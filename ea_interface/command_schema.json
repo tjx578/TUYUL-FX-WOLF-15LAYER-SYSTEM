@@ -1,1 +1,55 @@
-{}
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "EA Command Schema",
+  "type": "object",
+  "oneOf": [
+    {
+      "properties": {
+        "command": { "const": "PLACE_PENDING" },
+        "payload": {
+          "type": "object",
+          "required": ["symbol", "direction", "entry", "sl", "tp", "mode"],
+          "properties": {
+            "symbol": { "type": "string" },
+            "direction": {
+              "type": "string",
+              "enum": ["EXECUTE_BUY", "EXECUTE_SELL"]
+            },
+            "entry": { "type": "number" },
+            "sl": { "type": "number" },
+            "tp": { "type": "number" },
+            "mode": { "type": "string", "enum": ["TP1_ONLY"] },
+            "order_type": { "type": "string", "enum": ["PENDING_ONLY"] }
+          }
+        }
+      },
+      "required": ["command", "payload"]
+    },
+    {
+      "properties": {
+        "command": { "const": "CANCEL_ORDER" },
+        "payload": {
+          "type": "object",
+          "required": ["reason"],
+          "properties": {
+            "reason": { "type": "string" }
+          }
+        }
+      },
+      "required": ["command", "payload"]
+    },
+    {
+      "properties": {
+        "command": { "const": "SYNC_STATE" },
+        "payload": {
+          "type": "object",
+          "properties": {
+            "state": { "type": "string" },
+            "timestamp": { "type": "string", "format": "date-time" }
+          }
+        }
+      },
+      "required": ["command", "payload"]
+    }
+  ]
+}
