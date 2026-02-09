@@ -90,6 +90,14 @@ Broker/EA Executor
 
 ---
 
+## 🧪 Sandbox & Experimental Modules
+
+Folder `sandbox/` berisi modul **non-runtime** untuk:
+- reasoning simulation
+- output validation
+- research & experimentation
+
+⚠️ Modul di folder ini **TIDAK DIEKSEKUSI OLEH SISTEM LIVE**.
 ## 📚 Documentation
 
 - `docs/WOLF_15_LAYER_OUTPUT_TO_L14_SCHEMA_MAPPING.md` — Mapping resmi template → JSON output
