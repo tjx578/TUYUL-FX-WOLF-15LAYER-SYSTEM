@@ -61,6 +61,17 @@ Broker/EA Executor
 
 ---
 
+## 🧪 Sandbox & Experimental Modules
+
+Folder `sandbox/` berisi modul **non-runtime** untuk:
+- reasoning simulation
+- output validation
+- research & experimentation
+
+⚠️ Modul di folder ini **TIDAK DIEKSEKUSI OLEH SISTEM LIVE**.
+
+---
+
 ## ✅ Quick Start
 
 ### 1) Setup Environment
