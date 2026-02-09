@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
@@ -14,7 +14,7 @@ def reset_context_bus():
 
 
 def test_high_impact_event_locks_market(reset_context_bus):
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     reset_context_bus.update_news(
         {"events": [{"impact": "HIGH", "timestamp": now, "currency": "USD"}]}
     )
@@ -24,7 +24,7 @@ def test_high_impact_event_locks_market(reset_context_bus):
 
 
 def test_out_of_window_event_does_not_lock(reset_context_bus):
-    past = datetime.utcnow() - timedelta(hours=2)
+    past = datetime.now(timezone.utc) - timedelta(hours=2)
     reset_context_bus.update_news(
         {"events": [{"impact": "HIGH", "timestamp": past, "currency": "USD"}]}
     )

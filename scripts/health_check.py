@@ -25,7 +25,7 @@ def main() -> int:
         logger.info("Prop-firm guard active: {}", prop["prop_firm"]["enabled"])
         print("OK")
         return 0
-    except Exception as exc:  # pragma: no cover - defensive logging
+    except (RuntimeError, ValueError, KeyError) as exc:  # pragma: no cover - defensive logging
         logger.error("Health check failed: {}", exc)
         print("FAIL")
         return 1
