@@ -1,0 +1,19 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "L12 Verdict Schema",
+  "type": "object",
+  "required": ["symbol", "verdict", "confidence"],
+  "properties": {
+    "symbol": { "type": "string" },
+    "verdict": {
+      "type": "string",
+      "enum": ["EXECUTE_BUY", "EXECUTE_SELL", "NO_TRADE", "HOLD"]
+    },
+    "confidence": {
+      "type": "string",
+      "enum": ["VERY_HIGH", "HIGH", "MEDIUM", "LOW"]
+    },
+    "execution_mode": { "type": "string" },
+    "reason": { "type": "string" }
+  }
+}
