@@ -1,0 +1,30 @@
+twelve_data:
+  provider: "twelvedata"
+  mode: "realtime"
+
+websocket:
+  enabled: true
+  reconnect: true
+  reconnect_interval_sec: 5
+
+rest:
+  timeout_sec: 20
+  retries: 3
+
+candles:
+  build_timeframes: ["M15", "H1"]
+  max_history: 500
+
+symbols:
+  include_forex: true
+  include_commodities: true
+
+news:
+  enabled: true
+  impact_levels:
+    high: true
+    medium: true
+    low: false
+  pre_event_lock_minutes: 30
+  post_event_lock_minutes: 15
+# Placeholder
