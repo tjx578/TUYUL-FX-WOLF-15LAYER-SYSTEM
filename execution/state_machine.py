@@ -63,3 +63,4 @@ class ExecutionStateMachine:
             "reason": self.reason,
             "timestamp": self.timestamp.isoformat() if self.timestamp else None,
         }
+# Placeholder

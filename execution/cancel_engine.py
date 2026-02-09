@@ -17,3 +17,4 @@ class CancelEngine:
 
         self.state.set_cancelled(reason)
         logger.warning(f"\u274c ORDER CANCELLED \u2192 {reason}")
+# Placeholder

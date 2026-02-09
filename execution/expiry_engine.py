@@ -19,3 +19,4 @@ class ExpiryEngine:
         if elapsed_h1 >= self.max_h1_bars:
             self.state.set_cancelled("H1_EXPIRY")
             logger.warning("⏱️ ORDER EXPIRED (H1 COUNT)")
+# Placeholder
