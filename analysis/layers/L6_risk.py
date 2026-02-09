@@ -13,3 +13,4 @@ class L6RiskAnalyzer:
             "risk_ok": rr >= 2.0,
             "valid": True,
         }
+# Placeholder

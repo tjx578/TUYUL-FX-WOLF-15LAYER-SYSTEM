@@ -29,3 +29,4 @@ class L2MTAAnalyzer:
         h1_dir = h1["close"] > h1["open"]
         m15_dir = m15["close"] > m15["open"]
         return h1_dir == m15_dir
+# Placeholder
