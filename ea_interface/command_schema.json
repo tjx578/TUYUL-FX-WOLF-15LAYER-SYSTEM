@@ -28,5 +28,13 @@
       "type": "string",
       "format": "date-time"
     }
+  },
+  "if": {
+    "properties": {
+      "command": { "const": "PLACE" }
+    }
+  },
+  "then": {
+    "required": ["command", "symbol", "timestamp", "direction", "entry", "sl", "tp"]
   }
 }

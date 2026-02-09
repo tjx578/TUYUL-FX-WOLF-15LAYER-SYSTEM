@@ -12,6 +12,7 @@
 - HOLD   → tidak melakukan apa pun
 
 ## State dari EA ke Sistem
+- IDLE           → tidak ada order aktif atau pending
 - PENDING_ACTIVE
 - FILLED
 - CANCELLED

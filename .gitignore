@@ -25,6 +25,7 @@ venv/
 ENV/
 env/
 
+# IDEs
 # IDE
 .vscode/
 .idea/
