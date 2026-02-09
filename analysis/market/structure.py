@@ -35,3 +35,4 @@ class MarketStructureAnalyzer:
         To be expanded with swing logic (HH/HL/LH/LL).
         """
         return "NEUTRAL"  # BULLISH | BEARISH | NEUTRAL
+# Placeholder

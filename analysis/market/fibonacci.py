@@ -25,3 +25,4 @@ class FibonacciEngine:
             "1.618": high + diff * 0.618,
             "2.0": high + diff,
         }
+# Placeholder

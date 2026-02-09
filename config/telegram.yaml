@@ -1,0 +1,10 @@
+telegram:
+  enabled: false
+  mode: "ALERT_ONLY"
+
+messages:
+  on_l12_pass: true
+  on_trade_placed: true
+  on_trade_cancelled: true
+  on_violation: true
+# Placeholder
