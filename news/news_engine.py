@@ -37,3 +37,4 @@ class NewsEngine:
                 return True
 
         return False
+# Placeholder

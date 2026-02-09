@@ -17,3 +17,4 @@ class PropFirmRules:
 
     def min_rr_required(self) -> float:
         return self.cfg["risk"]["min_rr_required"]
+# Placeholder
