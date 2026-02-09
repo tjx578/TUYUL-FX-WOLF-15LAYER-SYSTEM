@@ -1,0 +1,27 @@
+prop_firm:
+  enabled: true
+  firm_name: "GENERIC_PROP"
+
+account:
+  balance: 100000
+  currency: "USD"
+
+drawdown:
+  max_daily_percent: 5.0
+  max_total_percent: 10.0
+  trailing: false
+
+risk:
+  max_risk_per_trade_percent: 1.0
+  min_rr_required: 2.0
+
+allowed_markets:
+  forex: true
+  commodities: true
+  crypto: false
+  indices: false
+
+restrictions:
+  news_trading_allowed: false
+  weekend_trading_allowed: false
+  hedge_allowed: false
