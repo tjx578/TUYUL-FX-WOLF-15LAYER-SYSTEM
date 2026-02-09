@@ -20,6 +20,8 @@ The EA must keep its internal state aligned with the live engine so orders are n
 }
 ```
 
+State values mirror `execution.state_machine.ExecutionStateMachine.state`.
+
 ## Sync Rules
 
 1. The engine is the source of truth. EA only mirrors.
