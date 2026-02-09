@@ -2,7 +2,23 @@
 Prop Firm Rule Validator
 """
 
-from config_loader import load_prop_firm
+try:
+    from config_loader import load_prop_firm
+except ModuleNotFoundError:
+    def load_prop_firm():
+        """
+        Fallback configuration loader used when `config_loader` is not available.
+
+        Returns a minimal configuration structure with the keys expected by
+        `PropFirmRules`, so that the module can be imported without error.
+        """
+        return {
+            "allowed_markets": {},
+            "risk": {
+                "max_risk_per_trade_percent": 0.0,
+                "min_rr_required": 0.0,
+            },
+        }
 
 
 class PropFirmRules:
