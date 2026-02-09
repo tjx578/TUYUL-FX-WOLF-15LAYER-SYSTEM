@@ -61,6 +61,19 @@ Broker/EA Executor
 
 ---
 
+## 📚 Documentation (Operational)
+
+Dokumentasi ini **bukan bagian runtime**, digunakan untuk:
+audit · compliance · SOP · training.
+
+- `docs/FINAL_SYSTEM_REVIEW.md`
+- `docs/END_TO_END_SIMULATION.md`
+- `docs/GO_LIVE_CHECKLIST_PROP_FIRM.md`
+
+⚠️ File di folder `docs/` **tidak pernah dipanggil oleh kode**.
+
+---
+
 ## ✅ Quick Start
 
 ### 1) Setup Environment
