@@ -1,4 +1,4 @@
-from news.news_engine import NewsEngine
+from news_engine import NewsEngine
 
 
 def test_news_lock_returns_bool():
