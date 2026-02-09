@@ -25,6 +25,8 @@ except ImportError:
         def snapshot(self):
             # Return a valid default state to satisfy the health check assertion
             return {"state": "IDLE"}
+from context.live_context_bus import LiveContextBus
+from execution.state_machine import ExecutionStateMachine
 
 
 def health_check():
@@ -40,6 +42,12 @@ def health_check():
     
     if state["state"] not in ["IDLE", "PENDING_ACTIVE", "CANCELLED", "FILLED"]:
         print(f"❌ SYSTEM HEALTH: FAILED - Invalid state: {state['state']}")
+        print("❌ SYSTEM HEALTH: FAILED - Context snapshot is None", file=sys.stderr)
+        sys.exit(1)
+    
+    valid_states = ["IDLE", "PENDING_ACTIVE", "CANCELLED", "FILLED"]
+    if state["state"] not in valid_states:
+        print(f"❌ SYSTEM HEALTH: FAILED - Invalid state: {state['state']}", file=sys.stderr)
         sys.exit(1)
 
     print("✅ SYSTEM HEALTH: OK")
