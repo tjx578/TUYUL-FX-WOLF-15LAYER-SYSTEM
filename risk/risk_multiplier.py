@@ -14,6 +14,17 @@ class RiskMultiplier:
         drawdown_level : float
             Fraction of the maximum allowed drawdown that has been used,
             expressed as a value between 0.0 and 1.0 (e.g. 0.3 == 30%).
+
+        Returns
+        -------
+        float
+            Risk multiplier between 0.25 and 1.0
+
+        Notes
+        -----
+        Input values are automatically clamped to [0.0, 1.0] to handle edge
+        cases gracefully (e.g., when drawdown calculations produce values
+        slightly outside the expected range due to rounding).
         """
         # Normalize input to a float in the [0.0, 1.0] range to avoid
         # ambiguity between percentages (0–100) and fractions (0.0–1.0).
