@@ -44,3 +44,4 @@ class TwelveDataNews:
                 logger.error(f"News fetch error: {e}")
 
             await asyncio.sleep(300)  # every 5 minutes
+# Placeholder

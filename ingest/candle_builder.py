@@ -68,3 +68,4 @@ class CandleBuilder:
             seconds=ts.second,
             microseconds=ts.microsecond,
         )
+# Placeholder
