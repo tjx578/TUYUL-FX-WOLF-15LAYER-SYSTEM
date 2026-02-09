@@ -9,8 +9,13 @@ CONFIG_DIR = BASE_DIR / "config"
 
 def _load_yaml(filename: str) -> dict:
     path = CONFIG_DIR / filename
-    with path.open() as f:
-        return yaml.safe_load(f)
+    try:
+        with path.open() as f:
+            return yaml.safe_load(f)
+    except FileNotFoundError as exc:
+        raise RuntimeError(f"Config file missing: {path}") from exc
+    except yaml.YAMLError as exc:
+        raise RuntimeError(f"Invalid YAML in config: {path}") from exc
 
 
 @functools.lru_cache(maxsize=None)
