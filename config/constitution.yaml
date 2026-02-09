@@ -1,0 +1,46 @@
+tii_min: 0.93
+integrity_min: 0.97
+rr_min: 2.0
+fta_min: 65.0
+monte_min: 60.0
+conf12_min: 0.75
+max_drawdown: 2.5
+authority:
+  sole_layer: 12
+  bypass_allowed: false
+  override_allowed: false
+
+market_law:
+  mandatory_pairs: ["XAUUSD", "XAGUSD"]
+
+thresholds:
+  TII_sym_min: 0.93
+  integrity_min: 0.96
+  CONF12_min: 0.88
+
+risk_rules:
+  min_rr: 2.0
+  max_risk_percent: 1.0
+
+probability:
+  min_win_probability_percent: 55.0
+  min_profit_factor: 1.6
+
+execution_rules:
+  order_type: "PENDING_ONLY"
+  tp_mode: "TP1_ONLY"
+  allow_market_execution: false
+
+timeframe_laws:
+  setup_tf_only: "H1"
+  monitor_tf_only: "M15"
+
+gates:
+  total_gates: 9
+  required_pass: 9
+
+violation_policy:
+  on_violation: "NO_TRADE"
+  log_violation: true
+  notify: true
+# Placeholder
