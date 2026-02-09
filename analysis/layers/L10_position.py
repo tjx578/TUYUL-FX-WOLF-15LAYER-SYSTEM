@@ -15,3 +15,4 @@ class L10PositionAnalyzer:
             "position_ok": position_ok,
             "valid": True,
         }
+# Placeholder
