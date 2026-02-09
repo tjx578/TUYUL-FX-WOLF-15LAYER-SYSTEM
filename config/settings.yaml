@@ -1,0 +1,34 @@
+app:
+  name: "tuyul-fx-wolf-15layer-system"
+  version: "v7.4r∞"
+  environment: "prod"
+  trading_mode: "paper"
+  timezone: "UTC"
+
+timeframes:
+  setup_tf: "H1"        # setup creation only
+  monitor_tf: "M15"     # monitoring + invalidation
+  context_tf: ["H1", "M15"]
+
+execution:
+  order_type: "PENDING_ONLY"
+  tp_mode: "TP1_ONLY"
+  max_concurrent_trades: 1
+  allow_partial_close: false
+
+market_universe:
+  allow_forex: true
+  allow_commodities: true
+  allow_crypto: false
+  allow_indices: false
+
+logging:
+  level: "INFO"
+  json_logs: true
+  log_to_file: true
+  log_dir: "logs/"
+
+safety:
+  allow_market_execution: false
+  allow_dashboard_write: false
+# Placeholder
