@@ -16,3 +16,4 @@ class RiskMultiplier:
         if drawdown_level < 0.8:
             return 0.5
         return 0.25
+# Placeholder

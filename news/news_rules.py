@@ -20,3 +20,4 @@ NEWS_RULES = {
         "lock": False,
     },
 }
+# Placeholder
