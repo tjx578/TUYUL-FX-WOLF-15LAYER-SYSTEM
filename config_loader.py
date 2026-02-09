@@ -1,44 +1,17 @@
-import functools
+import yaml
 from pathlib import Path
 
-import yaml
-
 BASE_DIR = Path(__file__).resolve().parent
-CONFIG_DIR = BASE_DIR / "config"
 
+def _load(path: str):
+    with open(BASE_DIR / path, "r") as f:
+        return yaml.safe_load(f)
 
-def _load_yaml(filename: str) -> dict:
-    path = CONFIG_DIR / filename
-    try:
-        with path.open() as f:
-            return yaml.safe_load(f)
-    except FileNotFoundError as exc:
-        raise RuntimeError(f"Config file missing: {path}") from exc
-    except yaml.YAMLError as exc:
-        raise RuntimeError(f"Invalid YAML in config: {path}") from exc
-
-
-@functools.lru_cache(maxsize=None)
-def load_settings() -> dict:
-    return _load_yaml("settings.yaml")
-
-
-@functools.lru_cache(maxsize=None)
-def load_pairs() -> list:
-    data = _load_yaml("pairs.yaml")
-    return data.get("pairs", []) if data else []
-
-
-@functools.lru_cache(maxsize=None)
-def load_constitution() -> dict:
-    return _load_yaml("constitution.yaml")
-
-
-@functools.lru_cache(maxsize=None)
-def load_prop_firm() -> dict:
-    return _load_yaml("prop_firm.yaml")
-
-
-@functools.lru_cache(maxsize=None)
-def load_twelve_data() -> dict:
-    return _load_yaml("twelve_data.yaml")
+CONFIG = {
+    "settings": _load("config/settings.yaml"),
+    "pairs": _load("config/pairs.yaml"),
+    "prop_firm": _load("config/prop_firm.yaml"),
+    "telegram": _load("config/telegram.yaml"),
+    "twelve_data": _load("config/twelve_data.yaml"),
+    "constitution": _load("config/constitution.yaml"),
+}

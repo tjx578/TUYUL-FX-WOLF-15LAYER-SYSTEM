@@ -1,25 +1,12 @@
-"""
-Snapshot Store
-Stores L14 JSON snapshots (post-L12).
-"""
-
 import json
 from datetime import datetime
+from pathlib import Path
 
-from storage.redis_client import RedisClient
+BASE_DIR = Path(__file__).resolve().parent / "snapshots"
+BASE_DIR.mkdir(exist_ok=True)
 
-
-class SnapshotStore:
-    def __init__(self):
-        self.redis = RedisClient()
-
-    def save(self, snapshot: dict):
-        ts = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
-        key = f"snapshot:L14:{snapshot.get('symbol')}:{ts}"
-        self.redis.set(key, json.dumps(snapshot))
-        return key
-
-    def load(self, key: str) -> dict:
-        raw = self.redis.get(key)
-        return json.loads(raw) if raw else None
-# Placeholder
+def save_snapshot(pair: str, data: dict):
+    ts = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+    path = BASE_DIR / f"{pair}_{ts}.json"
+    with open(path, "w") as f:
+        json.dump(data, f, indent=2)
