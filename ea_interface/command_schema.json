@@ -3,7 +3,6 @@
   "title": "EA Command Schema",
   "type": "object",
   "required": ["command", "symbol", "timestamp"],
-  "additionalProperties": false,
   "properties": {
     "command": {
       "type": "string",

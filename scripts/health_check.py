@@ -1,3 +1,5 @@
+import sys
+
 try:
     from context.live_context_bus import LiveContextBus
 except ImportError:
@@ -34,11 +36,11 @@ def health_check():
 
     if snapshot is None:
         print("❌ SYSTEM HEALTH: FAILED - Context snapshot is None")
-        exit(1)
+        sys.exit(1)
     
     if state["state"] not in ["IDLE", "PENDING_ACTIVE", "CANCELLED", "FILLED"]:
         print(f"❌ SYSTEM HEALTH: FAILED - Invalid state: {state['state']}")
-        exit(1)
+        sys.exit(1)
 
     print("✅ SYSTEM HEALTH: OK")
 
