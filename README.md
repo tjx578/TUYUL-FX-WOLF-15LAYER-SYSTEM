@@ -1,9 +1,35 @@
 # 🐺 TUYUL FX — WOLF 15-LAYER SYSTEM (v7.4r∞)
 
-> **Status:** 🟢 FINAL · LOCKED · LIVE READY  
-> **Scope:** LIVE TRADING · EA · DASHBOARD · PROP FIRM  
-> **Authority:** **Layer-12 ONLY (Constitution Zone)**  
+> **Status:** 🟢 FINAL · LOCKED · LIVE READY  \
+> **Scope:** LIVE TRADING · EA · DASHBOARD · PROP FIRM  \
+> **Authority:** **Layer-12 ONLY (Constitution Zone)**  \
 > **Execution Mode:** **TP1_ONLY** · **Pending Orders Only** · **No Market Execution**
+
+---
+
+## 📌 Master Output Reference (WOLF 15-LAYER)
+
+Sistem ini menggunakan **WOLF 15-LAYER OUTPUT TEMPLATE** sebagai
+**referensi utama cara sistem berpikir, menilai, dan mengambil keputusan**.
+
+📄 **Primary Reference Document:**
+- `docs/WOLF_15_LAYER_OUTPUT_TEMPLATE_v7.4r∞.md`
+
+### Fungsi Dokumen Ini
+- Standar output analisis (L1–L15)
+- Referensi audit & training
+- Acuan validasi hasil L14 JSON
+- Dokumentasi bagaimana **Layer-12 mengambil keputusan**
+
+### Catatan Penting
+- Dokumen ini **TIDAK DIEKSEKUSI**
+- Dokumen ini **TIDAK MENGGANTIKAN LOGIC**
+- Otoritas final tetap pada:
+  - `constitution/gatekeeper.py`
+  - `constitution/verdict_engine.py`
+
+Jika terjadi perbedaan:
+> **Konstitusi & kode selalu menang.**
 
 ---
 
@@ -22,6 +48,8 @@
 
 ## 🧠 System Flow
 
+```
+
 Twelve Data
 ↓
 ingest/ (feed + candle builder)
@@ -30,7 +58,7 @@ context/ (Live Context Bus)
 ↓
 analysis/ (L1–L11) + synthesis.py
 ↓
-constitution/ (gatekeeper.py + verdict_engine.py) ← L12 FINAL
+constitution/ (gatekeeper.py + verdict_engine.py)  ← L12 FINAL
 ↓
 execution/ (pending/cancel/expiry/guard/state machine)
 ↓
@@ -38,6 +66,7 @@ ea_interface/ (command schema)
 ↓
 Broker/EA Executor
 
+````
 
 ---
 
@@ -61,6 +90,22 @@ Broker/EA Executor
 
 ---
 
+## 📚 Documentation
+
+- `docs/WOLF_15_LAYER_OUTPUT_TO_L14_SCHEMA_MAPPING.md` — Mapping resmi template → JSON output
+## 📚 Documentation (Operational)
+
+Dokumentasi ini **bukan bagian runtime**, digunakan untuk:
+audit · compliance · SOP · training.
+
+- `docs/FINAL_SYSTEM_REVIEW.md`
+- `docs/END_TO_END_SIMULATION.md`
+- `docs/GO_LIVE_CHECKLIST_PROP_FIRM.md`
+
+⚠️ File di folder `docs/` **tidak pernah dipanggil oleh kode**.
+
+---
+
 ## ✅ Quick Start
 
 ### 1) Setup Environment
@@ -68,49 +113,74 @@ Broker/EA Executor
 python -m venv .venv
 source .venv/bin/activate   # windows: .venv\Scripts\activate
 pip install -r requirements.txt
-2) Configure Env
-Copy .env.example → .env dan isi key yang diperlukan:
+````
 
+### 2) Configure Env
+
+Copy `.env.example` → `.env` dan isi key yang diperlukan:
+
+```bash
 cp .env.example .env
-3) Run (Live Or Paper)
-Live engine:
+```
 
+### 3) Run (Live Or Paper)
+
+* Live engine:
+
+```bash
 bash scripts/run_live.sh
-Dashboard:
+```
 
+* Dashboard:
+
+```bash
 bash scripts/run_dashboard.sh
-Catatan: file main.py adalah entrypoint dan tidak boleh berisi logic analisis/eksekusi.
+```
 
-🧪 Run Tests
+> Catatan: file `main.py` adalah entrypoint dan **tidak boleh berisi logic analisis/eksekusi**.
+
+---
+
+## 🧪 Run Tests
+
+```bash
 pytest -q
+```
+
 Test penting:
 
-tests/test_l12_gate.py : L12 tidak bisa bypass
+* `tests/test_l12_gate.py` : L12 tidak bisa bypass
+* `tests/test_news_lock.py` : news lock bekerja
+* `tests/test_m15_cancel.py` : M15 cancel-only
+* `tests/test_prop_firm.py` : aturan prop-firm
 
-tests/test_news_lock.py : news lock bekerja
+---
 
-tests/test_m15_cancel.py : M15 cancel-only
+## 🔐 Logging & Audit
 
-tests/test_prop_firm.py : aturan prop-firm
+* Semua gate failure dicatat via `constitution/violation_log.py`
+* Snapshot JSON untuk L14 disimpan via `storage/snapshot_store.py`
+* Dashboard hanya membaca state & audit output, tidak bisa memodifikasi apa pun
 
-🔐 Logging & Audit
-Semua gate failure dicatat via constitution/violation_log.py
+---
 
-Snapshot JSON untuk L14 disimpan via storage/snapshot_store.py
+## 🧩 Environment Variables
 
-Dashboard hanya membaca state & audit output, tidak bisa memodifikasi apa pun
+Lihat `.env.example` untuk daftar lengkap.
 
-🧩 Environment Variables
-Lihat .env.example untuk daftar lengkap.
+---
 
-⚠️ Safety Notes
-Gunakan akun demo/paper sebelum live
+## ⚠️ Safety Notes
 
-Pastikan constitution.yaml thresholds sudah benar
+* Gunakan akun demo/paper sebelum live
+* Pastikan `constitution.yaml` thresholds sudah benar
+* Pastikan news lock aktif untuk event high impact
+* Jangan mengubah struktur repo (LOCKED)
 
-Pastikan news lock aktif untuk event high impact
+---
 
-Jangan mengubah struktur repo (LOCKED)
+## 📜 License
 
-📜 License
 Private / Proprietary (edit sesuai kebutuhan)
+
+````
