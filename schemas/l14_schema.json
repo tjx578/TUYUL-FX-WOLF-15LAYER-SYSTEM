@@ -1,1 +1,19 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "L14 Snapshot Schema",
+  "type": "object",
+  "required": ["symbol", "verdict", "analysis", "timestamp"],
+  "properties": {
+    "symbol": { "type": "string" },
+    "timestamp": { "type": "string", "format": "date-time" },
+    "verdict": { "$ref": "l12_schema.json" },
+    "analysis": {
+      "type": "object",
+      "description": "Aggregated L1-L11 output"
+    },
+    "execution_state": {
+      "type": "object"
+    }
+  }
+}
 {}
