@@ -20,3 +20,4 @@
     "timestamp": { "type": "string", "format": "date-time" }
   }
 }
+{}

@@ -22,3 +22,4 @@ class SnapshotStore:
     def load(self, key: str) -> dict:
         raw = self.redis.get(key)
         return json.loads(raw) if raw else None
+# Placeholder

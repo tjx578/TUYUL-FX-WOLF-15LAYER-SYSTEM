@@ -19,3 +19,4 @@ class TradeJournal:
 
     def all(self):
         return list(self._trades)
+# Placeholder
