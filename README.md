@@ -90,6 +90,9 @@ Broker/EA Executor
 
 ---
 
+## 📚 Documentation
+
+- `docs/WOLF_15_LAYER_OUTPUT_TO_L14_SCHEMA_MAPPING.md` — Mapping resmi template → JSON output
 ## 📚 Documentation (Operational)
 
 Dokumentasi ini **bukan bagian runtime**, digunakan untuk:
