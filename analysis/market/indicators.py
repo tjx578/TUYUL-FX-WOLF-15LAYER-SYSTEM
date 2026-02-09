@@ -56,3 +56,4 @@ class IndicatorEngine:
             trs.append(tr)
 
         return float(np.mean(trs[-period:]))
+# Placeholder

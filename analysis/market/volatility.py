@@ -23,3 +23,4 @@ class VolatilityAnalyzer:
             "profile": profile,
             "valid": True,
         }
+# Placeholder
