@@ -24,3 +24,4 @@ class ViolationLogger:
 
     def all(self):
         return list(self._violations)
+# Placeholder

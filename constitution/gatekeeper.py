@@ -87,3 +87,4 @@ class Gatekeeper:
             if r not in c or not c[r]:
                 return False, f"missing_{r}"
         return True, "complete"
+# Placeholder

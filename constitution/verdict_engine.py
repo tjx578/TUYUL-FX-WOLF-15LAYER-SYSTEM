@@ -35,3 +35,4 @@ class VerdictEngine:
         if trend == "BEARISH":
             return "SELL"
         return "HOLD"
+# Placeholder
