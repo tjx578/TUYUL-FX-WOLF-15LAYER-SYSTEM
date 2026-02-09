@@ -6,10 +6,10 @@ The EA must keep its internal state aligned with the live engine so orders are n
 
 ```json
 {
-  "state": "PENDING_ACTIVE | CANCELLED | FILLED | IDLE",
+  "state": "<PENDING_ACTIVE | CANCELLED | FILLED | IDLE>",
   "order": {
     "symbol": "XAUUSD",
-    "direction": "EXECUTE_BUY | EXECUTE_SELL",
+    "direction": "<EXECUTE_BUY | EXECUTE_SELL>",
     "entry": 2420.1,
     "sl": 2412.5,
     "tp": 2432.0,
