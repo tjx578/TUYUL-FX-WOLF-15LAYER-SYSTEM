@@ -3,6 +3,7 @@
   "title": "EA Command Schema",
   "type": "object",
   "required": ["command", "symbol", "timestamp"],
+  "additionalProperties": false,
   "properties": {
     "command": {
       "type": "string",
@@ -28,5 +29,13 @@
       "type": "string",
       "format": "date-time"
     }
+  },
+  "if": {
+    "properties": {
+      "command": { "const": "PLACE" }
+    }
+  },
+  "then": {
+    "required": ["command", "symbol", "timestamp", "direction", "entry", "sl", "tp"]
   }
 }
