@@ -25,3 +25,4 @@ class DashboardState:
 
     def get_verdict(self):
         return self._verdict
+# Placeholder

@@ -9,3 +9,4 @@ class ReadOnlyPermission:
     def allow(method: str) -> bool:
         # Only allow GET
         return method.upper() == "GET"
+# Placeholder
