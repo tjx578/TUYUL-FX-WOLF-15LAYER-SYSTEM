@@ -1,0 +1,32 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "EA Command Schema",
+  "type": "object",
+  "required": ["command", "symbol", "timestamp"],
+  "properties": {
+    "command": {
+      "type": "string",
+      "enum": ["PLACE", "CANCEL", "HOLD"]
+    },
+    "symbol": { "type": "string" },
+    "direction": {
+      "type": "string",
+      "enum": ["BUY", "SELL"]
+    },
+    "order_type": {
+      "type": "string",
+      "enum": ["PENDING_ONLY"]
+    },
+    "entry": { "type": "number" },
+    "sl": { "type": "number" },
+    "tp": { "type": "number" },
+    "execution_mode": {
+      "type": "string",
+      "enum": ["TP1_ONLY"]
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}
