@@ -7,11 +7,15 @@ def _base_candidate():
     return {
         "symbol": "EURUSD",
         "L1": {"ctx": True},
-        "L2": {"mta": True},
+        "L2": {"multi_timeframe_alignment": True},
         "L3": {"tech": True},
         "L4": {"score": 90},
         "L7": {"win_probability": 60.0},
-        "L8": {"integrity": 0.99, "tii_sym": 0.95},
+        "L8": {
+            "integrity": 0.99,
+            "technical_integrity_index_symbol": 0.95,
+            "tii_sym": 0.95,
+        },
         "L9": {"smc": True},
         "L10": {"position_ok": True},
         "L11": {"rr": 2.5},
