@@ -60,3 +60,4 @@ class TelegramNotifier:
 
         text = AlertFormatter.format_violation(symbol, gate, reason)
         self._send(text)
+# Placeholder

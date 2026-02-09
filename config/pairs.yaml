@@ -1,0 +1,50 @@
+pairs:
+  # ===== MAJOR =====
+  - { symbol: "EURUSD", category: "forex", enabled: true, digits: 5 }
+  - { symbol: "GBPUSD", category: "forex", enabled: true, digits: 5 }
+  - { symbol: "USDJPY", category: "forex", enabled: true, digits: 3 }
+  - { symbol: "USDCHF", category: "forex", enabled: true, digits: 5 }
+  - { symbol: "USDCAD", category: "forex", enabled: true, digits: 5 }
+  - { symbol: "AUDUSD", category: "forex", enabled: true, digits: 5 }
+  - { symbol: "NZDUSD", category: "forex", enabled: true, digits: 5 }
+
+  # ===== EUR CROSSES =====
+  - { symbol: "EURGBP", category: "forex", enabled: true }
+  - { symbol: "EURJPY", category: "forex", enabled: true }
+  - { symbol: "EURCHF", category: "forex", enabled: true }
+  - { symbol: "EURAUD", category: "forex", enabled: true }
+  - { symbol: "EURCAD", category: "forex", enabled: true }
+  - { symbol: "EURNZD", category: "forex", enabled: true }
+
+  # ===== GBP CROSSES =====
+  - { symbol: "GBPJPY", category: "forex", enabled: true }
+  - { symbol: "GBPCHF", category: "forex", enabled: true }
+  - { symbol: "GBPAUD", category: "forex", enabled: true }
+  - { symbol: "GBPCAD", category: "forex", enabled: true }
+  - { symbol: "GBPNZD", category: "forex", enabled: true }
+
+  # ===== AUD CROSSES =====
+  - { symbol: "AUDJPY", category: "forex", enabled: true }
+  - { symbol: "AUDNZD", category: "forex", enabled: true }
+  - { symbol: "AUDCAD", category: "forex", enabled: true }
+  - { symbol: "AUDCHF", category: "forex", enabled: true }
+
+  # ===== NZD CROSSES =====
+  - { symbol: "NZDJPY", category: "forex", enabled: true }
+  - { symbol: "NZDCHF", category: "forex", enabled: true }
+  - { symbol: "NZDCAD", category: "forex", enabled: true }
+
+  # ===== CAD / CHF =====
+  - { symbol: "CADJPY", category: "forex", enabled: true }
+  - { symbol: "CADCHF", category: "forex", enabled: true }
+  - { symbol: "CHFJPY", category: "forex", enabled: true }
+
+  # ===== COMMODITIES (MANDATORY) =====
+  - { symbol: "XAUUSD", category: "commodity", enabled: true, digits: 2, volatility: "HIGH" }
+  - { symbol: "XAGUSD", category: "commodity", enabled: true, digits: 3, volatility: "HIGH" }
+
+constraints:
+  allow_crypto: false
+  allow_indices: false
+  allow_disable_enabled_pairs: false
+# Placeholder
