@@ -7,6 +7,32 @@
 
 ---
 
+## 📌 Master Output Reference (WOLF 15-LAYER)
+
+Sistem ini menggunakan **WOLF 15-LAYER OUTPUT TEMPLATE** sebagai
+**referensi utama cara sistem berpikir, menilai, dan mengambil keputusan**.
+
+📄 **Primary Reference Document:**
+- `docs/WOLF_15_LAYER_OUTPUT_TEMPLATE_v7.4r∞.md`
+
+### Fungsi Dokumen Ini
+- Standar output analisis (L1–L15)
+- Referensi audit & training
+- Acuan validasi hasil L14 JSON
+- Dokumentasi bagaimana **Layer-12 mengambil keputusan**
+
+### Catatan Penting
+- Dokumen ini **TIDAK DIEKSEKUSI**
+- Dokumen ini **TIDAK MENGGANTIKAN LOGIC**
+- Otoritas final tetap pada:
+  - `constitution/gatekeeper.py`
+  - `constitution/verdict_engine.py`
+
+Jika terjadi perbedaan:
+> **Konstitusi & kode selalu menang.**
+
+---
+
 ## 🔒 Constitutional Rules (Non-Negotiable)
 
 - **L12 (constitution/) = satu-satunya otoritas final**
