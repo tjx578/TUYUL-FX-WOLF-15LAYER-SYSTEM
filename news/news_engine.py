@@ -21,6 +21,12 @@ class NewsEngine:
         now = datetime.utcnow()
 
         for event in news["events"]:
+            # Filter events relevant to the symbol's currency pairs
+            affected = event.get("affected_pairs", [])
+            if affected and symbol not in affected:
+                # Skip events that don't affect this symbol
+                continue
+
             impact = event.get("impact", "LOW").upper()
             rule = NEWS_RULES.get(impact)
             if not rule or not rule["lock"]:
