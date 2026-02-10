@@ -1,11 +1,17 @@
 """
 Live Context Bus
 Single Source of Truth for live market state.
+
+Supports two modes via CONTEXT_MODE environment variable:
+  - local (default): In-memory storage, single-process only
+  - redis: Redis-backed storage for multi-container deployments
 """
 
+import os
 from collections import defaultdict, deque
 from datetime import datetime
 from threading import Lock
+from typing import Optional
 
 from loguru import logger
 
@@ -16,12 +22,16 @@ from utils.timezone_utils import now_utc
 class LiveContextBus:
     """
     Centralized, thread-safe market state container.
+
+    Supports two modes:
+      - CONTEXT_MODE=local (default): In-memory only, for local dev/testing
+      - CONTEXT_MODE=redis: Writes to Redis for multi-container setups
     """
 
-    _instance = None
+    _instance: Optional["LiveContextBus"] = None
     _lock = Lock()
 
-    def __new__(cls):
+    def __new__(cls) -> "LiveContextBus":
         if not cls._instance:
             with cls._lock:
                 if not cls._instance:
@@ -29,19 +39,46 @@ class LiveContextBus:
                     cls._instance._init()
         return cls._instance
 
-    def _init(self):
+    def _init(self) -> None:
+        """Initialize context bus based on CONTEXT_MODE."""
+        # Always maintain local storage for backward compatibility
         self._tick_buffer = deque(maxlen=10000)
         self._candle_store = defaultdict(dict)  # symbol -> tf -> candle
         self._news_store = {}
         self._meta = {}
-
         self._rw_lock = Lock()
+
+        # Check mode and initialize Redis bridge if needed
+        self._mode = os.getenv("CONTEXT_MODE", "local").lower()
+        self._redis_bridge: Optional["RedisContextBridge"] = None
+
+        if self._mode == "redis":
+            try:
+                # Lazy import to avoid circular dependency
+                from context.redis_context_bridge import RedisContextBridge
+                self._redis_bridge = RedisContextBridge()
+                logger.info("LiveContextBus initialized in REDIS mode")
+            except Exception as exc:
+                logger.error(
+                    f"Failed to initialize Redis bridge: {exc}. "
+                    "Falling back to local mode."
+                )
+                self._mode = "local"
+                self._redis_bridge = None
+        else:
+            logger.info("LiveContextBus initialized in LOCAL mode")
 
     # =========================
     # WRITE METHODS (INGEST ONLY)
     # =========================
 
-    def update_tick(self, tick: dict):
+    def update_tick(self, tick: dict) -> None:
+        """
+        Update tick data.
+
+        In local mode: Stores in in-memory buffer.
+        In Redis mode: Stores locally AND writes to Redis.
+        """
         if not ContextValidator.validate_tick(tick):
             logger.warning("Invalid tick rejected")
             return
@@ -49,7 +86,20 @@ class LiveContextBus:
         with self._rw_lock:
             self._tick_buffer.append(tick)
 
-    def update_candle(self, candle: dict):
+        # If Redis mode, also write to Redis
+        if self._mode == "redis" and self._redis_bridge:
+            try:
+                self._redis_bridge.write_tick(tick)
+            except Exception as exc:
+                logger.error(f"Failed to write tick to Redis: {exc}")
+
+    def update_candle(self, candle: dict) -> None:
+        """
+        Update candle data.
+
+        In local mode: Stores in in-memory store.
+        In Redis mode: Stores locally AND writes to Redis.
+        """
         if not ContextValidator.validate_candle(candle):
             logger.warning("Invalid candle rejected")
             return
@@ -60,7 +110,20 @@ class LiveContextBus:
         with self._rw_lock:
             self._candle_store[symbol][tf] = candle
 
-    def update_news(self, news: dict):
+        # If Redis mode, also write to Redis
+        if self._mode == "redis" and self._redis_bridge:
+            try:
+                self._redis_bridge.write_candle(candle)
+            except Exception as exc:
+                logger.error(f"Failed to write candle to Redis: {exc}")
+
+    def update_news(self, news: dict) -> None:
+        """
+        Update news data.
+
+        In local mode: Stores in in-memory store.
+        In Redis mode: Stores locally AND writes to Redis.
+        """
         if not ContextValidator.validate_news(news):
             logger.warning("Invalid news payload rejected")
             return
@@ -68,6 +131,13 @@ class LiveContextBus:
         with self._rw_lock:
             self._news_store = news
             self._meta["news_updated_at"] = now_utc()
+
+        # If Redis mode, also write to Redis
+        if self._mode == "redis" and self._redis_bridge:
+            try:
+                self._redis_bridge.write_news(news)
+            except Exception as exc:
+                logger.error(f"Failed to write news to Redis: {exc}")
 
     # =========================
     # READ METHODS (EVERYONE ELSE)
