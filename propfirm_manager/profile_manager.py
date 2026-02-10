@@ -42,9 +42,28 @@ class PropFirmManager:
             FileNotFoundError: If profile files don't exist
             ImportError: If guard class can't be imported
         """
+        # Skip re-initialization if already initialized
+        if hasattr(self, 'profile_name'):
+            return
+            
         self.profile_name = profile_name
         self._load_profile()
         self._load_guard()
+    
+    def __new__(cls, profile_name: str):
+        """
+        Factory pattern to return cached instance if exists.
+        
+        Args:
+            profile_name: Name of the profile
+            
+        Returns:
+            PropFirmManager instance (cached or new)
+        """
+        if profile_name not in cls._profile_cache:
+            instance = super().__new__(cls)
+            cls._profile_cache[profile_name] = instance
+        return cls._profile_cache[profile_name]
     
     def _load_profile(self) -> None:
         """Load profile YAML configuration."""
@@ -109,6 +128,10 @@ class PropFirmManager:
         Returns:
             Guard class name
         """
+        # Special cases for all-caps acronyms
+        if profile_name == "ftmo":
+            return "FTMOGuard"
+        
         # Split by underscore, capitalize each part, join, add "Guard"
         parts = profile_name.split("_")
         class_name = "".join(part.capitalize() for part in parts)
