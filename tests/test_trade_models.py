@@ -9,7 +9,6 @@ Tests cover:
 """
 
 import pytest
-from datetime import datetime
 
 from schemas.trade_models import (
     Trade,

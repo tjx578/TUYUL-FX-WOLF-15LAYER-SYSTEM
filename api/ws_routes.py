@@ -7,7 +7,6 @@ Endpoints:
 """
 
 import asyncio
-import json
 from typing import Set
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect

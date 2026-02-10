@@ -15,7 +15,7 @@ Endpoints:
   GET  /api/v1/accounts/{id}      — Get account detail
 """
 
-from typing import List, Optional
+from typing import List
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
@@ -25,7 +25,6 @@ from dashboard.price_feed import PriceFeed
 from dashboard.trade_ledger import TradeLedger
 from journal.journal_router import JournalRouter
 from journal.journal_schema import DecisionJournal, VerdictType
-from risk.drawdown import DrawdownMonitor
 from risk.prop_firm import PropFirmRules
 from schemas.trade_models import Trade, Account, TradeStatus, CloseReason
 from utils.timezone_utils import now_utc
@@ -159,10 +158,10 @@ async def take_signal(req: TakeSignalRequest) -> Trade:
             primary_rejection_reason=None,
         )
         _journal.record_decision(j2)
-    except Exception as exc:
+    except Exception:
         # Don't fail the trade if journal fails
         pass
-    
+
     return trade
 
 
@@ -195,9 +194,9 @@ async def skip_signal(req: SkipSignalRequest) -> dict:
             primary_rejection_reason=req.reason,
         )
         _journal.record_decision(j2)
-    except Exception as exc:
+    except Exception:
         pass
-    
+
     return {
         "status": "skipped",
         "signal_id": req.signal_id,

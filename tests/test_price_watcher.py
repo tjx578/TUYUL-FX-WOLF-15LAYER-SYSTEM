@@ -10,7 +10,7 @@ Tests cover:
 """
 
 import pytest
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 from dashboard.price_watcher import PriceWatcher
 from schemas.trade_models import Trade, TradeLeg, TradeStatus, CloseReason

@@ -8,7 +8,6 @@ Tests all OpenRiskTracker functionality:
 - Edge cases (corrupt data, zero lot size)
 """
 
-import json
 from unittest.mock import MagicMock, patch
 
 import pytest

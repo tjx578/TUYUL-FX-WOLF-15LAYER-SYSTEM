@@ -10,7 +10,6 @@ Tests all risk components:
 - Synthesis integration
 """
 
-import json
 from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock, patch
 
@@ -23,7 +22,6 @@ from risk.risk_multiplier import RiskMultiplier
 from risk.risk_manager import RiskManager
 from risk.exceptions import (
     DrawdownLimitExceeded,
-    CircuitBreakerOpen,
     InvalidPositionSize,
 )
 

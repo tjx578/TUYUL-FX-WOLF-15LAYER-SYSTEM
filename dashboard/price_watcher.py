@@ -31,8 +31,6 @@ CRITICAL:
 
 import asyncio
 import os
-from typing import Optional
-
 from loguru import logger
 
 from dashboard.price_feed import PriceFeed

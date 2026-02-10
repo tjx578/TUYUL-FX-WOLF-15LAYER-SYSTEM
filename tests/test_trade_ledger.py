@@ -13,7 +13,6 @@ import pytest
 
 from dashboard.trade_ledger import TradeLedger
 from schemas.trade_models import TradeStatus, CloseReason
-from utils.timezone_utils import now_utc
 
 
 @pytest.fixture
@@ -210,7 +209,7 @@ def test_get_active_trades(trade_ledger):
 def test_get_trades_by_account(trade_ledger):
     """Test getting trades for a specific account."""
     # Create trades for different accounts
-    trade1 = trade_ledger.create_trade(
+    trade_ledger.create_trade(
         signal_id="SIG-EURUSD_1",
         account_id="ACC-001",
         pair="EURUSD",
@@ -220,8 +219,8 @@ def test_get_trades_by_account(trade_ledger):
         total_risk_amount=2000.0,
         legs=[{"entry": 1.08500, "sl": 1.08000, "tp": 1.09500, "lot": 0.01}],
     )
-    
-    trade2 = trade_ledger.create_trade(
+
+    trade_ledger.create_trade(
         signal_id="SIG-GBPUSD_2",
         account_id="ACC-001",
         pair="GBPUSD",
@@ -231,8 +230,8 @@ def test_get_trades_by_account(trade_ledger):
         total_risk_amount=2000.0,
         legs=[{"entry": 1.25500, "sl": 1.26000, "tp": 1.24500, "lot": 0.01}],
     )
-    
-    trade3 = trade_ledger.create_trade(
+
+    trade_ledger.create_trade(
         signal_id="SIG-USDJPY_3",
         account_id="ACC-002",
         pair="USDJPY",
@@ -242,7 +241,7 @@ def test_get_trades_by_account(trade_ledger):
         total_risk_amount=1500.0,
         legs=[{"entry": 150.500, "sl": 150.000, "tp": 151.500, "lot": 0.01}],
     )
-    
+
     # Get trades for ACC-001
     acc001_trades = trade_ledger.get_trades_by_account("ACC-001")
     assert len(acc001_trades) == 2
