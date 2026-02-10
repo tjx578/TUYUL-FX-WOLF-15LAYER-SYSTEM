@@ -1,5 +1,8 @@
 from datetime import datetime
 
+from utils.timezone_utils import now_utc
+
+
 class RuntimeState:
     latency_ms: int = 0
     last_tick_at = {}
@@ -12,4 +15,4 @@ class RuntimeState:
 
     @classmethod
     def tick(cls, pair: str):
-        cls.last_tick_at[pair] = datetime.utcnow()
+        cls.last_tick_at[pair] = now_utc()

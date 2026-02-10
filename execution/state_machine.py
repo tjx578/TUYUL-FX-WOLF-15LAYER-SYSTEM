@@ -6,6 +6,8 @@ Manages execution lifecycle states.
 from threading import Lock
 from datetime import datetime
 
+from utils.timezone_utils import now_utc
+
 
 class ExecutionStateMachine:
     _instance = None
@@ -35,19 +37,19 @@ class ExecutionStateMachine:
             self.state = "PENDING_ACTIVE"
             self.order = order
             self.reason = None
-            self.timestamp = datetime.utcnow()
+            self.timestamp = now_utc()
 
     def set_cancelled(self, reason: str):
         with self._sm_lock:
             self.state = "CANCELLED"
             self.reason = reason
-            self.timestamp = datetime.utcnow()
+            self.timestamp = now_utc()
 
     def set_filled(self, fill_info: dict):
         with self._sm_lock:
             self.state = "FILLED"
             self.order = fill_info
-            self.timestamp = datetime.utcnow()
+            self.timestamp = now_utc()
 
     # =========================
     # READ ONLY
