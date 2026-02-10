@@ -76,9 +76,10 @@ def generate_l12_verdict(synthesis: Dict[str, Any]) -> Dict[str, Any]:
         log_violation(pair=synthesis["pair"], reason=f"GATES_FAILED: {failed}")
     else:
         # Determine direction from execution or bias
+        # If direction is missing or HOLD, infer from technical bias
         direction = execution.get("direction")
         if not direction or direction == "HOLD":
-            # Infer from technical bias
+            # Infer from technical bias (BULLISH -> BUY, BEARISH -> SELL)
             if bias["technical"] == "BULLISH":
                 direction = "BUY"
             elif bias["technical"] == "BEARISH":

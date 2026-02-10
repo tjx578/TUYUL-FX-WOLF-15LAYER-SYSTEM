@@ -56,7 +56,7 @@ class TestBuildSynthesis:
         mock_engine.build_candidate.return_value = {
             "L1": {"valid": True, "regime": "TRENDING"},
             "L2": {"valid": True, "alignment": "BULLISH"},
-            "L3": {"valid": True, "bias": "BUY", "trend": "BULLISH"},
+            "L3": {"valid": True, "bias": "BULLISH", "trend": "BULLISH"},
             "L4": {"valid": True, "score": 75, "technical_score": 75, "fundamental_score": 60},
             "L5": {"valid": True, "stable": True},
             "L6": {"valid": True, "risk": "LOW"},
