@@ -26,12 +26,12 @@ _shutdown_event: Optional[asyncio.Event] = None
 def _validate_api_key() -> bool:
     """
     Validate Finnhub API key on startup.
-    
+
     Returns:
         bool: True if API key is valid, False otherwise
     """
     api_key = os.getenv("FINNHUB_API_KEY", "")
-    
+
     if not api_key or api_key == "YOUR_FINNHUB_API_KEY":
         logger.warning(
             "╔════════════════════════════════════════════════════════════╗\n"
@@ -42,7 +42,7 @@ def _validate_api_key() -> bool:
             "╚════════════════════════════════════════════════════════════╝"
         )
         return False
-    
+
     logger.info("✓ FINNHUB_API_KEY validated")
     return True
 
@@ -50,14 +50,14 @@ def _validate_api_key() -> bool:
 async def run_ingest_services(has_api_key: bool) -> None:
     """
     Run data ingestion services concurrently.
-    
+
     Launches three concurrent tasks:
     - FinnhubWebSocket: Real-time tick data
     - FinnhubNews: News feed
     - CandleBuilder: Aggregates ticks into H1/M15/M5 candles
-    
+
     All data is written to Redis via RedisContextBridge (CONTEXT_MODE=redis).
-    
+
     Args:
         has_api_key: Whether a valid Finnhub API key is configured
     """
@@ -70,15 +70,15 @@ async def run_ingest_services(has_api_key: bool) -> None:
                 break
             await asyncio.sleep(1)
         return
-    
+
     # Initialize ingest services
     ws_feed = FinnhubWebSocket()
     news_feed = FinnhubNews()
     candle_builder = CandleBuilder()
-    
+
     logger.info("Starting ingest services: WebSocket, News, CandleBuilder")
     logger.info("Writing data to Redis (CONTEXT_MODE=redis)")
-    
+
     # Run all three services concurrently
     try:
         await asyncio.gather(
@@ -94,14 +94,14 @@ async def run_ingest_services(has_api_key: bool) -> None:
 def _handle_signal(signum: int, frame) -> None:
     """
     Handle shutdown signals gracefully.
-    
+
     Args:
         signum: Signal number
         frame: Current stack frame
     """
     signal_name = signal.Signals(signum).name
     logger.info(f"Received {signal_name} - initiating graceful shutdown...")
-    
+
     if _shutdown_event:
         _shutdown_event.set()
 
@@ -109,12 +109,12 @@ def _handle_signal(signum: int, frame) -> None:
 async def main() -> None:
     """
     Main entry point for ingest service.
-    
+
     Sets up signal handlers, validates API key, and runs ingest services.
     """
     global _shutdown_event
     _shutdown_event = asyncio.Event()
-    
+
     # Configure logging
     logger.remove()
     logger.add(
@@ -125,18 +125,18 @@ async def main() -> None:
                "<level>{message}</level>",
         level="INFO",
     )
-    
+
     logger.info("=" * 70)
     logger.info("TUYUL FX WOLF - Standalone Ingest Service")
     logger.info("=" * 70)
-    
+
     # Set up signal handlers for graceful shutdown
     signal.signal(signal.SIGTERM, _handle_signal)
     signal.signal(signal.SIGINT, _handle_signal)
-    
+
     # Validate API key
     has_api_key = _validate_api_key()
-    
+
     # Validate CONTEXT_MODE
     context_mode = os.getenv("CONTEXT_MODE", "local").lower()
     if context_mode != "redis":
@@ -147,7 +147,7 @@ async def main() -> None:
     else:
         redis_url = os.getenv("REDIS_URL", "")
         logger.info(f"✓ CONTEXT_MODE=redis, REDIS_URL={redis_url}")
-    
+
     # Run ingest services
     try:
         await run_ingest_services(has_api_key)

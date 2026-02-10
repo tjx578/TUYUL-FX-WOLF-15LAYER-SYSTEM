@@ -39,36 +39,36 @@ app.include_router(l12_router)
 def _get_feed_status() -> str:
     """
     Determine data feed status.
-    
+
     Returns:
         "connected" | "disconnected" | "no_api_key"
     """
     api_key = os.getenv("FINNHUB_API_KEY", "")
-    
+
     if not api_key or api_key == "YOUR_FINNHUB_API_KEY":
         return "no_api_key"
-    
+
     # Check if we have recent tick data
     context_bus = LiveContextBus()
     snapshot = context_bus.snapshot()
-    
+
     if snapshot.get("ticks"):
         return "connected"
-    
+
     return "disconnected"
 
 
 def _get_last_tick_times() -> Dict[str, Optional[str]]:
     """
     Get timestamp of last tick per symbol.
-    
+
     Returns:
         Dictionary of symbol -> ISO timestamp
     """
     context_bus = LiveContextBus()
     snapshot = context_bus.snapshot()
     ticks = snapshot.get("ticks", [])
-    
+
     last_ticks = {}
     for tick in reversed(ticks):
         symbol = tick.get("symbol")
@@ -80,24 +80,24 @@ def _get_last_tick_times() -> Dict[str, Optional[str]]:
                 last_ticks[symbol] = dt.isoformat()
             elif isinstance(ts, datetime):
                 last_ticks[symbol] = ts.isoformat()
-    
+
     return last_ticks
 
 
 def _get_candle_freshness() -> Dict[str, int]:
     """
     Get age of latest candle per symbol in seconds.
-    
+
     Returns:
         Dictionary of symbol -> age in seconds
     """
     context_bus = LiveContextBus()
     snapshot = context_bus.snapshot()
     candles = snapshot.get("candles", {})
-    
+
     now = datetime.now(timezone.utc)
     freshness = {}
-    
+
     for symbol, timeframes in candles.items():
         for tf, candle in timeframes.items():
             ts = candle.get("timestamp")
@@ -105,22 +105,22 @@ def _get_candle_freshness() -> Dict[str, int]:
                 age = (now - ts).total_seconds()
                 key = f"{symbol}_{tf}"
                 freshness[key] = int(age)
-    
+
     return freshness
 
 
 def _get_redis_status() -> str:
     """
     Check Redis connection status.
-    
+
     Returns:
         "connected" | "disconnected" | "not_configured"
     """
     context_mode = os.getenv("CONTEXT_MODE", "local").lower()
-    
+
     if context_mode != "redis":
         return "not_configured"
-    
+
     try:
         # Try to get LiveContextBus and check if Redis bridge exists
         context_bus = LiveContextBus()
@@ -148,7 +148,7 @@ async def root():
 async def health_check():
     """
     Enhanced health check endpoint for monitoring.
-    
+
     Returns:
         Dictionary with system health information including:
         - Overall status

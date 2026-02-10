@@ -18,18 +18,18 @@ class RuntimeState:
     @classmethod
     def tick(cls, pair: str):
         cls.last_tick_at[pair] = now_utc()
-    
+
     @classmethod
     def get_session_hours(cls) -> float:
         """
         Get hours since session start.
-        
+
         Returns:
             Hours elapsed since session start (0.0 if not started)
         """
         if cls.session_start is None:
             cls.session_start = now_utc()
             return 0.0
-        
+
         delta = now_utc() - cls.session_start
         return delta.total_seconds() / 3600.0
