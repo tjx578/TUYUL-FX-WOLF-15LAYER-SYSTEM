@@ -43,6 +43,8 @@ storage/snapshots/
 storage/journal/
 storage/ea_commands/
 storage/ea_state/
+storage/decision_archive/
+storage/gpt_exports/
 *.rdb
 
 # =========================
