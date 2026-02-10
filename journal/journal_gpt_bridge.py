@@ -12,7 +12,7 @@ GPT Role (LOCKED):
 """
 
 import json
-from collections import Counter, defaultdict
+from collections import Counter
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, List, Optional

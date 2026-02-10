@@ -2,10 +2,9 @@
 Volatility Analysis
 """
 
-from typing import Dict, List, Optional
+from typing import Dict
 
 from context.live_context_bus import LiveContextBus
-from analysis.market.indicators import IndicatorEngine
 
 
 class VolatilityAnalyzer:
