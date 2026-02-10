@@ -268,6 +268,8 @@ class ModeController:
 class EvolutionEngine:
     """System evolution and learning engine."""
     
+    WIN_RATE_EVOLUTION_THRESHOLD = 0.55  # Win rate below which evolution is needed
+    
     def evolve(self, performance_data: Dict[str, Any]) -> Dict[str, Any]:
         """
         Evolve system based on performance.
@@ -281,7 +283,7 @@ class EvolutionEngine:
         win_rate = performance_data.get("win_rate", 0.5)
         
         # Determine if system needs adjustment
-        evolution_needed = win_rate < 0.55
+        evolution_needed = win_rate < self.WIN_RATE_EVOLUTION_THRESHOLD
         
         return {
             "evolution_applied": evolution_needed,
@@ -293,6 +295,8 @@ class EvolutionEngine:
 
 class WolfIntegrator:
     """Wolf 15-Layer System Integrator."""
+    
+    TOTAL_LAYERS = 15  # Total number of layers in the system
     
     def integrate_layers(
         self,
@@ -309,12 +313,12 @@ class WolfIntegrator:
         """
         # Count valid layers
         valid_count = sum(1 for layer in layers.values() if layer.get("valid", False))
-        integration_score = valid_count / 15.0
+        integration_score = valid_count / float(self.TOTAL_LAYERS)
         
         return {
             "integration_complete": valid_count >= 11,
             "valid_layers": valid_count,
-            "total_layers": 15,
+            "total_layers": self.TOTAL_LAYERS,
             "integration_score": integration_score,
             "valid": True,
         }
