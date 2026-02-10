@@ -277,7 +277,7 @@ class TestCandleBuilderEmptyBuffer:
         
         # Buffer should be cleaned (ticks from first period removed)
         # Only ticks from second period should remain
-        _buffer = builder.get_buffer() # pyright: ignore[reportAttributeAccessIssue]
+        _buffer = builder.buffers
         
         # Should have some ticks remaining (second period)
         # Exact count depends on implementation
