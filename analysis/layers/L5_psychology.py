@@ -7,10 +7,11 @@ Tracks trader psychology factors:
 - Drawdown percentage
 """
 
-from datetime import datetime, timezone
 from typing import Dict, Optional
 
 from loguru import logger
+
+from context.runtime_state import RuntimeState
 
 
 class L5PsychologyAnalyzer:
@@ -30,7 +31,6 @@ class L5PsychologyAnalyzer:
     MAX_DRAWDOWN_PERCENT = 5.0  # 5% max drawdown
     
     def __init__(self) -> None:
-        self._session_start: Optional[datetime] = None
         self._consecutive_losses = 0
         self._current_drawdown = 0.0
     
@@ -54,12 +54,8 @@ class L5PsychologyAnalyzer:
         if volatility_profile and volatility_profile.get("profile") == "HIGH":
             stable = False
         
-        # Initialize session start if not set
-        if self._session_start is None:
-            self._session_start = datetime.now(timezone.utc)
-        
-        # Calculate session duration
-        session_hours = self._get_session_hours()
+        # Get session duration from RuntimeState
+        session_hours = RuntimeState.get_session_hours()
         fatigue_level = self._calculate_fatigue(session_hours)
         
         # Check consecutive losses
@@ -76,6 +72,20 @@ class L5PsychologyAnalyzer:
             and fatigue_level != "HIGH"
         )
         
+        # Build recommendation
+        recommendation = "Psychology OK"
+        if not psychology_ok:
+            reasons = []
+            if not stable:
+                reasons.append("high volatility")
+            if not losses_ok:
+                reasons.append(f"{self._consecutive_losses} consecutive losses")
+            if not drawdown_ok:
+                reasons.append(f"{self._current_drawdown:.1f}% drawdown")
+            if fatigue_level == "HIGH":
+                reasons.append("high fatigue")
+            recommendation = f"Psychology NOT OK: {', '.join(reasons)}"
+        
         return {
             "stable": stable,
             "psychology_ok": psychology_ok,
@@ -85,17 +95,9 @@ class L5PsychologyAnalyzer:
             "drawdown_percent": round(self._current_drawdown, 2),
             "losses_ok": losses_ok,
             "drawdown_ok": drawdown_ok,
+            "recommendation": recommendation,
             "valid": True,
         }
-    
-    def _get_session_hours(self) -> float:
-        """Calculate hours since session start."""
-        if self._session_start is None:
-            return 0.0
-        
-        now = datetime.now(timezone.utc)
-        delta = now - self._session_start
-        return delta.total_seconds() / 3600.0
     
     def _calculate_fatigue(self, hours: float) -> str:
         """
@@ -148,7 +150,7 @@ class L5PsychologyAnalyzer:
     
     def reset_session(self) -> None:
         """Reset session tracking (e.g., at start of new trading day)."""
-        self._session_start = datetime.now(timezone.utc)
+        RuntimeState.session_start = None  # Will be reinitialized on next call
         self._consecutive_losses = 0
         self._current_drawdown = 0.0
         logger.info("Psychology session reset")

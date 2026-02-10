@@ -5,8 +5,7 @@ Contains: CentralBankSentimentAnalyzer, FTAExecutionGate, FTAIntegrationEngine,
 FundamentalDriveEngine, FundamentalPatchIntegrator.
 """
 
-from typing import Dict, Any, List, Optional
-from loguru import logger
+from typing import Dict, Any
 
 
 class CentralBankSentimentAnalyzer:

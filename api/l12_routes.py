@@ -3,7 +3,6 @@ from storage.l12_cache import get_verdict
 from context.live_context_bus import LiveContextBus
 from execution.state_machine import ExecutionStateMachine
 from utils.timezone_utils import format_utc, format_local, now_utc
-from typing import Dict, List
 
 router = APIRouter()
 

@@ -5,8 +5,7 @@ Contains: EmotionFeedbackEngine, RegimeClassifier, IntegrityEngine, RiskManager,
 TWMSCalculator, SmartMoneyDetector, Monte Carlo Validator.
 """
 
-from typing import Dict, Any, Optional
-from loguru import logger
+from typing import Dict, Any
 
 
 class EmotionFeedbackEngine:
