@@ -1,0 +1,5 @@
+# Account to Prop Firm Profile Mapping
+# Maps account IDs to their associated prop firm profile
+
+ACC-001: ftmo
+ACC-002: aqua_instant_pro
