@@ -3,6 +3,8 @@ SYNTHESIS — Aggregate L1–L11
 Produces candidate setup (pre-constitution).
 """
 
+from loguru import logger
+
 from analysis.layers.L1_context import L1ContextAnalyzer
 from analysis.layers.L2_mta import L2MTAAnalyzer
 from analysis.layers.L3_technical import L3TechnicalAnalyzer
@@ -101,7 +103,11 @@ class SynthesisEngine:
 # Placeholder
 
 
-def build_synthesis(pair: str) -> dict:
+def build_synthesis(
+    pair: str, 
+    risk_manager=None, 
+    vix_level: float = None
+) -> dict:
     """
     Build L12-contract-compliant synthesis for a pair.
     
@@ -111,6 +117,8 @@ def build_synthesis(pair: str) -> dict:
     
     Args:
         pair: Trading pair symbol (e.g., "EURUSD")
+        risk_manager: Optional RiskManager instance for real risk data
+        vix_level: Optional VIX level for risk calculations
         
     Returns:
         Dict with L12 contract fields: pair, scores, layers, execution, risk, propfirm, bias, system
@@ -162,6 +170,56 @@ def build_synthesis(pair: str) -> dict:
     take_profit_1 = 1.1100  # placeholder
     rr_ratio = l11.get("rr", 2.0)
     
+    # Get risk data from RiskManager if available
+    if risk_manager is not None:
+        try:
+            # Get risk snapshot
+            risk_snapshot = risk_manager.get_risk_snapshot(
+                vix_level=vix_level,
+                session=None,  # auto-detect
+            )
+            
+            # Calculate position size
+            position_data = risk_manager.calculate_position(
+                entry_price=entry_price,
+                stop_loss_price=stop_loss,
+                pair=pair,
+                vix_level=vix_level,
+            )
+            
+            # Check prop firm compliance
+            prop_compliance = risk_manager.check_prop_firm_compliance({
+                "risk_percent": position_data["risk_percent"],
+                "rr_ratio": rr_ratio,
+            })
+            
+            # Extract values
+            current_drawdown = risk_snapshot["drawdown"]["total_dd_percent"]
+            lot_size = position_data["lot_size"]
+            risk_percent = position_data["risk_percent"]
+            risk_amount = position_data["risk_amount"]
+            prop_compliant = prop_compliance["compliant"]
+            
+        except Exception as e:
+            # Fallback to defaults on error
+            logger.warning(
+                "Failed to get risk data from RiskManager, using defaults",
+                error=str(e),
+                pair=pair,
+            )
+            current_drawdown = 0.0
+            lot_size = 0.01
+            risk_percent = 1.0
+            risk_amount = 100.0
+            prop_compliant = True
+    else:
+        # Use defaults if no RiskManager provided
+        current_drawdown = 0.0
+        lot_size = 0.01
+        risk_percent = 1.0
+        risk_amount = 100.0
+        prop_compliant = True
+    
     # Compute confidence index (conf12)
     # Average of key integrity metrics
     tii_sym = l8.get("tii_sym", 0.5)
@@ -197,15 +255,15 @@ def build_synthesis(pair: str) -> dict:
             "take_profit_1": take_profit_1,
             "take_profit": take_profit_1,
             "rr_ratio": rr_ratio,
-            "lot_size": 0.01,
-            "risk_percent": 1.0,
-            "risk_amount": 100.0,
+            "lot_size": lot_size,
+            "risk_percent": risk_percent,
+            "risk_amount": risk_amount,
         },
         "risk": {
-            "current_drawdown": 0.0,  # would come from risk manager
+            "current_drawdown": current_drawdown,
         },
         "propfirm": {
-            "compliant": True,  # would come from prop firm checker
+            "compliant": prop_compliant,
         },
         "bias": {
             "fundamental": "NEUTRAL" if not l1_valid else trend,
