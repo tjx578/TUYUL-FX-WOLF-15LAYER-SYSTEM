@@ -3,7 +3,6 @@ SYNTHESIS — Aggregate L1–L11
 Produces candidate setup (pre-constitution).
 """
 
-from context.runtime_state import RuntimeState
 from analysis.layers.L1_context import L1ContextAnalyzer
 from analysis.layers.L2_mta import L2MTAAnalyzer
 from analysis.layers.L3_technical import L3TechnicalAnalyzer
@@ -97,10 +96,8 @@ def build_synthesis(pair: str) -> dict:
     l2 = raw.get("L2", {})
     l3 = raw.get("L3", {})
     l4 = raw.get("L4", {})
-    l6 = raw.get("L6", {})
     l7 = raw.get("L7", {})
     l8 = raw.get("L8", {})
-    l9 = raw.get("L9", {})
     l10 = raw.get("L10", {})
     l11 = raw.get("L11", {})
     
