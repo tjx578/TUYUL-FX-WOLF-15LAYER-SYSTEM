@@ -209,14 +209,14 @@ def build_synthesis(
             )
             current_drawdown = 0.0
             lot_size = 0.01
-            risk_percent = 1.0
+            risk_percent = 0.01  # 1%
             risk_amount = 100.0
             prop_compliant = True
     else:
         # Use defaults if no RiskManager provided
         current_drawdown = 0.0
         lot_size = 0.01
-        risk_percent = 1.0
+        risk_percent = 0.01  # 1%
         risk_amount = 100.0
         prop_compliant = True
     

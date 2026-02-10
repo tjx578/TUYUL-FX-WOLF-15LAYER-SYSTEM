@@ -111,14 +111,15 @@ class RiskMultiplier:
         
         vix_config = self._rm_config["vix"]
         
-        if vix_level < vix_config["low_threshold"]:
-            return vix_config["low_multiplier"]
-        elif vix_level < vix_config["medium_threshold"]:
-            return vix_config["medium_multiplier"]
-        elif vix_level < vix_config["high_threshold"]:
-            return vix_config["high_multiplier"]
-        else:
+        # Return appropriate multiplier based on thresholds
+        if vix_level >= vix_config["high_threshold"]:
             return vix_config["extreme_multiplier"]
+        if vix_level >= vix_config["medium_threshold"]:
+            return vix_config["high_multiplier"]
+        if vix_level >= vix_config["low_threshold"]:
+            return vix_config["medium_multiplier"]
+        
+        return vix_config["low_multiplier"]
     
     def _calculate_session_multiplier(
         self, 
