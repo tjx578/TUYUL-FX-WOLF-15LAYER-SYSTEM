@@ -28,4 +28,3 @@ class SupplyDemandDetector:
         }
 
         return zones
-# Placeholder

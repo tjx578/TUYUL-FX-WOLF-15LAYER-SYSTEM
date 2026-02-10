@@ -46,4 +46,3 @@ class L1ContextAnalyzer:
             return False
         # detail filtering dilakukan di news engine
         return False
-# Placeholder
