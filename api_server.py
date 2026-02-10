@@ -18,6 +18,7 @@ from api.dashboard_routes import router as dashboard_router
 from api.journal_routes import router as journal_router
 from api.l12_routes import router as l12_router
 from api.ws_routes import router as ws_router
+from risk.risk_router import router as risk_router
 from context.live_context_bus import LiveContextBus
 from context.runtime_state import RuntimeState
 from dashboard.price_feed import PriceFeed
@@ -116,6 +117,7 @@ app.include_router(l12_router)
 app.include_router(dashboard_router)
 app.include_router(journal_router)
 app.include_router(ws_router)
+app.include_router(risk_router)
 
 
 def _get_feed_status() -> str:
