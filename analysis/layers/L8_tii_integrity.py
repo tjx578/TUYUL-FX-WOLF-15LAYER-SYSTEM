@@ -8,7 +8,7 @@ class L8TIIIntegrityAnalyzer:
         """
         layers: output dict dari L1–L7
         """
-        valid_layers = sum(1 for l in layers.values() if l.get("valid"))
+        valid_layers = sum(1 for layer in layers.values() if layer.get("valid"))
         total_layers = len(layers)
 
         if total_layers == 0:

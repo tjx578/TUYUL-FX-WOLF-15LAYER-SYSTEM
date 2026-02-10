@@ -7,7 +7,7 @@ ingest container in a multi-container deployment.
 """
 
 import asyncio
-from typing import Any, Optional
+from typing import Optional
 
 import orjson
 from loguru import logger

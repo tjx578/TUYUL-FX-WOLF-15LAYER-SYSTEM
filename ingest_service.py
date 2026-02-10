@@ -15,7 +15,6 @@ from typing import Optional
 
 from loguru import logger
 
-from config_loader import CONFIG
 from ingest.candle_builder import CandleBuilder
 from ingest.finnhub_news import FinnhubNews
 from ingest.finnhub_ws import FinnhubWebSocket

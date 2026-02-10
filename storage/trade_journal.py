@@ -3,7 +3,6 @@ Trade Journal
 Immutable trade history for audit.
 """
 
-from datetime import datetime
 
 from utils.timezone_utils import now_utc
 

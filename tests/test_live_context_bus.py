@@ -8,7 +8,6 @@ and snapshot functionality.
 import threading
 from datetime import datetime, timezone
 
-import pytest
 
 from context.live_context_bus import LiveContextBus
 
