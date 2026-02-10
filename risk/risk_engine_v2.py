@@ -14,12 +14,8 @@ from typing import Optional
 from loguru import logger
 
 from risk.exceptions import (
-    CircuitBreakerOpen,
-    DrawdownLimitExceeded,
     InvalidPositionSize,
-    PropFirmViolation,
     RiskCalculationError,
-    RiskException,
 )
 from risk.open_risk_tracker import OpenRiskTracker, OpenTrade
 from risk.risk_profile import RiskMode, RiskProfile, load_risk_profile

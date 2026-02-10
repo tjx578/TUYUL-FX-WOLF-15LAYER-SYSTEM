@@ -16,7 +16,7 @@ from pydantic import BaseModel, Field, field_validator
 from loguru import logger
 
 from risk.exceptions import RiskException
-from risk.risk_engine_v2 import RiskEngineV2, SignalInput, RiskVerdict
+from risk.risk_engine_v2 import RiskEngineV2, SignalInput
 from risk.risk_profile import RiskProfile, RiskMode, save_risk_profile, load_risk_profile
 
 router = APIRouter(prefix="/api/v1/risk")
@@ -98,7 +98,7 @@ async def evaluate_signal(
 ) -> dict:
     """
     Evaluate a trading signal against risk constraints.
-    
+
     Returns ALLOW or DENY verdict with lot sizing details.
     Optionally auto-registers the trade if allowed.
     """
@@ -114,13 +114,13 @@ async def evaluate_signal(
             trade_id=req.trade_id,
             sl_distance_2=req.sl_distance_2,
         )
-        
+
         result = engine.evaluate(signal, vix_level=req.vix_level, session=req.session)
-        
+
         # Auto-register if requested and allowed
         if req.auto_register and result.allowed:
             engine.register_intended_trade(signal, result.lots)
-        
+
         return {
             "verdict": result.verdict.value,
             "deny_code": result.deny_code,
