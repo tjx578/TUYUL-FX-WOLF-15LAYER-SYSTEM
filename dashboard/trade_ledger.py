@@ -206,7 +206,8 @@ class TradeLedger:
             True if updated successfully, False otherwise
         """
         with self._rw_lock:
-            trade = self.get_trade(trade_id)
+            # Check cache first (avoid calling get_trade which may access Redis)
+            trade = self._cache.get(trade_id)
             
             if not trade:
                 logger.warning(f"Trade not found: {trade_id}")
@@ -238,6 +239,14 @@ class TradeLedger:
             # Save to cache and Redis
             self._cache[trade_id] = trade
             
+            # Log the update
+            logger.info(
+                f"Updated trade {trade_id}: {old_status} → {new_status}"
+                + (f" | Reason: {close_reason}" if close_reason else "")
+                + (f" | P&L: ${pnl:.2f}" if pnl is not None else "")
+            )
+            
+            # Try to save to Redis (best effort - failure doesn't mean the update failed)
             try:
                 redis_key = f"{self._redis_prefix}:TRADE:{trade_id}"
                 self._redis.set(redis_key, trade.model_dump_json())
@@ -246,16 +255,12 @@ class TradeLedger:
                 if new_status in (TradeStatus.CLOSED, TradeStatus.CANCELLED, TradeStatus.SKIPPED):
                     active_key = f"{self._redis_prefix}:TRADES:ACTIVE"
                     self._redis.client.zrem(active_key, trade_id)
-                
-                logger.info(
-                    f"Updated trade {trade_id}: {old_status} → {new_status}"
-                    + (f" | Reason: {close_reason}" if close_reason else "")
-                    + (f" | P&L: ${pnl:.2f}" if pnl is not None else "")
-                )
-                return True
+                    
             except Exception as exc:
                 logger.error(f"Failed to update trade in Redis: {exc}")
-                return False
+                # Don't return False - cache update succeeded
+            
+            return True
 
     def get_trade(self, trade_id: str) -> Optional[Trade]:
         """
