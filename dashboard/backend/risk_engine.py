@@ -99,6 +99,7 @@ class RiskEngine:
             )
         
         # Apply drawdown multiplier
+        # Convert total_dd_percent (percentage) to fraction for multiplier
         dd_level = account_state.total_dd_percent / 100.0
         multiplier = self.risk_multiplier.calculate(dd_level)
         adjusted_risk_percent = risk_percent * multiplier
