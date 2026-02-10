@@ -33,4 +33,5 @@ class RedisClient:
 
 
 # Singleton instance
+# Singleton instance for imports
 redis_client = RedisClient()
