@@ -22,7 +22,7 @@ def fetch_l12(pair: str):
     data = get_verdict(pair.upper())
     if not data:
         raise HTTPException(status_code=404, detail=f"No verdict found for {pair}")
-    
+
     # Add dual timezone info if timestamp exists
     if "timestamp" in data:
         try:
@@ -31,7 +31,7 @@ def fetch_l12(pair: str):
             data["time_local"] = format_local(current_time)
         except Exception:
             pass
-    
+
     return data
 
 
@@ -44,7 +44,7 @@ def fetch_all_verdicts():
         data = get_verdict(pair)
         if data:
             verdicts[pair] = data
-    
+
     return verdicts
 
 
@@ -53,12 +53,12 @@ def fetch_context():
     """Get live context snapshot."""
     context_bus = LiveContextBus()
     snapshot = context_bus.snapshot()
-    
+
     # Add timestamp info
     current_time = now_utc()
     snapshot["timestamp_utc"] = format_utc(current_time)
     snapshot["timestamp_local"] = format_local(current_time)
-    
+
     return snapshot
 
 
@@ -67,12 +67,12 @@ def fetch_execution():
     """Get current execution state."""
     state_machine = ExecutionStateMachine()
     execution_state = state_machine.snapshot()
-    
+
     # Add timezone info
     current_time = now_utc()
     execution_state["current_time_utc"] = format_utc(current_time)
     execution_state["current_time_local"] = format_local(current_time)
-    
+
     return execution_state
 
 
