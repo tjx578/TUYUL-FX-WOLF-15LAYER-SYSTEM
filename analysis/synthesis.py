@@ -135,8 +135,8 @@ def build_synthesis(pair: str) -> dict:
     
     # Bias alignment
     bias = {
-        "fundamental_bias": "NEUTRAL",
-        "technical_bias": "NEUTRAL",
+        "fundamental": "NEUTRAL",
+        "technical": "NEUTRAL",
         "aligned": False,
     }
     
