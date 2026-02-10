@@ -116,16 +116,9 @@ class FinnhubWebSocket:
                 "FINNHUB_API_KEY not set — WebSocket will fail to authenticate"
             )
 
-    async def _connect(self) -> websockets.WebSocketClientProtocol: # pyright: ignore[reportAttributeAccessIssue]
-        url = f"{self._ws_url}?token={self._api_key}"
-        logger.info("Connecting to Finnhub WebSocket...")
-        ws = await websockets.connect(
-            url,
-            ping_interval=self._ping_interval,
-            ping_timeout=self._ping_interval + 10,
-        )
-        logger.info("Finnhub WebSocket connected")
-        return ws
+    def _build_ws_url(self) -> str:
+        """Build the WebSocket URL with authentication token."""
+        return f"{self._ws_url}?token={self._api_key}"
 
     async def _subscribe(
         self, ws: websockets.WebSocketClientProtocol # pyright: ignore[reportAttributeAccessIssue]
@@ -147,7 +140,14 @@ class FinnhubWebSocket:
 
         while True:
             try:
-                async with await self._connect() as ws:
+                url = self._build_ws_url()
+                logger.info("Connecting to Finnhub WebSocket...")
+                async with websockets.connect(
+                    url,
+                    ping_interval=self._ping_interval,
+                    ping_timeout=self._ping_interval + 10,
+                ) as ws:
+                    logger.info("Finnhub WebSocket connected")
                     await self._subscribe(ws)
                     backoff = self._reconnect_interval  # reset on success
 
