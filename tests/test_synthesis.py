@@ -54,17 +54,17 @@ class TestBuildSynthesis:
         mock_engine_class.return_value = mock_engine
         
         mock_engine.build_candidate.return_value = {
-            "l1": {"valid": True, "regime": "TRENDING"},
-            "l2": {"valid": True, "alignment": "BULLISH"},
-            "l3": {"valid": True, "bias": "BUY"},
-            "l4": {"valid": True, "score": 75},
-            "l5": {"valid": True, "stable": True},
-            "l6": {"valid": True, "risk": "LOW"},
-            "l7": {"valid": True, "probability": 0.75},
-            "l8": {"valid": True, "integrity": 0.85},
-            "l9": {"valid": True, "confidence": 0.80},
-            "l10": {"valid": True, "size": 0.02},
-            "l11": {"valid": True, "rr": 2.5},
+            "L1": {"valid": True, "regime": "TRENDING"},
+            "L2": {"valid": True, "alignment": "BULLISH"},
+            "L3": {"valid": True, "bias": "BULLISH", "trend": "BULLISH"},
+            "L4": {"valid": True, "score": 75, "technical_score": 75, "fundamental_score": 60},
+            "L5": {"valid": True, "stable": True},
+            "L6": {"valid": True, "risk": "LOW"},
+            "L7": {"valid": True, "probability": 0.75, "win_probability": 75},
+            "L8": {"valid": True, "integrity": 0.85, "tii_sym": 0.85},
+            "L9": {"valid": True, "confidence": 0.80},
+            "L10": {"valid": True, "size": 0.02},
+            "L11": {"valid": True, "rr": 2.5},
         }
         
         result = build_synthesis("EURUSD")
@@ -72,7 +72,11 @@ class TestBuildSynthesis:
         # Should return valid synthesis
         assert result is not None
         assert isinstance(result, dict)
-        assert result.get("l1", {}).get("valid") is True
+        # Check for contract fields instead of raw layer data
+        assert "pair" in result
+        assert "scores" in result
+        assert "layers" in result
+        assert "execution" in result
 
 
 class TestAdaptSynthesis:
