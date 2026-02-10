@@ -817,7 +817,7 @@ class Wolf15LayerEngine:
             return self._generate_output()
 
         # L9: SMC Integration
-        self.process_layer_9(analysis_data.get('L9', {}))
+        l9_result = self.process_layer_9(analysis_data.get('L9', {}))
 
         # L10: Position Sizing (calculate FTA)
         fta_action = WolfActions.calculate_fta_score(
@@ -844,7 +844,7 @@ class Wolf15LayerEngine:
         self.layer_results.append(l11_result)
 
         # L12: Constitutional Verdict
-        self.process_layer_12()
+        l12_result = self.process_layer_12()
 
         # L13-L15: Meta layers (simplified)
         self.context.layer_outputs['L13'] = {
@@ -1053,14 +1053,14 @@ if __name__ == "__main__":
     print(f"🐺 WOLF STATUS: {result['wolf_status']}")
     print(f"🚪 GATES: {result['gates']['passed']}/{result['gates']['total']}")
 
-    print("\n📊 SCORES:")
+    print(f"\n📊 SCORES:")
     print(f"   Wolf 30-Point: {result['scores']['wolf_30']}/30")
     print(f"   F-Score: {result['scores']['f_score']}/7")
     print(f"   T-Score: {result['scores']['t_score']}/13")
     print(f"   FTA Score: {result['scores']['fta_score']}%")
     print(f"   Psychology: {result['scores']['psychology']}/100")
 
-    print("\n💹 EXECUTION (TP1_ONLY):")
+    print(f"\n💹 EXECUTION (TP1_ONLY):")
     print(f"   Entry: {result['execution']['entry']}")
     print(f"   SL: {result['execution']['stop_loss']}")
     print(f"   TP1: {result['execution']['take_profit_1']}")
