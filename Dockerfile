@@ -26,7 +26,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 # Create necessary directories
-RUN mkdir -p /app/storage/snapshots /app/storage/ea_commands /app/storage/ea_state /app/logs
+RUN mkdir -p /app/storage/snapshots /app/storage/ea_commands /app/storage/ea_state /app/storage/decision_archive /app/storage/gpt_exports /app/logs
 
 # ================================================
 # Stage: API Server
