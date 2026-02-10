@@ -99,31 +99,6 @@ class PositionSizer:
             )
         return pip_value
     
-    def _get_pip_decimals(self, pair: str) -> int:
-        """
-        Get number of decimal places for pip calculation.
-        
-        Parameters
-        ----------
-        pair : str
-            Trading pair
-            
-        Returns
-        -------
-        int
-            Number of decimal places (5 for forex, 2-3 for commodities)
-        """
-        # Commodities use fewer decimals
-        if pair in ["XAUUSD", "XAGUSD"]:
-            return 2 if pair == "XAUUSD" else 3
-        
-        # JPY pairs use 3 decimals (0.001 = 1 pip)
-        if "JPY" in pair:
-            return 3
-        
-        # Standard forex uses 5 decimals (0.00001 = 1 pip)
-        return 5
-    
     def _get_pip_multiplier(self, pair: str) -> float:
         """
         Get pip multiplier for converting price difference to pips.
