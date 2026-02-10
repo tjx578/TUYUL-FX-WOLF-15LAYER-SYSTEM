@@ -91,7 +91,7 @@ def build_synthesis(pair: str) -> dict:
     engine = SynthesisEngine()
     raw = engine.build_candidate(pair)
     
-    # Extract layer data
+    # Extract layer data (only layers used in this function)
     l1 = raw.get("L1", {})
     l2 = raw.get("L2", {})
     l3 = raw.get("L3", {})
