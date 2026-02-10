@@ -1,15 +1,19 @@
-twelve_data:
-  provider: "twelvedata"
+finnhub:
+  provider: "finnhub"
   mode: "realtime"
 
 websocket:
   enabled: true
+  url: "wss://ws.finnhub.io"
   reconnect: true
   reconnect_interval_sec: 5
+  ping_interval_sec: 30
 
 rest:
+  base_url: "https://finnhub.io/api/v1"
   timeout_sec: 20
   retries: 3
+  backoff_factor: 1.5
 
 candles:
   build_timeframes: ["M15", "H1"]
@@ -18,13 +22,17 @@ candles:
 symbols:
   include_forex: true
   include_commodities: true
+  # Finnhub forex prefix: "OANDA:"
+  # e.g. EURUSD → OANDA:EUR_USD, XAUUSD → OANDA:XAU_USD
+  symbol_prefix: "OANDA"
 
 news:
   enabled: true
+  endpoint: "/economic-calendar"
   impact_levels:
     high: true
     medium: true
     low: false
   pre_event_lock_minutes: 30
   post_event_lock_minutes: 15
-# Placeholder
+  poll_interval_sec: 300
