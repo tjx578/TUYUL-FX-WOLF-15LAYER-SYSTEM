@@ -3,7 +3,7 @@ Market Structure Analysis (H1)
 NO EXECUTION | NO DECISION
 """
 
-from typing import Dict, List, Optional
+from typing import Dict, List
 
 from context.live_context_bus import LiveContextBus
 

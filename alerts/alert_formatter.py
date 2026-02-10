@@ -3,7 +3,6 @@ Alert Formatter
 Produces human-readable alerts (GBPJPY style).
 """
 
-from datetime import datetime
 
 from utils.timezone_utils import now_utc, format_dual_timezone
 
