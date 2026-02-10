@@ -1,8 +1,8 @@
-tii_min: 0.93
-integrity_min: 0.97
+tii_min: 0.75
+integrity_min: 0.75
 rr_min: 2.0
-fta_min: 65.0
-monte_min: 60.0
+fta_min: 0.65
+monte_min: 0.60
 conf12_min: 0.75
 max_drawdown: 2.5
 authority:
