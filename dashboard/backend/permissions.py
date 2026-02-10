@@ -4,7 +4,7 @@ Allows POST for dashboard write routes, GET for read routes.
 """
 
 
-class ReadOnlyPermission:
+class DashboardPermission:
     @staticmethod
     def allow(method: str, path: str = "") -> bool:
         """
@@ -29,4 +29,8 @@ class ReadOnlyPermission:
         
         # Deny all other methods
         return False
+
+
+# Maintain backward compatibility alias
+ReadOnlyPermission = DashboardPermission
 # Placeholder

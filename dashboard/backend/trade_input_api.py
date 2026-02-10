@@ -45,7 +45,9 @@ write_router = APIRouter(
     tags=["Dashboard Write Operations"],
 )
 
-# In-memory storage (replace with DB in production)
+# In-memory storage
+# TODO: Replace with persistent storage (Redis/PostgreSQL) for production
+# See tracking issue: https://github.com/tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM/issues/TBD
 signal_pool: Dict[UUID, Dict] = {}
 trade_ledger: Dict[str, Dict] = {}
 account_registry: Dict[str, AccountEngine] = {}

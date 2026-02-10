@@ -83,7 +83,7 @@ class RiskEngine:
         
         # Calculate SL distance in pips
         sl_distance = self._calculate_sl_distance(
-            signal.entry, signal.stop_loss, signal.direction
+            signal.entry, signal.stop_loss, signal.direction, signal.pair
         )
         
         if sl_distance <= 0:
@@ -185,7 +185,7 @@ class RiskEngine:
         )
     
     def _calculate_sl_distance(
-        self, entry: float, stop_loss: float, direction: str
+        self, entry: float, stop_loss: float, direction: str, pair: str
     ) -> float:
         """
         Calculate stop loss distance in pips.
@@ -194,6 +194,7 @@ class RiskEngine:
             entry: Entry price
             stop_loss: Stop loss price
             direction: BUY or SELL
+            pair: Trading pair (for pip calculation)
             
         Returns:
             Distance in pips
@@ -205,8 +206,10 @@ class RiskEngine:
             # For SELL: SL is above entry
             distance = abs(stop_loss - entry)
         
-        # Convert to pips (assuming 5-digit or 3-digit pricing)
-        # For most pairs: 1 pip = 0.0001 or 0.00001
-        # For JPY pairs: 1 pip = 0.01 or 0.001
-        # For simplicity, use direct price distance as pips
-        return distance * 10000  # Convert to pips (4-decimal pairs)
+        # Convert to pips based on pair type
+        # JPY pairs: 1 pip = 0.01 (2 decimal places)
+        # Other pairs: 1 pip = 0.0001 (4 decimal places)
+        if "JPY" in pair.upper():
+            return distance * 100  # JPY pairs
+        else:
+            return distance * 10000  # Standard pairs

@@ -24,10 +24,15 @@ from dashboard.backend.schemas import (
 )
 
 
-# Add test accounts to registry
+# Add test accounts to registry for testing
 @pytest.fixture(scope="module", autouse=True)
 def setup_test_accounts():
-    """Add test accounts to account registry for testing."""
+    """
+    Add test accounts to account registry for testing.
+    
+    NOTE: This temporarily modifies the production registry file.
+    In production, use a separate test registry or mock the loading.
+    """
     registry_path = (
         Path(__file__).parent.parent /
         "propfirm_manager" / "account_registry.yaml"
