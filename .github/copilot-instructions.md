@@ -14,10 +14,10 @@ Your job: implement features while preserving these boundaries.
 
 ## Non-Negotiable Rules (Constitutional)
 1. **Never add execution authority to analysis or reflective modules.**
-2. **Never allow dashboard or EA to override Layer-12 verdict.**
+2. **Never allow dashboard or EA (Expert Advisor) to override Layer-12 verdict.**
 3. **Never compute market direction in execution/dashboard.**
 4. **Journal is write-only / append-only (immutable).**
-5. EA is an executor only. All state/risk comes from dashboard.
+5. EA (Expert Advisor) is an executor only. All state/risk comes from dashboard.
 
 If a request conflicts with these, propose an alternative design that preserves authority boundaries.
 
@@ -47,6 +47,7 @@ If a request conflicts with these, propose an alternative design that preserves 
 ### Trade Reporting (EA/User → Dashboard)
 - Required events: ORDER_PLACED, ORDER_FILLED, ORDER_CANCELLED, TRADE_CLOSED.
 - Manual and EA must use the same endpoints and ledger tables.
+- Event schemas are defined in `schemas/` directory.
 
 ---
 
@@ -61,7 +62,7 @@ If a request conflicts with these, propose an alternative design that preserves 
 States:
 - SIGNAL_CREATED → (SIGNAL_EXPIRED | PENDING_PLACED)
 - PENDING_PLACED → (PENDING_FILLED → TRADE_OPEN) | PENDING_CANCELLED
-- TRADE_OPEN → (TRADE_PARTIAL_CLOSED?) → TRADE_CLOSED
+- TRADE_OPEN → [optionally: TRADE_PARTIAL_CLOSED] → TRADE_CLOSED
 - TRADE_ABORTED (violation/bypass)
 
 Dashboard owns state transitions; EA/user only reports events.
