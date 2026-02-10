@@ -55,7 +55,7 @@ def generate_l12_verdict(synthesis: Dict[str, Any]) -> Dict[str, Any]:
     # Check for F/T conflict - NEUTRAL is compatible with any direction
     if bias["fundamental"] != bias["technical"]:
         if bias["fundamental"] != "NEUTRAL" and bias["technical"] != "NEUTRAL":
-        violations.append("F_T_CONFLICT")
+            violations.append("F_T_CONFLICT")
 
     if scores["exec_score"] < 6:
         violations.append("EXEC_SCORE_VIOLATION")
