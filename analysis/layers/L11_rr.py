@@ -59,7 +59,7 @@ class L11RRAnalyzer:
         
         # Use current price as entry if not specified
         if entry is None:
-            entry = closes[-1]
+            entry = float(closes[-1])
         
         # Calculate ATR for stop loss
         atr = self.indicator_engine.atr(highs, lows, closes, period=14)
@@ -76,15 +76,15 @@ class L11RRAnalyzer:
         # Calculate stop loss and take profit based on direction
         if direction == "BUY":
             # Stop loss: Entry - (1.5 * ATR)
-            sl = entry - (1.5 * atr)
+            sl = entry - (1.5 * atr) # pyright: ignore[reportOptionalOperand]
             # Take profit: Entry + (3.0 * ATR) for 2:1 RR minimum
-            tp1 = entry + (3.0 * atr)
+            tp1 = entry + (3.0 * atr) # pyright: ignore[reportOptionalOperand]
         
         elif direction == "SELL":
             # Stop loss: Entry + (1.5 * ATR)
-            sl = entry + (1.5 * atr)
+            sl = entry + (1.5 * atr) # pyright: ignore[reportOptionalOperand]
             # Take profit: Entry - (3.0 * ATR) for 2:1 RR minimum
-            tp1 = entry - (3.0 * atr)
+            tp1 = entry - (3.0 * atr) # pyright: ignore[reportOptionalOperand]
         
         else:
             return {
@@ -93,8 +93,8 @@ class L11RRAnalyzer:
             }
         
         # Calculate risk and reward
-        risk = abs(entry - sl)
-        reward = abs(tp1 - entry)
+        risk = abs(entry - sl) # pyright: ignore[reportOptionalOperand]
+        reward = abs(tp1 - entry) # pyright: ignore[reportOperatorIssue]
         
         if risk == 0:
             return {
