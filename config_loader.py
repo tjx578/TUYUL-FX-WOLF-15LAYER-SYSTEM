@@ -21,6 +21,12 @@ CONFIG: dict[str, Any] = {
     "constitution": _load("config/constitution.yaml"),
 }
 
+# Extract enabled symbols list for main.py
+_pairs_data = CONFIG["pairs"].get("pairs", [])
+CONFIG["pairs"]["symbols"] = [
+    pair["symbol"] for pair in _pairs_data if pair.get("enabled", False)
+]
+
 
 # =============================
 # Convenience loaders
