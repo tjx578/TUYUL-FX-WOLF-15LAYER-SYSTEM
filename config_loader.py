@@ -19,6 +19,7 @@ CONFIG: dict[str, Any] = {
     "telegram": _load("config/telegram.yaml"),
     "finnhub": _load("config/finnhub.yaml"),
     "constitution": _load("config/constitution.yaml"),
+    "risk": _load("config/risk.yaml"),
 }
 
 # Extract enabled symbols list for main.py
@@ -54,3 +55,7 @@ def load_finnhub() -> dict[str, Any]:
 
 def load_telegram() -> dict[str, Any]:
     return CONFIG["telegram"]
+
+
+def load_risk() -> dict[str, Any]:
+    return CONFIG["risk"]
