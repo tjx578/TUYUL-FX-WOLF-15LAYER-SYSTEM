@@ -138,6 +138,9 @@ def test_session_reset(analyzer):
     analyzer.record_loss()
     analyzer.update_drawdown(4.0)
     
+    # Get initial session time (should be > 0 if any time has passed)
+    result_before = analyzer.analyze("EURUSD")
+    
     # Reset session
     analyzer.reset_session()
     
@@ -145,7 +148,8 @@ def test_session_reset(analyzer):
     result = analyzer.analyze("EURUSD")
     assert result["consecutive_losses"] == 0
     assert result["drawdown_percent"] == 0.0
-    assert result["session_hours"] >= 0.0
+    # Session hours should be very close to 0 after reset (freshly started)
+    assert result["session_hours"] < result_before.get("session_hours", 0.1) + 0.1
 
 
 def test_runtime_state_integration(analyzer):
