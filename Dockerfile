@@ -45,4 +45,4 @@ CMD ["python", "main.py"]
 # Stage: Ingest Service
 # ================================================
 FROM base AS ingest
-CMD ["python", "-m", "ingest.finnhub_ws"]
+CMD ["python", "ingest_service.py"]
