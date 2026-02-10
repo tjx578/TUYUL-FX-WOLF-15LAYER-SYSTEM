@@ -4,7 +4,7 @@ Finnhub Economic Calendar Ingestion
 Fetches upcoming economic events via Finnhub REST API.
 NO TRADING DECISION.
 
-Endpoint: GET /economic-calendar?from=YYYY-MM-DD&to=YYYY-MM-DD&token=KEY
+Endpoint: GET /calendar/economic?from=YYYY-MM-DD&to=YYYY-MM-DD&token=KEY
 """
 
 from __future__ import annotations
