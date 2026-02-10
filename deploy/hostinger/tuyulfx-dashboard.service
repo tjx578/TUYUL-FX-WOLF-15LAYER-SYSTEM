@@ -1,0 +1,34 @@
+[Unit]
+Description=TUYUL FX Wolf Next.js Dashboard
+After=network.target
+
+[Service]
+Type=simple
+User=tuyulfx
+Group=tuyulfx
+WorkingDirectory=/opt/tuyulfx/dashboard/nextjs
+
+# Environment variables
+Environment="NODE_ENV=production"
+Environment="PORT=3000"
+Environment="HOSTNAME=127.0.0.1"
+
+# Next.js production server
+ExecStart=/usr/bin/npm start
+
+# Restart policy
+Restart=always
+RestartSec=5
+StartLimitInterval=300
+StartLimitBurst=5
+
+# Logging
+StandardOutput=append:/opt/tuyulfx/logs/dashboard.log
+StandardError=append:/opt/tuyulfx/logs/dashboard-error.log
+
+# Resource limits
+LimitNOFILE=65536
+MemoryLimit=1G
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,36 @@
+[Unit]
+Description=TUYUL FX Wolf 15-Layer Trading Engine
+After=network.target redis-server.service
+Wants=redis-server.service
+
+[Service]
+Type=simple
+User=tuyulfx
+Group=tuyulfx
+WorkingDirectory=/opt/tuyulfx
+Environment="PATH=/opt/tuyulfx/venv/bin:/usr/local/bin:/usr/bin:/bin"
+Environment="PYTHONUNBUFFERED=1"
+
+# Load environment variables from .env file
+EnvironmentFile=/opt/tuyulfx/.env
+
+# Main trading engine
+ExecStart=/opt/tuyulfx/venv/bin/python main.py
+
+# Restart policy
+Restart=always
+RestartSec=10
+StartLimitInterval=300
+StartLimitBurst=5
+
+# Logging
+StandardOutput=append:/opt/tuyulfx/logs/engine.log
+StandardError=append:/opt/tuyulfx/logs/engine-error.log
+
+# Resource limits
+LimitNOFILE=65536
+MemoryLimit=2G
+CPUQuota=200%
+
+[Install]
+WantedBy=multi-user.target
