@@ -3,7 +3,12 @@ app:
   version: "v7.4r∞"
   environment: "prod"
   trading_mode: "paper"
-  timezone: "UTC"
+  timezone: "Asia/Singapore"
+
+timezone:
+  system_tz: "Asia/Singapore"  # GMT+8 - User's local timezone
+  data_tz: "UTC"  # External data always in UTC
+  display_format: "%Y-%m-%d %H:%M:%S"
 
 timeframes:
   setup_tf: "H1"        # setup creation only

@@ -7,6 +7,7 @@ from datetime import datetime
 
 from context.live_context_bus import LiveContextBus
 from analysis.market.volatility import VolatilityAnalyzer
+from utils.timezone_utils import is_trading_session
 
 
 class L1ContextAnalyzer:
@@ -22,23 +23,12 @@ class L1ContextAnalyzer:
             return {"valid": False, "reason": "no_h1_candle"}
 
         context = {
-            "session": self._detect_session(h1["timestamp"]),
+            "session": is_trading_session(h1["timestamp"]),
             "news_lock": self._is_news_lock(news, symbol),
             "valid": True,
         }
 
         return context
-
-    @staticmethod
-    def _detect_session(ts: datetime) -> str:
-        hour = ts.hour
-        if 0 <= hour < 7:
-            return "ASIA"
-        if 7 <= hour < 13:
-            return "LONDON"
-        if 13 <= hour < 21:
-            return "NEW_YORK"
-        return "OFF_SESSION"
 
     @staticmethod
     def _is_news_lock(news: dict, symbol: str) -> bool:

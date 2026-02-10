@@ -10,6 +10,7 @@ from threading import Lock
 from loguru import logger
 
 from context.context_validator import ContextValidator
+from utils.timezone_utils import now_utc
 
 
 class LiveContextBus:
@@ -66,7 +67,7 @@ class LiveContextBus:
 
         with self._rw_lock:
             self._news_store = news
-            self._meta["news_updated_at"] = datetime.utcnow()
+            self._meta["news_updated_at"] = now_utc()
 
     # =========================
     # READ METHODS (EVERYONE ELSE)
