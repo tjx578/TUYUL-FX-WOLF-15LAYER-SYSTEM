@@ -154,7 +154,7 @@ async def main() -> None:
     except KeyboardInterrupt:
         logger.info("KeyboardInterrupt received")
     except Exception as exc:
-        logger.error(f"Ingest service failed: {exc}", exc_info=True)
+        logger.exception(f"Ingest service failed: {exc}")
         sys.exit(1)
     finally:
         logger.info("Ingest service shutdown complete")
