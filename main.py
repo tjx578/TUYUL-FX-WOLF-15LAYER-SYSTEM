@@ -1,3 +1,5 @@
+import asyncio
+import os
 import time
 from analysis.synthesis import build_synthesis   # L1–L11
 from analysis.synthesis_adapter import adapt_synthesis
@@ -109,6 +111,40 @@ def _build_j2(pair: str, synthesis: dict, l12: dict) -> DecisionJournal:
 
 
 def main_loop():
+    """
+    Main trading loop.
+
+    If CONTEXT_MODE=redis, spawns RedisConsumer as a background task to
+    receive live data from the ingest container.
+    """
+    # Check if we need to start Redis consumer
+    context_mode = os.getenv("CONTEXT_MODE", "local").lower()
+    redis_consumer = None
+
+    if context_mode == "redis":
+        logger.info("CONTEXT_MODE=redis detected, starting RedisConsumer...")
+        try:
+            from context.redis_consumer import RedisConsumer
+            redis_consumer = RedisConsumer(symbols=PAIRS)
+
+            # Start consumer in a background thread using asyncio.run
+            import threading
+
+            def run_consumer():
+                asyncio.run(redis_consumer.start())
+
+            consumer_thread = threading.Thread(
+                target=run_consumer, daemon=True, name="RedisConsumer"
+            )
+            consumer_thread.start()
+            logger.info("RedisConsumer started in background thread")
+
+        except Exception as exc:
+            logger.error(
+                f"Failed to start RedisConsumer: {exc}. "
+                "Continuing without Redis consumer."
+            )
+
     while True:
         for pair in PAIRS:
             try:
