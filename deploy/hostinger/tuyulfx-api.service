@@ -1,0 +1,43 @@
+[Unit]
+Description=TUYUL FX Wolf FastAPI Dashboard API
+After=network.target redis-server.service
+Wants=redis-server.service
+
+[Service]
+Type=simple
+User=tuyulfx
+Group=tuyulfx
+WorkingDirectory=/opt/tuyulfx
+Environment="PATH=/opt/tuyulfx/venv/bin:/usr/local/bin:/usr/bin:/bin"
+Environment="PYTHONUNBUFFERED=1"
+
+# Load environment variables from .env file
+EnvironmentFile=/opt/tuyulfx/.env
+
+# FastAPI with Gunicorn (production ASGI server)
+ExecStart=/opt/tuyulfx/venv/bin/gunicorn api_server:app \
+    --workers 2 \
+    --worker-class uvicorn.workers.UvicornWorker \
+    --bind 127.0.0.1:8000 \
+    --access-logfile /opt/tuyulfx/logs/api-access.log \
+    --error-logfile /opt/tuyulfx/logs/api-error.log \
+    --log-level info \
+    --timeout 60 \
+    --graceful-timeout 30
+
+# Restart policy
+Restart=always
+RestartSec=5
+StartLimitInterval=300
+StartLimitBurst=5
+
+# Logging
+StandardOutput=append:/opt/tuyulfx/logs/api.log
+StandardError=append:/opt/tuyulfx/logs/api-error.log
+
+# Resource limits
+LimitNOFILE=65536
+MemoryLimit=1G
+
+[Install]
+WantedBy=multi-user.target

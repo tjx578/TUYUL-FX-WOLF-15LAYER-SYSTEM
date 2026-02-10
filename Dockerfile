@@ -1,6 +1,6 @@
-# Wolf 15-Layer Trading System - Dockerfile
+# Wolf 15-Layer Trading System - Dockerfile (Multi-stage build)
 
-FROM python:3.11-slim
+FROM python:3.11-slim AS base
 
 # Set working directory
 WORKDIR /app
@@ -26,10 +26,23 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 # Create necessary directories
-RUN mkdir -p /app/storage/snapshots /app/logs
+RUN mkdir -p /app/storage/snapshots /app/storage/ea_commands /app/storage/ea_state /app/logs
 
-# Expose API port
+# ================================================
+# Stage: API Server
+# ================================================
+FROM base AS api
 EXPOSE 8000
+CMD ["gunicorn", "api_server:app", "--workers", "2", "--worker-class", "uvicorn.workers.UvicornWorker", "--bind", "0.0.0.0:8000"]
 
-# Default command - run API server
-CMD ["python", "-m", "uvicorn", "api_server:app", "--host", "0.0.0.0", "--port", "8000"]
+# ================================================
+# Stage: Trading Engine
+# ================================================
+FROM base AS engine
+CMD ["python", "main.py"]
+
+# ================================================
+# Stage: Ingest Service
+# ================================================
+FROM base AS ingest
+CMD ["python", "-m", "ingest.finnhub_ws"]
