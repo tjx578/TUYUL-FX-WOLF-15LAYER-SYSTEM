@@ -95,7 +95,7 @@ When implementing:
 - Python: type hints, dataclasses where appropriate, small pure functions.
 - No hidden side effects in analysis.
 - Explicit error codes; avoid silent fallbacks in production paths.
-- Keep configs in `config/` and profiles in `propfirm_manager/profiles/`.
+- Keep configs in `config/` and prop firm profiles under the appropriate config/profile directory (for example, under `config/` as used by `risk/prop_firm.py`).
 - Log important state transitions and violations (but do not log secrets).
 
 ---
