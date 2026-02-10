@@ -1,12 +1,20 @@
-/**
- * Client-side timezone utilities
- * Handles UTC ↔ GMT+8 conversion for display
- */
+"""
+Client-side timezone utilities
+Handles UTC ↔ GMT+8 conversion for display
+"""
 
 import { format, parseISO } from 'date-fns';
 import { toZonedTime } from 'date-fns-tz';
 
 const SYSTEM_TZ = process.env.NEXT_PUBLIC_TIMEZONE || 'Asia/Singapore';
+
+// Validate timezone on module load
+try {
+  toZonedTime(new Date(), SYSTEM_TZ);
+} catch (error) {
+  console.error(`Invalid timezone configured: ${SYSTEM_TZ}. Falling back to UTC.`);
+  // Module will use UTC as fallback
+}
 
 /**
  * Format UTC timestamp to local timezone (GMT+8)

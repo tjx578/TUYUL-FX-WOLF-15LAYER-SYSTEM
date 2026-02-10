@@ -4,6 +4,7 @@ Wolf L12 API Server
 FastAPI server for L12 verdict polling and system health monitoring.
 """
 
+import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from api.l12_routes import router as l12_router
@@ -17,12 +18,11 @@ app = FastAPI(
 )
 
 # CORS middleware for Next.js dashboard
+# Configure allowed origins via environment variable in production
+cors_origins = os.getenv("CORS_ORIGINS", "http://localhost:3000").split(",")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",  # Next.js dev server
-        "https://yourdomain.com",  # Production domain (update this)
-    ],
+    allow_origins=cors_origins,
     allow_credentials=True,
     allow_methods=["GET"],  # Read-only
     allow_headers=["*"],
