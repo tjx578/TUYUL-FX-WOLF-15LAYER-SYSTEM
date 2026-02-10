@@ -1,0 +1,165 @@
+"""
+Standalone Ingest Service for Docker Multi-Container Setup
+
+This service runs data ingestion (Finnhub WebSocket, News, and CandleBuilder)
+and writes to Redis via RedisContextBridge.
+
+Used by docker-compose.yml with CONTEXT_MODE=redis.
+"""
+
+import asyncio
+import os
+import signal
+import sys
+from typing import Optional
+
+from loguru import logger
+
+from config_loader import CONFIG
+from ingest.candle_builder import CandleBuilder
+from ingest.finnhub_news import FinnhubNews
+from ingest.finnhub_ws import FinnhubWebSocket
+
+# Global shutdown event
+_shutdown_event: Optional[asyncio.Event] = None
+
+
+def _validate_api_key() -> bool:
+    """
+    Validate Finnhub API key on startup.
+    
+    Returns:
+        bool: True if API key is valid, False otherwise
+    """
+    api_key = os.getenv("FINNHUB_API_KEY", "")
+    
+    if not api_key or api_key == "YOUR_FINNHUB_API_KEY":
+        logger.warning(
+            "╔════════════════════════════════════════════════════════════╗\n"
+            "║  WARNING: FINNHUB_API_KEY not configured                 ║\n"
+            "║  Ingest service running in DRY RUN mode                   ║\n"
+            "║  No live data feed available                              ║\n"
+            "║  Set FINNHUB_API_KEY environment variable for live data  ║\n"
+            "╚════════════════════════════════════════════════════════════╝"
+        )
+        return False
+    
+    logger.info("✓ FINNHUB_API_KEY validated")
+    return True
+
+
+async def run_ingest_services(has_api_key: bool) -> None:
+    """
+    Run data ingestion services concurrently.
+    
+    Launches three concurrent tasks:
+    - FinnhubWebSocket: Real-time tick data
+    - FinnhubNews: News feed
+    - CandleBuilder: Aggregates ticks into H1/M15/M5 candles
+    
+    All data is written to Redis via RedisContextBridge (CONTEXT_MODE=redis).
+    
+    Args:
+        has_api_key: Whether a valid Finnhub API key is configured
+    """
+    if not has_api_key:
+        logger.info("Skipping ingest services - no API key configured")
+        logger.info("Keeping ingest container alive (DRY RUN mode)...")
+        # Keep container alive but don't do anything
+        while True:
+            if _shutdown_event and _shutdown_event.is_set():
+                break
+            await asyncio.sleep(1)
+        return
+    
+    # Initialize ingest services
+    ws_feed = FinnhubWebSocket()
+    news_feed = FinnhubNews()
+    candle_builder = CandleBuilder()
+    
+    logger.info("Starting ingest services: WebSocket, News, CandleBuilder")
+    logger.info("Writing data to Redis (CONTEXT_MODE=redis)")
+    
+    # Run all three services concurrently
+    try:
+        await asyncio.gather(
+            ws_feed.run(),
+            news_feed.run(),
+            candle_builder.run(),
+        )
+    except asyncio.CancelledError:
+        logger.info("Ingest services cancelled - shutting down")
+        raise
+
+
+def _handle_signal(signum: int, frame) -> None:
+    """
+    Handle shutdown signals gracefully.
+    
+    Args:
+        signum: Signal number
+        frame: Current stack frame
+    """
+    signal_name = signal.Signals(signum).name
+    logger.info(f"Received {signal_name} - initiating graceful shutdown...")
+    
+    if _shutdown_event:
+        _shutdown_event.set()
+
+
+async def main() -> None:
+    """
+    Main entry point for ingest service.
+    
+    Sets up signal handlers, validates API key, and runs ingest services.
+    """
+    global _shutdown_event
+    _shutdown_event = asyncio.Event()
+    
+    # Configure logging
+    logger.remove()
+    logger.add(
+        sys.stderr,
+        format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | "
+               "<level>{level: <8}</level> | "
+               "<cyan>{name}</cyan>:<cyan>{function}</cyan> - "
+               "<level>{message}</level>",
+        level="INFO",
+    )
+    
+    logger.info("=" * 70)
+    logger.info("TUYUL FX WOLF - Standalone Ingest Service")
+    logger.info("=" * 70)
+    
+    # Set up signal handlers for graceful shutdown
+    signal.signal(signal.SIGTERM, _handle_signal)
+    signal.signal(signal.SIGINT, _handle_signal)
+    
+    # Validate API key
+    has_api_key = _validate_api_key()
+    
+    # Validate CONTEXT_MODE
+    context_mode = os.getenv("CONTEXT_MODE", "local").lower()
+    if context_mode != "redis":
+        logger.warning(
+            f"CONTEXT_MODE={context_mode} - expected 'redis' for multi-container setup"
+        )
+        logger.warning("Data will be written to local memory only (not shared)")
+    else:
+        redis_url = os.getenv("REDIS_URL", "")
+        logger.info(f"✓ CONTEXT_MODE=redis, REDIS_URL={redis_url}")
+    
+    # Run ingest services
+    try:
+        await run_ingest_services(has_api_key)
+    except KeyboardInterrupt:
+        logger.info("KeyboardInterrupt received")
+    except Exception as exc:
+        logger.error(f"Ingest service failed: {exc}", exc_info=True)
+        sys.exit(1)
+    finally:
+        logger.info("Ingest service shutdown complete")
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
