@@ -45,16 +45,21 @@ def test_trend_detection_insufficient_data(analyzer, context_bus):
 
 def test_trend_detection_bullish_hh_hl(analyzer, context_bus):
     """Test bullish trend detection (Higher Highs + Higher Lows)."""
-    # Create candles with clear uptrend: HH + HL pattern
+    # Create candles with clear uptrend: HH + HL pattern with obvious swing points
+    # Use zig-zag pattern: up, pullback, up more, pullback, up even more
     candles_data = [
         (1.1000, 1.1010, 1.0990, 1.1005),  # 0
-        (1.1005, 1.1012, 1.0995, 1.1008),  # 1
-        (1.1008, 1.1015, 1.1000, 1.1010),  # 2 - swing high
-        (1.1010, 1.1018, 1.1005, 1.1012),  # 3
-        (1.1012, 1.1020, 1.1008, 1.1015),  # 4
-        (1.1015, 1.1025, 1.1012, 1.1020),  # 5 - higher high
-        (1.1020, 1.1028, 1.1015, 1.1022),  # 6
-        (1.1022, 1.1030, 1.1018, 1.1025),  # 7
+        (1.1005, 1.1020, 1.0995, 1.1015),  # 1
+        (1.1015, 1.1030, 1.1010, 1.1025),  # 2 - first peak
+        (1.1025, 1.1028, 1.1005, 1.1010),  # 3 - pullback
+        (1.1010, 1.1015, 1.0995, 1.1000),  # 4 - pullback continues (valley)
+        (1.1000, 1.1020, 1.0998, 1.1015),  # 5 - bounce back
+        (1.1015, 1.1035, 1.1012, 1.1030),  # 6 - higher peak
+        (1.1030, 1.1048, 1.1025, 1.1045),  # 7 - even higher
+        (1.1045, 1.1050, 1.1025, 1.1030),  # 8 - pullback
+        (1.1030, 1.1035, 1.1015, 1.1020),  # 9 - pullback continues (higher valley)
+        (1.1020, 1.1040, 1.1018, 1.1035),  # 10 - bounce
+        (1.1035, 1.1060, 1.1032, 1.1055),  # 11 - highest peak
     ]
     
     for i, (o, h, l, c) in enumerate(candles_data):
@@ -76,16 +81,21 @@ def test_trend_detection_bullish_hh_hl(analyzer, context_bus):
 
 def test_trend_detection_bearish_lh_ll(analyzer, context_bus):
     """Test bearish trend detection (Lower Highs + Lower Lows)."""
-    # Create candles with clear downtrend: LH + LL pattern
+    # Create candles with clear downtrend: LH + LL pattern with obvious swing points
+    # Use zig-zag pattern: down, bounce, down more, bounce, down even more
     candles_data = [
         (1.1000, 1.1010, 1.0990, 1.0995),  # 0
-        (1.0995, 1.1005, 1.0985, 1.0990),  # 1
-        (1.0990, 1.1000, 1.0980, 1.0985),  # 2 - swing low
-        (1.0985, 1.0995, 1.0975, 1.0980),  # 3
-        (1.0980, 1.0990, 1.0970, 1.0975),  # 4
-        (1.0975, 1.0985, 1.0965, 1.0970),  # 5 - lower low
-        (1.0970, 1.0980, 1.0960, 1.0965),  # 6
-        (1.0965, 1.0975, 1.0955, 1.0960),  # 7
+        (1.0995, 1.1000, 1.0980, 1.0985),  # 1
+        (1.0985, 1.0990, 1.0970, 1.0975),  # 2 - first valley
+        (1.0975, 1.0995, 1.0972, 1.0990),  # 3 - bounce
+        (1.0990, 1.1005, 1.0988, 1.1000),  # 4 - bounce continues (peak)
+        (1.1000, 1.1002, 1.0980, 1.0985),  # 5 - down again
+        (1.0985, 1.0990, 1.0960, 1.0965),  # 6 - lower valley
+        (1.0965, 1.0970, 1.0950, 1.0955),  # 7 - even lower
+        (1.0955, 1.0975, 1.0952, 1.0970),  # 8 - bounce
+        (1.0970, 1.0985, 1.0968, 1.0980),  # 9 - bounce continues (lower peak)
+        (1.0980, 1.0982, 1.0960, 1.0965),  # 10 - down
+        (1.0965, 1.0970, 1.0940, 1.0945),  # 11 - lowest valley
     ]
     
     for i, (o, h, l, c) in enumerate(candles_data):
