@@ -22,7 +22,7 @@ class TestBuildSynthesis:
         # Mock the engine to return safe defaults
         mock_engine = MagicMock()
         mock_engine_class.return_value = mock_engine
-        
+
         # Mock all layer outputs to return {"valid": False}
         mock_engine.build_candidate.return_value = {
             "l1": {"valid": False},
@@ -37,9 +37,9 @@ class TestBuildSynthesis:
             "l10": {"valid": False},
             "l11": {"valid": False},
         }
-        
+
         result = build_synthesis("EURUSD")
-        
+
         # Should return a result even with empty context
         assert result is not None
         assert isinstance(result, dict)
@@ -52,7 +52,7 @@ class TestBuildSynthesis:
         # Mock the engine to return valid data
         mock_engine = MagicMock()
         mock_engine_class.return_value = mock_engine
-        
+
         mock_engine.build_candidate.return_value = {
             "L1": {"valid": True, "regime": "TRENDING"},
             "L2": {"valid": True, "alignment": "BULLISH"},
@@ -66,9 +66,9 @@ class TestBuildSynthesis:
             "L10": {"valid": True, "size": 0.02},
             "L11": {"valid": True, "rr": 2.5},
         }
-        
+
         result = build_synthesis("EURUSD")
-        
+
         # Should return valid synthesis
         assert result is not None
         assert isinstance(result, dict)
@@ -114,9 +114,9 @@ class TestAdaptSynthesis:
                 "latency_ms": 50,
             },
         }
-        
+
         result = adapt_synthesis(raw_synthesis)
-        
+
         # Should return adapted contract
         assert result is not None
         assert isinstance(result, dict)
@@ -136,7 +136,7 @@ class TestAdaptSynthesis:
             "bias": {},
             "system": {},
         }
-        
+
         # Should raise ValueError
         with pytest.raises(ValueError, match="pair"):
             adapt_synthesis(raw_synthesis)
@@ -167,9 +167,9 @@ class TestAdaptSynthesis:
                 "latency_ms": 100,
             },
         }
-        
+
         result = adapt_synthesis(raw_synthesis)
-        
+
         # Verify data is preserved
         assert result["pair"] == "XAUUSD"
         assert result["layers"]["L1"]["regime"] == "TRENDING"
@@ -188,9 +188,9 @@ class TestAdaptSynthesis:
             "bias": {},
             "system": {},
         }
-        
+
         result = adapt_synthesis(raw_synthesis)
-        
+
         # Check required top-level fields
         required_fields = [
             "pair", "layers", "scores", "bias", "system",

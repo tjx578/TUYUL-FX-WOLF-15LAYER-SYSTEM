@@ -48,7 +48,7 @@ class JournalRouter:
     def record_context(self, j1: ContextJournal) -> None:
         """
         Record J1 context journal entry.
-        
+
         Args:
             j1: ContextJournal instance
         """
@@ -64,7 +64,7 @@ class JournalRouter:
     def record_decision(self, j2: DecisionJournal) -> None:
         """
         Record J2 decision journal entry.
-        
+
         Args:
             j2: DecisionJournal instance
         """
@@ -83,7 +83,7 @@ class JournalRouter:
     def record_execution(self, j3: ExecutionJournal) -> None:
         """
         Record J3 execution journal entry.
-        
+
         Args:
             j3: ExecutionJournal instance
         """
@@ -102,7 +102,7 @@ class JournalRouter:
     def record_reflection(self, j4: ReflectiveJournal) -> None:
         """
         Record J4 reflective journal entry.
-        
+
         Args:
             j4: ReflectiveJournal instance
         """
@@ -125,7 +125,7 @@ class JournalRouter:
     def get_event_count(self) -> int:
         """
         Get total number of events recorded.
-        
+
         Returns:
             Total event count
         """

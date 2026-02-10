@@ -10,14 +10,14 @@ from typing import Dict, Any
 
 class EmotionFeedbackEngine:
     """Analyzes market emotion and sentiment."""
-    
+
     def analyze(self, market_data: Dict[str, Any]) -> Dict[str, Any]:
         """
         Analyze emotional state of market.
-        
+
         Args:
             market_data: Market data including price action and volume
-            
+
         Returns:
             Dictionary with emotion scores and indicators
         """
@@ -31,15 +31,15 @@ class EmotionFeedbackEngine:
 
 class RegimeClassifier:
     """Classifies market regime (trending, ranging, volatile, etc.)."""
-    
+
     def classify(self, symbol: str, timeframe: str = "H1") -> Dict[str, Any]:
         """
         Classify current market regime.
-        
+
         Args:
             symbol: Trading pair
             timeframe: Chart timeframe
-            
+
         Returns:
             Dictionary with regime classification
         """
@@ -53,14 +53,14 @@ class RegimeClassifier:
 
 class IntegrityEngine:
     """Validates data integrity and consistency."""
-    
+
     def validate(self, data: Dict[str, Any]) -> Dict[str, Any]:
         """
         Validate data integrity.
-        
+
         Args:
             data: Data to validate
-            
+
         Returns:
             Dictionary with integrity scores
         """
@@ -74,7 +74,7 @@ class IntegrityEngine:
 
 class RiskManager:
     """Manages risk calculations and limits."""
-    
+
     def calculate_risk(
         self,
         entry: float,
@@ -84,19 +84,19 @@ class RiskManager:
     ) -> Dict[str, Any]:
         """
         Calculate risk parameters.
-        
+
         Args:
             entry: Entry price
             stop_loss: Stop loss price
             account_balance: Account balance
             risk_percent: Risk percentage per trade
-            
+
         Returns:
             Dictionary with risk calculations
         """
         pips_at_risk = abs(entry - stop_loss)
         risk_amount = account_balance * (risk_percent / 100.0)
-        
+
         return {
             "risk_amount": risk_amount,
             "pips_at_risk": pips_at_risk,
@@ -107,14 +107,14 @@ class RiskManager:
 
 class TWMSCalculator:
     """Time-Weighted Market Score Calculator."""
-    
+
     def calculate(self, symbol: str) -> Dict[str, Any]:
         """
         Calculate TWMS score.
-        
+
         Args:
             symbol: Trading pair
-            
+
         Returns:
             Dictionary with TWMS scores
         """
@@ -128,14 +128,14 @@ class TWMSCalculator:
 
 class SmartMoneyDetector:
     """Detects smart money movements and institutional activity."""
-    
+
     def detect(self, symbol: str) -> Dict[str, Any]:
         """
         Detect smart money activity.
-        
+
         Args:
             symbol: Trading pair
-            
+
         Returns:
             Dictionary with smart money indicators
         """
@@ -151,7 +151,7 @@ class SmartMoneyDetector:
 
 class MonteCarloValidator:
     """Monte Carlo simulation for trade validation."""
-    
+
     def validate(
         self,
         win_rate: float,
@@ -160,19 +160,19 @@ class MonteCarloValidator:
     ) -> Dict[str, Any]:
         """
         Run Monte Carlo simulation.
-        
+
         Args:
             win_rate: Historical win rate (0-1)
             rr_ratio: Risk-reward ratio
             num_simulations: Number of simulations to run
-            
+
         Returns:
             Dictionary with Monte Carlo results
         """
         # Simplified Monte Carlo
         expected_value = (win_rate * rr_ratio) - ((1 - win_rate) * 1.0)
         win_probability = win_rate * 100
-        
+
         return {
             "win_probability": win_probability,
             "expected_value": expected_value,
