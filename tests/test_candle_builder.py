@@ -281,6 +281,7 @@ class TestCandleBuilderEmptyBuffer:
 
         # Should have some ticks remaining (second period)
         # Exact count depends on implementation
+        assert builder.buffers is not None
 
 
 class TestCandleBuilderMultipleSymbols:
