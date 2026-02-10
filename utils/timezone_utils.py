@@ -162,6 +162,7 @@ def is_trading_session(dt: Optional[datetime] = None) -> str:
     elif 15 <= hour < 21:
         return "LONDON"
     elif hour >= 21 or hour < 5:
+        # NEW_YORK session wraps around midnight: 21:00 GMT+8 to 05:00 GMT+8 next day
         return "NEW_YORK"
     else:
         return "OFF_SESSION"
