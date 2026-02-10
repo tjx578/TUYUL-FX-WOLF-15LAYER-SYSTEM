@@ -39,9 +39,16 @@ class SynthesisEngine:
         l2 = self.l2.analyze(symbol)
         l3 = self.l3.analyze(symbol)
 
+        # L4 Scoring
         l4 = self.l4.score(l1, l2, l3)
+        
+        # L5 Psychology
+        l5 = self.l5.analyze(symbol, volatility_profile=l2)
+        
+        # L7 Probability
         l7 = self.l7.analyze(l4["technical_score"])
 
+        # L8 TII Integrity
         l8 = self.l8.analyze(
             {
                 "l1": l1,
@@ -52,10 +59,21 @@ class SynthesisEngine:
             }
         )
 
-        l9 = self.l9.analyze(l3)
-        l6 = self.l6.analyze(rr=2.0)  # placeholder RR
+        # L9 SMC - Get full structure analysis
+        structure = self.l3.structure.analyze(symbol)
+        l9 = self.l9.analyze(symbol, structure)
+        
+        # L11 RR - Calculate for BUY direction as example
+        # In real trading, direction would come from signal
+        direction = "BUY" if l3.get("trend") == "BULLISH" else "SELL"
+        l11 = self.l11.calculate_rr(symbol, direction)
+        
+        # L6 Risk - Use L11 RR if available
+        rr_value = l11.get("rr", 2.0) if l11.get("valid") else 2.0
+        l6 = self.l6.analyze(rr=rr_value)
+        
+        # L10 Position
         l10 = self.l10.analyze(l6.get("risk_ok"), l9.get("confidence", 0))
-        l11 = {"valid": False}  # entry/sl/tp calculated later (constitution/execution prep)
 
         return {
             "symbol": symbol,
@@ -63,7 +81,7 @@ class SynthesisEngine:
             "L2": l2,
             "L3": l3,
             "L4": l4,
-            "L5": None,
+            "L5": l5,
             "L6": l6,
             "L7": l7,
             "L8": l8,
