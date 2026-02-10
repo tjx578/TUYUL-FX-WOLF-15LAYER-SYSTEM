@@ -220,8 +220,7 @@ class PositionSizer:
         
         # Get pip value for pair
         pip_value = self._get_pip_value(pair)
-        pip_decimals = self._get_pip_decimals(pair)
-        
+
         # Calculate pips at risk
         price_diff = abs(entry_price - stop_loss_price)
         pip_multiplier = self._get_pip_multiplier(pair)
