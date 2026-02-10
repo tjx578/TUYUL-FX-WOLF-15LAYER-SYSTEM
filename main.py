@@ -29,21 +29,21 @@ _shutdown_event: Optional[asyncio.Event] = None
 def _build_j1(pair: str, synthesis: dict) -> ContextJournal:
     """
     Build J1 ContextJournal from synthesis data.
-    
+
     Args:
         pair: Trading pair symbol
         synthesis: Synthesis output from adapt_synthesis
-        
+
     Returns:
         ContextJournal instance
     """
     # Extract context from synthesis layers
     layers = synthesis.get("layers", {})
     bias = synthesis.get("bias", {})
-    
+
     # Get trading session
     session = is_trading_session()
-    
+
     # Build J1
     return ContextJournal(
         timestamp=now_utc(),
@@ -60,29 +60,29 @@ def _build_j1(pair: str, synthesis: dict) -> ContextJournal:
 def _build_j2(pair: str, synthesis: dict, l12: dict) -> DecisionJournal:
     """
     Build J2 DecisionJournal from synthesis and L12 verdict.
-    
+
     Args:
         pair: Trading pair symbol
         synthesis: Synthesis output from adapt_synthesis
         l12: L12 verdict output from generate_l12_verdict
-        
+
     Returns:
         DecisionJournal instance
     """
     scores = synthesis.get("scores", {})
     layers = synthesis.get("layers", {})
     gates = l12.get("gates", {})
-    
+
     # Build setup_id from pair and timestamp
     timestamp_str = now_utc().strftime("%Y%m%d_%H%M%S")
     setup_id = f"{pair}_{timestamp_str}"
-    
+
     # Extract failed gates
     failed_gates = [
         gate_name for gate_name, gate_value in gates.items()
         if gate_name not in ["passed", "total"] and gate_value == "FAIL"
     ]
-    
+
     # Determine primary rejection reason
     primary_rejection_reason = None
     if l12["verdict"] in [VerdictType.HOLD.value, VerdictType.NO_TRADE.value]:
@@ -90,11 +90,14 @@ def _build_j2(pair: str, synthesis: dict, l12: dict) -> DecisionJournal:
             primary_rejection_reason = f"Failed gates: {', '.join(failed_gates)}"
         else:
             primary_rejection_reason = "Constitutional violation"
-    
+
     # Map verdict string to VerdictType enum
     verdict_str = l12["verdict"]
-    verdict_type = VerdictType(verdict_str)
-    
+    try:
+        verdict_type = VerdictType(verdict_str)
+    except ValueError:
+        verdict_type = VerdictType.NO_TRADE
+
     # Build J2
     return DecisionJournal(
         timestamp=now_utc(),
@@ -103,7 +106,7 @@ def _build_j2(pair: str, synthesis: dict, l12: dict) -> DecisionJournal:
         wolf_30_score=int(scores.get("wolf_30_point", 0)),
         f_score=int(scores.get("f_score", 0)),
         t_score=int(scores.get("t_score", 0)),
-        fta_score=int(scores.get("fta_score", 0) * 10),  # Convert fta_score from 0-1 scale to 0-10 scale
+        fta_score=int((scores.get("fta_score") or 0) * 10),  # Convert fta_score from 0-1 scale to 0-10 scale
         exec_score=int(scores.get("exec_score", 0)),
         tii_sym=float(layers.get("L8_tii_sym", 0.0)),
         integrity_index=float(layers.get("L8_integrity_index", 0.0)),
@@ -123,12 +126,12 @@ def _build_j2(pair: str, synthesis: dict, l12: dict) -> DecisionJournal:
 def _validate_api_key() -> bool:
     """
     Validate Finnhub API key on startup.
-    
+
     Returns:
         bool: True if API key is valid, False otherwise
     """
     api_key = os.getenv("FINNHUB_API_KEY", "")
-    
+
     if not api_key or api_key == "YOUR_FINNHUB_API_KEY":
         logger.warning(
             "╔════════════════════════════════════════════════════════════╗\n"
@@ -139,7 +142,7 @@ def _validate_api_key() -> bool:
             "╚════════════════════════════════════════════════════════════╝"
         )
         return False
-    
+
     logger.info("✓ FINNHUB_API_KEY validated")
     return True
 
@@ -149,7 +152,7 @@ async def run_ingest_services(
 ) -> None:
     """
     Run data ingestion services concurrently.
-    
+
     Args:
         has_api_key: Whether a valid Finnhub API key is configured
     """
@@ -161,13 +164,13 @@ async def run_ingest_services(
                 break
             await asyncio.sleep(1)
         return
-    
+
     ws_feed = FinnhubWebSocket()
     news_feed = FinnhubNews()
     candle_builder = CandleBuilder()
-    
+
     logger.info("Starting ingest services: WebSocket, News, CandleBuilder")
-    
+
     # Run all three services concurrently
     await asyncio.gather(
         ws_feed.run(),
@@ -179,17 +182,17 @@ async def run_ingest_services(
 async def run_redis_consumer() -> None:
     """
     Run RedisConsumer for CONTEXT_MODE=redis.
-    
+
     This consumes ticks/candles from Redis that were published by a
     separate ingest container.
     """
     try:
         from context.redis_consumer import RedisConsumer
-        
+
         redis_consumer = RedisConsumer(symbols=PAIRS)
         logger.info("Starting RedisConsumer...")
         await redis_consumer.start()
-        
+
     except Exception as exc:
         logger.error(
             f"Failed to start RedisConsumer: {exc}. "
@@ -205,18 +208,18 @@ async def run_redis_consumer() -> None:
 async def analysis_loop() -> None:
     """
     Main analysis loop (async version).
-    
+
     Reads from LiveContextBus and runs L1-L12 analysis pipeline.
     """
     loop_interval = CONFIG["settings"].get("loop_interval_sec", 60)
-    
+
     logger.info(f"Analysis loop started (interval={loop_interval}s)")
-    
+
     while True:
         if _shutdown_event and _shutdown_event.is_set():
             logger.info("Analysis loop shutting down...")
             break
-        
+
         for pair in PAIRS:
             try:
                 # 1. Build analysis (L1-L11)
@@ -271,32 +274,32 @@ def _signal_handler(signum: int, frame) -> None:
 async def main() -> None:
     """
     Main async orchestrator.
-    
+
     Runs ingest services and analysis loop concurrently.
     Supports both local mode (with Finnhub ingestion) and redis mode
     (with RedisConsumer).
     """
     global _shutdown_event
     _shutdown_event = asyncio.Event()
-    
+
     # Register signal handlers
     signal.signal(signal.SIGINT, _signal_handler)
     signal.signal(signal.SIGTERM, _signal_handler)
-    
+
     logger.info("═" * 60)
     logger.info("WOLF 15-LAYER TRADING SYSTEM v7.4r∞")
     logger.info("═" * 60)
-    
+
     # Validate API key
     has_api_key = _validate_api_key()
-    
+
     # Check context mode
     context_mode = os.getenv("CONTEXT_MODE", "local").lower()
     logger.info(f"Context mode: {context_mode.upper()}")
-    
+
     # Create tasks based on mode
     tasks = []
-    
+
     if context_mode == "redis":
         # Redis mode: Run RedisConsumer + analysis loop
         logger.info("Redis mode: Starting RedisConsumer + analysis loop")
@@ -314,9 +317,9 @@ async def main() -> None:
             ),
             asyncio.create_task(analysis_loop(), name="AnalysisLoop"),
         ]
-    
+
     logger.info(f"System initialized. Running {len(tasks)} concurrent tasks.")
-    
+
     try:
         # Run all tasks concurrently
         await asyncio.gather(*tasks)
