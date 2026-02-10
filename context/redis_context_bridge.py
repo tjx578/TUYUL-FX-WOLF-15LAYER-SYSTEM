@@ -74,7 +74,7 @@ class RedisContextBridge:
 
             # 2. HSET latest tick
             latest_key = f"{self._prefix}:latest_tick:{symbol}"
-            self._redis.hset(latest_key, "data", tick_json)
+            self._redis.hset(latest_key, mapping={"data": tick_json})
 
             # 3. PUBLISH notification
             self._redis.publish("tick_updates", tick_json)
@@ -114,7 +114,7 @@ class RedisContextBridge:
 
             # 2. HSET latest candle
             hash_key = f"{self._prefix}:candle:{symbol}:{timeframe}"
-            self._redis.hset(hash_key, "data", candle_json)
+            self._redis.hset(hash_key, mapping={"data": candle_json})
 
             logger.debug(f"Candle written to Redis: {symbol} {timeframe}")
 

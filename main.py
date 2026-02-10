@@ -119,7 +119,7 @@ def main_loop():
     """
     # Check if we need to start Redis consumer
     context_mode = os.getenv("CONTEXT_MODE", "local").lower()
-    redis_consumer_task = None
+    redis_consumer = None
 
     if context_mode == "redis":
         logger.info("CONTEXT_MODE=redis detected, starting RedisConsumer...")
@@ -127,16 +127,17 @@ def main_loop():
             from context.redis_consumer import RedisConsumer
             redis_consumer = RedisConsumer(symbols=PAIRS)
 
-            # Create event loop if not exists
-            try:
-                loop = asyncio.get_event_loop()
-            except RuntimeError:
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
+            # Start consumer in a background thread using asyncio.run
+            import threading
 
-            # Start consumer in background
-            redis_consumer_task = loop.create_task(redis_consumer.start())
-            logger.info("RedisConsumer started in background")
+            def run_consumer():
+                asyncio.run(redis_consumer.start())
+
+            consumer_thread = threading.Thread(
+                target=run_consumer, daemon=True, name="RedisConsumer"
+            )
+            consumer_thread.start()
+            logger.info("RedisConsumer started in background thread")
 
         except Exception as exc:
             logger.error(
