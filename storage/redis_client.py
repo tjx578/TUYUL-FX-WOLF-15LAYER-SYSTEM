@@ -103,11 +103,23 @@ class RedisClient:
         reraise=True,
     )
     def hset(
-        self, name: str, key: Optional[str] = None, value: Optional[str] = None,
-        mapping: Optional[dict] = None
+        self, name: str, mapping: Optional[dict] = None, **kwargs: Any
     ) -> int:
-        """Set hash field(s)."""
-        return self.client.hset(name, key, value, mapping)
+        """
+        Set hash field(s).
+
+        Args:
+            name: Hash name.
+            mapping: Dictionary of field-value pairs.
+            **kwargs: Alternative way to specify field-value pairs.
+
+        Returns:
+            Number of fields that were added.
+        """
+        if mapping:
+            return self.client.hset(name, mapping=mapping)
+        else:
+            return self.client.hset(name, **kwargs)
 
     @retry(
         retry=retry_if_exception_type(
