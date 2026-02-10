@@ -18,12 +18,6 @@ from utils.timezone_utils import now_utc
 
 
 @pytest.fixture
-def price_watcher():
-    """Create a PriceWatcher instance for testing."""
-    return PriceWatcher()
-
-
-@pytest.fixture
 def mock_trade_ledger():
     """Mock TradeLedger for isolated testing."""
     with patch('dashboard.price_watcher.TradeLedger') as mock:
@@ -42,6 +36,12 @@ def mock_journal():
     """Mock JournalRouter for isolated testing."""
     with patch('dashboard.price_watcher.JournalRouter') as mock:
         yield mock.return_value
+
+
+@pytest.fixture
+def price_watcher(mock_trade_ledger, mock_price_feed, mock_journal):
+    """Create a PriceWatcher instance for testing (patches must be active)."""
+    return PriceWatcher()
 
 
 def create_test_trade(
