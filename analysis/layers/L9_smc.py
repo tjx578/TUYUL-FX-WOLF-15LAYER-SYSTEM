@@ -26,7 +26,6 @@ class L9SMCAnalyzer:
     
     def __init__(self) -> None:
         self.context_bus = LiveContextBus()
-        self.structure_analyzer = MarketStructureAnalyzer()
         self._previous_trend = {}  # Track previous trend for CHoCH detection
     
     def analyze(self, symbol: str, structure: Dict) -> Dict:

@@ -62,10 +62,19 @@ class SynthesisEngine:
         structure = self.l3.structure.analyze(symbol)
         l9 = self.l9.analyze(symbol, structure)
         
-        # L11 RR - Calculate for BUY direction as example
+        # L11 RR - Map trend explicitly to direction
         # In real trading, direction would come from signal
-        direction = "BUY" if l3.get("trend") == "BULLISH" else "SELL"
-        l11 = self.l11.calculate_rr(symbol, direction)
+        trend = l3.get("trend")
+        direction = None
+        l11 = {"valid": False}
+        
+        if trend == "BULLISH":
+            direction = "BUY"
+        elif trend == "BEARISH":
+            direction = "SELL"
+        
+        if direction is not None:
+            l11 = self.l11.calculate_rr(symbol, direction)
         
         # L6 Risk - Use L11 RR if available
         rr_value = l11.get("rr", 2.0) if l11.get("valid") else 2.0

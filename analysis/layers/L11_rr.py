@@ -2,19 +2,18 @@
 L11 — Risk Reward Calculation
 
 Calculates entry, stop loss, and take profit levels using
-ATR for volatility-based stops and Fibonacci for targets.
+ATR for volatility-based stops and targets.
 """
 
 from typing import Dict, Optional
 
-from analysis.market.fibonacci import FibonacciEngine
 from analysis.market.indicators import IndicatorEngine
 from context.live_context_bus import LiveContextBus
 
 
 class L11RRAnalyzer:
     """
-    Risk/Reward analyzer using ATR and Fibonacci.
+    Risk/Reward analyzer using ATR for volatility-based calculations.
     
     Wolf 30-Point discipline requires RR >= 1.5.
     """
@@ -23,7 +22,6 @@ class L11RRAnalyzer:
     
     def __init__(self) -> None:
         self.context_bus = LiveContextBus()
-        self.fib_engine = FibonacciEngine()
         self.indicator_engine = IndicatorEngine()
     
     def calculate_rr(
