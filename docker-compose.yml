@@ -33,6 +33,7 @@ services:
       - .env
     environment:
       - REDIS_URL=redis://redis:6379/0
+      - CONTEXT_MODE=redis
       - PYTHONUNBUFFERED=1
     volumes:
       - ./storage:/app/storage
@@ -56,6 +57,7 @@ services:
       - .env
     environment:
       - REDIS_URL=redis://redis:6379/0
+      - CONTEXT_MODE=redis
       - PYTHONUNBUFFERED=1
     depends_on:
       redis:
