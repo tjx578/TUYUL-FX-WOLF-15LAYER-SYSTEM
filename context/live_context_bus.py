@@ -9,7 +9,6 @@ Supports two modes via CONTEXT_MODE environment variable:
 
 import os
 from collections import defaultdict, deque
-from datetime import datetime
 from threading import Lock
 from typing import Optional
 

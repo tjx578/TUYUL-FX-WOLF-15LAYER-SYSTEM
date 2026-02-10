@@ -1,0 +1,36 @@
+name: Docker
+
+on:
+  push:
+    branches: [ main ]
+
+permissions:
+  contents: read
+
+jobs:
+  docker-build:
+    name: Multi-Stage Docker Build
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      
+      - name: Build API stage
+        run: |
+          docker build --target api -t tuyulfx-api:latest .
+      
+      - name: Build Engine stage
+        run: |
+          docker build --target engine -t tuyulfx-engine:latest .
+      
+      - name: Build Ingest stage
+        run: |
+          docker build --target ingest -t tuyulfx-ingest:latest .
+      
+      - name: Verify all images built successfully
+        run: |
+          docker images | grep tuyulfx
