@@ -29,43 +29,66 @@ If a request conflicts with these, propose an alternative design that preserves 
 - `execution/` : pending/cancel/expiry/state-machine. No strategy logic.
 - `dashboard/` : interactive UI + backend API. **Account, risk, ledger, monitoring.**
 - `journal/` : decision audit system (J1–J4). Append-only. No decision power.
-- `propfirm_manager/` : prop firm profiles + guards. **Rule authority for account limits.**
+- `risk/` : prop firm profiles + guards (see `risk/prop_firm.py`). **Rule authority for account limits.**
 - `storage/` : snapshots, archives, exports.
-- `schemas/` : JSON schemas for L12/L14/alerts/commands.
+- `schemas/` : JSON schemas for L12/L14 and alerts.
 
 ---
 
 ## Core Data Contracts
-### Layer-12 Signal (Core → Dashboard)
-- Must NOT include: balance, equity, lot, risk%.
-- Must include: pair, direction, entry, SL, TP1, RR, verdict, scores (wolf/tii/frpc), signal_id, timestamp.
+### Layer-12 Verdict / Signal (Core → Dashboard)
+- **Current minimal schema** (see `schemas/l12_schema.json`):
+  - Required: `symbol`, `verdict`, `confidence`.
+- **Current enriched fields** (produced by `constitution/verdict_engine.py`, not yet enforced by `l12_schema.json`):
+  - Examples: `execution.lot_size`, `risk_percent`, `risk_amount`, `entry_price`, `stop_loss`, `take_profit_1`.
+- **Design constraint (now and future)**:
+  - Must NOT depend on: account balance, equity, or external account state.
+- **Target / aspirational L12 "Signal" contract** (for future schema alignment):
+  - Should include: pair/symbol, direction, entry_price, stop_loss, take_profit_1, RR, verdict, scores (wolf/tii/frpc), signal_id, timestamp.
+  - Should avoid embedding account-level risk state (balance, equity) and let dashboard/propfirm logic handle position sizing.
 
 ### Risk Recommendation (Dashboard → EA/User)
 - Must include: trade_allowed, recommended_lot, max_safe_lot, reason, expiry.
 - Must be derived from account state + propfirm guard + risk profile.
 
 ### Trade Reporting (EA/User → Dashboard)
-- Required events: ORDER_PLACED, ORDER_FILLED, ORDER_CANCELLED, TRADE_CLOSED.
+- Required events: ORDER_PLACED, ORDER_FILLED, ORDER_CANCELLED, ORDER_EXPIRED, SYSTEM_VIOLATION.
 - Manual and EA must use the same endpoints and ledger tables.
-- Event schemas are defined in `schemas/` directory.
+- Event schemas are defined in `schemas/alert_schema.json`.
 
 ---
 
 ## Prop Firm Enforcement
-- All enforcement happens in `propfirm_manager/**/guard.py` with a standard interface:
+- All enforcement happens in `risk/prop_firm.py` (current prop-firm guard module) with a standard interface:
   - `check(account_state: dict, trade_risk: dict) -> {allowed, code, severity, details?}`
 - Dashboard must treat guard result as binding for risk legality (but still not a market decision).
 
 ---
 
-## Trade State Machine (Dashboard Authority)
-States:
+## Trade State Machine (Dashboard Authority – Conceptual)
+
+This is a **dashboard-level conceptual state machine**, not a direct mirror of
+`execution/state_machine.py`. Names like `SIGNAL_CREATED` and `TRADE_OPEN` are
+**semantic labels for the UI/governance layer**, not required code identifiers.
+
+States (dashboard conceptual model):
 - SIGNAL_CREATED → (SIGNAL_EXPIRED | PENDING_PLACED)
 - PENDING_PLACED → (PENDING_FILLED → TRADE_OPEN) | PENDING_CANCELLED
 - TRADE_OPEN → [optionally: TRADE_PARTIAL_CLOSED] → TRADE_CLOSED
 - TRADE_ABORTED (violation/bypass)
 
-Dashboard owns state transitions; EA/user only reports events.
+Mapping to `execution/state_machine.py` (implementation states such as `IDLE`,
+`PENDING_ACTIVE`, `CANCELLED`, `FILLED`):
+- SIGNAL_CREATED ≈ `IDLE` with an attached decision signal but no live order yet.
+- PENDING_PLACED ≈ `PENDING_ACTIVE` (order placed, waiting to fill or cancel).
+- PENDING_FILLED / TRADE_OPEN ≈ `FILLED` (position live).
+- PENDING_CANCELLED / SIGNAL_EXPIRED / TRADE_ABORTED / TRADE_CLOSED → terminal
+  conditions that should correspond to `CANCELLED` or a finalized `FILLED`
+  position depending on whether the order ever filled.
+
+Dashboard owns conceptual state transitions; EA/user only reports execution
+events which then update both the execution state machine and this dashboard
+model consistently.
 
 ---
 
@@ -80,7 +103,7 @@ All rejected setups must be journaled.
 
 ## How to Work
 When implementing:
-1. Identify which zone the change belongs to (analysis/constitution/execution/dashboard/journal/propfirm).
+1. Identify which zone the change belongs to (analysis/constitution/execution/dashboard/journal/risk).
 2. Confirm it does not violate authority boundaries.
 3. Add/adjust schemas if contracts change.
 4. Add tests for critical logic:
