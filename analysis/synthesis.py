@@ -54,7 +54,7 @@ class SynthesisEngine:
 
         l9 = self.l9.analyze(l3)
         l6 = self.l6.analyze(rr=2.0)  # placeholder RR
-        l10 = self.l10.analyze(l6.get("risk_ok"), l9.get("confidence", 0))
+        l10 = self.l10.analyze(bool(l6.get("risk_ok", False)), l9.get("confidence", 0))
         l11 = {"valid": False}  # entry/sl/tp calculated later (constitution/execution prep)
 
         return {
@@ -162,10 +162,16 @@ def build_synthesis(pair: str) -> dict:
         },
         "execution": {
             "direction": direction,
+            # NOTE: Duplicate fields for backwards compatibility
+            # - 'entry' and 'entry_price' both contain the entry price
+            # - 'take_profit' and 'take_profit_1' both contain TP1 price
+            # This ensures compatibility with both test contracts and L12 verdict engine
+            "entry": entry_price,
             "entry_zone": f"{entry_price-0.0010:.5f}-{entry_price+0.0010:.5f}",
             "entry_price": entry_price,
             "stop_loss": stop_loss,
             "take_profit_1": take_profit_1,
+            "take_profit": take_profit_1,
             "rr_ratio": rr_ratio,
             "lot_size": 0.01,
             "risk_percent": 1.0,
