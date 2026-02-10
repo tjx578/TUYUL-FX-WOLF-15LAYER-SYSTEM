@@ -5,6 +5,8 @@ Immutable trade history for audit.
 
 from datetime import datetime
 
+from utils.timezone_utils import now_utc
+
 
 class TradeJournal:
     def __init__(self):
@@ -12,7 +14,7 @@ class TradeJournal:
 
     def record(self, trade: dict):
         entry = {
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": now_utc().isoformat(),
             **trade,
         }
         self._trades.append(entry)

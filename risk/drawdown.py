@@ -4,6 +4,8 @@ Drawdown Monitor
 
 from datetime import datetime
 
+from utils.timezone_utils import now_utc, now_local
+
 
 class DrawdownMonitor:
     def __init__(self, max_daily: float, max_total: float):
@@ -11,10 +13,10 @@ class DrawdownMonitor:
         self.max_total = max_total
         self.daily_dd = 0.0
         self.total_dd = 0.0
-        self.last_reset = datetime.utcnow().date()
+        self.last_reset = now_local().date()
 
     def update(self, pnl: float):
-        today = datetime.utcnow().date()
+        today = now_local().date()
         if today != self.last_reset:
             self.daily_dd = 0.0
             self.last_reset = today

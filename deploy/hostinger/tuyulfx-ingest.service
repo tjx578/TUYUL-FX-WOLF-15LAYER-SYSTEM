@@ -1,0 +1,35 @@
+[Unit]
+Description=TUYUL FX Wolf Finnhub WebSocket Ingest Service
+After=network.target redis-server.service
+Wants=redis-server.service
+
+[Service]
+Type=simple
+User=tuyulfx
+Group=tuyulfx
+WorkingDirectory=/opt/tuyulfx
+Environment="PATH=/opt/tuyulfx/venv/bin:/usr/local/bin:/usr/bin:/bin"
+Environment="PYTHONUNBUFFERED=1"
+
+# Load environment variables from .env file
+EnvironmentFile=/opt/tuyulfx/.env
+
+# Finnhub WebSocket feed ingestion
+ExecStart=/opt/tuyulfx/venv/bin/python -m ingest.finnhub_ws
+
+# Restart policy
+Restart=always
+RestartSec=10
+StartLimitInterval=300
+StartLimitBurst=5
+
+# Logging
+StandardOutput=append:/opt/tuyulfx/logs/ingest.log
+StandardError=append:/opt/tuyulfx/logs/ingest-error.log
+
+# Resource limits
+LimitNOFILE=65536
+MemoryLimit=512M
+
+[Install]
+WantedBy=multi-user.target
