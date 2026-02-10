@@ -1,6 +1,8 @@
 # TUYUL FX WOLF 15-LAYER SYSTEM - Next.js Dashboard
 
-Professional trading system dashboard built with Next.js 14, TypeScript, and Tailwind CSS.
+Professional trading system dashboard built with Next.js 15, TypeScript, and Tailwind CSS.
+
+> **🔒 Security Note**: This dashboard uses Next.js 15.0.8+ which includes critical security patches for HTTP request deserialization DoS vulnerabilities (CVE-2024-XXXXX). Always keep Next.js updated to the latest stable version.
 
 ## Features
 
@@ -15,12 +17,14 @@ Professional trading system dashboard built with Next.js 14, TypeScript, and Tai
 
 ## Tech Stack
 
-- **Framework**: Next.js 14 (App Router)
+- **Framework**: Next.js 15 (App Router) - Upgraded for security patches
 - **Language**: TypeScript
 - **Styling**: Tailwind CSS
 - **Data Fetching**: SWR
 - **Icons**: Lucide React
 - **Timezone**: date-fns-tz
+
+**Note**: Next.js 15 requires React 19. This may affect some third-party libraries. Test thoroughly.
 
 ## Quick Start
 
@@ -217,10 +221,12 @@ npm run dev
 
 ## Security
 
+- **Next.js 15.0.8+**: Patched against HTTP request deserialization DoS vulnerabilities
 - No write operations (read-only dashboard)
 - CORS configured for API access
 - Security headers in Next.js config
 - No sensitive data in client-side code
+- Regular dependency updates recommended
 
 ## Contributing
 
