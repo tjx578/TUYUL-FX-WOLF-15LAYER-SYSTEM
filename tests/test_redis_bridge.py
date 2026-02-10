@@ -214,9 +214,8 @@ class TestLiveContextBusRedisIntegration:
         """Test LiveContextBus in Redis mode."""
         with patch.dict(os.environ, {"CONTEXT_MODE": "redis"}):
             with patch(
-                "context.live_context_bus.RedisContextBridge"
-            ) as mock_cls:
-                mock_cls.return_value = mock_redis_bridge
+                "context.redis_context_bridge.RedisClient"
+            ):
                 bus = LiveContextBus()
 
                 assert bus._mode == "redis"
@@ -226,10 +225,10 @@ class TestLiveContextBusRedisIntegration:
         """Test tick update in Redis mode writes to both local and Redis."""
         with patch.dict(os.environ, {"CONTEXT_MODE": "redis"}):
             with patch(
-                "context.live_context_bus.RedisContextBridge"
-            ) as mock_cls:
-                mock_cls.return_value = mock_redis_bridge
+                "context.redis_context_bridge.RedisClient"
+            ):
                 bus = LiveContextBus()
+                bus._redis_bridge = mock_redis_bridge
 
                 tick = {
                     "symbol": "EURUSD",
@@ -252,10 +251,10 @@ class TestLiveContextBusRedisIntegration:
         """Test candle update in Redis mode writes to both local and Redis."""
         with patch.dict(os.environ, {"CONTEXT_MODE": "redis"}):
             with patch(
-                "context.live_context_bus.RedisContextBridge"
-            ) as mock_cls:
-                mock_cls.return_value = mock_redis_bridge
+                "context.redis_context_bridge.RedisClient"
+            ):
                 bus = LiveContextBus()
+                bus._redis_bridge = mock_redis_bridge
 
                 candle = {
                     "symbol": "EURUSD",
@@ -279,15 +278,19 @@ class TestLiveContextBusRedisIntegration:
         """Test news update in Redis mode writes to both local and Redis."""
         with patch.dict(os.environ, {"CONTEXT_MODE": "redis"}):
             with patch(
-                "context.live_context_bus.RedisContextBridge"
-            ) as mock_cls:
-                mock_cls.return_value = mock_redis_bridge
+                "context.redis_context_bridge.RedisClient"
+            ):
                 bus = LiveContextBus()
+                bus._redis_bridge = mock_redis_bridge
 
                 news = {
-                    "headline": "Fed raises rates",
-                    "impact": "HIGH",
-                    "timestamp": 1700000000.0,
+                    "events": [
+                        {
+                            "headline": "Fed raises rates",
+                            "impact": "HIGH",
+                            "timestamp": 1700000000.0,
+                        }
+                    ],
                 }
 
                 bus.update_news(news)
