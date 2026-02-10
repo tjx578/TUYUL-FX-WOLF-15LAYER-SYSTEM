@@ -38,7 +38,7 @@ def test_trend_detection_insufficient_data(analyzer, context_bus):
             "timestamp": f"2024-01-01T{i:02d}:00:00Z",
         }
         context_bus.update_candle(candle)
-    
+
     trend = analyzer._detect_trend("EURUSD")
     assert trend == "NEUTRAL"
 
@@ -61,7 +61,7 @@ def test_trend_detection_bullish_hh_hl(analyzer, context_bus):
         (1.1020, 1.1040, 1.1018, 1.1035),  # 10 - bounce
         (1.1035, 1.1060, 1.1032, 1.1055),  # 11 - highest peak
     ]
-    
+
     for i, (o, h, low, c) in enumerate(candles_data):
         candle = {
             "symbol": "EURUSD",
@@ -74,7 +74,7 @@ def test_trend_detection_bullish_hh_hl(analyzer, context_bus):
             "timestamp": f"2024-01-01T{i:02d}:00:00Z",
         }
         context_bus.update_candle(candle)
-    
+
     trend = analyzer._detect_trend("EURUSD")
     assert trend == "BULLISH"
 
@@ -97,7 +97,7 @@ def test_trend_detection_bearish_lh_ll(analyzer, context_bus):
         (1.0980, 1.0982, 1.0960, 1.0965),  # 10 - down
         (1.0965, 1.0970, 1.0940, 1.0945),  # 11 - lowest valley
     ]
-    
+
     for i, (o, h, low, c) in enumerate(candles_data):
         candle = {
             "symbol": "EURUSD",
@@ -110,7 +110,7 @@ def test_trend_detection_bearish_lh_ll(analyzer, context_bus):
             "timestamp": f"2024-01-01T{i:02d}:00:00Z",
         }
         context_bus.update_candle(candle)
-    
+
     trend = analyzer._detect_trend("EURUSD")
     assert trend == "BEARISH"
 
@@ -128,7 +128,7 @@ def test_trend_detection_neutral_mixed(analyzer, context_bus):
         (1.1010, 1.1016, 1.0994, 1.1004),  # 6
         (1.1004, 1.1012, 1.0998, 1.1006),  # 7
     ]
-    
+
     for i, (o, h, low, c) in enumerate(candles_data):
         candle = {
             "symbol": "EURUSD",
@@ -141,7 +141,7 @@ def test_trend_detection_neutral_mixed(analyzer, context_bus):
             "timestamp": f"2024-01-01T{i:02d}:00:00Z",
         }
         context_bus.update_candle(candle)
-    
+
     trend = analyzer._detect_trend("EURUSD")
     assert trend == "NEUTRAL"
 
@@ -150,7 +150,7 @@ def test_swing_highs_detection(analyzer):
     """Test swing high detection logic."""
     highs = [1.10, 1.12, 1.11, 1.15, 1.13, 1.14, 1.16, 1.15, 1.14]
     swing_highs = analyzer._find_swing_highs(highs, window=2)
-    
+
     # With window=2, a swing high needs to be higher than 2 candles before/after
     # 1.12 at index 1 is a swing high (higher than 1.10 and 1.11)
     # 1.15 at index 3 is a swing high (higher than surrounding candles)
@@ -162,7 +162,7 @@ def test_swing_lows_detection(analyzer):
     """Test swing low detection logic."""
     lows = [1.10, 1.08, 1.09, 1.07, 1.09, 1.08, 1.06, 1.08, 1.09]
     swing_lows = analyzer._find_swing_lows(lows, window=2)
-    
+
     # With window=2, a swing low needs to be lower than 2 candles before/after
     assert len(swing_lows) > 0
 
@@ -182,7 +182,7 @@ def test_analyze_with_valid_structure(analyzer, context_bus):
             "timestamp": f"2024-01-01T{i:02d}:00:00Z",
         }
         context_bus.update_candle(candle)
-    
+
     # Also add current H1 candle
     current_candle = {
         "symbol": "EURUSD",
@@ -195,7 +195,7 @@ def test_analyze_with_valid_structure(analyzer, context_bus):
         "timestamp": "2024-01-01T10:00:00Z",
     }
     context_bus.update_candle(current_candle)
-    
+
     result = analyzer.analyze("EURUSD")
     assert result["valid"] is True
     assert "trend" in result

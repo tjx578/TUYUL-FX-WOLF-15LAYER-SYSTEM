@@ -45,7 +45,7 @@ def test_smc_neutral_trend_low_confidence(analyzer, context_bus):
         "bos": False,
         "choch": False,
     }
-    
+
     result = analyzer.analyze("EURUSD", structure=structure)
     assert result["valid"] is True
     assert result["smc"] is False  # No clear SMC signal
@@ -67,17 +67,17 @@ def test_smc_bullish_bos_detected(analyzer, context_bus):
             "timestamp": f"2024-01-01T{i:02d}:00:00Z",
         }
         context_bus.update_candle(candle)
-    
+
     structure = {
         "valid": True,
         "trend": "BULLISH",
         "bos": False,
         "choch": False,
     }
-    
+
     result = analyzer.analyze("EURUSD", structure=structure)
     assert result["valid"] is True
-    
+
     # Should detect BOS with uptrend breaking previous swing high
     if result["bos_detected"]:
         assert result["confidence"] == 0.8
@@ -100,17 +100,17 @@ def test_smc_bearish_bos_detected(analyzer, context_bus):
             "timestamp": f"2024-01-01T{i:02d}:00:00Z",
         }
         context_bus.update_candle(candle)
-    
+
     structure = {
         "valid": True,
         "trend": "BEARISH",
         "bos": False,
         "choch": False,
     }
-    
+
     result = analyzer.analyze("EURUSD", structure=structure)
     assert result["valid"] is True
-    
+
     # Should detect BOS with downtrend breaking previous swing low
     if result["bos_detected"]:
         assert result["confidence"] == 0.8
@@ -126,11 +126,11 @@ def test_smc_choch_bullish_to_bearish(analyzer, context_bus):
         "bos": False,
         "choch": False,
     }
-    
+
     result1 = analyzer.analyze("EURUSD", structure=structure_bullish)
     assert result1["valid"] is True
     assert result1["choch_detected"] is False  # No previous trend
-    
+
     # Second analysis with BEARISH trend (CHoCH)
     structure_bearish = {
         "valid": True,
@@ -138,7 +138,7 @@ def test_smc_choch_bullish_to_bearish(analyzer, context_bus):
         "bos": False,
         "choch": False,
     }
-    
+
     result2 = analyzer.analyze("EURUSD", structure=structure_bearish)
     assert result2["valid"] is True
     assert result2["choch_detected"] is True  # Detected CHoCH
@@ -155,10 +155,10 @@ def test_smc_choch_bearish_to_bullish(analyzer, context_bus):
         "bos": False,
         "choch": False,
     }
-    
+
     result1 = analyzer.analyze("EURUSD", structure=structure_bearish)
     assert result1["valid"] is True
-    
+
     # Second analysis with BULLISH trend (CHoCH)
     structure_bullish = {
         "valid": True,
@@ -166,7 +166,7 @@ def test_smc_choch_bearish_to_bullish(analyzer, context_bus):
         "bos": False,
         "choch": False,
     }
-    
+
     result2 = analyzer.analyze("EURUSD", structure=structure_bullish)
     assert result2["valid"] is True
     assert result2["choch_detected"] is True
@@ -181,11 +181,11 @@ def test_smc_no_choch_same_trend(analyzer, context_bus):
         "bos": False,
         "choch": False,
     }
-    
+
     # First analysis
     result1 = analyzer.analyze("EURUSD", structure=structure)
     assert result1["choch_detected"] is False
-    
+
     # Second analysis with same trend
     result2 = analyzer.analyze("EURUSD", structure=structure)
     assert result2["choch_detected"] is False  # No change
@@ -206,14 +206,14 @@ def test_smc_bos_insufficient_data(analyzer, context_bus):
             "timestamp": f"2024-01-01T{i:02d}:00:00Z",
         }
         context_bus.update_candle(candle)
-    
+
     structure = {
         "valid": True,
         "trend": "BULLISH",
         "bos": False,
         "choch": False,
     }
-    
+
     result = analyzer.analyze("EURUSD", structure=structure)
     assert result["bos_detected"] is False  # Not enough data
 
@@ -226,9 +226,9 @@ def test_smc_output_format(analyzer, context_bus):
         "bos": False,
         "choch": False,
     }
-    
+
     result = analyzer.analyze("EURUSD", structure=structure)
-    
+
     # Verify all required fields are present
     assert "valid" in result
     assert "smc" in result
@@ -237,6 +237,6 @@ def test_smc_output_format(analyzer, context_bus):
     assert "liquidity_sweep" in result
     assert "displacement" in result
     assert "confidence" in result
-    
+
     # Verify confidence is in valid range
     assert 0.0 <= result["confidence"] <= 1.0
