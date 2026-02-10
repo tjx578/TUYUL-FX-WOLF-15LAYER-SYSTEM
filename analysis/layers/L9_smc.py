@@ -9,6 +9,7 @@ from typing import Dict
 
 from loguru import logger
 
+from analysis.market.structure import MarketStructureAnalyzer
 from context.live_context_bus import LiveContextBus
 
 
