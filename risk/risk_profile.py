@@ -6,9 +6,8 @@ Risk Engine reads it. Redis = single source of truth.
 """
 
 import json
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, asdict
 from enum import Enum
-from typing import Optional
 
 from loguru import logger
 

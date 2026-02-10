@@ -7,11 +7,9 @@ Persisted in Redis. Updated on INTENDED/OPEN/CLOSE events.
 
 import json
 from dataclasses import dataclass, asdict
-from typing import Optional
 
 from loguru import logger
 
-from risk.exceptions import RiskException
 from storage.redis_client import RedisClient
 
 
