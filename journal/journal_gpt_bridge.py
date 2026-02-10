@@ -217,9 +217,9 @@ def export_for_gpt(
         f.write("- Edge Miner\n")
         f.write("- System Governor\n\n")
         f.write("❌ **FORBIDDEN:**\n")
-        f.write("- TIDAK mengubah threshold\n")
-        f.write("- TIDAK mengirim order\n")
-        f.write("- TIDAK override L12\n\n")
+        f.write("- Must NOT change thresholds\n")
+        f.write("- Must NOT send orders\n")
+        f.write("- Must NOT override L12\n\n")
         f.write("---\n\n")
         
         # Metrics summary

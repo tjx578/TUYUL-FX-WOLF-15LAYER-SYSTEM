@@ -73,7 +73,7 @@ def _build_j2(pair: str, synthesis: dict, l12: dict) -> DecisionJournal:
     
     # Determine primary rejection reason
     primary_rejection_reason = None
-    if l12["verdict"] in ["HOLD", "NO_TRADE"]:
+    if l12["verdict"] in [VerdictType.HOLD.value, VerdictType.NO_TRADE.value]:
         if failed_gates:
             primary_rejection_reason = f"Failed gates: {', '.join(failed_gates)}"
         else:
@@ -91,7 +91,7 @@ def _build_j2(pair: str, synthesis: dict, l12: dict) -> DecisionJournal:
         wolf_30_score=int(scores.get("wolf_30_point", 0)),
         f_score=int(scores.get("f_score", 0)),
         t_score=int(scores.get("t_score", 0)),
-        fta_score=int(scores.get("fta_score", 0) * 10),  # Convert 0-1 to 0-10
+        fta_score=int(scores.get("fta_score", 0) * 10),  # Convert fta_score from 0-1 scale to 0-10 scale
         exec_score=int(scores.get("exec_score", 0)),
         tii_sym=float(layers.get("L8_tii_sym", 0.0)),
         integrity_index=float(layers.get("L8_integrity_index", 0.0)),

@@ -65,6 +65,21 @@ def test_context_journal_invalid_coherence():
         )
 
 
+def test_context_journal_invalid_coherence_negative():
+    """Test ContextJournal rejects negative coherence (< 0.0)"""
+    with pytest.raises(ValueError):
+        ContextJournal(
+            timestamp=now_utc(),
+            pair="EURUSD",
+            session="LONDON",
+            market_regime="TRENDING",
+            news_lock=False,
+            context_coherence=-0.5,  # Invalid: < 0.0
+            mta_alignment=True,
+            technical_bias="BULLISH",
+        )
+
+
 def test_decision_journal_valid():
     """Test DecisionJournal with valid data"""
     j2 = DecisionJournal(
@@ -203,6 +218,19 @@ def test_reflective_journal_invalid_discipline():
             outcome=TradeOutcome.WIN,
             did_system_protect=ProtectionAssessment.NO,
             discipline_rating=15,  # Invalid: > 10
+        )
+
+
+def test_reflective_journal_invalid_discipline_low():
+    """Test ReflectiveJournal rejects discipline_rating < 1"""
+    with pytest.raises(ValueError):
+        ReflectiveJournal(
+            timestamp=now_utc(),
+            setup_id="EURUSD_20260210_120000",
+            pair="EURUSD",
+            outcome=TradeOutcome.WIN,
+            did_system_protect=ProtectionAssessment.NO,
+            discipline_rating=0,  # Invalid: < 1
         )
 
 
