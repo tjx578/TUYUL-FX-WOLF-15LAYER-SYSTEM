@@ -1,0 +1,107 @@
+# Risk Management Configuration
+# All monetary values are in account currency (USD)
+# All percentages are expressed as decimals (e.g., 0.03 = 3%)
+
+# Drawdown Limits
+drawdown:
+  max_daily_percent: 0.03      # 3% max daily drawdown
+  max_weekly_percent: 0.05     # 5% max weekly drawdown
+  max_total_percent: 0.10      # 10% max total drawdown (high-water mark)
+  
+# Circuit Breaker Settings
+circuit_breaker:
+  daily_loss_threshold: 0.03   # 3% daily loss triggers OPEN state
+  consecutive_loss_limit: 3    # 3 consecutive losses trigger OPEN
+  velocity_threshold: 0.02     # 2% loss in 1 hour triggers OPEN
+  velocity_window_hours: 1     # Velocity calculation window
+  cooldown_hours: 4            # Hours before auto-reset to HALF_OPEN
+  recovery_probe_trades: 1     # Trades needed in HALF_OPEN before CLOSED
+
+# Position Sizing
+position_sizing:
+  default_risk_percent: 0.01   # 1% risk per trade (fixed fractional)
+  min_lot_size: 0.01           # Minimum position size
+  max_lot_size: 10.0           # Maximum position size
+  
+  # Pip values for different instruments (per standard lot)
+  pip_values:
+    # Forex majors (quote currency = USD)
+    EURUSD: 10.0
+    GBPUSD: 10.0
+    AUDUSD: 10.0
+    NZDUSD: 10.0
+    USDCAD: 10.0
+    USDCHF: 10.0
+    USDJPY: 10.0
+    
+    # Cross pairs (varies, approximate values)
+    EURJPY: 10.0
+    GBPJPY: 10.0
+    EURGBP: 10.0
+    EURAUD: 10.0
+    EURNZD: 10.0
+    EURCAD: 10.0
+    EURCHF: 10.0
+    GBPAUD: 10.0
+    GBPNZD: 10.0
+    GBPCAD: 10.0
+    GBPCHF: 10.0
+    AUDNZD: 10.0
+    AUDCAD: 10.0
+    AUDCHF: 10.0
+    AUDJPY: 10.0
+    NZDJPY: 10.0
+    NZDCAD: 10.0
+    NZDCHF: 10.0
+    CADJPY: 10.0
+    CADCHF: 10.0
+    CHFJPY: 10.0
+    
+    # Commodities
+    XAUUSD: 10.0   # Gold: 1 pip = $10 per standard lot
+    XAGUSD: 50.0   # Silver: 1 pip = $50 per standard lot
+
+# Risk Multiplier - Adaptive Scaling
+risk_multiplier:
+  # VIX-based scaling
+  vix:
+    enabled: true
+    low_threshold: 15      # Below this = normal risk
+    medium_threshold: 25   # Above this = reduced risk
+    high_threshold: 35     # Above this = minimal risk
+    low_multiplier: 1.0    # VIX < 15
+    medium_multiplier: 0.75  # 15 <= VIX < 25
+    high_multiplier: 0.5   # 25 <= VIX < 35
+    extreme_multiplier: 0.25  # VIX >= 35
+  
+  # Session-based scaling
+  session:
+    enabled: true
+    asia_multiplier: 0.8      # Lower liquidity
+    london_multiplier: 1.0    # Prime session
+    new_york_multiplier: 1.0  # Prime session
+    off_session_multiplier: 0.5  # Outside major sessions
+  
+  # Time-based scaling
+  time:
+    enabled: true
+    friday_afternoon_multiplier: 0.6  # Weekend gap risk
+    friday_cutoff_hour: 16  # UTC hour to apply friday scaling
+  
+  # Drawdown-based scaling (existing)
+  drawdown:
+    level_30_multiplier: 1.0   # < 30% of max drawdown
+    level_60_multiplier: 0.75  # 30-60% of max drawdown
+    level_80_multiplier: 0.5   # 60-80% of max drawdown
+    level_max_multiplier: 0.25 # > 80% of max drawdown
+
+# Redis Keys (namespace: wolf15:risk:)
+redis_keys:
+  drawdown_daily: "wolf15:risk:drawdown:daily"
+  drawdown_weekly: "wolf15:risk:drawdown:weekly"
+  drawdown_total: "wolf15:risk:drawdown:total"
+  peak_equity: "wolf15:risk:peak_equity"
+  circuit_breaker_state: "wolf15:risk:circuit_breaker:state"
+  circuit_breaker_data: "wolf15:risk:circuit_breaker:data"
+  consecutive_losses: "wolf15:risk:consecutive_losses"
+  trade_history: "wolf15:risk:trade_history"
