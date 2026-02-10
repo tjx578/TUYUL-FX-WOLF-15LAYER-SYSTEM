@@ -54,7 +54,7 @@ class SynthesisEngine:
 
         l9 = self.l9.analyze(l3)
         l6 = self.l6.analyze(rr=2.0)  # placeholder RR
-        l10 = self.l10.analyze(l6.get("risk_ok"), l9.get("confidence", 0))
+        l10 = self.l10.analyze(bool(l6.get("risk_ok", False)), l9.get("confidence", 0))
         l11 = {"valid": False}  # entry/sl/tp calculated later (constitution/execution prep)
 
         return {
@@ -97,8 +97,10 @@ def build_synthesis(pair: str) -> dict:
     l2 = raw.get("L2", {})
     l3 = raw.get("L3", {})
     l4 = raw.get("L4", {})
+    l6 = raw.get("L6", {})
     l7 = raw.get("L7", {})
     l8 = raw.get("L8", {})
+    l9 = raw.get("L9", {})
     l10 = raw.get("L10", {})
     l11 = raw.get("L11", {})
     
