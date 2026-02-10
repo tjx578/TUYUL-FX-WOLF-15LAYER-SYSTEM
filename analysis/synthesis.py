@@ -3,7 +3,6 @@ SYNTHESIS — Aggregate L1–L11
 Produces candidate setup (pre-constitution).
 """
 
-from context.runtime_state import RuntimeState
 from analysis.layers.L1_context import L1ContextAnalyzer
 from analysis.layers.L2_mta import L2MTAAnalyzer
 from analysis.layers.L3_technical import L3TechnicalAnalyzer
@@ -73,7 +72,7 @@ class SynthesisEngine:
         l6 = self.l6.analyze(rr=rr_value)
         
         # L10 Position
-        l10 = self.l10.analyze(l6.get("risk_ok"), l9.get("confidence", 0))
+        l10 = self.l10.analyze(l6.get("risk_ok"), l9.get("confidence", 0)) # pyright: ignore[reportArgumentType]
 
         return {
             "symbol": symbol,

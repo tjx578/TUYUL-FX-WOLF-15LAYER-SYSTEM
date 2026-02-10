@@ -4,8 +4,7 @@ Core Orchestrator Layer 12
 Contains: CoreOrchestratorLayer12 with TII, FRPC, MC_FTTC gates.
 """
 
-from typing import Dict, Any, Optional
-from loguru import logger
+from typing import Dict, Any
 
 
 class CoreOrchestratorLayer12:

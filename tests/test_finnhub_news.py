@@ -3,9 +3,9 @@ Unit tests for FinnhubNews economic calendar ingestion.
 """
 
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
-from ingest.finnhub_news import FinnhubNews, FinnhubNewsError
+from ingest.finnhub_news import FinnhubNews
 
 
 @pytest.fixture

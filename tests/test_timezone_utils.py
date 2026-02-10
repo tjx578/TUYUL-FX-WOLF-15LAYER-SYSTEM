@@ -2,9 +2,7 @@
 Test suite for timezone utilities
 """
 
-import pytest
 from datetime import datetime, timezone
-from zoneinfo import ZoneInfo
 
 from utils.timezone_utils import (
     now_utc,

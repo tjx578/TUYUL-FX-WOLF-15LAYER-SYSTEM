@@ -4,7 +4,7 @@ Unit tests for FinnhubSymbolMapper and FinnhubWebSocket tick normalization.
 
 import pytest
 from typing import cast
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 from ingest.finnhub_ws import FinnhubSymbolMapper, FinnhubWebSocket
 

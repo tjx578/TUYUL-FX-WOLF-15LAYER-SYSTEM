@@ -1,5 +1,6 @@
 import logging
 from datetime import datetime, timezone
+from loguru import logger as loguru_logger  # Move to top with other imports
 
 logger = logging.getLogger("WOLF_CONSTITUTION")
 
@@ -12,9 +13,6 @@ def log_violation(pair: str, reason: str) -> None:
 Violation Log
 All constitutional violations must be recorded here.
 """
-
-from loguru import logger as loguru_logger
-
 
 class ViolationLogger:
     def __init__(self):

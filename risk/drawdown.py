@@ -2,9 +2,8 @@
 Drawdown Monitor
 """
 
-from datetime import datetime
 
-from utils.timezone_utils import now_utc, now_local
+from utils.timezone_utils import now_local
 
 
 class DrawdownMonitor:
