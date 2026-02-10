@@ -7,7 +7,7 @@ from storage.l12_cache import set_verdict
 from context.runtime_state import RuntimeState
 from config_loader import CONFIG
 
-PAIRS = CONFIG["pairs"]["symbols"]
+PAIRS = [p["symbol"] for p in CONFIG["pairs"]["pairs"] if p.get("enabled", True)]
 
 def main_loop():
     while True:
