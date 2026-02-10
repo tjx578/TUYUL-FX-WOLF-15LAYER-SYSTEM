@@ -1,19 +1,29 @@
 import asyncio
 import os
-import time
-from analysis.synthesis import build_synthesis   # L1–L11
-from analysis.synthesis_adapter import adapt_synthesis
-from constitution.verdict_engine import generate_l12_verdict
-from storage.snapshot_store import save_snapshot
-from storage.l12_cache import set_verdict
-from context.runtime_state import RuntimeState
-from config_loader import CONFIG
-from journal.journal_router import journal_router
-from journal.journal_schema import ContextJournal, DecisionJournal, VerdictType
-from utils.timezone_utils import now_utc, is_trading_session
+import signal
+import sys
+from typing import Optional
+
 from loguru import logger
 
+from analysis.synthesis import build_synthesis
+from analysis.synthesis_adapter import adapt_synthesis
+from config_loader import CONFIG
+from constitution.verdict_engine import generate_l12_verdict
+from context.runtime_state import RuntimeState
+from ingest.candle_builder import CandleBuilder
+from ingest.finnhub_news import FinnhubNews
+from ingest.finnhub_ws import FinnhubWebSocket
+from journal.journal_router import journal_router
+from journal.journal_schema import ContextJournal, DecisionJournal, VerdictType
+from storage.l12_cache import set_verdict
+from storage.snapshot_store import save_snapshot
+from utils.timezone_utils import is_trading_session, now_utc
+
 PAIRS = [p["symbol"] for p in CONFIG["pairs"]["pairs"] if p.get("enabled", True)]
+
+# Global flag for graceful shutdown
+_shutdown_event: Optional[asyncio.Event] = None
 
 
 def _build_j1(pair: str, synthesis: dict) -> ContextJournal:
@@ -110,42 +120,103 @@ def _build_j2(pair: str, synthesis: dict, l12: dict) -> DecisionJournal:
     )
 
 
-def main_loop():
+def _validate_api_key() -> bool:
     """
-    Main trading loop.
-
-    If CONTEXT_MODE=redis, spawns RedisConsumer as a background task to
-    receive live data from the ingest container.
+    Validate Finnhub API key on startup.
+    
+    Returns:
+        bool: True if API key is valid, False otherwise
     """
-    # Check if we need to start Redis consumer
-    context_mode = os.getenv("CONTEXT_MODE", "local").lower()
-    redis_consumer = None
+    api_key = os.getenv("FINNHUB_API_KEY", "")
+    
+    if not api_key or api_key == "YOUR_FINNHUB_API_KEY":
+        logger.warning(
+            "╔════════════════════════════════════════════════════════════╗\n"
+            "║  WARNING: FINNHUB_API_KEY not configured                 ║\n"
+            "║  System running in DRY RUN mode                           ║\n"
+            "║  No live data feed available                              ║\n"
+            "║  Set FINNHUB_API_KEY environment variable for live data  ║\n"
+            "╚════════════════════════════════════════════════════════════╝"
+        )
+        return False
+    
+    logger.info("✓ FINNHUB_API_KEY validated")
+    return True
 
-    if context_mode == "redis":
-        logger.info("CONTEXT_MODE=redis detected, starting RedisConsumer...")
-        try:
-            from context.redis_consumer import RedisConsumer
-            redis_consumer = RedisConsumer(symbols=PAIRS)
 
-            # Start consumer in a background thread using asyncio.run
-            import threading
+async def run_ingest_services(
+    has_api_key: bool,
+) -> None:
+    """
+    Run data ingestion services concurrently.
+    
+    Args:
+        has_api_key: Whether a valid Finnhub API key is configured
+    """
+    if not has_api_key:
+        logger.info("Skipping ingest services - no API key configured")
+        # Keep task alive but don't do anything
+        while True:
+            if _shutdown_event and _shutdown_event.is_set():
+                break
+            await asyncio.sleep(1)
+        return
+    
+    ws_feed = FinnhubWebSocket()
+    news_feed = FinnhubNews()
+    candle_builder = CandleBuilder()
+    
+    logger.info("Starting ingest services: WebSocket, News, CandleBuilder")
+    
+    # Run all three services concurrently
+    await asyncio.gather(
+        ws_feed.run(),
+        news_feed.run(),
+        candle_builder.run(),
+    )
 
-            def run_consumer():
-                asyncio.run(redis_consumer.start())
 
-            consumer_thread = threading.Thread(
-                target=run_consumer, daemon=True, name="RedisConsumer"
-            )
-            consumer_thread.start()
-            logger.info("RedisConsumer started in background thread")
+async def run_redis_consumer() -> None:
+    """
+    Run RedisConsumer for CONTEXT_MODE=redis.
+    
+    This consumes ticks/candles from Redis that were published by a
+    separate ingest container.
+    """
+    try:
+        from context.redis_consumer import RedisConsumer
+        
+        redis_consumer = RedisConsumer(symbols=PAIRS)
+        logger.info("Starting RedisConsumer...")
+        await redis_consumer.start()
+        
+    except Exception as exc:
+        logger.error(
+            f"Failed to start RedisConsumer: {exc}. "
+            "Continuing without Redis consumer."
+        )
+        # Keep task alive so main doesn't exit
+        while True:
+            if _shutdown_event and _shutdown_event.is_set():
+                break
+            await asyncio.sleep(1)
 
-        except Exception as exc:
-            logger.error(
-                f"Failed to start RedisConsumer: {exc}. "
-                "Continuing without Redis consumer."
-            )
 
+async def analysis_loop() -> None:
+    """
+    Main analysis loop (async version).
+    
+    Reads from LiveContextBus and runs L1-L12 analysis pipeline.
+    """
+    loop_interval = CONFIG["settings"].get("loop_interval_sec", 60)
+    
+    logger.info(f"Analysis loop started (interval={loop_interval}s)")
+    
     while True:
+        if _shutdown_event and _shutdown_event.is_set():
+            logger.info("Analysis loop shutting down...")
+            break
+        
         for pair in PAIRS:
             try:
                 # 1. Build analysis (L1-L11)
@@ -182,12 +253,88 @@ def main_loop():
                 # 6. Snapshot L14
                 save_snapshot(pair, l12)
 
-                print(f"[L12] {pair} → {l12['verdict']}")
+                logger.debug(f"[L12] {pair} → {l12['verdict']}")
 
             except Exception as e:
-                print(f"[ERROR] {pair} | {e}")
+                logger.error(f"[ERROR] {pair} | {e}")
 
-        time.sleep(CONFIG["settings"].get("loop_interval_sec", 60))
+        await asyncio.sleep(loop_interval)
+
+
+def _signal_handler(signum: int, frame) -> None:
+    """Handle shutdown signals."""
+    logger.info(f"Received signal {signum}, initiating graceful shutdown...")
+    if _shutdown_event:
+        _shutdown_event.set()
+
+
+async def main() -> None:
+    """
+    Main async orchestrator.
+    
+    Runs ingest services and analysis loop concurrently.
+    Supports both local mode (with Finnhub ingestion) and redis mode
+    (with RedisConsumer).
+    """
+    global _shutdown_event
+    _shutdown_event = asyncio.Event()
+    
+    # Register signal handlers
+    signal.signal(signal.SIGINT, _signal_handler)
+    signal.signal(signal.SIGTERM, _signal_handler)
+    
+    logger.info("═" * 60)
+    logger.info("WOLF 15-LAYER TRADING SYSTEM v7.4r∞")
+    logger.info("═" * 60)
+    
+    # Validate API key
+    has_api_key = _validate_api_key()
+    
+    # Check context mode
+    context_mode = os.getenv("CONTEXT_MODE", "local").lower()
+    logger.info(f"Context mode: {context_mode.upper()}")
+    
+    # Create tasks based on mode
+    tasks = []
+    
+    if context_mode == "redis":
+        # Redis mode: Run RedisConsumer + analysis loop
+        logger.info("Redis mode: Starting RedisConsumer + analysis loop")
+        tasks = [
+            asyncio.create_task(run_redis_consumer(), name="RedisConsumer"),
+            asyncio.create_task(analysis_loop(), name="AnalysisLoop"),
+        ]
+    else:
+        # Local mode: Run ingest services + analysis loop
+        logger.info("Local mode: Starting ingest services + analysis loop")
+        tasks = [
+            asyncio.create_task(
+                run_ingest_services(has_api_key),
+                name="IngestServices",
+            ),
+            asyncio.create_task(analysis_loop(), name="AnalysisLoop"),
+        ]
+    
+    logger.info(f"System initialized. Running {len(tasks)} concurrent tasks.")
+    
+    try:
+        # Run all tasks concurrently
+        await asyncio.gather(*tasks)
+    except asyncio.CancelledError:
+        logger.info("Tasks cancelled, shutting down...")
+    except Exception as exc:
+        logger.error(f"Fatal error: {exc}")
+        raise
+    finally:
+        logger.info("System shutdown complete.")
+
 
 if __name__ == "__main__":
-    main_loop()
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        logger.info("Keyboard interrupt received, exiting...")
+        sys.exit(0)
+    except Exception as exc:
+        logger.error(f"Fatal error: {exc}")
+        sys.exit(1)

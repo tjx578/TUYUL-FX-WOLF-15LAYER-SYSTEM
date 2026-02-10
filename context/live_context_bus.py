@@ -44,6 +44,9 @@ class LiveContextBus:
         # Always maintain local storage for backward compatibility
         self._tick_buffer = deque(maxlen=10000)
         self._candle_store = defaultdict(dict)  # symbol -> tf -> candle
+        self._candle_history = defaultdict(
+            lambda: defaultdict(lambda: deque(maxlen=50))
+        )  # symbol -> tf -> deque of candles
         self._news_store = {}
         self._meta = {}
         self._rw_lock = Lock()
@@ -109,6 +112,8 @@ class LiveContextBus:
 
         with self._rw_lock:
             self._candle_store[symbol][tf] = candle
+            # Also add to history buffer
+            self._candle_history[symbol][tf].append(candle)
 
         # If Redis mode, also write to Redis
         if self._mode == "redis" and self._redis_bridge:
@@ -170,6 +175,26 @@ class LiveContextBus:
                 for symbol, tf_map in self._candle_store.items()
                 if timeframe in tf_map
             }
+
+    def get_candle_history(
+        self, symbol: str, timeframe: str, count: int = 20
+    ) -> list:
+        """
+        Get historical candles for a symbol and timeframe.
+        
+        Args:
+            symbol: Trading pair symbol
+            timeframe: Timeframe (M15, H1, etc.)
+            count: Number of candles to return (default 20, max 50)
+            
+        Returns:
+            List of candles, newest first
+        """
+        with self._rw_lock:
+            history = self._candle_history.get(symbol, {}).get(timeframe, deque())
+            # Return last N candles, newest first
+            candles = list(history)
+            return candles[-count:] if len(candles) > count else candles
 
     def get_news(self):
         with self._rw_lock:
