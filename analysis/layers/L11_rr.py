@@ -108,6 +108,12 @@ class L11RRAnalyzer:
         is_valid = rr_ratio >= self.MIN_RR_RATIO
         reason = "rr_ok" if is_valid else "rr_too_low"
         
+        # Narrow types for pyright — entry/sl/tp1/atr are guaranteed non-None here
+        assert entry is not None
+        assert sl is not None
+        assert tp1 is not None
+        assert atr is not None
+
         return {
             "valid": is_valid,
             "rr": rr_ratio,
