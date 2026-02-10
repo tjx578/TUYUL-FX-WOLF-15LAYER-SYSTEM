@@ -7,7 +7,7 @@ Thread-safe with proper locking.
 """
 
 import threading
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from loguru import logger
@@ -123,7 +123,7 @@ class DrawdownMonitor:
         days_since_monday = dt.weekday()
         monday = dt.replace(
             hour=0, minute=0, second=0, microsecond=0
-        ) - threading.timedelta(days=days_since_monday)
+        ) - timedelta(days=days_since_monday)
         return monday
     
     def _persist_state(self) -> None:
