@@ -74,8 +74,7 @@ class Gatekeeper:
         return True, "tf_ok"  # enforced by design (H1/M15)
 
     def _gate_market_law(self, c: dict):
-        mandatory = self.constitution["market_law"]["mandatory_pairs"]
-        return c["symbol"] not in mandatory or True, "market_law_ok"
+        return True, "market_law_ok"  # enforced by pair config; all enabled pairs allowed
 
     def _gate_execution_rule(self, c: dict):
         rule = self.constitution["execution_rules"]["order_type"]

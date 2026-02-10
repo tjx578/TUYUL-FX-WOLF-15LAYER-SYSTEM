@@ -23,7 +23,7 @@ def _make_synthesis(
 ) -> Dict[str, Any]:
     """
     Helper to create a synthesis dict with configurable values.
-    
+
     Default values pass all gates.
     """
     return {
@@ -72,27 +72,27 @@ class TestL12VerdictAllGatesPassing:
     def test_all_gates_pass_execute_verdict(self) -> None:
         """Test verdict when all gates pass."""
         synthesis = _make_synthesis()
-        
+
         verdict = generate_l12_verdict(synthesis)
-        
+
         # Should generate EXECUTE verdict
         assert verdict is not None
         assert "verdict" in verdict
         assert "gates" in verdict
-        
+
         # Check gates
         gates = verdict["gates"]
         assert gates["passed"] == gates["total"]
-        
+
         # Verdict should be EXECUTE_BUY or EXECUTE_SELL
         assert verdict["verdict"] in ["EXECUTE_BUY", "EXECUTE_SELL"]
 
     def test_all_gates_pass_high_confidence(self) -> None:
         """Test confidence is HIGH when all gates pass."""
         synthesis = _make_synthesis()
-        
+
         verdict = generate_l12_verdict(synthesis)
-        
+
         # Confidence should be HIGH
         assert verdict.get("confidence") in ["HIGH", "MEDIUM"]
 
@@ -103,9 +103,9 @@ class TestL12VerdictGateFailures:
     def test_tii_gate_failure(self) -> None:
         """Test verdict when TII gate fails."""
         synthesis = _make_synthesis(tii=0.50)  # Below threshold
-        
+
         verdict = generate_l12_verdict(synthesis)
-        
+
         # Should fail
         assert verdict["verdict"] in ["NO_TRADE", "HOLD"]
         assert verdict["gates"]["gate_1_tii"] == "FAIL"
@@ -113,72 +113,72 @@ class TestL12VerdictGateFailures:
     def test_integrity_gate_failure(self) -> None:
         """Test verdict when integrity gate fails."""
         synthesis = _make_synthesis(integrity=0.50)
-        
+
         verdict = generate_l12_verdict(synthesis)
-        
+
         assert verdict["verdict"] in ["NO_TRADE", "HOLD"]
         assert verdict["gates"]["gate_2_integrity"] == "FAIL"
 
     def test_rr_gate_failure(self) -> None:
         """Test verdict when RR gate fails."""
         synthesis = _make_synthesis(rr=1.0)  # Below 1.5 threshold
-        
+
         verdict = generate_l12_verdict(synthesis)
-        
+
         assert verdict["verdict"] in ["NO_TRADE", "HOLD"]
         assert verdict["gates"]["gate_3_rr"] == "FAIL"
 
     def test_fta_gate_failure(self) -> None:
         """Test verdict when FTA score gate fails."""
         synthesis = _make_synthesis(fta=0.5)
-        
+
         verdict = generate_l12_verdict(synthesis)
-        
+
         assert verdict["verdict"] in ["NO_TRADE", "HOLD"]
         assert verdict["gates"]["gate_4_fta"] == "FAIL"
 
     def test_monte_carlo_gate_failure(self) -> None:
         """Test verdict when Monte Carlo gate fails."""
         synthesis = _make_synthesis(monte=0.5)
-        
+
         verdict = generate_l12_verdict(synthesis)
-        
+
         assert verdict["verdict"] in ["NO_TRADE", "HOLD"]
         assert verdict["gates"]["gate_5_montecarlo"] == "FAIL"
 
     def test_propfirm_gate_failure(self) -> None:
         """Test verdict when prop firm compliance fails."""
         synthesis = _make_synthesis(propfirm_compliant=False)
-        
+
         verdict = generate_l12_verdict(synthesis)
-        
+
         assert verdict["verdict"] in ["NO_TRADE", "HOLD"]
         assert verdict["gates"]["gate_6_propfirm"] == "FAIL"
 
     def test_drawdown_gate_failure(self) -> None:
         """Test verdict when drawdown exceeds limit."""
         synthesis = _make_synthesis(drawdown=6.0)  # Above 5.0 threshold
-        
+
         verdict = generate_l12_verdict(synthesis)
-        
+
         assert verdict["verdict"] in ["NO_TRADE", "HOLD"]
         assert verdict["gates"]["gate_7_drawdown"] == "FAIL"
 
     def test_latency_gate_failure(self) -> None:
         """Test verdict when latency is too high."""
         synthesis = _make_synthesis(latency=300)  # Above 250ms threshold
-        
+
         verdict = generate_l12_verdict(synthesis)
-        
+
         assert verdict["verdict"] in ["NO_TRADE", "HOLD"]
         assert verdict["gates"]["gate_8_latency"] == "FAIL"
 
     def test_conf12_gate_failure(self) -> None:
         """Test verdict when confidence is too low."""
         synthesis = _make_synthesis(conf12=0.5)
-        
+
         verdict = generate_l12_verdict(synthesis)
-        
+
         assert verdict["verdict"] in ["NO_TRADE", "HOLD"]
         assert verdict["gates"]["gate_9_conf12"] == "FAIL"
 
@@ -189,12 +189,12 @@ class TestL12VerdictGateFailures:
             rr=1.0,
             drawdown=6.0,
         )
-        
+
         verdict = generate_l12_verdict(synthesis)
-        
+
         # Should fail
         assert verdict["verdict"] in ["NO_TRADE", "HOLD"]
-        
+
         # Multiple gates should fail
         gates = verdict["gates"]
         failed_count = sum(1 for v in gates.values() if v == "FAIL")
@@ -211,18 +211,18 @@ class TestL12VerdictTypes:
             propfirm_compliant=False,
             drawdown=6.0,
         )
-        
+
         verdict = generate_l12_verdict(synthesis)
-        
+
         assert verdict["verdict"] in ["NO_TRADE", "HOLD"]
 
     def test_hold_verdict(self) -> None:
         """Test HOLD verdict is generated."""
         # Marginal failures
         synthesis = _make_synthesis(conf12=0.7)
-        
+
         verdict = generate_l12_verdict(synthesis)
-        
+
         # Should be NO_TRADE or HOLD
         assert verdict["verdict"] in ["NO_TRADE", "HOLD"]
 
@@ -230,9 +230,9 @@ class TestL12VerdictTypes:
         """Test EXECUTE_BUY verdict is generated."""
         synthesis = _make_synthesis()
         synthesis["bias"]["technical"] = "BULLISH"
-        
+
         verdict = generate_l12_verdict(synthesis)
-        
+
         # Should execute (exact type depends on implementation)
         assert verdict["verdict"] in ["EXECUTE_BUY", "EXECUTE_SELL"]
 
@@ -240,9 +240,9 @@ class TestL12VerdictTypes:
         """Test EXECUTE_SELL verdict is generated."""
         synthesis = _make_synthesis()
         synthesis["bias"]["technical"] = "BEARISH"
-        
+
         verdict = generate_l12_verdict(synthesis)
-        
+
         # Should execute
         assert verdict["verdict"] in ["EXECUTE_BUY", "EXECUTE_SELL"]
 
@@ -253,9 +253,9 @@ class TestL12CannotBeBypassed:
     def test_l12_always_validates_gates(self) -> None:
         """Test L12 always validates all gates."""
         synthesis = _make_synthesis()
-        
+
         verdict = generate_l12_verdict(synthesis)
-        
+
         # Gates must be present
         assert "gates" in verdict
         assert len(verdict["gates"]) > 0
@@ -266,7 +266,7 @@ class TestL12CannotBeBypassed:
             "pair": "EURUSD",
             # Missing required fields
         }
-        
+
         # Should raise ValueError
         with pytest.raises(ValueError, match="Missing required synthesis field"):
             generate_l12_verdict(invalid_synthesis)
@@ -274,9 +274,9 @@ class TestL12CannotBeBypassed:
     def test_l12_verdict_immutable(self) -> None:
         """Test L12 verdict cannot be modified after generation."""
         synthesis = _make_synthesis()
-        
+
         verdict = generate_l12_verdict(synthesis)
-        
+
         # Verdict is a dict, but conceptually immutable
         # (In production, this would be enforced by L14 cache)
         assert "verdict" in verdict
@@ -287,11 +287,11 @@ class TestL12CannotBeBypassed:
         # Start with all passing
         synthesis = _make_synthesis()
         verdict_pass = generate_l12_verdict(synthesis)
-        
+
         # Now fail one gate
         synthesis_fail = _make_synthesis(tii=0.5)
         verdict_fail = generate_l12_verdict(synthesis_fail)
-        
+
         # First should execute, second should not
         assert verdict_pass["verdict"] in ["EXECUTE_BUY", "EXECUTE_SELL"]
         assert verdict_fail["verdict"] in ["NO_TRADE", "HOLD"]

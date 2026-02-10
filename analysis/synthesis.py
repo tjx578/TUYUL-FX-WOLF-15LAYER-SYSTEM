@@ -42,10 +42,10 @@ class SynthesisEngine:
 
         # L4 Scoring
         l4 = self.l4.score(l1, l2, l3)
-        
+
         # L5 Psychology
         l5 = self.l5.analyze(symbol, volatility_profile=l2)
-        
+
         # L7 Probability
         l7 = self.l7.analyze(l4["technical_score"])
 
@@ -63,25 +63,25 @@ class SynthesisEngine:
         # L9 SMC - Get full structure analysis
         structure = self.l3.structure.analyze(symbol)
         l9 = self.l9.analyze(symbol, structure)
-        
+
         # L11 RR - Map trend explicitly to direction
         # In real trading, direction would come from signal
         trend = l3.get("trend")
         direction = None
         l11 = {"valid": False}
-        
+
         if trend == "BULLISH":
             direction = "BUY"
         elif trend == "BEARISH":
             direction = "SELL"
-        
+
         if direction is not None:
             l11 = self.l11.calculate_rr(symbol, direction)
-        
+
         # L6 Risk - Use L11 RR if available
         rr_value = l11.get("rr", 2.0) if l11.get("valid") else 2.0
         l6 = self.l6.analyze(rr=rr_value)
-        
+
         # L10 Position
         l10 = self.l10.analyze(bool(l6.get("risk_ok", False)), l9.get("confidence", 0))
 
@@ -110,22 +110,23 @@ def build_synthesis(
 ) -> dict:
     """
     Build L12-contract-compliant synthesis for a pair.
-    
+
     This is the bridge between L1-L11 raw layer analysis and the L12 verdict engine.
     Transforms SynthesisEngine.build_candidate() output into the contract format
     expected by synthesis_adapter.py and verdict_engine.py.
-    
+
     Args:
         pair: Trading pair symbol (e.g., "EURUSD")
         risk_manager: Optional RiskManager instance for real risk data
         vix_level: Optional VIX level for risk calculations
         
+
     Returns:
         Dict with L12 contract fields: pair, scores, layers, execution, risk, propfirm, bias, system
     """
     engine = SynthesisEngine()
     raw = engine.build_candidate(pair)
-    
+
     # Extract layer data (only layers used in this function)
     l1 = raw.get("L1", {})
     l2 = raw.get("L2", {})
@@ -135,14 +136,14 @@ def build_synthesis(
     l8 = raw.get("L8", {})
     l10 = raw.get("L10", {})
     l11 = raw.get("L11", {})
-    
+
     # Compute wolf_30_point score (0-30) from layer scores
     # Based on L4 technical_score and L7 win probability
     technical_score = l4.get("technical_score", 0)
     win_prob = l7.get("win_probability", 0)
     wolf_30_point = int((technical_score / 100) * 15 + (win_prob / 100) * 15)
     wolf_30_point = max(0, min(30, wolf_30_point))  # clamp to 0-30
-    
+
     # Compute FTA score (fundamental-technical alignment) 0.0-1.0
     # For now, based on validity of L1, L2, L3
     l1_valid = l1.get("valid", False)
@@ -150,10 +151,10 @@ def build_synthesis(
     l3_valid = l3.get("valid", False)
     valid_count = sum([l1_valid, l2_valid, l3_valid])
     fta_score = valid_count / 3.0
-    
+
     # Compute execution readiness score (0-10)
     exec_score = 10 if l10.get("position_ok", False) else 5
-    
+
     # Determine direction from L3 trend
     trend = l3.get("trend", "NEUTRAL")
     if trend == "BULLISH":
@@ -162,7 +163,7 @@ def build_synthesis(
         direction = "SELL"
     else:
         direction = "HOLD"
-    
+
     # Compute basic entry/stop/tp from L11 or defaults
     # In production, L11 would calculate these based on structure
     entry_price = 1.1000  # placeholder
@@ -220,12 +221,13 @@ def build_synthesis(
         risk_amount = 100.0
         prop_compliant = True
     
+
     # Compute confidence index (conf12)
     # Average of key integrity metrics
     tii_sym = l8.get("tii_sym", 0.5)
     integrity = l8.get("integrity", 0.5)
     conf12 = (tii_sym + integrity) / 2.0
-    
+
     # Build L12 contract
     return {
         "pair": pair,

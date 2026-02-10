@@ -11,15 +11,15 @@ from typing import Dict, Any, List
 
 class TRQ3DEngine:
     """Time-Risk-Quality 3D Analysis Engine."""
-    
+
     def analyze(self, symbol: str, timeframe: str = "H1") -> Dict[str, Any]:
         """
         Perform 3D TRQ analysis.
-        
+
         Args:
             symbol: Trading pair
             timeframe: Chart timeframe
-            
+
         Returns:
             Dictionary with TRQ scores
         """
@@ -34,14 +34,14 @@ class TRQ3DEngine:
 
 class QuantumFieldSync:
     """Synchronizes quantum field calculations."""
-    
+
     def sync(self, fields: List[Dict[str, Any]]) -> Dict[str, Any]:
         """
         Synchronize quantum fields.
-        
+
         Args:
             fields: List of field data to synchronize
-            
+
         Returns:
             Dictionary with sync results
         """
@@ -55,7 +55,7 @@ class QuantumFieldSync:
 
 class NeuralDecisionTree:
     """Neural network-based decision tree."""
-    
+
     def decide(
         self,
         inputs: Dict[str, Any],
@@ -63,18 +63,18 @@ class NeuralDecisionTree:
     ) -> Dict[str, Any]:
         """
         Make decision based on inputs.
-        
+
         Args:
             inputs: Input features
             threshold: Decision threshold
-            
+
         Returns:
             Dictionary with decision
         """
         # Simplified neural decision
         confidence = 0.75
         decision = "GO" if confidence >= threshold else "NO_GO"
-        
+
         return {
             "decision": decision,
             "confidence": confidence,
@@ -85,28 +85,28 @@ class NeuralDecisionTree:
 
 class ProbabilityMatrixCalculator:
     """Calculates probability matrices for outcomes."""
-    
+
     def calculate(
         self,
         scenarios: List[Dict[str, Any]],
     ) -> Dict[str, Any]:
         """
         Calculate probability matrix.
-        
+
         Args:
             scenarios: List of scenarios to analyze
-            
+
         Returns:
             Dictionary with probability matrix
         """
         total_prob = 0.0
         matrix = {}
-        
+
         for i, scenario in enumerate(scenarios):
             prob = scenario.get("probability", 1.0 / len(scenarios))
             matrix[f"scenario_{i}"] = prob
             total_prob += prob
-        
+
         return {
             "matrix": matrix,
             "total_probability": total_prob,
@@ -117,7 +117,7 @@ class ProbabilityMatrixCalculator:
 
 class QuantumDecisionEngine:
     """Quantum-inspired decision engine."""
-    
+
     def decide(
         self,
         options: List[Dict[str, Any]],
@@ -125,20 +125,20 @@ class QuantumDecisionEngine:
     ) -> Dict[str, Any]:
         """
         Make quantum decision.
-        
+
         Args:
             options: List of options to choose from
             context: Decision context
-            
+
         Returns:
             Dictionary with decision
         """
         if not options:
             return {"decision": None, "valid": False}
-        
+
         # Score each option
         best_option = max(options, key=lambda x: x.get("score", 0))
-        
+
         return {
             "decision": best_option,
             "confidence": 0.85,
@@ -149,7 +149,7 @@ class QuantumDecisionEngine:
 
 class QuantumScenarioMatrix:
     """Builds quantum scenario matrices."""
-    
+
     def build(
         self,
         symbol: str,
@@ -157,11 +157,11 @@ class QuantumScenarioMatrix:
     ) -> Dict[str, Any]:
         """
         Build scenario matrix.
-        
+
         Args:
             symbol: Trading pair
             timeframe: Chart timeframe
-            
+
         Returns:
             Dictionary with scenario matrix
         """
@@ -170,7 +170,7 @@ class QuantumScenarioMatrix:
             {"name": "BEARISH", "probability": 0.35, "outcome": "DOWN"},
             {"name": "RANGING", "probability": 0.30, "outcome": "SIDEWAYS"},
         ]
-        
+
         return {
             "scenarios": scenarios,
             "matrix_built": True,
@@ -181,7 +181,7 @@ class QuantumScenarioMatrix:
 
 class QuantumExecutionOptimizer:
     """Optimizes trade execution using quantum algorithms."""
-    
+
     def optimize(
         self,
         entry: float,
@@ -191,19 +191,19 @@ class QuantumExecutionOptimizer:
     ) -> Dict[str, Any]:
         """
         Optimize execution parameters.
-        
+
         Args:
             entry: Entry price
             sl: Stop loss
             tp: Take profit
             market_conditions: Current market conditions
-            
+
         Returns:
             Dictionary with optimized parameters
         """
         # Apply micro-adjustments based on market conditions
         volatility = market_conditions.get("volatility", "MEDIUM")
-        
+
         # Adjust based on volatility
         if volatility == "HIGH":
             sl_adjusted = sl * 1.1  # Wider SL
@@ -211,7 +211,7 @@ class QuantumExecutionOptimizer:
         else:
             sl_adjusted = sl
             tp_adjusted = tp
-        
+
         return {
             "entry": entry,
             "sl_optimized": sl_adjusted,
