@@ -5,11 +5,13 @@ Produces human-readable alerts (GBPJPY style).
 
 from datetime import datetime
 
+from utils.timezone_utils import now_utc, format_dual_timezone
+
 
 class AlertFormatter:
     @staticmethod
     def format_l12_verdict(verdict: dict) -> str:
-        ts = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC")
+        ts = format_dual_timezone(now_utc())
 
         return f"""
 🐺 WOLF 15-LAYER — L12 VERDICT
@@ -18,13 +20,13 @@ Symbol      : {verdict.get("symbol")}
 Verdict    : {verdict.get("verdict")}
 Confidence : {verdict.get("confidence")}
 Mode       : {verdict.get("execution_mode")}
-Time       : {ts}
+{ts}
 ────────────────────────────
 """
 
     @staticmethod
     def format_order_event(event: str, state: dict) -> str:
-        ts = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC")
+        ts = format_dual_timezone(now_utc())
 
         return f"""
 📌 ORDER UPDATE — {event}
@@ -35,13 +37,13 @@ Direction : {state.get("order", {}).get("direction")}
 Entry     : {state.get("order", {}).get("entry")}
 SL        : {state.get("order", {}).get("sl")}
 TP        : {state.get("order", {}).get("tp")}
-Time      : {ts}
+{ts}
 ────────────────────────────
 """
 
     @staticmethod
     def format_violation(symbol: str, gate: str, reason: str) -> str:
-        ts = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC")
+        ts = format_dual_timezone(now_utc())
 
         return f"""
 🚫 CONSTITUTION VIOLATION
@@ -49,7 +51,7 @@ Time      : {ts}
 Symbol : {symbol}
 Gate   : {gate}
 Reason : {reason}
-Time   : {ts}
+{ts}
 ────────────────────────────
 """
 # Placeholder

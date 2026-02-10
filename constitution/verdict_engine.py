@@ -5,6 +5,7 @@ from typing import Any, Dict
 
 from config.constitution import CONSTITUTION_THRESHOLDS
 from constitution.violation_log import log_violation
+from utils.timezone_utils import now_utc, format_utc
 
 
 def _gate(condition: bool) -> str:
@@ -79,7 +80,7 @@ def generate_l12_verdict(synthesis: Dict[str, Any]) -> Dict[str, Any]:
     l12_output = {
         "schema": "v7.4r∞",
         "pair": synthesis["pair"],
-        "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"),
+        "timestamp": format_utc(now_utc()),
         "verdict": verdict,
         "confidence": confidence,
         "wolf_status": wolf_status,
