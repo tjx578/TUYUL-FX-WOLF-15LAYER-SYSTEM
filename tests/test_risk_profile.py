@@ -164,7 +164,7 @@ def test_risk_profile_to_dict():
         split_ratio=(0.4, 0.6),
     )
     data = profile.to_dict()
-    
+
     assert data["risk_per_trade"] == 1.2
     assert data["max_daily_dd"] == 6.0
     assert data["max_total_dd"] == 12.0
@@ -184,7 +184,7 @@ def test_risk_profile_from_dict():
         "split_ratio": [0.5, 0.5],
     }
     profile = RiskProfile.from_dict(data)
-    
+
     assert profile.risk_per_trade == 1.5
     assert profile.max_daily_dd == 7.0
     assert profile.max_total_dd == 14.0
@@ -205,7 +205,7 @@ def test_risk_profile_round_trip():
     )
     data = original.to_dict()
     restored = RiskProfile.from_dict(data)
-    
+
     assert restored.risk_per_trade == original.risk_per_trade
     assert restored.max_daily_dd == original.max_daily_dd
     assert restored.max_total_dd == original.max_total_dd
@@ -221,14 +221,14 @@ def test_risk_profile_json_round_trip():
         risk_mode=RiskMode.SPLIT,
         split_ratio=(0.6, 0.4),
     )
-    
+
     # Serialize to JSON
     json_str = json.dumps(original.to_dict())
-    
+
     # Deserialize from JSON
     data = json.loads(json_str)
     restored = RiskProfile.from_dict(data)
-    
+
     assert restored.risk_per_trade == original.risk_per_trade
     assert restored.risk_mode == original.risk_mode
     assert restored.split_ratio == original.split_ratio
@@ -240,20 +240,20 @@ def test_save_risk_profile(mock_redis):
     """Test saving risk profile to Redis."""
     with patch("risk.risk_profile.RedisClient") as MockRedis:
         MockRedis.return_value = mock_redis
-        
+
         profile = RiskProfile(
             risk_per_trade=1.5,
             risk_mode=RiskMode.FIXED,
         )
-        
+
         save_risk_profile("test_account", profile)
-        
+
         # Verify Redis set was called
         assert mock_redis.set.called
         call_args = mock_redis.set.call_args
         key = call_args[0][0]
         value = call_args[0][1]
-        
+
         assert "wolf15:risk:profile:test_account" in key
         assert "1.5" in value  # JSON contains risk_per_trade
 
@@ -262,22 +262,22 @@ def test_load_risk_profile_existing(mock_redis):
     """Test loading existing risk profile from Redis."""
     with patch("risk.risk_profile.RedisClient") as MockRedis:
         MockRedis.return_value = mock_redis
-        
+
         # Prepare stored profile
         stored_profile = RiskProfile(
             risk_per_trade=2.5,
             risk_mode=RiskMode.SPLIT,
             split_ratio=(0.5, 0.5),
         )
-        
+
         # Manually set in mock store
         store: dict[str, str] = {}
         mock_redis.get.side_effect = lambda key: store.get(key)
         store["wolf15:risk:profile:test_account"] = json.dumps(stored_profile.to_dict())
-        
+
         # Load profile
         loaded = load_risk_profile("test_account")
-        
+
         assert loaded.risk_per_trade == 2.5
         assert loaded.risk_mode == RiskMode.SPLIT
         assert loaded.split_ratio == (0.5, 0.5)
@@ -287,13 +287,13 @@ def test_load_risk_profile_default_fallback(mock_redis):
     """Test loading profile returns default when not found."""
     with patch("risk.risk_profile.RedisClient") as MockRedis:
         MockRedis.return_value = mock_redis
-        
+
         # Mock get returns None (not found)
         mock_redis.get.return_value = None
-        
+
         # Load profile
         loaded = load_risk_profile("nonexistent_account")
-        
+
         # Should return default profile
         assert loaded.risk_per_trade == 0.7
         assert loaded.risk_mode == RiskMode.FIXED
@@ -306,7 +306,7 @@ def test_save_and_load_round_trip(mock_redis):
         mock_redis.get.side_effect = lambda key: store.get(key)
         mock_redis.set.side_effect = lambda key, value, ex=None: store.__setitem__(key, value)
         MockRedis.return_value = mock_redis
-        
+
         # Create and save profile
         original = RiskProfile(
             risk_per_trade=3.0,
@@ -317,10 +317,10 @@ def test_save_and_load_round_trip(mock_redis):
             split_ratio=(0.4, 0.6),
         )
         save_risk_profile("test_account", original)
-        
+
         # Load profile
         loaded = load_risk_profile("test_account")
-        
+
         # Verify all fields match
         assert loaded.risk_per_trade == original.risk_per_trade
         assert loaded.max_daily_dd == original.max_daily_dd
