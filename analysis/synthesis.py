@@ -162,10 +162,12 @@ def build_synthesis(pair: str) -> dict:
         },
         "execution": {
             "direction": direction,
+            "entry": entry_price,
             "entry_zone": f"{entry_price-0.0010:.5f}-{entry_price+0.0010:.5f}",
             "entry_price": entry_price,
             "stop_loss": stop_loss,
             "take_profit_1": take_profit_1,
+            "take_profit": take_profit_1,
             "rr_ratio": rr_ratio,
             "lot_size": 0.01,
             "risk_percent": 1.0,
