@@ -51,8 +51,10 @@ def generate_l12_verdict(synthesis: Dict[str, Any]) -> Dict[str, Any]:
 
     violations = []
 
+    # Check for F/T conflict - NEUTRAL is compatible with any direction
     if bias["fundamental"] != bias["technical"]:
-        violations.append("F_T_CONFLICT")
+        if bias["fundamental"] != "NEUTRAL" and bias["technical"] != "NEUTRAL":
+            violations.append("F_T_CONFLICT")
 
     if scores["exec_score"] < 6:
         violations.append("EXEC_SCORE_VIOLATION")
@@ -72,7 +74,19 @@ def generate_l12_verdict(synthesis: Dict[str, Any]) -> Dict[str, Any]:
         failed = [key for key, value in gates.items() if value == "FAIL"]
         log_violation(pair=synthesis["pair"], reason=f"GATES_FAILED: {failed}")
     else:
-        verdict = f"EXECUTE_{execution['direction']}"
+        # Determine direction from execution or bias
+        # If direction is missing or HOLD, infer from technical bias
+        direction = execution.get("direction")
+        if not direction or direction == "HOLD":
+            # Infer from technical bias (BULLISH -> BUY, BEARISH -> SELL)
+            if bias["technical"] == "BULLISH":
+                direction = "BUY"
+            elif bias["technical"] == "BEARISH":
+                direction = "SELL"
+            else:
+                direction = "HOLD"
+        
+        verdict = f"EXECUTE_{direction}"
         confidence = "VERY_HIGH" if scores["wolf_30_point"] >= 27 else "HIGH"
         wolf_status = "ALPHA" if scores["wolf_30_point"] >= 27 else "PACK"
 

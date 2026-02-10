@@ -107,7 +107,7 @@ class TestLiveContextBusValidation:
         
         # Missing required fields
         invalid_candle = {
-            "symbol": "EURUSD",
+            "symbol": "GBPUSD",
             "open": 1.0850,
             # Missing high, low, close, timeframe, timestamp
         }
@@ -116,7 +116,7 @@ class TestLiveContextBusValidation:
         bus.update_candle(invalid_candle)
         
         # Should not be stored
-        retrieved = bus.get_candle("EURUSD", "H1")
+        retrieved = bus.get_candle("GBPUSD", "H1")
         assert retrieved is None
 
     def test_valid_news_accepted(self) -> None:
@@ -196,10 +196,13 @@ class TestLiveContextBusCandleHistory:
         """Test that history is separate per timeframe."""
         bus = LiveContextBus()
         
+        # Use a unique symbol to avoid interference from other tests
+        symbol = "NZDUSD"
+        
         # Add M15 candles
         for i in range(3):
             candle = {
-                "symbol": "EURUSD",
+                "symbol": symbol,
                 "timeframe": "M15",
                 "open": 1.0850,
                 "high": 1.0860,
@@ -212,7 +215,7 @@ class TestLiveContextBusCandleHistory:
         # Add H1 candles
         for i in range(5):
             candle = {
-                "symbol": "EURUSD",
+                "symbol": symbol,
                 "timeframe": "H1",
                 "open": 1.0850,
                 "high": 1.0860,
@@ -223,8 +226,8 @@ class TestLiveContextBusCandleHistory:
             bus.update_candle(candle)
         
         # Get histories
-        m15_history = bus.get_candle_history("EURUSD", "M15", count=10)
-        h1_history = bus.get_candle_history("EURUSD", "H1", count=10)
+        m15_history = bus.get_candle_history(symbol, "M15", count=10)
+        h1_history = bus.get_candle_history(symbol, "H1", count=10)
         
         assert len(m15_history) == 3
         assert len(h1_history) == 5
