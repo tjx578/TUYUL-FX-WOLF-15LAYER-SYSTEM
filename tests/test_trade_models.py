@@ -9,7 +9,6 @@ Tests cover:
 """
 
 import pytest
-from datetime import datetime
 
 from schemas.trade_models import (
     Trade,
@@ -76,7 +75,7 @@ def test_trade_leg_invalid_lot():
 def test_trade_valid():
     """Test Trade with valid data."""
     now = now_utc()
-    
+
     trade = Trade(
         trade_id="T-1234567890",
         signal_id="SIG-EURUSD_1234567890",
@@ -100,7 +99,7 @@ def test_trade_valid():
         created_at=now,
         updated_at=now,
     )
-    
+
     assert trade.trade_id == "T-1234567890"
     assert trade.direction == "BUY"
     assert trade.status == TradeStatus.INTENDED
@@ -112,7 +111,7 @@ def test_trade_valid():
 def test_trade_direction_normalization():
     """Test that direction is normalized to uppercase."""
     now = now_utc()
-    
+
     trade = Trade(
         trade_id="T-1234567890",
         signal_id="SIG-EURUSD_1234567890",
@@ -136,14 +135,14 @@ def test_trade_direction_normalization():
         created_at=now,
         updated_at=now,
     )
-    
+
     assert trade.direction == "BUY"
 
 
 def test_trade_invalid_direction():
     """Test Trade with invalid direction."""
     now = now_utc()
-    
+
     with pytest.raises(ValueError, match="Direction must be BUY or SELL"):
         Trade(
             trade_id="T-1234567890",
@@ -173,7 +172,7 @@ def test_trade_invalid_direction():
 def test_trade_no_legs():
     """Test Trade with no legs (invalid)."""
     now = now_utc()
-    
+
     with pytest.raises(ValueError, match="Trade must have at least one leg"):
         Trade(
             trade_id="T-1234567890",
@@ -194,7 +193,7 @@ def test_trade_no_legs():
 def test_trade_closed_with_pnl():
     """Test closed Trade with P&L."""
     now = now_utc()
-    
+
     trade = Trade(
         trade_id="T-1234567890",
         signal_id="SIG-EURUSD_1234567890",
@@ -220,7 +219,7 @@ def test_trade_closed_with_pnl():
         close_reason=CloseReason.TP_HIT,
         pnl=500.0,
     )
-    
+
     assert trade.status == TradeStatus.CLOSED
     assert trade.close_reason == CloseReason.TP_HIT
     assert trade.pnl == 500.0
@@ -242,7 +241,7 @@ def test_account_valid():
         max_total_dd_percent=8.0,
         max_concurrent_trades=3,
     )
-    
+
     assert account.account_id == "ACC-001"
     assert account.balance == 100000.0
     assert account.equity == 102000.0
@@ -270,41 +269,63 @@ def test_account_invalid_equity():
 
 def test_valid_transitions():
     """Test valid state transitions."""
-    # INTENDED → PENDING
-    assert is_valid_transition(TradeStatus.INTENDED, TradeStatus.PENDING) is True
-    
-    # INTENDED → CANCELLED
-    assert is_valid_transition(TradeStatus.INTENDED, TradeStatus.CANCELLED) is True
-    
-    # INTENDED → SKIPPED
-    assert is_valid_transition(TradeStatus.INTENDED, TradeStatus.SKIPPED) is True
-    
-    # PENDING → OPEN
-    assert is_valid_transition(TradeStatus.PENDING, TradeStatus.OPEN) is True
-    
-    # PENDING → CANCELLED
-    assert is_valid_transition(TradeStatus.PENDING, TradeStatus.CANCELLED) is True
-    
-    # OPEN → CLOSED
-    assert is_valid_transition(TradeStatus.OPEN, TradeStatus.CLOSED) is True
+    # INTENDED -> PENDING
+    assert is_valid_transition(
+        TradeStatus.INTENDED, TradeStatus.PENDING
+    )
+
+    # INTENDED -> CANCELLED
+    assert is_valid_transition(
+        TradeStatus.INTENDED, TradeStatus.CANCELLED
+    )
+
+    # INTENDED -> SKIPPED
+    assert is_valid_transition(
+        TradeStatus.INTENDED, TradeStatus.SKIPPED
+    )
+
+    # PENDING -> OPEN
+    assert is_valid_transition(
+        TradeStatus.PENDING, TradeStatus.OPEN
+    )
+
+    # PENDING -> CANCELLED
+    assert is_valid_transition(
+        TradeStatus.PENDING, TradeStatus.CANCELLED
+    )
+
+    # OPEN -> CLOSED
+    assert is_valid_transition(
+        TradeStatus.OPEN, TradeStatus.CLOSED
+    )
 
 
 def test_invalid_transitions():
     """Test invalid state transitions."""
-    # INTENDED → OPEN (must go through PENDING)
-    assert is_valid_transition(TradeStatus.INTENDED, TradeStatus.OPEN) is False
-    
-    # CLOSED → OPEN (terminal state)
-    assert is_valid_transition(TradeStatus.CLOSED, TradeStatus.OPEN) is False
-    
-    # CANCELLED → PENDING (terminal state)
-    assert is_valid_transition(TradeStatus.CANCELLED, TradeStatus.PENDING) is False
-    
-    # SKIPPED → PENDING (terminal state)
-    assert is_valid_transition(TradeStatus.SKIPPED, TradeStatus.PENDING) is False
-    
-    # OPEN → PENDING (can't go back)
-    assert is_valid_transition(TradeStatus.OPEN, TradeStatus.PENDING) is False
+    # INTENDED -> OPEN (must go through PENDING)
+    assert not is_valid_transition(
+        TradeStatus.INTENDED, TradeStatus.OPEN
+    )
+
+    # CLOSED -> OPEN (terminal state)
+    assert not is_valid_transition(
+        TradeStatus.CLOSED, TradeStatus.OPEN
+    )
+
+    # CANCELLED -> PENDING (terminal state)
+    assert not is_valid_transition(
+        TradeStatus.CANCELLED, TradeStatus.PENDING
+    )
+
+    # SKIPPED -> PENDING (terminal state)
+    assert not is_valid_transition(
+        TradeStatus.SKIPPED, TradeStatus.PENDING
+    )
+
+    # OPEN -> PENDING (can't go back)
+    assert not is_valid_transition(
+        TradeStatus.OPEN, TradeStatus.PENDING
+    )
 
 
 # ========================
