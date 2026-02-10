@@ -1,7 +1,7 @@
 """
 Open Risk Tracker — Tracks aggregate open exposure per account.
 
-Calculates: open_risk = Σ (lot × SL_distance × point_value)
+Calculates: open_risk = Σ (lot × sl_distance_pips × pip_value)
 Persisted in Redis. Updated on INTENDED/OPEN/CLOSE events.
 """
 

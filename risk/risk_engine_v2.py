@@ -161,12 +161,31 @@ class RiskEngineV2:
 
         return [position_1, position_2]
 
+    def _calculate_pip_value(self, lot_size: float, pips_at_risk: float, risk_amount: float) -> float:
+        """
+        Calculate pip value from position parameters.
+
+        Args:
+            lot_size: Position size in lots
+            pips_at_risk: Stop loss distance in pips
+            risk_amount: Total risk amount in account currency
+
+        Returns:
+            Pip value per lot, or 0.0 if calculation would divide by zero
+        """
+        if lot_size > 0 and pips_at_risk > 0:
+            return risk_amount / (lot_size * pips_at_risk)
+        return 0.0
+
     def register_intended_trade(self, signal: SignalInput, lots: list[dict]) -> None:
         for lot in lots:
+            pip_value = self._calculate_pip_value(
+                lot["lot_size"], lot["pips_at_risk"], lot["risk_amount"]
+            )
             trade = OpenTrade(
                 trade_id=signal.trade_id, symbol=signal.symbol, lot_size=lot["lot_size"],
                 sl_distance_pips=lot["pips_at_risk"],
-                pip_value=lot["risk_amount"] / (lot["lot_size"] * lot["pips_at_risk"]) if lot["lot_size"] > 0 and lot["pips_at_risk"] > 0 else 0.0,
+                pip_value=pip_value,
                 risk_amount=lot["risk_amount"], entry_number=lot.get("entry_number", 1),
             )
             self._tracker.add_trade(trade)
