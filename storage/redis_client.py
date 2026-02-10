@@ -32,5 +32,6 @@ class RedisClient:
         self.client.delete(key)
 
 
+# Singleton instance
 # Singleton instance for imports
 redis_client = RedisClient()

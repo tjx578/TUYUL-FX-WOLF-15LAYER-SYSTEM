@@ -115,4 +115,3 @@ class LiveContextBus:
                 "news": self._news_store,
                 "meta": self._meta,
             }
-# Placeholder

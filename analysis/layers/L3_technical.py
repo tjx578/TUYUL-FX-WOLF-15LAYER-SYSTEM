@@ -27,4 +27,3 @@ class L3TechnicalAnalyzer:
         }
 
         return confluence
-# Placeholder
