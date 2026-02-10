@@ -86,7 +86,7 @@ risk_multiplier:
   time:
     enabled: true
     friday_afternoon_multiplier: 0.6  # Weekend gap risk
-    friday_cutoff_hour: 16  # UTC hour to apply friday scaling
+    friday_cutoff_hour: 16  # UTC hour (16:00 UTC = Friday afternoon)
   
   # Drawdown-based scaling (existing)
   drawdown:

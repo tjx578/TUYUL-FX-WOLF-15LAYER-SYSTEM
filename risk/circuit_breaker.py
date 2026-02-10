@@ -11,6 +11,7 @@ States:
 - HALF_OPEN: Recovery probe, limited trading allowed
 """
 
+import json
 import threading
 from datetime import datetime, timedelta
 from enum import Enum
@@ -251,7 +252,6 @@ class CircuitBreaker:
         if not history_json:
             return False
         
-        import json
         try:
             trades = json.loads(history_json)
         except json.JSONDecodeError:
@@ -309,7 +309,6 @@ class CircuitBreaker:
             self._check_auto_recovery()
             
             # Record trade in history
-            import json
             history_json = self._redis.get(self._key_history) or "[]"
             try:
                 trades = json.loads(history_json)

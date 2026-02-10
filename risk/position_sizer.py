@@ -124,6 +124,33 @@ class PositionSizer:
         # Standard forex uses 5 decimals (0.00001 = 1 pip)
         return 5
     
+    def _get_pip_multiplier(self, pair: str) -> float:
+        """
+        Get pip multiplier for converting price difference to pips.
+        
+        Parameters
+        ----------
+        pair : str
+            Trading pair
+            
+        Returns
+        -------
+        float
+            Pip multiplier (e.g., 10000 for EUR/USD, 100 for JPY pairs)
+        """
+        # For JPY pairs: 0.01 = 1 pip
+        if "JPY" in pair:
+            return 100.0
+        
+        # For XAUUSD/XAGUSD: 0.01 = 1 pip (gold), 0.001 = 1 pip (silver)
+        if pair == "XAUUSD":
+            return 100.0
+        if pair == "XAGUSD":
+            return 1000.0
+        
+        # Standard forex: 0.0001 = 1 pip
+        return 10000.0
+    
     def calculate(
         self,
         account_balance: float,
@@ -197,17 +224,7 @@ class PositionSizer:
         
         # Calculate pips at risk
         price_diff = abs(entry_price - stop_loss_price)
-        
-        # For JPY pairs: 0.01 = 1 pip
-        # For other forex: 0.0001 = 1 pip
-        # For XAUUSD: 0.01 = 1 pip
-        if "JPY" in pair:
-            pip_multiplier = 100
-        elif pair in ["XAUUSD", "XAGUSD"]:
-            pip_multiplier = 100 if pair == "XAUUSD" else 1000
-        else:
-            pip_multiplier = 10000
-        
+        pip_multiplier = self._get_pip_multiplier(pair)
         pips_at_risk = price_diff * pip_multiplier
         
         if pips_at_risk <= 0:
