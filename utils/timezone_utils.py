@@ -22,7 +22,6 @@ Usage:
 
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
-from typing import Optional
 
 
 # System timezone constants
@@ -133,24 +132,27 @@ def format_utc(dt: datetime, fmt: str = "%Y-%m-%d %H:%M:%S UTC") -> str:
     return utc_dt.strftime(fmt)
 
 
-def is_trading_session(dt: Optional[datetime] = None) -> str:
+def is_trading_session(dt=None) -> str:
     """
     Detect trading session based on GMT+8 hour.
-    
+
     Session times (GMT+8):
     - ASIA: 07:00-15:00 GMT+8 (23:00-07:00 UTC prev day)
     - LONDON: 15:00-21:00 GMT+8 (07:00-13:00 UTC)
     - NEW_YORK: 21:00-05:00 GMT+8 (13:00-21:00 UTC)
-    
+
     Args:
-        dt: Datetime to check (defaults to current time)
-        
+        dt: Datetime or ISO string to check (defaults to current time)
+
     Returns:
         str: Session name ("ASIA", "LONDON", "NEW_YORK", or "OFF_SESSION")
     """
     if dt is None:
         dt = now_local()
     else:
+        # Parse ISO string timestamps
+        if isinstance(dt, str):
+            dt = datetime.fromisoformat(dt.replace("Z", "+00:00"))
         # Convert to local time for session detection
         dt = utc_to_local(dt)
     

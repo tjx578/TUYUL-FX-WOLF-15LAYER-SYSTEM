@@ -62,13 +62,13 @@ def test_trend_detection_bullish_hh_hl(analyzer, context_bus):
         (1.1035, 1.1060, 1.1032, 1.1055),  # 11 - highest peak
     ]
     
-    for i, (o, h, l, c) in enumerate(candles_data):
+    for i, (o, h, low, c) in enumerate(candles_data):
         candle = {
             "symbol": "EURUSD",
             "timeframe": "H1",
             "open": o,
             "high": h,
-            "low": l,
+            "low": low,
             "close": c,
             "volume": 1000,
             "timestamp": f"2024-01-01T{i:02d}:00:00Z",
@@ -98,13 +98,13 @@ def test_trend_detection_bearish_lh_ll(analyzer, context_bus):
         (1.0965, 1.0970, 1.0940, 1.0945),  # 11 - lowest valley
     ]
     
-    for i, (o, h, l, c) in enumerate(candles_data):
+    for i, (o, h, low, c) in enumerate(candles_data):
         candle = {
             "symbol": "EURUSD",
             "timeframe": "H1",
             "open": o,
             "high": h,
-            "low": l,
+            "low": low,
             "close": c,
             "volume": 1000,
             "timestamp": f"2024-01-01T{i:02d}:00:00Z",
@@ -129,13 +129,13 @@ def test_trend_detection_neutral_mixed(analyzer, context_bus):
         (1.1004, 1.1012, 1.0998, 1.1006),  # 7
     ]
     
-    for i, (o, h, l, c) in enumerate(candles_data):
+    for i, (o, h, low, c) in enumerate(candles_data):
         candle = {
             "symbol": "EURUSD",
             "timeframe": "H1",
             "open": o,
             "high": h,
-            "low": l,
+            "low": low,
             "close": c,
             "volume": 1000,
             "timestamp": f"2024-01-01T{i:02d}:00:00Z",
