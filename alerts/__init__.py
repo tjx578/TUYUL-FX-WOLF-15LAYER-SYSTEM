@@ -1,0 +1,3 @@
+"""
+Alerts package — Telegram notifications.
+"""
