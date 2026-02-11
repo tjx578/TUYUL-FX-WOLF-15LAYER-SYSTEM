@@ -7,13 +7,7 @@ from loguru import logger
 
 from context.live_context_bus import LiveContextBus
 
-TIMEFRAMES: dict[str, int] = {
-    "M15": 15,
-    "H1": 60,
-    "H4": 240,
-    "D1": 1440,
-    "W1": 10080,
-}
+TICK_TIMEFRAMES: dict[str, int] = {"M15": 15}
 
 
 class CandleBuilder:
@@ -30,7 +24,7 @@ class CandleBuilder:
 
     async def run(self) -> None:
         """Main candle building loop."""
-        logger.info("CandleBuilder started (M15 / H1 / H4 / D1 / W1)")
+        logger.info("CandleBuilder started (M15 only - monitoring/cancel trigger)")
         while True:
             await self.process_ticks()
             await asyncio.sleep(1)
@@ -43,8 +37,8 @@ class CandleBuilder:
             symbol = tick["symbol"]
             self.buffers[symbol].append(tick)
 
-            # Try building candles for all timeframes
-            for tf, minutes in TIMEFRAMES.items():
+            # Try building M15 candles only
+            for tf, minutes in TICK_TIMEFRAMES.items():
                 self._try_build(symbol, tf, minutes=minutes)
 
     def _try_build(self, symbol: str, tf: str, minutes: int) -> None:
@@ -53,7 +47,7 @@ class CandleBuilder:
 
         Args:
             symbol: Trading pair symbol
-            tf: Timeframe (M15 or H1)
+            tf: Timeframe (M15 only)
             minutes: Number of minutes for the timeframe
         """
         buffer = self.buffers[symbol]
@@ -75,10 +69,38 @@ class CandleBuilder:
         if not period_ticks:
             return
 
-        prices = [c["bid"] for c in period_ticks if c["bid"] is not None]
+        # Use mid price if available, fallback to bid
+        prices = []
+        total_volume = 0.0
+        
+        for tick in period_ticks:
+            # Prefer mid price (Finnhub uses 'last' or calculate from bid/ask)
+            mid = tick.get("mid")
+            if mid is None:
+                bid = tick.get("bid")
+                ask = tick.get("ask")
+                if bid is not None and ask is not None:
+                    mid = (bid + ask) / 2.0
+                elif bid is not None:
+                    mid = bid
+                elif ask is not None:
+                    mid = ask
+                else:
+                    mid = tick.get("last")
+            
+            if mid is not None:
+                prices.append(mid)
+            
+            # Sum real volume
+            volume = tick.get("volume", 0)
+            total_volume += volume
 
         if not prices:
             return
+        
+        # Use tick count as volume if all volumes are 0
+        if total_volume == 0:
+            total_volume = len(period_ticks)
 
         candle = {
             "symbol": symbol,
@@ -87,8 +109,9 @@ class CandleBuilder:
             "high": max(prices),
             "low": min(prices),
             "close": prices[-1],
-            "volume": len(period_ticks),  # tick count as volume proxy
+            "volume": total_volume,
             "timestamp": end_time,
+            "source": "tick_aggregation",
         }
 
         self.context_bus.update_candle(candle)
