@@ -3,9 +3,8 @@ L1 — Market Context Analysis
 NO EXECUTION | NO DECISION
 """
 
-
-from context.live_context_bus import LiveContextBus
 from analysis.market.volatility import VolatilityAnalyzer
+from context.live_context_bus import LiveContextBus
 from utils.timezone_utils import is_trading_session
 
 

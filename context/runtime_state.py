@@ -1,5 +1,4 @@
 from datetime import datetime
-from typing import Optional
 
 from utils.timezone_utils import now_utc
 
@@ -9,7 +8,7 @@ class RuntimeState:
     last_tick_at = {}
     last_candle_at = {}
     healthy: bool = True
-    session_start: Optional[datetime] = None
+    session_start: datetime | None = None
 
     @classmethod
     def update_latency(cls, ms: int):

@@ -20,8 +20,9 @@ CRITICAL:
 
 import json
 import os
+
 from threading import Lock
-from typing import Dict, Optional
+from typing import Optional
 
 from loguru import logger
 
@@ -75,7 +76,7 @@ class PriceFeed:
                 return 0
 
             # Group by symbol and keep latest tick per symbol
-            latest_ticks: Dict[str, dict] = {}
+            latest_ticks: dict[str, dict] = {}
             for tick in reversed(ticks):  # Reversed so we get most recent first
                 symbol = tick.get("symbol")
                 if symbol and symbol not in latest_ticks:
@@ -96,7 +97,7 @@ class PriceFeed:
                     self._redis.set(
                         redis_key,
                         json.dumps(price_data),
-                        ex=60  # Expire after 60 seconds if not updated
+                        ex=60,  # Expire after 60 seconds if not updated
                     )
                     updated_count += 1
 
@@ -111,7 +112,7 @@ class PriceFeed:
 
         return updated_count
 
-    def get_price(self, symbol: str) -> Optional[Dict[str, float]]:
+    def get_price(self, symbol: str) -> dict[str, float] | None:
         """
         Get latest price for a symbol.
 
@@ -130,12 +131,14 @@ class PriceFeed:
             else:
                 logger.debug(f"No price data for {symbol}")
                 return None
+            logger.debug(f"No price data for {symbol}")
+            return None
 
         except Exception as exc:
             logger.error(f"Failed to get price for {symbol}: {exc}")
             return None
 
-    def get_all_prices(self) -> Dict[str, Dict[str, float]]:
+    def get_all_prices(self) -> dict[str, dict[str, float]]:
         """
         Get latest prices for all symbols.
 
@@ -175,7 +178,7 @@ class PriceFeed:
 
         return prices
 
-    def get_latest_tick_from_bus(self, symbol: str) -> Optional[dict]:
+    def get_latest_tick_from_bus(self, symbol: str) -> dict | None:
         """
         Get latest tick directly from LiveContextBus (bypass Redis).
 

@@ -9,7 +9,7 @@ Enforces Aqua Instant Pro-specific rules:
 - Allows weekend holding (unlike FTMO)
 """
 
-from typing import Dict, Any
+from typing import Any
 
 from propfirm_manager.profiles.base_guard import (
     BasePropFirmGuard,
@@ -22,8 +22,8 @@ class AquaInstantProGuard(BasePropFirmGuard):
 
     def check(
         self,
-        account_state: Dict[str, Any],
-        trade_risk: Dict[str, Any],
+        account_state: dict[str, Any],
+        trade_risk: dict[str, Any],
     ) -> GuardResult:
         """
         Evaluate trade against Aqua Instant Pro rules.
@@ -60,32 +60,25 @@ class AquaInstantProGuard(BasePropFirmGuard):
         if open_trades >= max_open:
             return self._deny(
                 "DENY_MAX_OPEN_TRADES",
-                f"Max {max_open} open trade(s) allowed, "
-                f"currently {open_trades} open"
+                f"Max {max_open} open trade(s) allowed, currently {open_trades} open",
             )
 
         # Check 2: Risk per trade
         if risk_percent > max_risk_per_trade:
             return self._deny(
-                "DENY_RISK_PER_TRADE",
-                f"Risk {risk_percent:.2f}% exceeds max "
-                f"{max_risk_per_trade}%"
+                "DENY_RISK_PER_TRADE", f"Risk {risk_percent:.2f}% exceeds max {max_risk_per_trade}%"
             )
 
         # Check 3: Daily DD projection
         if daily_dd_after > max_daily_dd:
             return self._deny(
-                "DENY_DAILY_DD",
-                f"Daily DD would reach {daily_dd_after:.2f}%, "
-                f"max {max_daily_dd}%"
+                "DENY_DAILY_DD", f"Daily DD would reach {daily_dd_after:.2f}%, max {max_daily_dd}%"
             )
 
         # Check 4: Total DD projection
         if total_dd_after > max_total_dd:
             return self._deny(
-                "DENY_TOTAL_DD",
-                f"Total DD would reach {total_dd_after:.2f}%, "
-                f"max {max_total_dd}%"
+                "DENY_TOTAL_DD", f"Total DD would reach {total_dd_after:.2f}%, max {max_total_dd}%"
             )
 
         # Check 5: Warning thresholds (80% of limits)
@@ -95,15 +88,13 @@ class AquaInstantProGuard(BasePropFirmGuard):
         if daily_dd_after >= warn_daily_threshold:
             return self._warn(
                 "WARN_HIGH_DAILY_DD",
-                f"Daily DD would be {daily_dd_after:.2f}%, "
-                f"approaching limit of {max_daily_dd}%"
+                f"Daily DD would be {daily_dd_after:.2f}%, approaching limit of {max_daily_dd}%",
             )
 
         if total_dd_after >= warn_total_threshold:
             return self._warn(
                 "WARN_HIGH_TOTAL_DD",
-                f"Total DD would be {total_dd_after:.2f}%, "
-                f"approaching limit of {max_total_dd}%"
+                f"Total DD would be {total_dd_after:.2f}%, approaching limit of {max_total_dd}%",
             )
 
         # All checks passed

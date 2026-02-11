@@ -6,6 +6,7 @@ READ-ONLY alert delivery.
 import os
 
 import requests
+
 from loguru import logger
 
 from alerts.alert_formatter import AlertFormatter
@@ -39,9 +40,7 @@ class TelegramNotifier:
     # =========================
 
     def on_l12_verdict(self, verdict: dict):
-        if not ALERT_RULES["L12_PASSED"] and verdict.get("verdict", "").startswith(
-            "EXECUTE"
-        ):
+        if not ALERT_RULES["L12_PASSED"] and verdict.get("verdict", "").startswith("EXECUTE"):
             return
 
         text = AlertFormatter.format_l12_verdict(verdict)
@@ -60,4 +59,6 @@ class TelegramNotifier:
 
         text = AlertFormatter.format_violation(symbol, gate, reason)
         self._send(text)
+
+
 # Placeholder

@@ -2,8 +2,10 @@
 Integration test for Wolf 15-Layer System main loop.
 """
 
-import pytest
 from unittest.mock import Mock, patch
+
+import pytest
+
 from analysis.synthesis import build_synthesis
 from analysis.synthesis_adapter import adapt_synthesis
 from constitution.verdict_engine import generate_l12_verdict
@@ -92,7 +94,7 @@ def test_imports_no_redis_error(mock_redis):
     mock_redis.return_value = Mock()
 
     # These should import without error
-    from storage.l12_cache import set_verdict, get_verdict
+    from storage.l12_cache import get_verdict, set_verdict
     from storage.snapshot_store import save_snapshot
 
     # Should be callable

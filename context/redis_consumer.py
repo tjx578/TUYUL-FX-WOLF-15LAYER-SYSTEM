@@ -7,9 +7,9 @@ ingest container in a multi-container deployment.
 """
 
 import asyncio
-from typing import Optional
 
 import orjson
+
 from loguru import logger
 
 from context.live_context_bus import LiveContextBus
@@ -32,8 +32,8 @@ class RedisConsumer:
     def __init__(
         self,
         symbols: list[str],
-        redis_client: Optional[RedisClient] = None,
-        context_bus: Optional[LiveContextBus] = None,
+        redis_client: RedisClient | None = None,
+        context_bus: LiveContextBus | None = None,
     ) -> None:
         """
         Initialize Redis consumer.
@@ -105,13 +105,9 @@ class RedisConsumer:
                     "0",  # Start from beginning
                     True,  # Create stream if not exists
                 )
-                logger.debug(
-                    f"Consumer group {self._group_name} created for {stream_key}"
-                )
+                logger.debug(f"Consumer group {self._group_name} created for {stream_key}")
             except Exception as exc:
-                logger.debug(
-                    f"Consumer group creation skipped for {stream_key}: {exc}"
-                )
+                logger.debug(f"Consumer group creation skipped for {stream_key}: {exc}")
 
     async def _consume_ticks(self) -> None:
         """
@@ -122,9 +118,7 @@ class RedisConsumer:
         logger.info("Tick consumer task started")
 
         # Build streams dict for XREADGROUP
-        streams = {
-            f"{self._prefix}:tick:{symbol}": ">" for symbol in self._symbols
-        }
+        streams = {f"{self._prefix}:tick:{symbol}": ">" for symbol in self._symbols}
 
         while self._running:
             try:
@@ -140,22 +134,17 @@ class RedisConsumer:
                 )
 
                 if result:
-                    for stream_name, entries in result:
-                        for entry_id, fields in entries:
+                    for _stream_name, entries in result:
+                        for _entry_id, fields in entries:
                             tick_json = fields.get("data")
                             if tick_json:
                                 try:
                                     tick = orjson.loads(tick_json)
                                     # Feed into local context bus
                                     self._context_bus.update_tick(tick)
-                                    logger.debug(
-                                        f"Tick consumed from Redis: "
-                                        f"{tick.get('symbol')}"
-                                    )
+                                    logger.debug(f"Tick consumed from Redis: {tick.get('symbol')}")
                                 except Exception as parse_exc:
-                                    logger.error(
-                                        f"Failed to parse tick: {parse_exc}"
-                                    )
+                                    logger.error(f"Failed to parse tick: {parse_exc}")
 
             except asyncio.CancelledError:
                 logger.info("Tick consumer task cancelled")
@@ -188,16 +177,17 @@ class RedisConsumer:
                     ]
                 )
 
-            await asyncio.get_event_loop().run_in_executor(
-                None, pubsub.subscribe, *channels
-            )
+            await asyncio.get_event_loop().run_in_executor(None, pubsub.subscribe, *channels)
             logger.info(f"Subscribed to {len(channels)} candle channels")
 
             while self._running:
                 try:
                     # Get message with timeout
                     message = await asyncio.get_event_loop().run_in_executor(
-                        None, pubsub.get_message, True, 1.0  # Timeout: 1 second
+                        None,
+                        pubsub.get_message,
+                        True,
+                        1.0,  # Timeout: 1 second
                     )
 
                     if message and message["type"] == "message":
@@ -222,9 +212,7 @@ class RedisConsumer:
                     await asyncio.sleep(1)
 
         finally:
-            await asyncio.get_event_loop().run_in_executor(
-                None, pubsub.unsubscribe
-            )
+            await asyncio.get_event_loop().run_in_executor(None, pubsub.unsubscribe)
             await asyncio.get_event_loop().run_in_executor(None, pubsub.close)
 
         logger.info("Candle consumer task stopped")
@@ -242,16 +230,17 @@ class RedisConsumer:
 
         try:
             # Subscribe to news channel
-            await asyncio.get_event_loop().run_in_executor(
-                None, pubsub.subscribe, "news_updates"
-            )
+            await asyncio.get_event_loop().run_in_executor(None, pubsub.subscribe, "news_updates")
             logger.info("Subscribed to news_updates channel")
 
             while self._running:
                 try:
                     # Get message with timeout
                     message = await asyncio.get_event_loop().run_in_executor(
-                        None, pubsub.get_message, True, 1.0  # Timeout: 1 second
+                        None,
+                        pubsub.get_message,
+                        True,
+                        1.0,  # Timeout: 1 second
                     )
 
                     if message and message["type"] == "message":
@@ -272,9 +261,7 @@ class RedisConsumer:
                     await asyncio.sleep(1)
 
         finally:
-            await asyncio.get_event_loop().run_in_executor(
-                None, pubsub.unsubscribe
-            )
+            await asyncio.get_event_loop().run_in_executor(None, pubsub.unsubscribe)
             await asyncio.get_event_loop().run_in_executor(None, pubsub.close)
 
         logger.info("News consumer task stopped")
