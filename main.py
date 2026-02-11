@@ -3,7 +3,11 @@ import os
 import signal
 import sys
 
+<<<<<<< HEAD
 import loguru
+=======
+from loguru import logger
+>>>>>>> 27a7e64280c506070e486dd9d0ce53ef0937b87d
 from redis.asyncio import Redis as AsyncRedis
 
 from analysis.synthesis import build_synthesis

@@ -12,16 +12,17 @@ import os
 import signal
 import sys
 
-import loguru
-import redis
+from typing import Any
+
+import loguru # pyright: ignore[reportMissingImports]
+import redis # pyright: ignore[reportMissingImports]
 
 from ingest.candle_builder import CandleBuilder
 from ingest.dependencies import create_finnhub_ws
 from ingest.finnhub_news import FinnhubNews
-from ingest.finnhub_ws import FinnhubWebSocket
 
 
-def get_redis_client() -> redis.Redis:
+def get_redis_client() -> "redis.Redis[Any]":
     """
     Create and return a Redis client from REDIS_URL environment variable.
 
@@ -29,7 +30,7 @@ def get_redis_client() -> redis.Redis:
         redis.Redis: Redis client instance
     """
     redis_url = os.getenv("REDIS_URL", "redis://localhost:6379")
-    return redis.from_url(redis_url)
+    return redis.from_url(redis_url)  # type: ignore[return-value]
 
 # Global shutdown event
 _shutdown_event: asyncio.Event | None = None
