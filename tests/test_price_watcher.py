@@ -9,32 +9,34 @@ Tests cover:
   - Edge cases
 """
 
+from unittest.mock import patch
+
 import pytest
 from unittest.mock import patch
 
 from dashboard.price_watcher import PriceWatcher
-from schemas.trade_models import Trade, TradeLeg, TradeStatus, CloseReason
+from schemas.trade_models import CloseReason, Trade, TradeLeg, TradeStatus
 from utils.timezone_utils import now_utc
 
 
 @pytest.fixture
 def mock_trade_ledger():
     """Mock TradeLedger for isolated testing."""
-    with patch('dashboard.price_watcher.TradeLedger') as mock:
+    with patch("dashboard.price_watcher.TradeLedger") as mock:
         yield mock.return_value
 
 
 @pytest.fixture
 def mock_price_feed():
     """Mock PriceFeed for isolated testing."""
-    with patch('dashboard.price_watcher.PriceFeed') as mock:
+    with patch("dashboard.price_watcher.PriceFeed") as mock:
         yield mock.return_value
 
 
 @pytest.fixture
 def mock_journal():
     """Mock JournalRouter for isolated testing."""
-    with patch('dashboard.price_watcher.JournalRouter') as mock:
+    with patch("dashboard.price_watcher.JournalRouter") as mock:
         yield mock.return_value
 
 

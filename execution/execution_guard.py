@@ -20,4 +20,6 @@ class ExecutionGuard:
             return False
 
         return True
+
+
 # Placeholder

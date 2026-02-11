@@ -3,7 +3,6 @@ Trade Journal
 Immutable trade history for audit.
 """
 
-
 from utils.timezone_utils import now_utc
 
 
@@ -20,4 +19,6 @@ class TradeJournal:
 
     def all(self):
         return list(self._trades)
+
+
 # Placeholder

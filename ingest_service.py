@@ -13,10 +13,13 @@ import signal
 import sys
 
 from loguru import logger  # pyright: ignore[reportMissingImports]
+from loguru import logger
+from redis.asyncio import Redis as AsyncRedis
 
 from ingest.candle_builder import CandleBuilder
+from ingest.dependencies import create_finnhub_ws
 from ingest.finnhub_news import FinnhubNews
-from ingest.finnhub_ws import FinnhubWebSocket
+from ingest.dependencies import create_default_finnhub_ws
 
 # Global shutdown event
 _shutdown_event: asyncio.Event | None = None
@@ -72,13 +75,45 @@ async def run_ingest_services(has_api_key: bool) -> None:
 
     # Initialize ingest services
     ws_feed = FinnhubWebSocket() # pyright: ignore[reportCallIssue]
+    ws_feed = await create_default_finnhub_ws()
     news_feed = FinnhubNews()
     candle_builder = CandleBuilder()
 
     logger.info("Starting ingest services: WebSocket, News, CandleBuilder")
     logger.info("Writing data to Redis (CONTEXT_MODE=redis)")
+    # Build Redis connection from environment variables
+    redis_url = os.getenv("REDIS_URL")
+    if redis_url:
+        # Redact password from log output
+        if "@" in redis_url:
+            safe_url = redis_url.split("@")[-1]
+        elif "://" in redis_url:
+            safe_url = redis_url.split("://")[1]
+        else:
+            safe_url = redis_url
+        logger.info(f"Using REDIS_URL: redis://***@{safe_url}")
+        redis = AsyncRedis.from_url(
+            redis_url,
+            encoding="utf-8",
+            decode_responses=True,
+        )
+    else:
+        # Fallback to individual params
+        redis_host = os.getenv("REDIS_HOST", "localhost")
+        redis_port = int(os.getenv("REDIS_PORT", "6379"))
+        redis_password = os.getenv("REDIS_PASSWORD", "")
+        redis_db = int(os.getenv("REDIS_DB", "0"))
 
-    # Run all three services concurrently
+        logger.info(f"Using Redis: {redis_host}:{redis_port}/{redis_db}")
+        redis = AsyncRedis(
+            host=redis_host,
+            port=redis_port,
+            password=redis_password if redis_password else None,
+            db=redis_db,
+            encoding="utf-8",
+            decode_responses=True,
+        )
+
     try:
         await asyncio.gather(
             ws_feed.run(),
@@ -89,6 +124,34 @@ async def run_ingest_services(has_api_key: bool) -> None:
         logger.info("Ingest services cancelled - shutting down")
         await ws_feed.stop()
         raise
+        # Validate Redis connection
+        await redis.ping()
+        logger.info("✓ Redis connection validated")
+
+        # Initialize ingest services with factory
+        ws_feed = await create_finnhub_ws(redis=redis)
+        news_feed = FinnhubNews()
+        candle_builder = CandleBuilder()
+
+        logger.info("Starting ingest services: WebSocket, News, CandleBuilder")
+        logger.info("Writing data to Redis (CONTEXT_MODE=redis)")
+
+        # Run all three services concurrently
+        try:
+            await asyncio.gather(
+                ws_feed.run(),
+                news_feed.run(),
+                candle_builder.run(),
+            )
+        except asyncio.CancelledError:
+            logger.info("Ingest services cancelled - shutting down")
+            await ws_feed.stop()
+            raise
+
+    finally:
+        # Cleanup Redis connection
+        await redis.aclose()
+        logger.info("Redis connection closed")
 
 
 def _handle_signal(signum: int, frame) -> None:

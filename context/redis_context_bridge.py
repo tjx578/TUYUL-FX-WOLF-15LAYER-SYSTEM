@@ -10,9 +10,10 @@ Uses:
   - Redis Hash for latest tick per symbol (fast lookup)
 """
 
-from typing import Any, Optional
+from typing import Any
 
 import orjson
+
 from loguru import logger
 
 from storage.redis_client import RedisClient
@@ -31,7 +32,7 @@ class RedisContextBridge:
       - Handled by RedisConsumer class separately
     """
 
-    def __init__(self, redis_client: Optional[RedisClient] = None) -> None:
+    def __init__(self, redis_client: RedisClient | None = None) -> None:
         """
         Initialize Redis context bridge.
 
@@ -99,9 +100,7 @@ class RedisContextBridge:
         symbol = candle.get("symbol")
         timeframe = candle.get("timeframe")
         if not symbol or not timeframe:
-            logger.warning(
-                "Candle missing symbol/timeframe fields, skipping Redis write"
-            )
+            logger.warning("Candle missing symbol/timeframe fields, skipping Redis write")
             return
 
         try:
@@ -119,10 +118,7 @@ class RedisContextBridge:
             logger.debug(f"Candle written to Redis: {symbol} {timeframe}")
 
         except Exception as exc:
-            logger.error(
-                f"Failed to write candle to Redis for {symbol} "
-                f"{timeframe}: {exc}"
-            )
+            logger.error(f"Failed to write candle to Redis for {symbol} {timeframe}: {exc}")
 
     def write_news(self, news: dict[str, Any]) -> None:
         """
@@ -151,7 +147,7 @@ class RedisContextBridge:
         except Exception as exc:
             logger.error(f"Failed to write news to Redis: {exc}")
 
-    def read_latest_tick(self, symbol: str) -> Optional[dict[str, Any]]:
+    def read_latest_tick(self, symbol: str) -> dict[str, Any] | None:
         """
         Read latest tick for a symbol from Redis Hash.
 
@@ -171,9 +167,7 @@ class RedisContextBridge:
             logger.error(f"Failed to read latest tick from Redis: {exc}")
             return None
 
-    def read_latest_candle(
-        self, symbol: str, timeframe: str
-    ) -> Optional[dict[str, Any]]:
+    def read_latest_candle(self, symbol: str, timeframe: str) -> dict[str, Any] | None:
         """
         Read latest candle for a symbol/timeframe from Redis Hash.
 
@@ -194,7 +188,7 @@ class RedisContextBridge:
             logger.error(f"Failed to read latest candle from Redis: {exc}")
             return None
 
-    def read_latest_news(self) -> Optional[dict[str, Any]]:
+    def read_latest_news(self) -> dict[str, Any] | None:
         """
         Read latest news from Redis.
 

@@ -2,8 +2,9 @@
 Unit tests for FinnhubNews economic calendar ingestion.
 """
 
-import pytest
 from unittest.mock import MagicMock, patch
+
+import pytest
 
 from ingest.finnhub_news import FinnhubNews
 
@@ -42,9 +43,7 @@ def news_instance() -> FinnhubNews:
 class TestImpactFilter:
     """Test economic event filtering by impact."""
 
-    def test_filter_high_impact_only(
-        self, news_instance: FinnhubNews
-    ) -> None:
+    def test_filter_high_impact_only(self, news_instance: FinnhubNews) -> None:
         news_instance._impact_levels = {
             "high": True,
             "medium": False,
@@ -59,9 +58,7 @@ class TestImpactFilter:
         assert len(filtered) == 1
         assert filtered[0]["event"] == "NFP"
 
-    def test_filter_numeric_impact(
-        self, news_instance: FinnhubNews
-    ) -> None:
+    def test_filter_numeric_impact(self, news_instance: FinnhubNews) -> None:
         events = [
             {"event": "FOMC", "impact": 3, "country": "US"},
             {"event": "GDP", "impact": 2, "country": "EU"},
@@ -70,9 +67,7 @@ class TestImpactFilter:
         filtered = news_instance._filter_by_impact(events)
         assert len(filtered) == 2  # high + medium
 
-    def test_normalize_event_structure(
-        self, news_instance: FinnhubNews
-    ) -> None:
+    def test_normalize_event_structure(self, news_instance: FinnhubNews) -> None:
         event = {
             "event": "NFP",
             "country": "US",
