@@ -104,8 +104,8 @@ class SynthesisEngine:
 
 
 def build_synthesis(
-    pair: str, 
-    risk_manager=None, 
+    pair: str,
+    risk_manager=None,
     vix_level: float = None
 ) -> dict:
     """
@@ -119,7 +119,7 @@ def build_synthesis(
         pair: Trading pair symbol (e.g., "EURUSD")
         risk_manager: Optional RiskManager instance for real risk data
         vix_level: Optional VIX level for risk calculations
-        
+
 
     Returns:
         Dict with L12 contract fields: pair, scores, layers, execution, risk, propfirm, bias, system
@@ -170,7 +170,7 @@ def build_synthesis(
     stop_loss = 1.0950  # placeholder
     take_profit_1 = 1.1100  # placeholder
     rr_ratio = l11.get("rr", 2.0)
-    
+
     # Get risk data from RiskManager if available
     if risk_manager is not None:
         try:
@@ -179,7 +179,7 @@ def build_synthesis(
                 vix_level=vix_level,
                 session=None,  # auto-detect
             )
-            
+
             # Calculate position size
             position_data = risk_manager.calculate_position(
                 entry_price=entry_price,
@@ -187,20 +187,20 @@ def build_synthesis(
                 pair=pair,
                 vix_level=vix_level,
             )
-            
+
             # Check prop firm compliance
             prop_compliance = risk_manager.check_prop_firm_compliance({
                 "risk_percent": position_data["risk_percent"],
                 "rr_ratio": rr_ratio,
             })
-            
+
             # Extract values
             current_drawdown = risk_snapshot["drawdown"]["total_dd_percent"]
             lot_size = position_data["lot_size"]
             risk_percent = position_data["risk_percent"]
             risk_amount = position_data["risk_amount"]
             prop_compliant = prop_compliance["compliant"]
-            
+
         except Exception as e:
             # Fallback to defaults on error
             logger.warning(
@@ -220,7 +220,7 @@ def build_synthesis(
         risk_percent = 0.01  # 1%
         risk_amount = 100.0
         prop_compliant = True
-    
+
 
     # Compute confidence index (conf12)
     # Average of key integrity metrics
