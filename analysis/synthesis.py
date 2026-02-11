@@ -106,6 +106,9 @@ class SynthesisEngine:
 
 
 def build_synthesis(pair: str, risk_manager=None, vix_level: float | None = None) -> dict:
+def build_synthesis(
+    pair: str, risk_manager=None, vix_level: float | None = None
+) -> dict:
     """
     Build L12-contract-compliant synthesis for a pair.
 
@@ -187,10 +190,6 @@ def build_synthesis(pair: str, risk_manager=None, vix_level: float | None = None
             )
 
             # Check prop firm compliance
-            prop_compliance = risk_manager.check_prop_firm_compliance({
-                "risk_percent": position_data["risk_percent"],
-                "rr_ratio": rr_ratio,
-            })
             prop_compliance = risk_manager.check_prop_firm_compliance(
                 {
                     "risk_percent": position_data["risk_percent"],

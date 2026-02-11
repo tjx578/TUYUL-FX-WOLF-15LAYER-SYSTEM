@@ -69,7 +69,6 @@ def receive_layer12_signal(signal: Layer12Signal) -> dict:
     """
     signal_dict = signal.model_dump()
     signal_dict["state"] = TradeState.SIGNAL_CREATED.value
-    signal_dict["created_at"] = datetime.utcnow().isoformat()
     signal_dict["created_at"] = datetime.now(UTC).isoformat()
 
     signal_pool[signal.signal_id] = signal_dict

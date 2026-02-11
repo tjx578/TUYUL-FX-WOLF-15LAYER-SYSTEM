@@ -145,6 +145,9 @@ class PropFirmManager:
         """
         # Load account registry
         registry_path = Path(__file__).parent / "account_registry.yaml"
+        registry_path = (
+            Path(__file__).parent / "account_registry.yaml"
+        )
 
         if not registry_path.exists():
             raise FileNotFoundError(f"Account registry not found: {registry_path}")
