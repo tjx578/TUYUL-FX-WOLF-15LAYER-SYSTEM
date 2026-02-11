@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
 from typing import Any, Dict
 
 from config.constitution import CONSTITUTION_THRESHOLDS
@@ -86,7 +85,7 @@ def generate_l12_verdict(synthesis: Dict[str, Any]) -> Dict[str, Any]:
                 direction = "SELL"
             else:
                 direction = "HOLD"
-        
+
         verdict = f"EXECUTE_{direction}"
         confidence = "VERY_HIGH" if scores["wolf_30_point"] >= 27 else "HIGH"
         wolf_status = "ALPHA" if scores["wolf_30_point"] >= 27 else "PACK"

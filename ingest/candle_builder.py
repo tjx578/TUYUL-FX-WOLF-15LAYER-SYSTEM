@@ -11,7 +11,7 @@ from context.live_context_bus import LiveContextBus
 class CandleBuilder:
     """
     Tick → M15 / H1 candle builder.
-    
+
     Pure data aggregation. Handles both Unix timestamps (float)
     and datetime objects.
     """
@@ -41,7 +41,7 @@ class CandleBuilder:
     def _try_build(self, symbol: str, tf: str, minutes: int) -> None:
         """
         Try to build a candle for the given symbol and timeframe.
-        
+
         Args:
             symbol: Trading pair symbol
             tf: Timeframe (M15 or H1)
@@ -62,12 +62,12 @@ class CandleBuilder:
             tick_ts = self._normalize_timestamp(t["timestamp"])
             if start_time <= tick_ts < end_time:
                 candles.append(t)
-        
+
         if not candles:
             return
 
         prices = [c["bid"] for c in candles if c["bid"] is not None]
-        
+
         if not prices:
             return
 
@@ -82,7 +82,7 @@ class CandleBuilder:
         }
 
         self.context_bus.update_candle(candle)
-        
+
         # Clean buffer: keep only ticks after this candle
         self.buffers[symbol] = [
             t for t in buffer
@@ -95,10 +95,10 @@ class CandleBuilder:
     def _normalize_timestamp(ts: Union[float, datetime]) -> datetime:
         """
         Normalize timestamp to datetime object.
-        
+
         Args:
             ts: Unix timestamp (float) or datetime object
-            
+
         Returns:
             Timezone-aware datetime in UTC
         """
@@ -107,7 +107,7 @@ class CandleBuilder:
             if ts.tzinfo is None:
                 return ts.replace(tzinfo=timezone.utc)
             return ts.astimezone(timezone.utc)
-        
+
         # Unix timestamp (float) - convert to datetime
         return datetime.fromtimestamp(ts, tz=timezone.utc)
 
@@ -115,11 +115,11 @@ class CandleBuilder:
     def _floor_time(dt: datetime, minutes: int) -> datetime:
         """
         Floor datetime to the nearest interval.
-        
+
         Args:
             dt: Datetime to floor
             minutes: Interval in minutes (15 or 60)
-            
+
         Returns:
             Floored datetime
         """

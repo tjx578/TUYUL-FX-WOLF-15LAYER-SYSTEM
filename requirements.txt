@@ -36,5 +36,8 @@ jsonschema==4.23.0
 pytest==8.3.2
 pytest-asyncio==0.24.0
 
+# Linting
+ruff==0.8.4
+
 # Production WSGI/ASGI server
 gunicorn==23.0.0

@@ -4,7 +4,6 @@ Manages execution lifecycle states.
 """
 
 from threading import Lock
-from datetime import datetime
 
 from utils.timezone_utils import now_utc
 
