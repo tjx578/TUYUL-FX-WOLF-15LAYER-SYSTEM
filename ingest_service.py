@@ -15,12 +15,16 @@ from typing import Optional
 
 from loguru import logger
 
+from config_loader import CONFIG
+from context.live_context_bus import LiveContextBus
+from context.redis_config import create_redis_client
 from ingest.candle_builder import CandleBuilder
 from ingest.finnhub_news import FinnhubNews
 from ingest.finnhub_ws import FinnhubWebSocket
 
 # Global shutdown event
 _shutdown_event: Optional[asyncio.Event] = None
+PAIRS = [p["symbol"] for p in CONFIG["pairs"]["pairs"] if p.get("enabled", True)]
 
 
 def _validate_api_key() -> bool:
@@ -71,8 +75,46 @@ async def run_ingest_services(has_api_key: bool) -> None:
             await asyncio.sleep(1)
         return
 
-    # Initialize ingest services
-    ws_feed = FinnhubWebSocket()
+    redis = create_redis_client()
+    context_bus = LiveContextBus()
+
+    def _to_finnhub_symbol(symbol: str) -> str:
+        if len(symbol) == 6 and symbol.isalpha():
+            return f"OANDA:{symbol[:3]}_{symbol[3:]}"
+        return symbol
+
+    def _to_internal_symbol(symbol: str) -> str:
+        if ":" in symbol:
+            symbol = symbol.split(":", 1)[1]
+        return symbol.replace("_", "")
+
+    async def _handle_ws_message(data: dict) -> None:
+        if data.get("type") != "trade":
+            return
+
+        for tick in data.get("data", []):
+            price = tick.get("p")
+            ts_ms = tick.get("t")
+            raw_symbol = tick.get("s", "")
+
+            if price is None or ts_ms is None or not raw_symbol:
+                continue
+
+            context_bus.update_tick(
+                {
+                    "symbol": _to_internal_symbol(raw_symbol),
+                    "bid": float(price),
+                    "ask": float(price),
+                    "timestamp": float(ts_ms) / 1000.0,
+                    "source": "finnhub_ws",
+                }
+            )
+
+    ws_feed = FinnhubWebSocket(
+        redis=redis,
+        on_message=_handle_ws_message,
+        symbols=[_to_finnhub_symbol(symbol) for symbol in PAIRS],
+    )
     news_feed = FinnhubNews()
     candle_builder = CandleBuilder()
 
@@ -122,9 +164,9 @@ async def main() -> None:
     logger.add(
         sys.stdout,
         format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | "
-               "<level>{level: <8}</level> | "
-               "<cyan>{name}</cyan>:<cyan>{function}</cyan> - "
-               "<level>{message}</level>",
+        "<level>{level: <8}</level> | "
+        "<cyan>{name}</cyan>:<cyan>{function}</cyan> - "
+        "<level>{message}</level>",
         level="INFO",
         filter=lambda record: record["level"].no < 40,  # Below ERROR
     )
@@ -133,9 +175,9 @@ async def main() -> None:
     logger.add(
         sys.stderr,
         format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | "
-               "<level>{level: <8}</level> | "
-               "<cyan>{name}</cyan>:<cyan>{function}</cyan> - "
-               "<level>{message}</level>",
+        "<level>{level: <8}</level> | "
+        "<cyan>{name}</cyan>:<cyan>{function}</cyan> - "
+        "<level>{message}</level>",
         level="ERROR",
     )
 

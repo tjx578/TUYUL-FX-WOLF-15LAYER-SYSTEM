@@ -11,6 +11,8 @@ from analysis.synthesis_adapter import adapt_synthesis
 from config_loader import CONFIG
 from constitution.verdict_engine import generate_l12_verdict
 from context.runtime_state import RuntimeState
+from context.redis_config import create_redis_client
+from context.live_context_bus import LiveContextBus
 from ingest.candle_builder import CandleBuilder
 from ingest.finnhub_news import FinnhubNews
 from ingest.finnhub_ws import FinnhubWebSocket
@@ -79,7 +81,8 @@ def _build_j2(pair: str, synthesis: dict, l12: dict) -> DecisionJournal:
 
     # Extract failed gates
     failed_gates = [
-        gate_name for gate_name, gate_value in gates.items()
+        gate_name
+        for gate_name, gate_value in gates.items()
         if gate_name not in ["passed", "total"] and gate_value == "FAIL"
     ]
 
@@ -106,7 +109,9 @@ def _build_j2(pair: str, synthesis: dict, l12: dict) -> DecisionJournal:
         wolf_30_score=int(scores.get("wolf_30_point", 0)),
         f_score=int(scores.get("f_score", 0)),
         t_score=int(scores.get("t_score", 0)),
-        fta_score=int((scores.get("fta_score") or 0) * 10),  # Convert fta_score from 0-1 scale to 0-10 scale
+        fta_score=int(
+            (scores.get("fta_score") or 0) * 10
+        ),  # Convert fta_score from 0-1 scale to 0-10 scale
         exec_score=int(scores.get("exec_score", 0)),
         tii_sym=float(layers.get("L8_tii_sym", 0.0)),
         integrity_index=float(layers.get("L8_integrity_index", 0.0)),
@@ -165,7 +170,46 @@ async def run_ingest_services(
             await asyncio.sleep(1)
         return
 
-    ws_feed = FinnhubWebSocket()
+    redis = create_redis_client()
+    context_bus = LiveContextBus()
+
+    def _to_finnhub_symbol(symbol: str) -> str:
+        if len(symbol) == 6 and symbol.isalpha():
+            return f"OANDA:{symbol[:3]}_{symbol[3:]}"
+        return symbol
+
+    def _to_internal_symbol(symbol: str) -> str:
+        if ":" in symbol:
+            symbol = symbol.split(":", 1)[1]
+        return symbol.replace("_", "")
+
+    async def _handle_ws_message(data: dict) -> None:
+        if data.get("type") != "trade":
+            return
+
+        for tick in data.get("data", []):
+            price = tick.get("p")
+            ts_ms = tick.get("t")
+            raw_symbol = tick.get("s", "")
+
+            if price is None or ts_ms is None or not raw_symbol:
+                continue
+
+            context_bus.update_tick(
+                {
+                    "symbol": _to_internal_symbol(raw_symbol),
+                    "bid": float(price),
+                    "ask": float(price),
+                    "timestamp": float(ts_ms) / 1000.0,
+                    "source": "finnhub_ws",
+                }
+            )
+
+    ws_feed = FinnhubWebSocket(
+        redis=redis,
+        on_message=_handle_ws_message,
+        symbols=[_to_finnhub_symbol(pair) for pair in PAIRS],
+    )
     news_feed = FinnhubNews()
     candle_builder = CandleBuilder()
 
@@ -289,9 +333,9 @@ async def main() -> None:
     logger.add(
         sys.stdout,
         format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | "
-               "<level>{level: <8}</level> | "
-               "<cyan>{name}</cyan>:<cyan>{function}</cyan> - "
-               "<level>{message}</level>",
+        "<level>{level: <8}</level> | "
+        "<cyan>{name}</cyan>:<cyan>{function}</cyan> - "
+        "<level>{message}</level>",
         level="INFO",
         filter=lambda record: record["level"].no < 40,  # Below ERROR
     )
@@ -300,9 +344,9 @@ async def main() -> None:
     logger.add(
         sys.stderr,
         format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | "
-               "<level>{level: <8}</level> | "
-               "<cyan>{name}</cyan>:<cyan>{function}</cyan> - "
-               "<level>{message}</level>",
+        "<level>{level: <8}</level> | "
+        "<cyan>{name}</cyan>:<cyan>{function}</cyan> - "
+        "<level>{message}</level>",
         level="ERROR",
     )
 
