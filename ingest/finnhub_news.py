@@ -113,6 +113,14 @@ class FinnhubNews:
                         f"Finnhub HTTP 403 Forbidden — check API key permissions "
                         f"and endpoint URL: {url}"
                     )
+                    raise FinnhubNewsError(
+                        f"HTTP 403 Forbidden: {url}"
+                    ) from exc
+                else:
+                    logger.error(
+                        f"Finnhub HTTP 403 Forbidden — check API key permissions "
+                        f"and endpoint URL: {url}"
+                    )
                     raise FinnhubNewsError(f"HTTP 403 Forbidden: {url}") from exc
                 else:
                     logger.error(f"Finnhub HTTP {exc.response.status_code}: {exc.response.text}")
