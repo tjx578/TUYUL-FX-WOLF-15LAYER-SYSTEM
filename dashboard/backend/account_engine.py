@@ -12,7 +12,6 @@ Responsibilities:
 """
 
 from threading import Lock
-from typing import Dict
 
 from loguru import logger
 
@@ -103,8 +102,6 @@ class AccountEngine:
             self._equity = equity
 
             # Update equity high watermark
-            if equity > self._equity_high:
-                self._equity_high = equity
             self._equity_high = max(self._equity_high, equity)
 
             logger.debug(
@@ -143,6 +140,7 @@ class AccountEngine:
             # Update equity high if new high
             if self._equity > self._equity_high:
                 self._equity_high = self._equity
+            self._equity_high = max(self._equity_high, self._equity)
 
             # Decrement counters
             self._open_trades = max(0, self._open_trades - 1)
