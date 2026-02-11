@@ -53,16 +53,19 @@ async def run_ingest_services(has_api_key: bool) -> None:
             await asyncio.sleep(1)
         return
 
-    redis = _build_redis_client()
-    await redis.ping()
-    logger.info("Redis connection validated")
+    redis: AsyncRedis | None = None
+    ws_feed = None
 
-    ws_feed = await create_finnhub_ws(redis=redis)
-    news_feed = FinnhubNews()
-    candle_builder = CandleBuilder()
-
-    logger.info("Starting ingest services: WebSocket, News, CandleBuilder")
     try:
+        redis = _build_redis_client()
+        await redis.ping()
+        logger.info("Redis connection validated")
+
+        ws_feed = await create_finnhub_ws(redis=redis)
+        news_feed = FinnhubNews()
+        candle_builder = CandleBuilder()
+
+        logger.info("Starting ingest services: WebSocket, News, CandleBuilder")
         await asyncio.gather(
             ws_feed.run(),
             news_feed.run(),
@@ -72,8 +75,10 @@ async def run_ingest_services(has_api_key: bool) -> None:
         logger.info("Ingest services cancelled - shutting down")
         raise
     finally:
-        await ws_feed.stop()
-        await redis.aclose()
+        if ws_feed is not None:
+            await ws_feed.stop()
+        if redis is not None:
+            await redis.aclose()
         logger.info("Ingest service cleanup complete")
 
 
