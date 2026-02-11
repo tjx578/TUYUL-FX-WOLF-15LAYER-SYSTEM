@@ -6,9 +6,9 @@ FastAPI server for L12 verdict polling, dashboard trade management, and system h
 
 import asyncio
 import os
+
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
-from typing import Dict, Optional
+from datetime import UTC, datetime
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -18,13 +18,12 @@ from api.dashboard_routes import router as dashboard_router
 from api.journal_routes import router as journal_router
 from api.l12_routes import router as l12_router
 from api.ws_routes import router as ws_router
-from risk.risk_router import router as risk_router
 from context.live_context_bus import LiveContextBus
 from context.runtime_state import RuntimeState
 from dashboard.price_feed import PriceFeed
 from dashboard.price_watcher import PriceWatcher
+from risk.risk_router import router as risk_router
 from utils.timezone_utils import format_local, format_utc, now_utc
-
 
 # Background task references
 _price_feed_task = None
@@ -35,9 +34,9 @@ async def _run_price_feed_updater():
     """Background task to update price feed from LiveContextBus."""
     price_feed = PriceFeed()
     interval_sec = int(os.getenv("PRICE_FEED_INTERVAL_SEC", "2"))
-    
+
     logger.info(f"Price feed updater started (interval: {interval_sec}s)")
-    
+
     while True:
         try:
             updated = price_feed.update_prices()
@@ -45,7 +44,7 @@ async def _run_price_feed_updater():
                 logger.debug(f"Updated {updated} prices")
         except Exception as exc:
             logger.error(f"Price feed update error: {exc}")
-        
+
         await asyncio.sleep(interval_sec)
 
 
@@ -53,36 +52,36 @@ async def _run_price_feed_updater():
 async def lifespan(app: FastAPI):
     """
     Lifespan context manager for background tasks.
-    
+
     Starts price feed updater and price watcher on startup.
     Stops them on shutdown.
     """
     global _price_feed_task, _price_watcher_task
-    
+
     # Startup
     logger.info("Starting background tasks...")
-    
+
     # Start price feed updater
     _price_feed_task = asyncio.create_task(_run_price_feed_updater())
-    
+
     # Start price watcher
     price_watcher = PriceWatcher()
     _price_watcher_task = asyncio.create_task(price_watcher.start())
-    
+
     logger.info("Background tasks started")
-    
+
     yield
-    
+
     # Shutdown
     logger.info("Stopping background tasks...")
-    
+
     if _price_feed_task:
         _price_feed_task.cancel()
         try:
             await _price_feed_task
         except asyncio.CancelledError:
             pass
-    
+
     if _price_watcher_task:
         price_watcher.stop()
         _price_watcher_task.cancel()
@@ -90,7 +89,7 @@ async def lifespan(app: FastAPI):
             await _price_watcher_task
         except asyncio.CancelledError:
             pass
-    
+
     logger.info("Background tasks stopped")
 
 
@@ -142,7 +141,7 @@ def _get_feed_status() -> str:
     return "disconnected"
 
 
-def _get_last_tick_times() -> Dict[str, Optional[str]]:
+def _get_last_tick_times() -> dict[str, str | None]:
     """
     Get timestamp of last tick per symbol.
 
@@ -160,7 +159,7 @@ def _get_last_tick_times() -> Dict[str, Optional[str]]:
             ts = tick.get("timestamp")
             if isinstance(ts, (int, float)):
                 # Unix timestamp
-                dt = datetime.fromtimestamp(ts, tz=timezone.utc)
+                dt = datetime.fromtimestamp(ts, tz=UTC)
                 last_ticks[symbol] = dt.isoformat()
             elif isinstance(ts, datetime):
                 last_ticks[symbol] = ts.isoformat()
@@ -168,7 +167,7 @@ def _get_last_tick_times() -> Dict[str, Optional[str]]:
     return last_ticks
 
 
-def _get_candle_freshness() -> Dict[str, int]:
+def _get_candle_freshness() -> dict[str, int]:
     """
     Get age of latest candle per symbol in seconds.
 
@@ -179,7 +178,7 @@ def _get_candle_freshness() -> Dict[str, int]:
     snapshot = context_bus.snapshot()
     candles = snapshot.get("candles", {})
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     freshness = {}
 
     for symbol, timeframes in candles.items():
@@ -256,4 +255,5 @@ async def health_check():
 
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run(app, host="0.0.0.0", port=8000)

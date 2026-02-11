@@ -4,8 +4,9 @@ Places PENDING orders ONLY based on L12 verdict.
 """
 
 from loguru import logger
-from execution.state_machine import ExecutionStateMachine
+
 from execution.execution_guard import ExecutionGuard
+from execution.state_machine import ExecutionStateMachine
 
 
 class PendingEngine:
@@ -29,4 +30,6 @@ class PendingEngine:
 
         self.state.set_pending(order)
         logger.info(f"\ud83d\udfe0 PENDING ORDER PLACED \u2192 {order}")
+
+
 # Placeholder

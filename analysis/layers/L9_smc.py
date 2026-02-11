@@ -5,8 +5,6 @@ Analyzes market structure for liquidity sweeps, displacement,
 and Break of Structure (BOS) detection.
 """
 
-from typing import Dict
-
 from loguru import logger
 
 from context.live_context_bus import LiveContextBus
@@ -27,7 +25,7 @@ class L9SMCAnalyzer:
         self.context_bus = LiveContextBus()
         self._previous_trend = {}  # Track previous trend for CHoCH detection
 
-    def analyze(self, symbol: str, structure: Dict) -> Dict:
+    def analyze(self, symbol: str, structure: dict) -> dict:
         """
         Analyze Smart Money Concepts based on market structure.
 
@@ -120,7 +118,7 @@ class L9SMCAnalyzer:
             return current_close > prev_swing_high
 
         # Bearish BOS: current close breaks below previous swing low
-        elif current_trend == "BEARISH":
+        if current_trend == "BEARISH":
             return current_close < prev_swing_low
 
         return False
@@ -147,7 +145,7 @@ class L9SMCAnalyzer:
         if prev_trend == "BULLISH" and current_trend == "BEARISH":
             logger.info(f"CHoCH detected for {symbol}: BULLISH → BEARISH")
             return True
-        elif prev_trend == "BEARISH" and current_trend == "BULLISH":
+        if prev_trend == "BEARISH" and current_trend == "BULLISH":
             logger.info(f"CHoCH detected for {symbol}: BEARISH → BULLISH")
             return True
 

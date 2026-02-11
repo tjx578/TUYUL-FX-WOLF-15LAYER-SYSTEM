@@ -20,8 +20,9 @@ CRITICAL:
 
 import json
 import os
+
 from threading import Lock
-from typing import Dict, Optional
+from typing import Optional
 
 from loguru import logger
 
@@ -32,7 +33,7 @@ from storage.redis_client import RedisClient
 class PriceFeed:
     """
     Thread-safe price feed service for dashboard.
-    
+
     Reads from LiveContextBus and caches in Redis for fast dashboard access.
     Pure sensor — no decision logic.
     """
@@ -59,28 +60,28 @@ class PriceFeed:
     def update_prices(self) -> int:
         """
         Poll LiveContextBus for latest ticks and update Redis cache.
-        
+
         Returns:
             Number of symbols updated
         """
         updated_count = 0
-        
+
         try:
             # Get all recent ticks from context bus
             snapshot = self._context_bus.snapshot()
             ticks = snapshot.get("ticks", [])
-            
+
             if not ticks:
                 logger.debug("No ticks available from LiveContextBus")
                 return 0
-            
+
             # Group by symbol and keep latest tick per symbol
-            latest_ticks: Dict[str, dict] = {}
+            latest_ticks: dict[str, dict] = {}
             for tick in reversed(ticks):  # Reversed so we get most recent first
                 symbol = tick.get("symbol")
                 if symbol and symbol not in latest_ticks:
                     latest_ticks[symbol] = tick
-            
+
             # Update Redis with latest prices
             for symbol, tick in latest_ticks.items():
                 try:
@@ -90,100 +91,102 @@ class PriceFeed:
                         "ts": tick.get("timestamp", 0.0),
                         "source": tick.get("source", "unknown"),
                     }
-                    
+
                     # Store in Redis with 60-second expiry
                     redis_key = f"{self._redis_prefix}:PRICE:{symbol}"
                     self._redis.set(
                         redis_key,
                         json.dumps(price_data),
-                        ex=60  # Expire after 60 seconds if not updated
+                        ex=60,  # Expire after 60 seconds if not updated
                     )
                     updated_count += 1
-                    
+
                 except Exception as exc:
                     logger.error(f"Failed to update price for {symbol}: {exc}")
-            
+
             if updated_count > 0:
                 logger.debug(f"Updated prices for {updated_count} symbols")
-                
+
         except Exception as exc:
             logger.error(f"Price feed update failed: {exc}")
-        
+
         return updated_count
 
-    def get_price(self, symbol: str) -> Optional[Dict[str, float]]:
+    def get_price(self, symbol: str) -> dict[str, float] | None:
         """
         Get latest price for a symbol.
-        
+
         Args:
             symbol: Trading pair symbol (e.g., "EURUSD")
-            
+
         Returns:
             Dictionary with bid, ask, ts, source if available, else None
         """
         try:
             redis_key = f"{self._redis_prefix}:PRICE:{symbol}"
             price_json = self._redis.get(redis_key)
-            
+
             if price_json:
                 return json.loads(price_json)
             else:
                 logger.debug(f"No price data for {symbol}")
                 return None
-                
+            logger.debug(f"No price data for {symbol}")
+            return None
+
         except Exception as exc:
             logger.error(f"Failed to get price for {symbol}: {exc}")
             return None
 
-    def get_all_prices(self) -> Dict[str, Dict[str, float]]:
+    def get_all_prices(self) -> dict[str, dict[str, float]]:
         """
         Get latest prices for all symbols.
-        
+
         Returns:
             Dictionary mapping symbol -> price data
         """
         prices = {}
-        
+
         try:
             # Scan for all PRICE:* keys
             # Note: In production, consider maintaining a set of active symbols
             # For now, we'll scan with pattern matching
             pattern = f"{self._redis_prefix}:PRICE:*"
-            
+
             # Get client for scanning
             client = self._redis.client
-            
+
             # Use SCAN to find all price keys
             cursor = 0
             while True:
                 cursor, keys = client.scan(cursor, match=pattern, count=100)
-                
+
                 for key in keys:
                     # Extract symbol from key
                     symbol = key.split(":")[-1]
-                    
+
                     # Get price data
                     price_json = self._redis.get(key)
                     if price_json:
                         prices[symbol] = json.loads(price_json)
-                
+
                 if cursor == 0:
                     break
-                    
+
         except Exception as exc:
             logger.error(f"Failed to get all prices: {exc}")
-        
+
         return prices
 
-    def get_latest_tick_from_bus(self, symbol: str) -> Optional[dict]:
+    def get_latest_tick_from_bus(self, symbol: str) -> dict | None:
         """
         Get latest tick directly from LiveContextBus (bypass Redis).
-        
+
         Useful for immediate access without waiting for update cycle.
-        
+
         Args:
             symbol: Trading pair symbol
-            
+
         Returns:
             Tick dictionary if available, else None
         """
