@@ -12,7 +12,7 @@ from __future__ import annotations
 import asyncio
 import os
 
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 import httpx  # pyright: ignore[reportMissingImports]
@@ -51,7 +51,7 @@ class FinnhubMarketNews:
         self._timeout: int = self._config["rest"].get("timeout_sec", 20)
         self._retries: int = self._config["rest"].get("retries", 3)
         self._backoff_factor: float = self._config["rest"].get("backoff_factor", 1.5)
-        
+
         market_cfg = self._config.get("market_news", {})
         self._poll_interval: int = market_cfg.get("poll_interval_sec", 600)
         self._category: str = market_cfg.get("category", "forex")
@@ -63,7 +63,7 @@ class FinnhubMarketNews:
                 "bearish": ["dovish", "rate cut", "weak", "miss", "decline"],
             }
         )
-        
+
         self._context_bus = LiveContextBus()
         self._last_id: int = 0  # Track highest article ID for deduplication
 
@@ -85,7 +85,7 @@ class FinnhubMarketNews:
             "category": self._category,
             "token": self._api_key,
         }
-        
+
         # Add minId for deduplication if we've fetched before
         if self._last_id > 0:
             params["minId"] = self._last_id
@@ -101,19 +101,18 @@ class FinnhubMarketNews:
                     data = response.json()
 
                 articles: list[dict[str, Any]] = data if isinstance(data, list) else []
-                
+
                 # Limit number of articles
                 articles = articles[:self._max_articles]
-                
+
                 # Normalize and score sentiment
                 normalized = [self._normalize_article(article) for article in articles]
-                
+
                 # Update last_id if we got new articles
                 if normalized:
                     max_id = max(article["id"] for article in normalized if article["id"])
-                    if max_id > self._last_id:
-                        self._last_id = max_id
-                
+                    self._last_id = max(max_id, self._last_id)
+
                 logger.info(
                     f"Finnhub market news: {len(normalized)} articles fetched "
                     f"(last_id={self._last_id})"
@@ -155,10 +154,10 @@ class FinnhubMarketNews:
     def _normalize_article(self, article: dict[str, Any]) -> dict[str, Any]:
         """
         Normalize Finnhub market news article to internal format.
-        
+
         Args:
             article: Raw article from Finnhub API
-            
+
         Returns:
             Normalized article with sentiment score
         """
@@ -166,14 +165,14 @@ class FinnhubMarketNews:
         headline = article.get("headline", "")
         summary = article.get("summary", "")
         text = f"{headline} {summary}"
-        
+
         # Score sentiment
         sentiment_score, sentiment_label = self._score_sentiment(text)
-        
+
         # Convert timestamp to ISO format
         timestamp = article.get("datetime", 0)
-        datetime_iso = datetime.fromtimestamp(timestamp).isoformat() if timestamp else ""
-        
+        datetime_iso = datetime.fromtimestamp(timestamp, tz=UTC).isoformat() if timestamp else ""
+
         return {
             "id": article.get("id", 0),
             "headline": headline,
@@ -192,17 +191,17 @@ class FinnhubMarketNews:
     def _score_sentiment(self, text: str) -> tuple[float, str]:
         """
         Score sentiment using keyword matching.
-        
+
         Args:
             text: Combined headline + summary text
-            
+
         Returns:
             Tuple of (score, label) where:
             - score ranges from -1.0 (bearish) to 1.0 (bullish)
             - label is "bullish", "bearish", or "neutral"
         """
         text_lower = text.lower()
-        
+
         bullish_count = sum(
             1 for keyword in self._sentiment_keywords["bullish"]
             if keyword.lower() in text_lower
@@ -211,14 +210,14 @@ class FinnhubMarketNews:
             1 for keyword in self._sentiment_keywords["bearish"]
             if keyword.lower() in text_lower
         )
-        
+
         # Normalize score between -1.0 and 1.0
         total = bullish_count + bearish_count
         if total == 0:
             score = 0.0
         else:
             score = (bullish_count - bearish_count) / total
-        
+
         # Classify label
         if score > 0.2:
             label = "bullish"
@@ -226,7 +225,7 @@ class FinnhubMarketNews:
             label = "bearish"
         else:
             label = "neutral"
-        
+
         return score, label
 
     async def run(self) -> None:
