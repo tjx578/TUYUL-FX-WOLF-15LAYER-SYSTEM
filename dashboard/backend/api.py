@@ -2,6 +2,8 @@
 Dashboard API (Account & Risk Governor)
 """
 
+from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi import FastAPI, Request # pyright: ignore[reportMissingImports]
 from fastapi.middleware.cors import CORSMiddleware # pyright: ignore[reportMissingImports]
 
