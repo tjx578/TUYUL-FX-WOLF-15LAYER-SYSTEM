@@ -2,8 +2,6 @@
 Volatility Analysis
 """
 
-from typing import Dict
-
 from context.live_context_bus import LiveContextBus
 
 
@@ -11,7 +9,7 @@ class VolatilityAnalyzer:
     def __init__(self):
         self.context = LiveContextBus()
 
-    def analyze(self, symbol: str) -> Dict:
+    def analyze(self, symbol: str) -> dict:
         """
         Analyze volatility for a symbol using ATR.
 

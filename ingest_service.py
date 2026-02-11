@@ -11,7 +11,6 @@ import asyncio
 import os
 import signal
 import sys
-from typing import Optional
 
 from loguru import logger
 from redis.asyncio import Redis as AsyncRedis
@@ -21,7 +20,7 @@ from ingest.dependencies import create_finnhub_ws
 from ingest.finnhub_news import FinnhubNews
 
 # Global shutdown event
-_shutdown_event: Optional[asyncio.Event] = None
+_shutdown_event: asyncio.Event | None = None
 
 
 def _validate_api_key() -> bool:
@@ -76,10 +75,10 @@ async def run_ingest_services(has_api_key: bool) -> None:
     redis_url = os.getenv("REDIS_URL")
     if redis_url:
         # Redact password from log output
-        if '@' in redis_url:
-            safe_url = redis_url.split('@')[-1]
-        elif '://' in redis_url:
-            safe_url = redis_url.split('://')[1]
+        if "@" in redis_url:
+            safe_url = redis_url.split("@")[-1]
+        elif "://" in redis_url:
+            safe_url = redis_url.split("://")[1]
         else:
             safe_url = redis_url
         logger.info(f"Using REDIS_URL: redis://***@{safe_url}")
@@ -167,9 +166,9 @@ async def main() -> None:
     logger.add(
         sys.stdout,
         format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | "
-               "<level>{level: <8}</level> | "
-               "<cyan>{name}</cyan>:<cyan>{function}</cyan> - "
-               "<level>{message}</level>",
+        "<level>{level: <8}</level> | "
+        "<cyan>{name}</cyan>:<cyan>{function}</cyan> - "
+        "<level>{message}</level>",
         level="INFO",
         filter=lambda record: record["level"].no < 40,  # Below ERROR
     )
@@ -178,9 +177,9 @@ async def main() -> None:
     logger.add(
         sys.stderr,
         format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | "
-               "<level>{level: <8}</level> | "
-               "<cyan>{name}</cyan>:<cyan>{function}</cyan> - "
-               "<level>{message}</level>",
+        "<level>{level: <8}</level> | "
+        "<cyan>{name}</cyan>:<cyan>{function}</cyan> - "
+        "<level>{message}</level>",
         level="ERROR",
     )
 
@@ -198,9 +197,7 @@ async def main() -> None:
     # Validate CONTEXT_MODE
     context_mode = os.getenv("CONTEXT_MODE", "local").lower()
     if context_mode != "redis":
-        logger.warning(
-            f"CONTEXT_MODE={context_mode} - expected 'redis' for multi-container setup"
-        )
+        logger.warning(f"CONTEXT_MODE={context_mode} - expected 'redis' for multi-container setup")
         logger.warning("Data will be written to local memory only (not shared)")
     else:
         redis_url = os.getenv("REDIS_URL", "")

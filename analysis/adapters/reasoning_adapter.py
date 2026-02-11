@@ -12,7 +12,7 @@ CONSTITUTIONAL NOTICE:
 - Final authority remains in Layer-12
 """
 
-from typing import Any, Dict
+from typing import Any
 
 
 class ReasoningToSynthesisAdapter:
@@ -34,18 +34,16 @@ class ReasoningToSynthesisAdapter:
     def __init__(self) -> None:
         self.read_only = True
 
-    def validate_input(self, reasoning_output: Dict[str, Any]) -> None:
+    def validate_input(self, reasoning_output: dict[str, Any]) -> None:
         """
         Validasi ringan: memastikan struktur minimum ada.
         BUKAN validasi konstitusional.
         """
         for field in self.REQUIRED_FIELDS:
             if field not in reasoning_output:
-                raise ValueError(
-                    f"[ADAPTER ERROR] Missing required field: {field}"
-                )
+                raise ValueError(f"[ADAPTER ERROR] Missing required field: {field}")
 
-    def to_candidate_setup(self, reasoning_output: Dict[str, Any]) -> Dict[str, Any]:
+    def to_candidate_setup(self, reasoning_output: dict[str, Any]) -> dict[str, Any]:
         """
         Konversi output reasoning -> candidate setup
         yang bisa dibaca synthesis.py

@@ -5,13 +5,13 @@ Contains: EmotionFeedbackEngine, RegimeClassifier, IntegrityEngine, RiskManager,
 TWMSCalculator, SmartMoneyDetector, Monte Carlo Validator.
 """
 
-from typing import Dict, Any
+from typing import Any
 
 
 class EmotionFeedbackEngine:
     """Analyzes market emotion and sentiment."""
 
-    def analyze(self, market_data: Dict[str, Any]) -> Dict[str, Any]:
+    def analyze(self, market_data: dict[str, Any]) -> dict[str, Any]:
         """
         Analyze emotional state of market.
 
@@ -32,7 +32,7 @@ class EmotionFeedbackEngine:
 class RegimeClassifier:
     """Classifies market regime (trending, ranging, volatile, etc.)."""
 
-    def classify(self, symbol: str, timeframe: str = "H1") -> Dict[str, Any]:
+    def classify(self, symbol: str, timeframe: str = "H1") -> dict[str, Any]:
         """
         Classify current market regime.
 
@@ -54,7 +54,7 @@ class RegimeClassifier:
 class IntegrityEngine:
     """Validates data integrity and consistency."""
 
-    def validate(self, data: Dict[str, Any]) -> Dict[str, Any]:
+    def validate(self, data: dict[str, Any]) -> dict[str, Any]:
         """
         Validate data integrity.
 
@@ -81,7 +81,7 @@ class RiskManager:
         stop_loss: float,
         account_balance: float,
         risk_percent: float = 1.0,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Calculate risk parameters.
 
@@ -108,7 +108,7 @@ class RiskManager:
 class TWMSCalculator:
     """Time-Weighted Market Score Calculator."""
 
-    def calculate(self, symbol: str) -> Dict[str, Any]:
+    def calculate(self, symbol: str) -> dict[str, Any]:
         """
         Calculate TWMS score.
 
@@ -129,7 +129,7 @@ class TWMSCalculator:
 class SmartMoneyDetector:
     """Detects smart money movements and institutional activity."""
 
-    def detect(self, symbol: str) -> Dict[str, Any]:
+    def detect(self, symbol: str) -> dict[str, Any]:
         """
         Detect smart money activity.
 
@@ -157,7 +157,7 @@ class MonteCarloValidator:
         win_rate: float,
         rr_ratio: float,
         num_simulations: int = 1000,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Run Monte Carlo simulation.
 

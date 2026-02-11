@@ -48,9 +48,7 @@ class TestBackoff:
 
     def test_calculate_backoff_respects_maximum(self) -> None:
         with patch("ingest.finnhub_ws.random.uniform", return_value=0.0):
-            assert (
-                _calculate_backoff(10, base=1.0, multiplier=2.0, maximum=30.0) == 30.0
-            )
+            assert _calculate_backoff(10, base=1.0, multiplier=2.0, maximum=30.0) == 30.0
 
     def test_calculate_backoff_floor(self) -> None:
         with patch("ingest.finnhub_ws.random.uniform", return_value=-1.0):

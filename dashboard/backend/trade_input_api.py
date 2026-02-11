@@ -11,32 +11,30 @@ All endpoints require JWT authentication.
 """
 
 from datetime import datetime
-from typing import Dict, List
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, HTTPException
 from loguru import logger
 
-from dashboard.backend.auth import verify_token
 from dashboard.backend.account_engine import AccountEngine
+from dashboard.backend.auth import verify_token
 from dashboard.backend.risk_engine import RiskEngine
 from dashboard.backend.schemas import (
+    AccountCreate,
+    AccountState,
     Layer12Signal,
     RiskCalculationRequest,
     RiskCalculationResult,
-    TradeOpenRequest,
     TradeCloseRequest,
-    AccountState,
-    AccountCreate,
+    TradeOpenRequest,
 )
 from execution.trade_state_enum import TradeState
 from journal.journal_router import journal_router
 from journal.journal_schema import (
+    ProtectionAssessment,
     ReflectiveJournal,
     TradeOutcome,
-    ProtectionAssessment,
 )
-
 
 # Router with auth dependency
 write_router = APIRouter(
@@ -48,16 +46,16 @@ write_router = APIRouter(
 # In-memory storage
 # TODO: Replace with persistent storage (Redis/PostgreSQL) for production
 # See tracking issue: https://github.com/tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM/issues/TBD
-signal_pool: Dict[UUID, Dict] = {}
-trade_ledger: Dict[str, Dict] = {}
-account_registry: Dict[str, AccountEngine] = {}
+signal_pool: dict[UUID, dict] = {}
+trade_ledger: dict[str, dict] = {}
+account_registry: dict[str, AccountEngine] = {}
 
 # Risk engine singleton
 risk_engine = RiskEngine()
 
 
 @write_router.post("/signal/layer12", status_code=201)
-def receive_layer12_signal(signal: Layer12Signal) -> Dict:
+def receive_layer12_signal(signal: Layer12Signal) -> dict:
     """
     Receive Layer 12 signal from constitution.
 
@@ -104,20 +102,14 @@ def calculate_risk(request: RiskCalculationRequest) -> RiskCalculationResult:
     # Get signal
     signal_dict = signal_pool.get(request.signal_id)
     if not signal_dict:
-        raise HTTPException(
-            status_code=404,
-            detail=f"Signal {request.signal_id} not found"
-        )
+        raise HTTPException(status_code=404, detail=f"Signal {request.signal_id} not found")
 
     signal = Layer12Signal(**signal_dict)
 
     # Get account
     account_engine = account_registry.get(request.account_id)
     if not account_engine:
-        raise HTTPException(
-            status_code=404,
-            detail=f"Account {request.account_id} not found"
-        )
+        raise HTTPException(status_code=404, detail=f"Account {request.account_id} not found")
 
     account_state = account_engine.get_state()
 
@@ -142,7 +134,7 @@ def calculate_risk(request: RiskCalculationRequest) -> RiskCalculationResult:
 
 
 @write_router.post("/trade/open", status_code=201)
-def open_trade(request: TradeOpenRequest) -> Dict:
+def open_trade(request: TradeOpenRequest) -> dict:
     """
     Record trade opening.
 
@@ -162,18 +154,12 @@ def open_trade(request: TradeOpenRequest) -> Dict:
     # Get account
     account_engine = account_registry.get(request.account_id)
     if not account_engine:
-        raise HTTPException(
-            status_code=404,
-            detail=f"Account {request.account_id} not found"
-        )
+        raise HTTPException(status_code=404, detail=f"Account {request.account_id} not found")
 
     # Get signal to validate lot
     signal_dict = signal_pool.get(request.signal_id)
     if not signal_dict:
-        raise HTTPException(
-            status_code=404,
-            detail=f"Signal {request.signal_id} not found"
-        )
+        raise HTTPException(status_code=404, detail=f"Signal {request.signal_id} not found")
 
     signal = Layer12Signal(**signal_dict)
     account_state = account_engine.get_state()
@@ -188,19 +174,13 @@ def open_trade(request: TradeOpenRequest) -> Dict:
 
     # Validate trade is allowed
     if not result.trade_allowed:
-        raise HTTPException(
-            status_code=403,
-            detail=f"Trade denied: {result.reason}"
-        )
+        raise HTTPException(status_code=403, detail=f"Trade denied: {result.reason}")
 
     # Validate lot doesn't exceed max safe lot
     if request.lot > result.max_safe_lot:
         raise HTTPException(
             status_code=403,
-            detail=(
-                f"Lot {request.lot:.2f} exceeds max safe lot "
-                f"{result.max_safe_lot:.2f}"
-            )
+            detail=(f"Lot {request.lot:.2f} exceeds max safe lot {result.max_safe_lot:.2f}"),
         )
 
     # Calculate risk amount
@@ -242,7 +222,7 @@ def open_trade(request: TradeOpenRequest) -> Dict:
 
 
 @write_router.post("/trade/close")
-def close_trade(request: TradeCloseRequest) -> Dict:
+def close_trade(request: TradeCloseRequest) -> dict:
     """
     Record trade closure.
 
@@ -260,10 +240,7 @@ def close_trade(request: TradeCloseRequest) -> Dict:
     # Get trade
     trade = trade_ledger.get(request.trade_id)
     if not trade:
-        raise HTTPException(
-            status_code=404,
-            detail=f"Trade {request.trade_id} not found"
-        )
+        raise HTTPException(status_code=404, detail=f"Trade {request.trade_id} not found")
 
     # Update trade record
     trade["state"] = TradeState.TRADE_CLOSED.value
@@ -296,10 +273,7 @@ def close_trade(request: TradeCloseRequest) -> Dict:
 
     journal_router.record_reflection(j4)
 
-    logger.info(
-        f"Trade closed: {request.trade_id} | "
-        f"PnL=${request.pnl:.2f} | {request.reason}"
-    )
+    logger.info(f"Trade closed: {request.trade_id} | PnL=${request.pnl:.2f} | {request.reason}")
 
     return trade
 
@@ -320,16 +294,13 @@ def get_account_state(account_id: str) -> AccountState:
     """
     account_engine = account_registry.get(account_id)
     if not account_engine:
-        raise HTTPException(
-            status_code=404,
-            detail=f"Account {account_id} not found"
-        )
+        raise HTTPException(status_code=404, detail=f"Account {account_id} not found")
 
     return account_engine.get_state()
 
 
 @write_router.get("/signals")
-def get_signals() -> List[Dict]:
+def get_signals() -> list[dict]:
     """
     Get active signal pool.
 
@@ -343,7 +314,7 @@ def get_signals() -> List[Dict]:
 def get_trades(
     account_id: str = None,
     state: str = None,
-) -> List[Dict]:
+) -> list[dict]:
     """
     Get trade ledger (all trades or filtered).
 
@@ -366,7 +337,7 @@ def get_trades(
 
 
 @write_router.get("/trade/{trade_id}")
-def get_trade(trade_id: str) -> Dict:
+def get_trade(trade_id: str) -> dict:
     """
     Get single trade detail.
 
@@ -381,16 +352,13 @@ def get_trade(trade_id: str) -> Dict:
     """
     trade = trade_ledger.get(trade_id)
     if not trade:
-        raise HTTPException(
-            status_code=404,
-            detail=f"Trade {trade_id} not found"
-        )
+        raise HTTPException(status_code=404, detail=f"Trade {trade_id} not found")
 
     return trade
 
 
 @write_router.post("/account/create", status_code=201)
-def create_account(account: AccountCreate) -> Dict:
+def create_account(account: AccountCreate) -> dict:
     """
     Create new account for tracking.
 
@@ -411,10 +379,7 @@ def create_account(account: AccountCreate) -> Dict:
 
     account_registry[account_id] = account_engine
 
-    logger.info(
-        f"Account created: {account_id} | "
-        f"{account.broker} | {account.prop_firm_code}"
-    )
+    logger.info(f"Account created: {account_id} | {account.broker} | {account.prop_firm_code}")
 
     return {
         "account_id": account_id,

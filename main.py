@@ -2,7 +2,6 @@ import asyncio
 import os
 import signal
 import sys
-from typing import Optional
 
 from loguru import logger
 from redis.asyncio import Redis as AsyncRedis
@@ -24,7 +23,7 @@ from utils.timezone_utils import is_trading_session, now_utc
 PAIRS = [p["symbol"] for p in CONFIG["pairs"]["pairs"] if p.get("enabled", True)]
 
 # Global flag for graceful shutdown
-_shutdown_event: Optional[asyncio.Event] = None
+_shutdown_event: asyncio.Event | None = None
 
 
 def _build_j1(pair: str, synthesis: dict) -> ContextJournal:
@@ -80,7 +79,8 @@ def _build_j2(pair: str, synthesis: dict, l12: dict) -> DecisionJournal:
 
     # Extract failed gates
     failed_gates = [
-        gate_name for gate_name, gate_value in gates.items()
+        gate_name
+        for gate_name, gate_value in gates.items()
         if gate_name not in ["passed", "total"] and gate_value == "FAIL"
     ]
 
@@ -107,7 +107,9 @@ def _build_j2(pair: str, synthesis: dict, l12: dict) -> DecisionJournal:
         wolf_30_score=int(scores.get("wolf_30_point", 0)),
         f_score=int(scores.get("f_score", 0)),
         t_score=int(scores.get("t_score", 0)),
-        fta_score=int((scores.get("fta_score") or 0) * 10),  # Convert fta_score from 0-1 scale to 0-10 scale
+        fta_score=int(
+            (scores.get("fta_score") or 0) * 10
+        ),  # Convert fta_score from 0-1 scale to 0-10 scale
         exec_score=int(scores.get("exec_score", 0)),
         tii_sym=float(layers.get("L8_tii_sym", 0.0)),
         integrity_index=float(layers.get("L8_integrity_index", 0.0)),
@@ -170,10 +172,10 @@ async def run_ingest_services(
     redis_url = os.getenv("REDIS_URL")
     if redis_url:
         # Redact password from log output
-        if '@' in redis_url:
-            safe_url = redis_url.split('@')[-1]
-        elif '://' in redis_url:
-            safe_url = redis_url.split('://')[1]
+        if "@" in redis_url:
+            safe_url = redis_url.split("@")[-1]
+        elif "://" in redis_url:
+            safe_url = redis_url.split("://")[1]
         else:
             safe_url = redis_url
         logger.info(f"Using REDIS_URL for local mode: redis://***@{safe_url}")
@@ -224,7 +226,7 @@ async def run_ingest_services(
 
     finally:
         # Cleanup
-        if 'ws_feed' in locals():
+        if "ws_feed" in locals():
             await ws_feed.stop()
         await redis.aclose()
         logger.info("Ingest services cleanup complete")
@@ -245,10 +247,7 @@ async def run_redis_consumer() -> None:
         await redis_consumer.start()
 
     except Exception as exc:
-        logger.error(
-            f"Failed to start RedisConsumer: {exc}. "
-            "Continuing without Redis consumer."
-        )
+        logger.error(f"Failed to start RedisConsumer: {exc}. Continuing without Redis consumer.")
         # Keep task alive so main doesn't exit
         while True:
             if _shutdown_event and _shutdown_event.is_set():
@@ -340,9 +339,9 @@ async def main() -> None:
     logger.add(
         sys.stdout,
         format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | "
-               "<level>{level: <8}</level> | "
-               "<cyan>{name}</cyan>:<cyan>{function}</cyan> - "
-               "<level>{message}</level>",
+        "<level>{level: <8}</level> | "
+        "<cyan>{name}</cyan>:<cyan>{function}</cyan> - "
+        "<level>{message}</level>",
         level="INFO",
         filter=lambda record: record["level"].no < 40,  # Below ERROR
     )
@@ -351,9 +350,9 @@ async def main() -> None:
     logger.add(
         sys.stderr,
         format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | "
-               "<level>{level: <8}</level> | "
-               "<cyan>{name}</cyan>:<cyan>{function}</cyan> - "
-               "<level>{message}</level>",
+        "<level>{level: <8}</level> | "
+        "<cyan>{name}</cyan>:<cyan>{function}</cyan> - "
+        "<level>{message}</level>",
         level="ERROR",
     )
 

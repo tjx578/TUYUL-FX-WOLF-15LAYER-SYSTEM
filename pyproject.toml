@@ -46,8 +46,6 @@ select = [
     "C4",     # flake8-comprehensions (list/dict comp best practices)
 ]
 ignore = [
-    "ANN101",  # missing type annotation for `self`
-    "ANN102",  # missing type annotation for `cls`
     "ANN401",  # allow `Any` hanya kalau memang perlu
     "E501",    # line length — kita pakai formatter untuk ini
 ]

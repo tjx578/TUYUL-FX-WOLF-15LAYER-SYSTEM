@@ -1,17 +1,17 @@
 from __future__ import annotations
 
-from typing import Any, Dict
+from typing import Any
 
 from config.constitution import CONSTITUTION_THRESHOLDS
 from constitution.violation_log import log_violation
-from utils.timezone_utils import now_utc, format_utc
+from utils.timezone_utils import format_utc, now_utc
 
 
 def _gate(condition: bool) -> str:
     return "PASS" if condition else "FAIL"
 
 
-def generate_l12_verdict(synthesis: Dict[str, Any]) -> Dict[str, Any]:
+def generate_l12_verdict(synthesis: dict[str, Any]) -> dict[str, Any]:
     """
     Input: synthesis output from analysis.synthesis (L1-L11).
     Output: final L12 verdict (constitutional).

@@ -18,8 +18,8 @@ import yaml
 
 from dashboard.backend.risk_engine import RiskEngine
 from dashboard.backend.schemas import (
-    Layer12Signal,
     AccountState,
+    Layer12Signal,
     RiskMode,
     RiskSeverity,
 )
@@ -34,12 +34,9 @@ def setup_test_accounts():
     NOTE: This temporarily modifies the production registry file.
     In production, use a separate test registry or mock the loading.
     """
-    registry_path = (
-        Path(__file__).parent.parent /
-        "propfirm_manager" / "account_registry.yaml"
-    )
+    registry_path = Path(__file__).parent.parent / "propfirm_manager" / "account_registry.yaml"
 
-    with open(registry_path, "r") as f:
+    with open(registry_path) as f:
         registry = yaml.safe_load(f) or {}
 
     # Add test accounts

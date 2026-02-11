@@ -7,17 +7,17 @@ Endpoints:
   GET /api/v1/journal/metrics     — Rejection %, protection rate, win rate
 """
 
-from typing import Any, Dict
+from typing import Any
 
 from fastapi import APIRouter
 
-from journal.journal_metrics import get_daily_stats, get_weekly_stats, get_rejection_accuracy
+from journal.journal_metrics import get_daily_stats, get_rejection_accuracy, get_weekly_stats
 
 router = APIRouter()
 
 
 @router.get("/api/v1/journal/today")
-async def get_today_journal() -> Dict[str, Any]:
+async def get_today_journal() -> dict[str, Any]:
     """
     Get today's journal entries and metrics.
 
@@ -28,7 +28,7 @@ async def get_today_journal() -> Dict[str, Any]:
 
 
 @router.get("/api/v1/journal/weekly")
-async def get_weekly_journal() -> Dict[str, Any]:
+async def get_weekly_journal() -> dict[str, Any]:
     """
     Get last 7 days of journal entries and metrics.
 
@@ -39,7 +39,7 @@ async def get_weekly_journal() -> Dict[str, Any]:
 
 
 @router.get("/api/v1/journal/metrics")
-async def get_journal_metrics() -> Dict[str, Any]:
+async def get_journal_metrics() -> dict[str, Any]:
     """
     Get journal metrics summary.
 

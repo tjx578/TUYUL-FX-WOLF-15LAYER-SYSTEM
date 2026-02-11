@@ -12,16 +12,15 @@ Provides simple interface for the rest of the system.
 """
 
 import threading
-from typing import Optional
 
 from loguru import logger
 
 from config_loader import load_risk
-from risk.drawdown import DrawdownMonitor
 from risk.circuit_breaker import CircuitBreaker
+from risk.drawdown import DrawdownMonitor
 from risk.position_sizer import PositionSizer
-from risk.risk_multiplier import RiskMultiplier
 from risk.prop_firm import PropFirmRules
+from risk.risk_multiplier import RiskMultiplier
 
 
 class RiskManager:
@@ -57,9 +56,7 @@ class RiskManager:
             Starting account balance
         """
         if RiskManager._instance is not None:
-            raise RuntimeError(
-                "RiskManager is a singleton. Use get_instance()."
-            )
+            raise RuntimeError("RiskManager is a singleton. Use get_instance().")
 
         self._config = load_risk()
         self._balance = initial_balance
@@ -77,7 +74,7 @@ class RiskManager:
         )
 
     @classmethod
-    def get_instance(cls, initial_balance: Optional[float] = None):
+    def get_instance(cls, initial_balance: float | None = None):
         """
         Get RiskManager singleton instance.
 
@@ -96,8 +93,7 @@ class RiskManager:
                 if cls._instance is None:
                     if initial_balance is None:
                         raise ValueError(
-                            "initial_balance required for first "
-                            "RiskManager initialization"
+                            "initial_balance required for first RiskManager initialization"
                         )
                     cls._instance = cls(initial_balance)
 
@@ -129,8 +125,8 @@ class RiskManager:
 
     def get_risk_snapshot(
         self,
-        vix_level: Optional[float] = None,
-        session: Optional[str] = None,
+        vix_level: float | None = None,
+        session: str | None = None,
     ) -> dict:
         """
         Get complete risk snapshot for synthesis integration.
@@ -235,9 +231,9 @@ class RiskManager:
         entry_price: float,
         stop_loss_price: float,
         pair: str,
-        risk_percent: Optional[float] = None,
-        vix_level: Optional[float] = None,
-        session: Optional[str] = None,
+        risk_percent: float | None = None,
+        vix_level: float | None = None,
+        session: str | None = None,
     ) -> dict:
         """
         Calculate position size with adaptive risk multiplier.
@@ -295,7 +291,7 @@ class RiskManager:
 
             return position
 
-    def is_trading_allowed(self, category: Optional[str] = None) -> bool:
+    def is_trading_allowed(self, category: str | None = None) -> bool:
         """
         Check if trading is allowed based on all risk factors.
 
@@ -365,17 +361,13 @@ class RiskManager:
         max_risk = self._prop_firm.max_risk_allowed()
         if trade_risk.get("risk_percent", 0) > max_risk:
             violations.append(
-                f"Risk {trade_risk['risk_percent']*100:.2f}% "
-                f"exceeds max {max_risk*100:.2f}%"
+                f"Risk {trade_risk['risk_percent'] * 100:.2f}% exceeds max {max_risk * 100:.2f}%"
             )
 
         # Check min RR
         min_rr = self._prop_firm.min_rr_required()
         if trade_risk.get("rr_ratio", 0) < min_rr:
-            violations.append(
-                f"RR {trade_risk['rr_ratio']:.2f} "
-                f"below min {min_rr:.2f}"
-            )
+            violations.append(f"RR {trade_risk['rr_ratio']:.2f} below min {min_rr:.2f}")
 
         compliant = len(violations) == 0
 
@@ -419,9 +411,6 @@ class RiskManager:
         }
 
         if name not in components:
-            raise ValueError(
-                f"Invalid component: {name}. "
-                f"Valid: {list(components.keys())}"
-            )
+            raise ValueError(f"Invalid component: {name}. Valid: {list(components.keys())}")
 
         return components[name]
