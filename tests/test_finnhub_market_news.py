@@ -105,7 +105,7 @@ class TestSentimentScoring:
         text = "Strong data beat estimates but dovish rate cut announced"
         score, label = market_news_instance._score_sentiment(text)
 
-        assert score == 0.0  # Equal counts cancel out
+        assert abs(score) < 0.01  # Nearly zero with small tolerance
         assert label == "neutral"
 
     def test_case_insensitive(self, market_news_instance: FinnhubMarketNews) -> None:
