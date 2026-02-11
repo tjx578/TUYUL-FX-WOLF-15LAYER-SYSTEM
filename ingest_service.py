@@ -17,7 +17,7 @@ from loguru import logger
 
 from ingest.candle_builder import CandleBuilder
 from ingest.finnhub_news import FinnhubNews
-from ingest.finnhub_ws import FinnhubWebSocket
+from ingest.dependencies import create_default_finnhub_ws
 
 # Global shutdown event
 _shutdown_event: Optional[asyncio.Event] = None
@@ -72,7 +72,7 @@ async def run_ingest_services(has_api_key: bool) -> None:
         return
 
     # Initialize ingest services
-    ws_feed = FinnhubWebSocket()
+    ws_feed = await create_default_finnhub_ws()
     news_feed = FinnhubNews()
     candle_builder = CandleBuilder()
 
@@ -122,9 +122,9 @@ async def main() -> None:
     logger.add(
         sys.stdout,
         format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | "
-               "<level>{level: <8}</level> | "
-               "<cyan>{name}</cyan>:<cyan>{function}</cyan> - "
-               "<level>{message}</level>",
+        "<level>{level: <8}</level> | "
+        "<cyan>{name}</cyan>:<cyan>{function}</cyan> - "
+        "<level>{message}</level>",
         level="INFO",
         filter=lambda record: record["level"].no < 40,  # Below ERROR
     )
@@ -133,9 +133,9 @@ async def main() -> None:
     logger.add(
         sys.stderr,
         format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | "
-               "<level>{level: <8}</level> | "
-               "<cyan>{name}</cyan>:<cyan>{function}</cyan> - "
-               "<level>{message}</level>",
+        "<level>{level: <8}</level> | "
+        "<cyan>{name}</cyan>:<cyan>{function}</cyan> - "
+        "<level>{message}</level>",
         level="ERROR",
     )
 
