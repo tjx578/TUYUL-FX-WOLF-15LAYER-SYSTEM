@@ -14,6 +14,7 @@ from context.runtime_state import RuntimeState
 from ingest.candle_builder import CandleBuilder
 from ingest.dependencies import create_finnhub_ws
 from ingest.finnhub_news import FinnhubNews
+from ingest.dependencies import create_default_finnhub_ws
 from journal.journal_router import journal_router
 from journal.journal_schema import ContextJournal, DecisionJournal, VerdictType
 from storage.l12_cache import set_verdict
@@ -168,6 +169,9 @@ async def run_ingest_services(
             await asyncio.sleep(1)
         return
 
+    ws_feed = await create_default_finnhub_ws()
+    news_feed = FinnhubNews()
+    candle_builder = CandleBuilder()
     # Build Redis connection from environment variables
     redis_url = os.getenv("REDIS_URL")
     if redis_url:

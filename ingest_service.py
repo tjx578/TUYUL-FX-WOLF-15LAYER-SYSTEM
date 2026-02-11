@@ -18,6 +18,7 @@ from redis.asyncio import Redis as AsyncRedis
 from ingest.candle_builder import CandleBuilder
 from ingest.dependencies import create_finnhub_ws
 from ingest.finnhub_news import FinnhubNews
+from ingest.dependencies import create_default_finnhub_ws
 
 # Global shutdown event
 _shutdown_event: asyncio.Event | None = None
@@ -71,6 +72,13 @@ async def run_ingest_services(has_api_key: bool) -> None:
             await asyncio.sleep(1)
         return
 
+    # Initialize ingest services
+    ws_feed = await create_default_finnhub_ws()
+    news_feed = FinnhubNews()
+    candle_builder = CandleBuilder()
+
+    logger.info("Starting ingest services: WebSocket, News, CandleBuilder")
+    logger.info("Writing data to Redis (CONTEXT_MODE=redis)")
     # Build Redis connection from environment variables
     redis_url = os.getenv("REDIS_URL")
     if redis_url:
