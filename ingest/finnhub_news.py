@@ -4,7 +4,7 @@ Finnhub Economic Calendar Ingestion
 Fetches upcoming economic events via Finnhub REST API.
 NO TRADING DECISION.
 
-Endpoint: GET /economic-calendar?from=YYYY-MM-DD&to=YYYY-MM-DD&token=KEY
+Endpoint: GET /calendar/economic?from=YYYY-MM-DD&to=YYYY-MM-DD&token=KEY
 """
 
 from __future__ import annotations
@@ -30,7 +30,7 @@ class FinnhubNews:
     Economic calendar & news ingestion via Finnhub REST API.
 
     Responsibilities:
-      1. Poll /economic-calendar at configured interval
+      1. Poll /calendar/economic at configured interval
       2. Filter by impact level (high/medium/low)
       3. Normalize → push to LiveContextBus
       4. Retry with exponential backoff on transient errors
@@ -79,7 +79,7 @@ class FinnhubNews:
         from_date = today.isoformat()
         to_date = (today + timedelta(days=7)).isoformat()
 
-        url = f"{self._base_url}/economic-calendar"
+        url = f"{self._base_url}/calendar/economic"
         params: dict[str, str] = {
             "from": from_date,
             "to": to_date,
@@ -118,6 +118,14 @@ class FinnhubNews:
                     )
                     await asyncio.sleep(wait)
                     wait *= self._backoff_factor
+                elif exc.response.status_code == 403:
+                    logger.error(
+                        f"Finnhub HTTP 403 Forbidden — check API key permissions "
+                        f"and endpoint URL: {url}"
+                    )
+                    raise FinnhubNewsError(
+                        f"HTTP 403 Forbidden: {url}"
+                    ) from exc
                 else:
                     logger.error(
                         f"Finnhub HTTP {exc.response.status_code}: "
