@@ -11,15 +11,25 @@ import asyncio
 import os
 import signal
 import sys
-from typing import Optional
 
-from loguru import logger # pyright: ignore[reportMissingImports]
-from redis.asyncio import Redis as AsyncRedis # pyright: ignore[reportMissingImports]
+import loguru
+import redis
 
 from ingest.candle_builder import CandleBuilder
 from ingest.dependencies import create_finnhub_ws
 from ingest.finnhub_news import FinnhubNews
 from ingest.finnhub_ws import FinnhubWebSocket
+
+
+def get_redis_client() -> redis.Redis:
+    """
+    Create and return a Redis client from REDIS_URL environment variable.
+
+    Returns:
+        redis.Redis: Redis client instance
+    """
+    redis_url = os.getenv("REDIS_URL", "redis://localhost:6379")
+    return redis.from_url(redis_url)
 
 # Global shutdown event
 _shutdown_event: asyncio.Event | None = None
@@ -35,7 +45,7 @@ def _validate_api_key() -> bool:
     api_key = os.getenv("FINNHUB_API_KEY", "")
 
     if not api_key or api_key == "YOUR_FINNHUB_API_KEY":
-        logger.warning(
+        loguru.logger.warning(
             "╔════════════════════════════════════════════════════════════╗\n"
             "║  WARNING: FINNHUB_API_KEY not configured                 ║\n"
             "║  Ingest service running in DRY RUN mode                   ║\n"
@@ -45,7 +55,7 @@ def _validate_api_key() -> bool:
         )
         return False
 
-    logger.info("✓ FINNHUB_API_KEY validated")
+    loguru.logger.info("✓ FINNHUB_API_KEY validated")
     return True
 
 
@@ -64,8 +74,8 @@ async def run_ingest_services(has_api_key: bool) -> None:
         has_api_key: Whether a valid Finnhub API key is configured
     """
     if not has_api_key:
-        logger.info("Skipping ingest services - no API key configured")
-        logger.info("Keeping ingest container alive (DRY RUN mode)...")
+        loguru.logger.info("Skipping ingest services - no API key configured")
+        loguru.logger.info("Keeping ingest container alive (DRY RUN mode)...")
         # Keep container alive but don't do anything
         while True:
             if _shutdown_event and _shutdown_event.is_set():
@@ -74,12 +84,13 @@ async def run_ingest_services(has_api_key: bool) -> None:
         return
 
     # Initialize ingest services
-    ws_feed = FinnhubWebSocket() # pyright: ignore[reportCallIssue]
+    redis_client = get_redis_client()
+    ws_feed = await create_finnhub_ws(redis=redis_client)
     news_feed = FinnhubNews()
     candle_builder = CandleBuilder()
 
-    logger.info("Starting ingest services: WebSocket, News, CandleBuilder")
-    logger.info("Writing data to Redis (CONTEXT_MODE=redis)")
+    loguru.logger.info("Starting ingest services: WebSocket, News, CandleBuilder")
+    loguru.logger.info("Writing data to Redis (CONTEXT_MODE=redis)")
 
     # Run all three services concurrently
     try:
@@ -89,14 +100,8 @@ async def run_ingest_services(has_api_key: bool) -> None:
             candle_builder.run(),
         )
     except asyncio.CancelledError:
-        logger.info("Ingest services cancelled - shutting down")
-        await ws_feed.stop()
+        loguru.logger.info("Ingest services cancelled - shutting down")
         raise
-
-    finally:
-        # Cleanup Redis connection
-        await redis.aclose() # pyright: ignore[reportUndefinedVariable]
-        logger.info("Redis connection closed")
 
 
 def _handle_signal(signum: int, frame) -> None:
@@ -108,7 +113,7 @@ def _handle_signal(signum: int, frame) -> None:
         frame: Current stack frame
     """
     signal_name = signal.Signals(signum).name
-    logger.info(f"Received {signal_name} - initiating graceful shutdown...")
+    loguru.logger.info(f"Received {signal_name} - initiating graceful shutdown...")
 
     if _shutdown_event:
         _shutdown_event.set()
@@ -124,10 +129,10 @@ async def main() -> None:
     _shutdown_event = asyncio.Event()
 
     # Configure logging — split streams for Railway compatibility
-    logger.remove()
+    loguru.logger.remove()
 
     # INFO/WARNING → stdout (Railway classifies as "info")
-    logger.add(
+    loguru.logger.add(
         sys.stdout,
         format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | "
         "<level>{level: <8}</level> | "
@@ -138,7 +143,7 @@ async def main() -> None:
     )
 
     # ERROR/CRITICAL → stderr (Railway classifies as "error")
-    logger.add(
+    loguru.logger.add(
         sys.stderr,
         format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | "
         "<level>{level: <8}</level> | "
@@ -147,9 +152,9 @@ async def main() -> None:
         level="ERROR",
     )
 
-    logger.info("=" * 70)
-    logger.info("TUYUL FX WOLF - Standalone Ingest Service")
-    logger.info("=" * 70)
+    loguru.logger.info("=" * 70)
+    loguru.logger.info("TUYUL FX WOLF - Standalone Ingest Service")
+    loguru.logger.info("=" * 70)
 
     # Set up signal handlers for graceful shutdown
     signal.signal(signal.SIGTERM, _handle_signal)
@@ -161,22 +166,22 @@ async def main() -> None:
     # Validate CONTEXT_MODE
     context_mode = os.getenv("CONTEXT_MODE", "local").lower()
     if context_mode != "redis":
-        logger.warning(f"CONTEXT_MODE={context_mode} - expected 'redis' for multi-container setup")
-        logger.warning("Data will be written to local memory only (not shared)")
+        loguru.logger.warning(f"CONTEXT_MODE={context_mode} - expected 'redis' for multi-container setup")
+        loguru.logger.warning("Data will be written to local memory only (not shared)")
     else:
         redis_url = os.getenv("REDIS_URL", "")
-        logger.info(f"✓ CONTEXT_MODE=redis, REDIS_URL={redis_url}")
+        loguru.logger.info(f"✓ CONTEXT_MODE=redis, REDIS_URL={redis_url}")
 
     # Run ingest services
     try:
         await run_ingest_services(has_api_key)
     except KeyboardInterrupt:
-        logger.info("KeyboardInterrupt received")
+        loguru.logger.info("KeyboardInterrupt received")
     except Exception as exc:
-        logger.exception(f"Ingest service failed: {exc}")
+        loguru.logger.exception(f"Ingest service failed: {exc}")
         sys.exit(1)
     finally:
-        logger.info("Ingest service shutdown complete")
+        loguru.logger.info("Ingest service shutdown complete")
 
 
 if __name__ == "__main__":
