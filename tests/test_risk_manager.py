@@ -10,6 +10,7 @@ Tests all risk components:
 - Synthesis integration
 """
 
+from datetime import datetime, timedelta, timezone
 from datetime import UTC, datetime, timedelta
 from unittest.mock import MagicMock, patch
 
@@ -185,6 +186,11 @@ def test_circuit_breaker_consecutive_losses(circuit_breaker):
     # Record 3 consecutive losses (threshold = 3)
     for i in range(3):
         daily_loss = (i + 1) * 50.0
+        circuit_breaker.record_trade(
+            pnl=-50.0,
+            pair="EURUSD",
+            daily_loss=daily_loss
+        )
         circuit_breaker.record_trade(pnl=-50.0, pair="EURUSD", daily_loss=daily_loss)
 
     assert circuit_breaker.get_state() == "OPEN"
@@ -195,6 +201,7 @@ def test_circuit_breaker_recovery_probe_success(circuit_breaker):
     """Test CircuitBreaker recovers after successful probe."""
     # Force into OPEN state
     circuit_breaker._state = CircuitBreakerState.OPEN
+    circuit_breaker._opened_at = datetime.now(timezone.utc) - timedelta(hours=5)
     circuit_breaker._opened_at = datetime.now(UTC) - timedelta(hours=5)
 
     # Check auto-recovery to HALF_OPEN after cooldown
@@ -334,6 +341,14 @@ def test_risk_multiplier_high_drawdown(risk_multiplier):
 
 def test_risk_multiplier_vix_scaling(risk_multiplier):
     """Test RiskMultiplier with VIX input."""
+    mult_low_vix = risk_multiplier.calculate(
+        drawdown_level=0.1,
+        vix_level=12.0
+    )
+    mult_high_vix = risk_multiplier.calculate(
+        drawdown_level=0.1,
+        vix_level=40.0
+    )
     mult_low_vix = risk_multiplier.calculate(drawdown_level=0.1, vix_level=12.0)
     mult_high_vix = risk_multiplier.calculate(drawdown_level=0.1, vix_level=40.0)
 
@@ -343,6 +358,14 @@ def test_risk_multiplier_vix_scaling(risk_multiplier):
 
 def test_risk_multiplier_session_scaling(risk_multiplier):
     """Test RiskMultiplier with session input."""
+    mult_london = risk_multiplier.calculate(
+        drawdown_level=0.1,
+        session="LONDON"
+    )
+    mult_off = risk_multiplier.calculate(
+        drawdown_level=0.1,
+        session="OFF_SESSION"
+    )
     mult_london = risk_multiplier.calculate(drawdown_level=0.1, session="LONDON")
     mult_off = risk_multiplier.calculate(drawdown_level=0.1, session="OFF_SESSION")
 
@@ -436,6 +459,10 @@ def test_risk_manager_trading_not_allowed_on_breach(risk_manager):
 
 def test_risk_manager_prop_firm_compliance(risk_manager):
     """Test RiskManager checks prop firm compliance."""
+    result = risk_manager.check_prop_firm_compliance({
+        "risk_percent": 0.01,
+        "rr_ratio": 2.5,
+    })
     result = risk_manager.check_prop_firm_compliance(
         {
             "risk_percent": 0.01,

@@ -56,6 +56,10 @@ class RiskMultiplier:
             time_enabled=self.time_enabled,
         )
 
+    def _calculate_drawdown_multiplier(
+        self,
+        drawdown_level: float
+    ) -> float:
     def _calculate_drawdown_multiplier(self, drawdown_level: float) -> float:
         """
         Calculate multiplier based on drawdown level.
@@ -84,6 +88,10 @@ class RiskMultiplier:
 
         return dd_config["level_max_multiplier"]
 
+    def _calculate_vix_multiplier(
+        self,
+        vix_level: Optional[float]
+    ) -> float:
     def _calculate_vix_multiplier(self, vix_level: float | None) -> float:
         """
         Calculate multiplier based on VIX level.
@@ -113,6 +121,10 @@ class RiskMultiplier:
 
         return vix_config["low_multiplier"]
 
+    def _calculate_session_multiplier(
+        self,
+        session: Optional[str]
+    ) -> float:
     def _calculate_session_multiplier(self, session: str | None) -> float:
         """
         Calculate multiplier based on trading session.

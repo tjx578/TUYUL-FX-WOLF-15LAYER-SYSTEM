@@ -12,6 +12,8 @@ Calculates position size based on:
 Formula: lot = risk_amount / (sl_distance × pip_value)
 """
 
+from typing import Dict, List, Optional
+
 from loguru import logger
 
 from dashboard.backend.schemas import (
@@ -116,6 +118,9 @@ class RiskEngine:
         split_lots = None
         if risk_mode == RiskMode.SPLIT and split_ratios:
             split_lots = [lot * ratio for ratio in split_ratios]
+            _total_lot = lot  # Keep total lot same for validation
+        else:
+            _total_lot = lot
 
         # Project drawdown after trade loss
         daily_dd_after = account_state.daily_dd_percent + adjusted_risk_percent
@@ -152,6 +157,9 @@ class RiskEngine:
             "total_dd_after": total_dd_after,
         }
 
+        guard_result = manager.evaluate_trade(
+            account_state_dict, trade_risk_dict
+        )
         guard_result = manager.evaluate_trade(account_state_dict, trade_risk_dict)
 
         # Determine severity

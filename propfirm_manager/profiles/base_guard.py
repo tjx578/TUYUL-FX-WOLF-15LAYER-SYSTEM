@@ -34,6 +34,7 @@ class GuardResult:
         self.severity = severity
         self.details = details
 
+    def to_dict(self) -> Dict[str, Any]:
     def to_dict(self) -> dict[str, Any]:
         """
         Convert to dictionary.
@@ -57,6 +58,7 @@ class BasePropFirmGuard(ABC):
     specific rules (DD limits, max open trades, etc.).
     """
 
+    def __init__(self, rules: Dict[str, Any]):
     def __init__(self, rules: dict[str, Any]):
         """
         Initialize guard with firm rules.

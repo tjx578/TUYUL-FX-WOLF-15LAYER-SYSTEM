@@ -115,16 +115,26 @@ class PropFirmRules:
 
         # Check market allowed
         if not self.is_market_allowed(category):
+            violations.append(
+                f"Market category '{category}' not allowed by prop firm"
+            )
             violations.append(f"Market category '{category}' not allowed by prop firm")
 
         # Check risk limit
         max_risk = self.max_risk_allowed()
         if risk_percent > max_risk:
+            violations.append(
+                f"Risk {risk_percent*100:.2f}% exceeds max "
+                f"{max_risk*100:.2f}%"
+            )
             violations.append(f"Risk {risk_percent * 100:.2f}% exceeds max {max_risk * 100:.2f}%")
 
         # Check RR requirement
         min_rr = self.min_rr_required()
         if rr_ratio < min_rr:
+            violations.append(
+                f"RR {rr_ratio:.2f} below minimum {min_rr:.2f}"
+            )
             violations.append(f"RR {rr_ratio:.2f} below minimum {min_rr:.2f}")
 
         return {

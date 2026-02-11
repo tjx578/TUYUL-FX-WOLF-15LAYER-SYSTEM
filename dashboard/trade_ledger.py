@@ -131,6 +131,7 @@ class TradeLedger:
         """
         # Generate trade ID
         timestamp = int(now_utc().timestamp() * 1000)
+        trade_id = f"T-{timestamp}"
         self._trade_counter += 1
         trade_id = f"T-{timestamp}-{self._trade_counter}"
 
@@ -175,6 +176,10 @@ class TradeLedger:
 
                 # Add to active trades sorted set
                 active_key = f"{self._redis_prefix}:TRADES:ACTIVE"
+                self._redis.client.zadd(
+                    active_key,
+                    {trade_id: now.timestamp()}
+                )
                 self._redis.client.zadd(active_key, {trade_id: now.timestamp()})
 
                 logger.info(

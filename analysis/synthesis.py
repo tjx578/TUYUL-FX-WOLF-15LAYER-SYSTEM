@@ -105,6 +105,11 @@ class SynthesisEngine:
 # Placeholder
 
 
+def build_synthesis(
+    pair: str,
+    risk_manager=None,
+    vix_level: float = None
+) -> dict:
 def build_synthesis(pair: str, risk_manager=None, vix_level: float | None = None) -> dict:
     """
     Build L12-contract-compliant synthesis for a pair.
@@ -187,6 +192,10 @@ def build_synthesis(pair: str, risk_manager=None, vix_level: float | None = None
             )
 
             # Check prop firm compliance
+            prop_compliance = risk_manager.check_prop_firm_compliance({
+                "risk_percent": position_data["risk_percent"],
+                "rr_ratio": rr_ratio,
+            })
             prop_compliance = risk_manager.check_prop_firm_compliance(
                 {
                     "risk_percent": position_data["risk_percent"],
@@ -220,6 +229,7 @@ def build_synthesis(pair: str, risk_manager=None, vix_level: float | None = None
         risk_percent = 0.01  # 1%
         risk_amount = 100.0
         prop_compliant = True
+
 
     # Compute confidence index (conf12)
     # Average of key integrity metrics

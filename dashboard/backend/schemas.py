@@ -134,6 +134,12 @@ class Layer12Signal(BaseModel):
     verdict: str = Field(..., description="EXECUTE_BUY or EXECUTE_SELL")
     confidence: str = Field(..., description="VERY_HIGH, HIGH, MEDIUM, LOW")
     wolf_score: int = Field(..., ge=0, le=30, description="Wolf 30-point score")
+    tii_sym: float = Field(
+        ..., ge=0.0, le=1.0, description="Technical integrity index"
+    )
+    frpc: float = Field(
+        ..., ge=0.0, le=1.0, description="Fundamental-risk-prob-context"
+    )
     tii_sym: float = Field(..., ge=0.0, le=1.0, description="Technical integrity index")
     frpc: float = Field(..., ge=0.0, le=1.0, description="Fundamental-risk-prob-context")
 
@@ -187,6 +193,9 @@ class RiskCalculationResult(BaseModel):
     total_dd_after: float = Field(..., ge=0)
     severity: RiskSeverity = Field(...)
     reason: str = Field(...)
+    split_lots: Optional[List[float]] = Field(
+        default=None, description="For split risk mode"
+    )
     split_lots: list[float] | None = Field(default=None, description="For split risk mode")
 
     model_config = ConfigDict(frozen=True)
