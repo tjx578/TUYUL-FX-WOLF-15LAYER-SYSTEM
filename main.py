@@ -13,7 +13,7 @@ from constitution.verdict_engine import generate_l12_verdict
 from context.runtime_state import RuntimeState
 from ingest.candle_builder import CandleBuilder
 from ingest.finnhub_news import FinnhubNews
-from ingest.finnhub_ws import FinnhubWebSocket
+from ingest.dependencies import create_default_finnhub_ws
 from journal.journal_router import journal_router
 from journal.journal_schema import ContextJournal, DecisionJournal, VerdictType
 from storage.l12_cache import set_verdict
@@ -79,7 +79,8 @@ def _build_j2(pair: str, synthesis: dict, l12: dict) -> DecisionJournal:
 
     # Extract failed gates
     failed_gates = [
-        gate_name for gate_name, gate_value in gates.items()
+        gate_name
+        for gate_name, gate_value in gates.items()
         if gate_name not in ["passed", "total"] and gate_value == "FAIL"
     ]
 
@@ -106,7 +107,9 @@ def _build_j2(pair: str, synthesis: dict, l12: dict) -> DecisionJournal:
         wolf_30_score=int(scores.get("wolf_30_point", 0)),
         f_score=int(scores.get("f_score", 0)),
         t_score=int(scores.get("t_score", 0)),
-        fta_score=int((scores.get("fta_score") or 0) * 10),  # Convert fta_score from 0-1 scale to 0-10 scale
+        fta_score=int(
+            (scores.get("fta_score") or 0) * 10
+        ),  # Convert fta_score from 0-1 scale to 0-10 scale
         exec_score=int(scores.get("exec_score", 0)),
         tii_sym=float(layers.get("L8_tii_sym", 0.0)),
         integrity_index=float(layers.get("L8_integrity_index", 0.0)),
@@ -165,7 +168,7 @@ async def run_ingest_services(
             await asyncio.sleep(1)
         return
 
-    ws_feed = FinnhubWebSocket()
+    ws_feed = await create_default_finnhub_ws()
     news_feed = FinnhubNews()
     candle_builder = CandleBuilder()
 
@@ -289,9 +292,9 @@ async def main() -> None:
     logger.add(
         sys.stdout,
         format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | "
-               "<level>{level: <8}</level> | "
-               "<cyan>{name}</cyan>:<cyan>{function}</cyan> - "
-               "<level>{message}</level>",
+        "<level>{level: <8}</level> | "
+        "<cyan>{name}</cyan>:<cyan>{function}</cyan> - "
+        "<level>{message}</level>",
         level="INFO",
         filter=lambda record: record["level"].no < 40,  # Below ERROR
     )
@@ -300,9 +303,9 @@ async def main() -> None:
     logger.add(
         sys.stderr,
         format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | "
-               "<level>{level: <8}</level> | "
-               "<cyan>{name}</cyan>:<cyan>{function}</cyan> - "
-               "<level>{message}</level>",
+        "<level>{level: <8}</level> | "
+        "<cyan>{name}</cyan>:<cyan>{function}</cyan> - "
+        "<level>{message}</level>",
         level="ERROR",
     )
 
