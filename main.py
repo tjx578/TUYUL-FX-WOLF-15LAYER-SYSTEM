@@ -2,7 +2,6 @@ import asyncio
 import os
 import signal
 import sys
-from typing import Optional
 
 from loguru import logger
 from redis.asyncio import Redis as AsyncRedis
@@ -25,7 +24,7 @@ from utils.timezone_utils import is_trading_session, now_utc
 PAIRS = [p["symbol"] for p in CONFIG["pairs"]["pairs"] if p.get("enabled", True)]
 
 # Global flag for graceful shutdown
-_shutdown_event: Optional[asyncio.Event] = None
+_shutdown_event: asyncio.Event | None = None
 
 
 def _build_j1(pair: str, synthesis: dict) -> ContextJournal:
@@ -177,10 +176,10 @@ async def run_ingest_services(
     redis_url = os.getenv("REDIS_URL")
     if redis_url:
         # Redact password from log output
-        if '@' in redis_url:
-            safe_url = redis_url.split('@')[-1]
-        elif '://' in redis_url:
-            safe_url = redis_url.split('://')[1]
+        if "@" in redis_url:
+            safe_url = redis_url.split("@")[-1]
+        elif "://" in redis_url:
+            safe_url = redis_url.split("://")[1]
         else:
             safe_url = redis_url
         logger.info(f"Using REDIS_URL for local mode: redis://***@{safe_url}")
@@ -231,7 +230,7 @@ async def run_ingest_services(
 
     finally:
         # Cleanup
-        if 'ws_feed' in locals():
+        if "ws_feed" in locals():
             await ws_feed.stop()
         await redis.aclose()
         logger.info("Ingest services cleanup complete")
@@ -252,10 +251,7 @@ async def run_redis_consumer() -> None:
         await redis_consumer.start()
 
     except Exception as exc:
-        logger.error(
-            f"Failed to start RedisConsumer: {exc}. "
-            "Continuing without Redis consumer."
-        )
+        logger.error(f"Failed to start RedisConsumer: {exc}. Continuing without Redis consumer.")
         # Keep task alive so main doesn't exit
         while True:
             if _shutdown_event and _shutdown_event.is_set():

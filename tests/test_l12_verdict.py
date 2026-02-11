@@ -4,8 +4,9 @@ Unit tests for L12 verdict engine.
 Tests verdict generation with various gate configurations.
 """
 
+from typing import Any
+
 import pytest
-from typing import Dict, Any
 
 from constitution.verdict_engine import generate_l12_verdict
 
@@ -20,7 +21,7 @@ def _make_synthesis(
     drawdown: float = 2.0,
     latency: int = 100,
     conf12: float = 0.85,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Helper to create a synthesis dict with configurable values.
 

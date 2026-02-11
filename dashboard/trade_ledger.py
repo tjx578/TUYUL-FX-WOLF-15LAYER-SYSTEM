@@ -23,16 +23,17 @@ Storage:
 
 import json
 import os
+
 from threading import Lock
-from typing import Dict, List, Optional
+from typing import Optional
 
 from loguru import logger
 
 from schemas.trade_models import (
+    CloseReason,
     Trade,
     TradeLeg,
     TradeStatus,
-    CloseReason,
     is_valid_transition,
 )
 from storage.redis_client import RedisClient
@@ -62,7 +63,7 @@ class TradeLedger:
         """Initialize trade ledger."""
         self._redis = RedisClient()
         self._redis_prefix = os.getenv("REDIS_PREFIX", "wolf15")
-        self._cache: Dict[str, Trade] = {}
+        self._cache: dict[str, Trade] = {}
         self._rw_lock = Lock()
         self._trade_counter = 0
 
@@ -110,7 +111,7 @@ class TradeLedger:
         risk_mode: str,
         total_risk_percent: float,
         total_risk_amount: float,
-        legs: List[Dict],
+        legs: list[dict],
     ) -> Trade:
         """
         Create a new trade in INTENDED status.
@@ -174,10 +175,7 @@ class TradeLedger:
 
                 # Add to active trades sorted set
                 active_key = f"{self._redis_prefix}:TRADES:ACTIVE"
-                self._redis.client.zadd(
-                    active_key,
-                    {trade_id: now.timestamp()}
-                )
+                self._redis.client.zadd(active_key, {trade_id: now.timestamp()})
 
                 logger.info(
                     f"Created trade: {trade_id} | {pair} {direction} | "
@@ -192,8 +190,8 @@ class TradeLedger:
         self,
         trade_id: str,
         new_status: TradeStatus,
-        close_reason: Optional[CloseReason] = None,
-        pnl: Optional[float] = None,
+        close_reason: CloseReason | None = None,
+        pnl: float | None = None,
     ) -> bool:
         """
         Update trade status with transition validation.
@@ -217,9 +215,7 @@ class TradeLedger:
 
             # Validate transition
             if not is_valid_transition(trade.status, new_status):
-                logger.warning(
-                    f"Invalid transition: {trade.status} → {new_status} for {trade_id}"
-                )
+                logger.warning(f"Invalid transition: {trade.status} → {new_status} for {trade_id}")
                 return False
 
             # Update status
@@ -264,7 +260,7 @@ class TradeLedger:
 
             return True
 
-    def get_trade(self, trade_id: str) -> Optional[Trade]:
+    def get_trade(self, trade_id: str) -> Trade | None:
         """
         Get trade by ID.
 
@@ -294,7 +290,7 @@ class TradeLedger:
 
         return None
 
-    def get_active_trades(self) -> List[Trade]:
+    def get_active_trades(self) -> list[Trade]:
         """
         Get all active trades (not CLOSED/CANCELLED/SKIPPED).
 
@@ -305,10 +301,11 @@ class TradeLedger:
             return [
                 trade
                 for trade in self._cache.values()
-                if trade.status not in (TradeStatus.CLOSED, TradeStatus.CANCELLED, TradeStatus.SKIPPED)
+                if trade.status
+                not in (TradeStatus.CLOSED, TradeStatus.CANCELLED, TradeStatus.SKIPPED)
             ]
 
-    def get_trades_by_account(self, account_id: str) -> List[Trade]:
+    def get_trades_by_account(self, account_id: str) -> list[Trade]:
         """
         Get all trades for an account.
 
@@ -319,11 +316,7 @@ class TradeLedger:
             List of Trade instances for the account
         """
         with self._rw_lock:
-            return [
-                trade
-                for trade in self._cache.values()
-                if trade.account_id == account_id
-            ]
+            return [trade for trade in self._cache.values() if trade.account_id == account_id]
 
     def get_trade_count(self) -> int:
         """

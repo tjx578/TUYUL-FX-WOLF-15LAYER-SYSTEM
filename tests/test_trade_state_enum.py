@@ -10,9 +10,9 @@ Validates:
 import pytest
 
 from execution.trade_state_enum import (
-    TradeState,
     VALID_TRANSITIONS,
     InvalidTransitionError,
+    TradeState,
     validate_transition,
 )
 
@@ -54,21 +54,15 @@ class TestValidTransitions:
 
     def test_signal_created_to_pending_placed(self):
         """SIGNAL_CREATED -> PENDING_PLACED is valid."""
-        validate_transition(
-            TradeState.SIGNAL_CREATED, TradeState.PENDING_PLACED
-        )
+        validate_transition(TradeState.SIGNAL_CREATED, TradeState.PENDING_PLACED)
 
     def test_pending_placed_to_filled(self):
         """PENDING_PLACED -> PENDING_FILLED is valid."""
-        validate_transition(
-            TradeState.PENDING_PLACED, TradeState.PENDING_FILLED
-        )
+        validate_transition(TradeState.PENDING_PLACED, TradeState.PENDING_FILLED)
 
     def test_pending_filled_to_trade_open(self):
         """PENDING_FILLED -> TRADE_OPEN is valid."""
-        validate_transition(
-            TradeState.PENDING_FILLED, TradeState.TRADE_OPEN
-        )
+        validate_transition(TradeState.PENDING_FILLED, TradeState.TRADE_OPEN)
 
     def test_trade_open_to_closed(self):
         """TRADE_OPEN -> TRADE_CLOSED is valid."""
@@ -76,15 +70,11 @@ class TestValidTransitions:
 
     def test_trade_open_to_partial_closed(self):
         """TRADE_OPEN -> TRADE_PARTIAL_CLOSED is valid."""
-        validate_transition(
-            TradeState.TRADE_OPEN, TradeState.TRADE_PARTIAL_CLOSED
-        )
+        validate_transition(TradeState.TRADE_OPEN, TradeState.TRADE_PARTIAL_CLOSED)
 
     def test_partial_closed_to_closed(self):
         """TRADE_PARTIAL_CLOSED -> TRADE_CLOSED is valid."""
-        validate_transition(
-            TradeState.TRADE_PARTIAL_CLOSED, TradeState.TRADE_CLOSED
-        )
+        validate_transition(TradeState.TRADE_PARTIAL_CLOSED, TradeState.TRADE_CLOSED)
 
     def test_signal_expired_to_idle(self):
         """SIGNAL_EXPIRED -> IDLE is valid."""
@@ -105,16 +95,12 @@ class TestInvalidTransitions:
     def test_trade_closed_to_trade_open_invalid(self):
         """TRADE_CLOSED -> TRADE_OPEN should fail (no reopening)."""
         with pytest.raises(InvalidTransitionError):
-            validate_transition(
-                TradeState.TRADE_CLOSED, TradeState.TRADE_OPEN
-            )
+            validate_transition(TradeState.TRADE_CLOSED, TradeState.TRADE_OPEN)
 
     def test_signal_created_to_trade_closed_invalid(self):
         """SIGNAL_CREATED -> TRADE_CLOSED should fail (skip steps)."""
         with pytest.raises(InvalidTransitionError):
-            validate_transition(
-                TradeState.SIGNAL_CREATED, TradeState.TRADE_CLOSED
-            )
+            validate_transition(TradeState.SIGNAL_CREATED, TradeState.TRADE_CLOSED)
 
 
 class TestTransitionMap:

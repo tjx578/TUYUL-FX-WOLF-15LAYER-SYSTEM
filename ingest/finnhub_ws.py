@@ -5,9 +5,12 @@ import json
 import logging
 import os
 import random
-from typing import Any, Callable, Coroutine
+
+from collections.abc import Callable, Coroutine
+from typing import Any
 
 import websockets
+
 from redis.asyncio import Redis
 from websockets.exceptions import (
     ConnectionClosed,
@@ -201,9 +204,7 @@ class FinnhubWebSocket:
                     maximum=MAX_BACKOFF_S,
                 )
                 raise FinnhubRateLimitError(retry_after=backoff) from exc
-            raise FinnhubConnectionError(
-                f"WS connection rejected: HTTP {exc.status_code}"
-            ) from exc
+            raise FinnhubConnectionError(f"WS connection rejected: HTTP {exc.status_code}") from exc
         except Exception as exc:
             raise FinnhubConnectionError(str(exc)) from exc
 

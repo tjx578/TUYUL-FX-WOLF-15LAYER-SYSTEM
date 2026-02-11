@@ -7,15 +7,21 @@ Supports two modes via CONTEXT_MODE environment variable:
   - redis: Redis-backed storage for multi-container deployments
 """
 
+from __future__ import annotations
+
 import os
+
 from collections import defaultdict, deque
 from threading import Lock
-from typing import Optional
+from typing import TYPE_CHECKING
 
 from loguru import logger
 
 from context.context_validator import ContextValidator
 from utils.timezone_utils import now_utc
+
+if TYPE_CHECKING:
+    from context.redis_context_bridge import RedisContextBridge
 
 
 class LiveContextBus:
@@ -27,10 +33,10 @@ class LiveContextBus:
       - CONTEXT_MODE=redis: Writes to Redis for multi-container setups
     """
 
-    _instance: Optional["LiveContextBus"] = None
+    _instance: LiveContextBus | None = None
     _lock = Lock()
 
-    def __new__(cls) -> "LiveContextBus":
+    def __new__(cls) -> LiveContextBus:
         if not cls._instance:
             with cls._lock:
                 if not cls._instance:
@@ -52,18 +58,18 @@ class LiveContextBus:
 
         # Check mode and initialize Redis bridge if needed
         self._mode = os.getenv("CONTEXT_MODE", "local").lower()
-        self._redis_bridge: Optional["RedisContextBridge"] = None
+        self._redis_bridge: RedisContextBridge | None = None
 
         if self._mode == "redis":
             try:
                 # Lazy import to avoid circular dependency
                 from context.redis_context_bridge import RedisContextBridge
+
                 self._redis_bridge = RedisContextBridge()
                 logger.info("LiveContextBus initialized in REDIS mode")
             except Exception as exc:
                 logger.error(
-                    f"Failed to initialize Redis bridge: {exc}. "
-                    "Falling back to local mode."
+                    f"Failed to initialize Redis bridge: {exc}. Falling back to local mode."
                 )
                 self._mode = "local"
                 self._redis_bridge = None
@@ -175,9 +181,7 @@ class LiveContextBus:
                 if timeframe in tf_map
             }
 
-    def get_candle_history(
-        self, symbol: str, timeframe: str, count: int = 20
-    ) -> list:
+    def get_candle_history(self, symbol: str, timeframe: str, count: int = 20) -> list:
         """
         Get historical candles for a symbol and timeframe.
 

@@ -3,15 +3,17 @@ Redis Client Wrapper with Connection Pooling, Pub/Sub, and Streams support.
 """
 
 import os
+
 from typing import Any, Optional
 
 import redis
+
 from loguru import logger
 from tenacity import (
     retry,
+    retry_if_exception_type,
     stop_after_attempt,
     wait_exponential,
-    retry_if_exception_type,
 )
 
 
@@ -78,7 +80,7 @@ class RedisClient:
         wait=wait_exponential(multiplier=1, min=1, max=10),
         reraise=True,
     )
-    def set(self, key: str, value: str, ex: Optional[int] = None) -> None:
+    def set(self, key: str, value: str, ex: int | None = None) -> None:
         """Set key-value with optional expiration."""
         self.client.set(key, value, ex=ex)
 
@@ -90,7 +92,7 @@ class RedisClient:
         wait=wait_exponential(multiplier=1, min=1, max=10),
         reraise=True,
     )
-    def get(self, key: str) -> Optional[str]:
+    def get(self, key: str) -> str | None:
         """Get value by key."""
         return self.client.get(key)
 
@@ -102,9 +104,7 @@ class RedisClient:
         wait=wait_exponential(multiplier=1, min=1, max=10),
         reraise=True,
     )
-    def hset(
-        self, name: str, mapping: Optional[dict] = None, **kwargs: Any
-    ) -> int:
+    def hset(self, name: str, mapping: dict | None = None, **kwargs: Any) -> int:
         """
         Set hash field(s).
 
@@ -118,8 +118,7 @@ class RedisClient:
         """
         if mapping:
             return self.client.hset(name, mapping=mapping)
-        else:
-            return self.client.hset(name, **kwargs)
+        return self.client.hset(name, **kwargs)
 
     @retry(
         retry=retry_if_exception_type(
@@ -129,7 +128,7 @@ class RedisClient:
         wait=wait_exponential(multiplier=1, min=1, max=10),
         reraise=True,
     )
-    def hget(self, name: str, key: str) -> Optional[str]:
+    def hget(self, name: str, key: str) -> str | None:
         """Get hash field value."""
         return self.client.hget(name, key)
 
@@ -188,7 +187,7 @@ class RedisClient:
         name: str,
         fields: dict[str, Any],
         id: str = "*",
-        maxlen: Optional[int] = None,
+        maxlen: int | None = None,
         approximate: bool = True,
     ) -> str:
         """
@@ -204,9 +203,7 @@ class RedisClient:
         Returns:
             Entry ID assigned by Redis.
         """
-        return self.client.xadd(
-            name, fields, id=id, maxlen=maxlen, approximate=approximate
-        )
+        return self.client.xadd(name, fields, id=id, maxlen=maxlen, approximate=approximate)
 
     @retry(
         retry=retry_if_exception_type(
@@ -219,8 +216,8 @@ class RedisClient:
     def xread(
         self,
         streams: dict[str, str],
-        count: Optional[int] = None,
-        block: Optional[int] = None,
+        count: int | None = None,
+        block: int | None = None,
     ) -> list:
         """
         Read from Redis Streams.
@@ -248,8 +245,8 @@ class RedisClient:
         groupname: str,
         consumername: str,
         streams: dict[str, str],
-        count: Optional[int] = None,
-        block: Optional[int] = None,
+        count: int | None = None,
+        block: int | None = None,
     ) -> list:
         """
         Read from Redis Streams using a consumer group.
@@ -264,9 +261,7 @@ class RedisClient:
         Returns:
             List of [stream_name, [(entry_id, fields), ...]] tuples.
         """
-        return self.client.xreadgroup(
-            groupname, consumername, streams, count=count, block=block
-        )
+        return self.client.xreadgroup(groupname, consumername, streams, count=count, block=block)
 
     @retry(
         retry=retry_if_exception_type(
@@ -299,9 +294,7 @@ class RedisClient:
             redis.exceptions.ResponseError: If group already exists.
         """
         try:
-            return self.client.xgroup_create(
-                name, groupname, id=id, mkstream=mkstream
-            )
+            return self.client.xgroup_create(name, groupname, id=id, mkstream=mkstream)
         except redis.exceptions.ResponseError as e:
             if "BUSYGROUP" in str(e):
                 # Group already exists, this is fine

@@ -4,14 +4,12 @@ Ensures all data entering LiveContextBus is structurally valid.
 NO TRADING LOGIC.
 """
 
-from typing import Dict
-
 from context.context_keys import CANDLE, NEWS, TICK
 
 
 class ContextValidator:
     @staticmethod
-    def validate_tick(tick: Dict) -> bool:
+    def validate_tick(tick: dict) -> bool:
         required = TICK.values()
         for key in required:
             if key not in tick:
@@ -26,7 +24,7 @@ class ContextValidator:
         return True
 
     @staticmethod
-    def validate_candle(candle: Dict) -> bool:
+    def validate_candle(candle: dict) -> bool:
         required = CANDLE.values()
         for key in required:
             if key not in candle:
@@ -40,11 +38,13 @@ class ContextValidator:
         return True
 
     @staticmethod
-    def validate_news(news: Dict) -> bool:
+    def validate_news(news: dict) -> bool:
         if NEWS["events"] not in news:
             return False
         if not isinstance(news[NEWS["events"]], list):
             return False
 
         return True
+
+
 # Placeholder
