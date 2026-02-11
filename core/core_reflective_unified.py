@@ -59,7 +59,7 @@ class AlgoPrecisionEngine:
             return {"precision": 0.0, "valid": False}
 
         # Calculate mean absolute percentage error
-        errors = [abs((a - p) / a) for a, p in zip(actuals, predictions) if a != 0]
+        errors = [abs((a - p) / a) for a, p in zip(actuals, predictions, strict=False) if a != 0]
         mape = sum(errors) / len(errors) if errors else 0
         precision = max(0, 1 - mape)
 

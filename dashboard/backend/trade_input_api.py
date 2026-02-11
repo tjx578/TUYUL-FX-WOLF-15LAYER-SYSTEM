@@ -10,7 +10,7 @@ Provides write endpoints for:
 All endpoints require JWT authentication.
 """
 
-from datetime import datetime
+from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -69,7 +69,7 @@ def receive_layer12_signal(signal: Layer12Signal) -> dict:
     """
     signal_dict = signal.model_dump()
     signal_dict["state"] = TradeState.SIGNAL_CREATED.value
-    signal_dict["created_at"] = datetime.utcnow().isoformat()
+    signal_dict["created_at"] = datetime.now(UTC).isoformat()
 
     signal_pool[signal.signal_id] = signal_dict
 
@@ -203,7 +203,7 @@ def open_trade(request: TradeOpenRequest) -> dict:
         "lot": request.lot,
         "risk_amount": risk_amount,
         "state": TradeState.TRADE_OPEN.value,
-        "opened_at": datetime.utcnow().isoformat(),
+        "opened_at": datetime.now(UTC).isoformat(),
         "closed_at": None,
         "pnl": None,
     }
@@ -244,7 +244,7 @@ def close_trade(request: TradeCloseRequest) -> dict:
 
     # Update trade record
     trade["state"] = TradeState.TRADE_CLOSED.value
-    trade["closed_at"] = datetime.utcnow().isoformat()
+    trade["closed_at"] = datetime.now(UTC).isoformat()
     trade["close_price"] = request.close_price
     trade["pnl"] = request.pnl
     trade["close_reason"] = request.reason
@@ -262,7 +262,7 @@ def close_trade(request: TradeCloseRequest) -> dict:
     outcome = TradeOutcome.WIN if request.pnl > 0 else TradeOutcome.LOSS
 
     j4 = ReflectiveJournal(
-        timestamp=datetime.utcnow(),
+        timestamp=datetime.now(UTC),
         setup_id=f"{trade['pair']}_{trade['opened_at'][:19]}",
         pair=trade["pair"],
         outcome=outcome,
@@ -312,8 +312,8 @@ def get_signals() -> list[dict]:
 
 @write_router.get("/trades")
 def get_trades(
-    account_id: str = None,
-    state: str = None,
+    account_id: str | None = None,
+    state: str | None = None,
 ) -> list[dict]:
     """
     Get trade ledger (all trades or filtered).

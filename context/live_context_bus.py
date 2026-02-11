@@ -7,16 +7,21 @@ Supports two modes via CONTEXT_MODE environment variable:
   - redis: Redis-backed storage for multi-container deployments
 """
 
+from __future__ import annotations
+
 import os
 
 from collections import defaultdict, deque
 from threading import Lock
-from typing import Optional
+from typing import TYPE_CHECKING
 
 from loguru import logger
 
 from context.context_validator import ContextValidator
 from utils.timezone_utils import now_utc
+
+if TYPE_CHECKING:
+    from context.redis_context_bridge import RedisContextBridge
 
 
 class LiveContextBus:
@@ -28,10 +33,10 @@ class LiveContextBus:
       - CONTEXT_MODE=redis: Writes to Redis for multi-container setups
     """
 
-    _instance: Optional["LiveContextBus"] = None
+    _instance: LiveContextBus | None = None
     _lock = Lock()
 
-    def __new__(cls) -> "LiveContextBus":
+    def __new__(cls) -> LiveContextBus:
         if not cls._instance:
             with cls._lock:
                 if not cls._instance:
