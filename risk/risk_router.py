@@ -90,7 +90,7 @@ async def get_account_snapshot(
         return snapshot
     except Exception as exc:
         logger.error("Failed to get account snapshot", account_id=account_id, error=str(exc))
-        raise HTTPException(status_code=500, detail=str(exc))
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
 @router.post("/{account_id}/evaluate")
@@ -134,10 +134,10 @@ async def evaluate_signal(
         }
     except RiskException as exc:
         logger.warning("Risk evaluation rejected", account_id=account_id, error=str(exc))
-        raise HTTPException(status_code=400, detail=str(exc))
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
         logger.error("Failed to evaluate signal", account_id=account_id, error=str(exc))
-        raise HTTPException(status_code=500, detail=str(exc))
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
 @router.post("/{account_id}/profile")
@@ -159,10 +159,10 @@ async def save_profile(
         return {"status": "saved", "profile": profile.to_dict()}
     except RiskException as exc:
         logger.warning("Invalid risk profile", account_id=account_id, error=str(exc))
-        raise HTTPException(status_code=400, detail=str(exc))
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
         logger.error("Failed to save risk profile", account_id=account_id, error=str(exc))
-        raise HTTPException(status_code=500, detail=str(exc))
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
 @router.get("/{account_id}/profile")
@@ -173,7 +173,7 @@ async def get_profile(account_id: str) -> dict:
         return profile.to_dict()
     except Exception as exc:
         logger.error("Failed to load risk profile", account_id=account_id, error=str(exc))
-        raise HTTPException(status_code=500, detail=str(exc))
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
 @router.post("/{account_id}/close")
@@ -190,4 +190,4 @@ async def close_trade(
         logger.error(
             "Failed to close trade", account_id=account_id, trade_id=req.trade_id, error=str(exc)
         )
-        raise HTTPException(status_code=500, detail=str(exc))
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
