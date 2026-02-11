@@ -3,12 +3,8 @@ import os
 import signal
 import sys
 
-<<<<<<< HEAD
-import loguru
-=======
-from loguru import logger
->>>>>>> 27a7e64280c506070e486dd9d0ce53ef0937b87d
-from redis.asyncio import Redis as AsyncRedis
+import loguru # pyright: ignore[reportMissingImports]
+import redis.asyncio # pyright: ignore[reportMissingImports]
 
 from analysis.synthesis import build_synthesis
 from analysis.synthesis_adapter import adapt_synthesis
@@ -159,7 +155,7 @@ def FinnhubWebSocket():
 
 async def run_ingest_services(
     has_api_key: bool,
-    redis: AsyncRedis, # pyright: ignore[reportUndefinedVariable]
+    redis: redis.asyncio.Redis, # pyright: ignore[reportUndefinedVariable]
 ) -> None:
     """
     Run data ingestion services concurrently.
@@ -344,7 +340,7 @@ async def main() -> None:
         # Local mode: Run ingest services + analysis loop
         loguru.logger.info("Local mode: Starting ingest services + analysis loop")
         redis_url = os.getenv("REDIS_URL", "redis://localhost:6379")
-        redis_client = AsyncRedis.from_url(redis_url)
+        redis_client = redis.asyncio.Redis.from_url(redis_url)
         tasks = [
             asyncio.create_task(
                 run_ingest_services(has_api_key, redis_client),
