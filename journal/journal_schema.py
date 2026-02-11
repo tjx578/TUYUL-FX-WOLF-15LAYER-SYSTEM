@@ -14,7 +14,7 @@ Enums:
 """
 
 from datetime import datetime
-from enum import Enum
+from enum import StrEnum
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -23,7 +23,7 @@ from pydantic import BaseModel, Field, field_validator
 # ========================
 
 
-class VerdictType(str, Enum):
+class VerdictType(StrEnum):
     """L12 Verdict Types"""
 
     EXECUTE_BUY = "EXECUTE_BUY"
@@ -32,7 +32,7 @@ class VerdictType(str, Enum):
     NO_TRADE = "NO_TRADE"
 
 
-class TradeOutcome(str, Enum):
+class TradeOutcome(StrEnum):
     """Post-trade outcome classification"""
 
     WIN = "WIN"
@@ -43,7 +43,7 @@ class TradeOutcome(str, Enum):
     CANCELLED = "CANCELLED"
 
 
-class ProtectionAssessment(str, Enum):
+class ProtectionAssessment(StrEnum):
     """Did system protect trader from bad setup?"""
 
     YES = "YES"
