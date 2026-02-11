@@ -75,10 +75,22 @@ async def run_ingest_services(has_api_key: bool) -> None:
         logger.info("Ingest services cancelled - shutting down")
         raise
     finally:
+        cleanup_errors = []
         if ws_feed is not None:
-            await ws_feed.stop()
+            try:
+                await ws_feed.stop()
+            except Exception as e:
+                logger.error(f"Error stopping ws_feed: {e}")
+                cleanup_errors.append(("ws_feed.stop()", e))
         if redis is not None:
-            await redis.aclose()
+            try:
+                await redis.aclose()
+            except Exception as e:
+                logger.error(f"Error closing redis: {e}")
+                cleanup_errors.append(("redis.aclose()", e))
+        
+        if cleanup_errors:
+            logger.warning(f"Cleanup completed with {len(cleanup_errors)} error(s)")
         logger.info("Ingest service cleanup complete")
 
 
