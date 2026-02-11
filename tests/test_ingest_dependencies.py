@@ -59,7 +59,7 @@ class TestHandleTick:
 
             # Verify update_tick was called
             mock_bus.update_tick.assert_called_once()
-            
+
             # Verify normalized tick format
             call_args = mock_bus.update_tick.call_args[0][0]
             assert call_args["symbol"] == "EURUSD"
