@@ -10,6 +10,7 @@ from redis.asyncio import Redis as AsyncRedis
 
 from ingest.candle_builder import CandleBuilder
 from ingest.dependencies import create_finnhub_ws
+from ingest.finnhub_market_news import FinnhubMarketNews
 from ingest.finnhub_news import FinnhubNews
 
 _shutdown_event: asyncio.Event | None = None
@@ -59,13 +60,15 @@ async def run_ingest_services(has_api_key: bool) -> None:
 
     ws_feed = await create_finnhub_ws(redis=redis)
     news_feed = FinnhubNews()
+    market_news = FinnhubMarketNews()
     candle_builder = CandleBuilder()
 
-    logger.info("Starting ingest services: WebSocket, News, CandleBuilder")
+    logger.info("Starting ingest services: WebSocket, News, MarketNews, CandleBuilder")
     try:
         await asyncio.gather(
             ws_feed.run(),
             news_feed.run(),
+            market_news.run(),
             candle_builder.run(),
         )
     except asyncio.CancelledError:
