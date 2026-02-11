@@ -56,13 +56,19 @@ class FinnhubMarketNews:
         self._poll_interval: int = market_cfg.get("poll_interval_sec", 600)
         self._category: str = market_cfg.get("category", "forex")
         self._max_articles: int = market_cfg.get("max_articles", 50)
-        self._sentiment_keywords: dict[str, list[str]] = market_cfg.get(
+
+        # Normalize sentiment keywords to lowercase once during initialization
+        raw_keywords = market_cfg.get(
             "sentiment_keywords",
             {
                 "bullish": ["hawkish", "rate hike", "strong", "beat", "surge"],
                 "bearish": ["dovish", "rate cut", "weak", "miss", "decline"],
             }
         )
+        self._sentiment_keywords: dict[str, list[str]] = {
+            "bullish": [k.lower() for k in raw_keywords.get("bullish", [])],
+            "bearish": [k.lower() for k in raw_keywords.get("bearish", [])],
+        }
 
         self._context_bus = LiveContextBus()
         self._last_id: int = 0  # Track highest article ID for deduplication
@@ -204,11 +210,11 @@ class FinnhubMarketNews:
 
         bullish_count = sum(
             1 for keyword in self._sentiment_keywords["bullish"]
-            if keyword.lower() in text_lower
+            if keyword in text_lower
         )
         bearish_count = sum(
             1 for keyword in self._sentiment_keywords["bearish"]
-            if keyword.lower() in text_lower
+            if keyword in text_lower
         )
 
         # Normalize score between -1.0 and 1.0
