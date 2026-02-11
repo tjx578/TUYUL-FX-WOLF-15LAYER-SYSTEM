@@ -1,10 +1,15 @@
 from __future__ import annotations
 
+import logging
+
 from typing import Any
 
 from config.constitution import CONSTITUTION_THRESHOLDS
 from constitution.violation_log import log_violation
+from context.live_context_bus import LiveContextBus
 from utils.timezone_utils import format_utc, now_utc
+
+logger = logging.getLogger(__name__)
 
 
 def _gate(condition: bool) -> str:
@@ -16,6 +21,31 @@ def generate_l12_verdict(synthesis: dict[str, Any]) -> dict[str, Any]:
     Input: synthesis output from analysis.synthesis (L1-L11).
     Output: final L12 verdict (constitutional).
     """
+
+    # Feed staleness circuit breaker
+    context_bus = LiveContextBus()
+    pair = synthesis.get("pair")
+    
+    if pair and context_bus.is_feed_stale(pair):
+        feed_age = context_bus.get_feed_age(pair)
+        logger.warning(
+            "Feed stale — circuit breaker activated",
+            extra={"pair": pair, "feed_age_s": feed_age},
+        )
+        return {
+            "schema": "v7.4r∞",
+            "pair": pair,
+            "timestamp": format_utc(now_utc()),
+            "verdict": "HOLD",
+            "confidence": "LOW",
+            "wolf_status": "NO_HUNT",
+            "gates": {"passed": 0, "total": 9},
+            "execution": {},
+            "scores": synthesis.get("scores", {}),
+            "proceed_to_L13": False,
+            "circuit_breaker": "FEED_STALE",
+            "feed_age_s": feed_age,
+        }
 
     try:
         scores = synthesis["scores"]
