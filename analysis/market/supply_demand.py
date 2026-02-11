@@ -3,8 +3,6 @@ Supply & Demand Zone Detection
 H1 context only.
 """
 
-from typing import Dict
-
 from context.live_context_bus import LiveContextBus
 
 
@@ -12,7 +10,7 @@ class SupplyDemandDetector:
     def __init__(self):
         self.context = LiveContextBus()
 
-    def detect(self, symbol: str) -> Dict:
+    def detect(self, symbol: str) -> dict:
         """
         Identify potential supply / demand zones.
         Placeholder implementation.

@@ -37,8 +37,13 @@ from loguru import logger
 from dashboard.price_feed import PriceFeed
 from dashboard.trade_ledger import TradeLedger
 from journal.journal_router import JournalRouter
-from journal.journal_schema import ExecutionJournal, ReflectiveJournal, TradeOutcome, ProtectionAssessment
-from schemas.trade_models import Trade, TradeStatus, CloseReason
+from journal.journal_schema import (
+    ExecutionJournal,
+    ProtectionAssessment,
+    ReflectiveJournal,
+    TradeOutcome,
+)
+from schemas.trade_models import CloseReason, Trade, TradeStatus
 from utils.timezone_utils import now_utc
 
 
@@ -137,6 +142,7 @@ class PriceWatcher:
                 trade.trade_id,
                 TradeStatus.OPEN
             )
+            success = self._trade_ledger.update_status(trade.trade_id, TradeStatus.OPEN)
 
             if success:
                 logger.info(
@@ -198,7 +204,7 @@ class PriceWatcher:
                 trade.trade_id,
                 TradeStatus.CLOSED,
                 close_reason=close_reason,
-                pnl=None  # P&L calculation would be done by broker/EA
+                pnl=None,  # P&L calculation would be done by broker/EA
             )
 
             if success:
@@ -230,7 +236,9 @@ class PriceWatcher:
                 entry_price=entry_price,
                 stop_loss=leg.sl,
                 take_profit_1=leg.tp,
-                rr_ratio=abs((leg.tp - entry_price) / (entry_price - leg.sl)) if trade.direction == "BUY" else abs((entry_price - leg.tp) / (leg.sl - entry_price)),
+                rr_ratio=abs((leg.tp - entry_price) / (entry_price - leg.sl))
+                if trade.direction == "BUY"
+                else abs((entry_price - leg.tp) / (leg.sl - entry_price)),
                 risk_percent=trade.total_risk_percent,
                 lot_size=leg.lot,
                 execution_mode="TP1_ONLY",
@@ -259,7 +267,11 @@ class PriceWatcher:
                 outcome = TradeOutcome.LOSS
             elif close_reason == CloseReason.EXPIRY:
                 outcome = TradeOutcome.EXPIRED
-            elif close_reason in (CloseReason.NEWS_LOCK, CloseReason.M15_INVALIDATION, CloseReason.SYSTEM_PROTECTION):
+            elif close_reason in (
+                CloseReason.NEWS_LOCK,
+                CloseReason.M15_INVALIDATION,
+                CloseReason.SYSTEM_PROTECTION,
+            ):
                 outcome = TradeOutcome.CANCELLED
             else:
                 outcome = TradeOutcome.BREAKEVEN

@@ -17,12 +17,14 @@ from dashboard.trade_ledger import TradeLedger
 
 router = APIRouter()
 
+
 # Connection manager for WebSocket clients
 class ConnectionManager:
     """Manages WebSocket connections."""
 
     def __init__(self):
         self.active_connections: Set[WebSocket] = set()
+        self.active_connections: set[WebSocket] = set()
 
     async def connect(self, websocket: WebSocket):
         """Accept and register new WebSocket connection."""
@@ -74,6 +76,12 @@ async def websocket_prices(websocket: WebSocket):
             "type": "snapshot",
             "data": prices,
         })
+        await websocket.send_json(
+            {
+                "type": "snapshot",
+                "data": prices,
+            }
+        )
 
         # Keep connection alive and send updates
         while True:
@@ -85,6 +93,12 @@ async def websocket_prices(websocket: WebSocket):
                 "type": "update",
                 "data": prices,
             })
+            await websocket.send_json(
+                {
+                    "type": "update",
+                    "data": prices,
+                }
+            )
 
             # Wait 2 seconds before next update
             await asyncio.sleep(2)
@@ -119,6 +133,12 @@ async def websocket_trades(websocket: WebSocket):
             "type": "snapshot",
             "data": trades_data,
         })
+        await websocket.send_json(
+            {
+                "type": "snapshot",
+                "data": trades_data,
+            }
+        )
 
         # Build initial snapshot
         for trade in active_trades:
@@ -132,6 +152,7 @@ async def websocket_trades(websocket: WebSocket):
                 trade.trade_id: trade.status.value
                 for trade in active_trades
             }
+            current_snapshot = {trade.trade_id: trade.status.value for trade in active_trades}
 
             # Check for changes
             changed_trades = []
@@ -157,6 +178,13 @@ async def websocket_trades(websocket: WebSocket):
                     "changed": [trade.model_dump() for trade in changed_trades],
                     "removed": list(removed_trade_ids),
                 })
+                await websocket.send_json(
+                    {
+                        "type": "update",
+                        "changed": [trade.model_dump() for trade in changed_trades],
+                        "removed": list(removed_trade_ids),
+                    }
+                )
 
             # Wait 2 seconds before next check
             await asyncio.sleep(2)

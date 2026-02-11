@@ -9,6 +9,7 @@ Tests cover:
 """
 
 import pytest
+
 from fastapi.testclient import TestClient
 
 from api_server import app
@@ -46,6 +47,17 @@ def test_create_account(client):
         "max_total_dd_percent": 8.0,
         "max_concurrent_trades": 3,
     })
+    response = client.post(
+        "/api/v1/accounts",
+        json={
+            "name": "Test Account",
+            "balance": 100000.0,
+            "prop_firm": False,
+            "max_daily_dd_percent": 4.0,
+            "max_total_dd_percent": 8.0,
+            "max_concurrent_trades": 3,
+        },
+    )
 
     assert response.status_code == 200
     data = response.json()
@@ -76,6 +88,20 @@ def test_list_accounts_with_data(client):
         "name": "Account 2",
         "balance": 100000.0,
     })
+    client.post(
+        "/api/v1/accounts",
+        json={
+            "name": "Account 1",
+            "balance": 50000.0,
+        },
+    )
+    client.post(
+        "/api/v1/accounts",
+        json={
+            "name": "Account 2",
+            "balance": 100000.0,
+        },
+    )
 
     # List accounts
     response = client.get("/api/v1/accounts")
@@ -88,10 +114,13 @@ def test_list_accounts_with_data(client):
 def test_get_account(client):
     """Test getting a specific account."""
     # Create account
-    create_response = client.post("/api/v1/accounts", json={
-        "name": "Test Account",
-        "balance": 100000.0,
-    })
+    create_response = client.post(
+        "/api/v1/accounts",
+        json={
+            "name": "Test Account",
+            "balance": 100000.0,
+        },
+    )
     account_id = create_response.json()["account_id"]
 
     # Get account
@@ -113,10 +142,13 @@ def test_get_account_not_found(client):
 def test_take_signal(client):
     """Test taking a signal to create a trade."""
     # Create account first
-    account_response = client.post("/api/v1/accounts", json={
-        "name": "Trading Account",
-        "balance": 100000.0,
-    })
+    account_response = client.post(
+        "/api/v1/accounts",
+        json={
+            "name": "Trading Account",
+            "balance": 100000.0,
+        },
+    )
     account_id = account_response.json()["account_id"]
 
     # Take signal
@@ -130,6 +162,19 @@ def test_take_signal(client):
         "tp": 1.09500,
         "risk_percent": 2.0,
     })
+    response = client.post(
+        "/api/v1/trades/take",
+        json={
+            "signal_id": "SIG-EURUSD_1234567890",
+            "account_id": account_id,
+            "pair": "EURUSD",
+            "direction": "BUY",
+            "entry": 1.08500,
+            "sl": 1.08000,
+            "tp": 1.09500,
+            "risk_percent": 2.0,
+        },
+    )
 
     assert response.status_code == 200
     data = response.json()
@@ -149,6 +194,14 @@ def test_skip_signal(client):
         "pair": "GBPUSD",
         "reason": "Too risky",
     })
+    response = client.post(
+        "/api/v1/trades/skip",
+        json={
+            "signal_id": "SIG-GBPUSD_1234567890",
+            "pair": "GBPUSD",
+            "reason": "Too risky",
+        },
+    )
 
     assert response.status_code == 200
     data = response.json()
@@ -160,29 +213,41 @@ def test_skip_signal(client):
 def test_confirm_order(client):
     """Test confirming order placement."""
     # Create account
-    account_response = client.post("/api/v1/accounts", json={
-        "name": "Trading Account",
-        "balance": 100000.0,
-    })
+    account_response = client.post(
+        "/api/v1/accounts",
+        json={
+            "name": "Trading Account",
+            "balance": 100000.0,
+        },
+    )
     account_id = account_response.json()["account_id"]
 
     # Take signal
-    trade_response = client.post("/api/v1/trades/take", json={
-        "signal_id": "SIG-EURUSD_1234567890",
-        "account_id": account_id,
-        "pair": "EURUSD",
-        "direction": "BUY",
-        "entry": 1.08500,
-        "sl": 1.08000,
-        "tp": 1.09500,
-        "risk_percent": 2.0,
-    })
+    trade_response = client.post(
+        "/api/v1/trades/take",
+        json={
+            "signal_id": "SIG-EURUSD_1234567890",
+            "account_id": account_id,
+            "pair": "EURUSD",
+            "direction": "BUY",
+            "entry": 1.08500,
+            "sl": 1.08000,
+            "tp": 1.09500,
+            "risk_percent": 2.0,
+        },
+    )
     trade_id = trade_response.json()["trade_id"]
 
     # Confirm order
     response = client.post("/api/v1/trades/confirm", json={
         "trade_id": trade_id,
     })
+    response = client.post(
+        "/api/v1/trades/confirm",
+        json={
+            "trade_id": trade_id,
+        },
+    )
 
     assert response.status_code == 200
     data = response.json()
@@ -203,10 +268,13 @@ def test_get_active_trades_empty(client):
 def test_get_active_trades_with_data(client):
     """Test getting active trades after creating some."""
     # Create account
-    account_response = client.post("/api/v1/accounts", json={
-        "name": "Trading Account",
-        "balance": 100000.0,
-    })
+    account_response = client.post(
+        "/api/v1/accounts",
+        json={
+            "name": "Trading Account",
+            "balance": 100000.0,
+        },
+    )
     account_id = account_response.json()["account_id"]
 
     # Create two trades
@@ -231,6 +299,33 @@ def test_get_active_trades_with_data(client):
         "tp": 1.24500,
         "risk_percent": 1.5,
     })
+    client.post(
+        "/api/v1/trades/take",
+        json={
+            "signal_id": "SIG-EURUSD_1",
+            "account_id": account_id,
+            "pair": "EURUSD",
+            "direction": "BUY",
+            "entry": 1.08500,
+            "sl": 1.08000,
+            "tp": 1.09500,
+            "risk_percent": 2.0,
+        },
+    )
+
+    client.post(
+        "/api/v1/trades/take",
+        json={
+            "signal_id": "SIG-GBPUSD_2",
+            "account_id": account_id,
+            "pair": "GBPUSD",
+            "direction": "SELL",
+            "entry": 1.25500,
+            "sl": 1.26000,
+            "tp": 1.24500,
+            "risk_percent": 1.5,
+        },
+    )
 
     # Get active trades
     response = client.get("/api/v1/trades/active")
@@ -243,10 +338,13 @@ def test_get_active_trades_with_data(client):
 def test_get_trade(client):
     """Test getting a specific trade."""
     # Create account and trade
-    account_response = client.post("/api/v1/accounts", json={
-        "name": "Trading Account",
-        "balance": 100000.0,
-    })
+    account_response = client.post(
+        "/api/v1/accounts",
+        json={
+            "name": "Trading Account",
+            "balance": 100000.0,
+        },
+    )
     account_id = account_response.json()["account_id"]
 
     trade_response = client.post("/api/v1/trades/take", json={
@@ -259,6 +357,19 @@ def test_get_trade(client):
         "tp": 1.09500,
         "risk_percent": 2.0,
     })
+    trade_response = client.post(
+        "/api/v1/trades/take",
+        json={
+            "signal_id": "SIG-EURUSD_1234567890",
+            "account_id": account_id,
+            "pair": "EURUSD",
+            "direction": "BUY",
+            "entry": 1.08500,
+            "sl": 1.08000,
+            "tp": 1.09500,
+            "risk_percent": 2.0,
+        },
+    )
     trade_id = trade_response.json()["trade_id"]
 
     # Get trade

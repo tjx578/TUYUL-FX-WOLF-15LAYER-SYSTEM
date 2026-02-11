@@ -2,9 +2,9 @@ import asyncio
 import os
 import signal
 import sys
-from typing import Optional
 
 from loguru import logger
+from redis.asyncio import Redis as AsyncRedis
 
 from analysis.synthesis import build_synthesis
 from analysis.synthesis_adapter import adapt_synthesis
@@ -12,8 +12,9 @@ from config_loader import CONFIG
 from constitution.verdict_engine import generate_l12_verdict
 from context.runtime_state import RuntimeState
 from ingest.candle_builder import CandleBuilder
+from ingest.dependencies import create_finnhub_ws
 from ingest.finnhub_news import FinnhubNews
-from ingest.finnhub_ws import FinnhubWebSocket
+from ingest.dependencies import create_default_finnhub_ws
 from journal.journal_router import journal_router
 from journal.journal_schema import ContextJournal, DecisionJournal, VerdictType
 from storage.l12_cache import set_verdict
@@ -23,7 +24,7 @@ from utils.timezone_utils import is_trading_session, now_utc
 PAIRS = [p["symbol"] for p in CONFIG["pairs"]["pairs"] if p.get("enabled", True)]
 
 # Global flag for graceful shutdown
-_shutdown_event: Optional[asyncio.Event] = None
+_shutdown_event: asyncio.Event | None = None
 
 
 def _build_j1(pair: str, synthesis: dict) -> ContextJournal:
@@ -79,7 +80,8 @@ def _build_j2(pair: str, synthesis: dict, l12: dict) -> DecisionJournal:
 
     # Extract failed gates
     failed_gates = [
-        gate_name for gate_name, gate_value in gates.items()
+        gate_name
+        for gate_name, gate_value in gates.items()
         if gate_name not in ["passed", "total"] and gate_value == "FAIL"
     ]
 
@@ -106,7 +108,9 @@ def _build_j2(pair: str, synthesis: dict, l12: dict) -> DecisionJournal:
         wolf_30_score=int(scores.get("wolf_30_point", 0)),
         f_score=int(scores.get("f_score", 0)),
         t_score=int(scores.get("t_score", 0)),
-        fta_score=int((scores.get("fta_score") or 0) * 10),  # Convert fta_score from 0-1 scale to 0-10 scale
+        fta_score=int(
+            (scores.get("fta_score") or 0) * 10
+        ),  # Convert fta_score from 0-1 scale to 0-10 scale
         exec_score=int(scores.get("exec_score", 0)),
         tii_sym=float(layers.get("L8_tii_sym", 0.0)),
         integrity_index=float(layers.get("L8_integrity_index", 0.0)),
@@ -165,18 +169,71 @@ async def run_ingest_services(
             await asyncio.sleep(1)
         return
 
-    ws_feed = FinnhubWebSocket()
+    ws_feed = await create_default_finnhub_ws()
     news_feed = FinnhubNews()
     candle_builder = CandleBuilder()
+    # Build Redis connection from environment variables
+    redis_url = os.getenv("REDIS_URL")
+    if redis_url:
+        # Redact password from log output
+        if "@" in redis_url:
+            safe_url = redis_url.split("@")[-1]
+        elif "://" in redis_url:
+            safe_url = redis_url.split("://")[1]
+        else:
+            safe_url = redis_url
+        logger.info(f"Using REDIS_URL for local mode: redis://***@{safe_url}")
+        redis = AsyncRedis.from_url(
+            redis_url,
+            encoding="utf-8",
+            decode_responses=True,
+        )
+    else:
+        # Fallback to individual params
+        redis_host = os.getenv("REDIS_HOST", "localhost")
+        redis_port = int(os.getenv("REDIS_PORT", "6379"))
+        redis_password = os.getenv("REDIS_PASSWORD", "")
+        redis_db = int(os.getenv("REDIS_DB", "0"))
 
-    logger.info("Starting ingest services: WebSocket, News, CandleBuilder")
+        logger.info(f"Using Redis for local mode: {redis_host}:{redis_port}/{redis_db}")
+        redis = AsyncRedis(
+            host=redis_host,
+            port=redis_port,
+            password=redis_password if redis_password else None,
+            db=redis_db,
+            encoding="utf-8",
+            decode_responses=True,
+        )
 
-    # Run all three services concurrently
-    await asyncio.gather(
-        ws_feed.run(),
-        news_feed.run(),
-        candle_builder.run(),
-    )
+    try:
+        # Validate Redis connection
+        await redis.ping()
+        logger.info("✓ Redis connection validated")
+
+        # Initialize ingest services with factory
+        ws_feed = await create_finnhub_ws(redis=redis)
+        news_feed = FinnhubNews()
+        candle_builder = CandleBuilder()
+
+        logger.info("Starting ingest services: WebSocket, News, CandleBuilder")
+
+        # Run all three services concurrently
+        await asyncio.gather(
+            ws_feed.run(),
+            news_feed.run(),
+            candle_builder.run(),
+        )
+
+    except asyncio.CancelledError:
+        logger.info("Ingest services cancelled - shutting down")
+        raise
+
+    finally:
+        # Cleanup
+        if "ws_feed" in locals():
+            await ws_feed.stop()
+        await redis.aclose()
+        logger.info("Ingest services cleanup complete")
 
 
 async def run_redis_consumer() -> None:
@@ -194,10 +251,7 @@ async def run_redis_consumer() -> None:
         await redis_consumer.start()
 
     except Exception as exc:
-        logger.error(
-            f"Failed to start RedisConsumer: {exc}. "
-            "Continuing without Redis consumer."
-        )
+        logger.error(f"Failed to start RedisConsumer: {exc}. Continuing without Redis consumer.")
         # Keep task alive so main doesn't exit
         while True:
             if _shutdown_event and _shutdown_event.is_set():
@@ -289,9 +343,9 @@ async def main() -> None:
     logger.add(
         sys.stdout,
         format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | "
-               "<level>{level: <8}</level> | "
-               "<cyan>{name}</cyan>:<cyan>{function}</cyan> - "
-               "<level>{message}</level>",
+        "<level>{level: <8}</level> | "
+        "<cyan>{name}</cyan>:<cyan>{function}</cyan> - "
+        "<level>{message}</level>",
         level="INFO",
         filter=lambda record: record["level"].no < 40,  # Below ERROR
     )
@@ -300,9 +354,9 @@ async def main() -> None:
     logger.add(
         sys.stderr,
         format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | "
-               "<level>{level: <8}</level> | "
-               "<cyan>{name}</cyan>:<cyan>{function}</cyan> - "
-               "<level>{message}</level>",
+        "<level>{level: <8}</level> | "
+        "<cyan>{name}</cyan>:<cyan>{function}</cyan> - "
+        "<level>{message}</level>",
         level="ERROR",
     )
 

@@ -11,12 +11,10 @@ Provides dynamic risk scaling to protect capital in
 adverse conditions.
 """
 
-from typing import Optional
-
 from loguru import logger
 
 from config_loader import load_risk
-from utils.timezone_utils import now_utc, is_trading_session
+from utils.timezone_utils import is_trading_session, now_utc
 
 
 class RiskMultiplier:
@@ -62,6 +60,7 @@ class RiskMultiplier:
         self,
         drawdown_level: float
     ) -> float:
+    def _calculate_drawdown_multiplier(self, drawdown_level: float) -> float:
         """
         Calculate multiplier based on drawdown level.
 
@@ -93,6 +92,7 @@ class RiskMultiplier:
         self,
         vix_level: Optional[float]
     ) -> float:
+    def _calculate_vix_multiplier(self, vix_level: float | None) -> float:
         """
         Calculate multiplier based on VIX level.
 
@@ -125,6 +125,7 @@ class RiskMultiplier:
         self,
         session: Optional[str]
     ) -> float:
+    def _calculate_session_multiplier(self, session: str | None) -> float:
         """
         Calculate multiplier based on trading session.
 
@@ -184,8 +185,8 @@ class RiskMultiplier:
     def calculate(
         self,
         drawdown_level: float,
-        vix_level: Optional[float] = None,
-        session: Optional[str] = None,
+        vix_level: float | None = None,
+        session: str | None = None,
     ) -> float:
         """
         Calculate overall risk multiplier.
@@ -244,8 +245,8 @@ class RiskMultiplier:
     def get_breakdown(
         self,
         drawdown_level: float,
-        vix_level: Optional[float] = None,
-        session: Optional[str] = None,
+        vix_level: float | None = None,
+        session: str | None = None,
     ) -> dict:
         """
         Get detailed breakdown of risk multiplier calculation.

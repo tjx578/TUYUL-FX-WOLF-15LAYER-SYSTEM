@@ -14,8 +14,9 @@ Persistence:
 
 import json
 import os
+
 from threading import Lock
-from typing import Dict, List, Optional
+from typing import Optional
 
 from loguru import logger
 
@@ -47,7 +48,7 @@ class AccountManager:
         """Initialize account manager."""
         self._redis = RedisClient()
         self._redis_prefix = os.getenv("REDIS_PREFIX", "wolf15")
-        self._cache: Dict[str, Account] = {}
+        self._cache: dict[str, Account] = {}
         self._rw_lock = Lock()
 
         # Load existing accounts from Redis on startup
@@ -137,7 +138,7 @@ class AccountManager:
 
         return account
 
-    def get_account(self, account_id: str) -> Optional[Account]:
+    def get_account(self, account_id: str) -> Account | None:
         """
         Get account by ID.
 
@@ -201,7 +202,7 @@ class AccountManager:
                 logger.error(f"Failed to update account equity in Redis: {exc}")
                 return False
 
-    def list_accounts(self) -> List[Account]:
+    def list_accounts(self) -> list[Account]:
         """
         List all accounts.
 
