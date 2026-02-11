@@ -7,8 +7,6 @@ Thread-safe with proper locking.
 """
 
 import threading
-from datetime import datetime, timedelta
-from typing import Optional
 
 from datetime import datetime, timedelta
 
@@ -171,11 +169,6 @@ class DrawdownMonitor:
             self._last_weekly_reset = week_start
             self._persist_state()
 
-    def update(
-        self,
-        current_equity: float,
-        pnl: Optional[float] = None
-    ) -> None:
     def update(self, current_equity: float, pnl: float | None = None) -> None:
         """
         Update drawdown tracking with current equity or trade P&L.
@@ -252,8 +245,6 @@ class DrawdownMonitor:
                 "weekly_dd_amount": self._weekly_dd,
                 "total_dd_amount": self._total_dd,
                 "daily_dd_percent": (
-                    self._daily_dd / self._peak_equity
-                    if self._peak_equity > 0 else 0.0
                     self._daily_dd / self._peak_equity if self._peak_equity > 0 else 0.0
                 ),
                 "weekly_dd_percent": (

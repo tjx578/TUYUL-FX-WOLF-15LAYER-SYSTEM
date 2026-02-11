@@ -7,7 +7,6 @@ Endpoints:
 """
 
 import asyncio
-from typing import Set
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from loguru import logger
@@ -23,7 +22,6 @@ class ConnectionManager:
     """Manages WebSocket connections."""
 
     def __init__(self):
-        self.active_connections: Set[WebSocket] = set()
         self.active_connections: set[WebSocket] = set()
 
     async def connect(self, websocket: WebSocket):

@@ -174,7 +174,7 @@ async def analysis_loop() -> None:
             break
 
         results = await asyncio.gather(*(_analyze_pair(pair) for pair in PAIRS), return_exceptions=True)
-        for pair, result in zip(PAIRS, results):
+        for pair, result in zip(PAIRS, results, strict=False):
             if isinstance(result, Exception):
                 logger.error(f"[ERROR] {pair} | {result}")
 
