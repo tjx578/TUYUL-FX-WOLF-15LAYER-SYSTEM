@@ -211,8 +211,15 @@ class MonthlyRegimeAnalyzer:
 
         # Check if current price is within 0.5% of either liquidity zone
         current_price = mn_data[-1]["close"]
-        near_buy = abs(current_price - macro_buy_liquidity) / current_price <= 0.005
-        near_sell = abs(current_price - macro_sell_liquidity) / current_price <= 0.005
+        near_buy = False
+        near_sell = False
+
+        # Only check proximity if liquidity zones are valid (non-zero)
+        if macro_buy_liquidity > 0 and current_price > 0:
+            near_buy = abs(current_price - macro_buy_liquidity) / current_price <= 0.005
+        if macro_sell_liquidity > 0 and current_price > 0:
+            near_sell = abs(current_price - macro_sell_liquidity) / current_price <= 0.005
+
         near_macro_liquidity = near_buy or near_sell
 
         return {
