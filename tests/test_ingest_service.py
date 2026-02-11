@@ -56,8 +56,8 @@ async def test_run_ingest_services_no_api_key_exits_on_shutdown_event(
     # Start the service as a task with shutdown event unset
     task = asyncio.create_task(ingest_service_module.run_ingest_services(has_api_key=False))
     
-    # Give it a moment to enter the idle loop
-    await asyncio.sleep(0.1)
+    # Give it a moment to enter the idle loop (increased for CI stability)
+    await asyncio.sleep(0.5)
     
     # Task should still be running (pending)
     assert not task.done(), "Task should be waiting for shutdown event"
