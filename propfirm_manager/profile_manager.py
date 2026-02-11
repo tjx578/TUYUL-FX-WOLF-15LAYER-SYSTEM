@@ -92,7 +92,7 @@ class PropFirmManager:
         try:
             module = importlib.import_module(module_path)
         except ImportError as e:
-            raise ImportError(f"Failed to import guard for {self.profile_name}: {e}")
+            raise ImportError(f"Failed to import guard for {self.profile_name}: {e}") from e
 
         # Get guard class name (e.g., FTMOGuard, AquaInstantProGuard)
         # Convert profile_name to class name format

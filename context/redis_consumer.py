@@ -134,8 +134,8 @@ class RedisConsumer:
                 )
 
                 if result:
-                    for stream_name, entries in result:
-                        for entry_id, fields in entries:
+                    for _stream_name, entries in result:
+                        for _entry_id, fields in entries:
                             tick_json = fields.get("data")
                             if tick_json:
                                 try:

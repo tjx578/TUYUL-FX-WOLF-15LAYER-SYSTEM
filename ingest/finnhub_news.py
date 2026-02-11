@@ -12,7 +12,7 @@ from __future__ import annotations
 import asyncio
 import os
 
-from datetime import date, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import httpx  # pyright: ignore[reportMissingImports]
@@ -69,7 +69,7 @@ class FinnhubNews:
         Raises:
             FinnhubNewsError: After exhausting retries.
         """
-        today = date.today()
+        today = datetime.now(UTC).date()
         from_date = today.isoformat()
         to_date = (today + timedelta(days=7)).isoformat()
 
