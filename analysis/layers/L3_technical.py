@@ -2,9 +2,9 @@
 L3 — Technical Confluence
 """
 
+from analysis.market.fibonacci import FibonacciEngine
 from analysis.market.structure import MarketStructureAnalyzer
 from analysis.market.supply_demand import SupplyDemandDetector
-from analysis.market.fibonacci import FibonacciEngine
 
 
 class L3TechnicalAnalyzer:

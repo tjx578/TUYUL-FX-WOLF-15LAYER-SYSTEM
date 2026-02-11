@@ -10,33 +10,31 @@ Provides write endpoints for:
 All endpoints require JWT authentication.
 """
 
-from datetime import datetime
-from typing import Dict, List
+from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, HTTPException
 from loguru import logger
 
-from dashboard.backend.auth import verify_token
 from dashboard.backend.account_engine import AccountEngine
+from dashboard.backend.auth import verify_token
 from dashboard.backend.risk_engine import RiskEngine
 from dashboard.backend.schemas import (
+    AccountCreate,
+    AccountState,
     Layer12Signal,
     RiskCalculationRequest,
     RiskCalculationResult,
-    TradeOpenRequest,
     TradeCloseRequest,
-    AccountState,
-    AccountCreate,
+    TradeOpenRequest,
 )
 from execution.trade_state_enum import TradeState
 from journal.journal_router import journal_router
 from journal.journal_schema import (
+    ProtectionAssessment,
     ReflectiveJournal,
     TradeOutcome,
-    ProtectionAssessment,
 )
-
 
 # Router with auth dependency
 write_router = APIRouter(
@@ -48,16 +46,16 @@ write_router = APIRouter(
 # In-memory storage
 # TODO: Replace with persistent storage (Redis/PostgreSQL) for production
 # See tracking issue: https://github.com/tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM/issues/TBD
-signal_pool: Dict[UUID, Dict] = {}
-trade_ledger: Dict[str, Dict] = {}
-account_registry: Dict[str, AccountEngine] = {}
+signal_pool: dict[UUID, dict] = {}
+trade_ledger: dict[str, dict] = {}
+account_registry: dict[str, AccountEngine] = {}
 
 # Risk engine singleton
 risk_engine = RiskEngine()
 
 
 @write_router.post("/signal/layer12", status_code=201)
-def receive_layer12_signal(signal: Layer12Signal) -> Dict:
+def receive_layer12_signal(signal: Layer12Signal) -> dict:
     """
     Receive Layer 12 signal from constitution.
 
@@ -71,7 +69,7 @@ def receive_layer12_signal(signal: Layer12Signal) -> Dict:
     """
     signal_dict = signal.model_dump()
     signal_dict["state"] = TradeState.SIGNAL_CREATED.value
-    signal_dict["created_at"] = datetime.utcnow().isoformat()
+    signal_dict["created_at"] = datetime.now(UTC).isoformat()
 
     signal_pool[signal.signal_id] = signal_dict
 
@@ -108,6 +106,7 @@ def calculate_risk(request: RiskCalculationRequest) -> RiskCalculationResult:
             status_code=404,
             detail=f"Signal {request.signal_id} not found"
         )
+        raise HTTPException(status_code=404, detail=f"Signal {request.signal_id} not found")
 
     signal = Layer12Signal(**signal_dict)
 
@@ -118,6 +117,7 @@ def calculate_risk(request: RiskCalculationRequest) -> RiskCalculationResult:
             status_code=404,
             detail=f"Account {request.account_id} not found"
         )
+        raise HTTPException(status_code=404, detail=f"Account {request.account_id} not found")
 
     account_state = account_engine.get_state()
 
@@ -142,7 +142,7 @@ def calculate_risk(request: RiskCalculationRequest) -> RiskCalculationResult:
 
 
 @write_router.post("/trade/open", status_code=201)
-def open_trade(request: TradeOpenRequest) -> Dict:
+def open_trade(request: TradeOpenRequest) -> dict:
     """
     Record trade opening.
 
@@ -166,6 +166,7 @@ def open_trade(request: TradeOpenRequest) -> Dict:
             status_code=404,
             detail=f"Account {request.account_id} not found"
         )
+        raise HTTPException(status_code=404, detail=f"Account {request.account_id} not found")
 
     # Get signal to validate lot
     signal_dict = signal_pool.get(request.signal_id)
@@ -174,6 +175,7 @@ def open_trade(request: TradeOpenRequest) -> Dict:
             status_code=404,
             detail=f"Signal {request.signal_id} not found"
         )
+        raise HTTPException(status_code=404, detail=f"Signal {request.signal_id} not found")
 
     signal = Layer12Signal(**signal_dict)
     account_state = account_engine.get_state()
@@ -192,15 +194,13 @@ def open_trade(request: TradeOpenRequest) -> Dict:
             status_code=403,
             detail=f"Trade denied: {result.reason}"
         )
+        raise HTTPException(status_code=403, detail=f"Trade denied: {result.reason}")
 
     # Validate lot doesn't exceed max safe lot
     if request.lot > result.max_safe_lot:
         raise HTTPException(
             status_code=403,
-            detail=(
-                f"Lot {request.lot:.2f} exceeds max safe lot "
-                f"{result.max_safe_lot:.2f}"
-            )
+            detail=(f"Lot {request.lot:.2f} exceeds max safe lot {result.max_safe_lot:.2f}"),
         )
 
     # Calculate risk amount
@@ -223,7 +223,7 @@ def open_trade(request: TradeOpenRequest) -> Dict:
         "lot": request.lot,
         "risk_amount": risk_amount,
         "state": TradeState.TRADE_OPEN.value,
-        "opened_at": datetime.utcnow().isoformat(),
+        "opened_at": datetime.now(UTC).isoformat(),
         "closed_at": None,
         "pnl": None,
     }
@@ -242,7 +242,7 @@ def open_trade(request: TradeOpenRequest) -> Dict:
 
 
 @write_router.post("/trade/close")
-def close_trade(request: TradeCloseRequest) -> Dict:
+def close_trade(request: TradeCloseRequest) -> dict:
     """
     Record trade closure.
 
@@ -264,10 +264,11 @@ def close_trade(request: TradeCloseRequest) -> Dict:
             status_code=404,
             detail=f"Trade {request.trade_id} not found"
         )
+        raise HTTPException(status_code=404, detail=f"Trade {request.trade_id} not found")
 
     # Update trade record
     trade["state"] = TradeState.TRADE_CLOSED.value
-    trade["closed_at"] = datetime.utcnow().isoformat()
+    trade["closed_at"] = datetime.now(UTC).isoformat()
     trade["close_price"] = request.close_price
     trade["pnl"] = request.pnl
     trade["close_reason"] = request.reason
@@ -285,7 +286,7 @@ def close_trade(request: TradeCloseRequest) -> Dict:
     outcome = TradeOutcome.WIN if request.pnl > 0 else TradeOutcome.LOSS
 
     j4 = ReflectiveJournal(
-        timestamp=datetime.utcnow(),
+        timestamp=datetime.now(UTC),
         setup_id=f"{trade['pair']}_{trade['opened_at'][:19]}",
         pair=trade["pair"],
         outcome=outcome,
@@ -300,6 +301,7 @@ def close_trade(request: TradeCloseRequest) -> Dict:
         f"Trade closed: {request.trade_id} | "
         f"PnL=${request.pnl:.2f} | {request.reason}"
     )
+    logger.info(f"Trade closed: {request.trade_id} | PnL=${request.pnl:.2f} | {request.reason}")
 
     return trade
 
@@ -324,12 +326,13 @@ def get_account_state(account_id: str) -> AccountState:
             status_code=404,
             detail=f"Account {account_id} not found"
         )
+        raise HTTPException(status_code=404, detail=f"Account {account_id} not found")
 
     return account_engine.get_state()
 
 
 @write_router.get("/signals")
-def get_signals() -> List[Dict]:
+def get_signals() -> list[dict]:
     """
     Get active signal pool.
 
@@ -341,9 +344,9 @@ def get_signals() -> List[Dict]:
 
 @write_router.get("/trades")
 def get_trades(
-    account_id: str = None,
-    state: str = None,
-) -> List[Dict]:
+    account_id: str | None = None,
+    state: str | None = None,
+) -> list[dict]:
     """
     Get trade ledger (all trades or filtered).
 
@@ -366,7 +369,7 @@ def get_trades(
 
 
 @write_router.get("/trade/{trade_id}")
-def get_trade(trade_id: str) -> Dict:
+def get_trade(trade_id: str) -> dict:
     """
     Get single trade detail.
 
@@ -385,12 +388,13 @@ def get_trade(trade_id: str) -> Dict:
             status_code=404,
             detail=f"Trade {trade_id} not found"
         )
+        raise HTTPException(status_code=404, detail=f"Trade {trade_id} not found")
 
     return trade
 
 
 @write_router.post("/account/create", status_code=201)
-def create_account(account: AccountCreate) -> Dict:
+def create_account(account: AccountCreate) -> dict:
     """
     Create new account for tracking.
 
@@ -415,6 +419,7 @@ def create_account(account: AccountCreate) -> Dict:
         f"Account created: {account_id} | "
         f"{account.broker} | {account.prop_firm_code}"
     )
+    logger.info(f"Account created: {account_id} | {account.broker} | {account.prop_firm_code}")
 
     return {
         "account_id": account_id,

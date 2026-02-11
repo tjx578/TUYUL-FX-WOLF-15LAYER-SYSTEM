@@ -9,44 +9,46 @@ All models follow the separation of concerns:
 """
 
 from datetime import datetime
-from enum import Enum
-from typing import List, Optional
+from enum import StrEnum
 from uuid import UUID
 
 from pydantic import (
     BaseModel,
+    ConfigDict,
     Field,
     field_validator,
-    ConfigDict,
 )
-
 
 # ========================
 # ENUMS
 # ========================
 
 
-class TradeSource(str, Enum):
+class TradeSource(StrEnum):
     """Source of trade execution."""
+
     EA = "EA"
     MANUAL = "MANUAL"
 
 
-class RiskMode(str, Enum):
+class RiskMode(StrEnum):
     """Risk calculation mode."""
+
     FIXED = "FIXED"
     SPLIT = "SPLIT"
 
 
-class RiskSeverity(str, Enum):
+class RiskSeverity(StrEnum):
     """Risk assessment severity levels."""
+
     SAFE = "SAFE"
     WARNING = "WARNING"
     CRITICAL = "CRITICAL"
 
 
-class ScalingModel(str, Enum):
+class ScalingModel(StrEnum):
     """Risk scaling model based on confidence/DD."""
+
     FIXED = "FIXED"
     CONFIDENCE = "CONFIDENCE"
     STEP = "STEP"
@@ -102,13 +104,9 @@ class RiskProfile(BaseModel):
     max_daily_risk_percent: float = Field(
         ..., ge=0.1, le=10.0, description="Max daily risk (0.1-10%)"
     )
-    max_total_dd_percent: float = Field(
-        ..., ge=0.1, le=20.0, description="Max total DD (0.1-20%)"
-    )
+    max_total_dd_percent: float = Field(..., ge=0.1, le=20.0, description="Max total DD (0.1-20%)")
     max_open_trades: int = Field(..., ge=1, le=10)
-    confidence_scaling: bool = Field(
-        default=True, description="Scale risk by confidence"
-    )
+    confidence_scaling: bool = Field(default=True, description="Scale risk by confidence")
     scaling_model: ScalingModel = Field(default=ScalingModel.CONFIDENCE)
 
     model_config = ConfigDict(frozen=False)
@@ -134,9 +132,7 @@ class Layer12Signal(BaseModel):
     take_profit_1: float = Field(..., gt=0)
     rr: float = Field(..., gt=0, description="Risk/reward ratio")
     verdict: str = Field(..., description="EXECUTE_BUY or EXECUTE_SELL")
-    confidence: str = Field(
-        ..., description="VERY_HIGH, HIGH, MEDIUM, LOW"
-    )
+    confidence: str = Field(..., description="VERY_HIGH, HIGH, MEDIUM, LOW")
     wolf_score: int = Field(..., ge=0, le=30, description="Wolf 30-point score")
     tii_sym: float = Field(
         ..., ge=0.0, le=1.0, description="Technical integrity index"
@@ -144,6 +140,8 @@ class Layer12Signal(BaseModel):
     frpc: float = Field(
         ..., ge=0.0, le=1.0, description="Fundamental-risk-prob-context"
     )
+    tii_sym: float = Field(..., ge=0.0, le=1.0, description="Technical integrity index")
+    frpc: float = Field(..., ge=0.0, le=1.0, description="Fundamental-risk-prob-context")
 
     model_config = ConfigDict(frozen=False)
 
@@ -167,16 +165,15 @@ class RiskCalculationRequest(BaseModel):
     account_id: str = Field(...)
     signal_id: UUID = Field(...)
     risk_mode: RiskMode = Field(default=RiskMode.FIXED)
-    split_ratio: Optional[List[float]] = Field(
-        default=None,
-        description="For SPLIT mode: [0.5, 0.3, 0.2] must sum to 1.0"
+    split_ratio: list[float] | None = Field(
+        default=None, description="For SPLIT mode: [0.5, 0.3, 0.2] must sum to 1.0"
     )
 
     model_config = ConfigDict(frozen=False)
 
     @field_validator("split_ratio")
     @classmethod
-    def validate_split_sum(cls, v: Optional[List[float]]) -> Optional[List[float]]:
+    def validate_split_sum(cls, v: list[float] | None) -> list[float] | None:
         """Ensure split ratios sum to 1.0."""
         if v is not None:
             total = sum(v)
@@ -196,9 +193,7 @@ class RiskCalculationResult(BaseModel):
     total_dd_after: float = Field(..., ge=0)
     severity: RiskSeverity = Field(...)
     reason: str = Field(...)
-    split_lots: Optional[List[float]] = Field(
-        default=None, description="For split risk mode"
-    )
+    split_lots: list[float] | None = Field(default=None, description="For split risk mode")
 
     model_config = ConfigDict(frozen=True)
 

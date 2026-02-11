@@ -5,9 +5,12 @@ import json
 import logging
 import os
 import random
-from typing import Any, Callable, Coroutine
+
+from collections.abc import Callable, Coroutine
+from typing import Any
 
 import websockets
+
 from redis.asyncio import Redis
 from websockets.exceptions import (
     ConnectionClosed,
@@ -34,6 +37,35 @@ LEADER_LOCK_KEY: str = "finnhub:ws:leader"
 LEADER_LOCK_TTL_S: int = 60
 
 
+class FinnhubSymbolMapper:
+    """Map internal symbols to Finnhub symbols and back."""
+
+    def __init__(self, prefix: str) -> None:
+        self._prefix = prefix
+        self._external_to_internal: dict[str, str] = {}
+
+    def register(self, symbol: str) -> str:
+        """Register and return the Finnhub-formatted symbol."""
+        if len(symbol) == 6:
+            external_symbol = f"{self._prefix}:{symbol[:3]}_{symbol[3:]}"
+        else:
+            external_symbol = symbol
+
+        self._external_to_internal[external_symbol] = symbol
+        return external_symbol
+
+    def to_internal(self, external_symbol: str) -> str:
+        """Convert Finnhub symbol back to internal format."""
+        registered = self._external_to_internal.get(external_symbol)
+        if registered is not None:
+            return registered
+
+        prefix = f"{self._prefix}:"
+        if external_symbol.startswith(prefix):
+            return external_symbol[len(prefix) :].replace("_", "")
+        return external_symbol
+
+
 class FinnhubConnectionError(Exception):
     """Raised when Finnhub WS connection fails."""
 
@@ -43,9 +75,7 @@ class FinnhubRateLimitError(FinnhubConnectionError):
 
     def __init__(self, retry_after: float = RATE_LIMIT_BASE_BACKOFF_S):
         self.retry_after = retry_after
-        super().__init__(
-            f"Finnhub rate limited — retry after {retry_after:.1f}s"
-        )
+        super().__init__(f"Finnhub rate limited — retry after {retry_after:.1f}s")
 
 
 def _calculate_backoff(
@@ -66,7 +96,7 @@ def _calculate_backoff(
     Returns:
         Backoff duration in seconds with jitter applied.
     """
-    exp_backoff = base * (multiplier ** attempt)
+    exp_backoff = base * (multiplier**attempt)
     clamped = min(exp_backoff, maximum)
     jitter = clamped * random.uniform(-JITTER_RANGE, JITTER_RANGE)
     return max(0.1, clamped + jitter)
@@ -93,9 +123,7 @@ class FinnhubWebSocket:
         self._redis = redis
         self._on_message = on_message
         self._symbols = symbols
-        self._replica_id = replica_id or os.environ.get(
-            "RAILWAY_REPLICA_ID", "unknown"
-        )
+        self._replica_id = replica_id or os.environ.get("RAILWAY_REPLICA_ID", "unknown")
         self._token = os.environ["FINNHUB_API_KEY"]
         self._attempt: int = 0
         self._running: bool = False
@@ -176,9 +204,7 @@ class FinnhubWebSocket:
                     maximum=MAX_BACKOFF_S,
                 )
                 raise FinnhubRateLimitError(retry_after=backoff) from exc
-            raise FinnhubConnectionError(
-                f"WS connection rejected: HTTP {exc.status_code}"
-            ) from exc
+            raise FinnhubConnectionError(f"WS connection rejected: HTTP {exc.status_code}") from exc
         except Exception as exc:
             raise FinnhubConnectionError(str(exc)) from exc
 

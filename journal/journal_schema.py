@@ -14,26 +14,27 @@ Enums:
 """
 
 from datetime import datetime
-from enum import Enum
-from typing import List, Optional
+from enum import StrEnum
 
 from pydantic import BaseModel, Field, field_validator
-
 
 # ========================
 # ENUMS
 # ========================
 
-class VerdictType(str, Enum):
+
+class VerdictType(StrEnum):
     """L12 Verdict Types"""
+
     EXECUTE_BUY = "EXECUTE_BUY"
     EXECUTE_SELL = "EXECUTE_SELL"
     HOLD = "HOLD"
     NO_TRADE = "NO_TRADE"
 
 
-class TradeOutcome(str, Enum):
+class TradeOutcome(StrEnum):
     """Post-trade outcome classification"""
+
     WIN = "WIN"
     LOSS = "LOSS"
     BREAKEVEN = "BREAKEVEN"
@@ -42,8 +43,9 @@ class TradeOutcome(str, Enum):
     CANCELLED = "CANCELLED"
 
 
-class ProtectionAssessment(str, Enum):
+class ProtectionAssessment(StrEnum):
     """Did system protect trader from bad setup?"""
+
     YES = "YES"
     NO = "NO"
     UNCLEAR = "UNCLEAR"
@@ -53,11 +55,13 @@ class ProtectionAssessment(str, Enum):
 # J1: CONTEXT JOURNAL
 # ========================
 
+
 class ContextJournal(BaseModel):
     """
     J1 — Market context snapshot at analysis time.
     Source: context/live_context_bus.py, analysis/L1, L2, L3
     """
+
     timestamp: datetime = Field(..., description="Analysis timestamp (UTC)")
     pair: str = Field(..., description="Trading pair symbol")
     session: str = Field(..., description="Trading session (ASIA/LONDON/NEW_YORK)")
@@ -72,11 +76,13 @@ class ContextJournal(BaseModel):
 # J2: DECISION JOURNAL
 # ========================
 
+
 class DecisionJournal(BaseModel):
     """
     J2 — Full decision record for EVERY verdict.
     Source: constitution/verdict_engine.py output
     """
+
     timestamp: datetime = Field(..., description="Decision timestamp (UTC)")
     pair: str = Field(..., description="Trading pair symbol")
     setup_id: str = Field(..., description="Unique setup ID (pair_timestamp)")
@@ -102,9 +108,11 @@ class DecisionJournal(BaseModel):
     # Gate results
     gates_passed: int = Field(..., ge=0, le=9, description="Number of gates passed")
     gates_total: int = Field(default=9, description="Total number of gates")
-    failed_gates: List[str] = Field(default_factory=list, description="List of failed gate names")
-    violations: List[str] = Field(default_factory=list, description="Constitutional violations")
-    primary_rejection_reason: Optional[str] = Field(default=None, description="Main reason for rejection")
+    failed_gates: list[str] = Field(default_factory=list, description="List of failed gate names")
+    violations: list[str] = Field(default_factory=list, description="Constitutional violations")
+    primary_rejection_reason: str | None = Field(
+        default=None, description="Main reason for rejection"
+    )
 
     @field_validator("setup_id")
     @classmethod
@@ -119,11 +127,13 @@ class DecisionJournal(BaseModel):
 # J3: EXECUTION JOURNAL
 # ========================
 
+
 class ExecutionJournal(BaseModel):
     """
     J3 — Execution details (only for EXECUTE_* verdicts).
     Source: execution/state_machine.py, execution/pending_engine.py
     """
+
     timestamp: datetime = Field(..., description="Execution timestamp (UTC)")
     setup_id: str = Field(..., description="Reference to J2 setup_id")
     pair: str = Field(..., description="Trading pair symbol")
@@ -155,11 +165,13 @@ class ExecutionJournal(BaseModel):
 # J4: REFLECTIVE JOURNAL
 # ========================
 
+
 class ReflectiveJournal(BaseModel):
     """
     J4 — Post-trade or post-reject reflection.
     Manual entry or automated post-mortem analysis.
     """
+
     timestamp: datetime = Field(..., description="Reflection timestamp (UTC)")
     setup_id: str = Field(..., description="Reference to J2 setup_id")
     pair: str = Field(..., description="Trading pair symbol")
@@ -167,13 +179,15 @@ class ReflectiveJournal(BaseModel):
     # Outcome assessment
     outcome: TradeOutcome = Field(..., description="Trade outcome classification")
     did_system_protect: ProtectionAssessment = Field(..., description="Protection assessment")
-    was_rejection_correct: Optional[bool] = Field(default=None, description="Was rejection correct?")
+    was_rejection_correct: bool | None = Field(default=None, description="Was rejection correct?")
 
     # Discipline and learning
     discipline_rating: int = Field(..., ge=1, le=10, description="Discipline score (1-10)")
     override_attempted: bool = Field(default=False, description="Was override attempted?")
     learning_note: str = Field(default="", description="Key learning from this trade")
-    system_adjustment_candidate: bool = Field(default=False, description="Should system be adjusted?")
+    system_adjustment_candidate: bool = Field(
+        default=False, description="Should system be adjusted?"
+    )
 
     @field_validator("setup_id")
     @classmethod

@@ -15,22 +15,22 @@ import pytest
 
 from risk.risk_engine_v2 import (
     RiskEngineV2,
-    RiskVerdict,
     RiskEvalResult,
+    RiskVerdict,
     SignalInput,
 )
 from risk.risk_manager import RiskManager
-from risk.risk_profile import RiskProfile, RiskMode, save_risk_profile
-
+from risk.risk_profile import RiskMode, RiskProfile, save_risk_profile
 
 # ========== Fixtures ==========
+
 
 @pytest.fixture
 def mock_redis():
     """Mock Redis client with in-memory store."""
     store: dict[str, str] = {}
     redis_mock = MagicMock()
-    redis_mock.get.side_effect = lambda key: store.get(key)
+    redis_mock.get.side_effect = store.get
     redis_mock.set.side_effect = lambda key, value, ex=None: store.__setitem__(key, value)
     redis_mock.delete.side_effect = lambda key: store.pop(key, None)
     return redis_mock
@@ -91,6 +91,7 @@ def xauusd_signal():
 
 # ========== ALLOW Flow ==========
 
+
 def test_evaluate_allow_basic_fixed_mode(mock_redis, engine, buy_signal):
     """Test basic ALLOW verdict in FIXED mode."""
     with patch("risk.risk_profile.RedisClient") as MockRedis:
@@ -120,6 +121,7 @@ def test_evaluate_allow_xauusd(mock_redis, engine, xauusd_signal):
 
 
 # ========== SPLIT Mode ==========
+
 
 def test_evaluate_split_mode_returns_two_lots(mock_redis, engine, buy_signal):
     """Test SPLIT mode returns 2 lots."""
@@ -190,6 +192,7 @@ def test_evaluate_split_mode_50_50_allocation(mock_redis, engine, buy_signal):
 
 
 # ========== DENY Flows ==========
+
 
 def test_evaluate_deny_circuit_breaker(mock_redis, engine, buy_signal, risk_manager):
     """Test DENY verdict when circuit breaker is OPEN."""
@@ -282,6 +285,7 @@ def test_evaluate_allow_after_close(mock_redis, engine, buy_signal):
 
 # ========== Trade Lifecycle ==========
 
+
 def test_register_intended_trade_updates_tracker(mock_redis, engine, buy_signal):
     """Test register_intended_trade updates open risk tracker."""
     with patch("risk.risk_profile.RedisClient") as MockRedis1:
@@ -372,6 +376,7 @@ def test_split_lifecycle_close_both_entries(mock_redis, engine, buy_signal):
 
 # ========== Account Snapshot ==========
 
+
 def test_get_account_snapshot_structure(mock_redis, engine):
     """Test account snapshot contains all required fields."""
     with patch("risk.risk_profile.RedisClient") as MockRedis1:
@@ -439,6 +444,7 @@ def test_get_account_snapshot_trading_allowed_flag(mock_redis, engine):
 
 # ========== Dataclass Tests ==========
 
+
 def test_risk_eval_result_dataclass():
     """Test RiskEvalResult dataclass."""
     result = RiskEvalResult(
@@ -485,13 +491,17 @@ def test_signal_input_dataclass():
 
 # ========== Parametrized Multi-Instrument ==========
 
-@pytest.mark.parametrize("symbol,entry,sl,tp", [
-    ("EURUSD", 1.0950, 1.0900, 1.1050),
-    ("GBPUSD", 1.2500, 1.2450, 1.2600),
-    ("USDJPY", 150.00, 149.50, 151.00),
-    ("XAUUSD", 2000.0, 1995.0, 2010.0),
-    ("AUDUSD", 0.6500, 0.6450, 0.6600),
-])
+
+@pytest.mark.parametrize(
+    "symbol,entry,sl,tp",
+    [
+        ("EURUSD", 1.0950, 1.0900, 1.1050),
+        ("GBPUSD", 1.2500, 1.2450, 1.2600),
+        ("USDJPY", 150.00, 149.50, 151.00),
+        ("XAUUSD", 2000.0, 1995.0, 2010.0),
+        ("AUDUSD", 0.6500, 0.6450, 0.6600),
+    ],
+)
 def test_evaluate_multi_instrument(mock_redis, engine, symbol, entry, sl, tp):
     """Test evaluate works for multiple instruments."""
     with patch("risk.risk_profile.RedisClient") as MockRedis:
@@ -515,6 +525,7 @@ def test_evaluate_multi_instrument(mock_redis, engine, symbol, entry, sl, tp):
 
 
 # ========== Edge Cases ==========
+
 
 def test_evaluate_projected_risk_stacking(mock_redis, engine):
     """Test projected risk stacks correctly with multiple trades."""

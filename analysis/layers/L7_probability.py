@@ -21,4 +21,6 @@ class L7ProbabilityAnalyzer:
             "profit_factor": profit_factor,
             "valid": True,
         }
+
+
 # Placeholder

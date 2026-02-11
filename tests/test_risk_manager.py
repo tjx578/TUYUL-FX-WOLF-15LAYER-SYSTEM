@@ -10,23 +10,23 @@ Tests all risk components:
 - Synthesis integration
 """
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-from risk.drawdown import DrawdownMonitor
 from risk.circuit_breaker import CircuitBreaker, CircuitBreakerState
-from risk.position_sizer import PositionSizer
-from risk.risk_multiplier import RiskMultiplier
-from risk.risk_manager import RiskManager
+from risk.drawdown import DrawdownMonitor
 from risk.exceptions import (
     DrawdownLimitExceeded,
     InvalidPositionSize,
 )
-
+from risk.position_sizer import PositionSizer
+from risk.risk_manager import RiskManager
+from risk.risk_multiplier import RiskMultiplier
 
 # ========== Fixtures ==========
+
 
 @pytest.fixture
 def mock_redis():
@@ -98,6 +98,7 @@ def risk_manager(mock_redis):
 
 # ========== DrawdownMonitor Tests ==========
 
+
 def test_drawdown_monitor_initialization(drawdown_monitor):
     """Test DrawdownMonitor initializes correctly."""
     assert drawdown_monitor.max_daily_percent == 0.03
@@ -163,6 +164,7 @@ def test_drawdown_monitor_redis_persistence(mock_redis):
 
 # ========== CircuitBreaker Tests ==========
 
+
 def test_circuit_breaker_initialization(circuit_breaker):
     """Test CircuitBreaker initializes in CLOSED state."""
     assert circuit_breaker.get_state() == "CLOSED"
@@ -188,6 +190,7 @@ def test_circuit_breaker_consecutive_losses(circuit_breaker):
             pair="EURUSD",
             daily_loss=daily_loss
         )
+        circuit_breaker.record_trade(pnl=-50.0, pair="EURUSD", daily_loss=daily_loss)
 
     assert circuit_breaker.get_state() == "OPEN"
     assert not circuit_breaker.is_trading_allowed()
@@ -197,7 +200,7 @@ def test_circuit_breaker_recovery_probe_success(circuit_breaker):
     """Test CircuitBreaker recovers after successful probe."""
     # Force into OPEN state
     circuit_breaker._state = CircuitBreakerState.OPEN
-    circuit_breaker._opened_at = datetime.now(timezone.utc) - timedelta(hours=5)
+    circuit_breaker._opened_at = datetime.now(UTC) - timedelta(hours=5)
 
     # Check auto-recovery to HALF_OPEN after cooldown
     assert circuit_breaker.is_trading_allowed()  # Triggers auto-recovery check
@@ -235,6 +238,7 @@ def test_circuit_breaker_redis_persistence(mock_redis):
 
 
 # ========== PositionSizer Tests ==========
+
 
 def test_position_sizer_eurusd(position_sizer):
     """Test PositionSizer calculates correctly for EURUSD."""
@@ -320,6 +324,7 @@ def test_position_sizer_invalid_inputs(position_sizer):
 
 # ========== RiskMultiplier Tests ==========
 
+
 def test_risk_multiplier_low_drawdown(risk_multiplier):
     """Test RiskMultiplier with low drawdown."""
     mult = risk_multiplier.calculate(drawdown_level=0.1, session="LONDON")
@@ -342,6 +347,8 @@ def test_risk_multiplier_vix_scaling(risk_multiplier):
         drawdown_level=0.1,
         vix_level=40.0
     )
+    mult_low_vix = risk_multiplier.calculate(drawdown_level=0.1, vix_level=12.0)
+    mult_high_vix = risk_multiplier.calculate(drawdown_level=0.1, vix_level=40.0)
 
     # High VIX should reduce multiplier
     assert mult_high_vix < mult_low_vix
@@ -357,6 +364,8 @@ def test_risk_multiplier_session_scaling(risk_multiplier):
         drawdown_level=0.1,
         session="OFF_SESSION"
     )
+    mult_london = risk_multiplier.calculate(drawdown_level=0.1, session="LONDON")
+    mult_off = risk_multiplier.calculate(drawdown_level=0.1, session="OFF_SESSION")
 
     # Off-session should reduce multiplier
     assert mult_off < mult_london
@@ -378,6 +387,7 @@ def test_risk_multiplier_breakdown(risk_multiplier):
 
 
 # ========== RiskManager Tests ==========
+
 
 def test_risk_manager_singleton(risk_manager):
     """Test RiskManager is a singleton."""
@@ -451,12 +461,19 @@ def test_risk_manager_prop_firm_compliance(risk_manager):
         "risk_percent": 0.01,
         "rr_ratio": 2.5,
     })
+    result = risk_manager.check_prop_firm_compliance(
+        {
+            "risk_percent": 0.01,
+            "rr_ratio": 2.5,
+        }
+    )
 
     assert "compliant" in result
     assert "violations" in result
 
 
 # ========== Synthesis Integration Tests ==========
+
 
 def test_synthesis_with_risk_manager():
     """Test synthesis integration with RiskManager."""

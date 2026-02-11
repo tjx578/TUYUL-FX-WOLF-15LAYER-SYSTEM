@@ -12,7 +12,6 @@ Calculates position size based on:
 Formula: lot = risk_amount / (sl_distance × pip_value)
 """
 
-from typing import Dict, List, Optional
 
 from loguru import logger
 
@@ -26,17 +25,16 @@ from dashboard.backend.schemas import (
 from propfirm_manager.profile_manager import PropFirmManager
 from risk.risk_multiplier import RiskMultiplier
 
-
 # Pip value lookup (for 1 standard lot)
-PIP_VALUES: Dict[str, float] = {
-    "XAUUSD": 0.10,      # Gold
-    "EURUSD": 10.0,      # Euro
-    "GBPUSD": 10.0,      # Pound
-    "USDJPY": 6.50,      # Yen
-    "USDCHF": 10.0,      # Swiss Franc
-    "AUDUSD": 10.0,      # Aussie Dollar
-    "NZDUSD": 10.0,      # Kiwi Dollar
-    "USDCAD": 10.0,      # Canadian Dollar
+PIP_VALUES: dict[str, float] = {
+    "XAUUSD": 0.10,  # Gold
+    "EURUSD": 10.0,  # Euro
+    "GBPUSD": 10.0,  # Pound
+    "USDJPY": 6.50,  # Yen
+    "USDCHF": 10.0,  # Swiss Franc
+    "AUDUSD": 10.0,  # Aussie Dollar
+    "NZDUSD": 10.0,  # Kiwi Dollar
+    "USDCAD": 10.0,  # Canadian Dollar
 }
 
 
@@ -60,7 +58,7 @@ class RiskEngine:
         risk_percent: float,
         prop_firm_code: str,
         risk_mode: RiskMode = RiskMode.FIXED,
-        split_ratios: Optional[List[float]] = None,
+        split_ratios: list[float] | None = None,
     ) -> RiskCalculationResult:
         """
         Calculate recommended lot size with prop firm validation.
@@ -119,6 +117,9 @@ class RiskEngine:
         split_lots = None
         if risk_mode == RiskMode.SPLIT and split_ratios:
             split_lots = [lot * ratio for ratio in split_ratios]
+            _total_lot = lot  # Keep total lot same for validation
+        else:
+            _total_lot = lot
 
         # Project drawdown after trade loss
         daily_dd_after = account_state.daily_dd_percent + adjusted_risk_percent
@@ -158,6 +159,7 @@ class RiskEngine:
         guard_result = manager.evaluate_trade(
             account_state_dict, trade_risk_dict
         )
+        guard_result = manager.evaluate_trade(account_state_dict, trade_risk_dict)
 
         # Determine severity
         if not guard_result.allowed:
@@ -206,5 +208,4 @@ class RiskEngine:
         # Other pairs: 1 pip = 0.0001 (4 decimal places)
         if "JPY" in pair.upper():
             return distance * 100  # JPY pairs
-        else:
-            return distance * 10000  # Standard pairs
+        return distance * 10000  # Standard pairs

@@ -10,32 +10,34 @@ Tests all RiskProfile functionality:
 """
 
 import json
+
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 from risk.exceptions import RiskException
 from risk.risk_profile import (
-    RiskProfile,
     RiskMode,
-    save_risk_profile,
+    RiskProfile,
     load_risk_profile,
+    save_risk_profile,
 )
 
-
 # ========== Fixtures ==========
+
 
 @pytest.fixture
 def mock_redis():
     """Mock Redis client."""
     store: dict[str, str] = {}
     redis_mock = MagicMock()
-    redis_mock.get.side_effect = lambda key: store.get(key)
+    redis_mock.get.side_effect = store.get
     redis_mock.set.side_effect = lambda key, value, ex=None: store.__setitem__(key, value)
     return redis_mock
 
 
 # ========== Creation & Validation ==========
+
 
 def test_risk_profile_default_values():
     """Test default RiskProfile values."""
@@ -80,6 +82,7 @@ def test_risk_profile_immutability():
 
 # ========== Invalid Field Values ==========
 
+
 @pytest.mark.parametrize("risk_per_trade", [-1.0, 0.0, 5.1, 10.0])
 def test_risk_profile_invalid_risk_per_trade(risk_per_trade):
     """Test that invalid risk_per_trade raises RiskException."""
@@ -110,13 +113,17 @@ def test_risk_profile_invalid_max_open_trades(max_open_trades):
 
 # ========== Split Ratio Validation ==========
 
-@pytest.mark.parametrize("split_ratio", [
-    (0.4, 0.6),
-    (0.5, 0.5),
-    (0.3, 0.7),
-    (0.6, 0.4),
-    (0.2, 0.8),
-])
+
+@pytest.mark.parametrize(
+    "split_ratio",
+    [
+        (0.4, 0.6),
+        (0.5, 0.5),
+        (0.3, 0.7),
+        (0.6, 0.4),
+        (0.2, 0.8),
+    ],
+)
 def test_risk_profile_valid_split_ratios(split_ratio):
     """Test various valid split ratios that sum to 1.0."""
     profile = RiskProfile(
@@ -126,12 +133,15 @@ def test_risk_profile_valid_split_ratios(split_ratio):
     assert sum(profile.split_ratio) == 1.0
 
 
-@pytest.mark.parametrize("split_ratio", [
-    (0.4, 0.5),   # sums to 0.9
-    (0.5, 0.6),   # sums to 1.1
-    (0.3, 0.3),   # sums to 0.6
-    (1.0, 1.0),   # sums to 2.0
-])
+@pytest.mark.parametrize(
+    "split_ratio",
+    [
+        (0.4, 0.5),  # sums to 0.9
+        (0.5, 0.6),  # sums to 1.1
+        (0.3, 0.3),  # sums to 0.6
+        (1.0, 1.0),  # sums to 2.0
+    ],
+)
 def test_risk_profile_invalid_split_ratios(split_ratio):
     """Test that invalid split ratios raise RiskException."""
     with pytest.raises(RiskException, match="split_ratio"):
@@ -152,6 +162,7 @@ def test_risk_profile_split_ratio_ignored_in_fixed_mode():
 
 
 # ========== Serialization ==========
+
 
 def test_risk_profile_to_dict():
     """Test RiskProfile serialization to dict."""
@@ -236,6 +247,7 @@ def test_risk_profile_json_round_trip():
 
 # ========== Redis Persistence ==========
 
+
 def test_save_risk_profile(mock_redis):
     """Test saving risk profile to Redis."""
     with patch("risk.risk_profile.RedisClient") as MockRedis:
@@ -272,7 +284,7 @@ def test_load_risk_profile_existing(mock_redis):
 
         # Manually set in mock store
         store: dict[str, str] = {}
-        mock_redis.get.side_effect = lambda key: store.get(key)
+        mock_redis.get.side_effect = store.get
         store["wolf15:risk:profile:test_account"] = json.dumps(stored_profile.to_dict())
 
         # Load profile
@@ -303,7 +315,7 @@ def test_save_and_load_round_trip(mock_redis):
     """Test save/load round-trip with Redis."""
     with patch("risk.risk_profile.RedisClient") as MockRedis:
         store: dict[str, str] = {}
-        mock_redis.get.side_effect = lambda key: store.get(key)
+        mock_redis.get.side_effect = store.get
         mock_redis.set.side_effect = lambda key, value, ex=None: store.__setitem__(key, value)
         MockRedis.return_value = mock_redis
 
@@ -331,6 +343,7 @@ def test_save_and_load_round_trip(mock_redis):
 
 
 # ========== RiskMode Enum ==========
+
 
 def test_risk_mode_enum_values():
     """Test RiskMode enum has expected values."""
