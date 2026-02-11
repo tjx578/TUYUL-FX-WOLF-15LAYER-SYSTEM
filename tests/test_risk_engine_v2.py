@@ -58,7 +58,7 @@ def engine(mock_redis, risk_manager):
         MockRedis1.return_value = mock_redis
         with patch("risk.open_risk_tracker.RedisClient") as MockRedis2:
             MockRedis2.return_value = mock_redis
-            return RiskEngineV2("test_account", risk_manager=risk_manager)
+            yield RiskEngineV2("test_account", risk_manager=risk_manager)
 
 
 @pytest.fixture
@@ -69,8 +69,8 @@ def buy_signal():
         direction="BUY",
         entry_price=1.0950,
         stop_loss=1.0900,
-        take_profit_1=1.1000,
-        rr_ratio=1.0,
+        take_profit_1=1.1050,
+        rr_ratio=2.0,
         trade_id="test_trade_1",
     )
 
@@ -235,8 +235,8 @@ def test_evaluate_deny_max_open_trades(mock_redis, engine, buy_signal):
                 direction="BUY",
                 entry_price=1.2500,
                 stop_loss=1.2450,
-                take_profit_1=1.2550,
-                rr_ratio=1.0,
+                take_profit_1=1.2600,
+                rr_ratio=2.0,
                 trade_id="test_trade_2",
             )
             result2 = engine.evaluate(signal2)
@@ -271,8 +271,8 @@ def test_evaluate_allow_after_close(mock_redis, engine, buy_signal):
                 direction="BUY",
                 entry_price=1.2500,
                 stop_loss=1.2450,
-                take_profit_1=1.2550,
-                rr_ratio=1.0,
+                take_profit_1=1.2600,
+                rr_ratio=2.0,
                 trade_id="test_trade_2",
             )
             result2 = engine.evaluate(signal2)
@@ -486,11 +486,11 @@ def test_signal_input_dataclass():
 # ========== Parametrized Multi-Instrument ==========
 
 @pytest.mark.parametrize("symbol,entry,sl,tp", [
-    ("EURUSD", 1.0950, 1.0900, 1.1000),
-    ("GBPUSD", 1.2500, 1.2450, 1.2550),
-    ("USDJPY", 150.00, 149.50, 150.50),
+    ("EURUSD", 1.0950, 1.0900, 1.1050),
+    ("GBPUSD", 1.2500, 1.2450, 1.2600),
+    ("USDJPY", 150.00, 149.50, 151.00),
     ("XAUUSD", 2000.0, 1995.0, 2010.0),
-    ("AUDUSD", 0.6500, 0.6450, 0.6550),
+    ("AUDUSD", 0.6500, 0.6450, 0.6600),
 ])
 def test_evaluate_multi_instrument(mock_redis, engine, symbol, entry, sl, tp):
     """Test evaluate works for multiple instruments."""
@@ -503,7 +503,7 @@ def test_evaluate_multi_instrument(mock_redis, engine, symbol, entry, sl, tp):
             entry_price=entry,
             stop_loss=sl,
             take_profit_1=tp,
-            rr_ratio=1.0,
+            rr_ratio=2.0,
             trade_id=f"test_trade_{symbol}",
         )
 
@@ -533,8 +533,8 @@ def test_evaluate_projected_risk_stacking(mock_redis, engine):
                 direction="BUY",
                 entry_price=1.0950,
                 stop_loss=1.0900,
-                take_profit_1=1.1000,
-                rr_ratio=1.0,
+                take_profit_1=1.1050,
+                rr_ratio=2.0,
                 trade_id="trade_1",
             )
             result1 = engine.evaluate(signal1)
@@ -546,8 +546,8 @@ def test_evaluate_projected_risk_stacking(mock_redis, engine):
                 direction="BUY",
                 entry_price=1.2500,
                 stop_loss=1.2450,
-                take_profit_1=1.2550,
-                rr_ratio=1.0,
+                take_profit_1=1.2600,
+                rr_ratio=2.0,
                 trade_id="trade_2",
             )
             result2 = engine.evaluate(signal2)

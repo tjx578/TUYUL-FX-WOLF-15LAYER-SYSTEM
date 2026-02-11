@@ -83,7 +83,7 @@ class CircuitBreaker:
         cooldown_hours : int, optional
             Hours before auto-reset (loaded from config if None)
         """
-        self._lock = threading.Lock()
+        self._lock = threading.RLock()
         self._redis = RedisClient()
         self._config = load_risk()
 

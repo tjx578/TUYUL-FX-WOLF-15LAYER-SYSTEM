@@ -10,6 +10,7 @@ Validates:
 
 from datetime import datetime
 from pathlib import Path
+from unittest.mock import patch
 from uuid import uuid4
 
 import pytest
@@ -328,12 +329,13 @@ class TestDrawdownMultiplier:
             risk_state=RiskSeverity.SAFE,
         )
 
-        result = engine.calculate_lot(
-            signal=signal,
-            account_state=low_dd_state,
-            risk_percent=1.0,
-            prop_firm_code="ftmo",
-        )
+        with patch("risk.risk_multiplier.is_trading_session", return_value="LONDON"):
+            result = engine.calculate_lot(
+                signal=signal,
+                account_state=low_dd_state,
+                risk_percent=1.0,
+                prop_firm_code="ftmo",
+            )
 
         # Verify calculation succeeded
         assert result.recommended_lot > 0
