@@ -12,7 +12,7 @@ Uses:
 
 from typing import Any, Optional
 
-import or json
+import orjson
 from loguru import logger
 
 from storage.redis_client import RedisClient
@@ -76,9 +76,10 @@ class RedisContextBridge:
                 approximate=True,
             )
 
-            # 2. HSET latest tick
+            # 2. HSET latest tick + set TTL
             latest_key = f"{self._prefix}:latest_tick:{symbol}"
             self._redis.hset(latest_key, mapping={"data": tick_json})
+            self._redis.client.expire(latest_key, LATEST_TICK_TTL_SECONDS)
 
             # 3. PUBLISH notification
             self._redis.publish("tick_updates", tick_json)
@@ -116,9 +117,10 @@ class RedisContextBridge:
             channel = f"candle:{symbol}:{timeframe}"
             self._redis.publish(channel, candle_json)
 
-            # 2. HSET latest candle
+            # 2. HSET latest candle + set TTL
             hash_key = f"{self._prefix}:candle:{symbol}:{timeframe}"
             self._redis.hset(hash_key, mapping={"data": candle_json})
+            self._redis.client.expire(hash_key, CANDLE_HASH_TTL_SECONDS)
 
             logger.debug(f"Candle written to Redis: {symbol} {timeframe}")
 
