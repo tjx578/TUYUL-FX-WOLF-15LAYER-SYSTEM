@@ -32,7 +32,6 @@ class PropFirmManager:
 
     # Class-level profile cache
     _profile_cache: dict[str, "PropFirmManager"] = {}
-    _profile_cache: dict[str, "PropFirmManager"] = {}
 
     def __init__(self, profile_name: str):
         """
@@ -74,11 +73,6 @@ class PropFirmManager:
         profile_path = base_dir / "profile.yaml"
 
         if not profile_path.exists():
-            raise FileNotFoundError(
-                f"Profile not found: {profile_path}"
-            )
-
-        with open(profile_path) as f:
             raise FileNotFoundError(f"Profile not found: {profile_path}")
 
         with open(profile_path) as f:

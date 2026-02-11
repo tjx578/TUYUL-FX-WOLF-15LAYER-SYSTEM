@@ -130,8 +130,6 @@ class PriceFeed:
                 return json.loads(price_json)
             logger.debug(f"No price data for {symbol}")
             return None
-            logger.debug(f"No price data for {symbol}")
-            return None
 
         except Exception as exc:
             logger.error(f"Failed to get price for {symbol}: {exc}")
