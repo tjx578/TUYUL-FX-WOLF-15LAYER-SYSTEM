@@ -12,10 +12,11 @@ GPT Role (LOCKED):
 """
 
 import json
+
 from collections import Counter
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from loguru import logger
 
@@ -24,9 +25,9 @@ from utils.timezone_utils import now_utc
 
 def _load_entries(
     date_range_days: int = 7,
-    journal_types: Optional[List[str]] = None,
+    journal_types: list[str] | None = None,
     base_dir: str = "storage/decision_archive",
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """
     Load journal entries from storage.
 
@@ -68,7 +69,7 @@ def _load_entries(
         # Load all JSON files in this directory
         for json_file in date_dir.glob("*.json"):
             try:
-                with open(json_file, "r", encoding="utf-8") as f:
+                with open(json_file, encoding="utf-8") as f:
                     entry = json.load(f)
 
                 # Filter by journal type if specified
@@ -85,7 +86,7 @@ def _load_entries(
     return entries
 
 
-def compute_metrics(entries: List[Dict[str, Any]]) -> Dict[str, Any]:
+def compute_metrics(entries: list[dict[str, Any]]) -> dict[str, Any]:
     """
     Compute metrics from journal entries.
 
@@ -136,9 +137,7 @@ def compute_metrics(entries: List[Dict[str, Any]]) -> Dict[str, Any]:
             override_count += 1
 
     protection_score = (
-        sum(protection_scores) / len(protection_scores) * 100
-        if protection_scores
-        else None
+        sum(protection_scores) / len(protection_scores) * 100 if protection_scores else None
     )
 
     # Average wolf score for EXECUTE verdicts
@@ -152,9 +151,7 @@ def compute_metrics(entries: List[Dict[str, Any]]) -> Dict[str, Any]:
                 execute_wolf_scores.append(wolf_score)
 
     avg_execute_wolf = (
-        sum(execute_wolf_scores) / len(execute_wolf_scores)
-        if execute_wolf_scores
-        else None
+        sum(execute_wolf_scores) / len(execute_wolf_scores) if execute_wolf_scores else None
     )
 
     return {
@@ -172,7 +169,7 @@ def compute_metrics(entries: List[Dict[str, Any]]) -> Dict[str, Any]:
 
 def export_for_gpt(
     date_range_days: int = 7,
-    journal_types: Optional[List[str]] = None,
+    journal_types: list[str] | None = None,
     output_dir: str = "storage/gpt_exports",
 ) -> Path:
     """
@@ -229,25 +226,27 @@ def export_for_gpt(
         f.write(f"- **Total Reflections:** {metrics['total_reflections']}\n")
         f.write(f"- **Rejection Rate:** {metrics['rejection_rate']}%\n")
 
-        if metrics['protection_score']:
+        if metrics["protection_score"]:
             f.write(f"- **Protection Score:** {metrics['protection_score']}%\n")
 
-        if metrics['avg_execute_wolf_score']:
+        if metrics["avg_execute_wolf_score"]:
             f.write(f"- **Avg Execute Wolf Score:** {metrics['avg_execute_wolf_score']}/30\n")
 
         f.write(f"- **Override Attempts:** {metrics['override_count']}\n\n")
 
         # Verdict distribution
         f.write("### Verdict Distribution\n\n")
-        for verdict, count in sorted(metrics['verdict_counts'].items()):
-            pct = (count / metrics['total_decisions'] * 100) if metrics['total_decisions'] > 0 else 0
+        for verdict, count in sorted(metrics["verdict_counts"].items()):
+            pct = (
+                (count / metrics["total_decisions"] * 100) if metrics["total_decisions"] > 0 else 0
+            )
             f.write(f"- **{verdict}:** {count} ({pct:.1f}%)\n")
         f.write("\n")
 
         # Top failed gates
         f.write("### Top Failed Gates\n\n")
-        if metrics['top_failed_gates']:
-            for gate, count in metrics['top_failed_gates']:
+        if metrics["top_failed_gates"]:
+            for gate, count in metrics["top_failed_gates"]:
                 f.write(f"- **{gate}:** {count} failures\n")
         else:
             f.write("*No gate failures recorded*\n")

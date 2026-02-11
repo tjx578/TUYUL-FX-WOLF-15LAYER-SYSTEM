@@ -1,7 +1,7 @@
 import asyncio
+
 from collections import defaultdict
-from datetime import datetime, timedelta, timezone
-from typing import Union
+from datetime import UTC, datetime, timedelta
 
 from loguru import logger
 
@@ -85,14 +85,13 @@ class CandleBuilder:
 
         # Clean buffer: keep only ticks after this candle
         self.buffers[symbol] = [
-            t for t in buffer
-            if self._normalize_timestamp(t["timestamp"]) >= end_time
+            t for t in buffer if self._normalize_timestamp(t["timestamp"]) >= end_time
         ]
 
         logger.debug(f"{symbol} {tf} candle built: O={candle['open']:.5f}")
 
     @staticmethod
-    def _normalize_timestamp(ts: Union[float, datetime]) -> datetime:
+    def _normalize_timestamp(ts: float | datetime) -> datetime:
         """
         Normalize timestamp to datetime object.
 
@@ -105,11 +104,11 @@ class CandleBuilder:
         if isinstance(ts, datetime):
             # Ensure timezone-aware
             if ts.tzinfo is None:
-                return ts.replace(tzinfo=timezone.utc)
-            return ts.astimezone(timezone.utc)
+                return ts.replace(tzinfo=UTC)
+            return ts.astimezone(UTC)
 
         # Unix timestamp (float) - convert to datetime
-        return datetime.fromtimestamp(ts, tz=timezone.utc)
+        return datetime.fromtimestamp(ts, tz=UTC)
 
     @staticmethod
     def _floor_time(dt: datetime, minutes: int) -> datetime:

@@ -5,8 +5,6 @@ Calculates entry, stop loss, and take profit levels using
 ATR for volatility-based stops and targets.
 """
 
-from typing import Dict, Optional
-
 from analysis.market.indicators import IndicatorEngine
 from context.live_context_bus import LiveContextBus
 
@@ -28,8 +26,8 @@ class L11RRAnalyzer:
         self,
         symbol: str,
         direction: str,
-        entry: Optional[float] = None,
-    ) -> Dict:
+        entry: float | None = None,
+    ) -> dict:
         """
         Calculate risk/reward for a trade setup.
 
@@ -74,15 +72,15 @@ class L11RRAnalyzer:
         # Calculate stop loss and take profit based on direction
         if direction == "BUY":
             # Stop loss: Entry - (1.5 * ATR)
-            sl = entry - (1.5 * atr) # pyright: ignore[reportOptionalOperand]
+            sl = entry - (1.5 * atr)  # pyright: ignore[reportOptionalOperand]
             # Take profit: Entry + (3.0 * ATR) for 2:1 RR minimum
-            tp1 = entry + (3.0 * atr) # pyright: ignore[reportOptionalOperand]
+            tp1 = entry + (3.0 * atr)  # pyright: ignore[reportOptionalOperand]
 
         elif direction == "SELL":
             # Stop loss: Entry + (1.5 * ATR)
-            sl = entry + (1.5 * atr) # pyright: ignore[reportOptionalOperand]
+            sl = entry + (1.5 * atr)  # pyright: ignore[reportOptionalOperand]
             # Take profit: Entry - (3.0 * ATR) for 2:1 RR minimum
-            tp1 = entry - (3.0 * atr) # pyright: ignore[reportOptionalOperand]
+            tp1 = entry - (3.0 * atr)  # pyright: ignore[reportOptionalOperand]
 
         else:
             return {
@@ -91,8 +89,8 @@ class L11RRAnalyzer:
             }
 
         # Calculate risk and reward
-        risk = abs(entry - sl) # pyright: ignore[reportOptionalOperand]
-        reward = abs(tp1 - entry) # pyright: ignore[reportOperatorIssue]
+        risk = abs(entry - sl)  # pyright: ignore[reportOptionalOperand]
+        reward = abs(tp1 - entry)  # pyright: ignore[reportOperatorIssue]
 
         if risk == 0:
             return {
@@ -125,10 +123,10 @@ class L11RRAnalyzer:
 
     def calculate(
         self,
-        entry: Optional[float],
-        sl: Optional[float],
-        tp: Optional[float],
-    ) -> Dict:
+        entry: float | None,
+        sl: float | None,
+        tp: float | None,
+    ) -> dict:
         """
         Calculate RR from explicit entry/SL/TP values.
 

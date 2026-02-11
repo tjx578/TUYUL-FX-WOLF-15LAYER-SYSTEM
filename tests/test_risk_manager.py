@@ -10,25 +10,24 @@ Tests all risk components:
 - Synthesis integration
 """
 
-import json
 from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-from risk.drawdown import DrawdownMonitor
 from risk.circuit_breaker import CircuitBreaker, CircuitBreakerState
-from risk.position_sizer import PositionSizer
-from risk.risk_multiplier import RiskMultiplier
-from risk.risk_manager import RiskManager
+from risk.drawdown import DrawdownMonitor
 from risk.exceptions import (
     DrawdownLimitExceeded,
-    CircuitBreakerOpen,
     InvalidPositionSize,
 )
-
+from risk.position_sizer import PositionSizer
+from risk.risk_manager import RiskManager
+from risk.risk_multiplier import RiskMultiplier
 
 # ========== Fixtures ==========
+
 
 @pytest.fixture
 def mock_redis():
@@ -86,19 +85,20 @@ def risk_manager(mock_redis):
     """Create RiskManager with mocked Redis."""
     # Reset singleton before test
     RiskManager.reset_instance()
-    
+
     with patch("risk.drawdown.RedisClient") as MockRedis:
         MockRedis.return_value = mock_redis
         with patch("risk.circuit_breaker.RedisClient") as MockRedis2:
             MockRedis2.return_value = mock_redis
             manager = RiskManager.get_instance(initial_balance=10000.0)
             yield manager
-    
+
     # Reset after test
     RiskManager.reset_instance()
 
 
 # ========== DrawdownMonitor Tests ==========
+
 
 def test_drawdown_monitor_initialization(drawdown_monitor):
     """Test DrawdownMonitor initializes correctly."""
@@ -111,7 +111,7 @@ def test_drawdown_monitor_update_loss(drawdown_monitor):
     """Test DrawdownMonitor tracks losses."""
     # Update with losing trade
     drawdown_monitor.update(current_equity=9900.0, pnl=-100.0)
-    
+
     snapshot = drawdown_monitor.get_snapshot()
     assert snapshot["daily_dd_amount"] == 100.0
     assert snapshot["weekly_dd_amount"] == 100.0
@@ -122,7 +122,7 @@ def test_drawdown_monitor_update_profit(drawdown_monitor):
     """Test DrawdownMonitor with winning trade."""
     # Update with winning trade
     drawdown_monitor.update(current_equity=10100.0, pnl=100.0)
-    
+
     snapshot = drawdown_monitor.get_snapshot()
     # Daily/weekly should not increase on profit
     assert snapshot["daily_dd_amount"] == 0.0
@@ -133,7 +133,7 @@ def test_drawdown_monitor_peak_equity(drawdown_monitor):
     """Test DrawdownMonitor tracks peak equity."""
     # Make profit - should update peak
     drawdown_monitor.update(current_equity=10500.0, pnl=500.0)
-    
+
     snapshot = drawdown_monitor.get_snapshot()
     assert snapshot["peak_equity"] == 10500.0
 
@@ -142,9 +142,9 @@ def test_drawdown_monitor_breach(drawdown_monitor):
     """Test DrawdownMonitor detects breaches."""
     # Breach daily limit (3% of 10000 = 300)
     drawdown_monitor.update(current_equity=9650.0, pnl=-350.0)
-    
+
     assert drawdown_monitor.is_breached()
-    
+
     with pytest.raises(DrawdownLimitExceeded):
         drawdown_monitor.check_and_raise()
 
@@ -153,10 +153,10 @@ def test_drawdown_monitor_redis_persistence(mock_redis):
     """Test DrawdownMonitor persists to Redis."""
     with patch("risk.drawdown.RedisClient") as MockRedis:
         MockRedis.return_value = mock_redis
-        
+
         monitor = DrawdownMonitor(initial_balance=10000.0)
         monitor.update(current_equity=9900.0, pnl=-100.0)
-        
+
         # Check Redis set was called
         assert mock_redis.set.called
         # Should persist daily, weekly, total, peak
@@ -164,6 +164,7 @@ def test_drawdown_monitor_redis_persistence(mock_redis):
 
 
 # ========== CircuitBreaker Tests ==========
+
 
 def test_circuit_breaker_initialization(circuit_breaker):
     """Test CircuitBreaker initializes in CLOSED state."""
@@ -175,7 +176,7 @@ def test_circuit_breaker_daily_loss_trigger(circuit_breaker):
     """Test CircuitBreaker opens on daily loss threshold."""
     # Record loss exceeding 3% threshold
     circuit_breaker.record_trade(pnl=-350.0, pair="EURUSD", daily_loss=350.0)
-    
+
     assert circuit_breaker.get_state() == "OPEN"
     assert not circuit_breaker.is_trading_allowed()
 
@@ -186,11 +187,12 @@ def test_circuit_breaker_consecutive_losses(circuit_breaker):
     for i in range(3):
         daily_loss = (i + 1) * 50.0
         circuit_breaker.record_trade(
-            pnl=-50.0, 
-            pair="EURUSD", 
+            pnl=-50.0,
+            pair="EURUSD",
             daily_loss=daily_loss
         )
-    
+        circuit_breaker.record_trade(pnl=-50.0, pair="EURUSD", daily_loss=daily_loss)
+
     assert circuit_breaker.get_state() == "OPEN"
     assert not circuit_breaker.is_trading_allowed()
 
@@ -200,14 +202,15 @@ def test_circuit_breaker_recovery_probe_success(circuit_breaker):
     # Force into OPEN state
     circuit_breaker._state = CircuitBreakerState.OPEN
     circuit_breaker._opened_at = datetime.now(timezone.utc) - timedelta(hours=5)
-    
+    circuit_breaker._opened_at = datetime.now(UTC) - timedelta(hours=5)
+
     # Check auto-recovery to HALF_OPEN after cooldown
     assert circuit_breaker.is_trading_allowed()  # Triggers auto-recovery check
     assert circuit_breaker.get_state() == "HALF_OPEN"
-    
+
     # Successful probe trade
     circuit_breaker.record_trade(pnl=100.0, pair="EURUSD", daily_loss=0.0)
-    
+
     # Should be CLOSED now
     assert circuit_breaker.get_state() == "CLOSED"
 
@@ -216,10 +219,10 @@ def test_circuit_breaker_recovery_probe_failure(circuit_breaker):
     """Test CircuitBreaker returns to OPEN on failed probe."""
     # Force into HALF_OPEN state
     circuit_breaker._state = CircuitBreakerState.HALF_OPEN
-    
+
     # Failed probe trade (loss)
     circuit_breaker.record_trade(pnl=-50.0, pair="EURUSD", daily_loss=50.0)
-    
+
     # Should return to OPEN
     assert circuit_breaker.get_state() == "OPEN"
 
@@ -228,15 +231,16 @@ def test_circuit_breaker_redis_persistence(mock_redis):
     """Test CircuitBreaker persists state to Redis."""
     with patch("risk.circuit_breaker.RedisClient") as MockRedis:
         MockRedis.return_value = mock_redis
-        
+
         breaker = CircuitBreaker(initial_balance=10000.0)
         breaker.record_trade(pnl=-350.0, pair="EURUSD", daily_loss=350.0)
-        
+
         # Check Redis set was called
         assert mock_redis.set.called
 
 
 # ========== PositionSizer Tests ==========
+
 
 def test_position_sizer_eurusd(position_sizer):
     """Test PositionSizer calculates correctly for EURUSD."""
@@ -248,7 +252,7 @@ def test_position_sizer_eurusd(position_sizer):
         risk_percent=0.01,  # 1%
         risk_multiplier=1.0,
     )
-    
+
     assert "lot_size" in result
     assert result["lot_size"] > 0
     assert result["risk_amount"] == 100.0  # 1% of 10000
@@ -265,7 +269,7 @@ def test_position_sizer_xauusd(position_sizer):
         risk_percent=0.01,  # 1%
         risk_multiplier=1.0,
     )
-    
+
     assert "lot_size" in result
     assert result["lot_size"] > 0
     assert result["risk_amount"] == 100.0
@@ -281,7 +285,7 @@ def test_position_sizer_risk_multiplier(position_sizer):
         pair="EURUSD",
         risk_multiplier=1.0,
     )
-    
+
     result_half = position_sizer.calculate(
         account_balance=10000.0,
         entry_price=1.1000,
@@ -289,7 +293,7 @@ def test_position_sizer_risk_multiplier(position_sizer):
         pair="EURUSD",
         risk_multiplier=0.5,
     )
-    
+
     # Half multiplier should result in smaller position
     assert result_half["lot_size"] < result_full["lot_size"]
     assert result_half["risk_amount"] < result_full["risk_amount"]
@@ -304,7 +308,7 @@ def test_position_sizer_min_lot_clamp(position_sizer):
         pair="EURUSD",
         risk_multiplier=1.0,
     )
-    
+
     # Should be clamped to min (0.01)
     assert result["lot_size"] >= position_sizer.min_lot_size
 
@@ -322,29 +326,32 @@ def test_position_sizer_invalid_inputs(position_sizer):
 
 # ========== RiskMultiplier Tests ==========
 
+
 def test_risk_multiplier_low_drawdown(risk_multiplier):
     """Test RiskMultiplier with low drawdown."""
-    mult = risk_multiplier.calculate(drawdown_level=0.1)
+    mult = risk_multiplier.calculate(drawdown_level=0.1, session="LONDON")
     assert mult == 1.0
 
 
 def test_risk_multiplier_high_drawdown(risk_multiplier):
     """Test RiskMultiplier with high drawdown."""
-    mult = risk_multiplier.calculate(drawdown_level=0.9)
+    mult = risk_multiplier.calculate(drawdown_level=0.9, session="LONDON")
     assert mult == 0.25
 
 
 def test_risk_multiplier_vix_scaling(risk_multiplier):
     """Test RiskMultiplier with VIX input."""
     mult_low_vix = risk_multiplier.calculate(
-        drawdown_level=0.1, 
+        drawdown_level=0.1,
         vix_level=12.0
     )
     mult_high_vix = risk_multiplier.calculate(
-        drawdown_level=0.1, 
+        drawdown_level=0.1,
         vix_level=40.0
     )
-    
+    mult_low_vix = risk_multiplier.calculate(drawdown_level=0.1, vix_level=12.0)
+    mult_high_vix = risk_multiplier.calculate(drawdown_level=0.1, vix_level=40.0)
+
     # High VIX should reduce multiplier
     assert mult_high_vix < mult_low_vix
 
@@ -352,14 +359,16 @@ def test_risk_multiplier_vix_scaling(risk_multiplier):
 def test_risk_multiplier_session_scaling(risk_multiplier):
     """Test RiskMultiplier with session input."""
     mult_london = risk_multiplier.calculate(
-        drawdown_level=0.1, 
+        drawdown_level=0.1,
         session="LONDON"
     )
     mult_off = risk_multiplier.calculate(
-        drawdown_level=0.1, 
+        drawdown_level=0.1,
         session="OFF_SESSION"
     )
-    
+    mult_london = risk_multiplier.calculate(drawdown_level=0.1, session="LONDON")
+    mult_off = risk_multiplier.calculate(drawdown_level=0.1, session="OFF_SESSION")
+
     # Off-session should reduce multiplier
     assert mult_off < mult_london
 
@@ -371,7 +380,7 @@ def test_risk_multiplier_breakdown(risk_multiplier):
         vix_level=20.0,
         session="LONDON",
     )
-    
+
     assert "overall" in breakdown
     assert "components" in breakdown
     assert "drawdown" in breakdown["components"]
@@ -381,11 +390,12 @@ def test_risk_multiplier_breakdown(risk_multiplier):
 
 # ========== RiskManager Tests ==========
 
+
 def test_risk_manager_singleton(risk_manager):
     """Test RiskManager is a singleton."""
     # Get another instance
     instance2 = RiskManager.get_instance()
-    
+
     # Should be same instance
     assert instance2 is risk_manager
 
@@ -393,7 +403,7 @@ def test_risk_manager_singleton(risk_manager):
 def test_risk_manager_get_risk_snapshot(risk_manager):
     """Test RiskManager provides risk snapshot."""
     snapshot = risk_manager.get_risk_snapshot()
-    
+
     assert "drawdown" in snapshot
     assert "circuit_breaker" in snapshot
     assert "risk_multiplier" in snapshot
@@ -408,9 +418,9 @@ def test_risk_manager_record_trade(risk_manager):
         pair="EURUSD",
         current_equity=9900.0,
     )
-    
+
     snapshot = risk_manager.get_risk_snapshot()
-    
+
     # Should have updated drawdown
     assert snapshot["drawdown"]["daily_dd_amount"] == 100.0
 
@@ -422,7 +432,7 @@ def test_risk_manager_calculate_position(risk_manager):
         stop_loss_price=1.0950,
         pair="EURUSD",
     )
-    
+
     assert "lot_size" in position
     assert "risk_amount" in position
     assert position["lot_size"] > 0
@@ -442,7 +452,7 @@ def test_risk_manager_trading_not_allowed_on_breach(risk_manager):
         pair="EURUSD",
         current_equity=8900.0,
     )
-    
+
     # Should not allow trading
     assert not risk_manager.is_trading_allowed()
 
@@ -453,45 +463,52 @@ def test_risk_manager_prop_firm_compliance(risk_manager):
         "risk_percent": 0.01,
         "rr_ratio": 2.5,
     })
-    
+    result = risk_manager.check_prop_firm_compliance(
+        {
+            "risk_percent": 0.01,
+            "rr_ratio": 2.5,
+        }
+    )
+
     assert "compliant" in result
     assert "violations" in result
 
 
 # ========== Synthesis Integration Tests ==========
 
+
 def test_synthesis_with_risk_manager():
     """Test synthesis integration with RiskManager."""
     from analysis.synthesis import build_synthesis
-    
+
     # Reset singleton
     RiskManager.reset_instance()
-    
+
     with patch("risk.drawdown.RedisClient") as MockRedis:
         mock_redis = MagicMock()
         mock_redis.get.return_value = None
         mock_redis.set.return_value = True
         MockRedis.return_value = mock_redis
-        
+
         with patch("risk.circuit_breaker.RedisClient") as MockRedis2:
             MockRedis2.return_value = mock_redis
-            
+
             # Create RiskManager
             rm = RiskManager.get_instance(initial_balance=10000.0)
-            
+
             # Build synthesis with RiskManager
             result = build_synthesis("EURUSD", risk_manager=rm)
-            
+
             # Should have real risk data (not 0.0)
             assert "risk" in result
             assert "current_drawdown" in result["risk"]
             # Drawdown should be calculable (may be 0.0 initially)
             assert result["risk"]["current_drawdown"] >= 0.0
-            
+
             # Should have real prop firm compliance
             assert "propfirm" in result
             assert "compliant" in result["propfirm"]
-    
+
     # Cleanup
     RiskManager.reset_instance()
 
@@ -499,10 +516,10 @@ def test_synthesis_with_risk_manager():
 def test_synthesis_without_risk_manager():
     """Test synthesis works without RiskManager (fallback)."""
     from analysis.synthesis import build_synthesis
-    
+
     # Build synthesis without RiskManager
     result = build_synthesis("EURUSD", risk_manager=None)
-    
+
     # Should fall back to defaults
     assert result["risk"]["current_drawdown"] == 0.0
     assert result["propfirm"]["compliant"] is True

@@ -14,33 +14,35 @@ Enums:
 
 from datetime import datetime
 from enum import Enum
-from typing import List, Optional
 
 from pydantic import BaseModel, Field, field_validator
-
 
 # ========================
 # ENUMS
 # ========================
 
+
 class TradeStatus(str, Enum):
     """Trade lifecycle status"""
-    INTENDED = "INTENDED"          # Trader clicked TAKE, dashboard computed lot
-    PENDING = "PENDING"            # Order placed at broker (trader confirmed)
-    OPEN = "OPEN"                  # Price hit entry (auto-detected by price watcher)
-    CLOSED = "CLOSED"              # SL/TP hit or manual close
-    CANCELLED = "CANCELLED"        # System cancelled (M15 invalid, expiry, news, DD breach)
-    SKIPPED = "SKIPPED"            # Trader clicked SKIP
+
+    INTENDED = "INTENDED"  # Trader clicked TAKE, dashboard computed lot
+    PENDING = "PENDING"  # Order placed at broker (trader confirmed)
+    OPEN = "OPEN"  # Price hit entry (auto-detected by price watcher)
+    CLOSED = "CLOSED"  # SL/TP hit or manual close
+    CANCELLED = "CANCELLED"  # System cancelled (M15 invalid, expiry, news, DD breach)
+    SKIPPED = "SKIPPED"  # Trader clicked SKIP
 
 
 class RiskMode(str, Enum):
     """Risk allocation mode"""
-    FIXED = "FIXED"                # Single position, full risk
-    SPLIT = "SPLIT"                # Split into multiple legs
+
+    FIXED = "FIXED"  # Single position, full risk
+    SPLIT = "SPLIT"  # Split into multiple legs
 
 
 class CloseReason(str, Enum):
     """Reason for trade closure"""
+
     TP_HIT = "TP_HIT"
     SL_HIT = "SL_HIT"
     MANUAL_CLOSE = "MANUAL_CLOSE"
@@ -54,13 +56,15 @@ class CloseReason(str, Enum):
 # MODELS
 # ========================
 
+
 class TradeLeg(BaseModel):
     """
     Single leg of a trade.
-    
+
     For FIXED mode: 1 leg only.
     For SPLIT mode: Multiple legs (e.g., 2-leg or 3-leg).
     """
+
     leg: int = Field(..., description="Leg number (1, 2, 3, ...)")
     entry: float = Field(..., gt=0, description="Entry price")
     sl: float = Field(..., gt=0, description="Stop loss price")
@@ -72,10 +76,11 @@ class TradeLeg(BaseModel):
 class Trade(BaseModel):
     """
     Complete trade record.
-    
+
     Represents the full trade lifecycle from INTENDED to final state.
     Dashboard authority: manages state + risk + journal.
     """
+
     trade_id: str = Field(..., description="Unique trade ID (T-{timestamp})")
     signal_id: str = Field(..., description="Source signal ID (SIG-{pair}_{timestamp})")
     account_id: str = Field(..., description="Account ID (ACC-{id})")
@@ -85,11 +90,15 @@ class Trade(BaseModel):
     risk_mode: RiskMode = Field(..., description="Risk allocation mode")
     total_risk_percent: float = Field(..., gt=0, description="Total risk as % of balance")
     total_risk_amount: float = Field(..., gt=0, description="Total risk in account currency")
-    legs: List[TradeLeg] = Field(..., description="Trade legs (1 for FIXED, multiple for SPLIT)")
+    legs: list[TradeLeg] = Field(..., description="Trade legs (1 for FIXED, multiple for SPLIT)")
     created_at: datetime = Field(..., description="Trade creation timestamp (UTC)")
     updated_at: datetime = Field(..., description="Last update timestamp (UTC)")
-    close_reason: Optional[CloseReason] = Field(default=None, description="Reason for closure (if closed)")
-    pnl: Optional[float] = Field(default=None, description="Profit/loss in account currency (if closed)")
+    close_reason: CloseReason | None = Field(
+        default=None, description="Reason for closure (if closed)"
+    )
+    pnl: float | None = Field(
+        default=None, description="Profit/loss in account currency (if closed)"
+    )
 
     @field_validator("direction")
     @classmethod
@@ -101,7 +110,7 @@ class Trade(BaseModel):
 
     @field_validator("legs")
     @classmethod
-    def validate_legs(cls, v: List[TradeLeg]) -> List[TradeLeg]:
+    def validate_legs(cls, v: list[TradeLeg]) -> list[TradeLeg]:
         """Ensure at least one leg exists"""
         if not v:
             raise ValueError("Trade must have at least one leg")
@@ -111,10 +120,11 @@ class Trade(BaseModel):
 class Account(BaseModel):
     """
     Account information and risk limits.
-    
+
     Stores balance, equity, and prop firm constraints.
     Used by dashboard to compute safe lot sizes.
     """
+
     account_id: str = Field(..., description="Unique account ID (ACC-{id})")
     name: str = Field(..., description="Account name/label")
     balance: float = Field(..., gt=0, description="Account balance")
@@ -152,11 +162,11 @@ VALID_TRANSITIONS = {
 def is_valid_transition(current: TradeStatus, new: TradeStatus) -> bool:
     """
     Check if state transition is valid.
-    
+
     Args:
         current: Current trade status
         new: New trade status
-        
+
     Returns:
         True if transition is allowed, False otherwise
     """

@@ -8,16 +8,13 @@ Provides REST API for:
 - Trade lifecycle tracking
 """
 
-from typing import Optional
-
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel, Field, field_validator
-
 from loguru import logger
+from pydantic import BaseModel, Field, field_validator
 
 from risk.exceptions import RiskException
 from risk.risk_engine_v2 import RiskEngineV2, SignalInput
-from risk.risk_profile import RiskProfile, RiskMode, save_risk_profile, load_risk_profile
+from risk.risk_profile import RiskMode, RiskProfile, load_risk_profile, save_risk_profile
 
 router = APIRouter(prefix="/api/v1/risk")
 
@@ -26,8 +23,10 @@ router = APIRouter(prefix="/api/v1/risk")
 # REQUEST/RESPONSE MODELS
 # ========================
 
+
 class RiskProfileRequest(BaseModel):
     """Request to save risk profile."""
+
     risk_per_trade: float = Field(..., gt=0, le=5.0, description="Risk % per trade")
     max_daily_dd: float = Field(..., gt=0, le=20.0, description="Max daily drawdown %")
     max_total_dd: float = Field(..., gt=0, le=30.0, description="Max total drawdown %")
@@ -45,6 +44,7 @@ class RiskProfileRequest(BaseModel):
 
 class EvaluateSignalRequest(BaseModel):
     """Request to evaluate a trading signal."""
+
     symbol: str = Field(..., description="Trading pair")
     direction: str = Field(..., description="BUY or SELL")
     entry_price: float = Field(..., gt=0, description="Entry price")
@@ -52,9 +52,9 @@ class EvaluateSignalRequest(BaseModel):
     take_profit_1: float = Field(..., gt=0, description="First take profit")
     rr_ratio: float = Field(..., gt=0, description="Risk/reward ratio")
     trade_id: str = Field(..., description="Unique trade ID")
-    sl_distance_2: Optional[float] = Field(None, description="Second SL distance for SPLIT")
-    vix_level: Optional[float] = Field(None, description="VIX level")
-    session: Optional[str] = Field(None, description="Trading session")
+    sl_distance_2: float | None = Field(None, description="Second SL distance for SPLIT")
+    vix_level: float | None = Field(None, description="VIX level")
+    session: str | None = Field(None, description="Trading session")
     auto_register: bool = Field(default=False, description="Auto-register if ALLOW")
 
     @field_validator("direction")
@@ -67,6 +67,7 @@ class EvaluateSignalRequest(BaseModel):
 
 class CloseTradeRequest(BaseModel):
     """Request to close trade tracking."""
+
     trade_id: str = Field(..., description="Trade ID")
     entry_number: int = Field(default=1, ge=1, le=2, description="Entry number (1 or 2)")
 
@@ -75,11 +76,12 @@ class CloseTradeRequest(BaseModel):
 # ENDPOINTS
 # ========================
 
+
 @router.get("/{account_id}/snapshot")
 async def get_account_snapshot(
     account_id: str,
-    vix_level: Optional[float] = None,
-    session: Optional[str] = None,
+    vix_level: float | None = None,
+    session: str | None = None,
 ) -> dict:
     """Get complete account risk snapshot."""
     try:
@@ -88,7 +90,7 @@ async def get_account_snapshot(
         return snapshot
     except Exception as exc:
         logger.error("Failed to get account snapshot", account_id=account_id, error=str(exc))
-        raise HTTPException(status_code=500, detail=str(exc))
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
 @router.post("/{account_id}/evaluate")
@@ -132,10 +134,10 @@ async def evaluate_signal(
         }
     except RiskException as exc:
         logger.warning("Risk evaluation rejected", account_id=account_id, error=str(exc))
-        raise HTTPException(status_code=400, detail=str(exc))
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
         logger.error("Failed to evaluate signal", account_id=account_id, error=str(exc))
-        raise HTTPException(status_code=500, detail=str(exc))
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
 @router.post("/{account_id}/profile")
@@ -157,10 +159,10 @@ async def save_profile(
         return {"status": "saved", "profile": profile.to_dict()}
     except RiskException as exc:
         logger.warning("Invalid risk profile", account_id=account_id, error=str(exc))
-        raise HTTPException(status_code=400, detail=str(exc))
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
         logger.error("Failed to save risk profile", account_id=account_id, error=str(exc))
-        raise HTTPException(status_code=500, detail=str(exc))
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
 @router.get("/{account_id}/profile")
@@ -171,7 +173,7 @@ async def get_profile(account_id: str) -> dict:
         return profile.to_dict()
     except Exception as exc:
         logger.error("Failed to load risk profile", account_id=account_id, error=str(exc))
-        raise HTTPException(status_code=500, detail=str(exc))
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
 @router.post("/{account_id}/close")
@@ -185,5 +187,7 @@ async def close_trade(
         engine.close_trade(req.trade_id, req.entry_number)
         return {"status": "closed", "trade_id": req.trade_id, "entry_number": req.entry_number}
     except Exception as exc:
-        logger.error("Failed to close trade", account_id=account_id, trade_id=req.trade_id, error=str(exc))
-        raise HTTPException(status_code=500, detail=str(exc))
+        logger.error(
+            "Failed to close trade", account_id=account_id, trade_id=req.trade_id, error=str(exc)
+        )
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
