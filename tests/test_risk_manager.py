@@ -10,7 +10,6 @@ Tests all risk components:
 - Synthesis integration
 """
 
-from datetime import datetime, timedelta, timezone
 from datetime import UTC, datetime, timedelta
 from unittest.mock import MagicMock, patch
 
@@ -201,7 +200,6 @@ def test_circuit_breaker_recovery_probe_success(circuit_breaker):
     """Test CircuitBreaker recovers after successful probe."""
     # Force into OPEN state
     circuit_breaker._state = CircuitBreakerState.OPEN
-    circuit_breaker._opened_at = datetime.now(timezone.utc) - timedelta(hours=5)
     circuit_breaker._opened_at = datetime.now(UTC) - timedelta(hours=5)
 
     # Check auto-recovery to HALF_OPEN after cooldown

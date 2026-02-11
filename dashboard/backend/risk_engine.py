@@ -12,7 +12,6 @@ Calculates position size based on:
 Formula: lot = risk_amount / (sl_distance × pip_value)
 """
 
-from typing import Dict, List, Optional
 
 from loguru import logger
 

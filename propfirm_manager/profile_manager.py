@@ -7,7 +7,6 @@ Loads and caches prop firm profiles, dynamically imports guard classes.
 import importlib
 
 from pathlib import Path
-from typing import Dict, Any
 from typing import Any
 
 import yaml
@@ -32,7 +31,7 @@ class PropFirmManager:
     """
 
     # Class-level profile cache
-    _profile_cache: Dict[str, "PropFirmManager"] = {}
+    _profile_cache: dict[str, "PropFirmManager"] = {}
     _profile_cache: dict[str, "PropFirmManager"] = {}
 
     def __init__(self, profile_name: str):
@@ -79,7 +78,7 @@ class PropFirmManager:
                 f"Profile not found: {profile_path}"
             )
 
-        with open(profile_path, "r") as f:
+        with open(profile_path) as f:
             raise FileNotFoundError(f"Profile not found: {profile_path}")
 
         with open(profile_path) as f:
@@ -168,14 +167,6 @@ class PropFirmManager:
         )
 
         if not registry_path.exists():
-            raise FileNotFoundError(
-                f"Account registry not found: {registry_path}"
-            )
-
-        with open(registry_path, "r") as f:
-        registry_path = Path(__file__).parent / "account_registry.yaml"
-
-        if not registry_path.exists():
             raise FileNotFoundError(f"Account registry not found: {registry_path}")
 
         with open(registry_path) as f:
@@ -183,9 +174,6 @@ class PropFirmManager:
 
         profile_name = registry.get(account_id)
         if profile_name is None:
-            raise ValueError(
-                f"Account {account_id} not in registry"
-            )
             raise ValueError(f"Account {account_id} not in registry")
 
         # Use cached instance if available
@@ -211,7 +199,6 @@ class PropFirmManager:
         """
         return self.guard.check(account_state, trade_risk)
 
-    def get_rules(self) -> Dict[str, Any]:
     def get_rules(self) -> dict[str, Any]:
         """
         Get prop firm rules.
@@ -221,7 +208,6 @@ class PropFirmManager:
         """
         return self.rules.copy()
 
-    def get_features(self) -> Dict[str, Any]:
     def get_features(self) -> dict[str, Any]:
         """
         Get prop firm features.

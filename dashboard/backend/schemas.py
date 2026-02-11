@@ -193,9 +193,6 @@ class RiskCalculationResult(BaseModel):
     total_dd_after: float = Field(..., ge=0)
     severity: RiskSeverity = Field(...)
     reason: str = Field(...)
-    split_lots: Optional[List[float]] = Field(
-        default=None, description="For split risk mode"
-    )
     split_lots: list[float] | None = Field(default=None, description="For split risk mode")
 
     model_config = ConfigDict(frozen=True)
