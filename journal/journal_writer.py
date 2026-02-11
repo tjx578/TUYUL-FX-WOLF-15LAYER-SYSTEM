@@ -8,8 +8,8 @@ APPEND-ONLY. No update. No delete.
 """
 
 import json
+
 from pathlib import Path
-from typing import Union
 
 from loguru import logger
 
@@ -39,7 +39,7 @@ class JournalWriter:
 
     def write(
         self,
-        payload: Union[ContextJournal, DecisionJournal, ExecutionJournal, ReflectiveJournal],
+        payload: ContextJournal | DecisionJournal | ExecutionJournal | ReflectiveJournal,
     ) -> Path:
         """
         Write journal entry to disk.
@@ -95,4 +95,4 @@ class JournalWriter:
                 temp_path.unlink()
 
             logger.error(f"Failed to write journal: {exc}")
-            raise IOError(f"Journal write failed: {exc}") from exc
+            raise OSError(f"Journal write failed: {exc}") from exc

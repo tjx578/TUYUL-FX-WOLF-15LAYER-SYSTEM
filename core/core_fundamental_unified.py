@@ -5,13 +5,13 @@ Contains: CentralBankSentimentAnalyzer, FTAExecutionGate, FTAIntegrationEngine,
 FundamentalDriveEngine, FundamentalPatchIntegrator.
 """
 
-from typing import Dict, Any
+from typing import Any
 
 
 class CentralBankSentimentAnalyzer:
     """Analyzes central bank sentiment and policy decisions."""
 
-    def analyze(self, currency: str) -> Dict[str, Any]:
+    def analyze(self, currency: str) -> dict[str, Any]:
         """
         Analyze central bank sentiment.
 
@@ -33,7 +33,7 @@ class CentralBankSentimentAnalyzer:
 class FTAExecutionGate:
     """Fundamental-Technical Alignment Execution Gate."""
 
-    def check(self, fundamental_bias: str, technical_bias: str) -> Dict[str, Any]:
+    def check(self, fundamental_bias: str, technical_bias: str) -> dict[str, Any]:
         """
         Check if fundamental and technical are aligned.
 
@@ -62,9 +62,9 @@ class FTAIntegrationEngine:
 
     def integrate(
         self,
-        fundamental_data: Dict[str, Any],
-        technical_data: Dict[str, Any],
-    ) -> Dict[str, Any]:
+        fundamental_data: dict[str, Any],
+        technical_data: dict[str, Any],
+    ) -> dict[str, Any]:
         """
         Integrate FTA data.
 
@@ -93,7 +93,7 @@ class FTAIntegrationEngine:
 class FundamentalDriveEngine:
     """Analyzes fundamental drivers of market movement."""
 
-    def analyze(self, symbol: str) -> Dict[str, Any]:
+    def analyze(self, symbol: str) -> dict[str, Any]:
         """
         Analyze fundamental drivers.
 
@@ -118,8 +118,8 @@ class FundamentalPatchIntegrator:
     def integrate_patch(
         self,
         symbol: str,
-        patch_data: Dict[str, Any],
-    ) -> Dict[str, Any]:
+        patch_data: dict[str, Any],
+    ) -> dict[str, Any]:
         """
         Integrate fundamental patch.
 

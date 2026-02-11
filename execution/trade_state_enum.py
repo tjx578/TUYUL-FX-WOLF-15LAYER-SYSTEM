@@ -18,7 +18,6 @@ States:
 """
 
 from enum import Enum
-from typing import Dict, Set
 
 
 class TradeState(str, Enum):
@@ -42,13 +41,11 @@ class InvalidTransitionError(Exception):
     def __init__(self, from_state: TradeState, to_state: TradeState):
         self.from_state = from_state
         self.to_state = to_state
-        super().__init__(
-            f"Invalid transition: {from_state.value} -> {to_state.value}"
-        )
+        super().__init__(f"Invalid transition: {from_state.value} -> {to_state.value}")
 
 
 # Valid state transitions mapping
-VALID_TRANSITIONS: Dict[TradeState, Set[TradeState]] = {
+VALID_TRANSITIONS: dict[TradeState, set[TradeState]] = {
     TradeState.IDLE: {
         TradeState.SIGNAL_CREATED,
     },
@@ -89,9 +86,7 @@ VALID_TRANSITIONS: Dict[TradeState, Set[TradeState]] = {
 }
 
 
-def validate_transition(
-    from_state: TradeState, to_state: TradeState
-) -> None:
+def validate_transition(from_state: TradeState, to_state: TradeState) -> None:
     """
     Validate if a state transition is allowed.
 

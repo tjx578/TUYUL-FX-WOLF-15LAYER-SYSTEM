@@ -15,8 +15,6 @@ Endpoints:
   GET  /api/v1/accounts/{id}      — Get account detail
 """
 
-from typing import List
-
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
@@ -26,7 +24,7 @@ from dashboard.trade_ledger import TradeLedger
 from journal.journal_router import JournalRouter
 from journal.journal_schema import DecisionJournal, VerdictType
 from risk.prop_firm import PropFirmRules
-from schemas.trade_models import Trade, Account, TradeStatus, CloseReason
+from schemas.trade_models import Account, CloseReason, Trade, TradeStatus
 from utils.timezone_utils import now_utc
 
 router = APIRouter()
@@ -42,8 +40,10 @@ _journal = JournalRouter()
 # REQUEST/RESPONSE MODELS
 # ========================
 
+
 class TakeSignalRequest(BaseModel):
     """Request to take a signal."""
+
     signal_id: str = Field(..., description="Source signal ID")
     account_id: str = Field(..., description="Account ID")
     pair: str = Field(..., description="Trading pair")
@@ -56,6 +56,7 @@ class TakeSignalRequest(BaseModel):
 
 class SkipSignalRequest(BaseModel):
     """Request to skip a signal."""
+
     signal_id: str = Field(..., description="Source signal ID")
     pair: str = Field(..., description="Trading pair")
     reason: str = Field(default="Manual skip", description="Reason for skipping")
@@ -63,17 +64,20 @@ class SkipSignalRequest(BaseModel):
 
 class ConfirmOrderRequest(BaseModel):
     """Request to confirm order placed at broker."""
+
     trade_id: str = Field(..., description="Trade ID")
 
 
 class CloseTradeRequest(BaseModel):
     """Request to manually close a trade."""
+
     trade_id: str = Field(..., description="Trade ID")
     reason: str = Field(default="Manual close", description="Reason for closing")
 
 
 class CreateAccountRequest(BaseModel):
     """Request to create a new account."""
+
     name: str = Field(..., description="Account name")
     balance: float = Field(..., gt=0, description="Initial balance")
     prop_firm: bool = Field(default=False, description="Is prop firm account?")
@@ -85,6 +89,7 @@ class CreateAccountRequest(BaseModel):
 # ========================
 # TRADE ENDPOINTS
 # ========================
+
 
 @router.post("/api/v1/trades/take")
 async def take_signal(req: TakeSignalRequest) -> Trade:
@@ -108,7 +113,7 @@ async def take_signal(req: TakeSignalRequest) -> Trade:
         if req.risk_percent > max_risk:
             raise HTTPException(
                 status_code=400,
-                detail=f"Risk {req.risk_percent}% exceeds prop firm limit {max_risk}%"
+                detail=f"Risk {req.risk_percent}% exceeds prop firm limit {max_risk}%",
             )
 
     # Calculate risk amount
@@ -128,12 +133,14 @@ async def take_signal(req: TakeSignalRequest) -> Trade:
         risk_mode="FIXED",
         total_risk_percent=req.risk_percent,
         total_risk_amount=risk_amount,
-        legs=[{
-            "entry": req.entry,
-            "sl": req.sl,
-            "tp": req.tp,
-            "lot": lot_size,
-        }],
+        legs=[
+            {
+                "entry": req.entry,
+                "sl": req.sl,
+                "tp": req.tp,
+                "lot": lot_size,
+            }
+        ],
     )
 
     # Record J2 decision journal (trader took the signal)
@@ -241,7 +248,7 @@ async def close_trade(req: CloseTradeRequest) -> Trade:
         req.trade_id,
         TradeStatus.CLOSED,
         close_reason=CloseReason.MANUAL_CLOSE,
-        pnl=None  # P&L would come from broker
+        pnl=None,  # P&L would come from broker
     )
     if not success:
         raise HTTPException(status_code=400, detail="Invalid status transition")
@@ -252,7 +259,7 @@ async def close_trade(req: CloseTradeRequest) -> Trade:
 
 
 @router.get("/api/v1/trades/active")
-async def get_active_trades() -> List[Trade]:
+async def get_active_trades() -> list[Trade]:
     """Get all active trades."""
     return _trade_ledger.get_active_trades()
 
@@ -269,6 +276,7 @@ async def get_trade(trade_id: str) -> Trade:
 # ========================
 # PRICE ENDPOINTS
 # ========================
+
 
 @router.get("/api/v1/prices")
 async def get_all_prices() -> dict:
@@ -290,8 +298,9 @@ async def get_price(symbol: str) -> dict:
 # ACCOUNT ENDPOINTS
 # ========================
 
+
 @router.get("/api/v1/accounts")
-async def list_accounts() -> List[Account]:
+async def list_accounts() -> list[Account]:
     """List all accounts."""
     return _account_mgr.list_accounts()
 

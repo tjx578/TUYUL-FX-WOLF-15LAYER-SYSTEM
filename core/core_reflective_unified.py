@@ -6,7 +6,7 @@ Pipeline Controller, Hexa Vault Governance, EAF Calculator, FRPC Engine,
 Mode Controller, Evolution Engine, Wolf Integrator.
 """
 
-from typing import Dict, Any, List
+from typing import Any
 
 
 class AdaptiveTII:
@@ -16,7 +16,7 @@ class AdaptiveTII:
         self,
         technical_score: float,
         integrity_score: float,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Calculate adaptive TII.
 
@@ -42,9 +42,9 @@ class AlgoPrecisionEngine:
 
     def calculate_precision(
         self,
-        predictions: List[float],
-        actuals: List[float],
-    ) -> Dict[str, Any]:
+        predictions: list[float],
+        actuals: list[float],
+    ) -> dict[str, Any]:
         """
         Calculate algo precision.
 
@@ -59,7 +59,7 @@ class AlgoPrecisionEngine:
             return {"precision": 0.0, "valid": False}
 
         # Calculate mean absolute percentage error
-        errors = [abs((a - p) / a) for a, p in zip(actuals, predictions) if a != 0]
+        errors = [abs((a - p) / a) for a, p in zip(actuals, predictions, strict=False) if a != 0]
         mape = sum(errors) / len(errors) if errors else 0
         precision = max(0, 1 - mape)
 
@@ -77,9 +77,9 @@ class FieldStabilizer:
     def stabilize(
         self,
         current_value: float,
-        history: List[float],
+        history: list[float],
         smoothing: float = 0.3,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Stabilize field value.
 
@@ -111,7 +111,7 @@ class PipelineController:
     def __init__(self):
         self.pipeline_state = "IDLE"
 
-    def start_pipeline(self, symbol: str) -> Dict[str, Any]:
+    def start_pipeline(self, symbol: str) -> dict[str, Any]:
         """
         Start analysis pipeline.
 
@@ -129,7 +129,7 @@ class PipelineController:
             "valid": True,
         }
 
-    def stop_pipeline(self) -> Dict[str, Any]:
+    def stop_pipeline(self) -> dict[str, Any]:
         """Stop analysis pipeline."""
         self.pipeline_state = "STOPPED"
 
@@ -142,7 +142,7 @@ class PipelineController:
 class HexaVaultGovernance:
     """Hexa Vault security and governance."""
 
-    def check_governance(self, action: str, context: Dict[str, Any]) -> Dict[str, Any]:
+    def check_governance(self, action: str, context: dict[str, Any]) -> dict[str, Any]:
         """
         Check governance rules.
 
@@ -169,8 +169,8 @@ class EAFCalculator:
 
     def calculate(
         self,
-        executed_trades: List[Dict[str, Any]],
-    ) -> Dict[str, Any]:
+        executed_trades: list[dict[str, Any]],
+    ) -> dict[str, Any]:
         """
         Calculate EAF.
 
@@ -208,7 +208,7 @@ class FRPCEngine:
         risk_score: float,
         probability: float,
         confidence: float,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Calculate FRPC composite.
 
@@ -245,7 +245,7 @@ class ModeController:
     def __init__(self):
         self.current_mode = "CONSERVATIVE"
 
-    def set_mode(self, mode: str) -> Dict[str, Any]:
+    def set_mode(self, mode: str) -> dict[str, Any]:
         """
         Set operational mode.
 
@@ -269,7 +269,7 @@ class EvolutionEngine:
 
     WIN_RATE_EVOLUTION_THRESHOLD = 0.55  # Win rate below which evolution is needed
 
-    def evolve(self, performance_data: Dict[str, Any]) -> Dict[str, Any]:
+    def evolve(self, performance_data: dict[str, Any]) -> dict[str, Any]:
         """
         Evolve system based on performance.
 
@@ -299,8 +299,8 @@ class WolfIntegrator:
 
     def integrate_layers(
         self,
-        layers: Dict[str, Any],
-    ) -> Dict[str, Any]:
+        layers: dict[str, Any],
+    ) -> dict[str, Any]:
         """
         Integrate all 15 layers.
 

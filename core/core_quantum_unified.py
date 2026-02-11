@@ -6,13 +6,13 @@ ProbabilityMatrixCalculator, QuantumDecisionEngine, QuantumScenarioMatrix,
 QuantumExecutionOptimizer.
 """
 
-from typing import Dict, Any, List
+from typing import Any
 
 
 class TRQ3DEngine:
     """Time-Risk-Quality 3D Analysis Engine."""
 
-    def analyze(self, symbol: str, timeframe: str = "H1") -> Dict[str, Any]:
+    def analyze(self, symbol: str, timeframe: str = "H1") -> dict[str, Any]:
         """
         Perform 3D TRQ analysis.
 
@@ -35,7 +35,7 @@ class TRQ3DEngine:
 class QuantumFieldSync:
     """Synchronizes quantum field calculations."""
 
-    def sync(self, fields: List[Dict[str, Any]]) -> Dict[str, Any]:
+    def sync(self, fields: list[dict[str, Any]]) -> dict[str, Any]:
         """
         Synchronize quantum fields.
 
@@ -58,9 +58,9 @@ class NeuralDecisionTree:
 
     def decide(
         self,
-        inputs: Dict[str, Any],
+        inputs: dict[str, Any],
         threshold: float = 0.7,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Make decision based on inputs.
 
@@ -88,8 +88,8 @@ class ProbabilityMatrixCalculator:
 
     def calculate(
         self,
-        scenarios: List[Dict[str, Any]],
-    ) -> Dict[str, Any]:
+        scenarios: list[dict[str, Any]],
+    ) -> dict[str, Any]:
         """
         Calculate probability matrix.
 
@@ -120,9 +120,9 @@ class QuantumDecisionEngine:
 
     def decide(
         self,
-        options: List[Dict[str, Any]],
-        context: Dict[str, Any],
-    ) -> Dict[str, Any]:
+        options: list[dict[str, Any]],
+        context: dict[str, Any],
+    ) -> dict[str, Any]:
         """
         Make quantum decision.
 
@@ -154,7 +154,7 @@ class QuantumScenarioMatrix:
         self,
         symbol: str,
         timeframe: str = "H1",
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Build scenario matrix.
 
@@ -187,8 +187,8 @@ class QuantumExecutionOptimizer:
         entry: float,
         sl: float,
         tp: float,
-        market_conditions: Dict[str, Any],
-    ) -> Dict[str, Any]:
+        market_conditions: dict[str, Any],
+    ) -> dict[str, Any]:
         """
         Optimize execution parameters.
 

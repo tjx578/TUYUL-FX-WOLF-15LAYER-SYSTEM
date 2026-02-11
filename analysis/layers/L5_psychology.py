@@ -7,8 +7,6 @@ Tracks trader psychology factors:
 - Drawdown percentage
 """
 
-from typing import Dict, Optional
-
 from loguru import logger
 
 from context.runtime_state import RuntimeState
@@ -37,8 +35,8 @@ class L5PsychologyAnalyzer:
     def analyze(
         self,
         symbol: str,
-        volatility_profile: Optional[Dict] = None,
-    ) -> Dict:
+        volatility_profile: dict | None = None,
+    ) -> dict:
         """
         Analyze trader psychology and fatigue.
 
@@ -65,12 +63,7 @@ class L5PsychologyAnalyzer:
         drawdown_ok = self._current_drawdown < self.MAX_DRAWDOWN_PERCENT
 
         # Overall psychology OK if all factors are acceptable
-        psychology_ok = (
-            stable
-            and losses_ok
-            and drawdown_ok
-            and fatigue_level != "HIGH"
-        )
+        psychology_ok = stable and losses_ok and drawdown_ok and fatigue_level != "HIGH"
 
         # Build recommendation
         recommendation = "Psychology OK"
@@ -111,25 +104,22 @@ class L5PsychologyAnalyzer:
         """
         if hours >= self.FATIGUE_HOURS_HIGH:
             return "HIGH"
-        elif hours >= self.FATIGUE_HOURS_MEDIUM:
+        if hours >= self.FATIGUE_HOURS_MEDIUM:
             return "MEDIUM"
-        else:
-            return "LOW"
+        return "LOW"
 
     def record_loss(self) -> None:
         """Record a consecutive loss."""
         self._consecutive_losses += 1
         logger.warning(
-            f"Consecutive losses: {self._consecutive_losses}/"
-            f"{self.MAX_CONSECUTIVE_LOSSES}"
+            f"Consecutive losses: {self._consecutive_losses}/{self.MAX_CONSECUTIVE_LOSSES}"
         )
 
     def record_win(self) -> None:
         """Record a win (resets consecutive losses)."""
         if self._consecutive_losses > 0:
             logger.info(
-                f"Win recorded, resetting consecutive losses from "
-                f"{self._consecutive_losses} to 0"
+                f"Win recorded, resetting consecutive losses from {self._consecutive_losses} to 0"
             )
         self._consecutive_losses = 0
 
@@ -144,8 +134,7 @@ class L5PsychologyAnalyzer:
 
         if drawdown_percent >= self.MAX_DRAWDOWN_PERCENT:
             logger.warning(
-                f"Drawdown alert: {drawdown_percent:.2f}% "
-                f"(limit: {self.MAX_DRAWDOWN_PERCENT}%)"
+                f"Drawdown alert: {drawdown_percent:.2f}% (limit: {self.MAX_DRAWDOWN_PERCENT}%)"
             )
 
     def reset_session(self) -> None:

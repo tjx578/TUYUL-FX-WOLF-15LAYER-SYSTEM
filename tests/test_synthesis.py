@@ -4,8 +4,9 @@ Unit tests for synthesis engine.
 Tests build_synthesis() and adapt_synthesis() with various contexts.
 """
 
-import pytest
 from unittest.mock import MagicMock, patch
+
+import pytest
 
 from analysis.synthesis import build_synthesis
 from analysis.synthesis_adapter import adapt_synthesis
@@ -15,9 +16,7 @@ class TestBuildSynthesis:
     """Test build_synthesis() function."""
 
     @patch("analysis.synthesis.SynthesisEngine")
-    def test_build_synthesis_with_empty_context(
-        self, mock_engine_class: MagicMock
-    ) -> None:
+    def test_build_synthesis_with_empty_context(self, mock_engine_class: MagicMock) -> None:
         """Test build_synthesis with empty LiveContextBus."""
         # Mock the engine to return safe defaults
         mock_engine = MagicMock()
@@ -45,9 +44,7 @@ class TestBuildSynthesis:
         assert isinstance(result, dict)
 
     @patch("analysis.synthesis.SynthesisEngine")
-    def test_build_synthesis_with_populated_data(
-        self, mock_engine_class: MagicMock
-    ) -> None:
+    def test_build_synthesis_with_populated_data(self, mock_engine_class: MagicMock) -> None:
         """Test build_synthesis with populated candle data."""
         # Mock the engine to return valid data
         mock_engine = MagicMock()
@@ -193,8 +190,14 @@ class TestAdaptSynthesis:
 
         # Check required top-level fields
         required_fields = [
-            "pair", "layers", "scores", "bias", "system",
-            "execution", "risk", "propfirm"
+            "pair",
+            "layers",
+            "scores",
+            "bias",
+            "system",
+            "execution",
+            "risk",
+            "propfirm",
         ]
         for field in required_fields:
             assert field in result, f"Missing required field: {field}"
