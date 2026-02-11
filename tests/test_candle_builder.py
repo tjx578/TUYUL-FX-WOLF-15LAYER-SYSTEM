@@ -53,6 +53,33 @@ class TestCandleBuilderFloorTime:
         # Should remain the same
         assert floored == dt
 
+    def test_floor_time_h4(self) -> None:
+        """Test floor_time for H4 intervals."""
+        builder = CandleBuilder()
+        dt = datetime(2024, 1, 15, 10, 23, 45, tzinfo=UTC)
+        floored = builder._floor_time(dt, 240)
+        assert floored.hour == 8  # Floor to 08:00 (H4 bucket)
+        assert floored.minute == 0
+
+    def test_floor_time_d1(self) -> None:
+        """Test floor_time for D1 intervals."""
+        builder = CandleBuilder()
+        dt = datetime(2024, 1, 15, 10, 23, 45, tzinfo=UTC)
+        floored = builder._floor_time(dt, 1440)
+        assert floored.hour == 0
+        assert floored.minute == 0
+        assert floored.day == 15
+
+    def test_floor_time_w1(self) -> None:
+        """Test floor_time for W1 intervals (should floor to Monday)."""
+        builder = CandleBuilder()
+        # Jan 15, 2024 is a Monday
+        dt = datetime(2024, 1, 17, 10, 23, 45, tzinfo=UTC)  # Wednesday
+        floored = builder._floor_time(dt, 10080)
+        assert floored.weekday() == 0  # Monday
+        assert floored.day == 15
+        assert floored.hour == 0
+
     def test_floor_time_edge_cases(self) -> None:
         """Test floor_time edge cases."""
         builder = CandleBuilder()
