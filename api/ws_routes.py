@@ -8,13 +8,14 @@ Endpoints:
 
 import asyncio
 
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+import fastapi # pyright: ignore[reportMissingImports]
+
 from loguru import logger
 
 from dashboard.price_feed import PriceFeed
 from dashboard.trade_ledger import TradeLedger
 
-router = APIRouter()
+router = fastapi.APIRouter()
 
 
 # Connection manager for WebSocket clients
@@ -22,14 +23,15 @@ class ConnectionManager:
     """Manages WebSocket connections."""
 
     def __init__(self):
+        self.active_connections: Set[fastapi.WebSocket] = set()
         self.active_connections: set[WebSocket] = set()
 
-    async def connect(self, websocket: WebSocket):
+    async def connect(self, websocket: fastapi.WebSocket):
         """Accept and register new WebSocket connection."""
         await websocket.accept()
         self.active_connections.add(websocket)
 
-    def disconnect(self, websocket: WebSocket):
+    def disconnect(self, websocket: fastapi.WebSocket):
         """Remove WebSocket connection."""
         self.active_connections.discard(websocket)
 
@@ -58,7 +60,7 @@ _trade_ledger = TradeLedger()
 
 
 @router.websocket("/ws/prices")
-async def websocket_prices(websocket: WebSocket):
+async def websocket_prices(websocket: fastapi.WebSocket):
     """
     WebSocket endpoint for live price stream.
 
@@ -93,7 +95,7 @@ async def websocket_prices(websocket: WebSocket):
             # Wait 2 seconds before next update
             await asyncio.sleep(2)
 
-    except WebSocketDisconnect:
+    except fastapi.WebSocketDisconnect:
         price_manager.disconnect(websocket)
         logger.info("Price WebSocket client disconnected")
     except Exception as exc:
@@ -102,7 +104,7 @@ async def websocket_prices(websocket: WebSocket):
 
 
 @router.websocket("/ws/trades")
-async def websocket_trades(websocket: WebSocket):
+async def websocket_trades(websocket: fastapi.WebSocket):
     """
     WebSocket endpoint for trade status change events.
 
@@ -166,7 +168,7 @@ async def websocket_trades(websocket: WebSocket):
             # Wait 2 seconds before next check
             await asyncio.sleep(2)
 
-    except WebSocketDisconnect:
+    except fastapi.WebSocketDisconnect:
         trade_manager.disconnect(websocket)
         logger.info("Trade WebSocket client disconnected")
     except Exception as exc:
