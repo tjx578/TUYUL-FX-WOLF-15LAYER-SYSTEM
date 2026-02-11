@@ -16,6 +16,7 @@ from analysis.layers.L8_tii_integrity import L8TIIIntegrityAnalyzer
 from analysis.layers.L9_smc import L9SMCAnalyzer
 from analysis.layers.L10_position import L10PositionAnalyzer
 from analysis.layers.L11_rr import L11RRAnalyzer
+from analysis.macro.monthly_regime import MonthlyRegimeAnalyzer
 
 
 class SynthesisEngine:
@@ -31,6 +32,7 @@ class SynthesisEngine:
         self.l9 = L9SMCAnalyzer()
         self.l10 = L10PositionAnalyzer()
         self.l11 = L11RRAnalyzer()
+        self.macro = MonthlyRegimeAnalyzer()
 
     def build_candidate(self, symbol: str) -> dict:
         """
@@ -85,6 +87,9 @@ class SynthesisEngine:
         # L10 Position
         l10 = self.l10.analyze(bool(l6.get("risk_ok", False)), l9.get("confidence", 0))
 
+        # Macro regime analysis
+        macro = self.macro.analyze(symbol)
+
         return {
             "symbol": symbol,
             "L1": l1,
@@ -98,6 +103,7 @@ class SynthesisEngine:
             "L9": l9,
             "L10": l10,
             "L11": l11,
+            "macro": macro,
             "valid": True,
         }
 
@@ -136,6 +142,7 @@ def build_synthesis(
     l8 = raw.get("L8", {})
     l10 = raw.get("L10", {})
     l11 = raw.get("L11", {})
+    macro = raw.get("macro", {})
 
     # Compute wolf_30_point score (0-30) from layer scores
     # Based on L4 technical_score and L7 win probability
@@ -272,6 +279,15 @@ def build_synthesis(
         "bias": {
             "fundamental": "NEUTRAL" if not l1_valid else trend,
             "technical": trend,
+            "macro": macro.get("regime", "UNKNOWN"),
+        },
+        "macro": {
+            "regime": macro.get("regime", "UNKNOWN"),
+            "phase": macro.get("phase", "NEUTRAL"),
+            "volatility_ratio": macro.get("macro_vol_ratio", 1.0),
+            "mn_aligned": macro.get("alignment", False),
+            "liquidity": macro.get("liquidity", {}),
+            "bias_override": macro.get("bias_override", {}),
         },
         "system": {
             "latency_ms": 0,  # will be injected by main.py

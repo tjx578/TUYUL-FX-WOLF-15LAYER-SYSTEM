@@ -1,19 +1,21 @@
 """
-L2 — Multi-Timeframe Alignment (W1 → D1 → H4 → H1 → M15)
+L2 — Multi-Timeframe Alignment (MN → W1 → D1 → H4 → H1 → M15)
 
 Hierarchical weighted confluence model.
 Higher timeframes have dominant weight.
+MN = Macro regime detector (highest authority).
 """
 
 from context.live_context_bus import LiveContextBus
 
-# Timeframe weights — higher TF = higher authority
+# Timeframe weights — MN dominates as macro regime layer
 TF_WEIGHTS: dict[str, float] = {
-    "W1": 0.30,
-    "D1": 0.20,
-    "H4": 0.20,
-    "H1": 0.15,
-    "M15": 0.15,
+    "MN": 0.35,
+    "W1": 0.25,
+    "D1": 0.15,
+    "H4": 0.15,
+    "H1": 0.07,
+    "M15": 0.03,
 }
 
 ALIGNMENT_THRESHOLD: float = 0.3  # Minimum composite bias for directional signal
@@ -60,18 +62,29 @@ class L2MTAAnalyzer:
         # Full alignment check (all available TFs agree)
         non_zero_biases = [b for b in biases.values() if b != 0]
         fully_aligned = (
-            len(non_zero_biases) >= 3
+            len(non_zero_biases) >= 4
             and all(b > 0 for b in non_zero_biases)
             or all(b < 0 for b in non_zero_biases)
         )
 
+        # Check if MN aligns with composite direction
+        mn_bias = biases.get("MN", 0)
+        mn_aligned = False
+        if direction == "BULLISH" and mn_bias > 0:
+            mn_aligned = True
+        elif direction == "BEARISH" and mn_bias < 0:
+            mn_aligned = True
+        elif direction == "NEUTRAL":
+            mn_aligned = True  # Neutral is always considered aligned
+
         return {
             "aligned": fully_aligned,
-            "valid": available_tfs >= 2,  # Need at least 2 TFs
+            "valid": available_tfs >= 3,  # Need at least 3 TFs
             "direction": direction,
             "composite_bias": round(composite_bias, 4),
             "alignment_strength": round(abs(composite_bias), 4),
             "available_timeframes": available_tfs,
             "per_tf_bias": biases,
+            "mn_aligned": mn_aligned,
         }
 
