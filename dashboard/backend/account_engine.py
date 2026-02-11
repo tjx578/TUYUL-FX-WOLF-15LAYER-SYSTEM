@@ -211,15 +211,15 @@ class AccountEngine:
             RiskSeverity (SAFE/WARNING/CRITICAL)
         """
         # Critical thresholds (conservative defaults)
-        DAILY_CRITICAL = 4.0  # 4% daily DD
-        TOTAL_CRITICAL = 8.0  # 8% total DD
+        daily_critical = 4.0  # 4% daily DD
+        total_critical = 8.0  # 8% total DD
 
         # Warning thresholds (80% of critical)
-        DAILY_WARNING = DAILY_CRITICAL * 0.8
-        TOTAL_WARNING = TOTAL_CRITICAL * 0.8
+        daily_warning = daily_critical * 0.8
+        total_warning = total_critical * 0.8
 
-        if daily_dd >= DAILY_CRITICAL or total_dd >= TOTAL_CRITICAL:
+        if daily_dd >= daily_critical or total_dd >= total_critical:
             return RiskSeverity.CRITICAL
-        if daily_dd >= DAILY_WARNING or total_dd >= TOTAL_WARNING:
+        if daily_dd >= daily_warning or total_dd >= total_warning:
             return RiskSeverity.WARNING
         return RiskSeverity.SAFE

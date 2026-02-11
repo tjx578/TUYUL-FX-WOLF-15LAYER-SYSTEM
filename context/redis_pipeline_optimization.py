@@ -36,4 +36,4 @@ async def get_fta_scores_batch(
             pipe.get(f"fta:score:{pair}")
         results = await pipe.execute()
 
-    return {pair: float(score) if score else None for pair, score in zip(pairs, results)}
+    return {pair: float(score) if score else None for pair, score in zip(pairs, results, strict=False)}
