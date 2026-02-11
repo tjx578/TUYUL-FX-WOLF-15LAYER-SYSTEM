@@ -23,7 +23,7 @@ from typing import Dict, Set
 
 class TradeState(str, Enum):
     """Extended trade lifecycle states (10 states)."""
-    
+
     SIGNAL_CREATED = "SIGNAL_CREATED"
     SIGNAL_EXPIRED = "SIGNAL_EXPIRED"
     PENDING_PLACED = "PENDING_PLACED"
@@ -38,7 +38,7 @@ class TradeState(str, Enum):
 
 class InvalidTransitionError(Exception):
     """Raised when an invalid state transition is attempted."""
-    
+
     def __init__(self, from_state: TradeState, to_state: TradeState):
         self.from_state = from_state
         self.to_state = to_state
@@ -94,11 +94,11 @@ def validate_transition(
 ) -> None:
     """
     Validate if a state transition is allowed.
-    
+
     Args:
         from_state: Current state
         to_state: Target state
-        
+
     Raises:
         InvalidTransitionError: If transition is not allowed
     """

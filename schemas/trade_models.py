@@ -57,7 +57,7 @@ class CloseReason(str, Enum):
 class TradeLeg(BaseModel):
     """
     Single leg of a trade.
-    
+
     For FIXED mode: 1 leg only.
     For SPLIT mode: Multiple legs (e.g., 2-leg or 3-leg).
     """
@@ -72,7 +72,7 @@ class TradeLeg(BaseModel):
 class Trade(BaseModel):
     """
     Complete trade record.
-    
+
     Represents the full trade lifecycle from INTENDED to final state.
     Dashboard authority: manages state + risk + journal.
     """
@@ -111,7 +111,7 @@ class Trade(BaseModel):
 class Account(BaseModel):
     """
     Account information and risk limits.
-    
+
     Stores balance, equity, and prop firm constraints.
     Used by dashboard to compute safe lot sizes.
     """
@@ -152,11 +152,11 @@ VALID_TRANSITIONS = {
 def is_valid_transition(current: TradeStatus, new: TradeStatus) -> bool:
     """
     Check if state transition is valid.
-    
+
     Args:
         current: Current trade status
         new: New trade status
-        
+
     Returns:
         True if transition is allowed, False otherwise
     """
