@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import logging
+
 import os
 from collections.abc import Awaitable, Callable
 from typing import Any
 
-from redis.asyncio import Redis
+from redis.asyncio import Redis # pyright: ignore[reportMissingImports]
 
 from config_loader import CONFIG
 from context.live_context_bus import LiveContextBus
@@ -103,6 +104,14 @@ async def _handle_tick(data: dict[str, Any]) -> None:
     Finnhub tick format:
         {"type": "trade", "data": [{"p": price, "s": "OANDA:EUR_USD", "t": ts_ms, "v": vol}]}
 
+
+    Normalizes Finnhub tick format to internal format and dispatches
+    to LiveContextBus for downstream consumers. NO analysis or decision
+    logic here - pure ingestion zone.
+
+    Finnhub tick format:
+        {"type": "trade", "data": [{"p": price, "s": "OANDA:EUR_USD", "t": ts_ms, "v": vol}]}
+
     Internal tick format (per context_keys.py TICK dict):
         {"symbol": "EURUSD", "bid": float, "ask": float, "timestamp": float_seconds, "source": "finnhub_ws"}
 
@@ -146,6 +155,13 @@ async def _handle_tick(data: dict[str, Any]) -> None:
                 )
                 continue
 
+            # Normalize symbol (e.g., "OANDA:EUR_USD" -> "EURUSD")
+            internal_symbol = finnhub_symbol.replace("OANDA:", "").replace("_", "")
+
+            # Convert timestamp from milliseconds to seconds
+            timestamp_seconds = ts_ms / 1000.0
+
+            # Build normalized tick dict
             # Reverse map symbol: OANDA:EUR_USD → EURUSD
             internal_symbol = _SYMBOL_REVERSE_MAP.get(finnhub_symbol)
 

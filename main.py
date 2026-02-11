@@ -3,6 +3,8 @@ import os
 import signal
 import sys
 
+from loguru import logger # pyright: ignore[reportMissingImports]
+from redis.asyncio import Redis as AsyncRedis # pyright: ignore[reportMissingImports]
 from loguru import logger
 from redis.asyncio import Redis as AsyncRedis
 
@@ -150,9 +152,13 @@ def _validate_api_key() -> bool:
     logger.info("✓ FINNHUB_API_KEY validated")
     return True
 
+def FinnhubWebSocket():
+    raise NotImplementedError
+
 
 async def run_ingest_services(
     has_api_key: bool,
+    redis: AsyncRedis,
 ) -> None:
     """
     Run data ingestion services concurrently.
@@ -169,6 +175,7 @@ async def run_ingest_services(
             await asyncio.sleep(1)
         return
 
+    ws_feed = await create_finnhub_ws(redis)
     ws_feed = await create_default_finnhub_ws()
     news_feed = FinnhubNews()
     candle_builder = CandleBuilder()
@@ -228,6 +235,21 @@ async def run_ingest_services(
         logger.info("Ingest services cancelled - shutting down")
         raise
 
+    try:
+        # Run all three services concurrently
+        await asyncio.gather(
+            ws_feed.run(),
+            news_feed.run(),
+            candle_builder.run(),
+        )
+
+    except asyncio.CancelledError:
+        logger.info("Ingest services cancelled - shutting down")
+        raise
+
+    finally:
+        # Cleanup
+        if 'ws_feed' in locals():
     finally:
         # Cleanup
         if "ws_feed" in locals():
@@ -388,9 +410,11 @@ async def main() -> None:
     else:
         # Local mode: Run ingest services + analysis loop
         logger.info("Local mode: Starting ingest services + analysis loop")
+        redis_url = os.getenv("REDIS_URL", "redis://localhost:6379")
+        redis_client = AsyncRedis.from_url(redis_url)
         tasks = [
             asyncio.create_task(
-                run_ingest_services(has_api_key),
+                run_ingest_services(has_api_key, redis_client),
                 name="IngestServices",
             ),
             asyncio.create_task(analysis_loop(), name="AnalysisLoop"),
