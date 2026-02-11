@@ -69,6 +69,7 @@ def receive_layer12_signal(signal: Layer12Signal) -> dict:
     """
     signal_dict = signal.model_dump()
     signal_dict["state"] = TradeState.SIGNAL_CREATED.value
+    signal_dict["created_at"] = datetime.utcnow().isoformat()
     signal_dict["created_at"] = datetime.now(UTC).isoformat()
 
     signal_pool[signal.signal_id] = signal_dict
@@ -102,6 +103,10 @@ def calculate_risk(request: RiskCalculationRequest) -> RiskCalculationResult:
     # Get signal
     signal_dict = signal_pool.get(request.signal_id)
     if not signal_dict:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Signal {request.signal_id} not found"
+        )
         raise HTTPException(status_code=404, detail=f"Signal {request.signal_id} not found")
 
     signal = Layer12Signal(**signal_dict)
@@ -109,6 +114,10 @@ def calculate_risk(request: RiskCalculationRequest) -> RiskCalculationResult:
     # Get account
     account_engine = account_registry.get(request.account_id)
     if not account_engine:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Account {request.account_id} not found"
+        )
         raise HTTPException(status_code=404, detail=f"Account {request.account_id} not found")
 
     account_state = account_engine.get_state()
@@ -154,11 +163,19 @@ def open_trade(request: TradeOpenRequest) -> dict:
     # Get account
     account_engine = account_registry.get(request.account_id)
     if not account_engine:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Account {request.account_id} not found"
+        )
         raise HTTPException(status_code=404, detail=f"Account {request.account_id} not found")
 
     # Get signal to validate lot
     signal_dict = signal_pool.get(request.signal_id)
     if not signal_dict:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Signal {request.signal_id} not found"
+        )
         raise HTTPException(status_code=404, detail=f"Signal {request.signal_id} not found")
 
     signal = Layer12Signal(**signal_dict)
@@ -174,6 +191,10 @@ def open_trade(request: TradeOpenRequest) -> dict:
 
     # Validate trade is allowed
     if not result.trade_allowed:
+        raise HTTPException(
+            status_code=403,
+            detail=f"Trade denied: {result.reason}"
+        )
         raise HTTPException(status_code=403, detail=f"Trade denied: {result.reason}")
 
     # Validate lot doesn't exceed max safe lot
@@ -240,6 +261,10 @@ def close_trade(request: TradeCloseRequest) -> dict:
     # Get trade
     trade = trade_ledger.get(request.trade_id)
     if not trade:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Trade {request.trade_id} not found"
+        )
         raise HTTPException(status_code=404, detail=f"Trade {request.trade_id} not found")
 
     # Update trade record
@@ -273,6 +298,10 @@ def close_trade(request: TradeCloseRequest) -> dict:
 
     journal_router.record_reflection(j4)
 
+    logger.info(
+        f"Trade closed: {request.trade_id} | "
+        f"PnL=${request.pnl:.2f} | {request.reason}"
+    )
     logger.info(f"Trade closed: {request.trade_id} | PnL=${request.pnl:.2f} | {request.reason}")
 
     return trade
@@ -294,6 +323,10 @@ def get_account_state(account_id: str) -> AccountState:
     """
     account_engine = account_registry.get(account_id)
     if not account_engine:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Account {account_id} not found"
+        )
         raise HTTPException(status_code=404, detail=f"Account {account_id} not found")
 
     return account_engine.get_state()
@@ -352,6 +385,10 @@ def get_trade(trade_id: str) -> dict:
     """
     trade = trade_ledger.get(trade_id)
     if not trade:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Trade {trade_id} not found"
+        )
         raise HTTPException(status_code=404, detail=f"Trade {trade_id} not found")
 
     return trade
@@ -379,6 +416,10 @@ def create_account(account: AccountCreate) -> dict:
 
     account_registry[account_id] = account_engine
 
+    logger.info(
+        f"Account created: {account_id} | "
+        f"{account.broker} | {account.prop_firm_code}"
+    )
     logger.info(f"Account created: {account_id} | {account.broker} | {account.prop_firm_code}")
 
     return {

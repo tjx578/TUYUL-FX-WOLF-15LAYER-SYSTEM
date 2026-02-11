@@ -156,6 +156,17 @@ class CircuitBreaker:
 
             self._redis.set(self._key_consecutive, str(self._consecutive_losses))
         except Exception as e:
+            logger.error(
+                "Failed to persist circuit breaker state",
+                error=str(e)
+            )
+
+    def _check_auto_recovery(self) -> None:
+        """Check if cooldown has elapsed and auto-recover to HALF_OPEN."""
+        if (
+            self._state == CircuitBreakerState.OPEN
+            and self._opened_at
+        ):
             logger.error("Failed to persist circuit breaker state", error=str(e))
 
     def _check_auto_recovery(self) -> None:
@@ -269,6 +280,12 @@ class CircuitBreaker:
 
         return False
 
+    def record_trade(
+        self,
+        pnl: float,
+        pair: str,
+        daily_loss: float
+    ) -> None:
     def record_trade(self, pnl: float, pair: str, daily_loss: float) -> None:
         """
         Record a trade result and check circuit breaker conditions.
@@ -293,6 +310,11 @@ class CircuitBreaker:
             except json.JSONDecodeError:
                 trades = []
 
+            trades.append({
+                "timestamp": now_utc().isoformat(),
+                "pair": pair,
+                "pnl": pnl,
+            })
             trades.append(
                 {
                     "timestamp": now_utc().isoformat(),

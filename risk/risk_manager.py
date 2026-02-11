@@ -56,6 +56,9 @@ class RiskManager:
             Starting account balance
         """
         if RiskManager._instance is not None:
+            raise RuntimeError(
+                "RiskManager is a singleton. Use get_instance()."
+            )
             raise RuntimeError("RiskManager is a singleton. Use get_instance().")
 
         self._config = load_risk()
@@ -291,6 +294,7 @@ class RiskManager:
 
             return position
 
+    def is_trading_allowed(self, category: Optional[str] = None) -> bool:
     def is_trading_allowed(self, category: str | None = None) -> bool:
         """
         Check if trading is allowed based on all risk factors.
@@ -367,6 +371,10 @@ class RiskManager:
         # Check min RR
         min_rr = self._prop_firm.min_rr_required()
         if trade_risk.get("rr_ratio", 0) < min_rr:
+            violations.append(
+                f"RR {trade_risk['rr_ratio']:.2f} "
+                f"below min {min_rr:.2f}"
+            )
             violations.append(f"RR {trade_risk['rr_ratio']:.2f} below min {min_rr:.2f}")
 
         compliant = len(violations) == 0
@@ -411,6 +419,10 @@ class RiskManager:
         }
 
         if name not in components:
+            raise ValueError(
+                f"Invalid component: {name}. "
+                f"Valid: {list(components.keys())}"
+            )
             raise ValueError(f"Invalid component: {name}. Valid: {list(components.keys())}")
 
         return components[name]

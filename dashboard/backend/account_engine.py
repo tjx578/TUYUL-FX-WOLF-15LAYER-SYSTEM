@@ -12,6 +12,7 @@ Responsibilities:
 """
 
 from threading import Lock
+from typing import Dict
 
 from loguru import logger
 
@@ -102,6 +103,8 @@ class AccountEngine:
             self._equity = equity
 
             # Update equity high watermark
+            if equity > self._equity_high:
+                self._equity_high = equity
             self._equity_high = max(self._equity_high, equity)
 
             logger.debug(
@@ -125,6 +128,9 @@ class AccountEngine:
                 f"OpenRisk=${self._open_risk_amount:.2f}"
             )
 
+    def record_trade_close(
+        self, pnl: float, risk_amount: float
+    ) -> None:
     def record_trade_close(self, pnl: float, risk_amount: float) -> None:
         """
         Record a trade closure (update equity, DD, decrement counters).
@@ -138,6 +144,14 @@ class AccountEngine:
             self._equity += pnl
 
             # Update equity high if new high
+            if self._equity > self._equity_high:
+                self._equity_high = self._equity
+
+            # Decrement counters
+            self._open_trades = max(0, self._open_trades - 1)
+            self._open_risk_amount = max(
+                0.0, self._open_risk_amount - risk_amount
+            )
             self._equity_high = max(self._equity_high, self._equity)
 
             # Decrement counters
@@ -154,6 +168,10 @@ class AccountEngine:
         """Reset daily drawdown tracking (call at start of trading day)."""
         with self._lock:
             self._daily_starting_equity = self._equity
+            logger.info(
+                f"Daily DD reset: {self.account_id} | "
+                f"StartEquity=${self._equity:.2f}"
+            )
             logger.info(f"Daily DD reset: {self.account_id} | StartEquity=${self._equity:.2f}")
 
     def get_state(self) -> AccountState:
@@ -185,6 +203,9 @@ class AccountEngine:
                 open_risk_percent = 0.0
 
             # Determine risk state
+            risk_state = self._compute_risk_state(
+                daily_dd_percent, total_dd_percent
+            )
             risk_state = self._compute_risk_state(daily_dd_percent, total_dd_percent)
 
             return AccountState(
@@ -199,6 +220,9 @@ class AccountEngine:
                 risk_state=risk_state,
             )
 
+    def _compute_risk_state(
+        self, daily_dd: float, total_dd: float
+    ) -> RiskSeverity:
     def _compute_risk_state(self, daily_dd: float, total_dd: float) -> RiskSeverity:
         """
         Compute risk severity state based on drawdown levels.
@@ -211,6 +235,14 @@ class AccountEngine:
             RiskSeverity (SAFE/WARNING/CRITICAL)
         """
         # Critical thresholds (conservative defaults)
+        DAILY_CRITICAL = 4.0  # 4% daily DD
+        TOTAL_CRITICAL = 8.0  # 8% total DD
+
+        # Warning thresholds (80% of critical)
+        DAILY_WARNING = DAILY_CRITICAL * 0.8
+        TOTAL_WARNING = TOTAL_CRITICAL * 0.8
+
+        if daily_dd >= DAILY_CRITICAL or total_dd >= TOTAL_CRITICAL:
         daily_critical = 4.0  # 4% daily DD
         total_critical = 8.0  # 8% total DD
 

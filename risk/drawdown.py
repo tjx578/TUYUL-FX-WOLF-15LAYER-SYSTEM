@@ -7,6 +7,8 @@ Thread-safe with proper locking.
 """
 
 import threading
+from datetime import datetime, timedelta
+from typing import Optional
 
 from datetime import datetime, timedelta
 
@@ -67,6 +69,15 @@ class DrawdownMonitor:
 
         # Load limits from config if not provided
         dd_config = self._config["drawdown"]
+        self.max_daily_percent = (
+            max_daily_percent or dd_config["max_daily_percent"]
+        )
+        self.max_weekly_percent = (
+            max_weekly_percent or dd_config["max_weekly_percent"]
+        )
+        self.max_total_percent = (
+            max_total_percent or dd_config["max_total_percent"]
+        )
         self.max_daily_percent = max_daily_percent or dd_config["max_daily_percent"]
         self.max_weekly_percent = max_weekly_percent or dd_config["max_weekly_percent"]
         self.max_total_percent = max_total_percent or dd_config["max_total_percent"]
@@ -128,6 +139,10 @@ class DrawdownMonitor:
             self._redis.set(self._key_total, str(self._total_dd))
             self._redis.set(self._key_peak, str(self._peak_equity))
         except Exception as e:
+            logger.error(
+                "Failed to persist drawdown state to Redis",
+                error=str(e)
+            )
             logger.error("Failed to persist drawdown state to Redis", error=str(e))
 
     def _check_and_reset_daily(self) -> None:
@@ -156,6 +171,11 @@ class DrawdownMonitor:
             self._last_weekly_reset = week_start
             self._persist_state()
 
+    def update(
+        self,
+        current_equity: float,
+        pnl: Optional[float] = None
+    ) -> None:
     def update(self, current_equity: float, pnl: float | None = None) -> None:
         """
         Update drawdown tracking with current equity or trade P&L.
@@ -183,6 +203,11 @@ class DrawdownMonitor:
             if current_equity > self._peak_equity:
                 old_peak = self._peak_equity
                 self._peak_equity = current_equity
+                logger.debug(
+                    "New peak equity",
+                    old_peak=old_peak,
+                    new_peak=self._peak_equity
+                )
                 logger.debug("New peak equity", old_peak=old_peak, new_peak=self._peak_equity)
 
             # Calculate drawdown from peak
@@ -227,6 +252,8 @@ class DrawdownMonitor:
                 "weekly_dd_amount": self._weekly_dd,
                 "total_dd_amount": self._total_dd,
                 "daily_dd_percent": (
+                    self._daily_dd / self._peak_equity
+                    if self._peak_equity > 0 else 0.0
                     self._daily_dd / self._peak_equity if self._peak_equity > 0 else 0.0
                 ),
                 "weekly_dd_percent": (
