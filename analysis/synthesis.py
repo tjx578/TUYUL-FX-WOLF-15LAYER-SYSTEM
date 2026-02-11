@@ -105,11 +105,6 @@ class SynthesisEngine:
 # Placeholder
 
 
-def build_synthesis(
-    pair: str,
-    risk_manager=None,
-    vix_level: float = None
-) -> dict:
 def build_synthesis(pair: str, risk_manager=None, vix_level: float | None = None) -> dict:
     """
     Build L12-contract-compliant synthesis for a pair.
