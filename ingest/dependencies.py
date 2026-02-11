@@ -63,6 +63,11 @@ async def _handle_tick(data: dict[str, Any]) -> None:
     Internal tick format (per context_keys.py TICK dict):
         {"symbol": "EURUSD", "bid": float, "ask": float, "timestamp": float_seconds, "source": "finnhub_ws"}
 
+    Note: Finnhub provides a single trade price (p) which represents the last traded price.
+    Since we need both bid and ask for the internal format, we use the same price for both.
+    This is acceptable for ingestion purposes as downstream consumers can apply spread models
+    if needed.
+
     Args:
         data: Raw tick dict from Finnhub WebSocket with type and data fields.
     """
@@ -99,13 +104,10 @@ async def _handle_tick(data: dict[str, Any]) -> None:
                 continue
 
             # Reverse map symbol: OANDA:EUR_USD → EURUSD
-            internal_symbol = _SYMBOL_REVERSE_MAP.get(
-                finnhub_symbol,
-                finnhub_symbol  # fallback to original if not in map
-            )
+            internal_symbol = _SYMBOL_REVERSE_MAP.get(finnhub_symbol)
 
             # Skip if unmapped (not in our configured symbols)
-            if internal_symbol == finnhub_symbol and ":" in finnhub_symbol:
+            if internal_symbol is None:
                 logger.debug(
                     "Skipping unmapped symbol",
                     extra={"finnhub_symbol": finnhub_symbol},
