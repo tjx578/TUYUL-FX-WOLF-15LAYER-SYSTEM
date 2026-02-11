@@ -18,9 +18,12 @@ from schemas.trade_models import TradeStatus, CloseReason
 @pytest.fixture
 def trade_ledger():
     """Create a fresh TradeLedger instance for each test."""
+    from unittest.mock import MagicMock
     # Note: Using singleton, so clear cache before each test
     ledger = TradeLedger()
     ledger._cache.clear()
+    # Mock Redis to avoid connection timeouts in CI
+    ledger._redis = MagicMock()
     return ledger
 
 

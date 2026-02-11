@@ -191,9 +191,10 @@ def test_evaluate_signal_allow(client, mock_redis):
                 with patch("risk.circuit_breaker.RedisClient") as MockRedis4:
                     MockRedis4.return_value = mock_redis
 
-                    # Reset RiskManager singleton
+                    # Reset and re-initialize RiskManager singleton
                     from risk.risk_manager import RiskManager
                     RiskManager.reset_instance()
+                    RiskManager.get_instance(initial_balance=10000.0)
 
                     response = client.post(
                         "/api/v1/risk/test_account/evaluate",
@@ -202,8 +203,8 @@ def test_evaluate_signal_allow(client, mock_redis):
                             "direction": "BUY",
                             "entry_price": 1.0950,
                             "stop_loss": 1.0900,
-                            "take_profit_1": 1.1000,
-                            "rr_ratio": 1.0,
+                            "take_profit_1": 1.1050,
+                            "rr_ratio": 2.0,
                             "trade_id": "test_trade_1",
                         }
                     )
@@ -232,6 +233,7 @@ def test_evaluate_signal_with_auto_register(client, mock_redis):
 
                     from risk.risk_manager import RiskManager
                     RiskManager.reset_instance()
+                    RiskManager.get_instance(initial_balance=10000.0)
 
                     response = client.post(
                         "/api/v1/risk/test_account/evaluate",
@@ -240,8 +242,8 @@ def test_evaluate_signal_with_auto_register(client, mock_redis):
                             "direction": "BUY",
                             "entry_price": 1.0950,
                             "stop_loss": 1.0900,
-                            "take_profit_1": 1.1000,
-                            "rr_ratio": 1.0,
+                            "take_profit_1": 1.1050,
+                            "rr_ratio": 2.0,
                             "trade_id": "test_trade_1",
                             "auto_register": True,
                         }
@@ -271,6 +273,7 @@ def test_get_snapshot(client, mock_redis):
 
                     from risk.risk_manager import RiskManager
                     RiskManager.reset_instance()
+                    RiskManager.get_instance(initial_balance=10000.0)
 
                     response = client.get("/api/v1/risk/test_account/snapshot")
 
@@ -300,6 +303,7 @@ def test_close_trade(client, mock_redis):
 
                     from risk.risk_manager import RiskManager
                     RiskManager.reset_instance()
+                    RiskManager.get_instance(initial_balance=10000.0)
 
                     response = client.post(
                         "/api/v1/risk/test_account/close",
