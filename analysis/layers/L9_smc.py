@@ -70,7 +70,9 @@ class L9SMCAnalyzer:
             # Clear trend but no BOS/CHoCH
             smc["confidence"] = 0.5
 
-        # Add weekly and H4 structure analysis
+        # Add monthly, weekly and H4 structure analysis
+        monthly_structure = self._monthly_structure(symbol)
+        monthly_sweep = self._monthly_liquidity_sweep(symbol)
         weekly_structure = self._weekly_structure(symbol)
         weekly_sweep = self._weekly_liquidity_sweep(symbol)
         h4_structure = self._h4_structure(symbol)
@@ -91,15 +93,74 @@ class L9SMCAnalyzer:
         if smc_conflict and "confidence" in smc:
             smc["confidence"] = round(smc["confidence"] * 0.6, 2)
 
+        # Add monthly bias conflict detection (stronger penalty)
+        smc_monthly_conflict = False
+        if monthly_structure.get("state") == "BULLISH_STRUCTURE" and direction == "SELL":
+            smc_monthly_conflict = True
+        elif monthly_structure.get("state") == "BEARISH_STRUCTURE" and direction == "BUY":
+            smc_monthly_conflict = True
+
+        if smc_monthly_conflict and "confidence" in smc:
+            smc["confidence"] = round(smc["confidence"] * 0.5, 2)
+
+        # Stacking rule: MN sweep + W1 sweep + H4 BOS = confidence boost
+        mn_sweep = monthly_sweep.get("sweep") is not None
+        w1_sweep = weekly_sweep.get("sweep") is not None
+        h4_bos = h4_structure.get("state") in ("BULLISH_BOS", "BEARISH_BOS")
+        if mn_sweep and w1_sweep and h4_bos:
+            smc["confidence"] = min(round(smc["confidence"] * 1.4, 2), 1.0)
+
+        smc["monthly_structure"] = monthly_structure
+        smc["monthly_sweep"] = monthly_sweep
         smc["weekly_structure"] = weekly_structure
         smc["weekly_sweep"] = weekly_sweep
         smc["h4_structure"] = h4_structure
         smc["smc_weekly_conflict"] = smc_conflict
+        smc["smc_monthly_conflict"] = smc_monthly_conflict
 
         # Update previous trend for next call
         self._previous_trend[symbol] = trend
 
         return smc
+
+    def _monthly_structure(self, symbol: str) -> dict:
+        """Detect monthly market structure state."""
+        mn_candles = self.context_bus.get_candle_history(symbol, "MN", count=3)
+
+        if len(mn_candles) < 2:
+            return {"state": "UNKNOWN", "valid": False}
+
+        last = mn_candles[-1]
+        prev = mn_candles[-2]
+
+        if last["high"] > prev["high"] and last["low"] > prev["low"]:
+            state = "BULLISH_STRUCTURE"
+        elif last["high"] < prev["high"] and last["low"] < prev["low"]:
+            state = "BEARISH_STRUCTURE"
+        else:
+            state = "RANGE"
+
+        return {"state": state, "valid": True}
+
+    def _monthly_liquidity_sweep(self, symbol: str) -> dict:
+        """Detect monthly liquidity sweep."""
+        mn_candles = self.context_bus.get_candle_history(symbol, "MN", count=3)
+
+        if len(mn_candles) < 2:
+            return {"sweep": None, "valid": False}
+
+        last = mn_candles[-1]
+        prev = mn_candles[-2]
+
+        # Buy-side liquidity taken (swept above prev high, closed below)
+        if last["high"] > prev["high"] and last["close"] < prev["high"]:
+            return {"sweep": "BUY_SIDE_TAKEN", "valid": True}
+
+        # Sell-side liquidity taken (swept below prev low, closed above)
+        if last["low"] < prev["low"] and last["close"] > prev["low"]:
+            return {"sweep": "SELL_SIDE_TAKEN", "valid": True}
+
+        return {"sweep": None, "valid": True}
 
     def _weekly_structure(self, symbol: str) -> dict:
         """Detect weekly market structure state."""
