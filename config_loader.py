@@ -1,6 +1,7 @@
-import yaml
 from pathlib import Path
 from typing import Any
+
+import yaml
 
 BASE_DIR = Path(__file__).resolve().parent
 
@@ -8,7 +9,7 @@ BASE_DIR = Path(__file__).resolve().parent
 def _load(path: str) -> dict[str, Any]:
     """Load a YAML config file relative to project root."""
     filepath = BASE_DIR / path
-    with open(filepath, "r", encoding="utf-8") as f:
+    with open(filepath, encoding="utf-8") as f:
         return yaml.safe_load(f)
 
 
@@ -24,14 +25,13 @@ CONFIG: dict[str, Any] = {
 
 # Extract enabled symbols list for main.py
 _pairs_data = CONFIG["pairs"].get("pairs", [])
-CONFIG["pairs"]["symbols"] = [
-    pair["symbol"] for pair in _pairs_data if pair.get("enabled", False)
-]
+CONFIG["pairs"]["symbols"] = [pair["symbol"] for pair in _pairs_data if pair.get("enabled", False)]
 
 
 # =============================
 # Convenience loaders
 # =============================
+
 
 def load_settings() -> dict[str, Any]:
     return CONFIG["settings"]

@@ -4,7 +4,7 @@ Core Orchestrator Layer 12
 Contains: CoreOrchestratorLayer12 with TII, FRPC, MC_FTTC gates.
 """
 
-from typing import Dict, Any
+from typing import Any
 
 
 class CoreOrchestratorLayer12:
@@ -25,7 +25,7 @@ class CoreOrchestratorLayer12:
             "rr_min": 2.0,
         }
 
-    def validate_tii_gate(self, tii_score: float) -> Dict[str, bool]:
+    def validate_tii_gate(self, tii_score: float) -> dict[str, bool]:
         """
         Validate TII (Technical-Integrity Index) gate.
 
@@ -44,7 +44,7 @@ class CoreOrchestratorLayer12:
             "threshold": self.gates_config["tii_min"],
         }
 
-    def validate_integrity_gate(self, integrity_score: float) -> Dict[str, bool]:
+    def validate_integrity_gate(self, integrity_score: float) -> dict[str, bool]:
         """
         Validate Integrity gate.
 
@@ -63,7 +63,7 @@ class CoreOrchestratorLayer12:
             "threshold": self.gates_config["integrity_min"],
         }
 
-    def validate_frpc_gate(self, frpc_score: float) -> Dict[str, bool]:
+    def validate_frpc_gate(self, frpc_score: float) -> dict[str, bool]:
         """
         Validate FRPC (Field-Risk-Probability-Confidence) gate.
 
@@ -86,7 +86,7 @@ class CoreOrchestratorLayer12:
         self,
         mc_win_probability: float,
         fta_score: float,
-    ) -> Dict[str, bool]:
+    ) -> dict[str, bool]:
         """
         Validate MC_FTTC (Monte Carlo + FTA) gate.
 
@@ -110,7 +110,7 @@ class CoreOrchestratorLayer12:
             "fta_threshold": self.gates_config["fta_min"],
         }
 
-    def validate_conf12_gate(self, conf12: float) -> Dict[str, bool]:
+    def validate_conf12_gate(self, conf12: float) -> dict[str, bool]:
         """
         Validate CONF12 (Layer 12 Confidence) gate.
 
@@ -129,7 +129,7 @@ class CoreOrchestratorLayer12:
             "threshold": self.gates_config["conf12_min"],
         }
 
-    def validate_rr_gate(self, rr_ratio: float) -> Dict[str, bool]:
+    def validate_rr_gate(self, rr_ratio: float) -> dict[str, bool]:
         """
         Validate Risk-Reward ratio gate.
 
@@ -148,7 +148,7 @@ class CoreOrchestratorLayer12:
             "threshold": self.gates_config["rr_min"],
         }
 
-    def orchestrate(self, synthesis: Dict[str, Any]) -> Dict[str, Any]:
+    def orchestrate(self, synthesis: dict[str, Any]) -> dict[str, Any]:
         """
         Orchestrate all Layer 12 gates.
 
@@ -170,9 +170,7 @@ class CoreOrchestratorLayer12:
         gates.append(tii_result)
 
         # Integrity Gate
-        integrity_result = self.validate_integrity_gate(
-            layers.get("L8_integrity_index", 0.0)
-        )
+        integrity_result = self.validate_integrity_gate(layers.get("L8_integrity_index", 0.0))
         gates.append(integrity_result)
 
         # MC_FTTC Gate

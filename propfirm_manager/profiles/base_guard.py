@@ -5,7 +5,7 @@ Abstract base class for prop firm rule enforcement.
 """
 
 from abc import ABC, abstractmethod
-from typing import Dict, Any
+from typing import Any
 
 from dashboard.backend.schemas import RiskSeverity
 
@@ -35,6 +35,7 @@ class GuardResult:
         self.details = details
 
     def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """
         Convert to dictionary.
 
@@ -58,6 +59,7 @@ class BasePropFirmGuard(ABC):
     """
 
     def __init__(self, rules: Dict[str, Any]):
+    def __init__(self, rules: dict[str, Any]):
         """
         Initialize guard with firm rules.
 
@@ -69,8 +71,8 @@ class BasePropFirmGuard(ABC):
     @abstractmethod
     def check(
         self,
-        account_state: Dict[str, Any],
-        trade_risk: Dict[str, Any],
+        account_state: dict[str, Any],
+        trade_risk: dict[str, Any],
     ) -> GuardResult:
         """
         Evaluate if trade is allowed under prop firm rules.

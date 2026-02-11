@@ -11,20 +11,20 @@ Tests cover:
 import pytest
 
 from schemas.trade_models import (
+    Account,
+    CloseReason,
+    RiskMode,
     Trade,
     TradeLeg,
-    Account,
     TradeStatus,
-    RiskMode,
-    CloseReason,
     is_valid_transition,
 )
 from utils.timezone_utils import now_utc
 
-
 # ========================
 # TRADE LEG TESTS
 # ========================
+
 
 def test_trade_leg_valid():
     """Test TradeLeg with valid data."""
@@ -71,6 +71,7 @@ def test_trade_leg_invalid_lot():
 # ========================
 # TRADE TESTS
 # ========================
+
 
 def test_trade_valid():
     """Test Trade with valid data."""
@@ -229,6 +230,7 @@ def test_trade_closed_with_pnl():
 # ACCOUNT TESTS
 # ========================
 
+
 def test_account_valid():
     """Test Account with valid data."""
     account = Account(
@@ -266,6 +268,7 @@ def test_account_invalid_equity():
 # ========================
 # STATE TRANSITION TESTS
 # ========================
+
 
 def test_valid_transitions():
     """Test valid state transitions."""
@@ -309,6 +312,7 @@ def test_invalid_transitions():
 # ========================
 # ENUM TESTS
 # ========================
+
 
 def test_trade_status_enum():
     """Test TradeStatus enum values."""

@@ -3,8 +3,7 @@ Alert Formatter
 Produces human-readable alerts (GBPJPY style).
 """
 
-
-from utils.timezone_utils import now_utc, format_dual_timezone
+from utils.timezone_utils import format_dual_timezone, now_utc
 
 
 class AlertFormatter:
@@ -53,4 +52,6 @@ Reason : {reason}
 {ts}
 ────────────────────────────
 """
+
+
 # Placeholder
