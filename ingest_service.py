@@ -13,8 +13,8 @@ import signal
 import sys
 from typing import Optional
 
-from loguru import logger # pyright: ignore[reportMissingImports]
-from redis.asyncio import Redis as AsyncRedis # pyright: ignore[reportMissingImports]
+from loguru import logger
+from redis.asyncio import Redis as AsyncRedis
 
 from ingest.candle_builder import CandleBuilder
 from ingest.dependencies import create_finnhub_ws
