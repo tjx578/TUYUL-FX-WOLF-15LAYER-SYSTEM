@@ -102,6 +102,10 @@ class SynthesisEngine:
         }
 
 
+# Placeholder
+
+
+def build_synthesis(pair: str, risk_manager=None, vix_level: float | None = None) -> dict:
 def build_synthesis(
     pair: str, risk_manager=None, vix_level: float | None = None
 ) -> dict:

@@ -82,25 +82,16 @@ class PropFirmManager:
         self.features = config.get("features", {})
         self.version = config.get("version", "unknown")
 
-        logger.info(
-            f"Loaded profile: {self.profile_name} v{self.version}"
-        )
         logger.info(f"Loaded profile: {self.profile_name} v{self.version}")
 
     def _load_guard(self) -> None:
         """Dynamically import and instantiate guard class."""
         # Import the guard module
-        module_path = (
-            f"propfirm_manager.profiles.{self.profile_name}.guard"
-        )
         module_path = f"propfirm_manager.profiles.{self.profile_name}.guard"
 
         try:
             module = importlib.import_module(module_path)
         except ImportError as e:
-            raise ImportError(
-                f"Failed to import guard for {self.profile_name}: {e}"
-            )
             raise ImportError(f"Failed to import guard for {self.profile_name}: {e}") from e
 
         # Get guard class name (e.g., FTMOGuard, AquaInstantProGuard)
@@ -109,9 +100,6 @@ class PropFirmManager:
 
         guard_class = getattr(module, class_name, None)
         if guard_class is None:
-            raise ImportError(
-                f"Guard class {class_name} not found in {module_path}"
-            )
             raise ImportError(f"Guard class {class_name} not found in {module_path}")
 
         # Instantiate guard with rules
@@ -156,6 +144,7 @@ class PropFirmManager:
             FileNotFoundError: If registry or profile not found
         """
         # Load account registry
+        registry_path = Path(__file__).parent / "account_registry.yaml"
         registry_path = (
             Path(__file__).parent / "account_registry.yaml"
         )

@@ -138,6 +138,8 @@ class AccountEngine:
             self._equity += pnl
 
             # Update equity high if new high
+            if self._equity > self._equity_high:
+                self._equity_high = self._equity
             self._equity_high = max(self._equity_high, self._equity)
 
             # Decrement counters
@@ -158,7 +160,6 @@ class AccountEngine:
                 f"Daily DD reset: {self.account_id} | "
                 f"StartEquity=${self._equity:.2f}"
             )
-            logger.info(f"Daily DD reset: {self.account_id} | StartEquity=${self._equity:.2f}")
 
     def get_state(self) -> AccountState:
         """
