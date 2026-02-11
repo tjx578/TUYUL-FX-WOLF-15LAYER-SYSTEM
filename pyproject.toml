@@ -11,10 +11,76 @@ filterwarnings = [
     "ignore::DeprecationWarning:pytest_asyncio",
 ]
 
+# =============================================================
+# Ruff Configuration — TUYUL KARTEL FX
+# =============================================================
 [tool.ruff]
 target-version = "py311"
-line-length = 120
+line-length = 100
 
+# =============================================================
+# Lint
+# =============================================================
 [tool.ruff.lint]
-select = ["E", "F", "W"]
-ignore = ["E501"]
+select = [
+    "E",      # pycodestyle errors (indentation, whitespace, dll.)
+    "W",      # pycodestyle warnings
+    "F",      # pyflakes (unused imports, undefined names)
+    "I",      # isort (urutan import)
+    "N",      # pep8-naming (PascalCase class, snake_case func)
+    "UP",     # pyupgrade (upgrade syntax ke Python 3.11+)
+    "B",      # flake8-bugbear (common bugs & design problems)
+    "SIM",    # flake8-simplify (simplifikasi kode)
+    "ANN",    # flake8-annotations (type hints enforcement)
+    "ASYNC",  # flake8-async (async/await best practices)
+    "S",      # flake8-bandit (security checks)
+    "DTZ",    # flake8-datetimez (timezone-aware datetime)
+    "RET",    # flake8-return (return statement consistency)
+    "PTH",    # flake8-use-pathlib (Path > os.path)
+    "ERA",    # eradicate (commented-out code detection)
+    "PL",     # pylint subset
+    "RUF",    # ruff-specific rules
+    "PERF",   # perflint (performance anti-patterns)
+    "T20",    # flake8-print (no print() in production)
+    "TCH",    # flake8-type-checking (optimize TYPE_CHECKING imports)
+    "C4",     # flake8-comprehensions (list/dict comp best practices)
+]
+ignore = [
+    "ANN101",  # missing type annotation for `self`
+    "ANN102",  # missing type annotation for `cls`
+    "ANN401",  # allow `Any` hanya kalau memang perlu
+    "E501",    # line length — kita pakai formatter untuk ini
+]
+fixable = ["ALL"]
+unfixable = []
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**/*.py" = ["S101", "PLR2004", "ANN"]
+"alembic/**/*.py" = ["ALL"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["app", "core", "trading", "signals"]
+force-single-line = false
+lines-between-types = 1
+
+[tool.ruff.lint.pep8-naming]
+classmethod-decorators = ["pydantic.validator", "pydantic.field_validator"]
+
+[tool.ruff.lint.flake8-annotations]
+allow-star-arg-any = false
+mypy-init-return = true
+
+[tool.ruff.lint.pylint]
+max-args = 7
+max-returns = 3
+max-branches = 10
+
+# =============================================================
+# Formatter (pengganti Black)
+# =============================================================
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "auto"
+skip-magic-trailing-comma = false
+docstring-code-format = true
