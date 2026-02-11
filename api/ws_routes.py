@@ -7,7 +7,6 @@ Endpoints:
 """
 
 import asyncio
-from typing import Set
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from loguru import logger
@@ -23,7 +22,6 @@ class ConnectionManager:
     """Manages WebSocket connections."""
 
     def __init__(self):
-        self.active_connections: Set[WebSocket] = set()
         self.active_connections: set[WebSocket] = set()
 
     async def connect(self, websocket: WebSocket):
@@ -72,10 +70,6 @@ async def websocket_prices(websocket: WebSocket):
     try:
         # Send initial snapshot
         prices = _price_feed.get_all_prices()
-        await websocket.send_json({
-            "type": "snapshot",
-            "data": prices,
-        })
         await websocket.send_json(
             {
                 "type": "snapshot",
@@ -89,10 +83,6 @@ async def websocket_prices(websocket: WebSocket):
             prices = _price_feed.get_all_prices()
 
             # Send update
-            await websocket.send_json({
-                "type": "update",
-                "data": prices,
-            })
             await websocket.send_json(
                 {
                     "type": "update",
@@ -129,10 +119,6 @@ async def websocket_trades(websocket: WebSocket):
         active_trades = _trade_ledger.get_active_trades()
         trades_data = [trade.model_dump() for trade in active_trades]
 
-        await websocket.send_json({
-            "type": "snapshot",
-            "data": trades_data,
-        })
         await websocket.send_json(
             {
                 "type": "snapshot",
@@ -148,10 +134,6 @@ async def websocket_trades(websocket: WebSocket):
         while True:
             # Get current active trades
             active_trades = _trade_ledger.get_active_trades()
-            current_snapshot = {
-                trade.trade_id: trade.status.value
-                for trade in active_trades
-            }
             current_snapshot = {trade.trade_id: trade.status.value for trade in active_trades}
 
             # Check for changes
@@ -173,11 +155,6 @@ async def websocket_trades(websocket: WebSocket):
 
             # Send updates if any changes
             if changed_trades or removed_trade_ids:
-                await websocket.send_json({
-                    "type": "update",
-                    "changed": [trade.model_dump() for trade in changed_trades],
-                    "removed": list(removed_trade_ids),
-                })
                 await websocket.send_json(
                     {
                         "type": "update",
