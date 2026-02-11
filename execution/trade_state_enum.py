@@ -17,10 +17,10 @@ States:
     - IDLE: No active signal/trade (legacy compatibility)
 """
 
-from enum import Enum
+from enum import StrEnum
 
 
-class TradeState(str, Enum):
+class TradeState(StrEnum):
     """Extended trade lifecycle states (10 states)."""
 
     SIGNAL_CREATED = "SIGNAL_CREATED"

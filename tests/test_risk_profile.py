@@ -31,7 +31,7 @@ def mock_redis():
     """Mock Redis client."""
     store: dict[str, str] = {}
     redis_mock = MagicMock()
-    redis_mock.get.side_effect = lambda key: store.get(key)
+    redis_mock.get.side_effect = store.get
     redis_mock.set.side_effect = lambda key, value, ex=None: store.__setitem__(key, value)
     return redis_mock
 
@@ -284,7 +284,7 @@ def test_load_risk_profile_existing(mock_redis):
 
         # Manually set in mock store
         store: dict[str, str] = {}
-        mock_redis.get.side_effect = lambda key: store.get(key)
+        mock_redis.get.side_effect = store.get
         store["wolf15:risk:profile:test_account"] = json.dumps(stored_profile.to_dict())
 
         # Load profile
@@ -315,7 +315,7 @@ def test_save_and_load_round_trip(mock_redis):
     """Test save/load round-trip with Redis."""
     with patch("risk.risk_profile.RedisClient") as MockRedis:
         store: dict[str, str] = {}
-        mock_redis.get.side_effect = lambda key: store.get(key)
+        mock_redis.get.side_effect = store.get
         mock_redis.set.side_effect = lambda key, value, ex=None: store.__setitem__(key, value)
         MockRedis.return_value = mock_redis
 

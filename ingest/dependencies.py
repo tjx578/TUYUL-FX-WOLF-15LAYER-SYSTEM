@@ -5,14 +5,16 @@ from __future__ import annotations
 import logging
 import os
 
-from collections.abc import Awaitable, Callable
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from redis.asyncio import Redis  # pyright: ignore[reportMissingImports]
 
 from config_loader import CONFIG
 from context.live_context_bus import LiveContextBus
 from ingest.finnhub_ws import FinnhubSymbolMapper, FinnhubWebSocket
+
+if TYPE_CHECKING:
+    from collections.abc import Awaitable, Callable
 
 logger = logging.getLogger(__name__)
 

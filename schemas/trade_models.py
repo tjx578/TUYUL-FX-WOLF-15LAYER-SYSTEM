@@ -13,7 +13,7 @@ Enums:
 """
 
 from datetime import datetime
-from enum import Enum
+from enum import StrEnum
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -22,7 +22,7 @@ from pydantic import BaseModel, Field, field_validator
 # ========================
 
 
-class TradeStatus(str, Enum):
+class TradeStatus(StrEnum):
     """Trade lifecycle status"""
 
     INTENDED = "INTENDED"  # Trader clicked TAKE, dashboard computed lot
@@ -33,14 +33,14 @@ class TradeStatus(str, Enum):
     SKIPPED = "SKIPPED"  # Trader clicked SKIP
 
 
-class RiskMode(str, Enum):
+class RiskMode(StrEnum):
     """Risk allocation mode"""
 
     FIXED = "FIXED"  # Single position, full risk
     SPLIT = "SPLIT"  # Split into multiple legs
 
 
-class CloseReason(str, Enum):
+class CloseReason(StrEnum):
     """Reason for trade closure"""
 
     TP_HIT = "TP_HIT"

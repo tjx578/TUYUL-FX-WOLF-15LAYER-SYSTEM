@@ -25,7 +25,7 @@ def mock_redis():
     """Mock Redis client with in-memory store."""
     store: dict[str, str] = {}
     redis_mock = MagicMock()
-    redis_mock.get.side_effect = lambda key: store.get(key)
+    redis_mock.get.side_effect = store.get
     redis_mock.set.side_effect = lambda key, value, ex=None: store.__setitem__(key, value)
     redis_mock.delete.side_effect = lambda key: store.pop(key, None)
     return redis_mock
@@ -113,7 +113,7 @@ def test_get_profile_saved(client, mock_redis):
     """Test getting saved profile."""
     with patch("risk.risk_profile.RedisClient") as MockRedis:
         store: dict[str, str] = {}
-        mock_redis.get.side_effect = lambda key: store.get(key)
+        mock_redis.get.side_effect = store.get
         mock_redis.set.side_effect = lambda key, value, ex=None: store.__setitem__(key, value)
         MockRedis.return_value = mock_redis
 
