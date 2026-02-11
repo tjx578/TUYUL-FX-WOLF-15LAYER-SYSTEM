@@ -138,6 +138,8 @@ class AccountEngine:
             self._equity += pnl
 
             # Update equity high if new high
+            if self._equity > self._equity_high:
+                self._equity_high = self._equity
             self._equity_high = max(self._equity_high, self._equity)
 
             # Decrement counters

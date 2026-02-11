@@ -8,7 +8,7 @@ Risk Engine reads it. Redis = single source of truth.
 import json
 
 from dataclasses import asdict, dataclass
-from enum import Enum
+from enum import StrEnum
 
 from loguru import logger
 
@@ -16,7 +16,7 @@ from risk.exceptions import RiskException
 from storage.redis_client import RedisClient
 
 
-class RiskMode(str, Enum):
+class RiskMode(StrEnum):
     """Risk allocation mode."""
 
     FIXED = "FIXED"

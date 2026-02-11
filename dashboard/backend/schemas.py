@@ -9,7 +9,7 @@ All models follow the separation of concerns:
 """
 
 from datetime import datetime
-from enum import Enum
+from enum import StrEnum
 from uuid import UUID
 
 from pydantic import (
@@ -24,21 +24,21 @@ from pydantic import (
 # ========================
 
 
-class TradeSource(str, Enum):
+class TradeSource(StrEnum):
     """Source of trade execution."""
 
     EA = "EA"
     MANUAL = "MANUAL"
 
 
-class RiskMode(str, Enum):
+class RiskMode(StrEnum):
     """Risk calculation mode."""
 
     FIXED = "FIXED"
     SPLIT = "SPLIT"
 
 
-class RiskSeverity(str, Enum):
+class RiskSeverity(StrEnum):
     """Risk assessment severity levels."""
 
     SAFE = "SAFE"
@@ -46,7 +46,7 @@ class RiskSeverity(str, Enum):
     CRITICAL = "CRITICAL"
 
 
-class ScalingModel(str, Enum):
+class ScalingModel(StrEnum):
     """Risk scaling model based on confidence/DD."""
 
     FIXED = "FIXED"
@@ -193,9 +193,6 @@ class RiskCalculationResult(BaseModel):
     total_dd_after: float = Field(..., ge=0)
     severity: RiskSeverity = Field(...)
     reason: str = Field(...)
-    split_lots: Optional[List[float]] = Field(
-        default=None, description="For split risk mode"
-    )
     split_lots: list[float] | None = Field(default=None, description="For split risk mode")
 
     model_config = ConfigDict(frozen=True)
