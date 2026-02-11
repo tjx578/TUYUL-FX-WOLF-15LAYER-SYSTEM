@@ -5,20 +5,19 @@ Contains: CentralBankSentimentAnalyzer, FTAExecutionGate, FTAIntegrationEngine,
 FundamentalDriveEngine, FundamentalPatchIntegrator.
 """
 
-from typing import Dict, Any, List, Optional
-from loguru import logger
+from typing import Dict, Any
 
 
 class CentralBankSentimentAnalyzer:
     """Analyzes central bank sentiment and policy decisions."""
-    
+
     def analyze(self, currency: str) -> Dict[str, Any]:
         """
         Analyze central bank sentiment.
-        
+
         Args:
             currency: Currency code (e.g., "USD", "EUR")
-            
+
         Returns:
             Dictionary with sentiment analysis
         """
@@ -33,21 +32,21 @@ class CentralBankSentimentAnalyzer:
 
 class FTAExecutionGate:
     """Fundamental-Technical Alignment Execution Gate."""
-    
+
     def check(self, fundamental_bias: str, technical_bias: str) -> Dict[str, Any]:
         """
         Check if fundamental and technical are aligned.
-        
+
         Args:
             fundamental_bias: Fundamental bias (BULLISH/BEARISH/NEUTRAL)
             technical_bias: Technical bias (BULLISH/BEARISH/NEUTRAL)
-            
+
         Returns:
             Dictionary with alignment check results
         """
         aligned = fundamental_bias == technical_bias
         fta_score = 100.0 if aligned else 0.0
-        
+
         return {
             "aligned": aligned,
             "fta_score": fta_score,
@@ -60,7 +59,7 @@ class FTAExecutionGate:
 
 class FTAIntegrationEngine:
     """Integrates Fundamental and Technical Analysis."""
-    
+
     def integrate(
         self,
         fundamental_data: Dict[str, Any],
@@ -68,20 +67,20 @@ class FTAIntegrationEngine:
     ) -> Dict[str, Any]:
         """
         Integrate FTA data.
-        
+
         Args:
             fundamental_data: Fundamental analysis results
             technical_data: Technical analysis results
-            
+
         Returns:
             Dictionary with integrated FTA score
         """
         f_score = fundamental_data.get("score", 0.0)
         t_score = technical_data.get("score", 0.0)
-        
+
         # Weighted integration
         integrated_score = (f_score * 0.4) + (t_score * 0.6)
-        
+
         return {
             "integrated_score": integrated_score,
             "f_score": f_score,
@@ -93,14 +92,14 @@ class FTAIntegrationEngine:
 
 class FundamentalDriveEngine:
     """Analyzes fundamental drivers of market movement."""
-    
+
     def analyze(self, symbol: str) -> Dict[str, Any]:
         """
         Analyze fundamental drivers.
-        
+
         Args:
             symbol: Trading pair
-            
+
         Returns:
             Dictionary with fundamental analysis
         """
@@ -115,7 +114,7 @@ class FundamentalDriveEngine:
 
 class FundamentalPatchIntegrator:
     """Integrates fundamental patches and updates into the system."""
-    
+
     def integrate_patch(
         self,
         symbol: str,
@@ -123,11 +122,11 @@ class FundamentalPatchIntegrator:
     ) -> Dict[str, Any]:
         """
         Integrate fundamental patch.
-        
+
         Args:
             symbol: Trading pair
             patch_data: Patch data to integrate
-            
+
         Returns:
             Dictionary with integration results
         """

@@ -9,7 +9,6 @@ Supports two modes via CONTEXT_MODE environment variable:
 
 import os
 from collections import defaultdict, deque
-from datetime import datetime
 from threading import Lock
 from typing import Optional
 
@@ -181,12 +180,12 @@ class LiveContextBus:
     ) -> list:
         """
         Get historical candles for a symbol and timeframe.
-        
+
         Args:
             symbol: Trading pair symbol
             timeframe: Timeframe (M15, H1, etc.)
             count: Number of candles to return (default 20, max 50)
-            
+
         Returns:
             List of candles, newest first
         """

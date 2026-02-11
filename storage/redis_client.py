@@ -36,7 +36,7 @@ class RedisClient:
 
     def _init(self) -> None:
         """Initialize Redis connection pool."""
-        url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+        url = os.getenv("REDIS_URL") or "redis://localhost:6379/0"
         socket_timeout = int(os.getenv("REDIS_SOCKET_TIMEOUT_SEC", "5"))
 
         # Create connection pool for reuse

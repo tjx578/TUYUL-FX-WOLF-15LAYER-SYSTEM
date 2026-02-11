@@ -10,8 +10,6 @@ Tests cover:
 """
 
 import json
-from datetime import datetime, timezone
-from pathlib import Path
 
 import pytest
 
@@ -268,7 +266,7 @@ def test_protection_assessment_enum():
 def test_journal_writer_creates_file(tmp_path):
     """Test JournalWriter creates file in correct location"""
     writer = JournalWriter(base_dir=str(tmp_path))
-    
+
     j1 = ContextJournal(
         timestamp=now_utc(),
         pair="EURUSD",
@@ -279,15 +277,15 @@ def test_journal_writer_creates_file(tmp_path):
         mta_alignment=True,
         technical_bias="BULLISH",
     )
-    
+
     file_path = writer.write(j1)
-    
+
     # Verify file exists
     assert file_path.exists()
-    
+
     # Verify file is in date-based directory
     assert file_path.parent.parent == tmp_path
-    
+
     # Verify filename format
     assert "_context_EURUSD.json" in file_path.name
 
@@ -295,7 +293,7 @@ def test_journal_writer_creates_file(tmp_path):
 def test_journal_writer_file_format(tmp_path):
     """Test JournalWriter creates correctly formatted JSON"""
     writer = JournalWriter(base_dir=str(tmp_path))
-    
+
     j2 = DecisionJournal(
         timestamp=now_utc(),
         pair="EURUSD",
@@ -314,13 +312,13 @@ def test_journal_writer_file_format(tmp_path):
         wolf_status="PACK",
         gates_passed=9,
     )
-    
+
     file_path = writer.write(j2)
-    
+
     # Read and parse JSON
     with open(file_path, "r") as f:
         content = json.load(f)
-    
+
     # Verify structure
     assert "journal_type" in content
     assert "recorded_at" in content
@@ -345,13 +343,13 @@ def test_journal_router_increments_count(tmp_path):
     """Test JournalRouter increments event count"""
     # Create fresh router instance with temp directory
     from journal.journal_writer import JournalWriter
-    
+
     router = JournalRouter()
     # Replace writer with one using temp dir
     router._writer = JournalWriter(base_dir=str(tmp_path))
-    
+
     initial_count = router.get_event_count()
-    
+
     j1 = ContextJournal(
         timestamp=now_utc(),
         pair="EURUSD",
@@ -362,9 +360,9 @@ def test_journal_router_increments_count(tmp_path):
         mta_alignment=True,
         technical_bias="BULLISH",
     )
-    
+
     router.record_context(j1)
-    
+
     # Count should increase
     assert router.get_event_count() > initial_count
 
@@ -409,9 +407,9 @@ def test_compute_metrics_with_decisions():
             },
         },
     ]
-    
+
     metrics = compute_metrics(entries)
-    
+
     assert metrics["total_decisions"] == 3
     assert metrics["verdict_counts"]["EXECUTE_BUY"] == 1
     assert metrics["verdict_counts"]["HOLD"] == 1
@@ -441,9 +439,9 @@ def test_compute_metrics_with_reflections():
             },
         },
     ]
-    
+
     metrics = compute_metrics(entries)
-    
+
     assert metrics["total_reflections"] == 2
     assert metrics["protection_score"] == 100.0
     assert metrics["override_count"] == 1
