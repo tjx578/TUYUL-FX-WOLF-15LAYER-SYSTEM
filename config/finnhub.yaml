@@ -28,7 +28,7 @@ symbols:
 
 news:
   enabled: true
-  endpoint: "/economic-calendar"
+  endpoint: "/calendar/economic"
   impact_levels:
     high: true
     medium: true

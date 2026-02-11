@@ -6,8 +6,8 @@ and snapshot functionality.
 """
 
 import threading
-from datetime import datetime, timezone
 
+from datetime import UTC, datetime
 
 from context.live_context_bus import LiveContextBus
 
@@ -90,7 +90,7 @@ class TestLiveContextBusValidation:
             "high": 1.0860,
             "low": 1.0840,
             "close": 1.0855,
-            "timestamp": datetime.now(timezone.utc),
+            "timestamp": datetime.now(UTC),
         }
 
         bus.update_candle(candle)
@@ -159,7 +159,7 @@ class TestLiveContextBusCandleHistory:
                 "high": 1.0860 + i * 0.0001,
                 "low": 1.0840 + i * 0.0001,
                 "close": 1.0855 + i * 0.0001,
-                "timestamp": datetime.now(timezone.utc),
+                "timestamp": datetime.now(UTC),
             }
             bus.update_candle(candle)
 
@@ -184,7 +184,7 @@ class TestLiveContextBusCandleHistory:
                 "high": 1.0860,
                 "low": 1.0840,
                 "close": 1.0855,
-                "timestamp": datetime.now(timezone.utc),
+                "timestamp": datetime.now(UTC),
             }
             bus.update_candle(candle)
 
@@ -208,7 +208,7 @@ class TestLiveContextBusCandleHistory:
                 "high": 1.0860,
                 "low": 1.0840,
                 "close": 1.0855,
-                "timestamp": datetime.now(timezone.utc),
+                "timestamp": datetime.now(UTC),
             }
             bus.update_candle(candle)
 
@@ -221,7 +221,7 @@ class TestLiveContextBusCandleHistory:
                 "high": 1.0860,
                 "low": 1.0840,
                 "close": 1.0855,
-                "timestamp": datetime.now(timezone.utc),
+                "timestamp": datetime.now(UTC),
             }
             bus.update_candle(candle)
 
@@ -258,10 +258,7 @@ class TestLiveContextBusThreadSafety:
                 }
                 bus.update_tick(tick)
 
-        threads = [
-            threading.Thread(target=write_ticks, args=(i,))
-            for i in range(10)
-        ]
+        threads = [threading.Thread(target=write_ticks, args=(i,)) for i in range(10)]
 
         for thread in threads:
             thread.start()
@@ -286,14 +283,11 @@ class TestLiveContextBusThreadSafety:
                     "high": 1.0860,
                     "low": 1.0840,
                     "close": 1.0855,
-                    "timestamp": datetime.now(timezone.utc),
+                    "timestamp": datetime.now(UTC),
                 }
                 bus.update_candle(candle)
 
-        threads = [
-            threading.Thread(target=write_candles, args=(i,))
-            for i in range(5)
-        ]
+        threads = [threading.Thread(target=write_candles, args=(i,)) for i in range(5)]
 
         for thread in threads:
             thread.start()
@@ -330,7 +324,7 @@ class TestLiveContextBusSnapshot:
             "high": 1.0860,
             "low": 1.0840,
             "close": 1.0855,
-            "timestamp": datetime.now(timezone.utc),
+            "timestamp": datetime.now(UTC),
         }
         bus.update_candle(candle)
 

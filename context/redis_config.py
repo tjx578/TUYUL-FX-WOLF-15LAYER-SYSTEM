@@ -1,5 +1,7 @@
 import os
+
 from redis.asyncio import Redis
+
 
 def create_redis_client() -> Redis:
     """Create Redis client with TLS if configured.

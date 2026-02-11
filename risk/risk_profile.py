@@ -6,8 +6,9 @@ Risk Engine reads it. Redis = single source of truth.
 """
 
 import json
-from dataclasses import dataclass, asdict
-from enum import Enum
+
+from dataclasses import asdict, dataclass
+from enum import StrEnum
 
 from loguru import logger
 
@@ -15,8 +16,9 @@ from risk.exceptions import RiskException
 from storage.redis_client import RedisClient
 
 
-class RiskMode(str, Enum):
+class RiskMode(StrEnum):
     """Risk allocation mode."""
+
     FIXED = "FIXED"
     SPLIT = "SPLIT"
 
@@ -41,6 +43,7 @@ class RiskProfile:
     split_ratio : tuple[float, float]
         Risk allocation ratio for SPLIT mode (must sum to 1.0)
     """
+
     risk_per_trade: float = 0.7
     max_daily_dd: float = 5.0
     max_total_dd: float = 10.0
@@ -51,31 +54,18 @@ class RiskProfile:
     def __post_init__(self) -> None:
         """Validate profile constraints."""
         if self.risk_per_trade <= 0 or self.risk_per_trade > 5.0:
-            raise RiskException(
-                f"risk_per_trade must be 0 < x <= 5.0, "
-                f"got {self.risk_per_trade}"
-            )
+            raise RiskException(f"risk_per_trade must be 0 < x <= 5.0, got {self.risk_per_trade}")
         if self.max_daily_dd <= 0 or self.max_daily_dd > 20.0:
-            raise RiskException(
-                f"max_daily_dd must be 0 < x <= 20.0, "
-                f"got {self.max_daily_dd}"
-            )
+            raise RiskException(f"max_daily_dd must be 0 < x <= 20.0, got {self.max_daily_dd}")
         if self.max_total_dd <= 0 or self.max_total_dd > 30.0:
-            raise RiskException(
-                f"max_total_dd must be 0 < x <= 30.0, "
-                f"got {self.max_total_dd}"
-            )
+            raise RiskException(f"max_total_dd must be 0 < x <= 30.0, got {self.max_total_dd}")
         if self.max_open_trades < 1 or self.max_open_trades > 5:
-            raise RiskException(
-                f"max_open_trades must be 1-5, "
-                f"got {self.max_open_trades}"
-            )
+            raise RiskException(f"max_open_trades must be 1-5, got {self.max_open_trades}")
         if self.risk_mode == RiskMode.SPLIT:
             total = sum(self.split_ratio)
             if abs(total - 1.0) > 0.001:
                 raise RiskException(
-                    f"split_ratio must sum to 1.0, "
-                    f"got {self.split_ratio} = {total}"
+                    f"split_ratio must sum to 1.0, got {self.split_ratio} = {total}"
                 )
 
     def to_dict(self) -> dict:

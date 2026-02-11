@@ -1,20 +1,25 @@
-"""Dependency injection for Finnhub WS client."""
+"""Dependency injection utilities for Finnhub WS client."""
 
 from __future__ import annotations
 
 import logging
+import os
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from redis.asyncio import Redis # pyright: ignore[reportMissingImports]
+from redis.asyncio import Redis  # pyright: ignore[reportMissingImports]
 
+from config_loader import CONFIG
 from context.live_context_bus import LiveContextBus
-from ingest.finnhub_ws import FinnhubWebSocket
+from ingest.finnhub_ws import FinnhubSymbolMapper, FinnhubWebSocket
+
+if TYPE_CHECKING:
+    from collections.abc import Awaitable, Callable
 
 logger = logging.getLogger(__name__)
 
-# Default majors + gold — aligned with pairs config
-_DEFAULT_SYMBOLS: list[str] = [
+_DEFAULT_REDIS_URL = "redis://localhost:6379/0"
+_DEFAULT_SYMBOLS = [
     "OANDA:EUR_USD",
     "OANDA:GBP_JPY",
     "OANDA:USD_JPY",
@@ -22,111 +27,97 @@ _DEFAULT_SYMBOLS: list[str] = [
     "OANDA:AUD_USD",
     "OANDA:XAU_USD",
 ]
+_SYMBOL_REVERSE_MAP: dict[str, str] = {
+    symbol: symbol.replace("OANDA:", "").replace("_", "") for symbol in _DEFAULT_SYMBOLS
+}
 
 
-async def create_finnhub_ws(
-    redis: Redis,  # type: ignore[type-arg]
-    symbols: list[str] | None = None,
-) -> FinnhubWebSocket:
-    """Factory for FinnhubWebSocket with defaults.
+def _enabled_symbols() -> list[str]:
+    """Return enabled internal symbols from config."""
+    pairs = CONFIG.get("pairs", {}).get("pairs", [])
+    enabled = [str(pair.get("symbol", "")) for pair in pairs if pair.get("enabled", True)]
+    return [symbol for symbol in enabled if symbol]
 
-    Args:
-        redis: Shared async Redis client.
-        symbols: Forex symbols to subscribe. Defaults to majors.
 
-    Returns:
-        Configured FinnhubWebSocket instance.
-    """
-    return FinnhubWebSocket(
-        redis=redis,
-        on_message=_handle_tick,
-        symbols=symbols or _DEFAULT_SYMBOLS,
-    )
+def _build_tick_handler(
+    *,
+    mapper: FinnhubSymbolMapper,
+    allowed_symbols: set[str],
+) -> Callable[[dict[str, Any]], Awaitable[None]]:
+    """Create WS message handler that normalizes and writes ticks to context."""
+    context_bus = LiveContextBus()
+
+    async def _handle_tick(data: dict[str, Any]) -> None:
+        try:
+            if data.get("type") != "trade":
+                return
+
+            trades = data.get("data", [])
+            if not isinstance(trades, list):
+                logger.warning("Invalid Finnhub trade payload format")
+                return
+            for trade in trades:
+                external_symbol = trade.get("s")
+                price = trade.get("p")
+                timestamp = trade.get("t")
+
+                if not external_symbol or price is None or timestamp is None:
+                    logger.debug("Skipping incomplete trade payload")
+                    continue
+
+                internal_symbol = mapper.to_internal(str(external_symbol))
+                if internal_symbol not in allowed_symbols:
+                    logger.warning(
+                        "Skipping unmapped symbol from Finnhub stream",
+                        extra={"external_symbol": external_symbol},
+                    )
+                    continue
+
+                normalized_tick = {
+                    "symbol": internal_symbol,
+                    "bid": float(price),
+                    "ask": float(price),
+                    "timestamp": float(timestamp) / 1000.0,
+                    "source": "finnhub_ws",
+                }
+                context_bus.update_tick(normalized_tick)
+        except (TypeError, ValueError) as exc:
+            logger.error(
+                "Tick processing error",
+                extra={"error": str(exc), "raw_data": str(data)[:200]},
+            )
+
+    return _handle_tick
 
 
 async def _handle_tick(data: dict[str, Any]) -> None:
-    """Process incoming tick and route to LiveContextBus.
+    """Backwards-compatible default tick handler used by tests and local callers."""
+    mapper = FinnhubSymbolMapper(prefix="OANDA")
+    for internal_symbol in _SYMBOL_REVERSE_MAP.values():
+        mapper.register(internal_symbol)
+    handler = _build_tick_handler(mapper=mapper, allowed_symbols=set(_SYMBOL_REVERSE_MAP.values()))
+    await handler(data)
 
-    Normalizes Finnhub tick format to internal format and dispatches
-    to LiveContextBus for downstream consumers. NO analysis or decision
-    logic here - pure ingestion zone.
 
-    Finnhub tick format:
-        {"type": "trade", "data": [{"p": price, "s": "OANDA:EUR_USD", "t": ts_ms, "v": vol}]}
+async def create_finnhub_ws(
+    redis: Redis,
+    symbols: list[str] | None = None,
+) -> FinnhubWebSocket:
+    """Factory for FinnhubWebSocket with defaults and tick normalization."""
+    mapper = FinnhubSymbolMapper(prefix="OANDA")
+    internal_symbols = symbols or _enabled_symbols()
+    allowed_symbols = set(internal_symbols)
+    external_symbols = [mapper.register(symbol) for symbol in internal_symbols]
 
-    Internal tick format (per context_keys.py TICK dict):
-        {"symbol": "EURUSD", "bid": float, "ask": float, "timestamp": float_seconds, "source": "finnhub_ws"}
+    return FinnhubWebSocket(
+        redis=redis,
+        on_message=_build_tick_handler(mapper=mapper, allowed_symbols=allowed_symbols),
+        symbols=external_symbols,
+    )
 
-    Note: Finnhub provides a single trade price (p) which represents the last traded price.
-    Since we need both bid and ask for the internal format, we use the same price for both.
-    This is acceptable for ingestion purposes as downstream consumers can apply spread models
-    if needed.
 
-    Args:
-        data: Raw tick dict from Finnhub WebSocket with type and data fields.
-    """
-    try:
-        msg_type = data.get("type", "unknown")
-
-        if msg_type != "trade":
-            logger.debug(
-                "Ignoring non-trade message",
-                extra={"msg_type": msg_type},
-            )
-            return
-
-        trades = data.get("data", [])
-        if not isinstance(trades, list):
-            logger.warning(
-                "Invalid trades data format - expected list",
-                extra={"raw_data": str(data)[:200]},
-            )
-            return
-
-        for tick in trades:
-            # Extract raw fields
-            finnhub_symbol = tick.get("s", "")
-            price = tick.get("p")
-            ts_ms = tick.get("t")
-
-            # Validate required fields
-            if not finnhub_symbol or price is None or ts_ms is None:
-                logger.warning(
-                    "Skipping incomplete tick",
-                    extra={"raw_tick": tick},
-                )
-                continue
-
-            # Normalize symbol (e.g., "OANDA:EUR_USD" -> "EURUSD")
-            internal_symbol = finnhub_symbol.replace("OANDA:", "").replace("_", "")
-
-            # Convert timestamp from milliseconds to seconds
-            timestamp_seconds = ts_ms / 1000.0
-
-            # Build normalized tick dict
-            normalized_tick = {
-                "symbol": internal_symbol,
-                "bid": float(price),
-                "ask": float(price),
-                "timestamp": timestamp_seconds,
-                "source": "finnhub_ws",
-            }
-
-            logger.debug(
-                "Tick normalized",
-                extra={
-                    "symbol": internal_symbol,
-                    "price": price,
-                    "timestamp": timestamp_seconds,
-                },
-            )
-
-            # Route to LiveContextBus
-            # This handles both local mode (deque) and redis mode (Redis XADD + HSET + PUBLISH)
-            LiveContextBus().update_tick(normalized_tick)
-
-    except (KeyError, TypeError, ValueError) as exc:
-        logger.error(
-            "Tick processing error",
-            extra={"error": str(exc), "raw_data": str(data)[:200]},
-        )
+async def create_default_finnhub_ws() -> FinnhubWebSocket:
+    """Factory that builds Redis client and configured Finnhub WS instance."""
+    redis_url = os.getenv("REDIS_URL", _DEFAULT_REDIS_URL)
+    redis = Redis.from_url(redis_url, decode_responses=True)
+    return await create_finnhub_ws(redis=redis)

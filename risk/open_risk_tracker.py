@@ -6,7 +6,8 @@ Persisted in Redis. Updated on INTENDED/OPEN/CLOSE events.
 """
 
 import json
-from dataclasses import dataclass, asdict
+
+from dataclasses import asdict, dataclass
 
 from loguru import logger
 
@@ -16,6 +17,7 @@ from storage.redis_client import RedisClient
 @dataclass
 class OpenTrade:
     """Single open trade entry for risk tracking."""
+
     trade_id: str
     symbol: str
     lot_size: float
@@ -58,17 +60,33 @@ class OpenRiskTracker:
         existing_ids = {(t["trade_id"], t.get("entry_number", 1)) for t in trades}
         key = (trade.trade_id, trade.entry_number)
         if key in existing_ids:
-            logger.warning("Trade already registered, skipping", trade_id=trade.trade_id, entry=trade.entry_number)
+            logger.warning(
+                "Trade already registered, skipping",
+                trade_id=trade.trade_id,
+                entry=trade.entry_number,
+            )
             return
         trades.append(asdict(trade))
         self._save_trades(trades)
-        logger.info("Open trade registered", trade_id=trade.trade_id, symbol=trade.symbol, risk_amount=trade.risk_amount, total_open=len(trades))
+        logger.info(
+            "Open trade registered",
+            trade_id=trade.trade_id,
+            symbol=trade.symbol,
+            risk_amount=trade.risk_amount,
+            total_open=len(trades),
+        )
 
     def remove_trade(self, trade_id: str, entry_number: int = 1) -> None:
         trades = self._load_trades()
-        trades = [t for t in trades if not (t["trade_id"] == trade_id and t.get("entry_number", 1) == entry_number)]
+        trades = [
+            t
+            for t in trades
+            if not (t["trade_id"] == trade_id and t.get("entry_number", 1) == entry_number)
+        ]
         self._save_trades(trades)
-        logger.info("Open trade removed", trade_id=trade_id, entry=entry_number, remaining=len(trades))
+        logger.info(
+            "Open trade removed", trade_id=trade_id, entry=entry_number, remaining=len(trades)
+        )
 
     def get_open_risk(self) -> float:
         trades = self._load_trades()

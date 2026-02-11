@@ -10,12 +10,12 @@ Validates:
 
 import pytest
 
+from dashboard.backend.schemas import RiskSeverity
 from propfirm_manager.profile_manager import PropFirmManager
-from propfirm_manager.profiles.ftmo.guard import FTMOGuard
 from propfirm_manager.profiles.aqua_instant_pro.guard import (
     AquaInstantProGuard,
 )
-from dashboard.backend.schemas import RiskSeverity
+from propfirm_manager.profiles.ftmo.guard import FTMOGuard
 
 
 class TestFTMOGuard:

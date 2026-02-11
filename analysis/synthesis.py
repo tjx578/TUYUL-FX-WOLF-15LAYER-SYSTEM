@@ -100,13 +100,14 @@ class SynthesisEngine:
             "L11": l11,
             "valid": True,
         }
+
+
 # Placeholder
 
 
+def build_synthesis(pair: str, risk_manager=None, vix_level: float | None = None) -> dict:
 def build_synthesis(
-    pair: str,
-    risk_manager=None,
-    vix_level: float = None
+    pair: str, risk_manager=None, vix_level: float | None = None
 ) -> dict:
     """
     Build L12-contract-compliant synthesis for a pair.
@@ -189,10 +190,12 @@ def build_synthesis(
             )
 
             # Check prop firm compliance
-            prop_compliance = risk_manager.check_prop_firm_compliance({
-                "risk_percent": position_data["risk_percent"],
-                "rr_ratio": rr_ratio,
-            })
+            prop_compliance = risk_manager.check_prop_firm_compliance(
+                {
+                    "risk_percent": position_data["risk_percent"],
+                    "rr_ratio": rr_ratio,
+                }
+            )
 
             # Extract values
             current_drawdown = risk_snapshot["drawdown"]["total_dd_percent"]
@@ -251,7 +254,7 @@ def build_synthesis(
             # - 'take_profit' and 'take_profit_1' both contain TP1 price
             # This ensures compatibility with both test contracts and L12 verdict engine
             "entry": entry_price,
-            "entry_zone": f"{entry_price-0.0010:.5f}-{entry_price+0.0010:.5f}",
+            "entry_zone": f"{entry_price - 0.0010:.5f}-{entry_price + 0.0010:.5f}",
             "entry_price": entry_price,
             "stop_loss": stop_loss,
             "take_profit_1": take_profit_1,
