@@ -5,6 +5,7 @@ import sys
 from typing import Optional
 
 from loguru import logger
+from redis.asyncio import Redis as AsyncRedis
 
 from analysis.synthesis import build_synthesis
 from analysis.synthesis_adapter import adapt_synthesis
@@ -12,8 +13,8 @@ from config_loader import CONFIG
 from constitution.verdict_engine import generate_l12_verdict
 from context.runtime_state import RuntimeState
 from ingest.candle_builder import CandleBuilder
+from ingest.dependencies import create_finnhub_ws
 from ingest.finnhub_news import FinnhubNews
-from ingest.finnhub_ws import FinnhubWebSocket
 from journal.journal_router import journal_router
 from journal.journal_schema import ContextJournal, DecisionJournal, VerdictType
 from storage.l12_cache import set_verdict
@@ -165,18 +166,61 @@ async def run_ingest_services(
             await asyncio.sleep(1)
         return
 
-    ws_feed = FinnhubWebSocket()
-    news_feed = FinnhubNews()
-    candle_builder = CandleBuilder()
+    # Build Redis connection from environment variables
+    redis_url = os.getenv("REDIS_URL")
+    if redis_url:
+        logger.info(f"Using REDIS_URL for local mode: {redis_url}")
+        redis = AsyncRedis.from_url(
+            redis_url,
+            encoding="utf-8",
+            decode_responses=True,
+        )
+    else:
+        # Fallback to individual params
+        redis_host = os.getenv("REDIS_HOST", "localhost")
+        redis_port = int(os.getenv("REDIS_PORT", "6379"))
+        redis_password = os.getenv("REDIS_PASSWORD", "")
+        redis_db = int(os.getenv("REDIS_DB", "0"))
+        
+        logger.info(f"Using Redis for local mode: {redis_host}:{redis_port}/{redis_db}")
+        redis = AsyncRedis(
+            host=redis_host,
+            port=redis_port,
+            password=redis_password if redis_password else None,
+            db=redis_db,
+            encoding="utf-8",
+            decode_responses=True,
+        )
 
-    logger.info("Starting ingest services: WebSocket, News, CandleBuilder")
+    try:
+        # Validate Redis connection
+        await redis.ping()
+        logger.info("✓ Redis connection validated")
 
-    # Run all three services concurrently
-    await asyncio.gather(
-        ws_feed.run(),
-        news_feed.run(),
-        candle_builder.run(),
-    )
+        # Initialize ingest services with factory
+        ws_feed = await create_finnhub_ws(redis=redis)
+        news_feed = FinnhubNews()
+        candle_builder = CandleBuilder()
+
+        logger.info("Starting ingest services: WebSocket, News, CandleBuilder")
+
+        # Run all three services concurrently
+        await asyncio.gather(
+            ws_feed.run(),
+            news_feed.run(),
+            candle_builder.run(),
+        )
+
+    except asyncio.CancelledError:
+        logger.info("Ingest services cancelled - shutting down")
+        raise
+
+    finally:
+        # Cleanup
+        if 'ws_feed' in locals():
+            await ws_feed.stop()
+        await redis.aclose()
+        logger.info("Ingest services cleanup complete")
 
 
 async def run_redis_consumer() -> None:
