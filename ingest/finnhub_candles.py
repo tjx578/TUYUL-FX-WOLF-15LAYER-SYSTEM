@@ -266,8 +266,6 @@ class FinnhubCandleFetcher:
         if not h1_candles:
             return []
 
-        from datetime import timedelta
-
         h4_candles = []
         current_group: list[dict[str, Any]] = []
 

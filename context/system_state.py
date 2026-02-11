@@ -291,13 +291,13 @@ class SystemStateManager:
         """
         Publish state change to Redis (if in redis mode).
 
+        Note: This is currently a stub. Full Redis integration
+        will be implemented when multi-container state sync is needed.
+
         Args:
             state: New system state
         """
         if self._mode == "redis" and self._redis:
-            try:
-                # This would be async in real usage
-                # For now just log the intent
-                logger.debug(f"Would publish system:state={state.value} to Redis")
-            except Exception as exc:
-                logger.error(f"Failed to publish state to Redis: {exc}")
+            # TODO: Implement async Redis publish
+            # await self._redis.publish("system:state", state.value)
+            logger.debug(f"Redis state sync: system:state={state.value}")

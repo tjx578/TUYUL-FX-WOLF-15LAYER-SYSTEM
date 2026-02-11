@@ -72,32 +72,19 @@ class CandleBuilder:
         # Use mid price if available, fallback to bid
         prices = []
         total_volume = 0.0
-        
+
         for tick in period_ticks:
-            # Prefer mid price (Finnhub uses 'last' or calculate from bid/ask)
-            mid = tick.get("mid")
-            if mid is None:
-                bid = tick.get("bid")
-                ask = tick.get("ask")
-                if bid is not None and ask is not None:
-                    mid = (bid + ask) / 2.0
-                elif bid is not None:
-                    mid = bid
-                elif ask is not None:
-                    mid = ask
-                else:
-                    mid = tick.get("last")
-            
-            if mid is not None:
-                prices.append(mid)
-            
+            mid_price = self._calculate_mid_price(tick)
+            if mid_price is not None:
+                prices.append(mid_price)
+
             # Sum real volume
             volume = tick.get("volume", 0)
             total_volume += volume
 
         if not prices:
             return
-        
+
         # Use tick count as volume if all volumes are 0
         if total_volume == 0:
             total_volume = len(period_ticks)
@@ -122,6 +109,37 @@ class CandleBuilder:
         ]
 
         logger.debug(f"{symbol} {tf} candle built: O={candle['open']:.5f}")
+
+    @staticmethod
+    def _calculate_mid_price(tick: dict) -> float | None:
+        """
+        Calculate mid price from tick data.
+
+        Prefers 'mid' field, then calculates from bid/ask,
+        falls back to bid, ask, or last price.
+
+        Args:
+            tick: Tick data dict
+
+        Returns:
+            Mid price or None if no price available
+        """
+        # Prefer mid price (Finnhub uses 'last' or calculate from bid/ask)
+        mid = tick.get("mid")
+        if mid is not None:
+            return mid
+
+        bid = tick.get("bid")
+        ask = tick.get("ask")
+
+        if bid is not None and ask is not None:
+            return (bid + ask) / 2.0
+        if bid is not None:
+            return bid
+        if ask is not None:
+            return ask
+
+        return tick.get("last")
 
     @staticmethod
     def _normalize_timestamp(ts: float | datetime) -> datetime:
