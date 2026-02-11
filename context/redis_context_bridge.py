@@ -12,10 +12,14 @@ Uses:
 
 from typing import Any, Optional
 
-import orjson
+import or json
 from loguru import logger
 
 from storage.redis_client import RedisClient
+
+# TTL constants for hash keys (seconds)
+LATEST_TICK_TTL_SECONDS = 60  # 1 minute — stale ticks are useless
+CANDLE_HASH_TTL_SECONDS = 14400  # 4 hours — matches longest analysis window
 
 
 class RedisContextBridge:
