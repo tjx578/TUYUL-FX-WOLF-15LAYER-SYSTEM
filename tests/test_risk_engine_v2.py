@@ -40,14 +40,14 @@ def mock_redis():
 def risk_manager(mock_redis):
     """Create RiskManager with mocked Redis."""
     RiskManager.reset_instance()
-    
+
     with patch("risk.drawdown.RedisClient") as MockRedis1:
         MockRedis1.return_value = mock_redis
         with patch("risk.circuit_breaker.RedisClient") as MockRedis2:
             MockRedis2.return_value = mock_redis
             manager = RiskManager.get_instance(initial_balance=10000.0)
             yield manager
-    
+
     RiskManager.reset_instance()
 
 
@@ -95,9 +95,9 @@ def test_evaluate_allow_basic_fixed_mode(mock_redis, engine, buy_signal):
     """Test basic ALLOW verdict in FIXED mode."""
     with patch("risk.risk_profile.RedisClient") as MockRedis:
         MockRedis.return_value = mock_redis
-        
+
         result = engine.evaluate(buy_signal)
-        
+
         assert result.verdict == RiskVerdict.ALLOW
         assert result.allowed
         assert result.deny_code is None
@@ -111,9 +111,9 @@ def test_evaluate_allow_xauusd(mock_redis, engine, xauusd_signal):
     """Test ALLOW verdict for XAUUSD instrument."""
     with patch("risk.risk_profile.RedisClient") as MockRedis:
         MockRedis.return_value = mock_redis
-        
+
         result = engine.evaluate(xauusd_signal)
-        
+
         assert result.verdict == RiskVerdict.ALLOW
         assert result.lots is not None
         assert len(result.lots) == 1
@@ -125,7 +125,7 @@ def test_evaluate_split_mode_returns_two_lots(mock_redis, engine, buy_signal):
     """Test SPLIT mode returns 2 lots."""
     with patch("risk.risk_profile.RedisClient") as MockRedis:
         MockRedis.return_value = mock_redis
-        
+
         # Save SPLIT profile
         profile = RiskProfile(
             risk_per_trade=1.0,
@@ -133,9 +133,9 @@ def test_evaluate_split_mode_returns_two_lots(mock_redis, engine, buy_signal):
             split_ratio=(0.4, 0.6),
         )
         save_risk_profile("test_account", profile)
-        
+
         result = engine.evaluate(buy_signal)
-        
+
         assert result.verdict == RiskVerdict.ALLOW
         assert result.lots is not None
         assert len(result.lots) == 2  # SPLIT mode = 2 lots
@@ -147,21 +147,21 @@ def test_evaluate_split_mode_40_60_allocation(mock_redis, engine, buy_signal):
     """Test SPLIT mode 40/60 risk allocation."""
     with patch("risk.risk_profile.RedisClient") as MockRedis:
         MockRedis.return_value = mock_redis
-        
+
         profile = RiskProfile(
             risk_per_trade=1.0,
             risk_mode=RiskMode.SPLIT,
             split_ratio=(0.4, 0.6),
         )
         save_risk_profile("test_account", profile)
-        
+
         result = engine.evaluate(buy_signal)
-        
+
         assert result.verdict == RiskVerdict.ALLOW
         lot1_risk = result.lots[0]["risk_amount"]
         lot2_risk = result.lots[1]["risk_amount"]
         total_risk = lot1_risk + lot2_risk
-        
+
         # Check allocation ratio (allow small floating point error)
         assert abs(lot1_risk / total_risk - 0.4) < 0.01
         assert abs(lot2_risk / total_risk - 0.6) < 0.01
@@ -171,20 +171,20 @@ def test_evaluate_split_mode_50_50_allocation(mock_redis, engine, buy_signal):
     """Test SPLIT mode 50/50 risk allocation."""
     with patch("risk.risk_profile.RedisClient") as MockRedis:
         MockRedis.return_value = mock_redis
-        
+
         profile = RiskProfile(
             risk_per_trade=1.0,
             risk_mode=RiskMode.SPLIT,
             split_ratio=(0.5, 0.5),
         )
         save_risk_profile("test_account", profile)
-        
+
         result = engine.evaluate(buy_signal)
-        
+
         assert result.verdict == RiskVerdict.ALLOW
         lot1_risk = result.lots[0]["risk_amount"]
         lot2_risk = result.lots[1]["risk_amount"]
-        
+
         # Check equal allocation
         assert abs(lot1_risk - lot2_risk) < 0.01
 
@@ -195,16 +195,16 @@ def test_evaluate_deny_circuit_breaker(mock_redis, engine, buy_signal, risk_mana
     """Test DENY verdict when circuit breaker is OPEN."""
     with patch("risk.risk_profile.RedisClient") as MockRedis:
         MockRedis.return_value = mock_redis
-        
+
         # Trigger circuit breaker with large loss
         risk_manager.record_trade_result(
             pnl=-500.0,
             pair="EURUSD",
             current_equity=9500.0,
         )
-        
+
         result = engine.evaluate(buy_signal)
-        
+
         assert result.verdict == RiskVerdict.DENY
         assert not result.allowed
         assert result.deny_code == "CIRCUIT_BREAKER"
@@ -217,18 +217,18 @@ def test_evaluate_deny_max_open_trades(mock_redis, engine, buy_signal):
         MockRedis1.return_value = mock_redis
         with patch("risk.open_risk_tracker.RedisClient") as MockRedis2:
             MockRedis2.return_value = mock_redis
-            
+
             # Set profile with max_open_trades = 1
             profile = RiskProfile(max_open_trades=1)
             save_risk_profile("test_account", profile)
-            
+
             # First trade should be allowed
             result1 = engine.evaluate(buy_signal)
             assert result1.verdict == RiskVerdict.ALLOW
-            
+
             # Register the trade
             engine.register_intended_trade(buy_signal, result1.lots)
-            
+
             # Second trade should be denied
             signal2 = SignalInput(
                 symbol="GBPUSD",
@@ -240,7 +240,7 @@ def test_evaluate_deny_max_open_trades(mock_redis, engine, buy_signal):
                 trade_id="test_trade_2",
             )
             result2 = engine.evaluate(signal2)
-            
+
             assert result2.verdict == RiskVerdict.DENY
             assert result2.deny_code == "MAX_OPEN_TRADES"
             assert "max" in result2.details["reason"].lower()
@@ -252,19 +252,19 @@ def test_evaluate_allow_after_close(mock_redis, engine, buy_signal):
         MockRedis1.return_value = mock_redis
         with patch("risk.open_risk_tracker.RedisClient") as MockRedis2:
             MockRedis2.return_value = mock_redis
-            
+
             # Set profile with max_open_trades = 1
             profile = RiskProfile(max_open_trades=1)
             save_risk_profile("test_account", profile)
-            
+
             # First trade
             result1 = engine.evaluate(buy_signal)
             assert result1.verdict == RiskVerdict.ALLOW
             engine.register_intended_trade(buy_signal, result1.lots)
-            
+
             # Close first trade
             engine.close_trade("test_trade_1")
-            
+
             # Second trade should now be allowed
             signal2 = SignalInput(
                 symbol="GBPUSD",
@@ -276,7 +276,7 @@ def test_evaluate_allow_after_close(mock_redis, engine, buy_signal):
                 trade_id="test_trade_2",
             )
             result2 = engine.evaluate(signal2)
-            
+
             assert result2.verdict == RiskVerdict.ALLOW
 
 
@@ -288,10 +288,10 @@ def test_register_intended_trade_updates_tracker(mock_redis, engine, buy_signal)
         MockRedis1.return_value = mock_redis
         with patch("risk.open_risk_tracker.RedisClient") as MockRedis2:
             MockRedis2.return_value = mock_redis
-            
+
             result = engine.evaluate(buy_signal)
             engine.register_intended_trade(buy_signal, result.lots)
-            
+
             snapshot = engine.get_account_snapshot()
             assert snapshot["open_risk"]["open_trade_count"] == 1
             assert snapshot["open_risk"]["open_risk_amount"] > 0
@@ -303,17 +303,17 @@ def test_close_trade_reduces_open_risk(mock_redis, engine, buy_signal):
         MockRedis1.return_value = mock_redis
         with patch("risk.open_risk_tracker.RedisClient") as MockRedis2:
             MockRedis2.return_value = mock_redis
-            
+
             result = engine.evaluate(buy_signal)
             engine.register_intended_trade(buy_signal, result.lots)
-            
+
             # Verify trade is open
             snapshot1 = engine.get_account_snapshot()
             assert snapshot1["open_risk"]["open_trade_count"] == 1
-            
+
             # Close trade
             engine.close_trade("test_trade_1")
-            
+
             # Verify trade is closed
             snapshot2 = engine.get_account_snapshot()
             assert snapshot2["open_risk"]["open_trade_count"] == 0
@@ -326,7 +326,7 @@ def test_split_lifecycle_register_two_entries(mock_redis, engine, buy_signal):
         MockRedis1.return_value = mock_redis
         with patch("risk.open_risk_tracker.RedisClient") as MockRedis2:
             MockRedis2.return_value = mock_redis
-            
+
             # Set SPLIT profile
             profile = RiskProfile(
                 risk_per_trade=1.0,
@@ -334,10 +334,10 @@ def test_split_lifecycle_register_two_entries(mock_redis, engine, buy_signal):
                 split_ratio=(0.4, 0.6),
             )
             save_risk_profile("test_account", profile)
-            
+
             result = engine.evaluate(buy_signal)
             engine.register_intended_trade(buy_signal, result.lots)
-            
+
             snapshot = engine.get_account_snapshot()
             assert snapshot["open_risk"]["open_entry_count"] == 2  # 2 entries
             assert snapshot["open_risk"]["open_trade_count"] == 1  # 1 trade
@@ -349,7 +349,7 @@ def test_split_lifecycle_close_both_entries(mock_redis, engine, buy_signal):
         MockRedis1.return_value = mock_redis
         with patch("risk.open_risk_tracker.RedisClient") as MockRedis2:
             MockRedis2.return_value = mock_redis
-            
+
             # Set SPLIT profile
             profile = RiskProfile(
                 risk_per_trade=1.0,
@@ -357,14 +357,14 @@ def test_split_lifecycle_close_both_entries(mock_redis, engine, buy_signal):
                 split_ratio=(0.4, 0.6),
             )
             save_risk_profile("test_account", profile)
-            
+
             result = engine.evaluate(buy_signal)
             engine.register_intended_trade(buy_signal, result.lots)
-            
+
             # Close both entries
             engine.close_trade("test_trade_1", entry_number=1)
             engine.close_trade("test_trade_1", entry_number=2)
-            
+
             snapshot = engine.get_account_snapshot()
             assert snapshot["open_risk"]["open_trade_count"] == 0
             assert snapshot["open_risk"]["open_entry_count"] == 0
@@ -378,9 +378,9 @@ def test_get_account_snapshot_structure(mock_redis, engine):
         MockRedis1.return_value = mock_redis
         with patch("risk.open_risk_tracker.RedisClient") as MockRedis2:
             MockRedis2.return_value = mock_redis
-            
+
             snapshot = engine.get_account_snapshot()
-            
+
             assert "account_id" in snapshot
             assert "profile" in snapshot
             assert "risk" in snapshot
@@ -394,12 +394,12 @@ def test_get_account_snapshot_profile_data(mock_redis, engine):
         MockRedis1.return_value = mock_redis
         with patch("risk.open_risk_tracker.RedisClient") as MockRedis2:
             MockRedis2.return_value = mock_redis
-            
+
             profile = RiskProfile(risk_per_trade=2.0, max_open_trades=3)
             save_risk_profile("test_account", profile)
-            
+
             snapshot = engine.get_account_snapshot()
-            
+
             assert snapshot["profile"]["risk_per_trade"] == 2.0
             assert snapshot["profile"]["max_open_trades"] == 3
 
@@ -410,16 +410,16 @@ def test_get_account_snapshot_drawdown_info(mock_redis, engine, risk_manager):
         MockRedis1.return_value = mock_redis
         with patch("risk.open_risk_tracker.RedisClient") as MockRedis2:
             MockRedis2.return_value = mock_redis
-            
+
             # Record a loss
             risk_manager.record_trade_result(
                 pnl=-100.0,
                 pair="EURUSD",
                 current_equity=9900.0,
             )
-            
+
             snapshot = engine.get_account_snapshot()
-            
+
             assert "drawdown" in snapshot["risk"]
             assert snapshot["risk"]["drawdown"]["daily_dd_amount"] > 0
 
@@ -430,9 +430,9 @@ def test_get_account_snapshot_trading_allowed_flag(mock_redis, engine):
         MockRedis1.return_value = mock_redis
         with patch("risk.open_risk_tracker.RedisClient") as MockRedis2:
             MockRedis2.return_value = mock_redis
-            
+
             snapshot = engine.get_account_snapshot()
-            
+
             assert isinstance(snapshot["trading_allowed"], bool)
             assert snapshot["trading_allowed"] is True  # Should be true initially
 
@@ -446,7 +446,7 @@ def test_risk_eval_result_dataclass():
         lots=[{"lot_size": 0.1}],
         risk_amount=50.0,
     )
-    
+
     assert result.verdict == RiskVerdict.ALLOW
     assert result.allowed
     assert result.lots == [{"lot_size": 0.1}]
@@ -459,7 +459,7 @@ def test_risk_eval_result_deny():
         verdict=RiskVerdict.DENY,
         deny_code="TEST_DENY",
     )
-    
+
     assert result.verdict == RiskVerdict.DENY
     assert not result.allowed
     assert result.deny_code == "TEST_DENY"
@@ -476,7 +476,7 @@ def test_signal_input_dataclass():
         rr_ratio=1.0,
         trade_id="test_trade",
     )
-    
+
     assert signal.symbol == "EURUSD"
     assert signal.direction == "BUY"
     assert signal.entry_price == 1.0950
@@ -496,7 +496,7 @@ def test_evaluate_multi_instrument(mock_redis, engine, symbol, entry, sl, tp):
     """Test evaluate works for multiple instruments."""
     with patch("risk.risk_profile.RedisClient") as MockRedis:
         MockRedis.return_value = mock_redis
-        
+
         signal = SignalInput(
             symbol=symbol,
             direction="BUY",
@@ -506,9 +506,9 @@ def test_evaluate_multi_instrument(mock_redis, engine, symbol, entry, sl, tp):
             rr_ratio=1.0,
             trade_id=f"test_trade_{symbol}",
         )
-        
+
         result = engine.evaluate(signal)
-        
+
         assert result.verdict == RiskVerdict.ALLOW
         assert result.lots is not None
         assert len(result.lots) >= 1
@@ -522,11 +522,11 @@ def test_evaluate_projected_risk_stacking(mock_redis, engine):
         MockRedis1.return_value = mock_redis
         with patch("risk.open_risk_tracker.RedisClient") as MockRedis2:
             MockRedis2.return_value = mock_redis
-            
+
             # Set profile allowing 2 trades
             profile = RiskProfile(max_open_trades=2)
             save_risk_profile("test_account", profile)
-            
+
             # First trade
             signal1 = SignalInput(
                 symbol="EURUSD",
@@ -539,7 +539,7 @@ def test_evaluate_projected_risk_stacking(mock_redis, engine):
             )
             result1 = engine.evaluate(signal1)
             engine.register_intended_trade(signal1, result1.lots)
-            
+
             # Second trade
             signal2 = SignalInput(
                 symbol="GBPUSD",
@@ -551,7 +551,7 @@ def test_evaluate_projected_risk_stacking(mock_redis, engine):
                 trade_id="trade_2",
             )
             result2 = engine.evaluate(signal2)
-            
+
             # Projected risk should be sum of both
             assert result2.open_risk_after > result1.open_risk_after
 
@@ -560,9 +560,9 @@ def test_evaluate_details_contain_profile(mock_redis, engine, buy_signal):
     """Test evaluation result details contain profile."""
     with patch("risk.risk_profile.RedisClient") as MockRedis:
         MockRedis.return_value = mock_redis
-        
+
         result = engine.evaluate(buy_signal)
-        
+
         assert result.details is not None
         assert "profile" in result.details
         assert "risk_snapshot" in result.details
@@ -572,16 +572,16 @@ def test_evaluate_deny_details_contain_reason(mock_redis, engine, buy_signal, ri
     """Test DENY result details contain reason."""
     with patch("risk.risk_profile.RedisClient") as MockRedis:
         MockRedis.return_value = mock_redis
-        
+
         # Trigger circuit breaker
         risk_manager.record_trade_result(
             pnl=-500.0,
             pair="EURUSD",
             current_equity=9500.0,
         )
-        
+
         result = engine.evaluate(buy_signal)
-        
+
         assert result.verdict == RiskVerdict.DENY
         assert result.details is not None
         assert "reason" in result.details

@@ -15,7 +15,7 @@ Endpoints:
   GET  /api/v1/accounts/{id}      — Get account detail
 """
 
-from typing import List, Optional
+from typing import List
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
@@ -25,7 +25,6 @@ from dashboard.price_feed import PriceFeed
 from dashboard.trade_ledger import TradeLedger
 from journal.journal_router import JournalRouter
 from journal.journal_schema import DecisionJournal, VerdictType
-from risk.drawdown import DrawdownMonitor
 from risk.prop_firm import PropFirmRules
 from schemas.trade_models import Trade, Account, TradeStatus, CloseReason
 from utils.timezone_utils import now_utc
@@ -91,7 +90,7 @@ class CreateAccountRequest(BaseModel):
 async def take_signal(req: TakeSignalRequest) -> Trade:
     """
     Trader takes a signal — dashboard computes lot size and creates trade.
-    
+
     Validates:
       - Account exists
       - Risk limits not breached
@@ -101,7 +100,7 @@ async def take_signal(req: TakeSignalRequest) -> Trade:
     account = _account_mgr.get_account(req.account_id)
     if not account:
         raise HTTPException(status_code=404, detail=f"Account not found: {req.account_id}")
-    
+
     # Check risk limits
     if account.prop_firm:
         prop_rules = PropFirmRules()
@@ -111,15 +110,15 @@ async def take_signal(req: TakeSignalRequest) -> Trade:
                 status_code=400,
                 detail=f"Risk {req.risk_percent}% exceeds prop firm limit {max_risk}%"
             )
-    
+
     # Calculate risk amount
     risk_amount = account.balance * (req.risk_percent / 100.0)
-    
+
     # Calculate lot size (simplified — actual would need pip value, etc.)
     # For now, use a placeholder calculation
     pip_distance = abs(req.entry - req.sl)
     lot_size = round(risk_amount / (pip_distance * 10), 2)  # Simplified
-    
+
     # Create trade in INTENDED status
     trade = _trade_ledger.create_trade(
         signal_id=req.signal_id,
@@ -136,7 +135,7 @@ async def take_signal(req: TakeSignalRequest) -> Trade:
             "lot": lot_size,
         }],
     )
-    
+
     # Record J2 decision journal (trader took the signal)
     try:
         j2 = DecisionJournal(
@@ -159,10 +158,10 @@ async def take_signal(req: TakeSignalRequest) -> Trade:
             primary_rejection_reason=None,
         )
         _journal.record_decision(j2)
-    except Exception as exc:
+    except Exception:
         # Don't fail the trade if journal fails
         pass
-    
+
     return trade
 
 
@@ -170,7 +169,7 @@ async def take_signal(req: TakeSignalRequest) -> Trade:
 async def skip_signal(req: SkipSignalRequest) -> dict:
     """
     Trader skips a signal.
-    
+
     Records decision in journal but does not create trade.
     """
     try:
@@ -195,9 +194,9 @@ async def skip_signal(req: SkipSignalRequest) -> dict:
             primary_rejection_reason=req.reason,
         )
         _journal.record_decision(j2)
-    except Exception as exc:
+    except Exception:
         pass
-    
+
     return {
         "status": "skipped",
         "signal_id": req.signal_id,
@@ -209,18 +208,18 @@ async def skip_signal(req: SkipSignalRequest) -> dict:
 async def confirm_order(req: ConfirmOrderRequest) -> Trade:
     """
     Trader confirms order placed at broker.
-    
+
     Transitions trade from INTENDED → PENDING.
     """
     trade = _trade_ledger.get_trade(req.trade_id)
     if not trade:
         raise HTTPException(status_code=404, detail=f"Trade not found: {req.trade_id}")
-    
+
     # Update status
     success = _trade_ledger.update_status(req.trade_id, TradeStatus.PENDING)
     if not success:
         raise HTTPException(status_code=400, detail="Invalid status transition")
-    
+
     # Get updated trade
     trade = _trade_ledger.get_trade(req.trade_id)
     return trade
@@ -230,13 +229,13 @@ async def confirm_order(req: ConfirmOrderRequest) -> Trade:
 async def close_trade(req: CloseTradeRequest) -> Trade:
     """
     Trader manually closes a trade.
-    
+
     Transitions trade from OPEN → CLOSED with MANUAL_CLOSE reason.
     """
     trade = _trade_ledger.get_trade(req.trade_id)
     if not trade:
         raise HTTPException(status_code=404, detail=f"Trade not found: {req.trade_id}")
-    
+
     # Update status
     success = _trade_ledger.update_status(
         req.trade_id,
@@ -246,7 +245,7 @@ async def close_trade(req: CloseTradeRequest) -> Trade:
     )
     if not success:
         raise HTTPException(status_code=400, detail="Invalid status transition")
-    
+
     # Get updated trade
     trade = _trade_ledger.get_trade(req.trade_id)
     return trade
