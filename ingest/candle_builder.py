@@ -7,6 +7,14 @@ from loguru import logger
 
 from context.live_context_bus import LiveContextBus
 
+TIMEFRAMES: dict[str, int] = {
+    "M15": 15,
+    "H1": 60,
+    "H4": 240,
+    "D1": 1440,
+    "W1": 10080,
+}
+
 
 class CandleBuilder:
     """
@@ -22,7 +30,7 @@ class CandleBuilder:
 
     async def run(self) -> None:
         """Main candle building loop."""
-        logger.info("CandleBuilder started (M15 / H1)")
+        logger.info("CandleBuilder started (M15 / H1 / H4 / D1 / W1)")
         while True:
             await self.process_ticks()
             await asyncio.sleep(1)
@@ -35,8 +43,9 @@ class CandleBuilder:
             symbol = tick["symbol"]
             self.buffers[symbol].append(tick)
 
-            self._try_build(symbol, "M15", minutes=15)
-            self._try_build(symbol, "H1", minutes=60)
+            # Try building candles for all timeframes
+            for tf, minutes in TIMEFRAMES.items():
+                self._try_build(symbol, tf, minutes=minutes)
 
     def _try_build(self, symbol: str, tf: str, minutes: int) -> None:
         """
@@ -57,16 +66,16 @@ class CandleBuilder:
         end_time = start_time + timedelta(minutes=minutes)
 
         # Filter ticks for this candle period
-        candles = []
+        period_ticks = []
         for t in buffer:
             tick_ts = self._normalize_timestamp(t["timestamp"])
             if start_time <= tick_ts < end_time:
-                candles.append(t)
+                period_ticks.append(t)
 
-        if not candles:
+        if not period_ticks:
             return
 
-        prices = [c["bid"] for c in candles if c["bid"] is not None]
+        prices = [c["bid"] for c in period_ticks if c["bid"] is not None]
 
         if not prices:
             return
@@ -78,6 +87,7 @@ class CandleBuilder:
             "high": max(prices),
             "low": min(prices),
             "close": prices[-1],
+            "volume": len(period_ticks),  # tick count as volume proxy
             "timestamp": end_time,
         }
 
@@ -117,11 +127,27 @@ class CandleBuilder:
 
         Args:
             dt: Datetime to floor
-            minutes: Interval in minutes (15 or 60)
+            minutes: Interval in minutes (15, 60, 240, 1440, or 10080)
 
         Returns:
             Floored datetime
         """
+        if minutes >= 10080:  # W1 — align to Monday 00:00 UTC
+            days_since_monday = dt.weekday()
+            return dt.replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(
+                days=days_since_monday
+            )
+        if minutes >= 1440:  # D1 — align to midnight UTC
+            return dt.replace(hour=0, minute=0, second=0, microsecond=0)
+        if minutes >= 60:  # H1, H4 — floor hours
+            hours = minutes // 60
+            return dt.replace(
+                hour=(dt.hour // hours) * hours,
+                minute=0,
+                second=0,
+                microsecond=0,
+            )
+        # M15 etc
         return dt - timedelta(
             minutes=dt.minute % minutes,
             seconds=dt.second,
