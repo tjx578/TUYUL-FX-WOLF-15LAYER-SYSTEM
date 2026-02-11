@@ -35,17 +35,21 @@ class TestL2MTA:
         analyzer.context = MagicMock()
 
         def side_effect(symbol, tf):
-            # Higher TFs bearish (W1, D1, H4) - combined weight 0.70
+            # MN bearish (weight 0.35)
+            if tf == "MN":
+                return {"open": 1.0850, "close": 1.0800}  # Bearish
+            # Higher TFs bearish (W1, D1, H4) - combined weight 0.55
             if tf in ("W1", "D1", "H4"):
                 return {"open": 1.0850, "close": 1.0800}  # Bearish
-            # Lower TFs bullish (H1, M15) - combined weight 0.30
+            # Lower TFs bullish (H1, M15) - combined weight 0.10
             return {"open": 1.0800, "close": 1.0850}  # Bullish
 
         analyzer.context.get_candle.side_effect = side_effect
 
         result = analyzer.analyze("EURUSD")
         assert result["valid"] is True
-        # Should be bearish since higher TFs have more weight
+        # Should be bearish since higher TFs (especially MN) have more weight
+        # MN=-0.35, W1=-0.25, D1=-0.15, H4=-0.15, H1=+0.07, M15=+0.03 = -0.80
         assert result["direction"] == "BEARISH"
         assert result["composite_bias"] < 0
 
@@ -80,16 +84,16 @@ class TestL2MTA:
         analyzer.context = MagicMock()
 
         def side_effect(symbol, tf):
-            # Only W1 and D1 available
-            if tf in ("W1", "D1"):
+            # Only MN, W1 and D1 available (3 TFs)
+            if tf in ("MN", "W1", "D1"):
                 return {"open": 1.0800, "close": 1.0850}
             return None
 
         analyzer.context.get_candle.side_effect = side_effect
 
         result = analyzer.analyze("EURUSD")
-        assert result["valid"] is True  # Need at least 2 TFs
-        assert result["available_timeframes"] == 2
+        assert result["valid"] is True  # Need at least 3 TFs now
+        assert result["available_timeframes"] == 3
 
     def test_doji_candles_neutral_bias(self):
         analyzer = L2MTAAnalyzer()

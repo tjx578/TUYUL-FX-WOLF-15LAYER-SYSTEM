@@ -17,15 +17,16 @@ rest:
 
 candles:
   tick_timeframes: ["M15"]           # Built from WS ticks (monitoring only)
-  analysis_timeframes: ["H1", "H4", "D1", "W1"]  # Fetched from REST
+  analysis_timeframes: ["H1", "H4", "D1", "W1", "MN"]  # Fetched from REST
   max_history: 500
   warmup:
     enabled: true
     bars: 100
-    timeframes: ["H1", "H4", "D1", "W1"]
+    timeframes: ["H1", "H4", "D1", "W1", "MN"]
     request_delay_sec: 0.5
     max_concurrent: 5
     min_bars:                          # Minimum bars for READY state
+      MN: 12
       W1: 20
       D1: 50
       H4: 10

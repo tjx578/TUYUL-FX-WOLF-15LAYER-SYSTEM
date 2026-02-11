@@ -25,7 +25,7 @@ def generate_l12_verdict(synthesis: dict[str, Any]) -> dict[str, Any]:
     # Feed staleness circuit breaker
     context_bus = LiveContextBus()
     pair = synthesis.get("pair")
-    
+
     if pair and isinstance(pair, str) and pair.strip() and context_bus.is_feed_stale(pair):
         feed_age = context_bus.get_feed_age(pair)
         logger.warning(
@@ -81,6 +81,31 @@ def generate_l12_verdict(synthesis: dict[str, Any]) -> dict[str, Any]:
 
     violations = []
 
+    # ─── MN Bias Conflict Guard (internal, non-gate) ───
+    # If monthly macro regime conflicts with trade direction,
+    # downgrade verdict to HOLD unless confidence is extremely high
+    macro_data = synthesis.get("macro", {})
+    mn_regime = macro_data.get("regime", "UNKNOWN")
+    mn_bias_override = macro_data.get("bias_override", {})
+
+    mn_conflict = False
+    mn_override_active = False
+    if mn_bias_override.get("active", False):
+        # Determine trade direction
+        trade_direction = execution.get("direction")
+        penalized_direction = mn_bias_override.get("penalized_direction")
+
+        if trade_direction == penalized_direction:
+            mn_conflict = True
+            # Apply confidence penalty
+            adjusted_conf12 = layers["conf12"] * mn_bias_override.get(
+                "confidence_multiplier", 1.0
+            )
+            # If adjusted conf12 drops below threshold and we passed 7+ gates,
+            # consider downgrading to HOLD for counter-macro trades
+            if adjusted_conf12 < conf12_min and passed_gates >= 7:
+                mn_override_active = True
+
     # Check for F/T conflict - NEUTRAL is compatible with any direction
     if bias["fundamental"] != bias["technical"]:
         if bias["fundamental"] != "NEUTRAL" and bias["technical"] != "NEUTRAL":
@@ -96,6 +121,15 @@ def generate_l12_verdict(synthesis: dict[str, Any]) -> dict[str, Any]:
 
         for violation in violations:
             log_violation(pair=synthesis["pair"], reason=violation)
+    elif mn_override_active:
+        # MN bias conflict override: downgrade to HOLD
+        verdict = "HOLD"
+        confidence = "MEDIUM"
+        wolf_status = "SCOUT"
+        log_violation(
+            pair=synthesis["pair"],
+            reason=f"MN_BIAS_CONFLICT: counter-macro trade in {mn_regime}",
+        )
     elif passed_gates < 9:
         verdict = "HOLD"
         confidence = "MEDIUM"
@@ -132,6 +166,8 @@ def generate_l12_verdict(synthesis: dict[str, Any]) -> dict[str, Any]:
             "passed": passed_gates,
             "total": 9,
         },
+        "mn_conflict": mn_conflict,
+        "mn_regime": mn_regime,
         "execution": {
             "direction": execution.get("direction"),
             "entry_zone": execution.get("entry_zone"),
