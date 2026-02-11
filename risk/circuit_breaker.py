@@ -406,7 +406,10 @@ class CircuitBreaker:
             
             return {
                 "state": self._state.value,
-                "trading_allowed": self.is_trading_allowed(),
+                "trading_allowed": self._state in [
+                    CircuitBreakerState.CLOSED,
+                    CircuitBreakerState.HALF_OPEN,
+                ],
                 "consecutive_losses": self._consecutive_losses,
                 "opened_at": (
                     self._opened_at.isoformat() if self._opened_at else None
