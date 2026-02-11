@@ -75,7 +75,14 @@ async def run_ingest_services(has_api_key: bool) -> None:
     # Build Redis connection from environment variables
     redis_url = os.getenv("REDIS_URL")
     if redis_url:
-        logger.info(f"Using REDIS_URL: {redis_url}")
+        # Redact password from log output
+        if '@' in redis_url:
+            safe_url = redis_url.split('@')[-1]
+        elif '://' in redis_url:
+            safe_url = redis_url.split('://')[1]
+        else:
+            safe_url = redis_url
+        logger.info(f"Using REDIS_URL: redis://***@{safe_url}")
         redis = AsyncRedis.from_url(
             redis_url,
             encoding="utf-8",
