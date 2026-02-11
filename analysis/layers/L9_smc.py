@@ -104,11 +104,32 @@ class L9SMCAnalyzer:
             smc["confidence"] = round(smc["confidence"] * 0.5, 2)
 
         # Stacking rule: MN sweep + W1 sweep + H4 BOS = confidence boost
+        # But only if directionally aligned (all bullish or all bearish)
         mn_sweep = monthly_sweep.get("sweep") is not None
         w1_sweep = weekly_sweep.get("sweep") is not None
         h4_bos = h4_structure.get("state") in ("BULLISH_BOS", "BEARISH_BOS")
+
         if mn_sweep and w1_sweep and h4_bos:
-            smc["confidence"] = min(round(smc["confidence"] * 1.4, 2), 1.0)
+            # Check directional consistency
+            mn_sweep_type = monthly_sweep.get("sweep")
+            w1_sweep_type = weekly_sweep.get("sweep")
+            h4_state = h4_structure.get("state")
+
+            # SELL_SIDE_TAKEN (bullish sweep) + BULLISH_BOS = aligned bullish
+            # BUY_SIDE_TAKEN (bearish sweep) + BEARISH_BOS = aligned bearish
+            bullish_aligned = (
+                mn_sweep_type == "SELL_SIDE_TAKEN"
+                and w1_sweep_type == "SELL_SIDE_TAKEN"
+                and h4_state == "BULLISH_BOS"
+            )
+            bearish_aligned = (
+                mn_sweep_type == "BUY_SIDE_TAKEN"
+                and w1_sweep_type == "BUY_SIDE_TAKEN"
+                and h4_state == "BEARISH_BOS"
+            )
+
+            if bullish_aligned or bearish_aligned:
+                smc["confidence"] = min(round(smc["confidence"] * 1.4, 2), 1.0)
 
         smc["monthly_structure"] = monthly_structure
         smc["monthly_sweep"] = monthly_sweep
