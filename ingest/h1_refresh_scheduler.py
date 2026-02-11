@@ -19,7 +19,7 @@ class H1RefreshScheduler:
     """
     Periodic H1/H4 refresh scheduler.
 
-    Runs every N minutes (default 60) to:
+    Runs every N seconds (default 3600) to:
     - Fetch latest H1 bars
     - Re-aggregate H4
     - Check price drift

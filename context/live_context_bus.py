@@ -294,7 +294,7 @@ class LiveContextBus:
             max_drift_pips: Maximum allowed drift in pips (default 50.0)
 
         Returns:
-            Dict with keys: drifted (bool), drift_pips (float), 
+            Dict with keys: drifted (bool), drift_pips (float),
             rest_close (float), ws_mid (float)
         """
         with self._rw_lock:
