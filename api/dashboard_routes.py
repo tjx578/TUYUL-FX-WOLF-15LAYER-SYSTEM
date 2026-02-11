@@ -15,10 +15,8 @@ Endpoints:
   GET  /api/v1/accounts/{id}      — Get account detail
 """
 
-from typing import List
 
-from fastapi import APIRouter, HTTPException # pyright: ignore[reportMissingImports]
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException  # pyright: ignore[reportMissingImports]
 from pydantic import BaseModel, Field
 
 from dashboard.account_manager import AccountManager
