@@ -64,6 +64,7 @@ class TradeLedger:
         self._redis_prefix = os.getenv("REDIS_PREFIX", "wolf15")
         self._cache: Dict[str, Trade] = {}
         self._rw_lock = Lock()
+        self._trade_counter = 0
 
         # Load existing trades from Redis on startup
         self._load_from_redis()
@@ -129,7 +130,8 @@ class TradeLedger:
         """
         # Generate trade ID
         timestamp = int(now_utc().timestamp() * 1000)
-        trade_id = f"T-{timestamp}"
+        self._trade_counter += 1
+        trade_id = f"T-{timestamp}-{self._trade_counter}"
 
         # Create trade legs
         trade_legs = [
