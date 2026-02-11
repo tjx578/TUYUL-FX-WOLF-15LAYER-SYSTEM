@@ -174,6 +174,9 @@ class RedisConsumer:
                     [
                         f"candle:{symbol}:M15",
                         f"candle:{symbol}:H1",
+                        f"candle:{symbol}:H4",
+                        f"candle:{symbol}:D1",
+                        f"candle:{symbol}:W1",
                     ]
                 )
 

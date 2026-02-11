@@ -18,6 +18,10 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+MAX_DEVIATION_PCT: float = 0.5  # 0.5% max deviation
+
+_last_prices: dict[str, float] = {}
+
 _DEFAULT_REDIS_URL = "redis://localhost:6379/0"
 _DEFAULT_SYMBOLS = [
     "OANDA:EUR_USD",
@@ -37,6 +41,35 @@ def _enabled_symbols() -> list[str]:
     pairs = CONFIG.get("pairs", {}).get("pairs", [])
     enabled = [str(pair.get("symbol", "")) for pair in pairs if pair.get("enabled", True)]
     return [symbol for symbol in enabled if symbol]
+
+
+def _is_valid_tick(symbol: str, new_price: float) -> bool:
+    """
+    Validate tick price against spike threshold.
+
+    Args:
+        symbol: Trading pair symbol
+        new_price: New tick price
+
+    Returns:
+        True if tick is valid, False if spike detected
+    """
+    last_price = _last_prices.get(symbol)
+    if last_price is None:
+        return True
+    deviation = abs(new_price - last_price) / last_price * 100
+    if deviation > MAX_DEVIATION_PCT:
+        logger.warning(
+            "Tick spike rejected",
+            extra={
+                "symbol": symbol,
+                "new_price": new_price,
+                "last_price": last_price,
+                "deviation_pct": deviation,
+            },
+        )
+        return False
+    return True
 
 
 def _build_tick_handler(
@@ -72,6 +105,13 @@ def _build_tick_handler(
                         extra={"external_symbol": external_symbol},
                     )
                     continue
+
+                # Validate tick spike
+                if not _is_valid_tick(internal_symbol, float(price)):
+                    continue
+
+                # Update last known price
+                _last_prices[internal_symbol] = float(price)
 
                 normalized_tick = {
                     "symbol": internal_symbol,

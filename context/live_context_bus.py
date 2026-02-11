@@ -10,6 +10,7 @@ Supports two modes via CONTEXT_MODE environment variable:
 from __future__ import annotations
 
 import os
+import time
 
 from collections import defaultdict, deque
 from threading import Lock
@@ -55,6 +56,7 @@ class LiveContextBus:
         self._news_store = {}
         self._meta = {}
         self._rw_lock = Lock()
+        self._last_tick_ts: dict[str, float] = {}  # symbol -> Unix timestamp of last tick
 
         # Check mode and initialize Redis bridge if needed
         self._mode = os.getenv("CONTEXT_MODE", "local").lower()
@@ -93,6 +95,8 @@ class LiveContextBus:
 
         with self._rw_lock:
             self._tick_buffer.append(tick)
+            # Update last tick timestamp
+            self._last_tick_ts[tick["symbol"]] = time.time()
 
         # If Redis mode, also write to Redis
         if self._mode == "redis" and self._redis_bridge:
@@ -214,3 +218,54 @@ class LiveContextBus:
                 "news": self._news_store,
                 "meta": self._meta,
             }
+
+    def get_feed_age(self, symbol: str) -> float | None:
+        """
+        Get seconds since last tick for a symbol.
+
+        Args:
+            symbol: Trading pair symbol
+
+        Returns:
+            Seconds since last tick, or None if no tick received
+        """
+        with self._rw_lock:
+            last_ts = self._last_tick_ts.get(symbol)
+            if last_ts is None:
+                return None
+            return time.time() - last_ts
+
+    def is_feed_stale(self, symbol: str, threshold_sec: float = 30.0) -> bool:
+        """
+        Check if feed for a symbol is stale.
+
+        Args:
+            symbol: Trading pair symbol
+            threshold_sec: Staleness threshold in seconds (default 30.0)
+
+        Returns:
+            True if feed is stale or no data, False otherwise
+        """
+        age = self.get_feed_age(symbol)
+        if age is None:
+            return True
+        return age > threshold_sec
+
+    def get_feed_status(self, symbol: str) -> str:
+        """
+        Get feed status for a symbol.
+
+        Args:
+            symbol: Trading pair symbol
+
+        Returns:
+            Feed status: "CONNECTED", "DEGRADED", "DOWN", or "NO_DATA"
+        """
+        age = self.get_feed_age(symbol)
+        if age is None:
+            return "NO_DATA"
+        if age <= 10.0:
+            return "CONNECTED"
+        if age <= 30.0:
+            return "DEGRADED"
+        return "DOWN"

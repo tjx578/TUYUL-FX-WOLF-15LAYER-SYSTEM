@@ -119,52 +119,52 @@ app.include_router(ws_router)
 app.include_router(risk_router)
 
 
-def _get_feed_status() -> str:
+def _get_feed_status() -> dict[str, str]:
     """
-    Determine data feed status.
+    Get per-symbol feed status.
 
     Returns:
-        "connected" | "disconnected" | "no_api_key"
+        Dictionary with per-symbol status and overall status
     """
     api_key = os.getenv("FINNHUB_API_KEY", "")
-
     if not api_key or api_key == "YOUR_FINNHUB_API_KEY":
-        return "no_api_key"
+        return {"overall": "no_api_key"}
 
-    # Check if we have recent tick data
+    from config_loader import CONFIG
+
     context_bus = LiveContextBus()
-    snapshot = context_bus.snapshot()
+    pairs = [p["symbol"] for p in CONFIG["pairs"]["pairs"] if p.get("enabled", True)]
 
-    if snapshot.get("ticks"):
-        return "connected"
+    statuses = {}
+    for pair in pairs:
+        statuses[pair] = context_bus.get_feed_status(pair)
 
-    return "disconnected"
+    # Overall status
+    all_statuses = list(statuses.values())
+    if all(s == "CONNECTED" for s in all_statuses):
+        statuses["overall"] = "connected"
+    elif any(s == "DOWN" for s in all_statuses):
+        statuses["overall"] = "degraded"
+    elif any(s == "NO_DATA" for s in all_statuses):
+        statuses["overall"] = "no_data"
+    else:
+        statuses["overall"] = "connected"
+
+    return statuses
 
 
-def _get_last_tick_times() -> dict[str, str | None]:
+def _get_last_tick_times() -> dict[str, float | None]:
     """
-    Get timestamp of last tick per symbol.
+    Get last tick age in seconds for each symbol.
 
     Returns:
-        Dictionary of symbol -> ISO timestamp
+        Dictionary of symbol -> age in seconds (or None if no data)
     """
+    from config_loader import CONFIG
+
     context_bus = LiveContextBus()
-    snapshot = context_bus.snapshot()
-    ticks = snapshot.get("ticks", [])
-
-    last_ticks = {}
-    for tick in reversed(ticks):
-        symbol = tick.get("symbol")
-        if symbol and symbol not in last_ticks:
-            ts = tick.get("timestamp")
-            if isinstance(ts, (int, float)):
-                # Unix timestamp
-                dt = datetime.fromtimestamp(ts, tz=UTC)
-                last_ticks[symbol] = dt.isoformat()
-            elif isinstance(ts, datetime):
-                last_ticks[symbol] = ts.isoformat()
-
-    return last_ticks
+    pairs = [p["symbol"] for p in CONFIG["pairs"]["pairs"] if p.get("enabled", True)]
+    return {pair: context_bus.get_feed_age(pair) for pair in pairs}
 
 
 def _get_candle_freshness() -> dict[str, int]:
