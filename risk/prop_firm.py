@@ -28,21 +28,21 @@ except ModuleNotFoundError:
 class PropFirmRules:
     """
     Prop firm rule validator.
-    
+
     Validates:
     - Allowed market categories
     - Max risk per trade
     - Minimum RR ratio
-    
+
     Can be integrated with RiskManager for full compliance checks
     including circuit breaker state and drawdown limits.
-    
+
     Attributes
     ----------
     cfg : dict
         Prop firm configuration from config/prop_firm.yaml
     """
-    
+
     def __init__(self):
         """Initialize PropFirmRules with config."""
         self.cfg = load_prop_firm()
@@ -50,12 +50,12 @@ class PropFirmRules:
     def is_market_allowed(self, category: str) -> bool:
         """
         Check if market category is allowed.
-        
+
         Parameters
         ----------
         category : str
             Market category (e.g., "forex", "crypto", "commodities")
-            
+
         Returns
         -------
         bool
@@ -66,7 +66,7 @@ class PropFirmRules:
     def max_risk_allowed(self) -> float:
         """
         Get maximum risk % allowed per trade.
-        
+
         Returns
         -------
         float
@@ -77,14 +77,14 @@ class PropFirmRules:
     def min_rr_required(self) -> float:
         """
         Get minimum risk/reward ratio required.
-        
+
         Returns
         -------
         float
             Minimum RR ratio (e.g., 2.0)
         """
         return self.cfg["risk"]["min_rr_required"]
-    
+
     def validate_trade(
         self,
         category: str,
@@ -93,7 +93,7 @@ class PropFirmRules:
     ) -> dict:
         """
         Validate a trade against all prop firm rules.
-        
+
         Parameters
         ----------
         category : str
@@ -102,7 +102,7 @@ class PropFirmRules:
             Risk % for this trade
         rr_ratio : float
             Risk/reward ratio
-            
+
         Returns
         -------
         dict
@@ -111,13 +111,13 @@ class PropFirmRules:
             - violations: list of violation messages
         """
         violations = []
-        
+
         # Check market allowed
         if not self.is_market_allowed(category):
             violations.append(
                 f"Market category '{category}' not allowed by prop firm"
             )
-        
+
         # Check risk limit
         max_risk = self.max_risk_allowed()
         if risk_percent > max_risk:
@@ -125,14 +125,14 @@ class PropFirmRules:
                 f"Risk {risk_percent*100:.2f}% exceeds max "
                 f"{max_risk*100:.2f}%"
             )
-        
+
         # Check RR requirement
         min_rr = self.min_rr_required()
         if rr_ratio < min_rr:
             violations.append(
                 f"RR {rr_ratio:.2f} below minimum {min_rr:.2f}"
             )
-        
+
         return {
             "compliant": len(violations) == 0,
             "violations": violations,

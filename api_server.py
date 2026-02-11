@@ -35,9 +35,9 @@ async def _run_price_feed_updater():
     """Background task to update price feed from LiveContextBus."""
     price_feed = PriceFeed()
     interval_sec = int(os.getenv("PRICE_FEED_INTERVAL_SEC", "2"))
-    
+
     logger.info(f"Price feed updater started (interval: {interval_sec}s)")
-    
+
     while True:
         try:
             updated = price_feed.update_prices()
@@ -45,7 +45,7 @@ async def _run_price_feed_updater():
                 logger.debug(f"Updated {updated} prices")
         except Exception as exc:
             logger.error(f"Price feed update error: {exc}")
-        
+
         await asyncio.sleep(interval_sec)
 
 
@@ -53,36 +53,36 @@ async def _run_price_feed_updater():
 async def lifespan(app: FastAPI):
     """
     Lifespan context manager for background tasks.
-    
+
     Starts price feed updater and price watcher on startup.
     Stops them on shutdown.
     """
     global _price_feed_task, _price_watcher_task
-    
+
     # Startup
     logger.info("Starting background tasks...")
-    
+
     # Start price feed updater
     _price_feed_task = asyncio.create_task(_run_price_feed_updater())
-    
+
     # Start price watcher
     price_watcher = PriceWatcher()
     _price_watcher_task = asyncio.create_task(price_watcher.start())
-    
+
     logger.info("Background tasks started")
-    
+
     yield
-    
+
     # Shutdown
     logger.info("Stopping background tasks...")
-    
+
     if _price_feed_task:
         _price_feed_task.cancel()
         try:
             await _price_feed_task
         except asyncio.CancelledError:
             pass
-    
+
     if _price_watcher_task:
         price_watcher.stop()
         _price_watcher_task.cancel()
@@ -90,7 +90,7 @@ async def lifespan(app: FastAPI):
             await _price_watcher_task
         except asyncio.CancelledError:
             pass
-    
+
     logger.info("Background tasks stopped")
 
 

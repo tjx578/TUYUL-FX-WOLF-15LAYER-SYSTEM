@@ -29,7 +29,7 @@ from dashboard.backend.schemas import (
 def setup_test_accounts():
     """
     Add test accounts to account registry for testing.
-    
+
     NOTE: This temporarily modifies the production registry file.
     In production, use a separate test registry or mock the loading.
     """
@@ -37,10 +37,10 @@ def setup_test_accounts():
         Path(__file__).parent.parent /
         "propfirm_manager" / "account_registry.yaml"
     )
-    
+
     with open(registry_path, "r") as f:
         registry = yaml.safe_load(f) or {}
-    
+
     # Add test accounts
     test_accounts = {
         "TEST-001": "ftmo",
@@ -50,15 +50,15 @@ def setup_test_accounts():
         "TEST-006": "ftmo",
         "TEST-007": "ftmo",
     }
-    
+
     original_registry = registry.copy()
     registry.update(test_accounts)
-    
+
     with open(registry_path, "w") as f:
         yaml.safe_dump(registry, f)
-    
+
     yield
-    
+
     # Cleanup: restore original registry
     with open(registry_path, "w") as f:
         yaml.safe_dump(original_registry, f)
@@ -66,11 +66,11 @@ def setup_test_accounts():
 
 class TestBasicLotCalculation:
     """Test basic lot calculation logic."""
-    
+
     def test_fixed_risk_lot_positive(self):
         """Fixed risk produces positive lot size."""
         engine = RiskEngine()
-        
+
         signal = Layer12Signal(
             signal_id=uuid4(),
             timestamp=datetime.utcnow(),
@@ -86,7 +86,7 @@ class TestBasicLotCalculation:
             tii_sym=0.85,
             frpc=0.75,
         )
-        
+
         account_state = AccountState(
             account_id="TEST-001",
             balance=100000.0,
@@ -98,21 +98,21 @@ class TestBasicLotCalculation:
             open_trades=0,
             risk_state=RiskSeverity.SAFE,
         )
-        
+
         result = engine.calculate_lot(
             signal=signal,
             account_state=account_state,
             risk_percent=1.0,
             prop_firm_code="ftmo",
         )
-        
+
         assert result.recommended_lot > 0
         assert result.trade_allowed is True
-    
+
     def test_zero_sl_distance_blocked(self):
         """Zero SL distance should be blocked."""
         engine = RiskEngine()
-        
+
         signal = Layer12Signal(
             signal_id=uuid4(),
             timestamp=datetime.utcnow(),
@@ -128,7 +128,7 @@ class TestBasicLotCalculation:
             tii_sym=0.85,
             frpc=0.75,
         )
-        
+
         account_state = AccountState(
             account_id="TEST-002",
             balance=100000.0,
@@ -140,21 +140,21 @@ class TestBasicLotCalculation:
             open_trades=0,
             risk_state=RiskSeverity.SAFE,
         )
-        
+
         result = engine.calculate_lot(
             signal=signal,
             account_state=account_state,
             risk_percent=1.0,
             prop_firm_code="ftmo",
         )
-        
+
         assert result.trade_allowed is False
         assert "Invalid SL distance" in result.reason
-    
+
     def test_higher_risk_bigger_lot(self):
         """Higher risk percentage produces bigger lot size."""
         engine = RiskEngine()
-        
+
         signal = Layer12Signal(
             signal_id=uuid4(),
             timestamp=datetime.utcnow(),
@@ -170,7 +170,7 @@ class TestBasicLotCalculation:
             tii_sym=0.85,
             frpc=0.75,
         )
-        
+
         account_state = AccountState(
             account_id="TEST-003",
             balance=100000.0,
@@ -182,31 +182,31 @@ class TestBasicLotCalculation:
             open_trades=0,
             risk_state=RiskSeverity.SAFE,
         )
-        
+
         result_1pct = engine.calculate_lot(
             signal=signal,
             account_state=account_state,
             risk_percent=1.0,
             prop_firm_code="ftmo",
         )
-        
+
         result_2pct = engine.calculate_lot(
             signal=signal,
             account_state=account_state,
             risk_percent=2.0,
             prop_firm_code="ftmo",
         )
-        
+
         assert result_2pct.recommended_lot > result_1pct.recommended_lot
 
 
 class TestSplitRisk:
     """Test split risk mode."""
-    
+
     def test_split_produces_multiple_lots(self):
         """Split mode produces array of lot sizes."""
         engine = RiskEngine()
-        
+
         signal = Layer12Signal(
             signal_id=uuid4(),
             timestamp=datetime.utcnow(),
@@ -222,7 +222,7 @@ class TestSplitRisk:
             tii_sym=0.85,
             frpc=0.75,
         )
-        
+
         account_state = AccountState(
             account_id="TEST-004",
             balance=100000.0,
@@ -234,7 +234,7 @@ class TestSplitRisk:
             open_trades=0,
             risk_state=RiskSeverity.SAFE,
         )
-        
+
         result = engine.calculate_lot(
             signal=signal,
             account_state=account_state,
@@ -243,14 +243,14 @@ class TestSplitRisk:
             risk_mode=RiskMode.SPLIT,
             split_ratios=[0.5, 0.3, 0.2],
         )
-        
+
         assert result.split_lots is not None
         assert len(result.split_lots) == 3
-    
+
     def test_split_ratios_respected(self):
         """Split lots respect provided ratios."""
         engine = RiskEngine()
-        
+
         signal = Layer12Signal(
             signal_id=uuid4(),
             timestamp=datetime.utcnow(),
@@ -266,7 +266,7 @@ class TestSplitRisk:
             tii_sym=0.85,
             frpc=0.75,
         )
-        
+
         account_state = AccountState(
             account_id="TEST-005",
             balance=100000.0,
@@ -278,7 +278,7 @@ class TestSplitRisk:
             open_trades=0,
             risk_state=RiskSeverity.SAFE,
         )
-        
+
         result = engine.calculate_lot(
             signal=signal,
             account_state=account_state,
@@ -287,18 +287,18 @@ class TestSplitRisk:
             risk_mode=RiskMode.SPLIT,
             split_ratios=[0.5, 0.5],
         )
-        
+
         # First split should be roughly equal to second
         assert abs(result.split_lots[0] - result.split_lots[1]) < 0.05
 
 
 class TestDrawdownMultiplier:
     """Test drawdown multiplier integration."""
-    
+
     def test_multiplier_applied(self):
         """Verify DD multiplier is applied in calculation."""
         engine = RiskEngine()
-        
+
         signal = Layer12Signal(
             signal_id=uuid4(),
             timestamp=datetime.utcnow(),
@@ -314,7 +314,7 @@ class TestDrawdownMultiplier:
             tii_sym=0.85,
             frpc=0.75,
         )
-        
+
         # Low DD state
         low_dd_state = AccountState(
             account_id="TEST-006",
@@ -327,14 +327,14 @@ class TestDrawdownMultiplier:
             open_trades=0,
             risk_state=RiskSeverity.SAFE,
         )
-        
+
         result = engine.calculate_lot(
             signal=signal,
             account_state=low_dd_state,
             risk_percent=1.0,
             prop_firm_code="ftmo",
         )
-        
+
         # Verify calculation succeeded
         assert result.recommended_lot > 0
         assert result.trade_allowed is True
@@ -344,11 +344,11 @@ class TestDrawdownMultiplier:
 
 class TestPropFirmIntegration:
     """Test prop firm guard integration."""
-    
+
     def test_ftmo_blocks_when_dd_exceeded(self):
         """FTMO guard blocks trade when DD limit exceeded."""
         engine = RiskEngine()
-        
+
         signal = Layer12Signal(
             signal_id=uuid4(),
             timestamp=datetime.utcnow(),
@@ -364,7 +364,7 @@ class TestPropFirmIntegration:
             tii_sym=0.85,
             frpc=0.75,
         )
-        
+
         # Account near DD limit
         account_state = AccountState(
             account_id="ACC-001",  # Maps to FTMO
@@ -377,13 +377,13 @@ class TestPropFirmIntegration:
             open_trades=0,
             risk_state=RiskSeverity.CRITICAL,
         )
-        
+
         result = engine.calculate_lot(
             signal=signal,
             account_state=account_state,
             risk_percent=1.0,  # Would push DD to 5.5%
             prop_firm_code="ftmo",
         )
-        
+
         assert result.trade_allowed is False
         assert result.severity == RiskSeverity.CRITICAL
