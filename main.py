@@ -3,8 +3,8 @@ import os
 import signal
 import sys
 
-import loguru # pyright: ignore[reportMissingImports]
-import redis.asyncio # pyright: ignore[reportMissingImports]
+from loguru import logger # pyright: ignore[reportMissingImports]
+from redis.asyncio import Redis as AsyncRedis # pyright: ignore[reportMissingImports]
 
 from analysis.synthesis import build_synthesis
 from analysis.synthesis_adapter import adapt_synthesis
@@ -136,7 +136,7 @@ def _validate_api_key() -> bool:
     api_key = os.getenv("FINNHUB_API_KEY", "")
 
     if not api_key or api_key == "YOUR_FINNHUB_API_KEY":
-        loguru.logger.warning(
+        logger.warning(
             "╔════════════════════════════════════════════════════════════╗\n"
             "║  WARNING: FINNHUB_API_KEY not configured                 ║\n"
             "║  System running in DRY RUN mode                           ║\n"
@@ -146,7 +146,7 @@ def _validate_api_key() -> bool:
         )
         return False
 
-    loguru.logger.info("✓ FINNHUB_API_KEY validated")
+    logger.info("✓ FINNHUB_API_KEY validated")
     return True
 
 def FinnhubWebSocket():
@@ -155,17 +155,16 @@ def FinnhubWebSocket():
 
 async def run_ingest_services(
     has_api_key: bool,
-    redis: redis.asyncio.Redis, # pyright: ignore[reportUndefinedVariable]
+    redis: AsyncRedis,
 ) -> None:
     """
     Run data ingestion services concurrently.
 
     Args:
         has_api_key: Whether a valid Finnhub API key is configured
-        redis: Async Redis client for publishing tick data
     """
     if not has_api_key:
-        loguru.logger.info("Skipping ingest services - no API key configured")
+        logger.info("Skipping ingest services - no API key configured")
         # Keep task alive but don't do anything
         while True:
             if _shutdown_event and _shutdown_event.is_set():
@@ -173,18 +172,30 @@ async def run_ingest_services(
             await asyncio.sleep(1)
         return
 
-    ws_feed = FinnhubWebSocket()
+    ws_feed = await create_finnhub_ws(redis)
     news_feed = FinnhubNews()
     candle_builder = CandleBuilder()
 
-    loguru.logger.info("Starting ingest services: WebSocket, News, CandleBuilder")
+    logger.info("Starting ingest services: WebSocket, News, CandleBuilder")
 
-    # Run all three services concurrently
-    await asyncio.gather(
-        ws_feed.run(),
-        news_feed.run(),
-        candle_builder.run(),
-    )
+    try:
+        # Run all three services concurrently
+        await asyncio.gather(
+            ws_feed.run(),
+            news_feed.run(),
+            candle_builder.run(),
+        )
+
+    except asyncio.CancelledError:
+        logger.info("Ingest services cancelled - shutting down")
+        raise
+
+    finally:
+        # Cleanup
+        if 'ws_feed' in locals():
+            await ws_feed.stop()
+        await redis.aclose()
+        logger.info("Ingest services cleanup complete")
 
 
 async def run_redis_consumer() -> None:
@@ -198,11 +209,11 @@ async def run_redis_consumer() -> None:
         from context.redis_consumer import RedisConsumer
 
         redis_consumer = RedisConsumer(symbols=PAIRS)
-        loguru.logger.info("Starting RedisConsumer...")
+        logger.info("Starting RedisConsumer...")
         await redis_consumer.start()
 
     except Exception as exc:
-        loguru.logger.error(f"Failed to start RedisConsumer: {exc}. Continuing without Redis consumer.")
+        logger.error(f"Failed to start RedisConsumer: {exc}. Continuing without Redis consumer.")
         # Keep task alive so main doesn't exit
         while True:
             if _shutdown_event and _shutdown_event.is_set():
@@ -218,11 +229,11 @@ async def analysis_loop() -> None:
     """
     loop_interval = CONFIG["settings"].get("loop_interval_sec", 60)
 
-    loguru.logger.info(f"Analysis loop started (interval={loop_interval}s)")
+    logger.info(f"Analysis loop started (interval={loop_interval}s)")
 
     while True:
         if _shutdown_event and _shutdown_event.is_set():
-            loguru.logger.info("Analysis loop shutting down...")
+            logger.info("Analysis loop shutting down...")
             break
 
         for pair in PAIRS:
@@ -241,7 +252,7 @@ async def analysis_loop() -> None:
                     j1 = _build_j1(pair, synthesis)
                     journal_router.record_context(j1)
                 except Exception as journal_exc:
-                    loguru.logger.error(f"J1 journal failed for {pair}: {journal_exc}")
+                    logger.error(f"J1 journal failed for {pair}: {journal_exc}")
                     # Continue execution — journal failures must not break trading loop
 
                 # 4. L12 verdict
@@ -252,7 +263,7 @@ async def analysis_loop() -> None:
                     j2 = _build_j2(pair, synthesis, l12)
                     journal_router.record_decision(j2)
                 except Exception as journal_exc:
-                    loguru.logger.error(f"J2 journal failed for {pair}: {journal_exc}")
+                    logger.error(f"J2 journal failed for {pair}: {journal_exc}")
                     # Continue execution — journal failures must not break trading loop
 
                 # 5. Cache verdict for EA
@@ -261,17 +272,17 @@ async def analysis_loop() -> None:
                 # 6. Snapshot L14
                 save_snapshot(pair, l12)
 
-                loguru.logger.debug(f"[L12] {pair} → {l12['verdict']}")
+                logger.debug(f"[L12] {pair} → {l12['verdict']}")
 
             except Exception as e:
-                loguru.logger.error(f"[ERROR] {pair} | {e}")
+                logger.error(f"[ERROR] {pair} | {e}")
 
         await asyncio.sleep(loop_interval)
 
 
 def _signal_handler(signum: int, frame) -> None:
     """Handle shutdown signals."""
-    loguru.logger.info(f"Received signal {signum}, initiating graceful shutdown...")
+    logger.info(f"Received signal {signum}, initiating graceful shutdown...")
     if _shutdown_event:
         _shutdown_event.set()
 
@@ -288,10 +299,10 @@ async def main() -> None:
     _shutdown_event = asyncio.Event()
 
     # Configure logging — split streams for Railway compatibility
-    loguru.logger.remove()
+    logger.remove()
 
     # INFO/WARNING → stdout (Railway classifies as "info")
-    loguru.logger.add(
+    logger.add(
         sys.stdout,
         format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | "
         "<level>{level: <8}</level> | "
@@ -302,7 +313,7 @@ async def main() -> None:
     )
 
     # ERROR/CRITICAL → stderr (Railway classifies as "error")
-    loguru.logger.add(
+    logger.add(
         sys.stderr,
         format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | "
         "<level>{level: <8}</level> | "
@@ -315,32 +326,32 @@ async def main() -> None:
     signal.signal(signal.SIGINT, _signal_handler)
     signal.signal(signal.SIGTERM, _signal_handler)
 
-    loguru.logger.info("═" * 60)
-    loguru.logger.info("WOLF 15-LAYER TRADING SYSTEM v7.4r∞")
-    loguru.logger.info("═" * 60)
+    logger.info("═" * 60)
+    logger.info("WOLF 15-LAYER TRADING SYSTEM v7.4r∞")
+    logger.info("═" * 60)
 
     # Validate API key
     has_api_key = _validate_api_key()
 
     # Check context mode
     context_mode = os.getenv("CONTEXT_MODE", "local").lower()
-    loguru.logger.info(f"Context mode: {context_mode.upper()}")
+    logger.info(f"Context mode: {context_mode.upper()}")
 
     # Create tasks based on mode
     tasks = []
 
     if context_mode == "redis":
         # Redis mode: Run RedisConsumer + analysis loop
-        loguru.logger.info("Redis mode: Starting RedisConsumer + analysis loop")
+        logger.info("Redis mode: Starting RedisConsumer + analysis loop")
         tasks = [
             asyncio.create_task(run_redis_consumer(), name="RedisConsumer"),
             asyncio.create_task(analysis_loop(), name="AnalysisLoop"),
         ]
     else:
         # Local mode: Run ingest services + analysis loop
-        loguru.logger.info("Local mode: Starting ingest services + analysis loop")
+        logger.info("Local mode: Starting ingest services + analysis loop")
         redis_url = os.getenv("REDIS_URL", "redis://localhost:6379")
-        redis_client = redis.asyncio.Redis.from_url(redis_url)
+        redis_client = AsyncRedis.from_url(redis_url)
         tasks = [
             asyncio.create_task(
                 run_ingest_services(has_api_key, redis_client),
@@ -349,26 +360,26 @@ async def main() -> None:
             asyncio.create_task(analysis_loop(), name="AnalysisLoop"),
         ]
 
-    loguru.logger.info(f"System initialized. Running {len(tasks)} concurrent tasks.")
+    logger.info(f"System initialized. Running {len(tasks)} concurrent tasks.")
 
     try:
         # Run all tasks concurrently
         await asyncio.gather(*tasks)
     except asyncio.CancelledError:
-        loguru.logger.info("Tasks cancelled, shutting down...")
+        logger.info("Tasks cancelled, shutting down...")
     except Exception as exc:
-        loguru.logger.error(f"Fatal error: {exc}")
+        logger.error(f"Fatal error: {exc}")
         raise
     finally:
-        loguru.logger.info("System shutdown complete.")
+        logger.info("System shutdown complete.")
 
 
 if __name__ == "__main__":
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
-        loguru.logger.info("Keyboard interrupt received, exiting...")
+        logger.info("Keyboard interrupt received, exiting...")
         sys.exit(0)
     except Exception as exc:
-        loguru.logger.error(f"Fatal error: {exc}")
+        logger.error(f"Fatal error: {exc}")
         sys.exit(1)

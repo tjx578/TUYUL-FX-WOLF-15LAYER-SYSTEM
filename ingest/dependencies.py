@@ -23,6 +23,7 @@ _DEFAULT_SYMBOLS: list[str] = [
     "OANDA:XAU_USD",
 ]
 
+
 async def create_finnhub_ws(
     redis: Redis,  # type: ignore[type-arg]
     symbols: list[str] | None = None,
@@ -96,32 +97,13 @@ async def _handle_tick(data: dict[str, Any]) -> None:
                 )
                 continue
 
-            # Reverse map symbol: OANDA:EUR_USD → EURUSD
-            internal_symbol = _SYMBOL_REVERSE_MAP.get(finnhub_symbol) # pyright: ignore[reportUndefinedVariable]
+            # Normalize symbol (e.g., "OANDA:EUR_USD" -> "EURUSD")
+            internal_symbol = finnhub_symbol.replace("OANDA:", "").replace("_", "")
 
-            # Skip if unmapped (not in our configured symbols)
-            if internal_symbol is None:
-                logger.debug(
-                    "Skipping unmapped symbol",
-                    extra={"finnhub_symbol": finnhub_symbol},
-                )
-                continue
+            # Convert timestamp from milliseconds to seconds
+            timestamp_seconds = ts_ms / 1000.0
 
-            # Convert timestamp: milliseconds → seconds
-            try:
-                timestamp_seconds = float(ts_ms) / 1000.0
-            except (TypeError, ValueError) as exc:
-                logger.warning(
-                    "Invalid timestamp format",
-                    extra={
-                        "ts_ms": ts_ms,
-                        "error": str(exc),
-                    },
-                )
-                continue
-
-            # Normalize to internal format
-            # Since Finnhub provides single price, use it for both bid and ask
+            # Build normalized tick dict
             normalized_tick = {
                 "symbol": internal_symbol,
                 "bid": float(price),
