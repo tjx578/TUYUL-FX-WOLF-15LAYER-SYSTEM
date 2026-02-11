@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+
 from typing import Any
 
 from redis.asyncio import Redis # pyright: ignore[reportMissingImports]
@@ -21,14 +22,6 @@ _DEFAULT_SYMBOLS: list[str] = [
     "OANDA:AUD_USD",
     "OANDA:XAU_USD",
 ]
-
-# Build reverse symbol mapping: Finnhub format → internal format
-# Example: "OANDA:EUR_USD" → "EURUSD"
-_SYMBOL_REVERSE_MAP: dict[str, str] = {
-    finnhub_sym: finnhub_sym.split(":")[-1].replace("_", "")
-    for finnhub_sym in _DEFAULT_SYMBOLS
-}
-
 
 async def create_finnhub_ws(
     redis: Redis,  # type: ignore[type-arg]
@@ -104,7 +97,7 @@ async def _handle_tick(data: dict[str, Any]) -> None:
                 continue
 
             # Reverse map symbol: OANDA:EUR_USD → EURUSD
-            internal_symbol = _SYMBOL_REVERSE_MAP.get(finnhub_symbol)
+            internal_symbol = _SYMBOL_REVERSE_MAP.get(finnhub_symbol) # pyright: ignore[reportUndefinedVariable]
 
             # Skip if unmapped (not in our configured symbols)
             if internal_symbol is None:
