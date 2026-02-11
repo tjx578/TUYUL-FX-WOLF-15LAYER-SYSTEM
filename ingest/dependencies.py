@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from redis.asyncio import Redis
+from redis.asyncio import Redis # pyright: ignore[reportMissingImports]
 
 from context.live_context_bus import LiveContextBus
 from ingest.finnhub_ws import FinnhubWebSocket
