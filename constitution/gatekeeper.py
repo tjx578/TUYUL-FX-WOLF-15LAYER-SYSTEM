@@ -4,7 +4,6 @@ NO EXECUTION | NO DISCRETION
 """
 
 from config_loader import load_constitution
-
 from constitution.violation_log import ViolationLogger
 
 

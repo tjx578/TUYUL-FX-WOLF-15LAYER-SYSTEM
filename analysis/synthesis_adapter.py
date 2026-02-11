@@ -4,11 +4,7 @@ def adapt_synthesis(raw: dict) -> dict:
     Menjamin output synthesis SELALU cocok kontrak L12.
     """
 
-    required = [
-        "pair", "scores", "layers",
-        "execution", "risk", "propfirm",
-        "bias", "system"
-    ]
+    required = ["pair", "scores", "layers", "execution", "risk", "propfirm", "bias", "system"]
 
     for k in required:
         if k not in raw:

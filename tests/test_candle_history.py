@@ -179,7 +179,7 @@ def test_candle_history_multiple_timeframes(context_bus):
             "low": 1.0990,
             "close": 1.1005,
             "volume": 1000,
-            "timestamp": f"2024-01-01T00:{i*15:02d}:00Z",
+            "timestamp": f"2024-01-01T00:{i * 15:02d}:00Z",
         }
         context_bus.update_candle(candle)
 

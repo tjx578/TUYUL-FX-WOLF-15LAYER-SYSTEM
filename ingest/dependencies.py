@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+
 from typing import Any
 
 from redis.asyncio import Redis
@@ -25,8 +26,7 @@ _DEFAULT_SYMBOLS: list[str] = [
 # Build reverse symbol mapping: Finnhub format → internal format
 # Example: "OANDA:EUR_USD" → "EURUSD"
 _SYMBOL_REVERSE_MAP: dict[str, str] = {
-    finnhub_sym: finnhub_sym.split(":")[-1].replace("_", "")
-    for finnhub_sym in _DEFAULT_SYMBOLS
+    finnhub_sym: finnhub_sym.split(":")[-1].replace("_", "") for finnhub_sym in _DEFAULT_SYMBOLS
 }
 
 

@@ -11,11 +11,11 @@ Tests FastAPI endpoints:
 from unittest.mock import MagicMock, patch
 
 import pytest
+
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from risk.risk_router import router as risk_router
-
 
 # ========== Fixtures ==========
 
@@ -26,9 +26,7 @@ def mock_redis():
     store: dict[str, str] = {}
     redis_mock = MagicMock()
     redis_mock.get.side_effect = lambda key: store.get(key)
-    redis_mock.set.side_effect = lambda key, value, ex=None: store.__setitem__(
-        key, value
-    )
+    redis_mock.set.side_effect = lambda key, value, ex=None: store.__setitem__(key, value)
     redis_mock.delete.side_effect = lambda key: store.pop(key, None)
     return redis_mock
 
@@ -116,9 +114,7 @@ def test_get_profile_saved(client, mock_redis):
     with patch("risk.risk_profile.RedisClient") as MockRedis:
         store: dict[str, str] = {}
         mock_redis.get.side_effect = lambda key: store.get(key)
-        mock_redis.set.side_effect = lambda key, value, ex=None: store.__setitem__(
-            key, value
-        )
+        mock_redis.set.side_effect = lambda key, value, ex=None: store.__setitem__(key, value)
         MockRedis.return_value = mock_redis
 
         # Save profile

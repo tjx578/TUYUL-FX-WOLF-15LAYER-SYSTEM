@@ -8,6 +8,7 @@ Supports two modes via CONTEXT_MODE environment variable:
 """
 
 import os
+
 from collections import defaultdict, deque
 from threading import Lock
 from typing import Optional
@@ -52,18 +53,18 @@ class LiveContextBus:
 
         # Check mode and initialize Redis bridge if needed
         self._mode = os.getenv("CONTEXT_MODE", "local").lower()
-        self._redis_bridge: Optional["RedisContextBridge"] = None
+        self._redis_bridge: RedisContextBridge | None = None
 
         if self._mode == "redis":
             try:
                 # Lazy import to avoid circular dependency
                 from context.redis_context_bridge import RedisContextBridge
+
                 self._redis_bridge = RedisContextBridge()
                 logger.info("LiveContextBus initialized in REDIS mode")
             except Exception as exc:
                 logger.error(
-                    f"Failed to initialize Redis bridge: {exc}. "
-                    "Falling back to local mode."
+                    f"Failed to initialize Redis bridge: {exc}. Falling back to local mode."
                 )
                 self._mode = "local"
                 self._redis_bridge = None
@@ -175,9 +176,7 @@ class LiveContextBus:
                 if timeframe in tf_map
             }
 
-    def get_candle_history(
-        self, symbol: str, timeframe: str, count: int = 20
-    ) -> list:
+    def get_candle_history(self, symbol: str, timeframe: str, count: int = 20) -> list:
         """
         Get historical candles for a symbol and timeframe.
 
