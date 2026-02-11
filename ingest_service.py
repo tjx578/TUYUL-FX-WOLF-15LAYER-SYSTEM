@@ -8,10 +8,13 @@ import sys
 from loguru import logger  # pyright: ignore[reportMissingImports]
 from redis.asyncio import Redis as AsyncRedis
 
+from context.system_state import SystemState, SystemStateManager
 from ingest.candle_builder import CandleBuilder
 from ingest.dependencies import create_finnhub_ws
+from ingest.finnhub_candles import FinnhubCandleFetcher
 from ingest.finnhub_market_news import FinnhubMarketNews
 from ingest.finnhub_news import FinnhubNews
+from ingest.h1_refresh_scheduler import H1RefreshScheduler
 
 _shutdown_event: asyncio.Event | None = None
 
@@ -58,18 +61,58 @@ async def run_ingest_services(has_api_key: bool) -> None:
     await redis.ping()
     logger.info("Redis connection validated")
 
+    # Initialize system state manager
+    system_state = SystemStateManager()
+    system_state.set_state(SystemState.WARMING_UP)
+
+    # Warmup: fetch historical candles
+    logger.info("Starting warmup: fetching historical candles from Finnhub REST API")
+    try:
+        fetcher = FinnhubCandleFetcher()
+        warmup_results = await fetcher.warmup_all()
+        
+        # Validate warmup results
+        system_state.validate_warmup(warmup_results)
+        
+        # Set state based on validation
+        warmup_report = system_state.get_warmup_report()
+        incomplete_count = sum(
+            1 for status in warmup_report.values() 
+            if status.status.value != "COMPLETE"
+        )
+        
+        if incomplete_count == 0:
+            system_state.set_state(SystemState.READY)
+            logger.info("Warmup complete - system state: READY")
+        else:
+            system_state.set_state(SystemState.DEGRADED)
+            logger.warning(
+                f"Warmup complete with {incomplete_count} incomplete symbols - "
+                "system state: DEGRADED"
+            )
+            
+    except Exception as exc:
+        logger.error(f"Warmup failed (non-fatal): {exc}")
+        system_state.set_state(SystemState.DEGRADED)
+
+    # Start ingest services
     ws_feed = await create_finnhub_ws(redis=redis)
     news_feed = FinnhubNews()
     market_news = FinnhubMarketNews()
     candle_builder = CandleBuilder()
+    h1_refresh = H1RefreshScheduler()
 
-    logger.info("Starting ingest services: WebSocket, News, MarketNews, CandleBuilder")
+    logger.info(
+        "Starting ingest services: WebSocket, News, MarketNews, "
+        "CandleBuilder (M15), H1Refresh"
+    )
     try:
         await asyncio.gather(
             ws_feed.run(),
             news_feed.run(),
             market_news.run(),
             candle_builder.run(),
+            h1_refresh.run(),
         )
     except asyncio.CancelledError:
         logger.info("Ingest services cancelled - shutting down")
