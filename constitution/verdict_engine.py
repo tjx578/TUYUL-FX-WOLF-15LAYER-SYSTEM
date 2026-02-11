@@ -25,7 +25,7 @@ def generate_l12_verdict(synthesis: dict[str, Any]) -> dict[str, Any]:
     # Feed staleness circuit breaker
     context_bus = LiveContextBus()
     pair = synthesis.get("pair")
-    
+
     if pair and isinstance(pair, str) and pair.strip() and context_bus.is_feed_stale(pair):
         feed_age = context_bus.get_feed_age(pair)
         logger.warning(
@@ -94,7 +94,7 @@ def generate_l12_verdict(synthesis: dict[str, Any]) -> dict[str, Any]:
         # Determine trade direction
         trade_direction = execution.get("direction")
         penalized_direction = mn_bias_override.get("penalized_direction")
-        
+
         if trade_direction == penalized_direction:
             mn_conflict = True
             # Apply confidence penalty

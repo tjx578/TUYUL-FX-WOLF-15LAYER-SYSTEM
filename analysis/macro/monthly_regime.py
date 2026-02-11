@@ -36,7 +36,8 @@ class MonthlyRegimeAnalyzer:
 
         Returns:
             Dictionary containing:
-                - regime: BULLISH_EXPANSION, BEARISH_EXPANSION, CONSOLIDATION, TRANSITION, or UNKNOWN
+                - regime: BULLISH_EXPANSION, BEARISH_EXPANSION, CONSOLIDATION,
+                  TRANSITION, or UNKNOWN
                 - phase: EXPANSION, CONTRACTION, or NEUTRAL
                 - mn_atr: Monthly ATR value
                 - macro_vol_ratio: Current MN ATR / rolling mean
