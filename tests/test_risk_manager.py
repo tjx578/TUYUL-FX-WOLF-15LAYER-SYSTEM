@@ -322,13 +322,13 @@ def test_position_sizer_invalid_inputs(position_sizer):
 
 def test_risk_multiplier_low_drawdown(risk_multiplier):
     """Test RiskMultiplier with low drawdown."""
-    mult = risk_multiplier.calculate(drawdown_level=0.1)
+    mult = risk_multiplier.calculate(drawdown_level=0.1, session="LONDON")
     assert mult == 1.0
 
 
 def test_risk_multiplier_high_drawdown(risk_multiplier):
     """Test RiskMultiplier with high drawdown."""
-    mult = risk_multiplier.calculate(drawdown_level=0.9)
+    mult = risk_multiplier.calculate(drawdown_level=0.9, session="LONDON")
     assert mult == 0.25
 
 
