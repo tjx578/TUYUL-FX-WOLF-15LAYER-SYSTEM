@@ -31,7 +31,11 @@ def ingest_service_module():
     ):
         module = importlib.import_module("ingest_service")
         module = importlib.reload(module)
-        yield module
+        try:
+            yield module
+        finally:
+            # Ensure no cross-test contamination from a preloaded ingest_service.
+            sys.modules.pop("ingest_service", None)
 
 
 @pytest.mark.asyncio
