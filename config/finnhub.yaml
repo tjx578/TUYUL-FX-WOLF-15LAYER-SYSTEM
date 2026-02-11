@@ -16,8 +16,24 @@ rest:
   backoff_factor: 1.5
 
 candles:
-  build_timeframes: ["M15", "H1"]
+  tick_timeframes: ["M15"]           # Built from WS ticks (monitoring only)
+  analysis_timeframes: ["H1", "H4", "D1", "W1"]  # Fetched from REST
   max_history: 500
+  warmup:
+    enabled: true
+    bars: 100
+    timeframes: ["H1", "H4", "D1", "W1"]
+    request_delay_sec: 0.5
+    max_concurrent: 5
+    min_bars:                          # Minimum bars for READY state
+      W1: 20
+      D1: 50
+      H4: 10
+      H1: 50
+  refresh:
+    h1_interval_sec: 3600             # Refresh H1 every 1 hour
+    h1_bars: 5                        # Fetch last 5 bars on refresh
+    price_drift_max_pips: 50.0        # Max allowed drift REST vs WS
 
 symbols:
   include_forex: true
