@@ -12,6 +12,7 @@ import os
 import signal
 import sys
 
+from loguru import logger  # pyright: ignore[reportMissingImports]
 from loguru import logger
 from redis.asyncio import Redis as AsyncRedis
 
@@ -73,6 +74,7 @@ async def run_ingest_services(has_api_key: bool) -> None:
         return
 
     # Initialize ingest services
+    ws_feed = FinnhubWebSocket() # pyright: ignore[reportCallIssue]
     ws_feed = await create_default_finnhub_ws()
     news_feed = FinnhubNews()
     candle_builder = CandleBuilder()
@@ -113,6 +115,15 @@ async def run_ingest_services(has_api_key: bool) -> None:
         )
 
     try:
+        await asyncio.gather(
+            ws_feed.run(),
+            news_feed.run(),
+            candle_builder.run(),
+        )
+    except asyncio.CancelledError:
+        logger.info("Ingest services cancelled - shutting down")
+        await ws_feed.stop()
+        raise
         # Validate Redis connection
         await redis.ping()
         logger.info("✓ Redis connection validated")

@@ -2,6 +2,10 @@
 Unit tests for ingest/dependencies.py - Finnhub WS factory and tick handling.
 """
 
+import pytest
+from unittest.mock import MagicMock, AsyncMock, patch
+
+from ingest.dependencies import _handle_tick, _SYMBOL_REVERSE_MAP, create_finnhub_ws
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -60,6 +64,7 @@ class TestHandleTick:
 
             # Verify update_tick was called
             mock_bus.update_tick.assert_called_once()
+            
 
             # Verify normalized tick format
             call_args = mock_bus.update_tick.call_args[0][0]
@@ -250,6 +255,7 @@ class TestCreateFinnhubWs:
 
             # Verify FinnhubWebSocket was instantiated
             mock_ws_class.assert_called_once()
+            
 
             # Verify arguments
             call_kwargs = mock_ws_class.call_args[1]
