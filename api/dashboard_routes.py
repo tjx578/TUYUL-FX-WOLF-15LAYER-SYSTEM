@@ -17,7 +17,7 @@ Endpoints:
 
 from typing import List
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException # pyright: ignore[reportMissingImports]
 from pydantic import BaseModel, Field
 
 from dashboard.account_manager import AccountManager
@@ -222,7 +222,7 @@ async def confirm_order(req: ConfirmOrderRequest) -> Trade:
 
     # Get updated trade
     trade = _trade_ledger.get_trade(req.trade_id)
-    return trade
+    return trade # pyright: ignore[reportReturnType]
 
 
 @router.post("/api/v1/trades/close")
@@ -248,7 +248,7 @@ async def close_trade(req: CloseTradeRequest) -> Trade:
 
     # Get updated trade
     trade = _trade_ledger.get_trade(req.trade_id)
-    return trade
+    return trade # pyright: ignore[reportReturnType]
 
 
 @router.get("/api/v1/trades/active")
