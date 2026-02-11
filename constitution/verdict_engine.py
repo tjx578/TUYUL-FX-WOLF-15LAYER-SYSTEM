@@ -26,7 +26,7 @@ def generate_l12_verdict(synthesis: dict[str, Any]) -> dict[str, Any]:
     context_bus = LiveContextBus()
     pair = synthesis.get("pair")
     
-    if pair and context_bus.is_feed_stale(pair):
+    if pair and isinstance(pair, str) and pair.strip() and context_bus.is_feed_stale(pair):
         feed_age = context_bus.get_feed_age(pair)
         logger.warning(
             "Feed stale — circuit breaker activated",

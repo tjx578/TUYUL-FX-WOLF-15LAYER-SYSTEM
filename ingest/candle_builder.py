@@ -66,16 +66,16 @@ class CandleBuilder:
         end_time = start_time + timedelta(minutes=minutes)
 
         # Filter ticks for this candle period
-        candles = []
+        period_ticks = []
         for t in buffer:
             tick_ts = self._normalize_timestamp(t["timestamp"])
             if start_time <= tick_ts < end_time:
-                candles.append(t)
+                period_ticks.append(t)
 
-        if not candles:
+        if not period_ticks:
             return
 
-        prices = [c["bid"] for c in candles if c["bid"] is not None]
+        prices = [c["bid"] for c in period_ticks if c["bid"] is not None]
 
         if not prices:
             return
@@ -87,7 +87,7 @@ class CandleBuilder:
             "high": max(prices),
             "low": min(prices),
             "close": prices[-1],
-            "volume": len(candles),  # tick count as volume proxy
+            "volume": len(period_ticks),  # tick count as volume proxy
             "timestamp": end_time,
         }
 
