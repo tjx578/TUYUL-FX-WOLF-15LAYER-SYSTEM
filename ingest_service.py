@@ -87,7 +87,7 @@ async def run_ingest_services(has_api_key: bool) -> None:
         redis_port = int(os.getenv("REDIS_PORT", "6379"))
         redis_password = os.getenv("REDIS_PASSWORD", "")
         redis_db = int(os.getenv("REDIS_DB", "0"))
-        
+
         logger.info(f"Using Redis: {redis_host}:{redis_port}/{redis_db}")
         redis = AsyncRedis(
             host=redis_host,
