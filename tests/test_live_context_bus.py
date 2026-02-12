@@ -9,7 +9,7 @@ import threading
 
 from datetime import UTC, datetime
 
-from context.live_context_bus import LiveContextBus
+from context.live_context_bus import CANDLE_HISTORY_MAXLEN, LiveContextBus
 
 
 class TestLiveContextBusSingleton:
@@ -171,12 +171,15 @@ class TestLiveContextBusCandleHistory:
         assert abs(history[0]["close"] - 1.0855) < 0.0001
         assert abs(history[-1]["close"] - 1.0859) < 0.0001
 
-    def test_candle_history_limited_to_50(self) -> None:
-        """Test that history buffer is limited to 50 candles."""
+    def test_candle_history_limited_to_maxlen(self) -> None:
+        """Test that history buffer is limited to configured maxlen."""
         bus = LiveContextBus()
+        # Clear existing history to avoid singleton leakage from other tests
+        bus._candle_history.clear()
 
-        # Add 60 candles
-        for i in range(60):
+        # Add more candles than the configured max
+        overflow = CANDLE_HISTORY_MAXLEN + 10
+        for i in range(overflow):
             candle = {
                 "symbol": "EURUSD",
                 "timeframe": "H1",
@@ -188,9 +191,9 @@ class TestLiveContextBusCandleHistory:
             }
             bus.update_candle(candle)
 
-        # Get history - should only have 50
-        history = bus.get_candle_history("EURUSD", "H1", count=100)
-        assert len(history) <= 50
+        # Get history - should only have CANDLE_HISTORY_MAXLEN
+        history = bus.get_candle_history("EURUSD", "H1", count=overflow)
+        assert len(history) <= CANDLE_HISTORY_MAXLEN
 
     def test_candle_history_per_timeframe(self) -> None:
         """Test that history is separate per timeframe."""
