@@ -385,7 +385,19 @@ class FinnhubCandleFetcher:
             return {}
 
         warmup_bars = self.warmup_config.get("bars", 100)
-        timeframes = self.warmup_config.get("timeframes", ["H1", "H4", "D1", "W1"])
+
+        # Ensure required timeframes are always present for analysis.
+        REQUIRED_TIMEFRAMES = ["H1", "H4", "D1", "W1"]
+
+        configured_tfs = self.warmup_config.get("timeframes")
+        if not configured_tfs:
+            timeframes = REQUIRED_TIMEFRAMES
+        else:
+            # Preserve required order, then append any additional configured TFs (exclude M15)
+            timeframes = list(REQUIRED_TIMEFRAMES)
+            for tf in configured_tfs:
+                if tf not in timeframes and tf != "M15":
+                    timeframes.append(tf)
 
         logger.info(
             f"Starting warmup for {len(enabled_symbols)} symbols, "
