@@ -57,6 +57,7 @@ class LiveContextBus:
         self._meta = {}
         self._rw_lock = Lock()
         self._last_tick_ts: dict[str, float] = {}  # symbol -> Unix timestamp of last tick
+        self._macro_state: dict = {}
 
         # Check mode and initialize Redis bridge if needed
         self._mode = os.getenv("CONTEXT_MODE", "local").lower()
@@ -153,6 +154,19 @@ class LiveContextBus:
             except Exception as exc:
                 logger.error(f"Failed to write news to Redis: {exc}")
 
+    def update_macro_state(self, state: dict) -> None:
+        """
+        Update macro volatility state from MacroVolatilityEngine.
+
+        Args:
+            state: Macro state dict with vix_level, vix_regime, multipliers, etc.
+        """
+        with self._rw_lock:
+            self._macro_state = state
+            self._meta["macro_updated_at"] = now_utc()
+
+        logger.debug(f"Macro state updated: {state.get('vix_regime', 'UNKNOWN')}")
+
     # =========================
     # READ METHODS (EVERYONE ELSE)
     # =========================
@@ -207,6 +221,11 @@ class LiveContextBus:
         with self._rw_lock:
             return self._news_store
 
+    def get_macro_state(self) -> dict:
+        """Get current macro volatility state."""
+        with self._rw_lock:
+            return self._macro_state.copy()
+
     def snapshot(self):
         """
         Read-only snapshot for analysis / dashboard.
@@ -216,6 +235,7 @@ class LiveContextBus:
                 "ticks": list(self._tick_buffer),
                 "candles": dict(self._candle_store),
                 "news": self._news_store,
+                "macro": self._macro_state,
                 "meta": self._meta,
             }
 
