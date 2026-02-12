@@ -171,12 +171,12 @@ class TestLiveContextBusCandleHistory:
         assert abs(history[0]["close"] - 1.0855) < 0.0001
         assert abs(history[-1]["close"] - 1.0859) < 0.0001
 
-    def test_candle_history_limited_to_50(self) -> None:
-        """Test that history buffer is limited to 50 candles."""
+    def test_candle_history_limited_to_250(self) -> None:
+        """Test that history buffer is limited to 250 candles."""
         bus = LiveContextBus()
 
-        # Add 60 candles
-        for i in range(60):
+        # Add 300 candles
+        for i in range(300):
             candle = {
                 "symbol": "EURUSD",
                 "timeframe": "H1",
@@ -188,9 +188,9 @@ class TestLiveContextBusCandleHistory:
             }
             bus.update_candle(candle)
 
-        # Get history - should only have 50
-        history = bus.get_candle_history("EURUSD", "H1", count=100)
-        assert len(history) <= 50
+        # Get history - should only have 250 (buffer limit from config)
+        history = bus.get_candle_history("EURUSD", "H1", count=300)
+        assert len(history) <= 250
 
     def test_candle_history_per_timeframe(self) -> None:
         """Test that history is separate per timeframe."""
