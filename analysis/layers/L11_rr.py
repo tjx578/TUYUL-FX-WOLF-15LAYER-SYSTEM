@@ -6,7 +6,31 @@ ATR for volatility-based stops and targets.
 """
 
 from analysis.market.indicators import IndicatorEngine
+from config.constants import get_threshold
 from context.live_context_bus import LiveContextBus
+
+# Wolf discipline thresholds
+WOLF_SCORE_MIN: float = get_threshold("wolf_discipline.minimum", 0.75)
+WOLF_SCORE_STRONG: float = get_threshold("wolf_discipline.strong", 0.85)
+WOLF_SCORE_ELITE: float = get_threshold("wolf_discipline.elite", 0.93)
+
+# Emotion thresholds
+EMOTION_MAX_LOSSES: int = get_threshold("wolf_discipline.emotion.max_consecutive_losses", 2)
+EMOTION_INDEX_MAX: int = get_threshold("wolf_discipline.emotion.emotion_index_max", 70)
+DISCIPLINE_SCORE_MIN: int = get_threshold("wolf_discipline.emotion.discipline_score_min", 70)
+
+# RR thresholds
+MIN_RR_RATIO: float = get_threshold("rr.min_rr_ratio", 1.5)
+RR_MIN_CONSTITUTIONAL: float = get_threshold("rr.constitutional_min", 2.0)
+RR_BY_REGIME: dict = get_threshold("rr.by_regime", {
+    "HIGH": 2.5,
+    "NORMAL": 2.0,
+    "LOW": 1.5,
+    "EXPANSION": 2.5,
+    "CONTRACTION": 1.5,
+    "TRENDING": 2.0,
+    "RANGING": 1.8
+})
 
 
 class L11RRAnalyzer:
@@ -15,8 +39,6 @@ class L11RRAnalyzer:
 
     Wolf 30-Point discipline requires RR >= 1.5.
     """
-
-    MIN_RR_RATIO = 1.5  # Minimum acceptable risk/reward ratio
 
     def __init__(self) -> None:
         self.context_bus = LiveContextBus()
@@ -101,7 +123,7 @@ class L11RRAnalyzer:
         rr_ratio = round(reward / risk, 2)
 
         # Check if RR meets minimum requirement
-        is_valid = rr_ratio >= self.MIN_RR_RATIO
+        is_valid = rr_ratio >= MIN_RR_RATIO
         reason = "rr_ok" if is_valid else "rr_too_low"
 
         # Narrow types for pyright — entry/sl/tp1/atr are guaranteed non-None here
@@ -156,5 +178,5 @@ class L11RRAnalyzer:
             "stop_loss": sl,
             "take_profit": tp,
             "rr": rr,
-            "valid": rr >= self.MIN_RR_RATIO,
+            "valid": rr >= MIN_RR_RATIO,
         }
