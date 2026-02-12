@@ -4,8 +4,19 @@ NO EXECUTION | NO DECISION
 """
 
 from analysis.market.volatility import VolatilityAnalyzer
+from config.constants import get_threshold
 from context.live_context_bus import LiveContextBus
 from utils.timezone_utils import is_trading_session
+
+# Market context thresholds
+NEWS_LOCK_WINDOW_MINUTES: int = get_threshold("market_context.news_lock_window_minutes", 30)
+KILLZONES: dict = get_threshold("market_context.killzones", {
+    "ASIA_OPEN": [0, 3],
+    "LONDON_OPEN": [7, 10],
+    "NY_OPEN": [12, 15],
+    "LONDON_CLOSE": [15, 17],
+    "NY_CLOSE": [20, 22]
+})
 
 
 class L1ContextAnalyzer:
