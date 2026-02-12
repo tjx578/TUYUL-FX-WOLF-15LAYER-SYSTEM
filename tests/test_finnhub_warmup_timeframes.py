@@ -1,6 +1,6 @@
 import pytest
 from unittest.mock import AsyncMock, patch
-from datetime import datetime, timezone as UTC
+from datetime import UTC, datetime
 
 from ingest.finnhub_candles import FinnhubCandleFetcher
 
