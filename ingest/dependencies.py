@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import os
+import time
 
 from typing import TYPE_CHECKING, Any
 
@@ -18,9 +19,23 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-MAX_DEVIATION_PCT: float = 0.5  # 0.5% max deviation
+# Per-symbol spike rejection thresholds (percentage)
+SPIKE_THRESHOLDS: dict[str, float] = {
+    "XAUUSD": 2.0,   # Gold is volatile — 2% threshold
+    "GBPJPY": 1.0,   # High-vol cross — 1% threshold
+    "EURUSD": 0.5,   # Major pair — tight is fine
+    "GBPUSD": 0.5,
+    "USDJPY": 0.5,
+    "AUDUSD": 0.5,
+}
+_DEFAULT_SPIKE_THRESHOLD: float = 0.5
+_STALENESS_THRESHOLD_SECONDS: float = 60.0  # Reset baseline if no tick for 60s
+
+# Legacy constant for backwards compatibility (tests)
+MAX_DEVIATION_PCT: float = _DEFAULT_SPIKE_THRESHOLD
 
 _last_prices: dict[str, float] = {}
+_last_timestamps: dict[str, float] = {}
 
 _DEFAULT_REDIS_URL = "redis://localhost:6379/0"
 _DEFAULT_SYMBOLS = [
@@ -43,9 +58,19 @@ def _enabled_symbols() -> list[str]:
     return [symbol for symbol in enabled if symbol]
 
 
+def _get_spike_threshold(symbol: str) -> float:
+    """Return spike rejection threshold for a given symbol."""
+    return SPIKE_THRESHOLDS.get(symbol, _DEFAULT_SPIKE_THRESHOLD)
+
+
 def _is_valid_tick(symbol: str, new_price: float) -> bool:
     """
-    Validate tick price against spike threshold.
+    Validate tick price against spike threshold with staleness detection.
+
+    Auto-resets baseline price if:
+    - This is the first tick for the symbol, OR
+    - No tick received for this symbol in the last 60 seconds (prevents false
+      spikes after WS reconnects or session gaps)
 
     Args:
         symbol: Trading pair symbol
@@ -54,21 +79,45 @@ def _is_valid_tick(symbol: str, new_price: float) -> bool:
     Returns:
         True if tick is valid, False if spike detected
     """
+    now = time.monotonic()
     last_price = _last_prices.get(symbol)
-    if last_price is None:
+    last_ts = _last_timestamps.get(symbol)
+
+    # First tick or stale price → always accept as new baseline
+    if last_price is None or (
+        last_ts is not None and (now - last_ts) > _STALENESS_THRESHOLD_SECONDS
+    ):
+        reason = "first_tick" if last_price is None else "stale_baseline"
+        logger.info(
+            "Tick baseline reset",
+            extra={
+                "symbol": symbol,
+                "price": new_price,
+                "reason": reason,
+            },
+        )
+        _last_prices[symbol] = new_price
+        _last_timestamps[symbol] = now
         return True
+
+    threshold = _get_spike_threshold(symbol)
     deviation = abs(new_price - last_price) / last_price * 100
-    if deviation > MAX_DEVIATION_PCT:
+
+    if deviation > threshold:
         logger.warning(
             "Tick spike rejected",
             extra={
                 "symbol": symbol,
                 "new_price": new_price,
                 "last_price": last_price,
-                "deviation_pct": deviation,
+                "deviation_pct": round(deviation, 4),
+                "threshold_pct": threshold,
             },
         )
         return False
+
+    # Valid tick — update timestamp
+    _last_timestamps[symbol] = now
     return True
 
 
