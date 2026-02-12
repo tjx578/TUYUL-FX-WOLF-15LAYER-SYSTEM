@@ -4,7 +4,7 @@ Test candle history functionality in LiveContextBus
 
 import pytest
 
-from context.live_context_bus import LiveContextBus
+from context.live_context_bus import CANDLE_HISTORY_MAXLEN, LiveContextBus
 
 
 @pytest.fixture
@@ -94,9 +94,10 @@ def test_candle_history_count_limit(context_bus):
 
 
 def test_candle_history_max_buffer_size(context_bus):
-    """Test candle history buffer respects maxlen=50."""
-    # Add 100 candles across multiple days to keep valid timestamps
-    for i in range(100):
+    """Test candle history buffer respects configured maxlen."""
+    # Add more candles than the configured max to verify trimming
+    overflow = CANDLE_HISTORY_MAXLEN + 50
+    for i in range(overflow):
         day = 1 + i // 24
         hour = i % 24
         candle = {
@@ -111,9 +112,9 @@ def test_candle_history_max_buffer_size(context_bus):
         }
         context_bus.update_candle(candle)
 
-    # Should only have last 50
-    history = context_bus.get_candle_history("EURUSD", "H1", count=100)
-    assert len(history) == 50
+    # Should only have last CANDLE_HISTORY_MAXLEN candles
+    history = context_bus.get_candle_history("EURUSD", "H1", count=overflow)
+    assert len(history) == CANDLE_HISTORY_MAXLEN
 
 
 def test_candle_history_multiple_symbols(context_bus):
