@@ -17,6 +17,7 @@ from analysis.layers.L9_smc import L9SMCAnalyzer
 from analysis.layers.L10_position import L10PositionAnalyzer
 from analysis.layers.L11_rr import L11RRAnalyzer
 from analysis.macro.monthly_regime import MonthlyRegimeAnalyzer
+from analysis.macro_volatility_engine import MacroVolatilityEngine
 
 
 class SynthesisEngine:
@@ -33,6 +34,7 @@ class SynthesisEngine:
         self.l10 = L10PositionAnalyzer()
         self.l11 = L11RRAnalyzer()
         self.macro = MonthlyRegimeAnalyzer()
+        self.macro_vol = MacroVolatilityEngine()
 
     def build_candidate(self, symbol: str) -> dict:
         """
@@ -90,6 +92,15 @@ class SynthesisEngine:
         # Macro regime analysis
         macro = self.macro.analyze(symbol)
 
+        # Macro VIX volatility state
+        macro_vix_state = self.macro_vol.get_state()
+        vix_risk_multiplier = macro_vix_state.get("risk_multiplier", 1.0)
+
+        # Apply macro risk multiplier to L7 win probability (make a copy to avoid mutation)
+        l7_adjusted = l7.copy()
+        if l7_adjusted.get("win_probability"):
+            l7_adjusted["win_probability"] = l7_adjusted["win_probability"] * vix_risk_multiplier
+
         return {
             "symbol": symbol,
             "L1": l1,
@@ -98,7 +109,7 @@ class SynthesisEngine:
             "L4": l4,
             "L5": l5,
             "L6": l6,
-            "L7": l7,
+            "L7": l7_adjusted,
             "L8": l8,
             "L9": l9,
             "L10": l10,
