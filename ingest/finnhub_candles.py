@@ -9,7 +9,7 @@ M15 is NOT fetched (monitoring only, built from ticks).
 import asyncio
 import os
 
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import httpx
@@ -100,7 +100,7 @@ class FinnhubCandleFetcher:
         Returns:
             Unix timestamp for from parameter
         """
-        now = datetime.now(UTC)
+        now = datetime.now(timezone.utc)
 
         # Calculate time delta with 25% buffer
         buffer_multiplier = 1.25
@@ -155,7 +155,7 @@ class FinnhubCandleFetcher:
         candles = []
         for i in range(length):
             # Convert Unix timestamp to datetime
-            timestamp = datetime.fromtimestamp(timestamps[i], tz=UTC)
+            timestamp = datetime.fromtimestamp(timestamps[i], tz=timezone.utc)
 
             candle = {
                 "symbol": symbol,
@@ -205,7 +205,7 @@ class FinnhubCandleFetcher:
         finnhub_symbol = self._convert_symbol(symbol)
         resolution = self.RESOLUTION_MAP[timeframe]
         from_ts = self._calculate_from_ts(bars, timeframe)
-        to_ts = int(datetime.now(UTC).timestamp())
+        to_ts = int(datetime.now(timezone.utc).timestamp())
 
         url = f"{self.base_url}/forex/candle"
         params = {
@@ -277,7 +277,7 @@ class FinnhubCandleFetcher:
             if isinstance(timestamp, datetime):
                 ts = timestamp
             else:
-                ts = datetime.fromtimestamp(timestamp, tz=UTC)
+                ts = datetime.fromtimestamp(timestamp, tz=timezone.utc)
 
             # Determine H4 period start for this H1 bar
             # H1 timestamp is the END of the period (e.g., 01:00 means 00:00-01:00)
@@ -300,7 +300,7 @@ class FinnhubCandleFetcher:
                 if isinstance(first_ts, datetime):
                     first_dt = first_ts
                 else:
-                    first_dt = datetime.fromtimestamp(first_ts, tz=UTC)
+                    first_dt = datetime.fromtimestamp(first_ts, tz=timezone.utc)
 
                 first_h1_start_hour = first_dt.hour - 1
                 if first_h1_start_hour < 0:
@@ -353,7 +353,7 @@ class FinnhubCandleFetcher:
         # H4 timestamp is the close time of the last H1 in the group
         timestamp = last["timestamp"]
         if not isinstance(timestamp, datetime):
-            timestamp = datetime.fromtimestamp(timestamp, tz=UTC)
+            timestamp = datetime.fromtimestamp(timestamp, tz=timezone.utc)
 
         return {
             "symbol": first["symbol"],
