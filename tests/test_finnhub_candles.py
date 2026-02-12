@@ -7,7 +7,7 @@ H4 aggregation, and warmup functionality.
 
 import asyncio
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, tzinfo
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -149,6 +149,19 @@ class TestNormalizeResponse:
             ts = candle["timestamp"]
             assert isinstance(ts, datetime)
             assert ts.tzinfo == UTC
+
+    def test_tzinfo_is_instance_not_type(self) -> None:
+        """Regression: tzinfo must be an instance (e.g. timezone.utc), not the timezone class."""
+        fetcher = FinnhubCandleFetcher()
+        candles = fetcher._normalize_response(REAL_FINNHUB_RESPONSE, "EURUSD", "D1")
+
+        for candle in candles:
+            ts = candle["timestamp"]
+            # tzinfo must be an instance, not a class/type
+            assert not isinstance(ts.tzinfo, type), (
+                f"tzinfo is a type ({ts.tzinfo}), expected an instance like timezone.utc"
+            )
+            assert isinstance(ts.tzinfo, tzinfo)
 
     def test_ohlc_validity(self) -> None:
         """Test OHLC relationships are valid (high >= open,close; low <= open,close)."""
