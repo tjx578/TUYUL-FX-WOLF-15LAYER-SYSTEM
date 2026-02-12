@@ -2,6 +2,7 @@ from datetime import UTC, datetime, tzinfo
 from unittest.mock import AsyncMock, patch
 
 import pytest
+from datetime import UTC, datetime
 
 from ingest.finnhub_candles import FinnhubCandleFetcher
 
