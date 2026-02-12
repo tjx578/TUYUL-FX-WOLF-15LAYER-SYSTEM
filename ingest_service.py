@@ -8,16 +8,16 @@ import sys
 from loguru import logger  # pyright: ignore[reportMissingImports]
 from redis.asyncio import Redis as AsyncRedis
 
+from analysis.macro_regime_engine import MacroRegimeEngine
+from config_loader import CONFIG
 from context.system_state import SystemState, SystemStateManager
 from ingest.candle_builder import CandleBuilder
 from ingest.dependencies import create_finnhub_ws
 from ingest.finnhub_candles import FinnhubCandleFetcher
-from ingest.macro_monthly_scheduler import MacroMonthlyScheduler
-from analysis.macro_regime_engine import MacroRegimeEngine
-from config_loader import CONFIG
 from ingest.finnhub_market_news import FinnhubMarketNews
 from ingest.finnhub_news import FinnhubNews
 from ingest.h1_refresh_scheduler import H1RefreshScheduler
+from ingest.macro_monthly_scheduler import MacroMonthlyScheduler
 
 _shutdown_event: asyncio.Event | None = None
 
@@ -56,29 +56,38 @@ async def run_ingest_services(has_api_key: bool) -> None:
     """Run Finnhub WS, news, and candle builder loops."""
     if not has_api_key:
         logger.info("Skipping ingest services - no API key configured")
-        while not (_shutdown_event and _shutdown_event.is_set()):
+        while not (_shutdown_event and _shutdown_event.is_set()):  # noqa: ASYNC110
             await asyncio.sleep(1)
         return
 
     redis = _build_redis_client()
-    await redis.ping()
+    try:
+        result = redis.ping()
+        if not result:
+            raise RuntimeError("Redis ping returned False")
+    except Exception as exc:
+        logger.error(f"Redis ping failed: {exc}")
+        await redis.aclose()
+        raise
     logger.info("Redis connection validated")
 
     # Initialize system state manager
     system_state = SystemStateManager()
     system_state.set_state(SystemState.WARMING_UP)
 
+    # Resolve enabled symbols before warmup (needed by macro scheduler later)
+    enabled_symbols = CONFIG.get("pairs", {}).get("symbols", [])
+
     # Warmup: fetch historical candles
     logger.info("Starting warmup: fetching historical candles from Finnhub REST API")
     try:
         fetcher = FinnhubCandleFetcher()
         warmup_results = await fetcher.warmup_all()
-        
+
         # Validate warmup results
         system_state.validate_warmup(warmup_results)
-        
+
         # Run macro regime analysis using MN data (if warmup provided history)
-        enabled_symbols = CONFIG.get("pairs", {}).get("symbols", [])
         try:
             macro_engine = MacroRegimeEngine()
             for symbol in enabled_symbols:
@@ -92,10 +101,10 @@ async def run_ingest_services(has_api_key: bool) -> None:
         # Set state based on validation
         warmup_report = system_state.get_warmup_report()
         incomplete_count = sum(
-            1 for status in warmup_report.values() 
+            1 for status in warmup_report.values()
             if status.status.value != "COMPLETE"
         )
-        
+
         if incomplete_count == 0:
             system_state.set_state(SystemState.READY)
             logger.info("Warmup complete - system state: READY")
@@ -105,7 +114,7 @@ async def run_ingest_services(has_api_key: bool) -> None:
                 f"Warmup complete with {incomplete_count} incomplete symbols - "
                 "system state: DEGRADED"
             )
-            
+
     except Exception as exc:
         logger.error(f"Warmup failed (non-fatal): {exc}")
         system_state.set_state(SystemState.DEGRADED)
