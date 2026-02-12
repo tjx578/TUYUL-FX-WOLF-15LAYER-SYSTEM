@@ -89,6 +89,7 @@ This PR successfully implements a comprehensive set of production-grade upgrades
 #### Complete Rewrite (`analysis/layers/L2_mta.py`)
 
 - **Architecture**: Hierarchical weighted confluence model
+
 - **Timeframe Weights** (higher = more authority):
   - W1: 30%
   - D1: 20%
@@ -153,6 +154,8 @@ This PR successfully implements a comprehensive set of production-grade upgrades
 #### Function 1: `calculate_atr(candles, period=14)`
 
 - **Purpose**: Standard Average True Range calculation
+- **Purpose**: Standard Average True Range
+calculation
 - **Input**: List of candle dicts with high/low/close
 - **Output**: ATR value (float)
 - **Edge Cases**: Returns 0.0 for insufficient data
@@ -160,6 +163,12 @@ This PR successfully implements a comprehensive set of production-grade upgrades
 #### Function 2: `volatility_regime(current_atr, baseline_atr)`
 
 - **Purpose**: Determine volatility state and adjustment factors
+#### Function 2: `volatility_regime(current_atr
+
+baseline_atr)`
+
+- **Purpose**: Determine volatility state and
+adjustment factors
 - **Regimes**:
   - **EXPANSION** (ratio > 1.5): High volatility
     - `confidence_multiplier`: 0.9

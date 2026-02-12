@@ -280,12 +280,6 @@ class CircuitBreaker:
 
         return False
 
-    def record_trade(
-        self,
-        pnl: float,
-        pair: str,
-        daily_loss: float
-    ) -> None:
     def record_trade(self, pnl: float, pair: str, daily_loss: float) -> None:
         """
         Record a trade result and check circuit breaker conditions.

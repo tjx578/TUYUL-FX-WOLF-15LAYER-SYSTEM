@@ -8,7 +8,7 @@ Does NOT: determine BUY/SELL, modify SL/TP, read market structure.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from enum import Enum
+from enum import StrEnum
 
 from loguru import logger
 
@@ -21,7 +21,7 @@ from risk.risk_manager import RiskManager
 from risk.risk_profile import RiskMode, RiskProfile, load_risk_profile
 
 
-class RiskVerdict(str, Enum):
+class RiskVerdict(StrEnum):
     ALLOW = "ALLOW"
     DENY = "DENY"
 

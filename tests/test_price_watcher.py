@@ -12,7 +12,6 @@ Tests cover:
 from unittest.mock import patch
 
 import pytest
-from unittest.mock import patch
 
 from dashboard.price_watcher import PriceWatcher
 from schemas.trade_models import CloseReason, Trade, TradeLeg, TradeStatus

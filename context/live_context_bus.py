@@ -10,6 +10,7 @@ Supports two modes via CONTEXT_MODE environment variable:
 from __future__ import annotations
 
 import os
+import time
 
 from collections import defaultdict, deque
 from threading import Lock
@@ -55,6 +56,7 @@ class LiveContextBus:
         self._news_store = {}
         self._meta = {}
         self._rw_lock = Lock()
+        self._last_tick_ts: dict[str, float] = {}  # symbol -> Unix timestamp of last tick
 
         # Check mode and initialize Redis bridge if needed
         self._mode = os.getenv("CONTEXT_MODE", "local").lower()
@@ -93,6 +95,8 @@ class LiveContextBus:
 
         with self._rw_lock:
             self._tick_buffer.append(tick)
+            # Update last tick timestamp
+            self._last_tick_ts[tick["symbol"]] = time.time()
 
         # If Redis mode, also write to Redis
         if self._mode == "redis" and self._redis_bridge:
@@ -213,4 +217,161 @@ class LiveContextBus:
                 "candles": dict(self._candle_store),
                 "news": self._news_store,
                 "meta": self._meta,
+            }
+
+    def get_feed_age(self, symbol: str) -> float | None:
+        """
+        Get seconds since last tick for a symbol.
+
+        Args:
+            symbol: Trading pair symbol
+
+        Returns:
+            Seconds since last tick, or None if no tick received
+        """
+        with self._rw_lock:
+            last_ts = self._last_tick_ts.get(symbol)
+            if last_ts is None:
+                return None
+            return time.time() - last_ts
+
+    def is_feed_stale(self, symbol: str, threshold_sec: float = 30.0) -> bool:
+        """
+        Check if feed for a symbol is stale.
+
+        Args:
+            symbol: Trading pair symbol
+            threshold_sec: Staleness threshold in seconds (default 30.0)
+
+        Returns:
+            True if feed is stale or no data, False otherwise
+        """
+        age = self.get_feed_age(symbol)
+        if age is None:
+            return True
+        return age > threshold_sec
+
+    def get_feed_status(self, symbol: str) -> str:
+        """
+        Get feed status for a symbol.
+
+        Args:
+            symbol: Trading pair symbol
+
+        Returns:
+            Feed status: "CONNECTED", "DEGRADED", "DOWN", or "NO_DATA"
+        """
+        age = self.get_feed_age(symbol)
+        if age is None:
+            return "NO_DATA"
+        if age <= 10.0:
+            return "CONNECTED"
+        if age <= 30.0:
+            return "DEGRADED"
+        return "DOWN"
+
+    def get_warmup_bar_count(self, symbol: str, timeframe: str) -> int:
+        """
+        Count candles in history for warmup validation.
+
+        Args:
+            symbol: Trading pair symbol
+            timeframe: Timeframe (M15, H1, H4, D1, W1)
+
+        Returns:
+            Number of candles in history for this symbol/timeframe
+        """
+        with self._rw_lock:
+            history = self._candle_history.get(symbol, {}).get(timeframe, deque())
+            return len(history)
+
+    def check_price_drift(self, symbol: str, max_drift_pips: float = 50.0) -> dict:
+        """
+        Compare REST H1 close vs WS mid price for integrity check.
+
+        Args:
+            symbol: Trading pair symbol
+            max_drift_pips: Maximum allowed drift in pips (default 50.0)
+
+        Returns:
+            Dict with keys: drifted (bool), drift_pips (float),
+            rest_close (float), ws_mid (float)
+        """
+        with self._rw_lock:
+            # Get latest H1 candle close
+            h1_candle = self._candle_store.get(symbol, {}).get("H1")
+            if not h1_candle:
+                return {
+                    "drifted": False,
+                    "drift_pips": 0.0,
+                    "rest_close": None,
+                    "ws_mid": None,
+                    "reason": "No H1 candle",
+                }
+
+            rest_close = h1_candle["close"]
+
+            # Get latest tick mid price
+            latest_tick = None
+            for tick in reversed(self._tick_buffer):
+                if tick["symbol"] == symbol:
+                    latest_tick = tick
+                    break
+
+            if not latest_tick:
+                return {
+                    "drifted": False,
+                    "drift_pips": 0.0,
+                    "rest_close": rest_close,
+                    "ws_mid": None,
+                    "reason": "No WS tick",
+                }
+
+            # Calculate mid price
+            bid = latest_tick.get("bid")
+            ask = latest_tick.get("ask")
+
+            if bid is None or ask is None:
+                ws_mid = bid or ask or latest_tick.get("last", rest_close)
+            else:
+                ws_mid = (bid + ask) / 2.0
+
+            # Calculate drift in pips
+            # Assume 5-digit for forex, 2-digit for gold, 3-digit for silver
+            if "XAU" in symbol:
+                pip_multiplier = 100.0  # 2 digits
+            elif "XAG" in symbol:
+                pip_multiplier = 1000.0  # 3 digits
+            else:
+                pip_multiplier = 10000.0  # 5 digits (forex)
+
+            drift_pips = abs(rest_close - ws_mid) * pip_multiplier
+            drifted = drift_pips > max_drift_pips
+
+            return {
+                "drifted": drifted,
+                "drift_pips": drift_pips,
+                "rest_close": rest_close,
+                "ws_mid": ws_mid,
+            }
+
+    def get_data_completeness(self, symbol: str) -> dict:
+        """
+        Return per-TF bar count for a symbol.
+
+        Used by system_state validation.
+
+        Args:
+            symbol: Trading pair symbol
+
+        Returns:
+            Dict with keys: W1, D1, H4, H1, M15 (bar counts)
+        """
+        with self._rw_lock:
+            return {
+                "W1": len(self._candle_history.get(symbol, {}).get("W1", deque())),
+                "D1": len(self._candle_history.get(symbol, {}).get("D1", deque())),
+                "H4": len(self._candle_history.get(symbol, {}).get("H4", deque())),
+                "H1": len(self._candle_history.get(symbol, {}).get("H1", deque())),
+                "M15": len(self._candle_history.get(symbol, {}).get("M15", deque())),
             }

@@ -22,7 +22,7 @@ def mock_redis():
     """Mock Redis client with in-memory store."""
     store: dict[str, str] = {}
     redis_mock = MagicMock()
-    redis_mock.get.side_effect = lambda key: store.get(key)
+    redis_mock.get.side_effect = store.get
     redis_mock.set.side_effect = lambda key, value, ex=None: store.__setitem__(key, value)
     redis_mock.delete.side_effect = lambda key: store.pop(key, None)
     return redis_mock
@@ -388,7 +388,7 @@ def test_corrupt_redis_data_graceful_recovery(mock_redis):
 
         # Set corrupt data
         store: dict[str, str] = {}
-        mock_redis.get.side_effect = lambda key: store.get(key)
+        mock_redis.get.side_effect = store.get
         store["wolf15:risk:open_trades:test_account"] = "invalid json {{"
 
         tracker = OpenRiskTracker("test_account")

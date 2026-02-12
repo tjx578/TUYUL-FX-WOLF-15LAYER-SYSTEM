@@ -13,6 +13,7 @@ from constitution.verdict_engine import generate_l12_verdict
 from context.runtime_state import RuntimeState
 from ingest.candle_builder import CandleBuilder
 from ingest.dependencies import create_finnhub_ws
+from ingest.finnhub_market_news import FinnhubMarketNews
 from ingest.finnhub_news import FinnhubNews
 from journal.journal_router import journal_router
 from journal.journal_schema import ContextJournal, DecisionJournal, VerdictType
@@ -108,13 +109,15 @@ async def run_ingest_services(has_api_key: bool, redis: AsyncRedis) -> None:
 
     ws_feed = await create_finnhub_ws(redis=redis)
     news_feed = FinnhubNews()
+    market_news = FinnhubMarketNews()
     candle_builder = CandleBuilder()
 
-    logger.info("Starting ingest services: WebSocket, News, CandleBuilder")
+    logger.info("Starting ingest services: WebSocket, News, MarketNews, CandleBuilder")
     try:
         await asyncio.gather(
             ws_feed.run(),
             news_feed.run(),
+            market_news.run(),
             candle_builder.run(),
         )
     except asyncio.CancelledError:
@@ -174,7 +177,7 @@ async def analysis_loop() -> None:
             break
 
         results = await asyncio.gather(*(_analyze_pair(pair) for pair in PAIRS), return_exceptions=True)
-        for pair, result in zip(PAIRS, results):
+        for pair, result in zip(PAIRS, results, strict=False):
             if isinstance(result, Exception):
                 logger.error(f"[ERROR] {pair} | {result}")
 
