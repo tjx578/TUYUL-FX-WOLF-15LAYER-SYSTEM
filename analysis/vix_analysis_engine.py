@@ -10,10 +10,8 @@ Integrated into MacroVolatilityEngine for Wolf-15.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import List
 
 import numpy as np
-from loguru import logger
 
 
 @dataclass
@@ -38,12 +36,12 @@ class VIXAnalysisEngine:
     """
 
     def __init__(self, history_length: int = 60):
-        self._vix_history: List[float] = []
+        self._vix_history: list[float] = []
         self._max_history = history_length
 
     def analyze(self, vix_level: float) -> VIXState:
         """Comprehensive VIX analysis."""
-        
+
         # Input validation
         vix_level = max(0, min(vix_level, 100))
         self._vix_history.append(vix_level)
@@ -73,17 +71,16 @@ class VIXAnalysisEngine:
     def _classify_regime(self, vix: float) -> str:
         if vix < 14:
             return "LOW"
-        elif vix < 20:
+        if vix < 20:
             return "ELEVATED"
-        else:
-            return "HIGH"
+        return "HIGH"
 
     @staticmethod
     def _fear_greed(vix: float) -> float:
         """Fear/Greed 0-1 scale."""
         if vix <= 10:
             return 0.0
-        elif vix >= 50:
+        if vix >= 50:
             return 1.0
         return (vix - 10) / 40
 
@@ -92,7 +89,7 @@ class VIXAnalysisEngine:
         """Normalized regime danger (0-1)."""
         if vix <= 12:
             return 0.1
-        elif vix >= 40:
+        if vix >= 40:
             return 1.0
         return (vix - 12) / 28
 
@@ -100,12 +97,12 @@ class VIXAnalysisEngine:
         """Estimate term structure from history."""
         if len(self._vix_history) < 3:
             return "UNKNOWN"
-        
+
         recent = np.mean(self._vix_history[-5:])
         older = np.mean(self._vix_history[-10:-5])
-        
+
         if abs(recent - older) < 1:
             return "FLAT"
-        elif recent < older:
+        if recent < older:
             return "CONTANGO"
         return "BACKWARDATION"

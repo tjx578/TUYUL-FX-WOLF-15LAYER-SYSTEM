@@ -18,7 +18,6 @@ from analysis.layers.L10_position import L10PositionAnalyzer
 from analysis.layers.L11_rr import L11RRAnalyzer
 from analysis.macro.monthly_regime import MonthlyRegimeAnalyzer
 from analysis.macro_volatility_engine import MacroVolatilityEngine
-from analysis.synthesis_contract import SynthesisContractV2
 
 
 class SynthesisEngine:
