@@ -9,8 +9,7 @@ Guaranteed rigid schema for L12 + L14 JSON export.
 
 from __future__ import annotations
 
-import time
-from typing import Any, Dict
+from typing import Any
 
 
 class SynthesisContractV2:
@@ -20,12 +19,12 @@ class SynthesisContractV2:
     def build(
         symbol: str,
         timestamp_utc: float,
-        layer_results: Dict[str, Any],
-        macro_state: Dict[str, Any],
-        execution_data: Dict[str, Any],
-        risk_data: Dict[str, Any],
+        layer_results: dict[str, Any],
+        macro_state: dict[str, Any],
+        execution_data: dict[str, Any],
+        risk_data: dict[str, Any],
         system_latency_ms: float,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Build synthesis contract (immutable)."""
 
         contract = {

@@ -10,9 +10,9 @@ Fallback for when real VIX unavailable.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional
 
 import numpy as np
+
 from loguru import logger
 
 
@@ -39,9 +39,9 @@ class VIXProxyEstimator:
         self,
         symbol: str,
         candles: list[dict],
-    ) -> Optional[VIXProxyState]:
+    ) -> VIXProxyState | None:
         """Estimate synthetic VIX from H1 candles."""
-        
+
         if not candles or len(candles) < 30:
             return None
 

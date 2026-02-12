@@ -13,18 +13,17 @@ from __future__ import annotations
 import asyncio
 import os
 import time
-from datetime import datetime, timezone
-from typing import Optional
+
+from datetime import UTC, datetime
 
 import httpx
-import orjson
+
 from loguru import logger
 
 from analysis.vix_analysis_engine import VIXAnalysisEngine
 from analysis.vix_proxy_estimator import VIXProxyEstimator
 from context.live_context_bus import LiveContextBus
-from storage.redis_client import redis_client as RedisClient
-
+from storage.redis_client import redis_client
 
 FINNHUB_VIX_URL = "https://finnhub.io/api/v1/quote"
 REFRESH_INTERVAL = 60
@@ -42,14 +41,14 @@ class MacroVolatilityEngine:
     """Production macro volatility engine for Wolf-15."""
 
     def __init__(self):
-        self.redis = RedisClient
+        self.redis = redis_client
         self.context = LiveContextBus()
         self.api_key = os.getenv("FINNHUB_API_KEY")
 
         self.vix_engine = VIXAnalysisEngine()
         self.proxy_engine = VIXProxyEstimator()
 
-        self._last_state: Optional[dict] = None
+        self._last_state: dict | None = None
         logger.info("[MACRO] Engine initialized")
 
     async def start(self):
@@ -64,7 +63,7 @@ class MacroVolatilityEngine:
 
     async def _refresh(self):
         """Refresh cycle with fallback chain."""
-        
+
         # Try real VIX first
         vix_level = await self._fetch_real_vix()
         source = "real"
@@ -95,14 +94,14 @@ class MacroVolatilityEngine:
             "volatility_multiplier": multipliers["volatility"],
             "risk_multiplier": multipliers["risk"],
             "source": source,
-            "updated_at": datetime.now(timezone.utc).isoformat(),
+            "updated_at": datetime.now(UTC).isoformat(),
             "timestamp": int(time.time()),
         }
 
         # Publish
         self._publish(payload)
 
-    async def _fetch_real_vix(self) -> Optional[float]:
+    async def _fetch_real_vix(self) -> float | None:
         """Fetch real VIX from Finnhub."""
         if not self.api_key:
             return None
@@ -119,9 +118,9 @@ class MacroVolatilityEngine:
             pass
         return None
 
-    def _fetch_proxy(self) -> Optional[float]:
+    def _fetch_proxy(self) -> float | None:
         """Estimate synthetic VIX from forex H1 candle history.
-        
+
         BUG FIX: Uses get_candle_history() directly instead of
         snapshot().get("candle_history") which doesn't exist in
         LiveContextBus.snapshot() return schema.
@@ -141,7 +140,7 @@ class MacroVolatilityEngine:
         """Classify regime (0=Tranquil, 1=Stressed, 2=Crisis)."""
         if vix <= 14:
             return 0
-        elif vix <= 20:
+        if vix <= 20:
             return 1
         return 2
 
