@@ -5,19 +5,16 @@ Tests symbol conversion, resolution mapping, response normalization,
 H4 aggregation, and warmup functionality.
 """
 
-import asyncio
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, tzinfo
 from unittest.mock import AsyncMock, MagicMock, patch
+
+from datetime import UTC, datetime, tzinfo
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from ingest.finnhub_candles import (
-    FinnhubCandleError,
-    FinnhubCandleFetcher,
-    FinnhubCandlePremiumError,
-)
-
+from ingest.finnhub_candles import FinnhubCandleFetcher
 
 # Real Finnhub response data (20 bars of D1 EURUSD)
 REAL_FINNHUB_RESPONSE = {
@@ -120,7 +117,7 @@ class TestNormalizeResponse:
         """Test first bar OHLCV matches."""
         fetcher = FinnhubCandleFetcher()
         candles = fetcher._normalize_response(REAL_FINNHUB_RESPONSE, "EURUSD", "D1")
-        
+
         first = candles[0]
         assert first["open"] == 1.11674
         assert first["high"] == 1.11749
@@ -132,7 +129,7 @@ class TestNormalizeResponse:
         """Test last bar OHLCV matches."""
         fetcher = FinnhubCandleFetcher()
         candles = fetcher._normalize_response(REAL_FINNHUB_RESPONSE, "EURUSD", "D1")
-        
+
         last = candles[-1]
         assert last["open"] == 1.10051
         assert last["high"] == 1.10278
@@ -144,17 +141,30 @@ class TestNormalizeResponse:
         """Test all timestamps are UTC."""
         fetcher = FinnhubCandleFetcher()
         candles = fetcher._normalize_response(REAL_FINNHUB_RESPONSE, "EURUSD", "D1")
-        
+
         for candle in candles:
             ts = candle["timestamp"]
             assert isinstance(ts, datetime)
             assert ts.tzinfo == UTC
 
+    def test_tzinfo_is_instance_not_type(self) -> None:
+        """Regression: tzinfo must be an instance (e.g. timezone.utc), not the timezone class."""
+        fetcher = FinnhubCandleFetcher()
+        candles = fetcher._normalize_response(REAL_FINNHUB_RESPONSE, "EURUSD", "D1")
+
+        for candle in candles:
+            ts = candle["timestamp"]
+            # tzinfo must be an instance, not a class/type
+            assert not isinstance(ts.tzinfo, type), (
+                f"tzinfo is a type ({ts.tzinfo}), expected an instance like timezone.utc"
+            )
+            assert isinstance(ts.tzinfo, tzinfo)
+
     def test_ohlc_validity(self) -> None:
         """Test OHLC relationships are valid (high >= open,close; low <= open,close)."""
         fetcher = FinnhubCandleFetcher()
         candles = fetcher._normalize_response(REAL_FINNHUB_RESPONSE, "EURUSD", "D1")
-        
+
         for candle in candles:
             assert candle["high"] >= candle["open"]
             assert candle["high"] >= candle["close"]
@@ -172,7 +182,7 @@ class TestNormalizeResponse:
         """Test metadata fields are present."""
         fetcher = FinnhubCandleFetcher()
         candles = fetcher._normalize_response(REAL_FINNHUB_RESPONSE, "EURUSD", "D1")
-        
+
         first = candles[0]
         assert first["symbol"] == "EURUSD"
         assert first["timeframe"] == "D1"
@@ -196,7 +206,7 @@ class TestH4Aggregation:
     def test_four_h1_to_one_h4(self) -> None:
         """Test 4 H1 bars aggregate to 1 H4 bar."""
         fetcher = FinnhubCandleFetcher()
-        
+
         # Create 4 H1 bars aligned to 00:00, 01:00, 02:00, 03:00 UTC
         h1_bars = [
             {
@@ -244,12 +254,12 @@ class TestH4Aggregation:
                 "source": "rest_api",
             },
         ]
-        
+
         h4_bars = fetcher._aggregate_h4(h1_bars)
-        
+
         assert len(h4_bars) == 1
         h4 = h4_bars[0]
-        
+
         # Open from first H1
         assert h4["open"] == 1.1000
         # High from all H1s
@@ -268,11 +278,10 @@ class TestH4Aggregation:
     def test_h4_alignment(self) -> None:
         """Test H4 bars align to 00:00, 04:00, 08:00, etc."""
         fetcher = FinnhubCandleFetcher()
-        
+
         # Create H1 bars spanning multiple H4 periods
-        h1_bars = []
-        for hour in range(8):  # 00:00 to 07:00
-            h1_bars.append({
+        h1_bars = [
+            {
                 "symbol": "EURUSD",
                 "timeframe": "H1",
                 "open": 1.1000 + hour * 0.001,
@@ -282,10 +291,12 @@ class TestH4Aggregation:
                 "volume": 100,
                 "timestamp": datetime(2024, 1, 15, hour + 1, 0, 0, tzinfo=UTC),
                 "source": "rest_api",
-            })
-        
+            }
+            for hour in range(8)
+        ]
+
         h4_bars = fetcher._aggregate_h4(h1_bars)
-        
+
         # Should produce 2 H4 bars: 00:00-04:00 and 04:00-08:00
         assert len(h4_bars) == 2
 
@@ -311,23 +322,23 @@ class TestWarmup:
                 "source": "rest_api",
             }
         ]
-        
+
         mock_fetch.return_value = test_candles
-        
+
         fetcher = FinnhubCandleFetcher()
-        
+
         # Patch CONFIG to have a single test symbol
-        with patch("ingest.finnhub_candles.CONFIG", {"pairs": {"symbols": ["EURUSD"]}}):
-            with patch.object(fetcher, "warmup_config", {
+        with patch("ingest.finnhub_candles.CONFIG", {"pairs": {"symbols": ["EURUSD"]}}), \
+             patch.object(fetcher, "warmup_config", {
                 "enabled": True,
                 "bars": 10,
                 "timeframes": ["H1"],
             }):
-                results = await fetcher.warmup_all()
-        
+            results = await fetcher.warmup_all()
+
         # Check results structure
         assert "EURUSD" in results
         assert "H1" in results["EURUSD"]
-        
+
         # Verify fetch was called
         assert mock_fetch.called
