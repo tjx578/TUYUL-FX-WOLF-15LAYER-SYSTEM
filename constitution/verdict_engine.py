@@ -39,7 +39,7 @@ def generate_l12_verdict(synthesis: dict[str, Any]) -> dict[str, Any]:
             "verdict": "HOLD",
             "confidence": "LOW",
             "wolf_status": "NO_HUNT",
-            "gates": {"passed": 0, "total": 9},
+            "gates": {"passed": 0, "total": 10},
             "execution": {},
             "scores": synthesis.get("scores", {}),
             "proceed_to_L13": False,
@@ -76,6 +76,12 @@ def generate_l12_verdict(synthesis: dict[str, Any]) -> dict[str, Any]:
         "gate_8_latency": _gate(synthesis["system"]["latency_ms"] <= 250),
         "gate_9_conf12": _gate(layers["conf12"] >= conf12_min),
     }
+
+    # Gate #10: Macro VIX regime check
+    macro_vix = synthesis.get("macro_vix", {})
+    vix_regime_state = macro_vix.get("regime_state", 1)
+    safe_mode = synthesis.get("system", {}).get("safe_mode", False)
+    gates["gate_10_macro_regime"] = _gate(vix_regime_state < 2 or safe_mode)
 
     passed_gates = sum(1 for gate in gates.values() if gate == "PASS")
 
@@ -130,7 +136,7 @@ def generate_l12_verdict(synthesis: dict[str, Any]) -> dict[str, Any]:
             pair=synthesis["pair"],
             reason=f"MN_BIAS_CONFLICT: counter-macro trade in {mn_regime}",
         )
-    elif passed_gates < 9:
+    elif passed_gates < 10:
         verdict = "HOLD"
         confidence = "MEDIUM"
         wolf_status = "SCOUT"
@@ -164,7 +170,7 @@ def generate_l12_verdict(synthesis: dict[str, Any]) -> dict[str, Any]:
         "gates": {
             **gates,
             "passed": passed_gates,
-            "total": 9,
+            "total": 10,
         },
         "mn_conflict": mn_conflict,
         "mn_regime": mn_regime,
