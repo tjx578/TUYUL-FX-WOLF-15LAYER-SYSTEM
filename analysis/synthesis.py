@@ -96,9 +96,10 @@ class SynthesisEngine:
         macro_vix_state = self.macro_vol.get_state()
         vix_risk_multiplier = macro_vix_state.get("risk_multiplier", 1.0)
 
-        # Apply macro risk multiplier to L7 win probability
-        if l7.get("win_probability"):
-            l7["win_probability"] = l7["win_probability"] * vix_risk_multiplier
+        # Apply macro risk multiplier to L7 win probability (make a copy to avoid mutation)
+        l7_adjusted = l7.copy()
+        if l7_adjusted.get("win_probability"):
+            l7_adjusted["win_probability"] = l7_adjusted["win_probability"] * vix_risk_multiplier
 
         return {
             "symbol": symbol,
@@ -108,7 +109,7 @@ class SynthesisEngine:
             "L4": l4,
             "L5": l5,
             "L6": l6,
-            "L7": l7,
+            "L7": l7_adjusted,
             "L8": l8,
             "L9": l9,
             "L10": l10,
