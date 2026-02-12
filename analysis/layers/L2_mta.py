@@ -1,3 +1,67 @@
+from __future__ import annotations
+
+from typing import Any
+
+from context.live_context_bus import LiveContextBus
+
+
+class L2MTA:
+    """
+    Multi-Timeframe Alignment with Macro Regime weighting.
+    """
+
+    TF_WEIGHTS = {
+        "MN": 0.35,
+        "W1": 0.25,
+        "D1": 0.15,
+        "H4": 0.15,
+        "H1": 0.10,
+    }
+
+    def __init__(self, redis_client=None):
+        self.bus = LiveContextBus()
+        self.redis = redis_client
+
+    def compute(self, symbol: str, direction: str) -> dict[str, Any]:
+        score = 0.0
+        per_tf: dict[str, Any] = {}
+
+        # Macro (MN) - read regime from Redis if available
+        mn_regime = {"bias": "NEUTRAL"}
+        if self.redis:
+            try:
+                mn_regime = self.redis.hgetall(f"regime:macro:{symbol}") or {"bias": "NEUTRAL"}
+            except Exception:
+                mn_regime = {"bias": "NEUTRAL"}
+
+        mn_bias = mn_regime.get("bias", "NEUTRAL")
+        mn_contrib = 0.0
+        if mn_bias == direction:
+            mn_contrib = self.TF_WEIGHTS["MN"]
+            score += mn_contrib
+
+        per_tf["MN"] = {"bias": mn_bias, "weight": self.TF_WEIGHTS["MN"], "contribution": mn_contrib}
+
+        # Weekly and lower - use LiveContextBus candles
+        for tf in ["W1", "D1", "H4", "H1"]:
+            candle = self.bus.get_candle(symbol, tf)
+            bias = self._get_bias(candle, direction)
+            contrib = self.TF_WEIGHTS.get(tf, 0.0) if bias == direction else 0.0
+            score += contrib
+            per_tf[tf] = {"bias": bias, "weight": self.TF_WEIGHTS.get(tf, 0.0), "contribution": contrib}
+
+        return {"aligned": score >= 0.99, "composite_bias": round(score, 3), "per_tf": per_tf}
+
+    def _get_bias(self, candle: dict | None, direction: str) -> str:
+        if not candle:
+            return "UNKNOWN"
+        try:
+            if float(candle["close"]) > float(candle["open"]):
+                return "BULLISH" if direction == "BULLISH" else "NEUTRAL"
+            else:
+                return "BEARISH" if direction == "BEARISH" else "NEUTRAL"
+        except Exception:
+            return "UNKNOWN"
 """
 L2 — Multi-Timeframe Alignment (MN → W1 → D1 → H4 → H1 → M15)
 
