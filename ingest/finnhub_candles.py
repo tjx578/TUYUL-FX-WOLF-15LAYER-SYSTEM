@@ -41,6 +41,7 @@ class FinnhubCandleFetcher:
         "H1": "60",
         "D1": "D",
         "W1": "W",
+        "MN": "M",
     }
 
     def __init__(self) -> None:
@@ -387,7 +388,7 @@ class FinnhubCandleFetcher:
         warmup_bars = self.warmup_config.get("bars", 100)
 
         # Ensure required timeframes are always present for analysis.
-        REQUIRED_TIMEFRAMES = ["H1", "H4", "D1", "W1"]
+        REQUIRED_TIMEFRAMES = ["H1", "H4", "D1", "W1", "MN"]
 
         configured_tfs = self.warmup_config.get("timeframes")
         if not configured_tfs:

@@ -140,6 +140,16 @@ class RedisContextBridge:
             # 3. Set TTL — candle data expires after session relevance window
             self._redis.client.expire(hash_key, CANDLE_HASH_TTL_SECONDS)
 
+            # 4. For Monthly timeframe, maintain a history list for macro analysis
+            try:
+                if timeframe == "MN":
+                    list_key = f"{self._prefix}:candle:{symbol}:MN:history"
+                    # Append latest MN candle to history list and trim to reasonable max (e.g., 240 months)
+                    self._redis.client.rpush(list_key, candle_json)
+                    self._redis.client.ltrim(list_key, -240, -1)
+            except Exception as exc:
+                logger.error(f"Failed to write MN history list for {symbol}: {exc}")
+
             logger.debug(f"Candle written to Redis: {symbol} {timeframe}")
 
         except Exception as exc:
