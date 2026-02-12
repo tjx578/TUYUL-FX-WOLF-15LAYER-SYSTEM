@@ -3,6 +3,16 @@ L7 — Probability Estimation
 Statistical, NOT predictive.
 """
 
+from config.constants import get_threshold
+
+# Liquidity and Monte Carlo thresholds
+LIQUIDITY_SWEEP_THRESHOLD: float = get_threshold("liquidity.sweep_threshold", 0.65)
+MC_DEFAULT_RUNS: int = get_threshold("monte_carlo.default_runs", 1000)
+MC_DEFAULT_HORIZON: int = get_threshold("monte_carlo.default_horizon", 50)
+MC_WIN_PROB_MIN: float = get_threshold("monte_carlo.gate.win_prob_min", 68.0)
+MC_PROFIT_FACTOR_MIN: float = get_threshold("monte_carlo.gate.profit_factor_min", 2.0)
+MC_MAX_DRAWDOWN: float = get_threshold("monte_carlo.gate.max_drawdown", 5.0)
+
 
 class L7ProbabilityAnalyzer:
     def analyze(self, technical_score: float) -> dict:

@@ -38,26 +38,24 @@ def test_fatigue_level_low(analyzer):
 
 def test_consecutive_losses_tracking(analyzer):
     """Test consecutive loss tracking."""
-    # Record 2 losses
+    # Record 1 loss
+    analyzer.record_loss()
+
+    result = analyzer.analyze("EURUSD")
+    assert result["consecutive_losses"] == 1
+    assert result["losses_ok"] is True  # Still OK (limit is 2)
+    assert result["psychology_ok"] is True
+
+
+def test_consecutive_losses_limit_reached(analyzer):
+    """Test psychology NOT OK when consecutive losses >= 2."""
+    # Record 2 losses (at limit)
     analyzer.record_loss()
     analyzer.record_loss()
 
     result = analyzer.analyze("EURUSD")
     assert result["consecutive_losses"] == 2
-    assert result["losses_ok"] is True  # Still OK (limit is 3)
-    assert result["psychology_ok"] is True
-
-
-def test_consecutive_losses_limit_reached(analyzer):
-    """Test psychology NOT OK when consecutive losses >= 3."""
-    # Record 3 losses (at limit)
-    analyzer.record_loss()
-    analyzer.record_loss()
-    analyzer.record_loss()
-
-    result = analyzer.analyze("EURUSD")
-    assert result["consecutive_losses"] == 3
-    assert result["losses_ok"] is False
+    assert result["losses_ok"] is False  # At limit
     assert result["psychology_ok"] is False
     assert "consecutive losses" in result["recommendation"]
 

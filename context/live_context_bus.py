@@ -18,11 +18,15 @@ from typing import TYPE_CHECKING
 
 from loguru import logger
 
+from config.constants import get_threshold
 from context.context_validator import ContextValidator
 from utils.timezone_utils import now_utc
 
 if TYPE_CHECKING:
     from context.redis_context_bridge import RedisContextBridge
+
+# Get candle history maxlen from config
+CANDLE_HISTORY_MAXLEN: int = get_threshold("pipeline.candle_history_maxlen", 250)
 
 
 class LiveContextBus:
@@ -51,7 +55,7 @@ class LiveContextBus:
         self._tick_buffer = deque(maxlen=10000)
         self._candle_store = defaultdict(dict)  # symbol -> tf -> candle
         self._candle_history = defaultdict(
-            lambda: defaultdict(lambda: deque(maxlen=50))
+            lambda: defaultdict(lambda: deque(maxlen=CANDLE_HISTORY_MAXLEN))
         )  # symbol -> tf -> deque of candles
         self._news_store = {}
         self._meta = {}
