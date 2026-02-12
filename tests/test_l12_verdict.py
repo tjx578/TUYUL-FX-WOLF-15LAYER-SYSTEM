@@ -9,6 +9,22 @@ from typing import Any
 import pytest
 
 from constitution.verdict_engine import generate_l12_verdict
+from context.live_context_bus import LiveContextBus
+
+
+@pytest.fixture(autouse=True)
+def _setup_context_bus():
+    """Setup context bus with a recent tick to avoid staleness."""
+    bus = LiveContextBus()
+    bus.update_tick({
+        "symbol": "EURUSD",
+        "bid": 1.0850,
+        "ask": 1.0852,
+        "timestamp": 1700000000.0,
+        "source": "test",
+    })
+    yield
+    # No cleanup needed for singleton
 
 
 def _make_synthesis(
@@ -60,6 +76,13 @@ def _make_synthesis(
         "bias": {
             "technical": "BULLISH",
             "fundamental": "NEUTRAL",
+        },
+        "macro_vix": {
+            "vix_level": 15.0,
+            "vix_regime": "ELEVATED",
+            "regime_state": 1,
+            "volatility_multiplier": 1.0,
+            "risk_multiplier": 1.0,
         },
         "system": {
             "latency_ms": latency,
