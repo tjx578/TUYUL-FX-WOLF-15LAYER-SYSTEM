@@ -34,12 +34,6 @@ def setup_test_accounts():
     NOTE: This temporarily modifies the production registry file.
     In production, use a separate test registry or mock the loading.
     """
-    registry_path = (
-        Path(__file__).parent.parent /
-        "propfirm_manager" / "account_registry.yaml"
-    )
-
-    with open(registry_path, "r") as f:
     registry_path = Path(__file__).parent.parent / "propfirm_manager" / "account_registry.yaml"
 
     with open(registry_path) as f:

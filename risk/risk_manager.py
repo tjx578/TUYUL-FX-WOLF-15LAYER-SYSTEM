@@ -294,7 +294,6 @@ class RiskManager:
 
             return position
 
-    def is_trading_allowed(self, category: Optional[str] = None) -> bool:
     def is_trading_allowed(self, category: str | None = None) -> bool:
         """
         Check if trading is allowed based on all risk factors.

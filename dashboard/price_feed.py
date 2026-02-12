@@ -128,9 +128,6 @@ class PriceFeed:
 
             if price_json:
                 return json.loads(price_json)
-            else:
-                logger.debug(f"No price data for {symbol}")
-                return None
             logger.debug(f"No price data for {symbol}")
             return None
 

@@ -138,10 +138,6 @@ class PriceWatcher:
 
         if entry_hit:
             # Transition to OPEN
-            success = self._trade_ledger.update_status(
-                trade.trade_id,
-                TradeStatus.OPEN
-            )
             success = self._trade_ledger.update_status(trade.trade_id, TradeStatus.OPEN)
 
             if success:
