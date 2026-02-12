@@ -12,6 +12,9 @@ from context.system_state import SystemState, SystemStateManager
 from ingest.candle_builder import CandleBuilder
 from ingest.dependencies import create_finnhub_ws
 from ingest.finnhub_candles import FinnhubCandleFetcher
+from ingest.macro_monthly_scheduler import MacroMonthlyScheduler
+from analysis.macro_regime_engine import MacroRegimeEngine
+from config_loader import CONFIG
 from ingest.finnhub_market_news import FinnhubMarketNews
 from ingest.finnhub_news import FinnhubNews
 from ingest.h1_refresh_scheduler import H1RefreshScheduler
@@ -74,6 +77,18 @@ async def run_ingest_services(has_api_key: bool) -> None:
         # Validate warmup results
         system_state.validate_warmup(warmup_results)
         
+        # Run macro regime analysis using MN data (if warmup provided history)
+        enabled_symbols = CONFIG.get("pairs", {}).get("symbols", [])
+        try:
+            macro_engine = MacroRegimeEngine()
+            for symbol in enabled_symbols:
+                try:
+                    macro_engine.update_macro_state(symbol)
+                except Exception as e:
+                    logger.error(f"Macro regime failed for {symbol}: {e}")
+        except Exception:
+            logger.exception("Failed to initialize MacroRegimeEngine")
+
         # Set state based on validation
         warmup_report = system_state.get_warmup_report()
         incomplete_count = sum(
@@ -113,6 +128,8 @@ async def run_ingest_services(has_api_key: bool) -> None:
             market_news.run(),
             candle_builder.run(),
             h1_refresh.run(),
+            # Start monthly macro scheduler in background
+            MacroMonthlyScheduler(enabled_symbols).run(),
         )
     except asyncio.CancelledError:
         logger.info("Ingest services cancelled - shutting down")
