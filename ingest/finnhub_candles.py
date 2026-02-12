@@ -95,7 +95,7 @@ class FinnhubCandleFetcher:
 
         Args:
             bars: Number of bars to fetch
-            timeframe: Timeframe (H1, D1, W1)
+            timeframe: Timeframe (H1, D1, W1, MN)
 
         Returns:
             Unix timestamp for from parameter
@@ -111,6 +111,8 @@ class FinnhubCandleFetcher:
             delta = timedelta(days=int(bars * buffer_multiplier))
         elif timeframe == "W1":
             delta = timedelta(weeks=int(bars * buffer_multiplier))
+        elif timeframe == "MN":
+            delta = timedelta(days=int(bars * 30 * buffer_multiplier))
         else:
             raise FinnhubCandleError(f"Unsupported timeframe: {timeframe}")
 
