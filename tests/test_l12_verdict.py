@@ -28,8 +28,8 @@ def _setup_context_bus():
 
 
 def _make_synthesis(
-    tii: float = 0.85,
-    integrity: float = 0.85,
+    tii: float = 0.95,
+    integrity: float = 0.98,
     rr: float = 2.0,
     fta: float = 0.8,
     monte: float = 0.75,
@@ -41,7 +41,7 @@ def _make_synthesis(
     """
     Helper to create a synthesis dict with configurable values.
 
-    Default values pass all gates.
+    Default values pass all gates (updated for v7.4r∞ reconciled thresholds).
     """
     return {
         "pair": "EURUSD",

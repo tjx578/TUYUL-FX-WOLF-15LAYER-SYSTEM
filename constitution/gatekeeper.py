@@ -47,12 +47,14 @@ class Gatekeeper:
     # =========================
 
     def _gate_integrity(self, c: dict):
-        min_integrity = self.constitution["thresholds"]["integrity_min"]
+        # Use top-level integrity_min (reconciled value)
+        min_integrity = self.constitution.get("integrity_min", 0.97)
         integrity = c["L8"].get("integrity", 0)
         return integrity >= min_integrity, f"integrity<{min_integrity}"
 
     def _gate_tii(self, c: dict):
-        min_tii = self.constitution["thresholds"]["TII_sym_min"]
+        # Use top-level tii_min (reconciled value)
+        min_tii = self.constitution.get("tii_min", 0.93)
         tii = c["L8"].get("tii_sym", 0)
         return tii >= min_tii, f"tii<{min_tii}"
 
@@ -62,7 +64,8 @@ class Gatekeeper:
         return prob >= min_prob, f"prob<{min_prob}"
 
     def _gate_rr(self, c: dict):
-        min_rr = self.constitution["risk_rules"]["min_rr"]
+        # Use top-level rr_min (reconciled value)
+        min_rr = self.constitution.get("rr_min", 2.0)
         rr = c.get("L11", {}).get("rr", 0)
         return rr >= min_rr, f"rr<{min_rr}"
 
