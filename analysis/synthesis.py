@@ -50,8 +50,9 @@ class SynthesisEngine:
         # L5 Psychology
         l5 = self.l5.analyze(symbol, volatility_profile=l2)
 
-        # L7 Probability
-        l7 = self.l7.analyze(l4["technical_score"])
+        # L7 Probability - needs symbol as first parameter
+        # RR will be calculated later from L11, use default for now
+        l7 = self.l7.analyze(symbol, technical_score=l4["technical_score"])
 
         # L8 TII Integrity
         l8 = self.l8.analyze(
@@ -155,12 +156,23 @@ def build_synthesis(
     l11 = raw.get("L11", {})
     macro = raw.get("macro", {})
 
-    # Compute wolf_30_point score (0-30) from layer scores
-    # Based on L4 technical_score and L7 win probability
-    technical_score = l4.get("technical_score", 0)
+    # Compute wolf_30_point score (0-30) from L4 breakdown if available
+    # If L4 now returns real wolf_30_point breakdown, use it; otherwise compute from scores
+    if "wolf_30_point" in l4 and isinstance(l4["wolf_30_point"], dict):
+        wolf_30_point = l4["wolf_30_point"].get("total", 0)
+        f_score = l4["wolf_30_point"].get("f_score", 0)
+        t_score = l4["wolf_30_point"].get("t_score", 0)
+    else:
+        # Fallback to old calculation method
+        technical_score = l4.get("technical_score", 0)
+        win_prob = l7.get("win_probability", 0)
+        wolf_30_point = int((technical_score / 100) * 15 + (win_prob / 100) * 15)
+        wolf_30_point = max(0, min(30, wolf_30_point))  # clamp to 0-30
+        f_score = 0  # Unknown in old method
+        t_score = 0  # Unknown in old method
+    
+    # Get win_prob for layers section
     win_prob = l7.get("win_probability", 0)
-    wolf_30_point = int((technical_score / 100) * 15 + (win_prob / 100) * 15)
-    wolf_30_point = max(0, min(30, wolf_30_point))  # clamp to 0-30
 
     # Compute FTA score (fundamental-technical alignment) 0.0-1.0
     # For now, based on validity of L1, L2, L3
@@ -182,11 +194,11 @@ def build_synthesis(
     else:
         direction = "HOLD"
 
-    # Compute basic entry/stop/tp from L11 or defaults
-    # In production, L11 would calculate these based on structure
-    entry_price = 1.1000  # placeholder
-    stop_loss = 1.0950  # placeholder
-    take_profit_1 = 1.1100  # placeholder
+    # Compute basic entry/stop/tp from L11 output
+    # Use L11 calculated values if available, otherwise use defaults
+    entry_price = l11.get("entry", l11.get("entry_price", 1.1000))
+    stop_loss = l11.get("stop_loss", l11.get("sl", 1.0950))
+    take_profit_1 = l11.get("take_profit_1", l11.get("tp1", l11.get("tp", 1.1100)))
     rr_ratio = l11.get("rr", 2.0)
 
     # Get risk data from RiskManager if available
@@ -253,8 +265,8 @@ def build_synthesis(
         "pair": pair,
         "scores": {
             "wolf_30_point": wolf_30_point,
-            "f_score": l4.get("fundamental_score", 50.0),
-            "t_score": technical_score,
+            "f_score": f_score,  # Use extracted f_score from L4 breakdown
+            "t_score": t_score,  # Use extracted t_score from L4 breakdown
             "fta_score": fta_score,
             "exec_score": exec_score,
         },
