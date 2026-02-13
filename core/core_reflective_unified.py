@@ -1,9 +1,11 @@
 """
 Core Reflective Unified Engine
 
-Contains: Adaptive TII, Algo Precision Engine, Field Stabilizer,
-Pipeline Controller, Hexa Vault Governance, EAF Calculator, FRPC Engine,
-Mode Controller, Evolution Engine, Wolf Integrator.
+Contains: AdaptiveTII, AlgoPrecisionEngine, FieldStabilizer,
+EAFCalculator, FRPCEngine, EvolutionEngine, WolfIntegrator.
+
+Cleaned up: Removed PipelineController, HexaVaultGovernance, ModeController
+(these are now handled by pipeline.WolfConstitutionalPipeline).
 """
 
 from typing import Any
@@ -105,65 +107,6 @@ class FieldStabilizer:
         }
 
 
-class PipelineController:
-    """Controls analysis pipeline flow."""
-
-    def __init__(self):
-        self.pipeline_state = "IDLE"
-
-    def start_pipeline(self, symbol: str) -> dict[str, Any]:
-        """
-        Start analysis pipeline.
-
-        Args:
-            symbol: Trading pair
-
-        Returns:
-            Dictionary with pipeline status
-        """
-        self.pipeline_state = "RUNNING"
-
-        return {
-            "status": self.pipeline_state,
-            "symbol": symbol,
-            "valid": True,
-        }
-
-    def stop_pipeline(self) -> dict[str, Any]:
-        """Stop analysis pipeline."""
-        self.pipeline_state = "STOPPED"
-
-        return {
-            "status": self.pipeline_state,
-            "valid": True,
-        }
-
-
-class HexaVaultGovernance:
-    """Hexa Vault security and governance."""
-
-    def check_governance(self, action: str, context: dict[str, Any]) -> dict[str, Any]:
-        """
-        Check governance rules.
-
-        Args:
-            action: Action to validate
-            context: Action context
-
-        Returns:
-            Dictionary with governance check
-        """
-        # Placeholder governance logic
-        allowed_actions = ["TRADE", "ANALYZE", "REPORT"]
-
-        return {
-            "action": action,
-            "approved": action in allowed_actions,
-            "governance_level": "STANDARD",
-            "valid": True,
-        }
-
-
 class EAFCalculator:
     """Execution Accuracy Factor Calculator."""
 
@@ -237,31 +180,6 @@ class FRPCEngine:
             "confidence": confidence,
             "valid": True,
         }
-
-
-class ModeController:
-    """Controls system operational mode."""
-
-    def __init__(self):
-        self.current_mode = "CONSERVATIVE"
-
-    def set_mode(self, mode: str) -> dict[str, Any]:
-        """
-        Set operational mode.
-
-        Args:
-            mode: Mode to set (CONSERVATIVE, BALANCED, AGGRESSIVE)
-
-        Returns:
-            Dictionary with mode status
-        """
-        valid_modes = ["CONSERVATIVE", "BALANCED", "AGGRESSIVE"]
-
-        if mode in valid_modes:
-            self.current_mode = mode
-            return {"mode": self.current_mode, "changed": True, "valid": True}
-
-        return {"mode": self.current_mode, "changed": False, "valid": False}
 
 
 class EvolutionEngine:

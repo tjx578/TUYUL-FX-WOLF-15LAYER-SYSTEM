@@ -2,7 +2,9 @@
 Core Fundamental Unified Engine
 
 Contains: CentralBankSentimentAnalyzer, FTAExecutionGate, FTAIntegrationEngine,
-FundamentalDriveEngine, FundamentalPatchIntegrator.
+FundamentalDriveEngine.
+
+Cleaned up: Removed FundamentalPatchIntegrator (not needed).
 """
 
 from typing import Any
@@ -111,28 +113,3 @@ class FundamentalDriveEngine:
             "valid": True,
         }
 
-
-class FundamentalPatchIntegrator:
-    """Integrates fundamental patches and updates into the system."""
-
-    def integrate_patch(
-        self,
-        symbol: str,
-        patch_data: dict[str, Any],
-    ) -> dict[str, Any]:
-        """
-        Integrate fundamental patch.
-
-        Args:
-            symbol: Trading pair
-            patch_data: Patch data to integrate
-
-        Returns:
-            Dictionary with integration results
-        """
-        return {
-            "patch_applied": True,
-            "timestamp": patch_data.get("timestamp"),
-            "impact_score": 0.5,
-            "valid": True,
-        }
