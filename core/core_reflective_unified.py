@@ -1,241 +1,561 @@
 """
-Core Reflective Unified Engine
+Core Reflective Unified Engine — v7.4r∞
 
-Contains: AdaptiveTII, AlgoPrecisionEngine, FieldStabilizer,
-EAFCalculator, FRPCEngine, EvolutionEngine, WolfIntegrator.
+Pipeline Coverage:
+  L1  — Reflex Context       (FieldState, adaptive_field_stabilizer — shared)
+  L2  — Fusion Sync          (FRPCEngine, FRPCResult, PropagationState)
+  L4  — Energy Field αβγ     (AlphaBetaGamma, ReflectiveQuadEnergyManager)
+  L5  — RGO Governance       (HexaVaultManager, VaultSyncStatus, IntegrityLevel)
+  L6  — Lorentzian Stab.     (ReflectiveSymmetryPatchV6, get_reflective_energy_state)
+  L8  — TII Validation       (AdaptiveTIIThresholds, algo_precision_engine, TIIResult)
+  L10 — Meta Evolution       (ReflectiveEvolutionEngine, MetaState)
+  L11 — Wolf Discipline      (WolfReflectiveIntegrator, DisciplineCategory,
+                               EAFScoreCalculator)
+  L12 — Bridge to Decision   (QuantumReflectiveBridge)
+  L13 — Execution Pipeline   (ReflectiveTradePipelineController,
+                               execute_reflective_trade, generate_trade_targets,
+                               RiskFeedbackCalibrator)
 
-Cleaned up: Removed PipelineController, HexaVaultGovernance, ModeController
-(these are now handled by pipeline.WolfConstitutionalPipeline).
+Additional:
+  TRQ3DUnifiedEngine → L3 (energy calculation)
+
+Constants:
+  LAMBDA_ESI                = 0.003
+  META_LEARNING_RATE        = 0.015
+  META_RESILIENCE_INDEX     = 0.93
+  META_RESONANCE_LIMIT      = 0.95
+  DEFAULT_TII_THRESHOLDS    = {strong_valid: 0.93, valid: 0.85, marginal: 0.75}
+  ALPHA_PRICE_WEIGHT        = 0.62
+  BETA_TIME_WEIGHT          = 0.24
+  GAMMA_VOLUME_WEIGHT       = 0.14
+
+TODO: Replace NotImplementedError with real logic.
 """
 
-from typing import Any
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from enum import Enum
+from typing import Any, Dict, List, Tuple
+
+# ─── Constants ────────────────────────────────────────────────────────────────
+
+LAMBDA_ESI: float = 0.003
+
+META_LEARNING_RATE: float = 0.015
+META_RESILIENCE_INDEX: float = 0.93
+META_RESONANCE_LIMIT: float = 0.95
+
+DEFAULT_TII_THRESHOLDS: dict[str, float] = {
+    "strong_valid": 0.93,
+    "valid": 0.85,
+    "marginal": 0.75,
+}
+
+ALPHA_PRICE_WEIGHT: float = 0.62
+BETA_TIME_WEIGHT: float = 0.24
+GAMMA_VOLUME_WEIGHT: float = 0.14
 
 
-class AdaptiveTII:
-    """Adaptive Technical-Integrity Index."""
+# ─── Enums ────────────────────────────────────────────────────────────────────
 
-    def calculate(
-        self,
-        technical_score: float,
-        integrity_score: float,
-    ) -> dict[str, Any]:
-        """
-        Calculate adaptive TII.
-
-        Args:
-            technical_score: Technical analysis score (0-1)
-            integrity_score: Data integrity score (0-1)
-
-        Returns:
-            Dictionary with TII scores
-        """
-        tii = (technical_score * 0.5) + (integrity_score * 0.5)
-
-        return {
-            "tii_score": tii,
-            "technical_component": technical_score,
-            "integrity_component": integrity_score,
-            "valid": True,
-        }
+class FieldState(Enum):
+    """L1 — Structural field state."""
+    ACCUMULATION = "ACCUMULATION"
+    EXPANSION = "EXPANSION"
+    REVERSAL = "REVERSAL"
+    CONSOLIDATION = "CONSOLIDATION"
 
 
-class AlgoPrecisionEngine:
-    """Algorithmic precision calculator."""
-
-    def calculate_precision(
-        self,
-        predictions: list[float],
-        actuals: list[float],
-    ) -> dict[str, Any]:
-        """
-        Calculate algo precision.
-
-        Args:
-            predictions: Predicted values
-            actuals: Actual values
-
-        Returns:
-            Dictionary with precision metrics
-        """
-        if len(predictions) != len(actuals) or len(predictions) == 0:
-            return {"precision": 0.0, "valid": False}
-
-        # Calculate mean absolute percentage error
-        errors = [abs((a - p) / a) for a, p in zip(actuals, predictions, strict=False) if a != 0]
-        mape = sum(errors) / len(errors) if errors else 0
-        precision = max(0, 1 - mape)
-
-        return {
-            "precision": precision,
-            "mape": mape,
-            "sample_size": len(predictions),
-            "valid": True,
-        }
+class PropagationState(Enum):
+    """L2 — FRPC propagation state."""
+    SYNC = "SYNC"
+    PARTIAL = "PARTIAL"
+    DESYNC = "DESYNC"
 
 
-class FieldStabilizer:
-    """Stabilizes field calculations and prevents oscillation."""
-
-    def stabilize(
-        self,
-        current_value: float,
-        history: list[float],
-        smoothing: float = 0.3,
-    ) -> dict[str, Any]:
-        """
-        Stabilize field value.
-
-        Args:
-            current_value: Current field value
-            history: Historical values
-            smoothing: Smoothing factor (0-1)
-
-        Returns:
-            Dictionary with stabilized value
-        """
-        if not history:
-            stabilized = current_value
-        else:
-            avg_history = sum(history[-5:]) / min(5, len(history))
-            stabilized = (current_value * smoothing) + (avg_history * (1 - smoothing))
-
-        return {
-            "stabilized_value": stabilized,
-            "raw_value": current_value,
-            "smoothing_applied": smoothing,
-            "valid": True,
-        }
+class VaultSyncStatus(Enum):
+    """L5 — HexaVault synchronisation status."""
+    SYNCED = "SYNCED"
+    PENDING = "PENDING"
+    CONFLICT = "CONFLICT"
+    ERROR = "ERROR"
 
 
-class EAFCalculator:
-    """Execution Accuracy Factor Calculator."""
+class IntegrityLevel(Enum):
+    """L5 — System integrity level."""
+    FULL = "FULL"
+    PARTIAL = "PARTIAL"
+    COMPROMISED = "COMPROMISED"
 
-    def calculate(
-        self,
-        executed_trades: list[dict[str, Any]],
-    ) -> dict[str, Any]:
-        """
-        Calculate EAF.
 
-        Args:
-            executed_trades: List of executed trades
+class ReflectiveEnergyState(Enum):
+    """L6 — Reflective energy state."""
+    CRITICAL = "CRITICAL"
+    LOW = "LOW"
+    BALANCED = "BALANCED"
+    HIGH = "HIGH"
+    PEAK = "PEAK"
 
-        Returns:
-            Dictionary with EAF score
-        """
-        if not executed_trades:
-            return {"eaf_score": 0.0, "valid": False}
 
-        # Calculate accuracy based on slippage and execution quality
-        total_accuracy = 0.0
-        for trade in executed_trades:
-            slippage = trade.get("slippage", 0.0)
-            accuracy = max(0, 1 - abs(slippage))
-            total_accuracy += accuracy
+class TIIStatus(Enum):
+    """L8 — TII validation status."""
+    STRONG_VALID = "STRONG_VALID"
+    VALID = "VALID"
+    MARGINAL = "MARGINAL"
+    INVALID = "INVALID"
 
-        eaf_score = total_accuracy / len(executed_trades)
 
-        return {
-            "eaf_score": eaf_score,
-            "trades_analyzed": len(executed_trades),
-            "valid": True,
-        }
+class TIIClassification(Enum):
+    """L8 — TII trend classification."""
+    STRONG_TREND = "STRONG_TREND"
+    MODERATE_TREND = "MODERATE_TREND"
+    WEAK_TREND = "WEAK_TREND"
+    RANGING = "RANGING"
+    NO_TREND = "NO_TREND"
 
+
+class MetaState(Enum):
+    """L10 — Meta-evolution state."""
+    STABLE = "STABLE"
+    EVOLVING = "EVOLVING"
+    CALIBRATING = "CALIBRATING"
+    RESETTING = "RESETTING"
+
+
+class DisciplineCategory(Enum):
+    """L11 — Wolf discipline check category."""
+    ENTRY = "ENTRY"
+    RISK = "RISK"
+    PSYCHOLOGICAL = "PSYCHOLOGICAL"
+    PROPFIRM = "PROPFIRM"
+
+
+class ExecutionStatus(Enum):
+    """L13 — Execution status."""
+    SUCCESS = "SUCCESS"
+    PARTIAL = "PARTIAL"
+    FAILED = "FAILED"
+    REJECTED = "REJECTED"
+
+
+# ─── Dataclasses ──────────────────────────────────────────────────────────────
+
+@dataclass
+class FieldStabilityResult:
+    """L1 — Output of adaptive_field_stabilizer()."""
+    field_state: FieldState = FieldState.CONSOLIDATION
+    stability: float = 0.0
+
+
+@dataclass
+class FRPCResult:
+    """L2 — FRPC computation result."""
+    frpc: float = 0.0
+    propagation_state: PropagationState = PropagationState.DESYNC
+
+
+@dataclass
+class AlphaBetaGamma:
+    """L4 — αβγ energy weights."""
+    alpha: float = ALPHA_PRICE_WEIGHT
+    beta: float = BETA_TIME_WEIGHT
+    gamma: float = GAMMA_VOLUME_WEIGHT
+
+
+@dataclass
+class QuadEnergyResult:
+    """L4 — Quad energy computation result."""
+    mean_energy: float = 0.0
+    reflective_coherence: float = 0.0
+
+
+@dataclass
+class VaultStatus:
+    """L5 — HexaVault status report."""
+    sync_status: VaultSyncStatus = VaultSyncStatus.PENDING
+    integrity: IntegrityLevel = IntegrityLevel.PARTIAL
+
+
+@dataclass
+class SymmetryEvaluation:
+    """L6 — Lorentzian symmetry evaluation result."""
+    tii_sym: float = 0.0
+    phase: str = ""
+    lrce: float = 0.0  # Lorentzian Reflective Coherence Energy
+
+
+@dataclass
+class TIIResult:
+    """L8 — TII computation result."""
+    tii: float = 0.0
+    status: TIIStatus = TIIStatus.INVALID
+    rcadj: float = 0.0
+    confidence: float = 0.0
+
+
+@dataclass
+class EvolutionSnapshot:
+    """L10 — Meta-evolution snapshot."""
+    reflective_integrity: float = 0.0
+    meta_state: MetaState = MetaState.CALIBRATING
+    alpha: float = 0.0
+    drift: float = 0.0
+
+
+@dataclass
+class FeedbackSnapshot:
+    """L10 — Reflective feedback snapshot."""
+    gradient: float = 0.0
+    tii: float = 0.0
+
+
+@dataclass
+class DisciplineCheckResult:
+    """L11 — Single discipline check outcome."""
+    category: DisciplineCategory = DisciplineCategory.ENTRY
+    check_name: str = ""
+    passed: bool = False
+    weight: float = 1.0
+
+
+@dataclass
+class WolfDisciplineScore:
+    """L11 — Aggregate discipline score (24-point system)."""
+    total_score: float = 0.0
+    checks_passed: int = 0
+    checks_failed: int = 0
+    category_scores: Dict[str, float] = field(default_factory=dict)
+
+
+@dataclass
+class EAFResult:
+    """L11 — Execution Accuracy Factor result."""
+    eaf_score: float = 0.0
+    can_trade: bool = False
+    emotional_state: str = "CALM"
+
+
+@dataclass
+class TradeExecutionResult:
+    """L13 — Trade execution result."""
+    status: ExecutionStatus = ExecutionStatus.REJECTED
+    outcome: str = ""
+    pnl: float = 0.0
+
+
+@dataclass
+class TimeFrameEnergy:
+    """L3 — Timeframe energy from TRQ3DUnifiedEngine."""
+    h1_energy: float = 0.0
+    h4_energy: float = 0.0
+    d1_energy: float = 0.0
+
+
+@dataclass
+class TRQ3DResult:
+    """L3 — Full TRQ3D result."""
+    energy: TimeFrameEnergy = field(default_factory=TimeFrameEnergy)
+    composite: float = 0.0
+
+
+# ─── L1: Reflex Context (Field Stabilizer) ───────────────────────────────────
+
+def adaptive_field_stabilizer(
+    market_data: dict[str, Any],
+) -> FieldStabilityResult:
+    """
+    L1 — Adaptive field stabiliser.
+
+    TODO: Implement real field stabilisation logic.
+    """
+    raise NotImplementedError(
+        "adaptive_field_stabilizer — awaiting implementation"
+    )
+
+
+# ─── L2: Fusion Sync (FRPC) ──────────────────────────────────────────────────
 
 class FRPCEngine:
-    """Field-Risk-Probability-Confidence Engine."""
+    """
+    L2 — Fusion Reflective Propagation Coefficient.
 
-    def calculate(
+    fusion_reflective_propagation_coefficient() → FRPCResult
+    """
+
+    def fusion_reflective_propagation_coefficient(
         self,
-        field_strength: float,
-        risk_score: float,
-        probability: float,
-        confidence: float,
-    ) -> dict[str, Any]:
-        """
-        Calculate FRPC composite.
-
-        Args:
-            field_strength: Field strength (0-1)
-            risk_score: Risk score (0-1)
-            probability: Win probability (0-1)
-            confidence: Confidence level (0-1)
-
-        Returns:
-            Dictionary with FRPC score
-        """
-        # Weighted composite
-        frpc = (
-            field_strength * 0.25
-            + (1 - risk_score) * 0.25  # Lower risk is better
-            + probability * 0.25
-            + confidence * 0.25
+        fusion_scores: dict[str, float],
+    ) -> FRPCResult:
+        """TODO: Implement real FRPC computation."""
+        raise NotImplementedError(
+            "FRPCEngine.fusion_reflective_propagation_coefficient — awaiting implementation"
         )
 
-        return {
-            "frpc_score": frpc,
-            "field_strength": field_strength,
-            "risk_score": risk_score,
-            "probability": probability,
-            "confidence": confidence,
-            "valid": True,
-        }
+
+# ─── L3: TRQ3D Energy (Unified) ──────────────────────────────────────────────
+
+class TRQ3DUnifiedEngine:
+    """
+    L3 — TRQ3D unified energy calculator.
+
+    calculate_energy() → TimeFrameEnergy
+    """
+
+    def calculate_energy(self, symbol: str) -> TimeFrameEnergy:
+        """TODO: Implement real TRQ3D energy calculation."""
+        raise NotImplementedError(
+            "TRQ3DUnifiedEngine.calculate_energy — awaiting implementation"
+        )
 
 
-class EvolutionEngine:
-    """System evolution and learning engine."""
+# ─── L4: Energy Field αβγ ────────────────────────────────────────────────────
 
-    WIN_RATE_EVOLUTION_THRESHOLD = 0.55  # Win rate below which evolution is needed
+class ReflectiveQuadEnergyManager:
+    """
+    L4 — Quad-energy manager (αβγ field).
 
-    def evolve(self, performance_data: dict[str, Any]) -> dict[str, Any]:
-        """
-        Evolve system based on performance.
+    compute_quad_energy() → QuadEnergyResult
+    """
 
-        Args:
-            performance_data: Historical performance data
+    def compute_quad_energy(
+        self, symbol: str, timeframe: str = "H1"
+    ) -> QuadEnergyResult:
+        """TODO: Implement real quad energy computation."""
+        raise NotImplementedError(
+            "ReflectiveQuadEnergyManager.compute_quad_energy — awaiting implementation"
+        )
 
-        Returns:
-            Dictionary with evolution results
-        """
-        win_rate = performance_data.get("win_rate", 0.5)
-
-        # Determine if system needs adjustment
-        evolution_needed = win_rate < self.WIN_RATE_EVOLUTION_THRESHOLD
-
-        return {
-            "evolution_applied": evolution_needed,
-            "performance_win_rate": win_rate,
-            "adjustments": "THRESHOLD_TIGHTENED" if evolution_needed else "NONE",
-            "valid": True,
-        }
+    def compute_reflective_gradient(self) -> float:
+        """TODO: Implement reflective gradient (∇αβγ)."""
+        raise NotImplementedError(
+            "ReflectiveQuadEnergyManager.compute_reflective_gradient — awaiting implementation"
+        )
 
 
-class WolfIntegrator:
-    """Wolf 15-Layer System Integrator."""
+# ─── L5: RGO Governance ──────────────────────────────────────────────────────
 
-    TOTAL_LAYERS = 15  # Total number of layers in the system
+class VaultIntegrityError(Exception):
+    """Raised when vault integrity is compromised."""
 
-    def integrate_layers(
-        self,
-        layers: dict[str, Any],
-    ) -> dict[str, Any]:
-        """
-        Integrate all 15 layers.
 
-        Args:
-            layers: Dictionary of layer outputs
+class HexaVaultManager:
+    """
+    L5 — HexaVault governance manager.
 
-        Returns:
-            Dictionary with integrated output
-        """
-        # Count valid layers
-        valid_count = sum(1 for layer in layers.values() if layer.get("valid", False))
-        integration_score = valid_count / float(self.TOTAL_LAYERS)
+    sync_all()
+    get_vault_status() → VaultStatus
+    """
 
-        return {
-            "integration_complete": valid_count >= 11,
-            "valid_layers": valid_count,
-            "total_layers": self.TOTAL_LAYERS,
-            "integration_score": integration_score,
-            "valid": True,
-        }
+    def sync_all(self) -> None:
+        """TODO: Implement vault synchronisation."""
+        raise NotImplementedError(
+            "HexaVaultManager.sync_all — awaiting implementation"
+        )
+
+    def get_vault_status(self) -> VaultStatus:
+        """TODO: Implement vault status retrieval."""
+        raise NotImplementedError(
+            "HexaVaultManager.get_vault_status — awaiting implementation"
+        )
+
+
+# ─── L6: Lorentzian Stabilization ────────────────────────────────────────────
+
+def get_reflective_energy_state(energy: float) -> ReflectiveEnergyState:
+    """
+    L6 — Classify reflective energy state.
+
+    TODO: Implement real energy state classification.
+    """
+    raise NotImplementedError(
+        "get_reflective_energy_state — awaiting implementation"
+    )
+
+
+class ReflectiveSymmetryPatchV6:
+    """
+    L6 — Reflective symmetry patch with Lorentzian coherence.
+
+    evaluate_reflective_state() → SymmetryEvaluation
+    """
+
+    def evaluate_reflective_state(
+        self, symbol: str, timeframe: str = "H1"
+    ) -> SymmetryEvaluation:
+        """TODO: Implement real symmetry evaluation."""
+        raise NotImplementedError(
+            "ReflectiveSymmetryPatchV6.evaluate_reflective_state — awaiting implementation"
+        )
+
+
+# ─── L8: TII Validation ──────────────────────────────────────────────────────
+
+class AdaptiveTIIThresholds:
+    """
+    L8 — Adaptive TII threshold classifier.
+
+    classify() → TIIClassification
+    """
+
+    def classify(self, tii_score: float) -> TIIClassification:
+        """TODO: Implement adaptive TII classification."""
+        raise NotImplementedError(
+            "AdaptiveTIIThresholds.classify — awaiting implementation"
+        )
+
+
+def algo_precision_engine(
+    technical_score: float,
+    integrity_score: float,
+    confidence: float = 0.0,
+) -> TIIResult:
+    """
+    L8 — Algorithmic precision engine producing TII result.
+
+    TODO: Implement real TII computation.
+    """
+    raise NotImplementedError(
+        "algo_precision_engine — awaiting implementation"
+    )
+
+
+# ─── L10: Meta Evolution ─────────────────────────────────────────────────────
+
+class ReflectiveEvolutionEngine:
+    """
+    L10 — System evolution engine.
+
+    run_feedback_cycle() → EvolutionSnapshot
+    """
+
+    def run_feedback_cycle(
+        self, performance_data: dict[str, Any]
+    ) -> EvolutionSnapshot:
+        """TODO: Implement real evolution feedback cycle."""
+        raise NotImplementedError(
+            "ReflectiveEvolutionEngine.run_feedback_cycle — awaiting implementation"
+        )
+
+
+def sync_reflective_feedback() -> FeedbackSnapshot:
+    """L10 — Sync reflective feedback. TODO: implement."""
+    raise NotImplementedError(
+        "sync_reflective_feedback — awaiting implementation"
+    )
+
+
+# ─── L11: Wolf Discipline ────────────────────────────────────────────────────
+
+class WolfReflectiveIntegrator:
+    """
+    L11 — Wolf discipline integrator (24-point system).
+
+    evaluate_discipline(checks) → WolfDisciplineScore
+    """
+
+    def evaluate_discipline(
+        self, checks: List[DisciplineCheckResult]
+    ) -> WolfDisciplineScore:
+        """TODO: Implement real discipline evaluation."""
+        raise NotImplementedError(
+            "WolfReflectiveIntegrator.evaluate_discipline — awaiting implementation"
+        )
+
+
+class EAFScoreCalculator:
+    """
+    L11 — Execution Accuracy Factor calculator.
+
+    calculate() → EAFResult
+    """
+
+    def calculate(
+        self, trade_history: List[dict[str, Any]]
+    ) -> EAFResult:
+        """TODO: Implement real EAF calculation."""
+        raise NotImplementedError(
+            "EAFScoreCalculator.calculate — awaiting implementation"
+        )
+
+
+# ─── L12: Bridge to Decision ─────────────────────────────────────────────────
+
+class QuantumReflectiveBridge:
+    """
+    L12 — Bridge between reflective and quantum decision layers.
+
+    can_execute_trade() → Tuple[bool, str]
+    """
+
+    def can_execute_trade(
+        self, layer_outputs: dict[str, Any]
+    ) -> Tuple[bool, str]:
+        """TODO: Implement real bridge logic."""
+        raise NotImplementedError(
+            "QuantumReflectiveBridge.can_execute_trade — awaiting implementation"
+        )
+
+
+# ─── L13: Execution Pipeline ─────────────────────────────────────────────────
+
+class ReflectiveTradePipelineController:
+    """
+    L13 — Reflective trade pipeline controller.
+
+    execute() → PipelineResult-like dict
+    """
+
+    def execute(self, trade_plan: dict[str, Any]) -> dict[str, Any]:
+        """TODO: Implement real pipeline execution."""
+        raise NotImplementedError(
+            "ReflectiveTradePipelineController.execute — awaiting implementation"
+        )
+
+
+def execute_reflective_trade(
+    trade_plan: dict[str, Any],
+) -> TradeExecutionResult:
+    """L13 — Execute a reflective trade. TODO: implement."""
+    raise NotImplementedError(
+        "execute_reflective_trade — awaiting implementation"
+    )
+
+
+def generate_trade_targets(
+    entry: float, stop_loss: float, direction: str
+) -> dict[str, Any]:
+    """
+    L13 — Generate TP levels and RR ratio.
+
+    Returns:
+        dict with tp_levels: List[float], rr_ratio: float
+
+    TODO: Implement real target generation.
+    """
+    raise NotImplementedError(
+        "generate_trade_targets — awaiting implementation"
+    )
+
+
+class RiskFeedbackCalibrator:
+    """L13 — Risk feedback calibrator. TODO: implement."""
+
+    def calibrate(self, trade_result: TradeExecutionResult) -> dict[str, Any]:
+        raise NotImplementedError(
+            "RiskFeedbackCalibrator.calibrate — awaiting implementation"
+        )
+
+
+class ReflectivePipelineController:
+    """
+    L12 — Pipeline controller for reflective stages.
+
+    execute() → dict with success, stages_completed, final_output
+    """
+
+    def execute(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        """TODO: Implement reflective pipeline controller."""
+        raise NotImplementedError(
+            "ReflectivePipelineController.execute — awaiting implementation"
+        )
