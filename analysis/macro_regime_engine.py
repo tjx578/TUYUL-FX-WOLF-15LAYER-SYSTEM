@@ -1,12 +1,13 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
-from typing import Any, List
+from datetime import UTC, datetime
+from typing import Any
 
 import orjson
+
 from loguru import logger
 
-from storage.redis_client import redis_client as RedisClient
+from storage.redis_client import redis_client as redis_client_default
 
 
 class MacroRegimeEngine:
@@ -15,22 +16,22 @@ class MacroRegimeEngine:
     This implementation is intentionally small and deterministic for tests.
     """
 
-    def __init__(self, redis_client: RedisClient | None = None) -> None:
-        self.redis = redis_client or RedisClient
+    def __init__(self, redis_client: redis_client_default | None = None) -> None: # pyright: ignore[reportInvalidTypeForm]
+        self.redis = redis_client or redis_client_default
 
-    def _load_mn_history(self, symbol: str, max_items: int = 240) -> List[dict[str, Any]]:
+    def _load_mn_history(self, symbol: str, max_items: int = 240) -> list[dict[str, Any]]:
         key = f"wolf15:candle:{symbol}:MN:history"
         try:
             raw = self.redis.client.lrange(key, 0, -1)
             if not raw:
                 return []
-            history = [orjson.loads(item) for item in raw]
+            history = [orjson.loads(item) for item in raw] # pyright: ignore[reportGeneralTypeIssues]
             return history[-max_items:]
         except Exception as exc:
             logger.error(f"Failed to load MN history for {symbol}: {exc}")
             return []
 
-    def _compute_regime(self, mn_history: List[dict[str, Any]]) -> dict[str, Any]:
+    def _compute_regime(self, mn_history: list[dict[str, Any]]) -> dict[str, Any]:
         """Compute a lightweight regime signal from MN history.
 
         Strategy (simple):
@@ -51,8 +52,7 @@ class MacroRegimeEngine:
 
         if last_close > prev_close:
             return {"type": "BULLISH_EXPANSION", "bias": "BULLISH"}
-        else:
-            return {"type": "BEARISH_CONTRACTION", "bias": "BEARISH"}
+        return {"type": "BEARISH_CONTRACTION", "bias": "BEARISH"}
 
     def update_macro_state(self, symbol: str) -> dict[str, Any]:
         """Load MN history, compute regime, and write to Redis hash.
@@ -66,7 +66,7 @@ class MacroRegimeEngine:
         regime_payload = {
             "type": regime.get("type", "UNKNOWN"),
             "bias": regime.get("bias", "NEUTRAL"),
-            "updated_at": datetime.now(timezone.utc).isoformat(),
+            "updated_at": datetime.now(UTC).isoformat(),
         }
 
         try:
