@@ -28,6 +28,7 @@ Phase 6: L14 vault sync + sovereignty enforcement
 from __future__ import annotations
 
 import time
+
 from typing import Any
 
 from loguru import logger
@@ -458,10 +459,9 @@ class WolfConstitutionalPipeline:
             direction == "SELL" and technical_bias == "BEARISH"
         ):
             return 1.0
-        elif technical_bias == "NEUTRAL":
+        if technical_bias == "NEUTRAL":
             return 0.7
-        else:
-            return 0.3
+        return 0.3
 
     def _compute_frpc(
         self,
@@ -475,18 +475,14 @@ class WolfConstitutionalPipeline:
 
         # Check if verdict matches bias
         if verdict.startswith("EXECUTE"):
-            if direction == "BUY" and technical_bias == "BULLISH":
+            if (direction == "BUY" and technical_bias == "BULLISH") or (direction == "SELL" and technical_bias == "BEARISH"):
                 return 1.0
-            elif direction == "SELL" and technical_bias == "BEARISH":
-                return 1.0
-            elif technical_bias == "NEUTRAL":
+            if technical_bias == "NEUTRAL":
                 return 0.7
-            else:
-                return 0.3
-        elif verdict == "HOLD":
+            return 0.3
+        if verdict == "HOLD":
             return 0.8 if technical_bias == "NEUTRAL" else 0.5
-        else:
-            return 0.5
+        return 0.5
 
     def _compute_sovereignty(
         self,
