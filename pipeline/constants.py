@@ -1,8 +1,19 @@
 """
-Pipeline Constants — threshold accessors from config/constitution.yaml.
+Pipeline Constants v7.4r∞ — threshold accessors from config/constitution.yaml.
 
 This module provides easy access to constitutional thresholds
-for the pipeline without hardcoding magic numbers.
+for the Wolf 15-Layer Pipeline without hardcoding magic numbers.
+
+9-Gate Constitutional Check thresholds:
+    GATE 1: TIIₛᵧₘ ≥ 0.93
+    GATE 2: Monte Carlo ≥ 60% (0.55 in config, multiplied by 100)
+    GATE 3: FRPC State = SYNC
+    GATE 4: CONF₁₂ ≥ 0.75
+    GATE 5: RR ≥ 1:2.0
+    GATE 6: Integrity ≥ 0.97
+    GATE 7: PropFirm Compliant
+    GATE 8: Drawdown ≤ 5.0%
+    GATE 9: Latency ≤ 250ms
 """
 
 from __future__ import annotations
