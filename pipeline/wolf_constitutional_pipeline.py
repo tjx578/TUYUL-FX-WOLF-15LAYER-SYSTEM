@@ -337,8 +337,10 @@ class WolfConstitutionalPipeline:
             entry_zone = f"{entry_price:.5f}-{entry_price + 0.0010:.5f}"
 
         # Risk management (defaults - production should use RiskManager)
+        # TODO: Issue #XXX - Integrate real RiskManager from dashboard before production
+        # These placeholder values MUST be replaced with account-level risk state
         lot_size = 0.01  # PLACEHOLDER - should come from dashboard
-        risk_percent = 0.01  # 1%
+        risk_percent = 0.01  # 1% - PLACEHOLDER
         risk_amount = 100.0  # PLACEHOLDER - should come from account state
 
         # PropFirm compliance (default to True)
@@ -446,6 +448,23 @@ class WolfConstitutionalPipeline:
             "abg_score": abg_score,
         }
 
+    def _is_direction_aligned_with_bias(self, direction: str, technical_bias: str) -> bool:
+        """
+        Check if direction is aligned with technical bias.
+
+        Args:
+            direction: Trade direction (BUY/SELL)
+            technical_bias: Technical bias (BULLISH/BEARISH/NEUTRAL)
+
+        Returns:
+            True if aligned, False otherwise
+        """
+        if direction == "BUY" and technical_bias == "BULLISH":
+            return True
+        elif direction == "SELL" and technical_bias == "BEARISH":
+            return True
+        return False
+
     def _compute_lrce(self, synthesis: dict[str, Any]) -> float:
         """Compute Layer Recursive Coherence (directional alignment)."""
         direction = synthesis.get("execution", {}).get("direction")
@@ -455,9 +474,7 @@ class WolfConstitutionalPipeline:
             return 0.5
 
         # Check alignment
-        if (direction == "BUY" and technical_bias == "BULLISH") or (
-            direction == "SELL" and technical_bias == "BEARISH"
-        ):
+        if self._is_direction_aligned_with_bias(direction, technical_bias):
             return 1.0
         if technical_bias == "NEUTRAL":
             return 0.7
@@ -475,7 +492,7 @@ class WolfConstitutionalPipeline:
 
         # Check if verdict matches bias
         if verdict.startswith("EXECUTE"):
-            if (direction == "BUY" and technical_bias == "BULLISH") or (direction == "SELL" and technical_bias == "BEARISH"):
+            if self._is_direction_aligned_with_bias(direction, technical_bias):
                 return 1.0
             if technical_bias == "NEUTRAL":
                 return 0.7
@@ -503,8 +520,12 @@ class WolfConstitutionalPipeline:
         thresholds = get_vault_sync_thresholds()
 
         # Compute 3-component vault sync
-        # TODO: Replace with real health checks before production use
-        # KNOWN LIMITATION: Using placeholder values
+        # TODO: Issue #XXX - Implement real health checks before production deployment
+        # CRITICAL: These are placeholder values for feed_freshness and redis_health
+        # Production MUST implement:
+        # - feed_freshness: query LiveContextBus.get_feed_age() and compute freshness score
+        # - redis_health: check Redis connection health via ping/info commands
+        # - meta_integrity: compute from layer validity ratio (see L15MetaSovereigntyEngine)
         feed_freshness = 1.0  # PLACEHOLDER - should query LiveContextBus
         redis_health = 1.0  # PLACEHOLDER - should check Redis health
         meta_integrity = 1.0  # PLACEHOLDER - should compute from layer validity
