@@ -14,7 +14,6 @@ import asyncio
 import os
 import time
 
-from datetime import datetime, timezone
 from datetime import UTC, datetime
 
 import httpx
@@ -95,7 +94,6 @@ class MacroVolatilityEngine:
             "volatility_multiplier": multipliers["volatility"],
             "risk_multiplier": multipliers["risk"],
             "source": source,
-            "updated_at": datetime.now(timezone.utc).isoformat(),
             "updated_at": datetime.now(UTC).isoformat(),
             "timestamp": int(time.time()),
         }
