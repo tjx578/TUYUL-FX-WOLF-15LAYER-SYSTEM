@@ -8,9 +8,11 @@ execution logging, and template population.
 
 from reasoning.context import LayerResult, LayerState, Verdict, WolfContext, WolfStatus
 from reasoning.engine import Wolf15LayerEngine
+from reasoning.template import Wolf15LayerTemplatePopulator
 
 __all__ = [
     "Wolf15LayerEngine",
+    "Wolf15LayerTemplatePopulator",
     "WolfContext",
     "LayerResult",
     "LayerState",
