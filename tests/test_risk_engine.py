@@ -287,6 +287,7 @@ class TestSplitRisk:
         )
 
         # First split should be roughly equal to second
+        assert result.split_lots is not None, f"split_lots should not be None: {result.reason}"
         assert abs(result.split_lots[0] - result.split_lots[1]) < 0.05
 
 
@@ -326,13 +327,11 @@ class TestDrawdownMultiplier:
             risk_state=RiskSeverity.SAFE,
         )
 
-        result = engine.calculate_lot(
-            signal=signal,
-            account_state=low_dd_state,
-            risk_percent=1.0,
-            prop_firm_code="ftmo",
-        )
-        with patch("risk.risk_multiplier.is_trading_session", return_value="LONDON"):
+        # Mock both session detection and now_utc to ensure deterministic
+        # time multiplier (avoid Friday-afternoon 0.6 multiplier)
+        _tue_10am = datetime(2026, 2, 10, 10, 0, 0)  # Tuesday 10:00 UTC
+        with patch("risk.risk_multiplier.is_trading_session", return_value="LONDON"), \
+             patch("risk.risk_multiplier.now_utc", return_value=_tue_10am):
             result = engine.calculate_lot(
                 signal=signal,
                 account_state=low_dd_state,
