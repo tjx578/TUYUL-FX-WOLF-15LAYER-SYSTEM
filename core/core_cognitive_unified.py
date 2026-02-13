@@ -1,8 +1,10 @@
 """
 Core Cognitive Unified Engine
 
-Contains: EmotionFeedbackEngine, RegimeClassifier, IntegrityEngine, RiskManager,
-TWMSCalculator, SmartMoneyDetector, Monte Carlo Validator.
+Contains: EmotionFeedbackEngine, RegimeClassifier, IntegrityEngine,
+TWMSCalculator, SmartMoneyDetector.
+
+Cleaned up: Removed RiskManager, MonteCarloValidator (not needed in core).
 """
 
 from typing import Any
@@ -72,39 +74,6 @@ class IntegrityEngine:
         }
 
 
-class RiskManager:
-    """Manages risk calculations and limits."""
-
-    def calculate_risk(
-        self,
-        entry: float,
-        stop_loss: float,
-        account_balance: float,
-        risk_percent: float = 1.0,
-    ) -> dict[str, Any]:
-        """
-        Calculate risk parameters.
-
-        Args:
-            entry: Entry price
-            stop_loss: Stop loss price
-            account_balance: Account balance
-            risk_percent: Risk percentage per trade
-
-        Returns:
-            Dictionary with risk calculations
-        """
-        pips_at_risk = abs(entry - stop_loss)
-        risk_amount = account_balance * (risk_percent / 100.0)
-
-        return {
-            "risk_amount": risk_amount,
-            "pips_at_risk": pips_at_risk,
-            "risk_percent": risk_percent,
-            "valid": True,
-        }
-
-
 class TWMSCalculator:
     """Time-Weighted Market Score Calculator."""
 
@@ -148,35 +117,3 @@ class SmartMoneyDetector:
             "valid": True,
         }
 
-
-class MonteCarloValidator:
-    """Monte Carlo simulation for trade validation."""
-
-    def validate(
-        self,
-        win_rate: float,
-        rr_ratio: float,
-        num_simulations: int = 1000,
-    ) -> dict[str, Any]:
-        """
-        Run Monte Carlo simulation.
-
-        Args:
-            win_rate: Historical win rate (0-1)
-            rr_ratio: Risk-reward ratio
-            num_simulations: Number of simulations to run
-
-        Returns:
-            Dictionary with Monte Carlo results
-        """
-        # Simplified Monte Carlo
-        expected_value = (win_rate * rr_ratio) - ((1 - win_rate) * 1.0)
-        win_probability = win_rate * 100
-
-        return {
-            "win_probability": win_probability,
-            "expected_value": expected_value,
-            "simulations_run": num_simulations,
-            "confidence": 0.85,
-            "valid": expected_value > 0,
-        }
