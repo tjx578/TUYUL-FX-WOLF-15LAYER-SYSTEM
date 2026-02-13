@@ -7,7 +7,6 @@ from loguru import logger  # pyright: ignore[reportMissingImports]
 from redis.asyncio import Redis as AsyncRedis  # pyright: ignore[reportMissingImports]
 
 from config_loader import CONFIG
-from pipeline import WolfConstitutionalPipeline
 from context.runtime_state import RuntimeState
 from ingest.candle_builder import CandleBuilder
 from ingest.dependencies import create_finnhub_ws
@@ -15,6 +14,7 @@ from ingest.finnhub_market_news import FinnhubMarketNews
 from ingest.finnhub_news import FinnhubNews
 from journal.journal_router import journal_router
 from journal.journal_schema import ContextJournal, DecisionJournal, VerdictType
+from pipeline import WolfConstitutionalPipeline
 from storage.l12_cache import set_verdict
 from storage.snapshot_store import save_snapshot
 from utils.timezone_utils import is_trading_session, now_utc
