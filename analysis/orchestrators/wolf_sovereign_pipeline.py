@@ -169,7 +169,12 @@ class WolfSovereignPipeline:
             l8 = self._l8.analyze(layers_for_l8)
 
             # L9: SMC (requires structure from L3)
-            structure = self._l3.structure.analyze(symbol) if hasattr(self._l3, "structure") else l3
+            # Use structure analyzer if available, otherwise use L3 output directly
+            if hasattr(self._l3, "structure"):
+                structure = self._l3.structure.analyze(symbol)
+            else:
+                # Fallback: L3 output already contains structure data
+                structure = l3
             l9 = self._l9.analyze(symbol, structure)
 
             # ═══════════════════════════════════════════════════════════
@@ -369,9 +374,11 @@ def build_l12_synthesis(
         entry_zone = f"{entry_price:.5f}-{entry_price + 0.0010:.5f}"
 
     # Risk management
+    # NOTE: These are placeholder defaults.
+    # In production, risk_amount and lot_size MUST come from dashboard's account state.
     risk_percent = 1.0  # Default 1% per trade
-    risk_amount = 100.0  # Placeholder, should come from account state
-    lot_size = 0.01  # Placeholder, should be computed by dashboard
+    risk_amount = 100.0  # PLACEHOLDER - should come from account state
+    lot_size = 0.01  # PLACEHOLDER - should be computed by dashboard
 
     # PropFirm compliance (default to True)
     propfirm_compliant = True
@@ -628,9 +635,11 @@ class L15MetaSovereigntyEngine:
 
         meta_integrity = valid_count / total_count if total_count > 0 else 0.0
 
-        # Vault sync (placeholder - would use real Redis/feed health)
-        feed_freshness = 1.0  # Placeholder
-        redis_health = 1.0  # Placeholder
+        # Vault sync formula: feed_freshness × 0.50 + redis_health × 0.30 + meta_integrity × 0.20
+        # TODO: Replace with real health checks before production use
+        # KNOWN LIMITATION: Using placeholder values for feed_freshness and redis_health
+        feed_freshness = 1.0  # PLACEHOLDER - should query LiveContextBus feed age
+        redis_health = 1.0  # PLACEHOLDER - should check Redis connection health
         vault_sync = (
             feed_freshness * 0.50 + redis_health * 0.30 + meta_integrity * 0.20
         )

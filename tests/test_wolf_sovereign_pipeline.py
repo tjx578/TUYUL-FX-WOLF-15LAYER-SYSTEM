@@ -340,7 +340,7 @@ class TestL13ReflectiveEngine:
         assert pass2["pass"] == 2
         assert pass1["meta_integrity"] == 1.0
         assert pass2["meta_integrity"] == 0.85
-        assert pass1["drift_ratio"] == 0.0
+        assert abs(pass1["drift_ratio"] - 0.0) < 0.001  # Floating point comparison
         assert abs(pass2["drift_ratio"] - 0.15) < 0.001  # Floating point comparison
         assert pass1["abg_score"] != pass2["abg_score"]
 
