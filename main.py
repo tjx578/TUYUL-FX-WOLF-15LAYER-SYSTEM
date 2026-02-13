@@ -6,10 +6,8 @@ import sys
 from loguru import logger  # pyright: ignore[reportMissingImports]
 from redis.asyncio import Redis as AsyncRedis  # pyright: ignore[reportMissingImports]
 
-from analysis.synthesis import build_synthesis
-from analysis.synthesis_adapter import adapt_synthesis
 from config_loader import CONFIG
-from constitution.verdict_engine import generate_l12_verdict
+from pipeline import WolfConstitutionalPipeline
 from context.runtime_state import RuntimeState
 from ingest.candle_builder import CandleBuilder
 from ingest.dependencies import create_finnhub_ws
@@ -24,6 +22,7 @@ from utils.timezone_utils import is_trading_session, now_utc
 PAIRS = [p["symbol"] for p in CONFIG["pairs"]["pairs"] if p.get("enabled", True)]
 
 _shutdown_event: asyncio.Event | None = None
+_pipeline = WolfConstitutionalPipeline()
 
 
 def _build_j1(pair: str, synthesis: dict) -> ContextJournal:
@@ -144,22 +143,27 @@ async def run_redis_consumer() -> None:
 
 
 async def _analyze_pair(pair: str) -> None:
-    raw_synthesis = build_synthesis(pair)
-    synthesis = adapt_synthesis(raw_synthesis)
+    # Execute pipeline
+    result = _pipeline.execute(pair)
+
+    synthesis = result["synthesis"]
+    l12 = result["l12_verdict"]
+
+    # Inject runtime latency
     synthesis["system"]["latency_ms"] = RuntimeState.latency_ms
 
+    # Journal (KEEP existing journal logic)
     try:
         journal_router.record_context(_build_j1(pair, synthesis))
     except Exception as journal_exc:
         logger.error(f"J1 journal failed for {pair}: {journal_exc}")
-
-    l12 = generate_l12_verdict(synthesis)
 
     try:
         journal_router.record_decision(_build_j2(pair, synthesis, l12))
     except Exception as journal_exc:
         logger.error(f"J2 journal failed for {pair}: {journal_exc}")
 
+    # Storage (KEEP existing storage logic)
     set_verdict(pair, l12)
     save_snapshot(pair, l12)
     logger.debug(f"[L12] {pair} -> {l12['verdict']}")
