@@ -1,9 +1,10 @@
 """
 Core Quantum Unified Engine
 
-Contains: TRQ3DEngine, QuantumFieldSync, NeuralDecisionTree,
-ProbabilityMatrixCalculator, QuantumDecisionEngine, QuantumScenarioMatrix,
-QuantumExecutionOptimizer.
+Contains: TRQ3DEngine, NeuralDecisionTree, QuantumDecisionEngine,
+QuantumScenarioMatrix, QuantumExecutionOptimizer.
+
+Cleaned up: Removed QuantumFieldSync, ProbabilityMatrixCalculator (not needed).
 """
 
 from typing import Any
@@ -28,27 +29,6 @@ class TRQ3DEngine:
             "risk_score": 0.75,
             "quality_score": 0.85,
             "trq_composite": 0.80,
-            "valid": True,
-        }
-
-
-class QuantumFieldSync:
-    """Synchronizes quantum field calculations."""
-
-    def sync(self, fields: list[dict[str, Any]]) -> dict[str, Any]:
-        """
-        Synchronize quantum fields.
-
-        Args:
-            fields: List of field data to synchronize
-
-        Returns:
-            Dictionary with sync results
-        """
-        return {
-            "sync_status": "SYNCHRONIZED",
-            "field_count": len(fields),
-            "coherence": 0.9,
             "valid": True,
         }
 
@@ -80,38 +60,6 @@ class NeuralDecisionTree:
             "confidence": confidence,
             "threshold": threshold,
             "valid": True,
-        }
-
-
-class ProbabilityMatrixCalculator:
-    """Calculates probability matrices for outcomes."""
-
-    def calculate(
-        self,
-        scenarios: list[dict[str, Any]],
-    ) -> dict[str, Any]:
-        """
-        Calculate probability matrix.
-
-        Args:
-            scenarios: List of scenarios to analyze
-
-        Returns:
-            Dictionary with probability matrix
-        """
-        total_prob = 0.0
-        matrix = {}
-
-        for i, scenario in enumerate(scenarios):
-            prob = scenario.get("probability", 1.0 / len(scenarios))
-            matrix[f"scenario_{i}"] = prob
-            total_prob += prob
-
-        return {
-            "matrix": matrix,
-            "total_probability": total_prob,
-            "scenario_count": len(scenarios),
-            "valid": abs(total_prob - 1.0) < 0.01,
         }
 
 
