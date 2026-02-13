@@ -71,7 +71,7 @@ def generate_l12_verdict(synthesis: dict[str, Any]) -> dict[str, Any]:
         "gate_3_rr": _gate(execution["rr_ratio"] >= rr_min),
         "gate_4_fta": _gate(scores["fta_score"] >= fta_min),
         "gate_5_montecarlo": _gate(layers["L7_monte_carlo_win"] >= monte_min),
-        "gate_6_propfirm": _gate(propfirm["compliant"] is True),
+        "gate_6_propfirm": _gate(bool(propfirm.get("compliant", False))),
         "gate_7_drawdown": _gate(risk["current_drawdown"] <= max_drawdown),
         "gate_8_latency": _gate(synthesis["system"]["latency_ms"] <= 250),
         "gate_9_conf12": _gate(layers["conf12"] >= conf12_min),
@@ -154,11 +154,16 @@ def generate_l12_verdict(synthesis: dict[str, Any]) -> dict[str, Any]:
             elif bias["technical"] == "BEARISH":
                 direction = "SELL"
             else:
-                direction = "HOLD"
+                # No directional bias - return HOLD, not EXECUTE_HOLD
+                verdict = "HOLD"
+                confidence = "MEDIUM"
+                wolf_status = "SCOUT"
+                direction = None  # Clear direction
 
-        verdict = f"EXECUTE_{direction}"
-        confidence = "VERY_HIGH" if scores["wolf_30_point"] >= 27 else "HIGH"
-        wolf_status = "ALPHA" if scores["wolf_30_point"] >= 27 else "PACK"
+        if direction:  # Only set EXECUTE verdict if we have a valid direction
+            verdict = f"EXECUTE_{direction}"
+            confidence = "VERY_HIGH" if scores["wolf_30_point"] >= 27 else "HIGH"
+            wolf_status = "ALPHA" if scores["wolf_30_point"] >= 27 else "PACK"
 
     l12_output = {
         "schema": "v7.4r∞",

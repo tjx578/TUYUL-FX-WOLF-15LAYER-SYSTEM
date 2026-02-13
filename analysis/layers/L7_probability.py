@@ -15,10 +15,22 @@ MC_MAX_DRAWDOWN: float = get_threshold("monte_carlo.gate.max_drawdown", 5.0)
 
 
 class L7ProbabilityAnalyzer:
-    def analyze(self, technical_score: float) -> dict:
+    def analyze(
+        self, 
+        symbol: str, 
+        technical_score: float, 
+        rr: float = 2.0, 
+        historical_win_rate: float | None = None
+    ) -> dict:
         """
         Simple mapping placeholder:
         Higher technical score → higher probability.
+        
+        Args:
+            symbol: Trading pair symbol
+            technical_score: Technical score from L4
+            rr: Risk-reward ratio
+            historical_win_rate: Optional historical win rate
         """
         if technical_score is None:
             return {"valid": False}
