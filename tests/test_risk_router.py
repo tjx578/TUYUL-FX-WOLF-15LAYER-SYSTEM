@@ -194,6 +194,7 @@ def test_evaluate_signal_allow(client, mock_redis):
                 with patch("risk.circuit_breaker.RedisClient") as MockRedis4:
                     MockRedis4.return_value = mock_redis
 
+                    # Reset RiskManager singleton
                     # Reset and re-initialize RiskManager singleton
                     from risk.risk_manager import RiskManager
 
