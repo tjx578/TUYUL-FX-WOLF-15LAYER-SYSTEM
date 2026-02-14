@@ -1,6 +1,6 @@
 """
 
-Core Cognitive Unified Engine - v7.4r∞ Production
+Core Cognitive Unified Engine - v7.4rinf Production
 
 Pipeline Coverage:
   L0  - Cognitive Snapshot   (RegimeClassifier, CognitiveState, CognitiveBias)
@@ -27,7 +27,7 @@ from datetime import datetime
 from enum import Enum, IntEnum
 from pathlib import Path
 
-# ─── Exception Hierarchy ──────────────────────────────────────────────────────
+# --- Exception Hierarchy ------------------------------------------------------
 
 class CognitiveError(Exception):
     """Base exception for all cognitive module errors."""
@@ -89,7 +89,7 @@ class VaultPersistenceError(VaultError):
     pass
 
 
-# ─── Constants ────────────────────────────────────────────────────────────────
+# --- Constants ----------------------------------------------------------------
 
 COHERENCE_THRESHOLD: float = 0.90
 INTEGRITY_MINIMUM: float = 0.88
@@ -104,7 +104,7 @@ META_RESILIENCE_INDEX: float = 0.93
 META_RESONANCE_LIMIT: float = 0.95
 
 
-# ─── Enums ────────────────────────────────────────────────────────────────────
+# --- Enums --------------------------------------------------------------------
 
 class CognitiveBias(Enum):
     """L0 - Dominant cognitive bias."""
@@ -219,7 +219,7 @@ class Timeframe(Enum):
     M15 = "M15"
 
 
-# ─── Dataclasses ──────────────────────────────────────────────────────────────
+# --- Dataclasses --------------------------------------------------------------
 
 @dataclass
 class CognitiveState:
@@ -336,7 +336,7 @@ class TWMSResult:
     timestamp: datetime = field(default_factory=datetime.now)
 
 
-# ─── L0: Cognitive Snapshot ───────────────────────────────────────────────────
+# --- L0: Cognitive Snapshot ---------------------------------------------------
 
 class RegimeClassifier:
     """
@@ -441,7 +441,7 @@ class RegimeClassifier:
         )
 
 
-# ─── L1: Reflex Context ──────────────────────────────────────────────────────
+# --- L1: Reflex Context ------------------------------------------------------
 
 class ReflexEmotionCore:
     """
@@ -513,7 +513,7 @@ class ReflexEmotionCore:
         )
 
 
-# ─── L5: RGO Governance ───────────────────────────────────────────────────────
+# --- L5: RGO Governance -------------------------------------------------------
 
 class IntegrityEngine:
     """
@@ -652,7 +652,7 @@ class IntegrityEngine:
         return stability_ratio >= 0.8 and self.coherence_score >= COHERENCE_THRESHOLD
 
 
-# ─── L7: Structural Judgement ─────────────────────────────────────────────────
+# --- L7: Structural Judgement -------------------------------------------------
 
 class SmartMoneyDetector:
     """
@@ -818,7 +818,7 @@ class TWMSCalculator:
         )
 
 
-# ─── L9: Monte Carlo Probability ─────────────────────────────────────────────
+# --- L9: Monte Carlo Probability ---------------------------------------------
 
 def montecarlo_validate(
     returns: list[float],
@@ -903,7 +903,7 @@ def montecarlo_validate(
     }
 
 
-# ─── L11: Wolf Discipline (Emotion & Calibration) ────────────────────────────
+# --- L11: Wolf Discipline (Emotion & Calibration) ----------------------------
 
 class EmotionFeedbackEngine:
     """
@@ -1059,7 +1059,7 @@ class RiskFeedbackCalibrator:
         )
 
 
-# ─── L13: Adaptive Risk ──────────────────────────────────────────────────────
+# --- L13: Adaptive Risk ------------------------------------------------------
 
 class AdaptiveRiskCalculator:
     """
@@ -1226,7 +1226,7 @@ class VaultRiskSync:
             raise VaultPersistenceError(f"Failed to load risk config: {e}") from e
 
 
-# ─── Helper Functions ─────────────────────────────────────────────────────────
+# --- Helper Functions ---------------------------------------------------------
 
 def compute_reflex_emotion(
     volatility: float,
@@ -1395,7 +1395,7 @@ def calculate_risk_adjusted_score(
     return max(0.0, min(1.0, adjusted))
 
 
-# ─── Exports ──────────────────────────────────────────────────────────────────
+# --- Exports ------------------------------------------------------------------
 
 __all__ = [
     # Constants
