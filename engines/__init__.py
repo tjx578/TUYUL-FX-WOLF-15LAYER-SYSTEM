@@ -1,3 +1,13 @@
+"""Engine facade package for TUYUL FX pipeline."""
+
+from .cognitive_coherence_engine import CognitiveCoherenceEngine, CoherenceResult
+from .cognitive_context_engine import CognitiveContextEngine, ContextResult
+from .cognitive_risk_simulation import CognitiveRiskSimulation, RiskSimulationResult
+from .fusion_momentum_engine import FusionMomentumEngine, MomentumResult
+from .fusion_precision_engine import FusionPrecisionEngine, PrecisionResult
+from .fusion_structure_engine import FusionStructureEngine, StructureResult
+from .quantum_advisory_engine import AdvisorySummary, QuantumAdvisoryEngine
+from .quantum_field_engine import FieldResult, QuantumFieldEngine
 """Engine package facade."""
 
 from __future__ import annotations
@@ -154,6 +164,12 @@ from .quantum_probability_engine import (
 )
 
 
+def create_engine_suite() -> dict[str, object]:
+    """Create default engine instances for the facade layer."""
+    return {
+        "coherence": CognitiveCoherenceEngine(),
+        "context": CognitiveContextEngine(),
+        "risk": CognitiveRiskSimulation(),
 def create_engine_suite() -> dict:
     """Factory: create all 9 engines with default configuration.
 
@@ -174,6 +190,25 @@ def create_engine_suite() -> dict:
 
 
 __all__ = [
+    "AdvisorySummary",
+    "CoherenceResult",
+    "CognitiveCoherenceEngine",
+    "CognitiveContextEngine",
+    "CognitiveRiskSimulation",
+    "ContextResult",
+    "DEFAULT_LAYER_WEIGHTS",
+    "FieldResult",
+    "FusionMomentumEngine",
+    "FusionPrecisionEngine",
+    "FusionStructureEngine",
+    "MomentumResult",
+    "PrecisionResult",
+    "ProbabilityResult",
+    "QuantumAdvisoryEngine",
+    "QuantumFieldEngine",
+    "QuantumProbabilityEngine",
+    "RiskSimulationResult",
+    "StructureResult",
     "AdvisorySignal",
     "AdvisorySummary",
     "QuantumAdvisoryEngine",
