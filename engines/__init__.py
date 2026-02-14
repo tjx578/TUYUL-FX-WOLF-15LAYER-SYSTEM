@@ -1,3 +1,4 @@
+"""Engine facade layer for TUYUL FX."""
 """Engine facade package."""
 
 from .cognitive_coherence_engine import CognitiveCoherenceEngine
@@ -136,6 +137,9 @@ __all__ = [
     "FusionMomentumEngine",
     "FusionPrecisionEngine",
     "FusionStructureEngine",
+    "QuantumAdvisoryEngine",
+    "QuantumFieldEngine",
+    "QuantumProbabilityEngine",
     "QuantumFieldEngine",
     "QuantumProbabilityEngine",
     "QuantumAdvisoryEngine",
