@@ -3,13 +3,14 @@ Unit tests for Redis Context Bridge and integration with LiveContextBus.
 """
 
 import os
+
 from unittest.mock import MagicMock, patch
 
 import orjson
 import pytest
 
-from context.redis_context_bridge import RedisContextBridge
 from context.live_context_bus import LiveContextBus
+from context.redis_context_bridge import RedisContextBridge
 
 
 class TestRedisContextBridge:
@@ -212,94 +213,94 @@ class TestLiveContextBusRedisIntegration:
 
     def test_redis_mode_enabled(self, mock_redis_bridge):
         """Test LiveContextBus in Redis mode."""
-        with patch.dict(os.environ, {"CONTEXT_MODE": "redis"}):
-            with patch(
-                "context.redis_context_bridge.RedisClient"
-            ):
-                bus = LiveContextBus()
+        with (
+            patch.dict(os.environ, {"CONTEXT_MODE": "redis"}),
+            patch("context.redis_context_bridge.RedisClient"),
+        ):
+            bus = LiveContextBus()
 
-                assert bus._mode == "redis"
-                assert bus._redis_bridge is not None
+            assert bus._mode == "redis"
+            assert bus._redis_bridge is not None
 
     def test_update_tick_in_redis_mode(self, mock_redis_bridge):
         """Test tick update in Redis mode writes to both local and Redis."""
-        with patch.dict(os.environ, {"CONTEXT_MODE": "redis"}):
-            with patch(
-                "context.redis_context_bridge.RedisClient"
-            ):
-                bus = LiveContextBus()
-                bus._redis_bridge = mock_redis_bridge
+        with (
+            patch.dict(os.environ, {"CONTEXT_MODE": "redis"}),
+            patch("context.redis_context_bridge.RedisClient"),
+        ):
+            bus = LiveContextBus()
+            bus._redis_bridge = mock_redis_bridge
 
-                tick = {
-                    "symbol": "EURUSD",
-                    "bid": 1.0842,
-                    "ask": 1.0843,
-                    "timestamp": 1700000000.0,
-                    "source": "test",
-                }
+            tick = {
+                "symbol": "EURUSD",
+                "bid": 1.0842,
+                "ask": 1.0843,
+                "timestamp": 1700000000.0,
+                "source": "test",
+            }
 
-                bus.update_tick(tick)
+            bus.update_tick(tick)
 
-                # Verify local storage
-                assert len(bus._tick_buffer) == 1
-                assert bus._tick_buffer[0] == tick
+            # Verify local storage
+            assert len(bus._tick_buffer) == 1
+            assert bus._tick_buffer[0] == tick
 
-                # Verify Redis write
-                mock_redis_bridge.write_tick.assert_called_once_with(tick)
+            # Verify Redis write
+            mock_redis_bridge.write_tick.assert_called_once_with(tick)
 
     def test_update_candle_in_redis_mode(self, mock_redis_bridge):
         """Test candle update in Redis mode writes to both local and Redis."""
-        with patch.dict(os.environ, {"CONTEXT_MODE": "redis"}):
-            with patch(
-                "context.redis_context_bridge.RedisClient"
-            ):
-                bus = LiveContextBus()
-                bus._redis_bridge = mock_redis_bridge
+        with (
+            patch.dict(os.environ, {"CONTEXT_MODE": "redis"}),
+            patch("context.redis_context_bridge.RedisClient"),
+        ):
+            bus = LiveContextBus()
+            bus._redis_bridge = mock_redis_bridge
 
-                candle = {
-                    "symbol": "EURUSD",
-                    "timeframe": "M15",
-                    "open": 1.0840,
-                    "high": 1.0850,
-                    "low": 1.0835,
-                    "close": 1.0845,
-                    "timestamp": 1700000000.0,
-                }
+            candle = {
+                "symbol": "EURUSD",
+                "timeframe": "M15",
+                "open": 1.0840,
+                "high": 1.0850,
+                "low": 1.0835,
+                "close": 1.0845,
+                "timestamp": 1700000000.0,
+            }
 
-                bus.update_candle(candle)
+            bus.update_candle(candle)
 
-                # Verify local storage
-                assert bus._candle_store["EURUSD"]["M15"] == candle
+            # Verify local storage
+            assert bus._candle_store["EURUSD"]["M15"] == candle
 
-                # Verify Redis write
-                mock_redis_bridge.write_candle.assert_called_once_with(candle)
+            # Verify Redis write
+            mock_redis_bridge.write_candle.assert_called_once_with(candle)
 
     def test_update_news_in_redis_mode(self, mock_redis_bridge):
         """Test news update in Redis mode writes to both local and Redis."""
-        with patch.dict(os.environ, {"CONTEXT_MODE": "redis"}):
-            with patch(
-                "context.redis_context_bridge.RedisClient"
-            ):
-                bus = LiveContextBus()
-                bus._redis_bridge = mock_redis_bridge
+        with (
+            patch.dict(os.environ, {"CONTEXT_MODE": "redis"}),
+            patch("context.redis_context_bridge.RedisClient"),
+        ):
+            bus = LiveContextBus()
+            bus._redis_bridge = mock_redis_bridge
 
-                news = {
-                    "events": [
-                        {
-                            "headline": "Fed raises rates",
-                            "impact": "HIGH",
-                            "timestamp": 1700000000.0,
-                        }
-                    ],
-                }
+            news = {
+                "events": [
+                    {
+                        "headline": "Fed raises rates",
+                        "impact": "HIGH",
+                        "timestamp": 1700000000.0,
+                    }
+                ],
+            }
 
-                bus.update_news(news)
+            bus.update_news(news)
 
-                # Verify local storage
-                assert bus._news_store == news
+            # Verify local storage
+            assert bus._news_store == news
 
-                # Verify Redis write
-                mock_redis_bridge.write_news.assert_called_once_with(news)
+            # Verify Redis write
+            mock_redis_bridge.write_news.assert_called_once_with(news)
 
     def test_local_mode_no_redis_writes(self):
         """Test that local mode doesn't write to Redis."""

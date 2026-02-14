@@ -1,3 +1,3 @@
 """
-Analysis package — Layer synthesis and market analysis.
+Analysis package - Layer synthesis and market analysis.
 """

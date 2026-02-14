@@ -94,9 +94,9 @@ def test_candle_history_count_limit(context_bus):
 
 
 def test_candle_history_max_buffer_size(context_bus):
-    """Test candle history buffer respects maxlen=50."""
-    # Add 100 candles across multiple days to keep valid timestamps
-    for i in range(100):
+    """Test candle history buffer respects maxlen=250."""
+    # Add 300 candles across multiple days to keep valid timestamps
+    for i in range(300):
         day = 1 + i // 24
         hour = i % 24
         candle = {
@@ -111,9 +111,9 @@ def test_candle_history_max_buffer_size(context_bus):
         }
         context_bus.update_candle(candle)
 
-    # Should only have last 50
-    history = context_bus.get_candle_history("EURUSD", "H1", count=100)
-    assert len(history) == 50
+    # Should only have last 250 (buffer limit from config)
+    history = context_bus.get_candle_history("EURUSD", "H1", count=300)
+    assert len(history) == 250
 
 
 def test_candle_history_multiple_symbols(context_bus):
@@ -179,7 +179,7 @@ def test_candle_history_multiple_timeframes(context_bus):
             "low": 1.0990,
             "close": 1.1005,
             "volume": 1000,
-            "timestamp": f"2024-01-01T00:{i*15:02d}:00Z",
+            "timestamp": f"2024-01-01T00:{i * 15:02d}:00Z",
         }
         context_bus.update_candle(candle)
 

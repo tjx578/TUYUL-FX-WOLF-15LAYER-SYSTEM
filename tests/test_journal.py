@@ -13,24 +13,24 @@ import json
 
 import pytest
 
+from journal.journal_gpt_bridge import compute_metrics
+from journal.journal_router import JournalRouter
 from journal.journal_schema import (
     ContextJournal,
     DecisionJournal,
     ExecutionJournal,
-    ReflectiveJournal,
-    VerdictType,
-    TradeOutcome,
     ProtectionAssessment,
+    ReflectiveJournal,
+    TradeOutcome,
+    VerdictType,
 )
 from journal.journal_writer import JournalWriter
-from journal.journal_router import JournalRouter
-from journal.journal_gpt_bridge import compute_metrics
 from utils.timezone_utils import now_utc
-
 
 # ========================
 # SCHEMA VALIDATION TESTS
 # ========================
+
 
 def test_context_journal_valid():
     """Test ContextJournal with valid data"""
@@ -236,6 +236,7 @@ def test_reflective_journal_invalid_discipline_low():
 # ENUM VALIDATION TESTS
 # ========================
 
+
 def test_verdict_type_enum():
     """Test VerdictType enum values"""
     assert VerdictType.EXECUTE_BUY.value == "EXECUTE_BUY"
@@ -262,6 +263,7 @@ def test_protection_assessment_enum():
 # ========================
 # JOURNAL WRITER TESTS
 # ========================
+
 
 def test_journal_writer_creates_file(tmp_path):
     """Test JournalWriter creates file in correct location"""
@@ -316,7 +318,7 @@ def test_journal_writer_file_format(tmp_path):
     file_path = writer.write(j2)
 
     # Read and parse JSON
-    with open(file_path, "r") as f:
+    with open(file_path) as f:
         content = json.load(f)
 
     # Verify structure
@@ -331,6 +333,7 @@ def test_journal_writer_file_format(tmp_path):
 # ========================
 # JOURNAL ROUTER TESTS
 # ========================
+
 
 def test_journal_router_is_singleton():
     """Test JournalRouter is a singleton"""
@@ -370,6 +373,7 @@ def test_journal_router_increments_count(tmp_path):
 # ========================
 # GPT BRIDGE METRICS TESTS
 # ========================
+
 
 def test_compute_metrics_empty():
     """Test compute_metrics with empty entries"""

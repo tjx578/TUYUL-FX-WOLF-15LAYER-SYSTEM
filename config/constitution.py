@@ -1,7 +1,13 @@
-import yaml
-from pathlib import Path
+"""
+Legacy constitution loader for backward compatibility.
 
-BASE_DIR = Path(__file__).resolve().parent
+This module is maintained for backward compatibility with existing code
+that imports CONSTITUTION_THRESHOLDS directly.
 
-with open(BASE_DIR / "constitution.yaml", "r") as f:
-    CONSTITUTION_THRESHOLDS = yaml.safe_load(f)
+New code should use: from config.constants import get_threshold
+"""
+
+# Import from the new unified constants module
+from config.constants import CONSTITUTION_THRESHOLDS, get_all_thresholds, get_threshold
+
+__all__ = ["CONSTITUTION_THRESHOLDS", "get_threshold", "get_all_thresholds"]

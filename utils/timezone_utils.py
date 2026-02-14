@@ -20,13 +20,12 @@ Usage:
     formatted = format_local(utc_time)  # Shows in GMT+8
 """
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from zoneinfo import ZoneInfo
-
 
 # System timezone constants
 SYSTEM_TZ = ZoneInfo("Asia/Singapore")  # GMT+8 - User's local timezone
-DATA_TZ = timezone.utc  # External data always arrives in UTC
+DATA_TZ = UTC  # External data always arrives in UTC
 
 
 def now_utc() -> datetime:
@@ -36,7 +35,7 @@ def now_utc() -> datetime:
     Returns:
         datetime: Current time in UTC with timezone info
     """
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 def now_local() -> datetime:
@@ -61,7 +60,7 @@ def utc_to_local(dt: datetime) -> datetime:
     """
     # Ensure the datetime is timezone-aware (assume UTC if naive)
     if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
+        dt = dt.replace(tzinfo=UTC)
 
     return dt.astimezone(SYSTEM_TZ)
 
@@ -80,7 +79,7 @@ def local_to_utc(dt: datetime) -> datetime:
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=SYSTEM_TZ)
 
-    return dt.astimezone(timezone.utc)
+    return dt.astimezone(UTC)
 
 
 def ensure_utc(dt: datetime) -> datetime:
@@ -96,10 +95,9 @@ def ensure_utc(dt: datetime) -> datetime:
     """
     if dt.tzinfo is None:
         # Naive datetime - assume UTC
-        return dt.replace(tzinfo=timezone.utc)
-    else:
-        # Already has timezone - convert to UTC
-        return dt.astimezone(timezone.utc)
+        return dt.replace(tzinfo=UTC)
+    # Already has timezone - convert to UTC
+    return dt.astimezone(UTC)
 
 
 def format_local(dt: datetime, fmt: str = "%Y-%m-%d %H:%M:%S GMT+8") -> str:
@@ -113,7 +111,7 @@ def format_local(dt: datetime, fmt: str = "%Y-%m-%d %H:%M:%S GMT+8") -> str:
     Returns:
         str: Formatted datetime string in GMT+8
     """
-    local_dt = utc_to_local(dt) if dt.tzinfo == timezone.utc else dt
+    local_dt = utc_to_local(dt) if dt.tzinfo == UTC else dt
     return local_dt.strftime(fmt)
 
 
@@ -161,13 +159,12 @@ def is_trading_session(dt=None) -> str:
     # Session detection based on GMT+8 local hour
     if 7 <= hour < 15:
         return "ASIA"
-    elif 15 <= hour < 21:
+    if 15 <= hour < 21:
         return "LONDON"
-    elif hour >= 21 or hour < 5:
+    if hour >= 21 or hour < 5:
         # NEW_YORK session wraps around midnight: 21:00 GMT+8 to 05:00 GMT+8 next day
         return "NEW_YORK"
-    else:
-        return "OFF_SESSION"
+    return "OFF_SESSION"
 
 
 def get_daily_reset_time() -> datetime:
