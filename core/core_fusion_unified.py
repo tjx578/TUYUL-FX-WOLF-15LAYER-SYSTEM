@@ -1,12 +1,12 @@
 """
-Core Fusion Unified Engine — v7.4r∞
+Core Fusion Unified Engine - v7.4r∞
 
 Pipeline Coverage:
-  L2  — Fusion Synchronization (FusionIntegrator, MonteCarloConfidence)
-  L4  — Energy Field           (PhaseResonanceEngine, QuantumReflectiveEngine)
-  L6  — Lorentzian Stab.       (AdaptiveThresholdController)
-  L7  — Structural Judgement   (LiquidityZoneMapper, VolumeProfileAnalyzer, DivergenceType)
-  L9  — Monte Carlo Prob.      (FTTCMonteCarloEngine)
+  L2  - Fusion Synchronization (FusionIntegrator, MonteCarloConfidence)
+  L4  - Energy Field           (PhaseResonanceEngine, QuantumReflectiveEngine)
+  L6  - Lorentzian Stab.       (AdaptiveThresholdController)
+  L7  - Structural Judgement   (LiquidityZoneMapper, VolumeProfileAnalyzer, DivergenceType)
+  L9  - Monte Carlo Prob.      (FTTCMonteCarloEngine)
 
 Production-ready implementation with working EMA, divergence detection, volume profile, etc.
 """

@@ -1,9 +1,9 @@
 """
-WebSocket Routes — Real-time push to frontend.
+WebSocket Routes - Real-time push to frontend.
 
 Endpoints:
-  WS /ws/prices                   — Live price stream (all symbols)
-  WS /ws/trades                   — Trade status change events
+  WS /ws/prices                   - Live price stream (all symbols)
+  WS /ws/trades                   - Trade status change events
 """
 
 import asyncio

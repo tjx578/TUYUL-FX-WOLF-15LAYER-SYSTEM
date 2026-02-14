@@ -1,5 +1,5 @@
 """
-Price Feed Service — Dashboard's price sensor.
+Price Feed Service - Dashboard's price sensor.
 
 Leverages existing Finnhub infrastructure:
   - Reads latest ticks from LiveContextBus (which already has Finnhub WS data)
@@ -35,7 +35,7 @@ class PriceFeed:
     Thread-safe price feed service for dashboard.
 
     Reads from LiveContextBus and caches in Redis for fast dashboard access.
-    Pure sensor — no decision logic.
+    Pure sensor - no decision logic.
     """
 
     _instance: Optional["PriceFeed"] = None

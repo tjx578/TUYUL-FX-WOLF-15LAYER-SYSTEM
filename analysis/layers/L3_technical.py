@@ -1,5 +1,5 @@
 """
-L3 Technical Analysis Analyzer — Deep Dive + TRQ-3D PreMove (PLACEHOLDER).
+L3 Technical Analysis Analyzer - Deep Dive + TRQ-3D PreMove (PLACEHOLDER).
 
 Sources:
     core_quantum_unified.py    → TRQ3DEngine, analyze_drift
@@ -33,7 +33,7 @@ except ImportError as exc:
 
 
 class L3TechnicalAnalyzer:
-    """Layer 3: Technical Deep Dive + TRQ-3D — Perception & Context zone."""
+    """Layer 3: Technical Deep Dive + TRQ-3D - Perception & Context zone."""
 
     def __init__(self) -> None:
         self._trq3d = None

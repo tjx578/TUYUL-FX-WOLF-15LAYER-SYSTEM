@@ -1,5 +1,5 @@
 """
-Journal Schema — Pydantic models for J1–J4 decision records.
+Journal Schema - Pydantic models for J1-J4 decision records.
 
 Models:
   - ContextJournal (J1)     : Market context at analysis time
@@ -58,7 +58,7 @@ class ProtectionAssessment(StrEnum):
 
 class ContextJournal(BaseModel):
     """
-    J1 — Market context snapshot at analysis time.
+    J1 - Market context snapshot at analysis time.
     Source: context/live_context_bus.py, analysis/L1, L2, L3
     """
 
@@ -79,7 +79,7 @@ class ContextJournal(BaseModel):
 
 class DecisionJournal(BaseModel):
     """
-    J2 — Full decision record for EVERY verdict.
+    J2 - Full decision record for EVERY verdict.
     Source: constitution/verdict_engine.py output
     """
 
@@ -130,7 +130,7 @@ class DecisionJournal(BaseModel):
 
 class ExecutionJournal(BaseModel):
     """
-    J3 — Execution details (only for EXECUTE_* verdicts).
+    J3 - Execution details (only for EXECUTE_* verdicts).
     Source: execution/state_machine.py, execution/pending_engine.py
     """
 
@@ -168,7 +168,7 @@ class ExecutionJournal(BaseModel):
 
 class ReflectiveJournal(BaseModel):
     """
-    J4 — Post-trade or post-reject reflection.
+    J4 - Post-trade or post-reject reflection.
     Manual entry or automated post-mortem analysis.
     """
 
