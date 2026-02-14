@@ -153,12 +153,16 @@ This PR successfully implements a comprehensive set of production-grade upgrades
 
 #### Function 1: `calculate_atr(candles, period=14)`
 
+- **Purpose**: Standard Average True Range calculation
 - **Purpose**: Standard Average True Range
 calculation
 - **Input**: List of candle dicts with high/low/close
 - **Output**: ATR value (float)
 - **Edge Cases**: Returns 0.0 for insufficient data
 
+#### Function 2: `volatility_regime(current_atr, baseline_atr)`
+
+- **Purpose**: Determine volatility state and adjustment factors
 #### Function 2: `volatility_regime(current_atr
 
 baseline_atr)`

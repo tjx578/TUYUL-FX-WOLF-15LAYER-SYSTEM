@@ -53,16 +53,26 @@ def _build_redis_client() -> AsyncRedis:
 
 
 async def run_ingest_services(has_api_key: bool) -> None:
+  # noqa: PLR0912, RUF100
     """Run Finnhub WS, news, and candle builder loops."""
     if not has_api_key:
         logger.info("Skipping ingest services - no API key configured")
-        while not (_shutdown_event and _shutdown_event.is_set()):
+        while not (_shutdown_event and _shutdown_event.is_set()):  # noqa: ASYNC110
             await asyncio.sleep(1)
         return
 
-    redis = _build_redis_client()
-    await redis.ping()
-    logger.info("Redis connection validated")
+    redis: AsyncRedis | None = None
+    ws_feed = None
+    news_feed = None
+    candle_builder = None
+
+    try:
+        redis = _build_redis_client()
+        await redis.ping() # pyright: ignore[reportGeneralTypeIssues]
+        logger.info("Redis connection validated")
+    except Exception as e:
+        logger.error(f"Error connecting to Redis: {e}")
+        raise
 
     # Initialize system state manager
     system_state = SystemStateManager()
@@ -122,6 +132,11 @@ async def run_ingest_services(has_api_key: bool) -> None:
         "CandleBuilder (M15), H1Refresh"
     )
     try:
+        ws_feed = await create_finnhub_ws(redis=redis)
+        news_feed = FinnhubNews()
+        candle_builder = CandleBuilder()
+
+        logger.info("Starting ingest services: WebSocket, News, CandleBuilder")
         await asyncio.gather(
             ws_feed.run(),
             news_feed.run(),
@@ -135,8 +150,34 @@ async def run_ingest_services(has_api_key: bool) -> None:
         logger.info("Ingest services cancelled - shutting down")
         raise
     finally:
-        await ws_feed.stop()
-        await redis.aclose()
+        cleanup_errors = []
+        if ws_feed is not None:
+            try:
+                await ws_feed.stop()
+            except Exception as e:
+                logger.error(f"Error stopping ws_feed: {e}")
+                cleanup_errors.append(("ws_feed.stop()", e))
+        if news_feed is not None:
+            try:
+                await news_feed.stop() # pyright: ignore[reportAttributeAccessIssue]
+            except Exception as e:
+                logger.error(f"Error stopping news_feed: {e}")
+                cleanup_errors.append(("news_feed.stop()", e))
+        if candle_builder is not None:
+            try:
+                await candle_builder.stop() # pyright: ignore[reportAttributeAccessIssue]
+            except Exception as e:
+                logger.error(f"Error stopping candle_builder: {e}")
+                cleanup_errors.append(("candle_builder.stop()", e))
+        if redis is not None:
+            try:
+                await redis.aclose()
+            except Exception as e:
+                logger.error(f"Error closing redis: {e}")
+                cleanup_errors.append(("redis.aclose()", e))
+
+        if cleanup_errors:
+            logger.warning(f"Cleanup completed with {len(cleanup_errors)} error(s)")
         logger.info("Ingest service cleanup complete")
 
 
