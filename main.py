@@ -17,6 +17,7 @@ from journal.journal_schema import ContextJournal, DecisionJournal, VerdictType
 from pipeline import WolfConstitutionalPipeline
 from storage.l12_cache import set_verdict
 from storage.snapshot_store import save_snapshot
+from storage.startup import init_persistent_storage, shutdown_persistent_storage
 from utils.timezone_utils import is_trading_session, now_utc
 
 PAIRS = [p["symbol"] for p in CONFIG["pairs"]["pairs"] if p.get("enabled", True)]
@@ -227,6 +228,7 @@ async def main() -> None:
     has_api_key = _validate_api_key()
     context_mode = os.getenv("CONTEXT_MODE", "local").lower()
     logger.info(f"Context mode: {context_mode.upper()}")
+    await init_persistent_storage()
 
     if context_mode == "redis":
         tasks = [
@@ -251,6 +253,7 @@ async def main() -> None:
         logger.error(f"Fatal error: {exc}")
         raise
     finally:
+        await shutdown_persistent_storage()
         logger.info("System shutdown complete.")
 
 

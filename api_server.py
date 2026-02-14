@@ -27,6 +27,8 @@ from context.runtime_state import RuntimeState
 from dashboard.price_feed import PriceFeed
 from dashboard.price_watcher import PriceWatcher
 from risk.risk_router import router as risk_router
+from storage.health import postgres_health
+from storage.startup import init_persistent_storage, shutdown_persistent_storage
 from utils.timezone_utils import format_local, format_utc, now_utc
 
 # Background task references
@@ -72,6 +74,8 @@ async def lifespan(app: fastapi.FastAPI):
     price_watcher = PriceWatcher()
     _price_watcher_task = asyncio.create_task(price_watcher.start())
 
+    await init_persistent_storage()
+
     logger.info("Background tasks started")
 
     yield
@@ -93,6 +97,8 @@ async def lifespan(app: fastapi.FastAPI):
             await _price_watcher_task
         except asyncio.CancelledError:
             pass
+
+    await shutdown_persistent_storage()
 
     logger.info("Background tasks stopped")
 
@@ -246,6 +252,8 @@ async def health_check():
         - Redis status
         - System latency
     """
+    pg_status = await postgres_health()
+
     return {
         "status": "healthy",
         "service": "wolf-l12-api",
@@ -255,6 +263,7 @@ async def health_check():
         "last_tick_at": _get_last_tick_times(),
         "candle_freshness": _get_candle_freshness(),
         "redis_status": _get_redis_status(),
+        "postgres": pg_status,
     }
 
 
