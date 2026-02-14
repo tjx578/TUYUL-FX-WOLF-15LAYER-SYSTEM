@@ -1,3 +1,20 @@
+"""Engine package facade."""
+
+from __future__ import annotations
+
+from typing import Dict
+
+from engines.quantum_field_engine import QuantumFieldEngine
+
+
+def create_engine_suite() -> Dict[str, QuantumFieldEngine]:
+    """Create default engine suite."""
+    return {"field": QuantumFieldEngine()}
+
+
+__all__ = ["QuantumFieldEngine", "create_engine_suite"]
+"""Engine facade exports."""
+
 """Engine facade modules for market analysis."""
 
 from .fusion_structure_engine import FusionStructure, FusionStructureEngine, StructureState
@@ -124,6 +141,11 @@ from .quantum_advisory_engine import (
     QuantumAdvisoryEngine,
     RiskPosture,
 )
+
+
+def create_engine_suite() -> dict[str, object]:
+    """Create engine suite map for integration points."""
+    return {
 from .quantum_field_engine import QuantumFieldEngine
 from .quantum_probability_engine import (
     DEFAULT_LAYER_WEIGHTS,
@@ -152,6 +174,10 @@ def create_engine_suite() -> dict:
 
 
 __all__ = [
+    "AdvisorySignal",
+    "AdvisorySummary",
+    "QuantumAdvisoryEngine",
+    "RiskPosture",
     "CognitiveCoherenceEngine",
     "CognitiveContextEngine",
     "CognitiveRiskSimulation",
