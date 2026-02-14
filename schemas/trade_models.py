@@ -1,5 +1,5 @@
 """
-Trade Domain Models — Pydantic models for manual-first trade flow.
+Trade Domain Models - Pydantic models for manual-first trade flow.
 
 Models:
   - TradeLeg         : Single leg of a trade (entry, SL, TP, lot)

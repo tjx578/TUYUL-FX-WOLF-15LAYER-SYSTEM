@@ -1,5 +1,5 @@
 """
-L11 Risk-Reward Optimizer — RR + Battle Strategy.
+L11 Risk-Reward Optimizer - RR + Battle Strategy.
 
 Sources:
     core_quantum_unified.py    → QuantumScenarioMatrix, QuantumExecutionOptimizer, BattleStrategy
@@ -38,7 +38,7 @@ _VALID_DIRECTIONS = {"BUY", "SELL"}
 
 
 class L11RRAnalyzer:
-    """Layer 11: Risk-Reward Optimization — Execution & Decision zone."""
+    """Layer 11: Risk-Reward Optimization - Execution & Decision zone."""
 
     def __init__(self) -> None:
         self._scenario_matrix = None

@@ -1,3 +1,3 @@
 """
-Storage package — Redis cache, snapshots, trade journal.
+Storage package - Redis cache, snapshots, trade journal.
 """

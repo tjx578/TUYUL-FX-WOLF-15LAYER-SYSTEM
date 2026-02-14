@@ -74,7 +74,7 @@ class FinnhubMarketNews:
         self._last_id: int = 0  # Track highest article ID for deduplication
 
         if not self._api_key:
-            logger.error("FINNHUB_API_KEY not set — market news will fail")
+            logger.error("FINNHUB_API_KEY not set - market news will fail")
 
     async def fetch_news(self) -> list[dict[str, Any]]:
         """
@@ -136,7 +136,7 @@ class FinnhubMarketNews:
                     wait *= self._backoff_factor
                 elif exc.response.status_code == 403:
                     logger.error(
-                        f"Finnhub HTTP 403 Forbidden — check API key permissions "
+                        f"Finnhub HTTP 403 Forbidden - check API key permissions "
                         f"and endpoint URL: {url}"
                     )
                     raise MarketNewsError(f"HTTP 403 Forbidden: {url}") from exc

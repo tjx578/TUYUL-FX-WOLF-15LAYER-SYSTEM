@@ -1,15 +1,15 @@
 """
 
-Core Cognitive Unified Engine — v7.4r∞ Production
+Core Cognitive Unified Engine - v7.4r∞ Production
 
 Pipeline Coverage:
-  L0  — Cognitive Snapshot   (RegimeClassifier, CognitiveState, CognitiveBias)
-  L1  — Reflex Context       (ReflexEmotionCore, ReflexState)
-  L5  — RGO Governance       (IntegrityEngine)
-  L7  — Structural Judgement (SmartMoneyDetector, TWMSCalculator)
-  L9  — Monte Carlo Prob.    (montecarlo_validate)
-  L11 — Wolf Discipline      (EmotionFeedbackEngine, RiskFeedbackCalibrator)
-  L13 — Adaptive Risk        (AdaptiveRiskCalculator, VaultRiskSync)
+  L0  - Cognitive Snapshot   (RegimeClassifier, CognitiveState, CognitiveBias)
+  L1  - Reflex Context       (ReflexEmotionCore, ReflexState)
+  L5  - RGO Governance       (IntegrityEngine)
+  L7  - Structural Judgement (SmartMoneyDetector, TWMSCalculator)
+  L9  - Monte Carlo Prob.    (montecarlo_validate)
+  L11 - Wolf Discipline      (EmotionFeedbackEngine, RiskFeedbackCalibrator)
+  L13 - Adaptive Risk        (AdaptiveRiskCalculator, VaultRiskSync)
 
 Production-ready implementation with full exception hierarchy,
 comprehensive enums, working classes, and Monte Carlo validation.
@@ -107,7 +107,7 @@ META_RESONANCE_LIMIT: float = 0.95
 # ─── Enums ────────────────────────────────────────────────────────────────────
 
 class CognitiveBias(Enum):
-    """L0 — Dominant cognitive bias."""
+    """L0 - Dominant cognitive bias."""
     BULLISH = "BULLISH"
     BEARISH = "BEARISH"
     NEUTRAL = "NEUTRAL"
@@ -115,7 +115,7 @@ class CognitiveBias(Enum):
 
 
 class MarketRegimeType(IntEnum):
-    """L0 — Market regime classification (numeric)."""
+    """L0 - Market regime classification (numeric)."""
     RANGE = 0
     TREND = 1
     EXPANSION = 2
@@ -123,7 +123,7 @@ class MarketRegimeType(IntEnum):
 
 
 class MarketRegime(Enum):
-    """L0 — Market regime classification (string-based)."""
+    """L0 - Market regime classification (string-based)."""
     TRENDING_UP = "trending_up"
     TRENDING_DOWN = "trending_down"
     RANGING_HIGH = "ranging_high"
@@ -136,7 +136,7 @@ class MarketRegime(Enum):
 
 
 class TrendStrength(Enum):
-    """L0 — Trend strength classification."""
+    """L0 - Trend strength classification."""
     STRONG = "STRONG"
     MODERATE = "MODERATE"
     WEAK = "WEAK"
@@ -144,7 +144,7 @@ class TrendStrength(Enum):
 
 
 class ReflexState(Enum):
-    """L1 — Reflex synchronisation state."""
+    """L1 - Reflex synchronisation state."""
     SYNCED = "SYNCED"
     DESYNCED = "DESYNCED"
     LOCKOUT = "LOCKOUT"
@@ -195,7 +195,7 @@ class LayerID(Enum):
 
 
 class SmartMoneySignal(Enum):
-    """L7 — Institutional activity signal."""
+    """L7 - Institutional activity signal."""
     ACCUMULATION = "ACCUMULATION"
     DISTRIBUTION = "DISTRIBUTION"
     NEUTRAL = "NEUTRAL"
@@ -204,7 +204,7 @@ class SmartMoneySignal(Enum):
 
 
 class InstitutionalBias(Enum):
-    """L7 — Institutional directional bias."""
+    """L7 - Institutional directional bias."""
     BULLISH = "BULLISH"
     BEARISH = "BEARISH"
     NEUTRAL = "NEUTRAL"
@@ -223,7 +223,7 @@ class Timeframe(Enum):
 
 @dataclass
 class CognitiveState:
-    """L0 — Snapshot of cognitive / regime state."""
+    """L0 - Snapshot of cognitive / regime state."""
     timestamp: datetime
     twms_score: float
     risk_level: float
@@ -235,7 +235,7 @@ class CognitiveState:
 
 @dataclass(frozen=True)
 class EmotionFeedbackCycle:
-    """L11 — Output of EmotionFeedbackEngine.run_cycle()."""
+    """L11 - Output of EmotionFeedbackEngine.run_cycle()."""
     coherence: float
     emotion_delta: float
     gate: str
@@ -244,7 +244,7 @@ class EmotionFeedbackCycle:
 
 @dataclass(frozen=True)
 class ReflexEmotionResult:
-    """L1 — Output of ReflexEmotionCore.compute_reflex_emotion()."""
+    """L1 - Output of ReflexEmotionCore.compute_reflex_emotion()."""
     reflex_coherence: float
     emotion_delta: float
     alignment: str
@@ -254,7 +254,7 @@ class ReflexEmotionResult:
 
 @dataclass
 class RegimeAnalysis:
-    """L0 — Output of RegimeClassifier.classify()."""
+    """L0 - Output of RegimeClassifier.classify()."""
     regime: MarketRegimeType
     trend_direction: str
     volatility_level: str
@@ -284,7 +284,7 @@ class RiskAssessment:
 
 @dataclass
 class AdaptiveRiskResult:
-    """L13 — Adaptive risk calculation result."""
+    """L13 - Adaptive risk calculation result."""
     recommended_lot: float
     risk_amount: float
     position_value: float
@@ -304,7 +304,7 @@ class CalibrationResult:
 
 @dataclass
 class SmartMoneyAnalysis:
-    """L7 — Output of SmartMoneyDetector.analyze()."""
+    """L7 - Output of SmartMoneyDetector.analyze()."""
     signal: SmartMoneySignal
     bias: InstitutionalBias
     strength: float
@@ -325,7 +325,7 @@ class TWMSInput:
 
 @dataclass
 class TWMSResult:
-    """L7/L8 — Time-Weighted Multi-Score result v2.2."""
+    """L7/L8 - Time-Weighted Multi-Score result v2.2."""
     twms_score: float
     d1_weight: float
     h4_weight: float
@@ -340,7 +340,7 @@ class TWMSResult:
 
 class RegimeClassifier:
     """
-    L0 — Classifies market regime.
+    L0 - Classifies market regime.
 
     Production implementation with real regime detection logic.
     """
@@ -445,7 +445,7 @@ class RegimeClassifier:
 
 class ReflexEmotionCore:
     """
-    L1 — Computes reflex-emotion coherence.
+    L1 - Computes reflex-emotion coherence.
 
     Production implementation with real coherence calculations.
     """
@@ -517,7 +517,7 @@ class ReflexEmotionCore:
 
 class IntegrityEngine:
     """
-    L5 — Verifies system-state integrity.
+    L5 - Verifies system-state integrity.
 
 
     Production implementation with real verification logic.
@@ -656,7 +656,7 @@ class IntegrityEngine:
 
 class SmartMoneyDetector:
     """
-    L7 — Detects institutional / smart-money activity.
+    L7 - Detects institutional / smart-money activity.
 
     Production implementation with real detection algorithms.
     """
@@ -754,7 +754,7 @@ class SmartMoneyDetector:
 
 class TWMSCalculator:
     """
-    L7/L8 — Time-Weighted Multi-Score calculator v2.2.
+    L7/L8 - Time-Weighted Multi-Score calculator v2.2.
 
     Production implementation: D1:30%, H4:40%, H1:30% weighting.
     """
@@ -826,7 +826,7 @@ def montecarlo_validate(
     confidence_level: float = 0.95
 ) -> dict[str, typing.Any]:
     """
-    L9 — Monte Carlo validation with bootstrap simulation.
+    L9 - Monte Carlo validation with bootstrap simulation.
 
     Production implementation with deterministic bootstrap,
     Sharpe ratio, max drawdown, VaR, and Expected Shortfall.
@@ -907,7 +907,7 @@ def montecarlo_validate(
 
 class EmotionFeedbackEngine:
     """
-    L11 — Emotion feedback cycle for discipline advisory.
+    L11 - Emotion feedback cycle for discipline advisory.
 
     Production implementation with real coherence computation.
     """
@@ -986,7 +986,7 @@ class EmotionFeedbackEngine:
 
 class RiskFeedbackCalibrator:
     """
-    L11 — Risk feedback calibration system.
+    L11 - Risk feedback calibration system.
 
     Calibrates risk parameters based on performance feedback.
     """
@@ -1063,7 +1063,7 @@ class RiskFeedbackCalibrator:
 
 class AdaptiveRiskCalculator:
     """
-    L13 — Adaptive risk / position-sizing calculator.
+    L13 - Adaptive risk / position-sizing calculator.
 
     Production implementation with 5-tier drawdown system:
       0-5%: 100% (1.00)
@@ -1154,7 +1154,7 @@ class AdaptiveRiskCalculator:
 
 class VaultRiskSync:
     """
-    L13 — Vault persistence for risk parameters.
+    L13 - Vault persistence for risk parameters.
 
     Handles loading/saving risk configurations to vault.
     """

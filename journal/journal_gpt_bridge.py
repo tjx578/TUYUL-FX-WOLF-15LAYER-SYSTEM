@@ -1,5 +1,5 @@
 """
-Journal GPT Bridge — Export journal data for TUYUL FX GPT analysis.
+Journal GPT Bridge - Export journal data for TUYUL FX GPT analysis.
 
 Provides:
   - _load_entries(): Load journal entries from storage
@@ -201,7 +201,7 @@ def export_for_gpt(
     # Generate Markdown content
     with open(file_path, "w", encoding="utf-8") as f:
         # Header
-        f.write("# TUYUL FX WOLF — Journal Export for GPT Analysis\n\n")
+        f.write("# TUYUL FX WOLF - Journal Export for GPT Analysis\n\n")
         f.write(f"**Generated:** {now.isoformat()}\n\n")
         f.write(f"**Period:** Last {date_range_days} days\n\n")
         f.write("---\n\n")

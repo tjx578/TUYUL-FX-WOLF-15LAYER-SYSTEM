@@ -1,5 +1,5 @@
 """
-VIX Analysis Engine — FINAL PRODUCTION
+VIX Analysis Engine - FINAL PRODUCTION
 
 Analyzes VIX levels for regime classification.
 Outputs: regime (0/1/2), fear/greed score, term structure.
@@ -31,7 +31,7 @@ class VIXAnalysisEngine:
 
     Thresholds:
       VIX < 14: LOW (Tranquil)
-      14–20: ELEVATED (Stressed)
+      14-20: ELEVATED (Stressed)
       20+: HIGH (Crisis)
     """
 

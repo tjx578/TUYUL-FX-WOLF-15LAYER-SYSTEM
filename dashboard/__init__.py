@@ -1,3 +1,3 @@
 """
-Dashboard package — Real-time monitoring interface.
+Dashboard package - Real-time monitoring interface.
 """

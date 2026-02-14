@@ -62,13 +62,13 @@ class TestTickSpikeFilter:
         now = time.monotonic()
         _last_timestamps["XAUUSD"] = now
 
-        # 0.6% move — would reject EUR/USD but valid for XAU
+        # 0.6% move - would reject EUR/USD but valid for XAU
         assert _is_valid_tick("XAUUSD", 2012.0) is True
 
-        # 1.5% move — still valid for XAU (< 2% threshold)
+        # 1.5% move - still valid for XAU (< 2% threshold)
         assert _is_valid_tick("XAUUSD", 2030.0) is True
 
-        # 2.1% move — exceeds XAU threshold
+        # 2.1% move - exceeds XAU threshold
         assert _is_valid_tick("XAUUSD", 2042.0) is False
 
     def test_gbpjpy_medium_threshold(self):
@@ -77,10 +77,10 @@ class TestTickSpikeFilter:
         now = time.monotonic()
         _last_timestamps["GBPJPY"] = now
 
-        # 0.6% move — valid (< 1%)
+        # 0.6% move - valid (< 1%)
         assert _is_valid_tick("GBPJPY", 150.9) is True
 
-        # 1.1% move — exceeds threshold
+        # 1.1% move - exceeds threshold
         assert _is_valid_tick("GBPJPY", 151.65) is False
 
     def test_staleness_triggers_baseline_reset(self):
@@ -89,7 +89,7 @@ class TestTickSpikeFilter:
         old_time = time.monotonic() - (_STALENESS_THRESHOLD_SECONDS + 1.0)
         _last_timestamps["EURUSD"] = old_time
 
-        # Price moved 2% during gap — normally rejected, but stale baseline resets
+        # Price moved 2% during gap - normally rejected, but stale baseline resets
         assert _is_valid_tick("EURUSD", 1.1067) is True
         assert _last_prices["EURUSD"] == 1.1067
 

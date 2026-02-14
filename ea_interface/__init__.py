@@ -1,3 +1,3 @@
 """
-EA Interface package — MetaTrader integration.
+EA Interface package - MetaTrader integration.
 """
