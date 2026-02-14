@@ -76,9 +76,6 @@ class DrawdownMonitor:
         self.max_total_percent = (
             max_total_percent or dd_config["max_total_percent"]
         )
-        self.max_daily_percent = max_daily_percent or dd_config["max_daily_percent"]
-        self.max_weekly_percent = max_weekly_percent or dd_config["max_weekly_percent"]
-        self.max_total_percent = max_total_percent or dd_config["max_total_percent"]
 
         # Redis keys
         keys = self._config["redis_keys"]
@@ -141,7 +138,6 @@ class DrawdownMonitor:
                 "Failed to persist drawdown state to Redis",
                 error=str(e)
             )
-            logger.error("Failed to persist drawdown state to Redis", error=str(e))
 
     def _check_and_reset_daily(self) -> None:
         """Check if we need to reset daily drawdown (midnight UTC)."""
@@ -201,7 +197,6 @@ class DrawdownMonitor:
                     old_peak=old_peak,
                     new_peak=self._peak_equity
                 )
-                logger.debug("New peak equity", old_peak=old_peak, new_peak=self._peak_equity)
 
             # Calculate drawdown from peak
             drawdown = self._peak_equity - current_equity

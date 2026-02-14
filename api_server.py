@@ -24,6 +24,7 @@ from api.ws_routes import router as ws_router
 from config_loader import CONFIG
 from context.live_context_bus import LiveContextBus
 from context.runtime_state import RuntimeState
+from dashboard.backend.auth import verify_token
 from dashboard.price_feed import PriceFeed
 from dashboard.price_watcher import PriceWatcher
 from risk.risk_router import router as risk_router
@@ -116,9 +117,9 @@ app.add_middleware(
 )
 
 # Include routers
-app.include_router(l12_router)
-app.include_router(dashboard_router)
-app.include_router(journal_router)
+app.include_router(l12_router, dependencies=[fastapi.Depends(verify_token)])
+app.include_router(dashboard_router, dependencies=[fastapi.Depends(verify_token)])
+app.include_router(journal_router, dependencies=[fastapi.Depends(verify_token)])
 app.include_router(ws_router)
 app.include_router(risk_router)
 
@@ -255,17 +256,6 @@ async def health_check():
         "last_tick_at": _get_last_tick_times(),
         "candle_freshness": _get_candle_freshness(),
         "redis_status": _get_redis_status(),
-    }
-
-
-@app.get("/health")
-async def health():
-    return {
-        "status": "ok",
-        "pipeline_version": "v7.4.1r∞",
-        "core_modules": 4,
-        "layers": 15,
-        "governance": "ANALYSIS_ONLY"
     }
 
 
