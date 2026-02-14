@@ -73,7 +73,7 @@ class FusionPrecisionEngine:
         alpha = 2 / (period + 1)
         # Initialize with SMA over the first `period` observations
         ema = sum(series[:period]) / period
-        # Then iterate forward through the remaining values
+        # Apply exponential smoothing to remaining values
         for value in series[period:]:
             ema = alpha * value + (1 - alpha) * ema
         return ema

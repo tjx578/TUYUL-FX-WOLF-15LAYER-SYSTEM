@@ -32,7 +32,7 @@ class CoherenceSnapshot:
     emotion_delta: float
     emotion_volatility: float
     stress_score: float
-    state: CoherenceState  # Renamed from 'gate' to clarify this is state assessment
+    gate: CoherenceState  # 'gate' for backward compatibility; represents state assessment
     details: dict[str, Any] = field(default_factory=dict)
 
 
@@ -107,7 +107,7 @@ class CognitiveCoherenceEngine:
             emotion_delta=round(emotion_delta, 6),
             emotion_volatility=round(emotion_vol, 6),
             stress_score=round(stress_score, 6),
-            state=coherence_state,
+            gate=coherence_state,
             details={"timestamp": datetime.now(UTC).isoformat()},
         )
 
@@ -124,6 +124,6 @@ class CognitiveCoherenceEngine:
             "emotion_delta": snapshot.emotion_delta,
             "emotion_volatility": snapshot.emotion_volatility,
             "stress_score": snapshot.stress_score,
-            "gate": snapshot.state.value,  # Keep 'gate' key for backward compatibility
+            "gate": snapshot.gate.value,
             "details": snapshot.details,
         }

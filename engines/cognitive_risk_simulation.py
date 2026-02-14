@@ -55,7 +55,8 @@ class CognitiveRiskSimulation:
             return RiskSimulationResult(0.0, 0.0, 0.0, 0.0, 0.0, {"reason": "no_returns"})
 
         # Validate sufficient data for bootstrap methodology
-        min_required = max(20, self.horizon // 2)
+        # Bootstrap requires enough data for meaningful resampling over the horizon
+        min_required = max(self.horizon, 20)
         if len(returns) < min_required:
             return RiskSimulationResult(
                 0.0,
