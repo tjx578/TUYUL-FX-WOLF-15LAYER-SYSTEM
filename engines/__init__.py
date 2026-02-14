@@ -1,3 +1,8 @@
+"""Engine facade exports."""
+
+from engines.cognitive_risk_simulation import CognitiveRiskSimulation, RiskSimulationResult
+
+__all__ = ["CognitiveRiskSimulation", "RiskSimulationResult"]
 """Engine facade layer for pre-processing and cross-engine synthesis."""
 
 from engines.cognitive_coherence_engine import CognitiveCoherenceEngine
