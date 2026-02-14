@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
-⚛️ TUYUL FX AGI — Core Quantum Unified v7.0r∞
+⚛️ TUYUL FX AGI - Core Quantum Unified v7.0r∞
 ═══════════════════════════════════════════════════════════════════════════════
 Unified module for Quantum Decision Engine, TRQ3D Field, and Neural Decision Tree.
 
@@ -45,13 +44,16 @@ Version: 7.0r∞
 from __future__ import annotations
 
 import logging
-import math
+
 from collections import deque
 from copy import deepcopy
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
-from enum import Enum
-from typing import Any, Deque, Dict, List, Optional, Sequence, Tuple, Union
+from datetime import UTC, datetime
+from enum import StrEnum
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
 
 # Setup logging
 logger = logging.getLogger(__name__)
@@ -103,7 +105,7 @@ class ExecutionError(QuantumError):
 # =============================================================================
 
 
-class NodeType(str, Enum):
+class NodeType(StrEnum):
     """Types of decision tree nodes."""
 
     ROOT = "root"
@@ -113,7 +115,7 @@ class NodeType(str, Enum):
     LEAF = "leaf"
 
 
-class ConditionOperator(str, Enum):
+class ConditionOperator(StrEnum):
     """Operators for condition evaluation."""
 
     GREATER_THAN = ">"
@@ -128,7 +130,7 @@ class ConditionOperator(str, Enum):
     NOT_IN_LIST = "not_in"
 
 
-class LayerType(str, Enum):
+class LayerType(StrEnum):
     """Types of probability layers."""
 
     TECHNICAL = "technical"
@@ -138,7 +140,7 @@ class LayerType(str, Enum):
     EXTERNAL = "external"
 
 
-class DecisionType(str, Enum):
+class DecisionType(StrEnum):
     """Types of quantum decisions."""
 
     STRONG_BUY = "strong_buy"
@@ -149,7 +151,7 @@ class DecisionType(str, Enum):
     NO_TRADE = "no_trade"
 
 
-class DecisionConfidence(str, Enum):
+class DecisionConfidence(StrEnum):
     """Confidence levels for decisions."""
 
     ULTRA = "ultra"
@@ -159,7 +161,7 @@ class DecisionConfidence(str, Enum):
     INSUFFICIENT = "insufficient"
 
 
-class TreeAction(str, Enum):
+class TreeAction(StrEnum):
     """Actions from decision tree."""
 
     EXECUTE = "EXECUTE"
@@ -168,7 +170,7 @@ class TreeAction(str, Enum):
     REDUCE_SIZE = "REDUCE_SIZE"
 
 
-class ExecutionType(str, Enum):
+class ExecutionType(StrEnum):
     """Types of order execution."""
 
     LIMIT = "limit"
@@ -178,7 +180,7 @@ class ExecutionType(str, Enum):
     TRAILING_STOP = "trailing_stop"
 
 
-class ExecutionPriority(str, Enum):
+class ExecutionPriority(StrEnum):
     """Execution priority levels."""
 
     IMMEDIATE = "immediate"
@@ -186,7 +188,7 @@ class ExecutionPriority(str, Enum):
     PATIENT = "patient"
 
 
-class BattleStrategy(str, Enum):
+class BattleStrategy(StrEnum):
     """The 4 quantum battle strategies."""
 
     APEX_PREDATOR = "apex_predator"  # Sell the Rally Ultra
@@ -199,9 +201,9 @@ class BattleStrategy(str, Enum):
 # 🔧 SECTION 3: CONFIGURATION CONSTANTS
 # =============================================================================
 
-QUANTUM_MANIFEST: Dict[str, Any] = {
+QUANTUM_MANIFEST: dict[str, Any] = {
     "version": "v7.0r∞",
-    "description": "Quantum Layer – Lorentzian field dan energi reflektif AGI.",
+    "description": "Quantum Layer - Lorentzian field dan energi reflektif AGI.",
     "modules": [
         "trq3d_field_engine.py",
         "quantum_field_sync.py",
@@ -218,7 +220,7 @@ QUANTUM_MANIFEST: Dict[str, Any] = {
     "author": "Tuyul Kartel FX Advanced Ultra",
 }
 
-DECISION_TREE_RULES: Dict[str, Any] = {
+DECISION_TREE_RULES: dict[str, Any] = {
     "tree_settings": {
         "max_depth": 5,
         "min_confidence": 0.80,
@@ -275,7 +277,7 @@ DECISION_TREE_RULES: Dict[str, Any] = {
     },
 }
 
-QUANTUM_WEIGHTS: Dict[str, Any] = {
+QUANTUM_WEIGHTS: dict[str, Any] = {
     "layer_weights": {
         "technical": {"weight": 0.40, "name": "Technical Analysis"},
         "smart_money": {"weight": 0.25, "name": "Smart Money Concepts"},
@@ -296,7 +298,7 @@ QUANTUM_WEIGHTS: Dict[str, Any] = {
     },
 }
 
-DEFAULT_LAYER_WEIGHTS: Dict[LayerType, float] = {
+DEFAULT_LAYER_WEIGHTS: dict[LayerType, float] = {
     LayerType.TECHNICAL: 0.40,
     LayerType.SMART_MONEY: 0.25,
     LayerType.MARKET_REGIME: 0.20,
@@ -304,7 +306,7 @@ DEFAULT_LAYER_WEIGHTS: Dict[LayerType, float] = {
     LayerType.EXTERNAL: 0.05,
 }
 
-DECISION_THRESHOLDS: Dict[str, float] = {
+DECISION_THRESHOLDS: dict[str, float] = {
     "strong_buy": 0.95,
     "buy": 0.85,
     "sell": 0.15,
@@ -312,7 +314,7 @@ DECISION_THRESHOLDS: Dict[str, float] = {
     "min_trading": 0.70,
 }
 
-CONFIDENCE_THRESHOLDS: Dict[str, float] = {
+CONFIDENCE_THRESHOLDS: dict[str, float] = {
     "frpc_min": 0.96,
     "tii_min": 0.92,
     "frpc_optimal": 0.98,
@@ -320,7 +322,7 @@ CONFIDENCE_THRESHOLDS: Dict[str, float] = {
 }
 
 # Battle Strategies Configuration (akan di-populate oleh QuantumScenarioMatrix)
-BATTLE_STRATEGIES: Dict[str, Dict[str, Any]] = {
+BATTLE_STRATEGIES: dict[str, dict[str, Any]] = {
     "apex_predator": {
         "name": "APEX PREDATOR (Sell the Rally Ultra)",
         "description": "Target sells at key resistance with institutional confluence",
@@ -365,15 +367,15 @@ class TreeNode:
     node_type: NodeType
     name: str
     layer: int
-    condition_field: Optional[str] = None
-    condition_operator: Optional[ConditionOperator] = None
-    condition_value: Optional[Any] = None
-    condition_value_range: Optional[Tuple[float, float]] = None
-    action: Optional[str] = None
+    condition_field: str | None = None
+    condition_operator: ConditionOperator | None = None
+    condition_value: Any | None = None
+    condition_value_range: tuple[float, float] | None = None
+    action: str | None = None
     probability_modifier: float = 1.0
-    true_child: Optional["TreeNode"] = None
-    false_child: Optional["TreeNode"] = None
-    children: List["TreeNode"] = field(default_factory=list)
+    true_child: TreeNode | None = None
+    false_child: TreeNode | None = None
+    children: list[TreeNode] = field(default_factory=list)
     weight: float = 1.0
     activation_count: int = 0
 
@@ -383,14 +385,14 @@ class TreeDecision:
     """Result of tree traversal."""
 
     timestamp: datetime
-    path: List[str]
-    decisions: List[str]
+    path: list[str]
+    decisions: list[str]
     final_action: str
     probability: float
     confidence: float
-    node_activations: Dict[str, int]
+    node_activations: dict[str, int]
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "timestamp": self.timestamp.isoformat(),
             "path": self.path,
@@ -410,9 +412,9 @@ class LayerProbability:
     raw_probability: float
     weighted_probability: float
     confidence: float
-    components: Dict[str, float]
+    components: dict[str, float]
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "layer_type": self.layer_type.value,
             "weight": self.weight,
@@ -428,7 +430,7 @@ class ProbabilityMatrix:
 
     timestamp: datetime
     pair: str
-    layers: List[LayerProbability]
+    layers: list[LayerProbability]
     raw_sum: float
     weighted_sum: float
     confidence_multiplier: float
@@ -436,7 +438,7 @@ class ProbabilityMatrix:
     direction: str
     strength: str
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "timestamp": self.timestamp.isoformat(),
             "pair": self.pair,
@@ -462,7 +464,7 @@ class ConfidenceResult:
     confidence_level: str
     is_valid: bool
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "frpc_score": round(self.frpc_score, 4),
             "tii_score": round(self.tii_score, 4),
@@ -487,11 +489,11 @@ class QuantumDecision:
     tii_score: float
     eaf_score: float
     scenario: str
-    layer_contributions: Dict[str, float]
-    validation_gates: Dict[str, bool]
+    layer_contributions: dict[str, float]
+    validation_gates: dict[str, bool]
     recommendation: str
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "timestamp": self.timestamp.isoformat(),
             "pair": self.pair,
@@ -514,7 +516,7 @@ class DriftAnalysis:
     gradient: float
     stability: float
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "alpha": round(self.alpha, 6),
             "beta": round(self.beta, 6),
@@ -530,9 +532,9 @@ class TIIResult:
 
     tii: float
     status: str
-    components: Dict[str, float]
+    components: dict[str, float]
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "tii": round(self.tii, 4),
             "status": self.status,
@@ -547,7 +549,7 @@ class MonteCarloResult:
     bear: float
     confidence: float
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "bull": round(self.bull, 2),
             "bear": round(self.bear, 2),
@@ -563,10 +565,10 @@ class FieldSummary:
     vwap: float
     energy: float
     bias_strength: float
-    last_price: Optional[float]
+    last_price: float | None
     alignment_score: float = 0.0
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "pair": self.pair,
             "vwap": round(self.vwap, 5),
@@ -591,10 +593,10 @@ class ExecutionPlan:
     position_size: float
     slippage_estimate: float
     optimal_timing: str
-    retry_strategy: Dict[str, Any]
+    retry_strategy: dict[str, Any]
     risk_reward_ratio: float
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "timestamp": self.timestamp.isoformat(),
             "pair": self.pair,
@@ -617,8 +619,8 @@ class StrategyConfig:
     name: str
     description: str
     wolf_wisdom: str
-    required_regime: List[str]
-    required_confluence: List[str]
+    required_regime: list[str]
+    required_confluence: list[str]
     min_confluence_count: int
     execution_type: str
     risk_modifier: float
@@ -633,12 +635,12 @@ class ScenarioSelection:
     selected_strategy: BattleStrategy
     strategy_config: StrategyConfig
     match_score: float
-    confluence_matches: List[str]
+    confluence_matches: list[str]
     regime_match: bool
     entry_recommendation: str
     wolf_message: str
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "timestamp": self.timestamp.isoformat(),
             "pair": self.pair,
@@ -667,16 +669,16 @@ class TRQ3DEngine:
     VERSION = "1.0"
 
     def __init__(self, maxlen: int = 2000) -> None:
-        self.price_history: Dict[str, Deque[Tuple[float, float]]] = {}
-        self.energy_map: Dict[str, float] = {}
-        self.bias_strength: Dict[str, float] = {}
-        self.vwap_map: Dict[str, float] = {}
-        self.reflections: Dict[str, Deque[float]] = {}
+        self.price_history: dict[str, deque[tuple[float, float]]] = {}
+        self.energy_map: dict[str, float] = {}
+        self.bias_strength: dict[str, float] = {}
+        self.vwap_map: dict[str, float] = {}
+        self.reflections: dict[str, deque[float]] = {}
         self.maxlen = maxlen
 
     def update(self, pair: str, price: float) -> None:
         """Update field with new price data."""
-        ts = datetime.now(timezone.utc).timestamp()
+        ts = datetime.now(UTC).timestamp()
         history = self.price_history.setdefault(pair, deque(maxlen=self.maxlen))
         history.append((ts, float(price)))
         self._update_vwap(pair)
@@ -691,7 +693,7 @@ class TRQ3DEngine:
             return
         n = len(prices)
         weights = [1.0 + i / n for i in range(n)]
-        self.vwap_map[pair] = sum(p * w for p, w in zip(prices, weights)) / sum(weights)
+        self.vwap_map[pair] = sum(p * w for p, w in zip(prices, weights, strict=True)) / sum(weights)
 
     def get_vwap(self, pair: str) -> float:
         return self.vwap_map.get(pair, 0.0)
@@ -724,15 +726,15 @@ class TRQ3DEngine:
         ref = (price - self.get_vwap(pair)) * self.get_energy(pair) * 0.001
         self.reflections.setdefault(pair, deque(maxlen=self.maxlen)).append(ref)
 
-    def get_recent_reflections(self, pair: str) -> List[float]:
+    def get_recent_reflections(self, pair: str) -> list[float]:
         return list(self.reflections.get(pair, []))
 
-    def get_price_history(self, pair: str) -> List[float]:
+    def get_price_history(self, pair: str) -> list[float]:
         return [v for _, v in self.price_history.get(pair, [])]
 
     def summary(self, pair: str) -> FieldSummary:
         last_price = None
-        if pair in self.price_history and self.price_history[pair]:
+        if self.price_history.get(pair):
             last_price = self.price_history[pair][-1][1]
         return FieldSummary(
             pair=pair,
@@ -742,7 +744,7 @@ class TRQ3DEngine:
             last_price=last_price,
         )
 
-    def get_all_pairs(self) -> List[str]:
+    def get_all_pairs(self) -> list[str]:
         return list(self.price_history.keys())
 
 
@@ -751,7 +753,7 @@ class TRQ3DEngine:
 # =============================================================================
 
 
-def analyze_drift(reflections: List[float]) -> DriftAnalysis:
+def analyze_drift(reflections: list[float]) -> DriftAnalysis:
     """Analyze drift from reflections."""
     if not reflections:
         return DriftAnalysis(alpha=0.0, beta=0.0, gamma=0.0, gradient=0.0, stability=0.85)
@@ -815,21 +817,21 @@ class QuantumFieldSync:
 
     VERSION = "1.0"
 
-    def __init__(self, trq_engine: Optional[TRQ3DEngine] = None) -> None:
+    def __init__(self, trq_engine: TRQ3DEngine | None = None) -> None:
         self.trq_engine = trq_engine or TRQ3DEngine()
-        self.sync_status: Dict[str, str] = {}
-        self._reflective_state: Dict[str, Dict[str, Any]] = {}
+        self.sync_status: dict[str, str] = {}
+        self._reflective_state: dict[str, dict[str, Any]] = {}
 
     def update_pair(self, pair: str, price: float) -> None:
         self.trq_engine.update(pair, price)
 
-    def sync_pair(self, pair: str) -> Dict[str, Any]:
+    def sync_pair(self, pair: str) -> dict[str, Any]:
         summary = self.trq_engine.summary(pair)
         alignment = self._calculate_alignment_score(summary)
 
         state = {
             "pair": pair,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
             "vwap": summary.vwap,
             "energy": summary.energy,
             "bias_strength": summary.bias_strength,
@@ -837,19 +839,19 @@ class QuantumFieldSync:
         }
 
         self._reflective_state[pair] = state
-        self.sync_status[pair] = datetime.now(timezone.utc).isoformat()
+        self.sync_status[pair] = datetime.now(UTC).isoformat()
         return state
 
     def _calculate_alignment_score(self, summary: FieldSummary) -> float:
         return max(0.0, min(1.0, round(1 - abs(summary.bias_strength) * 0.8, 5)))
 
-    def get_reflective_state(self, pair: str) -> Optional[Dict[str, Any]]:
+    def get_reflective_state(self, pair: str) -> dict[str, Any] | None:
         return self._reflective_state.get(pair)
 
-    def sync_all(self) -> Dict[str, Dict[str, Any]]:
+    def sync_all(self) -> dict[str, dict[str, Any]]:
         return {pair: self.sync_pair(pair) for pair in self.trq_engine.get_all_pairs()}
 
-    def get_status(self) -> Dict[str, Any]:
+    def get_status(self) -> dict[str, Any]:
         return {"last_synced": self.sync_status, "active_pairs": list(self.sync_status.keys())}
 
 
@@ -863,10 +865,10 @@ class NeuralDecisionTree:
 
     VERSION = "1.0"
 
-    def __init__(self, config: Optional[Dict[str, Any]] = None) -> None:
+    def __init__(self, config: dict[str, Any] | None = None) -> None:
         self.config = config or {"max_depth": 5, "min_confidence": 0.80}
-        self.root: Optional[TreeNode] = None
-        self._nodes: Dict[str, TreeNode] = {}
+        self.root: TreeNode | None = None
+        self._nodes: dict[str, TreeNode] = {}
         self._build_default_tree()
 
     def _build_default_tree(self) -> None:
@@ -911,8 +913,8 @@ class NeuralDecisionTree:
         psych_pass.true_child = execute
         psych_pass.false_child = psych_fail
 
-    def traverse(self, context: Dict[str, Any]) -> TreeDecision:
-        timestamp = datetime.now(timezone.utc)
+    def traverse(self, context: dict[str, Any]) -> TreeDecision:
+        timestamp = datetime.now(UTC)
         path, decisions = [], []
         probability = 1.0
         current = self.root
@@ -942,7 +944,7 @@ class NeuralDecisionTree:
             probability=probability, confidence=confidence, node_activations=activations,
         )
 
-    def _evaluate_condition(self, node: TreeNode, context: Dict[str, Any]) -> bool:
+    def _evaluate_condition(self, node: TreeNode, context: dict[str, Any]) -> bool:
         if not node.condition_field or not node.condition_operator:
             return True
         value = context.get(node.condition_field)
@@ -960,7 +962,7 @@ class NeuralDecisionTree:
         }
         return ops.get(op, lambda v, t: False)(value, target)
 
-    def get_node(self, node_id: str) -> Optional[TreeNode]:
+    def get_node(self, node_id: str) -> TreeNode | None:
         return self._nodes.get(node_id)
 
     def reset_activations(self) -> None:
@@ -978,17 +980,21 @@ class ProbabilityMatrixCalculator:
 
     VERSION = "1.0"
 
-    def __init__(self, config: Optional[Dict[str, Any]] = None) -> None:
+    def __init__(self, config: dict[str, Any] | None = None) -> None:
         self.config = config or {"neutral_zone": (0.45, 0.55), "strong_threshold": 0.85}
         self.weights = deepcopy(DEFAULT_LAYER_WEIGHTS)
 
-    def calculate(self, layer_inputs: Dict[str, Dict[str, Any]], confidence_inputs: Dict[str, float]) -> ProbabilityMatrix:
-        timestamp = datetime.now(timezone.utc)
+    def calculate(self, layer_inputs: dict[str, Any], confidence_inputs: dict[str, float]) -> ProbabilityMatrix:
+        timestamp = datetime.now(UTC)
         pair = str(layer_inputs.get("pair", "UNKNOWN"))
-        layers = [self._calc_layer(lt, w, layer_inputs.get(lt.value, {})) for lt, w in self.weights.items()]
+        layers = []
+        for lt, w in self.weights.items():
+            layer_data_raw = layer_inputs.get(lt.value, {})
+            layer_data = layer_data_raw if isinstance(layer_data_raw, dict) else {}
+            layers.append(self._calc_layer(lt, w, layer_data))
 
-        raw_sum = sum(l.raw_probability for l in layers) / len(layers)
-        weighted_sum = sum(l.weighted_probability for l in layers)
+        raw_sum = sum(layer.raw_probability for layer in layers) / len(layers)
+        weighted_sum = sum(layer.weighted_probability for layer in layers)
         conf_mult = self._calc_conf_multiplier(confidence_inputs)
         final = max(0.0, min(1.0, weighted_sum * conf_mult))
 
@@ -998,7 +1004,7 @@ class ProbabilityMatrixCalculator:
             final_probability=final, direction=self._direction(final), strength=self._strength(final),
         )
 
-    def _calc_layer(self, lt: LayerType, weight: float, data: Dict[str, Any]) -> LayerProbability:
+    def _calc_layer(self, lt: LayerType, weight: float, data: dict[str, Any]) -> LayerProbability:
         calculators = {
             LayerType.TECHNICAL: self._tech,
             LayerType.SMART_MONEY: self._smart,
@@ -1009,45 +1015,45 @@ class ProbabilityMatrixCalculator:
         raw, comp = calculators.get(lt, lambda d: (0.5, {}))(data)
         return LayerProbability(lt, weight, raw, raw * weight, self._layer_conf(comp), comp)
 
-    def _tech(self, d: Dict) -> Tuple[float, Dict]:
+    def _tech(self, d: dict[str, Any]) -> tuple[float, dict[str, Any]]:
         c = {"twms": d.get("twms_score", 6) / 12, "trend": d.get("trend_aligned", 0.5),
              "rsi": 0.3 if d.get("rsi", 50) > 70 else 0.7 if d.get("rsi", 50) < 30 else 0.5,
              "ema": d.get("ema_aligned", 0.5), "fib": d.get("fib_confluence", 0.5)}
         w = {"twms": 0.30, "trend": 0.25, "rsi": 0.15, "ema": 0.15, "fib": 0.15}
         return sum(c[k] * w[k] for k in c), c
 
-    def _smart(self, d: Dict) -> Tuple[float, Dict]:
+    def _smart(self, d: dict[str, Any]) -> tuple[float, dict[str, Any]]:
         c = {"inst": d.get("institutional_flow", 0.5), "ob": d.get("order_block_strength", 0.5),
              "liq": d.get("liquidity_zone", 0.5), "fvg": d.get("fvg_presence", 0.5)}
         w = {"inst": 0.35, "ob": 0.30, "liq": 0.20, "fvg": 0.15}
         return sum(c[k] * w[k] for k in c), c
 
-    def _regime(self, d: Dict) -> Tuple[float, Dict]:
+    def _regime(self, d: dict[str, Any]) -> tuple[float, dict[str, Any]]:
         c = {"fav": d.get("regime_favorable", 0.5), "vol": d.get("volatility_appropriate", 0.5),
              "sess": d.get("session_timing", 0.5)}
         w = {"fav": 0.50, "vol": 0.30, "sess": 0.20}
         return sum(c[k] * w[k] for k in c), c
 
-    def _psych(self, d: Dict) -> Tuple[float, Dict]:
+    def _psych(self, d: dict[str, Any]) -> tuple[float, dict[str, Any]]:
         c = {"emo": 1 - d.get("emotion_index", 50) / 100, "disc": d.get("discipline_score", 85) / 100,
              "pat": d.get("patience_level", 7) / 10}
         w = {"emo": 0.40, "disc": 0.35, "pat": 0.25}
         return sum(c[k] * w[k] for k in c), c
 
-    def _external(self, d: Dict) -> Tuple[float, Dict]:
+    def _external(self, d: dict[str, Any]) -> tuple[float, dict[str, Any]]:
         c = {"news": d.get("news_clear", 0.7), "cal": d.get("calendar_clear", 0.7),
              "corr": d.get("correlation_low", 0.7)}
         w = {"news": 0.40, "cal": 0.35, "corr": 0.25}
         return sum(c[k] * w[k] for k in c), c
 
-    def _layer_conf(self, c: Dict) -> float:
+    def _layer_conf(self, c: dict) -> float:
         if not c:
             return 0.5
         vals = list(c.values())
         avg = sum(vals) / len(vals)
         return 1 - min(1, sum((v - avg) ** 2 for v in vals) / len(vals) * 2)
 
-    def _calc_conf_multiplier(self, inp: Dict[str, float]) -> float:
+    def _calc_conf_multiplier(self, inp: dict[str, float]) -> float:
         frpc, tii = inp.get("frpc", 0.96), inp.get("tii", 0.92)
         if frpc <= 0 or tii <= 0:
             return 0.9
@@ -1075,12 +1081,12 @@ class ConfidenceMultiplier:
     LEVELS = {"ultra": (1.10, 1.15), "high": (1.05, 1.10), "normal": (0.95, 1.05),
               "reduced": (0.90, 0.95), "low": (0.85, 0.90)}
 
-    def __init__(self, config: Optional[Dict[str, Any]] = None) -> None:
+    def __init__(self, config: dict[str, Any] | None = None) -> None:
         self.config = config or {"frpc_weight": 0.50, "tii_weight": 0.50,
                                  "method": "harmonic", "min": 0.85, "max": 1.15}
 
     def calculate(self, frpc_score: float, tii_score: float) -> ConfidenceResult:
-        timestamp = datetime.now(timezone.utc)
+        timestamp = datetime.now(UTC)
         is_valid = frpc_score >= CONFIDENCE_THRESHOLDS["frpc_min"] and tii_score >= CONFIDENCE_THRESHOLDS["tii_min"]
 
         fw, tw = self.config["frpc_weight"], self.config["tii_weight"]
@@ -1090,7 +1096,10 @@ class ConfidenceMultiplier:
             composite = 0.0
 
         mult = max(self.config["min"], min(self.config["max"], 1.0 + (composite - 0.94) * 2.5))
-        level = next((l for l, (lo, hi) in self.LEVELS.items() if lo <= mult < hi), "ultra" if mult >= 1.10 else "low")
+        level = next(
+            (level_name for level_name, (lo, hi) in self.LEVELS.items() if lo <= mult < hi),
+            "ultra" if mult >= 1.10 else "low",
+        )
 
         return ConfidenceResult(timestamp, frpc_score, tii_score, fw, tw, composite, mult, level, is_valid)
 
@@ -1108,15 +1117,21 @@ class QuantumDecisionEngine:
 
     VERSION = "1.0"
 
-    def __init__(self, config: Optional[Dict[str, Any]] = None) -> None:
+    def __init__(self, config: dict[str, Any] | None = None) -> None:
         self.config = config or {"min_probability": 0.90, "min_frpc": 0.96, "min_tii": 0.92, "min_eaf": 85}
-        self._history: List[QuantumDecision] = []
+        self._history: list[QuantumDecision] = []
         self.decision_tree = NeuralDecisionTree()
         self.probability_calc = ProbabilityMatrixCalculator()
         self.confidence_calc = ConfidenceMultiplier()
 
-    def analyze(self, market_data: Dict, cognitive: Dict, fusion: Dict, meta: Dict) -> QuantumDecision:
-        timestamp = datetime.now(timezone.utc)
+    def analyze(
+        self,
+        market_data: dict[str, Any],
+        cognitive: dict[str, Any],
+        fusion: dict[str, Any],
+        meta: dict[str, Any],
+    ) -> QuantumDecision:
+        timestamp = datetime.now(UTC)
         pair = market_data.get("pair", "UNKNOWN")
 
         layer_probs = {
@@ -1173,13 +1188,13 @@ class QuantumDecisionEngine:
             return DecisionConfidence.LOW
         return DecisionConfidence.INSUFFICIENT
 
-    def _eaf(self, lp: Dict, frpc: float, tii: float, p: float) -> float:
+    def _eaf(self, lp: dict[str, float], frpc: float, tii: float, p: float) -> float:
         aligned = sum(1 for v in lp.values() if v > 0.7 or v < 0.3) / len(lp) * 30
         coh = ((frpc - 0.90) + (tii - 0.85)) / 0.20 * 40
         conf = abs(p - 0.5) * 2 * 30
         return min(100, max(0, aligned + coh + conf))
 
-    def _scenario(self, md: Dict, dt: DecisionType) -> str:
+    def _scenario(self, md: dict[str, Any], dt: DecisionType) -> str:
         regime = md.get("regime", "unknown")
         if dt in (DecisionType.STRONG_SELL, DecisionType.SELL):
             return "APEX_PREDATOR" if regime in ("trending_down", "ranging_top") else "SHADOW_STRIKE"
@@ -1187,7 +1202,7 @@ class QuantumDecisionEngine:
             return "TSUNAMI_BREAKOUT" if regime == "transition_strong_trend" else "BLOOD_MOON_HUNT"
         return "WAIT_FOR_SETUP"
 
-    def _gates(self, p: float, c: DecisionConfidence, frpc: float, tii: float, eaf: float) -> Dict[str, bool]:
+    def _gates(self, p: float, c: DecisionConfidence, frpc: float, tii: float, eaf: float) -> dict[str, bool]:
         return {
             "quantum_probability": p >= self.config["min_probability"],
             "neural_confidence": c in (DecisionConfidence.ULTRA, DecisionConfidence.HIGH),
@@ -1196,7 +1211,7 @@ class QuantumDecisionEngine:
             "eaf_score": eaf >= self.config["min_eaf"],
         }
 
-    def _recommendation(self, dt: DecisionType, c: DecisionConfidence, sc: str, g: Dict[str, bool]) -> str:
+    def _recommendation(self, dt: DecisionType, c: DecisionConfidence, sc: str, g: dict[str, bool]) -> str:
         if not all(g.values()):
             return f"⚠️ HOLD - Gates failed: {', '.join(k for k, v in g.items() if not v)}"
         recs = {
@@ -1209,7 +1224,7 @@ class QuantumDecisionEngine:
         }
         return recs.get(dt, "❌ NO TRADE")
 
-    def get_history(self, limit: Optional[int] = None) -> List[QuantumDecision]:
+    def get_history(self, limit: int | None = None) -> list[QuantumDecision]:
         return self._history[-limit:] if limit else self._history.copy()
 
 
@@ -1230,7 +1245,7 @@ class QuantumScenarioMatrix:
 
     VERSION = "1.0"
 
-    STRATEGIES: Dict[BattleStrategy, StrategyConfig] = {
+    STRATEGIES: dict[BattleStrategy, StrategyConfig] = {
         BattleStrategy.APEX_PREDATOR: StrategyConfig(
             name="APEX PREDATOR (Sell the Rally Ultra)",
             description="Target sells at key resistance with institutional confluence",
@@ -1273,14 +1288,14 @@ class QuantumScenarioMatrix:
         ),
     }
 
-    def __init__(self, config: Optional[Dict[str, Any]] = None) -> None:
+    def __init__(self, config: dict[str, Any] | None = None) -> None:
         self.config = config or {"min_match_score": 0.70, "require_regime_match": True}
 
     def select_strategy(
-        self, market_context: Dict[str, Any], confluence_data: Dict[str, bool], direction_bias: str
+        self, market_context: dict[str, Any], confluence_data: dict[str, bool], direction_bias: str
     ) -> ScenarioSelection:
         """Select optimal battle strategy."""
-        timestamp = datetime.now(timezone.utc)
+        timestamp = datetime.now(UTC)
         pair = market_context.get("pair", "UNKNOWN")
         regime = market_context.get("regime", "unknown")
 
@@ -1311,8 +1326,8 @@ class QuantumScenarioMatrix:
 
     def _score_strategy(
         self, strategy: BattleStrategy, config: StrategyConfig, regime: str,
-        confluence_data: Dict[str, bool], direction_bias: str,
-    ) -> Tuple[float, List[str], bool]:
+        confluence_data: dict[str, bool], direction_bias: str,
+    ) -> tuple[float, list[str], bool]:
         score = 0.0
         matches = []
 
@@ -1343,18 +1358,18 @@ class QuantumScenarioMatrix:
         exec_type = config.execution_type
         if "sell_stop" in exec_type:
             return "Place SELL STOP 5 pips below the setup candle low"
-        elif "buy_stop" in exec_type:
+        if "buy_stop" in exec_type:
             return "Place BUY STOP 5 pips above the setup candle high"
-        elif "pending_on_retest" in exec_type:
+        if "pending_on_retest" in exec_type:
             return "Wait for retest of broken level, then enter with limit order"
-        elif "scale_in" in exec_type:
+        if "scale_in" in exec_type:
             return "Scale in with 3 positions: 40% at level, 30% each at next levels"
         return f"Execute {exec_type}"
 
-    def get_strategy_info(self, strategy: BattleStrategy) -> Optional[StrategyConfig]:
+    def get_strategy_info(self, strategy: BattleStrategy) -> StrategyConfig | None:
         return self.STRATEGIES.get(strategy)
 
-    def get_all_strategies(self) -> Dict[BattleStrategy, StrategyConfig]:
+    def get_all_strategies(self) -> dict[BattleStrategy, StrategyConfig]:
         return self.STRATEGIES.copy()
 
 
@@ -1375,7 +1390,7 @@ class QuantumExecutionOptimizer:
 
     VERSION = "1.0"
 
-    def __init__(self, config: Optional[Dict[str, Any]] = None) -> None:
+    def __init__(self, config: dict[str, Any] | None = None) -> None:
         self.config = config or {
             "slippage_tolerance_pips": 0.5,
             "retry_attempts": 3,
@@ -1385,10 +1400,10 @@ class QuantumExecutionOptimizer:
         }
 
     def optimize(
-        self, quantum_decision: Dict[str, Any], market_data: Dict[str, Any], account_info: Dict[str, Any]
+        self, quantum_decision: dict[str, Any], market_data: dict[str, Any], account_info: dict[str, Any]
     ) -> ExecutionPlan:
         """Create optimized execution plan."""
-        timestamp = datetime.now(timezone.utc)
+        timestamp = datetime.now(UTC)
         pair = quantum_decision.get("pair", "UNKNOWN")
         direction = quantum_decision.get("direction", "LONG")
 
@@ -1409,12 +1424,12 @@ class QuantumExecutionOptimizer:
             retry_strategy=retry_strategy, risk_reward_ratio=rr_ratio,
         )
 
-    def _calculate_optimal_entry(self, market_data: Dict[str, Any], direction: str) -> float:
+    def _calculate_optimal_entry(self, market_data: dict[str, Any], direction: str) -> float:
         price = market_data.get("current_price", 0)
         spread = market_data.get("spread", 0.0001)
         return price + spread / 2 if direction == "LONG" else price - spread / 2
 
-    def _calculate_stop_loss(self, entry: float, direction: str, market_data: Dict[str, Any]) -> float:
+    def _calculate_stop_loss(self, entry: float, direction: str, market_data: dict[str, Any]) -> float:
         atr = market_data.get("atr", entry * 0.001)
         offset = atr * 1.5
         return entry - offset if direction == "LONG" else entry + offset
@@ -1424,7 +1439,7 @@ class QuantumExecutionOptimizer:
         rr = self.config["min_rr_ratio"]
         return entry + (risk * rr) if direction == "LONG" else entry - (risk * rr)
 
-    def _calculate_position_size(self, account: Dict[str, Any], entry: float, stop_loss: float) -> float:
+    def _calculate_position_size(self, account: dict[str, Any], entry: float, stop_loss: float) -> float:
         balance = account.get("balance", 10000)
         risk_pct = account.get("risk_per_trade", 0.01)
         pip_value = account.get("pip_value", 10)
@@ -1432,38 +1447,38 @@ class QuantumExecutionOptimizer:
         risk_pips = abs(entry - stop_loss) * 10000
         return round(risk_amount / (risk_pips * pip_value), 2) if risk_pips > 0 else 0.01
 
-    def _estimate_slippage(self, market_data: Dict[str, Any]) -> float:
+    def _estimate_slippage(self, market_data: dict[str, Any]) -> float:
         spread = market_data.get("spread", 0.0001)
         volatility = market_data.get("volatility", 0.5)
         liquidity = market_data.get("liquidity", 0.8)
         return spread * 0.5 * (1 + volatility * 0.5) * (2 - liquidity)
 
-    def _determine_execution_type(self, decision: Dict[str, Any], slippage: float) -> ExecutionType:
+    def _determine_execution_type(self, decision: dict[str, Any], slippage: float) -> ExecutionType:
         confidence = decision.get("confidence", 0.9)
         if confidence > 0.98:
             return ExecutionType.MARKET
-        elif slippage < self.config["slippage_tolerance_pips"] * 0.0001:
+        if slippage < self.config["slippage_tolerance_pips"] * 0.0001:
             return ExecutionType.LIMIT
         return ExecutionType.STOP_LIMIT
 
     def _determine_optimal_timing(self) -> str:
-        hour = datetime.now(timezone.utc).hour
+        hour = datetime.now(UTC).hour
         london_ny_overlap = 13 <= hour < 17
         london_tokyo_overlap = 8 <= hour < 9
 
         if london_ny_overlap:
             return "optimal_london_ny_overlap"
-        elif london_tokyo_overlap:
+        if london_tokyo_overlap:
             return "optimal_london_tokyo_overlap"
-        elif 8 <= hour < 17:
+        if 8 <= hour < 17:
             return "london_session"
-        elif 13 <= hour < 22:
+        if 13 <= hour < 22:
             return "new_york_session"
-        elif 0 <= hour < 9:
+        if 0 <= hour < 9:
             return "tokyo_session"
         return "off_hours_wait"
 
-    def _build_retry_strategy(self, execution_type: ExecutionType) -> Dict[str, Any]:
+    def _build_retry_strategy(self, execution_type: ExecutionType) -> dict[str, Any]:
         return {
             "max_attempts": self.config["retry_attempts"],
             "delay_ms": self.config["retry_delay_ms"],
@@ -1527,26 +1542,60 @@ def create_scenario_matrix() -> QuantumScenarioMatrix:
 # =============================================================================
 
 __all__ = [
-    # Exceptions
-    "QuantumError", "QuantumFieldError", "DecisionTreeError", "ProbabilityError", "ConfidenceError",
+    "BATTLE_STRATEGIES",
+    "CONFIDENCE_THRESHOLDS",
+    "DECISION_THRESHOLDS",
+    "DECISION_TREE_RULES",
+    "DEFAULT_LAYER_WEIGHTS",
+    "QUANTUM_MANIFEST",
+    "QUANTUM_WEIGHTS",
+    "BattleStrategy",
+    "ConditionOperator",
+    "ConfidenceError",
+    "ConfidenceMultiplier",
+    "ConfidenceResult",
+    "DecisionConfidence",
+    "DecisionTreeError",
+    "DecisionType",
+    "DriftAnalysis",
     "ExecutionError",
-    # Enums
-    "NodeType", "ConditionOperator", "LayerType", "DecisionType", "DecisionConfidence", "TreeAction",
-    "ExecutionType", "ExecutionPriority", "BattleStrategy",
-    # Constants
-    "QUANTUM_MANIFEST", "DECISION_TREE_RULES", "QUANTUM_WEIGHTS", "DEFAULT_LAYER_WEIGHTS",
-    "DECISION_THRESHOLDS", "CONFIDENCE_THRESHOLDS", "BATTLE_STRATEGIES",
-    # Dataclasses
-    "TreeNode", "TreeDecision", "LayerProbability", "ProbabilityMatrix", "ConfidenceResult",
-    "QuantumDecision", "DriftAnalysis", "TIIResult", "MonteCarloResult", "FieldSummary",
-    "ExecutionPlan", "StrategyConfig", "ScenarioSelection",
-    # Classes
-    "TRQ3DEngine", "QuantumFieldSync", "NeuralDecisionTree", "ProbabilityMatrixCalculator",
-    "ConfidenceMultiplier", "QuantumDecisionEngine", "QuantumExecutionOptimizer", "QuantumScenarioMatrix",
-    # Functions
-    "analyze_drift", "calculate_tii", "monte_carlo_fttc_simulation", "get_wolf_message",
-    "get_layer_weight", "calculate_quick_probability", "create_quantum_engine",
-    "create_field_sync", "create_decision_tree", "create_execution_optimizer", "create_scenario_matrix",
+    "ExecutionPlan",
+    "ExecutionPriority",
+    "ExecutionType",
+    "FieldSummary",
+    "LayerProbability",
+    "LayerType",
+    "MonteCarloResult",
+    "NeuralDecisionTree",
+    "NodeType",
+    "ProbabilityError",
+    "ProbabilityMatrix",
+    "ProbabilityMatrixCalculator",
+    "QuantumDecision",
+    "QuantumDecisionEngine",
+    "QuantumError",
+    "QuantumExecutionOptimizer",
+    "QuantumFieldError",
+    "QuantumFieldSync",
+    "QuantumScenarioMatrix",
+    "ScenarioSelection",
+    "StrategyConfig",
+    "TIIResult",
+    "TRQ3DEngine",
+    "TreeAction",
+    "TreeDecision",
+    "TreeNode",
+    "analyze_drift",
+    "calculate_quick_probability",
+    "calculate_tii",
+    "create_decision_tree",
+    "create_execution_optimizer",
+    "create_field_sync",
+    "create_quantum_engine",
+    "create_scenario_matrix",
+    "get_layer_weight",
+    "get_wolf_message",
+    "monte_carlo_fttc_simulation",
 ]
 
 
@@ -1555,50 +1604,51 @@ __all__ = [
 # =============================================================================
 
 if __name__ == "__main__":
-    print("⚛️ TUYUL FX AGI — Core Quantum Unified v7.0r∞")
-    print("=" * 60)
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
+    logger.info("⚛️ TUYUL FX AGI - Core Quantum Unified v7.0r∞")
+    logger.info("=" * 60)
 
-    print("\n🌀 Testing TRQ3D Engine...")
+    logger.info("\n🌀 Testing TRQ3D Engine...")
     trq = TRQ3DEngine()
     for p in [1.0850, 1.0852, 1.0848, 1.0855, 1.0860, 1.0858]:
         trq.update("EURUSD", p)
     s = trq.summary("EURUSD")
-    print(f"  VWAP: {s.vwap:.5f}, Energy: {s.energy:.5f}, Bias: {s.bias_strength:.6f}")
+    logger.info(f"  VWAP: {s.vwap:.5f}, Energy: {s.energy:.5f}, Bias: {s.bias_strength:.6f}")
 
-    print("\n📊 Testing Drift Analysis...")
+    logger.info("\n📊 Testing Drift Analysis...")
     drift = analyze_drift(trq.get_recent_reflections("EURUSD"))
-    print(f"  Gradient: {drift.gradient:.6f}, Stability: {drift.stability:.4f}")
+    logger.info(f"  Gradient: {drift.gradient:.6f}, Stability: {drift.stability:.4f}")
 
-    print("\n🎲 Testing Monte Carlo...")
+    logger.info("\n🎲 Testing Monte Carlo...")
     mc = monte_carlo_fttc_simulation(trq.get_price_history("EURUSD"))
-    print(f"  Bull: {mc.bull}%, Bear: {mc.bear}%, Conf: {mc.confidence}%")
+    logger.info(f"  Bull: {mc.bull}%, Bear: {mc.bear}%, Conf: {mc.confidence}%")
 
-    print("\n🔄 Testing Quantum Field Sync...")
+    logger.info("\n🔄 Testing Quantum Field Sync...")
     qfs = QuantumFieldSync(trq)
     state = qfs.sync_pair("EURUSD")
-    print(f"  Alignment: {state['alignment_score']:.5f}")
+    logger.info(f"  Alignment: {state['alignment_score']:.5f}")
 
-    print("\n🌳 Testing Neural Decision Tree...")
+    logger.info("\n🌳 Testing Neural Decision Tree...")
     tree = NeuralDecisionTree()
     ctx = {"twms_score": 10, "smart_money_alignment": 0.85, "regime_favorable": True, "emotion_index": 45}
     td = tree.traverse(ctx)
-    print(f"  Path: {' → '.join(td.path)}")
-    print(f"  Action: {td.final_action}, Prob: {td.probability:.2f}")
+    logger.info(f"  Path: {' → '.join(td.path)}")
+    logger.info(f"  Action: {td.final_action}, Prob: {td.probability:.2f}")
 
-    print("\n📈 Testing Confidence Multiplier...")
+    logger.info("\n📈 Testing Confidence Multiplier...")
     cm = ConfidenceMultiplier()
     cr = cm.calculate(0.97, 0.93)
-    print(f"  Composite: {cr.composite_score:.4f}, Mult: {cr.multiplier:.4f}, Level: {cr.confidence_level}")
+    logger.info(f"  Composite: {cr.composite_score:.4f}, Mult: {cr.multiplier:.4f}, Level: {cr.confidence_level}")
 
-    print("\n📊 Testing Probability Matrix...")
+    logger.info("\n📊 Testing Probability Matrix...")
     pmc = ProbabilityMatrixCalculator()
     matrix = pmc.calculate(
         {"pair": "EURUSD", "technical": {"twms_score": 10}, "smart_money": {}, "market_regime": {}, "psychology": {}, "external": {}},
         {"frpc": 0.97, "tii": 0.93},
     )
-    print(f"  Final: {matrix.final_probability:.4f}, Dir: {matrix.direction}, Str: {matrix.strength}")
+    logger.info(f"  Final: {matrix.final_probability:.4f}, Dir: {matrix.direction}, Str: {matrix.strength}")
 
-    print("\n⚛️ Testing Quantum Decision Engine...")
+    logger.info("\n⚛️ Testing Quantum Decision Engine...")
     qde = QuantumDecisionEngine()
     dec = qde.analyze(
         {"pair": "EURUSD", "regime": "trending_up"},
@@ -1606,37 +1656,37 @@ if __name__ == "__main__":
         {"smart_money_probability": 0.82, "regime_probability": 0.88, "frpc_coherence": 0.97},
         {"external_probability": 0.9, "neural_confidence": 0.96},
     )
-    print(f"  Decision: {dec.decision_type.value}, Prob: {dec.probability:.4f}")
-    print(f"  EAF: {dec.eaf_score:.2f}, Scenario: {dec.scenario}")
-    print(f"  Rec: {dec.recommendation}")
+    logger.info(f"  Decision: {dec.decision_type.value}, Prob: {dec.probability:.4f}")
+    logger.info(f"  EAF: {dec.eaf_score:.2f}, Scenario: {dec.scenario}")
+    logger.info(f"  Rec: {dec.recommendation}")
 
-    print("\n🐺 Wolf Messages...")
-    print(f"  Execute: {get_wolf_message('execute')}")
+    logger.info("\n🐺 Wolf Messages...")
+    logger.info(f"  Execute: {get_wolf_message('execute')}")
 
-    print("\n⚡ Quick Probability...")
+    logger.info("\n⚡ Quick Probability...")
     qp = calculate_quick_probability(0.85, 0.82, 0.88, 0.80, 0.90, 0.97, 0.93)
-    print(f"  Result: {qp:.4f}")
+    logger.info(f"  Result: {qp:.4f}")
 
-    print("\n🗡️ Testing Quantum Scenario Matrix...")
+    logger.info("\n🗡️ Testing Quantum Scenario Matrix...")
     qsm = QuantumScenarioMatrix()
     market_ctx = {"pair": "EURUSD", "regime": "trending_up"}
     confluence = {"key_support": True, "demand_zone": True, "fib_38.2_50": True, "smc_accumulation": True}
     selection = qsm.select_strategy(market_ctx, confluence, "LONG")
-    print(f"  Strategy: {selection.selected_strategy.value}")
-    print(f"  Match Score: {selection.match_score:.2f}")
-    print(f"  Wolf: {selection.wolf_message}")
+    logger.info(f"  Strategy: {selection.selected_strategy.value}")
+    logger.info(f"  Match Score: {selection.match_score:.2f}")
+    logger.info(f"  Wolf: {selection.wolf_message}")
 
-    print("\n⚡ Testing Quantum Execution Optimizer...")
+    logger.info("\n⚡ Testing Quantum Execution Optimizer...")
     qeo = QuantumExecutionOptimizer()
     decision_data = {"pair": "EURUSD", "direction": "LONG", "confidence": 0.95}
     market = {"current_price": 1.0850, "spread": 0.0001, "atr": 0.0015, "volatility": 0.5, "liquidity": 0.8}
     account = {"balance": 10000, "risk_per_trade": 0.01, "pip_value": 10}
     exec_plan = qeo.optimize(decision_data, market, account)
-    print(f"  Entry: {exec_plan.entry_price:.5f}")
-    print(f"  SL: {exec_plan.stop_loss:.5f}, TP: {exec_plan.take_profit:.5f}")
-    print(f"  Position Size: {exec_plan.position_size} lots")
-    print(f"  R:R Ratio: {exec_plan.risk_reward_ratio}")
-    print(f"  Timing: {exec_plan.optimal_timing}")
+    logger.info(f"  Entry: {exec_plan.entry_price:.5f}")
+    logger.info(f"  SL: {exec_plan.stop_loss:.5f}, TP: {exec_plan.take_profit:.5f}")
+    logger.info(f"  Position Size: {exec_plan.position_size} lots")
+    logger.info(f"  R:R Ratio: {exec_plan.risk_reward_ratio}")
+    logger.info(f"  Timing: {exec_plan.optimal_timing}")
 
-    print("\n" + "=" * 60)
-    print(f"✅ All {len(__all__)} components tested successfully! 🐺")
+    logger.info("\n" + "=" * 60)
+    logger.info(f"✅ All {len(__all__)} components tested successfully! 🐺")
