@@ -1,3 +1,10 @@
+from __future__ import annotations
+
+import random
+
+from dataclasses import dataclass
+from statistics import fmean
+from typing import Any
 """Risk simulation engine with stressed Monte Carlo and tail metrics."""
 """Cognitive risk simulation engine."""
 
@@ -16,6 +23,7 @@ from random import Random
 from typing import Any, Dict, List, Sequence
 from random import Random
 from statistics import mean
+from typing import Any
 from typing import Any, Dict, List
 """
 Cognitive Risk Simulation v2.0.
@@ -52,7 +60,98 @@ class RiskSimulationResult:
     cvar_95: float
     max_drawdown: float
     stress_survival_rate: float
+    robustness_estimate: float
+    tail_risk_flag: bool
+
+
+class CognitiveRiskSimulation:
+    def __init__(self, n_iter: int = 500, seed: int = 17) -> None:
+        self.n_iter = n_iter
+        self.rng = random.Random(seed)
+
+    def simulate(self, returns: list[float]) -> RiskSimulationResult:
+        if len(returns) < 20:
+            return RiskSimulationResult(False, 0.0, 0.0, 0.0, 0.0, 0.0, True)
+
+        pnl = []
+        drawdowns = []
+        stress_ok = 0
+        for _ in range(self.n_iter):
+            path = [self.rng.choice(returns) for _ in range(50)]
+            if self.rng.random() < 0.08:
+                gap = abs(fmean(returns)) + max(0.01, self.rng.uniform(0.03, 0.05))
+                path[self.rng.randint(0, 49)] -= gap
+            if self.rng.random() < 0.2:
+                path = [step * 2.0 for step in path]
+
+            equity = 1.0
+            peak = 1.0
+            max_dd = 0.0
+            for step in path:
+                equity *= 1.0 + step
+                peak = max(peak, equity)
+                dd = (peak - equity) / max(peak, 1e-9)
+                max_dd = max(max_dd, dd)
+            pnl.append(equity - 1.0)
+            drawdowns.append(max_dd)
+            if max_dd < 0.2:
+                stress_ok += 1
+
+        pnl_sorted = sorted(pnl)
+        idx = max(0, int(0.05 * len(pnl_sorted)) - 1)
+        var_95 = -pnl_sorted[idx]
+        tail = pnl_sorted[: max(1, int(0.05 * len(pnl_sorted)))]
+        cvar_95 = -fmean(tail)
+
+        max_drawdown = max(drawdowns)
+        survival = stress_ok / self.n_iter
+
+        robustness = max(0.0, min(1.0, 1.0 - (var_95 * 0.4 + cvar_95 * 0.4 + max_drawdown * 0.2)))
+        tail_flag = cvar_95 > 0.2 or max_drawdown > 0.35
+
+        return RiskSimulationResult(
+            valid=True,
+            var_95=round(var_95, 4),
+            cvar_95=round(cvar_95, 4),
+            max_drawdown=round(max_drawdown, 4),
+            stress_survival_rate=round(survival, 4),
+            robustness_estimate=round(robustness, 4),
+            tail_risk_flag=tail_flag,
+        )
+
+    @staticmethod
+    def export(result: RiskSimulationResult) -> dict[str, Any]:
+        return {
+            "valid": result.valid,
     robustness: float
+    details: dict[str, Any] = field(default_factory=dict)
+
+
+class CognitiveRiskSimulation:
+    """Bootstrap Monte Carlo risk simulation with configurable stress scenarios.
+
+    Args:
+        iterations: Number of Monte Carlo simulation runs (default: 500)
+        horizon: Number of steps to project forward (default: 40)
+        seed: Random seed for reproducibility. Use None for true randomness in production (default: None)
+        stress_multiplier: Multiplier for stressed scenarios (default: 2.0)
+        stress_shock_prob: Probability of extreme downside shock in stressed path (default: 0.08)
+        stress_shock_range: Range of sigma multiples for extreme shocks (default: (3.0, 5.0))
+
+    Note:
+        For production use, consider setting seed=None to avoid deterministic results.
+        The default seed=None provides true randomness, while explicit seeds enable reproducible testing.
+    """
+
+    def __init__(
+        self,
+        iterations: int = 500,
+        horizon: int = 40,
+        seed: int | None = None,
+        stress_multiplier: float = 2.0,
+        stress_shock_prob: float = 0.08,
+        stress_shock_range: tuple[float, float] = (3.0, 5.0),
+    ) -> None:
 
 
 class CognitiveRiskSimulation:
@@ -160,11 +259,31 @@ class CognitiveRiskSimulation:
     def __init__(self, iterations: int = 500, horizon: int = 40, seed: int = 7) -> None:
         self.iterations = iterations
         self.horizon = horizon
+        self.stress_multiplier = stress_multiplier
+        self.stress_shock_prob = stress_shock_prob
+        self.stress_shock_range = stress_shock_range
         self._rng = Random(seed)
 
-    def simulate(self, returns: List[float]) -> RiskSimulationResult:
+    def simulate(self, returns: list[float]) -> RiskSimulationResult:
         if not returns:
             return RiskSimulationResult(0.0, 0.0, 0.0, 0.0, 0.0, {"reason": "no_returns"})
+
+        # Validate sufficient data for bootstrap methodology
+        # Bootstrap requires enough data for meaningful resampling over the horizon
+        min_required = max(self.horizon, 20)
+        if len(returns) < min_required:
+            return RiskSimulationResult(
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                {
+                    "reason": "insufficient_returns",
+                    "required": min_required,
+                    "provided": len(returns),
+                },
+            )
 
         terminal, drawdowns, stressed_terminal = [], [], []
         for _ in range(self.iterations):
@@ -197,38 +316,39 @@ class CognitiveRiskSimulation:
             },
         )
 
-    def _sample_path(self, returns: List[float], stressed: bool) -> List[float]:
+    def _sample_path(self, returns: list[float], stressed: bool) -> list[float]:
         level = 0.0
         path = [level]
         sigma_proxy = max(1e-6, (max(returns) - min(returns)) / 6)
         for _ in range(self.horizon):
             base = self._rng.choice(returns)
-            shock = base * (2.0 if stressed else 1.0)
-            if stressed and self._rng.random() < 0.08:
-                shock -= self._rng.uniform(3.0, 5.0) * sigma_proxy
+            shock = base * (self.stress_multiplier if stressed else 1.0)
+            if stressed and self._rng.random() < self.stress_shock_prob:
+                shock -= self._rng.uniform(*self.stress_shock_range) * sigma_proxy
             level += shock
             path.append(level)
         return path
 
     @staticmethod
-    def _max_drawdown(path: List[float]) -> float:
+    def _max_drawdown(path: list[float]) -> float:
         peak = path[0]
         max_dd = 0.0
         for value in path:
-            if value > peak:
-                peak = value
+            peak = max(peak, value)
             dd = peak - value
-            if dd > max_dd:
-                max_dd = dd
+            max_dd = max(max_dd, dd)
         return max_dd
 
     @staticmethod
-    def export(result: RiskSimulationResult) -> Dict[str, Any]:
+    def export(result: RiskSimulationResult) -> dict[str, Any]:
         return {
             "var_95": result.var_95,
             "cvar_95": result.cvar_95,
             "max_drawdown": result.max_drawdown,
             "stress_survival_rate": result.stress_survival_rate,
+            "robustness_estimate": result.robustness_estimate,
+            "tail_risk_flag": result.tail_risk_flag,
+        }
             "robustness": result.robustness,
             "details": result.details,
         }

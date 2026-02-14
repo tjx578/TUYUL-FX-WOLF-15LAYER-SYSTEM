@@ -1,3 +1,79 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+from math import exp, tanh
+from typing import Any
+
+
+def _ema(values: list[float], period: int) -> float:
+    if not values:
+        return 0.0
+    k = 2 / (period + 1)
+    acc = values[0]
+    for value in values[1:]:
+        acc = value * k + acc * (1 - k)
+    return acc
+
+
+@dataclass
+class PrecisionSnapshot:
+    valid: bool
+    precision_weight: float
+    ema_alignment: float
+    confluence_score: float
+    zone_proximity: float
+
+
+class FusionPrecisionEngine:
+    def evaluate(self, payload: dict[str, Any]) -> PrecisionSnapshot:
+        prices = [float(v) for v in payload.get("prices", [])]
+        rsi = float(payload.get("rsi", 50.0))
+        macd = float(payload.get("macd", 0.0))
+        atr = max(1e-9, float(payload.get("atr", 1.0)))
+        sr_zone = float(payload.get("sr_zone_distance", atr))
+        volatility = float(payload.get("volatility", 0.5))
+        if len(prices) < 30:
+            return PrecisionSnapshot(False, 0.0, 0.0, 0.0, 0.0)
+
+        ema8 = _ema(prices, 8)
+        ema21 = _ema(prices, 21)
+        ema55 = _ema(prices, 55)
+        ema100 = _ema(prices, 100)
+
+        aligns = [
+            ema8 > ema21,
+            ema21 > ema55,
+            ema55 > ema100,
+        ]
+        ema_alignment = sum(1 for cond in aligns if cond) / len(aligns)
+
+        rsi_score = 1.0 - abs(rsi - 50.0) / 50.0
+        macd_score = min(1.0, abs(macd) / atr)
+        confluence = max(0.0, min(1.0, (ema_alignment * 0.5 + rsi_score * 0.3 + macd_score * 0.2)))
+
+        zone_proximity = max(0.0, min(1.0, 1.0 - min(sr_zone / atr, 2.0) / 2.0))
+
+        base = tanh((ema8 - ema21) / atr) * exp(-abs(sr_zone) / (atr * 2.0))
+        weight = abs(base) * confluence * (0.5 + zone_proximity * 0.5)
+        if volatility > 0.7:
+            weight *= 0.85
+
+        return PrecisionSnapshot(
+            True,
+            round(max(0.0, min(1.0, weight)), 4),
+            round(ema_alignment, 4),
+            round(confluence, 4),
+            round(zone_proximity, 4),
+        )
+
+    @staticmethod
+    def export(snapshot: PrecisionSnapshot) -> dict[str, Any]:
+        return {
+            "valid": snapshot.valid,
+            "precision_weight": snapshot.precision_weight,
+            "ema_alignment": snapshot.ema_alignment,
+            "confluence_score": snapshot.confluence_score,
+            "zone_proximity": snapshot.zone_proximity,
 """Precision weighting engine."""
 
 from __future__ import annotations
@@ -329,7 +405,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from math import exp, tanh
-from typing import Any, Dict, List
+from typing import Any
 
 
 @dataclass
@@ -337,13 +413,13 @@ class PrecisionResult:
     precision_weight: float
     ema_alignment: float
     confluence: float
-    details: Dict[str, Any] = field(default_factory=dict)
+    details: dict[str, Any] = field(default_factory=dict)
 
 
 class FusionPrecisionEngine:
     def evaluate(
         self,
-        closes: List[float],
+        closes: list[float],
         rsi: float,
         macd_hist: float,
         atr_pct: float,
@@ -384,99 +460,30 @@ class FusionPrecisionEngine:
         )
 
     @staticmethod
-    def _ema(series: List[float], period: int) -> float:
+    def _ema(series: list[float], period: int) -> float:
+        """Compute a standard EMA using SMA of the first `period` values as seed.
+
+        This implementation uses proper EMA calculation by initializing with SMA
+        and iterating through all remaining values, rather than a fast approximation.
+        """
+        if period <= 0:
+            raise ValueError("period must be positive for EMA calculation")
+        if len(series) < period:
+            raise ValueError("series length must be at least `period` for EMA calculation")
+
         alpha = 2 / (period + 1)
-        ema = series[-period]
-        for value in series[-period + 1 :]:
+        # Initialize with SMA over the first `period` observations
+        ema = sum(series[:period]) / period
+        # Apply exponential smoothing to remaining values
+        for value in series[period:]:
             ema = alpha * value + (1 - alpha) * ema
         return ema
 
     @staticmethod
-    def export(result: PrecisionResult) -> Dict[str, Any]:
+    def export(result: PrecisionResult) -> dict[str, Any]:
         return {
             "precision_weight": result.precision_weight,
             "ema_alignment": result.ema_alignment,
             "confluence": result.confluence,
             "details": result.details,
         }
-"""Precision engine for confluence and zone proximity scoring."""
-
-import math
-
-from dataclasses import dataclass
-from typing import Any
-
-
-@dataclass
-class PrecisionReport:
-    precision_weight: float
-    ema_alignment: float
-    confluence: float
-    details: dict[str, Any]
-
-
-class FusionPrecisionEngine:
-    def evaluate(self, indicators: dict[str, float]) -> PrecisionReport:
-        ema8 = float(indicators.get("ema8", 0.0))
-        ema21 = float(indicators.get("ema21", 0.0))
-        ema55 = float(indicators.get("ema55", 0.0))
-        ema100 = float(indicators.get("ema100", 0.0))
-        rsi = float(indicators.get("rsi", 50.0))
-        macd = float(indicators.get("macd", 0.0))
-        atr = max(1e-9, float(indicators.get("atr", 1.0)))
-        vwap_gap = float(indicators.get("vwap_gap", 0.0))
-        zone_distance = abs(float(indicators.get("zone_distance", atr)))
-        volatility = float(indicators.get("volatility", 0.5))
-
-        align_pairs = [(ema8, ema21), (ema21, ema55), (ema55, ema100)]
-        aligned = sum(1 for a, b in align_pairs if a >= b)
-        ema_alignment = aligned / len(align_pairs)
-
-        rsi_sig = 1.0 if rsi > 55 else 0.0 if rsi < 45 else 0.5
-        macd_sig = 1.0 if macd > 0 else 0.0 if macd < 0 else 0.5
-        confluence = (ema_alignment + rsi_sig + macd_sig) / 3.0
-
-        tanh_component = math.tanh((ema8 - ema100) / atr)
-        vwap_component = math.exp(-abs(vwap_gap) / atr)
-        zone_component = max(0.2, 1.0 - zone_distance / (3 * atr))
-        vol_damping = 0.85 if volatility > 0.7 else 1.0
-
-        precision = abs(tanh_component) * vwap_component * confluence * zone_component * vol_damping
-
-        return PrecisionReport(
-            precision_weight=round(max(0.0, min(1.0, precision)), 4),
-            ema_alignment=round(ema_alignment, 4),
-            confluence=round(confluence, 4),
-            details={
-                "vwap_component": round(vwap_component, 6),
-                "zone_component": round(zone_component, 6),
-                "vol_damping": round(vol_damping, 6),
-            },
-from __future__ import annotations
-
-from dataclasses import dataclass
-from typing import Any, Mapping
-
-
-@dataclass(frozen=True)
-class FusionPrecision:
-    precision_weight: float
-    ema_alignment_score: float
-
-
-class FusionPrecisionEngine:
-    """Estimate entry precision from weighting and EMA agreement."""
-
-    def evaluate(self, state: Mapping[str, Any]) -> FusionPrecision:
-        weights = state.get("precision_weights", [0.5, 0.5])
-        if not isinstance(weights, list) or not weights:
-            weights = [0.5, 0.5]
-        mean_weight = sum(float(w) for w in weights) / len(weights)
-        ema_fast = float(state.get("ema_fast", 0.0))
-        ema_slow = float(state.get("ema_slow", 0.0))
-        alignment = max(0.0, min(1.0, 1.0 - min(1.0, abs(ema_fast - ema_slow))))
-
-        return FusionPrecision(
-            precision_weight=max(0.0, min(1.0, mean_weight)),
-            ema_alignment_score=alignment,
-        )

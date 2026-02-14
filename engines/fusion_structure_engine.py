@@ -1,3 +1,93 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Any
+
+
+def _slope(values: list[float]) -> float:
+    if len(values) < 2:
+        return 0.0
+    return values[-1] - values[0]
+
+
+@dataclass
+class StructureSnapshot:
+    valid: bool
+    structure: str
+    divergence_present: bool
+    divergence_type: str
+    mtf_alignment: float
+    liquidity_state: str
+
+
+class FusionStructureEngine:
+    def evaluate(self, payload: dict[str, Any]) -> StructureSnapshot:
+        close = [float(v) for v in payload.get("close", payload.get("prices", []))]
+        high = [float(v) for v in payload.get("high", close)]
+        low = [float(v) for v in payload.get("low", close)]
+        volume = [float(v) for v in payload.get("volume", [1.0] * len(close))]
+        rsi = [float(v) for v in payload.get("rsi_series", [50.0] * len(close))]
+
+        if len(close) < 25:
+            return StructureSnapshot(False, "UNKNOWN", False, "NONE", 0.0, "THIN")
+
+        recent_high = max(high[-10:])
+        recent_low = min(low[-10:])
+        broke_up = close[-1] > recent_high * 0.998
+        broke_down = close[-1] < recent_low * 1.002
+
+        if broke_up:
+            structure = "BREAKING_OUT"
+        elif broke_down:
+            structure = "BREAKING_DOWN"
+        elif close[-1] > close[-10]:
+            structure = "BULLISH"
+        elif close[-1] < close[-10]:
+            structure = "BEARISH"
+        else:
+            structure = "RANGE"
+
+        price_higher_high = close[-1] > close[-6]
+        rsi_lower_high = rsi[-1] < rsi[-6]
+        price_lower_low = close[-1] < close[-6]
+        rsi_higher_low = rsi[-1] > rsi[-6]
+
+        divergence = False
+        div_type = "NONE"
+        if price_higher_high and rsi_lower_high:
+            divergence = True
+            div_type = "BEARISH"
+        elif price_lower_low and rsi_higher_low:
+            divergence = True
+            div_type = "BULLISH"
+
+        short_slope = _slope(close[-5:])
+        mid_slope = _slope(close[-15:])
+        long_slope = _slope(close[-25:])
+        same_dir = sum(1 for s in (short_slope, mid_slope, long_slope) if s > 0)
+        mtf_alignment = same_dir / 3 if close[-1] >= close[0] else (3 - same_dir) / 3
+
+        v_avg = sum(volume[-20:]) / 20
+        if volume[-1] > v_avg * 1.5:
+            liq = "HIGH"
+        elif volume[-1] < v_avg * 0.7:
+            liq = "LOW"
+        else:
+            liq = "NORMAL"
+
+        return StructureSnapshot(
+            True, structure, divergence, div_type, round(mtf_alignment, 4), liq
+        )
+
+    @staticmethod
+    def export(snapshot: StructureSnapshot) -> dict[str, Any]:
+        return {
+            "valid": snapshot.valid,
+            "structure": snapshot.structure,
+            "divergence_present": snapshot.divergence_present,
+            "divergence_type": snapshot.divergence_type,
+            "mtf_alignment": snapshot.mtf_alignment,
+            "liquidity_state": snapshot.liquidity_state,
 """Structure and divergence engine."""
 """Fusion Structure Engine v2.0.
 
@@ -244,6 +334,7 @@ from dataclasses import dataclass
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Any
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Sequence
 from typing import Any, Dict, List
@@ -289,7 +380,7 @@ class FusionStructureEngine:
         mtf = 1.0 if htf_slope * ltf_slope > 0 else 0.4
         return StructureResult(structure, bull_div, bear_div, round(mtf, 4))
     liquidity: str
-    details: Dict[str, Any] = field(default_factory=dict)
+    details: dict[str, Any] = field(default_factory=dict)
 
 
 class FusionStructureEngine:
@@ -364,14 +455,16 @@ class FusionStructureEngine:
         return sh, sl
     def evaluate(
         self,
-        highs: List[float],
-        lows: List[float],
-        closes: List[float],
-        volumes: List[float],
-        rsi_values: List[float],
+        highs: list[float],
+        lows: list[float],
+        closes: list[float],
+        volumes: list[float],
+        rsi_values: list[float],
     ) -> StructureResult:
         if len(closes) < 40:
-            return StructureResult("RANGE", False, False, 0.0, "NORMAL", {"reason": "insufficient_data"})
+            return StructureResult(
+                "RANGE", False, False, 0.0, "NORMAL", {"reason": "insufficient_data"}
+            )
 
         swings_h = self._swings(highs, is_high=True)
         swings_l = self._swings(lows, is_high=False)
@@ -390,7 +483,7 @@ class FusionStructureEngine:
         )
 
     @staticmethod
-    def _swings(values: List[float], is_high: bool, lookback: int = 2) -> List[float]:
+    def _swings(values: list[float], is_high: bool, lookback: int = 2) -> list[float]:
         swings = []
         for i in range(lookback, len(values) - lookback):
             left = values[i - lookback : i]
@@ -402,7 +495,7 @@ class FusionStructureEngine:
         return swings[-4:]
 
     @staticmethod
-    def _classify(swings_h: List[float], swings_l: List[float], closes: List[float]) -> str:
+    def _classify(swings_h: list[float], swings_l: list[float], closes: list[float]) -> str:
         if len(swings_h) < 2 or len(swings_l) < 2:
             return "RANGE"
         hh = swings_h[-1] > swings_h[-2]
@@ -418,7 +511,7 @@ class FusionStructureEngine:
         return "BULLISH" if closes[-1] > closes[-20] else "BEARISH"
 
     @staticmethod
-    def _divergence(closes: List[float], rsi: List[float]) -> tuple[bool, bool]:
+    def _divergence(closes: list[float], rsi: list[float]) -> tuple[bool, bool]:
         if len(closes) < 8 or len(rsi) < 8:
             return False, False
         price_ll = closes[-1] < min(closes[-6:-1])
@@ -428,7 +521,7 @@ class FusionStructureEngine:
         return price_ll and rsi_hl, price_hh and rsi_lh
 
     @staticmethod
-    def _mtf_alignment(closes: List[float]) -> float:
+    def _mtf_alignment(closes: list[float]) -> float:
         sma10 = sum(closes[-10:]) / 10
         sma20 = sum(closes[-20:]) / 20
         sma40 = sum(closes[-40:]) / 40
@@ -437,7 +530,7 @@ class FusionStructureEngine:
         return max(sum(up), sum(down)) / 2
 
     @staticmethod
-    def _liquidity(volumes: List[float]) -> str:
+    def _liquidity(volumes: list[float]) -> str:
         if len(volumes) < 20:
             return "NORMAL"
         avg = sum(volumes[-20:]) / 20
@@ -449,7 +542,7 @@ class FusionStructureEngine:
         return "NORMAL"
 
     @staticmethod
-    def export(result: StructureResult) -> Dict[str, Any]:
+    def export(result: StructureResult) -> dict[str, Any]:
         return {
             "structure": result.structure,
             "bullish_divergence": result.bullish_divergence,
@@ -458,118 +551,3 @@ class FusionStructureEngine:
             "liquidity": result.liquidity,
             "details": result.details,
         }
-"""Structure engine with swing and divergence analysis."""
-
-from dataclasses import dataclass
-from typing import Any
-
-
-@dataclass
-class StructureReport:
-    structure: str
-    divergence: str
-    liquidity: str
-    mtf_alignment: float
-    details: dict[str, Any]
-
-
-class FusionStructureEngine:
-    def evaluate(self, market_data: dict[str, list[float] | float]) -> StructureReport:
-        closes = list(market_data.get("close", []))
-        highs = list(market_data.get("high", closes))
-        lows = list(market_data.get("low", closes))
-        volumes = list(market_data.get("volume", [1.0] * len(closes)))
-        rsi_series = list(market_data.get("rsi", []))
-        if len(closes) < 30:
-            return StructureReport("RANGE", "NONE", "NORMAL", 0.0, {"reason": "insufficient_data"})
-
-        recent_high = max(highs[-15:])
-        recent_low = min(lows[-15:])
-        if closes[-1] > recent_high * 0.999:
-            structure = "BREAKING_OUT"
-        elif closes[-1] < recent_low * 1.001:
-            structure = "BREAKING_DOWN"
-        elif closes[-1] > sum(closes[-10:]) / 10:
-            structure = "BULLISH"
-        elif closes[-1] < sum(closes[-10:]) / 10:
-            structure = "BEARISH"
-        else:
-            structure = "RANGE"
-
-        divergence = self._divergence(closes, rsi_series)
-        liquidity = self._liquidity(volumes)
-
-        slope_fast = (sum(closes[-10:]) / 10) - (sum(closes[-20:-10]) / 10)
-        slope_slow = (sum(closes[-20:]) / 20) - (sum(closes[-40:-20]) / 20)
-        mtf_alignment = 1.0 if slope_fast * slope_slow > 0 else 0.5 if slope_fast != 0 else 0.0
-
-        return StructureReport(
-            structure=structure,
-            divergence=divergence,
-            liquidity=liquidity,
-            mtf_alignment=round(mtf_alignment, 4),
-            details={"recent_high": round(recent_high, 6), "recent_low": round(recent_low, 6)},
-        )
-
-    def _divergence(self, closes: list[float], rsi: list[float]) -> str:
-        if len(rsi) < 6 or len(closes) < 6:
-            return "NONE"
-        price_trend = closes[-1] - closes[-6]
-        rsi_trend = rsi[-1] - rsi[-6]
-        if price_trend > 0 and rsi_trend < 0:
-            return "BEARISH"
-        if price_trend < 0 and rsi_trend > 0:
-            return "BULLISH"
-        return "NONE"
-
-    def _liquidity(self, volumes: list[float]) -> str:
-        if len(volumes) < 10:
-            return "LOW"
-        avg = sum(volumes[-10:]) / 10
-        if volumes[-1] > avg * 1.4:
-            return "HIGH"
-        if volumes[-1] < avg * 0.6:
-            return "LOW"
-        return "NORMAL"
-from __future__ import annotations
-
-from dataclasses import dataclass
-from enum import Enum
-from typing import Any, Mapping
-
-
-class StructureState(str, Enum):
-    SUPPORTIVE = "supportive"
-    CONFLICTED = "conflicted"
-    FRAGILE = "fragile"
-
-
-@dataclass(frozen=True)
-class FusionStructure:
-    state: StructureState
-    divergence_score: float
-    liquidity_signal: float
-    mtf_alignment: float
-
-
-class FusionStructureEngine:
-    """Assess structural reliability from divergence, liquidity and MTF alignment."""
-
-    def evaluate(self, state: Mapping[str, Any]) -> FusionStructure:
-        divergence = max(0.0, min(1.0, float(state.get("divergence_score", 0.4))))
-        liquidity = max(0.0, min(1.0, float(state.get("liquidity_signal", 0.5))))
-        mtf = max(0.0, min(1.0, float(state.get("mtf_alignment", 0.5))))
-
-        if divergence < 0.3 and mtf > 0.6:
-            struct_state = StructureState.SUPPORTIVE
-        elif divergence > 0.7 or liquidity < 0.3:
-            struct_state = StructureState.FRAGILE
-        else:
-            struct_state = StructureState.CONFLICTED
-
-        return FusionStructure(
-            state=struct_state,
-            divergence_score=divergence,
-            liquidity_signal=liquidity,
-            mtf_alignment=mtf,
-        )
