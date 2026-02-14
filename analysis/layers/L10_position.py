@@ -1,5 +1,5 @@
 """
-L10 Position Sizing Analyzer — FTA Multiplier + Meta Evolution (PLACEHOLDER).
+L10 Position Sizing Analyzer - FTA Multiplier + Meta Evolution (PLACEHOLDER).
 
 Sources:
     core_cognitive_unified.py  → AdaptiveRiskCalculator
@@ -32,7 +32,7 @@ except ImportError:
 
 
 class L10PositionAnalyzer:
-    """Layer 10: Position Sizing & Entry Planning — Execution & Decision zone."""
+    """Layer 10: Position Sizing & Entry Planning - Execution & Decision zone."""
 
     def __init__(self) -> None:
         self._risk_calc = None

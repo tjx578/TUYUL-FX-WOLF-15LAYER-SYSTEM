@@ -29,7 +29,7 @@ def generate_l12_verdict(synthesis: dict[str, Any]) -> dict[str, Any]:
     if pair and isinstance(pair, str) and pair.strip() and context_bus.is_feed_stale(pair):
         feed_age = context_bus.get_feed_age(pair)
         logger.warning(
-            "Feed stale — circuit breaker activated",
+            "Feed stale - circuit breaker activated",
             extra={"pair": pair, "feed_age_s": feed_age},
         )
         return {

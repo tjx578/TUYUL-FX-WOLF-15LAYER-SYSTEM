@@ -1,5 +1,5 @@
 """
-Journal Writer — Immutable JSON file persistence.
+Journal Writer - Immutable JSON file persistence.
 
 Writes journal entries to storage/decision_archive/{YYYY-MM-DD}/
 Format: {timestamp}_{journal_type}_{pair}.json

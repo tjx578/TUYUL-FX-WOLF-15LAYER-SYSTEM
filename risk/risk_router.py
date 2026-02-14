@@ -1,5 +1,5 @@
 """
-Risk Router — Dashboard API Endpoints for Risk Engine v2
+Risk Router - Dashboard API Endpoints for Risk Engine v2
 
 Provides REST API for:
 - Account risk snapshot

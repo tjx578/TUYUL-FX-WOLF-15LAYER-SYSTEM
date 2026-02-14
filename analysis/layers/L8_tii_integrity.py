@@ -1,5 +1,5 @@
 """
-L8 TII & Integrity Analyzer — TIIₛᵧₘ Algo Precision Engine (PLACEHOLDER).
+L8 TII & Integrity Analyzer - TIIₛᵧₘ Algo Precision Engine (PLACEHOLDER).
 
 Sources:
     core_reflective_unified.py → AdaptiveTIIThresholds, algo_precision_engine
@@ -34,7 +34,7 @@ except ImportError:
 
 
 class L8TIIIntegrityAnalyzer:
-    """Layer 8: TIIₛᵧₘ Algo Precision Engine — Probability & Validation zone."""
+    """Layer 8: TIIₛᵧₘ Algo Precision Engine - Probability & Validation zone."""
 
     def __init__(self) -> None:
         self._tii_thresholds = None

@@ -1,7 +1,7 @@
 """
-Synthesis Contract v2 — FINAL PRODUCTION
+Synthesis Contract v2 - FINAL PRODUCTION
 
-Macro-integrated | L1–L15 compliant | Constitutional-ready
+Macro-integrated | L1-L15 compliant | Constitutional-ready
 
 Output contract for SynthesisEngine.
 Guaranteed rigid schema for L12 + L14 JSON export.

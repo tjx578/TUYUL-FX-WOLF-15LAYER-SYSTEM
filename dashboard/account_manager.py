@@ -1,5 +1,5 @@
 """
-Account Manager — Simple multi-account store.
+Account Manager - Simple multi-account store.
 
 Provides:
   - create_account: Create new trading account

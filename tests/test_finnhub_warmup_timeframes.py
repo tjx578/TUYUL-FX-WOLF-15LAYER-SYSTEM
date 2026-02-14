@@ -61,7 +61,7 @@ class TestTzinfoIsInstance:
     def test_utc_is_instance_not_class(self) -> None:
         """UTC constant used in source must be an instance, not a type."""
         assert not isinstance(UTC, type), (
-            "UTC is a class/type — expected an instance like timezone.utc"
+            "UTC is a class/type - expected an instance like timezone.utc"
         )
         assert isinstance(UTC, tzinfo)
 

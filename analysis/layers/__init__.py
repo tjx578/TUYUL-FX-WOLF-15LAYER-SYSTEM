@@ -1,5 +1,5 @@
 """
-Analysis Layer Analyzers — L1 through L11.
+Analysis Layer Analyzers - L1 through L11.
 
 Each layer module provides a single analyzer class that the
 WolfConstitutionalPipeline invokes sequentially.

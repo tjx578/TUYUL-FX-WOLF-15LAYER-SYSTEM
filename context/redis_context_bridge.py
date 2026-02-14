@@ -20,11 +20,11 @@ from storage.redis_client import RedisClient
 
 
 # === TTL Constants ===
-# Latest tick: 60s — acts as stale feed circuit breaker.
+# Latest tick: 60s - acts as stale feed circuit breaker.
 # If no tick arrives in 60s, key expires → downstream knows feed is dead.
 LATEST_TICK_TTL_SECONDS: int = 60
 
-# Candle hash: 4 hours — covers full session overlap (e.g., London+NY).
+# Candle hash: 4 hours - covers full session overlap (e.g., London+NY).
 # Candles older than this are stale and should not inform decisions.
 CANDLE_HASH_TTL_SECONDS: int = 4 * 3600  # 14400s
 
@@ -94,7 +94,7 @@ class RedisContextBridge:
             latest_key = f"{self._prefix}:latest_tick:{symbol}"
             self._redis.hset(latest_key, mapping={"data": tick_json})
 
-            # 3. Set TTL — resets countdown on every tick.
+            # 3. Set TTL - resets countdown on every tick.
             #    If no tick in 60s → key expires → stale feed detected.
             self._redis.client.expire(latest_key, LATEST_TICK_TTL_SECONDS)
 
@@ -137,7 +137,7 @@ class RedisContextBridge:
             hash_key = f"{self._prefix}:candle:{symbol}:{timeframe}"
             self._redis.hset(hash_key, mapping={"data": candle_json})
 
-            # 3. Set TTL — candle data expires after session relevance window
+            # 3. Set TTL - candle data expires after session relevance window
             self._redis.client.expire(hash_key, CANDLE_HASH_TTL_SECONDS)
 
             # 4. For Monthly timeframe, maintain a history list for macro analysis
