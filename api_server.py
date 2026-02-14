@@ -120,8 +120,8 @@ app.add_middleware(
 app.include_router(l12_router, dependencies=[fastapi.Depends(verify_token)])
 app.include_router(dashboard_router, dependencies=[fastapi.Depends(verify_token)])
 app.include_router(journal_router, dependencies=[fastapi.Depends(verify_token)])
-app.include_router(ws_router)
-app.include_router(risk_router)
+app.include_router(ws_router, dependencies=[fastapi.Depends(verify_token)])
+app.include_router(risk_router, dependencies=[fastapi.Depends(verify_token)])
 
 
 def _get_feed_status() -> dict[str, str]:
