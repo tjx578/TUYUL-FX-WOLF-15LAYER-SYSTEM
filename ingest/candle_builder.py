@@ -173,14 +173,14 @@ class CandleBuilder:
         Returns:
             Floored datetime
         """
-        if minutes >= 10080:  # W1 — align to Monday 00:00 UTC
+        if minutes >= 10080:  # W1 - align to Monday 00:00 UTC
             days_since_monday = dt.weekday()
             return dt.replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(
                 days=days_since_monday
             )
-        if minutes >= 1440:  # D1 — align to midnight UTC
+        if minutes >= 1440:  # D1 - align to midnight UTC
             return dt.replace(hour=0, minute=0, second=0, microsecond=0)
-        if minutes >= 60:  # H1, H4 — floor hours
+        if minutes >= 60:  # H1, H4 - floor hours
             hours = minutes // 60
             return dt.replace(
                 hour=(dt.hour // hours) * hours,

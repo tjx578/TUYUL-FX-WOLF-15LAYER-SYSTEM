@@ -1,5 +1,5 @@
 """
-L4 Scoring Engine — Ultra-Precision Confluence (Wolf 30-Point) (PLACEHOLDER).
+L4 Scoring Engine - Ultra-Precision Confluence (Wolf 30-Point) (PLACEHOLDER).
 
 Sources:
     core_reflective_unified.py → WolfReflectiveIntegrator, DisciplineCategory
@@ -8,7 +8,7 @@ Sources:
 Produces:
     - wolf_30_point (dict): total, f_score, t_score, fta_score, exec_score
     - grade (str): PERFECT | EXCELLENT | GOOD | MARGINAL | FAIL
-    - technical_score (int 0-100)  — legacy
+    - technical_score (int 0-100)  - legacy
     - valid (bool)
 """
 
@@ -32,7 +32,7 @@ except ImportError as exc:
 
 
 class L4ScoringEngine:
-    """Layer 4: Ultra-Precision Confluence Score — Confluence & Scoring zone."""
+    """Layer 4: Ultra-Precision Confluence Score - Confluence & Scoring zone."""
 
     def __init__(self) -> None:
         self._wolf_integrator = None

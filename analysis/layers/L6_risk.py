@@ -1,5 +1,5 @@
 """
-L6 Risk Analyzer — Risk Management + Lorentzian Stabilization (PLACEHOLDER).
+L6 Risk Analyzer - Risk Management + Lorentzian Stabilization (PLACEHOLDER).
 
 Sources:
     core_cognitive_unified.py  → AdaptiveRiskCalculator
@@ -32,7 +32,7 @@ except ImportError:
 
 
 class L6RiskAnalyzer:
-    """Layer 6: Risk Management Matrix — Confluence & Scoring zone."""
+    """Layer 6: Risk Management Matrix - Confluence & Scoring zone."""
 
     def __init__(self) -> None:
         self._risk_calc = None

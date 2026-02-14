@@ -21,9 +21,9 @@ logger = logging.getLogger(__name__)
 
 # Per-symbol spike rejection thresholds (percentage)
 SPIKE_THRESHOLDS: dict[str, float] = {
-    "XAUUSD": 2.0,   # Gold is volatile — 2% threshold
-    "GBPJPY": 1.0,   # High-vol cross — 1% threshold
-    "EURUSD": 0.5,   # Major pair — tight is fine
+    "XAUUSD": 2.0,   # Gold is volatile - 2% threshold
+    "GBPJPY": 1.0,   # High-vol cross - 1% threshold
+    "EURUSD": 0.5,   # Major pair - tight is fine
     "GBPUSD": 0.5,
     "USDJPY": 0.5,
     "AUDUSD": 0.5,
@@ -116,7 +116,7 @@ def _is_valid_tick(symbol: str, new_price: float) -> bool:
         )
         return False
 
-    # Valid tick — update timestamp
+    # Valid tick - update timestamp
     _last_timestamps[symbol] = now
     return True
 

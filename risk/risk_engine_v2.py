@@ -1,5 +1,5 @@
 """
-Risk Engine v2 — Account Governor
+Risk Engine v2 - Account Governor
 
 Single entry-point for trade risk evaluation.
 Does NOT: determine BUY/SELL, modify SL/TP, read market structure.
@@ -54,7 +54,7 @@ class SignalInput:
 
 
 class RiskEngineV2:
-    """Account Governor — evaluates trade risk and returns ALLOW/DENY."""
+    """Account Governor - evaluates trade risk and returns ALLOW/DENY."""
 
     def __init__(self, account_id: str, risk_manager: RiskManager | None = None) -> None:
         self._account_id = account_id

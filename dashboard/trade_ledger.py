@@ -1,5 +1,5 @@
 """
-Trade Ledger Service — In-memory + Redis-backed trade state store.
+Trade Ledger Service - In-memory + Redis-backed trade state store.
 
 Provides:
   - create_trade: Create new trade with legs

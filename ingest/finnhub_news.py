@@ -56,7 +56,7 @@ class FinnhubNews:
         self._context_bus = LiveContextBus()
 
         if not self._api_key:
-            logger.error("FINNHUB_API_KEY not set — economic calendar will fail")
+            logger.error("FINNHUB_API_KEY not set - economic calendar will fail")
 
     async def fetch_calendar(self) -> list[dict[str, Any]]:
         """
@@ -110,7 +110,7 @@ class FinnhubNews:
                     wait *= self._backoff_factor
                 elif exc.response.status_code == 403:
                     logger.error(
-                        f"Finnhub HTTP 403 Forbidden — check API key permissions "
+                        f"Finnhub HTTP 403 Forbidden - check API key permissions "
                         f"and endpoint URL: {url}"
                     )
                     raise FinnhubNewsError(f"HTTP 403 Forbidden: {url}") from exc

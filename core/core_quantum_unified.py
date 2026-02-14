@@ -1,12 +1,12 @@
 """
-Core Quantum Unified Engine — v7.4r∞
+Core Quantum Unified Engine - v7.4r∞
 
 Pipeline Coverage:
-  L3  — TRQ-3D PreMove       (TRQ3DEngine, DriftAnalysis)
-  L8  — TII Validation       (ConfidenceMultiplier — partial)
-  L9  — Monte Carlo Prob.    (monte_carlo_fttc_simulation, ProbabilityMatrixCalc)
-  L12 — Constitutional Verdict (QuantumDecisionEngine, NeuralDecisionTree) SOLE AUTHORITY
-  L13 — Execution Strategy   (QuantumExecutionOptimizer, QuantumScenarioMatrix,
+  L3  - TRQ-3D PreMove       (TRQ3DEngine, DriftAnalysis)
+  L8  - TII Validation       (ConfidenceMultiplier - partial)
+  L9  - Monte Carlo Prob.    (monte_carlo_fttc_simulation, ProbabilityMatrixCalc)
+  L12 - Constitutional Verdict (QuantumDecisionEngine, NeuralDecisionTree) SOLE AUTHORITY
+  L13 - Execution Strategy   (QuantumExecutionOptimizer, QuantumScenarioMatrix,
                                BattleStrategy)
 
 Additional:
@@ -43,7 +43,7 @@ DECISION_THRESHOLDS: dict[str, float] = {
 # ─── Enums ────────────────────────────────────────────────────────────────────
 
 class DecisionType(Enum):
-    """L12 — Final verdict decision type."""
+    """L12 - Final verdict decision type."""
     STRONG_BUY = "STRONG_BUY"
     BUY = "BUY"
     HOLD = "HOLD"
@@ -53,7 +53,7 @@ class DecisionType(Enum):
 
 
 class DecisionConfidence(Enum):
-    """L12 — Decision confidence level."""
+    """L12 - Decision confidence level."""
     HIGH = "HIGH"
     MEDIUM = "MEDIUM"
     LOW = "LOW"
@@ -61,7 +61,7 @@ class DecisionConfidence(Enum):
 
 
 class TreeAction(Enum):
-    """L12 — Neural decision tree action."""
+    """L12 - Neural decision tree action."""
     EXECUTE = "EXECUTE"
     WAIT = "WAIT"
     MENTAL_STOP = "MENTAL_STOP"
@@ -69,7 +69,7 @@ class TreeAction(Enum):
 
 
 class ExecutionType(Enum):
-    """L13 — Order execution type."""
+    """L13 - Order execution type."""
     LIMIT = "LIMIT"
     MARKET = "MARKET"
     STOP = "STOP"
@@ -77,7 +77,7 @@ class ExecutionType(Enum):
 
 
 class BattleStrategy(Enum):
-    """L13 — 4 Quantum Battle Strategies."""
+    """L13 - 4 Quantum Battle Strategies."""
     APEX_PREDATOR = "APEX_PREDATOR"        # Sell the Rally Ultra
     BLOOD_MOON_HUNT = "BLOOD_MOON_HUNT"    # Buy the Dip Ultra
     TSUNAMI_BREAKOUT = "TSUNAMI_BREAKOUT"  # Continuation Ultra
@@ -88,7 +88,7 @@ class BattleStrategy(Enum):
 
 @dataclass
 class FieldSummary:
-    """L3 — TRQ3D field summary."""
+    """L3 - TRQ3D field summary."""
     vwap: float = 0.0
     energy: float = 0.0
     bias_strength: float = 0.0
@@ -96,7 +96,7 @@ class FieldSummary:
 
 @dataclass
 class DriftAnalysis:
-    """L3 — Drift analysis result."""
+    """L3 - Drift analysis result."""
     gradient: float = 0.0
     stability: float = 0.0
     is_stable: bool = True
@@ -104,7 +104,7 @@ class DriftAnalysis:
 
 @dataclass
 class ConfidenceResult:
-    """L8/L12 — Confidence multiplier result."""
+    """L8/L12 - Confidence multiplier result."""
     composite_score: float = 0.0
     multiplier: float = 1.0
     confidence_level: DecisionConfidence = DecisionConfidence.INSUFFICIENT
@@ -112,7 +112,7 @@ class ConfidenceResult:
 
 @dataclass
 class TIIResult:
-    """L8 — (Also defined in reflective; re-export if needed)."""
+    """L8 - (Also defined in reflective; re-export if needed)."""
     tii: float = 0.0
     status: str = "INVALID"
     rcadj: float = 0.0
@@ -121,7 +121,7 @@ class TIIResult:
 
 @dataclass
 class QuantumDecision:
-    """L12 — Output of QuantumDecisionEngine.analyze()."""
+    """L12 - Output of QuantumDecisionEngine.analyze()."""
     decision_type: DecisionType = DecisionType.NO_TRADE
     probability: float = 0.0
     eaf_score: float = 0.0
@@ -131,7 +131,7 @@ class QuantumDecision:
 
 @dataclass
 class TreeDecision:
-    """L12 — Output of NeuralDecisionTree.traverse()."""
+    """L12 - Output of NeuralDecisionTree.traverse()."""
     path: List[str] = field(default_factory=list)
     final_action: TreeAction = TreeAction.WAIT
     probability: float = 0.0
@@ -140,7 +140,7 @@ class TreeDecision:
 
 @dataclass
 class ExecutionPlan:
-    """L13 — Output of QuantumExecutionOptimizer.optimize()."""
+    """L13 - Output of QuantumExecutionOptimizer.optimize()."""
     entry_price: float = 0.0
     stop_loss: float = 0.0
     take_profit: float = 0.0
@@ -154,7 +154,7 @@ class ExecutionPlan:
 
 @dataclass
 class ScenarioSelection:
-    """L13 — Output of QuantumScenarioMatrix.select_strategy()."""
+    """L13 - Output of QuantumScenarioMatrix.select_strategy()."""
     selected_strategy: BattleStrategy = BattleStrategy.SHADOW_STRIKE
     match_score: float = 0.0
     wolf_message: str = ""
@@ -162,7 +162,7 @@ class ScenarioSelection:
 
 @dataclass
 class MonteCarloResult:
-    """L9 — Monte Carlo FTTC simulation result."""
+    """L9 - Monte Carlo FTTC simulation result."""
     bull: float = 0.0
     bear: float = 0.0
     confidence: float = 0.0
@@ -172,7 +172,7 @@ class MonteCarloResult:
 
 class TRQ3DEngine:
     """
-    L3 — Time-Risk-Quality 3D engine.
+    L3 - Time-Risk-Quality 3D engine.
 
     update(symbol, price)
     summary(symbol) → FieldSummary
@@ -181,36 +181,36 @@ class TRQ3DEngine:
 
     def update(self, symbol: str, price: float) -> None:
         """TODO: Implement price update for TRQ3D field."""
-        raise NotImplementedError("TRQ3DEngine.update — awaiting implementation")
+        raise NotImplementedError("TRQ3DEngine.update - awaiting implementation")
 
     def summary(self, symbol: str) -> FieldSummary:
         """TODO: Implement TRQ3D field summary."""
-        raise NotImplementedError("TRQ3DEngine.summary — awaiting implementation")
+        raise NotImplementedError("TRQ3DEngine.summary - awaiting implementation")
 
     def get_recent_reflections(self, symbol: str) -> List[dict[str, Any]]:
         """TODO: Implement recent reflections retrieval."""
         raise NotImplementedError(
-            "TRQ3DEngine.get_recent_reflections — awaiting implementation"
+            "TRQ3DEngine.get_recent_reflections - awaiting implementation"
         )
 
 
 def analyze_drift(symbol: str) -> DriftAnalysis:
-    """L3 — Analyze drift stability. TODO: implement."""
-    raise NotImplementedError("analyze_drift — awaiting implementation")
+    """L3 - Analyze drift stability. TODO: implement."""
+    raise NotImplementedError("analyze_drift - awaiting implementation")
 
 
 class QuantumFieldSync:
-    """L3+L4 — Quantum field synchronisation engine. TODO: implement."""
+    """L3+L4 - Quantum field synchronisation engine. TODO: implement."""
 
     def sync(self, symbol: str) -> dict[str, Any]:
-        raise NotImplementedError("QuantumFieldSync.sync — awaiting implementation")
+        raise NotImplementedError("QuantumFieldSync.sync - awaiting implementation")
 
 
-# ─── L8: TII Validation (partial — confidence multiplier) ────────────────────
+# ─── L8: TII Validation (partial - confidence multiplier) ────────────────────
 
 class ConfidenceMultiplier:
     """
-    L8/L12 — Confidence multiplier for TII validation.
+    L8/L12 - Confidence multiplier for TII validation.
 
     calculate() → ConfidenceResult
     """
@@ -223,18 +223,18 @@ class ConfidenceMultiplier:
     ) -> ConfidenceResult:
         """TODO: Implement real confidence multiplier calculation."""
         raise NotImplementedError(
-            "ConfidenceMultiplier.calculate — awaiting implementation"
+            "ConfidenceMultiplier.calculate - awaiting implementation"
         )
 
 
 # ─── L9: Monte Carlo Probability ─────────────────────────────────────────────
 
 class ProbabilityMatrixCalculator:
-    """L9 — Probability matrix computation. TODO: implement."""
+    """L9 - Probability matrix computation. TODO: implement."""
 
     def calculate(self, scenarios: List[dict[str, Any]]) -> dict[str, Any]:
         raise NotImplementedError(
-            "ProbabilityMatrixCalculator.calculate — awaiting implementation"
+            "ProbabilityMatrixCalculator.calculate - awaiting implementation"
         )
 
 
@@ -243,7 +243,7 @@ def monte_carlo_fttc_simulation(
     iterations: int = 50000,
 ) -> MonteCarloResult:
     """
-    L9 — Monte Carlo FTTC simulation.
+    L9 - Monte Carlo FTTC simulation.
 
     Returns:
         MonteCarloResult with bull%, bear%, confidence%.
@@ -251,15 +251,15 @@ def monte_carlo_fttc_simulation(
     TODO: Implement real simulation.
     """
     raise NotImplementedError(
-        "monte_carlo_fttc_simulation — awaiting implementation"
+        "monte_carlo_fttc_simulation - awaiting implementation"
     )
 
 
-# ─── L12: Constitutional Verdict — SOLE AUTHORITY ────────────────────────────
+# ─── L12: Constitutional Verdict - SOLE AUTHORITY ────────────────────────────
 
 class QuantumDecisionEngine:
     """
-    L12 — SOLE DECISION AUTHORITY.
+    L12 - SOLE DECISION AUTHORITY.
 
     analyze() → QuantumDecision
     """
@@ -267,13 +267,13 @@ class QuantumDecisionEngine:
     def analyze(self, layer_outputs: dict[str, Any]) -> QuantumDecision:
         """TODO: Implement constitutional verdict engine."""
         raise NotImplementedError(
-            "QuantumDecisionEngine.analyze — awaiting implementation"
+            "QuantumDecisionEngine.analyze - awaiting implementation"
         )
 
 
 class NeuralDecisionTree:
     """
-    L12 — Neural decision tree that traverses gate logic.
+    L12 - Neural decision tree that traverses gate logic.
 
     traverse() → TreeDecision
     """
@@ -281,7 +281,7 @@ class NeuralDecisionTree:
     def traverse(self, inputs: dict[str, Any]) -> TreeDecision:
         """TODO: Implement neural decision tree traversal."""
         raise NotImplementedError(
-            "NeuralDecisionTree.traverse — awaiting implementation"
+            "NeuralDecisionTree.traverse - awaiting implementation"
         )
 
 
@@ -289,7 +289,7 @@ class NeuralDecisionTree:
 
 class QuantumExecutionOptimizer:
     """
-    L13 — Optimises execution parameters.
+    L13 - Optimises execution parameters.
 
     optimize() → ExecutionPlan
     """
@@ -303,13 +303,13 @@ class QuantumExecutionOptimizer:
     ) -> ExecutionPlan:
         """TODO: Implement real execution optimisation."""
         raise NotImplementedError(
-            "QuantumExecutionOptimizer.optimize — awaiting implementation"
+            "QuantumExecutionOptimizer.optimize - awaiting implementation"
         )
 
 
 class QuantumScenarioMatrix:
     """
-    L13 — Selects one of 4 Battle Strategies.
+    L13 - Selects one of 4 Battle Strategies.
 
     select_strategy() → ScenarioSelection
     """
@@ -321,7 +321,7 @@ class QuantumScenarioMatrix:
     ) -> ScenarioSelection:
         """TODO: Implement strategy selection logic."""
         raise NotImplementedError(
-            "QuantumScenarioMatrix.select_strategy — awaiting implementation"
+            "QuantumScenarioMatrix.select_strategy - awaiting implementation"
         )
 
 
@@ -330,7 +330,7 @@ def get_wolf_message(action: str) -> str:
     messages = {
         "EXECUTE": "The wolf strikes with precision. Gaskeun!",
         "WAIT": "Patience is the wolf's greatest weapon.",
-        "MENTAL_STOP": "The wolf observes — no prey in sight.",
-        "REDUCE_SIZE": "The wolf stalks cautiously — reduced exposure.",
+        "MENTAL_STOP": "The wolf observes - no prey in sight.",
+        "REDUCE_SIZE": "The wolf stalks cautiously - reduced exposure.",
     }
     return messages.get(action, "The wolf watches. 🐺")

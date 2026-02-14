@@ -1,5 +1,5 @@
 """
-L9 SMC Integration Analyzer — Smart Money Concepts.
+L9 SMC Integration Analyzer - Smart Money Concepts.
 
 Sources:
     core_cognitive_unified.py → SmartMoneyDetector, TWMSCalculator
@@ -43,7 +43,7 @@ _MIN_BOS_CANDLES = 5
 
 
 class L9SMCAnalyzer:
-    """Layer 9: SMC Integration Analysis — Probability & Validation zone."""
+    """Layer 9: SMC Integration Analysis - Probability & Validation zone."""
 
     def __init__(self) -> None:
         self._smc_detector = None

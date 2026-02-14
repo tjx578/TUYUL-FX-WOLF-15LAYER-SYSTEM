@@ -1,5 +1,5 @@
 """
-Macro Volatility Engine — FINAL PRODUCTION
+Macro Volatility Engine - FINAL PRODUCTION
 
 Real-time macro regime detection.
 Finnhub VIX (real) → Fallback proxy → Redis + LiveContextBus

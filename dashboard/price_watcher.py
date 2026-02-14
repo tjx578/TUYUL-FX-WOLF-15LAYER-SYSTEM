@@ -1,5 +1,5 @@
 """
-Price Watcher — Background async task monitoring active trades.
+Price Watcher - Background async task monitoring active trades.
 
 Auto-detect logic:
   - PENDING → OPEN:
@@ -51,7 +51,7 @@ class PriceWatcher:
     """
     Background task monitoring active trades for state transitions.
 
-    Pure sensor — no decision logic, no signal generation.
+    Pure sensor - no decision logic, no signal generation.
     Only monitors price vs. entry/SL/TP and triggers state changes.
     """
 

@@ -1,5 +1,5 @@
 """
-Journal Router — Thread-safe singleton event receiver.
+Journal Router - Thread-safe singleton event receiver.
 
 Receives and routes journal events (J1-J4) to JournalWriter.
 Pattern: Same as LiveContextBus and ExecutionStateMachine.
@@ -59,7 +59,7 @@ class JournalRouter:
                 logger.debug(f"J1 recorded: {j1.pair} @ {j1.session}")
             except Exception as exc:
                 logger.error(f"J1 write failed: {exc}")
-                # Don't propagate — journal failures must not break trading loop
+                # Don't propagate - journal failures must not break trading loop
 
     def record_decision(self, j2: DecisionJournal) -> None:
         """
@@ -78,7 +78,7 @@ class JournalRouter:
                 )
             except Exception as exc:
                 logger.error(f"J2 write failed: {exc}")
-                # Don't propagate — journal failures must not break trading loop
+                # Don't propagate - journal failures must not break trading loop
 
     def record_execution(self, j3: ExecutionJournal) -> None:
         """
@@ -97,7 +97,7 @@ class JournalRouter:
                 )
             except Exception as exc:
                 logger.error(f"J3 write failed: {exc}")
-                # Don't propagate — journal failures must not break trading loop
+                # Don't propagate - journal failures must not break trading loop
 
     def record_reflection(self, j4: ReflectiveJournal) -> None:
         """
@@ -116,7 +116,7 @@ class JournalRouter:
                 )
             except Exception as exc:
                 logger.error(f"J4 write failed: {exc}")
-                # Don't propagate — journal failures must not break trading loop
+                # Don't propagate - journal failures must not break trading loop
 
     # ========================
     # METRICS
