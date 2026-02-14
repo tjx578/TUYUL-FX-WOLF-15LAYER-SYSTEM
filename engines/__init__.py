@@ -1,3 +1,11 @@
+"""Engine facade modules for market analysis."""
+
+from .fusion_structure_engine import FusionStructure, FusionStructureEngine, StructureState
+
+__all__ = [
+    "FusionStructure",
+    "FusionStructureEngine",
+    "StructureState",
 """Engine facade package for TUYUL FX system."""
 
 from .fusion_precision_engine import FusionPrecision, FusionPrecisionEngine
