@@ -340,7 +340,7 @@ class TWMSResult:
 
 class RegimeClassifier:
     """
-    L0 — Classifies market regime.
+    L0 - Classifies market regime.
 
     Production implementation with real regime detection logic.
     """
@@ -444,7 +444,7 @@ class RegimeClassifier:
 
 class ReflexEmotionCore:
     """
-    L1 — Computes reflex-emotion coherence.
+    L1 - Computes reflex-emotion coherence.
 
     Production implementation with real coherence calculations.
     """
@@ -519,7 +519,7 @@ class ReflexEmotionCore:
 
 class IntegrityEngine:
     """
-    L5 — Verifies system-state integrity.
+    L5 - Verifies system-state integrity.
 
     Production implementation with real verification logic.
     """
@@ -648,7 +648,7 @@ class IntegrityEngine:
 
 class SmartMoneyDetector:
     """
-    L7 — Detects institutional / smart-money activity.
+    L7 - Detects institutional / smart-money activity.
 
     Production implementation with real detection algorithms.
     """
@@ -751,7 +751,7 @@ class SmartMoneyDetector:
 
 class TWMSCalculator:
     """
-    L7/L8 — Time-Weighted Multi-Score calculator v2.2.
+    L7/L8 - Time-Weighted Multi-Score calculator v2.2.
 
     Production implementation: D1:30%, H4:40%, H1:30% weighting.
     """
@@ -822,7 +822,7 @@ def montecarlo_validate(
     confidence_level: float = 0.95
 ) -> dict[str, typing.Any]:
     """
-    L9 — Monte Carlo validation with bootstrap simulation.
+    L9 - Monte Carlo validation with bootstrap simulation.
 
     Production implementation with deterministic bootstrap,
     Sharpe ratio, max drawdown, VaR, and Expected Shortfall.
@@ -902,7 +902,7 @@ def montecarlo_validate(
 
 class EmotionFeedbackEngine:
     """
-    L11 — Emotion feedback cycle for discipline advisory.
+    L11 - Emotion feedback cycle for discipline advisory.
 
     Production implementation with real coherence computation.
     """
@@ -978,7 +978,7 @@ class EmotionFeedbackEngine:
 
 class RiskFeedbackCalibrator:
     """
-    L11 — Risk feedback calibration system.
+    L11 - Risk feedback calibration system.
 
     Calibrates risk parameters based on performance feedback.
     """
@@ -1054,7 +1054,7 @@ class RiskFeedbackCalibrator:
 
 class AdaptiveRiskCalculator:
     """
-    L13 — Adaptive risk / position-sizing calculator.
+    L13 - Adaptive risk / position-sizing calculator.
 
     Production implementation with 5-tier drawdown system:
       0-5%: 100% (1.00)
@@ -1141,7 +1141,7 @@ class AdaptiveRiskCalculator:
 
 class VaultRiskSync:
     """
-    L13 — Vault persistence for risk parameters.
+    L13 - Vault persistence for risk parameters.
 
     Handles loading/saving risk configurations to vault.
     """
