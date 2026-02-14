@@ -1,67 +1,60 @@
 """
 Integration test for Wolf 15-Layer System main loop.
+
+Updated to use WolfConstitutionalPipeline (single canonical pipeline).
 """
 
-import pytest
 from unittest.mock import Mock, patch
-from analysis.synthesis import build_synthesis
-from analysis.synthesis_adapter import adapt_synthesis
+
+import pytest
+
 from constitution.verdict_engine import generate_l12_verdict
+from pipeline import WolfConstitutionalPipeline
 
 
-def test_build_synthesis_returns_l12_contract():
-    """Test that build_synthesis returns data matching L12 contract."""
-    result = build_synthesis("XAUUSD")
+def test_pipeline_returns_l12_contract():
+    """Test that pipeline returns data matching L12 contract."""
+    pipeline = WolfConstitutionalPipeline()
+    result = pipeline.execute("XAUUSD")
+
+    # Check result structure
+    assert "synthesis" in result
+    assert "l12_verdict" in result
+    assert "reflective" in result
+    assert "sovereignty" in result
+    assert "latency_ms" in result
+
+    synthesis = result["synthesis"]
 
     # Check required keys from L12 contract
     required_keys = ["pair", "scores", "layers", "execution", "risk", "propfirm", "bias", "system"]
     for key in required_keys:
-        assert key in result, f"Missing required key: {key}"
+        assert key in synthesis, f"Missing required key: {key}"
 
     # Check scores structure
-    assert "wolf_30_point" in result["scores"]
-    assert "f_score" in result["scores"]
-    assert "t_score" in result["scores"]
+    assert "wolf_30_point" in synthesis["scores"]
+    assert "f_score" in synthesis["scores"]
+    assert "t_score" in synthesis["scores"]
 
     # Check layers structure
-    assert "L8_tii_sym" in result["layers"]
-    assert "L8_integrity_index" in result["layers"]
-    assert "L7_monte_carlo_win" in result["layers"]
+    assert "L8_tii_sym" in synthesis["layers"]
+    assert "L8_integrity_index" in synthesis["layers"]
+    assert "L7_monte_carlo_win" in synthesis["layers"]
 
     # Check execution structure
-    assert "direction" in result["execution"]
-    assert "entry" in result["execution"]
-    assert "rr_ratio" in result["execution"]
+    assert "direction" in synthesis["execution"]
+    assert "entry_price" in synthesis["execution"]
+    assert "rr_ratio" in synthesis["execution"]
 
 
-def test_adapt_synthesis_validates_contract():
-    """Test that adapt_synthesis validates L12 contract."""
-    valid_data = {
-        "pair": "XAUUSD",
-        "scores": {},
-        "layers": {},
-        "execution": {},
-        "risk": {},
-        "propfirm": {},
-        "bias": {},
-        "system": {},
-    }
+def test_pipeline_validates_contract():
+    """Test that pipeline produces valid L12 contract."""
+    pipeline = WolfConstitutionalPipeline()
+    result = pipeline.execute("XAUUSD")
 
-    # Should pass validation
-    result = adapt_synthesis(valid_data)
-    assert result["pair"] == "XAUUSD"
+    synthesis = result["synthesis"]
 
-    # Should fail validation with missing key
-    invalid_data = {"pair": "XAUUSD"}
-    with pytest.raises(ValueError, match="SYNTHESIS CONTRACT ERROR"):
-        adapt_synthesis(invalid_data)
-
-
-def test_l12_verdict_generation():
-    """Test L12 verdict generation."""
-    synthesis = build_synthesis("XAUUSD")
-
-    # Should not raise exception
+    # Synthesis should be compatible with L12 verdict engine
     verdict = generate_l12_verdict(synthesis)
 
     # Check verdict structure
@@ -71,19 +64,37 @@ def test_l12_verdict_generation():
     assert "gates" in verdict
 
 
-def test_synthesis_engine_layers():
-    """Test that SynthesisEngine can build candidate."""
-    from analysis.synthesis import SynthesisEngine
+def test_l12_verdict_generation():
+    """Test L12 verdict generation with pipeline synthesis."""
+    pipeline = WolfConstitutionalPipeline()
+    result = pipeline.execute("XAUUSD")
 
-    engine = SynthesisEngine()
-    candidate = engine.build_candidate("EURUSD")
+    synthesis = result["synthesis"]
+    l12_verdict = result["l12_verdict"]
 
-    # Check candidate has all layers
-    assert "symbol" in candidate
-    assert candidate["symbol"] == "EURUSD"
-    assert "L1" in candidate
-    assert "L8" in candidate
-    assert "valid" in candidate
+    # Should not raise exception
+    assert l12_verdict is not None
+
+    # Check verdict structure
+    assert "verdict" in l12_verdict
+    assert l12_verdict["verdict"] in ["NO_TRADE", "HOLD", "EXECUTE_BUY", "EXECUTE_SELL"]
+    assert "confidence" in l12_verdict
+    assert "gates" in l12_verdict
+
+
+def test_pipeline_layer_execution():
+    """Test that pipeline executes all layers."""
+    pipeline = WolfConstitutionalPipeline()
+    result = pipeline.execute("EURUSD")
+
+    synthesis = result["synthesis"]
+
+    # Check synthesis has required structure
+    assert "pair" in synthesis
+    assert synthesis["pair"] == "EURUSD"
+    assert "scores" in synthesis
+    assert "layers" in synthesis
+    assert "execution" in synthesis
 
 
 @patch("storage.redis_client.redis.Redis.from_url")
@@ -92,7 +103,7 @@ def test_imports_no_redis_error(mock_redis):
     mock_redis.return_value = Mock()
 
     # These should import without error
-    from storage.l12_cache import set_verdict, get_verdict
+    from storage.l12_cache import get_verdict, set_verdict
     from storage.snapshot_store import save_snapshot
 
     # Should be callable

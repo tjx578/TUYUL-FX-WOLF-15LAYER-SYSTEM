@@ -1,19 +1,189 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "title": "L14 Snapshot Schema",
+  "title": "L14 Snapshot Schema v7.4r∞",
+  "description": "Full JSON Output & Data Export — All 4 Unified Modules serialized.",
   "type": "object",
-  "required": ["symbol", "verdict", "analysis", "timestamp"],
+  "required": ["schema", "pair", "timestamp", "verdict", "confidence"],
   "properties": {
-    "symbol": { "type": "string" },
-    "timestamp": { "type": "string", "format": "date-time" },
-    "verdict": { "$ref": "l12_schema.json" },
-    "analysis": {
-      "type": "object",
-      "description": "Aggregated L1-L11 output"
+    "schema": { "type": "string", "default": "v7.4r∞" },
+    "pair": { "type": "string" },
+    "timestamp": { "type": "string" },
+    "verdict": {
+      "type": "string",
+      "enum": ["EXECUTE_BUY", "EXECUTE_SELL", "NO_TRADE", "HOLD"]
     },
-    "execution_state": {
-      "type": "object"
+    "confidence": {
+      "type": "string",
+      "enum": ["VERY_HIGH", "HIGH", "MEDIUM", "LOW"]
+    },
+    "wolf_status": {
+      "type": "string",
+      "enum": ["ALPHA_HUNT", "PACK_HUNT", "SCOUT", "NO_HUNT"]
+    },
+    "battle_strategy": {
+      "type": "string",
+      "enum": ["APEX_PREDATOR", "BLOOD_MOON_HUNT", "TSUNAMI_BREAKOUT", "SHADOW_STRIKE"]
+    },
+    "modules": {
+      "type": "object",
+      "properties": {
+        "cognitive": { "type": "string" },
+        "fusion": { "type": "string" },
+        "quantum": { "type": "string" },
+        "reflective": { "type": "string" }
+      }
+    },
+    "scores": {
+      "type": "object",
+      "properties": {
+        "wolf_30_point": { "type": "integer", "minimum": 0, "maximum": 30 },
+        "f_score": { "type": "integer", "minimum": 0, "maximum": 7 },
+        "t_score": { "type": "integer", "minimum": 0, "maximum": 13 },
+        "fta_score": { "type": "number" },
+        "fta_multiplier": { "type": "number" },
+        "exec_score": { "type": "integer", "minimum": 0, "maximum": 6 },
+        "psychology_score": { "type": "integer", "minimum": 0, "maximum": 100 },
+        "technical_score": { "type": "integer", "minimum": 0, "maximum": 100 }
+      }
+    },
+    "layers": {
+      "type": "object",
+      "properties": {
+        "L1_context_coherence": { "type": "number" },
+        "L2_reflex_coherence": { "type": "number" },
+        "L3_trq3d_energy": { "type": "number" },
+        "L7_monte_carlo_win": { "type": "number" },
+        "L8_tii_sym": { "type": "number" },
+        "L8_integrity_index": { "type": "number" },
+        "L9_dvg_confidence": { "type": "number" },
+        "L9_liquidity_score": { "type": "number" },
+        "conf12": { "type": "number" }
+      }
+    },
+    "cognitive": {
+      "type": "object",
+      "description": "core_cognitive_unified.py output",
+      "properties": {
+        "regime": { "type": "string", "enum": ["RANGE", "TREND", "EXPANSION", "REVERSAL"] },
+        "dominant_force": { "type": "string", "enum": ["BULLISH", "BEARISH", "NEUTRAL", "SIDEWAYS"] },
+        "cbv": { "type": "number" },
+        "csi": { "type": "number" }
+      }
+    },
+    "fusion_frpc": {
+      "type": "object",
+      "description": "core_fusion_unified.py FRPC output",
+      "properties": {
+        "conf12": { "type": "number" },
+        "frpc_energy": { "type": "number" },
+        "lambda_esi": { "type": "number" },
+        "integrity": { "type": "number" }
+      }
+    },
+    "trq3d": {
+      "type": "object",
+      "description": "TRQ-3D (alpha/beta/gamma) from core_quantum_unified.py",
+      "properties": {
+        "alpha": { "type": "number" },
+        "beta": { "type": "number" },
+        "gamma": { "type": "number" },
+        "drift": { "type": "number" },
+        "mean_energy": { "type": "number" },
+        "intensity": { "type": "number" }
+      }
+    },
+    "lfs": {
+      "type": "object",
+      "description": "Lorentzian Field Stabilization",
+      "properties": {
+        "mean_energy": { "type": "number" },
+        "lrce": { "type": "number" },
+        "phase": { "type": "string", "enum": ["EXPANSION", "STABILIZATION"] }
+      }
+    },
+    "smc": {
+      "type": "object",
+      "description": "Smart Money Concepts",
+      "properties": {
+        "structure": { "type": "string" },
+        "smart_money_signal": { "type": "string", "enum": ["ACCUMULATION", "DISTRIBUTION", "MANIPULATION", "NEUTRAL"] },
+        "liquidity_zone": { "type": "string" },
+        "ob_present": { "type": "boolean" },
+        "fvg_present": { "type": "boolean" },
+        "sweep_detected": { "type": "boolean" },
+        "bias": { "type": "string" }
+      }
+    },
+    "execution": {
+      "type": "object",
+      "properties": {
+        "direction": { "type": "string" },
+        "entry_price": { "type": "number" },
+        "entry_zone": { "type": "string" },
+        "stop_loss": { "type": "number" },
+        "take_profit_1": { "type": "number" },
+        "execution_mode": { "type": "string", "default": "TP1_ONLY" },
+        "battle_strategy": { "type": "string" },
+        "rr_ratio": { "type": "number" },
+        "lot_size": { "type": "number" },
+        "risk_percent": { "type": "number" },
+        "risk_amount": { "type": "number" },
+        "slippage_estimate": { "type": "number" },
+        "optimal_timing": { "type": "string" }
+      }
+    },
+    "gates": {
+      "type": "object",
+      "description": "9-Gate Constitutional Check",
+      "properties": {
+        "total_passed": { "type": "integer" },
+        "total_gates": { "type": "integer", "default": 9 },
+        "gate_1_tii": { "type": "string" },
+        "gate_2_montecarlo": { "type": "string" },
+        "gate_3_frpc": { "type": "string" },
+        "gate_4_conf12": { "type": "string" },
+        "gate_5_rr": { "type": "string" },
+        "gate_6_integrity": { "type": "string" },
+        "gate_7_propfirm": { "type": "string" },
+        "gate_8_drawdown": { "type": "string" },
+        "gate_9_latency": { "type": "string" }
+      }
+    },
+    "propfirm": {
+      "type": "object",
+      "properties": {
+        "compliant": { "type": "boolean" },
+        "daily_loss_status": { "type": "string" },
+        "max_drawdown_status": { "type": "string" },
+        "profit_target_progress": { "type": "number" }
+      }
+    },
+    "meta16": {
+      "type": "object",
+      "description": "Meta-16 Reflective Evolution",
+      "properties": {
+        "meta_integrity": { "type": "number" },
+        "reflective_coherence": { "type": "number" },
+        "vault_sync": { "type": "number" },
+        "evolution_drift": { "type": "number" },
+        "meta_state": { "type": "string", "enum": ["STABLE", "EVOLVING", "CALIBRATING", "RESETTING"] }
+      }
+    },
+    "wolf_discipline": {
+      "type": "object",
+      "description": "Wolf Discipline Symmetry (DPRB)",
+      "properties": {
+        "score": { "type": "number" },
+        "polarity_deviation": { "type": "number" },
+        "lambda_balance": { "type": "string" },
+        "bias_symmetry": { "type": "string" },
+        "eaf_score": { "type": "number" },
+        "emotional_state": { "type": "string" }
+      }
+    },
+    "final_gate": {
+      "type": "string",
+      "description": "ALL_PASS or GATE_X_FAIL"
     }
   }
 }
-{}

@@ -13,14 +13,19 @@ import pytest
 
 from dashboard.trade_ledger import TradeLedger
 from schemas.trade_models import TradeStatus, CloseReason
+from schemas.trade_models import CloseReason, TradeStatus
 
 
 @pytest.fixture
 def trade_ledger():
     """Create a fresh TradeLedger instance for each test."""
+    from unittest.mock import MagicMock
+
     # Note: Using singleton, so clear cache before each test
     ledger = TradeLedger()
     ledger._cache.clear()
+    # Mock Redis to avoid connection timeouts in CI
+    ledger._redis = MagicMock()
     return ledger
 
 
@@ -34,12 +39,14 @@ def test_create_trade(trade_ledger):
         risk_mode="FIXED",
         total_risk_percent=2.0,
         total_risk_amount=2000.0,
-        legs=[{
-            "entry": 1.08500,
-            "sl": 1.08000,
-            "tp": 1.09500,
-            "lot": 0.01,
-        }],
+        legs=[
+            {
+                "entry": 1.08500,
+                "sl": 1.08000,
+                "tp": 1.09500,
+                "lot": 0.01,
+            }
+        ],
     )
 
     assert trade.trade_id.startswith("T-")
@@ -63,12 +70,14 @@ def test_update_status_valid_transition(trade_ledger):
         risk_mode="FIXED",
         total_risk_percent=2.0,
         total_risk_amount=2000.0,
-        legs=[{
-            "entry": 1.08500,
-            "sl": 1.08000,
-            "tp": 1.09500,
-            "lot": 0.01,
-        }],
+        legs=[
+            {
+                "entry": 1.08500,
+                "sl": 1.08000,
+                "tp": 1.09500,
+                "lot": 0.01,
+            }
+        ],
     )
 
     # Update INTENDED → PENDING
@@ -92,12 +101,14 @@ def test_update_status_invalid_transition(trade_ledger):
         risk_mode="FIXED",
         total_risk_percent=2.0,
         total_risk_amount=2000.0,
-        legs=[{
-            "entry": 1.08500,
-            "sl": 1.08000,
-            "tp": 1.09500,
-            "lot": 0.01,
-        }],
+        legs=[
+            {
+                "entry": 1.08500,
+                "sl": 1.08000,
+                "tp": 1.09500,
+                "lot": 0.01,
+            }
+        ],
     )
 
     # Try invalid transition: INTENDED → OPEN (must go through PENDING)
@@ -120,12 +131,14 @@ def test_update_status_with_close_reason(trade_ledger):
         risk_mode="FIXED",
         total_risk_percent=2.0,
         total_risk_amount=2000.0,
-        legs=[{
-            "entry": 1.08500,
-            "sl": 1.08000,
-            "tp": 1.09500,
-            "lot": 0.01,
-        }],
+        legs=[
+            {
+                "entry": 1.08500,
+                "sl": 1.08000,
+                "tp": 1.09500,
+                "lot": 0.01,
+            }
+        ],
     )
 
     trade_ledger.update_status(trade.trade_id, TradeStatus.PENDING)
@@ -264,12 +277,14 @@ def test_full_trade_lifecycle(trade_ledger):
         risk_mode="FIXED",
         total_risk_percent=2.0,
         total_risk_amount=2000.0,
-        legs=[{
-            "entry": 1.08500,
-            "sl": 1.08000,
-            "tp": 1.09500,
-            "lot": 0.01,
-        }],
+        legs=[
+            {
+                "entry": 1.08500,
+                "sl": 1.08000,
+                "tp": 1.09500,
+                "lot": 0.01,
+            }
+        ],
     )
 
     # INTENDED → PENDING (trader confirms order placed)

@@ -1,6 +1,7 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "title": "L12 Verdict Schema",
+  "title": "L12 Verdict Schema v7.4r∞",
+  "description": "Constitutional Verdict — SOLE AUTHORITY. 9-Gate check included.",
   "type": "object",
   "required": ["symbol", "verdict", "confidence"],
   "properties": {
@@ -13,8 +14,43 @@
       "type": "string",
       "enum": ["VERY_HIGH", "HIGH", "MEDIUM", "LOW"]
     },
-    "execution_mode": { "type": "string" },
-    "reason": { "type": "string" }
+    "wolf_status": {
+      "type": "string",
+      "enum": ["ALPHA_HUNT", "PACK_HUNT", "SCOUT", "NO_HUNT"]
+    },
+    "execution_mode": {
+      "type": "string",
+      "default": "TP1_ONLY"
+    },
+    "battle_strategy": {
+      "type": "string",
+      "enum": ["APEX_PREDATOR", "BLOOD_MOON_HUNT", "TSUNAMI_BREAKOUT", "SHADOW_STRIKE"]
+    },
+    "reason": { "type": "string" },
+    "gates": {
+      "type": "object",
+      "properties": {
+        "passed": { "type": "integer" },
+        "total": { "type": "integer", "default": 9 }
+      }
+    },
+    "gates_v74": {
+      "type": "object",
+      "description": "v7.4r∞ 9-Gate Constitutional Check detail",
+      "properties": {
+        "total_passed": { "type": "integer", "minimum": 0, "maximum": 9 },
+        "total_gates": { "type": "integer", "default": 9 },
+        "gate_1_tii": { "type": "string", "enum": ["PASS", "FAIL"] },
+        "gate_2_montecarlo": { "type": "string", "enum": ["PASS", "FAIL"] },
+        "gate_3_frpc": { "type": "string", "enum": ["PASS", "FAIL"] },
+        "gate_4_conf12": { "type": "string", "enum": ["PASS", "FAIL"] },
+        "gate_5_rr": { "type": "string", "enum": ["PASS", "FAIL"] },
+        "gate_6_integrity": { "type": "string", "enum": ["PASS", "FAIL"] },
+        "gate_7_propfirm": { "type": "string", "enum": ["PASS", "FAIL"] },
+        "gate_8_drawdown": { "type": "string", "enum": ["PASS", "FAIL"] },
+        "gate_9_latency": { "type": "string", "enum": ["PASS", "FAIL"] }
+      }
+    },
+    "proceed_to_L13": { "type": "boolean" }
   }
 }
-{}

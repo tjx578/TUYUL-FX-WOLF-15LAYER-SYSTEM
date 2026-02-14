@@ -24,4 +24,6 @@ def get_execution():
 @router.get("/verdict")
 def get_verdict():
     return state.get_verdict()
+
+
 # Placeholder
