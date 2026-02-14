@@ -40,6 +40,8 @@ def mock_journal():
 
 
 @pytest.fixture
+def price_watcher(mock_trade_ledger, mock_price_feed, mock_journal):
+    """Create a PriceWatcher instance for testing (patches must be active)."""
 def price_watcher(mock_trade_ledger, mock_price_feed):
     """Create a PriceWatcher instance for testing (after mocks are active)."""
     return PriceWatcher()
