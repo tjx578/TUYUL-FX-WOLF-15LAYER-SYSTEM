@@ -40,9 +40,12 @@ class QuantumFieldEngine:
             energy_series = np.std(np.lib.stride_tricks.sliding_window_view(arr_p, window), axis=1)
             field_energy = float(energy_series[-1] / max(arr_p[-1], 1e-8))
             field_bias = float((arr_p[-1] - np.mean(arr_p[-window:])) / arr_p[-1])
-            # Clamp drift index to the available series length to avoid out-of-range access
-            drift_index = min(self.drift_window, len(energy_series) - 1)
-            energy_drift = float(energy_series[-1] - energy_series[-drift_index])
+            # Calculate drift by comparing current energy to energy drift_window steps back
+            # Clamp to ensure we don't access beyond the available series
+            if len(energy_series) > self.drift_window:
+                energy_drift = float(energy_series[-1] - energy_series[-(self.drift_window + 1)])
+            else:
+                energy_drift = 0.0
             vwap = float(np.sum(arr_p[-window:] * arr_v[-window:])) / float(np.sum(arr_v[-window:]))
         else:
             win = prices[-self.energy_window :]

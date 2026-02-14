@@ -204,14 +204,13 @@ class CognitiveContextEngine:
 
     def _calc_atr(self, highs: list[float], lows: list[float], closes: list[float]) -> float:
         period = min(self.atr_period, len(highs) - 1)
-        if period < 1:
+        if period < 2:
             return 0.0
         tr_values = []
-        for i in range(
-            -period + 1, 0
-        ):  # Start from -period + 1 to ensure i-1 stays within intended window
-            # Clamp previous close index to stay within the ATR lookback window
-            prev_idx = max(i - 1, -period)
+        # Start from -period + 1 to ensure i-1 stays within the intended ATR window
+        # For the first iteration (i = -period + 1), we use closes[-period] as prev close
+        for i in range(-period + 1, 0):
+            prev_idx = i - 1  # This will be -period for first iteration, which is valid
             tr_values.append(
                 max(
                     highs[i] - lows[i],
