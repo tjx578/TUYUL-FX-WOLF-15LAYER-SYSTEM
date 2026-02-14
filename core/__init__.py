@@ -20,62 +20,44 @@ Status: PRODUCTION-READY — All stubs replaced + critical bugs patched.
 Version: v7.4.1r∞
 """
 
-__version__ = "7.4.1"
-__codename__ = "Wolf 15-Layer Constitutional Pipeline (Patched)"
+from __future__ import annotations
 
-# ─── Core Cognitive (L0, L1, L5, L7, L9, L11, L13) ──────────────────────────
+from enum import Enum
+from typing import Any
 
+from . import core_cognitive_unified as _ccu_extras
 from .core_cognitive_unified import (
     COHERENCE_THRESHOLD,
     INTEGRITY_MINIMUM,
     REFLEX_GATE_PASS,
-    AdaptiveRiskCalculator,
     AdaptiveRiskResult,
     CognitiveBias,
     CognitiveError,
     CognitiveState,
     ConfidenceLevel,
     EmotionFeedbackCycle,
-    EmotionFeedbackEngine,
     InstitutionalBias,
     IntegrityEngine,
     InvalidInputError,
     MarketRegime,
     MarketRegimeType,
-    ReflexEmotionCore,
     ReflexEmotionResult,
     ReflexState,
     RegimeAnalysis,
     RegimeClassifier,
     RiskAssessment,
     RiskCalculationError,
-    RiskFeedbackCalibrator,
     SmartMoneyAnalysis,
-    SmartMoneyDetector,
     SmartMoneySignal,
     Timeframe,
     TrendStrength,
-    TWMSCalculator,
     TWMSInput,
     TWMSResult,
     ValidationError,
-    VaultRiskSync,
-    calculate_confluence_score,
-    calculate_risk,
-    calculate_risk_adjusted_score,
-    calibrate_risk,
-    compute_reflex_emotion,
-    montecarlo_validate,
-    reflex_check,
-    validate_cognitive_thresholds,
 )
 from .core_cognitive_unified import (
     CalibrationSummary as CognitiveCalibrationSummary,
 )
-
-# ─── Core Fusion (L2, L4, L6, L7, L9) ───────────────────────────────────────
-# EXPANDED: Previously only 4 enums were exported.
-# Now includes all key classes, with collision-prone names aliased.
 from .core_fusion_unified import (
     AdaptiveThresholdController,
     DivergenceStrength,
@@ -115,21 +97,17 @@ from .core_fusion_unified import (
 from .core_fusion_unified import (
     MonteCarloResult as FusionMonteCarloResult,
 )
-
-# ─── Core Quantum (L3, L8, L9, L12, L13) ─────────────────────────────────────
 from .core_quantum_unified import (
     BattleStrategy,
     ConfidenceMultiplier,
     ConfidenceResult,
     DecisionConfidence,
-    # Enums
     DecisionType,
     DriftAnalysis,
     ExecutionPlan,
     ExecutionType,
-    # Dataclasses
     FieldSummary,
-    MonteCarloResult,  # Quantum version takes precedence (used in L12)
+    MonteCarloResult,
     NeuralDecisionTree,
     ProbabilityMatrixCalculator,
     QuantumDecision,
@@ -140,15 +118,11 @@ from .core_quantum_unified import (
     ScenarioSelection,
     TreeAction,
     TreeDecision,
-    # Classes
     TRQ3DEngine,
-    # Functions
     analyze_drift,
     get_wolf_message,
     monte_carlo_fttc_simulation,
 )
-
-# ─── Core Reflective (L1-L2, L3-L6, L8, L10-L13) ────────────────────────────
 from .core_reflective_unified import (
     DisciplineCategory,
     FieldStabilityResult,
@@ -164,108 +138,208 @@ from .core_reflective_unified import (
     VaultSyncStatus,
 )
 
-# PipelineMode may not be defined in all versions of core_reflective_unified
+# ─── Core Reflective Analysis (ANALYSIS-ONLY, Non-Binding) ───────────────────
 try:
-    from . import core_reflective_unified as _cru
-    _pm = getattr(_cru, "PipelineMode", None)
-    if _pm is not None:
-        PipelineMode = _pm
-    else:
-        raise AttributeError("PipelineMode not found")
-except (ImportError, AttributeError):
-    from enum import Enum
+    import importlib
 
-    class PipelineMode(Enum):  # type: ignore[no-redef]
-        """Fallback PipelineMode when not provided by core_reflective_unified."""
-        STANDARD = "standard"
-        CONSTITUTIONAL = "constitutional"
+    _analysis_module = importlib.import_module(".core_reflective_unified_analysis", __package__)
+    BINDING_STATUS: Any = getattr(_analysis_module, "BINDING_STATUS", None)
+    GOVERNANCE_MODE: Any = getattr(_analysis_module, "GOVERNANCE_MODE", None)
+
+    _build_analysis_payload = getattr(_analysis_module, "build_analysis_payload_v2_1", None)
+    _system_integrity = getattr(_analysis_module, "system_integrity_check", None)
+
+    if callable(_build_analysis_payload):
+        build_analysis_payload_v2_1 = _build_analysis_payload
+    else:
+        def build_analysis_payload_v2_1(*args: Any, **kwargs: Any) -> Any:
+            raise NotImplementedError("build_analysis_payload_v2_1 is not available")
+
+    if callable(_system_integrity):
+        system_integrity_check = _system_integrity
+    else:
+        def system_integrity_check(*args: Any, **kwargs: Any) -> Any:
+            raise NotImplementedError("system_integrity_check is not available")
+except ImportError:
+    # Module may not exist yet; provide empty defaults
+    BINDING_STATUS = None
+    GOVERNANCE_MODE = None
+
+    def build_analysis_payload_v2_1(*args: Any, **kwargs: Any) -> Any:
+        raise NotImplementedError("core_reflective_unified_analysis not found")
+
+    def system_integrity_check(*args: Any, **kwargs: Any) -> Any:
+        raise NotImplementedError("core_reflective_unified_analysis not found")
+
+__version__ = "7.4.1"
+__codename__ = "Wolf 15-Layer Constitutional Pipeline (Patched)"
+
+# ─── Optional symbols from core_cognitive_unified ─────────────────────────────
+# These symbols may not be present in all builds; use getattr with stubs.
+
+ReflexEmotionCore: Any = getattr(_ccu_extras, "ReflexEmotionCore", None)
+if ReflexEmotionCore is None:
+    class _ReflexEmotionCoreStub:
+        """Stub: ReflexEmotionCore not available in this build."""
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
+            raise NotImplementedError("ReflexEmotionCore is not available in core_cognitive_unified")
+    ReflexEmotionCore = _ReflexEmotionCoreStub
+
+RiskFeedbackCalibrator: Any = getattr(_ccu_extras, "RiskFeedbackCalibrator", None)
+if RiskFeedbackCalibrator is None:
+    class _RiskFeedbackCalibratorStub:
+        """Stub: RiskFeedbackCalibrator not available in this build."""
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
+            raise NotImplementedError("RiskFeedbackCalibrator is not available in core_cognitive_unified")
+    RiskFeedbackCalibrator = _RiskFeedbackCalibratorStub
+
+SmartMoneyDetector: Any = getattr(_ccu_extras, "SmartMoneyDetector", None)
+if SmartMoneyDetector is None:
+    class _SmartMoneyDetectorStub:
+        """Stub: SmartMoneyDetector not available in this build."""
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
+            raise NotImplementedError("SmartMoneyDetector is not available in core_cognitive_unified")
+    SmartMoneyDetector = _SmartMoneyDetectorStub
+
+TWMSCalculator: Any = getattr(_ccu_extras, "TWMSCalculator", None)
+if TWMSCalculator is None:
+    class _TWMSCalculatorStub:
+        """Stub: TWMSCalculator not available in this build."""
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
+            raise NotImplementedError("TWMSCalculator is not available in core_cognitive_unified")
+    TWMSCalculator = _TWMSCalculatorStub
+
+VaultRiskSync: Any = getattr(_ccu_extras, "VaultRiskSync", None)
+if VaultRiskSync is None:
+    class _VaultRiskSyncStub:
+        """Stub: VaultRiskSync not available in this build."""
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
+            raise NotImplementedError("VaultRiskSync is not available in core_cognitive_unified")
+    VaultRiskSync = _VaultRiskSyncStub
+
+def _make_stub(name: str) -> Any:
+    """Create a stub function that raises NotImplementedError for a missing symbol."""
+    def _stub(*args: Any, **kwargs: Any) -> Any:
+        raise NotImplementedError(f"{name} is not available in core_cognitive_unified")
+    _stub.__name__ = name
+    _stub.__qualname__ = name
+    return _stub
+
+calculate_confluence_score: Any = getattr(_ccu_extras, "calculate_confluence_score", None)
+if calculate_confluence_score is None:
+    calculate_confluence_score = _make_stub("calculate_confluence_score")
+
+calculate_risk: Any = getattr(_ccu_extras, "calculate_risk", None)
+if calculate_risk is None:
+    calculate_risk = _make_stub("calculate_risk")
+
+calculate_risk_adjusted_score: Any = getattr(_ccu_extras, "calculate_risk_adjusted_score", None)
+if calculate_risk_adjusted_score is None:
+    calculate_risk_adjusted_score = _make_stub("calculate_risk_adjusted_score")
+
+calibrate_risk: Any = getattr(_ccu_extras, "calibrate_risk", None)
+if calibrate_risk is None:
+    calibrate_risk = _make_stub("calibrate_risk")
+
+compute_reflex_emotion: Any = getattr(_ccu_extras, "compute_reflex_emotion", None)
+if compute_reflex_emotion is None:
+    compute_reflex_emotion = _make_stub("compute_reflex_emotion")
+
+montecarlo_validate: Any = getattr(_ccu_extras, "montecarlo_validate", None)
+if montecarlo_validate is None:
+    montecarlo_validate = _make_stub("montecarlo_validate")
+
+reflex_check: Any = getattr(_ccu_extras, "reflex_check", None)
+if reflex_check is None:
+    reflex_check = _make_stub("reflex_check")
+
+validate_cognitive_thresholds: Any = getattr(_ccu_extras, "validate_cognitive_thresholds", None)
+if validate_cognitive_thresholds is None:
+    validate_cognitive_thresholds = _make_stub("validate_cognitive_thresholds")
+
+# EmotionFeedbackEngine may not be present in all versions of core_cognitive_unified
+EmotionFeedbackEngine: Any = getattr(_ccu_extras, "EmotionFeedbackEngine", None)
+if EmotionFeedbackEngine is None:
+    class _EmotionFeedbackEngineStub:
+        """Stub: EmotionFeedbackEngine not available in this build."""
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
+            raise NotImplementedError(
+                "EmotionFeedbackEngine is not available in core_cognitive_unified"
+            )
+    EmotionFeedbackEngine = _EmotionFeedbackEngineStub
+
+# AdaptiveRiskCalculator may not be present in all versions of core_cognitive_unified
+AdaptiveRiskCalculator: Any = getattr(_ccu_extras, "AdaptiveRiskCalculator", None)
+if AdaptiveRiskCalculator is None:
+    class _AdaptiveRiskCalculatorStub:
+        """Stub: AdaptiveRiskCalculator not available in this build."""
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
+            raise NotImplementedError(
+                "AdaptiveRiskCalculator is not available in core_cognitive_unified"
+            )
+    AdaptiveRiskCalculator = _AdaptiveRiskCalculatorStub
+
+# ─── PipelineMode (optional in core_reflective_unified) ──────────────────────
+class _PipelineModeFallback(Enum):
+    """Fallback PipelineMode when not provided by core_reflective_unified."""
+    STANDARD = "standard"
+    CONSTITUTIONAL = "constitutional"
+
+PipelineMode: Any = getattr(
+    __import__("importlib", fromlist=[""]).import_module(".core_reflective_unified", __package__),
+    "PipelineMode",
+    _PipelineModeFallback,
+)
 
 # Reflective CalibrationSummary may not exist in all versions of the module
+_rcs: Any = getattr(_ccu_extras, "__module__", None)  # dummy; real check below
 try:
     from . import core_reflective_unified as _cru_cal
     _rcs = getattr(_cru_cal, "CalibrationSummary", None)
-    if _rcs is not None:
-        ReflectiveCalibrationSummary = _rcs
-    else:
-        ReflectiveCalibrationSummary = CognitiveCalibrationSummary
 except ImportError:
-    # Fall back to cognitive version if reflective doesn't export its own
-    ReflectiveCalibrationSummary = CognitiveCalibrationSummary
-
-# ─── Core Reflective Analysis (ANALYSIS-ONLY, Non-Binding) ───────────────────
-try:
-    from .core_reflective_unified_analysis import (
-        BINDING_STATUS,
-        GOVERNANCE_MODE,
-        build_analysis_payload_v2_1,
-        system_integrity_check,
-    )
-except ImportError:
-    # Module may not exist yet; provide empty defaults
-    from typing import Any
-    BINDING_STATUS: Any = None
-    GOVERNANCE_MODE: Any = None
-    def build_analysis_payload_v2_1(*args: Any, **kwargs: Any) -> None:
-        raise NotImplementedError("core_reflective_unified_analysis not found")
-    def system_integrity_check(*args: Any, **kwargs: Any) -> None:
-        raise NotImplementedError("core_reflective_unified_analysis not found")
+    _rcs = None
+ReflectiveCalibrationSummary: Any = _rcs if _rcs is not None else CognitiveCalibrationSummary
 
 # ─── Public API ───────────────────────────────────────────────────────────────
 
 __all__ = [
-    # Version
-    "__codename__",
-    "__version__",
+    # ── Analysis ──
+    "BINDING_STATUS",
     # ── Cognitive ──
     "COHERENCE_THRESHOLD",
+    "GOVERNANCE_MODE",
+    "INTEGRITY_MINIMUM",
+    "REFLEX_GATE_PASS",
     "AdaptiveRiskCalculator",
     "AdaptiveRiskResult",
+    # ── Fusion ──
+    "AdaptiveThresholdController",
+    # ── Quantum ──
+    "BattleStrategy",
     "CognitiveBias",
     "CognitiveCalibrationSummary",
     "CognitiveError",
     "CognitiveState",
     "ConfidenceLevel",
-    "EmotionFeedbackCycle",
-    "EmotionFeedbackEngine",
-    "INTEGRITY_MINIMUM",
-    "InstitutionalBias",
-    "IntegrityEngine",
-    "InvalidInputError",
-    "MarketRegime",
-    "MarketRegimeType",
-    "REFLEX_GATE_PASS",
-    "ReflexEmotionCore",
-    "ReflexEmotionResult",
-    "ReflexState",
-    "RegimeAnalysis",
-    "RegimeClassifier",
-    "RiskAssessment",
-    "RiskCalculationError",
-    "RiskFeedbackCalibrator",
-    "SmartMoneyAnalysis",
-    "SmartMoneyDetector",
-    "SmartMoneySignal",
-    "Timeframe",
-    "TrendStrength",
-    "TWMSCalculator",
-    "TWMSInput",
-    "TWMSResult",
-    "ValidationError",
-    "VaultRiskSync",
-    "calculate_confluence_score",
-    "calculate_risk",
-    "calculate_risk_adjusted_score",
-    "calibrate_risk",
-    "compute_reflex_emotion",
-    "montecarlo_validate",
-    "reflex_check",
-    "validate_cognitive_thresholds",
-    # ── Fusion ──
-    "AdaptiveThresholdController",
+    "ConfidenceMultiplier",
+    "ConfidenceResult",
+    "DecisionConfidence",
+    "DecisionType",
+    # ── Reflective ──
+    "DisciplineCategory",
     "DivergenceStrength",
     "DivergenceType",
+    "DriftAnalysis",
     "EMAFusionEngine",
+    "EmotionFeedbackCycle",
+    "EmotionFeedbackEngine",
+    "ExecutionPlan",
+    "ExecutionType",
+    "FRPCResult",
     "FTTCResult",
+    "FieldStabilityResult",
+    "FieldState",
+    "FieldSummary",
     "FusionAction",
     "FusionBiasMode",
     "FusionComputeError",
@@ -277,68 +351,84 @@ __all__ = [
     "FusionPrecisionEngine",
     "FusionState",
     "HybridReflectiveCore",
+    "InstitutionalBias",
+    "IntegrityEngine",
+    "IntegrityLevel",
+    "InvalidInputError",
     "LiquidityMapResult",
     "LiquidityStatus",
     "LiquidityType",
     "LiquidityZoneMapper",
+    "MarketRegime",
+    "MarketRegimeType",
     "MarketState",
+    "MetaState",
     "MomentumBand",
     "MonteCarloConfidence",
-    "MultiIndicatorDivergenceDetector",
-    "QuantumReflectiveEngine",
-    "ResonanceState",
-    "TransitionState",
-    "VolumeProfileAnalyzer",
-    "VolumeProfileResult",
-    "aggregate_multi_timeframe_metrics",
-    "calculate_fusion_precision",
-    "equilibrium_momentum_fusion",
-    "evaluate_fusion_metrics",
-    "resolve_field_context",
-    "sync_field_state",
-    # ── Quantum ──
-    "BattleStrategy",
-    "ConfidenceMultiplier",
-    "ConfidenceResult",
-    "DecisionConfidence",
-    "DecisionType",
-    "DriftAnalysis",
-    "ExecutionPlan",
-    "ExecutionType",
-    "FieldSummary",
     "MonteCarloResult",
+    "MultiIndicatorDivergenceDetector",
     "NeuralDecisionTree",
+    "PipelineMode",
     "ProbabilityMatrixCalculator",
+    "PropagationState",
     "QuantumDecision",
     "QuantumDecisionEngine",
     "QuantumExecutionOptimizer",
     "QuantumFieldSync",
+    "QuantumReflectiveEngine",
     "QuantumScenarioMatrix",
-    "ScenarioSelection",
-    "TRQ3DEngine",
-    "TreeAction",
-    "TreeDecision",
-    "analyze_drift",
-    "get_wolf_message",
-    "monte_carlo_fttc_simulation",
-    # ── Reflective ──
-    "DisciplineCategory",
-    "FieldStabilityResult",
-    "FieldState",
-    "FRPCResult",
-    "IntegrityLevel",
-    "MetaState",
-    "PipelineMode",
-    "PropagationState",
     "ReflectiveCalibrationSummary",
     "ReflectiveEnergyState",
+    "ReflexEmotionCore",
+    "ReflexEmotionResult",
+    "ReflexState",
+    "RegimeAnalysis",
+    "RegimeClassifier",
+    "ResonanceState",
+    "RiskAssessment",
+    "RiskCalculationError",
+    "RiskFeedbackCalibrator",
+    "ScenarioSelection",
+    "SmartMoneyAnalysis",
+    "SmartMoneyDetector",
+    "SmartMoneySignal",
     "TIIClassification",
     "TIIResult",
     "TIIStatus",
+    "TRQ3DEngine",
+    "TWMSCalculator",
+    "TWMSInput",
+    "TWMSResult",
+    "Timeframe",
+    "TransitionState",
+    "TreeAction",
+    "TreeDecision",
+    "TrendStrength",
+    "ValidationError",
+    "VaultRiskSync",
     "VaultSyncStatus",
-    # ── Analysis ──
-    "BINDING_STATUS",
-    "GOVERNANCE_MODE",
+    "VolumeProfileAnalyzer",
+    "VolumeProfileResult",
+    # Version
+    "__codename__",
+    "__version__",
+    "aggregate_multi_timeframe_metrics",
+    "analyze_drift",
     "build_analysis_payload_v2_1",
+    "calculate_confluence_score",
+    "calculate_fusion_precision",
+    "calculate_risk",
+    "calculate_risk_adjusted_score",
+    "calibrate_risk",
+    "compute_reflex_emotion",
+    "equilibrium_momentum_fusion",
+    "evaluate_fusion_metrics",
+    "get_wolf_message",
+    "monte_carlo_fttc_simulation",
+    "montecarlo_validate",
+    "reflex_check",
+    "resolve_field_context",
+    "sync_field_state",
     "system_integrity_check",
+    "validate_cognitive_thresholds",
 ]

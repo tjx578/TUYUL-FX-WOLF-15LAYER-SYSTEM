@@ -17,13 +17,6 @@ comprehensive enums, working classes, and Monte Carlo validation.
 
 from __future__ import annotations
 
-import dataclasses
-import json
-import math
-import random
-import statistics
-import time
-import typing
 import json
 import random
 import statistics
@@ -348,11 +341,6 @@ class TWMSResult:
 class RegimeClassifier:
     """
     L0 — Classifies market regime.
-    
-    Production implementation with real regime detection logic.
-    """
-    
-    L0 - Classifies market regime.
 
     Production implementation with real regime detection logic.
     """
@@ -361,10 +349,6 @@ class RegimeClassifier:
         self.atr_threshold_low: float = 0.0005
         self.atr_threshold_high: float = 0.0015
         self.trend_threshold: float = 0.002
-        
-    def classify(
-        self, 
-        symbol: str, 
 
     def classify(
         self,
@@ -374,29 +358,19 @@ class RegimeClassifier:
     ) -> RegimeAnalysis:
         """
         Classify market regime based on volatility and trend analysis.
-        
 
         Args:
             symbol: Trading symbol
             timeframe: Analysis timeframe
             data: Market data (close, high, low, atr, etc.)
-            
 
         Returns:
             RegimeAnalysis with detected regime
         """
         if data is None:
             data = {}
-            
-        close_prices = data.get("close", [100.0] * 20)
-        high_prices = data.get("high", [100.5] * 20)
-        low_prices = data.get("low", [99.5] * 20)
-        atr = data.get("atr", 0.001)
-        
 
         close_prices = data.get("close", [100.0] * 20)
-        data.get("high", [100.5] * 20)
-        data.get("low", [99.5] * 20)
         atr = data.get("atr", 0.001)
 
         if len(close_prices) < 2:
@@ -408,10 +382,6 @@ class RegimeClassifier:
                 regime_string=MarketRegime.RANGING_MID,
                 trend_strength=TrendStrength.NONE
             )
-        
-        price_change = close_prices[-1] - close_prices[0]
-        price_change_pct = abs(price_change / close_prices[0])
-        
 
         price_change = close_prices[-1] - close_prices[0]
         price_change_pct = abs(price_change / close_prices[0])
@@ -422,13 +392,15 @@ class RegimeClassifier:
             volatility = "MEDIUM"
         else:
             volatility = "HIGH"
-        
 
         if price_change_pct > self.trend_threshold:
             regime_type = MarketRegimeType.TREND
             trend_dir = "BULLISH" if price_change > 0 else "BEARISH"
-            regime_str = MarketRegime.TRENDING_UP if price_change > 0 else MarketRegime.TRENDING_DOWN
-            
+            regime_str = (
+                MarketRegime.TRENDING_UP
+                if price_change > 0
+                else MarketRegime.TRENDING_DOWN
+            )
 
             if price_change_pct > self.trend_threshold * 2:
                 trend_str = TrendStrength.STRONG
@@ -436,28 +408,17 @@ class RegimeClassifier:
                 trend_str = TrendStrength.MODERATE
             else:
                 trend_str = TrendStrength.WEAK
-                
-            confidence = min(0.95, 0.6 + price_change_pct * 50)
-            
 
             confidence = min(0.95, 0.6 + price_change_pct * 50)
-
         elif atr > self.atr_threshold_high:
             regime_type = MarketRegimeType.EXPANSION
             trend_dir = "NEUTRAL"
             regime_str = MarketRegime.VOLATILE
             trend_str = TrendStrength.NONE
             confidence = 0.7 + min(0.25, atr * 100)
-            
         else:
             regime_type = MarketRegimeType.RANGE
             trend_dir = "NEUTRAL"
-            
-
-        else:
-            regime_type = MarketRegimeType.RANGE
-            trend_dir = "NEUTRAL"
-
             avg_price = statistics.mean(close_prices[-10:])
             if close_prices[-1] > avg_price * 1.002:
                 regime_str = MarketRegime.RANGING_HIGH
@@ -465,10 +426,6 @@ class RegimeClassifier:
                 regime_str = MarketRegime.RANGING_LOW
             else:
                 regime_str = MarketRegime.RANGING_MID
-                
-            trend_str = TrendStrength.NONE
-            confidence = 0.65 + (1 - price_change_pct * 100) * 0.2
-        
 
             trend_str = TrendStrength.NONE
             confidence = 0.65 + (1 - price_change_pct * 100) * 0.2
@@ -488,17 +445,6 @@ class RegimeClassifier:
 class ReflexEmotionCore:
     """
     L1 — Computes reflex-emotion coherence.
-    
-    Production implementation with real coherence calculations.
-    """
-    
-    def __init__(self) -> None:
-        self.baseline_emotion: float = 0.5
-        self.coherence_history: list[float] = []
-        
-    def compute_reflex_emotion(
-        self, 
-    L1 - Computes reflex-emotion coherence.
 
     Production implementation with real coherence calculations.
     """
@@ -513,10 +459,6 @@ class ReflexEmotionCore:
     ) -> ReflexEmotionResult:
         """
         Compute reflex-emotion coherence and alignment.
-        
-        Args:
-            market_data: Market state data (volatility, momentum, etc.)
-            
 
         Args:
             market_data: Market state data (volatility, momentum, etc.)
@@ -527,26 +469,12 @@ class ReflexEmotionCore:
         volatility = market_data.get("volatility", 0.01)
         momentum = market_data.get("momentum", 0.0)
         volume_ratio = market_data.get("volume_ratio", 1.0)
-        
-        reflex_signal = (momentum * 0.4 + (volume_ratio - 1.0) * 0.3 + 
-                        (1.0 - volatility * 50) * 0.3)
-        reflex_signal = max(-1.0, min(1.0, reflex_signal))
-        
-        emotion_signal = self.baseline_emotion + reflex_signal * 0.3
-        emotion_signal = max(0.0, min(1.0, emotion_signal))
-        
-        delta = abs(reflex_signal - (emotion_signal - self.baseline_emotion))
-        coherence = 1.0 - delta
-        
-        self.coherence_history.append(coherence)
-        if len(self.coherence_history) > 100:
-            self.coherence_history.pop(0)
-            
-        avg_coherence = statistics.mean(self.coherence_history[-20:])
-        
 
-        reflex_signal = (momentum * 0.4 + (volume_ratio - 1.0) * 0.3 +
-                        (1.0 - volatility * 50) * 0.3)
+        reflex_signal = (
+            momentum * 0.4 +
+            (volume_ratio - 1.0) * 0.3 +
+            (1.0 - volatility * 50) * 0.3
+        )
         reflex_signal = max(-1.0, min(1.0, reflex_signal))
 
         emotion_signal = self.baseline_emotion + reflex_signal * 0.3
@@ -577,7 +505,6 @@ class ReflexEmotionCore:
             state = ReflexState.DESYNCED
             gate = "CLOSED"
             alignment = "NEUTRAL"
-        
 
         return ReflexEmotionResult(
             reflex_coherence=coherence,
@@ -593,12 +520,6 @@ class ReflexEmotionCore:
 class IntegrityEngine:
     """
     L5 — Verifies system-state integrity.
-    
-    Production implementation with real verification logic.
-    """
-    
-    L5 - Verifies system-state integrity.
-
 
     Production implementation with real verification logic.
     """
@@ -607,7 +528,7 @@ class IntegrityEngine:
         self.snapshots: list[dict[str, typing.Any]] = []
         self.last_verification: datetime | None = None
         self.coherence_score: float = 1.0
-        
+
     def evaluate_coherence(
         self,
         fusion_conf: float = 0.0,
@@ -616,24 +537,12 @@ class IntegrityEngine:
     ) -> float:
         """
         Evaluate overall system coherence.
-        
+
         Returns:
             Coherence score [0.0, 1.0]
         """
         components = [fusion_conf, wlwci, rcadj]
         valid_components = [c for c in components if 0.0 <= c <= 1.0]
-        
-        if not valid_components:
-            return 0.0
-            
-        coherence = statistics.mean(valid_components)
-        variance = statistics.stdev(valid_components) if len(valid_components) > 1 else 0.0
-        
-        coherence_adjusted = coherence * (1.0 - variance * 0.5)
-        self.coherence_score = max(0.0, min(1.0, coherence_adjusted))
-        
-        return self.coherence_score
-    
 
         if not valid_components:
             return 0.0
@@ -643,7 +552,6 @@ class IntegrityEngine:
 
         coherence_adjusted = coherence * (1.0 - variance * 0.5)
         self.coherence_score = max(0.0, min(1.0, coherence_adjusted))
-
         return self.coherence_score
 
     def validate_integrity(
@@ -655,25 +563,17 @@ class IntegrityEngine:
     ) -> bool:
         """
         Validate system integrity against thresholds.
-        
 
         Returns:
             True if integrity checks pass
         """
         coherence = self.evaluate_coherence(fusion_conf, wlwci, rcadj)
-        
-
-        integrity_pass = (
+        return (
             coherence >= COHERENCE_THRESHOLD and
             ree_integrity >= INTEGRITY_MINIMUM and
             fusion_conf >= 0.75 and
             wlwci >= 0.70
         )
-        
-        return integrity_pass
-    
-
-        return integrity_pass
 
     def save_snapshot(
         self,
@@ -681,23 +581,14 @@ class IntegrityEngine:
     ) -> None:
         """Save system state snapshot."""
         snapshot = {
-            "timestamp": datetime.now().isoformat(),
             "timestamp": datetime.now().isoformat(),  # noqa: DTZ005
             "coherence": self.coherence_score,
             **state
         }
         self.snapshots.append(snapshot)
-        
+
         if len(self.snapshots) > 1000:
             self.snapshots = self.snapshots[-500:]
-    
-
-        if len(self.snapshots) > 1000:
-
-            self.new_method()
-
-    def new_method(self):
-        self.snapshots = self.snapshots[-500:]
 
     def verify_system_state(
         self,
@@ -708,21 +599,11 @@ class IntegrityEngine:
     ) -> dict[str, typing.Any]:
         """
         Comprehensive system state verification.
-        
-        Returns:
-            Verification result with status and metrics
-        """
-        self.last_verification = datetime.now()
-        
-        coherence = self.evaluate_coherence(fusion_conf, wlwci, rcadj)
-        is_valid = self.validate_integrity(fusion_conf, wlwci, rcadj, ree_integrity)
-        
 
         Returns:
             Verification result with status and metrics
         """
         self.last_verification = datetime.now()  # noqa: DTZ005
-
         coherence = self.evaluate_coherence(fusion_conf, wlwci, rcadj)
         is_valid = self.validate_integrity(fusion_conf, wlwci, rcadj, ree_integrity)
 
@@ -742,18 +623,8 @@ class IntegrityEngine:
                 "integrity": INTEGRITY_MINIMUM
             }
         }
-        
-        self.save_snapshot(result)
-        
-        return result
-    
-    def is_stable(self) -> bool:
-        """
-        Check if system is currently stable.
-        
 
         self.save_snapshot(result)
-
         return result
 
     def is_stable(self) -> bool:
@@ -765,15 +636,8 @@ class IntegrityEngine:
         """
         if not self.snapshots:
             return False
-            
-        recent = self.snapshots[-5:] if len(self.snapshots) >= 5 else self.snapshots
-        
-        stable_count = sum(1 for s in recent if s.get("status") == "STABLE")
-        stability_ratio = stable_count / len(recent)
-        
 
         recent = self.snapshots[-5:] if len(self.snapshots) >= 5 else self.snapshots
-
         stable_count = sum(1 for s in recent if s.get("status") == "STABLE")
         stability_ratio = stable_count / len(recent)
 
@@ -785,18 +649,6 @@ class IntegrityEngine:
 class SmartMoneyDetector:
     """
     L7 — Detects institutional / smart-money activity.
-    
-    Production implementation with real detection algorithms.
-    """
-    
-    def __init__(self) -> None:
-        self.volume_threshold: float = 1.5
-        self.sweep_threshold: float = 0.003
-        
-    def analyze(
-        self, 
-        symbol: str, 
-    L7 - Detects institutional / smart-money activity.
 
     Production implementation with real detection algorithms.
     """
@@ -813,26 +665,22 @@ class SmartMoneyDetector:
     ) -> SmartMoneyAnalysis:
         """
         Analyze institutional activity and bias.
-        
 
         Args:
             symbol: Trading symbol
             timeframe: Analysis timeframe
             data: Market data (volume, price action, etc.)
-            
 
         Returns:
             SmartMoneyAnalysis with detected signals
         """
         if data is None:
             data = {}
-            
 
         volume = data.get("volume", [1.0] * 20)
         close = data.get("close", [100.0] * 20)
         high = data.get("high", [100.5] * 20)
         low = data.get("low", [99.5] * 20)
-        
 
         if len(volume) < 5 or len(close) < 5:
             return SmartMoneyAnalysis(
@@ -841,24 +689,6 @@ class SmartMoneyDetector:
                 strength=0.0,
                 confidence=0.5
             )
-        
-        avg_volume = statistics.mean(volume[-20:])
-        recent_volume = statistics.mean(volume[-5:])
-        volume_ratio = recent_volume / avg_volume if avg_volume > 0 else 1.0
-        
-        price_change = (close[-1] - close[-5]) / close[-5]
-        
-        high_breaks = sum(1 for i in range(-5, -1) if high[i] > high[i-1])
-        low_breaks = sum(1 for i in range(-5, -1) if low[i] < low[i-1])
-        
-        liquidity_sweep = False
-        if abs(high[-1] - high[-2]) / high[-2] > self.sweep_threshold:
-            liquidity_sweep = True
-            
-        manipulation_detected = False
-        if volume_ratio > 2.0 and abs(price_change) < 0.001:
-            manipulation_detected = True
-        
 
         avg_volume = statistics.mean(volume[-20:])
         recent_volume = statistics.mean(volume[-5:])
@@ -866,8 +696,8 @@ class SmartMoneyDetector:
 
         price_change = (close[-1] - close[-5]) / close[-5]
 
-        high_breaks = sum(1 for i in range(-5, -1) if high[i] > high[i-1])
-        low_breaks = sum(1 for i in range(-5, -1) if low[i] < low[i-1])
+        high_breaks = sum(1 for i in range(-5, -1) if high[i] > high[i - 1])
+        low_breaks = sum(1 for i in range(-5, -1) if low[i] < low[i - 1])
 
         liquidity_sweep = False
         if abs(high[-1] - high[-2]) / high[-2] > self.sweep_threshold:
@@ -887,23 +717,25 @@ class SmartMoneyDetector:
                 bias = InstitutionalBias.BEARISH
                 strength = min(1.0, volume_ratio / 3.0)
             else:
-                if manipulation_detected:
-                    signal = SmartMoneySignal.MANIPULATION
-                else:
-                    signal = SmartMoneySignal.NEUTRAL
+                signal = (
+                    SmartMoneySignal.MANIPULATION
+                    if manipulation_detected
+                    else SmartMoneySignal.NEUTRAL
+                )
                 bias = InstitutionalBias.NEUTRAL
                 strength = 0.5
         elif liquidity_sweep:
             signal = SmartMoneySignal.SWEEP
-            bias = InstitutionalBias.BULLISH if high_breaks > low_breaks else InstitutionalBias.BEARISH
+            bias = (
+                InstitutionalBias.BULLISH
+                if high_breaks > low_breaks
+                else InstitutionalBias.BEARISH
+            )
             strength = 0.6
         else:
             signal = SmartMoneySignal.NEUTRAL
             bias = InstitutionalBias.NEUTRAL
             strength = 0.3
-        
-        confidence = 0.5 + min(0.45, strength * 0.6 + volume_ratio * 0.2)
-        
 
         confidence = 0.5 + min(0.45, strength * 0.6 + volume_ratio * 0.2)
 
@@ -920,11 +752,6 @@ class SmartMoneyDetector:
 class TWMSCalculator:
     """
     L7/L8 — Time-Weighted Multi-Score calculator v2.2.
-    
-    Production implementation: D1:30%, H4:40%, H1:30% weighting.
-    """
-    
-    L7/L8 - Time-Weighted Multi-Score calculator v2.2.
 
     Production implementation: D1:30%, H4:40%, H1:30% weighting.
     """
@@ -933,10 +760,6 @@ class TWMSCalculator:
         self.d1_weight = TWMS_WEIGHT_D1
         self.h4_weight = TWMS_WEIGHT_H4
         self.h1_weight = TWMS_WEIGHT_H1
-        
-    def calculate(
-        self, 
-        symbol: str, 
 
     def calculate(
         self,
@@ -946,16 +769,11 @@ class TWMSCalculator:
     ) -> TWMSResult:
         """
         Calculate Time-Weighted Multi-Score.
-        
 
         Args:
             symbol: Trading symbol
             timeframes: Timeframes to analyze (default: ["D1", "H4", "H1"])
             component_scores: Pre-calculated scores per timeframe
-            
-        Returns:
-            TWMSResult with weighted score
-            
 
         Returns:
             TWMSResult with weighted score
@@ -965,14 +783,6 @@ class TWMSCalculator:
         """
         if component_scores is None:
             component_scores = {}
-            
-        if timeframes is None:
-            timeframes = ["D1", "H4", "H1"]
-        
-        d1_score = component_scores.get("D1", 0.0)
-        h4_score = component_scores.get("H4", 0.0)
-        h1_score = component_scores.get("H1", 0.0)
-        
 
         if timeframes is None:
             timeframes = ["D1", "H4", "H1"]
@@ -986,18 +796,10 @@ class TWMSCalculator:
                 f"Component scores must be in range [0.0, 1.0]: "
                 f"D1={d1_score}, H4={h4_score}, H1={h1_score}"
             )
-        
-        d1_contrib = d1_score * self.d1_weight
-        h4_contrib = h4_score * self.h4_weight
-        h1_contrib = h1_score * self.h1_weight
-        
-        twms = d1_contrib + h4_contrib + h1_contrib
-        
 
         d1_contrib = d1_score * self.d1_weight
         h4_contrib = h4_score * self.h4_weight
         h1_contrib = h1_score * self.h1_weight
-
         twms = d1_contrib + h4_contrib + h1_contrib
 
         return TWMSResult(
@@ -1008,7 +810,6 @@ class TWMSCalculator:
             d1_contribution=d1_contrib,
             h4_contribution=h4_contrib,
             h1_contribution=h1_contrib,
-            timestamp=datetime.now()
             timestamp=datetime.now()  # noqa: DTZ005
         )
 
@@ -1022,11 +823,6 @@ def montecarlo_validate(
 ) -> dict[str, typing.Any]:
     """
     L9 — Monte Carlo validation with bootstrap simulation.
-    
-    Production implementation with deterministic bootstrap,
-    Sharpe ratio, max drawdown, VaR, and Expected Shortfall.
-    
-    L9 - Monte Carlo validation with bootstrap simulation.
 
     Production implementation with deterministic bootstrap,
     Sharpe ratio, max drawdown, VaR, and Expected Shortfall.
@@ -1035,7 +831,6 @@ def montecarlo_validate(
         returns: Historical returns list
         iterations: Number of Monte Carlo iterations
         confidence_level: Confidence level for VaR/ES (default: 0.95)
-        
 
     Returns:
         dict with statistical metrics:
@@ -1045,29 +840,13 @@ def montecarlo_validate(
             - win_probability: Probability of positive return
             - value_at_risk: Value at Risk (VaR)
             - expected_shortfall: Expected Shortfall (CVaR)
-            
 
     Raises:
         InvalidInputError: If returns list is empty or invalid
     """
     if not returns or len(returns) < 2:
         raise InvalidInputError("Returns list must contain at least 2 values")
-    
-    if iterations < 100:
-        raise InvalidInputError("Iterations must be at least 100")
-    
-    simulated_returns: list[float] = []
-    simulated_drawdowns: list[float] = []
-    
-    random.seed(42)
-    
-    for _ in range(iterations):
-        sample = random.choices(returns, k=len(returns))
-        
-        cumulative = 0.0
-        peak = 0.0
-        max_dd = 0.0
-        
+
     if iterations < 100:
         raise InvalidInputError("Iterations must be at least 100")
 
@@ -1088,43 +867,20 @@ def montecarlo_validate(
             peak = max(peak, cumulative)
             drawdown = peak - cumulative
             max_dd = max(max_dd, drawdown)
-        
-        simulated_returns.append(cumulative)
-        simulated_drawdowns.append(max_dd)
-    
-    mean_return = statistics.mean(simulated_returns)
-    std_return = statistics.stdev(simulated_returns) if len(simulated_returns) > 1 else 0.0
-    
-    sharpe_ratio = mean_return / std_return if std_return > 0 else 0.0
-    
-    max_drawdown = statistics.mean(simulated_drawdowns)
-    
-    positive_returns = sum(1 for r in simulated_returns if r > 0)
-    win_probability = positive_returns / len(simulated_returns)
-    
-    sorted_returns = sorted(simulated_returns)
-    var_index = int((1 - confidence_level) * len(sorted_returns))
-    value_at_risk = abs(sorted_returns[var_index])
-    
-    tail_returns = sorted_returns[:var_index + 1]
-    expected_shortfall = abs(statistics.mean(tail_returns)) if tail_returns else 0.0
-    
 
         simulated_returns.append(cumulative)
         simulated_drawdowns.append(max_dd)
 
     mean_return = statistics.mean(simulated_returns)
     std_return = statistics.stdev(simulated_returns) if len(simulated_returns) > 1 else 0.0
-
     sharpe_ratio = mean_return / std_return if std_return > 0 else 0.0
-
     max_drawdown = statistics.mean(simulated_drawdowns)
 
     positive_returns = sum(1 for r in simulated_returns if r > 0)
     win_probability = positive_returns / len(simulated_returns)
 
     sorted_returns = sorted(simulated_returns)
-    var_index = int((1 - confidence_level) * len(sorted_returns))
+    var_index = max(0, int((1 - confidence_level) * len(sorted_returns)) - 1)
     value_at_risk = abs(sorted_returns[var_index])
 
     tail_returns = sorted_returns[:var_index + 1]
@@ -1147,17 +903,6 @@ def montecarlo_validate(
 class EmotionFeedbackEngine:
     """
     L11 — Emotion feedback cycle for discipline advisory.
-    
-    Production implementation with real coherence computation.
-    """
-    
-    def __init__(self) -> None:
-        self.baseline_coherence: float = 0.85
-        self.emotion_memory: list[float] = []
-        
-    def run_cycle(
-        self, 
-    L11 - Emotion feedback cycle for discipline advisory.
 
     Production implementation with real coherence computation.
     """
@@ -1173,14 +918,6 @@ class EmotionFeedbackEngine:
     ) -> EmotionFeedbackCycle:
         """
         Run emotion feedback cycle.
-        
-        Args:
-            current_state: Current market/trading state
-            historical_performance: Recent performance metrics
-            
-        Returns:
-            EmotionFeedbackCycle with coherence and gate status
-            
 
         Args:
             current_state: Current market/trading state
@@ -1194,20 +931,13 @@ class EmotionFeedbackEngine:
         """
         if historical_performance is None:
             historical_performance = {}
-        
 
         try:
             win_rate = historical_performance.get("win_rate", 0.5)
             recent_pnl = historical_performance.get("recent_pnl", 0.0)
             consecutive_losses = historical_performance.get("consecutive_losses", 0)
-            
             market_volatility = current_state.get("volatility", 0.01)
-            position_exposure = current_state.get("exposure", 0.0)
-            
-
-            market_volatility = current_state.get("volatility", 0.01)
-
-            current_state.get("exposure", 0.0)
+            _position_exposure = current_state.get("exposure", 0.0)
 
             emotion_signal = (
                 win_rate * 0.3 +
@@ -1215,17 +945,6 @@ class EmotionFeedbackEngine:
                 max(0.0, 1.0 - consecutive_losses * 0.15) * 0.3 +
                 (1.0 - min(1.0, market_volatility * 50)) * 0.2
             )
-            
-            self.emotion_memory.append(emotion_signal)
-            if len(self.emotion_memory) > 50:
-                self.emotion_memory.pop(0)
-            
-            avg_emotion = statistics.mean(self.emotion_memory[-10:])
-            emotion_delta = abs(emotion_signal - avg_emotion)
-            
-            coherence = self.baseline_coherence * (1.0 - emotion_delta * 0.5)
-            coherence = max(0.0, min(1.0, coherence))
-            
 
             self.emotion_memory.append(emotion_signal)
             if len(self.emotion_memory) > 50:
@@ -1233,7 +952,6 @@ class EmotionFeedbackEngine:
 
             avg_emotion = statistics.mean(self.emotion_memory[-10:])
             emotion_delta = abs(emotion_signal - avg_emotion)
-
             coherence = self.baseline_coherence * (1.0 - emotion_delta * 0.5)
             coherence = max(0.0, min(1.0, coherence))
 
@@ -1246,7 +964,6 @@ class EmotionFeedbackEngine:
             else:
                 gate = "CLOSED"
                 psych_confidence = 0.4
-            
 
             return EmotionFeedbackCycle(
                 coherence=coherence,
@@ -1254,7 +971,6 @@ class EmotionFeedbackEngine:
                 gate=gate,
                 psych_confidence=psych_confidence
             )
-            
 
         except Exception as e:
             raise EmotionFeedbackError(f"Emotion feedback cycle failed: {e}") from e
@@ -1263,15 +979,6 @@ class EmotionFeedbackEngine:
 class RiskFeedbackCalibrator:
     """
     L11 — Risk feedback calibration system.
-    
-    Calibrates risk parameters based on performance feedback.
-    """
-    
-    def __init__(self) -> None:
-        self.learning_rate = META_LEARNING_RATE
-        self.calibration_history: list[dict[str, typing.Any]] = []
-        
-    L11 - Risk feedback calibration system.
 
     Calibrates risk parameters based on performance feedback.
     """
@@ -1287,14 +994,6 @@ class RiskFeedbackCalibrator:
     ) -> CalibrationResult:
         """
         Calibrate risk parameters based on performance.
-        
-        Args:
-            base_risk: Base risk percentage
-            performance_metrics: Recent performance data
-            
-        Returns:
-            CalibrationResult with adjusted risk
-            
 
         Args:
             base_risk: Base risk percentage
@@ -1308,11 +1007,6 @@ class RiskFeedbackCalibrator:
         """
         if not 0.0 <= base_risk <= 1.0:
             raise CalibrationError(f"Base risk must be in [0.0, 1.0]: {base_risk}")
-        
-        win_rate = performance_metrics.get("win_rate", 0.5)
-        profit_factor = performance_metrics.get("profit_factor", 1.0)
-        sharpe = performance_metrics.get("sharpe", 0.0)
-        
 
         win_rate = performance_metrics.get("win_rate", 0.5)
         profit_factor = performance_metrics.get("profit_factor", 1.0)
@@ -1323,18 +1017,10 @@ class RiskFeedbackCalibrator:
             min(1.0, profit_factor / 2.0) * 0.4 +
             min(1.0, max(0.0, sharpe / 2.0)) * 0.3
         )
-        
-        adjustment = (performance_score - 0.5) * self.learning_rate
-        calibrated_risk = base_risk * (1.0 + adjustment)
-        calibrated_risk = max(0.005, min(0.05, calibrated_risk))
-        
-        confidence = 0.5 + min(0.45, abs(adjustment) * 10)
-        
 
         adjustment = (performance_score - 0.5) * self.learning_rate
         calibrated_risk = base_risk * (1.0 + adjustment)
         calibrated_risk = max(0.005, min(0.05, calibrated_risk))
-
         confidence = 0.5 + min(0.45, abs(adjustment) * 10)
 
         if performance_score > 0.7:
@@ -1343,7 +1029,6 @@ class RiskFeedbackCalibrator:
             recommendation = "REDUCE_EXPOSURE"
         else:
             recommendation = "MAINTAIN"
-        
 
         adjustments = {
             "performance_score": performance_score,
@@ -1351,12 +1036,6 @@ class RiskFeedbackCalibrator:
             "original_risk": base_risk,
             "calibrated_risk": calibrated_risk
         }
-        
-        self.calibration_history.append({
-            "timestamp": datetime.now().isoformat(),
-            **adjustments
-        })
-        
 
         self.calibration_history.append({
             "timestamp": datetime.now().isoformat(),  # noqa: DTZ005
@@ -1376,8 +1055,6 @@ class RiskFeedbackCalibrator:
 class AdaptiveRiskCalculator:
     """
     L13 — Adaptive risk / position-sizing calculator.
-    
-    L13 - Adaptive risk / position-sizing calculator.
 
     Production implementation with 5-tier drawdown system:
       0-5%: 100% (1.00)
@@ -1386,7 +1063,6 @@ class AdaptiveRiskCalculator:
       15-20%: 40% (0.40)
       >20%: 20% (0.20)
     """
-    
 
     def __init__(self) -> None:
         self.drawdown_tiers = [
@@ -1394,9 +1070,8 @@ class AdaptiveRiskCalculator:
             (0.10, 0.80, "TIER_1"),
             (0.15, 0.60, "TIER_2"),
             (0.20, 0.40, "TIER_3"),
-            (float('inf'), 0.20, "TIER_4")
+            (float("inf"), 0.20, "TIER_4")
         ]
-        
 
     def calculate(
         self,
@@ -1408,7 +1083,6 @@ class AdaptiveRiskCalculator:
     ) -> AdaptiveRiskResult:
         """
         Calculate adaptive risk-adjusted position size.
-        
 
         Args:
             base_risk: Base risk percentage (e.g., 0.02 for 2%)
@@ -1416,10 +1090,6 @@ class AdaptiveRiskCalculator:
             balance: Account balance
             entry_price: Entry price
             stop_loss: Stop loss price
-            
-        Returns:
-            AdaptiveRiskResult with position sizing
-            
 
         Returns:
             AdaptiveRiskResult with position sizing
@@ -1429,19 +1099,6 @@ class AdaptiveRiskCalculator:
         """
         if base_risk <= 0 or base_risk > 0.1:
             raise RiskCalculationError(f"Base risk must be in (0.0, 0.1]: {base_risk}")
-        
-        if balance <= 0:
-            raise RiskCalculationError(f"Balance must be positive: {balance}")
-        
-        if entry_price <= 0 or stop_loss <= 0:
-            raise RiskCalculationError("Entry and stop loss must be positive")
-        
-        if abs(entry_price - stop_loss) < 1e-6:
-            raise RiskCalculationError("Entry and stop loss cannot be equal")
-        
-        drawdown_multiplier = 1.00
-        risk_tier = "TIER_0"
-        
 
         if balance <= 0:
             raise RiskCalculationError(f"Balance must be positive: {balance}")
@@ -1454,42 +1111,22 @@ class AdaptiveRiskCalculator:
 
         drawdown_multiplier = 1.00
         risk_tier = "TIER_0"
-
         for threshold, multiplier, tier in self.drawdown_tiers:
             if drawdown < threshold:
                 drawdown_multiplier = multiplier
                 risk_tier = tier
                 break
-        
-        adjusted_risk = base_risk * drawdown_multiplier
-        risk_amount = balance * adjusted_risk
-        
-        stop_distance = abs(entry_price - stop_loss)
-        
-        if stop_distance < 1e-6:
-            raise RiskCalculationError("Stop distance too small")
-        
-        recommended_lot = risk_amount / stop_distance
-        
-        max_risk = balance * 0.05
-        max_safe_lot = max_risk / stop_distance
-        
-        position_value = recommended_lot * entry_price
-        
 
         adjusted_risk = base_risk * drawdown_multiplier
         risk_amount = balance * adjusted_risk
-
         stop_distance = abs(entry_price - stop_loss)
 
         if stop_distance < 1e-6:
             raise RiskCalculationError("Stop distance too small")
 
         recommended_lot = risk_amount / stop_distance
-
         max_risk = balance * 0.05
         max_safe_lot = max_risk / stop_distance
-
         position_value = recommended_lot * entry_price
 
         return AdaptiveRiskResult(
@@ -1505,18 +1142,6 @@ class AdaptiveRiskCalculator:
 class VaultRiskSync:
     """
     L13 — Vault persistence for risk parameters.
-    
-    Handles loading/saving risk configurations to vault.
-    """
-    
-    def __init__(self, vault_path: Path | str | None = None) -> None:
-        if vault_path is None:
-            vault_path = Path.home() / ".wolf15" / "vault" / "risk"
-        
-        self.vault_path = Path(vault_path)
-        self._ensure_vault_exists()
-        
-    L13 - Vault persistence for risk parameters.
 
     Handles loading/saving risk configurations to vault.
     """
@@ -1534,7 +1159,6 @@ class VaultRiskSync:
             self.vault_path.mkdir(parents=True, exist_ok=True)
         except Exception as e:
             raise VaultPathError(f"Cannot create vault path {self.vault_path}: {e}") from e
-    
 
     def save_risk_config(
         self,
@@ -1543,11 +1167,6 @@ class VaultRiskSync:
     ) -> None:
         """
         Save risk configuration to vault.
-        
-        Args:
-            config: Risk configuration dict
-            config_name: Configuration name
-            
 
         Args:
             config: Risk configuration dict
@@ -1558,17 +1177,8 @@ class VaultRiskSync:
         """
         try:
             file_path = self.vault_path / f"{config_name}_risk.json"
-            
-            with open(file_path, 'w') as f:
+            with open(file_path, "w") as f:
                 json.dump(config, f, indent=2, default=str)
-                
-        except Exception as e:
-            raise VaultPersistenceError(f"Failed to save risk config: {e}") from e
-    
-
-            with open(file_path, 'w') as f:
-                json.dump(config, f, indent=2, default=str)
-
         except Exception as e:
             raise VaultPersistenceError(f"Failed to save risk config: {e}") from e
 
@@ -1578,13 +1188,6 @@ class VaultRiskSync:
     ) -> dict[str, typing.Any]:
         """
         Load risk configuration from vault.
-        
-        Args:
-            config_name: Configuration name
-            
-        Returns:
-            Risk configuration dict
-            
 
         Args:
             config_name: Configuration name
@@ -1597,18 +1200,10 @@ class VaultRiskSync:
         """
         try:
             file_path = self.vault_path / f"{config_name}_risk.json"
-            
-            if not file_path.exists():
-                return {}
-            
-            with open(file_path, 'r') as f:
-                return json.load(f)
-                
-
             if not file_path.exists():
                 return {}
 
-            with open(file_path ) as f:
+            with open(file_path) as f:
                 return json.load(f)
 
         except Exception as e:
@@ -1624,23 +1219,20 @@ def compute_reflex_emotion(
 ) -> float:
     """
     Compute reflex-emotion signal.
-    
 
     Args:
         volatility: Market volatility
         momentum: Price momentum
         volume_ratio: Volume ratio vs average
-        
-    Returns:
-        Reflex emotion score [-1.0, 1.0]
-    """
-    signal = (momentum * 0.4 + (volume_ratio - 1.0) * 0.3 + 
 
     Returns:
         Reflex emotion score [-1.0, 1.0]
     """
-    signal = (momentum * 0.4 + (volume_ratio - 1.0) * 0.3 +
-             (1.0 - volatility * 50) * 0.3)
+    signal = (
+        momentum * 0.4
+        + (volume_ratio - 1.0) * 0.3
+        + (1.0 - volatility * 50) * 0.3
+    )
     return max(-1.0, min(1.0, signal))
 
 
@@ -1650,11 +1242,6 @@ def reflex_check(
 ) -> bool:
     """
     Check if reflex coherence passes gate threshold.
-    
-    Args:
-        coherence: Coherence score
-        threshold: Gate threshold (default: REFLEX_GATE_PASS)
-        
 
     Args:
         coherence: Coherence score
@@ -1674,17 +1261,12 @@ def calculate_risk(
 ) -> float:
     """
     Calculate position size based on risk parameters.
-    
 
     Args:
         balance: Account balance
         risk_percent: Risk percentage
         entry: Entry price
         stop: Stop loss price
-        
-    Returns:
-        Position size (lot size)
-        
 
     Returns:
         Position size (lot size)
@@ -1694,16 +1276,6 @@ def calculate_risk(
     """
     if balance <= 0:
         raise RiskCalculationError("Balance must be positive")
-    
-    if not 0.0 < risk_percent <= 0.1:
-        raise RiskCalculationError("Risk percent must be in (0.0, 0.1]")
-    
-    risk_amount = balance * risk_percent
-    stop_distance = abs(entry - stop)
-    
-    if stop_distance < 1e-6:
-        raise RiskCalculationError("Stop distance too small")
-    
 
     if not 0.0 < risk_percent <= 0.1:
         raise RiskCalculationError("Risk percent must be in (0.0, 0.1]")
@@ -1724,20 +1296,20 @@ def calibrate_risk(
 ) -> float:
     """
     Calibrate risk based on performance.
-    
+
 
     Args:
         base_risk: Base risk percentage
         win_rate: Historical win rate
         profit_factor: Profit factor
-        
+
 
     Returns:
         Calibrated risk percentage
     """
     performance_score = win_rate * 0.5 + min(1.0, profit_factor / 2.0) * 0.5
     adjustment = (performance_score - 0.5) * META_LEARNING_RATE
-    
+
 
     calibrated = base_risk * (1.0 + adjustment)
     return max(0.005, min(0.05, calibrated))
@@ -1749,11 +1321,6 @@ def calculate_confluence_score(
 ) -> float:
     """
     Calculate confluence score from multiple signals.
-    
-    Args:
-        signals: List of boolean signals
-        weights: Optional weights for each signal
-        
 
     Args:
         signals: List of boolean signals
@@ -1764,24 +1331,8 @@ def calculate_confluence_score(
     """
     if not signals:
         return 0.0
-    
-    if weights is None:
-        weights = [1.0] * len(signals)
-    
-    if len(weights) != len(signals):
-        weights = [1.0] * len(signals)
-    
-    total_weight = sum(weights)
-    if total_weight == 0:
-        return 0.0
-    
-    weighted_sum = sum(w for s, w in zip(signals, weights) if s)
-    
 
-    if weights is None:
-        weights = [1.0] * len(signals)
-
-    if len(weights) != len(signals):
+    if weights is None or len(weights) != len(signals):
         weights = [1.0] * len(signals)
 
     total_weight = sum(weights)
@@ -1789,7 +1340,6 @@ def calculate_confluence_score(
         return 0.0
 
     weighted_sum = sum(w for s, w in zip(signals, weights, strict=False) if s)
-
     return weighted_sum / total_weight
 
 
@@ -1799,15 +1349,6 @@ def validate_cognitive_thresholds(
 ) -> bool:
     """
     Validate cognitive thresholds.
-    
-    Args:
-        coherence: Coherence score
-        integrity: Integrity score
-        
-    Returns:
-        True if thresholds pass
-    """
-    return (coherence >= COHERENCE_THRESHOLD and 
 
     Args:
         coherence: Coherence score
@@ -1816,8 +1357,10 @@ def validate_cognitive_thresholds(
     Returns:
         True if thresholds pass
     """
-    return (coherence >= COHERENCE_THRESHOLD and
-            integrity >= INTEGRITY_MINIMUM)
+    return (
+        coherence >= COHERENCE_THRESHOLD and
+        integrity >= INTEGRITY_MINIMUM
+    )
 
 
 def calculate_risk_adjusted_score(
@@ -1827,13 +1370,13 @@ def calculate_risk_adjusted_score(
 ) -> float:
     """
     Calculate risk-adjusted score.
-    
+
 
     Args:
         base_score: Base score
         risk_factor: Risk adjustment factor
         confidence: Confidence level
-        
+
 
     Returns:
         Risk-adjusted score
@@ -1845,78 +1388,6 @@ def calculate_risk_adjusted_score(
 # --- Exports ------------------------------------------------------------------
 
 __all__ = [
-    # Exceptions
-    "CognitiveError",
-    "RiskCalculationError",
-    "ValidationError",
-    "InvalidInputError",
-    "TradingError",
-    "RiskLimitExceeded",
-    "VaultError",
-    "VaultPathError",
-    "CalibrationError",
-    "EmotionFeedbackError",
-    "TWMSCalculationError",
-    "VaultPersistenceError",
-    
-    # Constants
-    "COHERENCE_THRESHOLD",
-    "INTEGRITY_MINIMUM",
-    "REFLEX_GATE_PASS",
-    "TWMS_WEIGHT_D1",
-    "TWMS_WEIGHT_H4",
-    "TWMS_WEIGHT_H1",
-    "META_LEARNING_RATE",
-    "META_RESILIENCE_INDEX",
-    "META_RESONANCE_LIMIT",
-    
-    # Enums
-    "CognitiveBias",
-    "MarketRegimeType",
-    "MarketRegime",
-    "TrendStrength",
-    "ReflexState",
-    "ConfidenceLevel",
-    "FusionMode",
-    "ReflectivePhase",
-    "LayerID",
-    "SmartMoneySignal",
-    "InstitutionalBias",
-    "Timeframe",
-    
-    # Dataclasses
-    "CognitiveState",
-    "EmotionFeedbackCycle",
-    "ReflexEmotionResult",
-    "RegimeAnalysis",
-    "CalibrationSummary",
-    "RiskAssessment",
-    "AdaptiveRiskResult",
-    "CalibrationResult",
-    "SmartMoneyAnalysis",
-    "TWMSInput",
-    "TWMSResult",
-    
-    # Classes
-    "RegimeClassifier",
-    "ReflexEmotionCore",
-    "IntegrityEngine",
-    "SmartMoneyDetector",
-    "TWMSCalculator",
-    "EmotionFeedbackEngine",
-    "RiskFeedbackCalibrator",
-    "AdaptiveRiskCalculator",
-    "VaultRiskSync",
-    
-    # Functions
-    "montecarlo_validate",
-    "compute_reflex_emotion",
-    "reflex_check",
-    "calculate_risk",
-    "calibrate_risk",
-    "calculate_confluence_score",
-    "validate_cognitive_thresholds",
-    "calculate_risk_adjusted_score",
     # Constants
     "COHERENCE_THRESHOLD",
     "INTEGRITY_MINIMUM",
