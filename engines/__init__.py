@@ -1,3 +1,6 @@
+"""Engine facade package for TUYUL FX core pre/post processing."""
+
+from .cognitive_coherence_engine import CognitiveCoherenceEngine
 """Engine facade package for TUYUL FX pipeline."""
 
 from .cognitive_coherence_engine import CognitiveCoherenceEngine, CoherenceResult
@@ -60,6 +63,8 @@ from .quantum_field_engine import QuantumFieldEngine
 from .quantum_probability_engine import QuantumProbabilityEngine
 
 
+def create_engine_suite() -> dict:
+    """Create the full engine suite used by the facade layer."""
 def create_engine_suite():
     """Create a complete suite of all 9 engines with default configuration."""
 """Engine facade exports."""
