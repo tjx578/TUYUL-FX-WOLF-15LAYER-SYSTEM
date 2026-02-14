@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, List
+from typing import Any
 
 
 @dataclass
@@ -12,22 +12,22 @@ class AdvisorySummary:
     confidence: float
     risk_posture: str
     directional_lean: float
-    conflicts: List[str] = field(default_factory=list)
-    details: Dict[str, Any] = field(default_factory=dict)
+    conflicts: list[str] = field(default_factory=list)
+    details: dict[str, Any] = field(default_factory=dict)
 
 
 class QuantumAdvisoryEngine:
     def summarize(
         self,
         *,
-        field: Dict[str, Any],
-        probability: Dict[str, Any],
-        coherence: Dict[str, Any],
-        context: Dict[str, Any],
-        momentum: Dict[str, Any],
-        precision: Dict[str, Any],
-        structure: Dict[str, Any],
-        risk: Dict[str, Any] | None = None,
+        field: dict[str, Any],
+        probability: dict[str, Any],
+        coherence: dict[str, Any],
+        context: dict[str, Any],
+        momentum: dict[str, Any],
+        precision: dict[str, Any],
+        structure: dict[str, Any],
+        risk: dict[str, Any] | None = None,
     ) -> AdvisorySummary:
         risk = risk or {}
         conflicts = self._detect_conflicts(
@@ -88,13 +88,13 @@ class QuantumAdvisoryEngine:
     @staticmethod
     def _detect_conflicts(
         *,
-        probability: Dict[str, Any],
-        coherence: Dict[str, Any],
-        momentum: Dict[str, Any],
-        structure: Dict[str, Any],
-        risk: Dict[str, Any],
-    ) -> List[str]:
-        conflicts: List[str] = []
+        probability: dict[str, Any],
+        coherence: dict[str, Any],
+        momentum: dict[str, Any],
+        structure: dict[str, Any],
+        risk: dict[str, Any],
+    ) -> list[str]:
+        conflicts: list[str] = []
         if (
             float(probability.get("weighted_probability", 0.0)) > 0.7
             and coherence.get("gate") == "LOCKOUT"
@@ -118,7 +118,7 @@ class QuantumAdvisoryEngine:
         return conflicts
 
     @staticmethod
-    def export(result: AdvisorySummary) -> Dict[str, Any]:
+    def export(result: AdvisorySummary) -> dict[str, Any]:
         return {
             "signal": result.signal,
             "confidence": result.confidence,

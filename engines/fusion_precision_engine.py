@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from math import exp, tanh
-from typing import Any, Dict, List
+from typing import Any
 
 
 @dataclass
@@ -12,13 +12,13 @@ class PrecisionResult:
     precision_weight: float
     ema_alignment: float
     confluence: float
-    details: Dict[str, Any] = field(default_factory=dict)
+    details: dict[str, Any] = field(default_factory=dict)
 
 
 class FusionPrecisionEngine:
     def evaluate(
         self,
-        closes: List[float],
+        closes: list[float],
         rsi: float,
         macd_hist: float,
         atr_pct: float,
@@ -59,9 +59,9 @@ class FusionPrecisionEngine:
         )
 
     @staticmethod
-    def _ema(series: List[float], period: int) -> float:
+    def _ema(series: list[float], period: int) -> float:
         """Compute a standard EMA using SMA of the first `period` values as seed.
-        
+
         This implementation uses proper EMA calculation by initializing with SMA
         and iterating through all remaining values, rather than a fast approximation.
         """
@@ -79,7 +79,7 @@ class FusionPrecisionEngine:
         return ema
 
     @staticmethod
-    def export(result: PrecisionResult) -> Dict[str, Any]:
+    def export(result: PrecisionResult) -> dict[str, Any]:
         return {
             "precision_weight": result.precision_weight,
             "ema_alignment": result.ema_alignment,

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, List
+from typing import Any
 
 
 @dataclass
@@ -13,20 +13,22 @@ class StructureResult:
     bearish_divergence: bool
     mtf_alignment: float
     liquidity: str
-    details: Dict[str, Any] = field(default_factory=dict)
+    details: dict[str, Any] = field(default_factory=dict)
 
 
 class FusionStructureEngine:
     def evaluate(
         self,
-        highs: List[float],
-        lows: List[float],
-        closes: List[float],
-        volumes: List[float],
-        rsi_values: List[float],
+        highs: list[float],
+        lows: list[float],
+        closes: list[float],
+        volumes: list[float],
+        rsi_values: list[float],
     ) -> StructureResult:
         if len(closes) < 40:
-            return StructureResult("RANGE", False, False, 0.0, "NORMAL", {"reason": "insufficient_data"})
+            return StructureResult(
+                "RANGE", False, False, 0.0, "NORMAL", {"reason": "insufficient_data"}
+            )
 
         swings_h = self._swings(highs, is_high=True)
         swings_l = self._swings(lows, is_high=False)
@@ -45,7 +47,7 @@ class FusionStructureEngine:
         )
 
     @staticmethod
-    def _swings(values: List[float], is_high: bool, lookback: int = 2) -> List[float]:
+    def _swings(values: list[float], is_high: bool, lookback: int = 2) -> list[float]:
         swings = []
         for i in range(lookback, len(values) - lookback):
             left = values[i - lookback : i]
@@ -57,7 +59,7 @@ class FusionStructureEngine:
         return swings[-4:]
 
     @staticmethod
-    def _classify(swings_h: List[float], swings_l: List[float], closes: List[float]) -> str:
+    def _classify(swings_h: list[float], swings_l: list[float], closes: list[float]) -> str:
         if len(swings_h) < 2 or len(swings_l) < 2:
             return "RANGE"
         hh = swings_h[-1] > swings_h[-2]
@@ -73,7 +75,7 @@ class FusionStructureEngine:
         return "BULLISH" if closes[-1] > closes[-20] else "BEARISH"
 
     @staticmethod
-    def _divergence(closes: List[float], rsi: List[float]) -> tuple[bool, bool]:
+    def _divergence(closes: list[float], rsi: list[float]) -> tuple[bool, bool]:
         if len(closes) < 8 or len(rsi) < 8:
             return False, False
         price_ll = closes[-1] < min(closes[-6:-1])
@@ -83,7 +85,7 @@ class FusionStructureEngine:
         return price_ll and rsi_hl, price_hh and rsi_lh
 
     @staticmethod
-    def _mtf_alignment(closes: List[float]) -> float:
+    def _mtf_alignment(closes: list[float]) -> float:
         sma10 = sum(closes[-10:]) / 10
         sma20 = sum(closes[-20:]) / 20
         sma40 = sum(closes[-40:]) / 40
@@ -92,7 +94,7 @@ class FusionStructureEngine:
         return max(sum(up), sum(down)) / 2
 
     @staticmethod
-    def _liquidity(volumes: List[float]) -> str:
+    def _liquidity(volumes: list[float]) -> str:
         if len(volumes) < 20:
             return "NORMAL"
         avg = sum(volumes[-20:]) / 20
@@ -104,7 +106,7 @@ class FusionStructureEngine:
         return "NORMAL"
 
     @staticmethod
-    def export(result: StructureResult) -> Dict[str, Any]:
+    def export(result: StructureResult) -> dict[str, Any]:
         return {
             "structure": result.structure,
             "bullish_divergence": result.bullish_divergence,
