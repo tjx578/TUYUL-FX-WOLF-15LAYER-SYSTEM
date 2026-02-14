@@ -1,3 +1,3 @@
 """
-Alerts package — Telegram notifications.
+Alerts package - Telegram notifications.
 """

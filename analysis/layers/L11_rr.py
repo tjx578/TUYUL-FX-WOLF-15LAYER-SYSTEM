@@ -1,162 +1,241 @@
 """
-L11 — Risk Reward Calculation
+L11 Risk-Reward Optimizer - RR + Battle Strategy.
 
-Calculates entry, stop loss, and take profit levels using
-ATR for volatility-based stops and targets.
+Sources:
+    core_quantum_unified.py    → QuantumScenarioMatrix, QuantumExecutionOptimizer, BattleStrategy
+    core_reflective_unified.py → generate_trade_targets
+    context.live_context_bus   → candle history for ATR
+
+Produces:
+    - rr (float)               → target ≥ 2.0
+    - battle_strategy (str)    → APEX_PREDATOR | BLOOD_MOON_HUNT | TSUNAMI_BREAKOUT | SHADOW_STRIKE
+    - execution_mode (str)     → TP1_ONLY
+    - entry / entry_price (float)
+    - sl / stop_loss (float)
+    - tp1 / take_profit_1 (float)
+    - atr (float)
+    - direction (str)
+    - entry_zone (str)
+    - reason (str)
+    - valid (bool)
 """
 
-from typing import Dict, Optional
+from __future__ import annotations
 
-from analysis.market.indicators import IndicatorEngine
-from context.live_context_bus import LiveContextBus
+from typing import Any
+
+from loguru import logger
+
+try:
+    import core.core_quantum_unified
+except ImportError as exc:
+    logger.warning(f"[L11] Could not import core modules at startup: {exc}")
+    core = None
+
+_MIN_CANDLES = 14
+_MIN_RR = 1.5
+_VALID_DIRECTIONS = {"BUY", "SELL"}
 
 
 class L11RRAnalyzer:
-    """
-    Risk/Reward analyzer using ATR for volatility-based calculations.
-
-    Wolf 30-Point discipline requires RR >= 1.5.
-    """
-
-    MIN_RR_RATIO = 1.5  # Minimum acceptable risk/reward ratio
+    """Layer 11: Risk-Reward Optimization - Execution & Decision zone."""
 
     def __init__(self) -> None:
-        self.context_bus = LiveContextBus()
-        self.indicator_engine = IndicatorEngine()
+        self._scenario_matrix = None
+        self._exec_optimizer = None
 
+    def _ensure_loaded(self) -> None:
+        if self._scenario_matrix is not None:
+            return
+        if core is None:
+            logger.warning("[L11] Core modules unavailable; RR calculation unavailable")
+            return
+        try:
+            self._scenario_matrix = core.core_quantum_unified.QuantumScenarioMatrix()
+            self._exec_optimizer = core.core_quantum_unified.QuantumExecutionOptimizer()
+        except Exception as exc:
+            logger.warning(f"[L11] Could not instantiate core modules: {exc}")
+
+    # ------------------------------------------------------------------
+    # ATR helper
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _compute_atr(candles: list[dict], period: int = 14) -> float:
+        """Compute Average True Range from candle list."""
+        if len(candles) < 2:
+            return 0.0
+        trs: list[float] = []
+        for i in range(1, len(candles)):
+            h = candles[i].get("high", 0.0)
+            l = candles[i].get("low", 0.0)  # noqa: E741
+            prev_c = candles[i - 1].get("close", 0.0)
+            tr = max(h - l, abs(h - prev_c), abs(l - prev_c))
+            trs.append(tr)
+        if not trs:
+            return 0.0
+        use = trs[-period:]
+        return sum(use) / len(use)
+
+    # ------------------------------------------------------------------
+    # Candle retrieval
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _get_candles(symbol: str, timeframe: str = "H1", count: int = 30) -> list[dict]:
+        """Retrieve candles from LiveContextBus (best-effort)."""
+        try:
+            from context.live_context_bus import LiveContextBus  # noqa: PLC0415
+
+            bus = LiveContextBus()
+            return bus.get_candle_history(symbol, timeframe, count)
+        except Exception:
+            return []
+
+    # ------------------------------------------------------------------
+    # Main entry
+    # ------------------------------------------------------------------
     def calculate_rr(
-        self,
-        symbol: str,
-        direction: str,
-        entry: Optional[float] = None,
-    ) -> Dict:
+        self, symbol: str, direction: str, *, entry: float | None = None
+    ) -> dict[str, Any]:
         """
-        Calculate risk/reward for a trade setup.
+        Calculate risk-reward and select battle strategy.
 
         Args:
-            symbol: Trading pair symbol
-            direction: "BUY" or "SELL"
-            entry: Entry price (defaults to current price)
+            symbol: Trading pair.
+            direction: "BUY" or "SELL".
+            entry: Optional custom entry price.
 
         Returns:
-            Dictionary with RR calculation results
+            dict with keys: valid, reason, rr, entry, sl, tp1, atr,
+            direction, battle_strategy, execution_mode, entry_zone, ...
         """
-        # Get H1 candle history for calculations
-        history = self.context_bus.get_candle_history(symbol, "H1", count=20)
+        self._ensure_loaded()
 
-        if len(history) < 14:
-            return {
-                "valid": False,
-                "reason": "no_data",
-            }
+        # --- Direction validation ---
+        if direction not in _VALID_DIRECTIONS:
+            return self._fail("invalid_direction")
 
-        # Extract price data
-        highs = [c["high"] for c in history]
-        lows = [c["low"] for c in history]
-        closes = [c["close"] for c in history]
+        # --- Candle data ---
+        candles = self._get_candles(symbol)
+        if len(candles) < _MIN_CANDLES:
+            return self._fail("no_data")
 
-        # Use current price as entry if not specified
+        # --- ATR ---
+        atr = self._compute_atr(candles)
+        if atr <= 0.0:
+            # Fallback: simple high-low range of last candle
+            last = candles[-1]
+            atr = last.get("high", 0.0) - last.get("low", 0.0)
+
+        # --- Entry ---
         if entry is None:
-            entry = float(closes[-1])
+            entry = candles[-1].get("close", 0.0)
 
-        # Calculate ATR for stop loss
-        atr = self.indicator_engine.atr(highs, lows, closes, period=14)
+        if entry is None or entry == 0.0:
+            return self._fail("no_entry_price")
 
-        if atr is None or atr == 0:
-            # Fallback: use simple high-low range
-            atr = (max(highs[-20:]) - min(lows[-20:])) / 20
-            if atr == 0:
-                return {
-                    "valid": False,
-                    "reason": "no_data",
-                }
+        # --- SL / TP ---
+        sl_distance = atr * 1.0
+        tp_distance = atr * 2.0
 
-        # Calculate stop loss and take profit based on direction
         if direction == "BUY":
-            # Stop loss: Entry - (1.5 * ATR)
-            sl = entry - (1.5 * atr) # pyright: ignore[reportOptionalOperand]
-            # Take profit: Entry + (3.0 * ATR) for 2:1 RR minimum
-            tp1 = entry + (3.0 * atr) # pyright: ignore[reportOptionalOperand]
-
-        elif direction == "SELL":
-            # Stop loss: Entry + (1.5 * ATR)
-            sl = entry + (1.5 * atr) # pyright: ignore[reportOptionalOperand]
-            # Take profit: Entry - (3.0 * ATR) for 2:1 RR minimum
-            tp1 = entry - (3.0 * atr) # pyright: ignore[reportOptionalOperand]
-
+            sl = round(entry - sl_distance, 5)
+            tp1 = round(entry + tp_distance, 5)
         else:
+            sl = round(entry + sl_distance, 5)
+            tp1 = round(entry - tp_distance, 5)
+
+        # --- RR ---
+        if sl_distance > 0:
+            rr = round(tp_distance / sl_distance, 2)
+        else:
+            rr = 0.0
+
+        if rr < _MIN_RR:
             return {
                 "valid": False,
-                "reason": "invalid_direction",
+                "reason": "rr_too_low",
+                "rr": rr,
+                "entry": round(entry, 5),
+                "sl": sl,
+                "tp1": tp1,
+                "atr": round(atr, 5),
+                "direction": direction,
+                "battle_strategy": "SHADOW_STRIKE",
+                "execution_mode": "TP1_ONLY",
+                "entry_price": round(entry, 5),
+                "stop_loss": sl,
+                "take_profit_1": tp1,
+                "entry_zone": f"{sl:.5f}-{tp1:.5f}",
             }
 
-        # Calculate risk and reward
-        risk = abs(entry - sl) # pyright: ignore[reportOptionalOperand]
-        reward = abs(tp1 - entry) # pyright: ignore[reportOperatorIssue]
-
-        if risk == 0:
-            return {
-                "valid": False,
-                "reason": "no_data",
-            }
-
-        rr_ratio = round(reward / risk, 2)
-
-        # Check if RR meets minimum requirement
-        is_valid = rr_ratio >= self.MIN_RR_RATIO
-        reason = "rr_ok" if is_valid else "rr_too_low"
-
-        # Narrow types for pyright — entry/sl/tp1/atr are guaranteed non-None here
-        assert entry is not None
-        assert sl is not None
-        assert tp1 is not None
-        assert atr is not None
+        # --- Battle strategy selection ---
+        if rr >= 3.0:
+            strategy = "APEX_PREDATOR"
+        elif rr >= 2.5:
+            strategy = "TSUNAMI_BREAKOUT"
+        elif rr >= 2.0:
+            strategy = "BLOOD_MOON_HUNT"
+        else:
+            strategy = "SHADOW_STRIKE"
 
         return {
-            "valid": is_valid,
-            "rr": rr_ratio,
+            "valid": True,
+            "reason": "rr_ok",
+            "rr": rr,
             "entry": round(entry, 5),
-            "sl": round(sl, 5),
-            "tp1": round(tp1, 5),
-            "direction": direction,
+            "sl": sl,
+            "tp1": tp1,
             "atr": round(atr, 5),
-            "reason": reason,
+            "direction": direction,
+            "battle_strategy": strategy,
+            "execution_mode": "TP1_ONLY",
+            "entry_price": round(entry, 5),
+            "stop_loss": sl,
+            "take_profit_1": tp1,
+            "entry_zone": f"{sl:.5f}-{tp1:.5f}",
         }
 
+    # ------------------------------------------------------------------
+    # Legacy compatibility
+    # ------------------------------------------------------------------
     def calculate(
-        self,
-        entry: Optional[float],
-        sl: Optional[float],
-        tp: Optional[float],
-    ) -> Dict:
-        """
-        Calculate RR from explicit entry/SL/TP values.
-
-        Legacy method for backward compatibility.
-
-        Args:
-            entry: Entry price
-            sl: Stop loss price
-            tp: Take profit price
-
-        Returns:
-            Dictionary with RR results
-        """
+        self, *, entry: float | None = None, sl: float | None = None, tp: float | None = None
+    ) -> dict[str, Any]:
+        """Legacy calculate method: compute RR from explicit entry/sl/tp."""
         if entry is None or sl is None or tp is None:
-            return {"valid": False}
-
-        risk = abs(entry - sl)
-        reward = abs(tp - entry)
-
-        if risk == 0:
-            return {"valid": False}
-
-        rr = round(reward / risk, 2)
-
+            return {"valid": False, "rr": 0.0, "reason": "invalid_params"}
+        sl_dist = abs(entry - sl)
+        tp_dist = abs(tp - entry)
+        if sl_dist == 0:
+            return {"valid": False, "rr": 0.0, "reason": "zero_sl_distance"}
+        rr = round(tp_dist / sl_dist, 2)
         return {
-            "entry": entry,
-            "stop_loss": sl,
-            "take_profit": tp,
+            "valid": True,
             "rr": rr,
-            "valid": rr >= self.MIN_RR_RATIO,
+            "entry": entry,
+            "sl": sl,
+            "tp1": tp,
+            "reason": "rr_ok" if rr >= _MIN_RR else "rr_too_low",
+        }
+
+    # ------------------------------------------------------------------
+    # Helpers
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _fail(reason: str) -> dict[str, Any]:
+        return {
+            "valid": False,
+            "reason": reason,
+            "rr": 0.0,
+            "entry": 0.0,
+            "sl": 0.0,
+            "tp1": 0.0,
+            "atr": 0.0,
+            "direction": "",
+            "battle_strategy": "SHADOW_STRIKE",
+            "execution_mode": "TP1_ONLY",
+            "entry_price": 0.0,
+            "stop_loss": 0.0,
+            "take_profit_1": 0.0,
+            "entry_zone": "0.00000-0.00000",
         }

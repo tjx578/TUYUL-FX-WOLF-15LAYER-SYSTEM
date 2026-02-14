@@ -1,15 +1,15 @@
 """
-Journal Metrics — Read-only metrics computation.
+Journal Metrics - Read-only metrics computation.
 
 Provides daily, weekly, and accuracy statistics from journal entries.
 """
 
-from typing import Any, Dict
+from typing import Any
 
 from journal.journal_gpt_bridge import _load_entries, compute_metrics
 
 
-def get_daily_stats(days: int = 1) -> Dict[str, Any]:
+def get_daily_stats(days: int = 1) -> dict[str, Any]:
     """
     Get journal metrics for specified number of days.
 
@@ -23,7 +23,7 @@ def get_daily_stats(days: int = 1) -> Dict[str, Any]:
     return compute_metrics(entries)
 
 
-def get_weekly_stats() -> Dict[str, Any]:
+def get_weekly_stats() -> dict[str, Any]:
     """
     Get journal metrics for the last 7 days.
 

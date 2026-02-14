@@ -4,15 +4,32 @@ Unit tests for L12 verdict engine.
 Tests verdict generation with various gate configurations.
 """
 
+from typing import Any
+
 import pytest
-from typing import Dict, Any
 
 from constitution.verdict_engine import generate_l12_verdict
+from context.live_context_bus import LiveContextBus
+
+
+@pytest.fixture(autouse=True)
+def _setup_context_bus():
+    """Setup context bus with a recent tick to avoid staleness."""
+    bus = LiveContextBus()
+    bus.update_tick({
+        "symbol": "EURUSD",
+        "bid": 1.0850,
+        "ask": 1.0852,
+        "timestamp": 1700000000.0,
+        "source": "test",
+    })
+    yield
+    # No cleanup needed for singleton
 
 
 def _make_synthesis(
-    tii: float = 0.85,
-    integrity: float = 0.85,
+    tii: float = 0.95,
+    integrity: float = 0.98,
     rr: float = 2.0,
     fta: float = 0.8,
     monte: float = 0.75,
@@ -20,11 +37,11 @@ def _make_synthesis(
     drawdown: float = 2.0,
     latency: int = 100,
     conf12: float = 0.85,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Helper to create a synthesis dict with configurable values.
 
-    Default values pass all gates.
+    Default values pass all gates (updated for v7.4r∞ reconciled thresholds).
     """
     return {
         "pair": "EURUSD",
@@ -59,6 +76,13 @@ def _make_synthesis(
         "bias": {
             "technical": "BULLISH",
             "fundamental": "NEUTRAL",
+        },
+        "macro_vix": {
+            "vix_level": 15.0,
+            "vix_regime": "ELEVATED",
+            "regime_state": 1,
+            "volatility_multiplier": 1.0,
+            "risk_multiplier": 1.0,
         },
         "system": {
             "latency_ms": latency,
