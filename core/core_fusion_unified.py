@@ -1,5 +1,5 @@
 """
-core_fusion_unified.py — TUYUL FX ULTIMATE HYBRID AGI 🧠💹
+core_fusion_unified.py - TUYUL FX ULTIMATE HYBRID AGI 🧠💹
 ==========================================================
 
 Unified Core Fusion Module v7.0r∞
@@ -27,24 +27,19 @@ import logging
 import math
 import random
 import statistics
+
 from dataclasses import asdict, dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import Enum
-from pathlib import Path
-from typing import (
-    Any,
-    Callable,
-    Dict,
-    Final,
-    Iterable,
-    List,
-    Mapping,
-    MutableMapping,
-    Optional,
-    Sequence,
-    Tuple,
-    Union,
-)
+from typing import TYPE_CHECKING, Any, Final
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable, Mapping, Sequence
+    from pathlib import Path
+
+Dict = dict
+List = list
+Tuple = tuple
 
 # Optional numpy import with fallback
 try:
@@ -233,7 +228,7 @@ DEFAULT_EQUAL_LEVEL_TOLERANCE: Final[float] = 0.0005
 
 def _clamp(value: float, low: float, high: float) -> float:
     """Clamp value between low and high bounds."""
-    if value != value:  # NaN check
+    if math.isnan(value):
         return low
     return max(low, min(high, value))
 
@@ -259,7 +254,7 @@ def _inputs_valid(*values: float) -> bool:
     return all(isinstance(v, (int, float)) and math.isfinite(v) for v in values)
 
 
-def _last_numeric(values: Optional[Sequence[Any]]) -> Optional[float]:
+def _last_numeric(values: Sequence[Any] | None) -> float | None:
     """Get last numeric value from sequence."""
     if not values:
         return None
@@ -269,7 +264,7 @@ def _last_numeric(values: Optional[Sequence[Any]]) -> Optional[float]:
         return None
 
 
-def _min_numeric(values: Optional[Sequence[Any]]) -> Optional[float]:
+def _min_numeric(values: Sequence[Any] | None) -> float | None:
     """Get minimum numeric value from sequence."""
     if not values:
         return None
@@ -282,7 +277,7 @@ def _min_numeric(values: Optional[Sequence[Any]]) -> Optional[float]:
     return min(numeric_values) if numeric_values else None
 
 
-def _average_numeric(values: Optional[Sequence[Any]]) -> Optional[float]:
+def _average_numeric(values: Sequence[Any] | None) -> float | None:
     """Get average of numeric values in sequence."""
     if not values:
         return None
@@ -333,9 +328,9 @@ class FusionPrecisionResult:
     precision_weight: float
     precision_confidence_hint: float
     details: Dict[str, Any]
-    symbol: Optional[str] = None
-    pair: Optional[str] = None
-    trade_id: Optional[str] = None
+    symbol: str | None = None
+    pair: str | None = None
+    trade_id: str | None = None
 
     def as_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -385,10 +380,10 @@ class MultiDivergenceResult:
     timestamp: datetime
     pair: str
     timeframe: str
-    rsi_divergence: Optional[DivergenceSignal]
-    macd_divergence: Optional[DivergenceSignal]
-    cci_divergence: Optional[DivergenceSignal]
-    mfi_divergence: Optional[DivergenceSignal]
+    rsi_divergence: DivergenceSignal | None
+    macd_divergence: DivergenceSignal | None
+    cci_divergence: DivergenceSignal | None
+    mfi_divergence: DivergenceSignal | None
     confluence_count: int
     overall_signal: DivergenceType
     overall_strength: DivergenceStrength
@@ -424,8 +419,8 @@ class ConfidenceLineage:
     authority: str
     notes: str
     lambda_esi: float = 0.06
-    field_state: Optional[str] = None
-    field_integrity: Optional[float] = None
+    field_state: str | None = None
+    field_integrity: float | None = None
 
     def as_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -475,7 +470,7 @@ class FTTCResult:
     transition_probabilities: Dict[str, float]
     escape_rates: Dict[str, float]
     meta_drift: float
-    timestamp: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    timestamp: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
 
     def as_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -503,7 +498,7 @@ class LiquidityZone:
     strength: float
     touch_count: int
     created_at: datetime
-    last_tested: Optional[datetime]
+    last_tested: datetime | None
     timeframe: str
 
 
@@ -515,8 +510,8 @@ class LiquidityMapResult:
     pair: str
     buy_side_zones: List[LiquidityZone]
     sell_side_zones: List[LiquidityZone]
-    nearest_buy_liquidity: Optional[float]
-    nearest_sell_liquidity: Optional[float]
+    nearest_buy_liquidity: float | None
+    nearest_sell_liquidity: float | None
     liquidity_imbalance: float
 
 
@@ -545,12 +540,12 @@ class CoherenceAudit:
 def resolve_field_context(
     pair: str = "XAUUSD",
     timeframe: str = "H4",
-    field_state: Optional[str] = None,
+    field_state: str | None = None,
     alpha: float = 1.0,
     beta: float = 1.0,
     gamma: float = 1.0,
     lambda_esi: float = 0.06,
-    field_override: Optional[Mapping[str, Any]] = None,
+    field_override: Mapping[str, Any] | None = None,
 ) -> Dict[str, Any]:
     """Resolve field context for fusion analysis.
 
@@ -589,7 +584,7 @@ def resolve_field_context(
         "gamma": gamma,
         "lambda_esi": lambda_esi,
         "field_integrity": round(field_integrity, 4),
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
     }
 
 
@@ -607,7 +602,7 @@ def sync_field_state(
         Merged synchronized state
     """
     merged = {**target_state, **source_state}
-    merged["sync_timestamp"] = datetime.now(timezone.utc).isoformat()
+    merged["sync_timestamp"] = datetime.now(UTC).isoformat()
     return merged
 
 
@@ -621,7 +616,7 @@ class EMAFusionEngine:
 
     def __init__(
         self,
-        periods: Optional[List[int]] = None,
+        periods: List[int] | None = None,
         smoothing: float = 2.0,
     ) -> None:
         """Initialize EMA Fusion Engine.
@@ -660,7 +655,7 @@ class EMAFusionEngine:
             "direction": direction,
             "fusion_strength": strength,
             "price": prices[-1],
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
         }
 
     def _calculate_ema(self, prices: List[float], period: int) -> float:
@@ -684,7 +679,7 @@ class EMAFusionEngine:
 
         if all(values[i] >= values[i + 1] for i in range(len(values) - 1)):
             return "BULL"
-        elif all(values[i] <= values[i + 1] for i in range(len(values) - 1)):
+        if all(values[i] <= values[i + 1] for i in range(len(values) - 1)):
             return "BEAR"
         return "NEUTRAL"
 
@@ -709,7 +704,7 @@ class EMAFusionEngine:
                 "direction": "NEUTRAL",
                 "fusion_strength": 0.5,
                 "price": 0.0,
-                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "timestamp": datetime.now(UTC).isoformat(),
             }
         )
         return result
@@ -753,7 +748,7 @@ def evaluate_fusion_metrics(
         "composite_score": score,
         "action": action,
         "threshold": threshold,
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
     }
 
 
@@ -807,7 +802,7 @@ def aggregate_multi_timeframe_metrics(
         "consensus_direction": consensus,
         "consensus_strength": round(consensus_strength, 2),
         "timeframes_analyzed": len(metrics_list),
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
     }
 
 
@@ -833,7 +828,7 @@ class FusionPrecisionEngine:
         self.ema_fast = ema_fast
         self.ema_slow = ema_slow
 
-    def compute_precision(
+    def compute_precision(  # noqa: PLR0913
         self,
         *,
         price: float,
@@ -844,9 +839,9 @@ class FusionPrecisionEngine:
         reflex_strength: float,
         volatility: float,
         rsi: float,
-        symbol: Optional[str] = None,
-        pair: Optional[str] = None,
-        trade_id: Optional[str] = None,
+        symbol: str | None = None,
+        pair: str | None = None,
+        trade_id: str | None = None,
     ) -> FusionPrecisionResult:
         """Compute precision strength and map into precision_weight.
 
@@ -866,7 +861,7 @@ class FusionPrecisionEngine:
         Returns:
             FusionPrecisionResult with precision metrics
         """
-        timestamp = datetime.now(timezone.utc).isoformat()
+        timestamp = datetime.now(UTC).isoformat()
 
         if not _inputs_valid(
             price, ema_fast_val, ema_slow_val, vwap, atr, reflex_strength, volatility, rsi
@@ -928,9 +923,7 @@ class FusionPrecisionEngine:
 
         # RSI bonus
         rsi_bonus = 0.0
-        if rsi >= 65 and fusion_strength > 0:
-            rsi_bonus = 0.10
-        elif rsi <= 35 and fusion_strength < 0:
+        if (rsi >= 65 and fusion_strength > 0) or (rsi <= 35 and fusion_strength < 0):
             rsi_bonus = 0.10
 
         # Precision weight calculation
@@ -999,7 +992,7 @@ def calculate_fusion_precision(market_data: Dict[str, Any]) -> Dict[str, Any]:
 # =============================================================================
 
 
-def equilibrium_momentum_fusion_v6(
+def equilibrium_momentum_fusion_v6(  # noqa: PLR0913
     price_change: float,
     volume_change: float,
     time_weight: float,
@@ -1011,11 +1004,11 @@ def equilibrium_momentum_fusion_v6(
     gamma: float = 1.0,
     integrity_index: float = 0.97,
     direction_hint: float = 1.0,
-    symbol: Optional[str] = None,
-    pair: Optional[str] = None,
-    trade_id: Optional[str] = None,
+    symbol: str | None = None,
+    pair: str | None = None,
+    trade_id: str | None = None,
     lambda_esi: float = 0.06,
-    field_override: Optional[Mapping[str, Any]] = None,
+    field_override: Mapping[str, Any] | None = None,
 ) -> Dict[str, Any]:
     """Calculate reflective equilibrium momentum across dimensions.
 
@@ -1125,7 +1118,7 @@ def equilibrium_momentum_fusion_v6(
     )
 
     return {
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
         "price_momentum": round(price_momentum, 3),
         "volume_factor": round(volume_factor, 3),
         "time_factor": round(time_factor, 3),
@@ -1154,7 +1147,7 @@ def equilibrium_momentum_fusion_v6(
     }
 
 
-def equilibrium_momentum_fusion(
+def equilibrium_momentum_fusion(  # noqa: PLR0913
     vwap_val: float,
     ema_fusion_data: Mapping[str, Any],
     reflex_strength: float,
@@ -1164,11 +1157,11 @@ def equilibrium_momentum_fusion(
     beta: float = 1.0,
     gamma: float = 1.0,
     integrity_index: float = 0.97,
-    symbol: Optional[str] = None,
-    pair: Optional[str] = None,
-    trade_id: Optional[str] = None,
+    symbol: str | None = None,
+    pair: str | None = None,
+    trade_id: str | None = None,
     lambda_esi: float = 0.06,
-    field_override: Optional[Mapping[str, Any]] = None,
+    field_override: Mapping[str, Any] | None = None,
 ) -> Dict[str, Any]:
     """High-level equilibrium fusion for Ultra Fusion pipeline.
 
@@ -1260,7 +1253,7 @@ class MultiIndicatorDivergenceDetector:
     - MFI (Money Flow Index)
     """
 
-    def __init__(self, config: Optional[Dict[str, Any]] = None) -> None:
+    def __init__(self, config: Dict[str, Any] | None = None) -> None:
         """Initialize Multi-Indicator Divergence Detector.
 
         Args:
@@ -1289,7 +1282,7 @@ class MultiIndicatorDivergenceDetector:
         ohlcv_data: List[Dict[str, Any]],
         pair: str,
         timeframe: str,
-        indicators: Optional[Dict[str, List[float]]] = None,
+        indicators: Dict[str, List[float]] | None = None,
     ) -> MultiDivergenceResult:
         """Analyze for divergences across all indicators.
 
@@ -1302,7 +1295,7 @@ class MultiIndicatorDivergenceDetector:
         Returns:
             MultiDivergenceResult
         """
-        timestamp = datetime.now(timezone.utc)
+        timestamp = datetime.now(UTC)
 
         if indicators is None:
             indicators = self._calculate_indicators(ohlcv_data)
@@ -1436,9 +1429,9 @@ class MultiIndicatorDivergenceDetector:
             return []
         ema_fast = self._calc_ema(closes, fast)
         ema_slow = self._calc_ema(closes, slow)
-        macd_line = [f - s for f, s in zip(ema_fast, ema_slow)]
+        macd_line = [f - s for f, s in zip(ema_fast, ema_slow, strict=False)]
         signal_line = self._calc_ema(macd_line, signal)
-        histogram = [m - s for m, s in zip(macd_line, signal_line)]
+        histogram = [m - s for m, s in zip(macd_line, signal_line, strict=False)]
         # Pad to match length
         pad = [0.0] * (len(closes) - len(histogram))
         return pad + histogram
@@ -1450,7 +1443,7 @@ class MultiIndicatorDivergenceDetector:
         """Calculate Commodity Channel Index."""
         if len(closes) < period:
             return []
-        typical = [(h + l + c) / 3.0 for h, l, c in zip(highs, lows, closes)]
+        typical = [(h + l + c) / 3.0 for h, l, c in zip(highs, lows, closes, strict=False)]  # noqa: E741
         cci_values: List[float] = []
         for i in range(period - 1, len(typical)):
             window = typical[i - period + 1: i + 1]
@@ -1471,7 +1464,7 @@ class MultiIndicatorDivergenceDetector:
         """Calculate Money Flow Index."""
         if len(closes) < period + 1:
             return []
-        typical = [(h + l + c) / 3.0 for h, l, c in zip(highs, lows, closes)]
+        typical = [(h + l + c) / 3.0 for h, l, c in zip(highs, lows, closes, strict=False)]  # noqa: E741
         mfi_values: List[float] = []
         for i in range(period, len(typical)):
             pos_flow = 0.0
@@ -1497,7 +1490,7 @@ class MultiIndicatorDivergenceDetector:
         closes: List[float],
         indicator_values: List[float],
         indicator_name: str,
-    ) -> Optional[DivergenceSignal]:
+    ) -> DivergenceSignal | None:
         """Detect divergence between price and indicator."""
         if len(indicator_values) < self.config["lookback_bars"]:
             return None
@@ -1561,7 +1554,7 @@ class MultiIndicatorDivergenceDetector:
                     if point_type == "high" and values[j] > current:
                         is_swing = False
                         break
-                    elif point_type == "low" and values[j] < current:
+                    if point_type == "low" and values[j] < current:
                         is_swing = False
                         break
 
@@ -1578,7 +1571,7 @@ class MultiIndicatorDivergenceDetector:
         indicator_values: List[float],
         min_bars: int,
         max_bars: int,
-    ) -> Optional[Dict[str, Any]]:
+    ) -> Dict[str, Any] | None:
         """Check for regular bullish divergence."""
         if len(price_lows) < 2 or len(ind_lows) < 2:
             return None
@@ -1619,7 +1612,7 @@ class MultiIndicatorDivergenceDetector:
         indicator_values: List[float],
         min_bars: int,
         max_bars: int,
-    ) -> Optional[Dict[str, Any]]:
+    ) -> Dict[str, Any] | None:
         """Check for regular bearish divergence."""
         if len(price_highs) < 2 or len(ind_highs) < 2:
             return None
@@ -1660,10 +1653,9 @@ class MultiIndicatorDivergenceDetector:
 
         if bars > 20:
             return DivergenceStrength.STRONG
-        elif bars > 10:
+        if bars > 10:
             return DivergenceStrength.MODERATE
-        else:
-            return DivergenceStrength.WEAK
+        return DivergenceStrength.WEAK
 
     def _determine_overall_signal(
         self, divergences: List[DivergenceSignal]
@@ -1747,7 +1739,7 @@ class AdaptiveThresholdController:
         self._state: Dict[str, Any] = {}
 
     def recompute(
-        self, frpc_data: Optional[Dict[str, Any]] = None
+        self, frpc_data: Dict[str, Any] | None = None
     ) -> Dict[str, Any]:
         """Recompute adaptive thresholds.
 
@@ -1757,7 +1749,7 @@ class AdaptiveThresholdController:
         Returns:
             AdaptiveUpdate as dict
         """
-        ts = datetime.now(timezone.utc).isoformat()
+        ts = datetime.now(UTC).isoformat()
 
         if not frpc_data:
             return AdaptiveUpdate(
@@ -1886,8 +1878,8 @@ class FusionIntegrator:
     def fuse_reflective_context(
         self,
         *,
-        market_data: Optional[Dict[str, Any]] = None,
-        coherence_audit: Optional[Dict[str, Any]] = None,
+        market_data: Dict[str, Any] | None = None,
+        coherence_audit: Dict[str, Any] | None = None,
     ) -> Dict[str, Any]:
         """Fuse reflective context with market data.
 
@@ -1916,7 +1908,7 @@ class FusionIntegrator:
         )
 
         fusion_output = {
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
             "fusion_version": self.VERSION,
             "field_context": field_context,
         }
@@ -2043,7 +2035,7 @@ class MonteCarloConfidence:
     Single Source of Truth for CONF₁₂ (RAW) based on simulation.
     """
 
-    def __init__(self, simulations: int = DEFAULT_MC_SIMULATIONS, seed: Optional[int] = None) -> None:
+    def __init__(self, simulations: int = DEFAULT_MC_SIMULATIONS, seed: int | None = None) -> None:
         """Initialize Monte Carlo Confidence Engine.
 
         Args:
@@ -2115,7 +2107,7 @@ class MonteCarloConfidence:
             bias_mean=float(base_bias),
             volatility_mean=float(sum(vol_samples) / len(vol_samples)),
             reflective_integrity=float(reflective_integrity),
-            timestamp=datetime.now(timezone.utc).isoformat(),
+            timestamp=datetime.now(UTC).isoformat(),
         )
 
 
@@ -2130,7 +2122,7 @@ class MultiEMAFusion:
     Builds Fusion Strength Index (FSI) and cross-timeframe trend confluence.
     """
 
-    def __init__(self, ema_periods: Optional[List[int]] = None) -> None:
+    def __init__(self, ema_periods: List[int] | None = None) -> None:
         """Initialize Multi EMA Fusion.
 
         Args:
@@ -2194,18 +2186,18 @@ class MultiEMAFusion:
 # =============================================================================
 
 
-def multi_timeframe_alignment_analyzer(
-    biases: Dict[str, float],
-    rsi_values: Dict[str, float],
+def multi_timeframe_alignment_analyzer(  # noqa: PLR0913
+    biases: Mapping[str, float],
+    rsi_values: Mapping[str, float],
     reflective_intensity: float = 1.0,
     trq_energy: float = 1.0,
     alpha: float = 1.0,
     beta: float = 1.0,
     gamma: float = 1.0,
     integrity_index: float = 0.97,
-    symbol: Optional[str] = None,
-    pair: Optional[str] = None,
-    trade_id: Optional[str] = None,
+    symbol: str | None = None,
+    pair: str | None = None,
+    trade_id: str | None = None,
 ) -> Dict[str, Any]:
     """Analyze cross-timeframe bias alignment.
 
@@ -2251,7 +2243,7 @@ def multi_timeframe_alignment_analyzer(
     time_coherence_index = (bias_strength * integrity_index) / (1 + rsi_var / 50)
 
     return {
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
         "alignment_ratio": round(alignment_ratio, 3),
         "rsi_variance": round(rsi_var, 3),
         "rsi_coherence": round(rsi_coherence, 3),
@@ -2270,10 +2262,10 @@ def multi_timeframe_alignment_analyzer(
 
 
 def _validate_mtf_inputs(
-    biases: Dict[str, float],
-    rsi_values: Dict[str, float],
+    biases: Mapping[str, float],
+    rsi_values: Mapping[str, float],
     timeframes: Iterable[str],
-) -> Optional[str]:
+) -> str | None:
     """Validate MTF analyzer inputs."""
     timeframes_list = list(timeframes)
     missing_biases = [tf for tf in timeframes_list if tf not in biases]
@@ -2299,7 +2291,7 @@ def _validate_mtf_inputs(
 # =============================================================================
 
 
-def phase_resonance_engine_v1_5(
+def phase_resonance_engine_v1_5(  # noqa: PLR0913
     price_change: float,
     volume_change: float,
     time_delta: float,
@@ -2313,11 +2305,11 @@ def phase_resonance_engine_v1_5(
     beta_drift: float = 0.0,
     gamma_drift: float = 0.0,
     integrity_index: float = 0.97,
-    symbol: Optional[str] = None,
-    pair: Optional[str] = None,
-    trade_id: Optional[str] = None,
+    symbol: str | None = None,
+    pair: str | None = None,
+    trade_id: str | None = None,
     lambda_esi: float = 0.06,
-    field_override: Optional[Mapping[str, Any]] = None,
+    field_override: Mapping[str, Any] | None = None,
 ) -> Dict[str, Any]:
     """Calculate Phase Resonance Index (PRI) and Resonant Field State.
 
@@ -2413,7 +2405,7 @@ def phase_resonance_engine_v1_5(
     )
 
     return {
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
         "price_energy": round(price_energy, 3),
         "volume_energy": round(volume_energy, 3),
         "time_energy": round(time_energy, 3),
@@ -2454,7 +2446,7 @@ class QMatrixGenerator:
     Diagonal elements are negative sum of escape rates.
     """
 
-    def __init__(self, config: Optional[QMatrixConfig] = None) -> None:
+    def __init__(self, config: QMatrixConfig | None = None) -> None:
         """Initialize Q-Matrix Generator.
 
         Args:
@@ -2464,7 +2456,7 @@ class QMatrixGenerator:
         self.states = list(TransitionState)
         self.n_states = len(self.states)
         self.state_to_idx = {state: i for i, state in enumerate(self.states)}
-        self.q_matrix: Optional[List[List[float]]] = None
+        self.q_matrix: List[List[float]] | None = None
 
     def _calculate_base_rates(self) -> List[List[float]]:
         """Calculate base transition rates between states."""
@@ -2591,7 +2583,7 @@ class QMatrixGenerator:
 
 def audit_reflective_coherence(
     *,
-    mtf_data: Optional[List[Dict[str, Any]]] = None,
+    mtf_data: List[Dict[str, Any]] | None = None,
     lookback: int = 64,
     divergence_threshold: float = 0.22,
     gate_threshold: float = 0.96,
@@ -2609,7 +2601,7 @@ def audit_reflective_coherence(
     """
     if not mtf_data or len(mtf_data) < lookback:
         return CoherenceAudit(
-            timestamp=datetime.now(timezone.utc).isoformat(),
+            timestamp=datetime.now(UTC).isoformat(),
             lookback=lookback,
             reflective_coherence=0.97,
             divergence_window=False,
@@ -2632,7 +2624,7 @@ def audit_reflective_coherence(
 
     if not coherence_indices:
         return CoherenceAudit(
-            timestamp=datetime.now(timezone.utc).isoformat(),
+            timestamp=datetime.now(UTC).isoformat(),
             lookback=lookback,
             reflective_coherence=0.97,
             divergence_window=False,
@@ -2660,7 +2652,7 @@ def audit_reflective_coherence(
     gate_pass = reflective_coherence >= gate_threshold
 
     result = CoherenceAudit(
-        timestamp=datetime.now(timezone.utc).isoformat(),
+        timestamp=datetime.now(UTC).isoformat(),
         lookback=lookback,
         reflective_coherence=round(reflective_coherence, 4),
         divergence_window=divergence_window,
@@ -2688,7 +2680,7 @@ class ReflectiveMonteCarlo:
     trade outcome simulation with reflective integrity integration.
     """
 
-    def __init__(self, config: Optional[FTTCConfig] = None, seed: Optional[int] = None) -> None:
+    def __init__(self, config: FTTCConfig | None = None, seed: int | None = None) -> None:
         """Initialize FTTC Monte Carlo Engine.
 
         Args:
@@ -2699,7 +2691,7 @@ class ReflectiveMonteCarlo:
         self.config = config or FTTCConfig()
         self.states = list(MarketState)
         if seed is None:
-            seed = int(datetime.now(timezone.utc).timestamp() * 1000) % (2**31)
+            seed = int(datetime.now(UTC).timestamp() * 1000) % (2**31)
         self._seed = seed
         self._rng = random.Random(seed)
 
@@ -2728,7 +2720,7 @@ class ReflectiveMonteCarlo:
     def run_simulation(
         self,
         initial_state: MarketState,
-        market_data: Dict[str, float],
+        market_data: Mapping[str, Any],
         signal_direction: str,
         entry_price: float,
         stop_loss: float,
@@ -2833,7 +2825,7 @@ class ReflectiveMonteCarlo:
     def validate_signal(
         self,
         signal: Dict[str, Any],
-        market_data: Dict[str, float],
+        market_data: Mapping[str, Any],
     ) -> Dict[str, Any]:
         """Validate trading signal using FTTC simulation.
 
@@ -2872,7 +2864,7 @@ class ReflectiveMonteCarlo:
         }
 
 
-def create_fttc_engine(config: Optional[Dict[str, Any]] = None) -> ReflectiveMonteCarlo:
+def create_fttc_engine(config: Dict[str, Any] | None = None) -> ReflectiveMonteCarlo:
     """Factory function to create FTTC Monte Carlo engine."""
     if config:
         fttc_config = FTTCConfig(**config)
@@ -2893,7 +2885,7 @@ class LiquidityZoneMapper:
     and tracks when institutions hunt these levels.
     """
 
-    def __init__(self, config: Optional[Dict[str, Any]] = None) -> None:
+    def __init__(self, config: Dict[str, Any] | None = None) -> None:
         """Initialize Liquidity Zone Mapper.
 
         Args:
@@ -2930,7 +2922,7 @@ class LiquidityZoneMapper:
         Returns:
             LiquidityMapResult
         """
-        timestamp = datetime.now(timezone.utc)
+        timestamp = datetime.now(UTC)
 
         swing_highs = self._identify_swing_highs(ohlcv_data)
         swing_lows = self._identify_swing_lows(ohlcv_data)
@@ -3041,7 +3033,7 @@ class LiquidityZoneMapper:
     ) -> List[LiquidityZone]:
         """Build buy side liquidity zones."""
         zones = []
-        timestamp = datetime.now(timezone.utc)
+        timestamp = datetime.now(UTC)
 
         for swing in swing_highs:
             zone = LiquidityZone(
@@ -3081,7 +3073,7 @@ class LiquidityZoneMapper:
     ) -> List[LiquidityZone]:
         """Build sell side liquidity zones."""
         zones = []
-        timestamp = datetime.now(timezone.utc)
+        timestamp = datetime.now(UTC)
 
         for swing in swing_lows:
             zone = LiquidityZone(
@@ -3118,7 +3110,7 @@ class LiquidityZoneMapper:
         zones: List[LiquidityZone],
         current_price: float,
         direction: str,
-    ) -> Optional[float]:
+    ) -> float | None:
         """Find nearest liquidity zone in given direction."""
         if not zones:
             return None
@@ -3127,9 +3119,7 @@ class LiquidityZoneMapper:
 
         for zone in zones:
             if zone.status != LiquidityStatus.FULLY_SWEPT:
-                if direction == "above" and zone.price_level > current_price:
-                    valid_zones.append(zone)
-                elif direction == "below" and zone.price_level < current_price:
+                if (direction == "above" and zone.price_level > current_price) or (direction == "below" and zone.price_level < current_price):
                     valid_zones.append(zone)
 
         if not valid_zones:
@@ -3137,8 +3127,7 @@ class LiquidityZoneMapper:
 
         if direction == "above":
             return min(z.price_level for z in valid_zones)
-        else:
-            return max(z.price_level for z in valid_zones)
+        return max(z.price_level for z in valid_zones)
 
     def _calculate_liquidity_imbalance(
         self,
@@ -3267,7 +3256,7 @@ def calculate_rr_ratio(
 
 def timestamp_now() -> str:
     """Get current UTC timestamp as ISO string."""
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def write_jsonl_atomic(path: Path, data: Dict[str, Any]) -> None:
@@ -3308,7 +3297,7 @@ def write_json_atomic(path: Path, data: Dict[str, Any]) -> None:
             tmp_path.unlink()
 
 
-def moving_average(values: List[float], period: int) -> Optional[float]:
+def moving_average(values: List[float], period: int) -> float | None:
     """Calculate simple moving average.
 
     Args:
@@ -3328,7 +3317,7 @@ def exponential_moving_average(
     values: List[float],
     period: int,
     smoothing: float = 2.0,
-) -> Optional[float]:
+) -> float | None:
     """Calculate exponential moving average.
 
     Args:
@@ -3364,7 +3353,7 @@ class VaultMacroLayer:
     """
 
     def __init__(
-        self, ema_period: int = 200, sma_periods: Optional[List[int]] = None
+        self, ema_period: int = 200, sma_periods: List[int] | None = None
     ) -> None:
         self.ema_period = ema_period
         self.sma_periods = sma_periods or [200, 800]
@@ -3436,14 +3425,13 @@ class VaultMacroLayer:
 
         if price_now > ema200 > sma200 > sma800:
             return "Strong_Bullish"
-        elif price_now < ema200 < sma200 < sma800:
+        if price_now < ema200 < sma200 < sma800:
             return "Strong_Bearish"
-        elif price_now > ema200 and ema200 > sma200:
+        if price_now > ema200 > sma200:
             return "Bullish"
-        elif price_now < ema200 and ema200 < sma200:
+        if price_now < ema200 < sma200:
             return "Bearish"
-        else:
-            return "Neutral"
+        return "Neutral"
 
     def get_reflective_gravity_score(self, closes: List[float]) -> Dict[str, Any]:
         """Hitung Reflective Gravity Score berdasarkan jarak dari SMA-800."""
@@ -3528,7 +3516,7 @@ class VolumeProfileAnalyzer:
     - LVN (Low Volume Node): Areas price moves through quickly
     """
 
-    def __init__(self, config: Optional[Dict[str, Any]] = None) -> None:
+    def __init__(self, config: Dict[str, Any] | None = None) -> None:
         self.config = config or self._default_config()
 
     def _default_config(self) -> Dict[str, Any]:
@@ -3544,7 +3532,7 @@ class VolumeProfileAnalyzer:
         self, ohlcv_data: List[Dict[str, Any]], pair: str, timeframe: str
     ) -> VolumeProfileResult:
         """Analyze volume profile for price data."""
-        timestamp = datetime.now(timezone.utc)
+        timestamp = datetime.now(UTC)
 
         profile = self._build_profile(ohlcv_data)
         poc_price = self._calculate_poc(profile)
@@ -3590,7 +3578,7 @@ class VolumeProfileAnalyzer:
 
         num_bins = self.config["price_bins"]
         bin_size = (price_max - price_min) / num_bins
-        volume_bins: Dict[int, float] = {i: 0.0 for i in range(num_bins)}
+        volume_bins: Dict[int, float] = dict.fromkeys(range(num_bins), 0.0)
 
         for candle in ohlcv_data:
             candle_high = candle.get("high", 0)
@@ -3724,10 +3712,9 @@ class VolumeProfileAnalyzer:
 
         if poc_position > 0.7:
             return "p"
-        elif poc_position < 0.3:
+        if poc_position < 0.3:
             return "b"
-        else:
-            return "d"
+        return "d"
 
     def validate_entry_at_level(
         self, price: float, profile_result: VolumeProfileResult, direction: str
@@ -3846,7 +3833,7 @@ def calculate_wlwci(
     trend_fusion: float,
     twms_micro: float,
     volatility: float,
-    config: Optional[Dict[str, Any]] = None,
+    config: Dict[str, Any] | None = None,
 ) -> Dict[str, Any]:
     """Calculate WLWCI (Weighted Layered Wave-Context Index).
 
@@ -3911,7 +3898,7 @@ def calculate_wlwci(
             "twms_micro_contrib": round(weights["twms_micro"] * twms_micro_clamped, 4),
             "vol_penalty_contrib": round(weights["volatility_penalty"] * vol_penalty, 4),
         },
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
     }
 
 
@@ -4003,10 +3990,10 @@ class CounterZoneContext:
     beta: float = 1.0
     gamma: float = 1.0
     integrity_index: float = 0.97
-    journal_path: Optional[Path] = None
-    symbol: Optional[str] = None
-    pair: Optional[str] = None
-    trade_id: Optional[str] = None
+    journal_path: Path | None = None
+    symbol: str | None = None
+    pair: str | None = None
+    trade_id: str | None = None
 
 
 def _compute_counter_zone_confidence(ctx: CounterZoneContext) -> float:
@@ -4049,68 +4036,57 @@ def _derive_counter_zone_direction(ctx: CounterZoneContext) -> str:
 
 
 def smart_money_counter_v3_5_reflective(
-    *,
-    price: float,
-    vwap: float,
-    atr: float,
-    rsi: float,
-    mfi: float,
-    cci50: float,
-    rsi_h4: float,
-    trq_energy: float = 1.0,
-    reflective_intensity: float = 1.0,
-    alpha: float = 1.0,
-    beta: float = 1.0,
-    gamma: float = 1.0,
-    integrity_index: float = 0.97,
-    journal_path: Optional[Path] = None,
-    symbol: Optional[str] = None,
-    pair: Optional[str] = None,
-    trade_id: Optional[str] = None,
+    context: CounterZoneContext | None = None,
+    **kwargs: Any,
 ) -> Dict[str, Any]:
     """Detect reflective counter-zones using VWAP, TRQ-3D, and αβγ gradients.
 
     Args:
-        price: Current price
-        vwap: VWAP value
-        atr: ATR value
-        rsi: RSI value
-        mfi: MFI value
-        cci50: CCI(50) value
-        rsi_h4: RSI H4 value
-        trq_energy: TRQ energy
-        reflective_intensity: Reflective intensity
-        alpha: Alpha coefficient
-        beta: Beta coefficient
-        gamma: Gamma coefficient
-        integrity_index: Integrity index
-        journal_path: Optional journal path
-        symbol: Optional symbol
-        pair: Optional pair
-        trade_id: Optional trade ID
+        context: Optional pre-built CounterZoneContext
+        **kwargs: Backward-compatible keyword fields for CounterZoneContext
 
     Returns:
         Dict with counter-zone signal data
     """
-    ctx = CounterZoneContext(
-        price=price,
-        vwap=vwap,
-        atr=atr,
-        rsi=rsi,
-        mfi=mfi,
-        cci50=cci50,
-        rsi_h4=rsi_h4,
-        trq_energy=trq_energy,
-        reflective_intensity=reflective_intensity,
-        alpha=alpha,
-        beta=beta,
-        gamma=gamma,
-        integrity_index=integrity_index,
-        journal_path=journal_path,
-        symbol=symbol,
-        pair=pair,
-        trade_id=trade_id,
-    )
+    if context is not None and kwargs:
+        return {
+            "status": "invalid_input",
+            "detail": "Provide either context or keyword fields, not both.",
+        }
+
+    if context is None:
+        required_fields = ("price", "vwap", "atr", "rsi", "mfi", "cci50", "rsi_h4")
+        missing_fields = [field for field in required_fields if field not in kwargs]
+        if missing_fields:
+            return {
+                "status": "invalid_input",
+                "detail": f"missing required fields: {missing_fields}",
+            }
+
+        try:
+            ctx = CounterZoneContext(
+                price=float(kwargs["price"]),
+                vwap=float(kwargs["vwap"]),
+                atr=float(kwargs["atr"]),
+                rsi=float(kwargs["rsi"]),
+                mfi=float(kwargs["mfi"]),
+                cci50=float(kwargs["cci50"]),
+                rsi_h4=float(kwargs["rsi_h4"]),
+                trq_energy=float(kwargs.get("trq_energy", 1.0)),
+                reflective_intensity=float(kwargs.get("reflective_intensity", 1.0)),
+                alpha=float(kwargs.get("alpha", 1.0)),
+                beta=float(kwargs.get("beta", 1.0)),
+                gamma=float(kwargs.get("gamma", 1.0)),
+                integrity_index=float(kwargs.get("integrity_index", 0.97)),
+                journal_path=kwargs.get("journal_path"),
+                symbol=kwargs.get("symbol"),
+                pair=kwargs.get("pair"),
+                trade_id=kwargs.get("trade_id"),
+            )
+        except (TypeError, ValueError):
+            return {"status": "invalid_input"}
+    else:
+        ctx = context
 
     numeric_fields = {
         "price": ctx.price,
@@ -4171,7 +4147,7 @@ def smart_money_counter_v3_5_reflective(
         tp = round(entry - target_buffer, 5)
 
     result: Dict[str, Any] = {
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
         "entry": entry,
         "sl": sl,
         "tp": tp,
@@ -4195,8 +4171,8 @@ def smart_money_counter_v3_5_reflective(
         "trade_id": ctx.trade_id,
     }
 
-    if journal_path:
-        write_jsonl_atomic(journal_path, result)
+    if ctx.journal_path:
+        write_jsonl_atomic(ctx.journal_path, result)
 
     return result
 
@@ -4207,7 +4183,7 @@ def smart_money_counter_v3_5_reflective(
 
 
 class UltraFusionOrchestrator:
-    """Main orchestrator for TUYUL FX Ultimate Fusion Pipeline (L8–L11).
+    """Main orchestrator for TUYUL FX Ultimate Fusion Pipeline (L8-L11).
 
     Integrates:
     - EMA Fusion → Precision Fusion → Equilibrium → Reflective Propagation
@@ -4249,7 +4225,7 @@ class UltraFusionOrchestrator:
         Returns:
             Complete fusion pipeline result
         """
-        timestamp = datetime.now(timezone.utc).isoformat()
+        timestamp = datetime.now(UTC).isoformat()
 
         # Layer 8: EMA Fusion
         ema_fusion = self.ema_engine.compute(prices)
@@ -4397,7 +4373,7 @@ class MicroAdapter:
         VolatilityRegime.EXTREME: 0.70,
     }
 
-    def __init__(self, bounds: Optional[MicroBounds] = None) -> None:
+    def __init__(self, bounds: MicroBounds | None = None) -> None:
         """Initialize adapter with safety bounds.
 
         Args:
@@ -4408,7 +4384,7 @@ class MicroAdapter:
     def normalize(
         self,
         micro: Dict[str, Any],
-        macro_direction: Optional[float] = None,
+        macro_direction: float | None = None,
     ) -> NormalizedMicro:
         """Normalize micro signal with safety bounds.
 
@@ -4460,7 +4436,7 @@ class MicroAdapter:
             raw_volatility=raw_vol,
         )
 
-    def _extract_twms(self, micro: Dict[str, Any]) -> Optional[float]:
+    def _extract_twms(self, micro: Dict[str, Any]) -> float | None:
         """Extract TWMS micro value from input dict."""
         for key in ["twms_micro", "micro_twms", "twms", "micro"]:
             if key in micro:
@@ -4472,7 +4448,7 @@ class MicroAdapter:
                     continue
         return None
 
-    def _extract_volatility(self, micro: Dict[str, Any]) -> Optional[float]:
+    def _extract_volatility(self, micro: Dict[str, Any]) -> float | None:
         """Extract volatility value from input dict."""
         for key in ["volatility", "micro_volatility", "vol", "micro_vol"]:
             if key in micro:
@@ -4496,17 +4472,16 @@ class MicroAdapter:
         """Classify volatility into regime categories."""
         if volatility <= self.VOL_LOW:
             return VolatilityRegime.LOW
-        elif volatility <= self.VOL_MEDIUM:
+        if volatility <= self.VOL_MEDIUM:
             return VolatilityRegime.MEDIUM
-        elif volatility <= self.VOL_HIGH:
+        if volatility <= self.VOL_HIGH:
             return VolatilityRegime.HIGH
-        else:
-            return VolatilityRegime.EXTREME
+        return VolatilityRegime.EXTREME
 
     def _detect_conflict(
         self,
         micro_twms: float,
-        macro_direction: Optional[float],
+        macro_direction: float | None,
     ) -> bool:
         """Detect if micro signal conflicts with macro direction.
 
@@ -4526,16 +4501,15 @@ class MicroAdapter:
 
         return (
             micro_sign != 0
-            and macro_sign != 0
-            and micro_sign != macro_sign
+            and macro_sign not in (0, micro_sign)
             and micro_significant
             and macro_significant
         )
 
     def _invalid_result(
         self,
-        raw_twms: Optional[float],
-        raw_vol: Optional[float],
+        raw_twms: float | None,
+        raw_vol: float | None,
     ) -> NormalizedMicro:
         """Return an invalid/fallback result."""
         return NormalizedMicro(
@@ -4553,7 +4527,7 @@ class MicroAdapter:
         self,
         wlwci_base: float,
         normalized: NormalizedMicro,
-        weights: Optional[Dict[str, float]] = None,
+        weights: Dict[str, float] | None = None,
     ) -> Dict[str, Any]:
         """Apply normalized micro signal to WLWCI calculation.
 
@@ -4611,7 +4585,7 @@ class MicroAdapter:
 
 
 class QuantumReflectiveEngine:
-    """Quantum Reflective Engine — Entropy-based reflective field analysis.
+    """Quantum Reflective Engine - Entropy-based reflective field analysis.
 
     Menghitung:
     - Alpha-Beta-Gamma gradient (αβγ)
@@ -4652,7 +4626,7 @@ class QuantumReflectiveEngine:
         returns = []
         for i in range(1, len(closes)):
             if closes[i - 1] != 0:
-                returns.append((closes[i] - closes[i - 1]) / closes[i - 1])
+                returns.append((closes[i] - closes[i - 1]) / closes[i - 1])  # noqa: PERF401
 
         if not returns:
             return {
@@ -4740,7 +4714,7 @@ class HybridReflectiveCore:
     def __init__(
         self,
         ema_period: int = 200,
-        sma_periods: Optional[List[int]] = None,
+        sma_periods: List[int] | None = None,
         quantum_weight: float = 0.4,
         macro_weight: float = 0.6,
     ) -> None:
@@ -4897,113 +4871,84 @@ class HybridReflectiveCore:
 # =============================================================================
 
 __all__ = [
-    # Exceptions
-    "FusionError",
-    "FusionComputeError",
-    "FusionInputError",
-    "FusionConfigError",
-    # Enums
-    "FusionBiasMode",
-    "FusionState",
-    "MomentumBand",
-    "DivergenceType",
-    "DivergenceStrength",
-    "FusionAction",
-    "MarketState",
-    "TransitionState",
-    "LiquidityType",
-    "LiquidityStatus",
-    "ResonanceState",
-    # Dataclasses
-    "FieldContext",
-    "FusionPrecisionResult",
-    "EquilibriumResult",
-    "DivergenceSignal",
-    "MultiDivergenceResult",
+    "WLWCI_CONFIG",
+    "AdaptiveThresholdController",
     "AdaptiveUpdate",
+    "CoherenceAudit",
     "ConfidenceLineage",
-    "MonteCarloResult",
+    "CounterZoneContext",
+    "DivergenceSignal",
+    "DivergenceStrength",
+    "DivergenceType",
+    "EMAFusionEngine",
+    "EquilibriumResult",
     "FTTCConfig",
     "FTTCResult",
-    "QMatrixConfig",
-    "LiquidityZone",
-    "LiquidityMapResult",
-    "CoherenceAudit",
-    # Field Sync
-    "resolve_field_context",
-    "sync_field_state",
-    # EMA Fusion Engine
-    "EMAFusionEngine",
-    # Fusion Metrics
-    "evaluate_fusion_metrics",
-    "aggregate_multi_timeframe_metrics",
-    # Fusion Precision
-    "FusionPrecisionEngine",
-    "calculate_fusion_precision",
-    # Equilibrium Momentum
-    "equilibrium_momentum_fusion_v6",
-    "equilibrium_momentum_fusion",
-    # Divergence Detector
-    "MultiIndicatorDivergenceDetector",
-    # Adaptive Threshold
-    "AdaptiveThresholdController",
-    # Fusion Integrator
+    "FieldContext",
+    "FusionAction",
+    "FusionBiasMode",
+    "FusionComputeError",
+    "FusionConfigError",
+    "FusionError",
+    "FusionInputError",
     "FusionIntegrator",
-    "integrate_fusion_layers",
-    # Monte Carlo Confidence
-    "MonteCarloConfidence",
-    # Multi EMA Fusion
-    "MultiEMAFusion",
-    # MTF Alignment Analyzer
-    "multi_timeframe_alignment_analyzer",
-    # Phase Resonance Engine
-    "phase_resonance_engine_v1_5",
-    # Q-Matrix Generator
-    "QMatrixGenerator",
-    # MTF Coherence Auditor
-    "audit_reflective_coherence",
-    # FTTC Monte Carlo
-    "ReflectiveMonteCarlo",
-    "create_fttc_engine",
-    # Liquidity Zone Mapper
+    "FusionPrecisionEngine",
+    "FusionPrecisionResult",
+    "FusionState",
+    "HybridReflectiveCore",
+    "LiquidityMapResult",
+    "LiquidityStatus",
+    "LiquidityType",
+    "LiquidityZone",
     "LiquidityZoneMapper",
-    # === NEW COMPONENTS ===
-    # Fusion Utilities
-    "validate_price_data",
-    "normalize_timeframe",
-    "calculate_rr_ratio",
-    "timestamp_now",
-    "write_jsonl_atomic",
-    "write_json_atomic",
-    "moving_average",
-    "exponential_moving_average",
-    # Vault Macro Engine
-    "VaultMacroLayer",
-    # Volume Profile Analyzer
-    "VolumeZoneType",
-    "VolumeProfileResult",
-    "VolumeZone",
-    "VolumeProfileAnalyzer",
-    # WLWCI Configuration
-    "WLWCI_CONFIG",
-    "get_wlwci_config",
-    "calculate_wlwci",
-    # RSI Alignment Engine
-    "rsi_alignment_engine",
-    # Smart Money Counter Zone
-    "CounterZoneContext",
-    "smart_money_counter_v3_5_reflective",
-    # Ultra Fusion Orchestrator
+    "MarketState",
+    "MicroAdapter",
+    "MicroBounds",
+    "MomentumBand",
+    "MonteCarloConfidence",
+    "MonteCarloResult",
+    "MultiDivergenceResult",
+    "MultiEMAFusion",
+    "MultiIndicatorDivergenceDetector",
+    "NormalizedMicro",
+    "QMatrixConfig",
+    "QMatrixGenerator",
+    "QuantumReflectiveEngine",
+    "ReflectiveMonteCarlo",
+    "ResonanceState",
+    "TransitionState",
     "UltraFusionOrchestrator",
     "UltraFusionOrchestratorV6",
-    # Micro Adapter
+    "VaultMacroLayer",
     "VolatilityRegime",
-    "MicroBounds",
-    "NormalizedMicro",
-    "MicroAdapter",
-    # Hybrid Vault Quantum Engine
-    "QuantumReflectiveEngine",
-    "HybridReflectiveCore",
+    "VolumeProfileAnalyzer",
+    "VolumeProfileResult",
+    "VolumeZone",
+    "VolumeZoneType",
+    "aggregate_multi_timeframe_metrics",
+    "audit_reflective_coherence",
+    "calculate_fusion_precision",
+    "calculate_rr_ratio",
+    "calculate_wlwci",
+    "create_fttc_engine",
+    "equilibrium_momentum_fusion",
+    "equilibrium_momentum_fusion_v6",
+    "evaluate_fusion_metrics",
+    "exponential_moving_average",
+    "get_wlwci_config",
+    "integrate_fusion_layers",
+    "moving_average",
+    "multi_timeframe_alignment_analyzer",
+    "normalize_timeframe",
+    "phase_resonance_engine_v1_5",
+    "resolve_field_context",
+    "rsi_alignment_engine",
+    "smart_money_counter_v3_5_reflective",
+    "sync_field_state",
+    "timestamp_now",
+    "validate_price_data",
+    "write_json_atomic",
+    "write_jsonl_atomic",
 ]
 
 
@@ -5012,7 +4957,8 @@ __all__ = [
 # =============================================================================
 
 if __name__ == "__main__":
-    print("🧠 TUYUL FX AGI — Core Fusion Unified v7.0r∞ EXPANDED")
+    """
+    print("🧠 TUYUL FX AGI - Core Fusion Unified v7.0r∞ EXPANDED")
     print("=" * 60)
 
     # Test Field Sync
@@ -5298,7 +5244,7 @@ if __name__ == "__main__":
     print(f"Volatility Regime: {normalized.regime.value}")
     print(f"Conflict Detected: {normalized.conflict_detected}")
     print(f"Is Valid: {normalized.is_valid}")
-    
+
     # Test apply_to_wlwci
     wlwci_result = adapter.apply_to_wlwci(wlwci_base=0.72, normalized=normalized)
     print(f"WLWCI Adjusted: {wlwci_result['wlwci']}")
@@ -5328,3 +5274,5 @@ if __name__ == "__main__":
 
     print("\n" + "=" * 60)
     print(f"✅ All {len(__all__)} components tested successfully! 🐺")
+    """
+    logger.info("CLI debug utility is disabled in production; run tests instead.")
