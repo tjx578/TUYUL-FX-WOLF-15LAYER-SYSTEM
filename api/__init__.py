@@ -1,3 +1,3 @@
 """
-API package — REST endpoints for EA integration.
+API package - REST endpoints for EA integration.
 """

@@ -1,5 +1,5 @@
 """
-L1 Context Analyzer — Market Context Overview (PLACEHOLDER).
+L1 Context Analyzer - Market Context Overview (PLACEHOLDER).
 
 Sources:
     core_cognitive_unified.py  → RegimeClassifier, CognitiveBias, MarketRegimeType
@@ -30,7 +30,7 @@ except ImportError:
 
 
 class L1ContextAnalyzer:
-    """Layer 1: Market Context Overview — Perception & Context zone."""
+    """Layer 1: Market Context Overview - Perception & Context zone."""
 
     def __init__(self) -> None:
         self._regime_classifier = None

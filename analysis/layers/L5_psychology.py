@@ -1,5 +1,5 @@
 """
-L5 Psychology Analyzer — Psychology Gates + RGO Governance.
+L5 Psychology Analyzer - Psychology Gates + RGO Governance.
 
 Sources:
     core_cognitive_unified.py  → EmotionFeedbackEngine, IntegrityEngine
@@ -62,7 +62,7 @@ _FOCUS_PEAK_END_HOURS = 3.0  # Focus starts degrading after 3 h
 
 
 class L5PsychologyAnalyzer:
-    """Layer 5: Psychology Gates Assessment — Confluence & Scoring zone."""
+    """Layer 5: Psychology Gates Assessment - Confluence & Scoring zone."""
 
     def __init__(self) -> None:
         self._emotion_engine = None
@@ -81,7 +81,7 @@ class L5PsychologyAnalyzer:
         self._win_streak = 0
 
     def record_win(self) -> None:
-        """Record a win — resets consecutive losses."""
+        """Record a win - resets consecutive losses."""
         self._consecutive_losses = 0
         self._win_streak += 1
 
@@ -154,7 +154,7 @@ class L5PsychologyAnalyzer:
             return 0.90
         if streak <= 4:
             return 0.80
-        return 0.65  # >4 — potential overconfidence / tilt risk
+        return 0.65  # >4 - potential overconfidence / tilt risk
 
     def _eaf_score(self, focus: float, emotional_bias: float,
                    discipline: float, stability: float) -> float:

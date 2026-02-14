@@ -1,3 +1,3 @@
 """
-Config package — YAML configuration files.
+Config package - YAML configuration files.
 """

@@ -1,10 +1,10 @@
 """
-Dashboard Journal Routes — Expose journal system to dashboard.
+Dashboard Journal Routes - Expose journal system to dashboard.
 
 Endpoints:
-  GET /api/v1/journal/today       — Today's journal entries
-  GET /api/v1/journal/weekly      — Last 7 days
-  GET /api/v1/journal/metrics     — Rejection %, protection rate, win rate
+  GET /api/v1/journal/today       - Today's journal entries
+  GET /api/v1/journal/weekly      - Last 7 days
+  GET /api/v1/journal/metrics     - Rejection %, protection rate, win rate
 """
 
 from typing import Any

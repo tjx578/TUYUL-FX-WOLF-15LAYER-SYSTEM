@@ -1,3 +1,3 @@
 """
-Market analysis package — Structure, volatility, supply/demand.
+Market analysis package - Structure, volatility, supply/demand.
 """

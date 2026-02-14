@@ -1,18 +1,18 @@
 """
-Dashboard Trade Routes — FastAPI router for manual-first trade flow.
+Dashboard Trade Routes - FastAPI router for manual-first trade flow.
 
 Endpoints:
-  POST /api/v1/trades/take        — Trader takes a signal (system computes lot)
-  POST /api/v1/trades/skip        — Trader skips a signal
-  POST /api/v1/trades/confirm     — Trader confirms order placed at broker
-  POST /api/v1/trades/close       — Trader manually closes a trade
-  GET  /api/v1/trades/active      — List all active trades
-  GET  /api/v1/trades/{trade_id}  — Get single trade detail
-  GET  /api/v1/prices             — Get all live prices
-  GET  /api/v1/prices/{symbol}    — Get single symbol price
-  GET  /api/v1/accounts           — List accounts
-  POST /api/v1/accounts           — Create account
-  GET  /api/v1/accounts/{id}      — Get account detail
+  POST /api/v1/trades/take        - Trader takes a signal (system computes lot)
+  POST /api/v1/trades/skip        - Trader skips a signal
+  POST /api/v1/trades/confirm     - Trader confirms order placed at broker
+  POST /api/v1/trades/close       - Trader manually closes a trade
+  GET  /api/v1/trades/active      - List all active trades
+  GET  /api/v1/trades/{trade_id}  - Get single trade detail
+  GET  /api/v1/prices             - Get all live prices
+  GET  /api/v1/prices/{symbol}    - Get single symbol price
+  GET  /api/v1/accounts           - List accounts
+  POST /api/v1/accounts           - Create account
+  GET  /api/v1/accounts/{id}      - Get account detail
 """
 
 from fastapi import APIRouter, HTTPException
@@ -96,7 +96,7 @@ class CreateAccountRequest(BaseModel):
 @router.post("/api/v1/trades/take")
 async def take_signal(req: TakeSignalRequest) -> Trade:
     """
-    Trader takes a signal — dashboard computes lot size and creates trade.
+    Trader takes a signal - dashboard computes lot size and creates trade.
 
     Validates:
       - Account exists
@@ -121,7 +121,7 @@ async def take_signal(req: TakeSignalRequest) -> Trade:
     # Calculate risk amount
     risk_amount = account.balance * (req.risk_percent / 100.0)
 
-    # Calculate lot size (simplified — actual would need pip value, etc.)
+    # Calculate lot size (simplified - actual would need pip value, etc.)
     # For now, use a placeholder calculation
     pip_distance = abs(req.entry - req.sl)
     lot_size = round(risk_amount / (pip_distance * 10), 2)  # Simplified

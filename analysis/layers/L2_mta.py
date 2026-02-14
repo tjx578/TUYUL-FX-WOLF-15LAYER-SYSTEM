@@ -1,5 +1,5 @@
 """
-L2 MTA Hierarchy Analyzer — Multi-Timeframe Analysis.
+L2 MTA Hierarchy Analyzer - Multi-Timeframe Analysis.
 
 Sources:
     core_cognitive_unified.py  → ReflexEmotionCore, ReflexState
@@ -53,7 +53,7 @@ _MIN_TIMEFRAMES = 3
 
 
 class L2MTAAnalyzer:
-    """Layer 2: MTA Hierarchy + Reflex Context — Perception & Context zone."""
+    """Layer 2: MTA Hierarchy + Reflex Context - Perception & Context zone."""
 
     def __init__(self, *, redis_client: Any = None) -> None:
         self._reflex_core = None
