@@ -1,0 +1,14 @@
+<!-- markdownlint-disable MD041 -->
+pycache/
+.env
+.env.*
+*.log
+tests/
+sandbox/
+docs/
+dashboard/nextjs/
+.github/
+*.md
+.dockerignore
+.gitignore
+pyproject.toml

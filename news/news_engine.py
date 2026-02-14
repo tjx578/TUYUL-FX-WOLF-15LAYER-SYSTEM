@@ -3,7 +3,7 @@ News Engine
 Determines whether market is locked due to news.
 """
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from context.live_context_bus import LiveContextBus
 from news.news_rules import NEWS_RULES
@@ -36,7 +36,7 @@ class NewsEngine:
         if not news or "events" not in news:
             return False
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         for event in news["events"]:
             # Filter events relevant to the symbol's currency pairs
@@ -58,9 +58,9 @@ class NewsEngine:
                 continue
 
             if event_time.tzinfo is None:
-                event_time = event_time.replace(tzinfo=timezone.utc)
+                event_time = event_time.replace(tzinfo=UTC)
             else:
-                event_time = event_time.astimezone(timezone.utc)
+                event_time = event_time.astimezone(UTC)
 
             start = event_time - timedelta(minutes=rule["pre_minutes"])
             end = event_time + timedelta(minutes=rule["post_minutes"])
@@ -69,4 +69,6 @@ class NewsEngine:
                 return True
 
         return False
+
+
 # Placeholder

@@ -1,3 +1,3 @@
 """
-Schemas package — Data validation schemas.
+Schemas package - Data validation schemas.
 """

@@ -1,37 +1,68 @@
 """
-L1 — Market Context Analysis
-NO EXECUTION | NO DECISION
+L1 Context Analyzer - Market Context Overview (PLACEHOLDER).
+
+Sources:
+    core_cognitive_unified.py  → RegimeClassifier, CognitiveBias, MarketRegimeType
+    core_fusion_unified.py     → FusionBiasMode, MarketState
+
+Produces:
+    - regime (MarketRegimeType)
+    - dominant_force (CognitiveBias)
+    - volatility_level (str)
+    - regime_confidence (float)  → target ≥ 0.90
+    - market_alignment (str)
+    - valid (bool)
 """
 
+from __future__ import annotations
 
-from context.live_context_bus import LiveContextBus
-from analysis.market.volatility import VolatilityAnalyzer
-from utils.timezone_utils import is_trading_session
+from typing import Any
+
+from loguru import logger
+
+try:
+    import core.core_cognitive_unified
+
+    from core.core_fusion_unified import FusionBiasMode
+except ImportError:
+    core = None
+    FusionBiasMode = None
 
 
 class L1ContextAnalyzer:
-    def __init__(self):
-        self.context = LiveContextBus()
-        self.volatility = VolatilityAnalyzer()
+    """Layer 1: Market Context Overview - Perception & Context zone."""
 
-    def analyze(self, symbol: str) -> dict:
-        h1 = self.context.get_candle(symbol, "H1")
-        news = self.context.get_news()
+    def __init__(self) -> None:
+        self._regime_classifier = None
+        self._fusion_bias = None
 
-        if not h1:
-            return {"valid": False, "reason": "no_h1_candle"}
+    def _ensure_loaded(self) -> None:
+        if self._regime_classifier is not None:
+            return
+        try:
+            if core is None:
+                raise ImportError("core modules not available")
+            self._regime_classifier = core.core_cognitive_unified.RegimeClassifier()
+        except Exception as exc:
+            logger.warning(f"[L1] Could not load core modules: {exc}")
 
-        context = {
-            "session": is_trading_session(h1["timestamp"]),
-            "news_lock": self._is_news_lock(news, symbol),
+    def analyze(self, symbol: str) -> dict[str, Any]:
+        """
+        Analyze market context for *symbol*.
+
+        Returns:
+            dict with keys: regime, dominant_force, volatility_level,
+            regime_confidence, csi, market_alignment, valid
+        """
+        self._ensure_loaded()
+
+        # --- PLACEHOLDER: delegate to RegimeClassifier when implemented ---
+        return {
+            "regime": "TREND",
+            "dominant_force": "NEUTRAL",
+            "volatility_level": "NORMAL",
+            "regime_confidence": 0.0,
+            "csi": 0.0,
+            "market_alignment": "NEUTRAL",
             "valid": True,
         }
-
-        return context
-
-    @staticmethod
-    def _is_news_lock(news: dict, symbol: str) -> bool:
-        if not news:
-            return False
-        # detail filtering dilakukan di news engine
-        return False

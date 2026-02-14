@@ -1,46 +1,239 @@
-tii_min: 0.75
-integrity_min: 0.75
+# ===================================================================
+# WOLF-15 CONSTITUTIONAL THRESHOLDS (v7.4r∞)
+# ===================================================================
+# Top-level verdict gates (read directly by verdict_engine.py)
+tii_min: 0.93
+integrity_min: 0.97
 rr_min: 2.0
-fta_min: 0.65
-monte_min: 0.60
+fta_min: 0.75
+monte_min: 0.55
 conf12_min: 0.75
-max_drawdown: 2.5
+max_drawdown: 5.0
+max_latency_ms: 250
+
+# ===================================================================
+# AUTHORITY
+# ===================================================================
 authority:
   sole_layer: 12
   bypass_allowed: false
   override_allowed: false
 
+# ===================================================================
+# MARKET LAW
+# ===================================================================
 market_law:
   mandatory_pairs: ["XAUUSD", "XAGUSD"]
 
-thresholds:
-  TII_sym_min: 0.93
-  integrity_min: 0.96
-  CONF12_min: 0.88
+# ===================================================================
+# L8 — TII (Convex Weighted v2)
+# ===================================================================
+tii:
+  constitutional_min: 0.93
+  weights:
+    structure: 0.25
+    discipline: 0.25
+    integrity: 0.20
+    alignment: 0.20
+    energy: 0.10
+  synergy_bonus: 0.02
+  drift_penalty_factor: 0.15
+  drift_penalty_cap: 0.05
 
-risk_rules:
-  min_rr: 2.0
-  max_risk_percent: 1.0
+# ===================================================================
+# L8 — FRPC (Field-Risk-Probability-Confidence)
+# ===================================================================
+frpc:
+  minimum: 0.96
 
-probability:
-  min_win_probability_percent: 55.0
-  min_profit_factor: 1.6
+# ===================================================================
+# L8 — DVG (Divergence Analysis)
+# ===================================================================
+dvg:
+  confidence_threshold: 0.70
+  weights:
+    exhaustion: 0.45
+    rsi: 0.20
+    cci: 0.20
+    mfi: 0.15
 
+# ===================================================================
+# L7 — Liquidity & Monte Carlo
+# ===================================================================
+liquidity:
+  sweep_threshold: 0.65
+
+monte_carlo:
+  default_runs: 1000
+  default_horizon: 50
+  gate:
+    win_prob_min: 68.0
+    profit_factor_min: 2.0
+    max_drawdown: 5.0
+
+# ===================================================================
+# L11 — Wolf Discipline (Tiered)
+# ===================================================================
+wolf_discipline:
+  minimum: 0.75
+  strong: 0.85
+  elite: 0.93
+  emotion:
+    max_consecutive_losses: 2
+    emotion_index_max: 70
+    discipline_score_min: 70
+
+# ===================================================================
+# L11 — Risk/Reward Ratios
+# ===================================================================
+rr:
+  min_rr_ratio: 1.5
+  constitutional_min: 2.0
+  by_regime:
+    HIGH: 2.5
+    NORMAL: 2.0
+    LOW: 1.5
+    EXPANSION: 2.5
+    CONTRACTION: 1.5
+    TRENDING: 2.0
+    RANGING: 1.8
+
+# ===================================================================
+# L4 — Wolf 30-Point Scoring
+# ===================================================================
+wolf_30_point:
+  max_score: 30
+  min_score: 22
+  sub_thresholds:
+    technical_min: 9
+    fta_min: 3
+    execution_min: 4
+
+# ===================================================================
+# L6 — Risk Management
+# ===================================================================
+risk:
+  base_risk_pct: 1.0
+  max_effective_risk_pct: 2.0
+  max_dd_daily: 4.0
+  max_dd_total: 8.0
+
+# ===================================================================
+# L10 — Position Sizing
+# ===================================================================
+position:
+  min_lot: 0.01
+  max_lot: 5.0
+  fta_scale:
+    "4": 1.0
+    "3": 0.8
+    "2": 0.5
+    "1": 0.3
+    "0": 0.0
+
+# ===================================================================
+# L13 — Meta Authority
+# ===================================================================
+meta_authority:
+  full: 0.95
+  caution: 0.93
+  reduced: 0.90
+  weights:
+    fusion_conf12: 0.40
+    reflective_coherence: 0.30
+    meta_integrity: 0.30
+
+# ===================================================================
+# L15 — Vault Sync (Tiered)
+# ===================================================================
+vault_sync:
+  strict: 0.97
+  operational: 0.90
+  critical: 0.80
+  formula_weights:
+    feed: 0.50
+    redis: 0.30
+    integrity: 0.20
+
+# ===================================================================
+# L15 — Drift Management
+# ===================================================================
+drift:
+  safe: 0.003
+  restrict: 0.004
+  hard_stop: 0.01
+  size_map:
+    safe: 1.0
+    caution: 0.7
+    elevated: 0.4
+    critical: 0.0
+
+# ===================================================================
+# L1 — Market Context
+# ===================================================================
+market_context:
+  news_lock_window_minutes: 30
+  killzones:
+    ASIA_OPEN: [0, 3]
+    LONDON_OPEN: [7, 10]
+    NY_OPEN: [12, 15]
+    LONDON_CLOSE: [15, 17]
+    NY_CLOSE: [20, 22]
+
+# ===================================================================
+# L5 — EAF (Emotional-Accuracy Factor)
+# ===================================================================
+eaf:
+  min_for_trade: 0.70
+  weights:
+    emotional_bias: 0.30
+    stability_index: 0.25
+    focus_level: 0.25
+    discipline_score: 0.20
+  fatigue:
+    session_threshold_minutes: 180
+    medium_hours: 3.0
+    high_hours: 5.0
+
+# ===================================================================
+# PIPELINE
+# ===================================================================
+pipeline:
+  candle_history_maxlen: 250
+
+# ===================================================================
+# EXECUTION RULES
+# ===================================================================
 execution_rules:
   order_type: "PENDING_ONLY"
   tp_mode: "TP1_ONLY"
   allow_market_execution: false
 
+# ===================================================================
+# TIMEFRAME LAWS
+# ===================================================================
 timeframe_laws:
   setup_tf_only: "H1"
   monitor_tf_only: "M15"
 
+# ===================================================================
+# GATES
+# ===================================================================
 gates:
-  total_gates: 9
-  required_pass: 9
+  total_gates: 10
+  required_pass: 10
 
+# ===================================================================
+# VIOLATION POLICY
+# ===================================================================
 violation_policy:
   on_violation: "NO_TRADE"
   log_violation: true
   notify: true
-# Placeholder
+
+# ===================================================================
+# PROBABILITY
+# ===================================================================
+probability:
+  min_win_probability_percent: 55.0
+  min_profit_factor: 1.6
