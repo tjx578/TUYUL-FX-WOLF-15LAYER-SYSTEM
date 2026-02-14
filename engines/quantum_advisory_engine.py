@@ -1,3 +1,12 @@
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from datetime import UTC, datetime
+from enum import Enum
+from typing import Any
+
+
+class AdvisorySignal(str, Enum):
 """Cross-engine advisory synthesis (non-execution)."""
 """Quantum Advisory Engine v2.0 (sanitized, non-execution)."""
 """Quantum advisory engine."""
@@ -46,6 +55,8 @@ class AdvisorySummary:
     confidence_estimate: float
     risk_posture: RiskPosture
     directional_lean: float
+    conflict_flags: list[str]
+    synthesis_note: str
     conflict_flags: List[str]
     synthesis_note: str
 from typing import Any, Dict, List
@@ -113,6 +124,8 @@ class QuantumAdvisoryEngine:
 
 
 class QuantumAdvisoryEngine:
+    def __init__(
+        self, min_confidence_threshold: float = 0.3, conflict_penalty: float = 0.15
     def summarize(self, **engines: Dict[str, Any]) -> AdvisorySummary:
         field = engines.get("field")
         probability = engines.get("probability")
@@ -200,6 +213,17 @@ class QuantumAdvisoryEngine:
         self.min_confidence = min_confidence_threshold
         self.conflict_penalty = conflict_penalty
 
+    def summarize(  # noqa: PLR0912
+        self,
+        field: dict[str, Any],
+        probability: dict[str, Any],
+        coherence: dict[str, Any] | None = None,
+        context: dict[str, Any] | None = None,
+        risk_sim: dict[str, Any] | None = None,
+        momentum: dict[str, Any] | None = None,
+        precision: dict[str, Any] | None = None,
+        structure: dict[str, Any] | None = None,
+    ) -> AdvisorySummary:
     def summarize(
         self,
         field: Dict[str, Any],
@@ -248,6 +272,26 @@ class QuantumAdvisoryEngine:
                 direction_signals.append(0.0)
             weights.append(0.2)
 
+        total = sum(weights)
+        directional_lean = sum(
+            x * w for x, w in zip(direction_signals, weights, strict=False)
+        ) / max(total, 1e-9)
+        directional_lean = max(-1.0, min(1.0, directional_lean))
+
+        conflicts: list[str] = []
+        if momentum and structure:
+            if (
+                float(momentum.get("momentum_direction", 0))
+                * float(structure.get("mtf_alignment", 0))
+                < -0.3
+            ):
+                conflicts.append("MOMENTUM_VS_STRUCTURE")
+        if coherence and coherence.get("gate") == "LOCKOUT" and w_prob > 0.6:
+            conflicts.append("HIGH_PROB_BUT_LOCKOUT")
+        if risk_sim and risk_sim.get("tail_risk_flag") and w_prob > 0.7:
+            conflicts.append("HIGH_PROB_BUT_TAIL_RISK")
+        if structure and structure.get("divergence_present") and directional_lean > 0.3:
+            if structure.get("divergence_type") == "BEARISH":
         weight_total = sum(weights)
         directional_lean = (
             sum(signal * weight for signal, weight in zip(direction_signals, weights))
@@ -275,6 +319,16 @@ class QuantumAdvisoryEngine:
 
         confidence = w_prob
         if coherence:
+            coh = float(coherence.get("coherence_index", 0.7))
+            psych = float(coherence.get("psych_confidence", 0.7))
+            confidence *= coh * 0.5 + psych * 0.5
+        if precision:
+            confidence *= 0.5 + float(precision.get("precision_weight", 0.5)) * 0.5
+        if risk_sim:
+            confidence *= 0.6 + float(risk_sim.get("robustness_estimate", 0.5)) * 0.4
+        confidence *= 0.7 + stability * 0.3
+        confidence -= len(conflicts) * self.conflict_penalty
+        confidence *= 1.0 - uncertainty * 0.3
             coh_idx = float(coherence.get("coherence_index", 0.7))
             psych = float(coherence.get("psych_confidence", 0.7))
             confidence *= (coh_idx * 0.5) + (psych * 0.5)
@@ -312,6 +366,9 @@ class QuantumAdvisoryEngine:
 
         parts = [f"Confidence {confidence:.0%}"]
         if momentum:
+            parts.append(f"phase={momentum.get("phase", "?")}")
+        if context:
+            parts.append(f"regime={context.get("market_regime", "?")}")
             parts.append(f"phase={momentum.get('phase', '?')}")
         if context:
             parts.append(f"regime={context.get('market_regime', '?')}")
@@ -335,6 +392,7 @@ class QuantumAdvisoryEngine:
                 "n_conflicts": len(conflicts),
                 "engines_available": sum(
                     1
+                    for x in [
                     for item in [
                         field,
                         probability,
@@ -345,6 +403,14 @@ class QuantumAdvisoryEngine:
                         precision,
                         structure,
                     ]
+                    if x is not None
+                ),
+                "timestamp": datetime.now(UTC).isoformat(),
+            },
+        )
+
+    @staticmethod
+    def export(summary: AdvisorySummary) -> dict[str, Any]:
                     if item is not None
                 ),
                 "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -367,6 +433,10 @@ class QuantumAdvisoryEngine:
 
 __all__ = [
     "AdvisorySignal",
+    "AdvisorySummary",
+    "QuantumAdvisoryEngine",
+    "RiskPosture",
+]
     "RiskPosture",
     "AdvisorySummary",
     "QuantumAdvisoryEngine",

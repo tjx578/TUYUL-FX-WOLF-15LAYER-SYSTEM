@@ -172,6 +172,10 @@ def create_engine_suite() -> dict[str, object]:
         "coherence": CognitiveCoherenceEngine(),
         "context": CognitiveContextEngine(),
         "risk": CognitiveRiskSimulation(),
+        "momentum": FusionMomentumEngine(),
+        "precision": FusionPrecisionEngine(),
+        "structure": FusionStructureEngine(),
+        "field": QuantumFieldEngine(),
 def create_engine_suite() -> dict:
     """Factory: create all 9 engines with default configuration.
 
@@ -191,6 +195,12 @@ def create_engine_suite() -> dict:
 
 
 __all__ = [
+    "CognitiveCoherenceEngine",
+    "CognitiveContextEngine",
+    "CognitiveRiskSimulation",
+    "FusionMomentumEngine",
+    "FusionPrecisionEngine",
+    "FusionStructureEngine",
     "AdvisorySummary",
     "CoherenceResult",
     "CognitiveCoherenceEngine",
