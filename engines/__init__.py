@@ -1,3 +1,17 @@
+"""Engine facade package."""
+
+from .cognitive_coherence_engine import CognitiveCoherenceEngine
+from .cognitive_context_engine import CognitiveContextEngine
+from .cognitive_risk_simulation import CognitiveRiskSimulation
+from .fusion_momentum_engine import FusionMomentumEngine
+from .fusion_precision_engine import FusionPrecisionEngine
+from .fusion_structure_engine import FusionStructureEngine
+from .quantum_advisory_engine import QuantumAdvisoryEngine
+from .quantum_field_engine import QuantumFieldEngine
+from .quantum_probability_engine import QuantumProbabilityEngine
+
+
+def create_engine_suite():
 """Engine facade exports."""
 
 from engines.cognitive_risk_simulation import CognitiveRiskSimulation, RiskSimulationResult
@@ -122,6 +136,9 @@ __all__ = [
     "FusionMomentumEngine",
     "FusionPrecisionEngine",
     "FusionStructureEngine",
+    "QuantumFieldEngine",
+    "QuantumProbabilityEngine",
+    "QuantumAdvisoryEngine",
     "QuantumAdvisoryEngine",
     "QuantumFieldEngine",
     "QuantumProbabilityEngine",
