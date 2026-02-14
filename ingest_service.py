@@ -5,21 +5,32 @@ import os
 import signal
 import sys
 
-from loguru import logger  # pyright: ignore[reportMissingImports]
-from redis.asyncio import Redis as AsyncRedis
+from importlib import import_module
+from typing import Any, Protocol
 
+from loguru import logger  # pyright: ignore[reportMissingImports]
+
+from analysis.macro_regime_engine import MacroRegimeEngine
+from config_loader import CONFIG
 from context.system_state import SystemState, SystemStateManager
 from ingest.candle_builder import CandleBuilder
 from ingest.dependencies import create_finnhub_ws
 from ingest.finnhub_candles import FinnhubCandleFetcher
-from ingest.macro_monthly_scheduler import MacroMonthlyScheduler
-from analysis.macro_regime_engine import MacroRegimeEngine
-from config_loader import CONFIG
 from ingest.finnhub_market_news import FinnhubMarketNews
 from ingest.finnhub_news import FinnhubNews
 from ingest.h1_refresh_scheduler import H1RefreshScheduler
+from ingest.macro_monthly_scheduler import MacroMonthlyScheduler
 
 _shutdown_event: asyncio.Event | None = None
+MAX_RETRIES = 10
+BASE_DELAY = 1.0
+
+
+class RedisClient(Protocol):
+    """Minimal async Redis client contract used by ingest service."""
+
+    async def ping(self) -> Any: ...
+    async def aclose(self) -> None: ...
 
 
 def _validate_api_key() -> bool:
@@ -31,18 +42,29 @@ def _validate_api_key() -> bool:
     return True
 
 
-def _build_redis_client() -> AsyncRedis:
+def _get_enabled_symbols() -> list[str]:
+    symbols = CONFIG.get("pairs", {}).get("symbols", [])
+    return symbols if isinstance(symbols, list) else []
+
+
+def _build_redis_client() -> RedisClient:
+    try:
+        redis_asyncio = import_module("redis.asyncio")
+    except ModuleNotFoundError as exc:
+        raise RuntimeError("Missing dependency 'redis'. Install it with: pip install redis") from exc
+
+    redis_cls = redis_asyncio.Redis
     redis_url = os.getenv("REDIS_URL")
     if redis_url:
         logger.info("Using REDIS_URL for ingest service")
-        return AsyncRedis.from_url(redis_url, encoding="utf-8", decode_responses=True)
+        return redis_cls.from_url(redis_url, encoding="utf-8", decode_responses=True)
 
     redis_host = os.getenv("REDIS_HOST", "localhost")
     redis_port = int(os.getenv("REDIS_PORT", "6379"))
     redis_password = os.getenv("REDIS_PASSWORD", "")
     redis_db = int(os.getenv("REDIS_DB", "0"))
     logger.info(f"Using Redis: {redis_host}:{redis_port}/{redis_db}")
-    return AsyncRedis(
+    return redis_cls(
         host=redis_host,
         port=redis_port,
         password=redis_password if redis_password else None,
@@ -52,136 +74,128 @@ def _build_redis_client() -> AsyncRedis:
     )
 
 
+async def _connect_redis() -> RedisClient:
+    redis = _build_redis_client()
+    await redis.ping()
+    logger.info("Redis connection validated")
+    return redis
+
+
+def _set_state_from_warmup(system_state: SystemStateManager) -> None:
+    warmup_report = system_state.get_warmup_report()
+    incomplete_count = sum(
+        1 for status in warmup_report.values() if status.status.value != "COMPLETE"
+    )
+    if incomplete_count == 0:
+        system_state.set_state(SystemState.READY)
+        logger.info("Warmup complete - system state: READY")
+        return
+    system_state.set_state(SystemState.DEGRADED)
+    logger.warning(
+        f"Warmup complete with {incomplete_count} incomplete symbols - "
+        "system state: DEGRADED"
+    )
+
+
+def _update_macro_regime(enabled_symbols: list[str]) -> None:
+    try:
+        macro_engine = MacroRegimeEngine()
+    except Exception:
+        logger.exception("Failed to initialize MacroRegimeEngine")
+        return
+
+    for symbol in enabled_symbols:
+        try:
+            macro_engine.update_macro_state(symbol)
+        except Exception as exc:
+            logger.error(f"Macro regime failed for {symbol}: {exc}")
+
+
+async def _run_warmup(system_state: SystemStateManager, enabled_symbols: list[str]) -> None:
+    logger.info("Starting warmup: fetching historical candles from Finnhub REST API")
+    try:
+        fetcher = FinnhubCandleFetcher()
+        warmup_results = await fetcher.warmup_all()
+        system_state.validate_warmup(warmup_results)
+        _update_macro_regime(enabled_symbols)
+        _set_state_from_warmup(system_state)
+    except Exception as exc:
+        logger.error(f"Warmup failed (non-fatal): {exc}")
+        system_state.set_state(SystemState.DEGRADED)
+
+
+async def _safe_stop(name: str, obj: Any, cleanup_errors: list[tuple[str, Exception]]) -> None:
+    stop = getattr(obj, "stop", None)
+    if stop is None:
+        return
+    try:
+        await stop()
+    except Exception as exc:
+        logger.error(f"Error stopping {name}: {exc}")
+        cleanup_errors.append((f"{name}.stop()", exc))
+
+
 async def run_ingest_services(has_api_key: bool) -> None:
-  # noqa: PLR0912, RUF100
-    """Run Finnhub WS, news, and candle builder loops."""
+    """Run Finnhub WS, news, market news, and candle/scheduler loops."""
     if not has_api_key:
         logger.info("Skipping ingest services - no API key configured")
         while not (_shutdown_event and _shutdown_event.is_set()):  # noqa: ASYNC110
             await asyncio.sleep(1)
         return
 
-    redis: AsyncRedis | None = None
+    enabled_symbols = _get_enabled_symbols()
+    redis: RedisClient | None = None
     ws_feed = None
     news_feed = None
+    market_news = None
     candle_builder = None
 
     try:
-        redis = _build_redis_client()
-        await redis.ping() # pyright: ignore[reportGeneralTypeIssues]
-        logger.info("Redis connection validated")
-    except Exception as e:
-        logger.error(f"Error connecting to Redis: {e}")
-        raise
+        redis = await _connect_redis()
+        system_state = SystemStateManager()
+        system_state.set_state(SystemState.WARMING_UP)
+        await _run_warmup(system_state, enabled_symbols)
 
-    # Initialize system state manager
-    system_state = SystemStateManager()
-    system_state.set_state(SystemState.WARMING_UP)
-
-    # Warmup: fetch historical candles
-    logger.info("Starting warmup: fetching historical candles from Finnhub REST API")
-    try:
-        fetcher = FinnhubCandleFetcher()
-        warmup_results = await fetcher.warmup_all()
-        
-        # Validate warmup results
-        system_state.validate_warmup(warmup_results)
-        
-        # Run macro regime analysis using MN data (if warmup provided history)
-        enabled_symbols = CONFIG.get("pairs", {}).get("symbols", [])
-        try:
-            macro_engine = MacroRegimeEngine()
-            for symbol in enabled_symbols:
-                try:
-                    macro_engine.update_macro_state(symbol)
-                except Exception as e:
-                    logger.error(f"Macro regime failed for {symbol}: {e}")
-        except Exception:
-            logger.exception("Failed to initialize MacroRegimeEngine")
-
-        # Set state based on validation
-        warmup_report = system_state.get_warmup_report()
-        incomplete_count = sum(
-            1 for status in warmup_report.values() 
-            if status.status.value != "COMPLETE"
-        )
-        
-        if incomplete_count == 0:
-            system_state.set_state(SystemState.READY)
-            logger.info("Warmup complete - system state: READY")
-        else:
-            system_state.set_state(SystemState.DEGRADED)
-            logger.warning(
-                f"Warmup complete with {incomplete_count} incomplete symbols - "
-                "system state: DEGRADED"
-            )
-            
-    except Exception as exc:
-        logger.error(f"Warmup failed (non-fatal): {exc}")
-        system_state.set_state(SystemState.DEGRADED)
-
-    # Start ingest services
-    ws_feed = await create_finnhub_ws(redis=redis)
-    news_feed = FinnhubNews()
-    market_news = FinnhubMarketNews()
-    candle_builder = CandleBuilder()
-    h1_refresh = H1RefreshScheduler()
-
-    logger.info(
-        "Starting ingest services: WebSocket, News, MarketNews, "
-        "CandleBuilder (M15), H1Refresh"
-    )
-    try:
-        ws_feed = await create_finnhub_ws(redis=redis)
+        ws_feed = await create_finnhub_ws(redis=redis) # pyright: ignore[reportArgumentType]
         news_feed = FinnhubNews()
+        market_news = FinnhubMarketNews()
         candle_builder = CandleBuilder()
+        h1_refresh = H1RefreshScheduler()
 
-        logger.info("Starting ingest services: WebSocket, News, CandleBuilder")
+        logger.info(
+            "Starting ingest services: WebSocket, News, MarketNews, CandleBuilder (M15), H1Refresh"
+        )
         await asyncio.gather(
             ws_feed.run(),
             news_feed.run(),
             market_news.run(),
             candle_builder.run(),
             h1_refresh.run(),
-            # Start monthly macro scheduler in background
             MacroMonthlyScheduler(enabled_symbols).run(),
         )
     except asyncio.CancelledError:
         logger.info("Ingest services cancelled - shutting down")
         raise
     finally:
-        cleanup_errors = []
-        if ws_feed is not None:
-            try:
-                await ws_feed.stop()
-            except Exception as e:
-                logger.error(f"Error stopping ws_feed: {e}")
-                cleanup_errors.append(("ws_feed.stop()", e))
-        if news_feed is not None:
-            try:
-                await news_feed.stop() # pyright: ignore[reportAttributeAccessIssue]
-            except Exception as e:
-                logger.error(f"Error stopping news_feed: {e}")
-                cleanup_errors.append(("news_feed.stop()", e))
-        if candle_builder is not None:
-            try:
-                await candle_builder.stop() # pyright: ignore[reportAttributeAccessIssue]
-            except Exception as e:
-                logger.error(f"Error stopping candle_builder: {e}")
-                cleanup_errors.append(("candle_builder.stop()", e))
+        cleanup_errors: list[tuple[str, Exception]] = []
+        await _safe_stop("ws_feed", ws_feed, cleanup_errors)
+        await _safe_stop("news_feed", news_feed, cleanup_errors)
+        await _safe_stop("market_news", market_news, cleanup_errors)
+        await _safe_stop("candle_builder", candle_builder, cleanup_errors)
+
         if redis is not None:
             try:
                 await redis.aclose()
-            except Exception as e:
-                logger.error(f"Error closing redis: {e}")
-                cleanup_errors.append(("redis.aclose()", e))
+            except Exception as exc:
+                logger.error(f"Error closing redis: {exc}")
+                cleanup_errors.append(("redis.aclose()", exc))
 
         if cleanup_errors:
             logger.warning(f"Cleanup completed with {len(cleanup_errors)} error(s)")
         logger.info("Ingest service cleanup complete")
 
 
-def _handle_signal(signum: int, frame) -> None:
+def _handle_signal(signum: int, frame: Any) -> None:
     signal_name = signal.Signals(signum).name
     logger.info(f"Received {signal_name} - initiating graceful shutdown...")
     if _shutdown_event:

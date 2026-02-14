@@ -9,15 +9,19 @@ import os
 
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
+from typing import Any
 
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
+import fastapi  # pyright: ignore[reportMissingImports]
+import uvicorn  # pyright: ignore[reportMissingImports]
+
+from fastapi.middleware.cors import CORSMiddleware  # pyright: ignore[reportMissingImports]
 from loguru import logger
 
 from api.dashboard_routes import router as dashboard_router
 from api.journal_routes import router as journal_router
 from api.l12_routes import router as l12_router
 from api.ws_routes import router as ws_router
+from config_loader import CONFIG
 from context.live_context_bus import LiveContextBus
 from context.runtime_state import RuntimeState
 from dashboard.price_feed import PriceFeed
@@ -49,7 +53,7 @@ async def _run_price_feed_updater():
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):
+async def lifespan(app: fastapi.FastAPI):
     """
     Lifespan context manager for background tasks.
 
@@ -93,7 +97,7 @@ async def lifespan(app: FastAPI):
     logger.info("Background tasks stopped")
 
 
-app = FastAPI(
+app = fastapi.FastAPI(
     title="Wolf L12 API",
     version="7.4r∞",
     description="Wolf 15-Layer Trading System - L12 Verdict & Dashboard API",
@@ -130,8 +134,6 @@ def _get_feed_status() -> dict[str, str]:
     if not api_key or api_key == "YOUR_FINNHUB_API_KEY":
         return {"overall": "no_api_key"}
 
-    from config_loader import CONFIG
-
     context_bus = LiveContextBus()
     pairs = [p["symbol"] for p in CONFIG["pairs"]["pairs"] if p.get("enabled", True)]
 
@@ -160,8 +162,6 @@ def _get_last_tick_times() -> dict[str, float | None]:
     Returns:
         Dictionary of symbol -> age in seconds (or None if no data)
     """
-    from config_loader import CONFIG
-
     context_bus = LiveContextBus()
     pairs = [p["symbol"] for p in CONFIG["pairs"]["pairs"] if p.get("enabled", True)]
     return {pair: context_bus.get_feed_age(pair) for pair in pairs}
@@ -176,13 +176,18 @@ def _get_candle_freshness() -> dict[str, int]:
     """
     context_bus = LiveContextBus()
     snapshot = context_bus.snapshot()
-    candles = snapshot.get("candles", {})
+    raw_candles: Any = snapshot.get("candles", {})
+    candles: dict[str, Any] = raw_candles if isinstance(raw_candles, dict) else {}
 
     now = datetime.now(UTC)
     freshness = {}
 
     for symbol, timeframes in candles.items():
+        if not isinstance(timeframes, dict):
+            continue
         for tf, candle in timeframes.items():
+            if not isinstance(candle, dict):
+                continue
             ts = candle.get("timestamp")
             if isinstance(ts, datetime):
                 age = (now - ts).total_seconds()
@@ -253,7 +258,16 @@ async def health_check():
     }
 
 
-if __name__ == "__main__":
-    import uvicorn
+@app.get("/health")
+async def health():
+    return {
+        "status": "ok",
+        "pipeline_version": "v7.4.1r∞",
+        "core_modules": 4,
+        "layers": 15,
+        "governance": "ANALYSIS_ONLY"
+    }
 
+
+if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)
