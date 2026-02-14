@@ -1,5 +1,5 @@
 """
-Core Unified Modules — v7.4.1r∞ Constitutional Pipeline (PATCHED)
+Core Unified Modules - v7.4.1r∞ Constitutional Pipeline (PATCHED)
 =================================================================
 
 CHANGELOG v7.4.1:
@@ -8,7 +8,7 @@ CHANGELOG v7.4.1:
   - FIX: MonteCarloResult collision handled via namespace alias
   - FIX: _clamp signature inconsistency documented (module-private, no export needed)
 
-4-Core Architecture (PRODUCTION — Real Logic Implementations):
+4-Core Architecture (PRODUCTION - Real Logic Implementations):
 
   core_cognitive_unified   → L0, L1, L5(partial), L7, L9, L11, L13
   core_fusion_unified      → L2, L4, L6, L7, L9
@@ -16,7 +16,7 @@ CHANGELOG v7.4.1:
   core_reflective_unified  → L1-L2, L3-L6, L8, L10-L13
   core_reflective_unified_analysis → ANALYSIS-ONLY layer (non-binding)
 
-Status: PRODUCTION-READY — All stubs replaced + critical bugs patched.
+Status: PRODUCTION-READY - All stubs replaced + critical bugs patched.
 Version: v7.4.1r∞
 """
 
