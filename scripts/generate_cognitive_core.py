@@ -1,4 +1,14 @@
-"""
+#!/usr/bin/env python3
+"""Generate production-ready core_cognitive_unified.py"""
+
+import sys
+from pathlib import Path
+
+# Target path
+target = Path(__file__).parent.parent / "core" / "core_cognitive_unified.py"
+
+# Full content
+content = '''"""
 Core Cognitive Unified Engine — v7.4r∞ Production
 
 Pipeline Coverage:
@@ -1469,3 +1479,11 @@ __all__ = [
     "validate_cognitive_thresholds",
     "calculate_risk_adjusted_score",
 ]
+'''
+
+# Write the file
+target.write_text(content)
+
+print(f"✓ Generated {target}")
+print(f"  Size: {target.stat().st_size:,} bytes")
+print(f"  Lines: {len(content.splitlines()):,}")
