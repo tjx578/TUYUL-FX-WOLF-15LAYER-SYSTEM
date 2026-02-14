@@ -59,7 +59,6 @@ class RiskManager:
             raise RuntimeError(
                 "RiskManager is a singleton. Use get_instance()."
             )
-            raise RuntimeError("RiskManager is a singleton. Use get_instance().")
 
         self._config = load_risk()
         self._balance = initial_balance

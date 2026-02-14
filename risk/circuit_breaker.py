@@ -163,14 +163,6 @@ class CircuitBreaker:
 
     def _check_auto_recovery(self) -> None:
         """Check if cooldown has elapsed and auto-recover to HALF_OPEN."""
-        if (
-            self._state == CircuitBreakerState.OPEN
-            and self._opened_at
-        ):
-            logger.error("Failed to persist circuit breaker state", error=str(e))
-
-    def _check_auto_recovery(self) -> None:
-        """Check if cooldown has elapsed and auto-recover to HALF_OPEN."""
         if self._state == CircuitBreakerState.OPEN and self._opened_at:
             now = now_utc()
             elapsed = now - self._opened_at
@@ -309,13 +301,6 @@ class CircuitBreaker:
                 "pair": pair,
                 "pnl": pnl,
             })
-            trades.append(
-                {
-                    "timestamp": now_utc().isoformat(),
-                    "pair": pair,
-                    "pnl": pnl,
-                }
-            )
 
             # Keep only last 100 trades
             trades = trades[-100:]
@@ -378,14 +363,6 @@ class CircuitBreaker:
             # Check for auto-recovery
             self._check_auto_recovery()
             return self._is_allowed()
-    
-
-            allowed = self._state in [
-                CircuitBreakerState.CLOSED,
-                CircuitBreakerState.HALF_OPEN,
-            ]
-
-            return allowed
 
     def get_state(self) -> str:
         """Get current circuit breaker state."""
@@ -408,10 +385,6 @@ class CircuitBreaker:
             return {
                 "state": self._state.value,
                 "trading_allowed": self._is_allowed(),
-                "trading_allowed": self._state in [
-                    CircuitBreakerState.CLOSED,
-                    CircuitBreakerState.HALF_OPEN,
-                ],
                 "consecutive_losses": self._consecutive_losses,
                 "opened_at": (self._opened_at.isoformat() if self._opened_at else None),
                 "probe_count": self._probe_count,
