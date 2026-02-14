@@ -1,5 +1,5 @@
 """
-Wolf Constitutional Pipeline v7.4r∞ — UNIFIED CORE MODULES INTEGRATION
+Wolf Constitutional Pipeline v7.4r∞ - UNIFIED CORE MODULES INTEGRATION
 
 SOLE pipeline orchestrator for the Wolf 15-Layer System.
 This is the ONE AND ONLY analysis pipeline in the entire repository.
@@ -15,17 +15,17 @@ Core Modules:
     4. core_reflective_unified.py   → TII, FRPC, Wolf Discipline, Evolution
 
 15-Layer Architecture:
-    ZONA 1 — Perception & Context   : L1, L2, L3
-    ZONA 2 — Confluence & Scoring   : L4, L5, L6
-    ZONA 3 — Probability & Validation: L7, L8, L9
-    ZONA 4 — Execution & Decision   : L10, L11, L12 (SOLE AUTHORITY)
-    ZONA 5 — Meta & Reflective      : L13, L14, L15
+    ZONA 1 - Perception & Context   : L1, L2, L3
+    ZONA 2 - Confluence & Scoring   : L4, L5, L6
+    ZONA 3 - Probability & Validation: L7, L8, L9
+    ZONA 4 - Execution & Decision   : L10, L11, L12 (SOLE AUTHORITY)
+    ZONA 5 - Meta & Reflective      : L13, L14, L15
 
 Execution order (CRITICAL):
-    Phase 1: L1, L2, L3 (Perception — independent)
-    Phase 2: L4, L5 (Confluence & Psychology — depend on L1-L3)
-    Phase 3: L7, L8, L9 (Probability & Validation — depend on L4/L5)
-    Phase 4: L11 → L6 → L10 (Execution + Risk — L11 BEFORE L6!)
+    Phase 1: L1, L2, L3 (Perception - independent)
+    Phase 2: L4, L5 (Confluence & Psychology - depend on L1-L3)
+    Phase 3: L7, L8, L9 (Probability & Validation - depend on L4/L5)
+    Phase 4: L11 → L6 → L10 (Execution + Risk - L11 BEFORE L6!)
     Phase 5: Build synthesis → L12 verdict (SOLE AUTHORITY)
     Phase 6: L13 reflective pass (only if EXECUTE verdict)
     Phase 7: L14 JSON export + L15 meta synthesis
@@ -129,7 +129,7 @@ class WolfConstitutionalPipeline:
         self._macro_vol = MacroVolatilityEngine()
 
     # ══════════════════════════════════════════════════════════════
-    #  MAIN EXECUTE — the single canonical entry point
+    #  MAIN EXECUTE - the single canonical entry point
     # ══════════════════════════════════════════════════════════════
 
     def execute(self, symbol: str) -> dict[str, Any]:
@@ -159,9 +159,9 @@ class WolfConstitutionalPipeline:
 
         try:
             # ═══════════════════════════════════════════════════════
-            # PHASE 1 — ZONA PERCEPTION & CONTEXT (L1, L2, L3)
+            # PHASE 1 - ZONA PERCEPTION & CONTEXT (L1, L2, L3)
             # ═══════════════════════════════════════════════════════
-            logger.info(f"[Pipeline v7.4r∞] Phase 1: Perception & Context — {symbol}")
+            logger.info(f"[Pipeline v7.4r∞] Phase 1: Perception & Context - {symbol}")
 
             l1 = self._l1.analyze(symbol)
             if not l1.get("valid"):
@@ -179,9 +179,9 @@ class WolfConstitutionalPipeline:
                 return self._early_exit(symbol, errors, time.time() - start_time)
 
             # ═══════════════════════════════════════════════════════
-            # PHASE 2 — ZONA CONFLUENCE & SCORING (L4, L5)
+            # PHASE 2 - ZONA CONFLUENCE & SCORING (L4, L5)
             # ═══════════════════════════════════════════════════════
-            logger.info(f"[Pipeline v7.4r∞] Phase 2: Confluence & Scoring — {symbol}")
+            logger.info(f"[Pipeline v7.4r∞] Phase 2: Confluence & Scoring - {symbol}")
 
             # L4: Wolf 30-Point Scoring (requires L1, L2, L3)
             l4 = self._l4.score(l1, l2, l3)
@@ -190,9 +190,9 @@ class WolfConstitutionalPipeline:
             l5 = self._l5.analyze(symbol, volatility_profile=l2)
 
             # ═══════════════════════════════════════════════════════
-            # PHASE 3 — ZONA PROBABILITY & VALIDATION (L7, L8, L9)
+            # PHASE 3 - ZONA PROBABILITY & VALIDATION (L7, L8, L9)
             # ═══════════════════════════════════════════════════════
-            logger.info(f"[Pipeline v7.4r∞] Phase 3: Probability & Validation — {symbol}")
+            logger.info(f"[Pipeline v7.4r∞] Phase 3: Probability & Validation - {symbol}")
 
             # L7: Monte Carlo FTTC Validation
             technical_score = l4.get("technical_score", 0)
@@ -220,10 +220,10 @@ class WolfConstitutionalPipeline:
             l9 = self._l9.analyze(symbol, structure)
 
             # ═══════════════════════════════════════════════════════
-            # PHASE 4 — ZONA EXECUTION & DECISION (L11 → L6 → L10)
+            # PHASE 4 - ZONA EXECUTION & DECISION (L11 → L6 → L10)
             # CRITICAL: L11 BEFORE L6 (L6 needs RR from L11)
             # ═══════════════════════════════════════════════════════
-            logger.info(f"[Pipeline v7.4r∞] Phase 4: Execution & Decision — {symbol}")
+            logger.info(f"[Pipeline v7.4r∞] Phase 4: Execution & Decision - {symbol}")
 
             # Determine direction from L3 trend
             trend = l3.get("trend", "NEUTRAL")
@@ -252,9 +252,9 @@ class WolfConstitutionalPipeline:
             macro = self._macro.analyze(symbol)
 
             # ═══════════════════════════════════════════════════════
-            # PHASE 5 — L12 CONSTITUTIONAL VERDICT (SOLE AUTHORITY)
+            # PHASE 5 - L12 CONSTITUTIONAL VERDICT (SOLE AUTHORITY)
             # ═══════════════════════════════════════════════════════
-            logger.info(f"[Pipeline v7.4r∞] Phase 5: Constitutional Verdict — {symbol}")
+            logger.info(f"[Pipeline v7.4r∞] Phase 5: Constitutional Verdict - {symbol}")
 
             synthesis = self._build_synthesis(
                 symbol=symbol,
@@ -274,17 +274,17 @@ class WolfConstitutionalPipeline:
             l12_verdict["gates_v74"] = gates
 
             # ═══════════════════════════════════════════════════════
-            # PHASE 6 — L13 REFLECTIVE EXECUTION (only if EXECUTE)
+            # PHASE 6 - L13 REFLECTIVE EXECUTION (only if EXECUTE)
             # ═══════════════════════════════════════════════════════
             reflective = None
             if l12_verdict.get("verdict", "").startswith("EXECUTE"):
-                logger.info(f"[Pipeline v7.4r∞] Phase 6: Reflective Execution — {symbol}")
+                logger.info(f"[Pipeline v7.4r∞] Phase 6: Reflective Execution - {symbol}")
                 reflective = self._run_reflective_pass(synthesis, l12_verdict)
 
             # ═══════════════════════════════════════════════════════
-            # PHASE 7 — L14 JSON OUTPUT + L15 META SYNTHESIS
+            # PHASE 7 - L14 JSON OUTPUT + L15 META SYNTHESIS
             # ═══════════════════════════════════════════════════════
-            logger.info(f"[Pipeline v7.4r∞] Phase 7: L14/L15 — {symbol}")
+            logger.info(f"[Pipeline v7.4r∞] Phase 7: L14/L15 - {symbol}")
 
             sovereignty = self._compute_sovereignty(synthesis, l12_verdict, reflective)
             latency_ms = (time.time() - start_time) * 1000
@@ -331,7 +331,7 @@ class WolfConstitutionalPipeline:
             return self._early_exit(symbol, errors, latency_ms)
 
     # ══════════════════════════════════════════════════════════════
-    #  BUILD SYNTHESIS — L12-contract payload from L1-L11
+    #  BUILD SYNTHESIS - L12-contract payload from L1-L11
     # ══════════════════════════════════════════════════════════════
 
     def _build_synthesis(
@@ -396,7 +396,7 @@ class WolfConstitutionalPipeline:
             else:
                 entry_zone = f"{entry_price:.5f}-{entry_price + 0.0010:.5f}"
 
-        # ── Risk (from L10/dashboard — placeholders) ──
+        # ── Risk (from L10/dashboard - placeholders) ──
         lot_size = l10.get("final_lot_size", 0.01)
         risk_percent = l10.get("adjusted_risk_pct", 1.0)
         risk_amount = l10.get("adjusted_risk_amount", 0.0)
@@ -589,7 +589,7 @@ class WolfConstitutionalPipeline:
         }
 
     # ══════════════════════════════════════════════════════════════
-    #  L13 — REFLECTIVE EXECUTION STRATEGY
+    #  L13 - REFLECTIVE EXECUTION STRATEGY
     # ══════════════════════════════════════════════════════════════
 
     def _run_reflective_pass(
@@ -610,7 +610,7 @@ class WolfConstitutionalPipeline:
         lrce_score = self._compute_lrce(synthesis)
         frpc_score = self._compute_frpc(synthesis, l12_verdict)
 
-        # αβγ from TRQ-3D (placeholder — will use core modules when populated)
+        # αβγ from TRQ-3D (placeholder - will use core modules when populated)
         alpha = lrce_score
         beta = frpc_score
         gamma = 1.0
@@ -634,7 +634,7 @@ class WolfConstitutionalPipeline:
         }
 
     # ══════════════════════════════════════════════════════════════
-    #  L14 — JSON OUTPUT & DATA EXPORT
+    #  L14 - JSON OUTPUT & DATA EXPORT
     # ══════════════════════════════════════════════════════════════
 
     def _build_l14_json(
@@ -702,7 +702,7 @@ class WolfConstitutionalPipeline:
         }
 
     # ══════════════════════════════════════════════════════════════
-    #  L15 — META SYNTHESIS (FULL UNITY STATE)
+    #  L15 - META SYNTHESIS (FULL UNITY STATE)
     # ══════════════════════════════════════════════════════════════
 
     def _build_l15_meta(
@@ -714,7 +714,7 @@ class WolfConstitutionalPipeline:
         gates: dict[str, Any],
     ) -> dict[str, Any]:
         """
-        L15: Meta Synthesis — Full Unity State Analysis.
+        L15: Meta Synthesis - Full Unity State Analysis.
 
         Combines all 14 layers into a single reflective consciousness state.
         """
@@ -763,7 +763,7 @@ class WolfConstitutionalPipeline:
         }
 
     # ══════════════════════════════════════════════════════════════
-    #  HELPER — direction / bias alignment
+    #  HELPER - direction / bias alignment
     # ══════════════════════════════════════════════════════════════
 
     def _is_direction_aligned_with_bias(self, direction: str, technical_bias: str) -> bool:
@@ -808,7 +808,7 @@ class WolfConstitutionalPipeline:
         return 0.5
 
     # ══════════════════════════════════════════════════════════════
-    #  L14 — VAULT SYNC + SOVEREIGNTY
+    #  L14 - VAULT SYNC + SOVEREIGNTY
     # ══════════════════════════════════════════════════════════════
 
     def _compute_sovereignty(
@@ -826,9 +826,9 @@ class WolfConstitutionalPipeline:
         thresholds = get_vault_sync_thresholds()
 
         # TODO: Implement real health checks before production deployment
-        feed_freshness = 1.0  # PLACEHOLDER — query LiveContextBus
-        redis_health = 1.0  # PLACEHOLDER — check Redis health
-        meta_integrity = 1.0  # PLACEHOLDER — compute from layer validity
+        feed_freshness = 1.0  # PLACEHOLDER - query LiveContextBus
+        redis_health = 1.0  # PLACEHOLDER - check Redis health
+        meta_integrity = 1.0  # PLACEHOLDER - compute from layer validity
 
         vault_sync = (
             feed_freshness * weights["feed"]
@@ -861,7 +861,7 @@ class WolfConstitutionalPipeline:
         }
 
     # ══════════════════════════════════════════════════════════════
-    #  EARLY EXIT — pipeline failure fallback
+    #  EARLY EXIT - pipeline failure fallback
     # ══════════════════════════════════════════════════════════════
 
     def _early_exit(

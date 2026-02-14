@@ -1,5 +1,5 @@
 """
-L7 Probability Analyzer — Monte Carlo FTTC Validation (PLACEHOLDER).
+L7 Probability Analyzer - Monte Carlo FTTC Validation (PLACEHOLDER).
 
 Sources:
     core_cognitive_unified.py → montecarlo_validate
@@ -32,7 +32,7 @@ except ImportError:
 
 
 class L7ProbabilityAnalyzer:
-    """Layer 7: Monte Carlo FTTC Validation — Probability & Validation zone."""
+    """Layer 7: Monte Carlo FTTC Validation - Probability & Validation zone."""
 
     def __init__(self) -> None:
         self._mc_confidence = None

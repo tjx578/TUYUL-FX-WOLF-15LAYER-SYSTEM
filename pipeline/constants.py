@@ -1,5 +1,5 @@
 """
-Pipeline Constants v7.4r∞ — threshold accessors from config/constitution.yaml.
+Pipeline Constants v7.4r∞ - threshold accessors from config/constitution.yaml.
 
 This module provides easy access to constitutional thresholds
 for the Wolf 15-Layer Pipeline without hardcoding magic numbers.

@@ -1,5 +1,5 @@
 """
-Journal Metrics — Read-only metrics computation.
+Journal Metrics - Read-only metrics computation.
 
 Provides daily, weekly, and accuracy statistics from journal entries.
 """

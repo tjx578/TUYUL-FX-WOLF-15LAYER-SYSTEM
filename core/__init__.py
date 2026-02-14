@@ -1,5 +1,5 @@
 """
-Core Unified Modules — v7.4r∞ Constitutional Pipeline
+Core Unified Modules - v7.4r∞ Constitutional Pipeline
 
 4-Core Architecture:
   core_cognitive_unified   → L0, L1, L5(partial), L7, L9, L11, L13

@@ -1,5 +1,5 @@
 """
-Pipeline Contracts v7.4r∞ — Pydantic models for L12 synthesis validation.
+Pipeline Contracts v7.4r∞ - Pydantic models for L12 synthesis validation.
 
 These models define the contract between the analysis pipeline (L1-L11)
 and the constitutional verdict engine (L12).
@@ -15,7 +15,7 @@ from pydantic import BaseModel, Field
 
 
 class ScoresContract(BaseModel):
-    """Scoring section of synthesis (v7.4r∞ — Wolf 30-Point)."""
+    """Scoring section of synthesis (v7.4r∞ - Wolf 30-Point)."""
 
     wolf_30_point: int = Field(ge=0, le=30)
     f_score: int = Field(ge=0, le=7)
@@ -87,7 +87,7 @@ class BiasContract(BaseModel):
 
 
 class CognitiveContract(BaseModel):
-    """Cognitive section (v7.4r∞ — from core_cognitive_unified.py)."""
+    """Cognitive section (v7.4r∞ - from core_cognitive_unified.py)."""
 
     regime: str = "TREND"
     dominant_force: str = "NEUTRAL"
@@ -96,7 +96,7 @@ class CognitiveContract(BaseModel):
 
 
 class FusionFRPCContract(BaseModel):
-    """Fusion/FRPC section (v7.4r∞ — from core_fusion_unified.py)."""
+    """Fusion/FRPC section (v7.4r∞ - from core_fusion_unified.py)."""
 
     conf12: float = Field(ge=0.0, le=1.0, default=0.0)
     frpc_energy: float = 0.0
@@ -105,7 +105,7 @@ class FusionFRPCContract(BaseModel):
 
 
 class TRQ3DContract(BaseModel):
-    """TRQ-3D section (v7.4r∞ — from core_quantum_unified.py)."""
+    """TRQ-3D section (v7.4r∞ - from core_quantum_unified.py)."""
 
     alpha: float = 0.0
     beta: float = 0.0
@@ -116,7 +116,7 @@ class TRQ3DContract(BaseModel):
 
 
 class SMCContract(BaseModel):
-    """SMC section (v7.4r∞ — from core_cognitive + core_fusion)."""
+    """SMC section (v7.4r∞ - from core_cognitive + core_fusion)."""
 
     structure: str = "RANGE"
     smart_money_signal: str = "NEUTRAL"
@@ -128,7 +128,7 @@ class SMCContract(BaseModel):
 
 
 class WolfDisciplineContract(BaseModel):
-    """Wolf discipline section (v7.4r∞ — from core_reflective_unified.py)."""
+    """Wolf discipline section (v7.4r∞ - from core_reflective_unified.py)."""
 
     score: float = Field(ge=0.0, le=1.0, default=0.0)
     polarity_deviation: float = 0.0

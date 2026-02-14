@@ -12,7 +12,7 @@ class AlertFormatter:
         ts = format_dual_timezone(now_utc())
 
         return f"""
-🐺 WOLF 15-LAYER — L12 VERDICT
+🐺 WOLF 15-LAYER - L12 VERDICT
 ────────────────────────────
 Symbol      : {verdict.get("symbol")}
 Verdict    : {verdict.get("verdict")}
@@ -27,7 +27,7 @@ Mode       : {verdict.get("execution_mode")}
         ts = format_dual_timezone(now_utc())
 
         return f"""
-📌 ORDER UPDATE — {event}
+📌 ORDER UPDATE - {event}
 ────────────────────────────
 State     : {state.get("state")}
 Symbol    : {state.get("order", {}).get("symbol")}

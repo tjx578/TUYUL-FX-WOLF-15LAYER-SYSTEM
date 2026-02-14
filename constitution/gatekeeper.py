@@ -1,5 +1,5 @@
 """
-Gatekeeper — Constitutional 9-Gate Enforcement
+Gatekeeper - Constitutional 9-Gate Enforcement
 NO EXECUTION | NO DISCRETION
 """
 

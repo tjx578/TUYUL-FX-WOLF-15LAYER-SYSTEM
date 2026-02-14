@@ -75,7 +75,7 @@ class FinnhubRateLimitError(FinnhubConnectionError):
 
     def __init__(self, retry_after: float = RATE_LIMIT_BASE_BACKOFF_S):
         self.retry_after = retry_after
-        super().__init__(f"Finnhub rate limited — retry after {retry_after:.1f}s")
+        super().__init__(f"Finnhub rate limited - retry after {retry_after:.1f}s")
 
 
 def _calculate_backoff(
@@ -243,7 +243,7 @@ class FinnhubWebSocket:
             # --- Leader election ---
             if not await self._acquire_leader_lock():
                 logger.debug(
-                    "Not leader — waiting before retry",
+                    "Not leader - waiting before retry",
                     extra={"replica_id": self._replica_id},
                 )
                 await asyncio.sleep(LEADER_LOCK_TTL_S / 2)

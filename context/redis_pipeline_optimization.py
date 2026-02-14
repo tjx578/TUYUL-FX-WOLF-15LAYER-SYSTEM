@@ -17,7 +17,7 @@ async def redis_pipeline_ctx(
         await pipe.execute()
 
 
-# Usage — batch FTA score reads instead of individual GETs
+# Usage - batch FTA score reads instead of individual GETs
 async def get_fta_scores_batch(
     redis: Redis,
     pairs: list[str],

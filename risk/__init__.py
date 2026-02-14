@@ -1,3 +1,3 @@
 """
-Risk package — Risk management and prop firm compliance.
+Risk package - Risk management and prop firm compliance.
 """
