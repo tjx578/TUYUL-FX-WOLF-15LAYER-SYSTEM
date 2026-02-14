@@ -1,23 +1,23 @@
 """
-Dashboard Trade Routes — FastAPI router for manual-first trade flow.
+Dashboard Trade Routes - FastAPI router for manual-first trade flow.
 
 Endpoints:
-  POST /api/v1/trades/take        — Trader takes a signal (system computes lot)
-  POST /api/v1/trades/skip        — Trader skips a signal
-  POST /api/v1/trades/confirm     — Trader confirms order placed at broker
-  POST /api/v1/trades/close       — Trader manually closes a trade
-  GET  /api/v1/trades/active      — List all active trades
-  GET  /api/v1/trades/{trade_id}  — Get single trade detail
-  GET  /api/v1/prices             — Get all live prices
-  GET  /api/v1/prices/{symbol}    — Get single symbol price
-  GET  /api/v1/accounts           — List accounts
-  POST /api/v1/accounts           — Create account
-  GET  /api/v1/accounts/{id}      — Get account detail
+  POST /api/v1/trades/take        - Trader takes a signal (system computes lot)
+  POST /api/v1/trades/skip        - Trader skips a signal
+  POST /api/v1/trades/confirm     - Trader confirms order placed at broker
+  POST /api/v1/trades/close       - Trader manually closes a trade
+  GET  /api/v1/trades/active      - List all active trades
+  GET  /api/v1/trades/{trade_id}  - Get single trade detail
+  GET  /api/v1/prices             - Get all live prices
+  GET  /api/v1/prices/{symbol}    - Get single symbol price
+  GET  /api/v1/accounts           - List accounts
+  POST /api/v1/accounts           - Create account
+  GET  /api/v1/accounts/{id}      - Get account detail
 """
 
-from typing import List, Optional
-
 from fastapi import APIRouter, HTTPException
+
+from fastapi import APIRouter, HTTPException  # pyright: ignore[reportMissingImports]
 from pydantic import BaseModel, Field
 
 from dashboard.account_manager import AccountManager
@@ -25,9 +25,8 @@ from dashboard.price_feed import PriceFeed
 from dashboard.trade_ledger import TradeLedger
 from journal.journal_router import JournalRouter
 from journal.journal_schema import DecisionJournal, VerdictType
-from risk.drawdown import DrawdownMonitor
 from risk.prop_firm import PropFirmRules
-from schemas.trade_models import Trade, Account, TradeStatus, CloseReason
+from schemas.trade_models import Account, CloseReason, Trade, TradeStatus
 from utils.timezone_utils import now_utc
 
 router = APIRouter()
@@ -43,8 +42,10 @@ _journal = JournalRouter()
 # REQUEST/RESPONSE MODELS
 # ========================
 
+
 class TakeSignalRequest(BaseModel):
     """Request to take a signal."""
+
     signal_id: str = Field(..., description="Source signal ID")
     account_id: str = Field(..., description="Account ID")
     pair: str = Field(..., description="Trading pair")
@@ -57,6 +58,7 @@ class TakeSignalRequest(BaseModel):
 
 class SkipSignalRequest(BaseModel):
     """Request to skip a signal."""
+
     signal_id: str = Field(..., description="Source signal ID")
     pair: str = Field(..., description="Trading pair")
     reason: str = Field(default="Manual skip", description="Reason for skipping")
@@ -64,17 +66,20 @@ class SkipSignalRequest(BaseModel):
 
 class ConfirmOrderRequest(BaseModel):
     """Request to confirm order placed at broker."""
+
     trade_id: str = Field(..., description="Trade ID")
 
 
 class CloseTradeRequest(BaseModel):
     """Request to manually close a trade."""
+
     trade_id: str = Field(..., description="Trade ID")
     reason: str = Field(default="Manual close", description="Reason for closing")
 
 
 class CreateAccountRequest(BaseModel):
     """Request to create a new account."""
+
     name: str = Field(..., description="Account name")
     balance: float = Field(..., gt=0, description="Initial balance")
     prop_firm: bool = Field(default=False, description="Is prop firm account?")
@@ -87,11 +92,12 @@ class CreateAccountRequest(BaseModel):
 # TRADE ENDPOINTS
 # ========================
 
+
 @router.post("/api/v1/trades/take")
 async def take_signal(req: TakeSignalRequest) -> Trade:
     """
-    Trader takes a signal — dashboard computes lot size and creates trade.
-    
+    Trader takes a signal - dashboard computes lot size and creates trade.
+
     Validates:
       - Account exists
       - Risk limits not breached
@@ -101,7 +107,7 @@ async def take_signal(req: TakeSignalRequest) -> Trade:
     account = _account_mgr.get_account(req.account_id)
     if not account:
         raise HTTPException(status_code=404, detail=f"Account not found: {req.account_id}")
-    
+
     # Check risk limits
     if account.prop_firm:
         prop_rules = PropFirmRules()
@@ -109,17 +115,17 @@ async def take_signal(req: TakeSignalRequest) -> Trade:
         if req.risk_percent > max_risk:
             raise HTTPException(
                 status_code=400,
-                detail=f"Risk {req.risk_percent}% exceeds prop firm limit {max_risk}%"
+                detail=f"Risk {req.risk_percent}% exceeds prop firm limit {max_risk}%",
             )
-    
+
     # Calculate risk amount
     risk_amount = account.balance * (req.risk_percent / 100.0)
-    
-    # Calculate lot size (simplified — actual would need pip value, etc.)
+
+    # Calculate lot size (simplified - actual would need pip value, etc.)
     # For now, use a placeholder calculation
     pip_distance = abs(req.entry - req.sl)
     lot_size = round(risk_amount / (pip_distance * 10), 2)  # Simplified
-    
+
     # Create trade in INTENDED status
     trade = _trade_ledger.create_trade(
         signal_id=req.signal_id,
@@ -129,14 +135,16 @@ async def take_signal(req: TakeSignalRequest) -> Trade:
         risk_mode="FIXED",
         total_risk_percent=req.risk_percent,
         total_risk_amount=risk_amount,
-        legs=[{
-            "entry": req.entry,
-            "sl": req.sl,
-            "tp": req.tp,
-            "lot": lot_size,
-        }],
+        legs=[
+            {
+                "entry": req.entry,
+                "sl": req.sl,
+                "tp": req.tp,
+                "lot": lot_size,
+            }
+        ],
     )
-    
+
     # Record J2 decision journal (trader took the signal)
     try:
         j2 = DecisionJournal(
@@ -159,10 +167,10 @@ async def take_signal(req: TakeSignalRequest) -> Trade:
             primary_rejection_reason=None,
         )
         _journal.record_decision(j2)
-    except Exception as exc:
+    except Exception:
         # Don't fail the trade if journal fails
         pass
-    
+
     return trade
 
 
@@ -170,7 +178,7 @@ async def take_signal(req: TakeSignalRequest) -> Trade:
 async def skip_signal(req: SkipSignalRequest) -> dict:
     """
     Trader skips a signal.
-    
+
     Records decision in journal but does not create trade.
     """
     try:
@@ -195,9 +203,9 @@ async def skip_signal(req: SkipSignalRequest) -> dict:
             primary_rejection_reason=req.reason,
         )
         _journal.record_decision(j2)
-    except Exception as exc:
+    except Exception:
         pass
-    
+
     return {
         "status": "skipped",
         "signal_id": req.signal_id,
@@ -209,51 +217,51 @@ async def skip_signal(req: SkipSignalRequest) -> dict:
 async def confirm_order(req: ConfirmOrderRequest) -> Trade:
     """
     Trader confirms order placed at broker.
-    
+
     Transitions trade from INTENDED → PENDING.
     """
     trade = _trade_ledger.get_trade(req.trade_id)
     if not trade:
         raise HTTPException(status_code=404, detail=f"Trade not found: {req.trade_id}")
-    
+
     # Update status
     success = _trade_ledger.update_status(req.trade_id, TradeStatus.PENDING)
     if not success:
         raise HTTPException(status_code=400, detail="Invalid status transition")
-    
+
     # Get updated trade
     trade = _trade_ledger.get_trade(req.trade_id)
-    return trade
+    return trade # pyright: ignore[reportReturnType]
 
 
 @router.post("/api/v1/trades/close")
 async def close_trade(req: CloseTradeRequest) -> Trade:
     """
     Trader manually closes a trade.
-    
+
     Transitions trade from OPEN → CLOSED with MANUAL_CLOSE reason.
     """
     trade = _trade_ledger.get_trade(req.trade_id)
     if not trade:
         raise HTTPException(status_code=404, detail=f"Trade not found: {req.trade_id}")
-    
+
     # Update status
     success = _trade_ledger.update_status(
         req.trade_id,
         TradeStatus.CLOSED,
         close_reason=CloseReason.MANUAL_CLOSE,
-        pnl=None  # P&L would come from broker
+        pnl=None,  # P&L would come from broker
     )
     if not success:
         raise HTTPException(status_code=400, detail="Invalid status transition")
-    
+
     # Get updated trade
     trade = _trade_ledger.get_trade(req.trade_id)
-    return trade
+    return trade # pyright: ignore[reportReturnType]
 
 
 @router.get("/api/v1/trades/active")
-async def get_active_trades() -> List[Trade]:
+async def get_active_trades() -> list[Trade]:
     """Get all active trades."""
     return _trade_ledger.get_active_trades()
 
@@ -270,6 +278,7 @@ async def get_trade(trade_id: str) -> Trade:
 # ========================
 # PRICE ENDPOINTS
 # ========================
+
 
 @router.get("/api/v1/prices")
 async def get_all_prices() -> dict:
@@ -291,8 +300,9 @@ async def get_price(symbol: str) -> dict:
 # ACCOUNT ENDPOINTS
 # ========================
 
+
 @router.get("/api/v1/accounts")
-async def list_accounts() -> List[Account]:
+async def list_accounts() -> list[Account]:
     """List all accounts."""
     return _account_mgr.list_accounts()
 

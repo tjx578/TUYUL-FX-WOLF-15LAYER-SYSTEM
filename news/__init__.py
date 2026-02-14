@@ -1,3 +1,3 @@
 """
-News package — News filtering and analysis.
+News package - News filtering and analysis.
 """

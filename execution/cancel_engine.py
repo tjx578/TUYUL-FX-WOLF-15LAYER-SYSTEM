@@ -4,6 +4,7 @@ Cancels pending orders based on M15 invalidation.
 """
 
 from loguru import logger
+
 from execution.state_machine import ExecutionStateMachine
 
 
@@ -17,4 +18,6 @@ class CancelEngine:
 
         self.state.set_cancelled(reason)
         logger.warning(f"\u274c ORDER CANCELLED \u2192 {reason}")
+
+
 # Placeholder

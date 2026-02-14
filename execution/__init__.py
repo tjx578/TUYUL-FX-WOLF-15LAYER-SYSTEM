@@ -1,3 +1,3 @@
 """
-Execution package — Trade execution logic.
+Execution package - Trade execution logic.
 """

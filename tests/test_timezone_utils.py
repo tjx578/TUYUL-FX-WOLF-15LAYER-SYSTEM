@@ -2,27 +2,27 @@
 Test suite for timezone utilities
 """
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from utils.timezone_utils import (
-    now_utc,
-    now_local,
-    utc_to_local,
-    local_to_utc,
+    SYSTEM_TZ,
     ensure_utc,
+    format_dual_timezone,
     format_local,
     format_utc,
-    is_trading_session,
     get_daily_reset_time,
-    format_dual_timezone,
-    SYSTEM_TZ,
+    is_trading_session,
+    local_to_utc,
+    now_local,
+    now_utc,
+    utc_to_local,
 )
 
 
 def test_now_utc():
     """Test now_utc returns timezone-aware UTC datetime"""
     dt = now_utc()
-    assert dt.tzinfo == timezone.utc
+    assert dt.tzinfo == UTC
     assert isinstance(dt, datetime)
 
 
@@ -36,7 +36,7 @@ def test_now_local():
 def test_utc_to_local():
     """Test UTC to GMT+8 conversion"""
     # Create a UTC datetime: 2026-02-10 08:00:00 UTC
-    utc_dt = datetime(2026, 2, 10, 8, 0, 0, tzinfo=timezone.utc)
+    utc_dt = datetime(2026, 2, 10, 8, 0, 0, tzinfo=UTC)
 
     # Convert to GMT+8
     local_dt = utc_to_local(utc_dt)
@@ -58,7 +58,7 @@ def test_local_to_utc():
     # Should be 2026-02-10 08:00:00 UTC
     assert utc_dt.hour == 8
     assert utc_dt.day == 10
-    assert utc_dt.tzinfo == timezone.utc
+    assert utc_dt.tzinfo == UTC
 
 
 def test_ensure_utc_naive():
@@ -66,7 +66,7 @@ def test_ensure_utc_naive():
     naive_dt = datetime(2026, 2, 10, 8, 0, 0)
     utc_dt = ensure_utc(naive_dt)
 
-    assert utc_dt.tzinfo == timezone.utc
+    assert utc_dt.tzinfo == UTC
     assert utc_dt.hour == 8
 
 
@@ -75,13 +75,13 @@ def test_ensure_utc_aware():
     local_dt = datetime(2026, 2, 10, 16, 0, 0, tzinfo=SYSTEM_TZ)
     utc_dt = ensure_utc(local_dt)
 
-    assert utc_dt.tzinfo == timezone.utc
+    assert utc_dt.tzinfo == UTC
     assert utc_dt.hour == 8
 
 
 def test_format_utc():
     """Test UTC formatting"""
-    dt = datetime(2026, 2, 10, 8, 30, 45, tzinfo=timezone.utc)
+    dt = datetime(2026, 2, 10, 8, 30, 45, tzinfo=UTC)
     formatted = format_utc(dt)
 
     assert "2026-02-10 08:30:45 UTC" in formatted
@@ -89,7 +89,7 @@ def test_format_utc():
 
 def test_format_local():
     """Test GMT+8 formatting"""
-    dt = datetime(2026, 2, 10, 8, 30, 45, tzinfo=timezone.utc)
+    dt = datetime(2026, 2, 10, 8, 30, 45, tzinfo=UTC)
     formatted = format_local(dt)
 
     # Should show GMT+8 time (16:30:45)
@@ -138,7 +138,7 @@ def test_get_daily_reset_time():
     reset_time = get_daily_reset_time()
 
     # Reset time should be in UTC
-    assert reset_time.tzinfo == timezone.utc
+    assert reset_time.tzinfo == UTC
 
     # Should be 16:00 UTC (midnight GMT+8)
     assert reset_time.hour == 16
@@ -147,7 +147,7 @@ def test_get_daily_reset_time():
 
 def test_format_dual_timezone():
     """Test dual timezone formatting for alerts"""
-    dt = datetime(2026, 2, 10, 8, 30, 0, tzinfo=timezone.utc)
+    dt = datetime(2026, 2, 10, 8, 30, 0, tzinfo=UTC)
     formatted = format_dual_timezone(dt)
 
     assert "Time (UTC)" in formatted
@@ -159,16 +159,16 @@ def test_format_dual_timezone():
 def test_session_conversion_from_utc():
     """Test that UTC times are correctly converted for session detection"""
     # 02:00 UTC should be 10:00 GMT+8 = ASIA session
-    utc_dt = datetime(2026, 2, 10, 2, 0, 0, tzinfo=timezone.utc)
+    utc_dt = datetime(2026, 2, 10, 2, 0, 0, tzinfo=UTC)
     session = is_trading_session(utc_dt)
     assert session == "ASIA"
 
     # 12:00 UTC should be 20:00 GMT+8 = LONDON session
-    utc_dt = datetime(2026, 2, 10, 12, 0, 0, tzinfo=timezone.utc)
+    utc_dt = datetime(2026, 2, 10, 12, 0, 0, tzinfo=UTC)
     session = is_trading_session(utc_dt)
     assert session == "LONDON"
 
     # 18:00 UTC should be 02:00 GMT+8 next day = NEW_YORK session
-    utc_dt = datetime(2026, 2, 10, 18, 0, 0, tzinfo=timezone.utc)
+    utc_dt = datetime(2026, 2, 10, 18, 0, 0, tzinfo=UTC)
     session = is_trading_session(utc_dt)
     assert session == "NEW_YORK"
