@@ -20,6 +20,7 @@ from ingest.finnhub_market_news import FinnhubMarketNews
 from ingest.finnhub_news import FinnhubNews
 from ingest.h1_refresh_scheduler import H1RefreshScheduler
 from ingest.macro_monthly_scheduler import MacroMonthlyScheduler
+from storage.startup import init_persistent_storage, shutdown_persistent_storage
 
 _shutdown_event: asyncio.Event | None = None
 MAX_RETRIES = 10
@@ -229,6 +230,7 @@ async def main() -> None:
     signal.signal(signal.SIGINT, _handle_signal)
 
     has_api_key = _validate_api_key()
+    await init_persistent_storage()
 
     try:
         await run_ingest_services(has_api_key)
@@ -238,6 +240,7 @@ async def main() -> None:
         logger.exception(f"Ingest service failed: {exc}")
         sys.exit(1)
     finally:
+        await shutdown_persistent_storage()
         logger.info("Ingest service shutdown complete")
 
 
