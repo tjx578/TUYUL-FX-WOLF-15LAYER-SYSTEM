@@ -102,6 +102,9 @@ def _calculate_backoff(
     return max(0.1, clamped + jitter)
 
 
+    def _build_ws_url(self) -> str:
+        """Build the WebSocket URL with authentication token."""
+        return f"{self._ws_url}?token={self._api_key}"
 class FinnhubWebSocket:
     """Resilient Finnhub WebSocket client.
 
@@ -250,6 +253,30 @@ class FinnhubWebSocket:
                 continue
 
             try:
+                url = self._build_ws_url()
+                logger.info("Connecting to Finnhub WebSocket...")
+                async with websockets.connect(
+                    url,
+                    ping_interval=self._ping_interval,
+                    ping_timeout=self._ping_interval + 10,
+                ) as ws:
+                    logger.info("Finnhub WebSocket connected")
+                    await self._subscribe(ws)
+                    backoff = self._reconnect_interval  # reset on success
+
+                    async for raw_msg in ws:
+                        msg = json.loads(raw_msg)
+                        await self._handle_message(msg)
+
+            except ConnectionClosedOK:
+                logger.info("Finnhub WS closed gracefully")
+                break
+
+            except (
+                ConnectionClosedError,
+                ConnectionError,
+                OSError,
+            ) as exc:
                 self._ws = await self._connect()
                 await self._subscribe(self._ws)
                 await self._listen(self._ws)
