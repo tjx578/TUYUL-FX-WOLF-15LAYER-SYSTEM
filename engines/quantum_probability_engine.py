@@ -1,3 +1,8 @@
+"""Probability weighting engine for layer outputs.
+
+This engine aggregates multiple layer scores into a single weighted probability estimate
+with uncertainty quantification and directional consensus metrics.
+"""
 """Quantum probability engine for weighted layer aggregation."""
 """Quantum probability engine."""
 
@@ -8,6 +13,7 @@ from __future__ import annotations
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Any
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 import math
@@ -26,6 +32,38 @@ DEFAULT_LAYER_WEIGHTS: Dict[str, float] = {
     "L13_execution": 0.05,
 from typing import Any, Dict
 
+# Layer weights for probability aggregation
+# These weights represent the relative importance of each analysis layer in the final decision.
+#
+# **Rationale for weights** (totaling 1.0):
+# - field (0.18): Highest weight. Quantum field energy captures market microstructure,
+#   order flow dynamics, and volatility clustering - critical for entry timing.
+# - momentum (0.16): Strong trend signals are reliable in directional markets. ROC-based
+#   momentum across multiple windows provides robust directional bias.
+# - risk (0.14): Monte Carlo simulation with stress scenarios validates trade viability
+#   under adverse conditions. Essential for capital preservation.
+# - precision (0.14): EMA confluence and zone proximity indicate high-quality entry points.
+#   Multi-timeframe alignment reduces false signals.
+# - context (0.13): Market regime detection (risk-on/off, structure) provides environmental
+#   awareness. Moderate weight as context sets stage but doesn't predict direction.
+# - structure (0.13): Swing highs/lows and breakout patterns confirm directional bias.
+#   Lower weight as structure is slower-moving than momentum.
+# - coherence (0.12): Trader psychological state. Lowest weight as it's a risk filter
+#   rather than a signal generator, but still critical for discipline.
+#
+# **Customization guidelines**:
+# - Increase 'field' weight for scalping/intraday strategies (up to 0.25)
+# - Increase 'momentum' weight for trend-following strategies (up to 0.22)
+# - Increase 'risk' weight for conservative risk management (up to 0.20)
+# - Decrease 'coherence' weight if using automated execution (down to 0.08)
+# - Adjust based on backtesting results for your specific market and timeframe
+#
+# **Layer correlations**:
+# - momentum, precision, and structure are partially correlated (all trend-based)
+# - field and context are partially correlated (both measure market state)
+# - coherence and risk are independent of market factors
+# The multiplicative weighting assumes approximate independence, which is acceptable
+# given the diverse nature of the signals.
 DEFAULT_LAYER_WEIGHTS = {
     "context": 0.13,
     "coherence": 0.12,
@@ -111,10 +149,11 @@ class QuantumProbabilityEngine:
     ci_high: float
     agreement_ratio: float
     dominant_layer: str
-    details: Dict[str, Any] = field(default_factory=dict)
+    details: dict[str, Any] = field(default_factory=dict)
 
 
 class QuantumProbabilityEngine:
+    def __init__(self, layer_weights: dict[str, float] | None = None) -> None:
     def __init__(
         self,
         layer_weights: Optional[Dict[str, float]] = None,
@@ -189,10 +228,12 @@ class QuantumProbabilityEngine:
     def __init__(self, layer_weights: Dict[str, float] | None = None) -> None:
         self.layer_weights = layer_weights or DEFAULT_LAYER_WEIGHTS
 
-    def evaluate(self, layer_scores: Dict[str, float]) -> ProbabilityResult:
+    def evaluate(self, layer_scores: dict[str, float]) -> ProbabilityResult:
         known = [(k, float(v)) for k, v in layer_scores.items() if k in self.layer_weights]
         if not known:
-            return ProbabilityResult(0.0, 1.0, 0.0, 0.0, 0.0, "UNKNOWN", {"reason": "no_known_layers"})
+            return ProbabilityResult(
+                0.0, 1.0, 0.0, 0.0, 0.0, "UNKNOWN", {"reason": "no_known_layers"}
+            )
 
         total_weight = sum(self.layer_weights[k] for k, _ in known)
         weighted = sum(v * self.layer_weights[k] for k, v in known) / total_weight
@@ -201,32 +242,17 @@ class QuantumProbabilityEngine:
         spread = max(scores) - min(scores)
         coverage = len(known) / len(self.layer_weights)
         uncertainty = min(1.0, spread * 0.7 + (1.0 - coverage) * 0.3)
-class ProbabilityReport:
-    weighted_probability: float
-    uncertainty: float
-    confidence_interval: tuple[float, float]
-    agreement_ratio: float
-    dominant_layer: str
-    details: dict[str, Any]
 
-
-class QuantumProbabilityEngine:
-    def __init__(self, layer_weights: dict[str, float] | None = None) -> None:
-        self.layer_weights = layer_weights or DEFAULT_LAYER_WEIGHTS
-
-    def evaluate(self, layer_scores: dict[str, float]) -> ProbabilityReport:
-        aligned = {k: float(v) for k, v in layer_scores.items() if k in self.layer_weights}
-        if not aligned:
-            return ProbabilityReport(0.0, 1.0, (0.0, 0.0), 0.0, "NONE", {})
-
-        total_w = sum(self.layer_weights[k] for k in aligned)
-        weighted = sum(aligned[k] * self.layer_weights[k] for k in aligned) / max(total_w, 1e-9)
-
-        scores = list(aligned.values())
-        spread = max(scores) - min(scores)
-        coverage = len(aligned) / len(self.layer_weights)
-        uncertainty = min(1.0, 0.55 * spread + 0.45 * (1.0 - coverage))
-
+        # Calculate directional consensus (agreement_ratio)
+        # This measures whether layers agree on direction (bullish vs bearish)
+        # using 0.5 as the neutral point: >=0.5 is bullish (+1), <0.5 is bearish (-1)
+        #
+        # Note: This metric only captures directional alignment, not strength of consensus.
+        # For example, scores [0.51, 0.49] and [0.9, 0.1] both yield agreement_ratio=0.0
+        # despite vastly different conviction levels. The metric is useful for identifying
+        # conflicting directional signals but does not account for magnitude of disagreement.
+        #
+        # Consider using 'uncertainty' and 'spread' for magnitude-aware analysis.
         signs = [1 if s >= 0.5 else -1 for s in scores]
         agreement = abs(sum(signs)) / len(signs)
 
@@ -244,7 +270,7 @@ class QuantumProbabilityEngine:
         )
 
     @staticmethod
-    def export(result: ProbabilityResult) -> Dict[str, Any]:
+    def export(result: ProbabilityResult) -> dict[str, Any]:
         return {
             "valid": result.valid,
             "weighted_probability": result.weighted_probability,

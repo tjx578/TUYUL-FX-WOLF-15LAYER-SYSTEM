@@ -168,6 +168,7 @@ class FusionMomentumEngine:
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Any
 from datetime import datetime, timezone
 from typing import Any, Dict, Sequence
 import math
@@ -184,10 +185,13 @@ class MomentumResult:
     momentum_strength: float
     phase: str
     directional_bias: float
-    details: Dict[str, Any] = field(default_factory=dict)
+    details: dict[str, Any] = field(default_factory=dict)
 
 
 class FusionMomentumEngine:
+    def evaluate(
+        self, closes: list[float], volumes: list[float], trq_energy: float = 0.0
+    ) -> MomentumResult:
     def evaluate(self, data: Dict[str, Sequence[float]]) -> MomentumResult:
         prices = list(data.get("price", []))
         volumes = list(data.get("volume", [1.0] * len(prices)))
@@ -206,7 +210,13 @@ class FusionMomentumEngine:
         composite = roc5 * 0.5 + roc10 * 0.3 + roc20 * 0.2
 
         curvature = roc5 - roc10
-        phase = "EXPANSION" if curvature > 0.002 else "DECELERATION" if curvature < -0.002 else "BALANCED"
+        phase = (
+            "EXPANSION"
+            if curvature > 0.002
+            else "DECELERATION"
+            if curvature < -0.002
+            else "BALANCED"
+        )
 
         vol_momentum = 0.0
         if len(volumes) > 8:
@@ -226,14 +236,14 @@ class FusionMomentumEngine:
         )
 
     @staticmethod
-    def _roc(closes: List[float], period: int) -> float:
+    def _roc(closes: list[float], period: int) -> float:
         base = closes[-period - 1]
         if base == 0:
             return 0.0
         return (closes[-1] - base) / base
 
     @staticmethod
-    def export(result: MomentumResult) -> Dict[str, Any]:
+    def export(result: MomentumResult) -> dict[str, Any]:
         return {
             "momentum_strength": result.momentum_strength,
             "phase": result.phase,

@@ -1,3 +1,8 @@
+"""Cognitive coherence engine for emotional integrity and state assessment.
+
+This module provides trader psychological state evaluation WITHOUT execution authority.
+All state values are input metrics for Layer-12 (constitution), not enforcement decisions.
+"""
 """Cognitive coherence engine (analysis-only)."""
 """Cognitive coherence engine."""
 
@@ -48,22 +53,17 @@ import math
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import Enum
+from statistics import pstdev
 from typing import Any
 
 
-class ReflexState(str, Enum):
-    STABLE = "STABLE"
-    ELEVATED = "ELEVATED"
-    UNSTABLE = "UNSTABLE"
+class CoherenceState(str, Enum):
+    """Trader psychological coherence state levels.
 
+    These are assessment states, not gate decisions. Layer-12 (constitution) makes
+    the final execution decision based on these and other inputs.
+    """
 
-class IntegrityStatus(str, Enum):
-    PASS = "PASS"  # noqa: S105
-    REVIEW = "REVIEW"
-    FAIL = "FAIL"
-
-
-class CoherenceGate(str, Enum):
     PASS = "PASS"  # noqa: S105
     REVIEW = "REVIEW"
     LOCKOUT = "LOCKOUT"
@@ -75,11 +75,31 @@ class CoherenceSnapshot:
     emotion_delta: float
     emotion_volatility: float
     stress_score: float
-    gate: CoherenceGate
-    details: Dict[str, Any] = field(default_factory=dict)
+    gate: CoherenceState  # 'gate' for backward compatibility; represents state assessment
+    details: dict[str, Any] = field(default_factory=dict)
 
 
 class CognitiveCoherenceEngine:
+    """Tracks trader-state coherence and emits psychological state assessment.
+
+    This engine maintains internal state across evaluations through instance variables:
+    - emotion_baseline: Adaptive baseline for emotion tracking
+    - coherence_state: Smoothed coherence index
+    - emotion_history: Rolling window of emotion values
+
+    **Thread Safety**: This engine is NOT thread-safe. Multiple concurrent calls to
+    evaluate() could cause race conditions when updating shared state.
+
+    **Reusability**: Engine instances should not be shared across different trading
+    symbols or contexts. Create separate instances for each context.
+
+    **State Management**: Call reset() to clear accumulated state when starting a new
+    trading session or switching contexts.
+
+    **Authority Boundaries**: This engine provides INPUT METRICS for Layer-12 decisions.
+    It does NOT have execution authority. The state values (PASS/REVIEW/LOCKOUT) are
+    assessments of trader psychological coherence, not trading permissions.
+    """
     """Tracks behavioral coherence and provides non-execution gate status."""
 
     def __init__(
@@ -166,16 +186,16 @@ class CognitiveCoherenceEngine:
         self.baseline_alpha = baseline_alpha
         self._emotion_baseline = 0.0
         self._coherence_state = 0.8
-        self._emotion_history: Deque[float] = deque(maxlen=history_size)
+        self._emotion_history: deque[float] = deque(maxlen=history_size)
 
-    def evaluate(self, state: Dict[str, Any], market_volatility: float = 0.0) -> CoherenceSnapshot:
+    def evaluate(self, state: dict[str, Any], market_volatility: float = 0.0) -> CoherenceSnapshot:
         emotion = float(state.get("emotion_state", 0.0))
         fatigue = max(0.0, min(1.0, float(state.get("fatigue", 0.0))))
         loss_stress = max(0.0, min(1.0, float(state.get("loss_stress", 0.0))))
 
         self._emotion_baseline = (
-            (1 - self.baseline_alpha) * self._emotion_baseline + self.baseline_alpha * emotion
-        )
+            1 - self.baseline_alpha
+        ) * self._emotion_baseline + self.baseline_alpha * emotion
         emotion_delta = abs(emotion - self._emotion_baseline)
 
         self._emotion_history.append(emotion)
@@ -184,9 +204,8 @@ class CognitiveCoherenceEngine:
 
         instantaneous = max(0.0, 1.0 - (emotion_delta * 0.7 + stress_score * 0.6))
         self._coherence_state = (
-            (1 - self.smoothing_alpha) * self._coherence_state
-            + self.smoothing_alpha * instantaneous
-        )
+            1 - self.smoothing_alpha
+        ) * self._coherence_state + self.smoothing_alpha * instantaneous
 
         volatility_penalty = 0.08 if market_volatility > 0.02 else 0.0
         coherence_index = max(0.0, min(1.0, self._coherence_state - volatility_penalty))
@@ -195,23 +214,29 @@ class CognitiveCoherenceEngine:
         review_bar = 0.58 + (0.04 if market_volatility > 0.02 else 0.0)
 
         if coherence_index >= pass_bar:
-            gate = CoherenceGate.PASS
+            coherence_state = CoherenceState.PASS
         elif coherence_index >= review_bar:
-            gate = CoherenceGate.REVIEW
+            coherence_state = CoherenceState.REVIEW
         else:
-            gate = CoherenceGate.LOCKOUT
+            coherence_state = CoherenceState.LOCKOUT
 
         return CoherenceSnapshot(
             coherence_index=round(coherence_index, 6),
             emotion_delta=round(emotion_delta, 6),
             emotion_volatility=round(emotion_vol, 6),
             stress_score=round(stress_score, 6),
-            gate=gate,
-            details={"timestamp": datetime.now(timezone.utc).isoformat()},
+            gate=coherence_state,
+            details={"timestamp": datetime.now(UTC).isoformat()},
         )
 
+    def reset(self) -> None:
+        """Reset accumulated state. Use when starting a new session or switching contexts."""
+        self._emotion_baseline = 0.0
+        self._coherence_state = 0.8
+        self._emotion_history.clear()
+
     @staticmethod
-    def export(snapshot: CoherenceSnapshot) -> Dict[str, Any]:
+    def export(snapshot: CoherenceSnapshot) -> dict[str, Any]:
         return {
             "coherence_index": snapshot.coherence_index,
             "emotion_delta": snapshot.emotion_delta,
