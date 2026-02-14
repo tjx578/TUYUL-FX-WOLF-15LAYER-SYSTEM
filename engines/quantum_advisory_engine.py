@@ -1,3 +1,12 @@
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from datetime import UTC, datetime
+from enum import Enum
+from typing import Any
+
+
+class AdvisorySignal(str, Enum):
 """Cross-engine advisory synthesis (non-execution)."""
 """Quantum Advisory Engine v2.0 (sanitized, non-execution)."""
 """Quantum advisory engine."""
@@ -46,6 +55,8 @@ class AdvisorySummary:
     confidence_estimate: float
     risk_posture: RiskPosture
     directional_lean: float
+    conflict_flags: list[str]
+    synthesis_note: str
     conflict_flags: List[str]
     synthesis_note: str
 from typing import Any, Dict, List
@@ -108,11 +119,13 @@ class QuantumAdvisoryEngine:
     confidence: float
     risk_posture: str
     directional_lean: float
-    conflicts: List[str] = field(default_factory=list)
-    details: Dict[str, Any] = field(default_factory=dict)
+    conflicts: list[str] = field(default_factory=list)
+    details: dict[str, Any] = field(default_factory=dict)
 
 
 class QuantumAdvisoryEngine:
+    def __init__(
+        self, min_confidence_threshold: float = 0.3, conflict_penalty: float = 0.15
     def summarize(self, **engines: Dict[str, Any]) -> AdvisorySummary:
         field = engines.get("field")
         probability = engines.get("probability")
@@ -200,6 +213,17 @@ class QuantumAdvisoryEngine:
         self.min_confidence = min_confidence_threshold
         self.conflict_penalty = conflict_penalty
 
+    def summarize(  # noqa: PLR0912
+        self,
+        field: dict[str, Any],
+        probability: dict[str, Any],
+        coherence: dict[str, Any] | None = None,
+        context: dict[str, Any] | None = None,
+        risk_sim: dict[str, Any] | None = None,
+        momentum: dict[str, Any] | None = None,
+        precision: dict[str, Any] | None = None,
+        structure: dict[str, Any] | None = None,
+    ) -> AdvisorySummary:
     def summarize(
         self,
         field: Dict[str, Any],
@@ -248,6 +272,26 @@ class QuantumAdvisoryEngine:
                 direction_signals.append(0.0)
             weights.append(0.2)
 
+        total = sum(weights)
+        directional_lean = sum(
+            x * w for x, w in zip(direction_signals, weights, strict=False)
+        ) / max(total, 1e-9)
+        directional_lean = max(-1.0, min(1.0, directional_lean))
+
+        conflicts: list[str] = []
+        if momentum and structure:
+            if (
+                float(momentum.get("momentum_direction", 0))
+                * float(structure.get("mtf_alignment", 0))
+                < -0.3
+            ):
+                conflicts.append("MOMENTUM_VS_STRUCTURE")
+        if coherence and coherence.get("gate") == "LOCKOUT" and w_prob > 0.6:
+            conflicts.append("HIGH_PROB_BUT_LOCKOUT")
+        if risk_sim and risk_sim.get("tail_risk_flag") and w_prob > 0.7:
+            conflicts.append("HIGH_PROB_BUT_TAIL_RISK")
+        if structure and structure.get("divergence_present") and directional_lean > 0.3:
+            if structure.get("divergence_type") == "BEARISH":
         weight_total = sum(weights)
         directional_lean = (
             sum(signal * weight for signal, weight in zip(direction_signals, weights))
@@ -275,6 +319,16 @@ class QuantumAdvisoryEngine:
 
         confidence = w_prob
         if coherence:
+            coh = float(coherence.get("coherence_index", 0.7))
+            psych = float(coherence.get("psych_confidence", 0.7))
+            confidence *= coh * 0.5 + psych * 0.5
+        if precision:
+            confidence *= 0.5 + float(precision.get("precision_weight", 0.5)) * 0.5
+        if risk_sim:
+            confidence *= 0.6 + float(risk_sim.get("robustness_estimate", 0.5)) * 0.4
+        confidence *= 0.7 + stability * 0.3
+        confidence -= len(conflicts) * self.conflict_penalty
+        confidence *= 1.0 - uncertainty * 0.3
             coh_idx = float(coherence.get("coherence_index", 0.7))
             psych = float(coherence.get("psych_confidence", 0.7))
             confidence *= (coh_idx * 0.5) + (psych * 0.5)
@@ -312,6 +366,9 @@ class QuantumAdvisoryEngine:
 
         parts = [f"Confidence {confidence:.0%}"]
         if momentum:
+            parts.append(f"phase={momentum.get("phase", "?")}")
+        if context:
+            parts.append(f"regime={context.get("market_regime", "?")}")
             parts.append(f"phase={momentum.get('phase', '?')}")
         if context:
             parts.append(f"regime={context.get('market_regime', '?')}")
@@ -335,6 +392,7 @@ class QuantumAdvisoryEngine:
                 "n_conflicts": len(conflicts),
                 "engines_available": sum(
                     1
+                    for x in [
                     for item in [
                         field,
                         probability,
@@ -345,6 +403,14 @@ class QuantumAdvisoryEngine:
                         precision,
                         structure,
                     ]
+                    if x is not None
+                ),
+                "timestamp": datetime.now(UTC).isoformat(),
+            },
+        )
+
+    @staticmethod
+    def export(summary: AdvisorySummary) -> dict[str, Any]:
                     if item is not None
                 ),
                 "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -367,6 +433,10 @@ class QuantumAdvisoryEngine:
 
 __all__ = [
     "AdvisorySignal",
+    "AdvisorySummary",
+    "QuantumAdvisoryEngine",
+    "RiskPosture",
+]
     "RiskPosture",
     "AdvisorySummary",
     "QuantumAdvisoryEngine",
@@ -374,14 +444,14 @@ __all__ = [
     def summarize(
         self,
         *,
-        field: Dict[str, Any],
-        probability: Dict[str, Any],
-        coherence: Dict[str, Any],
-        context: Dict[str, Any],
-        momentum: Dict[str, Any],
-        precision: Dict[str, Any],
-        structure: Dict[str, Any],
-        risk: Dict[str, Any] | None = None,
+        field: dict[str, Any],
+        probability: dict[str, Any],
+        coherence: dict[str, Any],
+        context: dict[str, Any],
+        momentum: dict[str, Any],
+        precision: dict[str, Any],
+        structure: dict[str, Any],
+        risk: dict[str, Any] | None = None,
     ) -> AdvisorySummary:
         risk = risk or {}
         conflicts = self._detect_conflicts(
@@ -408,57 +478,6 @@ __all__ = [
         )
         penalty = max(0.5, 1 - 0.12 * len(conflicts))
         confidence = max(0.0, min(1.0, base_conf * penalty))
-    directional_lean: str
-    conflicts: list[str]
-    details: dict[str, Any]
-
-
-class QuantumAdvisoryEngine:
-    def summarize(self, **engine_outputs: dict[str, Any]) -> AdvisorySummary:
-        field = engine_outputs.get("field", {})
-        probability = engine_outputs.get("probability", {})
-        coherence = engine_outputs.get("coherence", {})
-        context = engine_outputs.get("context", {})
-        momentum = engine_outputs.get("momentum", {})
-        precision = engine_outputs.get("precision", {})
-        structure = engine_outputs.get("structure", {})
-        risk = engine_outputs.get("risk", {})
-
-        lean_votes = [
-            1 if field.get("field_bias", 0.0) > 0 else -1,
-            1 if momentum.get("direction") == "BULLISH" else -1,
-            1 if structure.get("structure") in {"BULLISH", "BREAKING_OUT"} else -1,
-            1 if context.get("regime") == "RISK_ON" else -1,
-        ]
-        vote_sum = sum(lean_votes)
-        lean = "BULLISH" if vote_sum >= 2 else "BEARISH" if vote_sum <= -2 else "NEUTRAL"
-
-        weighted_prob = float(probability.get("weighted_probability", 0.0))
-        gate = coherence.get("gate", "REVIEW")
-        divergence = structure.get("divergence", "NONE")
-        tail_risk = bool(risk.get("tail_risk", False))
-
-        conflicts: list[str] = []
-        if momentum.get("direction") == "BULLISH" and structure.get("structure") in {
-            "BEARISH",
-            "BREAKING_DOWN",
-        }:
-            conflicts.append("MOMENTUM_VS_STRUCTURE")
-        if weighted_prob >= 0.7 and gate == "LOCKOUT":
-            conflicts.append("HIGH_PROB_BUT_LOCKOUT")
-        if weighted_prob >= 0.7 and tail_risk:
-            conflicts.append("HIGH_PROB_BUT_TAIL_RISK")
-        if lean == "BULLISH" and divergence == "BEARISH":
-            conflicts.append("BULLISH_LEAN_BUT_BEARISH_DIVERGENCE")
-
-        base_conf = (
-            weighted_prob
-            * float(coherence.get("psych_confidence", 0.5))
-            * float(precision.get("precision_weight", 0.5))
-            * float(risk.get("robustness", 0.5))
-            * float(field.get("stability_index", 0.5))
-        )
-        confidence = max(0.0, min(1.0, base_conf * (1.0 - 0.12 * len(conflicts))))
 
         if confidence >= 0.75 and not conflicts:
             signal = "STRONG"
@@ -501,13 +520,13 @@ class QuantumAdvisoryEngine:
     @staticmethod
     def _detect_conflicts(
         *,
-        probability: Dict[str, Any],
-        coherence: Dict[str, Any],
-        momentum: Dict[str, Any],
-        structure: Dict[str, Any],
-        risk: Dict[str, Any],
-    ) -> List[str]:
-        conflicts: List[str] = []
+        probability: dict[str, Any],
+        coherence: dict[str, Any],
+        momentum: dict[str, Any],
+        structure: dict[str, Any],
+        risk: dict[str, Any],
+    ) -> list[str]:
+        conflicts: list[str] = []
         if (
             float(probability.get("weighted_probability", 0.0)) > 0.7
             and coherence.get("gate") == "LOCKOUT"
@@ -531,7 +550,7 @@ class QuantumAdvisoryEngine:
         return conflicts
 
     @staticmethod
-    def export(result: AdvisorySummary) -> Dict[str, Any]:
+    def export(result: AdvisorySummary) -> dict[str, Any]:
         return {
             "signal": result.signal,
             "confidence": result.confidence,
@@ -540,68 +559,3 @@ class QuantumAdvisoryEngine:
             "conflicts": result.conflicts,
             "details": result.details,
         }
-        if tail_risk or gate == "LOCKOUT":
-            posture = "DEFENSIVE"
-        elif confidence > 0.7:
-            posture = "AGGRESSIVE"
-        elif confidence > 0.5:
-            posture = "BALANCED"
-        else:
-            posture = "CAUTIOUS"
-
-        return AdvisorySummary(
-            signal=signal,
-            confidence=round(confidence, 4),
-            risk_posture=posture,
-            directional_lean=lean,
-            conflicts=conflicts,
-            details={"vote_sum": vote_sum, "weighted_probability": weighted_prob, "gate": gate},
-        )
-from __future__ import annotations
-
-from dataclasses import dataclass
-from enum import Enum
-from typing import Any, Mapping
-
-
-class AdvisorySignal(str, Enum):
-    BUY = "buy"
-    SELL = "sell"
-    HOLD = "hold"
-
-
-class RiskPosture(str, Enum):
-    AGGRESSIVE = "aggressive"
-    BALANCED = "balanced"
-    DEFENSIVE = "defensive"
-
-
-@dataclass(frozen=True)
-class AdvisorySummary:
-    signal: AdvisorySignal
-    risk_posture: RiskPosture
-    confidence: float
-
-
-class QuantumAdvisoryEngine:
-    """Synthesize cross-engine outcomes into final advisory guidance."""
-
-    def evaluate(self, state: Mapping[str, Any]) -> AdvisorySummary:
-        probability = float(state.get("probability", 0.5))
-        bias = float(state.get("bias", 0.0))
-        risk = float(state.get("tail_risk", 0.5))
-
-        signal = AdvisorySignal.HOLD
-        if probability > 0.6 and bias > 0.1:
-            signal = AdvisorySignal.BUY
-        elif probability < 0.4 and bias < -0.1:
-            signal = AdvisorySignal.SELL
-
-        posture = RiskPosture.BALANCED
-        if risk > 0.7:
-            posture = RiskPosture.DEFENSIVE
-        elif risk < 0.3:
-            posture = RiskPosture.AGGRESSIVE
-
-        confidence = max(0.0, min(1.0, abs(probability - 0.5) * 2.0 * (1.0 - risk)))
-        return AdvisorySummary(signal=signal, risk_posture=posture, confidence=confidence)
