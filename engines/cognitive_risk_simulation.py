@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from random import Random
 from statistics import mean
-from typing import Any, Dict, List
+from typing import Any
 
 
 @dataclass
@@ -15,12 +15,12 @@ class RiskSimulationResult:
     max_drawdown: float
     stress_survival_rate: float
     robustness: float
-    details: Dict[str, Any] = field(default_factory=dict)
+    details: dict[str, Any] = field(default_factory=dict)
 
 
 class CognitiveRiskSimulation:
     """Bootstrap Monte Carlo risk simulation with configurable stress scenarios.
-    
+
     Args:
         iterations: Number of Monte Carlo simulation runs (default: 500)
         horizon: Number of steps to project forward (default: 40)
@@ -28,12 +28,12 @@ class CognitiveRiskSimulation:
         stress_multiplier: Multiplier for stressed scenarios (default: 2.0)
         stress_shock_prob: Probability of extreme downside shock in stressed path (default: 0.08)
         stress_shock_range: Range of sigma multiples for extreme shocks (default: (3.0, 5.0))
-    
+
     Note:
         For production use, consider setting seed=None to avoid deterministic results.
         The default seed=None provides true randomness, while explicit seeds enable reproducible testing.
     """
-    
+
     def __init__(
         self,
         iterations: int = 500,
@@ -50,16 +50,24 @@ class CognitiveRiskSimulation:
         self.stress_shock_range = stress_shock_range
         self._rng = Random(seed)
 
-    def simulate(self, returns: List[float]) -> RiskSimulationResult:
+    def simulate(self, returns: list[float]) -> RiskSimulationResult:
         if not returns:
             return RiskSimulationResult(0.0, 0.0, 0.0, 0.0, 0.0, {"reason": "no_returns"})
-        
+
         # Validate sufficient data for bootstrap methodology
         min_required = max(20, self.horizon // 2)
         if len(returns) < min_required:
             return RiskSimulationResult(
-                0.0, 0.0, 0.0, 0.0, 0.0,
-                {"reason": "insufficient_returns", "required": min_required, "provided": len(returns)}
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                {
+                    "reason": "insufficient_returns",
+                    "required": min_required,
+                    "provided": len(returns),
+                },
             )
 
         terminal, drawdowns, stressed_terminal = [], [], []
@@ -93,7 +101,7 @@ class CognitiveRiskSimulation:
             },
         )
 
-    def _sample_path(self, returns: List[float], stressed: bool) -> List[float]:
+    def _sample_path(self, returns: list[float], stressed: bool) -> list[float]:
         level = 0.0
         path = [level]
         sigma_proxy = max(1e-6, (max(returns) - min(returns)) / 6)
@@ -107,19 +115,17 @@ class CognitiveRiskSimulation:
         return path
 
     @staticmethod
-    def _max_drawdown(path: List[float]) -> float:
+    def _max_drawdown(path: list[float]) -> float:
         peak = path[0]
         max_dd = 0.0
         for value in path:
-            if value > peak:
-                peak = value
+            peak = max(peak, value)
             dd = peak - value
-            if dd > max_dd:
-                max_dd = dd
+            max_dd = max(max_dd, dd)
         return max_dd
 
     @staticmethod
-    def export(result: RiskSimulationResult) -> Dict[str, Any]:
+    def export(result: RiskSimulationResult) -> dict[str, Any]:
         return {
             "var_95": result.var_95,
             "cvar_95": result.cvar_95,

@@ -28,9 +28,9 @@ def create_engine_suite():
 
 __all__ = [
     "CognitiveCoherenceEngine",
-    "CoherenceState",
     "CognitiveContextEngine",
     "CognitiveRiskSimulation",
+    "CoherenceState",
     "FusionMomentumEngine",
     "FusionPrecisionEngine",
     "FusionStructureEngine",

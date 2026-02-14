@@ -1,4 +1,5 @@
 import math
+
 from engines import create_engine_suite
 
 
@@ -13,8 +14,8 @@ def _series(n=160, start=100.0, step=0.08):
     closes, highs, lows, volumes = [], [], [], []
 
     # Split into three regimes
-    regime_1_end = n // 3          # mean-reverting / range
-    regime_2_end = 2 * n // 3      # trending with higher volatility
+    regime_1_end = n // 3  # mean-reverting / range
+    regime_2_end = 2 * n // 3  # trending with higher volatility
     # regime 3: choppy / volatile (rest)
 
     last_price = start
@@ -35,12 +36,12 @@ def _series(n=160, start=100.0, step=0.08):
 
         price = last_price + drift + noise
         closes.append(price)
-        
+
         # Add realistic high/low spread with some volatility
         spread = abs(noise) * 0.5 + 0.3
         highs.append(price + spread)
         lows.append(price - spread)
-        
+
         # Volume with regime-dependent patterns
         base_vol = 1000
         if i < regime_1_end:
@@ -50,7 +51,7 @@ def _series(n=160, start=100.0, step=0.08):
         else:
             vol_mult = 1.5 + 0.5 * math.sin(i / 2.0)  # Highest in volatile regime
         volumes.append(base_vol * vol_mult)
-        
+
         last_price = price
 
     return closes, highs, lows, volumes
@@ -133,7 +134,7 @@ def test_engine_suite_simple():
         {"emotion_state": 0.15, "fatigue": 0.2, "loss_stress": 0.1}, market_volatility=0.01
     )
     risk = suite["risk"].simulate(returns)
-    
+
     assert context.market_regime in {"RISK_ON", "RISK_OFF", "TRANSITIONAL"}
     assert 0.0 <= coherence.coherence_index <= 1.0
     assert -1.0 <= risk.cvar_95 <= 1.0

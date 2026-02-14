@@ -7,7 +7,7 @@ with uncertainty quantification and directional consensus metrics.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict
+from typing import Any
 
 # Layer weights for probability aggregation
 # These weights represent the relative importance of each analysis layer in the final decision.
@@ -60,17 +60,19 @@ class ProbabilityResult:
     ci_high: float
     agreement_ratio: float
     dominant_layer: str
-    details: Dict[str, Any] = field(default_factory=dict)
+    details: dict[str, Any] = field(default_factory=dict)
 
 
 class QuantumProbabilityEngine:
-    def __init__(self, layer_weights: Dict[str, float] | None = None) -> None:
+    def __init__(self, layer_weights: dict[str, float] | None = None) -> None:
         self.layer_weights = layer_weights or DEFAULT_LAYER_WEIGHTS
 
-    def evaluate(self, layer_scores: Dict[str, float]) -> ProbabilityResult:
+    def evaluate(self, layer_scores: dict[str, float]) -> ProbabilityResult:
         known = [(k, float(v)) for k, v in layer_scores.items() if k in self.layer_weights]
         if not known:
-            return ProbabilityResult(0.0, 1.0, 0.0, 0.0, 0.0, "UNKNOWN", {"reason": "no_known_layers"})
+            return ProbabilityResult(
+                0.0, 1.0, 0.0, 0.0, 0.0, "UNKNOWN", {"reason": "no_known_layers"}
+            )
 
         total_weight = sum(self.layer_weights[k] for k, _ in known)
         weighted = sum(v * self.layer_weights[k] for k, v in known) / total_weight
@@ -107,7 +109,7 @@ class QuantumProbabilityEngine:
         )
 
     @staticmethod
-    def export(result: ProbabilityResult) -> Dict[str, Any]:
+    def export(result: ProbabilityResult) -> dict[str, Any]:
         return {
             "weighted_probability": result.weighted_probability,
             "uncertainty": result.uncertainty,
