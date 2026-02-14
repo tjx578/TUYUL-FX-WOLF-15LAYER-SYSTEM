@@ -2,6 +2,8 @@
 Dashboard API (Account & Risk Governor)
 """
 
+import os
+
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -11,15 +13,11 @@ from dashboard.backend.trade_input_api import write_router
 
 app = FastAPI(title="TUYUL FX - Dashboard (Account & Risk Governor)")
 
-# Add CORS support
-# TODO: Configure allowed origins for production deployment
+# Add CORS support (configurable via environment)
+cors_origins = os.getenv("CORS_ORIGINS", "http://localhost:3000,http://localhost:8000")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",  # Local development
-        "http://localhost:8000",
-        # Add production frontend URLs here
-    ],
+    allow_origins=[origin.strip() for origin in cors_origins.split(",") if origin.strip()],
     allow_credentials=True,
     allow_methods=["GET", "POST"],
     allow_headers=["*"],
