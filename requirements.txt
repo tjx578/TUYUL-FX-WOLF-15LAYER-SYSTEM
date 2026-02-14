@@ -20,6 +20,9 @@ pandas==2.2.2
 
 # Storage
 redis==5.0.8
+asyncpg==0.30.0
+psycopg[binary]==3.2.4
+alembic==1.14.1
 
 # Logging / CLI UX
 loguru==0.7.2
