@@ -17,6 +17,90 @@ def create_engine_suite() -> dict[str, object]:
         "coherence": CognitiveCoherenceEngine(),
         "context": CognitiveContextEngine(),
         "risk": CognitiveRiskSimulation(),
+"""
+TUYUL FX - Engine Facade Layer v2.0
+
+9 focused analysis engines that provide clean, testable API
+over the monolithic core unified modules.
+
+Architecture:
+  Cognitive Domain (internal state awareness):
+    - CognitiveCoherenceEngine  -> emotion/reflex/integrity
+    - CognitiveContextEngine    -> regime/structure/liquidity
+    - CognitiveRiskSimulation   -> stress testing/tail risk
+
+  Fusion Domain (technical analysis fusion):
+    - FusionMomentumEngine      -> momentum/phase/TRQ energy
+    - FusionPrecisionEngine     -> precision weights/EMA alignment
+    - FusionStructureEngine     -> divergence/liquidity/MTF
+
+  Quantum Domain (probabilistic analysis):
+    - QuantumFieldEngine        -> field energy/bias/stability
+    - QuantumProbabilityEngine  -> layer probability/uncertainty
+    - QuantumAdvisoryEngine     -> cross-engine synthesis
+
+Usage:
+    from engines import create_engine_suite
+    suite = create_engine_suite()
+    # ... use suite["coherence"].evaluate(state)
+"""
+
+__version__ = "2.0.0"
+__codename__ = "Wolf Engine Facade"
+
+# --- Cognitive ---
+from .cognitive_coherence_engine import (
+    CoherenceGate,
+    CognitiveCoherence,
+    CognitiveCoherenceEngine,
+    IntegrityStatus,
+    ReflexState,
+)
+from .cognitive_context_engine import (
+    CognitiveContext,
+    CognitiveContextEngine,
+    InstitutionalPresence,
+    LiquidityContext,
+    MarketRegime,
+    MarketStructure,
+)
+from .cognitive_risk_simulation import CognitiveRiskSimulation, RiskSimulationResult
+
+# --- Fusion ---
+from .fusion_momentum_engine import (
+    FusionMomentum,
+    FusionMomentumEngine,
+    MomentumBand,
+    MomentumPhase,
+)
+from .fusion_precision_engine import FusionPrecision, FusionPrecisionEngine
+from .fusion_structure_engine import FusionStructure, FusionStructureEngine, StructureState
+
+# --- Quantum ---
+from .quantum_advisory_engine import (
+    AdvisorySignal,
+    AdvisorySummary,
+    QuantumAdvisoryEngine,
+    RiskPosture,
+)
+from .quantum_field_engine import QuantumFieldEngine
+from .quantum_probability_engine import (
+    DEFAULT_LAYER_WEIGHTS,
+    ProbabilityResult,
+    QuantumProbabilityEngine,
+)
+
+
+def create_engine_suite() -> dict:
+    """Factory: create all 9 engines with default configuration.
+
+    Returns:
+        Dict of engine_name -> engine_instance
+    """
+    return {
+        "coherence": CognitiveCoherenceEngine(),
+        "context": CognitiveContextEngine(),
+        "risk_sim": CognitiveRiskSimulation(),
         "momentum": FusionMomentumEngine(),
         "precision": FusionPrecisionEngine(),
         "structure": FusionStructureEngine(),
@@ -36,5 +120,41 @@ __all__ = [
     "QuantumAdvisoryEngine",
     "QuantumFieldEngine",
     "QuantumProbabilityEngine",
+    "__version__",
+    "__codename__",
+    # Cognitive
+    "ReflexState",
+    "IntegrityStatus",
+    "CoherenceGate",
+    "CognitiveCoherence",
+    "CognitiveCoherenceEngine",
+    "MarketRegime",
+    "MarketStructure",
+    "LiquidityContext",
+    "InstitutionalPresence",
+    "CognitiveContext",
+    "CognitiveContextEngine",
+    "RiskSimulationResult",
+    "CognitiveRiskSimulation",
+    # Fusion
+    "MomentumPhase",
+    "MomentumBand",
+    "FusionMomentum",
+    "FusionMomentumEngine",
+    "FusionPrecision",
+    "FusionPrecisionEngine",
+    "StructureState",
+    "FusionStructure",
+    "FusionStructureEngine",
+    # Quantum
+    "QuantumFieldEngine",
+    "DEFAULT_LAYER_WEIGHTS",
+    "ProbabilityResult",
+    "QuantumProbabilityEngine",
+    "AdvisorySignal",
+    "RiskPosture",
+    "AdvisorySummary",
+    "QuantumAdvisoryEngine",
+    # Factory
     "create_engine_suite",
 ]
