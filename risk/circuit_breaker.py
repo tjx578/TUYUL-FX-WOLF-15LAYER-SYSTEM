@@ -357,6 +357,13 @@ class CircuitBreaker:
                     self._transition_to(CircuitBreakerState.OPEN)
 
             self._persist_state()
+    
+    def _is_allowed(self) -> bool:
+        """Check state without acquiring lock. Must be called within lock."""
+        return self._state in [
+            CircuitBreakerState.CLOSED,
+            CircuitBreakerState.HALF_OPEN,
+        ]
 
     def is_trading_allowed(self) -> bool:
         """
@@ -370,6 +377,8 @@ class CircuitBreaker:
         with self._lock:
             # Check for auto-recovery
             self._check_auto_recovery()
+            return self._is_allowed()
+    
 
             allowed = self._state in [
                 CircuitBreakerState.CLOSED,
@@ -398,6 +407,7 @@ class CircuitBreaker:
 
             return {
                 "state": self._state.value,
+                "trading_allowed": self._is_allowed(),
                 "trading_allowed": self._state in [
                     CircuitBreakerState.CLOSED,
                     CircuitBreakerState.HALF_OPEN,
