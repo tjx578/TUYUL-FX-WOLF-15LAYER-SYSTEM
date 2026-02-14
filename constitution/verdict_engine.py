@@ -1,21 +1,51 @@
 from __future__ import annotations
 
-from typing import Any, Dict
+import logging
+
+from typing import Any
 
 from config.constitution import CONSTITUTION_THRESHOLDS
 from constitution.violation_log import log_violation
-from utils.timezone_utils import now_utc, format_utc
+from context.live_context_bus import LiveContextBus
+from utils.timezone_utils import format_utc, now_utc
+
+logger = logging.getLogger(__name__)
 
 
 def _gate(condition: bool) -> str:
     return "PASS" if condition else "FAIL"
 
 
-def generate_l12_verdict(synthesis: Dict[str, Any]) -> Dict[str, Any]:
+def generate_l12_verdict(synthesis: dict[str, Any]) -> dict[str, Any]:
     """
     Input: synthesis output from analysis.synthesis (L1-L11).
     Output: final L12 verdict (constitutional).
     """
+
+    # Feed staleness circuit breaker
+    context_bus = LiveContextBus()
+    pair = synthesis.get("pair")
+
+    if pair and isinstance(pair, str) and pair.strip() and context_bus.is_feed_stale(pair):
+        feed_age = context_bus.get_feed_age(pair)
+        logger.warning(
+            "Feed stale - circuit breaker activated",
+            extra={"pair": pair, "feed_age_s": feed_age},
+        )
+        return {
+            "schema": "v7.4r∞",
+            "pair": pair,
+            "timestamp": format_utc(now_utc()),
+            "verdict": "HOLD",
+            "confidence": "LOW",
+            "wolf_status": "NO_HUNT",
+            "gates": {"passed": 0, "total": 10},
+            "execution": {},
+            "scores": synthesis.get("scores", {}),
+            "proceed_to_L13": False,
+            "circuit_breaker": "FEED_STALE",
+            "feed_age_s": feed_age,
+        }
 
     try:
         scores = synthesis["scores"]
@@ -41,15 +71,46 @@ def generate_l12_verdict(synthesis: Dict[str, Any]) -> Dict[str, Any]:
         "gate_3_rr": _gate(execution["rr_ratio"] >= rr_min),
         "gate_4_fta": _gate(scores["fta_score"] >= fta_min),
         "gate_5_montecarlo": _gate(layers["L7_monte_carlo_win"] >= monte_min),
-        "gate_6_propfirm": _gate(propfirm["compliant"] is True),
+        "gate_6_propfirm": _gate(bool(propfirm.get("compliant", False))),
         "gate_7_drawdown": _gate(risk["current_drawdown"] <= max_drawdown),
         "gate_8_latency": _gate(synthesis["system"]["latency_ms"] <= 250),
         "gate_9_conf12": _gate(layers["conf12"] >= conf12_min),
     }
 
+    # Gate #10: Macro VIX regime check
+    macro_vix = synthesis.get("macro_vix", {})
+    vix_regime_state = macro_vix.get("regime_state", 1)
+    safe_mode = synthesis.get("system", {}).get("safe_mode", False)
+    gates["gate_10_macro_regime"] = _gate(vix_regime_state < 2 or safe_mode)
+
     passed_gates = sum(1 for gate in gates.values() if gate == "PASS")
 
     violations = []
+
+    # ─── MN Bias Conflict Guard (internal, non-gate) ───
+    # If monthly macro regime conflicts with trade direction,
+    # downgrade verdict to HOLD unless confidence is extremely high
+    macro_data = synthesis.get("macro", {})
+    mn_regime = macro_data.get("regime", "UNKNOWN")
+    mn_bias_override = macro_data.get("bias_override", {})
+
+    mn_conflict = False
+    mn_override_active = False
+    if mn_bias_override.get("active", False):
+        # Determine trade direction
+        trade_direction = execution.get("direction")
+        penalized_direction = mn_bias_override.get("penalized_direction")
+
+        if trade_direction == penalized_direction:
+            mn_conflict = True
+            # Apply confidence penalty
+            adjusted_conf12 = layers["conf12"] * mn_bias_override.get(
+                "confidence_multiplier", 1.0
+            )
+            # If adjusted conf12 drops below threshold and we passed 7+ gates,
+            # consider downgrading to HOLD for counter-macro trades
+            if adjusted_conf12 < conf12_min and passed_gates >= 7:
+                mn_override_active = True
 
     # Check for F/T conflict - NEUTRAL is compatible with any direction
     if bias["fundamental"] != bias["technical"]:
@@ -66,7 +127,16 @@ def generate_l12_verdict(synthesis: Dict[str, Any]) -> Dict[str, Any]:
 
         for violation in violations:
             log_violation(pair=synthesis["pair"], reason=violation)
-    elif passed_gates < 9:
+    elif mn_override_active:
+        # MN bias conflict override: downgrade to HOLD
+        verdict = "HOLD"
+        confidence = "MEDIUM"
+        wolf_status = "SCOUT"
+        log_violation(
+            pair=synthesis["pair"],
+            reason=f"MN_BIAS_CONFLICT: counter-macro trade in {mn_regime}",
+        )
+    elif passed_gates < 10:
         verdict = "HOLD"
         confidence = "MEDIUM"
         wolf_status = "SCOUT"
@@ -84,11 +154,16 @@ def generate_l12_verdict(synthesis: Dict[str, Any]) -> Dict[str, Any]:
             elif bias["technical"] == "BEARISH":
                 direction = "SELL"
             else:
-                direction = "HOLD"
+                # No directional bias - return HOLD, not EXECUTE_HOLD
+                verdict = "HOLD"
+                confidence = "MEDIUM"
+                wolf_status = "SCOUT"
+                direction = None  # Clear direction
 
-        verdict = f"EXECUTE_{direction}"
-        confidence = "VERY_HIGH" if scores["wolf_30_point"] >= 27 else "HIGH"
-        wolf_status = "ALPHA" if scores["wolf_30_point"] >= 27 else "PACK"
+        if direction:  # Only set EXECUTE verdict if we have a valid direction
+            verdict = f"EXECUTE_{direction}"
+            confidence = "VERY_HIGH" if scores["wolf_30_point"] >= 27 else "HIGH"
+            wolf_status = "ALPHA" if scores["wolf_30_point"] >= 27 else "PACK"
 
     l12_output = {
         "schema": "v7.4r∞",
@@ -100,8 +175,10 @@ def generate_l12_verdict(synthesis: Dict[str, Any]) -> Dict[str, Any]:
         "gates": {
             **gates,
             "passed": passed_gates,
-            "total": 9,
+            "total": 10,
         },
+        "mn_conflict": mn_conflict,
+        "mn_regime": mn_regime,
         "execution": {
             "direction": execution.get("direction"),
             "entry_zone": execution.get("entry_zone"),

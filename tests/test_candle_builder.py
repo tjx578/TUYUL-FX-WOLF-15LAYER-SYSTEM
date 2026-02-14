@@ -5,7 +5,7 @@ Tests tick aggregation, M15/H1 candle building, floor_time calculation,
 and empty buffer handling.
 """
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from unittest.mock import MagicMock
 
 import pytest
@@ -21,7 +21,7 @@ class TestCandleBuilderFloorTime:
         builder = CandleBuilder()
 
         # Test various times
-        dt = datetime(2024, 1, 15, 10, 23, 45, tzinfo=timezone.utc)
+        dt = datetime(2024, 1, 15, 10, 23, 45, tzinfo=UTC)
         floored = builder._floor_time(dt, 15)
 
         # Should floor to 10:15:00
@@ -34,7 +34,7 @@ class TestCandleBuilderFloorTime:
         """Test floor_time for H1 intervals."""
         builder = CandleBuilder()
 
-        dt = datetime(2024, 1, 15, 10, 23, 45, tzinfo=timezone.utc)
+        dt = datetime(2024, 1, 15, 10, 23, 45, tzinfo=UTC)
         floored = builder._floor_time(dt, 60)
 
         # Should floor to 10:00:00
@@ -47,18 +47,45 @@ class TestCandleBuilderFloorTime:
         """Test floor_time when time is already on interval."""
         builder = CandleBuilder()
 
-        dt = datetime(2024, 1, 15, 10, 0, 0, tzinfo=timezone.utc)
+        dt = datetime(2024, 1, 15, 10, 0, 0, tzinfo=UTC)
         floored = builder._floor_time(dt, 60)
 
         # Should remain the same
         assert floored == dt
+
+    def test_floor_time_h4(self) -> None:
+        """Test floor_time for H4 intervals."""
+        builder = CandleBuilder()
+        dt = datetime(2024, 1, 15, 10, 23, 45, tzinfo=UTC)
+        floored = builder._floor_time(dt, 240)
+        assert floored.hour == 8  # Floor to 08:00 (H4 bucket)
+        assert floored.minute == 0
+
+    def test_floor_time_d1(self) -> None:
+        """Test floor_time for D1 intervals."""
+        builder = CandleBuilder()
+        dt = datetime(2024, 1, 15, 10, 23, 45, tzinfo=UTC)
+        floored = builder._floor_time(dt, 1440)
+        assert floored.hour == 0
+        assert floored.minute == 0
+        assert floored.day == 15
+
+    def test_floor_time_w1(self) -> None:
+        """Test floor_time for W1 intervals (should floor to Monday)."""
+        builder = CandleBuilder()
+        # Jan 15, 2024 is a Monday
+        dt = datetime(2024, 1, 17, 10, 23, 45, tzinfo=UTC)  # Wednesday
+        floored = builder._floor_time(dt, 10080)
+        assert floored.weekday() == 0  # Monday
+        assert floored.day == 15
+        assert floored.hour == 0
 
     def test_floor_time_edge_cases(self) -> None:
         """Test floor_time edge cases."""
         builder = CandleBuilder()
 
         # Just before midnight
-        dt = datetime(2024, 1, 15, 23, 59, 59, tzinfo=timezone.utc)
+        dt = datetime(2024, 1, 15, 23, 59, 59, tzinfo=UTC)
         floored = builder._floor_time(dt, 15)
 
         # Should floor to 23:45:00
@@ -77,18 +104,18 @@ class TestCandleBuilderNormalizeTimestamp:
         dt = builder._normalize_timestamp(unix_ts)
 
         assert isinstance(dt, datetime)
-        assert dt.tzinfo == timezone.utc
+        assert dt.tzinfo == UTC
         assert dt.year == 2023
 
     def test_normalize_datetime_aware(self) -> None:
         """Test normalizing timezone-aware datetime."""
         builder = CandleBuilder()
 
-        dt_in = datetime(2024, 1, 15, 10, 0, 0, tzinfo=timezone.utc)
+        dt_in = datetime(2024, 1, 15, 10, 0, 0, tzinfo=UTC)
         dt_out = builder._normalize_timestamp(dt_in)
 
         assert dt_out == dt_in
-        assert dt_out.tzinfo == timezone.utc
+        assert dt_out.tzinfo == UTC
 
     def test_normalize_datetime_naive(self) -> None:
         """Test normalizing naive datetime (assumes UTC)."""
@@ -98,7 +125,7 @@ class TestCandleBuilderNormalizeTimestamp:
         dt_out = builder._normalize_timestamp(dt_in)
 
         assert isinstance(dt_out, datetime)
-        assert dt_out.tzinfo == timezone.utc
+        assert dt_out.tzinfo == UTC
         assert dt_out.year == 2024
 
 
@@ -112,7 +139,7 @@ class TestCandleBuilderM15:
         builder.context_bus = MagicMock()
 
         # Create mock ticks within a 15-minute window
-        base_time = datetime(2024, 1, 15, 10, 0, 0, tzinfo=timezone.utc)
+        base_time = datetime(2024, 1, 15, 10, 0, 0, tzinfo=UTC)
 
         ticks = []
         for i in range(5):
@@ -137,10 +164,7 @@ class TestCandleBuilderM15:
         # Get all candles built (might be multiple as buffer builds incrementally)
         # The test just verifies that M15 candles are being built
         calls = builder.context_bus.update_candle.call_args_list
-        m15_candles = [
-            call[0][0] for call in calls
-            if call[0][0].get("timeframe") == "M15"
-        ]
+        m15_candles = [call[0][0] for call in calls if call[0][0].get("timeframe") == "M15"]
 
         # Should have built at least one M15 candle
         assert len(m15_candles) > 0
@@ -181,7 +205,7 @@ class TestCandleBuilderH1:
         builder.context_bus = MagicMock()
 
         # Create mock ticks within a 1-hour window
-        base_time = datetime(2024, 1, 15, 10, 0, 0, tzinfo=timezone.utc)
+        base_time = datetime(2024, 1, 15, 10, 0, 0, tzinfo=UTC)
 
         ticks = []
         for i in range(10):
@@ -205,10 +229,7 @@ class TestCandleBuilderH1:
 
         # Check if H1 candle was built
         calls = builder.context_bus.update_candle.call_args_list
-        h1_candles = [
-            call[0][0] for call in calls
-            if call[0][0].get("timeframe") == "H1"
-        ]
+        h1_candles = [call[0][0] for call in calls if call[0][0].get("timeframe") == "H1"]
 
         if h1_candles:
             candle = h1_candles[0]
@@ -242,7 +263,7 @@ class TestCandleBuilderEmptyBuffer:
         builder.context_bus = MagicMock()
 
         # Create ticks spanning two M15 periods
-        base_time = datetime(2024, 1, 15, 10, 0, 0, tzinfo=timezone.utc)
+        base_time = datetime(2024, 1, 15, 10, 0, 0, tzinfo=UTC)
 
         ticks = []
         # First period (10:00-10:15)
@@ -262,9 +283,7 @@ class TestCandleBuilderEmptyBuffer:
                 "symbol": "EURUSD",
                 "bid": 1.0860,
                 "ask": 1.0862,
-                "timestamp": (
-                    base_time + timedelta(minutes=15 + i)
-                ).timestamp(),
+                "timestamp": (base_time + timedelta(minutes=15 + i)).timestamp(),
                 "source": "test",
             }
             ticks.append(tick)
@@ -293,7 +312,7 @@ class TestCandleBuilderMultipleSymbols:
         builder = CandleBuilder()
         builder.context_bus = MagicMock()
 
-        base_time = datetime(2024, 1, 15, 10, 0, 0, tzinfo=timezone.utc)
+        base_time = datetime(2024, 1, 15, 10, 0, 0, tzinfo=UTC)
 
         ticks = []
         # EURUSD ticks

@@ -4,6 +4,7 @@ Time-based pending order expiration (H1 count).
 """
 
 from loguru import logger
+
 from execution.state_machine import ExecutionStateMachine
 
 
@@ -19,4 +20,6 @@ class ExpiryEngine:
         if elapsed_h1 >= self.max_h1_bars:
             self.state.set_cancelled("H1_EXPIRY")
             logger.warning("⏱️ ORDER EXPIRED (H1 COUNT)")
+
+
 # Placeholder
