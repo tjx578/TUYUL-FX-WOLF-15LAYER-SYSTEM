@@ -38,24 +38,28 @@ Integrity: TIIₛᵧₘ ≥ 0.93 | FRPC ≥ 0.96 | RR ≥ 1:2.0
 from __future__ import annotations
 
 import time
-from datetime import datetime, timezone, timedelta
-from typing import Any
 
-from loguru import logger
+from datetime import datetime, timedelta, timezone
+from typing import Any
 
 from constitution.verdict_engine import generate_l12_verdict
 from pipeline.constants import (
-    get_vault_sync_thresholds,
-    get_vault_sync_weights,
-    get_tii_min,
     get_conf12_min,
-    get_rr_min,
-    get_fta_min,
-    get_monte_min,
     get_integrity_min,
     get_max_drawdown,
     get_max_latency_ms,
+    get_monte_min,
+    get_rr_min,
+    get_tii_min,
+    get_vault_sync_thresholds,
+    get_vault_sync_weights,
 )
+
+try:
+    from loguru import logger  # pyright: ignore[reportMissingImports]
+except ImportError:
+    import logging
+    logger = logging.getLogger(__name__)
 
 # ─── GMT+8 timezone for timestamps ───
 _TZ_GMT8 = timezone(timedelta(hours=8))
@@ -100,19 +104,27 @@ class WolfConstitutionalPipeline:
         if self._l1 is not None:
             return
 
-        from analysis.layers.L1_context import L1ContextAnalyzer
-        from analysis.layers.L2_mta import L2MTAAnalyzer
-        from analysis.layers.L3_technical import L3TechnicalAnalyzer
-        from analysis.layers.L4_scoring import L4ScoringEngine
-        from analysis.layers.L5_psychology import L5PsychologyAnalyzer
-        from analysis.layers.L6_risk import L6RiskAnalyzer
-        from analysis.layers.L7_probability import L7ProbabilityAnalyzer
-        from analysis.layers.L8_tii_integrity import L8TIIIntegrityAnalyzer
-        from analysis.layers.L9_smc import L9SMCAnalyzer
-        from analysis.layers.L10_position import L10PositionAnalyzer
-        from analysis.layers.L11_rr import L11RRAnalyzer
-        from analysis.macro.monthly_regime import MonthlyRegimeAnalyzer
-        from analysis.macro_volatility_engine import MacroVolatilityEngine
+        import analysis.layers.L10_execution  # pyright: ignore[reportMissingImports]  # noqa: PLC0415
+        import analysis.macro_volatility_engine  # pyright: ignore[reportMissingImports]  # noqa: PLC0415
+
+        from analysis.layers.L4_scoring import (  # noqa: PLC0415 # pyright: ignore[reportMissingImports]
+            L4ScoringEngine,  # pyright: ignore[reportMissingImports]
+        )
+        from analysis.layers.L5_psychology import (  # noqa: PLC0415 # pyright: ignore[reportMissingImports]
+            L5PsychologyAnalyzer,  # pyright: ignore[reportMissingImports]
+        )
+
+        from analysis.layers.L1_context import (  # noqa: PLC0415
+            L1ContextAnalyzer,  # pyright: ignore[reportAttributeAccessIssue]
+        )
+        from analysis.layers.L2_mta import L2MTAAnalyzer  # noqa: PLC0415
+        from analysis.layers.L3_technical import L3TechnicalAnalyzer  # noqa: PLC0415
+        from analysis.layers.L6_risk import L6RiskAnalyzer  # noqa: PLC0415
+        from analysis.layers.L7_probability import L7ProbabilityAnalyzer  # noqa: PLC0415
+        from analysis.layers.L8_tii_integrity import L8TIIIntegrityAnalyzer  # noqa: PLC0415
+        from analysis.layers.L9_smc import L9SMCAnalyzer  # noqa: PLC0415
+        from analysis.layers.L11_rr import L11RRAnalyzer  # noqa: PLC0415
+        from analysis.macro.monthly_regime import MonthlyRegimeAnalyzer  # noqa: PLC0415
 
         self._l1 = L1ContextAnalyzer()
         self._l2 = L2MTAAnalyzer()
@@ -123,10 +135,10 @@ class WolfConstitutionalPipeline:
         self._l7 = L7ProbabilityAnalyzer()
         self._l8 = L8TIIIntegrityAnalyzer()
         self._l9 = L9SMCAnalyzer()
-        self._l10 = L10PositionAnalyzer()
+        self._l10 = analysis.layers.L10_execution.L10PositionAnalyzer()
         self._l11 = L11RRAnalyzer()
         self._macro = MonthlyRegimeAnalyzer()
-        self._macro_vol = MacroVolatilityEngine()
+        self._macro_vol = analysis.macro_volatility_engine.MacroVolatilityEngine()
 
     # ══════════════════════════════════════════════════════════════
     #  MAIN EXECUTE - the single canonical entry point
@@ -163,17 +175,17 @@ class WolfConstitutionalPipeline:
             # ═══════════════════════════════════════════════════════
             logger.info(f"[Pipeline v7.4r∞] Phase 1: Perception & Context - {symbol}")
 
-            l1 = self._l1.analyze(symbol)
+            l1 = self._l1.analyze(symbol) # pyright: ignore[reportOptionalMemberAccess]
             if not l1.get("valid"):
                 errors.append("L1_CONTEXT_INVALID")
                 return self._early_exit(symbol, errors, time.time() - start_time)
 
-            l2 = self._l2.analyze(symbol)
+            l2 = self._l2.analyze(symbol) # pyright: ignore[reportOptionalMemberAccess]
             if not l2.get("valid"):
                 errors.append("L2_MTA_INVALID")
                 return self._early_exit(symbol, errors, time.time() - start_time)
 
-            l3 = self._l3.analyze(symbol)
+            l3 = self._l3.analyze(symbol) # pyright: ignore[reportOptionalMemberAccess]
             if not l3.get("valid"):
                 errors.append("L3_TECHNICAL_INVALID")
                 return self._early_exit(symbol, errors, time.time() - start_time)
@@ -184,10 +196,10 @@ class WolfConstitutionalPipeline:
             logger.info(f"[Pipeline v7.4r∞] Phase 2: Confluence & Scoring - {symbol}")
 
             # L4: Wolf 30-Point Scoring (requires L1, L2, L3)
-            l4 = self._l4.score(l1, l2, l3)
+            l4 = self._l4.score(l1, l2, l3) # pyright: ignore[reportOptionalMemberAccess]
 
             # L5: Psychology Gates + RGO Governance
-            l5 = self._l5.analyze(symbol, volatility_profile=l2)
+            l5 = self._l5.analyze(symbol, volatility_profile=l2) # pyright: ignore[reportOptionalMemberAccess]
 
             # ═══════════════════════════════════════════════════════
             # PHASE 3 - ZONA PROBABILITY & VALIDATION (L7, L8, L9)
@@ -196,10 +208,10 @@ class WolfConstitutionalPipeline:
 
             # L7: Monte Carlo FTTC Validation
             technical_score = l4.get("technical_score", 0)
-            l7 = self._l7.analyze(symbol, technical_score=technical_score)
+            l7 = self._l7.analyze(symbol, technical_score=technical_score) # pyright: ignore[reportOptionalMemberAccess]
 
             # Apply VIX multiplier to L7 win probability
-            macro_vix_state = self._macro_vol.get_state()
+            macro_vix_state = self._macro_vol.get_state() # pyright: ignore[reportOptionalMemberAccess]
             vix_risk_multiplier = macro_vix_state.get("risk_multiplier", 1.0)
             if l7.get("win_probability"):
                 l7_adjusted = l7.copy()
@@ -210,14 +222,14 @@ class WolfConstitutionalPipeline:
             layers_for_l8 = {
                 "l1": l1, "l2": l2, "l3": l3, "l4": l4, "l7": l7,
             }
-            l8 = self._l8.analyze(layers_for_l8)
+            l8 = self._l8.analyze(layers_for_l8) # pyright: ignore[reportOptionalMemberAccess]
 
             # L9: SMC Integration Analysis
             if hasattr(self._l3, "structure"):
-                structure = self._l3.structure.analyze(symbol)
+                structure = self._l3.structure.analyze(symbol) # pyright: ignore[reportOptionalMemberAccess, reportAttributeAccessIssue]
             else:
                 structure = l3
-            l9 = self._l9.analyze(symbol, structure)
+            l9 = self._l9.analyze(symbol, structure) # pyright: ignore[reportOptionalMemberAccess]
 
             # ═══════════════════════════════════════════════════════
             # PHASE 4 - ZONA EXECUTION & DECISION (L11 → L6 → L10)
@@ -237,19 +249,19 @@ class WolfConstitutionalPipeline:
             # L11: Risk-Reward Optimization + Battle Strategy (BEFORE L6!)
             l11: dict[str, Any] = {"valid": False, "rr": 0.0}
             if direction in ("BUY", "SELL"):
-                l11 = self._l11.calculate_rr(symbol, direction)
+                l11 = self._l11.calculate_rr(symbol, direction) # pyright: ignore[reportOptionalMemberAccess]
             rr_value = l11.get("rr", 0.0)
 
             # L6: Risk Management + Lorentzian Stabilization
-            l6 = self._l6.analyze(rr=rr_value)
+            l6 = self._l6.analyze(rr=rr_value) # pyright: ignore[reportOptionalMemberAccess]
 
             # L10: Position Sizing & FTA Multiplier
             risk_ok = l6.get("risk_ok", False)
             smc_confidence = l9.get("confidence", 0.0)
-            l10 = self._l10.analyze(risk_ok, smc_confidence)
+            l10 = self._l10.analyze(risk_ok, smc_confidence) # pyright: ignore[reportOptionalMemberAccess]
 
             # Macro regime analysis
-            macro = self._macro.analyze(symbol)
+            macro = self._macro.analyze(symbol) # pyright: ignore[reportOptionalMemberAccess]
 
             # ═══════════════════════════════════════════════════════
             # PHASE 5 - L12 CONSTITUTIONAL VERDICT (SOLE AUTHORITY)
@@ -334,7 +346,7 @@ class WolfConstitutionalPipeline:
     #  BUILD SYNTHESIS - L12-contract payload from L1-L11
     # ══════════════════════════════════════════════════════════════
 
-    def _build_synthesis(
+    def _build_synthesis(  # noqa: PLR0913
         self,
         symbol: str,
         l1: dict[str, Any],
@@ -637,7 +649,7 @@ class WolfConstitutionalPipeline:
     #  L14 - JSON OUTPUT & DATA EXPORT
     # ══════════════════════════════════════════════════════════════
 
-    def _build_l14_json(
+    def _build_l14_json(  # noqa: PLR0913
         self,
         symbol: str,
         now: datetime,
@@ -719,7 +731,7 @@ class WolfConstitutionalPipeline:
         Combines all 14 layers into a single reflective consciousness state.
         """
         integrity = synthesis.get("layers", {}).get("L8_integrity_index", 0.0)
-        tii = synthesis.get("layers", {}).get("L8_tii_sym", 0.0)
+        synthesis.get("layers", {}).get("L8_tii_sym", 0.0)
         rr = synthesis.get("execution", {}).get("rr_ratio", 0.0)
         wolf_score = synthesis.get("scores", {}).get("wolf_30_point", 0)
 
