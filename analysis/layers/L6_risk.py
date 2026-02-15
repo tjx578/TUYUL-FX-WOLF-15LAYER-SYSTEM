@@ -21,7 +21,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from loguru import logger
+from loguru import logger  # pyright: ignore[reportMissingImports]
 
 try:
     from core.core_cognitive_unified import AdaptiveRiskCalculator

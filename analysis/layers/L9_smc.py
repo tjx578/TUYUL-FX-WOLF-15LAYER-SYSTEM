@@ -28,12 +28,14 @@ from __future__ import annotations
 
 from typing import Any
 
-from loguru import logger
+from loguru import logger  # pyright: ignore[reportMissingImports]
 
 try:
     import core.core_cognitive_unified
 
-    from core.core_fusion_unified import LiquidityZoneMapper
+    from core.core_fusion_unified import (  # pyright: ignore[reportMissingImports]
+        LiquidityZoneMapper,  # pyright: ignore[reportMissingImports]
+    )
 except ImportError as exc:
     logger.warning(f"[L9] Could not load core modules: {exc}")
     core = None

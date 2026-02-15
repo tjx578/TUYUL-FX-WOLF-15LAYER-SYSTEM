@@ -36,9 +36,9 @@ Zone: analysis/ — pure computation, zero side-effects.
 from __future__ import annotations
 
 import logging
-import math
-from datetime import datetime, timezone
-from typing import Any, Final, Optional
+
+from datetime import UTC, datetime
+from typing import Any, Final
 
 logger = logging.getLogger(__name__)
 
@@ -108,7 +108,7 @@ _KNOWN_CURRENCIES: Final = (
 # §3  FUNDAMENTAL HELPERS (from l5_fundamental.py — preserved 100%)
 # ═══════════════════════════════════════════════════════════════════════
 
-def _extract_pair_currencies(pair: str) -> tuple[Optional[str], Optional[str]]:
+def _extract_pair_currencies(pair: str) -> tuple[str | None, str | None]:
     """Extract (base, quote) currency from a pair string.
 
     Standard FX pairs: first 3 chars = base, last 3 = quote.
@@ -156,11 +156,11 @@ def _compute_fundamental_strength(
 
 def _resolve_pair_bias(
     pair_bias: str,
-    base_sentiment: Optional[float],
-    quote_sentiment: Optional[float],
-    base_ccy: Optional[str],
-    quote_ccy: Optional[str],
-) -> tuple[str, Optional[str]]:
+    base_sentiment: float | None,
+    quote_sentiment: float | None,
+    base_ccy: str | None,
+    quote_ccy: str | None,
+) -> tuple[str, str | None]:
     """Resolve directional bias considering base vs quote currency.
 
     For GBPUSD: bullish GBP + bearish USD → strongly BULLISH pair.
@@ -184,7 +184,7 @@ def _resolve_pair_bias(
 
 
 def _run_fundamental_analysis(
-    news_sentiment: Optional[dict[str, Any]],
+    news_sentiment: dict[str, Any] | None,
     pair: str,
     now: datetime,
 ) -> dict[str, Any]:
@@ -200,8 +200,8 @@ def _run_fundamental_analysis(
     impact_level = str(ns.get("impact_level", "NONE")).upper()
     source = ns.get("source", "unknown")
 
-    base_sentiment: Optional[float] = None
-    quote_sentiment: Optional[float] = None
+    base_sentiment: float | None = None
+    quote_sentiment: float | None = None
     if "base_sentiment" in ns:
         base_sentiment = float(ns["base_sentiment"])
     if "quote_sentiment" in ns:
@@ -410,12 +410,12 @@ class L5AnalysisLayer:
     def analyze(
         self,
         pair: str = "GBPUSD",
-        symbol: Optional[str] = None,
-        market_data: Optional[dict[str, Any]] = None,
-        news_sentiment: Optional[dict[str, Any]] = None,
-        volatility_profile: Optional[dict[str, Any]] = None,
+        symbol: str | None = None,
+        market_data: dict[str, Any] | None = None,
+        news_sentiment: dict[str, Any] | None = None,
+        volatility_profile: dict[str, Any] | None = None,
         session_hours: float = 0.0,
-        now: Optional[datetime] = None,
+        now: datetime | None = None,
     ) -> dict[str, Any]:
         """Complete L5 pipeline: fundamental + psychology + integration.
 
@@ -444,7 +444,7 @@ class L5AnalysisLayer:
             Unified L5 profile with all psychology AND fundamental fields.
         """
         if now is None:
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
 
         # ── PHASE 1: Fundamental analysis (stateless) ────────────────
 
@@ -627,7 +627,7 @@ class L5PsychologyAnalyzer:
         self,
         symbol: str,
         *,
-        volatility_profile: Optional[dict[str, Any]] = None,
+        volatility_profile: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Original L5_psychology.py signature preserved."""
         return self._inner.analyze(
@@ -638,16 +638,16 @@ class L5PsychologyAnalyzer:
 
 def analyze_fundamental(
     market_data: dict[str, Any],
-    news_sentiment: Optional[dict[str, Any]] = None,
+    news_sentiment: dict[str, Any] | None = None,
     pair: str = "GBPUSD",
-    now: Optional[datetime] = None,
+    now: datetime | None = None,
 ) -> dict[str, Any]:
     """Backward-compatible fundamental-only analysis.
 
     Same signature as original ``l5_fundamental.analyze_fundamental()``.
     """
     if now is None:
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
     fund = _run_fundamental_analysis(news_sentiment, pair, now)
 
@@ -672,10 +672,10 @@ def analyze_fundamental(
 
 def analyze_l5(
     pair: str = "GBPUSD",
-    news_sentiment: Optional[dict[str, Any]] = None,
-    volatility_profile: Optional[dict[str, Any]] = None,
+    news_sentiment: dict[str, Any] | None = None,
+    volatility_profile: dict[str, Any] | None = None,
     session_hours: float = 0.0,
-    now: Optional[datetime] = None,
+    now: datetime | None = None,
 ) -> dict[str, Any]:
     """Convenience function for full L5 analysis."""
     return L5AnalysisLayer().analyze(

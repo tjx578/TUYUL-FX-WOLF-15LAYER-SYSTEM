@@ -33,14 +33,15 @@ from __future__ import annotations
 
 import logging
 import math
-from datetime import datetime, timezone
-from typing import Any, Final, Literal, Optional, TypedDict
+
+from datetime import UTC, datetime
+from typing import Any, Final, Literal, Optional, TypedDict  # noqa: F401
 
 logger = logging.getLogger(__name__)
 
 __all__ = [
-    "L4SessionScoring",
     "L4ScoringEngine",
+    "L4SessionScoring",
     "analyze_session",
     "analyze_session_scoring",
 ]
@@ -211,7 +212,7 @@ def _extract_currencies(pair: str) -> list[str]:
 def _is_near_event(
     now: datetime,
     pair_currencies: list[str],
-) -> tuple[bool, Optional[str]]:
+) -> tuple[bool, str | None]:
     """Check if current time is within a high-impact event buffer.
 
     Uses minute-level precision.  Returns (is_near, event_name_or_none).
@@ -602,8 +603,8 @@ class L4SessionScoring:
         l2: dict[str, Any],
         l3: dict[str, Any],
         pair: str = "GBPUSD",
-        market_data: Optional[dict[str, Any]] = None,
-        now: Optional[datetime] = None,
+        market_data: dict[str, Any] | None = None,
+        now: datetime | None = None,
     ) -> dict[str, Any]:
         """Complete L4 pipeline: session + scoring + integration.
 
@@ -643,7 +644,7 @@ class L4SessionScoring:
               ``grade``, ``technical_score``, ``tradeable``, ``valid``
         """
         if now is None:
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
 
         # ── PHASE 1: Session analysis ────────────────────────────────
 
@@ -765,14 +766,14 @@ class L4ScoringEngine:
 def analyze_session(
     market_data: dict[str, Any],
     pair: str = "GBPUSD",
-    now: Optional[datetime] = None,
+    now: datetime | None = None,
 ) -> dict[str, Any]:
     """Backward-compatible session-only analysis.
 
     Same signature and return shape as original ``l4_session.analyze_session()``.
     """
     if now is None:
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
     ctx = _compute_session_context(pair, now)
 
@@ -796,7 +797,7 @@ def analyze_session_scoring(
     l2: dict[str, Any],
     l3: dict[str, Any],
     pair: str = "GBPUSD",
-    now: Optional[datetime] = None,
+    now: datetime | None = None,
 ) -> dict[str, Any]:
     """Convenience function for full L4 analysis without class instantiation."""
     return L4SessionScoring().analyze(l1=l1, l2=l2, l3=l3, pair=pair, now=now)

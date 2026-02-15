@@ -23,10 +23,10 @@ from __future__ import annotations
 
 from typing import Any
 
-from loguru import logger
+from loguru import logger  # pyright: ignore[reportMissingImports]
 
 try:
-    import core.core_fusion_unified
+    import core.core_fusion_unified  # pyright: ignore[reportMissingImports]
 except ImportError:
     core = None
 

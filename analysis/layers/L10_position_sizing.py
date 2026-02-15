@@ -27,8 +27,9 @@ from __future__ import annotations
 
 import logging
 import math
-from datetime import datetime, timezone
-from typing import Any, Final, Optional
+
+from datetime import UTC, datetime
+from typing import Any, Final
 
 logger = logging.getLogger(__name__)
 
@@ -149,7 +150,7 @@ def _classify_rr(rr: float) -> str:
     return "UNACCEPTABLE"
 
 
-def _infer_direction(entry: float, sl: float, tp: float) -> Optional[str]:
+def _infer_direction(entry: float, sl: float, tp: float) -> str | None:
     """Infer LONG/SHORT from entry/SL/TP geometry.
 
     Returns ``None`` if any value is zero or geometry is ambiguous.
@@ -167,7 +168,7 @@ def _validate_geometry(
     entry: float,
     sl: float,
     tp: float,
-    direction: Optional[str],
+    direction: str | None,
 ) -> list[str]:
     """Validate logical consistency of entry/SL/TP.  Return warnings."""
     w: list[str] = []
@@ -295,16 +296,16 @@ class L10PositionAnalyzer:
     def __init__(self) -> None:
         self._trade_count: int = 0
 
-    def analyze(
+    def analyze(  # noqa: PLR0912
         self,
         trade_params: dict[str, Any],
         account_balance: float = 10_000.0,
         pair: str = "GBPUSD",
-        risk_data: Optional[dict[str, Any]] = None,
+        risk_data: dict[str, Any] | None = None,
         confidence: float = 0.75,
         open_positions: int = 0,
         daily_dd_pct: float = 0.0,
-        now: Optional[datetime] = None,
+        now: datetime | None = None,
     ) -> dict[str, Any]:
         """Complete L10 pipeline: geometry → sizing → FTA → compliance.
 
@@ -351,7 +352,7 @@ class L10PositionAnalyzer:
               ``prop_violations``, ``warnings``, ``degraded_fields``
         """
         if now is None:
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
 
         rd = risk_data or {}
         warnings: list[str] = []
@@ -367,7 +368,7 @@ class L10PositionAnalyzer:
         inferred_dir = _infer_direction(entry, sl, tp)
 
         if explicit_dir:
-            direction: Optional[str] = explicit_dir.upper()
+            direction: str | None = explicit_dir.upper()
             if inferred_dir and direction != inferred_dir:
                 warnings.append(
                     f"DIRECTION_MISMATCH(explicit={direction}, "
@@ -537,9 +538,9 @@ class L10PositionAnalyzer:
 
 def analyze_risk_geometry(
     trade_params: dict[str, Any],
-    risk_data: Optional[dict[str, Any]] = None,
+    risk_data: dict[str, Any] | None = None,
     pair: str = "GBPUSD",
-    now: Optional[datetime] = None,
+    now: datetime | None = None,
 ) -> dict[str, Any]:
     """Backward-compatible geometry-only analysis.
 
