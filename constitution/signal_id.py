@@ -1,7 +1,6 @@
 """
 Signal ID generator — unique, traceable, sortable.
 Format: SIG-{SYMBOL_SHORT}-{YYYYMMDD}-{HHMMSS}-{4RANDOM}
-Example: SIG-EU-20260215-143052-A7F2
 """
 
 from __future__ import annotations
