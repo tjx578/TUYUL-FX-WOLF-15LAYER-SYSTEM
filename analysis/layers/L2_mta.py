@@ -27,12 +27,14 @@ from __future__ import annotations
 
 from typing import Any
 
-from loguru import logger
+from loguru import logger  # pyright: ignore[reportMissingImports]
 
 try:
-    from core.core_cognitive_unified import ReflexEmotionCore
-    from core.core_fusion_unified import FusionIntegrator
-    from core.core_reflective_unified import FRPCEngine
+    from analysis.core.core_cognitive_unified import ( # pyright: ignore[reportMissingImports]  # noqa: I001
+        ReflexEmotionCore,  # pyright: ignore[reportMissingImports]
+    )
+    from analysis.core.core_fusion_unified import FusionIntegrator # pyright: ignore[reportMissingImports]
+    from analysis.core.core_reflective_unified import FRPCEngine # pyright: ignore[reportMissingImports]
 except ImportError as exc:
     logger.warning(f"[L2] Could not load core modules: {exc}")
     ReflexEmotionCore = None  # type: ignore[assignment,misc]

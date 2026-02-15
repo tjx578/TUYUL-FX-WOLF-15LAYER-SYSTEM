@@ -22,7 +22,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from loguru import logger
+from loguru import logger  # pyright: ignore[reportMissingImports]
 
 try:
     import core.core_reflective_unified
@@ -45,7 +45,7 @@ class L8TIIIntegrityAnalyzer:
             return
         try:
             if core is not None and ConfidenceMultiplier is not None:
-                self._tii_thresholds = core.core_reflective_unified.AdaptiveTIIThresholds()
+                self._tii_thresholds = core.core_reflective_unified.AdaptiveTIIThresholds() # pyright: ignore[reportAttributeAccessIssue]
                 self._confidence_mult = ConfidenceMultiplier()
         except Exception as exc:
             logger.warning(f"[L8] Could not load core modules: {exc}")
