@@ -1,91 +1,114 @@
 """
-L7 Probability Analyzer - Monte Carlo FTTC Validation.
+L7 Probability Analyzer — Real Monte Carlo + Bayesian Validation.
+
+Replaces PLACEHOLDER with production bootstrap Monte Carlo engine
+and Bayesian posterior update for adaptive win probability.
 
 Sources:
     engines/monte_carlo_engine.py     → MonteCarloEngine
     engines/bayesian_update_engine.py → BayesianProbabilityEngine
-    core_fusion_unified.py            → MonteCarloConfidence, FTTCMonteCarloEngine
 
 Gate Logic:
-    IF Win% < 60% OR RR < 1:2 → FAIL → HOLD
-    IF Win% ≥ 60% AND RR ≥ 1:2 → PASS → continue
+    IF Win% ≥ 60% AND PF ≥ 1.5  → PASS      → continue to L8+
+    IF Win% ≥ 55% AND PF ≥ 1.2  → CONDITIONAL → continue with caution flag
+    OTHERWISE                     → FAIL       → HOLD (no execution candidate)
 
 Produces:
     - win_probability (float 0-100)
     - profit_factor (float)
-    - conf12_raw (float)      → target ≥ 0.92
+    - conf12_raw (float)               → target ≥ 0.92
     - max_drawdown (float)
-    - validation (str)        → PASS | CONDITIONAL | FAIL
-    - valid (bool)
-    - bayesian_posterior (float)
-    - bayesian_ci_low (float)
-    - bayesian_ci_high (float)
     - risk_of_ruin (float)
     - expected_value (float)
+    - posterior_win_probability (float)
+    - confidence_interval (tuple[float, float])
+    - bayesian_posterior (float)        → alias for L12 synthesis
+    - bayesian_ci_low (float)
+    - bayesian_ci_high (float)
     - mc_passed_threshold (bool)
+    - validation (str)                  → PASS | CONDITIONAL | FAIL
+    - valid (bool)
+    - simulations (int)
+    - symbol (str)
+
+Authority Boundary:
+    ANALYSIS-ONLY. No execution side-effects.
+    Layer-12 Constitution is the sole decision authority.
 """
 
 from __future__ import annotations
 
-import logging
-
 from typing import Any
 
-logger = logging.getLogger(__name__)
-
-# ── Core fusion (optional, for CONF12 enrichment) ────────────────────────────
-try:
-    import core.core_fusion_unified as _core_fusion  # pyright: ignore[reportMissingImports]
-except ImportError:
-    _core_fusion = None  # type: ignore[assignment]
-
-# ── Production engines ───────────────────────────────────────────────────────
-from engines.bayesian_update_engine import (  # pyright: ignore[reportMissingImports] # noqa: E402
+from engines.bayesian_update_engine import (  # pyright: ignore[reportMissingImports]
     BayesianProbabilityEngine,
     BayesianResult,
 )
+from loguru import logger  # pyright: ignore[reportMissingImports]
 
-from engines.monte_carlo_engine import (  # pyright: ignore[reportMissingImports]  # noqa: E402
+from engines.monte_carlo_engine import (  # pyright: ignore[reportMissingImports]
     MonteCarloEngine,
     MonteCarloResult,
 )
 
 # ── Gate thresholds ──────────────────────────────────────────────────────────
-_WIN_PASS = 60.0          # Win% ≥ 60 → PASS
-_WIN_CONDITIONAL = 50.0   # Win% ≥ 50 → CONDITIONAL
-_PF_PASS = 1.5            # Profit factor ≥ 1.5 → PASS
-_PF_CONDITIONAL = 1.2     # Profit factor ≥ 1.2 → CONDITIONAL
-_CONF12_TARGET = 0.92     # Target conf12_raw
-_MIN_TRADES = 30          # Minimum sample size for MC
+_MC_WIN_THRESHOLD = 0.60       # Win-rate ≥ 60% → PASS tier
+_MC_WIN_CONDITIONAL = 0.55     # Win-rate ≥ 55% → CONDITIONAL tier
+_PF_THRESHOLD = 1.5            # Profit factor ≥ 1.5 → PASS tier
+_PF_CONDITIONAL = 1.2          # Profit factor ≥ 1.2 → CONDITIONAL tier
+_MIN_TRADES = 30               # Minimum sample for bootstrap MC
+
+# ── CONF12 blending weights ─────────────────────────────────────────────────
+_CONF12_W_BAYES = 0.6          # Bayesian posterior weight in conf12_raw
+_CONF12_W_MC = 0.4             # MC win probability weight in conf12_raw
+
+# ── Bayesian evidence blending weights ───────────────────────────────────────
+_EVIDENCE_W_MC = 0.4           # MC win probability contribution to evidence
+_EVIDENCE_W_DVG = 0.3          # Divergence confidence contribution
+_EVIDENCE_W_LIQ = 0.3          # Liquidity score contribution
 
 
 class L7ProbabilityAnalyzer:
-    """Layer 7: Monte Carlo FTTC Validation - Probability & Validation zone."""
+    """Layer 7: Real Monte Carlo + Bayesian Probability Validation.
+
+    This layer is the probability gate in the Wolf-15 analysis pipeline.
+    It runs bootstrap Monte Carlo simulation over historical trade returns
+    and updates a Beta-distributed Bayesian belief about win probability.
+
+    Parameters
+    ----------
+    simulations : int
+        Number of MC bootstrap iterations (default 1000).
+    seed : int | None
+        RNG seed for deterministic reproducibility.
+    """
 
     def __init__(
         self,
-        mc_simulations: int = 1000,
-        mc_seed: int | None = 42,
-        bayesian_seed: int | None = 42,
+        simulations: int = 1000,
+        seed: int | None = 42,
     ) -> None:
         self._mc_engine = MonteCarloEngine(
-            simulations=mc_simulations, seed=mc_seed
+            simulations=simulations,
+            seed=seed,
+            min_trades=_MIN_TRADES,
+            win_threshold=_MC_WIN_THRESHOLD,
+            pf_threshold=_PF_THRESHOLD,
         )
-        self._bayesian_engine = BayesianProbabilityEngine(seed=bayesian_seed)
-        self._mc_confidence: Any = None
-        self._fttc_engine: Any = None
+        self._bayesian = BayesianProbabilityEngine(seed=seed)
+        self._trade_history: list[float] = []
 
-    def _ensure_core_loaded(self) -> None:
-        """Attempt lazy-load of core fusion modules for CONF12 enrichment."""
-        if self._mc_confidence is not None:
-            return
-        try:
-            if _core_fusion is None:
-                raise ImportError("core.core_fusion_unified not available")
-            self._mc_confidence = _core_fusion.MonteCarloConfidence()
-            self._fttc_engine = _core_fusion.FTTCMonteCarloEngine()
-        except Exception as exc:
-            logger.debug("[L7] Core fusion modules unavailable: %s", exc)
+    # ── Public API ───────────────────────────────────────────────────────────
+
+    def set_trade_history(self, returns: list[float]) -> None:
+        """Inject historical trade returns for bootstrap MC.
+
+        Use this when trade_returns cannot be passed per-call (e.g.,
+        shared history across multiple symbol analyses).
+        """
+        if not isinstance(returns, (list, tuple)):
+            raise TypeError(f"Expected list[float], got {type(returns).__name__}")
+        self._trade_history = [float(r) for r in returns]
 
     def analyze(
         self,
@@ -93,125 +116,197 @@ class L7ProbabilityAnalyzer:
         *,
         technical_score: int = 0,
         trade_returns: list[float] | None = None,
-        prior_wins: int = 0,
-        prior_losses: int = 0,
-        coherence: float = 50.0,
-        volatility_index: float = 20.0,
-        base_bias: float = 0.5,
+        prior_wins: int = 60,
+        prior_losses: int = 40,
+        dvg_confidence: float = 0.5,
+        liquidity_score: float = 0.5,
     ) -> dict[str, Any]:
-        """
-        Run Monte Carlo + Bayesian probability validation.
+        """Run Monte Carlo + Bayesian probability validation.
 
         Args:
             symbol: Currency pair / instrument identifier.
-            technical_score: Upstream technical score (0-100).
-            trade_returns: Historical per-trade P&L list (required for MC).
-            prior_wins: Number of prior winning trades (for Bayesian).
-            prior_losses: Number of prior losing trades (for Bayesian).
-            coherence: Layer coherence score (0-100) for CONF12.
-            volatility_index: Volatility index for CONF12.
-            base_bias: Base directional bias (0-1) for CONF12.
+            technical_score: Upstream technical analysis score (0-100).
+                Used only for logging context; not blended into probability.
+            trade_returns: Historical per-trade P&L list. If None, falls
+                back to ``self._trade_history`` (set via ``set_trade_history``).
+            prior_wins: Observed winning trades for Bayesian prior (≥ 0).
+            prior_losses: Observed losing trades for Bayesian prior (≥ 0).
+            dvg_confidence: Divergence confidence from L9 or upstream (0-1).
+            liquidity_score: Liquidity score from L9 or upstream (0-1).
 
         Returns:
-            dict with keys: win_probability, profit_factor, conf12_raw,
-            max_drawdown, validation, valid, bayesian_posterior,
-            bayesian_ci_low, bayesian_ci_high, risk_of_ruin,
-            expected_value, mc_passed_threshold
+            dict with full L7 output schema (see module docstring).
+
+        Note:
+            This method never raises. On any failure it returns a fail-safe
+            fallback result with validation="FAIL" and risk_of_ruin=1.0.
         """
-        result: dict[str, Any] = {
-            "symbol": symbol,
+        # Resolve trade returns: explicit > instance > empty
+        returns = trade_returns if trade_returns is not None else self._trade_history
+
+        # ── Guard: insufficient data → graceful fallback ─────────────
+        if len(returns) < _MIN_TRADES:
+            logger.warning(
+                "[L7] {symbol} — Insufficient trade history "
+                "({available}/{required}). Using fallback.",
+                symbol=symbol,
+                available=len(returns),
+                required=_MIN_TRADES,
+            )
+            return self._fallback_result(symbol, len(returns))
+
+        try:
+            # ── Monte Carlo Bootstrap ────────────────────────────────
+            mc_result: MonteCarloResult = self._mc_engine.run(returns)
+
+            # ── Bayesian Evidence Score ──────────────────────────────
+            # Blend MC win-rate with upstream signals into a single
+            # evidence observation for the Beta-Binomial update.
+            # Clamp inputs to [0, 1] defensively.
+            _mc_wp = max(0.0, min(1.0, mc_result.win_probability))
+            _dvg = max(0.0, min(1.0, dvg_confidence))
+            _liq = max(0.0, min(1.0, liquidity_score))
+
+            evidence_score = (
+                _mc_wp * _EVIDENCE_W_MC
+                + _dvg * _EVIDENCE_W_DVG
+                + _liq * _EVIDENCE_W_LIQ
+            )
+            # Final clamp (should already be [0,1] but be explicit)
+            evidence_score = max(0.0, min(1.0, evidence_score))
+
+            bayes_result: BayesianResult = self._bayesian.update(
+                prior_wins=max(0, prior_wins),
+                prior_losses=max(0, prior_losses),
+                new_evidence_score=evidence_score,
+            )
+
+            # ── Gate Logic ───────────────────────────────────────────
+            wp = mc_result.win_probability   # 0.0 – 1.0
+            pf = mc_result.profit_factor
+
+            if wp >= _MC_WIN_THRESHOLD and pf >= _PF_THRESHOLD:
+                validation = "PASS"
+            elif wp >= _MC_WIN_CONDITIONAL and pf >= _PF_CONDITIONAL:
+                validation = "CONDITIONAL"
+            else:
+                validation = "FAIL"
+
+            # ── CONF12 raw score ─────────────────────────────────────
+            # Blended confidence for Layer-12 consumption.
+            # Bayesian posterior carries more weight (0.6) because it
+            # incorporates both prior belief and new MC evidence.
+            conf12_raw = (
+                bayes_result.posterior_win_probability * _CONF12_W_BAYES
+                + wp * _CONF12_W_MC
+            )
+
+            result: dict[str, Any] = {
+                # ── Core MC outputs ──────────────────────────────────
+                "win_probability": round(wp * 100.0, 2),
+                "profit_factor": mc_result.profit_factor,
+                "max_drawdown": mc_result.max_drawdown_mean,
+                "risk_of_ruin": mc_result.risk_of_ruin,
+                "expected_value": mc_result.expected_value,
+                "mc_passed_threshold": mc_result.passed_threshold,
+                "simulations": mc_result.simulations,
+
+                # ── Bayesian outputs ─────────────────────────────────
+                "posterior_win_probability": bayes_result.posterior_win_probability,
+                "confidence_interval": (
+                    bayes_result.confidence_interval_low,
+                    bayes_result.confidence_interval_high,
+                ),
+                # Aliases for L12 synthesis compatibility
+                "bayesian_posterior": bayes_result.posterior_win_probability,
+                "bayesian_ci_low": bayes_result.confidence_interval_low,
+                "bayesian_ci_high": bayes_result.confidence_interval_high,
+
+                # ── Blended / Derived ────────────────────────────────
+                "conf12_raw": round(conf12_raw, 4),
+
+                # ── Gate result ──────────────────────────────────────
+                "validation": validation,
+                "valid": True,
+
+                # ── Metadata ─────────────────────────────────────────
+                "symbol": symbol,
+            }
+
+            logger.info(
+                "[L7] {symbol} → {validation} | "
+                "win={wp:.1f}% pf={pf:.2f} conf12={conf12:.4f} "
+                "bayes={bayes:.4f} [{ci_lo:.4f}, {ci_hi:.4f}] "
+                "ror={ror:.4f} ev={ev:.2f} dd={dd:.2f} "
+                "mc_passed={mc_pass} sims={sims}",
+                symbol=symbol,
+                validation=validation,
+                wp=result["win_probability"],
+                pf=result["profit_factor"],
+                conf12=result["conf12_raw"],
+                bayes=result["bayesian_posterior"],
+                ci_lo=result["bayesian_ci_low"],
+                ci_hi=result["bayesian_ci_high"],
+                ror=result["risk_of_ruin"],
+                ev=result["expected_value"],
+                dd=result["max_drawdown"],
+                mc_pass=result["mc_passed_threshold"],
+                sims=result["simulations"],
+            )
+
+            return result
+
+        except Exception as exc:
+            logger.error(
+                "[L7] Monte Carlo/Bayesian failed for {symbol}: {exc}",
+                symbol=symbol,
+                exc=exc,
+            )
+            return self._fallback_result(symbol, len(returns))
+
+    # ── Private helpers ──────────────────────────────────────────────────────
+
+    def _fallback_result(
+        self,
+        symbol: str,
+        available_trades: int,
+    ) -> dict[str, Any]:
+        """Graceful degradation when MC cannot run.
+
+        Returns a fail-safe result dict with:
+        - validation = "FAIL"
+        - risk_of_ruin = 1.0 (worst case assumption)
+        - All probability fields zeroed
+        - ``note`` field explaining the degradation reason
+
+        This ensures downstream gates (Gate 2, L12) will correctly
+        block any trade candidate that lacks validated probability data.
+        """
+        return {
+            # ── Core MC outputs (zeroed) ─────────────────────────────
             "win_probability": 0.0,
             "profit_factor": 0.0,
-            "conf12_raw": 0.0,
             "max_drawdown": 0.0,
-            "validation": "FAIL",
-            "valid": True,
+            "risk_of_ruin": 1.0,        # Worst case: fail-safe
+            "expected_value": 0.0,
+            "mc_passed_threshold": False,
+            "simulations": 0,
+
+            # ── Bayesian outputs (zeroed) ────────────────────────────
+            "posterior_win_probability": 0.0,
+            "confidence_interval": (0.0, 0.0),
             "bayesian_posterior": 0.0,
             "bayesian_ci_low": 0.0,
             "bayesian_ci_high": 0.0,
-            "risk_of_ruin": 0.0,
-            "expected_value": 0.0,
-            "mc_passed_threshold": False,
+
+            # ── Blended / Derived ────────────────────────────────────
+            "conf12_raw": 0.0,
+
+            # ── Gate result ──────────────────────────────────────────
+            "validation": "FAIL",
+            "valid": True,              # Layer executed successfully
+
+            # ── Metadata ─────────────────────────────────────────────
+            "symbol": symbol,
+            "note": f"insufficient_data_{available_trades}/{_MIN_TRADES}",
         }
-
-        # ── Monte Carlo simulation ───────────────────────────────────────
-        mc_result: MonteCarloResult | None = None
-        if trade_returns and len(trade_returns) >= _MIN_TRADES:
-            try:
-                mc_result = self._mc_engine.run(trade_returns)
-                result["win_probability"] = mc_result.win_probability * 100.0 # pyright: ignore[reportOptionalMemberAccess]
-                result["profit_factor"] = mc_result.profit_factor # pyright: ignore[reportOptionalMemberAccess]
-                result["max_drawdown"] = abs(mc_result.max_drawdown_mean) # pyright: ignore[reportOptionalMemberAccess]
-                result["risk_of_ruin"] = mc_result.risk_of_ruin # pyright: ignore[reportOptionalMemberAccess]
-                result["expected_value"] = mc_result.expected_value # pyright: ignore[reportOptionalMemberAccess]
-                result["mc_passed_threshold"] = mc_result.passed_threshold # pyright: ignore[reportOptionalMemberAccess]
-                logger.info(
-                    "[L7] %s MC: win=%.1f%% pf=%.2f dd=%.2f ruin=%.4f",
-                    symbol,
-                    result["win_probability"],
-                    result["profit_factor"],
-                    result["max_drawdown"],
-                    result["risk_of_ruin"],
-                )
-            except ValueError as exc:
-                logger.warning("[L7] %s MC skipped: %s", symbol, exc)
-        else:
-            logger.info(
-                "[L7] %s MC skipped: insufficient trades (%d < %d)",
-                symbol,
-                len(trade_returns) if trade_returns else 0,
-                _MIN_TRADES,
-            )
-
-        # ── Bayesian update ──────────────────────────────────────────────
-        evidence_score = technical_score / 100.0 if technical_score > 0 else 0.5
-        try:
-            bay_result: BayesianResult = self._bayesian_engine.update(
-                prior_wins=prior_wins,
-                prior_losses=prior_losses,
-                new_evidence_score=evidence_score,
-            )
-            result["bayesian_posterior"] = bay_result.posterior_win_probability
-            result["bayesian_ci_low"] = bay_result.confidence_interval_low
-            result["bayesian_ci_high"] = bay_result.confidence_interval_high
-        except ValueError as exc:
-            logger.warning("[L7] %s Bayesian skipped: %s", symbol, exc)
-
-        # ── CONF12 enrichment (optional core fusion) ─────────────────────
-        self._ensure_core_loaded()
-        if self._mc_confidence is not None:
-            try:
-                conf_result = self._mc_confidence.run(
-                    base_bias=base_bias,
-                    coherence=coherence,
-                    volatility_index=volatility_index,
-                )
-                result["conf12_raw"] = conf_result.conf12_raw
-            except Exception as exc:
-                logger.debug("[L7] %s CONF12 enrichment failed: %s", symbol, exc)
-
-        # ── Gate logic ───────────────────────────────────────────────────
-        win_pct = result["win_probability"]
-        pf = result["profit_factor"]
-
-        if win_pct >= _WIN_PASS and pf >= _PF_PASS:
-            result["validation"] = "PASS"
-        elif win_pct >= _WIN_CONDITIONAL and pf >= _PF_CONDITIONAL:
-            result["validation"] = "CONDITIONAL"
-        else:
-            result["validation"] = "FAIL"
-
-        # valid=True always (layer ran successfully; validation carries the gate)
-        result["valid"] = True
-
-        logger.info(
-            "[L7] %s → %s (win=%.1f%% pf=%.2f conf12=%.4f bayes=%.4f)",
-            symbol,
-            result["validation"],
-            win_pct,
-            pf,
-            result["conf12_raw"],
-            result["bayesian_posterior"],
-        )
-
-        return result
