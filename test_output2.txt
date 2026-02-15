@@ -9,3 +9,5 @@ collecting ... collected 14 items
 
 tests/test_dashboard_routes.py::test_create_account PASSED               [  7%]
 tests/test_dashboard_routes.py::test_list_accounts_empty PASSED          [ 14%]
+tests/test_dashboard_routes.py::test_list_accounts_with_data PASSED      [ 21%]
+tests/test_dashboard_routes.py::test_get_account PASSED                  [ 28%]
