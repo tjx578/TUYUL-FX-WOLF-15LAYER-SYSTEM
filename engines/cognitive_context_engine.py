@@ -1,94 +1,50 @@
 """Market context inference for regime, structure, and liquidity."""
 
-from dataclasses import dataclass, field
-from typing import Any, Dict, List, Tuple
-
-
-@dataclass
-class ContextState:
-from __future__ import annotations
-
-from dataclasses import dataclass
-from typing import Any
-
-
-def _sma(values: list[float], period: int) -> float:
-    if not values:
-        return 0.0
-    if len(values) < period:
-        return sum(values) / len(values)
-    window = values[-period:]
-    return sum(window) / period
-
-
-def _atr(high: list[float], low: list[float], close: list[float], period: int = 14) -> float:
-    if not close:
-        return 0.0
-    tr = [
-        max(
-            high[idx] - low[idx],
-            abs(high[idx] - close[idx - 1]),
-            abs(low[idx] - close[idx - 1]),
-        )
-        for idx in range(1, len(close))
-    ]
-    if not tr:
-        return 0.0
-    if len(tr) < period:
-        return sum(tr) / len(tr)
-    return sum(tr[-period:]) / period
-
-
-@dataclass
-class ContextSnapshot:
-    valid: bool
-    market_regime: str
-    structure_state: str
-    liquidity_state: str
-    institutional_inference: str
-"""Market context engine with regime and structure inference."""
-"""Cognitive context engine."""
-
-from __future__ import annotations
-
-"""Market context pre-processor engine."""
-
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Sequence
-from enum import Enum
-from typing import Any
+from enum import StrEnum
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping
 
 
-class MarketRegime(str, Enum):
+# ---------------------------------------------------------------------------
+# Enums
+# ---------------------------------------------------------------------------
+
+class MarketRegime(StrEnum):
     RISK_ON = "RISK_ON"
     RISK_OFF = "RISK_OFF"
     TRANSITIONAL = "TRANSITIONAL"
 
 
-class MarketStructure(str, Enum):
+class MarketStructure(StrEnum):
     ACCUMULATION = "ACCUMULATION"
     EXPANSION = "EXPANSION"
     DISTRIBUTION = "DISTRIBUTION"
     RANGE = "RANGE"
 
 
-class LiquidityContext(str, Enum):
+class LiquidityContext(StrEnum):
     HIGH = "HIGH"
     NORMAL = "NORMAL"
     LOW = "LOW"
     THIN = "THIN"
 
 
-class InstitutionalPresence(str, Enum):
+class InstitutionalPresence(StrEnum):
     STRONG = "STRONG"
     MODERATE = "MODERATE"
     WEAK = "WEAK"
     UNKNOWN = "UNKNOWN"
 
+
+# ---------------------------------------------------------------------------
+# Data classes
+# ---------------------------------------------------------------------------
 
 @dataclass
 class CognitiveContext:
@@ -99,6 +55,10 @@ class CognitiveContext:
     regime_confidence: float = 0.0
     details: dict[str, Any] = field(default_factory=dict)
 
+
+# ---------------------------------------------------------------------------
+# Engine
+# ---------------------------------------------------------------------------
 
 class CognitiveContextEngine:
     """Context classification using trend, volatility, structure, and volume."""
@@ -114,6 +74,8 @@ class CognitiveContextEngine:
         self.sma_slow = sma_slow
         self.atr_period = atr_period
         self.vol_lookback = vol_lookback
+
+    # -- public API ---------------------------------------------------------
 
     def analyze(self, market_snapshot: dict[str, Any]) -> CognitiveContext:
         closes = market_snapshot.get("closes", market_snapshot.get("close", []))
@@ -148,9 +110,67 @@ class CognitiveContextEngine:
             },
         )
 
-    def _detect_regime(self, closes: list[float], highs: list[float], lows: list[float]):
-        sma_f = sum(closes[-self.sma_fast :]) / self.sma_fast
-        sma_s = sum(closes[-self.sma_slow :]) / self.sma_slow
+    def evaluate(self, state: Mapping[str, Any]) -> CognitiveContext:
+        """Classify market context from normalised state values."""
+        trend = float(state.get("trend_strength", 0.5))
+        volatility = float(state.get("volatility", 0.5))
+        structure_bias = float(state.get("structure_bias", 0.0))
+        liquidity_depth = float(state.get("liquidity_depth", 0.5))
+        institutional = float(state.get("institutional_flow", 0.5))
+
+        if volatility > 0.75:
+            regime = MarketRegime.TRANSITIONAL
+        elif trend > 0.6:
+            regime = MarketRegime.RISK_ON
+        else:
+            regime = MarketRegime.RISK_OFF
+
+        if structure_bias > 0.2:
+            structure = MarketStructure.EXPANSION
+        elif structure_bias < -0.2:
+            structure = MarketStructure.DISTRIBUTION
+        else:
+            structure = MarketStructure.RANGE
+
+        if liquidity_depth < 0.35:
+            liq_context = LiquidityContext.THIN
+        elif liquidity_depth > 0.7:
+            liq_context = LiquidityContext.HIGH
+        else:
+            liq_context = LiquidityContext.NORMAL
+
+        if institutional < 0.35:
+            inst = InstitutionalPresence.WEAK
+        elif institutional > 0.7:
+            inst = InstitutionalPresence.STRONG
+        else:
+            inst = InstitutionalPresence.MODERATE
+
+        return CognitiveContext(
+            market_regime=regime,
+            structure=structure,
+            liquidity_context=liq_context,
+            institutional_presence=inst,
+        )
+
+    @staticmethod
+    def export(context: CognitiveContext) -> dict[str, Any]:
+        return {
+            "market_regime": context.market_regime.value,
+            "structure": context.structure.value,
+            "liquidity_context": context.liquidity_context.value,
+            "institutional_presence": context.institutional_presence.value,
+            "regime_confidence": context.regime_confidence,
+            "details": context.details,
+        }
+
+    # -- internal helpers ---------------------------------------------------
+
+    def _detect_regime(
+        self, closes: list[float], highs: list[float], lows: list[float]
+    ) -> tuple[MarketRegime, float, dict[str, Any]]:
+        sma_f = sum(closes[-self.sma_fast:]) / self.sma_fast
+        sma_s = sum(closes[-self.sma_slow:]) / self.sma_slow
         spread_pct = (sma_f - sma_s) / sma_s if sma_s else 0.0
         atr = self._calc_atr(highs, lows, closes)
         atr_pct = atr / closes[-1] if closes[-1] else 0.0
@@ -176,7 +196,9 @@ class CognitiveContextEngine:
             },
         )
 
-    def _classify_structure(self, closes: list[float], highs: list[float], lows: list[float]):
+    def _classify_structure(
+        self, closes: list[float], highs: list[float], lows: list[float]
+    ) -> tuple[MarketStructure, dict[str, Any]]:
         lookback = min(30, len(highs))
         swing_highs: list[float] = []
         swing_lows: list[float] = []
@@ -237,9 +259,7 @@ class CognitiveContextEngine:
         spikes = sum(1 for v in volumes[-lookback:] if v > avg_vol * 1.8)
 
         large_wicks = 0
-        for i in range(
-            -lookback + 1, 0
-        ):  # Start from -lookback + 1 to avoid accessing i-1 = -lookback-1
+        for i in range(-lookback + 1, 0):
             rng = highs[i] - lows[i]
             if not rng:
                 continue
@@ -261,11 +281,9 @@ class CognitiveContextEngine:
         period = min(self.atr_period, len(highs) - 1)
         if period < 2:
             return 0.0
-        tr_values = []
-        # Start from -period + 1 to ensure i-1 stays within the intended ATR window
-        # For the first iteration (i = -period + 1), we use closes[-period] as prev close
+        tr_values: list[float] = []
         for i in range(-period + 1, 0):
-            prev_idx = i - 1  # This will be -period for first iteration, which is valid
+            prev_idx = i - 1
             tr_values.append(
                 max(
                     highs[i] - lows[i],
@@ -275,533 +293,5 @@ class CognitiveContextEngine:
             )
         return sum(tr_values) / len(tr_values) if tr_values else 0.0
 
-    @staticmethod
-    def export(context: CognitiveContext) -> dict[str, Any]:
-        return {
-            "market_regime": context.market_regime.value,
-            "structure": context.structure.value,
-            "liquidity_context": context.liquidity_context.value,
-            "institutional_presence": context.institutional_presence.value,
-            "regime_confidence": context.regime_confidence,
-            "details": context.details,
-        }
-"""Market context engine with regime and structure inference."""
 
-from dataclasses import dataclass
-from typing import Any
-
-
-@dataclass
-class ContextResult:
-    valid: bool
-    regime: str
-    structure: str
-    liquidity: str
-    institutional_activity: str
-    confidence: float
-    details: Dict[str, Any] = field(default_factory=dict)
-
-
-class CognitiveContextEngine:
-    def analyze(self, market: Dict[str, Any]) -> ContextState:
-        closes: List[float] = market.get("closes", [])
-        highs: List[float] = market.get("highs", closes)
-        lows: List[float] = market.get("lows", closes)
-        volumes: List[float] = market.get("volumes", [])
-
-        sma20 = self._sma(closes, 20)
-        sma50 = self._sma(closes, 50)
-        atr = self._atr(highs, lows, closes, period=14)
-
-        regime = "TRANSITIONAL"
-        if sma20 > sma50 and atr < 0.03:
-            regime = "RISK_ON"
-        elif sma20 < sma50 and atr > 0.04:
-            regime = "RISK_OFF"
-
-        structure = self._swing_structure(closes)
-        liquidity = self._liquidity(volumes)
-        institutional = self._institutional_inference(highs, lows, closes, volumes)
-
-        confidence = 0.3
-        confidence += 0.25 if regime != "TRANSITIONAL" else 0.0
-        confidence += 0.25 if structure in {"UPTREND", "DOWNTREND"} else 0.0
-        confidence += 0.20 if liquidity in {"HIGH", "NORMAL"} else 0.0
-
-        return ContextState(
-            regime=regime,
-            structure=structure,
-            liquidity=liquidity,
-            institutional_activity=institutional,
-            confidence=round(min(1.0, confidence), 4),
-            details={"sma20": sma20, "sma50": sma50, "atr_norm": atr},
-        )
-
-    def _sma(self, values: List[float], period: int) -> float:
-        if len(values) < period:
-            return values[-1] if values else 0.0
-        window = values[-period:]
-        return sum(window) / len(window)
-
-    def _atr(
-        self,
-        highs: List[float],
-        lows: List[float],
-        closes: List[float],
-        period: int,
-    ) -> float:
-        if len(closes) < period + 1:
-            return 0.0
-        true_ranges: List[float] = []
-        for i in range(-period, 0):
-            prev_close = closes[i - 1]
-            tr = max(highs[i] - lows[i], abs(highs[i] - prev_close), abs(lows[i] - prev_close))
-            true_ranges.append(tr)
-        atr = sum(true_ranges) / len(true_ranges)
-        ref_price = closes[-1] if closes[-1] else 1.0
-        return atr / ref_price
-
-    def _swing_structure(self, closes: List[float]) -> str:
-        if len(closes) < 8:
-            return "RANGE"
-        recent = closes[-8:]
-        up = sum(1 for a, b in zip(recent, recent[1:]) if b > a)
-        down = sum(1 for a, b in zip(recent, recent[1:]) if b < a)
-        if up >= 6:
-            return "UPTREND"
-        if down >= 6:
-            return "DOWNTREND"
-        return "RANGE"
-
-    def _liquidity(self, volumes: List[float]) -> str:
-        if len(volumes) < 10:
-            return "UNKNOWN"
-        avg = sum(volumes[-20:]) / min(20, len(volumes))
-        latest = volumes[-1]
-        if latest > avg * 1.5:
-            return "HIGH"
-        if latest < avg * 0.5:
-            return "THIN"
-        return "NORMAL"
-
-    def _institutional_inference(
-        self,
-        highs: List[float],
-        lows: List[float],
-        closes: List[float],
-        volumes: List[float],
-    ) -> str:
-        if len(closes) < 2 or not volumes:
-            return "UNKNOWN"
-        wick = (highs[-1] - lows[-1]) - abs(closes[-1] - closes[-2])
-        vol_spike = volumes[-1] > (sum(volumes[-10:]) / min(10, len(volumes))) * 1.7
-        if vol_spike and wick > 0:
-            return "POSSIBLE_ACCUMULATION"
-        return "NEUTRAL"
-
-
-__all__ = ["ContextState", "CognitiveContextEngine"]
-    def analyze(self, market_data: Dict[str, Sequence[float]]) -> ContextResult:
-        closes = list(market_data.get("close", []))
-        highs = list(market_data.get("high", closes))
-        lows = list(market_data.get("low", closes))
-        volumes = list(market_data.get("volume", [1.0] * len(closes)))
-
-        if len(closes) < 60:
-            return ContextResult(
-                valid=False,
-                regime="UNKNOWN",
-                structure="UNKNOWN",
-                liquidity="UNKNOWN",
-                institutional_activity="UNKNOWN",
-                confidence=0.0,
-                details={"reason": "insufficient_bars"},
-            )
-
-        sma20 = self._sma(closes, 20)
-        sma50 = self._sma(closes, 50)
-        atr14 = self._atr(highs, lows, closes, 14)
-        atr_norm = atr14 / max(closes[-1], 1e-9)
-
-        regime = "RISK_ON" if sma20 > sma50 and atr_norm < 0.02 else "RISK_OFF"
-        if abs(sma20 - sma50) / max(closes[-1], 1e-9) < 0.0015:
-            regime = "TRANSITIONAL"
-
-        swings = self._swing_tags(closes[-30:])
-        structure = "RANGE"
-        if swings.count("HH") >= 2 and swings.count("HL") >= 2:
-            structure = "UPTREND"
-        elif swings.count("LL") >= 2 and swings.count("LH") >= 2:
-            structure = "DOWNTREND"
-
-        vol_ratio = volumes[-1] / max(self._sma(volumes, 20), 1e-9)
-        liquidity = "THIN" if vol_ratio < 0.6 else "LOW" if vol_ratio < 0.9 else "HIGH"
-
-        wick_signal = (highs[-1] - max(closes[-1], market_data.get("open", closes)[-1]))
-        wick_ratio = wick_signal / max(highs[-1] - lows[-1], 1e-9)
-        if vol_ratio > 1.8 and wick_ratio > 0.55:
-            inst = "DISTRIBUTION"
-        elif vol_ratio > 1.8 and wick_ratio < 0.2:
-            inst = "ACCUMULATION"
-        else:
-            inst = "NEUTRAL"
-
-        confidence = min(1.0, 0.45 + min(0.4, abs(sma20 - sma50) * 10) + min(0.15, vol_ratio / 10))
-
-        return ContextResult(
-            valid=True,
-            regime=regime,
-            structure=structure,
-            liquidity=liquidity,
-            institutional_activity=inst,
-            confidence=round(confidence, 4),
-            details={
-                "atr_normalized": round(atr_norm, 5),
-                "sma20": round(sma20, 6),
-                "sma50": round(sma50, 6),
-                "swing_tags": swings,
-                "timestamp": datetime.now(timezone.utc).isoformat(),
-            },
-        )
-
-    @staticmethod
-    def _sma(values: Sequence[float], period: int) -> float:
-        window = values[-period:]
-        return sum(window) / max(len(window), 1)
-
-    @staticmethod
-    def _atr(high: List[float], low: List[float], close: List[float], period: int) -> float:
-        trs = []
-        for i in range(1, len(close)):
-            tr = max(high[i] - low[i], abs(high[i] - close[i - 1]), abs(low[i] - close[i - 1]))
-            trs.append(tr)
-        window = trs[-period:]
-        return sum(window) / max(len(window), 1)
-
-    @staticmethod
-    def _swing_tags(values: List[float]) -> List[str]:
-        if len(values) < 5:
-            return []
-        tags: List[str] = []
-        for i in range(2, len(values) - 2):
-            p = values[i]
-            left = values[i - 2 : i]
-            right = values[i + 1 : i + 3]
-            if p > max(left + right):
-                tags.append("HH" if not tags or tags[-1] != "HH" else "LH")
-            elif p < min(left + right):
-                tags.append("LL" if not tags or tags[-1] != "LL" else "HL")
-        return tags
-    regime_confidence: float
-
-
-class CognitiveContextEngine:
-    def analyze(self, market_data: dict[str, Any]) -> ContextSnapshot:
-        close = [float(x) for x in market_data.get("close", [])]
-        high = [float(x) for x in market_data.get("high", close)]
-        low = [float(x) for x in market_data.get("low", close)]
-        volume = [float(x) for x in market_data.get("volume", [1.0] * len(close))]
-
-        if len(close) < 10:
-            return ContextSnapshot(False, "UNKNOWN", "UNKNOWN", "THIN", "UNKNOWN", 0.0)
-
-        sma20 = _sma(close, 20)
-        sma50 = _sma(close, 50)
-        atr14 = _atr(high, low, close, 14)
-        vol_norm = atr14 / max(close[-1], 1e-9)
-
-        if sma20 > sma50 and vol_norm < 0.02:
-            regime = "RISK_ON"
-        elif sma20 < sma50 and vol_norm > 0.02:
-    def analyze(self, market_data: dict[str, Any]) -> ContextResult:
-        closes = [float(v) for v in market_data.get("closes", [])]
-        highs = [float(v) for v in market_data.get("highs", closes)]
-        lows = [float(v) for v in market_data.get("lows", closes)]
-        volumes = [float(v) for v in market_data.get("volumes", [])]
-        sma20 = self._sma(closes, 20)
-        sma50 = self._sma(closes, 50)
-        atr = self._atr(highs, lows, closes, 14)
-        price = closes[-1] if closes else 0.0
-        norm_vol = atr / price if price else 0.0
-        regime = "RISK_ON" if sma20 > sma50 else "RISK_OFF"
-        if norm_vol > 0.03:
-            regime = "TRANSITIONAL"
-        structure = self._structure(closes)
-        liquidity = self._liquidity(volumes)
-        institutional = self._institutional(highs, lows, closes, volumes)
-        confidence = min(1.0, abs(sma20 - sma50) / price * 20.0 if price else 0.0)
-        return ContextResult(regime, structure, liquidity, institutional, round(confidence, 4))
-
-    @staticmethod
-    def _sma(values: list[float], period: int) -> float:
-        if len(values) < period:
-            return values[-1] if values else 0.0
-        return sum(values[-period:]) / period
-class CognitiveContext:
-    regime: str
-    structure: str
-    liquidity: str
-    institutional_flow: str
-    confidence: float
-    details: dict[str, Any]
-
-
-class CognitiveContextEngine:
-    """Analyze OHLCV to infer market context before core execution modules."""
-
-    def analyze(self, market_data: dict[str, list[float]]) -> CognitiveContext:
-        closes = market_data.get("close", [])
-        highs = market_data.get("high", closes)
-        lows = market_data.get("low", closes)
-        volumes = market_data.get("volume", [1.0] * len(closes))
-        if len(closes) < 30:
-            return CognitiveContext("TRANSITIONAL", "RANGE", "THIN", "UNKNOWN", 0.2, {})
-
-        sma20 = sum(closes[-20:]) / 20
-        sma50 = sum(closes[-50:]) / 50 if len(closes) >= 50 else sum(closes) / len(closes)
-        atr = self._atr(highs, lows, closes, period=14)
-        atr_norm = atr / max(closes[-1], 1e-9)
-
-        if sma20 > sma50 and atr_norm < 0.03:
-            regime = "RISK_ON"
-        elif sma20 < sma50 and atr_norm < 0.03:
-            regime = "RISK_OFF"
-        else:
-            regime = "TRANSITIONAL"
-
-        recent = close[-8:]
-        swings_up = int(recent[-1] > recent[-4] > recent[0])
-        swings_down = int(recent[-1] < recent[-4] < recent[0])
-        if swings_up:
-            structure = "BULLISH"
-        elif swings_down:
-            structure = "BEARISH"
-        else:
-            structure = "RANGE"
-
-        vol_avg = sum(volume[-20:]) / min(len(volume), 20)
-        vol_now = volume[-1]
-        if vol_now > vol_avg * 1.4:
-            liquidity = "HIGH"
-        elif vol_now < vol_avg * 0.6:
-            liquidity = "THIN"
-        else:
-            liquidity = "NORMAL"
-
-        wick_ratio = 0.0
-        if high[-1] != low[-1]:
-            body = abs(close[-1] - close[-2]) if len(close) > 1 else 0.0
-            wick_ratio = (high[-1] - low[-1] - body) / max(high[-1] - low[-1], 1e-9)
-        if vol_now > vol_avg * 1.6 and wick_ratio > 0.55:
-            inst = "ABSORPTION"
-        elif vol_now > vol_avg * 1.6:
-            inst = "INITIATIVE"
-        else:
-            inst = "NEUTRAL"
-
-        confidence = min(1.0, abs(sma20 - sma50) / max(close[-1], 1e-9) * 10 + (1 - vol_norm))
-
-        return ContextSnapshot(True, regime, structure, liquidity, inst, round(confidence, 4))
-
-    @staticmethod
-    def export(snapshot: ContextSnapshot) -> dict[str, Any]:
-        return {
-            "valid": snapshot.valid,
-            "market_regime": snapshot.market_regime,
-            "structure_state": snapshot.structure_state,
-            "liquidity_state": snapshot.liquidity_state,
-            "institutional_inference": snapshot.institutional_inference,
-            "regime_confidence": snapshot.regime_confidence,
-        }
-        structure = self._structure(closes)
-        liquidity = self._liquidity(volumes)
-        institutional_flow = self._institutional_flow(closes, highs, lows, volumes)
-        confidence = min(1.0, 0.45 + abs(sma20 - sma50) / max(closes[-1], 1e-9) * 8)
-from __future__ import annotations
-
-from dataclasses import dataclass
-from enum import Enum
-from typing import Any, Mapping
-
-
-class MarketRegime(str, Enum):
-    TRENDING = "trending"
-    RANGING = "ranging"
-    VOLATILE = "volatile"
-
-
-class MarketStructure(str, Enum):
-    BULLISH = "bullish"
-    BEARISH = "bearish"
-    NEUTRAL = "neutral"
-
-
-class LiquidityContext(str, Enum):
-    THIN = "thin"
-    BALANCED = "balanced"
-    DEEP = "deep"
-
-
-class InstitutionalPresence(str, Enum):
-    LOW = "low"
-    MEDIUM = "medium"
-    HIGH = "high"
-
-
-@dataclass(frozen=True)
-class CognitiveContext:
-    regime: MarketRegime
-    structure: MarketStructure
-    liquidity: LiquidityContext
-    institutional_presence: InstitutionalPresence
-
-
-class CognitiveContextEngine:
-    """Classify market context from normalized state values."""
-
-    def evaluate(self, state: Mapping[str, Any]) -> CognitiveContext:
-        trend = float(state.get("trend_strength", 0.5))
-        volatility = float(state.get("volatility", 0.5))
-        structure_bias = float(state.get("structure_bias", 0.0))
-        liquidity = float(state.get("liquidity_depth", 0.5))
-        institutional = float(state.get("institutional_flow", 0.5))
-
-        if volatility > 0.75:
-            regime = MarketRegime.VOLATILE
-        elif trend > 0.6:
-            regime = MarketRegime.TRENDING
-        else:
-            regime = MarketRegime.RANGING
-
-        if structure_bias > 0.2:
-            structure = MarketStructure.BULLISH
-        elif structure_bias < -0.2:
-            structure = MarketStructure.BEARISH
-        else:
-            structure = MarketStructure.NEUTRAL
-
-        if liquidity < 0.35:
-            liq_context = LiquidityContext.THIN
-        elif liquidity > 0.7:
-            liq_context = LiquidityContext.DEEP
-        else:
-            liq_context = LiquidityContext.BALANCED
-
-        if institutional < 0.35:
-            inst = InstitutionalPresence.LOW
-        elif institutional > 0.7:
-            inst = InstitutionalPresence.HIGH
-        else:
-            inst = InstitutionalPresence.MEDIUM
-
-        return CognitiveContext(
-            regime=regime,
-            structure=structure,
-            liquidity=liquidity,
-            institutional_flow=institutional_flow,
-            confidence=round(confidence, 4),
-            details={
-                "sma20": round(sma20, 6),
-                "sma50": round(sma50, 6),
-                "atr_norm": round(atr_norm, 6),
-            },
-        )
-
-    def _atr(
-        self, highs: list[float], lows: list[float], closes: list[float], period: int
-    ) -> float:
-        if len(closes) < 2:
-            return 0.0
-        tr = [
-            max(highs[i] - lows[i], abs(highs[i] - closes[i - 1]), abs(lows[i] - closes[i - 1]))
-            for i in range(1, len(closes))
-        ]
-        chunk = tr[-period:] if len(tr) >= period else tr
-        return sum(chunk) / len(chunk)
-
-    @staticmethod
-    def _structure(closes: list[float]) -> str:
-        if len(closes) < 6:
-            return "UNKNOWN"
-        h1 = closes[-1] > max(closes[-4:-1])
-        l1 = closes[-1] < min(closes[-4:-1])
-        if h1:
-            return "BREAKING_OUT"
-        if l1:
-            return "BREAKING_DOWN"
-        return "RANGE"
-
-    @staticmethod
-    def _liquidity(volumes: list[float]) -> str:
-        if len(volumes) < 10:
-            return "UNKNOWN"
-        avg = sum(volumes[-20:]) / min(20, len(volumes))
-        recent = sum(volumes[-5:]) / 5.0
-        ratio = recent / avg if avg else 0.0
-        if ratio > 1.4:
-            return "HIGH"
-        if ratio < 0.6:
-            return "THIN"
-        return "NORMAL"
-
-    @staticmethod
-    def _institutional(
-        highs: list[float], lows: list[float], closes: list[float], volumes: list[float]
-    ) -> str:
-        if len(closes) < 5 or len(volumes) < 5:
-            return "UNKNOWN"
-        avg_vol = sum(volumes[-20:]) / min(20, len(volumes))
-        spike = volumes[-1] > avg_vol * 1.8 if avg_vol else False
-        spread = highs[-1] - lows[-1]
-        body = abs(closes[-1] - closes[-2])
-        return "LIKELY" if spike and body < spread * 0.4 else "UNLIKELY"
-        trs: list[float] = []
-        for i in range(1, len(closes)):
-            tr = max(
-                highs[i] - lows[i], abs(highs[i] - closes[i - 1]), abs(lows[i] - closes[i - 1])
-            )
-            trs.append(tr)
-        window = trs[-period:] if len(trs) >= period else trs
-        return sum(window) / max(len(window), 1)
-
-    def _structure(self, closes: list[float]) -> str:
-        last = closes[-10:]
-        if len(last) < 6:
-            return "RANGE"
-        up = sum(1 for i in range(1, len(last)) if last[i] > last[i - 1])
-        if up >= 7:
-            return "HH_HL"
-        if up <= 2:
-            return "LL_LH"
-        return "RANGE"
-
-    def _liquidity(self, volumes: list[float]) -> str:
-        recent = volumes[-20:]
-        mean = sum(recent) / max(len(recent), 1)
-        current = recent[-1]
-        if current > mean * 1.35:
-            return "HIGH"
-        if current < mean * 0.6:
-            return "THIN"
-        return "NORMAL"
-
-    def _institutional_flow(
-        self,
-        closes: list[float],
-        highs: list[float],
-        lows: list[float],
-        volumes: list[float],
-    ) -> str:
-        body = abs(closes[-1] - closes[-2]) if len(closes) > 1 else 0.0
-        wick = (highs[-1] - lows[-1]) - body
-        avg_vol = sum(volumes[-20:]) / max(len(volumes[-20:]), 1)
-        if volumes[-1] > avg_vol * 1.6 and wick > body * 1.3:
-            return "ABSORPTION"
-        if volumes[-1] > avg_vol * 1.4 and closes[-1] > closes[-2]:
-            return "ACCUMULATION"
-        if volumes[-1] > avg_vol * 1.4 and closes[-1] < closes[-2]:
-            return "DISTRIBUTION"
-        return "NEUTRAL"
-            liquidity=liq_context,
-            institutional_presence=inst,
-        )
+__all__ = ["CognitiveContext", "CognitiveContextEngine", "InstitutionalPresence", "LiquidityContext", "MarketRegime", "MarketStructure"]
