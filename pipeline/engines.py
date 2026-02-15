@@ -95,7 +95,7 @@ class L13ReflectiveEngine:
         if calibration["calibration_grade"] in ("D", "F"):
             _penalty = 0.05 if calibration["calibration_grade"] == "D" else 0.10
             reflection["reflective_confidence"] = round(
-                max(0.0, reflection.get("reflective_confidence", 0.5) - _penalty),
+                max(0.0, reflection.get("reflective_confidence", 0.5) - _penalty), # pyright: ignore[reportOperatorIssue]
                 4,
             )
             reflection["calibration_warning"] = (
@@ -211,7 +211,7 @@ class L13ReflectiveEngine:
                 "note": f"insufficient_samples_{len(predicted)}/5",
             }
 
-        import numpy as np  # local import to avoid module-level dep in engines
+        import numpy as np  # pyright: ignore[reportMissingImports] # local import to avoid module-level dep in engines  # noqa: PLC0415
 
         pred_arr = np.array(predicted)
         act_arr = np.array(actual)
@@ -275,7 +275,7 @@ class L13ReflectiveEngine:
                 "sample_size": len(ror_values),
             }
 
-        import numpy as np
+        import numpy as np  # pyright: ignore[reportMissingImports] # noqa: PLC0415
 
         arr = np.array(ror_values)
         n = len(arr)

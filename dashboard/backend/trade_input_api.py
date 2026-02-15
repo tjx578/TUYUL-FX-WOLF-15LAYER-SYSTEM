@@ -10,31 +10,13 @@ Provides write endpoints for:
 All endpoints require JWT authentication.
 """
 
-from datetime import UTC, datetime
-from uuid import UUID, uuid4
+from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException
-from loguru import logger
+from fastapi import APIRouter, Depends, HTTPException  # pyright: ignore[reportMissingImports]
 
 from dashboard.backend.account_engine import AccountEngine
 from dashboard.backend.auth import verify_token
 from dashboard.backend.risk_engine import RiskEngine
-from dashboard.backend.schemas import (
-    AccountCreate,
-    AccountState,
-    Layer12Signal,
-    RiskCalculationRequest,
-    RiskCalculationResult,
-    TradeCloseRequest,
-    TradeOpenRequest,
-)
-from execution.trade_state_enum import TradeState
-from journal.journal_router import journal_router
-from journal.journal_schema import (
-    ProtectionAssessment,
-    ReflectiveJournal,
-    TradeOutcome,
-)
 
 # Router with auth dependency
 write_router = APIRouter(
@@ -53,378 +35,205 @@ account_registry: dict[str, AccountEngine] = {}
 # Risk engine singleton
 risk_engine = RiskEngine()
 
+from typing import Any  # noqa: E402
 
-@write_router.post("/signal/layer12", status_code=201)
-def receive_layer12_signal(signal: Layer12Signal) -> dict:
+# ═══════════════════════════════════════════════════════════════════════════════
+# L7 Monte Carlo + Bayesian Probability Endpoints
+#
+# Authority: READ-ONLY display. Dashboard cannot override Layer-12 verdict.
+# These endpoints expose probability metrics for monitoring/visualization.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
+@router.get("/api/v1/signals/{signal_id}/probability")  # pyright: ignore[reportUndefinedVariable] # noqa: F821
+async def get_signal_probability(signal_id: str) -> dict[str, Any]:
+    """Retrieve L7 Monte Carlo + Bayesian probability metrics for a signal.
+
+    Returns the probability_context attached to the Layer-12 verdict,
+    including MC win-rate, Bayesian posterior, risk-of-ruin, and
+    confidence intervals.
+
+    Authority: READ-ONLY. No decision power. Display/monitoring only.
+
+    Response Schema:
+        {
+            "signal_id": str,
+            "symbol": str,
+            "probability": {
+                "monte_carlo_win_rate": float (0.0-1.0),
+                "profit_factor": float,
+                "risk_of_ruin": float (0.0-1.0),
+                "bayesian_posterior": float (0.0-1.0),
+                "bayesian_ci": [float, float],
+                "conf12_raw": float,
+                "mc_passed": bool,
+                "l7_validation": str (PASS|CONDITIONAL|FAIL),
+                "expected_value": float,
+                "max_drawdown": float
+            },
+            "verdict": str (EXECUTE|HOLD|ABORT),
+            "confidence": float,
+            "timestamp": str (ISO 8601)
+        }
     """
-    Receive Layer 12 signal from constitution.
+    # Retrieve verdict from storage/cache
+    verdict = await _get_verdict_by_signal_id(signal_id)
+    if verdict is None:
+        raise HTTPException(status_code=404, detail=f"Signal {signal_id} not found")
 
-    Stores signal in pool with state=SIGNAL_CREATED.
-
-    Args:
-        signal: Layer12Signal from constitution
-
-    Returns:
-        Confirmation with signal_id
-    """
-    signal_dict = signal.model_dump()
-    signal_dict["state"] = TradeState.SIGNAL_CREATED.value
-    signal_dict["created_at"] = datetime.now(UTC).isoformat()
-
-    signal_pool[signal.signal_id] = signal_dict
-
-    logger.info(
-        f"L12 signal received: {signal.signal_id} | "
-        f"{signal.pair} {signal.direction} @ {signal.entry}"
-    )
+    prob_ctx = verdict.get("probability_context", {})
+    if not isinstance(prob_ctx, dict):
+        prob_ctx = {}
 
     return {
-        "status": "received",
-        "signal_id": str(signal.signal_id),
-        "state": TradeState.SIGNAL_CREATED.value,
+        "signal_id": signal_id,
+        "symbol": verdict.get("symbol", "UNKNOWN"),
+        "probability": {
+            "monte_carlo_win_rate": prob_ctx.get("monte_carlo_win_rate", 0.0),
+            "profit_factor": prob_ctx.get("profit_factor", 0.0),
+            "risk_of_ruin": prob_ctx.get("risk_of_ruin", 1.0),
+            "bayesian_posterior": prob_ctx.get("bayesian_posterior", 0.0),
+            "bayesian_ci": prob_ctx.get("bayesian_ci", [0.0, 0.0]),
+            "conf12_raw": prob_ctx.get("conf12_raw", 0.0),
+            "mc_passed": prob_ctx.get("mc_passed", False),
+            "l7_validation": prob_ctx.get("l7_validation", "FAIL"),
+            "expected_value": prob_ctx.get("expected_value", 0.0),
+            "max_drawdown": prob_ctx.get("max_drawdown", 0.0),
+        },
+        "verdict": verdict.get("verdict", "HOLD"),
+        "confidence": verdict.get("confidence", 0.0),
+        "timestamp": verdict.get("timestamp", None),
     }
 
 
-@write_router.post("/risk/calculate", response_model=RiskCalculationResult)
-def calculate_risk(request: RiskCalculationRequest) -> RiskCalculationResult:
-    """
-    Calculate recommended lot size for signal+account.
+@router.get("/api/v1/probability/calibration")  # pyright: ignore[reportUndefinedVariable] # noqa: F821
+async def get_probability_calibration(
+    symbol: str | None = None,
+    lookback: int = 100,
+) -> dict[str, Any]:
+    """Retrieve L7 probability calibration analysis from L13 reflection.
+
+    Shows how well-calibrated the Bayesian posterior predictions are
+    compared to actual trade outcomes. Useful for monitoring model
+    health and deciding whether to trust L7 probability output.
 
     Args:
-        request: RiskCalculationRequest
+        symbol: Filter by symbol (optional, None = all).
+        lookback: Number of recent verdicts to analyze (default 100).
 
-    Returns:
-        RiskCalculationResult with lot recommendation
+    Authority: READ-ONLY. No decision power. Monitoring only.
 
-    Raises:
-        HTTPException: If signal or account not found
+    Response Schema:
+        {
+            "calibration": {
+                "calibration_error": float | null,
+                "overconfidence_ratio": float | null,
+                "posterior_mean": float | null,
+                "actual_win_rate": float | null,
+                "sample_size": int,
+                "calibration_grade": str (A/B/C/D/F/N/A)
+            },
+            "risk_of_ruin_trend": {
+                "ror_mean": float | null,
+                "ror_latest": float | null,
+                "ror_trend": str (IMPROVING|STABLE|DETERIORATING|UNKNOWN),
+                "ror_above_threshold_pct": float | null,
+                "sample_size": int
+            },
+            "filters": {
+                "symbol": str | null,
+                "lookback": int
+            }
+        }
     """
-    # Get signal
-    signal_dict = signal_pool.get(request.signal_id)
-    if not signal_dict:
-        raise HTTPException(
-            status_code=404,
-            detail=f"Signal {request.signal_id} not found"
-        )
-        raise HTTPException(status_code=404, detail=f"Signal {request.signal_id} not found")
-
-    signal = Layer12Signal(**signal_dict)
-
-    # Get account
-    account_engine = account_registry.get(request.account_id)
-    if not account_engine:
-        raise HTTPException(
-            status_code=404,
-            detail=f"Account {request.account_id} not found"
-        )
-        raise HTTPException(status_code=404, detail=f"Account {request.account_id} not found")
-
-    account_state = account_engine.get_state()
-
-    # Calculate lot
-    result = risk_engine.calculate_lot(
-        signal=signal,
-        account_state=account_state,
-        risk_percent=1.0,  # Default 1% risk (could be from account profile)
-        prop_firm_code=account_engine.prop_firm_code,
-        risk_mode=request.risk_mode,
-        split_ratios=request.split_ratio,
+    historical_verdicts = await _get_historical_verdicts(
+        symbol=symbol, limit=lookback
     )
 
-    logger.info(
-        f"Risk calculated: {request.account_id} | "
-        f"Signal={request.signal_id} | "
-        f"Lot={result.recommended_lot:.2f} | "
-        f"Allowed={result.trade_allowed}"
-    )
+    # Use L13 reflective engine for calibration computation
+    from pipeline.engines import L13ReflectiveEngine  # noqa: PLC0415
 
-    return result
-
-
-@write_router.post("/trade/open", status_code=201)
-def open_trade(request: TradeOpenRequest) -> dict:
-    """
-    Record trade opening.
-
-    Validates:
-    - Lot <= max_safe_lot from risk calculation
-    - Prop firm allows trade
-
-    Args:
-        request: TradeOpenRequest
-
-    Returns:
-        Trade record with trade_id
-
-    Raises:
-        HTTPException: If validation fails
-    """
-    # Get account
-    account_engine = account_registry.get(request.account_id)
-    if not account_engine:
-        raise HTTPException(
-            status_code=404,
-            detail=f"Account {request.account_id} not found"
-        )
-        raise HTTPException(status_code=404, detail=f"Account {request.account_id} not found")
-
-    # Get signal to validate lot
-    signal_dict = signal_pool.get(request.signal_id)
-    if not signal_dict:
-        raise HTTPException(
-            status_code=404,
-            detail=f"Signal {request.signal_id} not found"
-        )
-        raise HTTPException(status_code=404, detail=f"Signal {request.signal_id} not found")
-
-    signal = Layer12Signal(**signal_dict)
-    account_state = account_engine.get_state()
-
-    # Re-calculate risk to validate lot
-    result = risk_engine.calculate_lot(
-        signal=signal,
-        account_state=account_state,
-        risk_percent=1.0,
-        prop_firm_code=account_engine.prop_firm_code,
-    )
-
-    # Validate trade is allowed
-    if not result.trade_allowed:
-        raise HTTPException(
-            status_code=403,
-            detail=f"Trade denied: {result.reason}"
-        )
-        raise HTTPException(status_code=403, detail=f"Trade denied: {result.reason}")
-
-    # Validate lot doesn't exceed max safe lot
-    if request.lot > result.max_safe_lot:
-        raise HTTPException(
-            status_code=403,
-            detail=(f"Lot {request.lot:.2f} exceeds max safe lot {result.max_safe_lot:.2f}"),
-        )
-
-    # Calculate risk amount
-    sl_distance = abs(request.entry - request.stop_loss)
-    pip_value = 10.0  # Simplified
-    risk_amount = request.lot * sl_distance * pip_value
-
-    # Record trade open
-    trade_id = f"TRD-{uuid4().hex[:12]}"
-    trade_record = {
-        "trade_id": trade_id,
-        "account_id": request.account_id,
-        "signal_id": str(request.signal_id),
-        "source": request.source.value,
-        "pair": request.pair,
-        "direction": request.direction,
-        "entry": request.entry,
-        "stop_loss": request.stop_loss,
-        "take_profit": request.take_profit,
-        "lot": request.lot,
-        "risk_amount": risk_amount,
-        "state": TradeState.TRADE_OPEN.value,
-        "opened_at": datetime.now(UTC).isoformat(),
-        "closed_at": None,
-        "pnl": None,
-    }
-
-    trade_ledger[trade_id] = trade_record
-
-    # Update account state
-    account_engine.record_trade_open(risk_amount)
-
-    logger.info(
-        f"Trade opened: {trade_id} | {request.pair} {request.direction} | "
-        f"Lot={request.lot:.2f} | Risk=${risk_amount:.2f}"
-    )
-
-    return trade_record
-
-
-@write_router.post("/trade/close")
-def close_trade(request: TradeCloseRequest) -> dict:
-    """
-    Record trade closure.
-
-    Automatically generates J4 reflective journal entry.
-
-    Args:
-        request: TradeCloseRequest
-
-    Returns:
-        Updated trade record
-
-    Raises:
-        HTTPException: If trade not found
-    """
-    # Get trade
-    trade = trade_ledger.get(request.trade_id)
-    if not trade:
-        raise HTTPException(
-            status_code=404,
-            detail=f"Trade {request.trade_id} not found"
-        )
-        raise HTTPException(status_code=404, detail=f"Trade {request.trade_id} not found")
-
-    # Update trade record
-    trade["state"] = TradeState.TRADE_CLOSED.value
-    trade["closed_at"] = datetime.now(UTC).isoformat()
-    trade["close_price"] = request.close_price
-    trade["pnl"] = request.pnl
-    trade["close_reason"] = request.reason
-
-    # Update account
-    account_id = trade["account_id"]
-    account_engine = account_registry.get(account_id)
-    if account_engine:
-        account_engine.record_trade_close(
-            pnl=request.pnl,
-            risk_amount=trade["risk_amount"],
-        )
-
-    # Generate J4 reflective journal
-    outcome = TradeOutcome.WIN if request.pnl > 0 else TradeOutcome.LOSS
-
-    j4 = ReflectiveJournal(
-        timestamp=datetime.now(UTC),
-        setup_id=f"{trade['pair']}_{trade['opened_at'][:19]}",
-        pair=trade["pair"],
-        outcome=outcome,
-        did_system_protect=ProtectionAssessment.UNCLEAR,
-        discipline_rating=8,
-        learning_note=f"Trade closed: {request.reason}",
-    )
-
-    journal_router.record_reflection(j4)
-
-    logger.info(
-        f"Trade closed: {request.trade_id} | "
-        f"PnL=${request.pnl:.2f} | {request.reason}"
-    )
-    logger.info(f"Trade closed: {request.trade_id} | PnL=${request.pnl:.2f} | {request.reason}")
-
-    return trade
-
-
-@write_router.get("/account/{account_id}/state", response_model=AccountState)
-def get_account_state(account_id: str) -> AccountState:
-    """
-    Get current account state for UI gauges.
-
-    Args:
-        account_id: Account identifier
-
-    Returns:
-        AccountState snapshot
-
-    Raises:
-        HTTPException: If account not found
-    """
-    account_engine = account_registry.get(account_id)
-    if not account_engine:
-        raise HTTPException(
-            status_code=404,
-            detail=f"Account {account_id} not found"
-        )
-        raise HTTPException(status_code=404, detail=f"Account {account_id} not found")
-
-    return account_engine.get_state()
-
-
-@write_router.get("/signals")
-def get_signals() -> list[dict]:
-    """
-    Get active signal pool.
-
-    Returns:
-        List of active signals
-    """
-    return list(signal_pool.values())
-
-
-@write_router.get("/trades")
-def get_trades(
-    account_id: str | None = None,
-    state: str | None = None,
-) -> list[dict]:
-    """
-    Get trade ledger (all trades or filtered).
-
-    Args:
-        account_id: Optional account filter
-        state: Optional state filter
-
-    Returns:
-        List of trades
-    """
-    trades = list(trade_ledger.values())
-
-    if account_id:
-        trades = [t for t in trades if t["account_id"] == account_id]
-
-    if state:
-        trades = [t for t in trades if t["state"] == state]
-
-    return trades
-
-
-@write_router.get("/trade/{trade_id}")
-def get_trade(trade_id: str) -> dict:
-    """
-    Get single trade detail.
-
-    Args:
-        trade_id: Trade identifier
-
-    Returns:
-        Trade record
-
-    Raises:
-        HTTPException: If trade not found
-    """
-    trade = trade_ledger.get(trade_id)
-    if not trade:
-        raise HTTPException(
-            status_code=404,
-            detail=f"Trade {trade_id} not found"
-        )
-        raise HTTPException(status_code=404, detail=f"Trade {trade_id} not found")
-
-    return trade
-
-
-@write_router.post("/account/create", status_code=201)
-def create_account(account: AccountCreate) -> dict:
-    """
-    Create new account for tracking.
-
-    Args:
-        account: AccountCreate request
-
-    Returns:
-        Account info with generated account_id
-    """
-    account_id = f"ACC-{uuid4().hex[:8]}"
-
-    account_engine = AccountEngine.get_or_create(
-        account_id=account_id,
-        balance=account.balance,
-        equity=account.equity,
-        prop_firm_code=account.prop_firm_code,
-    )
-
-    account_registry[account_id] = account_engine
-
-    logger.info(
-        f"Account created: {account_id} | "
-        f"{account.broker} | {account.prop_firm_code}"
-    )
-    logger.info(f"Account created: {account_id} | {account.broker} | {account.prop_firm_code}")
+    reflective = L13ReflectiveEngine()
+    calibration = reflective._extract_probability_calibration(historical_verdicts)
+    ror_trend = reflective._extract_risk_of_ruin_trend(historical_verdicts)
 
     return {
-        "account_id": account_id,
-        "broker": account.broker,
-        "account_name": account.account_name,
-        "balance": account.balance,
-        "prop_firm_code": account.prop_firm_code,
+        "calibration": calibration,
+        "risk_of_ruin_trend": ror_trend,
+        "filters": {
+            "symbol": symbol,
+            "lookback": lookback,
+        },
     }
+
+
+@router.get("/api/v1/probability/summary")  # pyright: ignore[reportUndefinedVariable] # noqa: F821
+async def get_probability_summary(
+    limit: int = 20,
+) -> dict[str, Any]:
+    """Retrieve summary of recent L7 probability results across all signals.
+
+    Provides a quick dashboard view of MC/Bayesian health.
+
+    Authority: READ-ONLY. No decision power.
+    """
+    recent_verdicts = await _get_historical_verdicts(limit=limit)
+
+    summary_items: list[dict[str, Any]] = []
+    for v in recent_verdicts:
+        prob_ctx = v.get("probability_context", {})
+        if not isinstance(prob_ctx, dict):
+            prob_ctx = {}
+
+        summary_items.append({
+            "signal_id": v.get("signal_id", ""),
+            "symbol": v.get("symbol", "UNKNOWN"),
+            "verdict": v.get("verdict", "HOLD"),
+            "mc_win_rate": prob_ctx.get("monte_carlo_win_rate", 0.0),
+            "bayesian_posterior": prob_ctx.get("bayesian_posterior", 0.0),
+            "risk_of_ruin": prob_ctx.get("risk_of_ruin", 1.0),
+            "l7_validation": prob_ctx.get("l7_validation", "FAIL"),
+            "mc_passed": prob_ctx.get("mc_passed", False),
+            "timestamp": v.get("timestamp", None),
+        })
+
+    return {
+        "count": len(summary_items),
+        "signals": summary_items,
+    }
+
+
+# ── Helper stubs (wire to actual storage layer) ─────────────────────────────
+
+async def _get_verdict_by_signal_id(signal_id: str) -> dict[str, Any] | None:
+    """Retrieve a single verdict by signal ID.
+
+    TODO: Wire to storage/verdict_archive.py or Redis cache.
+    """
+    # Placeholder — replace with actual storage lookup
+    from storage import (  # noqa: PLC0415
+        verdict_store,  # pyright: ignore[reportAttributeAccessIssue, reportMissingImports]
+    )
+
+    try:
+        return await verdict_store.get(signal_id)
+    except Exception:
+        return None
+
+
+async def _get_historical_verdicts(
+    symbol: str | None = None,
+    limit: int = 100,
+) -> list[dict[str, Any]]:
+    """Retrieve historical verdicts for calibration analysis.
+
+    TODO: Wire to journal J2/J4 storage.
+    """
+    from storage import (  # noqa: PLC0415
+        verdict_store,  # pyright: ignore[reportAttributeAccessIssue, reportMissingImports]
+    )
+
+    try:
+        return await verdict_store.get_history(symbol=symbol, limit=limit)
+    except Exception:
+        return []
