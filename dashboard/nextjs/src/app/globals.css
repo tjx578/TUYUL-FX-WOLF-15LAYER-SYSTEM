@@ -26,8 +26,8 @@ body {
 
 /* Custom scrollbar */
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 6px;
+  height: 6px;
 }
 
 ::-webkit-scrollbar-track {
@@ -36,7 +36,7 @@ body {
 
 ::-webkit-scrollbar-thumb {
   background: #2a2a2a;
-  border-radius: 4px;
+  border-radius: 3px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
@@ -47,4 +47,48 @@ body {
 .font-mono-numbers {
   font-variant-numeric: tabular-nums;
   font-feature-settings: "tnum";
+}
+
+/* Price flash animations */
+@keyframes flash-green {
+  0% { background-color: rgba(16, 185, 129, 0.15); }
+  100% { background-color: transparent; }
+}
+
+@keyframes flash-red {
+  0% { background-color: rgba(239, 68, 68, 0.15); }
+  100% { background-color: transparent; }
+}
+
+.flash-up {
+  animation: flash-green 0.3s ease-out;
+}
+
+.flash-down {
+  animation: flash-red 0.3s ease-out;
+}
+
+/* Chart container */
+.tv-lightweight-charts {
+  border-radius: 0.5rem;
+}
+
+/* Gauge bar transitions */
+.gauge-bar {
+  transition: width 0.5s ease-out;
+}
+
+/* Table row hover */
+.trade-row:hover {
+  background-color: rgba(255, 255, 255, 0.02);
+}
+
+/* Status indicator pulse */
+@keyframes status-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+.status-pulse {
+  animation: status-pulse 2s ease-in-out infinite;
 }
