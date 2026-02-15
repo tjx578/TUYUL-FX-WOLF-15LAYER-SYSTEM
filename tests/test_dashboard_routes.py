@@ -14,21 +14,24 @@ from fastapi.testclient import TestClient  # pyright: ignore[reportMissingImport
 
 from api_server import app
 from dashboard.account_manager import AccountManager
-from dashboard.backend.auth import create_token
+from dashboard.backend.auth import verify_token
 from dashboard.trade_ledger import TradeLedger
 
-# Generate a valid JWT for test requests
-_TEST_TOKEN = create_token(sub="test_user")
-_AUTH_HEADERS = {"Authorization": f"Bearer {_TEST_TOKEN}"}
+
+def _mock_verify_token():
+    """Override auth dependency for tests — returns a dummy payload."""
+    return {"sub": "test_user", "auth_method": "test"}
+
+
+# Override auth dependency so test requests are authenticated
+app.dependency_overrides[verify_token] = _mock_verify_token
 
 
 @pytest.fixture
 def client():
-    """Create test client for API with auth headers."""
-    c = TestClient(app)
-    # Monkey-patch default headers so every request is authenticated
-    c.headers.update(_AUTH_HEADERS)
-    return c
+    """Create test client for API with auth overridden."""
+    return TestClient(app)
+    return c  # noqa: F821
 
 
 @pytest.fixture(autouse=True)
