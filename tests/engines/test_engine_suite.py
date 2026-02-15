@@ -56,4 +56,4 @@ def test_engine_suite_smoke() -> None:
     assert structure is not None
     assert probability is not None
     assert advisory is not None
-    assert advisory.signal in {"EXECUTE", "HOLD", "ABORT", "INSUFFICIENT"}
+    assert advisory.advisory_action in {"EXECUTE", "HOLD", "NO_TRADE", "ABORT", "INSUFFICIENT"}
