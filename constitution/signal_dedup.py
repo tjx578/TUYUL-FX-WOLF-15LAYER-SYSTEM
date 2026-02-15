@@ -1,6 +1,5 @@
 """
 Signal deduplication — prevents duplicate execution from repeated pipeline runs.
-Uses a hash of (symbol, direction, entry, sl, timeframe, candle_time) as key.
 """
 
 from __future__ import annotations
@@ -13,21 +12,15 @@ logger = logging.getLogger("tuyul.constitution.dedup")
 
 
 class SignalDeduplicator:
-    """
-    In-memory dedup with TTL-based cleanup.
-    For production persistence, back with Redis.
-    """
+    """In-memory dedup with TTL-based cleanup. Back with Redis for persistence."""
 
-    def __init__(self, window_seconds: float = 600.0, redis_client=None):
+    def __init__(self, window_seconds: float = 600.0, redis_client=None) -> None:
         self._window = window_seconds
-        self._seen: dict[str, float] = {}  # hash -> timestamp
+        self._seen: dict[str, float] = {}
         self._redis = redis_client
 
     def compute_hash(self, signal: dict) -> str:
-        """
-        Create deterministic hash from signal core fields.
-        Same market setup on same candle = same hash.
-        """
+        """Deterministic hash from signal core fields."""
         parts = [
             str(signal.get("symbol", "")),
             str(signal.get("direction", "")),
@@ -39,36 +32,29 @@ class SignalDeduplicator:
         return hashlib.sha256(raw.encode()).hexdigest()[:16]
 
     def is_duplicate(self, signal: dict) -> tuple[bool, str]:
-        """
-        Check if this signal was already emitted within the dedup window.
-        Returns (is_dup, hash).
-        """
+        """Check if signal was already emitted within dedup window."""
         self._cleanup()
         sig_hash = self.compute_hash(signal)
 
-        # Check Redis first (if available, for multi-process)
         if self._redis:
             redis_key = f"tuyul:dedup:{sig_hash}"
             if self._redis.exists(redis_key):
-                logger.info(f"Duplicate signal detected (Redis): {sig_hash}")
+                logger.info("Duplicate signal detected (Redis): %s", sig_hash)
                 return True, sig_hash
 
-        # Check in-memory
         if sig_hash in self._seen:
-            logger.info(f"Duplicate signal detected (memory): {sig_hash}")
+            logger.info("Duplicate signal detected (memory): %s", sig_hash)
             return True, sig_hash
 
         return False, sig_hash
 
     def register(self, signal: dict) -> str:
-        """Mark signal as emitted. Must be called after successful emit."""
+        """Mark signal as emitted. Call after successful emit."""
         sig_hash = self.compute_hash(signal)
         self._seen[sig_hash] = time.time()
-
         if self._redis:
             redis_key = f"tuyul:dedup:{sig_hash}"
             self._redis.setex(redis_key, int(self._window), "1")
-
         return sig_hash
 
     def _cleanup(self) -> None:
