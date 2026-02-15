@@ -51,7 +51,6 @@ Jika terjadi perbedaan:
 
 ## 🧠 System Flow
 
-```
 Finnhub API (WebSocket / REST)
      ↓
 ingest/ (feed + candle builder)
@@ -67,7 +66,6 @@ execution/ (pending/cancel/expiry/guard/state machine)
 ea_interface/ (command schema)
      ↓
 Broker/EA Executor
-```
 
 ---
 
