@@ -131,6 +131,15 @@ position:
     "1": 0.3
     "0": 0.0
 
+# ── Dynamic Position Sizing (Kelly+CVaR Hybrid) ─────────────────────────────
+position_sizing:
+  max_kelly_risk_cap: 0.03          # 3% absolute max risk per trade
+  kelly_fraction_multiplier: 0.5    # Half-Kelly (conservative institutional)
+  cvar_confidence: 0.95             # 95% CVaR confidence level
+  cvar_sensitivity: 5.0             # CVaR dampening coefficient
+  min_returns_history: 10           # Minimum trade history for CVaR
+  enable_dynamic_sizing: true       # Master switch for Kelly hybrid
+
 # ===================================================================
 # L13 — Meta Authority
 # ===================================================================
