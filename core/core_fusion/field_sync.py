@@ -1,4 +1,4 @@
-"""Field Sync — Context resolution and synchronization."""
+"""Field Sync -- Context resolution and synchronization."""
 
 from datetime import datetime, timezone
 from typing import Any, Dict, Mapping, Optional

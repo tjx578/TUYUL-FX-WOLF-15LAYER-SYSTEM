@@ -1,12 +1,12 @@
 """Tests for Pending Execution Engine (execution/pending_engine.py)."""
 
+import json
+
 from datetime import UTC, datetime
 from typing import Any
 from unittest.mock import MagicMock, patch
 
-import pytest
-
-from pydantic.v1 import Json
+import pytest  # pyright: ignore[reportMissingImports]
 
 from execution.pending_engine import (
     _BROKER_MAX_LOT,
@@ -251,7 +251,7 @@ class TestConstitutionalNoStrategy:
         """R:R < 1 should NOT be rejected by execution.
         A 0.5 R:R is bad strategy but structurally valid."""
         engine = _make_engine()
-        # BUY: 50 pip SL, 25 pip TP → R:R = 0.5
+        # BUY: 50 pip SL, 25 pip TP -> R:R = 0.5
         result = engine.submit(_make_request(
             entry_price=1.25000,
             stop_loss=1.24500,
@@ -286,16 +286,16 @@ class TestConstitutionalNoStrategy:
         )
 
     def test_no_pip_value_lookup(self):
-        """Engine must not derive pip values — that's L10 analysis."""
+        """Engine must not derive pip values -- that's L10 analysis."""
         engine = _make_engine()
         result = engine.submit(_make_request(pair="ZARJPY"))
-        # Unknown pair is fine — engine doesn't need pip values
+        # Unknown pair is fine -- engine doesn't need pip values
         assert result.status == OrderStatus.DRY_RUN
 
     def test_no_account_balance_access(self):
         """Engine has no concept of account balance."""
         engine = _make_engine()
-        # There's nowhere to even pass balance — by design
+        # There's nowhere to even pass balance -- by design
         assert not hasattr(engine, "balance")
         assert not hasattr(engine, "equity")
 
@@ -392,11 +392,7 @@ class TestLiveMode:
     def test_live_success(self):
         engine = _make_engine(mode=ExecutionMode.LIVE)
 
-        mock_response = Json.dumps({"result": "OK", "ticket": 12345, "price": 1.25010})  # type: ignore
-
-        with patch("execution.pending_engine.sock_mod"):
-            # We need to patch at the point of import inside _execute_live
-            pass
+        mock_response = json.dumps({"result": "OK", "ticket": 12345, "price": 1.25010})
 
         # Since _execute_live does a local import, we patch socket directly
         with patch("socket.socket") as mock_socket_cls:
@@ -414,7 +410,7 @@ class TestLiveMode:
     def test_live_mt5_rejection(self):
         engine = _make_engine(mode=ExecutionMode.LIVE)
 
-        mock_response = Json.dumps({"result": "ERROR", "error": "Invalid volume"})  # pyright: ignore[reportAttributeAccessIssue]
+        mock_response = json.dumps({"result": "ERROR", "error": "Invalid volume"})
 
         with patch("socket.socket") as mock_socket_cls:
             mock_conn = MagicMock()

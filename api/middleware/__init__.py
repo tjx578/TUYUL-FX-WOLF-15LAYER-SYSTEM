@@ -1,3 +1,3 @@
 """
-API Middleware — rate limiting, auth helpers.
+API Middleware -- rate limiting, auth helpers.
 """

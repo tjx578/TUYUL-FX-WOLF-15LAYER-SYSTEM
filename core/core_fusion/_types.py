@@ -1,5 +1,5 @@
 """
-Fusion Types — Exceptions, Enums, Constants, Dataclasses.
+Fusion Types -- Exceptions, Enums, Constants, Dataclasses.
 Shared type definitions for all fusion sub-modules.
 """
 

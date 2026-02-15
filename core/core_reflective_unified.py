@@ -13,7 +13,7 @@ Files merged (38 total):
 2. algo_precision_engine_v3_2_production.py
 3. core_reflective.py
 4. adaptive_field_stabilizer.py
-5-10. Config files (YAML/JSON → constants)
+5-10. Config files (YAML/JSON -> constants)
 
 [Batch 2 - 10 files]
 11. eaf_score_calculator.py

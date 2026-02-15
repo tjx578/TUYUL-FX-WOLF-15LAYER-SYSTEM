@@ -1,5 +1,5 @@
 """
-System health monitor — required before going live.
+System health monitor -- required before going live.
 Monitors all subsystems and can auto-pause trading if critical issues detected.
 """
 
@@ -140,8 +140,8 @@ class HealthMonitor:
                             pass
                 return
 
-        # All critical systems OK — allow trading
+        # All critical systems OK -- allow trading
         if not self._health.trading_allowed:
-            logger.info("All critical subsystems recovered — trading re-enabled")
+            logger.info("All critical subsystems recovered -- trading re-enabled")
             self._health.trading_allowed = True
             self._health.pause_reason = None

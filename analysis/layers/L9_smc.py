@@ -2,16 +2,16 @@
 L9 SMC Integration Analyzer - Smart Money Concepts.
 
 Sources:
-    core_cognitive_unified.py → SmartMoneyDetector, TWMSCalculator
-    core_fusion_unified.py    → LiquidityZoneMapper, VolumeProfileAnalyzer
+    core_cognitive_unified.py -> SmartMoneyDetector, TWMSCalculator
+    core_fusion_unified.py    -> LiquidityZoneMapper, VolumeProfileAnalyzer
 
 Produces:
-    - smc (bool)               → True if clear SMC signal detected
+    - smc (bool)               -> True if clear SMC signal detected
     - smc_score (int)
-    - liquidity_score (float)  → target ≥ 0.65
-    - dvg_confidence (float)   → target ≥ 0.70
+    - liquidity_score (float)  -> target ≥ 0.65
+    - dvg_confidence (float)   -> target ≥ 0.70
     - smart_money_bias (str)
-    - smart_money_signal (str) → ACCUMULATION | DISTRIBUTION | MANIPULATION | NEUTRAL
+    - smart_money_signal (str) -> ACCUMULATION | DISTRIBUTION | MANIPULATION | NEUTRAL
     - ob_present (bool)
     - fvg_present (bool)
     - sweep_detected (bool)

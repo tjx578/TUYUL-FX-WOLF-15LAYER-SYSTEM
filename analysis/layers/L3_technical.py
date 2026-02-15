@@ -2,17 +2,17 @@
 L3 Technical Analysis Analyzer - Deep Dive + TRQ-3D PreMove (PLACEHOLDER).
 
 Sources:
-    core_quantum_unified.py    → TRQ3DEngine, analyze_drift
-    core_reflective_unified.py → TRQ3DUnifiedEngine, ReflectiveQuadEnergyManager, AlphaBetaGamma
-    core_fusion_unified.py     → QuantumReflectiveEngine, RSIAlignmentEngine
+    core_quantum_unified.py    -> TRQ3DEngine, analyze_drift
+    core_reflective_unified.py -> TRQ3DUnifiedEngine, ReflectiveQuadEnergyManager, AlphaBetaGamma
+    core_fusion_unified.py     -> QuantumReflectiveEngine, RSIAlignmentEngine
 
 Produces:
     - technical_score (int 0-100)
     - structure_validity (str)
     - confluence_points (int)
-    - trq3d_energy (float)    → target ≥ 0.65
-    - drift (float)           → target ≤ 0.004
-    - trend (str)             → BULLISH | BEARISH | NEUTRAL
+    - trq3d_energy (float)    -> target ≥ 0.65
+    - drift (float)           -> target ≤ 0.004
+    - trend (str)             -> BULLISH | BEARISH | NEUTRAL
     - valid (bool)
 """
 

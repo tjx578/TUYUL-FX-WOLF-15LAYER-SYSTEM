@@ -1,5 +1,5 @@
 """
-Root conftest — shared fixtures for the entire Wolf-15 test suite.
+Root conftest -- shared fixtures for the entire Wolf-15 test suite.
 Fast by default: heavy fixtures are session-scoped or lazy.
 """
 import asyncio
@@ -19,7 +19,7 @@ if str(ROOT) not in sys.path:
 # ── Async loop (session-scoped for speed) ─────────────────────────
 @pytest.fixture(scope="session")
 def event_loop():
-    """Single event loop for the whole session — avoids per-test loop cost."""
+    """Single event loop for the whole session -- avoids per-test loop cost."""
     loop = asyncio.new_event_loop()
     yield loop
     loop.close()
@@ -34,7 +34,7 @@ def _enforce_timeout(request):
     elapsed = time.perf_counter() - start
     if elapsed > 5.0 and "slow" not in [m.name for m in request.node.iter_markers()]:
         import warnings  # noqa: PLC0415
-        warnings.warn(f"Test {request.node.nodeid} took {elapsed:.1f}s — consider marking @pytest.mark.slow", stacklevel=2)
+        warnings.warn(f"Test {request.node.nodeid} took {elapsed:.1f}s -- consider marking @pytest.mark.slow", stacklevel=2)
 
 
 # ── Sample Layer-12 verdict ───────────────────────────────────────
@@ -119,7 +119,7 @@ def ftmo_profile():
 # ── Mock dependencies ─────────────────────────────────────────────
 @pytest.fixture
 def mock_redis():
-    """In-memory dict pretending to be Redis — tests run without Redis."""
+    """In-memory dict pretending to be Redis -- tests run without Redis."""
     store = {}
 
     class FakeRedis:

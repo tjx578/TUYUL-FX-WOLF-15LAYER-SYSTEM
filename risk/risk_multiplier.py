@@ -1,4 +1,4 @@
-"""Risk Multiplier — Aggregates risk scaling factors from multiple sources.
+"""Risk Multiplier -- Aggregates risk scaling factors from multiple sources.
 
 Combines macro, session, regime, and volatility-clustering multipliers
 into a single composite risk multiplier for position sizing.
@@ -6,7 +6,7 @@ into a single composite risk multiplier for position sizing.
 Authority: RISK ZONE. Computes scaling factors only.
            Does NOT decide market direction.
            Does NOT override Layer-12 verdict.
-           Output feeds → DynamicPositionSizingEngine → L10 → L12.
+           Output feeds -> DynamicPositionSizingEngine -> L10 -> L12.
 
 Enhancement (Tier 2):
     ✅ Now accepts vol_clustering.risk_multiplier as input source
@@ -94,25 +94,25 @@ class RiskMultiplierAggregator:
 
         Args:
             macro_multiplier: From macro_volatility_engine (VIX regime).
-                > 1.0 = elevated macro risk → larger position reduction.
+                > 1.0 = elevated macro risk -> larger position reduction.
             session_multiplier: From session/time-of-day analysis.
-                > 1.0 = unfavorable session → larger position reduction.
+                > 1.0 = unfavorable session -> larger position reduction.
             regime_multiplier: From regime_classifier_ml or L1 regime.
-                > 1.0 = uncertain regime → larger position reduction.
+                > 1.0 = uncertain regime -> larger position reduction.
             vol_clustering_multiplier: From VolatilityClusteringModel.risk_multiplier.
-                > 1.0 = volatility persistence detected → larger position reduction.
+                > 1.0 = volatility persistence detected -> larger position reduction.
                 Default 1.0 (no clustering = neutral).
             correlation_multiplier: From CorrelationRiskEngine.
-                > 1.0 = correlated exposure → larger position reduction.
+                > 1.0 = correlated exposure -> larger position reduction.
 
         Returns:
             RiskMultiplierResult with composite and per-source breakdown.
 
         Note:
             All multipliers represent RISK SCALING, not position scaling.
-            - multiplier > 1.0 → higher risk → DynamicPSE divides by this
-            - multiplier = 1.0 → neutral
-            - multiplier < 1.0 → lower risk (rare; most sources only increase)
+            - multiplier > 1.0 -> higher risk -> DynamicPSE divides by this
+            - multiplier = 1.0 -> neutral
+            - multiplier < 1.0 -> lower risk (rare; most sources only increase)
         """
         # Validate non-negative
         sources = {

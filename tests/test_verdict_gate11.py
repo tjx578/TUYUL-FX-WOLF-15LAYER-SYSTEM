@@ -100,11 +100,11 @@ class TestGate11KellyEdge:
         assert "severity" in gate
 
     def test_missing_keys_default_safe(self) -> None:
-        """Missing keys in kelly_edge_data → defaults to safe values."""
+        """Missing keys in kelly_edge_data -> defaults to safe values."""
         engine = self._make_engine(enabled=True)
         gate = engine._evaluate_kelly_edge_gate({})
 
-        # edge_negative defaults to False → passes
+        # edge_negative defaults to False -> passes
         assert gate["passed"] is True
         assert gate["kelly_raw"] == 0.0
 

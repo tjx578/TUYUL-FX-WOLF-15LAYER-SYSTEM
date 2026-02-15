@@ -191,7 +191,7 @@ class EnhancedPropGuard:
                 allowed=False,
                 code=GuardCode.WEEKEND_LOCKOUT,
                 severity=Severity.BLOCK,
-                details="Weekend close required — no new positions after Friday cutoff",
+                details="Weekend close required -- no new positions after Friday cutoff",
             )
 
         # All checks passed

@@ -1,32 +1,32 @@
 """
-L7 Probability Analyzer — Real Monte Carlo + Bayesian Validation.
+L7 Probability Analyzer -- Real Monte Carlo + Bayesian Validation.
 
 Replaces PLACEHOLDER with production bootstrap Monte Carlo engine
 and Bayesian posterior update for adaptive win probability.
 
 Sources:
-    engines/monte_carlo_engine.py     → MonteCarloEngine
-    engines/bayesian_update_engine.py → BayesianProbabilityEngine
+    engines/monte_carlo_engine.py     -> MonteCarloEngine
+    engines/bayesian_update_engine.py -> BayesianProbabilityEngine
 
 Gate Logic:
-    IF Win% ≥ 60% AND PF ≥ 1.5  → PASS      → continue to L8+
-    IF Win% ≥ 55% AND PF ≥ 1.2  → CONDITIONAL → continue with caution flag
-    OTHERWISE                     → FAIL       → HOLD (no execution candidate)
+    IF Win% ≥ 60% AND PF ≥ 1.5  -> PASS      -> continue to L8+
+    IF Win% ≥ 55% AND PF ≥ 1.2  -> CONDITIONAL -> continue with caution flag
+    OTHERWISE                     -> FAIL       -> HOLD (no execution candidate)
 
 Produces:
     - win_probability (float 0-100)
     - profit_factor (float)
-    - conf12_raw (float)               → target ≥ 0.92
+    - conf12_raw (float)               -> target ≥ 0.92
     - max_drawdown (float)
     - risk_of_ruin (float)
     - expected_value (float)
     - posterior_win_probability (float)
     - confidence_interval (tuple[float, float])
-    - bayesian_posterior (float)        → alias for L12 synthesis
+    - bayesian_posterior (float)        -> alias for L12 synthesis
     - bayesian_ci_low (float)
     - bayesian_ci_high (float)
     - mc_passed_threshold (bool)
-    - validation (str)                  → PASS | CONDITIONAL | FAIL
+    - validation (str)                  -> PASS | CONDITIONAL | FAIL
     - valid (bool)
     - simulations (int)
     - symbol (str)
@@ -52,10 +52,10 @@ from engines.monte_carlo_engine import (  # pyright: ignore[reportMissingImports
 )
 
 # ── Gate thresholds ──────────────────────────────────────────────────────────
-_MC_WIN_THRESHOLD = 0.60       # Win-rate ≥ 60% → PASS tier
-_MC_WIN_CONDITIONAL = 0.55     # Win-rate ≥ 55% → CONDITIONAL tier
-_PF_THRESHOLD = 1.5            # Profit factor ≥ 1.5 → PASS tier
-_PF_CONDITIONAL = 1.2          # Profit factor ≥ 1.2 → CONDITIONAL tier
+_MC_WIN_THRESHOLD = 0.60       # Win-rate ≥ 60% -> PASS tier
+_MC_WIN_CONDITIONAL = 0.55     # Win-rate ≥ 55% -> CONDITIONAL tier
+_PF_THRESHOLD = 1.5            # Profit factor ≥ 1.5 -> PASS tier
+_PF_CONDITIONAL = 1.2          # Profit factor ≥ 1.2 -> CONDITIONAL tier
 _MIN_TRADES = 30               # Minimum sample for bootstrap MC
 
 # ── CONF12 blending weights ─────────────────────────────────────────────────
@@ -144,10 +144,10 @@ class L7ProbabilityAnalyzer:
         # Resolve trade returns: explicit > instance > empty
         returns = trade_returns if trade_returns is not None else self._trade_history
 
-        # ── Guard: insufficient data → graceful fallback ─────────────
+        # ── Guard: insufficient data -> graceful fallback ─────────────
         if len(returns) < _MIN_TRADES:
             logger.warning(
-                "[L7] {symbol} — Insufficient trade history "
+                "[L7] {symbol} -- Insufficient trade history "
                 "({available}/{required}). Using fallback.",
                 symbol=symbol,
                 available=len(returns),
@@ -182,7 +182,7 @@ class L7ProbabilityAnalyzer:
             )
 
             # ── Gate Logic ───────────────────────────────────────────
-            wp = mc_result.win_probability   # 0.0 – 1.0
+            wp = mc_result.win_probability   # 0.0 - 1.0
             pf = mc_result.profit_factor
 
             if wp >= _MC_WIN_THRESHOLD and pf >= _PF_THRESHOLD:
@@ -234,7 +234,7 @@ class L7ProbabilityAnalyzer:
             }
 
             logger.info(
-                "[L7] {symbol} → {validation} | "
+                "[L7] {symbol} -> {validation} | "
                 "win={wp:.1f}% pf={pf:.2f} conf12={conf12:.4f} "
                 "bayes={bayes:.4f} [{ci_lo:.4f}, {ci_hi:.4f}] "
                 "ror={ror:.4f} ev={ev:.2f} dd={dd:.2f} "

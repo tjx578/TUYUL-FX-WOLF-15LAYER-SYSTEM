@@ -1,5 +1,5 @@
 """
-🔬 L8 — TII Integrity Layer (PRODUCTION)
+🔬 L8 -- TII Integrity Layer (PRODUCTION)
 -------------------------------------------
 Computes real Technical Integrity Index (TII) from:
   - Price-VWAP alignment
@@ -11,7 +11,7 @@ Also computes TWMS (Triple Wolf Momentum Score) for momentum confirmation.
 
 TII gate threshold for EXECUTE: >= 0.60 (pipeline bridge uses 0.6).
 
-Zone: analysis/ — pure read-only analysis, no execution side-effects.
+Zone: analysis/ -- pure read-only analysis, no execution side-effects.
 """
 
 import logging
@@ -77,7 +77,7 @@ def _clamp(v: float, lo: float = 0.0, hi: float = 1.0) -> float:
 
 
 def _score_vwap_alignment(price: float, vwap: float) -> float:
-    """Score price-VWAP alignment (0.0–1.0).
+    """Score price-VWAP alignment (0.0-1.0).
 
     High scores when price is near VWAP (institutional fair value).
     Smooth decay for larger deviations.
@@ -90,7 +90,7 @@ def _score_vwap_alignment(price: float, vwap: float) -> float:
     if deviation < _VWAP_VERY_CLOSE:
         return 0.95
     if deviation < _VWAP_CLOSE:
-        # Linear interpolation: 0.001→0.95, 0.005→0.80
+        # Linear interpolation: 0.001->0.95, 0.005->0.80
         t = (deviation - _VWAP_VERY_CLOSE) / (_VWAP_CLOSE - _VWAP_VERY_CLOSE)
         return 0.95 - t * 0.15
     if deviation < _VWAP_MODERATE:
@@ -100,12 +100,12 @@ def _score_vwap_alignment(price: float, vwap: float) -> float:
         t = (deviation - _VWAP_MODERATE) / (_VWAP_FAR - _VWAP_MODERATE)
         return 0.65 - t * 0.15
 
-    # Beyond 2% — decay smoothly but floor at 0.1
+    # Beyond 2% -- decay smoothly but floor at 0.1
     return max(0.10, 0.50 - (deviation - _VWAP_FAR) * 8)
 
 
 def _score_energy_coherence(trq_energy: float) -> float:
-    """Score TRQ field energy coherence (0.0–1.0).
+    """Score TRQ field energy coherence (0.0-1.0).
 
     Uses tanh normalization for smooth mapping from raw energy.
     """
@@ -127,9 +127,9 @@ def _score_energy_coherence(trq_energy: float) -> float:
 
 
 def _score_bias_confirmation(bias_strength: float) -> float:
-    """Score directional bias confirmation (0.0–1.0).
+    """Score directional bias confirmation (0.0-1.0).
 
-    Evaluates absolute bias — direction is irrelevant for integrity.
+    Evaluates absolute bias -- direction is irrelevant for integrity.
     """
     bias_abs = abs(bias_strength)
 
@@ -219,7 +219,7 @@ def _compute_twms(
     and raw momentum. Higher scores = stronger momentum signal,
     regardless of bull/bear direction.
 
-    Returns dict with twms_score (0–1) and signal labels.
+    Returns dict with twms_score (0-1) and signal labels.
     """
     score = 0.0
     signals: list[str] = []
@@ -268,7 +268,7 @@ def _compute_twms(
 def _fallback_vwap(closes: list[float]) -> float:
     """Estimate VWAP from closes using linearly-increasing time weights.
 
-    NOTE: This is a degraded approximation — real VWAP requires volume data.
+    NOTE: This is a degraded approximation -- real VWAP requires volume data.
     The result is a time-weighted average price, not a true VWAP.
     """
     window = closes[-50:] if len(closes) >= 50 else closes
@@ -284,7 +284,7 @@ def _fallback_energy(closes: list[float]) -> float:
     """Estimate TRQ-like energy from price movement intensity.
 
     Uses average absolute bar-to-bar change normalized to price level.
-    This maps roughly to the 0–5 range that _score_energy_coherence expects
+    This maps roughly to the 0-5 range that _score_energy_coherence expects
     (tanh(energy * 0.3) mapping).
     """
     recent = closes[-_MIN_BARS:]
@@ -293,7 +293,7 @@ def _fallback_energy(closes: list[float]) -> float:
     price_level = recent[-1] if recent[-1] != 0 else 1.0
     diffs = [abs(recent[i] - recent[i - 1]) for i in range(1, len(recent))]
     avg_diff = sum(diffs) / len(diffs)
-    # Normalize to price level, then scale to energy range (~0–5)
+    # Normalize to price level, then scale to energy range (~0-5)
     return (avg_diff / price_level) * 500
 
 
@@ -313,7 +313,7 @@ def analyze_tii(
     indicators: dict[str, Any] | None = None,
     now: datetime | None = None,
 ) -> dict[str, Any]:
-    """L8 TII + Integrity Analysis — PRODUCTION.
+    """L8 TII + Integrity Analysis -- PRODUCTION.
 
     Pure analysis function.  Computes Technical Integrity Index and
     Triple Wolf Momentum Score.  No execution side-effects.

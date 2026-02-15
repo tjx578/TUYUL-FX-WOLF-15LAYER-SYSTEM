@@ -1,4 +1,4 @@
-"""Multi-Indicator Divergence Detector — RSI/MACD/CCI/MFI."""
+"""Multi-Indicator Divergence Detector -- RSI/MACD/CCI/MFI."""
 
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple

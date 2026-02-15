@@ -1,4 +1,4 @@
-"""Bayesian Probability Update Engine — Layer-7 Bayesian inference.
+"""Bayesian Probability Update Engine -- Layer-7 Bayesian inference.
 
 Maintains Beta-distributed beliefs about win probability and updates
 them with new evidence scores.

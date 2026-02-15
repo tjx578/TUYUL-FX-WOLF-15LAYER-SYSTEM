@@ -2,7 +2,7 @@
 VIX Proxy Estimator - FINAL PRODUCTION
 
 Estimates synthetic VIX for forex pairs.
-Uses ATR(14) / SMA(close, 20) → VIX-like scale.
+Uses ATR(14) / SMA(close, 20) -> VIX-like scale.
 
 Fallback for when real VIX unavailable.
 """

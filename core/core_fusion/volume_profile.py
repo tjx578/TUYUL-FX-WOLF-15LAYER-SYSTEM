@@ -1,4 +1,4 @@
-"""Volume Profile Analyzer — POC, VAH, VAL, HVN, LVN."""
+"""Volume Profile Analyzer -- POC, VAH, VAL, HVN, LVN."""
 
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple

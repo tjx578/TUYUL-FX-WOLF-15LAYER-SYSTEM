@@ -1,4 +1,4 @@
-"""Quantum Advisory Engine — Layer-11 trade advisory synthesis.
+"""Quantum Advisory Engine -- Layer-11 trade advisory synthesis.
 
 Synthesizes outputs from all preceding engines into a final advisory
 recommendation for the Layer-12 constitution. Acts as the last analysis
@@ -30,9 +30,9 @@ class AdvisoryResult:
     direction: str = "NONE"        # "BUY" | "SELL" | "NONE"
 
     # Composite scores
-    wolf_score: float = 0.0  # 0.0–100.0 Wolf composite score
-    tii_score: float = 0.0   # Trade Idea Index (0–100)
-    frpc_score: float = 0.0  # Full Risk-Performance Composite (0–100)
+    wolf_score: float = 0.0  # 0.0-100.0 Wolf composite score
+    tii_score: float = 0.0   # Trade Idea Index (0-100)
+    frpc_score: float = 0.0  # Full Risk-Performance Composite (0-100)
 
     # Component contributions
     structure_weight: float = 0.0
@@ -66,7 +66,7 @@ class AdvisoryResult:
 # ---------------------------------------------------------------------------
 
 class QuantumAdvisoryEngine:
-    """Quantum Advisory Engine — final analysis synthesis.
+    """Quantum Advisory Engine -- final analysis synthesis.
 
     Parameters
     ----------
@@ -179,7 +179,7 @@ class QuantumAdvisoryEngine:
 
     @staticmethod
     def _extract_score(name: str, output: Any) -> float:
-        """Extract a 0.0–1.0 score from an engine output."""
+        """Extract a 0.0-1.0 score from an engine output."""
         attr_map = {
             "structure": "structure_score",
             "momentum": "momentum_score",
@@ -281,7 +281,7 @@ class QuantumAdvisoryEngine:
 
         if wolf_score >= self.min_wolf_score * 0.85:
             reasons.append(f"Wolf={wolf_score:.1f} near threshold, HOLD for confirmation")
-            warnings.append("Marginal setup — close to threshold")
+            warnings.append("Marginal setup -- close to threshold")
             return "HOLD"
 
         reasons.append(f"Wolf={wolf_score:.1f} TII={tii:.1f} below thresholds")

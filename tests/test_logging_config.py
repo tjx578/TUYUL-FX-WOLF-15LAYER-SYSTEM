@@ -16,8 +16,8 @@ def test_split_stream_logging():
     Test that logging is correctly split between stdout and stderr.
 
     This ensures Railway classifies logs correctly:
-    - stdout → "info" level
-    - stderr → "error" level
+    - stdout -> "info" level
+    - stderr -> "error" level
     """
     # Remove default handler
     logger.remove()
@@ -104,7 +104,7 @@ def test_level_boundary():
         level="ERROR",
     )
 
-    # Test DEBUG (10 < 40) → stdout
+    # Test DEBUG (10 < 40) -> stdout
     logger.debug("Debug message")
     assert "Debug message" in stdout_buffer.getvalue()
     assert "Debug message" not in stderr_buffer.getvalue()
@@ -115,7 +115,7 @@ def test_level_boundary():
     stderr_buffer.truncate(0)
     stderr_buffer.seek(0)
 
-    # Test ERROR (40 >= 40) → stderr
+    # Test ERROR (40 >= 40) -> stderr
     logger.error("Error message")
     assert "Error message" not in stdout_buffer.getvalue()
     assert "Error message" in stderr_buffer.getvalue()

@@ -1,5 +1,5 @@
 """
-Tests for analysis modules (L1–L11).
+Tests for analysis modules (L1-L11).
 Constitutional boundary: analysis must have NO execution side-effects.
 """
 
@@ -9,7 +9,7 @@ import pytest  # pyright: ignore[reportMissingImports]
 
 
 class TestAnalysisBoundary:
-    """Analysis modules must be pure — no execution side effects."""
+    """Analysis modules must be pure -- no execution side effects."""
 
     def _get_analysis_modules(self):
         analysis_dir = Path(__file__).parents[2] / "analysis"
@@ -25,7 +25,7 @@ class TestAnalysisBoundary:
             content = py_file.read_text(encoding="utf-8", errors="ignore")
             for forbidden in ["from execution", "import execution"]:
                 assert forbidden not in content, (
-                    f"{py_file.name} imports execution — boundary violation"
+                    f"{py_file.name} imports execution -- boundary violation"
                 )
 
     def test_no_order_placement_in_analysis(self):
@@ -36,7 +36,7 @@ class TestAnalysisBoundary:
             content = py_file.read_text(encoding="utf-8", errors="ignore")
             for forbidden in ["place_order", "send_order", "execute_trade", "OrderSend"]:
                 assert forbidden not in content, (
-                    f"{py_file.name} contains '{forbidden}' — execution side-effect in analysis"
+                    f"{py_file.name} contains '{forbidden}' -- execution side-effect in analysis"
                 )
 
     def test_no_dashboard_mutation_in_analysis(self):
@@ -47,12 +47,12 @@ class TestAnalysisBoundary:
             content = py_file.read_text(encoding="utf-8", errors="ignore")
             for forbidden in ["update_balance", "modify_equity", "set_account"]:
                 assert forbidden not in content, (
-                    f"{py_file.name} mutates dashboard state — boundary violation"
+                    f"{py_file.name} mutates dashboard state -- boundary violation"
                 )
 
 
 class TestFeedToAnalysisPipeline:
-    """Tests for data feed processing — latency and correctness."""
+    """Tests for data feed processing -- latency and correctness."""
 
     def test_candle_data_structure(self):
         candle = {

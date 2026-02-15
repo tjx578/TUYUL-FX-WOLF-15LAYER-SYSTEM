@@ -34,7 +34,7 @@ class FinnhubNews:
     Responsibilities:
       1. Poll /calendar/economic at configured interval
       2. Filter by impact level (high/medium/low)
-      3. Normalize → push to LiveContextBus
+      3. Normalize -> push to LiveContextBus
       4. Retry with exponential backoff on transient errors
 
     NO TRADING DECISION.

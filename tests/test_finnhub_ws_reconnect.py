@@ -233,7 +233,7 @@ class TestSubscribe:
 
 
 # ---------------------------------------------------------------------------
-# Connect — success and failure paths
+# Connect -- success and failure paths
 # ---------------------------------------------------------------------------
 
 class TestConnect:
@@ -286,7 +286,7 @@ class TestConnect:
 
 
 # ---------------------------------------------------------------------------
-# Listen — message dispatch
+# Listen -- message dispatch
 # ---------------------------------------------------------------------------
 
 class TestListen:
@@ -346,7 +346,7 @@ class TestListen:
 
 
 # ---------------------------------------------------------------------------
-# Run loop — reconnect scenarios
+# Run loop -- reconnect scenarios
 # ---------------------------------------------------------------------------
 
 class TestRunLoopReconnect:
@@ -468,14 +468,14 @@ class TestRunLoopReconnect:
             ws_client._running = False
             return AsyncMock()
 
-        # This test is more nuanced — we need to mock at the run() level
+        # This test is more nuanced -- we need to mock at the run() level
         # Instead, use a simpler approach:
         attempts = []
 
 
         async def patched_run():
             ws_client._running = True
-            # Simulate: acquire lock → connect → listen raises ConnectionClosed
+            # Simulate: acquire lock -> connect -> listen raises ConnectionClosed
             mock_redis.set = AsyncMock(return_value=True)
 
             mock_ws = AsyncMock()

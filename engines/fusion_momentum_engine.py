@@ -1,4 +1,4 @@
-"""Fusion Momentum Engine — Layer-4 momentum and trend analysis.
+"""Fusion Momentum Engine -- Layer-4 momentum and trend analysis.
 
 Computes RSI, MACD, ADX, Stochastic, and custom momentum composites
 to detect trend strength, divergences, and overbought/oversold conditions.
@@ -45,7 +45,7 @@ class MomentumResult:
     trend_strength: str = "WEAK"  # WEAK | MODERATE | STRONG | VERY_STRONG
 
     # Composite
-    momentum_score: float = 0.0  # 0.0–1.0
+    momentum_score: float = 0.0  # 0.0-1.0
     momentum_bias: str = "NEUTRAL"  # BULLISH | BEARISH | NEUTRAL
     divergence_detected: bool = False
     divergence_type: str = "NONE"  # BULLISH_DIV | BEARISH_DIV | NONE
@@ -173,7 +173,7 @@ def _adx(
 # ---------------------------------------------------------------------------
 
 class FusionMomentumEngine:
-    """Fusion Momentum Engine — analysis only, no side-effects."""
+    """Fusion Momentum Engine -- analysis only, no side-effects."""
 
     def __init__(
         self,

@@ -1,14 +1,14 @@
 """
-L10 — Position Sizing & Risk Geometry (PRODUCTION)
+L10 -- Position Sizing & Risk Geometry (PRODUCTION)
 ====================================================
 Merged & upgraded from:
-  • L10_position.py       (placeholder → REPLACED with real computation)
-  • l10_risk_geometry.py  (production geometry → PRESERVED & extended)
+  • L10_position.py       (placeholder -> REPLACED with real computation)
+  • l10_risk_geometry.py  (production geometry -> PRESERVED & extended)
 
 Pipeline Flow:
   L6 risk gate ──┐
   L8 TII gate  ──┤
-  L9 SMC entry ──┼──→  L10PositionAnalyzer.analyze()  ──→  lot_size
+  L9 SMC entry ──┼──->  L10PositionAnalyzer.analyze()  ──->  lot_size
   Account state ─┘     │                                    entry/sl/tp
                         ├─ (1) Risk Geometry                direction
                         ├─ (2) FTA Confidence Adjustment    risk_amount
@@ -20,7 +20,7 @@ Backward compatibility:
   • L10PositionAnalyzer class tetap tersedia (signature diperluas)
   • Semua output field dari kedua file original tetap ada
 
-Zone: analysis/ — pure computation, zero side-effects.
+Zone: analysis/ -- pure computation, zero side-effects.
 """
 
 from __future__ import annotations
@@ -41,10 +41,10 @@ __all__ = ["L10PositionAnalyzer", "analyze_risk_geometry"]
 # ═══════════════════════════════════════════════════════════════════════
 
 # Price-to-pip multipliers
-#   Standard FX: 1 pip = 0.0001 → multiplier 10_000
-#   JPY pairs:   1 pip = 0.01   → multiplier 100
-#   XAUUSD:      1 pip = 0.10   → multiplier 10
-#   XAGUSD:      1 pip = 0.01   → multiplier 100
+#   Standard FX: 1 pip = 0.0001 -> multiplier 10_000
+#   JPY pairs:   1 pip = 0.01   -> multiplier 100
+#   XAUUSD:      1 pip = 0.10   -> multiplier 10
+#   XAGUSD:      1 pip = 0.01   -> multiplier 100
 
 _PIP_MULTIPLIERS: Final[dict[str, float]] = {
     "XAUUSD": 10.0,
@@ -96,15 +96,15 @@ _LOT_MIN: Final = 0.01
 _LOT_MAX: Final = 10.0
 _LOT_STEP: Final = 0.01
 
-# FTA (Fundamental-Technical Alignment) confidence → risk multiplier
-# Higher confidence → allows bigger position; lower → defensive cut.
+# FTA (Fundamental-Technical Alignment) confidence -> risk multiplier
+# Higher confidence -> allows bigger position; lower -> defensive cut.
 _FTA_BANDS: Final[list[tuple[float, float, float, str]]] = [
     # (min_conf, max_conf, multiplier, label)
-    (0.90, 1.01, 1.20, "VERY_HIGH"),   # ≥90% → 120% of base risk
-    (0.75, 0.90, 1.00, "HIGH"),         # 75-89% → 100% (baseline)
-    (0.60, 0.75, 0.80, "MODERATE"),     # 60-74% → 80%
-    (0.40, 0.60, 0.60, "LOW"),          # 40-59% → 60%
-    (0.00, 0.40, 0.50, "VERY_LOW"),     # <40%   → 50% (defensive)
+    (0.90, 1.01, 1.20, "VERY_HIGH"),   # ≥90% -> 120% of base risk
+    (0.75, 0.90, 1.00, "HIGH"),         # 75-89% -> 100% (baseline)
+    (0.60, 0.75, 0.80, "MODERATE"),     # 60-74% -> 80%
+    (0.40, 0.60, 0.60, "LOW"),          # 40-59% -> 60%
+    (0.00, 0.40, 0.50, "VERY_LOW"),     # <40%   -> 50% (defensive)
 ]
 
 # Prop firm compliance gates
@@ -119,7 +119,7 @@ _PROP_MIN_RR: Final = 1.5
 # ═══════════════════════════════════════════════════════════════════════
 
 def _get_pip_multiplier(pair: str) -> float:
-    """Price-difference → pip conversion multiplier."""
+    """Price-difference -> pip conversion multiplier."""
     p = pair.upper()
     if p in _PIP_MULTIPLIERS:
         return _PIP_MULTIPLIERS[p]
@@ -263,7 +263,7 @@ def _check_prop_compliance(
 # ═══════════════════════════════════════════════════════════════════════
 
 class L10PositionAnalyzer:
-    """Layer 10: Position Sizing & Risk Geometry — PRODUCTION.
+    """Layer 10: Position Sizing & Risk Geometry -- PRODUCTION.
 
     Single entry-point yang menggabungkan risk geometry analysis dengan
     position sizing computation, FTA confidence adjustment, dan prop
@@ -287,10 +287,10 @@ class L10PositionAnalyzer:
             risk_data={"max_risk_pct": 1.0, "risk_multiplier": 1.0},
             confidence=0.78,
         )
-        # result["lot_size"]   → 0.33
-        # result["risk_amount"] → 100.0
-        # result["rr_ratio"]   → 2.0
-        # result["rr_quality"] → "GOOD"
+        # result["lot_size"]   -> 0.33
+        # result["risk_amount"] -> 100.0
+        # result["rr_ratio"]   -> 2.0
+        # result["rr_quality"] -> "GOOD"
     """
 
     def __init__(self) -> None:
@@ -307,7 +307,7 @@ class L10PositionAnalyzer:
         daily_dd_pct: float = 0.0,
         now: datetime | None = None,
     ) -> dict[str, Any]:
-        """Complete L10 pipeline: geometry → sizing → FTA → compliance.
+        """Complete L10 pipeline: geometry -> sizing -> FTA -> compliance.
 
         Parameters
         ----------
@@ -321,7 +321,7 @@ class L10PositionAnalyzer:
         risk_data : dict, optional
             ``max_risk_pct`` (default 1.0), ``risk_multiplier`` (default 1.0).
         confidence : float
-            Combined pipeline confidence (0.0–1.0) dari upstream layers.
+            Combined pipeline confidence (0.0-1.0) dari upstream layers.
             Drives FTA risk adjustment.
         open_positions : int
             Current open positions (prop firm gate).
@@ -427,11 +427,11 @@ class L10PositionAnalyzer:
         #
         # Confidence dari upstream layers (L8 TII, L9 SMC) menentukan
         # seberapa agresif position sizing:
-        #   ≥ 0.90  →  1.20× (sangat yakin, posisi lebih besar)
-        #   0.75–0.89 →  1.00× (baseline, tidak ada adjustment)
-        #   0.60–0.74 →  0.80× (moderate, sedikit defensif)
-        #   0.40–0.59 →  0.60× (rendah, potong setengah)
-        #   < 0.40  →  0.50× (sangat rendah, minimal size)
+        #   ≥ 0.90  ->  1.20× (sangat yakin, posisi lebih besar)
+        #   0.75-0.89 ->  1.00× (baseline, tidak ada adjustment)
+        #   0.60-0.74 ->  0.80× (moderate, sedikit defensif)
+        #   0.40-0.59 ->  0.60× (rendah, potong setengah)
+        #   < 0.40  ->  0.50× (sangat rendah, minimal size)
 
         fta_mult, fta_label = _fta_multiplier(confidence)
         fta_score = round(confidence * 100.0, 1)

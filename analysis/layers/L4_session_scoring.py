@@ -1,14 +1,14 @@
 """
-L4 — Session & Timing + Wolf 30-Point Scoring (PRODUCTION)
+L4 -- Session & Timing + Wolf 30-Point Scoring (PRODUCTION)
 ============================================================
 Merged & upgraded from:
-  • l4_session.py    (production timing → PRESERVED 100%)
-  • L4_scoring.py    (placeholder → REPLACED with real Wolf 30-Point)
+  • l4_session.py    (production timing -> PRESERVED 100%)
+  • L4_scoring.py    (placeholder -> REPLACED with real Wolf 30-Point)
 
 Pipeline Flow:
   L1 macro/fundamental ──┐
   L2 technical analysis ─┤
-  L3 market structure   ─┼──→  L4SessionScoring.analyze()
+  L3 market structure   ─┼──->  L4SessionScoring.analyze()
   pair + timestamp      ─┘     │
                                ├─ (1) Session Identification
                                ├─ (2) Quality Modifiers (weekend/news/etc)
@@ -17,16 +17,16 @@ Pipeline Flow:
                                └─ (5) Grade Classification + Gate
 
 Wolf 30-Point Breakdown:
-  F-score  (Fundamental)  0-8 pts  ← L1 macro bias + confidence
-  T-score  (Technical)    0-12 pts ← L2 trend + momentum + indicators
-  FTA-score (Alignment)   0-5 pts  ← L1↔L2 directional agreement
-  Exec-score (Execution)  0-5 pts  ← L3 structure + session quality
+  F-score  (Fundamental)  0-8 pts  <- L1 macro bias + confidence
+  T-score  (Technical)    0-12 pts <- L2 trend + momentum + indicators
+  FTA-score (Alignment)   0-5 pts  <- L1↔L2 directional agreement
+  Exec-score (Execution)  0-5 pts  <- L3 structure + session quality
 
 Backward compatibility:
   • analyze_session() tetap tersedia (signature identik)
   • L4ScoringEngine class tetap tersedia (signature diperluas)
 
-Zone: analysis/ — pure computation, zero side-effects.
+Zone: analysis/ -- pure computation, zero side-effects.
 """
 
 from __future__ import annotations
@@ -48,7 +48,7 @@ __all__ = [
 
 
 # ═══════════════════════════════════════════════════════════════════════
-# §1  SESSION CONFIGURATION (from l4_session.py — preserved 100%)
+# §1  SESSION CONFIGURATION (from l4_session.py -- preserved 100%)
 # ═══════════════════════════════════════════════════════════════════════
 
 # (session_name, start_hour_utc, end_hour_utc, base_quality)
@@ -78,7 +78,7 @@ _KNOWN_CURRENCIES: Final = (
 
 
 # ═══════════════════════════════════════════════════════════════════════
-# §2  HIGH-IMPACT EVENTS (from l4_session.py — preserved 100%)
+# §2  HIGH-IMPACT EVENTS (from l4_session.py -- preserved 100%)
 # ═══════════════════════════════════════════════════════════════════════
 
 class _HighImpactEvent(TypedDict):
@@ -171,28 +171,28 @@ _GRADE_THRESHOLDS: Final[list[tuple[int, str]]] = [
 ]
 
 # F-score sub-weights (within 8 points)
-_F_WEIGHT_BIAS_STRENGTH: Final = 3.0   # How strong is macro bias (0-1 → 0-3)
-_F_WEIGHT_CONFIDENCE: Final = 3.0      # Fundamental confidence (0-1 → 0-3)
-_F_WEIGHT_EVENT_CLEAR: Final = 2.0     # No near-term event risk (0/1 → 0-2)
+_F_WEIGHT_BIAS_STRENGTH: Final = 3.0   # How strong is macro bias (0-1 -> 0-3)
+_F_WEIGHT_CONFIDENCE: Final = 3.0      # Fundamental confidence (0-1 -> 0-3)
+_F_WEIGHT_EVENT_CLEAR: Final = 2.0     # No near-term event risk (0/1 -> 0-2)
 
 # T-score sub-weights (within 12 points)
-_T_WEIGHT_TREND: Final = 3.0           # Trend strength (0-1 → 0-3)
-_T_WEIGHT_MOMENTUM: Final = 3.0        # Momentum score (0-1 → 0-3)
-_T_WEIGHT_RSI: Final = 2.0             # RSI alignment (0-1 → 0-2)
-_T_WEIGHT_STRUCTURE: Final = 2.0       # EMA/MACD structure (0-1 → 0-2)
-_T_WEIGHT_VOLUME: Final = 2.0          # Volume confirmation (0-1 → 0-2)
+_T_WEIGHT_TREND: Final = 3.0           # Trend strength (0-1 -> 0-3)
+_T_WEIGHT_MOMENTUM: Final = 3.0        # Momentum score (0-1 -> 0-3)
+_T_WEIGHT_RSI: Final = 2.0             # RSI alignment (0-1 -> 0-2)
+_T_WEIGHT_STRUCTURE: Final = 2.0       # EMA/MACD structure (0-1 -> 0-2)
+_T_WEIGHT_VOLUME: Final = 2.0          # Volume confirmation (0-1 -> 0-2)
 
 # FTA-score sub-weights (within 5 points)
-_FTA_WEIGHT_DIRECTION: Final = 3.0     # L1↔L2 directional agreement (0/1 → 0-3)
-_FTA_WEIGHT_MAGNITUDE: Final = 2.0     # Strength alignment (0-1 → 0-2)
+_FTA_WEIGHT_DIRECTION: Final = 3.0     # L1↔L2 directional agreement (0/1 -> 0-3)
+_FTA_WEIGHT_MAGNITUDE: Final = 2.0     # Strength alignment (0-1 -> 0-2)
 
 # Exec-score sub-weights (within 5 points)
-_EXEC_WEIGHT_STRUCTURE: Final = 3.0    # L3 market structure quality (0-1 → 0-3)
-_EXEC_WEIGHT_SESSION: Final = 2.0      # Session quality (0-1 → 0-2)
+_EXEC_WEIGHT_STRUCTURE: Final = 3.0    # L3 market structure quality (0-1 -> 0-3)
+_EXEC_WEIGHT_SESSION: Final = 2.0      # Session quality (0-1 -> 0-2)
 
 
 # ═══════════════════════════════════════════════════════════════════════
-# §4  SESSION HELPER FUNCTIONS (from l4_session.py — preserved 100%)
+# §4  SESSION HELPER FUNCTIONS (from l4_session.py -- preserved 100%)
 # ═══════════════════════════════════════════════════════════════════════
 
 def _identify_session(h: int) -> tuple[str, float]:
@@ -337,7 +337,7 @@ def _normalize_bias(bias: Any) -> tuple[str, float]:
       - dict: {"direction": ..., "strength": ...}
 
     Returns (direction, strength) where direction is BULLISH/BEARISH/NEUTRAL
-    and strength is 0.0–1.0.
+    and strength is 0.0-1.0.
     """
     if isinstance(bias, dict):
         d = str(bias.get("direction", "NEUTRAL")).upper()
@@ -360,17 +360,17 @@ def _normalize_bias(bias: Any) -> tuple[str, float]:
 
 
 def _compute_f_score(l1: dict[str, Any], near_event: bool) -> tuple[float, dict[str, Any]]:
-    """Compute Fundamental score (0–8 points) from L1 output.
+    """Compute Fundamental score (0-8 points) from L1 output.
 
     Sub-components:
-      • bias_strength (0–3): How decisive the macro bias is
-      • confidence    (0–3): Fundamental analysis confidence
-      • event_clear   (0–2): No high-impact event in buffer zone
+      • bias_strength (0-3): How decisive the macro bias is
+      • confidence    (0-3): Fundamental analysis confidence
+      • event_clear   (0-2): No high-impact event in buffer zone
 
     L1 expected keys:
-      bias     — str/float/dict indicating macro direction
-      confidence — float 0-1
-      strength   — float 0-1 (alternative to bias strength)
+      bias     -- str/float/dict indicating macro direction
+      confidence -- float 0-1
+      strength   -- float 0-1 (alternative to bias strength)
     """
     _, bias_strength = _normalize_bias(l1.get("bias", "NEUTRAL"))
     confidence = _safe(l1, "confidence", 0.5)
@@ -399,16 +399,16 @@ def _compute_f_score(l1: dict[str, Any], near_event: bool) -> tuple[float, dict[
 
 
 def _compute_t_score(l2: dict[str, Any]) -> tuple[float, dict[str, Any]]:
-    """Compute Technical score (0–12 points) from L2 output.
+    """Compute Technical score (0-12 points) from L2 output.
 
     Sub-components:
-      • trend      (0–3): Trend direction + strength
-      • momentum   (0–3): Momentum indicators (MACD, etc.)
-      • rsi        (0–2): RSI alignment score
-      • structure  (0–2): EMA/indicator structure quality
-      • volume     (0–2): Volume confirmation
+      • trend      (0-3): Trend direction + strength
+      • momentum   (0-3): Momentum indicators (MACD, etc.)
+      • rsi        (0-2): RSI alignment score
+      • structure  (0-2): EMA/indicator structure quality
+      • volume     (0-2): Volume confirmation
 
-    L2 expected keys (flexible — adapts to available data):
+    L2 expected keys (flexible -- adapts to available data):
       trend_strength, momentum, rsi_score, rsi (raw 0-100),
       structure_score, volume_score, macd_signal, ema_alignment
     """
@@ -422,7 +422,7 @@ def _compute_t_score(l2: dict[str, Any]) -> tuple[float, dict[str, Any]]:
     if momentum == 0.0:
         momentum = _safe(l2, "momentum_score", 0.0)
 
-    # RSI — normalize raw RSI (0-100) to quality score (0-1)
+    # RSI -- normalize raw RSI (0-100) to quality score (0-1)
     rsi_score = _safe(l2, "rsi_score", 0.0)
     if rsi_score == 0.0 and "rsi" in l2:
         raw_rsi = _safe_raw(l2, "rsi", 50.0)
@@ -466,16 +466,16 @@ def _compute_fta_score(
     l1: dict[str, Any],
     l2: dict[str, Any],
 ) -> tuple[float, dict[str, Any]]:
-    """Compute Fundamental-Technical Alignment score (0–5 points).
+    """Compute Fundamental-Technical Alignment score (0-5 points).
 
     Measures how well L1 (fundamental) and L2 (technical) agree.
 
     Sub-components:
-      • direction_match (0–3): Both layers point same way
-      • magnitude_match (0–2): Strength levels are comparable
+      • direction_match (0-3): Both layers point same way
+      • magnitude_match (0-2): Strength levels are comparable
 
-    If L1 says BULLISH and L2 trend is bullish → full direction points.
-    If both are strong (>0.6) → full magnitude points.
+    If L1 says BULLISH and L2 trend is bullish -> full direction points.
+    If both are strong (>0.6) -> full magnitude points.
     """
     l1_dir, l1_str = _normalize_bias(l1.get("bias", "NEUTRAL"))
 
@@ -525,11 +525,11 @@ def _compute_exec_score(
     l3: dict[str, Any],
     session_quality: float,
 ) -> tuple[float, dict[str, Any]]:
-    """Compute Execution readiness score (0–5 points).
+    """Compute Execution readiness score (0-5 points).
 
     Sub-components:
-      • structure_quality (0–3): L3 market structure confidence
-      • session_quality   (0–2): Current session quality from timing
+      • structure_quality (0-3): L3 market structure confidence
+      • session_quality   (0-2): Current session quality from timing
 
     L3 expected keys:
       confidence, structure_confidence, structure_score, quality
@@ -572,7 +572,7 @@ def _classify_grade(total: float) -> str:
 # ═══════════════════════════════════════════════════════════════════════
 
 class L4SessionScoring:
-    """Layer 4: Session & Timing + Wolf 30-Point Scoring — PRODUCTION.
+    """Layer 4: Session & Timing + Wolf 30-Point Scoring -- PRODUCTION.
 
     Merges session/timing analysis with confluence scoring into a single
     L4 pipeline.  Replaces both ``l4_session.py`` (timing only) and
@@ -589,9 +589,9 @@ class L4SessionScoring:
             l3={"confidence": 0.78},
             pair="GBPUSD",
         )
-        # result["wolf_30_point"]["total"]  → 24.5
-        # result["grade"]                   → "EXCELLENT"
-        # result["session"]                 → "LONDON_NEWYORK"
+        # result["wolf_30_point"]["total"]  -> 24.5
+        # result["grade"]                   -> "EXCELLENT"
+        # result["session"]                 -> "LONDON_NEWYORK"
     """
 
     def __init__(self) -> None:
@@ -664,7 +664,7 @@ class L4SessionScoring:
 
         grade = _classify_grade(wolf_total)
 
-        # Legacy technical_score (0–100 scale) for backward compatibility
+        # Legacy technical_score (0-100 scale) for backward compatibility
         technical_score = round((t_score / _T_SCORE_MAX) * 100) if _T_SCORE_MAX > 0 else 0
 
         # ── PHASE 4: Integration gate ────────────────────────────────

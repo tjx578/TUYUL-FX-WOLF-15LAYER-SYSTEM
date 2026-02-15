@@ -1,15 +1,15 @@
 """
-Pipeline Engines v7.4r∞ — Reusable L13 Reflective & L15 Meta Sovereignty.
+Pipeline Engines v7.4r∞ -- Reusable L13 Reflective & L15 Meta Sovereignty.
 
 Extracted from the merged Constitutional + Sovereign pipeline to provide
 standalone, testable, reusable governance components.
 
 Architecture:
-    L13ReflectiveEngine  — LRCE + FRPC + αβγ field computation
-    L15MetaSovereigntyEngine — Meta integrity, zona health, sovereignty enforcement
+    L13ReflectiveEngine  -- LRCE + FRPC + αβγ field computation
+    L15MetaSovereigntyEngine -- Meta integrity, zona health, sovereignty enforcement
 
 Authority: Layer-12 remains the SOLE decision authority.
-These engines NEVER override L12 — they augment reflective governance.
+These engines NEVER override L12 -- they augment reflective governance.
 """
 
 from __future__ import annotations
@@ -54,7 +54,7 @@ class L13ReflectiveEngine:
         lrce_score = self._compute_lrce(synthesis)
         frpc_score = self._compute_frpc(synthesis, l12_verdict)
 
-        # αβγ from TRQ-3D — meta_integrity modulates gamma channel
+        # αβγ from TRQ-3D -- meta_integrity modulates gamma channel
         alpha = lrce_score
         beta = frpc_score
         gamma = meta_integrity
@@ -99,7 +99,7 @@ class L13ReflectiveEngine:
                 4,
             )
             reflection["calibration_warning"] = (
-                f"Probability calibration grade {calibration['calibration_grade']} — "
+                f"Probability calibration grade {calibration['calibration_grade']} -- "
                 f"error={calibration['calibration_error']:.4f}. "
                 f"L7 predictions may be unreliable."
             )

@@ -1,4 +1,4 @@
-"""Fusion Utilities — shared helper functions."""
+"""Fusion Utilities -- shared helper functions."""
 
 import json
 import math

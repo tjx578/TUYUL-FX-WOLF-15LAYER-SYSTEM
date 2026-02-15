@@ -29,7 +29,35 @@ from dashboard.backend.schemas import (
     RiskSeverity,
 )
 from propfirm_manager.profile_manager import PropFirmManager
-from risk.risk_multiplier import RiskMultiplier  # pyright: ignore[reportAttributeAccessIssue]
+
+
+def _drawdown_multiplier(dd_fraction: float) -> float:
+    """Compute risk reduction multiplier based on drawdown level.
+
+    This is a dashboard-level scaling function (account/risk governance).
+    It reduces risk as drawdown deepens, protecting from blow-up.
+
+    Parameters
+    ----------
+    dd_fraction : float
+        Total drawdown as a fraction (0.0 = no DD, 0.10 = 10% DD).
+
+    Returns
+    -------
+    float
+        Multiplier in (0.0, 1.0] -- applied to base risk_percent.
+        At 0% DD -> 1.0 (full risk), at 10%+ DD -> 0.25 (quarter risk).
+    """
+    dd = max(0.0, min(dd_fraction, 1.0))
+    if dd < 0.03:
+        return 1.0       # 0-3%  DD: full risk
+    if dd < 0.05:
+        return 0.75      # 3-5%  DD: reduce by 25%
+    if dd < 0.08:
+        return 0.50      # 5-8%  DD: half risk
+    if dd < 0.10:
+        return 0.35      # 8-10% DD: heavy reduction
+    return 0.25           # 10%+  DD: survival mode
 
 
 class RiskEngine:
@@ -37,13 +65,12 @@ class RiskEngine:
     Risk and lot size calculator with prop firm validation.
 
     Integrates:
-        - risk/risk_multiplier.py for DD-based adjustment
+        - Drawdown-based risk multiplier (dashboard account governance)
         - propfirm_manager for rule validation
     """
 
     def __init__(self):
         """Initialize risk engine."""
-        self.risk_multiplier = RiskMultiplier()
 
     def calculate_lot(
         self,
@@ -98,7 +125,7 @@ class RiskEngine:
         # Apply drawdown multiplier
         # Convert total_dd_percent (percentage) to fraction for multiplier
         dd_level = account_state.total_dd_percent / 100.0
-        multiplier = self.risk_multiplier.calculate(dd_level)
+        multiplier = _drawdown_multiplier(dd_level)
         adjusted_risk_percent = risk_percent * multiplier
 
         logger.debug(

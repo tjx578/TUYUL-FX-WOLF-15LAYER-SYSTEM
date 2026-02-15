@@ -218,7 +218,7 @@ async def confirm_order(req: ConfirmOrderRequest) -> Trade:
     """
     Trader confirms order placed at broker.
 
-    Transitions trade from INTENDED → PENDING.
+    Transitions trade from INTENDED -> PENDING.
     """
     trade = _trade_ledger.get_trade(req.trade_id)
     if not trade:
@@ -239,7 +239,7 @@ async def close_trade(req: CloseTradeRequest) -> Trade:
     """
     Trader manually closes a trade.
 
-    Transitions trade from OPEN → CLOSED with MANUAL_CLOSE reason.
+    Transitions trade from OPEN -> CLOSED with MANUAL_CLOSE reason.
     """
     trade = _trade_ledger.get_trade(req.trade_id)
     if not trade:

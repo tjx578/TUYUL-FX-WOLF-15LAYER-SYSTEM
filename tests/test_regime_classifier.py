@@ -3,14 +3,14 @@
 Tests cover:
     - Trending detection (persistent upward drift)
     - Mean-reverting detection (oscillatory series)
-    - Random walk → TRANSITION with low confidence
+    - Random walk -> TRANSITION with low confidence
     - Insufficient data raises ValueError
     - Negative prices raise ValueError
     - Hurst clamped to [0, 1]
     - Confidence bounded [0, 1]
     - Volatility state enum values
     - Serialization (to_dict)
-    - Constant prices → fallback Hurst 0.5 (no crash)
+    - Constant prices -> fallback Hurst 0.5 (no crash)
 """
 
 from __future__ import annotations
@@ -22,11 +22,13 @@ from engines.regime_classifier_ml import RegimeClassification, RegimeClassifier
 
 
 def _trending_prices(n: int = 300, seed: int = 42) -> list[float]:
-    """Strongly persistent upward price series."""
+    """Strongly persistent upward price series (geometric/exponential trend)."""
     rng = np.random.default_rng(seed)
     prices = [100.0]
     for _ in range(n - 1):
-        prices.append(prices[-1] + rng.uniform(0.1, 0.6))
+        # Multiplicative growth with small noise -- produces high Hurst
+        growth = 1.005 + rng.uniform(0.0, 0.003)
+        prices.append(prices[-1] * growth)
     return prices
 
 
@@ -73,7 +75,7 @@ class TestRegimeClassifier:
         clf = RegimeClassifier()
         result = clf.classify(_random_walk())
 
-        # Random walk → Hurst near 0.5 → TRANSITION (or edge case)
+        # Random walk -> Hurst near 0.5 -> TRANSITION (or edge case)
         assert result.regime in ("TRENDING", "MEAN_REVERTING", "TRANSITION")
         assert 0.0 <= result.hurst_exponent <= 1.0
 
@@ -116,7 +118,7 @@ class TestRegimeClassifier:
         assert expected_keys <= set(d.keys())
 
     def test_constant_prices_no_crash(self) -> None:
-        """Constant prices → zero std at all lags → fallback Hurst 0.5."""
+        """Constant prices -> zero std at all lags -> fallback Hurst 0.5."""
         clf = RegimeClassifier()
         result = clf.classify([100.0] * 50)
         assert result.hurst_exponent == 0.5

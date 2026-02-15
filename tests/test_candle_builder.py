@@ -1,5 +1,5 @@
 """
-Tests for CandleBuilder — M15/H1 tick-built, H4+ REST-fetched.
+Tests for CandleBuilder -- M15/H1 tick-built, H4+ REST-fetched.
 """
 
 from unittest.mock import MagicMock, patch
@@ -48,7 +48,7 @@ class TestTimeframe:
 
 
 # ---------------------------------------------------------------------------
-# TickCandleBuilder — M15
+# TickCandleBuilder -- M15
 # ---------------------------------------------------------------------------
 
 class TestTickCandleBuilderM15:
@@ -63,7 +63,7 @@ class TestTickCandleBuilderM15:
 
     def test_first_tick_starts_candle(self):
         builder = TickCandleBuilder(self.SYMBOL, Timeframe.M15)
-        # Tick at 2026-02-15 10:02:30 UTC → candle should align to 10:00:00
+        # Tick at 2026-02-15 10:02:30 UTC -> candle should align to 10:00:00
         ts = 1771056150.0  # arbitrary, alignment tested below
         builder.on_tick(self._make_tick(1.08500, ts))
         c = builder.current_candle
@@ -130,7 +130,7 @@ class TestTickCandleBuilderM15:
 
 
 # ---------------------------------------------------------------------------
-# TickCandleBuilder — H1
+# TickCandleBuilder -- H1
 # ---------------------------------------------------------------------------
 
 class TestTickCandleBuilderH1:
@@ -217,7 +217,7 @@ class TestRESTCandleFetcher:
 
 
 # ---------------------------------------------------------------------------
-# CandleManager — Integration
+# CandleManager -- Integration
 # ---------------------------------------------------------------------------
 
 class TestCandleManager:

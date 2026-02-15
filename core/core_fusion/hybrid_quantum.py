@@ -1,4 +1,4 @@
-"""Hybrid Vault Quantum Engine — Quantum ↔ Fusion reflective core."""
+"""Hybrid Vault Quantum Engine -- Quantum ↔ Fusion reflective core."""
 
 import math
 from typing import Any, Dict, List, Optional
@@ -38,7 +38,7 @@ class QuantumReflectiveEngine:
 
 
 class HybridReflectiveCore:
-    """L9 Hybrid: Quantum entropy + Vault Macro → Reflective Macro Coherence."""
+    """L9 Hybrid: Quantum entropy + Vault Macro -> Reflective Macro Coherence."""
 
     def __init__(self, ema_period: int = 200, sma_periods: Optional[List[int]] = None,
                  quantum_weight: float = 0.4, macro_weight: float = 0.6) -> None:

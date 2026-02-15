@@ -42,7 +42,7 @@ class TestL7ProbabilityAnalyzer:
         result = analyzer.analyze("GBPUSD", technical_score=50)
 
         assert result["valid"] is True
-        # MC skipped → defaults
+        # MC skipped -> defaults
         assert result["win_probability"] == 0.0
         assert result["profit_factor"] == 0.0
         assert result["validation"] == "FAIL"
@@ -63,7 +63,7 @@ class TestL7ProbabilityAnalyzer:
 
     def test_gate_logic_conditional(self) -> None:
         analyzer = L7ProbabilityAnalyzer(mc_simulations=300, mc_seed=42)
-        # ~55% win rate → should be CONDITIONAL or FAIL
+        # ~55% win rate -> should be CONDITIONAL or FAIL
         returns = _make_returns(100, win_rate=0.55, seed=11)
         result = analyzer.analyze(
             "AUDUSD",

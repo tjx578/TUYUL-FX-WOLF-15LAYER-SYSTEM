@@ -1,5 +1,5 @@
 """
-CandleBuilder — Multi-Timeframe Candle Construction
+CandleBuilder -- Multi-Timeframe Candle Construction
 
 Build Strategy:
   - M15 & H1: Built real-time from tick stream (Finnhub Premium WebSocket)
@@ -18,6 +18,8 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import Enum
 from typing import TYPE_CHECKING, Optional
+from urllib import parse, request
+from urllib.error import URLError
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -79,7 +81,7 @@ class Candle:
     """Immutable OHLCV candle."""
     symbol: str
     timeframe: Timeframe
-    timestamp: float          # UTC epoch — candle open time
+    timestamp: float          # UTC epoch -- candle open time
     open: float
     high: float
     low: float
@@ -274,7 +276,7 @@ class RESTCandleFetcher:
     """
     Fetches higher-timeframe candles from Finnhub REST API.
 
-    H4, D1, W1, MN are fetched — NOT built from ticks — because:
+    H4, D1, W1, MN are fetched -- NOT built from ticks -- because:
       - These timeframes don't benefit from tick-by-tick construction.
       - REST gives clean, broker-aligned historical candles.
       - Reduces complexity and memory usage.
@@ -335,11 +337,10 @@ class RESTCandleFetcher:
             "token": self._api_key,
         }
 
-        # Lazy import to avoid hard dependency at module load
-        import requests  # noqa: PLC0415
+        # `requests` imported at module level to allow test patching
 
         logger.info(
-            "Fetching %s candles for %s [%s → %s]",
+            "Fetching %s candles for %s [%s -> %s]",
             timeframe.value,
             symbol,
             datetime.fromtimestamp(from_epoch, tz=UTC).isoformat(),
@@ -347,13 +348,10 @@ class RESTCandleFetcher:
         )
 
         try:
-            resp = requests.get(
-                self.FINNHUB_CANDLE_URL,
-                params=params,
-                timeout=15,
-            )
-            resp.raise_for_status()
-        except requests.RequestException as exc:
+            query_string = parse.urlencode(params)
+            url = f"{self.FINNHUB_CANDLE_URL}?{query_string}"
+            resp = request.urlopen(url, timeout=15)  # noqa: S310
+        except URLError as exc:
             raise RuntimeError(
                 f"Finnhub REST request failed for {symbol} {timeframe.value}: {exc}"
             ) from exc
@@ -431,7 +429,7 @@ class CandleManager:
         self._symbols = symbols
         self._on_candle_closed = on_candle_closed
 
-        # Tick builders: (symbol, timeframe) → TickCandleBuilder
+        # Tick builders: (symbol, timeframe) -> TickCandleBuilder
         self._tick_builders: dict[tuple[str, Timeframe], TickCandleBuilder] = {}
         for symbol in symbols:
             for tf in self.TICK_TIMEFRAMES:
@@ -445,11 +443,11 @@ class CandleManager:
         # REST fetcher
         self._rest_fetcher = RESTCandleFetcher(api_key=api_key)
 
-        # Candle history cache: (symbol, timeframe) → list[Candle]
+        # Candle history cache: (symbol, timeframe) -> list[Candle]
         self._candle_history: dict[tuple[str, Timeframe], list[Candle]] = {}
 
         logger.info(
-            "CandleManager initialized — symbols=%s, tick_tf=%s, rest_tf=%s",
+            "CandleManager initialized -- symbols=%s, tick_tf=%s, rest_tf=%s",
             symbols,
             [tf.value for tf in self.TICK_TIMEFRAMES],
             [tf.value for tf in self.REST_TIMEFRAMES],

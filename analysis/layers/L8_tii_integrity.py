@@ -1,11 +1,11 @@
 """
-🔬 L8 — TII Integrity Layer (PRODUCTION)
+🔬 L8 -- TII Integrity Layer (PRODUCTION)
 ============================================
 Technical Integrity Index + Triple Wolf Momentum Score.
 
 Sources (optional enhancement):
-    core_reflective_unified.py → AdaptiveTIIThresholds
-    core_quantum_unified.py    → ConfidenceMultiplier
+    core_reflective_unified.py -> AdaptiveTIIThresholds
+    core_quantum_unified.py    -> ConfidenceMultiplier
 
 Computes real TII from:
   - Price-VWAP alignment      (25%)
@@ -15,21 +15,21 @@ Computes real TII from:
   - Meta integrity              (15%)
 
 Gate Logic:
-    IF TII < gate_threshold (default 0.60) → CLOSED → HOLD
+    IF TII < gate_threshold (default 0.60) -> CLOSED -> HOLD
     Integrity = TII * 0.60 + TWMS * 0.40
 
 Produces:
-    - tii_sym (float)          → target ≥ 0.60
-    - tii_status (str)         → STRONG | VALID | WEAK | INVALID
-    - integrity (float)        → combined TII + TWMS
-    - twms_score (float)       → 0.0–1.0
-    - gate_status (str)        → OPEN | CLOSED
+    - tii_sym (float)          -> target ≥ 0.60
+    - tii_status (str)         -> STRONG | VALID | WEAK | INVALID
+    - integrity (float)        -> combined TII + TWMS
+    - twms_score (float)       -> 0.0-1.0
+    - gate_status (str)        -> OPEN | CLOSED
     - gate_passed (bool)
     - valid (bool)
-    - components (dict)        → per-component breakdown
-    - twms_signals (list)      → active momentum signals
+    - components (dict)        -> per-component breakdown
+    - twms_signals (list)      -> active momentum signals
 
-Zone: analysis/ — pure computation, zero side-effects.
+Zone: analysis/ -- pure computation, zero side-effects.
 """
 
 from __future__ import annotations
@@ -79,7 +79,7 @@ try:
 
     from core.core_quantum_unified import ConfidenceMultiplier as _ConfidenceMultiplier
 except ImportError:
-    pass  # Standalone mode — all computation is self-contained
+    pass  # Standalone mode -- all computation is self-contained
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -92,7 +92,7 @@ def _clamp(v: float, lo: float = 0.0, hi: float = 1.0) -> float:
 
 
 def _score_vwap_alignment(price: float, vwap: float) -> float:
-    """Score price-VWAP alignment (0.0–1.0).
+    """Score price-VWAP alignment (0.0-1.0).
 
     High score when price is near VWAP or has clear directional separation.
     """
@@ -111,7 +111,7 @@ def _score_vwap_alignment(price: float, vwap: float) -> float:
 
 
 def _score_energy_coherence(trq_energy: float) -> float:
-    """Score TRQ field energy coherence (0.0–1.0)."""
+    """Score TRQ field energy coherence (0.0-1.0)."""
     norm = math.tanh(trq_energy * 0.3)
     if norm > 0.70:
         return 0.95
@@ -125,7 +125,7 @@ def _score_energy_coherence(trq_energy: float) -> float:
 
 
 def _score_bias_confirmation(bias_strength: float) -> float:
-    """Score directional bias strength (0.0–1.0)."""
+    """Score directional bias strength (0.0-1.0)."""
     b = abs(bias_strength)
     if b > 0.005:
         return 0.90
@@ -166,8 +166,8 @@ def _compute_tii(
         vwap: Volume-weighted average price.
         trq_energy: TRQ field energy value.
         bias_strength: Directional bias (signed).
-        reflective_intensity: System self-consistency (0–1).
-        meta_integrity: Overall system health (0–1).
+        reflective_intensity: System self-consistency (0-1).
+        meta_integrity: Overall system health (0-1).
 
     Returns:
         Dict with tii, tii_status, components.
@@ -211,7 +211,7 @@ def _compute_twms(
 ) -> dict[str, Any]:
     """Compute Triple Wolf Momentum Score.
 
-    Scores MFI, CCI, RSI, and momentum direction into a 0–1 composite.
+    Scores MFI, CCI, RSI, and momentum direction into a 0-1 composite.
     """
     score = 0.0
     signals: list[str] = []
@@ -300,7 +300,7 @@ def analyze_tii(
     *,
     gate_threshold: float = DEFAULT_GATE_THRESHOLD,
 ) -> dict[str, Any]:
-    """L8 TII + Integrity Analysis — standalone entry point.
+    """L8 TII + Integrity Analysis -- standalone entry point.
 
     Args:
         market_data: Dict with ``closes`` (or ``close``) list.
@@ -378,7 +378,7 @@ def analyze_tii(
 # ═══════════════════════════════════════════════════════════════════════
 
 class L8TIIIntegrityAnalyzer:
-    """Layer 8: TII Integrity Analyzer — PRODUCTION.
+    """Layer 8: TII Integrity Analyzer -- PRODUCTION.
 
     Class-based API for pipeline integration. Wraps :func:`analyze_tii`
     and optionally leverages core modules when available.

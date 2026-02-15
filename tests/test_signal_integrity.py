@@ -1,5 +1,5 @@
 """
-Tests for signal integrity — expiry, dedup, validation.
+Tests for signal integrity -- expiry, dedup, validation.
 """
 
 import time

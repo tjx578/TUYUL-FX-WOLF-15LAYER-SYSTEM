@@ -118,7 +118,7 @@ def test_smc_bearish_bos_detected(analyzer, context_bus):
 
 
 def test_smc_choch_bullish_to_bearish(analyzer, context_bus):
-    """Test CHoCH detection: BULLISH → BEARISH."""
+    """Test CHoCH detection: BULLISH -> BEARISH."""
     # First analysis with BULLISH trend
     structure_bullish = {
         "valid": True,
@@ -147,7 +147,7 @@ def test_smc_choch_bullish_to_bearish(analyzer, context_bus):
 
 
 def test_smc_choch_bearish_to_bullish(analyzer, context_bus):
-    """Test CHoCH detection: BEARISH → BULLISH."""
+    """Test CHoCH detection: BEARISH -> BULLISH."""
     # First analysis with BEARISH trend
     structure_bearish = {
         "valid": True,

@@ -1,13 +1,13 @@
-"""Regime Classifier — Hurst-exponent + volatility-based regime detection.
+"""Regime Classifier -- Hurst-exponent + volatility-based regime detection.
 
 Statistical regime detection without hardcoded SMA thresholds:
-    TRENDING       (H > 0.60)  — persistent price moves
-    MEAN_REVERTING (H < 0.45)  — oscillatory / range-bound
-    TRANSITION     (otherwise) — ambiguous / regime shift
+    TRENDING       (H > 0.60)  -- persistent price moves
+    MEAN_REVERTING (H < 0.45)  -- oscillatory / range-bound
+    TRANSITION     (otherwise) -- ambiguous / regime shift
 
 Authority: ANALYSIS-ONLY. No execution side-effects.
            Enriches L1 Context as secondary confirmation.
-           Does NOT replace L1 — acts as a parallel signal.
+           Does NOT replace L1 -- acts as a parallel signal.
 
 Bug fixes over original draft:
     ✅ _hurst_exponent: log(0) crash guard when std returns zero
@@ -34,7 +34,7 @@ class RegimeClassification:
     """Immutable result of regime classification."""
 
     regime: str               # TRENDING | MEAN_REVERTING | TRANSITION
-    confidence: float         # 0.0–1.0 (distance from random walk H=0.5)
+    confidence: float         # 0.0-1.0 (distance from random walk H=0.5)
     volatility_state: str     # HIGH_VOL | NORMAL_VOL | LOW_VOL
     hurst_exponent: float     # Raw Hurst value [0, 1]
     volatility: float         # Std of returns
@@ -168,7 +168,7 @@ class RegimeClassifier:
         """
         effective_max = min(self._max_lag, len(ts) // 2)
         if effective_max < self._min_lag + 1:
-            return 0.5  # Not enough data → assume random walk
+            return 0.5  # Not enough data -> assume random walk
 
         valid_lags: list[int] = []
         valid_tau: list[float] = []
@@ -178,7 +178,7 @@ class RegimeClassifier:
             if len(diff) < 2:
                 continue
             std_val = float(np.std(diff, ddof=1))
-            # FIX: Guard log(0) — skip lags with zero or negative std
+            # FIX: Guard log(0) -- skip lags with zero or negative std
             if std_val > 0.0 and np.isfinite(std_val):
                 valid_lags.append(lag)
                 valid_tau.append(std_val)

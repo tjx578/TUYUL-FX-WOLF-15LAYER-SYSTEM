@@ -10,7 +10,7 @@ async def redis_pipeline_ctx(
 ) -> AsyncGenerator:
     """Pipeline context to batch Redis commands and reduce packet count.
 
-    Reduces 705 packets → ~50-100 by batching small commands.
+    Reduces 705 packets -> ~50-100 by batching small commands.
     """
     async with redis.pipeline(transaction=False) as pipe:
         yield pipe

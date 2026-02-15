@@ -1,4 +1,4 @@
-"""Dynamic Position Sizing Engine — Kelly + CVaR + Volatility + Bayesian Hybrid.
+"""Dynamic Position Sizing Engine -- Kelly + CVaR + Volatility + Bayesian Hybrid.
 
 Institutional-grade position sizing that maximizes geometric growth while
 governing tail risk, volatility clustering, and posterior confidence.
@@ -13,10 +13,10 @@ Authority: ANALYSIS-ONLY. No execution side-effects.
            This is an enrichment engine whose output injects into L10.
 
 Integration flow:
-    L7 Monte Carlo ──→ win_probability, avg_win, avg_loss
-    L7 Bayesian    ──→ posterior_probability
-    Vol Clustering ──→ risk_multiplier (volatility_multiplier)
-    Trade history  ──→ returns_history (for CVaR)
+    L7 Monte Carlo ──-> win_probability, avg_win, avg_loss
+    L7 Bayesian    ──-> posterior_probability
+    Vol Clustering ──-> risk_multiplier (volatility_multiplier)
+    Trade history  ──-> returns_history (for CVaR)
          │
          ▼
     DynamicPositionSizingEngine.calculate()
@@ -31,7 +31,7 @@ Bug fixes over draft:
     ✅ avg_loss sign-agnostic: accepts negative, uses abs() internally
     ✅ Empty returns_history guard (minimum 10 observations)
     ✅ Empty tail slice guard (CVaR NaN prevention)
-    ✅ volatility_multiplier == 0 → ZeroDivisionError prevented (clamp ≥ 0.01)
+    ✅ volatility_multiplier == 0 -> ZeroDivisionError prevented (clamp ≥ 0.01)
     ✅ Input validation: win_probability ∈ [0, 1], posterior ∈ [0, 1]
     ✅ avg_win <= 0 guard (payoff ratio undefined)
     ✅ Fractional Kelly support (default half-Kelly for safety)
@@ -111,7 +111,7 @@ class DynamicPositionSizingEngine:
     ----------
     max_risk_cap : float
         Absolute maximum risk fraction per trade. Default 0.03 (3%).
-        Prop-firm safe: most firms allow 1–2% daily loss.
+        Prop-firm safe: most firms allow 1-2% daily loss.
     kelly_fraction_multiplier : float
         Fraction of full Kelly to use. Default 0.5 (half-Kelly).
         Full Kelly (1.0) is theoretically optimal but practically
@@ -212,13 +212,13 @@ class DynamicPositionSizingEngine:
         # Clamp multiplier to prevent division by zero
         safe_vol_mult = max(_DEFAULT_MIN_VOL_MULT, volatility_multiplier)
         volatility_adjustment = 1.0 / safe_vol_mult
-        # Clamp to (0, 1] — multiplier ≥ 1 always reduces; < 1 would amplify
+        # Clamp to (0, 1] -- multiplier ≥ 1 always reduces; < 1 would amplify
         volatility_adjustment = max(0.0, min(1.0, volatility_adjustment))
 
         # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
         # 4️⃣  BAYESIAN POSTERIOR CONFIDENCE
         # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-        # Clamp to [0, 1] — posterior > 1 would amplify beyond Kelly
+        # Clamp to [0, 1] -- posterior > 1 would amplify beyond Kelly
         posterior_adjustment = max(0.0, min(1.0, posterior_probability))
 
         # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -231,7 +231,7 @@ class DynamicPositionSizingEngine:
             * posterior_adjustment
         )
 
-        # Absolute cap — prop-firm safety
+        # Absolute cap -- prop-firm safety
         final_fraction = max(0.0, min(final_fraction, self._max_risk_cap))
 
         return PositionSizingResult(
@@ -298,7 +298,7 @@ class DynamicPositionSizingEngine:
         arr = np.asarray(returns_history, dtype=np.float64)
 
         # VaR at (1 - confidence) percentile
-        # For 95% confidence → 5th percentile (worst 5% of returns)
+        # For 95% confidence -> 5th percentile (worst 5% of returns)
         percentile = (1.0 - self._cvar_conf) * 100.0
         var_value = float(np.percentile(arr, percentile))
 
@@ -306,14 +306,14 @@ class DynamicPositionSizingEngine:
         tail = arr[arr <= var_value]
 
         if len(tail) == 0:
-            # No returns at or below VaR → use VaR as CVaR (conservative)
+            # No returns at or below VaR -> use VaR as CVaR (conservative)
             cvar_value = var_value
         else:
             cvar_value = float(np.mean(tail))
 
-        # CVaR adjustment: larger tail loss → smaller position
+        # CVaR adjustment: larger tail loss -> smaller position
         # adj = 1 / (1 + |CVaR| × sensitivity)
-        # Range: (0, 1] — always reduces, never amplifies
+        # Range: (0, 1] -- always reduces, never amplifies
         cvar_adjustment = 1.0 / (1.0 + abs(cvar_value) * self._cvar_sens)
 
         return var_value, cvar_value, cvar_adjustment

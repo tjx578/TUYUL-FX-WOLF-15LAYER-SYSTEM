@@ -1,4 +1,4 @@
-"""Fusion Precision Engine — Layer-7 precise entry/exit zone detection.
+"""Fusion Precision Engine -- Layer-7 precise entry/exit zone detection.
 
 Identifies optimal entry zones, stop-loss placements, and take-profit
 targets using confluence of structure, Fibonacci, and order flow analysis.
@@ -151,7 +151,7 @@ def _compute_rr(entry: float, sl: float, tp: float) -> float:
 # ---------------------------------------------------------------------------
 
 class FusionPrecisionEngine:
-    """Fusion Precision Engine — analysis only, no side-effects.
+    """Fusion Precision Engine -- analysis only, no side-effects.
 
     Parameters
     ----------

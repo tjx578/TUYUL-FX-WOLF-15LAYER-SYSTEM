@@ -1,21 +1,21 @@
 """
-🛡️ L6 — Risk Layer (PRODUCTION)
+🛡️ L6 -- Risk Layer (PRODUCTION)
 ----------------------------------
 Pure analysis layer: market-risk and trade-risk scoring.
 
-Responsibilities (analysis zone — NO execution side-effects):
+Responsibilities (analysis zone -- NO execution side-effects):
   - Drawdown-tier classification
   - Volatility-adjusted risk multiplier
   - Consecutive-loss scaling
-  - LRCE (Layered Risk Containment Envelope) — *market-side only*
+  - LRCE (Layered Risk Containment Envelope) -- *market-side only*
   - Circuit-breaker awareness (reads flag, does NOT enforce)
 
 What L6 does NOT do (delegated to risk/ and dashboard/):
-  - Prop firm compliance enforcement → [prop_firm.py](http://_vscodecontentref_/8)
-  - Account balance/equity decisions  → dashboard
-  - Position sizing                   → dashboard
+  - Prop firm compliance enforcement -> [prop_firm.py](http://_vscodecontentref_/8)
+  - Account balance/equity decisions  -> dashboard
+  - Position sizing                   -> dashboard
 
-Zone: analysis/ — pure read-only assessment, no execution side-effects.
+Zone: analysis/ -- pure read-only assessment, no execution side-effects.
 """
 
 import logging
@@ -41,7 +41,7 @@ DD_TIERS: list[tuple[str, float, float, str]] = [
     ("LEVEL_4", 10.0, 0.00, "LOCKOUT"),
 ]
 
-# Volatility → risk multiplier adjustments
+# Volatility -> risk multiplier adjustments
 _VOL_ADJUSTMENTS: dict[str, float] = {
     "EXTREME": 0.50,
     "HIGH":    0.75,
@@ -96,7 +96,7 @@ def _calc_lrce(
     open_positions: int,
     max_positions: int,
 ) -> float:
-    """LRCE — Layered Risk Containment Envelope (market-side).
+    """LRCE -- Layered Risk Containment Envelope (market-side).
 
     Returns the max allowed risk % for the next trade based on:
       - Drawdown-adjusted risk multiplier
@@ -119,7 +119,7 @@ def analyze_risk(
     trade_params: dict[str, Any] | None = None,
     now: datetime | None = None,
 ) -> dict[str, Any]:
-    """L6 Risk Assessment — PRODUCTION.
+    """L6 Risk Assessment -- PRODUCTION.
 
     Pure analysis function.  Produces a risk profile consumed downstream
     by Layer-12 (constitution) and dashboard (for prop-firm enforcement).
@@ -133,7 +133,7 @@ def analyze_risk(
         Lightweight state for drawdown-tier classification:
         ``drawdown_pct``, ``daily_pnl_pct``, ``open_positions``,
         ``consecutive_losses``, ``circuit_breaker_active``.
-        NOTE: L6 uses these read-only for risk *scoring* — actual
+        NOTE: L6 uses these read-only for risk *scoring* -- actual
         enforcement is in `[prop_firm.py](http://_vscodecontentref_/9)`.
     trade_params : dict, optional
         Proposed trade: ``risk_pct``, ``rr_ratio``.
@@ -168,7 +168,7 @@ def analyze_risk(
     # ── 1. Drawdown tier ──
     dd_level, risk_mult, risk_status = _classify_drawdown(dd_pct)
 
-    # ── 2. Circuit breaker (read flag, flag it — enforcement is dashboard's job) ──
+    # ── 2. Circuit breaker (read flag, flag it -- enforcement is dashboard's job) ──
     if circuit_breaker:
         risk_status = "LOCKOUT"
         risk_mult = 0.0
@@ -187,7 +187,7 @@ def analyze_risk(
     # ── 5. LRCE (market-side envelope) ──
     lrce = _calc_lrce(risk_mult, open_pos, max_positions)
 
-    # ── 6. Trade-parameter flags (advisory — not enforcement) ──
+    # ── 6. Trade-parameter flags (advisory -- not enforcement) ──
     if risk_pct > lrce * 1.1:  # requested risk exceeds envelope by >10%
         warnings.append(
             f"RISK_EXCEEDS_LRCE(requested={risk_pct:.2f}%>lrce={lrce:.2f}%)"
@@ -196,14 +196,14 @@ def analyze_risk(
     if rr_ratio < _MIN_RR_RATIO:
         warnings.append(f"LOW_RR_RATIO({rr_ratio:.2f}<{_MIN_RR_RATIO})")
 
-    # Daily drawdown flag (negative PnL only — positive PnL is fine)
+    # Daily drawdown flag (negative PnL only -- positive PnL is fine)
     if daily_pnl_pct < 0 and abs(daily_pnl_pct) > 2.5:
         warnings.append(f"DAILY_DD_ELEVATED({daily_pnl_pct:.2f}%)")
 
     if open_pos >= max_positions:
         warnings.append(f"POSITION_LOAD_FULL({open_pos}/{max_positions})")
 
-    # ── 7. Risk-OK (analysis opinion — Layer-12 makes actual decision) ──
+    # ── 7. Risk-OK (analysis opinion -- Layer-12 makes actual decision) ──
     risk_ok = (
         risk_status not in ("LOCKOUT", "CRITICAL")
         and not circuit_breaker

@@ -1,5 +1,5 @@
 """
-Tests for journal (J1–J4) — append-only, immutable audit trail.
+Tests for journal (J1-J4) -- append-only, immutable audit trail.
 Constitutional boundary: journal has NO decision power, write-only.
 """
 import copy
@@ -14,7 +14,7 @@ except ImportError:
 
 
 class TestJournalStructure:
-    """J1–J4 record structure validation."""
+    """J1-J4 record structure validation."""
 
     def _j1_context(self, symbol="EURUSD"):
         return {
@@ -96,13 +96,13 @@ class TestJournalImmutability:
         entry = {"id": 1, "type": "J2", "verdict": "EXECUTE"}
         journal.append(entry)
 
-        # Attempt to modify — should not affect the journal
+        # Attempt to modify -- should not affect the journal
         copy.deepcopy(journal[0])
         entry["verdict"] = "TAMPERED"
 
         # If the journal stores a copy, original should be intact
         journal[0]
-        # This test documents the requirement — implementation must deepcopy on insert
+        # This test documents the requirement -- implementation must deepcopy on insert
         # In practice, journal entries should be immutable dataclasses or frozen dicts
 
     def test_no_delete_operation(self):
@@ -128,12 +128,12 @@ class TestJournalImmutability:
         """Journal module must not export decision functions."""
         forbidden_names = ["decide", "compute_verdict", "execute_trade",
                            "place_order", "override_verdict"]
-        # Conceptual test — verify naming conventions
+        # Conceptual test -- verify naming conventions
         for name in forbidden_names:
             # If journal module exists, check it
             if HAS_JOURNAL:
                 assert not hasattr(JournalWriter, name), ( # pyright: ignore[reportPossiblyUnboundVariable]
-                    f"Journal must not have '{name}' — no decision authority"
+                    f"Journal must not have '{name}' -- no decision authority"
                 )
 
 

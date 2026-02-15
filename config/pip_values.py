@@ -1,12 +1,12 @@
 """
-💰 Pip Value Constants — TUYUL FX (SINGLE SOURCE OF TRUTH)
+💰 Pip Value Constants -- TUYUL FX (SINGLE SOURCE OF TRUTH)
 -------------------------------------------------------------
 P0 BUG FIX: XAUUSD was 0.10 in dashboard vs 10.0 in config.
 
 This module provides:
   - Pip values per standard lot (USD-denominated accounts)
-  - Pip multipliers (price difference → pip count)
-  - Pure lookups only — NO business logic
+  - Pip multipliers (price difference -> pip count)
+  - Pure lookups only -- NO business logic
 
 All modules that need pip values MUST import from here.
 No position sizing, no lot clamping, no risk calculations.
@@ -16,7 +16,7 @@ Limitation: Values are approximate and assume a USD-denominated
 account.  For non-USD accounts, a conversion factor must be
 applied by the consuming module (risk/position_sizer.py).
 
-Zone: config/ — pure data, no side effects, no business logic.
+Zone: config/ -- pure data, no side effects, no business logic.
 """
 
 
@@ -50,7 +50,7 @@ class PipLookupError(LookupError):
 # ── Constants ────────────────────────────────────────────────────────
 
 # Default pip value for unknown pairs (used ONLY by analysis layers
-# in degraded mode — risk/position_sizer.py must NOT fall back to this
+# in degraded mode -- risk/position_sizer.py must NOT fall back to this
 # silently).
 DEFAULT_PIP_VALUE: float = 10.0
 
@@ -86,10 +86,10 @@ PIP_VALUES_PER_STANDARD_LOT: dict[str, float] = {
     "AUDCAD": 7.50,
     "AUDNZD": 6.50,
 
-    # ── Metals — CORRECTED VALUES ──
-    # Gold:   1 pip = $0.10 price movement, 100oz/lot → $10 per pip per lot
+    # ── Metals -- CORRECTED VALUES ──
+    # Gold:   1 pip = $0.10 price movement, 100oz/lot -> $10 per pip per lot
     "XAUUSD": 10.00,
-    # Silver: 1 pip = $0.01 price movement, 5000oz/lot → $50 per pip per lot
+    # Silver: 1 pip = $0.01 price movement, 5000oz/lot -> $50 per pip per lot
     "XAGUSD": 50.00,
 
     # ── Indices (approximate, broker-dependent) ──
@@ -104,11 +104,11 @@ PIP_VALUES_PER_STANDARD_LOT: dict[str, float] = {
 # Converts a price difference to pip count:
 #   pips = abs(price_a - price_b) * PIP_MULTIPLIERS[pair]
 #
-# Standard FX:  1 pip = 0.0001 → multiplier = 10,000
-# JPY pairs:    1 pip = 0.01   → multiplier = 100
-# XAUUSD:       1 pip = 0.10   → multiplier = 10
-# XAGUSD:       1 pip = 0.01   → multiplier = 100
-# Indices:      1 pip = 1.0    → multiplier = 1
+# Standard FX:  1 pip = 0.0001 -> multiplier = 10,000
+# JPY pairs:    1 pip = 0.01   -> multiplier = 100
+# XAUUSD:       1 pip = 0.10   -> multiplier = 10
+# XAGUSD:       1 pip = 0.01   -> multiplier = 100
+# Indices:      1 pip = 1.0    -> multiplier = 1
 
 # Explicitly listed instruments take priority.
 # Everything else falls through to the JPY / standard heuristic.
@@ -203,7 +203,7 @@ def get_pip_multiplier(pair: str) -> float:
     Resolution order:
       1. Explicit multiplier table (metals, indices)
       2. JPY heuristic (any pair containing "JPY")
-      3. Standard FX multiplier (10000) — only if pair is in
+      3. Standard FX multiplier (10000) -- only if pair is in
          PIP_VALUES_PER_STANDARD_LOT
       4. PipLookupError for unknown pairs
     """
@@ -221,7 +221,7 @@ def get_pip_multiplier(pair: str) -> float:
     if key in PIP_VALUES_PER_STANDARD_LOT:
         return _STANDARD_MULTIPLIER
 
-    # 4. Unknown — raise, don't guess
+    # 4. Unknown -- raise, don't guess
     raise PipLookupError(key, "PIP_MULTIPLIERS")
 
 

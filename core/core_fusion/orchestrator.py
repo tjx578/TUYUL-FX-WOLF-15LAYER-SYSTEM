@@ -1,4 +1,4 @@
-"""Ultra Fusion Orchestrator v6 — main pipeline L8-L11."""
+"""Ultra Fusion Orchestrator v6 -- main pipeline L8-L11."""
 
 import logging
 from datetime import datetime, timezone
@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 
 
 class UltraFusionOrchestrator:
-    """Main orchestrator: EMA → Precision → Equilibrium → Reflective Propagation."""
+    """Main orchestrator: EMA -> Precision -> Equilibrium -> Reflective Propagation."""
     VERSION = "6.0"
 
     def __init__(self) -> None:
@@ -46,7 +46,7 @@ class UltraFusionOrchestrator:
                 "propagation_index": round((precision.get("fusion_strength", 0.0) + reflex_strength + rc_adjusted) / 3, 4),
                 "timestamp": ts}
 
-        logger.info(f"[☁️] ULTRA FUSION pipeline synced → {symbol}")
+        logger.info(f"[☁️] ULTRA FUSION pipeline synced -> {symbol}")
         return {"symbol": symbol, "timestamp": ts, "ema_layer": ema_fusion,
                 "precision_layer": precision, "equilibrium_layer": eq, "reflective_layer": frpc}
 

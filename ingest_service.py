@@ -77,7 +77,11 @@ def _build_redis_client() -> RedisClient:
 
 async def _connect_redis() -> RedisClient:
     redis = _build_redis_client()
-    await redis.ping()
+    try:
+        await redis.ping()
+    except Exception:
+        await redis.aclose()
+        raise
     logger.info("Redis connection validated")
     return redis
 

@@ -1,4 +1,4 @@
-"""Correlation Risk Engine — Multi-pair hidden exposure detector.
+"""Correlation Risk Engine -- Multi-pair hidden exposure detector.
 
 Computes pairwise correlation across instruments to detect:
     - USD concentration risk (EURUSD + GBPUSD + XAUUSD overlap)
@@ -7,13 +7,13 @@ Computes pairwise correlation across instruments to detect:
 
 Authority: ANALYSIS-ONLY. No execution side-effects.
            Feeds L6 Risk as portfolio-level adjustment.
-           L6 is currently PLACEHOLDER — this fills that gap.
+           L6 is currently PLACEHOLDER -- this fills that gap.
 
 Bug fixes over original draft:
     ✅ Single-row matrix guard (need ≥ 2 pairs)
     ✅ NaN/Inf handling in return matrix (np.nan_to_num)
     ✅ Eigenvalue-based Herfindahl concentration (replaces max*avg product)
-    ✅ Constant-series guard (NaN correlation → 0)
+    ✅ Constant-series guard (NaN correlation -> 0)
     ✅ Minimum observations guard
     ✅ High-correlation pair flagging with labels
 """
@@ -119,7 +119,7 @@ class CorrelationRiskEngine:
 
         # ── Correlation matrix ───────────────────────────────────────
         corr_matrix = np.corrcoef(mat)
-        # Constant series → NaN correlations → replace with 0
+        # Constant series -> NaN correlations -> replace with 0
         corr_matrix = np.nan_to_num(corr_matrix, nan=0.0)
 
         # ── Upper triangle (exclude diagonal) ────────────────────────
@@ -161,8 +161,8 @@ class CorrelationRiskEngine:
         """Compute Herfindahl-Hirschman index of eigenvalue shares.
 
         Measures how concentrated variance is across latent factors.
-            1/n → perfectly diversified (minimum)
-            1.0 → single factor dominates (maximum)
+            1/n -> perfectly diversified (minimum)
+            1.0 -> single factor dominates (maximum)
 
         Normalized to [0, 1]:  (HHI - 1/n) / (1 - 1/n)
         """

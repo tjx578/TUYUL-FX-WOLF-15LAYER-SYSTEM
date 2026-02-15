@@ -1,5 +1,5 @@
 """
-Integration test: end-to-end feed → analysis → verdict latency.
+Integration test: end-to-end feed -> analysis -> verdict latency.
 Target: < 2 seconds for a single pair analysis cycle.
 """
 import time
@@ -22,7 +22,7 @@ class TestFeedToVerdictLatency:
         }
 
     def _simulate_analysis(self, feed_data):
-        """Simulate L1–L11 analysis returning scores."""
+        """Simulate L1-L11 analysis returning scores."""
         time.sleep(0.05)  # simulate processing
         return {
             "symbol": feed_data["symbol"],

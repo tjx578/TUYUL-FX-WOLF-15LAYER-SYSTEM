@@ -80,7 +80,7 @@ def test_update_status_valid_transition(trade_ledger):
         ],
     )
 
-    # Update INTENDED → PENDING
+    # Update INTENDED -> PENDING
     success = trade_ledger.update_status(trade.trade_id, TradeStatus.PENDING)
     assert success is True
 
@@ -111,7 +111,7 @@ def test_update_status_invalid_transition(trade_ledger):
         ],
     )
 
-    # Try invalid transition: INTENDED → OPEN (must go through PENDING)
+    # Try invalid transition: INTENDED -> OPEN (must go through PENDING)
     success = trade_ledger.update_status(trade.trade_id, TradeStatus.OPEN)
     assert success is False
 
@@ -267,7 +267,7 @@ def test_get_trades_by_account(trade_ledger):
 
 
 def test_full_trade_lifecycle(trade_ledger):
-    """Test full trade lifecycle: INTENDED → PENDING → OPEN → CLOSED."""
+    """Test full trade lifecycle: INTENDED -> PENDING -> OPEN -> CLOSED."""
     # Create trade
     trade = trade_ledger.create_trade(
         signal_id="SIG-EURUSD_1234567890",
@@ -287,17 +287,17 @@ def test_full_trade_lifecycle(trade_ledger):
         ],
     )
 
-    # INTENDED → PENDING (trader confirms order placed)
+    # INTENDED -> PENDING (trader confirms order placed)
     trade_ledger.update_status(trade.trade_id, TradeStatus.PENDING)
     trade = trade_ledger.get_trade(trade.trade_id)
     assert trade.status == TradeStatus.PENDING
 
-    # PENDING → OPEN (price watcher detects entry hit)
+    # PENDING -> OPEN (price watcher detects entry hit)
     trade_ledger.update_status(trade.trade_id, TradeStatus.OPEN)
     trade = trade_ledger.get_trade(trade.trade_id)
     assert trade.status == TradeStatus.OPEN
 
-    # OPEN → CLOSED (TP hit)
+    # OPEN -> CLOSED (TP hit)
     trade_ledger.update_status(
         trade.trade_id,
         TradeStatus.CLOSED,

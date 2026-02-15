@@ -1,5 +1,5 @@
 """
-Integration test: full signal lifecycle from verdict → risk check → journal.
+Integration test: full signal lifecycle from verdict -> risk check -> journal.
 Tests the entire authority chain respects boundaries.
 """
 
@@ -34,7 +34,7 @@ class TestFullSignalLifecycle:
         }
 
     def _journal_record(self, enriched, journal_entries):
-        """Append journal entries — no decision power."""
+        """Append journal entries -- no decision power."""
         journal_entries.append({
             "journal_type": "J2",
             "verdict": enriched["signal"]["verdict"],

@@ -21,7 +21,7 @@ from storage.redis_client import RedisClient
 
 # === TTL Constants ===
 # Latest tick: 60s - acts as stale feed circuit breaker.
-# If no tick arrives in 60s, key expires → downstream knows feed is dead.
+# If no tick arrives in 60s, key expires -> downstream knows feed is dead.
 LATEST_TICK_TTL_SECONDS: int = 60
 
 # Candle hash: 4 hours - covers full session overlap (e.g., London+NY).
@@ -95,7 +95,7 @@ class RedisContextBridge:
             self._redis.hset(latest_key, mapping={"data": tick_json})
 
             # 3. Set TTL - resets countdown on every tick.
-            #    If no tick in 60s → key expires → stale feed detected.
+            #    If no tick in 60s -> key expires -> stale feed detected.
             self._redis.client.expire(latest_key, LATEST_TICK_TTL_SECONDS)
 
             # 4. PUBLISH notification

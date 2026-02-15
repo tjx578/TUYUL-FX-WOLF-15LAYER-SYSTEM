@@ -12,7 +12,7 @@ TICK_TIMEFRAMES: dict[str, int] = {"M15": 15}
 
 class CandleBuilder:
     """
-    Tick → M15 / H1 candle builder.
+    Tick -> M15 / H1 candle builder.
 
     Pure data aggregation. Handles both Unix timestamps (float)
     and datetime objects.

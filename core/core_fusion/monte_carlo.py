@@ -1,7 +1,7 @@
-"""Monte Carlo Engines — Confidence simulation + FTTC.
+"""Monte Carlo Engines -- Confidence simulation + FTTC.
 
 IMPORTANT: These engines are used by core_fusion for CONF12 raw simulation
-    and reflective FTTC analysis. They do NOT feed L7 → L12 directly.
+    and reflective FTTC analysis. They do NOT feed L7 -> L12 directly.
     The L7-to-L12 Monte Carlo path uses engines/Monte_carlo_engine.py
     (bootstrap over historical trade returns).
 """

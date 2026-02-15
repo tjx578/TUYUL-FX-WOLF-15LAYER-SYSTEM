@@ -1,5 +1,5 @@
 """
-Dashboard risk calculator — THE authority for lot sizing.
+Dashboard risk calculator -- THE authority for lot sizing.
 Receives: AnalysisRiskInput (from L12 verdict via position_sizing_bridge).
 Provides: DashboardRiskOutput with actual lot size.
 
@@ -104,7 +104,7 @@ class DashboardRiskCalculator:
             return DashboardRiskOutput.blocked(
                 reason=(
                     f"Prop firm guard: {guard_result.get('code', 'UNKNOWN')} "
-                    f"— {guard_result.get('details', '')}"
+                    f"-- {guard_result.get('details', '')}"
                 )
             )
 

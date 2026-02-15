@@ -5,18 +5,18 @@
 Unified module for Quantum Decision Engine, TRQ3D Field, and Neural Decision Tree.
 
 Files merged:
-1. decision_tree_rules.yaml → Embedded DECISION_TREE_RULES constant
-2. quantum_weights.yaml → Embedded QUANTUM_WEIGHTS constant
-3. trq3d_field_engine.py → TRQ3DEngine class
-4. update_trq3d_field.py → update_reflective_field() and helpers
-5. quantum_field_sync.py → QuantumFieldSync class
-6. neural_decision_tree.py → NeuralDecisionTree class
-7. probability_matrix_calculator.py → ProbabilityMatrixCalculator class
-8. quantum_decision_engine.py → QuantumDecisionEngine class
-9. confidence_multiplier.py → ConfidenceMultiplier class
-10. manifest.yaml → QUANTUM_MANIFEST constant
-11. quantum_execution_optimizer.py → QuantumExecutionOptimizer class
-12. quantum_scenario_matrix.py → QuantumScenarioMatrix class
+1. decision_tree_rules.yaml -> Embedded DECISION_TREE_RULES constant
+2. quantum_weights.yaml -> Embedded QUANTUM_WEIGHTS constant
+3. trq3d_field_engine.py -> TRQ3DEngine class
+4. update_trq3d_field.py -> update_reflective_field() and helpers
+5. quantum_field_sync.py -> QuantumFieldSync class
+6. neural_decision_tree.py -> NeuralDecisionTree class
+7. probability_matrix_calculator.py -> ProbabilityMatrixCalculator class
+8. quantum_decision_engine.py -> QuantumDecisionEngine class
+9. confidence_multiplier.py -> ConfidenceMultiplier class
+10. manifest.yaml -> QUANTUM_MANIFEST constant
+11. quantum_execution_optimizer.py -> QuantumExecutionOptimizer class
+12. quantum_scenario_matrix.py -> QuantumScenarioMatrix class
 
 Architecture:
 ┌─────────────────────────────────────────────────────────────────┐
@@ -1632,7 +1632,7 @@ if __name__ == "__main__":
     tree = NeuralDecisionTree()
     ctx = {"twms_score": 10, "smart_money_alignment": 0.85, "regime_favorable": True, "emotion_index": 45}
     td = tree.traverse(ctx)
-    logger.info(f"  Path: {' → '.join(td.path)}")
+    logger.info(f"  Path: {' -> '.join(td.path)}")
     logger.info(f"  Action: {td.final_action}, Prob: {td.probability:.2f}")
 
     logger.info("\n📈 Testing Confidence Multiplier...")

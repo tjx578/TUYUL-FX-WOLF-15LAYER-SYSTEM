@@ -1,5 +1,5 @@
 """
-Tests for prop firm guard — critical for live trading safety.
+Tests for prop firm guard -- critical for live trading safety.
 """
 
 import pytest  # pyright: ignore[reportMissingImports]
@@ -35,8 +35,8 @@ def healthy_account():
 def stressed_account():
     return AccountSnapshot(
         balance=100_000.0,
-        equity=95_200.0,  # Already 4.8% daily loss
-        floating_pnl=-4_800.0,
+        equity=95_000.0,  # Already 5.0% daily loss (budget fully exhausted)
+        floating_pnl=-5_000.0,
         closed_pnl_today=-3_000.0,
         open_position_count=5,
         day_start_balance=100_000.0,
@@ -154,7 +154,7 @@ class TestMaxSafeLotComputation:
 
 
 class TestConstitutionalBoundaries:
-    """Ensure guard never makes market decisions — only risk decisions."""
+    """Ensure guard never makes market decisions -- only risk decisions."""
 
     def test_guard_result_has_no_direction(self, ftmo_guard, healthy_account):
         result = ftmo_guard.check(healthy_account, trade_risk_usd=100.0, lot_size=0.1)

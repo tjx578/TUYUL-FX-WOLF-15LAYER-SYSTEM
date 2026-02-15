@@ -1,5 +1,5 @@
 """
-Tests for JSON schema contracts — L12 and alerts.
+Tests for JSON schema contracts -- L12 and alerts.
 """
 import json
 
@@ -36,7 +36,7 @@ class TestL12Schema:
         required = schema.get("required", [])
         for forbidden in ["balance", "equity", "margin", "account_id"]:
             assert forbidden not in required, (
-                f"L12 schema must not require '{forbidden}' — boundary violation"
+                f"L12 schema must not require '{forbidden}' -- boundary violation"
             )
 
 

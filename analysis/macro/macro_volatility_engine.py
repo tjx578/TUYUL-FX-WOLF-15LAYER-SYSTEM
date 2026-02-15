@@ -2,7 +2,7 @@
 Macro Volatility Engine - FINAL PRODUCTION
 
 Real-time macro regime detection.
-Finnhub VIX (real) → Fallback proxy → Redis + LiveContextBus
+Finnhub VIX (real) -> Fallback proxy -> Redis + LiveContextBus
 
 Output: macro:vix:state (Redis hash)
         snapshot()["macro"] (LiveContextBus)
