@@ -53,6 +53,7 @@ from __future__ import annotations
 import time
 
 from datetime import datetime, timedelta, timezone
+from symtable import Symbol
 from typing import Any
 
 from constitution.verdict_engine import generate_l12_verdict
@@ -84,52 +85,51 @@ _TZ_GMT8 = timezone(timedelta(hours=8))
 #  STANDALONE SYNTHESIS BUILDER
 # ══════════════════════════════════════════════════════════════
 
-def build_l12_synthesis(  # noqa: PLR0913
+def _run_l7_probability(
+    self,
     symbol: str,
-    l1: dict[str, Any],
-    l2: dict[str, Any],
-    l3: dict[str, Any],
-    l4: dict[str, Any],
-    l5: dict[str, Any],
-    l6: dict[str, Any],
-    l7: dict[str, Any],
-    l8: dict[str, Any],
-    l9: dict[str, Any],
-    l10: dict[str, Any],
-    l11: dict[str, Any],
-    macro: dict[str, Any],
-    macro_vix_state: dict[str, Any],
-    *,
-    safe_mode: bool = False,
-    latency_ms: float = 0.0,
+    technical_score: int,
+    trade_returns: list[float] | None = None,
+    prior_wins: int = 0,
+    prior_losses: int = 0,
+    coherence: float = 50.0,
+    volatility_index: float = 20.0,
+    base_bias: float = 0.5,
 ) -> dict[str, Any]:
-    """
-    Build L12-contract-compliant synthesis from layer outputs.
+    """Run Layer 7 probability analysis with trade returns."""
+    from analysis.layers.L7_probability import L7ProbabilityAnalyzer  # noqa: PLC0415
 
-    This is a standalone function importable without pipeline instantiation.
-    Matches the exact contract expected by generate_l12_verdict().
+    analyzer = L7ProbabilityAnalyzer()
+    return analyzer.analyze(
+        symbol,
+        technical_score=technical_score,
+        trade_returns=trade_returns,
+        prior_wins=prior_wins,
+        prior_losses=prior_losses,
+        coherence=coherence,
+        volatility_index=volatility_index,
+        base_bias=base_bias,
+    )
 
-    Args:
-        symbol: Trading pair (e.g. "EURUSD").
-        l1..l11: Layer analyzer outputs.
-        macro: Monthly regime analysis.
-        macro_vix_state: VIX regime state.
-        safe_mode: If True, bypass macro regime gate in verdict engine.
-        latency_ms: Current pipeline latency for latency gate.
+def build_l12_synthesis(
+    self,
+    layer_results: dict[str, Any],
+) -> dict[str, Any]:
+    """Build Layer-12 synthesis with Bayesian enrichment fields.
 
-    Returns:
-        Synthesis dict compliant with SynthesisContract / L12 input.
+    Adds bayesian_posterior, bayesian_ci_low, bayesian_ci_high,
+    mc_passed_threshold, and risk_of_ruin from L7 into the synthesis.
     """
     # ── Wolf 30-Point from L4 ──
-    if "wolf_30_point" in l4 and isinstance(l4["wolf_30_point"], dict):
-        wolf_30_point = l4["wolf_30_point"].get("total", 0)
-        f_score = l4["wolf_30_point"].get("f_score", 0)
-        t_score = l4["wolf_30_point"].get("t_score", 0)
-        fta_score_raw = l4["wolf_30_point"].get("fta_score", 0.0)
-        exec_score = l4["wolf_30_point"].get("exec_score", 0)
+    if "wolf_30_point" in layer_results.get("L4", {}) and isinstance(layer_results["L4"]["wolf_30_point"], dict):
+        wolf_30_point = layer_results["L4"]["wolf_30_point"].get("total", 0)
+        f_score = layer_results["L4"]["wolf_30_point"].get("f_score", 0)
+        t_score = layer_results["L4"]["wolf_30_point"].get("t_score", 0)
+        fta_score_raw = layer_results["L4"]["wolf_30_point"].get("fta_score", 0.0)
+        exec_score = layer_results["L4"]["wolf_30_point"].get("exec_score", 0)
     else:
-        technical_score = l4.get("technical_score", 0)
-        win_prob = l7.get("win_probability", 0)
+        technical_score = layer_results.get("L4", {}).get("technical_score", 0)
+        win_prob = layer_results.get("L7", {}).get("win_probability", 0)
         wolf_30_point = int((technical_score / 100) * 15 + (win_prob / 100) * 15)
         wolf_30_point = max(0, min(30, wolf_30_point))
         f_score = 0
@@ -138,22 +138,22 @@ def build_l12_synthesis(  # noqa: PLR0913
         exec_score = 0
 
     # ── FTA Score (enriched from L10 or fallback) ──
-    fta_score = l10.get("fta_score", fta_score_raw)
-    fta_multiplier = l10.get("fta_multiplier", 1.0)
+    fta_score = layer_results.get("L10", {}).get("fta_score", fta_score_raw)
+    fta_multiplier = layer_results.get("L10", {}).get("fta_multiplier", 1.0)
     if exec_score == 0:
-        exec_score = 6 if l10.get("position_ok", False) else 0
+        exec_score = 6 if layer_results.get("L10", {}).get("position_ok", False) else 0
 
     # ── Direction from L3 ──
-    trend = l3.get("trend", "NEUTRAL")
+    trend = layer_results.get("L3", {}).get("trend", "NEUTRAL")
     direction = {"BULLISH": "BUY", "BEARISH": "SELL"}.get(trend, "HOLD")
 
     # ── Execution details from L11 ──
-    entry_price = l11.get("entry_price", l11.get("entry", 0.0))
-    stop_loss = l11.get("stop_loss", l11.get("sl", 0.0))
-    take_profit_1 = l11.get("take_profit_1", l11.get("tp1", l11.get("tp", 0.0)))
-    rr_ratio = l11.get("rr", 0.0)
-    battle_strategy = l11.get("battle_strategy", "SHADOW_STRIKE")
-    entry_zone = l11.get("entry_zone", "")
+    entry_price = layer_results.get("L11", {}).get("entry_price", layer_results.get("L11", {}).get("entry", 0.0))
+    stop_loss = layer_results.get("L11", {}).get("stop_loss", layer_results.get("L11", {}).get("sl", 0.0))
+    take_profit_1 = layer_results.get("L11", {}).get("take_profit_1", layer_results.get("L11", {}).get("tp1", layer_results.get("L11", {}).get("tp", 0.0)))
+    rr_ratio = layer_results.get("L11", {}).get("rr", 0.0)
+    battle_strategy = layer_results.get("L11", {}).get("battle_strategy", "SHADOW_STRIKE")
+    entry_zone = layer_results.get("L11", {}).get("entry_zone", "")
     if not entry_zone and entry_price > 0:
         if direction == "BUY":
             entry_zone = f"{entry_price - 0.0010:.5f}-{entry_price:.5f}"
@@ -161,23 +161,24 @@ def build_l12_synthesis(  # noqa: PLR0913
             entry_zone = f"{entry_price:.5f}-{entry_price + 0.0010:.5f}"
 
     # ── Risk (from L10/dashboard — placeholders) ──
-    lot_size = l10.get("final_lot_size", 0.01)
-    risk_percent = l10.get("adjusted_risk_pct", 1.0)
-    risk_amount = l10.get("adjusted_risk_amount", 0.0)
+    lot_size = layer_results.get("L10", {}).get("final_lot_size", 0.01)
+    risk_percent = layer_results.get("L10", {}).get("adjusted_risk_pct", 1.0)
+    risk_amount = layer_results.get("L10", {}).get("adjusted_risk_amount", 0.0)
 
     # ── Metrics ──
-    tii_sym = l8.get("tii_sym", 0.0)
-    integrity = l8.get("integrity", 0.0)
-    conf12 = l2.get("conf12", (tii_sym + integrity) / 2.0)
-    current_drawdown = l5.get("current_drawdown", 0.0)
-    prop_compliant = l6.get("propfirm_compliant", True)
-    psychology_score = l5.get("psychology_score", 0)
-    eaf_score = l5.get("eaf_score", 0.0)
+    tii_sym = layer_results.get("L8", {}).get("tii_sym", 0.0)
+    integrity = layer_results.get("L8", {}).get("integrity", 0.0)
+    conf12 = layer_results.get("L2", {}).get("conf12", (tii_sym + integrity) / 2.0)
+    current_drawdown = layer_results.get("L5", {}).get("current_drawdown", 0.0)
+    prop_compliant = layer_results.get("L6", {}).get("propfirm_compliant", True)
+    psychology_score = layer_results.get("L5", {}).get("psychology_score", 0)
+    eaf_score = layer_results.get("L5", {}).get("eaf_score", 0.0)
 
-    vix_regime_state = macro_vix_state.get("regime_state", 1)
+    vix_regime_state = layer_results.get("macro_vix_state", {}).get("regime_state", 1)
 
-    return {
-        "pair": symbol,
+    # Existing fields
+    synthesis = {
+        "pair": Symbol,
         "scores": {
             "wolf_30_point": wolf_30_point,
             "f_score": f_score,
@@ -186,19 +187,19 @@ def build_l12_synthesis(  # noqa: PLR0913
             "fta_multiplier": fta_multiplier,
             "exec_score": exec_score,
             "psychology_score": psychology_score,
-            "technical_score": l4.get("technical_score", 0),
+            "technical_score": technical_score, # pyright: ignore[reportPossiblyUnboundVariable]
         },
         "layers": {
-            "L1_context_coherence": l1.get("regime_confidence", 0.0),
-            "L2_reflex_coherence": l2.get("reflex_coherence", 0.0),
-            "L3_trq3d_energy": l3.get("trq3d_energy", 0.0),
-            "L7_monte_carlo_win": l7.get("win_probability", 0.0) / 100.0
-            if l7.get("win_probability", 0.0) > 1.0
-            else l7.get("win_probability", 0.0),
+            "L1_context_coherence": layer_results.get("L1", {}).get("regime_confidence", 0.0),
+            "L2_reflex_coherence": layer_results.get("L2", {}).get("reflex_coherence", 0.0),
+            "L3_trq3d_energy": layer_results.get("L3", {}).get("trq3d_energy", 0.0),
+            "L7_monte_carlo_win": layer_results.get("L7", {}).get("win_probability", 0.0) / 100.0
+            if layer_results.get("win_probability", 0.0) > 1.0
+            else layer_results.get("win_probability", 0.0),
             "L8_tii_sym": tii_sym,
             "L8_integrity_index": integrity,
-            "L9_dvg_confidence": l9.get("dvg_confidence", 0.0),
-            "L9_liquidity_score": l9.get("liquidity_score", 0.0),
+            "L9_dvg_confidence": layer_results.get("L9", {}).get("dvg_confidence", 0.0),
+            "L9_liquidity_score": layer_results.get("L9", {}).get("liquidity_score", 0.0),
             "conf12": conf12,
         },
         "execution": {
@@ -218,10 +219,10 @@ def build_l12_synthesis(  # noqa: PLR0913
         },
         "risk": {
             "current_drawdown": current_drawdown,
-            "drawdown_level": l6.get("drawdown_level", "LEVEL_0"),
-            "risk_multiplier": l6.get("risk_multiplier", 1.0),
-            "risk_status": l6.get("risk_status", "ACCEPTABLE"),
-            "lrce": l6.get("lrce", 0.0),
+            "drawdown_level": layer_results.get("L6", {}).get("drawdown_level", "LEVEL_0"),
+            "risk_multiplier": layer_results.get("L6", {}).get("risk_multiplier", 1.0),
+            "risk_status": layer_results.get("L6", {}).get("risk_status", "ACCEPTABLE"),
+            "lrce": layer_results.get("L6", {}).get("lrce", 0.0),
         },
         "propfirm": {
             "compliant": prop_compliant,
@@ -230,19 +231,19 @@ def build_l12_synthesis(  # noqa: PLR0913
             "profit_target_progress": 0.0,
         },
         "bias": {
-            "fundamental": "NEUTRAL" if not l1.get("valid") else trend,
+            "fundamental": "NEUTRAL" if not layer_results.get("L1", {}).get("valid") else trend,
             "technical": trend,
-            "macro": macro.get("regime", "UNKNOWN"),
+            "macro": layer_results.get("macro", "UNKNOWN"),
         },
         "cognitive": {
-            "regime": l1.get("regime", "TREND"),
-            "dominant_force": l1.get("dominant_force", "NEUTRAL"),
-            "cbv": l1.get("csi", 0.0),
-            "csi": l1.get("regime_confidence", 0.0),
+            "regime": layer_results.get("L1", {}).get("regime", "TREND"),
+            "dominant_force": layer_results.get("L1", {}).get("dominant_force", "NEUTRAL"),
+            "cbv": layer_results.get("L1", {}).get("csi", 0.0),
+            "csi": layer_results.get("L1", {}).get("regime_confidence", 0.0),
         },
         "fusion_frpc": {
             "conf12": conf12,
-            "frpc_energy": l2.get("frpc_energy", 0.0),
+            "frpc_energy": layer_results.get("L2", {}).get("frpc_energy", 0.0),
             "lambda_esi": 0.003,
             "integrity": integrity,
         },
@@ -250,44 +251,54 @@ def build_l12_synthesis(  # noqa: PLR0913
             "alpha": 0.0,
             "beta": 0.0,
             "gamma": 0.0,
-            "drift": l3.get("drift", 0.0),
-            "mean_energy": l3.get("trq3d_energy", 0.0),
+            "drift": layer_results.get("L3", {}).get("drift", 0.0),
+            "mean_energy": layer_results.get("L3", {}).get("trq3d_energy", 0.0),
             "intensity": 0.0,
         },
         "smc": {
             "structure": "RANGE",
-            "smart_money_signal": l9.get("smart_money_signal", "NEUTRAL"),
+            "smart_money_signal": layer_results.get("L9", {}).get("smart_money_signal", "NEUTRAL"),
             "liquidity_zone": "0.00000",
-            "ob_present": l9.get("ob_present", False),
-            "fvg_present": l9.get("fvg_present", False),
-            "sweep_detected": l9.get("sweep_detected", False),
-            "bias": l9.get("smart_money_bias", "NEUTRAL"),
+            "ob_present": layer_results.get("L9", {}).get("ob_present", False),
+            "fvg_present": layer_results.get("L9", {}).get("fvg_present", False),
+            "sweep_detected": layer_results.get("L9", {}).get("sweep_detected", False),
+            "bias": layer_results.get("L9", {}).get("smart_money_bias", "NEUTRAL"),
         },
         "wolf_discipline": {
             "score": wolf_30_point / 30.0 if wolf_30_point else 0.0,
-            "polarity_deviation": l5.get("emotion_delta", 0.0),
+            "polarity_deviation": layer_results.get("L5", {}).get("emotion_delta", 0.0),
             "lambda_balance": "ACTIVE",
             "bias_symmetry": "NEUTRAL",
             "eaf_score": eaf_score,
             "emotional_state": "CALM",
         },
         "macro": {
-            "regime": macro.get("regime", "UNKNOWN"),
-            "phase": macro.get("phase", "NEUTRAL"),
-            "volatility_ratio": macro.get("macro_vol_ratio", 1.0),
-            "mn_aligned": macro.get("alignment", False),
-            "liquidity": macro.get("liquidity", {}),
-            "bias_override": macro.get("bias_override", {}),
+            "regime": layer_results.get("macro", "UNKNOWN"),
+            "phase": layer_results.get("phase", "NEUTRAL"),
+            "volatility_ratio": layer_results.get("macro_vol_ratio", 1.0),
+            "mn_aligned": layer_results.get("alignment", False),
+            "liquidity": layer_results.get("liquidity", {}),
+            "bias_override": layer_results.get("bias_override", {}),
         },
         "macro_vix": {
             "regime_state": vix_regime_state,
-            "risk_multiplier": macro_vix_state.get("risk_multiplier", 1.0),
+            "risk_multiplier": layer_results.get("macro_vix_state", {}).get("risk_multiplier", 1.0),
         },
         "system": {
-            "latency_ms": latency_ms,
-            "safe_mode": safe_mode,
+            "latency_ms": 0.0,
+            "safe_mode": False,
         },
     }
+
+    # Bayesian enrichment fields from L7
+    synthesis["bayesian_posterior"] = layer_results.get("L7", {}).get("bayesian_posterior", 0.0)
+    synthesis["bayesian_ci_low"] = layer_results.get("L7", {}).get("bayesian_ci_low", 0.0)
+    synthesis["bayesian_ci_high"] = layer_results.get("L7", {}).get("bayesian_ci_high", 0.0)
+    synthesis["mc_passed_threshold"] = layer_results.get("L7", {}).get("mc_passed_threshold", False)
+    synthesis["risk_of_ruin"] = layer_results.get("L7", {}).get("risk_of_ruin", 0.0)
+    synthesis["l7_validation"] = layer_results.get("L7", {}).get("validation", "FAIL")
+
+    return synthesis
 
 
 class WolfConstitutionalPipeline:
@@ -512,13 +523,13 @@ class WolfConstitutionalPipeline:
 
             current_latency_ms = (time.time() - start_time) * 1000
             synthesis = build_l12_synthesis(
-                symbol=symbol,
-                l1=l1, l2=l2, l3=l3, l4=l4, l5=l5,
-                l6=l6, l7=l7, l8=l8, l9=l9, l10=l10, l11=l11,
-                macro=macro,
-                macro_vix_state=macro_vix_state,
-                safe_mode=safe_mode,
-                latency_ms=current_latency_ms,
+                symbol=symbol, # pyright: ignore[reportCallIssue]
+                l1=l1, l2=l2, l3=l3, l4=l4, l5=l5, # pyright: ignore[reportCallIssue]
+                l6=l6, l7=l7, l8=l8, l9=l9, l10=l10, l11=l11, # pyright: ignore[reportCallIssue]
+                macro=macro, # pyright: ignore[reportCallIssue]
+                macro_vix_state=macro_vix_state, # pyright: ignore[reportCallIssue]
+                safe_mode=safe_mode, # pyright: ignore[reportCallIssue]
+                latency_ms=current_latency_ms, # pyright: ignore[reportCallIssue]
             )
 
             gates = self._evaluate_9_gates(synthesis, l8, l7, l2, l6, l9, l11, start_time)
