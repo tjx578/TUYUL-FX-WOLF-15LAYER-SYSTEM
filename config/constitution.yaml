@@ -131,14 +131,57 @@ position:
     "1": 0.3
     "0": 0.0
 
-# ── Dynamic Position Sizing (Kelly+CVaR Hybrid) ─────────────────────────────
+# ══════════════════════════════════════════════════════════════════════════════
+# DYNAMIC POSITION SIZING (Kelly + CVaR Hybrid)
+# ══════════════════════════════════════════════════════════════════════════════
+# Authority: engines/dynamic_position_sizing_engine.py
+# Feeds into: L10 Position Analyzer → L12 Verdict Engine
+# Does NOT execute trades or override L12 verdict.
 position_sizing:
-  max_kelly_risk_cap: 0.03          # 3% absolute max risk per trade
-  kelly_fraction_multiplier: 0.5    # Half-Kelly (conservative institutional)
-  cvar_confidence: 0.95             # 95% CVaR confidence level
-  cvar_sensitivity: 5.0             # CVaR dampening coefficient
-  min_returns_history: 10           # Minimum trade history for CVaR
-  enable_dynamic_sizing: true       # Master switch for Kelly hybrid
+  # Absolute maximum risk per trade (fraction of equity)
+  # This is the hard ceiling — dynamic sizing can only go LOWER.
+  max_kelly_risk_cap: 0.03            # 3% max (prop-firm safe)
+
+  # Fraction of full Kelly to use (1.0 = full, 0.5 = half-Kelly)
+  # Half-Kelly is standard institutional practice for finite-sample safety.
+  kelly_fraction_multiplier: 0.5
+
+  # CVaR (Expected Shortfall) confidence level
+  cvar_confidence: 0.95               # 95% → 5th percentile tail
+
+  # CVaR dampening sensitivity (higher = more tail-risk reduction)
+  cvar_sensitivity: 5.0
+
+  # Minimum trade history for CVaR computation
+  min_returns_history: 10
+
+  # Master switch: enable dynamic Kelly-based sizing
+  # When false, system uses static max_risk_percent from risk_manager.
+  enable_dynamic_sizing: true
+
+# ══════════════════════════════════════════════════════════════════════════════
+# GATE 11: KELLY EDGE GATE (Constitutional Safety)
+# ══════════════════════════════════════════════════════════════════════════════
+# When enabled, Layer-12 will REJECT any trade where the Kelly criterion
+# indicates no statistical edge (Kelly raw ≤ 0).
+# This is a mathematical safety gate, not a market opinion.
+kelly_edge_gate:
+  enabled: true                        # Set false to disable Gate 11
+
+# ══════════════════════════════════════════════════════════════════════════════
+# RISK MULTIPLIER AGGREGATION
+# ══════════════════════════════════════════════════════════════════════════════
+# Composite multiplier = product of all source multipliers, clamped.
+# Higher composite → DynamicPSE divides position size by this amount.
+risk_multiplier:
+  floor: 0.1                           # Minimum composite (10% of base)
+  cap: 3.0                             # Maximum composite (300% of base)
+  sources:
+    - macro_volatility                  # VIX regime state
+    - session_quality                   # Time-of-day favorability
+    - regime_classifier                 # Hurst-based regime
+    - volatility_clustering             # GARCH-style persistence
+    - correlation_risk                  # Multi-pair exposure
 
 # ===================================================================
 # L13 — Meta Authority

@@ -205,10 +205,20 @@ def generate_l12_verdict(synthesis: dict[str, Any]) -> dict[str, Any]:  # noqa: 
 
 
 class VerdictEngine:
-    """Layer-12 Constitutional Verdict Engine.
+    """Layer-12 Constitutional Verdict Engine — sole decision authority.
 
-    SOLE DECISION AUTHORITY. All other layers are advisory.
+    Enhancement (Tier 2):
+        ✅ Gate 11: Kelly Edge Gate (optional, enabled via config)
+        When DynamicPositionSizingEngine reports edge_negative=True,
+        verdict is forced to NO_TRADE regardless of other gate scores.
+        This is a CONSTITUTIONAL SAFETY gate, not a market opinion.
     """
+
+    def __init__(self, config: dict | None = None) -> None:
+        self._config = config or {}
+        self._kelly_gate_enabled = self._config.get(
+            "kelly_edge_gate_enabled", False
+        )
 
     def _extract_l7_probability_metrics(
         self, layer_results: dict[str, Any]
@@ -364,3 +374,85 @@ class VerdictEngine:
         # ...existing code...
 
         return verdict  # pyright: ignore[reportUndefinedVariable] # noqa: F821
+
+    def evaluate(
+        self,
+        gate_scores: dict,
+        kelly_edge_data: dict | None = None,
+        # ...existing parameters...
+    ) -> dict: # pyright: ignore[reportReturnType]
+        """Evaluate all constitutional gates and produce verdict.
+
+        Args:
+            gate_scores: Dict of gate_name → score/pass from L1–L11.
+            kelly_edge_data: Optional dict from DynamicPositionSizingEngine.
+                Expected keys: {"edge_negative": bool, "kelly_raw": float,
+                                "final_fraction": float}
+                If None, Gate 11 is skipped (backward-compatible).
+            ...existing parameters...
+
+        Returns:
+            Verdict dict with 'verdict', 'confidence', 'gate_results', etc.
+        """
+        gate_results = {}
+        violations = []
+
+        # ...existing code... (gates 1-10 processing)
+
+        # ── Gate 11: Kelly Edge Gate (Optional) ──────────────────────
+        if self._kelly_gate_enabled and kelly_edge_data is not None:
+            gate_11 = self._evaluate_kelly_edge_gate(kelly_edge_data)
+            gate_results["gate_11_kelly_edge"] = gate_11
+            if not gate_11["passed"]:
+                violations.append("GATE_11_KELLY_NO_EDGE")
+
+        # ...existing code... (verdict determination logic)
+
+        # If any gate has a hard violation, verdict is NO_TRADE
+        # ...existing code...
+
+    def _evaluate_kelly_edge_gate(self, kelly_edge_data: dict) -> dict:
+        """Gate 11: Kelly Edge Verification.
+
+        Constitutional safety gate that prevents trading when the
+        DynamicPositionSizingEngine determines there is no statistical
+        edge (Kelly fraction ≤ 0).
+
+        This is NOT a market opinion — it's a mathematical statement:
+        "Given the observed win rate and payoff ratio, risking capital
+        has negative expected geometric growth."
+
+        Args:
+            kelly_edge_data: Must contain at minimum:
+                - edge_negative (bool): True if Kelly raw ≤ 0
+                - kelly_raw (float): Raw Kelly fraction
+
+        Returns:
+            Gate result dict with passed, reason, and diagnostics.
+        """
+        edge_negative = kelly_edge_data.get("edge_negative", False)
+        kelly_raw = kelly_edge_data.get("kelly_raw", 0.0)
+        final_fraction = kelly_edge_data.get("final_fraction", 0.0)
+
+        if edge_negative:
+            return {
+                "passed": False,
+                "gate": "GATE_11_KELLY_EDGE",
+                "reason": (
+                    f"No statistical edge detected. "
+                    f"Kelly raw = {kelly_raw:.4f} (negative). "
+                    f"Trading would produce negative geometric growth."
+                ),
+                "kelly_raw": kelly_raw,
+                "final_fraction": final_fraction,
+                "severity": "HARD_BLOCK",
+            }
+
+        return {
+            "passed": True,
+            "gate": "GATE_11_KELLY_EDGE",
+            "reason": f"Kelly edge confirmed: raw = {kelly_raw:.4f}",
+            "kelly_raw": kelly_raw,
+            "final_fraction": final_fraction,
+            "severity": "NONE",
+        }
