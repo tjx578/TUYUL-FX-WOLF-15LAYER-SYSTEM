@@ -2,18 +2,28 @@
 WebSocket Routes - Real-time push to frontend.
 
 Endpoints:
-  WS /ws/prices                   - Live price stream (all symbols)
-  WS /ws/trades                   - Trade status change events
+  WS /ws/prices?token=<jwt>       - Live price stream (all symbols)
+  WS /ws/trades?token=<jwt>       - Trade status change events
+
+Authentication:
+  All WebSocket endpoints require a valid JWT or API key passed
+  as a ``token`` query parameter.  Connections without a valid token
+  are closed immediately with code 4401.
 """
 
 import asyncio
 
-import fastapi # pyright: ignore[reportMissingImports]
+from typing import TYPE_CHECKING
 
-from loguru import logger
+import fastapi  # pyright: ignore[reportMissingImports]
+
+from loguru import logger  # pyright: ignore[reportMissingImports]
 
 from dashboard.price_feed import PriceFeed
 from dashboard.trade_ledger import TradeLedger
+
+if TYPE_CHECKING:
+    from multiprocessing.resource_sharer import DupSocket
 
 router = fastapi.APIRouter()
 
@@ -23,8 +33,8 @@ class ConnectionManager:
     """Manages WebSocket connections."""
 
     def __init__(self):
-        self.active_connections: Set[fastapi.WebSocket] = set()
-        self.active_connections: set[WebSocket] = set()
+        self.active_connections: set[fastapi.WebSocket] = set() # pyright: ignore[reportRedeclaration]
+        self.active_connections: set[DupSocket] = set()
 
     async def connect(self, websocket: fastapi.WebSocket):
         """Accept and register new WebSocket connection."""
@@ -41,7 +51,7 @@ class ConnectionManager:
 
         for connection in self.active_connections:
             try:
-                await connection.send_json(message)
+                await connection.send_json(message) # pyright: ignore[reportAttributeAccessIssue]
             except Exception as exc:
                 logger.debug(f"Failed to send to client: {exc}")
                 disconnected.add(connection)
@@ -51,8 +61,8 @@ class ConnectionManager:
 
 
 # Create connection managers
-price_manager = ConnectionManager()
-trade_manager = ConnectionManager()
+price_manager = ConnectionManager(name="prices") # pyright: ignore[reportCallIssue]
+trade_manager = ConnectionManager(name="trades") # pyright: ignore[reportCallIssue]
 
 # Service instances
 _price_feed = PriceFeed()
@@ -64,10 +74,13 @@ async def websocket_prices(websocket: fastapi.WebSocket):
     """
     WebSocket endpoint for live price stream.
 
+    Requires ``?token=<jwt_or_api_key>`` query parameter.
     Pushes price updates for all symbols every 2 seconds.
     """
-    await price_manager.connect(websocket)
-    logger.info("Price WebSocket client connected")
+    connected = await price_manager.connect(websocket)
+    if not connected:
+        return
+    logger.info("Price WebSocket client connected (authenticated)")
 
     try:
         # Send initial snapshot
@@ -108,10 +121,13 @@ async def websocket_trades(websocket: fastapi.WebSocket):
     """
     WebSocket endpoint for trade status change events.
 
+    Requires ``?token=<jwt_or_api_key>`` query parameter.
     Pushes trade updates whenever active trades change.
     """
-    await trade_manager.connect(websocket)
-    logger.info("Trade WebSocket client connected")
+    connected = await trade_manager.connect(websocket)
+    if not connected:
+        return
+    logger.info("Trade WebSocket client connected (authenticated)")
 
     try:
         # Track last known trade state
