@@ -31,36 +31,11 @@ from dashboard.backend.schemas import (
 from propfirm_manager.profile_manager import PropFirmManager
 
 
-def _drawdown_multiplier(dd_fraction: float) -> float:
-    """Compute risk reduction multiplier based on drawdown level.
-
-    This is a dashboard-level scaling function (account/risk governance).
-    It reduces risk as drawdown deepens, protecting from blow-up.
-
-    Parameters
-    ----------
-    dd_fraction : float
-        Total drawdown as a fraction (0.0 = no DD, 0.10 = 10% DD).
-
-    Returns
-    -------
-    float
-        Multiplier in (0.0, 1.0] -- applied to base risk_percent.
-        At 0% DD -> 1.0 (full risk), at 10%+ DD -> 0.25 (quarter risk).
-    """
-    dd = max(0.0, min(dd_fraction, 1.0))
-    if dd < 0.03:
-        return 1.0       # 0-3%  DD: full risk
-    if dd < 0.05:
-        return 0.75      # 3-5%  DD: reduce by 25%
-    if dd < 0.08:
-        return 0.50      # 5-8%  DD: half risk
-    if dd < 0.10:
-        return 0.35      # 8-10% DD: heavy reduction
-    return 0.25           # 10%+  DD: survival mode
+def _drawdown_multiplier(dd_level: float) -> float:
+    raise NotImplementedError
 
 
-class RiskEngine:
+class RiskMultiplierAggregator:
     """
     Risk and lot size calculator with prop firm validation.
 
@@ -242,3 +217,10 @@ class RiskEngine:
             multiplier = 10_000.0
 
         return distance * multiplier
+
+
+# ------------------------------------------------------------------
+# Backward Compatibility Alias
+# ------------------------------------------------------------------
+# Legacy name used by dashboard
+RiskMultiplier = RiskMultiplierAggregator
