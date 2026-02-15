@@ -842,6 +842,7 @@ class WolfConstitutionalPipeline:
         # OLD (placeholder):
         #   feed_freshness = 1.0
         #   redis_health = 1.0
+        #
         # NEW:
         from core.vault_health import VaultHealthChecker  # noqa: PLC0415
 
