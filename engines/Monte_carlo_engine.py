@@ -30,16 +30,13 @@ class MonteCarloResult:
     simulations: int
     passed_threshold: bool
 
-    def to_dict(self) -> dict[str, object]:
-        return {
-            "win_probability": self.win_probability,
-            "expected_value": self.expected_value,
-            "profit_factor": self.profit_factor,
-            "risk_of_ruin": self.risk_of_ruin,
-            "max_drawdown_mean": self.max_drawdown_mean,
-            "simulations": self.simulations,
-            "passed_threshold": self.passed_threshold,
-        }
+    # ------------------------------------------------------------
+    # Backward Compatibility Alias
+    # ------------------------------------------------------------
+
+    @property
+    def passed(self):
+        return self.passed_threshold
 
 
 class MonteCarloEngine:
