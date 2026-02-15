@@ -110,6 +110,8 @@ __all__ = [
     "AdvisorySignal",
     "AdvisorySummary",
     "BayesianProbabilityEngine", # type: ignore
+    "BayesianProbabilityEngine", # type: ignore
+    "BayesianResult", # type: ignore
     "BayesianResult", # type: ignore
     "CognitiveCoherence",
     # Cognitive engines
@@ -124,7 +126,12 @@ __all__ = [
     "ContextResult",
     # Correlation
     "CorrelationRiskEngine", # pyright: ignore[reportUnsupportedDunderAll]
+    # Correlation
+    "CorrelationRiskEngine", # pyright: ignore[reportUnsupportedDunderAll]
     "CorrelationRiskResult", # pyright: ignore[reportUnsupportedDunderAll]
+    "CorrelationRiskResult", # pyright: ignore[reportUnsupportedDunderAll]
+    # Dynamic Position Sizing
+    "DynamicPositionSizingEngine", # pyright: ignore[reportUnsupportedDunderAll]
     "FieldResult",
     # Fusion types
     "FusionMomentum",
@@ -144,7 +151,11 @@ __all__ = [
     "MomentumResult",
     # Probability engines (Layer 7)
     "MonteCarloEngine", # pyright: ignore[reportUnsupportedDunderAll]
+    # Probability
+    "MonteCarloEngine", # pyright: ignore[reportUnsupportedDunderAll]
     "MonteCarloResult", # pyright: ignore[reportUnsupportedDunderAll]
+    "MonteCarloResult", # pyright: ignore[reportUnsupportedDunderAll]
+    "PositionSizingResult", # pyright: ignore[reportUnsupportedDunderAll]
     "PrecisionResult",
     "ProbabilityResult",
     # Quantum engines
@@ -153,6 +164,9 @@ __all__ = [
     "QuantumProbabilityEngine",
     "ReflexState",
     "RegimeClassification", # pyright: ignore[reportUnsupportedDunderAll]
+    "RegimeClassification", # pyright: ignore[reportUnsupportedDunderAll]
+    # Regime
+    "RegimeClassifier", # pyright: ignore[reportUnsupportedDunderAll]
     # Regime
     "RegimeClassifier", # pyright: ignore[reportUnsupportedDunderAll]
     "RiskPosture",
@@ -160,11 +174,17 @@ __all__ = [
     "StructureResult",
     "StructureState",
     "VolatilityClusterResult", # pyright: ignore[reportUnsupportedDunderAll]
+    "VolatilityClusterResult", # pyright: ignore[reportUnsupportedDunderAll]
+    # Volatility Clustering
+    "VolatilityClusteringModel", # pyright: ignore[reportUnsupportedDunderAll]
     # Volatility Clustering
     "VolatilityClusteringModel", # pyright: ignore[reportUnsupportedDunderAll]
     "WalkForwardResult", # pyright: ignore[reportUnsupportedDunderAll]
+    "WalkForwardResult", # pyright: ignore[reportUnsupportedDunderAll]
     # Walk-Forward
     "WalkForwardValidator", # pyright: ignore[reportUnsupportedDunderAll]
+    # Walk-Forward
+    "WalkForwardValidator", # type: ignore
     # Factory
     "create_engine_suite",
 ]
