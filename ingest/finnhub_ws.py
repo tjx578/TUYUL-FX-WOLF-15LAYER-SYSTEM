@@ -259,16 +259,19 @@ class FinnhubWebSocket:
                 ConnectionClosedError,
                 ConnectionError,
                 OSError,
-            ):
+            ) as exc:
                 self._attempt += 1
                 backoff = _calculate_backoff(self._attempt)
                 logger.warning(
                     "Finnhub WS connection error (retryable)",
                     extra={
+                        "error": str(exc),
+                        "error_type": type(exc).__name__,
                         "backoff_s": backoff,
                         "attempt": self._attempt,
                         "replica_id": self._replica_id,
                     },
+                    exc_info=self._attempt <= 3,  # full traceback only on first few attempts
                 )
                 await asyncio.sleep(backoff)
 
