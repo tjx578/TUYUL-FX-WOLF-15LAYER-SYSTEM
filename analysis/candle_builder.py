@@ -18,8 +18,8 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import Enum
 from typing import TYPE_CHECKING, Optional
-from urllib import parse, request
-from urllib.error import URLError
+
+import requests  # module-level so tests can patch analysis.candle_builder.requests
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -348,10 +348,13 @@ class RESTCandleFetcher:
         )
 
         try:
-            query_string = parse.urlencode(params)
-            url = f"{self.FINNHUB_CANDLE_URL}?{query_string}"
-            resp = request.urlopen(url, timeout=15)  # noqa: S310
-        except URLError as exc:
+            resp = requests.get(
+                self.FINNHUB_CANDLE_URL,
+                params=params,
+                timeout=15,
+            )
+            resp.raise_for_status()
+        except Exception as exc:
             raise RuntimeError(
                 f"Finnhub REST request failed for {symbol} {timeframe.value}: {exc}"
             ) from exc
