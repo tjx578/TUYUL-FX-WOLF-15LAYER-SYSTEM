@@ -1,7 +1,6 @@
 """
-MT5 Bridge — dumb execution relay.
+MT5 Bridge — dumb execution relay via file-based protocol.
 Receives execution commands from dashboard (after L12 verdict + risk check).
-Places orders on MT5. Reports back.
 ZERO intelligence. ZERO market analysis. ZERO overrides.
 """
 
@@ -12,17 +11,9 @@ import logging
 import time
 
 from dataclasses import asdict, dataclass
-from enum import Enum
 from pathlib import Path
 
 logger = logging.getLogger("tuyul.ea.mt5_bridge")
-
-
-class BridgeMode(Enum):
-    """How the bridge communicates with MT5."""
-    FILE_BASED = "FILE_BASED"    # Write JSON files that EA polls (safest, most compatible)
-    SOCKET = "SOCKET"             # TCP/Named pipe (lower latency, more complex)
-    # MT5_PYTHON = "MT5_PYTHON"   # Direct MetaTrader5 Python lib (Windows only)
 
 
 @dataclass
@@ -35,13 +26,13 @@ class ExecutionCommand:
     entry_price: float
     stop_loss: float
     take_profit: float
-    lot_size: float         # FROM dashboard risk calculator, NOT from analysis
+    lot_size: float         # FROM dashboard risk calculator only
     magic_number: int = 151515
     comment: str = "TUYUL-FX"
     expiry_seconds: float = 300.0
     timestamp: float = 0.0
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         if self.timestamp == 0.0:
             self.timestamp = time.time()
 
@@ -57,7 +48,7 @@ class ExecutionReport:
     error_message: str | None = None
     timestamp: float = 0.0
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         if self.timestamp == 0.0:
             self.timestamp = time.time()
 
@@ -65,18 +56,10 @@ class ExecutionReport:
 class FileBasedMT5Bridge:
     """
     File-based bridge for MT5 EA communication.
-
-    Protocol:
-    1. Python writes command JSON to `commands/` directory
-    2. MT5 EA polls `commands/`, reads, executes, deletes
-    3. MT5 EA writes result JSON to `reports/` directory
-    4. Python polls `reports/`, reads, processes, archives
-
-    This is the SAFEST approach — works on all MT5 setups,
-    no DLL imports needed in EA, no network config.
+    Python writes command JSON → EA polls, executes, writes report → Python reads.
     """
 
-    def __init__(self, bridge_dir: str | Path):
+    def __init__(self, bridge_dir: str | Path) -> None:
         self._bridge_dir = Path(bridge_dir)
         self._commands_dir = self._bridge_dir / "commands"
         self._reports_dir = self._bridge_dir / "reports"
@@ -88,33 +71,25 @@ class FileBasedMT5Bridge:
             d.mkdir(parents=True, exist_ok=True)
 
     def send_command(self, command: ExecutionCommand) -> bool:
-        """
-        Write execution command as JSON file for EA to pick up.
-        Returns True if file was written successfully.
-        """
+        """Write execution command as JSON file for EA to pick up."""
         filename = f"{command.signal_id}_{int(command.timestamp)}.json"
         filepath = self._commands_dir / filename
-
         try:
             payload = asdict(command)
             filepath.write_text(json.dumps(payload, indent=2), encoding="utf-8")
             logger.info(
-                f"Command sent: {command.signal_id} | "
-                f"{command.symbol} {command.direction} {command.order_type} | "
-                f"lot={command.lot_size} entry={command.entry_price}"
+                "Command sent: %s | %s %s %s | lot=%.2f entry=%.5f",
+                command.signal_id, command.symbol, command.direction,
+                command.order_type, command.lot_size, command.entry_price,
             )
             return True
         except Exception as e:
-            logger.error(f"Failed to write command {command.signal_id}: {e}")
+            logger.error("Failed to write command %s: %s", command.signal_id, e)
             return False
 
     def poll_reports(self) -> list[ExecutionReport]:
-        """
-        Read all pending execution reports from EA.
-        Archives processed report files.
-        """
+        """Read all pending execution reports from EA."""
         reports: list[ExecutionReport] = []
-
         for filepath in self._reports_dir.glob("*.json"):
             try:
                 data = json.loads(filepath.read_text(encoding="utf-8"))
@@ -128,36 +103,25 @@ class FileBasedMT5Bridge:
                     timestamp=data.get("timestamp", time.time()),
                 )
                 reports.append(report)
-
-                # Archive
                 archive_path = self._archive_dir / filepath.name
                 filepath.rename(archive_path)
-
                 logger.info(
-                    f"Report received: {report.signal_id} | "
-                    f"event={report.event} | ticket={report.broker_ticket}"
+                    "Report received: %s | event=%s | ticket=%s",
+                    report.signal_id, report.event, report.broker_ticket,
                 )
             except Exception as e:
-                logger.error(f"Failed to parse report {filepath}: {e}")
-
+                logger.error("Failed to parse report %s: %s", filepath, e)
         return reports
-
-    def get_pending_commands(self) -> list[str]:
-        """List signal IDs of commands not yet picked up by EA."""
-        return [
-            f.stem.split("_")[0]
-            for f in self._commands_dir.glob("*.json")
-        ]
 
     def cancel_command(self, signal_id: str) -> bool:
         """Remove a pending command before EA picks it up."""
         for filepath in self._commands_dir.glob(f"{signal_id}_*.json"):
             try:
                 filepath.unlink()
-                logger.info(f"Command cancelled: {signal_id}")
+                logger.info("Command cancelled: %s", signal_id)
                 return True
             except Exception as e:
-                logger.error(f"Failed to cancel command {signal_id}: {e}")
+                logger.error("Failed to cancel %s: %s", signal_id, e)
         return False
 
     def health_check(self) -> dict:
