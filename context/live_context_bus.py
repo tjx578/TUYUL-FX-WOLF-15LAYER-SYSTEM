@@ -402,13 +402,12 @@ class LiveContextBus:
 
     def get_last_tick_time(self, symbol: str) -> float | None:
         """
-        Get the Unix timestamp of the most recent tick for a symbol.
-        Returns None if no tick has been received yet.
+        Get Unix timestamp of most recent tick for a symbol.
         Used by VaultHealthChecker for feed freshness monitoring.
         """
         key = f"tuyul:tick:last_time:{symbol}"
         try:
-            val = self._redis.get(key) # pyright: ignore[reportAttributeAccessIssue]
+            val = self._redis.get(key) # pyright: ignore[reportAttributeAccessIssue] # pyright: ignore[reportAttributeAccessIssue]
             if val is None:
                 return None
             return float(val)
@@ -416,11 +415,9 @@ class LiveContextBus:
             return None
 
     def update_last_tick_time(self, symbol: str, timestamp: float) -> None:
-        """
-        Called by ingest/candle_builder when a new tick arrives.
-        """
+        """Called by ingest when a new tick arrives."""
         key = f"tuyul:tick:last_time:{symbol}"
         try:
-            self._redis.set(key, str(timestamp), ex=60)  # pyright: ignore[reportAttributeAccessIssue] # 60s TTL auto-cleanup
+            self._redis.set(key, str(timestamp), ex=60) # pyright: ignore[reportAttributeAccessIssue]
         except Exception:
             pass
