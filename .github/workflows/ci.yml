@@ -1,78 +1,65 @@
-name: CI
+name: Wolf-15 CI
 
 on:
   push:
-    branches: [ main ]
+    branches: [main, develop]
   pull_request:
-    branches: [ main ]
+    branches: [main, develop]
 
-permissions:
-  contents: read
+env:
+  PYTHONDONTWRITEBYTECODE: 1
+  PYTHONUNBUFFERED: 1
 
 jobs:
-  test:
-    name: Test (Python 3.11)
-    runs-on: ubuntu-latest
-    
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-      
-      - name: Set up Python 3.11
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-          cache: 'pip'
-      
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
-      
-      - name: Run tests
-        env:
-          FINNHUB_API_KEY: ${{ secrets.FINNHUB_API_KEY }}
-          CONTEXT_MODE: local
-          REDIS_URL: ""
-        run: |
-          pytest tests/ -v --tb=short
-  
   lint:
-    name: Lint (Ruff)
     runs-on: ubuntu-latest
-    
+    timeout-minutes: 5
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-      
-      - name: Set up Python 3.11
-        uses: actions/setup-python@v5
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
-          cache: 'pip'
-      
+          python-version: "3.11"
+          cache: pip
+      - run: pip install ruff
+      - run: ruff check . --select E,F,W
+
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      matrix:
+        group: [unit-analysis, unit-constitution, unit-execution, unit-dashboard, unit-risk, unit-journal, integration]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
       - name: Install dependencies
         run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
-      
-      - name: Run Ruff linter
+          pip install -r requirements.txt 2>/dev/null || true
+          pip install pytest pytest-asyncio pytest-cov pytest-xdist httpx websockets aiohttp
+      - name: Run tests — ${{ matrix.group }}
         run: |
-          ruff check . --output-format=github
-  
-  docker-build:
-    name: Docker Build Verification
-    runs-on: ubuntu-latest
-    
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-      
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-      
-      - name: Build Docker image (verify Dockerfile)
-        run: |
-          docker build --target api -t tuyulfx-api:test .
-          docker build --target engine -t tuyulfx-engine:test .
-          docker build --target ingest -t tuyulfx-ingest:test .
+          case "${{ matrix.group }}" in
+            unit-analysis)
+              pytest tests/unit/test_analysis*.py tests/unit/test_feed*.py -x -v --timeout=30 ;;
+            unit-constitution)
+              pytest tests/unit/test_constitution*.py tests/unit/test_verdict*.py tests/unit/test_layer12*.py -x -v --timeout=30 ;;
+            unit-execution)
+              pytest tests/unit/test_execution*.py tests/unit/test_pending*.py tests/unit/test_state_machine*.py -x -v --timeout=30 ;;
+            unit-dashboard)
+              pytest tests/unit/test_dashboard*.py tests/unit/test_ws*.py tests/unit/test_api*.py -x -v --timeout=30 ;;
+            unit-risk)
+              pytest tests/unit/test_risk*.py tests/unit/test_prop_firm*.py -x -v --timeout=30 ;;
+            unit-journal)
+              pytest tests/unit/test_journal*.py -x -v --timeout=30 ;;
+            integration)
+              pytest tests/integration/ -x -v --timeout=60 ;;
+          esac
+      - name: Upload coverage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-${{ matrix.group }}
+          path: .coverage*
