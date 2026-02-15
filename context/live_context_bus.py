@@ -16,7 +16,7 @@ from collections import defaultdict, deque
 from threading import Lock
 from typing import TYPE_CHECKING
 
-from loguru import logger
+from loguru import logger  # pyright: ignore[reportMissingImports]
 
 from config.constants import get_threshold
 from context.context_validator import ContextValidator
@@ -70,7 +70,7 @@ class LiveContextBus:
         if self._mode == "redis":
             try:
                 # Lazy import to avoid circular dependency
-                from context.redis_context_bridge import RedisContextBridge
+                from context.redis_context_bridge import RedisContextBridge  # noqa: PLC0415
 
                 self._redis_bridge = RedisContextBridge()
                 logger.info("LiveContextBus initialized in REDIS mode")
@@ -399,3 +399,28 @@ class LiveContextBus:
                 "H1": len(self._candle_history.get(symbol, {}).get("H1", deque())),
                 "M15": len(self._candle_history.get(symbol, {}).get("M15", deque())),
             }
+
+    def get_last_tick_time(self, symbol: str) -> float | None:
+        """
+        Get the Unix timestamp of the most recent tick for a symbol.
+        Returns None if no tick has been received yet.
+        Used by VaultHealthChecker for feed freshness monitoring.
+        """
+        key = f"tuyul:tick:last_time:{symbol}"
+        try:
+            val = self._redis.get(key) # pyright: ignore[reportAttributeAccessIssue]
+            if val is None:
+                return None
+            return float(val)
+        except Exception:
+            return None
+
+    def update_last_tick_time(self, symbol: str, timestamp: float) -> None:
+        """
+        Called by ingest/candle_builder when a new tick arrives.
+        """
+        key = f"tuyul:tick:last_time:{symbol}"
+        try:
+            self._redis.set(key, str(timestamp), ex=60)  # pyright: ignore[reportAttributeAccessIssue] # 60s TTL auto-cleanup
+        except Exception:
+            pass
