@@ -2,9 +2,12 @@
 Test L5 Psychology layer
 """
 
-import pytest
+import pytest  # pyright: ignore[reportMissingImports]
 
-from analysis.layers.L5_psychology import L5PsychologyAnalyzer
+from analysis.layers.L5_psychology import (  # pyright: ignore[reportMissingImports]
+    L5PsychologyAnalyzer,  # pyright: ignore[reportMissingImports]
+)
+
 from context.runtime_state import RuntimeState
 
 
