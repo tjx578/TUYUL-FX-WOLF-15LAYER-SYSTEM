@@ -91,7 +91,6 @@ NEXT_PUBLIC_APP_NAME="TUYUL FX WOLF 15-LAYER"
 
 ## Project Structure
 
-```
 dashboard/nextjs/
 ├── src/
 │   ├── app/              # Next.js App Router
@@ -116,7 +115,6 @@ dashboard/nextjs/
 ├── tsconfig.json         # TypeScript configuration
 ├── package.json          # Dependencies
 └── README.md             # This file
-```
 
 ## API Endpoints Required
 
@@ -134,8 +132,6 @@ The dashboard expects these FastAPI endpoints:
 ### Response Formats
 
 See `src/types/index.ts` for TypeScript type definitions matching expected API responses.
-
-## Development
 
 ### Adding New Components
 
@@ -241,5 +237,3 @@ npm run dev
 Part of TUYUL FX WOLF 15-LAYER SYSTEM
 
 ---
-
-**Happy Trading! 🐺**
