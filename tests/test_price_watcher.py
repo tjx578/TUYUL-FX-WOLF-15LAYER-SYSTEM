@@ -14,7 +14,7 @@ from unittest.mock import patch
 import pytest  # pyright: ignore[reportMissingImports]
 
 from dashboard.price_watcher import PriceWatcher
-from schemas.trade_models import CloseReason, Trade, TradeLeg, TradeStatus
+from schemas.trade_models import CloseReason, RiskMode, Trade, TradeLeg, TradeStatus
 from utils.timezone_utils import now_utc
 
 
@@ -64,7 +64,7 @@ def create_test_trade(
         pair=pair,
         direction=direction,
         status=status,
-        risk_mode="FIXED",
+        risk_mode=RiskMode.FIXED,
         total_risk_percent=2.0,
         total_risk_amount=2000.0,
         legs=[
