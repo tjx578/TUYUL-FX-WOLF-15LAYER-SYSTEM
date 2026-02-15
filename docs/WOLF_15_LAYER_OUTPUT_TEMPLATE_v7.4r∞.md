@@ -37,7 +37,7 @@ AUTHORITY:
 ## 15-LAYER PIPELINE STRUCTURE
 
 | Zona | Layers | Purpose | Core Modules |
-|------|--------|---------|-------------|
+| --- | --- | --- | --- |
 | Perception & Context | L1-L3 | Market context, MTA hierarchy, Technical deep dive | Cognitive + Fusion + Quantum |
 | Confluence & Scoring | L4-L6 | Wolf 30-Point, Psychology gates, Risk management | Reflective + Fusion + Cognitive |
 | Probability & Validation | L7-L9 | Monte Carlo, TIIₛᵧₘ, SMC integration | Fusion + Quantum + Reflective |
@@ -47,6 +47,7 @@ AUTHORITY:
 ## COMPONENT-TO-LAYER QUICK REFERENCE
 
 ### core_cognitive_unified.py
+
 - RegimeClassifier          → L1  (Market Context)
 - ReflexEmotionCore         → L2  (MTA Reflex)
 - TWMSCalculator            → L3  (Technical) + L8 (TII)
@@ -57,6 +58,7 @@ AUTHORITY:
 - AdaptiveRiskCalculator    → L10 (Position Sizing)
 
 ### core_fusion_unified.py
+
 - FusionIntegrator          → L2  (Fusion Sync) + L12 (Integration)
 - MonteCarloConfidence      → L2  (CONF12) + L7 (Probability)
 - FTTCMonteCarloEngine      → L7  (Monte Carlo)
@@ -67,6 +69,7 @@ AUTHORITY:
 - VolumeProfileAnalyzer     → L9  (SMC Volume)
 
 ### core_quantum_unified.py
+
 - TRQ3DEngine               → L3  (TRQ-3D PreMove)
 - ConfidenceMultiplier      → L8  (TII) + L10 (Sizing)
 - QuantumDecisionEngine     → L12 (SOLE AUTHORITY)
@@ -75,6 +78,7 @@ AUTHORITY:
 - QuantumScenarioMatrix     → L11 (4 Battle Strategies)
 
 ### core_reflective_unified.py
+
 - AdaptiveTIIThresholds     → L8  (TII Classification)
 - algo_precision_engine     → L8  (TII Computation)
 - FRPCEngine                → L2  (Fusion Sync) + L13 (FRPC)
@@ -87,7 +91,7 @@ AUTHORITY:
 ## 9-GATE CONSTITUTIONAL CHECK
 
 | Gate | Metric | Target | Source |
-|------|--------|--------|--------|
+| --- | --- | --- | --- |
 | 1 | TIIₛᵧₘ | ≥ 0.93 | core_reflective_unified → algo_precision_engine |
 | 2 | Monte Carlo Win% | ≥ 60% | core_fusion_unified → FTTCMonteCarloEngine |
 | 3 | FRPC State | = SYNC | core_reflective_unified → FRPCEngine |
@@ -101,6 +105,7 @@ AUTHORITY:
 ## LAYER PRIORITY & IMPLEMENTATION GUIDE
 
 | Priority | Layers | Purpose | Critical Modules |
+
 |----------|--------|---------|-----------------|
 | CRITICAL | L8, L12 | TII Gate + Constitutional Decision | core_reflective, core_quantum |
 | HIGH | L4, L7, L11 | Scoring + Monte Carlo + RR + Battle Strategy | core_fusion, core_quantum |
@@ -108,6 +113,7 @@ AUTHORITY:
 | REFLECTIVE | L13-L15 | Meta Synthesis + Execution + Unity | core_reflective |
 
 ---
+
 ## 🔒 CONSTITUTIONAL NOTICE
 
 This document is a **REFERENCE TEMPLATE ONLY**.
@@ -122,9 +128,77 @@ If any discrepancy exists between this document and code:
 ➡️ **CODE + CONSTITUTION WINS**
 
 Status:
+
 - Version: v7.4r∞
 - Structure: LOCKED
 - Modules: 4 Core Unified (Cognitive, Fusion, Quantum, Reflective)
 - Layers: 15 (L1-L15)
 - Usage: REFERENCE ONLY
----
+
+## Layer 7 — Monte Carlo FTTC Probability Validation
+
+## Overview
+
+L7 is the **probability gate** in the Wolf-15 analysis pipeline. It runs:
+
+1. **Monte Carlo Bootstrap Simulation** (`engines/monte_carlo_engine.py`)
+   - Resamples historical trade returns to estimate win probability, profit factor,
+     risk of ruin, expected value, and max drawdown.
+   - Requires ≥ 30 historical trades.
+
+2. **Bayesian Probability Update** (`engines/bayesian_update_engine.py`)
+   - Maintains a Beta-distributed belief about win probability.
+   - Updates with evidence from upstream technical score.
+
+3. **CONF12 Enrichment** (optional, from `core.core_fusion_unified.MonteCarloConfidence`)
+   - Computes raw confidence score used by Layer-12 constitution.
+
+## Gate Logic
+
+| Condition                               | Result        |
+
+| --- | --- |
+| Win% ≥ 60% **AND** PF ≥ 1.5            | **PASS**      |
+| Win% ≥ 50% **AND** PF ≥ 1.2            | **CONDITIONAL** |
+| Otherwise                               | **FAIL**      |
+
+## Output Schema
+
+```json
+{
+  "symbol": "EURUSD",
+  "win_probability": 65.2,
+  "profit_factor": 1.87,
+  "conf12_raw": 0.9345,
+  "max_drawdown": 342.50,
+  "validation": "PASS",
+  "valid": true,
+  "bayesian_posterior": 0.6812,
+  "bayesian_ci_low": 0.5934,
+  "bayesian_ci_high": 0.7621,
+  "risk_of_ruin": 0.0120,
+  "expected_value": 1523.40,
+  "mc_passed_threshold": true
+}
+```
+
+## L12 Synthesis Enrichment
+
+The following Bayesian fields are propagated into `build_l12_synthesis()`:
+
+- `bayesian_posterior` — posterior win probability
+- `bayesian_ci_low` / `bayesian_ci_high` — 90% credible interval
+- `mc_passed_threshold` — whether MC gate passed
+- `risk_of_ruin` — probability of > 20% capital loss
+- `l7_validation` — PASS / CONDITIONAL / FAIL
+
+## Authority Boundary
+
+L7 is **analysis-only**. It produces candidates and metrics but has **no execution
+authority**. The Layer-12 Constitution is the sole decision authority.
+
+## Running Tests
+
+```bash
+pytest tests/test_monte_carlo_engine.py tests/test_bayesian_update_engine.py tests/test_l7_probability.py -v
+```
