@@ -1,0 +1,76 @@
+name: 🔐 Wolf Security Scan
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    # Run weekly on Monday 06:00 UTC
+    - cron: "0 6 * * 1"
+
+jobs:
+  secret-scan:
+    name: "🔐 Secret & Credential Scan"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: 🔍 Check for .env file committed
+        run: |
+          if [ -f ".env" ]; then
+            echo "❌ CRITICAL: .env file is committed to repository!"
+            exit 1
+          fi
+          echo "✅ No .env file in repo"
+
+      - name: 🔍 Scan for API keys in Python files
+        run: |
+          PATTERNS=(
+            "finnhub_api_key\s*=\s*['\"][a-zA-Z0-9]"
+            "telegram_bot_token\s*=\s*['\"][0-9]"
+            "redis_password\s*=\s*['\"][a-zA-Z0-9]"
+            "secret_key\s*=\s*['\"][a-zA-Z0-9]"
+          )
+          FOUND=0
+          for pattern in "${PATTERNS[@]}"; do
+            RESULT=$(grep -rin "$pattern" --include="*.py" . || true)
+            if [ -n "$RESULT" ]; then
+              echo "❌ Potential secret found: $pattern"
+              echo "$RESULT"
+              FOUND=1
+            fi
+          done
+          if [ "$FOUND" -eq 1 ]; then
+            exit 1
+          fi
+          echo "✅ No hardcoded secrets detected"
+
+      - name: 🔍 Verify .env.example exists (template)
+        run: |
+          if [ ! -f ".env.example" ]; then
+            echo "⚠️ WARNING: .env.example not found — developers need a template"
+          else
+            echo "✅ .env.example present"
+          fi
+
+  dependency-audit:
+    name: "📦 Dependency Audit"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install pip-audit
+        run: pip install pip-audit
+
+      - name: 🔍 Audit Python dependencies
+        run: |
+          pip install -r requirements.txt
+          pip-audit --desc || true

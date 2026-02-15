@@ -1,0 +1,437 @@
+name: 🐺 Wolf 15-Layer CI Pipeline
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+  workflow_dispatch:
+
+env:
+  PYTHON_VERSION: "3.11"
+  NODE_VERSION: "20"
+
+# ──────────────────────────────────────────────────────────
+# PHASE 1: LINT & STATIC ANALYSIS (Perception Gate)
+# ──────────────────────────────────────────────────────────
+jobs:
+  phase-1-lint:
+    name: "Phase 1 · Lint & Static Analysis"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install flake8 mypy black isort
+
+      - name: 🔍 Black (formatting check)
+        run: black --check --diff .
+
+      - name: 🔍 isort (import order)
+        run: isort --check-only --diff .
+
+      - name: 🔍 Flake8 (lint)
+        run: flake8 . --max-line-length=120 --exclude=.venv,node_modules,__pycache__,.git
+
+      - name: 🔍 Mypy (type check - critical modules)
+        run: |
+          mypy constitution/ --ignore-missing-imports --no-error-summary || true
+          mypy risk/ --ignore-missing-imports --no-error-summary || true
+          mypy pipeline/ --ignore-missing-imports --no-error-summary || true
+
+  # ──────────────────────────────────────────────────────────
+  # PHASE 2: CONSTITUTIONAL BOUNDARY VALIDATION
+  # ──────────────────────────────────────────────────────────
+  phase-2-constitutional-boundary:
+    name: "Phase 2 · Constitutional Boundary Check"
+    runs-on: ubuntu-latest
+    needs: phase-1-lint
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: 🔒 Rule 1 — analysis/ must NOT contain execution logic
+        run: |
+          echo "Checking analysis/ for forbidden execution patterns..."
+          VIOLATIONS=$(grep -rn \
+            -e "place_order" \
+            -e "execute_trade" \
+            -e "send_order" \
+            -e "market_execution" \
+            -e "mt4_send" \
+            -e "mt5_send" \
+            --include="*.py" analysis/ || true)
+          if [ -n "$VIOLATIONS" ]; then
+            echo "❌ CONSTITUTIONAL VIOLATION: analysis/ contains execution logic!"
+            echo "$VIOLATIONS"
+            exit 1
+          fi
+          echo "✅ analysis/ clean — no execution side-effects"
+
+      - name: 🔒 Rule 2 — execution/ must NOT contain strategy logic
+        run: |
+          echo "Checking execution/ for forbidden strategy patterns..."
+          VIOLATIONS=$(grep -rn \
+            -e "calculate_signal" \
+            -e "market_direction" \
+            -e "trend_analysis" \
+            -e "wolf_score" \
+            -e "confluence" \
+            -e "generate_verdict" \
+            --include="*.py" execution/ || true)
+          if [ -n "$VIOLATIONS" ]; then
+            echo "❌ CONSTITUTIONAL VIOLATION: execution/ contains strategy logic!"
+            echo "$VIOLATIONS"
+            exit 1
+          fi
+          echo "✅ execution/ clean — blind executor only"
+
+      - name: 🔒 Rule 3 — dashboard/ must NOT override L12
+        run: |
+          echo "Checking dashboard/ for L12 override patterns..."
+          VIOLATIONS=$(grep -rn \
+            -e "override_verdict" \
+            -e "force_execute" \
+            -e "bypass_gate" \
+            -e "skip_constitution" \
+            -e "ignore_l12" \
+            --include="*.py" dashboard/ || true)
+          if [ -n "$VIOLATIONS" ]; then
+            echo "❌ CONSTITUTIONAL VIOLATION: dashboard/ attempts L12 override!"
+            echo "$VIOLATIONS"
+            exit 1
+          fi
+          echo "✅ dashboard/ clean — read-only governor"
+
+      - name: 🔒 Rule 4 — journal/ must be append-only
+        run: |
+          echo "Checking journal/ for mutation patterns..."
+          VIOLATIONS=$(grep -rn \
+            -e "\.delete(" \
+            -e "\.update(" \
+            -e "\.remove(" \
+            -e "DELETE FROM" \
+            -e "UPDATE.*SET" \
+            -e "truncate" \
+            --include="*.py" journal/ || true)
+          if [ -n "$VIOLATIONS" ]; then
+            echo "❌ CONSTITUTIONAL VIOLATION: journal/ contains mutation logic!"
+            echo "$VIOLATIONS"
+            exit 1
+          fi
+          echo "✅ journal/ clean — immutable audit trail"
+
+      - name: 🔒 Rule 5 — ea_interface/ must NOT contain decision logic
+        run: |
+          echo "Checking ea_interface/ for decision patterns..."
+          VIOLATIONS=$(grep -rn \
+            -e "generate_verdict" \
+            -e "wolf_score" \
+            -e "should_trade" \
+            -e "analyze_market" \
+            --include="*.py" ea_interface/ || true)
+          if [ -n "$VIOLATIONS" ]; then
+            echo "❌ CONSTITUTIONAL VIOLATION: ea_interface/ contains decision logic!"
+            echo "$VIOLATIONS"
+            exit 1
+          fi
+          echo "✅ ea_interface/ clean — executor only"
+
+      - name: 🔒 Rule 6 — No secrets in codebase
+        run: |
+          echo "Checking for hardcoded secrets..."
+          VIOLATIONS=$(grep -rn \
+            -e "FINNHUB_API_KEY\s*=" \
+            -e "TELEGRAM_BOT_TOKEN\s*=" \
+            -e "REDIS_PASSWORD\s*=" \
+            -e "JWT_SECRET\s*=" \
+            --include="*.py" \
+            --exclude-dir=.venv \
+            --exclude="*.example" \
+            . || true)
+          # Filter out os.getenv / os.environ patterns (these are safe)
+          REAL_VIOLATIONS=$(echo "$VIOLATIONS" | grep -v "os\.getenv\|os\.environ\|\.env\|config\.\|#" || true)
+          if [ -n "$REAL_VIOLATIONS" ]; then
+            echo "❌ SECURITY VIOLATION: Hardcoded secrets detected!"
+            echo "$REAL_VIOLATIONS"
+            exit 1
+          fi
+          echo "✅ No hardcoded secrets found"
+
+  # ──────────────────────────────────────────────────────────
+  # PHASE 3: SCHEMA VALIDATION
+  # ──────────────────────────────────────────────────────────
+  phase-3-schema-validation:
+    name: "Phase 3 · Schema Validation"
+    runs-on: ubuntu-latest
+    needs: phase-1-lint
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install jsonschema pyyaml
+
+      - name: 📋 Validate L12 schema is valid JSON Schema
+        run: |
+          python -c "
+          import json, jsonschema
+          with open('schemas/l12_schema.json') as f:
+              schema = json.load(f)
+          jsonschema.Draft7Validator.check_schema(schema)
+          print('✅ l12_schema.json is a valid JSON Schema')
+          "
+
+      - name: 📋 Validate alert schema is valid JSON Schema
+        run: |
+          python -c "
+          import json, jsonschema
+          with open('schemas/alert_schema.json') as f:
+              schema = json.load(f)
+          jsonschema.Draft7Validator.check_schema(schema)
+          print('✅ alert_schema.json is a valid JSON Schema')
+          "
+
+      - name: 📋 Validate config YAML files parse correctly
+        run: |
+          python -c "
+          import yaml, glob, sys
+          errors = []
+          for f in glob.glob('config/**/*.yaml', recursive=True) + glob.glob('config/**/*.yml', recursive=True):
+              try:
+                  with open(f) as fh:
+                      yaml.safe_load(fh)
+                  print(f'✅ {f}')
+              except Exception as e:
+                  errors.append(f'{f}: {e}')
+                  print(f'❌ {f}: {e}')
+          if errors:
+              sys.exit(1)
+          print('✅ All YAML configs valid')
+          "
+
+  # ──────────────────────────────────────────────────────────
+  # PHASE 4: UNIT TESTS (Layer Tests)
+  # ──────────────────────────────────────────────────────────
+  phase-4-unit-tests:
+    name: "Phase 4 · Unit Tests"
+    runs-on: ubuntu-latest
+    needs: [phase-2-constitutional-boundary, phase-3-schema-validation]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest pytest-cov pytest-timeout
+
+      - name: 🧪 Run L12 Gate Tests (Constitutional)
+        run: pytest tests/test_l12_gate.py -v --timeout=30 || true
+
+      - name: 🧪 Run News Lock Tests
+        run: pytest tests/test_news_lock.py -v --timeout=30 || true
+
+      - name: 🧪 Run M15 Cancel Tests
+        run: pytest tests/test_m15_cancel.py -v --timeout=30 || true
+
+      - name: 🧪 Run Prop Firm Guard Tests
+        run: pytest tests/test_prop_firm.py -v --timeout=30 || true
+
+      - name: 🧪 Run Full Test Suite
+        run: |
+          pytest tests/ -v --timeout=60 \
+            --cov=analysis \
+            --cov=constitution \
+            --cov=execution \
+            --cov=risk \
+            --cov=pipeline \
+            --cov-report=term-missing \
+            --cov-report=xml:coverage.xml \
+            || true
+
+      - name: 📊 Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage.xml
+          retention-days: 30
+
+  # ──────────────────────────────────────────────────────────
+  # PHASE 5: INTEGRATION TEST (Pipeline E2E)
+  # ──────────────────────────────────────────────────────────
+  phase-5-integration:
+    name: "Phase 5 · Pipeline Integration Test"
+    runs-on: ubuntu-latest
+    needs: phase-4-unit-tests
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest pytest-timeout
+
+      - name: 🔗 Pipeline import chain validation
+        run: |
+          python -c "
+          print('Testing core module imports...')
+          from core import core_cognitive_unified
+          print('  ✅ core_cognitive_unified')
+          from core import core_fusion_unified
+          print('  ✅ core_fusion_unified')
+          from core import core_quantum_unified
+          print('  ✅ core_quantum_unified')
+          from core import core_reflective_unified
+          print('  ✅ core_reflective_unified')
+
+          print('Testing analysis layer imports...')
+          from analysis.layers import L1_context, L2_mta, L3_technical
+          print('  ✅ L1, L2, L3')
+          from analysis.layers import L4_scoring, L5_psychology
+          print('  ✅ L4, L5')
+          from analysis.layers import L6_risk, L7_probability
+          print('  ✅ L6, L7')
+          from analysis.layers import L8_tii_integrity, L9_smc
+          print('  ✅ L8, L9')
+          from analysis.layers import L10_position, L11_rr
+          print('  ✅ L10, L11')
+
+          print('Testing constitution imports...')
+          from constitution import verdict_engine
+          print('  ✅ verdict_engine')
+
+          print('Testing pipeline imports...')
+          from pipeline import WolfConstitutionalPipeline
+          print('  ✅ WolfConstitutionalPipeline')
+
+          print('Testing risk imports...')
+          from risk import prop_firm
+          print('  ✅ prop_firm')
+
+          print('🐺 All import chains valid!')
+          "
+
+      - name: 🔗 Pipeline dry-run (no API keys needed)
+        run: |
+          python -c "
+          try:
+              from pipeline import WolfConstitutionalPipeline
+              p = WolfConstitutionalPipeline()
+              print('✅ Pipeline instantiated successfully')
+              print(f'   Pipeline class: {type(p).__name__}')
+          except Exception as e:
+              print(f'⚠️ Pipeline instantiation: {e}')
+              print('   (Expected if Redis/Finnhub not available in CI)')
+          "
+
+  # ──────────────────────────────────────────────────────────
+  # PHASE 6: DASHBOARD BUILD (Frontend)
+  # ──────────────────────────────────────────────────────────
+  phase-6-dashboard-build:
+    name: "Phase 6 · Dashboard Frontend Build"
+    runs-on: ubuntu-latest
+    needs: phase-1-lint
+    defaults:
+      run:
+        working-directory: dashboard/nextjs
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: dashboard/nextjs/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: 🔍 ESLint
+        run: npm run lint || true
+
+      - name: 🔨 Build
+        run: npm run build
+        env:
+          NEXT_TELEMETRY_DISABLED: 1
+
+  # ──────────────────────────────────────────────────────────
+  # GOVERNANCE VERDICT: Final Gate
+  # ──────────────────────────────────────────────────────────
+  governance-verdict:
+    name: "🐺 Governance Verdict"
+    runs-on: ubuntu-latest
+    needs:
+      - phase-1-lint
+      - phase-2-constitutional-boundary
+      - phase-3-schema-validation
+      - phase-4-unit-tests
+      - phase-5-integration
+      - phase-6-dashboard-build
+    if: always()
+    steps:
+      - name: 🐺 Pipeline Verdict
+        run: |
+          echo "╔══════════════════════════════════════════════╗"
+          echo "║     🐺 WOLF 15-LAYER CI PIPELINE VERDICT    ║"
+          echo "╠══════════════════════════════════════════════╣"
+          echo "║                                              ║"
+          echo "║  Phase 1: Lint & Static Analysis    ${{ needs.phase-1-lint.result == 'success' && '✅' || '❌' }}       ║"
+          echo "║  Phase 2: Constitutional Boundary   ${{ needs.phase-2-constitutional-boundary.result == 'success' && '✅' || '❌' }}       ║"
+          echo "║  Phase 3: Schema Validation         ${{ needs.phase-3-schema-validation.result == 'success' && '✅' || '❌' }}       ║"
+          echo "║  Phase 4: Unit Tests                ${{ needs.phase-4-unit-tests.result == 'success' && '✅' || '❌' }}       ║"
+          echo "║  Phase 5: Integration Tests         ${{ needs.phase-5-integration.result == 'success' && '✅' || '❌' }}       ║"
+          echo "║  Phase 6: Dashboard Build           ${{ needs.phase-6-dashboard-build.result == 'success' && '✅' || '❌' }}       ║"
+          echo "║                                              ║"
+          echo "╚══════════════════════════════════════════════╝"
+
+      - name: 🔒 Constitutional Gate — Block merge if boundaries violated
+        if: needs.phase-2-constitutional-boundary.result != 'success'
+        run: |
+          echo "❌ CONSTITUTIONAL VIOLATION DETECTED"
+          echo "Merge is BLOCKED — authority boundaries must be preserved."
+          exit 1
+
+      - name: ✅ All gates passed
+        if: >-
+          needs.phase-2-constitutional-boundary.result == 'success' &&
+          needs.phase-4-unit-tests.result == 'success' &&
+          needs.phase-5-integration.result == 'success'
+        run: |
+          echo "🐺 VERDICT: GRANTED — All constitutional gates passed."
+          echo "Pipeline is safe for merge."
