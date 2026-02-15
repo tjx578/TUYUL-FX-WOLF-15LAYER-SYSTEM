@@ -1,9 +1,10 @@
 """
-L5 -- Psychology & Fundamental Context Layer (PRODUCTION)
+L5 — Psychology & Fundamental Context Layer (PRODUCTION)
 ==========================================================
 Merged & upgraded from:
-  • L5_psychology.py   (production psychology -> PRESERVED 100%)
-  • l5_fundamental.py  (production fundamental -> PRESERVED 100%)
+  • L5_psychology.py   (production psychology → PRESERVED 100%)
+  • l5_fundamental.py  (production fundamental → PRESERVED 100%)
+  • L05_psychology_gates_engine.py → Critical Gates concept ported
 
 Both original files had real, tested logic.  This merge preserves
 every computation from both and adds cross-integration that neither
@@ -13,30 +14,34 @@ strength feeds into the overall confidence score.
 Pipeline Flow:
   market_data ─────────┐
   news_sentiment ──────┤
-  volatility_profile ──┼──->  L5AnalysisLayer.analyze()
+  volatility_profile ──┼──→  L5AnalysisLayer.analyze()
   pair + symbol ───────┘     │
                              ├─ (1) Fundamental Analysis (stateless)
-                             │     sentiment -> bias -> strength -> risk events
+                             │     sentiment → bias → strength → risk events
                              ├─ (2) Psychology Analysis (stateful)
-                             │     fatigue -> focus -> EAF -> discipline -> gates
-                             ├─ (3) Cross-Integration (NEW)
-                             │     risk_event -> emotional_bias modifier
-                             │     fundamental_strength -> EAF boost
-                             └─ (4) Combined Gate Decision
-                                   psychology_ok AND NOT risk_event -> can_trade
+                             │     fatigue → focus → EAF → discipline → gates
+                             ├─ (3) Psychology Gates (granular sub-scores)
+                             │     10 gates × 10 pts = 100 total
+                             │     critical gates 8,9,10 = MTA discipline
+                             ├─ (4) Cross-Integration
+                             │     risk_event → emotional_bias modifier
+                             │     fundamental_strength → EAF boost
+                             └─ (5) Combined Gate Decision
+                                   psychology_ok AND critical_pass AND NOT risk_event → can_trade
 
 Backward compatibility:
-  • L5PsychologyAnalyzer class + .analyze() -> identical signature
-  • analyze_fundamental() function -> identical signature
-  • All output keys from both files preserved
+  • L5PsychologyAnalyzer class + .analyze() → identical signature
+  • analyze_fundamental() function → identical signature
+  • All output keys from all source files preserved
 
-Zone: analysis/ -- pure computation, zero side-effects.
+Zone: analysis/ — pure computation, zero side-effects.
 """
 
 from __future__ import annotations
 
 import logging
 
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any, Final
 
@@ -45,13 +50,14 @@ logger = logging.getLogger(__name__)
 __all__ = [
     "L5AnalysisLayer",
     "L5PsychologyAnalyzer",
+    "PsychGate",
     "analyze_fundamental",
     "analyze_l5",
 ]
 
 
 # ═══════════════════════════════════════════════════════════════════════
-# §1  PSYCHOLOGY CONSTANTS (from L5_psychology.py)
+# §1  PSYCHOLOGY CONSTANTS
 # ═══════════════════════════════════════════════════════════════════════
 
 _MAX_CONSECUTIVE_LOSSES: Final = 2
@@ -60,59 +66,140 @@ _FATIGUE_MEDIUM_HOURS: Final = 4.0
 _FATIGUE_HIGH_HOURS: Final = 6.0
 _FOCUS_PEAK_END_HOURS: Final = 3.0
 
-# EAF component weights (convex -- no multiplicative collapse)
 _EAF_W_FOCUS: Final = 0.30
 _EAF_W_EMOTION: Final = 0.25
 _EAF_W_DISCIPLINE: Final = 0.25
 _EAF_W_STABILITY: Final = 0.20
 _EAF_THRESHOLD: Final = 0.70
 
-# Cross-integration: risk event -> emotional bias boost
 _RISK_EVENT_EMOTION_BOOST: Final = 0.15
 _CAUTION_EVENT_EMOTION_BOOST: Final = 0.05
+_FUNDAMENTAL_EAF_WEIGHT: Final = 0.10
 
-# Cross-integration: fundamental strength -> EAF adjustment
-_FUNDAMENTAL_EAF_WEIGHT: Final = 0.10  # up to 10% EAF boost from strong fundamentals
+# Critical gates threshold (70% of max)
+_CRITICAL_GATE_PASS_RATIO: Final = 0.70
 
 
 # ═══════════════════════════════════════════════════════════════════════
-# §2  FUNDAMENTAL CONSTANTS (from l5_fundamental.py)
+# §2  FUNDAMENTAL CONSTANTS
 # ═══════════════════════════════════════════════════════════════════════
 
-# Sentiment thresholds
 _SENTIMENT_STRONG: Final = 0.40
 _SENTIMENT_MODERATE: Final = 0.20
 _SENTIMENT_WEAK: Final = 0.10
 
-# News count confidence
 _NEWS_COUNT_CONFIDENT: Final = 3
 _NEWS_COUNT_MINIMAL: Final = 1
 
-# Impact levels
 _RISK_EVENT_LEVELS: Final = frozenset({"HIGH", "CRITICAL"})
 _CAUTION_LEVELS: Final = frozenset({"MEDIUM"})
 _ALL_IMPACT_LEVELS: Final = frozenset({"NONE", "LOW", "MEDIUM", "HIGH", "CRITICAL"})
 
-# Fundamental strength weights
 _W_SENTIMENT: Final = 0.50
 _W_NEWS_VOLUME: Final = 0.20
 _W_IMPACT: Final = 0.30
 
-# Known currencies
 _KNOWN_CURRENCIES: Final = (
     "USD", "GBP", "EUR", "JPY", "AUD", "NZD", "CAD", "CHF",
 )
 
 
 # ═══════════════════════════════════════════════════════════════════════
-# §3  FUNDAMENTAL HELPERS (from l5_fundamental.py -- preserved 100%)
+# §3  PSYCHOLOGY GATE STRUCTURE (ported from L05_psychology_gates_engine)
+# ═══════════════════════════════════════════════════════════════════════
+
+# Gate definitions: (name, [(sub_key, max_val), ...])
+# 10 gates × 10 points each = 100 total
+_GATE_DEFINITIONS: Final = (
+    ("PHYSICAL_STATE",       [("sleep_quality", 3), ("health_status", 3), ("substances_clear", 4)]),
+    ("EMOTIONAL_STATE",      [("mood_balance", 4), ("stress_level", 3), ("anxiety_level", 3)]),
+    ("REVENGE_DETECTION",    [("recent_loss_impact", 4), ("emotional_recovery", 3), ("behavior_check", 3)]),
+    ("FOMO_CONTROL",         [("missed_setup_impact", 3), ("confidence_level", 4), ("patience_score", 3)]),
+    ("ACCOUNT_HEALTH",       [("drawdown_status", 4), ("daily_limits_ok", 3), ("risk_budget_ok", 3)]),
+    ("FOCUS_LEVEL",          [("concentration", 4), ("environment", 3), ("mental_clarity", 3)]),
+    ("DISCIPLINE_SCORE",     [("rules_followed", 4), ("consistency", 3), ("tracking_active", 3)]),
+    ("MTA_HIERARCHY",        [("sequence_correct", 4), ("compliance", 3), ("no_violations", 3)]),
+    ("BODY_CLOSE_PATIENCE",  [("h4_discipline", 4), ("patience_level", 3), ("wait_capability", 3)]),
+    ("DECISION_GATE_FOCUS",  [("proximity_focus", 4), ("precision", 3), ("no_mid_range", 3)]),
+)
+
+# Gates 8, 9, 10 (indices 7-9) are critical MTA discipline gates
+_CRITICAL_GATE_INDICES: Final = (7, 8, 9)
+
+
+@dataclass
+class PsychGate:
+    """Individual psychology gate with sub-scores."""
+    name: str = ""
+    score: int = 0
+    max_score: int = 10
+    sub_scores: dict[str, int] = field(default_factory=dict)
+    missing_fields: list[str] = field(default_factory=list)
+
+    @property
+    def pass_ratio(self) -> float:
+        return self.score / self.max_score if self.max_score > 0 else 0.0
+
+
+def _evaluate_gates(psychology_data: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Evaluate all 10 psychology gates from structured input.
+
+    Returns gate scores, critical gate status, and total psychology score.
+    Missing data defaults to 0 (fail-safe), NOT max_val.
+    """
+    pd = psychology_data or {}
+    gates: list[PsychGate] = []
+
+    for gate_name, sub_defs in _GATE_DEFINITIONS:
+        gate_data = pd.get(gate_name, pd.get(gate_name.lower(), {}))
+        gate = PsychGate(name=gate_name)
+        gate_max = 0
+
+        for sub_key, max_val in sub_defs:
+            gate_max += max_val
+            if isinstance(gate_data, dict) and sub_key in gate_data:
+                raw = gate_data[sub_key]
+            else:
+                # FAIL-SAFE: missing data = 0 score, not max
+                if isinstance(gate_data, dict) and gate_data:
+                    gate.missing_fields.append(sub_key)
+                    logger.debug(
+                        "L5 gate %s missing sub_key '%s' — defaulting to 0",
+                        gate_name, sub_key,
+                    )
+                raw = 0
+
+            clamped = max(0, min(max_val, int(raw)))
+            gate.sub_scores[sub_key] = clamped
+            gate.score += clamped
+
+        gate.max_score = gate_max
+        gates.append(gate)
+
+    total_score = sum(g.score for g in gates)
+    total_max = sum(g.max_score for g in gates)
+
+    # Critical gates check (MTA discipline)
+    critical_gates = [gates[i] for i in _CRITICAL_GATE_INDICES if i < len(gates)]
+    critical_total = sum(g.score for g in critical_gates)
+    critical_max = sum(g.max_score for g in critical_gates)
+    critical_pass = critical_total >= int(critical_max * _CRITICAL_GATE_PASS_RATIO) if critical_max > 0 else False
+
+    return {
+        "gates": gates,
+        "total_score": total_score,
+        "total_max": total_max,
+        "critical_gates_pass": critical_pass,
+        "critical_total": critical_total,
+        "critical_max": critical_max,
+    }
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# §4  FUNDAMENTAL HELPERS (preserved 100%)
 # ═══════════════════════════════════════════════════════════════════════
 
 def _extract_pair_currencies(pair: str) -> tuple[str | None, str | None]:
-    """Extract (base, quote) currency from a pair string.
-
-    Standard FX pairs: first 3 chars = base, last 3 = quote.
-    """
     clean = pair.upper().replace("/", "").replace("_", "")
     if len(clean) == 6:
         base, quote = clean[:3], clean[3:]
@@ -122,7 +209,6 @@ def _extract_pair_currencies(pair: str) -> tuple[str | None, str | None]:
 
 
 def _classify_bias(score: float, news_count: int) -> str:
-    """Classify sentiment score into directional bias label (7 levels)."""
     has_conf = news_count >= _NEWS_COUNT_CONFIDENT
     has_min = news_count >= _NEWS_COUNT_MINIMAL
 
@@ -140,15 +226,10 @@ def _compute_fundamental_strength(
     news_count: int,
     impact_level: str,
 ) -> float:
-    """Continuous fundamental strength score (0.0-1.0).
-
-    Measures data quality/weight, NOT direction.
-    """
     sent = min(1.0, abs(sentiment_score) / 0.5)
     vol = min(1.0, news_count / 5.0) if news_count > 0 else 0.0
     impact_map = {"CRITICAL": 1.0, "HIGH": 0.80, "MEDIUM": 0.50, "LOW": 0.25, "NONE": 0.0}
     imp = impact_map.get(impact_level.upper(), 0.0)
-
     return round(max(0.0, min(1.0,
         sent * _W_SENTIMENT + vol * _W_NEWS_VOLUME + imp * _W_IMPACT
     )), 4)
@@ -161,11 +242,6 @@ def _resolve_pair_bias(
     base_ccy: str | None,
     quote_ccy: str | None,
 ) -> tuple[str, str | None]:
-    """Resolve directional bias considering base vs quote currency.
-
-    For GBPUSD: bullish GBP + bearish USD -> strongly BULLISH pair.
-    Returns (resolved_bias, conflict_note_or_none).
-    """
     if base_sentiment is None or quote_sentiment is None:
         return pair_bias, None
 
@@ -188,10 +264,6 @@ def _run_fundamental_analysis(
     pair: str,
     now: datetime,
 ) -> dict[str, Any]:
-    """Core fundamental analysis (extracted from original analyze_fundamental).
-
-    Returns complete fundamental profile dict.
-    """
     ns = news_sentiment or {}
     degraded_fields: list[str] = []
 
@@ -257,11 +329,10 @@ def _run_fundamental_analysis(
 
 
 # ═══════════════════════════════════════════════════════════════════════
-# §4  PSYCHOLOGY HELPERS (from L5_psychology.py -- preserved 100%)
+# §5  PSYCHOLOGY HELPERS (preserved 100%)
 # ═══════════════════════════════════════════════════════════════════════
 
 def _fatigue_level(hours: float) -> str:
-    """Classify fatigue from session duration."""
     if hours >= _FATIGUE_HIGH_HOURS:
         return "HIGH"
     if hours >= _FATIGUE_MEDIUM_HOURS:
@@ -270,7 +341,6 @@ def _fatigue_level(hours: float) -> str:
 
 
 def _focus_level(hours: float) -> float:
-    """Focus curve: ramps to 0.95 at ~2h, degrades after 3h."""
     if hours <= 0.0:
         return 0.90
     if hours <= _FOCUS_PEAK_END_HOURS:
@@ -285,15 +355,9 @@ def _emotional_bias(
     risk_event: bool = False,
     caution_event: bool = False,
 ) -> float:
-    """Emotional bias score (0-1, higher = worse).
-
-    Driven by losses + drawdown.  Cross-integration: risk events
-    amplify emotional pressure (traders become anxious around NFP, etc).
-    """
     loss_comp = min(consecutive_losses * 0.12, 0.50)
     dd_comp = min(drawdown_pct * 0.04, 0.40)
 
-    # NEW: risk event -> emotional pressure boost
     event_comp = 0.0
     if risk_event:
         event_comp = _RISK_EVENT_EMOTION_BOOST
@@ -304,7 +368,6 @@ def _emotional_bias(
 
 
 def _discipline_score(consecutive_losses: int) -> float:
-    """Discipline based on consecutive losses."""
     if consecutive_losses == 0:
         return 0.95
     if consecutive_losses == 1:
@@ -315,7 +378,6 @@ def _discipline_score(consecutive_losses: int) -> float:
 
 
 def _stability_index(win_streak: int, loss_streak: int) -> float:
-    """Long streaks (win or loss) reduce stability."""
     streak = max(win_streak, loss_streak)
     if streak <= 2:
         return 0.90
@@ -331,13 +393,6 @@ def _eaf_score(
     stability: float,
     fundamental_strength: float = 0.0,
 ) -> float:
-    """Convex-weighted EAF (Emotional Awareness Factor).
-
-    No multiplicative collapse -- each component contributes independently.
-
-    Cross-integration: strong fundamental data provides a small EAF boost
-    (conviction from data reduces emotional noise).
-    """
     emotion_contrib = max(0.0, 1.0 - emotional_bias)
     base_eaf = (
         _EAF_W_FOCUS * focus
@@ -345,22 +400,19 @@ def _eaf_score(
         + _EAF_W_DISCIPLINE * discipline
         + _EAF_W_STABILITY * stability
     )
-
-    # NEW: fundamental conviction boost (up to _FUNDAMENTAL_EAF_WEIGHT)
     fund_boost = fundamental_strength * _FUNDAMENTAL_EAF_WEIGHT
-
     return min(1.0, base_eaf + fund_boost)
 
 
 # ═══════════════════════════════════════════════════════════════════════
-# §5  MAIN ANALYZER CLASS
+# §6  MAIN ANALYZER CLASS
 # ═══════════════════════════════════════════════════════════════════════
 
 class L5AnalysisLayer:
-    """Layer 5: Psychology & Fundamental Context -- PRODUCTION.
+    """Layer 5: Psychology & Fundamental Context — PRODUCTION.
 
-    Merges psychology (stateful, internal) with fundamental analysis
-    (stateless, external) and adds cross-integration.
+    Merges psychology (stateful), fundamental (stateless), psychology
+    gates (granular sub-scores), and cross-integration.
 
     Usage::
 
@@ -372,10 +424,6 @@ class L5AnalysisLayer:
             volatility_profile={"profile": "NORMAL"},
             session_hours=2.5,
         )
-        # result["can_trade"]            -> True
-        # result["eaf_score"]            -> 0.87
-        # result["fundamental_bias"]     -> "BULLISH"
-        # result["fundamental_strength"] -> 0.55
     """
 
     def __init__(self) -> None:
@@ -383,31 +431,23 @@ class L5AnalysisLayer:
         self._win_streak: int = 0
         self._drawdown_percent: float = 0.0
 
-    # ── State mutation (from L5_psychology.py) ────────────────────────
-
     def record_loss(self) -> None:
-        """Record a consecutive loss."""
         self._consecutive_losses += 1
         self._win_streak = 0
 
     def record_win(self) -> None:
-        """Record a win -- resets consecutive losses."""
         self._consecutive_losses = 0
         self._win_streak += 1
 
     def update_drawdown(self, pct: float) -> None:
-        """Update current drawdown percentage."""
         self._drawdown_percent = max(0.0, pct)
 
     def reset_session(self) -> None:
-        """Reset session state."""
         self._consecutive_losses = 0
         self._win_streak = 0
         self._drawdown_percent = 0.0
 
-    # ── Main analysis ─────────────────────────────────────────────────
-
-    def analyze(
+    def analyze(  # noqa: PLR0912
         self,
         pair: str = "GBPUSD",
         symbol: str | None = None,
@@ -416,8 +456,9 @@ class L5AnalysisLayer:
         volatility_profile: dict[str, Any] | None = None,
         session_hours: float = 0.0,
         now: datetime | None = None,
+        psychology_data: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        """Complete L5 pipeline: fundamental + psychology + integration.
+        """Complete L5 pipeline: fundamental + psychology + gates + integration.
 
         Parameters
         ----------
@@ -426,32 +467,26 @@ class L5AnalysisLayer:
         symbol : str, optional
             Trading symbol (for logging/audit).
         market_data : dict, optional
-            Market data context (pipeline consistency).
+            Market data context.
         news_sentiment : dict, optional
-            Pre-fetched sentiment data with ``sentiment_score``,
-            ``news_count``, ``impact_level``, optionally
-            ``base_sentiment``, ``quote_sentiment``.
+            Sentiment data.
         volatility_profile : dict, optional
-            Volatility context with ``profile`` key.
+            Volatility context.
         session_hours : float
-            Hours since session start (for fatigue/focus).
+            Hours since session start.
         now : datetime, optional
             UTC timestamp override.
-
-        Returns
-        -------
-        dict
-            Unified L5 profile with all psychology AND fundamental fields.
+        psychology_data : dict, optional
+            Structured gate input (10 gates × sub-scores).
+            If None, gates still evaluate but score 0 (fail-safe).
         """
         if now is None:
             now = datetime.now(UTC)
 
         # ── PHASE 1: Fundamental analysis (stateless) ────────────────
-
         fund = _run_fundamental_analysis(news_sentiment, pair, now)
 
         # ── PHASE 2: Psychology analysis (stateful) ──────────────────
-
         fatigue = _fatigue_level(session_hours)
         focus = _focus_level(session_hours)
 
@@ -461,7 +496,6 @@ class L5AnalysisLayer:
         vol_profile = (volatility_profile or {}).get("profile", "NORMAL")
         stable = str(vol_profile).upper() != "HIGH"
 
-        # Cross-integration: risk events amplify emotional bias
         em_bias = _emotional_bias(
             self._consecutive_losses,
             self._drawdown_percent,
@@ -472,7 +506,6 @@ class L5AnalysisLayer:
         discipline = _discipline_score(self._consecutive_losses)
         stability = _stability_index(self._win_streak, self._consecutive_losses)
 
-        # Cross-integration: fundamental strength boosts EAF
         eaf = _eaf_score(
             focus, em_bias, discipline, stability,
             fundamental_strength=fund["fundamental_strength"],
@@ -480,8 +513,30 @@ class L5AnalysisLayer:
 
         emotion_index = int(em_bias * 100)
 
-        # ── PHASE 3: Psychology gate decision ────────────────────────
+        # ── PHASE 3: Psychology gates (granular sub-scores) ──────────
+        gate_result = _evaluate_gates(psychology_data)
+        gates: list[PsychGate] = gate_result["gates"]
+        critical_pass = gate_result["critical_gates_pass"]
 
+        # If psychology_data was provided, factor gate score into
+        # the overall psychology score (blended approach).
+        # If not provided, rely solely on EAF-based score.
+        has_gate_data = psychology_data is not None and len(psychology_data) > 0
+        gate_total = gate_result["total_score"]
+        gate_max = gate_result["total_max"]
+
+        if has_gate_data and gate_max > 0:
+            # Blend: 60% EAF-based + 40% gate-based
+            eaf_pct = int(eaf * 100)
+            gate_pct = int((gate_total / gate_max) * 100)
+            psychology_score = max(0, min(100, int(eaf_pct * 0.60 + gate_pct * 0.40)))
+        else:
+            psychology_score = max(0, min(100, int(eaf * 100)))
+            # No gate data → critical pass defaults to True
+            # (don't penalize when no structured gate input provided)
+            critical_pass = True
+
+        # ── PHASE 4: Combined gate decision ──────────────────────────
         psych_reasons: list[str] = []
         if not losses_ok:
             psych_reasons.append("consecutive_losses_at_limit")
@@ -493,14 +548,10 @@ class L5AnalysisLayer:
             psych_reasons.append("high_volatility")
         if eaf < _EAF_THRESHOLD:
             psych_reasons.append("eaf_below_threshold")
+        if has_gate_data and not critical_pass:
+            psych_reasons.append("critical_gates_failed(MTA/BodyClose/Decision)")
 
         psychology_ok = len(psych_reasons) == 0
-
-        # ── PHASE 4: Combined gate (NEW) ─────────────────────────────
-        #
-        # Risk event active -> CANNOT trade (fundamental override)
-        # Psychology not OK -> CANNOT trade (internal override)
-        # Both clear -> CAN trade
 
         fund_reasons: list[str] = []
         if fund["risk_event_active"]:
@@ -510,7 +561,7 @@ class L5AnalysisLayer:
         can_trade = psychology_ok and not fund["risk_event_active"]
 
         if can_trade:
-            recommendation = "Psychology & Fundamental OK -- clear to trade"
+            recommendation = "Psychology & Fundamental OK — clear to trade"
             gate_status = "OPEN"
         elif len(all_reasons) == 1:
             recommendation = "CAUTION: " + all_reasons[0]
@@ -519,13 +570,7 @@ class L5AnalysisLayer:
             recommendation = "BLOCKED: " + "; ".join(all_reasons)
             gate_status = "LOCKED"
 
-        psychology_score = max(0, min(100, int(eaf * 100)))
-
         # ── PHASE 5: RGO governance ──────────────────────────────────
-        # Compute actual integrity from EAF + fundamental data quality
-
-        # Absence of data (no_sentiment_data) is not integrity degradation;
-        # only actively corrupted or conflicting data degrades integrity.
         real_degradation = [
             f for f in fund["degraded_fields"]
             if f not in ("no_sentiment_data", "empty_sentiment_data")
@@ -542,13 +587,13 @@ class L5AnalysisLayer:
 
         logger.debug(
             "L5 analysis: pair=%s eaf=%.4f bias=%s strength=%.4f "
-            "gate=%s can_trade=%s reasons=%s",
+            "gate_status=%s can_trade=%s critical_pass=%s reasons=%s",
             pair, eaf, fund["fundamental_bias"], fund["fundamental_strength"],
-            gate_status, can_trade, all_reasons or "none",
+            gate_status, can_trade, critical_pass, all_reasons or "none",
         )
 
         return {
-            # ── Psychology (from L5_psychology.py) ──
+            # ── Psychology (EAF-based) ──
             "psychology_score": psychology_score,
             "eaf_score": round(eaf, 4),
             "emotion_delta": round(em_bias, 4),
@@ -569,7 +614,24 @@ class L5AnalysisLayer:
             "stability_index": round(stability, 4),
             "recommendation": recommendation,
 
-            # ── RGO Governance (was hardcoded, now computed) ──
+            # ── Psychology Gates (granular, from gates engine) ──
+            "psychology_gates": [
+                {
+                    "name": g.name,
+                    "score": g.score,
+                    "max": g.max_score,
+                    "pass_ratio": round(g.pass_ratio, 2),
+                    "sub_scores": g.sub_scores,
+                    "missing_fields": g.missing_fields,
+                }
+                for g in gates
+            ],
+            "critical_gates_pass": critical_pass,
+            "gate_total_score": gate_total,
+            "gate_total_max": gate_max,
+            "has_gate_data": has_gate_data,
+
+            # ── RGO Governance (computed, not hardcoded) ──
             "rgo_governance": {
                 "integrity_level": integrity_level,
                 "vault_sync": vault_sync,
@@ -577,7 +639,7 @@ class L5AnalysisLayer:
             },
             "current_drawdown": self._drawdown_percent,
 
-            # ── Fundamental (from l5_fundamental.py) ──
+            # ── Fundamental ──
             "fundamental_bias": fund["fundamental_bias"],
             "fundamental_strength": fund["fundamental_strength"],
             "sentiment_score": fund["sentiment_score"],
@@ -599,14 +661,11 @@ class L5AnalysisLayer:
 
 
 # ═══════════════════════════════════════════════════════════════════════
-# §6  BACKWARD-COMPATIBLE INTERFACES
+# §7  BACKWARD-COMPATIBLE INTERFACES
 # ═══════════════════════════════════════════════════════════════════════
 
 class L5PsychologyAnalyzer:
-    """Backward-compatible wrapper matching original L5_psychology.py.
-
-    Delegates to ``L5AnalysisLayer`` internally.
-    """
+    """Backward-compatible wrapper matching original L5_psychology.py."""
 
     def __init__(self) -> None:
         self._inner = L5AnalysisLayer()
@@ -629,7 +688,6 @@ class L5PsychologyAnalyzer:
         *,
         volatility_profile: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        """Original L5_psychology.py signature preserved."""
         return self._inner.analyze(
             symbol=symbol,
             volatility_profile=volatility_profile,
@@ -642,10 +700,7 @@ def analyze_fundamental(
     pair: str = "GBPUSD",
     now: datetime | None = None,
 ) -> dict[str, Any]:
-    """Backward-compatible fundamental-only analysis.
-
-    Same signature as original ``l5_fundamental.analyze_fundamental()``.
-    """
+    """Backward-compatible fundamental-only analysis."""
     if now is None:
         now = datetime.now(UTC)
 
@@ -676,6 +731,7 @@ def analyze_l5(
     volatility_profile: dict[str, Any] | None = None,
     session_hours: float = 0.0,
     now: datetime | None = None,
+    psychology_data: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Convenience function for full L5 analysis."""
     return L5AnalysisLayer().analyze(
@@ -684,4 +740,5 @@ def analyze_l5(
         volatility_profile=volatility_profile,
         session_hours=session_hours,
         now=now,
+        psychology_data=psychology_data,
     )
