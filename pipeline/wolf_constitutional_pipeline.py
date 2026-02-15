@@ -399,7 +399,7 @@ class WolfConstitutionalPipeline:
     #  MAIN EXECUTE — the single canonical entry point
     # ══════════════════════════════════════════════════════════════
 
-    def execute(
+    def execute(  # noqa: PLR0912
         self,
         symbol: str,
         system_metrics: dict[str, Any] | None = None,
@@ -468,31 +468,90 @@ class WolfConstitutionalPipeline:
             # ═══════════════════════════════════════════════════════
             # PHASE 3 — ZONA PROBABILITY & VALIDATION (L7, L8, L9)
             # ═══════════════════════════════════════════════════════
-            logger.info(f"[Pipeline v8.0] Phase 3: Probability & Validation — {symbol}")
+            #
+            # L7 receives:
+            #   - technical_score  → from L4 (upstream technical analysis)
+            #   - trade_returns    → from system_metrics or trade history storage
+            #   - prior_wins/losses → from system_metrics (running Bayesian state)
+            #   - coherence        → from earlier layer agreement (L1–L6)
+            #   - volatility_index → from L5 or market regime data
+            #   - base_bias        → directional lean from L3/L4
+            #
+            # Authority: ANALYSIS ONLY — no execution side-effects.
+            # Gate result flows to Layer-12 Constitution for final verdict.
+            # ═══════════════════════════════════════════════════════════════════
 
             technical_score = l4.get("technical_score", 0)
-            l7 = self._l7.analyze(symbol, technical_score=technical_score)  # pyright: ignore[reportOptionalMemberAccess]
 
-            # Apply VIX multiplier to L7 win probability
-            macro_vix_state = self._macro_vol.get_state()  # pyright: ignore[reportOptionalMemberAccess]
-            vix_risk_multiplier = macro_vix_state.get("risk_multiplier", 1.0)
-            if l7.get("win_probability"):
-                l7_adjusted = l7.copy()
-                l7_adjusted["win_probability"] = l7["win_probability"] * vix_risk_multiplier
-                l7 = l7_adjusted
+            # ── Trade history for Monte Carlo ────────────────────────────────
+            # Source: system_metrics carries historical per-trade P&L from
+            # dashboard ledger / journal archive.  If unavailable, MC engine
+            # gracefully skips (requires ≥ 30 trades).
+            #
+            # TODO: Wire to actual trade history storage via:
+            #   storage/trade_archive.py → get_closed_returns(symbol, lookback=200)
+            # For now, fall through to system_metrics or None.
+            trade_returns: list[float] | None = None
+            if system_metrics and isinstance(system_metrics, dict):
+                _raw = system_metrics.get("trade_returns", None)
+                if isinstance(_raw, (list, tuple)) and len(_raw) > 0:
+                    trade_returns = [float(r) for r in _raw]
 
-            # L8: TIIₛᵧₘ Algo Precision Engine (CRITICAL GATE)
-            layers_for_l8 = {
-                "l1": l1, "l2": l2, "l3": l3, "l4": l4, "l7": l7,
-            }
-            l8 = self._l8.analyze(layers_for_l8)  # pyright: ignore[reportOptionalMemberAccess]
+            # ── Bayesian prior state ─────────────────────────────────────────
+            # Accumulated win/loss counts from previous analysis cycles.
+            # Default 0/0 → uninformative Bayes-Laplace prior (alpha=1, beta=1).
+            prior_wins: int = 0
+            prior_losses: int = 0
+            if system_metrics and isinstance(system_metrics, dict):
+                prior_wins = int(system_metrics.get("prior_wins", 0))
+                prior_losses = int(system_metrics.get("prior_losses", 0))
 
-            # L9: SMC Integration Analysis
-            if hasattr(self._l3, "structure"):
-                structure = self._l3.structure.analyze(symbol)  # pyright: ignore[reportOptionalMemberAccess, reportAttributeAccessIssue]
-            else:
-                structure = l3
-            l9 = self._l9.analyze(symbol, structure)  # pyright: ignore[reportOptionalMemberAccess]
+            # ── Coherence from upstream layers (L1–L6 agreement) ─────────────
+            # If a coherence aggregator ran, use it; otherwise default 50.0.
+            coherence: float = 50.0
+            if isinstance(l4, dict):
+                _coh = l4.get("coherence", None)
+                if _coh is not None:
+                    coherence = float(_coh)
+
+            # ── Volatility index from L5 or regime detector ──────────────────
+            volatility_index: float = 20.0
+            if l5 and isinstance(l5, dict):
+                volatility_index = float(l5.get("volatility_index", l5.get("atr_normalized", 20.0)))
+
+            # ── Base directional bias from L3/L4 ─────────────────────────────
+            base_bias: float = 0.5
+            if l4 and isinstance(l4, dict):
+                _bias = l4.get("directional_bias", l4.get("bias_score", None))
+                if _bias is not None:
+                    base_bias = float(max(0.0, min(1.0, _bias)))
+
+            # ── Run L7 Probability Analyzer ──────────────────────────────────
+            l7 = self._l7.analyze( # pyright: ignore[reportOptionalMemberAccess]
+                symbol,
+                technical_score=technical_score,
+                trade_returns=trade_returns,
+                prior_wins=prior_wins,
+                prior_losses=prior_losses,
+                coherence=coherence,
+                volatility_index=volatility_index,
+                base_bias=base_bias,
+            )
+
+            l8 = self._l8.analyze(symbol)  # pyright: ignore[reportArgumentType, reportOptionalMemberAccess]
+            l9 = self._l9.analyze(symbol)  # pyright: ignore[reportOptionalMemberAccess]
+
+            logger.info(
+                "[Phase-3] %s L7 complete: validation=%s win=%.1f%% pf=%.2f "
+                "bayes=%.4f ror=%.4f mc_passed=%s",
+                symbol,
+                l7.get("validation", "N/A"),
+                l7.get("win_probability", 0.0),
+                l7.get("profit_factor", 0.0),
+                l7.get("bayesian_posterior", 0.0),
+                l7.get("risk_of_ruin", 1.0),
+                l7.get("mc_passed_threshold", False),
+            )
 
             # ═══════════════════════════════════════════════════════
             # PHASE 4 — ZONA EXECUTION & DECISION (L11 → L6 → L10)
@@ -528,17 +587,25 @@ class WolfConstitutionalPipeline:
             logger.info(f"[Pipeline v8.0] Phase 5: Constitutional Verdict — {symbol}")
 
             current_latency_ms = (time.time() - start_time) * 1000
-            synthesis = build_l12_synthesis(
-                symbol=symbol, # pyright: ignore[reportCallIssue]
-                l1=l1, l2=l2, l3=l3, l4=l4, l5=l5, # pyright: ignore[reportCallIssue]
-                l6=l6, l7=l7, l8=l8, l9=l9, l10=l10, l11=l11, # pyright: ignore[reportCallIssue]
-                macro=macro, # pyright: ignore[reportCallIssue]
-                macro_vix_state=macro_vix_state, # pyright: ignore[reportCallIssue]
-                safe_mode=safe_mode, # pyright: ignore[reportCallIssue]
-                latency_ms=current_latency_ms, # pyright: ignore[reportCallIssue]
-            )
 
-            gates = self._evaluate_9_gates(synthesis, l8, l7, l2, l6, l9, l11, start_time) # pyright: ignore[reportCallIssue]
+            layer_results_combined: dict[str, Any] = {
+                "L1": l1, "L2": l2, "L3": l3, "L4": l4, "L5": l5,
+                "L6": l6, "L7": l7, "L8": l8, "L9": l9, "L10": l10, "L11": l11,
+                "macro": macro.get("regime", "UNKNOWN") if isinstance(macro, dict) else "UNKNOWN",
+                "macro_vix_state": metrics.get("macro_vix_state", {}),
+            }
+
+            synthesis = build_l12_synthesis(
+                self,
+                layer_results=layer_results_combined,
+            )
+            synthesis["system"]["latency_ms"] = current_latency_ms
+            synthesis["system"]["safe_mode"] = safe_mode
+            synthesis["pair"] = symbol
+
+            metrics.get("macro_vix_state", {})
+
+            gates = self._evaluate_9_gates(synthesis)
             l12_verdict = generate_l12_verdict(synthesis)
             l12_verdict["gates_v74"] = gates
 
@@ -720,7 +787,7 @@ class WolfConstitutionalPipeline:
         g8 = drawdown <= get_max_drawdown()
 
         # Gate 9: Latency ≤ 250ms
-        latency = (time.time() - start_time) * 1000  # pyright: ignore[reportUndefinedVariable] # noqa: F821
+        latency = synthesis.get("system", {}).get("latency_ms", 0.0)  # pyright: ignore[reportUndefinedVariable] # noqa: F821
         g9 = latency <= get_max_latency_ms()
 
         passed = sum([g1, g2, g3, g4, g5, g6, g7, g8, g9])
