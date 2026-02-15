@@ -42,6 +42,27 @@ from ingest.finnhub_ws import (
 )
 
 # ---------------------------------------------------------------------------
+# Async iterator helper for mocking ``async for raw_msg in ws``
+# ---------------------------------------------------------------------------
+
+class AsyncMessageIterator:
+    """Async iterator that yields pre-defined messages, simulating a WS stream."""
+
+    def __init__(self, messages: list[str]) -> None:
+        self._messages = list(messages)
+        self._index = 0
+
+    def __aiter__(self) -> "AsyncMessageIterator":
+        return self
+
+    async def __anext__(self) -> str:
+        if self._index >= len(self._messages):
+            raise StopAsyncIteration
+        msg = self._messages[self._index]
+        self._index += 1
+        return msg
+
+# ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
 
