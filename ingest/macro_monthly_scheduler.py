@@ -1,8 +1,9 @@
 import asyncio
 import datetime
-from loguru import logger
 
-from analysis.macro_regime_engine import MacroRegimeEngine
+from loguru import logger  # pyright: ignore[reportMissingImports]
+
+from analysis.macro.macro_regime_engine import MacroRegimeEngine
 from ingest.finnhub_candles import FinnhubCandleFetcher
 
 
@@ -29,7 +30,7 @@ class MacroMonthlyScheduler:
                 await asyncio.sleep(3600)
 
     async def _check_and_refresh(self) -> None:
-        now = datetime.datetime.utcnow()
+        now = datetime.datetime.utcnow()  # noqa: DTZ003
         current_key = (now.year, now.month)
 
         if self.last_month is None:

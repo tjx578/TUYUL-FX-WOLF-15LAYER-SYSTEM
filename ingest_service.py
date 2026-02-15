@@ -10,7 +10,7 @@ from typing import Any, Protocol
 
 from loguru import logger  # pyright: ignore[reportMissingImports]
 
-from analysis.macro_regime_engine import MacroRegimeEngine
+from analysis.macro.macro_regime_engine import MacroRegimeEngine
 from config_loader import CONFIG
 from context.system_state import SystemState, SystemStateManager
 from ingest.candle_builder import CandleBuilder
