@@ -20,6 +20,7 @@ from loguru import logger  # pyright: ignore[reportMissingImports]
 from api.dashboard_routes import router as dashboard_router
 from api.journal_routes import router as journal_router
 from api.l12_routes import router as l12_router
+from api.middleware.rate_limit import RateLimitMiddleware
 from api.ws_routes import router as ws_router
 from config_loader import CONFIG
 from context.live_context_bus import LiveContextBus
@@ -122,12 +123,19 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Rate limiting middleware (applied AFTER CORS so preflight isn't blocked)
+app.add_middleware(RateLimitMiddleware)
+
 # Include routers
+# HTTP routers — protected by Bearer token (JWT or API key)
 app.include_router(l12_router, dependencies=[fastapi.Depends(verify_token)])
 app.include_router(dashboard_router, dependencies=[fastapi.Depends(verify_token)])
 app.include_router(journal_router, dependencies=[fastapi.Depends(verify_token)])
-app.include_router(ws_router, dependencies=[fastapi.Depends(verify_token)])
 app.include_router(risk_router, dependencies=[fastapi.Depends(verify_token)])
+
+# WebSocket router — auth handled inside each endpoint via query-param token
+# (FastAPI HTTP dependencies don't apply to WS upgrade handshakes)
+app.include_router(ws_router)
 
 
 def _get_feed_status() -> dict[str, str]:
