@@ -32,7 +32,7 @@ def test_gatekeeper_all_gates_pass():
 def test_gatekeeper_blocks_low_probability():
     gate = Gatekeeper()
     candidate = copy.deepcopy(_base_candidate())
-    candidate["L7"]["win_probability"] = 40.0
+    candidate["L7"]["win_probability"] = 40.0 # pyright: ignore[reportArgumentType, reportIndexIssue]
 
     result = gate.evaluate(candidate)
 
