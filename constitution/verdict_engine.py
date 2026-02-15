@@ -335,25 +335,51 @@ class VerdictEngine:
         Returns:
             Enriched verdict dict with L7 probability context.
         """
-        # ...existing code...
+        # ── Evaluate gates if not pre-computed ───────────────────────
+        if gate_results is None:
+            gate_results = {}
+
+        passed_count = sum(
+            1 for v in gate_results.values()
+            if isinstance(v, dict) and v.get("passed", False)
+        )
+        total_gates = max(len(gate_results), 1)
+
+        # ── Determine base verdict from gate pass rate ───────────────
+        pass_rate = passed_count / total_gates
+        if pass_rate >= 0.9:
+            verdict_label = "EXECUTE"
+            base_confidence = 0.70 + 0.20 * pass_rate  # 0.88–0.90
+        elif pass_rate >= 0.7:
+            verdict_label = "HOLD"
+            base_confidence = 0.40 + 0.20 * pass_rate  # 0.54–0.58
+        else:
+            verdict_label = "NO_TRADE"
+            base_confidence = max(0.10, 0.30 * pass_rate)
 
         # ── Extract L7 probability metrics ───────────────────────────
         l7_metrics = self._extract_l7_probability_metrics(layer_results)
 
         # ── Adjust confidence with L7 data ───────────────────────────
-        # base_confidence comes from existing verdict logic (upstream)
-        # ...existing code that computes base_confidence...
         confidence = self._compute_confidence_with_l7(
-            base_confidence=confidence,  # type: ignore[possibly-undefined]  # noqa: F821
+            base_confidence=base_confidence,
             l7_metrics=l7_metrics,
         )
 
-        # ...existing code that builds the verdict dict...
+        # ── Build verdict dict ───────────────────────────────────────
+        verdict: dict[str, Any] = {
+            "symbol": symbol,
+            "verdict": verdict_label,
+            "confidence": confidence,
+            "gate_results": gate_results,
+            "gates_passed": passed_count,
+            "gates_total": total_gates,
+        }
 
         # ── Enrich verdict with L7 probability context ───────────────
         # These fields are informational for downstream consumers
         # (dashboard, journal, reflection) — they do NOT change the verdict.
-        verdict["probability_context"] = {  # noqa: F821 # pyright: ignore[reportUndefinedVariable]
+        verdict["probability_context"] = {
             "monte_carlo_win_rate": l7_metrics["l7_win_probability"],
             "profit_factor": l7_metrics["l7_profit_factor"],
             "risk_of_ruin": l7_metrics["l7_risk_of_ruin"],
@@ -369,18 +395,13 @@ class VerdictEngine:
             "max_drawdown": l7_metrics["l7_max_drawdown"],
         }
 
-        verdict["confidence"] = confidence  # pyright: ignore[reportUndefinedVariable] # noqa: F821
-
-        # ...existing code...
-
-        return verdict  # pyright: ignore[reportUndefinedVariable] # noqa: F821
+        return verdict
 
     def evaluate(
         self,
         gate_scores: dict,
         kelly_edge_data: dict | None = None,
-        # ...existing parameters...
-    ) -> dict: # pyright: ignore[reportReturnType]
+    ) -> dict:
         """Evaluate all constitutional gates and produce verdict.
 
         Args:
@@ -389,15 +410,24 @@ class VerdictEngine:
                 Expected keys: {"edge_negative": bool, "kelly_raw": float,
                                 "final_fraction": float}
                 If None, Gate 11 is skipped (backward-compatible).
-            ...existing parameters...
 
         Returns:
             Verdict dict with 'verdict', 'confidence', 'gate_results', etc.
         """
-        gate_results = {}
-        violations = []
+        gate_results: dict[str, Any] = {}
+        violations: list[str] = []
 
-        # ...existing code... (gates 1-10 processing)
+        # ── Evaluate gates from scores ───────────────────────────────
+        for gate_name, score in gate_scores.items():
+            if isinstance(score, dict):
+                passed = score.get("passed", False)
+            elif isinstance(score, (int, float)):
+                passed = score >= 0.5
+            else:
+                passed = bool(score)
+            gate_results[gate_name] = {"passed": passed, "score": score}
+            if not passed:
+                violations.append(gate_name)
 
         # ── Gate 11: Kelly Edge Gate (Optional) ──────────────────────
         if self._kelly_gate_enabled and kelly_edge_data is not None:
@@ -406,10 +436,21 @@ class VerdictEngine:
             if not gate_11["passed"]:
                 violations.append("GATE_11_KELLY_NO_EDGE")
 
-        # ...existing code... (verdict determination logic)
+        # ── Determine verdict from violations ────────────────────────
+        if violations:
+            verdict = "NO_TRADE"
+            confidence = max(0.10, 0.50 - 0.05 * len(violations))
+        else:
+            verdict = "EXECUTE"
+            confidence = 0.80 + 0.02 * len(gate_results)
+            confidence = min(confidence, 1.0)
 
-        # If any gate has a hard violation, verdict is NO_TRADE
-        # ...existing code...
+        return {
+            "verdict": verdict,
+            "confidence": round(confidence, 4),
+            "gate_results": gate_results,
+            "violations": violations,
+        }
 
     def _evaluate_kelly_edge_gate(self, kelly_edge_data: dict) -> dict:
         """Gate 11: Kelly Edge Verification.

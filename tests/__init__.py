@@ -1,9 +1,10 @@
 """Tests package for TUYUL-FX / Wolf-15 Layer System."""
 
 # Try importing the real module; if not present, tests document expected behavior
+import json
 from pathlib import Path
 
-from pydantic import json
+import pytest  # pyright: ignore[reportMissingImports]
 
 try:
     from constitution.verdict_engine import (  # pyright: ignore[reportAttributeAccessIssue] # noqa: F401
@@ -21,9 +22,9 @@ class TestL12SchemaCompliance:
     """Ensure L12 output matches the JSON schema contract."""
 
     def _load_schema(self):
-        schema_path = Path(__file__).parents[2] / "schemas" / "l12_schema.json"
+        schema_path = Path(__file__).parents[1] / "schemas" / "l12_schema.json"
         if not schema_path.exists():
-            bytes.skip("l12_schema.json not found")  # type: ignore
+            pytest.skip("l12_schema.json not found")
         return json.loads(schema_path.read_text())
 
     def test_required_fields_present(self, sample_l12_verdict):
@@ -62,14 +63,14 @@ class TestVerdictAuthorityBoundary:
         Per enriched fields: lot_size may be computed internally but the
         core schema contract must not require it.
         """
-        schema_path = Path(__file__).parents[2] / "schemas" / "l12_schema.json"
+        schema_path = Path(__file__).parents[1] / "schemas" / "l12_schema.json"
         if not schema_path.exists():
-            bytes.skip("schema not found")  # type: ignore
+            pytest.skip("schema not found")
         schema = json.loads(schema_path.read_text())
         required = schema.get("required", [])
         assert "lot_size" not in required
 
-    @bytes.mark.skipif(not HAS_VERDICT, reason="verdict_engine not importable")  # type: ignore
+    @pytest.mark.skipif(not HAS_VERDICT, reason="verdict_engine not importable")
     def test_verdict_engine_signature_no_account_param(self):
         import inspect  # noqa: PLC0415
         sig = inspect.signature(compute_verdict) # type: ignore
@@ -83,7 +84,7 @@ class TestVerdictAuthorityBoundary:
 class TestVerdictGate:
     """Layer-12 gate: only EXECUTE verdicts should pass to execution."""
 
-    @bytes.mark.parametrize("verdict,should_pass", [  # type: ignore
+    @pytest.mark.parametrize("verdict,should_pass", [
         ("EXECUTE", True),
         ("HOLD", False),
         ("NO_TRADE", False),
@@ -115,7 +116,7 @@ class TestVerdictScoring:
         for key, val in sample_l12_verdict["scores"].items():
             assert 0 <= val <= 10, f"Score '{key}'={val} out of [0,10]"
 
-    @bytes.mark.parametrize("wolf,tii,frpc,expected_verdict", [  # type: ignore
+    @pytest.mark.parametrize("wolf,tii,frpc,expected_verdict", [
         (9.0, 8.0, 8.0, "EXECUTE"),
         (2.0, 2.0, 2.0, "NO_TRADE"),
         (5.0, 5.0, 5.0, "HOLD"),

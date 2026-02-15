@@ -3,6 +3,11 @@
 Runs bootstrap Monte Carlo simulations over historical trade returns
 to estimate win probability, profit factor, risk of ruin, and drawdown.
 
+IMPORTANT: This is the Monte Carlo engine that feeds L12 verdicts.
+    Pipeline path: engines.monte_carlo_engine → analysis.layers.L7_probability → L12
+    Sibling engine: core/core_fusion/monte_carlo.py (FTTC confidence simulation,
+                    used by the core fusion layer — NOT the L7→L12 path).
+
 ANALYSIS-ONLY module. No execution side-effects.
 """  # noqa: N999
 
