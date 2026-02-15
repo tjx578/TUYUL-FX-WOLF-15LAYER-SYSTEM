@@ -31,7 +31,6 @@ app.dependency_overrides[verify_token] = _mock_verify_token
 def client():
     """Create test client for API with auth overridden."""
     return TestClient(app)
-    return c  # noqa: F821
 
 
 @pytest.fixture(autouse=True)
