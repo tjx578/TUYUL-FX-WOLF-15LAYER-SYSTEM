@@ -16,12 +16,12 @@ import time
 
 from datetime import UTC, datetime
 
-import httpx
+import httpx  # pyright: ignore[reportMissingImports]
 
-from loguru import logger
+from loguru import logger  # pyright: ignore[reportMissingImports]
 
-from analysis.vix_analysis_engine import VIXAnalysisEngine
-from analysis.vix_proxy_estimator import VIXProxyEstimator
+from analysis.macro.vix_analysis_engine import VIXAnalysisEngine
+from analysis.macro.vix_proxy_estimator import VIXProxyEstimator
 from context.live_context_bus import LiveContextBus
 from storage.redis_client import redis_client
 
