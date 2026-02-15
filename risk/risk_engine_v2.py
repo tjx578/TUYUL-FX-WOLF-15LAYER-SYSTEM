@@ -10,7 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import StrEnum
 
-from loguru import logger
+from loguru import logger  # pyright: ignore[reportMissingImports]
 
 from risk.exceptions import (
     InvalidPositionSize,
