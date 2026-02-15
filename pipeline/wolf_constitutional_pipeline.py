@@ -115,10 +115,16 @@ def build_l12_synthesis(
     self,
     layer_results: dict[str, Any],
 ) -> dict[str, Any]:
-    """Build Layer-12 synthesis with Bayesian enrichment fields.
+    """Build Layer-12 synthesis with Bayesian + Monte Carlo enrichment fields.
 
-    Adds bayesian_posterior, bayesian_ci_low, bayesian_ci_high,
-    mc_passed_threshold, and risk_of_ruin from L7 into the synthesis.
+    L7 fields are normalized before injection:
+    - win_probability (0-100 from MC) → L7_monte_carlo_win (0.0-1.0)
+    - risk_of_ruin (0.0-1.0) → L7_risk_of_ruin (default 1.0 = worst)
+    - posterior_win_probability (0.0-1.0) → L7_posterior_win
+    - profit_factor (float) → L7_profit_factor
+    - bayesian_ci_low / bayesian_ci_high → L7_bayesian_ci_low / L7_bayesian_ci_high
+    - mc_passed_threshold (bool) → L7_mc_passed
+    - validation (str) → L7_validation
     """
     # ── Wolf 30-Point from L4 ──
     if "wolf_30_point" in layer_results.get("L4", {}) and isinstance(layer_results["L4"]["wolf_30_point"], dict):
