@@ -1,644 +1,381 @@
-"""Structure and divergence engine for swing state and alignment."""
+"""Fusion Structure Engine — Layer-5 market structure analysis.
 
-from dataclasses import dataclass, field
-from __future__ import annotations
+Detects key structure levels (support/resistance), break of structure (BOS),
+change of character (CHOCH), and order blocks across multiple timeframes.
 
-from dataclasses import dataclass
-from typing import Any
-
-
-def _slope(values: list[float]) -> float:
-    if len(values) < 2:
-        return 0.0
-    return values[-1] - values[0]
-
-
-@dataclass
-class StructureSnapshot:
-    valid: bool
-    structure: str
-    divergence_present: bool
-    divergence_type: str
-    mtf_alignment: float
-    liquidity_state: str
-
-
-class FusionStructureEngine:
-    def evaluate(self, payload: dict[str, Any]) -> StructureSnapshot:
-        close = [float(v) for v in payload.get("close", payload.get("prices", []))]
-        high = [float(v) for v in payload.get("high", close)]
-        low = [float(v) for v in payload.get("low", close)]
-        volume = [float(v) for v in payload.get("volume", [1.0] * len(close))]
-        rsi = [float(v) for v in payload.get("rsi_series", [50.0] * len(close))]
-
-        if len(close) < 25:
-            return StructureSnapshot(False, "UNKNOWN", False, "NONE", 0.0, "THIN")
-
-        recent_high = max(high[-10:])
-        recent_low = min(low[-10:])
-        broke_up = close[-1] > recent_high * 0.998
-        broke_down = close[-1] < recent_low * 1.002
-
-        if broke_up:
-            structure = "BREAKING_OUT"
-        elif broke_down:
-            structure = "BREAKING_DOWN"
-        elif close[-1] > close[-10]:
-            structure = "BULLISH"
-        elif close[-1] < close[-10]:
-            structure = "BEARISH"
-        else:
-            structure = "RANGE"
-
-        price_higher_high = close[-1] > close[-6]
-        rsi_lower_high = rsi[-1] < rsi[-6]
-        price_lower_low = close[-1] < close[-6]
-        rsi_higher_low = rsi[-1] > rsi[-6]
-
-        divergence = False
-        div_type = "NONE"
-        if price_higher_high and rsi_lower_high:
-            divergence = True
-            div_type = "BEARISH"
-        elif price_lower_low and rsi_higher_low:
-            divergence = True
-            div_type = "BULLISH"
-
-        short_slope = _slope(close[-5:])
-        mid_slope = _slope(close[-15:])
-        long_slope = _slope(close[-25:])
-        same_dir = sum(1 for s in (short_slope, mid_slope, long_slope) if s > 0)
-        mtf_alignment = same_dir / 3 if close[-1] >= close[0] else (3 - same_dir) / 3
-
-        v_avg = sum(volume[-20:]) / 20
-        if volume[-1] > v_avg * 1.5:
-            liq = "HIGH"
-        elif volume[-1] < v_avg * 0.7:
-            liq = "LOW"
-        else:
-            liq = "NORMAL"
-
-        return StructureSnapshot(
-            True, structure, divergence, div_type, round(mtf_alignment, 4), liq
-        )
-
-    @staticmethod
-    def export(snapshot: StructureSnapshot) -> dict[str, Any]:
-        return {
-            "valid": snapshot.valid,
-            "structure": snapshot.structure,
-            "divergence_present": snapshot.divergence_present,
-            "divergence_type": snapshot.divergence_type,
-            "mtf_alignment": snapshot.mtf_alignment,
-            "liquidity_state": snapshot.liquidity_state,
-"""Structure and divergence engine."""
-"""Fusion Structure Engine v2.0.
-
-Role:
-  - Market structure and divergence detection.
-  - Liquidity zone mapping.
-  - Multi-timeframe alignment scoring.
-
-Integration:
-  - Compatible with MultiIndicatorDivergenceDetector output.
-  - Consumes OHLCV data for real structure analysis.
+ANALYSIS-ONLY module. No execution side-effects.
 """
+
+from __future__ import annotations
 
 import logging
 
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
-from enum import Enum
 from typing import Any
+
+import numpy as np  # pyright: ignore[reportMissingImports]
 
 logger = logging.getLogger(__name__)
 
 
-class StructureState(str, Enum):
-    BULLISH_STRUCTURE = "BULLISH_STRUCTURE"
-    BEARISH_STRUCTURE = "BEARISH_STRUCTURE"
-    RANGE_BOUND = "RANGE_BOUND"
-    BREAKING_OUT = "BREAKING_OUT"
-    BREAKING_DOWN = "BREAKING_DOWN"
-
+# ---------------------------------------------------------------------------
+# Result dataclass
+# ---------------------------------------------------------------------------
 
 @dataclass
-class FusionStructure:
-    """Result of structure analysis."""
-
-    divergence_present: bool
-    divergence_type: str
-    liquidity_state: str
-    mtf_alignment: float
-    structure_state: StructureState
-    swing_high: float | None = None
-    swing_low: float | None = None
-    details: dict[str, Any] = field(default_factory=dict)
-
-
-class FusionStructureEngine:
-    """Analyze market structure, divergence, liquidity, and MTF alignment."""
-
-    def __init__(self, swing_lookback: int = 5) -> None:
-        self.swing_lookback = swing_lookback
-
-    def analyze(self, structure: dict[str, Any]) -> FusionStructure:
-        """Analyze market structure from raw OHLCV or pre-computed fields."""
-        closes = structure.get("closes", structure.get("close", []))
-        highs = structure.get("highs", structure.get("high", []))
-        lows = structure.get("lows", structure.get("low", []))
-        volumes = structure.get("volumes", structure.get("volume", []))
-        rsi_series = structure.get("rsi", [])
-
-        if structure.get("divergence") is not None and not closes:
-            return FusionStructure(
-                divergence_present=bool(structure.get("divergence", False)),
-                divergence_type=structure.get("divergence_type", "NONE"),
-                liquidity_state=structure.get("liquidity_state", "UNKNOWN"),
-                mtf_alignment=float(structure.get("mtf_alignment", 0.5)),
-                structure_state=StructureState.RANGE_BOUND,
-            )
-
-        if not closes or len(closes) < 20:
-            return FusionStructure(
-                divergence_present=False,
-                divergence_type="NONE",
-                liquidity_state="UNKNOWN",
-                mtf_alignment=0.5,
-                structure_state=StructureState.RANGE_BOUND,
-                details={"reason": "insufficient_data"},
-            )
-
-        swing_high, swing_low = self._find_swing_points(highs, lows)
-        structure_state = self._classify_structure(highs, lows, closes)
-        div_present, div_type = self._detect_divergence(closes, rsi_series, lows, highs)
-        liq_state = self._assess_liquidity(volumes)
-
-        mtf_scores = structure.get("mtf_scores", {})
-        if mtf_scores:
-            mtf_alignment = sum(mtf_scores.values()) / len(mtf_scores)
-        elif structure.get("mtf_alignment") is not None:
-            mtf_alignment = float(structure["mtf_alignment"])
-        else:
-            mtf_alignment = self._compute_basic_mtf(closes)
-
-        return FusionStructure(
-            divergence_present=div_present,
-            divergence_type=div_type,
-            liquidity_state=liq_state,
-            mtf_alignment=round(max(-1.0, min(1.0, mtf_alignment)), 4),
-            structure_state=structure_state,
-            swing_high=round(swing_high, 5) if swing_high else None,
-            swing_low=round(swing_low, 5) if swing_low else None,
-            details={
-                "mtf_scores": mtf_scores,
-                "timestamp": datetime.now(UTC).isoformat(),
-            },
-        )
-
-    def _find_swing_points(self, highs: list[float], lows: list[float]) -> tuple[float | None, float | None]:
-        """Find most recent swing high and low."""
-        lb = self.swing_lookback
-        last_sh, last_sl = None, None
-
-        for i in range(len(highs) - lb, lb - 1, -1):
-            if all(highs[i] >= highs[i - j] for j in range(1, lb + 1)) and all(
-                highs[i] >= highs[i + j] for j in range(1, min(lb + 1, len(highs) - i))
-            ):
-                last_sh = highs[i]
-                break
-
-        for i in range(len(lows) - lb, lb - 1, -1):
-            if all(lows[i] <= lows[i - j] for j in range(1, lb + 1)) and all(
-                lows[i] <= lows[i + j] for j in range(1, min(lb + 1, len(lows) - i))
-            ):
-                last_sl = lows[i]
-                break
-
-        return last_sh, last_sl
-
-    def _classify_structure(
-        self, highs: list[float], lows: list[float], closes: list[float]
-    ) -> StructureState:
-        """Classify structure from recent swing patterns."""
-        n = len(closes)
-        if n < 30:
-            return StructureState.RANGE_BOUND
-
-        shs: list[float] = []
-        sls: list[float] = []
-        for i in range(n - 25, n - 3):
-            if i < 2:
-                continue
-            if highs[i] > highs[i - 1] and highs[i] > highs[i + 1]:
-                shs.append(highs[i])
-            if lows[i] < lows[i - 1] and lows[i] < lows[i + 1]:
-                sls.append(lows[i])
-
-        if len(shs) >= 2 and len(sls) >= 2:
-            hh = shs[-1] > shs[-2]
-            hl = sls[-1] > sls[-2]
-            ll = sls[-1] < sls[-2]
-            lh = shs[-1] < shs[-2]
-
-            if hh and hl:
-                return StructureState.BULLISH_STRUCTURE
-            if ll and lh:
-                return StructureState.BEARISH_STRUCTURE
-
-        recent_high = max(highs[-5:])
-        lookback_high = max(highs[-30:-5]) if n > 30 else recent_high
-        recent_low = min(lows[-5:])
-        lookback_low = min(lows[-30:-5]) if n > 30 else recent_low
-
-        if recent_high > lookback_high * 1.002:
-            return StructureState.BREAKING_OUT
-        if recent_low < lookback_low * 0.998:
-            return StructureState.BREAKING_DOWN
-
-        return StructureState.RANGE_BOUND
-
-    def _detect_divergence(
-        self,
-        closes: list[float],
-        rsi: list[float],
-        lows: list[float],
-        highs: list[float],
-    ) -> tuple[bool, str]:
-        """Simple RSI-price divergence detection."""
-        if not rsi or len(rsi) < 20 or len(closes) < 20:
-            return False, "NONE"
-
-        price_ll = lows[-1] < min(lows[-15:-5])
-        rsi_hl = rsi[-1] > min(rsi[-15:-5])
-        if price_ll and rsi_hl:
-            return True, "BULLISH"
-
-        price_hh = highs[-1] > max(highs[-15:-5])
-        rsi_lh = rsi[-1] < max(rsi[-15:-5])
-        if price_hh and rsi_lh:
-            return True, "BEARISH"
-
-        return False, "NONE"
-
-    def _assess_liquidity(self, volumes: list[float]) -> str:
-        """Assess liquidity from recent volume profile."""
-        if not volumes or len(volumes) < 10:
-            return "NORMAL"
-        avg = sum(volumes[-20:]) / min(20, len(volumes))
-        current = volumes[-1]
-        if avg == 0:
-            return "THIN"
-        ratio = current / avg
-        if ratio > 1.5:
-            return "HIGH"
-        if ratio > 0.7:
-            return "NORMAL"
-        if ratio > 0.3:
-            return "LOW"
-        return "THIN"
-
-    def _compute_basic_mtf(self, closes: list[float]) -> float:
-        """Compute basic MTF alignment from SMA slopes."""
-        if len(closes) < 50:
-            return 0.0
-
-        scores: list[float] = []
-        for window in [10, 20, 50]:
-            if len(closes) >= window + 5:
-                sma_now = sum(closes[-window:]) / window
-                sma_prev = sum(closes[-window - 5 : -5]) / window
-                scores.append(1.0 if sma_now > sma_prev else -1.0)
-
-        return sum(scores) / len(scores) if scores else 0.0
-
-    def export(self, structure: FusionStructure) -> dict[str, Any]:
-        """Export dataclass output into a serializable dictionary."""
-        return {
-            "divergence_present": structure.divergence_present,
-            "divergence_type": structure.divergence_type,
-            "liquidity_state": structure.liquidity_state,
-            "mtf_alignment": structure.mtf_alignment,
-            "structure_state": structure.structure_state.value,
-            "swing_high": structure.swing_high,
-            "swing_low": structure.swing_low,
-            "details": structure.details,
-        }
-
-
-__all__ = ["FusionStructure", "FusionStructureEngine", "StructureState"]
-"""Fusion structure engine."""
-
-from __future__ import annotations
-
-from dataclasses import dataclass
-"""Structure and divergence analysis engine."""
-
-from __future__ import annotations
-
-from dataclasses import dataclass, field
-from typing import Any
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Sequence
-from typing import Any, Dict, List
+class StructureLevel:
+    """A detected support/resistance level."""
+    price: float
+    level_type: str  # "SUPPORT" | "RESISTANCE"
+    strength: float  # 0.0–1.0
+    timeframe: str = ""
+    touch_count: int = 0
+    last_touch_index: int = -1
 
 
 @dataclass
 class StructureResult:
-    valid: bool
-    structure: str
-    bullish_divergence: bool
-    bearish_divergence: bool
-    liquidity: str
-    mtf_alignment: float
-    structure: str
-    bullish_divergence: bool
-    bearish_divergence: bool
-    mtf_alignment: float
-    liquidity: str
-    details: Dict[str, Any] = field(default_factory=dict)
+    """Output of the Fusion Structure Engine."""
+
+    # Overall market structure
+    structure_bias: str = "NEUTRAL"  # BULLISH | BEARISH | NEUTRAL | RANGING
+    structure_score: float = 0.0     # 0.0–1.0
+
+    # Break of structure / Change of character
+    bos_detected: bool = False
+    bos_direction: str = "NONE"      # BULLISH | BEARISH | NONE
+    choch_detected: bool = False
+    choch_direction: str = "NONE"
+
+    # Key levels
+    levels: list[StructureLevel] = field(default_factory=list)
+    nearest_support: float = 0.0
+    nearest_resistance: float = 0.0
+
+    # Order blocks
+    order_blocks: list[dict[str, Any]] = field(default_factory=list)
+
+    # Swing points
+    swing_highs: list[float] = field(default_factory=list)
+    swing_lows: list[float] = field(default_factory=list)
+
+    # Multi-timeframe
+    mtf_structure_alignment: float = 0.0
+    timeframe_biases: dict[str, str] = field(default_factory=dict)
+
+    # Metadata
+    confidence: float = 0.0
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+    @property
+    def is_valid(self) -> bool:
+        return self.confidence > 0.0
 
 
-class FusionStructureEngine:
-    def __init__(self, swing_lookback: int = 3) -> None:
-        self.swing_lookback = swing_lookback
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
 
-    def evaluate(self, payload: Dict[str, Any]) -> StructureResult:
-        closes: List[float] = payload.get("closes", [])
-        highs: List[float] = payload.get("highs", closes)
-        lows: List[float] = payload.get("lows", closes)
-        volumes: List[float] = payload.get("volumes", [])
-        rsi_series: List[float] = payload.get("rsi_series", [])
+def _detect_swing_points(
+    highs: np.ndarray,
+    lows: np.ndarray,
+    lookback: int = 3,
+) -> tuple[list[tuple[int, float]], list[tuple[int, float]]]:
+    """Detect swing highs/lows using N-bar lookback."""
+    swing_highs: list[tuple[int, float]] = []
+    swing_lows: list[tuple[int, float]] = []
 
-        swings = self._swing_points(highs, lows)
-        structure = self._classify_structure(closes)
-        bull_div, bear_div = self._detect_divergence(closes, rsi_series)
-        mtf_alignment = self._mtf_alignment(closes)
-        liquidity = self._liquidity(volumes)
+    for i in range(lookback, len(highs) - lookback):
+        # Swing high: higher than surrounding bars
+        if all(highs[i] >= highs[i - j] for j in range(1, lookback + 1)) and \
+           all(highs[i] >= highs[i + j] for j in range(1, lookback + 1)):
+            swing_highs.append((i, float(highs[i])))
 
-        return StructureResult(
-            structure=structure,
-            bullish_divergence=bull_div,
-            bearish_divergence=bear_div,
-            mtf_alignment=round(mtf_alignment, 4),
-            liquidity=liquidity,
-            details={"swing_points": swings[-6:]},
-        )
+        # Swing low: lower than surrounding bars
+        if all(lows[i] <= lows[i - j] for j in range(1, lookback + 1)) and \
+           all(lows[i] <= lows[i + j] for j in range(1, lookback + 1)):
+            swing_lows.append((i, float(lows[i])))
 
-    def _swing_points(self, highs: List[float], lows: List[float]) -> List[Dict[str, float]]:
-        points: List[Dict[str, float]] = []
-        lb = self.swing_lookback
-        for idx in range(lb, len(highs) - lb):
-            if highs[idx] == max(highs[idx - lb : idx + lb + 1]):
-                points.append({"type": "high", "idx": idx, "value": highs[idx]})
-            if lows[idx] == min(lows[idx - lb : idx + lb + 1]):
-                points.append({"type": "low", "idx": idx, "value": lows[idx]})
-        return points
-
-    def _classify_structure(self, closes: List[float]) -> str:
-        if len(closes) < 20:
-            return "RANGE"
-        recent = closes[-5:]
-        prior = closes[-10:-5]
-        if max(recent) > max(prior) and min(recent) > min(prior):
-            return "BREAKING_OUT"
-        if max(recent) < max(prior) and min(recent) < min(prior):
-            return "BREAKING_DOWN"
-        if recent[-1] > prior[-1]:
-            return "BULLISH"
-        if recent[-1] < prior[-1]:
-            return "BEARISH"
-        return "RANGE"
-
-    def _detect_divergence(self, closes: List[float], rsi: List[float]) -> tuple:
-        if len(closes) < 6 or len(rsi) < 6:
-            return False, False
-        price_down = closes[-1] < closes[-4]
-        rsi_up = rsi[-1] > rsi[-4]
-        price_up = closes[-1] > closes[-4]
-        rsi_down = rsi[-1] < rsi[-4]
-        return price_down and rsi_up, price_up and rsi_down
-
-    def _mtf_alignment(self, closes: List[float]) -> float:
-        if len(closes) < 60:
-            return 0.5
-        short = closes[-1] - closes[-10]
-        medium = closes[-1] - closes[-30]
-        long = closes[-1] - closes[-60]
-        same_sign = sum(1 for item in [short, medium, long] if item > 0)
-        return abs((same_sign / 3.0) - ((3 - same_sign) / 3.0))
-
-    def _liquidity(self, volumes: List[float]) -> str:
-        if len(volumes) < 12:
-            return "UNKNOWN"
-        avg = sum(volumes[-12:]) / 12
-        if avg <= 0:
-            return "UNKNOWN"
-        ratio = volumes[-1] / avg
-        if ratio > 1.4:
-            return "HIGH"
-        if ratio < 0.6:
-            return "LOW"
-        return "NORMAL"
+    return swing_highs, swing_lows
 
 
-__all__ = ["StructureResult", "FusionStructureEngine"]
+def _detect_bos(
+    swing_highs: list[tuple[int, float]],
+    swing_lows: list[tuple[int, float]],
+    current_close: float,
+) -> tuple[bool, str]:
+    """Detect break of structure."""
+    if len(swing_highs) < 2 or len(swing_lows) < 2:
+        return False, "NONE"
+
+    last_sh = swing_highs[-1][1]
+    last_sl = swing_lows[-1][1]
+
+    if current_close > last_sh:
+        return True, "BULLISH"
+    if current_close < last_sl:
+        return True, "BEARISH"
+    return False, "NONE"
 
 
-class FusionStructureEngine:
-    def evaluate(self, payload: dict[str, list[float]]) -> StructureResult:
-        closes = payload.get("closes", [])
-        rsi = payload.get("rsi", [])
-        if len(closes) < 8:
-            return StructureResult("UNKNOWN", False, False, 0.0)
-        last = closes[-1]
-        recent_max = max(closes[-6:-1])
-        recent_min = min(closes[-6:-1])
-        if last > recent_max:
-            structure = "BREAKING_OUT"
-        elif last < recent_min:
-            structure = "BREAKING_DOWN"
-        elif closes[-1] > closes[-4] > closes[-8]:
-            structure = "BULLISH"
-        elif closes[-1] < closes[-4] < closes[-8]:
-            structure = "BEARISH"
+def _detect_choch(
+    swing_highs: list[tuple[int, float]],
+    swing_lows: list[tuple[int, float]],
+) -> tuple[bool, str]:
+    """Detect change of character (trend reversal signal)."""
+    if len(swing_highs) < 3 or len(swing_lows) < 3:
+        return False, "NONE"
+
+    # Bullish CHOCH: lower lows then a higher low
+    recent_lows = [sl[1] for sl in swing_lows[-3:]]
+    if recent_lows[-2] < recent_lows[-3] and recent_lows[-1] > recent_lows[-2]:
+        return True, "BULLISH"
+
+    # Bearish CHOCH: higher highs then a lower high
+    recent_highs = [sh[1] for sh in swing_highs[-3:]]
+    if recent_highs[-2] > recent_highs[-3] and recent_highs[-1] < recent_highs[-2]:
+        return True, "BEARISH"
+
+    return False, "NONE"
+
+
+def _find_structure_levels(
+    swing_highs: list[tuple[int, float]],
+    swing_lows: list[tuple[int, float]],
+    current_close: float,
+    tolerance_pct: float = 0.001,
+    timeframe: str = "",
+) -> list[StructureLevel]:
+    """Cluster swing points into support/resistance levels."""
+    all_points: list[tuple[float, str]] = []
+    for _, price in swing_highs:
+        all_points.append((price, "RESISTANCE"))
+    for _, price in swing_lows:
+        all_points.append((price, "SUPPORT"))
+
+    if not all_points:
+        return []
+
+    # Cluster nearby points
+    all_points.sort(key=lambda x: x[0])
+    levels: list[StructureLevel] = []
+    used = [False] * len(all_points)
+
+    for i, (price, ltype) in enumerate(all_points):
+        if used[i]:
+            continue
+        cluster_prices = [price]
+        cluster_types = [ltype]
+        used[i] = True
+        for j in range(i + 1, len(all_points)):
+            if used[j]:
+                continue
+            if abs(all_points[j][0] - price) / max(abs(price), 1e-8) < tolerance_pct:
+                cluster_prices.append(all_points[j][0])
+                cluster_types.append(all_points[j][1])
+                used[j] = True
+
+        avg_price = float(np.mean(cluster_prices))
+        touch_count = len(cluster_prices)
+        strength = min(1.0, touch_count / 5.0)
+
+        # Determine type relative to current price
+        if avg_price > current_close:
+            level_type = "RESISTANCE"
+        elif avg_price < current_close:
+            level_type = "SUPPORT"
         else:
-            structure = "RANGE"
-        bull_div = bool(len(rsi) >= 6 and closes[-1] < closes[-3] and rsi[-1] > rsi[-3])
-        bear_div = bool(len(rsi) >= 6 and closes[-1] > closes[-3] and rsi[-1] < rsi[-3])
-        htf_slope = (closes[-1] - closes[-6]) / closes[-6]
-        ltf_slope = (closes[-1] - closes[-3]) / closes[-3]
-        mtf = 1.0 if htf_slope * ltf_slope > 0 else 0.4
-        return StructureResult(structure, bull_div, bear_div, round(mtf, 4))
-    liquidity: str
-    details: dict[str, Any] = field(default_factory=dict)
+            level_type = cluster_types[0]
 
+        levels.append(StructureLevel(
+            price=round(avg_price, 5),
+            level_type=level_type,
+            strength=strength,
+            timeframe=timeframe,
+            touch_count=touch_count,
+        ))
+
+    return levels
+
+
+def _detect_order_blocks(
+    opens: np.ndarray, closes: np.ndarray,
+    highs: np.ndarray, lows: np.ndarray,
+    swing_highs: list[tuple[int, float]],
+    swing_lows: list[tuple[int, float]],
+) -> list[dict[str, Any]]:
+    """Detect institutional order blocks near swing points."""
+    ob_list: list[dict[str, Any]] = []
+
+    for idx, _price in swing_lows[-5:]:
+        if idx < 1 or idx >= len(opens):
+            continue
+        # Bullish OB: last bearish candle before a bullish swing
+        if closes[idx - 1] < opens[idx - 1]:
+            ob_list.append({
+                "type": "BULLISH",
+                "top": float(opens[idx - 1]),
+                "bottom": float(closes[idx - 1]),
+                "index": idx - 1,
+                "strength": 0.7,
+            })
+
+    for idx, _price in swing_highs[-5:]:
+        if idx < 1 or idx >= len(opens):
+            continue
+        if closes[idx - 1] > opens[idx - 1]:
+            ob_list.append({
+                "type": "BEARISH",
+                "top": float(closes[idx - 1]),
+                "bottom": float(opens[idx - 1]),
+                "index": idx - 1,
+                "strength": 0.7,
+            })
+
+    return ob_list
+
+
+def _classify_structure_bias(
+    swing_highs: list[tuple[int, float]],
+    swing_lows: list[tuple[int, float]],
+) -> tuple[str, float]:
+    """Classify market structure bias with confidence."""
+    if len(swing_highs) < 2 or len(swing_lows) < 2:
+        return "NEUTRAL", 0.0
+
+    hh = swing_highs[-1][1] > swing_highs[-2][1]
+    hl = swing_lows[-1][1] > swing_lows[-2][1]
+    lh = swing_highs[-1][1] < swing_highs[-2][1]
+    ll = swing_lows[-1][1] < swing_lows[-2][1]
+
+    if hh and hl:
+        return "BULLISH", 0.8
+    if lh and ll:
+        return "BEARISH", 0.8
+    if hh and ll:
+        return "RANGING", 0.5
+    if lh and hl:
+        return "RANGING", 0.5
+    return "NEUTRAL", 0.3
+
+
+# ---------------------------------------------------------------------------
+# Engine
+# ---------------------------------------------------------------------------
 
 class FusionStructureEngine:
-    def evaluate(self, data: Dict[str, Sequence[float] | float]) -> StructureResult:
-        closes = list(data.get("close", []))
-        highs = list(data.get("high", closes))
-        lows = list(data.get("low", closes))
-        volumes = list(data.get("volume", [1.0] * len(closes)))
-        rsi = list(data.get("rsi_series", []))
+    """Fusion Structure Engine — pure analysis, no execution.
 
-        if len(closes) < 50:
-            return StructureResult(False, "UNKNOWN", False, False, "UNKNOWN", 0.0, {"reason": "insufficient"})
+    Parameters
+    ----------
+    swing_lookback : int
+        N-bar lookback for swing point detection.
+    level_cluster_pct : float
+        Percentage tolerance for clustering levels.
+    """
 
-        highs_idx, lows_idx = self._swings(highs, lows, lookback=2)
-        structure = "RANGE"
-        if len(highs_idx) >= 2 and len(lows_idx) >= 2:
-            hh = highs[highs_idx[-1]] > highs[highs_idx[-2]]
-            hl = lows[lows_idx[-1]] > lows[lows_idx[-2]]
-            ll = lows[lows_idx[-1]] < lows[lows_idx[-2]]
-            lh = highs[highs_idx[-1]] < highs[highs_idx[-2]]
-            if hh and hl:
-                structure = "BREAKING_OUT"
-            elif ll and lh:
-                structure = "BREAKING_DOWN"
-            elif hh:
-                structure = "BULLISH"
-            elif ll:
-                structure = "BEARISH"
-
-        bull_div = False
-        bear_div = False
-        if len(rsi) >= len(closes) and len(lows_idx) >= 2 and len(highs_idx) >= 2:
-            l1, l2 = lows_idx[-2], lows_idx[-1]
-            h1, h2 = highs_idx[-2], highs_idx[-1]
-            bull_div = lows[l2] < lows[l1] and rsi[l2] > rsi[l1]
-            bear_div = highs[h2] > highs[h1] and rsi[h2] < rsi[h1]
-
-        vol_ratio = volumes[-1] / max(sum(volumes[-20:]) / 20.0, 1e-9)
-        liquidity = "HIGH" if vol_ratio > 1.2 else "LOW" if vol_ratio < 0.8 else "NORMAL"
-
-        slope_fast = closes[-1] - closes[-10]
-        slope_slow = closes[-1] - closes[-30]
-        mtf = 1.0 if slope_fast * slope_slow > 0 else 0.4
-
-        return StructureResult(
-            valid=True,
-            structure=structure,
-            bullish_divergence=bull_div,
-            bearish_divergence=bear_div,
-            liquidity=liquidity,
-            mtf_alignment=round(mtf, 4),
-            details={
-                "swing_highs": highs_idx[-5:],
-                "swing_lows": lows_idx[-5:],
-                "timestamp": datetime.now(timezone.utc).isoformat(),
-            },
-        )
-
-    @staticmethod
-    def _swings(highs: List[float], lows: List[float], lookback: int) -> tuple[List[int], List[int]]:
-        sh: List[int] = []
-        sl: List[int] = []
-        for i in range(lookback, len(highs) - lookback):
-            left_h = highs[i - lookback : i]
-            right_h = highs[i + 1 : i + lookback + 1]
-            left_l = lows[i - lookback : i]
-            right_l = lows[i + 1 : i + lookback + 1]
-            if highs[i] > max(left_h + right_h):
-                sh.append(i)
-            if lows[i] < min(left_l + right_l):
-                sl.append(i)
-        return sh, sl
-    def evaluate(
+    def __init__(
         self,
-        highs: list[float],
-        lows: list[float],
-        closes: list[float],
-        volumes: list[float],
-        rsi_values: list[float],
-    ) -> StructureResult:
-        if len(closes) < 40:
-            return StructureResult(
-                "RANGE", False, False, 0.0, "NORMAL", {"reason": "insufficient_data"}
-            )
+        swing_lookback: int = 3,
+        level_cluster_pct: float = 0.001,
+        **_extra: Any,
+    ) -> None:
+        self.swing_lookback = swing_lookback
+        self.level_cluster_pct = level_cluster_pct
 
-        swings_h = self._swings(highs, is_high=True)
-        swings_l = self._swings(lows, is_high=False)
-        structure = self._classify(swings_h, swings_l, closes)
-        bull_div, bear_div = self._divergence(closes, rsi_values)
-        mtf = self._mtf_alignment(closes)
-        liq = self._liquidity(volumes)
+    def analyze(
+        self,
+        candles: dict[str, list[dict[str, Any]]],
+        symbol: str = "",
+    ) -> StructureResult:
+        """Analyse market structure across multiple timeframes."""
+        if not candles:
+            logger.warning("FusionStructureEngine: empty candles")
+            return StructureResult(metadata={"symbol": symbol, "error": "no_candles"})
+
+        tf_biases: dict[str, str] = {}
+        all_levels: list[StructureLevel] = []
+        primary_tf = self._select_primary(candles)
+        primary_result: dict[str, Any] = {}
+
+        for tf_name, tf_candles in candles.items():
+            try:
+                result = self._analyze_tf(tf_candles, tf_name)
+                tf_biases[tf_name] = result.get("bias", "NEUTRAL")
+                all_levels.extend(result.get("levels", []))
+                if tf_name == primary_tf:
+                    primary_result = result
+            except Exception as exc:
+                logger.warning("Structure engine TF %s error: %s", tf_name, exc)
+
+        if not primary_result:
+            return StructureResult(metadata={"symbol": symbol, "error": "no_primary"})
+
+        # MTF alignment
+        bias_values = list(tf_biases.values())
+        if bias_values:
+            dominant = max(set(bias_values), key=bias_values.count)
+            mtf_alignment = bias_values.count(dominant) / len(bias_values)
+        else:
+            dominant = "NEUTRAL"
+            mtf_alignment = 0.0
+
+        current_close = primary_result.get("current_close", 0.0)
+        supports = [l.price for l in all_levels if l.level_type == "SUPPORT" and l.price < current_close]  # noqa: E741
+        resistances = [l.price for l in all_levels if l.level_type == "RESISTANCE" and l.price > current_close]  # noqa: E741
 
         return StructureResult(
-            structure=structure,
-            bullish_divergence=bull_div,
-            bearish_divergence=bear_div,
-            mtf_alignment=round(mtf, 6),
-            liquidity=liq,
-            details={"swing_highs": len(swings_h), "swing_lows": len(swings_l)},
+            structure_bias=primary_result.get("bias", "NEUTRAL"),
+            structure_score=primary_result.get("bias_score", 0.0),
+            bos_detected=primary_result.get("bos", (False, "NONE"))[0],
+            bos_direction=primary_result.get("bos", (False, "NONE"))[1],
+            choch_detected=primary_result.get("choch", (False, "NONE"))[0],
+            choch_direction=primary_result.get("choch", (False, "NONE"))[1],
+            levels=all_levels,
+            nearest_support=max(supports) if supports else 0.0,
+            nearest_resistance=min(resistances) if resistances else 0.0,
+            order_blocks=primary_result.get("order_blocks", []),
+            swing_highs=primary_result.get("swing_high_prices", []),
+            swing_lows=primary_result.get("swing_low_prices", []),
+            mtf_structure_alignment=mtf_alignment,
+            timeframe_biases=tf_biases,
+            confidence=min(1.0, primary_result.get("bias_score", 0.0) * 0.5 + mtf_alignment * 0.5),
+            metadata={"symbol": symbol, "primary_tf": primary_tf},
         )
 
-    @staticmethod
-    def _swings(values: list[float], is_high: bool, lookback: int = 2) -> list[float]:
-        swings = []
-        for i in range(lookback, len(values) - lookback):
-            left = values[i - lookback : i]
-            right = values[i + 1 : i + 1 + lookback]
-            if is_high and values[i] > max(left + right):
-                swings.append(values[i])
-            if not is_high and values[i] < min(left + right):
-                swings.append(values[i])
-        return swings[-4:]
+    def _analyze_tf(self, tf_candles: list[dict[str, Any]], tf_name: str) -> dict[str, Any]:
+        if len(tf_candles) < 10:
+            return {"bias": "NEUTRAL", "bias_score": 0.0}
 
-    @staticmethod
-    def _classify(swings_h: list[float], swings_l: list[float], closes: list[float]) -> str:
-        if len(swings_h) < 2 or len(swings_l) < 2:
-            return "RANGE"
-        hh = swings_h[-1] > swings_h[-2]
-        hl = swings_l[-1] > swings_l[-2]
-        ll = swings_l[-1] < swings_l[-2]
-        lh = swings_h[-1] < swings_h[-2]
-        if hh and hl:
-            return "BREAKING_OUT"
-        if ll and lh:
-            return "BREAKING_DOWN"
-        if abs(closes[-1] - closes[-20]) / closes[-20] < 0.004:
-            return "RANGE"
-        return "BULLISH" if closes[-1] > closes[-20] else "BEARISH"
+        opens = np.array([c.get("open", 0.0) for c in tf_candles], dtype=np.float64)
+        highs = np.array([c.get("high", 0.0) for c in tf_candles], dtype=np.float64)
+        lows = np.array([c.get("low", 0.0) for c in tf_candles], dtype=np.float64)
+        closes = np.array([c.get("close", 0.0) for c in tf_candles], dtype=np.float64)
 
-    @staticmethod
-    def _divergence(closes: list[float], rsi: list[float]) -> tuple[bool, bool]:
-        if len(closes) < 8 or len(rsi) < 8:
-            return False, False
-        price_ll = closes[-1] < min(closes[-6:-1])
-        rsi_hl = rsi[-1] > min(rsi[-6:-1])
-        price_hh = closes[-1] > max(closes[-6:-1])
-        rsi_lh = rsi[-1] < max(rsi[-6:-1])
-        return price_ll and rsi_hl, price_hh and rsi_lh
+        swing_highs, swing_lows = _detect_swing_points(highs, lows, self.swing_lookback)
+        current_close = float(closes[-1])
 
-    @staticmethod
-    def _mtf_alignment(closes: list[float]) -> float:
-        sma10 = sum(closes[-10:]) / 10
-        sma20 = sum(closes[-20:]) / 20
-        sma40 = sum(closes[-40:]) / 40
-        up = [sma10 > sma20, sma20 > sma40]
-        down = [sma10 < sma20, sma20 < sma40]
-        return max(sum(up), sum(down)) / 2
+        bias, bias_score = _classify_structure_bias(swing_highs, swing_lows)
+        bos = _detect_bos(swing_highs, swing_lows, current_close)
+        choch = _detect_choch(swing_highs, swing_lows)
+        levels = _find_structure_levels(swing_highs, swing_lows, current_close, self.level_cluster_pct, tf_name)
+        order_blocks = _detect_order_blocks(opens, closes, highs, lows, swing_highs, swing_lows)
 
-    @staticmethod
-    def _liquidity(volumes: list[float]) -> str:
-        if len(volumes) < 20:
-            return "NORMAL"
-        avg = sum(volumes[-20:]) / 20
-        ratio = volumes[-1] / avg if avg else 0.0
-        if ratio > 1.6:
-            return "HIGH"
-        if ratio < 0.5:
-            return "LOW"
-        return "NORMAL"
-
-    @staticmethod
-    def export(result: StructureResult) -> dict[str, Any]:
         return {
-            "structure": result.structure,
-            "bullish_divergence": result.bullish_divergence,
-            "bearish_divergence": result.bearish_divergence,
-            "mtf_alignment": result.mtf_alignment,
-            "liquidity": result.liquidity,
-            "details": result.details,
+            "bias": bias,
+            "bias_score": bias_score,
+            "bos": bos,
+            "choch": choch,
+            "levels": levels,
+            "order_blocks": order_blocks,
+            "swing_high_prices": [sh[1] for sh in swing_highs],
+            "swing_low_prices": [sl[1] for sl in swing_lows],
+            "current_close": current_close,
         }
+
+    @staticmethod
+    def _select_primary(candles: dict[str, list[dict[str, Any]]]) -> str:
+        for tf in ["H1", "M15", "H4", "D1"]:
+            if tf in candles and len(candles[tf]) >= 20:
+                return tf
+        return max(candles, key=lambda k: len(candles[k]))
