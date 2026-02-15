@@ -15,7 +15,7 @@ import fastapi  # pyright: ignore[reportMissingImports]
 import uvicorn  # pyright: ignore[reportMissingImports]
 
 from fastapi.middleware.cors import CORSMiddleware  # pyright: ignore[reportMissingImports]
-from loguru import logger
+from loguru import logger  # pyright: ignore[reportMissingImports]
 
 from api.dashboard_routes import router as dashboard_router
 from api.journal_routes import router as journal_router
