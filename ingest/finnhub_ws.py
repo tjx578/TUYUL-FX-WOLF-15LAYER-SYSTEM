@@ -14,6 +14,7 @@ import websockets  # pyright: ignore[reportMissingImports]
 from redis.asyncio import Redis  # pyright: ignore[reportMissingImports]
 from websockets.exceptions import (  # pyright: ignore[reportMissingImports]
     ConnectionClosed,
+    ConnectionClosedError,
     InvalidStatusCode,
 )
 
@@ -102,10 +103,6 @@ def _calculate_backoff(
     return max(0.1, clamped + jitter)
 
 
-    def _build_ws_url(self) -> str:
-        """Build the WebSocket URL with authentication token."""
-        return f"{self._ws_url}?token={self._api_key}"
-    return None
 class FinnhubWebSocket:
     """Resilient Finnhub WebSocket client.
 
@@ -254,33 +251,26 @@ class FinnhubWebSocket:
                 continue
 
             try:
-                url = self._build_ws_url() # pyright: ignore[reportAttributeAccessIssue]
-                logger.info("Connecting to Finnhub WebSocket...")
-                async with websockets.connect(
-                    url,
-                    ping_interval=self._ping_interval, # pyright: ignore[reportAttributeAccessIssue]
-                    ping_timeout=self._ping_interval + 10, # pyright: ignore[reportAttributeAccessIssue]
-                ) as ws:
-                    logger.info("Finnhub WebSocket connected")
-                    await self._subscribe(ws)
-                    backoff = self._reconnect_interval  # pyright: ignore[reportAttributeAccessIssue] # reset on success
-
-                    async for raw_msg in ws:
-                        msg = json.loads(raw_msg)
-                        await self._handle_message(msg) # pyright: ignore[reportAttributeAccessIssue]
-
-            except ConnectionClosed:
-                logger.info("Finnhub WS closed gracefully")
-                break
-
-            except (
-                ConnectionClosedError,  # noqa: F821 # pyright: ignore[reportUndefinedVariable]
-                ConnectionError,
-                OSError,
-            ):
                 self._ws = await self._connect()
                 await self._subscribe(self._ws)
                 await self._listen(self._ws)
+
+            except (
+                ConnectionClosedError,
+                ConnectionError,
+                OSError,
+            ):
+                self._attempt += 1
+                backoff = _calculate_backoff(self._attempt)
+                logger.warning(
+                    "Finnhub WS connection error (retryable)",
+                    extra={
+                        "backoff_s": backoff,
+                        "attempt": self._attempt,
+                        "replica_id": self._replica_id,
+                    },
+                )
+                await asyncio.sleep(backoff)
 
             except FinnhubRateLimitError as exc:
                 self._attempt += 1
@@ -308,7 +298,7 @@ class FinnhubWebSocket:
                 )
                 await asyncio.sleep(backoff)
 
-            except ConnectionClosed as exc:  # noqa: B025
+            except ConnectionClosed as exc:
                 self._attempt += 1
                 backoff = _calculate_backoff(self._attempt)
                 logger.warning(
