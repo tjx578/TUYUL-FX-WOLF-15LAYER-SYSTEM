@@ -14,12 +14,12 @@ Usage:
 from pathlib import Path
 from typing import Any
 
-import yaml
+import yaml  # pyright: ignore[reportMissingModuleSource]
 
 BASE_DIR = Path(__file__).resolve().parent
 
 # Load the constitution YAML file
-with open(BASE_DIR / "constitution.yaml") as f:
+with open(BASE_DIR / "constitution.yaml", encoding="utf-8") as f:
     _CONSTITUTION_CONFIG = yaml.safe_load(f)
 
 
