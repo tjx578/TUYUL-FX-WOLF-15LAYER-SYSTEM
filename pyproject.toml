@@ -10,6 +10,56 @@ asyncio_default_fixture_loop_scope = "function"
 filterwarnings = [
     "ignore::DeprecationWarning:pytest_asyncio",
 ]
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "load: marks load/stress tests (deselect with '-m \"not load\"')",
+]
+
+# =============================================================
+# Coverage Configuration — Target 80%
+# =============================================================
+[tool.coverage.run]
+source = [
+    "analysis",
+    "constitution",
+    "execution",
+    "dashboard",
+    "journal",
+    "risk",
+    "ingest",
+    "context",
+    "core",
+    "alerts",
+    "api",
+    "config",
+]
+omit = [
+    "*/tests/*",
+    "*/__pycache__/*",
+    "*/migrations/*",
+    "alembic/*",
+    "sandbox/*",
+    "scripts/*",
+]
+branch = true
+
+[tool.coverage.report]
+fail_under = 80
+show_missing = true
+skip_empty = true
+precision = 1
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "if __name__ == .__main__.",
+    "raise NotImplementedError",
+    "pass",
+    "except ImportError",
+    "if TYPE_CHECKING:",
+]
+
+[tool.coverage.html]
+directory = "htmlcov"
 
 # =============================================================
 # Ruff Configuration — TUYUL KARTEL FX
