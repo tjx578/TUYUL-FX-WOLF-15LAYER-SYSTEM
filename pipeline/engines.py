@@ -18,35 +18,39 @@ from typing import Any
 
 
 class L13ReflectiveEngine:
-    """
-    L13: Reflective Execution Strategy Engine.
+    """Layer 13: Reflective Learning Engine.
 
-    Computes TRQ-3D energy field (αβγ), LRCE, FRPC synchronization.
-    Supports two-pass governance: baseline pass (meta=1.0) → refined pass (real meta).
+    Consumes historical verdict + outcome data to produce reflective
+    scores. Now enriched with L7 Bayesian posterior tracking for
+    probability calibration analysis.
 
-    Sources:
-        core_quantum_unified.py    → QuantumExecutionOptimizer
-        core_reflective_unified.py → ReflectiveTradePipelineController
+    Authority: ANALYSIS-ONLY. No execution side-effects.
+    Reads from journal (immutable). Produces advisory metrics only.
     """
 
     def reflect(
         self,
-        synthesis: dict[str, Any],
-        l12_verdict: dict[str, Any],
-        meta_integrity: float = 1.0,
+        symbol: str,
+        historical_verdicts: list[dict[str, Any]],
+        current_layer_results: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        """
-        Run a single reflective pass.
+        """Produce reflective score with probability calibration analysis.
 
         Args:
-            synthesis: L12-contract synthesis dict.
-            l12_verdict: L12 verdict output.
-            meta_integrity: Meta integrity score (1.0 for baseline pass,
-                            real value for refined pass).
+            symbol: Instrument identifier.
+            historical_verdicts: Past verdict records (from journal J2/J4).
+            current_layer_results: Current cycle's layer outputs (optional).
 
         Returns:
-            Reflective pass result with LRCE, FRPC, αβγ, drift, field state.
+            Reflective analysis dict including probability calibration.
+
+        Authority: ANALYSIS-ONLY. No execution side-effects.
         """
+        # Run a single reflective pass
+        synthesis = current_layer_results or {}
+        l12_verdict = {"verdict": "HOLD", "confidence": "LOW", "wolf_status": "NO_HUNT"}
+        meta_integrity = 1.0
+
         lrce_score = self._compute_lrce(synthesis)
         frpc_score = self._compute_frpc(synthesis, l12_verdict)
 
@@ -60,7 +64,8 @@ class L13ReflectiveEngine:
         drift = synthesis.get("trq3d", {}).get("drift", 0.0)
         lrce_field = synthesis.get("risk", {}).get("lrce", 0.0)
 
-        return {
+        # Base reflective result
+        reflection = {
             "lrce_score": lrce_score,
             "frpc_score": frpc_score,
             "alpha": alpha,
@@ -77,6 +82,36 @@ class L13ReflectiveEngine:
                 else "POOR"
             ),
         }
+
+        # ── Probability calibration (L7 Bayesian posterior tracking) ──
+        calibration = self._extract_probability_calibration(historical_verdicts)
+        ror_trend = self._extract_risk_of_ruin_trend(historical_verdicts)
+
+        # ── Enrich reflection output with probability analysis ────────
+        reflection["probability_calibration"] = calibration
+        reflection["risk_of_ruin_trend"] = ror_trend
+
+        # ── Adjust reflective confidence if calibration is poor ──────
+        if calibration["calibration_grade"] in ("D", "F"):
+            _penalty = 0.05 if calibration["calibration_grade"] == "D" else 0.10
+            reflection["reflective_confidence"] = round(
+                max(0.0, reflection.get("reflective_confidence", 0.5) - _penalty),
+                4,
+            )
+            reflection["calibration_warning"] = (
+                f"Probability calibration grade {calibration['calibration_grade']} — "
+                f"error={calibration['calibration_error']:.4f}. "
+                f"L7 predictions may be unreliable."
+            )
+
+        if ror_trend["ror_trend"] == "DETERIORATING":
+            reflection["ror_warning"] = (
+                f"Risk-of-ruin trend DETERIORATING: "
+                f"mean={ror_trend['ror_mean']:.4f} latest={ror_trend['ror_latest']:.4f}. "
+                f"Review strategy health."
+            )
+
+        return reflection
 
     # ── Direction / bias alignment helpers ──
 
@@ -121,6 +156,153 @@ class L13ReflectiveEngine:
         if verdict == "HOLD":
             return 0.8 if technical_bias == "NEUTRAL" else 0.5
         return 0.5
+
+    def _extract_probability_calibration(
+        self,
+        historical_verdicts: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        """Analyze L7 Bayesian posterior calibration across historical verdicts.
+
+        Compares predicted win probability (L7 posterior) against actual
+        outcomes to measure how well-calibrated the probability engine is.
+
+        Args:
+            historical_verdicts: List of verdict dicts that include
+                ``probability_context`` and ``outcome`` fields.
+
+        Returns:
+            Calibration metrics dict:
+            - calibration_error: Mean absolute difference between predicted and actual
+            - overconfidence_ratio: Fraction of trades where predicted > actual
+            - posterior_mean: Mean posterior win probability across history
+            - actual_win_rate: Actual observed win rate
+            - sample_size: Number of verdicts with both probability + outcome data
+            - calibration_grade: A/B/C/D/F based on calibration_error
+
+        Authority: Pure computation, read-only. No side-effects.
+        """
+        predicted: list[float] = []
+        actual: list[float] = []
+
+        for v in historical_verdicts:
+            prob_ctx = v.get("probability_context", {})
+            outcome = v.get("outcome", {})
+
+            if not isinstance(prob_ctx, dict) or not isinstance(outcome, dict):
+                continue
+
+            posterior = prob_ctx.get("bayesian_posterior", None)
+            won = outcome.get("won", None)
+
+            if posterior is None or won is None:
+                continue
+
+            predicted.append(float(posterior))
+            actual.append(1.0 if won else 0.0)
+
+        if len(predicted) < 5:
+            return {
+                "calibration_error": None,
+                "overconfidence_ratio": None,
+                "posterior_mean": None,
+                "actual_win_rate": None,
+                "sample_size": len(predicted),
+                "calibration_grade": "N/A",
+                "note": f"insufficient_samples_{len(predicted)}/5",
+            }
+
+        import numpy as np  # local import to avoid module-level dep in engines
+
+        pred_arr = np.array(predicted)
+        act_arr = np.array(actual)
+
+        calibration_error = float(np.mean(np.abs(pred_arr - act_arr)))
+        overconfidence_ratio = float(np.mean(pred_arr > act_arr))
+        posterior_mean = float(np.mean(pred_arr))
+        actual_win_rate = float(np.mean(act_arr))
+
+        # Grade: A ≤ 0.05, B ≤ 0.10, C ≤ 0.15, D ≤ 0.25, F > 0.25
+        if calibration_error <= 0.05:
+            grade = "A"
+        elif calibration_error <= 0.10:
+            grade = "B"
+        elif calibration_error <= 0.15:
+            grade = "C"
+        elif calibration_error <= 0.25:
+            grade = "D"
+        else:
+            grade = "F"
+
+        return {
+            "calibration_error": round(calibration_error, 4),
+            "overconfidence_ratio": round(overconfidence_ratio, 4),
+            "posterior_mean": round(posterior_mean, 4),
+            "actual_win_rate": round(actual_win_rate, 4),
+            "sample_size": len(predicted),
+            "calibration_grade": grade,
+        }
+
+    def _extract_risk_of_ruin_trend(
+        self,
+        historical_verdicts: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        """Track risk-of-ruin trajectory across recent verdicts.
+
+        Args:
+            historical_verdicts: List of verdict dicts with probability_context.
+
+        Returns:
+            Trend metrics for risk-of-ruin.
+
+        Authority: Pure computation, read-only. No side-effects.
+        """
+        ror_values: list[float] = []
+
+        for v in historical_verdicts:
+            prob_ctx = v.get("probability_context", {})
+            if not isinstance(prob_ctx, dict):
+                continue
+            ror = prob_ctx.get("risk_of_ruin", None)
+            if ror is not None:
+                ror_values.append(float(ror))
+
+        if len(ror_values) < 3:
+            return {
+                "ror_mean": None,
+                "ror_latest": None,
+                "ror_trend": "UNKNOWN",
+                "ror_above_threshold_pct": None,
+                "sample_size": len(ror_values),
+            }
+
+        import numpy as np
+
+        arr = np.array(ror_values)
+        n = len(arr)
+        half = n // 2
+
+        ror_mean = float(np.mean(arr))
+        ror_latest = float(arr[-1])
+        first_half_mean = float(np.mean(arr[:half])) if half > 0 else ror_mean
+        second_half_mean = float(np.mean(arr[half:])) if half > 0 else ror_mean
+
+        if second_half_mean > first_half_mean + 0.02:
+            trend = "DETERIORATING"
+        elif second_half_mean < first_half_mean - 0.02:
+            trend = "IMPROVING"
+        else:
+            trend = "STABLE"
+
+        # Fraction of verdicts where RoR exceeded the 20% gate threshold
+        above_threshold = float(np.mean(arr >= 0.20))
+
+        return {
+            "ror_mean": round(ror_mean, 4),
+            "ror_latest": round(ror_latest, 4),
+            "ror_trend": trend,
+            "ror_above_threshold_pct": round(above_threshold, 4),
+            "sample_size": n,
+        }
 
 
 class L15MetaSovereigntyEngine:
