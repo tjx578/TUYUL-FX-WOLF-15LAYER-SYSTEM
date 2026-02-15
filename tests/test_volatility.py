@@ -1,6 +1,6 @@
 """Tests for volatility analysis utilities."""
 
-from analysis.volatility import calculate_atr, volatility_regime
+from analysis.macro.volatility import calculate_atr, volatility_regime
 
 
 class TestCalculateATR:
@@ -29,7 +29,7 @@ class TestCalculateATR:
     def test_atr_period_respected(self):
         candles = []
         for i in range(20):
-            candles.append(
+            candles.append(  # noqa: PERF401
                 {
                     "high": 1.0 + i * 0.01,
                     "low": 0.99 + i * 0.01,
@@ -47,7 +47,7 @@ class TestCalculateATR:
         # Stable market with small ranges
         candles = []
         for i in range(15):
-            candles.append({"high": 1.01, "low": 1.00, "close": 1.005})
+            candles.append({"high": 1.01, "low": 1.00, "close": 1.005})  # noqa: PERF401
 
         atr = calculate_atr(candles, period=14)
         assert atr > 0
@@ -57,7 +57,7 @@ class TestCalculateATR:
         # Volatile market with large ranges
         candles = []
         for i in range(15):
-            candles.append(
+            candles.append(  # noqa: PERF401
                 {
                     "high": 1.00 + i * 0.05,
                     "low": 1.00 + i * 0.05 - 0.04,
@@ -99,14 +99,14 @@ class TestVolatilityRegime:
 
     def test_expansion_threshold(self):
         # Just at threshold
-        result = volatility_regime(1.5, 1.0)
+        volatility_regime(1.5, 1.0)
         # Just above threshold
         result_above = volatility_regime(1.51, 1.0)
         assert result_above["regime"] == "EXPANSION"
 
     def test_compression_threshold(self):
         # Just at threshold
-        result = volatility_regime(0.7, 1.0)
+        volatility_regime(0.7, 1.0)
         # Just below threshold
         result_below = volatility_regime(0.69, 1.0)
         assert result_below["regime"] == "COMPRESSION"
