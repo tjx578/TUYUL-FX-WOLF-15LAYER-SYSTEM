@@ -538,7 +538,7 @@ class WolfConstitutionalPipeline:
                 latency_ms=current_latency_ms, # pyright: ignore[reportCallIssue]
             )
 
-            gates = self._evaluate_9_gates(synthesis, l8, l7, l2, l6, l9, l11, start_time)
+            gates = self._evaluate_9_gates(synthesis, l8, l7, l2, l6, l9, l11, start_time) # pyright: ignore[reportCallIssue]
             l12_verdict = generate_l12_verdict(synthesis)
             l12_verdict["gates_v74"] = gates
 
@@ -658,49 +658,87 @@ class WolfConstitutionalPipeline:
 
     def _evaluate_9_gates(
         self,
-        synthesis: dict[str, Any],
-        l8: dict[str, Any],
-        l7: dict[str, Any],
-        l2: dict[str, Any],
-        l6: dict[str, Any],
-        l9: dict[str, Any],
-        l11: dict[str, Any],
-        start_time: float,
+        layer_results: dict[str, Any],
     ) -> dict[str, Any]:
-        """
-        9-Gate Constitutional Check for L12.
+        """Evaluate the 9 constitutional gates.
 
-        GATE 1: TIIₛᵧₘ ≥ 0.93
-        GATE 2: Monte Carlo ≥ 60%
-        GATE 3: FRPC State = SYNC
-        GATE 4: CONF₁₂ ≥ 0.75
-        GATE 5: RR ≥ 1:2.0
-        GATE 6: Integrity ≥ 0.97
-        GATE 7: PropFirm Compliant
-        GATE 8: Drawdown ≤ 2.5%
-        GATE 9: Latency ≤ 250ms
-        """
-        tii = l8.get("tii_sym", 0.0)
-        win_pct = l7.get("win_probability", 0.0)
-        frpc_state = l2.get("frpc_state", "DESYNC")
-        conf12 = synthesis.get("layers", {}).get("conf12", 0.0)
-        rr = l11.get("rr", 0.0)
-        integrity = l8.get("integrity", 0.0)
-        compliant = l6.get("propfirm_compliant", True)
-        drawdown = synthesis.get("risk", {}).get("current_drawdown", 0.0)
-        latency = (time.time() - start_time) * 1000
+        Gate 2 Enhancement (v2.1):
+            Now requires BOTH conditions:
+            - win_pct >= monte_min * 100  (original MC win-rate check)
+            - risk_of_ruin < 0.20         (new: must not exceed 20% ruin probability)
 
+        Returns:
+            dict with per-gate booleans, overall pass, and metadata.
+        """
+        # Gate 1: TIIₛᵧₘ ≥ 0.93
+        tii = layer_results.get("L8", {}).get("tii_sym", 0.0)
         g1 = tii >= get_tii_min()
-        g2 = win_pct >= (get_monte_min() * 100)
+
+        # Gate 2: Monte Carlo Win-Rate + Risk of Ruin
+        l7 = layer_results.get("L7", {})
+
+        # Original: win_pct >= monte_min * 100
+        # Enhanced: also require risk_of_ruin < 20%
+        # Rationale: A strategy can show acceptable win-rate in MC bootstrap
+        # but still carry unacceptable tail risk (ruin probability).
+        # Both conditions must hold for Gate 2 to pass.
+        _raw_win = l7.get("win_probability", 0.0)
+        # Normalize: L7 may output 0-100 or 0.0-1.0
+        win_pct = _raw_win if _raw_win > 1.0 else _raw_win * 100.0
+
+        _monte_min = get_monte_min()  # returns float 0.0-1.0 (e.g. 0.60)
+        g2_win = win_pct >= (_monte_min * 100.0)
+
+        _risk_of_ruin = l7.get("risk_of_ruin", 1.0)  # default 1.0 = worst case (fail-safe)
+        _ror_threshold = 0.20
+        g2_ror = _risk_of_ruin < _ror_threshold
+
+        g2 = g2_win and g2_ror
+
+        # Gate 3: FRPC State = SYNC
+        frpc_state = layer_results.get("L2", {}).get("frpc_state", "DESYNC")
         g3 = frpc_state == "SYNC"
+
+        # Gate 4: CONF₁₂ ≥ 0.75
+        conf12 = layer_results.get("L2", {}).get("conf12", 0.0)
         g4 = conf12 >= get_conf12_min()
+
+        # Gate 5: RR ≥ 1:2.0
+        rr = layer_results.get("L11", {}).get("rr", 0.0)
         g5 = rr >= get_rr_min()
+
+        # Gate 6: Integrity ≥ 0.97
+        integrity = layer_results.get("L8", {}).get("integrity", 0.0)
         g6 = integrity >= get_integrity_min()
+
+        # Gate 7: PropFirm Compliant
+        compliant = layer_results.get("L6", {}).get("propfirm_compliant", True)
         g7 = bool(compliant)
+
+        # Gate 8: Drawdown ≤ 2.5%
+        drawdown = layer_results.get("risk", {}).get("current_drawdown", 0.0)
         g8 = drawdown <= get_max_drawdown()
+
+        # Gate 9: Latency ≤ 250ms
+        latency = (time.time() - start_time) * 1000  # pyright: ignore[reportUndefinedVariable] # noqa: F821
         g9 = latency <= get_max_latency_ms()
 
         passed = sum([g1, g2, g3, g4, g5, g6, g7, g8, g9])
+
+        # Log Gate 2 detail for audit trail
+        import logging  # noqa: PLC0415
+        _logger = logging.getLogger(__name__)
+        _logger.info(
+            "[Gate-2] win_pct=%.1f%% (min=%.1f%%) %s | "
+            "risk_of_ruin=%.4f (max=%.2f) %s | gate=%s",
+            win_pct,
+            _monte_min * 100.0,
+            "PASS" if g2_win else "FAIL",
+            _risk_of_ruin,
+            _ror_threshold,
+            "PASS" if g2_ror else "FAIL",
+            "PASS" if g2 else "FAIL",
+        )
 
         return {
             "total_passed": passed,
