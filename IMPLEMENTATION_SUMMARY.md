@@ -269,3 +269,28 @@ The Wolf 15-Layer Trading System is now fully operational:
 4. Implement advanced logging and metrics
 5. Add CI/CD pipeline
 6. Scale with Kubernetes
+
+## L7 Probability Layer (Monte Carlo + Bayesian)
+
+### New Files
+
+- `engines/monte_carlo_engine.py` — Bootstrap MC simulator (1000 sims, deterministic seed)
+- `engines/bayesian_update_engine.py` — Beta-Binomial Bayesian updater
+- `analysis/layers/L7_probability.py` — **Rewritten** from PLACEHOLDER to production
+- `tests/test_monte_carlo_engine.py` — 7 unit tests
+- `tests/test_bayesian_update_engine.py` — 7 unit tests
+- `tests/test_l7_probability.py` — 5 integration tests
+- `docs/L7_PROBABILITY.md` — Layer documentation
+
+### Pipeline Changes
+
+- `pipeline/wolf_constitutional_pipeline.py`:
+  - `_run_l7_probability()` now accepts `trade_returns`, `prior_wins`, `prior_losses`
+  - `build_l12_synthesis()` enriched with Bayesian fields
+
+### Authority Boundaries Preserved
+
+- ✅ All new code is analysis-only (no execution side-effects)
+- ✅ No execution authority added to L7
+- ✅ Layer-12 Constitution remains sole decision authority
+- ✅ Dashboard/EA cannot override L12 verdict
