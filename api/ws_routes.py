@@ -13,33 +13,49 @@ Authentication:
 
 import asyncio
 
-from typing import TYPE_CHECKING
-
 import fastapi  # pyright: ignore[reportMissingImports]
 
 from loguru import logger  # pyright: ignore[reportMissingImports]
 
+from api.middleware.ws_auth import ws_authenticate
 from dashboard.price_feed import PriceFeed
 from dashboard.trade_ledger import TradeLedger
 
-if TYPE_CHECKING:
-    from multiprocessing.resource_sharer import DupSocket
-
 router = fastapi.APIRouter()
+
+# Maximum concurrent WebSocket connections per manager
+MAX_WS_CONNECTIONS = 50
 
 
 # Connection manager for WebSocket clients
 class ConnectionManager:
-    """Manages WebSocket connections."""
+    """Manages WebSocket connections with authentication."""
 
-    def __init__(self):
-        self.active_connections: set[fastapi.WebSocket] = set() # pyright: ignore[reportRedeclaration]
-        self.active_connections: set[DupSocket] = set()
+    def __init__(self, name: str = "default"):
+        self.name = name
+        self.active_connections: set[fastapi.WebSocket] = set()
 
-    async def connect(self, websocket: fastapi.WebSocket):
-        """Accept and register new WebSocket connection."""
+    async def connect(self, websocket: fastapi.WebSocket) -> bool:
+        """
+        Authenticate, accept, and register a new WebSocket connection.
+
+        Returns True if connected, False if rejected.
+        """
+        # Enforce connection cap
+        if len(self.active_connections) >= MAX_WS_CONNECTIONS:
+            logger.warning(
+                f"WS [{self.name}] max connections reached ({MAX_WS_CONNECTIONS}), rejecting"
+            )
+            await websocket.close(code=4429, reason="Too many connections")
+            return False
+
+        # Authenticate BEFORE accepting
+        if not await ws_authenticate(websocket):
+            return False
+
         await websocket.accept()
         self.active_connections.add(websocket)
+        return True
 
     def disconnect(self, websocket: fastapi.WebSocket):
         """Remove WebSocket connection."""
@@ -51,7 +67,7 @@ class ConnectionManager:
 
         for connection in self.active_connections:
             try:
-                await connection.send_json(message) # pyright: ignore[reportAttributeAccessIssue]
+                await connection.send_json(message)
             except Exception as exc:
                 logger.debug(f"Failed to send to client: {exc}")
                 disconnected.add(connection)
@@ -61,8 +77,8 @@ class ConnectionManager:
 
 
 # Create connection managers
-price_manager = ConnectionManager(name="prices") # pyright: ignore[reportCallIssue]
-trade_manager = ConnectionManager(name="trades") # pyright: ignore[reportCallIssue]
+price_manager = ConnectionManager(name="prices")
+trade_manager = ConnectionManager(name="trades")
 
 # Service instances
 _price_feed = PriceFeed()
