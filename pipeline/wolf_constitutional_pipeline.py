@@ -837,35 +837,29 @@ class WolfConstitutionalPipeline:
         weights = get_vault_sync_weights()
         thresholds = get_vault_sync_thresholds()
 
-        # TODO: Implement real health checks before production deployment
-        # Replace placeholder vault health with real checker:
-        # OLD (placeholder):
-        #   feed_freshness = 1.0
-        #   redis_health = 1.0
+        # TODO: Implement real vault health checks before production deployment.
+        # For now, use placeholder values. When vault_health module is ready,
+        # uncomment the code below and remove placeholders:
         #
-        # NEW:
-        from core.vault_health import VaultHealthChecker  # noqa: PLC0415
+        # from core.vault_health import VaultHealthChecker
+        # vault_checker = VaultHealthChecker(
+        #     redis_client=self._redis_client,
+        #     context_bus=self._context_bus,
+        # )
+        # vault_report = vault_checker.check(symbols=self._active_symbols)
+        # if vault_report.should_block_analysis:
+        #     self._journal.log_j2_decision(
+        #         symbol="ALL",
+        #         verdict="NO_TRADE",
+        #         reason=f"Vault health block: {vault_report.details}",
+        #     )
+        #     return {"verdict": "NO_TRADE", "reason": vault_report.details}
+        # feed_freshness = vault_report.feed_freshness
+        # redis_health = vault_report.redis_health
 
-        # Inside pipeline run method, before analysis:
-        vault_checker = VaultHealthChecker(
-            redis_client=self._redis_client, # pyright: ignore[reportAttributeAccessIssue]
-            context_bus=self._context_bus, # pyright: ignore[reportAttributeAccessIssue]
-        )
-        vault_report = vault_checker.check(symbols=self._active_symbols) # pyright: ignore[reportAttributeAccessIssue]
-
-        if vault_report.should_block_analysis:
-            # Log to journal, return NO_TRADE
-            self._journal.log_j2_decision( # pyright: ignore[reportAttributeAccessIssue]
-                symbol="ALL",
-                verdict="NO_TRADE",
-                reason=f"Vault health block: {vault_report.details}",
-            )
-            return {"verdict": "NO_TRADE", "reason": vault_report.details}
-
-        feed_freshness = vault_report.feed_freshness
-        redis_health = vault_report.redis_health
-
-        meta_integrity = 1.0  # PLACEHOLDER - compute from layer validity
+        feed_freshness = 1.0
+        redis_health = 1.0
+        meta_integrity = 1.0
 
         vault_sync = (
             feed_freshness * weights["feed"]
