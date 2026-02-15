@@ -1,0 +1,111 @@
+﻿============================= test session starts =============================
+platform win32 -- Python 3.11.9, pytest-9.0.2, pluggy-1.6.0 -- C:\Users\INTEL\AppData\Local\Programs\Python\Python311\python.exe
+cachedir: .pytest_cache
+rootdir: C:\Users\INTEL\OneDrive\Documents\GitHub\TUYUL-FX-WOLF-15LAYER-SYSTEM
+configfile: pyproject.toml
+plugins: anyio-4.12.1, asyncio-1.3.0, cov-6.0.0
+asyncio: mode=Mode.STRICT, debug=False, asyncio_default_fixture_loop_scope=function, asyncio_default_test_loop_scope=function
+collecting ... collected 14 items
+
+tests/test_dashboard_routes.py::test_create_account FAILED               [  7%]
+tests/test_dashboard_routes.py::test_list_accounts_empty FAILED          [ 14%]
+tests/test_dashboard_routes.py::test_list_accounts_with_data FAILED      [ 21%]
+tests/test_dashboard_routes.py::test_get_account FAILED                  [ 28%]
+tests/test_dashboard_routes.py::test_get_account_not_found FAILED        [ 35%]
+tests/test_dashboard_routes.py::test_take_signal FAILED                  [ 42%]
+tests/test_dashboard_routes.py::test_skip_signal FAILED                  [ 50%]
+tests/test_dashboard_routes.py::test_confirm_order FAILED                [ 57%]
+tests/test_dashboard_routes.py::test_get_active_trades_empty FAILED      [ 64%]
+tests/test_dashboard_routes.py::test_get_active_trades_with_data FAILED  [ 71%]
+tests/test_dashboard_routes.py::test_get_trade FAILED                    [ 78%]
+tests/test_dashboard_routes.py::test_get_trade_not_found FAILED          [ 85%]
+tests/test_dashboard_routes.py::test_get_prices_empty FAILED             [ 92%]
+tests/test_dashboard_routes.py::test_journal_endpoints FAILED            [100%]
+
+================================== FAILURES ===================================
+_____________________________ test_create_account _____________________________
+tests\test_dashboard_routes.py:54: in test_create_account
+    assert response.status_code == 200
+E   assert 401 == 200
+E    +  where 401 = <Response [401 Unauthorized]>.status_code
+__________________________ test_list_accounts_empty ___________________________
+tests\test_dashboard_routes.py:67: in test_list_accounts_empty
+    assert response.status_code == 200
+E   assert 401 == 200
+E    +  where 401 = <Response [401 Unauthorized]>.status_code
+________________________ test_list_accounts_with_data _________________________
+tests\test_dashboard_routes.py:93: in test_list_accounts_with_data
+    assert response.status_code == 200
+E   assert 401 == 200
+E    +  where 401 = <Response [401 Unauthorized]>.status_code
+______________________________ test_get_account _______________________________
+tests\test_dashboard_routes.py:108: in test_get_account
+    account_id = create_response.json()["account_id"]
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   KeyError: 'account_id'
+_________________________ test_get_account_not_found __________________________
+tests\test_dashboard_routes.py:123: in test_get_account_not_found
+    assert response.status_code == 404
+E   assert 401 == 404
+E    +  where 401 = <Response [401 Unauthorized]>.status_code
+______________________________ test_take_signal _______________________________
+tests\test_dashboard_routes.py:136: in test_take_signal
+    account_id = account_response.json()["account_id"]
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   KeyError: 'account_id'
+______________________________ test_skip_signal _______________________________
+tests\test_dashboard_routes.py:175: in test_skip_signal
+    assert response.status_code == 200
+E   assert 401 == 200
+E    +  where 401 = <Response [401 Unauthorized]>.status_code
+_____________________________ test_confirm_order ______________________________
+tests\test_dashboard_routes.py:192: in test_confirm_order
+    account_id = account_response.json()["account_id"]
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   KeyError: 'account_id'
+________________________ test_get_active_trades_empty _________________________
+tests\test_dashboard_routes.py:228: in test_get_active_trades_empty
+    assert response.status_code == 200
+E   assert 401 == 200
+E    +  where 401 = <Response [401 Unauthorized]>.status_code
+______________________ test_get_active_trades_with_data _______________________
+tests\test_dashboard_routes.py:244: in test_get_active_trades_with_data
+    account_id = account_response.json()["account_id"]
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   KeyError: 'account_id'
+_______________________________ test_get_trade ________________________________
+tests\test_dashboard_routes.py:293: in test_get_trade
+    account_id = account_response.json()["account_id"]
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   KeyError: 'account_id'
+__________________________ test_get_trade_not_found ___________________________
+tests\test_dashboard_routes.py:322: in test_get_trade_not_found
+    assert response.status_code == 404
+E   assert 401 == 404
+E    +  where 401 = <Response [401 Unauthorized]>.status_code
+____________________________ test_get_prices_empty ____________________________
+tests\test_dashboard_routes.py:329: in test_get_prices_empty
+    assert response.status_code == 200
+E   assert 401 == 200
+E    +  where 401 = <Response [401 Unauthorized]>.status_code
+___________________________ test_journal_endpoints ____________________________
+tests\test_dashboard_routes.py:339: in test_journal_endpoints
+    assert response.status_code == 200
+E   assert 401 == 200
+E    +  where 401 = <Response [401 Unauthorized]>.status_code
+=========================== short test summary info ===========================
+FAILED tests/test_dashboard_routes.py::test_create_account - assert 401 == 200
+FAILED tests/test_dashboard_routes.py::test_list_accounts_empty - assert 401 ...
+FAILED tests/test_dashboard_routes.py::test_list_accounts_with_data - assert ...
+FAILED tests/test_dashboard_routes.py::test_get_account - KeyError: 'account_id'
+FAILED tests/test_dashboard_routes.py::test_get_account_not_found - assert 40...
+FAILED tests/test_dashboard_routes.py::test_take_signal - KeyError: 'account_id'
+FAILED tests/test_dashboard_routes.py::test_skip_signal - assert 401 == 200
+FAILED tests/test_dashboard_routes.py::test_confirm_order - KeyError: 'accoun...
+FAILED tests/test_dashboard_routes.py::test_get_active_trades_empty - assert ...
+FAILED tests/test_dashboard_routes.py::test_get_active_trades_with_data - Key...
+FAILED tests/test_dashboard_routes.py::test_get_trade - KeyError: 'account_id'
+FAILED tests/test_dashboard_routes.py::test_get_trade_not_found - assert 401 ...
+FAILED tests/test_dashboard_routes.py::test_get_prices_empty - assert 401 == 200
+FAILED tests/test_dashboard_routes.py::test_journal_endpoints - assert 401 ==...
+============================= 14 failed in 10.65s =============================
