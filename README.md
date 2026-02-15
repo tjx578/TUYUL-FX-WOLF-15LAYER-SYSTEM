@@ -13,15 +13,18 @@ Sistem ini menggunakan **WOLF 15-LAYER OUTPUT TEMPLATE** sebagai
 **referensi utama cara sistem berpikir, menilai, dan mengambil keputusan**.
 
 📄 **Primary Reference Document:**
+
 - `docs/WOLF_15_LAYER_OUTPUT_TEMPLATE_v7.4r∞.md`
 
 ### Fungsi Dokumen Ini
+
 - Standar output analisis (L1–L15)
 - Referensi audit & training
 - Acuan validasi hasil L14 JSON
 - Dokumentasi bagaimana **Layer-12 mengambil keputusan**
 
 ### Catatan Penting
+
 - Dokumen ini **TIDAK DIEKSEKUSI**
 - Dokumen ini **TIDAK MENGGANTIKAN LOGIC**
 - Otoritas final tetap pada:
@@ -49,31 +52,41 @@ Jika terjadi perbedaan:
 ## 🧠 System Flow
 
 ```
-
-Twelve Data
-↓
+Finnhub API (WebSocket / REST)
+     ↓
 ingest/ (feed + candle builder)
-↓
+     ↓
 context/ (Live Context Bus)
-↓
+     ↓
 analysis/ (L1–L11) + synthesis.py
-↓
+     ↓
 constitution/ (gatekeeper.py + verdict_engine.py)  ← L12 FINAL
-↓
+     ↓
 execution/ (pending/cancel/expiry/guard/state machine)
-↓
+     ↓
 ea_interface/ (command schema)
-↓
+     ↓
 Broker/EA Executor
+```
 
-````
+---
+
+## 📡 Data Provider
+
+Sistem menggunakan **Finnhub** sebagai satu-satunya data provider untuk:
+
+- **Real-time forex quotes** via WebSocket (`ingest/`)
+- **Candle/OHLCV data** via REST API (`ingest/candle_builder`)
+- **Economic calendar & news events** (`news/` → news lock engine)
+
+> ⚠️ Pastikan `FINNHUB_API_KEY` sudah diset di `.env` (lihat `.env.example`).
 
 ---
 
 ## 📁 Repo Structure (High-Level)
 
 - `config/` : semua konfigurasi (pairs, prop-firm, telegram, thresholds constitution)
-- `ingest/` : realtime feed + news + candle builder
+- `ingest/` : Finnhub realtime feed + candle builder
 - `context/` : unified market state (read-only)
 - `analysis/` : L1–L11 + synthesis (candidate setup)
 - `constitution/` : Gatekeeper + L12 Verdict + audit log (sole authority)
@@ -93,14 +106,13 @@ Broker/EA Executor
 ## 🧪 Sandbox & Experimental Modules
 
 Folder `sandbox/` berisi modul **non-runtime** untuk:
+
 - reasoning simulation
 - output validation
 - research & experimentation
 
 ⚠️ Modul di folder ini **TIDAK DIEKSEKUSI OLEH SISTEM LIVE**.
-## 📚 Documentation
 
-- `docs/WOLF_15_LAYER_OUTPUT_TO_L14_SCHEMA_MAPPING.md` — Mapping resmi template → JSON output
 ## 📚 Documentation (Operational)
 
 Dokumentasi ini **bukan bagian runtime**, digunakan untuk:
@@ -117,11 +129,12 @@ audit · compliance · SOP · training.
 ## ✅ Quick Start
 
 ### 1) Setup Environment
+
 ```bash
 python -m venv .venv
 source .venv/bin/activate   # windows: .venv\Scripts\activate
 pip install -r requirements.txt
-````
+```
 
 ### 2) Configure Env
 
@@ -131,15 +144,21 @@ Copy `.env.example` → `.env` dan isi key yang diperlukan:
 cp .env.example .env
 ```
 
+Pastikan variabel berikut terisi:
+
+```env
+FINNHUB_API_KEY=your_finnhub_api_key_here
+```
+
 ### 3) Run (Live Or Paper)
 
-* Live engine:
+- Live engine:
 
 ```bash
 bash scripts/run_live.sh
 ```
 
-* Dashboard:
+- Dashboard:
 
 ```bash
 bash scripts/run_dashboard.sh
@@ -157,18 +176,18 @@ pytest -q
 
 Test penting:
 
-* `tests/test_l12_gate.py` : L12 tidak bisa bypass
-* `tests/test_news_lock.py` : news lock bekerja
-* `tests/test_m15_cancel.py` : M15 cancel-only
-* `tests/test_prop_firm.py` : aturan prop-firm
+- `tests/test_l12_gate.py` : L12 tidak bisa bypass
+- `tests/test_news_lock.py` : news lock bekerja
+- `tests/test_m15_cancel.py` : M15 cancel-only
+- `tests/test_prop_firm.py` : aturan prop-firm
 
 ---
 
 ## 🔐 Logging & Audit
 
-* Semua gate failure dicatat via `constitution/violation_log.py`
-* Snapshot JSON untuk L14 disimpan via `storage/snapshot_store.py`
-* Dashboard hanya membaca state & audit output, tidak bisa memodifikasi apa pun
+- Semua gate failure dicatat via `constitution/violation_log.py`
+- Snapshot JSON untuk L14 disimpan via `storage/snapshot_store.py`
+- Dashboard hanya membaca state & audit output, tidak bisa memodifikasi apa pun
 
 ---
 
@@ -180,15 +199,13 @@ Lihat `.env.example` untuk daftar lengkap.
 
 ## ⚠️ Safety Notes
 
-* Gunakan akun demo/paper sebelum live
-* Pastikan `constitution.yaml` thresholds sudah benar
-* Pastikan news lock aktif untuk event high impact
-* Jangan mengubah struktur repo (LOCKED)
+- Gunakan akun demo/paper sebelum live
+- Pastikan `constitution.yaml` thresholds sudah benar
+- Pastikan news lock aktif untuk event high impact
+- Jangan mengubah struktur repo (LOCKED)
 
 ---
 
 ## 📜 License
 
 Private / Proprietary (edit sesuai kebutuhan)
-
-````
