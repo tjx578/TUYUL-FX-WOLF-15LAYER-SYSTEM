@@ -207,3 +207,9 @@ Lihat `.env.example` untuk daftar lengkap.
 ## 📜 License
 
 Private / Proprietary (edit sesuai kebutuhan)
+
+---
+
+## 📡 Data Flow
+
+Finnhub API → ingest/ → context/ → analysis/ (L1-L11) → constitution/ (L12) → execution/ → EA
