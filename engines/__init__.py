@@ -124,3 +124,16 @@ __all__ = [
     # Factory
     "create_engine_suite",
 ]
+
+# ------------------------------------------------------------------
+# Backward Compatibility: CognitiveCoherence Export
+# ------------------------------------------------------------------
+def __getattr__(name):
+    if name == "CognitiveCoherence":
+        try:
+            from .cognitive_coherence_engine import CognitiveCoherenceEngine  # noqa: PLC0415
+            return CognitiveCoherenceEngine
+        except ImportError as err:
+            raise ImportError("CognitiveCoherence engine not found") from err
+
+    raise AttributeError(f"module {__name__} has no attribute {name}")
