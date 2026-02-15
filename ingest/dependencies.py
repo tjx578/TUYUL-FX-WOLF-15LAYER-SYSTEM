@@ -200,7 +200,7 @@ async def create_finnhub_ws(
 
     return FinnhubWebSocket(
         redis=redis,
-        on_message=_build_tick_handler(mapper=mapper, allowed_symbols=allowed_symbols),
+        on_message=_build_tick_handler(mapper=mapper, allowed_symbols=allowed_symbols), # pyright: ignore[reportArgumentType]
         symbols=external_symbols,
     )
 
