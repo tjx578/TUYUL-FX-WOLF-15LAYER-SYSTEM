@@ -163,6 +163,7 @@ calculation
 #### Function 2: `volatility_regime(current_atr, baseline_atr)`
 
 - **Purpose**: Determine volatility state and adjustment factors
+
 #### Function 2: `volatility_regime(current_atr
 
 baseline_atr)`
