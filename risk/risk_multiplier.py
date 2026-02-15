@@ -148,3 +148,11 @@ class RiskMultiplierAggregator:
             composite=round(composite, 4),
             clamped=clamped,
         )
+
+
+# ------------------------------------------------------------------
+# Backward Compatibility Alias
+# Dashboard imports RiskMultiplier; canonical name is RiskMultiplierAggregator.
+# ------------------------------------------------------------------
+
+RiskMultiplier = RiskMultiplierAggregator

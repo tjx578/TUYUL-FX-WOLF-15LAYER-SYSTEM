@@ -126,14 +126,18 @@ __all__ = [
 ]
 
 # ------------------------------------------------------------------
-# Backward Compatibility: CognitiveCoherence Export
+# Backward Compatibility: CognitiveCoherence Export (Lazy)
 # ------------------------------------------------------------------
+
 def __getattr__(name):
     if name == "CognitiveCoherence":
         try:
             from .cognitive_coherence_engine import CognitiveCoherenceEngine  # noqa: PLC0415
             return CognitiveCoherenceEngine
-        except ImportError as err:
-            raise ImportError("CognitiveCoherence engine not found") from err
+        except ImportError:
+            raise ImportError(  # noqa: B904
+                "CognitiveCoherence engine not found. "
+                "Ensure engines/cognitive_coherence_engine.py exists."
+            )
 
     raise AttributeError(f"module {__name__} has no attribute {name}")
