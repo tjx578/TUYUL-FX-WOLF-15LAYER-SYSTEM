@@ -1,5 +1,5 @@
 """
-Tests for risk/prop_firm.py — prop firm guard enforcement.
+Tests for risk/prop_firm.py -- prop firm guard enforcement.
 Constitutional boundary: guard is binding for risk legality, not for market decisions.
 """
 import copy
@@ -63,7 +63,7 @@ class TestPropFirmGuardContract:
         state = copy.deepcopy(sample_account_state)
         unrealized_loss = state["balance"] - state["equity"]
         pct_loss = (unrealized_loss / state["balance"]) * 100
-        # With balance=100k, equity=99.5k → 0.5% loss, well within 10%
+        # With balance=100k, equity=99.5k -> 0.5% loss, well within 10%
         assert pct_loss < 10.0
 
     def test_max_total_loss_breach_triggers_block(self):

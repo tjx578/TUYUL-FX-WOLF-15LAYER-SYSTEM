@@ -272,40 +272,40 @@ def test_account_invalid_equity():
 
 def test_valid_transitions():
     """Test valid state transitions."""
-    # INTENDED → PENDING
+    # INTENDED -> PENDING
     assert is_valid_transition(TradeStatus.INTENDED, TradeStatus.PENDING) is True
 
-    # INTENDED → CANCELLED
+    # INTENDED -> CANCELLED
     assert is_valid_transition(TradeStatus.INTENDED, TradeStatus.CANCELLED) is True
 
-    # INTENDED → SKIPPED
+    # INTENDED -> SKIPPED
     assert is_valid_transition(TradeStatus.INTENDED, TradeStatus.SKIPPED) is True
 
-    # PENDING → OPEN
+    # PENDING -> OPEN
     assert is_valid_transition(TradeStatus.PENDING, TradeStatus.OPEN) is True
 
-    # PENDING → CANCELLED
+    # PENDING -> CANCELLED
     assert is_valid_transition(TradeStatus.PENDING, TradeStatus.CANCELLED) is True
 
-    # OPEN → CLOSED
+    # OPEN -> CLOSED
     assert is_valid_transition(TradeStatus.OPEN, TradeStatus.CLOSED) is True
 
 
 def test_invalid_transitions():
     """Test invalid state transitions."""
-    # INTENDED → OPEN (must go through PENDING)
+    # INTENDED -> OPEN (must go through PENDING)
     assert is_valid_transition(TradeStatus.INTENDED, TradeStatus.OPEN) is False
 
-    # CLOSED → OPEN (terminal state)
+    # CLOSED -> OPEN (terminal state)
     assert is_valid_transition(TradeStatus.CLOSED, TradeStatus.OPEN) is False
 
-    # CANCELLED → PENDING (terminal state)
+    # CANCELLED -> PENDING (terminal state)
     assert is_valid_transition(TradeStatus.CANCELLED, TradeStatus.PENDING) is False
 
-    # SKIPPED → PENDING (terminal state)
+    # SKIPPED -> PENDING (terminal state)
     assert is_valid_transition(TradeStatus.SKIPPED, TradeStatus.PENDING) is False
 
-    # OPEN → PENDING (can't go back)
+    # OPEN -> PENDING (can't go back)
     assert is_valid_transition(TradeStatus.OPEN, TradeStatus.PENDING) is False
 
 

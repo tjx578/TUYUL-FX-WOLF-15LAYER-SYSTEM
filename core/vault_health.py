@@ -1,5 +1,5 @@
 """
-Vault health checker — replaces placeholder feed_freshness and redis_health.
+Vault health checker -- replaces placeholder feed_freshness and redis_health.
 Queries actual feed freshness and Redis connectivity.
 """
 

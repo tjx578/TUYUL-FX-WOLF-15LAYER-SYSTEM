@@ -1,5 +1,5 @@
 """
-MT5 Bridge — dumb execution relay via file-based protocol.
+MT5 Bridge -- dumb execution relay via file-based protocol.
 Receives execution commands from dashboard (after L12 verdict + risk check).
 ZERO intelligence. ZERO market analysis. ZERO overrides.
 """
@@ -56,7 +56,7 @@ class ExecutionReport:
 class FileBasedMT5Bridge:
     """
     File-based bridge for MT5 EA communication.
-    Python writes command JSON → EA polls, executes, writes report → Python reads.
+    Python writes command JSON -> EA polls, executes, writes report -> Python reads.
     """
 
     def __init__(self, bridge_dir: str | Path) -> None:

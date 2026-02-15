@@ -11,7 +11,7 @@ Tests cover:
 
 from unittest.mock import patch
 
-import pytest
+import pytest  # pyright: ignore[reportMissingImports]
 
 from dashboard.price_watcher import PriceWatcher
 from schemas.trade_models import CloseReason, Trade, TradeLeg, TradeStatus
@@ -42,8 +42,6 @@ def mock_journal():
 @pytest.fixture
 def price_watcher(mock_trade_ledger, mock_price_feed, mock_journal):
     """Create a PriceWatcher instance for testing (patches must be active)."""
-def price_watcher(mock_trade_ledger, mock_price_feed):
-    """Create a PriceWatcher instance for testing (after mocks are active)."""
     return PriceWatcher()
 
 

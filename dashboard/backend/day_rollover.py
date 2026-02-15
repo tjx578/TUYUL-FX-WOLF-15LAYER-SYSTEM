@@ -32,7 +32,7 @@ class DayRolloverManager:
 
         if today_str != self._last_broker_date:
             logger.info(
-                "BROKER DAY ROLLOVER: %s → %s",
+                "BROKER DAY ROLLOVER: %s -> %s",
                 self._last_broker_date, today_str,
             )
             self._last_broker_date = today_str

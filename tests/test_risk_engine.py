@@ -10,11 +10,10 @@ Validates:
 
 from datetime import datetime
 from pathlib import Path
-from unittest.mock import patch
 from uuid import uuid4
 
-import pytest
-import yaml
+import pytest  # pyright: ignore[reportMissingImports]
+import yaml  # pyright: ignore[reportMissingModuleSource]
 
 from dashboard.backend.risk_engine import RiskEngine
 from dashboard.backend.schemas import (
@@ -314,7 +313,7 @@ class TestDrawdownMultiplier:
             frpc=0.75,
         )
 
-        # Low DD state
+        # Low DD state (1% total DD → drawdown multiplier returns 1.0)
         low_dd_state = AccountState(
             account_id="TEST-006",
             balance=100000.0,
@@ -327,17 +326,12 @@ class TestDrawdownMultiplier:
             risk_state=RiskSeverity.SAFE,
         )
 
-        # Mock both session detection and now_utc to ensure deterministic
-        # time multiplier (avoid Friday-afternoon 0.6 multiplier)
-        _tue_10am = datetime(2026, 2, 10, 10, 0, 0)  # Tuesday 10:00 UTC
-        with patch("risk.risk_multiplier.is_trading_session", return_value="LONDON"), \
-             patch("risk.risk_multiplier.now_utc", return_value=_tue_10am):
-            result = engine.calculate_lot(
-                signal=signal,
-                account_state=low_dd_state,
-                risk_percent=1.0,
-                prop_firm_code="ftmo",
-            )
+        result = engine.calculate_lot(
+            signal=signal,
+            account_state=low_dd_state,
+            risk_percent=1.0,
+            prop_firm_code="ftmo",
+        )
 
         # Verify calculation succeeded
         assert result.recommended_lot > 0

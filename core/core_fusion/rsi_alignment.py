@@ -1,4 +1,4 @@
-"""RSI Alignment Engine — cross-timeframe RSI analysis."""
+"""RSI Alignment Engine -- cross-timeframe RSI analysis."""
 
 from typing import Any, Dict
 

@@ -1,4 +1,4 @@
-"""Vault Macro Engine — Reflective Gravity Anchor (EMA+SMA)."""
+"""Vault Macro Engine -- Reflective Gravity Anchor (EMA+SMA)."""
 
 from typing import Any, Dict, List, Optional
 

@@ -1,4 +1,4 @@
-"""Quantum Probability Engine — Layer-6 probabilistic analysis.
+"""Quantum Probability Engine -- Layer-6 probabilistic analysis.
 
 Computes Bayesian probability estimates, pattern recognition confidence,
 and statistical edge metrics for trade setups.
@@ -119,7 +119,7 @@ def _detect_candle_pattern(candles: list[dict[str, Any]]) -> tuple[str, float]:
 # ---------------------------------------------------------------------------
 
 class QuantumProbabilityEngine:
-    """Quantum Probability Engine — statistical edge analysis.
+    """Quantum Probability Engine -- statistical edge analysis.
 
     Parameters
     ----------

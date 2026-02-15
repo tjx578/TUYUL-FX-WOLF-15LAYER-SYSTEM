@@ -31,7 +31,7 @@ class TestBayesianProbabilityEngine:
     def test_zero_priors(self) -> None:
         engine = BayesianProbabilityEngine(seed=42)
         result = engine.update(prior_wins=0, prior_losses=0, new_evidence_score=0.5)
-        # With uninformative prior + neutral evidence → near 0.5
+        # With uninformative prior + neutral evidence -> near 0.5
         assert 0.3 <= result.posterior_win_probability <= 0.7
 
     def test_negative_priors_raises(self) -> None:

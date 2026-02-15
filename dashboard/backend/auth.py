@@ -1,18 +1,18 @@
 """
-Dashboard Authentication — JWT + API-key support.
+Dashboard Authentication -- JWT + API-key support.
 
 Provides:
-  - ``create_token(sub, extra)`` — issue a signed JWT.
-  - ``decode_token(raw)`` — decode and validate a JWT; returns payload or None.
-  - ``validate_api_key(key)`` — check against the static API key.
-  - ``verify_token(authorization)`` — FastAPI Depends() for HTTP routes.
-  - ``verify_ws_token_from_query(websocket)`` — WS-safe auth via query param.
+  - ``create_token(sub, extra)`` -- issue a signed JWT.
+  - ``decode_token(raw)`` -- decode and validate a JWT; returns payload or None.
+  - ``validate_api_key(key)`` -- check against the static API key.
+  - ``verify_token(authorization)`` -- FastAPI Depends() for HTTP routes.
+  - ``verify_ws_token_from_query(websocket)`` -- WS-safe auth via query param.
 
 Environment variables:
-  DASHBOARD_JWT_SECRET        — HMAC secret (MUST change in prod)
-  DASHBOARD_JWT_ALGO          — algorithm (default HS256)
-  DASHBOARD_TOKEN_EXPIRE_MIN  — token lifetime in minutes (default 60)
-  DASHBOARD_API_KEY           — optional static API key for service-to-service calls
+  DASHBOARD_JWT_SECRET        -- HMAC secret (MUST change in prod)
+  DASHBOARD_JWT_ALGO          -- algorithm (default HS256)
+  DASHBOARD_TOKEN_EXPIRE_MIN  -- token lifetime in minutes (default 60)
+  DASHBOARD_API_KEY           -- optional static API key for service-to-service calls
 """
 
 from __future__ import annotations
@@ -43,7 +43,7 @@ if JWT_SECRET == "CHANGE_ME":
     )
 
 # ---------------------------------------------------------------------------
-# Lightweight JWT helpers (no external lib needed — HMAC-SHA256 only)
+# Lightweight JWT helpers (no external lib needed -- HMAC-SHA256 only)
 # ---------------------------------------------------------------------------
 
 import base64

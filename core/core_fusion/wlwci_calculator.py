@@ -1,4 +1,4 @@
-"""WLWCI Calculator — Weighted Layered Wave-Context Index."""
+"""WLWCI Calculator -- Weighted Layered Wave-Context Index."""
 
 from datetime import datetime, timezone
 from typing import Any, Dict, Final, Optional

@@ -1,5 +1,5 @@
 """
-Pipeline Result v7.4r∞ — Structured output dataclass.
+Pipeline Result v7.4r∞ -- Structured output dataclass.
 
 Replaces the old SovereignResult and provides typed access
 to all pipeline outputs while maintaining dict backward compatibility.

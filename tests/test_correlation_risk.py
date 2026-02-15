@@ -1,8 +1,8 @@
 """Unit tests for engines/correlation_risk_engine.py.
 
 Tests cover:
-    - High correlation → fail
-    - Low correlation → pass
+    - High correlation -> fail
+    - Low correlation -> pass
     - Single pair raises ValueError
     - Insufficient observations raises ValueError
     - Concentration risk bounded [0, 1]
@@ -11,7 +11,7 @@ Tests cover:
     - num_pairs tracked
     - Serialization (to_dict)
     - 1D input raises ValueError
-    - Identical series → max correlation ≈ 1
+    - Identical series -> max correlation ≈ 1
 """
 
 from __future__ import annotations
@@ -124,7 +124,7 @@ class TestCorrelationRiskEngine:
             engine.evaluate([0.01, 0.02, 0.03])  # type: ignore[arg-type]
 
     def test_identical_series_max_corr(self) -> None:
-        """Two identical series → correlation ≈ 1.0."""
+        """Two identical series -> correlation ≈ 1.0."""
         series = [0.01, -0.02, 0.03, -0.01, 0.02] * 10
         engine = CorrelationRiskEngine(min_observations=10)
         result = engine.evaluate([series, series])

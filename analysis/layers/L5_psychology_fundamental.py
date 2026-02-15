@@ -1,9 +1,9 @@
 """
-L5 — Psychology & Fundamental Context Layer (PRODUCTION)
+L5 -- Psychology & Fundamental Context Layer (PRODUCTION)
 ==========================================================
 Merged & upgraded from:
-  • L5_psychology.py   (production psychology → PRESERVED 100%)
-  • l5_fundamental.py  (production fundamental → PRESERVED 100%)
+  • L5_psychology.py   (production psychology -> PRESERVED 100%)
+  • l5_fundamental.py  (production fundamental -> PRESERVED 100%)
 
 Both original files had real, tested logic.  This merge preserves
 every computation from both and adds cross-integration that neither
@@ -13,24 +13,24 @@ strength feeds into the overall confidence score.
 Pipeline Flow:
   market_data ─────────┐
   news_sentiment ──────┤
-  volatility_profile ──┼──→  L5AnalysisLayer.analyze()
+  volatility_profile ──┼──->  L5AnalysisLayer.analyze()
   pair + symbol ───────┘     │
                              ├─ (1) Fundamental Analysis (stateless)
-                             │     sentiment → bias → strength → risk events
+                             │     sentiment -> bias -> strength -> risk events
                              ├─ (2) Psychology Analysis (stateful)
-                             │     fatigue → focus → EAF → discipline → gates
+                             │     fatigue -> focus -> EAF -> discipline -> gates
                              ├─ (3) Cross-Integration (NEW)
-                             │     risk_event → emotional_bias modifier
-                             │     fundamental_strength → EAF boost
+                             │     risk_event -> emotional_bias modifier
+                             │     fundamental_strength -> EAF boost
                              └─ (4) Combined Gate Decision
-                                   psychology_ok AND NOT risk_event → can_trade
+                                   psychology_ok AND NOT risk_event -> can_trade
 
 Backward compatibility:
-  • L5PsychologyAnalyzer class + .analyze() → identical signature
-  • analyze_fundamental() function → identical signature
+  • L5PsychologyAnalyzer class + .analyze() -> identical signature
+  • analyze_fundamental() function -> identical signature
   • All output keys from both files preserved
 
-Zone: analysis/ — pure computation, zero side-effects.
+Zone: analysis/ -- pure computation, zero side-effects.
 """
 
 from __future__ import annotations
@@ -60,18 +60,18 @@ _FATIGUE_MEDIUM_HOURS: Final = 4.0
 _FATIGUE_HIGH_HOURS: Final = 6.0
 _FOCUS_PEAK_END_HOURS: Final = 3.0
 
-# EAF component weights (convex — no multiplicative collapse)
+# EAF component weights (convex -- no multiplicative collapse)
 _EAF_W_FOCUS: Final = 0.30
 _EAF_W_EMOTION: Final = 0.25
 _EAF_W_DISCIPLINE: Final = 0.25
 _EAF_W_STABILITY: Final = 0.20
 _EAF_THRESHOLD: Final = 0.70
 
-# Cross-integration: risk event → emotional bias boost
+# Cross-integration: risk event -> emotional bias boost
 _RISK_EVENT_EMOTION_BOOST: Final = 0.15
 _CAUTION_EVENT_EMOTION_BOOST: Final = 0.05
 
-# Cross-integration: fundamental strength → EAF adjustment
+# Cross-integration: fundamental strength -> EAF adjustment
 _FUNDAMENTAL_EAF_WEIGHT: Final = 0.10  # up to 10% EAF boost from strong fundamentals
 
 
@@ -105,7 +105,7 @@ _KNOWN_CURRENCIES: Final = (
 
 
 # ═══════════════════════════════════════════════════════════════════════
-# §3  FUNDAMENTAL HELPERS (from l5_fundamental.py — preserved 100%)
+# §3  FUNDAMENTAL HELPERS (from l5_fundamental.py -- preserved 100%)
 # ═══════════════════════════════════════════════════════════════════════
 
 def _extract_pair_currencies(pair: str) -> tuple[str | None, str | None]:
@@ -140,7 +140,7 @@ def _compute_fundamental_strength(
     news_count: int,
     impact_level: str,
 ) -> float:
-    """Continuous fundamental strength score (0.0–1.0).
+    """Continuous fundamental strength score (0.0-1.0).
 
     Measures data quality/weight, NOT direction.
     """
@@ -163,7 +163,7 @@ def _resolve_pair_bias(
 ) -> tuple[str, str | None]:
     """Resolve directional bias considering base vs quote currency.
 
-    For GBPUSD: bullish GBP + bearish USD → strongly BULLISH pair.
+    For GBPUSD: bullish GBP + bearish USD -> strongly BULLISH pair.
     Returns (resolved_bias, conflict_note_or_none).
     """
     if base_sentiment is None or quote_sentiment is None:
@@ -257,7 +257,7 @@ def _run_fundamental_analysis(
 
 
 # ═══════════════════════════════════════════════════════════════════════
-# §4  PSYCHOLOGY HELPERS (from L5_psychology.py — preserved 100%)
+# §4  PSYCHOLOGY HELPERS (from L5_psychology.py -- preserved 100%)
 # ═══════════════════════════════════════════════════════════════════════
 
 def _fatigue_level(hours: float) -> str:
@@ -285,7 +285,7 @@ def _emotional_bias(
     risk_event: bool = False,
     caution_event: bool = False,
 ) -> float:
-    """Emotional bias score (0–1, higher = worse).
+    """Emotional bias score (0-1, higher = worse).
 
     Driven by losses + drawdown.  Cross-integration: risk events
     amplify emotional pressure (traders become anxious around NFP, etc).
@@ -293,7 +293,7 @@ def _emotional_bias(
     loss_comp = min(consecutive_losses * 0.12, 0.50)
     dd_comp = min(drawdown_pct * 0.04, 0.40)
 
-    # NEW: risk event → emotional pressure boost
+    # NEW: risk event -> emotional pressure boost
     event_comp = 0.0
     if risk_event:
         event_comp = _RISK_EVENT_EMOTION_BOOST
@@ -333,7 +333,7 @@ def _eaf_score(
 ) -> float:
     """Convex-weighted EAF (Emotional Awareness Factor).
 
-    No multiplicative collapse — each component contributes independently.
+    No multiplicative collapse -- each component contributes independently.
 
     Cross-integration: strong fundamental data provides a small EAF boost
     (conviction from data reduces emotional noise).
@@ -357,7 +357,7 @@ def _eaf_score(
 # ═══════════════════════════════════════════════════════════════════════
 
 class L5AnalysisLayer:
-    """Layer 5: Psychology & Fundamental Context — PRODUCTION.
+    """Layer 5: Psychology & Fundamental Context -- PRODUCTION.
 
     Merges psychology (stateful, internal) with fundamental analysis
     (stateless, external) and adds cross-integration.
@@ -372,10 +372,10 @@ class L5AnalysisLayer:
             volatility_profile={"profile": "NORMAL"},
             session_hours=2.5,
         )
-        # result["can_trade"]            → True
-        # result["eaf_score"]            → 0.87
-        # result["fundamental_bias"]     → "BULLISH"
-        # result["fundamental_strength"] → 0.55
+        # result["can_trade"]            -> True
+        # result["eaf_score"]            -> 0.87
+        # result["fundamental_bias"]     -> "BULLISH"
+        # result["fundamental_strength"] -> 0.55
     """
 
     def __init__(self) -> None:
@@ -391,7 +391,7 @@ class L5AnalysisLayer:
         self._win_streak = 0
 
     def record_win(self) -> None:
-        """Record a win — resets consecutive losses."""
+        """Record a win -- resets consecutive losses."""
         self._consecutive_losses = 0
         self._win_streak += 1
 
@@ -498,9 +498,9 @@ class L5AnalysisLayer:
 
         # ── PHASE 4: Combined gate (NEW) ─────────────────────────────
         #
-        # Risk event active → CANNOT trade (fundamental override)
-        # Psychology not OK → CANNOT trade (internal override)
-        # Both clear → CAN trade
+        # Risk event active -> CANNOT trade (fundamental override)
+        # Psychology not OK -> CANNOT trade (internal override)
+        # Both clear -> CAN trade
 
         fund_reasons: list[str] = []
         if fund["risk_event_active"]:
@@ -510,7 +510,7 @@ class L5AnalysisLayer:
         can_trade = psychology_ok and not fund["risk_event_active"]
 
         if can_trade:
-            recommendation = "Psychology & Fundamental OK — clear to trade"
+            recommendation = "Psychology & Fundamental OK -- clear to trade"
             gate_status = "OPEN"
         elif len(all_reasons) == 1:
             recommendation = "CAUTION: " + all_reasons[0]

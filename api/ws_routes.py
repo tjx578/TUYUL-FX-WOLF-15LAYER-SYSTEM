@@ -48,7 +48,7 @@ RISK_STATE_INTERVAL = 1.0  # 1s
 
 
 # ---------------------------------------------------------------------------
-# Candle Aggregator — builds OHLC bars from tick stream
+# Candle Aggregator -- builds OHLC bars from tick stream
 # ---------------------------------------------------------------------------
 
 class CandleAggregator:
@@ -77,7 +77,7 @@ class CandleAggregator:
             current = self._bars[symbol].get(tf_name)
 
             if current is None or current["ts_open"] != bar_open_ts:
-                # New bar — emit old one if exists
+                # New bar -- emit old one if exists
                 if current is not None:
                     completed.append({
                         "symbol": symbol,
@@ -178,7 +178,7 @@ _trade_ledger = TradeLedger()
 
 
 # ---------------------------------------------------------------------------
-# WS /ws/prices — Tick-by-tick price stream
+# WS /ws/prices -- Tick-by-tick price stream
 # ---------------------------------------------------------------------------
 
 @router.websocket("/ws/prices")
@@ -239,7 +239,7 @@ async def websocket_prices(websocket: fastapi.WebSocket):
 
 
 # ---------------------------------------------------------------------------
-# WS /ws/trades — Event-driven trade updates
+# WS /ws/trades -- Event-driven trade updates
 # ---------------------------------------------------------------------------
 
 @router.websocket("/ws/trades")
@@ -304,7 +304,7 @@ async def websocket_trades(websocket: fastapi.WebSocket):
 
 
 # ---------------------------------------------------------------------------
-# WS /ws/candles — Real-time candle bar stream
+# WS /ws/candles -- Real-time candle bar stream
 # ---------------------------------------------------------------------------
 
 @router.websocket("/ws/candles")
@@ -346,7 +346,7 @@ async def websocket_candles(websocket: fastapi.WebSocket):
 
 
 # ---------------------------------------------------------------------------
-# WS /ws/risk — Risk state stream
+# WS /ws/risk -- Risk state stream
 # ---------------------------------------------------------------------------
 
 @router.websocket("/ws/risk")

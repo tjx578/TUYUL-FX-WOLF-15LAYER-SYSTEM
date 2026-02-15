@@ -1,5 +1,5 @@
 """
-core.fusion — TUYUL FX Modular Fusion Package v7.0r∞
+core.fusion -- TUYUL FX Modular Fusion Package v7.0r∞
 =====================================================
 
 Refactored dari core_fusion_unified.py (5,330 LOC, 175KB)

@@ -1,15 +1,15 @@
 """
-Analysis Package — Wolf-15 Layer System (L1–L11)
+Analysis Package -- Wolf-15 Layer System (L1-L11)
 =================================================
 
 Pure analysis zone.  **No execution side-effects allowed.**
 
 Sub-packages
 ------------
-layers/      Individual layer analyzers (L1-Context … L11-RR).
-macro/       Macro regime engines — VIX, volatility, monthly regime.
-market/      Market-structure helpers — Fibonacci, indicators, S/D.
-orchestrators/  Position sizing bridge (analysis → dashboard handoff).
+layers/      Individual layer analyzers (L1-Context ... L11-RR).
+macro/       Macro regime engines -- VIX, volatility, monthly regime.
+market/      Market-structure helpers -- Fibonacci, indicators, S/D.
+orchestrators/  Position sizing bridge (analysis -> dashboard handoff).
 
 Top-level modules
 -----------------
@@ -22,7 +22,7 @@ Backward-compatible re-exports
 ------------------------------
 Historical flat imports (``analysis.vix_analysis_engine``, etc.) are
 re-exported here so existing call-sites keep working.  **Prefer the
-canonical paths** (``analysis.macro.vix_analysis_engine``, …).
+canonical paths** (``analysis.macro.vix_analysis_engine``, ...).
 """
 
 from __future__ import annotations
@@ -30,7 +30,7 @@ from __future__ import annotations
 from analysis.macro.macro_regime_engine import MacroRegimeEngine as MacroRegimeEngine
 
 # ── Canonical sub-package imports (lazy / backward-compat) ───────────
-# These allow  ``from analysis.vix_analysis_engine import …``  to keep
+# These allow  ``from analysis.vix_analysis_engine import ...``  to keep
 # working even though the modules now live under analysis/macro/.
 from analysis.macro.vix_analysis_engine import VIXAnalysisEngine as VIXAnalysisEngine
 from analysis.macro.vix_analysis_engine import VIXState as VIXState

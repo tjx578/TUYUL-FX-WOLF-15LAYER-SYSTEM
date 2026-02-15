@@ -26,7 +26,7 @@ class TestTelegramAlertFormat:
     def _format_signal_alert(self, verdict):
         emoji = {"EXECUTE": "🟢", "HOLD": "🟡", "NO_TRADE": "🔴", "ABORT": "⛔"}
         return (
-            f"{emoji.get(verdict['verdict'], '❓')} **{verdict['verdict']}** — {verdict['symbol']}\n"
+            f"{emoji.get(verdict['verdict'], '❓')} **{verdict['verdict']}** -- {verdict['symbol']}\n"
             f"Confidence: {verdict['confidence']:.0%}\n"
             f"Direction: {verdict.get('direction', 'N/A')}\n"
             f"Entry: {verdict.get('entry_price', 'N/A')}\n"
@@ -108,7 +108,7 @@ class TestTelegramSendMock:
 
     @pytest.mark.asyncio
     async def test_rate_limit_handling(self):
-        """Telegram has rate limits — system should handle 429 gracefully."""
+        """Telegram has rate limits -- system should handle 429 gracefully."""
         mock_client = AsyncMock()
         response_429 = MagicMock(status_code=429)
         response_429.json.return_value = {"retry_after": 5}

@@ -2,14 +2,14 @@
 L11 Risk-Reward Optimizer - RR + Battle Strategy.
 
 Sources:
-    core_quantum_unified.py    → QuantumScenarioMatrix, QuantumExecutionOptimizer, BattleStrategy
-    core_reflective_unified.py → generate_trade_targets
-    context.live_context_bus   → candle history for ATR
+    core_quantum_unified.py    -> QuantumScenarioMatrix, QuantumExecutionOptimizer, BattleStrategy
+    core_reflective_unified.py -> generate_trade_targets
+    context.live_context_bus   -> candle history for ATR
 
 Produces:
-    - rr (float)               → target ≥ 2.0
-    - battle_strategy (str)    → APEX_PREDATOR | BLOOD_MOON_HUNT | TSUNAMI_BREAKOUT | SHADOW_STRIKE
-    - execution_mode (str)     → TP1_ONLY
+    - rr (float)               -> target ≥ 2.0
+    - battle_strategy (str)    -> APEX_PREDATOR | BLOOD_MOON_HUNT | TSUNAMI_BREAKOUT | SHADOW_STRIKE
+    - execution_mode (str)     -> TP1_ONLY
     - entry / entry_price (float)
     - sl / stop_loss (float)
     - tp1 / take_profit_1 (float)

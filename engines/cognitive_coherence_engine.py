@@ -65,8 +65,8 @@ class CognitiveCoherenceEngine:
         """Initialize cognitive coherence engine.
 
         Args:
-            smoothing_alpha: EMA smoothing factor for coherence (0.0–1.0).
-            baseline_alpha: Adaptive baseline update rate (0.0–1.0).
+            smoothing_alpha: EMA smoothing factor for coherence (0.0-1.0).
+            baseline_alpha: Adaptive baseline update rate (0.0-1.0).
             history_size: Rolling window size for emotion history.
         """
         self.smoothing_alpha = smoothing_alpha
@@ -82,10 +82,10 @@ class CognitiveCoherenceEngine:
 
         Args:
             state: Input state dict with keys:
-                - emotion_state (float, 0–1): Current emotion level.
-                - fatigue (float, 0–1): Accumulated fatigue.
-                - loss_stress (float, 0–1): Loss-induced stress.
-            market_volatility: Current market volatility (0–1). Tightens thresholds.
+                - emotion_state (float, 0-1): Current emotion level.
+                - fatigue (float, 0-1): Accumulated fatigue.
+                - loss_stress (float, 0-1): Loss-induced stress.
+            market_volatility: Current market volatility (0-1). Tightens thresholds.
 
         Returns:
             CoherenceSnapshot with assessment metrics and gate.

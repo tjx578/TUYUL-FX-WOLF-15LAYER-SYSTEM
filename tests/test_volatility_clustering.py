@@ -1,15 +1,15 @@
 """Unit tests for engines/volatility_clustering_model.py.
 
 Tests cover:
-    - GARCH-like returns → clustering detected
-    - IID returns → minimal/no clustering
+    - GARCH-like returns -> clustering detected
+    - IID returns -> minimal/no clustering
     - risk_multiplier capped at configured max
     - Insufficient data raises ValueError
     - Multi-lag autocorrelation stored
-    - Constant returns → no crash, no clustering
+    - Constant returns -> no crash, no clustering
     - Ljung-Box proxy non-negative
     - Serialization (to_dict)
-    - No-clustering → risk_multiplier == 1.0
+    - No-clustering -> risk_multiplier == 1.0
     - Sample size tracked
 """
 
@@ -38,7 +38,7 @@ def _garch_returns(n: int = 300, seed: int = 42) -> list[float]:
 
 
 def _iid_returns(n: int = 300, seed: int = 42) -> list[float]:
-    """IID normal returns — no autocorrelation in squared returns."""
+    """IID normal returns -- no autocorrelation in squared returns."""
     rng = np.random.default_rng(seed)
     return [float(rng.normal(0, 0.01)) for _ in range(n)]
 
@@ -86,7 +86,7 @@ class TestVolatilityClusteringModel:
             assert -1.0 <= ac <= 1.0
 
     def test_constant_returns_no_crash(self) -> None:
-        """Constant returns → zero variance → no clustering, no NaN."""
+        """Constant returns -> zero variance -> no clustering, no NaN."""
         model = VolatilityClusteringModel(min_returns=5)
         result = model.analyze([0.01] * 50)
 

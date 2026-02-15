@@ -1,12 +1,12 @@
 """
-WebSocket Authentication — token validation for WS connections.
+WebSocket Authentication -- token validation for WS connections.
 
 WebSocket clients authenticate by passing a token as a query parameter:
     ws://host/ws/prices?token=<JWT_OR_API_KEY>
 
 This module provides:
-  - ``ws_authenticate()`` — validates token and returns the WebSocket or closes it.
-  - ``require_ws_token()`` — FastAPI dependency for WebSocket endpoints.
+  - ``ws_authenticate()`` -- validates token and returns the WebSocket or closes it.
+  - ``require_ws_token()`` -- FastAPI dependency for WebSocket endpoints.
 """
 
 from __future__ import annotations

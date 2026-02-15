@@ -1,7 +1,7 @@
 """
 Bridge between L12 verdict and Dashboard risk calculation.
 Analysis provides: entry, SL, TP, direction.
-Dashboard provides: account state → lot_size, risk_amount.
+Dashboard provides: account state -> lot_size, risk_amount.
 
 This module DOES NOT compute lot size. It packages what analysis knows
 and leaves the sizing decision to dashboard/risk zone.
@@ -14,7 +14,7 @@ from dataclasses import dataclass
 
 @dataclass(frozen=True)
 class AnalysisRiskInput:
-    """What analysis CAN provide — no account state here."""
+    """What analysis CAN provide -- no account state here."""
     symbol: str
     direction: str  # "BUY" or "SELL"
     entry_price: float
@@ -35,7 +35,7 @@ class AnalysisRiskInput:
 
 @dataclass(frozen=True)
 class DashboardRiskOutput:
-    """What dashboard MUST provide — computed from account state + prop firm guard."""
+    """What dashboard MUST provide -- computed from account state + prop firm guard."""
     trade_allowed: bool
     recommended_lot: float
     max_safe_lot: float

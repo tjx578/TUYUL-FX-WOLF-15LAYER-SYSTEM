@@ -22,7 +22,7 @@ from ingest.candle_builder import CandleBuilder
 from tests.conftest import generate_ticks
 
 # ---------------------------------------------------------------------------
-# Constants — tweak for CI vs local runs
+# Constants -- tweak for CI vs local runs
 # ---------------------------------------------------------------------------
 HIGH_FREQ_TICK_COUNT = 10_000  # Simulate 10k ticks per symbol
 MULTI_SYMBOL_COUNT = 6  # Number of concurrent symbols
@@ -144,7 +144,7 @@ class TestMultiSymbolConcurrentLoad:
         mock_bus.consume_ticks.return_value = all_ticks
         await builder.process_ticks()
 
-        # Each symbol should have its own buffer — no cross-contamination
+        # Each symbol should have its own buffer -- no cross-contamination
         for sym in self.SYMBOLS:
             buffer = builder.buffers.get(sym, [])
             for tick in buffer:
@@ -190,7 +190,7 @@ class TestMultiSymbolConcurrentLoad:
                 generate_ticks(
                     symbol=sym,
                     count=200,
-                    interval_ms=5_000,  # 5s apart → 200 * 5 = 1000s ≈ 16 min
+                    interval_ms=5_000,  # 5s apart -> 200 * 5 = 1000s ≈ 16 min
                 )
             )
 
@@ -321,7 +321,7 @@ class TestTickSpikeAndGap:
         mock_bus.consume_ticks.return_value = ticks
         await builder.process_ticks()
 
-        # No crash — candles may or may not be emitted depending on window
+        # No crash -- candles may or may not be emitted depending on window
         assert True, "Duplicate timestamps caused crash"
 
 
@@ -354,10 +354,10 @@ class TestSustainedLoad:
             current_buffer = sum(len(v) for v in builder.buffers.values())
             max_buffer_size = max(max_buffer_size, current_buffer)
 
-        # Buffer should never grow unboundedly — cap at a reasonable multiple
+        # Buffer should never grow unboundedly -- cap at a reasonable multiple
         # of a single M15 window worth of ticks
         assert max_buffer_size < HIGH_FREQ_TICK_COUNT, (
-            f"Buffer grew to {max_buffer_size} — possible memory leak"
+            f"Buffer grew to {max_buffer_size} -- possible memory leak"
         )
 
     @pytest.mark.asyncio

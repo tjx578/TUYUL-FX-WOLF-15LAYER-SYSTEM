@@ -1,8 +1,9 @@
-============================= test session starts =============================
+﻿============================= test session starts =============================
 platform win32 -- Python 3.11.9, pytest-9.0.2, pluggy-1.6.0 -- C:\Users\INTEL\AppData\Local\Programs\Python\Python311\python.exe
 cachedir: .pytest_cache
 rootdir: C:\Users\INTEL\OneDrive\Documents\GitHub\TUYUL-FX-WOLF-15LAYER-SYSTEM
 configfile: pytest.ini (WARNING: ignoring pytest config in pyproject.toml!)
+testpaths: tests
 plugins: anyio-4.12.1, asyncio-1.3.0, cov-6.0.0, timeout-2.4.0
 asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
 timeout: 30.0s
@@ -674,33 +675,33 @@ tests/test_risk_engine.py::TestSplitRisk::test_split_produces_multiple_lots PASS
 tests/test_risk_engine.py::TestSplitRisk::test_split_ratios_respected PASSED [ 62%]
 tests/test_risk_engine.py::TestDrawdownMultiplier::test_multiplier_applied PASSED [ 62%]
 tests/test_risk_engine.py::TestPropFirmIntegration::test_ftmo_blocks_when_dd_exceeded PASSED [ 62%]
-tests/test_risk_engine_v2.py::test_evaluate_allow_basic_fixed_mode FAILED [ 62%]
-tests/test_risk_engine_v2.py::test_evaluate_allow_xauusd FAILED          [ 62%]
-tests/test_risk_engine_v2.py::test_evaluate_split_mode_returns_two_lots FAILED [ 63%]
-tests/test_risk_engine_v2.py::test_evaluate_split_mode_40_60_allocation FAILED [ 63%]
-tests/test_risk_engine_v2.py::test_evaluate_split_mode_50_50_allocation FAILED [ 63%]
-tests/test_risk_engine_v2.py::test_evaluate_deny_circuit_breaker FAILED  [ 63%]
-tests/test_risk_engine_v2.py::test_evaluate_deny_max_open_trades FAILED  [ 63%]
-tests/test_risk_engine_v2.py::test_evaluate_allow_after_close FAILED     [ 63%]
-tests/test_risk_engine_v2.py::test_register_intended_trade_updates_tracker FAILED [ 63%]
-tests/test_risk_engine_v2.py::test_close_trade_reduces_open_risk FAILED  [ 63%]
-tests/test_risk_engine_v2.py::test_split_lifecycle_register_two_entries FAILED [ 63%]
-tests/test_risk_engine_v2.py::test_split_lifecycle_close_both_entries FAILED [ 63%]
-tests/test_risk_engine_v2.py::test_get_account_snapshot_structure FAILED [ 63%]
-tests/test_risk_engine_v2.py::test_get_account_snapshot_profile_data FAILED [ 64%]
-tests/test_risk_engine_v2.py::test_get_account_snapshot_drawdown_info FAILED [ 64%]
-tests/test_risk_engine_v2.py::test_get_account_snapshot_trading_allowed_flag FAILED [ 64%]
+tests/test_risk_engine_v2.py::test_evaluate_allow_basic_fixed_mode PASSED [ 62%]
+tests/test_risk_engine_v2.py::test_evaluate_allow_xauusd PASSED          [ 62%]
+tests/test_risk_engine_v2.py::test_evaluate_split_mode_returns_two_lots PASSED [ 63%]
+tests/test_risk_engine_v2.py::test_evaluate_split_mode_40_60_allocation PASSED [ 63%]
+tests/test_risk_engine_v2.py::test_evaluate_split_mode_50_50_allocation PASSED [ 63%]
+tests/test_risk_engine_v2.py::test_evaluate_deny_circuit_breaker PASSED  [ 63%]
+tests/test_risk_engine_v2.py::test_evaluate_deny_max_open_trades PASSED  [ 63%]
+tests/test_risk_engine_v2.py::test_evaluate_allow_after_close PASSED     [ 63%]
+tests/test_risk_engine_v2.py::test_register_intended_trade_updates_tracker PASSED [ 63%]
+tests/test_risk_engine_v2.py::test_close_trade_reduces_open_risk PASSED  [ 63%]
+tests/test_risk_engine_v2.py::test_split_lifecycle_register_two_entries PASSED [ 63%]
+tests/test_risk_engine_v2.py::test_split_lifecycle_close_both_entries PASSED [ 63%]
+tests/test_risk_engine_v2.py::test_get_account_snapshot_structure PASSED [ 63%]
+tests/test_risk_engine_v2.py::test_get_account_snapshot_profile_data PASSED [ 64%]
+tests/test_risk_engine_v2.py::test_get_account_snapshot_drawdown_info PASSED [ 64%]
+tests/test_risk_engine_v2.py::test_get_account_snapshot_trading_allowed_flag PASSED [ 64%]
 tests/test_risk_engine_v2.py::test_risk_eval_result_dataclass PASSED     [ 64%]
 tests/test_risk_engine_v2.py::test_risk_eval_result_deny PASSED          [ 64%]
 tests/test_risk_engine_v2.py::test_signal_input_dataclass PASSED         [ 64%]
-tests/test_risk_engine_v2.py::test_evaluate_multi_instrument[EURUSD-1.095-1.09-1.105] FAILED [ 64%]
-tests/test_risk_engine_v2.py::test_evaluate_multi_instrument[GBPUSD-1.25-1.245-1.26] FAILED [ 64%]
-tests/test_risk_engine_v2.py::test_evaluate_multi_instrument[USDJPY-150.0-149.5-151.0] FAILED [ 64%]
-tests/test_risk_engine_v2.py::test_evaluate_multi_instrument[XAUUSD-2000.0-1995.0-2010.0] FAILED [ 64%]
-tests/test_risk_engine_v2.py::test_evaluate_multi_instrument[AUDUSD-0.65-0.645-0.66] FAILED [ 65%]
-tests/test_risk_engine_v2.py::test_evaluate_projected_risk_stacking FAILED [ 65%]
-tests/test_risk_engine_v2.py::test_evaluate_details_contain_profile FAILED [ 65%]
-tests/test_risk_engine_v2.py::test_evaluate_deny_details_contain_reason FAILED [ 65%]
+tests/test_risk_engine_v2.py::test_evaluate_multi_instrument[EURUSD-1.095-1.09-1.105] PASSED [ 64%]
+tests/test_risk_engine_v2.py::test_evaluate_multi_instrument[GBPUSD-1.25-1.245-1.26] PASSED [ 64%]
+tests/test_risk_engine_v2.py::test_evaluate_multi_instrument[USDJPY-150.0-149.5-151.0] PASSED [ 64%]
+tests/test_risk_engine_v2.py::test_evaluate_multi_instrument[XAUUSD-2000.0-1995.0-2010.0] PASSED [ 64%]
+tests/test_risk_engine_v2.py::test_evaluate_multi_instrument[AUDUSD-0.65-0.645-0.66] PASSED [ 65%]
+tests/test_risk_engine_v2.py::test_evaluate_projected_risk_stacking PASSED [ 65%]
+tests/test_risk_engine_v2.py::test_evaluate_details_contain_profile PASSED [ 65%]
+tests/test_risk_engine_v2.py::test_evaluate_deny_details_contain_reason PASSED [ 65%]
 tests/test_risk_manager.py::TestRiskManager::test_static_risk_default PASSED [ 65%]
 tests/test_risk_manager.py::TestRiskManager::test_static_lot_computation PASSED [ 65%]
 tests/test_risk_manager.py::TestRiskManager::test_dynamic_risk_accepted PASSED [ 65%]
@@ -765,9 +766,9 @@ tests/test_risk_router.py::test_get_profile_default PASSED               [ 71%]
 tests/test_risk_router.py::test_get_profile_saved PASSED                 [ 71%]
 tests/test_risk_router.py::test_save_profile_invalid_risk_mode PASSED    [ 71%]
 tests/test_risk_router.py::test_save_profile_risk_too_high PASSED        [ 71%]
-tests/test_risk_router.py::test_evaluate_signal_allow FAILED             [ 71%]
-tests/test_risk_router.py::test_evaluate_signal_with_auto_register FAILED [ 71%]
-tests/test_risk_router.py::test_get_snapshot FAILED                      [ 71%]
+tests/test_risk_router.py::test_evaluate_signal_allow PASSED             [ 71%]
+tests/test_risk_router.py::test_evaluate_signal_with_auto_register PASSED [ 71%]
+tests/test_risk_router.py::test_get_snapshot PASSED                      [ 71%]
 tests/test_risk_router.py::test_close_trade PASSED                       [ 71%]
 tests/test_risk_router.py::test_evaluate_invalid_direction PASSED        [ 71%]
 tests/test_risk_router.py::test_evaluate_missing_required_fields PASSED  [ 71%]
@@ -1463,363 +1464,363 @@ _____________________ test_no_non_ascii_dashes_in_source ______________________
 tests\test_ascii_compliance.py:28: in test_no_non_ascii_dashes_in_source
     assert not violations, (
 E   AssertionError: Non-ASCII dash characters found in source files:
-E     .\api_server.py:130: # HTTP routers � protected by Bearer token (JWT or API key)
-E     .\api_server.py:136: # WebSocket router � auth handled inside each endpoint via query-param token
-E     .\conftest.py:2: Root conftest � shared fixtures for the entire Wolf-15 test suite.
-E     .\conftest.py:22:     """Single event loop for the whole session � avoids per-test loop cost."""
-E     .\conftest.py:37:         warnings.warn(f"Test {request.node.nodeid} took {elapsed:.1f}s � consider marking @pytest.mark.slow", stacklevel=2)
-E     .\conftest.py:122:     """In-memory dict pretending to be Redis � tests run without Redis."""
-E     .\analysis\candle_builder.py:2: CandleBuilder � Multi-Timeframe Candle Construction
-E     .\analysis\candle_builder.py:82:     timestamp: float          # UTC epoch � candle open time
-E     .\analysis\candle_builder.py:277:     H4, D1, W1, MN are fetched � NOT built from ticks � because:
-E     .\analysis\candle_builder.py:452:             "CandleManager initialized � symbols=%s, tick_tf=%s, rest_tf=%s",
-E     .\analysis\data_feed.py:92:     """Detects when data feed goes stale � prevents analysis on old data."""
+E     .\api_server.py:130: # HTTP routers ù protected by Bearer token (JWT or API key)
+E     .\api_server.py:136: # WebSocket router ù auth handled inside each endpoint via query-param token
+E     .\conftest.py:2: Root conftest ù shared fixtures for the entire Wolf-15 test suite.
+E     .\conftest.py:22:     """Single event loop for the whole session ù avoids per-test loop cost."""
+E     .\conftest.py:37:         warnings.warn(f"Test {request.node.nodeid} took {elapsed:.1f}s ù consider marking @pytest.mark.slow", stacklevel=2)
+E     .\conftest.py:122:     """In-memory dict pretending to be Redis ù tests run without Redis."""
+E     .\analysis\candle_builder.py:2: CandleBuilder ù Multi-Timeframe Candle Construction
+E     .\analysis\candle_builder.py:82:     timestamp: float          # UTC epoch ù candle open time
+E     .\analysis\candle_builder.py:277:     H4, D1, W1, MN are fetched ù NOT built from ticks ù because:
+E     .\analysis\candle_builder.py:452:             "CandleManager initialized ù symbols=%s, tick_tf=%s, rest_tf=%s",
+E     .\analysis\data_feed.py:92:     """Detects when data feed goes stale ù prevents analysis on old data."""
 E     .\\analysis\\l6_risk.py:2: \U0001f6e1\ufe0f L6 \u2014 Risk Layer (PRODUCTION)
-E     .\analysis\l6_risk.py:6: Responsibilities (analysis zone � NO execution side-effects):
-E     .\analysis\l6_risk.py:10:   - LRCE (Layered Risk Containment Envelope) � *market-side only*
-E     .\analysis\l6_risk.py:18: Zone: analysis/ � pure read-only assessment, no execution side-effects.
-E     .\analysis\l6_risk.py:99:     """LRCE � Layered Risk Containment Envelope (market-side).
-E     .\analysis\l6_risk.py:122:     """L6 Risk Assessment � PRODUCTION.
-E     .\analysis\l6_risk.py:136:         NOTE: L6 uses these read-only for risk *scoring* � actual
+E     .\analysis\l6_risk.py:6: Responsibilities (analysis zone ù NO execution side-effects):
+E     .\analysis\l6_risk.py:10:   - LRCE (Layered Risk Containment Envelope) ù *market-side only*
+E     .\analysis\l6_risk.py:18: Zone: analysis/ ù pure read-only assessment, no execution side-effects.
+E     .\analysis\l6_risk.py:99:     """LRCE ù Layered Risk Containment Envelope (market-side).
+E     .\analysis\l6_risk.py:122:     """L6 Risk Assessment ù PRODUCTION.
+E     .\analysis\l6_risk.py:136:         NOTE: L6 uses these read-only for risk *scoring* ù actual
 E     .\\analysis\\l6_risk.py:171:     # \u2500\u2500 2. Circuit breaker (read flag, flag it \u2014 enforcement is dashboard's job) \u2500\u2500
 E     .\\analysis\\l6_risk.py:190:     # \u2500\u2500 6. Trade-parameter flags (advisory \u2014 not enforcement) \u2500\u2500
-E     .\analysis\l6_risk.py:199:     # Daily drawdown flag (negative PnL only � positive PnL is fine)
+E     .\analysis\l6_risk.py:199:     # Daily drawdown flag (negative PnL only ù positive PnL is fine)
 E     .\\analysis\\l6_risk.py:206:     # \u2500\u2500 7. Risk-OK (analysis opinion \u2014 Layer-12 makes actual decision) \u2500\u2500
 E     .\\analysis\\l8_tii.py:2: \U0001f52c L8 \u2014 TII Integrity Layer (PRODUCTION)
-E     .\analysis\l8_tii.py:14: Zone: analysis/ � pure read-only analysis, no execution side-effects.
-E     .\analysis\l8_tii.py:80:     """Score price-VWAP alignment (0.0�1.0).
-E     .\analysis\l8_tii.py:103:     # Beyond 2% � decay smoothly but floor at 0.1
-E     .\analysis\l8_tii.py:108:     """Score TRQ field energy coherence (0.0�1.0).
-E     .\analysis\l8_tii.py:130:     """Score directional bias confirmation (0.0�1.0).
-E     .\analysis\l8_tii.py:132:     Evaluates absolute bias � direction is irrelevant for integrity.
-E     .\analysis\l8_tii.py:222:     Returns dict with twms_score (0�1) and signal labels.
-E     .\analysis\l8_tii.py:271:     NOTE: This is a degraded approximation � real VWAP requires volume data.
-E     .\analysis\l8_tii.py:287:     This maps roughly to the 0�5 range that _score_energy_coherence expects
-E     .\analysis\l8_tii.py:296:     # Normalize to price level, then scale to energy range (~0�5)
-E     .\analysis\l8_tii.py:316:     """L8 TII + Integrity Analysis � PRODUCTION.
-E     .\analysis\__init__.py:2: Analysis Package � Wolf-15 Layer System (L1�L11)
-E     .\analysis\__init__.py:10: macro/       Macro regime engines � VIX, volatility, monthly regime.
-E     .\analysis\__init__.py:11: market/      Market-structure helpers � Fibonacci, indicators, S/D.
-E     .\analysis\layers\L10_position_sizing.py:2: L10 � Position Sizing & Risk Geometry (PRODUCTION)
-E     .\analysis\layers\L10_position_sizing.py:23: Zone: analysis/ � pure computation, zero side-effects.
-E     .\analysis\layers\L10_position_sizing.py:266:     """Layer 10: Position Sizing & Risk Geometry � PRODUCTION.
-E     .\analysis\layers\L10_position_sizing.py:324:             Combined pipeline confidence (0.0�1.0) dari upstream layers.
+E     .\analysis\l8_tii.py:14: Zone: analysis/ ù pure read-only analysis, no execution side-effects.
+E     .\analysis\l8_tii.py:80:     """Score price-VWAP alignment (0.0û1.0).
+E     .\analysis\l8_tii.py:103:     # Beyond 2% ù decay smoothly but floor at 0.1
+E     .\analysis\l8_tii.py:108:     """Score TRQ field energy coherence (0.0û1.0).
+E     .\analysis\l8_tii.py:130:     """Score directional bias confirmation (0.0û1.0).
+E     .\analysis\l8_tii.py:132:     Evaluates absolute bias ù direction is irrelevant for integrity.
+E     .\analysis\l8_tii.py:222:     Returns dict with twms_score (0û1) and signal labels.
+E     .\analysis\l8_tii.py:271:     NOTE: This is a degraded approximation ù real VWAP requires volume data.
+E     .\analysis\l8_tii.py:287:     This maps roughly to the 0û5 range that _score_energy_coherence expects
+E     .\analysis\l8_tii.py:296:     # Normalize to price level, then scale to energy range (~0û5)
+E     .\analysis\l8_tii.py:316:     """L8 TII + Integrity Analysis ù PRODUCTION.
+E     .\analysis\__init__.py:2: Analysis Package ù Wolf-15 Layer System (L1ûL11)
+E     .\analysis\__init__.py:10: macro/       Macro regime engines ù VIX, volatility, monthly regime.
+E     .\analysis\__init__.py:11: market/      Market-structure helpers ù Fibonacci, indicators, S/D.
+E     .\analysis\layers\L10_position_sizing.py:2: L10 ù Position Sizing & Risk Geometry (PRODUCTION)
+E     .\analysis\layers\L10_position_sizing.py:23: Zone: analysis/ ù pure computation, zero side-effects.
+E     .\analysis\layers\L10_position_sizing.py:266:     """Layer 10: Position Sizing & Risk Geometry ù PRODUCTION.
+E     .\analysis\layers\L10_position_sizing.py:324:             Combined pipeline confidence (0.0û1.0) dari upstream layers.
 E     .\\analysis\\layers\\L10_position_sizing.py:431:         #   0.75\u20130.89 \u2192  1.00\xd7 (baseline, tidak ada adjustment)
 E     .\\analysis\\layers\\L10_position_sizing.py:432:         #   0.60\u20130.74 \u2192  0.80\xd7 (moderate, sedikit defensif)
 E     .\\analysis\\layers\\L10_position_sizing.py:433:         #   0.40\u20130.59 \u2192  0.60\xd7 (rendah, potong setengah)
 E     .\\analysis\\layers\\L1_context.py:2: \U0001f9ed L1 \u2014 Context Layer (PRODUCTION)
-E     .\analysis\layers\L1_context.py:10: Zone: analysis/ � pure read-only analysis, no execution side-effects.
-E     .\analysis\layers\L1_context.py:23: # Ordered by priority � overlaps checked first.
-E     .\analysis\layers\L1_context.py:133:     """Contextual Strength Index (0�1 range, volume-weighted)."""
-E     .\analysis\layers\L1_context.py:150:     """L1 Context � PRODUCTION.
-E     .\analysis\layers\L4_session_scoring.py:2: L4 � Session & Timing + Wolf 30-Point Scoring (PRODUCTION)
-E     .\analysis\layers\L4_session_scoring.py:29: Zone: analysis/ � pure computation, zero side-effects.
-E     .\analysis\layers\L4_session_scoring.py:51: # �1  SESSION CONFIGURATION (from l4_session.py � preserved 100%)
-E     .\analysis\layers\L4_session_scoring.py:81: # �2  HIGH-IMPACT EVENTS (from l4_session.py � preserved 100%)
-E     .\analysis\layers\L4_session_scoring.py:195: # �4  SESSION HELPER FUNCTIONS (from l4_session.py � preserved 100%)
-E     .\analysis\layers\L4_session_scoring.py:340:     and strength is 0.0�1.0.
-E     .\analysis\layers\L4_session_scoring.py:363:     """Compute Fundamental score (0�8 points) from L1 output.
-E     .\analysis\layers\L4_session_scoring.py:366:       � bias_strength (0�3): How decisive the macro bias is
-E     .\analysis\layers\L4_session_scoring.py:367:       � confidence    (0�3): Fundamental analysis confidence
-E     .\analysis\layers\L4_session_scoring.py:368:       � event_clear   (0�2): No high-impact event in buffer zone
-E     .\analysis\layers\L4_session_scoring.py:371:       bias     � str/float/dict indicating macro direction
-E     .\analysis\layers\L4_session_scoring.py:372:       confidence � float 0-1
-E     .\analysis\layers\L4_session_scoring.py:373:       strength   � float 0-1 (alternative to bias strength)
-E     .\analysis\layers\L4_session_scoring.py:402:     """Compute Technical score (0�12 points) from L2 output.
-E     .\analysis\layers\L4_session_scoring.py:405:       � trend      (0�3): Trend direction + strength
-E     .\analysis\layers\L4_session_scoring.py:406:       � momentum   (0�3): Momentum indicators (MACD, etc.)
-E     .\analysis\layers\L4_session_scoring.py:407:       � rsi        (0�2): RSI alignment score
-E     .\analysis\layers\L4_session_scoring.py:408:       � structure  (0�2): EMA/indicator structure quality
-E     .\analysis\layers\L4_session_scoring.py:409:       � volume     (0�2): Volume confirmation
-E     .\analysis\layers\L4_session_scoring.py:411:     L2 expected keys (flexible � adapts to available data):
-E     .\analysis\layers\L4_session_scoring.py:425:     # RSI � normalize raw RSI (0-100) to quality score (0-1)
-E     .\analysis\layers\L4_session_scoring.py:469:     """Compute Fundamental-Technical Alignment score (0�5 points).
-E     .\analysis\layers\L4_session_scoring.py:474:       � direction_match (0�3): Both layers point same way
-E     .\analysis\layers\L4_session_scoring.py:475:       � magnitude_match (0�2): Strength levels are comparable
-E     .\analysis\layers\L4_session_scoring.py:528:     """Compute Execution readiness score (0�5 points).
-E     .\analysis\layers\L4_session_scoring.py:531:       � structure_quality (0�3): L3 market structure confidence
-E     .\analysis\layers\L4_session_scoring.py:532:       � session_quality   (0�2): Current session quality from timing
-E     .\analysis\layers\L4_session_scoring.py:575:     """Layer 4: Session & Timing + Wolf 30-Point Scoring � PRODUCTION.
-E     .\analysis\layers\L4_session_scoring.py:667:         # Legacy technical_score (0�100 scale) for backward compatibility
-E     .\analysis\layers\L5_psychology_fundamental.py:2: L5 � Psychology & Fundamental Context Layer (PRODUCTION)
-E     .\analysis\layers\L5_psychology_fundamental.py:33: Zone: analysis/ � pure computation, zero side-effects.
-E     .\analysis\layers\L5_psychology_fundamental.py:63: # EAF component weights (convex � no multiplicative collapse)
-E     .\analysis\layers\L5_psychology_fundamental.py:108: # �3  FUNDAMENTAL HELPERS (from l5_fundamental.py � preserved 100%)
-E     .\analysis\layers\L5_psychology_fundamental.py:143:     """Continuous fundamental strength score (0.0�1.0).
-E     .\analysis\layers\L5_psychology_fundamental.py:260: # �4  PSYCHOLOGY HELPERS (from L5_psychology.py � preserved 100%)
-E     .\analysis\layers\L5_psychology_fundamental.py:288:     """Emotional bias score (0�1, higher = worse).
-E     .\analysis\layers\L5_psychology_fundamental.py:336:     No multiplicative collapse � each component contributes independently.
-E     .\analysis\layers\L5_psychology_fundamental.py:360:     """Layer 5: Psychology & Fundamental Context � PRODUCTION.
-E     .\analysis\layers\L5_psychology_fundamental.py:394:         """Record a win � resets consecutive losses."""
-E     .\analysis\layers\L5_psychology_fundamental.py:513:             recommendation = "Psychology & Fundamental OK � clear to trade"
-E     .\analysis\layers\L7_probability.py:2: L7 Probability Analyzer � Real Monte Carlo + Bayesian Validation.
-E     .\analysis\layers\L7_probability.py:150:                 "[L7] {symbol} � Insufficient trade history "
-E     .\analysis\layers\L7_probability.py:185:             wp = mc_result.win_probability   # 0.0 � 1.0
+E     .\analysis\layers\L1_context.py:10: Zone: analysis/ ù pure read-only analysis, no execution side-effects.
+E     .\analysis\layers\L1_context.py:23: # Ordered by priority ù overlaps checked first.
+E     .\analysis\layers\L1_context.py:133:     """Contextual Strength Index (0û1 range, volume-weighted)."""
+E     .\analysis\layers\L1_context.py:150:     """L1 Context ù PRODUCTION.
+E     .\analysis\layers\L4_session_scoring.py:2: L4 ù Session & Timing + Wolf 30-Point Scoring (PRODUCTION)
+E     .\analysis\layers\L4_session_scoring.py:29: Zone: analysis/ ù pure computation, zero side-effects.
+E     .\analysis\layers\L4_session_scoring.py:51: # º1  SESSION CONFIGURATION (from l4_session.py ù preserved 100%)
+E     .\analysis\layers\L4_session_scoring.py:81: # º2  HIGH-IMPACT EVENTS (from l4_session.py ù preserved 100%)
+E     .\analysis\layers\L4_session_scoring.py:195: # º4  SESSION HELPER FUNCTIONS (from l4_session.py ù preserved 100%)
+E     .\analysis\layers\L4_session_scoring.py:340:     and strength is 0.0û1.0.
+E     .\analysis\layers\L4_session_scoring.py:363:     """Compute Fundamental score (0û8 points) from L1 output.
+E     .\analysis\layers\L4_session_scoring.py:366:       ò bias_strength (0û3): How decisive the macro bias is
+E     .\analysis\layers\L4_session_scoring.py:367:       ò confidence    (0û3): Fundamental analysis confidence
+E     .\analysis\layers\L4_session_scoring.py:368:       ò event_clear   (0û2): No high-impact event in buffer zone
+E     .\analysis\layers\L4_session_scoring.py:371:       bias     ù str/float/dict indicating macro direction
+E     .\analysis\layers\L4_session_scoring.py:372:       confidence ù float 0-1
+E     .\analysis\layers\L4_session_scoring.py:373:       strength   ù float 0-1 (alternative to bias strength)
+E     .\analysis\layers\L4_session_scoring.py:402:     """Compute Technical score (0û12 points) from L2 output.
+E     .\analysis\layers\L4_session_scoring.py:405:       ò trend      (0û3): Trend direction + strength
+E     .\analysis\layers\L4_session_scoring.py:406:       ò momentum   (0û3): Momentum indicators (MACD, etc.)
+E     .\analysis\layers\L4_session_scoring.py:407:       ò rsi        (0û2): RSI alignment score
+E     .\analysis\layers\L4_session_scoring.py:408:       ò structure  (0û2): EMA/indicator structure quality
+E     .\analysis\layers\L4_session_scoring.py:409:       ò volume     (0û2): Volume confirmation
+E     .\analysis\layers\L4_session_scoring.py:411:     L2 expected keys (flexible ù adapts to available data):
+E     .\analysis\layers\L4_session_scoring.py:425:     # RSI ù normalize raw RSI (0-100) to quality score (0-1)
+E     .\analysis\layers\L4_session_scoring.py:469:     """Compute Fundamental-Technical Alignment score (0û5 points).
+E     .\analysis\layers\L4_session_scoring.py:474:       ò direction_match (0û3): Both layers point same way
+E     .\analysis\layers\L4_session_scoring.py:475:       ò magnitude_match (0û2): Strength levels are comparable
+E     .\analysis\layers\L4_session_scoring.py:528:     """Compute Execution readiness score (0û5 points).
+E     .\analysis\layers\L4_session_scoring.py:531:       ò structure_quality (0û3): L3 market structure confidence
+E     .\analysis\layers\L4_session_scoring.py:532:       ò session_quality   (0û2): Current session quality from timing
+E     .\analysis\layers\L4_session_scoring.py:575:     """Layer 4: Session & Timing + Wolf 30-Point Scoring ù PRODUCTION.
+E     .\analysis\layers\L4_session_scoring.py:667:         # Legacy technical_score (0û100 scale) for backward compatibility
+E     .\analysis\layers\L5_psychology_fundamental.py:2: L5 ù Psychology & Fundamental Context Layer (PRODUCTION)
+E     .\analysis\layers\L5_psychology_fundamental.py:33: Zone: analysis/ ù pure computation, zero side-effects.
+E     .\analysis\layers\L5_psychology_fundamental.py:63: # EAF component weights (convex ù no multiplicative collapse)
+E     .\analysis\layers\L5_psychology_fundamental.py:108: # º3  FUNDAMENTAL HELPERS (from l5_fundamental.py ù preserved 100%)
+E     .\analysis\layers\L5_psychology_fundamental.py:143:     """Continuous fundamental strength score (0.0û1.0).
+E     .\analysis\layers\L5_psychology_fundamental.py:260: # º4  PSYCHOLOGY HELPERS (from L5_psychology.py ù preserved 100%)
+E     .\analysis\layers\L5_psychology_fundamental.py:288:     """Emotional bias score (0û1, higher = worse).
+E     .\analysis\layers\L5_psychology_fundamental.py:336:     No multiplicative collapse ù each component contributes independently.
+E     .\analysis\layers\L5_psychology_fundamental.py:360:     """Layer 5: Psychology & Fundamental Context ù PRODUCTION.
+E     .\analysis\layers\L5_psychology_fundamental.py:394:         """Record a win ù resets consecutive losses."""
+E     .\analysis\layers\L5_psychology_fundamental.py:513:             recommendation = "Psychology & Fundamental OK ù clear to trade"
+E     .\analysis\layers\L7_probability.py:2: L7 Probability Analyzer ù Real Monte Carlo + Bayesian Validation.
+E     .\analysis\layers\L7_probability.py:150:                 "[L7] {symbol} ù Insufficient trade history "
+E     .\analysis\layers\L7_probability.py:185:             wp = mc_result.win_probability   # 0.0 û 1.0
 E     .\\analysis\\layers\\L8_tii_integrity.py:2: \U0001f52c L8 \u2014 TII Integrity Layer (PRODUCTION)
 E     .\\analysis\\layers\\L8_tii_integrity.py:25:     - twms_score (float)       \u2192 0.0\u20131.0
-E     .\analysis\layers\L8_tii_integrity.py:32: Zone: analysis/ � pure computation, zero side-effects.
-E     .\analysis\layers\L8_tii_integrity.py:82:     pass  # Standalone mode � all computation is self-contained
-E     .\analysis\layers\L8_tii_integrity.py:95:     """Score price-VWAP alignment (0.0�1.0).
-E     .\analysis\layers\L8_tii_integrity.py:114:     """Score TRQ field energy coherence (0.0�1.0)."""
-E     .\analysis\layers\L8_tii_integrity.py:128:     """Score directional bias strength (0.0�1.0)."""
-E     .\analysis\layers\L8_tii_integrity.py:169:         reflective_intensity: System self-consistency (0�1).
-E     .\analysis\layers\L8_tii_integrity.py:170:         meta_integrity: Overall system health (0�1).
-E     .\analysis\layers\L8_tii_integrity.py:214:     Scores MFI, CCI, RSI, and momentum direction into a 0�1 composite.
-E     .\analysis\layers\L8_tii_integrity.py:303:     """L8 TII + Integrity Analysis � standalone entry point.
-E     .\analysis\layers\L8_tii_integrity.py:381:     """Layer 8: TII Integrity Analyzer � PRODUCTION.
-E     .\analysis\orchestrators\position_sizing_bridge.py:17:     """What analysis CAN provide � no account state here."""
-E     .\analysis\orchestrators\position_sizing_bridge.py:38:     """What dashboard MUST provide � computed from account state + prop firm guard."""
-E     .\analysis\orchestrators\__init__.py:2: Analysis Orchestrators � position sizing bridge only.
-E     .\api\ws_routes.py:51: # Candle Aggregator � builds OHLC bars from tick stream
-E     .\api\ws_routes.py:80:                 # New bar � emit old one if exists
-E     .\api\ws_routes.py:181: # WS /ws/prices � Tick-by-tick price stream
-E     .\api\ws_routes.py:242: # WS /ws/trades � Event-driven trade updates
-E     .\api\ws_routes.py:307: # WS /ws/candles � Real-time candle bar stream
-E     .\api\ws_routes.py:349: # WS /ws/risk � Risk state stream
-E     .\api\middleware\rate_limit.py:2: Rate Limiting Middleware � per-IP sliding window.
-E     .\api\middleware\rate_limit.py:9:   RATE_LIMIT_REQUESTS_PER_MIN      � max requests per minute (default 120)
-E     .\api\middleware\rate_limit.py:10:   RATE_LIMIT_BURST                 � burst tolerance above base (default 20)
-E     .\api\middleware\rate_limit.py:11:   RATE_LIMIT_WS_PER_MIN           � WebSocket upgrade rate (default 10)
-E     .\api\middleware\rate_limit.py:12:   RATE_LIMIT_ENABLED              � "true" / "false" (default "true")
-E     .\api\middleware\ws_auth.py:2: WebSocket Authentication � token validation for WS connections.
-E     .\api\middleware\ws_auth.py:8:   - ``ws_authenticate()`` � validates token and returns the WebSocket or closes it.
-E     .\api\middleware\ws_auth.py:9:   - ``require_ws_token()`` � FastAPI dependency for WebSocket endpoints.
-E     .\api\middleware\__init__.py:2: API Middleware � rate limiting, auth helpers.
+E     .\analysis\layers\L8_tii_integrity.py:32: Zone: analysis/ ù pure computation, zero side-effects.
+E     .\analysis\layers\L8_tii_integrity.py:82:     pass  # Standalone mode ù all computation is self-contained
+E     .\analysis\layers\L8_tii_integrity.py:95:     """Score price-VWAP alignment (0.0û1.0).
+E     .\analysis\layers\L8_tii_integrity.py:114:     """Score TRQ field energy coherence (0.0û1.0)."""
+E     .\analysis\layers\L8_tii_integrity.py:128:     """Score directional bias strength (0.0û1.0)."""
+E     .\analysis\layers\L8_tii_integrity.py:169:         reflective_intensity: System self-consistency (0û1).
+E     .\analysis\layers\L8_tii_integrity.py:170:         meta_integrity: Overall system health (0û1).
+E     .\analysis\layers\L8_tii_integrity.py:214:     Scores MFI, CCI, RSI, and momentum direction into a 0û1 composite.
+E     .\analysis\layers\L8_tii_integrity.py:303:     """L8 TII + Integrity Analysis ù standalone entry point.
+E     .\analysis\layers\L8_tii_integrity.py:381:     """Layer 8: TII Integrity Analyzer ù PRODUCTION.
+E     .\analysis\orchestrators\position_sizing_bridge.py:17:     """What analysis CAN provide ù no account state here."""
+E     .\analysis\orchestrators\position_sizing_bridge.py:38:     """What dashboard MUST provide ù computed from account state + prop firm guard."""
+E     .\analysis\orchestrators\__init__.py:2: Analysis Orchestrators ù position sizing bridge only.
+E     .\api\ws_routes.py:51: # Candle Aggregator ù builds OHLC bars from tick stream
+E     .\api\ws_routes.py:80:                 # New bar ù emit old one if exists
+E     .\api\ws_routes.py:181: # WS /ws/prices ù Tick-by-tick price stream
+E     .\api\ws_routes.py:242: # WS /ws/trades ù Event-driven trade updates
+E     .\api\ws_routes.py:307: # WS /ws/candles ù Real-time candle bar stream
+E     .\api\ws_routes.py:349: # WS /ws/risk ù Risk state stream
+E     .\api\middleware\rate_limit.py:2: Rate Limiting Middleware ù per-IP sliding window.
+E     .\api\middleware\rate_limit.py:9:   RATE_LIMIT_REQUESTS_PER_MIN      û max requests per minute (default 120)
+E     .\api\middleware\rate_limit.py:10:   RATE_LIMIT_BURST                 û burst tolerance above base (default 20)
+E     .\api\middleware\rate_limit.py:11:   RATE_LIMIT_WS_PER_MIN           û WebSocket upgrade rate (default 10)
+E     .\api\middleware\rate_limit.py:12:   RATE_LIMIT_ENABLED              û "true" / "false" (default "true")
+E     .\api\middleware\ws_auth.py:2: WebSocket Authentication ù token validation for WS connections.
+E     .\api\middleware\ws_auth.py:8:   - ``ws_authenticate()`` ù validates token and returns the WebSocket or closes it.
+E     .\api\middleware\ws_auth.py:9:   - ``require_ws_token()`` ù FastAPI dependency for WebSocket endpoints.
+E     .\api\middleware\__init__.py:2: API Middleware ù rate limiting, auth helpers.
 E     .\\config\\pip_values.py:2: \U0001f4b0 Pip Value Constants \u2014 TUYUL FX (SINGLE SOURCE OF TRUTH)
-E     .\config\pip_values.py:9:   - Pure lookups only � NO business logic
-E     .\config\pip_values.py:19: Zone: config/ � pure data, no side effects, no business logic.
-E     .\config\pip_values.py:53: # in degraded mode � risk/position_sizer.py must NOT fall back to this
+E     .\config\pip_values.py:9:   - Pure lookups only ù NO business logic
+E     .\config\pip_values.py:19: Zone: config/ ù pure data, no side effects, no business logic.
+E     .\config\pip_values.py:53: # in degraded mode ù risk/position_sizer.py must NOT fall back to this
 E     .\\config\\pip_values.py:89:     # \u2500\u2500 Metals \u2014 CORRECTED VALUES \u2500\u2500
-E     .\config\pip_values.py:206:       3. Standard FX multiplier (10000) � only if pair is in
-E     .\config\pip_values.py:224:     # 4. Unknown � raise, don't guess
-E     .\constitution\signal_dedup.py:2: Signal deduplication � prevents duplicate execution from repeated pipeline runs.
-E     .\constitution\signal_expiry.py:33:         return False, "Signal has no expiry timestamp � reject as unsafe"
-E     .\constitution\signal_expiry.py:43:             "Signal %s expires in %.0fs � urgent",
-E     .\constitution\signal_expiry.py:47:     return True, f"Valid � {remaining:.0f}s remaining"
-E     .\constitution\signal_id.py:2: Signal ID generator � unique, traceable, sortable.
-E     .\constitution\verdict_engine.py:208:     """Layer-12 Constitutional Verdict Engine � sole decision authority.
-E     .\constitution\verdict_engine.py:229:         These are ADVISORY inputs to the verdict � they inform confidence
-E     .\constitution\verdict_engine.py:311:             # Bayesian belief is below coin-flip � penalize
-E     .\constitution\verdict_engine.py:332:             layer_results: Dict of all layer outputs (L1�L11+).
-E     .\constitution\verdict_engine.py:352:             base_confidence = 0.70 + 0.20 * pass_rate  # 0.88�0.90
-E     .\constitution\verdict_engine.py:355:             base_confidence = 0.40 + 0.20 * pass_rate  # 0.54�0.58
-E     .\constitution\verdict_engine.py:381:         # (dashboard, journal, reflection) � they do NOT change the verdict.
+E     .\config\pip_values.py:206:       3. Standard FX multiplier (10000) ù only if pair is in
+E     .\config\pip_values.py:224:     # 4. Unknown ù raise, don't guess
+E     .\constitution\signal_dedup.py:2: Signal deduplication ù prevents duplicate execution from repeated pipeline runs.
+E     .\constitution\signal_expiry.py:33:         return False, "Signal has no expiry timestamp ù reject as unsafe"
+E     .\constitution\signal_expiry.py:43:             "Signal %s expires in %.0fs ù urgent",
+E     .\constitution\signal_expiry.py:47:     return True, f"Valid ù {remaining:.0f}s remaining"
+E     .\constitution\signal_id.py:2: Signal ID generator ù unique, traceable, sortable.
+E     .\constitution\verdict_engine.py:208:     """Layer-12 Constitutional Verdict Engine ù sole decision authority.
+E     .\constitution\verdict_engine.py:229:         These are ADVISORY inputs to the verdict ù they inform confidence
+E     .\constitution\verdict_engine.py:311:             # Bayesian belief is below coin-flip ù penalize
+E     .\constitution\verdict_engine.py:332:             layer_results: Dict of all layer outputs (L1ûL11+).
+E     .\constitution\verdict_engine.py:352:             base_confidence = 0.70 + 0.20 * pass_rate  # 0.88û0.90
+E     .\constitution\verdict_engine.py:355:             base_confidence = 0.40 + 0.20 * pass_rate  # 0.54û0.58
+E     .\constitution\verdict_engine.py:381:         # (dashboard, journal, reflection) ù they do NOT change the verdict.
 E     .\\constitution\\verdict_engine.py:408:             gate_scores: Dict of gate_name \u2192 score/pass from L1\u2013L11.
-E     .\constitution\verdict_engine.py:462:         This is NOT a market opinion � it's a mathematical statement:
-E     .\core\event_bus.py:4: Events are typed and validated � not a free-for-all.
-E     .\core\event_bus.py:39:     # Execution events (reporting only � no authority)
-E     .\core\health_monitor.py:2: System health monitor � required before going live.
-E     .\core\health_monitor.py:143:         # All critical systems OK � allow trading
-E     .\core\health_monitor.py:145:             logger.info("All critical subsystems recovered � trading re-enabled")
-E     .\core\vault_health.py:2: Vault health checker � replaces placeholder feed_freshness and redis_health.
-E     .\core\core_fusion\adaptive_threshold.py:1: """Adaptive Threshold Controller � dynamic threshold management."""
-E     .\core\core_fusion\divergence.py:1: """Multi-Indicator Divergence Detector � RSI/MACD/CCI/MFI."""
-E     .\core\core_fusion\equilibrium.py:1: """Equilibrium Momentum Fusion � v6 + high-level wrapper."""
-E     .\core\core_fusion\field_sync.py:1: """Field Sync � Context resolution and synchronization."""
+E     .\constitution\verdict_engine.py:462:         This is NOT a market opinion ù it's a mathematical statement:
+E     .\core\event_bus.py:4: Events are typed and validated ù not a free-for-all.
+E     .\core\event_bus.py:39:     # Execution events (reporting only ù no authority)
+E     .\core\health_monitor.py:2: System health monitor ù required before going live.
+E     .\core\health_monitor.py:143:         # All critical systems OK ù allow trading
+E     .\core\health_monitor.py:145:             logger.info("All critical subsystems recovered ù trading re-enabled")
+E     .\core\vault_health.py:2: Vault health checker ù replaces placeholder feed_freshness and redis_health.
+E     .\core\core_fusion\adaptive_threshold.py:1: """Adaptive Threshold Controller ù dynamic threshold management."""
+E     .\core\core_fusion\divergence.py:1: """Multi-Indicator Divergence Detector ù RSI/MACD/CCI/MFI."""
+E     .\core\core_fusion\equilibrium.py:1: """Equilibrium Momentum Fusion ù v6 + high-level wrapper."""
+E     .\core\core_fusion\field_sync.py:1: """Field Sync ù Context resolution and synchronization."""
 E     .\\core\\core_fusion\\hybrid_quantum.py:1: """Hybrid Vault Quantum Engine \u2014 Quantum \u2194 Fusion reflective core."""
-E     .\core\core_fusion\integrator.py:1: """Fusion Integrator � Core Layer 12 integration."""
-E     .\core\core_fusion\liquidity_mapper.py:1: """Liquidity Zone Mapper � SMC institutional level tracking."""
-E     .\core\core_fusion\micro_adapter.py:1: """Micro Adapter � normalizes microstructure signals for WLWCI."""
-E     .\core\core_fusion\monte_carlo.py:1: """Monte Carlo Engines � Confidence simulation + FTTC.
-E     .\core\core_fusion\orchestrator.py:1: """Ultra Fusion Orchestrator v6 � main pipeline L8-L11."""
-E     .\core\core_fusion\rsi_alignment.py:1: """RSI Alignment Engine � cross-timeframe RSI analysis."""
-E     .\core\core_fusion\vault_macro.py:1: """Vault Macro Engine � Reflective Gravity Anchor (EMA+SMA)."""
-E     .\core\core_fusion\volume_profile.py:1: """Volume Profile Analyzer � POC, VAH, VAL, HVN, LVN."""
-E     .\core\core_fusion\wlwci_calculator.py:1: """WLWCI Calculator � Weighted Layered Wave-Context Index."""
-E     .\core\core_fusion\_types.py:2: Fusion Types � Exceptions, Enums, Constants, Dataclasses.
-E     .\core\core_fusion\_utils.py:1: """Fusion Utilities � shared helper functions."""
+E     .\core\core_fusion\integrator.py:1: """Fusion Integrator ù Core Layer 12 integration."""
+E     .\core\core_fusion\liquidity_mapper.py:1: """Liquidity Zone Mapper ù SMC institutional level tracking."""
+E     .\core\core_fusion\micro_adapter.py:1: """Micro Adapter ù normalizes microstructure signals for WLWCI."""
+E     .\core\core_fusion\monte_carlo.py:1: """Monte Carlo Engines ù Confidence simulation + FTTC.
+E     .\core\core_fusion\orchestrator.py:1: """Ultra Fusion Orchestrator v6 ù main pipeline L8-L11."""
+E     .\core\core_fusion\rsi_alignment.py:1: """RSI Alignment Engine ù cross-timeframe RSI analysis."""
+E     .\core\core_fusion\vault_macro.py:1: """Vault Macro Engine ù Reflective Gravity Anchor (EMA+SMA)."""
+E     .\core\core_fusion\volume_profile.py:1: """Volume Profile Analyzer ù POC, VAH, VAL, HVN, LVN."""
+E     .\core\core_fusion\wlwci_calculator.py:1: """WLWCI Calculator ù Weighted Layered Wave-Context Index."""
+E     .\core\core_fusion\_types.py:2: Fusion Types ù Exceptions, Enums, Constants, Dataclasses.
+E     .\core\core_fusion\_utils.py:1: """Fusion Utilities ù shared helper functions."""
 E     .\\core\\core_fusion\\__init__ .py:2: core.fusion \u2014 TUYUL FX Modular Fusion Package v7.0r\u221e
-E     .\dashboard\backend\account_state_provider.py:2: Account state provider � fetches real account info from MT5.
-E     .\dashboard\backend\account_state_provider.py:68:             logger.warning("MetaTrader5 not available � using fallback mode")
-E     .\dashboard\backend\auth.py:2: Dashboard Authentication � JWT + API-key support.
-E     .\dashboard\backend\auth.py:5:   - ``create_token(sub, extra)`` � issue a signed JWT.
-E     .\dashboard\backend\auth.py:6:   - ``decode_token(raw)`` � decode and validate a JWT; returns payload or None.
-E     .\dashboard\backend\auth.py:7:   - ``validate_api_key(key)`` � check against the static API key.
-E     .\dashboard\backend\auth.py:8:   - ``verify_token(authorization)`` � FastAPI Depends() for HTTP routes.
-E     .\dashboard\backend\auth.py:9:   - ``verify_ws_token_from_query(websocket)`` � WS-safe auth via query param.
-E     .\dashboard\backend\auth.py:12:   DASHBOARD_JWT_SECRET        � HMAC secret (MUST change in prod)
-E     .\dashboard\backend\auth.py:13:   DASHBOARD_JWT_ALGO          � algorithm (default HS256)
-E     .\dashboard\backend\auth.py:14:   DASHBOARD_TOKEN_EXPIRE_MIN  � token lifetime in minutes (default 60)
-E     .\dashboard\backend\auth.py:15:   DASHBOARD_API_KEY           � optional static API key for service-to-service calls
-E     .\dashboard\backend\auth.py:46: # Lightweight JWT helpers (no external lib needed � HMAC-SHA256 only)
-E     .\dashboard\backend\risk_calculator.py:2: Dashboard risk calculator � THE authority for lot sizing.
-E     .\dashboard\backend\risk_calculator.py:107:                     f"� {guard_result.get('details', '')}"
-E     .\dashboard\backend\risk_engine.py:48:         Multiplier in (0.0, 1.0] � applied to base risk_percent.
-E     .\dashboard\backend\risk_engine.py:53:         return 1.0       # 0�3%  DD: full risk
-E     .\dashboard\backend\risk_engine.py:55:         return 0.75      # 3�5%  DD: reduce by 25%
-E     .\dashboard\backend\risk_engine.py:57:         return 0.50      # 5�8%  DD: half risk
-E     .\dashboard\backend\risk_engine.py:59:         return 0.35      # 8�10% DD: heavy reduction
-E     .\dashboard\backend\trade_input_api.py:213:     # Placeholder � replace with actual storage lookup
-E     .\ea_interface\mt5_bridge.py:2: MT5 Bridge � dumb execution relay via file-based protocol.
-E     .\engines\Bayesian_upate_engine.py:1: """Bayesian Probability Update Engine � Layer-7 Bayesian inference.
-E     .\engines\cognitive_coherence_engine.py:68:             smoothing_alpha: EMA smoothing factor for coherence (0.0�1.0).
-E     .\engines\cognitive_coherence_engine.py:69:             baseline_alpha: Adaptive baseline update rate (0.0�1.0).
-E     .\engines\cognitive_coherence_engine.py:85:                 - emotion_state (float, 0�1): Current emotion level.
-E     .\engines\cognitive_coherence_engine.py:86:                 - fatigue (float, 0�1): Accumulated fatigue.
-E     .\engines\cognitive_coherence_engine.py:87:                 - loss_stress (float, 0�1): Loss-induced stress.
-E     .\engines\cognitive_coherence_engine.py:88:             market_volatility: Current market volatility (0�1). Tightens thresholds.
-E     .\engines\cognitive_risk_simulation.py:1: """Cognitive Risk Simulation � Layer-10 risk scenario modelling.
-E     .\engines\cognitive_risk_simulation.py:47:     risk_score: float = 0.5  # 0.0�1.0 (lower is riskier)
-E     .\engines\cognitive_risk_simulation.py:66:     """Risk simulation engine � analysis only, no execution.
-E     .\engines\correlation_risk_engine.py:1: """Correlation Risk Engine � Multi-pair hidden exposure detector.
-E     .\engines\correlation_risk_engine.py:10:            L6 is currently PLACEHOLDER � this fills that gap.
-E     .\engines\dynamic_position_sizing_engine.py:1: """Dynamic Position Sizing Engine � Kelly + CVaR + Volatility + Bayesian Hybrid.
-E     .\engines\dynamic_position_sizing_engine.py:114:         Prop-firm safe: most firms allow 1�2% daily loss.
+E     .\dashboard\backend\account_state_provider.py:2: Account state provider ù fetches real account info from MT5.
+E     .\dashboard\backend\account_state_provider.py:68:             logger.warning("MetaTrader5 not available ù using fallback mode")
+E     .\dashboard\backend\auth.py:2: Dashboard Authentication ù JWT + API-key support.
+E     .\dashboard\backend\auth.py:5:   - ``create_token(sub, extra)`` ù issue a signed JWT.
+E     .\dashboard\backend\auth.py:6:   - ``decode_token(raw)`` ù decode and validate a JWT; returns payload or None.
+E     .\dashboard\backend\auth.py:7:   - ``validate_api_key(key)`` ù check against the static API key.
+E     .\dashboard\backend\auth.py:8:   - ``verify_token(authorization)`` ù FastAPI Depends() for HTTP routes.
+E     .\dashboard\backend\auth.py:9:   - ``verify_ws_token_from_query(websocket)`` ù WS-safe auth via query param.
+E     .\dashboard\backend\auth.py:12:   DASHBOARD_JWT_SECRET        ù HMAC secret (MUST change in prod)
+E     .\dashboard\backend\auth.py:13:   DASHBOARD_JWT_ALGO          ù algorithm (default HS256)
+E     .\dashboard\backend\auth.py:14:   DASHBOARD_TOKEN_EXPIRE_MIN  ù token lifetime in minutes (default 60)
+E     .\dashboard\backend\auth.py:15:   DASHBOARD_API_KEY           ù optional static API key for service-to-service calls
+E     .\dashboard\backend\auth.py:46: # Lightweight JWT helpers (no external lib needed ù HMAC-SHA256 only)
+E     .\dashboard\backend\risk_calculator.py:2: Dashboard risk calculator ù THE authority for lot sizing.
+E     .\dashboard\backend\risk_calculator.py:107:                     f"ù {guard_result.get('details', '')}"
+E     .\dashboard\backend\risk_engine.py:48:         Multiplier in (0.0, 1.0] ù applied to base risk_percent.
+E     .\dashboard\backend\risk_engine.py:53:         return 1.0       # 0û3%  DD: full risk
+E     .\dashboard\backend\risk_engine.py:55:         return 0.75      # 3û5%  DD: reduce by 25%
+E     .\dashboard\backend\risk_engine.py:57:         return 0.50      # 5û8%  DD: half risk
+E     .\dashboard\backend\risk_engine.py:59:         return 0.35      # 8û10% DD: heavy reduction
+E     .\dashboard\backend\trade_input_api.py:213:     # Placeholder ù replace with actual storage lookup
+E     .\ea_interface\mt5_bridge.py:2: MT5 Bridge ù dumb execution relay via file-based protocol.
+E     .\engines\Bayesian_upate_engine.py:1: """Bayesian Probability Update Engine ù Layer-7 Bayesian inference.
+E     .\engines\cognitive_coherence_engine.py:68:             smoothing_alpha: EMA smoothing factor for coherence (0.0û1.0).
+E     .\engines\cognitive_coherence_engine.py:69:             baseline_alpha: Adaptive baseline update rate (0.0û1.0).
+E     .\engines\cognitive_coherence_engine.py:85:                 - emotion_state (float, 0û1): Current emotion level.
+E     .\engines\cognitive_coherence_engine.py:86:                 - fatigue (float, 0û1): Accumulated fatigue.
+E     .\engines\cognitive_coherence_engine.py:87:                 - loss_stress (float, 0û1): Loss-induced stress.
+E     .\engines\cognitive_coherence_engine.py:88:             market_volatility: Current market volatility (0û1). Tightens thresholds.
+E     .\engines\cognitive_risk_simulation.py:1: """Cognitive Risk Simulation ù Layer-10 risk scenario modelling.
+E     .\engines\cognitive_risk_simulation.py:47:     risk_score: float = 0.5  # 0.0û1.0 (lower is riskier)
+E     .\engines\cognitive_risk_simulation.py:66:     """Risk simulation engine ù analysis only, no execution.
+E     .\engines\correlation_risk_engine.py:1: """Correlation Risk Engine ù Multi-pair hidden exposure detector.
+E     .\engines\correlation_risk_engine.py:10:            L6 is currently PLACEHOLDER ù this fills that gap.
+E     .\engines\dynamic_position_sizing_engine.py:1: """Dynamic Position Sizing Engine ù Kelly + CVaR + Volatility + Bayesian Hybrid.
+E     .\engines\dynamic_position_sizing_engine.py:114:         Prop-firm safe: most firms allow 1û2% daily loss.
 E     .\\engines\\dynamic_position_sizing_engine.py:215:         # Clamp to (0, 1] \u2014 multiplier \u2265 1 always reduces; < 1 would amplify
-E     .\engines\dynamic_position_sizing_engine.py:221:         # Clamp to [0, 1] � posterior > 1 would amplify beyond Kelly
-E     .\engines\dynamic_position_sizing_engine.py:234:         # Absolute cap � prop-firm safety
-E     .\engines\dynamic_position_sizing_engine.py:316:         # Range: (0, 1] � always reduces, never amplifies
-E     .\engines\fusion_momentum_engine.py:1: """Fusion Momentum Engine � Layer-4 momentum and trend analysis.
-E     .\engines\fusion_momentum_engine.py:48:     momentum_score: float = 0.0  # 0.0�1.0
-E     .\engines\fusion_momentum_engine.py:176:     """Fusion Momentum Engine � analysis only, no side-effects."""
-E     .\engines\fusion_precision_engine.py:1: """Fusion Precision Engine � Layer-7 precise entry/exit zone detection.
-E     .\engines\fusion_precision_engine.py:154:     """Fusion Precision Engine � analysis only, no side-effects.
-E     .\engines\fusion_structure_engine.py:1: """Fusion Structure Engine � Layer-5 market structure analysis.
-E     .\engines\fusion_structure_engine.py:30:     strength: float  # 0.0�1.0
-E     .\engines\fusion_structure_engine.py:42:     structure_score: float = 0.0     # 0.0�1.0
-E     .\engines\fusion_structure_engine.py:267:     """Fusion Structure Engine � pure analysis, no execution.
-E     .\engines\Monte_carlo_engine.py:1: """Monte Carlo Engine � Layer-7 probability simulation.
+E     .\engines\dynamic_position_sizing_engine.py:221:         # Clamp to [0, 1] ù posterior > 1 would amplify beyond Kelly
+E     .\engines\dynamic_position_sizing_engine.py:234:         # Absolute cap ù prop-firm safety
+E     .\engines\dynamic_position_sizing_engine.py:316:         # Range: (0, 1] ù always reduces, never amplifies
+E     .\engines\fusion_momentum_engine.py:1: """Fusion Momentum Engine ù Layer-4 momentum and trend analysis.
+E     .\engines\fusion_momentum_engine.py:48:     momentum_score: float = 0.0  # 0.0û1.0
+E     .\engines\fusion_momentum_engine.py:176:     """Fusion Momentum Engine ù analysis only, no side-effects."""
+E     .\engines\fusion_precision_engine.py:1: """Fusion Precision Engine ù Layer-7 precise entry/exit zone detection.
+E     .\engines\fusion_precision_engine.py:154:     """Fusion Precision Engine ù analysis only, no side-effects.
+E     .\engines\fusion_structure_engine.py:1: """Fusion Structure Engine ù Layer-5 market structure analysis.
+E     .\engines\fusion_structure_engine.py:30:     strength: float  # 0.0û1.0
+E     .\engines\fusion_structure_engine.py:42:     structure_score: float = 0.0     # 0.0û1.0
+E     .\engines\fusion_structure_engine.py:267:     """Fusion Structure Engine ù pure analysis, no execution.
+E     .\engines\Monte_carlo_engine.py:1: """Monte Carlo Engine ù Layer-7 probability simulation.
 E     .\\engines\\Monte_carlo_engine.py:9:                     used by the core fusion layer \u2014 NOT the L7\u2192L12 path).
-E     .\engines\quantum_advisory_engine.py:1: """Quantum Advisory Engine � Layer-11 trade advisory synthesis.
-E     .\engines\quantum_advisory_engine.py:33:     wolf_score: float = 0.0  # 0.0�100.0 Wolf composite score
-E     .\engines\quantum_advisory_engine.py:34:     tii_score: float = 0.0   # Trade Idea Index (0�100)
-E     .\engines\quantum_advisory_engine.py:35:     frpc_score: float = 0.0  # Full Risk-Performance Composite (0�100)
-E     .\engines\quantum_advisory_engine.py:69:     """Quantum Advisory Engine � final analysis synthesis.
-E     .\engines\quantum_advisory_engine.py:182:         """Extract a 0.0�1.0 score from an engine output."""
-E     .\engines\quantum_advisory_engine.py:284:             warnings.append("Marginal setup � close to threshold")
-E     .\engines\quantum_field_engine.py:1: """Quantum Field Engine � Layer-3 field-state analysis.
-E     .\engines\quantum_field_engine.py:33:     # Core scores (0.0 � 1.0)
-E     .\engines\quantum_field_engine.py:149:     """Quantum Field Engine � analysis only, no side-effects.
-E     .\engines\quantum_probability_engine.py:1: """Quantum Probability Engine � Layer-6 probabilistic analysis.
-E     .\engines\quantum_probability_engine.py:122:     """Quantum Probability Engine � statistical edge analysis.
-E     .\engines\regime_classifier_ml.py:1: """Regime Classifier � Hurst-exponent + volatility-based regime detection.
-E     .\engines\regime_classifier_ml.py:4:     TRENDING       (H > 0.60)  � persistent price moves
-E     .\engines\regime_classifier_ml.py:5:     MEAN_REVERTING (H < 0.45)  � oscillatory / range-bound
-E     .\engines\regime_classifier_ml.py:6:     TRANSITION     (otherwise) � ambiguous / regime shift
-E     .\engines\regime_classifier_ml.py:10:            Does NOT replace L1 � acts as a parallel signal.
-E     .\engines\regime_classifier_ml.py:37:     confidence: float         # 0.0�1.0 (distance from random walk H=0.5)
-E     .\engines\regime_classifier_ml.py:181:             # FIX: Guard log(0) � skip lags with zero or negative std
-E     .\engines\volatility_clustering_model.py:1: """Volatility Clustering Model � GARCH-style autocorrelation detector.
-E     .\engines\volatility_clustering_model.py:10:            or L1 (ATR-based vol) � this measures temporal persistence
+E     .\engines\quantum_advisory_engine.py:1: """Quantum Advisory Engine ù Layer-11 trade advisory synthesis.
+E     .\engines\quantum_advisory_engine.py:33:     wolf_score: float = 0.0  # 0.0û100.0 Wolf composite score
+E     .\engines\quantum_advisory_engine.py:34:     tii_score: float = 0.0   # Trade Idea Index (0û100)
+E     .\engines\quantum_advisory_engine.py:35:     frpc_score: float = 0.0  # Full Risk-Performance Composite (0û100)
+E     .\engines\quantum_advisory_engine.py:69:     """Quantum Advisory Engine ù final analysis synthesis.
+E     .\engines\quantum_advisory_engine.py:182:         """Extract a 0.0û1.0 score from an engine output."""
+E     .\engines\quantum_advisory_engine.py:284:             warnings.append("Marginal setup ù close to threshold")
+E     .\engines\quantum_field_engine.py:1: """Quantum Field Engine ù Layer-3 field-state analysis.
+E     .\engines\quantum_field_engine.py:33:     # Core scores (0.0 û 1.0)
+E     .\engines\quantum_field_engine.py:149:     """Quantum Field Engine ù analysis only, no side-effects.
+E     .\engines\quantum_probability_engine.py:1: """Quantum Probability Engine ù Layer-6 probabilistic analysis.
+E     .\engines\quantum_probability_engine.py:122:     """Quantum Probability Engine ù statistical edge analysis.
+E     .\engines\regime_classifier_ml.py:1: """Regime Classifier ù Hurst-exponent + volatility-based regime detection.
+E     .\engines\regime_classifier_ml.py:4:     TRENDING       (H > 0.60)  ù persistent price moves
+E     .\engines\regime_classifier_ml.py:5:     MEAN_REVERTING (H < 0.45)  ù oscillatory / range-bound
+E     .\engines\regime_classifier_ml.py:6:     TRANSITION     (otherwise) ù ambiguous / regime shift
+E     .\engines\regime_classifier_ml.py:10:            Does NOT replace L1 ù acts as a parallel signal.
+E     .\engines\regime_classifier_ml.py:37:     confidence: float         # 0.0û1.0 (distance from random walk H=0.5)
+E     .\engines\regime_classifier_ml.py:181:             # FIX: Guard log(0) ù skip lags with zero or negative std
+E     .\engines\volatility_clustering_model.py:1: """Volatility Clustering Model ù GARCH-style autocorrelation detector.
+E     .\engines\volatility_clustering_model.py:10:            or L1 (ATR-based vol) ù this measures temporal persistence
 E     .\\engines\\volatility_clustering_model.py:14:     \u2705 Multi-lag autocorrelation (lags 1\u20135, not single lag-1)
-E     .\engines\volatility_clustering_model.py:63:     temporal persistence of volatility � a signature of clustered regimes.
-E     .\engines\walk_forward_validation_engine.py:1: """Walk-Forward Validation Engine � Out-of-Sample overfitting guard.
-E     .\engines\walk_forward_validation_engine.py:7:            Feeds advisory metrics to L7/L12 � does NOT decide trades.
-E     .\execution\broker_executor.py:2: Broker executor � dumb execution layer. No market analysis.
-E     .\execution\broker_executor.py:77:         This function has ZERO intelligence � it does exactly what is asked.
-E     .\execution\pending_engine.py:7:   1. LIVE  � sends orders via MT5 socket/API
-E     .\execution\pending_engine.py:8:   2. PAPER � simulates execution with journal logging
-E     .\execution\pending_engine.py:9:   3. DRY   � validates only, no execution
-E     .\execution\pending_engine.py:20: Zone: execution/ � no analysis, no decision-making.
-E     .\execution\pending_engine.py:157:     for traceability.  NOT based on datetime � two submissions
-E     .\execution\pending_engine.py:272:         Every call produces a journal entry � no silent failures.
-E     .\execution\pending_engine.py:399:         """DRY mode � validate only, no execution."""
-E     .\execution\pending_engine.py:415:             message="DRY RUN � order validated, not executed",
-E     .\execution\pending_engine.py:423:         """PAPER mode � simulate fill at entry price."""
-E     .\execution\pending_engine.py:439:             message=f"PAPER TRADE � simulated fill at {req.entry_price:.5f}",
-E     .\execution\pending_engine.py:447:         """LIVE mode � submit to MT5 via socket/API.
-E     .\execution\pending_engine.py:468:             logger.error("[LIVE] %s: %s � %s", error_key, order_id, msg)
-E     .\execution\pending_engine.py:523:                 message=f"LIVE FILLED � ticket {ticket}",
-E     .\execution\pending_engine.py:535:         Every submission � including rejections and duplicates � produces
+E     .\engines\volatility_clustering_model.py:63:     temporal persistence of volatility ù a signature of clustered regimes.
+E     .\engines\walk_forward_validation_engine.py:1: """Walk-Forward Validation Engine ù Out-of-Sample overfitting guard.
+E     .\engines\walk_forward_validation_engine.py:7:            Feeds advisory metrics to L7/L12 ù does NOT decide trades.
+E     .\execution\broker_executor.py:2: Broker executor ù dumb execution layer. No market analysis.
+E     .\execution\broker_executor.py:77:         This function has ZERO intelligence ù it does exactly what is asked.
+E     .\execution\pending_engine.py:7:   1. LIVE  ù sends orders via MT5 socket/API
+E     .\execution\pending_engine.py:8:   2. PAPER ù simulates execution with journal logging
+E     .\execution\pending_engine.py:9:   3. DRY   ù validates only, no execution
+E     .\execution\pending_engine.py:20: Zone: execution/ ù no analysis, no decision-making.
+E     .\execution\pending_engine.py:157:     for traceability.  NOT based on datetime ù two submissions
+E     .\execution\pending_engine.py:272:         Every call produces a journal entry ù no silent failures.
+E     .\execution\pending_engine.py:399:         """DRY mode ù validate only, no execution."""
+E     .\execution\pending_engine.py:415:             message="DRY RUN ù order validated, not executed",
+E     .\execution\pending_engine.py:423:         """PAPER mode ù simulate fill at entry price."""
+E     .\execution\pending_engine.py:439:             message=f"PAPER TRADE ù simulated fill at {req.entry_price:.5f}",
+E     .\execution\pending_engine.py:447:         """LIVE mode ù submit to MT5 via socket/API.
+E     .\execution\pending_engine.py:468:             logger.error("[LIVE] %s: %s ù %s", error_key, order_id, msg)
+E     .\execution\pending_engine.py:523:                 message=f"LIVE FILLED ù ticket {ticket}",
+E     .\execution\pending_engine.py:535:         Every submission ù including rejections and duplicates ù produces
 E     .\\pipeline\\engines.py:2: Pipeline Engines v7.4r\u221e \u2014 Reusable L13 Reflective & L15 Meta Sovereignty.
 E     .\\pipeline\\engines.py:8:     L13ReflectiveEngine  \u2014 LRCE + FRPC + \u03b1\u03b2\u03b3 field computation
-E     .\pipeline\engines.py:9:     L15MetaSovereigntyEngine � Meta integrity, zona health, sovereignty enforcement
-E     .\pipeline\engines.py:12: These engines NEVER override L12 � they augment reflective governance.
+E     .\pipeline\engines.py:9:     L15MetaSovereigntyEngine ù Meta integrity, zona health, sovereignty enforcement
+E     .\pipeline\engines.py:12: These engines NEVER override L12 ù they augment reflective governance.
 E     .\\pipeline\\engines.py:57:         # \u03b1\u03b2\u03b3 from TRQ-3D \u2014 meta_integrity modulates gamma channel
-E     .\pipeline\engines.py:102:                 f"Probability calibration grade {calibration['calibration_grade']} � "
+E     .\pipeline\engines.py:102:                 f"Probability calibration grade {calibration['calibration_grade']} ù "
 E     .\\pipeline\\result.py:2: Pipeline Result v7.4r\u221e \u2014 Structured output dataclass.
-E     .\pipeline\wolf_constitutional_pipeline.py:2: Wolf Constitutional Pipeline v8.0 � UNIFIED SUPER PIPELINE
-E     .\pipeline\wolf_constitutional_pipeline.py:6:   - analysis/orchestrators/wolf_sovereign_pipeline.py (Sovereign � deleted)
-E     .\pipeline\wolf_constitutional_pipeline.py:28: Execution order (CRITICAL � 8 phases):
-E     .\pipeline\wolf_constitutional_pipeline.py:29:     Phase 1: L1, L2, L3 (Perception � independent, halt-on-failure)
-E     .\pipeline\wolf_constitutional_pipeline.py:30:     Phase 2: L4, L5 (Confluence & Psychology � depend on L1-L3)
-E     .\pipeline\wolf_constitutional_pipeline.py:31:     Phase 3: L7, L8, L9 (Probability & Validation � depend on L4/L5)
+E     .\pipeline\wolf_constitutional_pipeline.py:2: Wolf Constitutional Pipeline v8.0 ù UNIFIED SUPER PIPELINE
+E     .\pipeline\wolf_constitutional_pipeline.py:6:   - analysis/orchestrators/wolf_sovereign_pipeline.py (Sovereign ù deleted)
+E     .\pipeline\wolf_constitutional_pipeline.py:28: Execution order (CRITICAL ù 8 phases):
+E     .\pipeline\wolf_constitutional_pipeline.py:29:     Phase 1: L1, L2, L3 (Perception ù independent, halt-on-failure)
+E     .\pipeline\wolf_constitutional_pipeline.py:30:     Phase 2: L4, L5 (Confluence & Psychology ù depend on L1-L3)
+E     .\pipeline\wolf_constitutional_pipeline.py:31:     Phase 3: L7, L8, L9 (Probability & Validation ù depend on L4/L5)
 E     .\\pipeline\\wolf_constitutional_pipeline.py:32:     Phase 4: L11 \u2192 L6 \u2192 L10 (Execution + Risk \u2014 L11 BEFORE L6!)
 E     .\\pipeline\\wolf_constitutional_pipeline.py:169:     # \u2500\u2500 Risk (from L10/dashboard \u2014 placeholders) \u2500\u2500
-E     .\pipeline\wolf_constitutional_pipeline.py:312:     Wolf 15-Layer Constitutional Pipeline v8.0 � Unified Super Pipeline.
-E     .\pipeline\wolf_constitutional_pipeline.py:399:     #  MAIN EXECUTE � the single canonical entry point
-E     .\pipeline\wolf_constitutional_pipeline.py:441:             # PHASE 1 � ZONA PERCEPTION & CONTEXT (L1, L2, L3)
-E     .\pipeline\wolf_constitutional_pipeline.py:443:             logger.info(f"[Pipeline v8.0] Phase 1: Perception & Context � {symbol}")
-E     .\pipeline\wolf_constitutional_pipeline.py:461:             # PHASE 2 � ZONA CONFLUENCE & SCORING (L4, L5)
-E     .\pipeline\wolf_constitutional_pipeline.py:463:             logger.info(f"[Pipeline v8.0] Phase 2: Confluence & Scoring � {symbol}")
-E     .\pipeline\wolf_constitutional_pipeline.py:469:             # PHASE 3 � ZONA PROBABILITY & VALIDATION (L7, L8, L9)
+E     .\pipeline\wolf_constitutional_pipeline.py:312:     Wolf 15-Layer Constitutional Pipeline v8.0 ù Unified Super Pipeline.
+E     .\pipeline\wolf_constitutional_pipeline.py:399:     #  MAIN EXECUTE ù the single canonical entry point
+E     .\pipeline\wolf_constitutional_pipeline.py:441:             # PHASE 1 ù ZONA PERCEPTION & CONTEXT (L1, L2, L3)
+E     .\pipeline\wolf_constitutional_pipeline.py:443:             logger.info(f"[Pipeline v8.0] Phase 1: Perception & Context ù {symbol}")
+E     .\pipeline\wolf_constitutional_pipeline.py:461:             # PHASE 2 ù ZONA CONFLUENCE & SCORING (L4, L5)
+E     .\pipeline\wolf_constitutional_pipeline.py:463:             logger.info(f"[Pipeline v8.0] Phase 2: Confluence & Scoring ù {symbol}")
+E     .\pipeline\wolf_constitutional_pipeline.py:469:             # PHASE 3 ù ZONA PROBABILITY & VALIDATION (L7, L8, L9)
 E     .\\pipeline\\wolf_constitutional_pipeline.py:476:             #   - coherence        \u2192 from earlier layer agreement (L1\u2013L6)
-E     .\pipeline\wolf_constitutional_pipeline.py:480:             # Authority: ANALYSIS ONLY � no execution side-effects.
+E     .\pipeline\wolf_constitutional_pipeline.py:480:             # Authority: ANALYSIS ONLY ù no execution side-effects.
 E     .\\pipeline\\wolf_constitutional_pipeline.py:509:             # \u2500\u2500 Coherence from upstream layers (L1\u2013L6 agreement) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
 E     .\\pipeline\\wolf_constitutional_pipeline.py:557:             # PHASE 4 \u2014 ZONA EXECUTION & DECISION (L11 \u2192 L6 \u2192 L10)
-E     .\pipeline\wolf_constitutional_pipeline.py:560:             logger.info(f"[Pipeline v8.0] Phase 4: Execution & Decision � {symbol}")
-E     .\pipeline\wolf_constitutional_pipeline.py:584:             # PHASE 5 � L12 CONSTITUTIONAL VERDICT (SOLE AUTHORITY)
-E     .\pipeline\wolf_constitutional_pipeline.py:587:             logger.info(f"[Pipeline v8.0] Phase 5: Constitutional Verdict � {symbol}")
-E     .\pipeline\wolf_constitutional_pipeline.py:613:             # PHASE 6 � TWO-PASS L13 GOVERNANCE (from Sovereign)
-E     .\pipeline\wolf_constitutional_pipeline.py:626:                 logger.info(f"[Pipeline v8.0] Phase 6: Two-Pass L13 Governance � {symbol}")
-E     .\pipeline\wolf_constitutional_pipeline.py:651:                 # No L13 � still compute vault sync and meta
-E     .\pipeline\wolf_constitutional_pipeline.py:662:             # PHASE 7 � SOVEREIGNTY ENFORCEMENT (drift + downgrade)
-E     .\pipeline\wolf_constitutional_pipeline.py:664:             logger.info(f"[Pipeline v8.0] Phase 7: Sovereignty Enforcement � {symbol}")
-E     .\pipeline\wolf_constitutional_pipeline.py:675:             # PHASE 8 � L14 JSON EXPORT + FINAL ASSEMBLY
-E     .\pipeline\wolf_constitutional_pipeline.py:677:             logger.info(f"[Pipeline v8.0] Phase 8: L14/Result Assembly � {symbol}")
-E     .\pipeline\wolf_constitutional_pipeline.py:825:     #  L14 � JSON OUTPUT & DATA EXPORT
-E     .\pipeline\wolf_constitutional_pipeline.py:960:     #  EARLY EXIT � pipeline failure fallback
-E     .\pipeline\__init__.py:2: Wolf Constitutional Pipeline v8.0 � UNIFIED SUPER PIPELINE.
-E     .\risk\enhanced_prop_guard.py:194:                 details="Weekend close required � no new positions after Friday cutoff",
-E     .\risk\risk_manager.py:1: """Risk Manager � Account-level risk governance with dynamic sizing support.
-E     .\risk\risk_manager.py:67:         This is the ABSOLUTE ceiling � dynamic sizing can only go LOWER.
-E     .\risk\risk_manager.py:93:         """Discard the singleton � mainly for test isolation."""
-E     .\risk\risk_multiplier.py:1: """Risk Multiplier � Aggregates risk scaling factors from multiple sources.
-E     .\schemas\validator.py:21:     logger.warning("jsonschema not installed � runtime validation disabled")
-E     .\schemas\validator.py:57:         logger.warning("Skipping L12 validation � jsonschema not available")
-E     .\tests\test_candle_builder.py:2: Tests for CandleBuilder � M15/H1 tick-built, H4+ REST-fetched.
-E     .\tests\test_candle_builder.py:51: # TickCandleBuilder � M15
-E     .\tests\test_candle_builder.py:133: # TickCandleBuilder � H1
-E     .\tests\test_candle_builder.py:220: # CandleManager � Integration
-E     .\tests\test_dashboard_routes.py:22:     """Override auth dependency for tests � returns a dummy payload."""
-E     .\tests\test_finnhub_ws_reconnect.py:236: # Connect � success and failure paths
-E     .\tests\test_finnhub_ws_reconnect.py:289: # Listen � message dispatch
-E     .\tests\test_finnhub_ws_reconnect.py:349: # Run loop � reconnect scenarios
-E     .\tests\test_finnhub_ws_reconnect.py:471:         # This test is more nuanced � we need to mock at the run() level
-E     .\tests\test_load_tick_stress.py:25: # Constants � tweak for CI vs local runs
-E     .\tests\test_load_tick_stress.py:147:         # Each symbol should have its own buffer � no cross-contamination
-E     .\tests\test_load_tick_stress.py:324:         # No crash � candles may or may not be emitted depending on window
-E     .\tests\test_load_tick_stress.py:357:         # Buffer should never grow unboundedly � cap at a reasonable multiple
-E     .\tests\test_load_tick_stress.py:360:             f"Buffer grew to {max_buffer_size} � possible memory leak"
-E     .\tests\test_pending_engine.py:289:         """Engine must not derive pip values � that's L10 analysis."""
-E     .\tests\test_pending_engine.py:292:         # Unknown pair is fine � engine doesn't need pip values
-E     .\tests\test_pending_engine.py:298:         # There's nowhere to even pass balance � by design
-E     .\tests\test_pipeline_e2e.py:104:         They return data structures only � no order placement, no account mutation.
-E     .\tests\test_pipeline_e2e.py:107:         # This is a structural test � ensure the function signature is pure
-E     .\tests\test_pipeline_e2e.py:138:         # Verify command is immutable � EA cannot change these
-E     .\tests\test_pip_values.py:1: """Tests for config/pip_values.py � pip value single source of truth."""
-E     .\tests\test_pip_values.py:312:             "get_pip_value must not accept lot_size � "
-E     .\tests\test_prop_guard.py:2: Tests for prop firm guard � critical for live trading safety.
-E     .\tests\test_prop_guard.py:157:     """Ensure guard never makes market decisions � only risk decisions."""
-E     .\tests\test_signal_integrity.py:2: Tests for signal integrity � expiry, dedup, validation.
-E     .\tests\test_unified_pipeline.py:2: Tests for unified pipeline v8.0 � engines, result, two-pass governance.
-E     .\tests\test_volatility_clustering.py:41:     """IID normal returns � no autocorrelation in squared returns."""
-E     .\tests\__init__.py:80:                 f"compute_verdict must not accept '{forbidden}' � authority boundary violation"
-E     .\tests\__init__.py:125:         """Conceptual mapping � concrete thresholds depend on engine config."""
-E     .\tests\integration\test_feed_to_verdict_latency.py:25:         """Simulate L1�L11 analysis returning scores."""
-E     .\tests\integration\test_full_signal_lifecycle.py:37:         """Append journal entries � no decision power."""
-E     .\tests\unit\test_analysis_boundary.py:2: Tests for analysis modules (L1�L11).
-E     .\tests\unit\test_analysis_boundary.py:12:     """Analysis modules must be pure � no execution side effects."""
-E     .\tests\unit\test_analysis_boundary.py:28:                     f"{py_file.name} imports execution � boundary violation"
-E     .\tests\unit\test_analysis_boundary.py:39:                     f"{py_file.name} contains '{forbidden}' � execution side-effect in analysis"
-E     .\tests\unit\test_analysis_boundary.py:50:                     f"{py_file.name} mutates dashboard state � boundary violation"
-E     .\tests\unit\test_analysis_boundary.py:55:     """Tests for data feed processing � latency and correctness."""
-E     .\tests\unit\test_dashboard_api.py:41:         # Dashboard must respect this � no override
-E     .\tests\unit\test_execution_state_machine.py:2: Tests for execution/state_machine.py � state transitions.
-E     .\tests\unit\test_execution_state_machine.py:135:                 f"execution/state_machine.py must not contain '{forbidden}' � boundary violation"
-E     .\tests\unit\test_journal_immutability.py:2: Tests for journal (J1�J4) � append-only, immutable audit trail.
-E     .\tests\unit\test_journal_immutability.py:17:     """J1�J4 record structure validation."""
-E     .\tests\unit\test_journal_immutability.py:99:         # Attempt to modify � should not affect the journal
-E     .\tests\unit\test_journal_immutability.py:105:         # This test documents the requirement � implementation must deepcopy on insert
-E     .\tests\unit\test_journal_immutability.py:131:         # Conceptual test � verify naming conventions
-E     .\tests\unit\test_journal_immutability.py:136:                     f"Journal must not have '{name}' � no decision authority"
-E     .\tests\unit\test_performance.py:2: Performance regression tests � keep CI fast.
-E     .\tests\unit\test_risk_prop_firm.py:2: Tests for risk/prop_firm.py � prop firm guard enforcement.
-E     .\tests\unit\test_schema_validation.py:2: Tests for JSON schema contracts � L12 and alerts.
-E     .\tests\unit\test_schema_validation.py:39:                 f"L12 schema must not require '{forbidden}' � boundary violation"
+E     .\pipeline\wolf_constitutional_pipeline.py:560:             logger.info(f"[Pipeline v8.0] Phase 4: Execution & Decision ù {symbol}")
+E     .\pipeline\wolf_constitutional_pipeline.py:584:             # PHASE 5 ù L12 CONSTITUTIONAL VERDICT (SOLE AUTHORITY)
+E     .\pipeline\wolf_constitutional_pipeline.py:587:             logger.info(f"[Pipeline v8.0] Phase 5: Constitutional Verdict ù {symbol}")
+E     .\pipeline\wolf_constitutional_pipeline.py:613:             # PHASE 6 ù TWO-PASS L13 GOVERNANCE (from Sovereign)
+E     .\pipeline\wolf_constitutional_pipeline.py:626:                 logger.info(f"[Pipeline v8.0] Phase 6: Two-Pass L13 Governance ù {symbol}")
+E     .\pipeline\wolf_constitutional_pipeline.py:651:                 # No L13 ù still compute vault sync and meta
+E     .\pipeline\wolf_constitutional_pipeline.py:662:             # PHASE 7 ù SOVEREIGNTY ENFORCEMENT (drift + downgrade)
+E     .\pipeline\wolf_constitutional_pipeline.py:664:             logger.info(f"[Pipeline v8.0] Phase 7: Sovereignty Enforcement ù {symbol}")
+E     .\pipeline\wolf_constitutional_pipeline.py:675:             # PHASE 8 ù L14 JSON EXPORT + FINAL ASSEMBLY
+E     .\pipeline\wolf_constitutional_pipeline.py:677:             logger.info(f"[Pipeline v8.0] Phase 8: L14/Result Assembly ù {symbol}")
+E     .\pipeline\wolf_constitutional_pipeline.py:825:     #  L14 ù JSON OUTPUT & DATA EXPORT
+E     .\pipeline\wolf_constitutional_pipeline.py:960:     #  EARLY EXIT ù pipeline failure fallback
+E     .\pipeline\__init__.py:2: Wolf Constitutional Pipeline v8.0 ù UNIFIED SUPER PIPELINE.
+E     .\risk\enhanced_prop_guard.py:194:                 details="Weekend close required ù no new positions after Friday cutoff",
+E     .\risk\risk_manager.py:1: """Risk Manager ù Account-level risk governance with dynamic sizing support.
+E     .\risk\risk_manager.py:69:         This is the ABSOLUTE ceiling ù dynamic sizing can only go LOWER.
+E     .\risk\risk_manager.py:95:         """Discard the singleton ù mainly for test isolation."""
+E     .\risk\risk_multiplier.py:1: """Risk Multiplier ù Aggregates risk scaling factors from multiple sources.
+E     .\schemas\validator.py:21:     logger.warning("jsonschema not installed ù runtime validation disabled")
+E     .\schemas\validator.py:57:         logger.warning("Skipping L12 validation ù jsonschema not available")
+E     .\tests\test_candle_builder.py:2: Tests for CandleBuilder ù M15/H1 tick-built, H4+ REST-fetched.
+E     .\tests\test_candle_builder.py:51: # TickCandleBuilder ù M15
+E     .\tests\test_candle_builder.py:133: # TickCandleBuilder ù H1
+E     .\tests\test_candle_builder.py:220: # CandleManager ù Integration
+E     .\tests\test_dashboard_routes.py:22:     """Override auth dependency for tests ù returns a dummy payload."""
+E     .\tests\test_finnhub_ws_reconnect.py:236: # Connect ù success and failure paths
+E     .\tests\test_finnhub_ws_reconnect.py:289: # Listen ù message dispatch
+E     .\tests\test_finnhub_ws_reconnect.py:349: # Run loop ù reconnect scenarios
+E     .\tests\test_finnhub_ws_reconnect.py:471:         # This test is more nuanced ù we need to mock at the run() level
+E     .\tests\test_load_tick_stress.py:25: # Constants ù tweak for CI vs local runs
+E     .\tests\test_load_tick_stress.py:147:         # Each symbol should have its own buffer ù no cross-contamination
+E     .\tests\test_load_tick_stress.py:324:         # No crash ù candles may or may not be emitted depending on window
+E     .\tests\test_load_tick_stress.py:357:         # Buffer should never grow unboundedly ù cap at a reasonable multiple
+E     .\tests\test_load_tick_stress.py:360:             f"Buffer grew to {max_buffer_size} ù possible memory leak"
+E     .\tests\test_pending_engine.py:289:         """Engine must not derive pip values ù that's L10 analysis."""
+E     .\tests\test_pending_engine.py:292:         # Unknown pair is fine ù engine doesn't need pip values
+E     .\tests\test_pending_engine.py:298:         # There's nowhere to even pass balance ù by design
+E     .\tests\test_pipeline_e2e.py:104:         They return data structures only ù no order placement, no account mutation.
+E     .\tests\test_pipeline_e2e.py:107:         # This is a structural test ù ensure the function signature is pure
+E     .\tests\test_pipeline_e2e.py:138:         # Verify command is immutable ù EA cannot change these
+E     .\tests\test_pip_values.py:1: """Tests for config/pip_values.py ù pip value single source of truth."""
+E     .\tests\test_pip_values.py:312:             "get_pip_value must not accept lot_size ù "
+E     .\tests\test_prop_guard.py:2: Tests for prop firm guard ù critical for live trading safety.
+E     .\tests\test_prop_guard.py:157:     """Ensure guard never makes market decisions ù only risk decisions."""
+E     .\tests\test_signal_integrity.py:2: Tests for signal integrity ù expiry, dedup, validation.
+E     .\tests\test_unified_pipeline.py:2: Tests for unified pipeline v8.0 ù engines, result, two-pass governance.
+E     .\tests\test_volatility_clustering.py:41:     """IID normal returns ù no autocorrelation in squared returns."""
+E     .\tests\__init__.py:80:                 f"compute_verdict must not accept '{forbidden}' ù authority boundary violation"
+E     .\tests\__init__.py:125:         """Conceptual mapping ù concrete thresholds depend on engine config."""
+E     .\tests\integration\test_feed_to_verdict_latency.py:25:         """Simulate L1ûL11 analysis returning scores."""
+E     .\tests\integration\test_full_signal_lifecycle.py:37:         """Append journal entries ù no decision power."""
+E     .\tests\unit\test_analysis_boundary.py:2: Tests for analysis modules (L1ûL11).
+E     .\tests\unit\test_analysis_boundary.py:12:     """Analysis modules must be pure ù no execution side effects."""
+E     .\tests\unit\test_analysis_boundary.py:28:                     f"{py_file.name} imports execution ù boundary violation"
+E     .\tests\unit\test_analysis_boundary.py:39:                     f"{py_file.name} contains '{forbidden}' ù execution side-effect in analysis"
+E     .\tests\unit\test_analysis_boundary.py:50:                     f"{py_file.name} mutates dashboard state ù boundary violation"
+E     .\tests\unit\test_analysis_boundary.py:55:     """Tests for data feed processing ù latency and correctness."""
+E     .\tests\unit\test_dashboard_api.py:41:         # Dashboard must respect this ù no override
+E     .\tests\unit\test_execution_state_machine.py:2: Tests for execution/state_machine.py ù state transitions.
+E     .\tests\unit\test_execution_state_machine.py:135:                 f"execution/state_machine.py must not contain '{forbidden}' ù boundary violation"
+E     .\tests\unit\test_journal_immutability.py:2: Tests for journal (J1ûJ4) ù append-only, immutable audit trail.
+E     .\tests\unit\test_journal_immutability.py:17:     """J1ûJ4 record structure validation."""
+E     .\tests\unit\test_journal_immutability.py:99:         # Attempt to modify ù should not affect the journal
+E     .\tests\unit\test_journal_immutability.py:105:         # This test documents the requirement ù implementation must deepcopy on insert
+E     .\tests\unit\test_journal_immutability.py:131:         # Conceptual test ù verify naming conventions
+E     .\tests\unit\test_journal_immutability.py:136:                     f"Journal must not have '{name}' ù no decision authority"
+E     .\tests\unit\test_performance.py:2: Performance regression tests ù keep CI fast.
+E     .\tests\unit\test_risk_prop_firm.py:2: Tests for risk/prop_firm.py ù prop firm guard enforcement.
+E     .\tests\unit\test_schema_validation.py:2: Tests for JSON schema contracts ù L12 and alerts.
+E     .\tests\unit\test_schema_validation.py:39:                 f"L12 schema must not require '{forbidden}' ù boundary violation"
 E     .\\tests\\unit\\test_telegram_alerts.py:29:             f"{emoji.get(verdict['verdict'], '\u2753')} **{verdict['verdict']}** \u2014 {verdict['symbol']}\\n"
-E     .\tests\unit\test_telegram_alerts.py:111:         """Telegram has rate limits � system should handle 429 gracefully."""
-E   assert not ['.\\api_server.py:130: # HTTP routers � protected by Bearer token (JWT or API key)', '.\\api_server.py:136: # WebSocket router � auth handled inside each endpoint via query-param token', '.\\conftest.py:2: Root conftest � shared fixtures for the entire Wolf-15 test suite.', '.\\conftest.py:22:     """Single event loop for the whole session � avoids per-test loop cost."""', '.\\conftest.py:37:         warnings.warn(f"Test {request.node.nodeid} took {elapsed:.1f}s � consider marking @pytest.mark.slow", stacklevel=2)', '.\\conftest.py:122:     """In-memory dict pretending to be Redis � tests run without Redis."""', ...]
+E     .\tests\unit\test_telegram_alerts.py:111:         """Telegram has rate limits ù system should handle 429 gracefully."""
+E   assert not ['.\\api_server.py:130: # HTTP routers ù protected by Bearer token (JWT or API key)', '.\\api_server.py:136: # WebSocket router ù auth handled inside each endpoint via query-param token', '.\\conftest.py:2: Root conftest ù shared fixtures for the entire Wolf-15 test suite.', '.\\conftest.py:22:     """Single event loop for the whole session ù avoids per-test loop cost."""', '.\\conftest.py:37:         warnings.warn(f"Test {request.node.nodeid} took {elapsed:.1f}s ù consider marking @pytest.mark.slow", stacklevel=2)', '.\\conftest.py:122:     """In-memory dict pretending to be Redis ù tests run without Redis."""', ...]
 _________________ TestRESTCandleFetcher.test_fetch_h4_candles _________________
 ..\..\..\..\AppData\Local\Programs\Python\Python311\Lib\unittest\mock.py:1375: in patched
     with self.decoration_helper(patched,
@@ -1870,10 +1871,10 @@ __________________ test_create_engine_suite_has_all_engines ___________________
 tests\test_engine_suite.py:6: in test_create_engine_suite_has_all_engines
     assert {
 E   AssertionError: assert False
-E    +  where False = <built-in method issubset of set object at 0x0000020882293140>(dict_keys(['coherence', 'context', 'risk_sim', 'momentum', 'precision', 'structure', 'field', 'probability', 'advisory']))
-E    +    where <built-in method issubset of set object at 0x0000020882293140> = {'advisory', 'coherence', 'context', 'field', 'momentum', 'precision', ...}.issubset
-E    +    and   dict_keys(['coherence', 'context', 'risk_sim', 'momentum', 'precision', 'structure', 'field', 'probability', 'advisory']) = <built-in method keys of dict object at 0x00000208826EF240>()
-E    +      where <built-in method keys of dict object at 0x00000208826EF240> = {'advisory': <engines.quantum_advisory_engine.QuantumAdvisoryEngine object at 0x00000208826EEBD0>, 'coherence': <engines.cognitive_coherence_engine.CognitiveCoherenceEngine object at 0x00000208826EF4D0>, 'context': <engines.cognitive_context_engine.CognitiveContextEngine object at 0x00000208826EEE50>, 'field': <engines.quantum_field_engine.QuantumFieldEngine object at 0x00000208822FC3D0>, ...}.keys
+E    +  where False = <built-in method issubset of set object at 0x000001C036FDF300>(dict_keys(['coherence', 'context', 'risk_sim', 'momentum', 'precision', 'structure', 'field', 'probability', 'advisory']))
+E    +    where <built-in method issubset of set object at 0x000001C036FDF300> = {'advisory', 'coherence', 'context', 'field', 'momentum', 'precision', ...}.issubset
+E    +    and   dict_keys(['coherence', 'context', 'risk_sim', 'momentum', 'precision', 'structure', 'field', 'probability', 'advisory']) = <built-in method keys of dict object at 0x000001C03719BDC0>()
+E    +      where <built-in method keys of dict object at 0x000001C03719BDC0> = {'advisory': <engines.quantum_advisory_engine.QuantumAdvisoryEngine object at 0x000001C03719BF90>, 'coherence': <engines.cognitive_coherence_engine.CognitiveCoherenceEngine object at 0x000001C03719B590>, 'context': <engines.cognitive_context_engine.CognitiveContextEngine object at 0x000001C03709F690>, 'field': <engines.quantum_field_engine.QuantumFieldEngine object at 0x000001C03719BF50>, ...}.keys
 ____________________ test_advisory_flags_lockout_conflict _____________________
 tests\test_engine_suite.py:22: in test_advisory_flags_lockout_conflict
     summary = advisory.summarize(  # type: ignore[attr-defined]
@@ -1916,7 +1917,7 @@ tests\test_ingest_service.py:85: in test_run_ingest_services_closes_redis_when_p
     raise AssertionError(msg)
 E   AssertionError: Expected aclose to have been awaited once. Awaited 0 times.
 ---------------------------- Captured stderr call -----------------------------
-2026-02-16 01:49:38.268 | INFO     | ingest_service:run_ingest_services:196 - Ingest service cleanup complete
+2026-02-16 01:57:17.635 | INFO     | ingest_service:run_ingest_services:196 - Ingest service cleanup complete
 _____________________ test_pipeline_returns_l12_contract ______________________
 tests\test_integration.py:18: in test_pipeline_returns_l12_contract
     result = pipeline.execute("XAUUSD")
@@ -1998,204 +1999,6 @@ E   AssertionError: assert 'MEAN_REVERTING' == 'TRENDING'
 E     
 E     - TRENDING
 E     + MEAN_REVERTING
-____________________ test_evaluate_allow_basic_fixed_mode _____________________
-tests\test_risk_engine_v2.py:100: in test_evaluate_allow_basic_fixed_mode
-    result = engine.evaluate(buy_signal)
-             ^^^^^^^^^^^^^^^^^^^^^^^^^^^
-risk\risk_engine_v2.py:71: in evaluate
-    if not self._rm.is_trading_allowed(category="forex"):
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
-E   AttributeError: 'RiskManager' object has no attribute 'is_trading_allowed'
-_________________________ test_evaluate_allow_xauusd __________________________
-tests\test_risk_engine_v2.py:116: in test_evaluate_allow_xauusd
-    result = engine.evaluate(xauusd_signal)
-             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-risk\risk_engine_v2.py:71: in evaluate
-    if not self._rm.is_trading_allowed(category="forex"):
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
-E   AttributeError: 'RiskManager' object has no attribute 'is_trading_allowed'
-__________________ test_evaluate_split_mode_returns_two_lots __________________
-tests\test_risk_engine_v2.py:139: in test_evaluate_split_mode_returns_two_lots
-    result = engine.evaluate(buy_signal)
-             ^^^^^^^^^^^^^^^^^^^^^^^^^^^
-risk\risk_engine_v2.py:71: in evaluate
-    if not self._rm.is_trading_allowed(category="forex"):
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
-E   AttributeError: 'RiskManager' object has no attribute 'is_trading_allowed'
-__________________ test_evaluate_split_mode_40_60_allocation __________________
-tests\test_risk_engine_v2.py:160: in test_evaluate_split_mode_40_60_allocation
-    result = engine.evaluate(buy_signal)
-             ^^^^^^^^^^^^^^^^^^^^^^^^^^^
-risk\risk_engine_v2.py:71: in evaluate
-    if not self._rm.is_trading_allowed(category="forex"):
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
-E   AttributeError: 'RiskManager' object has no attribute 'is_trading_allowed'
-__________________ test_evaluate_split_mode_50_50_allocation __________________
-tests\test_risk_engine_v2.py:184: in test_evaluate_split_mode_50_50_allocation
-    result = engine.evaluate(buy_signal)
-             ^^^^^^^^^^^^^^^^^^^^^^^^^^^
-risk\risk_engine_v2.py:71: in evaluate
-    if not self._rm.is_trading_allowed(category="forex"):
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
-E   AttributeError: 'RiskManager' object has no attribute 'is_trading_allowed'
-_____________________ test_evaluate_deny_circuit_breaker ______________________
-tests\test_risk_engine_v2.py:203: in test_evaluate_deny_circuit_breaker
-    risk_manager.record_trade_result(
-    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-E   AttributeError: 'RiskManager' object has no attribute 'record_trade_result'
-_____________________ test_evaluate_deny_max_open_trades ______________________
-tests\test_risk_engine_v2.py:229: in test_evaluate_deny_max_open_trades
-    result1 = engine.evaluate(buy_signal)
-              ^^^^^^^^^^^^^^^^^^^^^^^^^^^
-risk\risk_engine_v2.py:71: in evaluate
-    if not self._rm.is_trading_allowed(category="forex"):
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
-E   AttributeError: 'RiskManager' object has no attribute 'is_trading_allowed'
-_______________________ test_evaluate_allow_after_close _______________________
-tests\test_risk_engine_v2.py:264: in test_evaluate_allow_after_close
-    result1 = engine.evaluate(buy_signal)
-              ^^^^^^^^^^^^^^^^^^^^^^^^^^^
-risk\risk_engine_v2.py:71: in evaluate
-    if not self._rm.is_trading_allowed(category="forex"):
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
-E   AttributeError: 'RiskManager' object has no attribute 'is_trading_allowed'
-________________ test_register_intended_trade_updates_tracker _________________
-tests\test_risk_engine_v2.py:296: in test_register_intended_trade_updates_tracker
-    result = engine.evaluate(buy_signal)
-             ^^^^^^^^^^^^^^^^^^^^^^^^^^^
-risk\risk_engine_v2.py:71: in evaluate
-    if not self._rm.is_trading_allowed(category="forex"):
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
-E   AttributeError: 'RiskManager' object has no attribute 'is_trading_allowed'
-_____________________ test_close_trade_reduces_open_risk ______________________
-tests\test_risk_engine_v2.py:311: in test_close_trade_reduces_open_risk
-    result = engine.evaluate(buy_signal)
-             ^^^^^^^^^^^^^^^^^^^^^^^^^^^
-risk\risk_engine_v2.py:71: in evaluate
-    if not self._rm.is_trading_allowed(category="forex"):
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
-E   AttributeError: 'RiskManager' object has no attribute 'is_trading_allowed'
-__________________ test_split_lifecycle_register_two_entries __________________
-tests\test_risk_engine_v2.py:342: in test_split_lifecycle_register_two_entries
-    result = engine.evaluate(buy_signal)
-             ^^^^^^^^^^^^^^^^^^^^^^^^^^^
-risk\risk_engine_v2.py:71: in evaluate
-    if not self._rm.is_trading_allowed(category="forex"):
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
-E   AttributeError: 'RiskManager' object has no attribute 'is_trading_allowed'
-___________________ test_split_lifecycle_close_both_entries ___________________
-tests\test_risk_engine_v2.py:365: in test_split_lifecycle_close_both_entries
-    result = engine.evaluate(buy_signal)
-             ^^^^^^^^^^^^^^^^^^^^^^^^^^^
-risk\risk_engine_v2.py:71: in evaluate
-    if not self._rm.is_trading_allowed(category="forex"):
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
-E   AttributeError: 'RiskManager' object has no attribute 'is_trading_allowed'
-_____________________ test_get_account_snapshot_structure _____________________
-tests\test_risk_engine_v2.py:387: in test_get_account_snapshot_structure
-    snapshot = engine.get_account_snapshot()
-               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-risk\risk_engine_v2.py:278: in get_account_snapshot
-    risk_snapshot = self._rm.get_risk_snapshot(vix_level, session)
-                    ^^^^^^^^^^^^^^^^^^^^^^^^^^
-E   AttributeError: 'RiskManager' object has no attribute 'get_risk_snapshot'
-___________________ test_get_account_snapshot_profile_data ____________________
-tests\test_risk_engine_v2.py:406: in test_get_account_snapshot_profile_data
-    snapshot = engine.get_account_snapshot()
-               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-risk\risk_engine_v2.py:278: in get_account_snapshot
-    risk_snapshot = self._rm.get_risk_snapshot(vix_level, session)
-                    ^^^^^^^^^^^^^^^^^^^^^^^^^^
-E   AttributeError: 'RiskManager' object has no attribute 'get_risk_snapshot'
-___________________ test_get_account_snapshot_drawdown_info ___________________
-tests\test_risk_engine_v2.py:420: in test_get_account_snapshot_drawdown_info
-    risk_manager.record_trade_result(
-    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-E   AttributeError: 'RiskManager' object has no attribute 'record_trade_result'
-_______________ test_get_account_snapshot_trading_allowed_flag ________________
-tests\test_risk_engine_v2.py:439: in test_get_account_snapshot_trading_allowed_flag
-    snapshot = engine.get_account_snapshot()
-               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-risk\risk_engine_v2.py:278: in get_account_snapshot
-    risk_snapshot = self._rm.get_risk_snapshot(vix_level, session)
-                    ^^^^^^^^^^^^^^^^^^^^^^^^^^
-E   AttributeError: 'RiskManager' object has no attribute 'get_risk_snapshot'
-___________ test_evaluate_multi_instrument[EURUSD-1.095-1.09-1.105] ___________
-tests\test_risk_engine_v2.py:520: in test_evaluate_multi_instrument
-    result = engine.evaluate(signal)
-             ^^^^^^^^^^^^^^^^^^^^^^^
-risk\risk_engine_v2.py:71: in evaluate
-    if not self._rm.is_trading_allowed(category="forex"):
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
-E   AttributeError: 'RiskManager' object has no attribute 'is_trading_allowed'
-___________ test_evaluate_multi_instrument[GBPUSD-1.25-1.245-1.26] ____________
-tests\test_risk_engine_v2.py:520: in test_evaluate_multi_instrument
-    result = engine.evaluate(signal)
-             ^^^^^^^^^^^^^^^^^^^^^^^
-risk\risk_engine_v2.py:71: in evaluate
-    if not self._rm.is_trading_allowed(category="forex"):
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
-E   AttributeError: 'RiskManager' object has no attribute 'is_trading_allowed'
-__________ test_evaluate_multi_instrument[USDJPY-150.0-149.5-151.0] ___________
-tests\test_risk_engine_v2.py:520: in test_evaluate_multi_instrument
-    result = engine.evaluate(signal)
-             ^^^^^^^^^^^^^^^^^^^^^^^
-risk\risk_engine_v2.py:71: in evaluate
-    if not self._rm.is_trading_allowed(category="forex"):
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
-E   AttributeError: 'RiskManager' object has no attribute 'is_trading_allowed'
-_________ test_evaluate_multi_instrument[XAUUSD-2000.0-1995.0-2010.0] _________
-tests\test_risk_engine_v2.py:520: in test_evaluate_multi_instrument
-    result = engine.evaluate(signal)
-             ^^^^^^^^^^^^^^^^^^^^^^^
-risk\risk_engine_v2.py:71: in evaluate
-    if not self._rm.is_trading_allowed(category="forex"):
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
-E   AttributeError: 'RiskManager' object has no attribute 'is_trading_allowed'
-___________ test_evaluate_multi_instrument[AUDUSD-0.65-0.645-0.66] ____________
-tests\test_risk_engine_v2.py:520: in test_evaluate_multi_instrument
-    result = engine.evaluate(signal)
-             ^^^^^^^^^^^^^^^^^^^^^^^
-risk\risk_engine_v2.py:71: in evaluate
-    if not self._rm.is_trading_allowed(category="forex"):
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
-E   AttributeError: 'RiskManager' object has no attribute 'is_trading_allowed'
-____________________ test_evaluate_projected_risk_stacking ____________________
-tests\test_risk_engine_v2.py:551: in test_evaluate_projected_risk_stacking
-    result1 = engine.evaluate(signal1)
-              ^^^^^^^^^^^^^^^^^^^^^^^^
-risk\risk_engine_v2.py:71: in evaluate
-    if not self._rm.is_trading_allowed(category="forex"):
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
-E   AttributeError: 'RiskManager' object has no attribute 'is_trading_allowed'
-____________________ test_evaluate_details_contain_profile ____________________
-tests\test_risk_engine_v2.py:575: in test_evaluate_details_contain_profile
-    result = engine.evaluate(buy_signal)
-             ^^^^^^^^^^^^^^^^^^^^^^^^^^^
-risk\risk_engine_v2.py:71: in evaluate
-    if not self._rm.is_trading_allowed(category="forex"):
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
-E   AttributeError: 'RiskManager' object has no attribute 'is_trading_allowed'
-__________________ test_evaluate_deny_details_contain_reason __________________
-tests\test_risk_engine_v2.py:588: in test_evaluate_deny_details_contain_reason
-    risk_manager.record_trade_result(
-    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-E   AttributeError: 'RiskManager' object has no attribute 'record_trade_result'
-_________________________ test_evaluate_signal_allow __________________________
-tests\test_risk_router.py:221: in test_evaluate_signal_allow
-    assert response.status_code == 200
-E   assert 500 == 200
-E    +  where 500 = <Response [500 Internal Server Error]>.status_code
-___________________ test_evaluate_signal_with_auto_register ___________________
-tests\test_risk_router.py:262: in test_evaluate_signal_with_auto_register
-    assert response.status_code == 200
-E   assert 500 == 200
-E    +  where 500 = <Response [500 Internal Server Error]>.status_code
-______________________________ test_get_snapshot ______________________________
-tests\test_risk_router.py:292: in test_get_snapshot
-    assert response.status_code == 200
-E   assert 500 == 200
-E    +  where 500 = <Response [500 Internal Server Error]>.status_code
 _____________ TestL13ReflectiveEngine.test_reflect_baseline_meta ______________
 tests\test_unified_pipeline.py:149: in test_reflect_baseline_meta
     result = engine.reflect(synthesis, verdict, meta_integrity=1.0)
@@ -2320,33 +2123,6 @@ FAILED tests/test_prop_guard.py::TestMaxSafeLotComputation::test_returns_min_lot
 FAILED tests/test_quantum_field_engine.py::test_quantum_field_engine_rejects_short_input
 FAILED tests/test_quantum_field_engine.py::test_quantum_field_engine_emits_metrics
 FAILED tests/test_regime_classifier.py::TestRegimeClassifier::test_trending_detected
-FAILED tests/test_risk_engine_v2.py::test_evaluate_allow_basic_fixed_mode - A...
-FAILED tests/test_risk_engine_v2.py::test_evaluate_allow_xauusd - AttributeEr...
-FAILED tests/test_risk_engine_v2.py::test_evaluate_split_mode_returns_two_lots
-FAILED tests/test_risk_engine_v2.py::test_evaluate_split_mode_40_60_allocation
-FAILED tests/test_risk_engine_v2.py::test_evaluate_split_mode_50_50_allocation
-FAILED tests/test_risk_engine_v2.py::test_evaluate_deny_circuit_breaker - Att...
-FAILED tests/test_risk_engine_v2.py::test_evaluate_deny_max_open_trades - Att...
-FAILED tests/test_risk_engine_v2.py::test_evaluate_allow_after_close - Attrib...
-FAILED tests/test_risk_engine_v2.py::test_register_intended_trade_updates_tracker
-FAILED tests/test_risk_engine_v2.py::test_close_trade_reduces_open_risk - Att...
-FAILED tests/test_risk_engine_v2.py::test_split_lifecycle_register_two_entries
-FAILED tests/test_risk_engine_v2.py::test_split_lifecycle_close_both_entries
-FAILED tests/test_risk_engine_v2.py::test_get_account_snapshot_structure - At...
-FAILED tests/test_risk_engine_v2.py::test_get_account_snapshot_profile_data
-FAILED tests/test_risk_engine_v2.py::test_get_account_snapshot_drawdown_info
-FAILED tests/test_risk_engine_v2.py::test_get_account_snapshot_trading_allowed_flag
-FAILED tests/test_risk_engine_v2.py::test_evaluate_multi_instrument[EURUSD-1.095-1.09-1.105]
-FAILED tests/test_risk_engine_v2.py::test_evaluate_multi_instrument[GBPUSD-1.25-1.245-1.26]
-FAILED tests/test_risk_engine_v2.py::test_evaluate_multi_instrument[USDJPY-150.0-149.5-151.0]
-FAILED tests/test_risk_engine_v2.py::test_evaluate_multi_instrument[XAUUSD-2000.0-1995.0-2010.0]
-FAILED tests/test_risk_engine_v2.py::test_evaluate_multi_instrument[AUDUSD-0.65-0.645-0.66]
-FAILED tests/test_risk_engine_v2.py::test_evaluate_projected_risk_stacking - ...
-FAILED tests/test_risk_engine_v2.py::test_evaluate_details_contain_profile - ...
-FAILED tests/test_risk_engine_v2.py::test_evaluate_deny_details_contain_reason
-FAILED tests/test_risk_router.py::test_evaluate_signal_allow - assert 500 == 200
-FAILED tests/test_risk_router.py::test_evaluate_signal_with_auto_register - a...
-FAILED tests/test_risk_router.py::test_get_snapshot - assert 500 == 200
 FAILED tests/test_unified_pipeline.py::TestL13ReflectiveEngine::test_reflect_baseline_meta
 FAILED tests/test_unified_pipeline.py::TestL13ReflectiveEngine::test_reflect_with_real_meta
 FAILED tests/test_unified_pipeline.py::TestL13ReflectiveEngine::test_reflect_misaligned_direction
@@ -2370,6 +2146,4 @@ ERROR tests/test_price_watcher.py::test_no_price_data
 ERROR tests/test_price_watcher.py::test_invalid_price_data
 ERROR tests/unit/test_schema_validation.py::TestAlertSchema::test_schema_is_valid_json
 ERROR tests/unit/test_schema_validation.py::TestAlertSchema::test_event_types_defined
-===== 69 failed, 975 passed, 3 skipped, 10 warnings, 11 errors in 31.39s ======
-
----STDERR---
+===== 42 failed, 1002 passed, 3 skipped, 10 warnings, 11 errors in 31.26s =====

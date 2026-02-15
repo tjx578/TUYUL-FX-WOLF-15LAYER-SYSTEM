@@ -2,19 +2,19 @@
 L2 MTA Hierarchy Analyzer - Multi-Timeframe Analysis.
 
 Sources:
-    core_cognitive_unified.py  → ReflexEmotionCore, ReflexState
-    core_reflective_unified.py → FRPCEngine, adaptive_field_stabilizer, FieldState
-    core_fusion_unified.py     → FusionIntegrator, MonteCarloConfidence
+    core_cognitive_unified.py  -> ReflexEmotionCore, ReflexState
+    core_reflective_unified.py -> FRPCEngine, adaptive_field_stabilizer, FieldState
+    core_fusion_unified.py     -> FusionIntegrator, MonteCarloConfidence
 
 Produces:
     - mta_compliance (str)
     - hierarchy_followed (bool)
-    - reflex_coherence (float)  → target ≥ 0.88
-    - conf12 (float)            → target ≥ 0.92
+    - reflex_coherence (float)  -> target ≥ 0.88
+    - conf12 (float)            -> target ≥ 0.92
     - frpc_energy (float)
-    - frpc_state (str)          → SYNC | PARTIAL | DESYNC
-    - field_phase (str)         → ACCUMULATION | EXPANSION | DISTRIBUTION | REVERSAL | CONSOLIDATION
-    - direction (str)           → BULLISH | BEARISH | NEUTRAL
+    - frpc_state (str)          -> SYNC | PARTIAL | DESYNC
+    - field_phase (str)         -> ACCUMULATION | EXPANSION | DISTRIBUTION | REVERSAL | CONSOLIDATION
+    - direction (str)           -> BULLISH | BEARISH | NEUTRAL
     - composite_bias (float)
     - available_timeframes (int)
     - aligned (bool)

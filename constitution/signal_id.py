@@ -1,5 +1,5 @@
 """
-Signal ID generator — unique, traceable, sortable.
+Signal ID generator -- unique, traceable, sortable.
 Format: SIG-{SYMBOL_SHORT}-{YYYYMMDD}-{HHMMSS}-{4RANDOM}
 """
 

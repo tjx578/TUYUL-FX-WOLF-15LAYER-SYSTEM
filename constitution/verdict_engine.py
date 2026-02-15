@@ -205,7 +205,7 @@ def generate_l12_verdict(synthesis: dict[str, Any]) -> dict[str, Any]:  # noqa: 
 
 
 class VerdictEngine:
-    """Layer-12 Constitutional Verdict Engine — sole decision authority.
+    """Layer-12 Constitutional Verdict Engine -- sole decision authority.
 
     Enhancement (Tier 2):
         ✅ Gate 11: Kelly Edge Gate (optional, enabled via config)
@@ -226,7 +226,7 @@ class VerdictEngine:
         """Extract and normalize L7 Monte Carlo + Bayesian metrics.
 
         Returns a flat dict of validated L7 fields with fail-safe defaults.
-        These are ADVISORY inputs to the verdict — they inform confidence
+        These are ADVISORY inputs to the verdict -- they inform confidence
         scoring but do not independently authorize or block trades.
         The gate logic (PASS/CONDITIONAL/FAIL) is evaluated by _evaluate_9_gates().
 
@@ -265,9 +265,9 @@ class VerdictEngine:
         """Adjust verdict confidence using L7 probability metrics.
 
         Applies bounded adjustments to base_confidence:
-        - High posterior win + low risk-of-ruin → boost (max +0.08)
-        - High risk-of-ruin or FAIL validation → penalty (max -0.12)
-        - CONDITIONAL validation → mild penalty (-0.04)
+        - High posterior win + low risk-of-ruin -> boost (max +0.08)
+        - High risk-of-ruin or FAIL validation -> penalty (max -0.12)
+        - CONDITIONAL validation -> mild penalty (-0.04)
 
         Result is clamped to [0.0, 1.0].
 
@@ -308,7 +308,7 @@ class VerdictEngine:
             penalty += 0.04
 
         if posterior < 0.45 and posterior > 0.0:
-            # Bayesian belief is below coin-flip — penalize
+            # Bayesian belief is below coin-flip -- penalize
             penalty += 0.04
 
         penalty = min(penalty, 0.12)
@@ -329,7 +329,7 @@ class VerdictEngine:
 
         Args:
             symbol: Instrument identifier.
-            layer_results: Dict of all layer outputs (L1–L11+).
+            layer_results: Dict of all layer outputs (L1-L11+).
             gate_results: Pre-computed gate results (if available).
 
         Returns:
@@ -349,10 +349,10 @@ class VerdictEngine:
         pass_rate = passed_count / total_gates
         if pass_rate >= 0.9:
             verdict_label = "EXECUTE"
-            base_confidence = 0.70 + 0.20 * pass_rate  # 0.88–0.90
+            base_confidence = 0.70 + 0.20 * pass_rate  # 0.88-0.90
         elif pass_rate >= 0.7:
             verdict_label = "HOLD"
-            base_confidence = 0.40 + 0.20 * pass_rate  # 0.54–0.58
+            base_confidence = 0.40 + 0.20 * pass_rate  # 0.54-0.58
         else:
             verdict_label = "NO_TRADE"
             base_confidence = max(0.10, 0.30 * pass_rate)
@@ -378,7 +378,7 @@ class VerdictEngine:
 
         # ── Enrich verdict with L7 probability context ───────────────
         # These fields are informational for downstream consumers
-        # (dashboard, journal, reflection) — they do NOT change the verdict.
+        # (dashboard, journal, reflection) -- they do NOT change the verdict.
         verdict["probability_context"] = {
             "monte_carlo_win_rate": l7_metrics["l7_win_probability"],
             "profit_factor": l7_metrics["l7_profit_factor"],
@@ -405,7 +405,7 @@ class VerdictEngine:
         """Evaluate all constitutional gates and produce verdict.
 
         Args:
-            gate_scores: Dict of gate_name → score/pass from L1–L11.
+            gate_scores: Dict of gate_name -> score/pass from L1-L11.
             kelly_edge_data: Optional dict from DynamicPositionSizingEngine.
                 Expected keys: {"edge_negative": bool, "kelly_raw": float,
                                 "final_fraction": float}
@@ -459,7 +459,7 @@ class VerdictEngine:
         DynamicPositionSizingEngine determines there is no statistical
         edge (Kelly fraction ≤ 0).
 
-        This is NOT a market opinion — it's a mathematical statement:
+        This is NOT a market opinion -- it's a mathematical statement:
         "Given the observed win rate and payoff ratio, risking capital
         has negative expected geometric growth."
 

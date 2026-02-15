@@ -1,5 +1,5 @@
 """
-Wolf Constitutional Pipeline v8.0 — UNIFIED SUPER PIPELINE.
+Wolf Constitutional Pipeline v8.0 -- UNIFIED SUPER PIPELINE.
 
 4 Core Unified Modules × 15 Analytical Layers × Complete Pipeline.
 Single canonical pipeline for the entire analysis system.

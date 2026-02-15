@@ -1,5 +1,5 @@
 """
-Signal deduplication — prevents duplicate execution from repeated pipeline runs.
+Signal deduplication -- prevents duplicate execution from repeated pipeline runs.
 """
 
 from __future__ import annotations

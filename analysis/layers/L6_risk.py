@@ -2,16 +2,16 @@
 L6 Risk Analyzer - Risk Management + Lorentzian Stabilization (PLACEHOLDER).
 
 Sources:
-    core_cognitive_unified.py  → AdaptiveRiskCalculator
-    core_reflective_unified.py → ReflectiveSymmetryPatchV6, get_reflective_energy_state
-    core_fusion_unified.py     → AdaptiveThresholdController
+    core_cognitive_unified.py  -> AdaptiveRiskCalculator
+    core_reflective_unified.py -> ReflectiveSymmetryPatchV6, get_reflective_energy_state
+    core_fusion_unified.py     -> AdaptiveThresholdController
 
 Produces:
-    - risk_status (str)       → OPTIMAL | ACCEPTABLE | WARNING | CRITICAL
+    - risk_status (str)       -> OPTIMAL | ACCEPTABLE | WARNING | CRITICAL
     - propfirm_compliant (bool)
-    - drawdown_level (str)    → LEVEL_0 .. CRITICAL
-    - risk_multiplier (float) → 1.0 / 0.75 / 0.50 / 0.25 / 0.0
-    - lrce (float)            → target ≥ 0.96
+    - drawdown_level (str)    -> LEVEL_0 .. CRITICAL
+    - risk_multiplier (float) -> 1.0 / 0.75 / 0.50 / 0.25 / 0.0
+    - lrce (float)            -> target ≥ 0.96
     - max_risk_pct (float)
     - risk_ok (bool)
     - valid (bool)

@@ -1,4 +1,4 @@
-"""Cognitive Risk Simulation — Layer-10 risk scenario modelling.
+"""Cognitive Risk Simulation -- Layer-10 risk scenario modelling.
 
 Runs Monte Carlo-style simulations and risk scenarios to estimate
 drawdown probability, expected payoff, and position risk metrics.
@@ -44,7 +44,7 @@ class RiskSimulationResult:
 
     # Risk classification
     risk_class: str = "MODERATE"  # LOW | MODERATE | HIGH | EXTREME
-    risk_score: float = 0.5  # 0.0–1.0 (lower is riskier)
+    risk_score: float = 0.5  # 0.0-1.0 (lower is riskier)
 
     # Simulation details
     simulations_run: int = 0
@@ -63,7 +63,7 @@ class RiskSimulationResult:
 # ---------------------------------------------------------------------------
 
 class CognitiveRiskSimulation:
-    """Risk simulation engine — analysis only, no execution.
+    """Risk simulation engine -- analysis only, no execution.
 
     Parameters
     ----------

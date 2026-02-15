@@ -38,7 +38,7 @@ class TestDashboardRiskGovernance:
     def test_risk_block_when_guard_denies(self):
         guard_result = {"allowed": False, "code": "DAILY_LOSS_BREACH", "severity": "CRITICAL"}
         assert guard_result["allowed"] is False
-        # Dashboard must respect this — no override
+        # Dashboard must respect this -- no override
         trade_permitted = guard_result["allowed"]
         assert trade_permitted is False
 
@@ -63,7 +63,7 @@ class TestDashboardRiskGovernance:
 
 
 class TestTradeReportingEndpoints:
-    """Trade events from EA/user → dashboard."""
+    """Trade events from EA/user -> dashboard."""
 
     @pytest.mark.parametrize("event_type", [
         "ORDER_PLACED",

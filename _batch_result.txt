@@ -1,0 +1,52 @@
+﻿============================= test session starts =============================
+platform win32 -- Python 3.11.9, pytest-9.0.2, pluggy-1.6.0
+rootdir: C:\Users\INTEL\OneDrive\Documents\GitHub\TUYUL-FX-WOLF-15LAYER-SYSTEM
+configfile: pytest.ini (WARNING: ignoring pytest config in pyproject.toml!)
+plugins: anyio-4.12.1, asyncio-1.3.0, cov-6.0.0, timeout-2.4.0
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+timeout: 30.0s
+timeout method: thread
+timeout func_only: False
+collected 144 items
+
+tests\test_price_watcher.py .........                                    [  6%]
+tests\test_pending_engine.py ........................................F.. [ 36%]
+.........................                                                [ 53%]
+tests\test_volatility_clustering.py ............                         [ 61%]
+tests\test_candle_builder.py ..............FF....                        [ 75%]
+tests\test_prop_guard.py ..........                                      [ 82%]
+tests\test_regime_classifier.py F...........                             [ 90%]
+tests\test_pipeline_e2e.py F..F.                                         [ 94%]
+tests\test_ingest_service.py ..                                          [ 95%]
+tests\unit\test_schema_validation.py ......                              [100%]
+
+================================== FAILURES ===================================
+E   AttributeError: <module 'execution.pending_engine' from 'C:\\Users\\INTEL\\OneDrive\\Documents\\GitHub\\TUYUL-FX-WOLF-15LAYER-SYSTEM\\execution\\pending_engine.py'> does not have the attribute 'sock_mod'
+C:\Users\INTEL\AppData\Local\Programs\Python\Python311\Lib\unittest\mock.py:1419: AttributeError: <module 'execution.pending_engine' from 'C:\\Users\\INTEL\\OneDrive\\Documents\\GitHub\\TUYUL-FX-WOLF-15LAYER-SYSTEM\\execution\\pending_engine.py'> does not have the attribute 'sock_mod'
+E   requests.exceptions.HTTPError: 401 Client Error: Unauthorized for url: https://finnhub.io/api/v1/forex/candle?symbol=OANDA%3AEUR_USD&resolution=240&from=1771151793&to=1771180593&token=premium_key
+
+The above exception was the direct cause of the following exception:
+E   RuntimeError: Finnhub REST request failed for OANDA:EUR_USD H4: 401 Client Error: Unauthorized for url: https://finnhub.io/api/v1/forex/candle?symbol=OANDA%3AEUR_USD&resolution=240&from=1771151793&to=1771180593&token=premium_key
+C:\Users\INTEL\OneDrive\Documents\GitHub\TUYUL-FX-WOLF-15LAYER-SYSTEM\analysis\candle_builder.py:359: RuntimeError: Finnhub REST request failed for OANDA:EUR_USD H4: 401 Client Error: Unauthorized for url: https://finnhub.io/api/v1/forex/candle?symbol=OANDA%3AEUR_USD&resolution=240&from=1771151793&to=1771180593&token=premium_key
+E   requests.exceptions.HTTPError: 401 Client Error: Unauthorized for url: https://finnhub.io/api/v1/forex/candle?symbol=OANDA%3AEUR_USD&resolution=D&from=1770316595&to=1771180595&token=premium_key
+
+The above exception was the direct cause of the following exception:
+E   RuntimeError: Finnhub REST request failed for OANDA:EUR_USD D1: 401 Client Error: Unauthorized for url: https://finnhub.io/api/v1/forex/candle?symbol=OANDA%3AEUR_USD&resolution=D&from=1770316595&to=1771180595&token=premium_key
+C:\Users\INTEL\OneDrive\Documents\GitHub\TUYUL-FX-WOLF-15LAYER-SYSTEM\analysis\candle_builder.py:359: RuntimeError: Finnhub REST request failed for OANDA:EUR_USD D1: 401 Client Error: Unauthorized for url: https://finnhub.io/api/v1/forex/candle?symbol=OANDA%3AEUR_USD&resolution=D&from=1770316595&to=1771180595&token=premium_key
+E   AssertionError: assert 'MEAN_REVERTING' == 'TRENDING'
+      
+      - TRENDING
+      + MEAN_REVERTING
+C:\Users\INTEL\OneDrive\Documents\GitHub\TUYUL-FX-WOLF-15LAYER-SYSTEM\tests\test_regime_classifier.py:62: AssertionError: assert 'MEAN_REVERTING' == 'TRENDING'
+E   AttributeError: 'WolfConstitutionalPipeline' object has no attribute 'build_l12_synthesis'
+C:\Users\INTEL\OneDrive\Documents\GitHub\TUYUL-FX-WOLF-15LAYER-SYSTEM\tests\test_pipeline_e2e.py:36: AttributeError: 'WolfConstitutionalPipeline' object has no attribute 'build_l12_synthesis'
+E   AttributeError: module 'analysis.synthesis_contract' has no attribute 'validate_synthesis'
+C:\Users\INTEL\OneDrive\Documents\GitHub\TUYUL-FX-WOLF-15LAYER-SYSTEM\tests\test_pipeline_e2e.py:99: AttributeError: module 'analysis.synthesis_contract' has no attribute 'validate_synthesis'
+=========================== short test summary info ===========================
+FAILED tests/test_pending_engine.py::TestLiveMode::test_live_success - Attrib...
+FAILED tests/test_candle_builder.py::TestRESTCandleFetcher::test_fetch_h4_candles
+FAILED tests/test_candle_builder.py::TestRESTCandleFetcher::test_fetch_no_data
+FAILED tests/test_regime_classifier.py::TestRegimeClassifier::test_trending_detected
+FAILED tests/test_pipeline_e2e.py::TestFullPipelineE2E::test_pipeline_produces_valid_l12_signal
+FAILED tests/test_pipeline_e2e.py::TestFullPipelineE2E::test_constitutional_boundary_analysis_no_execution
+======================= 6 failed, 138 passed in 12.04s ========================

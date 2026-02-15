@@ -127,13 +127,13 @@ app.add_middleware(
 app.add_middleware(RateLimitMiddleware)
 
 # Include routers
-# HTTP routers — protected by Bearer token (JWT or API key)
+# HTTP routers -- protected by Bearer token (JWT or API key)
 app.include_router(l12_router, dependencies=[fastapi.Depends(verify_token)])
 app.include_router(dashboard_router, dependencies=[fastapi.Depends(verify_token)])
 app.include_router(journal_router, dependencies=[fastapi.Depends(verify_token)])
 app.include_router(risk_router, dependencies=[fastapi.Depends(verify_token)])
 
-# WebSocket router — auth handled inside each endpoint via query-param token
+# WebSocket router -- auth handled inside each endpoint via query-param token
 # (FastAPI HTTP dependencies don't apply to WS upgrade handshakes)
 app.include_router(ws_router)
 

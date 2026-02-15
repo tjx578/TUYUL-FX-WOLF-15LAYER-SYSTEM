@@ -33,18 +33,13 @@ __codename__ = "Wolf Engine Facade"
 
 # --- Cognitive ---
 from .cognitive_coherence_engine import (
-    CognitiveCoherence,  # pyright: ignore[reportAttributeAccessIssue]
     CognitiveCoherenceEngine,
-    CoherenceGate,  # pyright: ignore[reportAttributeAccessIssue]
-    CoherenceResult,  # pyright: ignore[reportAttributeAccessIssue]
+    CoherenceSnapshot,
     CoherenceState,
-    IntegrityStatus,  # pyright: ignore[reportAttributeAccessIssue]
-    ReflexState,  # pyright: ignore[reportAttributeAccessIssue]
 )
 from .cognitive_context_engine import (
     CognitiveContext,
     CognitiveContextEngine,
-    ContextResult,  # pyright: ignore[reportAttributeAccessIssue]
     InstitutionalPresence,
     LiquidityContext,
     MarketRegime,
@@ -54,36 +49,27 @@ from .cognitive_risk_simulation import CognitiveRiskSimulation, RiskSimulationRe
 
 # --- Fusion ---
 from .fusion_momentum_engine import (
-    FusionMomentum,  # pyright: ignore[reportAttributeAccessIssue]
     FusionMomentumEngine,
-    MomentumBand,  # pyright: ignore[reportAttributeAccessIssue]
-    MomentumPhase,  # pyright: ignore[reportAttributeAccessIssue]
     MomentumResult,
 )
 from .fusion_precision_engine import (
-    FusionPrecision,  # pyright: ignore[reportAttributeAccessIssue]
     FusionPrecisionEngine,
-    PrecisionResult,  # pyright: ignore[reportAttributeAccessIssue]
+    PrecisionResult,
 )
 from .fusion_structure_engine import (
-    FusionStructure,  # pyright: ignore[reportAttributeAccessIssue]
     FusionStructureEngine,
-    StructureResult,  # pyright: ignore[reportAttributeAccessIssue]
-    StructureState,  # pyright: ignore[reportAttributeAccessIssue]
+    StructureResult,
 )
 
 # --- Quantum ---
 from .quantum_advisory_engine import (
-    AdvisorySignal,  # pyright: ignore[reportAttributeAccessIssue]
-    AdvisorySummary,  # pyright: ignore[reportAttributeAccessIssue]
+    AdvisoryResult,
     QuantumAdvisoryEngine,
-    RiskPosture,  # pyright: ignore[reportAttributeAccessIssue]
 )
 from .quantum_field_engine import FieldResult, QuantumFieldEngine
 from .quantum_probability_engine import (
-    DEFAULT_LAYER_WEIGHTS,  # pyright: ignore[reportAttributeAccessIssue]
-    ProbabilityResult,  # pyright: ignore[reportAttributeAccessIssue]
-    QuantumProbabilityEngine,  # pyright: ignore[reportAttributeAccessIssue]
+    ProbabilityResult,
+    QuantumProbabilityEngine,
 )
 
 
@@ -96,7 +82,8 @@ def create_engine_suite() -> dict[str, object]:
     return {
         "coherence": CognitiveCoherenceEngine(),
         "context": CognitiveContextEngine(),
-        "risk_sim": CognitiveRiskSimulation(),
+        "risk_sim": CognitiveRiskSimulation(),  # also aliased as "risk"
+        "risk": CognitiveRiskSimulation(),  # alias for backward compat
         "momentum": FusionMomentumEngine(),
         "precision": FusionPrecisionEngine(),
         "structure": FusionStructureEngine(),
@@ -105,86 +92,35 @@ def create_engine_suite() -> dict[str, object]:
         "advisory": QuantumAdvisoryEngine(),
     }
 __all__ = [
-    "DEFAULT_LAYER_WEIGHTS",
     # Quantum types
-    "AdvisorySignal",
-    "AdvisorySummary",
-    "BayesianProbabilityEngine", # type: ignore
-    "BayesianProbabilityEngine", # type: ignore
-    "BayesianResult", # type: ignore
-    "BayesianResult", # type: ignore
-    "CognitiveCoherence",
+    "AdvisoryResult",
     # Cognitive engines
     "CognitiveCoherenceEngine",
     "CognitiveContext",
     "CognitiveContextEngine",
     "CognitiveRiskSimulation",
     # Cognitive types
-    "CoherenceGate",
-    "CoherenceResult",
+    "CoherenceSnapshot",
     "CoherenceState",
-    "ContextResult",
-    # Correlation
-    "CorrelationRiskEngine", # pyright: ignore[reportUnsupportedDunderAll]
-    # Correlation
-    "CorrelationRiskEngine", # pyright: ignore[reportUnsupportedDunderAll]
-    "CorrelationRiskResult", # pyright: ignore[reportUnsupportedDunderAll]
-    "CorrelationRiskResult", # pyright: ignore[reportUnsupportedDunderAll]
-    # Dynamic Position Sizing
-    "DynamicPositionSizingEngine", # pyright: ignore[reportUnsupportedDunderAll]
     "FieldResult",
-    # Fusion types
-    "FusionMomentum",
     # Fusion engines
     "FusionMomentumEngine",
-    "FusionPrecision",
     "FusionPrecisionEngine",
-    "FusionStructure",
     "FusionStructureEngine",
     "InstitutionalPresence",
-    "IntegrityStatus",
     "LiquidityContext",
     "MarketRegime",
     "MarketStructure",
-    "MomentumBand",
-    "MomentumPhase",
+    # Fusion types
     "MomentumResult",
-    # Probability engines (Layer 7)
-    "MonteCarloEngine", # pyright: ignore[reportUnsupportedDunderAll]
-    # Probability
-    "MonteCarloEngine", # pyright: ignore[reportUnsupportedDunderAll]
-    "MonteCarloResult", # pyright: ignore[reportUnsupportedDunderAll]
-    "MonteCarloResult", # pyright: ignore[reportUnsupportedDunderAll]
-    "PositionSizingResult", # pyright: ignore[reportUnsupportedDunderAll]
     "PrecisionResult",
     "ProbabilityResult",
     # Quantum engines
     "QuantumAdvisoryEngine",
     "QuantumFieldEngine",
     "QuantumProbabilityEngine",
-    "ReflexState",
-    "RegimeClassification", # pyright: ignore[reportUnsupportedDunderAll]
-    "RegimeClassification", # pyright: ignore[reportUnsupportedDunderAll]
-    # Regime
-    "RegimeClassifier", # pyright: ignore[reportUnsupportedDunderAll]
-    # Regime
-    "RegimeClassifier", # pyright: ignore[reportUnsupportedDunderAll]
-    "RiskPosture",
     "RiskSimulationResult",
     "StructureResult",
-    "StructureState",
-    "VolatilityClusterResult", # pyright: ignore[reportUnsupportedDunderAll]
-    "VolatilityClusterResult", # pyright: ignore[reportUnsupportedDunderAll]
-    # Volatility Clustering
-    "VolatilityClusteringModel", # pyright: ignore[reportUnsupportedDunderAll]
-    # Volatility Clustering
-    "VolatilityClusteringModel", # pyright: ignore[reportUnsupportedDunderAll]
-    "WalkForwardResult", # pyright: ignore[reportUnsupportedDunderAll]
-    "WalkForwardResult", # pyright: ignore[reportUnsupportedDunderAll]
-    # Walk-Forward
-    "WalkForwardValidator", # pyright: ignore[reportUnsupportedDunderAll]
-    # Walk-Forward
-    "WalkForwardValidator", # type: ignore
     # Factory
     "create_engine_suite",
 ]

@@ -210,7 +210,7 @@ async def _get_verdict_by_signal_id(signal_id: str) -> dict[str, Any] | None:
 
     TODO: Wire to storage/verdict_archive.py or Redis cache.
     """
-    # Placeholder — replace with actual storage lookup
+    # Placeholder -- replace with actual storage lookup
     from storage import (  # noqa: PLC0415
         verdict_store,  # pyright: ignore[reportAttributeAccessIssue, reportMissingImports]
     )

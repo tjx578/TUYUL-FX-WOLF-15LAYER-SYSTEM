@@ -2,15 +2,15 @@
 Price Watcher - Background async task monitoring active trades.
 
 Auto-detect logic:
-  - PENDING → OPEN:
+  - PENDING -> OPEN:
     * For SELL pending: if bid >= entry
     * For BUY pending: if ask <= entry
 
-  - OPEN → CLOSED (SL hit):
+  - OPEN -> CLOSED (SL hit):
     * For SELL open: if ask >= sl
     * For BUY open: if bid <= sl
 
-  - OPEN → CLOSED (TP hit):
+  - OPEN -> CLOSED (TP hit):
     * For SELL open: if bid <= tp
     * For BUY open: if bid >= tp
 

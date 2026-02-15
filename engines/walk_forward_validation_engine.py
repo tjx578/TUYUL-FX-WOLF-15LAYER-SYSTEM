@@ -1,13 +1,13 @@
-"""Walk-Forward Validation Engine — Out-of-Sample overfitting guard.
+"""Walk-Forward Validation Engine -- Out-of-Sample overfitting guard.
 
 Slides a rolling train/test window across historical trade returns
 to verify regime-robust, out-of-sample performance before deployment.
 
 Authority: ANALYSIS-ONLY. No execution side-effects.
-           Feeds advisory metrics to L7/L12 — does NOT decide trades.
+           Feeds advisory metrics to L7/L12 -- does NOT decide trades.
 
 Bug fixes over original draft:
-    ✅ ZeroDivisionError guard: empty losses list → safe PF computation
+    ✅ ZeroDivisionError guard: empty losses list -> safe PF computation
     ✅ stability_score clamped [0, 1]: np.std(win_rates) can exceed 1.0
     ✅ regime_consistency clamped [0, 1]: uses coefficient of variation
     ✅ All-wins / all-losses per window handled gracefully (PF capped)
@@ -198,10 +198,10 @@ class WalkForwardValidator:
         if gross_loss > 0.0:
             pf = gross_profit / gross_loss
         elif gross_profit > 0.0:
-            # All wins, zero losses → perfect window, cap PF
+            # All wins, zero losses -> perfect window, cap PF
             pf = _PF_CAP
         else:
-            # No wins, no losses (all breakeven or empty) → neutral
+            # No wins, no losses (all breakeven or empty) -> neutral
             pf = 0.0
 
         return win_rate, min(pf, _PF_CAP)
@@ -210,7 +210,7 @@ class WalkForwardValidator:
     def _compute_stability(win_rates: np.ndarray) -> float:
         """Stability = 1 - std(win_rates), clamped to [0, 1].
 
-        High std → low stability. Uses ddof=1 for sample std.
+        High std -> low stability. Uses ddof=1 for sample std.
         """
         if len(win_rates) < 2:
             return 1.0

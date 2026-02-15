@@ -94,7 +94,7 @@ class TestRiskManager:
         assert result.effective_risk_percent == 0.02
 
     def test_dynamic_zero_blocks_trade(self) -> None:
-        """Zero edge from Kelly → no trade."""
+        """Zero edge from Kelly -> no trade."""
         mgr = RiskManager(max_risk_percent=0.02)
         result = mgr.evaluate(
             **self._base_params(),
@@ -106,7 +106,7 @@ class TestRiskManager:
         assert result.recommended_lot == 0.0
 
     def test_dynamic_none_falls_back_static(self) -> None:
-        """None dynamic_risk_percent → static (backward compat)."""
+        """None dynamic_risk_percent -> static (backward compat)."""
         mgr = RiskManager(max_risk_percent=0.02)
         result = mgr.evaluate(
             **self._base_params(),
@@ -128,7 +128,7 @@ class TestRiskManager:
         assert "DAILY_LOSS_LIMIT_REACHED" in result.violations
 
     def test_daily_loss_warning(self) -> None:
-        """At 80% of daily limit → warning but still allowed."""
+        """At 80% of daily limit -> warning but still allowed."""
         mgr = RiskManager(max_daily_loss_percent=0.05)
         result = mgr.evaluate(
             **self._base_params(daily_pnl=-4100.0),  # 82% of 5000
@@ -173,13 +173,13 @@ class TestRiskManager:
         mgr.evaluate(**self._base_params())
 
         # risk_amount = 100000 * 0.0001 = 10
-        # lot = 10 / (25*10) = 0.04 → rounds to 0.04 → OK
+        # lot = 10 / (25*10) = 0.04 -> rounds to 0.04 -> OK
         # But with very tiny risk it could go below 0.01
         # Let's force it:
         result2 = mgr.evaluate(
             **self._base_params(account_equity=10.0),
         )
-        # risk = 10 * 0.0001 = 0.001; lot = 0.001/250 = 0.000004 → 0.0
+        # risk = 10 * 0.0001 = 0.001; lot = 0.001/250 = 0.000004 -> 0.0
         assert result2.recommended_lot == 0.0
 
     def test_lot_rounds_down(self) -> None:
@@ -193,7 +193,7 @@ class TestRiskManager:
             ),
         )
         # risk = 50000 * 0.02 = 1000
-        # lot = 1000 / (30*10) = 3.333... → rounds down to 3.33
+        # lot = 1000 / (30*10) = 3.333... -> rounds down to 3.33
         assert result.recommended_lot == 3.33
 
     # ── Serialization ────────────────────────────────────────────────

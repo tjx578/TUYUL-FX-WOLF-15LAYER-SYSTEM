@@ -1,5 +1,5 @@
 """
-🧭 L1 — Context Layer (PRODUCTION)
+🧭 L1 -- Context Layer (PRODUCTION)
 ------------------------------------
 Real regime detection via:
   - SMA 20/50 crossover for regime
@@ -7,7 +7,7 @@ Real regime detection via:
   - Session awareness (London/NY/Tokyo overlap)
   - Volume-weighted CSI (Contextual Strength Index)
 
-Zone: analysis/ — pure read-only analysis, no execution side-effects.
+Zone: analysis/ -- pure read-only analysis, no execution side-effects.
 """
 
 import logging
@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 __all__ = ["analyze_context"]
 
 # Session definitions: (name, start_hour_utc, end_hour_utc, multiplier)
-# Ordered by priority — overlaps checked first.
+# Ordered by priority -- overlaps checked first.
 SESSIONS = {
     "LONDON_NEWYORK_OVERLAP": (13, 16, 1.30),
     "TOKYO_LONDON_OVERLAP":   (7,  9,  1.15),
@@ -130,7 +130,7 @@ def _compute_alignment(close: float, sma20: float, sma50: float,
 
 def _compute_csi(trend_strength: float, volumes: list[float],
                  session_mult: float) -> float:
-    """Contextual Strength Index (0–1 range, volume-weighted)."""
+    """Contextual Strength Index (0-1 range, volume-weighted)."""
     vol_factor = 0.5
     if volumes and len(volumes) >= 20:
         avg_v = sum(volumes[-20:]) / 20
@@ -147,7 +147,7 @@ def _compute_csi(trend_strength: float, volumes: list[float],
 def analyze_context(market_data: dict[str, Any],
                     pair: str = "GBPUSD",
                     now: datetime | None = None) -> dict[str, Any]:
-    """L1 Context — PRODUCTION.
+    """L1 Context -- PRODUCTION.
 
     Pure analysis function.  Returns regime, volatility, alignment, and CSI.
     No execution side-effects.

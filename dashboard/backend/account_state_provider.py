@@ -1,5 +1,5 @@
 """
-Account state provider — fetches real account info from MT5.
+Account state provider -- fetches real account info from MT5.
 Dashboard authority: only this module knows the actual balance/equity.
 """
 
@@ -65,7 +65,7 @@ class AccountStateProvider:
             self._mt5 = mt5
             self._mt5_available = True
         except ImportError:
-            logger.warning("MetaTrader5 not available — using fallback mode")
+            logger.warning("MetaTrader5 not available -- using fallback mode")
 
     def get_state(self) -> AccountState | None:
         """Get current account state. Returns cached if within TTL."""

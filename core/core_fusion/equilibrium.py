@@ -1,4 +1,4 @@
-"""Equilibrium Momentum Fusion — v6 + high-level wrapper."""
+"""Equilibrium Momentum Fusion -- v6 + high-level wrapper."""
 
 import math
 from datetime import datetime, timezone

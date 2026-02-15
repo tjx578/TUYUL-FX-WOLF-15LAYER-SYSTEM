@@ -1,5 +1,5 @@
 """
-Broker executor — dumb execution layer. No market analysis.
+Broker executor -- dumb execution layer. No market analysis.
 Only places, monitors, and reports order status.
 All decisions come from constitution + dashboard.
 """
@@ -60,7 +60,7 @@ class MT5Executor:
     """
     Dumb executor for MetaTrader5.
     NO market analysis. NO decision-making. NO overrides.
-    Only: place order → report result.
+    Only: place order -> report result.
     """
 
     def __init__(self):
@@ -74,7 +74,7 @@ class MT5Executor:
     def place_order(self, request: ExecutionRequest) -> ExecutionResult:
         """
         Place a single order. Returns execution result.
-        This function has ZERO intelligence — it does exactly what is asked.
+        This function has ZERO intelligence -- it does exactly what is asked.
         """
         self._ensure_mt5()
         mt5 = self._mt5

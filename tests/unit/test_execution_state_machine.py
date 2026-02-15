@@ -1,5 +1,5 @@
 """
-Tests for execution/state_machine.py — state transitions.
+Tests for execution/state_machine.py -- state transitions.
 Constitutional boundary: execution must contain NO strategy logic.
 """
 import time
@@ -132,7 +132,7 @@ class TestExecutionBoundary:
         source = inspect.getsource(mod)
         for forbidden in ["from analysis", "import analysis", "compute_direction", "compute_verdict"]:
             assert forbidden not in source, (
-                f"execution/state_machine.py must not contain '{forbidden}' — boundary violation"
+                f"execution/state_machine.py must not contain '{forbidden}' -- boundary violation"
             )
 
     def test_execution_order_has_no_strategy_fields(self):

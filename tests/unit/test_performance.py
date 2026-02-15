@@ -1,5 +1,5 @@
 """
-Performance regression tests — keep CI fast.
+Performance regression tests -- keep CI fast.
 """
 import time
 

@@ -1,17 +1,17 @@
-"""Integration tests: DynamicPositionSizingEngine ← upstream engines → L10.
+"""Integration tests: DynamicPositionSizingEngine <- upstream engines -> L10.
 
 Verifies the complete data flow:
 
     ┌─────────────────────────────────────────────────────────────────┐
-    │  MonteCarloEngine ──→ win_probability, avg_win, avg_loss       │
-    │  BayesianEngine   ──→ posterior_probability                    │
-    │  VolClusterModel  ──→ risk_multiplier                          │
+    │  MonteCarloEngine ──-> win_probability, avg_win, avg_loss       │
+    │  BayesianEngine   ──-> posterior_probability                    │
+    │  VolClusterModel  ──-> risk_multiplier                          │
     │         │                                                       │
     │         ▼                                                       │
     │  DynamicPositionSizingEngine.calculate()                        │
     │         │                                                       │
     │         ▼  (output = data contract for L10)                     │
-    │  PositionSizingResult.final_fraction → max_risk_pct override   │
+    │  PositionSizingResult.final_fraction -> max_risk_pct override   │
     │         │                                                       │
     │         ▼                                                       │
     │  RiskManager.evaluate(dynamic_risk_percent=final_fraction)      │
@@ -24,14 +24,14 @@ Verifies the complete data flow:
     └─────────────────────────────────────────────────────────────────┘
 
 Tests cover:
-    - VolCluster → DynamicPSE data contract
-    - DynamicPSE → RiskManager data contract
-    - DynamicPSE → RiskMultiplier data contract
-    - DynamicPSE → VerdictEngine Gate 11 data contract
-    - Full pipeline: VolCluster → PSE → RiskManager → VerdictEngine
+    - VolCluster -> DynamicPSE data contract
+    - DynamicPSE -> RiskManager data contract
+    - DynamicPSE -> RiskMultiplier data contract
+    - DynamicPSE -> VerdictEngine Gate 11 data contract
+    - Full pipeline: VolCluster -> PSE -> RiskManager -> VerdictEngine
     - Edge cases: negative edge flows through entire chain
     - Authority boundary: no execution side-effects in any engine
-    - Deterministic: same inputs → same outputs through entire chain
+    - Deterministic: same inputs -> same outputs through entire chain
     - Backward compatibility: all new features optional
 
 Authority: ANALYSIS + RISK ZONE integration.
@@ -92,7 +92,7 @@ def _pse_with_returns(
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# CONTRACT: VolCluster → DynamicPSE
+# CONTRACT: VolCluster -> DynamicPSE
 # ══════════════════════════════════════════════════════════════════════════════
 
 
@@ -122,7 +122,7 @@ class TestVolClusterToPSEContract:
         assert 0.0 <= sizing.final_fraction <= 0.03
 
     def test_vol_cluster_high_persistence_reduces_size(self) -> None:
-        """High volatility persistence → higher multiplier → smaller position.
+        """High volatility persistence -> higher multiplier -> smaller position.
 
         We compare a calm market (low vol returns) against a volatile market
         (high vol returns) to verify the chain dampens appropriately.
@@ -157,7 +157,7 @@ class TestVolClusterToPSEContract:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# CONTRACT: DynamicPSE → RiskManager
+# CONTRACT: DynamicPSE -> RiskManager
 # ══════════════════════════════════════════════════════════════════════════════
 
 
@@ -184,7 +184,7 @@ class TestPSEToRiskManagerContract:
         assert decision.risk_source in ("DYNAMIC_PSE", "DYNAMIC_CLAMPED")
 
     def test_zero_edge_blocks_in_risk_manager(self) -> None:
-        """PSE with negative edge → final_fraction=0 → RiskManager blocks."""
+        """PSE with negative edge -> final_fraction=0 -> RiskManager blocks."""
         sizing = _pse_with_returns(
             _trade_returns(100),
             win_probability=0.20,
@@ -243,12 +243,12 @@ class TestPSEToRiskManagerContract:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# CONTRACT: DynamicPSE → RiskMultiplierAggregator
+# CONTRACT: DynamicPSE -> RiskMultiplierAggregator
 # ══════════════════════════════════════════════════════════════════════════════
 
 
 class TestPSEToRiskMultiplierContract:
-    """Verify VolCluster.risk_multiplier → RiskMultiplierAggregator → PSE."""
+    """Verify VolCluster.risk_multiplier -> RiskMultiplierAggregator -> PSE."""
 
     def test_vol_cluster_into_aggregator(self) -> None:
         """risk_multiplier feeds into aggregator's vol_clustering_multiplier slot."""
@@ -293,15 +293,15 @@ class TestPSEToRiskMultiplierContract:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# CONTRACT: DynamicPSE → VerdictEngine Gate 11
+# CONTRACT: DynamicPSE -> VerdictEngine Gate 11
 # ══════════════════════════════════════════════════════════════════════════════
 
 
 class TestPSEToVerdictGate11Contract:
-    """Verify DynamicPSE → VerdictEngine Gate 11 data contract."""
+    """Verify DynamicPSE -> VerdictEngine Gate 11 data contract."""
 
     def test_positive_edge_passes_gate(self) -> None:
-        """PSE with positive edge → Gate 11 passes."""
+        """PSE with positive edge -> Gate 11 passes."""
         sizing = _pse_with_returns(_trade_returns(100))
 
         assert sizing.edge_negative is False
@@ -313,7 +313,7 @@ class TestPSEToVerdictGate11Contract:
         assert gate["kelly_raw"] == sizing.kelly_raw
 
     def test_negative_edge_blocks_gate(self) -> None:
-        """PSE with negative edge → Gate 11 hard-blocks."""
+        """PSE with negative edge -> Gate 11 hard-blocks."""
         sizing = _pse_with_returns(
             _trade_returns(100),
             win_probability=0.20,
@@ -349,7 +349,7 @@ class TestPSEToVerdictGate11Contract:
 
 
 class TestFullPipelineIntegration:
-    """End-to-end: VolCluster → PSE → RiskManager + Gate 11."""
+    """End-to-end: VolCluster -> PSE -> RiskManager + Gate 11."""
 
     def test_full_chain_positive_edge(self) -> None:
         """Complete happy path through all components."""
@@ -400,7 +400,7 @@ class TestFullPipelineIntegration:
         assert gate["passed"] is True
 
     def test_full_chain_negative_edge(self) -> None:
-        """Complete rejection path: no edge → all components agree NO_TRADE."""
+        """Complete rejection path: no edge -> all components agree NO_TRADE."""
         returns = _trade_returns(200, win_rate=0.25, seed=88)
 
         vol_model = VolatilityClusteringModel()
@@ -487,7 +487,7 @@ class TestDeterminism:
     """Verify entire chain is deterministic (no hidden RNG)."""
 
     def test_full_chain_deterministic(self) -> None:
-        """Running full chain twice with same inputs → identical output."""
+        """Running full chain twice with same inputs -> identical output."""
         returns = _trade_returns(200, seed=55)
 
         def _run_chain() -> tuple[PositionSizingResult, RiskDecision, dict]:

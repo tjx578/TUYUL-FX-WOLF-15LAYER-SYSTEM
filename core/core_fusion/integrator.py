@@ -1,4 +1,4 @@
-"""Fusion Integrator — Core Layer 12 integration."""
+"""Fusion Integrator -- Core Layer 12 integration."""
 
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional

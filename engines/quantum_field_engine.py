@@ -1,4 +1,4 @@
-"""Quantum Field Engine — Layer-3 field-state analysis.
+"""Quantum Field Engine -- Layer-3 field-state analysis.
 
 Analyses multi-timeframe candle data to detect market energy fields,
 momentum flux, and volatility regimes. Produces a FieldResult that
@@ -30,7 +30,7 @@ logger = logging.getLogger(__name__)
 class FieldResult:
     """Output of the Quantum Field Engine."""
 
-    # Core scores (0.0 – 1.0)
+    # Core scores (0.0 - 1.0)
     energy_score: float = 0.0
     momentum_flux: float = 0.0
     volatility_regime: str = "NORMAL"  # LOW | NORMAL | HIGH | EXTREME
@@ -146,7 +146,7 @@ def _classify_polarity(velocity: float, threshold: float = 0.0002) -> str:
 # ---------------------------------------------------------------------------
 
 class QuantumFieldEngine:
-    """Quantum Field Engine — analysis only, no side-effects.
+    """Quantum Field Engine -- analysis only, no side-effects.
 
     Parameters
     ----------

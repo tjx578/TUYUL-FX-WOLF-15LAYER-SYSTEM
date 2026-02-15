@@ -1,7 +1,7 @@
 """
 Central event bus for TUYUL FX system.
 Decouples components while maintaining authority boundaries.
-Events are typed and validated — not a free-for-all.
+Events are typed and validated -- not a free-for-all.
 """
 
 from __future__ import annotations
@@ -36,7 +36,7 @@ class EventType(Enum):
     RISK_CHECK_FAILED = "RISK_CHECK_FAILED"
     ACCOUNT_UPDATED = "ACCOUNT_UPDATED"
 
-    # Execution events (reporting only — no authority)
+    # Execution events (reporting only -- no authority)
     ORDER_PLACED = "ORDER_PLACED"
     ORDER_FILLED = "ORDER_FILLED"
     ORDER_CANCELLED = "ORDER_CANCELLED"

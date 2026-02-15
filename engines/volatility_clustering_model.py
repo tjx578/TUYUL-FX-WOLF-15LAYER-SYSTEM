@@ -1,4 +1,4 @@
-"""Volatility Clustering Model — GARCH-style autocorrelation detector.
+"""Volatility Clustering Model -- GARCH-style autocorrelation detector.
 
 Detects volatility persistence (clustering) by analyzing autocorrelation
 of squared returns across multiple lags. Produces a risk_multiplier for
@@ -7,12 +7,12 @@ L6 Risk adjustment.
 Authority: ANALYSIS-ONLY. No execution side-effects.
            Enriches L6 Risk (currently PLACEHOLDER).
            Does NOT overlap macro_volatility_engine (VIX regime state)
-           or L1 (ATR-based vol) — this measures temporal persistence
+           or L1 (ATR-based vol) -- this measures temporal persistence
            of volatility itself (GARCH-style behavior).
 
 Bug fixes over original draft:
-    ✅ Multi-lag autocorrelation (lags 1–5, not single lag-1)
-    ✅ NaN guard: constant returns → zero variance → safe fallback
+    ✅ Multi-lag autocorrelation (lags 1-5, not single lag-1)
+    ✅ NaN guard: constant returns -> zero variance -> safe fallback
     ✅ risk_multiplier capped at configurable max (default 1.5)
     ✅ risk_multiplier linear scaling (not raw 1 + autocorr)
     ✅ Minimum data length guard (≥ 20 returns)
@@ -60,7 +60,7 @@ class VolatilityClusteringModel:
     """GARCH-style volatility clustering detector.
 
     Analyzes autocorrelation of squared returns at multiple lags to detect
-    temporal persistence of volatility — a signature of clustered regimes.
+    temporal persistence of volatility -- a signature of clustered regimes.
 
     Parameters
     ----------
@@ -123,7 +123,7 @@ class VolatilityClusteringModel:
 
         per_lag: dict[int, float] = {}
 
-        if sq_var > 0.0:
+        if sq_var > 1e-15:
             for lag in range(1, effective_max + 1):
                 if lag >= len(sq_demeaned):
                     per_lag[lag] = 0.0
@@ -135,7 +135,7 @@ class VolatilityClusteringModel:
                 ac = max(-1.0, min(1.0, ac))
                 per_lag[lag] = round(ac, 4)
         else:
-            # Zero variance (constant returns) → no clustering
+            # Zero variance (constant returns) -> no clustering
             for lag in range(1, effective_max + 1):
                 per_lag[lag] = 0.0
 

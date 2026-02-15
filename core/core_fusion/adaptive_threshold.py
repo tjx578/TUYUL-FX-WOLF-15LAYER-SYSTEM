@@ -1,4 +1,4 @@
-"""Adaptive Threshold Controller — dynamic threshold management."""
+"""Adaptive Threshold Controller -- dynamic threshold management."""
 
 import math
 from datetime import datetime, timezone

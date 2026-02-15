@@ -4,9 +4,9 @@
 Submits orders to MT5 or simulated environments.
 
 Modes:
-  1. LIVE  — sends orders via MT5 socket/API
-  2. PAPER — simulates execution with journal logging
-  3. DRY   — validates only, no execution
+  1. LIVE  -- sends orders via MT5 socket/API
+  2. PAPER -- simulates execution with journal logging
+  3. DRY   -- validates only, no execution
 
 Constitutional constraints:
   - Execution is DUMB: no strategy logic, no R:R evaluation,
@@ -17,7 +17,7 @@ Constitutional constraints:
   - Journal integration: every submission (including rejections)
     is logged as a J3 execution event.
 
-Zone: execution/ — no analysis, no decision-making.
+Zone: execution/ -- no analysis, no decision-making.
 """
 
 import hashlib
@@ -154,7 +154,7 @@ def _generate_order_id(signal_id: str) -> str:
     """Generate a unique order ID anchored to the L12 signal_id.
 
     Uses UUID4 for uniqueness and embeds the signal_id prefix
-    for traceability.  NOT based on datetime — two submissions
+    for traceability.  NOT based on datetime -- two submissions
     of the same signal are distinguishable.
     """
     unique = uuid.uuid4().hex[:8].upper()
@@ -235,7 +235,7 @@ class PendingEngine:
         self._now_factory = now_factory or (lambda: datetime.now(UTC))
 
         # Idempotency tracking
-        self._executed_keys: dict[str, str] = {}  # idempotency_key → order_id
+        self._executed_keys: dict[str, str] = {}  # idempotency_key -> order_id
 
         # Journal
         self._internal_journal = _InMemoryJournal()
@@ -261,7 +261,7 @@ class PendingEngine:
             return ExecutionMode.DRY
 
     def submit(self, request: OrderRequest) -> OrderResult:
-        """Submit order through validation → execution pipeline.
+        """Submit order through validation -> execution pipeline.
 
         Steps:
           1. Structural validation (no strategy logic)
@@ -269,7 +269,7 @@ class PendingEngine:
           3. Route to mode-specific executor
           4. Log J3 journal entry (including rejections)
 
-        Every call produces a journal entry — no silent failures.
+        Every call produces a journal entry -- no silent failures.
         """
         now = self._now_factory()
         order_id = _generate_order_id(request.signal_id)
@@ -396,7 +396,7 @@ class PendingEngine:
     def _execute_dry(
         self, req: OrderRequest, order_id: str, now: datetime
     ) -> OrderResult:
-        """DRY mode — validate only, no execution."""
+        """DRY mode -- validate only, no execution."""
         logger.info(
             "[DRY] Order validated: %s %s %s @ %.5f (signal: %s)",
             order_id, req.order_type.value, req.pair,
@@ -412,7 +412,7 @@ class PendingEngine:
             entry_price=req.entry_price,
             stop_loss=req.stop_loss,
             take_profit=req.take_profit,
-            message="DRY RUN — order validated, not executed",
+            message="DRY RUN -- order validated, not executed",
             execution_mode="DRY",
             timestamp=now.isoformat(),
         )
@@ -420,7 +420,7 @@ class PendingEngine:
     def _execute_paper(
         self, req: OrderRequest, order_id: str, now: datetime
     ) -> OrderResult:
-        """PAPER mode — simulate fill at entry price."""
+        """PAPER mode -- simulate fill at entry price."""
         logger.info(
             "[PAPER] Order filled: %s %s %s %.2f lots @ %.5f (signal: %s)",
             order_id, req.order_type.value, req.pair,
@@ -436,7 +436,7 @@ class PendingEngine:
             entry_price=req.entry_price,
             stop_loss=req.stop_loss,
             take_profit=req.take_profit,
-            message=f"PAPER TRADE — simulated fill at {req.entry_price:.5f}",
+            message=f"PAPER TRADE -- simulated fill at {req.entry_price:.5f}",
             execution_mode="PAPER",
             timestamp=now.isoformat(),
         )
@@ -444,7 +444,7 @@ class PendingEngine:
     def _execute_live(
         self, req: OrderRequest, order_id: str, now: datetime
     ) -> OrderResult:
-        """LIVE mode — submit to MT5 via socket/API.
+        """LIVE mode -- submit to MT5 via socket/API.
 
         Protocol: JSON over TCP to MT5 EA listener.
         """
@@ -465,7 +465,7 @@ class PendingEngine:
 
         # Common rejection builder
         def _reject(msg: str, error_key: str) -> OrderResult:
-            logger.error("[LIVE] %s: %s — %s", error_key, order_id, msg)
+            logger.error("[LIVE] %s: %s -- %s", error_key, order_id, msg)
             return OrderResult(
                 status=OrderStatus.REJECTED,
                 order_id=order_id,
@@ -520,7 +520,7 @@ class PendingEngine:
                 entry_price=fill_price,
                 stop_loss=req.stop_loss,
                 take_profit=req.take_profit,
-                message=f"LIVE FILLED — ticket {ticket}",
+                message=f"LIVE FILLED -- ticket {ticket}",
                 execution_mode="LIVE",
                 timestamp=now.isoformat(),
                 mt5_ticket=int(ticket) if ticket is not None else None,
@@ -532,7 +532,7 @@ class PendingEngine:
     def _log_j3(self, result: OrderResult) -> None:
         """Write J3 execution journal entry.
 
-        Every submission — including rejections and duplicates — produces
+        Every submission -- including rejections and duplicates -- produces
         a journal entry.  No silent failures.
         """
         entry: dict[str, Any] = {

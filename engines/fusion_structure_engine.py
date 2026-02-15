@@ -1,4 +1,4 @@
-"""Fusion Structure Engine — Layer-5 market structure analysis.
+"""Fusion Structure Engine -- Layer-5 market structure analysis.
 
 Detects key structure levels (support/resistance), break of structure (BOS),
 change of character (CHOCH), and order blocks across multiple timeframes.
@@ -27,7 +27,7 @@ class StructureLevel:
     """A detected support/resistance level."""
     price: float
     level_type: str  # "SUPPORT" | "RESISTANCE"
-    strength: float  # 0.0–1.0
+    strength: float  # 0.0-1.0
     timeframe: str = ""
     touch_count: int = 0
     last_touch_index: int = -1
@@ -39,7 +39,7 @@ class StructureResult:
 
     # Overall market structure
     structure_bias: str = "NEUTRAL"  # BULLISH | BEARISH | NEUTRAL | RANGING
-    structure_score: float = 0.0     # 0.0–1.0
+    structure_score: float = 0.0     # 0.0-1.0
 
     # Break of structure / Change of character
     bos_detected: bool = False
@@ -264,7 +264,7 @@ def _classify_structure_bias(
 # ---------------------------------------------------------------------------
 
 class FusionStructureEngine:
-    """Fusion Structure Engine — pure analysis, no execution.
+    """Fusion Structure Engine -- pure analysis, no execution.
 
     Parameters
     ----------

@@ -18,7 +18,7 @@ try:
     HAS_JSONSCHEMA = True
 except ImportError:
     HAS_JSONSCHEMA = False
-    logger.warning("jsonschema not installed — runtime validation disabled")
+    logger.warning("jsonschema not installed -- runtime validation disabled")
 
 
 _SCHEMA_CACHE: dict[str, dict] = {}
@@ -50,11 +50,11 @@ def validate_l12_signal(signal: dict[str, Any]) -> tuple[bool, list[str]]:
     Returns (is_valid, list_of_errors).
 
     MUST be called before signal crosses zone boundaries:
-    - Constitution → Dashboard
-    - Dashboard → Execution
+    - Constitution -> Dashboard
+    - Dashboard -> Execution
     """
     if not HAS_JSONSCHEMA:
-        logger.warning("Skipping L12 validation — jsonschema not available")
+        logger.warning("Skipping L12 validation -- jsonschema not available")
         return True, []
 
     schema = _load_schema("l12_signal_schema.json")

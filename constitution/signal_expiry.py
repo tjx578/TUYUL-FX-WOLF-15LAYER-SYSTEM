@@ -30,7 +30,7 @@ def is_signal_valid(signal: dict) -> tuple[bool, str]:
     """Check if signal is within expiry window. Call before execution."""
     expires_at = signal.get("expires_at")
     if expires_at is None:
-        return False, "Signal has no expiry timestamp — reject as unsafe"
+        return False, "Signal has no expiry timestamp -- reject as unsafe"
 
     now = time.time()
     if now > expires_at:
@@ -40,8 +40,8 @@ def is_signal_valid(signal: dict) -> tuple[bool, str]:
     remaining = expires_at - now
     if remaining < 10:
         logger.warning(
-            "Signal %s expires in %.0fs — urgent",
+            "Signal %s expires in %.0fs -- urgent",
             signal.get("signal_id", "?"), remaining,
         )
 
-    return True, f"Valid — {remaining:.0f}s remaining"
+    return True, f"Valid -- {remaining:.0f}s remaining"

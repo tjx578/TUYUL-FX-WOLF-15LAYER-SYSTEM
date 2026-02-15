@@ -77,7 +77,7 @@ class TestVerdictAuthorityBoundary:
         params = list(sig.parameters.keys())
         for forbidden in ["balance", "equity", "account_state", "account"]:
             assert forbidden not in params, (
-                f"compute_verdict must not accept '{forbidden}' — authority boundary violation"
+                f"compute_verdict must not accept '{forbidden}' -- authority boundary violation"
             )
 
 
@@ -96,7 +96,7 @@ class TestVerdictGate:
         assert passed == should_pass
 
     def test_low_confidence_should_not_execute(self, sample_l12_verdict):
-        """Convention: confidence < 0.6 → should not be EXECUTE."""
+        """Convention: confidence < 0.6 -> should not be EXECUTE."""
         sample_l12_verdict["confidence"] = 0.4
         # If a real engine existed, it should reject. We test the invariant.
         if sample_l12_verdict["verdict"] == "EXECUTE":
@@ -122,7 +122,7 @@ class TestVerdictScoring:
         (5.0, 5.0, 5.0, "HOLD"),
     ])
     def test_score_to_verdict_mapping(self, wolf, tii, frpc, expected_verdict):
-        """Conceptual mapping — concrete thresholds depend on engine config."""
+        """Conceptual mapping -- concrete thresholds depend on engine config."""
         avg = (wolf + tii + frpc) / 3
         if avg >= 7.5:
             result = "EXECUTE"

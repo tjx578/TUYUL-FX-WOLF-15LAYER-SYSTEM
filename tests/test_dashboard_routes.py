@@ -19,7 +19,7 @@ from dashboard.trade_ledger import TradeLedger
 
 
 def _mock_verify_token():
-    """Override auth dependency for tests — returns a dummy payload."""
+    """Override auth dependency for tests -- returns a dummy payload."""
     return {"sub": "test_user", "auth_method": "test"}
 
 

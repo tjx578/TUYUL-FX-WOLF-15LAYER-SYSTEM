@@ -1,4 +1,4 @@
-"""Micro Adapter — normalizes microstructure signals for WLWCI."""
+"""Micro Adapter -- normalizes microstructure signals for WLWCI."""
 
 import math
 from typing import Any, Dict, Optional

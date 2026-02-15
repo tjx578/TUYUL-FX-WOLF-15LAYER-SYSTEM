@@ -83,7 +83,7 @@ def _is_valid_tick(symbol: str, new_price: float) -> bool:
     last_price = _last_prices.get(symbol)
     last_ts = _last_timestamps.get(symbol)
 
-    # First tick or stale price → always accept as new baseline
+    # First tick or stale price -> always accept as new baseline
     if last_price is None or (
         last_ts is not None and (now - last_ts) > _STALENESS_THRESHOLD_SECONDS
     ):

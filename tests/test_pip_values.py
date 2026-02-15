@@ -1,4 +1,4 @@
-"""Tests for config/pip_values.py — pip value single source of truth."""
+"""Tests for config/pip_values.py -- pip value single source of truth."""
 
 import pytest
 
@@ -55,7 +55,7 @@ class TestP0XauusdFix:
         assert get_pip_value("XAUUSD") == 10.0
 
     def test_xauusd_multiplier_is_10(self):
-        """XAUUSD: 1 pip = $0.10 → multiplier = 10."""
+        """XAUUSD: 1 pip = $0.10 -> multiplier = 10."""
         assert get_pip_multiplier("XAUUSD") == 10.0
 
     def test_xagusd_pip_value_is_50(self):
@@ -63,7 +63,7 @@ class TestP0XauusdFix:
         assert get_pip_value("XAGUSD") == 50.0
 
     def test_xagusd_multiplier_is_100(self):
-        """XAGUSD: 1 pip = $0.01 → multiplier = 100."""
+        """XAGUSD: 1 pip = $0.01 -> multiplier = 100."""
         assert get_pip_multiplier("XAGUSD") == 100.0
 
 
@@ -150,7 +150,7 @@ class TestPipMathConsistency:
     """Verify pip multiplier and pip values produce correct risk amounts."""
 
     def test_eurusd_50pip_sl_1lot(self):
-        """EURUSD: 50 pip SL, 1 lot → $500 risk."""
+        """EURUSD: 50 pip SL, 1 lot -> $500 risk."""
         entry = 1.10000
         sl = 1.09500
         mult = get_pip_multiplier("EURUSD")
@@ -162,7 +162,7 @@ class TestPipMathConsistency:
         assert risk == pytest.approx(500.0, abs=1.0)
 
     def test_usdjpy_50pip_sl_1lot(self):
-        """USDJPY: 50 pip SL, 1 lot → ~$333.50 risk."""
+        """USDJPY: 50 pip SL, 1 lot -> ~$333.50 risk."""
         entry = 155.000
         sl = 154.500
         mult = get_pip_multiplier("USDJPY")
@@ -174,7 +174,7 @@ class TestPipMathConsistency:
         assert risk == pytest.approx(333.5, abs=5.0)
 
     def test_xauusd_50pip_sl_1lot(self):
-        """XAUUSD: $5.00 SL distance = 50 pips, 1 lot → $500 risk."""
+        """XAUUSD: $5.00 SL distance = 50 pips, 1 lot -> $500 risk."""
         entry = 2000.00
         sl = 1995.00
         mult = get_pip_multiplier("XAUUSD")
@@ -186,7 +186,7 @@ class TestPipMathConsistency:
         assert risk == pytest.approx(500.0, abs=1.0)
 
     def test_xagusd_50pip_sl_1lot(self):
-        """XAGUSD: $0.50 SL distance = 50 pips, 1 lot → $2500 risk."""
+        """XAGUSD: $0.50 SL distance = 50 pips, 1 lot -> $2500 risk."""
         entry = 25.00
         sl = 24.50
         mult = get_pip_multiplier("XAGUSD")
@@ -198,7 +198,7 @@ class TestPipMathConsistency:
         assert risk == pytest.approx(2500.0, abs=1.0)
 
     def test_index_us30_10point_sl(self):
-        """US30: 10 point SL = 10 pips, 1 lot → $100 risk."""
+        """US30: 10 point SL = 10 pips, 1 lot -> $100 risk."""
         entry = 40000.0
         sl = 39990.0
         mult = get_pip_multiplier("US30")
@@ -309,7 +309,7 @@ class TestConstitutionalNoBusinessLogic:
         sig = inspect.signature(get_pip_value)
         param_names = list(sig.parameters.keys())
         assert "lot_size" not in param_names, (
-            "get_pip_value must not accept lot_size — "
+            "get_pip_value must not accept lot_size -- "
             "scaling is the caller's (risk/) responsibility"
         )
 

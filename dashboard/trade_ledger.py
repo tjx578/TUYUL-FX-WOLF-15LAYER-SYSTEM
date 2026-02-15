@@ -9,12 +9,12 @@ Provides:
   - get_trades_by_account: Get all trades for an account
 
 Valid state transitions:
-  INTENDED → PENDING (trader confirms order placed)
-  INTENDED → CANCELLED (system or trader cancels before placing)
-  INTENDED → SKIPPED (trader skips)
-  PENDING → OPEN (price watcher detects entry hit)
-  PENDING → CANCELLED (expiry, M15 invalid, news lock, DD breach)
-  OPEN → CLOSED (SL/TP hit or manual close)
+  INTENDED -> PENDING (trader confirms order placed)
+  INTENDED -> CANCELLED (system or trader cancels before placing)
+  INTENDED -> SKIPPED (trader skips)
+  PENDING -> OPEN (price watcher detects entry hit)
+  PENDING -> CANCELLED (expiry, M15 invalid, news lock, DD breach)
+  OPEN -> CLOSED (SL/TP hit or manual close)
 
 Storage:
   - Redis: TRADE:{trade_id} with JSON serialization
@@ -220,7 +220,7 @@ class TradeLedger:
 
             # Validate transition
             if not is_valid_transition(trade.status, new_status):
-                logger.warning(f"Invalid transition: {trade.status} → {new_status} for {trade_id}")
+                logger.warning(f"Invalid transition: {trade.status} -> {new_status} for {trade_id}")
                 return False
 
             # Update status
@@ -244,7 +244,7 @@ class TradeLedger:
 
             # Log the update
             logger.info(
-                f"Updated trade {trade_id}: {old_status} → {new_status}"
+                f"Updated trade {trade_id}: {old_status} -> {new_status}"
                 + (f" | Reason: {close_reason}" if close_reason else "")
                 + (f" | P&L: ${pnl:.2f}" if pnl is not None else "")
             )

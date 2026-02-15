@@ -1,9 +1,9 @@
 """
-Wolf Constitutional Pipeline v8.0 — UNIFIED SUPER PIPELINE
+Wolf Constitutional Pipeline v8.0 -- UNIFIED SUPER PIPELINE
 
 Merged from:
   - pipeline/wolf_constitutional_pipeline.py  (Constitutional v7.4r∞)
-  - analysis/orchestrators/wolf_sovereign_pipeline.py (Sovereign — deleted)
+  - analysis/orchestrators/wolf_sovereign_pipeline.py (Sovereign -- deleted)
 
 This is the SOLE pipeline orchestrator for the Wolf 15-Layer System.
 No other pipeline exists. All analysis flows through this single entry point.
@@ -13,10 +13,10 @@ No other pipeline exists. All analysis flows through this single entry point.
 ══════════════════════════════════════════════════════════════════════
 
 Core Modules:
-    1. core_cognitive_unified.py    → Emotion, Regime, Risk, TWMS, SMC
-    2. core_fusion_unified.py       → Fusion, MTF, Confluence, WLWCI, MC
-    3. core_quantum_unified.py      → TRQ3D, Decision Engine, Scenario Matrix
-    4. core_reflective_unified.py   → TII, FRPC, Wolf Discipline, Evolution
+    1. core_cognitive_unified.py    -> Emotion, Regime, Risk, TWMS, SMC
+    2. core_fusion_unified.py       -> Fusion, MTF, Confluence, WLWCI, MC
+    3. core_quantum_unified.py      -> TRQ3D, Decision Engine, Scenario Matrix
+    4. core_reflective_unified.py   -> TII, FRPC, Wolf Discipline, Evolution
 
 15-Layer Architecture:
     ZONA 1 - Perception & Context   : L1, L2, L3
@@ -25,13 +25,13 @@ Core Modules:
     ZONA 4 - Execution & Decision   : L10, L11, L12 (SOLE AUTHORITY)
     ZONA 5 - Meta & Reflective      : L13, L14, L15
 
-Execution order (CRITICAL — 8 phases):
-    Phase 1: L1, L2, L3 (Perception — independent, halt-on-failure)
-    Phase 2: L4, L5 (Confluence & Psychology — depend on L1-L3)
-    Phase 3: L7, L8, L9 (Probability & Validation — depend on L4/L5)
-    Phase 4: L11 → L6 → L10 (Execution + Risk — L11 BEFORE L6!)
-    Phase 5: Build synthesis → 9-Gate Check → L12 verdict (SOLE AUTHORITY)
-    Phase 6: Two-pass L13 governance (baseline → meta → refined)
+Execution order (CRITICAL -- 8 phases):
+    Phase 1: L1, L2, L3 (Perception -- independent, halt-on-failure)
+    Phase 2: L4, L5 (Confluence & Psychology -- depend on L1-L3)
+    Phase 3: L7, L8, L9 (Probability & Validation -- depend on L4/L5)
+    Phase 4: L11 -> L6 -> L10 (Execution + Risk -- L11 BEFORE L6!)
+    Phase 5: Build synthesis -> 9-Gate Check -> L12 verdict (SOLE AUTHORITY)
+    Phase 6: Two-pass L13 governance (baseline -> meta -> refined)
     Phase 7: Sovereignty enforcement (drift detection + verdict downgrade)
     Phase 8: L14 JSON export + final result assembly
 
@@ -92,8 +92,6 @@ def _run_l7_probability(
     trade_returns: list[float] | None = None,
     prior_wins: int = 0,
     prior_losses: int = 0,
-    coherence: float = 50.0,
-    volatility_index: float = 20.0,
     base_bias: float = 0.5,
 ) -> dict[str, Any]:
     """Run Layer 7 probability analysis with trade returns."""
@@ -106,9 +104,6 @@ def _run_l7_probability(
         trade_returns=trade_returns,
         prior_wins=prior_wins,
         prior_losses=prior_losses,
-        coherence=coherence,
-        volatility_index=volatility_index,
-        base_bias=base_bias,
     )
 
 def build_l12_synthesis(
@@ -118,13 +113,13 @@ def build_l12_synthesis(
     """Build Layer-12 synthesis with Bayesian + Monte Carlo enrichment fields.
 
     L7 fields are normalized before injection:
-    - win_probability (0-100 from MC) → L7_monte_carlo_win (0.0-1.0)
-    - risk_of_ruin (0.0-1.0) → L7_risk_of_ruin (default 1.0 = worst)
-    - posterior_win_probability (0.0-1.0) → L7_posterior_win
-    - profit_factor (float) → L7_profit_factor
-    - bayesian_ci_low / bayesian_ci_high → L7_bayesian_ci_low / L7_bayesian_ci_high
-    - mc_passed_threshold (bool) → L7_mc_passed
-    - validation (str) → L7_validation
+    - win_probability (0-100 from MC) -> L7_monte_carlo_win (0.0-1.0)
+    - risk_of_ruin (0.0-1.0) -> L7_risk_of_ruin (default 1.0 = worst)
+    - posterior_win_probability (0.0-1.0) -> L7_posterior_win
+    - profit_factor (float) -> L7_profit_factor
+    - bayesian_ci_low / bayesian_ci_high -> L7_bayesian_ci_low / L7_bayesian_ci_high
+    - mc_passed_threshold (bool) -> L7_mc_passed
+    - validation (str) -> L7_validation
     """
     # ── Wolf 30-Point from L4 ──
     if "wolf_30_point" in layer_results.get("L4", {}) and isinstance(layer_results["L4"]["wolf_30_point"], dict):
@@ -166,7 +161,7 @@ def build_l12_synthesis(
         else:
             entry_zone = f"{entry_price:.5f}-{entry_price + 0.0010:.5f}"
 
-    # ── Risk (from L10/dashboard — placeholders) ──
+    # ── Risk (from L10/dashboard -- placeholders) ──
     lot_size = layer_results.get("L10", {}).get("final_lot_size", 0.01)
     risk_percent = layer_results.get("L10", {}).get("adjusted_risk_pct", 1.0)
     risk_amount = layer_results.get("L10", {}).get("adjusted_risk_amount", 0.0)
@@ -309,7 +304,7 @@ def build_l12_synthesis(
 
 class WolfConstitutionalPipeline:
     """
-    Wolf 15-Layer Constitutional Pipeline v8.0 — Unified Super Pipeline.
+    Wolf 15-Layer Constitutional Pipeline v8.0 -- Unified Super Pipeline.
 
     Merged from Constitutional v7.4r∞ + Sovereign governance features.
     This is the ONLY entry point for analysis in the entire system.
@@ -318,7 +313,7 @@ class WolfConstitutionalPipeline:
 
     Key features:
         - 9-Gate Constitutional Check
-        - Two-pass L13 governance (baseline → real meta → refined)
+        - Two-pass L13 governance (baseline -> real meta -> refined)
         - Drift-based sovereignty enforcement with verdict downgrade
         - L14 JSON export + L15 meta synthesis
         - VIX regime + macro monthly regime integration
@@ -359,21 +354,20 @@ class WolfConstitutionalPipeline:
         if self._l1 is not None:
             return
 
-        import analysis.layers.L10_execution  # pyright: ignore[reportMissingImports]  # noqa: PLC0415
-        import analysis.macro_volatility_engine  # pyright: ignore[reportMissingImports]  # noqa: PLC0415
-
-        from analysis.layers.L4_scoring import (  # noqa: PLC0415 # pyright: ignore[reportMissingImports]
-            L4ScoringEngine,  # pyright: ignore[reportMissingImports]
-        )
-        from analysis.layers.L5_psychology import (  # noqa: PLC0415 # pyright: ignore[reportMissingImports]
-            L5PsychologyAnalyzer,  # pyright: ignore[reportMissingImports]
-        )
+        import analysis.layers.L10_position_sizing  # noqa: PLC0415
+        import analysis.macro.macro_volatility_engine  # noqa: PLC0415
 
         from analysis.layers.L1_context import (  # noqa: PLC0415
             L1ContextAnalyzer,  # pyright: ignore[reportAttributeAccessIssue]
         )
         from analysis.layers.L2_mta import L2MTAAnalyzer  # noqa: PLC0415
         from analysis.layers.L3_technical import L3TechnicalAnalyzer  # noqa: PLC0415
+        from analysis.layers.L4_session_scoring import (  # noqa: PLC0415
+            L4ScoringEngine,  # pyright: ignore[reportMissingImports]
+        )
+        from analysis.layers.L5_psychology_fundamental import (  # noqa: PLC0415
+            L5PsychologyAnalyzer,  # pyright: ignore[reportMissingImports]
+        )
         from analysis.layers.L6_risk import L6RiskAnalyzer  # noqa: PLC0415
         from analysis.layers.L7_probability import L7ProbabilityAnalyzer  # noqa: PLC0415
         from analysis.layers.L8_tii_integrity import L8TIIIntegrityAnalyzer  # noqa: PLC0415
@@ -390,13 +384,13 @@ class WolfConstitutionalPipeline:
         self._l7 = L7ProbabilityAnalyzer()
         self._l8 = L8TIIIntegrityAnalyzer()
         self._l9 = L9SMCAnalyzer()
-        self._l10 = analysis.layers.L10_execution.L10PositionAnalyzer()
+        self._l10 = analysis.layers.L10_position_sizing.L10PositionAnalyzer()
         self._l11 = L11RRAnalyzer()
         self._macro = MonthlyRegimeAnalyzer()
-        self._macro_vol = analysis.macro_volatility_engine.MacroVolatilityEngine()
+        self._macro_vol = analysis.macro.macro_volatility_engine.MacroVolatilityEngine()
 
     # ══════════════════════════════════════════════════════════════
-    #  MAIN EXECUTE — the single canonical entry point
+    #  MAIN EXECUTE -- the single canonical entry point
     # ══════════════════════════════════════════════════════════════
 
     def execute(  # noqa: PLR0912
@@ -438,9 +432,9 @@ class WolfConstitutionalPipeline:
 
         try:
             # ═══════════════════════════════════════════════════════
-            # PHASE 1 — ZONA PERCEPTION & CONTEXT (L1, L2, L3)
+            # PHASE 1 -- ZONA PERCEPTION & CONTEXT (L1, L2, L3)
             # ═══════════════════════════════════════════════════════
-            logger.info(f"[Pipeline v8.0] Phase 1: Perception & Context — {symbol}")
+            logger.info(f"[Pipeline v8.0] Phase 1: Perception & Context -- {symbol}")
 
             l1 = self._l1.analyze(symbol)  # pyright: ignore[reportOptionalMemberAccess]
             if not l1.get("valid"):
@@ -458,26 +452,26 @@ class WolfConstitutionalPipeline:
                 return self._early_exit(symbol, errors, time.time() - start_time)
 
             # ═══════════════════════════════════════════════════════
-            # PHASE 2 — ZONA CONFLUENCE & SCORING (L4, L5)
+            # PHASE 2 -- ZONA CONFLUENCE & SCORING (L4, L5)
             # ═══════════════════════════════════════════════════════
-            logger.info(f"[Pipeline v8.0] Phase 2: Confluence & Scoring — {symbol}")
+            logger.info(f"[Pipeline v8.0] Phase 2: Confluence & Scoring -- {symbol}")
 
             l4 = self._l4.score(l1, l2, l3)  # pyright: ignore[reportOptionalMemberAccess]
             l5 = self._l5.analyze(symbol, volatility_profile=l2)  # pyright: ignore[reportOptionalMemberAccess]
 
             # ═══════════════════════════════════════════════════════
-            # PHASE 3 — ZONA PROBABILITY & VALIDATION (L7, L8, L9)
+            # PHASE 3 -- ZONA PROBABILITY & VALIDATION (L7, L8, L9)
             # ═══════════════════════════════════════════════════════
             #
             # L7 receives:
-            #   - technical_score  → from L4 (upstream technical analysis)
-            #   - trade_returns    → from system_metrics or trade history storage
-            #   - prior_wins/losses → from system_metrics (running Bayesian state)
-            #   - coherence        → from earlier layer agreement (L1–L6)
-            #   - volatility_index → from L5 or market regime data
-            #   - base_bias        → directional lean from L3/L4
+            #   - technical_score  -> from L4 (upstream technical analysis)
+            #   - trade_returns    -> from system_metrics or trade history storage
+            #   - prior_wins/losses -> from system_metrics (running Bayesian state)
+            #   - coherence        -> from earlier layer agreement (L1-L6)
+            #   - volatility_index -> from L5 or market regime data
+            #   - base_bias        -> directional lean from L3/L4
             #
-            # Authority: ANALYSIS ONLY — no execution side-effects.
+            # Authority: ANALYSIS ONLY -- no execution side-effects.
             # Gate result flows to Layer-12 Constitution for final verdict.
             # ═══════════════════════════════════════════════════════════════════
 
@@ -489,7 +483,7 @@ class WolfConstitutionalPipeline:
             # gracefully skips (requires ≥ 30 trades).
             #
             # TODO: Wire to actual trade history storage via:
-            #   storage/trade_archive.py → get_closed_returns(symbol, lookback=200)
+            #   storage/trade_archive.py -> get_closed_returns(symbol, lookback=200)
             # For now, fall through to system_metrics or None.
             trade_returns: list[float] | None = None
             if system_metrics and isinstance(system_metrics, dict):
@@ -499,32 +493,29 @@ class WolfConstitutionalPipeline:
 
             # ── Bayesian prior state ─────────────────────────────────────────
             # Accumulated win/loss counts from previous analysis cycles.
-            # Default 0/0 → uninformative Bayes-Laplace prior (alpha=1, beta=1).
+            # Default 0/0 -> uninformative Bayes-Laplace prior (alpha=1, beta=1).
             prior_wins: int = 0
             prior_losses: int = 0
             if system_metrics and isinstance(system_metrics, dict):
                 prior_wins = int(system_metrics.get("prior_wins", 0))
                 prior_losses = int(system_metrics.get("prior_losses", 0))
 
-            # ── Coherence from upstream layers (L1–L6 agreement) ─────────────
+            # ── Coherence from upstream layers (L1-L6 agreement) ─────────────
             # If a coherence aggregator ran, use it; otherwise default 50.0.
-            coherence: float = 50.0
             if isinstance(l4, dict):
                 _coh = l4.get("coherence", None)
                 if _coh is not None:
-                    coherence = float(_coh)
+                    float(_coh)
 
             # ── Volatility index from L5 or regime detector ──────────────────
-            volatility_index: float = 20.0
             if l5 and isinstance(l5, dict):
-                volatility_index = float(l5.get("volatility_index", l5.get("atr_normalized", 20.0)))
+                float(l5.get("volatility_index", l5.get("atr_normalized", 20.0)))
 
             # ── Base directional bias from L3/L4 ─────────────────────────────
-            base_bias: float = 0.5
             if l4 and isinstance(l4, dict):
                 _bias = l4.get("directional_bias", l4.get("bias_score", None))
                 if _bias is not None:
-                    base_bias = float(max(0.0, min(1.0, _bias)))
+                    float(max(0.0, min(1.0, _bias)))
 
             # ── Run L7 Probability Analyzer ──────────────────────────────────
             l7 = self._l7.analyze( # pyright: ignore[reportOptionalMemberAccess]
@@ -533,9 +524,6 @@ class WolfConstitutionalPipeline:
                 trade_returns=trade_returns,
                 prior_wins=prior_wins,
                 prior_losses=prior_losses,
-                coherence=coherence,
-                volatility_index=volatility_index,
-                base_bias=base_bias,
             )
 
             l8 = self._l8.analyze(symbol)  # pyright: ignore[reportArgumentType, reportOptionalMemberAccess]
@@ -554,10 +542,10 @@ class WolfConstitutionalPipeline:
             )
 
             # ═══════════════════════════════════════════════════════
-            # PHASE 4 — ZONA EXECUTION & DECISION (L11 → L6 → L10)
+            # PHASE 4 -- ZONA EXECUTION & DECISION (L11 -> L6 -> L10)
             # CRITICAL: L11 BEFORE L6 (L6 needs RR from L11)
             # ═══════════════════════════════════════════════════════
-            logger.info(f"[Pipeline v8.0] Phase 4: Execution & Decision — {symbol}")
+            logger.info(f"[Pipeline v8.0] Phase 4: Execution & Decision -- {symbol}")
 
             trend = l3.get("trend", "NEUTRAL")
             if trend == "BULLISH":
@@ -581,10 +569,10 @@ class WolfConstitutionalPipeline:
             macro = self._macro.analyze(symbol)  # pyright: ignore[reportOptionalMemberAccess]
 
             # ═══════════════════════════════════════════════════════
-            # PHASE 5 — L12 CONSTITUTIONAL VERDICT (SOLE AUTHORITY)
-            #   Build synthesis → 9-Gate Check → L12 verdict
+            # PHASE 5 -- L12 CONSTITUTIONAL VERDICT (SOLE AUTHORITY)
+            #   Build synthesis -> 9-Gate Check -> L12 verdict
             # ═══════════════════════════════════════════════════════
-            logger.info(f"[Pipeline v8.0] Phase 5: Constitutional Verdict — {symbol}")
+            logger.info(f"[Pipeline v8.0] Phase 5: Constitutional Verdict -- {symbol}")
 
             current_latency_ms = (time.time() - start_time) * 1000
 
@@ -610,8 +598,8 @@ class WolfConstitutionalPipeline:
             l12_verdict["gates_v74"] = gates
 
             # ═══════════════════════════════════════════════════════
-            # PHASE 6 — TWO-PASS L13 GOVERNANCE (from Sovereign)
-            #   Pass 1: baseline (meta=1.0) → L15 meta → Pass 2: refined
+            # PHASE 6 -- TWO-PASS L13 GOVERNANCE (from Sovereign)
+            #   Pass 1: baseline (meta=1.0) -> L15 meta -> Pass 2: refined
             # ═══════════════════════════════════════════════════════
             reflective_pass1 = None
             reflective_pass2 = None
@@ -623,11 +611,12 @@ class WolfConstitutionalPipeline:
             )
 
             if proceed:
-                logger.info(f"[Pipeline v8.0] Phase 6: Two-Pass L13 Governance — {symbol}")
+                logger.info(f"[Pipeline v8.0] Phase 6: Two-Pass L13 Governance -- {symbol}")
 
                 # Pass 1: Baseline reflective (meta_integrity = 1.0)
+                synthesis["_meta_integrity"] = 1.0
                 reflective_pass1 = self._l13_engine.reflect(
-                    synthesis, l12_verdict, meta_integrity=1.0,
+                    symbol, [l12_verdict], synthesis,
                 )
 
                 # Compute vault sync for sovereignty
@@ -644,11 +633,12 @@ class WolfConstitutionalPipeline:
 
                 # Pass 2: Refined reflective (uses real meta_integrity from L15)
                 real_meta = l15_meta.get("meta_integrity", 1.0)
+                synthesis["_meta_integrity"] = real_meta
                 reflective_pass2 = self._l13_engine.reflect(
-                    synthesis, l12_verdict, meta_integrity=real_meta,
+                    symbol, [l12_verdict], synthesis,
                 )
             else:
-                # No L13 — still compute vault sync and meta
+                # No L13 -- still compute vault sync and meta
                 sovereignty = self._compute_vault_sync(synthesis, l12_verdict, None)
                 l15_meta = self._l15_engine.compute_meta(
                     synthesis=synthesis,
@@ -659,9 +649,9 @@ class WolfConstitutionalPipeline:
                 )
 
             # ═══════════════════════════════════════════════════════
-            # PHASE 7 — SOVEREIGNTY ENFORCEMENT (drift + downgrade)
+            # PHASE 7 -- SOVEREIGNTY ENFORCEMENT (drift + downgrade)
             # ═══════════════════════════════════════════════════════
-            logger.info(f"[Pipeline v8.0] Phase 7: Sovereignty Enforcement — {symbol}")
+            logger.info(f"[Pipeline v8.0] Phase 7: Sovereignty Enforcement -- {symbol}")
 
             enforcement = self._l15_engine.enforce_sovereignty(
                 l12_verdict=l12_verdict,
@@ -672,9 +662,9 @@ class WolfConstitutionalPipeline:
             )
 
             # ═══════════════════════════════════════════════════════
-            # PHASE 8 — L14 JSON EXPORT + FINAL ASSEMBLY
+            # PHASE 8 -- L14 JSON EXPORT + FINAL ASSEMBLY
             # ═══════════════════════════════════════════════════════
-            logger.info(f"[Pipeline v8.0] Phase 8: L14/Result Assembly — {symbol}")
+            logger.info(f"[Pipeline v8.0] Phase 8: L14/Result Assembly -- {symbol}")
 
             latency_ms = (time.time() - start_time) * 1000
 
@@ -822,7 +812,7 @@ class WolfConstitutionalPipeline:
         }
 
     # ══════════════════════════════════════════════════════════════
-    #  L14 — JSON OUTPUT & DATA EXPORT
+    #  L14 -- JSON OUTPUT & DATA EXPORT
     # ══════════════════════════════════════════════════════════════
 
     def _build_l14_json(  # noqa: PLR0913
@@ -957,7 +947,7 @@ class WolfConstitutionalPipeline:
         }
 
     # ══════════════════════════════════════════════════════════════
-    #  EARLY EXIT — pipeline failure fallback
+    #  EARLY EXIT -- pipeline failure fallback
     # ══════════════════════════════════════════════════════════════
 
     def _early_exit(

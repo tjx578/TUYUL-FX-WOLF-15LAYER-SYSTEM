@@ -128,7 +128,7 @@ class TestDynamicPositionSizingEngine:
         assert result.risk_percent == 0.0
 
     def test_kelly_zero_win_probability(self) -> None:
-        """Zero win probability → negative Kelly → size 0."""
+        """Zero win probability -> negative Kelly -> size 0."""
         engine = DynamicPositionSizingEngine()
         result = engine.calculate(
             win_probability=0.0,
@@ -143,7 +143,7 @@ class TestDynamicPositionSizingEngine:
         assert result.edge_negative is True
 
     def test_kelly_perfect_win_rate(self) -> None:
-        """100% win rate → large Kelly, but capped at max_risk_cap."""
+        """100% win rate -> large Kelly, but capped at max_risk_cap."""
         engine = DynamicPositionSizingEngine(max_risk_cap=0.03)
         result = engine.calculate(
             win_probability=1.0,
@@ -160,7 +160,7 @@ class TestDynamicPositionSizingEngine:
     # ── CVaR Tail Risk ───────────────────────────────────────────────────────
 
     def test_cvar_heavy_tail_reduces_size(self) -> None:
-        """Returns with heavy left tail → smaller CVaR adjustment."""
+        """Returns with heavy left tail -> smaller CVaR adjustment."""
         rng = np.random.default_rng(99)
         heavy_tail = [-500.0] * 20 + [float(rng.uniform(10, 50)) for _ in range(80)]
 
@@ -187,7 +187,7 @@ class TestDynamicPositionSizingEngine:
         assert result_heavy.final_fraction <= result_normal.final_fraction
 
     def test_cvar_all_positive_returns(self) -> None:
-        """All positive returns → small CVaR → large adjustment (close to 1)."""
+        """All positive returns -> small CVaR -> large adjustment (close to 1)."""
         engine = DynamicPositionSizingEngine()
         positive_returns = [float(i + 1) for i in range(50)]
 
@@ -200,7 +200,7 @@ class TestDynamicPositionSizingEngine:
             volatility_multiplier=1.0,
         )
 
-        # VaR is still a positive number → CVaR adj close to 1
+        # VaR is still a positive number -> CVaR adj close to 1
         assert result.cvar_adjustment > 0.0
 
     # ── Volatility Adjustment ────────────────────────────────────────────────
@@ -254,7 +254,7 @@ class TestDynamicPositionSizingEngine:
     # ── Posterior Adjustment ─────────────────────────────────────────────────
 
     def test_low_posterior_reduces_size(self) -> None:
-        """Low Bayesian confidence → proportionally smaller position."""
+        """Low Bayesian confidence -> proportionally smaller position."""
         engine = DynamicPositionSizingEngine()
         base_params = {
             "win_probability": 0.60,
@@ -271,7 +271,7 @@ class TestDynamicPositionSizingEngine:
         assert r_low.final_fraction <= r_high.final_fraction
 
     def test_zero_posterior_zeros_size(self) -> None:
-        """Zero posterior → zero position (no confidence = no trade)."""
+        """Zero posterior -> zero position (no confidence = no trade)."""
         engine = DynamicPositionSizingEngine()
         result = engine.calculate(
             win_probability=0.60,

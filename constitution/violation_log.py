@@ -29,7 +29,7 @@ class ViolationLogger:
             "reason": reason,
         }
         self._violations.append(entry)
-        loguru_logger.warning(f"🚫 CONSTITUTION VIOLATION [{symbol}] {gate} → {reason}")
+        loguru_logger.warning(f"🚫 CONSTITUTION VIOLATION [{symbol}] {gate} -> {reason}")
 
     def all(self):
         return list(self._violations)

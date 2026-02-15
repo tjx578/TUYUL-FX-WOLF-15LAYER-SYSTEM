@@ -1,15 +1,15 @@
 """
-Rate Limiting Middleware — per-IP sliding window.
+Rate Limiting Middleware -- per-IP sliding window.
 
 Uses an in-memory sliding-window counter per client IP.
 No external dependency required; state resets on restart (acceptable for
 single-process deployments; use Redis-backed limiter for multi-instance).
 
 Environment variables:
-  RATE_LIMIT_REQUESTS_PER_MIN      – max requests per minute (default 120)
-  RATE_LIMIT_BURST                 – burst tolerance above base (default 20)
-  RATE_LIMIT_WS_PER_MIN           – WebSocket upgrade rate (default 10)
-  RATE_LIMIT_ENABLED              – "true" / "false" (default "true")
+  RATE_LIMIT_REQUESTS_PER_MIN      - max requests per minute (default 120)
+  RATE_LIMIT_BURST                 - burst tolerance above base (default 20)
+  RATE_LIMIT_WS_PER_MIN           - WebSocket upgrade rate (default 10)
+  RATE_LIMIT_ENABLED              - "true" / "false" (default "true")
 """
 
 from __future__ import annotations
