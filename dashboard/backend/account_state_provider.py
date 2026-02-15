@@ -1,12 +1,13 @@
 """
-Account state provider — fetches real account info from MT5 or broker API.
+Account state provider — fetches real account info from MT5.
 Dashboard authority: only this module knows the actual balance/equity.
 """
 
-from __future__ import annotations  # noqa: I001
+from __future__ import annotations
 
 import logging
 import time
+
 from dataclasses import dataclass, field
 
 logger = logging.getLogger("tuyul.dashboard.account")
@@ -45,41 +46,36 @@ class AccountState:
 
 class AccountStateProvider:
     """
-    Provides real account state from MT5.
+    Provides real account state from MT5 or fallback.
     Caches with short TTL to avoid excessive broker calls.
-    Falls back gracefully if MT5 is unavailable.
     """
 
-    CACHE_TTL_SECONDS = 2.0  # refresh every 2 seconds max
+    CACHE_TTL_SECONDS = 2.0
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._cache: AccountState | None = None
         self._cache_time: float = 0.0
         self._day_start_balance: float | None = None
         self._highest_balance: float = 0.0
         self._mt5_available: bool = False
+        self._mt5 = None
 
         try:
-            import MetaTrader5 as mt5  # pyright: ignore[reportMissingImports] # noqa: N813, PLC0415
+            import MetaTrader5 as mt5  # type: ignore[import-untyped]  # noqa: N813, PLC0415
             self._mt5 = mt5
             self._mt5_available = True
         except ImportError:
-            self._mt5 = None
             logger.warning("MetaTrader5 not available — using fallback mode")
 
     def get_state(self) -> AccountState | None:
-        """
-        Get current account state.
-        Returns cached value if within TTL.
-        Returns None if MT5 is unavailable.
-        """
+        """Get current account state. Returns cached if within TTL."""
         now = time.time()
         if self._cache and (now - self._cache_time) < self.CACHE_TTL_SECONDS:
             return self._cache
 
         if not self._mt5_available or self._mt5 is None:
             logger.warning("MT5 not available for account state")
-            return self._cache  # return stale cache or None
+            return self._cache
 
         try:
             info = self._mt5.account_info()
@@ -87,16 +83,13 @@ class AccountStateProvider:
                 logger.error("MT5 account_info() returned None")
                 return self._cache
 
-            # Track day start balance (reset at broker day rollover)
             if self._day_start_balance is None:
                 self._day_start_balance = info.balance
-                logger.info(f"Day start balance initialized: {info.balance}")
+                logger.info("Day start balance initialized: %.2f", info.balance)
 
-            # Track highest balance for trailing DD firms
             self._highest_balance = max(self._highest_balance, info.balance)
 
-            # Count open positions
-            positions = self._mt5.positions_total()
+            positions = self._mt5.positions_total() or 0
 
             state = AccountState(
                 balance=info.balance,
@@ -104,7 +97,7 @@ class AccountStateProvider:
                 margin=info.margin,
                 free_margin=info.margin_free,
                 floating_pnl=info.profit,
-                open_position_count=positions if positions else 0,
+                open_position_count=positions,
                 day_start_balance=self._day_start_balance, # pyright: ignore[reportArgumentType]
                 highest_balance=self._highest_balance,
                 currency=info.currency,
@@ -115,19 +108,16 @@ class AccountStateProvider:
             return state
 
         except Exception as e:
-            logger.error(f"Failed to get account state: {e}")
+            logger.error("Failed to get account state: %s", e)
             return self._cache
 
     def reset_day_start_balance(self, balance: float | None = None) -> None:
-        """
-        Call at broker day rollover to reset daily tracking.
-        If balance is None, uses current balance from MT5.
-        """
+        """Call at broker day rollover."""
         if balance is not None:
             self._day_start_balance = balance
         elif self._cache:
             self._day_start_balance = self._cache.balance
-        logger.info(f"Day start balance reset to: {self._day_start_balance}")
+        logger.info("Day start balance reset to: %s", self._day_start_balance)
 
     def force_refresh(self) -> AccountState | None:
         """Force bypass cache."""
