@@ -276,6 +276,7 @@ class TestWSAuth:
         ws = AsyncMock(spec=["query_params", "close", "state"])
         ws.query_params = {"token": token}
         ws.state = MagicMock()
+        ws.close = AsyncMock()  # explicit AsyncMock so assert_not_awaited works
 
         result = await ws_authenticate(ws)
 
