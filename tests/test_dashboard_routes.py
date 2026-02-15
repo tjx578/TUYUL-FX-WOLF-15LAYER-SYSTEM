@@ -8,19 +8,27 @@ Tests cover:
   - Price endpoints
 """
 
-import pytest
+import pytest  # pyright: ignore[reportMissingImports]
 
-from fastapi.testclient import TestClient
+from fastapi.testclient import TestClient  # pyright: ignore[reportMissingImports]
 
 from api_server import app
 from dashboard.account_manager import AccountManager
+from dashboard.backend.auth import create_token
 from dashboard.trade_ledger import TradeLedger
+
+# Generate a valid JWT for test requests
+_TEST_TOKEN = create_token(sub="test_user")
+_AUTH_HEADERS = {"Authorization": f"Bearer {_TEST_TOKEN}"}
 
 
 @pytest.fixture
 def client():
-    """Create test client for API."""
-    return TestClient(app)
+    """Create test client for API with auth headers."""
+    c = TestClient(app)
+    # Monkey-patch default headers so every request is authenticated
+    c.headers.update(_AUTH_HEADERS)
+    return c
 
 
 @pytest.fixture(autouse=True)
