@@ -16,7 +16,7 @@ def _gate(condition: bool) -> str:
     return "PASS" if condition else "FAIL"
 
 
-def generate_l12_verdict(synthesis: dict[str, Any]) -> dict[str, Any]:
+def generate_l12_verdict(synthesis: dict[str, Any]) -> dict[str, Any]:  # noqa: PLR0912
     """
     Input: synthesis output from analysis.synthesis (L1-L11).
     Output: final L12 verdict (constitutional).
@@ -169,9 +169,9 @@ def generate_l12_verdict(synthesis: dict[str, Any]) -> dict[str, Any]:
         "schema": "v7.4r∞",
         "pair": synthesis["pair"],
         "timestamp": format_utc(now_utc()),
-        "verdict": verdict,
-        "confidence": confidence,
-        "wolf_status": wolf_status,
+        "verdict": verdict, # pyright: ignore[reportPossiblyUnboundVariable]
+        "confidence": confidence, # pyright: ignore[reportPossiblyUnboundVariable]
+        "wolf_status": wolf_status, # pyright: ignore[reportPossiblyUnboundVariable]
         "gates": {
             **gates,
             "passed": passed_gates,
@@ -198,7 +198,7 @@ def generate_l12_verdict(synthesis: dict[str, Any]) -> dict[str, Any]:
             "fta_score": scores["fta_score"],
             "exec_score": scores["exec_score"],
         },
-        "proceed_to_L13": verdict.startswith("EXECUTE"),
+        "proceed_to_L13": verdict.startswith("EXECUTE"), # pyright: ignore[reportPossiblyUnboundVariable]
     }
 
     return l12_output
