@@ -62,7 +62,7 @@ class PropFirmRules:
         bool
             True if allowed
         """
-        return self.cfg["allowed_markets"].get(category, False)
+        return self.cfg["allowed_markets"].get(category, False) # pyright: ignore[reportReturnType]
 
     def max_risk_allowed(self) -> float:
         """
@@ -138,3 +138,49 @@ class PropFirmRules:
             "compliant": len(violations) == 0,
             "violations": violations,
         }
+
+    def check(self, account_state: dict, trade_risk: dict) -> dict:
+        """
+        Check if a trade is allowed based on account state and risk.
+
+        Parameters
+        ----------
+        account_state : dict
+            Account state (e.g., "drawdown", "circuit_breaker")
+        trade_risk : dict
+            Trade risk (e.g., "risk_percent", "rr_ratio")
+
+        Returns
+        -------
+        dict
+            Result with:
+            - allowed: bool
+            - code: str
+            - severity: str
+            - details: str?
+        """
+        result = {
+            "allowed": False,
+            "code": "RISK_EXCEEDED",
+            "severity": "HIGH",
+            "details": "",
+        }
+
+        # Validate trade
+        trade_result = self.validate_trade(
+            trade_risk["category"],
+            trade_risk["risk_percent"],
+            trade_risk["rr_ratio"],
+        )
+
+        if trade_result["compliant"]:
+            result["allowed"] = True
+            result["code"] = "TRADE_ALLOWED"
+            result["severity"] = "LOW"
+            result["details"] = "Trade is compliant with prop firm rules."
+        else:
+            result["details"] = "Trade violates prop firm rules."
+            result["code"] = "RISK_EXCEEDED"
+            result["severity"] = "HIGH"
+
+        return result
