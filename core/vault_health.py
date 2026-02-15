@@ -1,5 +1,5 @@
 """
-Vault health checker — replaces placeholder values in pipeline.
+Vault health checker — replaces placeholder feed_freshness and redis_health.
 Queries actual feed freshness and Redis connectivity.
 """
 
@@ -15,51 +15,39 @@ logger = logging.getLogger("tuyul.vault_health")
 
 @dataclass
 class VaultHealthReport:
-    feed_freshness: float         # 0.0 = completely stale, 1.0 = perfectly fresh
+    """Health report snapshot."""
+    feed_freshness: float         # 0.0 = stale, 1.0 = fresh
     redis_health: float           # 0.0 = dead, 1.0 = healthy
-    last_tick_age_seconds: float  # Age of most recent tick
-    redis_latency_ms: float      # Redis PING round-trip
-    is_healthy: bool              # Overall go/no-go
+    last_tick_age_seconds: float
+    redis_latency_ms: float
+    is_healthy: bool
     details: str = ""
 
     @property
     def should_block_analysis(self) -> bool:
-        """If True, pipeline must NOT proceed with analysis."""
+        """If True, pipeline must NOT proceed."""
         return self.feed_freshness < 0.3 or self.redis_health < 0.5
 
 
 class VaultHealthChecker:
-    """
-    Replaces hardcoded placeholder health values.
-    Must be called at pipeline start before any analysis runs.
-    """
+    """Replaces hardcoded placeholder health values."""
 
-    # Max acceptable tick age before declaring feed stale
     MAX_TICK_AGE_SECONDS = 10.0
-    # Max acceptable Redis latency
     MAX_REDIS_LATENCY_MS = 100.0
 
-    def __init__(self, redis_client=None, context_bus=None):
-        """
-        Args:
-            redis_client: Redis connection (from context bus or standalone)
-            context_bus: LiveContextBus instance for feed freshness queries
-        """
+    def __init__(self, redis_client=None, context_bus=None) -> None:
         self._redis = redis_client
         self._context_bus = context_bus
 
     def check(self, symbols: list[str] | None = None) -> VaultHealthReport:
-        """
-        Run health checks against real infrastructure.
-        Returns actual metrics instead of placeholder 1.0 values.
-        """
+        """Run health checks. Returns actual metrics."""
         feed_freshness = self._check_feed_freshness(symbols or [])
         redis_health, redis_latency = self._check_redis_health()
         tick_age = self._get_last_tick_age(symbols or [])
 
         is_healthy = feed_freshness >= 0.5 and redis_health >= 0.5
 
-        details_parts = []
+        details_parts: list[str] = []
         if feed_freshness < 0.5:
             details_parts.append(f"FEED STALE (freshness={feed_freshness:.2f})")
         if redis_health < 0.5:
@@ -77,79 +65,49 @@ class VaultHealthChecker:
         )
 
         if not report.is_healthy:
-            logger.warning(f"Vault health degraded: {report.details}")
-        else:
-            logger.debug(f"Vault health OK: feed={feed_freshness:.2f}, redis={redis_health:.2f}")
+            logger.warning("Vault health degraded: %s", report.details)
 
         return report
 
     def _check_feed_freshness(self, symbols: list[str]) -> float:
-        """
-        Query LiveContextBus for last tick timestamp per symbol.
-        Returns 0.0–1.0 score.
-        """
-        if self._context_bus is None:
-            logger.warning("No context bus configured — feed freshness unknown")
+        if self._context_bus is None or not symbols:
             return 0.0
-
-        if not symbols:
-            return 0.0
-
         try:
-            ages = []
+            ages: list[float] = []
             for symbol in symbols:
                 last_ts = self._context_bus.get_last_tick_time(symbol)
                 if last_ts is None or last_ts == 0:
                     ages.append(float("inf"))
                 else:
                     ages.append(time.time() - last_ts)
-
             if not ages:
                 return 0.0
-
-            # Worst age across all symbols
             worst_age = max(ages)
             if worst_age == float("inf"):
                 return 0.0
-
-            # Score: 1.0 if age < 1s, linearly degrades, 0.0 if age > MAX
-            freshness = max(0.0, 1.0 - (worst_age / self.MAX_TICK_AGE_SECONDS))
-            return freshness
-
+            return max(0.0, 1.0 - (worst_age / self.MAX_TICK_AGE_SECONDS))
         except Exception as e:
-            logger.error(f"Feed freshness check failed: {e}")
+            logger.error("Feed freshness check failed: %s", e)
             return 0.0
 
     def _check_redis_health(self) -> tuple[float, float]:
-        """
-        PING Redis, measure latency.
-        Returns (health_score 0-1, latency_ms).
-        """
         if self._redis is None:
-            logger.warning("No Redis client configured — health unknown")
             return 0.0, float("inf")
-
         try:
             start = time.monotonic()
             pong = self._redis.ping()
             latency_ms = (time.monotonic() - start) * 1000
-
             if not pong:
                 return 0.0, latency_ms
-
-            # Score: 1.0 if latency < 10ms, degrades linearly, 0.0 if > MAX
             health = max(0.0, 1.0 - (latency_ms / self.MAX_REDIS_LATENCY_MS))
             return health, latency_ms
-
         except Exception as e:
-            logger.error(f"Redis health check failed: {e}")
+            logger.error("Redis health check failed: %s", e)
             return 0.0, float("inf")
 
     def _get_last_tick_age(self, symbols: list[str]) -> float:
-        """Get oldest tick age across symbols."""
         if self._context_bus is None or not symbols:
             return float("inf")
-
         try:
             worst = 0.0
             for symbol in symbols:
