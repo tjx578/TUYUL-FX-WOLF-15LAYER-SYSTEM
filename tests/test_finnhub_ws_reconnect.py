@@ -298,8 +298,7 @@ class TestListen:
     ) -> None:
         """Trade messages are forwarded to on_message callback."""
         trade_msg = json.dumps({"type": "trade", "data": [{"s": "OANDA:EUR_USD"}]})
-        mock_ws = AsyncMock()
-        mock_ws.__aiter__ = MagicMock(return_value=iter([trade_msg]))
+        mock_ws = AsyncMessageIterator([trade_msg])
 
         await ws_client._listen(mock_ws)
         on_message.assert_awaited_once()
@@ -312,8 +311,7 @@ class TestListen:
     ) -> None:
         """Ping messages should NOT be forwarded to on_message."""
         ping_msg = json.dumps({"type": "ping"})
-        mock_ws = AsyncMock()
-        mock_ws.__aiter__ = MagicMock(return_value=iter([ping_msg]))
+        mock_ws = AsyncMessageIterator([ping_msg])
 
         await ws_client._listen(mock_ws)
         on_message.assert_not_awaited()
@@ -324,8 +322,7 @@ class TestListen:
     ) -> None:
         """Leader lock is renewed during message processing."""
         trade_msg = json.dumps({"type": "trade", "data": []})
-        mock_ws = AsyncMock()
-        mock_ws.__aiter__ = MagicMock(return_value=iter([trade_msg, trade_msg]))
+        mock_ws = AsyncMessageIterator([trade_msg, trade_msg])
 
         await ws_client._listen(mock_ws)
         # Lock renewal called once per non-ping message
@@ -341,8 +338,7 @@ class TestListen:
             json.dumps({"type": "ping"}),
             json.dumps({"type": "trade", "data": [{"s": "OANDA:GBP_JPY"}]}),
         ]
-        mock_ws = AsyncMock()
-        mock_ws.__aiter__ = MagicMock(return_value=iter(msgs))
+        mock_ws = AsyncMessageIterator(msgs)
 
         await ws_client._listen(mock_ws)
         # Only 2 trade messages dispatched (ping filtered)
