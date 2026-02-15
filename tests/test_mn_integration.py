@@ -1,6 +1,7 @@
-import pytest
-from unittest.mock import patch, MagicMock, AsyncMock
 from datetime import UTC, datetime
+from unittest.mock import MagicMock, patch
+
+import pytest  # pyright: ignore[reportMissingImports]
 
 
 @pytest.mark.asyncio
@@ -39,7 +40,7 @@ async def test_mn_fetch_in_warmup(mock_fetch):
 
     mock_fetch.side_effect = fake_fetch
 
-    from ingest.finnhub_candles import FinnhubCandleFetcher
+    from ingest.finnhub_candles import FinnhubCandleFetcher  # noqa: PLC0415
 
     with patch("ingest.finnhub_candles.CONFIG", {"pairs": {"symbols": ["XAUUSD"]}}):
         fetcher = FinnhubCandleFetcher()
@@ -52,7 +53,7 @@ async def test_mn_fetch_in_warmup(mock_fetch):
 
 
 def test_macro_regime_engine_initialization():
-    from analysis.macro_regime_engine import MacroRegimeEngine
+    from analysis.macro.macro_regime_engine import MacroRegimeEngine  # noqa: PLC0415
 
     mock_redis = MagicMock()
     mock_redis.client.lrange.return_value = [
@@ -68,7 +69,7 @@ def test_macro_regime_engine_initialization():
 
 
 def test_l2_mta_with_macro_weighting():
-    from analysis.layers.L2_mta import L2MTA
+    from analysis.layers.L2_mta import L2MTA  # noqa: PLC0415
 
     mock_redis = MagicMock()
     mock_redis.hgetall.return_value = {"type": "BULLISH_EXPANSION", "bias": "BULLISH"}
