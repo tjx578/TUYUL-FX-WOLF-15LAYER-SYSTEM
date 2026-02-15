@@ -15,7 +15,8 @@ tenacity==9.0.0
 APScheduler==3.10.4
 
 # Data / Math
-numpy==2.1.1
+numpy>=1.24.0
+scipy>=1.11.0                  # scipy.stats.beta used by bayesian_update_engine
 pandas==2.2.2
 
 # Storage
