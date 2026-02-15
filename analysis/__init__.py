@@ -9,7 +9,7 @@ Sub-packages
 layers/      Individual layer analyzers (L1-Context … L11-RR).
 macro/       Macro regime engines — VIX, volatility, monthly regime.
 market/      Market-structure helpers — Fibonacci, indicators, S/D.
-orchestrators/  (DEPRECATED) Use ``pipeline.WolfConstitutionalPipeline``.
+orchestrators/  Position sizing bridge (analysis → dashboard handoff).
 
 Top-level modules
 -----------------

@@ -1,8 +1,12 @@
 """
-Wolf Constitutional Pipeline v7.4r∞ - UNIFIED CORE MODULES INTEGRATION
+Wolf Constitutional Pipeline v8.0 — UNIFIED SUPER PIPELINE
 
-SOLE pipeline orchestrator for the Wolf 15-Layer System.
-This is the ONE AND ONLY analysis pipeline in the entire repository.
+Merged from:
+  - pipeline/wolf_constitutional_pipeline.py  (Constitutional v7.4r∞)
+  - analysis/orchestrators/wolf_sovereign_pipeline.py (Sovereign — deleted)
+
+This is the SOLE pipeline orchestrator for the Wolf 15-Layer System.
+No other pipeline exists. All analysis flows through this single entry point.
 
 ══════════════════════════════════════════════════════════════════════
 4 Core Unified Modules × 15 Analytical Layers × Complete Pipeline
@@ -21,14 +25,23 @@ Core Modules:
     ZONA 4 - Execution & Decision   : L10, L11, L12 (SOLE AUTHORITY)
     ZONA 5 - Meta & Reflective      : L13, L14, L15
 
-Execution order (CRITICAL):
-    Phase 1: L1, L2, L3 (Perception - independent)
-    Phase 2: L4, L5 (Confluence & Psychology - depend on L1-L3)
-    Phase 3: L7, L8, L9 (Probability & Validation - depend on L4/L5)
-    Phase 4: L11 → L6 → L10 (Execution + Risk - L11 BEFORE L6!)
-    Phase 5: Build synthesis → L12 verdict (SOLE AUTHORITY)
-    Phase 6: L13 reflective pass (only if EXECUTE verdict)
-    Phase 7: L14 JSON export + L15 meta synthesis
+Execution order (CRITICAL — 8 phases):
+    Phase 1: L1, L2, L3 (Perception — independent, halt-on-failure)
+    Phase 2: L4, L5 (Confluence & Psychology — depend on L1-L3)
+    Phase 3: L7, L8, L9 (Probability & Validation — depend on L4/L5)
+    Phase 4: L11 → L6 → L10 (Execution + Risk — L11 BEFORE L6!)
+    Phase 5: Build synthesis → 9-Gate Check → L12 verdict (SOLE AUTHORITY)
+    Phase 6: Two-pass L13 governance (baseline → meta → refined)
+    Phase 7: Sovereignty enforcement (drift detection + verdict downgrade)
+    Phase 8: L14 JSON export + final result assembly
+
+Merged improvements over v7.4r∞:
+    ✓ Two-pass L13 governance (from Sovereign pipeline)
+    ✓ Drift-based sovereignty enforcement with verdict downgrade
+    ✓ Extracted L13ReflectiveEngine + L15MetaSovereigntyEngine
+    ✓ system_metrics / safe_mode support for verdict engine
+    ✓ build_l12_synthesis() as standalone importable function
+    ✓ PipelineResult dataclass with dict backward compatibility
 
 Authority: Layer-12 is the SOLE CONSTITUTIONAL AUTHORITY.
 Discipline: Wolf 30-Point + F-T-P Trias.
@@ -54,6 +67,8 @@ from pipeline.constants import (
     get_vault_sync_thresholds,
     get_vault_sync_weights,
 )
+from pipeline.engines import L13ReflectiveEngine, L15MetaSovereigntyEngine
+from pipeline.result import PipelineResult
 
 try:
     from loguru import logger  # pyright: ignore[reportMissingImports]
@@ -65,16 +80,235 @@ except ImportError:
 _TZ_GMT8 = timezone(timedelta(hours=8))
 
 
+# ══════════════════════════════════════════════════════════════
+#  STANDALONE SYNTHESIS BUILDER
+# ══════════════════════════════════════════════════════════════
+
+def build_l12_synthesis(  # noqa: PLR0913
+    symbol: str,
+    l1: dict[str, Any],
+    l2: dict[str, Any],
+    l3: dict[str, Any],
+    l4: dict[str, Any],
+    l5: dict[str, Any],
+    l6: dict[str, Any],
+    l7: dict[str, Any],
+    l8: dict[str, Any],
+    l9: dict[str, Any],
+    l10: dict[str, Any],
+    l11: dict[str, Any],
+    macro: dict[str, Any],
+    macro_vix_state: dict[str, Any],
+    *,
+    safe_mode: bool = False,
+    latency_ms: float = 0.0,
+) -> dict[str, Any]:
+    """
+    Build L12-contract-compliant synthesis from layer outputs.
+
+    This is a standalone function importable without pipeline instantiation.
+    Matches the exact contract expected by generate_l12_verdict().
+
+    Args:
+        symbol: Trading pair (e.g. "EURUSD").
+        l1..l11: Layer analyzer outputs.
+        macro: Monthly regime analysis.
+        macro_vix_state: VIX regime state.
+        safe_mode: If True, bypass macro regime gate in verdict engine.
+        latency_ms: Current pipeline latency for latency gate.
+
+    Returns:
+        Synthesis dict compliant with SynthesisContract / L12 input.
+    """
+    # ── Wolf 30-Point from L4 ──
+    if "wolf_30_point" in l4 and isinstance(l4["wolf_30_point"], dict):
+        wolf_30_point = l4["wolf_30_point"].get("total", 0)
+        f_score = l4["wolf_30_point"].get("f_score", 0)
+        t_score = l4["wolf_30_point"].get("t_score", 0)
+        fta_score_raw = l4["wolf_30_point"].get("fta_score", 0.0)
+        exec_score = l4["wolf_30_point"].get("exec_score", 0)
+    else:
+        technical_score = l4.get("technical_score", 0)
+        win_prob = l7.get("win_probability", 0)
+        wolf_30_point = int((technical_score / 100) * 15 + (win_prob / 100) * 15)
+        wolf_30_point = max(0, min(30, wolf_30_point))
+        f_score = 0
+        t_score = 0
+        fta_score_raw = 0.0
+        exec_score = 0
+
+    # ── FTA Score (enriched from L10 or fallback) ──
+    fta_score = l10.get("fta_score", fta_score_raw)
+    fta_multiplier = l10.get("fta_multiplier", 1.0)
+    if exec_score == 0:
+        exec_score = 6 if l10.get("position_ok", False) else 0
+
+    # ── Direction from L3 ──
+    trend = l3.get("trend", "NEUTRAL")
+    direction = {"BULLISH": "BUY", "BEARISH": "SELL"}.get(trend, "HOLD")
+
+    # ── Execution details from L11 ──
+    entry_price = l11.get("entry_price", l11.get("entry", 0.0))
+    stop_loss = l11.get("stop_loss", l11.get("sl", 0.0))
+    take_profit_1 = l11.get("take_profit_1", l11.get("tp1", l11.get("tp", 0.0)))
+    rr_ratio = l11.get("rr", 0.0)
+    battle_strategy = l11.get("battle_strategy", "SHADOW_STRIKE")
+    entry_zone = l11.get("entry_zone", "")
+    if not entry_zone and entry_price > 0:
+        if direction == "BUY":
+            entry_zone = f"{entry_price - 0.0010:.5f}-{entry_price:.5f}"
+        else:
+            entry_zone = f"{entry_price:.5f}-{entry_price + 0.0010:.5f}"
+
+    # ── Risk (from L10/dashboard — placeholders) ──
+    lot_size = l10.get("final_lot_size", 0.01)
+    risk_percent = l10.get("adjusted_risk_pct", 1.0)
+    risk_amount = l10.get("adjusted_risk_amount", 0.0)
+
+    # ── Metrics ──
+    tii_sym = l8.get("tii_sym", 0.0)
+    integrity = l8.get("integrity", 0.0)
+    conf12 = l2.get("conf12", (tii_sym + integrity) / 2.0)
+    current_drawdown = l5.get("current_drawdown", 0.0)
+    prop_compliant = l6.get("propfirm_compliant", True)
+    psychology_score = l5.get("psychology_score", 0)
+    eaf_score = l5.get("eaf_score", 0.0)
+
+    vix_regime_state = macro_vix_state.get("regime_state", 1)
+
+    return {
+        "pair": symbol,
+        "scores": {
+            "wolf_30_point": wolf_30_point,
+            "f_score": f_score,
+            "t_score": t_score,
+            "fta_score": fta_score,
+            "fta_multiplier": fta_multiplier,
+            "exec_score": exec_score,
+            "psychology_score": psychology_score,
+            "technical_score": l4.get("technical_score", 0),
+        },
+        "layers": {
+            "L1_context_coherence": l1.get("regime_confidence", 0.0),
+            "L2_reflex_coherence": l2.get("reflex_coherence", 0.0),
+            "L3_trq3d_energy": l3.get("trq3d_energy", 0.0),
+            "L7_monte_carlo_win": l7.get("win_probability", 0.0) / 100.0
+            if l7.get("win_probability", 0.0) > 1.0
+            else l7.get("win_probability", 0.0),
+            "L8_tii_sym": tii_sym,
+            "L8_integrity_index": integrity,
+            "L9_dvg_confidence": l9.get("dvg_confidence", 0.0),
+            "L9_liquidity_score": l9.get("liquidity_score", 0.0),
+            "conf12": conf12,
+        },
+        "execution": {
+            "direction": direction,
+            "entry_price": entry_price,
+            "entry_zone": entry_zone,
+            "stop_loss": stop_loss,
+            "take_profit_1": take_profit_1,
+            "execution_mode": "TP1_ONLY",
+            "battle_strategy": battle_strategy,
+            "rr_ratio": rr_ratio,
+            "lot_size": lot_size,
+            "risk_percent": risk_percent,
+            "risk_amount": risk_amount,
+            "slippage_estimate": 0.0,
+            "optimal_timing": "",
+        },
+        "risk": {
+            "current_drawdown": current_drawdown,
+            "drawdown_level": l6.get("drawdown_level", "LEVEL_0"),
+            "risk_multiplier": l6.get("risk_multiplier", 1.0),
+            "risk_status": l6.get("risk_status", "ACCEPTABLE"),
+            "lrce": l6.get("lrce", 0.0),
+        },
+        "propfirm": {
+            "compliant": prop_compliant,
+            "daily_loss_status": "OK",
+            "max_drawdown_status": "OK",
+            "profit_target_progress": 0.0,
+        },
+        "bias": {
+            "fundamental": "NEUTRAL" if not l1.get("valid") else trend,
+            "technical": trend,
+            "macro": macro.get("regime", "UNKNOWN"),
+        },
+        "cognitive": {
+            "regime": l1.get("regime", "TREND"),
+            "dominant_force": l1.get("dominant_force", "NEUTRAL"),
+            "cbv": l1.get("csi", 0.0),
+            "csi": l1.get("regime_confidence", 0.0),
+        },
+        "fusion_frpc": {
+            "conf12": conf12,
+            "frpc_energy": l2.get("frpc_energy", 0.0),
+            "lambda_esi": 0.003,
+            "integrity": integrity,
+        },
+        "trq3d": {
+            "alpha": 0.0,
+            "beta": 0.0,
+            "gamma": 0.0,
+            "drift": l3.get("drift", 0.0),
+            "mean_energy": l3.get("trq3d_energy", 0.0),
+            "intensity": 0.0,
+        },
+        "smc": {
+            "structure": "RANGE",
+            "smart_money_signal": l9.get("smart_money_signal", "NEUTRAL"),
+            "liquidity_zone": "0.00000",
+            "ob_present": l9.get("ob_present", False),
+            "fvg_present": l9.get("fvg_present", False),
+            "sweep_detected": l9.get("sweep_detected", False),
+            "bias": l9.get("smart_money_bias", "NEUTRAL"),
+        },
+        "wolf_discipline": {
+            "score": wolf_30_point / 30.0 if wolf_30_point else 0.0,
+            "polarity_deviation": l5.get("emotion_delta", 0.0),
+            "lambda_balance": "ACTIVE",
+            "bias_symmetry": "NEUTRAL",
+            "eaf_score": eaf_score,
+            "emotional_state": "CALM",
+        },
+        "macro": {
+            "regime": macro.get("regime", "UNKNOWN"),
+            "phase": macro.get("phase", "NEUTRAL"),
+            "volatility_ratio": macro.get("macro_vol_ratio", 1.0),
+            "mn_aligned": macro.get("alignment", False),
+            "liquidity": macro.get("liquidity", {}),
+            "bias_override": macro.get("bias_override", {}),
+        },
+        "macro_vix": {
+            "regime_state": vix_regime_state,
+            "risk_multiplier": macro_vix_state.get("risk_multiplier", 1.0),
+        },
+        "system": {
+            "latency_ms": latency_ms,
+            "safe_mode": safe_mode,
+        },
+    }
+
+
 class WolfConstitutionalPipeline:
     """
-    Wolf 15-Layer Constitutional Pipeline v7.4r∞.
+    Wolf 15-Layer Constitutional Pipeline v8.0 — Unified Super Pipeline.
 
+    Merged from Constitutional v7.4r∞ + Sovereign governance features.
     This is the ONLY entry point for analysis in the entire system.
     All 15 layers (L1-L15) are executed sequentially with halt-on-failure.
     Layer-12 is the SOLE decision authority (Constitutional Verdict).
+
+    Key features:
+        - 9-Gate Constitutional Check
+        - Two-pass L13 governance (baseline → real meta → refined)
+        - Drift-based sovereignty enforcement with verdict downgrade
+        - L14 JSON export + L15 meta synthesis
+        - VIX regime + macro monthly regime integration
+        - system_metrics / safe_mode support
     """
 
-    VERSION = "v7.4r∞"
+    VERSION = "v8.0"
 
     def __init__(self) -> None:
         """Initialize with lazy loading to avoid circular imports."""
@@ -94,6 +328,10 @@ class WolfConstitutionalPipeline:
         # Macro analyzers
         self._macro = None
         self._macro_vol = None
+
+        # Governance engines (from merged Sovereign pipeline)
+        self._l13_engine = L13ReflectiveEngine()
+        self._l15_engine = L15MetaSovereigntyEngine()
 
     # ──────────────────────────────────────────────────────
     #  Lazy-load all layer analyzers
@@ -141,29 +379,41 @@ class WolfConstitutionalPipeline:
         self._macro_vol = analysis.macro_volatility_engine.MacroVolatilityEngine()
 
     # ══════════════════════════════════════════════════════════════
-    #  MAIN EXECUTE - the single canonical entry point
+    #  MAIN EXECUTE — the single canonical entry point
     # ══════════════════════════════════════════════════════════════
 
-    def execute(self, symbol: str) -> dict[str, Any]:
+    def execute(
+        self,
+        symbol: str,
+        system_metrics: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         """
         Execute complete Wolf 15-Layer Constitutional Pipeline.
 
         Args:
             symbol: Trading pair symbol (e.g., "EURUSD", "XAUUSD")
+            system_metrics: Optional system state dict with:
+                - safe_mode (bool): bypass macro regime gate
+                - latency_ms (float): override latency measurement
 
         Returns:
-            Complete v7.4r∞ result dict with:
-            - schema: pipeline version
-            - pair, timestamp
+            Complete v8.0 result dict (backward-compatible with v7.4r∞) with:
+            - schema, pair, timestamp
             - synthesis: L12-contract synthesis (all layer data)
             - l12_verdict: Constitutional verdict (SOLE AUTHORITY)
-            - reflective: L13 reflective pass (only if EXECUTE)
+            - reflective: Best available L13 reflective pass
+            - reflective_pass1: L13 baseline pass (meta=1.0)
+            - reflective_pass2: L13 refined pass (real meta)
             - l14_json: Full L14 JSON export
             - l15_meta: L15 meta synthesis (full unity state)
-            - sovereignty: vault sync + sovereignty enforcement
+            - sovereignty: vault sync computation
+            - enforcement: sovereignty enforcement + drift detection
             - latency_ms: Pipeline execution time
             - errors: List of any errors encountered
         """
+        metrics = system_metrics or {}
+        safe_mode = bool(metrics.get("safe_mode", False))
+
         start_time = time.time()
         self._ensure_analyzers()
         errors: list[str] = []
@@ -171,47 +421,43 @@ class WolfConstitutionalPipeline:
 
         try:
             # ═══════════════════════════════════════════════════════
-            # PHASE 1 - ZONA PERCEPTION & CONTEXT (L1, L2, L3)
+            # PHASE 1 — ZONA PERCEPTION & CONTEXT (L1, L2, L3)
             # ═══════════════════════════════════════════════════════
-            logger.info(f"[Pipeline v7.4r∞] Phase 1: Perception & Context - {symbol}")
+            logger.info(f"[Pipeline v8.0] Phase 1: Perception & Context — {symbol}")
 
-            l1 = self._l1.analyze(symbol) # pyright: ignore[reportOptionalMemberAccess]
+            l1 = self._l1.analyze(symbol)  # pyright: ignore[reportOptionalMemberAccess]
             if not l1.get("valid"):
                 errors.append("L1_CONTEXT_INVALID")
                 return self._early_exit(symbol, errors, time.time() - start_time)
 
-            l2 = self._l2.analyze(symbol) # pyright: ignore[reportOptionalMemberAccess]
+            l2 = self._l2.analyze(symbol)  # pyright: ignore[reportOptionalMemberAccess]
             if not l2.get("valid"):
                 errors.append("L2_MTA_INVALID")
                 return self._early_exit(symbol, errors, time.time() - start_time)
 
-            l3 = self._l3.analyze(symbol) # pyright: ignore[reportOptionalMemberAccess]
+            l3 = self._l3.analyze(symbol)  # pyright: ignore[reportOptionalMemberAccess]
             if not l3.get("valid"):
                 errors.append("L3_TECHNICAL_INVALID")
                 return self._early_exit(symbol, errors, time.time() - start_time)
 
             # ═══════════════════════════════════════════════════════
-            # PHASE 2 - ZONA CONFLUENCE & SCORING (L4, L5)
+            # PHASE 2 — ZONA CONFLUENCE & SCORING (L4, L5)
             # ═══════════════════════════════════════════════════════
-            logger.info(f"[Pipeline v7.4r∞] Phase 2: Confluence & Scoring - {symbol}")
+            logger.info(f"[Pipeline v8.0] Phase 2: Confluence & Scoring — {symbol}")
 
-            # L4: Wolf 30-Point Scoring (requires L1, L2, L3)
-            l4 = self._l4.score(l1, l2, l3) # pyright: ignore[reportOptionalMemberAccess]
-
-            # L5: Psychology Gates + RGO Governance
-            l5 = self._l5.analyze(symbol, volatility_profile=l2) # pyright: ignore[reportOptionalMemberAccess]
+            l4 = self._l4.score(l1, l2, l3)  # pyright: ignore[reportOptionalMemberAccess]
+            l5 = self._l5.analyze(symbol, volatility_profile=l2)  # pyright: ignore[reportOptionalMemberAccess]
 
             # ═══════════════════════════════════════════════════════
-            # PHASE 3 - ZONA PROBABILITY & VALIDATION (L7, L8, L9)
+            # PHASE 3 — ZONA PROBABILITY & VALIDATION (L7, L8, L9)
             # ═══════════════════════════════════════════════════════
-            logger.info(f"[Pipeline v7.4r∞] Phase 3: Probability & Validation - {symbol}")
+            logger.info(f"[Pipeline v8.0] Phase 3: Probability & Validation — {symbol}")
 
-            # L7: Monte Carlo FTTC Validation
             technical_score = l4.get("technical_score", 0)
-            l7 = self._l7.analyze(symbol, technical_score=technical_score) # pyright: ignore[reportOptionalMemberAccess]
+            l7 = self._l7.analyze(symbol, technical_score=technical_score)  # pyright: ignore[reportOptionalMemberAccess]
 
             # Apply VIX multiplier to L7 win probability
-            macro_vix_state = self._macro_vol.get_state() # pyright: ignore[reportOptionalMemberAccess]
+            macro_vix_state = self._macro_vol.get_state()  # pyright: ignore[reportOptionalMemberAccess]
             vix_risk_multiplier = macro_vix_state.get("risk_multiplier", 1.0)
             if l7.get("win_probability"):
                 l7_adjusted = l7.copy()
@@ -222,22 +468,21 @@ class WolfConstitutionalPipeline:
             layers_for_l8 = {
                 "l1": l1, "l2": l2, "l3": l3, "l4": l4, "l7": l7,
             }
-            l8 = self._l8.analyze(layers_for_l8) # pyright: ignore[reportOptionalMemberAccess]
+            l8 = self._l8.analyze(layers_for_l8)  # pyright: ignore[reportOptionalMemberAccess]
 
             # L9: SMC Integration Analysis
             if hasattr(self._l3, "structure"):
-                structure = self._l3.structure.analyze(symbol) # pyright: ignore[reportOptionalMemberAccess, reportAttributeAccessIssue]
+                structure = self._l3.structure.analyze(symbol)  # pyright: ignore[reportOptionalMemberAccess, reportAttributeAccessIssue]
             else:
                 structure = l3
-            l9 = self._l9.analyze(symbol, structure) # pyright: ignore[reportOptionalMemberAccess]
+            l9 = self._l9.analyze(symbol, structure)  # pyright: ignore[reportOptionalMemberAccess]
 
             # ═══════════════════════════════════════════════════════
-            # PHASE 4 - ZONA EXECUTION & DECISION (L11 → L6 → L10)
+            # PHASE 4 — ZONA EXECUTION & DECISION (L11 → L6 → L10)
             # CRITICAL: L11 BEFORE L6 (L6 needs RR from L11)
             # ═══════════════════════════════════════════════════════
-            logger.info(f"[Pipeline v7.4r∞] Phase 4: Execution & Decision - {symbol}")
+            logger.info(f"[Pipeline v8.0] Phase 4: Execution & Decision — {symbol}")
 
-            # Determine direction from L3 trend
             trend = l3.get("trend", "NEUTRAL")
             if trend == "BULLISH":
                 direction = "BUY"
@@ -246,295 +491,149 @@ class WolfConstitutionalPipeline:
             else:
                 direction = "HOLD"
 
-            # L11: Risk-Reward Optimization + Battle Strategy (BEFORE L6!)
             l11: dict[str, Any] = {"valid": False, "rr": 0.0}
             if direction in ("BUY", "SELL"):
-                l11 = self._l11.calculate_rr(symbol, direction) # pyright: ignore[reportOptionalMemberAccess]
+                l11 = self._l11.calculate_rr(symbol, direction)  # pyright: ignore[reportOptionalMemberAccess]
             rr_value = l11.get("rr", 0.0)
 
-            # L6: Risk Management + Lorentzian Stabilization
-            l6 = self._l6.analyze(rr=rr_value) # pyright: ignore[reportOptionalMemberAccess]
+            l6 = self._l6.analyze(rr=rr_value)  # pyright: ignore[reportOptionalMemberAccess]
 
-            # L10: Position Sizing & FTA Multiplier
             risk_ok = l6.get("risk_ok", False)
             smc_confidence = l9.get("confidence", 0.0)
-            l10 = self._l10.analyze(risk_ok, smc_confidence) # pyright: ignore[reportOptionalMemberAccess]
+            l10 = self._l10.analyze(risk_ok, smc_confidence)  # pyright: ignore[reportOptionalMemberAccess]
 
-            # Macro regime analysis
-            macro = self._macro.analyze(symbol) # pyright: ignore[reportOptionalMemberAccess]
+            macro = self._macro.analyze(symbol)  # pyright: ignore[reportOptionalMemberAccess]
 
             # ═══════════════════════════════════════════════════════
-            # PHASE 5 - L12 CONSTITUTIONAL VERDICT (SOLE AUTHORITY)
+            # PHASE 5 — L12 CONSTITUTIONAL VERDICT (SOLE AUTHORITY)
+            #   Build synthesis → 9-Gate Check → L12 verdict
             # ═══════════════════════════════════════════════════════
-            logger.info(f"[Pipeline v7.4r∞] Phase 5: Constitutional Verdict - {symbol}")
+            logger.info(f"[Pipeline v8.0] Phase 5: Constitutional Verdict — {symbol}")
 
-            synthesis = self._build_synthesis(
+            current_latency_ms = (time.time() - start_time) * 1000
+            synthesis = build_l12_synthesis(
                 symbol=symbol,
                 l1=l1, l2=l2, l3=l3, l4=l4, l5=l5,
                 l6=l6, l7=l7, l8=l8, l9=l9, l10=l10, l11=l11,
                 macro=macro,
                 macro_vix_state=macro_vix_state,
+                safe_mode=safe_mode,
+                latency_ms=current_latency_ms,
             )
 
-            # 9-Gate Constitutional Check
             gates = self._evaluate_9_gates(synthesis, l8, l7, l2, l6, l9, l11, start_time)
-
-            # Call L12 verdict engine as SOLE AUTHORITY
             l12_verdict = generate_l12_verdict(synthesis)
-
-            # Inject 9-gate results into verdict
             l12_verdict["gates_v74"] = gates
 
             # ═══════════════════════════════════════════════════════
-            # PHASE 6 - L13 REFLECTIVE EXECUTION (only if EXECUTE)
+            # PHASE 6 — TWO-PASS L13 GOVERNANCE (from Sovereign)
+            #   Pass 1: baseline (meta=1.0) → L15 meta → Pass 2: refined
             # ═══════════════════════════════════════════════════════
-            reflective = None
-            if l12_verdict.get("verdict", "").startswith("EXECUTE"):
-                logger.info(f"[Pipeline v7.4r∞] Phase 6: Reflective Execution - {symbol}")
-                reflective = self._run_reflective_pass(synthesis, l12_verdict)
+            reflective_pass1 = None
+            reflective_pass2 = None
+            l15_meta = None
+
+            proceed = (
+                l12_verdict.get("proceed_to_L13", False)
+                or l12_verdict.get("verdict", "").startswith("EXECUTE")
+            )
+
+            if proceed:
+                logger.info(f"[Pipeline v8.0] Phase 6: Two-Pass L13 Governance — {symbol}")
+
+                # Pass 1: Baseline reflective (meta_integrity = 1.0)
+                reflective_pass1 = self._l13_engine.reflect(
+                    synthesis, l12_verdict, meta_integrity=1.0,
+                )
+
+                # Compute vault sync for sovereignty
+                sovereignty = self._compute_vault_sync(synthesis, l12_verdict, reflective_pass1)
+
+                # L15 meta computation (uses Pass 1 + sovereignty)
+                l15_meta = self._l15_engine.compute_meta(
+                    synthesis=synthesis,
+                    l12_verdict=l12_verdict,
+                    reflective_pass1=reflective_pass1,
+                    sovereignty=sovereignty,
+                    gates=gates,
+                )
+
+                # Pass 2: Refined reflective (uses real meta_integrity from L15)
+                real_meta = l15_meta.get("meta_integrity", 1.0)
+                reflective_pass2 = self._l13_engine.reflect(
+                    synthesis, l12_verdict, meta_integrity=real_meta,
+                )
+            else:
+                # No L13 — still compute vault sync and meta
+                sovereignty = self._compute_vault_sync(synthesis, l12_verdict, None)
+                l15_meta = self._l15_engine.compute_meta(
+                    synthesis=synthesis,
+                    l12_verdict=l12_verdict,
+                    reflective_pass1=None, # pyright: ignore[reportArgumentType]
+                    sovereignty=sovereignty,
+                    gates=gates,
+                )
 
             # ═══════════════════════════════════════════════════════
-            # PHASE 7 - L14 JSON OUTPUT + L15 META SYNTHESIS
+            # PHASE 7 — SOVEREIGNTY ENFORCEMENT (drift + downgrade)
             # ═══════════════════════════════════════════════════════
-            logger.info(f"[Pipeline v7.4r∞] Phase 7: L14/L15 - {symbol}")
+            logger.info(f"[Pipeline v8.0] Phase 7: Sovereignty Enforcement — {symbol}")
 
-            sovereignty = self._compute_sovereignty(synthesis, l12_verdict, reflective)
+            enforcement = self._l15_engine.enforce_sovereignty(
+                l12_verdict=l12_verdict,
+                reflective_pass1=reflective_pass1,
+                reflective_pass2=reflective_pass2,
+                meta=l15_meta,
+                sovereignty=sovereignty,
+            )
+
+            # ═══════════════════════════════════════════════════════
+            # PHASE 8 — L14 JSON EXPORT + FINAL ASSEMBLY
+            # ═══════════════════════════════════════════════════════
+            logger.info(f"[Pipeline v8.0] Phase 8: L14/Result Assembly — {symbol}")
+
             latency_ms = (time.time() - start_time) * 1000
+
+            # Use best available reflective pass for L14
+            best_reflective = reflective_pass2 or reflective_pass1
 
             l14_json = self._build_l14_json(
                 symbol=symbol,
                 now=now,
                 synthesis=synthesis,
                 l12_verdict=l12_verdict,
-                reflective=reflective,
+                reflective=best_reflective,
                 gates=gates,
                 l1=l1, l2=l2, l3=l3, l5=l5, l6=l6,
                 l8=l8, l9=l9, l10=l10, l11=l11,
                 sovereignty=sovereignty,
+                enforcement=enforcement,
                 latency_ms=latency_ms,
             )
 
-            l15_meta = self._build_l15_meta(
+            result = PipelineResult(
+                schema=self.VERSION,
+                pair=symbol,
+                timestamp=now.isoformat(),
                 synthesis=synthesis,
                 l12_verdict=l12_verdict,
-                reflective=reflective,
+                reflective_pass1=reflective_pass1,
+                reflective_pass2=reflective_pass2,
+                l15_meta=l15_meta,
+                l14_json=l14_json,
                 sovereignty=sovereignty,
-                gates=gates,
+                enforcement=enforcement,
+                latency_ms=latency_ms,
+                errors=errors,
             )
 
-            return {
-                "schema": self.VERSION,
-                "pair": symbol,
-                "timestamp": now.isoformat(),
-                "synthesis": synthesis,
-                "l12_verdict": l12_verdict,
-                "reflective": reflective,
-                "l14_json": l14_json,
-                "l15_meta": l15_meta,
-                "sovereignty": sovereignty,
-                "latency_ms": latency_ms,
-                "errors": errors,
-            }
+            return result.to_dict()
 
         except Exception as exc:
-            logger.error(f"[Pipeline v7.4r∞] Fatal error for {symbol}: {exc}", exc_info=True)
+            logger.error(f"[Pipeline v8.0] Fatal error for {symbol}: {exc}", exc_info=True)
             errors.append(f"FATAL_ERROR: {exc}")
             latency_ms = (time.time() - start_time) * 1000
             return self._early_exit(symbol, errors, latency_ms)
-
-    # ══════════════════════════════════════════════════════════════
-    #  BUILD SYNTHESIS - L12-contract payload from L1-L11
-    # ══════════════════════════════════════════════════════════════
-
-    def _build_synthesis(  # noqa: PLR0913
-        self,
-        symbol: str,
-        l1: dict[str, Any],
-        l2: dict[str, Any],
-        l3: dict[str, Any],
-        l4: dict[str, Any],
-        l5: dict[str, Any],
-        l6: dict[str, Any],
-        l7: dict[str, Any],
-        l8: dict[str, Any],
-        l9: dict[str, Any],
-        l10: dict[str, Any],
-        l11: dict[str, Any],
-        macro: dict[str, Any],
-        macro_vix_state: dict[str, Any],
-    ) -> dict[str, Any]:
-        """
-        Build L12-contract-compliant synthesis from layer outputs.
-
-        Matches the exact contract expected by generate_l12_verdict().
-        """
-        # ── Wolf 30-Point from L4 ──
-        if "wolf_30_point" in l4 and isinstance(l4["wolf_30_point"], dict):
-            wolf_30_point = l4["wolf_30_point"].get("total", 0)
-            f_score = l4["wolf_30_point"].get("f_score", 0)
-            t_score = l4["wolf_30_point"].get("t_score", 0)
-            fta_score_raw = l4["wolf_30_point"].get("fta_score", 0.0)
-            exec_score = l4["wolf_30_point"].get("exec_score", 0)
-        else:
-            technical_score = l4.get("technical_score", 0)
-            win_prob = l7.get("win_probability", 0)
-            wolf_30_point = int((technical_score / 100) * 15 + (win_prob / 100) * 15)
-            wolf_30_point = max(0, min(30, wolf_30_point))
-            f_score = 0
-            t_score = 0
-            fta_score_raw = 0.0
-            exec_score = 0
-
-        # ── FTA Score (enriched from L10 or fallback) ──
-        fta_score = l10.get("fta_score", fta_score_raw)
-        fta_multiplier = l10.get("fta_multiplier", 1.0)
-        if exec_score == 0:
-            exec_score = 6 if l10.get("position_ok", False) else 0
-
-        # ── Direction from L3 ──
-        trend = l3.get("trend", "NEUTRAL")
-        direction = {"BULLISH": "BUY", "BEARISH": "SELL"}.get(trend, "HOLD")
-
-        # ── Execution details from L11 ──
-        entry_price = l11.get("entry_price", l11.get("entry", 0.0))
-        stop_loss = l11.get("stop_loss", l11.get("sl", 0.0))
-        take_profit_1 = l11.get("take_profit_1", l11.get("tp1", l11.get("tp", 0.0)))
-        rr_ratio = l11.get("rr", 0.0)
-        battle_strategy = l11.get("battle_strategy", "SHADOW_STRIKE")
-        entry_zone = l11.get("entry_zone", "")
-        if not entry_zone and entry_price > 0:
-            if direction == "BUY":
-                entry_zone = f"{entry_price - 0.0010:.5f}-{entry_price:.5f}"
-            else:
-                entry_zone = f"{entry_price:.5f}-{entry_price + 0.0010:.5f}"
-
-        # ── Risk (from L10/dashboard - placeholders) ──
-        lot_size = l10.get("final_lot_size", 0.01)
-        risk_percent = l10.get("adjusted_risk_pct", 1.0)
-        risk_amount = l10.get("adjusted_risk_amount", 0.0)
-
-        # ── Metrics ──
-        tii_sym = l8.get("tii_sym", 0.0)
-        integrity = l8.get("integrity", 0.0)
-        conf12 = l2.get("conf12", (tii_sym + integrity) / 2.0)
-        current_drawdown = l5.get("current_drawdown", 0.0)
-        prop_compliant = l6.get("propfirm_compliant", True)
-        psychology_score = l5.get("psychology_score", 0)
-        eaf_score = l5.get("eaf_score", 0.0)
-
-        vix_regime_state = macro_vix_state.get("regime_state", 1)
-
-        return {
-            "pair": symbol,
-            "scores": {
-                "wolf_30_point": wolf_30_point,
-                "f_score": f_score,
-                "t_score": t_score,
-                "fta_score": fta_score,
-                "fta_multiplier": fta_multiplier,
-                "exec_score": exec_score,
-                "psychology_score": psychology_score,
-                "technical_score": l4.get("technical_score", 0),
-            },
-            "layers": {
-                "L1_context_coherence": l1.get("regime_confidence", 0.0),
-                "L2_reflex_coherence": l2.get("reflex_coherence", 0.0),
-                "L3_trq3d_energy": l3.get("trq3d_energy", 0.0),
-                "L7_monte_carlo_win": l7.get("win_probability", 0.0) / 100.0
-                if l7.get("win_probability", 0.0) > 1.0
-                else l7.get("win_probability", 0.0),
-                "L8_tii_sym": tii_sym,
-                "L8_integrity_index": integrity,
-                "L9_dvg_confidence": l9.get("dvg_confidence", 0.0),
-                "L9_liquidity_score": l9.get("liquidity_score", 0.0),
-                "conf12": conf12,
-            },
-            "execution": {
-                "direction": direction,
-                "entry_price": entry_price,
-                "entry_zone": entry_zone,
-                "stop_loss": stop_loss,
-                "take_profit_1": take_profit_1,
-                "execution_mode": "TP1_ONLY",
-                "battle_strategy": battle_strategy,
-                "rr_ratio": rr_ratio,
-                "lot_size": lot_size,
-                "risk_percent": risk_percent,
-                "risk_amount": risk_amount,
-                "slippage_estimate": 0.0,
-                "optimal_timing": "",
-            },
-            "risk": {
-                "current_drawdown": current_drawdown,
-                "drawdown_level": l6.get("drawdown_level", "LEVEL_0"),
-                "risk_multiplier": l6.get("risk_multiplier", 1.0),
-                "risk_status": l6.get("risk_status", "ACCEPTABLE"),
-                "lrce": l6.get("lrce", 0.0),
-            },
-            "propfirm": {
-                "compliant": prop_compliant,
-                "daily_loss_status": "OK",
-                "max_drawdown_status": "OK",
-                "profit_target_progress": 0.0,
-            },
-            "bias": {
-                "fundamental": "NEUTRAL" if not l1.get("valid") else trend,
-                "technical": trend,
-                "macro": macro.get("regime", "UNKNOWN"),
-            },
-            "cognitive": {
-                "regime": l1.get("regime", "TREND"),
-                "dominant_force": l1.get("dominant_force", "NEUTRAL"),
-                "cbv": l1.get("csi", 0.0),
-                "csi": l1.get("regime_confidence", 0.0),
-            },
-            "fusion_frpc": {
-                "conf12": conf12,
-                "frpc_energy": l2.get("frpc_energy", 0.0),
-                "lambda_esi": 0.003,
-                "integrity": integrity,
-            },
-            "trq3d": {
-                "alpha": 0.0,
-                "beta": 0.0,
-                "gamma": 0.0,
-                "drift": l3.get("drift", 0.0),
-                "mean_energy": l3.get("trq3d_energy", 0.0),
-                "intensity": 0.0,
-            },
-            "smc": {
-                "structure": "RANGE",
-                "smart_money_signal": l9.get("smart_money_signal", "NEUTRAL"),
-                "liquidity_zone": "0.00000",
-                "ob_present": l9.get("ob_present", False),
-                "fvg_present": l9.get("fvg_present", False),
-                "sweep_detected": l9.get("sweep_detected", False),
-                "bias": l9.get("smart_money_bias", "NEUTRAL"),
-            },
-            "wolf_discipline": {
-                "score": wolf_30_point / 30.0 if wolf_30_point else 0.0,
-                "polarity_deviation": l5.get("emotion_delta", 0.0),
-                "lambda_balance": "ACTIVE",
-                "bias_symmetry": "NEUTRAL",
-                "eaf_score": eaf_score,
-                "emotional_state": "CALM",
-            },
-            "macro": {
-                "regime": macro.get("regime", "UNKNOWN"),
-                "phase": macro.get("phase", "NEUTRAL"),
-                "volatility_ratio": macro.get("macro_vol_ratio", 1.0),
-                "mn_aligned": macro.get("alignment", False),
-                "liquidity": macro.get("liquidity", {}),
-                "bias_override": macro.get("bias_override", {}),
-            },
-            "macro_vix": {
-                "regime_state": vix_regime_state,
-                "risk_multiplier": macro_vix_state.get("risk_multiplier", 1.0),
-            },
-            "system": {
-                "latency_ms": 0,
-            },
-        }
 
     # ══════════════════════════════════════════════════════════════
     #  9-GATE CONSTITUTIONAL CHECK
@@ -601,52 +700,7 @@ class WolfConstitutionalPipeline:
         }
 
     # ══════════════════════════════════════════════════════════════
-    #  L13 - REFLECTIVE EXECUTION STRATEGY
-    # ══════════════════════════════════════════════════════════════
-
-    def _run_reflective_pass(
-        self,
-        synthesis: dict[str, Any],
-        l12_verdict: dict[str, Any],
-    ) -> dict[str, Any]:
-        """
-        L13: Reflective Execution Strategy.
-
-        TRQ-3D energy field (αβγ), LFS, FRPC synchronization.
-        Only runs if L12 verdict is EXECUTE.
-
-        Sources:
-            core_quantum_unified.py    → QuantumExecutionOptimizer
-            core_reflective_unified.py → ReflectiveTradePipelineController
-        """
-        lrce_score = self._compute_lrce(synthesis)
-        frpc_score = self._compute_frpc(synthesis, l12_verdict)
-
-        # αβγ from TRQ-3D (placeholder - will use core modules when populated)
-        alpha = lrce_score
-        beta = frpc_score
-        gamma = 1.0
-
-        abg_score = alpha * 0.40 + beta * 0.30 + gamma * 0.30
-
-        drift = synthesis.get("trq3d", {}).get("drift", 0.0)
-        lrce_field = synthesis.get("risk", {}).get("lrce", 0.0)
-
-        return {
-            "lrce_score": lrce_score,
-            "frpc_score": frpc_score,
-            "alpha": alpha,
-            "beta": beta,
-            "gamma": gamma,
-            "abg_score": abg_score,
-            "drift": drift,
-            "lrce_field": lrce_field,
-            "field_state": "EXPANSION" if abg_score >= 0.80 else "COMPRESSION",
-            "execution_window": "OPTIMAL" if abg_score >= 0.85 else "GOOD" if abg_score >= 0.70 else "POOR",
-        }
-
-    # ══════════════════════════════════════════════════════════════
-    #  L14 - JSON OUTPUT & DATA EXPORT
+    #  L14 — JSON OUTPUT & DATA EXPORT
     # ══════════════════════════════════════════════════════════════
 
     def _build_l14_json(  # noqa: PLR0913
@@ -667,9 +721,10 @@ class WolfConstitutionalPipeline:
         l10: dict[str, Any],
         l11: dict[str, Any],
         sovereignty: dict[str, Any],
+        enforcement: dict[str, Any] | None,
         latency_ms: float,
     ) -> dict[str, Any]:
-        """Build full L14 JSON export matching v7.4r∞ schema."""
+        """Build full L14 JSON export matching v8.0 schema."""
         verdict_str = l12_verdict.get("verdict", "HOLD")
         confidence = l12_verdict.get("confidence", "LOW")
         wolf_status = l12_verdict.get("wolf_status", "NO_HUNT")
@@ -710,153 +765,41 @@ class WolfConstitutionalPipeline:
                 "meta_state": l10.get("meta_state", "STABLE"),
             },
             "wolf_discipline": synthesis.get("wolf_discipline", {}),
+            "enforcement": {
+                "execution_rights": enforcement.get("execution_rights", "REVOKED") if enforcement else "REVOKED",
+                "drift_ratio": enforcement.get("drift_ratio", 0.0) if enforcement else 0.0,
+                "verdict_downgraded": enforcement.get("verdict_downgraded", False) if enforcement else False,
+            },
             "final_gate": "ALL_PASS" if gates.get("total_passed", 0) == 9 else f"GATE_{9 - gates.get('total_passed', 0)}_FAIL",
         }
 
     # ══════════════════════════════════════════════════════════════
-    #  L15 - META SYNTHESIS (FULL UNITY STATE)
+    #  VAULT SYNC COMPUTATION (3-component)
     # ══════════════════════════════════════════════════════════════
 
-    def _build_l15_meta(
-        self,
-        synthesis: dict[str, Any],
-        l12_verdict: dict[str, Any],
-        reflective: dict[str, Any] | None,
-        sovereignty: dict[str, Any],
-        gates: dict[str, Any],
-    ) -> dict[str, Any]:
-        """
-        L15: Meta Synthesis - Full Unity State Analysis.
-
-        Combines all 14 layers into a single reflective consciousness state.
-        """
-        integrity = synthesis.get("layers", {}).get("L8_integrity_index", 0.0)
-        synthesis.get("layers", {}).get("L8_tii_sym", 0.0)
-        rr = synthesis.get("execution", {}).get("rr_ratio", 0.0)
-        wolf_score = synthesis.get("scores", {}).get("wolf_30_point", 0)
-
-        # Zona health aggregation
-        zona_1_pass = all([
-            synthesis.get("layers", {}).get("L1_context_coherence", 0) >= 0.90,
-            synthesis.get("layers", {}).get("L2_reflex_coherence", 0) >= 0.88,
-            synthesis.get("layers", {}).get("L3_trq3d_energy", 0) >= 0.65,
-        ])
-        zona_2_pass = wolf_score >= 24
-        zona_3_pass = all([
-            gates.get("gate_1_tii") == "PASS",
-            gates.get("gate_2_montecarlo") == "PASS",
-        ])
-        zona_4_pass = l12_verdict.get("verdict", "").startswith("EXECUTE")
-        zona_5_pass = reflective is not None and reflective.get("abg_score", 0) >= 0.70
-
-        all_harmonized = all([zona_1_pass, zona_2_pass, zona_3_pass, zona_4_pass, zona_5_pass])
-
-        return {
-            "meta_integrity": sovereignty.get("meta_integrity", 0.0),
-            "reflective_coherence": reflective.get("frpc_score", 0.0) if reflective else 0.0,
-            "vault_sync": sovereignty.get("vault_sync", 0.0),
-            "evolution_drift": reflective.get("drift", 0.0) if reflective else 0.0,
-            "conscious_phase": "EXPANSION" if all_harmonized else "STABILIZATION",
-            "wolf_discipline_score": wolf_score / 30.0 if wolf_score else 0.0,
-            "zona_health": {
-                "perception_context": {"layers": "L1-L3", "status": "PASS" if zona_1_pass else "FAIL"},
-                "confluence_scoring": {"layers": "L4-L6", "status": "PASS" if zona_2_pass else "FAIL"},
-                "probability_validation": {"layers": "L7-L9", "status": "PASS" if zona_3_pass else "FAIL"},
-                "execution_decision": {"layers": "L10-L12", "status": "PASS" if zona_4_pass else "FAIL"},
-                "meta_reflective": {"layers": "L13-L15", "status": "PASS" if zona_5_pass else "FAIL"},
-            },
-            "full_reflective_state": {
-                "all_harmonized": all_harmonized,
-                "integrity_check": integrity >= 0.97,
-                "rr_check": rr >= 2.0,
-                "constitutional_clear": l12_verdict.get("verdict", "").startswith("EXECUTE"),
-                "achieved": all_harmonized and integrity >= 0.97 and rr >= 2.0,
-            },
-        }
-
-    # ══════════════════════════════════════════════════════════════
-    #  HELPER - direction / bias alignment
-    # ══════════════════════════════════════════════════════════════
-
-    def _is_direction_aligned_with_bias(self, direction: str, technical_bias: str) -> bool:
-        """Check if direction is aligned with technical bias."""
-        if direction == "BUY" and technical_bias == "BULLISH":
-            return True
-        if direction == "SELL" and technical_bias == "BEARISH":
-            return True
-        return False
-
-    def _compute_lrce(self, synthesis: dict[str, Any]) -> float:
-        """Compute Layer Recursive Coherence (directional alignment)."""
-        direction = synthesis.get("execution", {}).get("direction")
-        technical_bias = synthesis.get("bias", {}).get("technical", "NEUTRAL")
-
-        if not direction or direction == "HOLD":
-            return 0.5
-        if self._is_direction_aligned_with_bias(direction, technical_bias):
-            return 1.0
-        if technical_bias == "NEUTRAL":
-            return 0.7
-        return 0.3
-
-    def _compute_frpc(
-        self,
-        synthesis: dict[str, Any],
-        l12_verdict: dict[str, Any],
-    ) -> float:
-        """Compute Fusion Recursive Pattern Check (verdict/bias consistency)."""
-        verdict = l12_verdict.get("verdict", "HOLD")
-        technical_bias = synthesis.get("bias", {}).get("technical", "NEUTRAL")
-        direction = synthesis.get("execution", {}).get("direction")
-
-        if verdict.startswith("EXECUTE"):
-            if self._is_direction_aligned_with_bias(direction, technical_bias):
-                return 1.0
-            if technical_bias == "NEUTRAL":
-                return 0.7
-            return 0.3
-        if verdict == "HOLD":
-            return 0.8 if technical_bias == "NEUTRAL" else 0.5
-        return 0.5
-
-    # ══════════════════════════════════════════════════════════════
-    #  L14 - VAULT SYNC + SOVEREIGNTY
-    # ══════════════════════════════════════════════════════════════
-
-    def _compute_sovereignty(
+    def _compute_vault_sync(
         self,
         synthesis: dict[str, Any],
         l12_verdict: dict[str, Any],
         reflective: dict[str, Any] | None,
     ) -> dict[str, Any]:
         """
-        Compute vault sync (3-component) + sovereignty enforcement.
+        Compute vault sync (3-component) + base sovereignty level.
 
         Vault sync formula: feed × 0.50 + redis × 0.30 + integrity × 0.20
+
+        Note: Final sovereignty enforcement (including drift checks and
+        verdict downgrades) is handled by L15MetaSovereigntyEngine.enforce_sovereignty().
         """
         weights = get_vault_sync_weights()
         thresholds = get_vault_sync_thresholds()
 
         # TODO: Implement real vault health checks before production deployment.
-        # For now, use placeholder values. When vault_health module is ready,
-        # uncomment the code below and remove placeholders:
-        #
         # from core.vault_health import VaultHealthChecker
-        # vault_checker = VaultHealthChecker(
-        #     redis_client=self._redis_client,
-        #     context_bus=self._context_bus,
-        # )
-        # vault_report = vault_checker.check(symbols=self._active_symbols)
-        # if vault_report.should_block_analysis:
-        #     self._journal.log_j2_decision(
-        #         symbol="ALL",
-        #         verdict="NO_TRADE",
-        #         reason=f"Vault health block: {vault_report.details}",
-        #     )
-        #     return {"verdict": "NO_TRADE", "reason": vault_report.details}
+        # vault_checker = VaultHealthChecker(redis_client=..., context_bus=...)
+        # vault_report = vault_checker.check(symbols=...)
         # feed_freshness = vault_report.feed_freshness
         # redis_health = vault_report.redis_health
-
         feed_freshness = 1.0
         redis_health = 1.0
         meta_integrity = 1.0
@@ -892,7 +835,7 @@ class WolfConstitutionalPipeline:
         }
 
     # ══════════════════════════════════════════════════════════════
-    #  EARLY EXIT - pipeline failure fallback
+    #  EARLY EXIT — pipeline failure fallback
     # ══════════════════════════════════════════════════════════════
 
     def _early_exit(
@@ -972,7 +915,7 @@ class WolfConstitutionalPipeline:
                     "volatility_ratio": 1.0, "mn_aligned": False,
                     "liquidity": {}, "bias_override": {},
                 },
-                "system": {"latency_ms": latency_ms},
+                "system": {"latency_ms": latency_ms, "safe_mode": False},
             },
             "l12_verdict": {
                 "verdict": "HOLD",
@@ -983,12 +926,25 @@ class WolfConstitutionalPipeline:
                 "proceed_to_L13": False,
             },
             "reflective": None,
+            "reflective_pass1": None,
+            "reflective_pass2": None,
             "l14_json": None,
             "l15_meta": None,
             "sovereignty": {
                 "execution_rights": "REVOKED",
                 "lot_multiplier": 0.0,
                 "vault_sync": 0.0,
+            },
+            "enforcement": {
+                "execution_rights": "REVOKED",
+                "vault_sync": 0.0,
+                "drift_ratio": 0.0,
+                "verdict_downgraded": False,
+                "original_verdict": "HOLD",
+                "lot_multiplier": 0.0,
+                "meta_integrity": 0.0,
+                "pass1_abg": 0.0,
+                "pass2_abg": 0.0,
             },
             "latency_ms": latency_ms,
             "errors": errors,
