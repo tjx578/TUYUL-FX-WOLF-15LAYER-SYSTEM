@@ -13,8 +13,14 @@ Formula: lot = risk_amount / (sl_distance × pip_value)
 """
 
 
-from loguru import logger
+from loguru import logger  # pyright: ignore[reportMissingImports]
 
+from config.pip_values import (
+    DEFAULT_PIP_VALUE,
+    PipLookupError,
+    get_pip_multiplier,
+    get_pip_value,
+)
 from dashboard.backend.schemas import (
     AccountState,
     Layer12Signal,
@@ -23,19 +29,7 @@ from dashboard.backend.schemas import (
     RiskSeverity,
 )
 from propfirm_manager.profile_manager import PropFirmManager
-from risk.risk_multiplier import RiskMultiplier
-
-# Pip value lookup (for 1 standard lot)
-PIP_VALUES: dict[str, float] = {
-    "XAUUSD": 0.10,  # Gold
-    "EURUSD": 10.0,  # Euro
-    "GBPUSD": 10.0,  # Pound
-    "USDJPY": 6.50,  # Yen
-    "USDCHF": 10.0,  # Swiss Franc
-    "AUDUSD": 10.0,  # Aussie Dollar
-    "NZDUSD": 10.0,  # Kiwi Dollar
-    "USDCAD": 10.0,  # Canadian Dollar
-}
+from risk.risk_multiplier import RiskMultiplier  # pyright: ignore[reportAttributeAccessIssue]
 
 
 class RiskEngine:
@@ -74,8 +68,15 @@ class RiskEngine:
         Returns:
             RiskCalculationResult with lot recommendation
         """
-        # Get pip value for pair
-        pip_value = PIP_VALUES.get(signal.pair, 10.0)
+        # Get pip value for pair from single source of truth
+        try:
+            pip_value = get_pip_value(signal.pair)
+        except PipLookupError:
+            logger.warning(
+                f"Pair {signal.pair} not in pip value table, "
+                f"using default {DEFAULT_PIP_VALUE}"
+            )
+            pip_value = DEFAULT_PIP_VALUE
 
         # Calculate SL distance in pips
         sl_distance = self._calculate_sl_distance(
@@ -156,9 +157,6 @@ class RiskEngine:
             "total_dd_after": total_dd_after,
         }
 
-        guard_result = manager.evaluate_trade(
-            account_state_dict, trade_risk_dict
-        )
         guard_result = manager.evaluate_trade(account_state_dict, trade_risk_dict)
 
         # Determine severity
@@ -187,6 +185,9 @@ class RiskEngine:
         """
         Calculate stop loss distance in pips.
 
+        Uses config/pip_values.py multipliers (single source of truth)
+        to correctly handle FX, JPY pairs, metals, and indices.
+
         Args:
             entry: Entry price
             stop_loss: Stop loss price
@@ -203,9 +204,14 @@ class RiskEngine:
             # For SELL: SL is above entry
             distance = abs(stop_loss - entry)
 
-        # Convert to pips based on pair type
-        # JPY pairs: 1 pip = 0.01 (2 decimal places)
-        # Other pairs: 1 pip = 0.0001 (4 decimal places)
-        if "JPY" in pair.upper():
-            return distance * 100  # JPY pairs
-        return distance * 10000  # Standard pairs
+        # Convert to pips using pip multiplier from config/pip_values.py
+        try:
+            multiplier = get_pip_multiplier(pair)
+        except PipLookupError:
+            logger.warning(
+                f"Pair {pair} not in pip multiplier table, "
+                f"falling back to standard FX multiplier (10000)"
+            )
+            multiplier = 10_000.0
+
+        return distance * multiplier
