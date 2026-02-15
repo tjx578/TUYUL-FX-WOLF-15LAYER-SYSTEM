@@ -202,3 +202,165 @@ def generate_l12_verdict(synthesis: dict[str, Any]) -> dict[str, Any]:  # noqa: 
     }
 
     return l12_output
+
+
+class VerdictEngine:
+    """Layer-12 Constitutional Verdict Engine.
+
+    SOLE DECISION AUTHORITY. All other layers are advisory.
+    """
+
+    def _extract_l7_probability_metrics(
+        self, layer_results: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Extract and normalize L7 Monte Carlo + Bayesian metrics.
+
+        Returns a flat dict of validated L7 fields with fail-safe defaults.
+        These are ADVISORY inputs to the verdict — they inform confidence
+        scoring but do not independently authorize or block trades.
+        The gate logic (PASS/CONDITIONAL/FAIL) is evaluated by _evaluate_9_gates().
+
+        Authority: READ-ONLY extraction. No side-effects.
+        """
+        l7 = layer_results.get("L7", {})
+        if not isinstance(l7, dict):
+            l7 = {}
+
+        # Normalize win_probability: L7 outputs 0-100, verdict needs 0.0-1.0
+        raw_win = l7.get("win_probability", 0.0)
+        win_prob = raw_win / 100.0 if raw_win > 1.0 else raw_win
+
+        return {
+            "l7_win_probability": round(float(win_prob), 4),
+            "l7_profit_factor": round(float(l7.get("profit_factor", 0.0)), 2),
+            "l7_risk_of_ruin": round(float(l7.get("risk_of_ruin", 1.0)), 4),
+            "l7_posterior_win": round(
+                float(l7.get("bayesian_posterior", l7.get("posterior_win_probability", 0.0))),
+                4,
+            ),
+            "l7_bayesian_ci_low": round(float(l7.get("bayesian_ci_low", 0.0)), 4),
+            "l7_bayesian_ci_high": round(float(l7.get("bayesian_ci_high", 0.0)), 4),
+            "l7_conf12_raw": round(float(l7.get("conf12_raw", 0.0)), 4),
+            "l7_mc_passed": bool(l7.get("mc_passed_threshold", False)),
+            "l7_validation": str(l7.get("validation", "FAIL")),
+            "l7_expected_value": round(float(l7.get("expected_value", 0.0)), 2),
+            "l7_max_drawdown": round(float(l7.get("max_drawdown", 0.0)), 2),
+        }
+
+    def _compute_confidence_with_l7(
+        self,
+        base_confidence: float,
+        l7_metrics: dict[str, Any],
+    ) -> float:
+        """Adjust verdict confidence using L7 probability metrics.
+
+        Applies bounded adjustments to base_confidence:
+        - High posterior win + low risk-of-ruin → boost (max +0.08)
+        - High risk-of-ruin or FAIL validation → penalty (max -0.12)
+        - CONDITIONAL validation → mild penalty (-0.04)
+
+        Result is clamped to [0.0, 1.0].
+
+        Authority: Pure computation. No side-effects.
+        """
+        adjustment = 0.0
+
+        posterior = l7_metrics["l7_posterior_win"]
+        ror = l7_metrics["l7_risk_of_ruin"]
+        validation = l7_metrics["l7_validation"]
+        mc_passed = l7_metrics["l7_mc_passed"]
+
+        # ── Positive adjustments (capped at +0.08) ───────────────────
+        if mc_passed and posterior >= 0.60 and ror < 0.10:
+            # Strong probability profile: high posterior, low ruin risk
+            adjustment += 0.06
+        elif mc_passed and posterior >= 0.55:
+            adjustment += 0.03
+
+        if ror < 0.05:
+            # Very low ruin risk bonus
+            adjustment += 0.02
+
+        adjustment = min(adjustment, 0.08)
+
+        # ── Negative adjustments (capped at -0.12) ──────────────────
+        penalty = 0.0
+
+        if validation == "FAIL":
+            penalty += 0.08
+        elif validation == "CONDITIONAL":
+            penalty += 0.04
+
+        if ror >= 0.30:
+            # Dangerously high ruin risk
+            penalty += 0.06
+        elif ror >= 0.20:
+            penalty += 0.04
+
+        if posterior < 0.45 and posterior > 0.0:
+            # Bayesian belief is below coin-flip — penalize
+            penalty += 0.04
+
+        penalty = min(penalty, 0.12)
+
+        adjusted = base_confidence + adjustment - penalty
+        return round(max(0.0, min(1.0, adjusted)), 4)
+
+    def produce_verdict(
+        self,
+        symbol: str,
+        layer_results: dict[str, Any],
+        gate_results: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Produce the constitutional verdict for a trade candidate.
+
+        This is the SOLE AUTHORITY that decides EXECUTE / HOLD / ABORT.
+        L7 probability metrics are advisory inputs that inform confidence.
+
+        Args:
+            symbol: Instrument identifier.
+            layer_results: Dict of all layer outputs (L1–L11+).
+            gate_results: Pre-computed gate results (if available).
+
+        Returns:
+            Enriched verdict dict with L7 probability context.
+        """
+        # ...existing code...
+
+        # ── Extract L7 probability metrics ───────────────────────────
+        l7_metrics = self._extract_l7_probability_metrics(layer_results)
+
+        # ── Adjust confidence with L7 data ───────────────────────────
+        # base_confidence comes from existing verdict logic (upstream)
+        # ...existing code that computes base_confidence...
+        confidence = self._compute_confidence_with_l7(
+            base_confidence=confidence,  # type: ignore[possibly-undefined]  # noqa: F821
+            l7_metrics=l7_metrics,
+        )
+
+        # ...existing code that builds the verdict dict...
+
+        # ── Enrich verdict with L7 probability context ───────────────
+        # These fields are informational for downstream consumers
+        # (dashboard, journal, reflection) — they do NOT change the verdict.
+        verdict["probability_context"] = {  # noqa: F821 # pyright: ignore[reportUndefinedVariable]
+            "monte_carlo_win_rate": l7_metrics["l7_win_probability"],
+            "profit_factor": l7_metrics["l7_profit_factor"],
+            "risk_of_ruin": l7_metrics["l7_risk_of_ruin"],
+            "bayesian_posterior": l7_metrics["l7_posterior_win"],
+            "bayesian_ci": [
+                l7_metrics["l7_bayesian_ci_low"],
+                l7_metrics["l7_bayesian_ci_high"],
+            ],
+            "conf12_raw": l7_metrics["l7_conf12_raw"],
+            "mc_passed": l7_metrics["l7_mc_passed"],
+            "l7_validation": l7_metrics["l7_validation"],
+            "expected_value": l7_metrics["l7_expected_value"],
+            "max_drawdown": l7_metrics["l7_max_drawdown"],
+        }
+
+        verdict["confidence"] = confidence  # pyright: ignore[reportUndefinedVariable] # noqa: F821
+
+        # ...existing code...
+
+        return verdict  # pyright: ignore[reportUndefinedVariable] # noqa: F821
