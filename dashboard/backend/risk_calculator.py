@@ -1,24 +1,19 @@
 """
 Dashboard risk calculator — THE authority for lot sizing.
-Receives: AnalysisRiskInput (from L12 verdict) + account state.
-Returns: DashboardRiskOutput with actual lot size.
+Receives: AnalysisRiskInput (from L12 verdict via position_sizing_bridge).
+Provides: DashboardRiskOutput with actual lot size.
 
-This is where hardcoded placeholders must be replaced.
+Constitutional: This module reads account state; analysis never does.
 """
 
 from __future__ import annotations
 
 import logging
 
-from typing import TYPE_CHECKING
-
 from analysis.orchestrators.position_sizing_bridge import (
     AnalysisRiskInput,
     DashboardRiskOutput,
 )
-
-if TYPE_CHECKING:
-    from risk.prop_firm import PropFirmGuard  # pyright: ignore[reportAttributeAccessIssue]
 
 logger = logging.getLogger("tuyul.dashboard.risk")
 
@@ -33,17 +28,24 @@ class DashboardRiskCalculator:
     THIS IS NOT ANALYSIS. No market direction logic allowed here.
     """
 
+    # Standard pip values per 1 standard lot (USD account)
+    # In production, should come from broker/MT5 symbol info
+    DEFAULT_PIP_VALUES: dict[str, float] = {
+        "EURUSD": 10.0, "GBPUSD": 10.0, "AUDUSD": 10.0,
+        "NZDUSD": 10.0, "USDCHF": 10.0, "USDCAD": 7.5,
+        "USDJPY": 6.7, "EURJPY": 6.7, "GBPJPY": 6.7,
+        "EURGBP": 12.5, "XAUUSD": 10.0,
+    }
+
     def __init__(
         self,
-        prop_guard: PropFirmGuard,
-        default_risk_pct: float = 1.0,  # 1% per trade default
+        prop_guard,
+        default_risk_pct: float = 1.0,
         pip_value_lookup: dict[str, float] | None = None,
     ):
         self._guard = prop_guard
         self._default_risk_pct = default_risk_pct
-        # pip value per 1 standard lot, per symbol
-        # e.g. {"EURUSD": 10.0, "GBPUSD": 10.0, "USDJPY": 6.7}
-        self._pip_values = pip_value_lookup or self._default_pip_values()
+        self._pip_values = pip_value_lookup or self.DEFAULT_PIP_VALUES
 
     def calculate(
         self,
@@ -60,7 +62,7 @@ class DashboardRiskCalculator:
         """
         risk_pct = risk_pct_override or self._default_risk_pct
 
-        # Step 1: Calculate risk amount from account
+        # Step 1: Calculate risk amount from real account
         risk_amount_usd = account_balance * (risk_pct / 100.0)
 
         # Step 2: Calculate lot size from risk amount + SL distance
@@ -100,23 +102,27 @@ class DashboardRiskCalculator:
         guard_result = self._guard.check(account_state, trade_risk)
         if not guard_result.get("allowed", False):
             return DashboardRiskOutput.blocked(
-                reason=f"Prop firm guard: {guard_result.get('code', 'UNKNOWN')} — {guard_result.get('details', '')}"
+                reason=(
+                    f"Prop firm guard: {guard_result.get('code', 'UNKNOWN')} "
+                    f"— {guard_result.get('details', '')}"
+                )
             )
 
-        # Step 5: Compute max safe lot (conservative)
-        daily_limit_usd = day_start_balance * 0.05  # 5% daily max (FTMO standard)
-        daily_used = day_start_balance - account_equity  # includes floating
+        # Step 5: Compute max safe lot (conservative daily limit)
+        daily_limit_usd = day_start_balance * 0.05  # 5% FTMO standard
+        daily_used = max(0, day_start_balance - account_equity)
         daily_remaining = max(0, daily_limit_usd - daily_used)
-        max_safe = daily_remaining / (sl_pips * pip_value) if sl_pips * pip_value > 0 else min_lot
+        denominator = sl_pips * pip_value
+        max_safe = daily_remaining / denominator if denominator > 0 else min_lot
         max_safe_lot = max(min_lot, round(int(max_safe / lot_step) * lot_step, 2))
 
         final_lot = min(clamped_lot, max_safe_lot)
 
         logger.info(
-            f"Risk calc: {analysis_input.symbol} | "
-            f"balance={account_balance} | risk={risk_pct}% | "
-            f"SL={sl_pips:.1f}pips | lot={final_lot} | "
-            f"max_safe={max_safe_lot}"
+            "Risk calc: %s | balance=%.2f | risk=%.1f%% | "
+            "SL=%.1f pips | lot=%.2f | max_safe=%.2f",
+            analysis_input.symbol, account_balance, risk_pct,
+            sl_pips, final_lot, max_safe_lot,
         )
 
         return DashboardRiskOutput(
@@ -127,23 +133,3 @@ class DashboardRiskCalculator:
             risk_percent=risk_pct,
             reason="All checks passed",
         )
-
-    @staticmethod
-    def _default_pip_values() -> dict[str, float]:
-        """
-        Default pip values per 1 standard lot (USD account).
-        In production, these should come from broker/MT5 symbol info.
-        """
-        return {
-            "EURUSD": 10.0,
-            "GBPUSD": 10.0,
-            "AUDUSD": 10.0,
-            "NZDUSD": 10.0,
-            "USDCHF": 10.0,
-            "USDCAD": 7.5,
-            "USDJPY": 6.7,
-            "EURJPY": 6.7,
-            "GBPJPY": 6.7,
-            "EURGBP": 12.5,
-            "XAUUSD": 10.0,  # Gold — varies by broker
-        }
