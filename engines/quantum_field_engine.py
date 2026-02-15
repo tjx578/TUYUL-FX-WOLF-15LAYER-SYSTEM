@@ -1,514 +1,327 @@
-"""Quantum field engine with numpy path and pure python fallback."""
+"""Quantum Field Engine — Layer-3 field-state analysis.
 
-from dataclasses import dataclass, field
-"""Quantum field proxy engine."""
-"""
-Quantum Field Engine v2.0 (analysis-only).
+Analyses multi-timeframe candle data to detect market energy fields,
+momentum flux, and volatility regimes. Produces a FieldResult that
+feeds into the Layer-12 constitution verdict pipeline.
 
-NO BUY / SELL / EXECUTE - analysis only.
+This is an ANALYSIS-ONLY module. No execution side-effects.
 """
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
 import logging
-import math
+
+from dataclasses import dataclass, field
+from typing import TYPE_CHECKING, Any
+
+import numpy as np  # pyright: ignore[reportMissingImports]
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
 
 logger = logging.getLogger(__name__)
 
-try:
-    import numpy as np
 
-    HAS_NUMPY = True
-except ImportError:
-    HAS_NUMPY = False
-    logger.warning("numpy not available - using pure-Python fallback")
-
-
-class QuantumFieldEngine:
-    """Compute field metrics from price and optional volume series."""
-
-    def __init__(
-        self,
-        energy_window: int = 20,
-        bias_window: int = 50,
-        drift_window: int = 10,
-    ) -> None:
-        self.energy_window = energy_window
-        self.bias_window = bias_window
-        self.drift_window = drift_window
-
-    def evaluate(self, prices: Any, volumes: Optional[Any] = None) -> Dict[str, Any]:
-        """Evaluate field state from market data."""
-        if prices is None or (hasattr(prices, "__len__") and len(prices) < 5):
-            return {
-                "valid": False,
-                "reason": "insufficient_price_data",
-                "min_required": 5,
-                "received": len(prices) if prices is not None else 0,
-            }
-
-        if HAS_NUMPY:
-            return self._evaluate_numpy(prices, volumes)
-        return self._evaluate_pure(prices)
-
-    def _evaluate_numpy(self, prices: Any, volumes: Optional[Any]) -> Dict[str, Any]:
-        p = np.array(prices, dtype=np.float64)
-        n = len(p)
-
-        e_win = min(self.energy_window, n)
-        field_energy = float(np.std(p[-e_win:]))
-
-        if n >= e_win + self.drift_window:
-            energies = [
-                float(np.std(p[i : i + e_win]))
-                for i in range(n - e_win - self.drift_window, n - e_win + 1)
-            ]
-            energy_drift = (energies[-1] - energies[0]) / max(len(energies), 1)
-            drift_vol = float(np.std(energies)) if len(energies) > 1 else 0.001
-        else:
-            energy_drift = 0.0
-            drift_vol = 0.001
-
-        b_win = min(self.bias_window, n)
-        price_mean = float(np.mean(p[-b_win:]))
-        field_bias = float((p[-1] - price_mean) / price_mean) if price_mean != 0 else 0.0
-
-        if volumes is not None and len(volumes) >= n:
-            v = np.array(volumes[-n:], dtype=np.float64)
-            vol_sum = np.sum(v)
-            if vol_sum > 0:
-                vwap = float(np.sum(p * v) / vol_sum)
-                vwap_strength = float((p[-1] - vwap) / vwap) if vwap != 0 else 0.0
-            else:
-                vwap = price_mean
-                vwap_strength = 0.0
-        else:
-            weights = np.linspace(0.5, 1.5, n)
-            vwap = float(np.average(p, weights=weights))
-            vwap_strength = float((p[-1] - vwap) / vwap) if vwap != 0 else 0.0
-
-        stability = max(0.0, min(1.0, 1.0 / (1.0 + abs(drift_vol) * 100)))
-
-        return {
-            "valid": True,
-            "field_energy": round(field_energy, 6),
-            "field_bias": round(field_bias, 6),
-            "energy_drift": round(energy_drift, 8),
-            "vwap_strength": round(vwap_strength, 6),
-            "stability_index": round(stability, 4),
-            "price_mean": round(price_mean, 5),
-            "vwap": round(vwap, 5),
-            "data_points": n,
-        }
-
-    def _evaluate_pure(self, prices: Any) -> Dict[str, Any]:
-        p = list(prices)
-        n = len(p)
-
-        e_win = min(self.energy_window, n)
-        recent = p[-e_win:]
-        mean_r = sum(recent) / e_win
-        field_energy = math.sqrt(sum((x - mean_r) ** 2 for x in recent) / e_win)
-
-        b_win = min(self.bias_window, n)
-        price_mean = sum(p[-b_win:]) / b_win
-        field_bias = (p[-1] - price_mean) / price_mean if price_mean != 0 else 0.0
-
-        if n >= 20:
-            e1 = self._std(p[-20:-10])
-            e2 = self._std(p[-10:])
-            energy_drift = e2 - e1
-        else:
-            energy_drift = 0.0
-
-        stability = max(0.0, min(1.0, 1.0 / (1.0 + abs(energy_drift) * 100)))
-
-        return {
-            "valid": True,
-            "field_energy": round(field_energy, 6),
-            "field_bias": round(field_bias, 6),
-            "energy_drift": round(energy_drift, 8),
-            "vwap_strength": round(field_bias * 0.8, 6),
-            "stability_index": round(stability, 4),
-            "price_mean": round(price_mean, 5),
-            "data_points": n,
-        }
-
-    @staticmethod
-    def _std(values: List[float]) -> float:
-        if len(values) < 2:
-            return 0.0
-        mean_val = sum(values) / len(values)
-        return math.sqrt(sum((x - mean_val) ** 2 for x in values) / len(values))
-
-
-__all__ = ["QuantumFieldEngine"]
-"""Quantum field engine."""
-
-from __future__ import annotations
-
-from dataclasses import dataclass
-from statistics import fmean, pstdev
-"""Quantum field engine with numpy acceleration and pure-python fallback."""
-
-from __future__ import annotations
-
-from dataclasses import dataclass, field
-from datetime import datetime, timezone
-from typing import Any, Dict, Sequence
-from typing import Any, Dict, List
-
-try:
-    import numpy as np
-except ImportError:  # pragma: no cover
-except Exception:  # pragma: no cover
-"""Quantum field engine with numpy acceleration and pure Python fallback."""
-
-import math
-
-from dataclasses import dataclass
-from typing import Any
-
-try:
-    import numpy as np
-except ImportError:  # pragma: no cover
-except Exception:  # pragma: no cover
-    np = None
-
+# ---------------------------------------------------------------------------
+# Result dataclass
+# ---------------------------------------------------------------------------
 
 @dataclass
 class FieldResult:
-class FieldSnapshot:
-    valid: bool
-class FieldResult:
-    valid: bool
-class FieldReport:
-    field_energy: float
-    field_bias: float
-    energy_drift: float
-    vwap_strength: float
-    stability_index: float
+    """Output of the Quantum Field Engine."""
 
+    # Core scores (0.0 – 1.0)
+    energy_score: float = 0.0
+    momentum_flux: float = 0.0
+    volatility_regime: str = "NORMAL"  # LOW | NORMAL | HIGH | EXTREME
+    field_polarity: str = "NEUTRAL"    # BULLISH | BEARISH | NEUTRAL
+
+    # Component details
+    atr_normalized: float = 0.0
+    volume_energy: float = 0.0
+    price_velocity: float = 0.0
+    price_acceleration: float = 0.0
+    field_gradient: float = 0.0
+
+    # Multi-timeframe alignment
+    mtf_alignment: float = 0.0
+    timeframe_scores: dict[str, float] = field(default_factory=dict)
+
+    # Metadata
+    confidence: float = 0.0
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+    @property
+    def is_valid(self) -> bool:
+        return self.confidence > 0.0
+
+
+# ---------------------------------------------------------------------------
+# Helper pure functions
+# ---------------------------------------------------------------------------
+
+def _safe_array(data: Sequence[float], min_len: int = 2) -> np.ndarray | None:
+    """Convert to numpy array; return None if too short."""
+    arr = np.asarray(data, dtype=np.float64)
+    arr = arr[np.isfinite(arr)]
+    return arr if len(arr) >= min_len else None
+
+
+def _normalize(value: float, lo: float, hi: float) -> float:
+    """Clamp-normalize *value* into [0, 1]."""
+    if hi <= lo:
+        return 0.0
+    return max(0.0, min(1.0, (value - lo) / (hi - lo)))
+
+
+def _compute_atr(highs: np.ndarray, lows: np.ndarray, closes: np.ndarray,
+                 period: int = 14) -> float:
+    """Average True Range (Wilder smoothing)."""
+    if len(highs) < period + 1:
+        return 0.0
+    tr_list: list[float] = []
+    for i in range(1, len(highs)):
+        hl = highs[i] - lows[i]
+        hc = abs(highs[i] - closes[i - 1])
+        lc = abs(lows[i] - closes[i - 1])
+        tr_list.append(max(hl, hc, lc))
+    if len(tr_list) < period:
+        return float(np.mean(tr_list)) if tr_list else 0.0
+    atr = float(np.mean(tr_list[:period]))
+    for tr in tr_list[period:]:
+        atr = (atr * (period - 1) + tr) / period
+    return atr
+
+
+def _compute_velocity(closes: np.ndarray, period: int = 5) -> float:
+    """Price velocity = average of per-bar returns over *period*."""
+    if len(closes) < period + 1:
+        return 0.0
+    returns = np.diff(closes[-period - 1:]) / closes[-period - 1:-1]
+    returns = returns[np.isfinite(returns)]
+    return float(np.mean(returns)) if len(returns) > 0 else 0.0
+
+
+def _compute_acceleration(closes: np.ndarray, period: int = 5) -> float:
+    """Price acceleration = velocity delta."""
+    if len(closes) < period * 2 + 1:
+        return 0.0
+    mid = len(closes) - period
+    v_recent = _compute_velocity(closes[mid:], min(period, len(closes) - mid - 1))
+    v_prior = _compute_velocity(closes[:mid + 1], min(period, mid))
+    return v_recent - v_prior
+
+
+def _volume_energy(volumes: np.ndarray, period: int = 14) -> float:
+    """Relative volume energy: current volume vs moving average."""
+    if len(volumes) < period + 1:
+        return 0.5
+    ma = float(np.mean(volumes[-period - 1:-1]))
+    if ma <= 0:
+        return 0.5
+    ratio = float(volumes[-1]) / ma
+    return _normalize(ratio, 0.3, 3.0)
+
+
+def _classify_volatility(atr_norm: float) -> str:
+    if atr_norm < 0.2:
+        return "LOW"
+    if atr_norm < 0.5:
+        return "NORMAL"
+    if atr_norm < 0.8:
+        return "HIGH"
+    return "EXTREME"
+
+
+def _classify_polarity(velocity: float, threshold: float = 0.0002) -> str:
+    if velocity > threshold:
+        return "BULLISH"
+    if velocity < -threshold:
+        return "BEARISH"
+    return "NEUTRAL"
+
+
+# ---------------------------------------------------------------------------
+# Engine
+# ---------------------------------------------------------------------------
 
 class QuantumFieldEngine:
-    def evaluate(self, prices: list[float], volumes: list[float]) -> FieldSnapshot:
-        if len(prices) < 20:
-            return FieldSnapshot(False, 0.0, 0.0, 0.0, 0.0, 0.0)
+    """Quantum Field Engine — analysis only, no side-effects.
 
-        if np is not None:
-            p = np.array(prices[-40:], dtype=float)
-            v = np.array(volumes[-40:] if volumes else [1.0] * min(40, len(prices)), dtype=float)
-            energy = float(np.std(p[-20:]) / max(np.mean(p[-20:]), 1e-9))
-            bias = float((p[-1] - np.mean(p[-20:])) / max(np.mean(p[-20:]), 1e-9))
-            early = float(np.std(p[:20]) / max(np.mean(p[:20]), 1e-9))
-            drift = energy - early
-            vwap = float(np.sum(p * v) / max(np.sum(v), 1e-9))
-            vwap_strength = float((p[-1] - vwap) / max(vwap, 1e-9))
-            stability = float(1.0 / (1.0 + np.std(np.diff(p[-10:]))))
-        else:
-            p = prices[-40:]
-            v = volumes[-40:] if volumes else [1.0] * len(p)
-            energy = pstdev(p[-20:]) / max(fmean(p[-20:]), 1e-9)
-            bias = (p[-1] - fmean(p[-20:])) / max(fmean(p[-20:]), 1e-9)
-            early = pstdev(p[:20]) / max(fmean(p[:20]), 1e-9)
-            drift = energy - early
-            vwap = sum(px * vol for px, vol in zip(p, v, strict=False)) / max(sum(v), 1e-9)
-            vwap_strength = (p[-1] - vwap) / max(vwap, 1e-9)
-            diffs = [p[idx] - p[idx - 1] for idx in range(1, len(p[-10:]))]
-            stability = 1.0 / (1.0 + (pstdev(diffs) if len(diffs) > 1 else 0.0))
+    Parameters
+    ----------
+    atr_period : int
+        ATR lookback.
+    velocity_period : int
+        Price velocity lookback.
+    energy_weights : dict
+        Weights for sub-components when computing composite energy.
+    """
 
-        return FieldSnapshot(
-            True,
-            round(energy, 6),
-            round(max(-1.0, min(1.0, bias)), 6),
-            round(drift, 6),
-            round(vwap_strength, 6),
-            round(max(0.0, min(1.0, stability)), 6),
-        )
-
-    @staticmethod
-    def export(snapshot: FieldSnapshot) -> dict[str, Any]:
-        return {
-            "valid": snapshot.valid,
-            "field_energy": snapshot.field_energy,
-            "field_bias": snapshot.field_bias,
-            "energy_drift": snapshot.energy_drift,
-            "vwap_strength": snapshot.vwap_strength,
-            "stability_index": snapshot.stability_index,
+    def __init__(
+        self,
+        atr_period: int = 14,
+        velocity_period: int = 5,
+        energy_weights: dict[str, float] | None = None,
+        **_extra: Any,
+    ) -> None:
+        self.atr_period = atr_period
+        self.velocity_period = velocity_period
+        self.energy_weights: dict[str, float] = energy_weights or {
+            "atr": 0.30,
+            "volume": 0.25,
+            "velocity": 0.25,
+            "acceleration": 0.20,
         }
-    details: dict[str, Any] = field(default_factory=dict)
 
+    # ---- public API -------------------------------------------------------
 
-class QuantumFieldEngine:
-    def evaluate(self, prices: list[float], volumes: list[float]) -> FieldResult:
-        if len(prices) < 3:
-            return FieldResult(0.0, 0.0, 0.0, 0.0, 0.0)
-        window = prices[-20:] if len(prices) > 20 else prices
-        mean = fmean(window)
-        energy = pstdev(window)
-        bias = (prices[-1] - mean) / mean if mean else 0.0
-        short_mean = fmean(prices[-5:])
-        long_mean = fmean(prices[-15:]) if len(prices) >= 15 else mean
-        drift = (short_mean - long_mean) / long_mean if long_mean else 0.0
-        if volumes and len(volumes) == len(prices):
-            num = sum(p * v for p, v in zip(prices[-20:], volumes[-20:], strict=False))
-            den = sum(volumes[-20:])
-            vwap = num / den if den else mean
-        else:
-            vwap = mean
-        vwap_strength = abs((prices[-1] - vwap) / vwap) if vwap else 0.0
-        stability = 1.0 / (1.0 + abs(drift) * 25.0)
-        return FieldResult(
-            round(energy, 6),
-            round(bias, 6),
-            round(drift, 6),
-            round(vwap_strength, 6),
-            round(stability, 4),
-        )
-    details: Dict[str, Any] = field(default_factory=dict)
+    def analyze(
+        self,
+        candles: dict[str, list[dict[str, Any]]],
+        symbol: str = "",
+    ) -> FieldResult:
+        """Run field analysis across multiple timeframes.
 
+        Parameters
+        ----------
+        candles:
+            ``{"M15": [...], "H1": [...], ...}`` where each candle dict has
+            keys ``open, high, low, close, volume, timestamp``.
+        symbol:
+            Optional symbol name (for metadata only).
 
-class QuantumFieldEngine:
-    def evaluate(self, prices: Sequence[float], volumes: Sequence[float]) -> FieldResult:
-        if len(prices) < 25:
-            return FieldResult(False, 0.0, 0.0, 0.0, 0.0, 0.0, {"reason": "insufficient"})
+        Returns
+        -------
+        FieldResult
+        """
+        if not candles:
+            logger.warning("QuantumFieldEngine.analyze: empty candles input")
+            return FieldResult(metadata={"symbol": symbol, "error": "no_candles"})
 
-        if np is not None:
-            p = np.array(prices, dtype=float)
-            v = np.array(volumes if volumes else [1.0] * len(prices), dtype=float)
-            energy = float(np.std(p[-20:]))
-            bias = float((p[-1] - np.mean(p[-20:])) / max(np.mean(p[-20:]), 1e-9))
-            recent = [float(np.std(p[-w:])) for w in (8, 12, 20)]
-        else:
-            p = list(float(x) for x in prices)
-            v = list(float(x) for x in (volumes if volumes else [1.0] * len(prices)))
-            mean20 = sum(p[-20:]) / 20.0
-            energy = (sum((x - mean20) ** 2 for x in p[-20:]) / 20.0) ** 0.5
-            bias = (p[-1] - mean20) / max(mean20, 1e-9)
-            recent = [self._std(p[-w:]) for w in (8, 12, 20)]
+        tf_results: dict[str, dict[str, float]] = {}
+        primary_tf = self._select_primary_tf(candles)
 
-        drift = (recent[0] - recent[2]) / max(recent[2], 1e-9)
-        vwap = sum(pp * vv for pp, vv in zip(prices[-20:], volumes[-20:])) / max(sum(volumes[-20:]), 1e-9)
-        vwap_strength = (prices[-1] - vwap) / max(vwap, 1e-9)
-        stab = 1.0 / (1.0 + abs(drift))
+        for tf_name, tf_candles in candles.items():
+            try:
+                tf_results[tf_name] = self._analyze_single_tf(tf_candles)
+            except Exception as exc:
+                logger.warning("Field engine TF %s error: %s", tf_name, exc)
+                tf_results[tf_name] = {"energy": 0.0, "confidence": 0.0}
+
+        # Primary TF drives the main result
+        primary = tf_results.get(primary_tf, {})
+
+        # MTF alignment
+        mtf_alignment = self._compute_mtf_alignment(tf_results)
+
+        # Build result from primary + MTF
+        atr_norm = primary.get("atr_norm", 0.0)
+        velocity = primary.get("velocity", 0.0)
+        acceleration = primary.get("acceleration", 0.0)
+        vol_energy = primary.get("vol_energy", 0.5)
+        energy = primary.get("energy", 0.0)
+        gradient = primary.get("gradient", 0.0)
+
+        confidence = self._compute_confidence(primary, mtf_alignment, len(candles))
 
         return FieldResult(
-            valid=True,
-    def __init__(self, energy_window: int = 20, drift_window: int = 10) -> None:
-        self.energy_window = energy_window
-        self.drift_window = drift_window
-
-    def evaluate(self, prices: List[float], volumes: List[float]) -> FieldResult:
-        prices = prices or [0.0]
-        volumes = volumes or [1.0] * len(prices)
-
-        if np is not None:
-            price_arr = np.array(prices[-self.energy_window :], dtype=float)
-            vol_arr = np.array(volumes[-len(price_arr) :], dtype=float)
-            mean = float(np.mean(price_arr))
-            energy = float(np.std(price_arr) / (mean if mean else 1.0))
-            bias = float((price_arr[-1] - mean) / (mean if mean else 1.0))
-            drift = self._drift_numpy(price_arr)
-            vwap = float(np.sum(price_arr * vol_arr) / (np.sum(vol_arr) or 1.0))
-            vwap_strength = abs((price_arr[-1] - vwap) / (vwap if vwap else 1.0))
-        else:
-            sample = prices[-self.energy_window :]
-            mean = sum(sample) / len(sample)
-            var = sum((x - mean) ** 2 for x in sample) / len(sample)
-            energy = (var ** 0.5) / (mean if mean else 1.0)
-            bias = (sample[-1] - mean) / (mean if mean else 1.0)
-            drift = self._drift_python(sample)
-            total_v = sum(volumes[-len(sample) :]) or 1.0
-            vwap = sum(p * v for p, v in zip(sample, volumes[-len(sample) :])) / total_v
-            vwap_strength = abs((sample[-1] - vwap) / (vwap if vwap else 1.0))
-
-        stability = 1.0 / (1.0 + abs(drift) * 10.0)
-
-        return FieldResult(
-            field_energy=round(energy, 6),
-            field_bias=round(max(-1.0, min(1.0, bias)), 6),
-            energy_drift=round(drift, 6),
-    def evaluate(self, prices: list[float], volumes: list[float]) -> FieldResult:
-        if len(prices) < self.energy_window + self.drift_window + 2:
-            return FieldResult(0.0, 0.0, 0.0, 0.0, 0.0, {"reason": "insufficient_data"})
-
-        if np is not None:
-            arr_p = np.array(prices, dtype=float)
-            arr_v = (
-                np.array(volumes[-len(prices) :], dtype=float) if volumes else np.ones_like(arr_p)
-            )
-            # Use a local window size to keep all rolling computations consistent and safe
-            window = min(self.energy_window, arr_p.shape[0])
-            energy_series = np.std(np.lib.stride_tricks.sliding_window_view(arr_p, window), axis=1)
-            field_energy = float(energy_series[-1] / max(arr_p[-1], 1e-8))
-            field_bias = float((arr_p[-1] - np.mean(arr_p[-window:])) / arr_p[-1])
-            # Calculate drift by comparing current energy to energy drift_window steps back
-            # Clamp to ensure we don't access beyond the available series
-            if len(energy_series) > self.drift_window:
-                energy_drift = float(energy_series[-1] - energy_series[-(self.drift_window + 1)])
-            else:
-                energy_drift = 0.0
-            vwap = float(np.sum(arr_p[-window:] * arr_v[-window:])) / float(np.sum(arr_v[-window:]))
-        else:
-            win = prices[-self.energy_window :]
-            mean_p = sum(win) / len(win)
-            variance = sum((p - mean_p) ** 2 for p in win) / len(win)
-            field_energy = (variance**0.5) / max(prices[-1], 1e-8)
-            field_bias = (prices[-1] - mean_p) / max(prices[-1], 1e-8)
-            prev = prices[-(self.energy_window + self.drift_window) : -self.drift_window]
-            prev_mean = sum(prev) / len(prev)
-            prev_var = sum((p - prev_mean) ** 2 for p in prev) / len(prev)
-            energy_drift = variance**0.5 - prev_var**0.5
-            if volumes:
-                sub_prices = prices[-self.energy_window :]
-                sub_vol = volumes[-self.energy_window :]
-                vwap = sum(p * v for p, v in zip(sub_prices, sub_vol, strict=False)) / max(
-                    sum(sub_vol), 1e-8
-                )
-            else:
-                vwap = mean_p
-
-        vwap_strength = (prices[-1] - vwap) / max(prices[-1], 1e-8)
-        stability = 1.0 / (1.0 + abs(energy_drift) * 15)
-
-        return FieldResult(
-            field_energy=round(field_energy, 6),
-            field_bias=round(field_bias, 6),
-            energy_drift=round(energy_drift, 6),
-            vwap_strength=round(vwap_strength, 6),
-            stability_index=round(max(0.0, min(1.0, stability)), 6),
-            details={"backend": "numpy" if np is not None else "python"},
+            energy_score=energy,
+            momentum_flux=abs(velocity) * (1.0 + abs(acceleration)),
+            volatility_regime=_classify_volatility(atr_norm),
+            field_polarity=_classify_polarity(velocity),
+            atr_normalized=atr_norm,
+            volume_energy=vol_energy,
+            price_velocity=velocity,
+            price_acceleration=acceleration,
+            field_gradient=gradient,
+            mtf_alignment=mtf_alignment,
+            timeframe_scores={tf: r.get("energy", 0.0) for tf, r in tf_results.items()},
+            confidence=confidence,
+            metadata={"symbol": symbol, "primary_tf": primary_tf},
         )
 
-    def _drift_numpy(self, values: Any) -> float:
-        if len(values) < self.drift_window + 1:
-            return 0.0
-        tail = values[-(self.drift_window + 1) :]
-        diffs = np.diff(tail)
-        return float(np.mean(diffs) / (np.mean(tail) or 1.0))
+    # ---- internals --------------------------------------------------------
 
-    def _drift_python(self, values: List[float]) -> float:
-        if len(values) < self.drift_window + 1:
-            return 0.0
-        tail = values[-(self.drift_window + 1) :]
-        diffs = [b - a for a, b in zip(tail, tail[1:])]
-        return (sum(diffs) / len(diffs)) / ((sum(tail) / len(tail)) or 1.0)
-
-
-__all__ = ["FieldResult", "QuantumFieldEngine"]
     @staticmethod
-    def export(result: FieldResult) -> dict[str, Any]:
+    def _select_primary_tf(candles: dict[str, list[dict[str, Any]]]) -> str:
+        priority = ["M15", "H1", "H4", "D1", "W1", "MN"]
+        for tf in priority:
+            if tf in candles and len(candles[tf]) >= 20:
+                return tf
+        # Fallback: longest available
+        return max(candles, key=lambda k: len(candles[k]))
+
+    def _analyze_single_tf(self, tf_candles: list[dict[str, Any]]) -> dict[str, float]:
+        """Analyse a single timeframe's candle list."""
+        if len(tf_candles) < 5:
+            return {"energy": 0.0, "confidence": 0.0}
+
+        closes_raw = [c.get("close", 0.0) for c in tf_candles]
+        highs_raw = [c.get("high", 0.0) for c in tf_candles]
+        lows_raw = [c.get("low", 0.0) for c in tf_candles]
+        vols_raw = [c.get("volume", 0.0) for c in tf_candles]
+
+        closes = _safe_array(closes_raw)
+        highs = _safe_array(highs_raw)
+        lows = _safe_array(lows_raw)
+        vols = _safe_array(vols_raw)
+
+        if closes is None or highs is None or lows is None:
+            return {"energy": 0.0, "confidence": 0.0}
+
+        atr = _compute_atr(highs, lows, closes, self.atr_period)
+        price_level = float(closes[-1]) if closes[-1] != 0 else 1.0
+        atr_norm = _normalize(atr / abs(price_level), 0.0, 0.03)
+
+        velocity = _compute_velocity(closes, self.velocity_period)
+        acceleration = _compute_acceleration(closes, self.velocity_period)
+        vol_energy = _volume_energy(vols, self.atr_period) if vols is not None else 0.5
+
+        # Composite energy
+        w = self.energy_weights
+        energy = (
+            w.get("atr", 0.25) * atr_norm
+            + w.get("volume", 0.25) * vol_energy
+            + w.get("velocity", 0.25) * _normalize(abs(velocity), 0.0, 0.005)
+            + w.get("acceleration", 0.25) * _normalize(abs(acceleration), 0.0, 0.003)
+        )
+        energy = max(0.0, min(1.0, energy))
+
+        # Field gradient (slope of recent energy proxy)
+        gradient = velocity  # simplified
+
+        confidence = min(1.0, len(closes) / 50.0) * 0.6 + 0.4 * (1.0 if atr > 0 else 0.0)
+
         return {
-            "field_energy": result.field_energy,
-            "field_bias": result.field_bias,
-            "energy_drift": result.energy_drift,
-            "vwap_strength": result.vwap_strength,
-            "stability_index": result.stability_index,
-            "details": result.details,
+            "energy": energy,
+            "atr_norm": atr_norm,
+            "velocity": velocity,
+            "acceleration": acceleration,
+            "vol_energy": vol_energy,
+            "gradient": gradient,
+            "confidence": confidence,
         }
-    details: dict[str, Any]
-
-
-class QuantumFieldEngine:
-    def __init__(self, energy_window: int = 20, drift_window: int = 8) -> None:
-        self.energy_window = energy_window
-        self.drift_window = drift_window
-
-    def evaluate(self, prices: list[float], volumes: list[float] | None = None) -> FieldReport:
-        if len(prices) < self.energy_window + 5:
-            return FieldReport(0.0, 0.0, 0.0, 0.0, 0.0, {"reason": "insufficient_data"})
-
-        if np is not None:
-            arr = np.asarray(prices, dtype=float)
-            energy = float(np.std(arr[-self.energy_window :]))
-            mean_price = float(np.mean(arr[-self.energy_window :]))
-            bias = (arr[-1] - mean_price) / max(mean_price, 1e-9)
-            energies = [
-                float(np.std(arr[i - self.energy_window : i]))
-                for i in range(self.energy_window, len(arr))
-            ]
-        else:
-            window = prices[-self.energy_window :]
-            mean_price = sum(window) / len(window)
-            energy = self._stdev(window)
-            bias = (prices[-1] - mean_price) / max(mean_price, 1e-9)
-            energies = [
-                self._stdev(prices[i - self.energy_window : i])
-                for i in range(self.energy_window, len(prices))
-            ]
-
-        drift = 0.0
-        if len(energies) > self.drift_window:
-            old = sum(energies[-self.drift_window - 1 : -1]) / self.drift_window
-            new = sum(energies[-self.drift_window :]) / self.drift_window
-            drift = (new - old) / max(old, 1e-9)
-
-        if volumes and len(volumes) == len(prices):
-            wsum = sum(
-                v * p for p, v in zip(prices[-self.energy_window :], volumes[-self.energy_window :], strict=False)
-            )
-            vsum = sum(volumes[-self.energy_window :])
-            vwap = wsum / max(vsum, 1e-9)
-        else:
-            vwap = mean_price
-        vwap_strength = (prices[-1] - vwap) / max(vwap, 1e-9)
-
-        drift_vol = (
-            self._stdev(energies[-self.drift_window :])
-            if len(energies) >= self.drift_window
-            else 0.0
-        )
-        stability = 1.0 / (1.0 + abs(drift) + drift_vol)
-
-        return FieldReport(
-            field_energy=round(energy, 6),
-            field_bias=round(bias, 6),
-            energy_drift=round(drift, 6),
-            vwap_strength=round(vwap_strength, 6),
-            stability_index=round(stab, 4),
-            details={
-                "numpy_enabled": np is not None,
-                "timestamp": datetime.now(timezone.utc).isoformat(),
-            },
-        )
 
     @staticmethod
-    def _std(values: Sequence[float]) -> float:
-        mean = sum(values) / max(len(values), 1)
-        return (sum((x - mean) ** 2 for x in values) / max(len(values), 1)) ** 0.5
-            stability_index=round(stability, 4),
-            details={"backend": "numpy" if np is not None else "python", "vwap": round(vwap, 6)},
-        )
+    def _compute_mtf_alignment(tf_results: dict[str, dict[str, float]]) -> float:
+        """Compute multi-timeframe directional alignment [0,1]."""
+        velocities = [r.get("velocity", 0.0) for r in tf_results.values() if r.get("confidence", 0) > 0]
+        if len(velocities) < 2:
+            return 0.5
+        signs = [1 if v > 0 else (-1 if v < 0 else 0) for v in velocities]
+        if not signs:
+            return 0.5
+        agreement = abs(sum(signs)) / len(signs)
+        return agreement
 
-    def _stdev(self, values: list[float]) -> float:
-        if not values:
-            return 0.0
-        mean = sum(values) / len(values)
-        variance = sum((v - mean) ** 2 for v in values) / len(values)
-        return math.sqrt(variance)
-from __future__ import annotations
-
-from dataclasses import dataclass
-from typing import Any, Mapping
-
-
-@dataclass(frozen=True)
-class QuantumField:
-    field_energy: float
-    bias: float
-    stability: float
-
-
-class QuantumFieldEngine:
-    """Compute aggregate field state from directional and noise components."""
-
-    def evaluate(self, state: Mapping[str, Any]) -> QuantumField:
-        direction = float(state.get("directional_pressure", 0.0))
-        coherence = max(0.0, min(1.0, float(state.get("signal_coherence", 0.5))))
-        noise = max(0.0, min(1.0, float(state.get("market_noise", 0.5))))
-
-        energy = max(0.0, min(1.0, (abs(direction) * 0.55) + coherence * 0.45))
-        bias = max(-1.0, min(1.0, direction))
-        stability = max(0.0, min(1.0, coherence * (1.0 - noise)))
-        return QuantumField(field_energy=energy, bias=bias, stability=stability)
+    @staticmethod
+    def _compute_confidence(
+        primary: dict[str, float],
+        mtf_alignment: float,
+        num_timeframes: int,
+    ) -> float:
+        base = primary.get("confidence", 0.0)
+        tf_bonus = min(0.2, num_timeframes * 0.05)
+        mtf_bonus = mtf_alignment * 0.2
+        return max(0.0, min(1.0, base * 0.6 + tf_bonus + mtf_bonus))
