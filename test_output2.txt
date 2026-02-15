@@ -16,3 +16,10 @@ tests/test_dashboard_routes.py::test_take_signal PASSED                  [ 42%]
 tests/test_dashboard_routes.py::test_skip_signal PASSED                  [ 50%]
 tests/test_dashboard_routes.py::test_confirm_order PASSED                [ 57%]
 tests/test_dashboard_routes.py::test_get_active_trades_empty PASSED      [ 64%]
+tests/test_dashboard_routes.py::test_get_active_trades_with_data PASSED  [ 71%]
+tests/test_dashboard_routes.py::test_get_trade PASSED                    [ 78%]
+tests/test_dashboard_routes.py::test_get_trade_not_found PASSED          [ 85%]
+tests/test_dashboard_routes.py::test_get_prices_empty PASSED             [ 92%]
+tests/test_dashboard_routes.py::test_journal_endpoints PASSED            [100%]
+
+======================= 14 passed in 259.26s (0:04:19) ========================
