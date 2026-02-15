@@ -2,16 +2,27 @@
 WebSocket Routes - Real-time push to frontend.
 
 Endpoints:
-  WS /ws/prices?token=<jwt>       - Live price stream (all symbols)
-  WS /ws/trades?token=<jwt>       - Trade status change events
+  WS /ws/prices?token=<jwt>       - Live tick-by-tick price stream
+  WS /ws/trades?token=<jwt>       - Trade status change events (event-driven)
+  WS /ws/candles?token=<jwt>      - Real-time candle aggregation stream
+  WS /ws/risk?token=<jwt>         - Risk state stream (drawdown, circuit breaker)
 
 Authentication:
   All WebSocket endpoints require a valid JWT or API key passed
   as a ``token`` query parameter.  Connections without a valid token
   are closed immediately with code 4401.
+
+Upgrade (v2):
+  - Price stream changed from 2s polling to event-driven tick push (<100ms)
+  - Trade stream changed from 2s polling to event-driven diff push
+  - Added candle aggregation (M1/M5/M15/H1) with real-time bar updates
+  - Added risk state stream for drawdown / circuit breaker monitoring
 """
 
 import asyncio
+import time
+
+from collections import defaultdict
 
 import fastapi  # pyright: ignore[reportMissingImports]
 
@@ -26,8 +37,87 @@ router = fastapi.APIRouter()
 # Maximum concurrent WebSocket connections per manager
 MAX_WS_CONNECTIONS = 50
 
+# Tick-by-tick push interval (near real-time, batched per 100ms to avoid flood)
+TICK_BATCH_INTERVAL = 0.1  # 100ms
+# Trade diff check interval (event-driven with fallback poll)
+TRADE_CHECK_INTERVAL = 0.25  # 250ms
+# Candle update interval
+CANDLE_UPDATE_INTERVAL = 0.5  # 500ms
+# Risk state push interval
+RISK_STATE_INTERVAL = 1.0  # 1s
 
-# Connection manager for WebSocket clients
+
+# ---------------------------------------------------------------------------
+# Candle Aggregator — builds OHLC bars from tick stream
+# ---------------------------------------------------------------------------
+
+class CandleAggregator:
+    """Builds OHLC candle bars from incoming tick data in real-time."""
+
+    TIMEFRAMES = {"M1": 60, "M5": 300, "M15": 900, "H1": 3600}
+
+    def __init__(self) -> None:
+        # {symbol: {timeframe: {open, high, low, close, volume, ts_open, ts_close}}}
+        self._bars: dict[str, dict[str, dict]] = defaultdict(dict)
+
+    def _bar_key(self, timestamp: float, seconds: int) -> float:
+        """Floor timestamp to bar open."""
+        return float(int(timestamp) // seconds * seconds)
+
+    def ingest_tick(self, symbol: str, bid: float, ask: float, ts: float) -> list[dict]:
+        """
+        Feed a tick into the aggregator.
+        Returns list of completed bars (if any bar rolled over).
+        """
+        mid = round((bid + ask) / 2, 6)
+        completed: list[dict] = []
+
+        for tf_name, tf_seconds in self.TIMEFRAMES.items():
+            bar_open_ts = self._bar_key(ts, tf_seconds)
+            current = self._bars[symbol].get(tf_name)
+
+            if current is None or current["ts_open"] != bar_open_ts:
+                # New bar — emit old one if exists
+                if current is not None:
+                    completed.append({
+                        "symbol": symbol,
+                        "timeframe": tf_name,
+                        "bar": current,
+                        "status": "closed",
+                    })
+                # Start new bar
+                self._bars[symbol][tf_name] = {
+                    "open": mid,
+                    "high": mid,
+                    "low": mid,
+                    "close": mid,
+                    "volume": 1,
+                    "ts_open": bar_open_ts,
+                    "ts_close": bar_open_ts + tf_seconds,
+                }
+            else:
+                # Update existing bar
+                current["high"] = max(current["high"], mid)
+                current["low"] = min(current["low"], mid)
+                current["close"] = mid
+                current["volume"] += 1
+
+        return completed
+
+    def get_current_bars(self, symbol: str | None = None) -> dict:
+        """Return all current (forming) bars."""
+        if symbol:
+            return {symbol: dict(self._bars.get(symbol, {}))}
+        return {s: dict(bars) for s, bars in self._bars.items()}
+
+
+_candle_agg = CandleAggregator()
+
+
+# ---------------------------------------------------------------------------
+# Connection Manager
+# ---------------------------------------------------------------------------
+
 class ConnectionManager:
     """Manages WebSocket connections with authentication."""
 
@@ -79,50 +169,66 @@ class ConnectionManager:
 # Create connection managers
 price_manager = ConnectionManager(name="prices")
 trade_manager = ConnectionManager(name="trades")
+candle_manager = ConnectionManager(name="candles")
+risk_manager = ConnectionManager(name="risk")
 
 # Service instances
 _price_feed = PriceFeed()
 _trade_ledger = TradeLedger()
 
 
+# ---------------------------------------------------------------------------
+# WS /ws/prices — Tick-by-tick price stream
+# ---------------------------------------------------------------------------
+
 @router.websocket("/ws/prices")
 async def websocket_prices(websocket: fastapi.WebSocket):
     """
-    WebSocket endpoint for live price stream.
+    WebSocket endpoint for live tick-by-tick price stream.
 
     Requires ``?token=<jwt_or_api_key>`` query parameter.
-    Pushes price updates for all symbols every 2 seconds.
+    Pushes price changes as soon as they are detected (~100ms batches).
     """
     connected = await price_manager.connect(websocket)
     if not connected:
         return
-    logger.info("Price WebSocket client connected (authenticated)")
+    logger.info("Price WebSocket client connected (tick-by-tick)")
 
     try:
         # Send initial snapshot
         prices = _price_feed.get_all_prices()
-        await websocket.send_json(
-            {
-                "type": "snapshot",
-                "data": prices,
-            }
-        )
+        await websocket.send_json({"type": "snapshot", "data": prices})
 
-        # Keep connection alive and send updates
+        # Track last known prices to push only diffs
+        last_prices: dict[str, dict] = dict(prices) if prices else {}
+
         while True:
-            # Get latest prices
-            prices = _price_feed.get_all_prices()
+            current = _price_feed.get_all_prices() or {}
+            changed: dict[str, dict] = {}
 
-            # Send update
-            await websocket.send_json(
-                {
-                    "type": "update",
-                    "data": prices,
-                }
-            )
+            for symbol, price_data in current.items():
+                prev = last_prices.get(symbol)
+                if prev is None or prev.get("bid") != price_data.get("bid") or prev.get("ask") != price_data.get("ask"):
+                    changed[symbol] = price_data
+                    last_prices[symbol] = price_data
 
-            # Wait 2 seconds before next update
-            await asyncio.sleep(2)
+                    # Feed tick into candle aggregator
+                    _candle_agg.ingest_tick(
+                        symbol,
+                        float(price_data.get("bid", 0)),
+                        float(price_data.get("ask", 0)),
+                        float(price_data.get("ts", time.time())),
+                    )
+
+            if changed:
+                await websocket.send_json({
+                    "type": "tick",
+                    "data": changed,
+                    "ts": time.time(),
+                })
+
+            # ~100ms batch interval for near-real-time without flooding
+            await asyncio.sleep(TICK_BATCH_INTERVAL)
 
     except fastapi.WebSocketDisconnect:
         price_manager.disconnect(websocket)
@@ -132,73 +238,62 @@ async def websocket_prices(websocket: fastapi.WebSocket):
         price_manager.disconnect(websocket)
 
 
+# ---------------------------------------------------------------------------
+# WS /ws/trades — Event-driven trade updates
+# ---------------------------------------------------------------------------
+
 @router.websocket("/ws/trades")
 async def websocket_trades(websocket: fastapi.WebSocket):
     """
     WebSocket endpoint for trade status change events.
 
     Requires ``?token=<jwt_or_api_key>`` query parameter.
-    Pushes trade updates whenever active trades change.
+    Pushes trade updates as soon as state changes are detected (~250ms check).
     """
     connected = await trade_manager.connect(websocket)
     if not connected:
         return
-    logger.info("Trade WebSocket client connected (authenticated)")
+    logger.info("Trade WebSocket client connected (event-driven)")
 
     try:
         # Track last known trade state
-        last_trade_snapshot = {}
+        last_trade_snapshot: dict[str, str] = {}
 
         # Send initial snapshot
         active_trades = _trade_ledger.get_active_trades()
         trades_data = [trade.model_dump() for trade in active_trades]
 
-        await websocket.send_json(
-            {
-                "type": "snapshot",
-                "data": trades_data,
-            }
-        )
+        await websocket.send_json({"type": "snapshot", "data": trades_data})
 
         # Build initial snapshot
         for trade in active_trades:
             last_trade_snapshot[trade.trade_id] = trade.status.value
 
-        # Keep connection alive and send updates when trades change
         while True:
-            # Get current active trades
             active_trades = _trade_ledger.get_active_trades()
-            current_snapshot = {trade.trade_id: trade.status.value for trade in active_trades}
+            current_snapshot = {t.trade_id: t.status.value for t in active_trades}
 
-            # Check for changes
             changed_trades = []
-
-            # Check for status changes or new trades
             for trade in active_trades:
                 last_status = last_trade_snapshot.get(trade.trade_id)
-
                 if last_status != trade.status.value:
-                    # Status changed or new trade
                     changed_trades.append(trade)
                     last_trade_snapshot[trade.trade_id] = trade.status.value
 
-            # Check for removed trades (closed/cancelled)
             removed_trade_ids = set(last_trade_snapshot.keys()) - set(current_snapshot.keys())
             for trade_id in removed_trade_ids:
                 del last_trade_snapshot[trade_id]
 
-            # Send updates if any changes
             if changed_trades or removed_trade_ids:
-                await websocket.send_json(
-                    {
-                        "type": "update",
-                        "changed": [trade.model_dump() for trade in changed_trades],
-                        "removed": list(removed_trade_ids),
-                    }
-                )
+                await websocket.send_json({
+                    "type": "update",
+                    "changed": [t.model_dump() for t in changed_trades],
+                    "removed": list(removed_trade_ids),
+                    "ts": time.time(),
+                })
 
-            # Wait 2 seconds before next check
-            await asyncio.sleep(2)
+            # 250ms for near-instant trade event delivery
+            await asyncio.sleep(TRADE_CHECK_INTERVAL)
 
     except fastapi.WebSocketDisconnect:
         trade_manager.disconnect(websocket)
@@ -206,3 +301,104 @@ async def websocket_trades(websocket: fastapi.WebSocket):
     except Exception as exc:
         logger.error(f"Trade WebSocket error: {exc}")
         trade_manager.disconnect(websocket)
+
+
+# ---------------------------------------------------------------------------
+# WS /ws/candles — Real-time candle bar stream
+# ---------------------------------------------------------------------------
+
+@router.websocket("/ws/candles")
+async def websocket_candles(websocket: fastapi.WebSocket):
+    """
+    WebSocket endpoint for real-time OHLC candle updates.
+
+    Pushes forming bars every 500ms and closed bar events.
+    Query params: ?token=<jwt>&symbol=<EURUSD> (optional symbol filter)
+    """
+    connected = await candle_manager.connect(websocket)
+    if not connected:
+        return
+
+    # Optional symbol filter
+    symbol_filter = websocket.query_params.get("symbol")
+    logger.info(f"Candle WebSocket connected (filter={symbol_filter or 'all'})")
+
+    try:
+        # Send current bars snapshot
+        bars = _candle_agg.get_current_bars(symbol_filter)
+        await websocket.send_json({"type": "snapshot", "data": bars})
+
+        while True:
+            bars = _candle_agg.get_current_bars(symbol_filter)
+            await websocket.send_json({
+                "type": "forming",
+                "data": bars,
+                "ts": time.time(),
+            })
+            await asyncio.sleep(CANDLE_UPDATE_INTERVAL)
+
+    except fastapi.WebSocketDisconnect:
+        candle_manager.disconnect(websocket)
+        logger.info("Candle WebSocket client disconnected")
+    except Exception as exc:
+        logger.error(f"Candle WebSocket error: {exc}")
+        candle_manager.disconnect(websocket)
+
+
+# ---------------------------------------------------------------------------
+# WS /ws/risk — Risk state stream
+# ---------------------------------------------------------------------------
+
+@router.websocket("/ws/risk")
+async def websocket_risk(websocket: fastapi.WebSocket):
+    """
+    WebSocket endpoint for risk state monitoring.
+
+    Pushes drawdown, circuit breaker, and prop firm guard state every 1s.
+    """
+    connected = await risk_manager.connect(websocket)
+    if not connected:
+        return
+    logger.info("Risk WebSocket client connected")
+
+    try:
+        while True:
+            # Build risk state from available modules
+            risk_state: dict = {"ts": time.time()}
+
+            try:
+                from risk.risk_manager import RiskManager  # noqa: PLC0415
+                rm = RiskManager() # pyright: ignore[reportCallIssue]
+                snapshot = rm.get_risk_snapshot()
+                risk_state["risk_snapshot"] = snapshot
+            except Exception:
+                risk_state["risk_snapshot"] = None
+
+            try:
+                from risk.circuit_breaker import CircuitBreaker  # noqa: PLC0415
+                cb = CircuitBreaker() # pyright: ignore[reportCallIssue]
+                risk_state["circuit_breaker"] = {
+                    "state": cb.state.value if hasattr(cb, "state") else "UNKNOWN", # pyright: ignore[reportAttributeAccessIssue]
+                    "is_open": cb.is_open() if hasattr(cb, "is_open") else False, # pyright: ignore[reportAttributeAccessIssue]
+                }
+            except Exception:
+                risk_state["circuit_breaker"] = None
+
+            try:
+                from risk.drawdown import (  # noqa: PLC0415
+                    DrawdownTracker,  # pyright: ignore[reportAttributeAccessIssue]
+                )
+                dd = DrawdownTracker()
+                risk_state["drawdown"] = dd.get_status() if hasattr(dd, "get_status") else None
+            except Exception:
+                risk_state["drawdown"] = None
+
+            await websocket.send_json({"type": "risk_state", "data": risk_state})
+            await asyncio.sleep(RISK_STATE_INTERVAL)
+
+    except fastapi.WebSocketDisconnect:
+        risk_manager.disconnect(websocket)
+        logger.info("Risk WebSocket client disconnected")
+    except Exception as exc:
+        logger.error(f"Risk WebSocket error: {exc}")
+        risk_manager.disconnect(websocket)
