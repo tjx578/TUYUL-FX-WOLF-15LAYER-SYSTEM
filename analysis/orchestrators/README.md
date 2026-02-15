@@ -22,7 +22,6 @@ This orchestrator fixes 5 critical issues in the system:
 
 ### 6-Phase Execution Flow
 
-```
 Phase 1: Independent Analysis (L1, L2, L3)
     ↓
 Phase 2: Dependent Analysis (L4, L5, L7, L8, L9)
@@ -34,13 +33,13 @@ Phase 4: Build Synthesis → L12 Constitutional Verdict
 Phase 5: Two-Pass Governance (L13 pass 1 → L15 → L13 pass 2)
     ↓
 Phase 6: Sovereignty Enforcement (GRANTED/RESTRICTED/REVOKED)
-```
 
 ### Key Components
 
 #### 1. WolfSovereignPipeline
 
 Master orchestrator class that:
+
 - Lazy-loads all layer analyzers to avoid circular imports
 - Executes layers in correct order (L11 BEFORE L6)
 - Applies VIX multiplier properly
@@ -51,6 +50,7 @@ Master orchestrator class that:
 #### 2. build_l12_synthesis()
 
 Contract-safe synthesis builder that produces a dict with ALL required keys:
+
 - `scores`: wolf_30_point, f_score, t_score, fta_score, exec_score
 - `layers`: L8_tii_sym, L8_integrity_index, L7_monte_carlo_win, conf12
 - `execution`: rr_ratio, direction, entry_price, stop_loss, take_profit_1, entry_zone, risk_percent, risk_amount, lot_size
@@ -64,6 +64,7 @@ Contract-safe synthesis builder that produces a dict with ALL required keys:
 #### 3. L13ReflectiveEngine
 
 Two-pass reflective authority that checks:
+
 - **LRCE** (Layer Recursive Coherence): directional alignment across layers
 - **FRPC** (Fusion Recursive Pattern Check): verdict/bias consistency
 - **αβγ** (Alpha-Beta-Gamma) quality score: `alpha × 0.40 + beta × 0.30 + gamma × 0.30`
@@ -74,6 +75,7 @@ Pass 1 uses `meta_integrity = 1.0` (baseline), Pass 2 uses value from L15.
 #### 4. L15MetaSovereigntyEngine
 
 Meta-sovereignty and execution rights engine:
+
 - Computes meta integrity (valid layer ratio)
 - Calculates vault sync: `feed_freshness × 0.50 + redis_health × 0.30 + meta_integrity × 0.20`
 - Returns execution rights:
@@ -82,12 +84,14 @@ Meta-sovereignty and execution rights engine:
   - **REVOKED**: No execution, verdict downgraded to HOLD
 
 Thresholds:
+
 - `vault_sync_min = 0.985` (from config)
 - `drift_max = 0.15` (from config)
 
 #### 5. SovereignResult
 
 Complete pipeline output dataclass containing:
+
 - `symbol`: Trading pair
 - `synthesis`: Full synthesis dict
 - `l12_verdict`: Constitutional verdict
@@ -128,6 +132,7 @@ if result.enforcement:
 ### Early Exit
 
 Pipeline exits early if:
+
 1. Any layer (L1-L3) is invalid
 2. L12 verdict is not EXECUTE (no L13/L15 processing)
 
@@ -208,6 +213,7 @@ python tests/manual_test_orchestrator.py
 ```
 
 Test coverage includes:
+
 - ✅ Pipeline instantiation and lazy loading
 - ✅ Synthesis builder produces all required L12 keys
 - ✅ L13 two-pass produces different results
@@ -225,12 +231,13 @@ The orchestrator currently uses placeholder values for:
 1. **Risk Management** (`build_l12_synthesis()`):
    - `risk_amount = 100.0` - Should come from account state
    - `lot_size = 0.01` - Should be computed by dashboard
-   
+
 2. **Vault Sync** (`L15MetaSovereigntyEngine.compute_meta()`):
    - `feed_freshness = 1.0` - Should query LiveContextBus feed age
    - `redis_health = 1.0` - Should check Redis connection health
 
 **Before production use**, these must be replaced with real values from:
+
 - Dashboard account manager (for risk_amount, lot_size)
 - LiveContextBus (for feed_freshness)
 - Redis health check (for redis_health)
@@ -239,7 +246,6 @@ The orchestrator currently uses placeholder values for:
 
 The orchestrator ensures correct execution order:
 
-```
 L1 → L2 → L3 (independent)
     ↓
 L4 (needs L1, L2, L3)
@@ -249,7 +255,6 @@ L8 (needs L1-L7)
 L9 (needs L3 structure)
     ↓
 L11 (RR calculation) → L6 (needs L11 RR) → L10 (needs L6 + L9)
-```
 
 **Critical**: L11 MUST execute before L6, as L6 requires RR value from L11.
 
@@ -258,6 +263,7 @@ L11 (RR calculation) → L6 (needs L11 RR) → L10 (needs L6 + L9)
 ### With reasoning/engine.py
 
 The old `Wolf15LayerEngine` in `reasoning/engine.py` should be **deprecated** in favor of `WolfSovereignPipeline`. The new orchestrator:
+
 - Uses the same layer analyzers
 - Calls the same `generate_l12_verdict()` from constitution
 - Adds L13/L15 governance that was missing
@@ -270,6 +276,7 @@ The orchestrator uses `generate_l12_verdict()` as the **SOLE AUTHORITY** for ver
 ### With Dashboard
 
 The orchestrator output (`SovereignResult`) provides all data needed by dashboard:
+
 - `l12_verdict`: Contains execution details (entry, stop, TP, lot_size)
 - `enforcement`: Contains execution rights and lot multiplier adjustments
 - Dashboard should use `enforcement.lot_multiplier` to adjust final lot size
@@ -292,6 +299,7 @@ To adjust thresholds, update `config/constitution.yaml`.
 ✅ CodeQL scan: **0 security alerts**
 
 The orchestrator:
+
 - Has no SQL injection risks (no DB queries)
 - Has no command injection risks (no shell execution)
 - Has no secrets in code (uses config system)
