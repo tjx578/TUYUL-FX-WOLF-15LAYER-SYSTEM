@@ -1,543 +1,286 @@
-"""Precision scoring using EMA stack, confluence, and zone proximity."""
+"""Fusion Precision Engine — Layer-7 precise entry/exit zone detection.
 
-from dataclasses import dataclass, field
-from typing import Any, Dict, List
+Identifies optimal entry zones, stop-loss placements, and take-profit
+targets using confluence of structure, Fibonacci, and order flow analysis.
+
+ANALYSIS-ONLY module. No execution side-effects.
+"""
+
 from __future__ import annotations
 
-from dataclasses import dataclass
-from math import exp, tanh
+import logging
+
+from dataclasses import dataclass, field
 from typing import Any
 
+import numpy as np  # pyright: ignore[reportMissingImports]
 
-def _ema(values: list[float], period: int) -> float:
-    if not values:
-        return 0.0
-    k = 2 / (period + 1)
-    acc = values[0]
-    for value in values[1:]:
-        acc = value * k + acc * (1 - k)
-    return acc
+logger = logging.getLogger(__name__)
 
+
+# ---------------------------------------------------------------------------
+# Result dataclass
+# ---------------------------------------------------------------------------
 
 @dataclass
-class PrecisionSnapshot:
-    valid: bool
-    precision_weight: float
-    ema_alignment: float
-    confluence_score: float
-    zone_proximity: float
-
-
-class FusionPrecisionEngine:
-    def evaluate(self, payload: dict[str, Any]) -> PrecisionSnapshot:
-        prices = [float(v) for v in payload.get("prices", [])]
-        rsi = float(payload.get("rsi", 50.0))
-        macd = float(payload.get("macd", 0.0))
-        atr = max(1e-9, float(payload.get("atr", 1.0)))
-        sr_zone = float(payload.get("sr_zone_distance", atr))
-        volatility = float(payload.get("volatility", 0.5))
-        if len(prices) < 30:
-            return PrecisionSnapshot(False, 0.0, 0.0, 0.0, 0.0)
-
-        ema8 = _ema(prices, 8)
-        ema21 = _ema(prices, 21)
-        ema55 = _ema(prices, 55)
-        ema100 = _ema(prices, 100)
-
-        aligns = [
-            ema8 > ema21,
-            ema21 > ema55,
-            ema55 > ema100,
-        ]
-        ema_alignment = sum(1 for cond in aligns if cond) / len(aligns)
-
-        rsi_score = 1.0 - abs(rsi - 50.0) / 50.0
-        macd_score = min(1.0, abs(macd) / atr)
-        confluence = max(0.0, min(1.0, (ema_alignment * 0.5 + rsi_score * 0.3 + macd_score * 0.2)))
-
-        zone_proximity = max(0.0, min(1.0, 1.0 - min(sr_zone / atr, 2.0) / 2.0))
-
-        base = tanh((ema8 - ema21) / atr) * exp(-abs(sr_zone) / (atr * 2.0))
-        weight = abs(base) * confluence * (0.5 + zone_proximity * 0.5)
-        if volatility > 0.7:
-            weight *= 0.85
-
-        return PrecisionSnapshot(
-            True,
-            round(max(0.0, min(1.0, weight)), 4),
-            round(ema_alignment, 4),
-            round(confluence, 4),
-            round(zone_proximity, 4),
-        )
-
-    @staticmethod
-    def export(snapshot: PrecisionSnapshot) -> dict[str, Any]:
-        return {
-            "valid": snapshot.valid,
-            "precision_weight": snapshot.precision_weight,
-            "ema_alignment": snapshot.ema_alignment,
-            "confluence_score": snapshot.confluence_score,
-            "zone_proximity": snapshot.zone_proximity,
-"""Precision weighting engine."""
-
-from __future__ import annotations
-
-from dataclasses import dataclass, field
-from datetime import datetime, timezone
-from typing import Any, Dict, Sequence
-"""
-Fusion Precision Engine v2.0.
-
-Role:
-- Compute technical precision weights from indicator alignment.
-- EMA ratio + VWAP deviation + volatility normalization.
-- Multi-indicator confluence scoring.
-
-Integration:
-- Compatible with FusionPrecisionEngine.compute_precision() in core.
-- Adds EMA stack analysis and VWAP zone proximity.
-
-NO decision authority - produces weights for downstream consumers.
-"""
-
-from dataclasses import dataclass, field
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
-import math
+class PrecisionZone:
+    """A detected precision zone for entry/exit."""
+    price: float
+    zone_type: str  # "ENTRY" | "SL" | "TP1" | "TP2" | "TP3"
+    strength: float = 0.0
+    method: str = ""  # "FIB" | "STRUCTURE" | "OB" | "CONFLUENCE"
 
 
 @dataclass
 class PrecisionResult:
-    precision_weight: float
-    ema_alignment: float
-    confluence: float
-    valid: bool
-    precision_weight: float
-    ema_alignment: float
-class FusionPrecision:
-    """Result of precision weight computation."""
+    """Output of the Fusion Precision Engine."""
 
-    precision_weight: float
-    ema_alignment: float
-    vwap_deviation: float
-    volatility_adjustment: float
-    confluence_score: float
-    zone_proximity: float
-    details: Dict[str, Any] = field(default_factory=dict)
+    # Entry zone
+    entry_zone_low: float = 0.0
+    entry_zone_high: float = 0.0
+    entry_optimal: float = 0.0
 
+    # Stop loss
+    stop_loss: float = 0.0
+    sl_method: str = ""  # "ATR" | "STRUCTURE" | "FIB"
+
+    # Take profit levels
+    tp1: float = 0.0
+    tp2: float = 0.0
+    tp3: float = 0.0
+    risk_reward_1: float = 0.0
+    risk_reward_2: float = 0.0
+    risk_reward_3: float = 0.0
+
+    # Precision zones
+    zones: list[PrecisionZone] = field(default_factory=list)
+
+    # Fibonacci levels
+    fib_levels: dict[str, float] = field(default_factory=dict)
+
+    # Direction
+    direction: str = "NONE"  # "BUY" | "SELL" | "NONE"
+
+    # Confidence & metadata
+    precision_score: float = 0.0
+    confidence: float = 0.0
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+    @property
+    def is_valid(self) -> bool:
+        return self.confidence > 0.0 and self.entry_optimal > 0.0
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+FIB_RATIOS = {
+    "0.0": 0.0,
+    "0.236": 0.236,
+    "0.382": 0.382,
+    "0.5": 0.5,
+    "0.618": 0.618,
+    "0.786": 0.786,
+    "1.0": 1.0,
+    "1.272": 1.272,
+    "1.618": 1.618,
+    "2.0": 2.0,
+    "2.618": 2.618,
+}
+
+
+def _compute_fib_levels(
+    swing_high: float, swing_low: float, direction: str
+) -> dict[str, float]:
+    """Compute Fibonacci retracement/extension levels."""
+    diff = swing_high - swing_low
+    if diff <= 0:
+        return {}
+
+    levels: dict[str, float] = {}
+    for label, ratio in FIB_RATIOS.items():
+        if direction == "BUY":
+            levels[label] = swing_high - diff * ratio
+        else:
+            levels[label] = swing_low + diff * ratio
+    return levels
+
+
+def _compute_atr(
+    highs: np.ndarray, lows: np.ndarray, closes: np.ndarray, period: int = 14
+) -> float:
+    """Simple ATR computation."""
+    if len(highs) < period + 1:
+        return 0.0
+    tr_list: list[float] = []
+    for i in range(1, len(highs)):
+        hl = highs[i] - lows[i]
+        hc = abs(highs[i] - closes[i - 1])
+        lc = abs(lows[i] - closes[i - 1])
+        tr_list.append(max(hl, hc, lc))
+    return float(np.mean(tr_list[-period:])) if tr_list else 0.0
+
+
+def _find_recent_swings(
+    highs: np.ndarray, lows: np.ndarray, lookback: int = 3
+) -> tuple[list[tuple[int, float]], list[tuple[int, float]]]:
+    """Detect recent swing highs and lows."""
+    sh: list[tuple[int, float]] = []
+    sl: list[tuple[int, float]] = []
+    for i in range(lookback, len(highs) - lookback):
+        if all(highs[i] >= highs[i - j] for j in range(1, lookback + 1)) and \
+           all(highs[i] >= highs[i + j] for j in range(1, lookback + 1)):
+            sh.append((i, float(highs[i])))
+        if all(lows[i] <= lows[i - j] for j in range(1, lookback + 1)) and \
+           all(lows[i] <= lows[i + j] for j in range(1, lookback + 1)):
+            sl.append((i, float(lows[i])))
+    return sh, sl
+
+
+def _compute_rr(entry: float, sl: float, tp: float) -> float:
+    """Risk-Reward ratio."""
+    risk = abs(entry - sl)
+    if risk <= 0:
+        return 0.0
+    return abs(tp - entry) / risk
+
+
+# ---------------------------------------------------------------------------
+# Engine
+# ---------------------------------------------------------------------------
 
 class FusionPrecisionEngine:
-    def evaluate(self, data: Dict[str, Any]) -> PrecisionResult:
-        closes: List[float] = data.get("closes", [])
-        atr = float(data.get("atr", 0.0))
-        rsi = float(data.get("rsi", 50.0))
-        macd = float(data.get("macd", 0.0))
-        support = data.get("support")
-        resistance = data.get("resistance")
-    def evaluate(self, data: Dict[str, Sequence[float] | float]) -> PrecisionResult:
-        prices = list(data.get("price", []))
-        if len(prices) < 120:
-            return PrecisionResult(False, 0.0, 0.0, 0.0, 0.0, {"reason": "insufficient"})
+    """Fusion Precision Engine — analysis only, no side-effects.
 
-        ema8 = self._ema(prices, 8)
-        ema21 = self._ema(prices, 21)
-        ema55 = self._ema(prices, 55)
-        ema100 = self._ema(prices, 100)
-
-        ordered = [ema8 > ema21, ema21 > ema55, ema55 > ema100]
-        alignment = sum(1.0 for ok in ordered if ok) / 3.0
-
-        rsi = float(data.get("rsi", 50.0))
-        macd = float(data.get("macd", 0.0))
-        confluence = 0.0
-        if rsi > 52:
-            confluence += 0.34
-        if macd > 0:
-            confluence += 0.33
-        if alignment > 0.66:
-            confluence += 0.33
-
-        atr = float(data.get("atr", 0.001))
-        support = float(data.get("support", prices[-1] - atr * 2))
-        resistance = float(data.get("resistance", prices[-1] + atr * 2))
-        dist_support = abs(prices[-1] - support)
-        dist_resistance = abs(resistance - prices[-1])
-        zone_proximity = math.exp(-min(dist_support, dist_resistance) / max(atr * 4, 1e-9))
-
-        vol = float(data.get("volatility", 0.2))
-        vol_damp = 0.85 if vol > 0.75 else 1.0
-
-        base = math.tanh((ema8 - ema21) / max(atr, 1e-9))
-        weight = abs(base) * confluence * zone_proximity * vol_damp
-
-        return PrecisionResult(
-            valid=True,
-            precision_weight=round(min(1.0, weight), 4),
-            ema_alignment=round(alignment, 4),
-            confluence_score=round(confluence, 4),
-            zone_proximity=round(zone_proximity, 4),
-            details={
-                "ema8": round(ema8, 6),
-                "ema21": round(ema21, 6),
-                "ema55": round(ema55, 6),
-                "ema100": round(ema100, 6),
-    """
-    Computes precision weights using tanh-exponential model:
-
-        precision = tanh(ema_alignment) * exp(-|vwap_dev| / ATR)
-                    * confluence_factor * zone_proximity
-
-    This produces a 0-1 weight indicating how precisely aligned
-    the current price is with multiple technical factors.
+    Parameters
+    ----------
+    atr_period : int
+        ATR period for SL calculation.
+    atr_sl_multiplier : float
+        Multiplier for ATR-based SL.
+    swing_lookback : int
+        Lookback for swing detection.
     """
 
     def __init__(
         self,
-        ema_periods: Optional[List[int]] = None,
-        vwap_sensitivity: float = 1.0,
+        atr_period: int = 14,
+        atr_sl_multiplier: float = 1.5,
+        swing_lookback: int = 3,
+        **_extra: Any,
     ) -> None:
-        self.ema_periods = ema_periods or [8, 21, 55, 100]
-        self.vwap_sensitivity = vwap_sensitivity
+        self.atr_period = atr_period
+        self.atr_sl_multiplier = atr_sl_multiplier
+        self.swing_lookback = swing_lookback
 
-    def calculate(self, indicators: Dict[str, Any]) -> FusionPrecision:
-        """
-        Calculate precision from indicator data.
-
-        Args:
-            indicators: Dict containing:
-                - ema_ratio (float): EMA fast/slow ratio (>1 = bullish)
-                - vwap_deviation (float): Distance from VWAP (signed)
-                - atr_norm (float): Normalized ATR
-                - closes (List[float], optional): For EMA stack computation
-                - support_level (float, optional): Nearest support
-                - resistance_level (float, optional): Nearest resistance
-                - rsi (float, optional): RSI value for confluence
-                - macd_signal (float, optional): MACD signal for confluence
-
-        Returns:
-            FusionPrecision with computed weights
-        """
-        ema_ratio = float(indicators.get("ema_ratio", 0.0))
-        vwap_dev = float(indicators.get("vwap_deviation", 0.0))
-        atr_norm = float(indicators.get("atr_norm", 1.0))
-        closes = indicators.get("closes", [])
-
-        if closes and len(closes) >= max(self.ema_periods):
-            ema_alignment = self._compute_ema_stack_alignment(closes)
-        else:
-            ema_alignment = ema_ratio
-
-        atr_safe = max(atr_norm, 1e-6)
-        core_precision = (
-            math.tanh(ema_alignment)
-            * math.exp(-abs(vwap_dev) * self.vwap_sensitivity / atr_safe)
-        )
-
-        confluence = self._compute_confluence(indicators)
-        zone_prox = self._compute_zone_proximity(indicators, closes)
-
-        precision_weight = self._clamp(
-            core_precision * 0.50
-            + confluence * 0.30
-            + zone_prox * 0.20
-        )
-
-        if atr_norm > 2.0:
-            precision_weight *= 0.85
-
-        return FusionPrecision(
-            precision_weight=round(float(self._clamp(precision_weight)), 4),
-            ema_alignment=round(ema_alignment, 4),
-            vwap_deviation=round(vwap_dev, 6),
-            volatility_adjustment=round(atr_norm, 4),
-            confluence_score=round(confluence, 4),
-            zone_proximity=round(zone_prox, 4),
-            details={
-                "core_precision": round(core_precision, 4),
-                "ema_periods": self.ema_periods,
-                "timestamp": datetime.now(timezone.utc).isoformat(),
-            },
-        )
-
-    @staticmethod
-    def _ema(values: Sequence[float], period: int) -> float:
-        k = 2.0 / (period + 1.0)
-        ema = values[0]
-        for value in values[1:]:
-            ema = value * k + ema * (1.0 - k)
-        return ema
-    def _compute_ema_stack_alignment(self, closes: List[float]) -> float:
-        """
-        Compute EMA stack alignment score.
-        Perfect bullish stack: EMA8 > EMA21 > EMA55 > EMA100 -> +1.0
-        Perfect bearish stack: reverse -> -1.0
-        """
-        emas = []
-        for period in self.ema_periods:
-            if len(closes) >= period:
-                emas.append(self._ema(closes, period))
-            else:
-                return 0.0
-
-        n_pairs = 0
-        bullish_pairs = 0
-        for i in range(len(emas)):
-            for j in range(i + 1, len(emas)):
-                n_pairs += 1
-                if emas[i] > emas[j]:
-                    bullish_pairs += 1
-
-        if n_pairs == 0:
-            return 0.0
-        return (bullish_pairs / n_pairs) * 2.0 - 1.0
-
-    def _compute_confluence(self, indicators: Dict[str, Any]) -> float:
-        """Compute multi-indicator confluence score."""
-        signals = []
-
-        rsi = indicators.get("rsi")
-        if rsi is not None:
-            if rsi > 55:
-                signals.append(1.0)
-            elif rsi < 45:
-                signals.append(-1.0)
-            else:
-                signals.append(0.0)
-
-        macd = indicators.get("macd_signal")
-        if macd is not None:
-            signals.append(1.0 if macd > 0 else -1.0)
-
-        ema_r = indicators.get("ema_ratio", 0)
-        if ema_r != 0:
-            signals.append(1.0 if ema_r > 0 else -1.0)
-
-        if not signals:
-            return 0.5
-
-        avg = sum(signals) / len(signals)
-        return self._clamp(abs(avg))
-
-    def _compute_zone_proximity(
-        self, indicators: Dict[str, Any], closes: List[float]
-    ) -> float:
-        """Proximity to support/resistance zone (1.0 = at zone, 0 = far)."""
-        if not closes:
-            return 0.5
-
-        current = closes[-1]
-        support = indicators.get("support_level")
-        resistance = indicators.get("resistance_level")
-
-        if support is None and resistance is None:
-            return 0.5
-
-        proximities = []
-        if support is not None and current != 0:
-            dist = abs(current - support) / current
-            proximities.append(max(0, 1.0 - dist * 50))
-        if resistance is not None and current != 0:
-            dist = abs(current - resistance) / current
-            proximities.append(max(0, 1.0 - dist * 50))
-
-        return max(proximities) if proximities else 0.5
-
-    @staticmethod
-    def _ema(data: List[float], period: int) -> float:
-        """Compute last EMA value."""
-        if len(data) < period:
-            return data[-1] if data else 0.0
-
-        k = 2.0 / (period + 1)
-        ema = sum(data[:period]) / period
-        for value in data[period:]:
-            ema = value * k + ema * (1 - k)
-        return ema
-
-    @staticmethod
-    def _clamp(v: float, lo: float = 0.0, hi: float = 1.0) -> float:
-        return max(lo, min(hi, v))
-
-    def export(self, precision: FusionPrecision) -> Dict[str, Any]:
-        """Export result as a serializable dictionary."""
-        return {
-            "precision_weight": precision.precision_weight,
-            "ema_alignment": precision.ema_alignment,
-            "vwap_deviation": precision.vwap_deviation,
-            "volatility_adjustment": precision.volatility_adjustment,
-            "confluence_score": precision.confluence_score,
-            "zone_proximity": precision.zone_proximity,
-            "details": precision.details,
-        }
-
-
-__all__ = ["FusionPrecision", "FusionPrecisionEngine"]
-"""Fusion precision engine."""
-
-from __future__ import annotations
-
-import math
-
-from dataclasses import dataclass
-
-
-@dataclass
-class PrecisionResult:
-    precision_weight: float
-    ema_alignment: float
-    confluence: float
-    zone_proximity: float
-
-
-class FusionPrecisionEngine:
-    def evaluate(self, payload: dict[str, float]) -> PrecisionResult:
-        ema8 = payload.get("ema8", 0.0)
-        ema21 = payload.get("ema21", 0.0)
-        ema55 = payload.get("ema55", 0.0)
-        ema100 = payload.get("ema100", 0.0)
-        rsi = payload.get("rsi", 50.0)
-        macd = payload.get("macd", 0.0)
-        atr = max(payload.get("atr", 1e-6), 1e-6)
-        vwap_delta = payload.get("vwap_delta", 0.0)
-        sr_distance = abs(payload.get("sr_distance", atr))
-        trend_up = ema8 > ema21 > ema55 > ema100
-        trend_down = ema8 < ema21 < ema55 < ema100
-        alignment = 1.0 if (trend_up or trend_down) else 0.25
-        rsi_bias = 1.0 - min(1.0, abs(rsi - 50.0) / 50.0)
-        macd_bias = min(1.0, abs(macd) / atr)
-        confluence = max(0.0, min(1.0, (rsi_bias + macd_bias + alignment) / 3.0))
-        zone = max(0.2, min(1.0, 1.0 - (sr_distance / (atr * 3.0))))
-        damping = 0.85 if atr > payload.get("price", 1.0) * 0.03 else 1.0
-        precision = (
-            math.tanh(alignment) * math.exp(-abs(vwap_delta) / atr) * confluence * zone * damping
-        )
-        return PrecisionResult(
-            round(precision, 4), round(alignment, 4), round(confluence, 4), round(zone, 4)
-"""Precision weighting engine."""
-
-from __future__ import annotations
-
-from dataclasses import dataclass, field
-from math import exp, tanh
-from typing import Any
-
-
-@dataclass
-class PrecisionResult:
-    precision_weight: float
-    ema_alignment: float
-    confluence: float
-    details: dict[str, Any] = field(default_factory=dict)
-
-
-class FusionPrecisionEngine:
-    def evaluate(
+    def analyze(
         self,
-        closes: list[float],
-        rsi: float,
-        macd_hist: float,
-        atr_pct: float,
-        support: float,
-        resistance: float,
+        candles: dict[str, list[dict[str, Any]]],
+        direction: str = "NONE",
+        symbol: str = "",
     ) -> PrecisionResult:
-        if len(closes) < 110:
-            return PrecisionResult(0.0, 0.0, 0.0, {"reason": "not_enough_bars"})
+        """Compute precision entry/exit zones.
 
-        ema8 = self._ema(closes, 8)
-        ema21 = self._ema(closes, 21)
-        ema55 = self._ema(closes, 55)
-        ema100 = self._ema(closes, 100)
-
-        aligned = [ema8 > ema21, ema21 > ema55, ema55 > ema100]
-        ema_alignment = sum(1.0 for item in aligned if item) / len(aligned)
-
-        signal_up = rsi > 50 and macd >= 0 and ema8 > ema21
-        signal_down = rsi < 50 and macd < 0 and ema8 < ema21
-        confluence = 1.0 if (signal_up or signal_down) else 0.45
-
-        zone_proximity = self._zone_proximity(closes[-1] if closes else 0.0, support, resistance, atr)
-        base = math.tanh(abs((ema8 - ema21) / (atr or 1.0))) * math.exp(-abs(macd))
-
-        damping = 0.85 if atr > 0 and closes and (atr / closes[-1]) > 0.03 else 1.0
-        weight = max(0.0, min(1.0, base * confluence * zone_proximity * damping))
-
-        return PrecisionResult(
-            precision_weight=round(weight, 4),
-            ema_alignment=round(ema_alignment, 4),
-            confluence=round(confluence, 4),
-            zone_proximity=round(zone_proximity, 4),
-            details={"ema8": ema8, "ema21": ema21, "ema55": ema55, "ema100": ema100},
-        )
-
-    def _ema(self, values: List[float], period: int) -> float:
-        if not values:
-            return 0.0
-        k = 2 / (period + 1)
-        ema_value = values[0]
-        for value in values[1:]:
-            ema_value = (value * k) + (ema_value * (1 - k))
-        return ema_value
-
-    def _zone_proximity(self, price: float, support: Any, resistance: Any, atr: float) -> float:
-        if not price or support is None or resistance is None or atr <= 0:
-            return 0.7
-        near_support = abs(price - float(support)) / atr
-        near_res = abs(float(resistance) - price) / atr
-        score = 1.0 - min(1.0, min(near_support, near_res) / 3.0)
-        return max(0.5, score)
-
-
-__all__ = ["PrecisionResult", "FusionPrecisionEngine"]
-        ordered = [ema8 > ema21, ema21 > ema55, ema55 > ema100]
-        inv_ordered = [ema8 < ema21, ema21 < ema55, ema55 < ema100]
-        ema_alignment = max(sum(ordered), sum(inv_ordered)) / 3
-
-        rsi_sig = 1.0 if 45 <= rsi <= 65 else 0.5
-        macd_sig = 1.0 if macd_hist > 0 else 0.6
-        trend_sig = 0.5 + 0.5 * ema_alignment
-        confluence = (rsi_sig + macd_sig + trend_sig) / 3
-
-        price = closes[-1]
-        zone_span = max(1e-8, resistance - support)
-        zone_proximity = 1.0 - min(1.0, abs(price - (support + resistance) / 2) / zone_span)
-        vol_damping = 0.85 if atr_pct > 0.02 else 1.0
-
-        raw = tanh((ema8 - ema55) / max(price, 1e-8))
-        precision = abs(raw) * exp(-abs(price - ema21) / max(price, 1e-8))
-        precision = precision * confluence * zone_proximity * vol_damping
-
-        return PrecisionResult(
-            precision_weight=round(max(0.0, min(1.0, precision)), 6),
-            ema_alignment=round(ema_alignment, 6),
-            confluence=round(confluence, 6),
-            details={"zone_proximity": round(zone_proximity, 6), "vol_damping": vol_damping},
-        )
-
-    @staticmethod
-    def _ema(series: list[float], period: int) -> float:
-        """Compute a standard EMA using SMA of the first `period` values as seed.
-
-        This implementation uses proper EMA calculation by initializing with SMA
-        and iterating through all remaining values, rather than a fast approximation.
+        Parameters
+        ----------
+        candles : dict
+            Multi-timeframe candle data.
+        direction : str
+            Bias from structure/momentum engines: "BUY" | "SELL" | "NONE".
+        symbol : str
+            Symbol for metadata.
         """
-        if period <= 0:
-            raise ValueError("period must be positive for EMA calculation")
-        if len(series) < period:
-            raise ValueError("series length must be at least `period` for EMA calculation")
+        if not candles or direction == "NONE":
+            return PrecisionResult(
+                direction=direction,
+                metadata={"symbol": symbol, "error": "no_candles_or_direction"},
+            )
 
-        alpha = 2 / (period + 1)
-        # Initialize with SMA over the first `period` observations
-        ema = sum(series[:period]) / period
-        # Apply exponential smoothing to remaining values
-        for value in series[period:]:
-            ema = alpha * value + (1 - alpha) * ema
-        return ema
+        primary_tf = self._select_primary(candles)
+        tf_candles = candles[primary_tf]
+
+        if len(tf_candles) < 20:
+            return PrecisionResult(
+                direction=direction,
+                metadata={"symbol": symbol, "error": "insufficient_candles"},
+            )
+
+        highs = np.array([c.get("high", 0.0) for c in tf_candles], dtype=np.float64)
+        lows = np.array([c.get("low", 0.0) for c in tf_candles], dtype=np.float64)
+        closes = np.array([c.get("close", 0.0) for c in tf_candles], dtype=np.float64)
+
+        current_close = float(closes[-1])
+        atr = _compute_atr(highs, lows, closes, self.atr_period)
+
+        swing_highs, swing_lows = _find_recent_swings(highs, lows, self.swing_lookback)
+
+        # Identify key swing for Fibonacci
+        if direction == "BUY" and swing_lows and swing_highs:
+            fib_low = swing_lows[-1][1]
+            fib_high = swing_highs[-1][1] if swing_highs[-1][0] > swing_lows[-1][0] else current_close
+        elif direction == "SELL" and swing_highs and swing_lows:
+            fib_high = swing_highs[-1][1]
+            fib_low = swing_lows[-1][1] if swing_lows[-1][0] > swing_highs[-1][0] else current_close
+        else:
+            fib_high = float(np.max(highs[-20:]))
+            fib_low = float(np.min(lows[-20:]))
+
+        fib_levels = _compute_fib_levels(fib_high, fib_low, direction)
+
+        # Entry zone
+        if direction == "BUY":
+            entry_optimal = fib_levels.get("0.618", current_close)
+            entry_zone_low = fib_levels.get("0.786", entry_optimal - atr * 0.3)
+            entry_zone_high = fib_levels.get("0.5", entry_optimal + atr * 0.3)
+            stop_loss = entry_zone_low - atr * self.atr_sl_multiplier
+            tp1 = entry_optimal + atr * 2.0
+            tp2 = entry_optimal + atr * 3.5
+            tp3 = fib_levels.get("1.618", entry_optimal + atr * 5.0)
+        elif direction == "SELL":
+            entry_optimal = fib_levels.get("0.618", current_close)
+            entry_zone_low = fib_levels.get("0.5", entry_optimal - atr * 0.3)
+            entry_zone_high = fib_levels.get("0.786", entry_optimal + atr * 0.3)
+            stop_loss = entry_zone_high + atr * self.atr_sl_multiplier
+            tp1 = entry_optimal - atr * 2.0
+            tp2 = entry_optimal - atr * 3.5
+            tp3 = fib_levels.get("1.618", entry_optimal - atr * 5.0)
+        else:
+            return PrecisionResult(direction=direction, metadata={"symbol": symbol})
+
+        zones = [
+            PrecisionZone(entry_optimal, "ENTRY", 0.8, "CONFLUENCE"),
+            PrecisionZone(stop_loss, "SL", 0.9, "ATR"),
+            PrecisionZone(tp1, "TP1", 0.7, "ATR"),
+            PrecisionZone(tp2, "TP2", 0.5, "ATR"),
+            PrecisionZone(tp3, "TP3", 0.3, "FIB"),
+        ]
+
+        confidence = min(1.0, 0.3 + len(swing_highs) * 0.05 + len(swing_lows) * 0.05)
+
+        return PrecisionResult(
+            entry_zone_low=round(entry_zone_low, 5),
+            entry_zone_high=round(entry_zone_high, 5),
+            entry_optimal=round(entry_optimal, 5),
+            stop_loss=round(stop_loss, 5),
+            sl_method="ATR",
+            tp1=round(tp1, 5),
+            tp2=round(tp2, 5),
+            tp3=round(tp3, 5),
+            risk_reward_1=round(_compute_rr(entry_optimal, stop_loss, tp1), 2),
+            risk_reward_2=round(_compute_rr(entry_optimal, stop_loss, tp2), 2),
+            risk_reward_3=round(_compute_rr(entry_optimal, stop_loss, tp3), 2),
+            zones=zones,
+            fib_levels={k: round(v, 5) for k, v in fib_levels.items()},
+            direction=direction,
+            precision_score=min(1.0, atr / (abs(current_close) + 1e-8) * 100),
+            confidence=confidence,
+            metadata={"symbol": symbol, "primary_tf": primary_tf, "atr": atr},
+        )
 
     @staticmethod
-    def export(result: PrecisionResult) -> dict[str, Any]:
-        return {
-            "precision_weight": result.precision_weight,
-            "ema_alignment": result.ema_alignment,
-            "confluence": result.confluence,
-            "details": result.details,
-        }
+    def _select_primary(candles: dict[str, list[dict[str, Any]]]) -> str:
+        for tf in ["M15", "H1", "H4"]:
+            if tf in candles and len(candles[tf]) >= 20:
+                return tf
+        return max(candles, key=lambda k: len(candles[k]))
