@@ -486,23 +486,53 @@ class WolfConstitutionalPipeline:
             # dashboard ledger / journal archive.  If unavailable, MC engine
             # gracefully skips (requires ≥ 30 trades).
             #
-            # TODO: Wire to actual trade history storage via:
-            #   storage/trade_archive.py -> get_closed_returns(symbol, lookback=200)
-            # For now, fall through to system_metrics or None.
+            # ── Trade history for Monte Carlo (from persistent archive) ────
+            # Primary: storage/trade_archive.py  (Redis → PostgreSQL → ledger)
+            # Fallback: system_metrics pass-through (caller-provided)
             trade_returns: list[float] | None = None
-            if system_metrics and isinstance(system_metrics, dict):
-                _raw = system_metrics.get("trade_returns", None)
-                if isinstance(_raw, (list, tuple)) and len(_raw) > 0:
-                    trade_returns = [float(r) for r in _raw]
+            try:
+                from storage.trade_archive import get_closed_returns, get_win_loss_counts  # noqa: PLC0415
+
+                _archived = get_closed_returns(symbol=symbol, lookback=200)
+                if _archived:
+                    trade_returns = _archived
+                    logger.info(
+                        "[Phase-3] %s Loaded %d historical returns from trade archive",
+                        symbol,
+                        len(_archived),
+                    )
+            except Exception as _archive_err:
+                logger.warning(
+                    "[Phase-3] %s trade_archive unavailable: %s — falling back to system_metrics",
+                    symbol,
+                    _archive_err,
+                )
+
+            # Fallback: system_metrics pass-through (for test harness / manual override)
+            if not trade_returns:
+                if system_metrics and isinstance(system_metrics, dict):
+                    _raw = system_metrics.get("trade_returns", None)
+                    if isinstance(_raw, (list, tuple)) and len(_raw) > 0:
+                        trade_returns = [float(r) for r in _raw]
 
             # ── Bayesian prior state ─────────────────────────────────────────
-            # Accumulated win/loss counts from previous analysis cycles.
-            # Default 0/0 -> uninformative Bayes-Laplace prior (alpha=1, beta=1).
+            # Primary: derive from trade archive. Fallback: system_metrics.
             prior_wins: int = 0
             prior_losses: int = 0
-            if system_metrics and isinstance(system_metrics, dict):
-                prior_wins = int(system_metrics.get("prior_wins", 0))
-                prior_losses = int(system_metrics.get("prior_losses", 0))
+            try:
+                from storage.trade_archive import get_win_loss_counts as _gwlc  # noqa: PLC0415
+
+                _w, _l = _gwlc(symbol=symbol, lookback=200)
+                if _w + _l > 0:
+                    prior_wins = _w
+                    prior_losses = _l
+            except Exception:
+                pass  # fall through to system_metrics
+
+            if prior_wins == 0 and prior_losses == 0:
+                if system_metrics and isinstance(system_metrics, dict):
+                    prior_wins = int(system_metrics.get("prior_wins", 0))
+                    prior_losses = int(system_metrics.get("prior_losses", 0))
 
             # ── Coherence from upstream layers (L1-L6 agreement) ─────────────
             # If a coherence aggregator ran, use it; otherwise default 50.0.
