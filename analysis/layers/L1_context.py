@@ -17,6 +17,17 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
+# ── Optional Engine Enrichment ────────────────────────────────────────────
+# RegimeClassifier (Hurst-exponent) gives statistical regime confirmation
+# as a secondary signal alongside the SMA-based primary detection.
+try:
+    from engines.regime_classifier_ml import (
+        RegimeClassifier,  # pyright: ignore[reportMissingImports]
+    )
+    _regime_classifier: RegimeClassifier | None = RegimeClassifier()
+except Exception:  # pragma: no cover
+    _regime_classifier = None
+
 __all__ = ["analyze_context"]
 
 # Session definitions: (name, start_hour_utc, end_hour_utc, multiplier)
@@ -215,7 +226,7 @@ def analyze_context(market_data: dict[str, Any],
         pair, regime, vol_level, csi, session,
     )
 
-    return {
+    result = {
         "regime": regime,
         "dominant_force": dominant,
         "volatility_level": vol_level,
@@ -233,3 +244,21 @@ def analyze_context(market_data: dict[str, Any],
         "pair": pair,
         "timestamp": now.isoformat(),
     }
+
+    # ── Regime Classifier Enrichment (Hurst-exponent, optional) ───────
+    if _regime_classifier is not None:
+        try:
+            rc = _regime_classifier.classify(closes)
+            result["hurst_regime"] = rc.regime
+            result["hurst_confidence"] = rc.confidence
+            result["hurst_exponent"] = rc.hurst_exponent
+            result["hurst_volatility_state"] = rc.volatility_state
+            result["hurst_momentum"] = rc.momentum
+            # Agreement flag: do SMA regime and Hurst agree?
+            _sma_trending = regime in ("TREND_UP", "TREND_DOWN")
+            _hurst_trending = rc.regime == "TRENDING"
+            result["regime_agreement"] = _sma_trending == _hurst_trending
+        except Exception as exc:
+            logger.debug("L1 Hurst enrichment skipped: %s", exc)
+
+    return result
