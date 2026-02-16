@@ -180,28 +180,31 @@ def create_engine_suite() -> dict[str, object]:
     Returns:
         Dict of engine_name -> engine_instance
 
-    Each engine is imported on demand. If a specific engine module has
-    an error, only *that* key will raise — the rest still work.
+    Each engine is imported on demand via ``__getattr__``.  If a specific
+    engine module has an error, only *that* key is skipped — the rest
+    still load successfully.
     """
-    from .cognitive_coherence_engine import CognitiveCoherenceEngine  # noqa: PLC0415
-    from .cognitive_context_engine import CognitiveContextEngine  # noqa: PLC0415
-    from .cognitive_risk_simulation import CognitiveRiskSimulation  # noqa: PLC0415
-    from .fusion_momentum_engine import FusionMomentumEngine  # noqa: PLC0415
-    from .fusion_precision_engine import FusionPrecisionEngine  # noqa: PLC0415
-    from .fusion_structure_engine import FusionStructureEngine  # noqa: PLC0415
-    from .quantum_advisory_engine import QuantumAdvisoryEngine  # noqa: PLC0415
-    from .quantum_field_engine import QuantumFieldEngine  # noqa: PLC0415
-    from .quantum_probability_engine import QuantumProbabilityEngine  # noqa: PLC0415
-
-    return {
-        "coherence": CognitiveCoherenceEngine(),
-        "context": CognitiveContextEngine(),
-        "risk_sim": CognitiveRiskSimulation(),
-        "risk": CognitiveRiskSimulation(),
-        "momentum": FusionMomentumEngine(),
-        "precision": FusionPrecisionEngine(),
-        "structure": FusionStructureEngine(),
-        "field": QuantumFieldEngine(),
-        "probability": QuantumProbabilityEngine(),
-        "advisory": QuantumAdvisoryEngine(),
+    _map: dict[str, str] = {
+        "coherence": "CognitiveCoherenceEngine",
+        "context": "CognitiveContextEngine",
+        "risk_sim": "CognitiveRiskSimulation",
+        "risk": "CognitiveRiskSimulation",
+        "momentum": "FusionMomentumEngine",
+        "precision": "FusionPrecisionEngine",
+        "structure": "FusionStructureEngine",
+        "field": "QuantumFieldEngine",
+        "probability": "QuantumProbabilityEngine",
+        "advisory": "QuantumAdvisoryEngine",
     }
+
+    suite: dict[str, object] = {}
+    for key, cls_name in _map.items():
+        try:
+            cls = __getattr__(cls_name)
+            suite[key] = cls()
+        except Exception as exc:
+            import logging  # noqa: PLC0415
+            logging.getLogger(__name__).warning(
+                "Engine %r (%s) skipped: %s", key, cls_name, exc,
+            )
+    return suite
