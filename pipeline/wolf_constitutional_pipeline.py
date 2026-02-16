@@ -132,6 +132,8 @@ def build_l12_synthesis(
     - validation (str) -> L7_validation
     """
     # ── Wolf 30-Point from L4 ──
+    technical_score = layer_results.get("L4", {}).get("technical_score", 0)
+
     if "wolf_30_point" in layer_results.get("L4", {}) and isinstance(layer_results["L4"]["wolf_30_point"], dict):
         wolf_30_point = layer_results["L4"]["wolf_30_point"].get("total", 0)
         f_score = layer_results["L4"]["wolf_30_point"].get("f_score", 0)
@@ -139,7 +141,6 @@ def build_l12_synthesis(
         fta_score_raw = layer_results["L4"]["wolf_30_point"].get("fta_score", 0.0)
         exec_score = layer_results["L4"]["wolf_30_point"].get("exec_score", 0)
     else:
-        technical_score = layer_results.get("L4", {}).get("technical_score", 0)
         win_prob = layer_results.get("L7", {}).get("win_probability", 0)
         wolf_30_point = int((technical_score / 100) * 15 + (win_prob / 100) * 15)
         wolf_30_point = max(0, min(30, wolf_30_point))
@@ -198,7 +199,7 @@ def build_l12_synthesis(
             "fta_multiplier": fta_multiplier,
             "exec_score": exec_score,
             "psychology_score": psychology_score,
-            "technical_score": technical_score, # pyright: ignore[reportPossiblyUnboundVariable]
+            "technical_score": technical_score,
         },
         "layers": {
             "L1_context_coherence": layer_results.get("L1", {}).get("regime_confidence", 0.0),
