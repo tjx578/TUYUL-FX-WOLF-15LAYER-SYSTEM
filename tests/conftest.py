@@ -171,3 +171,45 @@ class Timer:
 def timer() -> Timer:
     """Provide a reusable wall-clock timer."""
     return Timer()
+
+
+@pytest.fixture
+def price_watcher():
+    """Fixture providing a mock PriceWatcher for tests."""
+    class MockPriceWatcher:
+        def __init__(self):
+            self._prices = {}
+            self._watching = set()
+
+        def watch(self, symbol: str):
+            self._watching.add(symbol)
+
+        def unwatch(self, symbol: str):
+            self._watching.discard(symbol)
+
+        def set_price(self, symbol: str, bid: float, ask: float):
+            self._prices[symbol] = {"bid": bid, "ask": ask, "spread": ask - bid}
+
+        def get_price(self, symbol: str) -> dict:
+            return self._prices.get(symbol, {"bid": 0.0, "ask": 0.0, "spread": 0.0})
+
+        def get_bid(self, symbol: str) -> float:
+            return self._prices.get(symbol, {}).get("bid", 0.0)
+
+        def get_ask(self, symbol: str) -> float:
+            return self._prices.get(symbol, {}).get("ask", 0.0)
+
+        @property
+        def watching(self) -> set:
+            return self._watching.copy()
+
+        def is_watching(self, symbol: str) -> bool:
+            return symbol in self._watching
+
+    watcher = MockPriceWatcher()
+    # Pre-populate common forex pairs for convenience
+    watcher.set_price("EURUSD", 1.08500, 1.08520)
+    watcher.set_price("GBPUSD", 1.26100, 1.26130)
+    watcher.set_price("USDJPY", 149.500, 149.520)
+    watcher.set_price("XAUUSD", 2650.00, 2650.50)
+    return watcher
