@@ -3,9 +3,10 @@ import asyncio
 from collections import defaultdict
 from datetime import UTC, datetime, timedelta
 
-from loguru import logger
+from loguru import logger  # pyright: ignore[reportMissingImports]
 
 from context.live_context_bus import LiveContextBus
+from core.event_bus import Event, EventType, get_event_bus
 
 TICK_TIMEFRAMES: dict[str, int] = {"M15": 15}
 
@@ -102,6 +103,28 @@ class CandleBuilder:
         }
 
         self.context_bus.update_candle(candle)
+
+        # Emit CANDLE_CLOSED event so analysis can react immediately
+        try:
+            bus = get_event_bus()
+            event = Event(
+                type=EventType.CANDLE_CLOSED,
+                source="ingest",
+                data={
+                    "symbol": symbol,
+                    "timeframe": tf,
+                    "close": candle["close"],
+                    "timestamp": end_time.isoformat(),
+                },
+            )
+            # Fire-and-forget: schedule the async emit without blocking
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                loop.create_task(bus.emit(event))  # noqa: RUF006
+            else:
+                bus.emit_sync(event)
+        except Exception as emit_exc:
+            logger.warning(f"Failed to emit CANDLE_CLOSED for {symbol} {tf}: {emit_exc}")
 
         # Clean buffer: keep only ticks after this candle
         self.buffers[symbol] = [

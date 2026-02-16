@@ -78,6 +78,8 @@ _ALLOWED_SOURCES: dict[EventType, list[str]] = {
     EventType.ORDER_CANCELLED: ["execution"],
     EventType.ORDER_FAILED: ["execution"],
     EventType.ANALYSIS_COMPLETE: ["analysis"],
+    EventType.CANDLE_CLOSED: ["ingest"],
+    EventType.TICK_RECEIVED: ["ingest"],
 }
 
 
@@ -149,3 +151,15 @@ class EventBus:
         if event_type:
             events = [e for e in events if e.type == event_type]
         return events[-limit:]
+
+
+# ── Module-level singleton ──────────────────────────────────────
+_event_bus_instance: EventBus | None = None
+
+
+def get_event_bus() -> EventBus:
+    """Return the process-wide EventBus singleton."""
+    global _event_bus_instance
+    if _event_bus_instance is None:
+        _event_bus_instance = EventBus()
+    return _event_bus_instance

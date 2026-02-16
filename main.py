@@ -8,6 +8,7 @@ from redis.asyncio import Redis as AsyncRedis  # pyright: ignore[reportMissingIm
 
 from config_loader import CONFIG
 from context.runtime_state import RuntimeState
+from core.event_bus import Event, EventType, get_event_bus
 from ingest.candle_builder import CandleBuilder
 from ingest.dependencies import create_finnhub_ws
 from ingest.finnhub_market_news import FinnhubMarketNews
@@ -103,7 +104,7 @@ async def run_ingest_services(has_api_key: bool, redis: AsyncRedis) -> None:
     """Run ingestion tasks concurrently in local mode."""
     if not has_api_key:
         logger.info("Skipping ingest services - no API key configured")
-        while not (_shutdown_event and _shutdown_event.is_set()):
+        while not (_shutdown_event and _shutdown_event.is_set()):  # noqa: ASYNC110
             await asyncio.sleep(1)
         return
 
@@ -132,14 +133,14 @@ async def run_ingest_services(has_api_key: bool, redis: AsyncRedis) -> None:
 async def run_redis_consumer() -> None:
     """Run RedisConsumer when CONTEXT_MODE=redis."""
     try:
-        from context.redis_consumer import RedisConsumer
+        from context.redis_consumer import RedisConsumer  # noqa: PLC0415
 
         redis_consumer = RedisConsumer(symbols=PAIRS)
         logger.info("Starting RedisConsumer...")
         await redis_consumer.start()
     except Exception as exc:
         logger.error(f"Failed to start RedisConsumer: {exc}. Continuing without Redis consumer.")
-        while not (_shutdown_event and _shutdown_event.is_set()):
+        while not (_shutdown_event and _shutdown_event.is_set()):  # noqa: ASYNC110
             await asyncio.sleep(1)
 
 
@@ -171,22 +172,67 @@ async def _analyze_pair(pair: str) -> None:
 
 
 async def analysis_loop() -> None:
-    """Main analysis loop with per-pair parallel execution."""
+    """Event-driven analysis loop.
+
+    Triggers immediately on CANDLE_CLOSED events from CandleBuilder,
+    with ``loop_interval`` (default 60 s) as a maximum-wait fallback so
+    analysis still runs periodically even if no candles close.
+
+    When a CANDLE_CLOSED event arrives *only* the affected symbol is
+    re-analysed, keeping CPU usage proportional to market activity.
+    """
     env_interval = os.getenv("ANALYSIS_LOOP_INTERVAL_SEC")
     loop_interval = int(env_interval) if env_interval else CONFIG["settings"].get("loop_interval_sec", 60)
-    logger.info(f"Analysis loop started (interval={loop_interval}s)")
+    logger.info(f"Analysis loop started (event-driven, fallback interval={loop_interval}s)")
+
+    # ── asyncio.Event used as a lightweight signal ──────────────────
+    _candle_signal = asyncio.Event()
+    _pending_symbols: set[str] = set()
+    def _on_candle_closed(event: Event) -> None:
+        """Non-async callback – just record the symbol and wake the loop."""
+        symbol = event.data.get("symbol")
+        if symbol:
+            _pending_symbols.add(symbol)
+        _candle_signal.set()
+
+    bus = get_event_bus()
+    bus.subscribe(EventType.CANDLE_CLOSED, _on_candle_closed)
+    bus.subscribe(EventType.CANDLE_CLOSED, _on_candle_closed)
 
     while True:
         if _shutdown_event and _shutdown_event.is_set():
             logger.info("Analysis loop shutting down...")
             break
 
-        results = await asyncio.gather(*(_analyze_pair(pair) for pair in PAIRS), return_exceptions=True)
-        for pair, result in zip(PAIRS, results, strict=False):
+        # Wait for a candle-close event OR the fallback timeout
+        try:
+            await asyncio.wait_for(_candle_signal.wait(), timeout=loop_interval)
+        except TimeoutError:
+            pass  # Fallback: run full sweep on all pairs
+
+        _candle_signal.clear()
+
+        # Decide which pairs to analyse this iteration
+        if _pending_symbols:
+            # Event-driven: only symbols that just had a candle close
+            symbols_to_run = [s for s in PAIRS if s in _pending_symbols]
+            _pending_symbols.clear()
+            if not symbols_to_run:
+                # Symbol from event not in our PAIRS list – full sweep
+                symbols_to_run = PAIRS
+            logger.info(f"[EVENT] Candle close triggered analysis for {symbols_to_run}")
+        else:
+            # Timeout fallback: analyse everything
+            symbols_to_run = PAIRS
+            logger.debug("[TIMER] Fallback sweep - analysing all pairs")
+
+        results = await asyncio.gather(
+            *(_analyze_pair(pair) for pair in symbols_to_run),
+            return_exceptions=True,
+        )
+        for pair, result in zip(symbols_to_run, results, strict=False):
             if isinstance(result, Exception):
                 logger.error(f"[ERROR] {pair} | {result}")
-
-        await asyncio.sleep(loop_interval)
 
 
 def _signal_handler(signum: int, frame) -> None:
