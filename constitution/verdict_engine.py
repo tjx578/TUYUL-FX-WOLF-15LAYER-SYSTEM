@@ -372,6 +372,70 @@ class VerdictEngine:
         adjusted = base_confidence + adjustment - penalty
         return round(max(0.0, min(1.0, adjusted)), 4)
 
+    def _apply_enrichment_adjustment(
+        self,
+        confidence: float,
+        verdict_label: str,
+        layer_results: dict[str, Any],
+    ) -> tuple[float, bool]:
+        """Apply enrichment-aware confidence adjustment (advisory only).
+
+        Enrichment engines (cognitive, quantum, fusion, etc.) produce an
+        aggregate score and a signed confidence adjustment.  Both are
+        ADVISORY — they modulate confidence but NEVER override the verdict.
+
+        Constitutional boundary: a NO_TRADE/HOLD is never promoted to
+        EXECUTE by enrichment data.
+
+        Args:
+            confidence: Current confidence value (0.0-1.0).
+            verdict_label: Current verdict string (EXECUTE / HOLD / NO_TRADE).
+            layer_results: Full layer results dict containing enrichment keys.
+
+        Returns:
+            (adjusted_confidence, enrichment_applied) tuple.
+        """
+        enrichment_score = layer_results.get("enrichment_score", 0.0)
+        enrichment_adj = layer_results.get("enrichment_confidence_adj", 0.0)
+        applied = False
+
+        if not isinstance(enrichment_score, (int, float)):
+            enrichment_score = 0.0
+        if not isinstance(enrichment_adj, (int, float)):
+            enrichment_adj = 0.0
+
+        # ── Phase 1: Discrete adjustment from enrichment_score ───────
+        if enrichment_score > 0 and verdict_label == "EXECUTE":
+            if enrichment_score >= 0.75 and confidence < 0.85:
+                # Strong engine agreement boosts confidence
+                confidence = min(1.0, confidence + 0.05)
+                applied = True
+            elif enrichment_score < 0.30 and confidence > 0.60:
+                # Low engine agreement dampens confidence
+                confidence = max(0.10, confidence - 0.05)
+                applied = True
+        elif enrichment_score < 0.20 and verdict_label == "HOLD":
+            # Very low engine agreement reinforces HOLD (logged only)
+            applied = True
+
+        # ── Phase 2: Continuous adjustment from confidence_adj ───────
+        # Only applies to EXECUTE verdicts — never promotes HOLD/NO_TRADE.
+        if enrichment_adj != 0.0 and verdict_label == "EXECUTE":
+            # Clamp to [-0.15, +0.10] to prevent extreme swings
+            clamped = max(-0.15, min(0.10, float(enrichment_adj)))
+
+            if clamped >= 0.06 and confidence < 0.85:
+                confidence = min(1.0, confidence + 0.04)
+                applied = True
+            elif clamped <= -0.08 and confidence > 0.70:
+                confidence = max(0.10, confidence - 0.06)
+                applied = True
+            elif clamped <= -0.12 and confidence > 0.50:
+                confidence = max(0.10, confidence - 0.10)
+                applied = True
+
+        return round(max(0.0, min(1.0, confidence)), 4), applied
+
     def produce_verdict(
         self,
         symbol: str,
@@ -382,6 +446,8 @@ class VerdictEngine:
 
         This is the SOLE AUTHORITY that decides EXECUTE / HOLD / ABORT.
         L7 probability metrics are advisory inputs that inform confidence.
+        Enrichment metrics are advisory inputs that modulate confidence
+        but never override the verdict.
 
         Args:
             symbol: Instrument identifier.
@@ -389,7 +455,7 @@ class VerdictEngine:
             gate_results: Pre-computed gate results (if available).
 
         Returns:
-            Enriched verdict dict with L7 probability context.
+            Enriched verdict dict with L7 probability and enrichment context.
         """
         # ── Evaluate gates if not pre-computed ───────────────────────
         if gate_results is None:
@@ -422,6 +488,13 @@ class VerdictEngine:
             l7_metrics=l7_metrics,
         )
 
+        # ── Adjust confidence with enrichment data (advisory) ────────
+        confidence, enrichment_applied = self._apply_enrichment_adjustment(
+            confidence=confidence,
+            verdict_label=verdict_label,
+            layer_results=layer_results,
+        )
+
         # ── Build verdict dict ───────────────────────────────────────
         verdict: dict[str, Any] = {
             "symbol": symbol,
@@ -430,6 +503,7 @@ class VerdictEngine:
             "gate_results": gate_results,
             "gates_passed": passed_count,
             "gates_total": total_gates,
+            "enrichment_applied": enrichment_applied,
         }
 
         # ── Enrich verdict with L7 probability context ───────────────
@@ -449,6 +523,13 @@ class VerdictEngine:
             "l7_validation": l7_metrics["l7_validation"],
             "expected_value": l7_metrics["l7_expected_value"],
             "max_drawdown": l7_metrics["l7_max_drawdown"],
+        }
+
+        # ── Enrichment context (advisory metadata) ───────────────────
+        verdict["enrichment_context"] = {
+            "enrichment_score": layer_results.get("enrichment_score", 0.0),
+            "enrichment_confidence_adj": layer_results.get("enrichment_confidence_adj", 0.0),
+            "enrichment_applied": enrichment_applied,
         }
 
         return verdict
