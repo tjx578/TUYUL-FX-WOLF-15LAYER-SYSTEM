@@ -67,14 +67,39 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt || true
-          pip install pytest pytest-cov
+          pip install -r requirements.txt
+          pip install pytest pytest-cov pytest-timeout
 
-      - name: Run tests
+      - name: "Critical gate tests (must pass to merge)"
         run: |
-          python -m pytest tests/ -v --tb=short --strict-markers \
-            --junitxml=test-results/results.xml \
-            -x --timeout=60 2>&1 | head -200
+          python -m pytest \
+            tests/test_l12_gate.py \
+            tests/test_l12_verdict.py \
+            tests/test_l11_rr.py \
+            tests/test_l2_mta.py \
+            tests/test_l10_dynamic_sizing.py \
+            tests/test_l10_kelly_integration.py \
+            tests/test_l6_correlation_integration.py \
+            tests/contract/test_public_api_contract.py \
+            tests/test_prop_firm.py \
+            tests/test_news_lock.py \
+            tests/test_m15_cancel.py \
+            tests/test_signal_integrity.py \
+            tests/test_signal_throttle.py \
+            tests/test_pip_values.py \
+            tests/test_journal.py \
+            tests/test_l9_smc.py \
+            tests/test_dynamic_position_sizing.py \
+            tests/test_spread_estimator.py \
+            -v --tb=short --strict-markers --timeout=60 \
+            --junitxml=test-results/critical.xml
+
+      - name: "Extended test suite (informational)"
+        if: always()
+        continue-on-error: true
+        run: |
+          python -m pytest tests/ -v --tb=short --timeout=60 \
+            --junitxml=test-results/full.xml
 
       - name: Upload test results
         if: always()
