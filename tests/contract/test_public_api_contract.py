@@ -1,36 +1,34 @@
 """
-Contract Freeze Tests — CI Guard
+Contract Freeze Tests -- CI Guard
 Prevents silent field renames on Zone-A core contracts.
 
 If any of these fail, a breaking change has been introduced.
 Do NOT modify these assertions without a migration plan.
 """
 
-import traceback
-
 from dataclasses import fields
 
 import pytest
 
 # ------------------------------------------------------------------
-# 1. Core Contract Field Assertions (Zone A — CANNOT BREAK)
+# 1. Core Contract Field Assertions (Zone A -- CANNOT BREAK)
 # ------------------------------------------------------------------
 
 class TestMonteCarloContract:
     def test_required_fields_exist(self):
         from monte_carlo_engine import MonteCarloResult  # noqa: PLC0415
-        field_names = {f.name for f in fields(MonteCarloResult)} # type: ignore
-        assert "win_probability" in field_names, "win_probability removed — BREAKING"
-        assert "profit_factor" in field_names, "profit_factor removed — BREAKING"
-        assert "passed_threshold" in field_names, "passed_threshold removed — BREAKING"
+        field_names = {f.name for f in fields(MonteCarloResult)}  # type: ignore
+        assert "win_probability" in field_names, "win_probability removed -- BREAKING"
+        assert "profit_factor" in field_names, "profit_factor removed -- BREAKING"
+        assert "passed_threshold" in field_names, "passed_threshold removed -- BREAKING"
 
 
 class TestPositionSizingContract:
     def test_required_fields_exist(self):
         from dynamic_position_sizing_engine import PositionSizingResult  # noqa: PLC0415
         field_names = {f.name for f in fields(PositionSizingResult)}
-        assert "final_fraction" in field_names, "final_fraction removed — BREAKING"
-        assert "risk_percent" in field_names, "risk_percent removed — BREAKING"
+        assert "final_fraction" in field_names, "final_fraction removed -- BREAKING"
+        assert "risk_percent" in field_names, "risk_percent removed -- BREAKING"
 
 
 # ------------------------------------------------------------------
@@ -41,21 +39,21 @@ class TestBackwardCompatibilityAliases:
     def test_monte_carlo_passed_alias(self):
         from monte_carlo_engine import MonteCarloResult  # noqa: PLC0415
         assert hasattr(MonteCarloResult, "passed"), (
-            "MonteCarloResult.passed alias missing — "
+            "MonteCarloResult.passed alias missing -- "
             "risk_engine_v2 will break"
         )
 
     def test_position_sizing_risk_multiplier_alias(self):
         from dynamic_position_sizing_engine import PositionSizingResult  # noqa: PLC0415
         assert hasattr(PositionSizingResult, "risk_multiplier"), (
-            "PositionSizingResult.risk_multiplier alias missing — "
+            "PositionSizingResult.risk_multiplier alias missing -- "
             "dashboard will break"
         )
 
     def test_position_sizing_position_size_alias(self):
         from dynamic_position_sizing_engine import PositionSizingResult  # noqa: PLC0415
         assert hasattr(PositionSizingResult, "position_size"), (
-            "PositionSizingResult.position_size alias missing — "
+            "PositionSizingResult.position_size alias missing -- "
             "dashboard will break"
         )
 
@@ -72,7 +70,7 @@ class TestEnginesImportGuard:
             assert CognitiveCoherence is not None
         except ImportError:
             pytest.skip(
-                "CognitiveCoherenceEngine source not present — "
+                "CognitiveCoherenceEngine source not present -- "
                 "shim works but source missing"
             )
 
@@ -100,13 +98,9 @@ class TestSchemaVersionLock:
         Skip if not applicable yet.
         """
         expected = "2.1"
-        # Placeholder — wire to real orchestrator output in integration tests
+        # Placeholder -- wire to real orchestrator output in integration tests
         payload = {"schema_version": "2.1"}
         assert payload["schema_version"] == expected, (
             f"Schema version drift: expected {expected}, "
             f"got {payload['schema_version']}"
         )
-
-frames = [f for f in traceback.extract_stack() if "15LAYER" not in f.filename]
-# Filter out internal framework frames for cleaner stack traces
-remove_frames_with_15layer = True
