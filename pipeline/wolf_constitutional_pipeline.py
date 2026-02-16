@@ -644,11 +644,105 @@ class WolfConstitutionalPipeline:
                 l11 = self._l11.calculate_rr(symbol, direction)  # pyright: ignore[reportOptionalMemberAccess]
             rr_value = l11.get("rr", 0.0)
 
-            # Build account_state snapshot from L5 + pipeline context
+            # ── Build account_state snapshot for L6 ────────────────────
+            # L6 has 7 checks; all need real account data to fire.
+            # Primary source: RiskManager singleton (live account governor).
+            # Fallback: L5 psychology layer (has drawdown/consec-losses).
+            # If RiskManager is unavailable (e.g. unit tests) we
+            # degrade gracefully to L5-only data — same as before.
+
+            _l5_dd = l5.get("current_drawdown", 0.0) if isinstance(l5, dict) else 0.0
+            _l5_cl = l5.get("consecutive_losses", 0) if isinstance(l5, dict) else 0
+            _l1_vol = l1.get("volatility_level", "NORMAL") if isinstance(l1, dict) else "NORMAL"
+
+            # Pull real account state from RiskManager when available
+            _rm_balance: float = 0.0
+            _rm_daily_loss_pct: float = 0.0
+            _rm_circuit: bool = False
+            _rm_open_trades: int = 0
+            _rm_max_open: int = 5
+
+            try:
+                from risk.risk_manager import RiskManager  # noqa: PLC0415
+
+                _rm = RiskManager.get_instance()
+                _snap = _rm.get_risk_snapshot()
+                _rm_balance = float(_snap.get("balance", 0.0))
+                _rm_daily_loss_raw = float(_snap.get("daily_loss", 0.0))
+                _rm_circuit = bool(_snap.get("circuit_open", False))
+                _rm_max_open = int(_snap.get("max_open_trades", 5))
+
+                # daily_loss_pct: fraction of balance lost today
+                if _rm_balance > 0 and _rm_daily_loss_raw < 0:
+                    _rm_daily_loss_pct = abs(_rm_daily_loss_raw) / _rm_balance
+                else:
+                    _rm_daily_loss_pct = 0.0
+
+                # Open trade count from OpenRiskTracker (if available)
+                try:
+                    from risk.open_risk_tracker import OpenRiskTracker  # noqa: PLC0415
+
+                    # Use default account; overridable via system_metrics
+                    _account_id = (
+                        (system_metrics or {}).get("account_id", "")
+                        if system_metrics else ""
+                    )
+                    if _account_id:
+                        _ort = OpenRiskTracker(_account_id)
+                        _rm_open_trades = _ort.get_open_count()
+                except Exception:
+                    # system_metrics fallback for open trade count
+                    if system_metrics and isinstance(system_metrics, dict):
+                        _rm_open_trades = int(system_metrics.get("open_trade_count", 0))
+
+                logger.debug(
+                    "[Phase-4] L6 account wiring: balance=%.2f daily_dd=%.4f "
+                    "circuit=%s open=%d/%d",
+                    _rm_balance, _rm_daily_loss_pct, _rm_circuit,
+                    _rm_open_trades, _rm_max_open,
+                )
+            except Exception as _rm_err:
+                logger.warning(
+                    "[Phase-4] RiskManager unavailable for L6 wiring, "
+                    "falling back to L5 data: %s", _rm_err,
+                )
+
+            # Also pull equity/peak from system_metrics when caller provides
+            _sm_equity = 0.0
+            _sm_peak = 0.0
+            if system_metrics and isinstance(system_metrics, dict):
+                _sm_equity = float(system_metrics.get("equity", _rm_balance))
+                _sm_peak = float(system_metrics.get("peak_equity", _sm_equity))
+                # Allow caller override for open trades & corr
+                if _rm_open_trades == 0:
+                    _rm_open_trades = int(system_metrics.get("open_trade_count", 0))
+            else:
+                _sm_equity = _rm_balance
+                _sm_peak = _rm_balance  # best-effort; RiskManager tracks balance
+
             _l6_account_state: dict[str, Any] = {
-                "drawdown_pct": l5.get("current_drawdown", 0.0) if isinstance(l5, dict) else 0.0,
-                "consecutive_losses": l5.get("consecutive_losses", 0) if isinstance(l5, dict) else 0,
-                "vol_cluster": l1.get("volatility_level", "NORMAL") if isinstance(l1, dict) else "NORMAL",
+                # Check 1: Drawdown tier (equity/peak for accurate calc; pct as fallback)
+                "equity": _sm_equity,
+                "peak_equity": _sm_peak,
+                "drawdown_pct": _l5_dd,
+                # Check 2: Volatility cluster (from L1)
+                "vol_cluster": _l1_vol,
+                # Check 3: Correlation exposure (from system_metrics or 0)
+                "corr_exposure": float(
+                    (system_metrics or {}).get("corr_exposure", 0.0)
+                ),
+                # Check 5: Rolling Sharpe uses trade_returns (passed separately)
+                # Check 6: Prop-firm daily DD (from RiskManager)
+                "daily_loss_pct": _rm_daily_loss_pct,
+                # Check 7: Kelly dampener
+                "base_kelly": float(
+                    (system_metrics or {}).get("base_kelly", 0.25)
+                ),
+                # Shared: consecutive losses, open positions, circuit breaker
+                "consecutive_losses": _l5_cl,
+                "open_positions": _rm_open_trades,
+                "max_open_positions": _rm_max_open,
+                "circuit_breaker_active": _rm_circuit,
             }
 
             l6 = self._l6.analyze(  # pyright: ignore[reportOptionalMemberAccess]
