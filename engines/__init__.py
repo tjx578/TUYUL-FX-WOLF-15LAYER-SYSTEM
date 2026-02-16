@@ -1,8 +1,13 @@
 """
-TUYUL FX - Engine Facade Layer v2.0
+TUYUL FX - Engine Facade Layer v2.0 (Lazy Imports)
 
 9 focused analysis engines that provide clean, testable API
 over the monolithic core unified modules.
+
+All imports are LAZY: importing `engines` does NOT trigger loading
+any engine module.  Each class/function is resolved on first access
+via ``__getattr__``.  This means a broken engine file only affects
+code that actually uses that engine — no cascade failures.
 
 Architecture:
   Cognitive Domain (internal state awareness):
@@ -28,91 +33,97 @@ Usage:
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 __version__ = "2.0.0"
 __codename__ = "Wolf Engine Facade"
 
-# --- Cognitive ---
-from .cognitive_coherence_engine import (
-    CognitiveCoherenceEngine,
-    CoherenceSnapshot,
-    CoherenceState,
-)
-from .cognitive_context_engine import (
-    CognitiveContext,
-    CognitiveContextEngine,
-    InstitutionalPresence,
-    LiquidityContext,
-    MarketRegime,
-    MarketStructure,
-)
-from .cognitive_risk_simulation import CognitiveRiskSimulation, RiskSimulationResult
+if TYPE_CHECKING:
+    from .cognitive_context_engine import (
+        InstitutionalPresence,
+        LiquidityContext,
+        MarketRegime,
+        MarketStructure,
+    )
+    from .cognitive_risk_simulation import RiskSimulationResult
+    from .fusion_momentum_engine import MomentumResult
+    from .fusion_precision_engine import PrecisionResult
+    from .fusion_structure_engine import (
+        FusionStructureEngine,
+        StructureResult,
+        StructureState,
+    )
+    from .quantum_advisory_engine import QuantumAdvisoryEngine
+    from .quantum_field_engine import QuantumFieldEngine
+    from .quantum_probability_engine import (
+        ProbabilityResult,
+        QuantumProbabilityEngine,
+    )
 
-# --- Fusion ---
-from .fusion_momentum_engine import (
-    FusionMomentumEngine,
-    MomentumResult,
-)
-from .fusion_precision_engine import (
-    FusionPrecisionEngine,
-    PrecisionResult,
-)
-from .fusion_structure_engine import (
-    FusionStructureEngine,
-    StructureResult,
-    StructureState,
-)
+    FusionStructure = StructureResult
 
-# --- Quantum ---
-from .quantum_advisory_engine import (
-    AdvisoryResult,
-    AdvisorySignal,
-    QuantumAdvisoryEngine,
-)
-from .quantum_field_engine import FieldResult, QuantumFieldEngine
-from .quantum_probability_engine import (
-    ProbabilityResult,
-    QuantumProbabilityEngine,
-)
+# ---------------------------------------------------------------------------
+# Lazy-import registry: name → (module_relative_path, real_name | None)
+#   If real_name is None, the attribute name IS the symbol name in that module.
+# ---------------------------------------------------------------------------
+_LAZY_IMPORTS: dict[str, tuple[str, str | None]] = {
+    # --- Cognitive ---
+    "CognitiveCoherenceEngine": (".cognitive_coherence_engine", None),
+    "CoherenceSnapshot":        (".cognitive_coherence_engine", None),
+    "CoherenceState":           (".cognitive_coherence_engine", None),
+    "CognitiveContextEngine":   (".cognitive_context_engine", None),
+    "CognitiveContext":         (".cognitive_context_engine", None),
+    "InstitutionalPresence":    (".cognitive_context_engine", None),
+    "LiquidityContext":         (".cognitive_context_engine", None),
+    "MarketRegime":             (".cognitive_context_engine", None),
+    "MarketStructure":          (".cognitive_context_engine", None),
+    "CognitiveRiskSimulation":  (".cognitive_risk_simulation", None),
+    "RiskSimulationResult":     (".cognitive_risk_simulation", None),
+    # --- Fusion ---
+    "FusionMomentumEngine":     (".fusion_momentum_engine", None),
+    "MomentumResult":           (".fusion_momentum_engine", None),
+    "FusionPrecisionEngine":    (".fusion_precision_engine", None),
+    "PrecisionResult":          (".fusion_precision_engine", None),
+    "FusionStructureEngine":    (".fusion_structure_engine", None),
+    "StructureResult":          (".fusion_structure_engine", None),
+    "StructureState":           (".fusion_structure_engine", None),
+    # --- Quantum ---
+    "QuantumAdvisoryEngine":    (".quantum_advisory_engine", None),
+    "AdvisoryResult":           (".quantum_advisory_engine", None),
+    "AdvisorySignal":           (".quantum_advisory_engine", None),
+    "QuantumFieldEngine":       (".quantum_field_engine", None),
+    "FieldResult":              (".quantum_field_engine", None),
+    "QuantumProbabilityEngine": (".quantum_probability_engine", None),
+    "ProbabilityResult":        (".quantum_probability_engine", None),
+}
 
+# Backward-compat aliases: resolved lazily via the same mechanism.
+_LAZY_ALIASES: dict[str, str] = {
+    "CognitiveCoherence": "CoherenceSnapshot",
+    "FusionMomentum":     "MomentumResult",
+    "FusionPrecision":    "PrecisionResult",
+    "FusionStructure":    "StructureResult",
+}
 
-def create_engine_suite() -> dict[str, object]:
-    """Factory: create all 9 engines with default configuration.
-
-    Returns:
-        Dict of engine_name -> engine_instance
-    """
-    return {
-        "coherence": CognitiveCoherenceEngine(),
-        "context": CognitiveContextEngine(),
-        "risk_sim": CognitiveRiskSimulation(),  # also aliased as "risk"
-        "risk": CognitiveRiskSimulation(),  # alias for backward compat
-        "momentum": FusionMomentumEngine(),
-        "precision": FusionPrecisionEngine(),
-        "structure": FusionStructureEngine(),
-        "field": QuantumFieldEngine(),
-        "probability": QuantumProbabilityEngine(),
-        "advisory": QuantumAdvisoryEngine(),
-    }
 __all__ = [
     # Quantum types
-    "AdvisoryResult",
+    "AdvisoryResult", # pyright: ignore[reportUnsupportedDunderAll]
     # Backward-compat aliases
-    "AdvisorySignal",
-    "CognitiveCoherence",
+    "AdvisorySignal", # pyright: ignore[reportUnsupportedDunderAll]
+    "CognitiveCoherence", # pyright: ignore[reportUnsupportedDunderAll]
     # Cognitive engines
-    "CognitiveCoherenceEngine",
-    "CognitiveContext",
-    "CognitiveContextEngine",
-    "CognitiveRiskSimulation",
+    "CognitiveCoherenceEngine", # pyright: ignore[reportUnsupportedDunderAll]
+    "CognitiveContextEngine", # pyright: ignore[reportUnsupportedDunderAll]
+    "CognitiveRiskSimulation", # pyright: ignore[reportUnsupportedDunderAll]
     # Cognitive types
-    "CoherenceSnapshot",
-    "CoherenceState",
-    "FieldResult",
-    "FusionMomentum",
+    "CoherenceSnapshot", # pyright: ignore[reportUnsupportedDunderAll]
+    "CoherenceState", # pyright: ignore[reportUnsupportedDunderAll]
+    "FieldResult", # pyright: ignore[reportUnsupportedDunderAll]
+    "FusionMomentum", # pyright: ignore[reportUnsupportedDunderAll]
     # Fusion engines
-    "FusionMomentumEngine",
-    "FusionPrecision",
-    "FusionPrecisionEngine",
+    "FusionMomentumEngine", # pyright: ignore[reportUnsupportedDunderAll]
+    "FusionPrecision", # pyright: ignore[reportUnsupportedDunderAll]
+    "FusionPrecisionEngine", # pyright: ignore[reportUnsupportedDunderAll]
     "FusionStructure",
     "FusionStructureEngine",
     "InstitutionalPresence",
@@ -134,28 +145,63 @@ __all__ = [
     "create_engine_suite",
 ]
 
-# ------------------------------------------------------------------
-# Backward Compatibility: CognitiveCoherence Export (Lazy)
-# ------------------------------------------------------------------
 
-# ------------------------------------------------------------------
-# Backward Compatibility Aliases
-# ------------------------------------------------------------------
-CognitiveCoherence = CoherenceSnapshot
-FusionMomentum = MomentumResult
-FusionPrecision = PrecisionResult
-FusionStructure = StructureResult
+# ---------------------------------------------------------------------------
+# Module-level __getattr__  — the heart of lazy loading
+# ---------------------------------------------------------------------------
+def __getattr__(name: str):
+    # 1. Direct lazy import
+    if name in _LAZY_IMPORTS:
+        mod_path, real_name = _LAZY_IMPORTS[name]
+        import importlib  # noqa: PLC0415
+
+        mod = importlib.import_module(mod_path, __name__)
+        attr = getattr(mod, real_name or name)
+        # Cache on module dict so __getattr__ is not called again
+        globals()[name] = attr
+        return attr
+
+    # 2. Backward-compat aliases
+    if name in _LAZY_ALIASES:
+        target = _LAZY_ALIASES[name]
+        attr = __getattr__(target)  # recursively resolve
+        globals()[name] = attr
+        return attr
+
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
-def __getattr__(name):
-    if name == "CognitiveCoherence":
-        try:
-            from .cognitive_coherence_engine import CognitiveCoherenceEngine  # noqa: PLC0415
-            return CognitiveCoherenceEngine
-        except ImportError:
-            raise ImportError(  # noqa: B904
-                "CognitiveCoherence engine not found. "
-                "Ensure engines/cognitive_coherence_engine.py exists."
-            )
+# ---------------------------------------------------------------------------
+# Factory function (also lazy — engines are only imported when called)
+# ---------------------------------------------------------------------------
+def create_engine_suite() -> dict[str, object]:
+    """Factory: create all 9 engines with default configuration.
 
-    raise AttributeError(f"module {__name__} has no attribute {name}")
+    Returns:
+        Dict of engine_name -> engine_instance
+
+    Each engine is imported on demand. If a specific engine module has
+    an error, only *that* key will raise — the rest still work.
+    """
+    from .cognitive_coherence_engine import CognitiveCoherenceEngine  # noqa: PLC0415
+    from .cognitive_context_engine import CognitiveContextEngine  # noqa: PLC0415
+    from .cognitive_risk_simulation import CognitiveRiskSimulation  # noqa: PLC0415
+    from .fusion_momentum_engine import FusionMomentumEngine  # noqa: PLC0415
+    from .fusion_precision_engine import FusionPrecisionEngine  # noqa: PLC0415
+    from .fusion_structure_engine import FusionStructureEngine  # noqa: PLC0415
+    from .quantum_advisory_engine import QuantumAdvisoryEngine  # noqa: PLC0415
+    from .quantum_field_engine import QuantumFieldEngine  # noqa: PLC0415
+    from .quantum_probability_engine import QuantumProbabilityEngine  # noqa: PLC0415
+
+    return {
+        "coherence": CognitiveCoherenceEngine(),
+        "context": CognitiveContextEngine(),
+        "risk_sim": CognitiveRiskSimulation(),
+        "risk": CognitiveRiskSimulation(),
+        "momentum": FusionMomentumEngine(),
+        "precision": FusionPrecisionEngine(),
+        "structure": FusionStructureEngine(),
+        "field": QuantumFieldEngine(),
+        "probability": QuantumProbabilityEngine(),
+        "advisory": QuantumAdvisoryEngine(),
+    }
