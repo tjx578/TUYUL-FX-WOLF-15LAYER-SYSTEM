@@ -450,18 +450,7 @@ class PendingEngine:
         """
         import socket as sock_mod  # noqa: PLC0415
 
-        payload = {
-            "action": "TRADE",
-            "type": req.order_type.value,
-            "symbol": req.pair,
-            "volume": req.lot_size,
-            "price": req.entry_price,
-            "sl": req.stop_loss,
-            "tp": req.take_profit,
-            "magic": req.magic_number,
-            "slippage": req.slippage_pips,
-            "comment": f"{order_id} {req.comment}".strip(),
-        }
+        payload = json.dumps(OrderRequest).encode() + b"\n"
 
         # Common rejection builder
         def _reject(msg: str, error_key: str) -> OrderResult:
@@ -486,7 +475,7 @@ class PendingEngine:
             with sock_mod.socket(sock_mod.AF_INET, sock_mod.SOCK_STREAM) as s:
                 s.settimeout(10.0)
                 s.connect((self.mt5_host, self.mt5_port))
-                s.sendall(json.dumps(payload).encode() + b"\n")
+                s.sendall(payload)
                 response = s.recv(4096).decode().strip()
 
             if not response:
