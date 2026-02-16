@@ -159,7 +159,7 @@ class PropFirmRules:
             - severity: str
             - details: str?
         """
-        result = {
+        result: dict[str, bool | str | float] = {
             "allowed": False,
             "code": "RISK_EXCEEDED",
             "severity": "HIGH",
@@ -182,5 +182,9 @@ class PropFirmRules:
             result["details"] = "Trade violates prop firm rules."
             result["code"] = "RISK_EXCEEDED"
             result["severity"] = "HIGH"
+
+        # Ensure max_safe_lot is always present in result
+        if "max_safe_lot" not in result:
+            result["max_safe_lot"] = result.get("recommended_lot", 0.0)
 
         return result
