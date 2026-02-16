@@ -1,12 +1,24 @@
 """
-L3 — Technical Deep Dive + Smart Money Enrichment (PRODUCTION)
-===============================================================
+L3 — Technical Deep Dive + Smart Money Enrichment (PRODUCTION v6)
+==================================================================
 Multi-asset safe: FX, XAU, XAG, BTC, Indices.
+
+v6 upgrade: Logistic edge probability as ADDITIVE enrichment.
+ALL v5 methods, scoring, and output contract preserved byte-identical.
+
+Mathematical model (v6 enrichment):
+    X = [trend_str, struct_score, conf/4, liq, trq3d, adx_n, atr_exp]
+    z = W^T · X + bias
+    P_edge = σ(z)
+    drift_state = classify(drift)     # FRESH / EXTENDING / OVEREXTENDED
+    drift_factor = lookup(drift_state) # 1.0 / 0.85 / 0.65
+    P_adj = P_edge × drift_factor
 
 Pipeline interface:
     L3TechnicalAnalyzer().analyze(symbol) -> dict[str, Any]
 
 Output contract (consumed by L4, L12 synthesis, L13, L15):
+    === v5 contract (IDENTICAL, preserved) ===
     technical_score    int   0-100   ScoresContract + L4 legacy
     structure_validity str   STRONG/MODERATE/WEAK
     confluence_points  int   0-4     smart-money confluence count
@@ -17,26 +29,30 @@ Output contract (consumed by L4, L12 synthesis, L13, L15):
     structure_score    float 0-1     L4 exec_score FALLBACK key
     valid              bool          pipeline gate check
 
-Version: v5-final (ATR-normalized, multi-asset)
-Fixes applied:
-    - ATR-based vol_factor (asset-agnostic, replaces hardcoded x1000)
-    - ATR-based confluence band (replaces fixed 0.3% threshold)
-    - ATR-normalized TRQ3D energy (replaces raw min(1.0, ...) clamp)
-    - Correct LiquiditySweepScorer integration (engines/v11/)
-    - True EMA via IndicatorEngine (analysis/market/indicators.py)
-    - True ADX with Wilder RMA smoothing
-    - Structure 3-state: STRONG / MODERATE / WEAK (BOS + range filter)
-    - Volume Profile: equal-width bins, meaningful POC
-    - Order Block: impulse + last opposite candle + retest proximity
-    - FVG: bullish + bearish + middle-candle non-fill check
-    - TRQ3D: per-call instance (no cross-symbol state bleed), 60-bar feed
-    - Balanced scoring: 25+25+20+20+10 = 100 max
+    === v6 enrichment (ADDITIVE, new keys) ===
+    edge_probability        float 0-1   calibrated P(structural edge)
+    edge_detail             dict        full breakdown (features, z, p_raw, etc.)
+    drift_state             str         FRESH / EXTENDING / OVEREXTENDED
+    trend_strength          float 0-1   ADX-derived (direction-agnostic)
+    adx                     float 0-100 raw Wilder ADX
+    atr                     float       raw ATR value
+    atr_expansion           float       vol_factor ratio [0.7, 2.0]
+    liquidity_score         float 0-1   sweep quality from engine
+
+Version: v6 (Logistic Edge Enrichment + Drift Context)
+Preserves all v5-final infrastructure:
+    - ATR-based vol_factor, confluence band, TRQ3D normalization
+    - True EMA via IndicatorEngine, True ADX (Wilder RMA)
+    - BOS + range filter structure, Volume Profile, Order Block, FVG
+    - LiquiditySweepScorer integration, per-call TRQ3D
+    - Balanced scoring: 25+25+20+20+10 = 100 max (UNCHANGED)
 """
 
 from __future__ import annotations
 
 import logging
 import math
+
 from typing import Any
 
 import numpy as np
@@ -50,6 +66,137 @@ logger = logging.getLogger(__name__)
 
 
 # ═══════════════════════════════════════════════════════════════════════
+# §0  EDGE MODEL CONSTANTS (v6 enrichment)
+# ═══════════════════════════════════════════════════════════════════════
+
+# Expert-calibrated weight vector W for P_edge = σ(W^T · X + bias)
+# Order: [trend_str, struct_score, conf_norm, liq_score,
+#         trq3d_energy, adx_norm, atr_expansion]
+#
+# NOTE: All weights are DIRECTION-AGNOSTIC.  trend_strength=0.8 for
+# BULLISH and BEARISH produces IDENTICAL P_edge.  This is correct:
+# ADX measures strength-of-trend, not direction.  Direction is
+# captured by the `trend` label output, not the edge score.
+_EDGE_WEIGHTS: list[float] = [1.8, 1.5, 1.2, 1.0, 0.8, 0.6, 0.4]
+_EDGE_BIAS: float = -3.5
+
+# Drift context thresholds — same for BULLISH and BEARISH
+# Drift = |price - VWAP| / price (distance from equilibrium)
+_DRIFT_FRESH: float = 0.003       # entry phase: full edge
+_DRIFT_EXTENDING: float = 0.008   # continuation: moderate edge
+# Above EXTENDING = OVEREXTENDED: late entry
+
+# Drift context multipliers (NOT penalty — context factor)
+_DRIFT_FACTORS: dict[str, float] = {
+    "FRESH": 1.00,          # early entry → full conviction
+    "EXTENDING": 0.85,      # trend continuation → slightly reduced
+    "OVEREXTENDED": 0.65,   # late entry → reduced (not killed)
+}
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# §0.1  PURE MATH
+# ═══════════════════════════════════════════════════════════════════════
+
+def _sigmoid(x: float) -> float:
+    """Numerically stable sigmoid σ(x) → (0, 1)."""
+    if x >= 0:
+        z = math.exp(-x)
+        return 1.0 / (1.0 + z)
+    z = math.exp(x)
+    return z / (1.0 + z)
+
+
+def _classify_drift(drift: float) -> str:
+    """Classify drift into context state.
+
+    Symmetric for BULLISH and BEARISH:
+        FRESH:        drift < 0.003  → price near equilibrium
+        EXTENDING:    0.003 ≤ drift < 0.008  → trend underway
+        OVEREXTENDED: drift ≥ 0.008 → extended from equilibrium
+
+    This is NOT a directional judgment — a BEARISH move with drift=0.002
+    is equally FRESH as a BULLISH move with drift=0.002.
+    """
+    if drift < _DRIFT_FRESH:
+        return "FRESH"
+    if drift < _DRIFT_EXTENDING:
+        return "EXTENDING"
+    return "OVEREXTENDED"
+
+
+def _compute_edge_probability(
+    *,
+    trend_strength: float,
+    structure_score: float,
+    confluence_count: int,
+    liquidity_score: float,
+    trq3d_energy: float,
+    adx_norm: float,
+    atr_expansion: float,
+    drift: float,
+) -> tuple[float, dict[str, Any]]:
+    """Compute calibrated edge probability P_edge_adj.
+
+    Mathematical model:
+        X = [trend, struct, conf/4, liq, trq3d, adx_n, atr_exp]
+        z = W^T · X + bias
+        P_edge = σ(z)
+        drift_state = classify(drift)
+        drift_factor = lookup(drift_state)
+        P_adj = P_edge × drift_factor
+
+    Direction-agnostic:
+        BULLISH trend_strength=0.8 and BEARISH trend_strength=0.8
+        produce IDENTICAL P_edge.  This is by design — edge measures
+        the QUALITY of the setup, not its direction.
+
+    Args:
+        All features in [0, 1] range (confluence_count → conf/4).
+        drift: VWAP deviation (0+), higher = more extended.
+
+    Returns:
+        (p_adj, detail_dict) for logging / downstream enrichment.
+    """
+    x = [
+        float(np.clip(trend_strength, 0.0, 1.0)),
+        float(np.clip(structure_score, 0.0, 1.0)),
+        float(np.clip(confluence_count / 4.0, 0.0, 1.0)),
+        float(np.clip(liquidity_score, 0.0, 1.0)),
+        float(np.clip(trq3d_energy, 0.0, 1.0)),
+        float(np.clip(adx_norm, 0.0, 1.0)),
+        float(np.clip(atr_expansion, 0.0, 1.0)),
+    ]
+
+    z = sum(w * xi for w, xi in zip(_EDGE_WEIGHTS, x, strict=False)) + _EDGE_BIAS
+    p_edge = _sigmoid(z)
+
+    drift_state = _classify_drift(drift)
+    drift_factor = _DRIFT_FACTORS[drift_state]
+    p_adj = p_edge * drift_factor
+
+    detail = {
+        "features": {
+            "trend_strength": x[0],
+            "structure_score": x[1],
+            "confluence_norm": x[2],
+            "liquidity_score": x[3],
+            "trq3d_energy": x[4],
+            "adx_norm": x[5],
+            "atr_expansion": x[6],
+        },
+        "logit_z": round(z, 4),
+        "p_edge_raw": round(p_edge, 4),
+        "drift": round(drift, 6),
+        "drift_state": drift_state,
+        "drift_factor": drift_factor,
+        "p_edge_adj": round(p_adj, 4),
+    }
+
+    return p_adj, detail
+
+
+# ═══════════════════════════════════════════════════════════════════════
 # §1  MAIN ANALYZER
 # ═══════════════════════════════════════════════════════════════════════
 
@@ -59,6 +206,10 @@ class L3TechnicalAnalyzer:
 
     Pull-based architecture: sources data from LiveContextBus.
     Stateless per-call for TRQ3D (fresh engine avoids cross-symbol bleed).
+
+    v6: Adds edge probability enrichment on top of v5 scoring.
+    v5 `_compute_tech_score()` is preserved UNCHANGED as the primary
+    `technical_score` output consumed by L4/L12/L15.
     """
 
     def __init__(self) -> None:
@@ -71,7 +222,7 @@ class L3TechnicalAnalyzer:
         """Deep technical analysis for *symbol*.
 
         Returns:
-            dict matching the L3 output contract (see module docstring).
+            dict with v5 contract keys (unchanged) + v6 enrichment keys.
         """
         candles_h1 = self._bus.get_candle_history(symbol, "H1", count=80)
         candles_h4 = self._bus.get_candle_history(symbol, "H4", count=30)
@@ -103,6 +254,7 @@ class L3TechnicalAnalyzer:
         liq_result = self._liq.score(candles_h1, direction=direction)
         liq_score = float(getattr(liq_result, "sweep_quality", 0.0))
 
+        # ── v5 scoring (UNCHANGED) ────────────────────────────────
         technical_score = self._compute_tech_score(
             trend_strength=trend_strength,
             structure_score=float(structure["score"]),
@@ -111,12 +263,30 @@ class L3TechnicalAnalyzer:
             trq3d_energy=float(trq3d["energy"]),
         )
 
+        # ── v6 edge enrichment (ADDITIVE) ─────────────────────────
+        adx_raw = self._adx_wilder(highs, lows, closes, period=14)
+        atr_expansion = self._vol_factor(highs, lows, closes)
+        atr_exp_norm = float(np.clip((atr_expansion - 0.7) / 1.3, 0.0, 1.0))
+
+        edge_prob, edge_detail = _compute_edge_probability(
+            trend_strength=trend_strength,
+            structure_score=float(structure["score"]),
+            confluence_count=int(confluence["count"]),
+            liquidity_score=liq_score,
+            trq3d_energy=float(trq3d["energy"]),
+            adx_norm=adx_raw / 100.0,
+            atr_expansion=atr_exp_norm,
+            drift=float(trq3d["drift"]),
+        )
+
         logger.info(
-            "[L3] %s trend=%s tech=%d struct=%s conf=%d "
-            "liq=%.2f trq=%.3f drift=%.5f atr=%.6f",
+            "[L3] %s trend=%s tech=%d P_edge=%.4f drift_state=%s "
+            "struct=%s conf=%d liq=%.2f trq=%.3f drift=%.5f atr=%.6f",
             symbol,
             trend,
             technical_score,
+            edge_prob,
+            edge_detail["drift_state"],
             structure["validity"],
             confluence["count"],
             liq_score,
@@ -126,6 +296,7 @@ class L3TechnicalAnalyzer:
         )
 
         return {
+            # ── v5 contract (PRESERVED IDENTICAL) ─────────────────
             "technical_score": technical_score,
             "structure_validity": structure["validity"],
             "confluence_points": confluence["count"],
@@ -135,6 +306,15 @@ class L3TechnicalAnalyzer:
             "confidence": structure["confidence"],
             "structure_score": structure["score"],
             "valid": True,
+            # ── v6 enrichment (ADDITIVE) ──────────────────────────
+            "edge_probability": round(edge_prob, 4),
+            "edge_detail": edge_detail,
+            "drift_state": edge_detail["drift_state"],
+            "trend_strength": trend_strength,
+            "adx": adx_raw,
+            "atr": atr,
+            "atr_expansion": atr_expansion,
+            "liquidity_score": liq_score,
         }
 
     # ═══════════════════════════════════════════════════════════════
@@ -157,7 +337,7 @@ class L3TechnicalAnalyzer:
 
         tr_vals: list[float] = []
         for i in range(1, len(closes)):
-            tr_vals.append(
+            tr_vals.append(  # noqa: PERF401
                 max(
                     highs[i] - lows[i],
                     abs(highs[i] - closes[i - 1]),
@@ -183,6 +363,10 @@ class L3TechnicalAnalyzer:
         Uses IndicatorEngine.ema for EMA crossover and true Wilder ADX
         for trend strength.  Gap threshold is ATR-adaptive so the same
         logic works for EURUSD (ATR ~0.0008) and XAUUSD (ATR ~20).
+
+        SYMMETRY: BULLISH and BEARISH use IDENTICAL strength formula:
+            strength = min(1.0, (adx - 20.0) / 25.0)
+        ADX measures trend intensity, not direction.
         """
         ema20 = IndicatorEngine.ema(closes, 20)
         ema50 = IndicatorEngine.ema(closes, 50)
@@ -224,7 +408,7 @@ class L3TechnicalAnalyzer:
 
         tr_short: list[float] = []
         for i in range(max(1, len(closes) - 7), len(closes)):
-            tr_short.append(
+            tr_short.append(  # noqa: PERF401
                 max(
                     highs[i] - lows[i],
                     abs(highs[i] - closes[i - 1]),
@@ -235,7 +419,7 @@ class L3TechnicalAnalyzer:
 
         tr_long: list[float] = []
         for i in range(max(1, len(closes) - 20), len(closes)):
-            tr_long.append(
+            tr_long.append(  # noqa: PERF401
                 max(
                     highs[i] - lows[i],
                     abs(highs[i] - closes[i - 1]),
@@ -268,7 +452,7 @@ class L3TechnicalAnalyzer:
             return 0.0
 
         h = np.array(highs, dtype=np.float64)
-        l = np.array(lows, dtype=np.float64)
+        l = np.array(lows, dtype=np.float64)  # noqa: E741
         c = np.array(closes, dtype=np.float64)
 
         up_move = h[1:] - h[:-1]
@@ -314,7 +498,7 @@ class L3TechnicalAnalyzer:
             return 0.0
         return float(max(0.0, min(100.0, val)))
 
-    # ═══════════════════════════════════════��═══════════════════════
+    # ═══════════════════════════════════════════════════════════════
     # §4  STRUCTURE: BOS + range filter → STRONG / MODERATE / WEAK
     # ═══════════════════════════════════════════════════════════════
 
@@ -327,8 +511,9 @@ class L3TechnicalAnalyzer:
     ) -> dict[str, Any]:
         """Market structure analysis with ATR-based range filter.
 
-        Uses ATR to determine whether the range is meaningful for
-        the instrument (works for EURUSD, XAUUSD, XAGUSD alike).
+        SYMMETRY: BOS upward and BOS downward return IDENTICAL
+        score (0.85) and confidence (0.85).  Structure break is
+        structure break — direction doesn't affect quality.
         """
         if len(highs) < 20:
             return {"validity": "WEAK", "confidence": 0.0, "score": 0.0}
@@ -441,7 +626,7 @@ class L3TechnicalAnalyzer:
         idxs = np.clip(
             np.digitize(window_prices, edges) - 1, 0, bins - 1,
         )
-        for idx, v in zip(idxs, window_vols):
+        for idx, v in zip(idxs, window_vols, strict=False):
             vol_by_bin[int(idx)] += float(v)
 
         poc_bin = int(np.argmax(vol_by_bin))
@@ -590,7 +775,7 @@ class L3TechnicalAnalyzer:
         return {"energy": energy, "drift": drift}
 
     # ═══════════════════════════════════════════════════════════════
-    # §7  SCORING (balanced, capped at 100)
+    # §7  SCORING (balanced, capped at 100) — v5 UNCHANGED
     # ═══════════════════════════════════════════════════════════════
 
     @staticmethod
@@ -602,7 +787,11 @@ class L3TechnicalAnalyzer:
         liquidity_score: float,
         trq3d_energy: float,
     ) -> int:
-        """Balanced technical score.
+        """Balanced technical score — v5 IDENTICAL.
+
+        SYMMETRY: trend_strength from BULLISH and BEARISH uses
+        the same formula.  A strong bear scores the same as a
+        strong bull — direction is captured separately in `trend`.
 
         Components:
             Trend strength:     0-25
@@ -632,6 +821,7 @@ class L3TechnicalAnalyzer:
         """Safe fallback — valid=False triggers pipeline early-exit."""
         logger.warning("[L3] %s insufficient data for analysis", symbol)
         return {
+            # v5 contract
             "technical_score": 0,
             "structure_validity": "WEAK",
             "confluence_points": 0,
@@ -641,4 +831,13 @@ class L3TechnicalAnalyzer:
             "confidence": 0.0,
             "structure_score": 0.0,
             "valid": False,
+            # v6 enrichment
+            "edge_probability": 0.0,
+            "edge_detail": {},
+            "drift_state": "FRESH",
+            "trend_strength": 0.0,
+            "adx": 0.0,
+            "atr": 0.0,
+            "atr_expansion": 1.0,
+            "liquidity_score": 0.0,
         }

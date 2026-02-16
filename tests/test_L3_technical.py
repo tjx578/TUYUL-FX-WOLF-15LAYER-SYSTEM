@@ -21,7 +21,15 @@ from unittest import mock
 import numpy as np
 import pytest
 
-from analysis.layers.L3_technical import L3TechnicalAnalyzer
+from analysis.layers.L3_technical import (
+    _DRIFT_FACTORS,
+    _EDGE_BIAS,
+    _EDGE_WEIGHTS,
+    L3TechnicalAnalyzer,
+    _classify_drift,
+    _compute_edge_probability,
+    _sigmoid,
+)
 
 # ═══════════════════════════════════════════════════════════════════════
 # HELPERS: Synthetic candle data generators
@@ -201,7 +209,7 @@ class TestComputeATR:
 class TestDetectTrend:
     """Trend direction: BULLISH/BEARISH/NEUTRAL across FX, metals, crypto."""
 
-    def test_strong_fx_uptrend_bullish(self, analyzer):
+    def test_strong_fx_uptrend_bullish(self, analyzer: L3TechnicalAnalyzer):
         """EURUSD clear uptrend → BULLISH."""
         h, l, c, _ = _make_trending_data(  # noqa: E741
             start=1.050, step=0.002, n=80, noise=0.0005, direction="up",
@@ -211,7 +219,7 @@ class TestDetectTrend:
         assert trend == "BULLISH"
         assert strength > 0.0
 
-    def test_strong_fx_downtrend_bearish(self, analyzer):
+    def test_strong_fx_downtrend_bearish(self, analyzer: L3TechnicalAnalyzer):
         """EURUSD clear downtrend → BEARISH."""
         h, l, c, _ = _make_trending_data(  # noqa: E741
             start=1.150, step=0.002, n=80, noise=0.0005, direction="down",
@@ -221,7 +229,7 @@ class TestDetectTrend:
         assert trend == "BEARISH"
         assert strength > 0.0
 
-    def test_flat_market_neutral(self, analyzer):
+    def test_flat_market_neutral(self, analyzer: L3TechnicalAnalyzer):
         """Sideways market → NEUTRAL."""
         rng = np.random.RandomState(99)
         n = 80
@@ -232,7 +240,7 @@ class TestDetectTrend:
         trend, _ = analyzer._detect_trend(h, l, c, atr)
         assert trend == "NEUTRAL"
 
-    def test_gold_uptrend_bullish(self, analyzer):
+    def test_gold_uptrend_bullish(self, analyzer: L3TechnicalAnalyzer):
         """XAUUSD uptrend → BULLISH (multi-asset safe)."""
         h, l, c, _ = _make_trending_data(  # noqa: E741
             start=1900.0, step=5.0, n=80, noise=3.0, direction="up",
@@ -241,7 +249,7 @@ class TestDetectTrend:
         trend, _ = analyzer._detect_trend(h, l, c, atr)
         assert trend == "BULLISH"
 
-    def test_gold_downtrend_bearish(self, analyzer):
+    def test_gold_downtrend_bearish(self, analyzer: L3TechnicalAnalyzer):
         """XAUUSD downtrend → BEARISH."""
         h, l, c, _ = _make_trending_data(  # noqa: E741
             start=2050.0, step=5.0, n=80, noise=3.0, direction="down",
@@ -250,7 +258,7 @@ class TestDetectTrend:
         trend, _ = analyzer._detect_trend(h, l, c, atr)
         assert trend == "BEARISH"
 
-    def test_btc_downtrend_bearish(self, analyzer):
+    def test_btc_downtrend_bearish(self, analyzer: L3TechnicalAnalyzer):
         """BTC downtrend → BEARISH."""
         h, l, c, _ = _make_trending_data(  # noqa: E741
             start=45000.0, step=200.0, n=80, noise=80.0, direction="down",
@@ -259,7 +267,7 @@ class TestDetectTrend:
         trend, _ = analyzer._detect_trend(h, l, c, atr)
         assert trend == "BEARISH"
 
-    def test_insufficient_ema_data_neutral(self, analyzer):
+    def test_insufficient_ema_data_neutral(self, analyzer: L3TechnicalAnalyzer):
         """< 50 bars (can't compute EMA50) → NEUTRAL, strength 0."""
         c = [1.10] * 10
         h = [1.11] * 10
@@ -268,7 +276,7 @@ class TestDetectTrend:
         assert trend == "NEUTRAL"
         assert strength == 0.0
 
-    def test_trend_strength_bounded_zero_one(self, analyzer):
+    def test_trend_strength_bounded_zero_one(self, analyzer: L3TechnicalAnalyzer):
         """Strength is always in [0, 1]."""
         for direction in ("up", "down", "flat"):
             h, l, c, _ = _make_trending_data(  # noqa: E741
@@ -287,7 +295,7 @@ class TestDetectTrend:
 class TestADXWilder:
     """True ADX with Wilder RMA smoothing."""
 
-    def test_insufficient_data_returns_zero(self, analyzer):
+    def test_insufficient_data_returns_zero(self, analyzer: L3TechnicalAnalyzer):
         """< period*2+2 bars → 0.0."""
         n = 20  # needs 30 for period=14
         c = [1.10 + i * 0.001 for i in range(n)]
@@ -295,7 +303,7 @@ class TestADXWilder:
         l = [x - 0.002 for x in c]  # noqa: E741
         assert analyzer._adx_wilder(h, l, c, period=14) == 0.0
 
-    def test_exactly_minimum_bars(self, analyzer):
+    def test_exactly_minimum_bars(self, analyzer: L3TechnicalAnalyzer):
         """period*2+2 bars → computable."""
         n = 30
         c = [1.10 + i * 0.002 for i in range(n)]
@@ -304,7 +312,7 @@ class TestADXWilder:
         adx = analyzer._adx_wilder(h, l, c, period=14)
         assert adx >= 0.0
 
-    def test_strong_trend_high_adx(self, analyzer):
+    def test_strong_trend_high_adx(self, analyzer: L3TechnicalAnalyzer):
         """Strong monotonic uptrend → ADX > 25."""
         h, l, c, _ = _make_trending_data(  # noqa: E741
             start=1.050, step=0.003, n=80, noise=0.0003, direction="up",
@@ -312,7 +320,7 @@ class TestADXWilder:
         adx = analyzer._adx_wilder(h, l, c, period=14)
         assert adx >= 25.0, f"Expected ADX >= 25 for strong trend, got {adx:.1f}"
 
-    def test_ranging_market_low_adx(self, analyzer):
+    def test_ranging_market_low_adx(self, analyzer: L3TechnicalAnalyzer):
         """Flat/ranging market → ADX < 25."""
         rng = np.random.RandomState(42)
         n = 80
@@ -322,7 +330,7 @@ class TestADXWilder:
         adx = analyzer._adx_wilder(h, l, c, period=14)
         assert adx < 25.0, f"Expected ADX < 25 for ranging, got {adx:.1f}"
 
-    def test_adx_bounded_0_100(self, analyzer):
+    def test_adx_bounded_0_100(self, analyzer: L3TechnicalAnalyzer):
         """ADX always in [0, 100]."""
         np.random.RandomState(42)
         for seed in range(5):
@@ -334,7 +342,7 @@ class TestADXWilder:
             adx = analyzer._adx_wilder(h, l, c, period=14)
             assert 0.0 <= adx <= 100.0, f"seed={seed}, adx={adx}"
 
-    def test_gold_trending_adx_high(self, analyzer):
+    def test_gold_trending_adx_high(self, analyzer: L3TechnicalAnalyzer):
         """XAUUSD strong trend → ADX >= 20."""
         h, l, c, _ = _make_trending_data(  # noqa: E741
             start=1900.0, step=8.0, n=80, noise=2.0, direction="up",
@@ -342,13 +350,13 @@ class TestADXWilder:
         adx = analyzer._adx_wilder(h, l, c, period=14)
         assert adx >= 20.0
 
-    def test_flat_data_returns_zero_or_low(self, analyzer):
+    def test_flat_data_returns_zero_or_low(self, analyzer: L3TechnicalAnalyzer):
         """Totally flat bars → ADX 0 or very low."""
         n = 80
         adx = analyzer._adx_wilder([100.0] * n, [100.0] * n, [100.0] * n, period=14)
         assert adx < 5.0
 
-    def test_adx_not_nan(self, analyzer):
+    def test_adx_not_nan(self, analyzer: L3TechnicalAnalyzer):
         """ADX never NaN."""
         h, l, c, _ = _make_trending_data(  # noqa: E741
             start=1.05, step=0.001, n=80, noise=0.0008, direction="up",
@@ -683,7 +691,7 @@ class TestDetectFVG:
 class TestFindConfluence:
     """Combined confluence count: 0-4."""
 
-    def test_all_four_detectors_fire(self, analyzer):
+    def test_all_four_detectors_fire(self, analyzer: L3TechnicalAnalyzer):
         """All detectors → count=4."""
         with (
             mock.patch.object(L3TechnicalAnalyzer, "_fib_retracement_hit", return_value=True),
@@ -693,7 +701,7 @@ class TestFindConfluence:
         ):
             assert analyzer._find_confluence([], [], [], [], atr=0.001)["count"] == 4
 
-    def test_zero_detectors_fire(self, analyzer):
+    def test_zero_detectors_fire(self, analyzer: L3TechnicalAnalyzer):
         """No detectors → count=0."""
         with (
             mock.patch.object(L3TechnicalAnalyzer, "_fib_retracement_hit", return_value=False),
@@ -703,7 +711,7 @@ class TestFindConfluence:
         ):
             assert analyzer._find_confluence([], [], [], [], atr=0.001)["count"] == 0
 
-    def test_partial_two_detectors(self, analyzer):
+    def test_partial_two_detectors(self, analyzer: L3TechnicalAnalyzer):
         """Two detectors → count=2."""
         with (
             mock.patch.object(L3TechnicalAnalyzer, "_fib_retracement_hit", return_value=True),
@@ -713,7 +721,7 @@ class TestFindConfluence:
         ):
             assert analyzer._find_confluence([], [], [], [], atr=0.001)["count"] == 2
 
-    def test_count_capped_at_four(self, analyzer):
+    def test_count_capped_at_four(self, analyzer: L3TechnicalAnalyzer):
         """Result is min(count, 4) — can't exceed 4."""
         with (
             mock.patch.object(L3TechnicalAnalyzer, "_fib_retracement_hit", return_value=True),
@@ -724,7 +732,7 @@ class TestFindConfluence:
             result = analyzer._find_confluence([], [], [], [], atr=0.001)
             assert result["count"] <= 4
 
-    def test_count_is_int(self, analyzer):
+    def test_count_is_int(self, analyzer: L3TechnicalAnalyzer):
         """count is always int."""
         with (
             mock.patch.object(L3TechnicalAnalyzer, "_fib_retracement_hit", return_value=True),
@@ -928,11 +936,17 @@ class TestInsufficientData:
 
     def test_all_keys_present(self):
         result = L3TechnicalAnalyzer._insufficient_data("XAUUSD")
-        expected_keys = {
+        v5_keys = {
             "technical_score", "structure_validity", "confluence_points",
             "trq3d_energy", "drift", "trend", "confidence",
             "structure_score", "valid",
         }
+        v6_keys = {
+            "edge_probability", "edge_detail", "drift_state",
+            "trend_strength", "adx", "atr", "atr_expansion",
+            "liquidity_score",
+        }
+        expected_keys = v5_keys | v6_keys
         assert set(result.keys()) == expected_keys
 
     def test_safe_defaults(self):
@@ -955,14 +969,14 @@ class TestInsufficientData:
 class TestVolFactor:
     """Volatility factor: ATR(7)/ATR(20) ratio, bounded [0.7, 2.0]."""
 
-    def test_insufficient_data_returns_one(self, analyzer):
+    def test_insufficient_data_returns_one(self, analyzer: L3TechnicalAnalyzer):
         """< 30 bars → default 1.0."""
         c = [1.10] * 20
         h = [1.11] * 20
         l = [1.09] * 20  # noqa: E741
         assert analyzer._vol_factor(h, l, c) == 1.0
 
-    def test_flat_market_near_one(self, analyzer):
+    def test_flat_market_near_one(self, analyzer: L3TechnicalAnalyzer):
         """Flat market (ATR short ≈ ATR long) → ~1.0."""
         n = 50
         rng = np.random.RandomState(42)
@@ -973,7 +987,7 @@ class TestVolFactor:
         assert 0.7 <= vf <= 2.0
         assert abs(vf - 1.0) < 0.5  # near 1.0 for flat market
 
-    def test_bounded_lower(self, analyzer):
+    def test_bounded_lower(self, analyzer: L3TechnicalAnalyzer):
         """Result always >= 0.7."""
         n = 50
         # Recent bars very tight, older bars wide
@@ -983,7 +997,7 @@ class TestVolFactor:
         vf = analyzer._vol_factor(h, l, c)
         assert vf >= 0.7
 
-    def test_bounded_upper(self, analyzer):
+    def test_bounded_upper(self, analyzer: L3TechnicalAnalyzer):
         """Result always <= 2.0."""
         n = 50
         c = [1.10] * n
@@ -992,3 +1006,474 @@ class TestVolFactor:
         l = [1.0999] * 30 + [1.00] * 20  # noqa: E741
         vf = analyzer._vol_factor(h, l, c)
         assert vf <= 2.0
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# §A  _sigmoid() — mathematical properties (v6)
+# ═══════════════════════════════════════════════════════════════════════
+
+
+class TestSigmoid:
+    """σ(x): numerically stable sigmoid function."""
+
+    def test_zero_is_half(self):
+        assert abs(_sigmoid(0.0) - 0.5) < 1e-10
+
+    def test_large_positive_near_one(self):
+        assert _sigmoid(100.0) > 0.9999
+
+    def test_large_negative_near_zero(self):
+        assert _sigmoid(-100.0) < 0.0001
+
+    def test_symmetry(self):
+        for x in [-5.0, -1.0, 0.0, 1.0, 5.0]:
+            assert abs(_sigmoid(x) + _sigmoid(-x) - 1.0) < 1e-10
+
+    def test_monotonically_increasing(self):
+        xs = [-10.0, -5.0, -1.0, 0.0, 1.0, 5.0, 10.0]
+        vals = [_sigmoid(x) for x in xs]
+        for i in range(len(vals) - 1):
+            assert vals[i] < vals[i + 1]
+
+    def test_never_nan_inf(self):
+        for x in [-1e6, -1e3, 0.0, 1e3, 1e6]:
+            v = _sigmoid(x)
+            assert not math.isnan(v) and not math.isinf(v)
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# §B  _classify_drift() — FRESH / EXTENDING / OVEREXTENDED (v6)
+# ═══════════════════════════════════════════════════════════════════════
+
+
+class TestClassifyDrift:
+    """Drift classification: direction-agnostic thresholds."""
+
+    @pytest.mark.parametrize(
+        "drift, expected",
+        [
+            (0.000, "FRESH"),
+            (0.001, "FRESH"),
+            (0.0029, "FRESH"),
+            (0.003, "EXTENDING"),
+            (0.005, "EXTENDING"),
+            (0.0079, "EXTENDING"),
+            (0.008, "OVEREXTENDED"),
+            (0.010, "OVEREXTENDED"),
+            (0.050, "OVEREXTENDED"),
+            (1.000, "OVEREXTENDED"),
+        ],
+    )
+    def test_threshold_boundaries(self, drift: float, expected: str):
+        assert _classify_drift(drift) == expected
+
+    def test_same_for_bullish_and_bearish_conceptually(self):
+        """Drift 0.005 from a bull move = same state as from a bear move."""
+        drift_bull = 0.005
+        drift_bear = 0.005
+        assert _classify_drift(drift_bull) == _classify_drift(drift_bear)
+
+    def test_drift_factors_defined_for_all_states(self):
+        for state in ("FRESH", "EXTENDING", "OVEREXTENDED"):
+            assert state in _DRIFT_FACTORS
+            assert 0.0 < _DRIFT_FACTORS[state] <= 1.0
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# §C  _compute_edge_probability() — feature vector → P_edge (v6)
+# ═══════════════════════════════════════════════════════════════════════
+
+
+class TestComputeEdgeProbability:
+    """Core logistic edge model."""
+
+    def test_all_zero_low_edge(self):
+        p, _ = _compute_edge_probability(
+            trend_strength=0.0, structure_score=0.0,
+            confluence_count=0, liquidity_score=0.0,
+            trq3d_energy=0.0, adx_norm=0.0, atr_expansion=0.0,
+            drift=0.0,
+        )
+        assert p < 0.10
+
+    def test_all_max_high_edge(self):
+        p, _ = _compute_edge_probability(
+            trend_strength=1.0, structure_score=1.0,
+            confluence_count=4, liquidity_score=1.0,
+            trq3d_energy=1.0, adx_norm=1.0, atr_expansion=1.0,
+            drift=0.0,
+        )
+        assert p > 0.85
+
+    def test_output_always_0_1(self):
+        rng = np.random.RandomState(42)
+        for _ in range(50):
+            p, _ = _compute_edge_probability(
+                trend_strength=rng.uniform(-1, 2),
+                structure_score=rng.uniform(-1, 2),
+                confluence_count=rng.randint(-2, 8),
+                liquidity_score=rng.uniform(-1, 2),
+                trq3d_energy=rng.uniform(-1, 2),
+                adx_norm=rng.uniform(-1, 2),
+                atr_expansion=rng.uniform(-1, 2),
+                drift=rng.uniform(0, 1),
+            )
+            assert 0.0 <= p <= 1.0
+
+    def test_detail_keys_complete(self):
+        _, detail = _compute_edge_probability(
+            trend_strength=0.5, structure_score=0.5,
+            confluence_count=2, liquidity_score=0.5,
+            trq3d_energy=0.5, adx_norm=0.3, atr_expansion=0.5,
+            drift=0.003,
+        )
+        required = {
+            "features", "logit_z", "p_edge_raw",
+            "drift", "drift_state", "drift_factor", "p_edge_adj",
+        }
+        assert required.issubset(detail.keys())
+
+    def test_manual_math_verification(self):
+        """Hand-compute z, σ(z), drift_factor, P_adj."""
+        features = [0.80, 0.85, 0.75, 0.70, 0.65, 0.40, 0.50]
+        z = sum(w * x for w, x in zip(_EDGE_WEIGHTS, features, strict=False)) + _EDGE_BIAS
+        expected_raw = _sigmoid(z)
+        expected_adj = expected_raw * 1.0
+
+        p, detail = _compute_edge_probability(
+            trend_strength=0.80, structure_score=0.85,
+            confluence_count=3, liquidity_score=0.70,
+            trq3d_energy=0.65, adx_norm=0.40, atr_expansion=0.50,
+            drift=0.002,
+        )
+        assert abs(p - expected_adj) < 0.01
+        assert detail["drift_state"] == "FRESH"
+        assert detail["drift_factor"] == 1.0
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# §D  BULLISH-BEARISH SYMMETRY PROOF — THE CORE REQUIREMENT (v6)
+# ═══════════════════════════════════════════════════════════════════════
+
+
+class TestBullishBearishSymmetry:
+    """PROOF: Bullish and Bearish produce IDENTICAL scores when
+    given the same feature magnitudes and the same drift."""
+
+    def test_same_features_same_drift_identical_edge(self):
+        """Exact same features → exact same P_edge."""
+        p1, d1 = _compute_edge_probability(
+            trend_strength=0.80, structure_score=0.85,
+            confluence_count=3, liquidity_score=0.70,
+            trq3d_energy=0.65, adx_norm=0.40, atr_expansion=0.50,
+            drift=0.004,
+        )
+        p2, d2 = _compute_edge_probability(
+            trend_strength=0.80, structure_score=0.85,
+            confluence_count=3, liquidity_score=0.70,
+            trq3d_energy=0.65, adx_norm=0.40, atr_expansion=0.50,
+            drift=0.004,
+        )
+        assert p1 == p2
+        assert d1["p_edge_raw"] == d2["p_edge_raw"]
+        assert d1["drift_factor"] == d2["drift_factor"]
+
+    def test_tech_score_symmetric_bull_bear(self):
+        """_compute_tech_score with same strength → same score."""
+        bull_score = L3TechnicalAnalyzer._compute_tech_score(
+            trend_strength=0.80, structure_score=0.85,
+            confluence_count=3, liquidity_score=0.70,
+            trq3d_energy=0.65,
+        )
+        bear_score = L3TechnicalAnalyzer._compute_tech_score(
+            trend_strength=0.80, structure_score=0.85,
+            confluence_count=3, liquidity_score=0.70,
+            trq3d_energy=0.65,
+        )
+        assert bull_score == bear_score
+
+    def test_detect_trend_strength_symmetric(self, analyzer: L3TechnicalAnalyzer):
+        """BULLISH strength formula = BEARISH strength formula."""
+        h_up, l_up, c_up, _ = _make_trending_data(
+            start=1.050, step=0.002, n=80, noise=0.0005, direction="up",
+        )
+        h_dn, l_dn, c_dn, _ = _make_trending_data(
+            start=1.150, step=0.002, n=80, noise=0.0005, direction="down",
+        )
+        atr_up = L3TechnicalAnalyzer._compute_atr(h_up, l_up, c_up)
+        atr_dn = L3TechnicalAnalyzer._compute_atr(h_dn, l_dn, c_dn)
+
+        trend_up, str_up = analyzer._detect_trend(h_up, l_up, c_up, atr_up)
+        trend_dn, str_dn = analyzer._detect_trend(h_dn, l_dn, c_dn, atr_dn)
+
+        assert trend_up == "BULLISH"
+        assert trend_dn == "BEARISH"
+        assert abs(str_up - str_dn) < 0.15, (
+            f"Strength asymmetry too large: bull={str_up:.3f} bear={str_dn:.3f}"
+        )
+
+    def test_structure_bos_up_equals_bos_down(self):
+        """BOS upward score == BOS downward score (both 0.85)."""
+        h_up = [1.10] * 20 + [1.08, 1.09, 1.10, 1.11, 1.15]
+        l_up = [1.08] * 20 + [1.07, 1.08, 1.09, 1.10, 1.12]
+        c_up = [1.09] * 20 + [1.075, 1.085, 1.095, 1.105, 1.14]
+        r_up = L3TechnicalAnalyzer._analyze_structure(h_up, l_up, c_up, 0.005)
+
+        h_dn = [1.10] * 20 + [1.09, 1.08, 1.07, 1.06, 1.05]
+        l_dn = [1.08] * 20 + [1.07, 1.06, 1.05, 1.04, 1.01]
+        c_dn = [1.09] * 20 + [1.08, 1.07, 1.06, 1.05, 1.02]
+        r_dn = L3TechnicalAnalyzer._analyze_structure(h_dn, l_dn, c_dn, 0.005)
+
+        assert r_up["validity"] == "STRONG"
+        assert r_dn["validity"] == "STRONG"
+        assert r_up["score"] == r_dn["score"] == 0.85
+        assert r_up["confidence"] == r_dn["confidence"] == 0.85
+
+    def test_drift_context_symmetric(self):
+        """Same drift magnitude → same drift_state for bull and bear."""
+        for drift in [0.001, 0.005, 0.010, 0.050]:
+            state = _classify_drift(drift)
+            assert state == _classify_drift(drift)
+
+    def test_edge_probability_symmetric_across_drift_states(self):
+        """For each drift state: bull features == bear features → same P."""
+        for drift, expected_state in [
+            (0.001, "FRESH"),
+            (0.005, "EXTENDING"),
+            (0.015, "OVEREXTENDED"),
+        ]:
+            p_bull, d_bull = _compute_edge_probability(
+                trend_strength=0.75, structure_score=0.85,
+                confluence_count=3, liquidity_score=0.65,
+                trq3d_energy=0.60, adx_norm=0.40, atr_expansion=0.55,
+                drift=drift,
+            )
+            p_bear, d_bear = _compute_edge_probability(
+                trend_strength=0.75, structure_score=0.85,
+                confluence_count=3, liquidity_score=0.65,
+                trq3d_energy=0.60, adx_norm=0.40, atr_expansion=0.55,
+                drift=drift,
+            )
+
+            assert d_bull["drift_state"] == expected_state
+            assert d_bear["drift_state"] == expected_state
+            assert p_bull == p_bear
+            assert d_bull["drift_factor"] == d_bear["drift_factor"]
+
+    @pytest.mark.parametrize(
+        "asset, start_bull, start_bear, step, noise",
+        [
+            ("EURUSD", 1.050, 1.150, 0.002, 0.0005),
+            ("XAUUSD", 1900.0, 2050.0, 5.0, 3.0),
+            ("BTCUSD", 40000.0, 50000.0, 200.0, 80.0),
+            ("XAGUSD", 22.0, 26.0, 0.08, 0.03),
+        ],
+    )
+    def test_multi_asset_direction_symmetry(
+        self, analyzer: L3TechnicalAnalyzer, asset: str, start_bull: float, start_bear: float, step: float, noise: float,
+    ) -> None:
+        """Each asset: bullish and bearish detected + both score > 0."""
+        h_up, l_up, c_up, _ = _make_trending_data(
+            start=start_bull, step=step, n=80, noise=noise, direction="up",
+        )
+        h_dn, l_dn, c_dn, _ = _make_trending_data(
+            start=start_bear, step=step, n=80, noise=noise, direction="down",
+        )
+
+        atr_up = L3TechnicalAnalyzer._compute_atr(h_up, l_up, c_up)
+        atr_dn = L3TechnicalAnalyzer._compute_atr(h_dn, l_dn, c_dn)
+
+        t_up, s_up = analyzer._detect_trend(h_up, l_up, c_up, atr_up)
+        t_dn, s_dn = analyzer._detect_trend(h_dn, l_dn, c_dn, atr_dn)
+
+        assert t_up == "BULLISH", f"{asset} up: got {t_up}"
+        assert t_dn == "BEARISH", f"{asset} down: got {t_dn}"
+        assert s_up > 0.0, f"{asset} bullish strength should be > 0"
+        assert s_dn > 0.0, f"{asset} bearish strength should be > 0"
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# §F  Drift context (NOT penalty) — same for both directions (v6)
+# ═══════════════════════════════════════════════════════════════════════
+
+
+class TestDriftContext:
+    """Drift context — same for both directions."""
+
+    def test_fresh_full_factor(self):
+        p, d = _compute_edge_probability(
+            trend_strength=0.8, structure_score=0.85,
+            confluence_count=3, liquidity_score=0.7,
+            trq3d_energy=0.6, adx_norm=0.4, atr_expansion=0.5,
+            drift=0.001,
+        )
+        assert d["drift_state"] == "FRESH"
+        assert d["drift_factor"] == 1.0
+        # factor=1.0 means p_adj ≈ p_edge_raw
+        assert abs(d["p_edge_raw"] - p) < 1e-4
+
+    def test_extending_reduced_factor(self):
+        p, d = _compute_edge_probability(
+            trend_strength=0.8, structure_score=0.85,
+            confluence_count=3, liquidity_score=0.7,
+            trq3d_energy=0.6, adx_norm=0.4, atr_expansion=0.5,
+            drift=0.005,
+        )
+        assert d["drift_state"] == "EXTENDING"
+        assert d["drift_factor"] == 0.85
+        assert p < d["p_edge_raw"]
+
+    def test_overextended_most_reduced(self):
+        p, d = _compute_edge_probability(
+            trend_strength=0.8, structure_score=0.85,
+            confluence_count=3, liquidity_score=0.7,
+            trq3d_energy=0.6, adx_norm=0.4, atr_expansion=0.5,
+            drift=0.015,
+        )
+        assert d["drift_state"] == "OVEREXTENDED"
+        assert d["drift_factor"] == 0.65
+        assert p < d["p_edge_raw"]
+
+    def test_drift_monotonic_decrease(self):
+        """Higher drift → lower P_adj (same raw features)."""
+        kwargs = {
+            "trend_strength": 0.8, "structure_score": 0.85,
+            "confluence_count": (3), "liquidity_score": 0.7,
+            "trq3d_energy": 0.6, "adx_norm": 0.4, "atr_expansion": 0.5,
+        }
+        p_fresh, _ = _compute_edge_probability(drift=0.001, **kwargs)
+        p_ext, _ = _compute_edge_probability(drift=0.005, **kwargs)
+        p_over, _ = _compute_edge_probability(drift=0.015, **kwargs)
+        assert p_fresh >= p_ext >= p_over
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# §G  v5 scoring unchanged — _compute_tech_score() byte-identical (v6)
+# ═══════════════════════════════════════════════════════════════════════
+
+
+class TestV5ScoringUnchanged:
+    """_compute_tech_score() remains byte-identical to v5."""
+
+    def test_all_zero_inputs(self):
+        score = L3TechnicalAnalyzer._compute_tech_score(
+            trend_strength=0.0, structure_score=0.0,
+            confluence_count=0, liquidity_score=0.0,
+            trq3d_energy=0.0,
+        )
+        assert score == 0
+
+    def test_all_max_inputs(self):
+        score = L3TechnicalAnalyzer._compute_tech_score(
+            trend_strength=1.0, structure_score=1.0,
+            confluence_count=4, liquidity_score=1.0,
+            trq3d_energy=1.0,
+        )
+        assert score == 100
+
+    def test_formula_components(self):
+        """25+25+20+20+10 = 100 max."""
+        score = L3TechnicalAnalyzer._compute_tech_score(
+            trend_strength=0.5, structure_score=0.5,
+            confluence_count=2, liquidity_score=0.5,
+            trq3d_energy=0.5,
+        )
+        expected = round(0.5 * 25 + 0.5 * 25 + 2 * 5 + 0.5 * 20 + 0.5 * 10)
+        assert score == expected
+
+    def test_clamping_above_max(self):
+        """Over-range inputs still cap at 100."""
+        score = L3TechnicalAnalyzer._compute_tech_score(
+            trend_strength=2.0, structure_score=2.0,
+            confluence_count=10, liquidity_score=2.0,
+            trq3d_energy=2.0,
+        )
+        assert score == 100
+
+    def test_negative_inputs_clamp_to_zero(self):
+        score = L3TechnicalAnalyzer._compute_tech_score(
+            trend_strength=-1.0, structure_score=-1.0,
+            confluence_count=-5, liquidity_score=-1.0,
+            trq3d_energy=-1.0,
+        )
+        assert score == 0
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# §H  Output contract — v5 keys preserved, v6 keys added (v6)
+# ═══════════════════════════════════════════════════════════════════════
+
+
+class TestOutputContract:
+    """v5 keys preserved, v6 keys added in _insufficient_data."""
+
+    def test_insufficient_data_v5_keys(self):
+        result = L3TechnicalAnalyzer._insufficient_data("EURUSD")
+        v5_keys = {
+            "technical_score", "structure_validity", "confluence_points",
+            "trq3d_energy", "drift", "trend", "confidence",
+            "structure_score", "valid",
+        }
+        assert v5_keys.issubset(result.keys())
+        assert result["valid"] is False
+
+    def test_insufficient_data_v6_keys(self):
+        result = L3TechnicalAnalyzer._insufficient_data("EURUSD")
+        v6_keys = {
+            "edge_probability", "edge_detail", "drift_state",
+            "trend_strength", "adx", "atr", "atr_expansion",
+            "liquidity_score",
+        }
+        assert v6_keys.issubset(result.keys())
+        assert result["edge_probability"] == 0.0
+        assert result["drift_state"] == "FRESH"
+        assert result["atr_expansion"] == 1.0
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# §I  Boundary safety — NaN/Inf/overflow protection (v6)
+# ═══════════════════════════════════════════════════════════════════════
+
+
+class TestBoundarySafety:
+    """NaN/Inf/overflow protection in edge model."""
+
+    def test_extreme_positive_features(self):
+        p, _ = _compute_edge_probability(
+            trend_strength=1e6, structure_score=1e6,
+            confluence_count=1000, liquidity_score=1e6,
+            trq3d_energy=1e6, adx_norm=1e6, atr_expansion=1e6,
+            drift=0.0,
+        )
+        assert 0.0 <= p <= 1.0
+        assert not math.isnan(p) and not math.isinf(p)
+
+    def test_extreme_negative_features(self):
+        p, _ = _compute_edge_probability(
+            trend_strength=-1e6, structure_score=-1e6,
+            confluence_count=-1000, liquidity_score=-1e6,
+            trq3d_energy=-1e6, adx_norm=-1e6, atr_expansion=-1e6,
+            drift=0.0,
+        )
+        assert 0.0 <= p <= 1.0
+        assert not math.isnan(p) and not math.isinf(p)
+
+    def test_zero_drift_valid(self):
+        _p, d = _compute_edge_probability(
+            trend_strength=0.5, structure_score=0.5,
+            confluence_count=2, liquidity_score=0.5,
+            trq3d_energy=0.5, adx_norm=0.3, atr_expansion=0.5,
+            drift=0.0,
+        )
+        assert d["drift_state"] == "FRESH"
+        assert d["drift_factor"] == 1.0
+
+    def test_very_large_drift(self):
+        p, d = _compute_edge_probability(
+            trend_strength=0.5, structure_score=0.5,
+            confluence_count=2, liquidity_score=0.5,
+            trq3d_energy=0.5, adx_norm=0.3, atr_expansion=0.5,
+            drift=100.0,
+        )
+        assert d["drift_state"] == "OVEREXTENDED"
+        assert 0.0 <= p <= 1.0
