@@ -10,6 +10,8 @@
 # =========================
 __pycache__/
 *.py[cod]
+*$py.class
+*.pyc
 *.pyo
 *.pyd
 *.so
@@ -84,13 +86,10 @@ temp/
 _test_result*.txt
 _test_result*.log
 test-results/
-*.test-result
 htmlcov/
 .coverage
 coverage.xml
-*.pytest_cache
-__pycache__/
-*.pyc
+.pytest_cache/
 
 # Environment
 .env
