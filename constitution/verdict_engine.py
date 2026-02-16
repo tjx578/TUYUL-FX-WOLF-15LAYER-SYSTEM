@@ -241,7 +241,6 @@ class VerdictEngine:
             "kelly_edge_gate_enabled", False
         )
         self.analyzers: list = []
-        self.analyzers: list = []
 
     def _extract_l7_probability_metrics(
         self, layer_results: dict[str, Any]
