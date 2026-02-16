@@ -252,19 +252,31 @@ jobs:
           pip install -r requirements.txt
           pip install pytest pytest-cov pytest-timeout
 
-      - name: 🧪 Run L12 Gate Tests (Constitutional)
-        run: pytest tests/test_l12_gate.py -v --timeout=30 || true
+      - name: "🧪 Critical Test Gate (must pass to merge)"
+        run: |
+          pytest \
+            tests/test_l12_gate.py \
+            tests/test_l12_verdict.py \
+            tests/test_l11_rr.py \
+            tests/test_l2_mta.py \
+            tests/test_l10_dynamic_sizing.py \
+            tests/test_l10_kelly_integration.py \
+            tests/test_l6_correlation_integration.py \
+            tests/contract/test_public_api_contract.py \
+            tests/test_prop_firm.py \
+            tests/test_news_lock.py \
+            tests/test_m15_cancel.py \
+            tests/test_signal_integrity.py \
+            tests/test_signal_throttle.py \
+            tests/test_pip_values.py \
+            tests/test_journal.py \
+            tests/test_l9_smc.py \
+            tests/test_dynamic_position_sizing.py \
+            tests/test_spread_estimator.py \
+            -v --timeout=60
 
-      - name: 🧪 Run News Lock Tests
-        run: pytest tests/test_news_lock.py -v --timeout=30 || true
-
-      - name: 🧪 Run M15 Cancel Tests
-        run: pytest tests/test_m15_cancel.py -v --timeout=30 || true
-
-      - name: 🧪 Run Prop Firm Guard Tests
-        run: pytest tests/test_prop_firm.py -v --timeout=30 || true
-
-      - name: 🧪 Run Full Test Suite
+      - name: "🧪 Extended Test Suite (informational)"
+        continue-on-error: true
         run: |
           pytest tests/ -v --timeout=60 \
             --cov=analysis \
@@ -273,8 +285,7 @@ jobs:
             --cov=risk \
             --cov=pipeline \
             --cov-report=term-missing \
-            --cov-report=xml:coverage.xml \
-            || true
+            --cov-report=xml:coverage.xml
 
       - name: 📊 Upload coverage report
         if: always()
