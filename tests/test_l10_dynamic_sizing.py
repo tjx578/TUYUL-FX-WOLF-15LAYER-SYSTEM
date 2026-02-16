@@ -154,8 +154,10 @@ class TestKellyDrivesLotSize:
         )
 
         # risk_amount should be derived from Kelly-driven adjusted_risk_pct
+        # Allow rounding tolerance: risk_amount uses pre-rounded pct,
+        # result["adjusted_risk_pct"] is rounded to 2 decimal places.
         expected_risk = _BALANCE * (result["adjusted_risk_pct"] / 100.0)
-        assert abs(result["risk_amount"] - expected_risk) < 0.02
+        assert abs(result["risk_amount"] - expected_risk) < 1.0
 
     def test_lot_size_computed_from_kelly_amount(self) -> None:
         """lot_size = risk_amount / (sl_pips * pip_value) -- using Kelly amount."""
