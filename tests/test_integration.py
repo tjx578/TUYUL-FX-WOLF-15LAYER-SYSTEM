@@ -27,7 +27,7 @@ _MOCK_LAYERS = {
 
 def test_pipeline_returns_l12_contract():
     """Test that synthesis builder returns data matching expected structure."""
-    synthesis = build_l12_synthesis(None, _MOCK_LAYERS)
+    synthesis = build_l12_synthesis(_MOCK_LAYERS)
 
     assert isinstance(synthesis, dict)
     # Check required top-level keys
@@ -37,7 +37,7 @@ def test_pipeline_returns_l12_contract():
 
 def test_pipeline_validates_contract():
     """Test that synthesis is compatible with L12 verdict engine."""
-    synthesis = build_l12_synthesis(None, _MOCK_LAYERS)
+    synthesis = build_l12_synthesis(_MOCK_LAYERS)
 
     # Synthesis should be processable by L12 verdict engine
     verdict = generate_l12_verdict(synthesis)
@@ -50,7 +50,7 @@ def test_pipeline_validates_contract():
 
 def test_l12_verdict_generation():
     """Test L12 verdict generation with synthesis data."""
-    synthesis = build_l12_synthesis(None, _MOCK_LAYERS)
+    synthesis = build_l12_synthesis(_MOCK_LAYERS)
     verdict = generate_l12_verdict(synthesis)
 
     assert verdict is not None
@@ -63,7 +63,7 @@ def test_l12_verdict_generation():
 def test_pipeline_layer_execution():
     """Test that synthesis builder processes layer results correctly."""
     layers_eurusd = dict(_MOCK_LAYERS)
-    synthesis = build_l12_synthesis(None, layers_eurusd)
+    synthesis = build_l12_synthesis(layers_eurusd)
 
     assert isinstance(synthesis, dict)
     assert "scores" in synthesis

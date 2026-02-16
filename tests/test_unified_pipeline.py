@@ -477,9 +477,9 @@ class TestPipelineResult:
 # ══════════════════════════════════════════════════════════════
 
 class TestBuildL12Synthesis:
-    """Tests for build_l12_synthesis(self, layer_results).
+    """Tests for build_l12_synthesis(layer_results).
 
-    The function is module-level with an unused ``self`` parameter.
+    The function is module-level.
     ``layer_results`` is a dict keyed by uppercase layer names:
     "L1", "L2", ..., "L11", "macro", "macro_vix_state".
     """
@@ -542,8 +542,7 @@ class TestBuildL12Synthesis:
         """Synthesis should contain all keys required by L12 verdict engine."""
         layer_results = self._make_layer_results()
 
-        # First arg (self) is unused -- pass None
-        synthesis = build_l12_synthesis(None, layer_results)
+        synthesis = build_l12_synthesis(layer_results)
 
         required_keys = [
             "scores", "layers", "execution", "risk",
@@ -558,7 +557,7 @@ class TestBuildL12Synthesis:
     def test_synthesis_execution_details(self):
         """Execution section should carry through L11 and L10 values."""
         layer_results = self._make_layer_results()
-        synthesis = build_l12_synthesis(None, layer_results)
+        synthesis = build_l12_synthesis(layer_results)
 
         assert synthesis["execution"]["entry_price"] == 1.10000
         assert synthesis["execution"]["stop_loss"] == 1.09500
@@ -575,6 +574,6 @@ class TestBuildL12Synthesis:
         layer_results = self._make_layer_results()
         layer_results["L3"]["trend"] = "NEUTRAL"
 
-        synthesis = build_l12_synthesis(None, layer_results)
+        synthesis = build_l12_synthesis(layer_results)
 
         assert synthesis["execution"]["direction"] == "HOLD"

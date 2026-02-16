@@ -8,8 +8,7 @@ import time
 
 from constitution.signal_dedup import SignalDeduplicator
 from constitution.signal_expiry import is_signal_valid
-from pipeline.wolf_constitutional_pipeline import WolfConstitutionalPipeline, build_l12_synthesis
-from schemas.validator import validate_l12_signal
+from pipeline.wolf_constitutional_pipeline import build_l12_synthesis
 
 
 class TestFullPipelineE2E:
@@ -31,7 +30,7 @@ class TestFullPipelineE2E:
             "L8": {"tii_score": 0.7},
         }
 
-        result = build_l12_synthesis(None, layer_results)
+        result = build_l12_synthesis(layer_results)
 
         assert result is not None
         # build_l12_synthesis returns a synthesis dict (pre-verdict structure)
