@@ -175,11 +175,12 @@ def timer() -> Timer:
 
 @pytest.fixture
 def price_watcher():
-    """Fixture providing a mock PriceWatcher for tests."""
+    """Mock PriceWatcher for tests -- no MT5 dependency."""
+
     class MockPriceWatcher:
         def __init__(self):
-            self._prices = {}
-            self._watching = set()
+            self._prices: dict = {}
+            self._watching: set = set()
 
         def watch(self, symbol: str):
             self._watching.add(symbol)
@@ -188,16 +189,25 @@ def price_watcher():
             self._watching.discard(symbol)
 
         def set_price(self, symbol: str, bid: float, ask: float):
-            self._prices[symbol] = {"bid": bid, "ask": ask, "spread": ask - bid}
+            self._prices[symbol] = {
+                "bid": bid,
+                "ask": ask,
+                "spread": round(ask - bid, 6),
+            }
 
         def get_price(self, symbol: str) -> dict:
-            return self._prices.get(symbol, {"bid": 0.0, "ask": 0.0, "spread": 0.0})
+            return self._prices.get(
+                symbol, {"bid": 0.0, "ask": 0.0, "spread": 0.0}
+            )
 
         def get_bid(self, symbol: str) -> float:
-            return self._prices.get(symbol, {}).get("bid", 0.0)
+            return self.get_price(symbol)["bid"]
 
         def get_ask(self, symbol: str) -> float:
-            return self._prices.get(symbol, {}).get("ask", 0.0)
+            return self.get_price(symbol)["ask"]
+
+        def get_spread(self, symbol: str) -> float:
+            return self.get_price(symbol)["spread"]
 
         @property
         def watching(self) -> set:
@@ -207,9 +217,9 @@ def price_watcher():
             return symbol in self._watching
 
     watcher = MockPriceWatcher()
-    # Pre-populate common forex pairs for convenience
     watcher.set_price("EURUSD", 1.08500, 1.08520)
     watcher.set_price("GBPUSD", 1.26100, 1.26130)
     watcher.set_price("USDJPY", 149.500, 149.520)
     watcher.set_price("XAUUSD", 2650.00, 2650.50)
+    watcher.set_price("GBPJPY", 188.200, 188.240)
     return watcher
