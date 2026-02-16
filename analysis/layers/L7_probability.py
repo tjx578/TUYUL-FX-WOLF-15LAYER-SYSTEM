@@ -51,6 +51,17 @@ from engines.monte_carlo_engine import (  # pyright: ignore[reportMissingImports
     MonteCarloResult,
 )
 
+# ── Optional Engine Enrichment ────────────────────────────────────────────────
+# WalkForwardValidator provides out-of-sample overfitting guard as an
+# enrichment layer on top of the MC + Bayesian probability gate.
+try:
+    from engines.walk_forward_validation_engine import (  # pyright: ignore[reportMissingImports]
+        WalkForwardValidator,
+    )
+    _wf_validator: WalkForwardValidator | None = WalkForwardValidator()
+except Exception:  # pragma: no cover
+    _wf_validator = None
+
 # ── Gate thresholds ──────────────────────────────────────────────────────────
 _MC_WIN_THRESHOLD = 0.60       # Win-rate ≥ 60% -> PASS tier
 _MC_WIN_CONDITIONAL = 0.55     # Win-rate ≥ 55% -> CONDITIONAL tier
@@ -240,6 +251,25 @@ class L7ProbabilityAnalyzer:
                 # ── Metadata ─────────────────────────────────────────
                 "symbol": symbol,
             }
+
+            # ── Walk-Forward Enrichment (optional) ───────────────────
+            if _wf_validator is not None and len(returns) >= 130:
+                try:
+                    wf_result = _wf_validator.run(returns)
+                    result["wf_passed"] = wf_result.passed
+                    result["wf_stability_score"] = wf_result.stability_score
+                    result["wf_avg_win_rate"] = wf_result.avg_win_rate
+                    result["wf_regime_consistency"] = wf_result.regime_consistency
+                    result["wf_avg_profit_factor"] = wf_result.avg_profit_factor
+                    # Downgrade validation tier if walk-forward fails
+                    if not wf_result.passed and validation == "PASS":
+                        result["validation"] = "CONDITIONAL"
+                        validation = "CONDITIONAL"  # for log
+                except Exception as wf_exc:
+                    logger.debug(
+                        "[L7] Walk-forward enrichment skipped: {exc}",
+                        exc=wf_exc,
+                    )
 
             logger.info(
                 "[L7] {symbol} -> {validation} | "
