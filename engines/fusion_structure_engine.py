@@ -11,11 +11,21 @@ from __future__ import annotations
 import logging
 
 from dataclasses import dataclass, field
+from enum import StrEnum
 from typing import Any
 
 import numpy as np  # pyright: ignore[reportMissingImports]
 
 logger = logging.getLogger(__name__)
+
+
+# Backward-compat enum (tests/older callers may use StructureState)
+class StructureState(StrEnum):
+    BULLISH = "BULLISH"
+    BEARISH = "BEARISH"
+    NEUTRAL = "NEUTRAL"
+    RANGE_BOUND = "RANGE_BOUND"   # legacy alias for "RANGING"
+    RANGING = "RANGING"
 
 
 # ---------------------------------------------------------------------------

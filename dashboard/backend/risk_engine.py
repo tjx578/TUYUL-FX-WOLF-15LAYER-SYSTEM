@@ -220,7 +220,8 @@ class RiskMultiplierAggregator:
 
 
 # ------------------------------------------------------------------
-# Backward Compatibility Alias
+# Backward Compatibility Aliases
 # ------------------------------------------------------------------
-# Legacy name used by dashboard
+# Legacy names used by dashboard / tests
 RiskMultiplier = RiskMultiplierAggregator
+RiskEngine = RiskMultiplierAggregator

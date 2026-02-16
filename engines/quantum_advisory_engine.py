@@ -12,6 +12,7 @@ from __future__ import annotations
 import logging
 
 from dataclasses import dataclass, field
+from enum import StrEnum
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -20,6 +21,15 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # Result
 # ---------------------------------------------------------------------------
+
+# Backward-compat enum (tests/older callers may use AdvisorySignal)
+class AdvisorySignal(StrEnum):
+    BUY = "BUY"
+    SELL = "SELL"
+    HOLD = "HOLD"
+    NO_TRADE = "NO_TRADE"
+    ABORT = "ABORT"
+
 
 @dataclass
 class AdvisoryResult:
