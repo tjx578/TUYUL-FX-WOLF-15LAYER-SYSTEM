@@ -57,6 +57,7 @@ from symtable import Symbol
 from typing import Any
 
 from constitution.verdict_engine import generate_l12_verdict
+from core.vault_health import VaultHealthChecker
 from pipeline.constants import (
     get_conf12_min,
     get_integrity_min,
@@ -344,6 +345,9 @@ class WolfConstitutionalPipeline:
         # Governance engines (from merged Sovereign pipeline)
         self._l13_engine = L13ReflectiveEngine()
         self._l15_engine = L15MetaSovereigntyEngine()
+
+        # Vault health checker (lazy-initialized on first use)
+        self._vault_checker: VaultHealthChecker | None = None
 
     # ──────────────────────────────────────────────────────
     #  Lazy-load all layer analyzers
@@ -906,14 +910,56 @@ class WolfConstitutionalPipeline:
         weights = get_vault_sync_weights()
         thresholds = get_vault_sync_thresholds()
 
-        # TODO: Implement real vault health checks before production deployment.
-        # from core.vault_health import VaultHealthChecker
-        # vault_checker = VaultHealthChecker(redis_client=..., context_bus=...)
-        # vault_report = vault_checker.check(symbols=...)
-        # feed_freshness = vault_report.feed_freshness
-        # redis_health = vault_report.redis_health
-        feed_freshness = 1.0
-        redis_health = 1.0
+        # --- Real vault health checks (feed freshness + Redis) ---
+        symbol = synthesis.get("pair", "")
+        try:
+            if self._vault_checker is None:
+                from context.live_context_bus import LiveContextBus  # noqa: PLC0415
+                from storage.redis_client import RedisClient  # noqa: PLC0415
+
+                try:
+                    redis_client = RedisClient()
+                except Exception as redis_err:
+                    logger.warning(
+                        "[VaultSync] Redis client init failed: %s — treating Redis as DOWN",
+                        redis_err,
+                    )
+                    redis_client = None
+
+                context_bus = LiveContextBus()
+                self._vault_checker = VaultHealthChecker(
+                    redis_client=redis_client,
+                    context_bus=context_bus,
+                )
+
+            vault_report = self._vault_checker.check(
+                symbols=[symbol] if symbol else [],
+            )
+            feed_freshness = vault_report.feed_freshness
+            redis_health = vault_report.redis_health
+
+            if vault_report.should_block_analysis:
+                logger.warning(
+                    "[VaultSync] Vault health CRITICAL for %s — %s",
+                    symbol,
+                    vault_report.details,
+                )
+            elif not vault_report.is_healthy:
+                logger.warning(
+                    "[VaultSync] Vault health degraded for %s — %s",
+                    symbol,
+                    vault_report.details,
+                )
+        except Exception as exc:
+            # FAIL-SAFE: if vault check itself errors, treat as unhealthy
+            logger.error(
+                "[VaultSync] Vault health check FAILED for %s: %s — defaulting to 0.0",
+                symbol,
+                exc,
+            )
+            feed_freshness = 0.0
+            redis_health = 0.0
+
         meta_integrity = 1.0
 
         vault_sync = (
