@@ -25,118 +25,146 @@ from __future__ import annotations
 from enum import Enum
 from typing import Any
 
-from . import core_cognitive_unified as _ccu_extras
-from .core_cognitive_unified import (
-    COHERENCE_THRESHOLD,
-    INTEGRITY_MINIMUM,
-    REFLEX_GATE_PASS,
-    AdaptiveRiskResult,
-    CognitiveBias,
-    CognitiveError,
-    CognitiveState,
-    ConfidenceLevel,
-    EmotionFeedbackCycle,
-    InstitutionalBias,
-    IntegrityEngine,
-    InvalidInputError,
-    MarketRegime,
-    MarketRegimeType,
-    ReflexEmotionResult,
-    ReflexState,
-    RegimeAnalysis,
-    RegimeClassifier,
-    RiskAssessment,
-    RiskCalculationError,
-    SmartMoneyAnalysis,
-    SmartMoneySignal,
-    Timeframe,
-    TrendStrength,
-    TWMSInput,
-    TWMSResult,
-    ValidationError,
-)
-from .core_cognitive_unified import (
-    CalibrationSummary as CognitiveCalibrationSummary,
-)
-from .core_fusion_unified import (
-    AdaptiveThresholdController,
-    DivergenceStrength,
-    DivergenceType,
-    EMAFusionEngine,
-    FTTCResult,
-    FusionAction,
-    FusionBiasMode,
-    FusionComputeError,
-    FusionConfigError,
-    FusionError,
-    FusionInputError,
-    FusionIntegrator,
-    FusionPrecisionEngine,
-    FusionState,
-    HybridReflectiveCore,
-    LiquidityMapResult,
-    LiquidityStatus,
-    LiquidityType,
-    LiquidityZoneMapper,
-    MarketState,
-    MomentumBand,
-    MonteCarloConfidence,
-    MultiIndicatorDivergenceDetector,
-    QuantumReflectiveEngine,
-    ResonanceState,
-    TransitionState,
-    VolumeProfileAnalyzer,
-    VolumeProfileResult,
-    aggregate_multi_timeframe_metrics,
-    calculate_fusion_precision,
-    equilibrium_momentum_fusion,
-    evaluate_fusion_metrics,
-    resolve_field_context,
-    sync_field_state,
-)
-from .core_fusion_unified import (
-    MonteCarloResult as FusionMonteCarloResult,
-)
-from .core_quantum_unified import (
-    BattleStrategy,
-    ConfidenceMultiplier,
-    ConfidenceResult,
-    DecisionConfidence,
-    DecisionType,
-    DriftAnalysis,
-    ExecutionPlan,
-    ExecutionType,
-    FieldSummary,
-    MonteCarloResult,
-    NeuralDecisionTree,
-    ProbabilityMatrixCalculator,
-    QuantumDecision,
-    QuantumDecisionEngine,
-    QuantumExecutionOptimizer,
-    QuantumFieldSync,
-    QuantumScenarioMatrix,
-    ScenarioSelection,
-    TreeAction,
-    TreeDecision,
-    TRQ3DEngine,
-    analyze_drift,
-    get_wolf_message,
-    monte_carlo_fttc_simulation,
-)
-from .core_reflective_unified import (
-    DisciplineCategory,
-    FieldStabilityResult,
-    FieldState,
-    FRPCResult,
-    IntegrityLevel,
-    MetaState,
-    PropagationState,
-    ReflectiveEnergyState,
-    TIIClassification,
-    TIIResult,
-    TIIStatus,
-    VaultSyncStatus,
-)
+_ccu_extras = None  # fallback
+try:
+    from . import core_cognitive_unified as _ccu_extras
+    from .core_cognitive_unified import (
+        COHERENCE_THRESHOLD,
+        INTEGRITY_MINIMUM,
+        REFLEX_GATE_PASS,
+        AdaptiveRiskResult,
+        CognitiveBias,
+        CognitiveError,
+        CognitiveState,
+        ConfidenceLevel,
+        EmotionFeedbackCycle,
+        InstitutionalBias,
+        IntegrityEngine,
+        InvalidInputError,
+        MarketRegime,
+        MarketRegimeType,
+        ReflexEmotionResult,
+        ReflexState,
+        RegimeAnalysis,
+        RegimeClassifier,
+        RiskAssessment,
+        RiskCalculationError,
+        SmartMoneyAnalysis,
+        SmartMoneySignal,
+        Timeframe,
+        TrendStrength,
+        TWMSInput,
+        TWMSResult,
+        ValidationError,
+    )
+    from .core_cognitive_unified import (
+        CalibrationSummary as CognitiveCalibrationSummary,
+    )
+except ImportError:
+    import logging as _logging
+    _logging.getLogger("tuyul.core").debug(
+        "core_cognitive_unified import failed — cognitive re-exports unavailable"
+    )
+_cfu_extras = None  # fallback
+try:
+    from . import core_fusion_unified as _cfu_extras  # noqa: F401
+    from .core_fusion_unified import (  # pyright: ignore[reportMissingImports]
+        AdaptiveThresholdController,
+        DivergenceStrength,
+        DivergenceType,
+        EMAFusionEngine,
+        FTTCResult,
+        FusionAction,
+        FusionBiasMode,
+        FusionComputeError,
+        FusionConfigError,
+        FusionError,
+        FusionInputError,
+        FusionIntegrator,
+        FusionPrecisionEngine,
+        FusionState,
+        HybridReflectiveCore,
+        LiquidityMapResult,
+        LiquidityStatus,
+        LiquidityType,
+        LiquidityZoneMapper,
+        MarketState,
+        MomentumBand,
+        MonteCarloConfidence,
+        MultiIndicatorDivergenceDetector,
+        QuantumReflectiveEngine,
+        ResonanceState,
+        TransitionState,
+        VolumeProfileAnalyzer,
+        VolumeProfileResult,
+        aggregate_multi_timeframe_metrics,
+        calculate_fusion_precision,
+        equilibrium_momentum_fusion,
+        evaluate_fusion_metrics,
+        resolve_field_context,
+        sync_field_state,
+    )
+    from .core_fusion_unified import (  # pyright: ignore[reportMissingImports]
+        MonteCarloResult as FusionMonteCarloResult,
+    )
+except ImportError as _e:
+    import logging as _logging
+    _logging.getLogger("tuyul.core").warning(
+        "core_fusion_unified not found (%s) — fusion re-exports unavailable "
+        "(module may have been refactored to core/core_fusion/)", str(_e)
+    )
+try:
+    from .core_quantum_unified import (
+        BattleStrategy,
+        ConfidenceMultiplier,
+        ConfidenceResult,
+        DecisionConfidence,
+        DecisionType,
+        DriftAnalysis,
+        ExecutionPlan,
+        ExecutionType,
+        FieldSummary,
+        MonteCarloResult,
+        NeuralDecisionTree,
+        ProbabilityMatrixCalculator,
+        QuantumDecision,
+        QuantumDecisionEngine,
+        QuantumExecutionOptimizer,
+        QuantumFieldSync,
+        QuantumScenarioMatrix,
+        ScenarioSelection,
+        TreeAction,
+        TreeDecision,
+        TRQ3DEngine,
+        analyze_drift,
+        get_wolf_message,
+        monte_carlo_fttc_simulation,
+    )
+except ImportError:
+    import logging as _logging
+    _logging.getLogger("tuyul.core").debug(
+        "core_quantum_unified import failed — quantum re-exports unavailable"
+    )
+try:
+    from .core_reflective_unified import (
+        DisciplineCategory,  # pyright: ignore[reportAttributeAccessIssue]
+        FieldStabilityResult,
+        FieldState,
+        FRPCResult,
+        IntegrityLevel,
+        MetaState,
+        PropagationState,
+        ReflectiveEnergyState,
+        TIIClassification,
+        TIIResult,
+        TIIStatus,
+        VaultSyncStatus,
+    )
+except ImportError:
+    import logging as _logging
+    _logging.getLogger("tuyul.core").debug(
+        "core_reflective_unified import failed — reflective re-exports unavailable"
+    )
 
 # ─── Core Reflective Analysis (ANALYSIS-ONLY, Non-Binding) ───────────────────
 try:
@@ -298,7 +326,7 @@ try:
     _rcs = getattr(_cru_cal, "CalibrationSummary", None)
 except ImportError:
     _rcs = None
-ReflectiveCalibrationSummary: Any = _rcs if _rcs is not None else CognitiveCalibrationSummary
+ReflectiveCalibrationSummary: Any = _rcs if _rcs is not None else CognitiveCalibrationSummary # pyright: ignore[reportPossiblyUnboundVariable]
 
 # ─── Public API ───────────────────────────────────────────────────────────────
 
