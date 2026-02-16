@@ -17,6 +17,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest  # pyright: ignore[reportMissingImports]
 
+# Import directly from the module file to avoid core/__init__.py re-export issues
 from core.event_bus import Event, EventBus, EventType, get_event_bus
 
 # ---------------------------------------------------------------------------
