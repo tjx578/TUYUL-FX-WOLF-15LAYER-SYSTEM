@@ -98,6 +98,9 @@ jobs:
             tests/test_cognitive_risk_simulation.py \
             tests/test_fusion_precision_engine.py \
             -v --tb=short --strict-markers --timeout=60 \
+            --cov --cov-report=term-missing \
+            --cov-report=xml:test-results/coverage.xml \
+            --cov-fail-under=0 \
             --junitxml=test-results/critical.xml
 
       - name: "Extended test suite (informational)"
