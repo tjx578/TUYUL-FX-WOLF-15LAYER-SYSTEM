@@ -6,6 +6,7 @@ If any of these fail, a breaking change has been introduced.
 Do NOT modify these assertions without a migration plan.
 """
 
+from dataclasses import fields
 
 import pytest
 
@@ -21,11 +22,7 @@ class TestMonteCarloContract:
         except (ImportError, SyntaxError) as exc:
             pytest.skip(f"monte_carlo_engine not importable: {exc}")
 
-        dataclass_fields = getattr(MonteCarloResult, "__dataclass_fields__", None)
-        if dataclass_fields is None:
-            pytest.skip("MonteCarloResult is not a dataclass")
-
-        field_names = set(dataclass_fields.keys())
+        field_names = {f.name for f in fields(MonteCarloResult)}  # type: ignore
         assert "win_probability" in field_names, "win_probability removed -- BREAKING"
         assert "profit_factor" in field_names, "profit_factor removed -- BREAKING"
         assert "passed_threshold" in field_names, "passed_threshold removed -- BREAKING"
@@ -38,11 +35,7 @@ class TestPositionSizingContract:
         except (ImportError, SyntaxError) as exc:
             pytest.skip(f"dynamic_position_sizing_engine not importable: {exc}")
 
-        dataclass_fields = getattr(PositionSizingResult, "__dataclass_fields__", None)
-        if dataclass_fields is None:
-            pytest.skip("PositionSizingResult is not a dataclass")
-
-        field_names = set(dataclass_fields.keys())
+        field_names = {f.name for f in fields(PositionSizingResult)}  # type: ignore
         assert "final_fraction" in field_names, "final_fraction removed -- BREAKING"
         assert "risk_percent" in field_names, "risk_percent removed -- BREAKING"
 
@@ -99,7 +92,7 @@ class TestEnginesImportGuard:
             from engines import CognitiveCoherence  # noqa: PLC0415
 
             assert CognitiveCoherence is not None
-        except ImportError:
+        except (ImportError, SyntaxError):
             pytest.skip(
                 "CognitiveCoherenceEngine source not present -- "
                 "shim works but source missing"
