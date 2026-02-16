@@ -319,3 +319,54 @@ class TestL12CannotBeBypassed:
         # First should execute, second should not
         assert verdict_pass["verdict"] in ["EXECUTE_BUY", "EXECUTE_SELL"]
         assert verdict_fail["verdict"] in ["NO_TRADE", "HOLD"]
+
+
+class TestL12EnrichmentInjection:
+    """Test enrichment_score → L12 confidence adjustment (advisory)."""
+
+    def test_high_enrichment_upgrades_confidence(self) -> None:
+        """Enrichment >= 0.75 upgrades HIGH → VERY_HIGH."""
+        synthesis = _make_synthesis()
+        # wolf_30_point=25 → confidence would be HIGH (< 27)
+        synthesis["layers"]["enrichment_score"] = 0.80
+        verdict = generate_l12_verdict(synthesis)
+        assert verdict["verdict"].startswith("EXECUTE")
+        assert verdict["confidence"] == "VERY_HIGH"
+        assert verdict["enrichment_applied"] is True
+        assert verdict["scores"]["enrichment_score"] == 0.80
+
+    def test_low_enrichment_downgrades_confidence(self) -> None:
+        """Enrichment < 0.30 downgrades HIGH → MEDIUM."""
+        synthesis = _make_synthesis()
+        synthesis["layers"]["enrichment_score"] = 0.15
+        verdict = generate_l12_verdict(synthesis)
+        assert verdict["verdict"].startswith("EXECUTE")
+        assert verdict["confidence"] == "MEDIUM"
+        assert verdict["enrichment_applied"] is True
+
+    def test_no_enrichment_no_change(self) -> None:
+        """Without enrichment_score, confidence is unchanged."""
+        synthesis = _make_synthesis()
+        # No enrichment_score in layers → defaults to 0.0
+        verdict = generate_l12_verdict(synthesis)
+        assert verdict["verdict"].startswith("EXECUTE")
+        assert verdict["confidence"] == "HIGH"  # wolf_30=25 < 27
+        assert verdict["enrichment_applied"] is False
+
+    def test_enrichment_never_overrides_verdict(self) -> None:
+        """Enrichment adjusts confidence, never the verdict."""
+        # Fail a gate → HOLD verdict
+        synthesis = _make_synthesis(tii=0.3)
+        synthesis["layers"]["enrichment_score"] = 0.95
+        verdict = generate_l12_verdict(synthesis)
+        # Even with very high enrichment, verdict stays HOLD
+        assert verdict["verdict"] == "HOLD"
+        assert verdict["enrichment_applied"] is False  # HOLD + high score → no adjustment
+
+    def test_enrichment_in_output_scores(self) -> None:
+        """enrichment_score appears in verdict scores dict."""
+        synthesis = _make_synthesis()
+        synthesis["layers"]["enrichment_score"] = 0.55
+        verdict = generate_l12_verdict(synthesis)
+        assert "enrichment_score" in verdict["scores"]
+        assert verdict["scores"]["enrichment_score"] == 0.55
