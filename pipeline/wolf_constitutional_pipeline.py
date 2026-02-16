@@ -53,7 +53,6 @@ from __future__ import annotations
 import time
 
 from datetime import datetime, timedelta, timezone
-from symtable import Symbol
 from typing import Any
 
 from constitution.signal_throttle import SignalThrottle
@@ -121,6 +120,7 @@ def _run_l7_probability(
 def build_l12_synthesis(
     self,
     layer_results: dict[str, Any],
+    symbol: str = "UNKNOWN",
 ) -> dict[str, Any]:
     """Build Layer-12 synthesis with Bayesian + Monte Carlo enrichment fields.
 
@@ -191,7 +191,7 @@ def build_l12_synthesis(
 
     # Existing fields
     synthesis = {
-        "pair": Symbol,
+        "pair": symbol,
         "scores": {
             "wolf_30_point": wolf_30_point,
             "f_score": f_score,
@@ -666,10 +666,10 @@ class WolfConstitutionalPipeline:
             synthesis = build_l12_synthesis(
                 self,
                 layer_results=layer_results_combined,
+                symbol=symbol,
             )
             synthesis["system"]["latency_ms"] = current_latency_ms
             synthesis["system"]["safe_mode"] = safe_mode
-            synthesis["pair"] = symbol
 
             metrics.get("macro_vix_state", {})
 
