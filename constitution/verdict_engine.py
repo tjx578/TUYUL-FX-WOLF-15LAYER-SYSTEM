@@ -569,14 +569,16 @@ class WolfConstitutionalPipeline:
         """
         context = context or {}
 
-        # L1-L11: Gather analysis scores
-        analysis_result = self._run_analysis(symbol, timeframe, context)
+        # Run L1-L11: Gather analysis scores
+        analysis = self._run_analysis(symbol, timeframe, context)
 
         # L12: Constitutional gate — single decision authority
-        verdict = self._evaluate_verdict(symbol, analysis_result, context)
+        verdict = self._evaluate_verdict(symbol, analysis, context)
 
-        # Ensure required schema fields
+        # Enforce minimal schema
         verdict.setdefault("symbol", symbol)
         verdict.setdefault("verdict", "NO_TRADE")
         verdict.setdefault("confidence", 0.0)
+        verdict.setdefault("timeframe", timeframe)
+
         return verdict
