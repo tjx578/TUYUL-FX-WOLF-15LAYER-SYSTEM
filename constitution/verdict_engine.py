@@ -572,13 +572,12 @@ class _LegacyVerdictPipeline:
     def _run_analysis(self, symbol: str, timeframe: str, context: dict) -> dict:
         """Run L1-L11 analysis layers and return aggregated scores."""
         scores = {}
-        if hasattr(self, 'analyzers'):
-            for analyzer in self.analyzers:
-                try:
-                    result = analyzer.analyze(symbol, timeframe, context)
-                    scores.update(result or {})
-                except Exception as e:
-                    scores[analyzer.__class__.__name__] = {"error": str(e)}
+        for analyzer in self.analyzers:
+            try:
+                result = analyzer.analyze(symbol, timeframe, context)
+                scores.update(result or {})
+            except Exception as e:
+                scores[analyzer.__class__.__name__] = {"error": str(e)}
         return scores
 
     def _evaluate_verdict(self, symbol: str, analysis_result: dict, context: dict) -> dict:
