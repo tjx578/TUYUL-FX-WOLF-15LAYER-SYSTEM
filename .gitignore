@@ -13,76 +13,8 @@ __pycache__/
 *$py.class
 *.pyc
 *.pyo
-*.pyd
-*.so
-*.egg-info/
-dist/
-build/
-pip-wheel-metadata/
-.venv/
-venv/
-ENV/
-env/
-.pytest_cache/
-.mypy_cache/
-.pytype/
-.pyre/
 
-# =========================
-# Logs / Runtime Artifacts
-# =========================
-logs/
-*.log
-*.out
-*.pid
-
-# =========================
-# Storage (runtime snapshots, journals, redis dumps)
-# Keep code, ignore runtime data
-# =========================
-storage/redis_dump/
-storage/snapshots/
-storage/journal/
-storage/ea_commands/
-storage/ea_state/
-storage/decision_archive/
-storage/gpt_exports/
-*.rdb
-
-# =========================
-# OS / Editor
-# =========================
-.DS_Store
-Thumbs.db
-.idea/
-.vscode/
-*.swp
-
-# =========================
-# Dashboard Frontend
-# =========================
-node_modules/
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-pnpm-lock.yaml
-
-# =========================
-# Coverage
-# =========================
-.coverage
-coverage.xml
-htmlcov/
-
-# =========================
-# Temporary
-# =========================
-tmp/
-temp/
-*.tmp
-# Placeholder
-
-# Test result artifacts
+# Test artifacts
 _test_result*.txt
 _test_result*.log
 test-results/
