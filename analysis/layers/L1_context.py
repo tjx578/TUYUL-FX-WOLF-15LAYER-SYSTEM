@@ -1,25 +1,30 @@
 """
-🧭 L1 -- Context Layer (PRODUCTION v2)
-----------------------------------------
-Adaptive multi-asset regime detection via:
-  - SMA 20/50 crossover with ATR-normalized thresholds (asset-agnostic)
-  - ATR-14 for volatility classification (asset-adaptive percentile)
-  - Session awareness (London/NY/Tokyo overlap)
-  - Volume-weighted CSI (Contextual Strength Index) v2 (momentum-aware)
-  - EMA-9 momentum layer (short-term directional bias)
-  - Regime quality score (composite confidence metric)
+🧭 L1 -- Context Layer (PRODUCTION v3 — Probabilistic Regime)
+--------------------------------------------------------------
+Probabilistic regime detection via 4-feature logistic model:
 
-Upgrade from v1:
-  ✅ ATR-normalized regime threshold (replaces static 0.002)
-  ✅ Asset-adaptive volatility classification (replaces fixed ATR% bands)
-  ✅ Trend strength scaled by ATR (replaces spread×200)
-  ✅ Enhanced CSI v2 with momentum component
-  ✅ EMA-9 short-term momentum enrichment
-  ✅ Regime quality composite (trend + vol + session + momentum)
-  ✅ Multi-timeframe regime summary ready for downstream layers
-  ✅ Dataclass-based AssetProfile for clean extensibility
-  ✅ Input validation with ContextError exception
-  ✅ Type-safe return contract via ContextResult dataclass
+  X_L1 = [S, A, H, Vz]
+
+  S  = (EMA₂₀ - EMA₅₀) / Price     — Normalized trend spread
+  A  = ATR₁₄ / Price                — Normalized volatility
+  H  = Hurst exponent (returns)     — Persistence measure [0, 1]
+  Vz = Z-score(ATR, lookback=50)    — Volatility regime shift
+
+  P_trend = σ(w₁·S + w₂·A + w₃·H + w₄·Vz + b₀)
+
+  Regime = TREND_UP/DOWN  if P > 0.65
+           TRANSITION      if 0.45 < P ≤ 0.65
+           RANGE            if P ≤ 0.45
+
+  Context Coherence (Shannon Entropy):
+    CC = 1 - H_regime / ln(2)   where H_regime = -Σ pᵢ ln(pᵢ)
+
+Upgrade path:
+  v1 (original): Static SMA spread threshold 0.002, no asset adaptation
+  v2 (ATR-norm): ATR-normalized thresholds, AssetProfile per-class
+  v3 (THIS):     Probabilistic logistic model, Shannon entropy coherence,
+                 Hurst as core feature, Z-score volatility percentile,
+                 inherently asset-agnostic via price-normalized features
 
 Zone: analysis/ -- pure read-only analysis, no execution side-effects.
 """
@@ -28,6 +33,7 @@ from __future__ import annotations
 
 import logging
 import math
+import statistics
 
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
@@ -36,8 +42,6 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 # ── Optional Engine Enrichment ────────────────────────────────────────────
-# RegimeClassifier (Hurst-exponent) gives statistical regime confirmation
-# as a secondary signal alongside the SMA-based primary detection.
 try:
     from engines.regime_classifier_ml import (
         RegimeClassifier,  # pyright: ignore[reportMissingImports]
@@ -48,10 +52,10 @@ except Exception:  # pragma: no cover
     _regime_classifier = None
 
 __all__ = [
-    "AssetProfile",
     "ContextError",
     "ContextResult",
     "L1ContextAnalyzer",
+    "LogisticWeights",
     "analyze_context",
 ]
 
@@ -66,88 +70,48 @@ class ContextError(Exception):
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# §1  ASSET PROFILES (adaptive thresholds per instrument class)
+# §1  LOGISTIC REGIME MODEL — CONFIGURABLE WEIGHTS
 # ═══════════════════════════════════════════════════════════════════════════
 
 
 @dataclass(frozen=True)
-class AssetProfile:
-    """Per-asset-class calibration for regime and volatility thresholds.
+class LogisticWeights:
+    """Weights for the logistic regime probability model.
 
-    Instead of a single static threshold (0.002), we derive thresholds
-    from ATR-normalized spread.  The ``k_trend`` / ``k_transition``
-    multipliers determine how many ATRs of SMA spread constitute
-    a trend vs. transition.
+    P_trend = σ(w_spread·S + w_atr·A + w_hurst·H + w_zscore·Vz + bias)
 
-    Attributes
-    ----------
-    k_trend : float
-        ATR-normalized spread multiplier for TREND detection.
-        regime = TREND when  |sma_spread| > k_trend * (ATR / price)
-    k_transition : float
-        ATR-normalized spread multiplier for TRANSITION detection.
-        regime = TRANSITION when  |sma_spread| > k_transition * (ATR / price)
-    vol_percentiles : tuple[float, float, float, float]
-        (extreme, high, normal, low) thresholds as ATR%  — session-adjusted.
-    trend_scale : float
-        Replaces the hardcoded ``spread × 200``.
-        trend_strength = min(1.0, |spread| / (k_trend * atr_frac) )
+    Derivation (see analysis doc):
+      - w_spread = 8.0  → primary trend indicator, highest importance
+      - w_atr    = 3.0  → volatility context (trend needs volatility)
+      - w_hurst  = 4.0  → statistical persistence confirmation
+      - w_zscore = 1.5  → volatility regime shift detector
+      - bias     = -2.0 → centers sigmoid so H=0.5, S=0, Vz=0 → P≈0.5
+
+    All weights are YAML-overridable for backtesting calibration.
+
+    Regime thresholds:
+      - trend_threshold     = 0.65 → P > 0.65 = TREND
+      - transition_threshold = 0.45 → 0.45 < P ≤ 0.65 = TRANSITION
     """
 
-    k_trend: float = 1.5
-    k_transition: float = 0.4
-    vol_percentiles: tuple[float, float, float, float] = (1.5, 0.8, 0.3, 0.1)
-    trend_scale: float = 1.0  # normalizer — 1.0 = threshold = max strength
+    w_spread: float = 8.0
+    w_atr: float = 3.0
+    w_hurst: float = 4.0
+    w_zscore: float = 1.5
+    bias: float = -2.0
+    trend_threshold: float = 0.65
+    transition_threshold: float = 0.45
+    hurst_fallback: float = 0.5
 
 
-# Pre-built profiles for known asset classes.
-# Missing symbols gracefully fall back to FX_PROFILE (the most conservative).
-FX_PROFILE = AssetProfile(
-    k_trend=1.5,
-    k_transition=0.4,
-    vol_percentiles=(1.5, 0.8, 0.3, 0.1),
-)
-METALS_PROFILE = AssetProfile(
-    k_trend=1.2,
-    k_transition=0.35,
-    vol_percentiles=(3.0, 1.5, 0.6, 0.2),
-)
-CRYPTO_PROFILE = AssetProfile(
-    k_trend=1.0,
-    k_transition=0.3,
-    vol_percentiles=(5.0, 2.5, 1.0, 0.4),
-)
-INDEX_PROFILE = AssetProfile(
-    k_trend=1.3,
-    k_transition=0.35,
-    vol_percentiles=(2.5, 1.2, 0.5, 0.15),
-)
-
-_ASSET_CLASS_MAP: dict[str, AssetProfile] = {
-    # Metals
-    "XAUUSD": METALS_PROFILE,
-    "XAGUSD": METALS_PROFILE,
-    # Crypto
-    "BTCUSD": CRYPTO_PROFILE,
-    "ETHUSD": CRYPTO_PROFILE,
-    # Indices
-    "US30": INDEX_PROFILE,
-    "US500": INDEX_PROFILE,
-    "NAS100": INDEX_PROFILE,
-}
-
-
-def _get_asset_profile(pair: str) -> AssetProfile:
-    """Resolve asset profile.  Falls back to FX for unknown symbols."""
-    return _ASSET_CLASS_MAP.get(pair.upper(), FX_PROFILE)
+# Default production weights
+DEFAULT_WEIGHTS = LogisticWeights()
 
 
 # ═══════════════════════════════════════════════════════════════════════════
 # §2  SESSION MODEL
 # ═══════════════════════════════════════════════════════════════════════════
 
-# Session definitions: (name, start_hour_utc, end_hour_utc, multiplier)
-# Ordered by priority -- overlaps checked first.
 SESSIONS = {
     "LONDON_NEWYORK_OVERLAP": (13, 16, 1.30),
     "TOKYO_LONDON_OVERLAP": (7, 9, 1.15),
@@ -158,13 +122,12 @@ SESSIONS = {
 }
 
 _MIN_BARS = 20
+_ZSCORE_LOOKBACK = 50
+_EPS = 1e-9  # clamp guard for log(0)
 
 
 def _get_session(h: int) -> tuple[str, float]:
-    """Return (session_name, multiplier) for a given UTC hour.
-
-    Priority order: overlaps first, then single sessions, then Sydney fallback.
-    """
+    """Return (session_name, multiplier) for a given UTC hour."""
     if 13 <= h < 16:
         return "LONDON_NEWYORK_OVERLAP", 1.30
     if 7 <= h < 9:
@@ -183,29 +146,18 @@ def _get_session(h: int) -> tuple[str, float]:
 # ═══════════════════════════════════════════════════════════════════════════
 
 
-def _sma(data: list[float], n: int) -> float:
-    """Simple moving average over the last *n* values of *data*."""
-    if not data:
-        return 0.0
-    if len(data) < n:
-        return sum(data) / len(data)
-    return sum(data[-n:]) / n
-
-
 def _ema(data: list[float], n: int) -> float:
     """Exponential moving average over the full series, return last value.
 
-    Uses standard EMA formula:  EMA_t = α * price_t + (1-α) * EMA_{t-1}
-    where α = 2 / (n+1).
-
-    Falls back to SMA if data length < n.
+    Uses standard EMA formula:  EMA_t = α·price_t + (1-α)·EMA_{t-1}
+    where α = 2 / (n+1).  Falls back to SMA if len(data) < n.
     """
     if not data:
         return 0.0
     if len(data) < n:
         return sum(data) / len(data)
     alpha = 2.0 / (n + 1)
-    ema_val = sum(data[:n]) / n  # seed with SMA
+    ema_val = sum(data[:n]) / n
     for price in data[n:]:
         ema_val = alpha * price + (1.0 - alpha) * ema_val
     return ema_val
@@ -217,7 +169,7 @@ def _atr(
     closes: list[float],
     period: int = 14,
 ) -> float:
-    """Average True Range over *period* bars (simple average, not smoothed)."""
+    """Average True Range over *period* bars (simple average)."""
     n = min(period, len(highs) - 1)
     if n < 1:
         return 0.0
@@ -233,119 +185,251 @@ def _atr(
     return sum(trs) / len(trs) if trs else 0.0
 
 
-# ═══════════════════════════════════════════════════════════════════════════
-# §4  REGIME DETECTION (ATR-normalized, asset-adaptive)
-# ═══════════════════════════════════════════════════════════════════════════
+def _atr_series(
+    highs: list[float],
+    lows: list[float],
+    closes: list[float],
+    period: int = 14,
+) -> list[float]:
+    """Compute rolling ATR series for Z-score calculation.
 
-
-def _classify_volatility(
-    adj_atr_pct: float,
-    profile: AssetProfile,
-) -> str:
-    """Map session-adjusted ATR% to volatility label using asset profile."""
-    ext, high, normal, low = profile.vol_percentiles
-    if adj_atr_pct > ext:
-        return "EXTREME"
-    if adj_atr_pct > high:
-        return "HIGH"
-    if adj_atr_pct > normal:
-        return "NORMAL"
-    if adj_atr_pct > low:
-        return "LOW"
-    return "DEAD"
-
-
-def _detect_regime(
-    spread: float,
-    atr_frac: float,
-    profile: AssetProfile,
-) -> tuple[str, str]:
-    """Return (regime, dominant_force) using ATR-normalized thresholds.
-
-    Thresholds:
-      TREND      when |spread| > k_trend      * atr_frac
-      TRANSITION when |spread| > k_transition * atr_frac
-      RANGE      otherwise
-
-    Where atr_frac = ATR / price (dimensionless volatility measure).
+    Returns one ATR value per bar (from index=period onward).
+    Bars before sufficient history return 0.0.
     """
-    trend_thresh = profile.k_trend * atr_frac
-    trans_thresh = profile.k_transition * atr_frac
+    series: list[float] = []
+    for end in range(period + 1, len(highs) + 1):
+        trs: list[float] = []
+        for i in range(end - period, end):
+            if i == 0:
+                trs.append(highs[i] - lows[i])
+            else:
+                prev_close = closes[i - 1]
+                tr = max(
+                    highs[i] - lows[i],
+                    abs(highs[i] - prev_close),
+                    abs(lows[i] - prev_close),
+                )
+                trs.append(tr)
+        series.append(sum(trs) / len(trs) if trs else 0.0)
+    return series
 
-    # Guard: if ATR is zero/negligible fall back to static thresholds
-    if atr_frac < 1e-9:
-        trend_thresh = 0.002
-        trans_thresh = 0.0005
 
-    if spread > trend_thresh:
-        return "TREND_UP", "BULLISH"
-    if spread < -trend_thresh:
+# ═══════════════════════════════════════════════════════════════════════════
+# §4  FEATURE EXTRACTION — X_L1 = [S, A, H, Vz]
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+def _sigmoid(x: float) -> float:
+    """Numerically stable sigmoid σ(x) = 1 / (1 + e⁻ˣ)."""
+    if x >= 0:
+        return 1.0 / (1.0 + math.exp(-x))
+    ex = math.exp(x)
+    return ex / (1.0 + ex)
+
+
+def _compute_spread(closes: list[float]) -> float:
+    """S = (EMA₂₀ - EMA₅₀) / Price.  Dimensionless trend measure."""
+    price = closes[-1]
+    if price == 0.0:
+        return 0.0
+    ema20 = _ema(closes, 20)
+    ema50 = _ema(closes, 50) if len(closes) >= 50 else _ema(closes, len(closes))
+    return (ema20 - ema50) / price
+
+
+def _compute_atr_frac(
+    highs: list[float],
+    lows: list[float],
+    closes: list[float],
+) -> float:
+    """A = ATR₁₄ / Price.  Dimensionless volatility measure."""
+    price = closes[-1]
+    if price == 0.0 or not highs or not lows:
+        return 0.0
+    return _atr(highs, lows, closes) / price
+
+
+def _compute_hurst(closes: list[float]) -> float | None:
+    """Compute Hurst exponent via RegimeClassifier engine.
+
+    Returns None if engine unavailable or computation fails.
+    Uses the engine from engines/regime_classifier_ml.py which
+    implements proper R/S analysis with log-regression.
+    """
+    if _regime_classifier is None:
+        return None
+    try:
+        rc = _regime_classifier.classify(closes)
+        return rc.hurst_exponent
+    except Exception:
+        return None
+
+
+def _compute_zscore(
+    highs: list[float],
+    lows: list[float],
+    closes: list[float],
+    lookback: int = _ZSCORE_LOOKBACK,
+) -> float:
+    """Vz = Z-Score(ATR_current, μ_ATR, σ_ATR) over lookback period.
+
+    Vz = (ATR_now - mean(ATR_series)) / max(stdev(ATR_series), ε)
+
+    Returns 0.0 if insufficient data for Z-score computation.
+    """
+    if not highs or not lows or len(highs) < 15:
+        return 0.0
+
+    series = _atr_series(highs, lows, closes)
+    if len(series) < 2:
+        return 0.0
+
+    # Take last `lookback` ATR values
+    window = series[-lookback:] if len(series) >= lookback else series
+    current_atr = window[-1]
+
+    mean_atr = statistics.mean(window)
+    stdev_atr = statistics.stdev(window) if len(window) > 1 else 0.0
+
+    if stdev_atr < _EPS:
+        return 0.0
+    return (current_atr - mean_atr) / stdev_atr
+
+
+def _compute_volatility_percentile(vz: float) -> float:
+    """Convert Z-score to percentile via standard normal CDF approximation.
+
+    Uses Abramowitz & Stegun approximation (error < 1.5e-7).
+    Output ∈ [0, 1] representing where current ATR sits in historical distribution.
+    """
+    return 0.5 * (1.0 + math.erf(vz / math.sqrt(2.0)))
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# §5  LOGISTIC REGIME PROBABILITY + ENTROPY
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+def _compute_regime_probability(
+    s: float,
+    a: float,
+    h: float,
+    vz: float,
+    w: LogisticWeights,
+) -> float:
+    """P_trend = σ(w₁·S + w₂·A + w₃·H + w₄·Vz + b₀).
+
+    Args:
+        s: EMA spread (normalized).
+        a: ATR fraction (normalized).
+        h: Hurst exponent [0, 1].
+        vz: ATR Z-score.
+        w: Logistic weight configuration.
+
+    Returns:
+        Regime probability ∈ [0, 1].
+    """
+    z = w.w_spread * s + w.w_atr * a + w.w_hurst * h + w.w_zscore * vz + w.bias
+    return _sigmoid(z)
+
+
+def _classify_regime(
+    p_trend: float,
+    s: float,
+    w: LogisticWeights,
+) -> tuple[str, str]:
+    """Classify regime and direction from probability + spread sign.
+
+    Returns (regime_label, dominant_force).
+    Direction derived from sign(S): positive = UP/BULLISH, negative = DOWN/BEARISH.
+    """
+    if p_trend > w.trend_threshold:
+        if s > 0:
+            return "TREND_UP", "BULLISH"
         return "TREND_DOWN", "BEARISH"
-    if abs(spread) > trans_thresh:
+    if p_trend > w.transition_threshold:
         return "TRANSITION", "NEUTRAL"
     return "RANGE", "NEUTRAL"
 
 
-def _compute_trend_strength(
-    spread: float,
-    atr_frac: float,
-    profile: AssetProfile,
-) -> float:
-    """ATR-normalized trend strength [0.0, 1.0].
+def _compute_entropy(p_trend: float) -> float:
+    """Shannon entropy H_regime = -Σ pᵢ·ln(pᵢ) for binary distribution.
 
-    At exactly the trend threshold → strength = 1.0 × profile.trend_scale.
-    Linearly interpolated below that.  Capped at 1.0.
+    Input is clamped to [ε, 1-ε] to prevent log(0).
+    Output ∈ [0, ln(2)] ≈ [0, 0.6931].
     """
-    threshold = profile.k_trend * atr_frac
-    if threshold < 1e-12:
-        # Fallback: use legacy scaling when ATR data unavailable
-        return min(1.0, abs(spread) * 200.0)
-    raw = abs(spread) / threshold
-    return min(1.0, raw * profile.trend_scale)
+    p = max(_EPS, min(1.0 - _EPS, p_trend))
+    q = 1.0 - p
+    return -(p * math.log(p) + q * math.log(q))
+
+
+def _compute_context_coherence(p_trend: float) -> float:
+    """Context Coherence: CC = 1 - H_regime / ln(2).
+
+    CC = 1.0 when regime is certain (P=0 or P=1).
+    CC = 0.0 when maximum uncertainty (P=0.5).
+    Output ∈ [0, 1].
+    """
+    h = _compute_entropy(p_trend)
+    return 1.0 - h / math.log(2.0)
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# §5  ALIGNMENT & CSI
+# §6  SESSION-ADJUSTED VOLATILITY CLASSIFICATION
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+def _classify_volatility_by_percentile(vol_pct: float) -> str:
+    """Map volatility percentile [0,1] to label.
+
+    Percentile-based (not fixed ATR%) → inherently asset-agnostic.
+    """
+    if vol_pct > 0.95:
+        return "EXTREME"
+    if vol_pct > 0.75:
+        return "HIGH"
+    if vol_pct > 0.25:
+        return "NORMAL"
+    if vol_pct > 0.05:
+        return "LOW"
+    return "DEAD"
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# §7  ALIGNMENT & CSI v3
 # ═══════════════════════════════════════════════════════════════════════════
 
 
 def _compute_alignment(
     close: float,
-    sma20: float,
-    sma50: float,
+    ema20: float,
+    ema50: float,
     ema9: float,
-    spread: float,
+    s: float,
     regime: str,
 ) -> str:
-    """Price-to-SMA alignment label (enriched with EMA-9 momentum)."""
-    above20 = close > sma20
-    above50 = close > sma50
-    above_ema9 = close > ema9
+    """Price-to-EMA alignment label (enriched with EMA-9)."""
+    above20 = close > ema20
+    above50 = close > ema50
+    above9 = close > ema9
 
-    if above20 and above50 and above_ema9 and regime == "TREND_UP":
+    if above20 and above50 and above9 and regime == "TREND_UP":
         return "STRONGLY_BULLISH"
-    if not above20 and not above50 and not above_ema9 and regime == "TREND_DOWN":
+    if not above20 and not above50 and not above9 and regime == "TREND_DOWN":
         return "STRONGLY_BEARISH"
-    if above20 and above_ema9 and spread > 0:
+    if above20 and above9 and s > 0:
         return "BULLISH"
-    if not above20 and not above_ema9 and spread < 0:
+    if not above20 and not above9 and s < 0:
         return "BEARISH"
     return "NEUTRAL"
 
 
-def _compute_momentum_bias(
-    closes: list[float],
-    ema9: float,
-) -> tuple[str, float]:
-    """Short-term momentum direction and magnitude.
-
-    Returns (direction, magnitude) where magnitude ∈ [0, 1].
-    """
+def _compute_momentum_bias(closes: list[float], ema9: float) -> tuple[str, float]:
+    """Short-term EMA-9 momentum direction and magnitude [0, 1]."""
     if not closes or ema9 == 0.0:
         return "NEUTRAL", 0.0
-    price = closes[-1]
-    deviation = (price - ema9) / ema9
-    magnitude = min(1.0, abs(deviation) * 100)  # 1% deviation = full strength
+    deviation = (closes[-1] - ema9) / ema9
+    magnitude = min(1.0, abs(deviation) * 100)
     if deviation > 0.0001:
         return "BULLISH", round(magnitude, 4)
     if deviation < -0.0001:
@@ -354,21 +438,21 @@ def _compute_momentum_bias(
 
 
 def _compute_csi(
-    trend_strength: float,
+    p_trend: float,
     volumes: list[float],
     session_mult: float,
-    momentum_magnitude: float,
+    momentum_mag: float,
+    context_coherence: float,
 ) -> float:
-    """Contextual Strength Index v2 (0-1 range, momentum-enriched).
+    """Contextual Strength Index v3 — probability-weighted.
 
-    CSI v2 = trend_strength × 0.35
-           + volume_factor  × 0.25
-           + session_factor × 0.20
-           + momentum       × 0.20
+    CSI v3 = regime_probability × 0.25
+           + volume_factor     × 0.20
+           + session_factor    × 0.15
+           + momentum          × 0.15
+           + context_coherence × 0.25
 
-    Volume factor: ratio of last volume to 20-bar average, capped at 1.0.
-    Session factor: session multiplier normalized to [0, 1].
-    Momentum: short-term EMA-9 deviation strength.
+    CC as component = CSI rewards high-confidence regimes.
     """
     vol_factor = 0.5
     if volumes and len(volumes) >= 20:
@@ -377,123 +461,22 @@ def _compute_csi(
             vol_factor = min(1.0, (volumes[-1] / avg_v) / 2.0)
 
     csi = (
-        trend_strength * 0.35
-        + vol_factor * 0.25
-        + (session_mult / 1.3) * 0.20
-        + momentum_magnitude * 0.20
+        p_trend * 0.25
+        + vol_factor * 0.20
+        + (session_mult / 1.3) * 0.15
+        + momentum_mag * 0.15
+        + context_coherence * 0.25
     )
     return round(min(1.0, csi), 4)
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# §6  REGIME QUALITY SCORE
-# ═══════════════════════════════════════════════════════════════════════════
-
-
-def _compute_regime_quality(
-    trend_strength: float,
-    vol_level: str,
-    session_mult: float,
-    momentum_magnitude: float,
-    regime_agreement: bool | None,
-) -> float:
-    """Composite regime quality score [0.0, 1.0].
-
-    Weights:
-      - trend_strength:      0.30  (how decisive is the regime?)
-      - volatility_penalty:  0.20  (EXTREME/DEAD penalize quality)
-      - session_quality:     0.20  (overlaps are highest quality)
-      - momentum_coherence:  0.15  (EMA-9 agrees with trend?)
-      - hurst_agreement:     0.15  (SMA regime matches Hurst?)
-
-    Higher = more reliable context for downstream layers.
-    """
-    # Volatility quality: NORMAL = best, EXTREME/DEAD = worst
-    vol_quality_map = {
-        "NORMAL": 1.0,
-        "HIGH": 0.7,
-        "LOW": 0.6,
-        "EXTREME": 0.3,
-        "DEAD": 0.2,
-    }
-    vol_q = vol_quality_map.get(vol_level, 0.5)
-
-    sess_q = min(1.0, session_mult / 1.3)
-
-    hurst_q = 0.5  # neutral default
-    if regime_agreement is True:
-        hurst_q = 1.0
-    elif regime_agreement is False:
-        hurst_q = 0.0
-
-    quality = (
-        trend_strength * 0.30
-        + vol_q * 0.20
-        + sess_q * 0.20
-        + momentum_magnitude * 0.15
-        + hurst_q * 0.15
-    )
-    return round(min(1.0, quality), 4)
-
-
-# ═══════════════════════════════════════════════════════════════════════════
-# §7  RESULT CONTRACT
-# ═══════════════════════════════════════════════════════════════════════════
-
-
-@dataclass(frozen=True)
-class ContextResult:
-    """Immutable L1 Context output contract.
-
-    All downstream layers (L2-L12) consume this via ``to_dict()``.
-    """
-
-    regime: str
-    dominant_force: str
-    volatility_level: str
-    regime_confidence: float
-    csi: float
-    market_alignment: str
-    valid: bool
-    session: str
-    session_multiplier: float
-    sma20: float
-    sma50: float
-    ema9: float
-    sma_spread_pct: float
-    atr: float
-    atr_pct: float
-    pair: str
-    timestamp: str
-    asset_class: str
-    momentum_direction: str
-    momentum_magnitude: float
-    trend_strength: float
-    regime_quality: float
-    reason: str = ""
-
-    # Optional Hurst enrichment fields
-    hurst_regime: str | None = None
-    hurst_confidence: float | None = None
-    hurst_exponent: float | None = None
-    hurst_volatility_state: str | None = None
-    hurst_momentum: float | None = None
-    regime_agreement: bool | None = None
-
-    def to_dict(self) -> dict[str, Any]:
-        """Serialize to dict for downstream layer consumption."""
-        result = asdict(self)
-        # Strip None Hurst fields when enrichment unavailable
-        return {k: v for k, v in result.items() if v is not None}
-
-
-# ═══════════════════════════════════════════════════════════════════════════
-# §8  INPUT VALIDATION
+# §8  RESULT CONTRACT
 # ═══════════════════════════════════════════════════════════════════════════
 
 
 def _classify_asset(pair: str) -> str:
-    """Return human-readable asset class label for output."""
+    """Return human-readable asset class label."""
     upper = pair.upper()
     if upper in ("XAUUSD", "XAGUSD"):
         return "METALS"
@@ -504,27 +487,91 @@ def _classify_asset(pair: str) -> str:
     return "FX"
 
 
+@dataclass(frozen=True)
+class ContextResult:
+    """Immutable L1 Context output contract (v3 — probabilistic).
+
+    All downstream layers (L2-L12) consume via ``to_dict()``.
+    New fields: regime_probability, context_coherence, volatility_percentile,
+    entropy_score.  All [0, 1] bounded.
+    """
+
+    # ── Core regime output ────────────────────────────────────────
+    regime: str
+    dominant_force: str
+    regime_probability: float
+    context_coherence: float
+    volatility_level: str
+    volatility_percentile: float
+    entropy_score: float
+    regime_confidence: float
+    csi: float
+    market_alignment: str
+    valid: bool
+
+    # ── Session & instrument ──────────────────────────────────────
+    session: str
+    session_multiplier: float
+    pair: str
+    asset_class: str
+    timestamp: str
+
+    # ── Feature vector (for downstream transparency) ──────────────
+    feature_spread: float
+    feature_atr_frac: float
+    feature_hurst: float
+    feature_zscore: float
+
+    # ── Indicator values ──────────────────────────────────────────
+    ema20: float
+    ema50: float
+    ema9: float
+    atr: float
+    atr_pct: float
+
+    # ── Momentum ──────────────────────────────────────────────────
+    momentum_direction: str
+    momentum_magnitude: float
+
+    reason: str = ""
+
+    # ── Hurst enrichment (optional — from RegimeClassifier) ──────
+    hurst_regime: str | None = None
+    hurst_confidence: float | None = None
+    hurst_exponent: float | None = None
+    hurst_volatility_state: str | None = None
+    hurst_momentum: float | None = None
+    regime_agreement: bool | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        """Serialize to dict for downstream consumption."""
+        result = asdict(self)
+        return {k: v for k, v in result.items() if v is not None}
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# §9  INPUT VALIDATION
+# ═══════════════════════════════════════════════════════════════════════════
+
+
 def _validate_market_data(
     closes: list[float],
     highs: list[float],
     lows: list[float],
 ) -> None:
-    """Validate market data integrity.
-
-    Raises ContextError on invalid data.
-    """
+    """Validate market data integrity.  Raises ContextError on bad data."""
     if not closes:
         raise ContextError("closes data is empty")
 
-    # Check for NaN/Inf in closes
-    for i, c in enumerate(closes[-_MIN_BARS:]):
+    check_count = min(len(closes), _MIN_BARS)
+    for i, c in enumerate(closes[-check_count:]):
         if not math.isfinite(c):
             raise ContextError(
-                f"closes[{len(closes) - _MIN_BARS + i}] = {c} is not finite"
+                f"closes[{len(closes) - check_count + i}] = {c} is not finite"
             )
         if c <= 0:
             raise ContextError(
-                f"closes[{len(closes) - _MIN_BARS + i}] = {c} must be positive"
+                f"closes[{len(closes) - check_count + i}] = {c} must be positive"
             )
 
     if highs and lows:
@@ -537,7 +584,7 @@ def _validate_market_data(
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# §9  MAIN ENTRY POINT
+# §10  MAIN ENTRY POINT
 # ═══════════════════════════════════════════════════════════════════════════
 
 
@@ -545,19 +592,18 @@ def analyze_context(
     market_data: dict[str, Any],
     pair: str = "GBPUSD",
     now: datetime | None = None,
+    weights: LogisticWeights | None = None,
 ) -> dict[str, Any]:
-    """L1 Context -- PRODUCTION v2.
+    """L1 Context — PRODUCTION v3 (Probabilistic Regime).
 
-    Pure analysis function.  Returns regime, volatility, alignment, CSI,
-    momentum, and regime quality.  No execution side-effects.
+    Pure analysis function.  Returns probabilistic regime classification,
+    Shannon entropy coherence, volatility percentile, and CSI v3.
+    No execution side-effects.
 
-    Enhancements over v1:
-      - ATR-normalized regime thresholds (asset-agnostic)
-      - Asset-adaptive volatility classification
-      - ATR-scaled trend strength (replaces spread×200)
-      - EMA-9 short-term momentum layer
-      - Regime quality composite score
-      - ContextResult dataclass contract
+    Mathematical model:
+      X_L1 = [S, A, H, Vz]
+      P_trend = σ(w₁·S + w₂·A + w₃·H + w₄·Vz + b₀)
+      CC = 1 - H_regime / ln(2)
 
     Parameters
     ----------
@@ -567,18 +613,24 @@ def analyze_context(
     pair : str
         Currency pair / instrument label.
     now : datetime, optional
-        Override for current UTC time (useful for testing).
+        Override for current UTC time (testing).
+    weights : LogisticWeights, optional
+        Override model weights (backtesting calibration).
 
     Returns
     -------
     dict[str, Any]
         Context analysis result.  Always includes ``valid`` key.
+        New output fields: regime_probability, context_coherence,
+        volatility_percentile, entropy_score.
 
     Raises
     ------
     ContextError
         On data integrity issues (NaN, negative prices, high < low).
     """
+    w = weights or DEFAULT_WEIGHTS
+
     closes: list[float] = market_data.get(
         "closes", market_data.get("close", [])
     )
@@ -596,146 +648,143 @@ def analyze_context(
         return ContextResult(
             regime="UNKNOWN",
             dominant_force="NEUTRAL",
+            regime_probability=0.0,
+            context_coherence=0.0,
             volatility_level="UNKNOWN",
+            volatility_percentile=0.0,
+            entropy_score=math.log(2.0),
             regime_confidence=0.0,
             csi=0.0,
             market_alignment="NEUTRAL",
             valid=False,
             session="UNKNOWN",
             session_multiplier=0.0,
-            sma20=0.0,
-            sma50=0.0,
+            pair=pair,
+            asset_class=_classify_asset(pair),
+            timestamp=datetime.now(UTC).isoformat(),
+            feature_spread=0.0,
+            feature_atr_frac=0.0,
+            feature_hurst=w.hurst_fallback,
+            feature_zscore=0.0,
+            ema20=0.0,
+            ema50=0.0,
             ema9=0.0,
-            sma_spread_pct=0.0,
             atr=0.0,
             atr_pct=0.0,
-            pair=pair,
-            timestamp=datetime.now(UTC).isoformat(),
-            asset_class=_classify_asset(pair),
             momentum_direction="NEUTRAL",
             momentum_magnitude=0.0,
-            trend_strength=0.0,
-            regime_quality=0.0,
             reason=f"need {_MIN_BARS}+ bars, got {len(closes)}",
         ).to_dict()
 
-    # Validate data integrity
     _validate_market_data(closes, highs, lows)
 
     if now is None:
         now = datetime.now(UTC)
 
-    profile = _get_asset_profile(pair)
     session, sess_mult = _get_session(now.hour)
 
-    # ── Moving Averages ───────────────────────────────────────────
-    sma20 = _sma(closes, 20)
-    sma50 = (
-        _sma(closes, 50)
-        if len(closes) >= 50
-        else _sma(closes, len(closes))
-    )
-    ema9 = _ema(closes, 9)
-    spread = (sma20 - sma50) / sma50 if sma50 != 0 else 0.0
+    # ── Feature Extraction: X_L1 = [S, A, H, Vz] ─────────────────
+    s = _compute_spread(closes)
+    a = _compute_atr_frac(highs, lows, closes)
+    h_raw = _compute_hurst(closes)
+    h = h_raw if h_raw is not None else w.hurst_fallback
+    vz = _compute_zscore(highs, lows, closes)
 
-    # ── ATR & Volatility ─────────────────────────────────────────
+    # ── EMA values (for alignment & output) ───────────────────────
+    ema20 = _ema(closes, 20)
+    ema50 = _ema(closes, 50) if len(closes) >= 50 else _ema(closes, len(closes))
+    ema9 = _ema(closes, 9)
+
+    # ── ATR (for output) ──────────────────────────────────────────
     atr_val = _atr(highs, lows, closes) if highs and lows else 0.0
     price = closes[-1]
     atr_pct = (atr_val / price * 100) if price != 0 else 0.0
-    atr_frac = atr_val / price if price != 0 else 0.0  # dimensionless
-    adj_atr = atr_pct * sess_mult
-    vol_level = _classify_volatility(adj_atr, profile)
 
-    # ── Regime (ATR-normalized) ───────────────────────────────────
-    regime, dominant = _detect_regime(spread, atr_frac, profile)
+    # ── Regime Probability ────────────────────────────────────────
+    p_trend = _compute_regime_probability(s, a, h, vz, w)
+    regime, dominant = _classify_regime(p_trend, s, w)
 
-    # ── Trend Strength (ATR-scaled) ──────────────────────────────
-    trend_strength = _compute_trend_strength(spread, atr_frac, profile)
+    # ── Context Coherence (Shannon Entropy) ───────────────────────
+    entropy = _compute_entropy(p_trend)
+    cc = _compute_context_coherence(p_trend)
 
-    # ── Confidence (trend × volatility penalty) ──────────────────
-    vol_penalty = (
-        max(0.0, 1.0 - adj_atr * 0.3)
-        if vol_level in ("EXTREME", "HIGH")
-        else 1.0
-    )
-    regime_conf = round(trend_strength * vol_penalty, 4)
+    # ── Volatility Percentile ─────────────────────────────────────
+    vol_pct = _compute_volatility_percentile(vz)
+    vol_level = _classify_volatility_by_percentile(vol_pct)
 
-    # ── Momentum (EMA-9) ─────────────────────────────────────────
+    # ── Regime Confidence (CC × session quality) ──────────────────
+    sess_quality = min(1.0, sess_mult / 1.3)
+    regime_conf = round(cc * sess_quality, 4)
+
+    # ── Momentum ──────────────────────────────────────────────────
     mom_dir, mom_mag = _compute_momentum_bias(closes, ema9)
 
-    # ── CSI v2 ────────────────────────────────────────────────────
-    csi = _compute_csi(trend_strength, volumes, sess_mult, mom_mag)
+    # ── CSI v3 ────────────────────────────────────────────────────
+    csi = _compute_csi(p_trend, volumes, sess_mult, mom_mag, cc)
 
-    # ── Alignment (enriched) ─────────────────────────────────────
+    # ── Alignment ─────────────────────────────────────────────────
     alignment = _compute_alignment(
-        closes[-1], sma20, sma50, ema9, spread, regime
+        closes[-1], ema20, ema50, ema9, s, regime,
     )
 
-    # ── Hurst Enrichment (optional) ──────────────────────────────
+    # ── Hurst Enrichment (full result from engine) ────────────────
     hurst_regime: str | None = None
     hurst_conf: float | None = None
-    hurst_exp: float | None = None
     hurst_vol_state: str | None = None
     hurst_mom: float | None = None
     regime_agreement: bool | None = None
 
-    if _regime_classifier is not None:
+    if _regime_classifier is not None and h_raw is not None:
         try:
             rc = _regime_classifier.classify(closes)
             hurst_regime = rc.regime
             hurst_conf = rc.confidence
-            hurst_exp = rc.hurst_exponent
             hurst_vol_state = rc.volatility_state
             hurst_mom = rc.momentum
-            _sma_trending = regime in ("TREND_UP", "TREND_DOWN")
+            _prob_trending = regime in ("TREND_UP", "TREND_DOWN")
             _hurst_trending = rc.regime == "TRENDING"
-            regime_agreement = _sma_trending == _hurst_trending
+            regime_agreement = _prob_trending == _hurst_trending
         except Exception as exc:
             logger.debug("L1 Hurst enrichment skipped: %s", exc)
 
-    # ── Regime Quality ────────────────────────────────────────────
-    regime_quality = _compute_regime_quality(
-        trend_strength, vol_level, sess_mult, mom_mag, regime_agreement
-    )
-
     logger.debug(
-        "L1 context v2: pair=%s regime=%s vol=%s csi=%.4f "
-        "quality=%.4f session=%s asset=%s",
-        pair,
-        regime,
-        vol_level,
-        csi,
-        regime_quality,
-        session,
-        _classify_asset(pair),
+        "L1 v3: pair=%s P=%.4f CC=%.4f regime=%s vol=%s(%s) "
+        "csi=%.4f session=%s X=[S=%.6f A=%.6f H=%.4f Vz=%.4f]",
+        pair, p_trend, cc, regime, vol_level,
+        _classify_asset(pair), csi, session, s, a, h, vz,
     )
 
     result = ContextResult(
         regime=regime,
         dominant_force=dominant,
+        regime_probability=round(p_trend, 4),
+        context_coherence=round(cc, 4),
         volatility_level=vol_level,
+        volatility_percentile=round(vol_pct, 4),
+        entropy_score=round(entropy, 4),
         regime_confidence=regime_conf,
         csi=csi,
         market_alignment=alignment,
         valid=True,
         session=session,
         session_multiplier=sess_mult,
-        sma20=round(sma20, 5),
-        sma50=round(sma50, 5),
+        pair=pair,
+        asset_class=_classify_asset(pair),
+        timestamp=now.isoformat(),
+        feature_spread=round(s, 8),
+        feature_atr_frac=round(a, 8),
+        feature_hurst=round(h, 4),
+        feature_zscore=round(vz, 4),
+        ema20=round(ema20, 5),
+        ema50=round(ema50, 5),
         ema9=round(ema9, 5),
-        sma_spread_pct=round(spread, 6),
         atr=round(atr_val, 6),
         atr_pct=round(atr_pct, 4),
-        pair=pair,
-        timestamp=now.isoformat(),
-        asset_class=_classify_asset(pair),
         momentum_direction=mom_dir,
         momentum_magnitude=mom_mag,
-        trend_strength=round(trend_strength, 4),
-        regime_quality=regime_quality,
         hurst_regime=hurst_regime,
         hurst_confidence=hurst_conf,
-        hurst_exponent=hurst_exp,
+        hurst_exponent=round(h, 4) if h_raw is not None else None,
         hurst_volatility_state=hurst_vol_state,
         hurst_momentum=hurst_mom,
         regime_agreement=regime_agreement,
@@ -745,34 +794,29 @@ def analyze_context(
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# §10  PIPELINE-COMPATIBLE CLASS WRAPPER
+# §11  PIPELINE-COMPATIBLE CLASS WRAPPER
 # ═══════════════════════════════════════════════════════════════════════════
 
 
 class L1ContextAnalyzer:
     """Pipeline-compatible wrapper around :func:`analyze_context`.
 
-    The Wolf Constitutional Pipeline (``wolf_constitutional_pipeline.py``)
-    instantiates ``L1ContextAnalyzer()`` and calls ``.analyze(symbol)``.
-    This class pulls OHLCV candle data from :class:`LiveContextBus` and
-    delegates to the pure ``analyze_context()`` function.
+    The Wolf Constitutional Pipeline instantiates ``L1ContextAnalyzer()``
+    and calls ``.analyze(symbol)``.  Pulls OHLCV from LiveContextBus.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, weights: LogisticWeights | None = None) -> None:
         from context.live_context_bus import LiveContextBus  # noqa: PLC0415
 
         self._bus = LiveContextBus()
+        self._weights = weights or DEFAULT_WEIGHTS
 
     def analyze(self, symbol: str) -> dict[str, Any]:
-        """Run L1 context analysis for *symbol*.
-
-        Pulls H1 candle history from LiveContextBus, assembles the
-        market_data dict, and delegates to ``analyze_context()``.
-        """
+        """Run L1 context analysis for *symbol*."""
         candles = self._bus.get_candle_history(symbol, "H1", count=80)
 
         if not candles:
-            return analyze_context({}, pair=symbol)
+            return analyze_context({}, pair=symbol, weights=self._weights)
 
         closes = [float(c["close"]) for c in candles]
         highs = [float(c["high"]) for c in candles]
@@ -786,4 +830,6 @@ class L1ContextAnalyzer:
             "volumes": volumes,
         }
 
-        return analyze_context(market_data, pair=symbol)
+        return analyze_context(
+            market_data, pair=symbol, weights=self._weights,
+        )
