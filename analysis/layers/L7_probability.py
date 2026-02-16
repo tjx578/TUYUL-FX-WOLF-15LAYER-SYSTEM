@@ -40,12 +40,12 @@ from __future__ import annotations
 
 from typing import Any
 
+from loguru import logger  # pyright: ignore[reportMissingImports]
+
 from engines.bayesian_update_engine import (  # pyright: ignore[reportMissingImports]
     BayesianProbabilityEngine,
     BayesianResult,
 )
-from loguru import logger  # pyright: ignore[reportMissingImports]
-
 from engines.monte_carlo_engine import (  # pyright: ignore[reportMissingImports]
     MonteCarloEngine,
     MonteCarloResult,
@@ -87,7 +87,15 @@ class L7ProbabilityAnalyzer:
         self,
         simulations: int = 1000,
         seed: int | None = 42,
+        *,
+        mc_simulations: int | None = None,
+        mc_seed: int | None = None,
     ) -> None:
+        # Accept legacy kwarg names used by older callers / tests
+        if mc_simulations is not None:
+            simulations = mc_simulations
+        if mc_seed is not None:
+            seed = mc_seed
         self._mc_engine = MonteCarloEngine(
             simulations=simulations,
             seed=seed,

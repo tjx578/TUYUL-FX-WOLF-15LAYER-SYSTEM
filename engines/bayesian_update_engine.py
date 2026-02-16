@@ -4,7 +4,7 @@ Maintains Beta-distributed beliefs about win probability and updates
 them with new evidence scores.
 
 ANALYSIS-ONLY module. No execution side-effects.
-"""  # noqa: N999
+"""
 
 from __future__ import annotations
 

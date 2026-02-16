@@ -59,11 +59,13 @@ from .fusion_precision_engine import (
 from .fusion_structure_engine import (
     FusionStructureEngine,
     StructureResult,
+    StructureState,
 )
 
 # --- Quantum ---
 from .quantum_advisory_engine import (
     AdvisoryResult,
+    AdvisorySignal,
     QuantumAdvisoryEngine,
 )
 from .quantum_field_engine import FieldResult, QuantumFieldEngine
@@ -94,6 +96,9 @@ def create_engine_suite() -> dict[str, object]:
 __all__ = [
     # Quantum types
     "AdvisoryResult",
+    # Backward-compat aliases
+    "AdvisorySignal",
+    "CognitiveCoherence",
     # Cognitive engines
     "CognitiveCoherenceEngine",
     "CognitiveContext",
@@ -103,9 +108,12 @@ __all__ = [
     "CoherenceSnapshot",
     "CoherenceState",
     "FieldResult",
+    "FusionMomentum",
     # Fusion engines
     "FusionMomentumEngine",
+    "FusionPrecision",
     "FusionPrecisionEngine",
+    "FusionStructure",
     "FusionStructureEngine",
     "InstitutionalPresence",
     "LiquidityContext",
@@ -121,6 +129,7 @@ __all__ = [
     "QuantumProbabilityEngine",
     "RiskSimulationResult",
     "StructureResult",
+    "StructureState",
     # Factory
     "create_engine_suite",
 ]
@@ -128,6 +137,15 @@ __all__ = [
 # ------------------------------------------------------------------
 # Backward Compatibility: CognitiveCoherence Export (Lazy)
 # ------------------------------------------------------------------
+
+# ------------------------------------------------------------------
+# Backward Compatibility Aliases
+# ------------------------------------------------------------------
+CognitiveCoherence = CoherenceSnapshot
+FusionMomentum = MomentumResult
+FusionPrecision = PrecisionResult
+FusionStructure = StructureResult
+
 
 def __getattr__(name):
     if name == "CognitiveCoherence":
