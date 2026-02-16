@@ -1,9 +1,11 @@
-"""Tests: CorrelationRiskEngine integration INTO L6 risk analyzer.
+"""Tests: CorrelationRiskEngine integration INTO L6 Capital Firewall.
 
 Verifies that when ``pair_returns`` (multi-pair return dict) is provided,
-L6 evaluates pairwise correlation risk and includes enrichment fields
-in its result.  When correlation breaches threshold, risk_status
-is downgraded and propfirm_compliant is set False.
+L6 uses pairwise correlation risk internally to dampen risk_multiplier
+and set CORRELATION_STRESS status when correlated pairs are detected.
+
+Updated for L6 v4 API: correlation engine fields are used internally
+(not exposed as raw result keys).
 
 Authority: ANALYSIS ZONE only. No execution side-effects.
 """
@@ -53,88 +55,62 @@ class TestPrerequisite:
         )
 
 
-# -- Low correlation: enrichment present, passed = True -----------------------
+# -- Low correlation: risk unaffected -----------------------------------------
 
 
 class TestLowCorrelation:
-    """Independent pairs -> correlation risk passes."""
-
-    def test_corr_fields_present(self) -> None:
-        analyzer = L6RiskAnalyzer()
-        result = analyzer.analyze(pair_returns=_multi_pair_low_corr())
-
-        assert "corr_max_correlation" in result
-        assert "corr_avg_correlation" in result
-        assert "corr_concentration_risk" in result
-        assert "corr_num_pairs" in result
-        assert "corr_high_pairs" in result
-        assert "corr_passed" in result
+    """Independent pairs -> correlation engine does not reduce risk."""
 
     def test_passes_with_independent_pairs(self) -> None:
         analyzer = L6RiskAnalyzer()
         result = analyzer.analyze(pair_returns=_multi_pair_low_corr())
 
-        assert result["corr_passed"] is True
-        assert result["risk_status"] == "ACCEPTABLE"
-        assert result["propfirm_compliant"] is True
+        assert result["risk_ok"] is True
+        assert result["risk_status"] == "OPTIMAL"
 
-    def test_num_pairs_matches_input(self) -> None:
-        pairs = _multi_pair_low_corr(n_pairs=5)
-        result = L6RiskAnalyzer().analyze(pair_returns=pairs)
-        assert result["corr_num_pairs"] == 5
+    def test_risk_multiplier_not_reduced(self) -> None:
+        analyzer = L6RiskAnalyzer()
+        result = analyzer.analyze(pair_returns=_multi_pair_low_corr())
+        assert result["risk_multiplier"] == 1.0
 
 
-# -- High correlation: risk downgrade -----------------------------------------
+# -- High correlation: risk dampened ------------------------------------------
 
 
 class TestHighCorrelation:
-    """Highly correlated pairs -> risk_status WARNING, propfirm False."""
+    """Highly correlated pairs -> risk dampened via engine."""
 
-    def test_fails_with_correlated_pairs(self) -> None:
+    def test_risk_reduced_with_correlated_pairs(self) -> None:
         analyzer = L6RiskAnalyzer()
         result = analyzer.analyze(pair_returns=_multi_pair_high_corr())
 
-        assert result["corr_passed"] is False
-        assert result["risk_status"] == "WARNING"
-        assert result["propfirm_compliant"] is False
+        # Correlation engine should dampen risk_multiplier
+        assert result["risk_multiplier"] < 1.0
 
-    def test_high_pairs_flagged(self) -> None:
+    def test_correlation_stress_warning(self) -> None:
         analyzer = L6RiskAnalyzer()
         result = analyzer.analyze(pair_returns=_multi_pair_high_corr())
 
-        assert len(result["corr_high_pairs"]) > 0
-        # High pairs should have human-readable labels
-        first = result["corr_high_pairs"][0]
-        assert "pair_i" in first
-        assert "pair_j" in first
-        assert "correlation" in first
-
-    def test_max_correlation_above_threshold(self) -> None:
-        analyzer = L6RiskAnalyzer()
-        result = analyzer.analyze(pair_returns=_multi_pair_high_corr())
-
-        assert result["corr_max_correlation"] >= 0.85
+        assert result["risk_status"] == "CORRELATION_STRESS"
+        assert any("CORR_ENGINE_BLOCK" in w for w in result["warnings"])
 
 
-# -- Backward compatibility: no pair_returns -> no corr fields ----------------
+# -- Backward compatibility: no pair_returns -> no corr impact ----------------
 
 
 class TestBackwardCompat:
-    """Without pair_returns, L6 behaves identically to before."""
+    """Without pair_returns, L6 behaves normally."""
 
-    def test_no_pair_returns_no_corr_fields(self) -> None:
+    def test_no_pair_returns_optimal(self) -> None:
         result = L6RiskAnalyzer().analyze(rr=2.0)
-
-        assert "corr_max_correlation" not in result
-        assert "corr_passed" not in result
-        assert result["risk_status"] == "ACCEPTABLE"
+        assert result["risk_status"] == "OPTIMAL"
 
     def test_single_pair_skipped(self) -> None:
         """Only 1 pair -> correlation analysis skipped (need >= 2)."""
         result = L6RiskAnalyzer().analyze(
             pair_returns={"EURUSD": [float(x) for x in range(50)]},
         )
-        assert "corr_passed" not in result
+        assert result["risk_ok"] is True
 
     def test_short_series_skipped(self) -> None:
         """Series < 20 observations -> correlation analysis skipped."""
@@ -144,7 +120,7 @@ class TestBackwardCompat:
                 "GBPUSD": [2.0] * 10,
             },
         )
-        assert "corr_passed" not in result
+        assert result["risk_ok"] is True
 
 
 # -- Combined: vol clustering + correlation -----------------------------------
@@ -153,7 +129,7 @@ class TestBackwardCompat:
 class TestCombinedEnrichment:
     """Both vol clustering and correlation can run together."""
 
-    def test_both_enrichments_present(self) -> None:
+    def test_both_enrichments_run(self) -> None:
         rng = np.random.default_rng(7)
         trade_returns = [float(x) for x in rng.normal(0, 1, 50)]
         pair_returns = _multi_pair_low_corr()
@@ -163,7 +139,7 @@ class TestCombinedEnrichment:
             pair_returns=pair_returns,
         )
 
-        # Vol clustering fields
-        assert "vol_clustering_detected" in result
-        # Correlation fields
-        assert "corr_passed" in result
+        # All core fields present
+        assert result["valid"] is True
+        assert "risk_multiplier" in result
+        assert "lrce" in result
