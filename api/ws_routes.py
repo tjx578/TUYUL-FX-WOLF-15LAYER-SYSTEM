@@ -6,6 +6,7 @@ Endpoints:
   WS /ws/trades?token=<jwt>       - Trade status change events (event-driven)
   WS /ws/candles?token=<jwt>      - Real-time candle aggregation stream
   WS /ws/risk?token=<jwt>         - Risk state stream (drawdown, circuit breaker)
+  WS /ws/equity?token=<jwt>       - Streaming equity curve with drawdown overlay
 
 Authentication:
   All WebSocket endpoints require a valid JWT or API key passed
@@ -45,6 +46,8 @@ TRADE_CHECK_INTERVAL = 0.25  # 250ms
 CANDLE_UPDATE_INTERVAL = 0.5  # 500ms
 # Risk state push interval
 RISK_STATE_INTERVAL = 1.0  # 1s
+# Equity curve push interval
+EQUITY_PUSH_INTERVAL = 2.0  # 2s (balance/equity changes slowly)
 
 
 # ---------------------------------------------------------------------------
@@ -171,6 +174,7 @@ price_manager = ConnectionManager(name="prices")
 trade_manager = ConnectionManager(name="trades")
 candle_manager = ConnectionManager(name="candles")
 risk_manager = ConnectionManager(name="risk")
+equity_manager = ConnectionManager(name="equity")
 
 # Service instances
 _price_feed = PriceFeed()
@@ -402,3 +406,130 @@ async def websocket_risk(websocket: fastapi.WebSocket):
     except Exception as exc:
         logger.error(f"Risk WebSocket error: {exc}")
         risk_manager.disconnect(websocket)
+
+
+# ---------------------------------------------------------------------------
+# WS /ws/equity -- Streaming equity curve with drawdown overlay
+# ---------------------------------------------------------------------------
+
+# In-memory equity history buffer (ring buffer, max 1440 points = 24h at 1min)
+_EQUITY_HISTORY_MAX = 1440
+_equity_history: list[dict] = []
+
+
+def _compute_drawdown(equity: float, peak: float) -> float:
+    """Compute drawdown percentage from peak equity."""
+    if peak <= 0:
+        return 0.0
+    return round((peak - equity) / peak * 100.0, 4)
+
+
+@router.websocket("/ws/equity")
+async def websocket_equity(websocket: fastapi.WebSocket):
+    """
+    WebSocket endpoint for streaming equity curve with drawdown overlay.
+
+    Pushes equity snapshots every 2s containing:
+    - equity, balance, floating_pnl
+    - drawdown_pct, peak_equity
+    - equity_history (ring buffer of recent points)
+
+    Requires ``?token=<jwt_or_api_key>`` query parameter.
+    Optional ``?account_id=<id>`` to filter to specific account.
+    """
+    connected = await equity_manager.connect(websocket)
+    if not connected:
+        return
+
+    account_filter = websocket.query_params.get("account_id")
+    logger.info(f"Equity WebSocket connected (account={account_filter or 'default'})")
+
+    peak_equity: float = 0.0
+    last_equity: float | None = None
+
+    try:
+        # Send initial snapshot with history
+        await websocket.send_json({
+            "type": "equity_snapshot",
+            "data": {
+                "history": list(_equity_history),
+                "ts": time.time(),
+            },
+        })
+
+        while True:
+            # Fetch current account state
+            equity_point: dict = {"ts": time.time()}
+
+            try:
+                from dashboard.account_manager import AccountManager  # noqa: PLC0415
+                am = AccountManager()
+                accounts = am.list_accounts()
+
+                if account_filter:
+                    account = am.get_account(account_filter)
+                    accounts = [account] if account else []
+
+                if accounts:
+                    # Use first/filtered account
+                    acct = accounts[0]
+                    equity = float(acct.equity)
+                    balance = float(acct.balance)
+                    floating_pnl = round(equity - balance, 2)
+
+                    # Track peak for drawdown calculation
+                    peak_equity = max(peak_equity, equity)
+
+                    dd_pct = _compute_drawdown(equity, peak_equity)
+
+                    equity_point.update({
+                        "account_id": acct.account_id,
+                        "equity": equity,
+                        "balance": balance,
+                        "floating_pnl": floating_pnl,
+                        "peak_equity": peak_equity,
+                        "drawdown_pct": dd_pct,
+                    })
+                else:
+                    equity_point.update({
+                        "equity": 0.0,
+                        "balance": 0.0,
+                        "floating_pnl": 0.0,
+                        "peak_equity": 0.0,
+                        "drawdown_pct": 0.0,
+                    })
+
+            except Exception as exc:
+                logger.debug(f"Equity fetch failed: {exc}")
+                equity_point.update({
+                    "equity": 0.0,
+                    "balance": 0.0,
+                    "floating_pnl": 0.0,
+                    "peak_equity": 0.0,
+                    "drawdown_pct": 0.0,
+                    "error": str(exc),
+                })
+
+            current_equity = equity_point.get("equity", 0.0)
+
+            # Only append to history if equity changed (avoid flat duplicates)
+            if last_equity is None or current_equity != last_equity:
+                _equity_history.append(equity_point)
+                if len(_equity_history) > _EQUITY_HISTORY_MAX:
+                    _equity_history.pop(0)
+                last_equity = current_equity
+
+            # Push update to client
+            await websocket.send_json({
+                "type": "equity_update",
+                "data": equity_point,
+            })
+
+            await asyncio.sleep(EQUITY_PUSH_INTERVAL)
+
+    except fastapi.WebSocketDisconnect:
+        equity_manager.disconnect(websocket)
+        logger.info("Equity WebSocket client disconnected")
+    except Exception as exc:
+        logger.error(f"Equity WebSocket error: {exc}")
+        equity_manager.disconnect(websocket)
