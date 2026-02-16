@@ -497,3 +497,77 @@ class VerdictEngine:
             "final_fraction": final_fraction,
             "severity": "NONE",
         }
+
+
+class WolfConstitutionalPipeline:
+    """Wolf Constitutional Pipeline.
+
+    Runs the full constitutional pipeline for a symbol.
+    """
+
+    def __init__(self, config: dict | None = None) -> None:
+        self._config = config or {}
+        self._kelly_gate_enabled = self._config.get(
+            "kelly_edge_gate_enabled", False
+        )
+
+    def _run_analysis(self, symbol: str, timeframe: str = "H1", context: dict | None = None) -> dict:
+        """Run the full analysis pipeline for a symbol.
+
+        Returns a dict of all layer outputs (L1-L11).
+        """
+        context = context or {}
+
+        # L1-L11: Gather analysis scores
+        analysis_result = self._run_analysis(symbol, timeframe, context)
+
+        return analysis_result
+
+    def _evaluate_verdict(self, symbol: str, analysis_result: dict, context: dict | None = None) -> dict:
+        """Evaluate the constitutional verdict for a symbol.
+
+        This is the SOLE AUTHORITY that decides EXECUTE / HOLD / ABORT.
+        L7 probability metrics are advisory inputs that inform confidence.
+
+        Args:
+            symbol: Instrument identifier.
+            analysis_result: Dict of all layer outputs (L1-L11+).
+            context: Additional context data.
+
+        Returns:
+            Enriched verdict dict with L7 probability context.
+        """
+        context = context or {}
+
+        # L1-L11: Gather analysis scores
+        analysis_result = self._run_analysis(symbol, "H1", context)
+
+        # L12: Constitutional gate — single decision authority
+        verdict = self._evaluate_verdict(symbol, analysis_result, context)
+
+        # Ensure required schema fields
+        verdict.setdefault("symbol", symbol)
+        verdict.setdefault("verdict", "NO_TRADE")
+        verdict.setdefault("confidence", 0.0)
+
+        return verdict
+
+    def run(self, symbol: str, timeframe: str = "H1", context: dict | None = None) -> dict:
+        """Run the full constitutional pipeline for a symbol.
+
+        Returns a Layer-12 verdict dict with at minimum:
+        symbol, verdict, confidence.
+        """
+        context = context or {}
+
+        # L1-L11: Gather analysis scores
+        analysis_result = self._run_analysis(symbol, timeframe, context)
+
+        # L12: Constitutional gate — single decision authority
+        verdict = self._evaluate_verdict(symbol, analysis_result, context)
+
+        # Ensure required schema fields
+        verdict.setdefault("symbol", symbol)
+        verdict.setdefault("verdict", "NO_TRADE")
+        verdict.setdefault("confidence", 0.0)
+        return verdict
