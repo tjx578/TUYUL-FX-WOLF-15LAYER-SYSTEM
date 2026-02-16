@@ -13,6 +13,7 @@ from redis.asyncio import Redis  # pyright: ignore[reportMissingImports]
 from config_loader import CONFIG
 from context.live_context_bus import LiveContextBus
 from ingest.finnhub_ws import FinnhubSymbolMapper, FinnhubWebSocket
+from ingest.spread_estimator import estimate_spread
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
@@ -162,11 +163,20 @@ def _build_tick_handler(
                 # Update last known price
                 _last_prices[internal_symbol] = float(price)
 
+                tick_ts = float(timestamp) / 1000.0
+                bid, ask = estimate_spread(
+                    symbol=internal_symbol,
+                    price=float(price),
+                    timestamp=tick_ts,
+                )
+
                 normalized_tick = {
                     "symbol": internal_symbol,
-                    "bid": float(price),
-                    "ask": float(price),
-                    "timestamp": float(timestamp) / 1000.0,
+                    "bid": bid,
+                    "ask": ask,
+                    "last": float(price),
+                    "spread": round(ask - bid, 6),
+                    "timestamp": tick_ts,
                     "source": "finnhub_ws",
                 }
                 context_bus.update_tick(normalized_tick)
