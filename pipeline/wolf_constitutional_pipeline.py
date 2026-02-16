@@ -57,6 +57,15 @@ from symtable import Symbol
 from typing import Any
 
 from constitution.verdict_engine import generate_l12_verdict
+from core.metrics import (
+    GATE_RESULT,
+    PIPELINE_DURATION,
+    PIPELINE_ERROR,
+    PIPELINE_RUNS,
+    SIGNAL_TOTAL,
+    VERDICT_TOTAL,
+    WARMUP_BLOCKED,
+)
 from core.vault_health import VaultHealthChecker  # noqa: F401
 from pipeline.constants import (
     get_conf12_min,
@@ -463,6 +472,7 @@ class WolfConstitutionalPipeline:
                     f"missing={warmup['missing']}"
                 )
                 errors.append("WARMUP_INSUFFICIENT")
+                WARMUP_BLOCKED.labels(symbol=symbol).inc()
                 return self._early_exit(symbol, errors, time.time() - start_time)
 
         try:
@@ -766,7 +776,9 @@ class WolfConstitutionalPipeline:
                 errors=errors,
             )
 
-            return result.to_dict()
+            result_dict = result.to_dict()
+            self._record_metrics(symbol, result_dict)
+            return result_dict
 
         except Exception as exc:
             logger.error(f"[Pipeline v8.0] Fatal error for {symbol}: {exc}", exc_info=True)
@@ -1055,6 +1067,51 @@ class WolfConstitutionalPipeline:
         }
 
     # ══════════════════════════════════════════════════════════════
+    #  METRICS RECORDING
+    # ══════════════════════════════════════════════════════════════
+
+    @staticmethod
+    def _record_metrics(symbol: str, result: dict[str, Any]) -> None:
+        """Record Prometheus metrics from a pipeline result.
+
+        Covers: latency histogram, gate pass/fail, verdict counter,
+        error counters, and actionable-signal counter.
+
+        This is pure observability — no execution side-effects.
+        """
+        # Pipeline run counter
+        PIPELINE_RUNS.labels(symbol=symbol).inc()
+
+        # Latency histogram (convert ms → seconds)
+        latency_s = result.get("latency_ms", 0.0) / 1000.0
+        PIPELINE_DURATION.labels(symbol=symbol).observe(latency_s)
+
+        # Gate results
+        gates = result.get("l12_verdict", {}).get("gates_v74", {})
+        for gate_key in (
+            "gate_1_tii", "gate_2_montecarlo", "gate_3_frpc",
+            "gate_4_conf12", "gate_5_rr", "gate_6_integrity",
+            "gate_7_propfirm", "gate_8_drawdown", "gate_9_latency",
+        ):
+            gate_val = gates.get(gate_key, "FAIL")
+            GATE_RESULT.labels(gate=gate_key, result=gate_val).inc()
+
+        # Verdict counter
+        verdict = result.get("l12_verdict", {}).get("verdict", "HOLD")
+        VERDICT_TOTAL.labels(symbol=symbol, verdict=verdict).inc()
+
+        # Actionable signal counter (EXECUTE_BUY / EXECUTE_SELL only)
+        if verdict.startswith("EXECUTE_"):
+            direction = verdict.replace("EXECUTE_", "")
+            SIGNAL_TOTAL.labels(symbol=symbol, direction=direction).inc()
+
+        # Error counters
+        for err in result.get("errors", []):
+            # Normalize long FATAL_ERROR messages to a generic code
+            code = "FATAL_ERROR" if err.startswith("FATAL_ERROR") else err
+            PIPELINE_ERROR.labels(error_code=code).inc()
+
+    # ══════════════════════════════════════════════════════════════
     #  EARLY EXIT -- pipeline failure fallback
     # ══════════════════════════════════════════════════════════════
 
@@ -1079,7 +1136,7 @@ class WolfConstitutionalPipeline:
             "gate_9_latency": "FAIL",
         }
 
-        return {
+        result = {
             "schema": self.VERSION,
             "pair": symbol,
             "timestamp": datetime.now(_TZ_GMT8).isoformat(),
@@ -1169,3 +1226,5 @@ class WolfConstitutionalPipeline:
             "latency_ms": latency_ms,
             "errors": errors,
         }
+        self._record_metrics(symbol, result)
+        return result
