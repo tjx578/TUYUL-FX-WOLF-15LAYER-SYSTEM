@@ -1,0 +1,200 @@
+# ===================================================================
+# V11 HYPER-PRECISION SNIPER ENGINE SUITE CONFIGURATION
+# ===================================================================
+# Post-pipeline overlay for extreme selectivity filtering.
+# V11 can ONLY block trades (veto EXECUTE), never override HOLD.
+# L12 Constitutional Authority is PRESERVED.
+
+# ===================================================================
+# MASTER SWITCH
+# ===================================================================
+enabled: true
+
+# ===================================================================
+# SELECTIVITY THRESHOLDS (Execution Layer 3)
+# ===================================================================
+selectivity:
+  # Minimum composite score (weighted from Layer 2)
+  score_min: 0.78
+  
+  # Monte Carlo win probability minimum
+  monte_carlo_win_min: 0.70
+  
+  # Bayesian posterior confidence minimum
+  posterior_min: 0.72
+  
+  # Monte Carlo profit factor minimum
+  mc_pf_min: 1.8
+  
+  # Volume expansion ratio minimum
+  vol_expansion_min: 1.4
+
+# ===================================================================
+# VETO RULES (Layer 1 - Binary Conditions)
+# ===================================================================
+veto:
+  # Regime confidence floor (below = veto)
+  regime_confidence_floor: 0.65
+  
+  # Regime transition risk ceiling (above = veto)
+  regime_transition_risk_ceiling: 0.40
+  
+  # Discipline score floor (below = veto)
+  discipline_min: 0.90
+  
+  # EAF score floor (below = veto)
+  eaf_min: 0.75
+  
+  # Cluster exposure ceiling (above = veto)
+  cluster_exposure_max: 0.75
+  
+  # Rolling correlation max ceiling (above = veto)
+  correlation_max: 0.90
+  
+  # Emotion delta ceiling (above = veto)
+  emotion_delta_max: 0.25
+  
+  # Allowed volatility states (others = veto)
+  allowed_vol_states:
+    - "NORMAL"
+    - "EXPANSION"
+    - "TRENDING"
+
+# ===================================================================
+# SCORING WEIGHTS (Layer 2)
+# ===================================================================
+scoring:
+  regime_confidence: 0.20
+  liquidity_sweep: 0.15
+  exhaustion_confidence: 0.15
+  divergence_confidence: 0.10
+  monte_carlo_win: 0.15
+  posterior: 0.15
+  cluster_exposure_inverse: 0.10
+
+# ===================================================================
+# EXHAUSTION DETECTOR
+# ===================================================================
+exhaustion:
+  # Distance from mean threshold (normalized by mean)
+  extreme_distance: 0.025
+  
+  # Impulse strength limit (price displacement / ATR)
+  impulse_limit: 3.0
+  
+  # Wick pressure ratio threshold
+  wick_ratio: 1.5
+  
+  # Lookback periods
+  lookback_mean: 20
+  lookback_atr: 14
+
+# ===================================================================
+# EXHAUSTION + DIVERGENCE FUSION
+# ===================================================================
+exhaustion_dvg_fusion:
+  # Exhaustion weight in composite
+  exhaustion_weight: 0.45
+  
+  # Divergence weight (split by timeframe)
+  divergence_weight: 0.55
+  divergence_tf_weights:
+    H1: 0.25
+    H4: 0.45
+    D1: 0.30
+
+# ===================================================================
+# LIQUIDITY SWEEP SCORER
+# ===================================================================
+liquidity_sweep:
+  # Equal high/low detection tolerance
+  equal_level_tolerance: 0.0002
+  
+  # Wick rejection threshold
+  wick_rejection_min: 0.60
+  
+  # Volume spike threshold (multiple of rolling avg)
+  volume_spike_threshold: 1.5
+  
+  # Lookback periods
+  volume_lookback: 20
+  pattern_lookback: 5
+
+# ===================================================================
+# REGIME AI (Online K-Means)
+# ===================================================================
+regime_ai:
+  # Number of clusters
+  n_clusters: 4
+  
+  # Confidence decay parameter (tau)
+  confidence_tau: 1.5
+  
+  # Learning rate for centroid updates
+  learning_rate: 0.1
+  
+  # Minimum samples for stable regime detection
+  min_samples: 30
+  
+  # Persistence file
+  state_file: "storage/regime_ai_state.json"
+  
+  # Feature extraction window
+  feature_window: 50
+  
+  # Regime label mapping (cluster_id -> label)
+  label_mapping:
+    0: "TRENDING"
+    1: "RANGING"
+    2: "EXPANSION"
+    3: "SHOCK"
+
+# ===================================================================
+# PORTFOLIO OPTIMIZER (Markowitz + Kelly)
+# ===================================================================
+portfolio:
+  # Kelly fraction dampening
+  kelly_fraction: 0.5
+  
+  # Confidence power scaling
+  confidence_power: 2.0
+  
+  # Risk-free rate (annual)
+  risk_free_rate: 0.02
+  
+  # Shrinkage target for covariance (Ledoit-Wolf)
+  shrinkage_target: 0.5
+
+# ===================================================================
+# EDGE VALIDATOR (Statistical Significance)
+# ===================================================================
+edge_validation:
+  # Minimum win rate for significance test (H0: p <= threshold)
+  min_win_rate: 0.75
+  
+  # Significance level (alpha)
+  alpha: 0.05
+  
+  # Minimum trades for reliability
+  min_trades: 30
+  
+  # Wilson score confidence level
+  wilson_confidence: 0.95
+
+# ===================================================================
+# GOVERNANCE
+# ===================================================================
+governance:
+  # Operation mode
+  # - ANALYSIS_ONLY_UNTIL_APPROVED: v11 runs but does not block trades
+  # - PRODUCTION: v11 veto is enforced
+  mode: "ANALYSIS_ONLY_UNTIL_APPROVED"
+  
+  # Require L12=EXECUTE before running v11 (skip if L12 rejected)
+  require_l12_execute: true
+  
+  # Latency budget (ms)
+  max_latency_ms: 100
+  
+  # Log level for v11 decisions
+  log_level: "INFO"
