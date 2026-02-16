@@ -309,6 +309,46 @@ class LiveContextBus:
             history = self._candle_history.get(symbol, {}).get(timeframe, deque())
             return len(history)
 
+    def check_warmup(
+        self,
+        symbol: str,
+        min_bars: dict[str, int] | None = None,
+    ) -> dict:
+        """Check if a symbol has sufficient candle history for analysis.
+
+        Args:
+            symbol: Trading pair symbol.
+            min_bars: Minimum bars per timeframe.
+                Defaults to ``{"M15": 20, "H1": 20, "H4": 10, "D1": 5}``.
+
+        Returns:
+            ``{"ready": bool, "bars": {tf: count}, "required": {tf: min},
+              "missing": {tf: shortfall}}``
+        """
+        if min_bars is None:
+            min_bars = {"M15": 20, "H1": 20, "H4": 10, "D1": 5}
+
+        bars: dict[str, int] = {}
+        missing: dict[str, int] = {}
+        ready = True
+
+        with self._rw_lock:
+            for tf, required in min_bars.items():
+                count = len(
+                    self._candle_history.get(symbol, {}).get(tf, deque())
+                )
+                bars[tf] = count
+                if count < required:
+                    ready = False
+                    missing[tf] = required - count
+
+        return {
+            "ready": ready,
+            "bars": bars,
+            "required": dict(min_bars),
+            "missing": missing,
+        }
+
     def check_price_drift(self, symbol: str, max_drift_pips: float = 50.0) -> dict:
         """
         Compare REST H1 close vs WS mid price for integrity check.
