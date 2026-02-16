@@ -25,6 +25,7 @@ from api.ws_routes import router as ws_router
 from config_loader import CONFIG
 from context.live_context_bus import LiveContextBus
 from context.runtime_state import RuntimeState
+from core.metrics import FEED_AGE, get_registry
 from dashboard.backend.auth import verify_token
 from dashboard.price_feed import PriceFeed
 from dashboard.price_watcher import PriceWatcher
@@ -274,6 +275,28 @@ async def health_check():
         "redis_status": _get_redis_status(),
         "postgres": pg_status,
     }
+
+
+@app.get("/metrics")
+async def prometheus_metrics():
+    """Prometheus text exposition endpoint.
+
+    Returns all registered Wolf metrics in Prometheus text format.
+    Feed-age gauges are refreshed on each scrape so they reflect the
+    current staleness of each symbol's tick stream.
+    """
+    from fastapi.responses import PlainTextResponse  # noqa: PLC0415
+
+    # Refresh per-symbol feed-age gauges before exposition
+    context_bus = LiveContextBus()
+    pairs = [p["symbol"] for p in CONFIG["pairs"]["pairs"] if p.get("enabled", True)]
+    for pair in pairs:
+        age = context_bus.get_feed_age(pair)
+        if age is not None:
+            FEED_AGE.labels(symbol=pair).set(age)
+
+    body = get_registry().exposition()
+    return PlainTextResponse(body, media_type="text/plain; version=0.0.4; charset=utf-8")
 
 
 if __name__ == "__main__":
