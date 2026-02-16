@@ -232,11 +232,13 @@ def build_l12_synthesis(
             "optimal_timing": "",
         },
         "risk": {
-            "current_drawdown": current_drawdown,
+            "current_drawdown": layer_results.get("L6", {}).get("current_drawdown", current_drawdown),
             "drawdown_level": layer_results.get("L6", {}).get("drawdown_level", "LEVEL_0"),
             "risk_multiplier": layer_results.get("L6", {}).get("risk_multiplier", 1.0),
             "risk_status": layer_results.get("L6", {}).get("risk_status", "ACCEPTABLE"),
             "lrce": layer_results.get("L6", {}).get("lrce", 0.0),
+            "rolling_sharpe": layer_results.get("L6", {}).get("rolling_sharpe", 0.0),
+            "kelly_adjusted": layer_results.get("L6", {}).get("kelly_adjusted", 0.0),
         },
         "propfirm": {
             "compliant": prop_compliant,
@@ -644,7 +646,18 @@ class WolfConstitutionalPipeline:
                 l11 = self._l11.calculate_rr(symbol, direction)  # pyright: ignore[reportOptionalMemberAccess]
             rr_value = l11.get("rr", 0.0)
 
-            l6 = self._l6.analyze(rr=rr_value)  # pyright: ignore[reportOptionalMemberAccess]
+            # Build account_state snapshot from L5 + pipeline context
+            _l6_account_state: dict[str, Any] = {
+                "drawdown_pct": l5.get("current_drawdown", 0.0) if isinstance(l5, dict) else 0.0,
+                "consecutive_losses": l5.get("consecutive_losses", 0) if isinstance(l5, dict) else 0,
+                "vol_cluster": l1.get("volatility_level", "NORMAL") if isinstance(l1, dict) else "NORMAL",
+            }
+
+            l6 = self._l6.analyze(  # pyright: ignore[reportOptionalMemberAccess]
+                rr=rr_value,
+                trade_returns=trade_returns,
+                account_state=_l6_account_state,
+            )
 
             risk_ok = l6.get("risk_ok", False)
             smc_confidence = l9.get("confidence", 0.0)
