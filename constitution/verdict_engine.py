@@ -501,10 +501,11 @@ class VerdictEngine:
         }
 
 
-class WolfConstitutionalPipeline:
-    """Wolf Constitutional Pipeline.
+class _LegacyVerdictPipeline:
+    """DEPRECATED: Use pipeline.WolfConstitutionalPipeline instead.
 
-    Runs the full constitutional pipeline for a symbol.
+    Simplified verdict-only wrapper kept for backward compatibility.
+    Do NOT import this directly — use the real v8.0 pipeline.
     """
 
     def __init__(self, config: dict | None = None) -> None:
