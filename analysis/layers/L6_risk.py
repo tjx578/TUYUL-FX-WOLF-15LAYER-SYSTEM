@@ -72,7 +72,7 @@ class L6RiskAnalyzer:
         Args:
             rr: Risk-reward ratio from L11.
             trade_returns: Historical per-trade P&L list for vol clustering
-                enrichment. Optional — if None, clustering analysis is skipped.
+                enrichment. Optional -- if None, clustering analysis is skipped.
 
         Returns:
             dict with keys: risk_status, propfirm_compliant, drawdown_level,
