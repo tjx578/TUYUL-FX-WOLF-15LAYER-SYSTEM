@@ -166,12 +166,18 @@ def generate_l12_verdict(synthesis: dict[str, Any]) -> dict[str, Any]:  # noqa: 
             wolf_status = "ALPHA" if scores["wolf_30_point"] >= 27 else "PACK"
 
     # ─── Enrichment-aware confidence adjustment (advisory) ───
-    # Enrichment engines (cognitive, quantum, fusion, etc.) produce
-    # an enrichment_score in [0, 1].  This is ADVISORY -- it adjusts
-    # the confidence tier but NEVER overrides the verdict itself.
+    # Enrichment engines (cognitive, quantum, fusion, etc.) produce:
+    #   enrichment_score        : aggregate 0-1 score across all engines
+    #   enrichment_confidence_adj: signed float (boost or dampening) from
+    #                              EngineEnrichmentLayer._aggregate()
+    #
+    # Both are ADVISORY -- they adjust the confidence tier but NEVER
+    # override the verdict itself.
     enrichment_score = layers.get("enrichment_score", 0.0)
+    enrichment_confidence_adj = layers.get("enrichment_confidence_adj", 0.0)
     enrichment_applied = False
 
+    # ── Phase 1: Discrete tier adjustment from enrichment_score ──────
     if isinstance(enrichment_score, (int, float)) and enrichment_score > 0:
         if verdict.startswith("EXECUTE"):  # pyright: ignore[reportPossiblyUnboundVariable]
             if enrichment_score >= 0.75 and confidence == "HIGH":  # pyright: ignore[reportPossiblyUnboundVariable]
@@ -183,6 +189,33 @@ def generate_l12_verdict(synthesis: dict[str, Any]) -> dict[str, Any]:  # noqa: 
         elif verdict == "HOLD" and enrichment_score < 0.20:  # pyright: ignore[reportPossiblyUnboundVariable]
             # Very low engine agreement reinforces HOLD
             enrichment_applied = True  # confidence stays MEDIUM, logged only
+
+    # ── Phase 2: Continuous confidence injection from confidence_adj ──
+    # The enrichment layer computes a signed adjustment:
+    #   positive = integrity boost outweighs tail risk
+    #   negative = tail risk or instability dampens confidence
+    # This modulates the tier only when executing — never promotes
+    # a NO_TRADE/HOLD to EXECUTE (constitutional boundary).
+    if (
+        isinstance(enrichment_confidence_adj, (int, float))
+        and enrichment_confidence_adj != 0.0
+        and verdict.startswith("EXECUTE")  # pyright: ignore[reportPossiblyUnboundVariable]
+    ):
+        # Clamp adjustment to [-0.15, +0.10] to prevent extreme swings
+        clamped_adj = max(-0.15, min(0.10, float(enrichment_confidence_adj)))
+
+        if clamped_adj >= 0.06 and confidence == "HIGH":  # pyright: ignore[reportPossiblyUnboundVariable]
+            # Strong positive enrichment boost → promote tier
+            confidence = "VERY_HIGH"
+            enrichment_applied = True
+        elif clamped_adj <= -0.08 and confidence == "VERY_HIGH":  # pyright: ignore[reportPossiblyUnboundVariable]
+            # Significant negative enrichment → demote tier
+            confidence = "HIGH"
+            enrichment_applied = True
+        elif clamped_adj <= -0.12 and confidence == "HIGH":  # pyright: ignore[reportPossiblyUnboundVariable]
+            # Severe dampening → drop to MEDIUM
+            confidence = "MEDIUM"
+            enrichment_applied = True
 
     l12_output = {
         "schema": "v7.4r∞",
@@ -217,6 +250,7 @@ def generate_l12_verdict(synthesis: dict[str, Any]) -> dict[str, Any]:  # noqa: 
             "fta_score": scores["fta_score"],
             "exec_score": scores["exec_score"],
             "enrichment_score": enrichment_score,
+            "enrichment_confidence_adj": enrichment_confidence_adj,
         },
         "enrichment_applied": enrichment_applied,
         "proceed_to_L13": verdict.startswith("EXECUTE"), # pyright: ignore[reportPossiblyUnboundVariable]
