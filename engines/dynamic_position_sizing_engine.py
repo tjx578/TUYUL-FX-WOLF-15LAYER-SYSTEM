@@ -83,6 +83,19 @@ class PositionSizingResult:
     var_value: float              # Computed VaR at confidence level
     payoff_ratio: float           # avg_win / abs(avg_loss)
 
+    # ── Backward Compatibility Aliases ────────────────────────────────
+    # risk_engine_v2 and dashboard read these names.
+
+    @property
+    def risk_multiplier(self) -> float:
+        """Alias for final_fraction (legacy contract)."""
+        return self.final_fraction
+
+    @property
+    def position_size(self) -> float:
+        """Alias for risk_percent (legacy contract)."""
+        return self.risk_percent
+
     def to_dict(self) -> dict[str, Any]:
         """Serialize for JSON / L10 / L12 consumption."""
         return {

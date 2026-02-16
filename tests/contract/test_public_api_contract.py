@@ -18,12 +18,12 @@ import pytest
 class TestMonteCarloContract:
     def test_required_fields_exist(self):
         mc = pytest.importorskip(
-            "monte_carlo_engine",
-            reason="monte_carlo_engine not importable",
+            "engines.monte_carlo_engine",
+            reason="engines.monte_carlo_engine not importable",
         )
         MonteCarloResult = getattr(mc, "MonteCarloResult", None)
         if MonteCarloResult is None:
-            pytest.skip("MonteCarloResult not found in monte_carlo_engine")
+            pytest.skip("MonteCarloResult not found in engines.monte_carlo_engine")
 
         field_names = {f.name for f in fields(MonteCarloResult)}
         assert "win_probability" in field_names, "win_probability removed -- BREAKING"
@@ -34,8 +34,8 @@ class TestMonteCarloContract:
 class TestPositionSizingContract:
     def test_required_fields_exist(self):
         dps = pytest.importorskip(
-            "dynamic_position_sizing_engine",
-            reason="dynamic_position_sizing_engine not importable",
+            "engines.dynamic_position_sizing_engine",
+            reason="engines.dynamic_position_sizing_engine not importable",
         )
         PositionSizingResult = getattr(dps, "PositionSizingResult", None)
         if PositionSizingResult is None:
@@ -54,8 +54,8 @@ class TestPositionSizingContract:
 class TestBackwardCompatibilityAliases:
     def test_monte_carlo_passed_alias(self):
         mc = pytest.importorskip(
-            "monte_carlo_engine",
-            reason="monte_carlo_engine not importable",
+            "engines.monte_carlo_engine",
+            reason="engines.monte_carlo_engine not importable",
         )
         MonteCarloResult = getattr(mc, "MonteCarloResult", None)
         if MonteCarloResult is None:
@@ -68,8 +68,8 @@ class TestBackwardCompatibilityAliases:
 
     def test_position_sizing_risk_multiplier_alias(self):
         dps = pytest.importorskip(
-            "dynamic_position_sizing_engine",
-            reason="dynamic_position_sizing_engine not importable",
+            "engines.dynamic_position_sizing_engine",
+            reason="engines.dynamic_position_sizing_engine not importable",
         )
         PositionSizingResult = getattr(dps, "PositionSizingResult", None)
         if PositionSizingResult is None:
@@ -82,8 +82,8 @@ class TestBackwardCompatibilityAliases:
 
     def test_position_sizing_position_size_alias(self):
         dps = pytest.importorskip(
-            "dynamic_position_sizing_engine",
-            reason="dynamic_position_sizing_engine not importable",
+            "engines.dynamic_position_sizing_engine",
+            reason="engines.dynamic_position_sizing_engine not importable",
         )
         PositionSizingResult = getattr(dps, "PositionSizingResult", None)
         if PositionSizingResult is None:
