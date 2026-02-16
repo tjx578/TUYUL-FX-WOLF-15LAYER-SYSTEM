@@ -128,6 +128,7 @@ class TestPipelineWarmupGate:
         mock_bus = MagicMock()
         mock_bus.check_warmup.return_value = warmup_result
         pipe._context_bus = mock_bus
+        pipe._ensure_analyzers = MagicMock()  # avoid real layer imports
         return pipe
 
     def test_insufficient_warmup_returns_early_exit(self):
