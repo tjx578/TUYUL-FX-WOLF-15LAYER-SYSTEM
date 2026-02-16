@@ -762,6 +762,36 @@ class WolfConstitutionalPipeline:
                     self._signal_throttle.record(symbol)
 
             # ═══════════════════════════════════════════════════════
+            # PHASE 8.5 -- V11 SNIPER FILTER (optional)
+            # ═══════════════════════════════════════════════════════
+            v11_overlay = None
+            try:
+                from engines.v11 import V11PipelineHook  # noqa: PLC0415
+                _v11 = V11PipelineHook()
+                v11_overlay = _v11.evaluate(
+                    pipeline_result={
+                        "synthesis": synthesis,
+                        "l12_verdict": l12_verdict,
+                    },
+                    symbol=symbol,
+                    timeframe="H1",
+                )
+                if v11_overlay.should_trade is False and l12_verdict["verdict"].startswith("EXECUTE"):
+                    logger.warning(
+                        f"[Pipeline v8.0] {symbol} V11 VETO — "
+                        f"verdict {l12_verdict['verdict']} downgraded to HOLD"
+                    )
+                    l12_verdict["verdict"] = "HOLD"
+                    l12_verdict["v11_veto"] = True
+                    errors.append("V11_VETO")
+                synthesis["v11"] = v11_overlay.to_dict() if v11_overlay else None
+            except ImportError:
+                pass  # V11 optional — not installed = skip
+            except Exception as v11_exc:
+                logger.warning(f"[Pipeline v8.0] V11 error for {symbol}: {v11_exc}")
+                errors.append(f"V11_ERROR: {v11_exc}")
+
+            # ═══════════════════════════════════════════════════════
             # PHASE 8 -- L14 JSON EXPORT + FINAL ASSEMBLY
             # ═══════════════════════════════════════════════════════
             logger.info(f"[Pipeline v8.0] Phase 8: L14/Result Assembly -- {symbol}")
