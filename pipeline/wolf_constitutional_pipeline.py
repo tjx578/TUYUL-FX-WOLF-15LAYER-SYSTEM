@@ -57,7 +57,7 @@ from symtable import Symbol
 from typing import Any
 
 from constitution.verdict_engine import generate_l12_verdict
-from core.vault_health import VaultHealthChecker
+from core.vault_health import VaultHealthChecker  # noqa: F401
 from pipeline.constants import (
     get_conf12_min,
     get_integrity_min,
@@ -347,7 +347,7 @@ class WolfConstitutionalPipeline:
         self._l15_engine = L15MetaSovereigntyEngine()
 
         # Vault health checker (lazy-initialized on first use)
-        self._vault_checker: VaultHealthChecker | None = None
+        self._vault_checker = None  # type: VaultHealthChecker | None
 
     # ──────────────────────────────────────────────────────
     #  Lazy-load all layer analyzers
@@ -915,6 +915,7 @@ class WolfConstitutionalPipeline:
         try:
             if self._vault_checker is None:
                 from context.live_context_bus import LiveContextBus  # noqa: PLC0415
+                from core.vault_health import VaultHealthChecker  # noqa: PLC0415
                 from storage.redis_client import RedisClient  # noqa: PLC0415
 
                 try:
