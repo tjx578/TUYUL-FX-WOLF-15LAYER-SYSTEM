@@ -6,6 +6,12 @@ Upgraded from:
   • L4 v2 (merged): Wolf 30-Point + session integration
   • L4 v3 (THIS): Bayesian probabilistic decision engine + expectancy
 
+Mathematical Model (see docs/L4_PRO_MATH.md):
+  P_final = σ(log O₀ + Σαᵢ·log(Lᵢ/(1-Lᵢ))) · CoherenceDampener · VolAdj
+  Expectancy = P_final·(R+1) - 1
+  RAE = Expectancy × ln(1 + P_final)
+  CI = 1 - H_posterior / ln(2)
+
 Architecture:
   Linear Weighted Sum  →  Bayesian Evidence Integration
   Grade Label          →  Expected Value Estimator
@@ -23,7 +29,8 @@ Pipeline Flow:
                                ├─ (4) Bayesian Win Probability
                                ├─ (5) Expectancy + Risk-Adjusted Edge
                                ├─ (6) Regime-Conditioned Dampeners
-                               └─ (7) Grade Classification + Gate
+                               ├─ (7) Posterior Entropy + Confidence Index
+                               └─ (8) Grade Classification + Gate
 
 Wolf 30-Point Breakdown (PRESERVED):
   F-score  (Fundamental)  0-8 pts  <- L1 macro bias + confidence
@@ -34,8 +41,8 @@ Wolf 30-Point Breakdown (PRESERVED):
 Bayesian Enrichment (NEW):
   P(W|E) = P(W)·∏Lᵢ / [P(W)·∏Lᵢ + (1-P(W))·∏(1-Lᵢ)]
   Each likelihood Lᵢ raised to regime-conditioned strength exponent.
-  Expectancy = P(win) × R - (1 - P(win))
-  RAE = Expectancy × ln(1 + posterior)  (risk-adjusted)
+  Stability constraint: Σαᵢ ∈ [2.8, 5.2], each αᵢ ∈ [0.5, 2.0]
+  CI = 1 - H(P_final) / ln(2)
 
 Backward compatibility:
   • analyze_session() tetap tersedia (signature identik)
@@ -58,6 +65,7 @@ from typing import Any, Final, Literal, TypedDict
 logger = logging.getLogger(__name__)
 
 __all__ = [
+    "BayesianConfig",
     "L4ScoringEngine",
     "L4SessionScoring",
     "analyze_session",
@@ -170,7 +178,7 @@ HIGH_IMPACT_EVENTS: Final[dict[str, _HighImpactEvent]] = {
 
 # ═══════════════════════════════════════════════════════════════════════
 # §3  WOLF 30-POINT SCORING CONFIGURATION
-# ════════════════════════════════════��══════════════════════════════════
+# ═══════════════════════════════════════════════════════════════════════
 
 # Max points per component
 _F_SCORE_MAX: Final = 8     # Fundamental
@@ -209,9 +217,19 @@ _EXEC_WEIGHT_STRUCTURE: Final = 3.0
 _EXEC_WEIGHT_SESSION: Final = 2.0
 
 
-# ═══════════════════════════════════════════════════════════════════════
+# ════════��══════════════════════════════════════════════════════════════
 # §3B  BAYESIAN CONFIGURATION (NEW — v3)
 # ═══════════════════════════════════════════════════════════════════════
+
+# Stability constraint bounds (Math Spec §XV)
+_STRENGTH_SUM_MIN: Final = 2.8
+_STRENGTH_SUM_MAX: Final = 5.2
+_STRENGTH_INDIVIDUAL_MIN: Final = 0.5
+_STRENGTH_INDIVIDUAL_MAX: Final = 2.0
+
+# Numerical guard
+_EPS: Final = 1e-9
+
 
 @dataclass(frozen=True)
 class BayesianConfig:
@@ -221,70 +239,136 @@ class BayesianConfig:
     Strength matrix controls how much each evidence component contributes
     under different market regimes (exponent on Bayes factor).
 
-    Calibration:
-      - Priors: historical win% per regime from backtest corpus
-      - Strengths: >1.0 = amplify, <1.0 = dampen, 1.0 = neutral
-      - Likelihood clamp: prevents degenerate BF at extremes
-      - Strength cap: prevents runaway posterior from single component
-      - Coherence threshold: below this, posterior is dampened
+    Stability constraints (Math Spec §XV):
+      - Per-regime: Σαᵢ ∈ [2.8, 5.2]
+      - Individual: 0.5 ≤ αᵢ ≤ 2.0
+    Validated at construction via __post_init__.
 
     All values are YAML-overridable for recalibration.
     """
 
-    # ── Regime-conditioned prior win probabilities ──
+    # ── Regime-conditioned prior win probabilities (§II) ──
     prior_trend_up: float = 0.58
     prior_trend_down: float = 0.58
     prior_range: float = 0.47
     prior_transition: float = 0.42
     prior_unknown: float = 0.45
 
-    # ── Regime-conditioned evidence strength matrix ──
-    # Keys: (regime, component) → exponent on Bayes factor
-    # In trending: technical evidence is most reliable
-    # In range: execution timing is most critical
-    # In transition: alignment is key
+    # ── Regime-conditioned evidence strength matrix (§IV) ──
+    # TREND_UP: technical most reliable
     strength_trend_up_f: float = 1.2
     strength_trend_up_t: float = 1.5
     strength_trend_up_fta: float = 1.3
     strength_trend_up_exec: float = 1.0
 
+    # TREND_DOWN: mirror of TREND_UP
     strength_trend_down_f: float = 1.2
     strength_trend_down_t: float = 1.5
     strength_trend_down_fta: float = 1.3
     strength_trend_down_exec: float = 1.0
 
+    # RANGE: execution timing most critical
     strength_range_f: float = 0.8
     strength_range_t: float = 0.9
     strength_range_fta: float = 1.0
     strength_range_exec: float = 1.4
 
+    # TRANSITION: alignment is key
     strength_transition_f: float = 0.7
     strength_transition_t: float = 0.8
     strength_transition_fta: float = 1.2
     strength_transition_exec: float = 1.3
 
+    # UNKNOWN: conservative uniform
     strength_unknown_f: float = 0.8
     strength_unknown_t: float = 0.8
     strength_unknown_fta: float = 0.8
     strength_unknown_exec: float = 0.8
 
-    # ── Likelihood clamp (prevent degenerate BF) ──
+    # ── Likelihood clamp (prevent degenerate BF) (§IV) ──
     likelihood_min: float = 0.05
     likelihood_max: float = 0.95
 
-    # ── Strength exponent cap (prevent runaway posterior) ──
+    # ── Strength exponent cap (§XV individual bound) ──
     strength_cap: float = 2.0
 
-    # ── Coherence dampener ──
+    # ── Coherence dampener (§VI) ──
     coherence_threshold: float = 0.70
     coherence_min_mult: float = 0.60
 
-    # ── Volatility dampener ──
+    # ── Volatility dampener (§VII) ──
     extreme_vol_mult: float = 0.85
     high_vol_mult: float = 0.93
 
-    # ── Default R:R when L3 doesn't provide ──
+    # ── Default R:R when L3 doesn't provide (§VIII) ──
     default_rr: float = 1.5
+
+    def __post_init__(self) -> None:
+        """Validate stability constraints (Math Spec §XV).
+
+        Ensures:
+          - Each regime's strength sum ∈ [2.8, 5.2]
+          - Each individual strength ∈ [0.5, 2.0]
+          - Prior probabilities ∈ (0, 1)
+          - Likelihood bounds valid
+        """
+        regimes = {
+            "TREND_UP": (
+                self.strength_trend_up_f, self.strength_trend_up_t,
+                self.strength_trend_up_fta, self.strength_trend_up_exec,
+            ),
+            "TREND_DOWN": (
+                self.strength_trend_down_f, self.strength_trend_down_t,
+                self.strength_trend_down_fta, self.strength_trend_down_exec,
+            ),
+            "RANGE": (
+                self.strength_range_f, self.strength_range_t,
+                self.strength_range_fta, self.strength_range_exec,
+            ),
+            "TRANSITION": (
+                self.strength_transition_f, self.strength_transition_t,
+                self.strength_transition_fta, self.strength_transition_exec,
+            ),
+            "UNKNOWN": (
+                self.strength_unknown_f, self.strength_unknown_t,
+                self.strength_unknown_fta, self.strength_unknown_exec,
+            ),
+        }
+
+        for regime_name, strengths in regimes.items():
+            s_sum = sum(strengths)
+            if not (_STRENGTH_SUM_MIN <= s_sum <= _STRENGTH_SUM_MAX):
+                raise ValueError(
+                    f"BayesianConfig: {regime_name} Σαᵢ={s_sum:.2f} "
+                    f"violates [{_STRENGTH_SUM_MIN}, {_STRENGTH_SUM_MAX}]"
+                )
+            for i, s in enumerate(strengths):
+                if not (
+                    _STRENGTH_INDIVIDUAL_MIN <= s <= _STRENGTH_INDIVIDUAL_MAX
+                ):
+                    raise ValueError(
+                        f"BayesianConfig: {regime_name} α[{i}]={s:.2f} "
+                        f"violates [{_STRENGTH_INDIVIDUAL_MIN}, "
+                        f"{_STRENGTH_INDIVIDUAL_MAX}]"
+                    )
+
+        for name, prior in [
+            ("prior_trend_up", self.prior_trend_up),
+            ("prior_trend_down", self.prior_trend_down),
+            ("prior_range", self.prior_range),
+            ("prior_transition", self.prior_transition),
+            ("prior_unknown", self.prior_unknown),
+        ]:
+            if not (0.0 < prior < 1.0):
+                raise ValueError(
+                    f"BayesianConfig: {name}={prior} must be in (0, 1)"
+                )
+
+        if not (0.0 < self.likelihood_min < self.likelihood_max < 1.0):
+            raise ValueError(
+                "BayesianConfig: likelihood bounds invalid: "
+                f"min={self.likelihood_min}, max={self.likelihood_max}"
+            )
 
 
 # Production default
@@ -292,7 +376,7 @@ _DEFAULT_BAYESIAN_CONFIG: Final = BayesianConfig()
 
 
 def _get_regime_prior(regime: str, cfg: BayesianConfig) -> float:
-    """Look up regime-conditioned prior win probability."""
+    """Look up regime-conditioned prior win probability (§II)."""
     _map: dict[str, float] = {
         "TREND_UP": cfg.prior_trend_up,
         "TREND_DOWN": cfg.prior_trend_down,
@@ -306,38 +390,31 @@ def _get_regime_strengths(
     regime: str,
     cfg: BayesianConfig,
 ) -> tuple[float, float, float, float]:
-    """Look up regime-conditioned evidence strengths (F, T, FTA, Exec)."""
+    """Look up regime-conditioned evidence strengths (§IV).
+
+    Returns (α_F, α_T, α_FTA, α_Exec).
+    """
     _map: dict[str, tuple[float, float, float, float]] = {
         "TREND_UP": (
-            cfg.strength_trend_up_f,
-            cfg.strength_trend_up_t,
-            cfg.strength_trend_up_fta,
-            cfg.strength_trend_up_exec,
+            cfg.strength_trend_up_f, cfg.strength_trend_up_t,
+            cfg.strength_trend_up_fta, cfg.strength_trend_up_exec,
         ),
         "TREND_DOWN": (
-            cfg.strength_trend_down_f,
-            cfg.strength_trend_down_t,
-            cfg.strength_trend_down_fta,
-            cfg.strength_trend_down_exec,
+            cfg.strength_trend_down_f, cfg.strength_trend_down_t,
+            cfg.strength_trend_down_fta, cfg.strength_trend_down_exec,
         ),
         "RANGE": (
-            cfg.strength_range_f,
-            cfg.strength_range_t,
-            cfg.strength_range_fta,
-            cfg.strength_range_exec,
+            cfg.strength_range_f, cfg.strength_range_t,
+            cfg.strength_range_fta, cfg.strength_range_exec,
         ),
         "TRANSITION": (
-            cfg.strength_transition_f,
-            cfg.strength_transition_t,
-            cfg.strength_transition_fta,
-            cfg.strength_transition_exec,
+            cfg.strength_transition_f, cfg.strength_transition_t,
+            cfg.strength_transition_fta, cfg.strength_transition_exec,
         ),
     }
     return _map.get(regime, (
-        cfg.strength_unknown_f,
-        cfg.strength_unknown_t,
-        cfg.strength_unknown_fta,
-        cfg.strength_unknown_exec,
+        cfg.strength_unknown_f, cfg.strength_unknown_t,
+        cfg.strength_unknown_fta, cfg.strength_unknown_exec,
     ))
 
 
@@ -519,16 +596,10 @@ def _compute_f_score(
       • bias_strength (0-3): How decisive the macro bias is
       • confidence    (0-3): Fundamental analysis confidence
       • event_clear   (0-2): No high-impact event in buffer zone
-
-    L1 expected keys:
-      bias     -- str/float/dict indicating macro direction
-      confidence -- float 0-1
-      strength   -- float 0-1 (alternative to bias strength)
     """
     _, bias_strength = _normalize_bias(l1.get("bias", "NEUTRAL"))
     confidence = _safe(l1, "confidence", 0.5)
 
-    # Override bias_strength if L1 provides explicit strength
     if "strength" in l1:
         bias_strength = _safe(l1, "strength", bias_strength)
 
@@ -552,42 +623,24 @@ def _compute_f_score(
 
 
 def _compute_t_score(l2: dict[str, Any]) -> tuple[float, dict[str, Any]]:
-    """Compute Technical score (0-12 points) from L2 output.
-
-    Sub-components:
-      • trend      (0-3): Trend direction + strength
-      • momentum   (0-3): Momentum indicators (MACD, etc.)
-      • rsi        (0-2): RSI alignment score
-      • structure  (0-2): EMA/indicator structure quality
-      • volume     (0-2): Volume confirmation
-
-    L2 expected keys (flexible -- adapts to available data):
-      trend_strength, momentum, rsi_score, rsi (raw 0-100),
-      structure_score, volume_score, macd_signal, ema_alignment
-    """
-    # Trend strength
+    """Compute Technical score (0-12 points) from L2 output."""
     trend = _safe(l2, "trend_strength", 0.0)
     if trend == 0.0:
         trend = _safe(l2, "trend", 0.0)
 
-    # Momentum
     momentum = _safe(l2, "momentum", 0.0)
     if momentum == 0.0:
         momentum = _safe(l2, "momentum_score", 0.0)
 
-    # RSI -- normalize raw RSI (0-100) to quality score (0-1)
     rsi_score = _safe(l2, "rsi_score", 0.0)
     if rsi_score == 0.0 and "rsi" in l2:
         raw_rsi = _safe_raw(l2, "rsi", 50.0)
-        # Best score near extremes (strong signal), worst at 50
         rsi_score = min(1.0, abs(raw_rsi - 50.0) / 30.0)
 
-    # Structure (EMA alignment, MACD, etc.)
     structure = _safe(l2, "structure_score", 0.0)
     if structure == 0.0:
         structure = _safe(l2, "ema_alignment", 0.0)
 
-    # Volume confirmation
     volume = _safe(l2, "volume_score", 0.0)
     if volume == 0.0:
         volume = _safe(l2, "volume_confirmation", 0.0)
@@ -622,28 +675,15 @@ def _compute_fta_score(
     l1: dict[str, Any],
     l2: dict[str, Any],
 ) -> tuple[float, dict[str, Any]]:
-    """Compute Fundamental-Technical Alignment score (0-5 points).
-
-    Measures how well L1 (fundamental) and L2 (technical) agree.
-
-    Sub-components:
-      • direction_match (0-3): Both layers point same way
-      • magnitude_match (0-2): Strength levels are comparable
-
-    If L1 says BULLISH and L2 trend is bullish -> full direction points.
-    If both are strong (>0.6) -> full magnitude points.
-    """
+    """Compute Fundamental-Technical Alignment score (0-5 points)."""
     l1_dir, l1_str = _normalize_bias(l1.get("bias", "NEUTRAL"))
 
-    # L2 direction from trend or bias
     l2_bias = l2.get("bias", l2.get("trend_bias", "NEUTRAL"))
     l2_dir, l2_str = _normalize_bias(l2_bias)
 
-    # Override L2 strength if explicit
     if "trend_strength" in l2:
         l2_str = _safe(l2, "trend_strength", l2_str)
 
-    # Direction match: same = 1.0, opposite = 0.0, one neutral = 0.5
     if l1_dir == l2_dir and l1_dir != "NEUTRAL":
         dir_match = 1.0
     elif l1_dir == "NEUTRAL" or l2_dir == "NEUTRAL":
@@ -653,7 +693,6 @@ def _compute_fta_score(
     else:
         dir_match = 0.5
 
-    # Magnitude match: how close are the strength levels
     if l1_str > 0 and l2_str > 0:
         mag_match = 1.0 - min(1.0, abs(l1_str - l2_str))
     else:
@@ -681,15 +720,7 @@ def _compute_exec_score(
     l3: dict[str, Any],
     session_quality: float,
 ) -> tuple[float, dict[str, Any]]:
-    """Compute Execution readiness score (0-5 points).
-
-    Sub-components:
-      • structure_quality (0-3): L3 market structure confidence
-      • session_quality   (0-2): Current session quality from timing
-
-    L3 expected keys:
-      confidence, structure_confidence, structure_score, quality
-    """
+    """Compute Execution readiness score (0-5 points)."""
     struct = _safe(l3, "confidence", 0.0)
     if struct == 0.0:
         struct = _safe(l3, "structure_confidence", 0.0)
@@ -735,18 +766,18 @@ def _bayesian_win_probability(
 ) -> float:
     """Compute posterior win probability via Bayesian evidence integration.
 
-    Mathematical model:
-      odds = P(W) / (1 - P(W))
-      For each evidence Lᵢ with strength sᵢ:
-        BF = (Lᵢ / (1 - Lᵢ))^sᵢ
-        odds *= BF
-      posterior = odds / (1 + odds)
+    Mathematical model (§IV-V):
+      O₀ = P₀ / (1 - P₀)
+      For each evidence Lᵢ with strength αᵢ:
+        BFᵢ = (Lᵢ / (1 - Lᵢ))^αᵢ
+        O_post = O₀ · ∏BFᵢ
+      P(W|E) = O_post / (1 + O_post)
 
     Likelihoods clamped to [min, max] to prevent degenerate Bayes factors.
     Strengths capped to prevent runaway posterior from single component.
 
     Args:
-        prior: Regime-conditioned base win probability P(W).
+        prior: Regime-conditioned base win probability P₀.
         likelihoods: Normalized evidence values [0-1] per component.
         strengths: Reliability weight exponents per component.
         cfg: Bayesian configuration for clamp/cap values.
@@ -754,16 +785,12 @@ def _bayesian_win_probability(
     Returns:
         Posterior win probability ∈ [0, 1].
     """
-    # Clamp prior to prevent division by zero
     p = max(0.01, min(0.99, prior))
     odds = p / (1.0 - p)
 
     for like, s in zip(likelihoods, strengths):
-        # Clamp likelihood to prevent degenerate BF (0/0 or inf)
         clamped = max(cfg.likelihood_min, min(cfg.likelihood_max, like))
-        # Cap strength exponent to prevent runaway
         capped_s = min(cfg.strength_cap, max(0.0, s))
-        # Bayes factor: evidence ratio raised to strength power
         bayes_factor = (clamped / (1.0 - clamped)) ** capped_s
         odds *= bayes_factor
 
@@ -772,21 +799,18 @@ def _bayesian_win_probability(
 
 
 def _compute_expectancy(p_win: float, rr: float) -> float:
-    """Compute mathematical expectancy of a trade.
+    """Compute mathematical expectancy of a trade (§VIII).
 
-    Expectancy = P(win) × R - (1 - P(win))
-
-    Where R = reward:risk ratio.
+    E = P_win · (R + 1) - 1  ≡  P_win · R - (1 - P_win)
 
     Positive expectancy = statistical edge exists.
-    Negative expectancy = no edge, do not trade.
 
     Args:
         p_win: Win probability [0, 1].
-        rr: Reward:risk ratio (e.g. 1.8 means TP = 1.8 × SL).
+        rr: Reward:risk ratio (e.g. 1.8 = TP is 1.8× SL).
 
     Returns:
-        Expectancy value (unbounded, typically -1.0 to +R).
+        Expectancy value (typically -1.0 to +R).
     """
     return (p_win * rr) - (1.0 - p_win)
 
@@ -800,8 +824,9 @@ def _compute_risk_adjusted_edge(
     RAE = expectancy × ln(1 + posterior)
 
     Log-scaling prevents over-sizing on marginal edges.
-    High posterior + high expectancy = high RAE.
-    Low posterior dampens even good expectancy.
+    Note: full math spec §IX uses E × P × (1-RoR) but RoR from L7
+    is not available at L4 execution time. ln(1+P) approximates
+    the confidence-weighted dampening without L7 dependency.
 
     Args:
         expectancy: Mathematical expectancy value.
@@ -815,17 +840,41 @@ def _compute_risk_adjusted_edge(
     return round(expectancy * math.log(1.0 + posterior), 4)
 
 
+def _compute_posterior_entropy(posterior: float) -> float:
+    """Shannon entropy of posterior distribution (§XI).
+
+    H = -P·ln(P) - (1-P)·ln(1-P)
+
+    Output ∈ [0, ln(2)] ≈ [0, 0.6931].
+    Clamped to [ε, 1-ε] to prevent log(0).
+    """
+    p = max(_EPS, min(1.0 - _EPS, posterior))
+    q = 1.0 - p
+    return -(p * math.log(p) + q * math.log(q))
+
+
+def _compute_confidence_index(posterior: float) -> float:
+    """Confidence Index: CI = 1 - H / ln(2) (§XI).
+
+    CI = 1.0 when posterior is certain (P=0 or P=1).
+    CI = 0.0 when maximum uncertainty (P=0.5).
+    Output ∈ [0, 1].
+    """
+    h = _compute_posterior_entropy(posterior)
+    return round(1.0 - h / math.log(2.0), 4)
+
+
 def _classify_bayesian_grade(
     posterior: float,
     expectancy: float,
 ) -> str:
-    """Classify trade quality by posterior + expectancy combination.
+    """Classify trade quality by posterior + expectancy (§XIV).
 
-    Replaces linear grade with probabilistic interpretation:
-      INSTITUTIONAL_A : Very high probability + strong edge
-      INSTITUTIONAL_B : High probability + good edge
-      SPECULATIVE     : Moderate probability + positive edge
-      NO_EDGE         : Insufficient probability or negative expectancy
+    Grade mapping:
+      INSTITUTIONAL_A : P ≥ 0.75 AND E > 0.5  (best setups)
+      INSTITUTIONAL_B : P ≥ 0.65 AND E > 0.3  (good setups)
+      SPECULATIVE     : P ≥ 0.55 AND E > 0.0  (marginal edge)
+      NO_EDGE         : everything else
     """
     if posterior >= 0.75 and expectancy > 0.5:
         return "INSTITUTIONAL_A"
@@ -846,38 +895,39 @@ def _compute_bayesian_enrichment(
     l3: dict[str, Any],
     cfg: BayesianConfig,
 ) -> dict[str, Any]:
-    """Full Bayesian enrichment pipeline.
+    """Full Bayesian enrichment pipeline (§II-§XV).
 
     Converts Wolf 30-Point sub-scores into probabilistic win assessment.
 
     Flow:
-      1. Extract regime from L1 → select prior + strength matrix
-      2. Normalize sub-scores to [0, 1] likelihoods
-      3. Apply coherence dampener (L1 context_coherence / L2 reflex)
-      4. Apply volatility dampener (L1 volatility_level)
-      5. Compute posterior via Bayesian update
-      6. Compute expectancy + risk-adjusted edge
-      7. Classify into bayesian grade
+      1. Extract regime from L1 → select prior + strength matrix (§II, §IV)
+      2. Normalize sub-scores to [0, 1] likelihoods (§III)
+      3. Compute raw posterior via Bayesian update (§V)
+      4. Apply coherence dampener: L2.reflex → L1.CC fallback (§VI)
+      5. Apply volatility dampener from L1.volatility_level (§VII)
+      6. Compute expectancy + risk-adjusted edge (§VIII, §IX)
+      7. Compute posterior entropy + confidence index (§XI)
+      8. Classify into bayesian grade (§XIV)
 
     Args:
         f_score: Fundamental sub-score (0-8).
         t_score: Technical sub-score (0-12).
         fta_score: FTA alignment sub-score (0-5).
         exec_score: Execution sub-score (0-5).
-        l1: Layer 1 output dict (regime, volatility, coherence).
-        l2: Layer 2 output dict (reflex_coherence, technical signals).
-        l3: Layer 3 output dict (rr_ratio, structure confidence).
+        l1: Layer 1 output (regime, volatility, context_coherence).
+        l2: Layer 2 output (reflex_coherence, technical signals).
+        l3: Layer 3 output (rr_ratio, structure confidence).
         cfg: Bayesian configuration.
 
     Returns:
-        Dict with posterior, expectancy, RAE, grade, and full lineage.
+        Dict with posterior, expectancy, RAE, CI, grade, and lineage.
     """
-    # ── 1. Regime → prior + strengths ─────────────────────────────
+    # ── 1. Regime → prior + strengths (§II, §IV) ─────────────────
     regime = str(l1.get("regime", "UNKNOWN")).upper()
     prior = _get_regime_prior(regime, cfg)
     s_f, s_t, s_fta, s_exec = _get_regime_strengths(regime, cfg)
 
-    # ── 2. Normalize sub-scores to [0, 1] likelihoods ────────────
+    # ── 2. Normalize sub-scores to [0, 1] likelihoods (§III) ─────
     l_f = f_score / _F_SCORE_MAX if _F_SCORE_MAX > 0 else 0.0
     l_t = t_score / _T_SCORE_MAX if _T_SCORE_MAX > 0 else 0.0
     l_fta = fta_score / _FTA_SCORE_MAX if _FTA_SCORE_MAX > 0 else 0.0
@@ -886,19 +936,20 @@ def _compute_bayesian_enrichment(
     likelihoods = [l_f, l_t, l_fta, l_exec]
     strengths = [s_f, s_t, s_fta, s_exec]
 
-    # ── 3. Bayesian posterior ─────────────────────────────────────
-    posterior = _bayesian_win_probability(prior, likelihoods, strengths, cfg)
+    # ── 3. Bayesian posterior (§V) ────────────────────────────────
+    posterior = _bayesian_win_probability(
+        prior, likelihoods, strengths, cfg,
+    )
 
-    # ── 4. Coherence dampener (from L2 reflex, fallback L1 CC) ───
-    # L2.reflex_coherence is the PRIMARY coherence signal for L4.
-    # L1.context_coherence is the FALLBACK if L2 doesn't provide.
+    # ── 4. Coherence dampener (§VI) ──────────────────────────────
+    # PRIMARY: L2.reflex_coherence (technical signal coherence)
+    # FALLBACK: L1.context_coherence (regime certainty from entropy)
     reflex_coherence = _safe(
         l2, "reflex_coherence",
         _safe(l1, "context_coherence", 1.0),
     )
     coherence_applied = False
     if reflex_coherence < cfg.coherence_threshold:
-        # Linear interpolation: at 0.0 → min_mult, at threshold → 1.0
         dampener = cfg.coherence_min_mult + (
             (1.0 - cfg.coherence_min_mult)
             * (reflex_coherence / cfg.coherence_threshold)
@@ -906,7 +957,7 @@ def _compute_bayesian_enrichment(
         posterior *= dampener
         coherence_applied = True
 
-    # ── 5. Volatility dampener (from L1 volatility_level) ────────
+    # ── 5. Volatility dampener (§VII) ────────────────────────────
     vol_level = str(l1.get("volatility_level", "")).upper()
     vol_dampener = 1.0
     if vol_level == "EXTREME":
@@ -918,7 +969,7 @@ def _compute_bayesian_enrichment(
     # Clamp final posterior
     posterior = round(max(0.0, min(1.0, posterior)), 4)
 
-    # ── 6. Expectancy + RAE ───────────────────────────────────────
+    # ── 6. Expectancy + RAE (§VIII, §IX) ─────────────────────────
     rr = _safe_raw(l3, "rr_ratio", cfg.default_rr)
     if rr <= 0:
         rr = cfg.default_rr
@@ -926,16 +977,25 @@ def _compute_bayesian_enrichment(
     expectancy = round(_compute_expectancy(posterior, rr), 4)
     rae = _compute_risk_adjusted_edge(expectancy, posterior)
 
-    # ── 7. Bayesian grade ──────────────��──────────────────────────
+    # ── 7. Posterior entropy + confidence index (§XI) ─────────────
+    posterior_entropy = round(_compute_posterior_entropy(posterior), 4)
+    confidence_index = _compute_confidence_index(posterior)
+
+    # ── 8. Bayesian grade (§XIV) ──────────────────────────────────
     bayesian_grade = _classify_bayesian_grade(posterior, expectancy)
 
-    # ── 8. Bayesian tradeable gate ────────────────────────────────
+    # ── 9. Bayesian tradeable gate (§X) ──────────────────────────
+    # Note: full §X requires Edge_adj > 0.15 + L7 RoR, which is
+    # not available at L4. We use simplified gate here; L12 verdict
+    # engine applies the full constitutional gate with L7 data.
     bayesian_tradeable = posterior >= 0.55 and expectancy > 0.0
 
     return {
         "posterior_win_probability": posterior,
         "expected_value": expectancy,
         "risk_adjusted_edge": rae,
+        "posterior_entropy": posterior_entropy,
+        "confidence_index": confidence_index,
         "regime_prior": round(prior, 4),
         "regime_used": regime,
         "rr_ratio": round(rr, 2),
@@ -990,10 +1050,11 @@ class L4SessionScoring:
             l3={"confidence": 0.78, "rr_ratio": 1.8},
             pair="GBPUSD",
         )
-        # result["wolf_30_point"]["total"]           -> 24.5
-        # result["grade"]                            -> "EXCELLENT"
-        # result["bayesian"]["posterior_win_probability"] -> 0.72
-        # result["bayesian"]["bayesian_grade"]       -> "INSTITUTIONAL_B"
+        # result["wolf_30_point"]["total"]                   -> 24.5
+        # result["grade"]                                    -> "EXCELLENT"
+        # result["bayesian"]["posterior_win_probability"]     -> 0.72
+        # result["bayesian"]["bayesian_grade"]               -> "INSTITUTIONAL_B"
+        # result["bayesian"]["confidence_index"]             -> 0.83
     """
 
     def __init__(
@@ -1018,17 +1079,16 @@ class L4SessionScoring:
         ----------
         l1 : dict
             Layer 1 (Fundamental/Macro) output.
-            Expected keys: ``bias``, ``confidence``, ``strength``,
+            Expected: ``bias``, ``confidence``, ``strength``,
             ``regime``, ``context_coherence``, ``volatility_level``.
         l2 : dict
             Layer 2 (Technical Analysis) output.
-            Expected keys: ``trend_strength``, ``momentum``, ``rsi``,
+            Expected: ``trend_strength``, ``momentum``, ``rsi``,
             ``structure_score``, ``volume_score``, ``trend_bias``,
             ``reflex_coherence``.
         l3 : dict
             Layer 3 (Market Structure) output.
-            Expected keys: ``confidence``, ``structure_score``,
-            ``rr_ratio``.
+            Expected: ``confidence``, ``structure_score``, ``rr_ratio``.
         pair : str
             Currency pair for event relevance and session context.
         market_data : dict, optional
@@ -1039,23 +1099,8 @@ class L4SessionScoring:
         Returns
         -------
         dict
-            Complete L4 profile with:
-
-            **Session** (from l4_session.py):
-              ``session``, ``quality``, ``tradeable``, ``gate_reasons``,
-              ``near_event``, ``event_name``
-
-            **Wolf 30-Point** (preserved byte-identical):
-              ``wolf_30_point`` dict with ``total``, ``f_score``,
-              ``t_score``, ``fta_score``, ``exec_score`` + sub-detail
-
-            **Bayesian** (NEW — additive enrichment):
-              ``bayesian`` dict with ``posterior_win_probability``,
-              ``expected_value``, ``risk_adjusted_edge``,
-              ``bayesian_grade``, ``bayesian_tradeable``
-
-            **Classification**:
-              ``grade``, ``technical_score``, ``tradeable``, ``valid``
+            Complete L4 profile with session, Wolf 30-Point (preserved),
+            Bayesian enrichment (new), and classification.
         """
         if now is None:
             now = datetime.now(UTC)
@@ -1069,7 +1114,9 @@ class L4SessionScoring:
         f_score, f_detail = _compute_f_score(l1, ctx["near_event"])
         t_score, t_detail = _compute_t_score(l2)
         fta_score, fta_detail = _compute_fta_score(l1, l2)
-        exec_score, exec_detail = _compute_exec_score(l3, ctx["quality"])
+        exec_score, exec_detail = _compute_exec_score(
+            l3, ctx["quality"],
+        )
 
         wolf_total = round(
             f_score + t_score + fta_score + exec_score, 2,
@@ -1080,7 +1127,6 @@ class L4SessionScoring:
 
         grade = _classify_grade(wolf_total)
 
-        # Legacy technical_score (0-100 scale) for backward compat
         technical_score = (
             round((t_score / _T_SCORE_MAX) * 100)
             if _T_SCORE_MAX > 0 else 0
@@ -1100,13 +1146,6 @@ class L4SessionScoring:
         )
 
         # ── PHASE 5: Integration gate ────────────────────────────────
-        #
-        # Dual gate: BOTH deterministic (Wolf 30-Point) AND
-        # probabilistic (Bayesian) must agree for full clearance.
-        #
-        # position_ok requires:
-        #   - Session is tradeable (not weekend)
-        #   - Grade is at least MARGINAL (��13 points)
 
         score_ok = grade in ("PERFECT", "EXCELLENT", "GOOD", "MARGINAL")
         valid = True
@@ -1115,14 +1154,15 @@ class L4SessionScoring:
         self._call_count += 1
 
         logger.debug(
-            "L4 scoring: pair=%s session=%s quality=%.4f "
+            "L4 v3: pair=%s session=%s quality=%.4f "
             "F=%s T=%s FTA=%s E=%s total=%.1f grade=%s "
-            "P(win)=%.4f EV=%.4f b_grade=%s tradeable=%s",
+            "P(win)=%.4f EV=%.4f CI=%.4f b_grade=%s tradeable=%s",
             pair, ctx["session"], ctx["quality"],
             f_score, t_score, fta_score, exec_score,
             wolf_total, grade,
             bayesian["posterior_win_probability"],
             bayesian["expected_value"],
+            bayesian["confidence_index"],
             bayesian["bayesian_grade"],
             overall_tradeable,
         )
@@ -1204,7 +1244,6 @@ class L4ScoringEngine:
             "grade": full["grade"],
             "technical_score": full["technical_score"],
             "valid": full["valid"],
-            # NEW — additive, ignored by existing consumers
             "bayesian": full["bayesian"],
         }
 
@@ -1216,7 +1255,8 @@ def analyze_session(
 ) -> dict[str, Any]:
     """Backward-compatible session-only analysis.
 
-    Same signature and return shape as original ``l4_session.analyze_session()``.
+    Same signature and return shape as original
+    ``l4_session.analyze_session()``.
     """
     if now is None:
         now = datetime.now(UTC)
@@ -1246,4 +1286,6 @@ def analyze_session_scoring(
     now: datetime | None = None,
 ) -> dict[str, Any]:
     """Convenience function for full L4 analysis without class instantiation."""
-    return L4SessionScoring().analyze(l1=l1, l2=l2, l3=l3, pair=pair, now=now)
+    return L4SessionScoring().analyze(
+        l1=l1, l2=l2, l3=l3, pair=pair, now=now,
+    )
