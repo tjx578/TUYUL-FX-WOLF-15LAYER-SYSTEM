@@ -219,6 +219,8 @@ class VerdictEngine:
         self._kelly_gate_enabled = self._config.get(
             "kelly_edge_gate_enabled", False
         )
+        self.analyzers: list = []
+        self.analyzers: list = []
 
     def _extract_l7_probability_metrics(
         self, layer_results: dict[str, Any]
@@ -510,45 +512,52 @@ class WolfConstitutionalPipeline:
         self._kelly_gate_enabled = self._config.get(
             "kelly_edge_gate_enabled", False
         )
+        self.analyzers: list = []
 
-    def _run_analysis(self, symbol: str, timeframe: str = "H1", context: dict | None = None) -> dict:
-        """Run the full analysis pipeline for a symbol.
+    def _run_analysis(self, symbol: str, timeframe: str, context: dict) -> dict:
+        """Run L1-L11 analysis layers and return aggregated scores."""
+        scores = {}
+        if hasattr(self, 'analyzers'):
+            for analyzer in self.analyzers:
+                try:
+                    result = analyzer.analyze(symbol, timeframe, context)
+                    scores.update(result or {})
+                except Exception as e:
+                    scores[analyzer.__class__.__name__] = {"error": str(e)}
+        return scores
 
-        Returns a dict of all layer outputs (L1-L11).
-        """
-        context = context or {}
+    def _evaluate_verdict(self, symbol: str, analysis_result: dict, context: dict) -> dict:
+        """L12 constitutional gate: evaluate analysis and produce verdict."""
+        wolf_score = analysis_result.get("wolf_score", 0.0)
+        tii_score = analysis_result.get("tii_score", 0.0)
+        frpc_score = analysis_result.get("frpc_score", 0.0)
 
-        # L1-L11: Gather analysis scores
-        analysis_result = self._run_analysis(symbol, timeframe, context)
+        confidence = (wolf_score + tii_score + frpc_score) / 3.0 if any([wolf_score, tii_score, frpc_score]) else 0.0
 
-        return analysis_result
+        # Constitutional threshold
+        threshold = getattr(self, 'threshold', 0.6)
 
-    def _evaluate_verdict(self, symbol: str, analysis_result: dict, context: dict | None = None) -> dict:
-        """Evaluate the constitutional verdict for a symbol.
+        if confidence >= threshold:
+            direction = analysis_result.get("direction", "LONG")
+            verdict_value = "EXECUTE"
+        else:
+            direction = None
+            verdict_value = "NO_TRADE"
 
-        This is the SOLE AUTHORITY that decides EXECUTE / HOLD / ABORT.
-        L7 probability metrics are advisory inputs that inform confidence.
-
-        Args:
-            symbol: Instrument identifier.
-            analysis_result: Dict of all layer outputs (L1-L11+).
-            context: Additional context data.
-
-        Returns:
-            Enriched verdict dict with L7 probability context.
-        """
-        context = context or {}
-
-        # L1-L11: Gather analysis scores
-        analysis_result = self._run_analysis(symbol, "H1", context)
-
-        # L12: Constitutional gate — single decision authority
-        verdict = self._evaluate_verdict(symbol, analysis_result, context)
-
-        # Ensure required schema fields
-        verdict.setdefault("symbol", symbol)
-        verdict.setdefault("verdict", "NO_TRADE")
-        verdict.setdefault("confidence", 0.0)
+        verdict = {
+            "symbol": symbol,
+            "verdict": verdict_value,
+            "confidence": round(confidence, 4),
+            "direction": direction,
+            "scores": {
+                "wolf_score": wolf_score,
+                "tii_score": tii_score,
+                "frpc_score": frpc_score,
+            },
+            "entry_price": analysis_result.get("entry_price"),
+            "stop_loss": analysis_result.get("stop_loss"),
+            "take_profit_1": analysis_result.get("take_profit_1"),
+        }
 
         return verdict
 
