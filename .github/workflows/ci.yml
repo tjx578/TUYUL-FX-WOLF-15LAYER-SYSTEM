@@ -100,7 +100,7 @@ jobs:
             -v --tb=short --strict-markers --timeout=60 \
             --cov --cov-report=term-missing \
             --cov-report=xml:test-results/coverage.xml \
-            --cov-fail-under=0 \
+            --cov-fail-under=60 \
             --junitxml=test-results/critical.xml
 
       - name: "Extended test suite (informational)"
