@@ -216,7 +216,6 @@ async def analysis_loop() -> None:
 
     bus = get_event_bus()
     bus.subscribe(EventType.CANDLE_CLOSED, _on_candle_closed)
-    bus.subscribe(EventType.CANDLE_CLOSED, _on_candle_closed)
 
     while True:
         if _shutdown_event and _shutdown_event.is_set():
