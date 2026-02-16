@@ -65,8 +65,12 @@ class TestHandleTick:
             # Verify normalized tick format
             call_args = mock_bus.update_tick.call_args[0][0]
             assert call_args["symbol"] == "EURUSD"
-            assert call_args["bid"] == 1.0842
-            assert call_args["ask"] == 1.0842  # Same as bid for Finnhub
+            assert call_args["bid"] < call_args["ask"]  # Spread is non-zero
+            assert call_args["last"] == 1.0842
+            assert call_args["spread"] > 0
+            # Bid/ask should be centered around the trade price
+            mid = (call_args["bid"] + call_args["ask"]) / 2
+            assert abs(mid - 1.0842) < 1e-6
             assert call_args["timestamp"] == 1700000000.0  # Converted to seconds
             assert call_args["source"] == "finnhub_ws"
 
@@ -188,12 +192,14 @@ class TestHandleTick:
             # Check first call
             first_call = mock_bus.update_tick.call_args_list[0][0][0]
             assert first_call["symbol"] == "EURUSD"
-            assert first_call["bid"] == 1.0842
+            assert first_call["last"] == 1.0842
+            assert first_call["bid"] < first_call["ask"]
 
             # Check second call
             second_call = mock_bus.update_tick.call_args_list[1][0][0]
             assert second_call["symbol"] == "GBPJPY"
-            assert second_call["bid"] == 185.50
+            assert second_call["last"] == 185.50
+            assert second_call["bid"] < second_call["ask"]
 
     @pytest.mark.asyncio
     async def test_handle_tick_handles_invalid_timestamp(self) -> None:
