@@ -496,3 +496,19 @@ SIGNAL_THROTTLED = _R.counter(
     "EXECUTE verdicts downgraded to HOLD by signal rate throttle",
     label_names=("symbol",),
 )
+
+# Runtime state gauges (refreshed on each /metrics scrape)
+PIPELINE_LATENCY_MS = _R.gauge(
+    "wolf_pipeline_latency_ms",
+    "Latest pipeline execution latency in milliseconds",
+)
+
+ACTIVE_PAIRS = _R.gauge(
+    "wolf_active_pairs",
+    "Number of enabled trading pairs",
+)
+
+SYSTEM_HEALTHY = _R.gauge(
+    "wolf_system_healthy",
+    "System health flag (1=healthy, 0=degraded)",
+)

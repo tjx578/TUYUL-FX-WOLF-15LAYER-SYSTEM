@@ -25,7 +25,13 @@ from api.ws_routes import router as ws_router
 from config_loader import CONFIG
 from context.live_context_bus import LiveContextBus
 from context.runtime_state import RuntimeState
-from core.metrics import FEED_AGE, get_registry
+from core.metrics import (
+    ACTIVE_PAIRS,
+    FEED_AGE,
+    PIPELINE_LATENCY_MS,
+    SYSTEM_HEALTHY,
+    get_registry,
+)
 from dashboard.backend.auth import verify_token
 from dashboard.price_feed import PriceFeed
 from dashboard.price_watcher import PriceWatcher
@@ -287,13 +293,20 @@ async def prometheus_metrics():
     """
     from fastapi.responses import PlainTextResponse  # noqa: PLC0415
 
-    # Refresh per-symbol feed-age gauges before exposition
+    # Refresh runtime gauges before exposition
     context_bus = LiveContextBus()
     pairs = [p["symbol"] for p in CONFIG["pairs"]["pairs"] if p.get("enabled", True)]
+
+    # Per-symbol feed age
     for pair in pairs:
         age = context_bus.get_feed_age(pair)
         if age is not None:
             FEED_AGE.labels(symbol=pair).set(age)
+
+    # System-level gauges
+    PIPELINE_LATENCY_MS.set(float(RuntimeState.latency_ms))
+    ACTIVE_PAIRS.set(float(len(pairs)))
+    SYSTEM_HEALTHY.set(1.0 if RuntimeState.healthy else 0.0)
 
     body = get_registry().exposition()
     return PlainTextResponse(body, media_type="text/plain; version=0.0.4; charset=utf-8")
