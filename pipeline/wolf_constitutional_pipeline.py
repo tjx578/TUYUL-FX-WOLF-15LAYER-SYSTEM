@@ -532,30 +532,19 @@ class WolfConstitutionalPipeline:
             technical_score = l4.get("technical_score", 0)
 
             # ── Trade history for Monte Carlo ────────────────────────────────
-            # Source: system_metrics carries historical per-trade P&L from
-            # dashboard ledger / journal archive.  If unavailable, MC engine
-            # gracefully skips (requires ≥ 30 trades).
-            #
-            # ── Trade history for Monte Carlo (from persistent archive) ────
-            # Primary: storage/trade_archive.py  (Redis → PostgreSQL → ledger)
-            # Fallback: system_metrics pass-through (caller-provided)
-            trade_returns: list[float] | None = None
-            try:
-                from storage.trade_archive import get_closed_returns  # noqa: PLC0415
+            # Source: LiveContextBus.get_trade_history() resolves from
+            # trade_archive (Redis → PostgreSQL → ledger) automatically.
+            # Fallback: system_metrics pass-through (caller-provided / test).
 
-                _archived = get_closed_returns(symbol=symbol, lookback=200)
-                if _archived:
-                    trade_returns = _archived
-                    logger.info(
-                        "[Phase-3] %s Loaded %d historical returns from trade archive",
-                        symbol,
-                        len(_archived),
-                    )
-            except Exception as _archive_err:
-                logger.warning(
-                    "[Phase-3] %s trade_archive unavailable: %s — falling back to system_metrics",
-                    symbol,
-                    _archive_err,
+            trade_returns: list[float] | None = None
+            _bus_returns = self._context_bus.get_trade_history(  # pyright: ignore[reportAttributeAccessIssue]
+                symbol=symbol, lookback=200,
+            )
+            if _bus_returns:
+                trade_returns = _bus_returns
+                logger.info(
+                    "[Phase-3] %s Loaded %d historical returns via context bus",
+                    symbol, len(_bus_returns),
                 )
 
             # Fallback: system_metrics pass-through (for test harness / manual override)

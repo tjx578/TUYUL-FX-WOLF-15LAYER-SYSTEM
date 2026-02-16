@@ -455,3 +455,140 @@ class LiveContextBus:
         """Called by ingest when a new tick arrives."""
         with self._rw_lock:
             self._last_tick_ts[symbol] = timestamp
+
+    # =========================================================
+    # ACCOUNT STATE — live account data for L6 risk evaluation
+    # =========================================================
+    #
+    # Write: dashboard / EA pushes via update_account_state().
+    # Read:  pipeline reads via get_account_state().
+    #
+    # If no external writer has pushed state, get_account_state()
+    # pulls from RiskManager singleton as fallback — so the bus
+    # always returns *something* even if dashboard is not running.
+    # =========================================================
+
+    def update_account_state(self, state: dict) -> None:
+        """Push live account state into the bus.
+
+        Called by dashboard backend or EA interface whenever account
+        metrics change (equity tick, trade open/close, daily reset).
+
+        Expected keys (all optional, merge semantics):
+            equity          (float)  current equity
+            peak_equity     (float)  high-water mark
+            balance         (float)  cash balance
+            daily_loss_pct  (float)  0-1 fraction lost today
+            open_positions  (int)    number of open trades
+            max_open_positions (int) configured max
+            consecutive_losses (int) running streak
+            circuit_breaker_active (bool)
+            corr_exposure   (float)  cross-pair correlation load
+            base_kelly      (float)  Kelly fraction estimate
+        """
+        with self._rw_lock:
+            if not hasattr(self, "_account_state"):
+                self._account_state: dict = {}
+            self._account_state.update(state)
+            self._meta["account_updated_at"] = now_utc()
+
+        logger.debug("Account state updated via bus: %s", list(state.keys()))
+
+    def get_account_state(self, symbol: str | None = None) -> dict:
+        """Return the best-available account state for L6 consumption.
+
+        Resolution order:
+          1. Cached state pushed by dashboard (update_account_state).
+          2. RiskManager singleton snapshot (live risk governor).
+          3. Empty dict — L6 applies safe defaults.
+
+        The *symbol* parameter is accepted for future per-symbol
+        partitioning but currently ignored (single-account model).
+
+        Returns
+        -------
+        dict
+            Account state with keys matching L6RiskAnalyzer.analyze()
+            ``account_state`` parameter.
+        """
+        # 1. Check bus cache first
+        with self._rw_lock:
+            cached = getattr(self, "_account_state", None)
+            if cached:
+                return dict(cached)  # shallow copy under lock
+
+        # 2. Fallback: pull from RiskManager singleton
+        try:
+            from risk.risk_manager import RiskManager  # noqa: PLC0415
+
+            rm = RiskManager.get_instance()
+            snap = rm.get_risk_snapshot()
+
+            balance = float(snap.get("balance", 0.0))
+            daily_loss_raw = float(snap.get("daily_loss", 0.0))
+            circuit = bool(snap.get("circuit_open", False))
+            max_open = int(snap.get("max_open_trades", 5))
+
+            daily_loss_pct = (
+                abs(daily_loss_raw) / balance
+                if balance > 0 and daily_loss_raw < 0
+                else 0.0
+            )
+
+            return {
+                "equity": balance,          # RiskManager tracks balance
+                "peak_equity": balance,     # best-effort from RM
+                "balance": balance,
+                "daily_loss_pct": daily_loss_pct,
+                "circuit_breaker_active": circuit,
+                "max_open_positions": max_open,
+            }
+        except Exception as exc:
+            logger.debug(
+                "RiskManager unavailable for account state fallback: %s", exc,
+            )
+
+        # 3. Empty — L6 will use safe defaults
+        return {}
+
+    # =========================================================
+    # TRADE HISTORY — per-trade P&L for L6/L7 risk evaluation
+    # =========================================================
+
+    def get_trade_history(
+        self,
+        symbol: str | None = None,
+        lookback: int = 200,
+    ) -> list[float]:
+        """Return historical per-trade P&L for L6/L7 consumption.
+
+        Resolution order:
+          1. trade_archive (Redis → PostgreSQL → ledger cache).
+          2. Empty list — L6/L7 degrade gracefully.
+
+        Parameters
+        ----------
+        symbol : str | None
+            Filter by pair. ``None`` returns all symbols.
+        lookback : int
+            Maximum number of returns (default 200).
+
+        Returns
+        -------
+        list[float]
+            P&L values, most-recent first. Empty if unavailable.
+        """
+        try:
+            from storage.trade_archive import get_closed_returns  # noqa: PLC0415
+
+            returns = get_closed_returns(symbol=symbol, lookback=lookback)
+            if returns:
+                logger.debug(
+                    "Trade history loaded via bus: %d returns (symbol=%s)",
+                    len(returns), symbol,
+                )
+                return returns
+        except Exception as exc:
+            logger.debug("trade_archive unavailable via bus: %s", exc)
+
+        return []
