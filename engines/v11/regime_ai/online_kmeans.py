@@ -126,7 +126,9 @@ class OnlineKMeans:
         self._n_dims = len(first_sample)
         
         # Initialize centroids with small random perturbations
-        rng = np.random.default_rng(42)
+        # Use time-based seed for production, but deterministic for testing if state exists
+        seed = 42 if self._sample_count == 0 else None
+        rng = np.random.default_rng(seed)
         self._centroids = np.tile(first_sample, (self._n_clusters, 1))
         self._centroids += rng.normal(0, 0.1, size=self._centroids.shape)
     

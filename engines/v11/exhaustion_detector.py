@@ -210,7 +210,8 @@ class ExhaustionDetector:
         lower_wick = min(o, c) - l
         
         if lower_wick == 0:
-            return 0.0 if upper_wick == 0 else float('inf')
+            # Return large finite value when lower wick is zero but upper exists
+            return 0.0 if upper_wick == 0 else 10.0
         
         return upper_wick / lower_wick
     

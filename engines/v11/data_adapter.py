@@ -191,8 +191,13 @@ class V11DataAdapter:
         # Bayesian from L7
         bayesian = l7.get("bayesian", {})
         
+        # Check if win_probability is already in 0-1 range or percentage
+        mc_win_raw = mc.get("win_probability", 50.0)
+        # If value > 1.0, assume it's percentage and convert
+        mc_win = mc_win_raw / 100.0 if mc_win_raw > 1.0 else mc_win_raw
+        
         return {
-            "mc_win": mc.get("win_probability", 0.5) / 100.0,  # Convert % to 0-1
+            "mc_win": mc_win,
             "mc_pf": mc.get("profit_factor", 1.0),
             "posterior": bayesian.get("posterior", 0.5),
         }

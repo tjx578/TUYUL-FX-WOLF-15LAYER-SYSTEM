@@ -104,10 +104,13 @@ class SniperOptimizer:
         if returns is not None and len(returns) > 0:
             weights, exp_ret, port_risk = self._markowitz_optimize(returns)
         else:
-            # Single asset case
+            # Single asset case - use win rate and payoff for simple risk estimate
             weights = (1.0,)
             exp_ret = win_rate * avg_win - (1 - win_rate) * avg_loss
-            port_risk = np.std([avg_win, -avg_loss]) if avg_win > 0 else 0.0
+            # Estimate risk from expected profit/loss distribution
+            # Risk = sqrt(WR * (avg_win - EV)^2 + (1-WR) * (-avg_loss - EV)^2)
+            variance = win_rate * (avg_win - exp_ret) ** 2 + (1 - win_rate) * (-avg_loss - exp_ret) ** 2
+            port_risk = float(np.sqrt(variance)) if variance > 0 else 0.0
         
         # Compute Sharpe ratio
         sharpe = self._compute_sharpe(exp_ret, port_risk)
@@ -169,9 +172,9 @@ class SniperOptimizer:
         n_assets = returns_arr.shape[0]
         
         if n_assets == 1:
-            # Single asset
+            # Single asset - use actual return volatility
             mean_return = float(np.mean(returns_arr[0]))
-            risk = float(np.std(returns_arr[0]))
+            risk = float(np.std(returns_arr[0])) if len(returns_arr[0]) > 1 else 0.0
             return (1.0,), mean_return, risk
         
         # Compute mean returns
