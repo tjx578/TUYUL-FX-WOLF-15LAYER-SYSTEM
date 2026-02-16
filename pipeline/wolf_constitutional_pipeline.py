@@ -323,8 +323,23 @@ class WolfConstitutionalPipeline:
 
     VERSION = "v8.0"
 
+    # Minimum candle bars per timeframe before analysis is allowed.
+    # Prevents garbage indicator outputs during the first minutes
+    # after system startup.
+    WARMUP_MIN_BARS: dict[str, int] = {
+        "M15": 20,
+        "H1": 20,
+        "H4": 10,
+        "D1": 5,
+    }
+
     def __init__(self) -> None:
         """Initialize with lazy loading to avoid circular imports."""
+        from context.live_context_bus import LiveContextBus  # noqa: PLC0415
+
+        # Shared context bus (singleton) for warmup checks & vault health
+        self._context_bus = LiveContextBus()
+
         # Layer analyzers (lazy-loaded)
         self._l1 = None
         self._l2 = None
@@ -434,6 +449,22 @@ class WolfConstitutionalPipeline:
         errors: list[str] = []
         now = datetime.now(_TZ_GMT8)
 
+        # ═══════════════════════════════════════════════════════
+        # WARMUP GATE -- reject analysis if candle history is
+        # too thin.  Prevents garbage verdicts on first few
+        # minutes after startup.
+        # ═══════════════════════════════════════════════════════
+        if not safe_mode:
+            warmup = self._context_bus.check_warmup(symbol, self.WARMUP_MIN_BARS) # pyright: ignore[reportAttributeAccessIssue]
+            if not warmup["ready"]:
+                logger.warning(
+                    f"[Pipeline v8.0] {symbol} WARMUP INSUFFICIENT — "
+                    f"bars={warmup['bars']}, required={warmup['required']}, "
+                    f"missing={warmup['missing']}"
+                )
+                errors.append("WARMUP_INSUFFICIENT")
+                return self._early_exit(symbol, errors, time.time() - start_time)
+
         try:
             # ═══════════════════════════════════════════════════════
             # PHASE 1 -- ZONA PERCEPTION & CONTEXT (L1, L2, L3)
@@ -491,7 +522,7 @@ class WolfConstitutionalPipeline:
             # Fallback: system_metrics pass-through (caller-provided)
             trade_returns: list[float] | None = None
             try:
-                from storage.trade_archive import get_closed_returns, get_win_loss_counts  # noqa: PLC0415
+                from storage.trade_archive import get_closed_returns  # noqa: PLC0415
 
                 _archived = get_closed_returns(symbol=symbol, lookback=200)
                 if _archived:
