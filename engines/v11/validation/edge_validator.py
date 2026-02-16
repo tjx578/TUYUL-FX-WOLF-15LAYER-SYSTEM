@@ -224,14 +224,16 @@ class EdgeValidator:
         """
         Estimate minimum number of trades needed for significance.
         
-        Uses heuristic: n >= (Z/2)^2 / (p * (1-p))
+        Uses standard formula: n = (z^2 * p * (1-p)) / margin^2
+        Assumes margin of error = 0.05 (5%)
         """
         z = self._z_score(1 - alpha)
+        margin = 0.05  # 5% margin of error
         
         if target_wr == 0 or target_wr == 1:
             return 100  # Default for edge cases
         
-        n = ((z / 2) ** 2) / (target_wr * (1 - target_wr))
+        n = (z ** 2 * target_wr * (1 - target_wr)) / (margin ** 2)
         
         return int(math.ceil(n))
     
