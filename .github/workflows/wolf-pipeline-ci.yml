@@ -426,13 +426,14 @@ jobs:
           echo "❌ CONSTITUTIONAL VIOLATION DETECTED"
           echo "Merge is BLOCKED — authority boundaries must be preserved."
           exit 1
-      - name: \U0001F512 Test Gate \u2014 Block merge if critical tests fail
+      - name: 🔒 Test Gate — Block merge if critical tests fail
         if: needs.phase-4-unit-tests.result != 'success'
         run: |
-          echo "\u274C CRITICAL TEST FAILURE DETECTED"
-          echo "Merge is BLOCKED \u2014 critical test gate did not pass."
+          echo "❌ CRITICAL TEST FAILURE DETECTED"
+          echo "Merge is BLOCKED — critical test gate did not pass."
           echo "Fix failing tests in the Critical Test Gate before merging."
           exit 1
+
       - name: ✅ All gates passed
         if: >-
           needs.phase-2-constitutional-boundary.result == 'success' &&
