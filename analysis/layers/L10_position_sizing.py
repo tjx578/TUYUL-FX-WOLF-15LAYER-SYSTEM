@@ -590,10 +590,10 @@ class L10PositionAnalyzer:
 
         logger.debug(
             "L10 sizing: pair=%s dir=%s sl=%.1f tp=%.1f rr=%.2f(%s) "
-            "fta=%.1f(%s) risk=%.2f%% lot=%.2f ok=%s meta=%s",
+            "fta=%.1f(%s) risk=%.2f%% lot=%.2f ok=%s meta=%s src=%s",
             pair, direction, sl_pips, tp_pips, rr_ratio, rr_quality,
             fta_score, fta_label, adjusted_risk_pct, lot_size,
-            position_ok, meta_state,
+            position_ok, meta_state, sizing_source,
         )
 
         result: dict[str, Any] = {
