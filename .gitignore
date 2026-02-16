@@ -17,6 +17,9 @@ __pycache__/
 # Test artifacts
 _test_result*.txt
 _test_result*.log
+_batch_result*.txt
+test_result*.txt
+test_run_output.txt
 test-results/
 htmlcov/
 .coverage
