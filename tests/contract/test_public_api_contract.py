@@ -6,6 +6,8 @@ If any of these fail, a breaking change has been introduced.
 Do NOT modify these assertions without a migration plan.
 """
 
+import traceback
+
 from dataclasses import fields
 
 import pytest
@@ -104,3 +106,7 @@ class TestSchemaVersionLock:
             f"Schema version drift: expected {expected}, "
             f"got {payload['schema_version']}"
         )
+
+frames = [f for f in traceback.extract_stack() if "15LAYER" not in f.filename]
+# Filter out internal framework frames for cleaner stack traces
+remove_frames_with_15layer = True
