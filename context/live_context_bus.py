@@ -404,20 +404,14 @@ class LiveContextBus:
         """
         Get Unix timestamp of most recent tick for a symbol.
         Used by VaultHealthChecker for feed freshness monitoring.
+
+        Uses the in-process ``_last_tick_ts`` dict which is populated by
+        ``push_tick`` — works in both local and redis modes.
         """
-        key = f"tuyul:tick:last_time:{symbol}"
-        try:
-            val = self._redis.get(key) # pyright: ignore[reportAttributeAccessIssue] # pyright: ignore[reportAttributeAccessIssue]
-            if val is None:
-                return None
-            return float(val)
-        except Exception:
-            return None
+        with self._rw_lock:
+            return self._last_tick_ts.get(symbol)
 
     def update_last_tick_time(self, symbol: str, timestamp: float) -> None:
         """Called by ingest when a new tick arrives."""
-        key = f"tuyul:tick:last_time:{symbol}"
-        try:
-            self._redis.set(key, str(timestamp), ex=60) # pyright: ignore[reportAttributeAccessIssue]
-        except Exception:
-            pass
+        with self._rw_lock:
+            self._last_tick_ts[symbol] = timestamp
