@@ -56,12 +56,14 @@ from datetime import datetime, timedelta, timezone
 from symtable import Symbol
 from typing import Any
 
+from constitution.signal_throttle import SignalThrottle
 from constitution.verdict_engine import generate_l12_verdict
 from core.metrics import (
     GATE_RESULT,
     PIPELINE_DURATION,
     PIPELINE_ERROR,
     PIPELINE_RUNS,
+    SIGNAL_THROTTLED,
     SIGNAL_TOTAL,
     VERDICT_TOTAL,
     WARMUP_BLOCKED,
@@ -369,6 +371,9 @@ class WolfConstitutionalPipeline:
         # Governance engines (from merged Sovereign pipeline)
         self._l13_engine = L13ReflectiveEngine()
         self._l15_engine = L15MetaSovereigntyEngine()
+
+        # Signal rate throttle (max 3 EXECUTE per symbol in 5 minutes)
+        self._signal_throttle = SignalThrottle(max_signals=3, window_seconds=300)
 
         # Vault health checker (lazy-initialized on first use)
         self._vault_checker = None  # type: VaultHealthChecker | None
@@ -735,6 +740,26 @@ class WolfConstitutionalPipeline:
                 meta=l15_meta,
                 sovereignty=sovereignty,
             )
+
+            # ═══════════════════════════════════════════════════════
+            # SIGNAL RATE THROTTLE — prevent over-trading
+            # If the final verdict is still EXECUTE_* after enforcement,
+            # check whether this symbol has exceeded the emission rate
+            # limit. If so, downgrade to HOLD.
+            # ═══════════════════════════════════════════════════════
+            final_verdict = l12_verdict.get("verdict", "")
+            if final_verdict.startswith("EXECUTE") and not safe_mode:
+                if self._signal_throttle.is_throttled(symbol):
+                    logger.warning(
+                        f"[Pipeline v8.0] {symbol} SIGNAL THROTTLED — "
+                        f"verdict {final_verdict} downgraded to HOLD"
+                    )
+                    l12_verdict["verdict"] = "HOLD"
+                    l12_verdict["throttled_from"] = final_verdict
+                    errors.append("SIGNAL_THROTTLED")
+                    SIGNAL_THROTTLED.labels(symbol=symbol).inc()
+                else:
+                    self._signal_throttle.record(symbol)
 
             # ═══════════════════════════════════════════════════════
             # PHASE 8 -- L14 JSON EXPORT + FINAL ASSEMBLY
