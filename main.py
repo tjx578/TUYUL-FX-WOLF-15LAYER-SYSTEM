@@ -21,6 +21,12 @@ from storage.snapshot_store import save_snapshot
 from storage.startup import init_persistent_storage, shutdown_persistent_storage
 from utils.timezone_utils import is_trading_session, now_utc
 
+try:
+    from engines.v11 import V11PipelineHook
+    _v11_hook: V11PipelineHook | None = V11PipelineHook()
+except Exception:  # V11 optional — missing = skip
+    _v11_hook = None
+
 PAIRS = [p["symbol"] for p in CONFIG["pairs"]["pairs"] if p.get("enabled", True)]
 
 _shutdown_event: asyncio.Event | None = None
@@ -150,6 +156,19 @@ async def _analyze_pair(pair: str) -> None:
 
     synthesis = result["synthesis"]
     l12 = result["l12_verdict"]
+
+    # ══ V11 POST-PIPELINE FILTER ══
+    if _v11_hook is not None:
+        try:
+            v11_overlay = _v11_hook.evaluate(result, symbol=pair, timeframe="H1")
+            synthesis["v11"] = v11_overlay.to_dict()
+            if l12["verdict"].startswith("EXECUTE") and not v11_overlay.should_trade:
+                l12["verdict"] = "HOLD"
+                l12["confidence"] = "MEDIUM"
+                l12["v11_veto"] = True
+                logger.info(f"[V11] {pair} — EXECUTE vetoed by V11 sniper filter")
+        except Exception as v11_exc:
+            logger.warning(f"[V11] {pair} — hook error (skipped): {v11_exc}")
 
     # Inject runtime latency
     synthesis["system"]["latency_ms"] = RuntimeState.latency_ms
