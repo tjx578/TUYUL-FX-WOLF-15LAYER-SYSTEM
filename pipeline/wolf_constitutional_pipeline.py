@@ -97,7 +97,6 @@ _TZ_GMT8 = timezone(timedelta(hours=8))
 # ══════════════════════════════════════════════════════════════
 
 def _run_l7_probability(
-    self,
     symbol: str,
     technical_score: int,
     trade_returns: list[float] | None = None,
@@ -118,7 +117,6 @@ def _run_l7_probability(
     )
 
 def build_l12_synthesis(
-    self,
     layer_results: dict[str, Any],
     symbol: str = "UNKNOWN",
 ) -> dict[str, Any]:
@@ -718,7 +716,6 @@ class WolfConstitutionalPipeline:
             }
 
             synthesis = build_l12_synthesis(
-                self,
                 layer_results=layer_results_combined,
                 symbol=symbol,
             )
