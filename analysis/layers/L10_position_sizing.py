@@ -33,6 +33,18 @@ from typing import Any, Final
 
 logger = logging.getLogger(__name__)
 
+# ── Optional Engine Enrichment ────────────────────────────────────────────
+# DynamicPositionSizingEngine (Kelly + CVaR + Vol) provides a
+# sophisticated risk-fraction recommendation as secondary signal
+# alongside the base percentage-based sizing.
+try:
+    from engines.dynamic_position_sizing_engine import (  # pyright: ignore[reportMissingImports]
+        DynamicPositionSizingEngine,
+    )
+    _dps_engine: DynamicPositionSizingEngine | None = DynamicPositionSizingEngine()
+except Exception:  # pragma: no cover
+    _dps_engine = None
+
 __all__ = ["L10PositionAnalyzer", "analyze_risk_geometry"]
 
 
@@ -296,7 +308,7 @@ class L10PositionAnalyzer:
     def __init__(self) -> None:
         self._trade_count: int = 0
 
-    def analyze(  # noqa: PLR0912
+    def analyze(  # noqa: PLR0912, PLR0913
         self,
         trade_params: dict[str, Any],
         account_balance: float = 10_000.0,
@@ -306,6 +318,11 @@ class L10PositionAnalyzer:
         open_positions: int = 0,
         daily_dd_pct: float = 0.0,
         now: datetime | None = None,
+        *,
+        trade_returns: list[float] | None = None,
+        win_probability: float | None = None,
+        bayesian_posterior: float | None = None,
+        volatility_multiplier: float = 1.0,
     ) -> dict[str, Any]:
         """Complete L10 pipeline: geometry -> sizing -> FTA -> compliance.
 
@@ -530,6 +547,38 @@ class L10PositionAnalyzer:
             "degraded_fields": degraded,
             "timestamp": now.isoformat(),
         }
+
+        # ── Dynamic Position Sizing Enrichment (Kelly+CVaR, optional) ───
+        if (
+            _dps_engine is not None
+            and trade_returns
+            and len(trade_returns) >= 10
+            and win_probability is not None
+        ):
+            try:
+                wins = [r for r in trade_returns if r > 0]
+                losses = [r for r in trade_returns if r < 0]
+                avg_win = sum(wins) / len(wins) if wins else 0.01
+                avg_loss = sum(losses) / len(losses) if losses else -0.01
+                dps_result = _dps_engine.calculate(
+                    win_probability=win_probability,
+                    avg_win=avg_win,
+                    avg_loss=avg_loss,
+                    posterior_probability=bayesian_posterior or win_probability,
+                    returns_history=trade_returns,
+                    volatility_multiplier=volatility_multiplier,
+                )
+                result["kelly_fraction"] = dps_result.kelly_fraction  # noqa: F821
+                result["kelly_raw"] = dps_result.kelly_raw  # noqa: F821
+                result["kelly_risk_percent"] = dps_result.risk_percent  # noqa: F821
+                result["kelly_edge_negative"] = dps_result.edge_negative  # noqa: F821
+                result["cvar_adjustment"] = dps_result.cvar_adjustment  # noqa: F821
+                result["cvar_value"] = dps_result.cvar_value  # noqa: F821
+                result["volatility_adjustment"] = dps_result.volatility_adjustment  # noqa: F821
+            except Exception as exc:
+                logger.debug("L10 Kelly+CVaR enrichment skipped: %s", exc)
+
+        return result  # noqa: F821
 
 
 # ═══════════════════════════════════════════════════════════════════════
