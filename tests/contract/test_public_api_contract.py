@@ -1,4 +1,4 @@
-"""
+﻿"""
 Contract Freeze Tests -- CI Guard
 Prevents silent field renames on Zone-A core contracts.
 
@@ -17,12 +17,15 @@ import pytest
 
 class TestMonteCarloContract:
     def test_required_fields_exist(self):
-        try:
-            from monte_carlo_engine import MonteCarloResult  # noqa: PLC0415
-        except (ImportError, SyntaxError) as exc:
-            pytest.skip(f"monte_carlo_engine not importable: {exc}")
+        mc = pytest.importorskip(
+            "monte_carlo_engine",
+            reason="monte_carlo_engine not importable",
+        )
+        MonteCarloResult = getattr(mc, "MonteCarloResult", None)
+        if MonteCarloResult is None:
+            pytest.skip("MonteCarloResult not found in monte_carlo_engine")
 
-        field_names = {f.name for f in fields(MonteCarloResult)}  # type: ignore
+        field_names = {f.name for f in fields(MonteCarloResult)}
         assert "win_probability" in field_names, "win_probability removed -- BREAKING"
         assert "profit_factor" in field_names, "profit_factor removed -- BREAKING"
         assert "passed_threshold" in field_names, "passed_threshold removed -- BREAKING"
@@ -30,12 +33,15 @@ class TestMonteCarloContract:
 
 class TestPositionSizingContract:
     def test_required_fields_exist(self):
-        try:
-            from dynamic_position_sizing_engine import PositionSizingResult  # noqa: PLC0415
-        except (ImportError, SyntaxError) as exc:
-            pytest.skip(f"dynamic_position_sizing_engine not importable: {exc}")
+        dps = pytest.importorskip(
+            "dynamic_position_sizing_engine",
+            reason="dynamic_position_sizing_engine not importable",
+        )
+        PositionSizingResult = getattr(dps, "PositionSizingResult", None)
+        if PositionSizingResult is None:
+            pytest.skip("PositionSizingResult not found")
 
-        field_names = {f.name for f in fields(PositionSizingResult)}  # type: ignore
+        field_names = {f.name for f in fields(PositionSizingResult)}
         assert "final_fraction" in field_names, "final_fraction removed -- BREAKING"
         assert "risk_percent" in field_names, "risk_percent removed -- BREAKING"
 
@@ -47,10 +53,13 @@ class TestPositionSizingContract:
 
 class TestBackwardCompatibilityAliases:
     def test_monte_carlo_passed_alias(self):
-        try:
-            from monte_carlo_engine import MonteCarloResult  # noqa: PLC0415
-        except (ImportError, SyntaxError) as exc:
-            pytest.skip(f"monte_carlo_engine not importable: {exc}")
+        mc = pytest.importorskip(
+            "monte_carlo_engine",
+            reason="monte_carlo_engine not importable",
+        )
+        MonteCarloResult = getattr(mc, "MonteCarloResult", None)
+        if MonteCarloResult is None:
+            pytest.skip("MonteCarloResult not found")
 
         assert hasattr(MonteCarloResult, "passed"), (
             "MonteCarloResult.passed alias missing -- "
@@ -58,10 +67,13 @@ class TestBackwardCompatibilityAliases:
         )
 
     def test_position_sizing_risk_multiplier_alias(self):
-        try:
-            from dynamic_position_sizing_engine import PositionSizingResult  # noqa: PLC0415
-        except (ImportError, SyntaxError) as exc:
-            pytest.skip(f"dynamic_position_sizing_engine not importable: {exc}")
+        dps = pytest.importorskip(
+            "dynamic_position_sizing_engine",
+            reason="dynamic_position_sizing_engine not importable",
+        )
+        PositionSizingResult = getattr(dps, "PositionSizingResult", None)
+        if PositionSizingResult is None:
+            pytest.skip("PositionSizingResult not found")
 
         assert hasattr(PositionSizingResult, "risk_multiplier"), (
             "PositionSizingResult.risk_multiplier alias missing -- "
@@ -69,10 +81,13 @@ class TestBackwardCompatibilityAliases:
         )
 
     def test_position_sizing_position_size_alias(self):
-        try:
-            from dynamic_position_sizing_engine import PositionSizingResult  # noqa: PLC0415
-        except (ImportError, SyntaxError) as exc:
-            pytest.skip(f"dynamic_position_sizing_engine not importable: {exc}")
+        dps = pytest.importorskip(
+            "dynamic_position_sizing_engine",
+            reason="dynamic_position_sizing_engine not importable",
+        )
+        PositionSizingResult = getattr(dps, "PositionSizingResult", None)
+        if PositionSizingResult is None:
+            pytest.skip("PositionSizingResult not found")
 
         assert hasattr(PositionSizingResult, "position_size"), (
             "PositionSizingResult.position_size alias missing -- "
@@ -88,15 +103,15 @@ class TestBackwardCompatibilityAliases:
 class TestEnginesImportGuard:
     def test_cognitive_coherence_importable(self):
         """Ensures the lazy __getattr__ shim works."""
-        try:
-            from engines import CognitiveCoherence  # noqa: PLC0415
+        engines = pytest.importorskip(
+            "engines",
+            reason="engines package not importable",
+        )
+        CognitiveCoherence = getattr(engines, "CognitiveCoherence", None)
+        if CognitiveCoherence is None:
+            pytest.skip("CognitiveCoherence not exposed by engines package")
 
-            assert CognitiveCoherence is not None
-        except (ImportError, SyntaxError):
-            pytest.skip(
-                "CognitiveCoherenceEngine source not present -- "
-                "shim works but source missing"
-            )
+        assert CognitiveCoherence is not None
 
 
 # ------------------------------------------------------------------
@@ -106,13 +121,15 @@ class TestEnginesImportGuard:
 
 class TestRiskMultiplierAlias:
     def test_legacy_name_importable(self):
-        try:
-            from risk.risk_multiplier import (  # noqa: PLC0415
-                RiskMultiplier,
-                RiskMultiplierAggregator,
-            )
-        except (ImportError, SyntaxError) as exc:
-            pytest.skip(f"risk.risk_multiplier not importable: {exc}")
+        rm = pytest.importorskip(
+            "risk.risk_multiplier",
+            reason="risk.risk_multiplier not importable",
+        )
+        RiskMultiplier = getattr(rm, "RiskMultiplier", None)
+        RiskMultiplierAggregator = getattr(rm, "RiskMultiplierAggregator", None)
+
+        if RiskMultiplier is None or RiskMultiplierAggregator is None:
+            pytest.skip("RiskMultiplier or RiskMultiplierAggregator not found")
 
         assert RiskMultiplier is RiskMultiplierAggregator, (
             "RiskMultiplier must be an alias for RiskMultiplierAggregator"
