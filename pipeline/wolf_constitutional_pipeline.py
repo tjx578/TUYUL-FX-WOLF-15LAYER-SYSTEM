@@ -206,8 +206,9 @@ def build_l12_synthesis(
             "L1_context_coherence": layer_results.get("L1", {}).get("regime_confidence", 0.0),
             "L2_reflex_coherence": layer_results.get("L2", {}).get("reflex_coherence", 0.0),
             "L3_trq3d_energy": layer_results.get("L3", {}).get("trq3d_energy", 0.0),
-            "L7_monte_carlo_win": (lambda _wp_raw: _wp_raw / 100.0 if _wp_raw > 1.0 else _wp_raw)(  # noqa: PLC3002
-                layer_results.get("L7", {}).get("win_probability", 0.0)
+            "L7_monte_carlo_win": (
+                _wp_raw / 100.0 if (_wp_raw := layer_results.get("L7", {}).get("win_probability", 0.0)) > 1.0
+                else _wp_raw
             ),
             "L8_tii_sym": tii_sym,
             "L8_integrity_index": integrity,
