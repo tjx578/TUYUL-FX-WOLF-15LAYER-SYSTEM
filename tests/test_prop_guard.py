@@ -164,25 +164,42 @@ class TestConstitutionalBoundaries:
         assert not hasattr(result, "entry_price")
 
 
-def test_max_safe_lot(prop_guard, account_state):
-    """Test that max_safe_lot is calculated and returned correctly."""
+def test_max_safe_lot(prop_guard):
+    """Prop firm guard must always return max_safe_lot in result."""
+    account_state = {
+        "balance": 100000.0,
+        "equity": 99500.0,
+        "daily_pnl": -200.0,
+        "open_trades": 2,
+    }
     trade_risk = {
         "symbol": "EURUSD",
         "risk_percent": 1.0,
         "stop_loss_pips": 30,
     }
+
     result = prop_guard.check(account_state, trade_risk)
 
-    # max_safe_lot should be present and positive when trade is allowed
-    if result.get("allowed", result.get("trade_allowed", False)):
-        assert "max_safe_lot" in result, "Result must contain max_safe_lot field"
-        assert result["max_safe_lot"] > 0, f"max_safe_lot should be > 0, got {result['max_safe_lot']}"
-        # max_safe_lot must be >= recommended_lot (safe lot is the ceiling)
-        if "recommended_lot" in result:
-            assert result["max_safe_lot"] >= result["recommended_lot"], (
-                f"max_safe_lot ({result['max_safe_lot']}) must be >= "
-                f"recommended_lot ({result['recommended_lot']})"
+    # Result must always contain max_safe_lot
+    assert "max_safe_lot" in result, (
+        f"prop_guard.check() must return 'max_safe_lot'. Got keys: {list(result.keys())}"
+    )
+
+    max_lot = result["max_safe_lot"]
+    assert isinstance(max_lot, (int, float)), (
+        f"max_safe_lot must be numeric, got {type(max_lot)}"
+    )
+    assert max_lot >= 0, f"max_safe_lot must be >= 0, got {max_lot}"
+
+    # If trade is allowed, max_safe_lot must be positive
+    allowed = result.get("allowed", result.get("trade_allowed", False))
+    if allowed:
+        assert max_lot > 0, (
+            f"max_safe_lot must be > 0 when trade is allowed, got {max_lot}"
+        )
+        # max_safe_lot >= recommended_lot (it is the ceiling)
+        recommended = result.get("recommended_lot", 0.0)
+        if recommended > 0:
+            assert max_lot >= recommended, (
+                f"max_safe_lot ({max_lot}) must be >= recommended_lot ({recommended})"
             )
-    else:
-        # Even when disallowed, max_safe_lot should be present (could be 0)
-        assert "max_safe_lot" in result, "Result must contain max_safe_lot even when disallowed"
