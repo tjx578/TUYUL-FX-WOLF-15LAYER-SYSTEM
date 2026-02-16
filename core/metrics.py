@@ -489,3 +489,10 @@ WARMUP_BLOCKED = _R.counter(
     "Pipeline runs blocked by warmup gate",
     label_names=("symbol",),
 )
+
+# Signal throttle counter (verdict downgraded EXECUTE → HOLD)
+SIGNAL_THROTTLED = _R.counter(
+    "wolf_signal_throttled_total",
+    "EXECUTE verdicts downgraded to HOLD by signal rate throttle",
+    label_names=("symbol",),
+)
