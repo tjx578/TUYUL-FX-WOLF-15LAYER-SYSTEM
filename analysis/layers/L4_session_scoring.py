@@ -347,7 +347,7 @@ class BayesianConfig:
                     _STRENGTH_INDIVIDUAL_MIN <= s <= _STRENGTH_INDIVIDUAL_MAX
                 ):
                     raise ValueError(
-                        f"BayesianConfig: {regime_name} α[{i}]={s:.2f} "
+                        f"BayesianConfig: {regime_name} α[{i}]={s:.2f} "  # noqa: RUF001
                         f"violates [{_STRENGTH_INDIVIDUAL_MIN}, "
                         f"{_STRENGTH_INDIVIDUAL_MAX}]"
                     )
@@ -788,7 +788,7 @@ def _bayesian_win_probability(
     p = max(0.01, min(0.99, prior))
     odds = p / (1.0 - p)
 
-    for like, s in zip(likelihoods, strengths):
+    for like, s in zip(likelihoods, strengths, strict=False):
         clamped = max(cfg.likelihood_min, min(cfg.likelihood_max, like))
         capped_s = min(cfg.strength_cap, max(0.0, s))
         bayes_factor = (clamped / (1.0 - clamped)) ** capped_s
