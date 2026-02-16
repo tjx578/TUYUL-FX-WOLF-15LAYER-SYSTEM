@@ -375,6 +375,9 @@ class WolfConstitutionalPipeline:
         # Signal rate throttle (max 3 EXECUTE per symbol in 5 minutes)
         self._signal_throttle = SignalThrottle(max_signals=3, window_seconds=300)
 
+        # Engine Enrichment Layer (Phase 2.5 — 9 facade engines)
+        self._enrichment: Any = None  # lazy-loaded
+
         # Vault health checker (lazy-initialized on first use)
         self._vault_checker = None  # type: VaultHealthChecker | None
 
@@ -649,6 +652,43 @@ class WolfConstitutionalPipeline:
             macro = self._macro.analyze(symbol)  # pyright: ignore[reportOptionalMemberAccess]
 
             # ═══════════════════════════════════════════════════════
+            # PHASE 2.5 -- ENGINE ENRICHMENT LAYER (9 Facade Engines)
+            #   ADR-011: cognitive/fusion/quantum enrichment before L12
+            # ═══════════════════════════════════════════════════════
+            enrichment_data: dict[str, Any] = {}
+            try:
+                if self._enrichment is None:
+                    from engines.enrichment_orchestrator import (  # noqa: PLC0415
+                        EngineEnrichmentLayer,
+                    )
+                    self._enrichment = EngineEnrichmentLayer(
+                        context_bus=self._context_bus,
+                    )
+
+                _enrich_lr: dict[str, Any] = {
+                    "L1": l1, "L2": l2, "L3": l3, "L4": l4, "L5": l5,
+                    "L6": l6, "L7": l7, "L8": l8, "L9": l9, "L10": l10, "L11": l11,
+                }
+                enrichment_result = self._enrichment.run(
+                    symbol=symbol,
+                    direction=direction,
+                    layer_results=_enrich_lr,
+                    entry_price=l11.get("entry_price", l11.get("entry", 0.0)),
+                    stop_loss=l11.get("stop_loss", l11.get("sl", 0.0)),
+                    take_profit=l11.get("take_profit_1", l11.get("tp1", l11.get("tp", 0.0))),
+                )
+                enrichment_data = enrichment_result.to_dict()
+                logger.info(
+                    "[Pipeline v8.0] Phase 2.5: Enrichment -- %s score=%.3f engines_ok=%d/9",
+                    symbol,
+                    enrichment_result.enrichment_score,
+                    9 - len(enrichment_result.errors),
+                )
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("[Pipeline v8.0] Phase 2.5 enrichment failed (non-fatal): %s", exc)
+                enrichment_data = {"error": str(exc)}
+
+            # ═══════════════════════════════════════════════════════
             # PHASE 5 -- L12 CONSTITUTIONAL VERDICT (SOLE AUTHORITY)
             #   Build synthesis -> 9-Gate Check -> L12 verdict
             # ═══════════════════════════════════════════════════════
@@ -670,6 +710,12 @@ class WolfConstitutionalPipeline:
             )
             synthesis["system"]["latency_ms"] = current_latency_ms
             synthesis["system"]["safe_mode"] = safe_mode
+
+            # Inject enrichment data into synthesis for L12 visibility
+            synthesis["enrichment"] = enrichment_data
+            if enrichment_data.get("confidence_adjustment"):
+                synthesis["layers"]["enrichment_confidence_adj"] = enrichment_data["confidence_adjustment"]
+                synthesis["layers"]["enrichment_score"] = enrichment_data.get("enrichment_score", 0.0)
 
             metrics.get("macro_vix_state", {})
 
