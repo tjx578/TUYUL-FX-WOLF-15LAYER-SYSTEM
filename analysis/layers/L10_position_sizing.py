@@ -33,17 +33,41 @@ from typing import Any, Final
 
 logger = logging.getLogger(__name__)
 
-# ── Optional Engine Enrichment ────────────────────────────────────────────
-# DynamicPositionSizingEngine (Kelly + CVaR + Vol) provides a
-# sophisticated risk-fraction recommendation as secondary signal
-# alongside the base percentage-based sizing.
+# ── Dynamic Position Sizing Config (from constitution.yaml) ──────────────
+# Loads position_sizing section for Kelly+CVaR engine parameters.
+# Graceful fallback to empty dict if config unavailable.
+try:
+    from config_loader import CONFIG as _APP_CONFIG  # pyright: ignore[reportMissingImports]
+    _PS_CFG: dict[str, Any] = (
+        _APP_CONFIG.get("constitution", {}).get("position_sizing", {})
+    )
+except Exception:  # pragma: no cover
+    _PS_CFG = {}
+
+_DYNAMIC_SIZING_ENABLED: Final[bool] = bool(
+    _PS_CFG.get("enable_dynamic_sizing", False)
+)
+
+# ── DynamicPositionSizingEngine (Kelly + CVaR + Vol + Bayesian) ──────────
+# Created once with constitution.yaml parameters.  When enabled, its
+# risk_percent output REPLACES the static max_risk_pct in Phase 5.
 try:
     from engines.dynamic_position_sizing_engine import (  # pyright: ignore[reportMissingImports]
         DynamicPositionSizingEngine,
+        PositionSizingResult,
     )
-    _dps_engine: DynamicPositionSizingEngine | None = DynamicPositionSizingEngine()
+    _dps_engine: DynamicPositionSizingEngine | None = DynamicPositionSizingEngine(
+        max_risk_cap=float(_PS_CFG.get("max_kelly_risk_cap", 0.03)),
+        kelly_fraction_multiplier=float(
+            _PS_CFG.get("kelly_fraction_multiplier", 0.5)
+        ),
+        cvar_confidence=float(_PS_CFG.get("cvar_confidence", 0.95)),
+        cvar_sensitivity=float(_PS_CFG.get("cvar_sensitivity", 5.0)),
+        min_returns=int(_PS_CFG.get("min_returns_history", 10)),
+    )
 except Exception:  # pragma: no cover
     _dps_engine = None
+    PositionSizingResult = None  # type: ignore[assignment,misc]
 
 __all__ = ["L10PositionAnalyzer", "analyze_risk_geometry"]
 
@@ -424,11 +448,74 @@ class L10PositionAnalyzer:
         rr_ratio = (tp_pips / sl_pips) if (sl_pips > 0 and tp_pips > 0) else 0.0
         rr_quality = _classify_rr(rr_ratio)
 
+        # ── PHASE 4.5: Dynamic Kelly Computation (optional) ──────────
+        #
+        # When enable_dynamic_sizing is True and upstream provides
+        # trade_returns + win_probability, the Kelly+CVaR engine
+        # computes an optimal risk fraction that REPLACES static
+        # max_risk_pct in Phase 5.  FTA adjustment (Phase 6) still
+        # applies on top.
+        #
+        # Requires:
+        #   - _DYNAMIC_SIZING_ENABLED (config toggle)
+        #   - _dps_engine loaded successfully
+        #   - trade_returns with >= min_returns observations
+        #   - win_probability from L7 Monte Carlo
+
+        dps_result: Any = None  # PositionSizingResult | None
+        kelly_override_pct: float | None = None
+        sizing_source = "STATIC"
+
+        if (
+            _DYNAMIC_SIZING_ENABLED
+            and _dps_engine is not None
+            and trade_returns
+            and len(trade_returns) >= int(_PS_CFG.get("min_returns_history", 10))
+            and win_probability is not None
+        ):
+            try:
+                wins = [r for r in trade_returns if r > 0]
+                losses = [r for r in trade_returns if r < 0]
+                avg_win = sum(wins) / len(wins) if wins else 0.01
+                avg_loss = sum(losses) / len(losses) if losses else -0.01
+
+                dps_result = _dps_engine.calculate(
+                    win_probability=win_probability,
+                    avg_win=avg_win,
+                    avg_loss=avg_loss,
+                    posterior_probability=(
+                        bayesian_posterior
+                        if bayesian_posterior is not None
+                        else win_probability
+                    ),
+                    returns_history=trade_returns,
+                    volatility_multiplier=volatility_multiplier,
+                )
+
+                if not dps_result.edge_negative and dps_result.risk_percent > 0:
+                    kelly_override_pct = dps_result.risk_percent
+                    sizing_source = "DYNAMIC_KELLY"
+                else:
+                    sizing_source = "STATIC_KELLY_NO_EDGE"
+                    warnings.append(
+                        f"KELLY_NO_EDGE(kelly_raw={dps_result.kelly_raw:.4f})"
+                    )
+            except Exception as exc:
+                logger.debug("L10 dynamic sizing computation skipped: %s", exc)
+
         # ── PHASE 5: Base risk fraction ──────────────────────────────
+        #
+        # If Phase 4.5 produced a Kelly override, use it directly.
+        # Otherwise fall back to static max_risk_pct * risk_multiplier.
 
         max_risk_pct = float(rd.get("max_risk_pct", _DEFAULT_RISK_PCT))
         risk_multiplier = float(rd.get("risk_multiplier", 1.0))
-        base_risk_pct = max_risk_pct * risk_multiplier
+
+        if kelly_override_pct is not None:
+            # Kelly-optimal fraction replaces static base
+            base_risk_pct = kelly_override_pct
+        else:
+            base_risk_pct = max_risk_pct * risk_multiplier
 
         if base_risk_pct > _MAX_RISK_PCT:
             warnings.append(
@@ -509,7 +596,7 @@ class L10PositionAnalyzer:
             position_ok, meta_state,
         )
 
-        return {
+        result: dict[str, Any] = {
             # ── Risk Geometry ──
             "sl_pips": round(sl_pips, 1),
             "tp_pips": round(tp_pips, 1),
@@ -542,43 +629,25 @@ class L10PositionAnalyzer:
             "valid": valid,
             # ── Compliance ──
             "prop_violations": prop_violations,
+            # ── Dynamic Sizing Diagnostics ──
+            "sizing_source": sizing_source,
+            "kelly_fraction": dps_result.kelly_fraction if dps_result else None,
+            "kelly_raw": dps_result.kelly_raw if dps_result else None,
+            "kelly_risk_percent": dps_result.risk_percent if dps_result else None,
+            "kelly_edge_negative": dps_result.edge_negative if dps_result else None,
+            "cvar_adjustment": dps_result.cvar_adjustment if dps_result else None,
+            "cvar_value": dps_result.cvar_value if dps_result else None,
+            "volatility_adjustment": (
+                dps_result.volatility_adjustment if dps_result else None
+            ),
+            "dps_result": dps_result.to_dict() if dps_result else None,
             # ── Metadata ──
             "warnings": warnings,
             "degraded_fields": degraded,
             "timestamp": now.isoformat(),
         }
 
-        # ── Dynamic Position Sizing Enrichment (Kelly+CVaR, optional) ───
-        if (
-            _dps_engine is not None
-            and trade_returns
-            and len(trade_returns) >= 10
-            and win_probability is not None
-        ):
-            try:
-                wins = [r for r in trade_returns if r > 0]
-                losses = [r for r in trade_returns if r < 0]
-                avg_win = sum(wins) / len(wins) if wins else 0.01
-                avg_loss = sum(losses) / len(losses) if losses else -0.01
-                dps_result = _dps_engine.calculate(
-                    win_probability=win_probability,
-                    avg_win=avg_win,
-                    avg_loss=avg_loss,
-                    posterior_probability=bayesian_posterior or win_probability,
-                    returns_history=trade_returns,
-                    volatility_multiplier=volatility_multiplier,
-                )
-                result["kelly_fraction"] = dps_result.kelly_fraction  # noqa: F821
-                result["kelly_raw"] = dps_result.kelly_raw  # noqa: F821
-                result["kelly_risk_percent"] = dps_result.risk_percent  # noqa: F821
-                result["kelly_edge_negative"] = dps_result.edge_negative  # noqa: F821
-                result["cvar_adjustment"] = dps_result.cvar_adjustment  # noqa: F821
-                result["cvar_value"] = dps_result.cvar_value  # noqa: F821
-                result["volatility_adjustment"] = dps_result.volatility_adjustment  # noqa: F821
-            except Exception as exc:
-                logger.debug("L10 Kelly+CVaR enrichment skipped: %s", exc)
-
-        return result  # noqa: F821
+        return result
 
 
 # ═══════════════════════════════════════════════════════════════════════
