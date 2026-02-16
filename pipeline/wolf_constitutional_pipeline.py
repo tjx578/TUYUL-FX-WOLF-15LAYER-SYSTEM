@@ -206,9 +206,9 @@ def build_l12_synthesis(
             "L1_context_coherence": layer_results.get("L1", {}).get("regime_confidence", 0.0),
             "L2_reflex_coherence": layer_results.get("L2", {}).get("reflex_coherence", 0.0),
             "L3_trq3d_energy": layer_results.get("L3", {}).get("trq3d_energy", 0.0),
-            "L7_monte_carlo_win": layer_results.get("L7", {}).get("win_probability", 0.0) / 100.0
-            if layer_results.get("win_probability", 0.0) > 1.0
-            else layer_results.get("win_probability", 0.0),
+            "L7_monte_carlo_win": (lambda _wp_raw: _wp_raw / 100.0 if _wp_raw > 1.0 else _wp_raw)(  # noqa: PLC3002
+                layer_results.get("L7", {}).get("win_probability", 0.0)
+            ),
             "L8_tii_sym": tii_sym,
             "L8_integrity_index": integrity,
             "L9_dvg_confidence": layer_results.get("L9", {}).get("dvg_confidence", 0.0),
@@ -684,7 +684,7 @@ class WolfConstitutionalPipeline:
                     enrichment_result.enrichment_score,
                     9 - len(enrichment_result.errors),
                 )
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 logger.warning("[Pipeline v8.0] Phase 2.5 enrichment failed (non-fatal): %s", exc)
                 enrichment_data = {"error": str(exc)}
 
