@@ -140,24 +140,10 @@ class PropFirmRules:
         }
 
     def check(self, account_state: dict, trade_risk: dict) -> dict:
-        """
-        Check if a trade is allowed based on account state and risk.
+        """Check trade against prop firm rules.
 
-        Parameters
-        ----------
-        account_state : dict
-            Account state (e.g., "drawdown", "circuit_breaker")
-        trade_risk : dict
-            Trade risk (e.g., "risk_percent", "rr_ratio")
-
-        Returns
-        -------
-        dict
-            Result with:
-            - allowed: bool
-            - code: str
-            - severity: str
-            - details: str?
+        Returns dict with at minimum:
+            allowed, code, severity, max_safe_lot
         """
         result: dict[str, bool | str | float] = {
             "allowed": False,
@@ -183,7 +169,7 @@ class PropFirmRules:
             result["code"] = "RISK_EXCEEDED"
             result["severity"] = "HIGH"
 
-        # Ensure max_safe_lot is always present in result
+        # Guarantee max_safe_lot is always present before returning
         if "max_safe_lot" not in result:
             result["max_safe_lot"] = result.get("recommended_lot", 0.0)
 
