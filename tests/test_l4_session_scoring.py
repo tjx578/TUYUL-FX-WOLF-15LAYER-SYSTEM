@@ -431,8 +431,8 @@ class TestFTAScore:
     """Test _compute_fta_score alignment scoring."""
 
     def test_perfect_alignment(self) -> None:
-        l1 = {"bias": "BULLISH", "strength": 0.8}
-        l2 = {"trend_bias": "BULLISH", "trend_strength": 0.8}
+        l1 = {"bias": "BULLISH", "strength": 0.7}
+        l2 = {"trend_bias": "BULLISH", "trend_strength": 0.7}
         score, detail = _compute_fta_score(l1, l2)
         assert detail["direction_match"] == 1.0
         assert score == 5.0
