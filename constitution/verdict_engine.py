@@ -165,6 +165,25 @@ def generate_l12_verdict(synthesis: dict[str, Any]) -> dict[str, Any]:  # noqa: 
             confidence = "VERY_HIGH" if scores["wolf_30_point"] >= 27 else "HIGH"
             wolf_status = "ALPHA" if scores["wolf_30_point"] >= 27 else "PACK"
 
+    # ─── Enrichment-aware confidence adjustment (advisory) ───
+    # Enrichment engines (cognitive, quantum, fusion, etc.) produce
+    # an enrichment_score in [0, 1].  This is ADVISORY -- it adjusts
+    # the confidence tier but NEVER overrides the verdict itself.
+    enrichment_score = layers.get("enrichment_score", 0.0)
+    enrichment_applied = False
+
+    if isinstance(enrichment_score, (int, float)) and enrichment_score > 0:
+        if verdict.startswith("EXECUTE"):  # pyright: ignore[reportPossiblyUnboundVariable]
+            if enrichment_score >= 0.75 and confidence == "HIGH":  # pyright: ignore[reportPossiblyUnboundVariable]
+                confidence = "VERY_HIGH"
+                enrichment_applied = True
+            elif enrichment_score < 0.30 and confidence in ("HIGH", "VERY_HIGH"):  # pyright: ignore[reportPossiblyUnboundVariable]
+                confidence = "MEDIUM"
+                enrichment_applied = True
+        elif verdict == "HOLD" and enrichment_score < 0.20:  # pyright: ignore[reportPossiblyUnboundVariable]
+            # Very low engine agreement reinforces HOLD
+            enrichment_applied = True  # confidence stays MEDIUM, logged only
+
     l12_output = {
         "schema": "v7.4r∞",
         "pair": synthesis["pair"],
@@ -197,7 +216,9 @@ def generate_l12_verdict(synthesis: dict[str, Any]) -> dict[str, Any]:  # noqa: 
             "t_score": scores["t_score"],
             "fta_score": scores["fta_score"],
             "exec_score": scores["exec_score"],
+            "enrichment_score": enrichment_score,
         },
+        "enrichment_applied": enrichment_applied,
         "proceed_to_L13": verdict.startswith("EXECUTE"), # pyright: ignore[reportPossiblyUnboundVariable]
     }
 
