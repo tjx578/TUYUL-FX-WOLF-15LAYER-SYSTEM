@@ -91,6 +91,12 @@ jobs:
             tests/test_l9_smc.py \
             tests/test_dynamic_position_sizing.py \
             tests/test_spread_estimator.py \
+            tests/test_integration.py \
+            tests/test_pipeline_e2e.py \
+            tests/engines/test_engine_suite.py \
+            tests/engines/test_quantum_advisory_engine.py \
+            tests/test_cognitive_risk_simulation.py \
+            tests/test_fusion_precision_engine.py \
             -v --tb=short --strict-markers --timeout=60 \
             --junitxml=test-results/critical.xml
 
