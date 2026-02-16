@@ -219,6 +219,7 @@ class _HistogramChild:
             for i, bound in enumerate(self._buckets):
                 if value <= bound:
                     self._bucket_counts[i] += 1
+                    break
 
     def collect_buckets(self) -> list[tuple[float, int]]:
         """Return (le, cumulative_count) pairs."""
