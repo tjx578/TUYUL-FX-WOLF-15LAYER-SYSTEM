@@ -6,6 +6,8 @@ import logging
 import os
 import time
 
+from collections import deque
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 from redis.asyncio import Redis  # pyright: ignore[reportMissingImports]
@@ -20,23 +22,104 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-# Per-symbol spike rejection thresholds (percentage)
+# ── Tick-filter config (loaded from config/finnhub.yaml) ──────────
+_TICK_CFG: dict[str, Any] = CONFIG.get("finnhub", {}).get("tick_filter", {})
+
+# Per-symbol spike rejection thresholds (percentage) — config-driven
 SPIKE_THRESHOLDS: dict[str, float] = {
-    "XAUUSD": 2.0,   # Gold is volatile - 2% threshold
-    "GBPJPY": 1.0,   # High-vol cross - 1% threshold
-    "EURUSD": 0.5,   # Major pair - tight is fine
+    str(k): float(v)
+    for k, v in _TICK_CFG.get("spike_thresholds", {}).items()
+} or {
+    # Inline fallback only if config section is absent entirely
+    "XAUUSD": 2.0,
+    "GBPJPY": 1.0,
+    "EURUSD": 0.5,
     "GBPUSD": 0.5,
     "USDJPY": 0.5,
     "AUDUSD": 0.5,
 }
-_DEFAULT_SPIKE_THRESHOLD: float = 0.5
-_STALENESS_THRESHOLD_SECONDS: float = 60.0  # Reset baseline if no tick for 60s
+_DEFAULT_SPIKE_THRESHOLD: float = float(_TICK_CFG.get("default_spike_pct", 0.5))
+_STALENESS_THRESHOLD_SECONDS: float = float(_TICK_CFG.get("staleness_sec", 60.0))
+_DEDUP_WINDOW_SECONDS: float = float(_TICK_CFG.get("dedup_window_sec", 0.05))
 
 # Legacy constant for backwards compatibility (tests)
 MAX_DEVIATION_PCT: float = _DEFAULT_SPIKE_THRESHOLD
 
 _last_prices: dict[str, float] = {}
 _last_timestamps: dict[str, float] = {}
+
+# ── Tick deduplication state ──────────────────────────────────────
+# Key: (symbol, price, exchange_ts)  →  monotonic time of last accept
+_dedup_cache: dict[tuple[str, float, float], float] = {}
+_DEDUP_CACHE_MAX = 5_000  # evict oldest when exceeded
+
+
+def _is_duplicate_tick(symbol: str, price: float, exchange_ts: float) -> bool:
+    """Return True if an identical tick was already accepted within the dedup window."""
+    key = (symbol, price, exchange_ts)
+    now = time.monotonic()
+    prev = _dedup_cache.get(key)
+    if prev is not None and (now - prev) < _DEDUP_WINDOW_SECONDS:
+        return True
+    # Evict stale entries lazily when cache grows too large
+    if len(_dedup_cache) >= _DEDUP_CACHE_MAX:
+        cutoff = now - _DEDUP_WINDOW_SECONDS * 2
+        stale_keys = [k for k, v in _dedup_cache.items() if v < cutoff]
+        for k in stale_keys:
+            del _dedup_cache[k]
+    _dedup_cache[key] = now
+    return False
+
+
+# ── Tick rate metrics ─────────────────────────────────────────────
+@dataclass
+class _TickRateCounter:
+    """Sliding-window tick counter per symbol."""
+
+    _window_sec: float = 10.0
+    _timestamps: dict[str, deque[float]] = field(default_factory=dict)
+    _rejected: dict[str, int] = field(default_factory=dict)
+    _duplicates: dict[str, int] = field(default_factory=dict)
+
+    def record(self, symbol: str) -> None:
+        """Record an accepted tick."""
+        dq = self._timestamps.setdefault(symbol, deque())
+        dq.append(time.monotonic())
+
+    def record_rejected(self, symbol: str) -> None:
+        self._rejected[symbol] = self._rejected.get(symbol, 0) + 1
+
+    def record_duplicate(self, symbol: str) -> None:
+        self._duplicates[symbol] = self._duplicates.get(symbol, 0) + 1
+
+    def ticks_per_second(self, symbol: str) -> float:
+        """Return ticks/sec over the sliding window for *symbol*."""
+        dq = self._timestamps.get(symbol)
+        if not dq:
+            return 0.0
+        now = time.monotonic()
+        cutoff = now - self._window_sec
+        while dq and dq[0] < cutoff:
+            dq.popleft()
+        return len(dq) / self._window_sec
+
+    def snapshot(self) -> dict[str, dict[str, float | int]]:
+        """Return per-symbol rate + rejection stats."""
+        now = time.monotonic()
+        result: dict[str, dict[str, float | int]] = {}
+        for symbol, dq in self._timestamps.items():
+            cutoff = now - self._window_sec
+            while dq and dq[0] < cutoff:
+                dq.popleft()
+            result[symbol] = {
+                "ticks_per_sec": round(len(dq) / self._window_sec, 2),
+                "rejected": self._rejected.get(symbol, 0),
+                "duplicates": self._duplicates.get(symbol, 0),
+            }
+        return result
+
+
+tick_metrics = _TickRateCounter()
 
 _DEFAULT_REDIS_URL = "redis://localhost:6379/0"
 _DEFAULT_SYMBOLS = [
@@ -156,17 +239,26 @@ def _build_tick_handler(
                     )
                     continue
 
-                # Validate tick spike
-                if not _is_valid_tick(internal_symbol, float(price)):
+                tick_price = float(price)
+                tick_ts_raw = float(timestamp)
+
+                # ── Dedup: reject identical (symbol+price+ts) within window ──
+                if _is_duplicate_tick(internal_symbol, tick_price, tick_ts_raw):
+                    tick_metrics.record_duplicate(internal_symbol)
+                    continue
+
+                # ── Spike filter ──
+                if not _is_valid_tick(internal_symbol, tick_price):
+                    tick_metrics.record_rejected(internal_symbol)
                     continue
 
                 # Update last known price
-                _last_prices[internal_symbol] = float(price)
+                _last_prices[internal_symbol] = tick_price
 
-                tick_ts = float(timestamp) / 1000.0
+                tick_ts = tick_ts_raw / 1000.0
                 bid, ask = estimate_spread(
                     symbol=internal_symbol,
-                    price=float(price),
+                    price=tick_price,
                     timestamp=tick_ts,
                 )
 
@@ -174,12 +266,13 @@ def _build_tick_handler(
                     "symbol": internal_symbol,
                     "bid": bid,
                     "ask": ask,
-                    "last": float(price),
+                    "last": tick_price,
                     "spread": round(ask - bid, 6),
                     "timestamp": tick_ts,
                     "source": "finnhub_ws",
                 }
                 context_bus.update_tick(normalized_tick)
+                tick_metrics.record(internal_symbol)
         except (TypeError, ValueError) as exc:
             logger.error(
                 "Tick processing error",
