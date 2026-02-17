@@ -13,6 +13,7 @@ from loguru import logger  # pyright: ignore[reportMissingImports]
 from analysis.macro.macro_regime_engine import MacroRegimeEngine
 from config_loader import CONFIG
 from context.system_state import SystemState, SystemStateManager
+from core.health_probe import HealthProbe
 from ingest.candle_builder import CandleBuilder
 from ingest.dependencies import create_finnhub_ws
 from ingest.finnhub_candles import FinnhubCandleFetcher
@@ -25,6 +26,19 @@ from storage.startup import init_persistent_storage, shutdown_persistent_storage
 _shutdown_event: asyncio.Event | None = None
 MAX_RETRIES = 10
 BASE_DELAY = 1.0
+
+# ── Health probe for container orchestration ──────────────────────
+_INGEST_HEALTH_PORT = int(os.getenv("INGEST_HEALTH_PORT", "8082"))
+_health_probe = HealthProbe(port=_INGEST_HEALTH_PORT, service_name="ingest")
+_ingest_ready = False
+
+
+def _ingest_readiness() -> bool:
+    """Readiness gate: True once Redis is connected and warmup is done."""
+    return _ingest_ready
+
+
+_health_probe.set_readiness_check(_ingest_readiness)
 
 
 class RedisClient(Protocol):
@@ -167,6 +181,11 @@ async def run_ingest_services(has_api_key: bool) -> None:
         candle_builder = CandleBuilder()
         h1_refresh = H1RefreshScheduler()
 
+        # Mark ingest as ready after warmup + connection
+        global _ingest_ready
+        _ingest_ready = True
+        logger.info("Ingest readiness: READY")
+
         logger.info(
             "Starting ingest services: WebSocket, News, MarketNews, CandleBuilder (M15), H1Refresh"
         )
@@ -236,14 +255,21 @@ async def main() -> None:
     has_api_key = _validate_api_key()
     await init_persistent_storage()
 
+    # Start health probe alongside ingest services
+    health_task = asyncio.create_task(_health_probe.start(), name="IngestHealthProbe")
+
     try:
         await run_ingest_services(has_api_key)
     except KeyboardInterrupt:
         logger.info("KeyboardInterrupt received")
     except Exception as exc:
+        _health_probe.set_alive(False)
+        _health_probe.set_detail("dead_reason", str(exc)[:120])
         logger.exception(f"Ingest service failed: {exc}")
         sys.exit(1)
     finally:
+        health_task.cancel()
+        await _health_probe.stop()
         await shutdown_persistent_storage()
         logger.info("Ingest service shutdown complete")
 
