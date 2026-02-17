@@ -1,261 +1,303 @@
 """
-Tests for CandleBuilder -- M15/H1 tick-built, H4+ REST-fetched.
+Tests for the unified CandleBuilder (ingest/candle_builder.py).
+
+Covers:
+- M15 candle building from ticks
+- H1 candle aggregation from M15 candles
+- Multi-timeframe chaining (tick → M15 → H1)
+- Period alignment
+- Flush behavior
+- Backward-compat import from analysis/
 """
 
-from unittest.mock import MagicMock, patch
+from datetime import UTC, datetime, timedelta
 
-import pytest  # pyright: ignore[reportMissingImports]
+import pytest
 
-from analysis.candle_builder import (
-    CandleManager,
-    RESTCandleFetcher,
-    Tick,
-    TickCandleBuilder,
+from ingest.candle_builder import (
+    Candle,
+    CandleBuilder,
+    MultiTimeframeCandleBuilder,
     Timeframe,
+    _align_to_period,
 )
 
-# ---------------------------------------------------------------------------
-# Timeframe classification
-# ---------------------------------------------------------------------------
+# ── Alignment ────────────────────────────────────────────────────────
+
+class TestAlignment:
+    def test_m15_alignment(self):
+        dt = datetime(2026, 2, 17, 10, 7, 30, tzinfo=UTC)
+        aligned = _align_to_period(dt, 15)
+        assert aligned == datetime(2026, 2, 17, 10, 0, tzinfo=UTC)
+
+    def test_m15_alignment_on_boundary(self):
+        dt = datetime(2026, 2, 17, 10, 15, 0, tzinfo=UTC)
+        aligned = _align_to_period(dt, 15)
+        assert aligned == datetime(2026, 2, 17, 10, 15, tzinfo=UTC)
+
+    def test_h1_alignment(self):
+        dt = datetime(2026, 2, 17, 10, 42, 0, tzinfo=UTC)
+        aligned = _align_to_period(dt, 60)
+        assert aligned == datetime(2026, 2, 17, 10, 0, tzinfo=UTC)
+
+    def test_h4_alignment(self):
+        dt = datetime(2026, 2, 17, 5, 30, 0, tzinfo=UTC)
+        aligned = _align_to_period(dt, 240)
+        assert aligned == datetime(2026, 2, 17, 4, 0, tzinfo=UTC)
+
+    def test_naive_datetime_treated_as_utc(self):
+        dt_naive = datetime(2026, 2, 17, 10, 7, 30)
+        dt_aware = datetime(2026, 2, 17, 10, 7, 30, tzinfo=UTC)
+        assert _align_to_period(dt_naive, 15) == _align_to_period(dt_aware, 15)
+
+
+# ── M15 from Ticks ──────────────────────────────────────────────────
+
+class TestM15FromTicks:
+    def _make_builder(self):
+        return CandleBuilder("EURUSD", Timeframe.M15)
+
+    def test_single_period_no_completion(self):
+        b = self._make_builder()
+        base = datetime(2026, 2, 17, 10, 0, tzinfo=UTC)
+        for i in range(5):
+            result = b.on_tick(1.1000 + i * 0.0001, base + timedelta(seconds=i * 60))
+            assert result is None  # still in same period
+
+    def test_cross_period_emits_candle(self):
+        b = self._make_builder()
+        base = datetime(2026, 2, 17, 10, 0, tzinfo=UTC)
+
+        # Feed ticks in 10:00–10:14
+        b.on_tick(1.1000, base)
+        b.on_tick(1.1050, base + timedelta(minutes=5))
+        b.on_tick(1.0980, base + timedelta(minutes=10))
+        b.on_tick(1.1020, base + timedelta(minutes=14))
+
+        # This tick at 10:15 should trigger completion of the 10:00 candle
+        completed = b.on_tick(1.1030, base + timedelta(minutes=15))
+
+        assert completed is not None
+        assert completed.complete is True
+        assert completed.timeframe == "M15"
+        assert completed.open == 1.1000
+        assert completed.high == 1.1050
+        assert completed.low == 1.0980
+        assert completed.close == 1.1020
+        assert completed.tick_count == 4
+        assert completed.open_time == base
+        assert completed.close_time == base + timedelta(minutes=15)
+
+    def test_multiple_periods(self):
+        b = self._make_builder()
+        base = datetime(2026, 2, 17, 10, 0, tzinfo=UTC)
+
+        # Fill 3 periods: 10:00, 10:15, 10:30
+        candles = []
+        for period in range(3):
+            for m in range(15):
+                t = base + timedelta(minutes=period * 15 + m)
+                c = b.on_tick(1.1000 + period * 0.001, t)
+                if c is not None:
+                    candles.append(c)
+
+        # Flush the last one
+        c = b.flush()
+        if c is not None:
+            candles.append(c)
+
+        assert len(candles) == 3
+        assert candles[0].open_time == base
+        assert candles[1].open_time == base + timedelta(minutes=15)
+        assert candles[2].open_time == base + timedelta(minutes=30)
+
+
+# ── H1 from M15 Candles ─────────────────────────────────────────────
+
+class TestH1FromM15:
+    def _make_m15_candle(self, open_time: datetime, o: float, h: float, l: float, c: float) -> Candle:  # noqa: E741
+        return Candle(
+            symbol="EURUSD",
+            timeframe="M15",
+            open_time=open_time,
+            close_time=open_time + timedelta(minutes=15),
+            open=o, high=h, low=l, close=c,
+            volume=100.0, tick_count=50, complete=True,
+        )
+
+    def test_four_m15_make_one_h1(self):
+        b = CandleBuilder("EURUSD", Timeframe.H1)
+        base = datetime(2026, 2, 17, 10, 0, tzinfo=UTC)
+
+        # Feed 4 M15 candles (10:00, 10:15, 10:30, 10:45)
+        m15s = [
+            self._make_m15_candle(base,                        1.10, 1.12, 1.09, 1.11),
+            self._make_m15_candle(base + timedelta(minutes=15), 1.11, 1.13, 1.10, 1.12),
+            self._make_m15_candle(base + timedelta(minutes=30), 1.12, 1.14, 1.11, 1.13),
+            self._make_m15_candle(base + timedelta(minutes=45), 1.13, 1.15, 1.12, 1.14),
+        ]
+
+        results = [b.on_candle(c) for c in m15s]
+        # None of them trigger completion yet (all in same hour)
+        assert all(r is None for r in results)
+
+        # Feed first M15 of next hour → triggers H1 completion
+        next_hour_candle = self._make_m15_candle(
+            base + timedelta(minutes=60), 1.14, 1.16, 1.13, 1.15
+        )
+        h1 = b.on_candle(next_hour_candle)
+
+        assert h1 is not None
+        assert h1.timeframe == "H1"
+        assert h1.complete is True
+        assert h1.open == 1.10
+        assert h1.high == 1.15
+        assert h1.low == 1.09
+        assert h1.close == 1.14
+        assert h1.volume == 400.0
+        assert h1.tick_count == 200
+        assert h1.open_time == base
+        assert h1.close_time == base + timedelta(minutes=60)
+
+    def test_incomplete_candle_ignored(self):
+        b = CandleBuilder("EURUSD", Timeframe.H1)
+        incomplete = Candle(
+            symbol="EURUSD", timeframe="M15",
+            open_time=datetime(2026, 2, 17, 10, 0, tzinfo=UTC),
+            close_time=datetime(2026, 2, 17, 10, 15, tzinfo=UTC),
+            open=1.10, high=1.11, low=1.09, close=1.10,
+            complete=False,
+        )
+        assert b.on_candle(incomplete) is None
+        assert len(b.completed_candles) == 0
+
+
+# ── MultiTimeframeCandleBuilder ─────────────────────────────────────
+
+class TestMultiTimeframe:
+    def test_tick_to_m15_and_h1(self):
+        results = {"M15": [], "H1": []}
+
+        def on_any(candle: Candle):
+            results[candle.timeframe].append(candle)
+
+        mtf = MultiTimeframeCandleBuilder(
+            "EURUSD",
+            timeframes=[Timeframe.M15, Timeframe.H1],
+            on_any_complete=on_any,
+        )
+
+        base = datetime(2026, 2, 17, 10, 0, tzinfo=UTC)
+
+        # Feed 1 tick per minute for 75 minutes (10:00–11:14)
+        # This should produce: 5 M15 candles (10:00,10:15,10:30,10:45,11:00)
+        # and 1 H1 candle (10:00)
+        for minute in range(75):
+            t = base + timedelta(minutes=minute)
+            price = 1.1000 + (minute % 15) * 0.0001
+            mtf.on_tick(price, t, volume=1.0)
+
+        # Flush remaining
+        mtf.flush_all()
+
+        # Count completed M15 candles: periods 10:00,10:15,10:30,10:45,11:00
+        # The 10:00 M15 completes when 10:15 arrives, etc.
+        # With 75 minutes: 5 full M15 periods completed by rollover
+        assert len(results["M15"]) == 5
+
+        # H1: the 10:00 hour completes when 11:00's first M15 arrives
+        assert len(results["H1"]) == 1
+        h1 = results["H1"][0]
+        assert h1.open_time == base
+        assert h1.timeframe == "H1"
+
+    def test_default_timeframes(self):
+        mtf = MultiTimeframeCandleBuilder("GBPUSD")
+        assert "M15" in mtf._builders
+        assert "H1" in mtf._builders
+
+    def test_custom_timeframes(self):
+        mtf = MultiTimeframeCandleBuilder(
+            "USDJPY",
+            timeframes=[Timeframe.M5, Timeframe.M15, Timeframe.H4],
+        )
+        assert "M5" in mtf._builders
+        assert "M15" in mtf._builders
+        assert "H4" in mtf._builders
+
+
+# ── Flush ────────────────────────────────────────────────────────────
+
+class TestFlush:
+    def test_flush_partial_candle(self):
+        b = CandleBuilder("EURUSD", Timeframe.M15)
+        base = datetime(2026, 2, 17, 10, 0, tzinfo=UTC)
+        b.on_tick(1.10, base)
+        b.on_tick(1.12, base + timedelta(minutes=5))
+
+        partial = b.current_partial
+        assert partial is not None
+        assert partial.complete is False
+
+        flushed = b.flush()
+        assert flushed is not None
+        assert flushed.complete is True
+        assert flushed.open == 1.10
+        assert flushed.close == 1.12
+
+    def test_flush_empty(self):
+        b = CandleBuilder("EURUSD", Timeframe.M15)
+        assert b.flush() is None
+
+
+# ── Candle.to_dict ───────────────────────────────────────────────────
+
+class TestCandleDict:
+    def test_round_trip(self):
+        c = Candle(
+            symbol="EURUSD", timeframe="M15",
+            open_time=datetime(2026, 2, 17, 10, 0, tzinfo=UTC),
+            close_time=datetime(2026, 2, 17, 10, 15, tzinfo=UTC),
+            open=1.10, high=1.12, low=1.09, close=1.11,
+            volume=500.0, tick_count=100, complete=True,
+        )
+        d = c.to_dict()
+        assert d["symbol"] == "EURUSD"
+        assert d["complete"] is True
+        assert isinstance(d["open_time"], str)
+
+
+# ── Timeframe enum ───────────────────────────────────────────────────
 
 class TestTimeframe:
-    def test_tick_built_timeframes(self):
-        assert Timeframe.M15.is_tick_built is True
-        assert Timeframe.H1.is_tick_built is True
-        assert Timeframe.H4.is_tick_built is False
-        assert Timeframe.D1.is_tick_built is False
+    def test_from_str(self):
+        assert Timeframe.from_str("m15") == Timeframe.M15
+        assert Timeframe.from_str("H1") == Timeframe.H1
 
-    def test_rest_fetched_timeframes(self):
-        assert Timeframe.H4.is_rest_fetched is True
-        assert Timeframe.D1.is_rest_fetched is True
-        assert Timeframe.W1.is_rest_fetched is True
-        assert Timeframe.MN.is_rest_fetched is True
-        assert Timeframe.M15.is_rest_fetched is False
-        assert Timeframe.H1.is_rest_fetched is False
+    def test_from_str_invalid(self):
+        with pytest.raises(ValueError, match="Unknown timeframe"):
+            Timeframe.from_str("W1")
 
-    def test_seconds(self):
-        assert Timeframe.M15.seconds == 900
-        assert Timeframe.H1.seconds == 3600
-        assert Timeframe.H4.seconds == 14400
-
-    def test_finnhub_resolution(self):
-        assert Timeframe.M15.finnhub_resolution == "15"
-        assert Timeframe.H1.finnhub_resolution == "60"
-        assert Timeframe.H4.finnhub_resolution == "240"
-        assert Timeframe.D1.finnhub_resolution == "D"
-        assert Timeframe.W1.finnhub_resolution == "W"
-        assert Timeframe.MN.finnhub_resolution == "M"
+    def test_minutes(self):
+        assert Timeframe.M15.minutes == 15
+        assert Timeframe.H1.minutes == 60
+        assert Timeframe.H4.minutes == 240
 
 
-# ---------------------------------------------------------------------------
-# TickCandleBuilder -- M15
-# ---------------------------------------------------------------------------
+# ── Backward-compat import from analysis/ ────────────────────────────
 
-class TestTickCandleBuilderM15:
-    SYMBOL = "OANDA:EUR_USD"
-
-    def _make_tick(self, price: float, ts: float, vol: float = 1.0) -> Tick:
-        return Tick(symbol=self.SYMBOL, price=price, volume=vol, timestamp=ts)
-
-    def test_reject_non_tick_timeframe(self):
-        with pytest.raises(ValueError, match="not tick-built"):
-            TickCandleBuilder(self.SYMBOL, Timeframe.H4)
-
-    def test_first_tick_starts_candle(self):
-        builder = TickCandleBuilder(self.SYMBOL, Timeframe.M15)
-        # Tick at 2026-02-15 10:02:30 UTC -> candle should align to 10:00:00
-        ts = 1771056150.0  # arbitrary, alignment tested below
-        builder.on_tick(self._make_tick(1.08500, ts))
-        c = builder.current_candle
-        assert c is not None
-        assert c.open == 1.08500
-        assert c.is_closed is False
-        # Candle timestamp should be floor-aligned to 15-min
-        assert c.timestamp == builder._align_to_interval(ts, 900)
-
-    def test_candle_closes_on_boundary_cross(self):
-        builder = TickCandleBuilder(self.SYMBOL, Timeframe.M15)
-
-        # Start of a 15-min window (exact boundary)
-        base = 1771056000.0  # clean 15-min boundary
-        builder.on_tick(self._make_tick(1.08500, base + 1))
-        builder.on_tick(self._make_tick(1.08600, base + 120))
-        builder.on_tick(self._make_tick(1.08400, base + 500))
-
-        assert builder.current_candle is not None
-        assert builder.current_candle.is_closed is False
-
-        # Tick that crosses into next candle
-        closed = builder.on_tick(self._make_tick(1.08550, base + 901))
-        assert closed is not None
-        assert closed.is_closed is True
-        assert closed.open == 1.08500
-        assert closed.high == 1.08600
-        assert closed.low == 1.08400
-        assert closed.close == 1.08400  # last tick before boundary
-        assert closed.tick_count == 3
-
-        # New candle should be in progress
-        assert builder.current_candle is not None
-        assert builder.current_candle.open == 1.08550
-
-    def test_force_close(self):
-        builder = TickCandleBuilder(self.SYMBOL, Timeframe.M15)
-        base = 1771056000.0
-        builder.on_tick(self._make_tick(1.08500, base + 1))
-        closed = builder.force_close()
-        assert closed is not None
-        assert closed.is_closed is True
-        assert builder.current_candle is None
-
-    def test_callback_fired_on_close(self):
-        closed_candles = []
-        builder = TickCandleBuilder(
-            self.SYMBOL, Timeframe.M15,
-            on_candle_closed=closed_candles.append,
+class TestBackwardCompat:
+    def test_import_from_analysis(self):
+        from analysis.candle_builder import (
+            Candle as ACandle,
         )
-        base = 1771056000.0
-        builder.on_tick(self._make_tick(1.08500, base + 1))
-        builder.on_tick(self._make_tick(1.08550, base + 901))
-        assert len(closed_candles) == 1
-
-    def test_ignores_wrong_symbol(self):
-        builder = TickCandleBuilder(self.SYMBOL, Timeframe.M15)
-        wrong_tick = Tick(
-            symbol="OANDA:GBP_USD", price=1.25, volume=1.0, timestamp=1771056001.0
+        from analysis.candle_builder import (
+            CandleBuilder as ACB,  # noqa: N814
         )
-        result = builder.on_tick(wrong_tick)
-        assert result is None
-        assert builder.current_candle is None
-
-
-# ---------------------------------------------------------------------------
-# TickCandleBuilder -- H1
-# ---------------------------------------------------------------------------
-
-class TestTickCandleBuilderH1:
-    SYMBOL = "OANDA:EUR_USD"
-
-    def _make_tick(self, price: float, ts: float, vol: float = 1.0) -> Tick:
-        return Tick(symbol=self.SYMBOL, price=price, volume=vol, timestamp=ts)
-
-    def test_h1_candle_aligns_to_hour(self):
-        builder = TickCandleBuilder(self.SYMBOL, Timeframe.H1)
-        # Tick at some mid-hour time
-        ts = 1771056500.0
-        builder.on_tick(self._make_tick(1.08500, ts))
-        c = builder.current_candle
-        assert c is not None
-        expected_boundary = builder._align_to_interval(ts, 3600)
-        assert c.timestamp == expected_boundary
-
-    def test_h1_closes_after_one_hour(self):
-        builder = TickCandleBuilder(self.SYMBOL, Timeframe.H1)
-        base = 1771056000.0  # clean hour boundary
-        builder.on_tick(self._make_tick(1.08500, base + 10))
-        builder.on_tick(self._make_tick(1.08700, base + 1800))
-
-        # Cross into next hour
-        closed = builder.on_tick(self._make_tick(1.08600, base + 3601))
-        assert closed is not None
-        assert closed.is_closed is True
-        assert closed.high == 1.08700
-        assert closed.tick_count == 2
-
-
-# ---------------------------------------------------------------------------
-# RESTCandleFetcher
-# ---------------------------------------------------------------------------
-
-class TestRESTCandleFetcher:
-    def test_reject_tick_timeframe(self):
-        fetcher = RESTCandleFetcher(api_key="test_key")
-        with pytest.raises(ValueError, match="built from ticks"):
-            fetcher.fetch_candles("OANDA:EUR_USD", Timeframe.M15)
-
-        with pytest.raises(ValueError, match="built from ticks"):
-            fetcher.fetch_candles("OANDA:EUR_USD", Timeframe.H1)
-
-    def test_requires_api_key(self):
-        with pytest.raises(ValueError, match="API key is required"):
-            RESTCandleFetcher(api_key="")
-
-    @patch("analysis.candle_builder.requests")
-    def test_fetch_h4_candles(self, mock_requests):
-        mock_resp = MagicMock()
-        mock_resp.json.return_value = {
-            "s": "ok",
-            "t": [1771056000, 1771070400],
-            "o": [1.085, 1.086],
-            "h": [1.087, 1.088],
-            "l": [1.083, 1.084],
-            "c": [1.086, 1.087],
-            "v": [1000, 1200],
-        }
-        mock_resp.raise_for_status = MagicMock()
-        mock_requests.get.return_value = mock_resp
-
-        fetcher = RESTCandleFetcher(api_key="premium_key", rate_limit_delay=0)
-        candles = fetcher.fetch_candles("OANDA:EUR_USD", Timeframe.H4, count=2)
-
-        assert len(candles) == 2
-        assert candles[0].timeframe == Timeframe.H4
-        assert candles[0].open == 1.085
-        assert candles[0].is_closed is True
-        assert candles[1].close == 1.087
-
-    @patch("analysis.candle_builder.requests")
-    def test_fetch_no_data(self, mock_requests):
-        mock_resp = MagicMock()
-        mock_resp.json.return_value = {"s": "no_data"}
-        mock_resp.raise_for_status = MagicMock()
-        mock_requests.get.return_value = mock_resp
-
-        fetcher = RESTCandleFetcher(api_key="premium_key", rate_limit_delay=0)
-        candles = fetcher.fetch_candles("OANDA:EUR_USD", Timeframe.D1, count=10)
-        assert candles == []
-
-
-# ---------------------------------------------------------------------------
-# CandleManager -- Integration
-# ---------------------------------------------------------------------------
-
-class TestCandleManager:
-    SYMBOL = "OANDA:EUR_USD"
-
-    def _make_tick(self, price: float, ts: float) -> Tick:
-        return Tick(symbol=self.SYMBOL, price=price, volume=1.0, timestamp=ts)
-
-    def test_tick_feeds_both_m15_and_h1(self):
-        mgr = CandleManager(
-            symbols=[self.SYMBOL],
-            api_key="test_key",
+        from analysis.candle_builder import (
+            Timeframe as ATF,  # noqa: N814
         )
-        base = 1771056000.0
-        mgr.on_tick(self._make_tick(1.085, base + 1))
-
-        m15 = mgr.get_current_candle(self.SYMBOL, Timeframe.M15)
-        h1 = mgr.get_current_candle(self.SYMBOL, Timeframe.H1)
-        assert m15 is not None
-        assert h1 is not None
-
-    def test_rest_timeframe_raises_on_tick_access(self):
-        mgr = CandleManager(symbols=[self.SYMBOL], api_key="test_key")
-        # get_current_candle for REST TF returns None (no builder)
-        assert mgr.get_current_candle(self.SYMBOL, Timeframe.H4) is None
-
-    def test_fetch_rest_rejects_tick_tf(self):
-        mgr = CandleManager(symbols=[self.SYMBOL], api_key="test_key")
-        with pytest.raises(ValueError):
-            mgr.fetch_rest_candles(self.SYMBOL, Timeframe.M15)
-
-    def test_force_close_all(self):
-        mgr = CandleManager(symbols=[self.SYMBOL], api_key="test_key")
-        base = 1771056000.0
-        mgr.on_tick(self._make_tick(1.085, base + 1))
-        closed = mgr.force_close_all()
-        # Should close both M15 and H1
-        assert len(closed) == 2
-        tfs = {c.timeframe for c in closed}
-        assert Timeframe.M15 in tfs
-        assert Timeframe.H1 in tfs
+        # They should be the exact same objects
+        assert ACandle is Candle
+        assert ACB is CandleBuilder
+        assert ATF is Timeframe
