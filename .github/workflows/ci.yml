@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
 name: CI
 
 on:
@@ -14,10 +15,10 @@ jobs:
     name: Lint & ASCII compliance
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v3
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v4
         with:
           python-version: "3.11"
 
@@ -57,10 +58,10 @@ jobs:
     runs-on: ubuntu-latest
     needs: lint
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v3
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v4
         with:
           python-version: "3.11"
 
@@ -110,6 +111,13 @@ jobs:
           python -m pytest tests/ -v --tb=short --timeout=60 \
             --junitxml=test-results/full.xml
 
+      - name: Run tests
+        run: |
+          python -m pytest tests/ -v --tb=short --strict-markers -x \
+            -k "test_l4_scoring or test_l5_psychology or test_l8_tii or test_l12 or test_prop_firm or test_state_machine"
+        env:
+          PYTHONPATH: .
+
       - name: Upload test results
         if: always()
         uses: actions/upload-artifact@v4
@@ -123,10 +131,10 @@ jobs:
     runs-on: ubuntu-latest
     needs: lint
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v3
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v4
         with:
           python-version: "3.11"
 

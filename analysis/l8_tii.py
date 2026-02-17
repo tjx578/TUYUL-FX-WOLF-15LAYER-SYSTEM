@@ -16,7 +16,6 @@ Zone: analysis/ -- pure read-only analysis, no execution side-effects.
 
 import logging
 import math
-
 from datetime import UTC, datetime
 from typing import Any
 
