@@ -179,8 +179,19 @@ async def run_redis_consumer() -> None:
 async def _analyze_pair(pair: str) -> dict | None:
     """Run pipeline for a single pair with timeout + thread offload."""
     try:
+        # Capture last tick timestamp for end-to-end latency tracing
+        from context.live_context_bus import LiveContextBus  # noqa: PLC0415
+
+        _bus = LiveContextBus()
+        _latest = _bus.get_latest_tick(pair)
+        _tick_ts: float | None = (
+            _latest.get("local_ts") or _latest.get("timestamp")
+            if _latest
+            else None
+        )
+
         result = await asyncio.wait_for(
-            asyncio.to_thread(_pipeline.execute, pair),
+            asyncio.to_thread(_pipeline.execute, pair, None, tick_ts=_tick_ts),
             timeout=_PIPELINE_TIMEOUT_SEC,
         )
         return result
