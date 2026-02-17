@@ -1,4 +1,12 @@
-[project]
+# Paths to exclude from secret scanning
+# (test fixtures, example configs, lock files)
+node_modules/
+.env.example
+package-lock.json
+*.lock
+__pycache__/
+*.pyc
+coverage.xml[project]
 name = "tuyulfx-wolf"
 version = "7.4.0"
 requires-python = ">=3.11"
@@ -160,3 +168,27 @@ indent-style = "space"
 line-ending = "auto"
 skip-magic-trailing-comma = false
 docstring-code-format = true
+
+[tool.mypy]
+python_version = "3.11"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+check_untyped_defs = true
+no_implicit_optional = true
+strict_equality = true
+
+# Per-module overrides for gradual adoption
+[[tool.mypy.overrides]]
+module = [
+    "tests.*",
+    "scripts.*",
+]
+disallow_untyped_defs = false
+
+[[tool.mypy.overrides]]
+module = [
+    "MetaTrader5.*",
+    "mt5.*",
+]
+ignore_missing_imports = true
