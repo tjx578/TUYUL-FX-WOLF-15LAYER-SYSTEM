@@ -13,17 +13,19 @@ Authentication:
   as a ``token`` query parameter.  Connections without a valid token
   are closed immediately with code 4401.
 
-Upgrade (v2):
-  - Price stream changed from 2s polling to event-driven tick push (<100ms)
-  - Trade stream changed from 2s polling to event-driven diff push
-  - Added candle aggregation (M1/M5/M15/H1) with real-time bar updates
-  - Added risk state stream for drawdown / circuit breaker monitoring
+Upgrade (v3):
+  - Price stream: event-driven via asyncio.Event (no polling sleep)
+  - Risk WS: singleton instances cached (no per-push instantiation)
+  - Heartbeat: server-side ping every 30s, detects dead connections
+  - Message buffer: ring-buffer per manager for replay on reconnect
+  - Trade stream: event-driven diff push with 250ms fallback
+  - Candle aggregation (M1/M5/M15/H1) with real-time bar updates
 """
 
 import asyncio
 import time
 
-from collections import defaultdict
+from collections import defaultdict, deque  # noqa: F401
 
 import fastapi  # pyright: ignore[reportMissingImports]
 
@@ -48,6 +50,13 @@ CANDLE_UPDATE_INTERVAL = 0.5  # 500ms
 RISK_STATE_INTERVAL = 1.0  # 1s
 # Equity curve push interval
 EQUITY_PUSH_INTERVAL = 2.0  # 2s (balance/equity changes slowly)
+
+# Heartbeat / ping interval
+WS_PING_INTERVAL = 30.0  # seconds
+WS_PONG_TIMEOUT = 10.0  # seconds to wait for pong before declaring dead
+
+# Message replay buffer size per manager
+MESSAGE_BUFFER_SIZE = 100  # last N messages kept for replay on reconnect
 
 
 # ---------------------------------------------------------------------------
@@ -118,15 +127,18 @@ _candle_agg = CandleAggregator()
 
 
 # ---------------------------------------------------------------------------
-# Connection Manager
+# Connection Manager with heartbeat + message buffer
 # ---------------------------------------------------------------------------
 
 class ConnectionManager:
-    """Manages WebSocket connections with authentication."""
+    """Manages WebSocket connections with authentication, heartbeat, and replay buffer."""
 
-    def __init__(self, name: str = "default"):
+    def __init__(self, name: str = "default", buffer_size: int = MESSAGE_BUFFER_SIZE):
         self.name = name
         self.active_connections: set[fastapi.WebSocket] = set()
+        self._ping_tasks: dict[fastapi.WebSocket, asyncio.Task] = {}  # type: ignore[type-arg]
+        # Ring buffer of recent messages for replay on reconnect
+        self._message_buffer: deque[dict] = deque(maxlen=buffer_size)
 
     async def connect(self, websocket: fastapi.WebSocket) -> bool:
         """
@@ -148,14 +160,69 @@ class ConnectionManager:
 
         await websocket.accept()
         self.active_connections.add(websocket)
+
+        # Start heartbeat ping task for this connection
+        task = asyncio.create_task(self._heartbeat_loop(websocket))
+        self._ping_tasks[websocket] = task
+
         return True
 
     def disconnect(self, websocket: fastapi.WebSocket):
-        """Remove WebSocket connection."""
+        """Remove WebSocket connection and cancel its heartbeat."""
         self.active_connections.discard(websocket)
+        task = self._ping_tasks.pop(websocket, None)
+        if task and not task.done():
+            task.cancel()
+
+    async def _heartbeat_loop(self, websocket: fastapi.WebSocket):
+        """Send periodic ping frames to detect dead connections behind NAT/proxy."""
+        try:
+            while websocket in self.active_connections:
+                await asyncio.sleep(WS_PING_INTERVAL)
+                try:
+                    await asyncio.wait_for(
+                        websocket.send_json({"type": "ping", "ts": time.time()}),
+                        timeout=WS_PONG_TIMEOUT,
+                    )
+                except (asyncio.TimeoutError, Exception):
+                    logger.info(f"WS [{self.name}] heartbeat failed, disconnecting client")
+                    self.disconnect(websocket)
+                    try:
+                        await websocket.close(code=4408, reason="Heartbeat timeout")
+                    except Exception:
+                        pass
+                    break
+        except asyncio.CancelledError:
+            pass
+
+    def buffer_message(self, message: dict):
+        """Store message in replay buffer."""
+        self._message_buffer.append(message)
+
+    async def replay_buffer(self, websocket: fastapi.WebSocket, since_ts: float | None = None):
+        """
+        Replay buffered messages to a reconnecting client.
+
+        Args:
+            websocket: The reconnected client.
+            since_ts: Only replay messages after this timestamp. If None, replay all.
+        """
+        replayed = 0
+        for msg in self._message_buffer:
+            msg_ts = msg.get("ts", 0)
+            if since_ts is not None and msg_ts <= since_ts:
+                continue
+            try:
+                await websocket.send_json(msg)
+                replayed += 1
+            except Exception:
+                break
+        if replayed > 0:
+            logger.debug(f"WS [{self.name}] replayed {replayed} buffered messages")
 
     async def broadcast(self, message: dict):
-        """Broadcast message to all connected clients."""
+        """Broadcast message to all connected clients and buffer it."""
+        self.buffer_message(message)
         disconnected = set()
 
         for connection in self.active_connections:
@@ -166,14 +233,15 @@ class ConnectionManager:
                 disconnected.add(connection)
 
         # Remove disconnected clients
-        self.active_connections -= disconnected
+        for conn in disconnected:
+            self.disconnect(conn)
 
 
 # Create connection managers
 price_manager = ConnectionManager(name="prices")
 trade_manager = ConnectionManager(name="trades")
 candle_manager = ConnectionManager(name="candles")
-risk_manager = ConnectionManager(name="risk")
+risk_ws_manager = ConnectionManager(name="risk")
 equity_manager = ConnectionManager(name="equity")
 
 # Service instances
