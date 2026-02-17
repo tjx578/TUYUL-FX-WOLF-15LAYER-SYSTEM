@@ -9,12 +9,15 @@ from redis.asyncio import Redis as AsyncRedis  # pyright: ignore[reportMissingIm
 from config_loader import CONFIG
 from context.runtime_state import RuntimeState
 from core.event_bus import Event, EventType, get_event_bus
+from core.health_probe import HealthProbe
 from ingest.candle_builder import CandleBuilder
 from ingest.dependencies import create_finnhub_ws
 from ingest.finnhub_market_news import FinnhubMarketNews
 from ingest.finnhub_news import FinnhubNews
 from journal.journal_router import journal_router
 from journal.journal_schema import ContextJournal, DecisionJournal, VerdictType
+from collections.abc import Callable, Coroutine
+
 from pipeline import WolfConstitutionalPipeline
 from storage.l12_cache import set_verdict
 from storage.snapshot_store import save_snapshot
@@ -31,6 +34,25 @@ PAIRS = [p["symbol"] for p in CONFIG["pairs"]["pairs"] if p.get("enabled", True)
 
 _shutdown_event: asyncio.Event | None = None
 _pipeline = WolfConstitutionalPipeline()
+
+# ── Health probe for container orchestration ────────────────────
+_ENGINE_HEALTH_PORT = int(os.getenv("ENGINE_HEALTH_PORT", "8081"))
+_health_probe = HealthProbe(port=_ENGINE_HEALTH_PORT, service_name="engine")
+_analysis_healthy = False
+
+
+def _engine_readiness() -> bool:
+    """Readiness gate: True once at least one analysis cycle has completed."""
+    return _analysis_healthy
+
+
+_health_probe.set_readiness_check(_engine_readiness)
+
+# ── Run mode: 'all' (default/dev), 'engine-only', 'ingest-only' ─
+RUN_MODE = os.getenv("RUN_MODE", "all").lower()
+
+_MAX_TASK_RESTARTS = int(os.getenv("MAX_TASK_RESTARTS", "5"))
+_RESTART_COOLDOWN = float(os.getenv("RESTART_COOLDOWN_SEC", "5.0"))
 
 
 def _build_j1(pair: str, synthesis: dict) -> ContextJournal:
@@ -200,6 +222,7 @@ async def analysis_loop() -> None:
     When a CANDLE_CLOSED event arrives *only* the affected symbol is
     re-analysed, keeping CPU usage proportional to market activity.
     """
+    global _analysis_healthy
     env_interval = os.getenv("ANALYSIS_LOOP_INTERVAL_SEC")
     loop_interval = int(env_interval) if env_interval else CONFIG["settings"].get("loop_interval_sec", 60)
     logger.info(f"Analysis loop started (event-driven, fallback interval={loop_interval}s)")
@@ -252,11 +275,56 @@ async def analysis_loop() -> None:
             if isinstance(result, Exception):
                 logger.error(f"[ERROR] {pair} | {result}")
 
+        # Mark engine ready after first successful cycle
+        if not _analysis_healthy:
+            _analysis_healthy = True
+            logger.info("Engine readiness: READY (first analysis cycle complete)")
+
 
 def _signal_handler(signum: int, frame) -> None:
     logger.info(f"Received signal {signum}, initiating graceful shutdown...")
     if _shutdown_event:
         _shutdown_event.set()
+
+
+async def _supervised_task(
+    name: str,
+    coro_factory: Callable[[], Coroutine],
+    max_restarts: int = _MAX_TASK_RESTARTS,
+    cooldown: float = _RESTART_COOLDOWN,
+) -> None:
+    """Run *coro_factory()* with automatic restart on crash.
+
+    In local (dev) mode the engine and ingest share a process.  This
+    supervisor ensures one component crashing does not kill the other.
+    After *max_restarts* consecutive failures the task is abandoned and
+    the health probe is marked dead.
+    """
+    restarts = 0
+    while restarts <= max_restarts:
+        if _shutdown_event and _shutdown_event.is_set():
+            return
+        try:
+            logger.info(f"[SUPERVISOR] Starting task '{name}' (attempt {restarts + 1})")
+            await coro_factory()
+            return  # clean exit
+        except asyncio.CancelledError:
+            logger.info(f"[SUPERVISOR] Task '{name}' cancelled")
+            return
+        except Exception as exc:
+            restarts += 1
+            logger.error(
+                f"[SUPERVISOR] Task '{name}' crashed: {exc} "
+                f"(restart {restarts}/{max_restarts})"
+            )
+            if restarts > max_restarts:
+                logger.critical(
+                    f"[SUPERVISOR] Task '{name}' exceeded max restarts — giving up"
+                )
+                _health_probe.set_alive(False)
+                _health_probe.set_detail("dead_reason", f"{name}_crash_limit")
+                return
+            await asyncio.sleep(cooldown)
 
 
 async def main() -> None:
@@ -291,21 +359,58 @@ async def main() -> None:
 
     has_api_key = _validate_api_key()
     context_mode = os.getenv("CONTEXT_MODE", "local").lower()
-    logger.info(f"Context mode: {context_mode.upper()}")
+    logger.info(f"Context mode: {context_mode.upper()} | Run mode: {RUN_MODE.upper()}")
     await init_persistent_storage()
 
+    # ── Health probe (always runs) ──────────────────────────────────
+    tasks: list[asyncio.Task] = [
+        asyncio.create_task(_health_probe.start(), name="HealthProbe"),
+    ]
+
     if context_mode == "redis":
-        tasks = [
-            asyncio.create_task(run_redis_consumer(), name="RedisConsumer"),
-            asyncio.create_task(analysis_loop(), name="AnalysisLoop"),
-        ]
+        # ── Production: engine reads from Redis (ingest is a separate container)
+        if RUN_MODE in ("all", "engine-only"):
+            tasks.append(
+                asyncio.create_task(
+                    _supervised_task("RedisConsumer", run_redis_consumer),
+                    name="RedisConsumer",
+                )
+            )
+            tasks.append(
+                asyncio.create_task(
+                    _supervised_task("AnalysisLoop", analysis_loop),
+                    name="AnalysisLoop",
+                )
+            )
+            if RUN_MODE == "engine-only":
+                logger.info("RUN_MODE=engine-only — skipping ingest services")
     else:
-        redis_url = os.getenv("REDIS_URL", "redis://localhost:6379")
-        redis_client = AsyncRedis.from_url(redis_url)
-        tasks = [
-            asyncio.create_task(run_ingest_services(has_api_key, redis_client), name="IngestServices"),
-            asyncio.create_task(analysis_loop(), name="AnalysisLoop"),
-        ]
+        # ── Local dev: everything in one process (supervised) ───────
+        if RUN_MODE in ("all", "ingest-only"):
+            redis_url = os.getenv("REDIS_URL", "redis://localhost:6379")
+            redis_client = AsyncRedis.from_url(redis_url)
+            tasks.append(
+                asyncio.create_task(
+                    _supervised_task(
+                        "IngestServices",
+                        lambda: run_ingest_services(has_api_key, redis_client),
+                    ),
+                    name="IngestServices",
+                )
+            )
+        if RUN_MODE in ("all", "engine-only"):
+            tasks.append(
+                asyncio.create_task(
+                    _supervised_task("AnalysisLoop", analysis_loop),
+                    name="AnalysisLoop",
+                )
+            )
+
+        if RUN_MODE == "all":
+            logger.warning(
+                "Running ingest + engine in ONE process (dev mode). "
+                "Use separate containers or RUN_MODE=engine-only|ingest-only for production."
+            )
 
     logger.info(f"System initialized. Running {len(tasks)} concurrent tasks.")
 
@@ -317,6 +422,7 @@ async def main() -> None:
         logger.error(f"Fatal error: {exc}")
         raise
     finally:
+        await _health_probe.stop()
         await shutdown_persistent_storage()
         logger.info("System shutdown complete.")
 
