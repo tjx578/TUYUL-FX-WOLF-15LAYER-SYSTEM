@@ -2,6 +2,8 @@
 Volatility Analysis
 """
 
+from typing import Any
+
 from context.live_context_bus import LiveContextBus
 
 
@@ -9,7 +11,7 @@ class VolatilityAnalyzer:
     def __init__(self):
         self.context = LiveContextBus()
 
-    def analyze(self, symbol: str) -> dict:
+    def analyze(self, symbol: str) -> dict[str, Any]:
         """
         Analyze volatility for a symbol using ATR.
 
@@ -51,7 +53,7 @@ class VolatilityAnalyzer:
             "valid": True,
         }
 
-    def analyze_macro(self, symbol: str) -> dict:
+    def analyze_macro(self, symbol: str) -> dict[str, Any]:
         """
         Analyze macro volatility using MN (Monthly) candles.
 

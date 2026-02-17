@@ -3,6 +3,8 @@ Market Structure Analysis (H1)
 NO EXECUTION | NO DECISION
 """
 
+from typing import Any
+
 from context.live_context_bus import LiveContextBus
 
 
@@ -17,7 +19,7 @@ class MarketStructureAnalyzer:
     def __init__(self) -> None:
         self.context = LiveContextBus()
 
-    def analyze(self, symbol: str) -> dict:
+    def analyze(self, symbol: str) -> dict[str, Any]:
         """
         Analyze H1 market structure for a symbol.
 

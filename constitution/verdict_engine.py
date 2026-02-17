@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
 
 
 @dataclass
@@ -43,7 +44,7 @@ class VerdictEngine:
         tii_score: float,
         frpc_score: float,
         exhaustion_input: ExhaustionLayerInput | None = None,
-    ) -> dict:
+    ) -> dict[str, Any]:
         """
         Constitutional verdict evaluation.
 

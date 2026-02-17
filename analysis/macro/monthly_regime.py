@@ -10,6 +10,8 @@ Provides top-level macro regime classification using Monthly (MN) timeframe:
 
 from __future__ import annotations
 
+from typing import Any
+
 from loguru import logger
 
 from context.live_context_bus import LiveContextBus
@@ -27,7 +29,7 @@ class MonthlyRegimeAnalyzer:
         """Initialize the Monthly Regime Analyzer."""
         self.context_bus = LiveContextBus()
 
-    def analyze(self, symbol: str) -> dict:
+    def analyze(self, symbol: str) -> dict[str, Any]:
         """
         Analyze monthly regime for a symbol.
 
@@ -176,7 +178,7 @@ class MonthlyRegimeAnalyzer:
 
         return round(mn_atr, 6), round(macro_vol_ratio, 4), phase
 
-    def _map_liquidity_zones(self, mn_data: list[dict]) -> dict:
+    def _map_liquidity_zones(self, mn_data: list[dict]) -> dict[str, Any]:
         """
         Map macro liquidity zones from MN candles.
 
@@ -228,7 +230,7 @@ class MonthlyRegimeAnalyzer:
             "near_macro_liquidity": near_macro_liquidity,
         }
 
-    def _invalid_result(self) -> dict:
+    def _invalid_result(self) -> dict[str, Any]:
         """
         Return invalid result structure.
 

@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Literal
+from typing import Any, Literal
 
 
 @dataclass
@@ -61,7 +61,7 @@ class ExhaustionDivergenceFusionEngine:
         osc: dict[str, list[float]],
         price: dict[str, list[float]],
         mode: Literal["bullish", "bearish"],
-    ) -> dict:
+    ) -> dict[str, Any]:
         """
         Compute divergence score across timeframes.
 
@@ -161,15 +161,15 @@ class ExhaustionDivergenceFusionEngine:
             osc_lower = curr_osc < prev_osc
             return price_higher and osc_lower
 
-async def fetch_price_data(symbol: str) -> dict:
+async def fetch_price_data(symbol: str) -> dict[str, Any]:
     raise NotImplementedError
 
-async def fetch_rsi_data(symbol: str) -> dict:
+async def fetch_rsi_data(symbol: str) -> dict[str, Any]:
     raise NotImplementedError
 
 
 # ✅ USAGE EXAMPLE
-async def exhaustion_layer_analysis(symbol: str) -> dict:
+async def exhaustion_layer_analysis(symbol: str) -> dict[str, Any]:
     """
     Layer-7 Exhaustion analysis with validation.
 

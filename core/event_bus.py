@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections import deque
 import time
 
 from dataclasses import dataclass, field
@@ -91,8 +92,7 @@ class EventBus:
 
     def __init__(self):
         self._subscribers: dict[EventType, list[Callable]] = {}
-        self._event_log: list[Event] = []
-        self._max_log_size = 10_000
+        self._event_log: deque[Event] = deque(maxlen=10_000)
 
     def subscribe(self, event_type: EventType, handler: Callable[[Event], Any]) -> None:
         if event_type not in self._subscribers:
@@ -117,8 +117,6 @@ class EventBus:
 
         # Log event
         self._event_log.append(event)
-        if len(self._event_log) > self._max_log_size:
-            self._event_log = self._event_log[-self._max_log_size:]
 
         # Dispatch to subscribers
         handlers = self._subscribers.get(event.type, [])
@@ -147,7 +145,7 @@ class EventBus:
                 logger.error(f"Handler error for {event.type.value}: {e}", exc_info=True)
 
     def get_recent_events(self, event_type: EventType | None = None, limit: int = 100) -> list[Event]:
-        events = self._event_log
+        events = list(self._event_log)
         if event_type:
             events = [e for e in events if e.type == event_type]
         return events[-limit:]

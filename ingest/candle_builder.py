@@ -124,9 +124,8 @@ class _CandleAccumulator:
         self.tick_count += candle.tick_count
 
     def emit(self) -> Candle:
-        assert self.open is not None and self.close is not None, (
-            "Cannot emit candle with no price data"
-        )
+        if self.open is None or self.close is None:
+            raise ValueError("Cannot emit candle with no price data")
         return Candle(
             symbol=self.symbol,
             timeframe=self.timeframe,

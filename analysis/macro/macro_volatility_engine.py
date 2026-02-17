@@ -15,6 +15,7 @@ import os
 import time
 
 from datetime import UTC, datetime
+from typing import Any
 
 import httpx  # pyright: ignore[reportMissingImports]
 
@@ -168,12 +169,12 @@ class MacroVolatilityEngine:
             f"(VIX={state['vix_level']}, risk={state['risk_multiplier']})"
         )
 
-    def get_state(self) -> dict:
+    def get_state(self) -> dict[str, Any]:
         """Get latest macro state."""
         return self._last_state or self._default_state()
 
     @staticmethod
-    def _default_state() -> dict:
+    def _default_state() -> dict[str, Any]:
         """Safe default (neutral regime)."""
         return {
             "vix_level": 15.0,
