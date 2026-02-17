@@ -37,6 +37,7 @@ ENV WEB_CONCURRENCY=2
 HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
     CMD curl -f http://localhost:${PORT}/health || exit 1
 
-# --access-logfile - --error-logfile - : send all logs to stdout/stderr properly
-# --log-level info : ensure gunicorn itself logs at info level to stdout
-CMD ["sh", "-c", "gunicorn --bind 0.0.0.0:${PORT} --workers ${WEB_CONCURRENCY} --timeout 120 --access-logfile - --error-logfile - --log-level info dashboard.app:app"]
+# Gunicorn writes startup/app logs to stderr by default (--error-logfile -).
+# Container platforms (Railway, Render, GCP, etc.) classify stderr as "error",
+# so we redirect stderr → stdout (2>&1) to keep everything on fd 1.
+CMD ["sh", "-c", "exec gunicorn --bind 0.0.0.0:${PORT} --workers ${WEB_CONCURRENCY} --timeout 120 --access-logfile - --error-logfile - --log-level info dashboard.app:app 2>&1"]
