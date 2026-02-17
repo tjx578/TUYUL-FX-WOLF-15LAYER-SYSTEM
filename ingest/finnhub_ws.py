@@ -1,21 +1,20 @@
 """Finnhub WebSocket client with exponential backoff and distributed locking."""
 
 import asyncio
+import contextlib
 import json
 import logging
 import os
 import random
-
 from collections.abc import Callable, Coroutine
 from typing import Any
 
 import websockets  # pyright: ignore[reportMissingImports]
-
+import websockets.asyncio.client  # pyright: ignore[reportMissingImports]
 from redis.asyncio import Redis  # pyright: ignore[reportMissingImports]
 from websockets.exceptions import (  # pyright: ignore[reportMissingImports]
     ConnectionClosed,
     ConnectionClosedError,
-    InvalidStatusCode,
 )
 
 logger = logging.getLogger(__name__)
@@ -47,10 +46,7 @@ class FinnhubSymbolMapper:
 
     def register(self, symbol: str) -> str:
         """Register and return the Finnhub-formatted symbol."""
-        if len(symbol) == 6:
-            external_symbol = f"{self._prefix}:{symbol[:3]}_{symbol[3:]}"
-        else:
-            external_symbol = symbol
+        external_symbol = f"{self._prefix}:{symbol[:3]}_{symbol[3:]}" if len(symbol) == 6 else symbol
 
         self._external_to_internal[external_symbol] = symbol
         return external_symbol
@@ -128,7 +124,7 @@ class FinnhubWebSocket:
         self._token = os.environ["FINNHUB_API_KEY"]
         self._attempt: int = 0
         self._running: bool = False
-        self._ws: websockets.WebSocketClientProtocol | None = None
+        self._ws: websockets.asyncio.client.ClientConnection | None = None
 
     async def _acquire_leader_lock(self) -> bool:
         """Attempt to acquire distributed leader lock.
@@ -162,7 +158,7 @@ class FinnhubWebSocket:
 
     async def _subscribe(
         self,
-        ws: websockets.WebSocketClientProtocol,
+        ws: websockets.asyncio.client.ClientConnection,
     ) -> None:
         """Subscribe to configured symbols."""
         for symbol in self._symbols:
@@ -173,7 +169,7 @@ class FinnhubWebSocket:
                 extra={"symbol": symbol},
             )
 
-    async def _connect(self) -> websockets.WebSocketClientProtocol:
+    async def _connect(self) -> websockets.asyncio.client.ClientConnection:
         """Establish WebSocket connection to Finnhub.
 
         Raises:
@@ -197,31 +193,39 @@ class FinnhubWebSocket:
             )
             self._attempt = 0  # Reset on success
             return ws
-        except InvalidStatusCode as exc:
-            if exc.status_code == RATE_LIMIT_STATUS:
+        except Exception as exc:
+            # websockets raises InvalidStatusCode on HTTP error responses
+            status_code = getattr(exc, 'status_code', None)
+            if status_code == RATE_LIMIT_STATUS:
                 backoff = _calculate_backoff(
                     self._attempt,
                     base=RATE_LIMIT_BASE_BACKOFF_S,
                     maximum=MAX_BACKOFF_S,
                 )
                 raise FinnhubRateLimitError(retry_after=backoff) from exc
-            raise FinnhubConnectionError(f"WS connection rejected: HTTP {exc.status_code}") from exc
-        except Exception as exc:
+            if status_code is not None:
+                raise FinnhubConnectionError(f"WS connection rejected: HTTP {status_code}") from exc
             raise FinnhubConnectionError(str(exc)) from exc
 
     async def _listen(
         self,
-        ws: websockets.WebSocketClientProtocol,
+        ws: websockets.asyncio.client.ClientConnection,
     ) -> None:
         """Listen for messages and dispatch to handler."""
+        import time
+        _RENEW_INTERVAL_S = 15  # noqa: N806
+        _last_renew = 0.0
         async for raw_msg in ws:
             data = json.loads(raw_msg)
 
             if data.get("type") == "ping":
                 continue
 
-            # Renew lock periodically during message processing
-            await self._renew_leader_lock()
+            # Renew lock periodically during message processing (throttled)
+            now = time.monotonic()
+            if now - _last_renew >= _RENEW_INTERVAL_S:
+                await self._renew_leader_lock()
+                _last_renew = now
             await self._on_message(data)
 
     async def run(self) -> None:
@@ -316,15 +320,17 @@ class FinnhubWebSocket:
                 await asyncio.sleep(backoff)
 
             finally:
-                if self._ws and not self._ws.closed:
-                    await self._ws.close()
+                if self._ws is not None:
+                    with contextlib.suppress(Exception):
+                        await self._ws.close()
                     self._ws = None
 
     async def stop(self) -> None:
         """Gracefully shutdown the WebSocket client."""
         self._running = False
-        if self._ws and not self._ws.closed:
-            await self._ws.close()
+        if self._ws is not None:
+            with contextlib.suppress(Exception):
+                await self._ws.close()
         # Release leader lock
         current = await self._redis.get(LEADER_LOCK_KEY)
         if current == self._replica_id:
