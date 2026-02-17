@@ -1,3 +1,1 @@
-"""
-Dashboard package - Real-time monitoring interface.
-"""
+"""Dashboard — account/risk governor, ledger, monitoring UI."""
