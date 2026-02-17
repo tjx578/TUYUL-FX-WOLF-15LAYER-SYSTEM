@@ -43,6 +43,20 @@ symbols:
   # e.g. EURUSD → OANDA:EUR_USD, XAUUSD → OANDA:XAU_USD
   symbol_prefix: "OANDA"
 
+# ── Tick filter: spike rejection & dedup ─────────────────────────
+tick_filter:
+  # Per-symbol spike threshold (percentage). Ticks exceeding this are rejected.
+  spike_thresholds:
+    XAUUSD: 2.0     # Gold is volatile
+    GBPJPY: 1.0     # High-vol cross
+    EURUSD: 0.5     # Major pair
+    GBPUSD: 0.5
+    USDJPY: 0.5
+    AUDUSD: 0.5
+  default_spike_pct: 0.5           # Fallback for unlisted symbols
+  staleness_sec: 60.0              # Reset baseline after N seconds of silence
+  dedup_window_sec: 0.05           # Reject identical (symbol+price+ts) within window
+
 news:
   enabled: true
   endpoint: "/calendar/economic"
