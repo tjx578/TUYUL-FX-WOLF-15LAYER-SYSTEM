@@ -21,24 +21,33 @@ import math
 
 from datetime import UTC, datetime
 
+import numpy as np
 import pytest
 
 from analysis.layers.L1_context import (
     ContextError,
+    ContextResult,
     LogisticWeights,
+    _atr,
+    _atr_series,
+    _classify_asset,
     _classify_regime,
     _classify_volatility_by_percentile,
+    _compute_alignment,
     _compute_context_coherence,
     _compute_csi,
     _compute_entropy,
+    _compute_momentum_bias,
     _compute_regime_probability,
     _compute_spread,
     _compute_volatility_percentile,
     _compute_zscore,
+    _get_session,
     _sigmoid,
     _validate_market_data,
     analyze_context,
 )
+from engines.fusion_momentum_engine import _ema
 
 # ═══════════════════════════════════════════════════════════════════════════
 # Fixtures
@@ -384,3 +393,336 @@ class TestValidation:
             _validate_market_data(
                 [1.3] * 20, [1.3] * 20, [1.31] * 20,
             )
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# §12  Session Model — _get_session
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+class TestSessionModel:
+    def test_london_newyork_overlap(self) -> None:
+        name, mult = _get_session(14)
+        assert name == "LONDON_NEWYORK_OVERLAP"
+        assert mult == 1.30
+
+    def test_tokyo_london_overlap(self) -> None:
+        name, mult = _get_session(8)
+        assert name == "TOKYO_LONDON_OVERLAP"
+        assert mult == 1.15
+
+    def test_london_only(self) -> None:
+        name, mult = _get_session(10)
+        assert name == "LONDON"
+        assert mult == 1.10
+
+    def test_newyork_only(self) -> None:
+        name, mult = _get_session(18)
+        assert name == "NEWYORK"
+        assert mult == 1.05
+
+    def test_tokyo(self) -> None:
+        name, mult = _get_session(3)
+        assert name == "TOKYO"
+        assert mult == 0.85
+
+    def test_sydney(self) -> None:
+        name, mult = _get_session(22)
+        assert name == "SYDNEY"
+        assert mult == 0.70
+
+    def test_all_hours_classified(self) -> None:
+        """Every UTC hour must map to a session."""
+        for h in range(24):
+            name, mult = _get_session(h)
+            assert name, f"Hour {h} returned empty session name"
+            assert mult > 0, f"Hour {h} returned non-positive multiplier"
+
+    def test_overlap_hours_boundary(self) -> None:
+        """Overlap start/end hours should be correctly classified."""
+        assert _get_session(13)[0] == "LONDON_NEWYORK_OVERLAP"
+        assert _get_session(15)[0] == "LONDON_NEWYORK_OVERLAP"
+        assert _get_session(16)[0] != "LONDON_NEWYORK_OVERLAP"
+        assert _get_session(7)[0] == "TOKYO_LONDON_OVERLAP"
+        assert _get_session(9)[0] != "TOKYO_LONDON_OVERLAP"
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# §13  Core Indicators — _ema, _atr, _atr_series
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+class TestEMA:
+    def test_empty_data(self) -> None:
+        assert _ema(np.array([]), 20) == 0.0
+
+    def test_fewer_than_period(self) -> None:
+        """Falls back to SMA when data < period."""
+        data = np.array([1.0, 2.0, 3.0])
+        assert _ema(data, 20) == pytest.approx(2.0)
+
+    def test_known_ema(self) -> None:
+        """EMA of constant series equals that constant."""
+        data = np.array([5.0] * 30)
+        assert _ema(data, 10) == pytest.approx(5.0)
+
+    def test_ema_responds_to_trend(self) -> None:
+        """EMA on a rising series should be between midpoint and last value."""
+        data = np.array([float(i) for i in range(1, 31)])
+        ema_val = _ema(data, 10)
+        assert ema_val > sum(data) / len(data)  # faster than SMA
+        assert ema_val < data[-1]  # but lags behind price
+
+
+class TestATR:
+    def test_insufficient_data(self) -> None:
+        assert _atr([1.0], [0.9], [0.95], period=14) == 0.0
+
+    def test_constant_bars(self) -> None:
+        """Constant high/low/close → ATR should incorporate prev-close gap."""
+        n = 20
+        highs = [1.01] * n
+        lows = [0.99] * n
+        closes = [1.00] * n
+        atr_val = _atr(highs, lows, closes)
+        assert atr_val == pytest.approx(0.02, abs=0.001)
+
+    def test_volatile_bars(self) -> None:
+        """Wider range → larger ATR."""
+        n = 20
+        narrow_h, narrow_l = [1.001] * n, [0.999] * n
+        wide_h, wide_l = [1.05] * n, [0.95] * n
+        closes = [1.0] * n
+        assert _atr(wide_h, wide_l, closes) > _atr(narrow_h, narrow_l, closes)
+
+
+class TestATRSeries:
+    def test_returns_list(self) -> None:
+        n = 30
+        h = [1.01 + i * 0.0001 for i in range(n)]
+        lo = [0.99 + i * 0.0001 for i in range(n)]
+        c = [1.00 + i * 0.0001 for i in range(n)]
+        series = _atr_series(h, lo, c)
+        assert isinstance(series, list)
+        assert len(series) > 0
+
+    def test_insufficient_data_empty(self) -> None:
+        assert _atr_series([1.0], [0.9], [0.95]) == []
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# §14  Alignment — _compute_alignment
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+class TestAlignment:
+    def test_strongly_bullish(self) -> None:
+        # Close > ema9 > ema20 > ema50, positive spread, TREND_UP
+        result = _compute_alignment(
+            close=1.35, ema20=1.33, ema50=1.31, ema9=1.34,
+            s=0.01, regime="TREND_UP",
+        )
+        assert result == "STRONGLY_BULLISH"
+
+    def test_strongly_bearish(self) -> None:
+        result = _compute_alignment(
+            close=1.28, ema20=1.30, ema50=1.32, ema9=1.29,
+            s=-0.01, regime="TREND_DOWN",
+        )
+        assert result == "STRONGLY_BEARISH"
+
+    def test_bullish(self) -> None:
+        # Above ema20 and ema9, positive spread, but NOT TREND_UP regime
+        result = _compute_alignment(
+            close=1.35, ema20=1.33, ema50=1.36, ema9=1.34,
+            s=0.005, regime="TRANSITION",
+        )
+        assert result == "BULLISH"
+
+    def test_bearish(self) -> None:
+        result = _compute_alignment(
+            close=1.28, ema20=1.30, ema50=1.27, ema9=1.29,
+            s=-0.005, regime="TRANSITION",
+        )
+        assert result == "BEARISH"
+
+    def test_neutral(self) -> None:
+        result = _compute_alignment(
+            close=1.30, ema20=1.30, ema50=1.30, ema9=1.30,
+            s=0.0, regime="RANGE",
+        )
+        assert result == "NEUTRAL"
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# §15  Momentum — _compute_momentum_bias
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+class TestMomentumBias:
+    def test_bullish_momentum(self) -> None:
+        closes = [1.30, 1.31, 1.32, 1.33, 1.34]
+        ema9 = 1.32
+        direction, mag = _compute_momentum_bias(closes, ema9)
+        assert direction == "BULLISH"
+        assert mag > 0
+
+    def test_bearish_momentum(self) -> None:
+        closes = [1.34, 1.33, 1.32, 1.31, 1.30]
+        ema9 = 1.32
+        direction, mag = _compute_momentum_bias(closes, ema9)
+        assert direction == "BEARISH"
+        assert mag > 0
+
+    def test_neutral_when_close_equals_ema(self) -> None:
+        closes = [1.32]
+        direction, mag = _compute_momentum_bias(closes, 1.32)
+        assert direction == "NEUTRAL"
+        assert mag == 0.0
+
+    def test_empty_closes(self) -> None:
+        direction, mag = _compute_momentum_bias([], 1.32)
+        assert direction == "NEUTRAL"
+        assert mag == 0.0
+
+    def test_zero_ema(self) -> None:
+        direction, _mag = _compute_momentum_bias([1.32], 0.0)
+        assert direction == "NEUTRAL"
+
+    def test_magnitude_bounded(self) -> None:
+        """Magnitude is clamped to [0, 1]."""
+        closes = [2.0]
+        _, mag = _compute_momentum_bias(closes, 1.0)
+        assert 0.0 <= mag <= 1.0
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# §16  Asset Classification — _classify_asset
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+class TestClassifyAsset:
+    @pytest.mark.parametrize("pair,expected", [
+        ("XAUUSD", "METALS"),
+        ("XAGUSD", "METALS"),
+        ("BTCUSD", "CRYPTO"),
+        ("ETHUSD", "CRYPTO"),
+        ("US30", "INDEX"),
+        ("US500", "INDEX"),
+        ("NAS100", "INDEX"),
+        ("EURUSD", "FX"),
+        ("GBPJPY", "FX"),
+    ])
+    def test_asset_class(self, pair: str, expected: str) -> None:
+        assert _classify_asset(pair) == expected
+
+    def test_case_insensitive(self) -> None:
+        assert _classify_asset("xauusd") == "METALS"
+        assert _classify_asset("btcusd") == "CRYPTO"
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# §17  ContextResult — to_dict None filtering
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+class TestContextResult:
+    def test_to_dict_excludes_none(self) -> None:
+        """Optional fields with None should not appear in output dict."""
+        result = ContextResult(
+            regime="RANGE", dominant_force="NEUTRAL",
+            regime_probability=0.4, context_coherence=0.6,
+            volatility_level="NORMAL", volatility_percentile=0.5,
+            entropy_score=0.5, regime_confidence=0.5,
+            csi=0.5, market_alignment="NEUTRAL", valid=True,
+            session="LONDON", session_multiplier=1.1,
+            pair="EURUSD", asset_class="FX",
+            timestamp="2026-02-16T14:00:00+00:00",
+            feature_spread=0.001, feature_atr_frac=0.001,
+            feature_hurst=0.5, feature_zscore=0.0,
+            ema20=1.3, ema50=1.3, ema9=1.3,
+            atr=0.001, atr_pct=0.1,
+            momentum_direction="NEUTRAL", momentum_magnitude=0.0,
+            # All optional Hurst fields left at default None
+        )
+        d = result.to_dict()
+        assert "hurst_regime" not in d
+        assert "hurst_confidence" not in d
+        assert "hurst_exponent" not in d
+        assert "regime_agreement" not in d
+
+    def test_to_dict_includes_set_optionals(self) -> None:
+        result = ContextResult(
+            regime="TREND_UP", dominant_force="BULLISH",
+            regime_probability=0.8, context_coherence=0.9,
+            volatility_level="NORMAL", volatility_percentile=0.5,
+            entropy_score=0.3, regime_confidence=0.85,
+            csi=0.7, market_alignment="STRONGLY_BULLISH", valid=True,
+            session="LONDON", session_multiplier=1.1,
+            pair="GBPUSD", asset_class="FX",
+            timestamp="2026-02-16T14:00:00+00:00",
+            feature_spread=0.005, feature_atr_frac=0.001,
+            feature_hurst=0.65, feature_zscore=0.5,
+            ema20=1.33, ema50=1.31, ema9=1.34,
+            atr=0.002, atr_pct=0.15,
+            momentum_direction="BULLISH", momentum_magnitude=0.5,
+            hurst_regime="TRENDING",
+            hurst_confidence=0.85,
+            hurst_exponent=0.65,
+            regime_agreement=True,
+        )
+        d = result.to_dict()
+        assert d["hurst_regime"] == "TRENDING"
+        assert d["hurst_confidence"] == 0.85
+        assert d["regime_agreement"] is True
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# §18  Hurst Fallback Behavior
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+class TestHurstFallback:
+    def test_hurst_uses_fallback_when_engine_unavailable(self) -> None:
+        """When RegimeClassifier is not loaded, feature_hurst = fallback."""
+        data = _trending_data(n=60, drift=0.0003)
+        r = analyze_context(data, pair="GBPUSD", now=NOW_LONDON)
+        assert r["valid"] is True
+        # Hurst either comes from engine or equals default fallback 0.5
+        assert isinstance(r["feature_hurst"], float)
+        assert 0.0 <= r["feature_hurst"] <= 1.0
+
+    def test_custom_hurst_fallback(self) -> None:
+        """Custom weights can set a different hurst_fallback."""
+        w = LogisticWeights(hurst_fallback=0.7)
+        data = _ranging_data(n=60)
+        r = analyze_context(data, pair="EURUSD", now=NOW_LONDON, weights=w)
+        assert r["valid"] is True
+        # If engine not loaded, should use 0.7 fallback
+        # (can't guarantee engine absence, but value should be valid)
+        assert isinstance(r["feature_hurst"], float)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# §19  Integration: Session affects regime_confidence
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+class TestSessionIntegration:
+    def test_london_session_higher_confidence_than_tokyo(self) -> None:
+        """High-quality session should produce higher regime_confidence."""
+        data = _trending_data(n=60, drift=0.0003)
+        r_london = analyze_context(data, pair="GBPUSD", now=NOW_LONDON)
+        r_tokyo = analyze_context(data, pair="GBPUSD", now=NOW_TOKYO)
+        assert r_london["valid"] is True
+        assert r_tokyo["valid"] is True
+        # London overlap (mult=1.3) → higher confidence than Tokyo (mult=0.85)
+        assert r_london["regime_confidence"] >= r_tokyo["regime_confidence"]
+
+    def test_session_name_in_output(self) -> None:
+        data = _trending_data(n=60)
+        r = analyze_context(data, pair="GBPUSD", now=NOW_LONDON)
+        assert r["session"] == "LONDON_NEWYORK_OVERLAP"
+
+        r2 = analyze_context(data, pair="GBPUSD", now=NOW_TOKYO)
+        assert r2["session"] == "TOKYO"
