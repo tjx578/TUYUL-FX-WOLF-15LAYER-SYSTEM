@@ -21,7 +21,6 @@ import math
 
 from datetime import UTC, datetime
 
-import numpy as np
 import pytest
 
 from analysis.layers.L1_context import (
@@ -42,12 +41,12 @@ from analysis.layers.L1_context import (
     _compute_spread,
     _compute_volatility_percentile,
     _compute_zscore,
+    _ema,
     _get_session,
     _sigmoid,
     _validate_market_data,
     analyze_context,
 )
-from engines.fusion_momentum_engine import _ema
 
 # ═══════════════════════════════════════════════════════════════════════════
 # Fixtures
@@ -454,21 +453,21 @@ class TestSessionModel:
 
 class TestEMA:
     def test_empty_data(self) -> None:
-        assert _ema(np.array([]), 20) == 0.0
+        assert _ema([], 20) == 0.0
 
     def test_fewer_than_period(self) -> None:
         """Falls back to SMA when data < period."""
-        data = np.array([1.0, 2.0, 3.0])
+        data = [1.0, 2.0, 3.0]
         assert _ema(data, 20) == pytest.approx(2.0)
 
     def test_known_ema(self) -> None:
         """EMA of constant series equals that constant."""
-        data = np.array([5.0] * 30)
+        data = [5.0] * 30
         assert _ema(data, 10) == pytest.approx(5.0)
 
     def test_ema_responds_to_trend(self) -> None:
         """EMA on a rising series should be between midpoint and last value."""
-        data = np.array([float(i) for i in range(1, 31)])
+        data = [float(i) for i in range(1, 31)]
         ema_val = _ema(data, 10)
         assert ema_val > sum(data) / len(data)  # faster than SMA
         assert ema_val < data[-1]  # but lags behind price
