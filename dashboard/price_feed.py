@@ -61,6 +61,8 @@ class PriceFeed:
         """
         Poll LiveContextBus for latest ticks and update Redis cache.
 
+        Also fires the WS price event to wake any waiting WebSocket loops.
+
         Returns:
             Number of symbols updated
         """
@@ -106,11 +108,36 @@ class PriceFeed:
 
             if updated_count > 0:
                 logger.debug(f"Updated prices for {updated_count} symbols")
+                # Signal WS price event to wake waiting WebSocket loops
+                self._fire_price_event()
 
         except Exception as exc:
             logger.error(f"Price feed update failed: {exc}")
 
         return updated_count
+
+    @staticmethod
+    def _fire_price_event() -> None:
+        """Notify the WS price stream that new prices are available.
+
+        Uses a lazy import to avoid circular dependency at module load time.
+        Silently ignores errors (WS module may not be loaded yet).
+        """
+        try:
+            import asyncio  # noqa: PLC0415
+
+            from api.ws_routes import notify_price_update  # noqa: PLC0415
+
+            # If we're already in an event loop, schedule; otherwise ignore
+            try:
+                loop = asyncio.get_running_loop()
+                loop.call_soon_threadsafe(
+                    lambda: asyncio.ensure_future(notify_price_update())
+                )
+            except RuntimeError:
+                pass  # No running event loop — skip
+        except ImportError:
+            pass  # ws_routes not available
 
     def get_price(self, symbol: str) -> dict[str, float] | None:
         """
@@ -135,45 +162,47 @@ class PriceFeed:
             logger.error(f"Failed to get price for {symbol}: {exc}")
             return None
 
-    def get_all_prices(self) -> dict[str, dict[str, float]]:
-        """
-        Get latest prices for all symbols.
+def get_all_prices(self) -> dict[str, dict[str, float]]:
+    """
+    Get latest prices for all symbols.
 
-        Returns:
-            Dictionary mapping symbol -> price data
-        """
-        prices = {}
+    Returns:
+        Dictionary mapping symbol -> price data
+    """
+    prices = {}
 
-        try:
-            # Scan for all PRICE:* keys
-            # Note: In production, consider maintaining a set of active symbols
-            # For now, we'll scan with pattern matching
-            pattern = f"{self._redis_prefix}:PRICE:*"
+    try:
+        # Get all PRICE:* keys using Redis scan
+        pattern = f"{self._redis_prefix}:PRICE:*"
+        cursor = 0
 
-            # Get client for scanning
-            client = self._redis.client
+        while True:
+            # Use the synchronous scan interface from RedisClient
+            result = self._redis.client.scan(cursor, match=pattern, count=100)
+            if isinstance(result, tuple):
+                cursor, keys_list = result
+            else:
+                # Fallback for type compatibility
+                logger.warning("Unexpected scan result type, breaking scan loop")
+                break
 
-            # Use SCAN to find all price keys
-            cursor = 0
-            while True:
-                cursor, keys = client.scan(cursor, match=pattern, count=100)
+            for key in keys_list:
+                # Extract symbol from key
+                symbol = key.decode().split(":")[-1] if isinstance(key, bytes) else key.split(":")[-1]
 
-                for key in keys:
-                    # Extract symbol from key
-                    symbol = key.split(":")[-1]
+                # Get price data
+                redis_key = f"{self._redis_prefix}:PRICE:{symbol}"
+                price_json = self._redis.get(redis_key)
+                if price_json:
+                    prices[symbol] = json.loads(price_json)
 
-                    # Get price data
-                    price_json = self._redis.get(key)
-                    if price_json:
-                        prices[symbol] = json.loads(price_json)
+            if cursor == 0:
+                break
 
-                if cursor == 0:
-                    break
+    except Exception as exc:
+        logger.error(f"Failed to get all prices: {exc}")
 
-        except Exception as exc:
-            logger.error(f"Failed to get all prices: {exc}")
-
-        return prices
+    return prices
 
     def get_latest_tick_from_bus(self, symbol: str) -> dict | None:
         """
@@ -192,6 +221,7 @@ class PriceFeed:
         except Exception as exc:
             logger.error(f"Failed to get tick from context bus for {symbol}: {exc}")
             return None
+    return None
 
 
 # Singleton instance for imports

@@ -328,7 +328,7 @@ async def websocket_prices(websocket: fastapi.WebSocket):
                 pass
 
         # Send initial snapshot
-        prices = _price_feed.get_all_prices()
+        prices = _price_feed.get_latest_prices() if hasattr(_price_feed, 'get_latest_prices') else {} # pyright: ignore[reportAttributeAccessIssue]
         snapshot_msg = {"type": "snapshot", "data": prices, "ts": time.time()}
         await websocket.send_json(snapshot_msg)
 
@@ -346,7 +346,7 @@ async def websocket_prices(websocket: fastapi.WebSocket):
             except TimeoutError:
                 pass  # Fallback: check anyway after TICK_BATCH_INTERVAL
 
-            current = _price_feed.get_all_prices() or {}
+            current = _price_feed.get_latest_prices() if hasattr(_price_feed, 'get_latest_prices') else {} # pyright: ignore[reportAttributeAccessIssue]
             changed: dict[str, dict] = {}
 
             for symbol, price_data in current.items():
@@ -541,16 +541,16 @@ async def websocket_risk(websocket: fastapi.WebSocket):
                 risk_state["drawdown"] = None
 
             msg = {"type": "risk_state", "data": risk_state}
-            risk_ws_manager.buffer_message(msg)
+            risk_manager.buffer_message(msg)
             await websocket.send_json(msg)
             await asyncio.sleep(RISK_STATE_INTERVAL)
 
     except fastapi.WebSocketDisconnect:
-        risk_ws_manager.disconnect(websocket)
+        risk_manager.disconnect(websocket)
         logger.info("Risk WebSocket client disconnected")
     except Exception as exc:
         logger.error(f"Risk WebSocket error: {exc}")
-        risk_ws_manager.disconnect(websocket)
+        risk_manager.disconnect(websocket)
 
 
 # ---------------------------------------------------------------------------
