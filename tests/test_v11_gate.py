@@ -1,313 +1,226 @@
-"""Unit tests for engines/v11/extreme_selectivity_gate.py.
-
-Tests cover:
-- All 9 veto conditions
-- Scoring layer computation
-- Execution threshold checks
-- Confidence band classification
-- Frozen result immutability
-- to_dict() serialization
 """
+Tests for V11 Gate — input validation, type safety, adapter integration.
+"""
+import pytest
 
-import pytest  # pyright: ignore[reportMissingImports]
+from analysis.v11.data_adapter import V11DataAdapter
+from analysis.v11.extreme_selectivity_gate import ExtremeSelectivityGateV11, V11Thresholds
+from analysis.v11.models import GateVerdict, V11GateInput, V11GateResult
+from analysis.v11.pipeline_hook import V11PipelineHook
 
-from engines.v11.extreme_selectivity_gate import (
-    ExtremeSelectivityGateV11,
-    ExtremeGateInput,
-    GateVerdict,
-    ConfidenceBand,
-)
+# =====================================================================
+# V11GateInput — validation
+# =====================================================================
 
+class TestV11GateInput:
+    def test_from_dict_empty(self):
+        """Empty dict → safe defaults, no crash."""
+        inp = V11GateInput.from_dict({})
+        assert inp.wolf_score == 0.0
+        assert inp.htf_alignment is False
+        assert inp.news_clear is True  # default is True (fail-safe: clear)
+
+    def test_from_dict_none(self):
+        """None input → safe defaults."""
+        inp = V11GateInput.from_dict(None) # pyright: ignore[reportArgumentType]
+        assert inp.wolf_score == 0.0
+
+    def test_from_dict_with_values(self):
+        inp = V11GateInput.from_dict({
+            "wolf_score": 0.85,
+            "tii_score": 0.70,
+            "frpc_score": "0.65",  # string → should be coerced to float
+            "htf_alignment": True,
+            "symbol": "EURUSD",
+        })
+        assert inp.wolf_score == 0.85
+        assert inp.frpc_score == 0.65
+        assert inp.htf_alignment is True
+        assert inp.symbol == "EURUSD"
+
+    def test_scores_clamped(self):
+        """Scores > 1.0 or < 0.0 get clamped."""
+        inp = V11GateInput(wolf_score=1.5, tii_score=-0.3)
+        assert inp.wolf_score == 1.0
+        assert inp.tii_score == 0.0
+
+    def test_invalid_type_raises(self):
+        """Non-numeric score raises TypeError."""
+        with pytest.raises(TypeError):
+            V11GateInput(wolf_score="not_a_number") # pyright: ignore[reportArgumentType]
+
+    def test_from_dict_garbage_scores_default(self):
+        """Garbage values in dict → fall back to 0.0."""
+        inp = V11GateInput.from_dict({
+            "wolf_score": "garbage",
+            "tii_score": None,
+            "frpc_score": [1, 2, 3],
+        })
+        assert inp.wolf_score == 0.0
+        assert inp.tii_score == 0.0
+        assert inp.frpc_score == 0.0
+
+    def test_frozen(self):
+        """V11GateInput is immutable."""
+        inp = V11GateInput(wolf_score=0.8)
+        with pytest.raises(AttributeError):
+            inp.wolf_score = 0.9 # pyright: ignore[reportAttributeAccessIssue]
+
+
+# =====================================================================
+# ExtremeSelectivityGateV11 — evaluation
+# =====================================================================
 
 class TestExtremeSelectivityGate:
-    """Tests for extreme selectivity gate."""
-    
-    def _create_passing_input(self) -> ExtremeGateInput:
-        """Create input that should pass all gates."""
-        return ExtremeGateInput(
-            regime_label="TRENDING",
-            regime_confidence=0.85,
-            regime_transition_risk=0.10,
-            vol_state="NORMAL",
-            vol_expansion=1.5,
-            cluster_exposure=0.25,
-            rolling_correlation_max=0.50,
-            emotion_delta=0.10,
-            discipline_score=0.95,
-            eaf_score=0.85,
-            liquidity_sweep_quality=0.85,
-            exhaustion_confidence=0.80,
-            divergence_confidence=0.75,
-            monte_carlo_win=0.75,
-            monte_carlo_pf=2.0,
-            posterior=0.80,
-        )
-    
-    def test_passing_input_allows_trade(self) -> None:
-        """Test that strong input passes all gates."""
+    def _make_passing_input(self) -> dict:
+        return {
+            "wolf_score": 0.85,
+            "tii_score": 0.75,
+            "frpc_score": 0.70,
+            "confluence_score": 0.80,
+            "htf_alignment": True,
+            "session_valid": True,
+            "news_clear": True,
+            "momentum_confirmed": True,
+            "atr_value": 0.0015,
+            "spread_ratio": 0.10,
+            "symbol": "EURUSD",
+            "timeframe": "H1",
+        }
+
+    def test_all_passing(self):
         gate = ExtremeSelectivityGateV11()
-        inp = self._create_passing_input()
-        
-        result = gate.evaluate(inp)
-        
-        assert result.verdict == GateVerdict.ALLOW
-        assert not result.veto_triggered
-        assert len(result.veto_reasons) == 0
-        assert result.score >= 0.78
-    
-    def test_veto_regime_shock(self) -> None:
-        """Test veto when regime is SHOCK."""
+        result = gate.evaluate(self._make_passing_input())
+        assert result.verdict == GateVerdict.PASS
+        assert result.passed
+        assert result.overall_score > 0.5
+        assert len(result.failed_criteria) == 0
+
+    def test_all_failing(self):
         gate = ExtremeSelectivityGateV11()
-        inp = self._create_passing_input()
-        
-        # Create new input with SHOCK regime
-        inp_shock = ExtremeGateInput(
-            regime_label="SHOCK",
-            regime_confidence=inp.regime_confidence,
-            regime_transition_risk=inp.regime_transition_risk,
-            vol_state=inp.vol_state,
-            vol_expansion=inp.vol_expansion,
-            cluster_exposure=inp.cluster_exposure,
-            rolling_correlation_max=inp.rolling_correlation_max,
-            emotion_delta=inp.emotion_delta,
-            discipline_score=inp.discipline_score,
-            eaf_score=inp.eaf_score,
-            liquidity_sweep_quality=inp.liquidity_sweep_quality,
-            exhaustion_confidence=inp.exhaustion_confidence,
-            divergence_confidence=inp.divergence_confidence,
-            monte_carlo_win=inp.monte_carlo_win,
-            monte_carlo_pf=inp.monte_carlo_pf,
-            posterior=inp.posterior,
-        )
-        
-        result = gate.evaluate(inp_shock)
-        
-        assert result.verdict == GateVerdict.BLOCK
-        assert result.veto_triggered
-        assert "regime_shock" in result.veto_reasons
-    
-    def test_veto_low_regime_confidence(self) -> None:
-        """Test veto when regime confidence too low."""
-        gate = ExtremeSelectivityGateV11(regime_confidence_floor=0.65)
-        inp = self._create_passing_input()
-        
-        # Create input with low regime confidence
-        inp_low = ExtremeGateInput(
-            regime_label=inp.regime_label,
-            regime_confidence=0.60,  # Below floor
-            regime_transition_risk=inp.regime_transition_risk,
-            vol_state=inp.vol_state,
-            vol_expansion=inp.vol_expansion,
-            cluster_exposure=inp.cluster_exposure,
-            rolling_correlation_max=inp.rolling_correlation_max,
-            emotion_delta=inp.emotion_delta,
-            discipline_score=inp.discipline_score,
-            eaf_score=inp.eaf_score,
-            liquidity_sweep_quality=inp.liquidity_sweep_quality,
-            exhaustion_confidence=inp.exhaustion_confidence,
-            divergence_confidence=inp.divergence_confidence,
-            monte_carlo_win=inp.monte_carlo_win,
-            monte_carlo_pf=inp.monte_carlo_pf,
-            posterior=inp.posterior,
-        )
-        
-        result = gate.evaluate(inp_low)
-        
-        assert result.verdict == GateVerdict.BLOCK
-        assert result.veto_triggered
-        assert any("regime_confidence_low" in r for r in result.veto_reasons)
-    
-    def test_veto_high_cluster_exposure(self) -> None:
-        """Test veto when cluster exposure too high."""
-        gate = ExtremeSelectivityGateV11(cluster_exposure_max=0.75)
-        inp = self._create_passing_input()
-        
-        # Create input with high cluster exposure
-        inp_high = ExtremeGateInput(
-            regime_label=inp.regime_label,
-            regime_confidence=inp.regime_confidence,
-            regime_transition_risk=inp.regime_transition_risk,
-            vol_state=inp.vol_state,
-            vol_expansion=inp.vol_expansion,
-            cluster_exposure=0.80,  # Above max
-            rolling_correlation_max=inp.rolling_correlation_max,
-            emotion_delta=inp.emotion_delta,
-            discipline_score=inp.discipline_score,
-            eaf_score=inp.eaf_score,
-            liquidity_sweep_quality=inp.liquidity_sweep_quality,
-            exhaustion_confidence=inp.exhaustion_confidence,
-            divergence_confidence=inp.divergence_confidence,
-            monte_carlo_win=inp.monte_carlo_win,
-            monte_carlo_pf=inp.monte_carlo_pf,
-            posterior=inp.posterior,
-        )
-        
-        result = gate.evaluate(inp_high)
-        
-        assert result.verdict == GateVerdict.BLOCK
-        assert result.veto_triggered
-        assert any("cluster_exposure_high" in r for r in result.veto_reasons)
-    
-    def test_veto_low_discipline(self) -> None:
-        """Test veto when discipline score too low."""
-        gate = ExtremeSelectivityGateV11(discipline_min=0.90)
-        inp = self._create_passing_input()
-        
-        # Create input with low discipline
-        inp_low = ExtremeGateInput(
-            regime_label=inp.regime_label,
-            regime_confidence=inp.regime_confidence,
-            regime_transition_risk=inp.regime_transition_risk,
-            vol_state=inp.vol_state,
-            vol_expansion=inp.vol_expansion,
-            cluster_exposure=inp.cluster_exposure,
-            rolling_correlation_max=inp.rolling_correlation_max,
-            emotion_delta=inp.emotion_delta,
-            discipline_score=0.85,  # Below min
-            eaf_score=inp.eaf_score,
-            liquidity_sweep_quality=inp.liquidity_sweep_quality,
-            exhaustion_confidence=inp.exhaustion_confidence,
-            divergence_confidence=inp.divergence_confidence,
-            monte_carlo_win=inp.monte_carlo_win,
-            monte_carlo_pf=inp.monte_carlo_pf,
-            posterior=inp.posterior,
-        )
-        
-        result = gate.evaluate(inp_low)
-        
-        assert result.verdict == GateVerdict.BLOCK
-        assert result.veto_triggered
-        assert any("discipline_low" in r for r in result.veto_reasons)
-    
-    def test_veto_blocked_vol_state(self) -> None:
-        """Test veto when vol state not in allowed set."""
-        gate = ExtremeSelectivityGateV11(
-            allowed_vol_states=["NORMAL", "EXPANSION", "TRENDING"]
-        )
-        inp = self._create_passing_input()
-        
-        # Create input with blocked vol state
-        inp_blocked = ExtremeGateInput(
-            regime_label=inp.regime_label,
-            regime_confidence=inp.regime_confidence,
-            regime_transition_risk=inp.regime_transition_risk,
-            vol_state="CONTRACTION",  # Not allowed
-            vol_expansion=inp.vol_expansion,
-            cluster_exposure=inp.cluster_exposure,
-            rolling_correlation_max=inp.rolling_correlation_max,
-            emotion_delta=inp.emotion_delta,
-            discipline_score=inp.discipline_score,
-            eaf_score=inp.eaf_score,
-            liquidity_sweep_quality=inp.liquidity_sweep_quality,
-            exhaustion_confidence=inp.exhaustion_confidence,
-            divergence_confidence=inp.divergence_confidence,
-            monte_carlo_win=inp.monte_carlo_win,
-            monte_carlo_pf=inp.monte_carlo_pf,
-            posterior=inp.posterior,
-        )
-        
-        result = gate.evaluate(inp_blocked)
-        
-        assert result.verdict == GateVerdict.BLOCK
-        assert result.veto_triggered
-        assert any("vol_state_blocked" in r for r in result.veto_reasons)
-    
-    def test_scoring_layer(self) -> None:
-        """Test scoring layer computation."""
+        result = gate.evaluate({})
+        assert result.verdict == GateVerdict.FAIL
+        assert not result.passed
+        assert len(result.failed_criteria) > 0
+
+    def test_partial_fail(self):
+        data = self._make_passing_input()
+        data["wolf_score"] = 0.30  # below threshold
+        data["htf_alignment"] = False  # fail
         gate = ExtremeSelectivityGateV11()
-        inp = self._create_passing_input()
-        
-        result = gate.evaluate(inp)
-        
-        # Score should be in valid range
-        assert 0.0 <= result.score <= 1.0
-        
-        # Layer breakdown should have score components
-        assert "layer2_score" in result.layer_breakdown
-        assert "score" in result.layer_breakdown["layer2_score"]
-        assert "components" in result.layer_breakdown["layer2_score"]
-    
-    def test_execution_threshold_score_min(self) -> None:
-        """Test execution threshold: score_min."""
-        gate = ExtremeSelectivityGateV11(score_min=0.90)
-        
-        # Create input with good metrics but score will be < 0.90
-        inp = ExtremeGateInput(
-            regime_label="TRENDING",
-            regime_confidence=0.70,  # Lower than passing
-            regime_transition_risk=0.10,
-            vol_state="NORMAL",
-            vol_expansion=1.5,
-            cluster_exposure=0.30,
-            rolling_correlation_max=0.50,
-            emotion_delta=0.10,
-            discipline_score=0.95,
-            eaf_score=0.85,
-            liquidity_sweep_quality=0.70,
-            exhaustion_confidence=0.65,
-            divergence_confidence=0.60,
-            monte_carlo_win=0.75,
-            monte_carlo_pf=2.0,
-            posterior=0.75,
+        result = gate.evaluate(data)
+        assert "wolf_score_below_threshold" in result.failed_criteria
+        assert "htf_not_aligned" in result.failed_criteria
+
+    def test_custom_thresholds(self):
+        loose = V11Thresholds(
+            min_wolf_score=0.10,
+            min_tii_score=0.10,
+            min_frpc_score=0.10,
+            min_confluence_score=0.10,
+            require_htf_alignment=False,
+            require_session_valid=False,
+            require_news_clear=False,
+            require_momentum=False,
+            min_pass_ratio=0.50,
         )
-        
-        result = gate.evaluate(inp)
-        
-        # Should block due to score threshold
-        if result.score < 0.90:
-            assert result.verdict == GateVerdict.BLOCK
-    
-    def test_confidence_band_ultra_high(self) -> None:
-        """Test ultra high confidence band."""
+        gate = ExtremeSelectivityGateV11(thresholds=loose)
+        result = gate.evaluate({"wolf_score": 0.20, "tii_score": 0.20,
+                                "frpc_score": 0.20, "confluence_score": 0.20,
+                                "atr_value": 0.001, "spread_ratio": 0.1})
+        assert result.verdict == GateVerdict.PASS
+
+    def test_accepts_v11_gate_input_directly(self):
         gate = ExtremeSelectivityGateV11()
-        
-        # Create exceptional input
-        inp = ExtremeGateInput(
-            regime_label="TRENDING",
-            regime_confidence=0.90,
-            regime_transition_risk=0.05,
-            vol_state="NORMAL",
-            vol_expansion=2.0,
-            cluster_exposure=0.10,
-            rolling_correlation_max=0.30,
-            emotion_delta=0.05,
-            discipline_score=0.98,
-            eaf_score=0.95,
-            liquidity_sweep_quality=0.90,
-            exhaustion_confidence=0.85,
-            divergence_confidence=0.80,
-            monte_carlo_win=0.80,
-            monte_carlo_pf=2.5,
-            posterior=0.85,
+        inp = V11GateInput(
+            wolf_score=0.90, tii_score=0.80, frpc_score=0.75,
+            confluence_score=0.85, htf_alignment=True, session_valid=True,
+            news_clear=True, momentum_confirmed=True,
+            atr_value=0.002, spread_ratio=0.05,
         )
-        
         result = gate.evaluate(inp)
-        
-        # Should have high confidence band
-        assert result.confidence_band in [ConfidenceBand.ULTRA_HIGH, ConfidenceBand.HIGH]
-    
-    def test_frozen_result(self) -> None:
-        """Test that result is immutable."""
+        assert result.verdict == GateVerdict.PASS
+
+    def test_never_crashes_on_garbage(self):
+        """Gate must NEVER crash, even on absurd input."""
         gate = ExtremeSelectivityGateV11()
-        inp = self._create_passing_input()
-        
-        result = gate.evaluate(inp)
-        
-        with pytest.raises(AttributeError):
-            result.verdict = GateVerdict.BLOCK  # type: ignore[misc]
-    
-    def test_to_dict_serialization(self) -> None:
-        """Test to_dict() serialization."""
-        gate = ExtremeSelectivityGateV11()
-        inp = self._create_passing_input()
-        
-        result = gate.evaluate(inp)
-        d = result.to_dict()
-        
-        assert isinstance(d, dict)
-        assert "verdict" in d
-        assert "score" in d
-        assert "veto_triggered" in d
-        assert "veto_reasons" in d
-        assert "confidence_band" in d
-        assert "layer_breakdown" in d
+        for garbage in [None, 42, "string", [], True, {"nested": {"deep": object()}}]:
+            result = gate.evaluate(garbage)  # type: ignore
+            assert isinstance(result, V11GateResult)
+            assert result.verdict in (GateVerdict.FAIL, GateVerdict.SKIP)
+
+
+# =====================================================================
+# V11DataAdapter — pipeline bridge
+# =====================================================================
+
+class TestV11DataAdapter:
+    def test_flat_dict(self):
+        adapter = V11DataAdapter()
+        inp = adapter.collect({
+            "wolf_score": 0.80,
+            "tii_score": 0.70,
+            "symbol": "GBPUSD",
+        })
+        assert isinstance(inp, V11GateInput)
+        assert inp.wolf_score == 0.80
+        assert inp.symbol == "GBPUSD"
+
+    def test_nested_aliases(self):
+        adapter = V11DataAdapter()
+        inp = adapter.collect({
+            "scores": {"wolf": 0.85, "tii": 0.70, "frpc": 0.65},
+            "synthesis": {"confluence_score": 0.75},
+            "context": {"htf_alignment": True, "session_valid": True},
+            "volatility": {"atr": 0.0012, "spread_ratio": 0.08},
+            "pair": "USDJPY",
+            "tf": "M15",
+        })
+        assert inp.wolf_score == 0.85
+        assert inp.confluence_score == 0.75
+        assert inp.htf_alignment is True
+        assert inp.atr_value == 0.0012
+        assert inp.symbol == "USDJPY"
+        assert inp.timeframe == "M15"
+
+    def test_garbage_input(self):
+        adapter = V11DataAdapter()
+        inp = adapter.collect("not a dict") # pyright: ignore[reportArgumentType]
+        assert isinstance(inp, V11GateInput)
+        assert inp.wolf_score == 0.0
+
+
+# =====================================================================
+# V11PipelineHook — end-to-end
+# =====================================================================
+
+class TestV11PipelineHook:
+    def test_full_pipeline_pass(self):
+        hook = V11PipelineHook()
+        result = hook.run({
+            "wolf_score": 0.85, "tii_score": 0.75, "frpc_score": 0.70,
+            "confluence_score": 0.80, "htf_alignment": True,
+            "session_valid": True, "news_clear": True,
+            "momentum_confirmed": True, "atr_value": 0.0015,
+            "spread_ratio": 0.10, "symbol": "EURUSD",
+        })
+        assert result.passed
+
+    def test_full_pipeline_fail(self):
+        hook = V11PipelineHook()
+        result = hook.run({})
+        assert not result.passed
+
+    def test_run_and_annotate(self):
+        hook = V11PipelineHook()
+        data = {"symbol": "EURUSD", "wolf_score": 0.85}
+        annotated = hook.run_and_annotate(data)
+        assert "v11_gate" in annotated
+        assert "verdict" in annotated["v11_gate"]
+        assert annotated["symbol"] == "EURUSD"  # original data preserved
+
+    def test_never_crashes(self):
+        hook = V11PipelineHook()
+        for garbage in [None, 42, "x", [], {}]:
+            result = hook.run(garbage)  # type: ignore
+            assert isinstance(result, V11GateResult)
