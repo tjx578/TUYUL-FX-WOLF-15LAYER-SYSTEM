@@ -3,6 +3,11 @@
  *
  * Replaces SWR HTTP polling with native WebSocket connections
  * for tick-by-tick price updates, trade events, candle bars, and risk state.
+ *
+ * v3 Upgrades:
+ *   - Exponential backoff with jitter (replaces flat 2s reconnect)
+ *   - Heartbeat pong: responds to server ping frames to keep connection alive
+ *   - Reconnect with ?since=<ts> for server-side message replay
  */
 
 import { useEffect, useRef, useState, useCallback } from 'react';
@@ -10,9 +15,11 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 const WS_BASE = process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:8000';
 const WS_TOKEN = process.env.NEXT_PUBLIC_WS_TOKEN || '';
 
-// Reconnection config
-const RECONNECT_DELAY_MS = 2000;
-const MAX_RECONNECT_ATTEMPTS = 10;
+// Reconnection config — exponential backoff
+const RECONNECT_BASE_MS = 500;       // initial delay
+const RECONNECT_MAX_MS = 30_000;     // cap
+const RECONNECT_JITTER = 0.3;        // ±30% random jitter
+const MAX_RECONNECT_ATTEMPTS = 15;
 
 type WSStatus = 'connecting' | 'connected' | 'disconnected' | 'error';
 
@@ -24,7 +31,18 @@ interface UseWebSocketOptions {
 }
 
 /**
- * Generic WebSocket hook with auto-reconnect.
+ * Compute exponential backoff delay with jitter.
+ *
+ * delay = min(base * 2^attempt, max) * (1 ± jitter)
+ */
+function backoffDelay(attempt: number): number {
+  const base = Math.min(RECONNECT_BASE_MS * 2 ** attempt, RECONNECT_MAX_MS);
+  const jitter = 1 + (Math.random() * 2 - 1) * RECONNECT_JITTER;
+  return Math.round(base * jitter);
+}
+
+/**
+ * Generic WebSocket hook with exponential backoff reconnect and heartbeat.
  */
 function useWebSocket<T>(
   path: string,
@@ -37,11 +55,18 @@ function useWebSocket<T>(
   const attemptsRef = useRef(0);
   const onMessageRef = useRef(onMessage);
   onMessageRef.current = onMessage;
+  // Track last received message timestamp for replay on reconnect
+  const lastTsRef = useRef<number>(0);
 
   const connect = useCallback(() => {
     if (wsRef.current?.readyState === WebSocket.OPEN) return;
 
-    const queryParams = new URLSearchParams({ token: WS_TOKEN, ...params });
+    const extraParams: Record<string, string> = { token: WS_TOKEN, ...params };
+    // Attach ?since=<ts> so server can replay missed messages
+    if (lastTsRef.current > 0) {
+      extraParams.since = String(lastTsRef.current);
+    }
+    const queryParams = new URLSearchParams(extraParams);
     const url = `${WS_BASE}${path}?${queryParams.toString()}`;
 
     setStatus('connecting');
@@ -55,6 +80,18 @@ function useWebSocket<T>(
     ws.onmessage = (event) => {
       try {
         const parsed = JSON.parse(event.data);
+
+        // Respond to server heartbeat pings
+        if (parsed?.type === 'ping') {
+          ws.send(JSON.stringify({ type: 'pong', ts: parsed.ts }));
+          return;
+        }
+
+        // Track latest timestamp for replay
+        if (parsed?.ts) {
+          lastTsRef.current = parsed.ts;
+        }
+
         onMessageRef.current(parsed);
       } catch {
         // ignore non-JSON messages
@@ -69,10 +106,11 @@ function useWebSocket<T>(
       setStatus('disconnected');
       wsRef.current = null;
 
-      // Auto-reconnect
+      // Auto-reconnect with exponential backoff + jitter
       if (attemptsRef.current < MAX_RECONNECT_ATTEMPTS) {
+        const delay = backoffDelay(attemptsRef.current);
         attemptsRef.current += 1;
-        setTimeout(connect, RECONNECT_DELAY_MS);
+        setTimeout(connect, delay);
       }
     };
 
