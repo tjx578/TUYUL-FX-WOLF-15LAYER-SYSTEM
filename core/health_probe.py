@@ -92,6 +92,8 @@ class HealthProbe:
                 response = self._liveness_response()
             elif path == "/readyz":
                 response = self._readiness_response()
+            elif path == "/status":
+                response = self._status_response()
             else:
                 response = self._not_found_response()
 
@@ -132,9 +134,28 @@ class HealthProbe:
         status_text = "OK" if ready else "Service Unavailable"
         return self._http_response(status_code, status_text, body)
 
+    def _status_response(self) -> str:
+        """Combined liveness + readiness + all detail metadata."""
+        try:
+            ready = self._readiness_check()
+        except Exception:
+            ready = False
+        uptime = int(time.monotonic() - self._started_at)
+        body = {
+            "alive": self._alive,
+            "ready": ready,
+            "service": self._service_name,
+            "uptime_sec": uptime,
+            **self._details,
+        }
+        ok = self._alive and ready
+        code = 200 if ok else 503
+        text = "OK" if ok else "Service Unavailable"
+        return self._http_response(code, text, body)
+
     @staticmethod
     def _not_found_response() -> str:
-        body = {"error": "not_found", "hint": "Use /healthz or /readyz"}
+        body = {"error": "not_found", "hint": "Use /healthz, /readyz, or /status"}
         return HealthProbe._http_response(404, "Not Found", body)
 
     @staticmethod
@@ -158,7 +179,7 @@ class HealthProbe:
         )
         logger.info(
             f"Health probe listening on :{self._port} "
-            f"(service={self._service_name}, endpoints=/healthz /readyz)"
+            f"(service={self._service_name}, endpoints=/healthz /readyz /status)"
         )
         async with self._server:
             await self._server.serve_forever()

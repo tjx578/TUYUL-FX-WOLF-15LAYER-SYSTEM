@@ -4,6 +4,7 @@ import asyncio
 import os
 import signal
 import sys
+import types
 
 from importlib import import_module
 from typing import Any, Protocol
@@ -131,19 +132,40 @@ def _update_macro_regime(enabled_symbols: list[str]) -> None:
 
 
 async def _run_warmup(system_state: SystemStateManager, enabled_symbols: list[str]) -> None:
+    """Fetch historical candles with retry before falling back to DEGRADED."""
     logger.info("Starting warmup: fetching historical candles from Finnhub REST API")
-    try:
-        fetcher = FinnhubCandleFetcher()
-        warmup_results = await fetcher.warmup_all()
-        system_state.validate_warmup(warmup_results)
-        _update_macro_regime(enabled_symbols)
-        _set_state_from_warmup(system_state)
-    except Exception as exc:
-        logger.error(f"Warmup failed (non-fatal): {exc}")
-        system_state.set_state(SystemState.DEGRADED)
+    last_exc: Exception | None = None
+    for attempt in range(1, MAX_RETRIES + 1):
+        try:
+            fetcher = FinnhubCandleFetcher()
+            warmup_results = await fetcher.warmup_all()
+            system_state.validate_warmup(warmup_results)
+            _update_macro_regime(enabled_symbols)
+            _set_state_from_warmup(system_state)
+            return  # success
+        except Exception as exc:
+            last_exc = exc
+            delay = BASE_DELAY * (2 ** (attempt - 1))
+            logger.warning(
+                f"Warmup attempt {attempt}/{MAX_RETRIES} failed: {exc}  "
+                f"retrying in {delay:.1f}s"
+            )
+            _health_probe.set_detail("warmup_retry", f"{attempt}/{MAX_RETRIES}")
+            await asyncio.sleep(delay)
+
+    logger.error(f"Warmup failed after {MAX_RETRIES} attempts (non-fatal): {last_exc}")
+    system_state.set_state(SystemState.DEGRADED)
 
 
-async def _safe_stop(name: str, obj: Any, cleanup_errors: list[tuple[str, Exception]]) -> None:
+class Stoppable(Protocol):
+    """Any object that exposes an async stop() method."""
+
+    async def stop(self) -> None: ...
+
+
+async def _safe_stop(
+    name: str, obj: Any, cleanup_errors: list[tuple[str, Exception]]
+) -> None:
     stop = getattr(obj, "stop", None)
     if stop is None:
         return
@@ -184,6 +206,9 @@ async def run_ingest_services(has_api_key: bool) -> None:
         # Mark ingest as ready after warmup + connection
         global _ingest_ready
         _ingest_ready = True
+        _health_probe.set_detail("warmup", "complete")
+        _health_probe.set_detail("redis", "connected")
+        _health_probe.set_detail("system_state", system_state.get_state().value)
         logger.info("Ingest readiness: READY")
 
         logger.info(
@@ -219,7 +244,7 @@ async def run_ingest_services(has_api_key: bool) -> None:
         logger.info("Ingest service cleanup complete")
 
 
-def _handle_signal(signum: int, frame: Any) -> None:
+def _handle_signal(signum: int, frame: types.FrameType | None) -> None:
     signal_name = signal.Signals(signum).name
     logger.info(f"Received {signal_name} - initiating graceful shutdown...")
     if _shutdown_event:
