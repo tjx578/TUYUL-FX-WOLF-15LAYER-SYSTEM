@@ -1,4 +1,4 @@
-# Wolf 15-Layer Trading System - Dockerfile (Multi-stage build)
+# Wolf 15-Layer Trading System - Dockerfile
 
 FROM python:3.11-slim
 
@@ -26,25 +26,17 @@ COPY . .
 RUN chown -R appuser:appuser /app
 USER appuser
 
-# --- Final stage ---
-# Create non-root user
-RUN addgroup --system --gid 1001 appgroup && \
-    adduser --system --uid 1001 --ingroup appgroup appuser
-
-# Ensure app files are owned by appuser
-RUN chown -R appuser:appgroup /app
-
-USER appuser
-
-# Configurable port
+# Configurable port (platforms like Railway/Render override PORT)
 ENV PORT=8000
 EXPOSE ${PORT}
 
 # Configurable workers via WEB_CONCURRENCY (default 2)
 ENV WEB_CONCURRENCY=2
 
-# --- Healthcheck ---
+# --- Healthcheck (uses $PORT so it follows the actual listening port) ---
 HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
     CMD curl -f http://localhost:${PORT}/health || exit 1
 
-CMD ["sh", "-c", "gunicorn --bind 0.0.0.0:${PORT} --workers ${WEB_CONCURRENCY} --timeout 120 dashboard.app:app"]
+# --access-logfile - --error-logfile - : send all logs to stdout/stderr properly
+# --log-level info : ensure gunicorn itself logs at info level to stdout
+CMD ["sh", "-c", "gunicorn --bind 0.0.0.0:${PORT} --workers ${WEB_CONCURRENCY} --timeout 120 --access-logfile - --error-logfile - --log-level info dashboard.app:app"]
