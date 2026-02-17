@@ -51,19 +51,20 @@ Integrity: TIIₛᵧₘ ≥ 0.93 | FRPC ≥ 0.96 | RR ≥ 1:2.0
 from __future__ import annotations
 
 import time
-
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from constitution.signal_throttle import SignalThrottle
-from constitution.verdict_engine import generate_l12_verdict
+from constitution.verdict_engine import generate_l12_verdict  # pyright: ignore[reportAttributeAccessIssue]
 from core.metrics import (
     GATE_RESULT,
+    LAYER_LATENCY,
     PIPELINE_DURATION,
     PIPELINE_ERROR,
     PIPELINE_RUNS,
     SIGNAL_THROTTLED,
     SIGNAL_TOTAL,
+    TICK_TO_VERDICT_LATENCY,
     VERDICT_TOTAL,
     WARMUP_BLOCKED,
 )
@@ -394,7 +395,6 @@ class WolfConstitutionalPipeline:
 
         import analysis.layers.L10_position_sizing  # noqa: PLC0415
         import analysis.macro.macro_volatility_engine  # noqa: PLC0415
-
         from analysis.layers.L1_context import (  # noqa: PLC0415
             L1ContextAnalyzer,  # pyright: ignore[reportAttributeAccessIssue]
         )
@@ -428,6 +428,20 @@ class WolfConstitutionalPipeline:
         self._macro_vol = analysis.macro.macro_volatility_engine.MacroVolatilityEngine()
 
     # ══════════════════════════════════════════════════════════════
+    #  Per-layer latency helper
+    # ══════════════════════════════════════════════════════════════
+
+    @staticmethod
+    def _timed_call(func, layer_name: str, symbol: str, *args, **kwargs):
+        """Call *func* and observe its wall-clock latency on LAYER_LATENCY."""
+        t0 = time.time()
+        result = func(*args, **kwargs)
+        LAYER_LATENCY.labels(layer=layer_name, symbol=symbol).observe(
+            time.time() - t0,
+        )
+        return result
+
+    # ══════════════════════════════════════════════════════════════
     #  MAIN EXECUTE -- the single canonical entry point
     # ══════════════════════════════════════════════════════════════
 
@@ -435,6 +449,8 @@ class WolfConstitutionalPipeline:
         self,
         symbol: str,
         system_metrics: dict[str, Any] | None = None,
+        *,
+        tick_ts: float | None = None,
     ) -> dict[str, Any]:
         """
         Execute complete Wolf 15-Layer Constitutional Pipeline.
@@ -444,6 +460,9 @@ class WolfConstitutionalPipeline:
             system_metrics: Optional system state dict with:
                 - safe_mode (bool): bypass macro regime gate
                 - latency_ms (float): override latency measurement
+            tick_ts: ``time.time()`` epoch of the triggering tick. When
+                provided, the tick→verdict end-to-end latency is observed
+                on the ``TICK_TO_VERDICT_LATENCY`` histogram.
 
         Returns:
             Complete v8.0 result dict (backward-compatible with v7.4r∞) with:
@@ -491,17 +510,17 @@ class WolfConstitutionalPipeline:
             # ═══════════════════════════════════════════════════════
             logger.info(f"[Pipeline v8.0] Phase 1: Perception & Context -- {symbol}")
 
-            l1 = self._l1.analyze(symbol)  # pyright: ignore[reportOptionalMemberAccess]
+            l1 = self._timed_call(self._l1.analyze, "L1", symbol, symbol)  # pyright: ignore[reportOptionalMemberAccess]
             if not l1.get("valid"):
                 errors.append("L1_CONTEXT_INVALID")
                 return self._early_exit(symbol, errors, time.time() - start_time)
 
-            l2 = self._l2.analyze(symbol)  # pyright: ignore[reportOptionalMemberAccess]
+            l2 = self._timed_call(self._l2.analyze, "L2", symbol, symbol)  # pyright: ignore[reportOptionalMemberAccess]
             if not l2.get("valid"):
                 errors.append("L2_MTA_INVALID")
                 return self._early_exit(symbol, errors, time.time() - start_time)
 
-            l3 = self._l3.analyze(symbol)  # pyright: ignore[reportOptionalMemberAccess]
+            l3 = self._timed_call(self._l3.analyze, "L3", symbol, symbol)  # pyright: ignore[reportOptionalMemberAccess]
             if not l3.get("valid"):
                 errors.append("L3_TECHNICAL_INVALID")
                 return self._early_exit(symbol, errors, time.time() - start_time)
@@ -511,8 +530,8 @@ class WolfConstitutionalPipeline:
             # ═══════════════════════════════════════════════════════
             logger.info(f"[Pipeline v8.0] Phase 2: Confluence & Scoring -- {symbol}")
 
-            l4 = self._l4.score(l1, l2, l3)  # pyright: ignore[reportOptionalMemberAccess]
-            l5 = self._l5.analyze(symbol, volatility_profile=l2)  # pyright: ignore[reportOptionalMemberAccess]
+            l4 = self._timed_call(self._l4.score, "L4", symbol, l1, l2, l3)  # pyright: ignore[reportOptionalMemberAccess]
+            l5 = self._timed_call(self._l5.analyze, "L5", symbol, symbol, volatility_profile=l2)  # pyright: ignore[reportOptionalMemberAccess]
 
             # ═══════════════════════════════════════════════════════
             # PHASE 3 -- ZONA PROBABILITY & VALIDATION (L7, L8, L9)
@@ -549,11 +568,10 @@ class WolfConstitutionalPipeline:
                 )
 
             # Fallback: system_metrics pass-through (for test harness / manual override)
-            if not trade_returns:
-                if system_metrics and isinstance(system_metrics, dict):
-                    _raw = system_metrics.get("trade_returns", None)
-                    if isinstance(_raw, (list, tuple)) and len(_raw) > 0:
-                        trade_returns = [float(r) for r in _raw]
+            if not trade_returns and system_metrics and isinstance(system_metrics, dict):
+                _raw = system_metrics.get("trade_returns", None)
+                if isinstance(_raw, (list, tuple)) and len(_raw) > 0:
+                    trade_returns = [float(r) for r in _raw]
 
             # ── Bayesian prior state ─────────────────────────────────────────
             # Primary: derive from trade archive. Fallback: system_metrics.
@@ -569,7 +587,7 @@ class WolfConstitutionalPipeline:
             except Exception:
                 pass  # fall through to system_metrics
 
-            if prior_wins == 0 and prior_losses == 0:
+            if prior_wins == 0 and prior_losses == 0:  # noqa: SIM102
                 if system_metrics and isinstance(system_metrics, dict):
                     prior_wins = int(system_metrics.get("prior_wins", 0))
                     prior_losses = int(system_metrics.get("prior_losses", 0))
@@ -592,7 +610,8 @@ class WolfConstitutionalPipeline:
                     float(max(0.0, min(1.0, _bias)))
 
             # ── Run L7 Probability Analyzer ──────────────────────────────────
-            l7 = self._l7.analyze( # pyright: ignore[reportOptionalMemberAccess]
+            l7 = self._timed_call(  # pyright: ignore[reportOptionalMemberAccess]
+                self._l7.analyze, "L7", symbol, # pyright: ignore[reportOptionalMemberAccess]
                 symbol,
                 technical_score=technical_score,
                 trade_returns=trade_returns,
@@ -600,8 +619,8 @@ class WolfConstitutionalPipeline:
                 prior_losses=prior_losses,
             )
 
-            l8 = self._l8.analyze(symbol)  # pyright: ignore[reportArgumentType, reportOptionalMemberAccess]
-            l9 = self._l9.analyze(symbol)  # pyright: ignore[reportOptionalMemberAccess]
+            l8 = self._timed_call(self._l8.analyze, "L8", symbol, symbol)  # pyright: ignore[reportArgumentType, reportOptionalMemberAccess]
+            l9 = self._timed_call(self._l9.analyze, "L9", symbol, symbol)  # pyright: ignore[reportOptionalMemberAccess]
 
             logger.info(
                 "[Phase-3] %s L7 complete: validation=%s win=%.1f%% pf=%.2f "
@@ -631,7 +650,7 @@ class WolfConstitutionalPipeline:
 
             l11: dict[str, Any] = {"valid": False, "rr": 0.0}
             if direction in ("BUY", "SELL"):
-                l11 = self._l11.calculate_rr(symbol, direction)  # pyright: ignore[reportOptionalMemberAccess]
+                l11 = self._timed_call(self._l11.calculate_rr, "L11", symbol, symbol, direction)  # pyright: ignore[reportOptionalMemberAccess]
             rr_value = l11.get("rr", 0.0)
 
             # ── Build account_state snapshot for L6 ────────────────────
@@ -707,7 +726,12 @@ class WolfConstitutionalPipeline:
                 _l6_account_state["max_open_positions"],
             )
 
-            l6 = self._l6.analyze(  # pyright: ignore[reportOptionalMemberAccess]
+            if self._l6 is None:
+                errors.append("L6_ANALYZER_NOT_INITIALIZED")
+                return self._early_exit(symbol, errors, time.time() - start_time)
+
+            l6 = self._timed_call(
+                self._l6.analyze, "L6", symbol,
                 rr=rr_value,
                 trade_returns=trade_returns,
                 account_state=_l6_account_state,
@@ -715,9 +739,9 @@ class WolfConstitutionalPipeline:
 
             risk_ok = l6.get("risk_ok", False)
             smc_confidence = l9.get("confidence", 0.0)
-            l10 = self._l10.analyze(risk_ok, smc_confidence)  # pyright: ignore[reportOptionalMemberAccess]
+            l10 = self._timed_call(self._l10.analyze, "L10", symbol, risk_ok, smc_confidence)  # pyright: ignore[reportOptionalMemberAccess]
 
-            macro = self._macro.analyze(symbol)  # pyright: ignore[reportOptionalMemberAccess]
+            macro = self._timed_call(self._macro.analyze, "macro", symbol, symbol)  # pyright: ignore[reportOptionalMemberAccess]
 
             # ═══════════════════════════════════════════════════════
             # PHASE 2.5 -- ENGINE ENRICHMENT LAYER (9 Facade Engines)
@@ -979,6 +1003,13 @@ class WolfConstitutionalPipeline:
             )
 
             result_dict = result.to_dict()
+
+            # ── Tick→verdict end-to-end latency ────────────────────
+            if tick_ts is not None:
+                e2e_latency = time.time() - tick_ts
+                TICK_TO_VERDICT_LATENCY.labels(symbol=symbol).observe(e2e_latency)
+                result_dict["tick_to_verdict_s"] = round(e2e_latency, 4)
+
             self._record_metrics(symbol, result_dict)
             return result_dict
 
