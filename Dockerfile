@@ -40,10 +40,12 @@ CMD ["gunicorn", "api_server:app", "--workers", "2", "--worker-class", "uvicorn.
 # Stage: Trading Engine
 # ================================================
 FROM base AS engine
+EXPOSE 8081
 CMD ["python", "main.py"]
 
 # ================================================
 # Stage: Ingest Service
 # ================================================
 FROM base AS ingest
+EXPOSE 8082
 CMD ["python", "ingest_service.py"]
