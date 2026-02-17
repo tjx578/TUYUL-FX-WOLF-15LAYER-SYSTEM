@@ -12,7 +12,6 @@ Covers:
 
 from __future__ import annotations
 
-import math
 from datetime import UTC, datetime
 
 import pytest
@@ -25,7 +24,6 @@ from analysis.layers.L4_session_scoring import (
     analyze_session,
     analyze_session_scoring,
 )
-
 
 # ── Helpers ──────────────────────────────────────────────────────────
 
@@ -113,11 +111,12 @@ class TestGradeClassification:
 class TestBayesianConfig:
     def test_default_config_valid(self) -> None:
         cfg = BayesianConfig()
-        assert 0.0 < cfg.prior_win_rate < 1.0
+        assert 0.0 < cfg.prior_trend_up < 1.0
+        assert 0.0 < cfg.prior_range < 1.0
 
-    def test_invalid_prior_raises(self) -> None:
+    def test_invalid_strength_sum_raises(self) -> None:
         with pytest.raises(ValueError):
-            BayesianConfig(prior_win_rate=1.5)
+            BayesianConfig(strength_trend_up_f=5.0, strength_trend_up_t=5.0)
 
 
 # ── L4SessionScoring full pipeline ──────────────────────────────────
