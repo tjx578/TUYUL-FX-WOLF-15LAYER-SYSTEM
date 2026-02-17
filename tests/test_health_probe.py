@@ -121,3 +121,31 @@ async def test_unknown_path_returns_404(probe_server):
     status, body = await asyncio.to_thread(_get, port, "/unknown")
     assert status == 404
     assert body["error"] == "not_found"
+
+
+# ── /status endpoint ───────────────────────────────────────────
+
+
+@pytest.mark.asyncio()
+async def test_status_healthy(probe_server):
+    """When alive and ready, /status returns 200 with combined info."""
+    probe, port = probe_server
+    probe.set_detail("component", "ws")
+    status, body = await asyncio.to_thread(_get, port, "/status")
+    assert status == 200
+    assert body["alive"] is True
+    assert body["ready"] is True
+    assert body["service"] == "test-service"
+    assert body["component"] == "ws"
+    assert "uptime_sec" in body
+
+
+@pytest.mark.asyncio()
+async def test_status_degraded_when_not_ready(probe_server):
+    """When alive but not ready, /status returns 503."""
+    probe, port = probe_server
+    probe.set_readiness_check(lambda: False)
+    status, body = await asyncio.to_thread(_get, port, "/status")
+    assert status == 503
+    assert body["alive"] is True
+    assert body["ready"] is False
