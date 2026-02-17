@@ -6,6 +6,8 @@ Integrates with circuit breaker and drawdown monitoring
 for real-time compliance checks.
 """
 
+from dataclasses import dataclass
+
 try:
     from config_loader import load_prop_firm
 except ModuleNotFoundError:
@@ -20,9 +22,88 @@ except ModuleNotFoundError:
         return {
             "allowed_markets": {},
             "risk": {
-                "max_risk_per_trade_percent": 0.0,
-                "min_rr_required": 0.0,
+                "max_risk_per_trade_percent": 0.01,
+                "min_rr_required": 2.0,
+                "max_daily_loss": 1000.0,
+                "max_open_positions": 3,
+                "max_lot_per_trade": 1.0,
             },
+        }
+
+
+@dataclass
+class AccountState:
+    """Typed account state for validation."""
+    balance: float
+    equity: float
+    daily_loss: float
+    open_positions: list[dict]
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "AccountState":
+        """Safe constructor with validation."""
+        try:
+            return cls(
+                balance=float(data.get("balance", 0.0)),
+                equity=float(data.get("equity", 0.0)),
+                daily_loss=float(data.get("daily_loss", 0.0)),
+                open_positions=data.get("open_positions", []),
+            )
+        except (TypeError, ValueError) as e:
+            raise ValueError(f"Invalid account state: {e}")  # noqa: B904
+
+
+@dataclass
+class TradeRisk:
+    """Typed trade risk for validation."""
+    category: str
+    risk_percent: float
+    rr_ratio: float
+    lot_size: float
+    risk_amount: float | None = None
+    symbol: str | None = None
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "TradeRisk":
+        """Safe constructor with validation."""
+        try:
+            return cls(
+                category=str(data.get("category", "unknown")),
+                risk_percent=float(data.get("risk_percent", 0.0)),
+                rr_ratio=float(data.get("rr_ratio", 0.0)),
+                lot_size=float(data.get("lot_size", 0.0)),
+                risk_amount=float(data["risk_amount"]) if "risk_amount" in data else None,
+                symbol=data.get("symbol"),
+            )
+        except (TypeError, ValueError) as e:
+            raise ValueError(f"Invalid trade risk: {e}")  # noqa: B904
+
+
+@dataclass
+class GuardResult:
+    """Standardized guard check result."""
+    allowed: bool
+    code: str
+    severity: str  # "ERROR" | "WARNING" | "INFO"
+    details: str | None = None
+    max_safe_lot: float = 0.0
+    recommended_lot: float = 0.0
+    violations: list[str] | None = None
+
+    def __post_init__(self):
+        if self.violations is None:
+            self.violations = []
+
+    def to_dict(self) -> dict:
+        """Convert to dict for legacy compatibility."""
+        return {
+            "allowed": self.allowed,
+            "code": self.code,
+            "severity": self.severity,
+            "details": self.details,
+            "max_safe_lot": self.max_safe_lot,
+            "recommended_lot": self.recommended_lot,
+            "violations": self.violations,
         }
 
 
@@ -47,6 +128,25 @@ class PropFirmRules:
     def __init__(self):
         """Initialize PropFirmRules with config."""
         self.cfg = load_prop_firm()
+        self._validate_config()
+
+    def _validate_config(self) -> None:
+        """Validate that required config keys exist."""
+        required_keys = ["allowed_markets", "risk"]
+        for key in required_keys:
+            if key not in self.cfg:
+                raise ValueError(f"Missing required config key: {key}")
+
+        risk_keys = [
+            "max_risk_per_trade_percent",
+            "min_rr_required",
+            "max_daily_loss",
+            "max_open_positions",
+            "max_lot_per_trade",
+        ]
+        for key in risk_keys:
+            if key not in self.cfg["risk"]:
+                raise ValueError(f"Missing required risk config key: {key}")
 
     def is_market_allowed(self, category: str) -> bool:
         """
@@ -62,7 +162,9 @@ class PropFirmRules:
         bool
             True if allowed
         """
-        return self.cfg["allowed_markets"].get(category, False) # pyright: ignore[reportReturnType]
+        if not category or not isinstance(category, str):
+            return False
+        return bool(self.cfg["allowed_markets"].get(category, False))
 
     def max_risk_allowed(self) -> float:
         """
@@ -73,7 +175,7 @@ class PropFirmRules:
         float
             Max risk as decimal (e.g., 0.01 = 1%)
         """
-        return self.cfg["risk"]["max_risk_per_trade_percent"]
+        return float(self.cfg["risk"]["max_risk_per_trade_percent"])
 
     def min_rr_required(self) -> float:
         """
@@ -84,7 +186,37 @@ class PropFirmRules:
         float
             Minimum RR ratio (e.g., 2.0)
         """
-        return self.cfg["risk"]["min_rr_required"]
+        return float(self.cfg["risk"]["min_rr_required"])
+
+    @property
+    def max_daily_loss(self) -> float:
+        """Maximum daily loss allowed (in account currency)."""
+        return float(self.cfg["risk"]["max_daily_loss"])
+
+    @max_daily_loss.setter
+    def max_daily_loss(self, value: float) -> None:
+        """Set maximum daily loss (for testing/override only)."""
+        self.cfg["risk"]["max_daily_loss"] = float(value)
+
+    @property
+    def max_open_positions(self) -> int:
+        """Maximum number of open positions allowed."""
+        return int(self.cfg["risk"]["max_open_positions"])
+
+    @max_open_positions.setter
+    def max_open_positions(self, value: int) -> None:
+        """Set maximum open positions (for testing/override only)."""
+        self.cfg["risk"]["max_open_positions"] = int(value)
+
+    @property
+    def max_lot_per_trade(self) -> float:
+        """Maximum lot size per trade."""
+        return float(self.cfg["risk"]["max_lot_per_trade"])
+
+    @max_lot_per_trade.setter
+    def max_lot_per_trade(self, value: float) -> None:
+        """Set maximum lot per trade (for testing/override only)."""
+        self.cfg["risk"]["max_lot_per_trade"] = float(value)
 
     def validate_trade(
         self,
@@ -139,65 +271,126 @@ class PropFirmRules:
             "violations": violations,
         }
 
-    def check(self, account_state: dict, trade_risk: dict) -> dict:
-        """Check trade against prop firm rules.
-
-        Returns dict with at minimum:
-            allowed, code, severity, max_safe_lot
+    def calculate_safe_lot(
+        self,
+        account_balance: float,
+        risk_percent: float,
+        stop_loss_pips: float,
+        pip_value: float = 10.0,  # Default for standard lot on major pairs
+    ) -> float:
         """
-        result: dict[str, bool | str | float] = {
-            "allowed": False,
-            "code": "RISK_EXCEEDED",
-            "severity": "HIGH",
-            "details": "",
-        }
+        Calculate maximum safe lot size based on risk parameters.
 
-        # Validate trade
+        Parameters
+        ----------
+        account_balance : float
+            Current account balance
+        risk_percent : float
+            Risk percent (as decimal, e.g., 0.01 for 1%)
+        stop_loss_pips : float
+            Stop loss distance in pips
+        pip_value : float
+            Value per pip for 1 standard lot (default: $10 for majors)
+
+        Returns
+        -------
+        float
+            Maximum safe lot size
+        """
+        if account_balance <= 0 or stop_loss_pips <= 0 or pip_value <= 0:
+            return 0.0
+
+        # Clamp risk to max allowed
+        max_risk = self.max_risk_allowed()
+        clamped_risk = min(risk_percent, max_risk)
+
+        # Calculate risk amount
+        risk_amount = account_balance * clamped_risk
+
+        # Calculate lot size
+        lot_size = risk_amount / (stop_loss_pips * pip_value)
+
+        # Clamp to max lot per trade
+        return min(lot_size, self.max_lot_per_trade)
+
+    def check(self, account_state: dict, trade_risk: dict) -> dict:
+        """
+        Check trade against prop firm rules.
+
+        Constitutional authority: This is a RISK LEGALITY check, NOT a market decision.
+        Dashboard must treat result as binding for account/position limits.
+
+        Parameters
+        ----------
+        account_state : dict
+            Must contain: balance, equity, daily_loss, open_positions
+        trade_risk : dict
+            Must contain: category, risk_percent, rr_ratio, lot_size
+
+        Returns
+        -------
+        dict
+            {
+                allowed: bool,
+                code: str,
+                severity: str,
+                details: str,
+                max_safe_lot: float,
+                recommended_lot: float,
+                violations: list
+            }
+        """
+        try:
+            # Validate inputs
+            AccountState.from_dict(account_state)
+            t_risk = TradeRisk.from_dict(trade_risk)
+        except ValueError as e:
+            return GuardResult(
+                allowed=False,
+                code="INVALID_INPUT",
+                severity="ERROR",
+                details=f"Input validation failed: {e}",
+                max_safe_lot=0.0,
+                recommended_lot=0.0,
+            ).to_dict()
+
+        violations = []
+
+        # Validate trade against rules
         trade_result = self.validate_trade(
-            trade_risk["category"],
-            trade_risk["risk_percent"],
-            trade_risk["rr_ratio"],
+            t_risk.category,
+            t_risk.risk_percent,
+            t_risk.rr_ratio,
         )
 
+        violations.extend(trade_result["violations"])
+
+        # Calculate safe lot size
+        # Note: This requires stop_loss info which may not be in trade_risk yet
+        # For now, use the requested lot and clamp to max
+        max_safe_lot = min(t_risk.lot_size, self.max_lot_per_trade)
+        recommended_lot = max_safe_lot if trade_result["compliant"] else 0.0
+
         if trade_result["compliant"]:
-            result["allowed"] = True
-            result["code"] = "TRADE_ALLOWED"
-            result["severity"] = "LOW"
-            result["details"] = "Trade is compliant with prop firm rules."
+            return GuardResult(
+                allowed=True,
+                code="TRADE_ALLOWED",
+                severity="INFO",
+                details="Trade compliant with prop firm rules",
+                max_safe_lot=max_safe_lot,
+                recommended_lot=recommended_lot,
+                violations=[],
+            ).to_dict()
         else:
-            result["details"] = "Trade violates prop firm rules."
-            result["code"] = "RISK_EXCEEDED"
-            result["severity"] = "HIGH"
-
-        # Guarantee max_safe_lot is always present before returning
-        if "max_safe_lot" not in result:
-            result["max_safe_lot"] = result.get("recommended_lot", 0.0)
-
-        return result
-
-    @property
-    def max_daily_loss(self):
-        raise NotImplementedError
-
-    @max_daily_loss.setter
-    def max_daily_loss(self, value):
-        raise NotImplementedError
-
-    @property
-    def max_open_positions(self):
-        raise NotImplementedError
-
-    @max_open_positions.setter
-    def max_open_positions(self, value):
-        raise NotImplementedError
-
-    @property
-    def max_lot_per_trade(self):
-        raise NotImplementedError
-
-    @max_lot_per_trade.setter
-    def max_lot_per_trade(self, value):
-        raise NotImplementedError
+            return GuardResult(
+                allowed=False,
+                code="RISK_EXCEEDED",
+                severity="ERROR",
+                details="; ".join(violations),
+                max_safe_lot=max_safe_lot,
+                recommended_lot=0.0,
+                violations=violations,
+            ).to_dict()
 
 
 class PropFirmGuard:
@@ -206,6 +399,8 @@ class PropFirmGuard:
 
     Constitutional constraint: ALWAYS checked before execution,
     regardless of signal strength or confidence.
+
+    This is a GOVERNANCE layer, NOT a market decision layer.
     """
 
     def __init__(self):
@@ -216,58 +411,82 @@ class PropFirmGuard:
         self,
         account_state: dict,
         trade_risk: dict,
-        signal_verdict: str,  # ✅ NEW: Accept verdict but don't let it bypass checks
+        signal_verdict: str | None = None,  # For audit only
     ) -> dict:
         """
         Validate trade against prop firm rules.
 
+        Constitutional principle: Even EXECUTE verdicts must pass prop firm checks.
+        Signal confidence does NOT override risk rules.
+
         Args:
             account_state: {balance, equity, open_positions, daily_loss, ...}
-            trade_risk: {lot_size, risk_amount, symbol, ...}
+            trade_risk: {lot_size, risk_amount, symbol, category, risk_percent, rr_ratio, ...}
             signal_verdict: L12 verdict (for audit only, NOT a bypass key)
 
         Returns:
             {
                 "allowed": bool,
                 "code": str,
-                "severity": "ERROR" | "WARNING",
+                "severity": "ERROR" | "WARNING" | "INFO",
                 "details": str | None,
+                "max_safe_lot": float,
+                "recommended_lot": float,
             }
         """
-        # ✅ CRITICAL: Even EXECUTE verdicts must pass prop firm checks
-        # Signal confidence does NOT override risk rules
+        try:
+            # Validate inputs using typed models
+            acc_state = AccountState.from_dict(account_state)
+            t_risk = TradeRisk.from_dict(trade_risk)
+        except ValueError as e:
+            return GuardResult(
+                allowed=False,
+                code="INVALID_INPUT",
+                severity="ERROR",
+                details=f"Input validation failed: {e}",
+            ).to_dict()
 
         # Check 1: Daily loss limit
-        if account_state["daily_loss"] >= self.profile.max_daily_loss:
-            return {
-                "allowed": False,
-                "code": "DAILY_LOSS_LIMIT",
-                "severity": "ERROR",
-                "details": f"Daily loss {account_state['daily_loss']:.2f} >= {self.profile.max_daily_loss:.2f}",
-            }
+        if acc_state.daily_loss >= self.profile.max_daily_loss:
+            return GuardResult(
+                allowed=False,
+                code="DAILY_LOSS_LIMIT",
+                severity="ERROR",
+                details=f"Daily loss {acc_state.daily_loss:.2f} >= {self.profile.max_daily_loss:.2f}",
+            ).to_dict()
 
         # Check 2: Max open positions
-        if len(account_state["open_positions"]) >= self.profile.max_open_positions:
-            return {
-                "allowed": False,
-                "code": "MAX_POSITIONS",
-                "severity": "ERROR",
-                "details": f"Already at max positions ({self.profile.max_open_positions})",
-            }
+        if len(acc_state.open_positions) >= self.profile.max_open_positions:
+            return GuardResult(
+                allowed=False,
+                code="MAX_POSITIONS",
+                severity="ERROR",
+                details=f"Already at max positions ({self.profile.max_open_positions})",
+            ).to_dict()
 
         # Check 3: Lot size validation
-        if trade_risk["lot_size"] > self.profile.max_lot_per_trade:
-            return {
-                "allowed": False,
-                "code": "LOT_SIZE_EXCEEDED",
-                "severity": "ERROR",
-                "details": f"Lot {trade_risk['lot_size']} > max {self.profile.max_lot_per_trade}",
-            }
+        if t_risk.lot_size > self.profile.max_lot_per_trade:
+            return GuardResult(
+                allowed=False,
+                code="LOT_SIZE_EXCEEDED",
+                severity="ERROR",
+                details=f"Lot {t_risk.lot_size:.2f} > max {self.profile.max_lot_per_trade:.2f}",
+                max_safe_lot=self.profile.max_lot_per_trade,
+                recommended_lot=self.profile.max_lot_per_trade,
+            ).to_dict()
 
-        # ✅ All checks passed
-        return {
-            "allowed": True,
-            "code": "APPROVED",
-            "severity": "INFO",
-            "details": None,
-        }
+        # Check 4: Comprehensive prop firm rule validation
+        prop_check = self.profile.check(account_state, trade_risk)
+
+        if not prop_check["allowed"]:
+            return prop_check
+
+        # All checks passed
+        return GuardResult(
+            allowed=True,
+            code="APPROVED",
+            severity="INFO",
+            details=f"Trade approved (verdict: {signal_verdict})" if signal_verdict else "Trade approved",
+            max_safe_lot=min(t_risk.lot_size, self.profile.max_lot_per_trade),
+            recommended_lot=min(t_risk.lot_size, self.profile.max_lot_per_trade),
+        ).to_dict()
