@@ -1,163 +1,336 @@
 """
-Test L5 Psychology layer
+Tests for Layer 5 — Market Psychology & Trader Sentiment Analysis.
+Zone: Analysis. No execution side-effects.
 """
 
 import pytest  # pyright: ignore[reportMissingImports]
 
-from analysis.layers.L5_psychology import (  # pyright: ignore[reportMissingImports]
-    L5PsychologyAnalyzer,  # pyright: ignore[reportMissingImports]
+from analysis.l5_psychology import (  # pyright: ignore[reportMissingImports]
+    BAD_DAY_PNL_PCT,
+    EXTREME_SENTIMENT_THRESHOLD,
+    LOSS_STREAK_CAUTION,
+    LOSS_STREAK_TILT,
+    MAX_TRADES_PER_DAY,
+    L5Result,
+    PsychologyInputs,
+    PsychState,
+    SentimentBias,
+    analyze,
 )
 
-from context.runtime_state import RuntimeState
+# ---------------------------------------------------------------------------
+# Fixtures
+# ---------------------------------------------------------------------------
+
+@pytest.fixture
+def optimal_inputs() -> PsychologyInputs:
+    """Healthy trader state — no flags expected."""
+    return PsychologyInputs(
+        retail_long_ratio=0.50,
+        recent_consecutive_losses=0,
+        hours_since_last_trade=4.0,
+        trades_today=1,
+        daily_pnl_pct=0.5,
+        in_session_window=True,
+        fear_greed_index=50.0,
+    )
 
 
 @pytest.fixture
-def analyzer():
-    """Get L5PsychologyAnalyzer instance."""
-    # Reset RuntimeState for each test
-    RuntimeState.session_start = None
-    return L5PsychologyAnalyzer()
+def tilted_inputs() -> PsychologyInputs:
+    """Worst-case: loss streak + revenge + overtrading + bad day + out of session."""
+    return PsychologyInputs(
+        retail_long_ratio=0.50,
+        recent_consecutive_losses=5,
+        hours_since_last_trade=0.1,
+        trades_today=8,
+        daily_pnl_pct=-4.0,
+        in_session_window=False,
+        fear_greed_index=10.0,
+    )
 
 
-def test_psychology_initial_state(analyzer):
-    """Test psychology analyzer initial state."""
-    result = analyzer.analyze("EURUSD")
+# ---------------------------------------------------------------------------
+# Input validation
+# ---------------------------------------------------------------------------
 
-    assert result["valid"] is True
-    assert result["psychology_ok"] is True
-    assert result["consecutive_losses"] == 0
-    assert result["fatigue_level"] == "LOW"
-    assert result["session_hours"] >= 0.0
+class TestPsychologyInputsValidation:
+    def test_valid_inputs(self, optimal_inputs: PsychologyInputs) -> None:
+        assert optimal_inputs.retail_long_ratio == 0.50
 
+    def test_long_ratio_below_zero_raises(self) -> None:
+        with pytest.raises(ValueError, match="retail_long_ratio"):
+            PsychologyInputs(retail_long_ratio=-0.1)
 
-def test_fatigue_level_low(analyzer):
-    """Test LOW fatigue level (< 4 hours)."""
-    result = analyzer.analyze("EURUSD")
+    def test_long_ratio_above_one_raises(self) -> None:
+        with pytest.raises(ValueError, match="retail_long_ratio"):
+            PsychologyInputs(retail_long_ratio=1.1)
 
-    # Should be LOW since session just started
-    assert result["fatigue_level"] == "LOW"
-    assert result["psychology_ok"] is True
+    def test_fear_greed_below_zero_raises(self) -> None:
+        with pytest.raises(ValueError, match="fear_greed_index"):
+            PsychologyInputs(retail_long_ratio=0.5, fear_greed_index=-1.0)
 
+    def test_fear_greed_above_100_raises(self) -> None:
+        with pytest.raises(ValueError, match="fear_greed_index"):
+            PsychologyInputs(retail_long_ratio=0.5, fear_greed_index=101.0)
 
-def test_consecutive_losses_tracking(analyzer):
-    """Test consecutive loss tracking."""
-    # Record 1 loss
-    analyzer.record_loss()
-
-    result = analyzer.analyze("EURUSD")
-    assert result["consecutive_losses"] == 1
-    assert result["losses_ok"] is True  # Still OK (limit is 2)
-    assert result["psychology_ok"] is True
+    def test_boundary_values_accepted(self) -> None:
+        PsychologyInputs(retail_long_ratio=0.0, fear_greed_index=0.0)
+        PsychologyInputs(retail_long_ratio=1.0, fear_greed_index=100.0)
 
 
-def test_consecutive_losses_limit_reached(analyzer):
-    """Test psychology NOT OK when consecutive losses >= 2."""
-    # Record 2 losses (at limit)
-    analyzer.record_loss()
-    analyzer.record_loss()
+# ---------------------------------------------------------------------------
+# Sentiment classification
+# ---------------------------------------------------------------------------
 
-    result = analyzer.analyze("EURUSD")
-    assert result["consecutive_losses"] == 2
-    assert result["losses_ok"] is False  # At limit
-    assert result["psychology_ok"] is False
-    assert "consecutive losses" in result["recommendation"]
-
-
-def test_consecutive_losses_reset_on_win(analyzer):
-    """Test consecutive losses reset on win."""
-    # Record 2 losses
-    analyzer.record_loss()
-    analyzer.record_loss()
-
-    # Record a win
-    analyzer.record_win()
-
-    result = analyzer.analyze("EURUSD")
-    assert result["consecutive_losses"] == 0
-    assert result["losses_ok"] is True
+class TestSentimentBias:
+    @pytest.mark.parametrize("ratio, expected", [
+        (0.95, SentimentBias.EXTREME_LONG),
+        (EXTREME_SENTIMENT_THRESHOLD, SentimentBias.EXTREME_LONG),
+        (0.70, SentimentBias.LONG),
+        (0.50, SentimentBias.NEUTRAL),
+        (0.30, SentimentBias.SHORT),
+        (0.10, SentimentBias.EXTREME_SHORT),
+        (1.0 - EXTREME_SENTIMENT_THRESHOLD, SentimentBias.EXTREME_SHORT),
+    ])
+    def test_sentiment_classification(self, ratio: float, expected: SentimentBias) -> None:
+        inputs = PsychologyInputs(retail_long_ratio=ratio)
+        result = analyze("EURUSD", inputs)
+        assert result.sentiment_bias == expected
 
 
-def test_drawdown_tracking(analyzer):
-    """Test drawdown tracking."""
-    analyzer.update_drawdown(3.5)
+# ---------------------------------------------------------------------------
+# Contrarian signal
+# ---------------------------------------------------------------------------
 
-    result = analyzer.analyze("EURUSD")
-    assert result["drawdown_percent"] == 3.5
-    assert result["drawdown_ok"] is True  # Below 5% limit
+class TestContrarianSignal:
+    def test_extreme_long_triggers_contrarian(self) -> None:
+        inputs = PsychologyInputs(retail_long_ratio=0.90)
+        result = analyze("EURUSD", inputs)
+        assert result.contrarian_signal is True
 
+    def test_extreme_short_triggers_contrarian(self) -> None:
+        inputs = PsychologyInputs(retail_long_ratio=0.10)
+        result = analyze("EURUSD", inputs)
+        assert result.contrarian_signal is True
 
-def test_drawdown_limit_exceeded(analyzer):
-    """Test psychology NOT OK when drawdown >= 5%."""
-    analyzer.update_drawdown(5.5)
-
-    result = analyzer.analyze("EURUSD")
-    assert result["drawdown_percent"] == 5.5
-    assert result["drawdown_ok"] is False
-    assert result["psychology_ok"] is False
-    assert "drawdown" in result["recommendation"]
-
-
-def test_high_volatility_unstable(analyzer):
-    """Test psychology with high volatility profile."""
-    volatility_profile = {"profile": "HIGH"}
-
-    result = analyzer.analyze("EURUSD", volatility_profile=volatility_profile)
-    assert result["stable"] is False
-    assert result["psychology_ok"] is False
-    assert "high volatility" in result["recommendation"]
+    def test_neutral_no_contrarian(self) -> None:
+        inputs = PsychologyInputs(retail_long_ratio=0.50)
+        result = analyze("EURUSD", inputs)
+        assert result.contrarian_signal is False
 
 
-def test_psychology_ok_recommendation(analyzer):
-    """Test recommendation when psychology is OK."""
-    result = analyzer.analyze("EURUSD")
-    assert result["psychology_ok"] is True
-    assert result["recommendation"] == "Psychology OK"
+# ---------------------------------------------------------------------------
+# Optimal state
+# ---------------------------------------------------------------------------
+
+class TestOptimalState:
+    def test_optimal_inputs_produce_optimal_state(
+        self, optimal_inputs: PsychologyInputs
+    ) -> None:
+        result = analyze("EURUSD", optimal_inputs)
+        assert result.state == PsychState.OPTIMAL
+
+    def test_optimal_psych_score_high(self, optimal_inputs: PsychologyInputs) -> None:
+        result = analyze("EURUSD", optimal_inputs)
+        assert result.psych_score >= 80.0
+
+    def test_optimal_no_tilt(self, optimal_inputs: PsychologyInputs) -> None:
+        result = analyze("EURUSD", optimal_inputs)
+        assert result.tilt_detected is False
+
+    def test_optimal_no_overtrade(self, optimal_inputs: PsychologyInputs) -> None:
+        result = analyze("EURUSD", optimal_inputs)
+        assert result.overtrade_warning is False
+
+    def test_optimal_no_flags(self, optimal_inputs: PsychologyInputs) -> None:
+        result = analyze("EURUSD", optimal_inputs)
+        assert len(result.flags) == 0
 
 
-def test_psychology_not_ok_multiple_reasons(analyzer):
-    """Test recommendation with multiple failure reasons."""
-    # Set up multiple failure conditions
-    analyzer.record_loss()
-    analyzer.record_loss()
-    analyzer.record_loss()
-    analyzer.update_drawdown(5.5)
+# ---------------------------------------------------------------------------
+# Loss streak detection
+# ---------------------------------------------------------------------------
 
-    volatility_profile = {"profile": "HIGH"}
-    result = analyzer.analyze("EURUSD", volatility_profile=volatility_profile)
+class TestLossStreak:
+    def test_caution_at_threshold(self) -> None:
+        inputs = PsychologyInputs(
+            retail_long_ratio=0.50,
+            recent_consecutive_losses=LOSS_STREAK_CAUTION,
+        )
+        result = analyze("EURUSD", inputs)
+        flag_codes = [f.code for f in result.flags]
+        assert "LOSS_STREAK_CAUTION" in flag_codes
+        assert result.state in (PsychState.CAUTION, PsychState.IMPAIRED)
 
-    assert result["psychology_ok"] is False
-    recommendation = result["recommendation"]
-    assert "Psychology NOT OK" in recommendation
-    # Should contain multiple reasons
-    assert "high volatility" in recommendation or "drawdown" in recommendation
+    def test_tilt_at_threshold(self) -> None:
+        inputs = PsychologyInputs(
+            retail_long_ratio=0.50,
+            recent_consecutive_losses=LOSS_STREAK_TILT,
+        )
+        result = analyze("EURUSD", inputs)
+        flag_codes = [f.code for f in result.flags]
+        assert "LOSS_STREAK_TILT" in flag_codes
 
-
-def test_session_reset(analyzer):
-    """Test session reset functionality."""
-    # Set up some state
-    analyzer.record_loss()
-    analyzer.record_loss()
-    analyzer.update_drawdown(4.0)
-
-    # Get initial session time (should be > 0 if any time has passed)
-    result_before = analyzer.analyze("EURUSD")
-
-    # Reset session
-    analyzer.reset_session()
-
-    # Verify state is cleared
-    result = analyzer.analyze("EURUSD")
-    assert result["consecutive_losses"] == 0
-    assert result["drawdown_percent"] == 0.0
-    # Session hours should be very close to 0 after reset (freshly started)
-    assert result["session_hours"] < result_before.get("session_hours", 0.1) + 0.1
+    def test_no_flag_below_caution(self) -> None:
+        inputs = PsychologyInputs(
+            retail_long_ratio=0.50,
+            recent_consecutive_losses=LOSS_STREAK_CAUTION - 1,
+        )
+        result = analyze("EURUSD", inputs)
+        flag_codes = [f.code for f in result.flags]
+        assert "LOSS_STREAK_CAUTION" not in flag_codes
+        assert "LOSS_STREAK_TILT" not in flag_codes
 
 
-def test_runtime_state_integration(analyzer):
-    """Test integration with RuntimeState for session hours."""
-    # Session hours should come from RuntimeState
-    result = analyzer.analyze("EURUSD")
+# ---------------------------------------------------------------------------
+# Revenge trade detection
+# ---------------------------------------------------------------------------
 
-    # RuntimeState.get_session_hours() should be called
-    assert result["session_hours"] >= 0.0
-    assert "session_hours" in result
+class TestRevengeTrade:
+    def test_revenge_trade_detected(self) -> None:
+        inputs = PsychologyInputs(
+            retail_long_ratio=0.50,
+            recent_consecutive_losses=1,
+            hours_since_last_trade=0.2,  # 12 min after a loss
+        )
+        result = analyze("EURUSD", inputs)
+        flag_codes = [f.code for f in result.flags]
+        assert "REVENGE_TRADE_RISK" in flag_codes
+
+    def test_no_revenge_if_no_losses(self) -> None:
+        inputs = PsychologyInputs(
+            retail_long_ratio=0.50,
+            recent_consecutive_losses=0,
+            hours_since_last_trade=0.1,
+        )
+        result = analyze("EURUSD", inputs)
+        flag_codes = [f.code for f in result.flags]
+        assert "REVENGE_TRADE_RISK" not in flag_codes
+
+    def test_no_revenge_if_enough_time(self) -> None:
+        inputs = PsychologyInputs(
+            retail_long_ratio=0.50,
+            recent_consecutive_losses=2,
+            hours_since_last_trade=2.0,
+        )
+        result = analyze("EURUSD", inputs)
+        flag_codes = [f.code for f in result.flags]
+        assert "REVENGE_TRADE_RISK" not in flag_codes
+
+
+# ---------------------------------------------------------------------------
+# Overtrading
+# ---------------------------------------------------------------------------
+
+class TestOvertrading:
+    def test_overtrade_at_max(self) -> None:
+        inputs = PsychologyInputs(
+            retail_long_ratio=0.50,
+            trades_today=MAX_TRADES_PER_DAY,
+        )
+        result = analyze("EURUSD", inputs)
+        assert result.overtrade_warning is True
+        flag_codes = [f.code for f in result.flags]
+        assert "OVERTRADE" in flag_codes
+
+    def test_no_overtrade_below_max(self) -> None:
+        inputs = PsychologyInputs(
+            retail_long_ratio=0.50,
+            trades_today=MAX_TRADES_PER_DAY - 1,
+        )
+        result = analyze("EURUSD", inputs)
+        assert result.overtrade_warning is False
+
+
+# ---------------------------------------------------------------------------
+# Bad day / session
+# ---------------------------------------------------------------------------
+
+class TestBadDayAndSession:
+    def test_bad_day_flag(self) -> None:
+        inputs = PsychologyInputs(
+            retail_long_ratio=0.50,
+            daily_pnl_pct=BAD_DAY_PNL_PCT - 0.5,  # worse than threshold
+        )
+        result = analyze("EURUSD", inputs)
+        flag_codes = [f.code for f in result.flags]
+        assert "BAD_DAY" in flag_codes
+
+    def test_out_of_session_flag(self) -> None:
+        inputs = PsychologyInputs(
+            retail_long_ratio=0.50,
+            in_session_window=False,
+        )
+        result = analyze("EURUSD", inputs)
+        flag_codes = [f.code for f in result.flags]
+        assert "OUT_OF_SESSION" in flag_codes
+
+
+# ---------------------------------------------------------------------------
+# Tilt detection — full compound scenario
+# ---------------------------------------------------------------------------
+
+class TestTiltDetection:
+    def test_tilted_state(self, tilted_inputs: PsychologyInputs) -> None:
+        result = analyze("EURUSD", tilted_inputs)
+        assert result.state == PsychState.TILT
+        assert result.tilt_detected is True
+        assert result.psych_score < 25.0
+
+    def test_tilted_multiple_critical_flags(self, tilted_inputs: PsychologyInputs) -> None:
+        result = analyze("EURUSD", tilted_inputs)
+        critical_flags = [f for f in result.flags if f.severity == "CRITICAL"]
+        assert len(critical_flags) >= 2
+
+
+# ---------------------------------------------------------------------------
+# Psych score bounds & determinism
+# ---------------------------------------------------------------------------
+
+class TestPsychScore:
+    def test_score_within_bounds(self, optimal_inputs: PsychologyInputs) -> None:
+        result = analyze("EURUSD", optimal_inputs)
+        assert 0.0 <= result.psych_score <= 100.0
+
+    def test_score_deterministic(self, optimal_inputs: PsychologyInputs) -> None:
+        r1 = analyze("EURUSD", optimal_inputs)
+        r2 = analyze("EURUSD", optimal_inputs)
+        assert r1.psych_score == r2.psych_score
+
+    def test_tilted_score_low(self, tilted_inputs: PsychologyInputs) -> None:
+        result = analyze("EURUSD", tilted_inputs)
+        assert result.psych_score < 30.0
+
+
+# ---------------------------------------------------------------------------
+# Result immutability & no side-effects
+# ---------------------------------------------------------------------------
+
+class TestResultIntegrity:
+    def test_result_is_l5result(self, optimal_inputs: PsychologyInputs) -> None:
+        result = analyze("EURUSD", optimal_inputs)
+        assert isinstance(result, L5Result)
+
+    def test_result_is_frozen(self, optimal_inputs: PsychologyInputs) -> None:
+        result = analyze("EURUSD", optimal_inputs)
+        with pytest.raises(AttributeError):
+            result.state = PsychState.TILT  # type: ignore[misc]
+
+    def test_flags_are_tuple(self, optimal_inputs: PsychologyInputs) -> None:
+        result = analyze("EURUSD", optimal_inputs)
+        assert isinstance(result.flags, tuple)
+
+    def test_symbol_preserved(self, optimal_inputs: PsychologyInputs) -> None:
+        result = analyze("GBPJPY", optimal_inputs)
+        assert result.symbol == "GBPJPY"
+
+    def test_no_side_effects_on_inputs(self, optimal_inputs: PsychologyInputs) -> None:
+        original_ratio = optimal_inputs.retail_long_ratio
+        _ = analyze("EURUSD", optimal_inputs)
+        assert optimal_inputs.retail_long_ratio == original_ratio
+
+    def test_metadata_passthrough(self, optimal_inputs: PsychologyInputs) -> None:
+        meta = {"session": "london", "day_of_week": "monday"}
+        result = analyze("EURUSD", optimal_inputs, metadata=meta)
+        assert result.metadata == meta
