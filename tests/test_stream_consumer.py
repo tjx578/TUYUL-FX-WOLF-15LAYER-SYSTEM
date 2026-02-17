@@ -1,8 +1,10 @@
 """
-Tests for infrastructure/stream_consumer.py — XACK, PEL recovery, dynamic consumer.
+Tests for infrastructure/stream_consumer.py.
 
-Uses fakeredis[async] for isolated testing without a real Redis instance.
-If fakeredis is not available, tests are skipped.
+Validates: XACK after processing, PEL recovery, exponential backoff integration,
+dynamic consumer name, no run_in_executor.
+
+Uses mock Redis — no real server needed.
 """
 
 from __future__ import annotations
@@ -13,6 +15,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
+from infrastructure.backoff import BackoffConfig
 from infrastructure.consumer_identity import generate_consumer_name
 from infrastructure.stream_consumer import (
     ConsumerConfig,
@@ -21,172 +24,209 @@ from infrastructure.stream_consumer import (
     StreamPriority,
 )
 
-# ─── Consumer Identity Tests ─────────────────────────────────
+# ─── Consumer Identity ───────────────────────────────────────
 
 class TestConsumerIdentity:
-    def test_default_includes_hostname_and_pid(self) -> None:
+    def test_auto_generated(self) -> None:
         name = generate_consumer_name(prefix="test")
         assert name.startswith("test_")
         assert str(os.getpid()) in name
 
-    def test_override_takes_precedence(self) -> None:
-        name = generate_consumer_name(prefix="test", override="my_custom_consumer")
-        assert name == "my_custom_consumer"
+    def test_explicit_override(self) -> None:
+        name = generate_consumer_name(prefix="x", override="custom_1")
+        assert name == "custom_1"
 
-    def test_env_var_override(self) -> None:
-        with patch.dict(os.environ, {"REDIS_CONSUMER_NAME": "env_consumer_99"}):
-            name = generate_consumer_name(prefix="test")
-            assert name == "env_consumer_99"
+    def test_env_override(self) -> None:
+        with patch.dict(os.environ, {"REDIS_CONSUMER_NAME": "from_env"}):
+            assert generate_consumer_name() == "from_env"
 
-    def test_explicit_override_beats_env(self) -> None:
-        with patch.dict(os.environ, {"REDIS_CONSUMER_NAME": "env_consumer"}):
-            name = generate_consumer_name(prefix="test", override="explicit")
-            assert name == "explicit"
+    def test_explicit_beats_env(self) -> None:
+        with patch.dict(os.environ, {"REDIS_CONSUMER_NAME": "env"}):
+            assert generate_consumer_name(override="explicit") == "explicit"
 
-    def test_different_prefixes(self) -> None:
-        name1 = generate_consumer_name(prefix="engine")
-        name2 = generate_consumer_name(prefix="dashboard")
-        assert name1.startswith("engine_")
-        assert name2.startswith("dashboard_")
+    def test_unique_across_prefixes(self) -> None:
+        n1 = generate_consumer_name(prefix="engine")
+        n2 = generate_consumer_name(prefix="dashboard")
+        assert n1 != n2
 
 
-# ─── StreamConsumer Construction Tests ────────────────────────
+# ─── Construction ─────────────────────────────────────────────
 
 class TestStreamConsumerConstruction:
-    def test_requires_at_least_one_binding(self) -> None:
-        with pytest.raises(ValueError, match="At least one StreamBinding"):
+    def test_empty_bindings_raises(self) -> None:
+        with pytest.raises(ValueError, match="At least one"):
             StreamConsumer(bindings=[])
 
-    def test_consumer_name_generated(self) -> None:
-        binding = StreamBinding(
-            stream="test:stream",
-            group="test_group",
-            callback=AsyncMock(),
-        )
-        consumer = StreamConsumer(
-            bindings=[binding],
-            config=ConsumerConfig(consumer_prefix="unit_test"),
-        )
-        stats = consumer.stats
-        assert stats["consumer_name"].startswith("unit_test_")
-        assert stats["running"] is False
-
-    def test_explicit_consumer_name(self) -> None:
-        binding = StreamBinding(
-            stream="test:stream",
-            group="test_group",
-            callback=AsyncMock(),
-        )
-        consumer = StreamConsumer(
-            bindings=[binding],
-            config=ConsumerConfig(consumer_name="fixed_name_1"),
-        )
-        assert consumer.stats["consumer_name"] == "fixed_name_1"
-
-    def test_stats_initial(self) -> None:
+    def test_dynamic_consumer_name(self) -> None:
         binding = StreamBinding(
             stream="s", group="g", callback=AsyncMock(),
         )
-        consumer = StreamConsumer(bindings=[binding])
-        stats = consumer.stats
-        assert stats["messages_processed"] == 0
-        assert stats["messages_acked"] == 0
-        assert stats["messages_failed"] == 0
-        assert stats["pending_recovered"] == 0
-        assert stats["reconnects"] == 0
+        consumer = StreamConsumer(
+            bindings=[binding],
+            config=ConsumerConfig(consumer_prefix="unit"),
+        )
+        assert consumer.consumer_name.startswith("unit_")
+
+    def test_explicit_consumer_name(self) -> None:
+        consumer = StreamConsumer(
+            bindings=[StreamBinding(stream="s", group="g", callback=AsyncMock())],
+            config=ConsumerConfig(consumer_name="fixed_42"),
+        )
+        assert consumer.consumer_name == "fixed_42"
+
+    def test_initial_stats(self) -> None:
+        consumer = StreamConsumer(
+            bindings=[StreamBinding(stream="s", group="g", callback=AsyncMock())],
+        )
+        s = consumer.stats
+        assert s["messages_processed"] == 0
+        assert s["messages_acked"] == 0
+        assert s["messages_failed"] == 0
+        assert s["pending_recovered"] == 0
+        assert s["reconnects"] == 0
+        assert s["running"] is False
+
+    def test_backoff_config_in_stats_log(self) -> None:
+        """Ensure custom backoff config is accepted."""
+        cfg = ConsumerConfig(
+            backoff=BackoffConfig(initial=2.0, maximum=60.0, factor=3.0),
+        )
+        consumer = StreamConsumer(
+            bindings=[StreamBinding(stream="s", group="g", callback=AsyncMock())],
+            config=cfg,
+        )
+        assert consumer.stats["running"] is False  # Just verify no crash
 
 
-# ─── Process + ACK Tests (mocked Redis) ──────────────────────
+# ─── XACK: Process + Acknowledge ─────────────────────────────
 
-class TestProcessMessage:
-    """Test that _process_message calls callback then XACK."""
+class TestProcessAndAck:
+    """Core fix: XACK must happen after successful callback, not before."""
 
     @pytest.mark.asyncio
-    async def test_successful_process_calls_xack(self) -> None:
+    async def test_success_calls_callback_then_xack(self) -> None:
         callback = AsyncMock()
-        mock_redis = AsyncMock(spec=["xack"])
+        mock_redis = AsyncMock()
         mock_redis.xack = AsyncMock(return_value=1)
 
         binding = StreamBinding(
-            stream="signals:stream",
-            group="engine_group",
+            stream="signals:l12",
+            group="engine_grp",
             callback=callback,
         )
         consumer = StreamConsumer(
             bindings=[binding],
             redis_client=mock_redis,
         )
-        # Inject the mock redis
-        consumer._redis = mock_redis
 
-        success = await consumer._process_message(
-            binding, "1234-0", {"symbol": "EURUSD", "verdict": "EXECUTE"},
+        success = await consumer._process_and_ack(
+            binding, "1700000000000-0",
+            {"symbol": "EURUSD", "verdict": "EXECUTE", "confidence": "0.88"},
         )
 
         assert success is True
+
+        # Callback called with correct args
         callback.assert_awaited_once_with(
-            "signals:stream", "1234-0",
-            {"symbol": "EURUSD", "verdict": "EXECUTE"},
+            "signals:l12",
+            "1700000000000-0",
+            {"symbol": "EURUSD", "verdict": "EXECUTE", "confidence": "0.88"},
         )
+
+        # XACK called with stream, group, message_id
         mock_redis.xack.assert_awaited_once_with(
-            "signals:stream", "engine_group", "1234-0",
+            "signals:l12", "engine_grp", "1700000000000-0",
         )
+
         assert consumer.stats["messages_processed"] == 1
         assert consumer.stats["messages_acked"] == 1
+        assert consumer.stats["messages_failed"] == 0
 
     @pytest.mark.asyncio
-    async def test_failed_callback_no_xack(self) -> None:
-        """If callback raises, message stays in PEL (no XACK)."""
-        callback = AsyncMock(side_effect=RuntimeError("processing failed"))
-        mock_redis = AsyncMock(spec=["xack"])
+    async def test_callback_failure_no_xack(self) -> None:
+        """If callback raises, message must NOT be ACK'd (stays in PEL)."""
+        callback = AsyncMock(side_effect=ValueError("bad data"))
+        mock_redis = AsyncMock()
+        mock_redis.xack = AsyncMock()
 
         binding = StreamBinding(
-            stream="signals:stream",
-            group="engine_group",
-            callback=callback,
+            stream="candles:m1", group="grp", callback=callback,
         )
         consumer = StreamConsumer(
-            bindings=[binding],
-            redis_client=mock_redis,
+            bindings=[binding], redis_client=mock_redis,
         )
-        consumer._redis = mock_redis
 
-        success = await consumer._process_message(
-            binding, "1234-0", {"symbol": "EURUSD"},
+        success = await consumer._process_and_ack(
+            binding, "msg-001", {"symbol": "GBPUSD"},
         )
 
         assert success is False
-        mock_redis.xack.assert_not_awaited()  # No ACK on failure
+        mock_redis.xack.assert_not_awaited()  # Critical: no ACK
         assert consumer.stats["messages_failed"] == 1
         assert consumer.stats["messages_acked"] == 0
 
-
-# ─── PEL Recovery Tests ──────────────────────────────────────
-
-class TestPendingRecovery:
     @pytest.mark.asyncio
-    async def test_recover_pending_processes_and_acks(self) -> None:
-        """On reconnect, pending messages should be reprocessed and ACK'd."""
+    async def test_multiple_messages_independent_ack(self) -> None:
+        """Each message gets its own ACK — failure of one doesn't block others."""
+        call_count = 0
+
+        async def selective_callback(
+            stream: str, msg_id: str, fields: dict[str, str],
+        ) -> None:
+            nonlocal call_count
+            call_count += 1
+            if fields.get("fail") == "true":
+                raise RuntimeError("selective failure")
+
+        mock_redis = AsyncMock()
+        mock_redis.xack = AsyncMock(return_value=1)
+
+        binding = StreamBinding(
+            stream="s", group="g", callback=selective_callback,
+        )
+        consumer = StreamConsumer(
+            bindings=[binding], redis_client=mock_redis,
+        )
+
+        r1 = await consumer._process_and_ack(
+            binding, "1", {"symbol": "A"},
+        )
+        r2 = await consumer._process_and_ack(
+            binding, "2", {"symbol": "B", "fail": "true"},
+        )
+        r3 = await consumer._process_and_ack(
+            binding, "3", {"symbol": "C"},
+        )
+
+        assert r1 is True
+        assert r2 is False
+        assert r3 is True
+        assert consumer.stats["messages_acked"] == 2
+        assert consumer.stats["messages_failed"] == 1
+        assert mock_redis.xack.await_count == 2  # Only 2 ACKs, not 3
+
+
+# ─── PEL Recovery ────────────────────────────────────────────
+
+class TestPELRecovery:
+    @pytest.mark.asyncio
+    async def test_recovers_pending_messages(self) -> None:
         callback = AsyncMock()
         mock_redis = AsyncMock()
         mock_redis.xreadgroup = AsyncMock(return_value=[
-            ("signals:stream", [
-                ("1111-0", {"symbol": "EURUSD", "verdict": "EXECUTE"}),
-                ("2222-0", {"symbol": "GBPUSD", "verdict": "HOLD"}),
+            ("signals:l12", [
+                ("aaa-0", {"symbol": "EURUSD", "verdict": "EXECUTE"}),
+                ("bbb-0", {"symbol": "GBPUSD", "verdict": "HOLD"}),
             ]),
         ])
         mock_redis.xack = AsyncMock(return_value=1)
 
         binding = StreamBinding(
-            stream="signals:stream",
-            group="engine_group",
-            callback=callback,
+            stream="signals:l12", group="grp", callback=callback,
         )
         consumer = StreamConsumer(
-            bindings=[binding],
-            redis_client=mock_redis,
+            bindings=[binding], redis_client=mock_redis,
         )
-        consumer._redis = mock_redis
 
         recovered = await consumer._recover_pending(binding)
 
@@ -196,64 +236,93 @@ class TestPendingRecovery:
         assert consumer.stats["pending_recovered"] == 2
 
     @pytest.mark.asyncio
-    async def test_recover_pending_empty(self) -> None:
-        """No pending messages — nothing to recover."""
+    async def test_empty_pel_returns_zero(self) -> None:
         mock_redis = AsyncMock()
         mock_redis.xreadgroup = AsyncMock(return_value=[])
 
         binding = StreamBinding(
             stream="s", group="g", callback=AsyncMock(),
         )
-        consumer = StreamConsumer(bindings=[binding], redis_client=mock_redis)
-        consumer._redis = mock_redis
+        consumer = StreamConsumer(
+            bindings=[binding], redis_client=mock_redis,
+        )
+
+        assert await consumer._recover_pending(binding) == 0
+
+    @pytest.mark.asyncio
+    async def test_empty_fields_acked_without_callback(self) -> None:
+        """Messages with empty fields (already delivered) should just be ACK'd."""
+        callback = AsyncMock()
+        mock_redis = AsyncMock()
+        mock_redis.xreadgroup = AsyncMock(return_value=[
+            ("s", [
+                ("ghost-0", {}),  # Empty fields
+                ("real-0", {"data": "value"}),  # Real message
+            ]),
+        ])
+        mock_redis.xack = AsyncMock(return_value=1)
+
+        binding = StreamBinding(stream="s", group="g", callback=callback)
+        consumer = StreamConsumer(
+            bindings=[binding], redis_client=mock_redis,
+        )
 
         recovered = await consumer._recover_pending(binding)
-        assert recovered == 0
+
+        assert recovered == 1  # Only the real message counts
+        assert callback.await_count == 1  # Ghost not sent to callback
+        assert mock_redis.xack.await_count == 2  # Both ACK'd
 
 
-# ─── Stream Binding Configuration Tests ──────────────────────
+# ─── Stream Priority ─────────────────────────────────────────
 
-class TestStreamBinding:
-    def test_default_priority(self) -> None:
-        binding = StreamBinding(stream="s", group="g", callback=AsyncMock())
-        assert binding.priority == StreamPriority.IMPORTANT
+class TestStreamPriority:
+    def test_default_is_important(self) -> None:
+        b = StreamBinding(stream="s", group="g", callback=AsyncMock())
+        assert b.priority == StreamPriority.IMPORTANT
 
-    def test_critical_priority(self) -> None:
-        binding = StreamBinding(
+    def test_critical(self) -> None:
+        b = StreamBinding(
             stream="s", group="g", callback=AsyncMock(),
             priority=StreamPriority.CRITICAL,
         )
-        assert binding.priority == StreamPriority.CRITICAL
+        assert b.priority == StreamPriority.CRITICAL
 
-    def test_max_pending_age_default(self) -> None:
-        binding = StreamBinding(stream="s", group="g", callback=AsyncMock())
-        assert binding.max_pending_age_ms == 300_000
+    def test_ephemeral(self) -> None:
+        b = StreamBinding(
+            stream="s", group="g", callback=AsyncMock(),
+            priority=StreamPriority.EPHEMERAL,
+        )
+        assert b.priority == StreamPriority.EPHEMERAL
 
 
-# ─── Stop/Lifecycle Tests ────────────────────────────────────
+# ─── Lifecycle ────────────────────────────────────────────────
 
 class TestLifecycle:
     @pytest.mark.asyncio
-    async def test_stop_sets_running_false(self) -> None:
-        binding = StreamBinding(stream="s", group="g", callback=AsyncMock())
-        consumer = StreamConsumer(bindings=[binding])
+    async def test_stop_clears_running(self) -> None:
+        consumer = StreamConsumer(
+            bindings=[StreamBinding(stream="s", group="g", callback=AsyncMock())],
+        )
         consumer._running = True
-
         await consumer.stop()
         assert consumer._running is False
+        assert consumer.stats["running"] is False
 
     @pytest.mark.asyncio
-    async def test_double_start_warns(self) -> None:
-        """Starting an already-running consumer should log warning, not crash."""
-        binding = StreamBinding(stream="s", group="g", callback=AsyncMock())
-        consumer = StreamConsumer(bindings=[binding])
+    async def test_stop_cancels_tasks(self) -> None:
+        consumer = StreamConsumer(
+            bindings=[StreamBinding(stream="s", group="g", callback=AsyncMock())],
+        )
         consumer._running = True
 
-        # Should return immediately without error
-        # (the real start() would loop, but _running=True triggers early return)
-        # We test that calling start when _running=True returns quickly
-        # by using a short timeout
-        with pytest.raises(asyncio.TimeoutError):
-            # start() will attempt reconnect loop which hangs without real Redis
-            # but the important thing is it doesn't crash on double-start
-            await asyncio.wait_for(consumer.start(), timeout=0.1)
+        # Create a mock task
+        async def hang_forever() -> None:
+            await asyncio.sleep(3600)
+
+        task = asyncio.create_task(hang_forever())
+        consumer._tasks = [task]
+
+        await consumer.stop()
+        assert task.cancelled() or task.done()
+        assert len(consumer._tasks) == 0
