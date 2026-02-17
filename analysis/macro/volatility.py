@@ -7,6 +7,8 @@ for multi-timeframe risk adjustment.
 
 from __future__ import annotations
 
+from typing import Any
+
 
 def calculate_atr(candles: list[dict], period: int = 14) -> float:
     """Calculate Average True Range from candle data.
@@ -45,7 +47,7 @@ def calculate_atr(candles: list[dict], period: int = 14) -> float:
 def volatility_regime(
     current_atr: float,
     baseline_atr: float,
-) -> dict:
+) -> dict[str, Any]:
     """Determine volatility regime from ATR ratio.
 
     Args:

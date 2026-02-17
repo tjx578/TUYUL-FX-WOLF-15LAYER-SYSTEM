@@ -3,6 +3,8 @@ Gatekeeper - Constitutional 9-Gate Enforcement
 NO EXECUTION | NO DISCRETION
 """
 
+from typing import Any
+
 from config_loader import load_constitution
 from constitution.violation_log import ViolationLogger
 
@@ -12,7 +14,7 @@ class Gatekeeper:
         self.constitution = load_constitution()
         self.logger = ViolationLogger()
 
-    def evaluate(self, candidate: dict) -> dict:
+    def evaluate(self, candidate: dict) -> dict[str, Any]:
         symbol = candidate.get("symbol")
 
         gates = [

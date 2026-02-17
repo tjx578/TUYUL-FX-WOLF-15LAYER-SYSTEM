@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import logging
 import time
+from typing import Any
 
 logger = logging.getLogger("tuyul.constitution.expiry")
 
@@ -18,7 +19,7 @@ TIMEFRAME_TTL: dict[str, int] = {
 DEFAULT_TTL = 300
 
 
-def assign_expiry(signal: dict, primary_timeframe: str = "H1") -> dict:
+def assign_expiry(signal: dict, primary_timeframe: str = "H1") -> dict[str, Any]:
     """Attach expires_at to an L12 signal."""
     ttl = TIMEFRAME_TTL.get(primary_timeframe, DEFAULT_TTL)
     signal["expires_at"] = time.time() + ttl
