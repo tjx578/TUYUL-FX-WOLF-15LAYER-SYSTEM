@@ -27,24 +27,22 @@ services:
 
   redis:
     image: redis:7-alpine
-    restart: unless-stopped
-    # Enforce password + memory policy; no host port exposure
     command: >
       redis-server
-      --appendonly yes
-      --maxmemory 512mb
+      --requirepass ${REDIS_PASSWORD:?REDIS_PASSWORD must be set}
+      --maxmemory 256mb
       --maxmemory-policy allkeys-lru
-      --requirepass ${REDIS_PASSWORD}
+    ports:
+      # Bind to localhost only — not reachable from external network
+      - "127.0.0.1:6379:6379"
     volumes:
       - redis_data:/data
     healthcheck:
       test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
       interval: 10s
       timeout: 5s
-      retries: 5
-    # No 'ports:' → only accessible within wolf15_net (internal only)
-    networks:
-      - wolf15_net
+      retries: 3
+    restart: unless-stopped
 
 volumes:
   redis_data:
