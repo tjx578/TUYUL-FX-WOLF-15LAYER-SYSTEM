@@ -20,7 +20,7 @@ scipy>=1.11.0                  # scipy.stats.beta used by bayesian_update_engine
 pandas==2.2.2
 
 # Storage
-redis==5.0.8
+redis>=5.0.0
 asyncpg==0.30.0
 psycopg[binary]==3.2.4
 alembic==1.14.1
