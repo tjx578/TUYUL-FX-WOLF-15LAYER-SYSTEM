@@ -1,162 +1,55 @@
-version: '3.8'
+version: "3.8"
 
 services:
-  # ================================================
-  # Redis - Data Storage
-  # ================================================
+  app:
+    build: .
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      - WEB_CONCURRENCY=${WEB_CONCURRENCY:-2}
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
+    ports:
+      - "${APP_PORT:-8000}:8000"
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      start_period: 15s
+      retries: 3
+    networks:
+      - wolf15_net
+
   redis:
     image: redis:7-alpine
-    container_name: tuyulfx-redis
-    ports:
-      - "6379:6379"
+    restart: unless-stopped
+    # Enforce password + memory policy; no host port exposure
+    command: >
+      redis-server
+      --appendonly yes
+      --maxmemory 512mb
+      --maxmemory-policy allkeys-lru
+      --requirepass ${REDIS_PASSWORD}
     volumes:
       - redis_data:/data
-    command: redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru
-    restart: unless-stopped
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
+    # No 'ports:' → only accessible within wolf15_net (internal only)
     networks:
-      - tuyulfx-network
-
-  # ================================================
-  # Trading Engine - Main Logic
-  # ================================================
-  engine:
-    build:
-      context: .
-      target: engine
-    container_name: tuyulfx-engine
-    env_file:
-      - .env
-    environment:
-      - REDIS_URL=redis://redis:6379/0
-      - CONTEXT_MODE=redis
-      - RUN_MODE=engine-only
-      - ENGINE_HEALTH_PORT=8081
-      - PYTHONUNBUFFERED=1
-    volumes:
-      - ./storage:/app/storage
-      - ./logs:/app/logs
-    depends_on:
-      redis:
-        condition: service_healthy
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8081/healthz', timeout=5)"]
-      interval: 15s
-      timeout: 5s
-      retries: 3
-      start_period: 30s
-    networks:
-      - tuyulfx-network
-
-  # ================================================
-  # Ingest Service - Finnhub WebSocket
-  # ================================================
-  ingest:
-    build:
-      context: .
-      target: ingest
-    container_name: tuyulfx-ingest
-    env_file:
-      - .env
-    environment:
-      - REDIS_URL=redis://redis:6379/0
-      - CONTEXT_MODE=redis
-      - INGEST_HEALTH_PORT=8082
-      - PYTHONUNBUFFERED=1
-    depends_on:
-      redis:
-        condition: service_healthy
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8082/healthz', timeout=5)"]
-      interval: 15s
-      timeout: 5s
-      retries: 3
-      start_period: 45s
-    networks:
-      - tuyulfx-network
-
-  # ================================================
-  # API Server - FastAPI Dashboard Backend
-  # ================================================
-  api:
-    build:
-      context: .
-      target: api
-    container_name: tuyulfx-api
-    ports:
-      - "8000:8000"
-    env_file:
-      - .env
-    environment:
-      - REDIS_URL=redis://redis:6379/0
-      - PYTHONUNBUFFERED=1
-    volumes:
-      - ./storage:/app/storage
-      - ./logs:/app/logs
-    depends_on:
-      redis:
-        condition: service_healthy
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=5)"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 10s
-    networks:
-      - tuyulfx-network
-
-  # ================================================
-  # Next.js Dashboard - Frontend (Optional)
-  # Uncomment when Next.js dashboard is ready
-  # ================================================
-  # dashboard:
-  #   build:
-  #     context: ./dashboard/nextjs
-  #     dockerfile: Dockerfile
-  #   container_name: tuyulfx-dashboard
-  #   ports:
-  #     - "3000:3000"
-  #   environment:
-  #     - NODE_ENV=production
-  #     - NEXT_PUBLIC_API_URL=http://api:8000
-  #     - NEXT_PUBLIC_TIMEZONE=Asia/Singapore
-  #   depends_on:
-  #     - api
-  #   restart: unless-stopped
-  #   networks:
-  #     - tuyulfx-network
-
-  # ================================================
-  # Nginx - Reverse Proxy (Optional)
-  # Uncomment for production deployment with SSL
-  # ================================================
-  # nginx:
-  #   image: nginx:alpine
-  #   container_name: tuyulfx-nginx
-  #   ports:
-  #     - "80:80"
-  #     - "443:443"
-  #   volumes:
-  #     - ./deploy/hostinger/nginx.conf:/etc/nginx/conf.d/default.conf
-  #     - ./ssl:/etc/nginx/ssl
-  #   depends_on:
-  #     - api
-  #     - dashboard
-  #   restart: unless-stopped
-  #   networks:
-  #     - tuyulfx-network
+      - wolf15_net
 
 volumes:
   redis_data:
     driver: local
 
 networks:
-  tuyulfx-network:
+  wolf15_net:
     driver: bridge

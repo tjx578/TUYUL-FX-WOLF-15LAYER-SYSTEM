@@ -1,51 +1,40 @@
 # Wolf 15-Layer Trading System - Dockerfile (Multi-stage build)
 
-FROM python:3.11-slim AS base
+FROM python:3.11-slim
 
-# Set working directory
+LABEL maintainer="TUYUL-FX Wolf-15 Layer System"
+
+# --- Security: create non-root user ---
+RUN groupadd --gid 1000 appuser \
+    && useradd --uid 1000 --gid appuser --shell /bin/bash --create-home appuser
+
 WORKDIR /app
 
-# Set environment variables
-ENV PYTHONUNBUFFERED=1 \
-    PYTHONDONTWRITEBYTECODE=1 \
-    PIP_NO_CACHE_DIR=1 \
-    PIP_DISABLE_PIP_VERSION_CHECK=1
-
-# Install system dependencies
+# Install system deps (if any) then clean up
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    gcc \
-    libpq-dev \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy requirements first for better caching
+# Copy requirements first (layer caching)
 COPY requirements.txt .
-
-# Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application code
 COPY . .
 
-# Create necessary directories
-RUN mkdir -p /app/storage/snapshots /app/storage/ea_commands /app/storage/ea_state /app/storage/decision_archive /app/storage/gpt_exports /app/logs
+# --- Security: switch to non-root user ---
+RUN chown -R appuser:appuser /app
+USER appuser
 
-# ================================================
-# Stage: API Server
-# ================================================
-FROM base AS api
-EXPOSE 8000
-CMD ["gunicorn", "api_server:app", "--workers", "2", "--worker-class", "uvicorn.workers.UvicornWorker", "--bind", "0.0.0.0:8000"]
+# Configurable port
+ENV PORT=8000
+EXPOSE ${PORT}
 
-# ================================================
-# Stage: Trading Engine
-# ================================================
-FROM base AS engine
-EXPOSE 8081
-CMD ["python", "main.py"]
+# Configurable workers via WEB_CONCURRENCY (default 2)
+ENV WEB_CONCURRENCY=2
 
-# ================================================
-# Stage: Ingest Service
-# ================================================
-FROM base AS ingest
-EXPOSE 8082
-CMD ["python", "ingest_service.py"]
+# --- Healthcheck ---
+HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
+    CMD curl -f http://localhost:${PORT}/health || exit 1
+
+CMD ["sh", "-c", "gunicorn --bind 0.0.0.0:${PORT} --workers ${WEB_CONCURRENCY} --timeout 120 dashboard.app:app"]
