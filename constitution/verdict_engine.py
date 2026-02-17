@@ -1,719 +1,164 @@
 from __future__ import annotations
 
-import logging
-
-from typing import Any
-
-from config.constitution import CONSTITUTION_THRESHOLDS
-from constitution.violation_log import log_violation
-from context.live_context_bus import LiveContextBus
-from utils.timezone_utils import format_utc, now_utc
-
-logger = logging.getLogger(__name__)
+from dataclasses import dataclass
 
 
-def _gate(condition: bool) -> str:
-    return "PASS" if condition else "FAIL"
+@dataclass
+class ExhaustionLayerInput:
+    """L7 Exhaustion divergence analysis result."""
+    score: float
+    confidence: float
+    reason: str
+    available_tfs: list[str]
+    missing_tfs: list[str]
 
+@dataclass
+class VerdictThresholds:
+    """Constitutional thresholds for Layer-12 decisions."""
 
-def generate_l12_verdict(synthesis: dict[str, Any]) -> dict[str, Any]:  # noqa: PLR0912
-    """
-    Input: synthesis output from analysis.synthesis (L1-L11).
-    Output: final L12 verdict (constitutional).
-    """
+    # Exhaustion layer (L7) thresholds
+    exhaustion_min_confidence: float = 0.75  # ✅ NEW: Strong multi-TF alignment required
+    exhaustion_min_score: float = 0.6
 
-    # Feed staleness circuit breaker
-    context_bus = LiveContextBus()
-    pair = synthesis.get("pair")
-
-    if pair and isinstance(pair, str) and pair.strip() and context_bus.is_feed_stale(pair):
-        feed_age = context_bus.get_feed_age(pair)
-        logger.warning(
-            "Feed stale - circuit breaker activated",
-            extra={"pair": pair, "feed_age_s": feed_age},
-        )
-        return {
-            "schema": "v7.4r∞",
-            "pair": pair,
-            "timestamp": format_utc(now_utc()),
-            "verdict": "HOLD",
-            "confidence": "LOW",
-            "wolf_status": "NO_HUNT",
-            "gates": {"passed": 0, "total": 10},
-            "execution": {},
-            "scores": synthesis.get("scores", {}),
-            "proceed_to_L13": False,
-            "circuit_breaker": "FEED_STALE",
-            "feed_age_s": feed_age,
-        }
-
-    try:
-        scores = synthesis["scores"]
-        layers = synthesis["layers"]
-        execution = synthesis["execution"]
-        propfirm = synthesis["propfirm"]
-        risk = synthesis["risk"]
-        bias = synthesis["bias"]
-    except KeyError as exc:
-        raise ValueError(f"L12 ERROR: Missing required synthesis field {exc}") from exc
-
-    tii_min = CONSTITUTION_THRESHOLDS["tii_min"]
-    integrity_min = CONSTITUTION_THRESHOLDS["integrity_min"]
-    rr_min = CONSTITUTION_THRESHOLDS["rr_min"]
-    fta_min = CONSTITUTION_THRESHOLDS["fta_min"]
-    monte_min = CONSTITUTION_THRESHOLDS["monte_min"]
-    conf12_min = CONSTITUTION_THRESHOLDS["conf12_min"]
-    max_drawdown = CONSTITUTION_THRESHOLDS["max_drawdown"]
-
-    gates = {
-        "gate_1_tii": _gate(layers["L8_tii_sym"] >= tii_min),
-        "gate_2_integrity": _gate(layers["L8_integrity_index"] >= integrity_min),
-        "gate_3_rr": _gate(execution["rr_ratio"] >= rr_min),
-        "gate_4_fta": _gate(scores["fta_score"] >= fta_min),
-        "gate_5_montecarlo": _gate(layers["L7_monte_carlo_win"] >= monte_min),
-        "gate_6_propfirm": _gate(bool(propfirm.get("compliant", False))),
-        "gate_7_drawdown": _gate(risk["current_drawdown"] <= max_drawdown),
-        "gate_8_latency": _gate(synthesis["system"]["latency_ms"] <= 250),
-        "gate_9_conf12": _gate(layers["conf12"] >= conf12_min),
-    }
-
-    # Gate #10: Macro VIX regime check
-    macro_vix = synthesis.get("macro_vix", {})
-    vix_regime_state = macro_vix.get("regime_state", 1)
-    safe_mode = synthesis.get("system", {}).get("safe_mode", False)
-    gates["gate_10_macro_regime"] = _gate(vix_regime_state < 2 or safe_mode)
-
-    passed_gates = sum(1 for gate in gates.values() if gate == "PASS")
-
-    violations = []
-
-    # ─── MN Bias Conflict Guard (internal, non-gate) ───
-    # If monthly macro regime conflicts with trade direction,
-    # downgrade verdict to HOLD unless confidence is extremely high
-    macro_data = synthesis.get("macro", {})
-    mn_regime = macro_data.get("regime", "UNKNOWN")
-    mn_bias_override = macro_data.get("bias_override", {})
-
-    mn_conflict = False
-    mn_override_active = False
-    if mn_bias_override.get("active", False):
-        # Determine trade direction
-        trade_direction = execution.get("direction")
-        penalized_direction = mn_bias_override.get("penalized_direction")
-
-        if trade_direction == penalized_direction:
-            mn_conflict = True
-            # Apply confidence penalty
-            adjusted_conf12 = layers["conf12"] * mn_bias_override.get(
-                "confidence_multiplier", 1.0
-            )
-            # If adjusted conf12 drops below threshold and we passed 7+ gates,
-            # consider downgrading to HOLD for counter-macro trades
-            if adjusted_conf12 < conf12_min and passed_gates >= 7:
-                mn_override_active = True
-
-    # Check for F/T conflict - NEUTRAL is compatible with any direction
-    if bias["fundamental"] != bias["technical"]:
-        if bias["fundamental"] != "NEUTRAL" and bias["technical"] != "NEUTRAL":
-            violations.append("F_T_CONFLICT")
-
-    if scores["exec_score"] < 6:
-        violations.append("EXEC_SCORE_VIOLATION")
-
-    if violations:
-        verdict = "NO_TRADE"
-        confidence = "LOW"
-        wolf_status = "NO_HUNT"
-
-        for violation in violations:
-            log_violation(pair=synthesis["pair"], reason=violation)
-    elif mn_override_active:
-        # MN bias conflict override: downgrade to HOLD
-        verdict = "HOLD"
-        confidence = "MEDIUM"
-        wolf_status = "SCOUT"
-        log_violation(
-            pair=synthesis["pair"],
-            reason=f"MN_BIAS_CONFLICT: counter-macro trade in {mn_regime}",
-        )
-    elif passed_gates < 10:
-        verdict = "HOLD"
-        confidence = "MEDIUM"
-        wolf_status = "SCOUT"
-
-        failed = [key for key, value in gates.items() if value == "FAIL"]
-        log_violation(pair=synthesis["pair"], reason=f"GATES_FAILED: {failed}")
-    else:
-        # Determine direction from execution or bias
-        # If direction is missing or HOLD, infer from technical bias
-        direction = execution.get("direction")
-        if not direction or direction == "HOLD":
-            # Infer from technical bias (BULLISH -> BUY, BEARISH -> SELL)
-            if bias["technical"] == "BULLISH":
-                direction = "BUY"
-            elif bias["technical"] == "BEARISH":
-                direction = "SELL"
-            else:
-                # No directional bias - return HOLD, not EXECUTE_HOLD
-                verdict = "HOLD"
-                confidence = "MEDIUM"
-                wolf_status = "SCOUT"
-                direction = None  # Clear direction
-
-        if direction:  # Only set EXECUTE verdict if we have a valid direction
-            verdict = f"EXECUTE_{direction}"
-            confidence = "VERY_HIGH" if scores["wolf_30_point"] >= 27 else "HIGH"
-            wolf_status = "ALPHA" if scores["wolf_30_point"] >= 27 else "PACK"
-
-    # ─── Enrichment-aware confidence adjustment (advisory) ───
-    # Enrichment engines (cognitive, quantum, fusion, etc.) produce:
-    #   enrichment_score        : aggregate 0-1 score across all engines
-    #   enrichment_confidence_adj: signed float (boost or dampening) from
-    #                              EngineEnrichmentLayer._aggregate()
-    #
-    # Both are ADVISORY -- they adjust the confidence tier but NEVER
-    # override the verdict itself.
-    enrichment_score = layers.get("enrichment_score", 0.0)
-    enrichment_confidence_adj = layers.get("enrichment_confidence_adj", 0.0)
-    enrichment_applied = False
-
-    # ── Phase 1: Discrete tier adjustment from enrichment_score ──────
-    if isinstance(enrichment_score, (int, float)) and enrichment_score > 0:
-        if verdict.startswith("EXECUTE"):  # pyright: ignore[reportPossiblyUnboundVariable]
-            if enrichment_score >= 0.75 and confidence == "HIGH":  # pyright: ignore[reportPossiblyUnboundVariable]
-                confidence = "VERY_HIGH"
-                enrichment_applied = True
-            elif enrichment_score < 0.30 and confidence in ("HIGH", "VERY_HIGH"):  # pyright: ignore[reportPossiblyUnboundVariable]
-                confidence = "MEDIUM"
-                enrichment_applied = True
-        elif verdict == "HOLD" and enrichment_score < 0.20:  # pyright: ignore[reportPossiblyUnboundVariable]
-            # Very low engine agreement reinforces HOLD
-            enrichment_applied = True  # confidence stays MEDIUM, logged only
-
-    # ── Phase 2: Continuous confidence injection from confidence_adj ──
-    # The enrichment layer computes a signed adjustment:
-    #   positive = integrity boost outweighs tail risk
-    #   negative = tail risk or instability dampens confidence
-    # This modulates the tier only when executing — never promotes
-    # a NO_TRADE/HOLD to EXECUTE (constitutional boundary).
-    if (
-        isinstance(enrichment_confidence_adj, (int, float))
-        and enrichment_confidence_adj != 0.0
-        and verdict.startswith("EXECUTE")  # pyright: ignore[reportPossiblyUnboundVariable]
-    ):
-        # Clamp adjustment to [-0.15, +0.10] to prevent extreme swings
-        clamped_adj = max(-0.15, min(0.10, float(enrichment_confidence_adj)))
-
-        if clamped_adj >= 0.06 and confidence == "HIGH":  # pyright: ignore[reportPossiblyUnboundVariable]
-            # Strong positive enrichment boost → promote tier
-            confidence = "VERY_HIGH"
-            enrichment_applied = True
-        elif clamped_adj <= -0.08 and confidence == "VERY_HIGH":  # pyright: ignore[reportPossiblyUnboundVariable]
-            # Significant negative enrichment → demote tier
-            confidence = "HIGH"
-            enrichment_applied = True
-        elif clamped_adj <= -0.12 and confidence == "HIGH":  # pyright: ignore[reportPossiblyUnboundVariable]
-            # Severe dampening → drop to MEDIUM
-            confidence = "MEDIUM"
-            enrichment_applied = True
-
-    l12_output = {
-        "schema": "v7.4r∞",
-        "pair": synthesis["pair"],
-        "timestamp": format_utc(now_utc()),
-        "verdict": verdict, # pyright: ignore[reportPossiblyUnboundVariable]
-        "confidence": confidence, # pyright: ignore[reportPossiblyUnboundVariable]
-        "wolf_status": wolf_status, # pyright: ignore[reportPossiblyUnboundVariable]
-        "gates": {
-            **gates,
-            "passed": passed_gates,
-            "total": 10,
-        },
-        "mn_conflict": mn_conflict,
-        "mn_regime": mn_regime,
-        "execution": {
-            "direction": execution.get("direction"),
-            "entry_zone": execution.get("entry_zone"),
-            "entry_price": execution.get("entry_price"),
-            "stop_loss": execution.get("stop_loss"),
-            "take_profit_1": execution.get("take_profit_1"),
-            "execution_mode": "TP1_ONLY",
-            "rr_ratio": execution.get("rr_ratio"),
-            "lot_size": execution.get("lot_size"),
-            "risk_percent": execution.get("risk_percent"),
-            "risk_amount": execution.get("risk_amount"),
-        },
-        "scores": {
-            "wolf_30_point": scores["wolf_30_point"],
-            "f_score": scores["f_score"],
-            "t_score": scores["t_score"],
-            "fta_score": scores["fta_score"],
-            "exec_score": scores["exec_score"],
-            "enrichment_score": enrichment_score,
-            "enrichment_confidence_adj": enrichment_confidence_adj,
-        },
-        "enrichment_applied": enrichment_applied,
-        "proceed_to_L13": verdict.startswith("EXECUTE"), # pyright: ignore[reportPossiblyUnboundVariable]
-    }
-
-    return l12_output
+    # Existing thresholds
+    wolf_min_score: float = 0.7
+    tii_min_score: float = 0.65
+    frpc_min_score: float = 0.6
 
 
 class VerdictEngine:
-    """Layer-12 Constitutional Verdict Engine -- sole decision authority.
+    """
+    Layer-12 Decision Authority.
 
-    Enhancement (Tier 2):
-        ✅ Gate 11: Kelly Edge Gate (optional, enabled via config)
-        When DynamicPositionSizingEngine reports edge_negative=True,
-        verdict is forced to NO_TRADE regardless of other gate scores.
-        This is a CONSTITUTIONAL SAFETY gate, not a market opinion.
+    Produces verdicts based on analysis inputs.
+    No account state dependency.
     """
 
-    def __init__(self, config: dict | None = None) -> None:
-        self._config = config or {}
-        self._kelly_gate_enabled = self._config.get(
-            "kelly_edge_gate_enabled", False
-        )
-        self.analyzers: list = []
-
-    def _extract_l7_probability_metrics(
-        self, layer_results: dict[str, Any]
-    ) -> dict[str, Any]:
-        """Extract and normalize L7 Monte Carlo + Bayesian metrics.
-
-        Returns a flat dict of validated L7 fields with fail-safe defaults.
-        These are ADVISORY inputs to the verdict -- they inform confidence
-        scoring but do not independently authorize or block trades.
-        The gate logic (PASS/CONDITIONAL/FAIL) is evaluated by _evaluate_9_gates().
-
-        Authority: READ-ONLY extraction. No side-effects.
-        """
-        l7 = layer_results.get("L7", {})
-        if not isinstance(l7, dict):
-            l7 = {}
-
-        # Normalize win_probability: L7 outputs 0-100, verdict needs 0.0-1.0
-        raw_win = l7.get("win_probability", 0.0)
-        win_prob = raw_win / 100.0 if raw_win > 1.0 else raw_win
-
-        return {
-            "l7_win_probability": round(float(win_prob), 4),
-            "l7_profit_factor": round(float(l7.get("profit_factor", 0.0)), 2),
-            "l7_risk_of_ruin": round(float(l7.get("risk_of_ruin", 1.0)), 4),
-            "l7_posterior_win": round(
-                float(l7.get("bayesian_posterior", l7.get("posterior_win_probability", 0.0))),
-                4,
-            ),
-            "l7_bayesian_ci_low": round(float(l7.get("bayesian_ci_low", 0.0)), 4),
-            "l7_bayesian_ci_high": round(float(l7.get("bayesian_ci_high", 0.0)), 4),
-            "l7_conf12_raw": round(float(l7.get("conf12_raw", 0.0)), 4),
-            "l7_mc_passed": bool(l7.get("mc_passed_threshold", False)),
-            "l7_validation": str(l7.get("validation", "FAIL")),
-            "l7_expected_value": round(float(l7.get("expected_value", 0.0)), 2),
-            "l7_max_drawdown": round(float(l7.get("max_drawdown", 0.0)), 2),
-        }
-
-    def _compute_confidence_with_l7(
-        self,
-        base_confidence: float,
-        l7_metrics: dict[str, Any],
-    ) -> float:
-        """Adjust verdict confidence using L7 probability metrics.
-
-        Applies bounded adjustments to base_confidence:
-        - High posterior win + low risk-of-ruin -> boost (max +0.08)
-        - High risk-of-ruin or FAIL validation -> penalty (max -0.12)
-        - CONDITIONAL validation -> mild penalty (-0.04)
-
-        Result is clamped to [0.0, 1.0].
-
-        Authority: Pure computation. No side-effects.
-        """
-        adjustment = 0.0
-
-        posterior = l7_metrics["l7_posterior_win"]
-        ror = l7_metrics["l7_risk_of_ruin"]
-        validation = l7_metrics["l7_validation"]
-        mc_passed = l7_metrics["l7_mc_passed"]
-
-        # ── Positive adjustments (capped at +0.08) ───────────────────
-        if mc_passed and posterior >= 0.60 and ror < 0.10:
-            # Strong probability profile: high posterior, low ruin risk
-            adjustment += 0.06
-        elif mc_passed and posterior >= 0.55:
-            adjustment += 0.03
-
-        if ror < 0.05:
-            # Very low ruin risk bonus
-            adjustment += 0.02
-
-        adjustment = min(adjustment, 0.08)
-
-        # ── Negative adjustments (capped at -0.12) ──────────────────
-        penalty = 0.0
-
-        if validation == "FAIL":
-            penalty += 0.08
-        elif validation == "CONDITIONAL":
-            penalty += 0.04
-
-        if ror >= 0.30:
-            # Dangerously high ruin risk
-            penalty += 0.06
-        elif ror >= 0.20:
-            penalty += 0.04
-
-        if posterior < 0.45 and posterior > 0.0:
-            # Bayesian belief is below coin-flip -- penalize
-            penalty += 0.04
-
-        penalty = min(penalty, 0.12)
-
-        adjusted = base_confidence + adjustment - penalty
-        return round(max(0.0, min(1.0, adjusted)), 4)
-
-    def _apply_enrichment_adjustment(
-        self,
-        confidence: float,
-        verdict_label: str,
-        layer_results: dict[str, Any],
-    ) -> tuple[float, bool]:
-        """Apply enrichment-aware confidence adjustment (advisory only).
-
-        Enrichment engines (cognitive, quantum, fusion, etc.) produce an
-        aggregate score and a signed confidence adjustment.  Both are
-        ADVISORY — they modulate confidence but NEVER override the verdict.
-
-        Constitutional boundary: a NO_TRADE/HOLD is never promoted to
-        EXECUTE by enrichment data.
-
-        Args:
-            confidence: Current confidence value (0.0-1.0).
-            verdict_label: Current verdict string (EXECUTE / HOLD / NO_TRADE).
-            layer_results: Full layer results dict containing enrichment keys.
-
-        Returns:
-            (adjusted_confidence, enrichment_applied) tuple.
-        """
-        enrichment_score = layer_results.get("enrichment_score", 0.0)
-        enrichment_adj = layer_results.get("enrichment_confidence_adj", 0.0)
-        applied = False
-
-        if not isinstance(enrichment_score, (int, float)):
-            enrichment_score = 0.0
-        if not isinstance(enrichment_adj, (int, float)):
-            enrichment_adj = 0.0
-
-        # ── Phase 1: Discrete adjustment from enrichment_score ───────
-        if enrichment_score > 0 and verdict_label == "EXECUTE":
-            if enrichment_score >= 0.75 and confidence < 0.85:
-                # Strong engine agreement boosts confidence
-                confidence = min(1.0, confidence + 0.05)
-                applied = True
-            elif enrichment_score < 0.30 and confidence > 0.60:
-                # Low engine agreement dampens confidence
-                confidence = max(0.10, confidence - 0.05)
-                applied = True
-        elif enrichment_score < 0.20 and verdict_label == "HOLD":
-            # Very low engine agreement reinforces HOLD (logged only)
-            applied = True
-
-        # ── Phase 2: Continuous adjustment from confidence_adj ───────
-        # Only applies to EXECUTE verdicts — never promotes HOLD/NO_TRADE.
-        if enrichment_adj != 0.0 and verdict_label == "EXECUTE":
-            # Clamp to [-0.15, +0.10] to prevent extreme swings
-            clamped = max(-0.15, min(0.10, float(enrichment_adj)))
-
-            if clamped >= 0.06 and confidence < 0.85:
-                confidence = min(1.0, confidence + 0.04)
-                applied = True
-            elif clamped <= -0.08 and confidence > 0.70:
-                confidence = max(0.10, confidence - 0.06)
-                applied = True
-            elif clamped <= -0.12 and confidence > 0.50:
-                confidence = max(0.10, confidence - 0.10)
-                applied = True
-
-        return round(max(0.0, min(1.0, confidence)), 4), applied
-
-    def produce_verdict(
-        self,
-        symbol: str,
-        layer_results: dict[str, Any],
-        gate_results: dict[str, Any] | None = None,
-    ) -> dict[str, Any]:
-        """Produce the constitutional verdict for a trade candidate.
-
-        This is the SOLE AUTHORITY that decides EXECUTE / HOLD / ABORT.
-        L7 probability metrics are advisory inputs that inform confidence.
-        Enrichment metrics are advisory inputs that modulate confidence
-        but never override the verdict.
-
-        Args:
-            symbol: Instrument identifier.
-            layer_results: Dict of all layer outputs (L1-L11+).
-            gate_results: Pre-computed gate results (if available).
-
-        Returns:
-            Enriched verdict dict with L7 probability and enrichment context.
-        """
-        # ── Evaluate gates if not pre-computed ───────────────────────
-        if gate_results is None:
-            gate_results = {}
-
-        passed_count = sum(
-            1 for v in gate_results.values()
-            if isinstance(v, dict) and v.get("passed", False)
-        )
-        total_gates = max(len(gate_results), 1)
-
-        # ── Determine base verdict from gate pass rate ───────────────
-        pass_rate = passed_count / total_gates
-        if pass_rate >= 0.9:
-            verdict_label = "EXECUTE"
-            base_confidence = 0.70 + 0.20 * pass_rate  # 0.88-0.90
-        elif pass_rate >= 0.7:
-            verdict_label = "HOLD"
-            base_confidence = 0.40 + 0.20 * pass_rate  # 0.54-0.58
-        else:
-            verdict_label = "NO_TRADE"
-            base_confidence = max(0.10, 0.30 * pass_rate)
-
-        # ── Extract L7 probability metrics ───────────────────────────
-        l7_metrics = self._extract_l7_probability_metrics(layer_results)
-
-        # ── Adjust confidence with L7 data ───────────────────────────
-        confidence = self._compute_confidence_with_l7(
-            base_confidence=base_confidence,
-            l7_metrics=l7_metrics,
-        )
-
-        # ── Adjust confidence with enrichment data (advisory) ────────
-        confidence, enrichment_applied = self._apply_enrichment_adjustment(
-            confidence=confidence,
-            verdict_label=verdict_label,
-            layer_results=layer_results,
-        )
-
-        # ── Build verdict dict ───────────────────────────────────────
-        verdict: dict[str, Any] = {
-            "symbol": symbol,
-            "verdict": verdict_label,
-            "confidence": confidence,
-            "gate_results": gate_results,
-            "gates_passed": passed_count,
-            "gates_total": total_gates,
-            "enrichment_applied": enrichment_applied,
-        }
-
-        # ── Enrich verdict with L7 probability context ───────────────
-        # These fields are informational for downstream consumers
-        # (dashboard, journal, reflection) -- they do NOT change the verdict.
-        verdict["probability_context"] = {
-            "monte_carlo_win_rate": l7_metrics["l7_win_probability"],
-            "profit_factor": l7_metrics["l7_profit_factor"],
-            "risk_of_ruin": l7_metrics["l7_risk_of_ruin"],
-            "bayesian_posterior": l7_metrics["l7_posterior_win"],
-            "bayesian_ci": [
-                l7_metrics["l7_bayesian_ci_low"],
-                l7_metrics["l7_bayesian_ci_high"],
-            ],
-            "conf12_raw": l7_metrics["l7_conf12_raw"],
-            "mc_passed": l7_metrics["l7_mc_passed"],
-            "l7_validation": l7_metrics["l7_validation"],
-            "expected_value": l7_metrics["l7_expected_value"],
-            "max_drawdown": l7_metrics["l7_max_drawdown"],
-        }
-
-        # ── Enrichment context (advisory metadata) ───────────────────
-        verdict["enrichment_context"] = {
-            "enrichment_score": layer_results.get("enrichment_score", 0.0),
-            "enrichment_confidence_adj": layer_results.get("enrichment_confidence_adj", 0.0),
-            "enrichment_applied": enrichment_applied,
-        }
-
-        return verdict
+    def __init__(self, thresholds: VerdictThresholds | None = None):
+        self.thresholds = thresholds or VerdictThresholds()
 
     def evaluate(
         self,
-        gate_scores: dict,
-        kelly_edge_data: dict | None = None,
+        wolf_score: float,
+        tii_score: float,
+        frpc_score: float,
+        exhaustion_input: ExhaustionLayerInput | None = None,
     ) -> dict:
-        """Evaluate all constitutional gates and produce verdict.
-
-        Args:
-            gate_scores: Dict of gate_name -> score/pass from L1-L11.
-            kelly_edge_data: Optional dict from DynamicPositionSizingEngine.
-                Expected keys: {"edge_negative": bool, "kelly_raw": float,
-                                "final_fraction": float}
-                If None, Gate 11 is skipped (backward-compatible).
+        """
+        Constitutional verdict evaluation.
 
         Returns:
-            Verdict dict with 'verdict', 'confidence', 'gate_results', etc.
+            {
+                "verdict": "EXECUTE" | "HOLD" | "NO_TRADE" | "ABORT",
+                "confidence": float,
+                "reason": str,
+                "gate_results": dict,  # Per-layer pass/fail
+            }
         """
-        gate_results: dict[str, Any] = {}
-        violations: list[str] = []
+        gate_results = {}
+        rejection_reasons = []
 
-        # ── Evaluate gates from scores ───────────────────────────────
-        for gate_name, score in gate_scores.items():
-            if isinstance(score, dict):
-                passed = score.get("passed", False)
-            elif isinstance(score, (int, float)):
-                passed = score >= 0.5
-            else:
-                passed = bool(score)
-            gate_results[gate_name] = {"passed": passed, "score": score}
-            if not passed:
-                violations.append(gate_name)
-
-        # ── Gate 11: Kelly Edge Gate (Optional) ──────────────────────
-        if self._kelly_gate_enabled and kelly_edge_data is not None:
-            gate_11 = self._evaluate_kelly_edge_gate(kelly_edge_data)
-            gate_results["gate_11_kelly_edge"] = gate_11
-            if not gate_11["passed"]:
-                violations.append("GATE_11_KELLY_NO_EDGE")
-
-        # ── Determine verdict from violations ────────────────────────
-        if violations:
-            verdict = "NO_TRADE"
-            confidence = max(0.10, 0.50 - 0.05 * len(violations))
-        else:
-            verdict = "EXECUTE"
-            confidence = 0.80 + 0.02 * len(gate_results)
-            confidence = min(confidence, 1.0)
-
-        return {
-            "verdict": verdict,
-            "confidence": round(confidence, 4),
-            "gate_results": gate_results,
-            "violations": violations,
+        # Gate 1: Wolf (L1-L6 fusion)
+        wolf_pass = wolf_score >= self.thresholds.wolf_min_score
+        gate_results["wolf"] = {
+            "pass": wolf_pass,
+            "score": wolf_score,
+            "threshold": self.thresholds.wolf_min_score,
         }
+        if not wolf_pass:
+            rejection_reasons.append(f"WOLF_WEAK: {wolf_score:.2f} < {self.thresholds.wolf_min_score}")
 
-    def _evaluate_kelly_edge_gate(self, kelly_edge_data: dict) -> dict:
-        """Gate 11: Kelly Edge Verification.
+        # Gate 2: TII (L8)
+        tii_pass = tii_score >= self.thresholds.tii_min_score
+        gate_results["tii"] = {
+            "pass": tii_pass,
+            "score": tii_score,
+            "threshold": self.thresholds.tii_min_score,
+        }
+        if not tii_pass:
+            rejection_reasons.append(f"TII_WEAK: {tii_score:.2f} < {self.thresholds.tii_min_score}")
 
-        Constitutional safety gate that prevents trading when the
-        DynamicPositionSizingEngine determines there is no statistical
-        edge (Kelly fraction ≤ 0).
+        # Gate 3: FRPC (L9)
+        frpc_pass = frpc_score >= self.thresholds.frpc_min_score
+        gate_results["frpc"] = {
+            "pass": frpc_pass,
+            "score": frpc_score,
+            "threshold": self.thresholds.frpc_min_score,
+        }
+        if not frpc_pass:
+            rejection_reasons.append(f"FRPC_WEAK: {frpc_score:.2f} < {self.thresholds.frpc_min_score}")
 
-        This is NOT a market opinion -- it's a mathematical statement:
-        "Given the observed win rate and payoff ratio, risking capital
-        has negative expected geometric growth."
+        # Gate 4: Exhaustion (L7) — ✅ NEW GATE
+        exhaustion_pass = True  # Default if not provided
+        if exhaustion_input:
+            # Check for data availability FIRST
+            if exhaustion_input.missing_tfs:
+                exhaustion_pass = False
+                gate_results["exhaustion"] = {
+                    "pass": False,
+                    "score": 0.0,
+                    "confidence": 0.0,
+                    "abort_reason": f"INSUFFICIENT_DATA: Missing {exhaustion_input.missing_tfs}",
+                }
+                return {
+                    "verdict": "ABORT",
+                    "confidence": 0.0,
+                    "reason": f"EXHAUSTION_DATA_UNAVAILABLE: {', '.join(exhaustion_input.missing_tfs)}",
+                    "gate_results": gate_results,
+                }
 
-        Args:
-            kelly_edge_data: Must contain at minimum:
-                - edge_negative (bool): True if Kelly raw ≤ 0
-                - kelly_raw (float): Raw Kelly fraction
+            # Data is available, check thresholds
+            exhaustion_pass = (
+                exhaustion_input.confidence >= self.thresholds.exhaustion_min_confidence
+                and exhaustion_input.score >= self.thresholds.exhaustion_min_score
+            )
+            gate_results["exhaustion"] = {
+                "pass": exhaustion_pass,
+                "score": exhaustion_input.score,
+                "confidence": exhaustion_input.confidence,
+                "threshold_confidence": self.thresholds.exhaustion_min_confidence,
+                "threshold_score": self.thresholds.exhaustion_min_score,
+                "reason": exhaustion_input.reason,
+            }
+            if not exhaustion_pass:
+                rejection_reasons.append(
+                    f"EXHAUSTION_WEAK: conf={exhaustion_input.confidence:.2f} < {self.thresholds.exhaustion_min_confidence} "
+                    f"or score={exhaustion_input.score:.2f} < {self.thresholds.exhaustion_min_score}"
+                )
 
-        Returns:
-            Gate result dict with passed, reason, and diagnostics.
-        """
-        edge_negative = kelly_edge_data.get("edge_negative", False)
-        kelly_raw = kelly_edge_data.get("kelly_raw", 0.0)
-        final_fraction = kelly_edge_data.get("final_fraction", 0.0)
+        # Final verdict logic
+        all_gates_pass = wolf_pass and tii_pass and frpc_pass and exhaustion_pass
 
-        if edge_negative:
+        if all_gates_pass:
+            # Calculate overall confidence (weighted average)
+            weights = {"wolf": 0.3, "tii": 0.25, "frpc": 0.25, "exhaustion": 0.2}
+            overall_confidence = (
+                wolf_score * weights["wolf"]
+                + tii_score * weights["tii"]
+                + frpc_score * weights["frpc"]
+                + (exhaustion_input.score if exhaustion_input else 0.0) * weights["exhaustion"]
+            )
+
             return {
-                "passed": False,
-                "gate": "GATE_11_KELLY_EDGE",
-                "reason": (
-                    f"No statistical edge detected. "
-                    f"Kelly raw = {kelly_raw:.4f} (negative). "
-                    f"Trading would produce negative geometric growth."
-                ),
-                "kelly_raw": kelly_raw,
-                "final_fraction": final_fraction,
-                "severity": "HARD_BLOCK",
+                "verdict": "EXECUTE",
+                "confidence": round(overall_confidence, 3),
+                "reason": "ALL_GATES_PASSED",
+                "gate_results": gate_results,
             }
 
+        # Some gates failed
+        if rejection_reasons:
+            return {
+                "verdict": "NO_TRADE",
+                "confidence": 0.0,
+                "reason": " | ".join(rejection_reasons),
+                "gate_results": gate_results,
+            }
+
+        # Fallback (should not reach here)
         return {
-            "passed": True,
-            "gate": "GATE_11_KELLY_EDGE",
-            "reason": f"Kelly edge confirmed: raw = {kelly_raw:.4f}",
-            "kelly_raw": kelly_raw,
-            "final_fraction": final_fraction,
-            "severity": "NONE",
+            "verdict": "HOLD",
+            "confidence": 0.0,
+            "reason": "EVALUATION_INCOMPLETE",
+            "gate_results": gate_results,
         }
-
-
-class _LegacyVerdictPipeline:
-    """DEPRECATED: Use pipeline.WolfConstitutionalPipeline instead.
-
-    Simplified verdict-only wrapper kept for backward compatibility.
-    Do NOT import this directly — use the real v8.0 pipeline.
-    """
-
-    def __init__(self, config: dict | None = None) -> None:
-        self._config = config or {}
-        self._kelly_gate_enabled = self._config.get(
-            "kelly_edge_gate_enabled", False
-        )
-        self.analyzers: list = []
-
-    def _run_analysis(self, symbol: str, timeframe: str, context: dict) -> dict:
-        """Run L1-L11 analysis layers and return aggregated scores."""
-        scores = {}
-        for analyzer in self.analyzers:
-            try:
-                result = analyzer.analyze(symbol, timeframe, context)
-                scores.update(result or {})
-            except Exception as e:
-                scores[analyzer.__class__.__name__] = {"error": str(e)}
-        return scores
-
-    def _evaluate_verdict(self, symbol: str, analysis_result: dict, context: dict) -> dict:
-        """L12 constitutional gate: evaluate analysis and produce verdict."""
-        wolf_score = analysis_result.get("wolf_score", 0.0)
-        tii_score = analysis_result.get("tii_score", 0.0)
-        frpc_score = analysis_result.get("frpc_score", 0.0)
-
-        confidence = (wolf_score + tii_score + frpc_score) / 3.0 if any([wolf_score, tii_score, frpc_score]) else 0.0
-
-        # Constitutional threshold
-        threshold = getattr(self, 'threshold', 0.6)
-
-        if confidence >= threshold:
-            direction = analysis_result.get("direction", "LONG")
-            verdict_value = "EXECUTE"
-        else:
-            direction = None
-            verdict_value = "NO_TRADE"
-
-        verdict = {
-            "symbol": symbol,
-            "verdict": verdict_value,
-            "confidence": round(confidence, 4),
-            "direction": direction,
-            "scores": {
-                "wolf_score": wolf_score,
-                "tii_score": tii_score,
-                "frpc_score": frpc_score,
-            },
-            "entry_price": analysis_result.get("entry_price"),
-            "stop_loss": analysis_result.get("stop_loss"),
-            "take_profit_1": analysis_result.get("take_profit_1"),
-        }
-
-        return verdict
-
-    def run(self, symbol: str, timeframe: str = "H1", context: dict | None = None) -> dict:
-        """Run the full constitutional pipeline for a symbol.
-
-        Returns a Layer-12 verdict dict with at minimum:
-        symbol, verdict, confidence.
-        """
-        context = context or {}
-
-        # Run L1-L11: Gather analysis scores
-        analysis = self._run_analysis(symbol, timeframe, context)
-
-        # L12: Constitutional gate — single decision authority
-        verdict = self._evaluate_verdict(symbol, analysis, context)
-
-        # Enforce minimal schema
-        verdict.setdefault("symbol", symbol)
-        verdict.setdefault("verdict", "NO_TRADE")
-        verdict.setdefault("confidence", 0.0)
-        verdict.setdefault("timeframe", timeframe)
-
-        return verdict
