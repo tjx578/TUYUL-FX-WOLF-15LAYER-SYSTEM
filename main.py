@@ -3,7 +3,6 @@ import os
 import signal
 import sys
 from collections.abc import Callable, Coroutine
-from concurrent.futures import ThreadPoolExecutor
 
 from loguru import logger  # pyright: ignore[reportMissingImports]
 from redis.asyncio import Redis as AsyncRedis  # pyright: ignore[reportMissingImports]
@@ -49,9 +48,6 @@ RUN_MODE = os.getenv("RUN_MODE", "all").lower()
 
 _MAX_TASK_RESTARTS = int(os.getenv("MAX_TASK_RESTARTS", "5"))
 _RESTART_COOLDOWN = float(os.getenv("RESTART_COOLDOWN_SEC", "5.0"))
-
-# Module-level executor (bounded thread pool)
-_PIPELINE_EXECUTOR = ThreadPoolExecutor(max_workers=2, thread_name_prefix="wolf-pipeline")
 
 # Pipeline execution timeout in seconds
 _PIPELINE_TIMEOUT_SEC = 30.0
@@ -183,13 +179,8 @@ async def run_redis_consumer() -> None:
 async def _analyze_pair(pair: str) -> dict | None:
     """Run pipeline for a single pair with timeout + thread offload."""
     try:
-        loop = asyncio.get_running_loop()
         result = await asyncio.wait_for(
-            loop.run_in_executor(
-                _PIPELINE_EXECUTOR,
-                _pipeline.execute,
-                pair,
-            ),
+            asyncio.to_thread(_pipeline.execute, pair),
             timeout=_PIPELINE_TIMEOUT_SEC,
         )
         return result

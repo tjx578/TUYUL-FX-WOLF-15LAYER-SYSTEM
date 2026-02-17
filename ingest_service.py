@@ -5,7 +5,6 @@ import os
 import signal
 import sys
 import types
-
 from importlib import import_module
 from typing import Any, Protocol
 
@@ -15,7 +14,7 @@ from analysis.macro.macro_regime_engine import MacroRegimeEngine
 from config_loader import CONFIG
 from context.system_state import SystemState, SystemStateManager
 from core.health_probe import HealthProbe
-from ingest.candle_builder import CandleBuilder
+from ingest.candle_builder import CandleBuilder, Timeframe
 from ingest.dependencies import create_finnhub_ws
 from ingest.finnhub_candles import FinnhubCandleFetcher
 from ingest.finnhub_market_news import FinnhubMarketNews
@@ -59,8 +58,10 @@ def _validate_api_key() -> bool:
 
 
 def _get_enabled_symbols() -> list[str]:
-    symbols = CONFIG.get("pairs", {}).get("symbols", [])
-    return symbols if isinstance(symbols, list) else []
+    pairs = CONFIG.get("pairs", {}).get("pairs", [])
+    if not isinstance(pairs, list):
+        return []
+    return [p["symbol"] for p in pairs if isinstance(p, dict) and p.get("enabled")]
 
 
 def _build_redis_client() -> RedisClient:
@@ -189,7 +190,7 @@ async def run_ingest_services(has_api_key: bool) -> None:
     ws_feed = None
     news_feed = None
     market_news = None
-    candle_builder = None
+    candle_builders: list[CandleBuilder] = []
 
     try:
         redis = await _connect_redis()
@@ -200,7 +201,7 @@ async def run_ingest_services(has_api_key: bool) -> None:
         ws_feed = await create_finnhub_ws(redis=redis) # pyright: ignore[reportArgumentType]
         news_feed = FinnhubNews()
         market_news = FinnhubMarketNews()
-        candle_builder = CandleBuilder()
+        candle_builders = [CandleBuilder(symbol=symbol, timeframe=Timeframe.M15) for symbol in enabled_symbols]
         h1_refresh = H1RefreshScheduler()
 
         # Mark ingest as ready after warmup + connection
@@ -214,11 +215,12 @@ async def run_ingest_services(has_api_key: bool) -> None:
         logger.info(
             "Starting ingest services: WebSocket, News, MarketNews, CandleBuilder (M15), H1Refresh"
         )
+        candle_tasks = [cb.run() for cb in candle_builders] # pyright: ignore[reportAttributeAccessIssue]
         await asyncio.gather(
             ws_feed.run(),
             news_feed.run(),
             market_news.run(),
-            candle_builder.run(),
+            *candle_tasks,
             h1_refresh.run(),
             MacroMonthlyScheduler(enabled_symbols).run(),
         )
@@ -230,7 +232,9 @@ async def run_ingest_services(has_api_key: bool) -> None:
         await _safe_stop("ws_feed", ws_feed, cleanup_errors)
         await _safe_stop("news_feed", news_feed, cleanup_errors)
         await _safe_stop("market_news", market_news, cleanup_errors)
-        await _safe_stop("candle_builder", candle_builder, cleanup_errors)
+        if candle_builders is not None:
+            for i, cb in enumerate(candle_builders):
+                await _safe_stop(f"candle_builders[{i}]", cb, cleanup_errors)
 
         if redis is not None:
             try:
