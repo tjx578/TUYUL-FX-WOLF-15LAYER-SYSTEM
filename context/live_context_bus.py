@@ -9,6 +9,7 @@ Supports two modes via CONTEXT_MODE environment variable:
 
 from __future__ import annotations
 
+import itertools
 import os
 import time
 from collections import defaultdict, deque
@@ -209,8 +210,8 @@ class LiveContextBus:
                 self._consumer_cursors[consumer_id] = self._tick_seq
                 return []
 
-            # Slice from the right end of the deque
-            result = list(buf)[-start_offset:]
+            # Slice from the right end of the deque without full materialisation
+            result = list(itertools.islice(buf, buf_len - start_offset, buf_len))
             self._consumer_cursors[consumer_id] = self._tick_seq
             return result
 
