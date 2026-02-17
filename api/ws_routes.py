@@ -25,7 +25,7 @@ Upgrade (v3):
 import asyncio
 import time
 
-from collections import defaultdict, deque  # noqa: F401
+from collections import defaultdict, deque
 
 import fastapi  # pyright: ignore[reportMissingImports]
 
@@ -184,7 +184,7 @@ class ConnectionManager:
                         websocket.send_json({"type": "ping", "ts": time.time()}),
                         timeout=WS_PONG_TIMEOUT,
                     )
-                except (asyncio.TimeoutError, Exception):
+                except (TimeoutError, Exception):
                     logger.info(f"WS [{self.name}] heartbeat failed, disconnecting client")
                     self.disconnect(websocket)
                     try:
@@ -241,12 +241,60 @@ class ConnectionManager:
 price_manager = ConnectionManager(name="prices")
 trade_manager = ConnectionManager(name="trades")
 candle_manager = ConnectionManager(name="candles")
-risk_ws_manager = ConnectionManager(name="risk")
+risk_manager = ConnectionManager(name="risk")
 equity_manager = ConnectionManager(name="equity")
 
 # Service instances
 _price_feed = PriceFeed()
 _trade_ledger = TradeLedger()
+
+# Event that fires when new prices are available (set by price update loop)
+_price_event = asyncio.Event()
+
+
+async def notify_price_update():
+    """Signal all waiting WS loops that new prices are available.
+
+    Call this from wherever prices get ingested (PriceFeed.update_prices,
+    Redis subscriber, etc.) to wake the WS push loop immediately.
+    """
+    _price_event.set()
+
+
+# ---------------------------------------------------------------------------
+# Cached risk module singletons (avoid per-push instantiation)
+# ---------------------------------------------------------------------------
+
+_cached_risk_manager: object | None = None
+_cached_circuit_breaker: object | None = None
+
+
+def _get_risk_manager():
+    """Return a lazily cached RiskManager singleton."""
+    global _cached_risk_manager
+    if _cached_risk_manager is None:
+        try:
+            from risk.risk_manager import RiskManager as _RM  # noqa: N814, PLC0415
+            _cached_risk_manager = _RM.get_instance()
+        except Exception:
+            _cached_risk_manager = None
+    return _cached_risk_manager
+
+
+def _get_circuit_breaker():
+    """Return a lazily cached CircuitBreaker singleton."""
+    global _cached_circuit_breaker
+    if _cached_circuit_breaker is None:
+        try:
+            # CircuitBreaker requires initial_balance; try loading from config
+            from config_loader import load_risk  # noqa: PLC0415
+            from risk.circuit_breaker import CircuitBreaker as _CB  # noqa: N814, PLC0415
+            risk_cfg = load_risk()
+            initial_balance = risk_cfg.get("initial_balance", 10_000.0)
+            _cached_circuit_breaker = _CB(initial_balance=initial_balance)
+        except Exception:
+            _cached_circuit_breaker = None
+    return _cached_circuit_breaker
 
 
 # ---------------------------------------------------------------------------
@@ -259,22 +307,45 @@ async def websocket_prices(websocket: fastapi.WebSocket):
     WebSocket endpoint for live tick-by-tick price stream.
 
     Requires ``?token=<jwt_or_api_key>`` query parameter.
-    Pushes price changes as soon as they are detected (~100ms batches).
+    Event-driven: wakes immediately when _price_event is set,
+    with a fallback max sleep of TICK_BATCH_INTERVAL to guarantee freshness.
+
+    On connect, replays any buffered messages newer than the client's
+    ``since`` query parameter (Unix timestamp), then sends a full snapshot.
     """
     connected = await price_manager.connect(websocket)
     if not connected:
         return
-    logger.info("Price WebSocket client connected (tick-by-tick)")
+    logger.info("Price WebSocket client connected (event-driven)")
 
     try:
+        # Replay buffered ticks if client supplies ?since=<ts>
+        since_ts = websocket.query_params.get("since")
+        if since_ts:
+            try:
+                await price_manager.replay_buffer(websocket, float(since_ts))
+            except (ValueError, TypeError):
+                pass
+
         # Send initial snapshot
         prices = _price_feed.get_all_prices()
-        await websocket.send_json({"type": "snapshot", "data": prices})
+        snapshot_msg = {"type": "snapshot", "data": prices, "ts": time.time()}
+        await websocket.send_json(snapshot_msg)
 
         # Track last known prices to push only diffs
         last_prices: dict[str, dict] = dict(prices) if prices else {}
 
         while True:
+            # Wait for price event OR timeout (whichever comes first)
+            try:
+                await asyncio.wait_for(
+                    _price_event.wait(),
+                    timeout=TICK_BATCH_INTERVAL,
+                )
+                _price_event.clear()
+            except TimeoutError:
+                pass  # Fallback: check anyway after TICK_BATCH_INTERVAL
+
             current = _price_feed.get_all_prices() or {}
             changed: dict[str, dict] = {}
 
@@ -293,14 +364,13 @@ async def websocket_prices(websocket: fastapi.WebSocket):
                     )
 
             if changed:
-                await websocket.send_json({
+                tick_msg = {
                     "type": "tick",
                     "data": changed,
                     "ts": time.time(),
-                })
-
-            # ~100ms batch interval for near-real-time without flooding
-            await asyncio.sleep(TICK_BATCH_INTERVAL)
+                }
+                price_manager.buffer_message(tick_msg)
+                await websocket.send_json(tick_msg)
 
     except fastapi.WebSocketDisconnect:
         price_manager.disconnect(websocket)
@@ -427,6 +497,7 @@ async def websocket_risk(websocket: fastapi.WebSocket):
     WebSocket endpoint for risk state monitoring.
 
     Pushes drawdown, circuit breaker, and prop firm guard state every 1s.
+    Uses cached singleton instances — no per-push instantiation.
     """
     connected = await risk_manager.connect(websocket)
     if not connected:
@@ -435,25 +506,29 @@ async def websocket_risk(websocket: fastapi.WebSocket):
 
     try:
         while True:
-            # Build risk state from available modules
+            # Build risk state from cached singletons
             risk_state: dict = {"ts": time.time()}
 
-            try:
-                from risk.risk_manager import RiskManager  # noqa: PLC0415
-                rm = RiskManager() # pyright: ignore[reportCallIssue]
-                snapshot = rm.get_risk_snapshot()
-                risk_state["risk_snapshot"] = snapshot
-            except Exception:
+            rm = _get_risk_manager()
+            if rm is not None:
+                try:
+                    snapshot = rm.get_risk_snapshot()  # type: ignore[union-attr]
+                    risk_state["risk_snapshot"] = snapshot
+                except Exception:
+                    risk_state["risk_snapshot"] = None
+            else:
                 risk_state["risk_snapshot"] = None
 
-            try:
-                from risk.circuit_breaker import CircuitBreaker  # noqa: PLC0415
-                cb = CircuitBreaker() # pyright: ignore[reportCallIssue]
-                risk_state["circuit_breaker"] = {
-                    "state": cb.state.value if hasattr(cb, "state") else "UNKNOWN", # pyright: ignore[reportAttributeAccessIssue]
-                    "is_open": cb.is_open() if hasattr(cb, "is_open") else False, # pyright: ignore[reportAttributeAccessIssue]
-                }
-            except Exception:
+            cb = _get_circuit_breaker()
+            if cb is not None:
+                try:
+                    risk_state["circuit_breaker"] = {
+                        "state": cb.state.value if hasattr(cb, "state") else "UNKNOWN",  # type: ignore[union-attr]
+                        "is_open": cb.is_open() if hasattr(cb, "is_open") else False,  # type: ignore[union-attr]
+                    }
+                except Exception:
+                    risk_state["circuit_breaker"] = None
+            else:
                 risk_state["circuit_breaker"] = None
 
             try:
@@ -465,15 +540,17 @@ async def websocket_risk(websocket: fastapi.WebSocket):
             except Exception:
                 risk_state["drawdown"] = None
 
-            await websocket.send_json({"type": "risk_state", "data": risk_state})
+            msg = {"type": "risk_state", "data": risk_state}
+            risk_ws_manager.buffer_message(msg)
+            await websocket.send_json(msg)
             await asyncio.sleep(RISK_STATE_INTERVAL)
 
     except fastapi.WebSocketDisconnect:
-        risk_manager.disconnect(websocket)
+        risk_ws_manager.disconnect(websocket)
         logger.info("Risk WebSocket client disconnected")
     except Exception as exc:
         logger.error(f"Risk WebSocket error: {exc}")
-        risk_manager.disconnect(websocket)
+        risk_ws_manager.disconnect(websocket)
 
 
 # ---------------------------------------------------------------------------
