@@ -1,0 +1,9 @@
+# Paths to exclude from secret scanning
+# (test fixtures, example configs, lock files)
+node_modules/
+.env.example
+package-lock.json
+*.lock
+__pycache__/
+*.pyc
+coverage.xml
