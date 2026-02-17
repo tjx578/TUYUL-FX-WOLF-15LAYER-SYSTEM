@@ -174,3 +174,100 @@ class PropFirmRules:
             result["max_safe_lot"] = result.get("recommended_lot", 0.0)
 
         return result
+
+    @property
+    def max_daily_loss(self):
+        raise NotImplementedError
+
+    @max_daily_loss.setter
+    def max_daily_loss(self, value):
+        raise NotImplementedError
+
+    @property
+    def max_open_positions(self):
+        raise NotImplementedError
+
+    @max_open_positions.setter
+    def max_open_positions(self, value):
+        raise NotImplementedError
+
+    @property
+    def max_lot_per_trade(self):
+        raise NotImplementedError
+
+    @max_lot_per_trade.setter
+    def max_lot_per_trade(self, value):
+        raise NotImplementedError
+
+
+class PropFirmGuard:
+    """
+    Risk authority for prop firm compliance.
+
+    Constitutional constraint: ALWAYS checked before execution,
+    regardless of signal strength or confidence.
+    """
+
+    def __init__(self):
+        """Initialize PropFirmGuard with prop firm rules."""
+        self.profile = PropFirmRules()
+
+    def check(
+        self,
+        account_state: dict,
+        trade_risk: dict,
+        signal_verdict: str,  # ✅ NEW: Accept verdict but don't let it bypass checks
+    ) -> dict:
+        """
+        Validate trade against prop firm rules.
+
+        Args:
+            account_state: {balance, equity, open_positions, daily_loss, ...}
+            trade_risk: {lot_size, risk_amount, symbol, ...}
+            signal_verdict: L12 verdict (for audit only, NOT a bypass key)
+
+        Returns:
+            {
+                "allowed": bool,
+                "code": str,
+                "severity": "ERROR" | "WARNING",
+                "details": str | None,
+            }
+        """
+        # ✅ CRITICAL: Even EXECUTE verdicts must pass prop firm checks
+        # Signal confidence does NOT override risk rules
+
+        # Check 1: Daily loss limit
+        if account_state["daily_loss"] >= self.profile.max_daily_loss:
+            return {
+                "allowed": False,
+                "code": "DAILY_LOSS_LIMIT",
+                "severity": "ERROR",
+                "details": f"Daily loss {account_state['daily_loss']:.2f} >= {self.profile.max_daily_loss:.2f}",
+            }
+
+        # Check 2: Max open positions
+        if len(account_state["open_positions"]) >= self.profile.max_open_positions:
+            return {
+                "allowed": False,
+                "code": "MAX_POSITIONS",
+                "severity": "ERROR",
+                "details": f"Already at max positions ({self.profile.max_open_positions})",
+            }
+
+        # Check 3: Lot size validation
+        if trade_risk["lot_size"] > self.profile.max_lot_per_trade:
+            return {
+                "allowed": False,
+                "code": "LOT_SIZE_EXCEEDED",
+                "severity": "ERROR",
+                "details": f"Lot {trade_risk['lot_size']} > max {self.profile.max_lot_per_trade}",
+            }
+
+        # ✅ All checks passed
+        return {
+            "allowed": True,
+            "code": "APPROVED",
+            "severity": "INFO",
+            "details": None,
+        }
