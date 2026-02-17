@@ -2,25 +2,21 @@ import asyncio
 import os
 import signal
 import sys
+from collections.abc import Callable, Coroutine
+from concurrent.futures import ThreadPoolExecutor
 
 from loguru import logger  # pyright: ignore[reportMissingImports]
 from redis.asyncio import Redis as AsyncRedis  # pyright: ignore[reportMissingImports]
 
 from config_loader import CONFIG
-from context.runtime_state import RuntimeState
 from core.event_bus import Event, EventType, get_event_bus
 from core.health_probe import HealthProbe
 from ingest.candle_builder import CandleBuilder
 from ingest.dependencies import create_finnhub_ws
 from ingest.finnhub_market_news import FinnhubMarketNews
 from ingest.finnhub_news import FinnhubNews
-from journal.journal_router import journal_router
 from journal.journal_schema import ContextJournal, DecisionJournal, VerdictType
-from collections.abc import Callable, Coroutine
-
 from pipeline import WolfConstitutionalPipeline
-from storage.l12_cache import set_verdict
-from storage.snapshot_store import save_snapshot
 from storage.startup import init_persistent_storage, shutdown_persistent_storage
 from utils.timezone_utils import is_trading_session, now_utc
 
@@ -53,6 +49,12 @@ RUN_MODE = os.getenv("RUN_MODE", "all").lower()
 
 _MAX_TASK_RESTARTS = int(os.getenv("MAX_TASK_RESTARTS", "5"))
 _RESTART_COOLDOWN = float(os.getenv("RESTART_COOLDOWN_SEC", "5.0"))
+
+# Module-level executor (bounded thread pool)
+_PIPELINE_EXECUTOR = ThreadPoolExecutor(max_workers=2, thread_name_prefix="wolf-pipeline")
+
+# Pipeline execution timeout in seconds
+_PIPELINE_TIMEOUT_SEC = 30.0
 
 
 def _build_j1(pair: str, synthesis: dict) -> ContextJournal:
@@ -139,7 +141,13 @@ async def run_ingest_services(has_api_key: bool, redis: AsyncRedis) -> None:
     ws_feed = await create_finnhub_ws(redis=redis)
     news_feed = FinnhubNews()
     market_news = FinnhubMarketNews()
-    candle_builder = CandleBuilder()
+
+    # Create CandleBuilder instances for each enabled pair at default timeframe
+    default_timeframe = CONFIG["settings"].get("default_timeframe", "1h")
+    candle_builders = [
+        CandleBuilder(symbol=pair, timeframe=default_timeframe)
+        for pair in PAIRS
+    ]
 
     logger.info("Starting ingest services: WebSocket, News, MarketNews, CandleBuilder")
     try:
@@ -147,7 +155,7 @@ async def run_ingest_services(has_api_key: bool, redis: AsyncRedis) -> None:
             ws_feed.run(),
             news_feed.run(),
             market_news.run(),
-            candle_builder.run(),
+            *[cb.run() for cb in candle_builders], # pyright: ignore[reportAttributeAccessIssue]
         )
     except asyncio.CancelledError:
         logger.info("Ingest services cancelled - shutting down")
@@ -172,44 +180,27 @@ async def run_redis_consumer() -> None:
             await asyncio.sleep(1)
 
 
-async def _analyze_pair(pair: str) -> None:
-    # Execute pipeline
-    result = _pipeline.execute(pair)
-
-    synthesis = result["synthesis"]
-    l12 = result["l12_verdict"]
-
-    # ══ V11 POST-PIPELINE FILTER ══
-    if _v11_hook is not None:
-        try:
-            v11_overlay = _v11_hook.evaluate(result, symbol=pair, timeframe="H1")
-            synthesis["v11"] = v11_overlay.to_dict()
-            if l12["verdict"].startswith("EXECUTE") and not v11_overlay.should_trade:
-                l12["verdict"] = "HOLD"
-                l12["confidence"] = "MEDIUM"
-                l12["v11_veto"] = True
-                logger.info(f"[V11] {pair} — EXECUTE vetoed by V11 sniper filter")
-        except Exception as v11_exc:
-            logger.warning(f"[V11] {pair} — hook error (skipped): {v11_exc}")
-
-    # Inject runtime latency
-    synthesis["system"]["latency_ms"] = RuntimeState.latency_ms
-
-    # Journal (KEEP existing journal logic)
+async def _analyze_pair(pair: str) -> dict | None:
+    """Run pipeline for a single pair with timeout + thread offload."""
     try:
-        journal_router.record_context(_build_j1(pair, synthesis))
-    except Exception as journal_exc:
-        logger.error(f"J1 journal failed for {pair}: {journal_exc}")
-
-    try:
-        journal_router.record_decision(_build_j2(pair, synthesis, l12))
-    except Exception as journal_exc:
-        logger.error(f"J2 journal failed for {pair}: {journal_exc}")
-
-    # Storage (KEEP existing storage logic)
-    set_verdict(pair, l12)
-    save_snapshot(pair, l12)
-    logger.debug(f"[L12] {pair} -> {l12['verdict']}")
+        loop = asyncio.get_running_loop()
+        result = await asyncio.wait_for(
+            loop.run_in_executor(
+                _PIPELINE_EXECUTOR,
+                _pipeline.execute,
+                pair,
+            ),
+            timeout=_PIPELINE_TIMEOUT_SEC,
+        )
+        return result
+    except TimeoutError:
+        logger.error(
+            f"[Pipeline] TIMEOUT after {_PIPELINE_TIMEOUT_SEC}s for {pair} — skipping"
+        )
+        return None
+    except Exception as exc:
+        logger.error(f"[Pipeline] Error for {pair}: {exc}")
+        return None
 
 
 async def analysis_loop() -> None:
@@ -246,7 +237,7 @@ async def analysis_loop() -> None:
             break
 
         # Wait for a candle-close event OR the fallback timeout
-        try:
+        try:  # noqa: SIM105
             await asyncio.wait_for(_candle_signal.wait(), timeout=loop_interval)
         except TimeoutError:
             pass  # Fallback: run full sweep on all pairs

@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import os
 import time
-
 from collections import defaultdict, deque
 from threading import Lock
 from typing import TYPE_CHECKING
@@ -83,6 +82,10 @@ class LiveContextBus:
         else:
             logger.info("LiveContextBus initialized in LOCAL mode")
 
+        # Consumer cursor tracking (consumer_id -> last read index)
+        self._consumer_cursors: dict[str, int] = {}
+        self._tick_seq: int = 0  # monotonic sequence counter for tick buffer
+
     # =========================
     # WRITE METHODS (INGEST ONLY)
     # =========================
@@ -100,6 +103,7 @@ class LiveContextBus:
 
         with self._rw_lock:
             self._tick_buffer.append(tick)
+            self._tick_seq += 1
             # Update last tick timestamp
             self._last_tick_ts[tick["symbol"]] = time.time()
 
@@ -143,7 +147,7 @@ class LiveContextBus:
         In local mode: Stores in in-memory store.
         In Redis mode: Stores locally AND writes to Redis.
         """
-        if not ContextValidator.validate_news(news):
+        if not ContextValidator.validate_news(news): # pyright: ignore[reportAttributeAccessIssue]
             logger.warning("Invalid news payload rejected")
             return
 
@@ -175,14 +179,40 @@ class LiveContextBus:
     # READ METHODS (EVERYONE ELSE)
     # =========================
 
-    def consume_ticks(self):
+    def consume_ticks(self, consumer_id: str = "candle_builder") -> list[dict]:
         """
-        Used by CandleBuilder ONLY.
+        Non-destructive tick consumption with per-consumer cursors.
+
+        Each consumer tracks its own read position. Ticks remain in the
+        buffer for other consumers. Buffer is bounded by deque maxlen.
+
+        Args:
+            consumer_id: Unique identifier for the consumer.
+
+        Returns:
+            List of ticks not yet seen by this consumer.
         """
         with self._rw_lock:
-            ticks = list(self._tick_buffer)
-            self._tick_buffer.clear()
-            return ticks
+            buf = self._tick_buffer
+            buf_len = len(buf)
+            cursor = self._consumer_cursors.get(consumer_id, 0)
+
+            # If deque has wrapped (maxlen overflow), reset cursor
+            if cursor > self._tick_seq:
+                cursor = max(0, self._tick_seq - buf_len)
+
+            # Calculate how many ticks back from _tick_seq the cursor is
+            start_offset = self._tick_seq - cursor
+            if start_offset > buf_len:
+                start_offset = buf_len
+            if start_offset <= 0:
+                self._consumer_cursors[consumer_id] = self._tick_seq
+                return []
+
+            # Slice from the right end of the deque
+            result = list(buf)[-start_offset:]
+            self._consumer_cursors[consumer_id] = self._tick_seq
+            return result
 
     def get_latest_tick(self, symbol: str):
         with self._rw_lock:

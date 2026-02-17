@@ -30,7 +30,6 @@ from __future__ import annotations
 
 import math
 import threading
-
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -403,10 +402,7 @@ class MetricsRegistry:
             for sample_name, labels, value in metric.collect():
                 label_str = _label_str(labels)
                 # Format: integer if whole number, else float
-                if value == int(value) and not math.isinf(value):
-                    val_str = str(int(value))
-                else:
-                    val_str = f"{value:g}"
+                val_str = str(int(value)) if value == int(value) and not math.isinf(value) else f"{value:g}"
                 lines.append(f"{sample_name}{label_str} {val_str}")
 
         lines.append("")  # trailing newline
@@ -511,4 +507,25 @@ ACTIVE_PAIRS = _R.gauge(
 SYSTEM_HEALTHY = _R.gauge(
     "wolf_system_healthy",
     "System health flag (1=healthy, 0=degraded)",
+)
+
+# ── Tick rate per symbol ───────────────────────────────────
+wolf_tick_rate_total = Counter(
+    "wolf_tick_rate_total",
+    "Total ticks received per symbol",
+    ["symbol"],
+)
+
+# ── WebSocket reconnection events ─────────────────────────
+wolf_ws_reconnect_total = Counter(
+    "wolf_ws_reconnect_total",
+    "WebSocket reconnection events",
+    ["source"],
+)
+
+# ── Vault health composite score ──────────────────────────
+wolf_vault_sync_score = Gauge(
+    "wolf_vault_sync_score",
+    "Current vault health composite score (0-1)",
+    ["symbol"],
 )
