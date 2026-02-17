@@ -26,6 +26,16 @@ COPY . .
 RUN chown -R appuser:appuser /app
 USER appuser
 
+# --- Final stage ---
+# Create non-root user
+RUN addgroup --system --gid 1001 appgroup && \
+    adduser --system --uid 1001 --ingroup appgroup appuser
+
+# Ensure app files are owned by appuser
+RUN chown -R appuser:appgroup /app
+
+USER appuser
+
 # Configurable port
 ENV PORT=8000
 EXPOSE ${PORT}
