@@ -493,6 +493,20 @@ SIGNAL_THROTTLED = _R.counter(
     label_names=("symbol",),
 )
 
+# Per-layer execution latency (seconds) — observe inside pipeline execute()
+LAYER_LATENCY = _R.histogram(
+    "wolf_layer_latency_seconds",
+    "Per-layer execution latency in seconds",
+    label_names=("layer", "symbol"),
+)
+
+# End-to-end tick-to-verdict latency (seconds)
+TICK_TO_VERDICT_LATENCY = _R.histogram(
+    "wolf_tick_to_verdict_seconds",
+    "End-to-end latency from last tick timestamp to verdict emission",
+    label_names=("symbol",),
+)
+
 # Runtime state gauges (refreshed on each /metrics scrape)
 PIPELINE_LATENCY_MS = _R.gauge(
     "wolf_pipeline_latency_ms",
