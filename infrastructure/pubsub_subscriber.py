@@ -3,13 +3,13 @@ Redis Pub/Sub subscriber — ONLY for ephemeral notifications.
 
 Zone: infrastructure/ — message transport only.
 
-IMPORTANT: Pub/Sub is fire-and-forget. Messages during disconnect are LOST.
+⚠️  WARNING: Messages during disconnect are PERMANENTLY LOST.
 Use this ONLY for:
-- Heartbeats
-- Cache invalidation signals
-- Status notifications
+  - Heartbeats / liveness
+  - Cache invalidation signals
+  - Dashboard refresh hints
 
-For critical data (candles, signals, news), use StreamConsumer instead.
+For critical data (candles, signals, news, trades), use StreamConsumer.
 """
 
 from __future__ import annotations
@@ -20,6 +20,7 @@ from collections.abc import Awaitable, Callable
 
 import redis.asyncio as aioredis
 
+from infrastructure.backoff import BackoffConfig, ExponentialBackoff
 from infrastructure.redis_client import get_client
 
 logger = logging.getLogger(__name__)
@@ -27,50 +28,45 @@ logger = logging.getLogger(__name__)
 
 class PubSubSubscriber:
     """
-    Async Pub/Sub subscriber for ephemeral notifications only.
+    Async Pub/Sub for ephemeral-only notifications.
 
-    WARNING: Messages during disconnect are lost. For durable delivery,
-    use StreamConsumer (XREADGROUP + XACK).
+    Uses exponential backoff on reconnect (not sleep(1)).
     """
 
     def __init__(
         self,
         channels: dict[str, Callable[[dict], Awaitable[None]]],
         redis_client: aioredis.Redis | None = None,
-        reconnect_delay: float = 2.0,
+        backoff_config: BackoffConfig | None = None,
     ) -> None:
-        """
-        Args:
-            channels: Mapping of channel name → async callback.
-            redis_client: Optional pre-existing async Redis client.
-            reconnect_delay: Seconds between reconnect attempts.
-        """
         if not channels:
-            raise ValueError("At least one channel subscription is required")
+            raise ValueError("At least one channel is required")
 
         self._channels = channels
         self._redis: aioredis.Redis | None = redis_client
-        self._reconnect_delay = reconnect_delay
+        self._backoff = ExponentialBackoff(
+            backoff_config or BackoffConfig(initial=1.0, maximum=15.0),
+        )
         self._running = False
-        self._pubsub: aioredis.client.PubSub | None = None # type: ignore
-
-    async def _ensure_redis(self) -> aioredis.Redis:
-        if self._redis is None:
-            self._redis = await get_client()
-        return self._redis
+        self._pubsub: aioredis.client.PubSub | None = None # pyright: ignore[reportAttributeAccessIssue]
 
     async def start(self) -> None:
-        """Start listening. Reconnects automatically on failure."""
+        """Start listening. Reconnects with exponential backoff."""
         self._running = True
 
         while self._running:
             try:
-                client = await self._ensure_redis()
-                self._pubsub = client.pubsub()
+                if self._redis is None:
+                    self._redis = await get_client()
+
+                self._pubsub = self._redis.pubsub()
                 await self._pubsub.subscribe(*self._channels.keys()) # pyright: ignore[reportOptionalMemberAccess]
 
-                logger.info("PubSub subscribed: channels=%s (ephemeral only)",
-                            list(self._channels.keys()))
+                logger.info(
+                    "PubSub subscribed (EPHEMERAL ONLY): channels=%s",
+                    list(self._channels.keys()),
+                )
+                self._backoff.reset()
 
                 async for message in self._pubsub.listen(): # pyright: ignore[reportOptionalMemberAccess]
                     if not self._running:
@@ -87,20 +83,24 @@ class PubSubSubscriber:
                         try:
                             await callback(message)
                         except Exception:
-                            logger.exception("PubSub callback error: channel=%s", channel)
+                            logger.exception(
+                                "PubSub callback error: channel=%s", channel,
+                            )
 
             except asyncio.CancelledError:
                 break
             except Exception:
                 if not self._running:
                     break
-                logger.warning("PubSub connection lost. Reconnecting in %.1fs...",
-                               self._reconnect_delay)
+                delay = self._backoff.next_delay()
+                logger.warning(
+                    "PubSub lost. Reconnecting in %.2fs (attempt #%d)",
+                    delay, self._backoff.attempt,
+                )
                 self._redis = None
-                await asyncio.sleep(self._reconnect_delay)
+                await asyncio.sleep(delay)
 
     async def stop(self) -> None:
-        """Graceful shutdown."""
         self._running = False
         if self._pubsub:
             await self._pubsub.unsubscribe()

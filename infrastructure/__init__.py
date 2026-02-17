@@ -1,1 +1,1 @@
-"""Infrastructure — Redis, messaging, shared utilities."""
+"""Infrastructure — Redis, messaging, shared transport utilities."""

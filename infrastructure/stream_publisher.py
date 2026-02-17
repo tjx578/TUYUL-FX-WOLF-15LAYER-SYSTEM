@@ -18,10 +18,9 @@ logger = logging.getLogger(__name__)
 
 class StreamPublisher:
     """
-    Publish messages to Redis Streams.
+    Publish messages to Redis Streams. Native async.
 
-    Native async — no run_in_executor.
-    Supports maxlen trimming to prevent unbounded stream growth.
+    Supports MAXLEN trimming to prevent unbounded stream growth.
     """
 
     def __init__(
@@ -47,14 +46,7 @@ class StreamPublisher:
         """
         Publish a message to a Redis Stream.
 
-        Args:
-            stream: Stream key name.
-            fields: Message fields (must be str → str).
-            maxlen: Max stream length (trims oldest). None uses default.
-            approximate: Use ~ for MAXLEN (more efficient).
-
-        Returns:
-            The message ID assigned by Redis.
+        Returns the message ID assigned by Redis.
         """
         client = await self._ensure_redis()
         trim_len = maxlen if maxlen is not None else self._default_maxlen
@@ -66,8 +58,32 @@ class StreamPublisher:
             approximate=approximate,
         )
 
-        logger.debug("Published to %s: id=%s fields=%s", stream, message_id, list(fields.keys()))
+        logger.debug("Published: stream=%s id=%s", stream, message_id)
         return message_id
+
+    async def publish_candle(
+        self,
+        stream: str,
+        symbol: str,
+        timeframe: str,
+        o: str, h: str, l: str, c: str,  # noqa: E741
+        volume: str = "0",
+        extra: dict[str, str] | None = None,
+    ) -> str:
+        """Convenience: publish candle data to a stream."""
+        fields: dict[str, str] = {
+            "symbol": symbol,
+            "timeframe": timeframe,
+            "open": o,
+            "high": h,
+            "low": l,
+            "close": c,
+            "volume": volume,
+            "ts": str(time.time()),
+        }
+        if extra:
+            fields.update(extra)
+        return await self.publish(stream, fields)
 
     async def publish_signal(
         self,
@@ -82,7 +98,7 @@ class StreamPublisher:
             "symbol": symbol,
             "verdict": verdict,
             "confidence": str(confidence),
-            "timestamp": str(time.time()),
+            "ts": str(time.time()),
         }
         if extra:
             fields.update(extra)

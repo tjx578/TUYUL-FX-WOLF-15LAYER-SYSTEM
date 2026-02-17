@@ -1,5 +1,5 @@
 """
-Dynamic consumer identity generation.
+Dynamic consumer identity — unique per instance.
 
 Zone: infrastructure/ — no business logic.
 """
@@ -10,18 +10,17 @@ import os
 import socket
 
 
-def generate_consumer_name(prefix: str = "engine", override: str | None = None) -> str:
+def generate_consumer_name(
+    prefix: str = "engine",
+    override: str | None = None,
+) -> str:
     """
     Generate a unique consumer name for Redis consumer groups.
 
     Priority:
-    1. Explicit override (env var or parameter).
+    1. Explicit override parameter.
     2. REDIS_CONSUMER_NAME env var.
-    3. Auto-generated from prefix + hostname + PID.
-
-    Examples:
-        "engine_DESKTOP-ABC_12345"
-        "engine_pod-xyz-7f8d9_1"
+    3. Auto: {prefix}_{hostname}_{pid}.
     """
     if override:
         return override
