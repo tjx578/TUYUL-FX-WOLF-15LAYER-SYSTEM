@@ -1,50 +1,45 @@
-from __future__ import annotations
-
-from dataclasses import dataclass
-from typing import Any
 
 
-@dataclass
-class ExhaustionLayerInput:
-    """L7 Exhaustion divergence analysis result."""
-    score: float
-    confidence: float
-    reason: str
-    available_tfs: list[str]
-    missing_tfs: list[str]
+def meta_gate_structural_edge(exhaustion_conf: float, liquidity: float) -> bool:
+    return min(exhaustion_conf, liquidity) >= 0.70
 
-@dataclass
-class VerdictThresholds:
-    """Constitutional thresholds for Layer-12 decisions."""
+def meta_gate_model_integrity(tii: float, frpc: float, integrity: float, thresholds: dict[str, float]) -> str:
+    pass_all = tii >= thresholds["tii"] and frpc >= thresholds["frpc"] and integrity >= thresholds["integrity"]
+    conditional = (
+        (thresholds["tii"] - 0.03 <= tii < thresholds["tii"])
+        or (thresholds["frpc"] - 0.03 <= frpc < thresholds["frpc"])
+        or (thresholds["integrity"] - 0.02 <= integrity < thresholds["integrity"])
+    )
+    if pass_all:
+        return "PASS"
+    elif conditional:
+        return "CONDITIONAL"
+    return "FAIL"
 
-    # Exhaustion layer (L7) thresholds
-    exhaustion_min_confidence: float = 0.75  # ✅ NEW: Strong multi-TF alignment required
-    exhaustion_min_score: float = 0.6
+def meta_gate_statistical_edge(mc_win: float, mc_pf: float, rr: float, posterior: float, thresholds: dict[str, float]) -> bool:
+    return (
+        mc_win >= thresholds["mc_win"]
+        and mc_pf >= thresholds["mc_pf"]
+        and rr >= thresholds["rr"]
+        and posterior >= thresholds["posterior"]
+    )
 
-    # Existing thresholds
-    wolf_min_score: float = 0.7
-    tii_min_score: float = 0.65
-    frpc_min_score: float = 0.6
-
-
-class VerdictEngine:
-    """
-    Layer-12 Decision Authority.
-
-    Produces verdicts based on analysis inputs.
-    No account state dependency.
-    """
-
-    def __init__(self, thresholds: VerdictThresholds | None = None):
-        self.thresholds = thresholds or VerdictThresholds()
+def layer12_verdict_layer(meta_results: dict[str, str]) -> str:
+    pass_count = sum(1 for v in meta_results.values() if v == "PASS")
+    conditional_count = sum(1 for v in meta_results.values() if v == "CONDITIONAL")
+    if pass_count == 3:
+        return "EXECUTE"
+    elif pass_count == 2 and conditional_count == 1:
+        return "EXECUTE_REDUCED_RISK"
+    return "HOLD"
 
     def evaluate(
         self,
         wolf_score: float,
         tii_score: float,
         frpc_score: float,
-        exhaustion_input: ExhaustionLayerInput | None = None,
-    ) -> dict[str, Any]:
+        exhaustion_input: ExhaustionLayerInput | None = None,  # noqa: F821
+    ) -> dict[str, Any]:  # noqa: F821
         """
         Constitutional verdict evaluation.
 
