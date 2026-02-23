@@ -190,8 +190,9 @@ async def _analyze_pair(pair: str) -> dict | None:
             else None
         )
 
+        # Ensure pipeline.execute never blocks event loop
         result = await asyncio.wait_for(
-            asyncio.to_thread(_pipeline.execute, pair, None, tick_ts=_tick_ts),
+            asyncio.to_thread(lambda: _pipeline.execute(pair, None, tick_ts=_tick_ts)),
             timeout=_PIPELINE_TIMEOUT_SEC,
         )
         return result
