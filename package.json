@@ -1,4 +1,8 @@
 {
+  "dependencies": {
+    "date-fns": "^2.29.3",
+    "date-fns-tz": "^2.0.0"
+  },
   "devDependencies": {
     "@types/date-fns": "^2.5.3",
     "@types/react": "^19.2.14"
