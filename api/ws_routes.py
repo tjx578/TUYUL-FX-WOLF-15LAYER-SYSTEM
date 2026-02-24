@@ -23,15 +23,14 @@ Upgrade (v3):
 """
 
 import asyncio
+import contextlib
 import time
-
 from collections import defaultdict, deque
 
 import fastapi  # pyright: ignore[reportMissingImports]
-
 from loguru import logger  # pyright: ignore[reportMissingImports]
 
-from api.middleware.ws_auth import ws_authenticate
+from api.middleware.ws_auth import ws_auth_guard
 from dashboard.price_feed import PriceFeed
 from dashboard.trade_ledger import TradeLedger
 
@@ -155,7 +154,8 @@ class ConnectionManager:
             return False
 
         # Authenticate BEFORE accepting
-        if not await ws_authenticate(websocket):
+        user = await ws_auth_guard(websocket)
+        if not user:
             return False
 
         await websocket.accept()
@@ -187,10 +187,8 @@ class ConnectionManager:
                 except (TimeoutError, Exception):
                     logger.info(f"WS [{self.name}] heartbeat failed, disconnecting client")
                     self.disconnect(websocket)
-                    try:
+                    with contextlib.suppress(Exception):
                         await websocket.close(code=4408, reason="Heartbeat timeout")
-                    except Exception:
-                        pass
                     break
         except asyncio.CancelledError:
             pass
@@ -322,10 +320,8 @@ async def websocket_prices(websocket: fastapi.WebSocket):
         # Replay buffered ticks if client supplies ?since=<ts>
         since_ts = websocket.query_params.get("since")
         if since_ts:
-            try:
+            with contextlib.suppress(ValueError, TypeError):
                 await price_manager.replay_buffer(websocket, float(since_ts))
-            except (ValueError, TypeError):
-                pass
 
         # Send initial snapshot
         prices = _price_feed.get_latest_prices() if hasattr(_price_feed, 'get_latest_prices') else {} # pyright: ignore[reportAttributeAccessIssue]
