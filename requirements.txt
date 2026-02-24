@@ -47,3 +47,6 @@ ruff==0.8.4
 
 # Production WSGI/ASGI server
 gunicorn==23.0.0
+
+# PyJWT
+PyJWT>=2.0.0
