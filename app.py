@@ -9,3 +9,8 @@ app = FastAPI(title="TUYUL FX WOLF 15-Layer")
 def healthz() -> dict[str, str]:
     """Basic health check used by deployment probes."""
     return {"status": "ok"}
+"""
+FastAPI entrypoint for auto-discovery.
+Exposes 'app' from api_server.py for ASGI servers and deployment tools.
+"""
+
