@@ -15,10 +15,13 @@ from uuid import UUID
 
 import redis  # pyright: ignore[reportMissingImports]
 from fastapi import APIRouter, Depends, HTTPException  # type: ignore
+from fastapi.responses import JSONResponse
 
 from dashboard.backend.account_engine import AccountEngine
 from dashboard.backend.auth import verify_token
 from dashboard.backend.risk_engine import RiskEngine
+
+# from tests.test_risk_router import app
 
 
 class APIRouter:  # noqa: F811
@@ -301,3 +304,8 @@ async def get_probability_summary(
         )
 
     return {"count": len(summary_items), "signals": summary_items}
+
+# Or using JSONResponse
+@write_router.get("/error")  # noqa: F821
+async def error_route():
+    return JSONResponse(status_code=400, content={"detail": "Bad request"})
