@@ -1,5 +1,4 @@
-import { format, parseISO } from 'date-fns-tz';
-import { toZonedTime } from 'date-fns-tz';
+import { format, parseISO, toZonedTime } from 'date-fns-tz';
 
 // Declare process type for environments without Node.js types
 declare const process: {
@@ -81,5 +80,20 @@ export function formatTimeOnly(utcTimestamp: string | Date): string {
     return format(zonedDate, 'HH:mm:ss');
   } catch (error) {
     return '--:--:--';
+  }
+}
+
+/**
+ * Client-side timezone utilities.
+ * Handles UTC ↔ GMT+8 conversion for display.
+ */
+export function toLocalTime(utcTimestamp: string | Date): string {
+  try {
+    const date = typeof utcTimestamp === 'string' ? parseISO(utcTimestamp) : utcTimestamp;
+    const zonedDate = toZonedTime(date, SYSTEM_TZ);
+    return format(zonedDate, 'yyyy-MM-dd HH:mm:ss');
+  } catch (error) {
+    console.error('Error converting UTC to local time:', error);
+    return 'Invalid time';
   }
 }

@@ -13,6 +13,8 @@ Formula: lot = risk_amount / (sl_distance × pip_value)
 """
 
 
+from typing import Optional
+
 from loguru import logger  # pyright: ignore[reportMissingImports]
 
 from config.pip_values import (
@@ -29,6 +31,13 @@ from dashboard.backend.schemas import (
     RiskSeverity,
 )
 from propfirm_manager.profile_manager import PropFirmManager
+
+# ------------------------------------------------------------------
+# Backward Compatibility Aliases
+# ------------------------------------------------------------------
+# Legacy names used by dashboard / tests
+RiskMultiplier = RiskMultiplierAggregator  # noqa: F821
+RiskEngine = RiskMultiplierAggregator  # noqa: F821
 
 
 def _drawdown_multiplier(dd_level: float) -> float:
@@ -59,7 +68,7 @@ class RiskMultiplierAggregator:
         - propfirm_manager for rule validation
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize risk engine."""
 
     def calculate_lot(
@@ -69,7 +78,7 @@ class RiskMultiplierAggregator:
         risk_percent: float,
         prop_firm_code: str,
         risk_mode: RiskMode = RiskMode.FIXED,
-        split_ratios: list[float] | None = None,
+        split_ratios: Optional[list[float]] = None,
     ) -> RiskCalculationResult:
         """
         Calculate recommended lot size with prop firm validation.
@@ -101,13 +110,13 @@ class RiskMultiplierAggregator:
         )
 
         if sl_distance <= 0:
+            logger.error("Invalid SL distance: zero or negative.")
             return RiskCalculationResult(
                 trade_allowed=False,
                 recommended_lot=0.0,
                 max_safe_lot=0.0,
                 risk_used_percent=0.0,
                 daily_dd_after=account_state.daily_dd_percent,
-                total_dd_after=account_state.total_dd_percent,
                 severity=RiskSeverity.CRITICAL,
                 reason="Invalid SL distance (zero or negative)",
             )
@@ -116,10 +125,31 @@ class RiskMultiplierAggregator:
         # Convert total_dd_percent (percentage) to fraction for multiplier
         dd_level = account_state.total_dd_percent / 100.0
         multiplier = _drawdown_multiplier(dd_level)
+
+        # Kill switch: multiplier == 0 means DD ≥ 8% — hard stop
+        if multiplier == 0.0:
+            logger.warning(
+                f"Kill switch: DD={account_state.total_dd_percent:.2f}% ≥ 8% — "
+                f"trade DENIED for {signal.pair}"
+            )
+            return RiskCalculationResult(
+                trade_allowed=False,
+                recommended_lot=0.0,
+                max_safe_lot=0.0,
+                risk_used_percent=0.0,
+                daily_dd_after=account_state.daily_dd_percent,
+                severity=RiskSeverity.CRITICAL,
+                reason=(
+                    f"DD kill switch activated: total_dd={account_state.total_dd_percent:.2f}% "
+                    f"≥ 8%. No new trades allowed."
+                ),
+            )
+
         adjusted_risk_percent = risk_percent * multiplier
 
         logger.debug(
             f"Risk adjustment: base={risk_percent:.2f}% | "
+            f"dd_level={account_state.total_dd_percent:.2f}% | "
             f"multiplier={multiplier:.2f} | "
             f"adjusted={adjusted_risk_percent:.2f}%"
         )
@@ -127,17 +157,13 @@ class RiskMultiplierAggregator:
         # Calculate risk amount
         risk_amount = account_state.balance * (adjusted_risk_percent / 100)
 
-        # Calculate lot size
-        # lot = risk_amount / (sl_distance × pip_value)
+        # Calculate lot size: lot = risk_amount / (sl_distance × pip_value)
         lot = risk_amount / (sl_distance * pip_value)
 
         # Handle split risk mode
         split_lots = None
         if risk_mode == RiskMode.SPLIT and split_ratios:
             split_lots = [lot * ratio for ratio in split_ratios]
-            _total_lot = lot  # Keep total lot same for validation
-        else:
-            _total_lot = lot
 
         # Project drawdown after trade loss
         daily_dd_after = account_state.daily_dd_percent + adjusted_risk_percent
@@ -147,7 +173,6 @@ class RiskMultiplierAggregator:
         try:
             manager = PropFirmManager.for_account(account_state.account_id)
         except (FileNotFoundError, ValueError) as e:
-            # Fail-safe: if prop firm guard can't load, DENY by default
             logger.error(f"Prop firm manager load failed: {e}")
             return RiskCalculationResult(
                 trade_allowed=False,
@@ -155,12 +180,10 @@ class RiskMultiplierAggregator:
                 max_safe_lot=0.0,
                 risk_used_percent=0.0,
                 daily_dd_after=daily_dd_after,
-                total_dd_after=total_dd_after,
                 severity=RiskSeverity.CRITICAL,
                 reason=f"Prop firm guard unavailable: {e}",
             )
 
-        # Prepare state and risk dicts for guard
         account_state_dict = {
             "daily_dd_percent": account_state.daily_dd_percent,
             "total_dd_percent": account_state.total_dd_percent,
@@ -179,10 +202,13 @@ class RiskMultiplierAggregator:
         # Determine severity
         if not guard_result.allowed:
             severity = RiskSeverity.CRITICAL
+            error_code = guard_result.code or "PROP_FIRM_DENIED"
         elif guard_result.severity.value == "WARNING":
             severity = RiskSeverity.WARNING
+            error_code = guard_result.code or "WARNING"
         else:
             severity = RiskSeverity.SAFE
+            error_code = None
 
         return RiskCalculationResult(
             trade_allowed=guard_result.allowed,
@@ -192,7 +218,6 @@ class RiskMultiplierAggregator:
             daily_dd_after=daily_dd_after,
             total_dd_after=total_dd_after,
             severity=severity,
-            reason=guard_result.details,
             split_lots=[round(sl, 2) for sl in split_lots] if split_lots else None,
         )
 
@@ -212,16 +237,10 @@ class RiskMultiplierAggregator:
             pair: Trading pair (for pip calculation)
 
         Returns:
-            Distance in pips
+            Distance in pips (always positive)
         """
-        if direction == "BUY":  # noqa: SIM108
-            # For BUY: SL is below entry
-            distance = abs(entry - stop_loss)
-        else:  # SELL
-            # For SELL: SL is above entry
-            distance = abs(stop_loss - entry)
+        distance = abs(entry - stop_loss)
 
-        # Convert to pips using pip multiplier from config/pip_values.py
         try:
             multiplier = get_pip_multiplier(pair)
         except PipLookupError:
@@ -232,11 +251,3 @@ class RiskMultiplierAggregator:
             multiplier = 10_000.0
 
         return distance * multiplier
-
-
-# ------------------------------------------------------------------
-# Backward Compatibility Aliases
-# ------------------------------------------------------------------
-# Legacy names used by dashboard / tests
-RiskMultiplier = RiskMultiplierAggregator
-RiskEngine = RiskMultiplierAggregator

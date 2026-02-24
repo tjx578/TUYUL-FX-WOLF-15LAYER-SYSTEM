@@ -23,7 +23,6 @@ Storage:
 
 import json
 import os
-
 from threading import Lock
 from typing import Optional
 
@@ -67,9 +66,7 @@ class TradeLedger:
         self._rw_lock = Lock()
         self._trade_counter = 0
 
-        # Load existing trades from Redis on startup
         self._load_from_redis()
-
         logger.info("TradeLedger initialized")
 
     def _load_from_redis(self) -> None:
@@ -77,27 +74,20 @@ class TradeLedger:
         try:
             pattern = f"{self._redis_prefix}:TRADE:*"
             client = self._redis.client
-
             cursor = 0
             loaded_count = 0
 
             while True:
                 cursor, keys = client.scan(cursor, match=pattern, count=100)
-
                 for key in keys:
                     trade_json = self._redis.get(key)
                     if trade_json:
                         trade_data = json.loads(trade_json)
-                        # Parse datetime fields
                         trade = Trade(**trade_data)
                         self._cache[trade.trade_id] = trade
                         loaded_count += 1
-
-                if cursor == 0:
-                    break
-
-            if loaded_count > 0:
-                logger.info(f"Loaded {loaded_count} trades from Redis")
+            if cursor == 0:
+                break
 
         except Exception as exc:
             logger.error(f"Failed to load trades from Redis: {exc}")
@@ -129,13 +119,11 @@ class TradeLedger:
         Returns:
             Created Trade instance
         """
-        # Generate trade ID
-        timestamp = int(now_utc().timestamp() * 1000)
-        trade_id = f"T-{timestamp}"
+        now = now_utc()
+        timestamp = int(now.timestamp() * 1000)
         self._trade_counter += 1
         trade_id = f"T-{timestamp}-{self._trade_counter}"
 
-        # Create trade legs
         trade_legs = [
             TradeLeg(
                 leg=i + 1,
@@ -148,8 +136,6 @@ class TradeLedger:
             for i, leg in enumerate(legs)
         ]
 
-        # Create trade
-        now = now_utc()
         trade = Trade(
             trade_id=trade_id,
             signal_id=signal_id,
@@ -157,7 +143,7 @@ class TradeLedger:
             pair=pair,
             direction=direction,
             status=TradeStatus.INTENDED,
-            risk_mode=risk_mode,
+            risk_mode=RiskMode(risk_mode),
             total_risk_percent=total_risk_percent,
             total_risk_amount=total_risk_amount,
             legs=trade_legs,
@@ -165,21 +151,15 @@ class TradeLedger:
             updated_at=now,
         )
 
-        # Store in cache and Redis
         with self._rw_lock:
             self._cache[trade_id] = trade
 
             try:
-                # Store trade
                 redis_key = f"{self._redis_prefix}:TRADE:{trade_id}"
                 self._redis.set(redis_key, trade.model_dump_json())
 
-                # Add to active trades sorted set
+                # Add to active trades sorted set — single call only
                 active_key = f"{self._redis_prefix}:TRADES:ACTIVE"
-                self._redis.client.zadd(
-                    active_key,
-                    {trade_id: now.timestamp()}
-                )
                 self._redis.client.zadd(active_key, {trade_id: now.timestamp()})
 
                 logger.info(
@@ -197,73 +177,60 @@ class TradeLedger:
         new_status: TradeStatus,
         close_reason: CloseReason | None = None,
         pnl: float | None = None,
-    ) -> bool:
+    ) -> tuple[bool, str]:
         """
         Update trade status with transition validation.
 
-        Args:
-            trade_id: Trade ID
-            new_status: New status
-            close_reason: Reason for closure (required if new_status is CLOSED)
-            pnl: P&L amount (for CLOSED status)
-
         Returns:
-            True if updated successfully, False otherwise
+            (success, code): code is 'OK', 'NOT_FOUND', 'INVALID_TRANSITION', 'REDIS_ERROR'
         """
         with self._rw_lock:
-            # Check cache first (avoid calling get_trade which may access Redis)
             trade = self._cache.get(trade_id)
 
             if not trade:
                 logger.warning(f"Trade not found: {trade_id}")
-                return False
+                return False, "NOT_FOUND"
 
-            # Validate transition
             if not is_valid_transition(trade.status, new_status):
-                logger.warning(f"Invalid transition: {trade.status} -> {new_status} for {trade_id}")
-                return False
+                logger.warning(
+                    f"Invalid transition: {trade.status} -> {new_status} for {trade_id}"
+                )
+                return False, "INVALID_TRANSITION"
 
-            # Update status
             old_status = trade.status
             trade.status = new_status
             trade.updated_at = now_utc()
 
-            # Update close reason and P&L if closing
             if new_status == TradeStatus.CLOSED:
                 if close_reason:
                     trade.close_reason = close_reason
                 if pnl is not None:
                     trade.pnl = pnl
 
-            # Update leg statuses
             for leg in trade.legs:
                 leg.status = new_status
 
-            # Save to cache and Redis
             self._cache[trade_id] = trade
 
-            # Log the update
             logger.info(
                 f"Updated trade {trade_id}: {old_status} -> {new_status}"
                 + (f" | Reason: {close_reason}" if close_reason else "")
                 + (f" | P&L: ${pnl:.2f}" if pnl is not None else "")
             )
 
-            # Try to save to Redis (best effort - failure doesn't mean the update failed)
             try:
                 redis_key = f"{self._redis_prefix}:TRADE:{trade_id}"
                 self._redis.set(redis_key, trade.model_dump_json())
 
-                # Remove from active trades if terminal state
                 if new_status in (TradeStatus.CLOSED, TradeStatus.CANCELLED, TradeStatus.SKIPPED):
                     active_key = f"{self._redis_prefix}:TRADES:ACTIVE"
                     self._redis.client.zrem(active_key, trade_id)
 
             except Exception as exc:
                 logger.error(f"Failed to update trade in Redis: {exc}")
-                # Don't return False - cache update succeeded
+                return False, "REDIS_ERROR"
 
-            return True
+            return True, "OK"
 
     def get_trade(self, trade_id: str) -> Trade | None:
         """
@@ -275,21 +242,17 @@ class TradeLedger:
         Returns:
             Trade instance if found, else None
         """
-        # Check cache first
         if trade_id in self._cache:
             return self._cache[trade_id]
 
-        # Try Redis
         try:
             redis_key = f"{self._redis_prefix}:TRADE:{trade_id}"
             trade_json = self._redis.get(redis_key)
-
             if trade_json:
                 trade_data = json.loads(trade_json)
                 trade = Trade(**trade_data)
                 self._cache[trade_id] = trade
                 return trade
-
         except Exception as exc:
             logger.error(f"Failed to get trade from Redis: {exc}")
 
@@ -321,15 +284,13 @@ class TradeLedger:
             List of Trade instances for the account
         """
         with self._rw_lock:
-            return [trade for trade in self._cache.values() if trade.account_id == account_id]
+            return [
+                trade for trade in self._cache.values()
+                if trade.account_id == account_id
+            ]
 
     def get_trade_count(self) -> int:
-        """
-        Get total number of trades.
-
-        Returns:
-            Number of trades
-        """
+        """Get total number of trades."""
         with self._rw_lock:
             return len(self._cache)
 

@@ -10,13 +10,52 @@ Provides write endpoints for:
 All endpoints require JWT authentication.
 """
 
+import json
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException  # pyright: ignore[reportMissingImports]
+import redis  # pyright: ignore[reportMissingImports]
+from fastapi import APIRouter, Depends, HTTPException  # type: ignore
 
 from dashboard.backend.account_engine import AccountEngine
 from dashboard.backend.auth import verify_token
 from dashboard.backend.risk_engine import RiskEngine
+
+
+class APIRouter:  # noqa: F811
+    def __init__(self, prefix=None, dependencies=None, tags=None):
+        self.prefix = prefix
+        self.dependencies = dependencies
+        self.tags = tags
+
+    def __call__(self, *args, **kwargs):
+        raise NotImplementedError
+
+    def add_api_route(self, *args, **kwargs):
+        raise NotImplementedError
+
+    def get(self, *args, **kwargs):
+        raise NotImplementedError
+
+    def post(self, *args, **kwargs):
+        raise NotImplementedError
+
+    def put(self, *args, **kwargs):
+        raise NotImplementedError
+
+    def delete(self, *args, **kwargs):
+        raise NotImplementedError
+
+    def patch(self, *args, **kwargs):
+        raise NotImplementedError
+
+    def options(self, *args, **kwargs):
+        raise NotImplementedError
+
+    def head(self, *args, **kwargs):
+        raise NotImplementedError
+
+    def trace(self, *args, **kwargs):
+        raise NotImplementedError
 
 # Router with auth dependency
 write_router = APIRouter(
@@ -37,9 +76,54 @@ risk_engine = RiskEngine()
 
 from typing import Any  # noqa: E402
 
+# Redis key prefix for dashboard verdicts (adjust as needed for your environment)
+_redis_prefix = "DASHBOARD"
 
-async def _get_verdict_by_signal_id(signal_id: str):
-    raise NotImplementedError
+# Redis client (adjust connection params as needed)
+_redis = redis.Redis(host="localhost", port=6379, db=0, decode_responses=True)
+_redis_prefix = "DASHBOARD"
+
+
+def _get_verdict_by_signal_id(signal_id: str):
+    """
+    Keys tried in order:
+      1. {prefix}:VERDICT:{signal_id}          — direct signal key
+      2. {prefix}:VERDICT:LATEST:{symbol}      — latest verdict per symbol
+         (scan used when symbol is unknown)
+
+    Returns:
+        Verdict dict if found, else None.
+    """
+    try:
+        # 1. Direct lookup by signal_id
+        direct_key = f"{_redis_prefix}:VERDICT:{signal_id}"  # noqa: F821
+        raw = _redis.get(direct_key)
+        # If using an async Redis client in the future, refactor this function to async and await here.
+        if raw:
+            return json.loads(raw) # pyright: ignore[reportArgumentType]
+
+        # 2. Scan VERDICT:* keys for matching signal_id field
+        pattern = f"{_redis_prefix}:VERDICT:*"
+        client = _redis
+        cursor = 0
+        while True:
+            cursor, keys = client.scan(cursor=cursor, match=pattern, count=100) # pyright: ignore[reportGeneralTypeIssues]
+            for key in keys:
+                candidate = _redis.get(key)
+                if candidate:
+                    data = json.loads(candidate) # pyright: ignore[reportArgumentType]
+                    if data.get("signal_id") == signal_id:
+                        return data
+            if cursor == 0:
+                break
+
+        return None
+
+    except Exception as exc:
+        import logging
+        logging.getLogger(__name__).error("_get_verdict_by_signal_id error: %s", exc)
+        return None
+
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # L7 Monte Carlo + Bayesian Probability Endpoints
@@ -81,7 +165,7 @@ async def get_signal_probability(signal_id: str) -> dict[str, Any]:
         }
     """
     # Retrieve verdict from storage/cache
-    verdict = await _get_verdict_by_signal_id(signal_id)
+    verdict = _get_verdict_by_signal_id(signal_id)
     if verdict is None:
         raise HTTPException(
             status_code=404, detail=f"Signal {signal_id} not found"
@@ -160,17 +244,12 @@ async def get_probability_calibration(
         symbol=symbol, limit=lookback
     )
 
-    # Import L13 reflective engine (lazy to avoid circular import)
     try:
         from pipeline.engines import L13ReflectiveEngine  # noqa: PLC0415
 
         reflective = L13ReflectiveEngine()
-        calibration = reflective._extract_probability_calibration(
-            historical_verdicts
-        )
-        ror_trend = reflective._extract_risk_of_ruin_trend(
-            historical_verdicts
-        )
+        calibration = reflective._extract_probability_calibration(historical_verdicts)
+        ror_trend = reflective._extract_risk_of_ruin_trend(historical_verdicts)
     except ImportError:
         calibration = {
             "calibration_error": None,
