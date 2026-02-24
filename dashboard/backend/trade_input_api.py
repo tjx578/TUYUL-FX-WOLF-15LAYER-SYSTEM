@@ -37,6 +37,10 @@ risk_engine = RiskEngine()
 
 from typing import Any  # noqa: E402
 
+
+async def _get_verdict_by_signal_id(signal_id: str):
+    raise NotImplementedError
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # L7 Monte Carlo + Bayesian Probability Endpoints
 #
@@ -79,7 +83,9 @@ async def get_signal_probability(signal_id: str) -> dict[str, Any]:
     # Retrieve verdict from storage/cache
     verdict = await _get_verdict_by_signal_id(signal_id)
     if verdict is None:
-        raise HTTPException(status_code=404, detail=f"Signal {signal_id} not found")
+        raise HTTPException(
+            status_code=404, detail=f"Signal {signal_id} not found"
+        )
 
     prob_ctx = verdict.get("probability_context", {})
     if not isinstance(prob_ctx, dict):
@@ -104,6 +110,10 @@ async def get_signal_probability(signal_id: str) -> dict[str, Any]:
         "confidence": verdict.get("confidence", 0.0),
         "timestamp": verdict.get("timestamp", None),
     }
+
+async def _get_historical_verdicts(symbol: str | None = None, limit: int = 100):
+    # TODO: Implement actual retrieval logic
+    return []
 
 
 @router.get("/api/v1/probability/calibration")  # pyright: ignore[reportUndefinedVariable] # noqa: F821
@@ -150,20 +160,32 @@ async def get_probability_calibration(
         symbol=symbol, limit=lookback
     )
 
-    # Use L13 reflective engine for calibration computation
-    from pipeline.engines import L13ReflectiveEngine  # noqa: PLC0415
+    # Import L13 reflective engine (lazy to avoid circular import)
+    try:
+        from pipeline.engines import L13ReflectiveEngine  # noqa: PLC0415
 
-    reflective = L13ReflectiveEngine()
-    calibration = reflective._extract_probability_calibration(historical_verdicts)
-    ror_trend = reflective._extract_risk_of_ruin_trend(historical_verdicts)
+        reflective = L13ReflectiveEngine()
+        calibration = reflective._extract_probability_calibration(
+            historical_verdicts
+        )
+        ror_trend = reflective._extract_risk_of_ruin_trend(
+            historical_verdicts
+        )
+    except ImportError:
+        calibration = {
+            "calibration_error": None,
+            "sample_size": 0,
+            "calibration_grade": "N/A",
+        }
+        ror_trend = {
+            "ror_trend": "UNKNOWN",
+            "sample_size": 0,
+        }
 
     return {
         "calibration": calibration,
         "risk_of_ruin_trend": ror_trend,
-        "filters": {
-            "symbol": symbol,
-            "lookback": lookback,
-        },
+        "filters": {"symbol": symbol, "lookback": lookback},
     }
 
 
@@ -185,55 +207,18 @@ async def get_probability_summary(
         if not isinstance(prob_ctx, dict):
             prob_ctx = {}
 
-        summary_items.append({
-            "signal_id": v.get("signal_id", ""),
-            "symbol": v.get("symbol", "UNKNOWN"),
-            "verdict": v.get("verdict", "HOLD"),
-            "mc_win_rate": prob_ctx.get("monte_carlo_win_rate", 0.0),
-            "bayesian_posterior": prob_ctx.get("bayesian_posterior", 0.0),
-            "risk_of_ruin": prob_ctx.get("risk_of_ruin", 1.0),
-            "l7_validation": prob_ctx.get("l7_validation", "FAIL"),
-            "mc_passed": prob_ctx.get("mc_passed", False),
-            "timestamp": v.get("timestamp", None),
-        })
+        summary_items.append(
+            {
+                "signal_id": v.get("signal_id", ""),
+                "symbol": v.get("symbol", "UNKNOWN"),
+                "verdict": v.get("verdict", "HOLD"),
+                "mc_win_rate": prob_ctx.get("monte_carlo_win_rate", 0.0),
+                "bayesian_posterior": prob_ctx.get("bayesian_posterior", 0.0),
+                "risk_of_ruin": prob_ctx.get("risk_of_ruin", 1.0),
+                "l7_validation": prob_ctx.get("l7_validation", "FAIL"),
+                "mc_passed": prob_ctx.get("mc_passed", False),
+                "timestamp": v.get("timestamp", None),
+            }
+        )
 
-    return {
-        "count": len(summary_items),
-        "signals": summary_items,
-    }
-
-
-# ── Helper stubs (wire to actual storage layer) ─────────────────────────────
-
-async def _get_verdict_by_signal_id(signal_id: str) -> dict[str, Any] | None:
-    """Retrieve a single verdict by signal ID.
-
-    TODO: Wire to storage/verdict_archive.py or Redis cache.
-    """
-    # Placeholder -- replace with actual storage lookup
-    from storage import (  # noqa: PLC0415
-        verdict_store,  # pyright: ignore[reportAttributeAccessIssue, reportMissingImports]
-    )
-
-    try:
-        return await verdict_store.get(signal_id)
-    except Exception:
-        return None
-
-
-async def _get_historical_verdicts(
-    symbol: str | None = None,
-    limit: int = 100,
-) -> list[dict[str, Any]]:
-    """Retrieve historical verdicts for calibration analysis.
-
-    TODO: Wire to journal J2/J4 storage.
-    """
-    from storage import (  # noqa: PLC0415
-        verdict_store,  # pyright: ignore[reportAttributeAccessIssue, reportMissingImports]
-    )
-
-    try:
-        return await verdict_store.get_history(symbol=symbol, limit=limit)
-    except Exception:
-        return []
+    return {"count": len(summary_items), "signals": summary_items}
