@@ -1,12 +1,24 @@
-"""
-Client-side timezone utilities
-Handles UTC ↔ GMT+8 conversion for display
-"""
-
 import { format, parseISO } from 'date-fns';
 import { toZonedTime } from 'date-fns-tz';
 
-const SYSTEM_TZ = process.env.NEXT_PUBLIC_TIMEZONE || 'Asia/Singapore';
+// Declare process type for environments without Node.js types
+declare const process: {
+  env: { [key: string]: string | undefined };
+} | undefined;
+
+let SYSTEM_TZ: string = 'Asia/Singapore';
+
+if (typeof window === 'undefined') {
+  // Server-side: use process.env if available
+  if (typeof process !== 'undefined' && process.env.NEXT_PUBLIC_TIMEZONE) {
+    SYSTEM_TZ = process.env.NEXT_PUBLIC_TIMEZONE;
+  }
+} else {
+  // Client-side: use window variable if available
+  if ((window as any).NEXT_PUBLIC_TIMEZONE) {
+    SYSTEM_TZ = (window as any).NEXT_PUBLIC_TIMEZONE;
+  }
+}
 
 // Validate timezone on module load
 try {

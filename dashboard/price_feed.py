@@ -224,7 +224,3 @@ class PriceFeed:
 
 # Singleton instance for imports
 price_feed = PriceFeed()
-# Singleton instance for imports
-# (Removed duplicate and conflicting class/method definitions. See above for the correct, unified class.)
-# Singleton instance for imports
-price_feed = PriceFeed()

@@ -49,7 +49,7 @@ async def _get_verdict_by_signal_id(signal_id: str):
 # ═══════════════════════════════════════════════════════════════════════════════
 
 
-@router.get("/api/v1/signals/{signal_id}/probability")  # pyright: ignore[reportUndefinedVariable] # noqa: F821
+@write_router.get("/api/v1/signals/{signal_id}/probability")  # pyright: ignore[reportUndefinedVariable] # noqa: F821
 async def get_signal_probability(signal_id: str) -> dict[str, Any]:
     """Retrieve L7 Monte Carlo + Bayesian probability metrics for a signal.
 
@@ -116,7 +116,7 @@ async def _get_historical_verdicts(symbol: str | None = None, limit: int = 100):
     return []
 
 
-@router.get("/api/v1/probability/calibration")  # pyright: ignore[reportUndefinedVariable] # noqa: F821
+@write_router.get("/api/v1/probability/calibration")  # pyright: ignore[reportUndefinedVariable] # noqa: F821
 async def get_probability_calibration(
     symbol: str | None = None,
     lookback: int = 100,
@@ -189,7 +189,7 @@ async def get_probability_calibration(
     }
 
 
-@router.get("/api/v1/probability/summary")  # pyright: ignore[reportUndefinedVariable] # noqa: F821
+@write_router.get("/api/v1/probability/summary")  # pyright: ignore[reportUndefinedVariable] # noqa: F821
 async def get_probability_summary(
     limit: int = 20,
 ) -> dict[str, Any]:

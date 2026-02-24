@@ -32,7 +32,22 @@ from propfirm_manager.profile_manager import PropFirmManager
 
 
 def _drawdown_multiplier(dd_level: float) -> float:
-    raise NotImplementedError
+    """
+    Adaptive risk multiplier based on drawdown level (fraction, 0.0–1.0).
+    Uses config/risk.yaml drawdown-based scaling:
+        < 0.3  → 1.0
+        0.3–0.6 → 0.75
+        0.6–0.8 → 0.5
+        > 0.8  → 0.25
+    """
+    if dd_level < 0.3:
+        return 1.0
+    elif dd_level < 0.6:
+        return 0.75
+    elif dd_level < 0.8:
+        return 0.5
+    else:
+        return 0.25
 
 
 class RiskMultiplierAggregator:
