@@ -138,10 +138,9 @@ class Layer12Signal(BaseModel):
         ..., ge=0.0, le=1.0, description="Technical integrity index"
     )
     frpc: float = Field(
-        ..., ge=0.0, le=1.0, description="Fundamental-risk-prob-context"
+        ..., ge=0.0, le=1.0,
+        description="Fundamental-risk-prob-context",
     )
-    tii_sym: float = Field(..., ge=0.0, le=1.0, description="Technical integrity index")
-    frpc: float = Field(..., ge=0.0, le=1.0, description="Fundamental-risk-prob-context")
 
     model_config = ConfigDict(frozen=False)
 
@@ -173,12 +172,16 @@ class RiskCalculationRequest(BaseModel):
 
     @field_validator("split_ratio")
     @classmethod
-    def validate_split_sum(cls, v: list[float] | None) -> list[float] | None:
+    def validate_split_sum(
+        cls, v: list[float] | None,
+    ) -> list[float] | None:
         """Ensure split ratios sum to 1.0."""
         if v is not None:
             total = sum(v)
             if not (0.99 <= total <= 1.01):  # Allow small float tolerance
-                raise ValueError(f"Split ratios must sum to 1.0, got {total}")
+                raise ValueError(
+                    f"Split ratios must sum to 1.0, got {total}"
+                )
         return v
 
 
