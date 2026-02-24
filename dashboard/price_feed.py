@@ -20,7 +20,6 @@ CRITICAL:
 
 import json
 import os
-
 from threading import Lock
 from typing import Optional
 
@@ -60,9 +59,7 @@ class PriceFeed:
     def update_prices(self) -> int:
         """
         Poll LiveContextBus for latest ticks and update Redis cache.
-
         Also fires the WS price event to wake any waiting WebSocket loops.
-
         Returns:
             Number of symbols updated
         """
@@ -157,58 +154,61 @@ class PriceFeed:
                 return json.loads(price_json)
             logger.debug(f"No price data for {symbol}")
             return None
-
         except Exception as exc:
             logger.error(f"Failed to get price for {symbol}: {exc}")
             return None
 
-def get_all_prices(self) -> dict[str, dict[str, float]]:
-    """
-    Get latest prices for all symbols.
+    def get_all_prices(self) -> dict[str, dict[str, float]]:
+        """
+        Get latest prices for all symbols.
 
-    Returns:
-        Dictionary mapping symbol -> price data
-    """
-    prices = {}
+        Returns:
+            Dictionary mapping symbol -> price data
+        """
+        prices = {}
 
-    try:
-        # Get all PRICE:* keys using Redis scan
-        pattern = f"{self._redis_prefix}:PRICE:*"
-        cursor = 0
+        try:
+            # Get all PRICE:* keys using Redis scan
+            pattern = f"{self._redis_prefix}:PRICE:*"
+            cursor = 0
 
-        while True:
-            # Use the synchronous scan interface from RedisClient
-            result = self._redis.client.scan(cursor, match=pattern, count=100)
-            if isinstance(result, tuple):
-                cursor, keys_list = result
-            else:
-                # Fallback for type compatibility
-                logger.warning("Unexpected scan result type, breaking scan loop")
-                break
+            while True:
+                # Use the synchronous scan interface from RedisClient
+                result = self._redis.client.scan(cursor, match=pattern, count=100)
+                if isinstance(result, tuple):
+                    cursor, keys_list = result
+                else:
+                    # Fallback for type compatibility
+                    logger.warning("Unexpected scan result type, breaking scan loop")
+                    break
 
-            for key in keys_list:
-                # Extract symbol from key
-                symbol = key.decode().split(":")[-1] if isinstance(key, bytes) else key.split(":")[-1]
+                for key in keys_list:
+                    # Extract symbol from key
+                    symbol = key.decode().split(":")[-1] if isinstance(key, bytes) else key.split(":")[-1]
 
-                # Get price data
-                redis_key = f"{self._redis_prefix}:PRICE:{symbol}"
-                price_json = self._redis.get(redis_key)
-                if price_json:
-                    prices[symbol] = json.loads(price_json)
+                    # Get price data
+                    redis_key = f"{self._redis_prefix}:PRICE:{symbol}"
+                    price_json = self._redis.get(redis_key)
+                    if price_json:
+                        prices[symbol] = json.loads(price_json)
 
-            if cursor == 0:
-                break
+                if cursor == 0:
+                    break
 
-    except Exception as exc:
-        logger.error(f"Failed to get all prices: {exc}")
+        except Exception as exc:
+            logger.error(f"Failed to get all prices: {exc}")
 
-    return prices
+        return prices
+
+    def get_latest_prices(self) -> dict[str, dict[str, float]]:
+        """
+        Alias for get_all_prices() for dashboard API compatibility.
+        """
+        return self.get_all_prices()
 
     def get_latest_tick_from_bus(self, symbol: str) -> dict | None:
         """
         Get latest tick directly from LiveContextBus (bypass Redis).
-
-        Useful for immediate access without waiting for update cycle.
 
         Args:
             symbol: Trading pair symbol
@@ -221,8 +221,10 @@ def get_all_prices(self) -> dict[str, dict[str, float]]:
         except Exception as exc:
             logger.error(f"Failed to get tick from context bus for {symbol}: {exc}")
             return None
-    return None
 
-
+# Singleton instance for imports
+price_feed = PriceFeed()
+# Singleton instance for imports
+# (Removed duplicate and conflicting class/method definitions. See above for the correct, unified class.)
 # Singleton instance for imports
 price_feed = PriceFeed()
