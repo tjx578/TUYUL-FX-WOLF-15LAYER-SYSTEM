@@ -37,8 +37,8 @@ const nextConfig = {
     ];
   },
   
-  // Optimize production build
-  swcMinify: true,
+     // Optimize production build
+     // swcMinify: true, // Deprecated in Next.js 14+
   
   // Output standalone for Docker/VPS
   output: 'standalone',

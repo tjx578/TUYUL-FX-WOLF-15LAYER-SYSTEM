@@ -1,4 +1,4 @@
-import { format, toZonedTime } from "date-fns-tz"
+import { format, utcToZonedTime } from "date-fns-tz"
 import { parseISO } from "date-fns"
 
 export function formatUTCToZone(
@@ -7,6 +7,6 @@ export function formatUTCToZone(
   pattern = "yyyy-MM-dd HH:mm:ss"
 ) {
   const date = parseISO(isoString)
-  const zoned = toZonedTime(date, zone)
+  const zoned = utcToZonedTime(date, zone)
   return format(zoned, pattern, { timeZone: zone })
 }
