@@ -49,4 +49,20 @@ export function SignalCard({ status }: { status: SignalStatus }) {
   }
 
   // ... existing signal states (SIGNAL_CREATED, PENDING_PLACED, etc.)
+
+  // Fallback for unknown or unhandled states
+  return (
+    <div className="signal-card unknown">
+      <div className="header">
+        <span className="symbol">{status.symbol}</span>
+        <span className="badge unknown">Unknown State</span>
+      </div>
+      <div className="details">
+        <p>Signal state not recognized: <b>{status.state}</b></p>
+        <p>Verdict: {status.verdict ?? 'N/A'}</p>
+        <p>Confidence: {status.confidence}</p>
+        <p>Reason: {status.reason}</p>
+      </div>
+    </div>
+  );
 }
