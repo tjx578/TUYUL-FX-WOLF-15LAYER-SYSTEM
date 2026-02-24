@@ -2,10 +2,12 @@
 Dashboard API (Account & Risk Governor)
 """
 
+
 import os
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from dashboard.backend.permissions import DashboardPermission
 from dashboard.backend.routes import router as read_router
@@ -24,11 +26,12 @@ app.add_middleware(
 )
 
 
+
 @app.middleware("http")
 async def permission_guard(request: Request, call_next):
     """Guard to enforce permission rules."""
     if not DashboardPermission.allow(request.method, request.url.path):
-        return {"error": "Method not allowed"}
+        return JSONResponse(status_code=405, content={"error": "Method not allowed"})
     return await call_next(request)
 
 
