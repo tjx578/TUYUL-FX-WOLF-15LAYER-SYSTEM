@@ -199,7 +199,7 @@ class RiskMultiplierAggregator:
         Returns:
             Distance in pips
         """
-        if direction == "BUY":
+        if direction == "BUY":  # noqa: SIM108
             # For BUY: SL is below entry
             distance = abs(entry - stop_loss)
         else:  # SELL
