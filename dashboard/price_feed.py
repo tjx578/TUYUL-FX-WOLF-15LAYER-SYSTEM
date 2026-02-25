@@ -20,11 +20,13 @@ CRITICAL:
 
 import json
 import os
+import time
 from threading import Lock
 from typing import Optional
 
 from loguru import logger
 
+from config_loader import CONFIG
 from context.live_context_bus import LiveContextBus
 from storage.redis_client import RedisClient
 
@@ -53,8 +55,18 @@ class PriceFeed:
         self._context_bus = LiveContextBus()
         self._redis = RedisClient()
         self._redis_prefix = os.getenv("REDIS_PREFIX", "wolf15")
+        self._context_mode = os.getenv("CONTEXT_MODE", "local").lower()
         self._rw_lock = Lock()
-        logger.info("PriceFeed service initialized")
+        self._enabled_symbols: list[str] = [
+            p["symbol"]
+            for p in CONFIG.get("pairs", {}).get("pairs", [])
+            if p.get("enabled", True)
+        ]
+        self._last_no_tick_warn: float = 0.0
+        logger.info(
+            f"PriceFeed service initialized "
+            f"(context_mode={self._context_mode}, symbols={len(self._enabled_symbols)})"
+        )
 
     def update_prices(self) -> int:
         """
@@ -70,16 +82,30 @@ class PriceFeed:
             snapshot = self._context_bus.snapshot()
             ticks = snapshot.get("ticks", [])
 
-            if not ticks:
-                logger.debug("No ticks available from LiveContextBus")
-                return 0
-
             # Group by symbol and keep latest tick per symbol
             latest_ticks: dict[str, dict] = {}
             for tick in reversed(ticks):  # Reversed so we get most recent first
                 symbol = tick.get("symbol")
                 if symbol and symbol not in latest_ticks:
                     latest_ticks[symbol] = tick
+
+            # Fallback: if local buffer empty and CONTEXT_MODE=redis,
+            # read latest ticks directly from Redis hash keys.
+            if not latest_ticks and self._context_mode == "redis":
+                latest_ticks = self._read_ticks_from_redis()
+
+            if not latest_ticks:
+                now = time.monotonic()
+                # Throttle warning to once per 30 s to avoid log flood
+                if now - self._last_no_tick_warn > 30.0:
+                    logger.warning(
+                        "No ticks available from LiveContextBus or Redis. "
+                        "Check: FINNHUB_API_KEY set? Ingest running? "
+                        f"CONTEXT_MODE={self._context_mode}, "
+                        f"EMBED_INGEST={os.getenv('EMBED_INGEST', 'false')}"
+                    )
+                    self._last_no_tick_warn = now
+                return 0
 
             # Update Redis with latest prices
             for symbol, tick in latest_ticks.items():
@@ -135,6 +161,31 @@ class PriceFeed:
                 pass  # No running event loop — skip
         except ImportError:
             pass  # ws_routes not available
+
+    def _read_ticks_from_redis(self) -> dict[str, dict]:
+        """Read latest ticks from Redis hash keys (fallback when local buffer empty).
+
+        Reads ``wolf15:latest_tick:{symbol}`` hashes written by
+        ``RedisContextBridge.write_tick()`` in the ingest container.
+
+        Returns:
+            Dict mapping symbol -> tick dict.
+        """
+        latest: dict[str, dict] = {}
+        for symbol in self._enabled_symbols:
+            try:
+                key = f"{self._redis_prefix}:latest_tick:{symbol}"
+                tick_json = self._redis.hget(key, "data")
+                if tick_json:
+                    import orjson  # noqa: PLC0415
+
+                    tick = orjson.loads(tick_json)
+                    latest[symbol] = tick
+            except Exception as exc:
+                logger.debug(f"Redis tick fallback failed for {symbol}: {exc}")
+        if latest:
+            logger.debug(f"Redis fallback provided ticks for {len(latest)} symbols")
+        return latest
 
     def get_price(self, symbol: str) -> dict[str, float] | None:
         """
