@@ -6,14 +6,12 @@ FastAPI server for L12 verdict polling, dashboard trade management, and system h
 
 import asyncio
 import os
-
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from datetime import UTC, datetime
 from typing import Any
 
 import fastapi  # pyright: ignore[reportMissingImports]
 import uvicorn  # pyright: ignore[reportMissingImports]
-
 from fastapi.middleware.cors import CORSMiddleware  # pyright: ignore[reportMissingImports]
 from loguru import logger  # pyright: ignore[reportMissingImports]
 
@@ -44,6 +42,7 @@ from utils.timezone_utils import format_local, format_utc, now_utc
 _price_feed_task = None
 _price_watcher_task = None
 _ingest_task = None
+_redis_consumer = None  # RedisConsumer instance (when CONTEXT_MODE=redis)
 
 
 async def _run_ingest_embedded() -> None:
@@ -97,7 +96,7 @@ async def lifespan(app: fastapi.FastAPI):
     Starts price feed updater, price watcher, and optionally embedded
     ingest service on startup.  Stops them on shutdown.
     """
-    global _price_feed_task, _price_watcher_task, _ingest_task
+    global _price_feed_task, _price_watcher_task, _ingest_task, _redis_consumer
 
     # Startup
     logger.info("Starting background tasks...")
@@ -107,6 +106,25 @@ async def lifespan(app: fastapi.FastAPI):
         _ingest_task = asyncio.create_task(
             _run_ingest_embedded(), name="EmbeddedIngest"
         )
+
+    # Start RedisConsumer when CONTEXT_MODE=redis so that ticks written
+    # to Redis by the ingest container are consumed into the local
+    # LiveContextBus (required for multi-container AND single-container).
+    if os.getenv("CONTEXT_MODE", "local").lower() == "redis":
+        try:
+            from context.redis_consumer import RedisConsumer  # noqa: PLC0415
+
+            symbols = [
+                p["symbol"]
+                for p in CONFIG.get("pairs", {}).get("pairs", [])
+                if p.get("enabled", True)
+            ]
+            _redis_consumer = RedisConsumer(symbols=symbols)
+            await _redis_consumer.start()
+            logger.info(f"RedisConsumer started for {len(symbols)} symbols")
+        except Exception as exc:
+            logger.error(f"Failed to start RedisConsumer: {exc}")
+            _redis_consumer = None
 
     # Start price feed updater
     _price_feed_task = asyncio.create_task(_run_price_feed_updater())
@@ -131,14 +149,20 @@ async def lifespan(app: fastapi.FastAPI):
     ]:
         if task_ref:
             task_ref.cancel()
-            try:
+            with suppress(asyncio.CancelledError):
                 await task_ref
-            except asyncio.CancelledError:
-                pass
             logger.debug(f"Task {task_name} stopped")
 
     if _price_watcher_task:
         price_watcher.stop()
+
+    # Stop RedisConsumer if running
+    if _redis_consumer is not None:
+        try:
+            await _redis_consumer.stop()
+            logger.debug("RedisConsumer stopped")
+        except Exception as exc:
+            logger.error(f"Error stopping RedisConsumer: {exc}")
 
     await shutdown_persistent_storage()
 
