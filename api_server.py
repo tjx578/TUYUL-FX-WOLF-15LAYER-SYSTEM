@@ -6,6 +6,7 @@ FastAPI server for L12 verdict polling, dashboard trade management, and system h
 
 import asyncio
 import os
+import sys
 from contextlib import asynccontextmanager, suppress
 from datetime import UTC, datetime
 from typing import Any
@@ -15,28 +16,46 @@ import uvicorn  # pyright: ignore[reportMissingImports]
 from fastapi.middleware.cors import CORSMiddleware  # pyright: ignore[reportMissingImports]
 from loguru import logger  # pyright: ignore[reportMissingImports]
 
-from api.dashboard_routes import router as dashboard_router
-from api.journal_routes import router as journal_router
-from api.l12_routes import router as l12_router
-from api.middleware.rate_limit import RateLimitMiddleware
-from api.ws_routes import router as ws_router
-from config_loader import CONFIG
-from context.live_context_bus import LiveContextBus
-from context.runtime_state import RuntimeState
-from core.metrics import (
+from utils.timezone_utils import format_local, format_utc, now_utc
+
+# ── Configure loguru for production ──────────────────────────────
+# Without this, loguru's default handler logs at DEBUG level, flooding
+# Railway's log rate-limit (~100 lines/sec cap).
+_LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
+logger.remove()  # Remove default DEBUG-level stderr handler
+logger.add(
+    sys.stdout,
+    level=_LOG_LEVEL,
+    format=(
+        "<green>{time:YYYY-MM-DD HH:mm:ss.SSS}</green> | "
+        "<level>{level: <8}</level> | "
+        "<cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - "
+        "<level>{message}</level>"
+    ),
+    enqueue=True,  # Thread-safe async-safe logging
+)
+
+from api.dashboard_routes import router as dashboard_router  # noqa: E402
+from api.journal_routes import router as journal_router  # noqa: E402
+from api.l12_routes import router as l12_router  # noqa: E402
+from api.middleware.rate_limit import RateLimitMiddleware  # noqa: E402
+from api.ws_routes import router as ws_router  # noqa: E402
+from config_loader import CONFIG  # noqa: E402
+from context.live_context_bus import LiveContextBus  # noqa: E402
+from context.runtime_state import RuntimeState  # noqa: E402
+from core.metrics import (  # noqa: E402
     ACTIVE_PAIRS,
     FEED_AGE,
     PIPELINE_LATENCY_MS,
     SYSTEM_HEALTHY,
     get_registry,
 )
-from dashboard.backend.auth import verify_token
-from dashboard.price_feed import PriceFeed
-from dashboard.price_watcher import PriceWatcher
-from risk.risk_router import router as risk_router
-from storage.health import postgres_health
-from storage.startup import init_persistent_storage, shutdown_persistent_storage
-from utils.timezone_utils import format_local, format_utc, now_utc
+from dashboard.backend.auth import verify_token  # noqa: E402
+from dashboard.price_feed import PriceFeed  # noqa: E402
+from dashboard.price_watcher import PriceWatcher  # noqa: E402
+from risk.risk_router import router as risk_router  # noqa: E402
+from storage.health import postgres_health  # noqa: E402
+from storage.startup import init_persistent_storage, shutdown_persistent_storage  # noqa: E402
 
 # Background task references
 _price_feed_task = None

@@ -1093,9 +1093,7 @@ class WolfConstitutionalPipeline:
         passed = sum([g1, g2, g3, g4, g5, g6, g7, g8, g9])
 
         # Log Gate 2 detail for audit trail
-        import logging  # noqa: PLC0415
-        _logger = logging.getLogger(__name__)
-        _logger.info(
+        logger.debug(
             "[Gate-2] win_pct=%.1f%% (min=%.1f%%) %s | "
             "risk_of_ruin=%.4f (max=%.2f) %s | gate=%s",
             win_pct,
