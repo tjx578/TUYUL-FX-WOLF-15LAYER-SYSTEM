@@ -30,6 +30,7 @@ from loguru import logger
 
 from schemas.trade_models import (
     CloseReason,
+    RiskMode,
     Trade,
     TradeLeg,
     TradeStatus,
@@ -74,21 +75,17 @@ class TradeLedger:
         try:
             pattern = f"{self._redis_prefix}:TRADE:*"
             client = self._redis.client
-            cursor = 0
             loaded_count = 0
 
-            while True:
-                cursor, keys = client.scan(cursor, match=pattern, count=100)
-                for key in keys:
-                    trade_json = self._redis.get(key)
-                    if trade_json:
-                        trade_data = json.loads(trade_json)
-                        trade = Trade(**trade_data)
-                        self._cache[trade.trade_id] = trade
-                        loaded_count += 1
-            if cursor == 0:
-                break
+            for key in client.scan_iter(match=pattern, count=100):  # type: ignore[union-attr]
+                trade_json = self._redis.get(key)
+                if trade_json:
+                    trade_data = json.loads(trade_json)
+                    trade = Trade(**trade_data)
+                    self._cache[trade.trade_id] = trade
+                    loaded_count += 1
 
+            logger.info(f"Loaded {loaded_count} trades from Redis")
         except Exception as exc:
             logger.error(f"Failed to load trades from Redis: {exc}")
 
