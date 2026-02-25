@@ -3,11 +3,11 @@ Redis Client Wrapper with Connection Pooling, Pub/Sub, and Streams support.
 """
 
 import os
-
-from typing import Any, Optional
+from typing import Any, Optional, cast  # noqa: UP035
 
 import redis
-
+import redis.client
+import redis.exceptions
 from loguru import logger
 from tenacity import (
     retry,
@@ -41,13 +41,23 @@ class RedisClient:
         url = os.getenv("REDIS_URL") or "redis://localhost:6379/0"
         socket_timeout = int(os.getenv("REDIS_SOCKET_TIMEOUT_SEC", "5"))
 
-        # Create connection pool for reuse
+        # Create connection pool for reuse.
+        # TCP_OVERWINDOW fix: enable keepalive, reduce pool size,
+        # add health-check interval to prune idle connections.
         self._pool = redis.ConnectionPool.from_url(
             url,
             decode_responses=True,
             socket_timeout=socket_timeout,
             socket_connect_timeout=socket_timeout,
-            max_connections=50,
+            max_connections=20,
+            socket_keepalive=True,
+            socket_keepalive_options={
+                1: 60,   # TCP_KEEPIDLE  — seconds before first probe
+                2: 15,   # TCP_KEEPINTVL — seconds between probes
+                3: 4,    # TCP_KEEPCNT   — probes before declaring dead
+            },
+            health_check_interval=30,
+            retry_on_timeout=True,
         )
         self.client = redis.Redis(connection_pool=self._pool)
         logger.info(f"Redis client initialized with connection pool: {url}")
@@ -70,7 +80,8 @@ class RedisClient:
         Raises:
             redis.exceptions.ConnectionError: If connection fails after retries.
         """
-        return self.client.ping()
+        result = self.client.ping()
+        return bool(result)
 
     @retry(
         retry=retry_if_exception_type(
@@ -94,7 +105,7 @@ class RedisClient:
     )
     def get(self, key: str) -> str | None:
         """Get value by key."""
-        return self.client.get(key)
+        return cast(str | None, self.client.get(key))
 
     @retry(
         retry=retry_if_exception_type(
@@ -117,8 +128,8 @@ class RedisClient:
             Number of fields that were added.
         """
         if mapping:
-            return self.client.hset(name, mapping=mapping)
-        return self.client.hset(name, **kwargs)
+            return cast(int, self.client.hset(name, mapping=mapping))
+        return cast(int, self.client.hset(name, **kwargs))
 
     @retry(
         retry=retry_if_exception_type(
@@ -130,7 +141,7 @@ class RedisClient:
     )
     def hget(self, name: str, key: str) -> str | None:
         """Get hash field value."""
-        return self.client.hget(name, key)
+        return cast(str | None, self.client.hget(name, key))
 
     @retry(
         retry=retry_if_exception_type(
@@ -142,7 +153,7 @@ class RedisClient:
     )
     def delete(self, key: str) -> int:
         """Delete key."""
-        return self.client.delete(key)
+        return cast(int, self.client.delete(key))
 
     def pubsub(self) -> redis.client.PubSub:
         """
@@ -172,7 +183,7 @@ class RedisClient:
         Returns:
             Number of subscribers that received the message.
         """
-        return self.client.publish(channel, message)
+        return cast(int, self.client.publish(channel, message))
 
     @retry(
         retry=retry_if_exception_type(
@@ -203,7 +214,7 @@ class RedisClient:
         Returns:
             Entry ID assigned by Redis.
         """
-        return self.client.xadd(name, fields, id=id, maxlen=maxlen, approximate=approximate)
+        return cast(str, self.client.xadd(name, fields, id=id, maxlen=maxlen, approximate=approximate))  # type: ignore[arg-type]
 
     @retry(
         retry=retry_if_exception_type(
@@ -230,7 +241,7 @@ class RedisClient:
         Returns:
             List of [stream_name, [(entry_id, fields), ...]] tuples.
         """
-        return self.client.xread(streams, count=count, block=block)
+        return cast(list, self.client.xread(streams, count=count, block=block)) # type: ignore
 
     @retry(
         retry=retry_if_exception_type(
@@ -261,7 +272,7 @@ class RedisClient:
         Returns:
             List of [stream_name, [(entry_id, fields), ...]] tuples.
         """
-        return self.client.xreadgroup(groupname, consumername, streams, count=count, block=block)
+        return cast(list, self.client.xreadgroup(groupname, consumername, streams, count=count, block=block)) # type: ignore
 
     @retry(
         retry=retry_if_exception_type(
@@ -294,7 +305,7 @@ class RedisClient:
             redis.exceptions.ResponseError: If group already exists.
         """
         try:
-            return self.client.xgroup_create(name, groupname, id=id, mkstream=mkstream)
+            return cast(bool, self.client.xgroup_create(name, groupname, id=id, mkstream=mkstream))
         except redis.exceptions.ResponseError as e:
             if "BUSYGROUP" in str(e):
                 # Group already exists, this is fine
