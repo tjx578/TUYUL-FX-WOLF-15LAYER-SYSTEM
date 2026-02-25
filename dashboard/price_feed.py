@@ -130,7 +130,6 @@ class PriceFeed:
                     logger.error(f"Failed to update price for {symbol}: {exc}")
 
             if updated_count > 0:
-                logger.debug(f"Updated prices for {updated_count} symbols")
                 # Signal WS price event to wake waiting WebSocket loops
                 self._fire_price_event()
 
@@ -172,6 +171,7 @@ class PriceFeed:
             Dict mapping symbol -> tick dict.
         """
         latest: dict[str, dict] = {}
+        errors: list[str] = []
         for symbol in self._enabled_symbols:
             try:
                 key = f"{self._redis_prefix}:latest_tick:{symbol}"
@@ -182,9 +182,10 @@ class PriceFeed:
                     tick = orjson.loads(tick_json)
                     latest[symbol] = tick
             except Exception as exc:
-                logger.debug(f"Redis tick fallback failed for {symbol}: {exc}")
-        if latest:
-            logger.debug(f"Redis fallback provided ticks for {len(latest)} symbols")
+                errors.append(f"{symbol}: {exc}")
+        if errors and not latest:
+            # Only warn once when ALL symbols fail (connection issue)
+            logger.warning(f"Redis tick fallback failed ({len(errors)} symbols): {errors[0]}")
         return latest
 
     def get_price(self, symbol: str) -> dict[str, float] | None:
@@ -203,7 +204,6 @@ class PriceFeed:
 
             if price_json:
                 return json.loads(price_json)
-            logger.debug(f"No price data for {symbol}")
             return None
         except Exception as exc:
             logger.error(f"Failed to get price for {symbol}: {exc}")

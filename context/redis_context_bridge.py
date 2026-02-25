@@ -13,11 +13,9 @@ Uses:
 from typing import Any
 
 import orjson
-
 from loguru import logger
 
 from storage.redis_client import RedisClient
-
 
 # === TTL Constants ===
 # Latest tick: 60s - acts as stale feed circuit breaker.
@@ -101,8 +99,6 @@ class RedisContextBridge:
             # 4. PUBLISH notification
             self._redis.publish("tick_updates", tick_json)
 
-            logger.debug(f"Tick written to Redis: {symbol}")
-
         except Exception as exc:
             logger.error(f"Failed to write tick to Redis for {symbol}: {exc}")
 
@@ -150,8 +146,6 @@ class RedisContextBridge:
             except Exception as exc:
                 logger.error(f"Failed to write MN history list for {symbol}: {exc}")
 
-            logger.debug(f"Candle written to Redis: {symbol} {timeframe}")
-
         except Exception as exc:
             logger.error(f"Failed to write candle to Redis for {symbol} {timeframe}: {exc}")
 
@@ -176,8 +170,6 @@ class RedisContextBridge:
             # 2. SET latest news (already has TTL via ex=86400)
             key = f"{self._prefix}:latest_news"
             self._redis.set(key, news_json, ex=86400)  # 24h expiration
-
-            logger.debug("News written to Redis")
 
         except Exception as exc:
             logger.error(f"Failed to write news to Redis: {exc}")
