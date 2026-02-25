@@ -34,6 +34,12 @@ services:
       --requirepass ${REDIS_PASSWORD:?REDIS_PASSWORD must be set}
       --maxmemory 256mb
       --maxmemory-policy allkeys-lru
+      --tcp-backlog 128
+      --tcp-keepalive 60
+      --timeout 300
+      --hz 10
+      --client-output-buffer-limit "normal 0 0 0"
+      --client-output-buffer-limit "pubsub 64mb 32mb 60"
     ports:
       # Bind to localhost only — not reachable from external network
       - "127.0.0.1:6379:6379"

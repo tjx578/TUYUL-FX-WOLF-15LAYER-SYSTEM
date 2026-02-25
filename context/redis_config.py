@@ -8,6 +8,11 @@ def create_redis_client() -> Redis:
 
     Returns:
         Configured async Redis client instance.
+
+    TCP_OVERWINDOW mitigation:
+      - Keepalive enabled to prune stale connections.
+      - Pool capped at 10 (async callers pipeline / share better).
+      - health_check_interval prunes idle conns before they accumulate.
     """
     redis_url = os.environ["REDIS_URL"]
     use_tls = redis_url.startswith("rediss://")
@@ -15,9 +20,11 @@ def create_redis_client() -> Redis:
     return Redis.from_url(
         redis_url,
         decode_responses=True,
-        max_connections=20,
+        max_connections=10,
         retry_on_timeout=True,
         ssl=use_tls,
         socket_connect_timeout=5,
         socket_timeout=5,
+        socket_keepalive=True,
+        health_check_interval=30,
     )
