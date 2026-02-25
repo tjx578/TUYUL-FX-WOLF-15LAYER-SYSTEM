@@ -2,7 +2,10 @@
 const nextConfig = {
   reactStrictMode: true,
   
-  // API + WebSocket proxy to FastAPI backend
+  // API + WebSocket proxy to FastAPI backend (Railway)
+  // NOTE: In production on Vercel, the edge-level rewrites in vercel.json
+  // take priority (faster). These app-level rewrites are the fallback and
+  // are the primary mechanism during local `next dev`.
   async rewrites() {
     const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
     return [
@@ -10,7 +13,7 @@ const nextConfig = {
         source: '/api/:path*',
         destination: `${apiUrl}/api/:path*`,
       },
-      // WebSocket proxy (Next.js dev server)
+      // WebSocket proxy (Next.js dev server / fallback)
       {
         source: '/ws/:path*',
         destination: `${apiUrl}/ws/:path*`,
