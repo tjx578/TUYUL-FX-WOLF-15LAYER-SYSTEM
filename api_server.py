@@ -150,7 +150,10 @@ async def lifespan(app: fastapi.FastAPI):
     price_watcher = PriceWatcher()
     _price_watcher_task = asyncio.create_task(price_watcher.start())
 
-    await init_persistent_storage()
+    try:
+        await init_persistent_storage()
+    except Exception as exc:
+        logger.error(f"Persistent storage init failed (non-fatal): {exc}")
 
     logger.info("Background tasks started")
 
