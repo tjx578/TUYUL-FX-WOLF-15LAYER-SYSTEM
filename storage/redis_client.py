@@ -3,7 +3,6 @@ Redis Client Wrapper with Connection Pooling, Pub/Sub, and Streams support.
 """
 
 import os
-import socket
 from typing import Any, Optional, cast  # noqa: UP035
 
 import redis
@@ -42,20 +41,15 @@ class RedisClient:
         url = os.getenv("REDIS_URL") or "redis://localhost:6379/0"
         socket_timeout = int(os.getenv("REDIS_SOCKET_TIMEOUT_SEC", "5"))
 
-        # Build TCP keepalive options using platform-portable socket constants.
-        # These constants differ across OSes (Linux 4/5/6, macOS 16/…).
-        keepalive_opts: dict[int, int] = {}
-        if hasattr(socket, "TCP_KEEPIDLE"):
-            keepalive_opts[socket.TCP_KEEPIDLE] = 60   # seconds before first probe
-        if hasattr(socket, "TCP_KEEPINTVL"):
-            keepalive_opts[socket.TCP_KEEPINTVL] = 15  # seconds between probes
-        if hasattr(socket, "TCP_KEEPCNT"):
-            keepalive_opts[socket.TCP_KEEPCNT] = 4     # probes before declaring dead
-
-        # Create connection pool for reuse.
         # TCP_OVERWINDOW fix: enable keepalive, reduce pool size,
         # add health-check interval to prune idle connections.
-        pool_kwargs: dict[str, Any] = dict(
+        # NOTE: Only SO_KEEPALIVE is set here (socket_keepalive=True).
+        # Detailed keepalive timing (idle/interval/count) is handled
+        # server-side via Redis --tcp-keepalive.  Passing
+        # socket_keepalive_options with TCP_KEEPIDLE etc. causes EINVAL
+        # on some container runtimes (e.g. Railway Alpine).
+        self._pool = redis.ConnectionPool.from_url(
+            url,
             decode_responses=True,
             socket_timeout=socket_timeout,
             socket_connect_timeout=socket_timeout,
@@ -64,10 +58,6 @@ class RedisClient:
             health_check_interval=30,
             retry_on_timeout=True,
         )
-        if keepalive_opts:
-            pool_kwargs["socket_keepalive_options"] = keepalive_opts
-
-        self._pool = redis.ConnectionPool.from_url(url, **pool_kwargs)
         self.client = redis.Redis(connection_pool=self._pool)
         logger.info(f"Redis client initialized with connection pool: {url}")
 
