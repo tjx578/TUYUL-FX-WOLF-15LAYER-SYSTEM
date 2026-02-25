@@ -7,7 +7,9 @@ services:
     env_file:
       - .env
     environment:
-      - WEB_CONCURRENCY=${WEB_CONCURRENCY:-2}
+      - WEB_CONCURRENCY=${WEB_CONCURRENCY:-1}
+      - EMBED_INGEST=true
+      - CONTEXT_MODE=redis
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - REDIS_PASSWORD=${REDIS_PASSWORD}

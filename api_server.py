@@ -43,6 +43,32 @@ from utils.timezone_utils import format_local, format_utc, now_utc
 # Background task references
 _price_feed_task = None
 _price_watcher_task = None
+_ingest_task = None
+
+
+async def _run_ingest_embedded() -> None:
+    """Embedded ingest for single-container deploys (Railway/Render).
+
+    Imports ingest_service lazily to avoid hard dependency when
+    EMBED_INGEST is not enabled.
+    """
+    api_key = os.getenv("FINNHUB_API_KEY", "")
+    if not api_key or api_key == "YOUR_FINNHUB_API_KEY":
+        logger.warning(
+            "FINNHUB_API_KEY not set — embedded ingest disabled. "
+            "Real-time data feed will NOT work."
+        )
+        return
+
+    try:
+        from ingest_service import run_ingest_services  # noqa: PLC0415
+
+        logger.info("Embedded ingest starting (single-container mode)")
+        await run_ingest_services(has_api_key=True)
+    except asyncio.CancelledError:
+        logger.info("Embedded ingest cancelled")
+    except Exception as exc:
+        logger.error(f"Embedded ingest fatal error: {exc}", exc_info=True)
 
 
 async def _run_price_feed_updater():
@@ -68,13 +94,19 @@ async def lifespan(app: fastapi.FastAPI):
     """
     Lifespan context manager for background tasks.
 
-    Starts price feed updater and price watcher on startup.
-    Stops them on shutdown.
+    Starts price feed updater, price watcher, and optionally embedded
+    ingest service on startup.  Stops them on shutdown.
     """
-    global _price_feed_task, _price_watcher_task
+    global _price_feed_task, _price_watcher_task, _ingest_task
 
     # Startup
     logger.info("Starting background tasks...")
+
+    # Start embedded ingest if EMBED_INGEST=true (single-container mode)
+    if os.getenv("EMBED_INGEST", "false").lower() in ("true", "1", "yes"):
+        _ingest_task = asyncio.create_task(
+            _run_ingest_embedded(), name="EmbeddedIngest"
+        )
 
     # Start price feed updater
     _price_feed_task = asyncio.create_task(_run_price_feed_updater())
@@ -92,20 +124,21 @@ async def lifespan(app: fastapi.FastAPI):
     # Shutdown
     logger.info("Stopping background tasks...")
 
-    if _price_feed_task:
-        _price_feed_task.cancel()
-        try:
-            await _price_feed_task
-        except asyncio.CancelledError:
-            pass
+    for task_name, task_ref in [
+        ("ingest", _ingest_task),
+        ("price_feed", _price_feed_task),
+        ("price_watcher", _price_watcher_task),
+    ]:
+        if task_ref:
+            task_ref.cancel()
+            try:
+                await task_ref
+            except asyncio.CancelledError:
+                pass
+            logger.debug(f"Task {task_name} stopped")
 
     if _price_watcher_task:
         price_watcher.stop()
-        _price_watcher_task.cancel()
-        try:
-            await _price_watcher_task
-        except asyncio.CancelledError:
-            pass
 
     await shutdown_persistent_storage()
 

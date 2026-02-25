@@ -1,16 +1,13 @@
-from fastapi import FastAPI, Response
+"""
+Dashboard app entry point.
 
-from dashboard.metrics import get_metrics_bytes
+For backward compatibility, re-exports the main API server app
+so that ``gunicorn dashboard.app:app`` still works correctly.
 
-app = FastAPI()
+The actual application with all routes, WebSocket endpoints,
+and background tasks lives in api_server.py.
+"""
 
-# ── Prometheus /metrics endpoint ─────────────────────────────────────
+from api_server import app  # noqa: F401
 
-@app.get("/metrics", include_in_schema=False)
-async def prometheus_metrics() -> Response:
-    """Expose Prometheus-compatible metrics for external scraping.
-
-    Zone: dashboard (observability). No execution authority.
-    """
-    body, content_type = get_metrics_bytes()
-    return Response(content=body, media_type=content_type)
+__all__ = ["app"]

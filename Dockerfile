@@ -30,14 +30,22 @@ USER appuser
 ENV PORT=8000
 EXPOSE ${PORT}
 
-# Configurable workers via WEB_CONCURRENCY (default 2)
-ENV WEB_CONCURRENCY=2
+# Configurable workers via WEB_CONCURRENCY (default 1 for WebSocket support)
+# NOTE: WebSocket connections are per-worker. With multiple workers,
+# each WS client connects to ONE worker only. For real-time feeds,
+# 1 worker is safest unless using Redis pub/sub for cross-worker broadcast.
+ENV WEB_CONCURRENCY=1
 
 # --- Healthcheck (uses $PORT so it follows the actual listening port) ---
 HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
     CMD curl -f http://localhost:${PORT}/health || exit 1
 
+# CRITICAL FIXES:
+# 1. Use api_server:app (NOT dashboard.app:app) — contains ALL routes + lifespan
+# 2. Use uvicorn.workers.UvicornWorker (NOT sync) — required for WebSocket/ASGI
+# 3. WEB_CONCURRENCY=1 default for WS state consistency
+#
 # Gunicorn writes startup/app logs to stderr by default (--error-logfile -).
 # Container platforms (Railway, Render, GCP, etc.) classify stderr as "error",
 # so we redirect stderr → stdout (2>&1) to keep everything on fd 1.
-CMD ["sh", "-c", "exec gunicorn --bind 0.0.0.0:${PORT} --workers ${WEB_CONCURRENCY} --timeout 120 --access-logfile - --error-logfile - --log-level info dashboard.app:app 2>&1"]
+CMD ["sh", "-c", "exec gunicorn api_server:app --bind 0.0.0.0:${PORT} --workers ${WEB_CONCURRENCY} --worker-class uvicorn.workers.UvicornWorker --timeout 120 --access-logfile - --error-logfile - --log-level info 2>&1"]
