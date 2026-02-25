@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 
 from loguru import logger
 
@@ -28,14 +29,24 @@ async def init_persistent_storage() -> PersistenceSync | None:
         return None
 
     redis = RedisClient()
-    if not redis.get("wolf15:peak_equity"):
-        logger.warning("Redis appears empty; attempting recovery from PostgreSQL")
-        recovery_service = PersistenceSync(pg=pg_client, redis=redis)
-        await recovery_service.recover_from_postgres()
+    try:
+        if not redis.get("wolf15:peak_equity"):
+            logger.warning("Redis appears empty; attempting recovery from PostgreSQL")
+            recovery_service = PersistenceSync(pg=pg_client, redis=redis)
+            await recovery_service.recover_from_postgres()
+    except Exception as exc:
+        logger.warning(
+            f"Redis unavailable during PG sync init; skipping recovery: {exc}"
+        )
 
-    _sync_service = PersistenceSync(interval_sec=30.0, pg=pg_client, redis=redis)
-    _sync_task = asyncio.create_task(_sync_service.run())
-    logger.info("Persistent storage initialized")
+    try:
+        _sync_service = PersistenceSync(interval_sec=30.0, pg=pg_client, redis=redis)
+        _sync_task = asyncio.create_task(_sync_service.run())
+        logger.info("Persistent storage initialized")
+    except Exception as exc:
+        logger.warning(f"Persistence sync startup failed: {exc}")
+        return None
+
     return _sync_service
 
 
@@ -49,10 +60,8 @@ async def shutdown_persistent_storage() -> None:
 
     if _sync_task is not None:
         _sync_task.cancel()
-        try:
+        with contextlib.suppress(asyncio.CancelledError):
             await _sync_task
-        except asyncio.CancelledError:
-            pass
         _sync_task = None
 
     await pg_client.close()
