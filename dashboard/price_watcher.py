@@ -97,14 +97,12 @@ class PriceWatcher:
                 price_data = self._price_feed.get_price(trade.pair)
 
                 if not price_data:
-                    logger.debug(f"No price data for {trade.pair} (trade {trade.trade_id})")
                     continue
 
                 bid = price_data.get("bid", 0.0)
                 ask = price_data.get("ask", 0.0)
 
                 if bid <= 0 or ask <= 0:
-                    logger.debug(f"Invalid price data for {trade.pair}: bid={bid}, ask={ask}")
                     continue
 
                 # Check for state transitions

@@ -9,7 +9,6 @@ ingest container in a multi-container deployment.
 import asyncio
 
 import orjson
-
 from loguru import logger
 
 from context.live_context_bus import LiveContextBus
@@ -142,7 +141,6 @@ class RedisConsumer:
                                     tick = orjson.loads(tick_json)
                                     # Feed into local context bus
                                     self._context_bus.update_tick(tick)
-                                    logger.debug(f"Tick consumed from Redis: {tick.get('symbol')}")
                                 except Exception as parse_exc:
                                     logger.error(f"Failed to parse tick: {parse_exc}")
 
@@ -195,15 +193,12 @@ class RedisConsumer:
 
                     if message and message["type"] == "message":
                         candle_json = message["data"]
+                        if candle_json is None:
+                            continue
                         try:
                             candle = orjson.loads(candle_json)
                             # Feed into local context bus
                             self._context_bus.update_candle(candle)
-                            logger.debug(
-                                f"Candle consumed from Redis: "
-                                f"{candle.get('symbol')} "
-                                f"{candle.get('timeframe')}"
-                            )
                         except Exception as parse_exc:
                             logger.error(f"Failed to parse candle: {parse_exc}")
 
@@ -248,11 +243,12 @@ class RedisConsumer:
 
                     if message and message["type"] == "message":
                         news_json = message["data"]
+                        if news_json is None:
+                            continue
                         try:
                             news = orjson.loads(news_json)
                             # Feed into local context bus
                             self._context_bus.update_news(news)
-                            logger.debug("News consumed from Redis")
                         except Exception as parse_exc:
                             logger.error(f"Failed to parse news: {parse_exc}")
 

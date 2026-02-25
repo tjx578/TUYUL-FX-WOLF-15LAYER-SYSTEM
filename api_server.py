@@ -79,9 +79,7 @@ async def _run_price_feed_updater():
 
     while True:
         try:
-            updated = price_feed.update_prices()
-            if updated > 0:
-                logger.debug(f"Updated {updated} prices")
+            price_feed.update_prices()
         except Exception as exc:
             logger.error(f"Price feed update error: {exc}")
 
