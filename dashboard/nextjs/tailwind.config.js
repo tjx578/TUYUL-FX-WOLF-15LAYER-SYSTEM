@@ -8,20 +8,37 @@ module.exports = {
   theme: {
     extend: {
       colors: {
-        wolf: {
-          dark: '#0a0a0a',
-          darker: '#050505',
-          gray: '#1a1a1a',
-          'gray-light': '#2a2a2a',
-          gold: '#d4af37',
-          'gold-dark': '#b8941f',
-          green: '#10b981',
-          red: '#ef4444',
-          blue: '#3b82f6',
+        bg: {
+          primary: 'var(--bg-primary)',
+          secondary: 'var(--bg-secondary)',
+          elevated: 'var(--bg-elevated)',
+          panel: 'var(--bg-panel)',
+        },
+        accent: {
+          cyan: 'var(--accent-cyan)',
+          emerald: 'var(--accent-emerald)',
+          amber: 'var(--accent-amber)',
+          red: 'var(--accent-red)',
+          orange: 'var(--accent-orange)',
+        },
+        text: {
+          primary: 'var(--text-primary)',
+          secondary: 'var(--text-secondary)',
+          muted: 'var(--text-muted)',
+        },
+        border: {
+          subtle: 'var(--border-subtle)',
+          strong: 'var(--border-strong)',
         },
       },
       fontFamily: {
+        sans: ['Inter', 'sans-serif'],
         mono: ['JetBrains Mono', 'Courier New', 'monospace'],
+      },
+      boxShadow: {
+        'glow-cyan': 'var(--glow-cyan)',
+        'glow-emerald': 'var(--glow-emerald)',
+        'glow-orange': 'var(--glow-orange)',
       },
       animation: {
         'pulse-slow': 'pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite',
