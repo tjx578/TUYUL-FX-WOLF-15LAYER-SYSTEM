@@ -1,6 +1,6 @@
-@import "tailwindcss";
-
 @import url("https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap");
+
+@import "tailwindcss";
 
 /* ─── WOLF DESIGN TOKENS ─── */
 :root {
