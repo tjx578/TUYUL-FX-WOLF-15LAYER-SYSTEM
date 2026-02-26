@@ -222,7 +222,7 @@ export interface RiskCalculationResult {
 }
 
 export interface RiskSnapshot {
-  can_trade: any;
+  can_trade: boolean;
   block_reason: string;
   account_id: string;
   daily_dd_percent: number;
