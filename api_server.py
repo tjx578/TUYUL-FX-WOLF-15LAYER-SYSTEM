@@ -14,7 +14,7 @@ CHANGES FROM ORIGINAL:
   - CORS uses CORS_ORIGINS env var
 
 Run (Railway):
-    uvicorn api_server:app --host 0.0.0.0 --port ${PORT:-8000}
+    python api_server.py
 """
 
 import logging
