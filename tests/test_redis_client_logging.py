@@ -1,0 +1,21 @@
+"""Tests for Redis logging safety helpers."""
+
+from storage.redis_client import _sanitize_redis_url
+
+
+def test_sanitize_redis_url_masks_password() -> None:
+    url = "redis://default:supersecret@redis.railway.internal:6379"
+    safe = _sanitize_redis_url(url)
+
+    assert "supersecret" not in safe
+    assert safe == "redis://default:***@redis.railway.internal:6379"
+
+
+def test_sanitize_redis_url_without_credentials_is_unchanged() -> None:
+    url = "redis://localhost:6379/0"
+    assert _sanitize_redis_url(url) == url
+
+
+def test_sanitize_redis_url_with_username_only_is_unchanged() -> None:
+    url = "redis://default@localhost:6379/0"
+    assert _sanitize_redis_url(url) == url
