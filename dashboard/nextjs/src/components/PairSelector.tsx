@@ -8,7 +8,7 @@ interface PairSelectorProps {
 }
 
 export default function PairSelector({ selectedPair, onSelectPair }: PairSelectorProps) {
-  const { pairs, isLoading, isError } = usePairs();
+  const { data: pairs, isLoading, error: isError } = usePairs();
 
   // Fallback pairs if API fails
   const defaultPairs = ['EURUSD', 'GBPUSD', 'USDJPY', 'AUDUSD', 'USDCAD'];

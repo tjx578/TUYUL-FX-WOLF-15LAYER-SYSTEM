@@ -9,18 +9,27 @@
 
 import { useJournalToday, useJournalWeekly, useJournalMetrics } from '@/lib/api';
 import clsx from 'clsx';
-import { useState } from 'react';
-import {
-  FileText,
-  ShieldCheck,
-  TrendingUp,
-  Ban,
-  Target,
-  Eye,
-  Activity,
-} from 'lucide-react';
+import { useState, type ComponentType } from 'react';
 
-const ENTRY_TYPE_CONFIG: Record<string, { color: string; icon: any; label: string }> = {
+type IconComponent = ComponentType<{ className?: string }>;
+
+function IconGlyph({ className, glyph }: { className?: string; glyph: string }) {
+  return (
+    <span className={clsx(className, 'inline-flex items-center justify-center')}>
+      {glyph}
+    </span>
+  );
+}
+
+const FileText: IconComponent = ({ className }) => <IconGlyph className={className} glyph="📄" />;
+const ShieldCheck: IconComponent = ({ className }) => <IconGlyph className={className} glyph="🛡️" />;
+const TrendingUp: IconComponent = ({ className }) => <IconGlyph className={className} glyph="📈" />;
+const Ban: IconComponent = ({ className }) => <IconGlyph className={className} glyph="⛔" />;
+const Target: IconComponent = ({ className }) => <IconGlyph className={className} glyph="🎯" />;
+const Eye: IconComponent = ({ className }) => <IconGlyph className={className} glyph="👁️" />;
+const Activity: IconComponent = ({ className }) => <IconGlyph className={className} glyph="📊" />;
+
+const ENTRY_TYPE_CONFIG: Record<string, { color: string; icon: IconComponent; label: string }> = {
   J1: { color: 'text-blue-400', icon: Eye, label: 'Context' },
   J2: { color: 'text-wolf-gold', icon: Target, label: 'Decision' },
   J3: { color: 'text-emerald-400', icon: Activity, label: 'Execution' },
@@ -28,9 +37,9 @@ const ENTRY_TYPE_CONFIG: Record<string, { color: string; icon: any; label: strin
 };
 
 export default function JournalView() {
-  const { journal, isLoading: todayLoading } = useJournalToday();
-  const { journals: weeklyData } = useJournalWeekly();
-  const { metrics } = useJournalMetrics();
+  const { data: journal, isLoading: todayLoading } = useJournalToday();
+  const { data: weeklyData } = useJournalWeekly();
+  const { data: metrics } = useJournalMetrics();
   const [tab, setTab] = useState<'today' | 'weekly'>('today');
   const [expandedEntry, setExpandedEntry] = useState<number | null>(null);
 
@@ -40,7 +49,7 @@ export default function JournalView() {
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <MetricCard
           label="Signals"
-          value={metrics?.total_signals ?? 0}
+          value={metrics?.total_trades ?? 0}
           icon={FileText}
           color="text-wolf-gold"
         />
@@ -52,7 +61,7 @@ export default function JournalView() {
         />
         <MetricCard
           label="Protection Rate"
-          value={metrics ? `${(metrics.protection_rate * 100).toFixed(1)}%` : '—'}
+          value={metrics ? `${(metrics.rejection_rate * 100).toFixed(1)}%` : '—'}
           icon={ShieldCheck}
           color="text-emerald-400"
         />
@@ -101,7 +110,7 @@ export default function JournalView() {
             ) : (
               <div className="divide-y divide-wolf-gray/30">
                 {journal.entries.map((entry, idx) => {
-                  const cfg = ENTRY_TYPE_CONFIG[entry.type] || ENTRY_TYPE_CONFIG.J1;
+                  const cfg = ENTRY_TYPE_CONFIG[entry.journal_type] || ENTRY_TYPE_CONFIG.J1;
                   const Icon = cfg.icon;
                   const isExpanded = expandedEntry === idx;
 
@@ -114,7 +123,7 @@ export default function JournalView() {
                       <div className="flex items-center gap-3 px-4 py-3">
                         <div className={clsx('flex items-center gap-1.5', cfg.color)}>
                           <Icon className="w-4 h-4" />
-                          <span className="text-xs font-bold">{entry.type}</span>
+                          <span className="text-xs font-bold">{entry.journal_type}</span>
                         </div>
                         <span className="text-sm text-gray-200 font-medium">{cfg.label}</span>
                         <span className="text-xs text-gray-400">{entry.pair}</span>
@@ -129,7 +138,7 @@ export default function JournalView() {
                       {isExpanded && (
                         <div className="px-4 pb-3">
                           <pre className="text-xs text-gray-400 bg-wolf-darker p-3 rounded overflow-x-auto max-h-64">
-                            {JSON.stringify(entry.data, null, 2)}
+                            {JSON.stringify(entry, null, 2)}
                           </pre>
                         </div>
                       )}
@@ -143,11 +152,11 @@ export default function JournalView() {
 
         {tab === 'weekly' && (
           <div>
-            {weeklyData.length === 0 ? (
+            {(weeklyData ?? []).length === 0 ? (
               <div className="p-6 text-center text-gray-500">No weekly data</div>
             ) : (
               <div className="divide-y divide-wolf-gray/30">
-                {weeklyData.map((day, idx) => (
+                {(weeklyData ?? []).map((day, idx) => (
                   <div key={idx} className="px-4 py-3">
                     <div className="flex items-center justify-between mb-2">
                       <span className="text-sm font-bold text-gray-200">{day.date}</span>
@@ -157,9 +166,9 @@ export default function JournalView() {
                     </div>
                     {day.metrics && (
                       <div className="flex items-center gap-4 text-xs text-gray-400">
-                        <span>Signals: <span className="text-gray-200">{day.metrics.total_signals}</span></span>
-                        <span>Executed: <span className="text-emerald-400">{day.metrics.executed}</span></span>
-                        <span>Rejected: <span className="text-red-400">{day.metrics.rejected}</span></span>
+                        <span>Signals: <span className="text-gray-200">{day.metrics.total_trades}</span></span>
+                        <span>Wins: <span className="text-emerald-400">{day.metrics.total_wins}</span></span>
+                        <span>Losses: <span className="text-red-400">{day.metrics.total_losses}</span></span>
                         <span>Win: <span className="text-wolf-gold">{(day.metrics.win_rate * 100).toFixed(0)}%</span></span>
                         {day.metrics.total_pnl != null && (
                           <span className={day.metrics.total_pnl >= 0 ? 'text-emerald-400' : 'text-red-400'}>
@@ -191,7 +200,7 @@ function MetricCard({
 }: {
   label: string;
   value: string | number;
-  icon: any;
+  icon: IconComponent;
   color: string;
 }) {
   return (

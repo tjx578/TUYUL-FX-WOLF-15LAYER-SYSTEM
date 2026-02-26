@@ -5,8 +5,9 @@
  * Uses WebSocket for real-time updates + REST for historical data.
  */
 
-import { useTradeStream, type TradeEvent } from '@/lib/websocket';
+import { useTradesWS } from '@/lib/websocket';
 import { useActiveTrades, closeTrade } from '@/lib/api';
+import type { Trade } from '@/types';
 import clsx from 'clsx';
 import { useState } from 'react';
 import {
@@ -29,21 +30,21 @@ const STATUS_CONFIG: Record<string, { color: string; icon: any; label: string }>
 };
 
 export default function TradeHistory() {
-  const { trades: wsTrades, status: wsStatus } = useTradeStream();
-  const { trades: restTrades, mutate } = useActiveTrades();
+  const { data: wsTrade, connected: wsConnected } = useTradesWS();
+  const { data: restTrades, mutate } = useActiveTrades();
   const [closingId, setClosingId] = useState<string | null>(null);
   const [filter, setFilter] = useState<string>('ALL');
 
-  // Merge WS real-time trades with REST data (WS takes priority)
+  // Use REST trades as base, WS provides single trade updates
   const mergedTrades = (() => {
-    const tradeMap = new Map<string, TradeEvent>();
+    const tradeMap = new Map<string, Trade>();
     // REST as base
-    for (const t of restTrades) {
-      tradeMap.set(t.trade_id, t as any);
-    }
-    // WS overlay
-    for (const t of wsTrades) {
+    for (const t of (restTrades ?? [])) {
       tradeMap.set(t.trade_id, t);
+    }
+    // WS overlay (latest single trade update)
+    if (wsTrade) {
+      tradeMap.set(wsTrade.trade_id, wsTrade);
     }
     return Array.from(tradeMap.values()).sort(
       (a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()
@@ -74,7 +75,7 @@ export default function TradeHistory() {
           <h2 className="text-sm font-bold text-gray-200">Trade Ledger</h2>
           <span className={clsx(
             'w-2 h-2 rounded-full',
-            wsStatus === 'connected' ? 'bg-emerald-400' : 'bg-red-400'
+            wsConnected ? 'bg-emerald-400' : 'bg-red-400'
           )} />
           <span className="text-xs text-gray-500">
             {mergedTrades.length} trade{mergedTrades.length !== 1 ? 's' : ''}
@@ -129,8 +130,8 @@ export default function TradeHistory() {
               filteredTrades.map((trade) => {
                 const cfg = STATUS_CONFIG[trade.status] || STATUS_CONFIG.INTENDED;
                 const StatusIcon = cfg.icon;
-                const leg = trade.legs?.[0];
-                const isBuy = trade.direction === 'BUY' || trade.direction === 'LONG';
+                const leg = trade.legs?.[0] as any;
+                const isBuy = trade.direction === 'BUY';
 
                 return (
                   <tr

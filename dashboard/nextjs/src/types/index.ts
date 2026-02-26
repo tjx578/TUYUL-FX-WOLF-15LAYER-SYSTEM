@@ -1,217 +1,433 @@
-/**
- * TypeScript types matching backend data contracts.
- */
+// ============================================================
+// TUYUL FX Wolf-15 — TypeScript Type Definitions
+// Mirrors: dashboard/backend/schemas.py + schemas/trade_models.py
+// ============================================================
 
-// ---------------------------------------------------------------------------
-// L12 Verdict
-// ---------------------------------------------------------------------------
+// ─── ENUMS ───────────────────────────────────────────────────
+
+export enum TradeStatus {
+  INTENDED = "INTENDED",
+  PENDING = "PENDING",
+  OPEN = "OPEN",
+  CLOSED = "CLOSED",
+  CANCELLED = "CANCELLED",
+  SKIPPED = "SKIPPED",
+}
+
+export enum CloseReason {
+  TP_HIT = "TP_HIT",
+  SL_HIT = "SL_HIT",
+  MANUAL_CLOSE = "MANUAL_CLOSE",
+  SYSTEM_PROTECTION = "SYSTEM_PROTECTION",
+  EXPIRY = "EXPIRY",
+  NEWS_LOCK = "NEWS_LOCK",
+  M15_INVALIDATION = "M15_INVALIDATION",
+}
+
+export enum TradeSource {
+  EA = "EA",
+  MANUAL = "MANUAL",
+}
+
+export enum RiskMode {
+  FIXED = "FIXED",
+  SPLIT = "SPLIT",
+}
+
+export enum RiskSeverity {
+  SAFE = "SAFE",
+  WARNING = "WARNING",
+  CRITICAL = "CRITICAL",
+}
+
+export enum ScalingModel {
+  FIXED = "FIXED",
+  CONFIDENCE = "CONFIDENCE",
+  STEP = "STEP",
+}
+
+export enum VerdictType {
+  EXECUTE_BUY = "EXECUTE_BUY",
+  EXECUTE_SELL = "EXECUTE_SELL",
+  NO_TRADE = "NO_TRADE",
+  HOLD = "HOLD",
+  ABORT = "ABORT",
+  EXECUTE = "EXECUTE",
+}
+
+export enum CircuitBreakerState {
+  CLOSED = "CLOSED",
+  HALF_OPEN = "HALF_OPEN",
+  OPEN = "OPEN",
+}
+
+// ─── L12 VERDICT ─────────────────────────────────────────────
+
+export interface GateCheck {
+  passed: boolean;
+  gate_id: string;
+  name: string;
+  value?: number | string;
+  threshold?: number | string;
+  message?: string;
+}
+
+export interface L12Scores {
+  wolf_score: number;
+  tii_score: number;
+  frpc_score: number;
+  regime: string;
+  session: string;
+  confluence_score?: number;
+  volume_profile_score?: number;
+}
 
 export interface L12Verdict {
-  schema: string;
-  pair: string;
-  timestamp: string;
-  verdict: string;
-  confidence: string;
-  wolf_status: string;
-  gates: {
-    gate_1_tii: string;
-    gate_2_integrity: string;
-    gate_3_rr: string;
-    gate_4_fta: string;
-    gate_5_montecarlo: string;
-    gate_6_propfirm: string;
-    gate_7_drawdown: string;
-    gate_8_latency: string;
-    gate_9_conf12: string;
-    passed: number;
-    total: number;
-  };
-  execution: {
-    direction: string | null;
-    entry_zone: string | null;
-    entry_price: number | null;
-    stop_loss: number | null;
-    take_profit_1: number | null;
-    execution_mode: string;
-    rr_ratio: number | null;
-    lot_size: number | null;
-    risk_percent: number | null;
-    risk_amount: number | null;
-  };
-  scores: {
-    wolf_30_point: number;
-    f_score: number;
-    t_score: number;
-    fta_score: number;
-    exec_score: number;
-  };
-  proceed_to_L13: boolean;
-}
-
-// ---------------------------------------------------------------------------
-// System Health
-// ---------------------------------------------------------------------------
-
-export interface SystemHealth {
-  status: string;
-  service: string;
-  version: string;
-  latency_ms?: number;
-  redis?: boolean;
-  feed_status?: string;
-}
-
-// ---------------------------------------------------------------------------
-// Context Snapshot
-// ---------------------------------------------------------------------------
-
-export interface ContextSnapshot {
-  ticks: any[];
-  candles: Record<string, any>;
-  news: any;
-  meta: Record<string, any>;
-}
-
-// ---------------------------------------------------------------------------
-// Execution State
-// ---------------------------------------------------------------------------
-
-export interface ExecutionState {
-  state: string;
-  order: any;
-  reason: string | null;
-  timestamp: string | null;
-}
-
-// ---------------------------------------------------------------------------
-// Pair Info
-// ---------------------------------------------------------------------------
-
-export interface PairInfo {
   symbol: string;
-  name: string;
-  enabled: boolean;
+  verdict: VerdictType;
+  confidence: number;
+  direction?: "BUY" | "SELL";
+  entry_price?: number;
+  stop_loss?: number;
+  take_profit_1?: number;
+  take_profit_2?: number;
+  risk_reward_ratio?: number;
+  gates: GateCheck[];
+  scores?: L12Scores;
+  timestamp: number;
+  expires_at?: number;
+  wolf_status?: string;
+  session?: string;
 }
 
-// ---------------------------------------------------------------------------
-// Trade (matches backend Trade model)
-// ---------------------------------------------------------------------------
+// ─── SIGNAL ──────────────────────────────────────────────────
 
-export type TradeStatus =
-  | 'INTENDED'
-  | 'PENDING'
-  | 'OPEN'
-  | 'CLOSED'
-  | 'CANCELLED'
-  | 'SKIPPED';
+export interface Layer12Signal {
+  signal_id: string;
+  timestamp: number;
+  pair: string;
+  direction: "BUY" | "SELL";
+  entry: number;
+  stop_loss: number;
+  take_profit_1: number;
+  rr: number;
+  verdict: VerdictType;
+  confidence: number;
+  wolf_score: number;
+  tii_sym: number;
+  frpc: number;
+  scores?: L12Scores;
+  expires_at?: number;
+}
+
+// ─── TRADE ───────────────────────────────────────────────────
 
 export interface TradeLeg {
-  leg_number: number;
-  entry_price: number;
-  stop_loss: number;
-  take_profit: number;
-  lot_size: number;
-  status: string;
+  leg: number;
+  entry: number;
+  sl: number;
+  tp: number;
+  lot: number;
+  status: TradeStatus;
+  open_price?: number;
+  close_price?: number;
+  pnl?: number;
+  opened_at?: string;
+  closed_at?: string;
 }
 
 export interface Trade {
+  risk_percent: any;
   trade_id: string;
   signal_id: string;
   account_id: string;
   pair: string;
-  direction: string;
+  direction: "BUY" | "SELL";
   status: TradeStatus;
-  risk_mode?: string;
-  risk_percent?: number;
-  risk_amount?: number;
-  legs?: TradeLeg[];
-  created_at?: string;
-  updated_at?: string;
+  source: TradeSource;
+  risk_mode: RiskMode;
+  total_risk_percent: number;
+  total_risk_amount: number;
+  lot_size: number;
+  entry_price: number;
+  stop_loss: number;
+  take_profit: number;
+  legs: TradeLeg[];
+  created_at: string;
+  updated_at: string;
+  opened_at?: string;
   closed_at?: string;
-  close_reason?: string;
+  close_reason?: CloseReason;
   pnl?: number;
-  pnl_pips?: number;
+  pnl_percent?: number;
 }
 
-// ---------------------------------------------------------------------------
-// Journal Entries (J1-J4)
-// ---------------------------------------------------------------------------
+// ─── ACCOUNT ─────────────────────────────────────────────────
+
+export interface Account {
+  label: string;
+  account_id: string;
+  broker: string;
+  account_name: string;
+  balance: number;
+  equity: number;
+  equity_high: number;
+  currency: string;
+  prop_firm: boolean;
+  prop_firm_code?: string;
+  daily_dd_percent: number;
+  total_dd_percent: number;
+  open_risk_percent: number;
+  open_trades: number;
+  risk_state: RiskSeverity;
+  max_daily_dd_percent: number;
+  max_total_dd_percent: number;
+  max_concurrent_trades: number;
+  created_at?: string;
+}
+
+export interface AccountCreate {
+  broker: string;
+  account_name: string;
+  balance: number;
+  equity: number;
+  prop_firm_code?: string;
+  currency: string;
+}
+
+// ─── RISK ─────────────────────────────────────────────────────
+
+export interface RiskProfile {
+  risk_per_trade_percent: number;
+  max_daily_risk_percent: number;
+  max_total_dd_percent: number;
+  max_open_trades: number;
+  confidence_scaling: boolean;
+  scaling_model: ScalingModel;
+}
+
+export interface RiskCalculationResult {
+  trade_allowed: boolean;
+  recommended_lot: number;
+  max_safe_lot: number;
+  risk_used_percent: number;
+  daily_dd_after: number;
+  total_dd_after?: number;
+  severity: RiskSeverity;
+  reason?: string;
+  split_lots?: number[];
+}
+
+export interface RiskSnapshot {
+  can_trade: any;
+  block_reason: string;
+  account_id: string;
+  daily_dd_percent: number;
+  daily_dd_limit: number;
+  total_dd_percent: number;
+  total_dd_limit: number;
+  open_risk_percent: number;
+  open_trades: number;
+  circuit_breaker: CircuitBreakerState;
+  severity: RiskSeverity;
+  timestamp: number;
+}
+
+export interface DrawdownData {
+  timestamp: number;
+  equity: number;
+  balance: number;
+  daily_dd: number;
+  total_dd: number;
+}
+
+// ─── PROP FIRM ────────────────────────────────────────────────
+
+export interface PropFirmGuardResult {
+  allowed: boolean;
+  code: string;
+  severity: RiskSeverity;
+  details: string;
+  max_safe_lot?: number;
+  violations?: string[];
+}
+
+// ─── JOURNAL ─────────────────────────────────────────────────
 
 export interface JournalEntry {
-  type: 'J1' | 'J2' | 'J3' | 'J4';
+  entry_id: string;
+  signal_id: string;
   pair: string;
+  direction?: "BUY" | "SELL";
+  action: "TAKE" | "SKIP" | "OPEN" | "CLOSE";
+  reason?: string;
+  outcome?: "WIN" | "LOSS" | "BREAKEVEN";
+  pnl?: number;
+  rr_achieved?: number;
   timestamp: string;
-  data: Record<string, any>;
+  journal_type: "J1" | "J2" | "J3" | "J4";
 }
 
 export interface JournalMetrics {
-  total_signals: number;
-  executed: number;
-  rejected: number;
-  rejection_rate: number;
-  protection_rate: number;
   win_rate: number;
+  rejection_rate: number;
   avg_rr: number;
   total_pnl: number;
+  total_trades: number;
+  total_wins: number;
+  total_losses: number;
+  total_skipped: number;
+  best_pair?: string;
+  worst_pair?: string;
+  profit_factor?: number;
+  expectancy?: number;
 }
 
 export interface DailyJournal {
   date: string;
   entries: JournalEntry[];
   metrics: JournalMetrics;
+  net_pnl: number;
+  sessions: string[];
 }
 
-// ---------------------------------------------------------------------------
-// Risk State
-// ---------------------------------------------------------------------------
+// ─── PRICES ──────────────────────────────────────────────────
 
-export interface RiskSnapshot {
-  account_id: string;
-  balance: number;
-  equity: number;
-  daily_dd_percent: number;
-  weekly_dd_percent: number;
-  total_dd_percent: number;
-  open_trades: number;
-  max_concurrent_trades: number;
-  circuit_breaker_state: string;
-  is_trading_allowed: boolean;
-  risk_multiplier: number;
-  prop_firm?: string;
-  max_daily_dd_limit: number;
-  max_total_dd_limit: number;
+export interface PriceData {
+  symbol: string;
+  bid: number;
+  ask: number;
+  spread: number;
+  timestamp: number;
+  change_24h?: number;
+  change_percent_24h?: number;
 }
 
-export interface DrawdownData {
-  daily_dd: number;
-  daily_dd_limit: number;
-  weekly_dd: number;
-  weekly_dd_limit: number;
-  total_dd: number;
-  total_dd_limit: number;
-  high_water_mark: number;
-  current_equity: number;
+export interface CandleData {
+  symbol: string;
+  timeframe: string;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume?: number;
+  timestamp: number;
 }
 
-export interface CircuitBreakerState {
-  state: 'CLOSED' | 'OPEN' | 'HALF_OPEN';
-  is_open: boolean;
-  reason?: string;
-  cooldown_until?: string;
-  consecutive_losses?: number;
+// ─── SYSTEM ───────────────────────────────────────────────────
+
+export interface SystemHealth {
+  status: "ok" | "degraded" | "error";
+  service: string;
+  version: string;
+  uptime_seconds: number;
+  redis_connected: boolean;
+  mt5_connected: boolean;
+  active_pairs: number;
+  active_trades: number;
+  last_verdict_at?: number;
+  timestamp: number;
 }
 
-// ---------------------------------------------------------------------------
-// Account
-// ---------------------------------------------------------------------------
+export interface ContextSnapshot {
+  session: string;
+  regime: string;
+  volatility: string;
+  trend: string;
+  active_pairs: string[];
+  timestamp: number;
+}
 
-export interface Account {
-  account_id: string;
-  name: string;
-  balance: number;
-  equity: number;
-  prop_firm?: string;
-  max_daily_dd_percent: number;
-  max_total_dd_percent: number;
-  max_concurrent_trades: number;
+export interface ExecutionState {
+  state: "IDLE" | "SCANNING" | "SIGNAL_READY" | "EXECUTING" | "COOLDOWN";
+  current_pair?: string;
+  signal_count: number;
+  last_execution?: string;
+  cooldown_until?: number;
+}
+
+export interface PairInfo {
+  symbol: string;
+  category: string;
+  pip_value: number;
+  active: boolean;
+  last_verdict?: VerdictType;
+  last_confidence?: number;
+}
+
+// ─── PROBABILITY ──────────────────────────────────────────────
+
+export interface ProbabilityMetrics {
+  signal_id: string;
+  pair: string;
+  mc_win_probability: number;
+  mc_loss_probability: number;
+  bayesian_confidence: number;
+  calibration_grade: "A" | "B" | "C" | "D" | "F";
+  expected_rr: number;
+  simulations_run: number;
+  timestamp: number;
+}
+
+export interface ProbabilitySummary {
+  total_signals_today: number;
+  avg_mc_win_prob: number;
+  avg_bayesian_confidence: number;
+  calibration_grade: "A" | "B" | "C" | "D" | "F";
+  high_confidence_signals: number;
+  low_confidence_signals: number;
+}
+
+// ─── ALERTS ───────────────────────────────────────────────────
+
+export type AlertType =
+  | "ORDER_PLACED"
+  | "ORDER_FILLED"
+  | "ORDER_CANCELLED"
+  | "SYSTEM_VIOLATION"
+  | "RISK_LIMIT_REACHED"
+  | "PROP_FIRM_BREACH"
+  | "CIRCUIT_BREAKER_OPEN"
+  | "NEWS_LOCK"
+  | "SESSION_CHANGE";
+
+export interface AlertEvent {
+  alert_id: string;
+  type: AlertType;
+  severity: "INFO" | "WARNING" | "CRITICAL";
+  message: string;
+  pair?: string;
+  trade_id?: string;
+  timestamp: string;
+}
+
+// ─── EA BRIDGE ────────────────────────────────────────────────
+
+export interface ExecutionCommand {
+  command_id: string;
+  signal_id: string;
+  type: "PLACE_PENDING" | "CANCEL_ORDER" | "SYNC_STATE";
+  symbol: string;
+  direction: "BUY" | "SELL";
+  order_type: "LIMIT" | "STOP" | "MARKET";
+  entry: number;
+  sl: number;
+  tp: number;
+  lot_size: number;
+  expiry?: number;
+}
+
+// ─── API RESPONSE WRAPPERS ────────────────────────────────────
+
+export interface ApiResponse<T> {
+  data?: T;
+  error?: string;
+  status: number;
+}
+
+export interface PaginatedResponse<T> {
+  items: T[];
+  total: number;
+  page: number;
+  per_page: number;
 }

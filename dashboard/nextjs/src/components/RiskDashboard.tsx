@@ -13,8 +13,9 @@
  * Uses WebSocket /ws/risk for live state + REST fallback.
  */
 
-import { useRiskStream, type RiskState } from '@/lib/websocket';
+import { useRiskWS } from '@/lib/websocket';
 import { useRiskSnapshot, useAccounts } from '@/lib/api';
+import type { RiskSnapshot } from '@/types';
 import clsx from 'clsx';
 import { useState } from 'react';
 import {
@@ -29,29 +30,29 @@ import {
 } from 'lucide-react';
 
 export default function RiskDashboard() {
-  const { riskState, status: wsStatus } = useRiskStream();
-  const { accounts } = useAccounts();
+  const { data: wsRisk, connected: wsConnected } = useRiskWS();
+  const { data: accounts } = useAccounts();
   const [selectedAccount, setSelectedAccount] = useState<string | null>(null);
-  const { snapshot } = useRiskSnapshot(selectedAccount || accounts[0]?.account_id || null);
+  const { data: snapshot } = useRiskSnapshot(selectedAccount || (accounts ?? [])[0]?.account_id || '');
 
   return (
     <div className="space-y-4">
       {/* Account Selector */}
-      {accounts.length > 0 && (
+      {(accounts ?? []).length > 0 && (
         <div className="flex items-center gap-2">
           <span className="text-xs text-gray-500">Account:</span>
-          {accounts.map((acc) => (
+          {(accounts ?? []).map((acc) => (
             <button
               key={acc.account_id}
               onClick={() => setSelectedAccount(acc.account_id)}
               className={clsx(
                 'px-3 py-1 rounded text-xs font-medium transition-colors',
-                (selectedAccount || accounts[0]?.account_id) === acc.account_id
+                (selectedAccount || (accounts ?? [])[0]?.account_id) === acc.account_id
                   ? 'bg-wolf-gold/20 text-wolf-gold'
                   : 'text-gray-500 hover:text-gray-300 bg-wolf-gray/30'
               )}
             >
-              {acc.name || acc.account_id}
+              {acc.account_name || acc.account_id}
             </button>
           ))}
         </div>
@@ -60,7 +61,7 @@ export default function RiskDashboard() {
       {/* Top Row — Critical Indicators */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
         {/* Circuit Breaker */}
-        <CircuitBreakerCard state={riskState?.circuit_breaker} />
+        <CircuitBreakerCard state={wsRisk ? { state: String(wsRisk), is_open: false } : undefined} />
 
         {/* Trading Allowed */}
         <TradingStatusCard snapshot={snapshot} />
@@ -78,18 +79,18 @@ export default function RiskDashboard() {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <DrawdownGauge
             label="Daily"
-            current={riskState?.drawdown?.daily_dd ?? snapshot?.daily_dd_percent ?? 0}
-            limit={riskState?.drawdown?.daily_dd_limit ?? snapshot?.max_daily_dd_limit ?? 5}
+            current={snapshot?.daily_dd_percent ?? 0}
+            limit={snapshot?.daily_dd_limit ?? 5}
           />
           <DrawdownGauge
             label="Weekly"
-            current={riskState?.drawdown?.weekly_dd ?? 0}
-            limit={riskState?.drawdown?.weekly_dd_limit ?? 8}
+            current={0}
+            limit={8}
           />
           <DrawdownGauge
             label="Total"
-            current={riskState?.drawdown?.total_dd ?? snapshot?.total_dd_percent ?? 0}
-            limit={riskState?.drawdown?.total_dd_limit ?? snapshot?.max_total_dd_limit ?? 10}
+            current={snapshot?.total_dd_percent ?? 0}
+            limit={snapshot?.total_dd_limit ?? 10}
           />
         </div>
       </div>
@@ -100,19 +101,15 @@ export default function RiskDashboard() {
         <PropFirmCard snapshot={snapshot} />
 
         {/* Risk Multiplier */}
-        <RiskMultiplierCard riskState={riskState} snapshot={snapshot} />
+        <RiskMultiplierCard snapshot={snapshot} />
       </div>
 
-      {/* Connection Status */}
       <div className="flex items-center gap-2 text-xs text-gray-500">
         <div className={clsx(
           'w-1.5 h-1.5 rounded-full',
-          wsStatus === 'connected' ? 'bg-emerald-400' : 'bg-red-400'
+          wsConnected ? 'bg-emerald-400' : 'bg-red-400'
         )} />
-        Risk WS: {wsStatus}
-        {riskState?.ts && (
-          <span>| Last update: {new Date(riskState.ts * 1000).toLocaleTimeString()}</span>
-        )}
+        Risk WS: {wsConnected ? 'connected' : 'disconnected'}
       </div>
     </div>
   );
@@ -123,7 +120,7 @@ export default function RiskDashboard() {
 // Sub-components
 // ---------------------------------------------------------------------------
 
-function CircuitBreakerCard({ state }: { state: RiskState['circuit_breaker'] | undefined }) {
+function CircuitBreakerCard({ state }: { state: { state: string; is_open: boolean } | undefined }) {
   const cbState = state?.state || 'UNKNOWN';
   const isOpen = state?.is_open ?? false;
 
@@ -287,9 +284,8 @@ function PropFirmCard({ snapshot }: { snapshot: any }) {
   );
 }
 
-function RiskMultiplierCard({ riskState, snapshot }: { riskState: RiskState | null; snapshot: any }) {
+function RiskMultiplierCard({ snapshot }: { snapshot: any }) {
   const multiplier = snapshot?.risk_multiplier ?? 1.0;
-  const riskSnapshot = riskState?.risk_snapshot;
 
   return (
     <div className="rounded-lg border border-wolf-gray bg-wolf-dark/50 p-4">
@@ -307,19 +303,6 @@ function RiskMultiplierCard({ riskState, snapshot }: { riskState: RiskState | nu
           </span>
           <span className="text-xs text-gray-500 mb-1">effective risk scaling</span>
         </div>
-        {riskSnapshot && typeof riskSnapshot === 'object' && (
-          <div className="text-xs text-gray-500 space-y-0.5">
-            {Object.entries(riskSnapshot)
-              .filter(([k]) => k.includes('factor') || k.includes('multiplier'))
-              .slice(0, 5)
-              .map(([k, v]) => (
-                <div key={k} className="flex justify-between">
-                  <span>{k.replace(/_/g, ' ')}</span>
-                  <span className="text-gray-300 font-mono">{String(v)}</span>
-                </div>
-              ))}
-          </div>
-        )}
       </div>
     </div>
   );

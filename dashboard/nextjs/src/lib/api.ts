@@ -1,241 +1,266 @@
-/**
- * API client with SWR hooks for data fetching.
- *
- * Real-time data (prices, trades, candles, risk) now uses WebSocket hooks
- * in lib/websocket.ts.  SWR is retained for request/response endpoints
- * (verdicts, journal, accounts, REST trade operations).
- */
+// ============================================================
+// TUYUL FX Wolf-15 — API Client + SWR Hooks
+// Mirrors: api/dashboard_routes.py + api/l12_routes.py
+// ============================================================
 
-import useSWR from 'swr';
+import useSWR from "swr";
 import type {
   L12Verdict,
+  Trade,
+  Account,
+  AccountCreate,
+  JournalMetrics,
+  DailyJournal,
+  RiskSnapshot,
   SystemHealth,
   ContextSnapshot,
   ExecutionState,
   PairInfo,
-  Trade,
-  DailyJournal,
-  JournalMetrics,
-  Account,
-  RiskSnapshot,
-} from '@/types';
+  PriceData,
+  ProbabilitySummary,
+  ProbabilityMetrics,
+} from "@/types";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+const API_URL =
+  process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
-// Refresh intervals from env
-const VERDICT_REFRESH = Number(process.env.NEXT_PUBLIC_VERDICT_REFRESH_MS) || 5000;
-const CONTEXT_REFRESH = Number(process.env.NEXT_PUBLIC_CONTEXT_REFRESH_MS) || 10000;
-const HEALTH_REFRESH = Number(process.env.NEXT_PUBLIC_HEALTH_REFRESH_MS) || 30000;
+// ─── AUTH HELPERS ─────────────────────────────────────────────
 
-/**
- * Generic fetcher for SWR
- */
-const fetcher = async (url: string) => {
-  const res = await fetch(url);
+function getToken(): string | null {
+  if (typeof window === "undefined") return null;
+  return localStorage.getItem("wolf15_token");
+}
+
+function authHeaders(): HeadersInit {
+  const token = getToken();
+  return {
+    "Content-Type": "application/json",
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+  };
+}
+
+// ─── BASE FETCHER ─────────────────────────────────────────────
+
+async function fetcher<T = unknown>(url: string): Promise<T> {
+  const res = await fetch(`${API_URL}${url}`, {
+    headers: authHeaders(),
+  });
   if (!res.ok) {
-    throw new Error(`API error: ${res.status}`);
+    const body = await res.text().catch(() => res.statusText);
+    throw new Error(`${res.status}: ${body}`);
   }
-  return res.json();
-};
+  return res.json() as Promise<T>;
+}
 
-// ---------------------------------------------------------------------------
-// Verdict / Core hooks
-// ---------------------------------------------------------------------------
+async function poster<T = unknown>(
+  url: string,
+  body: unknown
+): Promise<T> {
+  const res = await fetch(`${API_URL}${url}`, {
+    method: "POST",
+    headers: authHeaders(),
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => res.statusText);
+    throw new Error(`${res.status}: ${text}`);
+  }
+  return res.json() as Promise<T>;
+}
+
+// ─── SWR CONFIG DEFAULTS ──────────────────────────────────────
+
+const FAST = { refreshInterval: 3000 };
+const NORMAL = { refreshInterval: 5000 };
+const SLOW = { refreshInterval: 10000 };
+const LAZY = { refreshInterval: 30000 };
+const ONCE = { revalidateOnFocus: false };
+
+// ─── L12 VERDICT HOOKS ────────────────────────────────────────
 
 export function useVerdict(pair: string) {
-  const { data, error, isLoading } = useSWR<L12Verdict>(
-    pair ? `${API_BASE}/api/v1/l12/${pair}` : null,
+  return useSWR<L12Verdict>(
+    pair ? `/api/v1/l12/${pair}` : null,
     fetcher,
-    { refreshInterval: VERDICT_REFRESH, revalidateOnFocus: true }
+    NORMAL
   );
-  return { verdict: data, isLoading, isError: error };
 }
 
 export function useAllVerdicts() {
-  const { data, error, isLoading } = useSWR<Record<string, L12Verdict>>(
-    `${API_BASE}/api/v1/verdict/all`,
+  return useSWR<Record<string, L12Verdict>>(
+    "/api/v1/verdict/all",
     fetcher,
-    { refreshInterval: VERDICT_REFRESH }
+    NORMAL
   );
-  return { verdicts: data, isLoading, isError: error };
-}
-
-export function useHealth() {
-  const { data, error, isLoading } = useSWR<SystemHealth>(
-    `${API_BASE}/health`,
-    fetcher,
-    { refreshInterval: HEALTH_REFRESH }
-  );
-  return { health: data, isLoading, isError: error };
 }
 
 export function useContext() {
-  const { data, error, isLoading } = useSWR<ContextSnapshot>(
-    `${API_BASE}/api/v1/context`,
+  return useSWR<ContextSnapshot>(
+    "/api/v1/context",
     fetcher,
-    { refreshInterval: CONTEXT_REFRESH }
+    SLOW
   );
-  return { context: data, isLoading, isError: error };
 }
 
 export function useExecution() {
-  const { data, error, isLoading } = useSWR<ExecutionState>(
-    `${API_BASE}/api/v1/execution`,
+  return useSWR<ExecutionState>(
+    "/api/v1/execution",
     fetcher,
-    { refreshInterval: VERDICT_REFRESH }
+    NORMAL
   );
-  return { execution: data, isLoading, isError: error };
 }
 
 export function usePairs() {
-  const { data, error, isLoading } = useSWR<PairInfo[]>(
-    `${API_BASE}/api/v1/pairs`,
-    fetcher,
-    { refreshInterval: 60000, revalidateOnFocus: false }
-  );
-  return { pairs: data, isLoading, isError: error };
+  return useSWR<PairInfo[]>("/api/v1/pairs", fetcher, ONCE);
 }
 
-// ---------------------------------------------------------------------------
-// Trade management (REST)
-// ---------------------------------------------------------------------------
+// ─── HEALTH ───────────────────────────────────────────────────
+
+export function useHealth() {
+  return useSWR<SystemHealth>("/health", fetcher, LAZY);
+}
+
+// ─── TRADE HOOKS ──────────────────────────────────────────────
 
 export function useActiveTrades() {
-  const { data, error, isLoading, mutate } = useSWR<Trade[]>(
-    `${API_BASE}/api/v1/trades/active`,
-    fetcher,
-    { refreshInterval: 3000 }
-  );
-  return { trades: data || [], isLoading, isError: error, mutate };
+  return useSWR<Trade[]>("/api/v1/trades/active", fetcher, FAST);
 }
 
-export function useTrade(tradeId: string | null) {
-  const { data, error, isLoading } = useSWR<Trade>(
-    tradeId ? `${API_BASE}/api/v1/trades/${tradeId}` : null,
+export function useTrade(tradeId: string) {
+  return useSWR<Trade>(
+    tradeId ? `/api/v1/trades/${tradeId}` : null,
     fetcher,
     { refreshInterval: 2000 }
   );
-  return { trade: data, isLoading, isError: error };
 }
 
-/** Take a trade signal */
-export async function takeSignal(signalId: string, accountId: string): Promise<Trade> {
-  const res = await fetch(`${API_BASE}/api/v1/trades/take`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ signal_id: signalId, account_id: accountId }),
-  });
-  if (!res.ok) throw new Error(`Take signal failed: ${res.status}`);
-  return res.json();
-}
-
-/** Skip a trade signal */
-export async function skipSignal(signalId: string, reason?: string): Promise<void> {
-  const res = await fetch(`${API_BASE}/api/v1/trades/skip`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ signal_id: signalId, reason }),
-  });
-  if (!res.ok) throw new Error(`Skip signal failed: ${res.status}`);
-}
-
-/** Confirm a pending order */
-export async function confirmTrade(tradeId: string): Promise<Trade> {
-  const res = await fetch(`${API_BASE}/api/v1/trades/confirm`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ trade_id: tradeId }),
-  });
-  if (!res.ok) throw new Error(`Confirm trade failed: ${res.status}`);
-  return res.json();
-}
-
-/** Close a trade manually */
-export async function closeTrade(tradeId: string, reason?: string): Promise<Trade> {
-  const res = await fetch(`${API_BASE}/api/v1/trades/close`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ trade_id: tradeId, reason }),
-  });
-  if (!res.ok) throw new Error(`Close trade failed: ${res.status}`);
-  return res.json();
-}
-
-// ---------------------------------------------------------------------------
-// Journal (REST)
-// ---------------------------------------------------------------------------
+// ─── JOURNAL HOOKS ────────────────────────────────────────────
 
 export function useJournalToday() {
-  const { data, error, isLoading } = useSWR<DailyJournal>(
-    `${API_BASE}/api/v1/journal/today`,
-    fetcher,
-    { refreshInterval: 10000 }
-  );
-  return { journal: data, isLoading, isError: error };
+  return useSWR<DailyJournal>("/api/v1/journal/today", fetcher, SLOW);
 }
 
 export function useJournalWeekly() {
-  const { data, error, isLoading } = useSWR<DailyJournal[]>(
-    `${API_BASE}/api/v1/journal/weekly`,
+  return useSWR<DailyJournal[]>(
+    "/api/v1/journal/weekly",
     fetcher,
-    { refreshInterval: 30000 }
+    LAZY
   );
-  return { journals: data || [], isLoading, isError: error };
 }
 
 export function useJournalMetrics() {
-  const { data, error, isLoading } = useSWR<JournalMetrics>(
-    `${API_BASE}/api/v1/journal/metrics`,
+  return useSWR<JournalMetrics>(
+    "/api/v1/journal/metrics",
     fetcher,
     { refreshInterval: 15000 }
   );
-  return { metrics: data, isLoading, isError: error };
 }
 
-// ---------------------------------------------------------------------------
-// Accounts (REST)
-// ---------------------------------------------------------------------------
+// ─── ACCOUNT HOOKS ────────────────────────────────────────────
 
 export function useAccounts() {
-  const { data, error, isLoading, mutate } = useSWR<Account[]>(
-    `${API_BASE}/api/v1/accounts`,
-    fetcher,
-    { refreshInterval: 30000 }
-  );
-  return { accounts: data || [], isLoading, isError: error, mutate };
+  return useSWR<Account[]>("/api/v1/accounts", fetcher, LAZY);
 }
 
-export function useAccount(accountId: string | null) {
-  const { data, error, isLoading } = useSWR<Account>(
-    accountId ? `${API_BASE}/api/v1/accounts/${accountId}` : null,
+export function useAccount(accountId: string) {
+  return useSWR<Account>(
+    accountId ? `/api/v1/accounts/${accountId}` : null,
     fetcher,
-    { refreshInterval: 10000 }
+    SLOW
   );
-  return { account: data, isLoading, isError: error };
 }
 
-// ---------------------------------------------------------------------------
-// Risk (REST — complementary to WS /ws/risk)
-// ---------------------------------------------------------------------------
+// ─── RISK HOOKS ───────────────────────────────────────────────
 
-export function useRiskSnapshot(accountId: string | null) {
-  const { data, error, isLoading } = useSWR<RiskSnapshot>(
-    accountId ? `${API_BASE}/api/v1/risk/${accountId}/snapshot` : null,
+export function useRiskSnapshot(accountId: string) {
+  return useSWR<RiskSnapshot>(
+    accountId ? `/api/v1/risk/${accountId}/snapshot` : null,
     fetcher,
-    { refreshInterval: 5000 }
+    NORMAL
   );
-  return { snapshot: data, isLoading, isError: error };
 }
 
-// ---------------------------------------------------------------------------
-// Prices (REST fallback — prefer WS for real-time)
-// ---------------------------------------------------------------------------
+// ─── PRICE HOOKS ──────────────────────────────────────────────
 
 export function usePricesREST() {
-  const { data, error, isLoading } = useSWR<Record<string, any>>(
-    `${API_BASE}/api/v1/prices`,
+  return useSWR<PriceData[]>("/api/v1/prices", fetcher, {
+    refreshInterval: 2000,
+  });
+}
+
+// ─── PROBABILITY HOOKS ────────────────────────────────────────
+
+export function useProbabilitySummary() {
+  return useSWR<ProbabilitySummary>(
+    "/api/v1/probability/summary",
     fetcher,
-    { refreshInterval: 2000 }
+    SLOW
   );
-  return { prices: data || {}, isLoading, isError: error };
+}
+
+export function useProbabilityCalibration() {
+  return useSWR<{ grade: string; score: number; details: string[] }>(
+    "/api/v1/probability/calibration",
+    fetcher,
+    LAZY
+  );
+}
+
+export function useSignalProbability(signalId: string) {
+  return useSWR<ProbabilityMetrics>(
+    signalId ? `/api/v1/signals/${signalId}/probability` : null,
+    fetcher,
+    ONCE
+  );
+}
+
+// ─── WRITE ACTIONS ────────────────────────────────────────────
+
+export interface TakeSignalRequest {
+  signal_id: string;
+  account_id: string;
+  pair: string;
+  direction: "BUY" | "SELL";
+  entry: number;
+  sl: number;
+  tp: number;
+  risk_percent: number;
+  risk_mode?: "FIXED" | "SPLIT";
+  split_ratio?: number;
+}
+
+export async function takeSignal(
+  data: TakeSignalRequest
+): Promise<{ trade_id: string; lot_size: number; risk_calc: unknown }> {
+  return poster("/api/v1/trades/take", data);
+}
+
+export async function skipSignal(data: {
+  signal_id: string;
+  pair: string;
+  reason?: string;
+}): Promise<{ logged: boolean }> {
+  return poster("/api/v1/trades/skip", data);
+}
+
+export async function confirmTrade(
+  tradeId: string
+): Promise<{ trade_id: string; status: string }> {
+  return poster("/api/v1/trades/confirm", { trade_id: tradeId });
+}
+
+export async function closeTrade(
+  tradeId: string,
+  reason?: string
+): Promise<{ trade_id: string; status: string; pnl: number }> {
+  return poster("/api/v1/trades/close", {
+    trade_id: tradeId,
+    reason: reason ?? "MANUAL_CLOSE",
+  });
+}
+
+export async function createAccount(
+  data: AccountCreate
+): Promise<Account> {
+  return poster("/api/v1/accounts", data);
 }

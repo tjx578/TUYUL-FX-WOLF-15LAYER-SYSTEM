@@ -8,7 +8,8 @@
  */
 
 import { useEffect, useRef, useState } from 'react';
-import { useCandleStream, type CandleBar } from '@/lib/websocket';
+import { useCandlesWS } from '@/lib/websocket';
+import type { CandleData } from '@/types';
 import clsx from 'clsx';
 
 // Dynamically import lightweight-charts (browser only)
@@ -42,7 +43,7 @@ export default function CandleChart({
   const [timeframe, setTimeframe] = useState<Timeframe>(initialTimeframe);
   const [chartReady, setChartReady] = useState(false);
 
-  const { bars } = useCandleStream(symbol);
+  const { data: candleData } = useCandlesWS(symbol, timeframe);
 
   // Initialize chart
   useEffect(() => {
@@ -135,23 +136,17 @@ export default function CandleChart({
     };
   }, [height]);
 
-  // Update chart data when bars change
+  // Update chart data when candle data changes
   useEffect(() => {
-    if (!chartReady || !seriesRef.current) return;
+    if (!chartReady || !seriesRef.current || !candleData) return;
 
-    const symbolBars = bars[symbol];
-    if (!symbolBars) return;
-
-    const bar = symbolBars[timeframe] as CandleBar | undefined;
-    if (!bar) return;
-
-    // Convert to lightweight-charts format
+    // Convert CandleData to lightweight-charts format
     const lwcBar = {
-      time: bar.ts_open as any, // Unix timestamp
-      open: bar.open,
-      high: bar.high,
-      low: bar.low,
-      close: bar.close,
+      time: candleData.timestamp as any, // Unix timestamp
+      open: candleData.open,
+      high: candleData.high,
+      low: candleData.low,
+      close: candleData.close,
     };
 
     try {
@@ -160,10 +155,10 @@ export default function CandleChart({
       // If update fails, try setting data array
       seriesRef.current.setData([lwcBar]);
     }
-  }, [bars, symbol, timeframe, chartReady]);
+  }, [candleData, symbol, timeframe, chartReady]);
 
-  // Current bar info
-  const currentBar = bars[symbol]?.[timeframe] as CandleBar | undefined;
+  // Current candle info
+  const currentBar = candleData;
 
   return (
     <div className="rounded-lg border border-wolf-gray bg-wolf-dark/50 overflow-hidden">

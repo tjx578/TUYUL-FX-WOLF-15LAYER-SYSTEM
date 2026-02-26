@@ -1,6 +1,7 @@
 'use client';
 
-import { usePriceStream, type PriceTick } from '@/lib/websocket';
+import { usePriceMap } from '@/lib/websocket';
+import type { PriceData } from '@/types';
 import clsx from 'clsx';
 import { useEffect, useRef, useState } from 'react';
 
@@ -15,7 +16,7 @@ interface PriceTickerProps {
  * Real-time price ticker powered by WebSocket tick-by-tick stream.
  */
 export default function PriceTicker({ symbols, compact = false }: PriceTickerProps) {
-  const { prices, status } = usePriceStream();
+  const { priceMap: prices, connected } = usePriceMap();
   const [flashes, setFlashes] = useState<Record<string, 'up' | 'down' | null>>({});
   const prevPrices = useRef<Record<string, number>>({});
 
@@ -49,7 +50,7 @@ export default function PriceTicker({ symbols, compact = false }: PriceTickerPro
   if (filteredSymbols.length === 0) {
     return (
       <div className="text-gray-500 text-xs p-2">
-        {status === 'connecting' ? 'Connecting...' : 'No price data'}
+        {connected ? 'Connecting...' : 'No price data'}
       </div>
     );
   }

@@ -1,106 +1,117 @@
-'use client';
+"use client";
 
-import { useVerdict } from '@/lib/api';
-import { CheckCircle2, XCircle } from 'lucide-react';
+// ============================================================
+// TUYUL FX Wolf-15 — GateStatus (9-gate constitutional check)
+// ============================================================
+
+import type { GateCheck } from "@/types";
 
 interface GateStatusProps {
-  pair: string;
+  gates: GateCheck[];
+  compact?: boolean;
 }
 
-export default function GateStatus({ pair }: GateStatusProps) {
-  const { verdict, isLoading, isError } = useVerdict(pair);
+export function GateStatus({ gates, compact = false }: GateStatusProps) {
+  const passed = gates.filter((g) => g.passed).length;
+  const allPassed = passed === gates.length;
 
-  if (isLoading) {
+  if (compact) {
     return (
-      <div className="bg-wolf-gray rounded-lg p-6 border border-wolf-gray-light">
-        <div className="animate-pulse space-y-3">
-          <div className="h-6 bg-wolf-gray-light rounded w-1/2"></div>
-          {[...Array(9)].map((_, i) => (
-            <div key={i} className="h-8 bg-wolf-gray-light rounded"></div>
+      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+        <span
+          style={{
+            fontSize: 11,
+            fontFamily: "var(--font-mono)",
+            color: allPassed ? "var(--green)" : "var(--yellow)",
+          }}
+        >
+          {passed}/{gates.length}
+        </span>
+        <div style={{ display: "flex", gap: 3 }}>
+          {gates.map((g) => (
+            <span
+              key={g.gate_id}
+              style={{
+                width: 6,
+                height: 6,
+                borderRadius: "50%",
+                background: g.passed ? "var(--green)" : "var(--red)",
+                display: "inline-block",
+              }}
+              title={g.name}
+            />
           ))}
         </div>
       </div>
     );
   }
 
-  if (isError || !verdict) {
-    return (
-      <div className="bg-wolf-gray rounded-lg p-6 border border-red-500/20">
-        <p className="text-red-500">⚠️ Failed to load gates</p>
-      </div>
-    );
-  }
-
-  const gates = [
-    { key: 'gate_1_tii', label: 'TII Symmetry' },
-    { key: 'gate_2_integrity', label: 'Integrity Index' },
-    { key: 'gate_3_rr', label: 'Risk:Reward Ratio' },
-    { key: 'gate_4_fta', label: 'FTA Score' },
-    { key: 'gate_5_montecarlo', label: 'Monte Carlo Win' },
-    { key: 'gate_6_propfirm', label: 'Prop Firm Compliance' },
-    { key: 'gate_7_drawdown', label: 'Drawdown Check' },
-    { key: 'gate_8_latency', label: 'System Latency' },
-    { key: 'gate_9_conf12', label: 'L12 Confidence' },
-  ];
-
   return (
-    <div className="bg-wolf-gray rounded-lg p-6 border border-wolf-gray-light">
-      {/* Header */}
-      <div className="mb-6">
-        <h2 className="text-xl font-bold text-wolf-gold mb-2">
-          🚪 9-GATE STATUS
-        </h2>
-        <p className="text-sm text-wolf-gray-light">
-          Constitutional validation checkpoints
-        </p>
+    <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          marginBottom: 6,
+          fontSize: 11,
+          fontWeight: 600,
+          letterSpacing: "0.06em",
+          color: "var(--text-muted)",
+        }}
+      >
+        <span>GATE CHECKS</span>
+        <span
+          style={{ color: allPassed ? "var(--green)" : "var(--yellow)" }}
+        >
+          {passed}/{gates.length} PASSED
+        </span>
       </div>
 
-      {/* Gates Grid */}
-      <div className="space-y-2">
-        {gates.map(({ key, label }) => {
-          const status = verdict.gates[key as keyof typeof verdict.gates];
-          const isPassed = status === 'PASS';
-
-          return (
-            <div
-              key={key}
-              className={`flex items-center justify-between p-3 rounded-lg ${
-                isPassed
-                  ? 'bg-wolf-green/10 border border-wolf-green/20'
-                  : 'bg-wolf-red/10 border border-wolf-red/20'
-              }`}
-            >
-              <div className="flex items-center gap-3">
-                {isPassed ? (
-                  <CheckCircle2 className="w-5 h-5 text-wolf-green" />
-                ) : (
-                  <XCircle className="w-5 h-5 text-wolf-red" />
-                )}
-                <span className="text-sm font-medium">{label}</span>
-              </div>
-              <span
-                className={`text-xs font-bold ${
-                  isPassed ? 'text-wolf-green' : 'text-wolf-red'
-                }`}
-              >
-                {String(status)}
-              </span>
-            </div>
-          );
-        })}
-      </div>
-
-      {/* Summary */}
-      <div className="mt-6 pt-6 border-t border-wolf-gray-light">
-        <div className="flex justify-between items-center">
-          <span className="text-sm text-wolf-gray-light">Total Status</span>
-          <span className="text-lg font-bold">
-            <span className="text-wolf-green">{verdict.gates.passed}</span>
-            <span className="text-wolf-gray-light"> / </span>
-            <span className="text-white">{verdict.gates.total}</span>
+      {gates.map((gate) => (
+        <div
+          key={gate.gate_id}
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            padding: "5px 8px",
+            borderRadius: 4,
+            background: gate.passed
+              ? "rgba(0,230,118,0.05)"
+              : "rgba(255,61,87,0.05)",
+            border: `1px solid ${gate.passed ? "rgba(0,230,118,0.1)" : "rgba(255,61,87,0.1)"}`,
+          }}
+        >
+          <span
+            style={{
+              fontSize: 12,
+              color: gate.passed ? "var(--green)" : "var(--red)",
+            }}
+          >
+            {gate.passed ? "✓" : "✗"}
           </span>
+          <span
+            style={{
+              flex: 1,
+              fontSize: 11,
+              color: gate.passed ? "var(--text-secondary)" : "var(--text-muted)",
+            }}
+          >
+            {gate.name || gate.gate_id}
+          </span>
+          {gate.message && (
+            <span
+              style={{
+                fontSize: 10,
+                fontFamily: "var(--font-mono)",
+                color: "var(--text-muted)",
+              }}
+            >
+              {gate.message}
+            </span>
+          )}
         </div>
-      </div>
+      ))}
     </div>
   );
 }
