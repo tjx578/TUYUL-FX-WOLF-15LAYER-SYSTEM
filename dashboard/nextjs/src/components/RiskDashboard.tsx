@@ -26,7 +26,7 @@ import {
   TrendingDown,
   Activity,
   Lock,
-  Unlock,
+  LockOpen,
 } from 'lucide-react';
 
 export default function RiskDashboard() {
