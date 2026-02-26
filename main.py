@@ -381,7 +381,8 @@ async def main() -> None:
     else:
         # ── Local dev: everything in one process (supervised) ───────
         if RUN_MODE in ("all", "ingest-only"):
-            redis_url = os.getenv("REDIS_URL", "redis://localhost:6379")
+            from infrastructure.redis_url import get_redis_url
+            redis_url = get_redis_url()
             redis_client = AsyncRedis.from_url(redis_url)
             tasks.append(
                 asyncio.create_task(

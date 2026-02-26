@@ -6,16 +6,16 @@ NEW ENDPOINTS:
   GET /api/v1/equity/history         → Historical equity curve for charting
 """
 
-import os
 import json
 import logging
-from datetime import datetime, timezone, timedelta
+from datetime import UTC, datetime, timedelta, timezone
 from typing import Optional
 
 import redis as redis_lib
 from fastapi import APIRouter, Depends, Query
 
 from dashboard.backend.auth import verify_token
+from infrastructure.redis_url import get_redis_url
 
 logger = logging.getLogger(__name__)
 
@@ -26,10 +26,10 @@ router = APIRouter(
 )
 
 
-def _get_redis() -> Optional[redis_lib.Redis]:
-    url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+def _get_redis() -> redis_lib.Redis | None:
+    url = get_redis_url()
     try:
-        r = redis_lib.from_url(url, decode_responses=True)
+        r = redis_lib.from_url(url, decode_responses=True, single_connection_client=False)
         r.ping()
         return r
     except Exception:
@@ -66,7 +66,7 @@ async def constitutional_health() -> dict:
                 if not raw:
                     continue
                 try:
-                    verdict = json.loads(raw)
+                    verdict = json.loads(raw) if isinstance(raw, (str, bytes)) else json.loads(str(raw))
                 except json.JSONDecodeError:
                     continue
 
@@ -116,7 +116,7 @@ async def constitutional_health() -> dict:
             pass
 
     return {
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
         "total_pairs_scanned": total_verdicts,
         "pairs_scanned": pairs_scanned,
         "l12_pass_rate": pass_rate,
@@ -145,7 +145,7 @@ def _grade_health(pass_rate: float, cb: str) -> str:
 
 @router.get("/equity/history")
 async def equity_history(
-    account_id: Optional[str] = Query(default=None),
+    account_id: str | None = Query(default=None),
     period: str = Query(default="1d", pattern="^(1h|4h|1d|1w)$"),
 ) -> dict:
     """
@@ -157,7 +157,7 @@ async def equity_history(
     r = _get_redis()
 
     # Time range
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     period_map = {"1h": 1, "4h": 4, "1d": 24, "1w": 168}
     cutoff = now - timedelta(hours=period_map.get(period, 24))
 

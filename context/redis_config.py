@@ -16,7 +16,8 @@ def create_redis_client() -> Redis:
       - Detailed keepalive timing delegated to Redis server-side
         ``--tcp-keepalive`` to avoid EINVAL on container runtimes.
     """
-    redis_url = os.environ["REDIS_URL"]
+    from infrastructure.redis_url import get_redis_url
+    redis_url = get_redis_url()
     use_tls = redis_url.startswith("rediss://")
 
     return Redis.from_url(
