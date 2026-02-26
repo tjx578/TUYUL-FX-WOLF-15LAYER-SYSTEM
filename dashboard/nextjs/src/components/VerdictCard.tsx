@@ -6,6 +6,8 @@
 
 import type { L12Verdict, VerdictType } from "@/types";
 import { formatTime } from "@/lib/timezone";
+import Panel from "@/components/ui/Panel";
+import StatusBadge from "@/components/ui/StatusBadge";
 
 interface VerdictCardProps {
   verdict: L12Verdict;
@@ -23,20 +25,25 @@ const VERDICT_COLORS: Record<string, string> = {
   ABORT:        "var(--red)",
 };
 
-const VERDICT_BG: Record<string, string> = {
-  EXECUTE_BUY:  "rgba(0, 230, 118, 0.07)",
-  EXECUTE_SELL: "rgba(255, 61, 87, 0.07)",
-  EXECUTE:      "rgba(0, 230, 118, 0.07)",
-  HOLD:         "rgba(255, 215, 64, 0.05)",
-  NO_TRADE:     "rgba(74, 99, 122, 0.05)",
-  ABORT:        "rgba(255, 61, 87, 0.07)",
-};
-
 function confidenceLabel(c: number): string {
   if (c >= 0.85) return "VERY HIGH";
   if (c >= 0.7)  return "HIGH";
   if (c >= 0.5)  return "MEDIUM";
   return "LOW";
+}
+
+function verdictGlow(v: string, selected: boolean): "cyan" | "emerald" | "orange" | "none" {
+  if (selected) return "cyan";
+  if (v.startsWith("EXECUTE")) return "emerald";
+  if (v === "ABORT") return "orange";
+  return "none";
+}
+
+function verdictBadgeType(v: string): "execute" | "hold" | "no-trade" | "abort" {
+  if (v.startsWith("EXECUTE")) return "execute";
+  if (v === "HOLD") return "hold";
+  if (v === "ABORT") return "abort";
+  return "no-trade";
 }
 
 export function VerdictCard({
@@ -47,27 +54,16 @@ export function VerdictCard({
 }: VerdictCardProps) {
   const v = verdict.verdict as string;
   const color = VERDICT_COLORS[v] ?? "var(--text-muted)";
-  const bg = VERDICT_BG[v] ?? "transparent";
   const isExecutable = v.startsWith("EXECUTE");
   const confidencePct = Math.round((verdict.confidence ?? 0) * 100);
 
   return (
-    <div
-      className="animate-fade-in"
-      style={{
-        background: selected ? "var(--accent-glow)" : bg,
-        border: `1px solid ${selected ? "var(--accent)" : "var(--bg-border)"}`,
-        borderRadius: 8,
-        padding: 16,
-        display: "flex",
-        flexDirection: "column",
-        gap: 10,
-        cursor: "pointer",
-        transition: "all 0.15s ease",
-      }}
+    <Panel
+      glow={verdictGlow(v, selected ?? false)}
+      className="animate-fade-in flex flex-col gap-3 cursor-pointer transition-all duration-150"
     >
       {/* ── Header ── */}
-      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+      <div className="flex items-center gap-2">
         <span
           className="num"
           style={{
@@ -79,16 +75,7 @@ export function VerdictCard({
         >
           {verdict.symbol}
         </span>
-        <span
-          className="badge"
-          style={{
-            background: `${color}1a`,
-            color,
-            borderColor: `${color}40`,
-          }}
-        >
-          {v}
-        </span>
+        <StatusBadge type={verdictBadgeType(v)} label={v} />
         <span
           style={{
             marginLeft: "auto",
@@ -232,6 +219,6 @@ export function VerdictCard({
           )}
         </div>
       )}
-    </div>
+    </Panel>
   );
 }

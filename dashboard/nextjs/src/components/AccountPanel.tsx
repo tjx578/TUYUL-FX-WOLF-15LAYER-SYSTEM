@@ -9,6 +9,8 @@
 import { useState } from "react";
 import type { Account, AccountCreate } from "@/types";
 import { createAccount } from "@/lib/api";
+import Panel from "@/components/ui/Panel";
+import StatusBadge from "@/components/ui/StatusBadge";
 
 // ─── ACCOUNT CARD ─────────────────────────────────────────────
 
@@ -18,24 +20,24 @@ interface AccountCardProps {
   onClick: () => void;
 }
 
-export function AccountCard({ account, selected, onClick }: AccountCardProps) {
-  const riskColor =
-    account.risk_state === "CRITICAL"
-      ? "var(--red)"
-      : account.risk_state === "WARNING"
-      ? "var(--yellow)"
-      : "var(--green)";
+function accountGlow(riskState: string, selected: boolean): "cyan" | "emerald" | "orange" | "none" {
+  if (selected) return "cyan";
+  if (riskState === "CRITICAL" || riskState === "WARNING") return "orange";
+  return "none";
+}
 
+function riskBadgeType(riskState: string): "execute" | "hold" | "no-trade" {
+  if (riskState === "CRITICAL") return "no-trade";
+  if (riskState === "WARNING") return "hold";
+  return "execute";
+}
+
+export function AccountCard({ account, selected, onClick }: AccountCardProps) {
   return (
-    <div
-      className="card"
+    <Panel
+      glow={accountGlow(account.risk_state ?? "", selected)}
+      className="cursor-pointer transition-all duration-200"
       onClick={onClick}
-      style={{
-        cursor: "pointer",
-        borderColor: selected ? "var(--accent)" : undefined,
-        boxShadow: selected ? "0 0 0 1px var(--accent)" : undefined,
-        transition: "border-color 0.2s, box-shadow 0.2s",
-      }}
     >
       {/* Header row */}
       <div
@@ -67,17 +69,10 @@ export function AccountCard({ account, selected, onClick }: AccountCardProps) {
           </div>
         </div>
 
-        <span
-          className="badge"
-          style={{
-            fontSize: 9,
-            background: `${riskColor}1a`,
-            color: riskColor,
-            borderColor: `${riskColor}40`,
-          }}
-        >
-          {account.risk_state}
-        </span>
+        <StatusBadge
+          type={riskBadgeType(account.risk_state ?? "")}
+          label={account.risk_state ?? "OK"}
+        />
       </div>
 
       {/* Stats grid */}
@@ -103,23 +98,14 @@ export function AccountCard({ account, selected, onClick }: AccountCardProps) {
 
       {/* Prop firm indicator */}
       {account.prop_firm && (
-        <div
-          style={{
-            marginTop: 10,
-            padding: "4px 8px",
-            background: "var(--accent-dim)",
-            borderRadius: 4,
-            fontSize: 10,
-            color: "var(--accent)",
-            fontWeight: 600,
-            letterSpacing: "0.06em",
-            textAlign: "center",
-          }}
-        >
-          PROP FIRM {account.prop_firm_code ? `— ${account.prop_firm_code}` : ""}
+        <div className="mt-3 text-center">
+          <StatusBadge
+            type="execute"
+            label={`PROP FIRM${account.prop_firm_code ? ` — ${account.prop_firm_code}` : ""}`}
+          />
         </div>
       )}
-    </div>
+    </Panel>
   );
 }
 
@@ -211,16 +197,7 @@ export function CreateAccountForm({ onCreated, onCancel }: CreateAccountFormProp
   };
 
   return (
-    <div
-      className="card"
-      style={{
-        width: 380,
-        padding: 24,
-        display: "flex",
-        flexDirection: "column",
-        gap: 16,
-      }}
-    >
+    <Panel className="w-96 flex flex-col gap-4">
       <div
         style={{
           fontSize: 13,
@@ -325,6 +302,6 @@ export function CreateAccountForm({ onCreated, onCancel }: CreateAccountFormProp
           </button>
         </div>
       </form>
-    </div>
+    </Panel>
   );
 }
