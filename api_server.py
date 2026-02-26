@@ -186,7 +186,8 @@ async def health() -> dict:
 
     redis_ok = False
     try:
-        url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+        from infrastructure.redis_url import get_redis_url
+        url = get_redis_url()
         r = redis_lib.from_url(url, decode_responses=True)
         r.ping()
         redis_ok = True

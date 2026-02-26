@@ -121,7 +121,9 @@ class _TickRateCounter:
 
 tick_metrics = _TickRateCounter()
 
-_DEFAULT_REDIS_URL = "redis://localhost:6379/0"
+from infrastructure.redis_url import get_redis_url
+
+_DEFAULT_REDIS_URL = get_redis_url()
 _DEFAULT_SYMBOLS = [
     "OANDA:EUR_USD",
     "OANDA:GBP_JPY",

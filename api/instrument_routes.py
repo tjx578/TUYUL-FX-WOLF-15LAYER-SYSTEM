@@ -18,6 +18,7 @@ import redis as redis_lib
 from fastapi import APIRouter, Depends, HTTPException
 
 from dashboard.backend.auth import verify_token
+from infrastructure.redis_url import get_redis_url
 
 logger = logging.getLogger(__name__)
 
@@ -29,7 +30,7 @@ router = APIRouter(
 
 
 def _get_redis() -> Optional[redis_lib.Redis]:
-    url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+    url = get_redis_url()
     try:
         r = redis_lib.from_url(url, decode_responses=True)
         r.ping()

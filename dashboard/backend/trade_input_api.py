@@ -25,7 +25,8 @@ logger = logging.getLogger(__name__)
 
 # ── [BUG-3 FIX] Redis connection via env var ──────────────────────────────────
 def _make_redis() -> redis_lib.Redis:
-    url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+    from infrastructure.redis_url import get_redis_url
+    url = get_redis_url()
     return redis_lib.from_url(url, decode_responses=True)
 
 
