@@ -1,48 +1,48 @@
 "use client";
 
 // ============================================================
-// TUYUL FX Wolf-15 — TimezoneDisplay
+// TUYUL FX Wolf-15 — Timezone Display
 // ============================================================
 
 import { useEffect, useState } from "react";
-import { formatTime, sessionLabel, nowInTz } from "@/lib/timezone";
+import { formatTime, formatDate, sessionLabel } from "@/lib/timezone";
 
 interface TimezoneDisplayProps {
   compact?: boolean;
 }
 
 export function TimezoneDisplay({ compact = false }: TimezoneDisplayProps) {
-  const [time, setTime] = useState("");
-  const [session, setSession] = useState("");
+  const [tick, setTick] = useState(0);
 
   useEffect(() => {
-    const tick = () => {
-      setTime(formatTime(nowInTz()));
-      setSession(sessionLabel());
-    };
-    tick();
-    const id = setInterval(tick, 1000);
+    const id = setInterval(() => setTick((t) => t + 1), 1000);
     return () => clearInterval(id);
   }, []);
 
+  const now = Date.now();
+  const session = sessionLabel();
+
   if (compact) {
     return (
-      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
         <span
           className="num"
           style={{
-            fontSize: 11,
-            color: "var(--text-secondary)",
-            letterSpacing: "0.04em",
+            fontSize: 13,
+            color: "var(--accent)",
+            fontWeight: 700,
           }}
         >
-          {time || "—"}
+          {formatTime(now)}
         </span>
         <span
-          className="badge badge-muted"
-          style={{ fontSize: 8 }}
+          style={{
+            fontSize: 10,
+            color: "var(--text-muted)",
+            letterSpacing: "0.06em",
+          }}
         >
-          {session}
+          {session} SESSION
         </span>
       </div>
     );
@@ -52,43 +52,22 @@ export function TimezoneDisplay({ compact = false }: TimezoneDisplayProps) {
     <div
       style={{
         display: "flex",
-        alignItems: "center",
-        gap: 10,
-        padding: "6px 12px",
-        background: "var(--bg-card)",
-        border: "1px solid var(--bg-border)",
-        borderRadius: 6,
+        flexDirection: "column",
+        alignItems: "flex-end",
+        gap: 2,
       }}
     >
       <span
         className="num"
-        style={{
-          fontSize: 14,
-          fontWeight: 700,
-          color: "var(--text-primary)",
-          letterSpacing: "0.04em",
-        }}
+        style={{ fontSize: 16, color: "var(--text-primary)", fontWeight: 700 }}
       >
-        {time || "—"}
+        {formatTime(now)}
       </span>
       <span
-        className="badge badge-blue"
-        style={{ fontSize: 10 }}
+        style={{ fontSize: 11, color: "var(--text-muted)", letterSpacing: "0.04em" }}
       >
-        {session}
-      </span>
-      <span
-        style={{
-          fontSize: 10,
-          color: "var(--text-muted)",
-          fontFamily: "var(--font-mono)",
-        }}
-      >
-        GMT+8
+        {formatDate(now)} · {session}
       </span>
     </div>
   );
 }
-
-// Keep default export for backward compat
-export default TimezoneDisplay;

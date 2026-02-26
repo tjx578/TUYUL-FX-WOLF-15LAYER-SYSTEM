@@ -2,90 +2,202 @@
 
 // ============================================================
 // TUYUL FX Wolf-15 — Prices Page (/prices)
-// Real-time price ticker + candle chart
+// Data: WS /ws/prices + REST fallback
 // ============================================================
 
 import { usePricesREST } from "@/lib/api";
 import { usePriceMap } from "@/lib/websocket";
+import type { PriceData } from "@/types";
 
 export default function PricesPage() {
-  const { data: restPrices, isLoading } = usePricesREST();
-  const { priceMap: wsPrices, connected } = usePriceMap();
+  const { data: restPrices } = usePricesREST();
+  const { priceMap, connected } = usePriceMap();
 
-  // Merge: WS prices take priority over REST
-  const prices: Record<string, { bid: number; ask: number; spread: number; ts: string }> = {};
-  if (restPrices) {
-    for (const [k, v] of Object.entries(restPrices)) {
-      prices[k] = v as any;
-    }
-  }
-  if (wsPrices) {
-    for (const [k, v] of Object.entries(wsPrices as Record<string, any>)) {
-      prices[k] = v;
-    }
-  }
+  // Merge WS + REST; WS wins
+  const allPrices: PriceData[] = (() => {
+    const restMap: Record<string, PriceData> = {};
+    for (const p of restPrices ?? []) restMap[p.symbol] = p;
+    return Object.values({ ...restMap, ...priceMap });
+  })();
 
-  const pairs = Object.keys(prices).sort();
+  allPrices.sort((a, b) => a.symbol.localeCompare(b.symbol));
 
   return (
-    <div style={{ padding: "2rem" }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.5rem" }}>
-        <h1 style={{ color: "var(--accent)", fontFamily: "var(--font-display)", fontSize: "1.5rem" }}>
-          ◭ LIVE PRICES
-        </h1>
-        <span style={{
-          fontSize: "0.75rem",
-          color: connected ? "var(--green)" : "var(--red)",
-        }}>
-          {connected ? "● WS Connected" : "○ WS Disconnected"}
+    <div style={{ padding: "24px 28px", display: "flex", flexDirection: "column", gap: 20 }}>
+      {/* ── Header ── */}
+      <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+        <div>
+          <h1
+            style={{
+              fontSize: 20,
+              fontWeight: 700,
+              letterSpacing: "0.04em",
+              color: "var(--text-primary)",
+              margin: 0,
+            }}
+          >
+            PRICE FEED
+          </h1>
+          <p style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2 }}>
+            Real-time bid/ask per instrument
+          </p>
+        </div>
+
+        <div
+          style={{
+            marginLeft: "auto",
+            display: "flex",
+            alignItems: "center",
+            gap: 6,
+            fontSize: 11,
+            fontFamily: "var(--font-mono)",
+            color: "var(--text-muted)",
+          }}
+        >
+          <span
+            style={{
+              width: 7,
+              height: 7,
+              borderRadius: "50%",
+              background: connected ? "var(--green)" : "var(--yellow)",
+              display: "inline-block",
+              animation: connected ? "pulse-dot 1.5s ease-in-out infinite" : "none",
+            }}
+          />
+          {connected ? "REAL-TIME" : "REST POLLING"}
+        </div>
+      </div>
+
+      {/* ── Price table ── */}
+      <div className="panel" style={{ overflow: "hidden" }}>
+        <table>
+          <thead>
+            <tr>
+              <th>SYMBOL</th>
+              <th style={{ textAlign: "right" }}>BID</th>
+              <th style={{ textAlign: "right" }}>ASK</th>
+              <th style={{ textAlign: "right" }}>SPREAD</th>
+              <th style={{ textAlign: "right" }}>24H CHANGE</th>
+              <th style={{ textAlign: "right" }}>UPDATED</th>
+            </tr>
+          </thead>
+          <tbody>
+            {allPrices.length === 0 ? (
+              <tr>
+                <td
+                  colSpan={6}
+                  style={{
+                    textAlign: "center",
+                    padding: "32px 0",
+                    color: "var(--text-muted)",
+                  }}
+                >
+                  {connected ? "Waiting for price data..." : "Connecting to price feed..."}
+                </td>
+              </tr>
+            ) : (
+              allPrices.map((p) => {
+                const changeColor =
+                  (p.change_percent_24h ?? 0) > 0
+                    ? "var(--green)"
+                    : (p.change_percent_24h ?? 0) < 0
+                    ? "var(--red)"
+                    : "var(--text-muted)";
+
+                return (
+                  <tr key={p.symbol}>
+                    <td>
+                      <span
+                        style={{ fontWeight: 700, color: "var(--text-primary)", fontSize: 13 }}
+                      >
+                        {p.symbol}
+                      </span>
+                    </td>
+                    <td style={{ textAlign: "right" }}>
+                      <span className="num" style={{ color: "var(--red)", fontSize: 13 }}>
+                        {p.bid?.toFixed(5)}
+                      </span>
+                    </td>
+                    <td style={{ textAlign: "right" }}>
+                      <span className="num" style={{ color: "var(--green)", fontSize: 13 }}>
+                        {p.ask?.toFixed(5)}
+                      </span>
+                    </td>
+                    <td style={{ textAlign: "right" }}>
+                      <span
+                        className="num"
+                        style={{
+                          fontSize: 12,
+                          color:
+                            p.spread > 3
+                              ? "var(--red)"
+                              : "var(--text-secondary)",
+                        }}
+                      >
+                        {p.spread?.toFixed(1)}
+                      </span>
+                    </td>
+                    <td style={{ textAlign: "right" }}>
+                      {p.change_percent_24h !== undefined ? (
+                        <span
+                          className="num"
+                          style={{ fontSize: 12, color: changeColor }}
+                        >
+                          {p.change_percent_24h > 0 ? "+" : ""}
+                          {p.change_percent_24h.toFixed(2)}%
+                        </span>
+                      ) : (
+                        <span style={{ color: "var(--text-muted)" }}>—</span>
+                      )}
+                    </td>
+                    <td style={{ textAlign: "right" }}>
+                      <span
+                        style={{
+                          fontFamily: "var(--font-mono)",
+                          fontSize: 10,
+                          color: "var(--text-muted)",
+                        }}
+                      >
+                        {new Date(p.timestamp).toLocaleTimeString("en-US", {
+                          hour: "2-digit",
+                          minute: "2-digit",
+                          second: "2-digit",
+                          hour12: false,
+                        })}
+                      </span>
+                    </td>
+                  </tr>
+                );
+              })
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      {/* ── Stats bar ── */}
+      <div
+        style={{
+          display: "flex",
+          gap: 20,
+          fontSize: 11,
+          color: "var(--text-muted)",
+          padding: "8px 0",
+          borderTop: "1px solid var(--bg-border)",
+        }}
+      >
+        <span>
+          Instruments:{" "}
+          <span className="num" style={{ color: "var(--text-secondary)" }}>
+            {allPrices.length}
+          </span>
+        </span>
+        <span>
+          Source:{" "}
+          <span style={{ color: connected ? "var(--green)" : "var(--yellow)" }}>
+            {connected ? "WebSocket" : "REST"}
+          </span>
         </span>
       </div>
-
-      {isLoading && <p style={{ color: "var(--text-muted)" }}>Loading prices…</p>}
-
-      <div style={{
-        display: "grid",
-        gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))",
-        gap: "0.75rem",
-      }}>
-        {pairs.map((pair) => {
-          const p = prices[pair];
-          return (
-            <div key={pair} style={{
-              background: "var(--bg-card)",
-              border: "1px solid var(--border)",
-              borderRadius: 8,
-              padding: "1rem",
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-            }}>
-              <div>
-                <p style={{ fontFamily: "var(--font-display)", fontSize: "1rem", color: "var(--text-primary)" }}>
-                  {pair}
-                </p>
-                <p style={{ fontSize: "0.7rem", color: "var(--text-muted)" }}>
-                  spread: {p.spread?.toFixed(1) ?? "—"}
-                </p>
-              </div>
-              <div style={{ textAlign: "right" }}>
-                <p style={{ fontFamily: "var(--font-mono)", fontSize: "0.95rem", color: "var(--green)" }}>
-                  {p.bid?.toFixed(5) ?? "—"}
-                </p>
-                <p style={{ fontFamily: "var(--font-mono)", fontSize: "0.95rem", color: "var(--red)" }}>
-                  {p.ask?.toFixed(5) ?? "—"}
-                </p>
-              </div>
-            </div>
-          );
-        })}
-      </div>
-
-      {!isLoading && pairs.length === 0 && (
-        <p style={{ color: "var(--text-muted)", textAlign: "center", marginTop: "3rem" }}>
-          No price data available
-        </p>
-      )}
     </div>
   );
 }
