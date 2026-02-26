@@ -1,86 +1,11 @@
 "use client";
-/// <reference types="react" />
 
 // ============================================================
 // TUYUL FX Wolf-15 — EquityCurve (SVG sparkline)
 // Data: WS /ws/equity → DrawdownData[]
 // ============================================================
 
-import { useEffect, useState } from "react";
-
-type DrawdownData = {
-  equity: number;
-  balance: number;
-  daily_dd: number;
-  total_dd: number;
-};
-
-function useEquityHistory(accountId?: string) {
-  const [history, setHistory] = useState<DrawdownData[]>([]);
-  const [connected, setConnected] = useState(false);
-
-  useEffect(() => {
-    let mounted = true;
-    const wsBase =
-      typeof window !== "undefined"
-        ? window.location.origin.replace(/^http/, "ws")
-        : "";
-    const query = accountId ? `?account_id=${encodeURIComponent(accountId)}` : "";
-    const ws = new WebSocket(`${wsBase}/ws/equity${query}`);
-
-    ws.onopen = () => {
-      if (mounted) setConnected(true);
-    };
-
-    ws.onclose = () => {
-      if (mounted) setConnected(false);
-    };
-
-    ws.onerror = () => {
-      if (mounted) setConnected(false);
-    };
-
-    ws.onmessage = (event) => {
-      if (!mounted) return;
-      try {
-        const payload = JSON.parse(event.data);
-        const rows = Array.isArray(payload) ? payload : [payload];
-        const normalized = rows
-          .filter((r) => r && typeof r === "object")
-          .map((r) => ({
-            equity: Number(r.equity ?? 0),
-            balance: Number(r.balance ?? 0),
-            daily_dd: Number(r.daily_dd ?? 0),
-            total_dd: Number(r.total_dd ?? 0),
-          }));
-        if (normalized.length > 0) {
-          setHistory((prev: any) => [...prev, ...normalized].slice(-500));
-        }
-      } catch {
-        // ignore malformed WS payload
-      }
-    };
-
-    return () => {
-      mounted = false;
-      ws.close();
-    };
-  }, [accountId]);
-
-  return { history, connected };
-}
-
-declare global {
-  namespace JSX {
-    interface IntrinsicElements {
-      div: any;
-      span: any;
-      svg: any;
-      path: any;
-      circle: any;
-    }
-  }
-}
+import { useEquityHistory } from "@/lib/websocket";
 
 interface EquityCurveProps {
   accountId?: string;
@@ -126,10 +51,10 @@ export function EquityCurve({
   height = 120,
   showBalance = true,
 }: EquityCurveProps) {
-  const { history, connected } = useEquityHistory(accountId);
+  const { history, connected } = useEquityHistory(accountId, 500);
 
-  const equityPoints = history.map((p: { equity: any; }) => p.equity);
-  const balancePoints = history.map((p: { balance: any; }) => p.balance);
+  const equityPoints = history.map((p) => p.equity);
+  const balancePoints = history.map((p) => p.balance);
 
   const latest = history[history.length - 1];
   const first = history[0];
