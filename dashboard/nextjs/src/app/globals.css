@@ -1,6 +1,37 @@
-@import url("https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Share+Tech+Mono&family=Rajdhani:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap");
 
 @import "tailwindcss";
+
+:root {
+
+  /* ===== BASE BACKGROUND ===== */
+  --bg-primary: #050A14;
+  --bg-secondary: #0B1623;
+  --bg-elevated: #0F1E2D;
+  --bg-panel: rgba(255,255,255,0.04);
+
+  /* ===== ACCENT COLORS ===== */
+  --accent-cyan: #00E5FF;
+  --accent-emerald: #00F5A0;
+  --accent-amber: #FFB020;
+  --accent-red: #FF4D4F;
+  --accent-orange: #FF7A00;
+
+  /* ===== TEXT ===== */
+  --text-primary: rgba(255,255,255,0.92);
+  --text-secondary: rgba(255,255,255,0.60);
+  --text-muted: rgba(255,255,255,0.35);
+
+  /* ===== BORDERS ===== */
+  --border-subtle: rgba(255,255,255,0.08);
+  --border-strong: rgba(255,255,255,0.16);
+
+  /* ===== GLOW ===== */
+  --glow-cyan: 0 0 40px rgba(0,229,255,0.25);
+  --glow-emerald: 0 0 40px rgba(0,245,160,0.25);
+  --glow-orange: 0 0 40px rgba(255,122,0,0.25);
+
+}
 
 /* ─── WOLF DESIGN TOKENS ─── */
 :root {
@@ -50,9 +81,9 @@
 html,
 body {
   height: 100%;
-  background-color: var(--bg-base);
+  background: var(--bg-primary);
   color: var(--text-primary);
-  font-family: var(--font-display);
+  font-family: 'Inter', sans-serif;
   font-size: 14px;
   -webkit-font-smoothing: antialiased;
 }

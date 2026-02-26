@@ -25,13 +25,7 @@ export default function RootLayout({
     <html lang="en">
       <body>
         <Providers>
-          <div
-            style={{
-              display: "flex",
-              minHeight: "100vh",
-              background: "var(--bg-base)",
-            }}
-          >
+          <div className="flex min-h-screen bg-bg-primary text-text-primary">
             <Sidebar />
             <main
               style={{
