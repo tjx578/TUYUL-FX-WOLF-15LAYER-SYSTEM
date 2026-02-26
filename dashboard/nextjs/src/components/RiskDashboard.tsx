@@ -15,7 +15,6 @@
 
 import { useRiskWS } from '@/lib/websocket';
 import { useRiskSnapshot, useAccounts } from '@/lib/api';
-import type { RiskSnapshot } from '@/types';
 import clsx from 'clsx';
 import { useState } from 'react';
 import {
@@ -25,8 +24,8 @@ import {
   Zap,
   TrendingDown,
   Activity,
-  Unlock,
-  Lock,
+  LockOpen,
+  Clock,
 } from 'lucide-react';
 
 export default function RiskDashboard() {
@@ -162,7 +161,7 @@ function TradingStatusCard({ snapshot }: { snapshot: any }) {
     )}>
       <div className="flex items-center gap-2 mb-2">
         {allowed ? (
-          <Unlock className="w-5 h-5 text-emerald-400" />
+          <LockOpen className="w-5 h-5 text-emerald-400" />
         ) : (
           <Lock className="w-5 h-5 text-red-400" />
         )}
