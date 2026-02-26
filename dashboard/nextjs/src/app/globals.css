@@ -475,3 +475,67 @@ td {
   color: var(--text-secondary);
 }
 tr:hover td { background: var(--bg-hover); color: var(--text-primary); }
+
+/* ─────────────────────────────────────────────────
+   MICRO INTERACTION ENGINE
+   1. Hover Glow Engine
+   2. Button Ripple Engine
+   3. Elevation Transition Engine
+───────────────────────────────────────────────── */
+
+/* ── 1. HOVER GLOW ENGINE ── */
+.interactive {
+  transition: all 0.25s cubic-bezier(.4, 0, .2, 1);
+}
+
+.interactive:hover {
+  transform: translateY(-2px);
+}
+
+.glow-hover-cyan:hover {
+  box-shadow: 0 0 40px rgba(0, 229, 255, 0.35);
+}
+
+.glow-hover-emerald:hover {
+  box-shadow: 0 0 40px rgba(0, 245, 160, 0.35);
+}
+
+.glow-hover-orange:hover {
+  box-shadow: 0 0 40px rgba(255, 122, 0, 0.35);
+}
+
+.glow-hover-amber:hover {
+  box-shadow: 0 0 40px rgba(255, 176, 32, 0.35);
+}
+
+/* ── 2. BUTTON RIPPLE ENGINE ── */
+button .ripple {
+  position: absolute;
+  border-radius: 50%;
+  transform: scale(0);
+  animation: ripple-animation 600ms linear;
+  background-color: rgba(255, 255, 255, 0.35);
+  pointer-events: none;
+}
+
+@keyframes ripple-animation {
+  to {
+    transform: scale(4);
+    opacity: 0;
+  }
+}
+
+/* ── 3. ELEVATION TRANSITION ENGINE ── */
+.panel-transition {
+  transition: box-shadow 0.3s ease, transform 0.3s ease;
+}
+
+/* ── 4. SEQUENTIAL GATE GLOW ── */
+@keyframes gate-appear {
+  from { opacity: 0; transform: scale(0.4); }
+  to   { opacity: 1; transform: scale(1); }
+}
+
+.gate-dot {
+  animation: gate-appear 0.25s cubic-bezier(.4, 0, .2, 1) backwards;
+}
