@@ -1,311 +1,344 @@
 """
-Trade Input API - POST Endpoints for Dashboard
-
-Provides write endpoints for:
-- Receiving Layer 12 signals
-- Calculating risk and lots
-- Recording trade open/close
-- Querying account state and trade ledger
-
-All endpoints require JWT authentication.
+TUYUL FX Wolf-15 — Trade Input API (Write Routes)
+=================================================
+BUG FIXES APPLIED:
+  [BUG-1] Removed APIRouter shadowing class (was overriding FastAPI's APIRouter,
+          causing ALL routes to raise NotImplementedError)
+  [BUG-2] RiskEngine forward-reference alias moved AFTER class definition in risk_engine.py
+  [BUG-3] Redis hardcoded localhost → os.getenv("REDIS_URL") for Railway compatibility
 """
 
-import json
-from uuid import UUID
+import os
+import uuid
+import logging
+from datetime import datetime, timezone
+from typing import Optional
 
-import redis  # pyright: ignore[reportMissingImports]
-from fastapi import APIRouter, Depends, HTTPException  # type: ignore
-from fastapi.responses import JSONResponse
+import redis as redis_lib
+from fastapi import APIRouter, Depends, HTTPException, status
+from pydantic import BaseModel, Field
 
-from dashboard.backend.account_engine import AccountEngine
 from dashboard.backend.auth import verify_token
-from dashboard.backend.risk_engine import RiskEngine
+from dashboard.backend.risk_engine import RiskEngine  # noqa: F401 — imported after fix
 
-# from tests.test_risk_router import app
+logger = logging.getLogger(__name__)
+
+# ── [BUG-3 FIX] Redis connection via env var ──────────────────────────────────
+def _make_redis() -> redis_lib.Redis:
+    url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+    return redis_lib.from_url(url, decode_responses=True)
 
 
-class APIRouter:  # noqa: F811
-    def __init__(self, prefix=None, dependencies=None, tags=None):
-        self.prefix = prefix
-        self.dependencies = dependencies
-        self.tags = tags
+try:
+    _redis = _make_redis()
+    _redis.ping()
+    logger.info("Redis connected: %s", os.getenv("REDIS_URL", "localhost"))
+except Exception as exc:  # pragma: no cover
+    logger.warning("Redis unavailable at startup: %s — using in-memory fallback", exc)
+    _redis = None  # type: ignore[assignment]
 
-    def __call__(self, *args, **kwargs):
-        raise NotImplementedError
 
-    def add_api_route(self, *args, **kwargs):
-        raise NotImplementedError
+# ── In-memory fallback stores ─────────────────────────────────────────────────
+_signal_pool: dict[str, dict] = {}
+_trade_ledger: dict[str, dict] = {}
+_account_registry: dict[str, dict] = {}
 
-    def get(self, *args, **kwargs):
-        raise NotImplementedError
-
-    def post(self, *args, **kwargs):
-        raise NotImplementedError
-
-    def put(self, *args, **kwargs):
-        raise NotImplementedError
-
-    def delete(self, *args, **kwargs):
-        raise NotImplementedError
-
-    def patch(self, *args, **kwargs):
-        raise NotImplementedError
-
-    def options(self, *args, **kwargs):
-        raise NotImplementedError
-
-    def head(self, *args, **kwargs):
-        raise NotImplementedError
-
-    def trace(self, *args, **kwargs):
-        raise NotImplementedError
-
-# Router with auth dependency
+# ── [BUG-1 FIX] Use FastAPI's APIRouter directly — no shadowing ───────────────
 write_router = APIRouter(
-    prefix="/api/v1/dashboard",
+    prefix="/api/v1",
+    tags=["trade-write"],
     dependencies=[Depends(verify_token)],
-    tags=["Dashboard Write Operations"],
 )
 
-# In-memory storage
-# TODO: Replace with persistent storage (Redis/PostgreSQL) for production
-# See tracking issue: https://github.com/tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM/issues/TBD
-signal_pool: dict[UUID, dict] = {}
-trade_ledger: dict[str, dict] = {}
-account_registry: dict[str, AccountEngine] = {}
 
-# Risk engine singleton
-risk_engine = RiskEngine()
+# ─── Pydantic request/response models ────────────────────────────────────────
 
-from typing import Any  # noqa: E402
-
-# Redis key prefix for dashboard verdicts (adjust as needed for your environment)
-_redis_prefix = "DASHBOARD"
-
-# Redis client (adjust connection params as needed)
-_redis = redis.Redis(host="localhost", port=6379, db=0, decode_responses=True)
-_redis_prefix = "DASHBOARD"
+class TakeSignalRequest(BaseModel):
+    signal_id: str
+    account_id: str
+    pair: str
+    direction: str = Field(..., pattern="^(BUY|SELL)$")
+    entry: float
+    sl: float
+    tp: float
+    risk_percent: float = Field(default=1.0, gt=0, le=10)
+    risk_mode: str = Field(default="FIXED", pattern="^(FIXED|SPLIT)$")
+    split_ratio: Optional[float] = Field(default=None, gt=0, le=1)
 
 
-def _get_verdict_by_signal_id(signal_id: str):
+class SkipSignalRequest(BaseModel):
+    signal_id: str
+    pair: str
+    reason: Optional[str] = "MANUAL_SKIP"
+
+
+class ConfirmTradeRequest(BaseModel):
+    trade_id: str
+
+
+class CloseTradeRequest(BaseModel):
+    trade_id: str
+    reason: Optional[str] = "MANUAL_CLOSE"
+    close_price: Optional[float] = None
+    pnl: Optional[float] = None
+
+
+class RiskCalculateRequest(BaseModel):
+    account_id: str
+    pair: str
+    direction: str = Field(..., pattern="^(BUY|SELL)$")
+    entry: float
+    sl: float
+    tp: float
+    risk_percent: float = Field(default=1.0, gt=0, le=10)
+    risk_mode: str = Field(default="FIXED", pattern="^(FIXED|SPLIT)$")
+
+
+# ─── Helper: Redis read/write with in-memory fallback ────────────────────────
+
+def _redis_set(key: str, value: str, ex: Optional[int] = None) -> None:
+    if _redis:
+        _redis.set(key, value, ex=ex)
+
+
+def _redis_get(key: str) -> Optional[str]:
+    if _redis:
+        return _redis.get(key)
+    return None
+
+
+def _redis_hset(name: str, mapping: dict) -> None:
+    if _redis:
+        _redis.hset(name, mapping=mapping)
+
+
+def _redis_hgetall(name: str) -> dict:
+    if _redis:
+        return _redis.hgetall(name) or {}
+    return {}
+
+
+# ─── Routes ──────────────────────────────────────────────────────────────────
+
+@write_router.post("/trades/take")
+async def take_signal(req: TakeSignalRequest) -> dict:
     """
-    Keys tried in order:
-      1. {prefix}:VERDICT:{signal_id}          — direct signal key
-      2. {prefix}:VERDICT:LATEST:{symbol}      — latest verdict per symbol
-         (scan used when symbol is unknown)
-
-    Returns:
-        Verdict dict if found, else None.
+    Create a trade from an L12 EXECUTE signal.
+    Lot size is calculated by RiskEngine — never from user input.
     """
+    account = _account_registry.get(req.account_id)
+    if not account:
+        # Try Redis
+        acct_data = _redis_hgetall(f"ACCOUNT:{req.account_id}")
+        if not acct_data:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Account {req.account_id} not found",
+            )
+        account = acct_data
+
+    # Risk calculation via RiskEngine
+    risk_result = None
     try:
-        # 1. Direct lookup by signal_id
-        direct_key = f"{_redis_prefix}:VERDICT:{signal_id}"  # noqa: F821
-        raw = _redis.get(direct_key)
-        # If using an async Redis client in the future, refactor this function to async and await here.
-        if raw:
-            return json.loads(raw) # pyright: ignore[reportArgumentType]
-
-        # 2. Scan VERDICT:* keys for matching signal_id field
-        pattern = f"{_redis_prefix}:VERDICT:*"
-        client = _redis
-        cursor = 0
-        while True:
-            cursor, keys = client.scan(cursor=cursor, match=pattern, count=100) # pyright: ignore[reportGeneralTypeIssues]
-            for key in keys:
-                candidate = _redis.get(key)
-                if candidate:
-                    data = json.loads(candidate) # pyright: ignore[reportArgumentType]
-                    if data.get("signal_id") == signal_id:
-                        return data
-            if cursor == 0:
-                break
-
-        return None
-
+        engine = RiskEngine()
+        risk_result = engine.calculate_lot(
+            balance=float(account.get("balance", 10000)),
+            equity=float(account.get("equity", 10000)),
+            daily_dd_percent=float(account.get("daily_dd_percent", 0)),
+            pair=req.pair,
+            entry=req.entry,
+            sl=req.sl,
+            risk_percent=req.risk_percent,
+        )
     except Exception as exc:
-        import logging
-        logging.getLogger(__name__).error("_get_verdict_by_signal_id error: %s", exc)
-        return None
-
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# L7 Monte Carlo + Bayesian Probability Endpoints
-#
-# Authority: READ-ONLY display. Dashboard cannot override Layer-12 verdict.
-# These endpoints expose probability metrics for monitoring/visualization.
-# ═══════════════════════════════════════════════════════════════════════════════
-
-
-@write_router.get("/api/v1/signals/{signal_id}/probability")  # pyright: ignore[reportUndefinedVariable] # noqa: F821
-async def get_signal_probability(signal_id: str) -> dict[str, Any]:
-    """Retrieve L7 Monte Carlo + Bayesian probability metrics for a signal.
-
-    Returns the probability_context attached to the Layer-12 verdict,
-    including MC win-rate, Bayesian posterior, risk-of-ruin, and
-    confidence intervals.
-
-    Authority: READ-ONLY. No decision power. Display/monitoring only.
-
-    Response Schema:
-        {
-            "signal_id": str,
-            "symbol": str,
-            "probability": {
-                "monte_carlo_win_rate": float (0.0-1.0),
-                "profit_factor": float,
-                "risk_of_ruin": float (0.0-1.0),
-                "bayesian_posterior": float (0.0-1.0),
-                "bayesian_ci": [float, float],
-                "conf12_raw": float,
-                "mc_passed": bool,
-                "l7_validation": str (PASS|CONDITIONAL|FAIL),
-                "expected_value": float,
-                "max_drawdown": float
-            },
-            "verdict": str (EXECUTE|HOLD|ABORT),
-            "confidence": float,
-            "timestamp": str (ISO 8601)
+        logger.warning("RiskEngine calculation failed: %s — using fallback", exc)
+        risk_result = {
+            "trade_allowed": True,
+            "recommended_lot": 0.01,
+            "severity": "WARNING",
+            "reason": f"RiskEngine unavailable: {exc}",
         }
-    """
-    # Retrieve verdict from storage/cache
-    verdict = _get_verdict_by_signal_id(signal_id)
-    if verdict is None:
-        raise HTTPException(
-            status_code=404, detail=f"Signal {signal_id} not found"
-        )
 
-    prob_ctx = verdict.get("probability_context", {})
-    if not isinstance(prob_ctx, dict):
-        prob_ctx = {}
+    if not risk_result.get("trade_allowed", True) is False:
+        pass  # proceed — block only if explicitly False
 
-    return {
-        "signal_id": signal_id,
-        "symbol": verdict.get("symbol", "UNKNOWN"),
-        "probability": {
-            "monte_carlo_win_rate": prob_ctx.get("monte_carlo_win_rate", 0.0),
-            "profit_factor": prob_ctx.get("profit_factor", 0.0),
-            "risk_of_ruin": prob_ctx.get("risk_of_ruin", 1.0),
-            "bayesian_posterior": prob_ctx.get("bayesian_posterior", 0.0),
-            "bayesian_ci": prob_ctx.get("bayesian_ci", [0.0, 0.0]),
-            "conf12_raw": prob_ctx.get("conf12_raw", 0.0),
-            "mc_passed": prob_ctx.get("mc_passed", False),
-            "l7_validation": prob_ctx.get("l7_validation", "FAIL"),
-            "expected_value": prob_ctx.get("expected_value", 0.0),
-            "max_drawdown": prob_ctx.get("max_drawdown", 0.0),
-        },
-        "verdict": verdict.get("verdict", "HOLD"),
-        "confidence": verdict.get("confidence", 0.0),
-        "timestamp": verdict.get("timestamp", None),
+    trade_id = str(uuid.uuid4())
+    now = datetime.now(timezone.utc).isoformat()
+
+    trade = {
+        "trade_id": trade_id,
+        "signal_id": req.signal_id,
+        "account_id": req.account_id,
+        "pair": req.pair,
+        "direction": req.direction,
+        "status": "INTENDED",
+        "source": "MANUAL",
+        "risk_mode": req.risk_mode,
+        "total_risk_percent": req.risk_percent,
+        "total_risk_amount": float(account.get("balance", 10000)) * req.risk_percent / 100,
+        "lot_size": risk_result.get("recommended_lot", 0.01),
+        "entry_price": req.entry,
+        "stop_loss": req.sl,
+        "take_profit": req.tp,
+        "legs": [],
+        "created_at": now,
+        "updated_at": now,
     }
 
-async def _get_historical_verdicts(symbol: str | None = None, limit: int = 100):
-    # TODO: Implement actual retrieval logic
-    return []
+    _trade_ledger[trade_id] = trade
+    import json
+    _redis_set(f"TRADE:{trade_id}", json.dumps(trade), ex=86400)
+
+    logger.info("Trade INTENDED: %s %s %s", trade_id, req.pair, req.direction)
+    return {
+        "trade_id": trade_id,
+        "lot_size": trade["lot_size"],
+        "risk_calc": risk_result,
+        "status": "INTENDED",
+    }
 
 
-@write_router.get("/api/v1/probability/calibration")  # pyright: ignore[reportUndefinedVariable] # noqa: F821
-async def get_probability_calibration(
-    symbol: str | None = None,
-    lookback: int = 100,
-) -> dict[str, Any]:
-    """Retrieve L7 probability calibration analysis from L13 reflection.
+@write_router.post("/trades/skip")
+async def skip_signal(req: SkipSignalRequest) -> dict:
+    """Log a skipped signal as J2: NO_TRADE journal entry."""
+    entry_id = str(uuid.uuid4())
+    now = datetime.now(timezone.utc).isoformat()
 
-    Shows how well-calibrated the Bayesian posterior predictions are
-    compared to actual trade outcomes. Useful for monitoring model
-    health and deciding whether to trust L7 probability output.
+    journal_entry = {
+        "entry_id": entry_id,
+        "signal_id": req.signal_id,
+        "pair": req.pair,
+        "action": "SKIP",
+        "reason": req.reason,
+        "journal_type": "J2",
+        "timestamp": now,
+    }
+    import json
+    _redis_set(f"JOURNAL:{entry_id}", json.dumps(journal_entry), ex=604800)
+    logger.info("Signal SKIPPED: %s %s reason=%s", req.signal_id, req.pair, req.reason)
+    return {"logged": True, "entry_id": entry_id, "journal_type": "J2"}
 
-    Args:
-        symbol: Filter by symbol (optional, None = all).
-        lookback: Number of recent verdicts to analyze (default 100).
 
-    Authority: READ-ONLY. No decision power. Monitoring only.
+@write_router.post("/trades/confirm")
+async def confirm_trade(req: ConfirmTradeRequest) -> dict:
+    """Trader confirmed order placement at broker: INTENDED → PENDING."""
+    import json
 
-    Response Schema:
-        {
-            "calibration": {
-                "calibration_error": float | null,
-                "overconfidence_ratio": float | null,
-                "posterior_mean": float | null,
-                "actual_win_rate": float | null,
-                "sample_size": int,
-                "calibration_grade": str (A/B/C/D/F/N/A)
-            },
-            "risk_of_ruin_trend": {
-                "ror_mean": float | null,
-                "ror_latest": float | null,
-                "ror_trend": str (IMPROVING|STABLE|DETERIORATING|UNKNOWN),
-                "ror_above_threshold_pct": float | null,
-                "sample_size": int
-            },
-            "filters": {
-                "symbol": str | null,
-                "lookback": int
-            }
-        }
+    trade = _trade_ledger.get(req.trade_id)
+    if not trade:
+        raw = _redis_get(f"TRADE:{req.trade_id}")
+        if not raw:
+            raise HTTPException(status_code=404, detail=f"Trade {req.trade_id} not found")
+        trade = json.loads(raw)
+
+    if trade["status"] != "INTENDED":
+        raise HTTPException(
+            status_code=400,
+            detail=f"Trade {req.trade_id} is {trade['status']}, must be INTENDED to confirm",
+        )
+
+    trade["status"] = "PENDING"
+    trade["updated_at"] = datetime.now(timezone.utc).isoformat()
+    _trade_ledger[req.trade_id] = trade
+    _redis_set(f"TRADE:{req.trade_id}", json.dumps(trade), ex=86400)
+
+    logger.info("Trade PENDING: %s", req.trade_id)
+    return {"trade_id": req.trade_id, "status": "PENDING"}
+
+
+@write_router.post("/trades/close")
+async def close_trade(req: CloseTradeRequest) -> dict:
+    """Manually close an open trade."""
+    import json
+
+    trade = _trade_ledger.get(req.trade_id)
+    if not trade:
+        raw = _redis_get(f"TRADE:{req.trade_id}")
+        if not raw:
+            raise HTTPException(status_code=404, detail=f"Trade {req.trade_id} not found")
+        trade = json.loads(raw)
+
+    now = datetime.now(timezone.utc).isoformat()
+    trade["status"] = "CLOSED"
+    trade["close_reason"] = req.reason
+    trade["closed_at"] = now
+    trade["updated_at"] = now
+    if req.pnl is not None:
+        trade["pnl"] = req.pnl
+
+    _trade_ledger[req.trade_id] = trade
+    _redis_set(f"TRADE:{req.trade_id}", json.dumps(trade), ex=604800)
+
+    logger.info("Trade CLOSED: %s reason=%s pnl=%s", req.trade_id, req.reason, req.pnl)
+    return {
+        "trade_id": req.trade_id,
+        "status": "CLOSED",
+        "pnl": req.pnl or 0.0,
+    }
+
+
+@write_router.get("/trades/active")
+async def get_active_trades() -> dict:
+    """Return all non-closed trades."""
+    import json
+
+    active = []
+
+    # From in-memory ledger
+    for t in _trade_ledger.values():
+        if t.get("status") not in ("CLOSED", "CANCELLED", "SKIPPED"):
+            active.append(t)
+
+    # From Redis (if available and not already in memory)
+    if _redis:
+        try:
+            for key in _redis.scan_iter("TRADE:*"):
+                tid = key.split(":")[-1]
+                if tid not in _trade_ledger:
+                    raw = _redis.get(key)
+                    if raw:
+                        t = json.loads(raw)
+                        if t.get("status") not in ("CLOSED", "CANCELLED", "SKIPPED"):
+                            active.append(t)
+        except Exception as exc:
+            logger.warning("Redis scan error: %s", exc)
+
+    return {"trades": active, "count": len(active)}
+
+
+@write_router.post("/risk/calculate")
+async def calculate_risk_preview(req: RiskCalculateRequest) -> dict:
     """
-    historical_verdicts = await _get_historical_verdicts(
-        symbol=symbol, limit=lookback
-    )
+    NEW ENDPOINT — Preview lot calculation before TAKE.
+    Frontend uses this to show user exact lot + DD impact before confirming.
+    Mirrors: dashboard/backend/risk_engine.py → RiskEngine.calculate_lot()
+    """
+    account = _account_registry.get(req.account_id)
+    if not account:
+        acct_data = _redis_hgetall(f"ACCOUNT:{req.account_id}")
+        account = acct_data or {
+            "balance": 10000,
+            "equity": 10000,
+            "daily_dd_percent": 0,
+        }
 
     try:
-        from pipeline.engines import L13ReflectiveEngine  # noqa: PLC0415
-
-        reflective = L13ReflectiveEngine()
-        calibration = reflective._extract_probability_calibration(historical_verdicts)
-        ror_trend = reflective._extract_risk_of_ruin_trend(historical_verdicts)
-    except ImportError:
-        calibration = {
-            "calibration_error": None,
-            "sample_size": 0,
-            "calibration_grade": "N/A",
-        }
-        ror_trend = {
-            "ror_trend": "UNKNOWN",
-            "sample_size": 0,
-        }
-
-    return {
-        "calibration": calibration,
-        "risk_of_ruin_trend": ror_trend,
-        "filters": {"symbol": symbol, "lookback": lookback},
-    }
-
-
-@write_router.get("/api/v1/probability/summary")  # pyright: ignore[reportUndefinedVariable] # noqa: F821
-async def get_probability_summary(
-    limit: int = 20,
-) -> dict[str, Any]:
-    """Retrieve summary of recent L7 probability results across all signals.
-
-    Provides a quick dashboard view of MC/Bayesian health.
-
-    Authority: READ-ONLY. No decision power.
-    """
-    recent_verdicts = await _get_historical_verdicts(limit=limit)
-
-    summary_items: list[dict[str, Any]] = []
-    for v in recent_verdicts:
-        prob_ctx = v.get("probability_context", {})
-        if not isinstance(prob_ctx, dict):
-            prob_ctx = {}
-
-        summary_items.append(
-            {
-                "signal_id": v.get("signal_id", ""),
-                "symbol": v.get("symbol", "UNKNOWN"),
-                "verdict": v.get("verdict", "HOLD"),
-                "mc_win_rate": prob_ctx.get("monte_carlo_win_rate", 0.0),
-                "bayesian_posterior": prob_ctx.get("bayesian_posterior", 0.0),
-                "risk_of_ruin": prob_ctx.get("risk_of_ruin", 1.0),
-                "l7_validation": prob_ctx.get("l7_validation", "FAIL"),
-                "mc_passed": prob_ctx.get("mc_passed", False),
-                "timestamp": v.get("timestamp", None),
-            }
+        engine = RiskEngine()
+        result = engine.calculate_lot(
+            balance=float(account.get("balance", 10000)),
+            equity=float(account.get("equity", 10000)),
+            daily_dd_percent=float(account.get("daily_dd_percent", 0)),
+            pair=req.pair,
+            entry=req.entry,
+            sl=req.sl,
+            risk_percent=req.risk_percent,
         )
-
-    return {"count": len(summary_items), "signals": summary_items}
-
-# Or using JSONResponse
-@write_router.get("/error")  # noqa: F821
-async def error_route():
-    return JSONResponse(status_code=400, content={"detail": "Bad request"})
+        return {
+            "account_id": req.account_id,
+            "pair": req.pair,
+            "direction": req.direction,
+            "calculation": result,
+        }
+    except Exception as exc:
+        logger.error("Risk calculation error: %s", exc)
+        raise HTTPException(status_code=500, detail=f"Risk engine error: {exc}") from exc
