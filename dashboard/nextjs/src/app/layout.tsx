@@ -52,11 +52,11 @@ export default function RootLayout({
           <div className="relative z-10 flex min-h-screen">
             <Sidebar />
             <main
+              className="flex-1 overflow-auto"
               style={{
-                flex: 1,
                 marginLeft: "var(--sidebar-w)",
                 minHeight: "100vh",
-                overflow: "auto",
+                padding: "32px 40px",
               }}
             >
               {children}

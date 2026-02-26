@@ -1,10 +1,11 @@
 "use client";
 
 // ============================================================
-// TUYUL FX Wolf-15 — Sidebar Navigation
+// TUYUL FX Wolf-15 — Sidebar Navigation (Institutional Rebuild)
 // ============================================================
 
 import Link from "next/link";
+import clsx from "clsx";
 import { usePathname } from "next/navigation";
 import { useHealth, useActiveTrades } from "@/lib/api";
 import { TimezoneDisplay } from "./TimezoneDisplay";
@@ -12,22 +13,31 @@ import { TimezoneDisplay } from "./TimezoneDisplay";
 interface NavItem {
   href: string;
   label: string;
-  icon: string;
-  badge?: () => string | number | null;
+  section?: string;
 }
 
+// ── Nav groups for visual hierarchy ──
 const NAV_ITEMS: NavItem[] = [
-  { href: "/", label: "OVERVIEW", icon: "🏠" },
-  { href: "/trades/signals", label: "SIGNAL QUEUE", icon: "👥" },
-  { href: "/trades", label: "ACTIVE TRADES", icon: "📊" },
-  { href: "/accounts", label: "ACCOUNTS", icon: "💼" },
-  { href: "/risk", label: "RISK MONITOR", icon: "🛡️" },
-  { href: "/journal", label: "JOURNAL", icon: "📖" },
-  { href: "/ea-manager", label: "EA MANAGER", icon: "🤖" },
-  { href: "/prop-firm", label: "PROP FIRM", icon: "🏢" },
-  { href: "/calendar", label: "NEWS CALENDAR", icon: "📅" },
-  { href: "/settings", label: "SETTINGS", icon: "⚙️" },
+  // Core
+  { href: "/",              label: "Overview",      section: "core" },
+  { href: "/trades/signals",label: "Signal Queue",   section: "core" },
+  { href: "/trades",        label: "Active Trades",  section: "core" },
+  { href: "/accounts",      label: "Accounts",       section: "core" },
+  // Risk
+  { href: "/risk",          label: "Risk Monitor",   section: "risk" },
+  { href: "/prop-firm",     label: "Prop Firm",       section: "risk" },
+  // Ops
+  { href: "/journal",       label: "Journal",        section: "ops" },
+  { href: "/ea-manager",    label: "EA Manager",      section: "ops" },
+  { href: "/calendar",      label: "News Calendar",  section: "ops" },
+  { href: "/settings",      label: "Settings",       section: "ops" },
 ];
+
+const SECTION_LABELS: Record<string, string> = {
+  core: "TRADING",
+  risk: "RISK & PROP",
+  ops:  "OPERATIONS",
+};
 
 export function Sidebar() {
   const pathname = usePathname();
@@ -37,169 +47,78 @@ export function Sidebar() {
   const activeCount = trades?.length ?? 0;
   const isHealthy = health?.status === "ok";
 
+  // Group nav items by section, preserving order
+  const sections = ["core", "risk", "ops"] as const;
+
   return (
-    <aside
-      style={{
-        width: "var(--sidebar-w)",
-        minHeight: "100vh",
-        background: "var(--bg-panel)",
-        borderRight: "1px solid var(--bg-border)",
-        display: "flex",
-        flexDirection: "column",
-        position: "fixed",
-        top: 0,
-        left: 0,
-        zIndex: 50,
-      }}
-    >
+    <aside className="sidebar-root">
+
       {/* ── Logo ── */}
-      <div
-        style={{
-          padding: "20px 16px 16px",
-          borderBottom: "1px solid var(--bg-border)",
-        }}
-      >
-        <div
-          style={{
-            fontFamily: "var(--font-display)",
-            fontWeight: 700,
-            fontSize: 18,
-            letterSpacing: "0.08em",
-            color: "var(--accent)",
-          }}
-        >
-          🐺 TUYUL FX
-        </div>
-        <div
-          style={{
-            fontFamily: "var(--font-mono)",
-            fontSize: 10,
-            color: "var(--text-muted)",
-            marginTop: 2,
-            letterSpacing: "0.12em",
-          }}
-        >
-          WOLF-15 PIPELINE
+      <div className="sidebar-logo">
+        <div className="sidebar-logo-mark" />
+        <div>
+          <div className="sidebar-logo-name">TUYUL FX</div>
+          <div className="sidebar-logo-sub">WOLF-15 TERMINAL</div>
         </div>
       </div>
 
-      {/* ── System status ── */}
-      <div
-        style={{
-          padding: "10px 16px",
-          borderBottom: "1px solid var(--bg-border)",
-          display: "flex",
-          alignItems: "center",
-          gap: 8,
-        }}
-      >
+      {/* ── System Status Bar ── */}
+      <div className="sidebar-status">
         <span
+          className="live-dot"
           style={{
-            display: "inline-block",
-            width: 6,
-            height: 6,
-            borderRadius: "50%",
             background: isHealthy ? "var(--green)" : "var(--red)",
-            boxShadow: isHealthy
-              ? "0 0 6px var(--green)"
-              : "0 0 6px var(--red)",
-            animation: isHealthy
-              ? "pulse-dot 1.5s ease-in-out infinite"
-              : "none",
+            boxShadow: isHealthy ? "0 0 6px var(--green)" : "0 0 6px var(--red)",
+            animation: isHealthy ? "pulse-dot 1.5s ease-in-out infinite" : "none",
           }}
         />
-        <span
-          style={{
-            fontSize: 11,
-            fontFamily: "var(--font-mono)",
-            color: isHealthy ? "var(--green)" : "var(--red)",
-            letterSpacing: "0.06em",
-          }}
-        >
+        <span className="sidebar-status-text" style={{ color: isHealthy ? "var(--green)" : "var(--red)" }}>
           {health?.status?.toUpperCase() ?? "CONNECTING"}
         </span>
         {activeCount > 0 && (
-          <span
-            className="badge badge-gold"
-            style={{ marginLeft: "auto", fontSize: 10 }}
-          >
+          <span className="badge badge-gold" style={{ marginLeft: "auto", fontSize: 10 }}>
             {activeCount} OPEN
           </span>
         )}
       </div>
 
-      {/* ── Nav links ── */}
-      <nav style={{ flex: 1, padding: "8px 0" }}>
-        {NAV_ITEMS.map((item) => {
-          const isActive =
-            item.href === "/"
-              ? pathname === "/"
-              : pathname.startsWith(item.href);
-
+      {/* ── Nav ── */}
+      <nav className="sidebar-nav">
+        {sections.map((section) => {
+          const items = NAV_ITEMS.filter((i) => i.section === section);
           return (
-            <Link
-              key={item.href}
-              href={item.href}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 10,
-                padding: "9px 16px",
-                fontSize: 12,
-                fontWeight: 600,
-                letterSpacing: "0.06em",
-                textDecoration: "none",
-                color: isActive ? "var(--accent)" : "var(--text-secondary)",
-                background: isActive ? "var(--accent-glow)" : "transparent",
-                borderLeft: isActive
-                  ? "2px solid var(--accent)"
-                  : "2px solid transparent",
-                transition: "all 0.12s ease",
-              }}
-            >
-              <span
-                style={{
-                  fontSize: 15,
-                  opacity: isActive ? 1 : 0.5,
-                }}
-              >
-                {item.icon}
-              </span>
-              {item.label}
-              {item.href === "/trades" && activeCount > 0 && (
-                <span
-                  style={{
-                    marginLeft: "auto",
-                    minWidth: 18,
-                    height: 18,
-                    borderRadius: "50%",
-                    background: "var(--accent)",
-                    color: "#000",
-                    fontSize: 10,
-                    fontWeight: 700,
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    fontFamily: "var(--font-mono)",
-                  }}
-                >
-                  {activeCount}
-                </span>
-              )}
-            </Link>
+            <div key={section} className="sidebar-section">
+              <div className="sidebar-section-label">{SECTION_LABELS[section]}</div>
+              {items.map((item) => {
+                const isActive =
+                  item.href === "/"
+                    ? pathname === "/"
+                    : pathname.startsWith(item.href);
+
+                return (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    className={clsx("sidebar-link", isActive && "sidebar-link--active")}
+                  >
+                    <span className="sidebar-link-dot" />
+                    {item.label}
+                    {item.href === "/trades" && activeCount > 0 && (
+                      <span className="sidebar-badge-count">{activeCount}</span>
+                    )}
+                  </Link>
+                );
+              })}
+            </div>
           );
         })}
       </nav>
 
-      {/* ── Clock ── */}
-      <div
-        style={{
-          padding: "12px 16px",
-          borderTop: "1px solid var(--bg-border)",
-        }}
-      >
+      {/* ── Footer ── */}
+      <div className="sidebar-footer">
         <TimezoneDisplay compact />
       </div>
+
     </aside>
   );
 }
