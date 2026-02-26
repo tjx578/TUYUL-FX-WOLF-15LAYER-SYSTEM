@@ -3,6 +3,8 @@
 // Mirrors: dashboard/backend/schemas.py + schemas/trade_models.py
 // ============================================================
 
+import { ReactNode } from "react";
+
 // ─── ENUMS ───────────────────────────────────────────────────
 
 export enum TradeStatus {
@@ -165,6 +167,7 @@ export interface Trade {
 // ─── ACCOUNT ─────────────────────────────────────────────────
 
 export interface Account {
+  name: ReactNode;
   label: string;
   account_id: string;
   broker: string;
@@ -430,4 +433,31 @@ export interface PaginatedResponse<T> {
   total: number;
   page: number;
   per_page: number;
+}
+
+export interface EAStatus {
+  healthy: boolean;
+  workers: number;
+}
+
+export interface EALog {
+  id: string;
+  timestamp: string;
+  message: string;
+}
+
+export interface PropFirmPhase {
+  phase_name: string;
+  progress_percent: number;
+}
+
+export interface CalendarEvent {
+  id: string;
+  time: string;
+  currency: string;
+  impact: "LOW" | "MEDIUM" | "HIGH";
+  event: string;
+  actual?: string | null;
+  forecast?: string | null;
+  previous?: string | null;
 }
