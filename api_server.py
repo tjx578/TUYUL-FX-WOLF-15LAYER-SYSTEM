@@ -17,26 +17,28 @@ Run (Railway):
     uvicorn api_server:app --host 0.0.0.0 --port ${PORT:-8000}
 """
 
-import os
 import logging
+import os
 from contextlib import asynccontextmanager
+from datetime import UTC
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-# ── Existing routers ───────────────────────────────────────────────────────────
-from api.l12_routes       import router as l12_router
-from api.ws_routes        import router as ws_router
-
-# ── Fixed routers ─────────────────────────────────────────────────────────────
-from dashboard.backend.trade_input_api import write_router   # BUG-1/2/3 FIXED
+from api.calendar_routes import router as calendar_router
 
 # ── New routers (7 new endpoints) ─────────────────────────────────────────────
 from api.constitutional_routes import router as constitutional_router
-from api.risk_events_routes    import router as risk_events_router
-from api.journal_routes        import router as journal_router
-from api.instrument_routes     import router as instrument_router
-from api.calendar_routes       import router as calendar_router
+from api.instrument_routes import router as instrument_router
+from api.journal_routes import router as journal_router
+
+# ── Existing routers ───────────────────────────────────────────────────────────
+from api.l12_routes import router as l12_router
+from api.risk_events_routes import router as risk_events_router
+from api.ws_routes import router as ws_router
+
+# ── Fixed routers ─────────────────────────────────────────────────────────────
+from dashboard.backend.trade_input_api import write_router  # BUG-1/2/3 FIXED
 
 logging.basicConfig(
     level=logging.INFO,
@@ -88,8 +90,9 @@ app.include_router(calendar_router)
 # ── Health ────────────────────────────────────────────────────────────────────
 @app.get("/health")
 async def health() -> dict:
+    from datetime import datetime
+
     import redis as redis_lib
-    from datetime import datetime, timezone
 
     redis_ok = False
     try:
@@ -108,7 +111,7 @@ async def health() -> dict:
         "mt5_connected": False,   # updated by EA bridge
         "active_pairs": 0,        # updated by L12 pipeline
         "active_trades": 0,       # updated by TradeLedger
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
     }
 
 
@@ -120,8 +123,28 @@ async def endpoint_summary() -> dict:
     for route in app.routes:
         if hasattr(route, "methods") and hasattr(route, "path"):
             routes.append({
-                "path": route.path,
+                "path": getattr(route, "path", "unknown"),
                 "methods": list(route.methods),  # type: ignore[arg-type]
-                "name": route.name,
+                "name": getattr(route, "name", "unknown"),
             })
     return {"total": len(routes), "routes": sorted(routes, key=lambda r: r["path"])}
+
+
+def _resolve_port(default: int = 8000) -> int:
+    raw_port = os.getenv("PORT", str(default)).strip()
+    try:
+        return int(raw_port)
+    except (TypeError, ValueError):
+        logger.warning("Invalid PORT value '%s'; falling back to %d", raw_port, default)
+        return default
+
+
+if __name__ == "__main__":
+    import uvicorn
+
+    uvicorn.run(
+        "api_server:app",
+        host="0.0.0.0",
+        port=_resolve_port(),
+        log_level="info",
+    )
