@@ -545,3 +545,33 @@ button .ripple {
 .gate-dot {
   animation: gate-appear 0.25s cubic-bezier(.4, 0, .2, 1) backwards;
 }
+
+/* ─────────────────────────────────────────────────
+   STEP 10 — LIVE PULSE ENGINE
+───────────────────────────────────────────────── */
+
+/* Panel aura pulse — soft emerald glow burst */
+@keyframes live-pulse {
+  0%   { box-shadow: 0 0 0px rgba(0,245,160,0); }
+  50%  { box-shadow: 0 0 40px rgba(0,245,160,0.5); }
+  100% { box-shadow: 0 0 0px rgba(0,245,160,0); }
+}
+
+.live-pulse {
+  animation: live-pulse 0.6s ease-out;
+}
+
+/* Value flash — upward direction (profit) */
+@keyframes value-flash-up {
+  0%   { color: #00F5A0; }
+  100% { color: var(--text-primary); }
+}
+
+/* Value flash — downward direction (loss) */
+@keyframes value-flash-down {
+  0%   { color: #FF4D4F; }
+  100% { color: var(--text-primary); }
+}
+
+.flash-up   { animation: value-flash-up   0.6s ease-out; }
+.flash-down { animation: value-flash-down 0.6s ease-out; }

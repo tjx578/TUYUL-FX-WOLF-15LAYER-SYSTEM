@@ -1,12 +1,13 @@
 // ============================================================
 // TUYUL FX Wolf-15 — AnimatedNumber (PnL Counter Engine)
-// Smooth number transition using framer-motion animate.
+// Smooth number transition + directional color flash.
+// Up → emerald flash | Down → red flash
 // Production-safe: degrades gracefully if value unchanged.
 // ============================================================
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { animate } from "framer-motion";
+import { animate, motion } from "framer-motion";
 
 interface AnimatedNumberProps {
   value: number;
@@ -16,6 +17,8 @@ interface AnimatedNumberProps {
   /** Duration in seconds */
   duration?: number;
   className?: string;
+  /** Enable directional color flash on change */
+  directionFlash?: boolean;
 }
 
 export default function AnimatedNumber({
@@ -24,8 +27,10 @@ export default function AnimatedNumber({
   prefix = "",
   duration = 0.6,
   className,
+  directionFlash = false,
 }: AnimatedNumberProps) {
   const [display, setDisplay] = useState(value);
+  const [direction, setDirection] = useState<"up" | "down" | null>(null);
   const prevRef = useRef(value);
 
   useEffect(() => {
@@ -35,6 +40,10 @@ export default function AnimatedNumber({
     // Skip animation for identical values
     if (from === value) return;
 
+    if (directionFlash) {
+      setDirection(value > from ? "up" : "down");
+    }
+
     const controls = animate(from, value, {
       duration,
       ease: "easeOut",
@@ -42,7 +51,26 @@ export default function AnimatedNumber({
     });
 
     return controls.stop;
-  }, [value, duration]);
+  }, [value, duration, directionFlash]);
+
+  if (directionFlash && direction !== null) {
+    return (
+      <motion.span
+        className={className}
+        animate={{
+          color:
+            direction === "up"
+              ? ["#00F5A0", "var(--text-primary)"]
+              : ["#FF4D4F", "var(--text-primary)"],
+        }}
+        transition={{ duration: 0.6, ease: "easeOut" }}
+        onAnimationComplete={() => setDirection(null)}
+      >
+        {prefix}
+        {display.toFixed(decimals)}
+      </motion.span>
+    );
+  }
 
   return (
     <span className={className}>

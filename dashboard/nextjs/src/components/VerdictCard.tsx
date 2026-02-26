@@ -10,6 +10,7 @@ import Panel from "@/components/ui/Panel";
 import StatusBadge from "@/components/ui/StatusBadge";
 import Button from "@/components/ui/Button";
 import { motion } from "framer-motion";
+import { useLivePulse } from "@/hooks/useLivePulse";
 
 interface VerdictCardProps {
   verdict: L12Verdict;
@@ -58,11 +59,14 @@ export function VerdictCard({
   const color = VERDICT_COLORS[v] ?? "var(--text-muted)";
   const isExecutable = v.startsWith("EXECUTE");
   const confidencePct = Math.round((verdict.confidence ?? 0) * 100);
+  const verdictPulse = useLivePulse(v);
+  const confidencePulse = useLivePulse(confidencePct);
+  const pulse = verdictPulse || confidencePulse;
 
   return (
     <Panel
       glow={verdictGlow(v, selected ?? false)}
-      className="animate-fade-in flex flex-col gap-3 cursor-pointer transition-all duration-150"
+      className={`animate-fade-in flex flex-col gap-3 cursor-pointer transition-all duration-150${pulse ? " live-pulse" : ""}`}
     >
       {/* ── Header ── */}
       <div className="flex items-center gap-2">
