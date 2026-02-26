@@ -1,33 +1,9 @@
-# ============================================
-# Railway Deployment Config — Wolf-15 Backend
-# ============================================
-# Railway auto-detects Dockerfile and injects $PORT.
-# The Dockerfile CMD already uses $PORT via Gunicorn.
-#
-# Required Railway environment variables:
-#   PORT              — set automatically by Railway
-#   REDIS_URL         — from Railway Redis plugin (or custom)
-#   REDIS_PASSWORD    — Redis auth
-#   CONTEXT_MODE      — "redis"
-#   EMBED_INGEST      — "true" (runs ingest inside the same process)
-#   WEB_CONCURRENCY   — "1" (safe default for WebSocket)
-#
-# Optional:
-#   FINNHUB_API_KEY, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
-#   JWT_SECRET, API_KEY
-#
-# Add a Redis plugin in Railway dashboard for managed Redis.
-
 [build]
 builder = "DOCKERFILE"
-dockerfilePath = "Dockerfile"
 
 [deploy]
-# Uses Dockerfile CMD (Gunicorn + Uvicorn workers)
-startCommand = ""
-# Railway health check hits the same endpoint as Dockerfile HEALTHCHECK
+startCommand = "uvicorn api_server:app --host 0.0.0.0 --port $PORT"
 healthcheckPath = "/health"
-healthcheckTimeout = 10
-# Restart on failure
+healthcheckTimeout = 30
 restartPolicyType = "ON_FAILURE"
 restartPolicyMaxRetries = 3
