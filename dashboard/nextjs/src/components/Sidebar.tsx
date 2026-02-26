@@ -17,14 +17,16 @@ interface NavItem {
 }
 
 const NAV_ITEMS: NavItem[] = [
-  { href: "/",                  label: "OVERVIEW",     icon: "⬡" },
-  { href: "/trades/signals",    label: "SIGNALS",      icon: "◈" },
-  { href: "/trades",            label: "TRADES",       icon: "◆" },
-  { href: "/risk",              label: "RISK",         icon: "⬡" },
-  { href: "/accounts",          label: "ACCOUNTS",     icon: "◉" },
-  { href: "/journal",           label: "JOURNAL",      icon: "◧" },
-  { href: "/probability",       label: "PROBABILITY",  icon: "◫" },
-  { href: "/prices",            label: "PRICES",       icon: "◭" },
+  { href: "/", label: "OVERVIEW", icon: "🏠" },
+  { href: "/trades/signals", label: "SIGNAL QUEUE", icon: "👥" },
+  { href: "/trades", label: "ACTIVE TRADES", icon: "📊" },
+  { href: "/accounts", label: "ACCOUNTS", icon: "💼" },
+  { href: "/risk", label: "RISK MONITOR", icon: "🛡️" },
+  { href: "/journal", label: "JOURNAL", icon: "📖" },
+  { href: "/ea-manager", label: "EA MANAGER", icon: "🤖" },
+  { href: "/prop-firm", label: "PROP FIRM", icon: "🏢" },
+  { href: "/calendar", label: "NEWS CALENDAR", icon: "📅" },
+  { href: "/settings", label: "SETTINGS", icon: "⚙️" },
 ];
 
 export function Sidebar() {
