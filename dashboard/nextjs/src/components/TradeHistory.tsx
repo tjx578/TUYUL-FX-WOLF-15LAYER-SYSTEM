@@ -11,19 +11,19 @@ import type { Trade } from '@/types';
 import clsx from 'clsx';
 import { useState } from 'react';
 import {
-  ArrowUpRight,
-  ArrowDownRight,
+  ArrowUp,
+  ArrowDown,
   X,
   Clock,
-  CheckCircle2,
   XCircle,
   AlertTriangle,
 } from 'lucide-react';
+import { CheckCircle } from 'lucide-react';
 
 const STATUS_CONFIG: Record<string, { color: string; icon: any; label: string }> = {
   INTENDED: { color: 'text-yellow-400', icon: Clock, label: 'Intended' },
   PENDING: { color: 'text-blue-400', icon: Clock, label: 'Pending' },
-  OPEN: { color: 'text-emerald-400', icon: CheckCircle2, label: 'Open' },
+  OPEN: { color: 'text-emerald-400', icon: CheckCircle, label: 'Open' },
   CLOSED: { color: 'text-gray-400', icon: XCircle, label: 'Closed' },
   CANCELLED: { color: 'text-red-400', icon: XCircle, label: 'Cancelled' },
   SKIPPED: { color: 'text-gray-500', icon: AlertTriangle, label: 'Skipped' },
@@ -147,7 +147,7 @@ export default function TradeHistory() {
                     <td className="px-3 py-2 font-bold text-gray-200">{trade.pair}</td>
                     <td className="px-3 py-2">
                       <span className={clsx('flex items-center gap-1', isBuy ? 'text-emerald-400' : 'text-red-400')}>
-                        {isBuy ? <ArrowUpRight className="w-3 h-3" /> : <ArrowDownRight className="w-3 h-3" />}
+                        {isBuy ? <ArrowUp className="w-3 h-3" /> : <ArrowDown className="w-3 h-3" />}
                         {trade.direction}
                       </span>
                     </td>
