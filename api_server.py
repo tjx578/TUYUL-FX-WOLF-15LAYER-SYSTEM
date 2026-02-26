@@ -21,6 +21,7 @@ import logging
 import os
 import sys
 from contextlib import asynccontextmanager
+from copy import deepcopy
 from datetime import UTC
 
 from fastapi import FastAPI
@@ -74,6 +75,66 @@ from api.ws_routes import router as ws_router  # noqa: E402
 from dashboard.backend.trade_input_api import write_router  # BUG-1/2/3 FIXED  # noqa: E402
 
 logger = logging.getLogger(__name__)
+
+
+class _MaxLevelFilter(logging.Filter):
+    def __init__(self, max_level: int) -> None:
+        super().__init__()
+        self.max_level = max_level
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        return record.levelno <= self.max_level
+
+
+def _build_uvicorn_log_config() -> dict:
+    from uvicorn.config import LOGGING_CONFIG
+
+    config = deepcopy(LOGGING_CONFIG)
+    config["disable_existing_loggers"] = False
+
+    filters = config.setdefault("filters", {})
+    filters["max_warning"] = {
+        "()": _MaxLevelFilter,
+        "max_level": logging.WARNING,
+    }
+
+    handlers = config.setdefault("handlers", {})
+    handlers["default_stdout"] = {
+        "class": "logging.StreamHandler",
+        "formatter": "default",
+        "stream": "ext://sys.stdout",
+        "filters": ["max_warning"],
+    }
+    handlers["default_stderr"] = {
+        "class": "logging.StreamHandler",
+        "formatter": "default",
+        "stream": "ext://sys.stderr",
+        "level": "ERROR",
+    }
+    handlers["access"] = {
+        "class": "logging.StreamHandler",
+        "formatter": "access",
+        "stream": "ext://sys.stdout",
+    }
+
+    loggers = config.setdefault("loggers", {})
+    loggers["uvicorn"] = {
+        "handlers": ["default_stdout", "default_stderr"],
+        "level": "INFO",
+        "propagate": False,
+    }
+    loggers["uvicorn.error"] = {
+        "handlers": ["default_stdout", "default_stderr"],
+        "level": "INFO",
+        "propagate": False,
+    }
+    loggers["uvicorn.access"] = {
+        "handlers": ["access"],
+        "level": "INFO",
+        "propagate": False,
+    }
+
+    return config
 
 
 @asynccontextmanager
@@ -176,4 +237,5 @@ if __name__ == "__main__":
         host="0.0.0.0",
         port=_resolve_port(),
         log_level="info",
+        log_config=_build_uvicorn_log_config(),
     )
