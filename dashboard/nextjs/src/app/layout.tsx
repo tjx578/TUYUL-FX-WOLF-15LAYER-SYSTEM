@@ -9,6 +9,7 @@ type AppMetadata = {
 
 import { Providers } from "@/components/Providers";
 import { Sidebar } from "@/components/Sidebar";
+import RouteTransition from "@/components/layout/RouteTransition";
 import "./globals.css";
 
 export const metadata: AppMetadata = {
@@ -59,7 +60,9 @@ export default function RootLayout({
                 padding: "32px 40px",
               }}
             >
-              {children}
+              <RouteTransition>
+                {children}
+              </RouteTransition>
             </main>
           </div>
         </Providers>

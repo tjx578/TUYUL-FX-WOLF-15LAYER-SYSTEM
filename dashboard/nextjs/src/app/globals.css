@@ -253,6 +253,12 @@ body {
   50% { opacity: 0.3; }
 }
 
+@keyframes pulse-glow {
+  0%   { box-shadow: 0 0 10px rgba(0,229,255,0.2), inset 0 0 30px rgba(0,229,255,0.04); }
+  50%  { box-shadow: 0 0 25px rgba(0,229,255,0.4), inset 0 0 30px rgba(0,229,255,0.08); }
+  100% { box-shadow: 0 0 10px rgba(0,229,255,0.2), inset 0 0 30px rgba(0,229,255,0.04); }
+}
+
 @keyframes fade-in {
   from { opacity: 0; transform: translateY(6px); }
   to   { opacity: 1; transform: translateY(0); }
@@ -390,8 +396,8 @@ body {
   color: var(--accent-cyan);
   background: rgba(0,229,255,0.06);
   border-left-color: var(--accent-cyan);
-  /* subtle active glow */
-  box-shadow: inset 0 0 30px rgba(0,229,255,0.04);
+  /* active pulse glow — data layer feel */
+  animation: pulse-glow 2s ease-in-out infinite;
 }
 .sidebar-link-dot {
   width: 4px;
