@@ -19,31 +19,60 @@ Run (Railway):
 
 import logging
 import os
+import sys
 from contextlib import asynccontextmanager
 from datetime import UTC
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from loguru import logger as loguru_logger
 
-from api.calendar_routes import router as calendar_router
+
+def _configure_process_logging() -> None:
+    """Configure stdlib + loguru logging for correct stdout/stderr severity routing."""
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s  %(levelname)-8s  %(name)s  %(message)s",
+        stream=sys.stdout,
+        force=True,
+    )
+
+    loguru_logger.remove()
+    log_format = (
+        "<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level: <8}</level> | "
+        "<cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - "
+        "<level>{message}</level>"
+    )
+    loguru_logger.add(
+        sys.stdout,
+        format=log_format,
+        level="INFO",
+        filter=lambda record: record["level"].no < 40,
+    )
+    loguru_logger.add(
+        sys.stderr,
+        format=log_format,
+        level="ERROR",
+    )
+
+
+_configure_process_logging()
+
+from api.calendar_routes import router as calendar_router  # noqa: E402
 
 # ── New routers (7 new endpoints) ─────────────────────────────────────────────
-from api.constitutional_routes import router as constitutional_router
-from api.instrument_routes import router as instrument_router
-from api.journal_routes import router as journal_router
+from api.constitutional_routes import router as constitutional_router  # noqa: E402
+from api.instrument_routes import router as instrument_router  # noqa: E402
+from api.journal_routes import router as journal_router  # noqa: E402
 
 # ── Existing routers ───────────────────────────────────────────────────────────
-from api.l12_routes import router as l12_router
-from api.risk_events_routes import router as risk_events_router
-from api.ws_routes import router as ws_router
+from api.l12_routes import router as l12_router  # noqa: E402
+from api.risk_events_routes import router as risk_events_router  # noqa: E402
+from api.ws_routes import router as ws_router  # noqa: E402
 
 # ── Fixed routers ─────────────────────────────────────────────────────────────
-from dashboard.backend.trade_input_api import write_router  # BUG-1/2/3 FIXED
+from dashboard.backend.trade_input_api import write_router  # BUG-1/2/3 FIXED  # noqa: E402
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s  %(levelname)-8s  %(name)s  %(message)s",
-)
 logger = logging.getLogger(__name__)
 
 

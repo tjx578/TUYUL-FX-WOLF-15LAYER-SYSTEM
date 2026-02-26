@@ -4,6 +4,7 @@ Redis Client Wrapper with Connection Pooling, Pub/Sub, and Streams support.
 
 import os
 from typing import Any, Optional, cast  # noqa: UP035
+from urllib.parse import urlsplit, urlunsplit
 
 import redis
 import redis.client
@@ -15,6 +16,21 @@ from tenacity import (
     stop_after_attempt,
     wait_exponential,
 )
+
+
+def _sanitize_redis_url(url: str) -> str:
+    """Mask password in Redis URL for safe logging."""
+    parts = urlsplit(url)
+    if not parts.netloc or "@" not in parts.netloc:
+        return url
+
+    userinfo, hostinfo = parts.netloc.rsplit("@", 1)
+    if ":" not in userinfo:
+        return url
+
+    username, _password = userinfo.split(":", 1)
+    safe_netloc = f"{username}:***@{hostinfo}"
+    return urlunsplit((parts.scheme, safe_netloc, parts.path, parts.query, parts.fragment))
 
 
 class RedisClient:
@@ -59,7 +75,10 @@ class RedisClient:
             retry_on_timeout=True,
         )
         self.client = redis.Redis(connection_pool=self._pool)
-        logger.info(f"Redis client initialized with connection pool: {url}")
+        logger.info(
+            "Redis client initialized with connection pool: {}",
+            _sanitize_redis_url(url),
+        )
 
     @retry(
         retry=retry_if_exception_type(
