@@ -8,8 +8,7 @@ NEW ENDPOINTS:
 
 import json
 import logging
-from datetime import UTC, datetime, timedelta, timezone
-from typing import Optional
+from datetime import UTC, datetime, timedelta
 
 import redis as redis_lib
 from fastapi import APIRouter, Depends, Query
@@ -110,7 +109,7 @@ async def constitutional_health() -> dict:
             for key in r.scan_iter("RISK:CB:*"):
                 cb = r.get(key)
                 if cb and cb != "CLOSED":
-                    circuit_breaker_state = cb
+                    circuit_breaker_state = str(cb)
                     break
         except Exception:
             pass
@@ -176,7 +175,7 @@ async def equity_history(
                 if not raw:
                     continue
                 try:
-                    point = json.loads(raw)
+                    point = json.loads(raw) # pyright: ignore[reportArgumentType]
                     ts_str = point.get("timestamp", "")
                     if ts_str:
                         ts = datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
