@@ -1,15 +1,14 @@
 'use client';
 
 import { useExecution } from '@/lib/api';
-import { formatLocalTime } from '@/lib/timezone';
-import { Activity } from 'lucide-react';
+import { formatTime } from '@/lib/timezone';
 
 interface ExecutionPanelProps {
   pair: string;
 }
 
 export default function ExecutionPanel({ pair }: ExecutionPanelProps) {
-  const { execution, isLoading, isError } = useExecution();
+  const { data: execution, isLoading, error: isError } = useExecution();
 
   if (isLoading) {
     return (
@@ -31,15 +30,15 @@ export default function ExecutionPanel({ pair }: ExecutionPanelProps) {
   }
 
   const stateColor =
-    execution.state === 'PENDING_ACTIVE' ? 'text-yellow-500' :
-    execution.state === 'FILLED' ? 'text-wolf-green' :
-    execution.state === 'CANCELLED' ? 'text-wolf-red' :
+    execution.state === 'SIGNAL_READY' ? 'text-yellow-500' :
+    execution.state === 'EXECUTING' ? 'text-wolf-green' :
+    execution.state === 'COOLDOWN' ? 'text-wolf-red' :
     'text-wolf-gray-light';
 
   const stateIcon =
-    execution.state === 'PENDING_ACTIVE' ? '⏳' :
-    execution.state === 'FILLED' ? '✅' :
-    execution.state === 'CANCELLED' ? '❌' :
+    execution.state === 'SIGNAL_READY' ? '⏳' :
+    execution.state === 'EXECUTING' ? '✅' :
+    execution.state === 'COOLDOWN' ? '❌' :
     '💤';
 
   return (
@@ -60,37 +59,31 @@ export default function ExecutionPanel({ pair }: ExecutionPanelProps) {
         <p className={`text-2xl font-bold ${stateColor}`}>
           {execution.state}
         </p>
-        {execution.reason && (
+        {execution.cooldown_until && (
           <p className="text-sm text-wolf-gray-light mt-2">
-            {execution.reason}
+            Cooldown until {formatTime(execution.cooldown_until)}
           </p>
         )}
       </div>
 
       {/* Order Details */}
-      {execution.order && (
+      {execution.current_pair && (
         <div className="space-y-2 text-sm">
           <div className="flex justify-between">
-            <span className="text-wolf-gray-light">Symbol:</span>
-            <span className="font-semibold">{execution.order.symbol || 'N/A'}</span>
+            <span className="text-wolf-gray-light">Current Pair:</span>
+            <span className="font-semibold">{execution.current_pair}</span>
           </div>
           <div className="flex justify-between">
-            <span className="text-wolf-gray-light">Direction:</span>
-            <span className="font-semibold">{execution.order.direction || 'N/A'}</span>
-          </div>
-          <div className="flex justify-between">
-            <span className="text-wolf-gray-light">Entry:</span>
-            <span className="font-mono-numbers">
-              {execution.order.entry || 'N/A'}
-            </span>
+            <span className="text-wolf-gray-light">Signals:</span>
+            <span className="font-semibold">{execution.signal_count}</span>
           </div>
         </div>
       )}
 
       {/* Timestamp */}
-      {execution.timestamp && (
+      {execution.last_execution && (
         <div className="mt-4 pt-4 border-t border-wolf-gray-light text-xs text-wolf-gray-light">
-          <p>Last Update: {formatLocalTime(execution.timestamp)}</p>
+          <p>Last Update: {formatTime(execution.last_execution)}</p>
         </div>
       )}
     </div>

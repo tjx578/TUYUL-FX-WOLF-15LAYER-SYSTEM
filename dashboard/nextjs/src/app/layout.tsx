@@ -1,13 +1,19 @@
-import type { Metadata } from 'next';
-import Navigation from '@/components/Navigation';
-import './globals.css';
+// ============================================================
+// TUYUL FX Wolf-15 — Root Layout
+// ============================================================
 
-export const metadata: Metadata = {
-  title: 'TUYUL FX WOLF 15-LAYER SYSTEM',
-  description: 'Professional Forex Trading System Dashboard',
-  icons: {
-    icon: '/favicon.ico',
-  },
+type AppMetadata = {
+  title: string;
+  description: string;
+};
+
+import { Providers } from "@/components/Providers";
+import { Sidebar } from "@/components/Sidebar";
+import "./globals.css";
+
+export const metadata: AppMetadata = {
+  title: "TUYUL FX — Wolf-15 Dashboard",
+  description: "Institutional-grade forex trading dashboard",
 };
 
 export default function RootLayout({
@@ -17,11 +23,28 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body className="min-h-screen bg-wolf-darker antialiased">
-        <Navigation />
-        <main className="min-h-[calc(100vh-3.5rem)]">
-          {children}
-        </main>
+      <body>
+        <Providers>
+          <div
+            style={{
+              display: "flex",
+              minHeight: "100vh",
+              background: "var(--bg-base)",
+            }}
+          >
+            <Sidebar />
+            <main
+              style={{
+                flex: 1,
+                marginLeft: "var(--sidebar-w)",
+                minHeight: "100vh",
+                overflow: "auto",
+              }}
+            >
+              {children}
+            </main>
+          </div>
+        </Providers>
       </body>
     </html>
   );

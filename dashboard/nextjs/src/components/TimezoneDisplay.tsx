@@ -1,41 +1,94 @@
-'use client';
+"use client";
 
-import { useEffect, useState } from 'react';
-import { Clock } from 'lucide-react';
-import { getCurrentLocalTime, getCurrentUTCTime } from '@/lib/timezone';
+// ============================================================
+// TUYUL FX Wolf-15 — TimezoneDisplay
+// ============================================================
 
-export default function TimezoneDisplay() {
-  const [utcTime, setUtcTime] = useState<string>('');
-  const [localTime, setLocalTime] = useState<string>('');
+import { useEffect, useState } from "react";
+import { formatTime, sessionLabel, nowInTz } from "@/lib/timezone";
+
+interface TimezoneDisplayProps {
+  compact?: boolean;
+}
+
+export function TimezoneDisplay({ compact = false }: TimezoneDisplayProps) {
+  const [time, setTime] = useState("");
+  const [session, setSession] = useState("");
 
   useEffect(() => {
-    const updateTimes = () => {
-      setUtcTime(getCurrentUTCTime());
-      setLocalTime(getCurrentLocalTime());
+    const tick = () => {
+      setTime(formatTime(nowInTz()));
+      setSession(sessionLabel());
     };
-
-    updateTimes();
-    const interval = setInterval(updateTimes, 1000);
-
-    return () => clearInterval(interval);
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
   }, []);
 
+  if (compact) {
+    return (
+      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+        <span
+          className="num"
+          style={{
+            fontSize: 11,
+            color: "var(--text-secondary)",
+            letterSpacing: "0.04em",
+          }}
+        >
+          {time || "—"}
+        </span>
+        <span
+          className="badge badge-muted"
+          style={{ fontSize: 8 }}
+        >
+          {session}
+        </span>
+      </div>
+    );
+  }
+
   return (
-    <div className="bg-wolf-gray rounded-lg p-3 border border-wolf-gray-light">
-      <div className="flex items-center gap-2 mb-2">
-        <Clock className="w-4 h-4 text-wolf-gold" />
-        <span className="text-xs font-semibold text-wolf-gold">TIME</span>
-      </div>
-      <div className="space-y-1 text-xs font-mono-numbers">
-        <div>
-          <span className="text-wolf-gray-light">UTC:</span>{' '}
-          <span className="text-white">{utcTime || 'Loading...'}</span>
-        </div>
-        <div>
-          <span className="text-wolf-gray-light">GMT+8:</span>{' '}
-          <span className="text-white">{localTime || 'Loading...'}</span>
-        </div>
-      </div>
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 10,
+        padding: "6px 12px",
+        background: "var(--bg-card)",
+        border: "1px solid var(--bg-border)",
+        borderRadius: 6,
+      }}
+    >
+      <span
+        className="num"
+        style={{
+          fontSize: 14,
+          fontWeight: 700,
+          color: "var(--text-primary)",
+          letterSpacing: "0.04em",
+        }}
+      >
+        {time || "—"}
+      </span>
+      <span
+        className="badge badge-blue"
+        style={{ fontSize: 10 }}
+      >
+        {session}
+      </span>
+      <span
+        style={{
+          fontSize: 10,
+          color: "var(--text-muted)",
+          fontFamily: "var(--font-mono)",
+        }}
+      >
+        GMT+8
+      </span>
     </div>
   );
 }
+
+// Keep default export for backward compat
+export default TimezoneDisplay;

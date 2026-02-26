@@ -1,334 +1,204 @@
-/**
- * WebSocket client hooks for real-time data streaming.
- *
- * Replaces SWR HTTP polling with native WebSocket connections
- * for tick-by-tick price updates, trade events, candle bars, and risk state.
- *
- * v3 Upgrades:
- *   - Exponential backoff with jitter (replaces flat 2s reconnect)
- *   - Heartbeat pong: responds to server ping frames to keep connection alive
- *   - Reconnect with ?since=<ts> for server-side message replay
- */
+// ============================================================
+// TUYUL FX Wolf-15 — WebSocket Hooks
+// Channels: /ws/prices, /ws/trades, /ws/candles, /ws/risk, /ws/equity
+// ============================================================
 
-import { useEffect, useRef, useState, useCallback } from 'react';
+"use client";
 
-const WS_BASE = process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:8000';
-const WS_TOKEN = process.env.NEXT_PUBLIC_WS_TOKEN || '';
+import { useEffect, useRef, useState, useCallback } from "react";
+import type {
+  PriceData,
+  Trade,
+  CandleData,
+  RiskSnapshot,
+  DrawdownData,
+  AlertEvent,
+} from "@/types";
 
-// Reconnection config — exponential backoff
-const RECONNECT_BASE_MS = 500;       // initial delay
-const RECONNECT_MAX_MS = 30_000;     // cap
-const RECONNECT_JITTER = 0.3;        // ±30% random jitter
-const MAX_RECONNECT_ATTEMPTS = 15;
+const WS_URL =
+  (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000").replace(
+    /^http/,
+    "ws"
+  );
 
-type WSStatus = 'connecting' | 'connected' | 'disconnected' | 'error';
+const RECONNECT_DELAY_MS = 3000;
+const MAX_RECONNECT_ATTEMPTS = 10;
 
-interface UseWebSocketOptions {
-  /** Auto-connect on mount (default: true) */
-  autoConnect?: boolean;
-  /** Query params appended to URL */
-  params?: Record<string, string>;
+// ─── BASE WS HOOK ─────────────────────────────────────────────
+
+interface UseWolfWebSocketOptions {
+  enabled?: boolean;
+  onOpen?: () => void;
+  onClose?: () => void;
+  onError?: (e: Event) => void;
 }
 
-/**
- * Compute exponential backoff delay with jitter.
- *
- * delay = min(base * 2^attempt, max) * (1 ± jitter)
- */
-function backoffDelay(attempt: number): number {
-  const base = Math.min(RECONNECT_BASE_MS * 2 ** attempt, RECONNECT_MAX_MS);
-  const jitter = 1 + (Math.random() * 2 - 1) * RECONNECT_JITTER;
-  return Math.round(base * jitter);
-}
-
-/**
- * Generic WebSocket hook with exponential backoff reconnect and heartbeat.
- */
-function useWebSocket<T>(
+export function useWolfWebSocket<T>(
   path: string,
-  onMessage: (data: T) => void,
-  options: UseWebSocketOptions = {}
+  options: UseWolfWebSocketOptions = {}
 ) {
-  const { autoConnect = true, params = {} } = options;
-  const [status, setStatus] = useState<WSStatus>('disconnected');
+  const { enabled = true, onOpen, onClose, onError } = options;
+  const [data, setData] = useState<T | null>(null);
+  const [connected, setConnected] = useState(false);
+  const [reconnectCount, setReconnectCount] = useState(0);
+
   const wsRef = useRef<WebSocket | null>(null);
-  const attemptsRef = useRef(0);
-  const onMessageRef = useRef(onMessage);
-  onMessageRef.current = onMessage;
-  // Track last received message timestamp for replay on reconnect
-  const lastTsRef = useRef<number>(0);
+  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const mountedRef = useRef(true);
 
   const connect = useCallback(() => {
-    if (wsRef.current?.readyState === WebSocket.OPEN) return;
+    if (!mountedRef.current || !enabled) return;
+    if (reconnectCount >= MAX_RECONNECT_ATTEMPTS) return;
 
-    const extraParams: Record<string, string> = { token: WS_TOKEN, ...params };
-    // Attach ?since=<ts> so server can replay missed messages
-    if (lastTsRef.current > 0) {
-      extraParams.since = String(lastTsRef.current);
+    const token =
+      typeof window !== "undefined"
+        ? localStorage.getItem("wolf15_token")
+        : null;
+    const url = token
+      ? `${WS_URL}${path}?token=${token}`
+      : `${WS_URL}${path}`;
+
+    try {
+      const ws = new WebSocket(url);
+
+      ws.onopen = () => {
+        if (!mountedRef.current) return;
+        setConnected(true);
+        setReconnectCount(0);
+        onOpen?.();
+      };
+
+      ws.onclose = () => {
+        if (!mountedRef.current) return;
+        setConnected(false);
+        onClose?.();
+
+        reconnectTimerRef.current = setTimeout(() => {
+          if (mountedRef.current) {
+            setReconnectCount((c) => c + 1);
+            connect();
+          }
+        }, RECONNECT_DELAY_MS);
+      };
+
+      ws.onerror = (e) => {
+        onError?.(e);
+      };
+
+      ws.onmessage = (event) => {
+        if (!mountedRef.current) return;
+        try {
+          setData(JSON.parse(event.data as string) as T);
+        } catch {
+          // ignore malformed frames
+        }
+      };
+
+      wsRef.current = ws;
+    } catch {
+      // ignore connection errors; reconnect will handle it
     }
-    const queryParams = new URLSearchParams(extraParams);
-    const url = `${WS_BASE}${path}?${queryParams.toString()}`;
-
-    setStatus('connecting');
-    const ws = new WebSocket(url);
-
-    ws.onopen = () => {
-      setStatus('connected');
-      attemptsRef.current = 0;
-    };
-
-    ws.onmessage = (event) => {
-      try {
-        const parsed = JSON.parse(event.data);
-
-        // Respond to server heartbeat pings
-        if (parsed?.type === 'ping') {
-          ws.send(JSON.stringify({ type: 'pong', ts: parsed.ts }));
-          return;
-        }
-
-        // Track latest timestamp for replay
-        if (parsed?.ts) {
-          lastTsRef.current = parsed.ts;
-        }
-
-        onMessageRef.current(parsed);
-      } catch {
-        // ignore non-JSON messages
-      }
-    };
-
-    ws.onerror = () => {
-      setStatus('error');
-    };
-
-    ws.onclose = () => {
-      setStatus('disconnected');
-      wsRef.current = null;
-
-      // Auto-reconnect with exponential backoff + jitter
-      if (attemptsRef.current < MAX_RECONNECT_ATTEMPTS) {
-        const delay = backoffDelay(attemptsRef.current);
-        attemptsRef.current += 1;
-        setTimeout(connect, delay);
-      }
-    };
-
-    wsRef.current = ws;
-  }, [path, params]);
-
-  const disconnect = useCallback(() => {
-    attemptsRef.current = MAX_RECONNECT_ATTEMPTS; // prevent reconnect
-    wsRef.current?.close();
-  }, []);
+  }, [path, enabled, reconnectCount, onOpen, onClose, onError]);
 
   useEffect(() => {
-    if (autoConnect) connect();
+    mountedRef.current = true;
+    if (enabled) connect();
     return () => {
-      attemptsRef.current = MAX_RECONNECT_ATTEMPTS;
+      mountedRef.current = false;
+      if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
       wsRef.current?.close();
     };
-  }, [autoConnect, connect]);
+  }, [connect, enabled]);
 
-  return { status, connect, disconnect };
-}
-
-
-// ---------------------------------------------------------------------------
-// Price ticks
-// ---------------------------------------------------------------------------
-
-export interface PriceTick {
-  bid: number;
-  ask: number;
-  ts: number;
-  source?: string;
-}
-
-export type PriceMap = Record<string, PriceTick>;
-
-interface PriceWSMessage {
-  type: 'snapshot' | 'tick';
-  data: PriceMap;
-  ts?: number;
-}
-
-/**
- * Hook: Real-time tick-by-tick price stream via WebSocket.
- */
-export function usePriceStream() {
-  const [prices, setPrices] = useState<PriceMap>({});
-  const [lastTick, setLastTick] = useState<number>(0);
-
-  const handleMessage = useCallback((msg: PriceWSMessage) => {
-    if (msg.type === 'snapshot' || msg.type === 'tick') {
-      setPrices((prev: PriceMap) => ({ ...prev, ...msg.data }));
-      setLastTick(msg.ts || Date.now() / 1000);
+  const send = useCallback((payload: unknown) => {
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify(payload));
     }
   }, []);
 
-  const { status } = useWebSocket<PriceWSMessage>('/ws/prices', handleMessage);
-
-  return { prices, lastTick, status };
+  return { data, connected, send, reconnectCount };
 }
 
+// ─── TYPED CHANNEL HOOKS ─────────────────────────────────────
 
-// ---------------------------------------------------------------------------
-// Trade events
-// ---------------------------------------------------------------------------
-
-export interface TradeEvent {
-  trade_id: string;
-  signal_id: string;
-  account_id: string;
-  pair: string;
-  direction: string;
-  status: string;
-  risk_percent?: number;
-  risk_amount?: number;
-  pnl?: number;
-  created_at?: string;
-  updated_at?: string;
-  legs?: Array<{
-    leg_number: number;
-    entry_price: number;
-    stop_loss: number;
-    take_profit: number;
-    lot_size: number;
-    status: string;
-  }>;
-  close_reason?: string;
+/** Real-time bid/ask per pair */
+export function usePricesWS(enabled = true) {
+  return useWolfWebSocket<Record<string, PriceData>>("/ws/prices", {
+    enabled,
+  });
 }
 
-interface TradeWSMessage {
-  type: 'snapshot' | 'update';
-  data?: TradeEvent[];
-  changed?: TradeEvent[];
-  removed?: string[];
-  ts?: number;
+/** Real-time trade state changes */
+export function useTradesWS(enabled = true) {
+  return useWolfWebSocket<Trade>("/ws/trades", { enabled });
 }
 
-/**
- * Hook: Real-time trade event stream via WebSocket.
- */
-export function useTradeStream() {
-  const [trades, setTrades] = useState<TradeEvent[]>([]);
+/** OHLC candles M1/M5/M15/H1 */
+export function useCandlesWS(pair?: string, timeframe = "M15", enabled = true) {
+  const path = pair
+    ? `/ws/candles?pair=${pair}&tf=${timeframe}`
+    : `/ws/candles`;
+  return useWolfWebSocket<CandleData>(path, { enabled });
+}
 
-  const handleMessage = useCallback((msg: TradeWSMessage) => {
-    if (msg.type === 'snapshot' && msg.data) {
-      setTrades(msg.data);
-    } else if (msg.type === 'update') {
-      setTrades((prev: TradeEvent[]) => {
-        let updated = [...prev];
+/** Real-time drawdown updates */
+export function useRiskWS(accountId?: string, enabled = true) {
+  const path = accountId ? `/ws/risk?account_id=${accountId}` : `/ws/risk`;
+  return useWolfWebSocket<RiskSnapshot>(path, { enabled });
+}
 
-        // Apply changed trades
-        if (msg.changed) {
-          for (const trade of msg.changed) {
-            const idx = updated.findIndex((t) => t.trade_id === trade.trade_id);
-            if (idx >= 0) {
-              updated[idx] = trade;
-            } else {
-              updated.push(trade);
-            }
-          }
-        }
+/** Real-time equity curve points */
+export function useEquityWS(accountId?: string, enabled = true) {
+  const path = accountId
+    ? `/ws/equity?account_id=${accountId}`
+    : `/ws/equity`;
+  return useWolfWebSocket<DrawdownData>(path, { enabled });
+}
 
-        // Remove closed/cancelled
-        if (msg.removed) {
-          const removedSet = new Set(msg.removed);
-          updated = updated.filter((t) => !removedSet.has(t.trade_id));
-        }
+/** System alerts feed */
+export function useAlertsWS(enabled = true) {
+  const { data, connected } = useWolfWebSocket<AlertEvent>("/ws/alerts", {
+    enabled,
+  });
+  const [alerts, setAlerts] = useState<AlertEvent[]>([]);
 
-        return updated;
-      });
+  useEffect(() => {
+    if (data) {
+      setAlerts((prev) => [data, ...prev].slice(0, 50));
     }
-  }, []);
+  }, [data]);
 
-  const { status } = useWebSocket<TradeWSMessage>('/ws/trades', handleMessage);
-
-  return { trades, status };
+  return { alerts, connected };
 }
 
+// ─── MULTI-PRICE ACCUMULATOR ─────────────────────────────────
 
-// ---------------------------------------------------------------------------
-// Candle stream
-// ---------------------------------------------------------------------------
+/** Accumulates a map of symbol → latest price from WS stream */
+export function usePriceMap(enabled = true) {
+  const { data, connected } = usePricesWS(enabled);
+  const [priceMap, setPriceMap] = useState<Record<string, PriceData>>({});
 
-export interface CandleBar {
-  open: number;
-  high: number;
-  low: number;
-  close: number;
-  volume: number;
-  ts_open: number;
-  ts_close: number;
-}
-
-type CandleBars = Record<string, Record<string, CandleBar>>;
-
-interface CandleWSMessage {
-  type: 'snapshot' | 'forming';
-  data: CandleBars;
-  ts?: number;
-}
-
-/**
- * Hook: Real-time candle bar stream via WebSocket.
- */
-export function useCandleStream(symbol?: string) {
-  const [bars, setBars] = useState<CandleBars>({});
-
-  const handleMessage = useCallback((msg: CandleWSMessage) => {
-    if (msg.data) {
-      setBars((prev: CandleBars) => {
-        const next = { ...prev };
-        for (const [sym, timeframes] of Object.entries(msg.data)) {
-          next[sym] = { ...(next[sym] || {}), ...timeframes };
-        }
-        return next;
-      });
+  useEffect(() => {
+    if (data) {
+      setPriceMap((prev) => ({ ...prev, ...data }));
     }
-  }, []);
+  }, [data]);
 
-  const params: Record<string, string> = symbol ? { symbol } : {};
-  const { status } = useWebSocket<CandleWSMessage>('/ws/candles', handleMessage, { params });
-
-  return { bars, status };
+  return { priceMap, connected };
 }
 
+// ─── EQUITY HISTORY ACCUMULATOR ──────────────────────────────
 
-// ---------------------------------------------------------------------------
-// Risk state stream
-// ---------------------------------------------------------------------------
+/** Accumulates equity points for charting */
+export function useEquityHistory(accountId?: string, maxPoints = 200) {
+  const { data, connected } = useEquityWS(accountId);
+  const [history, setHistory] = useState<DrawdownData[]>([]);
 
-export interface RiskState {
-  ts: number;
-  risk_snapshot: Record<string, any> | null;
-  circuit_breaker: {
-    state: string;
-    is_open: boolean;
-  } | null;
-  drawdown: Record<string, any> | null;
-}
-
-interface RiskWSMessage {
-  type: 'risk_state';
-  data: RiskState;
-}
-
-/**
- * Hook: Real-time risk state stream via WebSocket.
- */
-export function useRiskStream() {
-  const [riskState, setRiskState] = useState<RiskState | null>(null);
-
-  const handleMessage = useCallback((msg: RiskWSMessage) => {
-    if (msg.type === 'risk_state' && msg.data) {
-      setRiskState(msg.data);
+  useEffect(() => {
+    if (data) {
+      setHistory((prev) => [...prev, data].slice(-maxPoints));
     }
-  }, []);
+  }, [data, maxPoints]);
 
-  const { status } = useWebSocket<RiskWSMessage>('/ws/risk', handleMessage);
-
-  return { riskState, status };
+  return { history, connected };
 }
