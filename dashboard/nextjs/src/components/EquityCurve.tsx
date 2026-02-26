@@ -69,13 +69,18 @@ export function EquityCurve({
   const equityPath = buildPath(equityPoints, W, H);
   const equityArea = buildArea(equityPoints, W, H);
 
+  // gradient ids are unique per account to avoid conflicts
+  const gradId = `eq-area-${accountId ?? "default"}`;
+  const glowId = `eq-glow-${accountId ?? "default"}`;
+  const lineColor = isUp ? "#00F5A0" : "#FF4D4F";
+  const areaTop   = isUp ? "rgba(0,245,160,0.40)" : "rgba(255,61,87,0.35)";
+  const areaBot   = isUp ? "rgba(0,245,160,0.02)" : "rgba(255,61,87,0.02)";
+
   return (
-    <div className="card" style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+    <div className="card elevation-1" style={{ display: "flex", flexDirection: "column", gap: 10 }}>
       {/* ── Header ── */}
       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-        <span
-          style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.1em", color: "var(--text-muted)" }}
-        >
+        <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.1em", color: "var(--text-muted)" }}>
           EQUITY CURVE
         </span>
         {connected && <span className="live-dot" />}
@@ -89,8 +94,7 @@ export function EquityCurve({
               color: isUp ? "var(--green)" : "var(--red)",
             }}
           >
-            {isUp ? "+" : ""}
-            {equityChange.toFixed(2)}%
+            {isUp ? "+" : ""}{equityChange.toFixed(2)}%
           </span>
         )}
         {latest && (
@@ -117,60 +121,90 @@ export function EquityCurve({
           {connected ? "Waiting for data..." : "Connecting..."}
         </div>
       ) : (
-        <svg
-          viewBox={`0 0 ${W} ${H}`}
-          style={{
-            width: "100%",
-            height: H,
-            background: "var(--bg-panel)",
-            borderRadius: 4,
-          }}
-          preserveAspectRatio="none"
-        >
-          {/* Area fill */}
-          <path
-            d={equityArea}
-            fill={isUp ? "rgba(0,230,118,0.06)" : "rgba(255,61,87,0.06)"}
-          />
+        // wrapper div carries the drop-shadow so the SVG itself stays crisp
+        <div className="equity-chart-wrap">
+          <svg
+            viewBox={`0 0 ${W} ${H}`}
+            style={{
+              width: "100%",
+              height: H,
+              background: "var(--bg-panel)",
+              borderRadius: 4,
+              display: "block",
+            }}
+            preserveAspectRatio="none"
+          >
+            <defs>
+              {/* Area gradient: opaque top → transparent bottom */}
+              <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%"  stopColor={areaTop} />
+                <stop offset="100%" stopColor={areaBot} />
+              </linearGradient>
+              {/* SVG blur filter for line glow */}
+              <filter id={glowId} x="-20%" y="-20%" width="140%" height="140%">
+                <feGaussianBlur stdDeviation="3" result="blur" />
+                <feMerge>
+                  <feMergeNode in="blur" />
+                  <feMergeNode in="SourceGraphic" />
+                </feMerge>
+              </filter>
+            </defs>
 
-          {/* Balance line (secondary) */}
-          {showBalance && balancePoints.length > 1 && (
-            <path
-              d={buildPath(balancePoints, W, H)}
-              fill="none"
-              stroke="rgba(68,138,255,0.4)"
-              strokeWidth="1"
-              strokeDasharray="4 4"
-            />
-          )}
-
-          {/* Equity line */}
-          <path
-            d={equityPath}
-            fill="none"
-            stroke={isUp ? "var(--green)" : "var(--red)"}
-            strokeWidth="2"
-          />
-
-          {/* Latest dot */}
-          {equityPoints.length > 0 && (() => {
-            const pts = equityPoints;
-            const W2 = W, H2 = H, pad = 4;
-            const min = Math.min(...pts), max = Math.max(...pts);
-            const range = max - min || 1;
-            const xStep = (W2 - pad * 2) / (pts.length - 1);
-            const x = pad + (pts.length - 1) * xStep;
-            const y = pad + ((max - pts[pts.length - 1]) / range) * (H2 - pad * 2);
-            return (
-              <circle
-                cx={x}
-                cy={y}
-                r="4"
-                fill={isUp ? "var(--green)" : "var(--red)"}
+            {/* Subtle horizontal grid lines */}
+            {[0.25, 0.5, 0.75].map((frac) => (
+              <line
+                key={frac}
+                x1={0} y1={H * frac}
+                x2={W} y2={H * frac}
+                stroke="rgba(255,255,255,0.05)"
+                strokeWidth="1"
               />
-            );
-          })()}
-        </svg>
+            ))}
+
+            {/* Area fill with gradient */}
+            <path d={equityArea} fill={`url(#${gradId})`} />
+
+            {/* Balance line (secondary) */}
+            {showBalance && balancePoints.length > 1 && (
+              <path
+                d={buildPath(balancePoints, W, H)}
+                fill="none"
+                stroke="rgba(68,138,255,0.35)"
+                strokeWidth="1"
+                strokeDasharray="4 4"
+              />
+            )}
+
+            {/* Equity line (with glow filter) */}
+            <path
+              d={equityPath}
+              fill="none"
+              stroke={lineColor}
+              strokeWidth="2"
+              filter={`url(#${glowId})`}
+            />
+
+            {/* Latest dot */}
+            {equityPoints.length > 0 && (() => {
+              const pts = equityPoints;
+              const W2 = W, H2 = H, pad = 4;
+              const min = Math.min(...pts), max = Math.max(...pts);
+              const range = max - min || 1;
+              const xStep = (W2 - pad * 2) / (pts.length - 1);
+              const x = pad + (pts.length - 1) * xStep;
+              const y = pad + ((max - pts[pts.length - 1]) / range) * (H2 - pad * 2);
+              return (
+                <circle
+                  cx={x}
+                  cy={y}
+                  r="4"
+                  fill={lineColor}
+                  style={{ filter: `drop-shadow(0 0 6px ${lineColor})` }}
+                />
+              );
+            })()}
+          </svg>
+        </div>
       )}
 
       {/* ── DD info ── */}
