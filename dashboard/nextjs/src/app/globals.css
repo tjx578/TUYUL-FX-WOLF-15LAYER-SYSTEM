@@ -118,6 +118,49 @@ body {
   padding: 16px;
 }
 
+/* ─────────────────────────────────────────────────
+   STEP 3B — GLOW UTILITY CLASSES
+   Usage: <Panel className="glow-cyan-soft" />
+───────────────────────────────────────────────── */
+.glow-cyan-soft {
+  box-shadow: 0 0 60px rgba(0, 229, 255, 0.25);
+}
+
+.glow-emerald-soft {
+  box-shadow: 0 0 60px rgba(0, 245, 160, 0.25);
+}
+
+.glow-orange-soft {
+  box-shadow: 0 0 60px rgba(255, 122, 0, 0.25);
+}
+
+.glow-amber-soft {
+  box-shadow: 0 0 60px rgba(255, 166, 35, 0.25);
+}
+
+.glow-red-soft {
+  box-shadow: 0 0 60px rgba(255, 61, 87, 0.25);
+}
+
+/* ─────────────────────────────────────────────────
+   STEP 3C — ELEVATION DEPTH HIERARCHY
+   Usage: <Panel className="elevation-2" />
+   elevation-1 = subtle lift
+   elevation-2 = card depth (most used)
+   elevation-3 = modal / overlay depth
+───────────────────────────────────────────────── */
+.elevation-1 {
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+}
+
+.elevation-2 {
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
+}
+
+.elevation-3 {
+  box-shadow: 0 40px 120px rgba(0, 0, 0, 0.8);
+}
+
 /* ─── BADGES ─── */
 .badge {
   display: inline-flex;
