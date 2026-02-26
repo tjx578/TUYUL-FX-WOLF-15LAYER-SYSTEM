@@ -7,6 +7,7 @@
 
 import type { RiskSnapshot } from "@/types";
 import { CircuitBreakerState } from "@/types";
+import { motion } from "framer-motion";
 
 interface RiskGaugeProps {
   snapshot: RiskSnapshot;
@@ -66,8 +67,22 @@ export function RiskGauge({ snapshot }: RiskGaugeProps) {
       ? "var(--yellow)"
       : "var(--green)";
 
+  // Breathing pulse: triggers when daily OR total DD exceeds 85% of limit
+  const dailyPct  = snapshot.daily_dd_limit  > 0 ? (snapshot.daily_dd_percent  / snapshot.daily_dd_limit)  * 100 : 0;
+  const totalPct  = snapshot.total_dd_limit  > 0 ? (snapshot.total_dd_percent  / snapshot.total_dd_limit)  * 100 : 0;
+  const pulseCritical = dailyPct > 85 || totalPct > 85;
+
   return (
-    <div className="card" style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+    <motion.div
+      className="card"
+      style={{ display: "flex", flexDirection: "column", gap: 16 }}
+      animate={{ scale: pulseCritical ? [1, 1.025, 1] : 1 }}
+      transition={{
+        repeat: pulseCritical ? Infinity : 0,
+        duration: 1.5,
+        ease: "easeInOut",
+      }}
+    >
       {/* Section header */}
       <div
         style={{

@@ -11,6 +11,7 @@ import type { Account, AccountCreate } from "@/types";
 import { createAccount } from "@/lib/api";
 import Panel from "@/components/ui/Panel";
 import StatusBadge from "@/components/ui/StatusBadge";
+import { useLivePulse } from "@/hooks/useLivePulse";
 
 // ─── ACCOUNT CARD ─────────────────────────────────────────────
 
@@ -33,10 +34,14 @@ function riskBadgeType(riskState: string): "execute" | "hold" | "no-trade" {
 }
 
 export function AccountCard({ account, selected, onClick }: AccountCardProps) {
+  const equityPulse  = useLivePulse(account.equity);
+  const balancePulse = useLivePulse(account.balance);
+  const pulse = equityPulse || balancePulse;
+
   return (
     <Panel
       glow={accountGlow(account.risk_state ?? "", selected)}
-      className="cursor-pointer transition-all duration-200"
+      className={`cursor-pointer transition-all duration-200${pulse ? " live-pulse" : ""}`}
       onClick={onClick}
     >
       {/* Header row */}
