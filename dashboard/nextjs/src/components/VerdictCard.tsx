@@ -8,6 +8,8 @@ import type { L12Verdict, VerdictType } from "@/types";
 import { formatTime } from "@/lib/timezone";
 import Panel from "@/components/ui/Panel";
 import StatusBadge from "@/components/ui/StatusBadge";
+import Button from "@/components/ui/Button";
+import { motion } from "framer-motion";
 
 interface VerdictCardProps {
   verdict: L12Verdict;
@@ -153,24 +155,64 @@ export function VerdictCard({
         </div>
       </div>
 
-      {/* ── Scores row ── */}
+      {/* ── Gate Sequential Glow Engine ── */}
       {verdict.scores && (
-        <div
-          style={{
-            display: "flex",
-            gap: 8,
-            fontSize: 11,
-            fontFamily: "var(--font-mono)",
-            color: "var(--text-muted)",
-          }}
-        >
-          <span>W:{verdict.scores.wolf_score?.toFixed(0)}</span>
-          <span>TII:{verdict.scores.tii_score?.toFixed(0)}</span>
-          <span>FRPC:{verdict.scores.frpc_score?.toFixed(0)}</span>
+        <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+          {([
+            { label: "W",    value: verdict.scores.wolf_score },
+            { label: "TII",  value: verdict.scores.tii_score },
+            { label: "FRPC", value: verdict.scores.frpc_score },
+          ] as { label: string; value: number | undefined }[]).map(({ label, value }, index) => {
+            const passing = (value ?? 0) >= 60;
+            return (
+              <motion.div
+                key={label}
+                initial={{ opacity: 0, scale: 0.8 }}
+                animate={{ opacity: 1, scale: 1 }}
+                transition={{ delay: index * 0.08, duration: 0.3, ease: "easeOut" }}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 4,
+                  padding: "3px 7px",
+                  borderRadius: 6,
+                  background: passing ? "rgba(0,245,160,0.08)" : "rgba(255,255,255,0.04)",
+                  border: `1px solid ${passing ? "rgba(0,245,160,0.25)" : "rgba(255,255,255,0.08)"}`,
+                }}
+              >
+                <motion.div
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: passing ? 1 : 0.3 }}
+                  transition={{ delay: index * 0.08 + 0.15, duration: 0.25 }}
+                  style={{
+                    width: 6,
+                    height: 6,
+                    borderRadius: "50%",
+                    background: passing ? "var(--green)" : "var(--text-muted)",
+                    boxShadow: passing ? "0 0 6px rgba(0,245,160,0.8)" : "none",
+                  }}
+                />
+                <span style={{
+                  fontSize: 9,
+                  fontFamily: "var(--font-mono)",
+                  color: passing ? "var(--green)" : "var(--text-muted)",
+                  letterSpacing: "0.06em",
+                }}>
+                  {label}:{value?.toFixed(0) ?? "—"}
+                </span>
+              </motion.div>
+            );
+          })}
           {verdict.scores.regime && (
-            <span className="badge badge-muted" style={{ fontSize: 9, marginLeft: "auto" }}>
+            <motion.span
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ delay: 0.32, duration: 0.3 }}
+              className="badge badge-muted"
+              style={{ fontSize: 9, marginLeft: "auto" }}
+            >
               {verdict.scores.regime}
-            </span>
+            </motion.span>
           )}
         </div>
       )}
@@ -200,22 +242,22 @@ export function VerdictCard({
       {isExecutable && (onTake || onSkip) && (
         <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
           {onTake && (
-            <button
-              className="btn btn-take"
+            <Button
+              variant="take"
               style={{ flex: 1 }}
               onClick={(e) => { e.stopPropagation(); onTake(); }}
             >
               ▶ TAKE
-            </button>
+            </Button>
           )}
           {onSkip && (
-            <button
-              className="btn btn-skip"
+            <Button
+              variant="skip"
               style={{ flex: 1 }}
               onClick={(e) => { e.stopPropagation(); onSkip(); }}
             >
               ✕ SKIP
-            </button>
+            </Button>
           )}
         </div>
       )}
