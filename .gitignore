@@ -31,8 +31,22 @@ coverage.xml
 .env.local
 .env.*.local
 
+# Node / JS
+node_modules/
+package-lock.json
+.next/
+out/
+
 # IDE
 .vscode/settings.json
 .idea/
 *.swp
 *.swo
+
+# Ruff / Mypy cache
+.ruff_cache/
+.mypy_cache/
+
+# OS files
+Thumbs.db
+.DS_Store
