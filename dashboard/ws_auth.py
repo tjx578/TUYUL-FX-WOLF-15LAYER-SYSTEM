@@ -11,6 +11,7 @@ SECURITY FIXES:
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import hmac
 import json
@@ -183,6 +184,45 @@ class WSTokenManager:
                 self._revoked_tokens.discard(session.token_hash)
         return len(expired_ids)
 
+    def rotate_token(self, session_id: str) -> dict[str, str]:
+        """
+        Rotate (replace) token for an existing session.
+
+        Old token is revoked, a new token is issued for the same user/session.
+        Returns dict with 'token', 'session_id', 'expires_in'.
+        The raw token is returned ONCE.
+        """
+        session = self._sessions.get(session_id)
+        if session is None or session.revoked or session.is_expired:
+            raise AuthError(AuthErrorCode.TOKEN_INVALID.value)
+
+        # Revoke old token
+        self._revoked_tokens.add(session.token_hash)
+        self._token_index.pop(session.token_hash, None)
+
+        # Issue new token for same session/user
+        raw_token = secrets.token_urlsafe(WS_TOKEN_LENGTH)
+        token_hash = self._hash_token(raw_token)
+        now = time.time()
+
+        session.token_hash = token_hash
+        session.created_at = now
+        session.expires_at = now + self._max_age
+        session.revoked = False
+
+        self._token_index[token_hash] = session_id
+
+        logger.info(
+            "WS token rotated: session_id=%s user=%s expires_in=%ds",
+            session_id, session.user_id, self._max_age,
+        )
+
+        return {
+            "token": raw_token,
+            "session_id": session_id,
+            "expires_in": self._max_age,  # pyright: ignore[reportReturnType]
+        }
+
     def _hash_token(self, raw_token: str) -> str:
         return hmac.new(self._secret, raw_token.encode(), hashlib.sha256).hexdigest()
 
@@ -218,6 +258,79 @@ def reject_token_in_url(query_string: str) -> None:
             )
 
 
+def _parse_ws_subprotocol_token(websocket: Any) -> str | None:
+    """
+    Extract token from Sec-WebSocket-Protocol header.
+
+    Supported formats:
+      Sec-WebSocket-Protocol: json, auth.<token>
+      Sec-WebSocket-Protocol: auth, token.<token>
+
+    Returns raw token string or None.
+    """
+    headers = getattr(websocket, "headers", None)
+    if not headers:
+        return None
+
+    try:
+        proto = headers.get("sec-websocket-protocol")
+    except Exception:
+        proto = None
+
+    if not proto:
+        return None
+
+    # Header value is a comma-separated list of subprotocol names
+    parts = [p.strip() for p in proto.split(",") if p.strip()]
+    for p in parts:
+        lower = p.lower()
+        if lower.startswith("auth."):
+            return p.split(".", 1)[1].strip()
+        if lower.startswith("token."):
+            return p.split(".", 1)[1].strip()
+
+    return None
+
+
+def _map_auth_error_to_code(err: AuthError) -> AuthErrorCode:
+    """
+    Map an AuthError back to the correct AuthErrorCode.
+
+    AuthError messages are currently set to AuthErrorCode.value strings,
+    so we parse that back. Falls back to TOKEN_INVALID for unknown errors.
+    """
+    msg = str(err)
+    try:
+        return AuthErrorCode(msg)
+    except ValueError:
+        return AuthErrorCode.TOKEN_INVALID
+
+
+async def _send_error_and_close(
+    websocket: Any,
+    code: AuthErrorCode,
+    message: str,
+    close_code: int = 1008,
+) -> None:
+    """
+    Send auth error JSON and close the WebSocket connection.
+
+    Close codes:
+      1008 — Policy Violation (auth failures)
+      1002 — Protocol Error (malformed frames / unexpected message format)
+    """
+    try:  # noqa: SIM105
+        await websocket.send_text(json.dumps({
+            "type": "auth_error",
+            "code": code.value,
+            "message": message,
+        }))
+    except Exception:
+        pass  # Connection might already be closed
+    with contextlib.suppress(Exception):
+        await websocket.close(code=close_code)
+
+
 async def authenticate_websocket(
     websocket: Any,
     token_manager: WSTokenManager,
@@ -226,13 +339,11 @@ async def authenticate_websocket(
     """
     Authenticate a WebSocket connection.
 
-    Protocol:
-    1. Client connects (no token in URL).
-    2. Client sends first message: {"type": "auth", "token": "<token>"}
-    3. Server validates and responds:
-       - Success: {"type": "auth_ok", "session_id": "..."}
-       - Failure: {"type": "auth_error", "code": "...", "message": "..."}
-         then closes connection.
+    Token MUST be provided by:
+      - Sec-WebSocket-Protocol header (preferred for browsers), OR
+      - First message: {"type": "auth", "token": "<token>"}
+
+    Token in query string is REJECTED.
 
     Args:
         websocket: A WebSocket connection object (FastAPI/Starlette compatible).
@@ -248,35 +359,70 @@ async def authenticate_websocket(
     import asyncio
 
     # Step 1: Reject token in URL
-    # Access query string from the websocket scope
-    scope = getattr(websocket, "scope", {})
+    scope = getattr(websocket, "scope", {}) or {}
     query_string = scope.get("query_string", b"").decode("utf-8", errors="ignore")
     reject_token_in_url(query_string)
 
-    # Step 2: Wait for auth message
-    try:
-        raw_message = await asyncio.wait_for(websocket.receive_text(), timeout=timeout)
-    except TimeoutError:
-        await _send_error(websocket, AuthErrorCode.AUTH_TIMEOUT, "Authentication timeout")
-        raise AuthError(AuthErrorCode.AUTH_TIMEOUT.value)  # noqa: B904
+    # Step 2: Try Sec-WebSocket-Protocol token first
+    raw_token = _parse_ws_subprotocol_token(websocket)
 
-    try:
-        message = json.loads(raw_message)
-    except (json.JSONDecodeError, TypeError):
-        await _send_error(websocket, AuthErrorCode.NO_TOKEN, "Invalid auth message format")
-        raise AuthError(AuthErrorCode.NO_TOKEN.value)  # noqa: B904
+    # If not present in header, wait for first auth message
+    if not raw_token:
+        try:
+            raw_message = await asyncio.wait_for(
+                websocket.receive_text(), timeout=timeout,
+            )
+        except TimeoutError:
+            await _send_error_and_close(
+                websocket,
+                AuthErrorCode.AUTH_TIMEOUT,
+                "Authentication timeout",
+                close_code=1008,
+            )
+            raise AuthError(AuthErrorCode.AUTH_TIMEOUT.value)  # noqa: B904
 
-    if message.get("type") != "auth" or "token" not in message:
-        await _send_error(websocket, AuthErrorCode.NO_TOKEN, "Expected {type: 'auth', token: '...'}")
+        try:
+            message = json.loads(raw_message)
+        except (json.JSONDecodeError, TypeError):
+            await _send_error_and_close(
+                websocket,
+                AuthErrorCode.NO_TOKEN,
+                "Invalid auth message format",
+                close_code=1002,
+            )
+            raise AuthError(AuthErrorCode.NO_TOKEN.value)  # noqa: B904
+
+        if message.get("type") != "auth" or "token" not in message:
+            await _send_error_and_close(
+                websocket,
+                AuthErrorCode.NO_TOKEN,
+                "Expected {type: 'auth', token: '...'}",
+                close_code=1002,
+            )
+            raise AuthError(AuthErrorCode.NO_TOKEN.value)
+
+        raw_token = str(message["token"]).strip()
+
+    if not raw_token:
+        await _send_error_and_close(
+            websocket,
+            AuthErrorCode.NO_TOKEN,
+            "Missing token",
+            close_code=1008,
+        )
         raise AuthError(AuthErrorCode.NO_TOKEN.value)
-
-    raw_token = message["token"]
 
     # Step 3: Validate
     try:
         session = token_manager.validate_token(raw_token)
     except AuthError as e:
-        await _send_error(websocket, AuthErrorCode.TOKEN_INVALID, str(e))
+        code = _map_auth_error_to_code(e)
+        await _send_error_and_close(
+            websocket,
+            code,
+            code.value,  # avoid echoing internal details
+            close_code=1008,
+        )
         raise
 
     # Step 4: Success
@@ -293,7 +439,7 @@ async def authenticate_websocket(
 
 
 async def _send_error(websocket: Any, code: AuthErrorCode, message: str) -> None:
-    """Send auth error and close."""
+    """Send auth error (without closing). Kept for backward compatibility."""
     try:  # noqa: SIM105
         await websocket.send_text(json.dumps({
             "type": "auth_error",
