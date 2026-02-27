@@ -1,29 +1,18 @@
 """
-Dashboard calendar stub — development placeholder ONLY.
+Dashboard calendar router — shim forwarding to the canonical implementation.
 
-⚠️  DO NOT mount this router in api_server.py.
-    The canonical /api/v1/calendar router with full Finnhub integration lives in:
-        api/calendar_routes.py  (already registered in api_server.py)
+This module simply re-exports the router defined in api/calendar_routes.py,
+which provides full Finnhub integration, Redis caching, and news-lock control.
 
-    Mounting both would create duplicate routes for:
-        GET  /api/v1/calendar
-        POST /api/v1/calendar/news-lock
-    and trigger the _assert_no_duplicate_routes() guard at startup.
+⚠️  DO NOT also mount api/calendar_routes.router in api_server.py when this
+    shim is active in the standalone dashboard/backend/api.py — doing so would
+    create duplicate /api/v1/calendar routes and trigger
+    _assert_no_duplicate_routes() at startup.
 
-    This file is only kept as a dev reference stub inside the standalone
-    dashboard/backend/api.py app, which does NOT mount it either.
-    Remove or replace with a shim that imports from api/calendar_routes.py if needed.
+    In practice:
+      • api_server.py  → imports from api/calendar_routes.py directly.
+      • dashboard/backend/api.py → imports this shim (same router object).
+      Both point at the same FastAPI router instance, so no duplication occurs
+      as long as each application registers it exactly once.
 """
-from fastapi import APIRouter, Query
-
-router = APIRouter(prefix="/api/v1/calendar", tags=["calendar"])
-
-
-@router.get("")
-def get_calendar(date: str = Query("today"), impact: str = Query("HIGH")):
-    return []
-
-
-@router.post("/news-lock")
-def set_news_lock(enabled: bool):
-    return {"enabled": enabled}
+from api.calendar_routes import router  # noqa: F401 — re-export shim
