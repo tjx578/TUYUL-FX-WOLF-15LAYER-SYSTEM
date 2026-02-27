@@ -16,13 +16,9 @@
 #   Phase 7: dashboard build + ESLint       (parallel with Phase 5–6)
 #   Final:    governance-verdict            (merge gatekeeper)
 
-name: "Wolf 15-Layer CI"
+name: "Wolf 15-Layer CI (Deprecated)"
 
 on:
-  push:
-    branches: [main, develop]
-  pull_request:
-    branches: [main, develop]
   workflow_dispatch:
 
 concurrency:
