@@ -8,42 +8,47 @@ BUG FIXES APPLIED:
   [BUG-3] Redis hardcoded localhost → os.getenv("REDIS_URL") for Railway compatibility
 """
 
+import logging
 import os
 import uuid
-import logging
-from datetime import datetime, timezone
-from typing import Optional
+from datetime import UTC, datetime
 
 import redis as redis_lib
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
+from redis import Redis
 
 from dashboard.backend.auth import verify_token
 from dashboard.backend.risk_engine import RiskEngine  # noqa: F401 — imported after fix
 from dashboard.backend.schemas import (
     AccountState as DashAccountState,
+)
+from dashboard.backend.schemas import (
     Layer12Signal,
     RiskCalculationResult,
-    RiskMode as DashRiskMode,
     RiskSeverity,
+)
+from dashboard.backend.schemas import (
+    RiskMode as DashRiskMode,
 )
 
 logger = logging.getLogger(__name__)
 
 # ── [BUG-3 FIX] Redis connection via env var ──────────────────────────────────
-def _make_redis() -> redis_lib.Redis:
+def _make_redis() -> Redis | None:
     from infrastructure.redis_url import get_redis_url
     url = get_redis_url()
-    return redis_lib.from_url(url, decode_responses=True)
+    return redis_lib.from_url(url, decode_responses=True)  # type: ignore[return-value]
 
 
 try:
-    _redis = _make_redis()
-    _redis.ping()
-    logger.info("Redis connected: %s", os.getenv("REDIS_URL", "localhost"))
+    _redis: Redis | None = _make_redis()
+    if _redis:
+        _redis.ping()
+        logger.info("Redis connected: %s", os.getenv("REDIS_URL", "localhost"))
 except Exception as exc:  # pragma: no cover
     logger.warning("Redis unavailable at startup: %s — using in-memory fallback", exc)
-    _redis = None  # type: ignore[assignment]
+    _redis = None
 
 
 # ── In-memory fallback stores ─────────────────────────────────────────────────
@@ -71,13 +76,13 @@ class TakeSignalRequest(BaseModel):
     tp: float
     risk_percent: float = Field(default=1.0, gt=0, le=10)
     risk_mode: str = Field(default="FIXED", pattern="^(FIXED|SPLIT)$")
-    split_ratio: Optional[float] = Field(default=None, gt=0, le=1)
+    split_ratio: float | None = Field(default=None, gt=0, le=1)
 
 
 class SkipSignalRequest(BaseModel):
     signal_id: str
     pair: str
-    reason: Optional[str] = "MANUAL_SKIP"
+    reason: str | None = "MANUAL_SKIP"
 
 
 class ConfirmTradeRequest(BaseModel):
@@ -86,9 +91,9 @@ class ConfirmTradeRequest(BaseModel):
 
 class CloseTradeRequest(BaseModel):
     trade_id: str
-    reason: Optional[str] = "MANUAL_CLOSE"
-    close_price: Optional[float] = None
-    pnl: Optional[float] = None
+    reason: str | None = "MANUAL_CLOSE"
+    close_price: float | None = None
+    pnl: float | None = None
 
 
 class RiskCalculateRequest(BaseModel):
@@ -104,14 +109,15 @@ class RiskCalculateRequest(BaseModel):
 
 # ─── Helper: Redis read/write with in-memory fallback ────────────────────────
 
-def _redis_set(key: str, value: str, ex: Optional[int] = None) -> None:
+def _redis_set(key: str, value: str, ex: int | None = None) -> None:
     if _redis:
         _redis.set(key, value, ex=ex)
 
 
-def _redis_get(key: str) -> Optional[str]:
+def _redis_get(key: str) -> str | None:
     if _redis:
-        return _redis.get(key)
+        val = _redis.get(key)
+        return val if isinstance(val, str) else None
     return None
 
 
@@ -122,7 +128,8 @@ def _redis_hset(name: str, mapping: dict) -> None:
 
 def _redis_hgetall(name: str) -> dict:
     if _redis:
-        return _redis.hgetall(name) or {}
+        result = _redis.hgetall(name)
+        return result if isinstance(result, dict) else {}
     return {}
 
 
@@ -140,7 +147,7 @@ def _build_risk_signal(
     rr = abs(tp - entry) / entry_sl_dist if entry_sl_dist > 0 else 1.0
     return Layer12Signal(
         signal_id=uuid.uuid4(),
-        timestamp=datetime.now(timezone.utc),
+        timestamp=datetime.now(UTC),
         pair=pair,
         direction=direction,
         entry=entry,
@@ -214,7 +221,7 @@ async def take_signal(req: TakeSignalRequest) -> dict:
         )
 
     trade_id = str(uuid.uuid4())
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
 
     trade = {
         "trade_id": trade_id,
@@ -253,7 +260,7 @@ async def take_signal(req: TakeSignalRequest) -> dict:
 async def skip_signal(req: SkipSignalRequest) -> dict:
     """Log a skipped signal as J2: NO_TRADE journal entry."""
     entry_id = str(uuid.uuid4())
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
 
     journal_entry = {
         "entry_id": entry_id,
@@ -289,7 +296,7 @@ async def confirm_trade(req: ConfirmTradeRequest) -> dict:
         )
 
     trade["status"] = "PENDING"
-    trade["updated_at"] = datetime.now(timezone.utc).isoformat()
+    trade["updated_at"] = datetime.now(UTC).isoformat()
     _trade_ledger[req.trade_id] = trade
     _redis_set(f"TRADE:{req.trade_id}", json.dumps(trade), ex=86400)
 
@@ -309,7 +316,7 @@ async def close_trade(req: CloseTradeRequest) -> dict:
             raise HTTPException(status_code=404, detail=f"Trade {req.trade_id} not found")
         trade = json.loads(raw)
 
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
     trade["status"] = "CLOSED"
     trade["close_reason"] = req.reason
     trade["closed_at"] = now
@@ -347,7 +354,7 @@ async def get_active_trades() -> dict:
                 tid = key.split(":")[-1]
                 if tid not in _trade_ledger:
                     raw = _redis.get(key)
-                    if raw:
+                    if raw and isinstance(raw, str):
                         t = json.loads(raw)
                         if t.get("status") not in ("CLOSED", "CANCELLED", "SKIPPED"):
                             active.append(t)

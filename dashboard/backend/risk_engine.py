@@ -25,7 +25,6 @@ Lot formula:
 
 import logging
 import math
-from typing import Optional
 
 from config.pip_values import DEFAULT_PIP_VALUE, PipLookupError, get_pip_info
 from dashboard.backend.schemas import (
@@ -83,7 +82,7 @@ class RiskMultiplierAggregator:
         risk_percent: float,
         prop_firm_code: str,
         risk_mode: RiskMode = RiskMode.FIXED,
-        split_ratios: Optional[list[float]] = None,
+        split_ratios: list[float] | None = None,
     ) -> RiskCalculationResult:
         """
         Calculate recommended lot size from a Layer-12 signal and account state.
