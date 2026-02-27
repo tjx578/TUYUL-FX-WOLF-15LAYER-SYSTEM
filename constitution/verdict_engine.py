@@ -310,7 +310,9 @@ class VerdictEngine:
         enrichment_applied = enrichment_score > 0.0 or enrichment_confidence_adj != 0.0
 
         if enrichment_applied:
-            adjusted_conf = base_conf * 0.7 + enrichment_score * 0.3 + enrichment_confidence_adj
+            # Enrichment boosts confidence when enrichment_score > base;
+            # additive blend: base + 20% of enrichment score + explicit adj.
+            adjusted_conf = base_conf + enrichment_score * 0.2 + enrichment_confidence_adj
             adjusted_conf = max(0.0, min(1.0, adjusted_conf))
         else:
             adjusted_conf = base_conf
