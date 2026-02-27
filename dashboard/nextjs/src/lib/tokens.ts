@@ -36,6 +36,25 @@ export const T = {
   cyan:    "var(--accent-cyan,    #22D3EE)",
   blue:    "var(--accent-blue,    #3B82F6)",
 
+  // Extended palette
+  gold:      "var(--accent-gold,    #F5C842)",
+  purple:    "var(--accent-purple,  #A78BFA)",
+  violet:    "var(--accent-violet,  #8B5CF6)",
+
+  // Glow surface backgrounds (color @ ~5–8% opacity)
+  emeraldGlow: "rgba(0,245,160,0.07)",
+  amberGlow:   "rgba(255,177,0,0.07)",
+  redGlow:     "rgba(255,77,79,0.07)",
+  cyanGlow:    "rgba(34,211,238,0.07)",
+  goldGlow:    "rgba(245,200,66,0.07)",
+
+  // Dim border variants (~20% opacity)
+  emeraldDim: "rgba(0,245,160,0.20)",
+  amberDim:   "rgba(255,177,0,0.20)",
+  redDim:     "rgba(255,77,79,0.20)",
+  cyanDim:    "rgba(34,211,238,0.20)",
+  goldDim:    "rgba(245,200,66,0.20)",
+
   // Verdict palette
   execute: "var(--accent-emerald, #00F5A0)",
   hold:    "var(--accent-amber,   #FFB100)",
@@ -79,3 +98,14 @@ export const TRANSITION = {
   normal: "all 0.20s ease",
   slow:   "all 0.35s ease",
 } as const;
+
+// ── Wolf-15 Pipeline Zone Colors ─────────────────────────────
+// Each of the 15-layer zones has a distinct accent for the zone bar.
+export const ZONE_COLORS: Record<string, string> = {
+  COG:  "var(--accent-cyan,    #22D3EE)",   // Cognitive layers  (L1–L2)
+  ANA:  "var(--accent-emerald, #00F5A0)",   // Analysis layers   (L3–L4, L7–L9)
+  META: "var(--accent-amber,   #FFB100)",   // Meta layers       (L5–L6)
+  EXEC: "var(--accent-purple,  #A78BFA)",   // Execution layers  (L10–L11)
+  VER:  "var(--accent-gold,    #F5C842)",   // Verdict layer     (L12)
+  POST: "var(--text-tertiary,  #9CA3AF)",   // Post-trade layers (L13–L15)
+};
