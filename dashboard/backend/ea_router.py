@@ -49,10 +49,8 @@ def get_logs(limit: int = Query(default=20, ge=1, le=200)) -> list[dict]:
     )
     results: list[dict] = []
     for f in files[:limit]:
-        try:  # noqa: SIM105
+        with contextlib.suppress(Exception):
             results.append(json.loads(f.read_text(encoding="utf-8")))
-        except Exception:  # noqa: BLE001
-            pass
     return results
 
 
