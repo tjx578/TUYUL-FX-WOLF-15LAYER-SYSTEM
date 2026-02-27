@@ -583,34 +583,53 @@ class TestComputeDrawdown:
 # Auth rejection across all channels
 # ──────────────────────────────────────────────────────────────────────────────
 
-@pytest.mark.skipif(not HAS_FASTAPI, reason="fastapi not installed")
 class TestWsAuthRejection:
-    """All 5 channels must reject unauthenticated connections."""
+    """
+    All 5 channel managers must reject unauthenticated connections.
 
-    CHANNELS = ["/ws/prices", "/ws/trades", "/ws/candles", "/ws/risk", "/ws/equity"]
+    Tested at ConnectionManager.connect() unit level to avoid TestClient hang
+    conditions when no accept/close frame is sent by a mock auth guard.
+    """
 
-    @pytest.fixture
-    def unauth_client(self):
-        if not HAS_FASTAPI or TestClient is None:
-            pytest.skip("fastapi not installed")
-        _TestClient = TestClient  # bind to local so type checker knows it's not None  # noqa: N806
-        assert _TestClient is not None
-        app = _make_app()
-        # Auth guard returns None → reject
+    CHANNEL_NAMES = ["prices", "trades", "candles", "risk", "equity"]
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("name", CHANNEL_NAMES)
+    async def test_auth_failure_returns_false(self, name):
+        """connect() must return False and NOT register the client when auth fails."""
+        from api.ws_routes import ConnectionManager  # noqa: PLC0415
+
+        mgr = ConnectionManager(name=name)
+        ws = MagicMock()
+        ws.accept = AsyncMock()
+        ws.close = AsyncMock()
+        ws.send_json = AsyncMock()
+
         with patch("api.ws_routes.ws_auth_guard", new=AsyncMock(return_value=None)):
-            yield _TestClient(app)
+            result = await mgr.connect(ws)
 
-    @pytest.mark.parametrize("channel", CHANNELS)
-    def test_no_token_closes_connection(self, unauth_client, channel):
-        """
-        Connecting without a valid token must result in the WS being closed.
-        TestClient raises an exception or receives close on unauthenticated WS.
-        """
-        try:
-            with unauth_client.websocket_connect(f"{channel}?token=invalid") as ws:  # noqa: SIM117
-                # If ws_auth_guard returns None, the endpoint returns immediately
-                # without sending any messages; receive_text should raise or return close
-                with pytest.raises(Exception):  # noqa: B017
-                    ws.receive_json(mode="text")
-        except Exception:
-            pass  # expected: connection refused / closed
+        assert result is False
+        assert ws not in mgr.active_connections
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("name", CHANNEL_NAMES)
+    async def test_auth_success_returns_true(self, name):
+        """connect() must return True and register the client when auth succeeds."""
+        from api.ws_routes import ConnectionManager  # noqa: PLC0415
+
+        mgr = ConnectionManager(name=name)
+        ws = MagicMock()
+        ws.accept = AsyncMock()
+        ws.close = AsyncMock()
+        ws.send_json = AsyncMock()
+
+        with (
+            patch("api.ws_routes.ws_auth_guard", new=AsyncMock(return_value={"sub": "user"})),
+            patch("asyncio.create_task", return_value=MagicMock(
+                done=lambda: True, cancel=lambda: None
+            )),
+        ):
+            result = await mgr.connect(ws)
+
+        assert result is True
+        assert ws in mgr.active_connections
