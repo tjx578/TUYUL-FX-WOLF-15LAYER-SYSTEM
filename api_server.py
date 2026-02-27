@@ -63,13 +63,15 @@ from api.calendar_routes import router as calendar_router  # noqa: E402
 
 # ── New routers (7 new endpoints) ─────────────────────────────────────────────
 from api.constitutional_routes import router as constitutional_router  # noqa: E402
-from api.metrics_routes import router as metrics_router  # noqa: E402
 from api.dashboard_routes import router as dashboard_router  # prices, accounts, trade-by-id  # noqa: E402
 from api.instrument_routes import router as instrument_router  # noqa: E402
 from api.journal_routes import router as journal_router  # noqa: E402
 
 # ── Existing routers ───────────────────────────────────────────────────────────
 from api.l12_routes import router as l12_router  # noqa: E402
+from api.metrics_routes import router as metrics_router  # noqa: E402
+from api.middleware.prometheus_middleware import PrometheusMiddleware  # noqa: E402
+from api.middleware.rate_limit import RateLimitMiddleware  # noqa: E402
 from api.risk_events_routes import router as risk_events_router  # noqa: E402
 from api.ws_routes import router as ws_router  # noqa: E402
 

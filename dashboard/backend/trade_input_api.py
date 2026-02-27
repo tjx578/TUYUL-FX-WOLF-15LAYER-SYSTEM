@@ -243,8 +243,9 @@ async def take_signal(req: TakeSignalRequest) -> dict:
         "updated_at": now,
     }
 
+    import json  # noqa: E402
+
     _trade_ledger[trade_id] = trade
-    import json
     _redis_set(f"TRADE:{trade_id}", json.dumps(trade), ex=86400)
 
     logger.info("Trade INTENDED: %s %s %s", trade_id, req.pair, req.direction)
