@@ -183,9 +183,9 @@ Test penting:
 
 ## 🚀 CI/CD
 
-- CI workflow: `.github/workflows/ci.yml`
-  - Trigger: `push`, `pull_request`, `workflow_dispatch`
-  - Gate: menjalankan `pytest` (mengikuti konfigurasi `pytest.ini` / `pyproject.toml`)
+- CI workflow: `.github/workflows/wolf-pipeline-ci.yml`
+     - Trigger: `pull_request` ke branch `main`, `workflow_dispatch`
+     - Gate: lint, type check, constitutional boundary, tests, coverage, dashboard build, dan **secret scan (gitleaks)**
 
 - Deploy workflow: `.github/workflows/railway-deploy.yml`
   - Trigger otomatis: hanya setelah workflow `CI` sukses di branch `main`
@@ -199,7 +199,7 @@ Test penting:
 
 - Require a pull request before merging
 - Require status checks to pass before merging
-- Mark `CI / Python tests (pytest)` sebagai required check
+- Mark `Governance Verdict` sebagai required check
 - Require branches to be up to date before merging
 - Include administrators (recommended)
 

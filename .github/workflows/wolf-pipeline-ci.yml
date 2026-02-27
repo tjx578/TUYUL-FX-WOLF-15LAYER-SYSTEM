@@ -16,9 +16,11 @@
 #   Phase 7: dashboard build + ESLint       (parallel with Phase 5–6)
 #   Final:    governance-verdict            (merge gatekeeper)
 
-name: "Wolf 15-Layer CI (Deprecated)"
+name: "Wolf 15-Layer CI"
 
 on:
+  pull_request:
+    branches: [main]
   workflow_dispatch:
 
 concurrency:
@@ -55,6 +57,34 @@ jobs:
 
       - name: "Ruff format check"
         run: ruff format --check . --config pyproject.toml
+
+# ──────────────────────────────────────────────────────────────────────────
+# PHASE 0-C · Secret scan (hard-fail)
+# ──────────────────────────────────────────────────────────────────────────
+  secret-scan:
+    name: "Phase 0-C · Secret Scan"
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install gitleaks
+        run: |
+          GITLEAKS_VERSION="8.24.2"
+          curl -sSL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" -o gitleaks.tar.gz
+          tar -xzf gitleaks.tar.gz
+          sudo mv gitleaks /usr/local/bin/gitleaks
+          gitleaks version
+
+      - name: Run secret scan (working tree)
+        run: |
+          gitleaks detect \
+            --source . \
+            --no-git \
+            --redact \
+            --verbose \
+            --exit-code 1
 
 # ──────────────────────────────────────────────────────────────────────────
 # PHASE 0-B · ASCII compliance (hard-fail)
@@ -565,6 +595,7 @@ jobs:
     needs:
       - ruff
       - ascii-compliance
+      - secret-scan
       - mypy
       - constitutional-boundary
       - schema-validation
@@ -581,6 +612,7 @@ jobs:
           echo "=========================================="
           echo " Phase 0-A  ruff:                   ${{ needs.ruff.result }}"
           echo " Phase 0-B  ascii-compliance:        ${{ needs.ascii-compliance.result }}"
+          echo " Phase 0-C  secret-scan:             ${{ needs.secret-scan.result }}"
           echo " Phase 1    mypy:                    ${{ needs.mypy.result }}"
           echo " Phase 2    constitutional-boundary: ${{ needs.constitutional-boundary.result }}"
           echo " Phase 3    schema-validation:       ${{ needs.schema-validation.result }}"
@@ -604,6 +636,13 @@ jobs:
           echo "Merge is BLOCKED -- fix failing tests before merging."
           exit 1
 
+      - name: "Hard block -- secret leak detected"
+        if: needs.secret-scan.result != 'success'
+        run: |
+          echo "SECRET SCAN FAILURE"
+          echo "Merge is BLOCKED -- remove secrets from repository content."
+          exit 1
+
       - name: "Hard block -- coverage below 70%"
         if: needs.coverage-gate.result != 'success'
         run: |
@@ -613,6 +652,7 @@ jobs:
 
       - name: "Verdict: GRANTED"
         if: >-
+          needs.secret-scan.result == 'success' &&
           needs.constitutional-boundary.result == 'success' &&
           needs.critical-tests.result == 'success' &&
           needs.coverage-gate.result == 'success'
