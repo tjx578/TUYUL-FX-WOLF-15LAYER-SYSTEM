@@ -178,17 +178,18 @@ class TestJWT:
 
         from dashboard.backend import auth as dashboard_auth  # noqa: PLC0415
 
+        shared_secret = "shared-secret-at-least-32-bytes-long"
         now = int(time.time())
         token = jwt.encode(
             {"sub": "pyjwt_user", "iat": now, "exp": now + 60},
-            "shared-secret",
+            shared_secret,
             algorithm="HS256",
         )
 
-        with patch.object(dashboard_auth, "JWT_SECRET", "shared-secret"), patch.object(
+        with patch.object(dashboard_auth, "JWT_SECRET", shared_secret), patch.object(
             dashboard_auth,
             "JWT_VERIFY_SECRETS",
-            ("shared-secret",),
+            (shared_secret,),
         ):
             payload = dashboard_auth.decode_token(token)
 
@@ -200,14 +201,15 @@ class TestJWT:
 
         from dashboard.backend import auth as dashboard_auth  # noqa: PLC0415
 
-        with patch.object(dashboard_auth, "JWT_SECRET", "shared-secret"), patch.object(
+        shared_secret = "shared-secret-at-least-32-bytes-long"
+        with patch.object(dashboard_auth, "JWT_SECRET", shared_secret), patch.object(
             dashboard_auth,
             "JWT_VERIFY_SECRETS",
-            ("shared-secret",),
+            (shared_secret,),
         ):
             token = dashboard_auth.create_token(sub="custom_user")
 
-        payload = jwt.decode(token, "shared-secret", algorithms=["HS256"])
+        payload = jwt.decode(token, shared_secret, algorithms=["HS256"])
 
         assert payload["sub"] == "custom_user"
 
@@ -367,10 +369,11 @@ class TestWSAuth:
         from api.middleware.ws_auth import ws_authenticate  # noqa: PLC0415
         from dashboard.backend import auth as dashboard_auth  # noqa: PLC0415
 
+        shared_secret = "shared-secret-at-least-32-bytes-long"
         now = int(time.time())
         token = jwt.encode(
             {"sub": "ws_pyjwt_user", "iat": now, "exp": now + 60},
-            "shared-secret",
+            shared_secret,
             algorithm="HS256",
         )
 
@@ -379,10 +382,10 @@ class TestWSAuth:
         ws.state = MagicMock()
         ws.close = AsyncMock()
 
-        with patch.object(dashboard_auth, "JWT_SECRET", "shared-secret"), patch.object(
+        with patch.object(dashboard_auth, "JWT_SECRET", shared_secret), patch.object(
             dashboard_auth,
             "JWT_VERIFY_SECRETS",
-            ("shared-secret",),
+            (shared_secret,),
         ):
             result = await ws_authenticate(ws)
 
