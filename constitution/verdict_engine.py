@@ -340,72 +340,160 @@ class VerdictEngine:
 
 # ── Standalone helper (no account params — authority boundary) ────────────────
 
+# Required top-level keys that a valid synthesis dict must provide.
+_REQUIRED_SYNTHESIS_FIELDS: tuple[str, ...] = (
+    "layers", "scores", "execution", "propfirm", "risk", "bias", "system",
+)
+
+# Constitutional gate thresholds (9 gates)
+_THRESH_TII: float = 0.65          # gate_1  — L8_tii_sym
+_THRESH_INTEGRITY: float = 0.75    # gate_2  — L8_integrity_index
+_THRESH_RR: float = 1.5            # gate_3  — execution.rr_ratio
+_THRESH_FTA: float = 0.65          # gate_4  — scores.fta_score
+_THRESH_MONTE: float = 0.60        # gate_5  — layers.L7_monte_carlo_win
+_THRESH_LATENCY_MS: int = 250      # gate_8  — system.latency_ms
+_THRESH_CONF12: float = 0.75       # gate_9  — layers.conf12
+
+# Confidence label thresholds (based on wolf_30_point)
+_CONF_VERY_HIGH_MIN: int = 27
+_CONF_HIGH_MIN: int = 20
+_CONF_MEDIUM_MIN: int = 13
+_CONFIDENCE_LEVELS: list[str] = ["LOW", "MEDIUM", "HIGH", "VERY_HIGH"]
+
+
+def _wolf30_to_confidence(wolf_30: int) -> str:
+    if wolf_30 >= _CONF_VERY_HIGH_MIN:
+        return "VERY_HIGH"
+    if wolf_30 >= _CONF_HIGH_MIN:
+        return "HIGH"
+    if wolf_30 >= _CONF_MEDIUM_MIN:
+        return "MEDIUM"
+    return "LOW"
+
+
+def _upgrade_confidence(conf: str) -> str:
+    idx = _CONFIDENCE_LEVELS.index(conf)
+    return _CONFIDENCE_LEVELS[min(idx + 1, len(_CONFIDENCE_LEVELS) - 1)]
+
+
+def _downgrade_confidence(conf: str) -> str:
+    idx = _CONFIDENCE_LEVELS.index(conf)
+    return _CONFIDENCE_LEVELS[max(idx - 1, 0)]
+
+
 def generate_l12_verdict(synthesis: dict[str, Any]) -> dict[str, Any]:
     """
     Generate a Layer-12 constitutional verdict from a synthesis dict.
 
     This is the canonical entrypoint used by WolfConstitutionalPipeline.
-    It extracts gate-relevant scores from the synthesis structure and
-    delegates final authority to VerdictEngine.
+    Evaluates 9 constitutional gates and returns a directional verdict.
 
     Constitutional boundary: synthesis MUST NOT contain account-level state
-    (balance, equity, margin).  This function enforces that by ignoring any
+    (balance, equity, margin). This function enforces that by ignoring any
     such fields even if accidentally present.
 
     Args:
-        synthesis: Output of build_l12_synthesis() — nested dict containing
-            layers, scores, execution, risk, fusion_frpc, etc.
+        synthesis: Nested dict containing layers, scores, execution, propfirm,
+            risk, bias, system, etc. (output of build_l12_synthesis()).
 
     Returns:
-        verdict dict with at minimum:
-            "symbol", "verdict", "confidence", "direction",
-            "wolf_status", "proceed_to_L13", "gates"
+        verdict dict containing:
+            symbol, verdict, confidence, direction, wolf_status,
+            proceed_to_L13, gates, enrichment_applied, scores
+
+    Raises:
+        ValueError: If a required top-level synthesis field is missing.
     """
+    # Validate required fields
+    for field in _REQUIRED_SYNTHESIS_FIELDS:  # noqa: F402
+        if field not in synthesis:
+            raise ValueError(f"Missing required synthesis field: {field}")
+
     symbol: str = synthesis.get("pair", synthesis.get("symbol", "UNKNOWN"))
 
-    # --- Extract scores from synthesis structure ---
-    layers: dict = synthesis.get("layers", {})
-    scores: dict = synthesis.get("scores", {})
-    frpc_block: dict = synthesis.get("fusion_frpc", {})
-    execution: dict = synthesis.get("execution", {})
+    layers: dict[str, Any] = synthesis["layers"]
+    scores: dict[str, Any] = synthesis["scores"]
+    execution: dict[str, Any] = synthesis["execution"]
+    propfirm: dict[str, Any] = synthesis["propfirm"]
+    risk: dict[str, Any] = synthesis["risk"]
+    bias: dict[str, Any] = synthesis["bias"]
+    system: dict[str, Any] = synthesis["system"]
 
-    tii_sym: float = float(layers.get("L8_tii_sym", 0.0))
+    # ── Extract raw values ────────────────────────────────────────────────────
+    tii: float = float(layers.get("L8_tii_sym", 0.0))
     integrity: float = float(layers.get("L8_integrity_index", 0.0))
-    conf12: float = float(layers.get("conf12", (tii_sym + integrity) / 2.0))
-    frpc_energy: float = float(frpc_block.get("frpc_energy", 0.0))
+    monte: float = float(layers.get("L7_monte_carlo_win", 0.0))
+    conf12: float = float(layers.get("conf12", 0.0))
+    enrichment_score: float = float(layers.get("enrichment_score", 0.0))
+
+    rr: float = float(execution.get("rr_ratio", 0.0))
+    fta: float = float(scores.get("fta_score", 0.0))
     wolf_30: int = int(scores.get("wolf_30_point", 0))
 
-    # Normalise wolf_30 (0–30) to 0–1
-    wolf_norm: float = wolf_30 / 30.0 if wolf_30 > 0 else 0.0
+    compliant: bool = bool(propfirm.get("compliant", False))
+    drawdown: float = float(risk.get("current_drawdown", 0.0))
+    max_drawdown: float = float(risk.get("max_drawdown", 5.0))
+    latency: int = int(system.get("latency_ms", 0))
 
-    # Gate pass conditions (constitutional thresholds)
-    wolf_ok: bool = wolf_norm >= 0.70
-    tii_ok: bool = conf12 >= 0.70
-    frpc_ok: bool = frpc_energy >= 0.65 or integrity >= 0.65
+    # ── 9 Constitutional Gates ────────────────────────────────────────────────
+    g1 = "PASS" if tii >= _THRESH_TII else "FAIL"
+    g2 = "PASS" if integrity >= _THRESH_INTEGRITY else "FAIL"
+    g3 = "PASS" if rr >= _THRESH_RR else "FAIL"
+    g4 = "PASS" if fta >= _THRESH_FTA else "FAIL"
+    g5 = "PASS" if monte >= _THRESH_MONTE else "FAIL"
+    g6 = "PASS" if compliant else "FAIL"
+    g7 = "PASS" if drawdown < max_drawdown else "FAIL"
+    g8 = "PASS" if latency <= _THRESH_LATENCY_MS else "FAIL"
+    g9 = "PASS" if conf12 >= _THRESH_CONF12 else "FAIL"
 
-    passed_count: int = sum([wolf_ok, tii_ok, frpc_ok])
+    gate_results: dict[str, Any] = {
+        "gate_1_tii": g1,
+        "gate_2_integrity": g2,
+        "gate_3_rr": g3,
+        "gate_4_fta": g4,
+        "gate_5_montecarlo": g5,
+        "gate_6_propfirm": g6,
+        "gate_7_drawdown": g7,
+        "gate_8_latency": g8,
+        "gate_9_conf12": g9,
+    }
+    passed: int = sum(1 for v in gate_results.values() if v == "PASS")
+    gate_results["passed"] = passed
+    gate_results["total"] = 9
 
-    if passed_count == 3:
-        verdict = "EXECUTE"
-        proceed = True
-    elif passed_count == 2:
-        verdict = "EXECUTE_REDUCED_RISK"
-        proceed = True
-    elif passed_count == 1:
-        verdict = "HOLD"
-        proceed = False
-    else:
+    all_pass: bool = passed == 9
+    critical_fail: bool = g6 == "FAIL" or g7 == "FAIL"
+
+    # ── Direction from technical bias ─────────────────────────────────────────
+    technical_bias: str = str(bias.get("technical", "NEUTRAL")).upper()
+    direction: str = "SELL" if technical_bias == "BEARISH" else "BUY"
+
+    # ── Verdict ───────────────────────────────────────────────────────────────
+    if all_pass:
+        verdict: str = f"EXECUTE_{direction}"
+        proceed: bool = True
+    elif critical_fail:
         verdict = "NO_TRADE"
         proceed = False
+    else:
+        verdict = "HOLD"
+        proceed = False
 
-    # Confidence: weighted blend of gate scores
-    confidence: float = round(
-        wolf_norm * 0.35 + conf12 * 0.40 + frpc_energy * 0.25,
-        4,
-    )
+    # ── Confidence label (wolf_30_point based) + enrichment adjustment ────────
+    base_confidence: str = _wolf30_to_confidence(wolf_30)
+    has_enrichment: bool = enrichment_score != 0.0
+    enrichment_applied: bool = False
+    confidence: str = base_confidence
 
-    direction: str = execution.get("direction", "HOLD")
-    wolf_status: str = "ACTIVE" if wolf_ok else "WEAK"
+    if all_pass and has_enrichment:
+        if enrichment_score >= 0.75:
+            confidence = _upgrade_confidence(base_confidence)
+            enrichment_applied = True
+        elif enrichment_score < 0.30:
+            confidence = _downgrade_confidence(base_confidence)
+            enrichment_applied = True
+
+    wolf_status: str = "ACTIVE" if passed >= 7 else "WEAK"
 
     return {
         "symbol": symbol,
@@ -414,17 +502,13 @@ def generate_l12_verdict(synthesis: dict[str, Any]) -> dict[str, Any]:
         "direction": direction,
         "wolf_status": wolf_status,
         "proceed_to_L13": proceed,
-        "gates": {
-            "passed": passed_count,
-            "total": 3,
-            "wolf": wolf_ok,
-            "tii": tii_ok,
-            "frpc": frpc_ok,
-        },
+        "gates": gate_results,
+        "enrichment_applied": enrichment_applied,
         "scores": {
-            "wolf_norm": round(wolf_norm, 4),
-            "conf12": round(conf12, 4),
-            "frpc_energy": round(frpc_energy, 4),
+            "tii": tii,
+            "integrity": integrity,
+            "conf12": conf12,
+            "enrichment_score": enrichment_score,
         },
     }
 
