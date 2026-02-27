@@ -8,13 +8,21 @@ Covers:
   - build_l12_synthesis (module-level function with layer_results dict)
   - Two-pass governance integration
   - Sovereignty enforcement with verdict downgrade
+  - _timed_call per-layer timeout
+  - Macro analyzer wiring (MonthlyRegimeAnalyzer + MacroVolatilityEngine)
 """
+
+import time
 
 import pytest  # pyright: ignore[reportMissingImports]
 
 from pipeline.engines import L13ReflectiveEngine, L15MetaSovereigntyEngine
 from pipeline.result import PipelineResult
-from pipeline.wolf_constitutional_pipeline import build_l12_synthesis
+from pipeline.wolf_constitutional_pipeline import (
+    WolfConstitutionalPipeline,
+    _LAYER_TIMEOUT_SEC,
+    build_l12_synthesis,
+)
 
 # ══════════════════════════════════════════════════════════════
 #  FIXTURES
@@ -577,3 +585,79 @@ class TestBuildL12Synthesis:
         synthesis = build_l12_synthesis(layer_results)
 
         assert synthesis["execution"]["direction"] == "HOLD"
+
+    def test_macro_regime_fields_in_synthesis(self):
+        """MonthlyRegimeAnalyzer fields should flow into synthesis['macro']."""
+        layer_results = self._make_layer_results()
+        # Simulate a full MonthlyRegimeAnalyzer result being flattened into
+        # layer_results_combined (as done in Phase 5 of the pipeline).
+        layer_results["macro"] = "BULLISH_EXPANSION"
+        layer_results["phase"] = "EXPANSION"
+        layer_results["macro_vol_ratio"] = 1.35
+        layer_results["alignment"] = True
+        layer_results["liquidity"] = {"macro_buy_liquidity": 1.09500}
+        layer_results["bias_override"] = {
+            "active": True,
+            "penalized_direction": "SELL",
+            "confidence_multiplier": 0.7,
+        }
+
+        synthesis = build_l12_synthesis(layer_results)
+
+        assert synthesis["macro"]["regime"] == "BULLISH_EXPANSION"
+        assert synthesis["macro"]["phase"] == "EXPANSION"
+        assert synthesis["macro"]["volatility_ratio"] == pytest.approx(1.35)
+        assert synthesis["macro"]["mn_aligned"] is True
+        assert synthesis["macro"]["bias_override"]["active"] is True
+
+    def test_macro_vix_state_in_synthesis(self):
+        """macro_vix_state should flow into synthesis['macro_vix']."""
+        layer_results = self._make_layer_results()
+        layer_results["macro_vix_state"] = {
+            "regime_state": 2,
+            "risk_multiplier": 0.3,
+            "vix_level": 28.5,
+        }
+
+        synthesis = build_l12_synthesis(layer_results)
+
+        assert synthesis["macro_vix"]["regime_state"] == 2
+        assert synthesis["macro_vix"]["risk_multiplier"] == pytest.approx(0.3)
+
+
+# ══════════════════════════════════════════════════════════════
+#  _TIMED_CALL PER-LAYER TIMEOUT
+# ══════════════════════════════════════════════════════════════
+
+class TestTimedCallTimeout:
+    """Tests for WolfConstitutionalPipeline._timed_call per-layer timeout."""
+
+    def test_timed_call_completes_fast_function(self):
+        """A function that completes within the timeout should return normally."""
+        def fast_fn(x):
+            return x * 2
+
+        result = WolfConstitutionalPipeline._timed_call(
+            fast_fn, "TEST_LAYER", "EURUSD", 21
+        )
+
+        assert result == 42
+
+    def test_timed_call_raises_timeout_error_when_layer_hangs(self, monkeypatch):
+        """A function that sleeps longer than the timeout must raise TimeoutError."""
+        import pipeline.wolf_constitutional_pipeline as _pipeline_mod
+
+        # Use a very short timeout so the test completes quickly.
+        monkeypatch.setattr(_pipeline_mod, "_LAYER_TIMEOUT_SEC", 0.1)
+
+        def hanging_fn():
+            time.sleep(1)  # longer than 0.1s, shorter than default 10s
+
+        with pytest.raises(TimeoutError, match="timeout"):
+            WolfConstitutionalPipeline._timed_call(
+                hanging_fn, "HANGING_LAYER", "EURUSD"
+            )
+
+    def test_layer_timeout_constant_is_positive(self):
+        """_LAYER_TIMEOUT_SEC must be a positive float."""
+        assert _LAYER_TIMEOUT_SEC > 0
