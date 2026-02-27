@@ -184,8 +184,8 @@ Test penting:
 ## 🚀 CI/CD
 
 - CI workflow: `.github/workflows/wolf-pipeline-ci.yml`
-     - Trigger: `pull_request` ke branch `main`, `workflow_dispatch`
-     - Gate: lint, type check, constitutional boundary, tests, coverage, dashboard build, dan **secret scan (gitleaks)**
+  - Trigger: `pull_request` ke branch `main`, `workflow_dispatch`
+  - Gate: lint, type check, constitutional boundary, tests, coverage, dashboard build, dan **secret scan (gitleaks)**
 
 - Deploy workflow: `.github/workflows/railway-deploy.yml`
   - Trigger otomatis: hanya setelah workflow `CI` sukses di branch `main`
