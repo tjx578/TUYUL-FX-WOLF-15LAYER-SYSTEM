@@ -18,21 +18,26 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass
-from typing import Any
+from types import SimpleNamespace
+from typing import TYPE_CHECKING, Any
 
 from loguru import logger  # pyright: ignore[reportMissingImports]
 
 from engines.v11.config import get_v11, is_v11_enabled
+
+if TYPE_CHECKING:
+    from engines.v11.data_adapter import V11DataAdapter
+    from engines.v11.extreme_selectivity_gate import ExtremeSelectivityGateV11
 
 
 @dataclass(frozen=True)
 class V11Overlay:
     """
     V11 post-pipeline overlay result.
-    
+
     This is the output of the v11 hook that overlays on top of PipelineResult.
     """
-    
+
     enabled: bool
     should_trade: bool  # Final recommendation: L12 + v11 consensus
     gate_result: dict[str, Any] | None
@@ -40,7 +45,7 @@ class V11Overlay:
     latency_ms: float
     skipped_reason: str | None = None
     error: str | None = None
-    
+
     def to_dict(self) -> dict[str, Any]:
         """Serialize for JSON consumption."""
         return {
@@ -57,24 +62,24 @@ class V11Overlay:
 class V11PipelineHook:
     """
     Post-pipeline hook for v11 extreme selectivity filtering.
-    
+
     Decision Matrix:
     - L12=EXECUTE AND v11=ALLOW → ✅ TRADE (Sniper Entry)
     - L12=EXECUTE AND v11=BLOCK → ❌ NO TRADE (v11 veto)
     - L12=HOLD/NO_TRADE AND v11=* → ❌ NO TRADE (L12 authority preserved)
-    
+
     v11 can ONLY reduce trades (block EXECUTE), never override HOLD.
     """
-    
+
     def __init__(self) -> None:
         self._enabled = is_v11_enabled()
         self._require_l12_execute = get_v11("governance.require_l12_execute", True)
         self._max_latency_ms = get_v11("governance.max_latency_ms", 100)
-        
+
         # Lazy-loaded components (prevent circular imports)
-        self._data_adapter = None
-        self._selectivity_gate = None
-    
+        self._data_adapter: V11DataAdapter | None = None
+        self._selectivity_gate: ExtremeSelectivityGateV11 | None = None
+
     def evaluate(
         self,
         pipeline_result: Any,  # PipelineResult
@@ -83,25 +88,25 @@ class V11PipelineHook:
     ) -> V11Overlay:
         """
         Evaluate pipeline result through v11 sniper filter.
-        
+
         Args:
             pipeline_result: Output from WolfConstitutionalPipeline
             symbol: Trading symbol
             timeframe: Timeframe for analysis
-        
+
         Returns:
             V11Overlay with final trade recommendation
         """
         start_time = time.perf_counter()
-        
+
         # Check if v11 is enabled
         if not self._enabled:
             return self._disabled_overlay(time.perf_counter() - start_time)
-        
+
         try:
             # Extract L12 verdict
             l12_verdict = self._extract_l12_verdict(pipeline_result)
-            
+
             # If L12 didn't approve, skip v11 (preserve L12 authority)
             if self._require_l12_execute and l12_verdict != "EXECUTE":
                 latency = (time.perf_counter() - start_time) * 1000
@@ -113,16 +118,17 @@ class V11PipelineHook:
                     latency_ms=latency,
                     skipped_reason=f"L12_verdict={l12_verdict}",
                 )
-            
+
             # Load v11 components (lazy)
             self._ensure_components_loaded()
-            
+
             # Extract synthesis from pipeline result
             synthesis = self._extract_synthesis(pipeline_result)
-            
+
             # Collect data for gate
+            assert self._data_adapter is not None  # guaranteed by _ensure_components_loaded
             gate_input = self._data_adapter.collect(synthesis, symbol, timeframe)
-            
+
             if gate_input is None:
                 latency = (time.perf_counter() - start_time) * 1000
                 return V11Overlay(
@@ -133,24 +139,25 @@ class V11PipelineHook:
                     latency_ms=latency,
                     error="Failed to collect gate input data",
                 )
-            
+
             # Run gate evaluation
+            assert self._selectivity_gate is not None  # guaranteed by _ensure_components_loaded
             gate_result = self._selectivity_gate.evaluate(gate_input)
-            
+
             latency = (time.perf_counter() - start_time) * 1000
-            
+
             # Check latency budget
             if latency > self._max_latency_ms:
                 logger.warning(
                     f"V11 latency exceeded budget: {latency:.2f}ms > {self._max_latency_ms}ms"
                 )
-            
+
             # Determine final recommendation
             should_trade = self._compute_final_decision(l12_verdict, gate_result)
-            
+
             # Log decision
             self._log_decision(symbol, l12_verdict, gate_result, should_trade, latency)
-            
+
             return V11Overlay(
                 enabled=True,
                 should_trade=should_trade,
@@ -158,11 +165,11 @@ class V11PipelineHook:
                 adapter_input=self._serialize_gate_input(gate_input),
                 latency_ms=latency,
             )
-            
+
         except Exception as e:
             latency = (time.perf_counter() - start_time) * 1000
             logger.error(f"V11PipelineHook: Error during evaluation: {e}")
-            
+
             return V11Overlay(
                 enabled=True,
                 should_trade=False,
@@ -171,37 +178,78 @@ class V11PipelineHook:
                 latency_ms=latency,
                 error=str(e),
             )
-    
+
+    def run(
+        self,
+        pipeline_data: dict[str, Any],
+        symbol: str | None = None,
+        timeframe: str = "H1",
+    ) -> V11Overlay:
+        """Compatibility entrypoint for dict-first callers.
+
+        This mirrors analysis.v11 hook ergonomics while preserving the
+        post-L12 governance matrix in engines.v11.
+        """
+        if isinstance(pipeline_data, dict):
+            resolved_symbol = symbol or str(
+                pipeline_data.get("pair")
+                or pipeline_data.get("symbol")
+                or "UNKNOWN"
+            )
+            l12_verdict = pipeline_data.get("l12_verdict")
+            if not isinstance(l12_verdict, dict):
+                l12_verdict = {"verdict": "EXECUTE"}
+            pipeline_result = SimpleNamespace(
+                synthesis=pipeline_data.get("synthesis", pipeline_data),
+                l12_verdict=l12_verdict,
+            )
+            return self.evaluate(
+                pipeline_result=pipeline_result,
+                symbol=resolved_symbol,
+                timeframe=timeframe,
+            )
+
+        resolved_symbol = symbol or "UNKNOWN"
+        return self.evaluate(
+            pipeline_result=pipeline_data,
+            symbol=resolved_symbol,
+            timeframe=timeframe,
+        )
+
     def _ensure_components_loaded(self) -> None:
         """Lazy-load v11 components to prevent circular imports."""
         if self._data_adapter is None:
             from engines.v11.data_adapter import V11DataAdapter  # noqa: PLC0415
             self._data_adapter = V11DataAdapter()
-        
+
         if self._selectivity_gate is None:
             from engines.v11.extreme_selectivity_gate import ExtremeSelectivityGateV11  # noqa: PLC0415
             self._selectivity_gate = ExtremeSelectivityGateV11()
-    
+
     def _extract_l12_verdict(self, pipeline_result: Any) -> str:
         """Extract L12 verdict from pipeline result."""
         try:
-            # PipelineResult has l12_verdict dict
-            l12 = pipeline_result.l12_verdict
+            if isinstance(pipeline_result, dict):
+                l12 = pipeline_result.get("l12_verdict", {})
+            else:
+                l12 = pipeline_result.l12_verdict
             return l12.get("verdict", "NO_TRADE")
         except Exception:
             return "NO_TRADE"
-    
+
     def _extract_synthesis(self, pipeline_result: Any) -> dict[str, Any]:
         """Extract synthesis dict from pipeline result."""
         try:
+            if isinstance(pipeline_result, dict):
+                return pipeline_result.get("synthesis", {})
             return pipeline_result.synthesis
         except Exception:
             return {}
-    
+
     def _compute_final_decision(self, l12_verdict: str, gate_result: Any) -> bool:
         """
         Compute final trade decision based on L12 + v11.
-        
+
         Decision Matrix:
         - L12=EXECUTE AND v11=ALLOW → TRUE
         - L12=EXECUTE AND v11=BLOCK → FALSE
@@ -209,12 +257,12 @@ class V11PipelineHook:
         """
         if l12_verdict != "EXECUTE":
             return False
-        
+
         # v11 can only veto EXECUTE
         from engines.v11.extreme_selectivity_gate import GateVerdict  # noqa: PLC0415
-        
+
         return gate_result.verdict == GateVerdict.ALLOW
-    
+
     def _serialize_gate_input(self, gate_input: Any) -> dict[str, Any]:
         """Serialize gate input for logging/debugging."""
         try:
@@ -230,7 +278,7 @@ class V11PipelineHook:
             }
         except Exception:
             return {}
-    
+
     def _log_decision(
         self,
         symbol: str,
@@ -241,7 +289,7 @@ class V11PipelineHook:
     ) -> None:
         """Log v11 decision with structured data."""
         log_level = get_v11("governance.log_level", "INFO")
-        
+
         if log_level == "DEBUG":
             logger.debug(
                 f"V11 Decision: symbol={symbol} L12={l12_verdict} "
@@ -252,7 +300,7 @@ class V11PipelineHook:
             logger.info(
                 f"V11 VETO: symbol={symbol} reasons={gate_result.veto_reasons}"
             )
-    
+
     def _disabled_overlay(self, elapsed: float) -> V11Overlay:
         """Return overlay indicating v11 is disabled."""
         return V11Overlay(

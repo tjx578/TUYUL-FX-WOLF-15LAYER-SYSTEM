@@ -14,7 +14,6 @@ Covers:
 
 import sys
 import time
-
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -148,6 +147,31 @@ class TestJWT:
         assert payload is not None
         assert payload["role"] == "admin"
         assert payload["account"] == "123"
+
+    def test_decode_accepts_legacy_secret_during_migration(self):
+        import json  # noqa: PLC0415
+
+        from dashboard.backend import auth as dashboard_auth  # noqa: PLC0415
+
+        now = int(time.time())
+        header_b64 = dashboard_auth._b64url_encode(  # noqa: SLF001
+            json.dumps({"alg": "HS256", "typ": "JWT"}, separators=(",", ":")).encode()
+        )
+        payload_b64 = dashboard_auth._b64url_encode(  # noqa: SLF001
+            json.dumps({"sub": "legacy_user", "iat": now, "exp": now + 60}, separators=(",", ":")).encode()
+        )
+        legacy_sig = dashboard_auth._sign(header_b64, payload_b64, "legacy-secret")  # noqa: SLF001
+        token = f"{header_b64}.{payload_b64}.{legacy_sig}"
+
+        with patch.object(dashboard_auth, "JWT_SECRET", "dashboard-secret"), patch.object(
+            dashboard_auth,
+            "JWT_VERIFY_SECRETS",
+            ("dashboard-secret", "legacy-secret"),
+        ):
+            payload = dashboard_auth.decode_token(token)
+
+        assert payload is not None
+        assert payload["sub"] == "legacy_user"
 
 
 # =========================================================================
@@ -310,7 +334,6 @@ class TestRateLimitIntegration:
     def test_rate_limit_headers_present(self):
         """Responses should include X-RateLimit-* headers."""
         import fastapi  # type: ignore # noqa: PLC0415
-
         from fastapi.testclient import (  # noqa: PLC0415 # pyright: ignore[reportMissingImports]
             TestClient,  # pyright: ignore[reportMissingImports]
         )
@@ -333,7 +356,6 @@ class TestRateLimitIntegration:
     def test_exempt_paths_skip_rate_limit(self):
         """Health and root endpoints should NOT have rate limit headers."""
         import fastapi  # pyright: ignore[reportMissingImports] # noqa: PLC0415
-
         from fastapi.testclient import (  # noqa: PLC0415 # pyright: ignore[reportMissingImports]
             TestClient,  # pyright: ignore[reportMissingImports]
         )
@@ -356,7 +378,6 @@ class TestRateLimitIntegration:
     def test_burst_triggers_429(self):
         """Exceeding burst limit should return 429."""
         import fastapi  # pyright: ignore[reportMissingImports] # noqa: PLC0415
-
         from fastapi.testclient import (  # noqa: PLC0415 # pyright: ignore[reportMissingImports]
             TestClient,  # pyright: ignore[reportMissingImports]
         )
