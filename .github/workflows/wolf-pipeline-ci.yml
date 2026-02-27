@@ -1,4 +1,22 @@
-name: 🐺 Wolf 15-Layer CI Pipeline
+# yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
+#
+# Wolf 15-Layer System — Authoritative CI/CD Pipeline
+#
+# This is the SINGLE authoritative pipeline. All other CI workflows
+# (ci.yml, wolf-ci.yml, wolf-15-ci.yml) are deprecated and disabled.
+#
+# Job order (critical path):
+#   Phase 0 (parallel): ruff-lint, ascii-compliance
+#   Phase 1: mypy type check
+#   Phase 2: constitutional boundary check  (HARD BLOCK on violations)
+#   Phase 3: schema validation
+#   Phase 4: critical test gate             (HARD BLOCK on failure)
+#   Phase 5: coverage gate (≥70%)
+#   Phase 6: integration / import-chain
+#   Phase 7: dashboard build + ESLint       (parallel with Phase 5–6)
+#   Final:    governance-verdict            (merge gatekeeper)
+
+name: "Wolf 15-Layer CI"
 
 on:
   push:
