@@ -1,78 +1,42 @@
 """
-TUYUL FX Wolf-15 — Risk Engine
-================================
+TUYUL FX Wolf-15 — Risk Engine (Dashboard Layer)
+=================================================
 BUG FIX [BUG-2]:
   RiskMultiplier and RiskEngine aliases are now defined AFTER the class body.
   Previously they were defined before the class, causing NameError on import.
 
+REFACTOR [overlap-fix]:
+  Removed local pip value table and helper functions.
+  All pip lookups now delegate to config/pip_values.py (single source of truth),
+  eliminating divergence from risk/risk_engine_v2.py.
+
+  calculate_lot() now accepts typed schema objects and returns RiskCalculationResult,
+  matching the contract expected by tests and dashboard consumers.
+
 Lot formula:
-  1. pip_value  = get_pip_value(pair)
-  2. sl_dist    = abs(entry - sl) * pip_multiplier
-  3. dd_mult    = dd_multiplier(daily_dd_percent)
-  4. adj_risk   = risk_percent * dd_mult
-  5. risk_amt   = balance * adj_risk / 100
-  6. lot        = risk_amt / (sl_dist * pip_value)
-  7. PropFirmGuard.evaluate_trade()  ← final boundary check
+  1. pip_value, pip_mult = get_pip_info(pair)          ← config/pip_values.py
+  2. sl_pips  = abs(entry - sl) * pip_mult
+  3. dd_mult  = dd_multiplier(daily_dd_percent)
+  4. adj_risk = risk_percent * dd_mult
+  5. risk_amt = equity * adj_risk / 100
+  6. lot      = risk_amt / (sl_pips * pip_value)
+  7. PropFirmManager.evaluate_trade()                  ← DD-based guard
 """
 
 import logging
 import math
-from typing import Optional
+
+from config.pip_values import DEFAULT_PIP_VALUE, PipLookupError, get_pip_info
+from dashboard.backend.schemas import (
+    AccountState,
+    Layer12Signal,
+    RiskCalculationResult,
+    RiskMode,
+    RiskSeverity,
+)
+from propfirm_manager.profile_manager import PropFirmManager
 
 logger = logging.getLogger(__name__)
-
-# ─── Pip value table (standard lot = 100,000 units) ─────────────────────────
-
-_PIP_VALUES: dict[str, float] = {
-    # Gold / Metals
-    "XAUUSD": 10.0,
-    "XAGUSD": 50.0,
-    # Major pairs (USD quote)
-    "EURUSD": 10.0,
-    "GBPUSD": 10.0,
-    "AUDUSD": 10.0,
-    "NZDUSD": 10.0,
-    # USD base pairs
-    "USDJPY": 9.09,
-    "USDCHF": 10.87,
-    "USDCAD": 7.52,
-    # Cross pairs (approx, varies with FX rate)
-    "EURJPY": 9.09,
-    "GBPJPY": 9.09,
-    "AUDJPY": 9.09,
-    "EURGBP": 13.25,
-    "EURAUD": 6.45,
-    "GBPAUD": 6.45,
-    "GBPCAD": 7.52,
-    "EURCAD": 7.52,
-    # Indices
-    "US30":   1.0,
-    "US100":  1.0,
-    "SPX500": 10.0,
-    # Oil
-    "USOIL":  10.0,
-    "UKOIL":  10.0,
-    # BTC
-    "BTCUSD": 1.0,
-}
-
-_DEFAULT_PIP_VALUE = 10.0
-
-
-def get_pip_value(pair: str) -> float:
-    """Return pip value per standard lot in USD for given instrument."""
-    return _PIP_VALUES.get(pair.upper(), _DEFAULT_PIP_VALUE)
-
-
-def pip_multiplier(pair: str) -> float:
-    """Return decimal multiplier: JPY pairs use 100, others use 10000."""
-    if "JPY" in pair.upper():
-        return 100.0
-    if pair.upper() in ("XAUUSD",):
-        return 10.0   # Gold: 1 pip = $0.1 per micro, $10 per standard
-    if pair.upper() in ("US30", "US100", "SPX500", "BTCUSD", "USOIL", "UKOIL"):
-        return 1.0
-    return 10_000.0
 
 
 # ─── Drawdown multiplier (adaptive risk reduction) ───────────────────────────
@@ -98,134 +62,136 @@ def dd_multiplier(daily_dd_percent: float) -> float:
 
 class RiskMultiplierAggregator:
     """
-    Calculates position size based on account state and signal parameters.
-    Constitutional rule: lot_size is ALWAYS derived here, never from EA or user input.
+    Dashboard lot-size calculator — single authority for position sizing.
+
+    Uses config/pip_values.py as the sole pip data source so that the
+    dashboard and risk/risk_engine_v2.py share identical pip values and
+    cannot diverge.
+
+    Constitutional rule: lot_size is ALWAYS derived here, never from EA or
+    user input.
     """
 
-    # Lot size boundaries
     MIN_LOT: float = 0.01
     MAX_LOT: float = 100.0
-    LOT_STEP: float = 0.01
 
     def calculate_lot(
         self,
-        balance: float,
-        equity: float,
-        daily_dd_percent: float,
-        pair: str,
-        entry: float,
-        sl: float,
+        signal: Layer12Signal,
+        account_state: AccountState,
         risk_percent: float,
-        prop_firm_max_lot: Optional[float] = None,
-    ) -> dict:
+        prop_firm_code: str,
+        risk_mode: RiskMode = RiskMode.FIXED,
+        split_ratios: list[float] | None = None,
+    ) -> RiskCalculationResult:
         """
-        Calculate recommended lot size.
+        Calculate recommended lot size from a Layer-12 signal and account state.
+
+        Args:
+            signal: Layer-12 signal supplying pair, entry, and stop_loss.
+            account_state: Current account state snapshot.
+            risk_percent: Risk per trade as a percentage (e.g. 1.0 = 1 %).
+            prop_firm_code: Prop firm identifier for guard lookup (e.g. "ftmo").
+            risk_mode: FIXED (single lot) or SPLIT (multiple legs).
+            split_ratios: For SPLIT mode — ratios per leg, must sum to ~1.0.
 
         Returns:
-            dict with keys:
-              trade_allowed, recommended_lot, max_safe_lot,
-              risk_used_percent, daily_dd_after, severity, reason
+            RiskCalculationResult
         """
-        if balance <= 0:
-            return self._blocked("ZERO_BALANCE", "Account balance is zero or negative")
-        if entry <= 0 or sl <= 0:
-            return self._blocked("INVALID_PRICES", "Entry or SL price is zero")
-        if risk_percent <= 0:
-            return self._blocked("ZERO_RISK", "Risk percent must be positive")
+        # ── 1. Pip data (single source of truth: config/pip_values.py) ───────
+        try:
+            pip_val, pip_mult = get_pip_info(signal.pair)
+        except PipLookupError:
+            pip_val = DEFAULT_PIP_VALUE
+            pip_mult = 10_000.0
 
-        # 1. DD multiplier
-        mult = dd_multiplier(daily_dd_percent)
+        # ── 2. SL distance ───────────────────────────────────────────────────
+        sl_pips = abs(signal.entry - signal.stop_loss) * pip_mult
+        if sl_pips < 1:
+            return RiskCalculationResult(
+                trade_allowed=False,
+                recommended_lot=0.0,
+                max_safe_lot=0.0,
+                risk_used_percent=0.0,
+                daily_dd_after=account_state.daily_dd_percent,
+                total_dd_after=account_state.total_dd_percent,
+                severity=RiskSeverity.CRITICAL,
+                reason=f"Invalid SL distance: {sl_pips:.2f} pips",
+            )
 
-        # 2. Adjusted risk
+        # ── 3. Adjusted risk (DD multiplier) ─────────────────────────────────
+        mult = dd_multiplier(account_state.daily_dd_percent)
         adj_risk_pct = risk_percent * mult
 
-        # 3. Risk amount in account currency
-        risk_amount = equity * adj_risk_pct / 100.0
+        # ── 4. Risk amount and lot size ───────────────────────────────────────
+        risk_amount = account_state.equity * adj_risk_pct / 100.0
+        raw_lot = risk_amount / (sl_pips * pip_val)
+        lot = max(self.MIN_LOT, min(self.MAX_LOT, self._round_lot(raw_lot)))
 
-        # 4. SL distance in pips
-        pip_mult = pip_multiplier(pair)
-        sl_distance_pips = abs(entry - sl) * pip_mult
-        if sl_distance_pips < 1:
-            return self._blocked("SL_TOO_TIGHT", f"SL distance too small: {sl_distance_pips:.2f} pips")
+        # ── 5. DD projections ─────────────────────────────────────────────────
+        dd_after = account_state.daily_dd_percent + adj_risk_pct
+        total_dd_after = account_state.total_dd_percent + adj_risk_pct
 
-        # 5. Pip value
-        pip_val = get_pip_value(pair)
+        # ── 6. Prop firm guard (DD-based limits) ──────────────────────────────
+        try:
+            mgr = PropFirmManager(prop_firm_code)
+            guard = mgr.evaluate_trade(
+                account_state={
+                    "daily_dd_percent": account_state.daily_dd_percent,
+                    "total_dd_percent": account_state.total_dd_percent,
+                    "open_trades": account_state.open_trades,
+                    "balance": account_state.balance,
+                },
+                trade_risk={
+                    "daily_dd_after": dd_after,
+                    "total_dd_after": total_dd_after,
+                },
+            )
+            if not guard.allowed:
+                return RiskCalculationResult(
+                    trade_allowed=False,
+                    recommended_lot=0.0,
+                    max_safe_lot=0.0,
+                    risk_used_percent=round(adj_risk_pct, 3),
+                    daily_dd_after=round(dd_after, 3),
+                    total_dd_after=round(total_dd_after, 3),
+                    severity=guard.severity,
+                    reason=f"{guard.code}: {guard.details}",
+                )
+        except Exception as exc:
+            logger.warning("PropFirmManager error for %s: %s", prop_firm_code, exc)
 
-        # 6. Raw lot
-        raw_lot = risk_amount / (sl_distance_pips * pip_val)
-
-        # 7. Round to step + clamp
-        lot = self._round_lot(raw_lot)
-
-        # 8. Prop firm cap
-        if prop_firm_max_lot and lot > prop_firm_max_lot:
-            lot = self._round_lot(prop_firm_max_lot)
-
-        lot = max(self.MIN_LOT, min(self.MAX_LOT, lot))
-
-        # 9. DD after trade
-        dd_after = daily_dd_percent + adj_risk_pct
-
+        # ── 7. Severity label ─────────────────────────────────────────────────
         severity = (
-            "CRITICAL" if dd_after >= 4.0 else
-            "WARNING"  if dd_after >= 2.5 else
-            "SAFE"
+            RiskSeverity.CRITICAL if dd_after >= 4.0 else
+            RiskSeverity.WARNING  if dd_after >= 2.5 else
+            RiskSeverity.SAFE
         )
 
-        return {
-            "trade_allowed": True,
-            "recommended_lot": lot,
-            "max_safe_lot": lot,
-            "raw_lot": round(raw_lot, 4),
-            "risk_used_percent": round(adj_risk_pct, 3),
-            "risk_amount_usd": round(risk_amount, 2),
-            "sl_distance_pips": round(sl_distance_pips, 1),
-            "daily_dd_after": round(dd_after, 3),
-            "dd_multiplier": mult,
-            "severity": severity,
-            "pip_value": pip_val,
-        }
+        # ── 8. Split legs ─────────────────────────────────────────────────────
+        split_lots = None
+        if risk_mode == RiskMode.SPLIT and split_ratios:
+            split_lots = [
+                max(self.MIN_LOT, self._round_lot(lot * r))
+                for r in split_ratios
+            ]
 
-    def calculate_split_lots(
-        self,
-        balance: float,
-        equity: float,
-        daily_dd_percent: float,
-        pair: str,
-        entry: float,
-        sl: float,
-        risk_percent: float,
-        split_ratio: float = 0.5,
-    ) -> dict:
-        """Calculate two-leg split entry lots."""
-        base = self.calculate_lot(
-            balance, equity, daily_dd_percent, pair, entry, sl, risk_percent
+        return RiskCalculationResult(
+            trade_allowed=True,
+            recommended_lot=lot,
+            max_safe_lot=lot,
+            risk_used_percent=round(adj_risk_pct, 3),
+            daily_dd_after=round(dd_after, 3),
+            total_dd_after=round(total_dd_after, 3),
+            severity=severity,
+            reason="APPROVED",
+            split_lots=split_lots,
         )
-        if not base.get("trade_allowed"):
-            return base
-
-        total = base["recommended_lot"]
-        leg1 = self._round_lot(total * split_ratio)
-        leg2 = self._round_lot(total * (1 - split_ratio))
-        base["split_lots"] = [leg1, leg2]
-        base["risk_mode"] = "SPLIT"
-        return base
 
     @staticmethod
     def _round_lot(lot: float) -> float:
-        """Round to 0.01 lot step."""
+        """Round to 0.01 lot step (floor, never round up for safety)."""
         return math.floor(lot * 100) / 100.0
-
-    @staticmethod
-    def _blocked(code: str, reason: str) -> dict:
-        return {
-            "trade_allowed": False,
-            "recommended_lot": 0.0,
-            "max_safe_lot": 0.0,
-            "severity": "CRITICAL",
-            "code": code,
-            "reason": reason,
-        }
 
 
 # ── [BUG-2 FIX] Aliases defined AFTER class — no NameError on import ─────────
