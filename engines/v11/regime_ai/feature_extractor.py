@@ -1,217 +1,205 @@
 """
-Feature Extractor for Regime AI
+Regime AI — Feature Extractor
+Wolf-15 Layer Analysis System
 
-Computes 6 features from OHLCV:
-1. atr_ratio: ATR / price (normalized volatility)
-2. entropy: Price distribution entropy
-3. slope: Linear trend slope
-4. corr_dispersion: Dispersion of O/H/L/C correlations
-5. vol_imbalance: Volume imbalance ratio
-6. dd_velocity: Drawdown velocity
-
-Authority: ANALYSIS-ONLY. No execution side-effects.
+Extracts statistical features from price/volume data for regime classification.
+Pure analysis module (L1–L11). No execution side-effects.
 """
 
 from __future__ import annotations
 
-from typing import Any
+import logging
+from dataclasses import dataclass, field
 
-import numpy as np  # pyright: ignore[reportMissingImports]
+import numpy as np
+
+logger = logging.getLogger(__name__)
 
 
+@dataclass
+class RegimeFeatures:
+    """Feature vector for regime classification."""
+
+    volatility: float = 0.0
+    trend_strength: float = 0.0
+    mean_reversion: float = 0.0
+    volume_profile: float = 0.0
+    momentum: float = 0.0
+    atr_ratio: float = 0.0
+    spread_normalized: float = 0.0
+    bar_range_avg: float = 0.0
+    close_position_in_range: float = 0.0
+    directional_bias: float = 0.0
+    extras: dict[str, float] = field(default_factory=lambda: dict[str, float]())
+
+    def to_array(self) -> np.ndarray:
+        """Convert core features to numpy array for ML input."""
+        return np.array([
+            self.volatility,
+            self.trend_strength,
+            self.mean_reversion,
+            self.volume_profile,
+            self.momentum,
+            self.atr_ratio,
+            self.spread_normalized,
+            self.bar_range_avg,
+            self.close_position_in_range,
+            self.directional_bias,
+        ])
 class FeatureExtractor:
     """
-    Feature extractor for regime classification.
-    
-    Computes 6 features from OHLCV candle data.
-    
-    Parameters
-    ----------
-    window : int
-        Lookback window for feature computation
+    Extracts statistical features from OHLCV data for regime detection.
+
+    All methods are pure functions operating on numpy arrays.
+    No side-effects, no execution logic.
     """
-    
-    def __init__(self, window: int = 50) -> None:
-        self._window = window
-    
-    def extract(self, candles: list[dict[str, Any]]) -> np.ndarray | None:
+    def __init__(self, atr_period: int = 14, momentum_period: int = 10) -> None:
         """
-        Extract features from candle history.
-        
+        Initialize feature extractor.
         Args:
-            candles: List of OHLCV candles
-        
-        Returns:
-            Feature vector (6 elements) or None if insufficient data
+            atr_period: Period for ATR calculation.
+            momentum_period: Period for momentum calculation.
         """
-        if len(candles) < self._window:
-            return None
-        
-        try:
-            # Get last window candles
-            recent = candles[-self._window:]
-            
-            opens = np.array([c["open"] for c in recent], dtype=np.float64)
-            highs = np.array([c["high"] for c in recent], dtype=np.float64)
-            lows = np.array([c["low"] for c in recent], dtype=np.float64)
-            closes = np.array([c["close"] for c in recent], dtype=np.float64)
-            volumes = np.array([c.get("volume", 0) for c in recent], dtype=np.float64)
-            
-            # Feature 1: ATR ratio
-            atr_ratio = self._compute_atr_ratio(highs, lows, closes)
-            
-            # Feature 2: Entropy
-            entropy = self._compute_entropy(closes)
-            
-            # Feature 3: Slope
-            slope = self._compute_slope(closes)
-            
-            # Feature 4: Correlation dispersion
-            corr_dispersion = self._compute_corr_dispersion(opens, highs, lows, closes)
-            
-            # Feature 5: Volume imbalance
-            vol_imbalance = self._compute_vol_imbalance(volumes, closes)
-            
-            # Feature 6: Drawdown velocity
-            dd_velocity = self._compute_dd_velocity(closes)
-            
-            features = np.array([
-                atr_ratio,
-                entropy,
-                slope,
-                corr_dispersion,
-                vol_imbalance,
-                dd_velocity,
-            ], dtype=np.float64)
-            
-            # Replace NaN/inf with 0
-            features = np.nan_to_num(features, nan=0.0, posinf=0.0, neginf=0.0)
-            
+        super().__init__()
+        self.atr_period = atr_period
+        self.momentum_period = momentum_period
+    def extract(
+        self,
+        highs: np.ndarray,
+        lows: np.ndarray,
+        closes: np.ndarray,
+        volumes: np.ndarray | None = None,
+    ) -> RegimeFeatures:
+        """
+        Extract all features from OHLCV data.
+        Args:
+            highs: Array of high prices.
+            lows: Array of low prices.
+            closes: Array of close prices.
+            volumes: Optional volume data.
+        Returns:
+            RegimeFeatures dataclass with computed feature values.
+        """
+        features = RegimeFeatures()
+
+        if len(closes) < max(self.atr_period, self.momentum_period) + 1:
+            logger.warning("Insufficient data for feature extraction")
             return features
-            
-        except Exception:
-            return None
-    
-    def _compute_atr_ratio(
-        self, highs: np.ndarray, lows: np.ndarray, closes: np.ndarray
+        features.volatility = self._calc_volatility(closes)
+        features.trend_strength = self._calc_trend_strength(closes)
+        features.mean_reversion = self._calc_mean_reversion(closes)
+        features.momentum = self._calc_momentum(closes)
+        features.atr_ratio = self._calc_atr_ratio(highs, lows, closes)
+        features.bar_range_avg = self._calc_bar_range_avg(highs, lows)
+        features.close_position_in_range = self._calc_close_position(
+            highs, lows, closes
+        )
+        features.directional_bias = self._calc_directional_bias(closes)
+
+        if volumes is not None and len(volumes) > 0:
+            features.volume_profile = self._calc_volume_profile(volumes)
+        return features
+    def _calc_volatility(self, closes: np.ndarray) -> float:
+        """Calculate normalized volatility (std of returns)."""
+        if len(closes) < 2:
+            return 0.0
+        returns = np.diff(np.log(closes))
+        return float(np.std(returns))
+    def _calc_trend_strength(self, closes: np.ndarray) -> float:
+        """Calculate trend strength using linear regression R-squared."""
+        n = len(closes)
+        if n < 5:
+            return 0.0
+        x = np.arange(n)
+        correlation = np.corrcoef(x, closes)[0, 1]
+        return float(correlation**2)  # R-squared
+    def _calc_mean_reversion(self, closes: np.ndarray) -> float:
+        """Calculate mean reversion tendency (Hurst exponent approximation)."""
+        if len(closes) < 20:
+            return 0.5
+        returns = np.diff(np.log(closes))
+        # Simplified variance ratio
+        var1 = np.var(returns)
+        if var1 == 0:
+            return 0.5
+        returns_2 = returns[::2][:len(returns) // 2]
+        if len(returns_2) < 2:
+            return 0.5
+        var2 = np.var(returns_2)
+        ratio = var2 / (2 * var1) if var1 > 0 else 0.5
+        return float(np.clip(ratio, 0.0, 1.0))
+    def _calc_momentum(self, closes: np.ndarray) -> float:
+        """Calculate normalized momentum."""
+        if len(closes) < self.momentum_period + 1:
+            return 0.0
+        mom = (closes[-1] - closes[-self.momentum_period - 1]) / closes[
+            -self.momentum_period - 1
+        ]
+        return float(mom)
+    def _calc_atr_ratio(
+        self,
+        highs: np.ndarray,
+        lows: np.ndarray,
+        closes: np.ndarray,
     ) -> float:
-        """Compute ATR / price ratio."""
-        true_ranges = []
+        """Calculate ATR as ratio of price."""
+        if len(highs) < self.atr_period + 1:
+            return 0.0
+        tr_values: list[float] = []
         for i in range(1, len(highs)):
-            tr1 = highs[i] - lows[i]
-            tr2 = abs(highs[i] - closes[i - 1])
-            tr3 = abs(lows[i] - closes[i - 1])
-            true_ranges.append(max(tr1, tr2, tr3))
-        
-        if not true_ranges:
+            tr = max(
+                highs[i] - lows[i],
+                abs(highs[i] - closes[i - 1]),
+                abs(lows[i] - closes[i - 1]),
+            )
+            tr_values.append(tr)
+        if not tr_values:
             return 0.0
-        
-        atr = np.mean(true_ranges)
-        price = closes[-1]
-        
-        if price == 0:
+        atr = float(np.mean(tr_values[-self.atr_period :]))
+        avg_price = float(np.mean(closes[-self.atr_period :]))
+        if avg_price == 0:
             return 0.0
-        
-        return atr / price
-    
-    def _compute_entropy(self, closes: np.ndarray) -> float:
-        """Compute price distribution entropy."""
-        # Bin returns into histogram
-        returns = np.diff(closes) / closes[:-1]
-        
-        if len(returns) == 0:
-            return 0.0
-        
-        # Create histogram (10 bins)
-        hist, _ = np.histogram(returns, bins=10)
-        
-        # Normalize to probabilities
-        hist = hist / np.sum(hist)
-        
-        # Remove zeros
-        hist = hist[hist > 0]
-        
-        # Compute entropy
-        entropy = -np.sum(hist * np.log(hist))
-        
-        return float(entropy)
-    
-    def _compute_slope(self, closes: np.ndarray) -> float:
-        """Compute linear trend slope."""
-        x = np.arange(len(closes))
-        
-        # Linear regression
-        mean_x = np.mean(x)
-        mean_y = np.mean(closes)
-        
-        num = np.sum((x - mean_x) * (closes - mean_y))
-        den = np.sum((x - mean_x) ** 2)
-        
-        if den == 0:
-            return 0.0
-        
-        slope = num / den
-        
-        # Normalize by price
-        if mean_y != 0:
-            slope = slope / mean_y
-        
-        return float(slope)
-    
-    def _compute_corr_dispersion(
-        self, opens: np.ndarray, highs: np.ndarray, lows: np.ndarray, closes: np.ndarray
+        return atr / avg_price
+    def _calc_bar_range_avg(
+        self, highs: np.ndarray, lows: np.ndarray
     ) -> float:
-        """Compute dispersion of OHLC correlations."""
-        # Compute pairwise correlations
-        correlations = []
-        
-        for arr1, arr2 in [
-            (opens, highs), (opens, lows), (opens, closes),
-            (highs, lows), (highs, closes), (lows, closes)
-        ]:
-            corr = np.corrcoef(arr1, arr2)[0, 1]
-            if not np.isnan(corr):
-                correlations.append(corr)
-        
-        if not correlations:
+        """Calculate average bar range normalized."""
+        ranges = highs - lows
+        avg_range = float(np.mean(ranges))
+        avg_price = float(np.mean((highs + lows) / 2))
+        if avg_price == 0:
             return 0.0
-        
-        # Return standard deviation of correlations
-        return float(np.std(correlations))
-    
-    def _compute_vol_imbalance(self, volumes: np.ndarray, closes: np.ndarray) -> float:
-        """Compute volume imbalance ratio."""
-        if len(volumes) < 2:
+        return avg_range / avg_price
+    def _calc_close_position(
+        self,
+        highs: np.ndarray,
+        lows: np.ndarray,
+        closes: np.ndarray,
+    ) -> float:
+        """Calculate average close position within bar range (0=low, 1=high)."""
+        ranges = highs - lows
+        mask = ranges > 0
+        if not np.any(mask):
+            return 0.5
+        positions = (closes[mask] - lows[mask]) / ranges[mask]
+        return float(np.mean(positions))
+
+    def _calc_directional_bias(self, closes: np.ndarray) -> float:
+        """Calculate directional bias (-1 to +1)."""
+        if len(closes) < 2:
             return 0.0
-        
-        # Separate up/down volume
         returns = np.diff(closes)
-        
-        up_vol = np.sum(volumes[1:][returns > 0])
-        down_vol = np.sum(volumes[1:][returns < 0])
-        
-        total_vol = up_vol + down_vol
-        
-        if total_vol == 0:
+        up = np.sum(returns > 0)
+        total = len(returns)
+        if total == 0:
             return 0.0
-        
-        # Imbalance: (up - down) / total
-        imbalance = (up_vol - down_vol) / total_vol
-        
-        return float(imbalance)
-    
-    def _compute_dd_velocity(self, closes: np.ndarray) -> float:
-        """Compute drawdown velocity."""
-        # Compute running max
-        running_max = np.maximum.accumulate(closes)
-        
-        # Compute drawdown
-        drawdowns = (closes - running_max) / running_max
-        
-        # Velocity = change in drawdown
-        if len(drawdowns) < 2:
+        return float((2 * up / total) - 1.0)
+    def _calc_volume_profile(self, volumes: np.ndarray) -> float:
+        """Calculate volume profile metric (recent vs historical)."""
+        if len(volumes) < 10:
             return 0.0
-        
-        dd_velocity = np.mean(np.diff(drawdowns))
-        
-        return float(dd_velocity)
+        recent_avg = float(np.mean(volumes[-5:]))
+        historical_avg = float(np.mean(volumes[:-5]))
+        if historical_avg == 0:
+            return 0.0
+        return recent_avg / historical_avg
