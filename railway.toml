@@ -3,6 +3,7 @@ builder = "DOCKERFILE"
 
 [deploy]
 startCommand = "sh -lc 'exec gunicorn app:app --bind 0.0.0.0:${PORT:-8000} --workers ${WEB_CONCURRENCY:-1} --worker-class uvicorn.workers.UvicornWorker --timeout 120 --access-logfile - --error-logfile - --log-level info 2>&1'"
+startCommand = "bash scripts/railway_start.sh"
 healthcheckPath = "/health"
 healthcheckTimeout = 30
 restartPolicyType = "ON_FAILURE"
