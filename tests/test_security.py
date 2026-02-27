@@ -178,6 +178,218 @@ class TestWSTokenManager:
             with pytest.raises(ValueError, match="WS_SECRET_KEY"):
                 WSTokenManager(secret_key="")
 
+    def test_rotate_token(self):
+        mgr = self._make_manager()
+        result = mgr.create_token("user:admin")
+        old_token = result["token"]
+        sid = result["session_id"]
+
+        rotated = mgr.rotate_token(sid)
+        new_token = rotated["token"]
+
+        assert new_token != old_token
+        assert rotated["session_id"] == sid
+
+        # Old token must be revoked
+        with pytest.raises(AuthError):
+            mgr.validate_token(old_token)
+
+        # New token must be valid
+        session = mgr.validate_token(new_token)
+        assert session.user_id == "user:admin"
+        assert session.session_id == sid
+
+    def test_rotate_revoked_session_fails(self):
+        mgr = self._make_manager()
+        result = mgr.create_token("user:admin")
+        mgr.revoke_session(result["session_id"])
+
+        with pytest.raises(AuthError):
+            mgr.rotate_token(result["session_id"])
+
+    def test_rotate_expired_session_fails(self):
+        mgr = WSTokenManager(secret_key="test-secret-key-32chars-minimum!", max_age=0)
+        result = mgr.create_token("user:admin")
+        time.sleep(0.01)
+
+        with pytest.raises(AuthError):
+            mgr.rotate_token(result["session_id"])
+
+    def test_rotate_nonexistent_session_fails(self):
+        mgr = self._make_manager()
+        with pytest.raises(AuthError):
+            mgr.rotate_token("nonexistent-session-id")
+
+
+from dashboard.ws_auth import (  # noqa: E402
+    AuthErrorCode,
+    _map_auth_error_to_code,
+    _parse_ws_subprotocol_token,
+    _send_error_and_close,
+    authenticate_websocket,
+)
+
+
+class TestParseWSSubprotocolToken:
+    """Tests for Sec-WebSocket-Protocol token extraction."""
+
+    def test_auth_dot_token(self):
+        ws = type("WS", (), {"headers": {"sec-websocket-protocol": "json, auth.mytoken123"}})()
+        assert _parse_ws_subprotocol_token(ws) == "mytoken123"
+
+    def test_token_dot_token(self):
+        ws = type("WS", (), {"headers": {"sec-websocket-protocol": "auth, token.mytoken456"}})()
+        assert _parse_ws_subprotocol_token(ws) == "mytoken456"
+
+    def test_no_matching_prefix(self):
+        ws = type("WS", (), {"headers": {"sec-websocket-protocol": "json, graphql"}})()
+        assert _parse_ws_subprotocol_token(ws) is None
+
+    def test_empty_header(self):
+        ws = type("WS", (), {"headers": {"sec-websocket-protocol": ""}})()
+        assert _parse_ws_subprotocol_token(ws) is None
+
+    def test_no_header(self):
+        ws = type("WS", (), {"headers": {}})()
+        assert _parse_ws_subprotocol_token(ws) is None
+
+    def test_no_headers_attr(self):
+        ws = type("WS", (), {})()
+        assert _parse_ws_subprotocol_token(ws) is None
+
+    def test_case_insensitive_prefix(self):
+        ws = type("WS", (), {"headers": {"sec-websocket-protocol": "json, AUTH.CaseSensitiveToken"}})()
+        assert _parse_ws_subprotocol_token(ws) == "CaseSensitiveToken"
+
+
+class TestMapAuthErrorToCode:
+    """Tests for accurate AuthError → AuthErrorCode mapping."""
+
+    def test_maps_expired(self):
+        err = AuthError("TOKEN_EXPIRED")
+        assert _map_auth_error_to_code(err) == AuthErrorCode.TOKEN_EXPIRED
+
+    def test_maps_revoked(self):
+        err = AuthError("TOKEN_REVOKED")
+        assert _map_auth_error_to_code(err) == AuthErrorCode.TOKEN_REVOKED
+
+    def test_maps_invalid(self):
+        err = AuthError("TOKEN_INVALID")
+        assert _map_auth_error_to_code(err) == AuthErrorCode.TOKEN_INVALID
+
+    def test_unknown_falls_back_to_invalid(self):
+        err = AuthError("SOMETHING_ELSE")
+        assert _map_auth_error_to_code(err) == AuthErrorCode.TOKEN_INVALID
+
+
+class TestSendErrorAndClose:
+    """Tests that _send_error_and_close sends JSON and closes with correct code."""
+
+    @pytest.mark.asyncio
+    async def test_sends_and_closes(self):
+        ws = AsyncMock()
+        await _send_error_and_close(ws, AuthErrorCode.TOKEN_INVALID, "bad token", close_code=1008)
+
+        ws.send_text.assert_called_once()
+        sent = json.loads(ws.send_text.call_args[0][0])
+        assert sent["type"] == "auth_error"
+        assert sent["code"] == "TOKEN_INVALID"
+        ws.close.assert_called_once_with(code=1008)
+
+    @pytest.mark.asyncio
+    async def test_protocol_error_close_code(self):
+        ws = AsyncMock()
+        await _send_error_and_close(ws, AuthErrorCode.NO_TOKEN, "malformed", close_code=1002)
+        ws.close.assert_called_once_with(code=1002)
+
+    @pytest.mark.asyncio
+    async def test_tolerates_send_failure(self):
+        ws = AsyncMock()
+        ws.send_text.side_effect = RuntimeError("already closed")
+        # Should not raise
+        await _send_error_and_close(ws, AuthErrorCode.TOKEN_INVALID, "x")
+        ws.close.assert_called_once()
+
+
+class TestAuthenticateWebsocketSubprotocol:
+    """Tests authenticate_websocket with Sec-WebSocket-Protocol header token."""
+
+    def _make_manager(self):
+        return WSTokenManager(secret_key="test-secret-key-32chars-minimum!")
+
+    @pytest.mark.asyncio
+    async def test_auth_via_subprotocol_header(self):
+        mgr = self._make_manager()
+        result = mgr.create_token("user:browser")
+        raw_token = result["token"]
+
+        ws = AsyncMock()
+        ws.scope = {"query_string": b""}
+        ws.headers = {"sec-websocket-protocol": f"json, auth.{raw_token}"}
+
+        session = await authenticate_websocket(ws, mgr)
+        assert session.user_id == "user:browser"
+        ws.send_text.assert_called_once()  # auth_ok message
+
+    @pytest.mark.asyncio
+    async def test_auth_via_first_message_fallback(self):
+        mgr = self._make_manager()
+        result = mgr.create_token("user:js")
+        raw_token = result["token"]
+
+        ws = AsyncMock()
+        ws.scope = {"query_string": b""}
+        ws.headers = {}  # No subprotocol header
+        ws.receive_text.return_value = json.dumps({"type": "auth", "token": raw_token})
+
+        session = await authenticate_websocket(ws, mgr)
+        assert session.user_id == "user:js"
+
+    @pytest.mark.asyncio
+    async def test_closes_on_invalid_token(self):
+        mgr = self._make_manager()
+
+        ws = AsyncMock()
+        ws.scope = {"query_string": b""}
+        ws.headers = {"sec-websocket-protocol": "json, auth.totally-fake-token"}
+
+        with pytest.raises(AuthError):
+            await authenticate_websocket(ws, mgr)
+
+        ws.close.assert_called_once_with(code=1008)
+
+    @pytest.mark.asyncio
+    async def test_closes_on_malformed_json(self):
+        mgr = self._make_manager()
+
+        ws = AsyncMock()
+        ws.scope = {"query_string": b""}
+        ws.headers = {}
+        ws.receive_text.return_value = "NOT JSON{{{{"
+
+        with pytest.raises(AuthError):
+            await authenticate_websocket(ws, mgr)
+
+        ws.close.assert_called_once_with(code=1002)
+
+    @pytest.mark.asyncio
+    async def test_expired_token_returns_correct_code(self):
+        mgr = WSTokenManager(secret_key="test-secret-key-32chars-minimum!", max_age=0)
+        result = mgr.create_token("user:expiring")
+        time.sleep(0.01)
+
+        ws = AsyncMock()
+        ws.scope = {"query_string": b""}
+        ws.headers = {"sec-websocket-protocol": f"json, auth.{result['token']}"}
+
+        with pytest.raises(AuthError, match="TOKEN_EXPIRED"):
+            await authenticate_websocket(ws, mgr)
+
+        # Verify error sent has correct code
+        sent = json.loads(ws.send_text.call_args[0][0])
+        assert sent["code"] == "TOKEN_EXPIRED"
+        ws.close.assert_called_once_with(code=1008)
+
 
 # ═══════════════════════════════════════════════════════════════════
 # 3. TLS Redirect Middleware
