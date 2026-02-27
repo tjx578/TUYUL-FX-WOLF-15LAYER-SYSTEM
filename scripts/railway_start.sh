@@ -17,6 +17,6 @@ exec gunicorn api_server:app \
   --workers "${WEB_CONCURRENCY}" \
   --worker-class uvicorn.workers.UvicornWorker \
   --timeout 120 \
-  --access-logfile - \
-  --error-logfile - \
+  --access-logfile /dev/stdout \
+  --error-logfile /dev/stdout \
   --log-level info
