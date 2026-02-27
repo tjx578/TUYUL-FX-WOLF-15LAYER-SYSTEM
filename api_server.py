@@ -63,7 +63,6 @@ def _configure_process_logging() -> None:
 _configure_process_logging()
 
 from api.calendar_routes import router as calendar_router  # noqa: E402
-from api.redis_health_routes import router as redis_health_router  # noqa: E402
 
 # ── New routers (7 new endpoints) ─────────────────────────────────────────────
 from api.constitutional_routes import router as constitutional_router  # noqa: E402
@@ -76,6 +75,7 @@ from api.l12_routes import router as l12_router  # noqa: E402
 from api.metrics_routes import router as metrics_router  # noqa: E402
 from api.middleware.prometheus_middleware import PrometheusMiddleware  # noqa: E402
 from api.middleware.rate_limit import RateLimitMiddleware  # noqa: E402  # noqa: E402
+from api.redis_health_routes import router as redis_health_router  # noqa: E402
 from api.risk_events_routes import router as risk_events_router  # noqa: E402
 from api.ws_routes import router as ws_router  # noqa: E402
 
@@ -263,7 +263,7 @@ async def health(request: Request) -> dict[str, Any]:
     redis_ok = False
     try:
         r: aioredis.Redis = request.app.state.redis
-        redis_ok = bool(await r.ping())
+        redis_ok = bool(await r.ping()) # pyright: ignore[reportGeneralTypeIssues]
     except Exception:
         pass
 
