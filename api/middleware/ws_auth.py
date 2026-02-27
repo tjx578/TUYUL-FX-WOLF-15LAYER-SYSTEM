@@ -10,8 +10,9 @@ This module provides:
   - ``require_ws_token()`` -- FastAPI dependency for WebSocket endpoints.
 
 All JWT tokens are validated via the unified ``dashboard.backend.auth`` module
-(HMAC-SHA256, secret from ``DASHBOARD_JWT_SECRET`` env var).  A single secret
-is used for both HTTP and WebSocket authentication.
+(HMAC-SHA256, primary secret ``DASHBOARD_JWT_SECRET`` with legacy fallback
+``JWT_SECRET`` for verification). This keeps HTTP and WebSocket authentication
+compatible during secret migration.
 """
 
 from __future__ import annotations

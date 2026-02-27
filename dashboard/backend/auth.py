@@ -9,7 +9,8 @@ Provides:
   - ``verify_ws_token_from_query(websocket)`` -- WS-safe auth via query param.
 
 Environment variables:
-  DASHBOARD_JWT_SECRET        -- HMAC secret (MUST change in prod)
+    DASHBOARD_JWT_SECRET        -- primary HMAC secret (MUST change in prod)
+    JWT_SECRET                  -- legacy fallback secret (optional)
   DASHBOARD_JWT_ALGO          -- algorithm (default HS256)
   DASHBOARD_TOKEN_EXPIRE_MIN  -- token lifetime in minutes (default 60)
   DASHBOARD_API_KEY           -- optional static API key for service-to-service calls
@@ -21,16 +22,28 @@ import hashlib
 import hmac
 import os
 import time
-from typing import Any, Optional
+from typing import Any
 
-from fastapi import Header, HTTPException, WebSocket, Query  # pyright: ignore[reportMissingImports]
+from fastapi import Header, HTTPException, Query, WebSocket  # pyright: ignore[reportMissingImports]
 from loguru import logger  # pyright: ignore[reportMissingImports]
 
 # ---------------------------------------------------------------------------
 # Config
 # ---------------------------------------------------------------------------
 
-JWT_SECRET: str = os.getenv("DASHBOARD_JWT_SECRET", "CHANGE_ME")
+_DASHBOARD_JWT_SECRET = os.getenv("DASHBOARD_JWT_SECRET", "").strip()
+_LEGACY_JWT_SECRET = os.getenv("JWT_SECRET", "").strip()
+
+if _DASHBOARD_JWT_SECRET and _LEGACY_JWT_SECRET and _DASHBOARD_JWT_SECRET != _LEGACY_JWT_SECRET:
+    logger.warning(
+        "JWT secret mismatch detected: DASHBOARD_JWT_SECRET and JWT_SECRET differ. "
+        "Using DASHBOARD_JWT_SECRET for token issuance and accepting both for verification."
+    )
+
+JWT_SECRET: str = _DASHBOARD_JWT_SECRET or _LEGACY_JWT_SECRET or "CHANGE_ME"
+JWT_VERIFY_SECRETS: tuple[str, ...] = tuple(
+    dict.fromkeys(secret for secret in (_DASHBOARD_JWT_SECRET, _LEGACY_JWT_SECRET, JWT_SECRET) if secret)
+)
 JWT_ALGO: str = os.getenv("DASHBOARD_JWT_ALGO", "HS256")
 TOKEN_EXPIRE_MIN: int = int(os.getenv("DASHBOARD_TOKEN_EXPIRE_MIN", "60"))
 API_KEY: str = os.getenv("DASHBOARD_API_KEY", "")
@@ -46,8 +59,8 @@ if JWT_SECRET == "CHANGE_ME":
 # Lightweight JWT helpers (no external lib needed -- HMAC-SHA256 only)
 # ---------------------------------------------------------------------------
 
-import base64
-import json
+import base64  # noqa: E402
+import json  # noqa: E402
 
 
 def _b64url_encode(data: bytes) -> str:
@@ -80,6 +93,8 @@ def create_token(sub: str = "dashboard", extra: dict[str, Any] | None = None) ->
     Returns:
         Encoded JWT string.
     """
+    if JWT_ALGO != "HS256":
+        logger.warning(f"Unsupported DASHBOARD_JWT_ALGO={JWT_ALGO}. Falling back to HS256.")
     header = {"alg": "HS256", "typ": "JWT"}
     now = int(time.time())
     payload: dict[str, Any] = {
@@ -97,7 +112,7 @@ def create_token(sub: str = "dashboard", extra: dict[str, Any] | None = None) ->
     return f"{header_b64}.{payload_b64}.{signature}"
 
 
-def decode_token(raw: str) -> Optional[dict[str, Any]]:
+def decode_token(raw: str) -> dict[str, Any] | None:
     """
     Decode and validate a JWT.
 
@@ -111,9 +126,18 @@ def decode_token(raw: str) -> Optional[dict[str, Any]]:
 
         header_b64, payload_b64, sig_b64 = parts
 
-        # Verify signature
-        expected_sig = _sign(header_b64, payload_b64, JWT_SECRET)
-        if not hmac.compare_digest(sig_b64, expected_sig):
+        header = json.loads(_b64url_decode(header_b64))
+        if header.get("alg") != "HS256":
+            return None
+
+        # Verify signature against accepted secrets.
+        matched_secret = False
+        for secret in JWT_VERIFY_SECRETS:
+            expected_sig = _sign(header_b64, payload_b64, secret)
+            if hmac.compare_digest(sig_b64, expected_sig):
+                matched_secret = True
+                break
+        if not matched_secret:
             return None
 
         # Decode payload
