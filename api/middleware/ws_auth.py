@@ -83,8 +83,8 @@ def verify_token(token: str) -> dict[str, Any] | None:
 
     try:
         result = validate_api_key(token)
-        if result is not None:
-            return result if isinstance(result, dict) else {"sub": "api_key_user", "auth_method": "api_key"}
+        if result:
+            return {"sub": "api_key_user", "auth_method": "api_key"}
     except Exception:
         pass
 

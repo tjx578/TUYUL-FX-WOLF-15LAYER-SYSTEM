@@ -8,6 +8,7 @@
 
 import { T, RADIUS, ZONE_COLORS, FONT_MONO, FONT_DISPLAY } from "@/lib/tokens";
 import { M, L, Card } from "@/components/ui";
+import { usePipeline } from "@/lib/api";
 
 // ── Types ─────────────────────────────────────────────────────
 export interface PipelineLayer {
@@ -47,47 +48,6 @@ export interface PipelineData {
   gates: PipelineGate[];
   entry: PipelineEntry;
 }
-
-// ── Mock / fallback data ──────────────────────────────────────
-export const MOCK_PIPELINE: PipelineData = {
-  pair: "EURUSD",
-  verdict: "EXECUTE_BUY",
-  wolfGrade: "PACK",
-  confidence: 0.87,
-  latency: 142,
-  layers: [
-    { id: "L1",  name: "Context",     zone: "COG",  status: "pass", val: "TREND",   detail: "0.85"  },
-    { id: "L2",  name: "MTA",         zone: "COG",  status: "pass", val: "BULL",    detail: "4/5"   },
-    { id: "L3",  name: "Technical",   zone: "ANA",  status: "pass", val: "BOS↑",   detail: "OB+FVG" },
-    { id: "L4",  name: "Scoring",     zone: "ANA",  status: "pass", val: "27/30",   detail: "wolf"  },
-    { id: "L5",  name: "Psychology",  zone: "META", status: "warn", val: "0.82",    detail: "calm"  },
-    { id: "L6",  name: "Risk",        zone: "META", status: "pass", val: "0.6%",    detail: "safe"  },
-    { id: "L7",  name: "Monte Carlo", zone: "ANA",  status: "pass", val: "72%",     detail: "MC"    },
-    { id: "L8",  name: "TII",         zone: "ANA",  status: "pass", val: "0.95",    detail: "integ" },
-    { id: "L9",  name: "SMC/VP",      zone: "ANA",  status: "pass", val: "Sweep✓",  detail: "dvg"   },
-    { id: "L10", name: "Position",    zone: "EXEC", status: "pass", val: "0.50L",   detail: "1:2.1" },
-    { id: "L11", name: "Execution",   zone: "EXEC", status: "pass", val: "1.0850",  detail: "setup" },
-    { id: "L12", name: "Verdict",     zone: "VER",  status: "pass", val: "9/9",     detail: "EXEC"  },
-    { id: "L13", name: "Reflect",     zone: "POST", status: "pass", val: "0.92",    detail: "LRCE"  },
-    { id: "L14", name: "Export",      zone: "POST", status: "pass", val: "JSON✓",   detail: "saved" },
-    { id: "L15", name: "Sovereign",   zone: "POST", status: "pass", val: "STABLE",  detail: "0.02"  },
-  ],
-  gates: [
-    { name: "TII Sym",   val: 0.94, thr: 0.85, pass: true },
-    { name: "Integrity", val: 0.98, thr: 0.80, pass: true },
-    { name: "R:R",       val: 2.1,  thr: 2.0,  pass: true },
-    { name: "FTA",       val: 4,    thr: 3,    pass: true },
-    { name: "MC WR",     val: 72,   thr: 55,   pass: true },
-    { name: "PropFirm",  val: "OK", thr: "OK", pass: true },
-    { name: "DD",        val: 0.6,  thr: 5.0,  pass: true },
-    { name: "Latency",   val: 142,  thr: 200,  pass: true },
-    { name: "Conf",      val: 0.87, thr: 0.70, pass: true },
-  ],
-  entry: {
-    price: 1.0850, sl: 1.0820, tp1: 1.0910, tp2: 1.0950,
-    rr: "1:2.0", lots: 0.50, risk$: 500, reward$: 1000,
-  },
-};
 
 // ── Helpers ───────────────────────────────────────────────────
 function statusColor(s: PipelineLayer["status"]): string {
@@ -227,19 +187,47 @@ function InfoRow({
 }
 
 // ── PipelinePanel ─────────────────────────────────────────────
-export function PipelinePanel({ data = MOCK_PIPELINE }: { data?: PipelineData }) {
-  const passCount = data.layers.filter((l) => l.status === "pass").length;
-  const totalCount = data.layers.length;
+export function PipelinePanel({ pair = "EURUSD" }: { pair?: string }) {
+  const { data, error, isLoading } = usePipeline(pair);
+
+  if (isLoading) {
+    return (
+      <Card title="WOLF-15 PIPELINE" sub="Loading…" accentColor="warn" icon="◈">
+        <div style={{ textAlign: "center", padding: 24, color: T.t4 }}>
+          <M s={10} c={T.t4} w={500}>Loading pipeline data…</M>
+        </div>
+      </Card>
+    );
+  }
+
+  if (error || !data) {
+    return (
+      <Card title="WOLF-15 PIPELINE" sub={pair} accentColor="warn" icon="◈">
+        <div style={{ textAlign: "center", padding: 24, color: T.red }}>
+          <M s={10} c={T.red} w={600}>
+            {error?.message ?? "No pipeline data available"}
+          </M>
+          <div style={{ marginTop: 6 }}>
+            <L s={8} c={T.t4}>Waiting for L12 verdict on {pair}</L>
+          </div>
+        </div>
+      </Card>
+    );
+  }
+
+  const pipeline = data as PipelineData;
+  const passCount = pipeline.layers.filter((l) => l.status === "pass").length;
+  const totalCount = pipeline.layers.length;
   const allPass = passCount === totalCount;
 
-  const verdictColor = data.verdict.startsWith("EXECUTE")
+  const verdictColor = pipeline.verdict.startsWith("EXECUTE")
     ? T.emerald
-    : data.verdict === "ABORT" ? T.red : T.amber;
+    : pipeline.verdict === "ABORT" ? T.red : T.amber;
 
   return (
     <Card
       title="WOLF-15 PIPELINE"
-      sub={`${data.pair} · Conf. ${(data.confidence * 100).toFixed(0)}% · ${data.latency}ms`}
+      sub={`${pipeline.pair} · Conf. ${(pipeline.confidence * 100).toFixed(0)}% · ${pipeline.latency}ms`}
       accentColor={allPass ? "ok" : "warn"}
       icon="◈"
       right={
@@ -256,14 +244,14 @@ export function PipelinePanel({ data = MOCK_PIPELINE }: { data?: PipelineData })
             border: `1px solid ${verdictColor}28`,
             letterSpacing: "0.06em",
           }}>
-            {data.verdict}
+            {pipeline.verdict}
           </div>
           <M s={10} c={T.t3}>{passCount}/{totalCount}</M>
         </div>
       }
     >
       {/* ── Gate summary ── */}
-      <GateGrid gates={data.gates} />
+      <GateGrid gates={pipeline.gates} />
 
       {/* ── 15-layer grid (3 columns) ── */}
       <div style={{
@@ -271,7 +259,7 @@ export function PipelinePanel({ data = MOCK_PIPELINE }: { data?: PipelineData })
         gridTemplateColumns: "1fr 1fr 1fr",
         gap: 3,
       }}>
-        {data.layers.map((l) => (
+        {pipeline.layers.map((l) => (
           <LayerRow key={l.id} layer={l} />
         ))}
       </div>
@@ -279,10 +267,10 @@ export function PipelinePanel({ data = MOCK_PIPELINE }: { data?: PipelineData })
       {/* ── Entry levels ── */}
       <InfoRow
         cells={[
-          { l: "ENTRY", v: data.entry.price, c: T.t1   },
-          { l: "SL",    v: data.entry.sl,    c: T.red   },
-          { l: "TP1",   v: data.entry.tp1,   c: T.emerald },
-          { l: "R:R",   v: data.entry.rr,    c: T.gold  },
+          { l: "ENTRY", v: pipeline.entry.price, c: T.t1   },
+          { l: "SL",    v: pipeline.entry.sl,    c: T.red   },
+          { l: "TP1",   v: pipeline.entry.tp1,   c: T.emerald },
+          { l: "R:R",   v: pipeline.entry.rr,    c: T.gold  },
         ]}
         bg={T.bg1}
         border={T.b0}
@@ -291,10 +279,10 @@ export function PipelinePanel({ data = MOCK_PIPELINE }: { data?: PipelineData })
       {/* ── Lot + Risk summary ── */}
       <InfoRow
         cells={[
-          { l: "LOTS",   v: `${data.entry.lots}L`,    c: T.t1      },
-          { l: "RISK",   v: `$${data.entry["risk$"]}`,  c: T.red     },
-          { l: "REWARD", v: `$${data.entry["reward$"]}`,c: T.emerald },
-          { l: "GRADE",  v: data.wolfGrade,             c: T.gold    },
+          { l: "LOTS",   v: `${pipeline.entry.lots}L`,    c: T.t1      },
+          { l: "RISK",   v: `$${pipeline.entry["risk$"]}`,  c: T.red     },
+          { l: "REWARD", v: `$${pipeline.entry["reward$"]}`,c: T.emerald },
+          { l: "GRADE",  v: pipeline.wolfGrade,             c: T.gold    },
         ]}
         bg={T.emeraldGlow}
         border={T.emeraldDim}

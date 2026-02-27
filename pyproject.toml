@@ -45,7 +45,7 @@ python_functions = ["test_*"]
 addopts = "-v --tb=short"
 
 # -----------------------------------------------------------------
-# coverage — 70% minimum gate
+# coverage — 85% minimum gate (institutional enforcement)
 # -----------------------------------------------------------------
 [tool.coverage.run]
 source = [
@@ -63,7 +63,7 @@ omit = [
 ]
 
 [tool.coverage.report]
-fail_under = 70
+fail_under = 85
 show_missing = true
 skip_empty = true
 exclude_lines = [

@@ -20,13 +20,16 @@ Run (Railway):
 import logging
 import os
 import sys
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from copy import deepcopy
 from datetime import UTC
+from typing import Any, Protocol, cast
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from loguru import logger as loguru_logger
+from typing_extensions import override
 
 
 def _configure_process_logging() -> None:
@@ -122,11 +125,12 @@ class _MaxLevelFilter(logging.Filter):
         super().__init__()
         self.max_level = max_level
 
+    @override
     def filter(self, record: logging.LogRecord) -> bool:
         return record.levelno <= self.max_level
 
 
-def _build_uvicorn_log_config() -> dict:
+def _build_uvicorn_log_config() -> dict[str, Any]:
     from uvicorn.config import LOGGING_CONFIG
 
     config = deepcopy(LOGGING_CONFIG)
@@ -178,7 +182,7 @@ def _build_uvicorn_log_config() -> dict:
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):  # type: ignore[type-arg]
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     logger.info("🐺 TUYUL FX Wolf-15 starting up…")
     yield
     logger.info("🐺 TUYUL FX Wolf-15 shutting down…")
@@ -243,18 +247,27 @@ _assert_no_duplicate_routes(app)
 
 # ── Health ────────────────────────────────────────────────────────────────────
 @app.get("/health")
-async def health() -> dict:
+async def health() -> dict[str, Any]:
     from datetime import datetime
 
-    import redis as redis_lib
+    from redis import Redis
+
+    class _SyncRedisClient(Protocol):
+        def ping(self) -> bool:
+            ...
+
+    class _RedisFactory(Protocol):
+        @staticmethod
+        def from_url(url: str, *, decode_responses: bool) -> _SyncRedisClient:
+            ...
 
     redis_ok = False
     try:
         from infrastructure.redis_url import get_redis_url
         url = get_redis_url()
-        r = redis_lib.from_url(url, decode_responses=True)
-        r.ping()
-        redis_ok = True
+        redis_factory = cast(_RedisFactory, Redis)
+        redis_client = redis_factory.from_url(url, decode_responses=True)
+        redis_ok = redis_client.ping()
     except Exception:
         pass
 
@@ -272,9 +285,9 @@ async def health() -> dict:
 
 # ── Endpoint summary (dev helper) ────────────────────────────────────────────
 @app.get("/api/v1/endpoints")
-async def endpoint_summary() -> dict:
+async def endpoint_summary() -> dict[str, Any]:
     """List all registered routes — for development debugging."""
-    routes = []
+    routes: list[dict[str, Any]] = []
     for route in app.routes:
         if hasattr(route, "methods") and hasattr(route, "path"):
             routes.append({
@@ -282,7 +295,12 @@ async def endpoint_summary() -> dict:
                 "methods": list(route.methods),  # type: ignore[arg-type]
                 "name": getattr(route, "name", "unknown"),
             })
-    return {"total": len(routes), "routes": sorted(routes, key=lambda r: r["path"])}
+
+    def _route_sort_key(route_item: dict[str, Any]) -> str:
+        path = route_item.get("path", "unknown")
+        return path if isinstance(path, str) else "unknown"
+
+    return {"total": len(routes), "routes": sorted(routes, key=_route_sort_key)}
 
 
 def _resolve_port(default: int = 8000) -> int:
