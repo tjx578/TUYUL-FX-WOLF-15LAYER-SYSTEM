@@ -118,6 +118,16 @@ export function usePairs() {
   return useSWR<PairInfo[]>("/api/v1/pairs", fetcher, ONCE);
 }
 
+// ─── PIPELINE HOOKS ───────────────────────────────────────────
+
+export function usePipeline(pair: string | null) {
+  return useSWR(
+    pair ? `/api/v1/pipeline/${pair}` : null,
+    fetcher,
+    NORMAL
+  );
+}
+
 // ─── HEALTH ───────────────────────────────────────────────────
 
 export function useHealth() {

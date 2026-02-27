@@ -6,12 +6,12 @@
 # (ci.yml, wolf-ci.yml, wolf-15-ci.yml) are deprecated and disabled.
 #
 # Job order (critical path):
-#   Phase 0 (parallel): ruff-lint, ascii-compliance
-#   Phase 1: mypy type check
+#   Phase 0 (parallel): ruff-lint, ascii-compliance, pyright-ignore-guard, artifact-guard, secret-scan
+#   Phase 1: mypy type check + pyright strict
 #   Phase 2: constitutional boundary check  (HARD BLOCK on violations)
 #   Phase 3: schema validation
 #   Phase 4: critical test gate             (HARD BLOCK on failure)
-#   Phase 5: coverage gate (≥70%)
+#   Phase 5: coverage gate (>=85%)
 #   Phase 6: integration / import-chain
 #   Phase 7: dashboard build + ESLint       (parallel with Phase 5–6)
 #   Final:    governance-verdict            (merge gatekeeper)
@@ -87,6 +87,46 @@ jobs:
             --exit-code 1
 
 # ──────────────────────────────────────────────────────────────────────────
+# PHASE 0-D · Blanket pyright ignore enforcement (hard-fail)
+# ──────────────────────────────────────────────────────────────────────────
+  pyright-ignore-guard:
+    name: "Phase 0-D · Pyright Ignore Guard"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: "Fail on blanket pyright ignores"
+        run: |
+          echo "Checking for blanket # pyright: ignore (without error code)..."
+          # Match '# pyright: ignore' at end of line (no [...] suffix)
+          if grep -Rn --include='*.py' -P '# pyright: ignore(?!\[)' . --exclude-dir=.venv --exclude-dir=node_modules --exclude-dir=__pycache__; then
+            echo "::error::Blanket pyright ignores detected. Use specific error codes: # pyright: ignore[reportXxx]"
+            exit 1
+          fi
+          echo "All pyright ignores have specific error codes."
+
+# ──────────────────────────────────────────────────────────────────────────
+# PHASE 0-E · Artifact guard (hard-fail)
+# ──────────────────────────────────────────────────────────────────────────
+  artifact-guard:
+    name: "Phase 0-E · Artifact Guard"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: "Prevent committed build artifacts"
+        run: |
+          echo "Checking for committed build artifacts..."
+          ARTIFACTS=$(git ls-files | grep -E 'final_results\.txt|\.coverage$|coverage\.xml|\.coveragerc$' || true)
+          if [ -n "$ARTIFACTS" ]; then
+            echo "::error::Build artifacts detected in repository:"
+            echo "$ARTIFACTS"
+            echo "Remove them with: git rm --cached <file>"
+            exit 1
+          fi
+          echo "No build artifacts in repository."
+
+# ──────────────────────────────────────────────────────────────────────────
 # PHASE 0-B · ASCII compliance (hard-fail)
 # ──────────────────────────────────────────────────────────────────────────
   ascii-compliance:
@@ -132,7 +172,7 @@ jobs:
   mypy:
     name: "Phase 1 · mypy (strict)"
     runs-on: ubuntu-latest
-    needs: [ruff, ascii-compliance]
+    needs: [ruff, ascii-compliance, pyright-ignore-guard, artifact-guard]
     steps:
       - uses: actions/checkout@v4
 
@@ -159,6 +199,36 @@ jobs:
           name: mypy-report
           path: mypy-report.txt
           retention-days: 7
+
+# ──────────────────────────────────────────────────────────────────────────
+# PHASE 1-B · Pyright type check (strict mode, hard-fail)
+# ──────────────────────────────────────────────────────────────────────────
+  pyright:
+    name: "Phase 1-B · Pyright (strict)"
+    runs-on: ubuntu-latest
+    needs: [ruff, ascii-compliance, pyright-ignore-guard]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install pyright
+        run: npm install -g pyright
+
+      - name: "Pyright (strict, hard-fail)"
+        run: pyright
 
 # ──────────────────────────────────────────────────────────────────────────
 # PHASE 2 · Constitutional boundary check (HARD BLOCK)
@@ -349,7 +419,7 @@ jobs:
   critical-tests:
     name: "Phase 4 · Critical Test Gate"
     runs-on: ubuntu-latest
-    needs: [mypy, constitutional-boundary, schema-validation]
+    needs: [mypy, pyright, constitutional-boundary, schema-validation]
     steps:
       - uses: actions/checkout@v4
 
@@ -409,10 +479,10 @@ jobs:
 
 
 # ──────────────────────────────────────────────────────────────────────────
-# PHASE 5 · Full test suite + coverage gate (>=70%)
+# PHASE 5 · Full test suite + coverage gate (>=85%)
 # ──────────────────────────────────────────────────────────────────────────
   coverage-gate:
-    name: "Phase 5 · Coverage Gate (>=70%)"
+    name: "Phase 5 · Coverage Gate (>=85%)"
     runs-on: ubuntu-latest
     needs: critical-tests
     steps:
@@ -442,7 +512,7 @@ jobs:
             --cov=risk \
             --cov-report=xml:coverage.xml \
             --cov-report=term-missing \
-            --cov-fail-under=70 \
+            --cov-fail-under=85 \
             --strict-markers \
             --timeout=60 \
             --tb=short \
@@ -450,7 +520,7 @@ jobs:
             -q
 
       - name: "Enforce coverage threshold"
-        run: coverage report --fail-under=70
+        run: coverage report --fail-under=85
 
       - name: Upload coverage to Codecov
         if: always()
@@ -596,7 +666,10 @@ jobs:
       - ruff
       - ascii-compliance
       - secret-scan
+      - pyright-ignore-guard
+      - artifact-guard
       - mypy
+      - pyright
       - constitutional-boundary
       - schema-validation
       - critical-tests
@@ -613,7 +686,10 @@ jobs:
           echo " Phase 0-A  ruff:                   ${{ needs.ruff.result }}"
           echo " Phase 0-B  ascii-compliance:        ${{ needs.ascii-compliance.result }}"
           echo " Phase 0-C  secret-scan:             ${{ needs.secret-scan.result }}"
+          echo " Phase 0-D  pyright-ignore-guard:    ${{ needs.pyright-ignore-guard.result }}"
+          echo " Phase 0-E  artifact-guard:          ${{ needs.artifact-guard.result }}"
           echo " Phase 1    mypy:                    ${{ needs.mypy.result }}"
+          echo " Phase 1-B  pyright:                 ${{ needs.pyright.result }}"
           echo " Phase 2    constitutional-boundary: ${{ needs.constitutional-boundary.result }}"
           echo " Phase 3    schema-validation:       ${{ needs.schema-validation.result }}"
           echo " Phase 4    critical-tests:          ${{ needs.critical-tests.result }}"
@@ -643,17 +719,41 @@ jobs:
           echo "Merge is BLOCKED -- remove secrets from repository content."
           exit 1
 
-      - name: "Hard block -- coverage below 70%"
+      - name: "Hard block -- pyright type errors"
+        if: needs.pyright.result != 'success'
+        run: |
+          echo "PYRIGHT TYPE CHECK FAILURE"
+          echo "Merge is BLOCKED -- fix pyright strict-mode type errors."
+          exit 1
+
+      - name: "Hard block -- blanket pyright ignores"
+        if: needs.pyright-ignore-guard.result != 'success'
+        run: |
+          echo "BLANKET PYRIGHT IGNORE DETECTED"
+          echo "Merge is BLOCKED -- use specific error codes: # pyright: ignore[reportXxx]"
+          exit 1
+
+      - name: "Hard block -- build artifacts in repo"
+        if: needs.artifact-guard.result != 'success'
+        run: |
+          echo "BUILD ARTIFACT IN REPOSITORY"
+          echo "Merge is BLOCKED -- remove committed artifacts."
+          exit 1
+
+      - name: "Hard block -- coverage below 85%"
         if: needs.coverage-gate.result != 'success'
         run: |
           echo "COVERAGE GATE FAILURE"
-          echo "Merge is BLOCKED -- test coverage must be >= 70%."
+          echo "Merge is BLOCKED -- test coverage must be >= 85%."
           exit 1
 
       - name: "Verdict: GRANTED"
         if: >-
           needs.secret-scan.result == 'success' &&
+          needs.pyright-ignore-guard.result == 'success' &&
+          needs.artifact-guard.result == 'success' &&
           needs.constitutional-boundary.result == 'success' &&
+          needs.pyright.result == 'success' &&
           needs.critical-tests.result == 'success' &&
           needs.coverage-gate.result == 'success'
         run: |

@@ -20,7 +20,7 @@ import {
   M, L, Dot, Badge, Divider,
   Card, Bar, Ring, StreamBadge,
 } from "@/components/ui";
-import { PipelinePanel, MOCK_PIPELINE } from "@/components/PipelinePanel";
+import { PipelinePanel } from "@/components/PipelinePanel";
 
 // ── Local account / order types (MT5 live model) ─────────────
 interface DdStat      { used: number; limit: number }
@@ -73,10 +73,10 @@ const ACCOUNTS: CockpitAccount[] = [
   },
 ];
 
-// ── Precomputed pipeline meta ─────────────────────────────────
-const PIPELINE_PASS  = MOCK_PIPELINE.layers.filter((l) => l.status === "pass").length;
-const PIPELINE_TOTAL = MOCK_PIPELINE.layers.length;
-const ALL_PASS       = PIPELINE_PASS === PIPELINE_TOTAL;
+// ── Pipeline summary is fetched live by PipelinePanel ─────────
+const PIPELINE_PASS  = 0;  // placeholder — real counts come from the component
+const PIPELINE_TOTAL = 15;
+const ALL_PASS       = false;
 
 // ── Status bar items ──────────────────────────────────────────
 const STATUS_ITEMS = [
@@ -707,7 +707,7 @@ export default function CockpitPage() {
 
           {/* ── CENTER column ── */}
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-            <PipelinePanel data={MOCK_PIPELINE} />
+            <PipelinePanel pair="EURUSD" />
             <ActionBar
               killSwitch={killSwitch}
               onToggleKill={() => setKillSwitch((v) => !v)}

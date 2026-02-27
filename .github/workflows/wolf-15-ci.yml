@@ -80,7 +80,7 @@ jobs:
             --cov=risk \
             --cov-report=xml:coverage.xml \
             --cov-report=term-missing \
-            --cov-fail-under=70 \
+            --cov-fail-under=85 \
             -v
 
       - name: Upload coverage to Codecov
@@ -93,7 +93,7 @@ jobs:
       - name: Coverage threshold gate
         run: |
           echo "--- Enforcing minimum coverage ---"
-          coverage report --fail-under=70
+          coverage report --fail-under=85
 
   # ---------------------------------------------------------------
   # JavaScript/TypeScript: ESLint — HARD FAIL (was soft-fail)

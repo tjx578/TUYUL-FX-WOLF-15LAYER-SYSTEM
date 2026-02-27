@@ -31,7 +31,7 @@ import secrets
 import time
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any  # noqa: UP035
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -85,6 +85,7 @@ class WSTokenManager:
     """
 
     def __init__(self, secret_key: str | None = None, max_age: int = WS_TOKEN_MAX_AGE_SECONDS) -> None:
+        super().__init__()
         self._secret = (secret_key or os.environ.get("WS_SECRET_KEY", "")).encode()
         if not self._secret:
             raise ValueError(
@@ -171,7 +172,7 @@ class WSTokenManager:
     def revoke_all_for_user(self, user_id: str) -> int:
         """Revoke all sessions for a user. Returns count revoked."""
         count = 0
-        for session in self._sessions.values():
+        for session in self._sessions.values():  # noqa: F402
             if session.user_id == user_id and not session.revoked:
                 session.revoked = True
                 self._revoked_tokens.add(session.token_hash)
@@ -446,15 +447,3 @@ async def authenticate_websocket(
         session.session_id, session.user_id,
     )
     return session
-
-
-async def _send_error(websocket: Any, code: AuthErrorCode, message: str) -> None:
-    """Send auth error (without closing). Kept for backward compatibility."""
-    try:  # noqa: SIM105
-        await websocket.send_text(json.dumps({
-            "type": "auth_error",
-            "code": code.value,
-            "message": message,
-        }))
-    except Exception:
-        pass  # Connection might already be closed
