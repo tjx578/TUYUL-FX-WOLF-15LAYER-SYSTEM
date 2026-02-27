@@ -1,12 +1,22 @@
 """
-WebSocket authentication middleware.
+DEPRECATED — Remove after 2026-06-01.
 
-Zone: dashboard (API security). No market analysis.
+This file is NOT used in production.  The canonical WebSocket authentication
+lives in ``api/middleware/ws_auth.py`` and delegates to the shared JWT / API-key
+verifiers in ``dashboard.backend.auth``.
 
-SECURITY FIXES:
-- Token MUST be sent via first message or Sec-WebSocket-Protocol header.
-- Token in query string is REJECTED (visible in access logs, browser history, proxies).
-- Short-lived session tokens with rotation.
+If you need WS auth, import from::
+
+    from api.middleware.ws_auth import (
+        extract_token,
+        verify_token,
+        ws_authenticate,
+        ws_auth_guard,
+    )
+
+Original description:
+  WebSocket authentication middleware with custom session-token management.
+  Zone: dashboard (API security). No market analysis.
 """
 
 from __future__ import annotations

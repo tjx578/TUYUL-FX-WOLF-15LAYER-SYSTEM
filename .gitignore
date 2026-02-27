@@ -5,16 +5,17 @@
 .env.*
 !.env.example
 
-# =========================
-# Python
-# =========================
+# ── Python artifacts ─────────────────────────
 __pycache__/
 *.py[cod]
 *$py.class
 *.pyc
 *.pyo
+*.egg-info/
+dist/
+build/
 
-# Test artifacts
+# ── Test output ──────────────────────────────
 _test_result*.txt
 _test_result*.log
 _batch_result*.txt
@@ -23,30 +24,44 @@ test_run_output.txt
 test-results/
 htmlcov/
 .coverage
+.coveragerc
 coverage.xml
 .pytest_cache/
+pytest_cache/
 
-# Environment
+# ── Build artifacts ──────────────────────────
+final_results.txt
+*.log
+*.out
+
+# ── Environment ──────────────────────────────
 .env
 .env.local
 .env.*.local
+.venv/
 
-# Node / JS
+# ── Node / JS ────────────────────────────────
 node_modules/
+**/node_modules/
 package-lock.json
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
 .next/
 out/
 
-# IDE
+# ── IDE ──────────────────────────────────────
 .vscode/settings.json
 .idea/
 *.swp
 *.swo
 
-# Ruff / Mypy cache
+# ── Ruff / Mypy / Pyright cache ─────────────
 .ruff_cache/
 .mypy_cache/
+.pyright/
 
-# OS files
+# ── OS files ─────────────────────────────────
 Thumbs.db
 .DS_Store

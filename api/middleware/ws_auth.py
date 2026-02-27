@@ -1,32 +1,94 @@
-"""
-WebSocket Authentication -- token validation for WS connections.
+"""WebSocket Authentication — canonical token validation for WS connections.
 
-WebSocket clients authenticate by passing a token as a query parameter:
-    ws://host/ws/prices?token=<JWT_OR_API_KEY>
+This is the **single source of truth** for WebSocket authentication.
+Both HTTP and WS endpoints share the same JWT / API-key verifiers via
+``dashboard.backend.auth``.  Do NOT add a parallel auth system.
 
-This module provides:
-  - ``ws_authenticate()`` -- validates token, sets websocket.state.user, returns bool.
-  - ``ws_auth_guard()`` -- high-level guard returning payload dict or None.
-  - ``require_ws_token()`` -- FastAPI dependency for WebSocket endpoints.
+Provides:
+  - ``extract_token()``     -- pull token from Authorization header OR query param.
+  - ``verify_token()``      -- validate a raw token string, return payload or None.
+  - ``ws_authenticate()``   -- validates token, sets websocket.state.user, returns bool.
+  - ``ws_auth_guard()``     -- high-level guard returning payload dict or None.
+  - ``require_ws_token()``  -- FastAPI dependency for WebSocket endpoints.
 
 All JWT tokens are validated via the unified ``dashboard.backend.auth`` module
 (HMAC-SHA256, canonical secret ``DASHBOARD_JWT_SECRET``). This keeps HTTP and
 WebSocket authentication on one compatible trust boundary.
+
+See also:
+  - ``dashboard.backend.auth.verify_token`` (HTTP FastAPI Depends)
+  - ``dashboard.backend.auth.verify_ws_token`` (WS FastAPI Depends via query)
 """
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
-import fastapi  # pyright: ignore[reportMissingImports]
-from fastapi import WebSocket  # pyright: ignore[reportMissingImports]
-from loguru import logger  # pyright: ignore[reportMissingImports]
+import fastapi
+from fastapi import WebSocket
 
 from dashboard.backend.auth import decode_token, validate_api_key
+
+logger = logging.getLogger(__name__)
 
 
 class WSAuthError(Exception):
     """Raised when WebSocket authentication fails."""
+
+
+# ---------------------------------------------------------------------------
+# Shared helpers — usable by both HTTP and WS layers
+# ---------------------------------------------------------------------------
+
+def extract_token(headers: dict[str, str], query_params: dict[str, str]) -> str | None:
+    """Extract a bearer token from headers or a ``token`` query param.
+
+    Lookup order:
+      1. ``?token=<token>`` query parameter (preferred for WS)
+      2. ``Authorization: Bearer <token>`` header
+
+    Returns the raw token string, or ``None`` if absent.
+    """
+    # 1. Query parameter (preferred for WS)
+    token = query_params.get("token")
+    if token:
+        return token
+
+    # 2. Authorization header
+    auth = headers.get("authorization") or headers.get("Authorization")
+    if auth and auth.lower().startswith("bearer "):
+        return auth.split(" ", 1)[1].strip()
+    if auth:
+        return auth
+
+    return None
+
+
+def verify_token(token: str) -> dict[str, Any] | None:
+    """Validate a raw token string (JWT or API key).
+
+    Delegates to ``dashboard.backend.auth.decode_token`` and
+    ``validate_api_key`` — the same verifiers used for HTTP routes.
+
+    Returns:
+        Payload dict on success, ``None`` on failure.
+    """
+    try:
+        payload = decode_token(token)
+        if payload is not None:
+            return payload
+    except Exception:
+        pass
+
+    try:
+        result = validate_api_key(token)
+        if result is not None:
+            return result if isinstance(result, dict) else {"sub": "api_key_user", "auth_method": "api_key"}
+    except Exception:
+        pass
+
+    return None
 
 
 async def ws_authenticate(websocket: WebSocket) -> bool:
@@ -37,20 +99,15 @@ async def ws_authenticate(websocket: WebSocket) -> bool:
     ``websocket.state.user`` to the subject claim and returns ``True``.
     On failure, closes the connection with code 4401 and returns ``False``.
     """
-    token: str | None = websocket.query_params.get("token")
+    token = extract_token(dict(websocket.headers), dict(websocket.query_params))  # noqa: F821
     if not token:
         await websocket.close(code=4401, reason="Missing authentication token")
         return False
 
-    payload = decode_token(token)
+    payload = verify_token(token)
     if payload is not None:
         websocket.state.user = payload.get("sub")
-        logger.debug(f"WS auth via JWT: user={websocket.state.user}")
-        return True
-
-    if validate_api_key(token):
-        websocket.state.user = "api_key_user"
-        logger.debug("WS auth via API key")
+        logger.debug(f"WS auth OK: user={websocket.state.user}")
         return True
 
     await websocket.close(code=4401, reason="Invalid or expired token")
@@ -73,7 +130,7 @@ async def ws_auth_guard(websocket: WebSocket) -> dict[str, Any] | None:
     Returns:
         User payload dict if authenticated, ``None`` if auth failed.
     """
-    token: str | None = websocket.query_params.get("token")
+    token = extract_token(dict(websocket.headers), dict(websocket.query_params))
     if not token:
         logger.warning("WS auth rejected: missing token")
         try:
@@ -83,14 +140,10 @@ async def ws_auth_guard(websocket: WebSocket) -> dict[str, Any] | None:
             pass
         return None
 
-    payload = decode_token(token)
+    payload = verify_token(token)
     if payload is not None:
-        logger.debug(f"WS auth via JWT: user={payload.get('sub')}")
+        logger.debug(f"WS auth OK: user={payload.get('sub')}")
         return payload
-
-    if validate_api_key(token):
-        logger.debug("WS auth via API key")
-        return {"sub": "api_key_user", "auth_method": "api_key"}
 
     logger.warning("WS auth rejected: invalid or expired token")
     try:
