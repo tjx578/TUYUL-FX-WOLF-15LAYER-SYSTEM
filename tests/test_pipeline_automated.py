@@ -160,8 +160,8 @@ class TestPipelineRealLayers:
 
     def test_execute_l12_verdict_has_mandatory_fields(self, pipeline_with_mocked_io):
         """
-        L12 verdict must include: symbol, verdict, confidence.
-        These are the minimal schema fields (l12_schema.json).
+        L12 verdict must include: verdict and confidence.
+        symbol is required in the normal path; it may be absent in warmup-blocked verdicts.
         """
         pipeline = pipeline_with_mocked_io
         try:
@@ -173,8 +173,14 @@ class TestPipelineRealLayers:
         if not verdict:
             pytest.skip("L12 verdict not produced (pipeline may require live data)")
 
-        for field in ("symbol", "verdict", "confidence"):
+        # verdict and confidence are always required
+        for field in ("verdict", "confidence"):
             assert field in verdict, f"L12 verdict missing mandatory field: {field}"
+
+        # symbol is required in the full execution path (warmup-passed)
+        proceeds = verdict.get("proceed_to_L13", False)
+        if proceeds or verdict.get("verdict", "").startswith("EXECUTE"):
+            assert "symbol" in verdict, "L12 EXECUTE verdict must include symbol"
 
     def test_execute_verdict_value_is_valid(self, pipeline_with_mocked_io):
         """verdict field must be one of the known constitutional verdict values."""
