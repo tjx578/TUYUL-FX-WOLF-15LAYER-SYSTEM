@@ -63,6 +63,7 @@ from api.calendar_routes import router as calendar_router  # noqa: E402
 
 # ── New routers (7 new endpoints) ─────────────────────────────────────────────
 from api.constitutional_routes import router as constitutional_router  # noqa: E402
+from api.dashboard_routes import router as dashboard_router  # prices, accounts, trade-by-id  # noqa: E402
 from api.instrument_routes import router as instrument_router  # noqa: E402
 from api.journal_routes import router as journal_router  # noqa: E402
 
@@ -75,6 +76,42 @@ from api.ws_routes import router as ws_router  # noqa: E402
 from dashboard.backend.trade_input_api import write_router  # BUG-1/2/3 FIXED  # noqa: E402
 
 logger = logging.getLogger(__name__)
+
+
+# ── Duplicate-route guard ─────────────────────────────────────────────────────
+
+def _assert_no_duplicate_routes(application: "FastAPI") -> None:  # noqa: F821
+    """
+    Raise RuntimeError at startup if any (method, path) pair is registered more
+    than once.  This prevents silent double-execution from accidentally mounting
+    the same router twice or defining conflicting endpoints in two modules.
+    """
+    seen: dict[tuple[str, str], str] = {}
+    duplicates: list[str] = []
+
+    for route in application.routes:
+        methods = getattr(route, "methods", None)
+        path = getattr(route, "path", None)
+        name = getattr(route, "name", "<unnamed>")
+        if not methods or not path:
+            continue
+        for method in methods:
+            key = (method.upper(), path)
+            if key in seen:
+                msg = (
+                    f"DUPLICATE ROUTE: {method} {path} — "
+                    f"handler '{name}' conflicts with '{seen[key]}'"
+                )
+                duplicates.append(msg)
+            else:
+                seen[key] = name
+
+    if duplicates:
+        detail = "\n  ".join(duplicates)
+        raise RuntimeError(
+            f"Duplicate API endpoints detected ({len(duplicates)}):\n  {detail}\n"
+            "Fix: remove one of the duplicate route definitions before starting."
+        )
 
 
 class _MaxLevelFilter(logging.Filter):
@@ -167,14 +204,27 @@ app.add_middleware(
 )
 
 # ── Mount routers ─────────────────────────────────────────────────────────────
-app.include_router(l12_router)
-app.include_router(ws_router)
+# Trade write lifecycle (take/skip/confirm/close/active + risk/calculate)
 app.include_router(write_router)
+# L12 verdicts, context, execution state, pairs
+app.include_router(l12_router)
+# WebSocket feeds
+app.include_router(ws_router)
+# Prices, accounts, trade-by-id (read-only; write lifecycle is in write_router)
+app.include_router(dashboard_router)
+# Constitutional health + equity history
 app.include_router(constitutional_router)
+# Risk event log + account snapshots
 app.include_router(risk_events_router)
+# Journal search + metrics
 app.include_router(journal_router)
+# Instrument list + regime + sessions
 app.include_router(instrument_router)
+# Economic calendar + news-lock
 app.include_router(calendar_router)
+
+# Guard: fail fast if any (method, path) was registered more than once.
+_assert_no_duplicate_routes(app)
 
 
 # ── Health ────────────────────────────────────────────────────────────────────
