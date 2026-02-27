@@ -14,7 +14,6 @@ Persistence:
 
 import json
 import os
-
 from threading import Lock
 from typing import Optional
 
@@ -62,7 +61,7 @@ class AccountManager:
             pattern = f"{self._redis_prefix}:ACCOUNT:*"
             client = self._redis.client
 
-            cursor = 0
+            cursor: int = 0
             loaded_count = 0
 
             while True:
