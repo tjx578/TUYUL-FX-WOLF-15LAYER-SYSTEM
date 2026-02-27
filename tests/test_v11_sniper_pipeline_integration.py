@@ -199,7 +199,12 @@ class TestV11NestedSynthesisFormat:
         synthesis = {
             "scores": {"wolf": 0.87, "tii": 0.81, "frpc": 0.77},
             "synthesis": {"confluence_score": 0.82},
-            "context": {"htf_alignment": True, "session_valid": True},
+            "context": {
+                "htf_alignment": True,
+                "session_valid": True,
+                "news_clear": True,
+                "momentum_confirmed": True,
+            },
             "volatility": {"atr": 0.0016, "spread_ratio": 0.08},
             "pair": "GBPUSD",
             "tf": "H1",
