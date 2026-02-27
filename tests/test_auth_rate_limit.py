@@ -24,6 +24,15 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 
+@pytest.fixture(autouse=True)
+def _configure_jwt_secret(monkeypatch):
+    from dashboard.backend import auth as dashboard_auth  # noqa: PLC0415
+
+    test_secret = "test-dashboard-secret-at-least-32-chars"
+    monkeypatch.setattr(dashboard_auth, "JWT_SECRET", test_secret)
+    monkeypatch.setattr(dashboard_auth, "JWT_VERIFY_SECRETS", (test_secret,))
+
+
 # =========================================================================
 # Rate limiter unit tests
 # =========================================================================
@@ -148,7 +157,7 @@ class TestJWT:
         assert payload["role"] == "admin"
         assert payload["account"] == "123"
 
-    def test_decode_accepts_legacy_secret_during_migration(self):
+    def test_decode_rejects_signature_from_different_secret(self):
         import json  # noqa: PLC0415
 
         from dashboard.backend import auth as dashboard_auth  # noqa: PLC0415
@@ -160,18 +169,27 @@ class TestJWT:
         payload_b64 = dashboard_auth._b64url_encode(  # noqa: SLF001
             json.dumps({"sub": "legacy_user", "iat": now, "exp": now + 60}, separators=(",", ":")).encode()
         )
-        legacy_sig = dashboard_auth._sign(header_b64, payload_b64, "legacy-secret")  # noqa: SLF001
-        token = f"{header_b64}.{payload_b64}.{legacy_sig}"
+        wrong_sig = dashboard_auth._sign(header_b64, payload_b64, "legacy-secret")  # noqa: SLF001
+        token = f"{header_b64}.{payload_b64}.{wrong_sig}"
 
         with patch.object(dashboard_auth, "JWT_SECRET", "dashboard-secret"), patch.object(
             dashboard_auth,
             "JWT_VERIFY_SECRETS",
-            ("dashboard-secret", "legacy-secret"),
+            ("dashboard-secret",),
         ):
             payload = dashboard_auth.decode_token(token)
 
-        assert payload is not None
-        assert payload["sub"] == "legacy_user"
+        assert payload is None
+
+    def test_create_token_raises_if_secret_missing(self):
+        from dashboard.backend import auth as dashboard_auth  # noqa: PLC0415
+
+        with patch.object(dashboard_auth, "JWT_SECRET", ""), patch.object(
+            dashboard_auth,
+            "JWT_VERIFY_SECRETS",
+            (),
+        ), pytest.raises(RuntimeError, match="DASHBOARD_JWT_SECRET"):
+            dashboard_auth.create_token(sub="blocked_user")
 
     def test_decode_accepts_pyjwt_encoded_token(self):
         jwt = pytest.importorskip("jwt")
