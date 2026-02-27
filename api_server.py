@@ -76,6 +76,7 @@ from api.ws_routes import router as ws_router  # noqa: E402
 # ── Fixed routers ─────────────────────────────────────────────────────────────
 from dashboard.backend.trade_input_api import write_router  # BUG-1/2/3 FIXED  # noqa: E402
 from api.middleware.prometheus_middleware import PrometheusMiddleware  # noqa: E402
+from api.middleware.rate_limit import RateLimitMiddleware  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
@@ -201,10 +202,11 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=cors_origins,
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "DELETE", "PATCH"],
     allow_headers=["*"],
 )
 app.add_middleware(PrometheusMiddleware)
+app.add_middleware(RateLimitMiddleware)
 
 # ── Mount routers ─────────────────────────────────────────────────────────────
 # Trade write lifecycle (take/skip/confirm/close/active + risk/calculate)
