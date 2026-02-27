@@ -76,7 +76,7 @@ export function RiskGauge({ snapshot }: RiskGaugeProps) {
     <motion.div
       className="card"
       style={{ display: "flex", flexDirection: "column", gap: 16 }}
-      animate={{ scale: pulseCritical ? [1, 1.025, 1] : 1 }}
+      animate={{ scale: pulseCritical ? [1, 1.025, 1] : [1] }}
       transition={{
         repeat: pulseCritical ? Infinity : 0,
         duration: 1.5,
@@ -202,6 +202,6 @@ export function RiskGauge({ snapshot }: RiskGaugeProps) {
           </div>
         </div>
       </div>
-    </div>
+    </motion.div>
   );
 }
