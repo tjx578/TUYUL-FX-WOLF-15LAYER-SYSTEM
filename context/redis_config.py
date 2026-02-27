@@ -1,33 +1,36 @@
-import os
+import redis.asyncio as aioredis
 
-from redis.asyncio import Redis
+from infrastructure.redis_client import RedisConfig
+from infrastructure.redis_url import get_redis_url
 
 
-def create_redis_client() -> Redis:
-    """Create Redis client with TLS if configured.
+def create_redis_client() -> aioredis.Redis:
+    """Create an async Redis client using shared infrastructure configuration.
 
-    Returns:
-        Configured async Redis client instance.
+    Delegates to :class:`infrastructure.redis_client.RedisConfig` so that all
+    Redis clients in the process share the same connection parameters and URL
+    source (``infrastructure.redis_url.get_redis_url``), eliminating the
+    duplicate-config problem where ``context/`` and ``infrastructure/`` could
+    silently connect to different Redis instances.
 
     TCP_OVERWINDOW mitigation:
       - Keepalive enabled (SO_KEEPALIVE) to prune stale connections.
-      - Pool capped at 10 (async callers pipeline / share better).
       - health_check_interval prunes idle conns before they accumulate.
       - Detailed keepalive timing delegated to Redis server-side
         ``--tcp-keepalive`` to avoid EINVAL on container runtimes.
     """
-    from infrastructure.redis_url import get_redis_url
-    redis_url = get_redis_url()
-    use_tls = redis_url.startswith("rediss://")
+    cfg = RedisConfig.from_env()
+    url = get_redis_url()
+    use_tls = url.startswith("rediss://")
 
-    return Redis.from_url(
-        redis_url,
-        decode_responses=True,
-        max_connections=10,
-        retry_on_timeout=True,
+    return aioredis.Redis.from_url(
+        url,
+        decode_responses=cfg.decode_responses,
+        max_connections=cfg.max_connections,
+        retry_on_timeout=cfg.retry_on_timeout,
         ssl=use_tls,
-        socket_connect_timeout=5,
-        socket_timeout=5,
-        socket_keepalive=True,
-        health_check_interval=30,
+        socket_connect_timeout=cfg.socket_connect_timeout,
+        socket_timeout=cfg.socket_timeout,
+        socket_keepalive=cfg.socket_keepalive,
+        health_check_interval=cfg.health_check_interval,
     )

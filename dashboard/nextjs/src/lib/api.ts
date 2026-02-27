@@ -273,7 +273,7 @@ export async function createAccount(
 
 export const useEAStatus = () => useSWR<EAStatus>("/api/v1/ea/status", fetcher);
 export const useEALogs = () => useSWR<EALog[]>("/api/v1/ea/logs", fetcher);
-export const restartEA = async () => post("/api/v1/ea/restart", {});
+export const restartEA = async () => poster("/api/v1/ea/restart", {});
 
 export const usePropFirmStatus = (accountId: string) =>
   useSWR(`/api/v1/prop-firm/${accountId}/status`, fetcher);
@@ -283,7 +283,4 @@ export const usePropFirmPhase = (accountId: string) =>
 
 export const useCalendarEvents = (date = "today", impact = "HIGH") =>
   useSWR<CalendarEvent[]>(`/api/v1/calendar?date=${date}&impact=${impact}`, fetcher);
-function post(arg0: string, arg1: {}) {
-  throw new Error("Function not implemented.");
-}
 
