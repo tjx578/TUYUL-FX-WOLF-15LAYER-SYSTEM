@@ -24,9 +24,9 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from copy import deepcopy
 from datetime import UTC
-from typing import Any, Protocol, cast
+from typing import Any
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from loguru import logger as loguru_logger
 from typing_extensions import override
@@ -63,6 +63,7 @@ def _configure_process_logging() -> None:
 _configure_process_logging()
 
 from api.calendar_routes import router as calendar_router  # noqa: E402
+from api.redis_health_routes import router as redis_health_router  # noqa: E402
 
 # ── New routers (7 new endpoints) ─────────────────────────────────────────────
 from api.constitutional_routes import router as constitutional_router  # noqa: E402
@@ -184,8 +185,13 @@ def _build_uvicorn_log_config() -> dict[str, Any]:
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     logger.info("🐺 TUYUL FX Wolf-15 starting up…")
-    yield
-    logger.info("🐺 TUYUL FX Wolf-15 shutting down…")
+    from infrastructure.redis_client import close_pool, get_client
+    app.state.redis = await get_client()
+    try:
+        yield
+    finally:
+        await close_pool()
+        logger.info("🐺 TUYUL FX Wolf-15 shutting down…")
 
 
 app = FastAPI(
@@ -240,6 +246,8 @@ app.include_router(instrument_router)
 app.include_router(calendar_router)
 # Prometheus scrape endpoint
 app.include_router(metrics_router)
+# Redis observability + TCP_OVERWINDOW diagnostics
+app.include_router(redis_health_router)
 
 # Guard: fail fast if any (method, path) was registered more than once.
 _assert_no_duplicate_routes(app)
@@ -247,27 +255,15 @@ _assert_no_duplicate_routes(app)
 
 # ── Health ────────────────────────────────────────────────────────────────────
 @app.get("/health")
-async def health() -> dict[str, Any]:
+async def health(request: Request) -> dict[str, Any]:
     from datetime import datetime
 
-    from redis import Redis
-
-    class _SyncRedisClient(Protocol):
-        def ping(self) -> bool:
-            ...
-
-    class _RedisFactory(Protocol):
-        @staticmethod
-        def from_url(url: str, *, decode_responses: bool) -> _SyncRedisClient:
-            ...
+    import redis.asyncio as aioredis
 
     redis_ok = False
     try:
-        from infrastructure.redis_url import get_redis_url
-        url = get_redis_url()
-        redis_factory = cast(_RedisFactory, Redis)
-        redis_client = redis_factory.from_url(url, decode_responses=True)
-        redis_ok = redis_client.ping()
+        r: aioredis.Redis = request.app.state.redis
+        redis_ok = bool(await r.ping())
     except Exception:
         pass
 
