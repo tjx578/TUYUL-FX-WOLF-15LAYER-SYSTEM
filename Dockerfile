@@ -45,7 +45,7 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
 # 2. Use uvicorn.workers.UvicornWorker (NOT sync) — required for WebSocket/ASGI
 # 3. WEB_CONCURRENCY=1 default for WS state consistency
 #
-# Gunicorn writes startup/app logs to stderr by default (--error-logfile -).
-# Container platforms (Railway, Render, GCP, etc.) classify stderr as "error",
-# so we redirect stderr → stdout (2>&1) to keep everything on fd 1.
-CMD ["sh", "-c", "exec gunicorn api_server:app --bind 0.0.0.0:${PORT} --workers ${WEB_CONCURRENCY} --worker-class uvicorn.workers.UvicornWorker --timeout 120 --access-logfile - --error-logfile - --log-level info 2>&1"]
+# Gunicorn emits INFO lifecycle logs via the error logger.
+# Many container log collectors classify stderr as severity=error, so route
+# Gunicorn's error logger to stdout to avoid false-positive "error" events.
+CMD ["sh", "-c", "exec gunicorn api_server:app --bind 0.0.0.0:${PORT} --workers ${WEB_CONCURRENCY} --worker-class uvicorn.workers.UvicornWorker --timeout 120 --access-logfile - --error-logfile /dev/stdout --log-level info"]
