@@ -1,168 +1,41 @@
-# yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
-# DEPRECATED — superseded by wolf-pipeline-ci.yml
-# This workflow is disabled (manual trigger only).
-name: CI (Deprecated)
+name: CI
 
 on:
+  push:
+  pull_request:
   workflow_dispatch:
-    inputs:
-      reason:
-        description: "Reason for manual trigger"
-        required: false
 
 permissions:
   contents: read
 
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PYTHON_VERSION: "3.11"
+
 jobs:
-  lint:
-    name: Lint & ASCII compliance
+  tests:
+    name: Python tests (pytest)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v4
+      - name: Setup Python
+        uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
 
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          pip install pytest flake8
+          pip install pytest pytest-timeout pytest-asyncio
 
-      - name: Check ASCII compliance
-        run: |
-          python -c "
-          import pathlib, sys
-          errors = []
-          for p in pathlib.Path('.').rglob('*.py'):
-              try:
-                  text = p.read_text(encoding='utf-8')
-                  for i, line in enumerate(text.splitlines(), 1):
-                      for ch in line:
-                          if ord(ch) > 127 and ch not in '""''':
-                              errors.append(f'{p}:{i} -> U+{ord(ch):04X} ({ch!r})')
-              except Exception as e:
-                  errors.append(f'{p}: read error {e}')
-          if errors:
-              print('ASCII violations found:')
-              for e in errors[:50]:
-                  print(f'  {e}')
-              sys.exit(1)
-          print('All .py files pass ASCII compliance.')
-          "
-
-      - name: Flake8 (syntax errors only)
-        run: flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
-
-  test:
-    name: Test suite
-    runs-on: ubuntu-latest
-    needs: lint
-    steps:
-      - uses: actions/checkout@v3
-
-      - name: Set up Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: "3.11"
-
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
-          pip install pytest pytest-cov pytest-timeout
-
-      - name: "Critical gate tests (must pass to merge)"
-        run: |
-          python -m pytest \
-            tests/test_l12_gate.py \
-            tests/test_l12_verdict.py \
-            tests/test_l11_rr.py \
-            tests/test_l2_mta.py \
-            tests/test_l10_dynamic_sizing.py \
-            tests/test_l10_kelly_integration.py \
-            tests/test_l6_correlation_integration.py \
-            tests/contract/test_public_api_contract.py \
-            tests/test_prop_firm.py \
-            tests/test_news_lock.py \
-            tests/test_m15_cancel.py \
-            tests/test_signal_integrity.py \
-            tests/test_signal_throttle.py \
-            tests/test_pip_values.py \
-            tests/test_journal.py \
-            tests/test_l9_smc.py \
-            tests/test_dynamic_position_sizing.py \
-            tests/test_spread_estimator.py \
-            tests/test_integration.py \
-            tests/test_pipeline_e2e.py \
-            tests/engines/test_engine_suite.py \
-            tests/engines/test_quantum_advisory_engine.py \
-            tests/test_cognitive_risk_simulation.py \
-            tests/test_fusion_precision_engine.py \
-            -v --tb=short --strict-markers --timeout=60 \
-            --cov --cov-report=term-missing \
-            --cov-report=xml:test-results/coverage.xml \
-            --cov-fail-under=60 \
-            --junitxml=test-results/critical.xml
-
-      - name: "Extended test suite (informational)"
-        if: always()
-        continue-on-error: true
-        run: |
-          python -m pytest tests/ -v --tb=short --timeout=60 \
-            --junitxml=test-results/full.xml
-
-      - name: Run tests
-        run: |
-          python -m pytest tests/ -v --tb=short --strict-markers -x \
-            -k "test_l4_scoring or test_l5_psychology or test_l8_tii or test_l12 or test_prop_firm or test_state_machine"
+      - name: Run pytest using repo config
         env:
           PYTHONPATH: .
-
-      - name: Upload test results
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: test-results
-          path: test-results/
-          retention-days: 14
-
-  boundary-check:
-    name: Constitutional boundary check
-    runs-on: ubuntu-latest
-    needs: lint
-    steps:
-      - uses: actions/checkout@v3
-
-      - name: Set up Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: "3.11"
-
-      - name: Verify no execution logic in analysis
-        run: |
-          echo "Checking analysis/ for execution side-effects..."
-          if grep -rn "mt5\.\|MetaTrader\|send_order\|place_order" analysis/ 2>/dev/null; then
-            echo "VIOLATION: execution logic found in analysis/"
-            exit 1
-          fi
-          echo "OK: analysis/ is clean."
-
-      - name: Verify no market direction in execution
-        run: |
-          echo "Checking execution/ for market direction logic..."
-          if grep -rn "def.*direction\|calc_signal\|predict_trend" execution/ 2>/dev/null; then
-            echo "VIOLATION: market direction logic found in execution/"
-            exit 1
-          fi
-          echo "OK: execution/ is clean."
-
-      - name: Verify journal is append-only
-        run: |
-          echo "Checking journal/ for mutation operations..."
-          if grep -rn "def delete\|def update\|def modify\|\.pop(\|del " journal/ 2>/dev/null | grep -v "# safe:" | grep -v "__pycache__"; then
-            echo "WARNING: possible mutation in journal/ (review manually)"
-          fi
-          echo "OK: journal/ check complete."
+        run: pytest
