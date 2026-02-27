@@ -69,6 +69,7 @@ from core.metrics import (
     TICK_TO_VERDICT_LATENCY,
     WARMUP_BLOCKED,
 )
+from core.tracing import layer_span
 from pipeline.constants import get_max_drawdown
 from pipeline.engines import L13ReflectiveEngine, L15MetaSovereigntyEngine
 from pipeline.phases.assembly import build_l14_json
@@ -274,18 +275,19 @@ class WolfConstitutionalPipeline:
         pipeline instances.
         """
         t0 = time.time()
-        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:  # pyright: ignore[reportAttributeAccessIssue] # noqa: F821
-            future = executor.submit(func, *args, **kwargs)
-            try:
-                result = future.result(timeout=_LAYER_TIMEOUT_SEC)  # pyright: ignore[reportUndefinedVariable] # noqa: F821
-            except concurrent.futures.TimeoutError: # pyright: ignore[reportAttributeAccessIssue]
-                logger.error(
-                    "[Pipeline] Layer %s TIMEOUT (>%.0fs) for %s — aborting layer",
-                    layer_name, _LAYER_TIMEOUT_SEC, symbol,  # noqa: F821 # pyright: ignore[reportUndefinedVariable]
-                )
-                raise TimeoutError(  # noqa: B904
-                    f"Layer {layer_name} exceeded {_LAYER_TIMEOUT_SEC}s timeout"  # noqa: F821 # pyright: ignore[reportUndefinedVariable]
-                )
+        with layer_span(layer_name, symbol=symbol):
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:  # pyright: ignore[reportAttributeAccessIssue] # noqa: F821
+                future = executor.submit(func, *args, **kwargs)
+                try:
+                    result = future.result(timeout=_LAYER_TIMEOUT_SEC)  # pyright: ignore[reportUndefinedVariable] # noqa: F821
+                except concurrent.futures.TimeoutError: # pyright: ignore[reportAttributeAccessIssue]
+                    logger.error(
+                        "[Pipeline] Layer %s TIMEOUT (>%.0fs) for %s — aborting layer",
+                        layer_name, _LAYER_TIMEOUT_SEC, symbol,  # noqa: F821 # pyright: ignore[reportUndefinedVariable]
+                    )
+                    raise TimeoutError(  # noqa: B904
+                        f"Layer {layer_name} exceeded {_LAYER_TIMEOUT_SEC}s timeout"  # noqa: F821 # pyright: ignore[reportUndefinedVariable]
+                    )
         LAYER_LATENCY.labels(layer=layer_name, symbol=symbol).observe(  # noqa: F821 # pyright: ignore[reportUndefinedVariable]
             time.time() - t0,
         )
