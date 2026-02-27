@@ -25,22 +25,92 @@ on:
     branches: [main, develop]
   workflow_dispatch:
 
+concurrency:
+  group: wolf-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
 env:
   PYTHON_VERSION: "3.11"
   NODE_VERSION: "20"
 
-# ──────────────────────────────────────────────────────────
-# PHASE 1: LINT & STATIC ANALYSIS (Perception Gate)
-# ──────────────────────────────────────────────────────────
 jobs:
-  phase-1-lint:
-    name: "Phase 1 · Lint & Static Analysis"
+# ──────────────────────────────────────────────────────────────────────────
+# PHASE 0-A · Ruff lint + format (hard-fail)
+# ──────────────────────────────────────────────────────────────────────────
+  ruff:
+    name: "Phase 0-A · Ruff lint & format"
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup Python ${{ env.PYTHON_VERSION }}
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Install ruff
+        run: pip install ruff
+
+      - name: "Ruff check (lint)"
+        run: ruff check . --config pyproject.toml
+
+      - name: "Ruff format check"
+        run: ruff format --check . --config pyproject.toml
+
+# ──────────────────────────────────────────────────────────────────────────
+# PHASE 0-B · ASCII compliance (hard-fail)
+# ──────────────────────────────────────────────────────────────────────────
+  ascii-compliance:
+    name: "Phase 0-B · ASCII compliance"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: "Check all .py files are ASCII-safe"
+        run: |
+          python - <<'EOF'
+          import pathlib, sys
+          SAFE_NON_ASCII = set('""''\u2019\u2018\u2013\u2014')
+          errors = []
+          for p in pathlib.Path('.').rglob('*.py'):
+              parts = p.parts
+              if any(x in parts for x in ('.venv', '__pycache__', 'node_modules')):
+                  continue
+              try:
+                  text = p.read_text(encoding='utf-8')
+              except Exception as e:
+                  errors.append(f'{p}: read error {e}')
+                  continue
+              for i, line in enumerate(text.splitlines(), 1):
+                  for ch in line:
+                      if ord(ch) > 127 and ch not in SAFE_NON_ASCII:
+                          errors.append(f'{p}:{i} -> U+{ord(ch):04X} ({ch!r})')
+          if errors:
+              print('ASCII violations found:')
+              for e in errors[:50]:
+                  print(f'  {e}')
+              sys.exit(1)
+          print('All .py files pass ASCII compliance.')
+          EOF
+
+# ──────────────────────────────────────────────────────────────────────────
+# PHASE 1 · mypy type check (hard-fail)
+# ──────────────────────────────────────────────────────────────────────────
+  mypy:
+    name: "Phase 1 · mypy (strict)"
+    runs-on: ubuntu-latest
+    needs: [ruff, ascii-compliance]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: pip
@@ -49,39 +119,36 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          pip install flake8 mypy black isort
+          pip install mypy types-requests types-redis
 
-      - name: 🔍 Black (formatting check)
-        run: black --check --diff .
-
-      - name: 🔍 isort (import order)
-        run: isort --check-only --diff .
-
-      - name: 🔍 Flake8 (lint)
-        run: flake8 . --max-line-length=120 --exclude=.venv,node_modules,__pycache__,.git
-
-      - name: 🔍 Mypy (type check - critical modules)
+      - name: "mypy (hard-fail)"
         run: |
-          mypy constitution/ --ignore-missing-imports --no-error-summary || true
-          mypy risk/ --ignore-missing-imports --no-error-summary || true
-          mypy pipeline/ --ignore-missing-imports --no-error-summary || true
+          set -o pipefail
+          mypy . --config-file pyproject.toml 2>&1 | tee mypy-report.txt
 
-  # ──────────────────────────────────────────────────────────
-  # PHASE 2: CONSTITUTIONAL BOUNDARY VALIDATION
-  # ──────────────────────────────────────────────────────────
-  phase-2-constitutional-boundary:
-    name: "Phase 2 · Constitutional Boundary Check"
+      - name: Upload mypy report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mypy-report
+          path: mypy-report.txt
+          retention-days: 7
+
+# ──────────────────────────────────────────────────────────────────────────
+# PHASE 2 · Constitutional boundary check (HARD BLOCK)
+# ──────────────────────────────────────────────────────────────────────────
+  constitutional-boundary:
+    name: "Phase 2 · Constitutional Boundary"
     runs-on: ubuntu-latest
-    needs: phase-1-lint
+    needs: [ruff, ascii-compliance]
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup Python ${{ env.PYTHON_VERSION }}
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
-      - name: 🔒 Rule 1 — analysis/ must NOT contain execution logic
+      - name: "Rule 1 - analysis must NOT contain execution logic"
         run: |
           echo "Checking analysis/ for forbidden execution patterns..."
           VIOLATIONS=$(grep -rn \
@@ -99,7 +166,7 @@ jobs:
           fi
           echo "✅ analysis/ clean — no execution side-effects"
 
-      - name: 🔒 Rule 2 — execution/ must NOT contain strategy logic
+      - name: "Rule 2 - execution must NOT contain strategy logic"
         run: |
           echo "Checking execution/ for forbidden strategy patterns..."
           VIOLATIONS=$(grep -rn \
@@ -117,7 +184,7 @@ jobs:
           fi
           echo "✅ execution/ clean — blind executor only"
 
-      - name: 🔒 Rule 3 — dashboard/ must NOT override L12
+      - name: "Rule 3 - dashboard must NOT override L12"
         run: |
           echo "Checking dashboard/ for L12 override patterns..."
           VIOLATIONS=$(grep -rn \
@@ -134,7 +201,7 @@ jobs:
           fi
           echo "✅ dashboard/ clean — read-only governor"
 
-      - name: 🔒 Rule 4 — journal/ must be append-only
+      - name: "Rule 4 - journal must be append-only"
         run: |
           echo "Checking journal/ for mutation patterns..."
           VIOLATIONS=$(grep -rn \
@@ -152,7 +219,7 @@ jobs:
           fi
           echo "✅ journal/ clean — immutable audit trail"
 
-      - name: 🔒 Rule 5 — ea_interface/ must NOT contain decision logic
+      - name: "Rule 5 - ea_interface must NOT contain decision logic"
         run: |
           echo "Checking ea_interface/ for decision patterns..."
           VIOLATIONS=$(grep -rn \
@@ -168,7 +235,7 @@ jobs:
           fi
           echo "✅ ea_interface/ clean — executor only"
 
-      - name: 🔒 Rule 6 — No secrets in codebase
+      - name: "Rule 6 - No hardcoded secrets"
         run: |
           echo "Checking for hardcoded secrets..."
           VIOLATIONS=$(grep -rn \
@@ -187,20 +254,19 @@ jobs:
             echo "$REAL_VIOLATIONS"
             exit 1
           fi
-          echo "✅ No hardcoded secrets found"
+          echo "No hardcoded secrets found"
 
-  # ──────────────────────────────────────────────────────────
-  # PHASE 3: SCHEMA VALIDATION
-  # ──────────────────────────────────────────────────────────
-  phase-3-schema-validation:
+# ──────────────────────────────────────────────────────────────────────────
+# PHASE 3 · Schema validation
+# ──────────────────────────────────────────────────────────────────────────
+  schema-validation:
     name: "Phase 3 · Schema Validation"
     runs-on: ubuntu-latest
-    needs: phase-1-lint
+    needs: [ruff, ascii-compliance]
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup Python ${{ env.PYTHON_VERSION }}
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: pip
@@ -210,56 +276,58 @@ jobs:
           python -m pip install --upgrade pip
           pip install jsonschema pyyaml
 
-      - name: 📋 Validate L12 schema is valid JSON Schema
+      - name: "Validate L12 JSON schema"
         run: |
           python -c "
           import json, jsonschema
           with open('schemas/l12_schema.json') as f:
               schema = json.load(f)
           jsonschema.Draft7Validator.check_schema(schema)
-          print('✅ l12_schema.json is a valid JSON Schema')
+          print('l12_schema.json is a valid JSON Schema')
           "
 
-      - name: 📋 Validate alert schema is valid JSON Schema
+      - name: "Validate alert JSON schema"
         run: |
           python -c "
           import json, jsonschema
           with open('schemas/alert_schema.json') as f:
               schema = json.load(f)
           jsonschema.Draft7Validator.check_schema(schema)
-          print('✅ alert_schema.json is a valid JSON Schema')
+          print('alert_schema.json is a valid JSON Schema')
           "
 
-      - name: 📋 Validate config YAML files parse correctly
+      - name: "Validate config YAML files"
         run: |
           python -c "
           import yaml, glob, sys
           errors = []
-          for f in glob.glob('config/**/*.yaml', recursive=True) + glob.glob('config/**/*.yml', recursive=True):
+          for f in (
+              glob.glob('config/**/*.yaml', recursive=True)
+              + glob.glob('config/**/*.yml', recursive=True)
+          ):
               try:
                   with open(f) as fh:
                       yaml.safe_load(fh)
-                  print(f'✅ {f}')
+                  print(f'OK: {f}')
               except Exception as e:
                   errors.append(f'{f}: {e}')
-                  print(f'❌ {f}: {e}')
+                  print(f'FAIL: {f}: {e}')
           if errors:
               sys.exit(1)
-          print('✅ All YAML configs valid')
+          print('All YAML configs valid')
           "
 
-  # ──────────────────────────────────────────────────────────
-  # PHASE 4: UNIT TESTS (Layer Tests)
-  # ──────────────────────────────────────────────────────────
-  phase-4-unit-tests:
-    name: "Phase 4 · Unit Tests"
+# ──────────────────────────────────────────────────────────────────────────
+# PHASE 4 · Critical test gate (HARD BLOCK on failure)
+# ──────────────────────────────────────────────────────────────────────────
+  critical-tests:
+    name: "Phase 4 · Critical Test Gate"
     runs-on: ubuntu-latest
-    needs: [phase-2-constitutional-boundary, phase-3-schema-validation]
+    needs: [mypy, constitutional-boundary, schema-validation]
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup Python ${{ env.PYTHON_VERSION }}
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: pip
@@ -268,9 +336,11 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          pip install pytest pytest-cov pytest-timeout
+          pip install pytest pytest-cov pytest-timeout pytest-asyncio
 
-      - name: "🧪 Critical Test Gate (must pass to merge)"
+      - name: "Critical gate tests (must pass to merge)"
+        env:
+          PYTHONPATH: .
         run: |
           pytest \
             tests/test_l12_gate.py \
@@ -297,40 +367,32 @@ jobs:
             tests/engines/test_quantum_advisory_engine.py \
             tests/test_cognitive_risk_simulation.py \
             tests/test_fusion_precision_engine.py \
-            -v --timeout=60
+            -v \
+            --strict-markers \
+            --timeout=60 \
+            --tb=short \
+            --junitxml=test-results/critical.xml
 
-      - name: "🧪 Extended Test Suite (informational)"
-        continue-on-error: true
-        run: |
-          pytest tests/ -v --timeout=60 \
-            --cov=analysis \
-            --cov=constitution \
-            --cov=execution \
-            --cov=risk \
-            --cov=pipeline \
-            --cov-report=term-missing \
-            --cov-report=xml:coverage.xml
-
-      - name: 📊 Upload coverage report
+      - name: Upload critical test results
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: coverage-report
-          path: coverage.xml
-          retention-days: 30
+          name: test-results-critical
+          path: test-results/critical.xml
+          retention-days: 14
 
-  # ──────────────────────────────────────────────────────────
-  # PHASE 5: INTEGRATION TEST (Pipeline E2E)
-  # ──────────────────────────────────────────────────────────
-  phase-5-integration:
-    name: "Phase 5 · Pipeline Integration Test"
+
+# ──────────────────────────────────────────────────────────────────────────
+# PHASE 5 · Full test suite + coverage gate (>=70%)
+# ──────────────────────────────────────────────────────────────────────────
+  coverage-gate:
+    name: "Phase 5 · Coverage Gate (>=70%)"
     runs-on: ubuntu-latest
-    needs: phase-4-unit-tests
+    needs: critical-tests
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup Python ${{ env.PYTHON_VERSION }}
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: pip
@@ -339,76 +401,146 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          pip install pytest pytest-timeout
+          pip install pytest pytest-cov pytest-timeout pytest-asyncio coverage
 
-      - name: 🔗 Pipeline import chain validation
+      - name: "Full test suite with coverage"
+        env:
+          PYTHONPATH: .
         run: |
-          python -c "
-          print('Testing core module imports...')
-          from core import core_cognitive_unified
-          print('  ✅ core_cognitive_unified')
-          from core import core_fusion_unified
-          print('  ✅ core_fusion_unified')
-          from core import core_quantum_unified
-          print('  ✅ core_quantum_unified')
-          from core import core_reflective_unified
-          print('  ✅ core_reflective_unified')
+          pytest tests/ \
+            --cov=analysis \
+            --cov=constitution \
+            --cov=execution \
+            --cov=dashboard \
+            --cov=journal \
+            --cov=risk \
+            --cov-report=xml:coverage.xml \
+            --cov-report=term-missing \
+            --cov-fail-under=70 \
+            --strict-markers \
+            --timeout=60 \
+            --tb=short \
+            --junitxml=test-results/full.xml \
+            -q
 
-          print('Testing analysis layer imports...')
-          from analysis.layers import L1_context, L2_mta, L3_technical
-          print('  ✅ L1, L2, L3')
-          from analysis.layers import L4_scoring, L5_psychology
-          print('  ✅ L4, L5')
-          from analysis.layers import L6_risk, L7_probability
-          print('  ✅ L6, L7')
-          from analysis.layers import L8_tii_integrity, L9_smc
-          print('  ✅ L8, L9')
-          from analysis.layers import L10_position, L11_rr
-          print('  ✅ L10, L11')
+      - name: "Enforce coverage threshold"
+        run: coverage report --fail-under=70
 
-          print('Testing constitution imports...')
-          from constitution import verdict_engine
-          print('  ✅ verdict_engine')
+      - name: Upload coverage to Codecov
+        if: always()
+        uses: codecov/codecov-action@v4
+        with:
+          files: coverage.xml
+          fail_ci_if_error: false
+          flags: unittests
 
-          print('Testing pipeline imports...')
-          from pipeline import WolfConstitutionalPipeline
-          print('  ✅ WolfConstitutionalPipeline')
+      - name: Upload full test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-full
+          path: |
+            test-results/full.xml
+            coverage.xml
+          retention-days: 30
 
-          print('Testing risk imports...')
-          from risk import prop_firm
-          print('  ✅ prop_firm')
+# ──────────────────────────────────────────────────────────────────────────
+# PHASE 6 · Import chain & pipeline dry-run
+# ──────────────────────────────────────────────────────────────────────────
+  integration:
+    name: "Phase 6 · Integration"
+    runs-on: ubuntu-latest
+    needs: critical-tests
+    steps:
+      - uses: actions/checkout@v4
 
-          print('🐺 All import chains valid!')
-          "
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
 
-      - name: 🔗 Pipeline dry-run (no API keys needed)
+      - name: Install dependencies
         run: |
-          python -c "
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: "Import chain validation"
+        env:
+          PYTHONPATH: .
+        run: |
+          python - <<'EOF'
+          import sys
+
+          checks = [
+              ("core.core_cognitive_unified",    "core_cognitive_unified"),
+              ("core.core_quantum_unified",       "core_quantum_unified"),
+              ("core.core_reflective_unified",    "core_reflective_unified"),
+              ("constitution.verdict_engine",     "verdict_engine"),
+              ("risk.prop_firm",                  "prop_firm"),
+          ]
+          failed = []
+          for mod, label in checks:
+              try:
+                  __import__(mod)
+                  print(f"  OK: {label}")
+              except Exception as e:
+                  print(f"  FAIL: {label}: {e}")
+                  failed.append(label)
+
+          if failed:
+              print(f"\nFailed imports: {failed}")
+              sys.exit(1)
+          print("\nAll import chains valid.")
+          EOF
+
+      - name: "Pipeline dry-run"
+        env:
+          PYTHONPATH: .
+        run: |
+          python - <<'EOF'
           try:
               from pipeline import WolfConstitutionalPipeline
               p = WolfConstitutionalPipeline()
-              print('✅ Pipeline instantiated successfully')
-              print(f'   Pipeline class: {type(p).__name__}')
+              print(f"Pipeline instantiated: {type(p).__name__}")
           except Exception as e:
-              print(f'⚠️ Pipeline instantiation: {e}')
-              print('   (Expected if Redis/Finnhub not available in CI)')
-          "
+              # Redis / Finnhub not available in CI -- acceptable
+              print(f"Pipeline instantiation note: {e}")
+              print("(Expected if external services unavailable in CI)")
+          EOF
 
-  # ──────────────────────────────────────────────────────────
-  # PHASE 6: DASHBOARD BUILD (Frontend)
-  # ──────────────────────────────────────────────────────────
-  phase-6-dashboard-build:
-    name: "Phase 6 · Dashboard Frontend Build"
+      - name: "Pytest integration tests"
+        env:
+          PYTHONPATH: .
+        continue-on-error: true
+        run: |
+          pytest tests/integration/ \
+            -v --strict-markers --timeout=60 --tb=short \
+            --junitxml=test-results/integration.xml \
+            -m "integration" || true
+
+      - name: Upload integration test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-integration
+          path: test-results/integration.xml
+          retention-days: 14
+
+# ──────────────────────────────────────────────────────────────────────────
+# PHASE 7 · Dashboard build + ESLint (hard-fail)
+# Runs in parallel with Phases 5-6 (only needs Phase 0)
+# ──────────────────────────────────────────────────────────────────────────
+  dashboard:
+    name: "Phase 7 · Dashboard (ESLint + tsc + build)"
     runs-on: ubuntu-latest
-    needs: phase-1-lint
+    needs: [ruff, ascii-compliance]
     defaults:
       run:
         working-directory: dashboard/nextjs
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup Node.js ${{ env.NODE_VERSION }}
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
@@ -417,63 +549,77 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: 🔍 ESLint
-        run: npm run lint || true
+      - name: "ESLint (hard-fail, zero warnings)"
+        run: npm run lint -- --max-warnings=0
 
-      - name: 🔨 Build
+      - name: "TypeScript type-check"
+        run: npx tsc --noEmit
+
+      - name: "Next.js build"
         run: npm run build
         env:
-          NEXT_TELEMETRY_DISABLED: 1
+          NEXT_TELEMETRY_DISABLED: "1"
 
-  # ──────────────────────────────────────────────────────────
-  # GOVERNANCE VERDICT: Final Gate
-  # ──────────────────────────────────────────────────────────
+# ──────────────────────────────────────────────────────────────────────────
+# FINAL GATE · Governance verdict (merge gatekeeper)
+# ──────────────────────────────────────────────────────────────────────────
   governance-verdict:
-    name: "🐺 Governance Verdict"
+    name: "Governance Verdict"
     runs-on: ubuntu-latest
     needs:
-      - phase-1-lint
-      - phase-2-constitutional-boundary
-      - phase-3-schema-validation
-      - phase-4-unit-tests
-      - phase-5-integration
-      - phase-6-dashboard-build
+      - ruff
+      - ascii-compliance
+      - mypy
+      - constitutional-boundary
+      - schema-validation
+      - critical-tests
+      - coverage-gate
+      - integration
+      - dashboard
     if: always()
     steps:
-      - name: 🐺 Pipeline Verdict
+      - name: "Report phase results"
         run: |
-          echo "╔══════════════════════════════════════════════╗"
-          echo "║     🐺 WOLF 15-LAYER CI PIPELINE VERDICT    ║"
-          echo "╠══════════════════════════════════════════════╣"
-          echo "║                                              ║"
-          echo "║  Phase 1: Lint & Static Analysis    ${{ needs.phase-1-lint.result == 'success' && '✅' || '❌' }}       ║"
-          echo "║  Phase 2: Constitutional Boundary   ${{ needs.phase-2-constitutional-boundary.result == 'success' && '✅' || '❌' }}       ║"
-          echo "║  Phase 3: Schema Validation         ${{ needs.phase-3-schema-validation.result == 'success' && '✅' || '❌' }}       ║"
-          echo "║  Phase 4: Unit Tests                ${{ needs.phase-4-unit-tests.result == 'success' && '✅' || '❌' }}       ║"
-          echo "║  Phase 5: Integration Tests         ${{ needs.phase-5-integration.result == 'success' && '✅' || '❌' }}       ║"
-          echo "║  Phase 6: Dashboard Build           ${{ needs.phase-6-dashboard-build.result == 'success' && '✅' || '❌' }}       ║"
-          echo "║                                              ║"
-          echo "╚══════════════════════════════════════════════╝"
+          echo "=========================================="
+          echo " Wolf 15-Layer CI -- Pipeline Results"
+          echo "=========================================="
+          echo " Phase 0-A  ruff:                   ${{ needs.ruff.result }}"
+          echo " Phase 0-B  ascii-compliance:        ${{ needs.ascii-compliance.result }}"
+          echo " Phase 1    mypy:                    ${{ needs.mypy.result }}"
+          echo " Phase 2    constitutional-boundary: ${{ needs.constitutional-boundary.result }}"
+          echo " Phase 3    schema-validation:       ${{ needs.schema-validation.result }}"
+          echo " Phase 4    critical-tests:          ${{ needs.critical-tests.result }}"
+          echo " Phase 5    coverage-gate:           ${{ needs.coverage-gate.result }}"
+          echo " Phase 6    integration:             ${{ needs.integration.result }}"
+          echo " Phase 7    dashboard:               ${{ needs.dashboard.result }}"
+          echo "=========================================="
 
-      - name: 🔒 Constitutional Gate — Block merge if boundaries violated
-        if: needs.phase-2-constitutional-boundary.result != 'success'
+      - name: "Hard block -- constitutional violations"
+        if: needs.constitutional-boundary.result != 'success'
         run: |
-          echo "❌ CONSTITUTIONAL VIOLATION DETECTED"
-          echo "Merge is BLOCKED — authority boundaries must be preserved."
-          exit 1
-      - name: 🔒 Test Gate — Block merge if critical tests fail
-        if: needs.phase-4-unit-tests.result != 'success'
-        run: |
-          echo "❌ CRITICAL TEST FAILURE DETECTED"
-          echo "Merge is BLOCKED — critical test gate did not pass."
-          echo "Fix failing tests in the Critical Test Gate before merging."
+          echo "CONSTITUTIONAL VIOLATION DETECTED"
+          echo "Merge is BLOCKED -- authority boundaries must be preserved."
           exit 1
 
-      - name: ✅ All gates passed
+      - name: "Hard block -- critical test failures"
+        if: needs.critical-tests.result != 'success'
+        run: |
+          echo "CRITICAL TEST FAILURE"
+          echo "Merge is BLOCKED -- fix failing tests before merging."
+          exit 1
+
+      - name: "Hard block -- coverage below 70%"
+        if: needs.coverage-gate.result != 'success'
+        run: |
+          echo "COVERAGE GATE FAILURE"
+          echo "Merge is BLOCKED -- test coverage must be >= 70%."
+          exit 1
+
+      - name: "Verdict: GRANTED"
         if: >-
-          needs.phase-2-constitutional-boundary.result == 'success' &&
-          needs.phase-4-unit-tests.result == 'success' &&
-          needs.phase-5-integration.result == 'success'
+          needs.constitutional-boundary.result == 'success' &&
+          needs.critical-tests.result == 'success' &&
+          needs.coverage-gate.result == 'success'
         run: |
-          echo "🐺 VERDICT: GRANTED — All constitutional gates passed."
+          echo "VERDICT: GRANTED -- All constitutional gates passed."
           echo "Pipeline is safe for merge."

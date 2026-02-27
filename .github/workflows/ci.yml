@@ -1,11 +1,14 @@
 # yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
-name: CI
+# DEPRECATED — superseded by wolf-pipeline-ci.yml
+# This workflow is disabled (manual trigger only).
+name: CI (Deprecated)
 
 on:
-  push:
-    branches: [main, develop]
-  pull_request:
-    branches: [main, develop]
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: "Reason for manual trigger"
+        required: false
 
 permissions:
   contents: read
