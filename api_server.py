@@ -198,7 +198,7 @@ app = FastAPI(
 # ── CORS ──────────────────────────────────────────────────────────────────────
 _cors_raw = os.getenv(
     "CORS_ORIGINS",
-    "http://localhost:3000,http://localhost:8000",
+    "http://localhost:3000,http://localhost:8000,https://railway-dashboard-production-de97.up.railway.app",
 )
 cors_origins = [o.strip() for o in _cors_raw.split(",") if o.strip()]
 
