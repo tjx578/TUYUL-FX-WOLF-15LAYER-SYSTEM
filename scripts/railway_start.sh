@@ -19,4 +19,5 @@ exec gunicorn api_server:app \
   --timeout 120 \
   --access-logfile - \
   --error-logfile - \
-  --log-level info
+  --log-level info \
+  2>&1
