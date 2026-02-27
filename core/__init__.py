@@ -67,8 +67,8 @@ except ImportError:
     )
 _cfu_extras = None  # fallback
 try:
-    from . import core_fusion_unified as _cfu_extras  # noqa: F401
-    from .core_fusion_unified import (  # pyright: ignore[reportMissingImports]
+    from . import core_fusion as _cfu_extras  # noqa: F401
+    from .core_fusion import (
         AdaptiveThresholdController,
         DivergenceStrength,
         DivergenceType,
@@ -104,14 +104,13 @@ try:
         resolve_field_context,
         sync_field_state,
     )
-    from .core_fusion_unified import (  # pyright: ignore[reportMissingImports]
+    from .core_fusion import (
         MonteCarloResult as FusionMonteCarloResult,
     )
 except ImportError as _e:
     import logging as _logging
     _logging.getLogger("tuyul.core").warning(
-        "core_fusion_unified not found (%s) — fusion re-exports unavailable "
-        "(module may have been refactored to core/core_fusion/)", str(_e)
+        "core_fusion not found (%s) — fusion re-exports unavailable", str(_e)
     )
 try:
     from .core_quantum_unified import (
