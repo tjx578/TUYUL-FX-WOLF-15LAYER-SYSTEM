@@ -9,8 +9,7 @@ Provides:
   - ``verify_ws_token_from_query(websocket)`` -- WS-safe auth via query param.
 
 Environment variables:
-    DASHBOARD_JWT_SECRET        -- primary HMAC secret (MUST change in prod)
-    JWT_SECRET                  -- legacy fallback secret (optional)
+    DASHBOARD_JWT_SECRET      -- canonical HMAC secret (required, strong value)
   DASHBOARD_JWT_ALGO          -- algorithm (default HS256)
   DASHBOARD_TOKEN_EXPIRE_MIN  -- token lifetime in minutes (default 60)
   DASHBOARD_API_KEY           -- optional static API key for service-to-service calls
@@ -32,27 +31,28 @@ from loguru import logger  # pyright: ignore[reportMissingImports]
 # ---------------------------------------------------------------------------
 
 _DASHBOARD_JWT_SECRET = os.getenv("DASHBOARD_JWT_SECRET", "").strip()
-_LEGACY_JWT_SECRET = os.getenv("JWT_SECRET", "").strip()
 
-if _DASHBOARD_JWT_SECRET and _LEGACY_JWT_SECRET and _DASHBOARD_JWT_SECRET != _LEGACY_JWT_SECRET:
-    logger.warning(
-        "JWT secret mismatch detected: DASHBOARD_JWT_SECRET and JWT_SECRET differ. "
-        "Using DASHBOARD_JWT_SECRET for token issuance and accepting both for verification."
-    )
-
-JWT_SECRET: str = _DASHBOARD_JWT_SECRET or _LEGACY_JWT_SECRET or "CHANGE_ME"
-JWT_VERIFY_SECRETS: tuple[str, ...] = tuple(
-    dict.fromkeys(secret for secret in (_DASHBOARD_JWT_SECRET, _LEGACY_JWT_SECRET, JWT_SECRET) if secret)
-)
+JWT_SECRET: str = _DASHBOARD_JWT_SECRET
+JWT_VERIFY_SECRETS: tuple[str, ...] = (JWT_SECRET,) if JWT_SECRET else ()
 JWT_ALGO: str = os.getenv("DASHBOARD_JWT_ALGO", "HS256")
 TOKEN_EXPIRE_MIN: int = int(os.getenv("DASHBOARD_TOKEN_EXPIRE_MIN", "60"))
 API_KEY: str = os.getenv("DASHBOARD_API_KEY", "")
 
-# Warn loudly if secret is still the default
-if JWT_SECRET == "CHANGE_ME":
-    logger.warning(
-        "⚠️  DASHBOARD_JWT_SECRET is set to default 'CHANGE_ME'. "
-        "Set a strong secret via environment variable before deploying to production."
+_FORBIDDEN_DEFAULT_JWT_SECRETS = {
+    "CHANGE_ME",
+    "CHANGE_ME_SUPER_SECRET",
+    "CHANGE_ME_TO_RANDOM_STRING",
+}
+
+
+def _is_strong_jwt_secret(secret: str) -> bool:
+    return bool(secret) and secret not in _FORBIDDEN_DEFAULT_JWT_SECRETS and len(secret) >= 32
+
+
+if not _is_strong_jwt_secret(JWT_SECRET):
+    logger.error(
+        "DASHBOARD_JWT_SECRET is missing/weak. "
+        "JWT issuance/verification will fail closed until a strong secret (>=32 chars) is configured."
     )
 
 # ---------------------------------------------------------------------------
@@ -93,6 +93,11 @@ def create_token(sub: str = "dashboard", extra: dict[str, Any] | None = None) ->
     Returns:
         Encoded JWT string.
     """
+    if not _is_strong_jwt_secret(JWT_SECRET):
+        raise RuntimeError(
+            "DASHBOARD_JWT_SECRET is missing/weak. Configure a strong secret (>=32 chars) before issuing JWTs."
+        )
+
     if JWT_ALGO != "HS256":
         logger.warning(f"Unsupported DASHBOARD_JWT_ALGO={JWT_ALGO}. Falling back to HS256.")
     header = {"alg": "HS256", "typ": "JWT"}
@@ -119,6 +124,10 @@ def decode_token(raw: str) -> dict[str, Any] | None:
     Returns:
         Payload dict if valid and not expired, else None.
     """
+    if not _is_strong_jwt_secret(JWT_SECRET):
+        logger.warning("JWT verification disabled: DASHBOARD_JWT_SECRET is missing/weak")
+        return None
+
     try:
         parts = raw.split(".")
         if len(parts) != 3:
