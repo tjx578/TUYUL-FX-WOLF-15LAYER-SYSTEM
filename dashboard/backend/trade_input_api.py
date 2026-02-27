@@ -9,7 +9,6 @@ BUG FIXES APPLIED:
 """
 
 import logging
-import os
 import uuid
 from datetime import UTC, datetime
 
@@ -44,8 +43,10 @@ def _make_redis() -> Redis | None:
 try:
     _redis: Redis | None = _make_redis()
     if _redis:
+        from infrastructure.redis_url import get_safe_redis_url
+
         _redis.ping()
-        logger.info("Redis connected: %s", os.getenv("REDIS_URL", "localhost"))
+        logger.info("Redis connected: %s", get_safe_redis_url())
 except Exception as exc:  # pragma: no cover
     logger.warning("Redis unavailable at startup: %s — using in-memory fallback", exc)
     _redis = None
