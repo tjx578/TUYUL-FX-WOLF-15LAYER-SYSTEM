@@ -77,9 +77,17 @@ class RedisConfig:
         url_db = int(raw_db)
 
         # Individual env vars override URL-derived values (backward-compat)
-        host = os.environ.get("REDIS_HOST") or url_host
-        port = int(os.environ.get("REDIS_PORT") or url_port)
-        password = os.environ.get("REDIS_PASSWORD") or url_password or None
+        # Also check Railway-style vars (REDISHOST, etc.) as secondary fallback
+        host = (os.environ.get("REDIS_HOST")
+                or os.environ.get("REDISHOST")
+                or url_host)
+        port = int(os.environ.get("REDIS_PORT")
+                   or os.environ.get("REDISPORT")
+                   or url_port)
+        password = (os.environ.get("REDIS_PASSWORD")
+                    or os.environ.get("REDISPASSWORD")
+                    or url_password
+                    or None)
         db = int(os.environ.get("REDIS_DB") or url_db)
 
         # Normalise empty string password to None
