@@ -11,6 +11,7 @@ see ea_interface/mt5_bridge.py for details.
 """
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 from pathlib import Path
@@ -62,9 +63,7 @@ def restart() -> dict:
     cleared = 0
     if commands_dir.exists():
         for f in commands_dir.glob("*.json"):
-            try:
+            with contextlib.suppress(Exception):
                 f.unlink()
                 cleared += 1
-            except Exception:  # noqa: BLE001
-                pass
     return {"ok": True, "pending_commands_cleared": cleared}
