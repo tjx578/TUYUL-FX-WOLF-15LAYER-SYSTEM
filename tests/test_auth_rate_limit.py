@@ -173,6 +173,44 @@ class TestJWT:
         assert payload is not None
         assert payload["sub"] == "legacy_user"
 
+    def test_decode_accepts_pyjwt_encoded_token(self):
+        jwt = pytest.importorskip("jwt")
+
+        from dashboard.backend import auth as dashboard_auth  # noqa: PLC0415
+
+        now = int(time.time())
+        token = jwt.encode(
+            {"sub": "pyjwt_user", "iat": now, "exp": now + 60},
+            "shared-secret",
+            algorithm="HS256",
+        )
+
+        with patch.object(dashboard_auth, "JWT_SECRET", "shared-secret"), patch.object(
+            dashboard_auth,
+            "JWT_VERIFY_SECRETS",
+            ("shared-secret",),
+        ):
+            payload = dashboard_auth.decode_token(token)
+
+        assert payload is not None
+        assert payload["sub"] == "pyjwt_user"
+
+    def test_custom_token_is_decodable_by_pyjwt(self):
+        jwt = pytest.importorskip("jwt")
+
+        from dashboard.backend import auth as dashboard_auth  # noqa: PLC0415
+
+        with patch.object(dashboard_auth, "JWT_SECRET", "shared-secret"), patch.object(
+            dashboard_auth,
+            "JWT_VERIFY_SECRETS",
+            ("shared-secret",),
+        ):
+            token = dashboard_auth.create_token(sub="custom_user")
+
+        payload = jwt.decode(token, "shared-secret", algorithms=["HS256"])
+
+        assert payload["sub"] == "custom_user"
+
 
 # =========================================================================
 # API key tests
@@ -321,6 +359,36 @@ class TestWSAuth:
 
             assert result is True
             assert ws.state.user == "api_key_user"
+
+    @pytest.mark.asyncio
+    async def test_ws_accepts_pyjwt_token_with_shared_secret(self):
+        jwt = pytest.importorskip("jwt")
+
+        from api.middleware.ws_auth import ws_authenticate  # noqa: PLC0415
+        from dashboard.backend import auth as dashboard_auth  # noqa: PLC0415
+
+        now = int(time.time())
+        token = jwt.encode(
+            {"sub": "ws_pyjwt_user", "iat": now, "exp": now + 60},
+            "shared-secret",
+            algorithm="HS256",
+        )
+
+        ws = AsyncMock(spec=["query_params", "close", "state"])
+        ws.query_params = {"token": token}
+        ws.state = MagicMock()
+        ws.close = AsyncMock()
+
+        with patch.object(dashboard_auth, "JWT_SECRET", "shared-secret"), patch.object(
+            dashboard_auth,
+            "JWT_VERIFY_SECRETS",
+            ("shared-secret",),
+        ):
+            result = await ws_authenticate(ws)
+
+        assert result is True
+        assert ws.state.user == "ws_pyjwt_user"
+        ws.close.assert_not_awaited()
 
 
 # =========================================================================
