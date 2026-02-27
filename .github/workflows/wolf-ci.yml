@@ -1,10 +1,13 @@
-name: Wolf-15 CI
+# DEPRECATED — superseded by wolf-pipeline-ci.yml
+# This workflow is disabled (manual trigger only).
+name: Wolf-15 CI v2 (Deprecated)
 
 on:
-  push:
-    branches: [main, develop]
-  pull_request:
-    branches: [main, develop]
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: "Reason for manual trigger"
+        required: false
 
 concurrency:
   group: ci-${{ github.ref }}
