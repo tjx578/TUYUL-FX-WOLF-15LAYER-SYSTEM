@@ -92,7 +92,7 @@ Sistem menggunakan **Finnhub** sebagai satu-satunya data provider untuk:
 - `news/` : news lock engine
 - `risk/` : prop-firm rules, drawdown, risk multiplier
 - `alerts/` : telegram notifier + formatter
-- `dashboard/` : backend API (read-only) + frontend UI
+- `dashboard/` : backend API (read-only) + frontend UI tunggal di `dashboard/nextjs/`
 - `storage/` : redis snapshot + trade journal
 - `schemas/` : JSON schemas (L12, L14, alerts)
 - `ea_interface/` : command schema + sync contract
