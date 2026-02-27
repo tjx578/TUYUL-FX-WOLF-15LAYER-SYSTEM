@@ -20,3 +20,7 @@ exec gunicorn api_server:app \
   --access-logfile /dev/stdout \
   --error-logfile /dev/stdout \
   --log-level info
+  --access-logfile - \
+  --error-logfile - \
+  --log-level info \
+  2>&1
