@@ -92,7 +92,13 @@ TELEGRAM_CHAT_ID="your_chat_id"
 
 # Dashboard
 DASHBOARD_ENABLED="true"
-DASHBOARD_JWT_SECRET="CHANGE_ME_TO_RANDOM_STRING"
+DASHBOARD_JWT_SECRET="<generate_64_hex_chars_with_openssl_rand>"
+```
+
+Generate a strong JWT secret before saving `.env`:
+
+```bash
+openssl rand -hex 32
 ```
 
 Save and exit (Ctrl+X, Y, Enter).
