@@ -181,6 +181,30 @@ Test penting:
 
 ---
 
+## 🚀 CI/CD
+
+- CI workflow: `.github/workflows/ci.yml`
+  - Trigger: `push`, `pull_request`, `workflow_dispatch`
+  - Gate: menjalankan `pytest` (mengikuti konfigurasi `pytest.ini` / `pyproject.toml`)
+
+- Deploy workflow: `.github/workflows/railway-deploy.yml`
+  - Trigger otomatis: hanya setelah workflow `CI` sukses di branch `main`
+    - Trigger manual: `workflow_dispatch`
+
+### Required GitHub Secrets
+
+- `RAILWAY_TOKEN` → token deploy Railway (wajib untuk workflow deploy)
+
+### Recommended Branch Protection (main)
+
+- Require a pull request before merging
+- Require status checks to pass before merging
+- Mark `CI / Python tests (pytest)` sebagai required check
+- Require branches to be up to date before merging
+- Include administrators (recommended)
+
+---
+
 ## 🔐 Logging & Audit
 
 - Semua gate failure dicatat via `constitution/violation_log.py`
