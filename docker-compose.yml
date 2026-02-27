@@ -39,7 +39,7 @@ services:
       --timeout 300
       --hz 10
       --client-output-buffer-limit "normal 0 0 0"
-      --client-output-buffer-limit "pubsub 64mb 32mb 60"
+      --client-output-buffer-limit "pubsub 8mb 4mb 30"
     ports:
       # Bind to localhost only — not reachable from external network
       - "127.0.0.1:6379:6379"

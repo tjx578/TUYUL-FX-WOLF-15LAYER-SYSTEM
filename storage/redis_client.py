@@ -70,7 +70,7 @@ class RedisClient:
             decode_responses=True,
             socket_timeout=socket_timeout,
             socket_connect_timeout=socket_timeout,
-            max_connections=20,
+            max_connections=10,
             socket_keepalive=True,
             health_check_interval=30,
             retry_on_timeout=True,
