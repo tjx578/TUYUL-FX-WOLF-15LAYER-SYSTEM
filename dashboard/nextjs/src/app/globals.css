@@ -575,3 +575,10 @@ button .ripple {
 
 .flash-up   { animation: value-flash-up   0.6s ease-out; }
 .flash-down { animation: value-flash-down 0.6s ease-out; }
+
+/* ─── COCKPIT KILL-SWITCH BANNER ─── */
+@keyframes kill-pulse {
+  0%, 100% { border-color: rgba(255,77,79,0.30); }
+  50%       { border-color: rgba(255,77,79,0.70); box-shadow: 0 0 24px rgba(255,77,79,0.22); }
+}
+.kill-banner { animation: kill-pulse 2.5s ease-in-out infinite; }

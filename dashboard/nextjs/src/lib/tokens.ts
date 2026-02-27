@@ -10,7 +10,8 @@
 // ── Semantic palette ─────────────────────────────────────────
 
 export const T = {
-  // Text
+  // Text (t0 = hero / max-brightness, t1–t4 descend in opacity)
+  t0: "rgba(255,255,255,0.97)",
   t1: "var(--text-primary)",
   t2: "var(--text-secondary)",
   t3: "var(--text-tertiary)",
@@ -34,6 +35,7 @@ export const T = {
   amber:   "var(--accent-amber,   #FFB100)",
   emerald: "var(--accent-emerald, #00F5A0)",
   cyan:    "var(--accent-cyan,    #22D3EE)",
+  teal:    "var(--accent-teal,    #00CCB8)",
   blue:    "var(--accent-blue,    #3B82F6)",
 
   // Extended palette
@@ -101,6 +103,54 @@ export const TRANSITION = {
 
 // ── Wolf-15 Pipeline Zone Colors ─────────────────────────────
 // Each of the 15-layer zones has a distinct accent for the zone bar.
+// ── Prop Firm Configuration ─────────────────────────────────
+export interface PropFirmConfig {
+  dailyDD: number;
+  maxDD: number;
+  newsBlock: number;  // minutes each side of news event
+  targets: Record<string, number>;
+}
+
+export const PROP_FIRMS: Record<string, PropFirmConfig> = {
+  FTMO: {
+    dailyDD: 5, maxDD: 10, newsBlock: 30,
+    targets: { Challenge: 10, Verification: 5, Funded: 0 },
+  },
+  MFF: {
+    dailyDD: 5, maxDD: 8, newsBlock: 0,
+    targets: { "Phase 1": 8, "Phase 2": 5, Funded: 0 },
+  },
+  "The5%ers": {
+    dailyDD: 0, maxDD: 6, newsBlock: 0,
+    targets: { Growth: 6, Funded: 0 },
+  },
+  E8: {
+    dailyDD: 5, maxDD: 8, newsBlock: 0,
+    targets: { E8: 8, Funded: 0 },
+  },
+};
+
+// ── Role Configuration ────────────────────────────────────────
+export const ROLE_CONFIG: Record<string, { label: string; color?: string }> = {
+  trader:  { label: "TRADER",   color: "var(--accent-emerald, #00F5A0)" },
+  risk:    { label: "RISK MGR", color: "var(--accent-amber,   #FFB100)" },
+  viewer:  { label: "VIEWER",   color: "var(--text-tertiary)"           },
+  monitor: { label: "MONITOR",  color: "var(--accent-cyan,    #22D3EE)" },
+};
+
+// ── Cockpit inline CSS (keyframes not already in globals.css) ─
+// Usage: <style>{GLOBAL_CSS}</style> in cockpit/page
+export const GLOBAL_CSS = `
+  @keyframes kill-pulse {
+    0%, 100% { border-color: rgba(255,77,79,0.30); }
+    50%       { border-color: rgba(255,77,79,0.70);
+                box-shadow:    0 0 24px rgba(255,77,79,0.22); }
+  }
+  .kill-banner { animation: kill-pulse 2.5s ease-in-out infinite; }
+  .layer-row:hover { background: var(--bg-elevated) !important; }
+  .card-hover:hover { border-color: rgba(255,255,255,0.14) !important; }
+`;
+
 export const ZONE_COLORS: Record<string, string> = {
   COG:  "var(--accent-cyan,    #22D3EE)",   // Cognitive layers  (L1–L2)
   ANA:  "var(--accent-emerald, #00F5A0)",   // Analysis layers   (L3–L4, L7–L9)
