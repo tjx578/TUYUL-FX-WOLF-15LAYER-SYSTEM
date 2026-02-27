@@ -2,7 +2,6 @@
 Root conftest -- shared fixtures for the entire Wolf-15 test suite.
 Fast by default: heavy fixtures are session-scoped or lazy.
 """
-import asyncio
 import sys
 import time
 
@@ -14,15 +13,6 @@ import pytest  # pyright: ignore[reportMissingImports]
 ROOT = Path(__file__).parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
-
-
-# ── Async loop (session-scoped for speed) ─────────────────────────
-@pytest.fixture(scope="session")
-def event_loop():
-    """Single event loop for the whole session -- avoids per-test loop cost."""
-    loop = asyncio.new_event_loop()
-    yield loop
-    loop.close()
 
 
 # ── Timing helper ─────────────────────────────────────────────────
@@ -114,43 +104,6 @@ def ftmo_profile():
         "news_lockout_minutes": 15,
         "weekend_close_required": True,
     }
-
-
-# ── Mock dependencies ─────────────────────────────────────────────
-@pytest.fixture
-def mock_redis():
-    """In-memory dict pretending to be Redis -- tests run without Redis."""
-    store = {}
-
-    class FakeRedis:
-        async def get(self, key):
-            return store.get(key)
-
-        async def set(self, key, value, ex=None):
-            store[key] = value
-
-        async def delete(self, key):
-            store.pop(key, None)
-
-        async def publish(self, channel, message):
-            pass
-
-        async def keys(self, pattern="*"):
-            import fnmatch  # noqa: PLC0415
-            return [k for k in store if fnmatch.fnmatch(k, pattern)]
-
-        async def hset(self, name, key=None, value=None, mapping=None):
-            if name not in store:
-                store[name] = {}
-            if mapping:
-                store[name].update(mapping)
-            elif key is not None:
-                store[name][key] = value
-
-        async def hgetall(self, name):
-            return store.get(name, {})
-
-    return FakeRedis()
 
 
 @pytest.fixture
