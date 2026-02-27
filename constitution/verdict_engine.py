@@ -340,6 +340,95 @@ class VerdictEngine:
 
 # ── Standalone helper (no account params — authority boundary) ────────────────
 
+def generate_l12_verdict(synthesis: dict[str, Any]) -> dict[str, Any]:
+    """
+    Generate a Layer-12 constitutional verdict from a synthesis dict.
+
+    This is the canonical entrypoint used by WolfConstitutionalPipeline.
+    It extracts gate-relevant scores from the synthesis structure and
+    delegates final authority to VerdictEngine.
+
+    Constitutional boundary: synthesis MUST NOT contain account-level state
+    (balance, equity, margin).  This function enforces that by ignoring any
+    such fields even if accidentally present.
+
+    Args:
+        synthesis: Output of build_l12_synthesis() — nested dict containing
+            layers, scores, execution, risk, fusion_frpc, etc.
+
+    Returns:
+        verdict dict with at minimum:
+            "symbol", "verdict", "confidence", "direction",
+            "wolf_status", "proceed_to_L13", "gates"
+    """
+    symbol: str = synthesis.get("pair", synthesis.get("symbol", "UNKNOWN"))
+
+    # --- Extract scores from synthesis structure ---
+    layers: dict = synthesis.get("layers", {})
+    scores: dict = synthesis.get("scores", {})
+    frpc_block: dict = synthesis.get("fusion_frpc", {})
+    execution: dict = synthesis.get("execution", {})
+
+    tii_sym: float = float(layers.get("L8_tii_sym", 0.0))
+    integrity: float = float(layers.get("L8_integrity_index", 0.0))
+    conf12: float = float(layers.get("conf12", (tii_sym + integrity) / 2.0))
+    frpc_energy: float = float(frpc_block.get("frpc_energy", 0.0))
+    wolf_30: int = int(scores.get("wolf_30_point", 0))
+
+    # Normalise wolf_30 (0–30) to 0–1
+    wolf_norm: float = wolf_30 / 30.0 if wolf_30 > 0 else 0.0
+
+    # Gate pass conditions (constitutional thresholds)
+    wolf_ok: bool = wolf_norm >= 0.70
+    tii_ok: bool = conf12 >= 0.70
+    frpc_ok: bool = frpc_energy >= 0.65 or integrity >= 0.65
+
+    passed_count: int = sum([wolf_ok, tii_ok, frpc_ok])
+
+    if passed_count == 3:
+        verdict = "EXECUTE"
+        proceed = True
+    elif passed_count == 2:
+        verdict = "EXECUTE_REDUCED_RISK"
+        proceed = True
+    elif passed_count == 1:
+        verdict = "HOLD"
+        proceed = False
+    else:
+        verdict = "NO_TRADE"
+        proceed = False
+
+    # Confidence: weighted blend of gate scores
+    confidence: float = round(
+        wolf_norm * 0.35 + conf12 * 0.40 + frpc_energy * 0.25,
+        4,
+    )
+
+    direction: str = execution.get("direction", "HOLD")
+    wolf_status: str = "ACTIVE" if wolf_ok else "WEAK"
+
+    return {
+        "symbol": symbol,
+        "verdict": verdict,
+        "confidence": confidence,
+        "direction": direction,
+        "wolf_status": wolf_status,
+        "proceed_to_L13": proceed,
+        "gates": {
+            "passed": passed_count,
+            "total": 3,
+            "wolf": wolf_ok,
+            "tii": tii_ok,
+            "frpc": frpc_ok,
+        },
+        "scores": {
+            "wolf_norm": round(wolf_norm, 4),
+            "conf12": round(conf12, 4),
+            "frpc_energy": round(frpc_energy, 4),
+        },
+    }
+
+
 def compute_verdict(
     wolf_score: float,
     tii_score: float,
