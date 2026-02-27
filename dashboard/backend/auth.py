@@ -31,8 +31,9 @@ from loguru import logger  # pyright: ignore[reportMissingImports]
 # ---------------------------------------------------------------------------
 
 _DASHBOARD_JWT_SECRET = os.getenv("DASHBOARD_JWT_SECRET", "").strip()
+_LEGACY_JWT_SECRET = os.getenv("JWT_SECRET", "").strip()
 
-JWT_SECRET: str = _DASHBOARD_JWT_SECRET
+JWT_SECRET: str = _DASHBOARD_JWT_SECRET or _LEGACY_JWT_SECRET
 JWT_VERIFY_SECRETS: tuple[str, ...] = (JWT_SECRET,) if JWT_SECRET else ()
 JWT_ALGO: str = os.getenv("DASHBOARD_JWT_ALGO", "HS256")
 TOKEN_EXPIRE_MIN: int = int(os.getenv("DASHBOARD_TOKEN_EXPIRE_MIN", "60"))
@@ -54,6 +55,8 @@ if not _is_strong_jwt_secret(JWT_SECRET):
         "DASHBOARD_JWT_SECRET is missing/weak. "
         "JWT issuance/verification will fail closed until a strong secret (>=32 chars) is configured."
     )
+elif _LEGACY_JWT_SECRET and not _DASHBOARD_JWT_SECRET:
+    logger.warning("Using legacy JWT_SECRET env var; please migrate to DASHBOARD_JWT_SECRET.")
 
 # ---------------------------------------------------------------------------
 # Lightweight JWT helpers (no external lib needed -- HMAC-SHA256 only)

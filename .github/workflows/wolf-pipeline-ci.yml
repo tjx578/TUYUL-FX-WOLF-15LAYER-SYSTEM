@@ -19,8 +19,6 @@
 name: "Wolf 15-Layer CI"
 
 on:
-  pull_request:
-    branches: [main]
   workflow_dispatch:
 
 concurrency:
