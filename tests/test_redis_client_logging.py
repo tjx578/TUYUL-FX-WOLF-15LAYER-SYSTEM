@@ -38,3 +38,35 @@ def test_get_safe_redis_url_uses_default_without_credentials() -> None:
         safe = get_safe_redis_url()
 
     assert safe == "redis://localhost:6379/0"
+
+
+def test_get_redis_url_falls_back_to_railway_vars() -> None:
+    """When REDIS_URL is absent, build URL from REDISHOST/PORT/etc."""
+    from infrastructure.redis_url import get_redis_url
+
+    env = {
+        "REDISHOST": "railway-host.internal",
+        "REDISPORT": "6380",
+        "REDISUSER": "default",
+        "REDISPASSWORD": "railwaypass",
+    }
+    with patch.dict(os.environ, env, clear=True):
+        url = get_redis_url()
+
+    assert "railway-host.internal" in url
+    assert ":6380" in url
+    assert "railwaypass" in url
+
+
+def test_redis_url_takes_priority_over_railway_vars() -> None:
+    """REDIS_URL always wins when both are set."""
+    from infrastructure.redis_url import get_redis_url
+
+    env = {
+        "REDIS_URL": "redis://explicit-host:6379/0",
+        "REDISHOST": "railway-host.internal",
+    }
+    with patch.dict(os.environ, env, clear=True):
+        url = get_redis_url()
+
+    assert url == "redis://explicit-host:6379/0"

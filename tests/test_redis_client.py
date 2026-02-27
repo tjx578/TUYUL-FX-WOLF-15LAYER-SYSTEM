@@ -66,6 +66,32 @@ class TestRedisConfig:
             cfg = RedisConfig.from_env()
             assert cfg.password is None
 
+    def test_railway_style_vars_fallback(self) -> None:
+        """Railway-style vars (REDISHOST etc.) used when standard vars absent."""
+        env = {
+            "REDISHOST": "railway-host.internal",
+            "REDISPORT": "6380",
+            "REDISPASSWORD": "railwaypass",
+        }
+        with patch.dict(os.environ, env, clear=True):
+            cfg = RedisConfig.from_env()
+            assert cfg.host == "railway-host.internal"
+            assert cfg.port == 6380
+            assert cfg.password == "railwaypass"
+
+    def test_standard_vars_override_railway_vars(self) -> None:
+        """REDIS_HOST takes priority over REDISHOST."""
+        env = {
+            "REDIS_HOST": "standard-host",
+            "REDISHOST": "railway-host",
+            "REDIS_PORT": "6381",
+            "REDISPORT": "6380",
+        }
+        with patch.dict(os.environ, env, clear=True):
+            cfg = RedisConfig.from_env()
+            assert cfg.host == "standard-host"
+            assert cfg.port == 6381
+
     def test_frozen(self) -> None:
         cfg = RedisConfig()
         with pytest.raises(AttributeError):
