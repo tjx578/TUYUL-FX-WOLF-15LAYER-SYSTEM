@@ -50,9 +50,16 @@ Integrity: TIIₛᵧₘ ≥ 0.93 | FRPC ≥ 0.96 | RR ≥ 1:2.0
 
 from __future__ import annotations
 
+import concurrent.futures
+import os
 import time
 from datetime import datetime, timedelta, timezone
 from typing import Any
+
+# Per-layer hard timeout (seconds).  A layer that exceeds this limit raises
+# TimeoutError so the outer try/except can record FATAL_ERROR and return an
+# early exit rather than blocking the whole pipeline indefinitely.
+_LAYER_TIMEOUT_SEC: float = float(os.getenv("LAYER_TIMEOUT_SEC", "10"))
 
 from constitution.signal_throttle import SignalThrottle
 from constitution.verdict_engine import generate_l12_verdict  # pyright: ignore[reportAttributeAccessIssue]
@@ -433,9 +440,32 @@ class WolfConstitutionalPipeline:
 
     @staticmethod
     def _timed_call(func, layer_name: str, symbol: str, *args, **kwargs):
-        """Call *func* and observe its wall-clock latency on LAYER_LATENCY."""
+        """Call *func* with a per-layer timeout and observe wall-clock latency.
+
+        Infrastructure safety only — this has no effect on Layer-12 verdict
+        authority.  If a layer exceeds ``_LAYER_TIMEOUT_SEC`` the raised
+        ``TimeoutError`` is caught by the outer ``except Exception`` block in
+        ``execute()`` and recorded as ``FATAL_ERROR``, returning an early exit
+        before Layer-12 can render judgment.
+
+        A new ``ThreadPoolExecutor`` is created per call (max_workers=1).  The
+        overhead is negligible (~microseconds) relative to actual layer work,
+        and it avoids shared-executor lifecycle concerns across concurrent
+        pipeline instances.
+        """
         t0 = time.time()
-        result = func(*args, **kwargs)
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+            future = executor.submit(func, *args, **kwargs)
+            try:
+                result = future.result(timeout=_LAYER_TIMEOUT_SEC)
+            except concurrent.futures.TimeoutError:
+                logger.error(
+                    "[Pipeline] Layer %s TIMEOUT (>%.0fs) for %s — aborting layer",
+                    layer_name, _LAYER_TIMEOUT_SEC, symbol,
+                )
+                raise TimeoutError(
+                    f"Layer {layer_name} exceeded {_LAYER_TIMEOUT_SEC}s timeout"
+                )
         LAYER_LATENCY.labels(layer=layer_name, symbol=symbol).observe(
             time.time() - t0,
         )
@@ -825,8 +855,21 @@ class WolfConstitutionalPipeline:
             layer_results_combined: dict[str, Any] = {
                 "L1": l1, "L2": l2, "L3": l3, "L4": l4, "L5": l5,
                 "L6": l6, "L7": l7, "L8": l8, "L9": l9, "L10": l10, "L11": l11,
+                # MonthlyRegimeAnalyzer — pass full result fields so
+                # build_l12_synthesis can populate synthesis["macro"] correctly.
                 "macro": macro.get("regime", "UNKNOWN") if isinstance(macro, dict) else "UNKNOWN",
-                "macro_vix_state": metrics.get("macro_vix_state", {}),
+                "phase": macro.get("phase", "NEUTRAL") if isinstance(macro, dict) else "NEUTRAL",
+                "macro_vol_ratio": macro.get("macro_vol_ratio", 1.0) if isinstance(macro, dict) else 1.0,
+                "alignment": macro.get("alignment", False) if isinstance(macro, dict) else False,
+                "liquidity": macro.get("liquidity", {}) if isinstance(macro, dict) else {},
+                "bias_override": macro.get("bias_override", {}) if isinstance(macro, dict) else {},
+                # MacroVolatilityEngine — prefer live engine state; fall back to
+                # caller-supplied system_metrics (test harness / manual override).
+                "macro_vix_state": (
+                    self._macro_vol.get_state()  # pyright: ignore[reportOptionalMemberAccess]
+                    if self._macro_vol is not None
+                    else metrics.get("macro_vix_state", {})
+                ),
             }
 
             synthesis = build_l12_synthesis(
