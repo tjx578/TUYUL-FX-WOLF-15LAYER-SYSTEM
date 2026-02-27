@@ -5,6 +5,7 @@ from typing import Any, Protocol, cast
 from fastapi import HTTPException
 from fastapi.routing import APIRouter
 
+from config_loader import load_pairs
 from context.live_context_bus import LiveContextBus
 from execution.state_machine import ExecutionStateMachine
 from storage.l12_cache import get_verdict
@@ -18,14 +19,22 @@ class _SnapshotProvider(Protocol):
         ...
 
 
-# Available currency pairs (can be loaded from config)
-AVAILABLE_PAIRS: list[dict[str, str | bool]] = [
-    {"symbol": "EURUSD", "name": "Euro/US Dollar", "enabled": True},
-    {"symbol": "GBPUSD", "name": "British Pound/US Dollar", "enabled": True},
-    {"symbol": "USDJPY", "name": "US Dollar/Japanese Yen", "enabled": True},
-    {"symbol": "AUDUSD", "name": "Australian Dollar/US Dollar", "enabled": True},
-    {"symbol": "USDCAD", "name": "US Dollar/Canadian Dollar", "enabled": True},
-]
+def _load_available_pairs() -> list[dict[str, str | bool]]:
+    """Load pair metadata from config/pairs.yaml for API endpoints."""
+    available: list[dict[str, str | bool]] = []
+    for pair in load_pairs():
+        symbol = str(pair.get("symbol", "")).upper().strip()
+        if not symbol:
+            continue
+        available.append({
+            "symbol": symbol,
+            "name": str(pair.get("name") or symbol),
+            "enabled": bool(pair.get("enabled", True)),
+        })
+    return available
+
+
+AVAILABLE_PAIRS: list[dict[str, str | bool]] = _load_available_pairs()
 
 
 @router.get("/api/v1/l12/{pair}")
