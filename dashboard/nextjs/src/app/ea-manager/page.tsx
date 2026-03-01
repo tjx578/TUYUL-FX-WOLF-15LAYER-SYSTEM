@@ -1,6 +1,7 @@
 "use client";
 
 import { restartEA, useEALogs, useEAStatus } from "@/lib/api";
+import type { EALog } from "@/types";
 
 export default function EAManagerPage() {
   const { data: status } = useEAStatus();
@@ -25,7 +26,7 @@ export default function EAManagerPage() {
       <div className="rounded-xl border p-4">
         <div className="font-semibold mb-2">EA Logs</div>
         <ul className="space-y-1 text-sm">
-          {logs?.map((l) => (
+          {logs?.map((l: EALog) => (
             <li key={l.id}>{l.timestamp} — {l.message}</li>
           ))}
         </ul>
