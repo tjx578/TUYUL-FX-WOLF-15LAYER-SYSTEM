@@ -7,8 +7,9 @@ default in one place, simplifies audits, and prevents security drift
 
 Railway Redis addon injects *both* ``REDIS_URL`` **and** individual vars
 without underscores (``REDISHOST``, ``REDISPASSWORD``, ``REDISPORT``,
-``REDISUSER``).  We prefer ``REDIS_URL`` but fall back to building a URL
-from the Railway-style vars when ``REDIS_URL`` is absent.
+``REDISUSER``).  We prefer ``REDIS_URL`` but fall back to ``REDIS_PRIVATE_URL``
+(Railway private-network URL) then the Railway-style vars when ``REDIS_URL``
+is absent.
 """
 
 import os
@@ -50,12 +51,17 @@ def get_redis_url() -> str:
 
     Priority:
         1. ``REDIS_URL`` environment variable (production / Railway / Docker).
-        2. URL built from Railway-style vars (``REDISHOST``, etc.).
-        3. ``_DEFAULT_REDIS_URL`` — localhost fallback for local dev.
+        2. ``REDIS_PRIVATE_URL`` environment variable (Railway private network URL).
+        3. URL built from Railway-style vars (``REDISHOST``, etc.).
+        4. ``_DEFAULT_REDIS_URL`` — localhost fallback for local dev.
     """
     url = os.environ.get("REDIS_URL")
     if url:
         return url
+
+    private_url = os.environ.get("REDIS_PRIVATE_URL")
+    if private_url:
+        return private_url
 
     railway_url = _build_url_from_railway_vars()
     if railway_url:
