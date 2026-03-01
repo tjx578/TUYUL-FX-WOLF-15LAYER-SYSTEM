@@ -1,5 +1,6 @@
 # Paths to exclude from secret scanning
 # (test fixtures, example configs, lock files)
+.git/
 node_modules/
 .env.example
 package-lock.json
