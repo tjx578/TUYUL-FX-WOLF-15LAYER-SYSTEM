@@ -255,6 +255,18 @@ export interface PropFirmGuardResult {
   violations?: string[];
 }
 
+export interface PropFirmStatus {
+  allowed: boolean;
+  code: string;
+  details?: string;
+}
+
+export interface ProbabilityCalibration {
+  grade: string;
+  score: number;
+  details?: string[];
+}
+
 // ─── JOURNAL ─────────────────────────────────────────────────
 
 export interface JournalEntry {
