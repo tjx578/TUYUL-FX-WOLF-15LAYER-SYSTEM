@@ -2,7 +2,6 @@ import asyncio
 import os
 import signal
 import sys
-import traceback
 import types
 from collections.abc import Callable, Coroutine
 
@@ -238,6 +237,7 @@ async def _analyze_pair(pair: str) -> dict[str, object] | None:
         )
         return None
     except Exception as exc:
+        import traceback
         logger.error(f"[Pipeline] Error for {pair}: {exc}\n{traceback.format_exc()}")
         return None
 
