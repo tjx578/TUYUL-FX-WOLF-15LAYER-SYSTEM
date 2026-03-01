@@ -1,7 +1,8 @@
 """Lightweight async health probe server for container orchestration.
 
-Exposes ``/healthz`` (liveness) and ``/readyz`` (readiness) endpoints on a
-configurable port.  Zero external dependencies — uses only ``asyncio``.
+Exposes ``/healthz`` (liveness), ``/health`` (liveness alias), ``/readyz``
+(readiness) and ``/status`` endpoints on a configurable port.  Zero external
+dependencies — uses only ``asyncio``.
 
 Usage::
 
@@ -88,7 +89,7 @@ class HealthProbe:
             parts = request_line.split(" ")
             path = parts[1] if len(parts) > 1 else "/"
 
-            if path == "/healthz":
+            if path in ("/healthz", "/health"):
                 response = self._liveness_response()
             elif path == "/readyz":
                 response = self._readiness_response()
@@ -155,7 +156,7 @@ class HealthProbe:
 
     @staticmethod
     def _not_found_response() -> str:
-        body = {"error": "not_found", "hint": "Use /healthz, /readyz, or /status"}
+        body = {"error": "not_found", "hint": "Use /health, /healthz, /readyz, or /status"}
         return HealthProbe._http_response(404, "Not Found", body)
 
     @staticmethod
