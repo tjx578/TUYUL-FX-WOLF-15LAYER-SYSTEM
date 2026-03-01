@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from datetime import UTC, datetime
 
-from ingest.finnhub_candles import FinnhubCandleFetcher
+from ingest.finnhub_candles import FinnhubCandleError, FinnhubCandleFetcher
 
 
 @pytest.mark.asyncio
@@ -157,5 +157,5 @@ class TestCalculateFromTs:
     def test_unsupported_timeframe_raises(self) -> None:
         """_calculate_from_ts must raise for unknown timeframes."""
         fetcher = FinnhubCandleFetcher()
-        with pytest.raises(Exception):
+        with pytest.raises(FinnhubCandleError):
             fetcher._calculate_from_ts(bars=10, timeframe="INVALID")

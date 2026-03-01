@@ -342,7 +342,7 @@ class CircuitBreaker:
                     self._transition_to(CircuitBreakerState.OPEN)
 
             self._persist_state()
-    
+
     def _is_allowed(self) -> bool:
         """Check state without acquiring lock. Must be called within lock."""
         return self._state in [
