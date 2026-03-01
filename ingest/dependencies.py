@@ -7,6 +7,7 @@ import os
 import time
 from collections import deque
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, cast
 
 from redis.asyncio import Redis
@@ -210,6 +211,7 @@ def _build_tick_handler(
     *,
     mapper: FinnhubSymbolMapper,
     allowed_symbols: set[str],
+    candle_callback: Callable[[str, float, datetime, float], None] | None = None,
 ) -> Callable[[dict[str, Any]], Awaitable[None]]:
     """Create WS message handler that normalizes and writes ticks to context."""
     context_bus = LiveContextBus()
@@ -275,6 +277,11 @@ def _build_tick_handler(
                 }
                 context_bus.update_tick(normalized_tick)  # type: ignore[arg-type]
                 tick_metrics.record(internal_symbol)
+
+                # Wire to CandleBuilder if callback provided
+                if candle_callback and internal_symbol in allowed_symbols:
+                    tick_dt = datetime.fromtimestamp(tick_ts, tz=UTC)
+                    candle_callback(internal_symbol, tick_price, tick_dt, 0.0)
         except (TypeError, ValueError) as exc:
             logger.error(
                 "Tick processing error",
@@ -296,6 +303,7 @@ async def handle_tick(data: dict[str, Any]) -> None:
 async def create_finnhub_ws(
     redis: Redis,
     symbols: list[str] | None = None,
+    candle_callback: Callable[[str, float, datetime, float], None] | None = None,
 ) -> FinnhubWebSocket:
     """Factory for FinnhubWebSocket with defaults and tick normalization."""
     mapper = FinnhubSymbolMapper(prefix="OANDA")
@@ -305,7 +313,11 @@ async def create_finnhub_ws(
 
     return FinnhubWebSocket(
         redis=redis,
-        on_message=_build_tick_handler(mapper=mapper, allowed_symbols=allowed_symbols), # pyright: ignore[reportArgumentType]
+        on_message=_build_tick_handler(
+            mapper=mapper,
+            allowed_symbols=allowed_symbols,
+            candle_callback=candle_callback,
+        ), # pyright: ignore[reportArgumentType]
         symbols=external_symbols,
     )
 

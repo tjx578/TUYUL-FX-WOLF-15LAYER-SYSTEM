@@ -5,10 +5,11 @@ import os
 import signal
 import sys
 import types
+from datetime import datetime
 from importlib import import_module
 from typing import Any, Protocol
 
-from loguru import logger  # pyright: ignore[reportMissingImports]
+from loguru import logger
 
 from analysis.macro.macro_regime_engine import MacroRegimeEngine
 from config_loader import CONFIG
@@ -61,7 +62,7 @@ def _get_enabled_symbols() -> list[str]:
     pairs = CONFIG.get("pairs", {}).get("pairs", [])
     if not isinstance(pairs, list):
         return []
-    return [p["symbol"] for p in pairs if isinstance(p, dict) and p.get("enabled")]
+    return [p["symbol"] for p in pairs if isinstance(p, dict) and (p := p if isinstance(p, dict) else {}).get("enabled")]  # type: ignore[assignment]  # noqa: F841
 
 
 def _build_redis_client() -> RedisClient:
@@ -140,7 +141,7 @@ async def _run_warmup(system_state: SystemStateManager, enabled_symbols: list[st
         try:
             fetcher = FinnhubCandleFetcher()
             warmup_results = await fetcher.warmup_all()
-            system_state.validate_warmup(warmup_results)
+            system_state.validate_warmup(warmup_results) # pyright: ignore[reportUnknownMemberType]
             _update_macro_regime(enabled_symbols)
             _set_state_from_warmup(system_state)
             return  # success
@@ -190,7 +191,7 @@ async def run_ingest_services(has_api_key: bool) -> None:
     ws_feed = None
     news_feed = None
     market_news = None
-    candle_builders: list[CandleBuilder] = []
+    candle_builders: dict[str, CandleBuilder] = {}
 
     try:
         redis = await _connect_redis()
@@ -198,10 +199,24 @@ async def run_ingest_services(has_api_key: bool) -> None:
         system_state.set_state(SystemState.WARMING_UP)
         await _run_warmup(system_state, enabled_symbols)
 
-        ws_feed = await create_finnhub_ws(redis=redis) # pyright: ignore[reportArgumentType]
+        # Build candle builders as dict for O(1) lookup
+        candle_builders = {
+            symbol: CandleBuilder(symbol=symbol, timeframe=Timeframe.M15)
+            for symbol in enabled_symbols
+        }
+
+        # Tick callback: route to CandleBuilder per symbol
+        def _on_tick(symbol: str, price: float, ts: datetime, volume: float) -> None:
+            cb = candle_builders.get(symbol)
+            if cb is not None:
+                cb.on_tick(price, ts, volume)
+
+        ws_feed = await create_finnhub_ws(
+            redis=redis,  # pyright: ignore[reportArgumentType]
+            candle_callback=_on_tick,
+        )
         news_feed = FinnhubNews()
         market_news = FinnhubMarketNews()
-        candle_builders = [CandleBuilder(symbol=symbol, timeframe=Timeframe.M15) for symbol in enabled_symbols]
         h1_refresh = H1RefreshScheduler()
 
         # Mark ingest as ready after warmup + connection
@@ -213,14 +228,12 @@ async def run_ingest_services(has_api_key: bool) -> None:
         logger.info("Ingest readiness: READY")
 
         logger.info(
-            "Starting ingest services: WebSocket, News, MarketNews, CandleBuilder (M15), H1Refresh"
+            "Starting ingest services: WebSocket, News, MarketNews, CandleBuilder (M15 via tick callback), H1Refresh"
         )
-        candle_tasks = [cb.run() for cb in candle_builders] # pyright: ignore[reportAttributeAccessIssue]
         await asyncio.gather(
             ws_feed.run(),
             news_feed.run(),
             market_news.run(),
-            *candle_tasks,
             h1_refresh.run(),
             MacroMonthlyScheduler(enabled_symbols).run(),
         )
@@ -232,9 +245,9 @@ async def run_ingest_services(has_api_key: bool) -> None:
         await _safe_stop("ws_feed", ws_feed, cleanup_errors)
         await _safe_stop("news_feed", news_feed, cleanup_errors)
         await _safe_stop("market_news", market_news, cleanup_errors)
-        if candle_builders is not None:
-            for i, cb in enumerate(candle_builders):
-                await _safe_stop(f"candle_builders[{i}]", cb, cleanup_errors)
+        if candle_builders:
+            for name, cb in candle_builders.items():
+                await _safe_stop(f"candle_builder[{name}]", cb, cleanup_errors)
 
         if redis is not None:
             try:
