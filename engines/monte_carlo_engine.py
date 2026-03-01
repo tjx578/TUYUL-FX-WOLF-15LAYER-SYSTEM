@@ -5,8 +5,9 @@ ANALYSIS-ONLY module. No execution side-effects.
 from __future__ import annotations
 
 import math
+from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Any, Iterable
+from typing import Any
 
 import numpy as np
 from numpy.typing import NDArray
@@ -64,6 +65,7 @@ class MonteCarloEngine:
             raise MonteCarloEngineError("pf_threshold must be > 0")
         if not (0.0 < ruin_capital_fraction < 1.0):
             raise MonteCarloEngineError("ruin_capital_fraction must be in (0, 1)")
+        super().__init__()
         self.simulations = int(simulations)
         self.min_trades = int(min_trades)
         self.win_threshold = float(win_threshold)
@@ -84,11 +86,12 @@ class MonteCarloEngine:
         equity = np.cumsum(sims, axis=1)
         peak = np.maximum.accumulate(equity, axis=1)
         drawdown = equity - peak
-        max_drawdown = np.min(drawdown, axis=1)
+        max_drawdown: NDArray[np.float64] = np.min(drawdown, axis=1)
         max_drawdown_mean = float(np.mean(max_drawdown))
         max_drawdown_p95 = float(np.percentile(max_drawdown, 5))
         ruin_threshold = -abs(self.ruin_capital_fraction)
-        risk_of_ruin = float(np.mean(max_drawdown <= ruin_threshold))
+        ruin_mask: NDArray[np.float64] = (max_drawdown <= ruin_threshold).astype(np.float64)
+        risk_of_ruin = float(np.mean(ruin_mask))
         passed_threshold = bool(
             (win_probability_obs >= self.win_threshold) and (profit_factor_obs >= self.pf_threshold)
         )
