@@ -263,7 +263,8 @@ async def health(request: Request) -> dict[str, Any]:
     redis_ok = False
     try:
         r: aioredis.Redis = request.app.state.redis
-        redis_ok = bool(await r.ping()) # pyright: ignore[reportGeneralTypeIssues]
+        ping_result: bool = await r.ping()  # type: ignore[assignment]
+        redis_ok = ping_result is True
     except Exception:
         pass
 
