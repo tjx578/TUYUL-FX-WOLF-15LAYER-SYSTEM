@@ -5,12 +5,11 @@ from __future__ import annotations
 import logging
 import os
 import time
-
 from collections import deque
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
-from redis.asyncio import Redis  # pyright: ignore[reportMissingImports]
+from redis.asyncio import Redis
 
 from config_loader import CONFIG
 from context.live_context_bus import LiveContextBus
@@ -77,9 +76,9 @@ class _TickRateCounter:
     """Sliding-window tick counter per symbol."""
 
     _window_sec: float = 10.0
-    _timestamps: dict[str, deque[float]] = field(default_factory=dict)
-    _rejected: dict[str, int] = field(default_factory=dict)
-    _duplicates: dict[str, int] = field(default_factory=dict)
+    _timestamps: dict[str, deque[float]] = field(default_factory=lambda: dict[str, deque[float]]())
+    _rejected: dict[str, int] = field(default_factory=lambda: dict[str, int]())
+    _duplicates: dict[str, int] = field(default_factory=lambda: dict[str, int]())
 
     def record(self, symbol: str) -> None:
         """Record an accepted tick."""
@@ -121,7 +120,7 @@ class _TickRateCounter:
 
 tick_metrics = _TickRateCounter()
 
-from infrastructure.redis_url import get_redis_url
+from infrastructure.redis_url import get_redis_url  # noqa: E402
 
 _DEFAULT_REDIS_URL = get_redis_url()
 _DEFAULT_SYMBOLS = [
@@ -220,13 +219,14 @@ def _build_tick_handler(
             if data.get("type") != "trade":
                 return
 
-            trades = data.get("data", [])
-            if not isinstance(trades, list):
+            trades_raw: Any = data.get("data", [])
+            if not isinstance(trades_raw, list):
                 logger.warning("Invalid Finnhub trade payload format")
                 return
+            trades: list[dict[str, Any]] = cast(list[dict[str, Any]], trades_raw)
             for trade in trades:
                 external_symbol = trade.get("s")
-                price = trade.get("p")
+                price: Any = trade.get("p")
                 timestamp = trade.get("t")
 
                 if not external_symbol or price is None or timestamp is None:
@@ -264,7 +264,7 @@ def _build_tick_handler(
                     timestamp=tick_ts,
                 )
 
-                normalized_tick = {
+                normalized_tick: dict[str, Any] = {
                     "symbol": internal_symbol,
                     "bid": bid,
                     "ask": ask,
@@ -273,7 +273,7 @@ def _build_tick_handler(
                     "timestamp": tick_ts,
                     "source": "finnhub_ws",
                 }
-                context_bus.update_tick(normalized_tick)
+                context_bus.update_tick(normalized_tick)  # type: ignore[arg-type]
                 tick_metrics.record(internal_symbol)
         except (TypeError, ValueError) as exc:
             logger.error(
@@ -284,7 +284,7 @@ def _build_tick_handler(
     return _handle_tick
 
 
-async def _handle_tick(data: dict[str, Any]) -> None:
+async def handle_tick(data: dict[str, Any]) -> None:
     """Backwards-compatible default tick handler used by tests and local callers."""
     mapper = FinnhubSymbolMapper(prefix="OANDA")
     for internal_symbol in _SYMBOL_REVERSE_MAP.values():
@@ -313,5 +313,5 @@ async def create_finnhub_ws(
 async def create_default_finnhub_ws() -> FinnhubWebSocket:
     """Factory that builds Redis client and configured Finnhub WS instance."""
     redis_url = os.getenv("REDIS_URL", _DEFAULT_REDIS_URL)
-    redis = Redis.from_url(redis_url, decode_responses=True)
+    redis: Redis = Redis.from_url(redis_url, decode_responses=True)  # type: ignore[misc]
     return await create_finnhub_ws(redis=redis)
