@@ -510,9 +510,10 @@ export function Tabs({
       {tabs.map((t) => (
         <button
           key={t.id}
+          type="button"
           className="tab-btn"
           onClick={() => onChange(t.id)}
-          aria-selected={active === t.id}
+          aria-pressed={active === t.id}
           style={{
             flex: 1,
             padding: compact ? "5px 6px" : "6px 8px",

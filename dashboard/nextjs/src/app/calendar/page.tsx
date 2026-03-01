@@ -1,6 +1,7 @@
 "use client";
 
 import { useCalendarEvents } from "@/lib/api";
+import type { CalendarEvent } from "@/types";
 
 export default function CalendarPage() {
   const { data, isLoading } = useCalendarEvents("today", "HIGH");
@@ -20,7 +21,7 @@ export default function CalendarPage() {
           </tr>
         </thead>
         <tbody>
-          {data?.map((e) => (
+          {data?.map((e: CalendarEvent) => (
             <tr key={e.id}>
               <td>{e.time}</td>
               <td>{e.currency}</td>

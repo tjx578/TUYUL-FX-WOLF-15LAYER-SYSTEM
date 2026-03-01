@@ -21,7 +21,7 @@ import asyncio
 import logging
 import time
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
 
@@ -63,11 +63,13 @@ class ConsumerConfig:
     batch_size: int = 10
     pending_sweep_interval: float = 30.0
     max_retries_per_message: int = 5
-    backoff: BackoffConfig = BackoffConfig(
-        initial=1.0,
-        maximum=30.0,
-        factor=2.0,
-        jitter=0.25,
+    backoff: BackoffConfig = field(
+        default_factory=lambda: BackoffConfig(
+            initial=1.0,
+            maximum=30.0,
+            factor=2.0,
+            jitter=0.25,
+        )
     )
 
     def __post_init__(self) -> None:
