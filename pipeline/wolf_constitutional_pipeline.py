@@ -57,7 +57,7 @@ import time
 from collections.abc import Callable
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, cast
 
 # third-party imports
 # import ...
@@ -347,7 +347,11 @@ class WolfConstitutionalPipeline:
         # minutes after startup.
         # ═══════════════════════════════════════════════════════
         if not safe_mode:
-            warmup: dict[str, Any] = self._context_bus.check_warmup(symbol, self.WARMUP_MIN_BARS)
+            _warmup_raw: dict[str, Any] = cast(
+                dict[str, Any],
+                self._context_bus.check_warmup(symbol, self.WARMUP_MIN_BARS),  # type: ignore[reportUnknownMemberType]
+            )
+            warmup: dict[str, Any] = _warmup_raw
             if not warmup["ready"]:
                 logger.warning(
                     f"[Pipeline v8.0] {symbol} WARMUP INSUFFICIENT — "
@@ -431,8 +435,8 @@ class WolfConstitutionalPipeline:
             # Fallback: system_metrics pass-through (for test harness / manual override)
             if not trade_returns and system_metrics:
                 _raw = system_metrics.get("trade_returns", None)
-                if isinstance(_raw, (list, tuple)) and len(_raw) > 0:
-                    trade_returns = [float(r) for r in _raw]
+                if isinstance(_raw, (list, tuple)) and len(cast(list[Any], _raw)) > 0:
+                    trade_returns = [float(r) for r in cast(list[Any], _raw)]
 
             # ── Bayesian prior state ─────────────────────────────────────────
             # Primary: derive from trade archive. Fallback: system_metrics.
@@ -455,18 +459,17 @@ class WolfConstitutionalPipeline:
 
             # ── Coherence from upstream layers (L1-L6 agreement) ─────────────
             # If a coherence aggregator ran, use it; otherwise default 50.0.
-            if isinstance(l4, dict):
-                _coh = l4.get("coherence", None)
-                if _coh is not None:
-                    float(_coh)
+            _coh = l4.get("coherence")
+            if _coh is not None:
+                float(_coh)
 
             # ── Volatility index from L5 or regime detector ──────────────────
-            if l5 and isinstance(l5, dict):
+            if l5:
                 float(l5.get("volatility_index", l5.get("atr_normalized", 20.0)))
 
             # ── Base directional bias from L3/L4 ─────────────────────────────
-            if l4 and isinstance(l4, dict):
-                _bias = l4.get("directional_bias", l4.get("bias_score", None))
+            if l4:
+                _bias = l4.get("directional_bias", l4.get("bias_score"))
                 if _bias is not None:
                     float(max(0.0, min(1.0, _bias)))
 
@@ -526,7 +529,10 @@ class WolfConstitutionalPipeline:
             # Layer-local enrichment: L5 drawdown/consec_losses, L1 vol
             # If all sources unavailable, L6 applies safe defaults.
 
-            _bus_account: dict[str, Any] = self._context_bus.get_account_state(symbol)
+            _bus_account: dict[str, Any] = cast(
+                dict[str, Any],
+                self._context_bus.get_account_state(symbol),  # type: ignore[reportUnknownMemberType]
+            )
 
             # Enrich with layer data that only the pipeline has
             _l5_dd: float = float(l5.get("current_drawdown", 0.0))
@@ -690,12 +696,12 @@ class WolfConstitutionalPipeline:
                 "L11": l11,
                 # MonthlyRegimeAnalyzer — pass full result fields so
                 # build_l12_synthesis can populate synthesis["macro"] correctly.
-                "macro": macro.get("regime", "UNKNOWN") if isinstance(macro, dict) else "UNKNOWN",
-                "phase": macro.get("phase", "NEUTRAL") if isinstance(macro, dict) else "NEUTRAL",
-                "macro_vol_ratio": macro.get("macro_vol_ratio", 1.0) if isinstance(macro, dict) else 1.0,
-                "alignment": macro.get("alignment", False) if isinstance(macro, dict) else False,
-                "liquidity": macro.get("liquidity", {}) if isinstance(macro, dict) else {},
-                "bias_override": macro.get("bias_override", {}) if isinstance(macro, dict) else {},
+                "macro": macro.get("regime", "UNKNOWN"),
+                "phase": macro.get("phase", "NEUTRAL"),
+                "macro_vol_ratio": macro.get("macro_vol_ratio", 1.0),
+                "alignment": macro.get("alignment", False),
+                "liquidity": macro.get("liquidity", {}),
+                "bias_override": macro.get("bias_override", {}),
                 # MacroVolatilityEngine — prefer live engine state; fall back to
                 # caller-supplied system_metrics (test harness / manual override).
                 "macro_vix_state": (
@@ -1002,7 +1008,7 @@ class WolfConstitutionalPipeline:
         latency_ms: float,
     ) -> dict[str, Any]:
         """Create early-exit result when pipeline fails."""
-        empty_gates = {
+        empty_gates: dict[str, Any] = {
             "total_passed": 0,
             "total_gates": 9,
             "gate_1_tii": "FAIL",
@@ -1016,7 +1022,7 @@ class WolfConstitutionalPipeline:
             "gate_9_latency": "FAIL",
         }
 
-        result = {
+        result: dict[str, Any] = {
             "schema": self.VERSION,
             "pair": symbol,
             "timestamp": datetime.now(_TZ_GMT8).isoformat(),
