@@ -74,8 +74,8 @@ npm start
 Create `.env` file from `.env.example`:
 
 ```env
-# API Backend URL
-NEXT_PUBLIC_API_URL=http://localhost:8000
+# API Backend URL — must match what src/lib/env.ts reads
+NEXT_PUBLIC_API_BASE_URL=http://localhost:8000
 
 # Timezone for display
 NEXT_PUBLIC_TIMEZONE=Asia/Singapore
@@ -161,7 +161,7 @@ docker build -t tuyulfx-dashboard .
 
 # Run container
 docker run -p 3000:3000 \
-  -e NEXT_PUBLIC_API_URL=http://api:8000 \
+  -e NEXT_PUBLIC_API_BASE_URL=http://api:8000 \
   tuyulfx-dashboard
 ```
 

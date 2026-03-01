@@ -17,11 +17,11 @@
   "rewrites": [
     {
       "source": "/api/:path*",
-      "destination": "https://api.yourdomain.com/api/:path*"
+      "destination": "https://analysis-engine-production-ae87.up.railway.app/api/:path*"
     },
     {
       "source": "/ws/:path*",
-      "destination": "https://api.yourdomain.com/ws/:path*"
+      "destination": "https://analysis-engine-production-ae87.up.railway.app/ws/:path*"
     }
   ]
 }
