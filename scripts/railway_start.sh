@@ -18,9 +18,5 @@ exec gunicorn api_server:app \
   --worker-class uvicorn.workers.UvicornWorker \
   --timeout 120 \
   --access-logfile /dev/stdout \
-  --error-logfile /dev/stdout \
+  --error-logfile /dev/stderr \
   --log-level info
-  --access-logfile - \
-  --error-logfile - \
-  --log-level info \
-  2>&1
