@@ -50,6 +50,24 @@ class TestRedisConfig:
             assert cfg.password == "s3cret"
             assert cfg.db == 3
 
+    def test_from_env_redis_private_url(self) -> None:
+        """REDIS_PRIVATE_URL is used when REDIS_URL is absent (Railway private network)."""
+        with patch.dict(os.environ, {"REDIS_PRIVATE_URL": "redis://:pass@redis.railway.internal:6379/0"}, clear=True):
+            cfg = RedisConfig.from_env()
+            assert cfg.host == "redis.railway.internal"
+            assert cfg.port == 6379
+            assert cfg.password == "pass"
+
+    def test_redis_url_takes_priority_over_private_url(self) -> None:
+        """REDIS_URL takes priority over REDIS_PRIVATE_URL."""
+        with patch.dict(os.environ, {
+            "REDIS_URL": "redis://url-host:6001/0",
+            "REDIS_PRIVATE_URL": "redis://private-host:6002/0",
+        }, clear=True):
+            cfg = RedisConfig.from_env()
+            assert cfg.host == "url-host"
+            assert cfg.port == 6001
+
     def test_from_env_individual_vars_override_url(self) -> None:
         """Individual REDIS_HOST/PORT/etc take priority over REDIS_URL components."""
         with patch.dict(os.environ, {
