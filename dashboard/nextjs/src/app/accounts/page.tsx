@@ -1,5 +1,6 @@
 "use client";
 
+import React from "react";
 import { useAccounts } from "@/lib/api";
 import type { Account } from "@/types/account";
 
