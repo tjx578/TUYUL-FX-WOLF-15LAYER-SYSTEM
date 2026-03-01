@@ -280,6 +280,30 @@ async def health(request: Request) -> dict[str, Any]:
     }
 
 
+# ── Debug: Redis key inspector ────────────────────────────────────────────────
+@app.get("/debug/redis-keys")
+async def debug_redis_keys(request: Request) -> dict[str, Any]:
+    """List Redis keys — temporary debug endpoint, remove before production."""
+    import redis.asyncio as aioredis
+
+    try:
+        r: aioredis.Redis = request.app.state.redis
+        all_keys: list[bytes] = await r.keys("*")  # type: ignore[assignment]
+        decoded = sorted(k.decode() for k in all_keys)
+        # Group by prefix for quick overview
+        prefixes: dict[str, int] = {}
+        for k in decoded:
+            prefix = k.split(":")[0] if ":" in k else k
+            prefixes[prefix] = prefixes.get(prefix, 0) + 1
+        return {
+            "total": len(decoded),
+            "prefixes": prefixes,
+            "keys": decoded[:100],
+        }
+    except Exception as exc:
+        return {"error": str(exc)}
+
+
 # ── Endpoint summary (dev helper) ────────────────────────────────────────────
 @app.get("/api/v1/endpoints")
 async def endpoint_summary() -> dict[str, Any]:
