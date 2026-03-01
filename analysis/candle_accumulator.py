@@ -153,11 +153,6 @@ class CandleAccumulator:
         """Expose current in-progress builder (read-only intent)."""
         return self._current
 
-    def _candle_boundary(self, timestamp: float) -> float:
-        """Calculate the candle boundary (start-of-period) for a given timestamp."""
-        tf = self._config.timeframe_seconds
-        return (timestamp // tf) * tf
-
     def _detect_gap(self, tick_ts: float) -> bool:
         """
         Detect if there is a significant time gap since previous tick.
@@ -190,21 +185,19 @@ class CandleAccumulator:
             raise ValueError(f"Tick price must be positive, got {price}")
 
         ts = timestamp if timestamp is not None else time.time()
-        tick_boundary = self._candle_boundary(ts)
         completed_candle: Candle | None = None
 
         # Detect gap before processing
         is_gap = self._detect_gap(ts)
 
         if self._current is not None:
-            current_boundary = self._candle_boundary(self._current.timestamp_open)
+            elapsed = ts - self._current.timestamp_open
 
-            # Check if tick belongs to a new candle period
-            if tick_boundary > current_boundary:
+            # Check if tick belongs to a new candle period.
+            # Window is anchored from candle open timestamp.
+            if elapsed >= self._config.timeframe_seconds:
                 # Close current candle
-                # Close timestamp = end of its period (or last tick ts if gap)
-                close_ts = current_boundary + self._config.timeframe_seconds
-                # If gap, use the boundary end as close time (not the new tick time)
+                close_ts = self._current.timestamp_open + self._config.timeframe_seconds
                 completed_candle = self._current.emit(
                     timestamp_close=min(close_ts, ts),
                     timeframe_seconds=self._config.timeframe_seconds,
