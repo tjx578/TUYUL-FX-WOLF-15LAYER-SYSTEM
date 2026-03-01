@@ -1,8 +1,9 @@
 "use client";
 
 import React from "react";
-import { useAccounts } from "@/lib/api";
+
 import type { Account } from "@/types/account";
+import { useAccounts } from "@/lib/api";
 
 export default function AccountsPage() {
   const { data: accounts, isLoading, isError } = useAccounts();
