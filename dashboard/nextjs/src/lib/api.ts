@@ -8,6 +8,27 @@ const fetcher = async (url: string) => {
       credentials: "include"
     }
   )
+import useSWR from "swr";
+import type {
+  L12Verdict,
+  Trade,
+  AccountCreate,
+  JournalMetrics,
+  DailyJournal,
+  RiskSnapshot,
+  SystemHealth,
+  ContextSnapshot,
+  ExecutionState,
+  PairInfo,
+  PriceData,
+  ProbabilitySummary,
+  ProbabilityMetrics,
+  CalendarEvent,
+  EALog,
+  EAStatus,
+  PropFirmPhase,
+} from "@/types";
+import type { Account } from "@/types/account";
 
   if (!res.ok) {
     throw new Error("Failed to fetch data")

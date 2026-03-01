@@ -2,7 +2,7 @@
 
 import pytest  # pyright: ignore[reportMissingImports]
 
-from ..analysis.candle_accumulator import (  # pyright: ignore[reportMissingImports]
+from analysis.candle_accumulator import (  # pyright: ignore[reportMissingImports]
     CandleAccumulator,
     CandleAccumulatorConfig,
     _CandleBuilder,
