@@ -11,6 +11,10 @@ RUN groupadd --gid 1000 appuser \
 WORKDIR /app
 
 # Install system deps then clean up
+FROM python:3.11-slim
+
+WORKDIR /app
+
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     && rm -rf /var/lib/apt/lists/*
@@ -33,5 +37,18 @@ EXPOSE 8082
 # --- Healthcheck ---
 HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
     CMD curl -f http://localhost:8082/health || exit 1
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY . .
+
+RUN groupadd --gid 1000 appuser \
+    && useradd --uid 1000 --gid appuser --shell /bin/bash --create-home appuser \
+    && chown -R appuser:appuser /app
+
+USER appuser
+
+EXPOSE 8082
 
 CMD ["python", "ingest_service.py"]
