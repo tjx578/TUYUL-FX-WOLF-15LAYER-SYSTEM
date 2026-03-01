@@ -29,7 +29,11 @@ MAX_RETRIES = 10
 BASE_DELAY = 1.0
 
 # ── Health probe for container orchestration ──────────────────────
-_INGEST_HEALTH_PORT = int(os.getenv("INGEST_HEALTH_PORT", "8082"))
+# Railway injects PORT for its proxy/healthcheck. Prefer INGEST_HEALTH_PORT,
+# then fall back to PORT (Railway-injected), then default 8082.
+_INGEST_HEALTH_PORT = int(
+    os.getenv("INGEST_HEALTH_PORT") or os.getenv("PORT", "8082")
+)
 _health_probe = HealthProbe(port=_INGEST_HEALTH_PORT, service_name="ingest")
 _ingest_ready = False
 
