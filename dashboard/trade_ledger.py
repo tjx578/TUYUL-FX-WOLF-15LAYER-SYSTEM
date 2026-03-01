@@ -26,6 +26,7 @@ import os
 from threading import Lock
 from typing import Optional
 
+import redis.exceptions
 from loguru import logger
 
 from schemas.trade_models import (
@@ -86,6 +87,10 @@ class TradeLedger:
                     loaded_count += 1
 
             logger.info(f"Loaded {loaded_count} trades from Redis")
+        except redis.exceptions.ConnectionError as exc:
+            logger.warning(
+                f"Redis unavailable at startup, continuing with empty cache: {exc}"
+            )
         except Exception as exc:
             logger.error(f"Failed to load trades from Redis: {exc}")
 
