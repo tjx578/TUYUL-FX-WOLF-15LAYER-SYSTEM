@@ -50,11 +50,12 @@ Integrity: TIIₛᵧₘ ≥ 0.93 | FRPC ≥ 0.96 | RR ≥ 1:2.0
 
 from __future__ import annotations
 
-import concurrent
+import concurrent.futures
 import time
 
 # stdlib imports
-from datetime import datetime, timedelta
+from collections.abc import Callable
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from typing import Any
 
@@ -70,7 +71,6 @@ from core.metrics import (
     WARMUP_BLOCKED,
 )
 from core.tracing import layer_span
-from pipeline.constants import get_max_drawdown
 from pipeline.engines import L13ReflectiveEngine, L15MetaSovereigntyEngine
 from pipeline.phases.assembly import build_l14_json
 from pipeline.phases.gates import evaluate_9_gates
@@ -80,16 +80,11 @@ from pipeline.phases.vault import compute_vault_sync
 from pipeline.result import PipelineResult  # noqa: E402  # delayed import to avoid circular dependency
 
 try:
-    from loguru import logger  # pyright: ignore[reportMissingImports]
+    from loguru import logger
 except ImportError:
     import logging
 
     logger = logging.getLogger(__name__)
-
-
-class timezone:  # noqa: N801
-    def __init__(self, *args, **kwargs):
-        pass
 
 
 # ─── GMT+8 timezone for timestamps ───
@@ -138,6 +133,7 @@ class WolfConstitutionalPipeline:
 
     def __init__(self) -> None:
         """Initialize with lazy loading to avoid circular imports."""
+        super().__init__()
         from context.live_context_bus import LiveContextBus  # noqa: PLC0415
 
         # Shared context bus (singleton) for warmup checks & vault health
@@ -171,7 +167,7 @@ class WolfConstitutionalPipeline:
         self._enrichment: Any = None  # lazy-loaded
 
         # Vault health checker (lazy-initialized on first use)
-        self._vault_checker = None  # pyright: ignore[reportUndefinedVariable] # type: VaultHealthChecker | None
+        self._vault_checker: Any = None  # type: VaultHealthChecker | None
 
     # ──────────────────────────────────────────────────────
     #  Lazy-load all layer analyzers
@@ -185,15 +181,15 @@ class WolfConstitutionalPipeline:
         import analysis.layers.L10_position_sizing  # noqa: PLC0415
         import analysis.macro.macro_volatility_engine  # noqa: PLC0415
         from analysis.layers.L1_context import (  # noqa: PLC0415
-            L1ContextAnalyzer,  # pyright: ignore[reportAttributeAccessIssue]
+            L1ContextAnalyzer,
         )
         from analysis.layers.L2_mta import L2MTAAnalyzer  # noqa: PLC0415
         from analysis.layers.L3_technical import L3TechnicalAnalyzer  # noqa: PLC0415
         from analysis.layers.L4_session_scoring import (  # noqa: PLC0415
-            L4ScoringEngine,  # pyright: ignore[reportMissingImports]
+            L4ScoringEngine,
         )
         from analysis.layers.L5_psychology_fundamental import (  # noqa: PLC0415
-            L5PsychologyAnalyzer,  # pyright: ignore[reportMissingImports]
+            L5PsychologyAnalyzer,
         )
         from analysis.layers.L6_risk import L6RiskAnalyzer  # noqa: PLC0415
         from analysis.layers.L7_probability import L7ProbabilityAnalyzer  # noqa: PLC0415
@@ -260,7 +256,13 @@ class WolfConstitutionalPipeline:
     # ══════════════════════════════════════════════════════════════
 
     @staticmethod
-    def _timed_call(func, layer_name: str, symbol: str, *args, **kwargs):
+    def _timed_call(
+        func: Callable[..., Any],
+        layer_name: str,
+        symbol: str,
+        *args: Any,
+        **kwargs: Any,
+    ) -> Any:
         """Call *func* with a per-layer timeout and observe wall-clock latency.
 
         Infrastructure safety only — this has no effect on Layer-12 verdict
@@ -275,20 +277,19 @@ class WolfConstitutionalPipeline:
         pipeline instances.
         """
         t0 = time.time()
-        with layer_span(layer_name, symbol=symbol):
-            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:  # pyright: ignore[reportAttributeAccessIssue] # noqa: F821
-                future = executor.submit(func, *args, **kwargs)
-                try:
-                    result = future.result(timeout=_LAYER_TIMEOUT_SEC)  # pyright: ignore[reportUndefinedVariable] # noqa: F821
-                except concurrent.futures.TimeoutError: # pyright: ignore[reportAttributeAccessIssue]
-                    logger.error(
-                        "[Pipeline] Layer %s TIMEOUT (>%.0fs) for %s — aborting layer",
-                        layer_name, _LAYER_TIMEOUT_SEC, symbol,  # noqa: F821 # pyright: ignore[reportUndefinedVariable]
-                    )
-                    raise TimeoutError(  # noqa: B904
-                        f"Layer {layer_name} exceeded {_LAYER_TIMEOUT_SEC}s timeout"  # noqa: F821 # pyright: ignore[reportUndefinedVariable]
-                    )
-        LAYER_LATENCY.labels(layer=layer_name, symbol=symbol).observe(  # noqa: F821 # pyright: ignore[reportUndefinedVariable]
+        with layer_span(layer_name, symbol=symbol), concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+            future = executor.submit(func, *args, **kwargs)
+            try:
+                result: Any = future.result(timeout=_LAYER_TIMEOUT_SEC)
+            except concurrent.futures.TimeoutError:
+                logger.error(
+                    "[Pipeline] Layer %s TIMEOUT (>%.0fs) for %s — aborting layer",
+                    layer_name, _LAYER_TIMEOUT_SEC, symbol,
+                )
+                raise TimeoutError(  # noqa: B904
+                    f"Layer {layer_name} exceeded {_LAYER_TIMEOUT_SEC}s timeout"
+                )
+        LAYER_LATENCY.labels(layer=layer_name, symbol=symbol).observe(
             time.time() - t0,
         )
         return result
@@ -338,7 +339,7 @@ class WolfConstitutionalPipeline:
         self._ensure_analyzers()
         self._ensure_governance_engines()
         errors: list[str] = []
-        now = datetime.now(_TZ_GMT8)  # pyright: ignore[reportArgumentType] # noqa: F821
+        now = datetime.now(_TZ_GMT8)
 
         # ═══════════════════════════════════════════════════════
         # WARMUP GATE -- reject analysis if candle history is
@@ -346,7 +347,7 @@ class WolfConstitutionalPipeline:
         # minutes after startup.
         # ═══════════════════════════════════════════════════════
         if not safe_mode:
-            warmup = self._context_bus.check_warmup(symbol, self.WARMUP_MIN_BARS)  # pyright: ignore[reportAttributeAccessIssue]
+            warmup: dict[str, Any] = self._context_bus.check_warmup(symbol, self.WARMUP_MIN_BARS)
             if not warmup["ready"]:
                 logger.warning(
                     f"[Pipeline v8.0] {symbol} WARMUP INSUFFICIENT — "
@@ -363,17 +364,20 @@ class WolfConstitutionalPipeline:
             # ═══════════════════════════════════════════════════════
             logger.info(f"[Pipeline v8.0] Phase 1: Perception & Context -- {symbol}")
 
-            l1 = self._timed_call(self._l1.analyze, "L1", symbol, symbol)  # pyright: ignore[reportOptionalMemberAccess]
+            assert self._l1 is not None
+            l1: dict[str, Any] = self._timed_call(self._l1.analyze, "L1", symbol, symbol)
             if not l1.get("valid"):
                 errors.append("L1_CONTEXT_INVALID")
                 return self._early_exit(symbol, errors, time.time() - start_time)
 
-            l2 = self._timed_call(self._l2.analyze, "L2", symbol, symbol)  # pyright: ignore[reportOptionalMemberAccess]
+            assert self._l2 is not None
+            l2: dict[str, Any] = self._timed_call(self._l2.analyze, "L2", symbol, symbol)
             if not l2.get("valid"):
                 errors.append("L2_MTA_INVALID")
                 return self._early_exit(symbol, errors, time.time() - start_time)
 
-            l3 = self._timed_call(self._l3.analyze, "L3", symbol, symbol)  # pyright: ignore[reportOptionalMemberAccess]
+            assert self._l3 is not None
+            l3: dict[str, Any] = self._timed_call(self._l3.analyze, "L3", symbol, symbol)
             if not l3.get("valid"):
                 errors.append("L3_TECHNICAL_INVALID")
                 return self._early_exit(symbol, errors, time.time() - start_time)
@@ -383,8 +387,10 @@ class WolfConstitutionalPipeline:
             # ═══════════════════════════════════════════════════════
             logger.info(f"[Pipeline v8.0] Phase 2: Confluence & Scoring -- {symbol}")
 
-            l4 = self._timed_call(self._l4.score, "L4", symbol, l1, l2, l3)  # pyright: ignore[reportOptionalMemberAccess]
-            l5 = self._timed_call(self._l5.analyze, "L5", symbol, symbol, volatility_profile=l2)  # pyright: ignore[reportOptionalMemberAccess]
+            assert self._l4 is not None
+            l4: dict[str, Any] = self._timed_call(self._l4.score, "L4", symbol, l1, l2, l3)
+            assert self._l5 is not None
+            l5: dict[str, Any] = self._timed_call(self._l5.analyze, "L5", symbol, symbol, volatility_profile=l2)
 
             # ═══════════════════════════════════════════════════════
             # PHASE 3 -- ZONA PROBABILITY & VALIDATION (L7, L8, L9)
@@ -402,7 +408,7 @@ class WolfConstitutionalPipeline:
             # Gate result flows to Layer-12 Constitution for final verdict.
             # ═══════════════════════════════════════════════════════════════════
 
-            technical_score = l4.get("technical_score", 0)
+            technical_score: Any = l4.get("technical_score", 0)
 
             # ── Trade history for Monte Carlo ────────────────────────────────
             # Source: LiveContextBus.get_trade_history() resolves from
@@ -410,7 +416,7 @@ class WolfConstitutionalPipeline:
             # Fallback: system_metrics pass-through (caller-provided / test).
 
             trade_returns: list[float] | None = None
-            _bus_returns = self._context_bus.get_trade_history(  # pyright: ignore[reportAttributeAccessIssue]
+            _bus_returns = self._context_bus.get_trade_history(
                 symbol=symbol,
                 lookback=200,
             )
@@ -423,7 +429,7 @@ class WolfConstitutionalPipeline:
                 )
 
             # Fallback: system_metrics pass-through (for test harness / manual override)
-            if not trade_returns and system_metrics and isinstance(system_metrics, dict):
+            if not trade_returns and system_metrics:
                 _raw = system_metrics.get("trade_returns", None)
                 if isinstance(_raw, (list, tuple)) and len(_raw) > 0:
                     trade_returns = [float(r) for r in _raw]
@@ -443,7 +449,7 @@ class WolfConstitutionalPipeline:
                 pass  # fall through to system_metrics
 
             if prior_wins == 0 and prior_losses == 0:  # noqa: SIM102
-                if system_metrics and isinstance(system_metrics, dict):
+                if system_metrics:
                     prior_wins = int(system_metrics.get("prior_wins", 0))
                     prior_losses = int(system_metrics.get("prior_losses", 0))
 
@@ -465,10 +471,11 @@ class WolfConstitutionalPipeline:
                     float(max(0.0, min(1.0, _bias)))
 
             # ── Run L7 Probability Analyzer ──────────────────────────────────
-            l7 = self._timed_call(  # pyright: ignore[reportOptionalMemberAccess]
+            assert self._l7 is not None
+            l7: dict[str, Any] = self._timed_call(
                 self._l7.analyze,
                 "L7",
-                symbol,  # pyright: ignore[reportOptionalMemberAccess]
+                symbol,
                 symbol,
                 technical_score=technical_score,
                 trade_returns=trade_returns,
@@ -476,8 +483,10 @@ class WolfConstitutionalPipeline:
                 prior_losses=prior_losses,
             )
 
-            l8 = self._timed_call(self._l8.analyze, "L8", symbol, symbol)  # pyright: ignore[reportArgumentType, reportOptionalMemberAccess]
-            l9 = self._timed_call(self._l9.analyze, "L9", symbol, symbol)  # pyright: ignore[reportOptionalMemberAccess]
+            assert self._l8 is not None
+            l8: dict[str, Any] = self._timed_call(self._l8.analyze, "L8", symbol, symbol)
+            assert self._l9 is not None
+            l9: dict[str, Any] = self._timed_call(self._l9.analyze, "L9", symbol, symbol)
 
             logger.info(
                 "[Phase-3] %s L7 complete: validation=%s win=%.1f%% pf=%.2f bayes=%.4f ror=%.4f mc_passed=%s",
@@ -506,8 +515,9 @@ class WolfConstitutionalPipeline:
 
             l11: dict[str, Any] = {"valid": False, "rr": 0.0}
             if direction in ("BUY", "SELL"):
-                l11 = self._timed_call(self._l11.calculate_rr, "L11", symbol, symbol, direction)  # pyright: ignore[reportOptionalMemberAccess]
-            rr_value = l11.get("rr", 0.0)
+                assert self._l11 is not None
+                l11 = self._timed_call(self._l11.calculate_rr, "L11", symbol, symbol, direction)
+            rr_value: float = float(l11.get("rr", 0.0))
 
             # ── Build account_state snapshot for L6 ────────────────────
             # L6 has 7 checks; all need real account data to fire.
@@ -516,34 +526,34 @@ class WolfConstitutionalPipeline:
             # Layer-local enrichment: L5 drawdown/consec_losses, L1 vol
             # If all sources unavailable, L6 applies safe defaults.
 
-            _bus_account = self._context_bus.get_account_state(symbol)  # pyright: ignore[reportAttributeAccessIssue]
+            _bus_account: dict[str, Any] = self._context_bus.get_account_state(symbol)
 
             # Enrich with layer data that only the pipeline has
-            _l5_dd = l5.get("current_drawdown", 0.0) if isinstance(l5, dict) else 0.0
-            _l5_cl = l5.get("consecutive_losses", 0) if isinstance(l5, dict) else 0
-            _l1_vol = l1.get("volatility_level", "NORMAL") if isinstance(l1, dict) else "NORMAL"
+            _l5_dd: float = float(l5.get("current_drawdown", 0.0))
+            _l5_cl: int = int(l5.get("consecutive_losses", 0))
+            _l1_vol: str = str(l1.get("volatility_level", "NORMAL"))
 
             # system_metrics caller overrides (test harness / manual)
             _sm = system_metrics if isinstance(system_metrics, dict) else {}
 
             _l6_account_state: dict[str, Any] = {
                 # Check 1: Drawdown tier — equity/peak for accurate drawdown calc
-                "equity": float(_sm.get("equity", _bus_account.get("equity", 0.0))),
-                "peak_equity": float(_sm.get("peak_equity", _bus_account.get("peak_equity", 0.0))),
+                "equity": float(_sm.get("equity", _bus_account.get("equity", 0.0)) or 0.0),
+                "peak_equity": float(_sm.get("peak_equity", _bus_account.get("peak_equity", 0.0)) or 0.0),
                 "drawdown_pct": _l5_dd,  # L5 psychology-derived fallback
                 # Check 2: Volatility cluster (from L1 market perception)
                 "vol_cluster": _l1_vol,
                 # Check 3: Correlation exposure
-                "corr_exposure": float(_sm.get("corr_exposure", _bus_account.get("corr_exposure", 0.0))),
+                "corr_exposure": float(_sm.get("corr_exposure", _bus_account.get("corr_exposure", 0.0)) or 0.0),
                 # Check 6: Prop-firm daily DD
-                "daily_loss_pct": float(_sm.get("daily_loss_pct", _bus_account.get("daily_loss_pct", 0.0))),
+                "daily_loss_pct": float(_sm.get("daily_loss_pct", _bus_account.get("daily_loss_pct", 0.0)) or 0.0),
                 # Check 7: Kelly dampener
-                "base_kelly": float(_sm.get("base_kelly", _bus_account.get("base_kelly", 0.25))),
+                "base_kelly": float(_sm.get("base_kelly", _bus_account.get("base_kelly", 0.25)) or 0.25),
                 # Shared: consecutive losses (L5 is authoritative)
                 "consecutive_losses": _l5_cl,
                 # Shared: open positions & max
-                "open_positions": int(_sm.get("open_positions", _bus_account.get("open_positions", 0))),
-                "max_open_positions": int(_bus_account.get("max_open_positions", 5)),
+                "open_positions": int(_sm.get("open_positions", _bus_account.get("open_positions", 0)) or 0),
+                "max_open_positions": int(_bus_account.get("max_open_positions", 5) or 5),
                 # Shared: circuit breaker flag
                 "circuit_breaker_active": bool(_bus_account.get("circuit_breaker_active", False)),
             }
@@ -562,7 +572,7 @@ class WolfConstitutionalPipeline:
                 errors.append("L6_ANALYZER_NOT_INITIALIZED")
                 return self._early_exit(symbol, errors, time.time() - start_time)
 
-            l6 = self._timed_call(
+            l6: dict[str, Any] = self._timed_call(
                 self._l6.analyze,
                 "L6",
                 symbol,
@@ -571,11 +581,13 @@ class WolfConstitutionalPipeline:
                 account_state=_l6_account_state,
             )
 
-            risk_ok = l6.get("risk_ok", False)
-            smc_confidence = l9.get("confidence", 0.0)
-            l10 = self._timed_call(self._l10.analyze, "L10", symbol, risk_ok, smc_confidence)  # pyright: ignore[reportOptionalMemberAccess]
+            risk_ok: Any = l6.get("risk_ok", False)
+            smc_confidence: Any = l9.get("confidence", 0.0)
+            assert self._l10 is not None
+            l10: dict[str, Any] = self._timed_call(self._l10.analyze, "L10", symbol, risk_ok, smc_confidence)
 
-            macro = self._timed_call(self._macro.analyze, "macro", symbol, symbol)  # pyright: ignore[reportOptionalMemberAccess]
+            assert self._macro is not None
+            macro: dict[str, Any] = self._timed_call(self._macro.analyze, "macro", symbol, symbol)
 
             # ═══════════════════════════════════════════════════════
             # PHASE 2.5 -- ENGINE ENRICHMENT LAYER (9 Facade Engines)
@@ -637,10 +649,10 @@ class WolfConstitutionalPipeline:
                         "bias_strength": float(enrichment_data.get("bias_strength", 0.0)),
                         "posterior": float(enrichment_data.get("posterior", 0.0)),
                     }
-                    _lrce = self._l6._compute_lrce(_lrce_input)  # pyright: ignore[reportOptionalMemberAccess, reportPrivateUsage]
+                    _lrce = self._l6._compute_lrce(_lrce_input)  # pyright: ignore[reportPrivateUsage]
                     l6["lrce"] = round(_lrce, 4)
 
-                    if _lrce > self._l6.lrce_block_threshold:  # pyright: ignore[reportOptionalMemberAccess]
+                    if _lrce > self._l6.lrce_block_threshold:
                         l6["risk_status"] = "UNSTABLE_FIELD"
                         l6["risk_ok"] = False
                         l6["propfirm_compliant"] = False
@@ -687,7 +699,7 @@ class WolfConstitutionalPipeline:
                 # MacroVolatilityEngine — prefer live engine state; fall back to
                 # caller-supplied system_metrics (test harness / manual override).
                 "macro_vix_state": (
-                    self._macro_vol.get_state()  # pyright: ignore[reportOptionalMemberAccess]
+                    self._macro_vol.get_state()
                     if self._macro_vol is not None
                     else metrics.get("macro_vix_state", {})
                 ),
@@ -795,7 +807,7 @@ class WolfConstitutionalPipeline:
                     l12_verdict["verdict"] = "HOLD"
                     l12_verdict["throttled_from"] = final_verdict
                     errors.append("SIGNAL_THROTTLED")
-                    SIGNAL_THROTTLED.labels(symbol=symbol).inc()  # pyright: ignore[reportUndefinedVariable]  # noqa: F821
+                    SIGNAL_THROTTLED.labels(symbol=symbol).inc()
                 else:
                     self._signal_throttle.record(symbol)
 
@@ -1007,7 +1019,7 @@ class WolfConstitutionalPipeline:
         result = {
             "schema": self.VERSION,
             "pair": symbol,
-            "timestamp": datetime.now(_TZ_GMT8).isoformat(),  # pyright: ignore[reportArgumentType]
+            "timestamp": datetime.now(_TZ_GMT8).isoformat(),
             "synthesis": {
                 "pair": symbol,
                 "scores": {
