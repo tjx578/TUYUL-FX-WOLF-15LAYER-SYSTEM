@@ -2,5 +2,8 @@
   "devDependencies": {
     "eslint": "^10.0.2",
     "typescript": "^5.9.3"
+  },
+  "dependencies": {
+    "swr": "^2.4.1"
   }
 }
