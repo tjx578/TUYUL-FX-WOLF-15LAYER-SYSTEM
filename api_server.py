@@ -282,14 +282,14 @@ async def health(request: Request) -> dict[str, Any]:
 
 # ── Debug: Redis key inspector ────────────────────────────────────────────────
 @app.get("/debug/redis-keys")
-async def debug_redis_keys(request: Request) -> dict[str, Any]:
+async def debug_redis_keys() -> dict[str, Any]:
     """List Redis keys — temporary debug endpoint, remove before production."""
-    import redis.asyncio as aioredis
+    from infrastructure.redis_client import get_client
 
     try:
-        r: aioredis.Redis = request.app.state.redis
-        all_keys: list[bytes] = await r.keys("*")  # type: ignore[assignment]
-        decoded = sorted(k.decode() for k in all_keys)
+        r = await get_client()
+        all_keys = await r.keys("*")
+        decoded = sorted(k if isinstance(k, str) else k.decode() for k in all_keys)
         # Group by prefix for quick overview
         prefixes: dict[str, int] = {}
         for k in decoded:
