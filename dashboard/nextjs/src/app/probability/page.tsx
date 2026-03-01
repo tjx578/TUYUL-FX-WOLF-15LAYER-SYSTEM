@@ -239,7 +239,7 @@ export default function ProbabilityPage() {
                   <div style={{ fontSize: 10, color: "var(--text-muted)", letterSpacing: "0.08em", marginBottom: 2 }}>
                     DETAILS
                   </div>
-                  {calibration.details.map((d, i) => (
+                  {calibration.details.map((d: string, i: number) => (
                     <div
                       key={i}
                       style={{
