@@ -27,7 +27,7 @@ class TestPeriodicRefresh:
         mock_state_instance = MagicMock()
         mock_state_instance.is_ready.return_value = True
         mock_state_manager.return_value = mock_state_instance
-        
+
         # Mock fetcher
         mock_fetcher_instance = MagicMock()
         h1_test_candles = [
@@ -54,11 +54,11 @@ class TestPeriodicRefresh:
                 "timestamp": datetime(2024, 1, 15, 12, 0, 0, tzinfo=UTC),
             }
         ]
-        
+
         mock_fetcher_instance.fetch = AsyncMock(return_value=h1_test_candles)
         mock_fetcher_instance._aggregate_h4 = MagicMock(return_value=h4_test_candles)
         mock_fetcher_class.return_value = mock_fetcher_instance
-        
+
         # Mock context bus
         with patch("ingest.h1_refresh_scheduler.LiveContextBus") as mock_bus_class:
             mock_bus = MagicMock()
@@ -69,20 +69,20 @@ class TestPeriodicRefresh:
                 "ws_mid": 1.10055,
             }
             mock_bus_class.return_value = mock_bus
-            
+
             # Mock CONFIG
             with patch("ingest.h1_refresh_scheduler.CONFIG", {
                 "pairs": {"symbols": ["EURUSD"]}
             }):
                 scheduler = H1RefreshScheduler()
                 await scheduler.refresh_all_symbols()
-        
+
         # Verify fetch was called
         mock_fetcher_instance.fetch.assert_called()
-        
+
         # Verify H4 aggregation was called
         mock_fetcher_instance._aggregate_h4.assert_called_with(h1_test_candles)
-        
+
         # Verify context bus update_candle was called
         assert mock_bus.update_candle.called
 
@@ -101,7 +101,7 @@ class TestPriceDriftDetection:
         mock_state_instance = MagicMock()
         mock_state_instance.is_ready.return_value = True
         mock_state_manager.return_value = mock_state_instance
-        
+
         # Mock fetcher
         mock_fetcher_instance = MagicMock()
         h1_test_candles = [
@@ -116,11 +116,11 @@ class TestPriceDriftDetection:
                 "timestamp": datetime(2024, 1, 15, 10, 0, 0, tzinfo=UTC),
             }
         ]
-        
+
         mock_fetcher_instance.fetch = AsyncMock(return_value=h1_test_candles)
         mock_fetcher_instance._aggregate_h4 = MagicMock(return_value=[])
         mock_fetcher_class.return_value = mock_fetcher_instance
-        
+
         # Mock context bus with HIGH drift
         with patch("ingest.h1_refresh_scheduler.LiveContextBus") as mock_bus_class:
             mock_bus = MagicMock()
@@ -131,13 +131,13 @@ class TestPriceDriftDetection:
                 "ws_mid": 1.09975,
             }
             mock_bus_class.return_value = mock_bus
-            
+
             with patch("ingest.h1_refresh_scheduler.CONFIG", {
                 "pairs": {"symbols": ["EURUSD"]}
             }):
                 scheduler = H1RefreshScheduler()
                 await scheduler.refresh_all_symbols()
-        
+
         # Verify mark_symbol_degraded was called
         mock_state_instance.mark_symbol_degraded.assert_called()
 
@@ -152,7 +152,7 @@ class TestPriceDriftDetection:
         mock_state_instance = MagicMock()
         mock_state_instance.is_ready.return_value = True
         mock_state_manager.return_value = mock_state_instance
-        
+
         # Mock fetcher
         mock_fetcher_instance = MagicMock()
         h1_test_candles = [
@@ -167,11 +167,11 @@ class TestPriceDriftDetection:
                 "timestamp": datetime(2024, 1, 15, 10, 0, 0, tzinfo=UTC),
             }
         ]
-        
+
         mock_fetcher_instance.fetch = AsyncMock(return_value=h1_test_candles)
         mock_fetcher_instance._aggregate_h4 = MagicMock(return_value=[])
         mock_fetcher_class.return_value = mock_fetcher_instance
-        
+
         # Mock context bus with LOW drift
         with patch("ingest.h1_refresh_scheduler.LiveContextBus") as mock_bus_class:
             mock_bus = MagicMock()
@@ -182,13 +182,13 @@ class TestPriceDriftDetection:
                 "ws_mid": 1.10055,
             }
             mock_bus_class.return_value = mock_bus
-            
+
             with patch("ingest.h1_refresh_scheduler.CONFIG", {
                 "pairs": {"symbols": ["EURUSD"]}
             }):
                 scheduler = H1RefreshScheduler()
                 await scheduler.refresh_all_symbols()
-        
+
         # Verify mark_symbol_recovered was called
         mock_state_instance.mark_symbol_recovered.assert_called()
 

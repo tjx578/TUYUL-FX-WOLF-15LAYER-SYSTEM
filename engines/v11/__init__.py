@@ -7,10 +7,10 @@ L12 Constitutional Authority is PRESERVED.
 
 Usage:
     from engines.v11 import V11PipelineHook
-    
+
     hook = V11PipelineHook()
     overlay = hook.evaluate(pipeline_result, symbol="EURUSD", timeframe="H1")
-    
+
     if overlay.should_trade:
         # Execute trade
         pass

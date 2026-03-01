@@ -10,7 +10,7 @@ Tests all RiskProfile functionality:
 """
 
 import json
-
+from dataclasses import FrozenInstanceError
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -76,7 +76,7 @@ def test_risk_profile_split_mode():
 def test_risk_profile_immutability():
     """Test that RiskProfile is immutable (frozen dataclass)."""
     profile = RiskProfile()
-    with pytest.raises(Exception):  # FrozenInstanceError or AttributeError
+    with pytest.raises(FrozenInstanceError):
         profile.risk_per_trade = 2.0
 
 

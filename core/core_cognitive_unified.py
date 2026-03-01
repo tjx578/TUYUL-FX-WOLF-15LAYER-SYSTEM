@@ -54,7 +54,7 @@ class TradingError(CognitiveError):
     pass
 
 
-class RiskLimitExceeded(TradingError):
+class RiskLimitExceededError(TradingError):
     """Raised when risk limits are exceeded."""
     pass
 
@@ -1430,7 +1430,7 @@ __all__ = [
     "RiskAssessment",
     "RiskCalculationError",
     "RiskFeedbackCalibrator",
-    "RiskLimitExceeded",
+    "RiskLimitExceededError",
     "SmartMoneyAnalysis",
     "SmartMoneyDetector",
     "SmartMoneySignal",
