@@ -1,5 +1,10 @@
 # Paths to exclude from secret scanning
-# (test fixtures, example configs, lock files)
+# (test fixtures, example configs, lock files, .git internals)
+
+# .git internals are not committed source — TruffleHog BASE64-decodes
+# strings in .git/config and false-positives on remote URLs.
+^\.git/
+
 node_modules/
 .env.example
 package-lock.json
