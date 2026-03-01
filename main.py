@@ -2,10 +2,12 @@ import asyncio
 import os
 import signal
 import sys
+import types
 from collections.abc import Callable, Coroutine
 
-from loguru import logger  # pyright: ignore[reportMissingImports]
-from redis.asyncio import Redis as AsyncRedis  # pyright: ignore[reportMissingImports]
+import uvicorn
+from loguru import logger
+from redis.asyncio import Redis as AsyncRedis
 
 from config_loader import CONFIG
 from core.event_bus import Event, EventType, get_event_bus
@@ -17,7 +19,7 @@ from ingest.finnhub_news import FinnhubNews
 from journal.journal_schema import ContextJournal, DecisionJournal, VerdictType
 from pipeline import WolfConstitutionalPipeline
 from storage.startup import init_persistent_storage, shutdown_persistent_storage
-from utils.timezone_utils import is_trading_session, now_utc
+from utils.timezone_utils import is_trading_session, now_utc  # pyright: ignore[reportUnknownVariableType]
 
 try:
     from engines.v11 import V11PipelineHook
@@ -43,6 +45,21 @@ def _engine_readiness() -> bool:
 
 _health_probe.set_readiness_check(_engine_readiness)
 
+
+async def _run_http_server() -> None:
+    """Run FastAPI HTTP server as an async task inside the main event loop."""
+    port = int(os.environ.get("PORT", "8000"))
+    config = uvicorn.Config(
+        "api_server:app",
+        host="0.0.0.0",
+        port=port,
+        workers=1,
+        log_level="info",
+    )
+    server = uvicorn.Server(config)
+    await server.serve()
+
+
 # ── Run mode: 'all' (default/dev), 'engine-only', 'ingest-only' ─
 RUN_MODE = os.getenv("RUN_MODE", "all").lower()
 
@@ -53,30 +70,30 @@ _RESTART_COOLDOWN = float(os.getenv("RESTART_COOLDOWN_SEC", "5.0"))
 _PIPELINE_TIMEOUT_SEC = 30.0
 
 
-def _build_j1(pair: str, synthesis: dict) -> ContextJournal:
-    layers = synthesis.get("layers", {})
-    bias = synthesis.get("bias", {})
+def _build_j1(pair: str, synthesis: dict[str, object]) -> ContextJournal:
+    layers: dict[str, object] = dict(synthesis.get("layers") or {})  # type: ignore[arg-type]
+    bias: dict[str, object] = dict(synthesis.get("bias") or {})  # type: ignore[arg-type]
     session = is_trading_session()
     return ContextJournal(
         timestamp=now_utc(),
         pair=pair,
         session=session,
-        market_regime=synthesis.get("market_regime", "UNKNOWN"),
-        news_lock=synthesis.get("news_lock", False),
-        context_coherence=layers.get("conf12", 0.5),
-        mta_alignment=synthesis.get("mta_alignment", True),
-        technical_bias=bias.get("technical", "NEUTRAL"),
+        market_regime=str(synthesis.get("market_regime", "UNKNOWN")),
+        news_lock=bool(synthesis.get("news_lock", False)),
+        context_coherence=float(layers.get("conf12", 0.5)),  # type: ignore[arg-type]
+        mta_alignment=bool(synthesis.get("mta_alignment", True)),
+        technical_bias=str(bias.get("technical", "NEUTRAL")),
     )
 
 
-def _build_j2(pair: str, synthesis: dict, l12: dict) -> DecisionJournal:
-    scores = synthesis.get("scores", {})
-    layers = synthesis.get("layers", {})
-    gates = l12.get("gates", {})
+def _build_j2(pair: str, synthesis: dict[str, object], l12: dict[str, object]) -> DecisionJournal:
+    scores: dict[str, object] = dict(synthesis.get("scores") or {})  # type: ignore[arg-type]
+    layers: dict[str, object] = dict(synthesis.get("layers") or {})  # type: ignore[arg-type]
+    gates: dict[str, object] = dict(l12.get("gates") or {})  # type: ignore[arg-type]
     setup_id = f"{pair}_{now_utc().strftime('%Y%m%d_%H%M%S')}"
 
-    failed_gates = [
-        gate_name
+    failed_gates: list[str] = [
+        str(gate_name)
         for gate_name, gate_value in gates.items()
         if gate_name not in ["passed", "total"] and gate_value == "FAIL"
     ]
@@ -97,20 +114,20 @@ def _build_j2(pair: str, synthesis: dict, l12: dict) -> DecisionJournal:
         timestamp=now_utc(),
         pair=pair,
         setup_id=setup_id,
-        wolf_30_score=int(scores.get("wolf_30_point", 0)),
-        f_score=int(scores.get("f_score", 0)),
-        t_score=int(scores.get("t_score", 0)),
-        fta_score=int((scores.get("fta_score") or 0) * 10),
-        exec_score=int(scores.get("exec_score", 0)),
-        tii_sym=float(layers.get("L8_tii_sym", 0.0)),
-        integrity_index=float(layers.get("L8_integrity_index", 0.0)),
-        monte_carlo_win=float(layers.get("L7_monte_carlo_win", 0.0)),
-        conf12=float(layers.get("conf12", 0.0)),
+        wolf_30_score=int(scores.get("wolf_30_point", 0)),  # type: ignore[arg-type]
+        f_score=int(scores.get("f_score", 0)),  # type: ignore[arg-type]
+        t_score=int(scores.get("t_score", 0)),  # type: ignore[arg-type]
+        fta_score=int((scores.get("fta_score") or 0) * 10),  # type: ignore[operator]
+        exec_score=int(scores.get("exec_score", 0)),  # type: ignore[arg-type]
+        tii_sym=float(layers.get("L8_tii_sym", 0.0)),  # type: ignore[arg-type]
+        integrity_index=float(layers.get("L8_integrity_index", 0.0)),  # type: ignore[arg-type]
+        monte_carlo_win=float(layers.get("L7_monte_carlo_win", 0.0)),  # type: ignore[arg-type]
+        conf12=float(layers.get("conf12", 0.0)),  # type: ignore[arg-type]
         verdict=verdict_type,
-        confidence=l12.get("confidence", "LOW"),
-        wolf_status=l12.get("wolf_status", "NO_HUNT"),
-        gates_passed=gates.get("passed", 0),
-        gates_total=gates.get("total", 9),
+        confidence=str(l12.get("confidence", "LOW")),
+        wolf_status=str(l12.get("wolf_status", "NO_HUNT")),
+        gates_passed=int(gates.get("passed", 0)),  # type: ignore[arg-type]
+        gates_total=int(gates.get("total", 9)),  # type: ignore[arg-type]
         failed_gates=failed_gates,
         violations=[],
         primary_rejection_reason=primary_rejection_reason,
@@ -147,11 +164,12 @@ async def run_ingest_services(has_api_key: bool, redis: AsyncRedis) -> None:
 
     logger.info("Starting ingest services: WebSocket, News, MarketNews, CandleBuilder")
     try:
+        cb_coros: list[Coroutine[object, object, object]] = [cb.run() for cb in candle_builders]  # pyright: ignore[reportAttributeAccessIssue, reportUnknownMemberType]
         await asyncio.gather(
             ws_feed.run(),
             news_feed.run(),
             market_news.run(),
-            *[cb.run() for cb in candle_builders], # pyright: ignore[reportAttributeAccessIssue]
+            *cb_coros,
         )
     except asyncio.CancelledError:
         logger.info("Ingest services cancelled - shutting down")
@@ -176,16 +194,16 @@ async def run_redis_consumer() -> None:
             await asyncio.sleep(1)
 
 
-async def _analyze_pair(pair: str) -> dict | None:
+async def _analyze_pair(pair: str) -> dict[str, object] | None:
     """Run pipeline for a single pair with timeout + thread offload."""
     try:
         # Capture last tick timestamp for end-to-end latency tracing
         from context.live_context_bus import LiveContextBus  # noqa: PLC0415
 
         _bus = LiveContextBus()
-        _latest = _bus.get_latest_tick(pair)
+        _latest: dict[str, object] | None = _bus.get_latest_tick(pair)  # type: ignore[assignment]
         _tick_ts: float | None = (
-            _latest.get("local_ts") or _latest.get("timestamp")
+            float(_latest.get("local_ts") or _latest.get("timestamp") or 0.0)  # type: ignore[arg-type]
             if _latest
             else None
         )
@@ -195,6 +213,23 @@ async def _analyze_pair(pair: str) -> dict | None:
             asyncio.to_thread(lambda: _pipeline.execute(pair, None, tick_ts=_tick_ts)),
             timeout=_PIPELINE_TIMEOUT_SEC,
         )
+
+        # ── Journal J1 (context) and J2 (decision) after each pipeline run ──
+        if result:
+            synthesis: dict[str, object] = dict(result.get("synthesis") or {})
+            l12: dict[str, object] = dict(result.get("l12") or {})
+            try:
+                j1 = _build_j1(pair, synthesis)
+                logger.debug(f"[J1] Context journal created for {pair}: {j1.market_regime}")
+            except Exception as j1_exc:
+                logger.warning(f"[J1] Failed to build context journal for {pair}: {j1_exc}")
+            if l12:
+                try:
+                    j2 = _build_j2(pair, synthesis, l12)
+                    logger.debug(f"[J2] Decision journal created for {pair}: verdict={j2.verdict}")
+                except Exception as j2_exc:
+                    logger.warning(f"[J2] Failed to build decision journal for {pair}: {j2_exc}")
+
         return result
     except TimeoutError:
         logger.error(
@@ -226,8 +261,9 @@ async def analysis_loop() -> None:
     _pending_symbols: set[str] = set()
     def _on_candle_closed(event: Event) -> None:
         """Non-async callback – just record the symbol and wake the loop."""
-        symbol = event.data.get("symbol")
-        if symbol:
+        data: dict[str, object] = dict(event.data)  # type: ignore[arg-type]
+        symbol = data.get("symbol")
+        if isinstance(symbol, str) and symbol:
             _pending_symbols.add(symbol)
         _candle_signal.set()
 
@@ -275,7 +311,7 @@ async def analysis_loop() -> None:
             logger.info("Engine readiness: READY (first analysis cycle complete)")
 
 
-def _signal_handler(signum: int, frame) -> None:
+def _signal_handler(signum: int, frame: types.FrameType | None) -> None:
     logger.info(f"Received signal {signum}, initiating graceful shutdown...")
     if _shutdown_event:
         _shutdown_event.set()
@@ -283,7 +319,7 @@ def _signal_handler(signum: int, frame) -> None:
 
 async def _supervised_task(
     name: str,
-    coro_factory: Callable[[], Coroutine],
+    coro_factory: Callable[[], Coroutine[object, object, object]],
     max_restarts: int = _MAX_TASK_RESTARTS,
     cooldown: float = _RESTART_COOLDOWN,
 ) -> None:
@@ -357,9 +393,17 @@ async def main() -> None:
     await init_persistent_storage()
 
     # ── Health probe (always runs) ──────────────────────────────────
-    tasks: list[asyncio.Task] = [
+    tasks: list[asyncio.Task[object]] = [
         asyncio.create_task(_health_probe.start(), name="HealthProbe"),
     ]
+
+    # ── HTTP server (always runs — serves FastAPI endpoints) ────────
+    tasks.append(
+        asyncio.create_task(
+            _supervised_task("HTTPServer", _run_http_server),
+            name="HTTPServer",
+        )
+    )
 
     if context_mode == "redis":
         # ── Production: engine reads from Redis (ingest is a separate container)
@@ -383,7 +427,7 @@ async def main() -> None:
         if RUN_MODE in ("all", "ingest-only"):
             from infrastructure.redis_url import get_redis_url
             redis_url = get_redis_url()
-            redis_client = AsyncRedis.from_url(redis_url)
+            redis_client: AsyncRedis = AsyncRedis.from_url(redis_url)  # type: ignore[no-untyped-call]
             tasks.append(
                 asyncio.create_task(
                     _supervised_task(
