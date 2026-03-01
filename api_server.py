@@ -288,7 +288,7 @@ async def debug_redis_keys() -> dict[str, Any]:
 
     try:
         r = await get_client()
-        all_keys = await r.keys("*")
+        all_keys: list[bytes | str] = await r.keys("*")  # type: ignore[assignment]
         decoded = sorted(k if isinstance(k, str) else k.decode() for k in all_keys)
         # Group by prefix for quick overview
         prefixes: dict[str, int] = {}
