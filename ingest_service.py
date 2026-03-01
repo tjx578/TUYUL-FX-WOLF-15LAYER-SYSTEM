@@ -62,7 +62,7 @@ def _get_enabled_symbols() -> list[str]:
     pairs = CONFIG.get("pairs", {}).get("pairs", [])
     if not isinstance(pairs, list):
         return []
-    return [p["symbol"] for p in pairs if isinstance(p, dict) and (p := p if isinstance(p, dict) else {}).get("enabled")]  # type: ignore[assignment]  # noqa: F841
+    return [p["symbol"] for p in pairs if isinstance(p, dict) and (p := p if isinstance(p, dict) else {}).get("enabled")]
 
 
 def _build_redis_client() -> RedisClient:
