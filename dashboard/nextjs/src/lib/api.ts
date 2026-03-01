@@ -70,6 +70,8 @@ export interface UseVerdictStreamOptions {
   reconnect?: boolean;
   /** Reconnect delay in ms (default 3 000) */
   reconnectDelay?: number;
+  /** Maximum reconnect delay cap in ms (default 30 000) */
+  maxReconnectDelay?: number;
 }
 
 /**
@@ -80,17 +82,26 @@ export interface UseVerdictStreamOptions {
  * decisions back through this channel (constitutional boundary).
  */
 export function useVerdictStream(opts?: UseVerdictStreamOptions) {
-  const { reconnect = true, reconnectDelay = 3_000 } = opts ?? {};
+  const {
+    reconnect = true,
+    reconnectDelay = 3_000,
+    maxReconnectDelay = 30_000,
+  } = opts ?? {};
 
   const [verdicts, setVerdicts] = useState<L12Verdict[]>([]);
   const [connected, setConnected] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const esRef = useRef<EventSource | null>(null);
   const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const retryCount = useRef(0);
 
   const connect = useCallback(() => {
     // Clean up any previous connection
     esRef.current?.close();
+    if (reconnectTimer.current) {
+      clearTimeout(reconnectTimer.current);
+      reconnectTimer.current = null;
+    }
 
     const url = `${API_BASE_URL}/stream/verdicts`;
     const es = new EventSource(url);
@@ -99,6 +110,7 @@ export function useVerdictStream(opts?: UseVerdictStreamOptions) {
     es.onopen = () => {
       setConnected(true);
       setError(null);
+      retryCount.current = 0; // reset backoff on successful connect
     };
 
     es.onmessage = (event: MessageEvent) => {
@@ -129,10 +141,19 @@ export function useVerdictStream(opts?: UseVerdictStreamOptions) {
       es.close();
 
       if (reconnect) {
-        reconnectTimer.current = setTimeout(connect, reconnectDelay);
+        // Exponential backoff: delay * 2^retryCount, capped at maxReconnectDelay
+        const delay = Math.min(
+          reconnectDelay * 2 ** retryCount.current,
+          maxReconnectDelay,
+        );
+        retryCount.current += 1;
+        console.warn(
+          `[useVerdictStream] Reconnecting in ${delay}ms (attempt ${retryCount.current})`,
+        );
+        reconnectTimer.current = setTimeout(connect, delay);
       }
     };
-  }, [reconnect, reconnectDelay]);
+  }, [reconnect, reconnectDelay, maxReconnectDelay]);
 
   useEffect(() => {
     connect();

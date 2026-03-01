@@ -1,1 +1,1 @@
-"""Dashboard — account/risk governor, ledger, monitoring UI."""
+"""Dashboard package — account/risk governor, ledger, and monitoring UI."""
