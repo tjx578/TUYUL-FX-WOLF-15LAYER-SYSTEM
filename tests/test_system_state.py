@@ -23,7 +23,7 @@ class TestStateTransitions:
         # Force reset to INITIALIZING
         with manager._rw_lock:
             manager._state = SystemState.INITIALIZING
-        
+
         manager.set_state(SystemState.WARMING_UP)
         assert manager.get_state() == SystemState.WARMING_UP
 
@@ -32,7 +32,7 @@ class TestStateTransitions:
         manager = SystemStateManager()
         with manager._rw_lock:
             manager._state = SystemState.WARMING_UP
-        
+
         manager.set_state(SystemState.READY)
         assert manager.get_state() == SystemState.READY
 
@@ -41,7 +41,7 @@ class TestStateTransitions:
         manager = SystemStateManager()
         with manager._rw_lock:
             manager._state = SystemState.WARMING_UP
-        
+
         manager.set_state(SystemState.DEGRADED)
         assert manager.get_state() == SystemState.DEGRADED
 
@@ -50,7 +50,7 @@ class TestStateTransitions:
         manager = SystemStateManager()
         with manager._rw_lock:
             manager._state = SystemState.READY
-        
+
         manager.set_state(SystemState.DEGRADED)
         assert manager.get_state() == SystemState.DEGRADED
 
@@ -59,7 +59,7 @@ class TestStateTransitions:
         manager = SystemStateManager()
         with manager._rw_lock:
             manager._state = SystemState.DEGRADED
-        
+
         manager.set_state(SystemState.READY)
         assert manager.get_state() == SystemState.READY
 
@@ -68,7 +68,7 @@ class TestStateTransitions:
         manager = SystemStateManager()
         with manager._rw_lock:
             manager._state = SystemState.READY
-        
+
         # READY -> WARMING_UP is invalid
         with pytest.raises(ValueError, match="Invalid state transition"):
             manager.set_state(SystemState.WARMING_UP)
@@ -78,7 +78,7 @@ class TestStateTransitions:
         manager = SystemStateManager()
         with manager._rw_lock:
             manager._state = SystemState.ERROR
-        
+
         manager.set_state(SystemState.INITIALIZING)
         assert manager.get_state() == SystemState.INITIALIZING
 
@@ -91,13 +91,13 @@ class TestReadyCheck:
         manager = SystemStateManager()
         with manager._rw_lock:
             manager._state = SystemState.READY
-        
+
         assert manager.is_ready() is True
 
     def test_non_ready_states_return_false(self) -> None:
         """Test is_ready() returns False for non-READY states."""
         manager = SystemStateManager()
-        
+
         for state in [
             SystemState.INITIALIZING,
             SystemState.WARMING_UP,
@@ -115,7 +115,7 @@ class TestTradeableCheck:
     def test_tradeable_when_complete_and_ready(self) -> None:
         """Test symbol is tradeable when COMPLETE and system READY."""
         manager = SystemStateManager()
-        
+
         with manager._rw_lock:
             manager._state = SystemState.READY
             manager._warmup_report["EURUSD"] = WarmupStatus(
@@ -126,13 +126,13 @@ class TestTradeableCheck:
                 H1_bars=60,
                 status=SymbolStatus.COMPLETE,
             )
-        
+
         assert manager.is_tradeable("EURUSD") is True
 
     def test_not_tradeable_when_incomplete(self) -> None:
         """Test symbol is not tradeable when INCOMPLETE_DATA."""
         manager = SystemStateManager()
-        
+
         with manager._rw_lock:
             manager._state = SystemState.READY
             manager._warmup_report["EURUSD"] = WarmupStatus(
@@ -143,29 +143,29 @@ class TestTradeableCheck:
                 H1_bars=25,
                 status=SymbolStatus.INCOMPLETE_DATA,
             )
-        
+
         assert manager.is_tradeable("EURUSD") is False
 
     def test_not_tradeable_when_system_warming_up(self) -> None:
         """Test symbol is not tradeable when system is WARMING_UP."""
         manager = SystemStateManager()
-        
+
         with manager._rw_lock:
             manager._state = SystemState.WARMING_UP
             manager._warmup_report["EURUSD"] = WarmupStatus(
                 symbol="EURUSD",
                 status=SymbolStatus.COMPLETE,
             )
-        
+
         assert manager.is_tradeable("EURUSD") is False
 
     def test_not_tradeable_when_symbol_not_in_report(self) -> None:
         """Test symbol is not tradeable when not in warmup report."""
         manager = SystemStateManager()
-        
+
         with manager._rw_lock:
             manager._state = SystemState.READY
-        
+
         assert manager.is_tradeable("UNKNOWN") is False
 
 
@@ -175,7 +175,7 @@ class TestWarmupValidation:
     def test_sufficient_bars_marked_complete(self) -> None:
         """Test symbols with sufficient bars are marked COMPLETE."""
         manager = SystemStateManager()
-        
+
         results = {
             "EURUSD": {
                 "W1": [{"bar": i} for i in range(25)],  # >= 20
@@ -184,9 +184,9 @@ class TestWarmupValidation:
                 "H1": [{"bar": i} for i in range(60)],  # >= 50
             }
         }
-        
+
         manager.validate_warmup(results)
-        
+
         report = manager.get_warmup_report()
         assert "EURUSD" in report
         assert report["EURUSD"].status == SymbolStatus.COMPLETE
@@ -198,7 +198,7 @@ class TestWarmupValidation:
     def test_insufficient_bars_marked_incomplete(self) -> None:
         """Test symbols with insufficient bars are marked INCOMPLETE_DATA."""
         manager = SystemStateManager()
-        
+
         results = {
             "EURUSD": {
                 "W1": [{"bar": i} for i in range(10)],  # < 20
@@ -207,9 +207,9 @@ class TestWarmupValidation:
                 "H1": [{"bar": i} for i in range(25)],  # < 50
             }
         }
-        
+
         manager.validate_warmup(results)
-        
+
         report = manager.get_warmup_report()
         assert "EURUSD" in report
         assert report["EURUSD"].status == SymbolStatus.INCOMPLETE_DATA
@@ -217,7 +217,7 @@ class TestWarmupValidation:
     def test_mixed_symbols(self) -> None:
         """Test validation with mix of complete and incomplete symbols."""
         manager = SystemStateManager()
-        
+
         results = {
             "EURUSD": {
                 "W1": [{"bar": i} for i in range(25)],
@@ -232,9 +232,9 @@ class TestWarmupValidation:
                 "H1": [{"bar": i} for i in range(25)],
             },
         }
-        
+
         manager.validate_warmup(results)
-        
+
         report = manager.get_warmup_report()
         assert report["EURUSD"].status == SymbolStatus.COMPLETE
         assert report["GBPUSD"].status == SymbolStatus.INCOMPLETE_DATA
@@ -246,23 +246,23 @@ class TestSymbolDegradation:
     def test_mark_symbol_degraded(self) -> None:
         """Test marking a symbol as degraded."""
         manager = SystemStateManager()
-        
+
         with manager._rw_lock:
             manager._state = SystemState.READY
             manager._warmup_report["EURUSD"] = WarmupStatus(
                 symbol="EURUSD",
                 status=SymbolStatus.COMPLETE,
             )
-        
+
         manager.mark_symbol_degraded("EURUSD", "Price drift 75 pips")
-        
+
         report = manager.get_warmup_report()
         assert report["EURUSD"].status == SymbolStatus.DEGRADED
 
     def test_mark_symbol_recovered(self) -> None:
         """Test marking a symbol as recovered."""
         manager = SystemStateManager()
-        
+
         with manager._rw_lock:
             manager._state = SystemState.DEGRADED
             manager._warmup_report["EURUSD"] = WarmupStatus(
@@ -273,25 +273,25 @@ class TestSymbolDegradation:
                 H1_bars=60,
                 status=SymbolStatus.DEGRADED,
             )
-        
+
         manager.mark_symbol_recovered("EURUSD")
-        
+
         report = manager.get_warmup_report()
         assert report["EURUSD"].status == SymbolStatus.COMPLETE
 
     def test_system_degraded_when_all_symbols_degraded(self) -> None:
         """Test system transitions to DEGRADED when all symbols degraded."""
         manager = SystemStateManager()
-        
+
         with manager._rw_lock:
             manager._state = SystemState.READY
             manager._warmup_report["EURUSD"] = WarmupStatus(
                 symbol="EURUSD",
                 status=SymbolStatus.COMPLETE,
             )
-        
+
         manager.mark_symbol_degraded("EURUSD", "Test")
-        
+
         # System should transition to DEGRADED
         assert manager.get_state() == SystemState.DEGRADED
 
@@ -303,19 +303,19 @@ class TestSingletonBehavior:
         """Test SystemStateManager returns same instance."""
         manager1 = SystemStateManager()
         manager2 = SystemStateManager()
-        
+
         assert manager1 is manager2
 
     def test_singleton_shares_state(self) -> None:
         """Test singleton instances share state."""
         manager1 = SystemStateManager()
         manager2 = SystemStateManager()
-        
+
         with manager1._rw_lock:
             manager1._warmup_report["TEST"] = WarmupStatus(
                 symbol="TEST",
                 status=SymbolStatus.COMPLETE,
             )
-        
+
         report = manager2.get_warmup_report()
         assert "TEST" in report
