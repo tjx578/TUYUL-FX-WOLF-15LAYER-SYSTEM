@@ -7,7 +7,6 @@ import useSWR from "swr";
 import type {
   L12Verdict,
   Trade,
-  Account,
   AccountCreate,
   JournalMetrics,
   DailyJournal,
@@ -24,6 +23,7 @@ import type {
   EAStatus,
   PropFirmPhase,
 } from "@/types";
+import type { Account } from "@/types/account";
 
 const API_URL =
   process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
