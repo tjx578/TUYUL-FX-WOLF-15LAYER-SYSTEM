@@ -59,10 +59,16 @@ def _validate_api_key() -> bool:
 
 
 def _get_enabled_symbols() -> list[str]:
-    pairs = CONFIG.get("pairs", {}).get("pairs", [])
-    if not isinstance(pairs, list):
+    from typing import cast
+    raw: Any = CONFIG.get("pairs", {}).get("pairs", [])
+    if not isinstance(raw, list):
         return []
-    return [p["symbol"] for p in pairs if isinstance(p, dict) and (p := p if isinstance(p, dict) else {}).get("enabled")]
+    pairs: list[dict[str, Any]] = cast(list[dict[str, Any]], raw)
+    return [
+        p["symbol"]
+        for p in pairs
+        if isinstance(p, dict) and p.get("enabled") # pyright: ignore[reportUnnecessaryIsInstance]
+    ]
 
 
 def _build_redis_client() -> RedisClient:
