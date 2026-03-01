@@ -3,7 +3,7 @@
 node_modules/
 .env.example
 package-lock.json
-*.lock
+.*\.lock$
 __pycache__/
-*.pyc
+.*\.pyc$
 coverage.xml
