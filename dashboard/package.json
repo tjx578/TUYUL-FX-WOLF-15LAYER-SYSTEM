@@ -1,0 +1,19 @@
+{
+  "name": "nextjs",
+  "version": "0.1.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git://github.com/username/nextjs.git"
+  },
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "eslint": "^8.57.0",
+    "eslint-config-next": "14.2.5"
+  }
+}
