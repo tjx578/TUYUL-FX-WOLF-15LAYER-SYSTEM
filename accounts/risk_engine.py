@@ -27,7 +27,7 @@ import logging
 import math
 
 from config.pip_values import DEFAULT_PIP_VALUE, PipLookupError, get_pip_info
-from dashboard.backend.schemas import (
+from accounts.account_model import (
     AccountState,
     Layer12Signal,
     RiskCalculationResult,

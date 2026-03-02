@@ -95,7 +95,7 @@ class TestJWT:
     """Tests for JWT create/decode/expiry in auth module."""
 
     def test_create_and_decode_token(self):
-        from dashboard.backend.auth import create_token, decode_token  # noqa: PLC0415
+        from api.auth import create_token, decode_token  # noqa: PLC0415
 
         token = create_token(sub="test_user")
         payload = decode_token(token)
@@ -106,14 +106,14 @@ class TestJWT:
         assert "exp" in payload
 
     def test_decode_invalid_token_returns_none(self):
-        from dashboard.backend.auth import decode_token  # noqa: PLC0415
+        from api.auth import decode_token  # noqa: PLC0415
 
         assert decode_token("not.a.valid.jwt") is None
         assert decode_token("garbage") is None
         assert decode_token("") is None
 
     def test_decode_tampered_signature_returns_none(self):
-        from dashboard.backend.auth import create_token, decode_token  # noqa: PLC0415
+        from api.auth import create_token, decode_token  # noqa: PLC0415
 
         token = create_token(sub="user")
         parts = token.split(".")
@@ -125,7 +125,7 @@ class TestJWT:
     def test_decode_expired_token_returns_none(self):
         import json  # noqa: PLC0415
 
-        from dashboard.backend.auth import (  # noqa: PLC0415
+        from api.auth import (  # noqa: PLC0415
             JWT_SECRET,
             _b64url_encode,
             _sign,
@@ -143,12 +143,12 @@ class TestJWT:
         sig = _sign(header_b64, payload_b64, JWT_SECRET)
         expired_token = f"{header_b64}.{payload_b64}.{sig}"
 
-        from dashboard.backend.auth import decode_token  # noqa: PLC0415
+        from api.auth import decode_token  # noqa: PLC0415
 
         assert decode_token(expired_token) is None
 
     def test_create_token_with_extra_claims(self):
-        from dashboard.backend.auth import create_token, decode_token  # noqa: PLC0415
+        from api.auth import create_token, decode_token  # noqa: PLC0415
 
         token = create_token(sub="svc", extra={"role": "admin", "account": "123"})
         payload = decode_token(token)
@@ -241,20 +241,20 @@ class TestAPIKey:
     """Tests for static API key validation."""
 
     def test_validate_with_matching_key(self):
-        with patch("dashboard.backend.auth.API_KEY", "my-secret-key-123"):
-            from dashboard.backend.auth import validate_api_key  # noqa: PLC0415
+        with patch("api.auth.API_KEY", "my-secret-key-123"):
+            from api.auth import validate_api_key  # noqa: PLC0415
 
             assert validate_api_key("my-secret-key-123") is True
 
     def test_validate_with_wrong_key(self):
-        with patch("dashboard.backend.auth.API_KEY", "my-secret-key-123"):
-            from dashboard.backend.auth import validate_api_key  # noqa: PLC0415
+        with patch("api.auth.API_KEY", "my-secret-key-123"):
+            from api.auth import validate_api_key  # noqa: PLC0415
 
             assert validate_api_key("wrong-key") is False
 
     def test_validate_with_empty_configured_key(self):
-        with patch("dashboard.backend.auth.API_KEY", ""):
-            from dashboard.backend.auth import validate_api_key  # noqa: PLC0415
+        with patch("api.auth.API_KEY", ""):
+            from api.auth import validate_api_key  # noqa: PLC0415
 
             # If no API key is configured, always reject
             assert validate_api_key("anything") is False
@@ -271,7 +271,7 @@ class TestVerifyToken:
     def test_missing_header_raises_401(self):
         from fastapi import HTTPException  # pyright: ignore[reportMissingImports] # noqa: PLC0415
 
-        from dashboard.backend.auth import verify_token  # noqa: PLC0415
+        from api.auth import verify_token  # noqa: PLC0415
 
         with pytest.raises(HTTPException) as exc_info:
             verify_token(authorization=None) # pyright: ignore[reportArgumentType]
@@ -280,22 +280,22 @@ class TestVerifyToken:
     def test_invalid_scheme_raises_401(self):
         from fastapi import HTTPException  # pyright: ignore[reportMissingImports] # noqa: PLC0415
 
-        from dashboard.backend.auth import verify_token  # noqa: PLC0415
+        from api.auth import verify_token  # noqa: PLC0415
 
         with pytest.raises(HTTPException) as exc_info:
             verify_token(authorization="Basic dXNlcjpwYXNz")
         assert exc_info.value.status_code == 401
 
     def test_valid_jwt_returns_payload(self):
-        from dashboard.backend.auth import create_token, verify_token  # noqa: PLC0415
+        from api.auth import create_token, verify_token  # noqa: PLC0415
 
         token = create_token(sub="dashboard")
         result = verify_token(authorization=f"Bearer {token}")
         assert result["sub"] == "dashboard"
 
     def test_valid_api_key_returns_payload(self):
-        with patch("dashboard.backend.auth.API_KEY", "test-api-key"):
-            from dashboard.backend.auth import verify_token  # noqa: PLC0415
+        with patch("api.auth.API_KEY", "test-api-key"):
+            from api.auth import verify_token  # noqa: PLC0415
 
             result = verify_token(authorization="Bearer test-api-key")
             assert result["sub"] == "api_key_user"
@@ -303,7 +303,7 @@ class TestVerifyToken:
     def test_invalid_token_raises_401(self):
         from fastapi import HTTPException  # pyright: ignore[reportMissingImports] # noqa: PLC0415
 
-        from dashboard.backend.auth import verify_token  # noqa: PLC0415
+        from api.auth import verify_token  # noqa: PLC0415
 
         with pytest.raises(HTTPException) as exc_info:
             verify_token(authorization="Bearer invalid-garbage")
@@ -352,7 +352,7 @@ class TestWSAuth:
     @pytest.mark.asyncio
     async def test_ws_valid_jwt_authenticates(self):
         from api.middleware.ws_auth import ws_authenticate  # noqa: PLC0415
-        from dashboard.backend.auth import create_token  # noqa: PLC0415
+        from api.auth import create_token  # noqa: PLC0415
 
         token = create_token(sub="ws_test_user")
         ws = AsyncMock(spec=["query_params", "close", "state"])
