@@ -29,6 +29,8 @@ class LiveContextBus:
     def _init(self) -> None:
         # {symbol: {timeframe: [candle_dict, ...]}}
         self._candles: dict[str, dict[str, list[dict[str, Any]]]] = {}
+        # {symbol: tick_dict}
+        self._ticks: dict[str, dict[str, Any]] = {}
 
     # ------------------------------------------------------------------
     # Write API (analysis / consumer only — no execution logic)
@@ -47,6 +49,14 @@ class LiveContextBus:
         """Append a single live candle (from pub/sub)."""
         self._candles.setdefault(symbol, {}).setdefault(timeframe, []).append(candle)
 
+    def update_tick(self, tick: dict[str, Any]) -> None:
+        """Store latest tick for a symbol. Tick must contain 'symbol' key."""
+        symbol = tick.get("symbol")
+        if symbol:
+            self._ticks[symbol] = tick
+        else:
+            logger.warning("LiveContextBus.update_tick: tick missing 'symbol' key — ignored")
+
     # ------------------------------------------------------------------
     # Read API
     # ------------------------------------------------------------------
@@ -56,6 +66,10 @@ class LiveContextBus:
     ) -> list[dict[str, Any]]:
         """Return stored candles for symbol/timeframe (empty list if none)."""
         return self._candles.get(symbol, {}).get(timeframe, [])
+
+    def get_latest_tick(self, symbol: str) -> dict[str, Any] | None:
+        """Return latest tick for symbol, or None if not yet received."""
+        return self._ticks.get(symbol)
 
     def get_warmup_bar_count(self, symbol: str, timeframe: str) -> int:
         """Return number of bars currently stored for symbol/timeframe."""
