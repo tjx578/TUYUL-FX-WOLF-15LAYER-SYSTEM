@@ -21,35 +21,32 @@ import type {
   PropFirmStatus,
 } from "@/types";
 import type { PipelineData } from "@/components/PipelinePanel";
+import { getApiBaseUrl } from "@/lib/env";
+
+const API_BASE = getApiBaseUrl();
 
 const fetcher = async (url: string) => {
-  const res = await fetch(
-    `${process.env.NEXT_PUBLIC_API_BASE_URL}${url}`,
-    {
-      credentials: "include",
-    }
-  );
+  const res = await fetch(`${API_BASE}${url}`, {
+    credentials: "include",
+  });
 
   if (!res.ok) {
-    throw new Error("Failed to fetch data");
+    throw new Error(`Failed to fetch data: ${res.status} ${res.statusText}`);
   }
 
   return res.json();
 };
 
 const apiMutate = async (url: string, body?: unknown, method = "POST") => {
-  const res = await fetch(
-    `${process.env.NEXT_PUBLIC_API_BASE_URL}${url}`,
-    {
-      method,
-      credentials: "include",
-      headers: { "Content-Type": "application/json" },
-      body: body !== undefined ? JSON.stringify(body) : undefined,
-    }
-  );
+  const res = await fetch(`${API_BASE}${url}`, {
+    method,
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: body !== undefined ? JSON.stringify(body) : undefined,
+  });
 
   if (!res.ok) {
-    throw new Error("Request failed");
+    throw new Error(`Request failed: ${res.status} ${res.statusText}`);
   }
 
   return res.json().catch(() => undefined);
