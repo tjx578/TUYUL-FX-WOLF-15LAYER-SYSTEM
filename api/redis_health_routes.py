@@ -1,60 +1,105 @@
-"""
-TUYUL FX Wolf-15 — Redis Observability Endpoint
-================================================
-GET /api/v1/redis/health  — PING latency, connected/blocked clients, ops/sec,
-                            slowlog length.
+"""Redis health and cache-management endpoints.
 
-Used to diagnose TCP_OVERWINDOW root cause:
-  - High ``blocked_clients``  → consumer-starvation (event-loop blockage)
-  - Rising ``latency_ms``     → Redis backpressure or slow operations
-  - High ``slowlog_len``      → expensive commands stalling the Redis server
-
-All reads go through ``request.app.state.redis`` (the lifecycle-managed async
-pool seeded in the FastAPI lifespan), so this endpoint never creates a new
-connection.
+Zones: dashboard (monitoring/ops) — no market logic, no execution authority.
 """
 
 from __future__ import annotations
 
-import logging
+import re
 from datetime import UTC, datetime
+from typing import Any
 
-import redis.asyncio as aioredis
-from fastapi import APIRouter, Request
-
-logger = logging.getLogger(__name__)
+from fastapi import APIRouter, HTTPException, Path, Request
 
 router = APIRouter(prefix="/api/v1/redis", tags=["redis"])
 
+# ---------------------------------------------------------------------------
+# Candle-cache key prefixes known to this system
+# ---------------------------------------------------------------------------
 
-@router.get("/health")
-async def redis_health(request: Request) -> dict:
-    """Redis connectivity and server stats for TCP_OVERWINDOW diagnostics.
+CANDLE_KEY_PREFIXES: list[str] = [
+    "candles",
+    "candle_cache",
+    "ohlcv",
+]
 
-    Returns:
-        status, latency_ms, blocked_clients, connected_clients,
-        ops_per_sec, slowlog_len, checked_at
+_SYMBOL_RE = re.compile(r"^[A-Z0-9]+$")
+_TIMEFRAME_RE = re.compile(r"^[A-Z][0-9]+$")
+
+
+# ---------------------------------------------------------------------------
+# Public helper — used by routes and exposed for unit testing
+# ---------------------------------------------------------------------------
+
+
+async def delete_keys_by_pattern(redis: Any, pattern: str) -> int:
+    """Scan Redis for *pattern* and delete all matching keys.
+
+    Returns the total number of keys deleted.
     """
-    r: aioredis.Redis = request.app.state.redis
+    cursor: int = 0
+    deleted: int = 0
 
-    t0 = datetime.now(UTC)
-    await r.ping()
-    latency_ms = (datetime.now(UTC) - t0).total_seconds() * 1000
+    while True:
+        cursor, keys = await redis.scan(cursor, match=pattern, count=100)
+        if keys:
+            deleted += await redis.delete(*keys)
+        if cursor == 0:
+            break
 
-    clients: dict = await r.info(section="clients")  # type: ignore[assignment]
-    stats: dict = await r.info(section="stats")  # type: ignore[assignment]
+    return deleted
 
-    try:
-        slowlog_len: int | None = await r.slowlog_len()
-    except Exception:
-        slowlog_len = None
+
+# ---------------------------------------------------------------------------
+# DELETE /api/v1/redis/candles — flush ALL candle keys
+# ---------------------------------------------------------------------------
+
+
+@router.delete("/candles")
+async def flush_all_candles(request: Request) -> dict[str, Any]:
+    """Delete every candle-cache key across all known prefixes."""
+    redis = request.app.state.redis
+    total_deleted: int = 0
+
+    for prefix in CANDLE_KEY_PREFIXES:
+        total_deleted += await delete_keys_by_pattern(redis, f"{prefix}:*")
 
     return {
         "status": "ok",
-        "latency_ms": round(latency_ms, 2),
-        "blocked_clients": clients.get("blocked_clients"),
-        "connected_clients": clients.get("connected_clients"),
-        "ops_per_sec": stats.get("instantaneous_ops_per_sec"),
-        "slowlog_len": slowlog_len,
-        "checked_at": datetime.now(UTC).isoformat(),
+        "deleted_count": total_deleted,
+        "flushed_at": datetime.now(UTC).isoformat(),
+    }
+
+
+# ---------------------------------------------------------------------------
+# DELETE /api/v1/redis/candles/{symbol}/{timeframe} — flush specific pair
+# ---------------------------------------------------------------------------
+
+
+@router.delete("/candles/{symbol}/{timeframe}")
+async def flush_pair_candles(
+    request: Request,
+    symbol: str = Path(...),
+    timeframe: str = Path(...),
+) -> dict[str, Any]:
+    """Delete all candle-cache keys for a specific symbol + timeframe."""
+    symbol = symbol.upper()
+    timeframe = timeframe.upper()
+
+    if not _SYMBOL_RE.match(symbol):
+        raise HTTPException(status_code=422, detail=f"Invalid symbol: {symbol!r}")
+    if not _TIMEFRAME_RE.match(timeframe):
+        raise HTTPException(status_code=422, detail=f"Invalid timeframe: {timeframe!r}")
+
+    redis = request.app.state.redis
+
+    keys = [f"{prefix}:{symbol}:{timeframe}" for prefix in CANDLE_KEY_PREFIXES]
+    deleted: int = await redis.delete(*keys)
+
+    return {
+        "status": "ok",
+        "symbol": symbol,
+        "timeframe": timeframe,
+        "deleted_count": deleted,
+        "flushed_at": datetime.now(UTC).isoformat(),
     }
