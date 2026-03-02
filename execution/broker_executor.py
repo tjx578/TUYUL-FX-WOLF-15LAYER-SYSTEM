@@ -1,4 +1,5 @@
 """
+<<<<<<< Updated upstream
 Broker executor -- dumb execution layer. No market analysis.
 Only places, monitors, and reports order status.
 All decisions come from constitution + dashboard.
@@ -19,10 +20,36 @@ class OrderAction(Enum):
     SELL_STOP = "SELL_STOP"
     BUY_MARKET = "BUY_MARKET"
     SELL_MARKET = "SELL_MARKET"
+=======
+Broker Executor — low-level order placement abstraction.
+
+Wraps MT5 bridge / EA HTTP endpoint calls.
+No strategy logic. No direction computation.
+Execution authority only.
+"""
+from __future__ import annotations
+
+import hashlib
+import time
+from dataclasses import dataclass, field
+from enum import StrEnum
+from typing import Any, Optional
+
+import httpx
+from loguru import logger
+
+
+class OrderAction(StrEnum):
+    PLACE = "PLACE"
+    CANCEL = "CANCEL"
+    CLOSE = "CLOSE"
+    MODIFY = "MODIFY"
+>>>>>>> Stashed changes
 
 
 @dataclass
 class ExecutionRequest:
+<<<<<<< Updated upstream
     """Comes from dashboard/constitution. Executor does NOT modify these."""
     signal_id: str
     symbol: str
@@ -34,10 +61,29 @@ class ExecutionRequest:
     expiry_seconds: float | None = None
     magic_number: int = 151515
     comment: str = "TUYUL-FX"
+=======
+    action: OrderAction
+    account_id: str
+    symbol: str
+    lot_size: float
+    order_type: str  # BUY_LIMIT | SELL_LIMIT | BUY_STOP | SELL_STOP | BUY | SELL
+    entry_price: float = 0.0
+    stop_loss: float = 0.0
+    take_profit: float = 0.0
+    ticket: Optional[int] = None
+    request_id: str = ""
+    meta: dict[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        if not self.request_id:
+            raw = f"{self.account_id}:{self.symbol}:{self.entry_price}:{time.time()}"
+            self.request_id = hashlib.sha256(raw.encode()).hexdigest()[:16]
+>>>>>>> Stashed changes
 
 
 @dataclass
 class ExecutionResult:
+<<<<<<< Updated upstream
     signal_id: str
     success: bool
     broker_ticket: int | None = None
@@ -212,3 +258,98 @@ class MT5Executor:
             for p in positions
             if p.magic == magic
         ]
+=======
+    success: bool
+    request_id: str
+    ticket: Optional[int] = None
+    error_code: int = 0
+    error_msg: str = ""
+    raw: Optional[dict[str, Any]] = None
+
+
+class BrokerExecutor:
+    """
+    Thin HTTP bridge to the EA (Expert Advisor).
+
+    Sends JSON execution commands to the EA bridge endpoint.
+    Never computes direction or risk — that's upstream.
+    """
+
+    def __init__(
+        self,
+        ea_url: str = "http://localhost:8081",
+        timeout: float = 10.0,
+    ) -> None:
+        self._ea_url = ea_url.rstrip("/")
+        self._timeout = timeout
+
+    def execute(self, req: ExecutionRequest) -> ExecutionResult:
+        """Send a single execution request to EA bridge."""
+        payload = {
+            "action": req.action,
+            "account_id": req.account_id,
+            "symbol": req.symbol,
+            "lot_size": req.lot_size,
+            "order_type": req.order_type,
+            "entry_price": req.entry_price,
+            "stop_loss": req.stop_loss,
+            "take_profit": req.take_profit,
+            "ticket": req.ticket,
+            "request_id": req.request_id,
+            "meta": req.meta,
+        }
+        try:
+            response = httpx.post(
+                f"{self._ea_url}/execute",
+                json=payload,
+                timeout=self._timeout,
+            )
+            response.raise_for_status()
+            data = response.json()
+            return ExecutionResult(
+                success=data.get("success", False),
+                request_id=req.request_id,
+                ticket=data.get("ticket"),
+                error_code=data.get("error_code", 0),
+                error_msg=data.get("error_msg", ""),
+                raw=data,
+            )
+        except httpx.HTTPStatusError as exc:
+            logger.error(f"BrokerExecutor: HTTP {exc.response.status_code} for {req.request_id}")
+            return ExecutionResult(
+                success=False,
+                request_id=req.request_id,
+                error_code=exc.response.status_code,
+                error_msg=str(exc),
+            )
+        except Exception as exc:
+            logger.error(f"BrokerExecutor: unexpected error for {req.request_id}: {exc}")
+            return ExecutionResult(
+                success=False,
+                request_id=req.request_id,
+                error_code=-1,
+                error_msg=str(exc),
+            )
+
+    def cancel_order(self, account_id: str, ticket: int, symbol: str) -> ExecutionResult:
+        req = ExecutionRequest(
+            action=OrderAction.CANCEL,
+            account_id=account_id,
+            symbol=symbol,
+            lot_size=0.0,
+            order_type="CANCEL",
+            ticket=ticket,
+        )
+        return self.execute(req)
+
+    def close_position(self, account_id: str, ticket: int, symbol: str, lot_size: float) -> ExecutionResult:
+        req = ExecutionRequest(
+            action=OrderAction.CLOSE,
+            account_id=account_id,
+            symbol=symbol,
+            lot_size=lot_size,
+            order_type="CLOSE",
+            ticket=ticket,
+        )
+        return self.execute(req)
+>>>>>>> Stashed changes
