@@ -11,7 +11,7 @@ Tests cover:
 
 import pytest
 
-from dashboard.trade_ledger import TradeLedger
+from journal.trade_ledger import TradeLedger
 from schemas.trade_models import TradeStatus, CloseReason
 from schemas.trade_models import CloseReason, TradeStatus
 

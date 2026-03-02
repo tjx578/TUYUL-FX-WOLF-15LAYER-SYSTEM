@@ -9,9 +9,9 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from dashboard.backend.permissions import DashboardPermission
-from dashboard.backend.routes import router as read_router
-from dashboard.backend.trade_input_api import write_router
+from api.permissions import DashboardPermission
+from api.dashboard_router import router as read_router
+from api.execution_router import write_router
 
 app = FastAPI(title="TUYUL FX - Dashboard (Account & Risk Governor)")
 

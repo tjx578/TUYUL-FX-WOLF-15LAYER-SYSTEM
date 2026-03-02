@@ -15,7 +15,7 @@ from threading import Lock
 
 from loguru import logger
 
-from dashboard.backend.schemas import AccountState, RiskSeverity
+from accounts.account_model import AccountState, RiskSeverity
 
 
 class AccountEngine:

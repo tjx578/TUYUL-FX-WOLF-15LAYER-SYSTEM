@@ -12,8 +12,8 @@ trigger the _assert_no_duplicate_routes() guard or cause silent double-reads.
 
 from fastapi import APIRouter, Depends
 
-from dashboard.backend.auth import verify_token
-from dashboard.dashboard_state import DashboardState
+from api.auth import verify_token
+from api.dashboard_state import DashboardState
 
 router = APIRouter(dependencies=[Depends(verify_token)])
 state = DashboardState()

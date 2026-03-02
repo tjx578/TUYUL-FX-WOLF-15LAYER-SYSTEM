@@ -13,9 +13,9 @@ import pytest  # pyright: ignore[reportMissingImports]
 from fastapi.testclient import TestClient  # pyright: ignore[reportMissingImports]
 
 from api_server import app
-from dashboard.account_manager import AccountManager
-from dashboard.backend.auth import verify_token
-from dashboard.trade_ledger import TradeLedger
+from accounts.account_manager import AccountManager
+from api.auth import verify_token
+from journal.trade_ledger import TradeLedger
 
 
 def _mock_verify_token():

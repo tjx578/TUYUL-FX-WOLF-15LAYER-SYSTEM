@@ -2,7 +2,7 @@
 
 This is the **single source of truth** for WebSocket authentication.
 Both HTTP and WS endpoints share the same JWT / API-key verifiers via
-``dashboard.backend.auth``.  Do NOT add a parallel auth system.
+``api.auth``.  Do NOT add a parallel auth system.
 
 Provides:
   - ``extract_token()``     -- pull token from Authorization header OR query param.
@@ -11,13 +11,13 @@ Provides:
   - ``ws_auth_guard()``     -- high-level guard returning payload dict or None.
   - ``require_ws_token()``  -- FastAPI dependency for WebSocket endpoints.
 
-All JWT tokens are validated via the unified ``dashboard.backend.auth`` module
+All JWT tokens are validated via the unified ``api.auth`` module
 (HMAC-SHA256, canonical secret ``DASHBOARD_JWT_SECRET``). This keeps HTTP and
 WebSocket authentication on one compatible trust boundary.
 
 See also:
-  - ``dashboard.backend.auth.verify_token`` (HTTP FastAPI Depends)
-  - ``dashboard.backend.auth.verify_ws_token`` (WS FastAPI Depends via query)
+  - ``api.auth.verify_token`` (HTTP FastAPI Depends)
+  - ``api.auth.verify_ws_token`` (WS FastAPI Depends via query)
 """
 
 from __future__ import annotations
@@ -28,7 +28,7 @@ from typing import Any
 import fastapi
 from fastapi import WebSocket
 
-from dashboard.backend.auth import decode_token, validate_api_key
+from api.auth import decode_token, validate_api_key
 
 logger = logging.getLogger(__name__)
 
@@ -68,7 +68,7 @@ def extract_token(headers: dict[str, str], query_params: dict[str, str]) -> str 
 def verify_token(token: str) -> dict[str, Any] | None:
     """Validate a raw token string (JWT or API key).
 
-    Delegates to ``dashboard.backend.auth.decode_token`` and
+    Delegates to ``api.auth.decode_token`` and
     ``validate_api_key`` — the same verifiers used for HTTP routes.
 
     Returns:

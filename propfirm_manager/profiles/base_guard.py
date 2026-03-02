@@ -7,7 +7,7 @@ Abstract base class for prop firm rule enforcement.
 from abc import ABC, abstractmethod
 from typing import Any
 
-from dashboard.backend.schemas import RiskSeverity
+from accounts.account_model import RiskSeverity
 
 
 class GuardResult:
