@@ -348,20 +348,24 @@ class WolfConstitutionalPipeline:
         # ═══════════════════════════════════════════════════════
         if not safe_mode:
             _warmup_raw = self._context_bus.check_warmup(symbol, self.WARMUP_MIN_BARS)
-            warmup = normalize_warmup(_warmup_raw, required=min(self.WARMUP_MIN_BARS.values())).to_dict()  # noqa: F821
+            warmup = normalize_warmup(_warmup_raw, required=min(self.WARMUP_MIN_BARS.values())).to_dict()
 
             if not warmup["ready"]:
+                missing = warmup["missing"]
                 logger.warning(
                     f"[Pipeline v8.0] {symbol} WARMUP INSUFFICIENT — "
                     f"bars={warmup['bars']}, required={warmup['required']}, "
-                    f"missing={warmup['missing']}"
+                    f"missing={missing}"
                 )
-                return {
-                    "symbol": symbol,
-                    "verdict": "NO_TRADE",
-                    "errors": ["WARMUP_INSUFFICIENT"],
-                    "warmup": warmup,
-                }
+                # Return full-structure result (same shape as _early_exit)
+                # so downstream consumers never hit missing-key errors.
+                result = self._early_exit(
+                    symbol,
+                    [f"WARMUP_INSUFFICIENT:{missing}_bars_missing"],
+                    time.time() - start_time,
+                )
+                result["warmup"] = warmup
+                return result
 
         try:
             # ═══════════════════════════════════════════════════════
