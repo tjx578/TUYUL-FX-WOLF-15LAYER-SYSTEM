@@ -6,11 +6,15 @@ import os
 from typing import Any, Optional, cast  # noqa: UP035
 from urllib.parse import urlsplit, urlunsplit
 
-import redis
-import redis.client
-import redis.exceptions
-from loguru import logger
-from tenacity import (
+# Type alias for Redis stream read responses:
+# list of (stream_name, list of (entry_id, fields)) tuples.
+StreamResponse = list[tuple[str, list[tuple[str, dict[str, str]]]]]
+
+import redis  # noqa: E402
+import redis.client  # noqa: E402
+import redis.exceptions  # noqa: E402
+from loguru import logger  # noqa: E402
+from tenacity import (  # noqa: E402
     retry,
     retry_if_exception_type,
     stop_after_attempt,
@@ -65,7 +69,7 @@ class RedisClient:
         # server-side via Redis --tcp-keepalive.  Passing
         # socket_keepalive_options with TCP_KEEPIDLE etc. causes EINVAL
         # on some container runtimes (e.g. Railway Alpine).
-        self._pool = redis.ConnectionPool.from_url(
+        self._pool = redis.ConnectionPool.from_url(  # type: ignore[reportUnknownMemberType]
             url,
             decode_responses=True,
             socket_timeout=socket_timeout,
@@ -99,8 +103,8 @@ class RedisClient:
         Raises:
             redis.exceptions.ConnectionError: If connection fails after retries.
         """
-        result = self.client.ping()
-        return bool(result)
+        result: bool = cast(bool, self.client.ping())  # type: ignore[reportUnknownMemberType]
+        return result
 
     @retry(
         retry=retry_if_exception_type(
@@ -134,7 +138,7 @@ class RedisClient:
         wait=wait_exponential(multiplier=1, min=1, max=10),
         reraise=True,
     )
-    def hset(self, name: str, mapping: dict | None = None, **kwargs: Any) -> int:
+    def hset(self, name: str, mapping: dict[str, Any] | None = None, **kwargs: Any) -> int:
         """
         Set hash field(s).
 
@@ -147,8 +151,8 @@ class RedisClient:
             Number of fields that were added.
         """
         if mapping:
-            return cast(int, self.client.hset(name, mapping=mapping))
-        return cast(int, self.client.hset(name, **kwargs))
+            return cast(int, self.client.hset(name, mapping=mapping))  # type: ignore[reportUnknownMemberType]
+        return cast(int, self.client.hset(name, **kwargs))  # type: ignore[reportUnknownMemberType]
 
     @retry(
         retry=retry_if_exception_type(
@@ -181,7 +185,7 @@ class RedisClient:
         Returns:
             redis.client.PubSub instance for subscribing.
         """
-        return self.client.pubsub()
+        return cast(redis.client.PubSub, self.client.pubsub())  # type: ignore[reportUnknownMemberType]
 
     @retry(
         retry=retry_if_exception_type(
@@ -202,7 +206,7 @@ class RedisClient:
         Returns:
             Number of subscribers that received the message.
         """
-        return cast(int, self.client.publish(channel, message))
+        return cast(int, self.client.publish(channel, message))  # type: ignore[reportUnknownMemberType]
 
     @retry(
         retry=retry_if_exception_type(
@@ -248,7 +252,7 @@ class RedisClient:
         streams: dict[str, str],
         count: int | None = None,
         block: int | None = None,
-    ) -> list:
+    ) -> StreamResponse:
         """
         Read from Redis Streams.
 
@@ -260,7 +264,7 @@ class RedisClient:
         Returns:
             List of [stream_name, [(entry_id, fields), ...]] tuples.
         """
-        return cast(list, self.client.xread(streams, count=count, block=block)) # type: ignore
+        return cast(StreamResponse, self.client.xread(streams, count=count, block=block)) # type: ignore
 
     @retry(
         retry=retry_if_exception_type(
@@ -277,7 +281,7 @@ class RedisClient:
         streams: dict[str, str],
         count: int | None = None,
         block: int | None = None,
-    ) -> list:
+    ) -> StreamResponse:
         """
         Read from Redis Streams using a consumer group.
 
@@ -291,7 +295,7 @@ class RedisClient:
         Returns:
             List of [stream_name, [(entry_id, fields), ...]] tuples.
         """
-        return cast(list, self.client.xreadgroup(groupname, consumername, streams, count=count, block=block)) # type: ignore
+        return cast(StreamResponse, self.client.xreadgroup(groupname, consumername, streams, count=count, block=block)) # type: ignore
 
     @retry(
         retry=retry_if_exception_type(
@@ -326,10 +330,20 @@ class RedisClient:
         try:
             return cast(bool, self.client.xgroup_create(name, groupname, id=id, mkstream=mkstream))
         except redis.exceptions.ResponseError as e:
-            if "BUSYGROUP" in str(e):
+            err = str(e)
+            if "BUSYGROUP" in err:
                 # Group already exists, this is fine
                 logger.debug(f"Consumer group {groupname} already exists on {name}")
                 return False
+            if "WRONGTYPE" in err:
+                # Key exists with incompatible type → delete and retry
+                logger.warning(
+                    "Key '%s' has wrong type for stream → deleting and recreating",
+                    name,
+                )
+                self.client.delete(name)
+                self.client.xgroup_create(name, groupname, id=id, mkstream=mkstream)
+                return True
             raise
 
 

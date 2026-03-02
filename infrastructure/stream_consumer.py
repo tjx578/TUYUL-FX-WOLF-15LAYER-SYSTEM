@@ -74,7 +74,13 @@ class ConsumerConfig:
 
     def __post_init__(self) -> None:
         if isinstance(self.backoff, dict):
-            object.__setattr__(self, "backoff", BackoffConfig(**self.backoff))
+            backoff_dict: dict[str, Any] = dict(self.backoff)
+            object.__setattr__(self, "backoff", BackoffConfig(
+                initial=float(backoff_dict.get("initial", 1.0)),
+                maximum=float(backoff_dict.get("maximum", 30.0)),
+                factor=float(backoff_dict.get("factor", 2.0)),
+                jitter=float(backoff_dict.get("jitter", 0.25)),
+            ))
 
 
 @dataclass
@@ -108,6 +114,7 @@ class StreamConsumer:
         config: ConsumerConfig | None = None,
         redis_client: aioredis.Redis | None = None,
     ) -> None:
+        super().__init__()
         if not bindings:
             raise ValueError("At least one StreamBinding is required")
 
@@ -160,7 +167,14 @@ class StreamConsumer:
         return self._redis
 
     async def _ensure_groups(self) -> None:
-        """Create consumer groups if they don't exist. Idempotent."""
+        """Create consumer groups if they don't exist. Idempotent.
+
+        Handles:
+          - BUSYGROUP: group already exists → safe to continue.
+          - WRONGTYPE: key exists with incompatible type (e.g. ``string``
+            left over from an older schema) → delete key and retry so the
+            stream is created fresh via ``mkstream=True``.
+        """
         client = await self._ensure_redis()
         for binding in self._bindings:
             try:
@@ -175,9 +189,27 @@ class StreamConsumer:
                     binding.stream, binding.group,
                 )
             except ResponseError as e:
-                if "BUSYGROUP" in str(e):
+                err = str(e)
+                if "BUSYGROUP" in err:
                     logger.debug(
                         "Consumer group exists: stream=%s group=%s",
+                        binding.stream, binding.group,
+                    )
+                elif "WRONGTYPE" in err:
+                    # Key exists but is not a stream — reset and retry
+                    logger.warning(
+                        "Key '%s' has wrong type for stream → deleting and recreating",
+                        binding.stream,
+                    )
+                    await client.delete(binding.stream)
+                    await client.xgroup_create(
+                        name=binding.stream,
+                        groupname=binding.group,
+                        id="0",
+                        mkstream=True,
+                    )
+                    logger.info(
+                        "Recreated consumer group after WRONGTYPE reset: stream=%s group=%s",
                         binding.stream, binding.group,
                     )
                 else:
