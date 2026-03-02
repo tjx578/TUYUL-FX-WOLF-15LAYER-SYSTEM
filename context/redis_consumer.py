@@ -41,16 +41,24 @@ CANDLE_HISTORY_LIST_PREFIXES: list[str] = [
 ]
 
 
-def _get_candle_prefixes() -> list[str]:
+def get_candle_prefixes() -> list[str]:
     """Resolve candle List prefixes at call-time.
 
     Reading at call-time (not import-time) lets tests override
     ``CANDLE_HISTORY_KEY_PREFIXES`` without reloading the module.
+    Falls back to module defaults when the env var is absent, empty, or
+    contains only whitespace/commas.
     """
     env_val = os.environ.get("CANDLE_HISTORY_KEY_PREFIXES", "").strip()
     if env_val:
-        return [p.strip() for p in env_val.split(",") if p.strip()]
+        parsed = [p.strip() for p in env_val.split(",") if p.strip()]
+        if parsed:
+            return parsed
     return list(CANDLE_HISTORY_LIST_PREFIXES)
+
+
+# Private alias kept for backward-compat with internal callers
+_get_candle_prefixes = get_candle_prefixes
 
 # Hash key prefix for latest single candle (HSET by RedisContextBridge)
 CANDLE_HASH_PREFIX: str = "wolf15:candle"

@@ -316,24 +316,24 @@ async def _sanitize_redis_keys(redis_client: AsyncRedis) -> None:
 
 
 async def run_redis_consumer() -> None:
-    """Run RedisConsumer when CONTEXT_MODE=redis."""
-    try:
-        from context.redis_consumer import RedisConsumer  # noqa: PLC0415
-        from infrastructure.redis_url import get_redis_url  # noqa: PLC0415
+    """Run RedisConsumer when CONTEXT_MODE=redis.
 
-        redis_url = get_redis_url()
-        redis_client: AsyncRedis = AsyncRedis.from_url(redis_url)  # type: ignore[no-untyped-call]
+    Fail-loud: any startup or runtime error is re-raised so the supervisor
+    can detect the failure and restart (rather than continuing silently
+    without a consumer, which would leave the pipeline with 0 bars).
+    """
+    from context.redis_consumer import RedisConsumer  # noqa: PLC0415
+    from infrastructure.redis_url import get_redis_url  # noqa: PLC0415
 
-        # Clean keys with wrong type before consumer touches them
-        await _sanitize_redis_keys(redis_client)
+    redis_url = get_redis_url()
+    redis_client: AsyncRedis = AsyncRedis.from_url(redis_url)  # type: ignore[no-untyped-call]
 
-        redis_consumer = RedisConsumer(symbols=PAIRS, redis_client=redis_client)
-        logger.info("Starting RedisConsumer...")
-        await redis_consumer.run()
-    except Exception as exc:
-        logger.error(f"Failed to start RedisConsumer: {exc}. Continuing without Redis consumer.")
-        while not (_shutdown_event and _shutdown_event.is_set()):  # noqa: ASYNC110
-            await asyncio.sleep(1)
+    # Clean keys with wrong type before consumer touches them
+    await _sanitize_redis_keys(redis_client)
+
+    redis_consumer = RedisConsumer(symbols=PAIRS, redis_client=redis_client)
+    logger.info("Starting RedisConsumer...")
+    await redis_consumer.run()
 
 
 async def _analyze_pair(pair: str) -> dict[str, object] | None:
