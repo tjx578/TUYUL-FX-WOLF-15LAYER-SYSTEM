@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 from dataclasses import dataclass
 from typing import Any, cast
 
@@ -28,13 +29,28 @@ WARMUP_TIMEFRAMES: tuple[str, ...] = ("M15", "H1", "H4", "D1", "W1")
 # Redis List key prefix for stored candle history
 CANDLE_HISTORY_KEY_PREFIX = "candle_history"
 
-# Ordered list of prefixes that hold *List* data (safe for LRANGE warmup).
+# Default ordered list of prefixes that hold *List* data (safe for LRANGE warmup).
 # NOTE: wolf15:candle:{sym}:{tf} is a Hash (HSET by RedisContextBridge)
 #       — handled separately via HGETALL as a single-bar fallback.
+#
+# Override at runtime via env var (comma-separated, first-wins):
+#   CANDLE_HISTORY_KEY_PREFIXES=wolf15:candle_history,candle_history
 CANDLE_HISTORY_LIST_PREFIXES: list[str] = [
     "wolf15:candle_history",
     "candle_history",
 ]
+
+
+def _get_candle_prefixes() -> list[str]:
+    """Resolve candle List prefixes at call-time.
+
+    Reading at call-time (not import-time) lets tests override
+    ``CANDLE_HISTORY_KEY_PREFIXES`` without reloading the module.
+    """
+    env_val = os.environ.get("CANDLE_HISTORY_KEY_PREFIXES", "").strip()
+    if env_val:
+        return [p.strip() for p in env_val.split(",") if p.strip()]
+    return list(CANDLE_HISTORY_LIST_PREFIXES)
 
 # Hash key prefix for latest single candle (HSET by RedisContextBridge)
 CANDLE_HASH_PREFIX: str = "wolf15:candle"
@@ -120,7 +136,7 @@ class RedisConsumer:
                 candles: list[dict[str, Any]] = []
                 for raw in raw_entries:
                     try:
-                        candle = orjson.loads(raw)
+                        candle: Any = orjson.loads(raw)
                         if isinstance(candle, dict):
                             candles.append(cast(dict[str, Any], candle))
                         else:
@@ -154,7 +170,7 @@ class RedisConsumer:
         does not prevent the remaining fallbacks from being tried.
         """
         # ── Priority 1: List keys (safe for LRANGE) ──
-        for prefix in CANDLE_HISTORY_LIST_PREFIXES:
+        for prefix in _get_candle_prefixes():
             key = f"{prefix}:{symbol}:{timeframe}"
             try:
                 raw_entries: list[bytes] = await self._redis.lrange(key, 0, -1)
@@ -201,7 +217,7 @@ class RedisConsumer:
             "tried list_prefixes=%s hash_key=%s",
             symbol,
             timeframe,
-            CANDLE_HISTORY_LIST_PREFIXES,
+            _get_candle_prefixes(),
             hash_key,
         )
         return []
