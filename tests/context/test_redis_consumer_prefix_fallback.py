@@ -168,14 +168,14 @@ def test_env_only_commas_falls_back_to_defaults() -> None:
 async def test_env_prefixes_are_stripped_before_lookup() -> None:
     """Leading/trailing spaces in env prefixes are stripped for Redis key lookup."""
     os.environ[_ENV_KEY] = "  custom:bars  "
-    candle = _make_candle("USDJPY", "M5", 154.321)
-    redis = _make_redis({"custom:bars:USDJPY:M5": [candle]})
+    candle = _make_candle("USDJPY", "H1", 154.321)
+    redis = _make_redis({"custom:bars:USDJPY:H1": [candle]})
     bus = LiveContextBus()
 
     consumer = RedisConsumer(["USDJPY"], redis, bus)
     await consumer.load_candle_history()
 
-    history: list[dict[str, Any]] | None = bus.get_candle_history("USDJPY", "M5")
+    history: list[dict[str, Any]] | None = bus.get_candle_history("USDJPY", "H1")
     assert history is not None and len(history) == 1
     assert history[0]["close"] == pytest.approx(154.321)  # type: ignore[reportUnknownMemberType]
 
