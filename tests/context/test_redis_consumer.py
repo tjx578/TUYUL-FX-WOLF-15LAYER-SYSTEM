@@ -21,14 +21,27 @@ def _make_candle(symbol: str, timeframe: str, close: float) -> bytes:
     return orjson.dumps({"symbol": symbol, "timeframe": timeframe, "close": close})
 
 
-def _make_redis(data: dict[str, list[bytes]]) -> MagicMock:
-    """Return a mock Redis client whose lrange returns data keyed by 'prefix:sym:tf'."""
+def _make_redis(
+    list_data: dict[str, list[bytes]] | None = None,
+    hash_data: dict[str, dict[str | bytes, str | bytes]] | None = None,
+) -> MagicMock:
+    """Return a mock Redis client.
+
+    list_data: keys → list entries (for LRANGE)
+    hash_data: keys → hash entries (for HGETALL)
+    """
     redis = MagicMock()
+    _ld = list_data or {}
+    _hd = hash_data or {}
 
     async def lrange(key: str, start: int, end: int) -> list[bytes]:
-        return data.get(key, [])
+        return _ld.get(key, [])
+
+    async def hgetall(key: str) -> dict[str | bytes, str | bytes]:
+        return _hd.get(key, {})
 
     redis.lrange = lrange
+    redis.hgetall = hgetall
     redis.pubsub = MagicMock(return_value=MagicMock())
     return redis
 
@@ -37,10 +50,28 @@ def _make_redis(data: dict[str, list[bytes]]) -> MagicMock:
 # Warmup prefix-fallback tests
 # ---------------------------------------------------------------------------
 
-async def test_warmup_uses_wolf15_candle_prefix() -> None:
-    """load_candle_history must pick data stored under wolf15:candle:* prefix."""
+async def test_warmup_uses_wolf15_candle_history_prefix() -> None:
+    """load_candle_history must pick data stored under wolf15:candle_history:* (List)."""
     candle = _make_candle("EURUSD", "H1", 1.0850)
-    redis = _make_redis({"wolf15:candle:EURUSD:H1": [candle]})
+    redis = _make_redis({"wolf15:candle_history:EURUSD:H1": [candle]})
+    bus = LiveContextBus()
+
+    consumer = RedisConsumer(["EURUSD"], redis, bus)
+    await consumer.load_candle_history()
+
+    history: list[dict[str, Any]] | None = bus.get_candle_history("EURUSD", "H1")
+    assert history is not None
+    assert len(history) == 1
+    assert history[0]["close"] == _approx(1.0850)
+
+
+async def test_warmup_hash_fallback() -> None:
+    """When no List data exists, warmup falls back to wolf15:candle (Hash) via hgetall."""
+    candle_json = orjson.dumps({"symbol": "EURUSD", "timeframe": "H1", "close": 1.0850}).decode("utf-8")
+    redis = _make_redis(
+        list_data={},
+        hash_data={"wolf15:candle:EURUSD:H1": {"data": candle_json}},
+    )
     bus = LiveContextBus()
 
     consumer = RedisConsumer(["EURUSD"], redis, bus)
@@ -53,9 +84,9 @@ async def test_warmup_uses_wolf15_candle_prefix() -> None:
 
 
 async def test_warmup_falls_back_to_wolf15_candle_history() -> None:
-    """If wolf15:candle misses, fall back to wolf15:candle_history."""
+    """If wolf15:candle_history misses, fall back to candle_history (legacy)."""
     candle = _make_candle("GBPUSD", "H1", 1.2700)
-    redis = _make_redis({"wolf15:candle_history:GBPUSD:H1": [candle]})
+    redis = _make_redis({"candle_history:GBPUSD:H1": [candle]})
     bus = LiveContextBus()
 
     consumer = RedisConsumer(["GBPUSD"], redis, bus)
@@ -93,12 +124,12 @@ async def test_warmup_returns_empty_when_no_prefix_matches() -> None:
 
 
 async def test_warmup_prefers_first_matching_prefix() -> None:
-    """wolf15:candle must win over wolf15:candle_history when both have data."""
+    """wolf15:candle_history (List) must win over candle_history (legacy) when both have data."""
     candle_new = _make_candle("EURUSD", "H4", 1.0900)
     candle_old = _make_candle("EURUSD", "H4", 1.0800)
     redis = _make_redis({
-        "wolf15:candle:EURUSD:H4": [candle_new],
-        "wolf15:candle_history:EURUSD:H4": [candle_old],
+        "wolf15:candle_history:EURUSD:H4": [candle_new],
+        "candle_history:EURUSD:H4": [candle_old],
     })
     bus = LiveContextBus()
 
@@ -115,7 +146,7 @@ async def test_warmup_skips_malformed_candles() -> None:
     """Malformed bytes in a key must be skipped without crashing."""
     good = _make_candle("EURUSD", "D1", 1.0950)
     bad = b"not-json-{{{{"
-    redis = _make_redis({"wolf15:candle:EURUSD:D1": [bad, good]})
+    redis = _make_redis({"wolf15:candle_history:EURUSD:D1": [bad, good]})
     bus = LiveContextBus()
 
     consumer = RedisConsumer(["EURUSD"], redis, bus)
@@ -136,8 +167,8 @@ async def test_warmup_loads_multiple_symbols() -> None:
     candle_eu = _make_candle("EURUSD", "H1", 1.0850)
     candle_gb = _make_candle("GBPUSD", "H1", 1.2700)
     redis = _make_redis({
-        "wolf15:candle:EURUSD:H1": [candle_eu],
-        "wolf15:candle:GBPUSD:H1": [candle_gb],
+        "wolf15:candle_history:EURUSD:H1": [candle_eu],
+        "wolf15:candle_history:GBPUSD:H1": [candle_gb],
     })
     bus = LiveContextBus()
 
@@ -159,7 +190,7 @@ async def test_warmup_loads_multiple_timeframes() -> None:
     data: dict[str, list[bytes]] = {}
     for tf in WARMUP_TIMEFRAMES:
         candle = _make_candle("EURUSD", tf, 1.0800 + WARMUP_TIMEFRAMES.index(tf) * 0.001)
-        data[f"wolf15:candle:EURUSD:{tf}"] = [candle]
+        data[f"wolf15:candle_history:EURUSD:{tf}"] = [candle]
 
     redis = _make_redis(data)
     bus = LiveContextBus()
@@ -180,7 +211,7 @@ async def test_warmup_loads_multiple_candles_per_key() -> None:
         _make_candle("EURUSD", "H1", 1.0850),
         _make_candle("EURUSD", "H1", 1.0900),
     ]
-    redis = _make_redis({"wolf15:candle:EURUSD:H1": candles})
+    redis = _make_redis({"wolf15:candle_history:EURUSD:H1": candles})
     bus = LiveContextBus()
 
     consumer = RedisConsumer(["EURUSD"], redis, bus)
@@ -197,7 +228,7 @@ async def test_warmup_skips_non_dict_json() -> None:
     """A valid JSON value that is not a dict (e.g. array, int) must be skipped."""
     non_dict = orjson.dumps([1, 2, 3])  # valid JSON but not a candle dict
     good = _make_candle("EURUSD", "H1", 1.0850)
-    redis = _make_redis({"wolf15:candle:EURUSD:H1": [non_dict, good]})
+    redis = _make_redis({"wolf15:candle_history:EURUSD:H1": [non_dict, good]})
     bus = LiveContextBus()
 
     consumer = RedisConsumer(["EURUSD"], redis, bus)
@@ -214,8 +245,8 @@ async def test_warmup_mixed_prefixes_per_timeframe() -> None:
     candle_h1 = _make_candle("EURUSD", "H1", 1.0850)
     candle_m15 = _make_candle("EURUSD", "M15", 1.0800)
     redis = _make_redis({
-        "wolf15:candle:EURUSD:H1": [candle_h1],           # primary prefix for H1
-        "candle_history:EURUSD:M15": [candle_m15],         # legacy prefix for M15
+        "wolf15:candle_history:EURUSD:H1": [candle_h1],     # primary list prefix for H1
+        "candle_history:EURUSD:M15": [candle_m15],           # legacy list prefix for M15
     })
     bus = LiveContextBus()
 
@@ -236,13 +267,13 @@ async def test_warmup_replaces_on_second_call() -> None:
     candle_v2 = _make_candle("EURUSD", "H1", 1.0900)
 
     # First call with v1 data
-    redis1 = _make_redis({"wolf15:candle:EURUSD:H1": [candle_v1]})
+    redis1 = _make_redis({"wolf15:candle_history:EURUSD:H1": [candle_v1]})
     bus = LiveContextBus()
     consumer = RedisConsumer(["EURUSD"], redis1, bus)
     await consumer.load_candle_history()
 
     # Replace redis mock data and reload
-    consumer._redis = _make_redis({"wolf15:candle:EURUSD:H1": [candle_v2]})  # type: ignore[attr-defined]
+    consumer._redis = _make_redis({"wolf15:candle_history:EURUSD:H1": [candle_v2]})  # type: ignore[attr-defined]
     await consumer.load_candle_history()
 
     history: list[dict[str, Any]] | None = bus.get_candle_history("EURUSD", "H1")
@@ -255,7 +286,7 @@ async def test_warmup_all_malformed_yields_empty() -> None:
     """If every entry under a key is malformed, the bus should store empty list."""
     bad1 = b"not-json"
     bad2 = b"{broken"
-    redis = _make_redis({"wolf15:candle:EURUSD:H1": [bad1, bad2]})
+    redis = _make_redis({"wolf15:candle_history:EURUSD:H1": [bad1, bad2]})
     bus = LiveContextBus()
 
     consumer = RedisConsumer(["EURUSD"], redis, bus)
