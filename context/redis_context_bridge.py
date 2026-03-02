@@ -26,6 +26,13 @@ LATEST_TICK_TTL_SECONDS: int = 60
 # Candles older than this are stale and should not inform decisions.
 CANDLE_HASH_TTL_SECONDS: int = 4 * 3600  # 14400s
 
+# Candle history list: 6 hours - long enough for engine restart/reconnect
+# to load warmup data that ingest already fetched.
+CANDLE_HISTORY_TTL_SECONDS: int = 6 * 3600  # 21600s
+
+# Max candle history entries per symbol/timeframe in Redis
+CANDLE_HISTORY_MAXLEN: int = 300
+
 
 class RedisContextBridge:
     """
@@ -136,15 +143,14 @@ class RedisContextBridge:
             # 3. Set TTL - candle data expires after session relevance window
             self._redis.client.expire(hash_key, CANDLE_HASH_TTL_SECONDS)
 
-            # 4. For Monthly timeframe, maintain a history list for macro analysis
+            # 4. Append to candle history list (enables engine warmup on startup)
             try:
-                if timeframe == "MN":
-                    list_key = f"{self._prefix}:candle:{symbol}:MN:history"
-                    # Append latest MN candle to history list and trim to reasonable max (e.g., 240 months)
-                    self._redis.client.rpush(list_key, candle_json)
-                    self._redis.client.ltrim(list_key, -240, -1)
+                list_key = f"{self._prefix}:candle_history:{symbol}:{timeframe}"
+                self._redis.client.rpush(list_key, candle_json)
+                self._redis.client.ltrim(list_key, -CANDLE_HISTORY_MAXLEN, -1)
+                self._redis.client.expire(list_key, CANDLE_HISTORY_TTL_SECONDS)
             except Exception as exc:
-                logger.error(f"Failed to write MN history list for {symbol}: {exc}")
+                logger.error(f"Failed to write candle history list for {symbol} {timeframe}: {exc}")
 
         except Exception as exc:
             logger.error(f"Failed to write candle to Redis for {symbol} {timeframe}: {exc}")
@@ -215,6 +221,42 @@ class RedisContextBridge:
         except Exception as exc:
             logger.error(f"Failed to read latest candle from Redis: {exc}")
             return None
+
+    def read_candle_history(
+        self, symbol: str, timeframe: str, count: int = 0
+    ) -> list[dict[str, Any]]:
+        """
+        Read candle history list from Redis.
+
+        Used by engine container on startup to load warmup data that
+        ingest already fetched, avoiding the pub/sub race condition.
+
+        Args:
+            symbol: Trading pair symbol.
+            timeframe: Timeframe (e.g., "H1", "H4", "D1").
+            count: Max candles to return (0 = all available).
+
+        Returns:
+            List of candle dicts, oldest first.
+        """
+        try:
+            list_key = f"{self._prefix}:candle_history:{symbol}:{timeframe}"
+            if count > 0:
+                raw = self._redis.client.lrange(list_key, -count, -1)
+            else:
+                raw = self._redis.client.lrange(list_key, 0, -1)
+            candles: list[dict[str, Any]] = []
+            for item in raw:
+                try:
+                    candles.append(orjson.loads(item))
+                except Exception:
+                    pass
+            return candles
+        except Exception as exc:
+            logger.error(
+                f"Failed to read candle history from Redis for {symbol} {timeframe}: {exc}"
+            )
+            return []
 
     def read_latest_news(self) -> dict[str, Any] | None:
         """
