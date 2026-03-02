@@ -30,7 +30,7 @@ CANDLE_HISTORY_KEY_PREFIX = "candle_history"
 
 # Ordered list of prefixes to try (newest namespace first, then legacy fallback)
 CANDLE_HISTORY_KEY_PREFIXES = [
-    "wolf15:candle",
+    "wolf15:candle",          # ← added (highest priority)
     "wolf15:candle_history",
     "candle_history",
 ]
