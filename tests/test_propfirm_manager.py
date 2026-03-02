@@ -10,7 +10,7 @@ Validates:
 
 import pytest
 
-from dashboard.backend.schemas import RiskSeverity
+from accounts.account_model import RiskSeverity
 from propfirm_manager.profile_manager import PropFirmManager
 from propfirm_manager.profiles.aqua_instant_pro.guard import (
     AquaInstantProGuard,

@@ -13,7 +13,7 @@ from datetime import UTC, datetime, timedelta
 import redis.asyncio as aioredis
 from fastapi import APIRouter, Depends, Query, Request
 
-from dashboard.backend.auth import verify_token
+from api.auth import verify_token
 
 logger = logging.getLogger(__name__)
 
