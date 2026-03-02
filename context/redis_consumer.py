@@ -39,7 +39,12 @@ class RedisConsumerConfig:
         subscribe via `subscribe()` as a fallback.
     """
 
-    pubsub_patterns: tuple[str, ...] = ("candles:*", "candle:*", "candle_updates:*")
+    pubsub_patterns: tuple[str, ...] = (
+        "candles:*",
+        "candle:*",
+        "candle_updates:*",
+        "wolf15:candle:*",  # ← add this
+    )
     pubsub_channels: tuple[str, ...] = ("candles", "candle_updates", "candle")
 
 
