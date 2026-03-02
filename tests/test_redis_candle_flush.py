@@ -7,6 +7,8 @@ Covers:
 
 from __future__ import annotations
 
+from unittest.mock import AsyncMock, MagicMock, patch
+
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
@@ -14,6 +16,9 @@ import httpx
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+
+from api.redis_health_routes import _CANDLE_KEY_PREFIXES, _delete_keys_by_pattern, router
+
 
 from api.redis_health_routes import delete_keys_by_pattern, router
 
@@ -63,6 +68,7 @@ async def test_delete_keys_by_pattern_no_keys() -> None:
     r.scan = AsyncMock(return_value=(0, []))
     r.delete = AsyncMock(return_value=0)
 
+    result = await _delete_keys_by_pattern(r, "candles:*")
     result = await delete_keys_by_pattern(r, "candles:*")
 
     assert result == 0
@@ -80,6 +86,7 @@ async def test_delete_keys_by_pattern_with_keys() -> None:
     ])
     r.delete = AsyncMock(return_value=2)
 
+    result = await _delete_keys_by_pattern(r, "candles:*")
     result = await delete_keys_by_pattern(r, "candles:*")
 
     assert result == 2
@@ -96,6 +103,7 @@ async def test_delete_keys_by_pattern_multiple_pages() -> None:
     ])
     r.delete = AsyncMock(side_effect=[2, 1])
 
+    result = await _delete_keys_by_pattern(r, "*")
     result = await delete_keys_by_pattern(r, "*")
 
     assert result == 3
@@ -109,6 +117,10 @@ async def test_delete_keys_by_pattern_multiple_pages() -> None:
 def test_flush_all_candles_returns_ok(client: TestClient, mock_redis: MagicMock) -> None:
     mock_redis.scan = AsyncMock(return_value=(0, []))
 
+    resp = client.delete("/api/v1/redis/candles")
+
+    assert resp.status_code == 200
+    body = resp.json()
     resp = _delete(client, "/api/v1/redis/candles")
 
     assert resp.status_code == 200
@@ -120,6 +132,16 @@ def test_flush_all_candles_returns_ok(client: TestClient, mock_redis: MagicMock)
 
 def test_flush_all_candles_counts_deleted_keys(client: TestClient, mock_redis: MagicMock) -> None:
     """Reports the total number of keys deleted across all prefixes."""
+    # Each prefix scan returns 3 keys; 4 prefixes × 3 keys = 12 total
+    mock_redis.scan = AsyncMock(return_value=(0, ["k1", "k2", "k3"]))
+    mock_redis.delete = AsyncMock(return_value=3)
+
+    resp = client.delete("/api/v1/redis/candles")
+
+    assert resp.status_code == 200
+    body = resp.json()
+    # 4 prefixes × 3 keys each
+    assert body["deleted_count"] == len(_CANDLE_KEY_PREFIXES) * 3
     mock_redis.scan = AsyncMock(return_value=(0, ["k1", "k2", "k3"]))
     mock_redis.delete = AsyncMock(return_value=3)
 
@@ -135,12 +157,17 @@ def test_flush_all_candles_covers_all_prefixes(client: TestClient, mock_redis: M
     """SCAN is called once per candle-cache prefix."""
     scan_patterns: list[str] = []
 
+    async def capture_scan(cursor: int, match: str, count: int) -> tuple:
     async def capture_scan(cursor: int, match: str, count: int) -> tuple[int, list[str]]:
         scan_patterns.append(match)
         return (0, [])
 
     mock_redis.scan = AsyncMock(side_effect=capture_scan)
 
+    client.delete("/api/v1/redis/candles")
+
+    expected = {f"{p}:*" for p in _CANDLE_KEY_PREFIXES}
+    assert set(scan_patterns) == expected
     _delete(client, "/api/v1/redis/candles")
 
     assert scan_patterns
@@ -156,6 +183,10 @@ def test_flush_all_candles_covers_all_prefixes(client: TestClient, mock_redis: M
 def test_flush_pair_returns_ok(client: TestClient, mock_redis: MagicMock) -> None:
     mock_redis.delete = AsyncMock(return_value=1)
 
+    resp = client.delete("/api/v1/redis/candles/EURUSD/M15")
+
+    assert resp.status_code == 200
+    body = resp.json()
     resp = _delete(client, "/api/v1/redis/candles/EURUSD/M15")
 
     assert resp.status_code == 200
@@ -171,6 +202,11 @@ def test_flush_pair_deletes_all_prefix_keys(client: TestClient, mock_redis: Magi
     """DELETE is called with keys for every known prefix."""
     mock_redis.delete = AsyncMock(return_value=2)
 
+    client.delete("/api/v1/redis/candles/USDCHF/M15")
+
+    call_args = mock_redis.delete.call_args[0]
+    expected_keys = {f"{p}:USDCHF:M15" for p in _CANDLE_KEY_PREFIXES}
+    assert set(call_args) == expected_keys
     _delete(client, "/api/v1/redis/candles/USDCHF/M15")
 
     call_args: tuple[object, ...] = mock_redis.delete.call_args[0]
@@ -184,6 +220,9 @@ def test_flush_pair_normalises_case(client: TestClient, mock_redis: MagicMock) -
     """Symbol and timeframe are uppercased regardless of input case."""
     mock_redis.delete = AsyncMock(return_value=0)
 
+    resp = client.delete("/api/v1/redis/candles/eurusd/m15")
+
+    body = resp.json()
     resp = _delete(client, "/api/v1/redis/candles/eurusd/m15")
 
     body: dict[str, Any] = resp.json()
@@ -195,6 +234,10 @@ def test_flush_pair_zero_deleted_is_still_ok(client: TestClient, mock_redis: Mag
     """Returns ok even when no keys existed for that pair."""
     mock_redis.delete = AsyncMock(return_value=0)
 
+    resp = client.delete("/api/v1/redis/candles/GBPUSD/H1")
+
+    assert resp.status_code == 200
+    assert resp.json()["deleted_count"] == 0
     resp: httpx.Response = _delete(client, "/api/v1/redis/candles/GBPUSD/H1")
 
     assert resp.status_code == 200
@@ -204,6 +247,7 @@ def test_flush_pair_zero_deleted_is_still_ok(client: TestClient, mock_redis: Mag
 
 def test_flush_pair_rejects_invalid_symbol(client: TestClient, mock_redis: MagicMock) -> None:
     """Returns 422 when the symbol contains non-alphanumeric characters."""
+    resp = client.delete("/api/v1/redis/candles/EUR*USD/M15")
     resp = _delete(client, "/api/v1/redis/candles/EUR*USD/M15")
 
     assert resp.status_code == 422
@@ -211,6 +255,9 @@ def test_flush_pair_rejects_invalid_symbol(client: TestClient, mock_redis: Magic
 
 def test_flush_pair_rejects_invalid_timeframe(client: TestClient, mock_redis: MagicMock) -> None:
     """Returns 422 when the timeframe does not match the expected pattern."""
+    resp = client.delete("/api/v1/redis/candles/EURUSD/1M5X")
+
+    assert resp.status_code == 422
     resp = _delete(client, "/api/v1/redis/candles/EURUSD/1M5X")
 
     assert resp.status_code == 422  # noqa: WPS432
