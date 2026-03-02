@@ -582,3 +582,51 @@ button .ripple {
   50%       { border-color: rgba(255,77,79,0.70); box-shadow: 0 0 24px rgba(255,77,79,0.22); }
 }
 .kill-banner { animation: kill-pulse 2.5s ease-in-out infinite; }
+
+/* ─── SKELETON LOADING ─── */
+@keyframes skeleton-loading {
+  0%   { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/* ─── OVERVIEW PAGE GRIDS ─── */
+.overview-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.overview-main-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 300px;
+  gap: 20px;
+  align-items: start;
+}
+
+.overview-verdict-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 12px;
+}
+
+@media (max-width: 1280px) {
+  .overview-main-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 980px) {
+  .overview-kpi-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 640px) {
+  .overview-kpi-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .overview-verdict-grid {
+    grid-template-columns: 1fr;
+  }
+}
