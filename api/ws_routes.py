@@ -31,8 +31,8 @@ import fastapi  # pyright: ignore[reportMissingImports]
 from loguru import logger  # pyright: ignore[reportMissingImports]
 
 from api.middleware.ws_auth import ws_auth_guard
-from dashboard.price_feed import PriceFeed
-from dashboard.trade_ledger import TradeLedger
+from context.price_feed import PriceFeed
+from journal.trade_ledger import TradeLedger
 
 router = fastapi.APIRouter()
 
@@ -603,7 +603,7 @@ async def websocket_equity(websocket: fastapi.WebSocket):
             equity_point: dict = {"ts": time.time()}
 
             try:
-                from dashboard.account_manager import AccountManager  # noqa: PLC0415
+                from accounts.account_manager import AccountManager  # noqa: PLC0415
                 am = AccountManager()
                 accounts = am.list_accounts()
 
