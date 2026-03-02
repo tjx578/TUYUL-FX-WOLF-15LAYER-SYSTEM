@@ -10,6 +10,10 @@ from typing import Any
 
 from loguru import logger
 
+# Maximum candle history entries per symbol:timeframe key.
+# Prevents unbounded memory growth during long-running sessions.
+CANDLE_MAX_BUFFER = 250
+
 
 class LiveContextBus:
     """Central in-memory bus for live market context (candles, ticks, etc.)."""
@@ -48,7 +52,11 @@ class LiveContextBus:
         self._candle_history[key] = candles
 
     def push_candle(self, candle: dict[str, Any]) -> None:
-        """Append a single candle to the history for its symbol/timeframe."""
+        """Append a single candle to the history for its symbol/timeframe.
+
+        Enforces ``CANDLE_MAX_BUFFER`` per key to prevent unbounded memory growth.
+        When the limit is reached the oldest candles are dropped.
+        """
         symbol = candle.get("symbol", "")
         timeframe = candle.get("timeframe", "")
         if not symbol or not timeframe:
@@ -56,7 +64,10 @@ class LiveContextBus:
         key = f"{symbol}:{timeframe}"
         if key not in self._candle_history:
             self._candle_history[key] = []
-        self._candle_history[key].append(candle)
+        buf = self._candle_history[key]
+        buf.append(candle)
+        if len(buf) > CANDLE_MAX_BUFFER:
+            self._candle_history[key] = buf[-CANDLE_MAX_BUFFER:]
 
     def update_candle(self, candle: dict[str, Any]) -> None:
         """Backward-compatible wrapper for pushing a candle.
@@ -176,18 +187,19 @@ class LiveContextBus:
 
     def get_candle_history(
         self, symbol: str, timeframe: str, count: int | None = None
-    ) -> list[dict[str, Any]] | None:
-        """Return stored candle history for *symbol*/*timeframe*, or None if absent.
+    ) -> list[dict[str, Any]]:
+        """Return stored candle history for *symbol*/*timeframe*.
 
         Args:
             symbol:    Trading symbol.
             timeframe: Timeframe string (e.g. "H1").
             count:     If given, return only the last *count* candles.
+
+        Returns:
+            List of candle dicts (empty list if no data stored).
         """
         key = f"{symbol}:{timeframe}"
-        data = self._candle_history.get(key)
-        if data is None:
-            return None
+        data = self._candle_history.get(key, [])
         if count is not None and count < len(data):
             return data[-count:]
         return data
