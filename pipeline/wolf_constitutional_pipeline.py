@@ -420,9 +420,12 @@ class WolfConstitutionalPipeline:
             # Fallback: system_metrics pass-through (caller-provided / test).
 
             trade_returns: list[float] | None = None
-            _bus_returns = self._context_bus.get_trade_history(
-                symbol=symbol,
-                lookback=200,
+            _bus_returns: list[float] | None = cast(
+                list[float] | None,
+                self._context_bus.get_trade_history(  # type: ignore[reportUnknownMemberType]
+                    symbol=symbol,
+                    lookback=200,
+                ),
             )
             if _bus_returns:
                 trade_returns = _bus_returns
