@@ -38,6 +38,84 @@ _health_probe = HealthProbe(port=_ENGINE_HEALTH_PORT, service_name="engine")
 _analysis_healthy = False
 
 
+# ── Candle seeding (warmup) ─────────────────────────────────────
+
+async def seed_candles_on_startup() -> None:
+    """Seed candle history into LiveContextBus BEFORE the analysis loop starts.
+
+    Strategy depends on CONTEXT_MODE:
+      - redis  : load candle history from Redis Lists (populated by ingest container)
+      - local  : fetch historical candles directly from Finnhub REST API
+
+    This ensures the pipeline warmup gate passes on the first analysis cycle.
+    """
+    context_mode = os.getenv("CONTEXT_MODE", "local").lower()
+    logger.info(
+        f"[SEED] Seeding candles on startup (mode={context_mode}, pairs={len(PAIRS)})"
+    )
+
+    if context_mode == "redis":
+        await _seed_from_redis()
+    else:
+        await _seed_from_finnhub()
+
+    # Verify warmup status
+    from context.live_context_bus import LiveContextBus  # noqa: PLC0415
+
+    bus = LiveContextBus()
+    ready_count = 0
+    for pair in PAIRS:
+        status = bus.check_warmup(pair, WolfConstitutionalPipeline.WARMUP_MIN_BARS)
+        if status.get("ready"):
+            ready_count += 1
+        else:
+            logger.warning(
+                f"[SEED] {pair} warmup still insufficient after seeding: {status.get('missing')}"
+            )
+    logger.info(f"[SEED] Warmup ready: {ready_count}/{len(PAIRS)} pairs")
+
+
+async def _seed_from_redis() -> None:
+    """Load candle history from Redis Lists into LiveContextBus."""
+    try:
+        from context.redis_consumer import RedisConsumer  # noqa: PLC0415
+        from infrastructure.redis_url import get_redis_url  # noqa: PLC0415
+
+        redis_url = get_redis_url()
+        redis_client: AsyncRedis = AsyncRedis.from_url(redis_url)  # type: ignore[no-untyped-call]
+        try:
+            consumer = RedisConsumer(symbols=PAIRS, redis_client=redis_client)
+            await consumer.load_candle_history()
+            logger.info("[SEED] Redis candle history loaded into LiveContextBus")
+        finally:
+            await redis_client.aclose()
+    except Exception as exc:
+        logger.error(f"[SEED] Failed to seed from Redis: {exc}")
+
+
+async def _seed_from_finnhub() -> None:
+    """Fetch historical candles from Finnhub REST API into LiveContextBus."""
+    api_key = os.getenv("FINNHUB_API_KEY", "")
+    if not api_key or api_key == "YOUR_FINNHUB_API_KEY":
+        logger.warning("[SEED] No Finnhub API key — skipping REST warmup")
+        return
+    try:
+        from ingest.finnhub_candles import FinnhubCandleFetcher  # noqa: PLC0415
+
+        fetcher = FinnhubCandleFetcher()
+        results = await fetcher.warmup_all()
+        total = sum(
+            len(candles)
+            for tfs in results.values()
+            for candles in tfs.values()
+        )
+        logger.info(
+            f"[SEED] Finnhub warmup complete: {len(results)} symbols, {total} total bars"
+        )
+    except Exception as exc:
+        logger.error(f"[SEED] Failed to seed from Finnhub: {exc}")
+
+
 def _engine_readiness() -> bool:
     """Readiness gate: True once at least one analysis cycle has completed."""
     return _analysis_healthy
@@ -190,7 +268,7 @@ async def run_redis_consumer() -> None:
         redis_client: AsyncRedis = AsyncRedis.from_url(redis_url)  # type: ignore[no-untyped-call]
         redis_consumer = RedisConsumer(symbols=PAIRS, redis_client=redis_client)
         logger.info("Starting RedisConsumer...")
-        await redis_consumer.run()  # type: ignore[union-attr]
+        await redis_consumer.run()
     except Exception as exc:
         logger.error(f"Failed to start RedisConsumer: {exc}. Continuing without Redis consumer.")
         while not (_shutdown_event and _shutdown_event.is_set()):  # noqa: ASYNC110
@@ -204,7 +282,7 @@ async def _analyze_pair(pair: str) -> dict[str, object] | None:
         from context.live_context_bus import LiveContextBus  # noqa: PLC0415
 
         _bus = LiveContextBus()
-        _latest: dict[str, object] | None = _bus.get_latest_tick(pair)  # type: ignore[assignment]
+        _latest: dict[str, object] | None = _bus.get_latest_tick(pair)
         _tick_ts: float | None = (
             float(_latest.get("local_ts") or _latest.get("timestamp") or 0.0)  # type: ignore[arg-type]
             if _latest
@@ -395,6 +473,13 @@ async def main() -> None:
     context_mode = os.getenv("CONTEXT_MODE", "local").lower()
     logger.info(f"Context mode: {context_mode.upper()} | Run mode: {RUN_MODE.upper()}")
     await init_persistent_storage()
+
+    # ── Seed candles BEFORE analysis loop starts ────────────────────
+    if RUN_MODE in ("all", "engine-only"):
+        try:
+            await seed_candles_on_startup()
+        except Exception as exc:
+            logger.error(f"[SEED] Candle seeding failed (non-fatal): {exc}")
 
     # ── Health probe (always runs) ──────────────────────────────────
     tasks: list[asyncio.Task[object]] = [

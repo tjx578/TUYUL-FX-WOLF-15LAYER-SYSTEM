@@ -91,8 +91,13 @@ class LiveContextBus:
     # ------------------------------------------------------------------
 
     def get_candles(self, symbol: str, timeframe: str) -> list[dict[str, Any]]:
-        """Return stored candles for symbol/timeframe (empty list if none)."""
-        return self._candles.get(symbol, {}).get(timeframe, [])
+        """Return stored candles for symbol/timeframe (empty list if none).
+
+        Reads from the unified ``_candle_history`` store that is populated by
+        ``set_candle_history``, ``push_candle``, and ``update_candle``.
+        """
+        key = f"{symbol}:{timeframe}"
+        return self._candle_history.get(key, [])
 
     def get_latest_tick(self, symbol: str) -> dict[str, Any] | None:
         """Return latest tick for symbol, or None if not yet received."""
@@ -170,8 +175,19 @@ class LiveContextBus:
         }
 
     def get_candle_history(
-        self, symbol: str, timeframe: str
+        self, symbol: str, timeframe: str, count: int | None = None
     ) -> list[dict[str, Any]] | None:
-        """Return stored candle history for *symbol*/*timeframe*, or None if absent."""
+        """Return stored candle history for *symbol*/*timeframe*, or None if absent.
+
+        Args:
+            symbol:    Trading symbol.
+            timeframe: Timeframe string (e.g. "H1").
+            count:     If given, return only the last *count* candles.
+        """
         key = f"{symbol}:{timeframe}"
-        return self._candle_history.get(key)
+        data = self._candle_history.get(key)
+        if data is None:
+            return None
+        if count is not None and count < len(data):
+            return data[-count:]
+        return data
