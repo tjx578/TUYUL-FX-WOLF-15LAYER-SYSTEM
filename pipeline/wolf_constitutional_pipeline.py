@@ -68,7 +68,6 @@ from core.metrics import (
     LAYER_LATENCY,
     SIGNAL_THROTTLED,
     TICK_TO_VERDICT_LATENCY,
-    WARMUP_BLOCKED,
 )
 from core.tracing import layer_span
 from pipeline.engines import L13ReflectiveEngine, L15MetaSovereigntyEngine
@@ -77,7 +76,8 @@ from pipeline.phases.gates import evaluate_9_gates
 from pipeline.phases.metrics_recorder import record_pipeline_metrics
 from pipeline.phases.synthesis import build_l12_synthesis
 from pipeline.phases.vault import compute_vault_sync
-from pipeline.result import PipelineResult  # noqa: E402  # delayed import to avoid circular dependency
+from pipeline.result import PipelineResult
+from pipeline.warmup_utils import normalize_warmup  # noqa: E402  # delayed import to avoid circular dependency
 
 try:
     from loguru import logger
@@ -347,20 +347,21 @@ class WolfConstitutionalPipeline:
         # minutes after startup.
         # ═══════════════════════════════════════════════════════
         if not safe_mode:
-            _warmup_raw: dict[str, Any] = cast(
-                dict[str, Any],
-                self._context_bus.check_warmup(symbol, self.WARMUP_MIN_BARS),  # type: ignore[reportUnknownMemberType]
-            )
-            warmup: dict[str, Any] = _warmup_raw
+            _warmup_raw = self._context_bus.check_warmup(symbol, self.WARMUP_MIN_BARS)
+            warmup = normalize_warmup(_warmup_raw, required=min(self.WARMUP_MIN_BARS.values())).to_dict()  # noqa: F821
+
             if not warmup["ready"]:
                 logger.warning(
                     f"[Pipeline v8.0] {symbol} WARMUP INSUFFICIENT — "
                     f"bars={warmup['bars']}, required={warmup['required']}, "
                     f"missing={warmup['missing']}"
                 )
-                errors.append("WARMUP_INSUFFICIENT")
-                WARMUP_BLOCKED.labels(symbol=symbol).inc()  # noqa: F821
-                return self._early_exit(symbol, errors, time.time() - start_time)
+                return {
+                    "symbol": symbol,
+                    "verdict": "NO_TRADE",
+                    "errors": ["WARMUP_INSUFFICIENT"],
+                    "warmup": warmup,
+                }
 
         try:
             # ═══════════════════════════════════════════════════════
