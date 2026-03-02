@@ -9,14 +9,23 @@ mismatches can be fixed without code changes (env var only).
 from __future__ import annotations
 
 import os
-from typing import Any
+from collections.abc import Callable
+from typing import Any, TypedDict, cast
 from unittest.mock import MagicMock
 
 import orjson
 import pytest
 
 from context.live_context_bus import LiveContextBus
-from context.redis_consumer import RedisConsumer, get_candle_prefixes
+from context.redis_consumer import RedisConsumer
+from context.redis_consumer import (
+    get_candle_prefixes as _get_candle_prefixes_raw,  # type: ignore
+)
+
+_get_candle_prefixes_raw_typed: Callable[[], list[str]] = cast(
+    Callable[[], list[str]], _get_candle_prefixes_raw
+)
+get_candle_prefixes = _get_candle_prefixes_raw_typed
 
 pytestmark = pytest.mark.anyio
 
@@ -63,7 +72,7 @@ def test_default_prefixes_when_env_not_set() -> None:
     """get_candle_prefixes returns module defaults when env var absent."""
     from context.redis_consumer import CANDLE_HISTORY_LIST_PREFIXES
 
-    result: list[str] = get_candle_prefixes()  # type: ignore[assignment]
+    result: list[str] = get_candle_prefixes()
     assert result == list(CANDLE_HISTORY_LIST_PREFIXES)
 
 
@@ -141,7 +150,7 @@ async def test_db_mismatch_fixed_via_env() -> None:
 def test_env_ignores_empty_tokens_between_commas() -> None:
     """Empty tokens are removed while preserving non-empty order."""
     os.environ[_ENV_KEY] = "primary:candles, ,secondary:candles,,legacy:candles"
-    result: list[str] = get_candle_prefixes()  # type: ignore[assignment]
+    result: list[str] = get_candle_prefixes()
     assert result == ["primary:candles", "secondary:candles", "legacy:candles"]
 
 
@@ -150,7 +159,7 @@ def test_env_only_commas_falls_back_to_defaults() -> None:
     from context.redis_consumer import CANDLE_HISTORY_LIST_PREFIXES
 
     os.environ[_ENV_KEY] = ", , ,,"
-    result: list[str] = get_candle_prefixes()  # type: ignore[assignment]
+    result: list[str] = get_candle_prefixes()
     assert result == list(CANDLE_HISTORY_LIST_PREFIXES)
 
 
@@ -195,3 +204,9 @@ async def test_env_override_can_load_multiple_symbols_independently() -> None:
     assert h_usdcad is not None and len(h_usdcad) == 1
     assert h_eurusd[0]["close"] == pytest.approx(1.1010)  # type: ignore[reportUnknownMemberType]
     assert h_usdcad[0]["close"] == pytest.approx(1.3570)  # type: ignore[reportUnknownMemberType]
+
+
+class SignalResult(TypedDict):
+    symbol: str
+    verdict: str
+    confidence: float

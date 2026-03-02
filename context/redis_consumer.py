@@ -136,7 +136,7 @@ class RedisConsumer:
                 candles: list[dict[str, Any]] = []
                 for raw in raw_entries:
                     try:
-                        candle = orjson.loads(raw)
+                        candle: Any = orjson.loads(raw)
                         if isinstance(candle, dict):
                             candles.append(cast(dict[str, Any], candle))
                         else:

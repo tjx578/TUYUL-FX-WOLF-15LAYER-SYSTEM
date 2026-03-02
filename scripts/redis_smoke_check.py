@@ -83,8 +83,8 @@ def main():
 
     # ── Ping ──────────────────────────────────────────────
     try:
-        r: Redis = redis.from_url(str(redis_url), decode_responses=True)
-        r.ping()
+        r: Redis = redis.from_url(str(redis_url), decode_responses=True)  # type: ignore[attr-defined]
+        bool(r.ping())  # type: ignore[arg-type]
         print("\n[2] ✅ Redis alive — PONG")
     except Exception as e:
         print(f"\n[2] ❌ Redis unreachable: {e}")
@@ -106,7 +106,7 @@ def main():
                 continue
             try:
                 r_alt = redis.from_url(str(_alt_url(redis_url, alt_db)), decode_responses=True)  # type: ignore[attr-defined]
-                count = sum(1 for _ in r_alt.scan_iter("*candle*", count=200))  # type: ignore[var-annotated]
+                count = sum(1 for _key in r_alt.scan_iter("*candle*", count=200))  # type: ignore[var-annotated]
                 print(f"    DB{alt_db}: {count} candle keys")
                 if count > 0:
                     print(f"    ⚠️  MISMATCH: Writer uses DB{alt_db}, reader uses DB{db_index}")
