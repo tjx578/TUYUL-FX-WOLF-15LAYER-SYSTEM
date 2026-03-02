@@ -1,7 +1,4 @@
-"""Monte Carlo Engine -- Bootstrap simulation over historical trade returns.
-
-ANALYSIS-ONLY module. No execution side-effects.
-"""
+"""Monte Carlo Engine -- Bootstrap simulation over historical trade returns."""
 from __future__ import annotations
 
 import math
