@@ -184,10 +184,13 @@ async def run_redis_consumer() -> None:
     """Run RedisConsumer when CONTEXT_MODE=redis."""
     try:
         from context.redis_consumer import RedisConsumer  # noqa: PLC0415
+        from infrastructure.redis_url import get_redis_url  # noqa: PLC0415
 
-        redis_consumer = RedisConsumer(symbols=PAIRS)
+        redis_url = get_redis_url()
+        redis_client: AsyncRedis = AsyncRedis.from_url(redis_url)  # type: ignore[no-untyped-call]
+        redis_consumer = RedisConsumer(symbols=PAIRS, redis_client=redis_client)
         logger.info("Starting RedisConsumer...")
-        await redis_consumer.start()
+        await redis_consumer.run()  # type: ignore[union-attr]
     except Exception as exc:
         logger.error(f"Failed to start RedisConsumer: {exc}. Continuing without Redis consumer.")
         while not (_shutdown_event and _shutdown_event.is_set()):  # noqa: ASYNC110
