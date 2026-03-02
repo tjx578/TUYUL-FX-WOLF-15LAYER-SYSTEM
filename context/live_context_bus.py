@@ -1,14 +1,14 @@
-"""LiveContextBus — in-process bus for candle/context data.
+"""LiveContextBus - in-process context store for candles and ticks.
 
-Zones: analysis (context sharing). No execution side-effects.
+This module is analysis-only; it stores market context used by the pipeline.
+No execution logic, no side effects beyond internal state.
 """
 
 from __future__ import annotations
 
-import logging
 from typing import Any
 
-logger = logging.getLogger(__name__)
+from loguru import logger
 
 
 class LiveContextBus:
@@ -49,21 +49,39 @@ class LiveContextBus:
         """Append a single live candle (from pub/sub)."""
         self._candles.setdefault(symbol, {}).setdefault(timeframe, []).append(candle)
 
+    def update_candle(self, candle: dict[str, Any]) -> None:
+        """Backward-compatible wrapper for pushing a candle.
+
+        Candle must contain 'symbol' and 'timeframe'.
+        """
+        symbol = str(candle.get("symbol", "")).strip()
+        timeframe = str(candle.get("timeframe", "")).strip()
+        if not symbol or not timeframe:
+            logger.warning(
+                "LiveContextBus.update_candle: candle missing symbol/timeframe — ignored"
+            )
+            return
+        self.push_candle(symbol, timeframe, candle)
+
     def update_tick(self, tick: dict[str, Any]) -> None:
         """Store latest tick for a symbol. Tick must contain 'symbol' key."""
         symbol = tick.get("symbol")
         if symbol:
-            self._ticks[symbol] = tick
+            self._ticks[str(symbol)] = tick
         else:
-            logger.warning("LiveContextBus.update_tick: tick missing 'symbol' key — ignored")
+            logger.warning(
+                "LiveContextBus.update_tick: tick missing 'symbol' key — ignored"
+            )
+
+    def reset_state(self) -> None:
+        """Clear all internal candle history. Used for test isolation."""
+        self._candle_history: dict[str, dict[str, list[dict[str, Any]]]] = {}
 
     # ------------------------------------------------------------------
     # Read API
     # ------------------------------------------------------------------
 
-    def get_candles(
-        self, symbol: str, timeframe: str
-    ) -> list[dict[str, Any]]:
+    def get_candles(self, symbol: str, timeframe: str) -> list[dict[str, Any]]:
         """Return stored candles for symbol/timeframe (empty list if none)."""
         return self._candles.get(symbol, {}).get(timeframe, [])
 
@@ -84,25 +102,60 @@ class LiveContextBus:
 
         Args:
             symbol:   Trading symbol to check.
-            min_bars: Mapping of timeframe → required minimum bar count.
+            min_bars: Mapping of timeframe -> required minimum bar count.
+                      Example: {"H4": 200, "H1": 500, "M15": 1000}
 
         Returns:
-            ``{"ready": bool, "details": {timeframe: {"have": int, "need": int}}}``
+            Stable schema consumed by pipeline + tests::
+
+                {
+                    "ready":    bool,
+                    "bars":     {tf: have_int, ...},       # all tfs
+                    "required": {tf: need_int, ...},       # all tfs
+                    "missing":  {tf: shortfall_int, ...},  # only tfs that are short
+                    "details":  {tf: {"have": int, "need": int, "missing": int}, ...},
+                }
+
+            ``bars``, ``required``, and ``missing`` are always present (may be
+            empty dicts if ``min_bars`` is empty).  ``details`` mirrors the
+            per-tf breakdown and is kept for backward-compat with consumers that
+            already access ``result["details"]``.
         """
+        bars: dict[str, int] = {}
+        required_map: dict[str, int] = {}
+        missing: dict[str, int] = {}
         details: dict[str, dict[str, int]] = {}
+
         ready = True
 
         for timeframe, required in min_bars.items():
-            have = self.get_warmup_bar_count(symbol, timeframe)
-            details[timeframe] = {"have": have, "need": required}
-            if have < required:
+            tf = str(timeframe)
+            need = int(required)
+            have = int(self.get_warmup_bar_count(symbol, tf))
+
+            bars[tf] = have
+            required_map[tf] = need
+
+            shortfall = max(0, need - have)
+            details[tf] = {"have": have, "need": need, "missing": shortfall}
+
+            if shortfall > 0:
                 ready = False
+                missing[tf] = shortfall
                 logger.debug(
-                    "LiveContextBus: warmup not ready for %s:%s — have %d, need %d",
+                    "LiveContextBus: warmup not ready for %s:%s"
+                    " — have %d, need %d (missing %d)",
                     symbol,
-                    timeframe,
+                    tf,
                     have,
-                    required,
+                    need,
+                    shortfall,
                 )
 
-        return {"ready": ready, "details": details}
+        return {
+            "ready": ready,
+            "bars": bars,
+            "required": required_map,
+            "missing": missing,
+            "details": details,
+        }
