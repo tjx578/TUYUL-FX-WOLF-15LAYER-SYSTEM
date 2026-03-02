@@ -1,3 +1,4 @@
+<<<<<<< Updated upstream
 """
 Aqua Instant Pro Prop Firm Guard
 
@@ -98,4 +99,23 @@ class AquaInstantProGuard(BasePropFirmGuard):
             )
 
         # All checks passed
+=======
+"""AquaInstantPro prop firm guard."""
+from typing import Any
+from propfirm_manager.profiles.base_guard import BasePropFirmGuard, GuardResult
+
+
+class AquaInstantProGuard(BasePropFirmGuard):
+    def check(self, account_state: dict[str, Any], trade_risk: dict[str, Any]) -> GuardResult:
+        daily_dd_after = trade_risk.get("daily_dd_after", 0)
+        total_dd_after = trade_risk.get("total_dd_after", 0)
+
+        max_daily_dd = self.rules.get("max_daily_dd_percent", 4.0)
+        max_total_dd = self.rules.get("max_total_dd_percent", 8.0)
+
+        if daily_dd_after > max_daily_dd:
+            return self._deny("DENY_DAILY_DD", f"Daily DD would reach {daily_dd_after:.2f}%, max {max_daily_dd}%")
+        if total_dd_after > max_total_dd:
+            return self._deny("DENY_TOTAL_DD", f"Total DD would reach {total_dd_after:.2f}%, max {max_total_dd}%")
+>>>>>>> Stashed changes
         return self._allow()
