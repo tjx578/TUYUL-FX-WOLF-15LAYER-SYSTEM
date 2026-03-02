@@ -9,6 +9,7 @@ from datetime import datetime
 from importlib import import_module
 from typing import Any, Protocol
 
+import orjson  # noqa: I001  — needed before analysis imports for _seed_redis_candle_history
 from loguru import logger
 
 from analysis.macro.macro_regime_engine import MacroRegimeEngine
@@ -143,8 +144,14 @@ def _update_macro_regime(enabled_symbols: list[str]) -> None:
             logger.error(f"Macro regime failed for {symbol}: {exc}")
 
 
-async def _run_warmup(system_state: SystemStateManager, enabled_symbols: list[str]) -> None:
-    """Fetch historical candles with retry before falling back to DEGRADED."""
+async def _run_warmup(
+    system_state: SystemStateManager, enabled_symbols: list[str]
+) -> dict[str, dict[str, list[dict[str, Any]]]]:
+    """Fetch historical candles with retry before falling back to DEGRADED.
+
+    Returns the warmup results dict (symbol -> timeframe -> candles) so the
+    caller can seed Redis for cross-container consumption.
+    """
     logger.info("Starting warmup: fetching historical candles from Finnhub REST API")
     last_exc: Exception | None = None
     for attempt in range(1, MAX_RETRIES + 1):
@@ -154,7 +161,7 @@ async def _run_warmup(system_state: SystemStateManager, enabled_symbols: list[st
             system_state.validate_warmup(warmup_results) # pyright: ignore[reportUnknownMemberType]
             _update_macro_regime(enabled_symbols)
             _set_state_from_warmup(system_state)
-            return  # success
+            return warmup_results  # success — relay results for Redis seeding
         except Exception as exc:
             last_exc = exc
             delay = BASE_DELAY * (2 ** (attempt - 1))
@@ -167,12 +174,71 @@ async def _run_warmup(system_state: SystemStateManager, enabled_symbols: list[st
 
     logger.error(f"Warmup failed after {MAX_RETRIES} attempts (non-fatal): {last_exc}")
     system_state.set_state(SystemState.DEGRADED)
+    return {}  # empty — no candles to seed
 
 
 class Stoppable(Protocol):
     """Any object that exposes an async stop() method."""
 
     async def stop(self) -> None: ...
+
+
+# ── Redis candle history seeding ──────────────────────────────────
+# Matches the key format and TTL used by RedisContextBridge.write_candle().
+_SEED_HISTORY_MAXLEN = 300
+_SEED_HISTORY_TTL = 6 * 3600  # 6 h
+
+
+async def _seed_redis_candle_history(
+    redis: RedisClient,
+    warmup_results: dict[str, dict[str, list[dict[str, Any]]]],
+) -> None:
+    """Write REST-warmup candles into Redis Lists.
+
+    This bridges the gap between FinnhubCandleFetcher (which populates the
+    in-process LiveContextBus) and RedisConsumer on the engine side (which
+    reads from Redis Lists for cross-container warmup).
+
+    Key format: ``wolf15:candle_history:{SYMBOL}:{TF}``
+    Serialisation: orjson, matching RedisContextBridge.write_candle().
+    """
+    if not warmup_results:
+        logger.info("[Seed] No warmup results to seed into Redis")
+        return
+
+    seeded = 0
+    for symbol, tf_data in warmup_results.items():
+        for timeframe, candles in tf_data.items():
+            if not candles:
+                continue
+
+            key = f"wolf15:candle_history:{symbol}:{timeframe}"
+
+            # Skip if Redis already has enough bars (e.g. service restarted)
+            try:
+                existing: int = await redis.llen(key)  # type: ignore[attr-defined]
+                if existing >= len(candles):
+                    logger.debug(
+                        "[Seed] %s already has %d bars, skip", key, existing
+                    )
+                    continue
+            except Exception:
+                pass  # key may not exist yet
+
+            try:
+                pipe = redis.pipeline()  # type: ignore[attr-defined]
+                for candle in candles:
+                    candle_json = orjson.dumps(candle).decode("utf-8")
+                    pipe.rpush(key, candle_json)  # type: ignore[union-attr]
+                    pipe.rpush(key, candle_json)  # type: ignore[reportUnknownMemberType]
+                pipe.expire(key, _SEED_HISTORY_TTL)  # type: ignore[union-attr]
+                await pipe.execute()  # type: ignore[union-attr]  # type: ignore[reportUnknownMemberType]
+                seeded += 1
+                logger.info("[Seed] %s: %d bars written", key, len(candles))
+            except Exception as exc:
+                logger.error("[Seed] Failed to seed %s: %s", key, exc)
+
+    logger.info("[Seed] Completed: %d symbol/tf combos seeded to Redis", seeded)
 
 
 async def _safe_stop(
@@ -207,7 +273,11 @@ async def run_ingest_services(has_api_key: bool) -> None:
         redis = await _connect_redis()
         system_state = SystemStateManager()
         system_state.set_state(SystemState.WARMING_UP)
-        await _run_warmup(system_state, enabled_symbols)
+        warmup_results = await _run_warmup(system_state, enabled_symbols)
+
+        # Seed Redis Lists so the engine's RedisConsumer can warm up
+        # without waiting for live candle completion (fixes race condition).
+        await _seed_redis_candle_history(redis, warmup_results)
 
         # Build candle builders as dict for O(1) lookup
         candle_builders = {
