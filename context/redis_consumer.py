@@ -28,6 +28,11 @@ WARMUP_TIMEFRAMES: tuple[str, ...] = ("M15", "H1", "H4", "D1", "W1")
 # Redis List key prefix for stored candle history
 CANDLE_HISTORY_KEY_PREFIX = "candle_history"
 
+# Ordered list of prefixes to try (newest namespace first, then legacy fallback)
+CANDLE_HISTORY_KEY_PREFIXES = [
+    "wolf15:candle_history",
+    "candle_history",
+]
 
 @dataclass(frozen=True)
 class RedisConsumerConfig:
@@ -96,12 +101,12 @@ class RedisConsumer:
         for symbol in self._symbols:
             for timeframe in WARMUP_TIMEFRAMES:
                 key = f"{CANDLE_HISTORY_KEY_PREFIX}:{symbol}:{timeframe}"
-                try:
-                    raw_entries: list[bytes] = await self._redis.lrange(key, 0, -1)
-                except Exception:
-                    logger.exception(
-                        "RedisConsumer: failed to fetch candle history for %s — skipping",
-                        key,
+                raw_entries: list[bytes] = await self._redis.lrange(key, 0, -1)
+                if not raw_entries:
+                    logger.info(
+                        "RedisConsumer: no data for %s:%s",
+                        symbol,
+                        timeframe,
                     )
                     continue
 
@@ -129,6 +134,32 @@ class RedisConsumer:
                     symbol,
                     timeframe,
                 )
+
+    async def _warmup_candle_history(self, symbol: str, timeframe: str) -> list[bytes]:
+        """
+        Load candle history from Redis, trying multiple key prefixes
+        for backward compatibility. Returns candles from first prefix that has data.
+        """
+        for prefix in CANDLE_HISTORY_KEY_PREFIXES:
+            key = f"{prefix}:{symbol}:{timeframe}"
+            raw_entries: list[bytes] = await self._redis.lrange(key, 0, -1)
+            if raw_entries:
+                logger.info(
+                    "warmup_candle_history | symbol=%s tf=%s prefix_used=%s count=%d",
+                    symbol,
+                    timeframe,
+                    prefix,
+                    len(raw_entries),
+                )
+                return raw_entries
+
+        logger.warning(
+            "warmup_candle_history | symbol=%s tf=%s no_data_found tried_prefixes=%s",
+            symbol,
+            timeframe,
+            CANDLE_HISTORY_KEY_PREFIXES,
+        )
+        return []
 
     # ------------------------------------------------------------------
     # Pub/Sub realtime consumption

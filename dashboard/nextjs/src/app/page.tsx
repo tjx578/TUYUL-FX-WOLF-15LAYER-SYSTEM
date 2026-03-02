@@ -15,8 +15,16 @@ import { useAccounts } from "@/lib/api";
 import { useAlertsWS } from "@/lib/websocket";
 import { AlertFeed } from "@/components/PropFirmBadge";
 import type { L12Verdict } from "@/types";
+import { getApiBaseUrl, validateEnv } from "@/lib/env";
 
-export default function OverviewPage() {
+export default function Home() {
+  // Validate env on every render in dev; no-op in prod if vars are set
+  if (typeof window === "undefined") {
+    validateEnv(); // server-side only
+  }
+
+  const apiBase = getApiBaseUrl();
+
   const { data: verdicts, isLoading: vLoading } = useAllVerdicts();
   const { data: health } = useHealth();
   const { data: activeTrades } = useActiveTrades();
