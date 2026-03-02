@@ -94,23 +94,25 @@ class RedisConsumer:
     async def load_candle_history(self) -> None:
         """Load candle history from Redis Lists into LiveContextBus.
 
-        Fetches ``candle_history:{symbol}:{timeframe}`` list keys for
-        every symbol × timeframe combination. Per-key errors are caught and logged.
+        Tries every prefix in CANDLE_HISTORY_KEY_PREFIXES in order and uses the
+        first one that returns data for each symbol × timeframe combination.
+        Per-key errors are caught and logged.
 
         Calling this method more than once replaces (not appends) the stored candles.
         """
         for symbol in self._symbols:
             for timeframe in WARMUP_TIMEFRAMES:
-                key = f"{CANDLE_HISTORY_KEY_PREFIX}:{symbol}:{timeframe}"
-                raw_entries: list[bytes] = await self._redis.lrange(key, 0, -1)
+                raw_entries = await self._warmup_candle_history(symbol, timeframe)
                 if not raw_entries:
                     logger.info(
-                        "RedisConsumer: no data for %s:%s",
+                        "RedisConsumer: no data for %s:%s (tried all prefixes)",
                         symbol,
                         timeframe,
                     )
                     continue
 
+                # Derive a display key from the first successful prefix for logging
+                key_display = f"<prefix>:{symbol}:{timeframe}"
                 candles: list[dict[str, Any]] = []
                 for raw in raw_entries:
                     try:
@@ -120,12 +122,12 @@ class RedisConsumer:
                         else:
                             logger.warning(
                                 "RedisConsumer: non-dict candle in key %s — skipped",
-                                key,
+                                key_display,
                             )
                     except Exception:
                         logger.warning(
                             "RedisConsumer: skipping malformed candle bytes in key %s",
-                            key,
+                            key_display,
                         )
 
                 self._bus.set_candle_history(symbol, timeframe, candles)
@@ -218,8 +220,12 @@ class RedisConsumer:
         if not isinstance(timeframe, str) or not timeframe.strip():
             return
 
-        # Push as live candle update
-        self._bus.push_candle(symbol.strip(), timeframe.strip(), candle)
+        # Ensure canonical symbol/timeframe in the candle dict
+        candle["symbol"] = symbol.strip()
+        candle["timeframe"] = timeframe.strip()
+
+        # Push as live candle update (push_candle expects a single candle dict)
+        self._bus.push_candle(candle)
 
     async def _consume_pubsub(self) -> None:
         """Consume pub/sub messages forever (until stop_event)."""
