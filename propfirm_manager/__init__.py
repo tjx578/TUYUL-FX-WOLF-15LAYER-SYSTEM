@@ -1,3 +1,4 @@
+<<<<<<< Updated upstream
 """
 Prop Firm Manager
 
@@ -19,3 +20,9 @@ Usage:
     if not result.allowed:
         raise TradeRejected(result.details)
 """
+=======
+"""Propfirm manager package."""
+from propfirm_manager.profile_manager import PropFirmManager
+
+__all__ = ["PropFirmManager"]
+>>>>>>> Stashed changes
