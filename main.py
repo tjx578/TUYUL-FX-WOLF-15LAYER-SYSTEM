@@ -258,6 +258,63 @@ async def run_ingest_services(has_api_key: bool, redis: AsyncRedis) -> None:
         logger.info("Ingest services cleanup complete")
 
 
+async def _sanitize_redis_keys(redis_client: AsyncRedis) -> None:
+    """Delete keys whose Redis type conflicts with what writers/consumers expect.
+
+    This prevents WRONGTYPE errors when the ingest bridge or RedisConsumer
+    encounters a key left over from an earlier schema (e.g. a ``string`` where
+    a ``hash`` or ``list`` is now expected).
+
+    Key-pattern → expected-type mapping mirrors:
+      - context/redis_context_bridge.py  (bridge writes)
+      - context/redis_consumer.py        (consumer reads)
+    """
+    # pattern → expected Redis type
+    keys_expected: dict[str, str] = {
+        "wolf15:tick:*":            "stream",   # bridge XADD
+        "wolf15:latest_tick:*":     "hash",     # bridge HSET
+        "wolf15:candle:*":          "hash",     # bridge HSET (latest candle)
+        "wolf15:candle_history:*":  "list",     # bridge RPUSH / consumer LRANGE
+        "candle_history:*":         "list",     # legacy consumer LRANGE
+    }
+
+    total_deleted = 0
+    for pattern, expected_type in keys_expected.items():
+        try:
+            keys: list[bytes | str] = await redis_client.keys(pattern)  # type: ignore[assignment]
+        except Exception as exc:
+            logger.warning("[Redis-sanitize] KEYS %s failed: %s", pattern, exc)
+            continue
+
+        for key in keys:
+            key_str = key if isinstance(key, str) else key.decode()
+            try:
+                actual_type: str = await redis_client.type(key_str)
+            except Exception as exc:
+                logger.warning("[Redis-sanitize] TYPE %s failed: %s", key_str, exc)
+                continue
+
+            if actual_type == "none":
+                continue
+            if actual_type == expected_type:
+                continue
+
+            logger.warning(
+                "[Redis-sanitize] Key '%s' type mismatch: expected=%s, actual=%s → deleting",
+                key_str, expected_type, actual_type,
+            )
+            try:
+                await redis_client.delete(key_str)
+                total_deleted += 1
+            except Exception as exc:
+                logger.error("[Redis-sanitize] Failed to delete '%s': %s", key_str, exc)
+
+    if total_deleted:
+        logger.info("[Redis-sanitize] Cleaned %d conflicting key(s)", total_deleted)
+    else:
+        logger.debug("[Redis-sanitize] No type conflicts found")
+
+
 async def run_redis_consumer() -> None:
     """Run RedisConsumer when CONTEXT_MODE=redis."""
     try:
@@ -266,6 +323,10 @@ async def run_redis_consumer() -> None:
 
         redis_url = get_redis_url()
         redis_client: AsyncRedis = AsyncRedis.from_url(redis_url)  # type: ignore[no-untyped-call]
+
+        # Clean keys with wrong type before consumer touches them
+        await _sanitize_redis_keys(redis_client)
+
         redis_consumer = RedisConsumer(symbols=PAIRS, redis_client=redis_client)
         logger.info("Starting RedisConsumer...")
         await redis_consumer.run()
