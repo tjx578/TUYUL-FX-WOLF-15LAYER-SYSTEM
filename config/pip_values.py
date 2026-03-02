@@ -1,4 +1,5 @@
 """
+<<<<<<< Updated upstream
 💰 Pip Value Constants -- TUYUL FX (SINGLE SOURCE OF TRUTH)
 -------------------------------------------------------------
 P0 BUG FIX: XAUUSD was 0.10 in dashboard vs 10.0 in config.
@@ -20,6 +21,16 @@ Zone: config/ -- pure data, no side effects, no business logic.
 """
 
 
+=======
+Pip Value Constants — TUYUL FX (SINGLE SOURCE OF TRUTH)
+
+Provides pip values and pip multipliers for all supported instruments.
+Pure lookups only — NO business logic, NO position sizing.
+
+All modules that need pip values MUST import from here.
+"""
+
+>>>>>>> Stashed changes
 __all__ = [
     "DEFAULT_PIP_VALUE",
     "PIP_MULTIPLIERS",
@@ -33,6 +44,7 @@ __all__ = [
 ]
 
 
+<<<<<<< Updated upstream
 # ── Exceptions ───────────────────────────────────────────────────────
 
 class PipLookupError(LookupError):
@@ -128,28 +140,71 @@ PIP_MULTIPLIERS: dict[str, float] = {
     **dict.fromkeys(PIP_VALUES_PER_STANDARD_LOT, _STANDARD_MULTIPLIER),
     **{pair: _JPY_MULTIPLIER
        for pair in PIP_VALUES_PER_STANDARD_LOT if "JPY" in pair},
+=======
+class PipLookupError(LookupError):
+    def __init__(self, pair: str, table_name: str) -> None:
+        self.pair = pair
+        self.table_name = table_name
+        super().__init__(f"Pair '{pair}' not found in {table_name}.")
+
+
+DEFAULT_PIP_VALUE: float = 10.0
+
+PIP_VALUES_PER_STANDARD_LOT: dict[str, float] = {
+    "EURUSD": 10.00, "GBPUSD": 10.00, "AUDUSD": 10.00, "NZDUSD": 10.00,
+    "USDJPY": 6.67,  "USDCHF": 10.00, "USDCAD": 7.50,
+    "GBPJPY": 6.67,  "EURJPY": 6.67,  "AUDJPY": 6.67,  "NZDJPY": 6.67,
+    "EURGBP": 12.50, "EURAUD": 7.50,  "GBPCHF": 10.00, "GBPAUD": 7.50,
+    "GBPCAD": 7.50,  "GBPNZD": 6.50,  "EURCHF": 10.00, "EURCAD": 7.50,
+    "AUDCAD": 7.50,  "AUDNZD": 6.50,
+    "XAUUSD": 10.00, "XAGUSD": 50.00,
+    "US30":   10.00, "US500":  10.00, "NAS100": 10.00,
+}
+
+_EXPLICIT_MULTIPLIERS: dict[str, float] = {
+    "XAUUSD": 10.0, "XAGUSD": 100.0,
+    "US30": 1.0, "US500": 1.0, "NAS100": 1.0,
+}
+_JPY_MULTIPLIER: float = 100.0
+_STANDARD_MULTIPLIER: float = 10_000.0
+
+PIP_MULTIPLIERS: dict[str, float] = {
+    **dict.fromkeys(PIP_VALUES_PER_STANDARD_LOT, _STANDARD_MULTIPLIER),
+    **{pair: _JPY_MULTIPLIER for pair in PIP_VALUES_PER_STANDARD_LOT if "JPY" in pair},
+>>>>>>> Stashed changes
     **_EXPLICIT_MULTIPLIERS,
 }
 
 
+<<<<<<< Updated upstream
 # ── Lookup Functions ─────────────────────────────────────────────────
 
 def _normalize_pair(pair: str) -> str:
     """Normalize pair name: uppercase, strip slash."""
+=======
+def _normalize_pair(pair: str) -> str:
+>>>>>>> Stashed changes
     return pair.upper().replace("/", "").strip()
 
 
 def is_pair_supported(pair: str) -> bool:
+<<<<<<< Updated upstream
     """Check if a pair exists in the pip value table."""
+=======
+>>>>>>> Stashed changes
     return _normalize_pair(pair) in PIP_VALUES_PER_STANDARD_LOT
 
 
 def list_supported_pairs() -> list[str]:
+<<<<<<< Updated upstream
     """Return sorted list of all supported pairs."""
+=======
+>>>>>>> Stashed changes
     return sorted(PIP_VALUES_PER_STANDARD_LOT.keys())
 
 
 def get_pip_value(pair: str) -> float:
+<<<<<<< Updated upstream
     """Get pip value per standard lot for a pair.
 
     Returns the dollar value of a 1-pip movement for 1.0 standard lot
@@ -170,6 +225,8 @@ def get_pip_value(pair: str) -> float:
     PipLookupError
         If the pair is not in the table.
     """
+=======
+>>>>>>> Stashed changes
     key = _normalize_pair(pair)
     if key not in PIP_VALUES_PER_STANDARD_LOT:
         raise PipLookupError(key, "PIP_VALUES_PER_STANDARD_LOT")
@@ -177,6 +234,7 @@ def get_pip_value(pair: str) -> float:
 
 
 def get_pip_multiplier(pair: str) -> float:
+<<<<<<< Updated upstream
     """Get pip multiplier for price-to-pip conversion.
 
     Converts a price difference to pip count:
@@ -222,10 +280,20 @@ def get_pip_multiplier(pair: str) -> float:
         return _STANDARD_MULTIPLIER
 
     # 4. Unknown -- raise, don't guess
+=======
+    key = _normalize_pair(pair)
+    if key in _EXPLICIT_MULTIPLIERS:
+        return _EXPLICIT_MULTIPLIERS[key]
+    if "JPY" in key:
+        return _JPY_MULTIPLIER
+    if key in PIP_VALUES_PER_STANDARD_LOT:
+        return _STANDARD_MULTIPLIER
+>>>>>>> Stashed changes
     raise PipLookupError(key, "PIP_MULTIPLIERS")
 
 
 def get_pip_info(pair: str) -> tuple[float, float]:
+<<<<<<< Updated upstream
     """Get both pip value and pip multiplier for a pair.
 
     Convenience function for modules that need both values.
@@ -245,4 +313,6 @@ def get_pip_info(pair: str) -> tuple[float, float]:
     PipLookupError
         If the pair is not supported.
     """
+=======
+>>>>>>> Stashed changes
     return get_pip_value(pair), get_pip_multiplier(pair)
