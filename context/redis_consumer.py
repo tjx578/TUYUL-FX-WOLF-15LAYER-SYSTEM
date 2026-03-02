@@ -28,12 +28,16 @@ WARMUP_TIMEFRAMES: tuple[str, ...] = ("M15", "H1", "H4", "D1", "W1")
 # Redis List key prefix for stored candle history
 CANDLE_HISTORY_KEY_PREFIX = "candle_history"
 
-# Ordered list of prefixes to try (newest namespace first, then legacy fallback)
-CANDLE_HISTORY_KEY_PREFIXES = [
-    "wolf15:candle",          # ← added (highest priority)
+# Ordered list of prefixes that hold *List* data (safe for LRANGE warmup).
+# NOTE: wolf15:candle:{sym}:{tf} is a Hash (HSET by RedisContextBridge)
+#       — handled separately via HGETALL as a single-bar fallback.
+CANDLE_HISTORY_LIST_PREFIXES: list[str] = [
     "wolf15:candle_history",
     "candle_history",
 ]
+
+# Hash key prefix for latest single candle (HSET by RedisContextBridge)
+CANDLE_HASH_PREFIX: str = "wolf15:candle"
 
 @dataclass(frozen=True)
 class RedisConsumerConfig:
@@ -140,27 +144,65 @@ class RedisConsumer:
 
     async def _warmup_candle_history(self, symbol: str, timeframe: str) -> list[bytes]:
         """
-        Load candle history from Redis, trying multiple key prefixes
-        for backward compatibility. Returns candles from first prefix that has data.
+        Load candle history from Redis, trying multiple sources.
+
+        Priority:
+          1. List keys (wolf15:candle_history, candle_history) — correct type for LRANGE
+          2. Hash key (wolf15:candle) — single latest candle via HGETALL fallback
+
+        Each call is wrapped in try/except so a WRONGTYPE error on one key
+        does not prevent the remaining fallbacks from being tried.
         """
-        for prefix in CANDLE_HISTORY_KEY_PREFIXES:
+        # ── Priority 1: List keys (safe for LRANGE) ──
+        for prefix in CANDLE_HISTORY_LIST_PREFIXES:
             key = f"{prefix}:{symbol}:{timeframe}"
-            raw_entries: list[bytes] = await self._redis.lrange(key, 0, -1)
-            if raw_entries:
-                logger.info(
-                    "warmup_candle_history | symbol=%s tf=%s prefix_used=%s count=%d",
-                    symbol,
-                    timeframe,
-                    prefix,
-                    len(raw_entries),
+            try:
+                raw_entries: list[bytes] = await self._redis.lrange(key, 0, -1)
+                if raw_entries:
+                    logger.info(
+                        "warmup_candle_history | symbol=%s tf=%s prefix_used=%s count=%d",
+                        symbol,
+                        timeframe,
+                        prefix,
+                        len(raw_entries),
+                    )
+                    return raw_entries
+            except Exception as exc:
+                # WRONGTYPE or connection error — log and try next prefix
+                logger.warning(
+                    "warmup_candle_history | lrange failed on %s: %s", key, exc
                 )
-                return raw_entries
+
+        # ── Priority 2: Hash key (single latest candle) ──
+        # wolf15:candle:{sym}:{tf} is written via HSET by RedisContextBridge.
+        # It only holds the *latest* candle, but 1 bar > 0 bars.
+        hash_key = f"{CANDLE_HASH_PREFIX}:{symbol}:{timeframe}"
+        try:
+            data: dict[str | bytes, str | bytes] = await self._redis.hgetall(hash_key)
+            if data:
+                # Hash stores {"data": "<json>"} — extract the JSON payload
+                raw_json = data.get("data") or data.get(b"data")
+                if raw_json:
+                    if isinstance(raw_json, str):
+                        raw_json = raw_json.encode("utf-8")
+                    logger.info(
+                        "warmup_candle_history | symbol=%s tf=%s source=hash_fallback count=1",
+                        symbol,
+                        timeframe,
+                    )
+                    return [raw_json]
+        except Exception as exc:
+            logger.warning(
+                "warmup_candle_history | hgetall failed on %s: %s", hash_key, exc
+            )
 
         logger.warning(
-            "warmup_candle_history | symbol=%s tf=%s no_data_found tried_prefixes=%s",
+            "warmup_candle_history | symbol=%s tf=%s no_data_found "
+            "tried list_prefixes=%s hash_key=%s",
             symbol,
             timeframe,
-            CANDLE_HISTORY_KEY_PREFIXES,
+            CANDLE_HISTORY_LIST_PREFIXES,
+            hash_key,
         )
         return []
 
