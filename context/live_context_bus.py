@@ -12,7 +12,7 @@ from loguru import logger
 
 
 class LiveContextBus:
-    """Singleton in-process bus that holds live candle context."""
+    """Central in-memory bus for live market context (candles, ticks, etc.)."""
 
     _instance: LiveContextBus | None = None
 
@@ -31,6 +31,7 @@ class LiveContextBus:
         self._candles: dict[str, dict[str, list[dict[str, Any]]]] = {}
         # {symbol: tick_dict}
         self._ticks: dict[str, dict[str, Any]] = {}
+        self._candle_history: dict[str, list[dict[str, Any]]] = {}
 
     # ------------------------------------------------------------------
     # Write API (analysis / consumer only — no execution logic)
@@ -42,12 +43,20 @@ class LiveContextBus:
         timeframe: str,
         candles: list[dict[str, Any]],
     ) -> None:
-        """Replace stored candles for a symbol/timeframe (idempotent)."""
-        self._candles.setdefault(symbol, {})[timeframe] = list(candles)
+        """Replace candle history for *symbol*/*timeframe*."""
+        key = f"{symbol}:{timeframe}"
+        self._candle_history[key] = candles
 
-    def push_candle(self, symbol: str, timeframe: str, candle: dict[str, Any]) -> None:
-        """Append a single live candle (from pub/sub)."""
-        self._candles.setdefault(symbol, {}).setdefault(timeframe, []).append(candle)
+    def push_candle(self, candle: dict[str, Any]) -> None:
+        """Append a single candle to the history for its symbol/timeframe."""
+        symbol = candle.get("symbol", "")
+        timeframe = candle.get("timeframe", "")
+        if not symbol or not timeframe:
+            return
+        key = f"{symbol}:{timeframe}"
+        if key not in self._candle_history:
+            self._candle_history[key] = []
+        self._candle_history[key].append(candle)
 
     def update_candle(self, candle: dict[str, Any]) -> None:
         """Backward-compatible wrapper for pushing a candle.
@@ -61,7 +70,7 @@ class LiveContextBus:
                 "LiveContextBus.update_candle: candle missing symbol/timeframe — ignored"
             )
             return
-        self.push_candle(symbol, timeframe, candle)
+        self.push_candle(candle)
 
     def update_tick(self, tick: dict[str, Any]) -> None:
         """Store latest tick for a symbol. Tick must contain 'symbol' key."""
@@ -75,7 +84,7 @@ class LiveContextBus:
 
     def reset_state(self) -> None:
         """Clear all internal candle history. Used for test isolation."""
-        self._candle_history: dict[str, dict[str, list[dict[str, Any]]]] = {}
+        self._candle_history: dict[str, list[dict[str, Any]]] = {}
 
     # ------------------------------------------------------------------
     # Read API
@@ -159,3 +168,10 @@ class LiveContextBus:
             "missing": missing,
             "details": details,
         }
+
+    def get_candle_history(
+        self, symbol: str, timeframe: str
+    ) -> list[dict[str, Any]] | None:
+        """Return stored candle history for *symbol*/*timeframe*, or None if absent."""
+        key = f"{symbol}:{timeframe}"
+        return self._candle_history.get(key)
