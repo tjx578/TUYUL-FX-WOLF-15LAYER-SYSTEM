@@ -2,31 +2,34 @@
 Test candle history functionality in LiveContextBus
 """
 
+from typing import Any  # noqa: UP035
+
 import pytest
 
 from context.live_context_bus import LiveContextBus
 
 
 @pytest.fixture
-def context_bus():
+def context_bus() -> LiveContextBus:
     """Get LiveContextBus instance."""
     bus = LiveContextBus()
-    # Clear any existing data
-    bus._candle_history.clear()
-    bus._candle_store.clear()
+    # Clear any existing data using public reset if available,
+    # otherwise access internals with type: ignore for test setup.
+    bus._candle_history.clear()  # type: ignore[attr-defined]
+    bus._ticks.clear()  # type: ignore[attr-defined]
     return bus
 
 
-def test_candle_history_empty(context_bus):
+def test_candle_history_empty(context_bus: LiveContextBus) -> None:
     """Test get_candle_history with no data."""
-    history = context_bus.get_candle_history("EURUSD", "H1", count=20)
+    history: list[dict[str, Any]] = context_bus.get_candle_history("EURUSD", "H1", count=20)
     assert isinstance(history, list)
     assert len(history) == 0
 
 
-def test_candle_history_single_candle(context_bus):
+def test_candle_history_single_candle(context_bus: LiveContextBus) -> None:
     """Test get_candle_history with single candle."""
-    candle = {
+    candle: dict[str, Any] = {
         "symbol": "EURUSD",
         "timeframe": "H1",
         "open": 1.1000,
@@ -39,16 +42,16 @@ def test_candle_history_single_candle(context_bus):
 
     context_bus.update_candle(candle)
 
-    history = context_bus.get_candle_history("EURUSD", "H1", count=20)
+    history: list[dict[str, Any]] = context_bus.get_candle_history("EURUSD", "H1", count=20)
     assert len(history) == 1
     assert history[0] == candle
 
 
-def test_candle_history_multiple_candles(context_bus):
+def test_candle_history_multiple_candles(context_bus: LiveContextBus) -> None:
     """Test get_candle_history with multiple candles."""
-    candles = []
+    candles: list[dict[str, Any]] = []
     for i in range(10):
-        candle = {
+        candle: dict[str, Any] = {
             "symbol": "EURUSD",
             "timeframe": "H1",
             "open": 1.1000 + (i * 0.0001),
@@ -61,12 +64,12 @@ def test_candle_history_multiple_candles(context_bus):
         candles.append(candle)
         context_bus.update_candle(candle)
 
-    history = context_bus.get_candle_history("EURUSD", "H1", count=20)
+    history: list[dict[str, Any]] = context_bus.get_candle_history("EURUSD", "H1", count=20)
     assert len(history) == 10
     assert history == candles
 
 
-def test_candle_history_count_limit(context_bus):
+def test_candle_history_count_limit(context_bus: LiveContextBus) -> None:
     """Test get_candle_history respects count parameter."""
     # Add 30 candles across multiple days to keep valid timestamps
     for i in range(30):
@@ -93,13 +96,13 @@ def test_candle_history_count_limit(context_bus):
     assert len(history) == 10
 
 
-def test_candle_history_max_buffer_size(context_bus):
+def test_candle_history_max_buffer_size(context_bus: LiveContextBus) -> None:
     """Test candle history buffer respects maxlen=250."""
     # Add 300 candles across multiple days to keep valid timestamps
     for i in range(300):
         day = 1 + i // 24
         hour = i % 24
-        candle = {
+        candle: dict[str, Any] = {
             "symbol": "EURUSD",
             "timeframe": "H1",
             "open": 1.1000,
@@ -112,11 +115,11 @@ def test_candle_history_max_buffer_size(context_bus):
         context_bus.update_candle(candle)
 
     # Should only have last 250 (buffer limit from config)
-    history = context_bus.get_candle_history("EURUSD", "H1", count=300)
+    history: list[dict[str, Any]] = context_bus.get_candle_history("EURUSD", "H1", count=300)
     assert len(history) == 250
 
 
-def test_candle_history_multiple_symbols(context_bus):
+def test_candle_history_multiple_symbols(context_bus: LiveContextBus) -> None:
     """Test candle history for multiple symbols."""
     # Add candles for EURUSD
     for i in range(5):
@@ -153,11 +156,11 @@ def test_candle_history_multiple_symbols(context_bus):
     assert len(gbpusd_history) == 3
 
 
-def test_candle_history_multiple_timeframes(context_bus):
+def test_candle_history_multiple_timeframes(context_bus: LiveContextBus) -> None:
     """Test candle history for multiple timeframes."""
     # Add H1 candles
     for i in range(5):
-        candle = {
+        candle_h1: dict[str, Any] = {
             "symbol": "EURUSD",
             "timeframe": "H1",
             "open": 1.1000,
@@ -167,11 +170,11 @@ def test_candle_history_multiple_timeframes(context_bus):
             "volume": 1000,
             "timestamp": f"2024-01-01T{i:02d}:00:00Z",
         }
-        context_bus.update_candle(candle)
+        context_bus.update_candle(candle_h1)
 
     # Add M15 candles
     for i in range(3):
-        candle = {
+        candle_m15: dict[str, Any] = {
             "symbol": "EURUSD",
             "timeframe": "M15",
             "open": 1.1000,
@@ -181,10 +184,10 @@ def test_candle_history_multiple_timeframes(context_bus):
             "volume": 1000,
             "timestamp": f"2024-01-01T00:{i * 15:02d}:00Z",
         }
-        context_bus.update_candle(candle)
+        context_bus.update_candle(candle_m15)
 
-    h1_history = context_bus.get_candle_history("EURUSD", "H1")
-    m15_history = context_bus.get_candle_history("EURUSD", "M15")
+    h1_history: list[dict[str, Any]] = context_bus.get_candle_history("EURUSD", "H1")
+    m15_history: list[dict[str, Any]] = context_bus.get_candle_history("EURUSD", "M15")
 
     assert len(h1_history) == 5
     assert len(m15_history) == 3
