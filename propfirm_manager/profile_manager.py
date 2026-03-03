@@ -6,13 +6,17 @@ Loads and caches prop firm profiles, dynamically imports guard classes.
 
 import importlib
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
 
+=======
+>>>>>>> Stashed changes
 =======
 >>>>>>> Stashed changes
 from pathlib import Path
 from typing import Any
 
 import yaml
+<<<<<<< Updated upstream
 <<<<<<< Updated upstream
 
 from loguru import logger
@@ -67,6 +71,8 @@ class PropFirmManager:
             PropFirmManager instance (cached or new)
         """
 =======
+=======
+>>>>>>> Stashed changes
 from loguru import logger
 
 from propfirm_manager.profiles.base_guard import BasePropFirmGuard, GuardResult
@@ -78,12 +84,16 @@ class PropFirmManager:
     _profile_cache: dict[str, "PropFirmManager"] = {}
 
     def __new__(cls, profile_name: str):
+<<<<<<< Updated upstream
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
         if profile_name not in cls._profile_cache:
             instance = super().__new__(cls)
             cls._profile_cache[profile_name] = instance
         return cls._profile_cache[profile_name]
 
+<<<<<<< Updated upstream
 <<<<<<< Updated upstream
     def _load_profile(self) -> None:
         """Load profile YAML configuration."""
@@ -108,6 +118,8 @@ class PropFirmManager:
         module_path = f"propfirm_manager.profiles.{self.profile_name}.guard"
 
 =======
+=======
+>>>>>>> Stashed changes
     def __init__(self, profile_name: str):
         if hasattr(self, "profile_name"):
             return
@@ -129,11 +141,15 @@ class PropFirmManager:
 
     def _load_guard(self) -> None:
         module_path = f"propfirm_manager.profiles.{self.profile_name}.guard"
+<<<<<<< Updated upstream
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
         try:
             module = importlib.import_module(module_path)
         except ImportError as e:
             raise ImportError(f"Failed to import guard for {self.profile_name}: {e}") from e
+<<<<<<< Updated upstream
 <<<<<<< Updated upstream
 
         # Get guard class name (e.g., FTMOGuard, AquaInstantProGuard)
@@ -242,6 +258,8 @@ class PropFirmManager:
         """
         return self.features.copy()
 =======
+=======
+>>>>>>> Stashed changes
         class_name = self._profile_to_class_name(self.profile_name)
         guard_class = getattr(module, class_name, None)
         if guard_class is None:
@@ -254,4 +272,7 @@ class PropFirmManager:
 
     def evaluate_trade(self, account_state: dict[str, Any], trade_risk: dict[str, Any]) -> GuardResult:
         return self.guard.check(account_state, trade_risk)
+<<<<<<< Updated upstream
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
