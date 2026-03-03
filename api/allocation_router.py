@@ -19,6 +19,7 @@ from pydantic import BaseModel, Field
 from redis import Redis
 
 from api.middleware.auth import verify_token
+from api.middleware.governance import enforce_write_policy
 from allocation.signal_service import SignalService
 from accounts.risk_engine import RiskEngine  # noqa: F401
 from accounts.account_model import (
@@ -72,7 +73,7 @@ IDEMPOTENCY_TTL_SEC = 60 * 60 * 24
 write_router = APIRouter(
     prefix="/api/v1",
     tags=["trade-write"],
-    dependencies=[Depends(verify_token)],
+    dependencies=[Depends(verify_token), Depends(enforce_write_policy)],
 )
 
 

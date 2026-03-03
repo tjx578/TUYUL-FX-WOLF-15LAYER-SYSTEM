@@ -30,6 +30,7 @@ except ImportError:
 import contextlib
 
 from api.middleware.auth import verify_token
+from api.middleware.governance import enforce_write_policy
 from infrastructure.redis_url import get_redis_url
 
 logger = logging.getLogger(__name__)
@@ -37,7 +38,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(
     prefix="/api/v1/calendar",
     tags=["calendar"],
-    dependencies=[Depends(verify_token)],
+    dependencies=[Depends(verify_token), Depends(enforce_write_policy)],
 )
 
 FINNHUB_API_KEY = os.getenv("FINNHUB_API_KEY", "")

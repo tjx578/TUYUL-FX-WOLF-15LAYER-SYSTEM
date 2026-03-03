@@ -1,13 +1,67 @@
-"""Read-only API for accounts."""
+"""Accounts API for read + manual CRUD governance."""
 
-from fastapi import APIRouter, HTTPException
+from __future__ import annotations
 
+import uuid
+from datetime import UTC, datetime
+
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel, Field
+
+from api.middleware.governance import enforce_write_policy
 from dashboard.account_manager import AccountManager
+from journal.audit_trail import AuditAction, AuditTrail
+from schemas.trade_models import Account
 from storage.redis_client import redis_client
 
 router = APIRouter(prefix="/api/v1/accounts", tags=["accounts"])
 
 _accounts = AccountManager()
+_audit = AuditTrail()
+
+
+class AccountUpsertRequest(BaseModel):
+	account_name: str = Field(..., min_length=1, max_length=120)
+	broker: str = Field(default="MANUAL", min_length=1, max_length=80)
+	currency: str = Field(default="USD", min_length=3, max_length=3)
+	starting_balance: float = Field(..., gt=0)
+	current_balance: float = Field(..., gt=0)
+	equity: float = Field(..., gt=0)
+	equity_high: float = Field(..., gt=0)
+	leverage: int = Field(default=100, ge=1, le=5000)
+	commission_model: str = Field(default="standard", min_length=1, max_length=50)
+	notes: str | None = Field(default=None, max_length=300)
+	data_source: str = Field(default="MANUAL", pattern="^(EA|MANUAL)$")
+	prop_firm: bool = False
+	max_daily_dd_percent: float = Field(default=4.0, gt=0, le=30)
+	max_total_dd_percent: float = Field(default=8.0, gt=0, le=50)
+	max_concurrent_trades: int = Field(default=1, ge=1, le=20)
+	reason: str = Field(..., min_length=1, max_length=200)
+
+
+def _read_payload(account_id: str) -> dict:
+	try:
+		return redis_client.client.hgetall(f"ACCOUNT:{account_id}") or {}
+	except Exception:
+		return {}
+
+
+def _enrich(account: Account) -> dict:
+	payload = _read_payload(account.account_id)
+	return {
+		**account.model_dump(),
+		"account_name": payload.get("account_name", account.name),
+		"broker": payload.get("broker", "MANUAL"),
+		"currency": payload.get("currency", "USD"),
+		"starting_balance": float(payload.get("starting_balance", account.balance) or account.balance),
+		"current_balance": float(payload.get("current_balance", account.balance) or account.balance),
+		"equity_high": float(payload.get("equity_high", account.equity) or account.equity),
+		"leverage": int(payload.get("leverage", 100) or 100),
+		"commission_model": payload.get("commission_model", "standard"),
+		"notes": payload.get("notes") or None,
+		"data_source": payload.get("data_source", "MANUAL"),
+		"updated_at": payload.get("updated_at"),
+	}
 
 
 @router.get("")
@@ -15,7 +69,7 @@ async def list_accounts() -> dict:
 	items = _accounts.list_accounts()
 	return {
 		"count": len(items),
-		"accounts": [a.model_dump() for a in items],
+		"accounts": [_enrich(a) for a in items],
 	}
 
 
@@ -69,4 +123,116 @@ async def get_account(account_id: str) -> dict:
 	account = _accounts.get_account(account_id)
 	if not account:
 		raise HTTPException(status_code=404, detail=f"Account not found: {account_id}")
-	return account.model_dump()
+	return _enrich(account)
+
+
+@router.post("", dependencies=[Depends(enforce_write_policy)])
+async def create_account(req: AccountUpsertRequest) -> dict:
+	account_id = f"ACC-{uuid.uuid4().hex[:10].upper()}"
+	account = Account(
+		account_id=account_id,
+		name=req.account_name,
+		balance=req.current_balance,
+		equity=req.equity,
+		prop_firm=req.prop_firm,
+		max_daily_dd_percent=req.max_daily_dd_percent,
+		max_total_dd_percent=req.max_total_dd_percent,
+		max_concurrent_trades=req.max_concurrent_trades,
+	)
+	_accounts.upsert_account(account)
+
+	redis_client.client.hset(
+		f"ACCOUNT:{account_id}",
+		mapping={
+			"account_name": req.account_name,
+			"broker": req.broker,
+			"currency": req.currency.upper(),
+			"starting_balance": req.starting_balance,
+			"current_balance": req.current_balance,
+			"equity": req.equity,
+			"equity_high": req.equity_high,
+			"leverage": req.leverage,
+			"commission_model": req.commission_model,
+			"notes": req.notes or "",
+			"data_source": req.data_source,
+			"updated_at": datetime.now(UTC).isoformat(),
+		},
+	)
+
+	_audit.log(
+		AuditAction.ORDER_MODIFIED,
+		actor="user:dashboard",
+		resource=f"account:{account_id}",
+		details={"action": "ACCOUNT_CREATE", "reason": req.reason, "data_source": req.data_source},
+	)
+	return _enrich(account)
+
+
+@router.put("/{account_id}", dependencies=[Depends(enforce_write_policy)])
+async def update_account(account_id: str, req: AccountUpsertRequest) -> dict:
+	existing = _accounts.get_account(account_id)
+	if not existing:
+		raise HTTPException(status_code=404, detail=f"Account not found: {account_id}")
+
+	account = Account(
+		account_id=account_id,
+		name=req.account_name,
+		balance=req.current_balance,
+		equity=req.equity,
+		prop_firm=req.prop_firm,
+		max_daily_dd_percent=req.max_daily_dd_percent,
+		max_total_dd_percent=req.max_total_dd_percent,
+		max_concurrent_trades=req.max_concurrent_trades,
+	)
+	_accounts.upsert_account(account)
+
+	redis_client.client.hset(
+		f"ACCOUNT:{account_id}",
+		mapping={
+			"account_name": req.account_name,
+			"broker": req.broker,
+			"currency": req.currency.upper(),
+			"starting_balance": req.starting_balance,
+			"current_balance": req.current_balance,
+			"equity": req.equity,
+			"equity_high": req.equity_high,
+			"leverage": req.leverage,
+			"commission_model": req.commission_model,
+			"notes": req.notes or "",
+			"data_source": req.data_source,
+			"updated_at": datetime.now(UTC).isoformat(),
+		},
+	)
+
+	_audit.log(
+		AuditAction.ORDER_MODIFIED,
+		actor="user:dashboard",
+		resource=f"account:{account_id}",
+		details={"action": "ACCOUNT_UPDATE", "reason": req.reason, "data_source": req.data_source},
+	)
+	return _enrich(account)
+
+
+class AccountDeleteRequest(BaseModel):
+	reason: str = Field(..., min_length=1, max_length=200)
+
+
+@router.delete("/{account_id}", dependencies=[Depends(enforce_write_policy)])
+async def delete_account(account_id: str, req: AccountDeleteRequest) -> dict:
+	existing = _accounts.get_account(account_id)
+	if not existing:
+		raise HTTPException(status_code=404, detail=f"Account not found: {account_id}")
+
+	_accounts._memory_accounts.pop(account_id, None)
+	try:
+		redis_client.client.delete(f"ACCOUNT:{account_id}")
+	except Exception:
+		pass
+
+	_audit.log(
+		AuditAction.ORDER_MODIFIED,
+		actor="user:dashboard",
+		resource=f"account:{account_id}",
+		details={"action": "ACCOUNT_DELETE", "reason": req.reason},
+	)
+	return {"deleted": True, "account_id": account_id}

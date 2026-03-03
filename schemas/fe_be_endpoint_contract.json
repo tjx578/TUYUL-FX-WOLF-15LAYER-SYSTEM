@@ -1,0 +1,71 @@
+{
+  "version": "2026-03-03",
+  "description": "Single source of truth for Dashboard FE↔BE endpoints",
+  "security": {
+    "write_headers_required": [
+      "Authorization: Bearer <token>",
+      "X-Edit-Mode: ON",
+      "X-Action-Reason: <reason>"
+    ],
+    "critical_write_headers_required": [
+      "X-Action-Pin: <pin>"
+    ],
+    "safe_mode_behavior": "When EA safe mode is ON, write actions are blocked except close actions."
+  },
+  "endpoints": {
+    "overview": {
+      "health": "/health",
+      "verdict_all": "/api/v1/verdict/all",
+      "context": "/api/v1/context",
+      "execution": "/api/v1/execution",
+      "trades_active": "/api/v1/trades/active"
+    },
+    "signals": {
+      "take_multi": "/api/v1/signals/take",
+      "skip": "/api/v1/signals/skip"
+    },
+    "trades": {
+      "active": "/api/v1/trades/active",
+      "take": "/api/v1/trades/take",
+      "confirm_by_id": "/api/v1/trades/{trade_id}/confirm",
+      "close": "/api/v1/trades/close"
+    },
+    "risk": {
+      "snapshot": "/api/v1/risk/{account_id}/snapshot",
+      "preview_multi": "/api/v1/risk/preview-multi",
+      "kill_switch": "/api/v1/risk/kill-switch"
+    },
+    "accounts": {
+      "list": "/api/v1/accounts",
+      "detail": "/api/v1/accounts/{account_id}",
+      "create": "/api/v1/accounts",
+      "update": "/api/v1/accounts/{account_id}",
+      "delete": "/api/v1/accounts/{account_id}",
+      "risk_snapshot": "/api/v1/accounts/risk-snapshot"
+    },
+    "prop_firm": {
+      "status": "/api/v1/prop-firm/{account_id}/status",
+      "phase": "/api/v1/prop-firm/{account_id}/phase"
+    },
+    "ea": {
+      "status": "/api/v1/ea/status",
+      "logs": "/api/v1/ea/logs",
+      "restart": "/api/v1/ea/restart",
+      "safe_mode": "/api/v1/ea/safe-mode"
+    },
+    "calendar": {
+      "events": "/api/v1/calendar",
+      "upcoming": "/api/v1/calendar/upcoming",
+      "news_lock_enable": "/api/v1/calendar/news-lock/enable",
+      "news_lock_disable": "/api/v1/calendar/news-lock/disable",
+      "news_lock_status": "/api/v1/calendar/news-lock/status"
+    },
+    "settings": {
+      "profiles": "/api/v1/config/profiles",
+      "active": "/api/v1/config/profiles/active",
+      "effective": "/api/v1/config/profiles/effective",
+      "override": "/api/v1/config/profiles/override",
+      "lock": "/api/v1/config/profiles/lock"
+    }
+  }
+}

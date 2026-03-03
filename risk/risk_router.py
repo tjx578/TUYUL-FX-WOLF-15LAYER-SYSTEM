@@ -11,7 +11,7 @@ Provides REST API for:
 import uuid
 from datetime import UTC, datetime
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from loguru import logger
 from pydantic import BaseModel, Field, field_validator
 
@@ -26,6 +26,7 @@ from accounts.account_model import (
 from accounts.risk_engine import RiskEngine
 from accounts.account_repository import AccountRepository, AccountRiskState, EAInstanceConfig
 from accounts.risk_calculator import AccountScopedRiskEngine
+from api.middleware.governance import enforce_write_policy
 from allocation.signal_service import SignalService
 from journal.audit_trail import AuditAction, AuditTrail
 from risk.kill_switch import GlobalKillSwitch
@@ -34,7 +35,7 @@ from risk.risk_engine_v2 import RiskEngineV2, SignalInput
 from risk.risk_profile import RiskMode, RiskProfile, load_risk_profile, save_risk_profile
 from storage.redis_client import redis_client
 
-router = APIRouter(prefix="/api/v1/risk")
+router = APIRouter(prefix="/api/v1/risk", dependencies=[Depends(enforce_write_policy)])
 _kill_switch = GlobalKillSwitch()
 _account_repo = AccountRepository.get_default()
 _account_risk_engine = AccountScopedRiskEngine()

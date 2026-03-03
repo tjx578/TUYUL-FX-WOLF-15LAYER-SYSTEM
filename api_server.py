@@ -77,6 +77,8 @@ from api.metrics_routes import router as metrics_router  # noqa: E402
 from api.middleware.prometheus_middleware import PrometheusMiddleware  # noqa: E402
 from api.middleware.rate_limit import RateLimitMiddleware  # noqa: E402  # noqa: E402
 from api.accounts_router import router as accounts_router  # noqa: E402
+from api.ea_router import router as ea_router  # noqa: E402
+from api.prop_router import router as prop_router  # noqa: E402
 from api.redis_health_routes import router as redis_health_router  # noqa: E402
 from api.risk_events_routes import router as risk_events_router  # noqa: E402
 from api.signals_router import router as signals_router  # noqa: E402
@@ -253,6 +255,10 @@ app.include_router(calendar_router)
 app.include_router(signals_router)
 # Read-only account APIs
 app.include_router(accounts_router)
+# Prop-firm governance status/phase
+app.include_router(prop_router)
+# EA bridge controls (status/restart/logs/safe-mode)
+app.include_router(ea_router)
 # Risk evaluation + preview + kill-switch
 app.include_router(risk_router)
 # Runtime config profile engine
