@@ -16,15 +16,25 @@
   --accent-amber: #FFB020;
   --accent-red: #FF4D4F;
   --accent-orange: #FF7A00;
+  --accent-blue: #3B82F6;
+  --accent-teal: #00CCB8;
+  --accent-gold: #F5C842;
+  --accent-purple: #A78BFA;
+  --accent-violet: #8B5CF6;
 
   /* ===== TEXT ===== */
   --text-primary: rgba(255,255,255,0.92);
   --text-secondary: rgba(255,255,255,0.60);
+  --text-tertiary: rgba(255,255,255,0.40);
   --text-muted: rgba(255,255,255,0.35);
 
   /* ===== BORDERS ===== */
   --border-subtle: rgba(255,255,255,0.08);
+  --border-default: rgba(255,255,255,0.10);
   --border-strong: rgba(255,255,255,0.16);
+  --border-danger: rgba(255,77,79,0.35);
+  --border-warn: rgba(255,177,0,0.35);
+  --border-accent: rgba(0,245,160,0.35);
 
   /* ===== GLOW ===== */
   --glow-cyan: 0 0 40px rgba(0,229,255,0.25);
@@ -39,6 +49,7 @@
   --bg-base: #080b10;
   --bg-panel: #0d1117;
   --bg-card: #111823;
+  --bg-elevated: #151e2c;
   --bg-hover: #171f2e;
   --bg-border: #1e2d40;
 
@@ -293,7 +304,7 @@ body {
   transition: width 0.4s ease;
 }
 
-/* ─────────────────────────────────────────────────
+/* ─────────────────────────────────��───────────────
    STEP 4 — SIDEBAR INSTITUTIONAL STYLES
 ───────────────────────────────────────────────── */
 .sidebar-root {
