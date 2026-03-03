@@ -82,6 +82,12 @@ from api.prop_router import router as prop_router  # noqa: E402
 from api.redis_health_routes import router as redis_health_router  # noqa: E402
 from api.risk_events_routes import router as risk_events_router  # noqa: E402
 from api.signals_router import router as signals_router  # noqa: E402
+from infrastructure.tracing import (  # noqa: E402
+    instrument_asyncio,
+    instrument_fastapi,
+    instrument_redis,
+    setup_tracer,
+)
 from risk.risk_router import router as risk_router  # noqa: E402
 from api.ws_routes import router as ws_router  # noqa: E402
 
@@ -89,6 +95,9 @@ from api.ws_routes import router as ws_router  # noqa: E402
 from api.allocation_router import write_router  # noqa: E402
 
 logger = logging.getLogger(__name__)
+_api_tracer = setup_tracer("wolf-api")
+instrument_asyncio()
+instrument_redis()
 
 
 # ── Duplicate-route guard ─────────────────────────────────────────────────────
@@ -206,6 +215,7 @@ app = FastAPI(
     description="Institutional-grade trading system API",
     lifespan=lifespan,
 )
+instrument_fastapi(app)
 
 # ── CORS ──────────────────────────────────────────────────────────────────────
 _cors_raw = os.getenv(

@@ -35,9 +35,11 @@ from accounts.account_model import (
     RiskMode as DashRiskMode,
 )
 from journal.trade_journal_service import trade_journal_automation_service
+from infrastructure.tracing import inject_trace_context, setup_tracer
 from risk.kill_switch import GlobalKillSwitch
 
 logger = logging.getLogger(__name__)
+_allocation_router_tracer = setup_tracer("wolf-api")
 
 # ── [BUG-3 FIX] Redis connection via env var ──────────────────────────────────
 def _make_redis() -> Redis | None:
@@ -447,39 +449,44 @@ async def take_signal_multi(req: TakeSignalBatchRequest) -> dict:
             detail=f"Global kill switch is active: {state.get('reason', 'N/A')}",
         )
 
-    signal_payload = {
-        "signal_id": req.verdict_id,
-        "symbol": req.pair,
-        "verdict": f"EXECUTE_{req.direction}",
-        "confidence": 0.8,
-        "direction": req.direction,
-        "entry_price": req.entry,
-        "stop_loss": req.sl,
-        "take_profit_1": req.tp,
-        "risk_reward_ratio": _build_risk_signal(req.pair, req.direction, req.entry, req.sl, req.tp).rr,
-    }
-    _signal_service.publish(signal_payload)
+    with _allocation_router_tracer.start_as_current_span("allocation_enqueue") as span:
+        span.set_attribute("signal.id", req.verdict_id)
+        span.set_attribute("allocation.account_count", len(req.accounts))
 
-    queued: list[dict] = []
-    for account_id in req.accounts:
-        allocation_id = str(uuid.uuid4())
-        payload = {
-            "request_id": allocation_id,
+        signal_payload = {
             "signal_id": req.verdict_id,
-            "account_ids": f"[\"{account_id}\"]",
-            "operator": req.operator,
-            "action": "TAKE",
-            "risk_percent": str(req.risk_percent),
+            "symbol": req.pair,
+            "verdict": f"EXECUTE_{req.direction}",
+            "confidence": 0.8,
+            "direction": req.direction,
+            "entry_price": req.entry,
+            "stop_loss": req.sl,
+            "take_profit_1": req.tp,
+            "risk_reward_ratio": _build_risk_signal(req.pair, req.direction, req.entry, req.sl, req.tp).rr,
         }
-        stream_id = _redis_xadd(ALLOC_REQUEST_STREAM, payload)
-        queued.append(
-            {
-                "allocation_id": allocation_id,
-                "account_id": account_id,
-                "stream_id": stream_id,
-                "status": "QUEUED" if stream_id else "PENDING_FALLBACK",
+        _signal_service.publish(signal_payload)
+
+        queued: list[dict] = []
+        for account_id in req.accounts:
+            allocation_id = str(uuid.uuid4())
+            payload = {
+                "request_id": allocation_id,
+                "signal_id": req.verdict_id,
+                "account_ids": f"[\"{account_id}\"]",
+                "operator": req.operator,
+                "action": "TAKE",
+                "risk_percent": str(req.risk_percent),
             }
-        )
+            inject_trace_context(payload)
+            stream_id = _redis_xadd(ALLOC_REQUEST_STREAM, payload)
+            queued.append(
+                {
+                    "allocation_id": allocation_id,
+                    "account_id": account_id,
+                    "stream_id": stream_id,
+                    "status": "QUEUED" if stream_id else "PENDING_FALLBACK",
+                }
+            )
 
     if not _redis:
         raise HTTPException(

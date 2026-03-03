@@ -28,6 +28,7 @@ from allocation.allocation_models import (
 from allocation.allocation_audit import AllocationAudit
 from allocation.signal_registry import SignalRegistry
 from config.pip_values import DEFAULT_PIP_VALUE, PipLookupError, get_pip_info
+from infrastructure.tracing import inject_trace_context
 
 EXECUTION_STREAM = "execution:queue"
 TRADE_UPDATES_CHANNEL = "trade:updates"
@@ -241,6 +242,7 @@ class AllocationService:
                 "lot_size": str(lot_size),
                 "operator": request.operator,
             }
+            inject_trace_context(plan)
             rc.xadd(EXECUTION_STREAM, plan)
         except Exception as exc:
             logger.error(f"AllocationService: failed to push execution plan: {exc}")

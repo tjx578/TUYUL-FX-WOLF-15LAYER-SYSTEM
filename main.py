@@ -16,6 +16,7 @@ from ingest.candle_builder import CandleBuilder
 from ingest.dependencies import create_finnhub_ws
 from ingest.finnhub_market_news import FinnhubMarketNews
 from ingest.finnhub_news import FinnhubNews
+from infrastructure.tracing import instrument_asyncio, instrument_redis, setup_tracer
 from journal.journal_schema import ContextJournal, DecisionJournal, VerdictType
 from pipeline import WolfConstitutionalPipeline
 from storage.startup import init_persistent_storage, shutdown_persistent_storage
@@ -31,6 +32,9 @@ PAIRS = [p["symbol"] for p in CONFIG["pairs"]["pairs"] if p.get("enabled", True)
 
 _shutdown_event: asyncio.Event | None = None
 _pipeline = WolfConstitutionalPipeline()
+_engine_tracer = setup_tracer("wolf-engine")
+instrument_asyncio()
+instrument_redis()
 
 # ── Health probe for container orchestration ────────────────────
 _ENGINE_HEALTH_PORT = int(os.getenv("ENGINE_HEALTH_PORT", "8081"))
@@ -338,50 +342,60 @@ async def run_redis_consumer() -> None:
 
 async def _analyze_pair(pair: str) -> dict[str, object] | None:
     """Run pipeline for a single pair with timeout + thread offload."""
-    try:
-        # Capture last tick timestamp for end-to-end latency tracing
-        from context.live_context_bus import LiveContextBus  # noqa: PLC0415
+    with _engine_tracer.start_as_current_span("pipeline_full") as span:
+        span.set_attribute("pair", pair)
+        span.set_attribute("pipeline.timeout_sec", _PIPELINE_TIMEOUT_SEC)
+        try:
+            # Capture last tick timestamp for end-to-end latency tracing
+            from context.live_context_bus import LiveContextBus  # noqa: PLC0415
 
-        _bus = LiveContextBus()
-        _latest: dict[str, object] | None = _bus.get_latest_tick(pair)
-        _tick_ts: float | None = (
-            float(_latest.get("local_ts") or _latest.get("timestamp") or 0.0)  # type: ignore[arg-type]
-            if _latest
-            else None
-        )
+            _bus = LiveContextBus()
+            _latest: dict[str, object] | None = _bus.get_latest_tick(pair)
+            _tick_ts: float | None = (
+                float(_latest.get("local_ts") or _latest.get("timestamp") or 0.0)  # type: ignore[arg-type]
+                if _latest
+                else None
+            )
+            if _tick_ts:
+                span.set_attribute("tick.timestamp", _tick_ts)
 
-        # Ensure pipeline.execute never blocks event loop
-        result = await asyncio.wait_for(
-            asyncio.to_thread(lambda: _pipeline.execute(pair, None, tick_ts=_tick_ts)),
-            timeout=_PIPELINE_TIMEOUT_SEC,
-        )
+            # Ensure pipeline.execute never blocks event loop
+            result = await asyncio.wait_for(
+                asyncio.to_thread(lambda: _pipeline.execute(pair, None, tick_ts=_tick_ts)),
+                timeout=_PIPELINE_TIMEOUT_SEC,
+            )
 
-        # ── Journal J1 (context) and J2 (decision) after each pipeline run ──
-        if result:
-            synthesis: dict[str, object] = dict(result.get("synthesis") or {})
-            l12: dict[str, object] = dict(result.get("l12") or {})
-            try:
-                j1 = _build_j1(pair, synthesis)
-                logger.debug(f"[J1] Context journal created for {pair}: {j1.market_regime}")
-            except Exception as j1_exc:
-                logger.warning(f"[J1] Failed to build context journal for {pair}: {j1_exc}")
-            if l12:
+            # ── Journal J1 (context) and J2 (decision) after each pipeline run ──
+            if result:
+                synthesis: dict[str, object] = dict(result.get("synthesis") or {})
+                l12: dict[str, object] = dict(result.get("l12") or {})
+                span.set_attribute("l12.verdict", str(l12.get("verdict", "")))
+                span.set_attribute("l12.confidence", str(l12.get("confidence", "")))
                 try:
-                    j2 = _build_j2(pair, synthesis, l12)
-                    logger.debug(f"[J2] Decision journal created for {pair}: verdict={j2.verdict}")
-                except Exception as j2_exc:
-                    logger.warning(f"[J2] Failed to build decision journal for {pair}: {j2_exc}")
+                    j1 = _build_j1(pair, synthesis)
+                    logger.debug(f"[J1] Context journal created for {pair}: {j1.market_regime}")
+                except Exception as j1_exc:
+                    logger.warning(f"[J1] Failed to build context journal for {pair}: {j1_exc}")
+                if l12:
+                    try:
+                        j2 = _build_j2(pair, synthesis, l12)
+                        logger.debug(f"[J2] Decision journal created for {pair}: verdict={j2.verdict}")
+                    except Exception as j2_exc:
+                        logger.warning(f"[J2] Failed to build decision journal for {pair}: {j2_exc}")
 
-        return result
-    except TimeoutError:
-        logger.error(
-            f"[Pipeline] TIMEOUT after {_PIPELINE_TIMEOUT_SEC}s for {pair} — skipping"
-        )
-        return None
-    except Exception as exc:
-        import traceback
-        logger.error(f"[Pipeline] Error for {pair}: {exc}\n{traceback.format_exc()}")
-        return None
+            return result
+        except TimeoutError as exc:
+            span.record_exception(exc)
+            logger.error(
+                f"[Pipeline] TIMEOUT after {_PIPELINE_TIMEOUT_SEC}s for {pair} — skipping"
+            )
+            return None
+        except Exception as exc:
+            import traceback
+
+            span.record_exception(exc)
+            logger.error(f"[Pipeline] Error for {pair}: {exc}\n{traceback.format_exc()}")
+            return None
 
 
 async def analysis_loop() -> None:

@@ -25,6 +25,13 @@ from redis.exceptions import ResponseError
 from allocation.allocation_models import AllocationRequest
 from allocation.allocation_service import AllocationService
 from infrastructure.redis_client import get_client
+from infrastructure.tracing import (
+    extract_trace_carrier,
+    extract_trace_context,
+    instrument_asyncio,
+    instrument_redis,
+    setup_tracer,
+)
 
 ALLOC_REQUEST_STREAM = "allocation:request"
 ALLOC_GROUP = "alloc-group"
@@ -62,6 +69,10 @@ process_memory = Gauge(
     "Python memory tracked by tracemalloc",
     ["service"],
 )
+
+_alloc_tracer = setup_tracer("wolf-allocation")
+instrument_asyncio()
+instrument_redis()
 
 
 @dataclass(frozen=True)
@@ -133,30 +144,39 @@ class AsyncAllocationWorker:
 
     async def _handle_message(self, redis_client, stream_name: str, msg_id: str, msg: dict[str, str]) -> None:
         async with self._sem:
-            alloc_requests_total.inc()
+            parent_context = extract_trace_context(extract_trace_carrier(msg))
+            with _alloc_tracer.start_as_current_span("allocation_process", context=parent_context) as span:
+                alloc_requests_total.inc()
+                span.set_attribute("redis.stream", stream_name)
+                span.set_attribute("redis.message_id", msg_id)
 
-            request = self._build_request(msg)
-            if request is None:
-                alloc_errors_total.inc()
+                request = self._build_request(msg)
+                if request is None:
+                    alloc_errors_total.inc()
+                    await redis_client.xack(stream_name, self._cfg.group, msg_id)
+                    return
+
+                span.set_attribute("signal.id", request.signal_id)
+                span.set_attribute("allocation.request_id", request.request_id)
+                span.set_attribute("allocation.account_count", len(request.account_ids))
+
+                try:
+                    with alloc_latency.time():
+                        result = await asyncio.to_thread(self._service.allocate, request)
+                except Exception as exc:
+                    alloc_errors_total.inc()
+                    span.record_exception(exc)
+                    logger.exception("Allocation worker failed request_id=%s err=%s", request.request_id, exc)
+                    return
+
+                for account_result in result.account_results:
+                    if account_result.allowed:
+                        alloc_success.labels(account_id=account_result.account_id).inc()
+                    else:
+                        reason = account_result.reason or "unknown"
+                        alloc_reject.labels(account_id=account_result.account_id, reason=reason).inc()
+
                 await redis_client.xack(stream_name, self._cfg.group, msg_id)
-                return
-
-            try:
-                with alloc_latency.time():
-                    result = await asyncio.to_thread(self._service.allocate, request)
-            except Exception as exc:
-                alloc_errors_total.inc()
-                logger.exception("Allocation worker failed request_id=%s err=%s", request.request_id, exc)
-                return
-
-            for account_result in result.account_results:
-                if account_result.allowed:
-                    alloc_success.labels(account_id=account_result.account_id).inc()
-                else:
-                    reason = account_result.reason or "unknown"
-                    alloc_reject.labels(account_id=account_result.account_id, reason=reason).inc()
-
-            await redis_client.xack(stream_name, self._cfg.group, msg_id)
 
     def _build_request(self, msg: dict[str, str]) -> AllocationRequest | None:
         signal_id = str(msg.get("signal_id", "")).strip()
