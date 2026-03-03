@@ -80,7 +80,7 @@ from api.risk_events_routes import router as risk_events_router  # noqa: E402
 from api.ws_routes import router as ws_router  # noqa: E402
 
 # ── Fixed routers ─────────────────────────────────────────────────────────────
-from dashboard.backend.trade_input_api import write_router  # BUG-1/2/3 FIXED  # noqa: E402
+from api.allocation_router import write_router  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
