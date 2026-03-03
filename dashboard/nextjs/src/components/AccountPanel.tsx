@@ -42,7 +42,8 @@ export function AccountCard({ account, selected, onClick }: AccountCardProps) {
     <Panel
       glow={accountGlow(account.risk_state ?? "", selected)}
       className={`cursor-pointer transition-all duration-200${pulse ? " live-pulse" : ""}`}
-      onClick={onClick} children={undefined}    >
+      onClick={onClick}
+    >
       {/* Header row */}
       <div
         style={{
@@ -201,7 +202,7 @@ export function CreateAccountForm({ onCreated, onCancel }: CreateAccountFormProp
   };
 
   return (
-    <Panel className="w-96 flex flex-col gap-4" children={undefined}>
+    <Panel className="w-96 flex flex-col gap-4">
       <div
         style={{
           fontSize: 13,
