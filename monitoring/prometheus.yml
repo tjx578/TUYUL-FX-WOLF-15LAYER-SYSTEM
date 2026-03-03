@@ -1,22 +1,11 @@
 global:
   scrape_interval: 5s
-  evaluation_interval: 5s
 
 scrape_configs:
-  - job_name: 'wolf-api'
-    metrics_path: /metrics
-    static_configs:
-      - targets: ['app:8000']
-
   - job_name: 'wolf-engine'
-    metrics_path: /metrics
     static_configs:
-      - targets: ['app:8000']
+      - targets: ['wolf-engine:9101']
 
   - job_name: 'wolf-allocation'
     static_configs:
       - targets: ['wolf-allocation:9102']
-
-  - job_name: 'wolf-execution'
-    static_configs:
-      - targets: ['wolf-execution:9103']

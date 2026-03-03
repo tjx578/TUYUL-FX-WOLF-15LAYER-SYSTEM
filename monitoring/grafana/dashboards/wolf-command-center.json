@@ -9,39 +9,61 @@
   "panels": [
     {
       "type": "timeseries",
-      "title": "Pipeline Latency (p95)",
+      "title": "Pipeline Latency (p95, p99)",
       "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0},
-      "targets": [{"expr": "histogram_quantile(0.95, sum(rate(wolf_pipeline_duration_seconds_bucket[5m])) by (le))", "refId": "A"}]
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(wolf_pipeline_duration_seconds_bucket[5m])) by (le))",
+          "legendFormat": "p95",
+          "refId": "A"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum(rate(wolf_pipeline_duration_seconds_bucket[5m])) by (le))",
+          "legendFormat": "p99",
+          "refId": "B"
+        }
+      ]
     },
     {
       "type": "timeseries",
-      "title": "Allocation Success Rate",
+      "title": "Allocation Approval Rate per Account",
       "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0},
-      "targets": [{"expr": "sum(rate(wolf_alloc_success_total[5m])) / clamp_min(sum(rate(wolf_alloc_success_total[5m])) + sum(rate(wolf_alloc_reject_total[5m])), 1)", "refId": "A"}]
+      "targets": [
+        {
+          "expr": "sum by (account_id) (rate(wolf_alloc_success_total[5m])) / clamp_min(sum by (account_id) (rate(wolf_alloc_success_total[5m])) + sum by (account_id) (rate(wolf_alloc_reject_total[5m])), 1)",
+          "refId": "A"
+        }
+      ]
     },
     {
-      "type": "timeseries",
-      "title": "Execution Latency (p95)",
+      "type": "heatmap",
+      "title": "Execution Latency Histogram",
       "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8},
-      "targets": [{"expr": "histogram_quantile(0.95, sum(rate(wolf_execution_latency_seconds_bucket[5m])) by (le))", "refId": "A"}]
+      "targets": [
+        {
+          "expr": "sum(rate(wolf_execution_latency_seconds_bucket[5m])) by (le)",
+          "format": "heatmap",
+          "refId": "A"
+        }
+      ]
     },
     {
       "type": "timeseries",
-      "title": "Signals / Minute",
+      "title": "Signal Rate per Minute",
       "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8},
       "targets": [{"expr": "sum(rate(wolf_signal_total[1m])) * 60", "refId": "A"}]
     },
     {
-      "type": "bargauge",
-      "title": "Rejection Reasons Breakdown",
+      "type": "gauge",
+      "title": "Account Drawdown Gauge",
       "gridPos": {"h": 8, "w": 12, "x": 0, "y": 16},
-      "targets": [{"expr": "sum by (reason) (increase(wolf_alloc_reject_total[15m]))", "refId": "A"}]
+      "targets": [{"expr": "wolf_account_drawdown_percent", "refId": "A"}]
     },
     {
       "type": "timeseries",
-      "title": "Per-Account Risk Buffer",
+      "title": "Memory per Service",
       "gridPos": {"h": 8, "w": 12, "x": 12, "y": 16},
-      "targets": [{"expr": "wolf_account_risk_buffer_percent", "refId": "A"}]
+      "targets": [{"expr": "wolf_process_memory_bytes", "refId": "A"}]
     },
     {
       "type": "timeseries",
@@ -50,10 +72,11 @@
       "targets": [{"expr": "wolf_redis_stream_lag", "refId": "A"}]
     },
     {
-      "type": "timeseries",
-      "title": "Memory Usage per Service",
+      "type": "traces",
+      "title": "Trace Viewer (Tempo)",
       "gridPos": {"h": 8, "w": 12, "x": 12, "y": 24},
-      "targets": [{"expr": "wolf_process_memory_bytes", "refId": "A"}]
+      "datasource": {"type": "tempo", "uid": "tempo"},
+      "targets": [{"queryType": "traceql", "query": "{}", "refId": "A"}]
     }
   ],
   "refresh": "10s",
@@ -65,6 +88,6 @@
   "timepicker": {},
   "timezone": "browser",
   "title": "Wolf Institutional Command Center",
-  "version": 1,
+  "version": 2,
   "weekStart": ""
 }

@@ -20,6 +20,13 @@ from redis.exceptions import ResponseError
 
 from execution.broker_executor import BrokerExecutor, ExecutionRequest, OrderAction
 from infrastructure.redis_client import get_client
+from infrastructure.tracing import (
+    extract_trace_carrier,
+    extract_trace_context,
+    instrument_asyncio,
+    instrument_redis,
+    setup_tracer,
+)
 
 EXECUTION_STREAM = "execution:queue"
 EXEC_GROUP = "exec-group"
@@ -44,6 +51,10 @@ process_memory = Gauge(
     "Python memory tracked by tracemalloc",
     ["service"],
 )
+
+_exec_tracer = setup_tracer("wolf-execution")
+instrument_asyncio()
+instrument_redis()
 
 
 @dataclass(frozen=True)
@@ -116,28 +127,39 @@ class AsyncExecutionWorker:
 
     async def _handle_message(self, redis_client, stream_name: str, msg_id: str, msg: dict[str, str]) -> None:
         async with self._sem:
-            try:
-                request = self._build_execution_request(msg)
-            except ValueError as exc:
-                execution_errors_total.inc()
-                logger.error("Execution worker dropped malformed message id=%s err=%s", msg_id, exc)
-                await redis_client.xack(stream_name, self._cfg.group, msg_id)
-                return
+            parent_context = extract_trace_context(extract_trace_carrier(msg))
+            with _exec_tracer.start_as_current_span("execution_send", context=parent_context) as span:
+                span.set_attribute("redis.stream", stream_name)
+                span.set_attribute("redis.message_id", msg_id)
+                span.set_attribute("signal.id", str(msg.get("signal_id", "")))
 
-            with execution_latency.time():
-                result = await asyncio.to_thread(self._executor.execute, request)
+                try:
+                    request = self._build_execution_request(msg)
+                except ValueError as exc:
+                    execution_errors_total.inc()
+                    span.record_exception(exc)
+                    logger.error("Execution worker dropped malformed message id=%s err=%s", msg_id, exc)
+                    await redis_client.xack(stream_name, self._cfg.group, msg_id)
+                    return
 
-            orders_sent.inc()
-            if result.success:
-                await redis_client.xack(stream_name, self._cfg.group, msg_id)
-            else:
-                orders_failed.inc()
-                logger.error(
-                    "Execution failed request_id=%s code=%s err=%s",
-                    request.request_id,
-                    result.error_code,
-                    result.error_msg,
-                )
+                span.set_attribute("execution.request_id", request.request_id)
+                span.set_attribute("account.id", request.account_id)
+                span.set_attribute("symbol", request.symbol)
+
+                with execution_latency.time():
+                    result = await asyncio.to_thread(self._executor.execute, request)
+
+                orders_sent.inc()
+                if result.success:
+                    await redis_client.xack(stream_name, self._cfg.group, msg_id)
+                else:
+                    orders_failed.inc()
+                    logger.error(
+                        "Execution failed request_id=%s code=%s err=%s",
+                        request.request_id,
+                        result.error_code,
+                        result.error_msg,
+                    )
 
     @staticmethod
     def _build_execution_request(msg: dict[str, str]) -> ExecutionRequest:
