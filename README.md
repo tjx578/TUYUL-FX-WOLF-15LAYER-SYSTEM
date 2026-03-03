@@ -99,6 +99,26 @@ Sistem menggunakan **Finnhub** sebagai satu-satunya data provider untuk:
 - `tests/` : unit tests untuk gate/news/cancel/prop-firm
 - `scripts/` : run scripts + health check
 
+## 🏗️ Production Service Layout (Distributed)
+
+Repository now includes service-scoped entrypoints under `services/` to support
+multi-service deployment without duplicating core logic:
+
+- `services/api/` → public FastAPI service (read-only governance boundary)
+- `services/engine/` → engine runner (no public HTTP)
+- `services/ingest/` → ingest worker
+- `services/orchestrator/` → governance mode/compliance runtime
+- `services/worker/` → scheduled jobs
+
+Shared contracts and state registry:
+
+- `contracts/` → DTO + websocket event contracts
+- `state/` → Redis keys/channels/consumer groups
+- `infrastructure/railway/service-map.md` → deployment responsibility matrix
+
+Design rule: preserve constitutional separation (analysis ≠ execution authority,
+dashboard/API ≠ decision authority, Layer-12 remains sole decision gate).
+
 ---
 
 ## 🧪 Sandbox & Experimental Modules

@@ -2,4 +2,4 @@
 set -euo pipefail
 
 export RUN_MODE="engine-only"
-exec python main.py
+exec python -m services.engine.runner
