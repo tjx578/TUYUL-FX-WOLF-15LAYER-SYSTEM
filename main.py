@@ -142,7 +142,7 @@ async def _run_http_server() -> None:
     await server.serve()
 
 
-# ── Run mode: 'all' (default/dev), 'engine-only', 'ingest-only' ─
+# ── Run mode: 'all' (default/dev), 'engine-only', 'ingest-only', 'api-only' ─
 RUN_MODE = os.getenv("RUN_MODE", "all").lower()
 
 _MAX_TASK_RESTARTS = int(os.getenv("MAX_TASK_RESTARTS", "5"))
@@ -561,13 +561,14 @@ async def main() -> None:
         asyncio.create_task(_health_probe.start(), name="HealthProbe"),
     ]
 
-    # ── HTTP server (always runs — serves FastAPI endpoints) ────────
-    tasks.append(
-        asyncio.create_task(
-            _supervised_task("HTTPServer", _run_http_server),
-            name="HTTPServer",
+    # ── HTTP server (only in all/api-only mode) ─────────────────────
+    if RUN_MODE in ("all", "api-only"):
+        tasks.append(
+            asyncio.create_task(
+                _supervised_task("HTTPServer", _run_http_server),
+                name="HTTPServer",
+            )
         )
-    )
 
     if context_mode == "redis":
         # ── Production: engine reads from Redis (ingest is a separate container)
@@ -614,6 +615,11 @@ async def main() -> None:
                 "Running ingest + engine in ONE process (dev mode). "
                 "Use separate containers or RUN_MODE=engine-only|ingest-only for production."
             )
+
+    if RUN_MODE == "engine-only":
+        logger.info("RUN_MODE=engine-only — HTTP API is disabled by design")
+    elif RUN_MODE == "ingest-only":
+        logger.info("RUN_MODE=ingest-only — HTTP API is disabled by design")
 
     logger.info(f"System initialized. Running {len(tasks)} concurrent tasks.")
 
