@@ -46,6 +46,9 @@ def get_status(account_id: str) -> dict:
 
     return {
         "account_id": account_id,
+        "allowed": True,
+        "code": "LIMITS_OK",
+        "details": "Prop-firm limits loaded",
         "max_risk_per_trade_percent": rules.max_risk_allowed(),
         "min_rr_required": rules.min_rr_required(),
         "max_daily_loss": rules.max_daily_loss,

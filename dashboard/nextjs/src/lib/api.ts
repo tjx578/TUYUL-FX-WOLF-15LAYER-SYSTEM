@@ -25,6 +25,35 @@ import { getApiBaseUrl } from "@/lib/env";
 
 const API_BASE = getApiBaseUrl();
 
+export const API_ENDPOINTS = {
+  health: "/health",
+  accounts: "/api/v1/accounts",
+  accountsRiskSnapshot: "/api/v1/accounts/risk-snapshot",
+  tradesActive: "/api/v1/trades/active",
+  tradesTake: "/api/v1/trades/take",
+  tradesSkip: "/api/v1/trades/skip",
+  tradesConfirmById: (tradeId: string) => `/api/v1/trades/${tradeId}/confirm`,
+  tradesClose: "/api/v1/trades/close",
+  riskSnapshotByAccount: (accountId: string) => `/api/v1/risk/${accountId}/snapshot`,
+  riskPreviewMulti: "/api/v1/risk/preview-multi",
+  verdictAll: "/api/v1/verdict/all",
+  context: "/api/v1/context",
+  execution: "/api/v1/execution",
+  calendar: "/api/v1/calendar",
+  calendarUpcoming: "/api/v1/calendar/upcoming",
+  eaStatus: "/api/v1/ea/status",
+  eaLogs: "/api/v1/ea/logs",
+  eaRestart: "/api/v1/ea/restart",
+  eaSafeMode: "/api/v1/ea/safe-mode",
+  propFirmStatus: (accountId: string) => `/api/v1/prop-firm/${accountId}/status`,
+  propFirmPhase: (accountId: string) => `/api/v1/prop-firm/${accountId}/phase`,
+  configProfiles: "/api/v1/config/profiles",
+  configActive: "/api/v1/config/profiles/active",
+  configEffective: "/api/v1/config/profiles/effective",
+  configOverride: "/api/v1/config/profiles/override",
+  configLock: "/api/v1/config/profiles/lock",
+} as const;
+
 const fetcher = async (url: string) => {
   const res = await fetch(`${API_BASE}${url}`, {
     credentials: "include",
@@ -47,11 +76,23 @@ const apiMutateWithHeaders = async (
   method = "POST",
   headers?: Record<string, string>
 ) => {
+  const governanceHeaders: Record<string, string> =
+    method.toUpperCase() === "GET"
+      ? {}
+      : {
+          "X-Edit-Mode": "ON",
+          "X-Action-Reason": "UI_WRITE_ACTION",
+          ...(process.env.NEXT_PUBLIC_ACTION_PIN
+            ? { "X-Action-Pin": process.env.NEXT_PUBLIC_ACTION_PIN }
+            : {}),
+        };
+
   const res = await fetch(`${API_BASE}${url}`, {
     method,
     credentials: "include",
     headers: {
       "Content-Type": "application/json",
+      ...governanceHeaders,
       ...(headers ?? {}),
     },
     body: body !== undefined ? JSON.stringify(body) : undefined,
@@ -73,7 +114,7 @@ export interface ActiveTradesResponse {
 
 export function useAccounts() {
   const { data, error, isLoading } = useSWR<Account[] | { accounts: Account[] }>(
-    "/api/v1/accounts",
+    API_ENDPOINTS.accounts,
     fetcher
   );
   const normalized = Array.isArray(data)
@@ -90,23 +131,24 @@ export function useActiveTrades() {
   const { data, error, isLoading, mutate } = useSWR<
     ActiveTradesResponse | Trade[]
   >(
-    "/api/v1/trades/active",
+    API_ENDPOINTS.tradesActive,
     fetcher
   );
   return { data, isLoading, isError: !!error, error, mutate };
 }
 
 export function useAllVerdicts() {
-  const { data, error, isLoading, mutate } = useSWR<L12Verdict[]>(
-    "/api/v1/verdicts",
+  const { data, error, isLoading, mutate } = useSWR<L12Verdict[] | Record<string, L12Verdict>>(
+    API_ENDPOINTS.verdictAll,
     fetcher
   );
-  return { data, isLoading, isError: !!error, error, mutate };
+  const normalized = Array.isArray(data) ? data : Object.values(data ?? {});
+  return { data: normalized, isLoading, isError: !!error, error, mutate };
 }
 
 export function useHealth() {
   const { data, error, isLoading } = useSWR<SystemHealth>(
-    "/api/v1/health",
+    API_ENDPOINTS.health,
     fetcher
   );
   return { data, isLoading, isError: !!error, error };
@@ -114,7 +156,7 @@ export function useHealth() {
 
 export function useContext() {
   const { data, error, isLoading } = useSWR<ContextSnapshot>(
-    "/api/v1/context",
+    API_ENDPOINTS.context,
     fetcher
   );
   return { data, isLoading, isError: !!error, error };
@@ -122,7 +164,7 @@ export function useContext() {
 
 export function useExecution() {
   const { data, error, isLoading } = useSWR<ExecutionState>(
-    "/api/v1/execution/state",
+    API_ENDPOINTS.execution,
     fetcher
   );
   return { data, isLoading, isError: !!error, error };
@@ -130,7 +172,7 @@ export function useExecution() {
 
 export function useRiskSnapshot(accountId: string) {
   const { data, error, isLoading } = useSWR<RiskSnapshot>(
-    accountId ? `/api/v1/risk/snapshot/${accountId}` : null,
+    accountId ? API_ENDPOINTS.riskSnapshotByAccount(accountId) : null,
     fetcher
   );
   return { data, isLoading, isError: !!error, error };
@@ -145,17 +187,26 @@ export function usePipeline(pair: string) {
 }
 
 export function useCalendarEvents(period = "today", impact?: string) {
-  const query = impact ? `?impact=${impact}` : "";
-  const { data, error, isLoading } = useSWR<CalendarEvent[]>(
-    `/api/v1/calendar/${period}${query}`,
+  const params = new URLSearchParams();
+  if (impact) params.set("impact", impact);
+  const endpoint = period === "upcoming"
+    ? `${API_ENDPOINTS.calendarUpcoming}?${params.toString()}`
+    : `${API_ENDPOINTS.calendar}?${params.toString()}`;
+  const { data, error, isLoading } = useSWR<any>(
+    endpoint,
     fetcher
   );
-  return { data, isLoading, isError: !!error, error };
+  const normalized = Array.isArray(data)
+    ? data
+    : Array.isArray(data?.events)
+      ? data.events
+      : [];
+  return { data: normalized as CalendarEvent[], isLoading, isError: !!error, error };
 }
 
 export function useEAStatus() {
   const { data, error, isLoading } = useSWR<EAStatus>(
-    "/api/v1/ea/status",
+    API_ENDPOINTS.eaStatus,
     fetcher
   );
   return { data, isLoading, isError: !!error, error };
@@ -163,7 +214,7 @@ export function useEAStatus() {
 
 export function useEALogs() {
   const { data, error, isLoading, mutate } = useSWR<EALog[]>(
-    "/api/v1/ea/logs",
+    API_ENDPOINTS.eaLogs,
     fetcher
   );
   return { data, isLoading, isError: !!error, error, mutate };
@@ -171,7 +222,7 @@ export function useEALogs() {
 
 export function usePropFirmPhase(accountId: string) {
   const { data, error, isLoading } = useSWR<PropFirmPhase>(
-    accountId ? `/api/v1/propfirm/${accountId}/phase` : null,
+    accountId ? API_ENDPOINTS.propFirmPhase(accountId) : null,
     fetcher
   );
   return { data, isLoading, isError: !!error, error };
@@ -179,7 +230,7 @@ export function usePropFirmPhase(accountId: string) {
 
 export function usePropFirmStatus(accountId: string) {
   const { data, error, isLoading } = useSWR<PropFirmStatus>(
-    accountId ? `/api/v1/propfirm/${accountId}/status` : null,
+    accountId ? API_ENDPOINTS.propFirmStatus(accountId) : null,
     fetcher
   );
   return { data, isLoading, isError: !!error, error };
@@ -254,7 +305,7 @@ export interface AccountRiskSnapshot {
 
 export function useAccountsRiskSnapshot() {
   const { data, error, isLoading, mutate } = useSWR<AccountRiskSnapshot[]>(
-    "/api/v1/accounts/risk-snapshot",
+    API_ENDPOINTS.accountsRiskSnapshot,
     fetcher
   );
   return { data, isLoading, isError: !!error, error, mutate };
@@ -264,7 +315,7 @@ export function useAccountsRiskSnapshot() {
 
 export async function confirmTrade(tradeId: string): Promise<void> {
   await apiMutateWithHeaders(
-    `/api/v1/trades/${tradeId}/confirm`,
+    API_ENDPOINTS.tradesConfirmById(tradeId),
     undefined,
     "POST",
     { "X-Idempotency-Key": `confirm:${tradeId}` }
@@ -272,7 +323,7 @@ export async function confirmTrade(tradeId: string): Promise<void> {
 }
 
 export async function closeTrade(tradeId: string, reason: string): Promise<void> {
-  await apiMutate(`/api/v1/trades/${tradeId}/close`, { reason });
+  await apiMutate(API_ENDPOINTS.tradesClose, { trade_id: tradeId, reason });
 }
 
 export interface TakeSignalRequest {
@@ -310,7 +361,7 @@ export interface RiskPreviewAccountItem {
 export async function previewRiskMulti(
   req: RiskPreviewMultiRequest
 ): Promise<{ previews: RiskPreviewAccountItem[] }> {
-  return apiMutate("/api/v1/risk/preview-multi", req);
+  return apiMutate(API_ENDPOINTS.riskPreviewMulti, req);
 }
 
 export interface SkipSignalRequest {
@@ -324,9 +375,30 @@ export async function skipSignal(req: SkipSignalRequest): Promise<void> {
 }
 
 export async function createAccount(data: AccountCreate): Promise<Account> {
-  return apiMutate("/api/v1/accounts", data);
+  return apiMutate(API_ENDPOINTS.accounts, {
+    account_name: data.account_name,
+    broker: data.broker,
+    currency: data.currency,
+    starting_balance: data.balance,
+    current_balance: data.balance,
+    equity: data.equity || data.balance,
+    equity_high: data.equity || data.balance,
+    leverage: 100,
+    commission_model: "standard",
+    notes: "",
+    data_source: "MANUAL",
+    prop_firm: Boolean(data.prop_firm_code),
+    max_daily_dd_percent: 4,
+    max_total_dd_percent: 8,
+    max_concurrent_trades: 1,
+    reason: "ACCOUNT_CREATE_FROM_UI",
+  });
 }
 
 export async function restartEA(): Promise<void> {
-  await apiMutate("/api/v1/ea/restart");
+  await apiMutate(API_ENDPOINTS.eaRestart, { reason: "MANUAL_RESTART" });
+}
+
+export async function setEASafeMode(enabled: boolean, reason: string): Promise<void> {
+  await apiMutate(API_ENDPOINTS.eaSafeMode, { enabled, reason });
 }

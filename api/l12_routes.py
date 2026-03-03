@@ -71,6 +71,12 @@ def fetch_all_verdicts() -> dict[str, Any]:
     return verdicts
 
 
+@router.get("/api/v1/verdict")
+def fetch_all_verdicts_alias() -> dict[str, Any]:
+    """Compatibility alias: return verdicts for all available pairs."""
+    return fetch_all_verdicts()
+
+
 @router.get("/api/v1/context")
 def fetch_context() -> dict[str, Any]:
     """Get live context snapshot."""
