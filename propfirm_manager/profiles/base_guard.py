@@ -1,4 +1,34 @@
 """
+Base Prop Firm Guard
+
+Abstract base class for prop firm rule enforcement.
+"""
+
+from abc import ABC, abstractmethod
+from typing import Any
+
+from accounts.account_model import RiskSeverity
+
+
+class GuardResult:
+    """Result of a prop firm guard check."""
+
+    def __init__(
+        self,
+        allowed: bool,
+        code: str,
+        severity: RiskSeverity,
+        details: str,
+    ):
+        """
+        Initialize guard result.
+
+        Args:
+            allowed: Whether trade is allowed
+            code: Result code (ALLOW, WARN_*, DENY_*)
+            severity: Risk severity level
+            details: Human-readable explanation
+        """
 Base Prop Firm Guard — abstract interface for all prop firm guards.
 """
 from abc import ABC, abstractmethod

@@ -15,8 +15,8 @@ from uuid import uuid4
 import pytest  # pyright: ignore[reportMissingImports]
 import yaml  # pyright: ignore[reportMissingModuleSource]
 
-from dashboard.backend.risk_engine import RiskEngine
-from dashboard.backend.schemas import (
+from accounts.risk_engine import RiskEngine
+from accounts.account_model import (
     AccountState,
     Layer12Signal,
     RiskMode,

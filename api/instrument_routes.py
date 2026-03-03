@@ -17,7 +17,7 @@ from typing import Optional
 import redis as redis_lib
 from fastapi import APIRouter, Depends, HTTPException
 
-from dashboard.backend.auth import verify_token
+from api.middleware.auth import verify_token
 from infrastructure.redis_url import get_redis_url
 
 logger = logging.getLogger(__name__)
