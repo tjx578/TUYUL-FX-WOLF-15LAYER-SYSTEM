@@ -1,3 +1,4 @@
+"""FTMO profile package."""
 <<<<<<< Updated upstream
 <<<<<<< Updated upstream
 """

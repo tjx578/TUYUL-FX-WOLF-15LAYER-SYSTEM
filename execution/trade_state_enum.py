@@ -1,4 +1,69 @@
 """
+Trade State Enum — canonical state machine states for dashboard + execution.
+
+Maps between execution/state_machine.py (engine states) and
+the dashboard conceptual model defined in copilot-instructions.md.
+"""
+from __future__ import annotations
+
+from enum import StrEnum
+
+
+class TradeState(StrEnum):
+    """
+    Dashboard-level conceptual trade states.
+
+    Mapping to execution/state_machine.py:
+      SIGNAL_CREATED → IDLE (with attached signal, no live order)
+      PENDING_PLACED  → PENDING_ACTIVE
+      PENDING_FILLED / TRADE_OPEN → FILLED (position live)
+      PENDING_CANCELLED / SIGNAL_EXPIRED / TRADE_CLOSED / TRADE_ABORTED → terminal
+    """
+
+    SIGNAL_CREATED = "SIGNAL_CREATED"
+    PENDING_PLACED = "PENDING_PLACED"
+    PENDING_FILLED = "PENDING_FILLED"
+    TRADE_OPEN = "TRADE_OPEN"
+    TRADE_PARTIAL_CLOSED = "TRADE_PARTIAL_CLOSED"
+    TRADE_CLOSED = "TRADE_CLOSED"
+    PENDING_CANCELLED = "PENDING_CANCELLED"
+    SIGNAL_EXPIRED = "SIGNAL_EXPIRED"
+    TRADE_ABORTED = "TRADE_ABORTED"
+
+
+TERMINAL_STATES: frozenset[TradeState] = frozenset({
+    TradeState.TRADE_CLOSED,
+    TradeState.PENDING_CANCELLED,
+    TradeState.SIGNAL_EXPIRED,
+    TradeState.TRADE_ABORTED,
+})
+
+ACTIVE_STATES: frozenset[TradeState] = frozenset({
+    TradeState.SIGNAL_CREATED,
+    TradeState.PENDING_PLACED,
+    TradeState.PENDING_FILLED,
+    TradeState.TRADE_OPEN,
+    TradeState.TRADE_PARTIAL_CLOSED,
+})
+
+# Valid transitions map
+VALID_TRANSITIONS: dict[TradeState, frozenset[TradeState]] = {
+    TradeState.SIGNAL_CREATED: frozenset({TradeState.PENDING_PLACED, TradeState.SIGNAL_EXPIRED}),
+    TradeState.PENDING_PLACED: frozenset({TradeState.PENDING_FILLED, TradeState.PENDING_CANCELLED}),
+    TradeState.PENDING_FILLED: frozenset({TradeState.TRADE_OPEN}),
+    TradeState.TRADE_OPEN: frozenset({TradeState.TRADE_PARTIAL_CLOSED, TradeState.TRADE_CLOSED, TradeState.TRADE_ABORTED}),
+    TradeState.TRADE_PARTIAL_CLOSED: frozenset({TradeState.TRADE_CLOSED, TradeState.TRADE_ABORTED}),
+    TradeState.TRADE_CLOSED: frozenset(),
+    TradeState.PENDING_CANCELLED: frozenset(),
+    TradeState.SIGNAL_EXPIRED: frozenset(),
+    TradeState.TRADE_ABORTED: frozenset(),
+}
+
+
+def is_valid_transition(from_state: TradeState, to_state: TradeState) -> bool:
+    """Check whether a state transition is allowed."""
+    return to_state in VALID_TRANSITIONS.get(from_state, frozenset())
+"""
 <<<<<<< Updated upstream
 <<<<<<< Updated upstream
 Extended Trade State Machine - 10 States
