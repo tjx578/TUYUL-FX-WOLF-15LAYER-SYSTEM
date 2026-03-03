@@ -1,9 +1,5 @@
-<<<<<<< Updated upstream
-"""
-Prop Firm Profiles Package
+"""Prop firm guard profiles package."""
 
-Contains guard implementations for different prop firms.
-"""
-=======
-"""Propfirm profiles package."""
->>>>>>> Stashed changes
+from propfirm_manager.profiles.base_guard import BasePropFirmGuard, GuardResult
+
+__all__ = ["BasePropFirmGuard", "GuardResult"]
