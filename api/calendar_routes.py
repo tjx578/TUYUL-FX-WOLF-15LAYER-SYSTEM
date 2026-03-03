@@ -162,13 +162,11 @@ def _is_news_locked(r: redis_lib.Redis | None) -> tuple[bool, str | None]:
     """Return (locked, reason)."""
     if not r:
         return False, None
-    try:
+    with contextlib.suppress(Exception):
         raw = r.get("NEWS_LOCK:STATE")
         if raw:
             data = json.loads(raw) # type: ignore
             return data.get("locked", False), data.get("reason")
-    except Exception:
-        pass
     return False, None
 
 
@@ -191,12 +189,10 @@ async def get_calendar(
     # Cache check
     events: list[dict] = []
     if r:
-        try:
+        with contextlib.suppress(Exception):
             cached = r.get(cache_key)
             if cached is not None and isinstance(cached, str):
                 events = json.loads(cached)
-        except Exception:
-            pass
 
     # Fetch if not cached
     if not events:
@@ -263,12 +259,10 @@ async def upcoming_events(
         cache_key = f"CALENDAR:{date_str}"
         events: list[dict] = []
         if r:
-            try:
+            with contextlib.suppress(Exception):
                 cached = r.get(cache_key)
                 if cached is not None and isinstance(cached, str):
                     events = json.loads(cached)
-            except Exception:
-                pass
         if not events:
             events = await _fetch_finnhub_calendar(date_str)
 

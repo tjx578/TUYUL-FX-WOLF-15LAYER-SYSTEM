@@ -9,6 +9,7 @@ BUG FIXES APPLIED:
 """
 
 import logging
+import contextlib
 import threading
 import uuid
 from datetime import UTC, datetime
@@ -314,12 +315,10 @@ async def _confirm_trade_internal(trade_id: str, idempotency_key: str | None) ->
     trade = _atomic_transition_intended_to_pending(trade_id)
 
     trade_journal_automation_service.on_trade_confirmed(trade)
-    try:
+    with contextlib.suppress(Exception):
         from api.ws_routes import publish_live_update  # noqa: PLC0415
 
         await publish_live_update("trade_confirmed", trade)
-    except Exception:
-        pass
 
     response = {"trade_id": trade_id, "status": "PENDING"}
     if idempotency_key:
@@ -421,12 +420,10 @@ async def take_signal(req: TakeSignalRequest) -> dict:
     trade_journal_automation_service.on_signal_taken(trade)
 
     # Push to live websocket feed (best-effort)
-    try:
+    with contextlib.suppress(Exception):
         from api.ws_routes import publish_live_update  # noqa: PLC0415
         await publish_live_update("trade_intended", trade)
         await publish_live_update("signal", signal_payload)
-    except Exception:
-        pass
 
     logger.info("Trade INTENDED: %s %s %s", trade_id, req.pair, req.direction)
     return {
@@ -516,11 +513,9 @@ async def skip_signal(req: SkipSignalRequest) -> dict:
     import json
     _redis_set(f"JOURNAL:{entry_id}", json.dumps(journal_entry), ex=604800)
     trade_journal_automation_service.on_signal_skipped(req.signal_id, req.pair, req.reason or "MANUAL_SKIP")
-    try:
+    with contextlib.suppress(Exception):
         from api.ws_routes import publish_live_update  # noqa: PLC0415
         await publish_live_update("signal_skipped", journal_entry)
-    except Exception:
-        pass
     logger.info("Signal SKIPPED: %s %s reason=%s", req.signal_id, req.pair, req.reason)
     return {"logged": True, "entry_id": entry_id, "journal_type": "J2"}
 
@@ -576,11 +571,9 @@ async def close_trade(req: CloseTradeRequest) -> dict:
     _trade_ledger[req.trade_id] = trade
     _redis_set(f"TRADE:{req.trade_id}", json.dumps(trade), ex=604800)
     trade_journal_automation_service.on_trade_closed(trade, req.reason or "MANUAL_CLOSE")
-    try:
+    with contextlib.suppress(Exception):
         from api.ws_routes import publish_live_update  # noqa: PLC0415
         await publish_live_update("trade_closed", trade)
-    except Exception:
-        pass
 
     logger.info("Trade CLOSED: %s reason=%s pnl=%s", req.trade_id, req.reason, req.pnl)
     return {

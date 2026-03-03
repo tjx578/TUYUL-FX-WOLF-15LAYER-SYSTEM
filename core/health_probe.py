@@ -24,6 +24,7 @@ Docker Compose healthcheck example::
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import time
 
@@ -101,13 +102,12 @@ class HealthProbe:
             writer.write(response.encode())
             await writer.drain()
         except Exception:
-            pass  # probe failures must never crash the service
+            # probe failures must never crash the service
+            return
         finally:
             writer.close()
-            try:
+            with contextlib.suppress(Exception):
                 await writer.wait_closed()
-            except Exception:
-                pass
 
     def _liveness_response(self) -> str:
         uptime = int(time.monotonic() - self._started_at)

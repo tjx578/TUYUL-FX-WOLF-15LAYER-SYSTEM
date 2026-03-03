@@ -10,7 +10,9 @@ class QuantumReflectiveEngine:
     """Entropy-based reflective field: αβγ gradient, energy, flux."""
 
     def __init__(self, alpha_weight: float = 0.4, beta_weight: float = 0.35, gamma_weight: float = 0.25) -> None:
-        self.aw = alpha_weight; self.bw = beta_weight; self.gw = gamma_weight
+        self.aw = alpha_weight
+        self.bw = beta_weight
+        self.gw = gamma_weight
 
     def evaluate_reflective_entropy(self, closes: List[float]) -> Dict[str, Any]:
         if len(closes) < 20:
@@ -25,14 +27,18 @@ class QuantumReflectiveEngine:
         g = abs(sum(rets[-50:]) / 50) if len(rets) >= 50 else abs(sum(rets) / len(rets))
         abg = round(a * self.aw + b * self.bw + g * self.gw, 6)
         re = round(max(0.0, min(1.0, 1.0 - abg * 100)), 3)
-        if abg <= 0.0015 and re >= 0.95: fs = "Stable"
-        elif abg <= 0.0025 and re >= 0.90: fs = "High_Flux"
-        else: fs = "Transitional"
+        if abg <= 0.0015 and re >= 0.95:
+            fs = "Stable"
+        elif abg <= 0.0025 and re >= 0.90:
+            fs = "High_Flux"
+        else:
+            fs = "Transitional"
         return {"alpha": round(a, 6), "beta": round(b, 6), "gamma": round(g, 6),
                 "alpha_beta_gamma": abg, "reflective_energy": re, "flux_state": fs}
 
     def _std(self, vals: List[float]) -> float:
-        if not vals or len(vals) < 2: return 0.0
+        if not vals or len(vals) < 2:
+            return 0.0
         m = sum(vals) / len(vals)
         return math.sqrt(sum((x - m) ** 2 for x in vals) / len(vals))
 
@@ -44,21 +50,27 @@ class HybridReflectiveCore:
                  quantum_weight: float = 0.4, macro_weight: float = 0.6) -> None:
         self.quantum = QuantumReflectiveEngine()
         self.vault = VaultMacroLayer(ema_period=ema_period, sma_periods=sma_periods or [200, 800])
-        self.qw = quantum_weight; self.mw = macro_weight
+        self.qw = quantum_weight
+        self.mw = macro_weight
 
     def integrate(self, closes: List[float]) -> Dict[str, Any]:
-        if not closes: return {"error": "No price data"}
+        if not closes:
+            return {"error": "No price data"}
         qf = self.quantum.evaluate_reflective_entropy(closes)
         vm = self.vault.get_reflective_gravity_score(closes)
-        if "error" in vm: return vm
+        if "error" in vm:
+            return vm
 
-        pn = closes[-1]; er = vm["ema_200"] / pn if pn != 0 else 1.0
+        pn = closes[-1]
+        er = vm["ema_200"] / pn if pn != 0 else 1.0
         en = min(1.0, max(0.5, er))
         rs = round(min(1.0, max(0.0, qf["reflective_energy"] * self.qw + en * self.mw)), 3)
 
         hb = vm["macro_bias"]
-        if qf["flux_state"] == "Transitional" and rs < 0.85: hb = "Transitional"
-        elif qf["flux_state"] == "High_Flux" and rs < 0.90: hb = "Cautious_" + vm["macro_bias"]
+        if qf["flux_state"] == "Transitional" and rs < 0.85:
+            hb = "Transitional"
+        elif qf["flux_state"] == "High_Flux" and rs < 0.90:
+            hb = "Cautious_" + vm["macro_bias"]
 
         rmc = round(min(1.0, max(0.0, qf["reflective_energy"] * 0.3 + vm["gravity_score"] * 0.3 + rs * 0.4)), 3)
         return {

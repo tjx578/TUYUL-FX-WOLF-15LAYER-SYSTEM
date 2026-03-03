@@ -7,6 +7,7 @@ import sys
 import types
 from datetime import datetime
 from importlib import import_module
+import contextlib
 from typing import Any, Protocol
 
 import orjson  # noqa: I001  — needed before analysis imports for _seed_redis_candle_history
@@ -214,16 +215,13 @@ async def _seed_redis_candle_history(
 
             key = f"wolf15:candle_history:{symbol}:{timeframe}"
 
-            # Skip if Redis already has enough bars (e.g. service restarted)
-            try:
+            with contextlib.suppress(Exception):
                 existing: int = await redis.llen(key)  # type: ignore[attr-defined]
                 if existing >= len(candles):
                     logger.debug(
                         "[Seed] %s already has %d bars, skip", key, existing
                     )
                     continue
-            except Exception:
-                pass  # key may not exist yet
 
             try:
                 pipe = redis.pipeline()  # type: ignore[attr-defined]

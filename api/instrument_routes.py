@@ -8,9 +8,10 @@ NEW ENDPOINTS:
   GET /api/v1/instruments/{symbol}/sessions  → Trading hours + session strength
 """
 
-import os
+import contextlib
 import json
 import logging
+import os
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -155,12 +156,10 @@ def _get_current_session() -> str:
 def _get_live_verdict(r: Optional[redis_lib.Redis], symbol: str) -> Optional[dict]:
     if not r:
         return None
-    try:
+    with contextlib.suppress(Exception):
         raw = r.get(f"DASHBOARD:VERDICT:{symbol}")
         if raw:
             return json.loads(raw)
-    except Exception:
-        pass
     return None
 
 
@@ -218,12 +217,10 @@ async def instrument_detail(symbol: str) -> dict:
 
     # Live price
     if r:
-        try:
+        with contextlib.suppress(Exception):
             raw_price = r.get(f"PRICE:{symbol_upper}")
             if raw_price:
                 detail["price"] = json.loads(raw_price)
-        except Exception:
-            pass
 
     detail["current_session"] = _get_current_session()
     detail["timestamp"] = datetime.now(timezone.utc).isoformat()

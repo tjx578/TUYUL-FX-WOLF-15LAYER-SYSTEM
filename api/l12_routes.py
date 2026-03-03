@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 from typing import Any, Protocol, cast
 
 from fastapi import HTTPException
@@ -46,12 +47,10 @@ def fetch_l12(pair: str):
 
     # Add dual timezone info if timestamp exists
     if "timestamp" in data:
-        try:
+        with contextlib.suppress(Exception):
             current_time = now_utc()
             data["time_utc"] = format_utc(current_time)
             data["time_local"] = format_local(current_time)
-        except Exception:
-            pass
 
     return data
 

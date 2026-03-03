@@ -10,6 +10,7 @@ Uses:
   - Redis Hash for latest tick per symbol (fast lookup)
 """
 
+import contextlib
 from typing import Any
 
 import orjson
@@ -247,10 +248,8 @@ class RedisContextBridge:
                 raw = self._redis.client.lrange(list_key, 0, -1)
             candles: list[dict[str, Any]] = []
             for item in raw:
-                try:
+                with contextlib.suppress(Exception):
                     candles.append(orjson.loads(item))
-                except Exception:
-                    pass
             return candles
         except Exception as exc:
             logger.error(

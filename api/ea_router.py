@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends
@@ -39,23 +40,19 @@ def _append_log(level: str, message: str) -> None:
         "level": level.upper(),
         "message": message,
     }
-    try:
+    with contextlib.suppress(Exception):
         import json
 
         redis_client.client.lpush(EA_LOGS_KEY, json.dumps(row))
         redis_client.client.ltrim(EA_LOGS_KEY, 0, EA_LOG_LIMIT - 1)
-    except Exception:
-        pass
 
 
 @router.get("/status")
 async def ea_status() -> dict:
     safe_mode = False
-    try:
+    with contextlib.suppress(Exception):
         raw = redis_client.client.get(EA_SAFE_MODE_KEY)
         safe_mode = str(raw or "0").strip().lower() in {"1", "true", "on", "enabled"}
-    except Exception:
-        pass
 
     state = _state_machine.snapshot()
     return {
@@ -90,10 +87,8 @@ async def ea_logs(limit: int = 100) -> list[dict]:
 @router.post("/restart", dependencies=[Depends(enforce_write_policy)])
 async def restart_ea(req: RestartRequest) -> dict:
     now = datetime.now(UTC).isoformat()
-    try:
+    with contextlib.suppress(Exception):
         redis_client.client.set(EA_RESTART_MARKER_KEY, now, ex=60 * 10)
-    except Exception:
-        pass
 
     _append_log("WARNING", f"EA restart requested: {req.reason}")
     _audit.log(
@@ -108,10 +103,8 @@ async def restart_ea(req: RestartRequest) -> dict:
 @router.post("/safe-mode", dependencies=[Depends(enforce_write_policy)])
 async def set_safe_mode(req: SafeModeRequest) -> dict:
     marker = "1" if req.enabled else "0"
-    try:
+    with contextlib.suppress(Exception):
         redis_client.client.set(EA_SAFE_MODE_KEY, marker)
-    except Exception:
-        pass
 
     _append_log("INFO", f"EA safe mode {'enabled' if req.enabled else 'disabled'}: {req.reason}")
     _audit.log(
