@@ -24,17 +24,23 @@ _results: dict[str, AllocationResult] = {}
 
 class TakeRequest(BaseModel):
     signal_id: str = Field(..., description="Signal ID from registry")
-    account_ids: list[str] = Field(..., description="Target account IDs")
+    account_ids: list[str] | None = Field(default=None, description="Target account IDs")
+    accounts: list[str] | None = Field(default=None, description="Target account IDs (alias for account_ids)")
+    operator: str = Field(default="operator")
+    action: str = Field(default="TAKE", description="TAKE or PREVIEW")
     risk_percent: float = Field(1.0, gt=0, le=5.0)
 
 
 @router.post("/take", response_model=AllocationResult)
 async def take_signal(req: TakeRequest) -> AllocationResult:
     """Operator takes a signal — allocates simultaneously to all specified accounts."""
+    account_ids = req.account_ids or req.accounts or []
     request = AllocationRequest(
         request_id=str(uuid.uuid4()),
         signal_id=req.signal_id,
-        account_ids=req.account_ids,
+        account_ids=account_ids,
+        operator=req.operator,
+        action=req.action,
         risk_percent=req.risk_percent,
     )
     result = _service.allocate(request)

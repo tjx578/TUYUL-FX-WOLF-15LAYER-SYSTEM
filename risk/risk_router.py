@@ -12,6 +12,9 @@ from fastapi import APIRouter, HTTPException
 from loguru import logger
 from pydantic import BaseModel, Field, field_validator
 
+from accounts.account_repository import AccountRepository, AccountRiskState, EAInstanceConfig
+from accounts.risk_calculator import AccountScopedRiskEngine
+from journal.audit_trail import AuditAction, AuditTrail
 from risk.kill_switch import GlobalKillSwitch
 from risk.exceptions import RiskException
 from risk.risk_engine_v2 import RiskEngineV2, SignalInput
@@ -19,6 +22,10 @@ from risk.risk_profile import RiskMode, RiskProfile, load_risk_profile, save_ris
 
 router = APIRouter(prefix="/api/v1/risk")
 _kill_switch = GlobalKillSwitch()
+_account_repo = AccountRepository.get_default()
+_account_risk_engine = AccountScopedRiskEngine()
+_audit = AuditTrail()
+_account_kill_switches: dict[str, str] = {}
 
 
 # ========================
@@ -76,6 +83,44 @@ class CloseTradeRequest(BaseModel):
 
 class KillSwitchRequest(BaseModel):
     reason: str = Field(default="MANUAL_KILL_SWITCH", min_length=1, max_length=200)
+
+
+class AccountContextRequest(BaseModel):
+    prop_firm_code: str = Field(..., min_length=1)
+    balance: float = Field(..., gt=0)
+    equity: float = Field(..., gt=0)
+    base_risk_percent: float = Field(..., gt=0, le=5.0)
+    max_daily_loss_percent: float = Field(..., gt=0, le=20.0)
+    max_total_loss_percent: float = Field(..., gt=0, le=30.0)
+    daily_loss_used_percent: float = Field(default=0.0, ge=0, le=100.0)
+    total_loss_used_percent: float = Field(default=0.0, ge=0, le=100.0)
+    consistency_limit_percent: float = Field(default=0.0, ge=0, le=100.0)
+    consistency_used_percent: float = Field(default=0.0, ge=0, le=100.0)
+    min_safe_risk_percent: float = Field(default=0.2, ge=0.01, le=2.0)
+    account_locked: bool = Field(default=False)
+    phase: str = Field(default="PHASE_FUNDED")
+    pair_cooldown: dict[str, str] = Field(default_factory=dict)
+    max_concurrent_trades: int = Field(default=5, ge=1, le=50)
+    news_lock: bool = Field(default=False)
+    circuit_breaker_open: bool = Field(default=False)
+    ea_instances: list[dict] = Field(default_factory=list)
+
+
+class AccountTakeRequest(BaseModel):
+    signal_id: str = Field(..., min_length=1)
+    ea_instance_id: str = Field(..., min_length=1)
+    requested_risk_percent: float = Field(..., gt=0, le=5.0)
+    stop_loss_pips: float = Field(..., gt=0)
+    pip_value_per_lot: float = Field(..., gt=0)
+    operator: str = Field(..., min_length=1)
+    reason: str = Field(default="TAKE", min_length=1)
+
+
+class OperatorActionRequest(BaseModel):
+    operator: str = Field(..., min_length=1)
+    reason: str = Field(..., min_length=1)
+    old_value: dict | None = None
+    new_value: dict | None = None
 
 
 # ========================
@@ -264,3 +309,216 @@ async def enable_kill_switch(req: KillSwitchRequest) -> dict:
 async def disable_kill_switch(req: KillSwitchRequest | None = None) -> dict:
     reason = req.reason if req else "MANUAL_RELEASE"
     return _kill_switch.disable(reason)
+
+
+@router.post("/accounts/{account_id}/context")
+async def upsert_account_context(account_id: str, req: AccountContextRequest) -> dict:
+    """Upsert account-scoped risk context for firewall evaluation."""
+    ea_instances = tuple(
+        EAInstanceConfig(
+            ea_instance_id=str(item.get("ea_instance_id", "")),
+            strategy_profile=str(item.get("strategy_profile", "DEFAULT")),
+            risk_multiplier=float(item.get("risk_multiplier", 1.0)),
+            news_lock_setting=str(item.get("news_lock_setting", "DEFAULT")),
+            enabled=bool(item.get("enabled", True)),
+        )
+        for item in req.ea_instances
+        if str(item.get("ea_instance_id", "")).strip()
+    )
+
+    state = AccountRiskState(
+        account_id=account_id,
+        prop_firm_code=req.prop_firm_code,
+        balance=req.balance,
+        equity=req.equity,
+        base_risk_percent=req.base_risk_percent,
+        max_daily_loss_percent=req.max_daily_loss_percent,
+        max_total_loss_percent=req.max_total_loss_percent,
+        daily_loss_used_percent=req.daily_loss_used_percent,
+        total_loss_used_percent=req.total_loss_used_percent,
+        consistency_limit_percent=req.consistency_limit_percent,
+        consistency_used_percent=req.consistency_used_percent,
+        min_safe_risk_percent=req.min_safe_risk_percent,
+        account_locked=req.account_locked,
+        phase_mode=req.phase,
+        pair_cooldown={str(k).upper(): str(v) for k, v in req.pair_cooldown.items()},
+        max_concurrent_trades=req.max_concurrent_trades,
+        news_lock=req.news_lock,
+        circuit_breaker_open=req.circuit_breaker_open,
+        ea_instances=ea_instances,
+    )
+    _account_repo.upsert_state(state)
+    return {
+        "status": "saved",
+        "account_id": account_id,
+        "ea_instances": [ea.ea_instance_id for ea in ea_instances],
+    }
+
+
+@router.get("/accounts/{account_id}/buffer")
+async def get_account_buffer(account_id: str) -> dict:
+    """Return live account buffer for operator awareness."""
+    state = _account_repo.get_state(account_id)
+    if not state:
+        raise HTTPException(status_code=404, detail=f"Account context not found: {account_id}")
+
+    result = _account_risk_engine.evaluate_trade(
+        account_state=state,
+        requested_risk_percent=state.base_risk_percent,
+        stop_loss_pips=100.0,
+        pip_value_per_lot=10.0,
+    )
+    return {
+        "account_id": account_id,
+        "daily_buffer_percent": result.daily_buffer_percent,
+        "total_buffer_percent": result.total_buffer_percent,
+        "consistency_remaining_percent": result.consistency_remaining_percent,
+        "max_risk_per_trade_now_percent": result.recommended_risk_percent,
+        "status": "SAFE" if result.trade_allowed else "LOCKED",
+    }
+
+
+@router.post("/accounts/{account_id}/take")
+async def evaluate_take(account_id: str, req: AccountTakeRequest) -> dict:
+    """Evaluate TAKE action with explicit account scope and account firewall."""
+    if _kill_switch.is_enabled():
+        state = _kill_switch.snapshot()
+        return {
+            "trade_allowed": False,
+            "reason": "GLOBAL_KILL_SWITCH",
+            "details": state,
+        }
+
+    if account_id in _account_kill_switches:
+        return {
+            "trade_allowed": False,
+            "reason": "ACCOUNT_KILL_SWITCH",
+            "details": {"message": _account_kill_switches[account_id]},
+        }
+
+    state = _account_repo.get_state(account_id)
+    if not state:
+        raise HTTPException(status_code=404, detail=f"Account context not found: {account_id}")
+
+    ea_ids = {ea.ea_instance_id for ea in state.ea_instances if ea.enabled}
+    if req.ea_instance_id not in ea_ids:
+        return {
+            "trade_allowed": False,
+            "reason": "EA_INSTANCE_STOPPED_OR_UNKNOWN",
+            "details": {"ea_instance_id": req.ea_instance_id},
+        }
+
+    selected_ea = next(ea for ea in state.ea_instances if ea.ea_instance_id == req.ea_instance_id)
+    decision = _account_risk_engine.evaluate_trade(
+        account_state=state,
+        requested_risk_percent=req.requested_risk_percent,
+        stop_loss_pips=req.stop_loss_pips,
+        pip_value_per_lot=req.pip_value_per_lot,
+        risk_multiplier=selected_ea.risk_multiplier,
+    )
+
+    _audit.log(
+        AuditAction.ORDER_PLACED if decision.trade_allowed else AuditAction.RISK_CHECK_FAILED,
+        actor=f"user:{req.operator}",
+        resource=f"account:{account_id}/signal:{req.signal_id}",
+        details={
+            "action": "TAKE",
+            "ea_instance_id": req.ea_instance_id,
+            "reason": req.reason,
+            "requested_risk_percent": req.requested_risk_percent,
+            "decision": {
+                "trade_allowed": decision.trade_allowed,
+                "status": decision.status,
+                "recommended_risk_percent": decision.recommended_risk_percent,
+                "recommended_lot": decision.recommended_lot,
+                "reason": decision.reason,
+            },
+        },
+    )
+
+    return {
+        "account_id": account_id,
+        "signal_id": req.signal_id,
+        "trade_allowed": decision.trade_allowed,
+        "status": decision.status,
+        "recommended_risk_percent": decision.recommended_risk_percent,
+        "risk_amount": decision.risk_amount,
+        "recommended_lot": decision.recommended_lot,
+        "max_safe_lot": decision.max_safe_lot,
+        "reason": decision.reason,
+        "buffer": {
+            "daily": decision.daily_buffer_percent,
+            "total": decision.total_buffer_percent,
+            "consistency": decision.consistency_remaining_percent,
+        },
+    }
+
+
+@router.post("/accounts/{account_id}/kill-switch")
+async def enable_account_kill_switch(account_id: str, req: KillSwitchRequest) -> dict:
+    _account_kill_switches[account_id] = req.reason
+    return {"account_id": account_id, "enabled": True, "reason": req.reason}
+
+
+@router.delete("/accounts/{account_id}/kill-switch")
+async def disable_account_kill_switch(account_id: str, req: KillSwitchRequest | None = None) -> dict:
+    _account_kill_switches.pop(account_id, None)
+    return {
+        "account_id": account_id,
+        "enabled": False,
+        "reason": req.reason if req else "MANUAL_RELEASE",
+    }
+
+
+@router.post("/accounts/{account_id}/operator/skip")
+async def operator_skip(account_id: str, req: OperatorActionRequest) -> dict:
+    _audit.log(
+        AuditAction.SIGNAL_REJECTED,
+        actor=f"user:{req.operator}",
+        resource=f"account:{account_id}",
+        details={"action": "SKIP", "reason": req.reason},
+    )
+    return {"status": "logged", "action": "SKIP", "account_id": account_id}
+
+
+@router.post("/accounts/{account_id}/operator/close")
+async def operator_close(account_id: str, req: OperatorActionRequest) -> dict:
+    _audit.log(
+        AuditAction.TRADE_CLOSED,
+        actor=f"user:{req.operator}",
+        resource=f"account:{account_id}",
+        details={"action": "CLOSE", "reason": req.reason},
+    )
+    return {"status": "logged", "action": "CLOSE", "account_id": account_id}
+
+
+@router.post("/accounts/{account_id}/operator/change-risk-profile")
+async def operator_change_risk_profile(account_id: str, req: OperatorActionRequest) -> dict:
+    _audit.log(
+        AuditAction.ORDER_MODIFIED,
+        actor=f"user:{req.operator}",
+        resource=f"account:{account_id}",
+        details={
+            "action": "CHANGE_RISK_PROFILE",
+            "reason": req.reason,
+            "old_value": req.old_value or {},
+            "new_value": req.new_value or {},
+        },
+    )
+    return {"status": "logged", "action": "CHANGE_RISK_PROFILE", "account_id": account_id}
+
+
+@router.post("/accounts/{account_id}/operator/change-prop-template")
+async def operator_change_prop_template(account_id: str, req: OperatorActionRequest) -> dict:
+    _audit.log(
+        AuditAction.ORDER_MODIFIED,
+        actor=f"user:{req.operator}",
+        resource=f"account:{account_id}",
+        details={
+            "action": "CHANGE_PROP_TEMPLATE",
+            "reason": req.reason,
+            "old_value": req.old_value or {},
+            "new_value": req.new_value or {},
+        },
+    )
+    return {"status": "logged", "action": "CHANGE_PROP_TEMPLATE", "account_id": account_id}

@@ -19,9 +19,13 @@ class AllocationStatus(StrEnum):
 
 class AccountAllocationResult(BaseModel):
     account_id: str
+    approved: bool = False
     allowed: bool
     lot_size: float = 0.0
     risk_percent: float = 0.0
+    daily_buffer_percent: float = 0.0
+    total_buffer_percent: float = 0.0
+    status: str = "SKIP"
     reason: str = ""
     severity: str = "SAFE"
 
@@ -32,6 +36,8 @@ class AllocationRequest(BaseModel):
     request_id: str = Field(..., description="Unique allocation request ID")
     signal_id: str = Field(..., description="Source L12 signal ID")
     account_ids: list[str] = Field(..., description="Accounts to allocate to")
+    operator: str = Field(default="system", description="Operator identity")
+    action: str = Field(default="TAKE", description="TAKE or PREVIEW")
     risk_percent: float = Field(1.0, gt=0, le=5.0, description="Risk % per account")
     timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
