@@ -53,8 +53,8 @@ export function EquityCurve({
 }: EquityCurveProps) {
   const { history, connected } = useEquityHistory(accountId, 500);
 
-  const equityPoints = history.map((p) => p.equity);
-  const balancePoints = history.map((p) => p.balance);
+  const equityPoints = history.map((p: { equity: any; }) => p.equity);
+  const balancePoints = history.map((p: { balance: any; }) => p.balance);
 
   const latest = history[history.length - 1];
   const first = history[0];
