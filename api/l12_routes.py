@@ -219,6 +219,19 @@ def _build_pipeline_data(pair: str, verdict_data: dict[str, Any]) -> dict[str, A
         "reward$": execution.get("reward_amount", 0),
     }
 
+    execution_map_raw = verdict_data.get("execution_map")
+    if isinstance(execution_map_raw, dict):
+        execution_map = execution_map_raw
+    else:
+        execution_map = {
+            "pair": pair,
+            "timestamp": verdict_data.get("timestamp", ""),
+            "layers_executed": [layer["id"] for layer in layer_list],
+            "engines_invoked": [],
+            "halt_reason": None,
+            "constitutional_verdict": verdict_str,
+        }
+
     return {
         "pair": pair,
         "verdict": verdict_str,
@@ -228,6 +241,7 @@ def _build_pipeline_data(pair: str, verdict_data: dict[str, Any]) -> dict[str, A
         "layers": layer_list,
         "gates": gate_list,
         "entry": entry,
+        "execution_map": execution_map,
     }
 
 
