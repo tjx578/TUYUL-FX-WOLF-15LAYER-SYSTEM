@@ -6,29 +6,51 @@ Integrates with circuit breaker and drawdown monitoring
 for real-time compliance checks.
 """
 
+from __future__ import annotations
+
+import os
+from abc import ABC, abstractmethod
 from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
 
-try:
-    from config_loader import load_prop_firm
-except ModuleNotFoundError:
 
-    def load_prop_firm():
-        """
-        Fallback configuration loader used when `config_loader` is not available.
+def load_prop_firm() -> dict[str, Any]:
+    """Load prop firm configuration from YAML or return defaults.
 
-        Returns a minimal configuration structure with the keys expected by
-        `PropFirmRules`, so that the module can be imported without error.
-        """
-        return {
-            "allowed_markets": {},
-            "risk": {
-                "max_risk_per_trade_percent": 0.01,
-                "min_rr_required": 2.0,
-                "max_daily_loss": 1000.0,
-                "max_open_positions": 3,
-                "max_lot_per_trade": 1.0,
-            },
-        }
+    Looks for ``config/prop_firm.yaml`` relative to the repository root
+    (two levels up from this file).  Falls back to sensible defaults so
+    the module is usable even without the config file.
+    """
+    config_path = Path(__file__).resolve().parent.parent / "config" / "prop_firm.yaml"
+
+    if config_path.exists():
+        try:
+            import yaml  # type: ignore[import-untyped]
+
+            with open(config_path, "r") as fh:
+                data = yaml.safe_load(fh)
+            if isinstance(data, dict):
+                return data
+        except Exception:  # noqa: BLE001
+            pass  # fall through to defaults
+
+    # Sensible defaults so the guard is always functional
+    return {
+        "allowed_markets": {
+            "forex": True,
+            "commodities": True,
+            "indices": True,
+            "crypto": False,
+        },
+        "risk": {
+            "max_risk_per_trade_percent": 0.01,
+            "min_rr_required": 2.0,
+            "max_daily_loss": 500.0,
+            "max_open_positions": 5,
+            "max_lot_per_trade": 1.0,
+        },
+    }
 
 
 @dataclass
@@ -40,7 +62,7 @@ class AccountState:
     open_positions: list[dict]
 
     @classmethod
-    def from_dict(cls, data: dict) -> "AccountState":
+    def from_dict(cls, data: dict) -> AccountState:
         """Safe constructor with validation."""
         try:
             return cls(
@@ -64,7 +86,7 @@ class TradeRisk:
     symbol: str | None = None
 
     @classmethod
-    def from_dict(cls, data: dict) -> "TradeRisk":
+    def from_dict(cls, data: dict) -> TradeRisk:
         """Safe constructor with validation."""
         try:
             return cls(
@@ -81,30 +103,40 @@ class TradeRisk:
 
 @dataclass
 class GuardResult:
-    """Standardized guard check result."""
+    """Standard result from a prop-firm guard check."""
     allowed: bool
     code: str
-    severity: str  # "ERROR" | "WARNING" | "INFO"
-    details: str | None = None
-    max_safe_lot: float = 0.0
-    recommended_lot: float = 0.0
-    violations: list[str] | None = None
+    severity: str  # "info" | "warning" | "block"
+    details: dict[str, Any] | None = None
 
-    def __post_init__(self):
-        if self.violations is None:
-            self.violations = []
 
-    def to_dict(self) -> dict:
-        """Convert to dict for legacy compatibility."""
-        return {
-            "allowed": self.allowed,
-            "code": self.code,
-            "severity": self.severity,
-            "details": self.details,
-            "max_safe_lot": self.max_safe_lot,
-            "recommended_lot": self.recommended_lot,
-            "violations": self.violations,
-        }
+class BasePropFirmGuard(ABC):
+    """
+    Base class for prop-firm risk guards.
+
+    Interface contract (from copilot-instructions):
+        check(account_state: dict, trade_risk: dict) -> {allowed, code, severity, details?}
+
+    Dashboard must treat guard result as binding for risk legality
+    (but still not a market decision).
+    """
+
+    @abstractmethod
+    def check(self, account_state: dict[str, Any], trade_risk: dict[str, Any]) -> GuardResult:
+        """Evaluate whether a trade is allowed under this prop-firm's rules.
+
+        Parameters
+        ----------
+        account_state : dict
+            Current account metrics (balance, equity, daily-dd, etc.).
+        trade_risk : dict
+            Proposed trade risk details (lot_size, risk_amount, symbol, etc.).
+
+        Returns
+        -------
+        GuardResult
+            Binding decision with code and severity.
+        """
 
 
 class PropFirmRules:
@@ -125,9 +157,9 @@ class PropFirmRules:
         Prop firm configuration from config/prop_firm.yaml
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize PropFirmRules with config."""
-        self.cfg = load_prop_firm()
+        self.cfg: dict[str, Any] = load_prop_firm()
         self._validate_config()
 
     def _validate_config(self) -> None:
