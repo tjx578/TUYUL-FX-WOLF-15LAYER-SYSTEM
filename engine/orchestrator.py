@@ -1,1 +1,1 @@
-"""Engine module placeholder."""
+"""Placeholder for engine orchestrator."""

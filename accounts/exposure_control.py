@@ -1,1 +1,1 @@
-"""Placeholder module for accounts domain."""
+"""Placeholder for per-account exposure controls."""

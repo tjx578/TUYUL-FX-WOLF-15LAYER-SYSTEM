@@ -1,1 +1,1 @@
-"""Sovereign trading intelligence engine package."""
+"""Engine domain package."""

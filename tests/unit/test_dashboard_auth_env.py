@@ -5,7 +5,7 @@ def test_auth_uses_legacy_jwt_secret_env(monkeypatch):
     monkeypatch.delenv("DASHBOARD_JWT_SECRET", raising=False)
     monkeypatch.setenv("JWT_SECRET", "legacy-secret-at-least-32-chars!!")
 
-    import api.auth as auth_module
+    import dashboard.backend.auth as auth_module
 
     reloaded = importlib.reload(auth_module)
 

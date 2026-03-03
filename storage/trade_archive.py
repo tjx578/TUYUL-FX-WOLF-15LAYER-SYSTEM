@@ -225,7 +225,7 @@ def _from_postgres(symbol: str | None, lookback: int) -> list[float]:
 def _from_ledger_cache(symbol: str | None, lookback: int) -> list[float]:
     """Read from the in-memory TradeLedger singleton (last resort)."""
     try:
-        from journal.trade_ledger import TradeLedger  # noqa: PLC0415
+        from dashboard.trade_ledger import TradeLedger  # noqa: PLC0415
 
         ledger = TradeLedger()
         all_trades = list(ledger._cache.values())

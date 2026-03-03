@@ -1,1 +1,1 @@
-"""Placeholder module for accounts domain."""
+"""Placeholder for account phase state transitions."""

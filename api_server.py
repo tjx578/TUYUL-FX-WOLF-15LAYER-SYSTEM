@@ -63,6 +63,7 @@ def _configure_process_logging() -> None:
 _configure_process_logging()
 
 from api.calendar_routes import router as calendar_router  # noqa: E402
+from api.config_profile_router import router as config_profile_router  # noqa: E402
 
 # ── New routers (7 new endpoints) ─────────────────────────────────────────────
 from api.constitutional_routes import router as constitutional_router  # noqa: E402
@@ -75,12 +76,15 @@ from api.l12_routes import router as l12_router  # noqa: E402
 from api.metrics_routes import router as metrics_router  # noqa: E402
 from api.middleware.prometheus_middleware import PrometheusMiddleware  # noqa: E402
 from api.middleware.rate_limit import RateLimitMiddleware  # noqa: E402  # noqa: E402
+from api.accounts_router import router as accounts_router  # noqa: E402
 from api.redis_health_routes import router as redis_health_router  # noqa: E402
 from api.risk_events_routes import router as risk_events_router  # noqa: E402
+from api.signals_router import router as signals_router  # noqa: E402
+from risk.risk_router import router as risk_router  # noqa: E402
 from api.ws_routes import router as ws_router  # noqa: E402
 
 # ── Fixed routers ─────────────────────────────────────────────────────────────
-from api.execution_router import write_router  # BUG-1/2/3 FIXED  # noqa: E402
+from api.allocation_router import write_router  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
@@ -219,6 +223,7 @@ app.add_middleware(
         "Accept",
         "Origin",
         "X-Requested-With",
+        "X-Idempotency-Key",
     ],
     expose_headers=[],
 )
@@ -244,6 +249,14 @@ app.include_router(journal_router)
 app.include_router(instrument_router)
 # Economic calendar + news-lock
 app.include_router(calendar_router)
+# Frozen SignalContract read APIs
+app.include_router(signals_router)
+# Read-only account APIs
+app.include_router(accounts_router)
+# Risk evaluation + preview + kill-switch
+app.include_router(risk_router)
+# Runtime config profile engine
+app.include_router(config_profile_router)
 # Prometheus scrape endpoint
 app.include_router(metrics_router)
 # Redis observability + TCP_OVERWINDOW diagnostics

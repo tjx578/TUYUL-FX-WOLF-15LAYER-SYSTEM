@@ -31,6 +31,7 @@ class PipelineResult:
     l14_json: dict[str, Any] | None = None
     sovereignty: dict[str, Any] = field(default_factory=dict)
     enforcement: dict[str, Any] | None = None
+    execution_map: dict[str, Any] | None = None
     latency_ms: float = 0.0
     errors: list[str] = field(default_factory=list)
 
@@ -61,6 +62,7 @@ class PipelineResult:
             "l15_meta": self.l15_meta,
             "sovereignty": self.sovereignty,
             "enforcement": self.enforcement,
+            "execution_map": self.execution_map,
             "latency_ms": self.latency_ms,
             "errors": self.errors,
         }

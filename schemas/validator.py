@@ -11,6 +11,8 @@ import logging
 from pathlib import Path
 from typing import Any
 
+from schemas.signal_contract import FROZEN_SIGNAL_CONTRACT_VERSION
+
 logger = logging.getLogger("tuyul.schemas")
 
 try:
@@ -102,3 +104,35 @@ def validate_alert(alert: dict[str, Any]) -> tuple[bool, list[str]]:
         errors.append(f"Validation error: {e.message}")
 
     return len(errors) == 0, errors
+
+
+def validate_signal_contract(signal: dict[str, Any]) -> tuple[bool, list[str]]:
+    """Validate frozen dashboard SignalContract payload."""
+    if not HAS_JSONSCHEMA:
+        return True, []
+
+    schema = _load_schema("signal_schema.json")
+    if schema is None:
+        return False, ["Schema file not found"]
+
+    errors: list[str] = []
+    try:
+        jsonschema.validate(instance=signal, schema=schema)  # pyright: ignore[reportPossiblyUnboundVariable]
+    except jsonschema.ValidationError as e:  # pyright: ignore[reportPossiblyUnboundVariable]
+        errors.append(f"Validation error: {e.message} at {list(e.absolute_path)}")
+    except jsonschema.SchemaError as e:  # pyright: ignore[reportPossiblyUnboundVariable]
+        errors.append(f"Schema error: {e.message}")
+
+    version = str(signal.get("contract_version", ""))
+    if version != FROZEN_SIGNAL_CONTRACT_VERSION:
+        errors.append(
+            "Frozen SignalContract mismatch: "
+            f"expected {FROZEN_SIGNAL_CONTRACT_VERSION}, got {version or 'missing'}"
+        )
+
+    if errors:
+        for err in errors:
+            logger.error(f"Signal contract validation: {err}")
+        return False, errors
+
+    return True, []

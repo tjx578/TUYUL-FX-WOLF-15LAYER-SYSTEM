@@ -1,1 +1,1 @@
-"""Journal repository placeholder."""
+"""Placeholder repository for journal persistence."""
