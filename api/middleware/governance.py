@@ -20,6 +20,7 @@ SAFE_MODE_CLOSE_ALLOWLIST = (
     "/trades/close",
     "/operator/close",
 )
+ALLOWED_ROLES = {"viewer", "trader", "admin"}
 
 
 @dataclass(frozen=True)
@@ -61,10 +62,22 @@ def _allow_during_safe_mode(path: str) -> bool:
 def _resolve_context(token: str) -> GovernanceContext:
     payload = decode_token(token)
     if payload is not None:
-        role = str(payload.get("role") or "trader").strip().lower()
+        role_raw = payload.get("role")
+        if role_raw is None:
+            raise HTTPException(status_code=403, detail="JWT missing required role claim")
+
+        role = str(role_raw).strip().lower()
+        if role not in ALLOWED_ROLES:
+            raise HTTPException(status_code=403, detail=f"JWT role is invalid: {role}")
+
+        required_issuer = os.getenv("DASHBOARD_JWT_REQUIRED_ISSUER", "").strip()
+        if required_issuer:
+            token_issuer = str(payload.get("iss") or "").strip()
+            allowed_issuers = {i.strip() for i in required_issuer.split(",") if i.strip()}
+            if token_issuer not in allowed_issuers:
+                raise HTTPException(status_code=403, detail="JWT issuer is not allowed")
+
         actor = str(payload.get("sub") or "user:unknown")
-        if role not in {"viewer", "trader", "admin"}:
-            role = "viewer"
         return GovernanceContext(role=role, actor=actor, auth_method="jwt")
 
     if validate_api_key(token):
