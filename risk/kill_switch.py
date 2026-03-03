@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import json
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -39,7 +40,7 @@ class GlobalKillSwitch:
         return cls._instance
 
     def _load(self) -> None:
-        try:
+        with contextlib.suppress(Exception):
             raw = redis_client.get(_KILL_SWITCH_KEY)
             if not raw:
                 return
@@ -49,17 +50,13 @@ class GlobalKillSwitch:
                 reason=str(payload.get("reason", "")),
                 updated_at=str(payload.get("updated_at", datetime.now(UTC).isoformat())),
             )
-        except Exception:
-            pass
 
     def _save(self) -> None:
-        try:
+        with contextlib.suppress(Exception):
             redis_client.set(
                 _KILL_SWITCH_KEY,
                 json.dumps(self.snapshot()),
             )
-        except Exception:
-            pass
 
     def enable(self, reason: str) -> dict[str, str | bool]:
         with self._rw_lock:

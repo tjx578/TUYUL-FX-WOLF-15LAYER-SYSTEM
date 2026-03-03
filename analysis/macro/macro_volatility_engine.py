@@ -11,6 +11,7 @@ Output: macro:vix:state (Redis hash)
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import os
 import time
 
@@ -107,7 +108,7 @@ class MacroVolatilityEngine:
         if not self.api_key:
             return None
 
-        try:
+        with contextlib.suppress(Exception):
             async with httpx.AsyncClient(timeout=API_TIMEOUT) as client:
                 r = await client.get(
                     FINNHUB_VIX_URL,
@@ -115,8 +116,6 @@ class MacroVolatilityEngine:
                 )
                 if r.status_code == 200:
                     return float(r.json().get("c"))
-        except Exception:
-            pass
         return None
 
     def _fetch_proxy(self) -> float | None:
@@ -126,14 +125,12 @@ class MacroVolatilityEngine:
         snapshot().get("candle_history") which doesn't exist in
         LiveContextBus.snapshot() return schema.
         """
-        try:
+        with contextlib.suppress(Exception):
             candles = self.context.get_candle_history("EURUSD", "H1", count=50)
             if candles:
                 proxy = self.proxy_engine.estimate("EURUSD", candles)
                 if proxy:
                     return proxy.vix_equivalent
-        except Exception:
-            pass
         return None
 
     @staticmethod

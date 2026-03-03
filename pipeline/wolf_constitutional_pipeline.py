@@ -51,6 +51,7 @@ Integrity: TIIₛᵧₘ ≥ 0.93 | FRPC ≥ 0.96 | RR ≥ 1:2.0
 from __future__ import annotations
 
 import concurrent.futures
+import contextlib
 import time
 
 # stdlib imports
@@ -473,15 +474,13 @@ class WolfConstitutionalPipeline:
             # Primary: derive from trade archive. Fallback: system_metrics.
             prior_wins: int = 0
             prior_losses: int = 0
-            try:
+            with contextlib.suppress(Exception):
                 from storage.trade_archive import get_win_loss_counts as _gwlc  # noqa: PLC0415
 
                 _w, _l = _gwlc(symbol=symbol, lookback=200)
                 if _w + _l > 0:
                     prior_wins = _w
                     prior_losses = _l
-            except Exception:
-                pass  # fall through to system_metrics
 
             if prior_wins == 0 and prior_losses == 0:  # noqa: SIM102
                 if system_metrics:

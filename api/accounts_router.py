@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import uuid
 from datetime import UTC, datetime
 
@@ -224,10 +225,8 @@ async def delete_account(account_id: str, req: AccountDeleteRequest) -> dict:
 		raise HTTPException(status_code=404, detail=f"Account not found: {account_id}")
 
 	_accounts._memory_accounts.pop(account_id, None)
-	try:
+	with contextlib.suppress(Exception):
 		redis_client.client.delete(f"ACCOUNT:{account_id}")
-	except Exception:
-		pass
 
 	_audit.log(
 		AuditAction.ORDER_MODIFIED,

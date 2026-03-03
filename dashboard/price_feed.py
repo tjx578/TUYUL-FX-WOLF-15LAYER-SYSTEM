@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import time
 from threading import Lock
 from typing import Any
@@ -23,10 +24,8 @@ class PriceFeed:
         with self._lock:
             self._prices[symbol.upper()] = item
 
-        try:
+        with contextlib.suppress(Exception):
             redis_client.client.hset(f"PRICE:{symbol.upper()}", mapping=item)
-        except Exception:
-            pass
 
     def get_latest_prices(self) -> dict[str, dict[str, Any]]:
         return self.get_all_prices()
@@ -36,7 +35,7 @@ class PriceFeed:
         with self._lock:
             prices.update(self._prices)
 
-        try:
+        with contextlib.suppress(Exception):
             for key in redis_client.client.scan_iter("PRICE:*"):
                 symbol = str(key).split(":", 1)[1]
                 payload = redis_client.client.hgetall(key)
@@ -46,8 +45,6 @@ class PriceFeed:
                         "ask": float(payload.get("ask", 0.0) or 0.0),
                         "ts": float(payload.get("ts", 0.0) or 0.0),
                     }
-        except Exception:
-            pass
 
         return prices
 

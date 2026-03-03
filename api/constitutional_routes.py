@@ -7,6 +7,7 @@ NEW ENDPOINTS:
 """
 
 import json
+import contextlib
 import logging
 from datetime import UTC, datetime, timedelta
 
@@ -92,14 +93,12 @@ async def constitutional_health(request: Request) -> dict:
 
     # Circuit breaker aggregate
     circuit_breaker_state = "CLOSED"
-    try:
+    with contextlib.suppress(Exception):
         async for key in r.scan_iter("RISK:CB:*"):
             cb = await r.get(key)
             if cb and cb != "CLOSED":
                 circuit_breaker_state = str(cb)
                 break
-    except Exception:
-        pass
 
     return {
         "timestamp": datetime.now(UTC).isoformat(),

@@ -22,6 +22,7 @@ See also:
 
 from __future__ import annotations
 
+import contextlib
 import logging
 from typing import Any
 
@@ -74,19 +75,15 @@ def verify_token(token: str) -> dict[str, Any] | None:
     Returns:
         Payload dict on success, ``None`` on failure.
     """
-    try:
+    with contextlib.suppress(Exception):
         payload = decode_token(token)
         if payload is not None:
             return payload
-    except Exception:
-        pass
 
-    try:
+    with contextlib.suppress(Exception):
         result = validate_api_key(token)
         if result:
             return {"sub": "api_key_user", "auth_method": "api_key"}
-    except Exception:
-        pass
 
     return None
 
@@ -133,11 +130,9 @@ async def ws_auth_guard(websocket: WebSocket) -> dict[str, Any] | None:
     token = extract_token(dict(websocket.headers), dict(websocket.query_params))
     if not token:
         logger.warning("WS auth rejected: missing token")
-        try:
+        with contextlib.suppress(Exception):
             await websocket.send_json({"type": "auth_error", "detail": "Missing authentication token"})
             await websocket.close(code=4001, reason="Missing authentication token")
-        except Exception:
-            pass
         return None
 
     payload = verify_token(token)
@@ -146,11 +141,9 @@ async def ws_auth_guard(websocket: WebSocket) -> dict[str, Any] | None:
         return payload
 
     logger.warning("WS auth rejected: invalid or expired token")
-    try:
+    with contextlib.suppress(Exception):
         await websocket.send_json({"type": "auth_error", "detail": "Invalid or expired token"})
         await websocket.close(code=4001, reason="Invalid or expired token")
-    except Exception:
-        pass
     return None
 
 

@@ -10,6 +10,7 @@ Authority boundaries:
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import os
 import tracemalloc
@@ -192,12 +193,10 @@ class AsyncAllocationWorker:
             return []
 
         if text.startswith("["):
-            try:
+            with contextlib.suppress(Exception):
                 parsed = json.loads(text)
                 if isinstance(parsed, list):
                     return [str(a).strip() for a in parsed if str(a).strip()]
-            except Exception:
-                pass
 
         return [x.strip() for x in text.split(",") if x.strip()]
 

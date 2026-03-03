@@ -5,6 +5,7 @@ Records every AllocationRequest + AllocationResult for compliance.
 """
 from __future__ import annotations
 
+import contextlib
 import json
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
@@ -82,9 +83,7 @@ class AllocationAudit:
                 logger.error(f"AllocationAudit: write failed: {exc}")
 
     def _redis_append(self, entry: dict) -> None:
-        try:
+        with contextlib.suppress(Exception):
             from storage.redis_client import RedisClient  # noqa: PLC0415
             rc = RedisClient()
             rc.xadd("allocation:audit", {"data": json.dumps(entry)}, maxlen=5000)
-        except Exception:
-            pass

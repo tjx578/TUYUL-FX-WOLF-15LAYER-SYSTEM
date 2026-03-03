@@ -5,6 +5,7 @@ Monitors all subsystems and can auto-pause trading if critical issues detected.
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import time
 
@@ -134,10 +135,8 @@ class HealthMonitor:
                     self._health.pause_reason = reason
                     logger.critical(f"AUTO-PAUSE: {reason}")
                     for cb in self._on_pause_callbacks:
-                        try:
+                        with contextlib.suppress(Exception):
                             cb(reason)
-                        except Exception:
-                            pass
                 return
 
         # All critical systems OK -- allow trading

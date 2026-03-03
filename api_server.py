@@ -21,7 +21,7 @@ import logging
 import os
 import sys
 from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from copy import deepcopy
 from datetime import UTC
 from typing import Any
@@ -280,12 +280,10 @@ async def health(request: Request) -> dict[str, Any]:
     import redis.asyncio as aioredis
 
     redis_ok = False
-    try:
+    with suppress(Exception):
         r: aioredis.Redis = request.app.state.redis
         ping_result: bool = await r.ping()  # type: ignore[assignment]
         redis_ok = ping_result is True
-    except Exception:
-        pass
 
     return {
         "status": "ok",

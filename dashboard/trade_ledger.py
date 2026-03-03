@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import json
 from datetime import UTC, datetime
 
@@ -17,26 +18,22 @@ class TradeLedger:
         if trade_id in self._memory_trades:
             return self._memory_trades[trade_id]
 
-        try:
+        with contextlib.suppress(Exception):
             raw = redis_client.client.get(f"TRADE:{trade_id}")
             if isinstance(raw, str):
                 trade = self._from_dict(json.loads(raw))
                 self._memory_trades[trade_id] = trade
                 return trade
-        except Exception:
-            pass
         return None
 
     def get_active_trades(self) -> list[Trade]:
         trades: dict[str, Trade] = dict(self._memory_trades)
-        try:
+        with contextlib.suppress(Exception):
             for key in redis_client.client.scan_iter("TRADE:*"):
                 trade_id = str(key).split(":", 1)[1]
                 raw = redis_client.client.get(key)
                 if isinstance(raw, str):
                     trades[trade_id] = self._from_dict(json.loads(raw))
-        except Exception:
-            pass
 
         return [
             t for t in sorted(trades.values(), key=lambda x: x.updated_at, reverse=True)

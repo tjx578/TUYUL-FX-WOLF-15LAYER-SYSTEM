@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 from datetime import UTC, datetime
 from typing import Any
 
@@ -16,16 +17,13 @@ class AccountManager:
     def list_accounts(self) -> list[Account]:
         accounts: dict[str, Account] = dict(self._memory_accounts)
 
-        try:
+        with contextlib.suppress(Exception):
             for key in redis_client.client.scan_iter("ACCOUNT:*"):
                 raw_id = key.split(":", 1)[1]
                 account_id = str(raw_id)
                 payload = redis_client.client.hgetall(key)
                 if payload:
                     accounts[account_id] = self._from_payload(account_id, payload)
-        except Exception:
-            # Redis unavailable - return in-memory snapshot only
-            pass
 
         return sorted(accounts.values(), key=lambda a: a.account_id)
 
@@ -47,7 +45,7 @@ class AccountManager:
 
     def upsert_account(self, account: Account) -> Account:
         self._memory_accounts[account.account_id] = account
-        try:
+        with contextlib.suppress(Exception):
             redis_client.client.hset(
                 f"ACCOUNT:{account.account_id}",
                 mapping={
@@ -61,8 +59,6 @@ class AccountManager:
                     "updated_at": datetime.now(UTC).isoformat(),
                 },
             )
-        except Exception:
-            pass
         return account
 
     def _from_payload(self, account_id: str, payload: dict[str, Any]) -> Account:

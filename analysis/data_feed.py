@@ -6,6 +6,7 @@ Supports multiple broker backends with staleness detection.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import time
 
 from abc import ABC, abstractmethod
@@ -157,11 +158,9 @@ class MT5DataFeed(DataFeedAdapter):
         return self._connected
 
     async def disconnect(self) -> None:
-        try:
+        with contextlib.suppress(Exception):
             import MetaTrader5 as mt5  # pyright: ignore[reportMissingImports] # pyright: ignore[reportMissingImports] # pyright: ignore[reportMissingImports] # noqa: N813, PLC0415
             mt5.shutdown()
-        except Exception:
-            pass
         self._connected = False
         self._running = False
 
@@ -216,8 +215,6 @@ class MT5DataFeed(DataFeedAdapter):
                     )
                     self._staleness.update(symbol)
                     for cb in self._subscribers:
-                        try:
+                        with contextlib.suppress(Exception):
                             cb(t)
-                        except Exception:
-                            pass  # TODO: log error without breaking loop
             await asyncio.sleep(interval)
