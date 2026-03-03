@@ -17,6 +17,9 @@ interface Trade {
   pnl?: number;
   status: string;
   opened_at: string;
+  account_id?: string;
+  sl?: number;
+  tp?: number;
 }
 
 interface TradesTableProps {
@@ -24,9 +27,9 @@ interface TradesTableProps {
   onSelect?: (trade: Trade) => void;
 }
 
-export function TradesTable({ trades, onSelect }: TradesTableProps) {
-  const headers = ["Pair", "Dir", "Entry", "Current", "Lots", "PnL", "Status", "Opened"];
+const HEADERS = ["STATUS", "ACCOUNT", "PAIR", "DIR", "LOT", "ENTRY", "SL", "TP", "PnL", "ACTIONS"];
 
+export function TradesTable({ trades, onSelect }: TradesTableProps) {
   if (trades.length === 0) {
     return (
       <div
@@ -53,13 +56,12 @@ export function TradesTable({ trades, onSelect }: TradesTableProps) {
         }}
       >
         <thead>
-          <tr>
-            {headers.map((h) => (
+          <tr style={{ textAlign: "left" }}>
+            {HEADERS.map((h) => (
               <th
                 key={h}
                 style={{
                   padding: "8px 10px",
-                  textAlign: "left",
                   fontSize: 10,
                   fontWeight: 600,
                   letterSpacing: "0.06em",
@@ -91,25 +93,6 @@ export function TradesTable({ trades, onSelect }: TradesTableProps) {
                   borderBottom: "1px solid var(--border-subtle, rgba(255,255,255,0.06))",
                 }}
               >
-                <td style={{ padding: "8px 10px", fontWeight: 600, color: "var(--text-primary)" }}>
-                  {t.pair}
-                </td>
-                <td style={{ padding: "8px 10px", fontWeight: 700, color: dirColor }}>
-                  {t.direction}
-                </td>
-                <td style={{ padding: "8px 10px", color: "var(--text-secondary)" }}>
-                  {t.entry_price.toFixed(5)}
-                </td>
-                <td style={{ padding: "8px 10px", color: "var(--text-secondary)" }}>
-                  {t.current_price?.toFixed(5) ?? "—"}
-                </td>
-                <td style={{ padding: "8px 10px", color: "var(--text-secondary)" }}>
-                  {t.lot_size.toFixed(2)}
-                </td>
-                <td style={{ padding: "8px 10px", fontWeight: 700, color: pnlColor }}>
-                  {pnl >= 0 ? "+" : ""}
-                  {pnl.toFixed(2)}
-                </td>
                 <td style={{ padding: "8px 10px" }}>
                   <span
                     style={{
@@ -125,8 +108,48 @@ export function TradesTable({ trades, onSelect }: TradesTableProps) {
                     {t.status}
                   </span>
                 </td>
-                <td style={{ padding: "8px 10px", color: "var(--text-muted)", fontSize: 10 }}>
-                  {new Date(t.opened_at).toLocaleString()}
+                <td style={{ padding: "8px 10px", color: "var(--text-secondary)" }}>
+                  {t.account_id ?? "—"}
+                </td>
+                <td style={{ padding: "8px 10px", fontWeight: 600, color: "var(--text-primary)" }}>
+                  {t.pair}
+                </td>
+                <td style={{ padding: "8px 10px", fontWeight: 700, color: dirColor }}>
+                  {t.direction}
+                </td>
+                <td style={{ padding: "8px 10px", color: "var(--text-secondary)" }}>
+                  {t.lot_size.toFixed(2)}
+                </td>
+                <td style={{ padding: "8px 10px", color: "var(--text-secondary)" }}>
+                  {t.entry_price.toFixed(5)}
+                </td>
+                <td style={{ padding: "8px 10px", color: "var(--text-secondary)" }}>
+                  {t.sl?.toFixed(5) ?? "—"}
+                </td>
+                <td style={{ padding: "8px 10px", color: "var(--text-secondary)" }}>
+                  {t.tp?.toFixed(5) ?? "—"}
+                </td>
+                <td style={{ padding: "8px 10px", fontWeight: 700, color: pnlColor }}>
+                  {pnl >= 0 ? "+" : ""}{pnl.toFixed(2)}
+                </td>
+                <td style={{ padding: "8px 10px" }}>
+                  <button
+                    style={{
+                      fontSize: 10,
+                      padding: "2px 8px",
+                      borderRadius: 4,
+                      border: "1px solid var(--border-subtle)",
+                      background: "transparent",
+                      color: "var(--text-muted)",
+                      cursor: "pointer",
+                    }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onSelect?.(t);
+                    }}
+                  >
+                    VIEW
+                  </button>
                 </td>
               </tr>
             );
