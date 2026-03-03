@@ -12,11 +12,13 @@ from fastapi import APIRouter, HTTPException
 from loguru import logger
 from pydantic import BaseModel, Field, field_validator
 
+from risk.kill_switch import GlobalKillSwitch
 from risk.exceptions import RiskException
 from risk.risk_engine_v2 import RiskEngineV2, SignalInput
 from risk.risk_profile import RiskMode, RiskProfile, load_risk_profile, save_risk_profile
 
 router = APIRouter(prefix="/api/v1/risk")
+_kill_switch = GlobalKillSwitch()
 
 
 # ========================
@@ -72,6 +74,10 @@ class CloseTradeRequest(BaseModel):
     entry_number: int = Field(default=1, ge=1, le=2, description="Entry number (1 or 2)")
 
 
+class KillSwitchRequest(BaseModel):
+    reason: str = Field(default="MANUAL_KILL_SWITCH", min_length=1, max_length=200)
+
+
 # ========================
 # ENDPOINTS
 # ========================
@@ -104,6 +110,18 @@ async def evaluate_signal(
     Returns ALLOW or DENY verdict with lot sizing details.
     Optionally auto-registers the trade if allowed.
     """
+    if _kill_switch.is_enabled():
+        state = _kill_switch.snapshot()
+        return {
+            "verdict": "DENY",
+            "deny_code": "GLOBAL_KILL_SWITCH",
+            "lots": [],
+            "risk_amount": 0.0,
+            "open_risk_after": 0.0,
+            "open_trades_after": 0,
+            "details": state,
+        }
+
     try:
         engine = RiskEngineV2(account_id)
         signal = SignalInput(
@@ -191,3 +209,58 @@ async def close_trade(
             "Failed to close trade", account_id=account_id, trade_id=req.trade_id, error=str(exc)
         )
         raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@router.post("/preview")
+async def risk_preview(req: EvaluateSignalRequest) -> dict:
+    """Risk Preview payload for modal UI (no trade registration side-effect)."""
+    if _kill_switch.is_enabled():
+        state = _kill_switch.snapshot()
+        return {
+            "trade_allowed": False,
+            "recommended_lot": 0.0,
+            "max_safe_lot": 0.0,
+            "reason": f"KILL_SWITCH_ACTIVE: {state.get('reason', 'N/A')}",
+            "expiry": None,
+            "details": state,
+        }
+
+    engine = RiskEngineV2(account_id="preview")
+    signal = SignalInput(
+        symbol=req.symbol,
+        direction=req.direction,
+        entry_price=req.entry_price,
+        stop_loss=req.stop_loss,
+        take_profit_1=req.take_profit_1,
+        rr_ratio=req.rr_ratio,
+        trade_id=req.trade_id,
+        sl_distance_2=req.sl_distance_2,
+    )
+    result = engine.evaluate(signal, vix_level=req.vix_level, session=req.session)
+
+    lots = result.lots or []
+    total_lot = sum(float(item.get("lot_size", 0.0) or 0.0) for item in lots)
+    return {
+        "trade_allowed": result.allowed,
+        "recommended_lot": round(total_lot, 4),
+        "max_safe_lot": round(total_lot, 4),
+        "reason": result.deny_code or "ALLOW",
+        "expiry": None,
+        "details": result.details or {},
+    }
+
+
+@router.get("/kill-switch")
+async def get_kill_switch() -> dict:
+    return _kill_switch.snapshot()
+
+
+@router.post("/kill-switch")
+async def enable_kill_switch(req: KillSwitchRequest) -> dict:
+    return _kill_switch.enable(req.reason)
+
+
+@router.delete("/kill-switch")
+async def disable_kill_switch(req: KillSwitchRequest | None = None) -> dict:
+    reason = req.reason if req else "MANUAL_RELEASE"
+    return _kill_switch.disable(reason)

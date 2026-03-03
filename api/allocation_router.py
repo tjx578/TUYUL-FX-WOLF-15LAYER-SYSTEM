@@ -18,6 +18,7 @@ from pydantic import BaseModel, Field
 from redis import Redis
 
 from api.middleware.auth import verify_token
+from allocation.signal_service import SignalService
 from accounts.risk_engine import RiskEngine  # noqa: F401
 from accounts.account_model import (
     AccountState as DashAccountState,
@@ -30,6 +31,8 @@ from accounts.account_model import (
 from accounts.account_model import (
     RiskMode as DashRiskMode,
 )
+from journal.trade_journal_service import trade_journal_automation_service
+from risk.kill_switch import GlobalKillSwitch
 
 logger = logging.getLogger(__name__)
 
@@ -56,6 +59,8 @@ except Exception as exc:  # pragma: no cover
 _signal_pool: dict[str, dict] = {}
 _trade_ledger: dict[str, dict] = {}
 _account_registry: dict[str, dict] = {}
+_signal_service = SignalService()
+_kill_switch = GlobalKillSwitch()
 
 # ── [BUG-1 FIX] Use FastAPI's APIRouter directly — no shadowing ───────────────
 write_router = APIRouter(
@@ -186,6 +191,13 @@ async def take_signal(req: TakeSignalRequest) -> dict:
     Create a trade from an L12 EXECUTE signal.
     Lot size is calculated by RiskEngine — never from user input.
     """
+    if _kill_switch.is_enabled():
+        state = _kill_switch.snapshot()
+        raise HTTPException(
+            status_code=status.HTTP_423_LOCKED,
+            detail=f"Global kill switch is active: {state.get('reason', 'N/A')}",
+        )
+
     account = _account_registry.get(req.account_id)
     if not account:
         # Try Redis
@@ -249,6 +261,29 @@ async def take_signal(req: TakeSignalRequest) -> dict:
     _trade_ledger[trade_id] = trade
     _redis_set(f"TRADE:{trade_id}", json.dumps(trade), ex=86400)
 
+    # Freeze + publish read-only signal contract
+    signal_payload = {
+        "signal_id": req.signal_id,
+        "symbol": req.pair,
+        "verdict": "EXECUTE",
+        "confidence": 0.8,
+        "direction": req.direction,
+        "entry_price": req.entry,
+        "stop_loss": req.sl,
+        "take_profit_1": req.tp,
+        "risk_reward_ratio": _build_risk_signal(req.pair, req.direction, req.entry, req.sl, req.tp).rr,
+    }
+    _signal_service.publish(signal_payload)
+    trade_journal_automation_service.on_signal_taken(trade)
+
+    # Push to live websocket feed (best-effort)
+    try:
+        from api.ws_routes import publish_live_update  # noqa: PLC0415
+        await publish_live_update("trade_intended", trade)
+        await publish_live_update("signal", signal_payload)
+    except Exception:
+        pass
+
     logger.info("Trade INTENDED: %s %s %s", trade_id, req.pair, req.direction)
     return {
         "trade_id": trade_id,
@@ -275,6 +310,12 @@ async def skip_signal(req: SkipSignalRequest) -> dict:
     }
     import json
     _redis_set(f"JOURNAL:{entry_id}", json.dumps(journal_entry), ex=604800)
+    trade_journal_automation_service.on_signal_skipped(req.signal_id, req.pair, req.reason or "MANUAL_SKIP")
+    try:
+        from api.ws_routes import publish_live_update  # noqa: PLC0415
+        await publish_live_update("signal_skipped", journal_entry)
+    except Exception:
+        pass
     logger.info("Signal SKIPPED: %s %s reason=%s", req.signal_id, req.pair, req.reason)
     return {"logged": True, "entry_id": entry_id, "journal_type": "J2"}
 
@@ -283,6 +324,13 @@ async def skip_signal(req: SkipSignalRequest) -> dict:
 async def confirm_trade(req: ConfirmTradeRequest) -> dict:
     """Trader confirmed order placement at broker: INTENDED → PENDING."""
     import json
+
+    if _kill_switch.is_enabled():
+        state = _kill_switch.snapshot()
+        raise HTTPException(
+            status_code=status.HTTP_423_LOCKED,
+            detail=f"Global kill switch is active: {state.get('reason', 'N/A')}",
+        )
 
     trade = _trade_ledger.get(req.trade_id)
     if not trade:
@@ -301,6 +349,12 @@ async def confirm_trade(req: ConfirmTradeRequest) -> dict:
     trade["updated_at"] = datetime.now(UTC).isoformat()
     _trade_ledger[req.trade_id] = trade
     _redis_set(f"TRADE:{req.trade_id}", json.dumps(trade), ex=86400)
+    trade_journal_automation_service.on_trade_confirmed(trade)
+    try:
+        from api.ws_routes import publish_live_update  # noqa: PLC0415
+        await publish_live_update("trade_confirmed", trade)
+    except Exception:
+        pass
 
     logger.info("Trade PENDING: %s", req.trade_id)
     return {"trade_id": req.trade_id, "status": "PENDING"}
@@ -328,6 +382,12 @@ async def close_trade(req: CloseTradeRequest) -> dict:
 
     _trade_ledger[req.trade_id] = trade
     _redis_set(f"TRADE:{req.trade_id}", json.dumps(trade), ex=604800)
+    trade_journal_automation_service.on_trade_closed(trade, req.reason or "MANUAL_CLOSE")
+    try:
+        from api.ws_routes import publish_live_update  # noqa: PLC0415
+        await publish_live_update("trade_closed", trade)
+    except Exception:
+        pass
 
     logger.info("Trade CLOSED: %s reason=%s pnl=%s", req.trade_id, req.reason, req.pnl)
     return {
@@ -373,6 +433,26 @@ async def calculate_risk_preview(req: RiskCalculateRequest) -> dict:
     Frontend uses this to show user exact lot + DD impact before confirming.
     Mirrors: dashboard/backend/risk_engine.py → RiskEngine.calculate_lot()
     """
+    if _kill_switch.is_enabled():
+        state = _kill_switch.snapshot()
+        return {
+            "account_id": req.account_id,
+            "pair": req.pair,
+            "direction": req.direction,
+            "trade_allowed": False,
+            "reason": f"KILL_SWITCH_ACTIVE: {state.get('reason', 'N/A')}",
+            "calculation": {
+                "trade_allowed": False,
+                "recommended_lot": 0.0,
+                "max_safe_lot": 0.0,
+                "risk_used_percent": 0.0,
+                "daily_dd_after": 0.0,
+                "total_dd_after": 0.0,
+                "severity": "CRITICAL",
+                "reason": f"KILL_SWITCH_ACTIVE: {state.get('reason', 'N/A')}",
+            },
+        }
+
     account = _account_registry.get(req.account_id)
     if not account:
         acct_data = _redis_hgetall(f"ACCOUNT:{req.account_id}")
