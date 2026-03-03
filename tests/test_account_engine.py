@@ -11,8 +11,8 @@ Validates:
 
 import pytest
 
-from dashboard.backend.account_engine import AccountEngine
-from dashboard.backend.schemas import RiskSeverity
+from accounts.account_state_service import AccountEngine
+from accounts.account_model import RiskSeverity
 
 
 class TestAccountEngineInitialization:
