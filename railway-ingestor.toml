@@ -1,9 +1,9 @@
 [build]
 builder = "DOCKERFILE"
-dockerfilePath = "Dockerfile.ingestor"
+dockerfilePath = "Dockerfile"
 
 [deploy]
-startCommand = "python ingest_service.py"
+startCommand = "bash deploy/railway/start_ingest.sh"
 healthcheckPath = "/healthz"
 healthcheckPort = 8082
 restartPolicyType = "ON_FAILURE"
