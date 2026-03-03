@@ -38,10 +38,22 @@ const fetcher = async (url: string) => {
 };
 
 const apiMutate = async (url: string, body?: unknown, method = "POST") => {
+  return apiMutateWithHeaders(url, body, method);
+};
+
+const apiMutateWithHeaders = async (
+  url: string,
+  body?: unknown,
+  method = "POST",
+  headers?: Record<string, string>
+) => {
   const res = await fetch(`${API_BASE}${url}`, {
     method,
     credentials: "include",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      ...(headers ?? {}),
+    },
     body: body !== undefined ? JSON.stringify(body) : undefined,
   });
 
@@ -60,11 +72,16 @@ export interface ActiveTradesResponse {
 // ─── HOOKS ───────────────────────────────────────────────────
 
 export function useAccounts() {
-  const { data, error, isLoading } = useSWR<Account[]>(
+  const { data, error, isLoading } = useSWR<Account[] | { accounts: Account[] }>(
     "/api/v1/accounts",
     fetcher
   );
-  return { data, isLoading, isError: !!error, error };
+  const normalized = Array.isArray(data)
+    ? data
+    : Array.isArray(data?.accounts)
+      ? data.accounts
+      : [];
+  return { data: normalized, isLoading, isError: !!error, error };
 }
 
 export function useActiveTrades() {
@@ -224,10 +241,34 @@ export function useJournalMetrics() {
   return { data, isLoading, isError: !!error, error };
 }
 
+export interface AccountRiskSnapshot {
+  account_id: string;
+  daily_dd_percent: number;
+  total_dd_percent: number;
+  open_risk_percent: number;
+  max_concurrent: number;
+  open_trades: number;
+  circuit_breaker: boolean;
+  status: "SAFE" | "WARNING" | "CRITICAL";
+}
+
+export function useAccountsRiskSnapshot() {
+  const { data, error, isLoading, mutate } = useSWR<AccountRiskSnapshot[]>(
+    "/api/v1/accounts/risk-snapshot",
+    fetcher
+  );
+  return { data, isLoading, isError: !!error, error, mutate };
+}
+
 // ─── MUTATIONS ────────────────────────────────────────────────
 
 export async function confirmTrade(tradeId: string): Promise<void> {
-  await apiMutate(`/api/v1/trades/${tradeId}/confirm`);
+  await apiMutateWithHeaders(
+    `/api/v1/trades/${tradeId}/confirm`,
+    undefined,
+    "POST",
+    { "X-Idempotency-Key": `confirm:${tradeId}` }
+  );
 }
 
 export async function closeTrade(tradeId: string, reason: string): Promise<void> {
@@ -235,19 +276,41 @@ export async function closeTrade(tradeId: string, reason: string): Promise<void>
 }
 
 export interface TakeSignalRequest {
-  signal_id: string;
-  account_id: string;
+  verdict_id: string;
+  accounts: string[];
   pair: string;
   direction: "BUY" | "SELL";
   entry: number;
   sl: number;
   tp: number;
   risk_percent: number;
-  risk_mode: "FIXED" | "SPLIT";
+  operator?: string;
 }
 
 export async function takeSignal(req: TakeSignalRequest): Promise<void> {
   await apiMutate("/api/v1/signals/take", req);
+}
+
+export interface RiskPreviewMultiRequest {
+  verdict_id: string;
+  accounts: Array<{ account_id: string }>;
+  risk_percent: number;
+  risk_mode: "FIXED" | "SPLIT";
+}
+
+export interface RiskPreviewAccountItem {
+  account_id: string;
+  lot_size: number;
+  risk_percent: number;
+  daily_dd_after: number;
+  allowed: boolean;
+  reason?: string;
+}
+
+export async function previewRiskMulti(
+  req: RiskPreviewMultiRequest
+): Promise<{ previews: RiskPreviewAccountItem[] }> {
+  return apiMutate("/api/v1/risk/preview-multi", req);
 }
 
 export interface SkipSignalRequest {

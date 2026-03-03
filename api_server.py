@@ -223,6 +223,7 @@ app.add_middleware(
         "Accept",
         "Origin",
         "X-Requested-With",
+        "X-Idempotency-Key",
     ],
     expose_headers=[],
 )
