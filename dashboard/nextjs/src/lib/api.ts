@@ -52,6 +52,11 @@ const apiMutate = async (url: string, body?: unknown, method = "POST") => {
   return res.json().catch(() => undefined);
 };
 
+export interface ActiveTradesResponse {
+  trades: Trade[];
+  count: number;
+}
+
 // ─── HOOKS ───────────────────────────────────────────────────
 
 export function useAccounts() {
@@ -63,7 +68,11 @@ export function useAccounts() {
 }
 
 export function useActiveTrades() {
-  const { data, error, isLoading, mutate } = useSWR<Trade[]>(
+  // Current backend shape: { trades: [...], count: n }
+  // Keep union for backward compatibility with legacy Trade[] responses.
+  const { data, error, isLoading, mutate } = useSWR<
+    ActiveTradesResponse | Trade[]
+  >(
     "/api/v1/trades/active",
     fetcher
   );
