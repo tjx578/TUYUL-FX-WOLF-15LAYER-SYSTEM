@@ -15,6 +15,7 @@ from typing import Any, Optional
 from loguru import logger
 
 from execution.broker_executor import BrokerExecutor, ExecutionRequest, ExecutionResult
+from execution.execution_guard import ExecutionGuard
 from execution.trade_state_enum import TradeState
 
 TRADE_UPDATES_CHANNEL = "trade:updates"
@@ -30,8 +31,13 @@ class EAManager:
     - Emits trade:updates events on success/failure
     """
 
-    def __init__(self, executor: Optional[BrokerExecutor] = None) -> None:
+    def __init__(
+        self,
+        executor: Optional[BrokerExecutor] = None,
+        guard: Optional[ExecutionGuard] = None,
+    ) -> None:
         self._executor = executor or BrokerExecutor()
+        self._guard = guard or ExecutionGuard()
         self._queue: Queue[ExecutionRequest] = Queue(maxsize=200)
         self._results: dict[str, ExecutionResult] = {}
         self._running = False
@@ -51,6 +57,17 @@ class EAManager:
 
     def submit(self, req: ExecutionRequest) -> str:
         """Enqueue an execution request. Returns request_id."""
+        signal_id = str(req.meta.get("signal_id", "") or "") if req.meta else ""
+        gate = self._guard.execute(
+            signal_id=signal_id,
+            account_id=req.account_id,
+            symbol=req.symbol,
+        ) if signal_id else self._guard.validate_scope(
+            account_id=req.account_id,
+            ea_instance_id=str(req.meta.get("ea_instance_id", "") or "") if req.meta else None,
+        )
+        if not gate.allowed:
+            raise ValueError(f"Execution rejected: {gate.code} ({gate.details})")
         self._queue.put(req, timeout=5)
         return req.request_id
 

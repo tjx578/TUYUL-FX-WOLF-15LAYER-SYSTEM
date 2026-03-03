@@ -6,6 +6,7 @@ Records every AllocationRequest + AllocationResult for compliance.
 from __future__ import annotations
 
 import json
+from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from threading import Lock
@@ -20,6 +21,18 @@ if TYPE_CHECKING:
 _LOG_DIR = Path("storage") / "allocation_audit"
 
 
+@dataclass(frozen=True)
+class AllocationLog:
+    id: str
+    signal_id: str
+    account_id: str
+    operator: str
+    action: str
+    lot_size: float
+    risk_percent: float
+    timestamp: str
+
+
 class AllocationAudit:
     """Write-only allocation audit log. Append-only. No deletion."""
 
@@ -27,16 +40,33 @@ class AllocationAudit:
 
     def record(self, request: "AllocationRequest", result: "AllocationResult") -> None:
         """Append an allocation decision to the audit log."""
+        logs = [
+            AllocationLog(
+                id=f"{request.request_id}:{item.account_id}",
+                signal_id=request.signal_id,
+                account_id=item.account_id,
+                operator=request.operator,
+                action="TAKE" if item.allowed else "SKIP",
+                lot_size=float(item.lot_size),
+                risk_percent=float(item.risk_percent),
+                timestamp=datetime.now(timezone.utc).isoformat(),
+            )
+            for item in result.account_results
+        ]
+
         entry = {
             "ts": datetime.now(timezone.utc).isoformat(),
             "request_id": request.request_id,
             "signal_id": request.signal_id,
             "account_ids": request.account_ids,
+            "operator": request.operator,
+            "action": request.action,
             "risk_percent": request.risk_percent,
             "status": result.status,
             "approved": result.approved_count,
             "rejected": result.rejected_count,
             "accounts": [r.model_dump() for r in result.account_results],
+            "allocation_logs": [asdict(item) for item in logs],
         }
         self._write(entry)
         self._redis_append(entry)

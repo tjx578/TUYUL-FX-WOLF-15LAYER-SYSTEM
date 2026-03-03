@@ -85,6 +85,8 @@ class ExecutionRequest:
     meta: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
+        if not self.account_id or not self.account_id.strip():
+            raise ValueError("account_id is required for execution requests")
         if not self.request_id:
             raw = f"{self.account_id}:{self.symbol}:{self.entry_price}:{time.time()}"
             self.request_id = hashlib.sha256(raw.encode()).hexdigest()[:16]
