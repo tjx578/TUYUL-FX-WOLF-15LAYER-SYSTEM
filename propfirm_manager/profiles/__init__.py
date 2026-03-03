@@ -1,5 +1,6 @@
-"""
-Prop Firm Profiles Package
+"""Prop firm guard profiles package."""
 
-Contains guard implementations for different prop firms.
-"""
+from propfirm_manager.profiles.base_guard import BasePropFirmGuard, GuardResult
+
+__all__ = ["BasePropFirmGuard", "GuardResult"]
+"""Propfirm profiles package."""

@@ -1,1 +1,1 @@
-"""Engine module placeholder."""
+"""Placeholder for sovereign engine pipeline v8."""

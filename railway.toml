@@ -3,5 +3,5 @@ builder = "DOCKERFILE"
 dockerfilePath = "Dockerfile"
 
 [deploy]
-startCommand = "bash railway_start.sh"
+startCommand = "bash deploy/railway/start_api.sh"
 healthcheckPath = "/health"

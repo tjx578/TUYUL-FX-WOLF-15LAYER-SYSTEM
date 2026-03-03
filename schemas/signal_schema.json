@@ -1,1 +1,83 @@
-{"$schema":"https://json-schema.org/draft/2020-12/schema","title":"SignalSchema","type":"object"}
+{
+	"$schema": "http://json-schema.org/draft-07/schema#",
+	"$id": "wolf15.signal_contract.v2026-03-03",
+	"title": "Wolf-15 SignalContract",
+	"description": "Frozen read contract for dashboard and execution boundaries.",
+	"type": "object",
+	"required": [
+		"contract_version",
+		"signal_id",
+		"symbol",
+		"verdict",
+		"confidence",
+		"timestamp"
+	],
+	"properties": {
+		"contract_version": {
+			"type": "string",
+			"const": "2026-03-03"
+		},
+		"signal_id": {
+			"type": "string",
+			"minLength": 6
+		},
+		"symbol": {
+			"type": "string",
+			"minLength": 3
+		},
+		"verdict": {
+			"type": "string",
+			"enum": ["EXECUTE", "HOLD", "NO_TRADE", "ABORT"]
+		},
+		"confidence": {
+			"type": "number",
+			"minimum": 0,
+			"maximum": 1
+		},
+		"direction": {
+			"type": ["string", "null"],
+			"enum": ["BUY", "SELL", null]
+		},
+		"entry_price": {
+			"type": ["number", "null"],
+			"exclusiveMinimum": 0
+		},
+		"stop_loss": {
+			"type": ["number", "null"],
+			"exclusiveMinimum": 0
+		},
+		"take_profit_1": {
+			"type": ["number", "null"],
+			"exclusiveMinimum": 0
+		},
+		"risk_reward_ratio": {
+			"type": ["number", "null"],
+			"minimum": 0
+		},
+		"scores": {
+			"type": "object",
+			"properties": {
+				"wolf_score": { "type": "number" },
+				"tii_score": { "type": "number" },
+				"frpc_score": { "type": "number" }
+			},
+			"additionalProperties": false
+		},
+		"timestamp": {
+			"type": "number"
+		},
+		"expires_at": {
+			"type": ["number", "null"]
+		}
+	},
+	"additionalProperties": false,
+	"not": {
+		"anyOf": [
+			{ "required": ["balance"] },
+			{ "required": ["equity"] },
+			{ "required": ["account_balance"] },
+			{ "required": ["lot_size"] },
+			{ "required": ["risk_amount"] }
+		]
+	}
+}

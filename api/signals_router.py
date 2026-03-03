@@ -1,67 +1,42 @@
-"""
-EA (Expert Advisor) executor-status routes.
+"""Read-only API for frozen SignalContract payloads."""
 
-Mount scope: dashboard/backend/api.py  (standalone dashboard app)
-Do NOT add to api_server.py without also updating _assert_no_duplicate_routes() coverage.
-EA is an executor only — no market decisions or verdicts live here.
+from fastapi import APIRouter, HTTPException, Query
 
-Bridge directory is read from the EA_BRIDGE_DIR environment variable
-(default: "bridge" relative to cwd). The bridge uses a file-based protocol —
-see ea_interface/mt5_bridge.py for details.
-"""
-from __future__ import annotations
+from allocation.signal_service import SignalService
+from schemas.signal_contract import FROZEN_SIGNAL_CONTRACT_VERSION
 
-import contextlib
-import json
-import os
-from pathlib import Path
+router = APIRouter(prefix="/api/v1/signals", tags=["signals"])
 
-from fastapi import APIRouter, Query
-
-from ea_interface.mt5_bridge import FileBasedMT5Bridge
-
-router = APIRouter(prefix="/api/v1/ea", tags=["ea"])
-
-_BRIDGE_DIR = os.getenv("EA_BRIDGE_DIR", "bridge")
+_signals = SignalService()
 
 
-def _bridge() -> FileBasedMT5Bridge:
-    """Return a bridge instance pointed at the configured directory."""
-    return FileBasedMT5Bridge(Path(_BRIDGE_DIR))
+@router.get("")
+async def list_signals(
+	symbol: str | None = Query(default=None),
+	limit: int = Query(default=100, ge=1, le=500),
+) -> dict:
+	items = _signals.list_by_symbol(symbol) if symbol else _signals.list_all()
+	clipped = items[:limit]
+	return {
+		"count": len(clipped),
+		"contract_version": FROZEN_SIGNAL_CONTRACT_VERSION,
+		"signals": clipped,
+	}
 
 
-@router.get("/status")
-def get_status() -> dict:
-    """Return EA bridge health (executor status only — no market state)."""
-    return _bridge().health_check()
+@router.get("/contract")
+async def signal_contract_meta() -> dict:
+	return {
+		"name": "SignalContract",
+		"frozen": True,
+		"version": FROZEN_SIGNAL_CONTRACT_VERSION,
+		"source": "schemas/signal_schema.json",
+	}
 
 
-@router.get("/logs")
-def get_logs(limit: int = Query(default=20, ge=1, le=200)) -> list[dict]:
-    """Return the most recent archived EA execution reports (read-only)."""
-    archive_dir = Path(_BRIDGE_DIR) / "archive"
-    if not archive_dir.exists():
-        return []
-    files = sorted(
-        archive_dir.glob("*.json"),
-        key=lambda f: f.stat().st_mtime,
-        reverse=True,
-    )
-    results: list[dict] = []
-    for f in files[:limit]:
-        with contextlib.suppress(Exception):
-            results.append(json.loads(f.read_text(encoding="utf-8")))
-    return results
-
-
-@router.post("/restart")
-def restart() -> dict:
-    """Clear pending command files (executor reset only — no market decision)."""
-    commands_dir = Path(_BRIDGE_DIR) / "commands"
-    cleared = 0
-    if commands_dir.exists():
-        for f in commands_dir.glob("*.json"):
-            with contextlib.suppress(Exception):
-                f.unlink()
-                cleared += 1
-    return {"ok": True, "pending_commands_cleared": cleared}
+@router.get("/{signal_id}")
+async def get_signal(signal_id: str) -> dict:
+	item = _signals.get(signal_id)
+	if not item:
+		raise HTTPException(status_code=404, detail=f"Signal not found: {signal_id}")
+	return item
