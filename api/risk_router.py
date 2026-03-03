@@ -1,5 +1,3 @@
-"""Placeholder API router for risk endpoints."""
+"""Compatibility router alias for risk endpoints."""
 
-from fastapi import APIRouter
-
-router = APIRouter(prefix="/api/v1/risk", tags=["risk"])
+from risk.risk_router import router  # re-export

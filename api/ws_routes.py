@@ -31,6 +31,8 @@ import fastapi  # pyright: ignore[reportMissingImports]
 from loguru import logger  # pyright: ignore[reportMissingImports]
 
 from api.middleware.ws_auth import ws_auth_guard
+from allocation.signal_service import SignalService
+from dashboard.account_manager import AccountManager
 from dashboard.price_feed import PriceFeed
 from dashboard.trade_ledger import TradeLedger
 
@@ -241,10 +243,13 @@ trade_manager = ConnectionManager(name="trades")
 candle_manager = ConnectionManager(name="candles")
 risk_manager = ConnectionManager(name="risk")
 equity_manager = ConnectionManager(name="equity")
+live_manager = ConnectionManager(name="live")
 
 # Service instances
 _price_feed = PriceFeed()
 _trade_ledger = TradeLedger()
+_account_manager = AccountManager()
+_signal_service = SignalService()
 
 # Event that fires when new prices are available (set by price update loop)
 _price_event = asyncio.Event()
@@ -257,6 +262,16 @@ async def notify_price_update():
     Redis subscriber, etc.) to wake the WS push loop immediately.
     """
     _price_event.set()
+
+
+async def publish_live_update(topic: str, payload: dict):
+    """Publish an event to /ws/live subscribers."""
+    await live_manager.broadcast({
+        "type": "live_event",
+        "topic": topic,
+        "data": payload,
+        "ts": time.time(),
+    })
 
 
 # ---------------------------------------------------------------------------
@@ -674,3 +689,46 @@ async def websocket_equity(websocket: fastapi.WebSocket):
     except Exception as exc:
         logger.error(f"Equity WebSocket error: {exc}")
         equity_manager.disconnect(websocket)
+
+
+# ---------------------------------------------------------------------------
+# WS /ws/live -- Unified live feed (signals + accounts + trades)
+# ---------------------------------------------------------------------------
+
+@router.websocket("/ws/live")
+async def websocket_live_feed(websocket: fastapi.WebSocket):
+    """Unified live feed for dashboard widgets and risk preview modal state."""
+    connected = await live_manager.connect(websocket)
+    if not connected:
+        return
+
+    try:
+        await websocket.send_json({
+            "type": "snapshot",
+            "data": {
+                "signals": _signal_service.list_all(),
+                "accounts": [a.model_dump() for a in _account_manager.list_accounts()],
+                "trades": [t.model_dump() for t in _trade_ledger.get_active_trades()],
+            },
+            "ts": time.time(),
+        })
+
+        while True:
+            # Keepalive periodic state update for clients that miss individual events
+            await websocket.send_json({
+                "type": "heartbeat_state",
+                "data": {
+                    "signal_count": len(_signal_service.list_all()),
+                    "account_count": len(_account_manager.list_accounts()),
+                    "active_trade_count": len(_trade_ledger.get_active_trades()),
+                },
+                "ts": time.time(),
+            })
+            await asyncio.sleep(1.0)
+
+    except fastapi.WebSocketDisconnect:
+        live_manager.disconnect(websocket)
+        logger.info("Live WebSocket client disconnected")
+    except Exception as exc:
+        logger.error(f"Live WebSocket error: {exc}")
+        live_manager.disconnect(websocket)
