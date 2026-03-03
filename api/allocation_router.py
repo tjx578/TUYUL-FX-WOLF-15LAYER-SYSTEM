@@ -9,11 +9,12 @@ BUG FIXES APPLIED:
 """
 
 import logging
+import threading
 import uuid
 from datetime import UTC, datetime
 
 import redis as redis_lib
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, Header, HTTPException, status
 from pydantic import BaseModel, Field
 from redis import Redis
 
@@ -61,6 +62,11 @@ _trade_ledger: dict[str, dict] = {}
 _account_registry: dict[str, dict] = {}
 _signal_service = SignalService()
 _kill_switch = GlobalKillSwitch()
+_confirm_lock = threading.Lock()
+
+ALLOC_REQUEST_STREAM = "allocation:request"
+IDEMPOTENCY_KEY_PREFIX = "idempotency:confirm:"
+IDEMPOTENCY_TTL_SEC = 60 * 60 * 24
 
 # ── [BUG-1 FIX] Use FastAPI's APIRouter directly — no shadowing ───────────────
 write_router = APIRouter(
@@ -83,6 +89,18 @@ class TakeSignalRequest(BaseModel):
     risk_percent: float = Field(default=1.0, gt=0, le=10)
     risk_mode: str = Field(default="FIXED", pattern="^(FIXED|SPLIT)$")
     split_ratio: float | None = Field(default=None, gt=0, le=1)
+
+
+class TakeSignalBatchRequest(BaseModel):
+    verdict_id: str
+    accounts: list[str] = Field(..., min_length=1)
+    pair: str
+    direction: str = Field(..., pattern="^(BUY|SELL)$")
+    entry: float
+    sl: float
+    tp: float
+    risk_percent: float = Field(default=1.0, gt=0, le=10)
+    operator: str = Field(default="operator")
 
 
 class SkipSignalRequest(BaseModel):
@@ -139,6 +157,36 @@ def _redis_hgetall(name: str) -> dict:
     return {}
 
 
+def _redis_xadd(name: str, fields: dict[str, str]) -> str | None:
+    if _redis:
+        val = _redis.xadd(name, fields)
+        return val if isinstance(val, str) else None
+    return None
+
+
+def _idempotency_get(key: str) -> dict | None:
+    import json
+
+    raw = _redis_get(f"{IDEMPOTENCY_KEY_PREFIX}{key}")
+    if not raw:
+        return None
+    try:
+        payload = json.loads(raw)
+        return payload if isinstance(payload, dict) else None
+    except Exception:
+        return None
+
+
+def _idempotency_set(key: str, response: dict) -> None:
+    import json
+
+    _redis_set(
+        f"{IDEMPOTENCY_KEY_PREFIX}{key}",
+        json.dumps(response),
+        ex=IDEMPOTENCY_TTL_SEC,
+    )
+
+
 # ─── Helper: RiskEngine signal/account construction ─────────────────────────
 
 def _build_risk_signal(
@@ -181,6 +229,101 @@ def _build_account_state(account_id: str, account: dict) -> DashAccountState:
         open_trades=int(account.get("open_trades", 0)),
         risk_state=RiskSeverity.SAFE,
     )
+
+
+def _atomic_transition_intended_to_pending(trade_id: str) -> dict:
+    import json
+
+    now = datetime.now(UTC).isoformat()
+    key = f"TRADE:{trade_id}"
+
+    if _redis:
+        try:
+            script = """
+            local key = KEYS[1]
+            local now = ARGV[1]
+            local raw = redis.call('GET', key)
+            if not raw then
+              return {0, 'NOT_FOUND'}
+            end
+            local trade = cjson.decode(raw)
+            local current = tostring(trade['status'] or '')
+            if current ~= 'INTENDED' then
+              return {0, current}
+            end
+            trade['status'] = 'PENDING'
+            trade['updated_at'] = now
+            redis.call('SET', key, cjson.encode(trade), 'EX', 86400)
+            return {1, cjson.encode(trade)}
+            """
+            result = _redis.eval(script, 1, key, now)
+            if isinstance(result, list) and len(result) >= 2 and int(result[0]) == 1:
+                payload = str(result[1])
+                trade = json.loads(payload)
+                _trade_ledger[trade_id] = trade
+                return trade
+
+            if isinstance(result, list) and len(result) >= 2:
+                state = str(result[1])
+                if state == "NOT_FOUND":
+                    raise HTTPException(status_code=404, detail=f"Trade {trade_id} not found")
+                raise HTTPException(
+                    status_code=409,
+                    detail=f"Trade {trade_id} is {state}, must be INTENDED to confirm",
+                )
+        except HTTPException:
+            raise
+        except Exception as exc:
+            logger.warning("Atomic Redis confirm fallback triggered for %s: %s", trade_id, exc)
+
+    with _confirm_lock:
+        trade = _trade_ledger.get(trade_id)
+        if not trade:
+            raw = _redis_get(key)
+            if not raw:
+                raise HTTPException(status_code=404, detail=f"Trade {trade_id} not found")
+            trade = json.loads(raw)
+
+        if trade.get("status") != "INTENDED":
+            raise HTTPException(
+                status_code=409,
+                detail=f"Trade {trade_id} is {trade.get('status')}, must be INTENDED to confirm",
+            )
+
+        trade["status"] = "PENDING"
+        trade["updated_at"] = now
+        _trade_ledger[trade_id] = trade
+        _redis_set(key, json.dumps(trade), ex=86400)
+        return trade
+
+
+async def _confirm_trade_internal(trade_id: str, idempotency_key: str | None) -> dict:
+    if _kill_switch.is_enabled():
+        state = _kill_switch.snapshot()
+        raise HTTPException(
+            status_code=status.HTTP_423_LOCKED,
+            detail=f"Global kill switch is active: {state.get('reason', 'N/A')}",
+        )
+
+    if idempotency_key:
+        cached = _idempotency_get(idempotency_key)
+        if cached:
+            return cached
+
+    trade = _atomic_transition_intended_to_pending(trade_id)
+
+    trade_journal_automation_service.on_trade_confirmed(trade)
+    try:
+        from api.ws_routes import publish_live_update  # noqa: PLC0415
+
+        await publish_live_update("trade_confirmed", trade)
+    except Exception:
+        pass
+
+    response = {"trade_id": trade_id, "status": "PENDING"}
+    if idempotency_key:
+        _idempotency_set(idempotency_key, response)
+    return response
 
 
 # ─── Routes ──────────────────────────────────────────────────────────────────
@@ -293,6 +436,67 @@ async def take_signal(req: TakeSignalRequest) -> dict:
     }
 
 
+@write_router.post("/signals/take")
+async def take_signal_multi(req: TakeSignalBatchRequest) -> dict:
+    """
+    Queue multi-account allocation requests (event-driven path).
+    One Redis stream message is published per account.
+    """
+    if _kill_switch.is_enabled():
+        state = _kill_switch.snapshot()
+        raise HTTPException(
+            status_code=status.HTTP_423_LOCKED,
+            detail=f"Global kill switch is active: {state.get('reason', 'N/A')}",
+        )
+
+    signal_payload = {
+        "signal_id": req.verdict_id,
+        "symbol": req.pair,
+        "verdict": f"EXECUTE_{req.direction}",
+        "confidence": 0.8,
+        "direction": req.direction,
+        "entry_price": req.entry,
+        "stop_loss": req.sl,
+        "take_profit_1": req.tp,
+        "risk_reward_ratio": _build_risk_signal(req.pair, req.direction, req.entry, req.sl, req.tp).rr,
+    }
+    _signal_service.publish(signal_payload)
+
+    queued: list[dict] = []
+    for account_id in req.accounts:
+        allocation_id = str(uuid.uuid4())
+        payload = {
+            "request_id": allocation_id,
+            "signal_id": req.verdict_id,
+            "account_ids": f"[\"{account_id}\"]",
+            "operator": req.operator,
+            "action": "TAKE",
+            "risk_percent": str(req.risk_percent),
+        }
+        stream_id = _redis_xadd(ALLOC_REQUEST_STREAM, payload)
+        queued.append(
+            {
+                "allocation_id": allocation_id,
+                "account_id": account_id,
+                "stream_id": stream_id,
+                "status": "QUEUED" if stream_id else "PENDING_FALLBACK",
+            }
+        )
+
+    if not _redis:
+        raise HTTPException(
+            status_code=503,
+            detail="Redis stream unavailable; cannot enqueue allocation request",
+        )
+
+    return {
+        "signal_id": req.verdict_id,
+        "queued": queued,
+        "count": len(queued),
+        "status": "QUEUED",
+    }
+
+
 @write_router.post("/trades/skip")
 async def skip_signal(req: SkipSignalRequest) -> dict:
     """Log a skipped signal as J2: NO_TRADE journal entry."""
@@ -320,44 +524,32 @@ async def skip_signal(req: SkipSignalRequest) -> dict:
     return {"logged": True, "entry_id": entry_id, "journal_type": "J2"}
 
 
+@write_router.post("/signals/skip")
+async def skip_signal_alias(req: SkipSignalRequest) -> dict:
+    """Compatibility alias for dashboard frontend."""
+    return await skip_signal(req)
+
+
 @write_router.post("/trades/confirm")
-async def confirm_trade(req: ConfirmTradeRequest) -> dict:
+async def confirm_trade(
+    req: ConfirmTradeRequest,
+    x_idempotency_key: str | None = Header(default=None, alias="X-Idempotency-Key"),
+) -> dict:
     """Trader confirmed order placement at broker: INTENDED → PENDING."""
-    import json
-
-    if _kill_switch.is_enabled():
-        state = _kill_switch.snapshot()
-        raise HTTPException(
-            status_code=status.HTTP_423_LOCKED,
-            detail=f"Global kill switch is active: {state.get('reason', 'N/A')}",
-        )
-
-    trade = _trade_ledger.get(req.trade_id)
-    if not trade:
-        raw = _redis_get(f"TRADE:{req.trade_id}")
-        if not raw:
-            raise HTTPException(status_code=404, detail=f"Trade {req.trade_id} not found")
-        trade = json.loads(raw)
-
-    if trade["status"] != "INTENDED":
-        raise HTTPException(
-            status_code=400,
-            detail=f"Trade {req.trade_id} is {trade['status']}, must be INTENDED to confirm",
-        )
-
-    trade["status"] = "PENDING"
-    trade["updated_at"] = datetime.now(UTC).isoformat()
-    _trade_ledger[req.trade_id] = trade
-    _redis_set(f"TRADE:{req.trade_id}", json.dumps(trade), ex=86400)
-    trade_journal_automation_service.on_trade_confirmed(trade)
-    try:
-        from api.ws_routes import publish_live_update  # noqa: PLC0415
-        await publish_live_update("trade_confirmed", trade)
-    except Exception:
-        pass
-
+    response = await _confirm_trade_internal(req.trade_id, x_idempotency_key)
     logger.info("Trade PENDING: %s", req.trade_id)
-    return {"trade_id": req.trade_id, "status": "PENDING"}
+    return response
+
+
+@write_router.post("/trades/{trade_id}/confirm")
+async def confirm_trade_by_id(
+    trade_id: str,
+    x_idempotency_key: str | None = Header(default=None, alias="X-Idempotency-Key"),
+) -> dict:
+    """Path-parameter variant for dashboard compatibility."""
+    response = await _confirm_trade_internal(trade_id, x_idempotency_key)
+    logger.info("Trade PENDING (path): %s", trade_id)
+    return response
 
 
 @write_router.post("/trades/close")

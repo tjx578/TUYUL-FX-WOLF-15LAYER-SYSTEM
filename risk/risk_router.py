@@ -8,17 +8,31 @@ Provides REST API for:
 - Trade lifecycle tracking
 """
 
+import uuid
+from datetime import UTC, datetime
+
 from fastapi import APIRouter, HTTPException
 from loguru import logger
 from pydantic import BaseModel, Field, field_validator
 
+from accounts.account_model import (
+    AccountState as DashAccountState,
+)
+from accounts.account_model import (
+    Layer12Signal,
+    RiskMode as DashRiskMode,
+    RiskSeverity,
+)
+from accounts.risk_engine import RiskEngine
 from accounts.account_repository import AccountRepository, AccountRiskState, EAInstanceConfig
 from accounts.risk_calculator import AccountScopedRiskEngine
+from allocation.signal_service import SignalService
 from journal.audit_trail import AuditAction, AuditTrail
 from risk.kill_switch import GlobalKillSwitch
 from risk.exceptions import RiskException
 from risk.risk_engine_v2 import RiskEngineV2, SignalInput
 from risk.risk_profile import RiskMode, RiskProfile, load_risk_profile, save_risk_profile
+from storage.redis_client import redis_client
 
 router = APIRouter(prefix="/api/v1/risk")
 _kill_switch = GlobalKillSwitch()
@@ -26,6 +40,7 @@ _account_repo = AccountRepository.get_default()
 _account_risk_engine = AccountScopedRiskEngine()
 _audit = AuditTrail()
 _account_kill_switches: dict[str, str] = {}
+_signal_service = SignalService()
 
 
 # ========================
@@ -121,6 +136,58 @@ class OperatorActionRequest(BaseModel):
     reason: str = Field(..., min_length=1)
     old_value: dict | None = None
     new_value: dict | None = None
+
+
+class PreviewMultiAccount(BaseModel):
+    account_id: str = Field(..., min_length=1)
+
+
+class PreviewMultiRequest(BaseModel):
+    verdict_id: str = Field(..., min_length=1)
+    accounts: list[PreviewMultiAccount] = Field(..., min_length=1)
+    risk_percent: float = Field(default=1.0, gt=0, le=10)
+    risk_mode: str = Field(default="FIXED", pattern="^(FIXED|SPLIT)$")
+
+
+def _build_risk_signal(payload: dict, signal_id: str) -> Layer12Signal:
+    pair = str(payload.get("symbol") or payload.get("pair") or signal_id.split("_")[0]).upper()
+    direction = str(payload.get("direction") or "BUY").upper()
+    entry = float(payload.get("entry_price") or payload.get("entry") or 1.0)
+    sl = float(payload.get("stop_loss") or entry - 0.0010)
+    tp = float(payload.get("take_profit_1") or entry + 0.0020)
+    entry_sl_dist = abs(entry - sl)
+    rr = abs(tp - entry) / entry_sl_dist if entry_sl_dist > 0 else 1.0
+
+    return Layer12Signal(
+        signal_id=uuid.uuid4(),
+        timestamp=datetime.now(UTC),
+        pair=pair,
+        direction="BUY" if direction != "SELL" else "SELL",
+        entry=entry,
+        stop_loss=sl,
+        take_profit_1=tp,
+        rr=rr,
+        verdict=f"EXECUTE_{direction}",
+        confidence="HIGH",
+        wolf_score=0,
+        tii_sym=0.0,
+        frpc=0.0,
+    )
+
+
+def _build_account_state(account_id: str) -> DashAccountState:
+    payload = redis_client.client.hgetall(f"ACCOUNT:{account_id}") or {}
+    return DashAccountState(
+        account_id=account_id,
+        balance=float(payload.get("balance", 10000) or 10000),
+        equity=float(payload.get("equity", payload.get("balance", 10000)) or 10000),
+        equity_high=float(payload.get("equity_high", payload.get("equity", payload.get("balance", 10000))) or 10000),
+        daily_dd_percent=float(payload.get("daily_dd_percent", 0.0) or 0.0),
+        total_dd_percent=float(payload.get("total_dd_percent", 0.0) or 0.0),
+        open_risk_percent=float(payload.get("open_risk_percent", 0.0) or 0.0),
+        open_trades=int(payload.get("open_trades", 0) or 0),
+        risk_state=RiskSeverity.SAFE,
+    )
 
 
 # ========================
@@ -293,6 +360,65 @@ async def risk_preview(req: EvaluateSignalRequest) -> dict:
         "expiry": None,
         "details": result.details or {},
     }
+
+
+@router.post("/preview-multi")
+async def risk_preview_multi(req: PreviewMultiRequest) -> dict:
+    """Batch risk preview per account for multi-account TAKE."""
+    if _kill_switch.is_enabled():
+        state = _kill_switch.snapshot()
+        return {
+            "previews": [
+                {
+                    "account_id": row.account_id,
+                    "lot_size": 0.0,
+                    "risk_percent": req.risk_percent,
+                    "daily_dd_after": 0.0,
+                    "allowed": False,
+                    "reason": f"KILL_SWITCH_ACTIVE: {state.get('reason', 'N/A')}",
+                }
+                for row in req.accounts
+            ]
+        }
+
+    signal_payload = _signal_service.get(req.verdict_id) or {}
+    signal = _build_risk_signal(signal_payload, req.verdict_id)
+    engine = RiskEngine()
+
+    previews: list[dict] = []
+    for row in req.accounts:
+        account_state = _build_account_state(row.account_id)
+        try:
+            result = engine.calculate_lot(
+                signal=signal,
+                account_state=account_state,
+                risk_percent=req.risk_percent,
+                prop_firm_code="ftmo",
+                risk_mode=DashRiskMode(req.risk_mode),
+            )
+            preview = {
+                "account_id": row.account_id,
+                "lot_size": float(result.recommended_lot),
+                "risk_percent": float(result.risk_used_percent),
+                "daily_dd_after": float(result.daily_dd_after),
+                "allowed": bool(result.trade_allowed),
+            }
+            if result.reason and not result.trade_allowed:
+                preview["reason"] = result.reason
+            previews.append(preview)
+        except Exception as exc:
+            previews.append(
+                {
+                    "account_id": row.account_id,
+                    "lot_size": 0.0,
+                    "risk_percent": req.risk_percent,
+                    "daily_dd_after": 0.0,
+                    "allowed": False,
+                    "reason": f"RISK_CALC_ERROR: {exc}",
+                }
+            )
+
+    return {"previews": previews}
 
 
 @router.get("/kill-switch")

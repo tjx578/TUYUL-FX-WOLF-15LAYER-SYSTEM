@@ -6,7 +6,13 @@
 
 import { useState } from "react";
 import type { L12Verdict, Account } from "@/types";
-import { takeSignal, skipSignal, type TakeSignalRequest } from "@/lib/api";
+import {
+  previewRiskMulti,
+  takeSignal,
+  skipSignal,
+  type RiskPreviewAccountItem,
+  type TakeSignalRequest,
+} from "@/lib/api";
 
 interface TakeSignalFormProps {
   verdict: L12Verdict;
@@ -21,30 +27,70 @@ export function TakeSignalForm({
   onDone,
   onCancel,
 }: TakeSignalFormProps) {
-  const [accountId, setAccountId] = useState(accounts[0]?.account_id ?? "");
+  const [selectedAccountIds, setSelectedAccountIds] = useState<string[]>(
+    accounts[0]?.account_id ? [accounts[0].account_id] : []
+  );
   const [riskPercent, setRiskPercent] = useState(1.0);
   const [riskMode, setRiskMode] = useState<"FIXED" | "SPLIT">("FIXED");
+  const [previews, setPreviews] = useState<RiskPreviewAccountItem[]>([]);
+  const [previewing, setPreviewing] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const isExecutable = verdict.verdict.toString().startsWith("EXECUTE");
   const direction = verdict.direction ?? (verdict.verdict === "EXECUTE_BUY" ? "BUY" : "SELL") as "BUY" | "SELL";
 
+  function toggleAccount(accountId: string) {
+    setSelectedAccountIds((prev) =>
+      prev.includes(accountId)
+        ? prev.filter((x) => x !== accountId)
+        : [...prev, accountId]
+    );
+  }
+
+  async function handlePreview() {
+    if (!selectedAccountIds.length) return;
+    setPreviewing(true);
+    setError(null);
+    try {
+      const result = await previewRiskMulti({
+        verdict_id: `${verdict.symbol}_${verdict.timestamp}`,
+        accounts: selectedAccountIds.map((account_id) => ({ account_id })),
+        risk_percent: riskPercent,
+        risk_mode: riskMode,
+      });
+      setPreviews(result.previews ?? []);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Failed to preview risk");
+    } finally {
+      setPreviewing(false);
+    }
+  }
+
   async function handleTake() {
-    if (!accountId) return;
+    if (!selectedAccountIds.length) return;
+
+    const rejected = new Set(
+      previews.filter((p) => !p.allowed).map((p) => p.account_id)
+    );
+    const takeAccounts = selectedAccountIds.filter((id) => !rejected.has(id));
+    if (!takeAccounts.length) {
+      setError("No eligible account selected. Preview and uncheck rejected accounts.");
+      return;
+    }
+
     setLoading(true);
     setError(null);
     try {
       const req: TakeSignalRequest = {
-        signal_id: `${verdict.symbol}_${verdict.timestamp}`,
-        account_id: accountId,
+        verdict_id: `${verdict.symbol}_${verdict.timestamp}`,
+        accounts: takeAccounts,
         pair: verdict.symbol,
         direction,
         entry: verdict.entry_price ?? 0,
         sl: verdict.stop_loss ?? 0,
         tp: verdict.take_profit_1 ?? 0,
         risk_percent: riskPercent,
-        risk_mode: riskMode,
       };
       await takeSignal(req);
       onDone();
@@ -129,7 +175,7 @@ export function TakeSignalForm({
 
       {isExecutable && (
         <>
-          {/* Account select */}
+          {/* Account multi-select */}
           <div>
             <label
               style={{
@@ -141,19 +187,33 @@ export function TakeSignalForm({
                 marginBottom: 4,
               }}
             >
-              ACCOUNT
+              ACCOUNTS
             </label>
-            <select
-              value={accountId}
-              onChange={(e) => setAccountId(e.target.value)}
-              style={{ width: "100%" }}
+            <div
+              style={{
+                display: "grid",
+                gap: 6,
+                maxHeight: 132,
+                overflowY: "auto",
+                padding: 8,
+                borderRadius: 6,
+                border: "1px solid rgba(255,255,255,0.08)",
+                background: "var(--bg-card)",
+              }}
             >
               {accounts.map((a) => (
-                <option key={a.account_id} value={a.account_id}>
-                  {a.account_name} — {a.broker} (${a.balance.toLocaleString()})
-                </option>
+                <label key={a.account_id} style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 12 }}>
+                  <input
+                    type="checkbox"
+                    checked={selectedAccountIds.includes(a.account_id)}
+                    onChange={() => toggleAccount(a.account_id)}
+                  />
+                  <span>
+                    {a.account_name} — {a.broker} (${a.balance.toLocaleString()})
+                  </span>
+                </label>
               ))}
-            </select>
+            </div>
           </div>
 
           {/* Risk controls */}
@@ -204,6 +264,57 @@ export function TakeSignalForm({
               </select>
             </div>
           </div>
+
+          <div style={{ display: "flex", justifyContent: "flex-end" }}>
+            <button
+              className="btn btn-ghost"
+              disabled={previewing || loading || !selectedAccountIds.length}
+              onClick={handlePreview}
+            >
+              {previewing ? "PREVIEWING..." : "PREVIEW RISK"}
+            </button>
+          </div>
+
+          {previews.length > 0 && (
+            <div
+              style={{
+                border: "1px solid rgba(255,255,255,0.08)",
+                borderRadius: 8,
+                overflow: "hidden",
+              }}
+            >
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11 }}>
+                <thead style={{ background: "rgba(255,255,255,0.03)", color: "var(--text-muted)" }}>
+                  <tr>
+                    <th style={{ textAlign: "left", padding: "6px 8px" }}>ACCOUNT</th>
+                    <th style={{ textAlign: "right", padding: "6px 8px" }}>LOT</th>
+                    <th style={{ textAlign: "right", padding: "6px 8px" }}>DD AFTER</th>
+                    <th style={{ textAlign: "right", padding: "6px 8px" }}>STATUS</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {previews.map((p) => (
+                    <tr key={p.account_id}>
+                      <td style={{ padding: "6px 8px" }}>{p.account_id}</td>
+                      <td className="num" style={{ textAlign: "right", padding: "6px 8px" }}>{p.lot_size.toFixed(2)}</td>
+                      <td className="num" style={{ textAlign: "right", padding: "6px 8px" }}>{p.daily_dd_after.toFixed(2)}%</td>
+                      <td
+                        style={{
+                          textAlign: "right",
+                          padding: "6px 8px",
+                          color: p.allowed ? "var(--green)" : "var(--red)",
+                          fontWeight: 700,
+                        }}
+                        title={p.reason ?? ""}
+                      >
+                        {p.allowed ? "ALLOW" : "REJECT"}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
 
           {/* RR display */}
           {verdict.risk_reward_ratio && (
@@ -256,7 +367,7 @@ export function TakeSignalForm({
           <button
             className="btn btn-take"
             style={{ flex: 1 }}
-            disabled={loading || !accountId}
+            disabled={loading || !selectedAccountIds.length}
             onClick={handleTake}
           >
             {loading ? "PROCESSING..." : "▶ CONFIRM TAKE"}
