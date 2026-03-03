@@ -23,7 +23,7 @@ class BrokerExecutor:
     to the broker API.  It never re-evaluates market conditions or risk.
     """
 
-    def __init__(self, guard: BasePropFirmGuard | None = None) -> None:
+    def __init__(self, guard: BasePropFirmGuard | None = None) -> None: # type: ignore
         self._guard = guard
 
     def preflight_check(
