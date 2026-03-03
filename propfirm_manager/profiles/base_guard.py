@@ -1,4 +1,42 @@
 """
+Base Prop Firm Guard — abstract interface for all prop firm guards.
+"""
+from abc import ABC, abstractmethod
+from typing import Any
+
+from accounts.account_model import RiskSeverity
+
+
+class GuardResult:
+    def __init__(self, allowed: bool, code: str, severity: RiskSeverity, details: str):
+        self.allowed = allowed
+        self.code = code
+        self.severity = severity
+        self.details = details
+
+    def to_dict(self) -> dict[str, Any]:
+        return {"allowed": self.allowed, "code": self.code, "severity": self.severity.value, "details": self.details}
+
+
+class BasePropFirmGuard(ABC):
+    def __init__(self, rules: dict[str, Any]):
+        self.rules = rules
+
+    @abstractmethod
+    def check(self, account_state: dict[str, Any], trade_risk: dict[str, Any]) -> GuardResult: ...
+
+    def _deny(self, code: str, details: str) -> GuardResult:
+        from accounts.account_model import RiskSeverity  # noqa: PLC0415
+        return GuardResult(allowed=False, code=code, severity=RiskSeverity.CRITICAL, details=details)
+
+    def _warn(self, code: str, details: str) -> GuardResult:
+        from accounts.account_model import RiskSeverity  # noqa: PLC0415
+        return GuardResult(allowed=True, code=code, severity=RiskSeverity.WARNING, details=details)
+
+    def _allow(self) -> GuardResult:
+        from accounts.account_model import RiskSeverity  # noqa: PLC0415
+        return GuardResult(allowed=True, code="ALLOW", severity=RiskSeverity.SAFE, details="Trade approved")
+"""
 Base Prop Firm Guard
 
 Abstract base class for all prop-firm guard profiles.

@@ -2,3 +2,7 @@
 from propfirm_manager.profile_manager import PropFirmManager
 
 __all__ = ["PropFirmManager"]
+"""Propfirm manager package."""
+from propfirm_manager.profile_manager import PropFirmManager
+
+__all__ = ["PropFirmManager"]
