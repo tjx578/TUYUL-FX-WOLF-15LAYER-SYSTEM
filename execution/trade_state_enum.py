@@ -1,5 +1,6 @@
 """
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
 Extended Trade State Machine - 10 States
 
 This module defines the extended trade lifecycle states for the
@@ -18,18 +19,24 @@ States:
     - IDLE: No active signal/trade (legacy compatibility)
 """
 =======
+=======
+>>>>>>> Stashed changes
 Trade State Enum — canonical state machine states for dashboard + execution.
 
 Maps between execution/state_machine.py (engine states) and
 the dashboard conceptual model defined in copilot-instructions.md.
 """
 from __future__ import annotations
+<<<<<<< Updated upstream
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
 
 from enum import StrEnum
 
 
 class TradeState(StrEnum):
+<<<<<<< Updated upstream
 <<<<<<< Updated upstream
     """Extended trade lifecycle states (10 states)."""
 
@@ -111,6 +118,8 @@ def validate_transition(from_state: TradeState, to_state: TradeState) -> None:
     if to_state not in allowed_states:
         raise InvalidTransitionError(from_state, to_state)
 =======
+=======
+>>>>>>> Stashed changes
     """
     Dashboard-level conceptual trade states.
 
@@ -164,4 +173,7 @@ VALID_TRANSITIONS: dict[TradeState, frozenset[TradeState]] = {
 def is_valid_transition(from_state: TradeState, to_state: TradeState) -> bool:
     """Check whether a state transition is allowed."""
     return to_state in VALID_TRANSITIONS.get(from_state, frozenset())
+<<<<<<< Updated upstream
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
