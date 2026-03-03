@@ -339,9 +339,6 @@ class WolfConstitutionalPipeline:
         self._ensure_analyzers()
         self._ensure_governance_engines()
         errors: list[str] = []
-        layers_executed: list[str] = ["L0"]
-        engines_invoked: list[str] = []
-        halt_reason: str | None = None
         now = datetime.now(_TZ_GMT8)
 
         # ═══════════════════════════════════════════════════════
@@ -366,9 +363,6 @@ class WolfConstitutionalPipeline:
                     symbol,
                     [f"WARMUP_INSUFFICIENT:{missing}_bars_missing"],
                     time.time() - start_time,
-                    layers_executed=layers_executed,
-                    engines_invoked=engines_invoked,
-                    halt_reason=f"WARMUP_INSUFFICIENT:{missing}_bars_missing",
                 )
                 result["warmup"] = warmup
                 return result
@@ -380,52 +374,22 @@ class WolfConstitutionalPipeline:
             logger.info(f"[Pipeline v8.0] Phase 1: Perception & Context -- {symbol}")
 
             assert self._l1 is not None
-            engines_invoked.append(self._engine_name(self._l1))
             l1: dict[str, Any] = self._timed_call(self._l1.analyze, "L1", symbol, symbol)
-            layers_executed.append("L1")
             if not l1.get("valid"):
                 errors.append("L1_CONTEXT_INVALID")
-                halt_reason = "L1_CONTEXT_INVALID"
-                return self._early_exit(
-                    symbol,
-                    errors,
-                    time.time() - start_time,
-                    layers_executed=layers_executed,
-                    engines_invoked=engines_invoked,
-                    halt_reason=halt_reason,
-                )
+                return self._early_exit(symbol, errors, time.time() - start_time)
 
             assert self._l2 is not None
-            engines_invoked.append(self._engine_name(self._l2))
             l2: dict[str, Any] = self._timed_call(self._l2.analyze, "L2", symbol, symbol)
-            layers_executed.append("L2")
             if not l2.get("valid"):
                 errors.append("L2_MTA_INVALID")
-                halt_reason = "L2_MTA_INVALID"
-                return self._early_exit(
-                    symbol,
-                    errors,
-                    time.time() - start_time,
-                    layers_executed=layers_executed,
-                    engines_invoked=engines_invoked,
-                    halt_reason=halt_reason,
-                )
+                return self._early_exit(symbol, errors, time.time() - start_time)
 
             assert self._l3 is not None
-            engines_invoked.append(self._engine_name(self._l3))
             l3: dict[str, Any] = self._timed_call(self._l3.analyze, "L3", symbol, symbol)
-            layers_executed.append("L3")
             if not l3.get("valid"):
                 errors.append("L3_TECHNICAL_INVALID")
-                halt_reason = "L3_TECHNICAL_INVALID"
-                return self._early_exit(
-                    symbol,
-                    errors,
-                    time.time() - start_time,
-                    layers_executed=layers_executed,
-                    engines_invoked=engines_invoked,
-                    halt_reason=halt_reason,
-                )
+                return self._early_exit(symbol, errors, time.time() - start_time)
 
             # ═══════════════════════════════════════════════════════
             # PHASE 2 -- ZONA CONFLUENCE & SCORING (L4, L5)
@@ -433,13 +397,9 @@ class WolfConstitutionalPipeline:
             logger.info(f"[Pipeline v8.0] Phase 2: Confluence & Scoring -- {symbol}")
 
             assert self._l4 is not None
-            engines_invoked.append(self._engine_name(self._l4))
             l4: dict[str, Any] = self._timed_call(self._l4.score, "L4", symbol, l1, l2, l3)
-            layers_executed.append("L4")
             assert self._l5 is not None
-            engines_invoked.append(self._engine_name(self._l5))
             l5: dict[str, Any] = self._timed_call(self._l5.analyze, "L5", symbol, symbol, volatility_profile=l2)
-            layers_executed.append("L5")
 
             # ═══════════════════════════════════════════════════════
             # PHASE 3 -- ZONA PROBABILITY & VALIDATION (L7, L8, L9)
@@ -523,7 +483,6 @@ class WolfConstitutionalPipeline:
 
             # ── Run L7 Probability Analyzer ──────────────────────────────────
             assert self._l7 is not None
-            engines_invoked.append(self._engine_name(self._l7))
             l7: dict[str, Any] = self._timed_call(
                 self._l7.analyze,
                 "L7",
@@ -534,16 +493,11 @@ class WolfConstitutionalPipeline:
                 prior_wins=prior_wins,
                 prior_losses=prior_losses,
             )
-            layers_executed.append("L7")
 
             assert self._l8 is not None
-            engines_invoked.append(self._engine_name(self._l8))
             l8: dict[str, Any] = self._timed_call(self._l8.analyze, "L8", symbol, symbol)
-            layers_executed.append("L8")
             assert self._l9 is not None
-            engines_invoked.append(self._engine_name(self._l9))
             l9: dict[str, Any] = self._timed_call(self._l9.analyze, "L9", symbol, symbol)
-            layers_executed.append("L9")
 
             logger.info(
                 "[Phase-3] %s L7 complete: validation=%s win=%.1f%% pf=%.2f bayes=%.4f ror=%.4f mc_passed=%s",
@@ -573,9 +527,7 @@ class WolfConstitutionalPipeline:
             l11: dict[str, Any] = {"valid": False, "rr": 0.0}
             if direction in ("BUY", "SELL"):
                 assert self._l11 is not None
-                engines_invoked.append(self._engine_name(self._l11))
                 l11 = self._timed_call(self._l11.calculate_rr, "L11", symbol, symbol, direction)
-                layers_executed.append("L11")
             rr_value: float = float(l11.get("rr", 0.0))
 
             # ── Build account_state snapshot for L6 ────────────────────
@@ -632,17 +584,8 @@ class WolfConstitutionalPipeline:
 
             if self._l6 is None:
                 errors.append("L6_ANALYZER_NOT_INITIALIZED")
-                halt_reason = "L6_ANALYZER_NOT_INITIALIZED"
-                return self._early_exit(
-                    symbol,
-                    errors,
-                    time.time() - start_time,
-                    layers_executed=layers_executed,
-                    engines_invoked=engines_invoked,
-                    halt_reason=halt_reason,
-                )
+                return self._early_exit(symbol, errors, time.time() - start_time)
 
-            engines_invoked.append(self._engine_name(self._l6))
             l6: dict[str, Any] = self._timed_call(
                 self._l6.analyze,
                 "L6",
@@ -651,17 +594,13 @@ class WolfConstitutionalPipeline:
                 trade_returns=trade_returns,
                 account_state=_l6_account_state,
             )
-            layers_executed.append("L6")
 
             risk_ok: Any = l6.get("risk_ok", False)
             smc_confidence: Any = l9.get("confidence", 0.0)
             assert self._l10 is not None
-            engines_invoked.append(self._engine_name(self._l10))
             l10: dict[str, Any] = self._timed_call(self._l10.analyze, "L10", symbol, risk_ok, smc_confidence)
-            layers_executed.append("L10")
 
             assert self._macro is not None
-            engines_invoked.append(self._engine_name(self._macro))
             macro: dict[str, Any] = self._timed_call(self._macro.analyze, "macro", symbol, symbol)
 
             # ═══════════════════════════════════════════════════════
@@ -678,17 +617,6 @@ class WolfConstitutionalPipeline:
                     self._enrichment = EngineEnrichmentLayer(
                         context_bus=self._context_bus,
                     )
-                engines_invoked.extend([
-                    "CognitiveCoherenceEngine",
-                    "CognitiveContextEngine",
-                    "CognitiveRiskSimulation",
-                    "FusionMomentumEngine",
-                    "FusionPrecisionEngine",
-                    "FusionStructureEngine",
-                    "QuantumFieldEngine",
-                    "QuantumProbabilityEngine",
-                    "QuantumAdvisoryEngine",
-                ])
 
                 _enrich_lr: dict[str, Any] = {
                     "L1": l1,
@@ -809,8 +737,6 @@ class WolfConstitutionalPipeline:
             gates = self._evaluate_9_gates(synthesis)
             l12_verdict = generate_l12_verdict(synthesis)  # noqa: F821
             l12_verdict["gates_v74"] = gates
-            layers_executed.append("L12")
-            engines_invoked.append("ConstitutionVerdictEngine")
 
             # ═══════════════════════════════════════════════════════
             # PHASE 6 -- TWO-PASS L13 GOVERNANCE (from Sovereign)
@@ -835,8 +761,6 @@ class WolfConstitutionalPipeline:
                     [l12_verdict],
                     synthesis,
                 )
-                layers_executed.append("L13")
-                engines_invoked.append(self._engine_name(l13_engine))
 
                 # Compute vault sync for sovereignty
                 sovereignty = self._compute_vault_sync(synthesis, l12_verdict, reflective_pass1)
@@ -849,8 +773,6 @@ class WolfConstitutionalPipeline:
                     sovereignty=sovereignty,
                     gates=gates,
                 )
-                layers_executed.append("L15")
-                engines_invoked.append(self._engine_name(l15_engine))
 
                 # Pass 2: Refined reflective (uses real meta_integrity from L15)
                 real_meta = l15_meta.get("meta_integrity", 1.0)
@@ -870,8 +792,6 @@ class WolfConstitutionalPipeline:
                     sovereignty=sovereignty,
                     gates=gates,
                 )
-                layers_executed.append("L15")
-                engines_invoked.append(self._engine_name(l15_engine))
 
             # ═══════════════════════════════════════════════════════
             # PHASE 7 -- SOVEREIGNTY ENFORCEMENT (drift + downgrade)
@@ -966,7 +886,6 @@ class WolfConstitutionalPipeline:
                 enforcement=enforcement,
                 latency_ms=latency_ms,
             )
-            layers_executed.append("L14")
 
             result = PipelineResult(
                 schema=self.VERSION,
@@ -980,14 +899,6 @@ class WolfConstitutionalPipeline:
                 l14_json=l14_json,
                 sovereignty=sovereignty,
                 enforcement=enforcement,
-                pipeline_execution_map=self._build_execution_map(
-                    symbol=symbol,
-                    timestamp_iso=now.isoformat(),
-                    layers_executed=layers_executed,
-                    engines_invoked=engines_invoked,
-                    halt_reason=halt_reason,
-                    constitutional_verdict=str(l12_verdict.get("verdict", "HOLD")),
-                ),
                 latency_ms=latency_ms,
                 errors=errors,
             )
@@ -1006,16 +917,8 @@ class WolfConstitutionalPipeline:
         except Exception as exc:
             logger.error(f"[Pipeline v8.0] Fatal error for {symbol}: {exc}", exc_info=True)
             errors.append(f"FATAL_ERROR: {exc}")
-            halt_reason = halt_reason or f"FATAL_ERROR: {exc}"
             latency_ms = (time.time() - start_time) * 1000
-            return self._early_exit(
-                symbol,
-                errors,
-                latency_ms,
-                layers_executed=layers_executed,
-                engines_invoked=engines_invoked,
-                halt_reason=halt_reason,
-            )
+            return self._early_exit(symbol, errors, latency_ms)
 
     # ══════════════════════════════════════════════════════════════
     #  9-GATE CONSTITUTIONAL CHECK
@@ -1102,35 +1005,6 @@ class WolfConstitutionalPipeline:
         """
         record_pipeline_metrics(symbol, result)
 
-    @staticmethod
-    def _engine_name(engine: Any) -> str:
-        """Return a stable engine/analyzer class name for observability."""
-        if engine is None:
-            return "UNKNOWN_ENGINE"
-        return str(getattr(engine.__class__, "__name__", "UNKNOWN_ENGINE"))
-
-    @staticmethod
-    def _build_execution_map(
-        symbol: str,
-        timestamp_iso: str,
-        layers_executed: list[str],
-        engines_invoked: list[str],
-        halt_reason: str | None,
-        constitutional_verdict: str,
-    ) -> dict[str, Any]:
-        """Build pipeline observability map for heatmap/audit visualizations."""
-        # preserve insertion order while removing duplicates
-        unique_engines = list(dict.fromkeys(engines_invoked))
-        unique_layers = list(dict.fromkeys(layers_executed))
-        return {
-            "pair": symbol,
-            "timestamp": timestamp_iso,
-            "layers_executed": unique_layers,
-            "engines_invoked": unique_engines,
-            "halt_reason": halt_reason,
-            "constitutional_verdict": constitutional_verdict,
-        }
-
     # ══════════════════════════════════════════════════════════════
     #  EARLY EXIT -- pipeline failure fallback
     # ══════════════════════════════════════════════════════════════
@@ -1140,10 +1014,6 @@ class WolfConstitutionalPipeline:
         symbol: str,
         errors: list[str],
         latency_ms: float,
-        *,
-        layers_executed: list[str] | None = None,
-        engines_invoked: list[str] | None = None,
-        halt_reason: str | None = None,
     ) -> dict[str, Any]:
         """Create early-exit result when pipeline fails."""
         empty_gates: dict[str, Any] = {
@@ -1275,14 +1145,6 @@ class WolfConstitutionalPipeline:
                 "pass1_abg": 0.0,
                 "pass2_abg": 0.0,
             },
-            "pipeline_execution_map": self._build_execution_map(
-                symbol=symbol,
-                timestamp_iso=datetime.now(_TZ_GMT8).isoformat(),
-                layers_executed=layers_executed or ["L0"],
-                engines_invoked=engines_invoked or [],
-                halt_reason=halt_reason,
-                constitutional_verdict="HOLD",
-            ),
             "latency_ms": latency_ms,
             "errors": errors,
         }

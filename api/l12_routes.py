@@ -149,13 +149,6 @@ def _build_pipeline_data(pair: str, verdict_data: dict[str, Any]) -> dict[str, A
     scores: dict[str, Any] = verdict_data.get("scores", {})
     execution: dict[str, Any] = verdict_data.get("execution", {})
     layers_raw: dict[str, Any] = verdict_data.get("layers", {})
-    execution_map: dict[str, Any] = dict(verdict_data.get("pipeline_execution_map") or {})
-    executed_layers: set[str] = {
-        str(layer).upper()
-        for layer in execution_map.get("layers_executed", [])
-        if isinstance(layer, str)
-    }
-    halt_reason = execution_map.get("halt_reason")
 
     verdict_str: str = verdict_data.get("verdict", "UNKNOWN")
     confidence = verdict_data.get("confidence", 0)
@@ -200,12 +193,8 @@ def _build_pipeline_data(pair: str, verdict_data: dict[str, Any]) -> dict[str, A
     for ldef in _LAYER_DEFS:
         lid = ldef["id"]
         val, detail = layer_score_map.get(lid, ("—", "—"))
-        # Determine status from execution map first, then gate data fallback.
-        if executed_layers and lid not in executed_layers:
-            status = "fail"
-            val = "NOT_EXECUTED"
-            detail = str(halt_reason or "HALTED_BEFORE_LAYER")
-        elif lid == "L12":
+        # Determine status from gate results or default
+        if lid == "L12":
             status = "pass" if pass_count == total_gates else ("warn" if pass_count >= 7 else "fail")
         else:
             status = "pass"  # default — layers don't have individual pass/fail in cache
@@ -239,7 +228,6 @@ def _build_pipeline_data(pair: str, verdict_data: dict[str, Any]) -> dict[str, A
         "layers": layer_list,
         "gates": gate_list,
         "entry": entry,
-        "executionMap": execution_map,
     }
 
 
@@ -254,25 +242,3 @@ def fetch_pipeline(pair: str):
     if not raw:
         raise HTTPException(status_code=404, detail=f"No pipeline data for {pair}")
     return _build_pipeline_data(pair.upper(), raw)
-
-
-@router.get("/api/v1/pipeline/{pair}/execution-map")
-def fetch_pipeline_execution_map(pair: str) -> dict[str, Any]:
-    """Get the latest Pipeline Execution Map for observability heatmaps."""
-    raw = get_verdict(pair.upper())
-    if not raw:
-        raise HTTPException(status_code=404, detail=f"No pipeline data for {pair}")
-
-    execution_map = raw.get("pipeline_execution_map")
-    if isinstance(execution_map, dict) and execution_map:
-        return execution_map
-
-    # Backward-compatible fallback when older cache entries do not carry map yet.
-    return {
-        "pair": pair.upper(),
-        "timestamp": raw.get("timestamp"),
-        "layers_executed": [],
-        "engines_invoked": [],
-        "halt_reason": "PIPELINE_EXECUTION_MAP_UNAVAILABLE",
-        "constitutional_verdict": raw.get("verdict", "UNKNOWN"),
-    }
