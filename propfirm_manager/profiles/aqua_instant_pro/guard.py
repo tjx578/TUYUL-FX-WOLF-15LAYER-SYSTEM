@@ -1,4 +1,3 @@
-<<<<<<< Updated upstream
 """
 Aqua Instant Pro Prop Firm Guard
 
@@ -52,10 +51,10 @@ class AquaInstantProGuard(BasePropFirmGuard):
         risk_percent = trade_risk.get("risk_percent", 0)
 
         # Get limits from rules
-        max_daily_dd = self.rules["max_daily_dd_percent"]
-        max_total_dd = self.rules["max_total_dd_percent"]
-        max_risk_per_trade = self.rules["max_risk_per_trade_percent"]
-        max_open = self.rules["max_open_trades"]
+        max_daily_dd: float = self.rules.get("max_daily_dd_percent", 5.0)
+        max_total_dd: float = self.rules.get("max_total_dd_percent", 10.0)
+        max_risk_per_trade: float = self.rules.get("max_risk_per_trade_percent", 1.0)
+        max_open: int = self.rules.get("max_open_trades", 1)
 
         # Check 1: Max open trades
         if open_trades >= max_open:
@@ -99,7 +98,7 @@ class AquaInstantProGuard(BasePropFirmGuard):
             )
 
         # All checks passed
-=======
+        return self._allow()
 """AquaInstantPro prop firm guard."""
 from typing import Any
 from propfirm_manager.profiles.base_guard import BasePropFirmGuard, GuardResult
@@ -117,5 +116,4 @@ class AquaInstantProGuard(BasePropFirmGuard):
             return self._deny("DENY_DAILY_DD", f"Daily DD would reach {daily_dd_after:.2f}%, max {max_daily_dd}%")
         if total_dd_after > max_total_dd:
             return self._deny("DENY_TOTAL_DD", f"Total DD would reach {total_dd_after:.2f}%, max {max_total_dd}%")
->>>>>>> Stashed changes
         return self._allow()
