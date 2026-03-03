@@ -1,0 +1,70 @@
+{
+  "annotations": {"list": []},
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": null,
+  "links": [],
+  "liveNow": false,
+  "panels": [
+    {
+      "type": "timeseries",
+      "title": "Pipeline Latency (p95)",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0},
+      "targets": [{"expr": "histogram_quantile(0.95, sum(rate(wolf_pipeline_duration_seconds_bucket[5m])) by (le))", "refId": "A"}]
+    },
+    {
+      "type": "timeseries",
+      "title": "Allocation Success Rate",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0},
+      "targets": [{"expr": "sum(rate(wolf_alloc_success_total[5m])) / clamp_min(sum(rate(wolf_alloc_success_total[5m])) + sum(rate(wolf_alloc_reject_total[5m])), 1)", "refId": "A"}]
+    },
+    {
+      "type": "timeseries",
+      "title": "Execution Latency (p95)",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8},
+      "targets": [{"expr": "histogram_quantile(0.95, sum(rate(wolf_execution_latency_seconds_bucket[5m])) by (le))", "refId": "A"}]
+    },
+    {
+      "type": "timeseries",
+      "title": "Signals / Minute",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8},
+      "targets": [{"expr": "sum(rate(wolf_signal_total[1m])) * 60", "refId": "A"}]
+    },
+    {
+      "type": "bargauge",
+      "title": "Rejection Reasons Breakdown",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 16},
+      "targets": [{"expr": "sum by (reason) (increase(wolf_alloc_reject_total[15m]))", "refId": "A"}]
+    },
+    {
+      "type": "timeseries",
+      "title": "Per-Account Risk Buffer",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 16},
+      "targets": [{"expr": "wolf_account_risk_buffer_percent", "refId": "A"}]
+    },
+    {
+      "type": "timeseries",
+      "title": "Redis Stream Lag",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 24},
+      "targets": [{"expr": "wolf_redis_stream_lag", "refId": "A"}]
+    },
+    {
+      "type": "timeseries",
+      "title": "Memory Usage per Service",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 24},
+      "targets": [{"expr": "wolf_process_memory_bytes", "refId": "A"}]
+    }
+  ],
+  "refresh": "10s",
+  "schemaVersion": 39,
+  "style": "dark",
+  "tags": ["wolf", "observability"],
+  "templating": {"list": []},
+  "time": {"from": "now-1h", "to": "now"},
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "Wolf Institutional Command Center",
+  "version": 1,
+  "weekStart": ""
+}
