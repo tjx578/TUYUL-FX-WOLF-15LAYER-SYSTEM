@@ -35,7 +35,9 @@ from context.runtime_state import RuntimeState
 from infrastructure.tracing import (
     instrument_asyncio,
     instrument_fastapi,
+    instrument_httpx,
     instrument_redis,
+    instrument_requests,
     setup_tracer,
 )
 from storage.postgres_client import pg_client
@@ -315,6 +317,8 @@ def create_app() -> FastAPI:
     _tracer = setup_tracer("wolf-api")  # noqa: F841
     instrument_asyncio()
     instrument_redis()
+    instrument_requests()
+    instrument_httpx()
     instrument_fastapi(app)
 
     # Middleware stack

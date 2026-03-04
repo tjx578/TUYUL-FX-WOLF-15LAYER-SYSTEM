@@ -12,11 +12,17 @@ from redis.asyncio import Redis as AsyncRedis
 from config_loader import CONFIG
 from core.event_bus import Event, EventType, get_event_bus
 from core.health_probe import HealthProbe
+from infrastructure.tracing import (
+    instrument_asyncio,
+    instrument_httpx,
+    instrument_redis,
+    instrument_requests,
+    setup_tracer,
+)
 from ingest.candle_builder import CandleBuilder
 from ingest.dependencies import create_finnhub_ws
 from ingest.finnhub_market_news import FinnhubMarketNews
 from ingest.finnhub_news import FinnhubNews
-from infrastructure.tracing import instrument_asyncio, instrument_redis, setup_tracer
 from journal.journal_schema import ContextJournal, DecisionJournal, VerdictType
 from pipeline import WolfConstitutionalPipeline
 from storage.startup import init_persistent_storage, shutdown_persistent_storage
@@ -35,6 +41,8 @@ _pipeline = WolfConstitutionalPipeline()
 _engine_tracer = setup_tracer("wolf-engine")
 instrument_asyncio()
 instrument_redis()
+instrument_requests()
+instrument_httpx()
 
 # ── Health probe for container orchestration ────────────────────
 _ENGINE_HEALTH_PORT = int(os.getenv("ENGINE_HEALTH_PORT", "8081"))
