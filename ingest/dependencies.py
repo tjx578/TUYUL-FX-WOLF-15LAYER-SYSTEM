@@ -275,7 +275,7 @@ def _build_tick_handler(
                     "timestamp": tick_ts,
                     "source": "finnhub_ws",
                 }
-                context_bus.update_tick(normalized_tick)  # type: ignore[arg-type]
+                context_bus.update_tick(normalized_tick)
                 tick_metrics.record(internal_symbol)
 
                 # Wire to CandleBuilder if callback provided
@@ -298,6 +298,11 @@ async def handle_tick(data: dict[str, Any]) -> None:
         mapper.register(internal_symbol)
     handler = _build_tick_handler(mapper=mapper, allowed_symbols=set(_SYMBOL_REVERSE_MAP.values()))
     await handler(data)
+
+
+# Module-level alias for test access (the real implementation is a closure inside
+# _build_tick_handler — this default handler is equivalent for unit testing)
+_handle_tick = handle_tick
 
 
 async def create_finnhub_ws(
