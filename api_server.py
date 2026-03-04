@@ -21,7 +21,6 @@ from typing import Any
 from loguru import logger as loguru_logger
 from typing_extensions import override
 
-
 # ── Process-level logging (must run before any app import) ────────────────────
 
 def _configure_process_logging() -> None:
