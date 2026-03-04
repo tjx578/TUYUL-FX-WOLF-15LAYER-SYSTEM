@@ -22,6 +22,7 @@ import type {
 } from "@/types";
 import type { PipelineData } from "@/components/PipelinePanel";
 import { getApiBaseUrl } from "@/lib/env";
+import { bearerHeader } from "@/lib/auth";
 
 const API_BASE = getApiBaseUrl();
 
@@ -55,8 +56,11 @@ export const API_ENDPOINTS = {
 } as const;
 
 const fetcher = async (url: string) => {
+  const auth = bearerHeader();
   const res = await fetch(`${API_BASE}${url}`, {
-    credentials: "include",
+    headers: {
+      ...(auth ? { Authorization: auth } : {}),
+    },
   });
 
   if (!res.ok) {
@@ -87,11 +91,12 @@ const apiMutateWithHeaders = async (
             : {}),
         };
 
+  const auth = bearerHeader();
   const res = await fetch(`${API_BASE}${url}`, {
     method,
-    credentials: "include",
     headers: {
       "Content-Type": "application/json",
+      ...(auth ? { Authorization: auth } : {}),
       ...governanceHeaders,
       ...(headers ?? {}),
     },

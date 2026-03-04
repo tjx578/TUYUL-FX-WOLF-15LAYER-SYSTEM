@@ -1,0 +1,131 @@
+"""
+Pipeline observability metrics — real-time tick/WS telemetry.
+
+All metrics are registered against the shared wolf-15 MetricsRegistry
+(prometheus-compatible) and exposed via GET /metrics.
+
+Metrics
+-------
+wolf_ticks_received_total               — every raw tick that enters ingest
+wolf_ticks_rejected_spike_total         — ticks dropped by SpikeFilter
+wolf_ticks_rejected_dedup_total         — ticks dropped by DedupCache
+wolf_ws_connections_active              — current open WS connections (gauge)
+wolf_redis_stream_lag_seconds           — consumer group read lag (histogram)
+wolf_pipeline_latency_ms                — end-to-end tick→context latency per stage
+
+Usage (ingest path)
+-------------------
+    from monitoring.pipeline_metrics import (
+        tick_received,
+        tick_rejected_spike,
+        tick_rejected_dedup,
+        ws_connection_opened,
+        ws_connection_closed,
+        record_redis_lag,
+        record_pipeline_latency,
+    )
+
+    tick_received(symbol="EURUSD")
+    tick_rejected_spike(symbol="EURUSD")
+    tick_rejected_dedup(symbol="EURUSD")
+    ws_connection_opened()
+    ws_connection_closed()
+    record_redis_lag(stream="tick_stream", lag_sec=0.012)
+    record_pipeline_latency(stage="tick_to_context", latency_ms=42.3)
+"""
+
+from __future__ import annotations
+
+from core.metrics import Counter, Gauge, Histogram, get_registry
+
+# ---------------------------------------------------------------------------
+# Registry
+# ---------------------------------------------------------------------------
+
+_R = get_registry()
+
+# ── Tick counters ──────────────────────────────────────────────────────────
+
+TICKS_RECEIVED: Counter = _R.counter(
+    "wolf_ticks_received_total",
+    "Total raw ticks received by the ingest pipeline",
+    label_names=("symbol",),
+)
+
+TICKS_REJECTED_SPIKE: Counter = _R.counter(
+    "wolf_ticks_rejected_spike_total",
+    "Ticks dropped by SpikeFilter (anomalous price movement)",
+    label_names=("symbol",),
+)
+
+TICKS_REJECTED_DEDUP: Counter = _R.counter(
+    "wolf_ticks_rejected_dedup_total",
+    "Ticks dropped by DedupCache (duplicate within TTL window)",
+    label_names=("symbol",),
+)
+
+# ── WebSocket connections ──────────────────────────────────────────────────
+
+WS_CONNECTIONS_ACTIVE: Gauge = _R.gauge(
+    "wolf_ws_connections_active",
+    "Number of currently open WebSocket connections",
+    label_names=(),
+)
+
+# ── Redis stream lag ───────────────────────────────────────────────────────
+
+REDIS_STREAM_LAG: Histogram = _R.histogram(
+    "wolf_redis_stream_lag_seconds",
+    "Consumer group read lag for Redis streams (seconds behind tip)",
+    label_names=("stream",),
+    buckets=(0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0),
+)
+
+# ── Pipeline latency ───────────────────────────────────────────────────────
+
+PIPELINE_LATENCY: Histogram = _R.histogram(
+    "wolf_pipeline_latency_ms",
+    "End-to-end latency per pipeline stage in milliseconds",
+    label_names=("stage",),
+    # stage examples: "tick_to_context", "context_to_verdict", "verdict_to_ws"
+    buckets=(1, 5, 10, 25, 50, 100, 200, 500, 1000, 2000, 5000),
+)
+
+# ---------------------------------------------------------------------------
+# Helper functions (call-site convenience)
+# ---------------------------------------------------------------------------
+
+
+def tick_received(symbol: str = "UNKNOWN") -> None:
+    """Record one incoming tick for *symbol*."""
+    TICKS_RECEIVED.labels(symbol=symbol.upper()).inc()
+
+
+def tick_rejected_spike(symbol: str = "UNKNOWN") -> None:
+    """Record one spike-filtered tick for *symbol*."""
+    TICKS_REJECTED_SPIKE.labels(symbol=symbol.upper()).inc()
+
+
+def tick_rejected_dedup(symbol: str = "UNKNOWN") -> None:
+    """Record one deduplicated tick for *symbol*."""
+    TICKS_REJECTED_DEDUP.labels(symbol=symbol.upper()).inc()
+
+
+def ws_connection_opened() -> None:
+    """Increment active WebSocket connections gauge."""
+    WS_CONNECTIONS_ACTIVE.labels().inc()
+
+
+def ws_connection_closed() -> None:
+    """Decrement active WebSocket connections gauge (floor = 0)."""
+    WS_CONNECTIONS_ACTIVE.labels().dec()
+
+
+def record_redis_lag(stream: str, lag_sec: float) -> None:
+    """Record consumer-group read lag for *stream* in seconds."""
+    REDIS_STREAM_LAG.labels(stream=stream).observe(lag_sec)
+
+
+def record_pipeline_latency(stage: str, latency_ms: float) -> None:
+    """Record end-to-end latency for a named pipeline *stage* in milliseconds."""
+    PIPELINE_LATENCY.labels(stage=stage).observe(latency_ms)
