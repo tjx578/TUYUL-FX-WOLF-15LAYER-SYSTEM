@@ -26,7 +26,7 @@ from copy import deepcopy
 from datetime import UTC
 from typing import Any
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse
 from loguru import logger as loguru_logger
@@ -379,11 +379,20 @@ async def health(request: Request) -> dict[str, Any]:
     }
 
 
+def _is_production_runtime() -> bool:
+    """Runtime production check — guards debug endpoints even if code is mounted."""
+    env = os.getenv("APP_ENV", os.getenv("ENV", "development")).strip().lower()
+    return env == "production"
+
+
 if ENABLE_DEV_ROUTES:
     # ── Debug: Redis key inspector ────────────────────────────────────────────
     @app.get("/debug/redis-keys")
     async def debug_redis_keys() -> dict[str, Any]:
         """List Redis keys for development troubleshooting."""
+        if _is_production_runtime():
+            raise HTTPException(status_code=404, detail="Not found")
+
         from infrastructure.redis_client import get_client
 
         try:
@@ -406,6 +415,9 @@ if ENABLE_DEV_ROUTES:
     @app.get("/api/v1/endpoints")
     async def endpoint_summary() -> dict[str, Any]:
         """List all registered routes for development debugging."""
+        if _is_production_runtime():
+            raise HTTPException(status_code=404, detail="Not found")
+
         routes: list[dict[str, Any]] = []
         for route in app.routes:
             if hasattr(route, "methods") and hasattr(route, "path"):
