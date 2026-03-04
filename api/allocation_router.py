@@ -10,6 +10,7 @@ BUG FIXES APPLIED:
 
 import logging
 import contextlib
+import os
 import threading
 import uuid
 from datetime import UTC, datetime
@@ -41,6 +42,9 @@ from risk.kill_switch import GlobalKillSwitch
 logger = logging.getLogger(__name__)
 _allocation_router_tracer = setup_tracer("wolf-api")
 
+# Stale-data threshold: reject write actions if context data is older than this.
+STALE_DATA_THRESHOLD_SEC = int(os.getenv("STALE_DATA_THRESHOLD_SEC", "300"))
+
 # ── [BUG-3 FIX] Redis connection via env var ──────────────────────────────────
 def _make_redis() -> Redis | None:
     from infrastructure.redis_url import get_redis_url
@@ -71,6 +75,43 @@ _confirm_lock = threading.Lock()
 ALLOC_REQUEST_STREAM = "allocation:request"
 IDEMPOTENCY_KEY_PREFIX = "idempotency:confirm:"
 IDEMPOTENCY_TTL_SEC = 60 * 60 * 24
+
+
+def _check_stale_data(pair: str) -> None:
+    """Reject write actions if the cached L12 verdict/context data is stale.
+
+    Reads the verdict timestamp from Redis (or the L12 cache) and compares
+    it against ``STALE_DATA_THRESHOLD_SEC``.  Raises 409 if stale.
+    """
+    if STALE_DATA_THRESHOLD_SEC <= 0:
+        return
+
+    verdict_ts: float | None = None
+    try:
+        from storage.l12_cache import get_verdict  # noqa: PLC0415
+
+        verdict = get_verdict(pair.upper())
+        if verdict:
+            ts_raw = verdict.get("timestamp") or verdict.get("ts") or verdict.get("updated_at")
+            if ts_raw:
+                if isinstance(ts_raw, (int, float)):
+                    verdict_ts = float(ts_raw)
+                elif isinstance(ts_raw, str):
+                    from datetime import datetime as _dt, timezone  # noqa: PLC0415
+
+                    parsed = _dt.fromisoformat(ts_raw.replace("Z", "+00:00"))
+                    verdict_ts = parsed.replace(tzinfo=parsed.tzinfo or timezone.utc).timestamp()
+    except Exception as exc:
+        logger.debug("Stale data check skipped: %s", exc)
+
+    if verdict_ts is not None:
+        age = datetime.now(UTC).timestamp() - verdict_ts
+        if age > STALE_DATA_THRESHOLD_SEC:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"STALE_DATA: verdict for {pair} is {int(age)}s old "
+                       f"(threshold: {STALE_DATA_THRESHOLD_SEC}s). Refresh context first.",
+            )
 
 # ── [BUG-1 FIX] Use FastAPI's APIRouter directly — no shadowing ───────────────
 write_router = APIRouter(
@@ -365,6 +406,17 @@ async def _confirm_trade_internal(trade_id: str, idempotency_key: str | None) ->
         if cached:
             return cached
 
+    # Stale-data guard: check trade pair freshness before confirming
+    trade_data = _trade_ledger.get(trade_id)
+    if not trade_data:
+        raw = _redis_get(f"TRADE:{trade_id}")
+        if raw:
+            import json as _json  # noqa: PLC0415
+            with contextlib.suppress(Exception):
+                trade_data = _json.loads(raw)
+    if trade_data and trade_data.get("pair"):
+        _check_stale_data(trade_data["pair"])
+
     trade = _atomic_transition_intended_to_pending(trade_id)
 
     trade_journal_automation_service.on_trade_confirmed(trade)
@@ -393,6 +445,8 @@ async def take_signal(req: TakeSignalRequest) -> dict:
             status_code=status.HTTP_423_LOCKED,
             detail=f"Global kill switch is active: {state.get('reason', 'N/A')}",
         )
+
+    _check_stale_data(req.pair)
 
     account = _account_registry.get(req.account_id)
     if not account:
@@ -512,6 +566,8 @@ async def take_signal_multi(req: TakeSignalBatchRequest) -> dict:
             status_code=status.HTTP_423_LOCKED,
             detail=f"Global kill switch is active: {state.get('reason', 'N/A')}",
         )
+
+    _check_stale_data(req.pair)
 
     with _allocation_router_tracer.start_as_current_span("allocation_enqueue") as span:
         span.set_attribute("signal.id", req.verdict_id)

@@ -15,8 +15,9 @@ NOTE: Do NOT add POST /api/v1/trades/* here — those belong to write_router onl
       Adding them here would create duplicate endpoints and double-execution risk.
 """
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 
+from api.middleware.auth import verify_token
 from dashboard.price_feed import PriceFeed
 from dashboard.trade_ledger import TradeLedger
 from schemas.trade_models import Trade
@@ -34,7 +35,7 @@ _price_feed = PriceFeed()
 # ========================
 
 
-@router.get("/api/v1/trades/{trade_id}")
+@router.get("/api/v1/trades/{trade_id}", dependencies=[Depends(verify_token)])
 async def get_trade(trade_id: str) -> Trade:
     """Get single trade by ID."""
     trade = _trade_ledger.get_trade(trade_id)
