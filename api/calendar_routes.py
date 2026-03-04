@@ -295,7 +295,6 @@ class NewsLockRequest(BaseModel):
     duration_minutes: int | None = 60
 
 
-@router.post("/news-lock/enable")
 @router.post("/news-lock/enable", dependencies=[Depends(verify_token), Depends(enforce_write_policy)])
 async def enable_news_lock(req: NewsLockRequest) -> dict:
     """Activate news lock — blocks new trades during high-impact events."""
@@ -316,7 +315,6 @@ async def enable_news_lock(req: NewsLockRequest) -> dict:
     return {"news_lock": True, **lock_data}
 
 
-@router.post("/news-lock/disable")
 @router.post("/news-lock/disable", dependencies=[Depends(verify_token), Depends(enforce_write_policy)])
 async def disable_news_lock() -> dict:
     """Remove news lock."""
