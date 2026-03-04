@@ -6,6 +6,7 @@ from datetime import UTC, datetime
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 
+from api.middleware.auth import verify_token
 from api.middleware.governance import enforce_write_policy
 from execution.ea_manager import EAManager
 from execution.state_machine import ExecutionStateMachine
@@ -47,7 +48,7 @@ def _append_log(level: str, message: str) -> None:
         redis_client.client.ltrim(EA_LOGS_KEY, 0, EA_LOG_LIMIT - 1)
 
 
-@router.get("/status")
+@router.get("/status", dependencies=[Depends(verify_token)])
 async def ea_status() -> dict:
     safe_mode = False
     with contextlib.suppress(Exception):
@@ -66,7 +67,7 @@ async def ea_status() -> dict:
     }
 
 
-@router.get("/logs")
+@router.get("/logs", dependencies=[Depends(verify_token)])
 async def ea_logs(limit: int = 100) -> list[dict]:
     limit = max(1, min(limit, EA_LOG_LIMIT))
     try:

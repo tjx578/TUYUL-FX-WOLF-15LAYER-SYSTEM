@@ -28,7 +28,7 @@ class ConfigLockRequest(BaseModel):
     locked: bool
 
 
-@router.get("")
+@router.get("", dependencies=[Depends(verify_token)])
 async def list_profiles() -> dict:
     return {
         "active_profile": _engine.get_active_profile(),
@@ -38,7 +38,7 @@ async def list_profiles() -> dict:
     }
 
 
-@router.get("/active")
+@router.get("/active", dependencies=[Depends(verify_token)])
 async def get_active_profile() -> dict:
     return {
         "active_profile": _engine.get_active_profile(),
@@ -51,7 +51,7 @@ async def get_active_profile() -> dict:
     }
 
 
-@router.get("/effective")
+@router.get("/effective", dependencies=[Depends(verify_token)])
 async def get_effective_profile(
     account_id: str | None = Query(default=None),
     prop_firm: str | None = Query(default=None),
@@ -73,7 +73,7 @@ async def get_effective_profile(
     }
 
 
-@router.get("/revisions")
+@router.get("/revisions", dependencies=[Depends(verify_token)])
 async def list_config_revisions(limit: int = Query(default=50, ge=1, le=500)) -> dict:
     return {
         "count": min(limit, len(_engine.list_revisions(limit=limit))),

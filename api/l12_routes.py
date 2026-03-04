@@ -3,9 +3,10 @@ from __future__ import annotations
 import contextlib
 from typing import Any, Protocol, cast
 
-from fastapi import HTTPException
+from fastapi import Depends, HTTPException
 from fastapi.routing import APIRouter
 
+from api.middleware.auth import verify_token
 from config_loader import load_pairs
 from context.live_context_bus import LiveContextBus
 from execution.state_machine import ExecutionStateMachine
@@ -38,7 +39,7 @@ def _load_available_pairs() -> list[dict[str, str | bool]]:
 AVAILABLE_PAIRS: list[dict[str, str | bool]] = _load_available_pairs()
 
 
-@router.get("/api/v1/l12/{pair}")
+@router.get("/api/v1/l12/{pair}", dependencies=[Depends(verify_token)])
 def fetch_l12(pair: str):
     """Get L12 verdict for a specific pair with timezone info."""
     data = get_verdict(pair.upper())
@@ -55,7 +56,7 @@ def fetch_l12(pair: str):
     return data
 
 
-@router.get("/api/v1/verdict/all")
+@router.get("/api/v1/verdict/all", dependencies=[Depends(verify_token)])
 def fetch_all_verdicts() -> dict[str, Any]:
     """Get verdicts for all available pairs."""
     verdicts: dict[str, Any] = {}
@@ -70,13 +71,13 @@ def fetch_all_verdicts() -> dict[str, Any]:
     return verdicts
 
 
-@router.get("/api/v1/verdict")
+@router.get("/api/v1/verdict", dependencies=[Depends(verify_token)])
 def fetch_all_verdicts_alias() -> dict[str, Any]:
     """Compatibility alias: return verdicts for all available pairs."""
     return fetch_all_verdicts()
 
 
-@router.get("/api/v1/context")
+@router.get("/api/v1/context", dependencies=[Depends(verify_token)])
 def fetch_context() -> dict[str, Any]:
     """Get live context snapshot."""
     context_bus = LiveContextBus()
@@ -90,7 +91,7 @@ def fetch_context() -> dict[str, Any]:
     return snapshot
 
 
-@router.get("/api/v1/execution")
+@router.get("/api/v1/execution", dependencies=[Depends(verify_token)])
 def fetch_execution() -> dict[str, Any]:
     """Get current execution state."""
     state_machine = cast(_SnapshotProvider, ExecutionStateMachine())
@@ -250,7 +251,7 @@ def _build_pipeline_data(pair: str, verdict_data: dict[str, Any]) -> dict[str, A
     }
 
 
-@router.get("/api/v1/pipeline/{pair}")
+@router.get("/api/v1/pipeline/{pair}", dependencies=[Depends(verify_token)])
 def fetch_pipeline(pair: str):
     """Get full pipeline data for the PipelinePanel UI component.
 
