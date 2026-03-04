@@ -8,10 +8,9 @@ from __future__ import annotations
 import logging
 import re
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, Protocol, cast
 
-import redis.asyncio as aioredis
-from fastapi import APIRouter, Depends, HTTPException, Path, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 
 from api.middleware.auth import verify_token
 from api.middleware.governance import enforce_write_policy
@@ -34,12 +33,25 @@ _SYMBOL_RE = re.compile(r"^[A-Z0-9]{3,10}$")
 _TIMEFRAME_RE = re.compile(r"^[A-Z]{1,2}[0-9]{0,2}$")
 
 
-async def _delete_keys_by_pattern(r: aioredis.Redis, pattern: str) -> int:
+class RedisClient(Protocol):
+    async def ping(self) -> bool: ...
+    async def info(self, section: str | None = None, *args: str, **kwargs: Any) -> dict[str, Any]: ...
+    async def slowlog_len(self) -> int: ...
+    async def scan(
+        self,
+        cursor: int = 0,
+        match: str | None = None,
+        count: int | None = None,
+    ) -> tuple[int, list[Any]]: ...
+    async def delete(self, *names: Any) -> int: ...
+
+
+async def _delete_keys_by_pattern(r: RedisClient, pattern: str) -> int:
     """Scan for keys matching *pattern* and delete them.  Returns count deleted."""
     deleted = 0
     cursor = 0
     while True:
-        cursor, keys = await r.scan(cursor=cursor, match=pattern, count=100)  # type: ignore[misc]
+        cursor, keys = await r.scan(cursor=cursor, match=pattern, count=100)
         if keys:
             deleted += await r.delete(*keys)
         if cursor == 0:
@@ -47,10 +59,15 @@ async def _delete_keys_by_pattern(r: aioredis.Redis, pattern: str) -> int:
     return deleted
 
 
+# Public alias — allows tests (and other callers) to import without the leading
+# underscore while keeping the private name for internal use.
+delete_keys_by_pattern = _delete_keys_by_pattern
+
+
 @router.get("/health", dependencies=[Depends(verify_token)])
 async def redis_health(request: Request) -> dict[str, Any]:
     """Return quick Redis diagnostics for dashboard observability."""
-    r: aioredis.Redis = request.app.state.redis
+    r = cast(RedisClient, request.app.state.redis)
     started = datetime.now(UTC)
     try:
         pong = await r.ping()
@@ -73,7 +90,7 @@ async def redis_health(request: Request) -> dict[str, Any]:
 
 
 @router.delete("/candles", dependencies=[Depends(verify_token), Depends(enforce_write_policy)])
-async def flush_all_candles(request: Request) -> dict:
+async def flush_all_candles(request: Request) -> dict[str, Any]:
     """Delete all candle-cache keys from Redis.
 
     Scans for every key that matches the known candle-cache prefixes
@@ -91,7 +108,7 @@ async def flush_all_candles(request: Request) -> dict:
     Returns:
         status, deleted_count, flushed_at
     """
-    r: aioredis.Redis = request.app.state.redis
+    r = cast(RedisClient, request.app.state.redis)
     total_deleted = 0
     for prefix in _CANDLE_KEY_PREFIXES:
         count = await _delete_keys_by_pattern(r, f"{prefix}:*")
@@ -108,7 +125,7 @@ async def flush_all_candles(request: Request) -> dict:
 
 
 @router.delete("/candles/{symbol}/{timeframe}", dependencies=[Depends(verify_token), Depends(enforce_write_policy)])
-async def flush_candles_for_pair(request: Request, symbol: str, timeframe: str) -> dict:
+async def flush_candles_for_pair(request: Request, symbol: str, timeframe: str) -> dict[str, Any]:
     """Delete candle-cache keys for a specific symbol and timeframe.
 
     Removes keys of the form ``<prefix>:{symbol}:{timeframe}`` across all
@@ -134,7 +151,7 @@ async def flush_candles_for_pair(request: Request, symbol: str, timeframe: str) 
     if not _TIMEFRAME_RE.match(timeframe):
         raise HTTPException(status_code=422, detail=f"Invalid timeframe: {timeframe!r}")
 
-    r: aioredis.Redis = request.app.state.redis
+    r = cast(RedisClient, request.app.state.redis)
     keys_to_delete = [f"{prefix}:{symbol}:{timeframe}" for prefix in _CANDLE_KEY_PREFIXES]
     deleted: int = await r.delete(*keys_to_delete)
 
