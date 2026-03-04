@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
+from typing import Any, cast
 
 import numpy as np
 
@@ -37,6 +38,18 @@ class KMeansState:
     n_features: int = 0
     total_samples: int = 0
     initialized: bool = False
+
+
+@dataclass
+class ClusterResult:
+    """Result of a single clustering prediction."""
+
+    cluster_id: int
+    confidence: float
+    distance: float
+    distances: list[float] = field(default_factory=lambda: [])
+
+
 class OnlineKMeans:
     """
     Online (incremental) K-Means clustering for regime detection.
@@ -55,6 +68,8 @@ class OnlineKMeans:
         min_learning_rate: float = 0.01,
         decay_factor: float = 0.999,
         random_seed: int | None = None,
+        confidence_tau: float = 1.5,
+        state_file: str | None = None,
     ) -> None:
         """
         Initialize online K-Means.
@@ -65,12 +80,16 @@ class OnlineKMeans:
             min_learning_rate: Minimum learning rate after decay.
             decay_factor: Learning rate decay per sample.
             random_seed: Random seed for reproducibility.
+            confidence_tau: Temperature parameter for confidence scoring.
+            state_file: Optional path to persist/load model state (currently unused).
         """
         super().__init__()
         self.n_clusters = n_clusters
         self.learning_rate = learning_rate
         self.min_learning_rate = min_learning_rate
         self.decay_factor = decay_factor
+        self.confidence_tau = confidence_tau
+        self.state_file = state_file
         self.rng = np.random.default_rng(random_seed)
 
         self.state = KMeansState()
@@ -141,6 +160,41 @@ class OnlineKMeans:
         cluster_idx = int(np.argmin(distances))
         return cluster_idx, distances
 
+    def fit_predict(self, features: np.ndarray) -> ClusterResult:
+        """
+        Predict cluster and update centroids; return a structured ClusterResult.
+
+        Args:
+            features: 1D feature vector.
+
+        Returns:
+            ClusterResult with cluster_id, confidence, and distance.
+        """
+        if not self.state.initialized:
+            # Auto-initialize with single-sample warm start
+            arr = np.asarray(features).flatten().reshape(1, -1)
+            expanded = np.tile(arr, (self.n_clusters, 1)) + self.rng.normal(0, 1e-6, (self.n_clusters, arr.shape[1]))
+            self.initialize(expanded)
+
+        cluster_idx, distances = self.predict(features)
+        dist_arr = np.asarray(distances)
+        min_dist = float(dist_arr[cluster_idx])
+
+        # Confidence via softmin over distances scaled by tau
+        scaled = -dist_arr / max(self.confidence_tau, 1e-9)
+        exp_s = np.exp(scaled - scaled.max())
+        confidence = float(exp_s[cluster_idx] / exp_s.sum())
+
+        # Update centroids online
+        self.update(np.asarray(features).flatten())
+
+        return ClusterResult(
+            cluster_id=cluster_idx,
+            confidence=confidence,
+            distance=min_dist,
+            distances=dist_arr.tolist(),
+        )
+
     def update(self, features: np.ndarray) -> int:
         """
         Update centroids with a new sample and return assignment.
@@ -166,9 +220,9 @@ class OnlineKMeans:
 
         return cluster_idx
 
-    def get_regime_distances(self, features: np.ndarray) -> dict[str, float]:
+    def distance_to_regimes(self, features: np.ndarray) -> dict[str, float]:
         """
-        Get distances to all regime centroids.
+        Compute distance from features to each regime centroid.
 
         Args:
             features: 1D feature vector.
@@ -191,7 +245,8 @@ class OnlineKMeans:
         indices: list[int] = []
 
         # First centroid: random
-        first_idx = int(self.rng.integers(0, n_samples))
+        first_raw = cast(np.integer[Any], self.rng.integers(0, n_samples))
+        first_idx = int(first_raw)
         indices.append(first_idx)
 
         for _ in range(1, self.n_clusters):
@@ -206,11 +261,14 @@ class OnlineKMeans:
             total = dist_sq.sum()
             if total == 0:
                 # All points are identical; pick randomly
-                next_idx = int(self.rng.integers(0, n_samples).item())
+                next_raw = cast(np.integer[Any], self.rng.integers(0, n_samples))
+                next_idx = int(next_raw)
             else:
                 probs = dist_sq / total
-                chosen = self.rng.choice(n_samples, p=probs)
-                next_idx = int(chosen.item()) if hasattr(chosen, "item") else int(chosen)
+                cdf = np.cumsum(probs)
+                r = float(self.rng.random())
+                chosen_idx = int(np.searchsorted(cdf, r, side="right"))
+                next_idx = min(chosen_idx, n_samples - 1)
 
             indices.append(next_idx)
 

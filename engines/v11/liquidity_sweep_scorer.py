@@ -69,6 +69,10 @@ class SweepResult:
     details: dict[str, Any] = field(default_factory=lambda: dict[str, Any]())
 
 
+# Alias used by engines.v11 package __init__ exports
+LiquiditySweepResult = SweepResult
+
+
 class LiquiditySweepScorer:
     """
     Scores liquidity sweep patterns for the Wolf-15 analysis system.
