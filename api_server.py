@@ -28,6 +28,7 @@ from typing import Any
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import RedirectResponse
 from loguru import logger as loguru_logger
 from typing_extensions import override
 
@@ -104,6 +105,8 @@ from infrastructure.tracing import (  # noqa: E402
 )
 from risk.risk_router import router as risk_router  # noqa: E402
 from api.ws_routes import router as ws_router  # noqa: E402
+from context.runtime_state import RuntimeState  # noqa: E402
+from storage.postgres_client import pg_client  # noqa: E402
 
 # ── Fixed routers ─────────────────────────────────────────────────────────────
 from api.allocation_router import write_router  # noqa: E402
@@ -216,9 +219,13 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     logger.info("🐺 TUYUL FX Wolf-15 starting up…")
     from infrastructure.redis_client import close_pool, get_client
     app.state.redis = await get_client()
+    with suppress(Exception):
+        await pg_client.initialize()
     try:
         yield
     finally:
+        with suppress(Exception):
+            await pg_client.close()
         await close_pool()
         logger.info("🐺 TUYUL FX Wolf-15 shutting down…")
 
@@ -233,6 +240,35 @@ app = FastAPI(
     redoc_url=None if IS_PRODUCTION else "/redoc",
 )
 instrument_fastapi(app)
+
+FORCE_HTTPS = _env_bool("FORCE_HTTPS", default=IS_PRODUCTION)
+_csp_default = (
+    "default-src 'self'; "
+    "connect-src 'self' https://api.yourdomain.com wss://api.yourdomain.com;"
+)
+CSP_HEADER_VALUE = os.getenv("CSP_HEADER", _csp_default)
+
+
+@app.middleware("http")
+async def https_redirect_middleware(request: Request, call_next):
+    if not FORCE_HTTPS:
+        return await call_next(request)
+
+    forwarded_proto = request.headers.get("x-forwarded-proto", "").lower()
+    if request.url.scheme != "https" and forwarded_proto != "https":
+        return RedirectResponse(url=str(request.url.replace(scheme="https")), status_code=307)
+
+    return await call_next(request)
+
+
+@app.middleware("http")
+async def security_headers_middleware(request: Request, call_next):
+    response = await call_next(request)
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "SAMEORIGIN")
+    response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+    response.headers.setdefault("Content-Security-Policy", CSP_HEADER_VALUE)
+    return response
 
 # ── CORS ──────────────────────────────────────────────────────────────────────
 _cors_raw = os.getenv(
@@ -305,6 +341,7 @@ async def health(request: Request) -> dict[str, Any]:
     from datetime import datetime
 
     import redis.asyncio as aioredis
+    from config_loader import CONFIG
 
     redis_ok = False
     with suppress(Exception):
@@ -312,11 +349,29 @@ async def health(request: Request) -> dict[str, Any]:
         ping_result: bool = await r.ping()  # type: ignore[assignment]
         redis_ok = ping_result is True
 
+    postgres_health = await pg_client.health_check()
+    config_loaded = bool(CONFIG.get("constitution"))
+    engine_state = {
+        "healthy": bool(RuntimeState.healthy),
+        "latency_ms": int(RuntimeState.latency_ms),
+        "session_hours": round(RuntimeState.get_session_hours(), 3),
+    }
+
+    lockdown_state = "unknown"
+    with suppress(Exception):
+        r = request.app.state.redis
+        locked = await r.get("system:lockdown")
+        lockdown_state = "locked" if str(locked).lower() in {"1", "true", "locked", "on"} else "normal"
+
     return {
-        "status": "ok",
+        "status": "ok" if redis_ok and bool(postgres_health.get("connected")) else "degraded",
         "service": "tuyul-fx",
         "version": "10.0.0",
-        "redis_connected": redis_ok,
+        "redis": {"connected": redis_ok},
+        "postgres": postgres_health,
+        "config_loaded": config_loaded,
+        "engine_state": engine_state,
+        "lockdown_state": lockdown_state,
         "mt5_connected": False,   # updated by EA bridge
         "active_pairs": 0,        # updated by L12 pipeline
         "active_trades": 0,       # updated by TradeLedger
