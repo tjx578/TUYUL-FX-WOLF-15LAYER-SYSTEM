@@ -7,9 +7,10 @@ import sys
 import time
 import urllib.request
 import zipfile
-from typing import Any  # noqa: UP035
+from typing import Any, Protocol, cast  # noqa: UP035
 
 import redis
+from redis import Redis
 
 REDIS_DIR = os.path.join(os.environ["LOCALAPPDATA"], "Redis")
 REDIS_EXE = os.path.join(REDIS_DIR, "redis-server.exe")
@@ -35,8 +36,9 @@ else:
 
 def ping() -> bool:
     try:
-        client: redis.Redis[str] = redis.Redis.from_url(URL, decode_responses=True)  # type: ignore[assignment]
-        return bool(client.ping())  # type: ignore[arg-type]
+        client: Redis = redis.Redis.from_url(URL, decode_responses=True)  # type: ignore[no-untyped-call]
+        result: bool = client.ping()  # type: ignore[assignment]
+        return bool(result)
     except Exception:
         return False
 
@@ -54,7 +56,7 @@ if not ping():
 print("PING OK\n")
 
 # ── 3. Inspect ──
-r: redis.Redis[str] = redis.Redis.from_url(URL, decode_responses=True)  # type: ignore[assignment]
+r: Redis = redis.Redis.from_url(URL, decode_responses=True)  # pyright: ignore[reportUnknownMemberType]
 
 lines: list[str] = []
 
@@ -64,6 +66,11 @@ def p(msg: str = "") -> None:
     lines.append(msg)
 
 
+class SyncHashReader(Protocol):
+    def hgetall(self, name: str) -> dict[str, str]:
+        ...
+
+
 all_keys: list[str] = sorted(r.keys("*"))  # type: ignore[arg-type]
 p(f"=== ALL KEYS ({len(all_keys)}) ===")
 for k in all_keys:
@@ -71,38 +78,46 @@ for k in all_keys:
 
 p("\n=== KEY DETAILS ===")
 for k in all_keys:
-    t: str = str(r.type(k))
-    key_ttl: int = int(r.ttl(k))  # type: ignore[arg-type]
+    t: str = str(cast(str, r.type(k)))
+    key_ttl: int = cast(int, r.ttl(k))
     try:
-        sz: Any = (
-            r.llen(k)   if t == "list"   else
-            r.scard(k)  if t == "set"    else
-            r.hlen(k)   if t == "hash"   else
-            r.zcard(k)  if t == "zset"   else
-            r.xlen(k)   if t == "stream" else
-            len(str(r.get(k) or "")) if t == "string" else "?"
-        )
+        sz: int | str
+        if t == "list":
+            sz = cast(int, r.llen(k))
+        elif t == "set":
+            sz = cast(int, r.scard(k))
+        elif t == "hash":
+            sz = cast(int, r.hlen(k))
+        elif t == "zset":
+            sz = cast(int, r.zcard(k))
+        elif t == "stream":
+            sz = cast(int, r.xlen(k))
+        elif t == "string":
+            sz = len(str(cast(str | None, r.get(k)) or ""))
+        else:
+            sz = "?"
     except Exception:
         sz = "?"
     p(f"  {k:<55s}  type={t:<8s}  ttl={key_ttl:>8}  size={sz}")
 
 p("\n=== SPECIFIC KEY CHECK ===")
 for k in ["candles:EURUSD:M15", "wolf:pipeline:EURUSD", "consumer:group:wolf15"]:
-    if not r.exists(k):
+    if not cast(int, r.exists(k)):
         p(f"  {k}: DOES NOT EXIST")
         continue
-    t = str(r.type(k))
+    t = str(cast(str, r.type(k)))
     p(f"  {k}: type={t}")
     if t == "stream":
-        info: dict[str, Any] = r.xinfo_stream(k)  # type: ignore[assignment]
-        grps: list[dict[str, Any]] = r.xinfo_groups(k)  # type: ignore[assignment]
+        info: dict[str, Any] = cast(dict[str, Any], r.xinfo_stream(k))
+        grps: list[dict[str, Any]] = cast(list[dict[str, Any]], r.xinfo_groups(k))
         p(f"    length={info['length']}, groups={len(grps)}")
         for g in grps:
             p(f"      group={g['name']}  pending={g['pending']}  consumers={g['consumers']}  last-id={g['last-delivered-id']}")
     elif t == "string":
-        p(f"    value={str(r.get(k))[:300]}")
+        p(f"    value={str(cast(str | None, r.get(k)))[:300]}")
     elif t == "hash":
-        hdata: dict[str, str] = r.hgetall(k)  # type: ignore[assignment]
+        hash_reader = cast(SyncHashReader, r)
+        hdata: dict[str, str] = hash_reader.hgetall(k)
         p(f"    fields={list(hdata.keys())[:30]}")
     elif t == "list":
         llen_val: int = r.llen(k)  # type: ignore[assignment]
