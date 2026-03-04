@@ -247,10 +247,10 @@ class TestDashboardRoutesAuth:
 
 
 # ============================================================================
-# 6. Prices endpoint (no auth required by design)
+# 6. Prices endpoint (auth required)
 # ============================================================================
 
-class TestPricesEndpointNoAuth:
+class TestPricesEndpointAuth:
     @pytest.fixture(autouse=True)
     def _setup(self):
         with (
@@ -266,6 +266,15 @@ class TestPricesEndpointNoAuth:
             self.client = TestClient(self.app)
             yield
 
-    def test_prices_returns_200_without_auth(self):
+    def test_prices_without_auth_returns_401(self):
         resp = self.client.get("/api/v1/prices")
+        assert resp.status_code == 401
+
+    def test_prices_with_valid_auth_returns_200(self):
+        _set_auth_secret()
+        token = _make_token()
+        resp = self.client.get(
+            "/api/v1/prices",
+            headers={"Authorization": f"Bearer {token}"},
+        )
         assert resp.status_code == 200

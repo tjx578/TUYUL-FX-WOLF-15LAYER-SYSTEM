@@ -26,7 +26,7 @@ from copy import deepcopy
 from datetime import UTC
 from typing import Any
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse
 from loguru import logger as loguru_logger
@@ -89,6 +89,7 @@ from api.journal_routes import router as journal_router  # noqa: E402
 # ── Existing routers ───────────────────────────────────────────────────────────
 from api.l12_routes import router as l12_router  # noqa: E402
 from api.metrics_routes import router as metrics_router  # noqa: E402
+from api.middleware.auth import verify_token  # noqa: E402
 from api.middleware.prometheus_middleware import PrometheusMiddleware  # noqa: E402
 from api.middleware.rate_limit import RateLimitMiddleware  # noqa: E402  # noqa: E402
 from api.accounts_router import router as accounts_router  # noqa: E402
@@ -337,7 +338,12 @@ _assert_no_duplicate_routes(app)
 
 # ── Health ────────────────────────────────────────────────────────────────────
 @app.get("/health")
-async def health(request: Request) -> dict[str, Any]:
+async def health() -> dict[str, str]:
+    return {"status": "ok"}
+
+
+@app.get("/health/full", dependencies=[Depends(verify_token)])
+async def full_health(request: Request) -> dict[str, Any]:
     from datetime import datetime
 
     import redis.asyncio as aioredis

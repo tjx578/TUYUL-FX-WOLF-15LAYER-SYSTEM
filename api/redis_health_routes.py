@@ -47,7 +47,7 @@ async def _delete_keys_by_pattern(r: aioredis.Redis, pattern: str) -> int:
     return deleted
 
 
-@router.get("/health")
+@router.get("/health", dependencies=[Depends(verify_token)])
 async def redis_health(request: Request) -> dict[str, Any]:
     """Return quick Redis diagnostics for dashboard observability."""
     r: aioredis.Redis = request.app.state.redis

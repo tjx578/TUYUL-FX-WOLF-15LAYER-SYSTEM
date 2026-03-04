@@ -22,7 +22,7 @@ from dashboard.price_feed import PriceFeed
 from dashboard.trade_ledger import TradeLedger
 from schemas.trade_models import Trade
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(verify_token)])
 
 # Service instances (read path only — no journal/risk side-effects here)
 _trade_ledger = TradeLedger()
@@ -35,7 +35,7 @@ _price_feed = PriceFeed()
 # ========================
 
 
-@router.get("/api/v1/trades/{trade_id}", dependencies=[Depends(verify_token)])
+@router.get("/api/v1/trades/{trade_id}")
 async def get_trade(trade_id: str) -> Trade:
     """Get single trade by ID."""
     trade = _trade_ledger.get_trade(trade_id)

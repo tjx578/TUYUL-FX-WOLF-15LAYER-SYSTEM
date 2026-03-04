@@ -54,7 +54,10 @@ CONFIG_WRITE_PER_MIN = _env_int("RATE_LIMIT_CONFIG_PER_MIN", 5)
 WS_CONNECT_PER_MIN = _env_int("RATE_LIMIT_WS_CONNECT_PER_MIN", _env_int("WS_MAX_CONNECTIONS_PER_MIN", 10))
 RATE_LIMIT_REDIS_PREFIX = os.getenv("RATE_LIMIT_REDIS_PREFIX", "ratelimit:").strip() or "ratelimit:"
 CLEANUP_INTERVAL_SEC = 120  # purge stale entries every N seconds
-_trusted_proxy_raw = os.getenv("RATE_LIMIT_TRUSTED_PROXY_IPS", "127.0.0.1,::1")
+_trusted_proxy_raw = os.getenv(
+    "TRUSTED_PROXIES",
+    os.getenv("RATE_LIMIT_TRUSTED_PROXY_IPS", "127.0.0.1,::1"),
+)
 TRUSTED_PROXY_IPS = {ip.strip() for ip in _trusted_proxy_raw.split(",") if ip.strip()}
 TRUST_ALL_PROXIES = "*" in TRUSTED_PROXY_IPS
 TRUSTED_PROXY_ENABLED = _env_bool("TRUSTED_PROXY_ENABLED", False)
@@ -171,8 +174,17 @@ def _client_ip(request: Request) -> str:
 
     forwarded = request.headers.get("x-forwarded-for")
     if forwarded and _is_trusted_proxy(source_ip):
-        # First entry is the original client
-        return forwarded.split(",")[0].strip()
+        # Enforce single-IP XFF to reduce spoofing surface.
+        if "," in forwarded:
+            logger.warning(
+                "Ignoring multi-valued X-Forwarded-For from trusted proxy: source=%s xff=%s",
+                source_ip,
+                forwarded,
+            )
+            return source_ip
+        real_ip = forwarded.strip()
+        if real_ip:
+            return real_ip
     return source_ip
 
 
