@@ -45,6 +45,7 @@ def _env_bool(key: str, default: bool) -> bool:
 
 
 RATE_LIMIT_ENABLED = _env_bool("RATE_LIMIT_ENABLED", True)
+RATE_LIMIT_BACKEND = os.getenv("RATE_LIMIT_BACKEND", "memory").strip().lower()  # memory | redis
 REQUESTS_PER_MIN = _env_int("RATE_LIMIT_REQUESTS_PER_MIN", 120)
 BURST = _env_int("RATE_LIMIT_BURST", 20)
 WS_PER_MIN = _env_int("RATE_LIMIT_WS_PER_MIN", 10)
@@ -188,6 +189,13 @@ def _is_websocket(request: Request) -> bool:
 
 
 def _redis_window_hit(key: str, ttl_sec: int = 60) -> int | None:
+    """Atomic Redis INCR + EXPIRE for distributed rate limiting.
+
+    Returns the current counter value, or None if Redis is unavailable.
+    Falls back to None so callers use the in-memory store instead.
+    """
+    if RATE_LIMIT_BACKEND != "redis":
+        return None
     try:
         value = redis_client.client.incr(key)
         if int(value) == 1:
@@ -279,8 +287,8 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
         # WebSocket upgrade request
         if _is_websocket(request):
-            count = self.ws_store.hit(ip)
-            if count > WS_PER_MIN:
+            allowed, count = _check_bucket("ws", ip, WS_PER_MIN, self.ws_store)
+            if not allowed:
                 logger.warning(
                     f"WS rate limit exceeded: {ip} ({count}/{WS_PER_MIN} per min)"
                 )
@@ -296,9 +304,9 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
         # Regular HTTP request
         limit = REQUESTS_PER_MIN + BURST
-        count = self.http_store.hit(ip)
+        allowed, count = _check_bucket("http", ip, limit, self.http_store)
 
-        if count > limit:
+        if not allowed:
             logger.warning(
                 f"HTTP rate limit exceeded: {ip} ({count}/{limit} per min)"
             )
