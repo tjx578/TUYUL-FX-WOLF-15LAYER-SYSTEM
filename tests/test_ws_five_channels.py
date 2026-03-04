@@ -303,23 +303,23 @@ class TestWsPricesChannel:
             yield TestClient(app) # pyright: ignore[reportOptionalCall]
 
     def test_price_channel_receives_snapshot(self, client):
-        """First message on /ws/prices must be type='snapshot'."""
+        """First message on /ws/prices must be event_type='price.snapshot'."""
         with client.websocket_connect("/ws/prices?token=testtoken") as ws:
             msg = ws.receive_json()
-            assert msg["type"] == "snapshot"
-            assert "data" in msg
+            assert msg["event_type"] == "price.snapshot"
+            assert "payload" in msg
 
     def test_price_snapshot_has_ts(self, client):
-        """Snapshot must include a 'ts' timestamp."""
+        """Snapshot must include a 'server_ts' timestamp."""
         with client.websocket_connect("/ws/prices?token=testtoken") as ws:
             msg = ws.receive_json()
-            assert "ts" in msg
+            assert "server_ts" in msg
 
     def test_price_snapshot_contains_known_symbols(self, client):
-        """Snapshot data must include mocked symbols."""
+        """Snapshot payload must include mocked symbols."""
         with client.websocket_connect("/ws/prices?token=testtoken") as ws:
             msg = ws.receive_json()
-            data = msg.get("data", {})
+            data = msg.get("payload", {}).get("prices", {})
             assert "EURUSD" in data or len(data) >= 0  # flexible: may be empty in fast CI
 
 
@@ -347,23 +347,23 @@ class TestWsTradesChannel:
             yield TestClient(app) # pyright: ignore[reportOptionalCall]
 
     def test_trades_channel_receives_snapshot(self, client):
-        """First message on /ws/trades must be type='snapshot'."""
+        """First message on /ws/trades must be event_type='trade.snapshot'."""
         with client.websocket_connect("/ws/trades?token=testtoken") as ws:
             msg = ws.receive_json()
-            assert msg["type"] == "snapshot"
-            assert "data" in msg
+            assert msg["event_type"] == "trade.snapshot"
+            assert "payload" in msg
 
     def test_trades_snapshot_is_list(self, client):
-        """Snapshot data must be a list of trade objects."""
+        """Snapshot payload.trades must be a list of trade objects."""
         with client.websocket_connect("/ws/trades?token=testtoken") as ws:
             msg = ws.receive_json()
-            assert isinstance(msg["data"], list)
+            assert isinstance(msg["payload"]["trades"], list)
 
     def test_trades_snapshot_contains_trade_ids(self, client):
         """Each trade in snapshot must have a trade_id field."""
         with client.websocket_connect("/ws/trades?token=testtoken") as ws:
             msg = ws.receive_json()
-            for trade in msg["data"]:
+            for trade in msg["payload"]["trades"]:
                 assert "trade_id" in trade
 
 
@@ -394,24 +394,24 @@ class TestWsCandlesChannel:
             yield TestClient(app) # pyright: ignore[reportOptionalCall]
 
     def test_candles_channel_receives_snapshot(self, client_with_bars):
-        """First message on /ws/candles must be type='snapshot'."""
+        """First message on /ws/candles must be event_type='candle.snapshot'."""
         with client_with_bars.websocket_connect("/ws/candles?token=testtoken") as ws:
             msg = ws.receive_json()
-            assert msg["type"] == "snapshot"
-            assert "data" in msg
+            assert msg["event_type"] == "candle.snapshot"
+            assert "payload" in msg
 
     def test_candles_snapshot_has_eurusd_bars(self, client_with_bars):
-        """After seeding EURUSD tick, snapshot data must include EURUSD."""
+        """After seeding EURUSD tick, snapshot payload.bars must include EURUSD."""
         with client_with_bars.websocket_connect("/ws/candles?token=testtoken") as ws:
             msg = ws.receive_json()
-            data = msg.get("data", {})
+            data = msg.get("payload", {}).get("bars", {})
             assert "EURUSD" in data
 
     def test_candles_snapshot_bar_has_ohlc(self, client_with_bars):
         """Each bar in snapshot must have open, high, low, close fields."""
         with client_with_bars.websocket_connect("/ws/candles?token=testtoken") as ws:
             msg = ws.receive_json()
-            data = msg.get("data", {})
+            data = msg.get("payload", {}).get("bars", {})
             if "EURUSD" in data and "M1" in data["EURUSD"]:
                 bar = data["EURUSD"]["M1"]
                 for field in ("open", "high", "low", "close"):
@@ -421,7 +421,7 @@ class TestWsCandlesChannel:
         """?symbol=EURUSD filter must only return EURUSD bars."""
         with client_with_bars.websocket_connect("/ws/candles?token=testtoken&symbol=EURUSD") as ws:
             msg = ws.receive_json()
-            data = msg.get("data", {})
+            data = msg.get("payload", {}).get("bars", {})
             # Filtered: should only have EURUSD or empty
             unexpected = [s for s in data if s != "EURUSD"]
             assert not unexpected, f"Symbol filter leaked other symbols: {unexpected}"
@@ -446,34 +446,34 @@ class TestWsRiskChannel:
             yield TestClient(app) # pyright: ignore[reportOptionalCall]
 
     def test_risk_channel_receives_first_message(self, client):
-        """First message on /ws/risk must be type='risk_state'."""
+        """First message on /ws/risk must be event_type='risk.state'."""
         with client.websocket_connect("/ws/risk?token=testtoken") as ws:
             msg = ws.receive_json()
-            assert msg["type"] == "risk_state"
+            assert msg["event_type"] == "risk.state"
 
     def test_risk_message_has_data_key(self, client):
-        """risk_state message must have a 'data' key."""
+        """risk.state message must have a 'payload' key."""
         with client.websocket_connect("/ws/risk?token=testtoken") as ws:
             msg = ws.receive_json()
-            assert "data" in msg
+            assert "payload" in msg
 
     def test_risk_data_has_ts(self, client):
-        """data payload must include a 'ts' timestamp."""
+        """payload must include a 'ts' timestamp."""
         with client.websocket_connect("/ws/risk?token=testtoken") as ws:
             msg = ws.receive_json()
-            assert "ts" in msg["data"]
+            assert "ts" in msg["payload"]
 
     def test_risk_data_null_when_no_manager(self, client):
         """When risk manager is None, risk_snapshot must be null/None."""
         with client.websocket_connect("/ws/risk?token=testtoken") as ws:
             msg = ws.receive_json()
-            assert msg["data"].get("risk_snapshot") is None
+            assert msg["payload"].get("risk_snapshot") is None
 
     def test_risk_circuit_breaker_null_when_none(self, client):
         """When circuit breaker is None, circuit_breaker must be null/None."""
         with client.websocket_connect("/ws/risk?token=testtoken") as ws:
             msg = ws.receive_json()
-            assert msg["data"].get("circuit_breaker") is None
+            assert msg["payload"].get("circuit_breaker") is None
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -524,32 +524,32 @@ class TestWsEquityChannel:
             yield _TestClient(app)
 
     def test_equity_channel_receives_snapshot(self, client_no_accounts):
-        """First message on /ws/equity must be type='equity_snapshot'."""
+        """First message on /ws/equity must be event_type='equity.snapshot'."""
         with client_no_accounts.websocket_connect("/ws/equity?token=testtoken") as ws:
             msg = ws.receive_json()
-            assert msg["type"] == "equity_snapshot"
+            assert msg["event_type"] == "equity.snapshot"
 
     def test_equity_snapshot_has_history(self, client_no_accounts):
-        """equity_snapshot data must include 'history' list."""
+        """equity.snapshot payload must include 'history' list."""
         with client_no_accounts.websocket_connect("/ws/equity?token=testtoken") as ws:
             msg = ws.receive_json()
-            assert "history" in msg["data"]
-            assert isinstance(msg["data"]["history"], list)
+            assert "history" in msg["payload"]
+            assert isinstance(msg["payload"]["history"], list)
 
     def test_equity_snapshot_has_ts(self, client_no_accounts):
-        """equity_snapshot data must include 'ts'."""
+        """equity.snapshot must include 'server_ts'."""
         with client_no_accounts.websocket_connect("/ws/equity?token=testtoken") as ws:
             msg = ws.receive_json()
-            assert "ts" in msg["data"]
+            assert "server_ts" in msg
 
     def test_equity_update_zero_when_no_account(self, client_no_accounts):
-        """equity_update with no accounts must return zero equity."""
+        """equity.update with no accounts must return zero equity."""
         with client_no_accounts.websocket_connect("/ws/equity?token=testtoken") as ws:
             ws.receive_json()  # snapshot
             update = ws.receive_json()
-            assert update["type"] == "equity_update"
-            assert update["data"]["equity"] == 0.0
-            assert update["data"]["balance"] == 0.0
+            assert update["event_type"] == "equity.update"
+            assert update["payload"]["equity"] == 0.0
+            assert update["payload"]["balance"] == 0.0
 
 
 # ──────────────────────────────────────────────────────────────────────────────
