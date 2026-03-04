@@ -15,11 +15,13 @@ import type {
   AlertEvent,
 } from "@/types";
 
-const WS_URL =
-  (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000").replace(
-    /^http/,
-    "ws"
-  );
+import { getWsBaseUrl } from "@/lib/env";
+import { getToken } from "@/lib/auth";
+
+// Resolved once when the module is first imported.
+// getWsBaseUrl() reads NEXT_PUBLIC_WS_BASE_URL directly — no fragile
+// http → ws replacement that silently produces ws:// in production.
+const WS_URL = getWsBaseUrl();
 
 const RECONNECT_DELAY_MS = 3000;
 const MAX_RECONNECT_ATTEMPTS = 10;
@@ -52,7 +54,7 @@ export function useWolfWebSocket<T>(
 
     const token =
       typeof window !== "undefined"
-        ? localStorage.getItem("wolf15_token")
+        ? getToken()
         : null;
     const url = token
       ? `${WS_URL}${path}?token=${token}`
