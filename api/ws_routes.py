@@ -27,6 +27,7 @@ import contextlib
 import json
 import os
 import time
+import uuid as _uuid
 from collections import defaultdict, deque
 
 import fastapi  # pyright: ignore[reportMissingImports]
@@ -40,6 +41,28 @@ from dashboard.trade_ledger import TradeLedger
 from storage.redis_client import redis_client
 
 router = fastapi.APIRouter()
+
+# ---------------------------------------------------------------------------
+# Versioned event envelope — standard contract for all WS messages
+# ---------------------------------------------------------------------------
+
+WS_EVENT_VERSION = "1.0"
+
+
+def _ws_event(event_type: str, payload: dict, *, trace_id: str | None = None) -> dict:
+    """Build a versioned WS event envelope.
+
+    Standard fields:
+      event_version, event_id, event_type, server_ts, trace_id, payload
+    """
+    return {
+        "event_version": WS_EVENT_VERSION,
+        "event_id": _uuid.uuid4().hex,
+        "event_type": event_type,
+        "server_ts": time.time(),
+        "trace_id": trace_id or _uuid.uuid4().hex[:16],
+        "payload": payload,
+    }
 
 # Maximum concurrent WebSocket connections per manager
 MAX_WS_CONNECTIONS = int(os.getenv("WS_MAX_CONNECTIONS", "50"))
@@ -338,13 +361,10 @@ async def notify_price_update():
 
 
 async def publish_live_update(topic: str, payload: dict):
-    """Publish an event to /ws/live subscribers."""
-    await live_manager.broadcast({
-        "type": "live_event",
-        "topic": topic,
-        "data": payload,
-        "ts": time.time(),
-    })
+    """Publish an event to /ws/live subscribers using versioned envelope."""
+    await live_manager.broadcast(
+        _ws_event(f"live_event.{topic}", payload)
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -413,7 +433,7 @@ async def websocket_prices(websocket: fastapi.WebSocket):
 
         # Send initial snapshot
         prices = _price_feed.get_latest_prices() if hasattr(_price_feed, 'get_latest_prices') else {} # pyright: ignore[reportAttributeAccessIssue]
-        snapshot_msg = {"type": "snapshot", "data": prices, "ts": time.time()}
+        snapshot_msg = _ws_event("price.snapshot", {"prices": prices})
         await websocket.send_json(snapshot_msg)
 
         # Track last known prices to push only diffs
@@ -448,11 +468,7 @@ async def websocket_prices(websocket: fastapi.WebSocket):
                     )
 
             if changed:
-                tick_msg = {
-                    "type": "tick",
-                    "data": changed,
-                    "ts": time.time(),
-                }
+                tick_msg = _ws_event("price.tick", {"changes": changed})
                 price_manager.buffer_message(tick_msg)
                 await websocket.send_json(tick_msg)
 
@@ -489,7 +505,7 @@ async def websocket_trades(websocket: fastapi.WebSocket):
         active_trades = _trade_ledger.get_active_trades()
         trades_data = [trade.model_dump() for trade in active_trades]
 
-        await websocket.send_json({"type": "snapshot", "data": trades_data})
+        await websocket.send_json(_ws_event("trade.snapshot", {"trades": trades_data}))
 
         # Build initial snapshot
         for trade in active_trades:
@@ -511,12 +527,10 @@ async def websocket_trades(websocket: fastapi.WebSocket):
                 del last_trade_snapshot[trade_id]
 
             if changed_trades or removed_trade_ids:
-                await websocket.send_json({
-                    "type": "update",
+                await websocket.send_json(_ws_event("trade.update", {
                     "changed": [t.model_dump() for t in changed_trades],
                     "removed": list(removed_trade_ids),
-                    "ts": time.time(),
-                })
+                }))
 
             # 250ms for near-instant trade event delivery
             await asyncio.sleep(TRADE_CHECK_INTERVAL)
@@ -552,15 +566,11 @@ async def websocket_candles(websocket: fastapi.WebSocket):
     try:
         # Send current bars snapshot
         bars = _candle_agg.get_current_bars(symbol_filter)
-        await websocket.send_json({"type": "snapshot", "data": bars})
+        await websocket.send_json(_ws_event("candle.snapshot", {"bars": bars}))
 
         while True:
             bars = _candle_agg.get_current_bars(symbol_filter)
-            await websocket.send_json({
-                "type": "forming",
-                "data": bars,
-                "ts": time.time(),
-            })
+            await websocket.send_json(_ws_event("candle.forming", {"bars": bars}))
             await asyncio.sleep(CANDLE_UPDATE_INTERVAL)
 
     except fastapi.WebSocketDisconnect:
@@ -624,7 +634,7 @@ async def websocket_risk(websocket: fastapi.WebSocket):
             except Exception:
                 risk_state["drawdown"] = None
 
-            msg = {"type": "risk_state", "data": risk_state}
+            msg = _ws_event("risk.state", risk_state)
             risk_manager.buffer_message(msg)
             await websocket.send_json(msg)
             await asyncio.sleep(RISK_STATE_INTERVAL)
@@ -678,13 +688,9 @@ async def websocket_equity(websocket: fastapi.WebSocket):
 
     try:
         # Send initial snapshot with history
-        await websocket.send_json({
-            "type": "equity_snapshot",
-            "data": {
-                "history": list(_equity_history),
-                "ts": time.time(),
-            },
-        })
+        await websocket.send_json(_ws_event("equity.snapshot", {
+            "history": list(_equity_history),
+        }))
 
         while True:
             # Fetch current account state
@@ -749,10 +755,7 @@ async def websocket_equity(websocket: fastapi.WebSocket):
                 last_equity = current_equity
 
             # Push update to client
-            await websocket.send_json({
-                "type": "equity_update",
-                "data": equity_point,
-            })
+            await websocket.send_json(_ws_event("equity.update", equity_point))
 
             await asyncio.sleep(EQUITY_PUSH_INTERVAL)
 
@@ -776,27 +779,19 @@ async def websocket_live_feed(websocket: fastapi.WebSocket):
         return
 
     try:
-        await websocket.send_json({
-            "type": "snapshot",
-            "data": {
-                "signals": _signal_service.list_all(),
-                "accounts": [a.model_dump() for a in _account_manager.list_accounts()],
-                "trades": [t.model_dump() for t in _trade_ledger.get_active_trades()],
-            },
-            "ts": time.time(),
-        })
+        await websocket.send_json(_ws_event("live.snapshot", {
+            "signals": _signal_service.list_all(),
+            "accounts": [a.model_dump() for a in _account_manager.list_accounts()],
+            "trades": [t.model_dump() for t in _trade_ledger.get_active_trades()],
+        }))
 
         while True:
             # Keepalive periodic state update for clients that miss individual events
-            await websocket.send_json({
-                "type": "heartbeat_state",
-                "data": {
-                    "signal_count": len(_signal_service.list_all()),
-                    "account_count": len(_account_manager.list_accounts()),
-                    "active_trade_count": len(_trade_ledger.get_active_trades()),
-                },
-                "ts": time.time(),
-            })
+            await websocket.send_json(_ws_event("live.heartbeat_state", {
+                "signal_count": len(_signal_service.list_all()),
+                "account_count": len(_account_manager.list_accounts()),
+                "active_trade_count": len(_trade_ledger.get_active_trades()),
+            }))
             await asyncio.sleep(1.0)
 
     except fastapi.WebSocketDisconnect:
