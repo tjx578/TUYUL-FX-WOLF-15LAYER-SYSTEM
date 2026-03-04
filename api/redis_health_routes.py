@@ -1,20 +1,3 @@
-"""
-TUYUL FX Wolf-15 — Redis Observability & Cache-Management Endpoints
-GET    /api/v1/redis/health                          — PING latency, connected/blocked clients,
-                                                       ops/sec, slowlog length.
-DELETE /api/v1/redis/candles                         — Flush all candle-cache keys (selective;
-                                                       safe for fresh deploy).
-DELETE /api/v1/redis/candles/{symbol}/{timeframe}    — Flush candle-cache keys for a specific
-                                                       symbol+timeframe pair.
-
-Used to diagnose TCP_OVERWINDOW root cause:
-  - High ``blocked_clients``  → consumer-starvation (event-loop blockage)
-  - Rising ``latency_ms``     → Redis backpressure or slow operations
-  - High ``slowlog_len``      → expensive commands stalling the Redis server
-
-All reads go through ``request.app.state.redis`` (the lifecycle-managed async
-pool seeded in the FastAPI lifespan), so this endpoint never creates a new
-connection.
 """Redis health and cache-management endpoints.
 
 Zones: dashboard (monitoring/ops) — no market logic, no execution authority.
@@ -28,7 +11,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 import redis.asyncio as aioredis
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Path, Request
 
 from api.middleware.auth import verify_token
 from api.middleware.governance import enforce_write_policy
@@ -62,100 +45,31 @@ async def _delete_keys_by_pattern(r: aioredis.Redis, pattern: str) -> int:
         if cursor == 0:
             break
     return deleted
-from fastapi import APIRouter, Depends, HTTPException, Path, Request
-
-router = APIRouter(prefix="/api/v1/redis", tags=["redis"])
-
-# ---------------------------------------------------------------------------
-# Candle-cache key prefixes known to this system
-# ---------------------------------------------------------------------------
-
-CANDLE_KEY_PREFIXES: list[str] = [
-    "candles",
-    "candle_cache",
-    "ohlcv",
-]
-
-_SYMBOL_RE = re.compile(r"^[A-Z0-9]+$")
-_TIMEFRAME_RE = re.compile(r"^[A-Z][0-9]+$")
 
 
-# ---------------------------------------------------------------------------
-# Public helper — used by routes and exposed for unit testing
-# ---------------------------------------------------------------------------
+@router.get("/health")
+async def redis_health(request: Request) -> dict[str, Any]:
+    """Return quick Redis diagnostics for dashboard observability."""
+    r: aioredis.Redis = request.app.state.redis
+    started = datetime.now(UTC)
+    try:
+        pong = await r.ping()
+        info = await r.info(section="stats")
+        clients = await r.info(section="clients")
+        slowlog_len = await r.slowlog_len()
+        elapsed_ms = (datetime.now(UTC) - started).total_seconds() * 1000.0
 
-
-async def delete_keys_by_pattern(redis: Any, pattern: str) -> int:
-    """Scan Redis for *pattern* and delete all matching keys.
-
-    Returns the total number of keys deleted.
-    """
-    cursor: int = 0
-    deleted: int = 0
-
-    while True:
-        cursor, keys = await redis.scan(cursor, match=pattern, count=100)
-        if keys:
-            deleted += await redis.delete(*keys)
-        if cursor == 0:
-            break
-
-    return deleted
-
-
-# ---------------------------------------------------------------------------
-# DELETE /api/v1/redis/candles — flush ALL candle keys
-# ---------------------------------------------------------------------------
-
-
-@router.delete("/candles", dependencies=[Depends(verify_token), Depends(enforce_write_policy)])
-async def flush_all_candles(request: Request) -> dict[str, Any]:
-    """Delete every candle-cache key across all known prefixes."""
-    redis = request.app.state.redis
-    total_deleted: int = 0
-
-    for prefix in CANDLE_KEY_PREFIXES:
-        total_deleted += await delete_keys_by_pattern(redis, f"{prefix}:*")
-
-    return {
-        "status": "ok",
-        "deleted_count": total_deleted,
-        "flushed_at": datetime.now(UTC).isoformat(),
-    }
-
-
-# ---------------------------------------------------------------------------
-# DELETE /api/v1/redis/candles/{symbol}/{timeframe} — flush specific pair
-# ---------------------------------------------------------------------------
-
-
-@router.delete("/candles/{symbol}/{timeframe}", dependencies=[Depends(verify_token), Depends(enforce_write_policy)])
-async def flush_pair_candles(
-    request: Request,
-    symbol: str = Path(...),
-    timeframe: str = Path(...),
-) -> dict[str, Any]:
-    """Delete all candle-cache keys for a specific symbol + timeframe."""
-    symbol = symbol.upper()
-    timeframe = timeframe.upper()
-
-    if not _SYMBOL_RE.match(symbol):
-        raise HTTPException(status_code=422, detail=f"Invalid symbol: {symbol!r}")
-    if not _TIMEFRAME_RE.match(timeframe):
-        raise HTTPException(status_code=422, detail=f"Invalid timeframe: {timeframe!r}")
-
-    redis = request.app.state.redis
-
-    keys = [f"{prefix}:{symbol}:{timeframe}" for prefix in CANDLE_KEY_PREFIXES]
-    deleted: int = await redis.delete(*keys)
-
-    return {
-        "status": "ok",
-        "symbol": symbol,
-        "timeframe": timeframe,
-        "deleted_count": deleted,
-        "flushed_at": datetime.now(UTC).isoformat(),
-    }
+        return {
+            "status": "ok" if pong else "degraded",
+            "latency_ms": round(elapsed_ms, 2),
+            "connected_clients": int(clients.get("connected_clients", 0)),
+            "blocked_clients": int(clients.get("blocked_clients", 0)),
+            "instantaneous_ops_per_sec": int(info.get("instantaneous_ops_per_sec", 0)),
+            "slowlog_len": int(slowlog_len),
+            "timestamp": datetime.now(UTC).isoformat(),
+        }
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"Redis health check failed: {exc}") from exc
 
 
 @router.delete("/candles", dependencies=[Depends(verify_token), Depends(enforce_write_policy)])
