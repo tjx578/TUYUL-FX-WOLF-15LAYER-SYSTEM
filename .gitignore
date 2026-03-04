@@ -56,7 +56,7 @@ pnpm-debug.log*
 out/
 
 # ── IDE ──────────────────────────────────────
-.vscode/settings.json
+.vscode/
 .idea/
 *.swp
 *.swo
