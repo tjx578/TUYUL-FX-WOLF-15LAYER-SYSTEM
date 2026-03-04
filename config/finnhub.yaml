@@ -35,6 +35,8 @@ candles:
     h1_interval_sec: 3600             # Refresh H1 every 1 hour
     h1_bars: 5                        # Fetch last 5 bars on refresh
     price_drift_max_pips: 50.0        # Max allowed drift REST vs WS
+    m15_cold_start_min_bars: 10       # M15 bar count below which recovery triggers
+    m15_recovery_bars: 100            # Number of M15 bars to fetch on cold start
 
 symbols:
   include_forex: true

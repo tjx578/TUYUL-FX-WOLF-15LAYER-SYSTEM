@@ -10,6 +10,11 @@ Environment variables:
   RATE_LIMIT_BURST                 - burst tolerance above base (default 20)
   RATE_LIMIT_WS_PER_MIN           - WebSocket upgrade rate (default 10)
   RATE_LIMIT_ENABLED              - "true" / "false" (default "true")
+  RATE_LIMIT_EA_CONTROL_PER_MIN   - EA restart/safe-mode (default 3)
+  RATE_LIMIT_ACCOUNT_WRITE_PER_MIN - account create/update/delete (default 10)
+  RATE_LIMIT_TRADE_WRITE_PER_MIN  - trade confirm/close/skip (default 20)
+  RATE_LIMIT_RISK_CALC_PER_MIN    - /risk/calculate compute (default 30)
+  RATE_LIMIT_ADMIN_PER_MIN        - destructive admin ops (default 5)
 """
 
 from __future__ import annotations
@@ -17,15 +22,18 @@ from __future__ import annotations
 import os
 import threading
 import time
-
 from collections import defaultdict
 from dataclasses import dataclass, field
 
-from fastapi import Request, Response  # pyright: ignore[reportMissingImports]
-from fastapi.responses import JSONResponse  # pyright: ignore[reportMissingImports]
-from loguru import logger  # pyright: ignore[reportMissingImports]
-from starlette.middleware.base import BaseHTTPMiddleware  # pyright: ignore[reportMissingImports]
-from starlette.types import ASGIApp  # pyright: ignore[reportMissingImports]
+from fastapi import Request, Response
+from fastapi.responses import JSONResponse
+from loguru import logger
+from starlette.middleware.base import (
+    BaseHTTPMiddleware,
+    RequestResponseEndpoint,
+)
+from starlette.types import ASGIApp
+from typing_extensions import override
 
 from storage.redis_client import redis_client
 
@@ -52,6 +60,11 @@ WS_PER_MIN = _env_int("RATE_LIMIT_WS_PER_MIN", 10)
 TAKE_PER_MIN = _env_int("RATE_LIMIT_TAKE_PER_MIN", 10)
 CONFIG_WRITE_PER_MIN = _env_int("RATE_LIMIT_CONFIG_PER_MIN", 5)
 WS_CONNECT_PER_MIN = _env_int("RATE_LIMIT_WS_CONNECT_PER_MIN", _env_int("WS_MAX_CONNECTIONS_PER_MIN", 10))
+EA_CONTROL_PER_MIN = _env_int("RATE_LIMIT_EA_CONTROL_PER_MIN", 3)
+ACCOUNT_WRITE_PER_MIN = _env_int("RATE_LIMIT_ACCOUNT_WRITE_PER_MIN", 10)
+TRADE_WRITE_PER_MIN = _env_int("RATE_LIMIT_TRADE_WRITE_PER_MIN", 20)
+RISK_CALC_PER_MIN = _env_int("RATE_LIMIT_RISK_CALC_PER_MIN", 30)
+ADMIN_PER_MIN = _env_int("RATE_LIMIT_ADMIN_PER_MIN", 5)
 RATE_LIMIT_REDIS_PREFIX = os.getenv("RATE_LIMIT_REDIS_PREFIX", "ratelimit:").strip() or "ratelimit:"
 CLEANUP_INTERVAL_SEC = 120  # purge stale entries every N seconds
 _trusted_proxy_raw = os.getenv(
@@ -80,13 +93,14 @@ EXEMPT_PATHS: set[str] = {"/", "/health", "/docs", "/openapi.json", "/redoc"}
 @dataclass
 class _ClientWindow:
     """Sliding-window timestamps for a single client IP."""
-    timestamps: list[float] = field(default_factory=list)
+    timestamps: list[float] = field(default_factory=lambda: [])
 
 
 class SlidingWindowStore:
     """Thread-safe per-IP sliding-window store."""
 
-    def __init__(self, window_sec: int = 60):
+    def __init__(self, window_sec: int = 60) -> None:
+        super().__init__()
         self._window = window_sec
         self._lock = threading.Lock()
         self._clients: dict[str, _ClientWindow] = defaultdict(_ClientWindow)
@@ -152,6 +166,11 @@ _ws_store = SlidingWindowStore(window_sec=60)
 _take_store = SlidingWindowStore(window_sec=60)
 _config_store = SlidingWindowStore(window_sec=60)
 _ws_connect_store = SlidingWindowStore(window_sec=60)
+_ea_control_store = SlidingWindowStore(window_sec=60)
+_account_write_store = SlidingWindowStore(window_sec=60)
+_trade_write_store = SlidingWindowStore(window_sec=60)
+_risk_calc_store = SlidingWindowStore(window_sec=60)
+_admin_store = SlidingWindowStore(window_sec=60)
 
 
 def get_http_store() -> SlidingWindowStore:
@@ -210,9 +229,26 @@ def _redis_window_hit(key: str, ttl_sec: int = 60) -> int | None:
         return None
     try:
         value = redis_client.client.incr(key)
-        if int(value) == 1:
+
+        # Guard against async Redis clients in this synchronous helper.
+        if hasattr(value, "__await__"):
+            logger.debug("Redis rate limit fallback for key=%s: async response in sync path", key)
+            return None
+
+        value_int: int
+        if isinstance(value, int):
+            value_int = value
+        elif isinstance(value, str):
+            value_int = int(value)
+        elif isinstance(value, (bytes, bytearray)):
+            value_int = int(value.decode())
+        else:
+            logger.debug("Redis rate limit fallback for key=%s: unsupported response type=%s", key, type(value).__name__)
+            return None
+
+        if value_int == 1:
             redis_client.client.expire(key, ttl_sec)
-        return int(value)
+        return value_int
     except Exception as exc:
         logger.debug("Redis rate limit fallback for key=%s: %s", key, exc)
         return None
@@ -236,14 +272,45 @@ def _check_bucket(
 
 def _path_bucket(path: str, method: str, is_ws_upgrade: bool) -> tuple[str, int, SlidingWindowStore] | None:
     lowered = path.lower()
-    if is_ws_upgrade and lowered.startswith("/ws"):
+    if is_ws_upgrade and "/ws" in lowered:
         return ("ws_connect", WS_CONNECT_PER_MIN, _ws_connect_store)
 
     if method in {"POST", "PUT", "PATCH", "DELETE"}:
-        if "/trades/take" in lowered or "/signals/take" in lowered or "/accounts/" in lowered and "/take" in lowered:
+        # ── EA control (restart / safe-mode) — very tight ──
+        # Paths are /api/v1/ea/restart, /api/v1/ea/safe-mode
+        if "/ea/" in lowered and any(
+            seg in lowered for seg in ("/restart", "/safe-mode")
+        ):
+            return ("ea_control", EA_CONTROL_PER_MIN, _ea_control_store)
+
+        # ── Trade take (original bucket) ──
+        if ("/trades/take" in lowered
+                or "/signals/take" in lowered
+                or ("/accounts/" in lowered and "/take" in lowered)):
             return ("take", TAKE_PER_MIN, _take_store)
+
+        # ── Trade lifecycle (confirm / close / skip) ──
+        if any(seg in lowered for seg in (
+            "/trades/confirm", "/trades/close", "/trades/skip",
+            "/signals/skip",
+        )):
+            return ("trade_write", TRADE_WRITE_PER_MIN, _trade_write_store)
+
+        # ── Risk calculate (compute-heavy) ──
+        if "/risk/calculate" in lowered:
+            return ("risk_calc", RISK_CALC_PER_MIN, _risk_calc_store)
+
+        # ── Account CRUD — paths are /api/v1/accounts/... ──
+        if "/accounts" in lowered and method in {"POST", "PUT", "DELETE"}:
+            return ("account_write", ACCOUNT_WRITE_PER_MIN, _account_write_store)
+
+        # ── Config profile writes ──
         if "/config/profiles" in lowered:
             return ("config_write", CONFIG_WRITE_PER_MIN, _config_store)
+
+        # ── Admin / destructive (redis candle delete, news-lock) ──
+        if ("/redis/candles" in lowered and method == "DELETE") or "/news-lock/" in lowered:
+            return ("admin", ADMIN_PER_MIN, _admin_store)
 
     return None
 
@@ -260,12 +327,15 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
     Returns 429 Too Many Requests when limit is exceeded.
     """
 
-    def __init__(self, app: ASGIApp):
+    def __init__(self, app: ASGIApp) -> None:
         super().__init__(app)
         self.http_store = _http_store
         self.ws_store = _ws_store
 
-    async def dispatch(self, request: Request, call_next) -> Response:
+    @override
+    async def dispatch(
+        self, request: Request, call_next: RequestResponseEndpoint
+    ) -> Response:
         if not RATE_LIMIT_ENABLED:
             return await call_next(request)
 

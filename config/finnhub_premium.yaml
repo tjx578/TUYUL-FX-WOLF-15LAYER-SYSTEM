@@ -1,0 +1,58 @@
+# Finnhub Premium Pair Registry
+#
+# Documents which pairs require Finnhub premium (paid) access.
+# Updated by running: python -m scripts.probe_finnhub_premium
+#
+# Classification:
+#   free     — available on Finnhub free tier
+#   premium  — returns HTTP 403, requires paid plan
+#   unknown  — not yet probed
+#
+# NOTE: Finnhub's free tier covers OANDA forex majors and most crosses.
+#       Commodity pairs (XAU, XAG) may require premium depending on the
+#       data provider prefix used.
+
+finnhub_premium_status:
+  # ── MAJORS (typically free on OANDA prefix) ──
+  EURUSD: free
+  GBPUSD: free
+  USDJPY: free
+  USDCHF: free
+  USDCAD: free
+  AUDUSD: free
+  NZDUSD: free
+
+  # ── EUR CROSSES ──
+  EURGBP: free
+  EURJPY: free
+  EURCHF: free
+  EURAUD: free
+  EURCAD: free
+  EURNZD: free
+
+  # ── GBP CROSSES ──
+  GBPJPY: free
+  GBPCHF: free
+  GBPAUD: free
+  GBPCAD: free
+  GBPNZD: free
+
+  # ── AUD CROSSES ──
+  AUDJPY: free
+  AUDNZD: free
+  AUDCAD: free
+  AUDCHF: free
+
+  # ── NZD CROSSES ──
+  NZDJPY: free
+  NZDCHF: free
+  NZDCAD: free
+
+  # ── CAD / CHF ──
+  CADJPY: free
+  CADCHF: free
+  CHFJPY: free
+
+  # ── COMMODITIES (probe to verify) ──
+  XAUUSD: unknown   # Gold — verify with probe
+  XAGUSD: unknown   # Silver — verify with probe

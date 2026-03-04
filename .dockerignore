@@ -62,3 +62,29 @@ Thumbs.db
 tests/
 test_*.py
 *_test.py
+
+# Node / Frontend build artifacts
+node_modules/
+.next/
+out/
+pnpm-lock.yaml
+package-lock.json
+
+# Playwright / E2E
+playwright.config.ts
+playwright-report/
+test-results/
+
+# Misc result/log files
+collect_results.txt
+full_results.txt
+full_test_run.txt
+test_collect.txt
+test_results.txt
+
+# Config & lint (not needed at runtime)
+pyrightconfig.json
+pytest.ini
+conftest.py
+pyproject.toml
+.ruff_cache/

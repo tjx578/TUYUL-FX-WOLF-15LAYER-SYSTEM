@@ -6,18 +6,41 @@ import json
 import logging
 import os
 import random
-from collections.abc import Callable, Coroutine
+from collections.abc import Awaitable, Callable
 from typing import Any
 
-import websockets  # pyright: ignore[reportMissingImports]
-import websockets.asyncio.client  # pyright: ignore[reportMissingImports]
-from redis.asyncio import Redis  # pyright: ignore[reportMissingImports]
-from websockets.exceptions import (  # pyright: ignore[reportMissingImports]
+import websockets
+import websockets.asyncio.client
+from prometheus_client import Counter, Gauge
+from redis.asyncio import Redis
+from websockets.exceptions import (
     ConnectionClosed,
     ConnectionClosedError,
 )
 
 logger = logging.getLogger(__name__)
+
+# ── Prometheus metrics for WS reconnect observability ─────────────
+finnhub_ws_reconnect_attempts = Counter(
+    "finnhub_ws_reconnect_attempts_total",
+    "Total Finnhub WS reconnect attempts",
+    ["replica_id", "error_type"],
+)
+finnhub_ws_reconnect_current = Gauge(
+    "finnhub_ws_reconnect_current_attempt",
+    "Current consecutive reconnect attempt number (resets on success)",
+    ["replica_id"],
+)
+finnhub_ws_connections_total = Counter(
+    "finnhub_ws_connections_total",
+    "Total successful Finnhub WS connections",
+    ["replica_id"],
+)
+finnhub_ws_connected = Gauge(
+    "finnhub_ws_connected",
+    "Whether Finnhub WS is currently connected (1=yes, 0=no)",
+    ["replica_id"],
+)
 
 # Backoff configuration
 INITIAL_BACKOFF_S: float = 1.0
@@ -41,6 +64,7 @@ class FinnhubSymbolMapper:
     """Map internal symbols to Finnhub symbols and back."""
 
     def __init__(self, prefix: str) -> None:
+        super().__init__()
         self._prefix = prefix
         self._external_to_internal: dict[str, str] = {}
 
@@ -112,16 +136,21 @@ class FinnhubWebSocket:
     def __init__(
         self,
         redis: Redis,
-        on_message: Callable[[dict[str, Any]], Coroutine],
+        on_message: Callable[[dict[str, Any]], Awaitable[None]],
         symbols: list[str],
         *,
         replica_id: str | None = None,
     ) -> None:
+        super().__init__()
         self._redis = redis
-        self._on_message = on_message
+        self._on_message: Callable[[dict[str, Any]], Awaitable[None]] = on_message
         self._symbols = symbols
         self._replica_id = replica_id or os.environ.get("RAILWAY_REPLICA_ID", "unknown")
-        self._token = os.environ["FINNHUB_API_KEY"]
+        from ingest.finnhub_key_manager import finnhub_keys  # noqa: PLC0415
+        self._key_manager = finnhub_keys
+        self._token = self._key_manager.current_key()
+        if not self._token:
+            raise RuntimeError("No FINNHUB_API_KEY configured — cannot start WebSocket client.")
         self._attempt: int = 0
         self._running: bool = False
         self._ws: websockets.asyncio.client.ClientConnection | None = None
@@ -192,6 +221,9 @@ class FinnhubWebSocket:
                 },
             )
             self._attempt = 0  # Reset on success
+            finnhub_ws_reconnect_current.labels(replica_id=self._replica_id).set(0)
+            finnhub_ws_connections_total.labels(replica_id=self._replica_id).inc()
+            finnhub_ws_connected.labels(replica_id=self._replica_id).set(1)
             return ws
         except Exception as exc:
             # websockets raises InvalidStatusCode on HTTP error responses
@@ -266,6 +298,11 @@ class FinnhubWebSocket:
             ) as exc:
                 self._attempt += 1
                 backoff = _calculate_backoff(self._attempt)
+                finnhub_ws_reconnect_attempts.labels(
+                    replica_id=self._replica_id, error_type=type(exc).__name__,
+                ).inc()
+                finnhub_ws_reconnect_current.labels(replica_id=self._replica_id).set(self._attempt)
+                finnhub_ws_connected.labels(replica_id=self._replica_id).set(0)
                 logger.warning(
                     "Finnhub WS connection error (retryable)",
                     extra={
@@ -281,6 +318,11 @@ class FinnhubWebSocket:
 
             except FinnhubRateLimitError as exc:
                 self._attempt += 1
+                finnhub_ws_reconnect_attempts.labels(
+                    replica_id=self._replica_id, error_type="RateLimit429",
+                ).inc()
+                finnhub_ws_reconnect_current.labels(replica_id=self._replica_id).set(self._attempt)
+                finnhub_ws_connected.labels(replica_id=self._replica_id).set(0)
                 logger.warning(
                     "Finnhub rate limited (HTTP 429)",
                     extra={
@@ -294,6 +336,11 @@ class FinnhubWebSocket:
             except FinnhubConnectionError as exc:
                 self._attempt += 1
                 backoff = _calculate_backoff(self._attempt)
+                finnhub_ws_reconnect_attempts.labels(
+                    replica_id=self._replica_id, error_type="FinnhubConnectionError",
+                ).inc()
+                finnhub_ws_reconnect_current.labels(replica_id=self._replica_id).set(self._attempt)
+                finnhub_ws_connected.labels(replica_id=self._replica_id).set(0)
                 logger.error(
                     "Finnhub WS connection error",
                     extra={
@@ -308,6 +355,11 @@ class FinnhubWebSocket:
             except ConnectionClosed as exc:
                 self._attempt += 1
                 backoff = _calculate_backoff(self._attempt)
+                finnhub_ws_reconnect_attempts.labels(
+                    replica_id=self._replica_id, error_type="ConnectionClosed",
+                ).inc()
+                finnhub_ws_reconnect_current.labels(replica_id=self._replica_id).set(self._attempt)
+                finnhub_ws_connected.labels(replica_id=self._replica_id).set(0)
                 logger.warning(
                     "Finnhub WS connection closed",
                     extra={
@@ -331,6 +383,7 @@ class FinnhubWebSocket:
         if self._ws is not None:
             with contextlib.suppress(Exception):
                 await self._ws.close()
+        finnhub_ws_connected.labels(replica_id=self._replica_id).set(0)
         # Release leader lock
         current = await self._redis.get(LEADER_LOCK_KEY)
         if current == self._replica_id:

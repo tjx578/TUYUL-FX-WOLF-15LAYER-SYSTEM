@@ -13,10 +13,11 @@ from datetime import datetime, timezone, timedelta
 from typing import Optional
 
 import redis as redis_lib
+import redis.asyncio as aioredis
 from fastapi import APIRouter, Depends, Query
 
 from api.middleware.auth import verify_token
-from infrastructure.redis_url import get_redis_url
+from infrastructure.redis_client import get_async_redis
 
 logger = logging.getLogger(__name__)
 
@@ -27,14 +28,11 @@ router = APIRouter(
 )
 
 
-def _get_redis() -> Optional[redis_lib.Redis]:
-    url = get_redis_url()
-    try:
-        r = redis_lib.from_url(url, decode_responses=True)
-        r.ping()
-        return r
-    except Exception:
-        return None
+def _get_redis() -> None:
+    """DEPRECATED — use ``get_async_redis`` FastAPI dependency instead."""
+    raise NotImplementedError(
+        "_get_redis() is removed. Inject via Depends(get_async_redis)."
+    )
 
 
 # ─── Risk Event types ─────────────────────────────────────────────────────────
@@ -68,44 +66,43 @@ async def risk_events(
 
     Frontend: Risk Monitor page → Risk Event Log panel
     """
-    r = _get_redis()
+    r: aioredis.Redis = await get_async_redis()
     events: list[dict] = []
 
     cutoff = datetime.now(timezone.utc) - timedelta(hours=hours_back)
 
-    if r:
-        try:
-            pattern = (
-                f"RISK_EVENT:{account_id}:*"
-                if account_id
-                else "RISK_EVENT:*"
-            )
-            for key in r.scan_iter(pattern):
-                raw = r.get(key)
-                if not raw:
-                    continue
+    try:
+        pattern = (
+            f"RISK_EVENT:{account_id}:*"
+            if account_id
+            else "RISK_EVENT:*"
+        )
+        async for key in r.scan_iter(pattern):
+            raw = await r.get(key)
+            if not raw:
+                continue
+            try:
+                ev = json.loads(raw)
+            except json.JSONDecodeError:
+                continue
+
+            # Filter by event_type
+            if event_type and ev.get("type") != event_type:
+                continue
+
+            # Filter by time
+            ts_str = ev.get("timestamp", "")
+            if ts_str:
                 try:
-                    ev = json.loads(raw)
-                except json.JSONDecodeError:
-                    continue
+                    ts = datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
+                    if ts < cutoff:
+                        continue
+                except ValueError:
+                    pass
 
-                # Filter by event_type
-                if event_type and ev.get("type") != event_type:
-                    continue
-
-                # Filter by time
-                ts_str = ev.get("timestamp", "")
-                if ts_str:
-                    try:
-                        ts = datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
-                        if ts < cutoff:
-                            continue
-                    except ValueError:
-                        pass
-
-                events.append(ev)
-        except Exception as exc:
-            logger.warning("Redis risk events scan failed: %s", exc)
+            events.append(ev)
+    except Exception as exc:
+        logger.warning("Redis risk events scan failed: %s", exc)
 
     # Sort newest first
     events.sort(key=lambda e: e.get("timestamp", ""), reverse=True)
@@ -165,16 +162,15 @@ async def risk_snapshot(account_id: str) -> dict:
     Current risk state snapshot for an account.
     Frontend: Risk Monitor page → DrawdownGauge, CircuitBreaker badge.
     """
-    r = _get_redis()
+    r: aioredis.Redis = await get_async_redis()
     snapshot: dict = {}
 
-    if r:
-        try:
-            raw = r.get(f"RISK:SNAPSHOT:{account_id}")
-            if raw:
-                snapshot = json.loads(raw)
-        except Exception as exc:
-            logger.warning("Risk snapshot Redis error: %s", exc)
+    try:
+        raw = await r.get(f"RISK:SNAPSHOT:{account_id}")
+        if raw:
+            snapshot = json.loads(raw)
+    except Exception as exc:
+        logger.warning("Risk snapshot Redis error: %s", exc)
 
     # Fallback structure if nothing in Redis
     if not snapshot:

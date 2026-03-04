@@ -2,16 +2,11 @@
 TUYUL FX Wolf-15 — Main API Server
 =====================================
 Entry point for Railway deployment.
-Mounts all routers including the 7 new endpoints.
 
-CHANGES FROM ORIGINAL:
-  - Added constitutional_router    (GET /api/v1/health/constitutional, /equity/history)
-  - Added risk_events_router       (GET /api/v1/risk/events, /risk/{id}/snapshot)
-  - Added journal_router           (GET /api/v1/journal/* with search + extended metrics)
-  - Added instrument_router        (GET /api/v1/instruments/*)
-  - Added calendar_router          (GET /api/v1/calendar/*)
-  - trade_input_api write_router   (BUG FIX: APIRouter shadow removed, Redis env fixed)
-  - CORS uses CORS_ORIGINS env var
+Architecture:
+  - Router registration: api/router_registry.py
+  - App construction:    api/app_factory.py
+  - This file:           logging bootstrap + uvicorn entry point
 
 Run (Railway):
     python api_server.py
@@ -20,18 +15,14 @@ Run (Railway):
 import logging
 import os
 import sys
-from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager, suppress
 from copy import deepcopy
-from datetime import UTC
 from typing import Any
 
-from fastapi import Depends, FastAPI, HTTPException, Request
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import RedirectResponse
 from loguru import logger as loguru_logger
 from typing_extensions import override
 
+
+# ── Process-level logging (must run before any app import) ────────────────────
 
 def _configure_process_logging() -> None:
     """Configure stdlib + loguru logging for correct stdout/stderr severity routing."""
@@ -63,96 +54,15 @@ def _configure_process_logging() -> None:
 
 _configure_process_logging()
 
+# ── Build application via factory ─────────────────────────────────────────────
+from api.app_factory import create_app  # noqa: E402
 
-def _env_bool(key: str, default: bool) -> bool:
-    return os.getenv(key, str(default)).strip().lower() in {"1", "true", "yes", "on"}
-
-
-APP_ENV = os.getenv("ENV", "development").strip().lower()
-IS_PRODUCTION = APP_ENV == "production"
-DEBUG_MODE = _env_bool("DEBUG", default=not IS_PRODUCTION)
-ENABLE_DEV_ROUTES = _env_bool("ENABLE_DEV_ROUTES", default=not IS_PRODUCTION)
-
-if IS_PRODUCTION:
-    DEBUG_MODE = False
-    ENABLE_DEV_ROUTES = False
-
-from api.calendar_routes import router as calendar_router  # noqa: E402
-from api.config_profile_router import router as config_profile_router  # noqa: E402
-
-# ── New routers (7 new endpoints) ─────────────────────────────────────────────
-from api.constitutional_routes import router as constitutional_router  # noqa: E402
-from api.dashboard_routes import router as dashboard_router  # prices, accounts, trade-by-id  # noqa: E402
-from api.instrument_routes import router as instrument_router  # noqa: E402
-from api.journal_routes import router as journal_router  # noqa: E402
-
-# ── Existing routers ───────────────────────────────────────────────────────────
-from api.l12_routes import router as l12_router  # noqa: E402
-from api.metrics_routes import router as metrics_router  # noqa: E402
-from api.middleware.auth import verify_token  # noqa: E402
-from api.middleware.prometheus_middleware import PrometheusMiddleware  # noqa: E402
-from api.middleware.rate_limit import RateLimitMiddleware  # noqa: E402  # noqa: E402
-from api.accounts_router import router as accounts_router  # noqa: E402
-from api.ea_router import router as ea_router  # noqa: E402
-from api.prop_router import router as prop_router  # noqa: E402
-from api.redis_health_routes import router as redis_health_router  # noqa: E402
-from api.risk_events_routes import router as risk_events_router  # noqa: E402
-from api.signals_router import router as signals_router  # noqa: E402
-from infrastructure.tracing import (  # noqa: E402
-    instrument_asyncio,
-    instrument_fastapi,
-    instrument_redis,
-    setup_tracer,
-)
-from risk.risk_router import router as risk_router  # noqa: E402
-from api.ws_routes import router as ws_router  # noqa: E402
-from context.runtime_state import RuntimeState  # noqa: E402
-from storage.postgres_client import pg_client  # noqa: E402
-
-# ── Fixed routers ─────────────────────────────────────────────────────────────
-from api.allocation_router import write_router  # noqa: E402
+app = create_app()
 
 logger = logging.getLogger(__name__)
-_api_tracer = setup_tracer("wolf-api")
-instrument_asyncio()
-instrument_redis()
 
 
-# ── Duplicate-route guard ─────────────────────────────────────────────────────
-
-def _assert_no_duplicate_routes(application: "FastAPI") -> None:  # noqa: F821
-    """
-    Raise RuntimeError at startup if any (method, path) pair is registered more
-    than once.  This prevents silent double-execution from accidentally mounting
-    the same router twice or defining conflicting endpoints in two modules.
-    """
-    seen: dict[tuple[str, str], str] = {}
-    duplicates: list[str] = []
-
-    for route in application.routes:
-        methods = getattr(route, "methods", None)
-        path = getattr(route, "path", None)
-        name = getattr(route, "name", "<unnamed>")
-        if not methods or not path:
-            continue
-        for method in methods:
-            key = (method.upper(), path)
-            if key in seen:
-                msg = (
-                    f"DUPLICATE ROUTE: {method} {path} — "
-                    f"handler '{name}' conflicts with '{seen[key]}'"
-                )
-                duplicates.append(msg)
-            else:
-                seen[key] = name
-
-    if duplicates:
-        detail = "\n  ".join(duplicates)
-        raise RuntimeError(
-            f"Duplicate API endpoints detected ({len(duplicates)}):\n  {detail}\n"
-            "Fix: remove one of the duplicate route definitions before starting."
-        )
-
+# ── Uvicorn log config ────────────────────────────────────────────────────────
 
 class _MaxLevelFilter(logging.Filter):
     def __init__(self, max_level: int) -> None:
@@ -213,231 +123,6 @@ def _build_uvicorn_log_config() -> dict[str, Any]:
     }
 
     return config
-
-
-@asynccontextmanager
-async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    logger.info("🐺 TUYUL FX Wolf-15 starting up…")
-    from infrastructure.redis_client import close_pool, get_client
-    app.state.redis = await get_client()
-    with suppress(Exception):
-        await pg_client.initialize()
-    try:
-        yield
-    finally:
-        with suppress(Exception):
-            await pg_client.close()
-        await close_pool()
-        logger.info("🐺 TUYUL FX Wolf-15 shutting down…")
-
-
-app = FastAPI(
-    title="TUYUL FX — Wolf-15 API",
-    version="10.0.0",
-    description="Institutional-grade trading system API",
-    lifespan=lifespan,
-    debug=DEBUG_MODE,
-    docs_url=None if IS_PRODUCTION else "/docs",
-    redoc_url=None if IS_PRODUCTION else "/redoc",
-)
-instrument_fastapi(app)
-
-FORCE_HTTPS = _env_bool("FORCE_HTTPS", default=IS_PRODUCTION)
-_csp_default = (
-    "default-src 'self'; "
-    "connect-src 'self' https://api.yourdomain.com wss://api.yourdomain.com;"
-)
-CSP_HEADER_VALUE = os.getenv("CSP_HEADER", _csp_default)
-
-
-@app.middleware("http")
-async def https_redirect_middleware(request: Request, call_next):
-    if not FORCE_HTTPS:
-        return await call_next(request)
-
-    forwarded_proto = request.headers.get("x-forwarded-proto", "").lower()
-    if request.url.scheme != "https" and forwarded_proto != "https":
-        return RedirectResponse(url=str(request.url.replace(scheme="https")), status_code=307)
-
-    return await call_next(request)
-
-
-@app.middleware("http")
-async def security_headers_middleware(request: Request, call_next):
-    response = await call_next(request)
-    response.headers.setdefault("X-Content-Type-Options", "nosniff")
-    response.headers.setdefault("X-Frame-Options", "SAMEORIGIN")
-    response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
-    response.headers.setdefault("Content-Security-Policy", CSP_HEADER_VALUE)
-    return response
-
-# ── CORS ──────────────────────────────────────────────────────────────────────
-_cors_raw = os.getenv(
-    "CORS_ORIGINS",
-    "http://localhost:3000,http://localhost:8000,https://railway-dashboard-production-de97.up.railway.app",
-)
-cors_origins = [o.strip() for o in _cors_raw.split(",") if o.strip()]
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=cors_origins,
-    allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allow_headers=[
-        "Authorization",
-        "Content-Type",
-        "Accept",
-        "Origin",
-        "X-Requested-With",
-        "X-Idempotency-Key",
-    ],
-    expose_headers=[],
-)
-app.add_middleware(PrometheusMiddleware)
-app.add_middleware(RateLimitMiddleware)
-
-# ── Mount routers ─────────────────────────────────────────────────────────────
-# Trade write lifecycle (take/skip/confirm/close/active + risk/calculate)
-app.include_router(write_router)
-# L12 verdicts, context, execution state, pairs
-app.include_router(l12_router)
-# WebSocket feeds
-app.include_router(ws_router)
-# Prices, accounts, trade-by-id (read-only; write lifecycle is in write_router)
-app.include_router(dashboard_router)
-# Constitutional health + equity history
-app.include_router(constitutional_router)
-# Risk event log + account snapshots
-app.include_router(risk_events_router)
-# Journal search + metrics
-app.include_router(journal_router)
-# Instrument list + regime + sessions
-app.include_router(instrument_router)
-# Economic calendar + news-lock
-app.include_router(calendar_router)
-# Frozen SignalContract read APIs
-app.include_router(signals_router)
-# Read-only account APIs
-app.include_router(accounts_router)
-# Prop-firm governance status/phase
-app.include_router(prop_router)
-# EA bridge controls (status/restart/logs/safe-mode)
-app.include_router(ea_router)
-# Risk evaluation + preview + kill-switch
-app.include_router(risk_router)
-# Runtime config profile engine
-app.include_router(config_profile_router)
-# Prometheus scrape endpoint
-app.include_router(metrics_router)
-# Redis observability + TCP_OVERWINDOW diagnostics
-app.include_router(redis_health_router)
-
-# Guard: fail fast if any (method, path) was registered more than once.
-_assert_no_duplicate_routes(app)
-
-
-# ── Health ────────────────────────────────────────────────────────────────────
-@app.get("/health")
-async def health() -> dict[str, str]:
-    return {"status": "ok"}
-
-
-@app.get("/health/full", dependencies=[Depends(verify_token)])
-async def full_health(request: Request) -> dict[str, Any]:
-    from datetime import datetime
-
-    import redis.asyncio as aioredis
-    from config_loader import CONFIG
-
-    redis_ok = False
-    with suppress(Exception):
-        r: aioredis.Redis = request.app.state.redis
-        ping_result: bool = await r.ping()  # type: ignore[assignment]
-        redis_ok = ping_result is True
-
-    postgres_health = await pg_client.health_check()
-    config_loaded = bool(CONFIG.get("constitution"))
-    engine_state = {
-        "healthy": bool(RuntimeState.healthy),
-        "latency_ms": int(RuntimeState.latency_ms),
-        "session_hours": round(RuntimeState.get_session_hours(), 3),
-    }
-
-    lockdown_state = "unknown"
-    with suppress(Exception):
-        r = request.app.state.redis
-        locked = await r.get("system:lockdown")
-        lockdown_state = "locked" if str(locked).lower() in {"1", "true", "locked", "on"} else "normal"
-
-    return {
-        "status": "ok" if redis_ok and bool(postgres_health.get("connected")) else "degraded",
-        "service": "tuyul-fx",
-        "version": "10.0.0",
-        "redis": {"connected": redis_ok},
-        "postgres": postgres_health,
-        "config_loaded": config_loaded,
-        "engine_state": engine_state,
-        "lockdown_state": lockdown_state,
-        "mt5_connected": False,   # updated by EA bridge
-        "active_pairs": 0,        # updated by L12 pipeline
-        "active_trades": 0,       # updated by TradeLedger
-        "timestamp": datetime.now(UTC).isoformat(),
-    }
-
-
-def _is_production_runtime() -> bool:
-    """Runtime production check — guards debug endpoints even if code is mounted."""
-    env = os.getenv("APP_ENV", os.getenv("ENV", "development")).strip().lower()
-    return env == "production"
-
-
-if ENABLE_DEV_ROUTES:
-    # ── Debug: Redis key inspector ────────────────────────────────────────────
-    @app.get("/debug/redis-keys")
-    async def debug_redis_keys() -> dict[str, Any]:
-        """List Redis keys for development troubleshooting."""
-        if _is_production_runtime():
-            raise HTTPException(status_code=404, detail="Not found")
-
-        from infrastructure.redis_client import get_client
-
-        try:
-            r = await get_client()
-            all_keys: list[bytes | str] = await r.keys("*")  # type: ignore[assignment]
-            decoded = sorted(k if isinstance(k, str) else k.decode() for k in all_keys)
-            prefixes: dict[str, int] = {}
-            for k in decoded:
-                prefix = k.split(":")[0] if ":" in k else k
-                prefixes[prefix] = prefixes.get(prefix, 0) + 1
-            return {
-                "total": len(decoded),
-                "prefixes": prefixes,
-                "keys": decoded[:100],
-            }
-        except Exception as exc:
-            return {"error": str(exc)}
-
-    # ── Endpoint summary (dev helper) ────────────────────────────────────────
-    @app.get("/api/v1/endpoints")
-    async def endpoint_summary() -> dict[str, Any]:
-        """List all registered routes for development debugging."""
-        if _is_production_runtime():
-            raise HTTPException(status_code=404, detail="Not found")
-
-        routes: list[dict[str, Any]] = []
-        for route in app.routes:
-            if hasattr(route, "methods") and hasattr(route, "path"):
-                routes.append({
-                    "path": getattr(route, "path", "unknown"),
-                    "methods": list(route.methods),  # type: ignore[arg-type]
-                    "name": getattr(route, "name", "unknown"),
-                })
-
-        def _route_sort_key(route_item: dict[str, Any]) -> str:
-            path = route_item.get("path", "unknown")
-            return path if isinstance(path, str) else "unknown"
-
-        return {"total": len(routes), "routes": sorted(routes, key=_route_sort_key)}
 
 
 def _resolve_port(default: int = 8000) -> int:

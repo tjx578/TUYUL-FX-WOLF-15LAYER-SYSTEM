@@ -14,24 +14,24 @@ Fallback: Mock data when API unavailable (dev mode)
 
 import json
 import logging
-import os
 from datetime import UTC, datetime, timedelta
+from typing import Any
 
-import redis as redis_lib
+import redis.asyncio as aioredis
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
 try:
     import httpx  # noqa: F401
-    _HTTPX_AVAILABLE = True
+    _httpx_available = True
 except ImportError:
-    _HTTPX_AVAILABLE = False
+    _httpx_available = False
 
 import contextlib
 
 from api.middleware.auth import verify_token
 from api.middleware.governance import enforce_write_policy
-from infrastructure.redis_url import get_redis_url
+from infrastructure.redis_client import get_async_redis
 
 logger = logging.getLogger(__name__)
 
@@ -40,24 +40,23 @@ router = APIRouter(
     tags=["calendar"],
 )
 
-FINNHUB_API_KEY = os.getenv("FINNHUB_API_KEY", "")
+from ingest.finnhub_key_manager import finnhub_keys as _finnhub_keys  # noqa: E402
+
+FINNHUB_API_KEY = _finnhub_keys.current_key()
 FINNHUB_CALENDAR_URL = "https://finnhub.io/api/v1/calendar/economic"
 CACHE_TTL_SECONDS = 900  # 15 minutes
 
 
-def _get_redis() -> redis_lib.Redis | None:
-    url = get_redis_url()
-    try:
-        r = redis_lib.from_url(url, decode_responses=True, protocol=3)
-        r.ping()
-        return r
-    except Exception:
-        return None
+def _get_redis() -> None:
+    """DEPRECATED — use ``get_async_redis`` dependency instead."""
+    raise NotImplementedError(
+        "_get_redis() is removed. Inject via Depends(get_async_redis)."
+    )
 
 
 # ─── Mock events for dev mode ─────────────────────────────────────────────────
 
-def _mock_events(date_str: str) -> list[dict]:
+def _mock_events(date_str: str) -> list[dict[str, Any]]:
     return [
         {
             "event_id": "mock_001",
@@ -110,13 +109,14 @@ def _mock_events(date_str: str) -> list[dict]:
     ]
 
 
-async def _fetch_finnhub_calendar(date_str: str) -> list[dict]:
+async def _fetch_finnhub_calendar(date_str: str) -> list[dict[str, Any]]:
     """Fetch economic calendar from Finnhub API."""
-    if not _HTTPX_AVAILABLE:
+    if not _httpx_available:
         logger.warning("httpx not installed — using mock calendar data")
         return _mock_events(date_str)
 
-    if not FINNHUB_API_KEY:
+    api_key = _finnhub_keys.current_key()
+    if not api_key:
         logger.warning("FINNHUB_API_KEY not set — using mock calendar data")
         return _mock_events(date_str)
 
@@ -125,9 +125,10 @@ async def _fetch_finnhub_calendar(date_str: str) -> list[dict]:
         async with httpx.AsyncClient(timeout=10.0) as client:
             resp = await client.get(
                 FINNHUB_CALENDAR_URL,
-                params={"from": date_str, "to": date_str, "token": FINNHUB_API_KEY},
+                params={"from": date_str, "to": date_str, "token": api_key},
             )
             resp.raise_for_status()
+            _finnhub_keys.report_success(api_key)
             data = resp.json()
 
         events = []
@@ -148,6 +149,9 @@ async def _fetch_finnhub_calendar(date_str: str) -> list[dict]:
         return events
 
     except Exception as exc:
+        # Report failure to key manager for potential rotation
+        if hasattr(exc, "response"):
+            _finnhub_keys.report_failure(api_key, getattr(exc.response, "status_code", 0))  # type: ignore[union-attr]
         logger.warning("Finnhub calendar fetch failed: %s — using mock data", exc)
         return _mock_events(date_str)
 
@@ -157,14 +161,12 @@ def _map_finnhub_impact(impact_raw: str) -> str:
     return mapping.get(str(impact_raw), "LOW")
 
 
-def _is_news_locked(r: redis_lib.Redis | None) -> tuple[bool, str | None]:
+async def _is_news_locked(r: aioredis.Redis) -> tuple[bool, str | None]:
     """Return (locked, reason)."""
-    if not r:
-        return False, None
     with contextlib.suppress(Exception):
-        raw = r.get("NEWS_LOCK:STATE")
+        raw = await r.get("NEWS_LOCK:STATE")
         if raw:
-            data = json.loads(raw) # type: ignore
+            data = json.loads(raw)
             return data.get("locked", False), data.get("reason")
     return False, None
 
@@ -176,29 +178,28 @@ async def get_calendar(
     date: str | None = Query(default=None, description="YYYY-MM-DD, default today"),
     impact: str | None = Query(default=None, pattern="^(HIGH|MEDIUM|LOW|HOLIDAY)?$"),
     currency: str | None = Query(default=None),
-) -> dict:
+) -> dict[str, Any]:
     """
     Fetch economic calendar events.
     Frontend: Calendar page
     """
-    r = _get_redis()
+    r: aioredis.Redis = await get_async_redis()
     date_str = date or datetime.now(UTC).strftime("%Y-%m-%d")
     cache_key = f"CALENDAR:{date_str}"
 
     # Cache check
-    events: list[dict] = []
-    if r:
-        with contextlib.suppress(Exception):
-            cached = r.get(cache_key)
-            if cached is not None and isinstance(cached, str):
-                events = json.loads(cached)
+    events: list[dict[str, Any]] = []
+    with contextlib.suppress(Exception):
+        cached = await r.get(cache_key)
+        if cached is not None and isinstance(cached, str):
+            events = json.loads(cached)  # type: ignore[assignment]
 
     # Fetch if not cached
     if not events:
         events = await _fetch_finnhub_calendar(date_str)
-        if r and events:
+        if events:
             with contextlib.suppress(Exception):
-                r.set(cache_key, json.dumps(events), ex=CACHE_TTL_SECONDS)
+                await r.set(cache_key, json.dumps(events), ex=CACHE_TTL_SECONDS)
 
     # Apply filters
     if impact:
@@ -207,10 +208,12 @@ async def get_calendar(
         events = [e for e in events if e.get("currency", "").upper() == currency.upper()]
 
     # Sort by time
-    events.sort(key=lambda e: e.get("time_utc", ""))
+    events_typed: list[dict[str, Any]] = list(events)
+    events_typed.sort(key=lambda e: e.get("time_utc", ""))
+    events = events_typed
 
     # News lock status
-    locked, lock_reason = _is_news_locked(r)
+    locked, lock_reason = await _is_news_locked(r)
 
     # Mark events within 30 min window
     now = datetime.now(UTC)
@@ -241,7 +244,7 @@ async def get_calendar(
 async def upcoming_events(
     hours: int = Query(default=4, ge=1, le=24),
     impact: str | None = Query(default="HIGH"),
-) -> dict:
+) -> dict[str, Any]:
     """
     Events in the next N hours — used for news lock warnings.
     Frontend: Signal Queue + Overview page → warning banner
@@ -251,17 +254,16 @@ async def upcoming_events(
     tomorrow_str = (now + timedelta(days=1)).strftime("%Y-%m-%d")
     cutoff = now + timedelta(hours=hours)
 
-    r = _get_redis()
+    r: aioredis.Redis = await get_async_redis()
 
-    upcoming = []
+    upcoming: list[dict[str, Any]] = []
     for date_str in [today_str, tomorrow_str]:
         cache_key = f"CALENDAR:{date_str}"
-        events: list[dict] = []
-        if r:
-            with contextlib.suppress(Exception):
-                cached = r.get(cache_key)
-                if cached is not None and isinstance(cached, str):
-                    events = json.loads(cached)
+        events: list[dict[str, Any]] = []
+        with contextlib.suppress(Exception):
+            cached = await r.get(cache_key)
+            if cached is not None and isinstance(cached, str):
+                events = json.loads(cached)
         if not events:
             events = await _fetch_finnhub_calendar(date_str)
 
@@ -296,9 +298,9 @@ class NewsLockRequest(BaseModel):
 
 
 @router.post("/news-lock/enable", dependencies=[Depends(verify_token), Depends(enforce_write_policy)])
-async def enable_news_lock(req: NewsLockRequest) -> dict:
+async def enable_news_lock(req: NewsLockRequest) -> dict[str, Any]:
     """Activate news lock — blocks new trades during high-impact events."""
-    r = _get_redis()
+    r: aioredis.Redis = await get_async_redis()
     lock_data = {
         "locked": True,
         "reason": req.reason,
@@ -307,30 +309,28 @@ async def enable_news_lock(req: NewsLockRequest) -> dict:
             datetime.now(UTC) + timedelta(minutes=req.duration_minutes or 60)
         ).isoformat(),
     }
-    if r:
-        try:
-            r.set("NEWS_LOCK:STATE", json.dumps(lock_data), ex=(req.duration_minutes or 60) * 60)
-        except Exception as exc:
-            raise HTTPException(status_code=500, detail=f"Redis error: {exc}") from exc
+    try:
+        await r.set("NEWS_LOCK:STATE", json.dumps(lock_data), ex=(req.duration_minutes or 60) * 60)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Redis error: {exc}") from exc
     return {"news_lock": True, **lock_data}
 
 
 @router.post("/news-lock/disable", dependencies=[Depends(verify_token), Depends(enforce_write_policy)])
-async def disable_news_lock() -> dict:
+async def disable_news_lock() -> dict[str, Any]:
     """Remove news lock."""
-    r = _get_redis()
-    if r:
-        try:
-            r.delete("NEWS_LOCK:STATE")
-        except Exception as exc:
-            raise HTTPException(status_code=500, detail=f"Redis error: {exc}") from exc
+    r: aioredis.Redis = await get_async_redis()
+    try:
+        await r.delete("NEWS_LOCK:STATE")
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Redis error: {exc}") from exc
     return {"news_lock": False, "disabled_at": datetime.now(UTC).isoformat()}
 
 
 @router.get("/news-lock/status")
-async def news_lock_status() -> dict:
-    r = _get_redis()
-    locked, reason = _is_news_locked(r)
+async def news_lock_status() -> dict[str, Any]:
+    r: aioredis.Redis = await get_async_redis()
+    locked, reason = await _is_news_locked(r)
     return {
         "news_lock": locked,
         "reason": reason,

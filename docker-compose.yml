@@ -13,10 +13,13 @@ services:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - REDIS_PASSWORD=${REDIS_PASSWORD}
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-wolf_user}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-wolf_trading}
     ports:
       - "${APP_PORT:-8000}:${PORT:-8000}"
     depends_on:
       redis:
+        condition: service_healthy
+      postgres:
         condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:${PORT:-8000}/health || exit 1"]
@@ -66,6 +69,32 @@ services:
     networks:
       - wolf15_net
 
+  wolf-dashboard:
+    build:
+      context: ./dashboard/nextjs
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_BASE_URL: http://app:${PORT:-8000}
+        NEXT_PUBLIC_WS_URL: ws://app:${PORT:-8000}
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=production
+      - NEXT_PUBLIC_API_BASE_URL=http://app:${PORT:-8000}
+      - NEXT_PUBLIC_WS_URL=ws://app:${PORT:-8000}
+    ports:
+      - "${DASHBOARD_FE_PORT:-3000}:3000"
+    depends_on:
+      app:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      start_period: 15s
+      retries: 3
+    networks:
+      - wolf15_net
+
   prometheus:
     image: prom/prometheus:latest
     restart: unless-stopped
@@ -95,9 +124,29 @@ services:
       - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
       - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
     ports:
-      - "3000:3000"
+      - "${GRAFANA_PORT:-3001}:3000"
     depends_on:
       - prometheus
+    networks:
+      - wolf15_net
+
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-wolf_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}
+      POSTGRES_DB: ${POSTGRES_DB:-wolf_trading}
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-wolf_user} -d ${POSTGRES_DB:-wolf_trading}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
     networks:
       - wolf15_net
 
@@ -127,6 +176,8 @@ services:
     restart: unless-stopped
 
 volumes:
+  postgres_data:
+    driver: local
   redis_data:
     driver: local
   prometheus_data:

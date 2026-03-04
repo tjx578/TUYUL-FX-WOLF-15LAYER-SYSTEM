@@ -12,10 +12,16 @@ from typing import TYPE_CHECKING, Any, cast
 
 from redis.asyncio import Redis
 
+from analysis.tick_filter import (
+    DedupCache,
+    SpikeFilter,
+    TickFilterConfig,
+)
 from config_loader import CONFIG
 from context.live_context_bus import LiveContextBus
 from ingest.finnhub_ws import FinnhubSymbolMapper, FinnhubWebSocket
 from ingest.spread_estimator import estimate_spread
+from ingest.tick_dlq import get_dlq
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
@@ -45,30 +51,74 @@ _DEDUP_WINDOW_SECONDS: float = float(_TICK_CFG.get("dedup_window_sec", 0.05))
 # Legacy constant for backwards compatibility (tests)
 MAX_DEVIATION_PCT: float = _DEFAULT_SPIKE_THRESHOLD
 
-_last_prices: dict[str, float] = {}
-_last_timestamps: dict[str, float] = {}
+# ── Unified tick filter instances (single source: analysis.tick_filter) ──
+_ingest_filter_config = TickFilterConfig(
+    spike_threshold_pct=_DEFAULT_SPIKE_THRESHOLD,
+    staleness_seconds=_STALENESS_THRESHOLD_SECONDS,
+    dedup_ttl_seconds=_DEDUP_WINDOW_SECONDS,
+    dedup_max_size=5_000,
+    dedup_evict_batch=500,
+    per_symbol_spike_pct=dict(SPIKE_THRESHOLDS),
+)
+_spike_filter = SpikeFilter(_ingest_filter_config)
+_unified_dedup = DedupCache(_ingest_filter_config)
 
-# ── Tick deduplication state ──────────────────────────────────────
-# Key: (symbol, price, exchange_ts)  →  monotonic time of last accept
-_dedup_cache: dict[tuple[str, float, float], float] = {}
-_DEDUP_CACHE_MAX = 5_000  # evict oldest when exceeded
+
+# ── Legacy proxy dicts — kept for backward-compatible test access ─
+# Tests import _last_prices / _last_timestamps and mutate them directly.
+# These proxy dicts synchronise writes with the underlying SpikeFilter store.
+
+class _LastPriceProxy(dict[str, float]):
+    """Dict proxy that mirrors writes into the SpikeFilter's LastPriceStore."""
+
+    def __setitem__(self, symbol: str, price: float) -> None:
+        super().__setitem__(symbol, price)
+        _spike_filter.price_store.update(symbol, price, time.monotonic())
+
+    def clear(self) -> None:
+        super().clear()
+        _spike_filter.clear()
+
+
+class _LastTimestampProxy(dict[str, float]):
+    """Dict proxy that mirrors writes into the SpikeFilter's LastPriceStore."""
+
+    def __setitem__(self, symbol: str, ts: float) -> None:
+        super().__setitem__(symbol, ts)
+        # Sync timestamp into the underlying store (price unchanged)
+        entry = _spike_filter.price_store.get(symbol)
+        if entry is not None:
+            _spike_filter.price_store.update(symbol, entry.price, ts)
+
+    def clear(self) -> None:
+        super().clear()
+        _spike_filter.clear()
+
+
+_last_prices: dict[str, float] = _LastPriceProxy()
+_last_timestamps: dict[str, float] = _LastTimestampProxy()
+
+# ── Tick deduplication state (legacy alias kept for test imports) ──
+
+class _DedupCacheProxy(dict):  # type: ignore[type-arg]
+    """Legacy proxy: clear() also resets the unified DedupCache."""
+
+    def clear(self) -> None:
+        super().clear()
+        _unified_dedup.clear()
+
+
+_dedup_cache: dict[tuple[str, float, float], float] = _DedupCacheProxy()  # type: ignore[assignment]
+_DEDUP_CACHE_MAX = 5_000  # kept for backward compat
 
 
 def _is_duplicate_tick(symbol: str, price: float, exchange_ts: float) -> bool:
-    """Return True if an identical tick was already accepted within the dedup window."""
-    key = (symbol, price, exchange_ts)
-    now = time.monotonic()
-    prev = _dedup_cache.get(key)
-    if prev is not None and (now - prev) < _DEDUP_WINDOW_SECONDS:
-        return True
-    # Evict stale entries lazily when cache grows too large
-    if len(_dedup_cache) >= _DEDUP_CACHE_MAX:
-        cutoff = now - _DEDUP_WINDOW_SECONDS * 2
-        stale_keys = [k for k, v in _dedup_cache.items() if v < cutoff]
-        for k in stale_keys:
-            del _dedup_cache[k]
-    _dedup_cache[key] = now
-    return False
+    """Return True if an identical tick was already accepted within the dedup window.
+
+    Delegates to unified DedupCache from analysis.tick_filter.
+    """
+    key = f"{symbol}:{price}:{exchange_ts}"
+    return _unified_dedup.is_duplicate(key, time.monotonic())
 
 
 # ── Tick rate metrics ─────────────────────────────────────────────
@@ -153,10 +203,8 @@ def _is_valid_tick(symbol: str, new_price: float) -> bool:
     """
     Validate tick price against spike threshold with staleness detection.
 
-    Auto-resets baseline price if:
-    - This is the first tick for the symbol, OR
-    - No tick received for this symbol in the last 60 seconds (prevents false
-      spikes after WS reconnects or session gaps)
+    Delegates to the unified SpikeFilter from analysis.tick_filter while
+    keeping the legacy proxy dicts in sync for backward compatibility.
 
     Args:
         symbol: Trading pair symbol
@@ -165,46 +213,34 @@ def _is_valid_tick(symbol: str, new_price: float) -> bool:
     Returns:
         True if tick is valid, False if spike detected
     """
-    now = time.monotonic()
-    last_price = _last_prices.get(symbol)
-    last_ts = _last_timestamps.get(symbol)
+    result = _spike_filter.check(symbol, new_price, time.monotonic())
 
-    # First tick or stale price -> always accept as new baseline
-    if last_price is None or (
-        last_ts is not None and (now - last_ts) > _STALENESS_THRESHOLD_SECONDS
-    ):
-        reason = "first_tick" if last_price is None else "stale_baseline"
-        logger.info(
-            "Tick baseline reset",
-            extra={
-                "symbol": symbol,
-                "price": new_price,
-                "reason": reason,
-            },
-        )
-        _last_prices[symbol] = new_price
-        _last_timestamps[symbol] = now
+    if result.accepted:
+        # Sync legacy proxy dicts
+        dict.__setitem__(_last_prices, symbol, new_price)
+        dict.__setitem__(_last_timestamps, symbol, time.monotonic())
+        if result.reason in ("first_tick", "stale_override_accepted"):
+            reason = "first_tick" if result.reason == "first_tick" else "stale_baseline"
+            logger.info(
+                "Tick baseline reset",
+                extra={"symbol": symbol, "price": new_price, "reason": reason},
+            )
         return True
 
-    threshold = _get_spike_threshold(symbol)
-    deviation = abs(new_price - last_price) / last_price * 100
-
-    if deviation > threshold:
-        logger.warning(
-            "Tick spike rejected",
-            extra={
-                "symbol": symbol,
-                "new_price": new_price,
-                "last_price": last_price,
-                "deviation_pct": round(deviation, 4),
-                "threshold_pct": threshold,
-            },
-        )
-        return False
-
-    # Valid tick - update timestamp
-    _last_timestamps[symbol] = now
-    return True
+    # Spike rejected
+    entry = _spike_filter.price_store.get(symbol)
+    last_price = entry.price if entry else None
+    logger.warning(
+        "Tick spike rejected",
+        extra={
+            "symbol": symbol,
+            "new_price": new_price,
+            "last_price": last_price,
+            "deviation_pct": round(result.pct_change, 4) if result.pct_change else None,
+            "threshold_pct": _get_spike_threshold(symbol),
+        },
+    )
+    return False
 
 
 def _build_tick_handler(
@@ -249,11 +285,30 @@ def _build_tick_handler(
                 # ── Dedup: reject identical (symbol+price+ts) within window ──
                 if _is_duplicate_tick(internal_symbol, tick_price, tick_ts_raw):
                     tick_metrics.record_duplicate(internal_symbol)
+                    dlq = get_dlq()
+                    if dlq is not None:
+                        await dlq.push(
+                            symbol=internal_symbol,
+                            price=tick_price,
+                            exchange_ts=tick_ts_raw,
+                            reason="duplicate",
+                        )
                     continue
 
                 # ── Spike filter ──
                 if not _is_valid_tick(internal_symbol, tick_price):
                     tick_metrics.record_rejected(internal_symbol)
+                    dlq = get_dlq()
+                    if dlq is not None:
+                        await dlq.push(
+                            symbol=internal_symbol,
+                            price=tick_price,
+                            exchange_ts=tick_ts_raw,
+                            reason="spike_rejected",
+                            details={
+                                "threshold_pct": _get_spike_threshold(internal_symbol),
+                            },
+                        )
                     continue
 
                 # Update last known price
@@ -311,6 +366,10 @@ async def create_finnhub_ws(
     candle_callback: Callable[[str, float, datetime, float], None] | None = None,
 ) -> FinnhubWebSocket:
     """Factory for FinnhubWebSocket with defaults and tick normalization."""
+    # Initialise DLQ singleton (idempotent — safe to call multiple times)
+    from ingest.tick_dlq import init_dlq
+    init_dlq(redis)
+
     mapper = FinnhubSymbolMapper(prefix="OANDA")
     internal_symbols = symbols or _enabled_symbols()
     allowed_symbols = set(internal_symbols)

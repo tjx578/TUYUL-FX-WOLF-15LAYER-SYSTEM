@@ -1,18 +1,32 @@
 """
-DEPRECATED — This file is a design blueprint only.
+DEPRECATED — This module is dead code. Do NOT import.
 
 The runtime tick processing path is:
   ingest/dependencies.py :: _build_tick_handler()
     → LiveContextBus.update_tick()
     → RedisContextBridge.write_tick()
 
-This module is preserved for reference. Do NOT import in production code.
 See: docs/REDIS_DEPLOYMENT.md for the authoritative data flow.
+
+This file is retained solely as a historical reference.
+It will be removed in a future release.
 """
 
 from __future__ import annotations
 
+import os
 import warnings
+
+__all__: list[str] = []  # Nothing is public.
+
+_ALLOW_DEPRECATED = os.getenv("ALLOW_DEPRECATED_TICK_STREAM", "").lower() in ("1", "true")
+
+if not _ALLOW_DEPRECATED:
+    raise ImportError(
+        "analysis.tick_stream is deprecated and must not be imported. "
+        "The runtime tick path is ingest.dependencies._build_tick_handler(). "
+        "Set ALLOW_DEPRECATED_TICK_STREAM=1 to suppress this guard (tests only)."
+    )
 
 warnings.warn(
     "analysis.tick_stream is a deprecated blueprint. "
@@ -24,7 +38,7 @@ warnings.warn(
 
 
 # ── Original blueprint (preserved for reference, non-functional) ──
-
+#
 # from analysis.candle_builder import process_tick_for_candle, update_vwap
 # from infrastructure.stream_consumer import ConsumerConfig, StreamBinding, StreamConsumer
 #
