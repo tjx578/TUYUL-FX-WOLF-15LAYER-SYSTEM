@@ -2,10 +2,11 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
+from typing import Any
 
 from fastapi import Header, HTTPException, Request
 
-from api.middleware.auth import decode_token, validate_api_key
+from api.middleware.auth import decode_token, validate_api_key, verify_token
 from storage.redis_client import redis_client
 
 WRITE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
@@ -28,6 +29,8 @@ class GovernanceContext:
     role: str
     actor: str
     auth_method: str
+    scopes: frozenset[str]
+    reason: str
 
 
 def _parse_authorization(authorization: str | None) -> tuple[str, str] | None:
@@ -77,13 +80,96 @@ def _resolve_context(token: str) -> GovernanceContext:
             if token_issuer not in allowed_issuers:
                 raise HTTPException(status_code=403, detail="JWT issuer is not allowed")
 
+        scopes = _normalize_scopes(payload)
         actor = str(payload.get("sub") or "user:unknown")
-        return GovernanceContext(role=role, actor=actor, auth_method="jwt")
+        return GovernanceContext(
+            role=role,
+            actor=actor,
+            auth_method="jwt",
+            scopes=scopes,
+            reason="",
+        )
 
     if validate_api_key(token):
-        return GovernanceContext(role="admin", actor="api_key_user", auth_method="api_key")
+        return GovernanceContext(
+            role="admin",
+            actor="api_key_user",
+            auth_method="api_key",
+            scopes=frozenset({"*"}),
+            reason="",
+        )
 
     raise HTTPException(status_code=401, detail="Invalid or expired token")
+
+
+def _normalize_scopes(payload: dict[str, Any]) -> frozenset[str]:
+    raw_scopes = payload.get("scopes", payload.get("scope", []))
+    scopes: set[str] = set()
+
+    if isinstance(raw_scopes, str):
+        scopes.update(s for s in raw_scopes.replace(",", " ").split() if s)
+    elif isinstance(raw_scopes, list):
+        scopes.update(str(item).strip() for item in raw_scopes if str(item).strip())
+
+    return frozenset(scopes)
+
+
+def _required_scope(path: str, method: str) -> str:
+    if method not in WRITE_METHODS:
+        return ""
+
+    lowered = path.lower()
+    if "/trades/take" in lowered or "/signals/take" in lowered or "/accounts/" in lowered and "/take" in lowered:
+        return "trade:take"
+    if "/trades/skip" in lowered or "/signals/skip" in lowered:
+        return "trade:skip"
+    if "/trades/confirm" in lowered:
+        return "trade:confirm"
+    if "/trades/close" in lowered or "/operator/close" in lowered:
+        return "trade:close"
+    if "/config/" in lowered:
+        return "config:write"
+    if "/risk/" in lowered and ("/profile" in lowered or "/context" in lowered or "kill-switch" in lowered or "change-risk-profile" in lowered or "change-prop-template" in lowered):
+        return "risk:write"
+    if "/news-lock/" in lowered:
+        return "risk:write"
+    if "/redis/" in lowered:
+        return "ops:write"
+    if "/ea/" in lowered:
+        return "ea:write"
+
+    return "write:all"
+
+
+def _admin_only_path(path: str) -> bool:
+    lowered = path.lower()
+    if "/config/" in lowered:
+        return True
+    if "/risk/" in lowered and (
+        "/profile" in lowered
+        or "/context" in lowered
+        or "kill-switch" in lowered
+        or "change-risk-profile" in lowered
+        or "change-prop-template" in lowered
+    ):
+        return True
+    if "/news-lock/" in lowered:
+        return True
+    if "/redis/" in lowered:
+        return True
+    return False
+
+
+def _scope_allowed(context: GovernanceContext, required_scope: str) -> bool:
+    if context.auth_method == "api_key":
+        return True
+    if "*" in context.scopes or "write:*" in context.scopes:
+        return True
+    if required_scope in context.scopes:
+        return True
+
+    namespace = required_scope.split(":", 1)[0]
+    return f"{namespace}:*" in context.scopes
 
 
 async def enforce_write_policy(
@@ -110,10 +196,23 @@ async def enforce_write_policy(
     if not parsed:
         raise HTTPException(status_code=401, detail="Missing Authorization header for write action")
     _, token = parsed
+    # Mandatory canonical token verification on every write endpoint.
+    verify_token(authorization)
+
     context = _resolve_context(token)
 
     if context.role not in {"trader", "admin"}:
         raise HTTPException(status_code=403, detail="Role does not permit write operations")
+
+    required_scope = _required_scope(request.url.path, request.method.upper())
+    if required_scope and not _scope_allowed(context, required_scope):
+        raise HTTPException(
+            status_code=403,
+            detail=f"Missing required scope: {required_scope}",
+        )
+
+    if _admin_only_path(request.url.path) and context.role != "admin":
+        raise HTTPException(status_code=403, detail="Admin role required for this write operation")
 
     if str(x_edit_mode or "").strip().upper() != "ON":
         raise HTTPException(status_code=403, detail="Edit Mode is OFF. Set X-Edit-Mode: ON")
@@ -132,4 +231,10 @@ async def enforce_write_policy(
         if (x_action_pin or "").strip() != expected_pin:
             raise HTTPException(status_code=403, detail="Invalid or missing X-Action-Pin")
 
-    return context
+    return GovernanceContext(
+        role=context.role,
+        actor=context.actor,
+        auth_method=context.auth_method,
+        scopes=context.scopes,
+        reason=reason,
+    )
