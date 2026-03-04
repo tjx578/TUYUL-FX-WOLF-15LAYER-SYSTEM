@@ -25,6 +25,7 @@ Upgrade (v3):
 import asyncio
 import contextlib
 import json
+import os
 import time
 from collections import defaultdict, deque
 
@@ -36,11 +37,13 @@ from allocation.signal_service import SignalService
 from dashboard.account_manager import AccountManager
 from dashboard.price_feed import PriceFeed
 from dashboard.trade_ledger import TradeLedger
+from storage.redis_client import redis_client
 
 router = fastapi.APIRouter()
 
 # Maximum concurrent WebSocket connections per manager
-MAX_WS_CONNECTIONS = 50
+MAX_WS_CONNECTIONS = int(os.getenv("WS_MAX_CONNECTIONS", "50"))
+WS_REQUIRE_AUTH = os.getenv("WS_REQUIRE_AUTH", "true").strip().lower() in {"1", "true", "yes", "on"}
 
 # Tick-by-tick push interval (near real-time, batched per 100ms to avoid flood)
 TICK_BATCH_INTERVAL = 0.1  # 100ms
@@ -54,8 +57,9 @@ RISK_STATE_INTERVAL = 1.0  # 1s
 EQUITY_PUSH_INTERVAL = 2.0  # 2s (balance/equity changes slowly)
 
 # Heartbeat / ping interval
-WS_PING_INTERVAL = 30.0  # seconds
-WS_PONG_TIMEOUT = 10.0  # seconds to wait for pong before declaring dead
+WS_PING_INTERVAL = float(os.getenv("WS_PING_INTERVAL", "15"))
+WS_HEARTBEAT_TIMEOUT = float(os.getenv("WS_HEARTBEAT_TIMEOUT", "30"))
+WS_PONG_TIMEOUT = float(os.getenv("WS_PONG_TIMEOUT", "10"))  # send timeout
 
 # Message replay buffer size per manager
 MESSAGE_BUFFER_SIZE = 100  # last N messages kept for replay on reconnect
@@ -141,6 +145,7 @@ class ConnectionManager:
         self._ping_tasks: dict[fastapi.WebSocket, asyncio.Task] = {}  # type: ignore[type-arg]
         self._recv_tasks: dict[fastapi.WebSocket, asyncio.Task] = {}  # type: ignore[type-arg]
         self._last_heartbeat: dict[fastapi.WebSocket, float] = {}
+        self._session_keys: dict[fastapi.WebSocket, str] = {}
         # Ring buffer of recent messages for replay on reconnect
         self._message_buffer: deque[dict] = deque(maxlen=buffer_size)
 
@@ -158,14 +163,17 @@ class ConnectionManager:
             await websocket.close(code=4429, reason="Too many connections")
             return False
 
-        # Authenticate BEFORE accepting
-        user = await ws_auth_guard(websocket)
-        if not user:
-            return False
+        # Authenticate BEFORE accepting (unless explicitly disabled)
+        user: dict | None = None
+        if WS_REQUIRE_AUTH:
+            user = await ws_auth_guard(websocket)
+            if not user:
+                return False
 
         await websocket.accept()
         self.active_connections.add(websocket)
         self._last_heartbeat[websocket] = time.time()
+        self._register_session(websocket, user)
 
         # Start heartbeat ping task for this connection
         self._ping_tasks[websocket] = asyncio.create_task(self._heartbeat_loop(websocket))
@@ -177,6 +185,7 @@ class ConnectionManager:
         """Remove WebSocket connection and cancel its heartbeat."""
         self.active_connections.discard(websocket)
         self._last_heartbeat.pop(websocket, None)
+        self._unregister_session(websocket)
         task = self._ping_tasks.pop(websocket, None)
         if task and not task.done():
             task.cancel()
@@ -198,6 +207,7 @@ class ConnectionManager:
                 msg_type = str((payload or {}).get("type", "")).lower()
                 if msg_type in {"pong", "heartbeat", "ping"}:
                     self._last_heartbeat[websocket] = time.time()
+                    self._touch_session(websocket)
         except Exception:
             self.disconnect(websocket)
 
@@ -216,7 +226,7 @@ class ConnectionManager:
                     break
 
                 last_seen = self._last_heartbeat.get(websocket, 0.0)
-                if last_seen and (time.time() - last_seen) > (WS_PING_INTERVAL + WS_PONG_TIMEOUT):
+                if last_seen and (time.time() - last_seen) > WS_HEARTBEAT_TIMEOUT:
                     logger.info(f"WS [{self.name}] heartbeat stale, disconnecting client")
                     self.disconnect(websocket)
                     with contextlib.suppress(Exception):
@@ -228,6 +238,7 @@ class ConnectionManager:
                         websocket.send_json({"type": "ping", "ts": time.time()}),
                         timeout=WS_PONG_TIMEOUT,
                     )
+                    self._touch_session(websocket)
                 except (TimeoutError, Exception):
                     logger.info(f"WS [{self.name}] heartbeat failed, disconnecting client")
                     self.disconnect(websocket)
@@ -236,6 +247,27 @@ class ConnectionManager:
                     break
         except asyncio.CancelledError:
             pass
+
+    def _register_session(self, websocket: fastapi.WebSocket, user: dict | None) -> None:
+        user_id = str((user or {}).get("sub") or getattr(websocket.state, "user", "anonymous"))
+        key = f"ws:sessions:user_{user_id}:{id(websocket)}"
+        self._session_keys[websocket] = key
+        with contextlib.suppress(Exception):
+            redis_client.client.set(key, int(time.time()), ex=max(int(WS_HEARTBEAT_TIMEOUT * 2), 30))
+
+    def _touch_session(self, websocket: fastapi.WebSocket) -> None:
+        key = self._session_keys.get(websocket)
+        if not key:
+            return
+        with contextlib.suppress(Exception):
+            redis_client.client.set(key, int(time.time()), ex=max(int(WS_HEARTBEAT_TIMEOUT * 2), 30))
+
+    def _unregister_session(self, websocket: fastapi.WebSocket) -> None:
+        key = self._session_keys.pop(websocket, None)
+        if not key:
+            return
+        with contextlib.suppress(Exception):
+            redis_client.client.delete(key)
 
     def buffer_message(self, message: dict):
         """Store message in replay buffer."""

@@ -50,11 +50,13 @@ BURST = _env_int("RATE_LIMIT_BURST", 20)
 WS_PER_MIN = _env_int("RATE_LIMIT_WS_PER_MIN", 10)
 TAKE_PER_MIN = _env_int("RATE_LIMIT_TAKE_PER_MIN", 10)
 CONFIG_WRITE_PER_MIN = _env_int("RATE_LIMIT_CONFIG_PER_MIN", 5)
-WS_CONNECT_PER_MIN = _env_int("RATE_LIMIT_WS_CONNECT_PER_MIN", 10)
+WS_CONNECT_PER_MIN = _env_int("RATE_LIMIT_WS_CONNECT_PER_MIN", _env_int("WS_MAX_CONNECTIONS_PER_MIN", 10))
+RATE_LIMIT_REDIS_PREFIX = os.getenv("RATE_LIMIT_REDIS_PREFIX", "ratelimit:").strip() or "ratelimit:"
 CLEANUP_INTERVAL_SEC = 120  # purge stale entries every N seconds
 _trusted_proxy_raw = os.getenv("RATE_LIMIT_TRUSTED_PROXY_IPS", "127.0.0.1,::1")
 TRUSTED_PROXY_IPS = {ip.strip() for ip in _trusted_proxy_raw.split(",") if ip.strip()}
 TRUST_ALL_PROXIES = "*" in TRUSTED_PROXY_IPS
+TRUSTED_PROXY_ENABLED = _env_bool("TRUSTED_PROXY_ENABLED", False)
 
 # Paths exempted from rate limiting (health, root).
 EXEMPT_PATHS: set[str] = {"/", "/health", "/docs", "/openapi.json", "/redoc"}
@@ -156,6 +158,9 @@ def get_ws_store() -> SlidingWindowStore:
 def _client_ip(request: Request) -> str:
     """Extract client IP, trusting X-Forwarded-For only from trusted proxies."""
     source_ip = request.client.host if request.client else "unknown"
+    if not TRUSTED_PROXY_ENABLED:
+        return source_ip
+
     forwarded = request.headers.get("x-forwarded-for")
     if forwarded and _is_trusted_proxy(source_ip):
         # First entry is the original client
@@ -193,7 +198,7 @@ def _check_bucket(
     fallback_store: SlidingWindowStore,
 ) -> tuple[bool, int]:
     slot = int(time.time() // 60)
-    key = f"rate_limit:{bucket}:{client_ip}:{slot}"
+    key = f"{RATE_LIMIT_REDIS_PREFIX}{bucket}:{client_ip}:{slot}"
     redis_count = _redis_window_hit(key)
     if redis_count is not None:
         return redis_count <= limit, redis_count
