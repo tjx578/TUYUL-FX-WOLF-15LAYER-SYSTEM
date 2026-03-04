@@ -3,13 +3,15 @@
 from __future__ import annotations
 
 import contextlib
+import os
 import uuid
 from datetime import UTC, datetime
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel, Field
 
 from api.middleware.governance import enforce_write_policy
+from accounts.prop_rule_engine import validate_prop_sovereignty
 from dashboard.account_manager import AccountManager
 from journal.audit_trail import AuditAction, AuditTrail
 from schemas.trade_models import Account
@@ -34,10 +36,33 @@ class AccountUpsertRequest(BaseModel):
 	notes: str | None = Field(default=None, max_length=300)
 	data_source: str = Field(default="MANUAL", pattern="^(EA|MANUAL)$")
 	prop_firm: bool = False
+	prop_firm_code: str = Field(default="ftmo", min_length=1, max_length=64)
 	max_daily_dd_percent: float = Field(default=4.0, gt=0, le=30)
 	max_total_dd_percent: float = Field(default=8.0, gt=0, le=50)
 	max_concurrent_trades: int = Field(default=1, ge=1, le=20)
+	compliance_mode: bool = Field(default=True)
 	reason: str = Field(..., min_length=1, max_length=200)
+
+
+def _validate_compliance_pin_or_raise(*, compliance_mode: bool, x_action_pin: str | None) -> None:
+	if compliance_mode:
+		return
+	expected_pin = os.getenv("DASHBOARD_ACTION_PIN", "").strip()
+	if not expected_pin:
+		raise HTTPException(status_code=503, detail="Compliance PIN is not configured")
+	if (x_action_pin or "").strip() != expected_pin:
+		raise HTTPException(status_code=403, detail="Invalid or missing X-Action-Pin for compliance_mode OFF")
+
+
+def _validate_prop_limits_or_raise(req: AccountUpsertRequest) -> None:
+	ok, reason = validate_prop_sovereignty(
+		prop_firm_code=req.prop_firm_code,
+		max_daily_dd_percent=req.max_daily_dd_percent,
+		max_total_dd_percent=req.max_total_dd_percent,
+		max_positions=req.max_concurrent_trades,
+	)
+	if not ok:
+		raise HTTPException(status_code=422, detail=reason or "PROP_SOVEREIGNTY_VIOLATION")
 
 
 def _read_payload(account_id: str) -> dict:
@@ -61,6 +86,8 @@ def _enrich(account: Account) -> dict:
 		"commission_model": payload.get("commission_model", "standard"),
 		"notes": payload.get("notes") or None,
 		"data_source": payload.get("data_source", "MANUAL"),
+		"prop_firm_code": payload.get("prop_firm_code", "ftmo"),
+		"compliance_mode": bool(int(payload.get("compliance_mode", 1) or 1)),
 		"updated_at": payload.get("updated_at"),
 	}
 
@@ -128,7 +155,13 @@ async def get_account(account_id: str) -> dict:
 
 
 @router.post("", dependencies=[Depends(enforce_write_policy)])
-async def create_account(req: AccountUpsertRequest) -> dict:
+async def create_account(
+	req: AccountUpsertRequest,
+	x_action_pin: str | None = Header(default=None, alias="X-Action-Pin"),
+) -> dict:
+	_validate_compliance_pin_or_raise(compliance_mode=req.compliance_mode, x_action_pin=x_action_pin)
+	_validate_prop_limits_or_raise(req)
+
 	account_id = f"ACC-{uuid.uuid4().hex[:10].upper()}"
 	account = Account(
 		account_id=account_id,
@@ -156,6 +189,8 @@ async def create_account(req: AccountUpsertRequest) -> dict:
 			"commission_model": req.commission_model,
 			"notes": req.notes or "",
 			"data_source": req.data_source,
+			"prop_firm_code": req.prop_firm_code.strip().lower(),
+			"compliance_mode": int(bool(req.compliance_mode)),
 			"updated_at": datetime.now(UTC).isoformat(),
 		},
 	)
@@ -170,10 +205,17 @@ async def create_account(req: AccountUpsertRequest) -> dict:
 
 
 @router.put("/{account_id}", dependencies=[Depends(enforce_write_policy)])
-async def update_account(account_id: str, req: AccountUpsertRequest) -> dict:
+async def update_account(
+	account_id: str,
+	req: AccountUpsertRequest,
+	x_action_pin: str | None = Header(default=None, alias="X-Action-Pin"),
+) -> dict:
 	existing = _accounts.get_account(account_id)
 	if not existing:
 		raise HTTPException(status_code=404, detail=f"Account not found: {account_id}")
+
+	_validate_compliance_pin_or_raise(compliance_mode=req.compliance_mode, x_action_pin=x_action_pin)
+	_validate_prop_limits_or_raise(req)
 
 	account = Account(
 		account_id=account_id,
@@ -201,6 +243,8 @@ async def update_account(account_id: str, req: AccountUpsertRequest) -> dict:
 			"commission_model": req.commission_model,
 			"notes": req.notes or "",
 			"data_source": req.data_source,
+			"prop_firm_code": req.prop_firm_code.strip().lower(),
+			"compliance_mode": int(bool(req.compliance_mode)),
 			"updated_at": datetime.now(UTC).isoformat(),
 		},
 	)

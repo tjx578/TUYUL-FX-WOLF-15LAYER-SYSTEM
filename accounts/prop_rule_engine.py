@@ -16,6 +16,7 @@ class PropTemplate:
 	code: str
 	max_daily_loss_percent: float
 	max_total_loss_percent: float
+	max_open_positions: int
 
 
 @dataclass(frozen=True)
@@ -36,14 +37,21 @@ class PropRuleFirewall:
 		code="default",
 		max_daily_loss_percent=5.0,
 		max_total_loss_percent=10.0,
+		max_open_positions=5,
 	)
 
 	TEMPLATES: dict[str, PropTemplate] = {
-		"ftmo": PropTemplate("ftmo", max_daily_loss_percent=5.0, max_total_loss_percent=10.0),
+		"ftmo": PropTemplate(
+			"ftmo",
+			max_daily_loss_percent=5.0,
+			max_total_loss_percent=10.0,
+			max_open_positions=5,
+		),
 		"fundednext": PropTemplate(
 			"fundednext",
 			max_daily_loss_percent=4.0,
 			max_total_loss_percent=8.0,
+			max_open_positions=3,
 		),
 	}
 
@@ -75,7 +83,7 @@ class PropRuleFirewall:
 				reason="ACCOUNT_LOCKED",
 			)
 
-		template = self.TEMPLATES.get(account_state.prop_firm_code.lower(), self.DEFAULT_TEMPLATE)
+		template = get_prop_template(account_state.prop_firm_code)
 
 		daily_cap = min(template.max_daily_loss_percent, account_state.max_daily_loss_percent)
 		total_cap = min(template.max_total_loss_percent, account_state.max_total_loss_percent)
@@ -125,4 +133,46 @@ class PropRuleFirewall:
 			consistency_remaining_percent=consistency_remaining,
 			reason="ALLOW" if mode == "NORMAL" else "ALLOW_AUTO_REDUCE",
 		)
+
+
+def get_prop_template(prop_firm_code: str) -> PropTemplate:
+	"""Resolve prop template by code with safe fallback."""
+	code = (prop_firm_code or "").strip().lower()
+	return PropRuleFirewall.TEMPLATES.get(code, PropRuleFirewall.DEFAULT_TEMPLATE)
+
+
+def validate_prop_sovereignty(
+	*,
+	prop_firm_code: str,
+	max_daily_dd_percent: float,
+	max_total_dd_percent: float,
+	max_positions: int,
+) -> tuple[bool, str | None]:
+	"""Validate account limits never exceed prop-firm template sovereignty."""
+	template = get_prop_template(prop_firm_code)
+	if max_daily_dd_percent > template.max_daily_loss_percent:
+		return (
+			False,
+			(
+				"PROP_SOVEREIGNTY_DAILY_DD: "
+				f"account={max_daily_dd_percent:.2f}% > prop={template.max_daily_loss_percent:.2f}%"
+			),
+		)
+	if max_total_dd_percent > template.max_total_loss_percent:
+		return (
+			False,
+			(
+				"PROP_SOVEREIGNTY_TOTAL_DD: "
+				f"account={max_total_dd_percent:.2f}% > prop={template.max_total_loss_percent:.2f}%"
+			),
+		)
+	if max_positions > template.max_open_positions:
+		return (
+			False,
+			(
+				"PROP_SOVEREIGNTY_MAX_POSITIONS: "
+				f"account={max_positions} > prop={template.max_open_positions}"
+			),
+		)
+	return True, None
 

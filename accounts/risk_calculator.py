@@ -46,6 +46,81 @@ class AccountScopedRiskEngine:
         risk_multiplier: float = 1.0,
     ) -> AccountRiskDecision:
         """Evaluate trade risk and produce account-scoped lot recommendation."""
+        if str(account_state.system_state or "").upper() == "LOCKDOWN":
+            return AccountRiskDecision(
+                account_id=account_state.account_id,
+                trade_allowed=False,
+                status="REJECT",
+                recommended_risk_percent=0.0,
+                risk_amount=0.0,
+                recommended_lot=0.0,
+                max_safe_lot=0.0,
+                daily_buffer_percent=0.0,
+                total_buffer_percent=0.0,
+                consistency_remaining_percent=0.0,
+                reason="LOCKDOWN_ACTIVE",
+            )
+
+        if not bool(account_state.compliance_mode):
+            return AccountRiskDecision(
+                account_id=account_state.account_id,
+                trade_allowed=False,
+                status="REJECT",
+                recommended_risk_percent=0.0,
+                risk_amount=0.0,
+                recommended_lot=0.0,
+                max_safe_lot=0.0,
+                daily_buffer_percent=0.0,
+                total_buffer_percent=0.0,
+                consistency_remaining_percent=0.0,
+                reason="COMPLIANCE_MODE_DISABLED",
+            )
+
+        if bool(account_state.news_lock):
+            return AccountRiskDecision(
+                account_id=account_state.account_id,
+                trade_allowed=False,
+                status="REJECT",
+                recommended_risk_percent=0.0,
+                risk_amount=0.0,
+                recommended_lot=0.0,
+                max_safe_lot=0.0,
+                daily_buffer_percent=0.0,
+                total_buffer_percent=0.0,
+                consistency_remaining_percent=0.0,
+                reason="NEWS_LOCK",
+            )
+
+        if str(account_state.correlation_bucket or "GREEN").upper() in {"RED", "BLOCK", "BLOCKED"}:
+            return AccountRiskDecision(
+                account_id=account_state.account_id,
+                trade_allowed=False,
+                status="REJECT",
+                recommended_risk_percent=0.0,
+                risk_amount=0.0,
+                recommended_lot=0.0,
+                max_safe_lot=0.0,
+                daily_buffer_percent=0.0,
+                total_buffer_percent=0.0,
+                consistency_remaining_percent=0.0,
+                reason="CORRELATION_BUCKET_BLOCKED",
+            )
+
+        if int(account_state.open_trades_count) >= int(account_state.max_concurrent_trades):
+            return AccountRiskDecision(
+                account_id=account_state.account_id,
+                trade_allowed=False,
+                status="REJECT",
+                recommended_risk_percent=0.0,
+                risk_amount=0.0,
+                recommended_lot=0.0,
+                max_safe_lot=0.0,
+                daily_buffer_percent=0.0,
+                total_buffer_percent=0.0,
+                consistency_remaining_percent=0.0,
+                reason="MAX_OPEN_TRADES",
+            )
+
         if stop_loss_pips <= 0 or pip_value_per_lot <= 0:
             return AccountRiskDecision(
                 account_id=account_state.account_id,

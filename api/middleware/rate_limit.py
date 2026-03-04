@@ -27,6 +27,8 @@ from loguru import logger  # pyright: ignore[reportMissingImports]
 from starlette.middleware.base import BaseHTTPMiddleware  # pyright: ignore[reportMissingImports]
 from starlette.types import ASGIApp  # pyright: ignore[reportMissingImports]
 
+from storage.redis_client import redis_client
+
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
@@ -46,7 +48,13 @@ RATE_LIMIT_ENABLED = _env_bool("RATE_LIMIT_ENABLED", True)
 REQUESTS_PER_MIN = _env_int("RATE_LIMIT_REQUESTS_PER_MIN", 120)
 BURST = _env_int("RATE_LIMIT_BURST", 20)
 WS_PER_MIN = _env_int("RATE_LIMIT_WS_PER_MIN", 10)
+TAKE_PER_MIN = _env_int("RATE_LIMIT_TAKE_PER_MIN", 10)
+CONFIG_WRITE_PER_MIN = _env_int("RATE_LIMIT_CONFIG_PER_MIN", 5)
+WS_CONNECT_PER_MIN = _env_int("RATE_LIMIT_WS_CONNECT_PER_MIN", 10)
 CLEANUP_INTERVAL_SEC = 120  # purge stale entries every N seconds
+_trusted_proxy_raw = os.getenv("RATE_LIMIT_TRUSTED_PROXY_IPS", "127.0.0.1,::1")
+TRUSTED_PROXY_IPS = {ip.strip() for ip in _trusted_proxy_raw.split(",") if ip.strip()}
+TRUST_ALL_PROXIES = "*" in TRUSTED_PROXY_IPS
 
 # Paths exempted from rate limiting (health, root).
 EXEMPT_PATHS: set[str] = {"/", "/health", "/docs", "/openapi.json", "/redoc"}
@@ -128,6 +136,9 @@ class SlidingWindowStore:
 # Singleton stores
 _http_store = SlidingWindowStore(window_sec=60)
 _ws_store = SlidingWindowStore(window_sec=60)
+_take_store = SlidingWindowStore(window_sec=60)
+_config_store = SlidingWindowStore(window_sec=60)
+_ws_connect_store = SlidingWindowStore(window_sec=60)
 
 
 def get_http_store() -> SlidingWindowStore:
@@ -143,18 +154,66 @@ def get_ws_store() -> SlidingWindowStore:
 # ---------------------------------------------------------------------------
 
 def _client_ip(request: Request) -> str:
-    """Extract client IP, respecting X-Forwarded-For behind reverse proxy."""
+    """Extract client IP, trusting X-Forwarded-For only from trusted proxies."""
+    source_ip = request.client.host if request.client else "unknown"
     forwarded = request.headers.get("x-forwarded-for")
-    if forwarded:
+    if forwarded and _is_trusted_proxy(source_ip):
         # First entry is the original client
         return forwarded.split(",")[0].strip()
-    return request.client.host if request.client else "unknown"
+    return source_ip
+
+
+def _is_trusted_proxy(source_ip: str) -> bool:
+    if TRUST_ALL_PROXIES:
+        return True
+    return source_ip in TRUSTED_PROXY_IPS
 
 
 def _is_websocket(request: Request) -> bool:
     """Check if this is a WebSocket upgrade request."""
     upgrade = request.headers.get("upgrade", "").lower()
     return upgrade == "websocket"
+
+
+def _redis_window_hit(key: str, ttl_sec: int = 60) -> int | None:
+    try:
+        value = redis_client.client.incr(key)
+        if int(value) == 1:
+            redis_client.client.expire(key, ttl_sec)
+        return int(value)
+    except Exception as exc:
+        logger.debug("Redis rate limit fallback for key=%s: %s", key, exc)
+        return None
+
+
+def _check_bucket(
+    bucket: str,
+    client_ip: str,
+    limit: int,
+    fallback_store: SlidingWindowStore,
+) -> tuple[bool, int]:
+    slot = int(time.time() // 60)
+    key = f"rate_limit:{bucket}:{client_ip}:{slot}"
+    redis_count = _redis_window_hit(key)
+    if redis_count is not None:
+        return redis_count <= limit, redis_count
+
+    count = fallback_store.hit(client_ip)
+    return count <= limit, count
+
+
+def _path_bucket(path: str, method: str, is_ws_upgrade: bool) -> tuple[str, int, SlidingWindowStore] | None:
+    lowered = path.lower()
+    if is_ws_upgrade and lowered.startswith("/ws"):
+        return ("ws_connect", WS_CONNECT_PER_MIN, _ws_connect_store)
+
+    if method in {"POST", "PUT", "PATCH", "DELETE"}:
+        if "/trades/take" in lowered or "/signals/take" in lowered or "/accounts/" in lowered and "/take" in lowered:
+            return ("take", TAKE_PER_MIN, _take_store)
+        if "/config/profiles" in lowered:
+            return ("config_write", CONFIG_WRITE_PER_MIN, _config_store)
+
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -183,6 +242,28 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
 
         ip = _client_ip(request)
+
+        bucket = _path_bucket(path, request.method.upper(), _is_websocket(request))
+        if bucket is not None:
+            bucket_name, bucket_limit, fallback_store = bucket
+            allowed, count = _check_bucket(bucket_name, ip, bucket_limit, fallback_store)
+            if not allowed:
+                logger.warning(
+                    "Rate limit exceeded: bucket=%s ip=%s (%d/%d per min)",
+                    bucket_name,
+                    ip,
+                    count,
+                    bucket_limit,
+                )
+                return JSONResponse(
+                    status_code=429,
+                    content={
+                        "detail": "Rate limit exceeded. Try again later.",
+                        "bucket": bucket_name,
+                        "retry_after_sec": 60,
+                    },
+                    headers={"Retry-After": "60"},
+                )
 
         # WebSocket upgrade request
         if _is_websocket(request):

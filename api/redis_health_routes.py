@@ -28,7 +28,10 @@ from datetime import UTC, datetime
 from typing import Any
 
 import redis.asyncio as aioredis
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
+
+from api.middleware.auth import verify_token
+from api.middleware.governance import enforce_write_policy
 
 logger = logging.getLogger(__name__)
 
@@ -59,7 +62,7 @@ async def _delete_keys_by_pattern(r: aioredis.Redis, pattern: str) -> int:
         if cursor == 0:
             break
     return deleted
-from fastapi import APIRouter, HTTPException, Path, Request
+from fastapi import APIRouter, Depends, HTTPException, Path, Request
 
 router = APIRouter(prefix="/api/v1/redis", tags=["redis"])
 
@@ -105,7 +108,7 @@ async def delete_keys_by_pattern(redis: Any, pattern: str) -> int:
 # ---------------------------------------------------------------------------
 
 
-@router.delete("/candles")
+@router.delete("/candles", dependencies=[Depends(verify_token), Depends(enforce_write_policy)])
 async def flush_all_candles(request: Request) -> dict[str, Any]:
     """Delete every candle-cache key across all known prefixes."""
     redis = request.app.state.redis
@@ -126,7 +129,7 @@ async def flush_all_candles(request: Request) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 
-@router.delete("/candles/{symbol}/{timeframe}")
+@router.delete("/candles/{symbol}/{timeframe}", dependencies=[Depends(verify_token), Depends(enforce_write_policy)])
 async def flush_pair_candles(
     request: Request,
     symbol: str = Path(...),
@@ -155,7 +158,7 @@ async def flush_pair_candles(
     }
 
 
-@router.delete("/candles")
+@router.delete("/candles", dependencies=[Depends(verify_token), Depends(enforce_write_policy)])
 async def flush_all_candles(request: Request) -> dict:
     """Delete all candle-cache keys from Redis.
 
@@ -190,7 +193,7 @@ async def flush_all_candles(request: Request) -> dict:
     }
 
 
-@router.delete("/candles/{symbol}/{timeframe}")
+@router.delete("/candles/{symbol}/{timeframe}", dependencies=[Depends(verify_token), Depends(enforce_write_policy)])
 async def flush_candles_for_pair(request: Request, symbol: str, timeframe: str) -> dict:
     """Delete candle-cache keys for a specific symbol and timeframe.
 
