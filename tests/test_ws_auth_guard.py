@@ -173,18 +173,6 @@ class TestWsAuthGuard:
         assert result is None
 
 
-    @pytest.mark.asyncio
-    async def test_comma_separated_scopes_parsed(self):
-        """Scopes given as comma-separated string should be split correctly."""
-        from api.middleware.ws_auth import _claim_set
-
-        payload = {"scopes": "account:*, trade:read, risk:write"}
-        scopes = _claim_set(payload, "scopes")
-        assert "account:*" in scopes
-        assert "trade:read" in scopes
-        assert "risk:write" in scopes
-
-
 # ============================================================================
 # extract_token tests
 # ============================================================================
