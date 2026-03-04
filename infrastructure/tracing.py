@@ -30,6 +30,11 @@ except Exception:  # pragma: no cover - graceful degradation when OTEL deps miss
 
 _PROVIDER_INITIALIZED = False
 _TRACER_CACHE: dict[str, trace.Tracer] = {}
+_FASTAPI_INSTRUMENTED = False
+_REDIS_INSTRUMENTED = False
+_ASYNCIO_INSTRUMENTED = False
+_REQUESTS_INSTRUMENTED = False
+_HTTPX_INSTRUMENTED = False
 
 TRACE_CONTEXT_FIELDS: tuple[str, ...] = ("traceparent", "tracestate", "baggage")
 
@@ -40,22 +45,37 @@ def _as_bool(value: str | None, default: bool = True) -> bool:
     return value.strip().lower() not in {"0", "false", "no", "off"}
 
 
+def _tracing_enabled() -> bool:
+    return _as_bool(os.getenv("OTEL_ENABLED"), default=True)
+
+
 def _init_provider_once(service_name: str) -> None:
     global _PROVIDER_INITIALIZED  # noqa: PLW0603
-    if _PROVIDER_INITIALIZED or not _HAS_OTEL:
+    if _PROVIDER_INITIALIZED or not _HAS_OTEL or not _tracing_enabled():
         return
 
     endpoint = os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://tempo:4317")
     insecure = _as_bool(os.getenv("OTEL_EXPORTER_OTLP_INSECURE"), default=True)
+    service_version = os.getenv("OTEL_SERVICE_VERSION", "unknown")
+    deployment_environment = os.getenv("OTEL_DEPLOYMENT_ENV", os.getenv("APP_ENV", "unknown"))
 
     try:
-        resource = Resource(attributes={"service.name": service_name})
+        resource = Resource(attributes={
+            "service.name": service_name,
+            "service.version": service_version,
+            "deployment.environment": deployment_environment,
+        })
         provider = TracerProvider(resource=resource)
         exporter = OTLPSpanExporter(endpoint=endpoint, insecure=insecure)
         provider.add_span_processor(BatchSpanProcessor(exporter))
         trace.set_tracer_provider(provider)
         _PROVIDER_INITIALIZED = True
-        logger.info("Tracing enabled service={} endpoint={}", service_name, endpoint)
+        logger.info(
+            "Tracing enabled service={} endpoint={} env={}",
+            service_name,
+            endpoint,
+            deployment_environment,
+        )
     except Exception as exc:  # pragma: no cover
         logger.warning("Tracing init failed service={} err={}", service_name, exc)
 
@@ -73,30 +93,70 @@ def setup_tracer(service_name: str) -> trace.Tracer:
 
 def instrument_fastapi(app: Any) -> None:
     """Auto-instrument FastAPI app if instrumentation package is installed."""
+    global _FASTAPI_INSTRUMENTED  # noqa: PLW0603
+    if _FASTAPI_INSTRUMENTED or not _tracing_enabled():
+        return
     try:
         from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 
         FastAPIInstrumentor.instrument_app(app)
+        _FASTAPI_INSTRUMENTED = True
     except Exception:
         return
 
 
 def instrument_redis() -> None:
     """Auto-instrument redis client calls if package is installed."""
+    global _REDIS_INSTRUMENTED  # noqa: PLW0603
+    if _REDIS_INSTRUMENTED or not _tracing_enabled():
+        return
     try:
         from opentelemetry.instrumentation.redis import RedisInstrumentor
 
         RedisInstrumentor().instrument()
+        _REDIS_INSTRUMENTED = True
     except Exception:
         return
 
 
 def instrument_asyncio() -> None:
     """Auto-instrument asyncio scheduling if package is installed."""
+    global _ASYNCIO_INSTRUMENTED  # noqa: PLW0603
+    if _ASYNCIO_INSTRUMENTED or not _tracing_enabled():
+        return
     try:
         from opentelemetry.instrumentation.asyncio import AsyncioInstrumentor
 
         AsyncioInstrumentor().instrument()
+        _ASYNCIO_INSTRUMENTED = True
+    except Exception:
+        return
+
+
+def instrument_requests() -> None:
+    """Auto-instrument requests client calls if package is installed."""
+    global _REQUESTS_INSTRUMENTED  # noqa: PLW0603
+    if _REQUESTS_INSTRUMENTED or not _tracing_enabled():
+        return
+    try:
+        from opentelemetry.instrumentation.requests import RequestsInstrumentor
+
+        RequestsInstrumentor().instrument()
+        _REQUESTS_INSTRUMENTED = True
+    except Exception:
+        return
+
+
+def instrument_httpx() -> None:
+    """Auto-instrument httpx client calls if package is installed."""
+    global _HTTPX_INSTRUMENTED  # noqa: PLW0603
+    if _HTTPX_INSTRUMENTED or not _tracing_enabled():
+        return
+    try:
+        from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor
+
+        HTTPXClientInstrumentor().instrument()
+        _HTTPX_INSTRUMENTED = True
     except Exception:
         return
 
