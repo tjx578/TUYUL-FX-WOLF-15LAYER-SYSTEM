@@ -3,7 +3,8 @@ Finnhub REST candle fetcher for historical data warmup.
 
 Fetches H1, D1, W1 from Finnhub /forex/candle API.
 H4 is aggregated from H1 bars (4:1).
-M15 is NOT fetched (monitoring only, built from ticks).
+M15 is normally built from ticks, but REST fallback is available
+for cold-start recovery via ``FinnhubCandleFetcher.cold_start_m15()``.
 """
 
 import asyncio
@@ -38,6 +39,7 @@ class FinnhubCandleFetcher:
 
     # Resolution mapping: timeframe -> Finnhub resolution
     RESOLUTION_MAP: dict[str, str] = {
+        "M15": "15",
         "H1": "60",
         "D1": "D",
         "W1": "W",
@@ -45,7 +47,9 @@ class FinnhubCandleFetcher:
     }
 
     def __init__(self) -> None:
-        self.api_key = os.getenv("FINNHUB_API_KEY", "")
+        from ingest.finnhub_key_manager import finnhub_keys  # noqa: PLC0415
+        self._key_manager = finnhub_keys
+        self.api_key = self._key_manager.current_key()
         self.config = load_finnhub()
         self.rest_config = self.config.get("rest", {})
         self.candles_config = self.config.get("candles", {})
@@ -105,7 +109,9 @@ class FinnhubCandleFetcher:
         # Calculate time delta with 25% buffer
         buffer_multiplier = 1.25
 
-        if timeframe == "H1":
+        if timeframe == "M15":
+            delta = timedelta(minutes=int(bars * 15 * buffer_multiplier))
+        elif timeframe == "H1":
             delta = timedelta(hours=int(bars * buffer_multiplier))
         elif timeframe == "D1":
             delta = timedelta(days=int(bars * buffer_multiplier))
@@ -188,10 +194,15 @@ class FinnhubCandleFetcher:
             FinnhubCandleError: On fetch failure
             FinnhubCandlePremiumError: On HTTP 403
         """
-        # M15 is not fetched from REST
+        # M15 is normally built from WS ticks.  REST fetch is allowed
+        # only as a cold-start fallback (callers must opt in explicitly or
+        # use cold_start_m15()).  A warning is emitted so callers know this
+        # path was taken.
         if timeframe == "M15":
-            logger.warning("M15 timeframe is built from ticks only, not fetched from REST")
-            return []
+            logger.info(
+                "M15 REST fallback activated for %s — normally built from WS ticks",
+                symbol,
+            )
 
         # H4 is aggregated from H1
         if timeframe == "H4":
@@ -213,8 +224,9 @@ class FinnhubCandleFetcher:
             "resolution": resolution,
             "from": from_ts,
             "to": to_ts,
-            "token": self.api_key,
+            "token": self._key_manager.current_key() or self.api_key,
         }
+        self.api_key = params["token"]  # keep in sync
 
         async with self.semaphore:
             try:
@@ -223,21 +235,27 @@ class FinnhubCandleFetcher:
                     response = await client.get(url, params=params)
 
                     if response.status_code == 403:
+                        self._key_manager.report_failure(self.api_key, 403)
                         raise FinnhubCandlePremiumError(
                             f"Premium access required for {symbol} {timeframe}"
                         )
 
                     if response.status_code == 429:
+                        self._key_manager.report_failure(self.api_key, 429)
+                        # Refresh key (may have rotated)
+                        self.api_key = self._key_manager.current_key()
                         # Rate limited - exponential backoff
                         wait_time = float(response.headers.get("Retry-After", 2))
                         logger.warning(f"Rate limited, waiting {wait_time}s")
                         await asyncio.sleep(wait_time)
-                        # Retry once
+                        # Retry once with (possibly new) key
+                        params["token"] = self.api_key
                         response = await client.get(url, params=params)
 
                     response.raise_for_status()
                     data = response.json()
 
+                    self._key_manager.report_success(self.api_key)
                     candles = self._normalize_response(data, symbol, timeframe)
                     logger.info(f"Fetched {len(candles)} {timeframe} bars for {symbol}")
 
@@ -463,3 +481,135 @@ class FinnhubCandleFetcher:
             logger.error(f"Error warming up {symbol} {timeframe}: {exc}")
         except Exception as exc:
             logger.exception(f"Unexpected error warming up {symbol} {timeframe}: {exc}")
+
+    # ------------------------------------------------------------------
+    # M15 cold-start recovery
+    # ------------------------------------------------------------------
+
+    async def cold_start_m15(
+        self,
+        symbols: list[str] | None = None,
+        bars: int = 100,
+    ) -> dict[str, int]:
+        """
+        Fetch M15 candles from REST for all (or given) symbols.
+
+        This is a recovery path for when the WebSocket has been disconnected
+        long enough that in-memory M15 candle history is stale or empty.
+
+        Args:
+            symbols: Symbols to recover (default: all enabled in config).
+            bars:    Number of M15 bars to fetch per symbol.
+
+        Returns:
+            Dict mapping symbol → number of M15 bars seeded.
+        """
+        if symbols is None:
+            symbols = CONFIG["pairs"].get("symbols", [])
+
+        if not symbols:
+            logger.warning("cold_start_m15: no symbols to recover")
+            return {}
+
+        logger.info(
+            "M15 cold-start recovery: fetching %d bars for %d symbols",
+            bars,
+            len(symbols),
+        )
+
+        seeded: dict[str, int] = {}
+
+        for symbol in symbols:
+            try:
+                candles = await self.fetch(symbol, "M15", bars)
+                if candles:
+                    for candle in candles:
+                        self.context_bus.update_candle(candle)
+                    seeded[symbol] = len(candles)
+                    logger.info(
+                        "M15 cold-start: seeded %d bars for %s",
+                        len(candles),
+                        symbol,
+                    )
+                else:
+                    logger.warning("M15 cold-start: no bars returned for %s", symbol)
+            except FinnhubCandlePremiumError:
+                logger.error("M15 cold-start: premium required for %s", symbol)
+            except FinnhubCandleError as exc:
+                logger.error("M15 cold-start error for %s: %s", symbol, exc)
+
+        logger.info(
+            "M15 cold-start complete: %d/%d symbols recovered",
+            len(seeded),
+            len(symbols),
+        )
+        return seeded
+
+    # ------------------------------------------------------------------
+    # Premium pair probe
+    # ------------------------------------------------------------------
+
+    async def probe_premium_pairs(
+        self,
+        symbols: list[str] | None = None,
+        timeframe: str = "H1",
+    ) -> dict[str, str]:
+        """
+        Probe each symbol to classify it as ``free`` or ``premium``.
+
+        Sends a minimal 1-bar fetch for each symbol and catches 403.
+
+        Args:
+            symbols:   Symbols to probe (default: all enabled).
+            timeframe: Timeframe to test (default ``H1``).
+
+        Returns:
+            Dict mapping ``symbol`` → ``"free"`` | ``"premium"`` | ``"error"``.
+            The result is also logged at INFO level for startup diagnostics.
+        """
+        if symbols is None:
+            symbols = CONFIG["pairs"].get("symbols", [])
+
+        if not symbols:
+            logger.warning("probe_premium_pairs: no symbols to check")
+            return {}
+
+        logger.info(
+            "Probing %d symbols for Finnhub premium requirements (%s) …",
+            len(symbols),
+            timeframe,
+        )
+
+        results: dict[str, str] = {}
+
+        for symbol in symbols:
+            try:
+                candles = await self.fetch(symbol, timeframe, 1)
+                results[symbol] = "free" if candles else "free"
+            except FinnhubCandlePremiumError:
+                results[symbol] = "premium"
+                logger.warning("  %s → PREMIUM (403)", symbol)
+            except FinnhubCandleError:
+                results[symbol] = "error"
+                logger.warning("  %s → ERROR (non-403 failure)", symbol)
+
+        free_count = sum(1 for v in results.values() if v == "free")
+        premium_count = sum(1 for v in results.values() if v == "premium")
+        error_count = sum(1 for v in results.values() if v == "error")
+
+        logger.info(
+            "Premium probe complete: %d free, %d premium, %d errors",
+            free_count,
+            premium_count,
+            error_count,
+        )
+
+        # Log sorted summary for easy reference
+        if premium_count > 0:
+            premium_symbols = sorted(k for k, v in results.items() if v == "premium")
+            logger.warning(
+                "Pairs requiring Finnhub premium: %s",
+                premium_symbols,
+            )
+
+        return results

@@ -6,7 +6,15 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from ingest.dependencies import _SYMBOL_REVERSE_MAP, _handle_tick, create_finnhub_ws
+from ingest.dependencies import (
+    _SYMBOL_REVERSE_MAP,
+    _handle_tick,
+    _last_prices,
+    _last_timestamps,
+    _spike_filter,
+    _unified_dedup,
+    create_finnhub_ws,
+)
 
 
 class TestSymbolReverseMap:
@@ -36,6 +44,13 @@ class TestSymbolReverseMap:
 
 class TestHandleTick:
     """Test _handle_tick function for tick normalization and routing."""
+
+    def setup_method(self) -> None:
+        """Reset unified filter state between tests."""
+        _last_prices.clear()
+        _last_timestamps.clear()
+        _spike_filter.clear()
+        _unified_dedup.clear()
 
     @pytest.mark.asyncio
     async def test_handle_tick_normalizes_format(self) -> None:

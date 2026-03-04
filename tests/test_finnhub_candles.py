@@ -190,14 +190,11 @@ class TestNormalizeResponse:
 
 
 class TestM15Rejection:
-    """Test M15 timeframe rejection."""
+    """Test M15 timeframe behaviour (REST fallback is now allowed)."""
 
-    @pytest.mark.asyncio
-    async def test_m15_returns_empty(self) -> None:
-        """Test fetch("EURUSD", "M15") returns empty list."""
-        fetcher = FinnhubCandleFetcher()
-        result = await fetcher.fetch("EURUSD", "M15", 100)
-        assert result == []
+    def test_m15_in_resolution_map(self) -> None:
+        """M15 resolution is '15' in the RESOLUTION_MAP."""
+        assert FinnhubCandleFetcher.RESOLUTION_MAP["M15"] == "15"
 
 
 class TestH4Aggregation:

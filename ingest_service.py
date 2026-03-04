@@ -56,11 +56,11 @@ class RedisClient(Protocol):
 
 
 def _validate_api_key() -> bool:
-    api_key = os.getenv("FINNHUB_API_KEY", "")
-    if not api_key or api_key == "YOUR_FINNHUB_API_KEY":
+    from ingest.finnhub_key_manager import finnhub_keys  # noqa: PLC0415
+    if not finnhub_keys.available:
         logger.warning("WARNING: FINNHUB_API_KEY not configured; ingest running in DRY RUN mode.")
         return False
-    logger.info("FINNHUB_API_KEY validated")
+    logger.info("FINNHUB_API_KEY validated (%d key(s) loaded)", finnhub_keys.key_count)
     return True
 
 

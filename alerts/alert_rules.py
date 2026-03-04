@@ -12,5 +12,7 @@ ALERT_RULES = {
     "ORDER_FILLED": True,
     "DRAWDOWN_WARNING": True,
     "SYSTEM_VIOLATION": True,
+    "PRICE_DRIFT": True,
+    "M15_COLD_START": True,
 }
 # Placeholder

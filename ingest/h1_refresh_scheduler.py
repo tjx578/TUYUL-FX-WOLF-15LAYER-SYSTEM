@@ -33,6 +33,8 @@ class H1RefreshScheduler:
         self.interval_sec = self.refresh_config.get("h1_interval_sec", 3600)
         self.h1_bars = self.refresh_config.get("h1_bars", 5)
         self.max_drift_pips = self.refresh_config.get("price_drift_max_pips", 50.0)
+        self.m15_min_bars = self.refresh_config.get("m15_cold_start_min_bars", 10)
+        self.m15_recovery_bars = self.refresh_config.get("m15_recovery_bars", 100)
 
         self.fetcher = FinnhubCandleFetcher()
         self.context_bus = LiveContextBus()
@@ -66,7 +68,7 @@ class H1RefreshScheduler:
                 logger.exception(f"H1 refresh error: {exc}")
 
     async def refresh_all_symbols(self) -> None:
-        """Refresh H1/H4 for all enabled symbols."""
+        """Refresh H1/H4 for all enabled symbols and check M15 coldness."""
         enabled_symbols = CONFIG["pairs"].get("symbols", [])
         if not enabled_symbols:
             logger.warning("No enabled symbols for H1 refresh")
@@ -77,6 +79,9 @@ class H1RefreshScheduler:
         tasks = [self._refresh_symbol(symbol) for symbol in enabled_symbols]
 
         await asyncio.gather(*tasks, return_exceptions=True)
+
+        # ── M15 cold start detection ──
+        await self._check_m15_cold_start(enabled_symbols)
 
         logger.info("H1 refresh complete")
 
@@ -131,3 +136,36 @@ class H1RefreshScheduler:
 
             except Exception as exc:
                 logger.error(f"Error refreshing {symbol}: {exc}")
+
+    async def _check_m15_cold_start(self, symbols: list[str]) -> None:
+        """Detect symbols with stale/missing M15 data and trigger REST recovery.
+
+        A symbol is considered "cold" if its M15 bar count in LiveContextBus
+        is below ``m15_min_bars`` (default 10).  When cold symbols are found,
+        ``FinnhubCandleFetcher.cold_start_m15()`` fetches M15 bars from REST
+        and seeds them back into the bus.
+        """
+        cold_symbols: list[str] = []
+        for symbol in symbols:
+            m15_count = self.context_bus.get_warmup_bar_count(symbol, "M15")
+            if m15_count < self.m15_min_bars:
+                cold_symbols.append(symbol)
+
+        if not cold_symbols:
+            return
+
+        logger.warning(
+            "M15 cold start detected for %d symbols: %s — triggering REST recovery",
+            len(cold_symbols),
+            cold_symbols,
+        )
+
+        try:
+            seeded = await self.fetcher.cold_start_m15(
+                symbols=cold_symbols,
+                bars=self.m15_recovery_bars,
+            )
+            for sym, count in seeded.items():
+                logger.info(f"M15 cold-start recovered {count} bars for {sym}")
+        except Exception as exc:
+            logger.error(f"M15 cold-start recovery failed: {exc}")

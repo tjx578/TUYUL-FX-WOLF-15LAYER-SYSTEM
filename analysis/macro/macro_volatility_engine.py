@@ -45,7 +45,9 @@ class MacroVolatilityEngine:
     def __init__(self):
         self.redis = redis_client
         self.context = LiveContextBus()
-        self.api_key = os.getenv("FINNHUB_API_KEY")
+        from ingest.finnhub_key_manager import finnhub_keys  # noqa: PLC0415
+        self._key_manager = finnhub_keys
+        self.api_key = self._key_manager.current_key() or None
 
         self.vix_engine = VIXAnalysisEngine()
         self.proxy_engine = VIXProxyEstimator()

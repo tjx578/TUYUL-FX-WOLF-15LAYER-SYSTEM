@@ -111,6 +111,7 @@ class RedisClientManager:
     """
 
     def __init__(self) -> None:
+        super().__init__()
         self._pool: aioredis.ConnectionPool | None = None
         self._config: RedisConfig | None = None
 
@@ -169,5 +170,27 @@ async def get_client(config: RedisConfig | None = None) -> aioredis.Redis:
 
 
 async def close_pool() -> None:
-    """Close the shared pool. Call on application shutdown."""
+    """Close the shared async connection pool. Call during app shutdown."""
     await _manager.close()
+
+
+# ── FastAPI dependency ────────────────────────────────────────────────────────
+
+async def get_async_redis() -> aioredis.Redis:
+    """FastAPI ``Depends()`` provider for the shared async Redis client.
+
+    Usage in route modules::
+
+        from fastapi import Depends
+        from infrastructure.redis_client import get_async_redis
+        import redis.asyncio as aioredis
+
+        @router.get("/example")
+        async def example(r: aioredis.Redis = Depends(get_async_redis)):
+            value = await r.get("key")
+            ...
+
+    This replaces per-request ``redis_lib.from_url()`` calls that created
+    a new sync connection on every request.
+    """
+    return await _manager.get_client()

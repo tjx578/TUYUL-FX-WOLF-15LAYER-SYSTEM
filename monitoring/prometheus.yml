@@ -9,3 +9,7 @@ scrape_configs:
   - job_name: 'wolf-allocation'
     static_configs:
       - targets: ['wolf-allocation:9102']
+
+  - job_name: 'wolf-ingest'
+    static_configs:
+      - targets: ['wolf-ingest:9103']

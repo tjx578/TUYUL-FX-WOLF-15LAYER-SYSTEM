@@ -46,6 +46,10 @@ _allocation_router_tracer = setup_tracer("wolf-api")
 STALE_DATA_THRESHOLD_SEC = int(os.getenv("STALE_DATA_THRESHOLD_SEC", "300"))
 
 # ── [BUG-3 FIX] Redis connection via env var ──────────────────────────────────
+# NOTE: This module still uses a sync Redis client for backwards-compatibility
+# with in-memory fallback helpers and Lua eval scripts.  New code should prefer
+# ``infrastructure.redis_client.get_async_redis`` (the shared async pool).
+# This sync singleton is scheduled for removal once all helpers are converted.
 def _make_redis() -> Redis | None:
     from infrastructure.redis_url import get_redis_url
     url = get_redis_url()

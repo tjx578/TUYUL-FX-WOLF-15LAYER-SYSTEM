@@ -99,8 +99,8 @@ async def _seed_from_redis() -> None:
 
 async def _seed_from_finnhub() -> None:
     """Fetch historical candles from Finnhub REST API into LiveContextBus."""
-    api_key = os.getenv("FINNHUB_API_KEY", "")
-    if not api_key or api_key == "YOUR_FINNHUB_API_KEY":
+    from ingest.finnhub_key_manager import finnhub_keys  # noqa: PLC0415
+    if not finnhub_keys.available:
         logger.warning("[SEED] No Finnhub API key — skipping REST warmup")
         return
     try:
@@ -217,11 +217,11 @@ def _build_j2(pair: str, synthesis: dict[str, object], l12: dict[str, object]) -
 
 
 def _validate_api_key() -> bool:
-    api_key = os.getenv("FINNHUB_API_KEY", "")
-    if not api_key or api_key == "YOUR_FINNHUB_API_KEY":
+    from ingest.finnhub_key_manager import finnhub_keys  # noqa: PLC0415
+    if not finnhub_keys.available:
         logger.warning("WARNING: FINNHUB_API_KEY not configured; running in DRY RUN mode.")
         return False
-    logger.info("FINNHUB_API_KEY validated")
+    logger.info("FINNHUB_API_KEY validated (%d key(s) loaded)", finnhub_keys.key_count)
     return True
 
 

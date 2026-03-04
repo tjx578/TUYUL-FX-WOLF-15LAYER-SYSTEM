@@ -69,12 +69,14 @@ class TestTickSpikeFilter:
 
         # 0.6% move - would reject EUR/USD but valid for XAU
         assert _is_valid_tick("XAUUSD", 2012.0) is True
+        # Reference is now 2012.0 (consolidated SpikeFilter updates on accept)
 
-        # 1.5% move - still valid for XAU (< 2% threshold)
+        # ~0.89% from 2012 - still valid for XAU (< 2% threshold)
         assert _is_valid_tick("XAUUSD", 2030.0) is True
+        # Reference is now 2030.0
 
-        # 2.1% move - exceeds XAU threshold
-        assert _is_valid_tick("XAUUSD", 2042.0) is False
+        # 2.1% from current reference (2030) — exceeds XAU threshold
+        assert _is_valid_tick("XAUUSD", 2073.0) is False
 
     def test_gbpjpy_medium_threshold(self):
         """GBP/JPY has 1% threshold."""
@@ -84,9 +86,10 @@ class TestTickSpikeFilter:
 
         # 0.6% move - valid (< 1%)
         assert _is_valid_tick("GBPJPY", 150.9) is True
+        # Reference is now 150.9
 
-        # 1.1% move - exceeds threshold
-        assert _is_valid_tick("GBPJPY", 151.65) is False
+        # 1.1% from 150.9 — exceeds 1% threshold
+        assert _is_valid_tick("GBPJPY", 152.6) is False
 
     def test_staleness_triggers_baseline_reset(self):
         """After 60s gap, next tick is accepted as new baseline."""
