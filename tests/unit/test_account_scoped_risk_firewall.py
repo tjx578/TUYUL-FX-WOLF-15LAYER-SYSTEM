@@ -168,3 +168,52 @@ def test_execution_guard_execute_blocks_max_concurrent() -> None:
     gate = guard.execute(signal_id="sig-2", account_id="FTMO_100K", symbol="EURUSD")
     assert gate.allowed is False
     assert gate.code == "MAX_CONCURRENT_TRADES"
+
+
+def test_scoped_engine_rejects_when_lockdown_active() -> None:
+    engine = AccountScopedRiskEngine()
+    state = AccountRiskState(
+        account_id="ACC_LOCK",
+        prop_firm_code="ftmo",
+        balance=100000.0,
+        equity=100000.0,
+        base_risk_percent=0.7,
+        max_daily_loss_percent=5.0,
+        max_total_loss_percent=10.0,
+        system_state="LOCKDOWN",
+        lockdown_reason="ABNORMAL_SLIPPAGE",
+    )
+
+    decision = engine.evaluate_trade(
+        account_state=state,
+        requested_risk_percent=0.5,
+        stop_loss_pips=200.0,
+        pip_value_per_lot=10.0,
+    )
+
+    assert decision.trade_allowed is False
+    assert decision.reason == "LOCKDOWN_ACTIVE"
+
+
+def test_scoped_engine_rejects_when_compliance_off() -> None:
+    engine = AccountScopedRiskEngine()
+    state = AccountRiskState(
+        account_id="ACC_CMP",
+        prop_firm_code="ftmo",
+        balance=100000.0,
+        equity=100000.0,
+        base_risk_percent=0.7,
+        max_daily_loss_percent=5.0,
+        max_total_loss_percent=10.0,
+        compliance_mode=False,
+    )
+
+    decision = engine.evaluate_trade(
+        account_state=state,
+        requested_risk_percent=0.5,
+        stop_loss_pips=200.0,
+        pip_value_per_lot=10.0,
+    )
+
+    assert decision.trade_allowed is False
+    assert decision.reason == "COMPLIANCE_MODE_DISABLED"

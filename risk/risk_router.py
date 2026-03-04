@@ -9,9 +9,10 @@ Provides REST API for:
 """
 
 import uuid
+import os
 from datetime import UTC, datetime
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException
 from loguru import logger
 from pydantic import BaseModel, Field, field_validator
 
@@ -25,6 +26,7 @@ from accounts.account_model import (
 )
 from accounts.risk_engine import RiskEngine
 from accounts.account_repository import AccountRepository, AccountRiskState, EAInstanceConfig
+from accounts.prop_rule_engine import get_prop_template, validate_prop_sovereignty
 from accounts.risk_calculator import AccountScopedRiskEngine
 from api.middleware.governance import enforce_write_policy
 from allocation.signal_service import SignalService
@@ -117,8 +119,16 @@ class AccountContextRequest(BaseModel):
     phase: str = Field(default="PHASE_FUNDED")
     pair_cooldown: dict[str, str] = Field(default_factory=dict)
     max_concurrent_trades: int = Field(default=5, ge=1, le=50)
+    open_trades_count: int = Field(default=0, ge=0, le=500)
+    correlation_bucket: str = Field(default="GREEN", description="GREEN|YELLOW|RED")
+    compliance_mode: bool = Field(default=True)
     news_lock: bool = Field(default=False)
     circuit_breaker_open: bool = Field(default=False)
+    system_state: str = Field(default="NORMAL", description="NORMAL|LOCKDOWN")
+    ea_connected: bool = Field(default=True)
+    abnormal_slippage: bool = Field(default=False)
+    daily_dd_block_threshold_percent: float = Field(default=95.0, ge=1.0, le=100.0)
+    total_dd_block_threshold_percent: float = Field(default=95.0, ge=1.0, le=100.0)
     ea_instances: list[dict] = Field(default_factory=list)
 
 
@@ -148,6 +158,93 @@ class PreviewMultiRequest(BaseModel):
     accounts: list[PreviewMultiAccount] = Field(..., min_length=1)
     risk_percent: float = Field(default=1.0, gt=0, le=10)
     risk_mode: str = Field(default="FIXED", pattern="^(FIXED|SPLIT)$")
+
+
+def _pin_matches(x_action_pin: str | None) -> bool:
+    expected_pin = os.getenv("DASHBOARD_ACTION_PIN", "").strip()
+    if not expected_pin:
+        return False
+    return (x_action_pin or "").strip() == expected_pin
+
+
+def _derive_lockdown(req: AccountContextRequest) -> tuple[str, str]:
+    if str(req.system_state).strip().upper() == "LOCKDOWN":
+        return "LOCKDOWN", "MANUAL_LOCKDOWN"
+
+    if req.daily_loss_used_percent >= req.daily_dd_block_threshold_percent:
+        return (
+            "LOCKDOWN",
+            (
+                "DAILY_DD_BLOCK_THRESHOLD: "
+                f"{req.daily_loss_used_percent:.2f}% >= {req.daily_dd_block_threshold_percent:.2f}%"
+            ),
+        )
+
+    if req.total_loss_used_percent >= req.total_dd_block_threshold_percent:
+        return (
+            "LOCKDOWN",
+            (
+                "TOTAL_DD_BLOCK_THRESHOLD: "
+                f"{req.total_loss_used_percent:.2f}% >= {req.total_dd_block_threshold_percent:.2f}%"
+            ),
+        )
+
+    if not req.ea_connected:
+        return "LOCKDOWN", "EA_DISCONNECTED"
+
+    if req.abnormal_slippage:
+        return "LOCKDOWN", "ABNORMAL_SLIPPAGE"
+
+    return "NORMAL", ""
+
+
+def _runtime_take_guard(state: AccountRiskState) -> tuple[bool, str | None, dict]:
+    """Risk governor checks before TAKE. Fail-fast on first hard block."""
+    details = {
+        "account_id": state.account_id,
+        "system_state": state.system_state,
+        "daily_dd_used_percent": state.daily_loss_used_percent,
+        "total_dd_used_percent": state.total_loss_used_percent,
+        "open_trades_count": state.open_trades_count,
+        "max_concurrent_trades": state.max_concurrent_trades,
+        "correlation_bucket": state.correlation_bucket,
+        "news_lock": state.news_lock,
+        "compliance_mode": state.compliance_mode,
+    }
+
+    if str(state.system_state or "").upper() == "LOCKDOWN":
+        details["reason"] = state.lockdown_reason or "LOCKDOWN_ACTIVE"
+        return False, "LOCKDOWN_ACTIVE", details
+
+    if not bool(state.compliance_mode):
+        details["reason"] = "COMPLIANCE_MODE_DISABLED"
+        return False, "COMPLIANCE_MODE_DISABLED", details
+
+    template = get_prop_template(state.prop_firm_code)
+    daily_cap = min(float(template.max_daily_loss_percent), float(state.max_daily_loss_percent))
+    total_cap = min(float(template.max_total_loss_percent), float(state.max_total_loss_percent))
+
+    if float(state.daily_loss_used_percent) >= daily_cap:
+        details["reason"] = f"DAILY_DD_LIMIT {state.daily_loss_used_percent:.2f}% >= {daily_cap:.2f}%"
+        return False, "DAILY_DD_LIMIT", details
+
+    if float(state.total_loss_used_percent) >= total_cap:
+        details["reason"] = f"TOTAL_DD_LIMIT {state.total_loss_used_percent:.2f}% >= {total_cap:.2f}%"
+        return False, "TOTAL_DD_LIMIT", details
+
+    if str(state.correlation_bucket or "GREEN").upper() in {"RED", "BLOCK", "BLOCKED"}:
+        details["reason"] = "CORRELATION_BUCKET_BLOCKED"
+        return False, "CORRELATION_BUCKET_BLOCKED", details
+
+    if int(state.open_trades_count) >= int(state.max_concurrent_trades):
+        details["reason"] = "MAX_OPEN_TRADES"
+        return False, "MAX_OPEN_TRADES", details
+
+    if bool(state.news_lock):
+        details["reason"] = "NEWS_LOCK"
+        return False, "NEWS_LOCK", details
+
+    return True, None, details
 
 
 def _build_risk_signal(payload: dict, signal_id: str) -> Layer12Signal:
@@ -439,8 +536,30 @@ async def disable_kill_switch(req: KillSwitchRequest | None = None) -> dict:
 
 
 @router.post("/accounts/{account_id}/context")
-async def upsert_account_context(account_id: str, req: AccountContextRequest) -> dict:
+async def upsert_account_context(
+    account_id: str,
+    req: AccountContextRequest,
+    x_action_pin: str | None = Header(default=None, alias="X-Action-Pin"),
+) -> dict:
     """Upsert account-scoped risk context for firewall evaluation."""
+    ok, reason = validate_prop_sovereignty(
+        prop_firm_code=req.prop_firm_code,
+        max_daily_dd_percent=req.max_daily_loss_percent,
+        max_total_dd_percent=req.max_total_loss_percent,
+        max_positions=req.max_concurrent_trades,
+    )
+    if not ok:
+        raise HTTPException(status_code=422, detail=reason or "PROP_SOVEREIGNTY_VIOLATION")
+
+    if not req.compliance_mode:
+        if not _pin_matches(x_action_pin):
+            raise HTTPException(
+                status_code=403,
+                detail="Invalid or missing X-Action-Pin for compliance_mode OFF",
+            )
+
+    system_state, lockdown_reason = _derive_lockdown(req)
+
     ea_instances = tuple(
         EAInstanceConfig(
             ea_instance_id=str(item.get("ea_instance_id", "")),
@@ -470,14 +589,26 @@ async def upsert_account_context(account_id: str, req: AccountContextRequest) ->
         phase_mode=req.phase,
         pair_cooldown={str(k).upper(): str(v) for k, v in req.pair_cooldown.items()},
         max_concurrent_trades=req.max_concurrent_trades,
+        open_trades_count=req.open_trades_count,
         news_lock=req.news_lock,
+        correlation_bucket=req.correlation_bucket,
+        compliance_mode=req.compliance_mode,
         circuit_breaker_open=req.circuit_breaker_open,
+        system_state=system_state,
+        lockdown_reason=lockdown_reason,
+        ea_connected=req.ea_connected,
+        abnormal_slippage=req.abnormal_slippage,
+        daily_dd_block_threshold_percent=req.daily_dd_block_threshold_percent,
+        total_dd_block_threshold_percent=req.total_dd_block_threshold_percent,
         ea_instances=ea_instances,
     )
     _account_repo.upsert_state(state)
     return {
         "status": "saved",
         "account_id": account_id,
+        "system_state": system_state,
+        "lockdown_reason": lockdown_reason,
+        "compliance_mode": req.compliance_mode,
         "ea_instances": [ea.ea_instance_id for ea in ea_instances],
     }
 
@@ -533,6 +664,14 @@ async def evaluate_take(account_id: str, req: AccountTakeRequest) -> dict:
             "trade_allowed": False,
             "reason": "EA_INSTANCE_STOPPED_OR_UNKNOWN",
             "details": {"ea_instance_id": req.ea_instance_id},
+        }
+
+    runtime_allowed, runtime_reason, runtime_details = _runtime_take_guard(state)
+    if not runtime_allowed:
+        return {
+            "trade_allowed": False,
+            "reason": runtime_reason or "RUNTIME_RISK_GOVERNOR",
+            "details": runtime_details,
         }
 
     selected_ea = next(ea for ea in state.ea_instances if ea.ea_instance_id == req.ea_instance_id)

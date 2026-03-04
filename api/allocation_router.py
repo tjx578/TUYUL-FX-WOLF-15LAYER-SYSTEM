@@ -235,6 +235,57 @@ def _build_account_state(account_id: str, account: dict) -> DashAccountState:
     )
 
 
+def _as_bool(raw: object, default: bool = False) -> bool:
+    if raw is None:
+        return default
+    if isinstance(raw, bool):
+        return raw
+    return str(raw).strip().lower() in {"1", "true", "yes", "on", "enabled"}
+
+
+def _global_news_lock_enabled() -> bool:
+    if not _redis:
+        return False
+    try:
+        return bool(_redis.get("NEWS_LOCK:STATE"))
+    except Exception:
+        return False
+
+
+def _runtime_take_precheck(account: dict) -> tuple[bool, str | None]:
+    # Compliance mode default = ON (fail closed when explicitly OFF).
+    if not _as_bool(account.get("compliance_mode", 1), default=True):
+        return False, "COMPLIANCE_MODE_DISABLED"
+
+    if str(account.get("system_state", "NORMAL")).strip().upper() == "LOCKDOWN":
+        reason = str(account.get("lockdown_reason") or "LOCKDOWN_ACTIVE")
+        return False, f"LOCKDOWN_ACTIVE: {reason}"
+
+    daily_dd = float(account.get("daily_dd_percent", 0) or 0)
+    daily_cap = float(account.get("max_daily_dd_percent", 5.0) or 5.0)
+    if daily_dd >= daily_cap:
+        return False, f"DAILY_DD_LIMIT {daily_dd:.2f}% >= {daily_cap:.2f}%"
+
+    total_dd = float(account.get("total_dd_percent", 0) or 0)
+    total_cap = float(account.get("max_total_dd_percent", 10.0) or 10.0)
+    if total_dd >= total_cap:
+        return False, f"TOTAL_DD_LIMIT {total_dd:.2f}% >= {total_cap:.2f}%"
+
+    correlation_bucket = str(account.get("correlation_bucket", "GREEN")).strip().upper()
+    if correlation_bucket in {"RED", "BLOCK", "BLOCKED"}:
+        return False, "CORRELATION_BUCKET_BLOCKED"
+
+    open_trades = int(account.get("open_trades", 0) or 0)
+    max_open = int(account.get("max_concurrent_trades", 1) or 1)
+    if open_trades >= max_open:
+        return False, f"MAX_OPEN_TRADES {open_trades}/{max_open}"
+
+    if _as_bool(account.get("news_lock", 0), default=False) or _global_news_lock_enabled():
+        return False, "NEWS_LOCK"
+
+    return True, None
+
+
 def _atomic_transition_intended_to_pending(trade_id: str) -> dict:
     import json
 
@@ -354,6 +405,13 @@ async def take_signal(req: TakeSignalRequest) -> dict:
             )
         account = acct_data
 
+    precheck_ok, precheck_reason = _runtime_take_precheck(account)
+    if not precheck_ok:
+        raise HTTPException(
+            status_code=status.HTTP_423_LOCKED,
+            detail=f"TAKE blocked by runtime risk governor: {precheck_reason}",
+        )
+
     # Risk calculation via RiskEngine
     risk_result: RiskCalculationResult
     try:
@@ -366,16 +424,22 @@ async def take_signal(req: TakeSignalRequest) -> dict:
             risk_mode=DashRiskMode(req.risk_mode),
         )
     except Exception as exc:
-        logger.warning("RiskEngine calculation failed: %s — using fallback", exc)
+        logger.error("RiskEngine calculation failed: %s", exc)
         risk_result = RiskCalculationResult(
-            trade_allowed=True,
-            recommended_lot=0.01,
-            max_safe_lot=0.01,
+            trade_allowed=False,
+            recommended_lot=0.0,
+            max_safe_lot=0.0,
             risk_used_percent=0.0,
             daily_dd_after=0.0,
             total_dd_after=0.0,
-            severity=RiskSeverity.WARNING,
+            severity=RiskSeverity.CRITICAL,
             reason=f"RiskEngine unavailable: {exc}",
+        )
+
+    if not risk_result.trade_allowed:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"TAKE rejected by risk engine: {risk_result.reason or 'RISK_REJECTED'}",
         )
 
     trade_id = str(uuid.uuid4())

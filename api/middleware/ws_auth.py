@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import contextlib
 import logging
+import time
 from typing import Any
 
 import fastapi
@@ -88,6 +89,41 @@ def verify_token(token: str) -> dict[str, Any] | None:
     return None
 
 
+def _claim_set(payload: dict[str, Any], key: str) -> set[str]:
+    raw = payload.get(key)
+    out: set[str] = set()
+    if isinstance(raw, str):
+        out.update(part for part in raw.replace(",", " ").split() if part)
+    elif isinstance(raw, list):
+        out.update(str(item).strip() for item in raw if str(item).strip())
+    return out
+
+
+def _has_account_access(payload: dict[str, Any], requested_account: str | None) -> bool:
+    role = str(payload.get("role", "")).strip().lower()
+    if role == "admin":
+        return True
+
+    account_claim = str(payload.get("account_id") or payload.get("account") or "").strip().upper()
+    allowed_accounts = {a.upper() for a in _claim_set(payload, "accounts")}
+    scopes = _claim_set(payload, "scopes") | _claim_set(payload, "scope")
+
+    if not requested_account:
+        return bool(account_claim or allowed_accounts or "account:*" in scopes)
+
+    account = requested_account.strip().upper()
+    if account_claim and account_claim == account:
+        return True
+
+    if account in allowed_accounts:
+        return True
+
+    if "account:*" in scopes or f"account:{account}" in scopes:
+        return True
+
+    return False
+
+
 async def ws_authenticate(websocket: WebSocket) -> bool:
     """
     Authenticate a WebSocket connection via query-param token.
@@ -104,6 +140,7 @@ async def ws_authenticate(websocket: WebSocket) -> bool:
     payload = verify_token(token)
     if payload is not None:
         websocket.state.user = payload.get("sub")
+        websocket.state.auth_payload = payload
         logger.debug(f"WS auth OK: user={websocket.state.user}")
         return True
 
@@ -137,6 +174,31 @@ async def ws_auth_guard(websocket: WebSocket) -> dict[str, Any] | None:
 
     payload = verify_token(token)
     if payload is not None:
+        if payload.get("auth_method") != "api_key":
+            exp = payload.get("exp")
+            if exp is None:
+                logger.warning("WS auth rejected: JWT missing exp claim")
+                with contextlib.suppress(Exception):
+                    await websocket.send_json({"type": "auth_error", "detail": "Token missing exp claim"})
+                    await websocket.close(code=4001, reason="Token missing exp claim")
+                return None
+            if int(exp) <= int(time.time()):
+                logger.warning("WS auth rejected: token expired")
+                with contextlib.suppress(Exception):
+                    await websocket.send_json({"type": "auth_error", "detail": "Token expired"})
+                    await websocket.close(code=4001, reason="Token expired")
+                return None
+
+        requested_account = websocket.query_params.get("account_id")
+        if not _has_account_access(payload, requested_account):
+            logger.warning("WS auth rejected: account scope denied")
+            with contextlib.suppress(Exception):
+                await websocket.send_json({"type": "auth_error", "detail": "Account scope denied"})
+                await websocket.close(code=4003, reason="Account scope denied")
+            return None
+
+        websocket.state.auth_payload = payload
+        websocket.state.auth_exp = int(payload.get("exp", 0) or 0)
         logger.debug(f"WS auth OK: user={payload.get('sub')}")
         return payload
 

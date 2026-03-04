@@ -20,7 +20,6 @@ from datetime import UTC, datetime, timedelta
 import redis as redis_lib
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
-from api.middleware.governance import enforce_write_policy
 
 try:
     import httpx  # noqa: F401
@@ -39,7 +38,6 @@ logger = logging.getLogger(__name__)
 router = APIRouter(
     prefix="/api/v1/calendar",
     tags=["calendar"],
-    dependencies=[Depends(verify_token), Depends(enforce_write_policy)],
 )
 
 FINNHUB_API_KEY = os.getenv("FINNHUB_API_KEY", "")
@@ -298,7 +296,7 @@ class NewsLockRequest(BaseModel):
 
 
 @router.post("/news-lock/enable")
-@router.post("/news-lock/enable", dependencies=[Depends(enforce_write_policy)])
+@router.post("/news-lock/enable", dependencies=[Depends(verify_token), Depends(enforce_write_policy)])
 async def enable_news_lock(req: NewsLockRequest) -> dict:
     """Activate news lock — blocks new trades during high-impact events."""
     r = _get_redis()
@@ -319,7 +317,7 @@ async def enable_news_lock(req: NewsLockRequest) -> dict:
 
 
 @router.post("/news-lock/disable")
-@router.post("/news-lock/disable", dependencies=[Depends(enforce_write_policy)])
+@router.post("/news-lock/disable", dependencies=[Depends(verify_token), Depends(enforce_write_policy)])
 async def disable_news_lock() -> dict:
     """Remove news lock."""
     r = _get_redis()

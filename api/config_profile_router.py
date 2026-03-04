@@ -3,12 +3,15 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
-from api.middleware.governance import enforce_write_policy
+from api.middleware.auth import verify_token
+from api.middleware.governance import GovernanceContext, enforce_write_policy
 from config.profile_engine import ConfigProfileEngine
+from journal.audit_trail import AuditAction, AuditTrail
 
 router = APIRouter(prefix="/api/v1/config/profiles", tags=["config-profile"])
 
 _engine = ConfigProfileEngine()
+_audit = AuditTrail()
 
 
 class ActivateProfileRequest(BaseModel):
@@ -70,33 +73,90 @@ async def get_effective_profile(
     }
 
 
-@router.post("/active", dependencies=[Depends(enforce_write_policy)])
-async def activate_profile(req: ActivateProfileRequest) -> dict:
+@router.get("/revisions")
+async def list_config_revisions(limit: int = Query(default=50, ge=1, le=500)) -> dict:
+    return {
+        "count": min(limit, len(_engine.list_revisions(limit=limit))),
+        "revisions": _engine.list_revisions(limit=limit),
+    }
+
+
+@router.post("/active", dependencies=[Depends(verify_token)])
+async def activate_profile(
+    req: ActivateProfileRequest,
+    context: GovernanceContext = Depends(enforce_write_policy),
+) -> dict:
     try:
-        return _engine.activate(req.profile_name)
+        result = _engine.activate(req.profile_name, actor=context.actor, reason=context.reason)
+        _audit.log(
+            AuditAction.ORDER_MODIFIED,
+            actor=context.actor,
+            resource="config:profiles",
+            details={"action": "ACTIVATE_PROFILE", "reason": context.reason, "result": result},
+        )
+        return result
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
-@router.post("/override", dependencies=[Depends(enforce_write_policy)])
-async def upsert_override(req: OverrideUpsertRequest) -> dict:
+@router.post("/override", dependencies=[Depends(verify_token)])
+async def upsert_override(
+    req: OverrideUpsertRequest,
+    context: GovernanceContext = Depends(enforce_write_policy),
+) -> dict:
     try:
-        return _engine.upsert_override(req.scope, req.scope_key, req.override)
+        result = _engine.upsert_override(
+            req.scope,
+            req.scope_key,
+            req.override,
+            actor=context.actor,
+            reason=context.reason,
+        )
+        _audit.log(
+            AuditAction.ORDER_MODIFIED,
+            actor=context.actor,
+            resource=f"config:override:{req.scope}:{req.scope_key}",
+            details={"action": "UPSERT_OVERRIDE", "reason": context.reason, "result": result},
+        )
+        return result
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
-@router.delete("/override", dependencies=[Depends(enforce_write_policy)])
+@router.delete("/override", dependencies=[Depends(verify_token)])
 async def delete_override(
     scope: str = Query(..., pattern="^(global|account|prop_firm|pair)$"),
     scope_key: str = Query(..., min_length=1),
+    context: GovernanceContext = Depends(enforce_write_policy),
 ) -> dict:
     try:
-        return _engine.delete_override(scope, scope_key)
+        result = _engine.delete_override(
+            scope,
+            scope_key,
+            actor=context.actor,
+            reason=context.reason,
+        )
+        _audit.log(
+            AuditAction.ORDER_MODIFIED,
+            actor=context.actor,
+            resource=f"config:override:{scope}:{scope_key}",
+            details={"action": "DELETE_OVERRIDE", "reason": context.reason, "result": result},
+        )
+        return result
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
-@router.post("/lock", dependencies=[Depends(enforce_write_policy)])
-async def lock_config(req: ConfigLockRequest) -> dict:
-    return _engine.set_lock(req.locked)
+@router.post("/lock", dependencies=[Depends(verify_token)])
+async def lock_config(
+    req: ConfigLockRequest,
+    context: GovernanceContext = Depends(enforce_write_policy),
+) -> dict:
+    result = _engine.set_lock(req.locked, actor=context.actor, reason=context.reason)
+    _audit.log(
+        AuditAction.ORDER_MODIFIED,
+        actor=context.actor,
+        resource="config:lock",
+        details={"action": "SET_LOCK", "reason": context.reason, "result": result},
+    )
+    return result

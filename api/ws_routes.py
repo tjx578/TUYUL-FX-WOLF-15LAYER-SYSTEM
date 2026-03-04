@@ -24,6 +24,7 @@ Upgrade (v3):
 
 import asyncio
 import contextlib
+import json
 import time
 from collections import defaultdict, deque
 
@@ -138,6 +139,8 @@ class ConnectionManager:
         self.name = name
         self.active_connections: set[fastapi.WebSocket] = set()
         self._ping_tasks: dict[fastapi.WebSocket, asyncio.Task] = {}  # type: ignore[type-arg]
+        self._recv_tasks: dict[fastapi.WebSocket, asyncio.Task] = {}  # type: ignore[type-arg]
+        self._last_heartbeat: dict[fastapi.WebSocket, float] = {}
         # Ring buffer of recent messages for replay on reconnect
         self._message_buffer: deque[dict] = deque(maxlen=buffer_size)
 
@@ -162,25 +165,64 @@ class ConnectionManager:
 
         await websocket.accept()
         self.active_connections.add(websocket)
+        self._last_heartbeat[websocket] = time.time()
 
         # Start heartbeat ping task for this connection
-        task = asyncio.create_task(self._heartbeat_loop(websocket))
-        self._ping_tasks[websocket] = task
+        self._ping_tasks[websocket] = asyncio.create_task(self._heartbeat_loop(websocket))
+        self._recv_tasks[websocket] = asyncio.create_task(self._receive_loop(websocket))
 
         return True
 
     def disconnect(self, websocket: fastapi.WebSocket):
         """Remove WebSocket connection and cancel its heartbeat."""
         self.active_connections.discard(websocket)
+        self._last_heartbeat.pop(websocket, None)
         task = self._ping_tasks.pop(websocket, None)
         if task and not task.done():
             task.cancel()
+        recv_task = self._recv_tasks.pop(websocket, None)
+        if recv_task and not recv_task.done():
+            recv_task.cancel()
+
+    async def _receive_loop(self, websocket: fastapi.WebSocket):
+        """Consume inbound frames to track heartbeat acknowledgements."""
+        try:
+            while websocket in self.active_connections:
+                message = await websocket.receive_text()
+                payload: dict | None = None
+                with contextlib.suppress(Exception):
+                    parsed = json.loads(message)
+                    if isinstance(parsed, dict):
+                        payload = parsed
+
+                msg_type = str((payload or {}).get("type", "")).lower()
+                if msg_type in {"pong", "heartbeat", "ping"}:
+                    self._last_heartbeat[websocket] = time.time()
+        except Exception:
+            self.disconnect(websocket)
 
     async def _heartbeat_loop(self, websocket: fastapi.WebSocket):
         """Send periodic ping frames to detect dead connections behind NAT/proxy."""
         try:
             while websocket in self.active_connections:
                 await asyncio.sleep(WS_PING_INTERVAL)
+
+                token_exp = int(getattr(websocket.state, "auth_exp", 0) or 0)
+                if token_exp and int(time.time()) >= token_exp:
+                    logger.info(f"WS [{self.name}] token expired, disconnecting client")
+                    self.disconnect(websocket)
+                    with contextlib.suppress(Exception):
+                        await websocket.close(code=4401, reason="Token expired")
+                    break
+
+                last_seen = self._last_heartbeat.get(websocket, 0.0)
+                if last_seen and (time.time() - last_seen) > (WS_PING_INTERVAL + WS_PONG_TIMEOUT):
+                    logger.info(f"WS [{self.name}] heartbeat stale, disconnecting client")
+                    self.disconnect(websocket)
+                    with contextlib.suppress(Exception):
+                        await websocket.close(code=4408, reason="Heartbeat timeout")
+                    break
+
                 try:
                     await asyncio.wait_for(
                         websocket.send_json({"type": "ping", "ts": time.time()}),

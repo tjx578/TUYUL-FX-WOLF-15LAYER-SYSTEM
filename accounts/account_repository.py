@@ -42,8 +42,17 @@ class AccountRiskState:
 	phase_mode: str = "FUNDED"
 	pair_cooldown: dict[str, str] = field(default_factory=dict)
 	max_concurrent_trades: int = 5
+	open_trades_count: int = 0
 	news_lock: bool = False
+	correlation_bucket: str = "GREEN"
+	compliance_mode: bool = True
 	circuit_breaker_open: bool = False
+	system_state: str = "NORMAL"
+	lockdown_reason: str = ""
+	ea_connected: bool = True
+	abnormal_slippage: bool = False
+	daily_dd_block_threshold_percent: float = 95.0
+	total_dd_block_threshold_percent: float = 95.0
 	ea_instances: tuple[EAInstanceConfig, ...] = field(default_factory=tuple)
 
 	def in_pair_cooldown(self, symbol: str, now: datetime | None = None) -> bool:

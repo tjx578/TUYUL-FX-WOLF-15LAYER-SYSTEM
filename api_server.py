@@ -62,6 +62,20 @@ def _configure_process_logging() -> None:
 
 _configure_process_logging()
 
+
+def _env_bool(key: str, default: bool) -> bool:
+    return os.getenv(key, str(default)).strip().lower() in {"1", "true", "yes", "on"}
+
+
+APP_ENV = os.getenv("ENV", "development").strip().lower()
+IS_PRODUCTION = APP_ENV == "production"
+DEBUG_MODE = _env_bool("DEBUG", default=not IS_PRODUCTION)
+ENABLE_DEV_ROUTES = _env_bool("ENABLE_DEV_ROUTES", default=not IS_PRODUCTION)
+
+if IS_PRODUCTION:
+    DEBUG_MODE = False
+    ENABLE_DEV_ROUTES = False
+
 from api.calendar_routes import router as calendar_router  # noqa: E402
 from api.config_profile_router import router as config_profile_router  # noqa: E402
 
@@ -214,6 +228,9 @@ app = FastAPI(
     version="10.0.0",
     description="Institutional-grade trading system API",
     lifespan=lifespan,
+    debug=DEBUG_MODE,
+    docs_url=None if IS_PRODUCTION else "/docs",
+    redoc_url=None if IS_PRODUCTION else "/redoc",
 )
 instrument_fastapi(app)
 
@@ -307,48 +324,47 @@ async def health(request: Request) -> dict[str, Any]:
     }
 
 
-# ── Debug: Redis key inspector ────────────────────────────────────────────────
-@app.get("/debug/redis-keys")
-async def debug_redis_keys() -> dict[str, Any]:
-    """List Redis keys — temporary debug endpoint, remove before production."""
-    from infrastructure.redis_client import get_client
+if ENABLE_DEV_ROUTES:
+    # ── Debug: Redis key inspector ────────────────────────────────────────────
+    @app.get("/debug/redis-keys")
+    async def debug_redis_keys() -> dict[str, Any]:
+        """List Redis keys for development troubleshooting."""
+        from infrastructure.redis_client import get_client
 
-    try:
-        r = await get_client()
-        all_keys: list[bytes | str] = await r.keys("*")  # type: ignore[assignment]
-        decoded = sorted(k if isinstance(k, str) else k.decode() for k in all_keys)
-        # Group by prefix for quick overview
-        prefixes: dict[str, int] = {}
-        for k in decoded:
-            prefix = k.split(":")[0] if ":" in k else k
-            prefixes[prefix] = prefixes.get(prefix, 0) + 1
-        return {
-            "total": len(decoded),
-            "prefixes": prefixes,
-            "keys": decoded[:100],
-        }
-    except Exception as exc:
-        return {"error": str(exc)}
+        try:
+            r = await get_client()
+            all_keys: list[bytes | str] = await r.keys("*")  # type: ignore[assignment]
+            decoded = sorted(k if isinstance(k, str) else k.decode() for k in all_keys)
+            prefixes: dict[str, int] = {}
+            for k in decoded:
+                prefix = k.split(":")[0] if ":" in k else k
+                prefixes[prefix] = prefixes.get(prefix, 0) + 1
+            return {
+                "total": len(decoded),
+                "prefixes": prefixes,
+                "keys": decoded[:100],
+            }
+        except Exception as exc:
+            return {"error": str(exc)}
 
+    # ── Endpoint summary (dev helper) ────────────────────────────────────────
+    @app.get("/api/v1/endpoints")
+    async def endpoint_summary() -> dict[str, Any]:
+        """List all registered routes for development debugging."""
+        routes: list[dict[str, Any]] = []
+        for route in app.routes:
+            if hasattr(route, "methods") and hasattr(route, "path"):
+                routes.append({
+                    "path": getattr(route, "path", "unknown"),
+                    "methods": list(route.methods),  # type: ignore[arg-type]
+                    "name": getattr(route, "name", "unknown"),
+                })
 
-# ── Endpoint summary (dev helper) ────────────────────────────────────────────
-@app.get("/api/v1/endpoints")
-async def endpoint_summary() -> dict[str, Any]:
-    """List all registered routes — for development debugging."""
-    routes: list[dict[str, Any]] = []
-    for route in app.routes:
-        if hasattr(route, "methods") and hasattr(route, "path"):
-            routes.append({
-                "path": getattr(route, "path", "unknown"),
-                "methods": list(route.methods),  # type: ignore[arg-type]
-                "name": getattr(route, "name", "unknown"),
-            })
+        def _route_sort_key(route_item: dict[str, Any]) -> str:
+            path = route_item.get("path", "unknown")
+            return path if isinstance(path, str) else "unknown"
 
-    def _route_sort_key(route_item: dict[str, Any]) -> str:
-        path = route_item.get("path", "unknown")
-        return path if isinstance(path, str) else "unknown"
-
-    return {"total": len(routes), "routes": sorted(routes, key=_route_sort_key)}
+        return {"total": len(routes), "routes": sorted(routes, key=_route_sort_key)}
 
 
 def _resolve_port(default: int = 8000) -> int:
