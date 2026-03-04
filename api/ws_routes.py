@@ -43,6 +43,7 @@ router = fastapi.APIRouter()
 
 # Maximum concurrent WebSocket connections per manager
 MAX_WS_CONNECTIONS = int(os.getenv("WS_MAX_CONNECTIONS", "50"))
+# Deprecated: auth is now always enforced regardless of this flag.
 WS_REQUIRE_AUTH = os.getenv("WS_REQUIRE_AUTH", "true").strip().lower() in {"1", "true", "yes", "on"}
 
 # Tick-by-tick push interval (near real-time, batched per 100ms to avoid flood)
@@ -163,12 +164,10 @@ class ConnectionManager:
             await websocket.close(code=4429, reason="Too many connections")
             return False
 
-        # Authenticate BEFORE accepting (unless explicitly disabled)
-        user: dict | None = None
-        if WS_REQUIRE_AUTH:
-            user = await ws_auth_guard(websocket)
-            if not user:
-                return False
+        # Authenticate BEFORE accepting — always enforced
+        user = await ws_auth_guard(websocket)
+        if not user:
+            return False
 
         await websocket.accept()
         self.active_connections.add(websocket)
