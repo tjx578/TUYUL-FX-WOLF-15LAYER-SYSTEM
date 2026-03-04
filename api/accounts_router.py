@@ -10,6 +10,7 @@ from datetime import UTC, datetime
 from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel, Field
 
+from api.middleware.auth import verify_token
 from api.middleware.governance import enforce_write_policy
 from accounts.prop_rule_engine import validate_prop_sovereignty
 from dashboard.account_manager import AccountManager
@@ -92,7 +93,7 @@ def _enrich(account: Account) -> dict:
 	}
 
 
-@router.get("")
+@router.get("", dependencies=[Depends(verify_token)])
 async def list_accounts() -> dict:
 	items = _accounts.list_accounts()
 	return {
@@ -101,7 +102,7 @@ async def list_accounts() -> dict:
 	}
 
 
-@router.get("/risk-snapshot")
+@router.get("/risk-snapshot", dependencies=[Depends(verify_token)])
 async def list_risk_snapshot() -> list[dict]:
 	"""Return per-account risk snapshot for Trade Desk governance cards."""
 	items = _accounts.list_accounts()
@@ -146,7 +147,7 @@ async def list_risk_snapshot() -> list[dict]:
 	return snapshots
 
 
-@router.get("/{account_id}")
+@router.get("/{account_id}", dependencies=[Depends(verify_token)])
 async def get_account(account_id: str) -> dict:
 	account = _accounts.get_account(account_id)
 	if not account:
