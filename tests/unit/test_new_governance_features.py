@@ -80,6 +80,6 @@ def test_ws_live_feed_endpoint_snapshot() -> None:
     with patch("api.ws_routes.ws_auth_guard", new=AsyncMock(return_value={"sub": "test-user"})):
         with client.websocket_connect("/ws/live?token=dummy") as ws:
             message = ws.receive_json()
-            assert message["type"] == "snapshot"
-            assert "signals" in message["data"]
-            assert "accounts" in message["data"]
+            assert message["event_type"] == "live.snapshot"
+            assert "signals" in message["payload"]
+            assert "accounts" in message["payload"]
