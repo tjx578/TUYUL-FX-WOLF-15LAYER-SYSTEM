@@ -172,6 +172,53 @@ class TestWsAuthGuard:
 
         assert result is None
 
+    @pytest.mark.asyncio
+    async def test_origin_rejected_when_not_in_allowlist(self):
+        now = int(time.time())
+        payload = {
+            "sub": "test_user",
+            "iat": now,
+            "exp": now + 3600,
+            "role": "admin",
+        }
+        with (
+            patch("api.middleware.ws_auth.WS_ALLOWED_ORIGINS", {"https://allowed.example"}),
+            patch("api.middleware.ws_auth.decode_token", return_value=payload),
+        ):
+            from api.middleware.ws_auth import ws_auth_guard
+
+            ws = _make_mock_websocket(
+                query_params={"token": "valid.jwt.token"},
+                headers={"origin": "https://blocked.example"},
+            )
+            result = await ws_auth_guard(ws)
+
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_origin_allowed_when_in_allowlist(self):
+        now = int(time.time())
+        payload = {
+            "sub": "test_user",
+            "iat": now,
+            "exp": now + 3600,
+            "role": "admin",
+        }
+        with (
+            patch("api.middleware.ws_auth.WS_ALLOWED_ORIGINS", {"https://allowed.example"}),
+            patch("api.middleware.ws_auth.decode_token", return_value=payload),
+        ):
+            from api.middleware.ws_auth import ws_auth_guard
+
+            ws = _make_mock_websocket(
+                query_params={"token": "valid.jwt.token"},
+                headers={"origin": "https://allowed.example"},
+            )
+            result = await ws_auth_guard(ws)
+
+        assert result is not None
+        assert result["sub"] == "test_user"
+
 
 # ============================================================================
 # extract_token tests

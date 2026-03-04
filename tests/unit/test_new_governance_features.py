@@ -6,6 +6,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from api.accounts_router import router as accounts_router
+from api.middleware.auth import verify_token
 from api.config_profile_router import router as config_profile_router
 from api.signals_router import router as signals_router
 from api.ws_routes import router as ws_router
@@ -48,6 +49,8 @@ def test_read_only_apis_expose_get_only() -> None:
     app = _build_app()
     client = TestClient(app)
 
+    assert client.get("/api/v1/signals").status_code == 401
+    app.dependency_overrides[verify_token] = lambda: {"sub": "test-user"}
     assert client.get("/api/v1/signals").status_code == 200
     assert client.get("/api/v1/accounts").status_code == 200
     assert client.post("/api/v1/signals", json={}).status_code == 405

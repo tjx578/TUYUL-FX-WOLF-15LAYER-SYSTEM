@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import contextlib
 import logging
+import os
 import time
 from typing import Any
 
@@ -33,6 +34,13 @@ from fastapi import WebSocket
 from api.middleware.auth import decode_token, validate_api_key
 
 logger = logging.getLogger(__name__)
+
+_WS_ALLOWED_ORIGINS_RAW = os.getenv("WS_ALLOWED_ORIGINS", "").strip()
+WS_ALLOWED_ORIGINS = {
+    origin.strip().rstrip("/")
+    for origin in _WS_ALLOWED_ORIGINS_RAW.split(",")
+    if origin.strip()
+}
 
 
 class WSAuthError(Exception):
@@ -164,6 +172,15 @@ async def ws_auth_guard(websocket: WebSocket) -> dict[str, Any] | None:
     Returns:
         User payload dict if authenticated, ``None`` if auth failed.
     """
+    if WS_ALLOWED_ORIGINS:
+        origin = (websocket.headers.get("origin") or "").strip().rstrip("/")
+        if not origin or origin not in WS_ALLOWED_ORIGINS:
+            logger.warning("WS auth rejected: forbidden origin")
+            with contextlib.suppress(Exception):
+                await websocket.send_json({"type": "auth_error", "detail": "Forbidden origin"})
+                await websocket.close(code=4003, reason="Forbidden origin")
+            return None
+
     token = extract_token(dict(websocket.headers), dict(websocket.query_params))
     if not token:
         logger.warning("WS auth rejected: missing token")
