@@ -58,6 +58,13 @@ TRUSTED_PROXY_IPS = {ip.strip() for ip in _trusted_proxy_raw.split(",") if ip.st
 TRUST_ALL_PROXIES = "*" in TRUSTED_PROXY_IPS
 TRUSTED_PROXY_ENABLED = _env_bool("TRUSTED_PROXY_ENABLED", False)
 
+if TRUSTED_PROXY_ENABLED and TRUST_ALL_PROXIES:
+    logger.warning(
+        "RATE_LIMIT_TRUSTED_PROXY_IPS='*' trusts ALL proxies — "
+        "X-Forwarded-For can be spoofed by any client. "
+        "Set explicit proxy IPs in production."
+    )
+
 # Paths exempted from rate limiting (health, root).
 EXEMPT_PATHS: set[str] = {"/", "/health", "/docs", "/openapi.json", "/redoc"}
 
