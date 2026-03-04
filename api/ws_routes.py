@@ -68,6 +68,11 @@ def _ws_event(event_type: str, payload: dict, *, trace_id: str | None = None) ->
 MAX_WS_CONNECTIONS = int(os.getenv("WS_MAX_CONNECTIONS", "50"))
 # Deprecated: auth is now always enforced regardless of this flag.
 WS_REQUIRE_AUTH = os.getenv("WS_REQUIRE_AUTH", "true").strip().lower() in {"1", "true", "yes", "on"}
+if not WS_REQUIRE_AUTH:
+    logger.warning(
+        "WS_REQUIRE_AUTH=false is deprecated and ignored. "
+        "WebSocket auth is now always enforced. Remove this env var."
+    )
 
 # Tick-by-tick push interval (near real-time, batched per 100ms to avoid flood)
 TICK_BATCH_INTERVAL = 0.1  # 100ms
