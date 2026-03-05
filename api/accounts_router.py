@@ -81,164 +81,164 @@ async def _read_payload(account_id: str) -> dict[str, Any]:
 		redis: Any = await get_client()  # noqa: W191
 		raw = await redis.hgetall(f"ACCOUNT:{account_id}")  # noqa: W191
 		result: dict[str, Any] = dict(raw or {})  # noqa: W191
-		return result
-	except Exception:
-		return {}
+		return result  # noqa: W191
+	except Exception:  # noqa: W191
+		return {}  # noqa: W191
 
 
 async def _enrich(account: Account) -> dict[str, Any]:
-	payload = await _read_payload(account.account_id)
-	return {
-		**account.model_dump(),
-		"account_name": payload.get("account_name", account.name),
-		"broker": payload.get("broker", "MANUAL"),
-		"currency": payload.get("currency", "USD"),
-		"starting_balance": float(payload.get("starting_balance", account.balance) or account.balance),
-		"current_balance": float(payload.get("current_balance", account.balance) or account.balance),
-		"equity_high": float(payload.get("equity_high", account.equity) or account.equity),
-		"leverage": int(payload.get("leverage", 100) or 100),
-		"commission_model": payload.get("commission_model", "standard"),
-		"notes": payload.get("notes") or None,
-		"data_source": payload.get("data_source", "MANUAL"),
-		"prop_firm_code": payload.get("prop_firm_code", "ftmo"),
-		"compliance_mode": bool(int(payload.get("compliance_mode", 1) or 1)),
-		"updated_at": payload.get("updated_at"),
-	}
+	payload = await _read_payload(account.account_id)  # noqa: W191
+	return {  # noqa: W191
+		**account.model_dump(),  # noqa: W191
+		"account_name": payload.get("account_name", account.name),  # noqa: W191
+		"broker": payload.get("broker", "MANUAL"),  # noqa: W191
+		"currency": payload.get("currency", "USD"),  # noqa: W191
+		"starting_balance": float(payload.get("starting_balance", account.balance) or account.balance),  # noqa: W191
+		"current_balance": float(payload.get("current_balance", account.balance) or account.balance),  # noqa: W191
+		"equity_high": float(payload.get("equity_high", account.equity) or account.equity),  # noqa: W191
+		"leverage": int(payload.get("leverage", 100) or 100),  # noqa: W191
+		"commission_model": payload.get("commission_model", "standard"),  # noqa: W191
+		"notes": payload.get("notes") or None,  # noqa: W191
+		"data_source": payload.get("data_source", "MANUAL"),  # noqa: W191
+		"prop_firm_code": payload.get("prop_firm_code", "ftmo"),  # noqa: W191
+		"compliance_mode": bool(int(payload.get("compliance_mode", 1) or 1)),  # noqa: W191
+		"updated_at": payload.get("updated_at"),  # noqa: W191
+	}  # noqa: W191
 
 
 @router.get("", dependencies=[Depends(verify_token)])
 async def list_accounts() -> dict[str, Any]:
-	items = await _accounts.list_accounts_async()
-	return {
-		"count": len(items),
-		"accounts": [await _enrich(a) for a in items],
-	}
+	items = await _accounts.list_accounts_async()  # noqa: W191
+	return {  # noqa: W191
+		"count": len(items),  # noqa: W191
+		"accounts": [await _enrich(a) for a in items],  # noqa: W191
+	}  # noqa: W191
 
 
 @router.get("/risk-snapshot", dependencies=[Depends(verify_token)])
 async def list_risk_snapshot() -> list[dict[str, Any]]:
-	"""Return per-account risk snapshot for Trade Desk governance cards."""
-	items = await _accounts.list_accounts_async()
-	snapshots: list[dict[str, Any]] = []
-	client: Any = await get_client()
+	"""Return per-account risk snapshot for Trade Desk governance cards."""  # noqa: W191
+	items = await _accounts.list_accounts_async()  # noqa: W191
+	snapshots: list[dict[str, Any]] = []  # noqa: W191
+	client: Any = await get_client()  # noqa: W191
 
-	for account in items:
-		payload: dict[str, Any] = {}
-		try:
-			raw = await client.hgetall(f"ACCOUNT:{account.account_id}")
-			payload = dict(raw or {})
-		except Exception:
-			payload = {}
+	for account in items:  # noqa: W191
+		payload: dict[str, Any] = {}  # noqa: W191
+		try:  # noqa: W191
+			raw = await client.hgetall(f"ACCOUNT:{account.account_id}")  # noqa: W191
+			payload = dict(raw or {})  # noqa: W191
+		except Exception:  # noqa: W191
+			payload = {}  # noqa: W191
 
-		daily_dd_percent = float(payload.get("daily_dd_percent", 0.0) or 0.0)
-		total_dd_percent = float(payload.get("total_dd_percent", 0.0) or 0.0)
-		open_risk_percent = float(payload.get("open_risk_percent", 0.0) or 0.0)
-		open_trades = int(payload.get("open_trades", 0) or 0)
+		daily_dd_percent = float(payload.get("daily_dd_percent", 0.0) or 0.0)  # noqa: W191
+		total_dd_percent = float(payload.get("total_dd_percent", 0.0) or 0.0)  # noqa: W191
+		open_risk_percent = float(payload.get("open_risk_percent", 0.0) or 0.0)  # noqa: W191
+		open_trades = int(payload.get("open_trades", 0) or 0)  # noqa: W191
 
-		max_daily_dd = float(account.max_daily_dd_percent or 0.0)
+		max_daily_dd = float(account.max_daily_dd_percent or 0.0)  # noqa: W191
 
-		status = "SAFE"
-		if max_daily_dd > 0:
-			ratio = daily_dd_percent / max_daily_dd
-			if ratio >= 0.9:
-				status = "CRITICAL"
-			elif ratio >= 0.7:
-				status = "WARNING"
+		status = "SAFE"  # noqa: W191
+		if max_daily_dd > 0:  # noqa: W191
+			ratio = daily_dd_percent / max_daily_dd  # noqa: W191
+			if ratio >= 0.9:  # noqa: W191
+				status = "CRITICAL"  # noqa: W191
+			elif ratio >= 0.7:  # noqa: W191
+				status = "WARNING"  # noqa: W191
 
-		circuit_breaker = bool(int(payload.get("circuit_breaker", 0) or 0))
+		circuit_breaker = bool(int(payload.get("circuit_breaker", 0) or 0))  # noqa: W191
 
-		snapshots.append(
-			{
-				"account_id": account.account_id,
-				"daily_dd_percent": round(daily_dd_percent, 4),
-				"total_dd_percent": round(total_dd_percent, 4),
-				"open_risk_percent": round(open_risk_percent, 4),
-				"max_concurrent": account.max_concurrent_trades,
-				"open_trades": open_trades,
-				"circuit_breaker": circuit_breaker,
-				"status": status,
-			}
-		)
+		snapshots.append(  # noqa: W191
+			{  # noqa: W191
+				"account_id": account.account_id,  # noqa: W191
+				"daily_dd_percent": round(daily_dd_percent, 4),  # noqa: W191
+				"total_dd_percent": round(total_dd_percent, 4),  # noqa: W191
+				"open_risk_percent": round(open_risk_percent, 4),  # noqa: W191
+				"max_concurrent": account.max_concurrent_trades,  # noqa: W191
+				"open_trades": open_trades,  # noqa: W191
+				"circuit_breaker": circuit_breaker,  # noqa: W191
+				"status": status,  # noqa: W191
+			}  # noqa: W191
+		)  # noqa: W191
 
-	return snapshots
+	return snapshots  # noqa: W191
 
 
 @router.get("/{account_id}", dependencies=[Depends(verify_token)])
 async def get_account(account_id: str) -> dict[str, Any]:
-	account = await _accounts.get_account_async(account_id)
-	if not account:
-		raise HTTPException(status_code=404, detail=f"Account not found: {account_id}")
-	return await _enrich(account)
+	account = await _accounts.get_account_async(account_id)  # noqa: W191
+	if not account:  # noqa: W191
+		raise HTTPException(status_code=404, detail=f"Account not found: {account_id}")  # noqa: W191
+	return await _enrich(account)  # noqa: W191
 
 
 @router.post("", dependencies=[Depends(enforce_write_policy)])
 async def create_account(
-	req: AccountUpsertRequest,
-	x_action_pin: str | None = Header(default=None, alias="X-Action-Pin"),
+	req: AccountUpsertRequest,  # noqa: W191
+	x_action_pin: str | None = Header(default=None, alias="X-Action-Pin"),  # noqa: W191
 ) -> dict[str, Any]:
-	_validate_compliance_pin_or_raise(compliance_mode=req.compliance_mode, x_action_pin=x_action_pin)
-	_validate_prop_limits_or_raise(req)
+	_validate_compliance_pin_or_raise(compliance_mode=req.compliance_mode, x_action_pin=x_action_pin)  # noqa: W191
+	_validate_prop_limits_or_raise(req)  # noqa: W191
 
-	account_id = f"ACC-{uuid.uuid4().hex[:10].upper()}"
-	account = Account(
-		account_id=account_id,
-		name=req.account_name,
-		balance=req.current_balance,
-		equity=req.equity,
-		prop_firm=req.prop_firm,
-		max_daily_dd_percent=req.max_daily_dd_percent,
-		max_total_dd_percent=req.max_total_dd_percent,
-		max_concurrent_trades=req.max_concurrent_trades,
-	)
-	await _accounts.upsert_account_async(account)
+	account_id = f"ACC-{uuid.uuid4().hex[:10].upper()}"  # noqa: W191
+	account = Account(  # noqa: W191
+		account_id=account_id,  # noqa: W191
+		name=req.account_name,  # noqa: W191
+		balance=req.current_balance,  # noqa: W191
+		equity=req.equity,  # noqa: W191
+		prop_firm=req.prop_firm,  # noqa: W191
+		max_daily_dd_percent=req.max_daily_dd_percent,  # noqa: W191
+		max_total_dd_percent=req.max_total_dd_percent,  # noqa: W191
+		max_concurrent_trades=req.max_concurrent_trades,  # noqa: W191
+	)  # noqa: W191
+	await _accounts.upsert_account_async(account)  # noqa: W191
 
-	client: Any = await get_client()
-	mapping: dict[str, Any] = {
-		"account_name": req.account_name,
-		"broker": req.broker,
-		"currency": req.currency.upper(),
-		"starting_balance": req.starting_balance,
-		"current_balance": req.current_balance,
-		"equity": req.equity,
-		"equity_high": req.equity_high,
-		"leverage": req.leverage,
-		"commission_model": req.commission_model,
-		"notes": req.notes or "",
-		"data_source": req.data_source,
-		"prop_firm_code": req.prop_firm_code.strip().lower(),
-		"compliance_mode": int(bool(req.compliance_mode)),
-		"updated_at": datetime.now(UTC).isoformat(),
-	}
-	await client.hset(f"ACCOUNT:{account_id}", mapping=mapping)
+	client: Any = await get_client()  # noqa: W191
+	mapping: dict[str, Any] = {  # noqa: W191
+		"account_name": req.account_name,  # noqa: W191
+		"broker": req.broker,  # noqa: W191
+		"currency": req.currency.upper(),  # noqa: W191
+		"starting_balance": req.starting_balance,  # noqa: W191
+		"current_balance": req.current_balance,  # noqa: W191
+		"equity": req.equity,  # noqa: W191
+		"equity_high": req.equity_high,  # noqa: W191
+		"leverage": req.leverage,  # noqa: W191
+		"commission_model": req.commission_model,  # noqa: W191
+		"notes": req.notes or "",  # noqa: W191
+		"data_source": req.data_source,  # noqa: W191
+		"prop_firm_code": req.prop_firm_code.strip().lower(),  # noqa: W191
+		"compliance_mode": int(bool(req.compliance_mode)),  # noqa: W191
+		"updated_at": datetime.now(UTC).isoformat(),  # noqa: W191
+	}  # noqa: W191
+	await client.hset(f"ACCOUNT:{account_id}", mapping=mapping)  # noqa: W191
 
-	_audit.log(
-		AuditAction.ORDER_MODIFIED,
-		actor="user:dashboard",
-		resource=f"account:{account_id}",
-		details={"action": "ACCOUNT_CREATE", "reason": req.reason, "data_source": req.data_source},
-	)
-	return await _enrich(account)
+	_audit.log(  # noqa: W191
+		AuditAction.ORDER_MODIFIED,  # noqa: W191
+		actor="user:dashboard",  # noqa: W191
+		resource=f"account:{account_id}",  # noqa: W191
+		details={"action": "ACCOUNT_CREATE", "reason": req.reason, "data_source": req.data_source},  # noqa: W191
+	)  # noqa: W191
+	return await _enrich(account)  # noqa: W191
 
 
 @router.put("/{account_id}", dependencies=[Depends(enforce_write_policy)])
 async def update_account(
-	account_id: str,
-	req: AccountUpsertRequest,
-	x_action_pin: str | None = Header(default=None, alias="X-Action-Pin"),
+	account_id: str,  # noqa: W191
+	req: AccountUpsertRequest,  # noqa: W191
+	x_action_pin: str | None = Header(default=None, alias="X-Action-Pin"),  # noqa: W191
 ) -> dict[str, Any]:
-	existing = await _accounts.get_account_async(account_id)
-	if not existing:
-		raise HTTPException(status_code=404, detail=f"Account not found: {account_id}")
+	existing = await _accounts.get_account_async(account_id)  # noqa: W191
+	if not existing:  # noqa: W191
+		raise HTTPException(status_code=404, detail=f"Account not found: {account_id}")  # noqa: W191
 
-	_validate_compliance_pin_or_raise(compliance_mode=req.compliance_mode, x_action_pin=x_action_pin)
-	_validate_prop_limits_or_raise(req)
+	_validate_compliance_pin_or_raise(compliance_mode=req.compliance_mode, x_action_pin=x_action_pin)  # noqa: W191
+	_validate_prop_limits_or_raise(req)  # noqa: W191
 
-	account = Account(
-		account_id=account_id,
-		name=req.account_name,
-		balance=req.current_balance,
-		equity=req.equity,
-		prop_firm=req.prop_firm,
+	account = Account(  # noqa: W191
+		account_id=account_id,  # noqa: W191
+		name=req.account_name,  # noqa: W191
+		balance=req.current_balance,  # noqa: W191
+		equity=req.equity,  # noqa: W191
+		prop_firm=req.prop_firm,  # noqa: W191
 		max_daily_dd_percent=req.max_daily_dd_percent,  # noqa: W191
 		max_total_dd_percent=req.max_total_dd_percent,  # noqa: W191
 		max_concurrent_trades=req.max_concurrent_trades,  # noqa: W191
@@ -290,8 +290,8 @@ async def delete_account(account_id: str, req: AccountDeleteRequest) -> dict[str
 
 	_audit.log(  # noqa: W191
 		AuditAction.ORDER_MODIFIED,  # noqa: W191
-		actor="user:dashboard",
-		resource=f"account:{account_id}",
-		details={"action": "ACCOUNT_DELETE", "reason": req.reason},
-	)
-	return {"deleted": True, "account_id": account_id}
+		actor="user:dashboard",  # noqa: W191
+		resource=f"account:{account_id}",  # noqa: W191
+		details={"action": "ACCOUNT_DELETE", "reason": req.reason},  # noqa: W191
+	)  # noqa: W191
+	return {"deleted": True, "account_id": account_id}  # noqa: W191
