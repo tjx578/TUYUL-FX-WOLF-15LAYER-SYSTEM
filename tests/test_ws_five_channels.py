@@ -1,5 +1,5 @@
 """
-Tests for all 5 WebSocket channels in api/ws_routes.py.
+Tests for WebSocket channels in api/ws_routes.py.
 
 Channels covered:
   /ws/prices  — tick-by-tick price stream
@@ -7,6 +7,9 @@ Channels covered:
   /ws/candles — real-time OHLC candle stream
   /ws/risk    — risk state stream (drawdown, circuit breaker)
   /ws/equity  — streaming equity curve with drawdown overlay
+    /ws/verdict — real-time L12 verdict stream
+    /ws/signals — real-time frozen signal stream
+    /ws/pipeline — real-time pipeline stream
 
 Strategy:
   - Create a minimal FastAPI app with ws_router mounted.
@@ -553,6 +556,230 @@ class TestWsEquityChannel:
 
 
 # ──────────────────────────────────────────────────────────────────────────────
+# /ws/verdict channel
+# ──────────────────────────────────────────────────────────────────────────────
+
+@pytest.mark.ws
+class TestWsVerdictChannel:
+    """WebSocket /ws/verdict endpoint tests."""
+
+    @pytest.fixture
+    def client(self):
+        if not HAS_FASTAPI:
+            pytest.skip("fastapi not installed")
+        app = _make_app()
+
+        class _FakePubSub:
+            def __init__(self):
+                self._sent = False
+
+            def subscribe(self, *_args, **_kwargs):
+                return None
+
+            def get_message(self, **_kwargs):
+                if self._sent:
+                    return None
+                self._sent = True
+                return {
+                    "type": "message",
+                    "data": '{"event":"VERDICT_READY","pair":"EURUSD"}',
+                }
+
+            def close(self):
+                return None
+
+        verdict_store: dict[str, dict[str, Any]] = {
+            "EURUSD": {
+                "symbol": "EURUSD",
+                "verdict": "EXECUTE_BUY",
+                "confidence": 0.9,
+                "timestamp": "2026-03-05T10:00:00Z",
+            },
+        }
+
+        def _fake_get_verdict(pair: str):
+            return verdict_store.get(pair.upper())
+
+        with (
+            patch("api.ws_routes.ws_auth_guard", new=AsyncMock(return_value=_FAKE_USER)),
+            patch("api.ws_routes.redis_client.pubsub", return_value=_FakePubSub()),
+            patch("api.ws_routes.get_verdict", side_effect=_fake_get_verdict),
+            patch("api.ws_routes.load_pairs", return_value=[{"symbol": "EURUSD", "enabled": True}]),
+        ):
+            yield TestClient(app) # pyright: ignore[reportOptionalCall]
+
+    def test_verdict_channel_receives_snapshot(self, client):
+        """First message on /ws/verdict must be event_type='verdict.snapshot'."""
+        with client.websocket_connect("/ws/verdict?token=testtoken") as ws:
+            msg = ws.receive_json()
+            assert msg["event_type"] == "verdict.snapshot"
+            verdicts = msg.get("payload", {}).get("verdicts", {})
+            assert "EURUSD" in verdicts
+
+    def test_verdict_channel_receives_update_event(self, client):
+        """Pub/Sub verdict-ready message must trigger verdict.update push."""
+        with client.websocket_connect("/ws/verdict?token=testtoken") as ws:
+            ws.receive_json()  # snapshot
+            update = {}
+            for _ in range(6):
+                candidate = ws.receive_json()
+                if candidate.get("event_type") == "verdict.update":
+                    update = candidate
+                    break
+            assert update["event_type"] == "verdict.update"
+            assert update["payload"]["pair"] == "EURUSD"
+            assert update["payload"]["verdict"]["verdict"] == "EXECUTE_BUY"
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# /ws/signals channel
+# ──────────────────────────────────────────────────────────────────────────────
+
+@pytest.mark.ws
+class TestWsSignalsChannel:
+    """WebSocket /ws/signals endpoint tests."""
+
+    @pytest.fixture
+    def client(self):
+        if not HAS_FASTAPI:
+            pytest.skip("fastapi not installed")
+        app = _make_app()
+
+        class _FakePubSub:
+            def __init__(self):
+                self._sent = False
+
+            def subscribe(self, *_args, **_kwargs):
+                return None
+
+            def get_message(self, **_kwargs):
+                if self._sent:
+                    return None
+                self._sent = True
+                return {
+                    "type": "message",
+                    "data": '{"event":"SIGNAL_READY","symbol":"EURUSD"}',
+                }
+
+            def close(self):
+                return None
+
+        signal_payload = {
+            "signal_id": "SIG-001",
+            "symbol": "EURUSD",
+            "verdict": "EXECUTE_BUY",
+            "confidence": 0.9,
+            "timestamp": 1_700_000_000.0,
+        }
+        mock_signal_service = MagicMock()
+        mock_signal_service.list_all = MagicMock(return_value=[signal_payload])
+        mock_signal_service.list_by_symbol = MagicMock(return_value=[signal_payload])
+
+        with (
+            patch("api.ws_routes.ws_auth_guard", new=AsyncMock(return_value=_FAKE_USER)),
+            patch("api.ws_routes.redis_client.pubsub", return_value=_FakePubSub()),
+            patch("api.ws_routes._signal_service", new=mock_signal_service),
+        ):
+            yield TestClient(app) # pyright: ignore[reportOptionalCall]
+
+    def test_signals_channel_receives_snapshot(self, client):
+        with client.websocket_connect("/ws/signals?token=testtoken") as ws:
+            msg = ws.receive_json()
+            assert msg["event_type"] == "signals.snapshot"
+            assert msg["payload"]["signals"][0]["signal_id"] == "SIG-001"
+
+    def test_signals_channel_receives_update_event(self, client):
+        with client.websocket_connect("/ws/signals?token=testtoken") as ws:
+            ws.receive_json()  # snapshot
+            update = {}
+            for _ in range(6):
+                candidate = ws.receive_json()
+                if candidate.get("event_type") == "signals.update":
+                    update = candidate
+                    break
+            assert update["event_type"] == "signals.update"
+            assert update["payload"]["signal"]["symbol"] == "EURUSD"
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# /ws/pipeline channel
+# ──────────────────────────────────────────────────────────────────────────────
+
+@pytest.mark.ws
+class TestWsPipelineChannel:
+    """WebSocket /ws/pipeline endpoint tests."""
+
+    @pytest.fixture
+    def client(self):
+        if not HAS_FASTAPI:
+            pytest.skip("fastapi not installed")
+        app = _make_app()
+
+        class _FakePubSub:
+            def __init__(self):
+                self._sent = False
+
+            def subscribe(self, *_args, **_kwargs):
+                return None
+
+            def get_message(self, **_kwargs):
+                if self._sent:
+                    return None
+                self._sent = True
+                return {
+                    "type": "message",
+                    "data": '{"event":"VERDICT_READY","pair":"EURUSD"}',
+                }
+
+            def close(self):
+                return None
+
+        verdict_payload = {
+            "symbol": "EURUSD",
+            "verdict": "EXECUTE_BUY",
+            "confidence": 0.9,
+            "gates": {"passed": 9, "total": 9},
+            "scores": {},
+            "execution": {},
+            "layers": {},
+            "timestamp": "2026-03-05T10:00:00Z",
+            "system": {"latency_ms": 120},
+        }
+
+        def _fake_get_verdict(pair: str):
+            if pair.upper() == "EURUSD":
+                return verdict_payload
+            return None
+
+        with (
+            patch("api.ws_routes.ws_auth_guard", new=AsyncMock(return_value=_FAKE_USER)),
+            patch("api.ws_routes.redis_client.pubsub", return_value=_FakePubSub()),
+            patch("api.ws_routes.get_verdict", side_effect=_fake_get_verdict),
+            patch("api.ws_routes.load_pairs", return_value=[{"symbol": "EURUSD", "enabled": True}]),
+        ):
+            yield TestClient(app) # pyright: ignore[reportOptionalCall]
+
+    def test_pipeline_channel_receives_snapshot(self, client):
+        with client.websocket_connect("/ws/pipeline?token=testtoken") as ws:
+            msg = ws.receive_json()
+            assert msg["event_type"] == "pipeline.snapshot"
+            assert "EURUSD" in msg["payload"]["pipelines"]
+
+    def test_pipeline_channel_receives_update_event(self, client):
+        with client.websocket_connect("/ws/pipeline?token=testtoken") as ws:
+            ws.receive_json()  # snapshot
+            update = {}
+            for _ in range(6):
+                candidate = ws.receive_json()
+                if candidate.get("event_type") == "pipeline.update":
+                    update = candidate
+                    break
+            assert update["event_type"] == "pipeline.update"
+            assert update["payload"]["pair"] == "EURUSD"
+            assert update["payload"]["pipeline"]["pair"] == "EURUSD"
+
+
+# ──────────────────────────────────────────────────────────────────────────────
 # _compute_drawdown helper
 # ──────────────────────────────────────────────────────────────────────────────
 
@@ -585,13 +812,13 @@ class TestComputeDrawdown:
 
 class TestWsAuthRejection:
     """
-    All 5 channel managers must reject unauthenticated connections.
+    All channel managers must reject unauthenticated connections.
 
     Tested at ConnectionManager.connect() unit level to avoid TestClient hang
     conditions when no accept/close frame is sent by a mock auth guard.
     """
 
-    CHANNEL_NAMES = ["prices", "trades", "candles", "risk", "equity"]
+    CHANNEL_NAMES = ["prices", "trades", "candles", "risk", "equity", "verdict", "signals", "pipeline"]
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize("name", CHANNEL_NAMES)
