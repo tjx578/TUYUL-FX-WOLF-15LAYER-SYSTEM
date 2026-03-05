@@ -35,6 +35,12 @@ Execution order (CRITICAL -- 8 phases):
     Phase 7: Sovereignty enforcement (drift detection + verdict downgrade)
     Phase 8: L14 JSON export + final result assembly
 
+Runtime model (capital-protection first):
+    SEMI-PARALLEL HALT-SAFE DAG
+    batch_1 -> sync barrier -> batch_2 -> sync barrier -> ...
+    If any runnable layer in a batch fails, the pipeline halts before
+    entering the next batch.
+
 Merged improvements over v7.4r∞:
     ✓ Two-pass L13 governance (from Sovereign pipeline)
     ✓ Drift-based sovereignty enforcement with verdict downgrade
@@ -114,7 +120,9 @@ class WolfConstitutionalPipeline:
 
     Merged from Constitutional v7.4r∞ + Sovereign governance features.
     This is the ONLY entry point for analysis in the entire system.
-    All 15 layers (L1-L15) are executed sequentially with halt-on-failure.
+    Runtime is a semi-parallel halt-safe DAG with batch barriers.
+    Independent nodes inside the same DAG batch may run concurrently, while
+    cross-batch progression is strictly synchronized (batch -> barrier -> batch).
     Layer-12 is the SOLE decision authority (Constitutional Verdict).
 
     Key features:
@@ -374,7 +382,14 @@ class WolfConstitutionalPipeline:
         dag_batches: list[list[str]],
         batch_calls: dict[str, Callable[[], dict[str, Any]]],
     ) -> dict[str, dict[str, Any]]:
-        """Execute callable layers in DAG batches with per-batch parallel gather."""
+        """Execute callable layers in a halt-safe DAG batch pipeline.
+
+        Semantics:
+        - Within a batch: runnable layers execute concurrently.
+        - Between batches: strict synchronization barrier.
+        - Failure mode: fail-fast; if one runnable layer raises, no later
+          batch is entered.
+        """
 
         async def _run_single(layer_id: str) -> tuple[str, dict[str, Any]]:
             result = await asyncio.to_thread(batch_calls[layer_id])
@@ -382,11 +397,19 @@ class WolfConstitutionalPipeline:
 
         async def _run_batches() -> dict[str, dict[str, Any]]:
             output: dict[str, dict[str, Any]] = {}
-            for batch in dag_batches:
+            for batch_idx, batch in enumerate(dag_batches, start=1):
                 runnable = [layer_id for layer_id in batch if layer_id in batch_calls]
                 if not runnable:
                     continue
-                completed = await asyncio.gather(*(_run_single(layer_id) for layer_id in runnable))
+                try:
+                    completed = await asyncio.gather(
+                        *(_run_single(layer_id) for layer_id in runnable),
+                    )
+                except Exception as exc:
+                    raise RuntimeError(
+                        "DAG_BATCH_FAILED: "
+                        f"batch={batch_idx}, runnable={','.join(runnable)}"
+                    ) from exc
                 for layer_id, layer_result in completed:
                     output[layer_id] = layer_result
             return output
@@ -982,6 +1005,8 @@ class WolfConstitutionalPipeline:
                     if self._macro_vol is not None
                     else metrics.get("macro_vix_state", {})
                 ),
+                # Inference state — ephemeral abstract state TUYUL reasons with.
+                "inference": self._context_bus.inference_snapshot(),
             }
 
             synthesis = build_l12_synthesis(

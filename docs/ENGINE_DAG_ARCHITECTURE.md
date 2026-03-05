@@ -1,17 +1,26 @@
 # TUYUL FX Engine DAG Architecture — Design Reference
 
-**Version:** 1.0  
+**Version:** 1.1  
 **Status:** Implemented (ADR-011)  
-**Last Updated:** 2026-03-05
+**Last Updated:** 2026-03-06
 
 ---
 
 ## 1. Overview
 
 The TUYUL FX Wolf-15 pipeline (`pipeline/wolf_constitutional_pipeline.py`) runs
-8 numbered phases plus two optional sub-phases.  This document captures the
-dependency graph, parallelization opportunities, and constitutional constraints
-that govern **which phases can run concurrently and which must remain sequential**.
+8 numbered phases plus two optional sub-phases. This document captures the
+dependency graph, parallelization opportunities, and constitutional constraints.
+
+Execution semantics are explicitly:
+
+`SEMI-PARALLEL HALT-SAFE DAG`
+
+`batch_1 -> sync barrier -> batch_2 -> sync barrier -> ...`
+
+This runtime is intentionally not fully sequential and not fully parallel.
+Trading runtime is treated as a capital-protection problem, so any batch
+failure halts progression before the next batch.
 
 ### Design Philosophy
 
@@ -23,7 +32,6 @@ Prefect, or a bespoke `core/dag_engine.py`).  The reasoning is in §7.
 
 ## 2. Current Pipeline Dependency Graph
 
-```
                        ┌─────────────────────────────────────────────────────────┐
                        │         WOLF-15 CONSTITUTIONAL PIPELINE                 │
                        └─────────────────────────────────────────────────────────┘
@@ -121,13 +129,13 @@ Prefect, or a bespoke `core/dag_engine.py`).  The reasoning is in §7.
   ╔══════════════════╗
   ║  OUTPUT          ║  verdict, scores, enrichment, signal_id …
   ╚══════════════════╝
-```
 
 ---
 
 ## 3. Parallelization Matrix
 
 | Phase | Components | Current Mode | Can Parallelize? | Blocker |
+
 |-------|-----------|--------------|-----------------|---------|
 | 1 | L1, L2, L3 | Sequential | ❌ No | L2 needs L1 output; L3 needs L2; halt-on-failure chain |
 | 2 | L4, L5 | Sequential | ⚠️ Maybe | L5 (psychology) is enriched by L4 score in practice |
@@ -141,39 +149,45 @@ Prefect, or a bespoke `core/dag_engine.py`).  The reasoning is in §7.
 | 8 | L14 | Sequential | ❌ No | Consumes all prior outputs |
 | 8.5 | V11 | Sequential | ❌ No | Post-pipeline filter |
 
----
+---  <!-- ensure no standalone `|` line exists before/after this separator -->
 
 ## 4. Constitutional Constraints
 
 The following 6 rules govern every DAG change and **may never be overridden**:
 
 ### Rule 1 — Halt-on-Failure (Phase 1)
+
 L1 → L2 → L3 is a strict sequential chain.  Any unhandled exception in this
 phase causes the pipeline to return `verdict = NO_TRADE` immediately.  No layer
 in Phase 1 may be parallelized.
 
 ### Rule 2 — L11 → L6 → L10 Strict Chain
+
 The risk chain (Phase 4) carries precise numerical state: R:R ratio from L11
 feeds L6, and the correlation-adjusted risk feeds L10 position sizing.  These
 layers **must never run in parallel** regardless of future architectural changes.
 
 ### Rule 3 — L12 Sole Authority
+
 Layer 12 is the **only** component permitted to emit a `EXECUTE` / `HOLD` /
 `NO_TRADE` verdict.  No enrichment engine, analysis layer, or runner may add
 execution authority.  The parallel enrichment work in Phase 2.5 produces metrics
 only — it never bypasses or influences L12 directly (only via the synthesis dict).
 
 ### Rule 4 — V11 Post-Pipeline Only
+
 V11 (Sniper Filter / Edge Validator) runs **after** L12 has issued its verdict.
 It may block a trade based on edge conditions, but it is not part of the core
 verdict loop.  Moving V11 before L12 would violate this rule.
 
 ### Rule 5 — Journal Immutability
+
 The journal (J1–J4) is append-only.  No parallel worker may overwrite or
 replace journal entries.  Journal writes triggered during or after enrichment
 must be sequentially serialised.
 
 ### Rule 6 — Enrichment Resilience (Non-Fatal Engines)
+
 Individual enrichment engine failures must **never** block the pipeline or other
 engines.  Each engine is wrapped in an isolated try/except.  In parallel mode,
 a single Future failure is caught per-future; it logs a warning, appends to
@@ -183,26 +197,25 @@ a single Future failure is caught per-future; it logs a warning, appends to
 
 ## 5. Enrichment Engine Parallel Architecture
 
-```
   EngineEnrichmentLayer.run()
         │
         ├── _build_candles()        (sync, I/O from context bus)
         ├── _build_cognitive_state() (sync, pure computation)
         │
-        │   if _PARALLEL_ENRICHMENT:
+        │   if_PARALLEL_ENRICHMENT:
         │       │
-        │       └── _run_engines_parallel()
+        │       └──_run_engines_parallel()
         │                │
         │                │   ThreadPoolExecutor(max_workers=8)
         │                │       │
-        │                │       ├── Future: _run_engine_safe("cognitive_coherence", …)
-        │                │       ├── Future: _run_engine_safe("cognitive_context",   …)
-        │                │       ├── Future: _run_engine_safe("risk_simulation",     …)
-        │                │       ├── Future: _run_engine_safe("fusion_momentum",     …)
-        │                │       ├── Future: _run_engine_safe("fusion_precision",    …)
-        │                │       ├── Future: _run_engine_safe("fusion_structure",    …)
-        │                │       ├── Future: _run_engine_safe("quantum_field",       …)
-        │                │       └── Future: _run_engine_safe("quantum_probability", …)
+        │                │       ├── Future:_run_engine_safe("cognitive_coherence", …)
+        │                │       ├── Future:_run_engine_safe("cognitive_context",   …)
+        │                │       ├── Future:_run_engine_safe("risk_simulation",     …)
+        │                │       ├── Future:_run_engine_safe("fusion_momentum",     …)
+        │                │       ├── Future:_run_engine_safe("fusion_precision",    …)
+        │                │       ├── Future:_run_engine_safe("fusion_structure",    …)
+        │                │       ├── Future:_run_engine_safe("quantum_field",       …)
+        │                │       └── Future:_run_engine_safe("quantum_probability", …)
         │                │
         │                │   as_completed(timeout=11s)
         │                │       ├── success  → setattr(result, field_name, out)
@@ -210,23 +223,20 @@ a single Future failure is caught per-future; it logs a warning, appends to
         │                │       └── timeout  → result.errors.append(msg); log WARNING
         │
         │   else (_PARALLEL_ENRICHMENT is False):
-        │       └── _run_engines_sequential()  (original behaviour, for debugging)
+        │       └──_run_engines_sequential()  (original behaviour, for debugging)
         │
         └── Engine 9: Advisory (always sequential, uses result from above)
                 │
                 └── _aggregate()  →  EnrichmentResult (unchanged contract)
-```
 
 ### Error Isolation
 
-```
 _run_engine_safe(name, fn, *args, **kwargs)
     try:
-        out = fn(*args, **kwargs)
+        out = fn(*args,**kwargs)
         return (name, out, None)       # success
     except Exception as exc:
         return (name, None, str(exc))  # isolated failure
-```
 
 A failure in any one future never propagates to other futures.  The executor
 `.as_completed()` loop catches both task-level exceptions (via the `error` tuple
@@ -237,6 +247,7 @@ element) and Future-level exceptions (via `future.result()` re-raise).
 ## 6. Performance Estimates
 
 | Scenario | Timing |
+
 |---------|--------|
 | Sequential (old) — engines 1-8 | ~8 × 30ms = 240ms |
 | Sequential (old) — engine 9 | ~30ms |
@@ -277,7 +288,7 @@ before enabling.
 To parallelize any new set of independent layers, follow the same pattern used
 for enrichment engines:
 
-```python
+python
 with concurrent.futures.ThreadPoolExecutor(max_workers=N) as executor:
     futures = {executor.submit(fn, *args): label for label, fn, args in tasks}
     for future in concurrent.futures.as_completed(futures, timeout=TIMEOUT):
@@ -286,9 +297,9 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=N) as executor:
             result = future.result(timeout=TIMEOUT)
         except Exception as exc:
             handle_error(label, exc)
-```
 
 Key requirements for any newly parallelized group:
+
 1. Layers must be **read-only** with respect to shared mutable state.
 2. Failures must be **non-fatal** (wrapped in try/except per future).
 3. Constitutional authority (L12) must remain downstream and sequential.
@@ -304,6 +315,7 @@ bespoke `core/dag_engine.py`).
 **Rationale:**
 
 | Criterion | Hybrid (chosen) | Standalone DAG |
+
 |-----------|----------------|----------------|
 | Dependency footprint | None (stdlib only) | Large (Airflow: 50+ deps) |
 | Operational complexity | Low (in-process) | High (separate scheduler) |
