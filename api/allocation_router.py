@@ -197,16 +197,6 @@ async def _redis_get(key: str) -> str | None:
         return None
 
 
-async def _redis_hset(name: str, mapping: dict[str, Any]) -> bool:
-    try:
-        redis = cast(Any, await get_client())
-        await redis.hset(name, mapping=mapping)
-        return True
-    except Exception as exc:
-        logger.debug("Redis HSET fallback for %s: %s", name, exc)
-        return False
-
-
 async def _redis_hgetall(name: str) -> dict[str, Any]:
     try:
         redis = cast(Any, await get_client())
@@ -698,7 +688,7 @@ async def skip_signal_alias(req: SkipSignalRequest) -> dict[str, Any]:
 async def confirm_trade(
     req: ConfirmTradeRequest,
     x_idempotency_key: str | None = Header(default=None, alias="X-Idempotency-Key"),
-) -> dict:
+) -> dict[str, Any]:
     """Trader confirmed order placement at broker: INTENDED → PENDING."""
     response = await _confirm_trade_internal(req.trade_id, x_idempotency_key)
     logger.info("Trade PENDING: %s", req.trade_id)
@@ -709,7 +699,7 @@ async def confirm_trade(
 async def confirm_trade_by_id(
     trade_id: str,
     x_idempotency_key: str | None = Header(default=None, alias="X-Idempotency-Key"),
-) -> dict:
+) -> dict[str, Any]:
     """Path-parameter variant for dashboard compatibility."""
     response = await _confirm_trade_internal(trade_id, x_idempotency_key)
     logger.info("Trade PENDING (path): %s", trade_id)
@@ -717,7 +707,7 @@ async def confirm_trade_by_id(
 
 
 @write_router.post("/trades/close")
-async def close_trade(req: CloseTradeRequest) -> dict:
+async def close_trade(req: CloseTradeRequest) -> dict[str, Any]:
     """Manually close an open trade."""
     import json
 
@@ -752,7 +742,7 @@ async def close_trade(req: CloseTradeRequest) -> dict:
 
 
 @write_router.get("/trades/active")
-async def get_active_trades() -> dict:
+async def get_active_trades() -> dict[str, Any]:
     """Return all non-closed trades."""
     import json
 
@@ -760,10 +750,8 @@ async def get_active_trades() -> dict:
 
     # From in-memory ledger
     for t in _trade_ledger.values():
-        if isinstance(t, dict):
-            trade_record = cast(dict[str, Any], t)
-            if trade_record.get("status") not in ("CLOSED", "CANCELLED", "SKIPPED"):
-                active.append(trade_record)
+        if t.get("status") not in ("CLOSED", "CANCELLED", "SKIPPED"):
+            active.append(t)
 
     # From Redis (if available and not already in memory)
     try:
@@ -786,7 +774,7 @@ async def get_active_trades() -> dict:
 
 
 @write_router.post("/risk/calculate")
-async def calculate_risk_preview(req: RiskCalculateRequest) -> dict:
+async def calculate_risk_preview(req: RiskCalculateRequest) -> dict[str, Any]:
     """
     NEW ENDPOINT — Preview lot calculation before TAKE.
     Frontend uses this to show user exact lot + DD impact before confirming.
