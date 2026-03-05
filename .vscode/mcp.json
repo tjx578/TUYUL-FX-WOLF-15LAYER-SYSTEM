@@ -11,10 +11,7 @@
 			},
 			"type": "stdio"
 		},
-		"my-mcp-server-bb6593ac": {
-			"url": "http://localhost:3000",
-			"type": "http"
-		}
+	
 	},
 	"inputs": []
 }

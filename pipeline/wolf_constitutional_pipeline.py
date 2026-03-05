@@ -65,6 +65,7 @@ from typing import Any, cast
 # local imports
 from constitution.signal_throttle import SignalThrottle
 from constitution.verdict_engine import generate_l12_verdict
+from core.dag_engine import DagEngine
 from core.metrics import (
     LAYER_LATENCY,
     SIGNAL_THROTTLED,
@@ -243,6 +244,41 @@ class WolfConstitutionalPipeline:
         if self._l15_engine is None:
             self._l15_engine = L15MetaSovereigntyEngine()
 
+    @staticmethod
+    def _build_pipeline_dag() -> DagEngine:
+        """Build canonical layer DAG for execution planning and UI introspection."""
+        dag = DagEngine()
+        for lid in [
+            "L1", "L2", "L3", "L4", "L5", "L7", "L8", "L9",
+            "L11", "L6", "L10", "macro", "L12", "L13", "L14", "L15",
+        ]:
+            dag.add_node(lid)
+
+        dag.add_edge("L1", "L4")
+        dag.add_edge("L2", "L4")
+        dag.add_edge("L3", "L4")
+        dag.add_edge("L2", "L5")
+        dag.add_edge("L4", "L7")
+        dag.add_edge("L5", "L7")
+        dag.add_edge("L4", "L8")
+        dag.add_edge("L4", "L9")
+        dag.add_edge("L3", "L11")
+        dag.add_edge("L11", "L6")
+        dag.add_edge("L6", "L10")
+        dag.add_edge("L1", "macro")
+        dag.add_edge("L2", "macro")
+        dag.add_edge("L3", "macro")
+        dag.add_edge("L10", "L12")
+        dag.add_edge("L7", "L12")
+        dag.add_edge("L8", "L12")
+        dag.add_edge("L9", "L12")
+        dag.add_edge("L6", "L12")
+        dag.add_edge("macro", "L12")
+        dag.add_edge("L12", "L13")
+        dag.add_edge("L13", "L15")
+        dag.add_edge("L15", "L14")
+        return dag
+
     def _get_l13_engine(self) -> L13ReflectiveEngine:
         """Return the L13 engine, raising if not initialized."""
         assert self._l13_engine is not None, "L13 engine not initialized"
@@ -343,7 +379,30 @@ class WolfConstitutionalPipeline:
         errors: list[str] = []
         layers_executed: list[str] = []
         engines_invoked: list[str] = []
+        layer_timings_ms: dict[str, float] = {}
         now = datetime.now(_TZ_GMT8)
+        pipeline_dag = self._build_pipeline_dag()
+        dag_topology = pipeline_dag.topological_sort()
+        dag_batches = pipeline_dag.execution_batches()
+        dag_payload = {
+            "topology": dag_topology,
+            "batches": dag_batches,
+            "edges": [
+                {"from": edge.source, "to": edge.target}
+                for edge in pipeline_dag.to_edge_list()
+            ],
+        }
+
+        def _timed_layer_call(
+            func: Callable[..., Any],
+            layer_name: str,
+            *args: Any,
+            **kwargs: Any,
+        ) -> Any:
+            started = time.time()
+            result = self._timed_call(func, layer_name, symbol, *args, **kwargs)
+            layer_timings_ms[layer_name] = round((time.time() - started) * 1000.0, 3)
+            return result
 
         def _early_exit_with_map(
             _errors: list[str],
@@ -392,22 +451,37 @@ class WolfConstitutionalPipeline:
             engines_invoked.extend(["L1ContextAnalyzer", "L2MTAAnalyzer", "L3TechnicalAnalyzer"])
 
             assert self._l1 is not None
-            l1: dict[str, Any] = self._timed_call(self._l1.analyze, "L1", symbol, symbol)
-            layers_executed.append("L1")
+            assert self._l2 is not None
+            assert self._l3 is not None
+            l1_analyzer = self._l1
+            l2_analyzer = self._l2
+            l3_analyzer = self._l3
+            phase1_calls: dict[str, Callable[[], dict[str, Any]]] = {
+                "L1": lambda: cast(dict[str, Any], _timed_layer_call(l1_analyzer.analyze, "L1", symbol)),
+                "L2": lambda: cast(dict[str, Any], _timed_layer_call(l2_analyzer.analyze, "L2", symbol)),
+                "L3": lambda: cast(dict[str, Any], _timed_layer_call(l3_analyzer.analyze, "L3", symbol)),
+            }
+            phase1_results: dict[str, dict[str, Any]] = {}
+            with concurrent.futures.ThreadPoolExecutor(max_workers=3) as phase1_pool:
+                futures = {
+                    phase1_pool.submit(run_layer): layer_id
+                    for layer_id, run_layer in phase1_calls.items()
+                }
+                for future in concurrent.futures.as_completed(futures):
+                    layer_id = futures[future]
+                    phase1_results[layer_id] = future.result()
+
+            l1 = phase1_results["L1"]
+            l2 = phase1_results["L2"]
+            l3 = phase1_results["L3"]
+            layers_executed.extend(["L1", "L2", "L3"])
+
             if not l1.get("valid"):
                 errors.append("L1_CONTEXT_INVALID")
                 return _early_exit_with_map(errors, time.time() - start_time)
-
-            assert self._l2 is not None
-            l2: dict[str, Any] = self._timed_call(self._l2.analyze, "L2", symbol, symbol)
-            layers_executed.append("L2")
             if not l2.get("valid"):
                 errors.append("L2_MTA_INVALID")
                 return _early_exit_with_map(errors, time.time() - start_time)
-
-            assert self._l3 is not None
-            l3: dict[str, Any] = self._timed_call(self._l3.analyze, "L3", symbol, symbol)
-            layers_executed.append("L3")
             if not l3.get("valid"):
                 errors.append("L3_TECHNICAL_INVALID")
                 return _early_exit_with_map(errors, time.time() - start_time)
@@ -419,10 +493,10 @@ class WolfConstitutionalPipeline:
             engines_invoked.extend(["L4ScoringEngine", "L5PsychologyAnalyzer"])
 
             assert self._l4 is not None
-            l4: dict[str, Any] = self._timed_call(self._l4.score, "L4", symbol, l1, l2, l3)
+            l4: dict[str, Any] = _timed_layer_call(self._l4.score, "L4", l1, l2, l3)
             layers_executed.append("L4")
             assert self._l5 is not None
-            l5: dict[str, Any] = self._timed_call(self._l5.analyze, "L5", symbol, symbol, volatility_profile=l2)
+            l5: dict[str, Any] = _timed_layer_call(self._l5.analyze, "L5", symbol, volatility_profile=l2)
             layers_executed.append("L5")
 
             # ═══════════════════════════════════════════════════════
@@ -506,10 +580,9 @@ class WolfConstitutionalPipeline:
             # ── Run L7 Probability Analyzer ──────────────────────────────────
             assert self._l7 is not None
             engines_invoked.append("L7ProbabilityAnalyzer")
-            l7: dict[str, Any] = self._timed_call(
+            l7: dict[str, Any] = _timed_layer_call(
                 self._l7.analyze,
                 "L7",
-                symbol,
                 symbol,
                 technical_score=technical_score,
                 trade_returns=trade_returns,
@@ -520,11 +593,11 @@ class WolfConstitutionalPipeline:
 
             assert self._l8 is not None
             engines_invoked.append("L8TIIIntegrityAnalyzer")
-            l8: dict[str, Any] = self._timed_call(self._l8.analyze, "L8", symbol, symbol)
+            l8: dict[str, Any] = _timed_layer_call(self._l8.analyze, "L8", symbol)
             layers_executed.append("L8")
             assert self._l9 is not None
             engines_invoked.append("L9SMCAnalyzer")
-            l9: dict[str, Any] = self._timed_call(self._l9.analyze, "L9", symbol, symbol)
+            l9: dict[str, Any] = _timed_layer_call(self._l9.analyze, "L9", symbol)
             layers_executed.append("L9")
 
             logger.info(
@@ -556,7 +629,7 @@ class WolfConstitutionalPipeline:
             l11: dict[str, Any] = {"valid": False, "rr": 0.0}
             if direction in ("BUY", "SELL"):
                 assert self._l11 is not None
-                l11 = self._timed_call(self._l11.calculate_rr, "L11", symbol, symbol, direction)
+                l11 = _timed_layer_call(self._l11.calculate_rr, "L11", symbol, direction)
                 layers_executed.append("L11")
             rr_value: float = float(l11.get("rr", 0.0))
 
@@ -616,10 +689,9 @@ class WolfConstitutionalPipeline:
                 errors.append("L6_ANALYZER_NOT_INITIALIZED")
                 return _early_exit_with_map(errors, time.time() - start_time)
 
-            l6: dict[str, Any] = self._timed_call(
+            l6: dict[str, Any] = _timed_layer_call(
                 self._l6.analyze,
                 "L6",
-                symbol,
                 rr=rr_value,
                 trade_returns=trade_returns,
                 account_state=_l6_account_state,
@@ -629,12 +701,12 @@ class WolfConstitutionalPipeline:
             risk_ok: Any = l6.get("risk_ok", False)
             smc_confidence: Any = l9.get("confidence", 0.0)
             assert self._l10 is not None
-            l10: dict[str, Any] = self._timed_call(self._l10.analyze, "L10", symbol, risk_ok, smc_confidence)
+            l10: dict[str, Any] = _timed_layer_call(self._l10.analyze, "L10", risk_ok, smc_confidence)
             layers_executed.append("L10")
 
             assert self._macro is not None
             engines_invoked.append("MonthlyRegimeAnalyzer")
-            macro: dict[str, Any] = self._timed_call(self._macro.analyze, "macro", symbol, symbol)
+            macro: dict[str, Any] = _timed_layer_call(self._macro.analyze, "macro", symbol)
 
             # ═══════════════════════════════════════════════════════
             # PHASE 2.5 -- ENGINE ENRICHMENT LAYER (9 Facade Engines)
@@ -767,6 +839,8 @@ class WolfConstitutionalPipeline:
             )
             synthesis["system"]["latency_ms"] = current_latency_ms
             synthesis["system"]["safe_mode"] = safe_mode
+            synthesis["system"]["layer_timings_ms"] = dict(layer_timings_ms)
+            synthesis["system"]["dag"] = dict(dag_payload)
 
             # Inject enrichment data into synthesis for L12 visibility
             synthesis["enrichment"] = enrichment_data
@@ -918,6 +992,8 @@ class WolfConstitutionalPipeline:
                 engines_invoked=engines_invoked,
                 halt_reason=None,
                 constitutional_verdict=str(l12_verdict.get("verdict", "UNKNOWN")),
+                layer_timings_ms=layer_timings_ms,
+                dag=dag_payload,
             )
 
             latency_ms = (time.time() - start_time) * 1000
