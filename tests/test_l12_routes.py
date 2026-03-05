@@ -78,3 +78,28 @@ def test_build_pipeline_data_generates_execution_map_fallback() -> None:
     assert "profiling" in pipeline
     assert "dag" in pipeline
     assert isinstance(pipeline["dag"]["edges"], list)
+
+
+def test_build_pipeline_data_includes_signal_conditioning_observability() -> None:
+    verdict_data = {
+        "verdict": "HOLD",
+        "confidence": 0.42,
+        "system": {
+            "latency_ms": 88,
+            "signal_conditioning": {
+                "samples_out": 55,
+                "noise_ratio": 0.21,
+                "microstructure_quality_score": 0.79,
+                "source": "candle_H1",
+            },
+        },
+        "gates": {"passed": 4, "total": 9, "gate_1_tii": "PASS"},
+    }
+
+    pipeline = l12_routes._build_pipeline_data("EURUSD", verdict_data)
+    obs = pipeline["observability"]["signal_conditioning"]
+
+    assert obs["samples_out"] == 55
+    assert obs["noise_ratio"] == 0.21
+    assert obs["microstructure_quality_score"] == 0.79
+    assert obs["source"] == "candle_H1"
