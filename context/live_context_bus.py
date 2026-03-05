@@ -38,6 +38,10 @@ class LiveContextBus:
         # {symbol: tick_dict}
         self._ticks: dict[str, dict[str, Any]] = {}
         self._candle_history: dict[str, list[dict[str, Any]]] = {}
+        # {symbol: conditioned return list}
+        self._conditioned_returns: dict[str, list[float]] = {}
+        # {symbol: diagnostics dict}
+        self._conditioning_meta: dict[str, dict[str, Any]] = {}
 
     # ------------------------------------------------------------------
     # Write API (analysis / consumer only — no execution logic)
@@ -98,6 +102,37 @@ class LiveContextBus:
     def reset_state(self) -> None:
         """Clear all internal candle history. Used for test isolation."""
         self._candle_history: dict[str, list[dict[str, Any]]] = {}
+        self._conditioned_returns = {}
+        self._conditioning_meta = {}
+
+    def update_conditioned_returns(
+        self,
+        symbol: str,
+        returns: list[float],
+        diagnostics: dict[str, Any] | None = None,
+    ) -> None:
+        """Store latest conditioned return series and optional diagnostics."""
+        if not symbol:
+            return
+        self._conditioned_returns[symbol] = [float(r) for r in returns]
+        if diagnostics is not None:
+            self._conditioning_meta[symbol] = dict(diagnostics)
+
+    def get_conditioned_returns(
+        self,
+        symbol: str,
+        count: int | None = None,
+    ) -> list[float]:
+        """Return latest conditioned return series for a symbol."""
+        data = self._conditioned_returns.get(symbol, [])
+        if count is not None and count < len(data):
+            return data[-count:]
+        return list(data)
+
+    def get_conditioning_meta(self, symbol: str) -> dict[str, Any] | None:
+        """Return latest signal-conditioning diagnostics for a symbol."""
+        meta = self._conditioning_meta.get(symbol)
+        return dict(meta) if meta is not None else None
 
     # ------------------------------------------------------------------
     # Read API
