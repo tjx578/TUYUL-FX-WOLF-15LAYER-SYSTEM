@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import json
 import time
 from typing import Any
@@ -51,10 +52,8 @@ class SignalService:
             "symbol": contract.get("symbol"),
             "ts": time.time(),
         }
-        try:
+        with contextlib.suppress(Exception):
             redis_client.publish(SIGNAL_READY_CHANNEL, json.dumps(event_payload))
-        except Exception:
-            pass
         return contract
 
     def get(self, signal_id: str) -> dict[str, Any] | None:

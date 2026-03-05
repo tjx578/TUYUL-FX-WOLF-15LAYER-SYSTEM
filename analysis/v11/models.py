@@ -5,11 +5,11 @@ Analysis zone only. No execution side-effects.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from enum import Enum
+from enum import StrEnum
 from typing import Optional
 
 
-class GateVerdict(str, Enum):
+class GateVerdict(StrEnum):
     PASS = "PASS"
     FAIL = "FAIL"
     SKIP = "SKIP"  # insufficient data to evaluate
