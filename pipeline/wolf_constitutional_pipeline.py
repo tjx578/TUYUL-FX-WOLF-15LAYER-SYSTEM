@@ -61,6 +61,9 @@ from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from typing import Any, cast
 
+from analysis.reflex_rqi import compute_rqi, latency_decay
+from config_loader import CONFIG
+
 # third-party imports
 # import ...
 # local imports
@@ -73,7 +76,6 @@ from core.metrics import (
     TICK_TO_VERDICT_LATENCY,
 )
 from core.tracing import layer_span
-from config_loader import CONFIG
 from pipeline.engines import L13ReflectiveEngine, L15MetaSovereigntyEngine
 from pipeline.execution_map import build_execution_map
 from pipeline.phases.assembly import build_l14_json
@@ -177,6 +179,11 @@ class WolfConstitutionalPipeline:
         # Signal rate throttle (max 3 EXECUTE per symbol in 5 minutes)
         self._signal_throttle = SignalThrottle(max_signals=3, window_seconds=300)
 
+        settings = CONFIG.get("settings", {})
+        self._rqi_sigma_sec = float(
+            settings.get("rqi_sigma_sec", settings.get("loop_interval_sec", 60))
+        )
+
         # Engine Enrichment Layer (Phase 2.5 — 9 facade engines)
         self._enrichment: Any = None  # lazy-loaded
 
@@ -186,6 +193,10 @@ class WolfConstitutionalPipeline:
     # ──────────────────────────────────────────────────────
     #  Lazy-load all layer analyzers
     # ──────────────────────────────────────────────────────
+
+    def skip_analyzers(self) -> None:
+        """Replace _ensure_analyzers with a no-op (for tests)."""
+        self._ensure_analyzers = lambda: None
 
     def _ensure_analyzers(self) -> None:
         """Lazy load analyzers to avoid circular imports."""
@@ -616,15 +627,22 @@ class WolfConstitutionalPipeline:
 
             # Fallback: derive returns from candle closes and condition them.
             if not trade_returns:
-                _h1 = cast(list[dict[str, Any]], self._context_bus.get_candles(symbol, "H1"))
-                _m15 = cast(list[dict[str, Any]], self._context_bus.get_candles(symbol, "M15"))
+                _h1 = cast(
+                    list[dict[str, Any]],
+                    self._context_bus.get_candles(symbol, "H1"),  # type: ignore[reportUnknownMemberType]
+                )
+                _m15 = cast(
+                    list[dict[str, Any]],
+                    self._context_bus.get_candles(symbol, "M15"),  # type: ignore[reportUnknownMemberType]
+                )
                 _candle_source = "H1" if len(_h1) >= len(_m15) else "M15"
                 _candles = _h1 if _candle_source == "H1" else _m15
-                _prices = [
-                    float(c.get("close"))
-                    for c in _candles
-                    if c.get("close") is not None
-                ]
+                _prices: list[float] = []
+                for c in _candles:
+                    _close = c.get("close")
+                    if isinstance(_close, (int, float, str)):
+                        with contextlib.suppress(TypeError, ValueError):
+                            _prices.append(float(_close))
                 if len(_prices) >= 2:
                     _conditioned = self._signal_conditioner.condition_prices(_prices[-300:])
                     trade_returns = _conditioned.conditioned_returns
@@ -974,6 +992,26 @@ class WolfConstitutionalPipeline:
             synthesis["system"]["safe_mode"] = safe_mode
             synthesis["system"]["layer_timings_ms"] = dict(layer_timings_ms)
             synthesis["system"]["dag"] = dict(dag_payload)
+            if conditioning_diag is not None:
+                synthesis["system"]["signal_conditioning"] = dict(conditioning_diag)
+
+            reflex_coherence = float(l2.get("reflex_coherence", 0.0) or 0.0)
+            emotion_delta = float(l5.get("emotion_delta", 0.0) or 0.0)
+            delta_t_sec = max(0.0, time.time() - tick_ts) if tick_ts is not None else 0.0
+            rqi_score = compute_rqi(
+                delta_t_sec=delta_t_sec,
+                coherence=reflex_coherence,
+                emotion_delta=emotion_delta,
+                sigma_sec=self._rqi_sigma_sec,
+            )
+            synthesis["system"]["rqi"] = round(rqi_score, 6)
+            synthesis["system"]["rqi_components"] = {
+                "latency_decay": round(latency_decay(delta_t_sec, self._rqi_sigma_sec), 6),
+                "reflex_coherence": round(max(0.0, min(1.0, reflex_coherence)), 6),
+                "emotion_stability": round(max(0.0, min(1.0, 1.0 - emotion_delta)), 6),
+                "delta_t_sec": round(delta_t_sec, 4),
+                "sigma_sec": round(self._rqi_sigma_sec, 4),
+            }
 
             # Inject enrichment data into synthesis for L12 visibility
             synthesis["enrichment"] = enrichment_data
@@ -1180,6 +1218,8 @@ class WolfConstitutionalPipeline:
                 TICK_TO_VERDICT_LATENCY.labels(symbol=symbol).observe(e2e_latency)  # noqa: F821
                 result_dict["tick_to_verdict_s"] = round(e2e_latency, 4)
 
+            result_dict["rqi"] = synthesis.get("system", {}).get("rqi", 0.0)
+
             self._record_metrics(symbol, result_dict)
             return result_dict
 
@@ -1272,6 +1312,11 @@ class WolfConstitutionalPipeline:
 
         Delegates to pipeline.phases.metrics_recorder.record_pipeline_metrics.
         """
+        record_pipeline_metrics(symbol, result)
+
+    @staticmethod
+    def record_metrics(symbol: str, result: dict[str, Any]) -> None:
+        """Public metrics recorder for tests and external callers."""
         record_pipeline_metrics(symbol, result)
 
     # ══════════════════════════════════════════════════════════════

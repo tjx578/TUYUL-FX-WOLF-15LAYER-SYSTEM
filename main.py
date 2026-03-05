@@ -2,6 +2,7 @@ import asyncio
 import os
 import signal
 import sys
+import time
 import types
 from collections.abc import Callable, Coroutine
 
@@ -9,6 +10,7 @@ import uvicorn
 from loguru import logger
 from redis.asyncio import Redis as AsyncRedis
 
+from analysis.reflex_rqi import compute_rqi
 from config_loader import CONFIG
 from core.event_bus import Event, EventType, get_event_bus
 from core.health_probe import HealthProbe
@@ -34,7 +36,11 @@ try:
 except Exception:  # V11 optional — missing = skip
     _v11_hook = None
 
-PAIRS = [p["symbol"] for p in CONFIG["pairs"]["pairs"] if p.get("enabled", True)]
+PAIRS: list[str] = [
+    str(p["symbol"])
+    for p in CONFIG["pairs"]["pairs"]
+    if p.get("enabled", True)
+]
 
 _shutdown_event: asyncio.Event | None = None
 _pipeline = WolfConstitutionalPipeline()
@@ -419,6 +425,14 @@ async def analysis_loop() -> None:
     global _analysis_healthy
     env_interval = os.getenv("ANALYSIS_LOOP_INTERVAL_SEC")
     loop_interval = int(env_interval) if env_interval else CONFIG["settings"].get("loop_interval_sec", 60)
+    rqi_sigma_sec = float(os.getenv("ANALYSIS_RQI_SIGMA_SEC", str(max(1, loop_interval))))
+    rqi_retrigger_threshold = max(
+        0.0,
+        min(1.0, float(os.getenv("ANALYSIS_RQI_RETRIGGER_THRESHOLD", "0.72"))),
+    )
+    rqi_force_stale_sec = float(
+        os.getenv("ANALYSIS_RQI_FORCE_STALE_SEC", str(max(1, loop_interval * 3)))
+    )
     logger.info(f"Analysis loop started (event-driven, fallback interval={loop_interval}s)")
 
     # ── asyncio.Event used as a lightweight signal ──────────────────
@@ -435,6 +449,20 @@ async def analysis_loop() -> None:
     bus = get_event_bus()
     bus.subscribe(EventType.CANDLE_CLOSED, _on_candle_closed)
 
+    # Per-symbol reflex cache used for selective timeout re-evaluation.
+    _symbol_reflex_inputs: dict[str, tuple[float, float]] = {}
+    _symbol_last_analysis_ts: dict[str, float] = {}
+
+    def _to_float(value: object, default: float = 0.0) -> float:
+        if isinstance(value, (int, float)):
+            return float(value)
+        if isinstance(value, str):
+            try:
+                return float(value)
+            except ValueError:
+                return default
+        return default
+
     while True:
         if _shutdown_event and _shutdown_event.is_set():
             logger.info("Analysis loop shutting down...")
@@ -449,18 +477,53 @@ async def analysis_loop() -> None:
         _candle_signal.clear()
 
         # Decide which pairs to analyse this iteration
+        symbols_to_run: list[str] = []
         if _pending_symbols:
             # Event-driven: only symbols that just had a candle close
             symbols_to_run = [s for s in PAIRS if s in _pending_symbols]
             _pending_symbols.clear()
             if not symbols_to_run:
                 # Symbol from event not in our PAIRS list – full sweep
-                symbols_to_run = PAIRS
+                symbols_to_run = list(PAIRS)
             logger.info(f"[EVENT] Candle close triggered analysis for {symbols_to_run}")
         else:
-            # Timeout fallback: analyse everything
-            symbols_to_run = PAIRS
-            logger.debug("[TIMER] Fallback sweep - analysing all pairs")
+            # Timeout fallback: selective re-evaluation by projected RQI.
+            if not _symbol_last_analysis_ts:
+                symbols_to_run = list(PAIRS)
+                logger.debug("[TIMER] Fallback sweep (cold-start) - analysing all pairs")
+            else:
+                now_ts = time.time()
+                symbols_to_run = list[str]()
+                for pair in PAIRS:
+                    last_ts = _symbol_last_analysis_ts.get(pair)
+                    if last_ts is None:
+                        symbols_to_run.append(pair)
+                        continue
+
+                    age_sec = max(0.0, now_ts - last_ts)
+                    if age_sec >= rqi_force_stale_sec:
+                        symbols_to_run.append(pair)
+                        continue
+
+                    coherence, emotion_delta = _symbol_reflex_inputs.get(pair, (1.0, 0.0))
+                    projected_rqi = compute_rqi(
+                        delta_t_sec=age_sec,
+                        coherence=coherence,
+                        emotion_delta=emotion_delta,
+                        sigma_sec=rqi_sigma_sec,
+                    )
+                    if projected_rqi <= rqi_retrigger_threshold:
+                        symbols_to_run.append(pair)
+
+                logger.debug(
+                    "[TIMER] Selective fallback - analysing %d/%d pair(s), threshold=%.2f",
+                    len(symbols_to_run),
+                    len(PAIRS),
+                    rqi_retrigger_threshold,
+                )
+
+                if not symbols_to_run:
+                    continue
 
         results = await asyncio.gather(
             *(_analyze_pair(pair) for pair in symbols_to_run),
@@ -469,6 +532,17 @@ async def analysis_loop() -> None:
         for pair, result in zip(symbols_to_run, results, strict=False):
             if isinstance(result, Exception):
                 logger.error(f"[ERROR] {pair} | {result}")
+                continue
+
+            _symbol_last_analysis_ts[pair] = time.time()
+            if isinstance(result, dict):
+                synthesis: dict[str, object] = dict(result.get("synthesis") or {})  # type: ignore[arg-type]
+                layers: dict[str, object] = dict(synthesis.get("layers") or {})  # type: ignore[arg-type]
+                discipline: dict[str, object] = dict(synthesis.get("wolf_discipline") or {})  # type: ignore[arg-type]
+
+                coherence = _to_float(layers.get("L2_reflex_coherence"), 0.0)
+                emotion_delta = _to_float(discipline.get("polarity_deviation"), 0.0)
+                _symbol_reflex_inputs[pair] = (coherence, emotion_delta)
 
         # Mark engine ready after first successful cycle
         if not _analysis_healthy:

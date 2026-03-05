@@ -72,6 +72,7 @@ class _CounterChild:
     __slots__ = ("_lock", "_value")
 
     def __init__(self) -> None:
+        super().__init__()
         self._value: float = 0.0
         self._lock = threading.Lock()
 
@@ -90,6 +91,7 @@ class Counter:
     """Prometheus-style monotonic counter."""
 
     def __init__(self, name: str, help_text: str, label_names: Sequence[str] = ()) -> None:
+        super().__init__()
         self.name = name
         self.help_text = help_text
         self.label_names = tuple(label_names)
@@ -137,6 +139,7 @@ class _GaugeChild:
     __slots__ = ("_lock", "_value")
 
     def __init__(self) -> None:
+        super().__init__()
         self._value: float = 0.0
         self._lock = threading.Lock()
 
@@ -161,6 +164,7 @@ class Gauge:
     """Prometheus-style gauge."""
 
     def __init__(self, name: str, help_text: str, label_names: Sequence[str] = ()) -> None:
+        super().__init__()
         self.name = name
         self.help_text = help_text
         self.label_names = tuple(label_names)
@@ -185,6 +189,18 @@ class Gauge:
             raise TypeError("Must call .labels() for labelled gauges")
         self._no_label.set(value)
 
+    def inc(self, amount: float = 1.0) -> None:
+        """Increment labelless gauge."""
+        if self._no_label is None:
+            raise TypeError("Must call .labels() for labelled gauges")
+        self._no_label.inc(amount)
+
+    def dec(self, amount: float = 1.0) -> None:
+        """Decrement labelless gauge."""
+        if self._no_label is None:
+            raise TypeError("Must call .labels() for labelled gauges")
+        self._no_label.dec(amount)
+
     def collect(self) -> list[tuple[str, dict[str, str], float]]:
         samples: list[tuple[str, dict[str, str], float]] = []
         if self._no_label is not None:
@@ -205,6 +221,7 @@ class _HistogramChild:
     __slots__ = ("_bucket_counts", "_buckets", "_count", "_lock", "_sum")
 
     def __init__(self, buckets: tuple[float, ...]) -> None:
+        super().__init__()
         self._buckets = buckets
         self._bucket_counts = [0] * len(buckets)
         self._sum: float = 0.0
@@ -224,7 +241,7 @@ class _HistogramChild:
         """Return (le, cumulative_count) pairs."""
         with self._lock:
             cumulative = 0
-            result = []
+            result: list[tuple[float, int]] = []
             for i, bound in enumerate(self._buckets):
                 cumulative += self._bucket_counts[i]
                 result.append((bound, cumulative))
@@ -250,6 +267,7 @@ class Histogram:
         label_names: Sequence[str] = (),
         buckets: tuple[float, ...] | None = None,
     ) -> None:
+        super().__init__()
         self.name = name
         self.help_text = help_text
         self.label_names = tuple(label_names)
@@ -324,6 +342,12 @@ class MetricsRegistry:
                     inst._lock = threading.Lock()
                     cls._instance = inst
         return cls._instance
+
+    @classmethod
+    def reset_singleton(cls) -> None:
+        """Reset singleton instance for test isolation."""
+        with cls._init_lock:
+            cls._instance = None
 
     # ── factory methods ──────────────────────────────────
 
@@ -521,6 +545,31 @@ ACTIVE_PAIRS = _R.gauge(
 SYSTEM_HEALTHY = _R.gauge(
     "wolf_system_healthy",
     "System health flag (1=healthy, 0=degraded)",
+)
+
+# Signal conditioning observability (per symbol)
+SIGNAL_CONDITIONED_SAMPLES = _R.gauge(
+    "wolf_signal_conditioned_samples",
+    "Number of samples after signal conditioning",
+    label_names=("symbol",),
+)
+
+SIGNAL_NOISE_RATIO = _R.gauge(
+    "wolf_signal_noise_ratio",
+    "Estimated microstructure noise ratio removed by conditioning",
+    label_names=("symbol",),
+)
+
+SIGNAL_QUALITY_SCORE = _R.gauge(
+    "wolf_signal_quality_score",
+    "Signal conditioning quality score (0-1)",
+    label_names=("symbol",),
+)
+
+RQI_SCORE = _R.gauge(
+    "wolf_reflex_rqi_score",
+    "Reflex Quality Index (RQI) score (0-1)",
+    label_names=("symbol",),
 )
 
 # ── Tick rate per symbol ───────────────────────────────────

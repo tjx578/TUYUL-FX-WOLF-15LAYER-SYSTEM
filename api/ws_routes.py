@@ -196,6 +196,9 @@ def _build_pipeline_data(pair: str, verdict_data: dict[str, Any]) -> dict[str, A
         "gates": gate_list,
         "entry": entry,
         "execution_map": execution_map,
+        "observability": {
+            "signal_conditioning": cast(dict[str, Any], verdict_data.get("system", {})).get("signal_conditioning", {}),
+        },
     }
 
 # Maximum concurrent WebSocket connections per manager

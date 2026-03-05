@@ -244,7 +244,7 @@ class TestPublisherHelpers:
         mock_broadcast = AsyncMock()
         with (
             patch.object(mod.pipeline_manager, "broadcast", mock_broadcast),
-            patch("api.ws_routes.get_verdict", return_value=None),
+            patch("api.ws_routes.get_verdict_async", new=AsyncMock(return_value=None)),
         ):
             ok = await mod.publish_pipeline_update("EURUSD")
 
