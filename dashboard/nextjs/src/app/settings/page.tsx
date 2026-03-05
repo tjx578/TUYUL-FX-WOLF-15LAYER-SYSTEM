@@ -31,10 +31,10 @@ export default function SettingsPage() {
 
   const endpointList = useMemo(
     () => [
-      API_ENDPOINTS.configProfiles,
+      API_ENDPOINTS.configProfile,
       API_ENDPOINTS.configActive,
       API_ENDPOINTS.configEffective,
-      API_ENDPOINTS.configOverride,
+      API_ENDPOINTS.configOverrideLegacy,
       API_ENDPOINTS.configLock,
     ],
     []
@@ -74,7 +74,7 @@ export default function SettingsPage() {
   const saveOverride = async () => {
     try {
       const parsed = JSON.parse(overrideJson);
-      await sendWrite(API_ENDPOINTS.configOverride, "POST", {
+      await sendWrite(API_ENDPOINTS.configOverrideLegacy, "POST", {
         scope: scopeType,
         scope_key: scopeKey,
         override: parsed,

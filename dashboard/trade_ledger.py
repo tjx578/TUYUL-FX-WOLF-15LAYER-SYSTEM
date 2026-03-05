@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 import contextlib
+import datetime
 import json
-from datetime import UTC, datetime
-
-from schemas.trade_models import RiskMode, Trade, TradeLeg, TradeStatus
 
 from infrastructure.redis_client import get_client
+from schemas.trade_models import RiskMode, Trade, TradeLeg, TradeStatus
+from storage.postgres_client import pg_client
 from storage.redis_client import redis_client
 
 
@@ -38,14 +38,35 @@ class TradeLedger:
                 trade = self._from_dict(json.loads(raw))
                 self._memory_trades[trade_id] = trade
                 return trade
+
+        with contextlib.suppress(Exception):
+            row = await pg_client.fetchrow(
+                """
+                SELECT trade_id, signal_id, account_id, pair, direction, status, risk_mode,
+                       total_risk_percent, total_risk_amount, pnl, close_reason, legs,
+                       created_at, updated_at, closed_at
+                FROM trade_history
+                WHERE trade_id = $1
+                """,
+                trade_id,
+            )
+            if row is not None:
+                data = dict(row)
+                for field in ("created_at", "updated_at", "closed_at"):
+                    if data.get(field) is not None:
+                        data[field] = data[field].isoformat()
+                trade = self._from_dict(data)
+                self._memory_trades[trade_id] = trade
+                return trade
         return None
 
     def get_active_trades(self) -> list[Trade]:
         trades: dict[str, Trade] = dict(self._memory_trades)
         with contextlib.suppress(Exception):
-            for key in redis_client.client.scan_iter("TRADE:*"):
-                trade_id = str(key).split(":", 1)[1]
-                raw = redis_client.client.get(key)
+            for key in redis_client.client.scan_iter(match="TRADE:*"):  # type: ignore[misc]
+                key_str: str = key if isinstance(key, str) else str(key)  # type: ignore[arg-type]
+                trade_id = key_str.split(":", 1)[1]
+                raw = redis_client.client.get(key_str)
                 if isinstance(raw, str):
                     trades[trade_id] = self._from_dict(json.loads(raw))
 
@@ -58,30 +79,100 @@ class TradeLedger:
         trades: dict[str, Trade] = dict(self._memory_trades)
         with contextlib.suppress(Exception):
             client = await get_client()
-            async for key in client.scan_iter(match="TRADE:*"):
-                trade_id = str(key).split(":", 1)[1]
-                raw = await client.get(str(key))
+            async for key in client.scan_iter(match="TRADE:*"):  # type: ignore[misc]
+                key_obj: str | bytes = key  # type: ignore[assignment]
+                if isinstance(key_obj, str):
+                    key_str = key_obj
+                elif isinstance(key_obj, bytes):
+                    key_str = key_obj.decode()
+                else:
+                    key_str = ""
+                trade_id = key_str.split(":", 1)[1]
+                raw = await client.get(key_str)
                 if isinstance(raw, str):
                     trades[trade_id] = self._from_dict(json.loads(raw))
+
+        if not trades:
+            with contextlib.suppress(Exception):
+                rows = await pg_client.fetch(
+                    """
+                    SELECT trade_id, signal_id, account_id, pair, direction, status, risk_mode,
+                           total_risk_percent, total_risk_amount, pnl, close_reason, legs,
+                           created_at, updated_at, closed_at
+                    FROM trade_history
+                    WHERE status NOT IN ('CANCELLED', 'CLOSED', 'SKIPPED', 'ABORTED')
+                    ORDER BY updated_at DESC
+                    LIMIT 500
+                    """
+                )
+                for row in rows:
+                    data = dict(row)
+                    for field in ("created_at", "updated_at", "closed_at"):
+                        if data.get(field) is not None:
+                            data[field] = data[field].isoformat()
+                    trade = self._from_dict(data)
+                    trades[trade.trade_id] = trade
 
         return [
             t for t in sorted(trades.values(), key=lambda x: x.updated_at, reverse=True)
             if t.status not in {TradeStatus.CANCELLED, TradeStatus.CLOSED, TradeStatus.SKIPPED}
         ]
 
-    def _from_dict(self, data: dict) -> Trade:
-        legs_payload = data.get("legs") or []
-        if not legs_payload:
+    def _from_dict(self, data: dict[str, object]) -> Trade:
+        legs_payload = data.get("legs")
+        if not legs_payload or not isinstance(legs_payload, list):
             legs_payload = [{
                 "leg": 1,
-                "entry": float(data.get("entry_price", 0.0) or 0.0),
-                "sl": float(data.get("stop_loss", 0.0) or 0.0),
-                "tp": float(data.get("take_profit", 0.0) or 0.0),
-                "lot": float(data.get("lot_size", 0.01) or 0.01),
-                "status": data.get("status", "INTENDED"),
+                "entry": float(str(data.get("entry_price") or 0.0)),
+                "sl": float(str(data.get("stop_loss") or 0.0)),
+                "tp": float(str(data.get("take_profit") or 0.0)),
+                "lot": float(str(data.get("lot_size") or 0.01)),
+                "status": str(data.get("status", "INTENDED")),
             }]
 
-        legs = [TradeLeg(**leg) for leg in legs_payload]
+        legs: list[TradeLeg] = []
+        for leg in legs_payload:  # type: ignore[assignment]
+            leg_dict: dict[str, object] = dict(leg) if isinstance(leg, dict) else {}  # type: ignore[arg-type]
+            # Sanitize and cast leg fields with explicit type conversion and error handling
+            try:
+                leg_num = int(float(str(leg_dict.get("leg", 1))))
+            except (ValueError, TypeError):
+                leg_num = 1
+
+            try:
+                entry = float(str(leg_dict.get("entry", 0.0)))
+            except (ValueError, TypeError):
+                entry = 0.0
+
+            try:
+                sl = float(str(leg_dict.get("sl", 0.0)))
+            except (ValueError, TypeError):
+                sl = 0.0
+
+            try:
+                tp = float(str(leg_dict.get("tp", 0.0)))
+            except (ValueError, TypeError):
+                tp = 0.0
+
+            try:
+                lot = float(str(leg_dict.get("lot", 0.01)))
+            except (ValueError, TypeError):
+                lot = 0.01
+
+            status_str = str(leg_dict.get("status", "INTENDED"))
+            try:
+                leg_status = TradeStatus(status_str)
+            except ValueError:
+                leg_status = TradeStatus.INTENDED
+
+            legs.append(TradeLeg(
+                leg=leg_num,
+                entry=entry,
+                sl=sl,
+                tp=tp,
+                lot=lot,
+                status=leg_status,
+            ))
 
         status_raw = str(data.get("status", "INTENDED"))
         try:
@@ -95,6 +186,15 @@ class TradeLedger:
         except ValueError:
             risk_mode = RiskMode.FIXED
 
+        close_reason = None
+        close_reason_raw = data.get("close_reason")
+        if close_reason_raw is not None:
+            try:
+                from schemas.trade_models import CloseReason
+                close_reason = CloseReason(str(close_reason_raw))
+            except (ValueError, ImportError):
+                close_reason = None
+
         return Trade(
             trade_id=str(data.get("trade_id", "")),
             signal_id=str(data.get("signal_id", "")),
@@ -103,20 +203,23 @@ class TradeLedger:
             direction=str(data.get("direction", "BUY")),
             status=status,
             risk_mode=risk_mode,
-            total_risk_percent=float(data.get("total_risk_percent", 0.1) or 0.1),
-            total_risk_amount=float(data.get("total_risk_amount", 0.01) or 0.01),
+            total_risk_percent=float(str(data.get("total_risk_percent", 0.1) or 0.1)),
+            total_risk_amount=float(str(data.get("total_risk_amount", 0.01) or 0.01)),
             legs=legs,
             created_at=_parse_dt(data.get("created_at")),
             updated_at=_parse_dt(data.get("updated_at")),
-            close_reason=data.get("close_reason"),
-            pnl=float(data["pnl"]) if data.get("pnl") is not None else None,
+            close_reason=close_reason,
+            pnl=float(str(data["pnl"])) if data.get("pnl") is not None else None,
         )
 
 
-def _parse_dt(value: str | None) -> datetime:
+def _parse_dt(value: object | None) -> datetime.datetime:
     if not value:
-        return datetime.now(UTC)
+        return datetime.datetime.now(datetime.UTC)
+    value_str: str = str(value)
+    if not value_str:
+        return datetime.datetime.now(datetime.UTC)
     try:
-        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+        return datetime.datetime.fromisoformat(value_str.replace("Z", "+00:00"))
     except Exception:
-        return datetime.now(UTC)
+        return datetime.datetime.now(datetime.UTC)
