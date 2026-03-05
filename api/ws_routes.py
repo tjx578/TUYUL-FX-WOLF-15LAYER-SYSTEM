@@ -1221,8 +1221,9 @@ async def websocket_signals(websocket: fastapi.WebSocket):
                 message_map = await asyncio.to_thread(_read_pubsub_message, pubsub, 1.0)
 
                 if message_map is not None and message_map.get("type") == "message":
-                    changed = _detect_changed_signals(signatures, symbol_filter)
-                    for signal in changed.values():
+                    latest = _signal_snapshot(symbol_filter)
+                    for key, signal in latest.items():
+                        signatures[key] = _signal_signature(signal)
                         await websocket.send_json(_ws_event("signals.update", {
                             "signal": signal,
                         }))
@@ -1302,8 +1303,9 @@ async def websocket_pipeline(websocket: fastapi.WebSocket):
                 message_map = await asyncio.to_thread(_read_pubsub_message, pubsub, 1.0)
 
                 if message_map is not None and message_map.get("type") == "message":
-                    changed = _detect_changed_pipeline(signatures, pair_filter)
-                    for pair, payload in changed.items():
+                    latest = _pipeline_snapshot(pair_filter)
+                    for pair, payload in latest.items():
+                        signatures[pair] = _verdict_signature(payload)
                         await websocket.send_json(_ws_event("pipeline.update", {
                             "pair": pair,
                             "pipeline": payload,
