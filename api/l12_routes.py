@@ -147,6 +147,32 @@ _LAYER_DEFS: list[dict[str, str]] = [
     {"id": "L15", "name": "Sovereign",   "zone": "POST"},
 ]
 
+_DEFAULT_DAG_EDGES: list[dict[str, str]] = [
+    {"from": "L1", "to": "L4"},
+    {"from": "L2", "to": "L4"},
+    {"from": "L3", "to": "L4"},
+    {"from": "L2", "to": "L5"},
+    {"from": "L4", "to": "L7"},
+    {"from": "L5", "to": "L7"},
+    {"from": "L4", "to": "L8"},
+    {"from": "L4", "to": "L9"},
+    {"from": "L3", "to": "L11"},
+    {"from": "L11", "to": "L6"},
+    {"from": "L6", "to": "L10"},
+    {"from": "L1", "to": "macro"},
+    {"from": "L2", "to": "macro"},
+    {"from": "L3", "to": "macro"},
+    {"from": "L10", "to": "L12"},
+    {"from": "L7", "to": "L12"},
+    {"from": "L8", "to": "L12"},
+    {"from": "L9", "to": "L12"},
+    {"from": "L6", "to": "L12"},
+    {"from": "macro", "to": "L12"},
+    {"from": "L12", "to": "L13"},
+    {"from": "L13", "to": "L15"},
+    {"from": "L15", "to": "L14"},
+]
+
 
 def _build_pipeline_data(pair: str, verdict_data: dict[str, Any]) -> dict[str, Any]:
     """Transform L12 verdict cache data into PipelineData shape for the UI."""
@@ -195,7 +221,7 @@ def _build_pipeline_data(pair: str, verdict_data: dict[str, Any]) -> dict[str, A
     pass_count = int(gates_raw.get("passed", 0))
     total_gates = int(gates_raw.get("total", 9))
 
-    layer_list: list[dict[str, str]] = []
+    layer_list: list[dict[str, Any]] = []
     for ldef in _LAYER_DEFS:
         lid = ldef["id"]
         val, detail = layer_score_map.get(lid, ("—", "—"))
@@ -238,6 +264,61 @@ def _build_pipeline_data(pair: str, verdict_data: dict[str, Any]) -> dict[str, A
             "constitutional_verdict": verdict_str,
         }
 
+    system_raw: dict[str, Any] = verdict_data.get("system", {})
+    layer_timings_raw = execution_map.get("layer_timings_ms", system_raw.get("layer_timings_ms", {}))
+    if isinstance(layer_timings_raw, dict):
+        layer_timings_ms = {
+            str(k): float(v)
+            for k, v in layer_timings_raw.items()
+            if isinstance(k, str)
+        }
+    else:
+        layer_timings_ms = {}
+
+    dag_raw = execution_map.get("dag", system_raw.get("dag", {}))
+    if isinstance(dag_raw, dict):
+        dag_topology = dag_raw.get("topology", [])
+        dag_batches = dag_raw.get("batches", [])
+        dag_edges = dag_raw.get("edges", _DEFAULT_DAG_EDGES)
+    else:
+        dag_topology = []
+        dag_batches = []
+        dag_edges = _DEFAULT_DAG_EDGES
+
+    if not isinstance(dag_topology, list):
+        dag_topology = []
+    if not isinstance(dag_batches, list):
+        dag_batches = []
+    if not isinstance(dag_edges, list):
+        dag_edges = _DEFAULT_DAG_EDGES
+
+    deps_by_target: dict[str, list[str]] = {}
+    for edge in dag_edges:
+        if not isinstance(edge, dict):
+            continue
+        src = str(edge.get("from", "")).strip()
+        dst = str(edge.get("to", "")).strip()
+        if not src or not dst:
+            continue
+        deps_by_target.setdefault(dst, []).append(src)
+
+    for layer in layer_list:
+        lid = layer["id"]
+        timing = layer_timings_ms.get(lid)
+        layer["timingMs"] = round(float(timing), 3) if timing is not None else None
+        layer["deps"] = sorted(set(deps_by_target.get(lid, [])))
+
+    dag_nodes = [
+        {
+            "id": ldef["id"],
+            "name": ldef["name"],
+            "zone": ldef["zone"],
+            "status": next((layer["status"] for layer in layer_list if layer["id"] == ldef["id"]), "pass"),
+            "timingMs": layer_timings_ms.get(ldef["id"]),
+        }
+        for ldef in _LAYER_DEFS
+    ]
+
     return {
         "pair": pair,
         "verdict": verdict_str,
@@ -248,6 +329,16 @@ def _build_pipeline_data(pair: str, verdict_data: dict[str, Any]) -> dict[str, A
         "gates": gate_list,
         "entry": entry,
         "execution_map": execution_map,
+        "profiling": {
+            "layer_timings_ms": layer_timings_ms,
+            "total_latency_ms": latency,
+        },
+        "dag": {
+            "nodes": dag_nodes,
+            "edges": dag_edges,
+            "topology": dag_topology,
+            "batches": dag_batches,
+        },
     }
 
 
