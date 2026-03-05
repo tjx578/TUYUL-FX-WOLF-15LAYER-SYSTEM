@@ -50,12 +50,13 @@ Integrity: TIIₛᵧₘ ≥ 0.93 | FRPC ≥ 0.96 | RR ≥ 1:2.0
 
 from __future__ import annotations
 
+import asyncio
 import concurrent.futures
 import contextlib
 import time
 
 # stdlib imports
-from collections.abc import Callable
+from collections.abc import Callable, Coroutine
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from typing import Any, cast
@@ -332,6 +333,42 @@ class WolfConstitutionalPipeline:
         )
         return result
 
+    @staticmethod
+    def _run_coro_sync(coro: Coroutine[Any, Any, Any]) -> Any:
+        """Run coroutine from sync code, even if caller already has an event loop."""
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:
+            return asyncio.run(coro)
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as loop_pool:
+            return loop_pool.submit(asyncio.run, coro).result()
+
+    @classmethod
+    def _run_dag_batch_calls(
+        cls,
+        dag_batches: list[list[str]],
+        batch_calls: dict[str, Callable[[], dict[str, Any]]],
+    ) -> dict[str, dict[str, Any]]:
+        """Execute callable layers in DAG batches with per-batch parallel gather."""
+
+        async def _run_single(layer_id: str) -> tuple[str, dict[str, Any]]:
+            result = await asyncio.to_thread(batch_calls[layer_id])
+            return layer_id, result
+
+        async def _run_batches() -> dict[str, dict[str, Any]]:
+            output: dict[str, dict[str, Any]] = {}
+            for batch in dag_batches:
+                runnable = [layer_id for layer_id in batch if layer_id in batch_calls]
+                if not runnable:
+                    continue
+                completed = await asyncio.gather(*(_run_single(layer_id) for layer_id in runnable))
+                for layer_id, layer_result in completed:
+                    output[layer_id] = layer_result
+            return output
+
+        return cast(dict[str, dict[str, Any]], cls._run_coro_sync(_run_batches()))
+
     # ══════════════════════════════════════════════════════════════
     #  MAIN EXECUTE -- the single canonical entry point
     # ══════════════════════════════════════════════════════════════
@@ -461,15 +498,7 @@ class WolfConstitutionalPipeline:
                 "L2": lambda: cast(dict[str, Any], _timed_layer_call(l2_analyzer.analyze, "L2", symbol)),
                 "L3": lambda: cast(dict[str, Any], _timed_layer_call(l3_analyzer.analyze, "L3", symbol)),
             }
-            phase1_results: dict[str, dict[str, Any]] = {}
-            with concurrent.futures.ThreadPoolExecutor(max_workers=3) as phase1_pool:
-                futures = {
-                    phase1_pool.submit(run_layer): layer_id
-                    for layer_id, run_layer in phase1_calls.items()
-                }
-                for future in concurrent.futures.as_completed(futures):
-                    layer_id = futures[future]
-                    phase1_results[layer_id] = future.result()
+            phase1_results = self._run_dag_batch_calls(dag_batches, phase1_calls)
 
             l1 = phase1_results["L1"]
             l2 = phase1_results["L2"]
@@ -493,10 +522,17 @@ class WolfConstitutionalPipeline:
             engines_invoked.extend(["L4ScoringEngine", "L5PsychologyAnalyzer"])
 
             assert self._l4 is not None
-            l4: dict[str, Any] = _timed_layer_call(self._l4.score, "L4", l1, l2, l3)
-            layers_executed.append("L4")
             assert self._l5 is not None
-            l5: dict[str, Any] = _timed_layer_call(self._l5.analyze, "L5", symbol, volatility_profile=l2)
+            l4_engine = self._l4
+            l5_engine = self._l5
+            phase2_calls: dict[str, Callable[[], dict[str, Any]]] = {
+                "L4": lambda: cast(dict[str, Any], _timed_layer_call(l4_engine.score, "L4", l1, l2, l3)),
+                "L5": lambda: cast(dict[str, Any], _timed_layer_call(l5_engine.analyze, "L5", symbol, volatility_profile=l2)),
+            }
+            phase2_results = self._run_dag_batch_calls(dag_batches, phase2_calls)
+            l4 = phase2_results["L4"]
+            l5 = phase2_results["L5"]
+            layers_executed.append("L4")
             layers_executed.append("L5")
 
             # ═══════════════════════════════════════════════════════
@@ -579,26 +615,37 @@ class WolfConstitutionalPipeline:
 
             # ── Run L7 Probability Analyzer ──────────────────────────────────
             assert self._l7 is not None
-            engines_invoked.append("L7ProbabilityAnalyzer")
-            l7: dict[str, Any] = _timed_layer_call(
-                self._l7.analyze,
-                "L7",
-                symbol,
-                technical_score=technical_score,
-                trade_returns=trade_returns,
-                prior_wins=prior_wins,
-                prior_losses=prior_losses,
-            )
-            layers_executed.append("L7")
-
             assert self._l8 is not None
-            engines_invoked.append("L8TIIIntegrityAnalyzer")
-            l8: dict[str, Any] = _timed_layer_call(self._l8.analyze, "L8", symbol)
-            layers_executed.append("L8")
             assert self._l9 is not None
-            engines_invoked.append("L9SMCAnalyzer")
-            l9: dict[str, Any] = _timed_layer_call(self._l9.analyze, "L9", symbol)
-            layers_executed.append("L9")
+            l7_engine = self._l7
+            l8_engine = self._l8
+            l9_engine = self._l9
+            engines_invoked.extend([
+                "L7ProbabilityAnalyzer",
+                "L8TIIIntegrityAnalyzer",
+                "L9SMCAnalyzer",
+            ])
+            phase3_calls: dict[str, Callable[[], dict[str, Any]]] = {
+                "L7": lambda: cast(
+                    dict[str, Any],
+                    _timed_layer_call(
+                        l7_engine.analyze,
+                        "L7",
+                        symbol,
+                        technical_score=technical_score,
+                        trade_returns=trade_returns,
+                        prior_wins=prior_wins,
+                        prior_losses=prior_losses,
+                    ),
+                ),
+                "L8": lambda: cast(dict[str, Any], _timed_layer_call(l8_engine.analyze, "L8", symbol)),
+                "L9": lambda: cast(dict[str, Any], _timed_layer_call(l9_engine.analyze, "L9", symbol)),
+            }
+            phase3_results = self._run_dag_batch_calls(dag_batches, phase3_calls)
+            l7 = phase3_results["L7"]
+            l8 = phase3_results["L8"]
+            l9 = phase3_results["L9"]
+            layers_executed.extend(["L7", "L8", "L9"])
 
             logger.info(
                 "[Phase-3] %s L7 complete: validation=%s win=%.1f%% pf=%.2f bayes=%.4f ror=%.4f mc_passed=%s",
@@ -616,7 +663,7 @@ class WolfConstitutionalPipeline:
             # CRITICAL: L11 BEFORE L6 (L6 needs RR from L11)
             # ═══════════════════════════════════════════════════════
             logger.info(f"[Pipeline v8.0] Phase 4: Execution & Decision -- {symbol}")
-            engines_invoked.extend(["L11RRAnalyzer", "L6RiskAnalyzer", "L10PositionAnalyzer"])
+            engines_invoked.extend(["L11RRAnalyzer", "L6RiskAnalyzer", "L10PositionAnalyzer", "MonthlyRegimeAnalyzer"])
 
             trend = l3.get("trend", "NEUTRAL")
             if trend == "BULLISH":
@@ -627,9 +674,23 @@ class WolfConstitutionalPipeline:
                 direction = "HOLD"
 
             l11: dict[str, Any] = {"valid": False, "rr": 0.0}
+            assert self._macro is not None
+            macro_engine = self._macro
+            phase4_batch0_calls: dict[str, Callable[[], dict[str, Any]]] = {
+                "macro": lambda: cast(dict[str, Any], _timed_layer_call(macro_engine.analyze, "macro", symbol)),
+            }
             if direction in ("BUY", "SELL"):
                 assert self._l11 is not None
-                l11 = _timed_layer_call(self._l11.calculate_rr, "L11", symbol, direction)
+                l11_engine = self._l11
+                phase4_batch0_calls["L11"] = lambda: cast(
+                    dict[str, Any],
+                    _timed_layer_call(l11_engine.calculate_rr, "L11", symbol, direction),
+                )
+
+            phase4_batch0_results = self._run_dag_batch_calls(dag_batches, phase4_batch0_calls)
+            macro = phase4_batch0_results["macro"]
+            if "L11" in phase4_batch0_results:
+                l11 = phase4_batch0_results["L11"]
                 layers_executed.append("L11")
             rr_value: float = float(l11.get("rr", 0.0))
 
@@ -703,10 +764,6 @@ class WolfConstitutionalPipeline:
             assert self._l10 is not None
             l10: dict[str, Any] = _timed_layer_call(self._l10.analyze, "L10", risk_ok, smc_confidence)
             layers_executed.append("L10")
-
-            assert self._macro is not None
-            engines_invoked.append("MonthlyRegimeAnalyzer")
-            macro: dict[str, Any] = _timed_layer_call(self._macro.analyze, "macro", symbol)
 
             # ═══════════════════════════════════════════════════════
             # PHASE 2.5 -- ENGINE ENRICHMENT LAYER (9 Facade Engines)
