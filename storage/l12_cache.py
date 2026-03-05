@@ -1,9 +1,7 @@
 import contextlib
 import json
 import time
-from typing import Any, cast
-
-import redis.asyncio as aioredis
+from typing import Any
 
 from infrastructure.redis_client import get_client
 from storage.redis_client import redis_client
@@ -31,7 +29,7 @@ def set_verdict(pair: str, data: dict[str, Any]) -> None:
 
 async def set_verdict_async(pair: str, data: dict[str, Any]) -> None:
     data_with_ts = {**data, "_cached_at": time.time()}
-    client = cast("aioredis.Redis[bytes]", await get_client())
+    client = await get_client()
     await client.set(KEY_PREFIX + pair, json.dumps(data_with_ts), ex=VERDICT_TTL_SEC)
     event_payload = {
         "event": "VERDICT_READY",
@@ -39,7 +37,7 @@ async def set_verdict_async(pair: str, data: dict[str, Any]) -> None:
         "ts": time.time(),
     }
     with contextlib.suppress(Exception):
-        await client.publish(VERDICT_READY_CHANNEL, json.dumps(event_payload))
+        await client.publish(VERDICT_READY_CHANNEL, json.dumps(event_payload))  # type: ignore[arg-type]
 
 
 def get_verdict(pair: str) -> dict[str, Any] | None:
@@ -48,7 +46,7 @@ def get_verdict(pair: str) -> dict[str, Any] | None:
 
 
 async def get_verdict_async(pair: str) -> dict[str, Any] | None:
-    client = cast("aioredis.Redis[bytes]", await get_client())
+    client = await get_client()
     raw = await client.get(KEY_PREFIX + pair)
     return json.loads(raw) if raw else None
 
@@ -73,7 +71,7 @@ def get_all_verdicts() -> list[dict[str, Any]]:
 
 
 async def get_all_verdicts_async() -> list[dict[str, Any]]:
-    client = cast("aioredis.Redis[bytes]", await get_client())
+    client = await get_client()
     all_verdicts = await client.get(KEY_PREFIX + "ALL")
     return json.loads(all_verdicts) if all_verdicts else []
 
