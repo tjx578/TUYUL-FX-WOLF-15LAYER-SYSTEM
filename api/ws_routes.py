@@ -555,8 +555,7 @@ async def publish_pipeline_update(
         verdict = await get_verdict_async(pair_upper)
         if not isinstance(verdict, dict):
             return False
-        verdict_typed: dict[str, Any] = cast(dict[str, Any], verdict)
-        payload_map = _build_pipeline_data(pair_upper, verdict_typed)
+        payload_map = _build_pipeline_data(pair_upper, verdict)
 
     await pipeline_manager.broadcast(
         _ws_event("pipeline.update", {
