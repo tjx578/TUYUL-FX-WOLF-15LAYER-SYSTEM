@@ -35,7 +35,7 @@ from starlette.middleware.base import (
 from starlette.types import ASGIApp
 from typing_extensions import override
 
-from storage.redis_client import redis_client
+from infrastructure.redis_client import get_client
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -219,7 +219,7 @@ def _is_websocket(request: Request) -> bool:
     return upgrade == "websocket"
 
 
-def _redis_window_hit(key: str, ttl_sec: int = 60) -> int | None:
+async def _redis_window_hit(key: str, ttl_sec: int = 60) -> int | None:
     """Atomic Redis INCR + EXPIRE for distributed rate limiting.
 
     Returns the current counter value, or None if Redis is unavailable.
@@ -228,12 +228,8 @@ def _redis_window_hit(key: str, ttl_sec: int = 60) -> int | None:
     if RATE_LIMIT_BACKEND != "redis":
         return None
     try:
-        value = redis_client.client.incr(key)
-
-        # Guard against async Redis clients in this synchronous helper.
-        if hasattr(value, "__await__"):
-            logger.debug("Redis rate limit fallback for key=%s: async response in sync path", key)
-            return None
+        client = await get_client()
+        value = await client.incr(key)
 
         value_int: int
         if isinstance(value, int):
@@ -247,14 +243,14 @@ def _redis_window_hit(key: str, ttl_sec: int = 60) -> int | None:
             return None
 
         if value_int == 1:
-            redis_client.client.expire(key, ttl_sec)
+            await client.expire(key, ttl_sec)
         return value_int
     except Exception as exc:
         logger.debug("Redis rate limit fallback for key=%s: %s", key, exc)
         return None
 
 
-def _check_bucket(
+async def _check_bucket(
     bucket: str,
     client_ip: str,
     limit: int,
@@ -262,7 +258,7 @@ def _check_bucket(
 ) -> tuple[bool, int]:
     slot = int(time.time() // 60)
     key = f"{RATE_LIMIT_REDIS_PREFIX}{bucket}:{client_ip}:{slot}"
-    redis_count = _redis_window_hit(key)
+    redis_count = await _redis_window_hit(key)
     if redis_count is not None:
         return redis_count <= limit, redis_count
 
@@ -348,7 +344,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         bucket = _path_bucket(path, request.method.upper(), _is_websocket(request))
         if bucket is not None:
             bucket_name, bucket_limit, fallback_store = bucket
-            allowed, count = _check_bucket(bucket_name, ip, bucket_limit, fallback_store)
+            allowed, count = await _check_bucket(bucket_name, ip, bucket_limit, fallback_store)
             if not allowed:
                 logger.warning(
                     "Rate limit exceeded: bucket=%s ip=%s (%d/%d per min)",
@@ -369,7 +365,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
         # WebSocket upgrade request
         if _is_websocket(request):
-            allowed, count = _check_bucket("ws", ip, WS_PER_MIN, self.ws_store)
+            allowed, count = await _check_bucket("ws", ip, WS_PER_MIN, self.ws_store)
             if not allowed:
                 logger.warning(
                     f"WS rate limit exceeded: {ip} ({count}/{WS_PER_MIN} per min)"
@@ -386,7 +382,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
         # Regular HTTP request
         limit = REQUESTS_PER_MIN + BURST
-        allowed, count = _check_bucket("http", ip, limit, self.http_store)
+        allowed, count = await _check_bucket("http", ip, limit, self.http_store)
 
         if not allowed:
             logger.warning(

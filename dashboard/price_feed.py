@@ -5,6 +5,7 @@ import time
 from threading import Lock
 from typing import Any
 
+from infrastructure.redis_client import get_client
 from storage.redis_client import redis_client
 
 
@@ -30,6 +31,9 @@ class PriceFeed:
     def get_latest_prices(self) -> dict[str, dict[str, Any]]:
         return self.get_all_prices()
 
+    async def get_latest_prices_async(self) -> dict[str, dict[str, Any]]:
+        return await self.get_all_prices_async()
+
     def get_all_prices(self) -> dict[str, dict[str, Any]]:
         prices: dict[str, dict[str, Any]] = {}
         with self._lock:
@@ -48,5 +52,28 @@ class PriceFeed:
 
         return prices
 
+    async def get_all_prices_async(self) -> dict[str, dict[str, Any]]:
+        prices: dict[str, dict[str, Any]] = {}
+        with self._lock:
+            prices.update(self._prices)
+
+        with contextlib.suppress(Exception):
+            client = await get_client()
+            async for key in client.scan_iter(match="PRICE:*"):
+                symbol = str(key).split(":", 1)[1]
+                payload = await client.hgetall(str(key))
+                if payload:
+                    prices[symbol] = {
+                        "bid": float(payload.get("bid", 0.0) or 0.0),
+                        "ask": float(payload.get("ask", 0.0) or 0.0),
+                        "ts": float(payload.get("ts", 0.0) or 0.0),
+                    }
+
+        return prices
+
     def get_price(self, symbol: str) -> dict[str, Any] | None:
         return self.get_all_prices().get(symbol.upper())
+
+    async def get_price_async(self, symbol: str) -> dict[str, Any] | None:
+        prices = await self.get_all_prices_async()
+        return prices.get(symbol.upper())

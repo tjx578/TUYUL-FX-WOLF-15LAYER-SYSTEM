@@ -6,6 +6,7 @@ from datetime import UTC, datetime
 
 from schemas.trade_models import RiskMode, Trade, TradeLeg, TradeStatus
 
+from infrastructure.redis_client import get_client
 from storage.redis_client import redis_client
 
 
@@ -26,12 +27,40 @@ class TradeLedger:
                 return trade
         return None
 
+    async def get_trade_async(self, trade_id: str) -> Trade | None:
+        if trade_id in self._memory_trades:
+            return self._memory_trades[trade_id]
+
+        with contextlib.suppress(Exception):
+            client = await get_client()
+            raw = await client.get(f"TRADE:{trade_id}")
+            if isinstance(raw, str):
+                trade = self._from_dict(json.loads(raw))
+                self._memory_trades[trade_id] = trade
+                return trade
+        return None
+
     def get_active_trades(self) -> list[Trade]:
         trades: dict[str, Trade] = dict(self._memory_trades)
         with contextlib.suppress(Exception):
             for key in redis_client.client.scan_iter("TRADE:*"):
                 trade_id = str(key).split(":", 1)[1]
                 raw = redis_client.client.get(key)
+                if isinstance(raw, str):
+                    trades[trade_id] = self._from_dict(json.loads(raw))
+
+        return [
+            t for t in sorted(trades.values(), key=lambda x: x.updated_at, reverse=True)
+            if t.status not in {TradeStatus.CANCELLED, TradeStatus.CLOSED, TradeStatus.SKIPPED}
+        ]
+
+    async def get_active_trades_async(self) -> list[Trade]:
+        trades: dict[str, Trade] = dict(self._memory_trades)
+        with contextlib.suppress(Exception):
+            client = await get_client()
+            async for key in client.scan_iter(match="TRADE:*"):
+                trade_id = str(key).split(":", 1)[1]
+                raw = await client.get(str(key))
                 if isinstance(raw, str):
                     trades[trade_id] = self._from_dict(json.loads(raw))
 
