@@ -4,6 +4,8 @@ import threading
 import time
 from collections.abc import Callable
 
+import pytest
+
 from pipeline.wolf_constitutional_pipeline import WolfConstitutionalPipeline
 
 
@@ -97,3 +99,37 @@ def test_pipeline_batch_parallel_matches_sequential_reference() -> None:
     sequential_results = _run_sequential_batches(dag_batches, sequential_calls)
 
     assert parallel_results == sequential_results
+
+
+def test_pipeline_batch_parallel_halts_before_next_batch_on_failure() -> None:
+    dag_batches = WolfConstitutionalPipeline._build_pipeline_dag().execution_batches()  # pyright: ignore[reportPrivateUsage]
+    executed: list[str] = []
+
+    def _ok(layer_id: str) -> Callable[[], dict[str, str]]:
+        def _call() -> dict[str, str]:
+            executed.append(layer_id)
+            return {"layer": layer_id}
+
+        return _call
+
+    def _boom() -> dict[str, str]:
+        executed.append("L4")
+        raise ValueError("synthetic L4 failure")
+
+    batch_calls: dict[str, Callable[[], dict[str, str]]] = {
+        "L1": _ok("L1"),
+        "L2": _ok("L2"),
+        "L3": _ok("L3"),
+        "L4": _boom,
+        # L7 is in a later batch than L4 and must never run once L4 fails.
+        "L7": _ok("L7"),
+    }
+
+    with pytest.raises(RuntimeError, match="DAG_BATCH_FAILED"):
+        WolfConstitutionalPipeline._run_dag_batch_calls(  # pyright: ignore[reportPrivateUsage]
+            dag_batches,
+            batch_calls,
+        )
+
+    assert "L4" in executed
+    assert "L7" not in executed
