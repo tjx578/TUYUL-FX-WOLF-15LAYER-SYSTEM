@@ -17,6 +17,7 @@ from analysis.tick_filter import (
     SpikeFilter,
     TickFilterConfig,
 )
+from analysis.signal_conditioner import SignalConditioner
 from config_loader import CONFIG
 from context.live_context_bus import LiveContextBus
 from ingest.finnhub_ws import FinnhubSymbolMapper, FinnhubWebSocket
@@ -30,6 +31,7 @@ logger = logging.getLogger(__name__)
 
 # ── Tick-filter config (loaded from config/finnhub.yaml) ──────────
 _TICK_CFG: dict[str, Any] = CONFIG.get("finnhub", {}).get("tick_filter", {})
+_SC_CFG: dict[str, Any] = CONFIG.get("finnhub", {}).get("signal_conditioning", {})
 
 # Per-symbol spike rejection thresholds (percentage) — config-driven
 SPIKE_THRESHOLDS: dict[str, float] = {
@@ -62,6 +64,12 @@ _ingest_filter_config = TickFilterConfig(
 )
 _spike_filter = SpikeFilter(_ingest_filter_config)
 _unified_dedup = DedupCache(_ingest_filter_config)
+
+# ── Real-time signal conditioning state (tick-path preprocessor) ──
+_signal_conditioner = SignalConditioner.from_config(_SC_CFG)
+_SC_TICK_WINDOW: int = max(20, int(_SC_CFG.get("realtime_window_ticks", 128)))
+_SC_MIN_PRICES: int = max(5, int(_SC_CFG.get("realtime_min_prices", 20)))
+_symbol_tick_prices: dict[str, deque[float]] = {}
 
 
 # ── Legacy proxy dicts — kept for backward-compatible test access ─
@@ -119,6 +127,30 @@ def _is_duplicate_tick(symbol: str, price: float, exchange_ts: float) -> bool:
     """
     key = f"{symbol}:{price}:{exchange_ts}"
     return _unified_dedup.is_duplicate(key, time.monotonic())
+
+
+def _update_realtime_conditioning(
+    context_bus: LiveContextBus,
+    symbol: str,
+    price: float,
+    ts: float,
+) -> None:
+    """Update per-symbol conditioning from live ticks and publish to context bus."""
+    window = _symbol_tick_prices.setdefault(symbol, deque(maxlen=_SC_TICK_WINDOW))
+    window.append(price)
+
+    if len(window) < _SC_MIN_PRICES:
+        return
+
+    conditioned = _signal_conditioner.condition_prices(list(window))
+    diagnostics = conditioned.diagnostics()
+    diagnostics["source"] = "tick_realtime"
+    diagnostics["timestamp"] = ts
+    context_bus.update_conditioned_returns(
+        symbol=symbol,
+        returns=conditioned.conditioned_returns,
+        diagnostics=diagnostics,
+    )
 
 
 # ── Tick rate metrics ─────────────────────────────────────────────
@@ -331,6 +363,12 @@ def _build_tick_handler(
                     "source": "finnhub_ws",
                 }
                 context_bus.update_tick(normalized_tick)
+                _update_realtime_conditioning(
+                    context_bus=context_bus,
+                    symbol=internal_symbol,
+                    price=tick_price,
+                    ts=tick_ts,
+                )
                 tick_metrics.record(internal_symbol)
 
                 # Wire to CandleBuilder if callback provided

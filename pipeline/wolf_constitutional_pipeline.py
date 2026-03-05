@@ -572,6 +572,8 @@ class WolfConstitutionalPipeline:
             # Fallback: system_metrics pass-through (caller-provided / test).
 
             trade_returns: list[float] | None = None
+            trade_returns_preconditioned = False
+            preconditioning_diag: dict[str, Any] | None = None
             _bus_returns: list[float] | None = cast(
                 list[float] | None,
                 self._context_bus.get_trade_history(  # type: ignore[reportUnknownMemberType]
@@ -592,6 +594,49 @@ class WolfConstitutionalPipeline:
                 _raw = system_metrics.get("trade_returns", None)
                 if isinstance(_raw, (list, tuple)) and len(cast(list[Any], _raw)) > 0:
                     trade_returns = [float(r) for r in cast(list[Any], _raw)]
+
+            # Fallback: conditioned returns produced by realtime tick ingest.
+            if not trade_returns:
+                _cond_returns = cast(
+                    list[float],
+                    self._context_bus.get_conditioned_returns(symbol, count=200),  # type: ignore[reportUnknownMemberType]
+                )
+                if _cond_returns:
+                    trade_returns = _cond_returns
+                    trade_returns_preconditioned = True
+                    preconditioning_diag = cast(
+                        dict[str, Any] | None,
+                        self._context_bus.get_conditioning_meta(symbol),  # type: ignore[reportUnknownMemberType]
+                    )
+                    logger.info(
+                        "[Phase-3] %s Loaded %d conditioned returns via realtime tick path",
+                        symbol,
+                        len(_cond_returns),
+                    )
+
+            # Fallback: derive returns from candle closes and condition them.
+            if not trade_returns:
+                _h1 = cast(list[dict[str, Any]], self._context_bus.get_candles(symbol, "H1"))
+                _m15 = cast(list[dict[str, Any]], self._context_bus.get_candles(symbol, "M15"))
+                _candle_source = "H1" if len(_h1) >= len(_m15) else "M15"
+                _candles = _h1 if _candle_source == "H1" else _m15
+                _prices = [
+                    float(c.get("close"))
+                    for c in _candles
+                    if c.get("close") is not None
+                ]
+                if len(_prices) >= 2:
+                    _conditioned = self._signal_conditioner.condition_prices(_prices[-300:])
+                    trade_returns = _conditioned.conditioned_returns
+                    trade_returns_preconditioned = True
+                    preconditioning_diag = _conditioned.diagnostics()
+                    preconditioning_diag["source"] = f"candle_{_candle_source}"
+                    logger.info(
+                        "[Phase-3] %s Derived %d conditioned returns from %s candle closes",
+                        symbol,
+                        len(trade_returns),
+                        _candle_source,
+                    )
 
             # ── Bayesian prior state ─────────────────────────────────────────
             # Primary: derive from trade archive. Fallback: system_metrics.
@@ -628,8 +673,8 @@ class WolfConstitutionalPipeline:
 
             # ── Run L7 Probability Analyzer ──────────────────────────────────
             l7_trade_returns = trade_returns
-            conditioning_diag: dict[str, Any] | None = None
-            if trade_returns:
+            conditioning_diag: dict[str, Any] | None = preconditioning_diag
+            if trade_returns and not trade_returns_preconditioned:
                 conditioned = self._signal_conditioner.condition_returns(trade_returns)
                 l7_trade_returns = conditioned.conditioned_returns
                 conditioning_diag = conditioned.diagnostics()

@@ -46,8 +46,9 @@ class TestL7ProbabilityAnalyzer:
         assert result["win_probability"] == 0.0
         assert result["profit_factor"] == 0.0
         assert result["validation"] == "FAIL"
-        # Bayesian should still run
-        assert result["bayesian_posterior"] > 0
+        # Fallback is fail-safe: Bayesian posterior is also zeroed.
+        assert result["bayesian_posterior"] == 0.0
+        assert str(result.get("note", "")).startswith("insufficient_data_")
 
     def test_analyze_insufficient_returns(self) -> None:
         analyzer = L7ProbabilityAnalyzer(mc_simulations=100, mc_seed=42)
