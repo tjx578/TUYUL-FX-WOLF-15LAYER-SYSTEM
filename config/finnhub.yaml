@@ -59,6 +59,16 @@ tick_filter:
   staleness_sec: 60.0              # Reset baseline after N seconds of silence
   dedup_window_sec: 0.05           # Reject identical (symbol+price+ts) within window
 
+# ── Signal conditioning (pre-L7 Monte Carlo) ─────────────────────
+signal_conditioning:
+  enabled: true
+  ema_span: 5
+  outlier_mad_scale: 6.0
+  min_samples: 20
+  adaptive_sampling: true
+  high_noise_ratio: 0.65
+  high_noise_stride: 2
+
 news:
   enabled: true
   endpoint: "/calendar/economic"

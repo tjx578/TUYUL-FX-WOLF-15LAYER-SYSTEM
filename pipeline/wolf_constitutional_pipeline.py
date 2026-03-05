@@ -73,6 +73,7 @@ from core.metrics import (
     TICK_TO_VERDICT_LATENCY,
 )
 from core.tracing import layer_span
+from config_loader import CONFIG
 from pipeline.engines import L13ReflectiveEngine, L15MetaSovereigntyEngine
 from pipeline.execution_map import build_execution_map
 from pipeline.phases.assembly import build_l14_json
@@ -155,6 +156,15 @@ class WolfConstitutionalPipeline:
         self._l9 = None
         self._l10 = None
         self._l11 = None
+
+        # Signal conditioning (Phase-3 pre-L7)
+        from analysis.signal_conditioner import SignalConditioner  # noqa: PLC0415
+
+        _cond_cfg = cast(
+            dict[str, Any],
+            CONFIG.get("finnhub", {}).get("signal_conditioning", {}),
+        )
+        self._signal_conditioner = SignalConditioner.from_config(_cond_cfg)
 
         # Macro analyzers
         self._macro = None
@@ -250,7 +260,7 @@ class WolfConstitutionalPipeline:
         """Build canonical layer DAG for execution planning and UI introspection."""
         dag = DagEngine()
         for lid in [
-            "L1", "L2", "L3", "L4", "L5", "L7", "L8", "L9",
+            "L1", "L2", "L3", "L4", "L5", "SC", "L7", "L8", "L9",
             "L11", "L6", "L10", "macro", "L12", "L13", "L14", "L15",
         ]:
             dag.add_node(lid)
@@ -261,6 +271,9 @@ class WolfConstitutionalPipeline:
         dag.add_edge("L2", "L5")
         dag.add_edge("L4", "L7")
         dag.add_edge("L5", "L7")
+        dag.add_edge("L4", "SC")
+        dag.add_edge("L5", "SC")
+        dag.add_edge("SC", "L7")
         dag.add_edge("L4", "L8")
         dag.add_edge("L4", "L9")
         dag.add_edge("L3", "L11")
@@ -614,6 +627,22 @@ class WolfConstitutionalPipeline:
                     float(max(0.0, min(1.0, _bias)))
 
             # ── Run L7 Probability Analyzer ──────────────────────────────────
+            l7_trade_returns = trade_returns
+            conditioning_diag: dict[str, Any] | None = None
+            if trade_returns:
+                conditioned = self._signal_conditioner.condition_returns(trade_returns)
+                l7_trade_returns = conditioned.conditioned_returns
+                conditioning_diag = conditioned.diagnostics()
+                logger.info(
+                    "[Phase-3] %s SignalConditioner: in=%d out=%d noise=%.4f quality=%.4f stride=%d",
+                    symbol,
+                    conditioning_diag["samples_in"],
+                    conditioning_diag["samples_out"],
+                    conditioning_diag["noise_ratio"],
+                    conditioning_diag["microstructure_quality_score"],
+                    conditioning_diag["sampling_stride"],
+                )
+
             assert self._l7 is not None
             assert self._l8 is not None
             assert self._l9 is not None
@@ -633,7 +662,7 @@ class WolfConstitutionalPipeline:
                         "L7",
                         symbol,
                         technical_score=technical_score,
-                        trade_returns=trade_returns,
+                        trade_returns=l7_trade_returns,
                         prior_wins=prior_wins,
                         prior_losses=prior_losses,
                     ),
@@ -643,6 +672,8 @@ class WolfConstitutionalPipeline:
             }
             phase3_results = self._run_dag_batch_calls(dag_batches, phase3_calls)
             l7 = phase3_results["L7"]
+            if conditioning_diag is not None:
+                l7["signal_conditioning"] = conditioning_diag
             l8 = phase3_results["L8"]
             l9 = phase3_results["L9"]
             layers_executed.extend(["L7", "L8", "L9"])
