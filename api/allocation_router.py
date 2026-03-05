@@ -38,6 +38,7 @@ from infrastructure.redis_client import get_client
 from infrastructure.tracing import inject_trace_context, setup_tracer
 from journal.trade_journal_service import trade_journal_automation_service
 from risk.kill_switch import GlobalKillSwitch
+from storage.trade_write_through import persist_trade_snapshot
 
 logger = logging.getLogger(__name__)
 _allocation_router_tracer = setup_tracer("wolf-api")
@@ -164,6 +165,20 @@ class CloseTradeRequest(BaseModel):
     pnl: float | None = None
 
 
+class TradeLifecycleEventRequest(BaseModel):
+    trade_id: str
+    event_type: str = Field(
+        ...,
+        pattern="^(ORDER_PLACED|ORDER_FILLED|ORDER_CANCELLED|ORDER_EXPIRED|SYSTEM_VIOLATION)$",
+    )
+    source: str = Field(default="EA", pattern="^(EA|MANUAL)$")
+    order_id: str | None = None
+    fill_price: float | None = None
+    pnl: float | None = None
+    reason: str | None = None
+    metadata: dict[str, Any] | None = None
+
+
 class RiskCalculateRequest(BaseModel):
     account_id: str
     pair: str
@@ -238,6 +253,21 @@ async def _idempotency_set(key: str, response: dict[str, Any]) -> None:
         json.dumps(response),
         ex=IDEMPOTENCY_TTL_SEC,
     )
+
+
+async def _persist_trade_write_through(
+    trade: dict[str, Any],
+    *,
+    event_type: str | None = None,
+    event_payload: dict[str, Any] | None = None,
+) -> None:
+    """Best-effort PostgreSQL write-through for trade lifecycle changes."""
+    with contextlib.suppress(Exception):
+        await persist_trade_snapshot(
+            trade,
+            event_type=event_type,
+            event_payload=event_payload,
+        )
 
 
 # ─── Helper: RiskEngine signal/account construction ─────────────────────────
@@ -449,6 +479,11 @@ async def _confirm_trade_internal(trade_id: str, idempotency_key: str | None) ->
         await _check_stale_data(trade_data["pair"])
 
     trade = await _atomic_transition_intended_to_pending(trade_id)
+    await _persist_trade_write_through(
+        trade,
+        event_type="ORDER_PLACED",
+        event_payload={"source": "MANUAL"},
+    )
 
     _journal_service.on_trade_confirmed(trade)
     with contextlib.suppress(Exception):
@@ -554,6 +589,11 @@ async def take_signal(req: TakeSignalRequest) -> dict[str, Any]:
 
     _trade_ledger[trade_id] = trade
     await _redis_set(f"TRADE:{trade_id}", json.dumps(trade), ex=86400)
+    await _persist_trade_write_through(
+        trade,
+        event_type="TRADE_INTENDED",
+        event_payload={"source": "MANUAL"},
+    )
 
     # Freeze + publish read-only signal contract
     signal_payload = {
@@ -728,6 +768,16 @@ async def close_trade(req: CloseTradeRequest) -> dict[str, Any]:
 
     _trade_ledger[req.trade_id] = trade
     await _redis_set(f"TRADE:{req.trade_id}", json.dumps(trade), ex=604800)
+    await _persist_trade_write_through(
+        trade,
+        event_type="TRADE_CLOSED",
+        event_payload={
+            "source": "MANUAL",
+            "reason": req.reason,
+            "close_price": req.close_price,
+            "pnl": req.pnl,
+        },
+    )
     _journal_service.on_trade_closed(trade, req.reason or "MANUAL_CLOSE")
     with contextlib.suppress(Exception):
         from api.ws_routes import publish_live_update  # noqa: PLC0415
@@ -738,6 +788,78 @@ async def close_trade(req: CloseTradeRequest) -> dict[str, Any]:
         "trade_id": req.trade_id,
         "status": "CLOSED",
         "pnl": req.pnl or 0.0,
+    }
+
+
+@write_router.post("/trades/events")
+async def record_trade_lifecycle_event(req: TradeLifecycleEventRequest) -> dict[str, Any]:
+    """Record broker lifecycle event and persist trade state to Redis + PostgreSQL."""
+    import json
+
+    trade = _trade_ledger.get(req.trade_id)
+    if not trade:
+        raw = await _redis_get(f"TRADE:{req.trade_id}")
+        if not raw:
+            raise HTTPException(status_code=404, detail=f"Trade {req.trade_id} not found")
+        trade = json.loads(raw)
+
+    now = datetime.now(UTC).isoformat()
+    event_type = req.event_type
+    reason = req.reason or event_type
+
+    if event_type == "ORDER_PLACED":
+        trade["status"] = "PENDING"
+    elif event_type == "ORDER_FILLED":
+        trade["status"] = "OPEN"
+    elif event_type in {"ORDER_CANCELLED", "ORDER_EXPIRED"}:
+        trade["status"] = "CANCELLED"
+        trade["close_reason"] = reason
+        trade["closed_at"] = now
+    elif event_type == "SYSTEM_VIOLATION":
+        trade["status"] = "ABORTED"
+        trade["close_reason"] = reason
+        trade["closed_at"] = now
+
+    if req.fill_price is not None:
+        trade["fill_price"] = req.fill_price
+    if req.pnl is not None:
+        trade["pnl"] = req.pnl
+
+    trade["updated_at"] = now
+    _trade_ledger[req.trade_id] = trade
+    await _redis_set(f"TRADE:{req.trade_id}", json.dumps(trade), ex=604800)
+
+    await _persist_trade_write_through(
+        trade,
+        event_type=event_type,
+        event_payload={
+            "source": req.source,
+            "order_id": req.order_id,
+            "reason": req.reason,
+            "fill_price": req.fill_price,
+            "pnl": req.pnl,
+            "metadata": req.metadata or {},
+        },
+    )
+
+    if event_type in {"ORDER_CANCELLED", "ORDER_EXPIRED", "SYSTEM_VIOLATION"}:
+        _journal_service.on_trade_closed(trade, reason)
+
+    with contextlib.suppress(Exception):
+        from api.ws_routes import publish_live_update  # noqa: PLC0415
+
+        await publish_live_update("trade_lifecycle", cast(dict[str, object], {
+            "trade_id": req.trade_id,
+            "event_type": event_type,
+            "status": trade.get("status"),
+            "source": req.source,
+        }))
+
+    return {
+        "trade_id": req.trade_id,
+        "event_type": event_type,
+        "status": trade.get("status"),
+        "persisted": True,
     }
 
 

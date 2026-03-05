@@ -15,6 +15,7 @@ CRITICAL_PATH_PARTS = (
     "/close-all",
     "/ea/restart",
     "/ea/safe-mode",
+    "/config/profile/lock",
     "/config/profiles/lock",
 )
 SAFE_MODE_CLOSE_ALLOWLIST = (
@@ -109,7 +110,7 @@ def _normalize_scopes(payload: dict[str, Any]) -> frozenset[str]:
     if isinstance(raw_scopes, str):
         scopes.update(s for s in raw_scopes.replace(",", " ").split() if s)
     elif isinstance(raw_scopes, list):
-        scopes.update(str(item).strip() for item in raw_scopes if str(item).strip())
+        scopes.update({str(item).strip() for item in raw_scopes if str(item).strip()}) # pyright: ignore[reportUnknownVariableType, reportUnknownArgumentType]
 
     return frozenset(scopes)
 
@@ -155,9 +156,7 @@ def _admin_only_path(path: str) -> bool:
         return True
     if "/news-lock/" in lowered:
         return True
-    if "/redis/" in lowered:
-        return True
-    return False
+    return "/redis/" in lowered
 
 
 def _scope_allowed(context: GovernanceContext, required_scope: str) -> bool:
@@ -197,7 +196,7 @@ async def enforce_write_policy(
         raise HTTPException(status_code=401, detail="Missing Authorization header for write action")
     _, token = parsed
     # Mandatory canonical token verification on every write endpoint.
-    verify_token(authorization)
+    verify_token(authorization) # pyright: ignore[reportArgumentType]
 
     context = _resolve_context(token)
 
