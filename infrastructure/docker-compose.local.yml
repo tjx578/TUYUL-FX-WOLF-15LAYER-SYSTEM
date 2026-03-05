@@ -7,7 +7,7 @@ services:
       dockerfile: services/api/Dockerfile
     environment:
       REDIS_URL: redis://redis:6379/0
-      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/wolf15
+      DATABASE_URL: ${DATABASE_URL}
       PORT: 8000
     ports:
       - "8000:8000"
