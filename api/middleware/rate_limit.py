@@ -52,8 +52,25 @@ def _env_bool(key: str, default: bool) -> bool:
     return os.getenv(key, str(default)).lower() in ("true", "1", "yes")
 
 
+def _default_rate_limit_backend() -> str:
+    explicit = os.getenv("RATE_LIMIT_BACKEND")
+    if explicit:
+        return explicit.strip().lower()
+
+    env = os.getenv("ENV", os.getenv("APP_ENV", "")).strip().lower()
+    if env in {"prod", "production"}:
+        return "redis"
+    return "memory"
+
+
 RATE_LIMIT_ENABLED = _env_bool("RATE_LIMIT_ENABLED", True)
-RATE_LIMIT_BACKEND = os.getenv("RATE_LIMIT_BACKEND", "memory").strip().lower()  # memory | redis
+RATE_LIMIT_BACKEND = _default_rate_limit_backend()  # memory | redis
+if RATE_LIMIT_BACKEND not in {"memory", "redis"}:
+    logger.warning(
+        "Invalid RATE_LIMIT_BACKEND=%s; falling back to memory",
+        RATE_LIMIT_BACKEND,
+    )
+    RATE_LIMIT_BACKEND = "memory"
 REQUESTS_PER_MIN = _env_int("RATE_LIMIT_REQUESTS_PER_MIN", 120)
 BURST = _env_int("RATE_LIMIT_BURST", 20)
 WS_PER_MIN = _env_int("RATE_LIMIT_WS_PER_MIN", 10)

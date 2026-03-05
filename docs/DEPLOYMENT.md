@@ -79,7 +79,7 @@ DASHBOARD_API_KEY=<optional service-to-service key>
 CORS_ORIGINS=https://dashboard.yourdomain.com
 
 # Redis
-REDIS_URL=redis://...
+REDIS_URL=rediss://:<password>@...
 RATE_LIMIT_BACKEND=redis          # use Redis for distributed rate limiting
 
 # Postgres
@@ -140,6 +140,7 @@ Active in production via `RateLimitMiddleware` (see `api/middleware/rate_limit.p
 All 429 responses include `Retry-After: 60` header.
 
 Set `RATE_LIMIT_BACKEND=redis` for multi-instance deployments (shared counter).
+Production Redis must use AUTH + TLS (`rediss://`).
 
 ---
 

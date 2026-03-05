@@ -18,6 +18,45 @@ from urllib.parse import quote_plus, urlsplit, urlunsplit
 _DEFAULT_REDIS_URL = "redis://localhost:6379/0"
 
 
+def _is_true(value: str | None) -> bool:
+    return (value or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _is_production_env() -> bool:
+    env = os.environ.get("ENV", os.environ.get("APP_ENV", "")).strip().lower()
+    return env in {"prod", "production"}
+
+
+def _is_local_redis_host(hostname: str | None) -> bool:
+    return (hostname or "").strip().lower() in {"localhost", "127.0.0.1", "::1"}
+
+
+def _validate_redis_security(url: str) -> str:
+    """Enforce AUTH + TLS for non-local Redis in production.
+
+    Set REDIS_ALLOW_INSECURE_IN_PROD=true only for temporary break-glass
+    situations; default behavior is fail-loud for insecure production URLs.
+    """
+    if not _is_production_env():
+        return url
+    if _is_true(os.environ.get("REDIS_ALLOW_INSECURE_IN_PROD")):
+        return url
+
+    parts = urlsplit(url)
+    if _is_local_redis_host(parts.hostname):
+        return url
+
+    if not parts.password:
+        raise RuntimeError(
+            "In production, Redis URL must include AUTH credentials (password)."
+        )
+    if parts.scheme != "rediss":
+        raise RuntimeError(
+            "In production, Redis URL must use TLS (rediss:// scheme)."
+        )
+    return url
+
+
 def _build_url_from_railway_vars() -> str | None:
     """Attempt to build a Redis URL from Railway-style env vars.
 
@@ -57,17 +96,17 @@ def get_redis_url() -> str:
     """
     url = os.environ.get("REDIS_URL")
     if url:
-        return url
+        return _validate_redis_security(url)
 
     private_url = os.environ.get("REDIS_PRIVATE_URL")
     if private_url:
-        return private_url
+        return _validate_redis_security(private_url)
 
     railway_url = _build_url_from_railway_vars()
     if railway_url:
-        return railway_url
+        return _validate_redis_security(railway_url)
 
-    return _DEFAULT_REDIS_URL
+    return _validate_redis_security(_DEFAULT_REDIS_URL)
 
 
 def get_safe_redis_url() -> str:
