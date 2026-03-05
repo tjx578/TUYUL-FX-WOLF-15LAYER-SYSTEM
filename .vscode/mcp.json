@@ -1,14 +1,20 @@
 {
-  "servers": {
-    "github": {
-      "command": "npx",
-      "args": [
-        "-y",
-        "@modelcontextprotocol/server-github"
-      ],
-      "env": {
-        "GITHUB_PERSONAL_ACCESS_TOKEN": "${input:token}"
-      }
-    }
-  }
+	"servers": {
+		"github": {
+			"command": "npx",
+			"args": [
+				"-y",
+				"@modelcontextprotocol/server-github"
+			],
+			"env": {
+				"GITHUB_PERSONAL_ACCESS_TOKEN": "${input:token}"
+			},
+			"type": "stdio"
+		},
+		"my-mcp-server-bb6593ac": {
+			"url": "http://localhost:3000",
+			"type": "http"
+		}
+	},
+	"inputs": []
 }
