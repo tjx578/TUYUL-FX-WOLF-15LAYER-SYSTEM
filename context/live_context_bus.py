@@ -134,6 +134,27 @@ class LiveContextBus:
         meta = self._conditioning_meta.get(symbol)
         return dict(meta) if meta is not None else None
 
+    def snapshot(self) -> dict[str, Any]:
+        """Return a shallow-immutable view of the live context state.
+
+        Intended for read-only API consumers and diagnostics.
+        """
+        return {
+            "candles": {
+                key: [dict(c) for c in candles]
+                for key, candles in self._candle_history.items()
+            },
+            "ticks": {symbol: dict(tick) for symbol, tick in self._ticks.items()},
+            "conditioned_returns": {
+                symbol: list(values)
+                for symbol, values in self._conditioned_returns.items()
+            },
+            "conditioning_meta": {
+                symbol: dict(meta)
+                for symbol, meta in self._conditioning_meta.items()
+            },
+        }
+
     # ------------------------------------------------------------------
     # Read API
     # ------------------------------------------------------------------

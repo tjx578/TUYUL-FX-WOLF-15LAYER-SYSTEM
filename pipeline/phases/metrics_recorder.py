@@ -7,16 +7,31 @@ Pure observability — no execution side-effects.
 
 from __future__ import annotations
 
-from typing import Any
+import contextlib
+from typing import Any, cast
 
 from core.metrics import (
     GATE_RESULT,
     PIPELINE_DURATION,
     PIPELINE_ERROR,
     PIPELINE_RUNS,
+    RQI_SCORE,
+    SIGNAL_CONDITIONED_SAMPLES,
+    SIGNAL_NOISE_RATIO,
+    SIGNAL_QUALITY_SCORE,
     SIGNAL_TOTAL,
     VERDICT_TOTAL,
 )
+
+
+def _to_float(value: Any, default: float = 0.0) -> float:
+    """Safely convert dynamic payload values to float for metric emission."""
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, str):
+        with contextlib.suppress(ValueError):
+            return float(value)
+    return default
 
 
 def record_pipeline_metrics(symbol: str, result: dict[str, Any]) -> None:
@@ -57,3 +72,29 @@ def record_pipeline_metrics(symbol: str, result: dict[str, Any]) -> None:
     for err in result.get("errors", []):
         code = "FATAL_ERROR" if err.startswith("FATAL_ERROR") else err
         PIPELINE_ERROR.labels(error_code=code).inc()
+
+    # Signal conditioning observability (if available)
+    conditioning = (
+        result.get("synthesis", {})
+        .get("system", {})
+        .get("signal_conditioning", {})
+    )
+    if isinstance(conditioning, dict) and conditioning:
+        conditioning_data = cast(dict[str, Any], conditioning)
+        SIGNAL_CONDITIONED_SAMPLES.labels(symbol=symbol).set(
+            _to_float(conditioning_data.get("samples_out", 0.0))
+        )
+        SIGNAL_NOISE_RATIO.labels(symbol=symbol).set(
+            _to_float(conditioning_data.get("noise_ratio", 0.0))
+        )
+        SIGNAL_QUALITY_SCORE.labels(symbol=symbol).set(
+            _to_float(conditioning_data.get("microstructure_quality_score", 0.0))
+        )
+
+    rqi = (
+        result.get("synthesis", {})
+        .get("system", {})
+        .get("rqi")
+    )
+    if rqi is not None:
+        RQI_SCORE.labels(symbol=symbol).set(_to_float(rqi, 0.0))

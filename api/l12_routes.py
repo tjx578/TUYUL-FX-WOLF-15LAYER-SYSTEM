@@ -80,8 +80,8 @@ def fetch_all_verdicts_alias() -> dict[str, Any]:
 @router.get("/api/v1/context", dependencies=[Depends(verify_token)])
 def fetch_context() -> dict[str, Any]:
     """Get live context snapshot."""
-    context_bus = LiveContextBus()
-    snapshot: dict[str, Any] = cast(dict[str, Any], context_bus.snapshot())
+    context_bus = cast(_SnapshotProvider, LiveContextBus())
+    snapshot = context_bus.snapshot()
 
     # Add timestamp info
     current_time = now_utc()
@@ -253,7 +253,7 @@ def _build_pipeline_data(pair: str, verdict_data: dict[str, Any]) -> dict[str, A
 
     execution_map_raw = verdict_data.get("execution_map")
     if isinstance(execution_map_raw, dict):
-        execution_map = execution_map_raw
+        execution_map: dict[str, Any] = cast(dict[str, Any], execution_map_raw)
     else:
         execution_map = {
             "pair": pair,
@@ -267,19 +267,21 @@ def _build_pipeline_data(pair: str, verdict_data: dict[str, Any]) -> dict[str, A
     system_raw: dict[str, Any] = verdict_data.get("system", {})
     layer_timings_raw = execution_map.get("layer_timings_ms", system_raw.get("layer_timings_ms", {}))
     if isinstance(layer_timings_raw, dict):
-        layer_timings_ms = {
-            str(k): float(v)
-            for k, v in layer_timings_raw.items()
-            if isinstance(k, str)
-        }
+        layer_timings_dict = cast(dict[str, Any], layer_timings_raw)
+        layer_timings_ms: dict[str, float] = {}
+        for k, v in layer_timings_dict.items():
+            if isinstance(v, (int, float, str)):
+                with contextlib.suppress(TypeError, ValueError):
+                    layer_timings_ms[k] = float(v)
     else:
-        layer_timings_ms = {}
+        layer_timings_ms: dict[str, float] = {}
 
     dag_raw = execution_map.get("dag", system_raw.get("dag", {}))
     if isinstance(dag_raw, dict):
-        dag_topology = dag_raw.get("topology", [])
-        dag_batches = dag_raw.get("batches", [])
-        dag_edges = dag_raw.get("edges", _DEFAULT_DAG_EDGES)
+        dag_payload = cast(dict[str, Any], dag_raw)
+        dag_topology = dag_payload.get("topology", [])
+        dag_batches = dag_payload.get("batches", [])
+        dag_edges = dag_payload.get("edges", _DEFAULT_DAG_EDGES)
     else:
         dag_topology = []
         dag_batches = []
@@ -292,10 +294,15 @@ def _build_pipeline_data(pair: str, verdict_data: dict[str, Any]) -> dict[str, A
     if not isinstance(dag_edges, list):
         dag_edges = _DEFAULT_DAG_EDGES
 
+    dag_edges_list = cast(list[Any], dag_edges)
+    dag_edges_typed: list[dict[str, Any]] = [
+        cast(dict[str, Any], edge)
+        for edge in dag_edges_list
+        if isinstance(edge, dict)
+    ]
+
     deps_by_target: dict[str, list[str]] = {}
-    for edge in dag_edges:
-        if not isinstance(edge, dict):
-            continue
+    for edge in dag_edges_typed:
         src = str(edge.get("from", "")).strip()
         dst = str(edge.get("to", "")).strip()
         if not src or not dst:
@@ -332,6 +339,9 @@ def _build_pipeline_data(pair: str, verdict_data: dict[str, Any]) -> dict[str, A
         "profiling": {
             "layer_timings_ms": layer_timings_ms,
             "total_latency_ms": latency,
+        },
+        "observability": {
+            "signal_conditioning": verdict_data.get("system", {}).get("signal_conditioning", {}),
         },
         "dag": {
             "nodes": dag_nodes,

@@ -10,8 +10,9 @@ Validates:
 
 from __future__ import annotations
 
+import math
 import threading
-
+from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
@@ -22,6 +23,10 @@ from core.metrics import (
     PIPELINE_DURATION,
     PIPELINE_ERROR,
     PIPELINE_RUNS,
+    RQI_SCORE,
+    SIGNAL_CONDITIONED_SAMPLES,
+    SIGNAL_NOISE_RATIO,
+    SIGNAL_QUALITY_SCORE,
     SIGNAL_TOTAL,
     VERDICT_TOTAL,
     WARMUP_BLOCKED,
@@ -38,9 +43,17 @@ from core.metrics import (
 
 def _fresh_registry() -> MetricsRegistry:
     """Reset the MetricsRegistry singleton and return a fresh instance."""
-    MetricsRegistry._instance = None
+    MetricsRegistry.reset_singleton()
     reg = MetricsRegistry()
     return reg
+
+
+def _pipeline_early_exit(pipe: Any, symbol: str, errors: list[str], latency_ms: float) -> None:
+    pipe._early_exit(symbol, errors, latency_ms)
+
+
+def _set_pipeline_context_bus(pipe: Any, bus: Any) -> None:
+    pipe._context_bus = bus
 
 
 # ===========================================================================
@@ -101,10 +114,8 @@ class TestGauge:
     def test_inc_dec(self):
         g = Gauge("test_gauge_incdec", "Inc/dec gauge")
         g.set(10)
-        child = g._no_label
-        assert child is not None, "_no_label should not be None for a labelless Gauge"
-        child.inc(5)
-        child.dec(3)
+        g.inc(5)
+        g.dec(3)
         assert g.collect()[0][2] == 12.0
 
     def test_labelled_gauge(self):
@@ -113,8 +124,8 @@ class TestGauge:
         g.labels(symbol="XAUUSD").set(0.5)
         samples = g.collect()
         values = {s[1]["symbol"]: s[2] for s in samples}
-        assert values["EURUSD"] == pytest.approx(2.3)
-        assert values["XAUUSD"] == pytest.approx(0.5)
+        assert math.isclose(values["EURUSD"], 2.3, rel_tol=1e-9, abs_tol=1e-12)
+        assert math.isclose(values["XAUUSD"], 0.5, rel_tol=1e-9, abs_tol=1e-12)
 
 
 # ===========================================================================
@@ -145,7 +156,7 @@ class TestHistogram:
         assert bucket_map["+Inf"] == 4
 
         sum_samples = [s for s in samples if s[0].endswith("_sum")]
-        assert sum_samples[0][2] == pytest.approx(0.05 + 0.3 + 0.8 + 2.0)
+        assert math.isclose(sum_samples[0][2], 0.05 + 0.3 + 0.8 + 2.0, rel_tol=1e-9, abs_tol=1e-12)
 
         count_samples = [s for s in samples if s[0].endswith("_count")]
         assert count_samples[0][2] == 4
@@ -172,7 +183,7 @@ class TestMetricsRegistry:
         self.registry = _fresh_registry()
 
     def teardown_method(self):
-        MetricsRegistry._instance = None
+        MetricsRegistry.reset_singleton()
 
     def test_singleton(self):
         r2 = MetricsRegistry()
@@ -270,6 +281,18 @@ class TestPreRegisteredMetrics:
         assert WARMUP_BLOCKED is not None
         assert WARMUP_BLOCKED.name == "wolf_warmup_blocked_total"
 
+    def test_signal_conditioning_gauges_exist(self):
+        assert SIGNAL_CONDITIONED_SAMPLES is not None
+        assert SIGNAL_CONDITIONED_SAMPLES.name == "wolf_signal_conditioned_samples"
+        assert SIGNAL_NOISE_RATIO is not None
+        assert SIGNAL_NOISE_RATIO.name == "wolf_signal_noise_ratio"
+        assert SIGNAL_QUALITY_SCORE is not None
+        assert SIGNAL_QUALITY_SCORE.name == "wolf_signal_quality_score"
+
+    def test_rqi_gauge_exists(self):
+        assert RQI_SCORE is not None
+        assert RQI_SCORE.name == "wolf_reflex_rqi_score"
+
 
 # ===========================================================================
 # Pipeline _record_metrics integration
@@ -283,7 +306,7 @@ class TestPipelineRecordMetrics:
             WolfConstitutionalPipeline,
         )
         pipe = WolfConstitutionalPipeline()
-        pipe._ensure_analyzers = MagicMock()
+        pipe.skip_analyzers()
         return pipe
 
     def test_early_exit_records_metrics(self):
@@ -294,7 +317,7 @@ class TestPipelineRecordMetrics:
         runs_before = PIPELINE_RUNS.labels(symbol="TEST_SYM").value
         err_before = PIPELINE_ERROR.labels(error_code="L1_CONTEXT_INVALID").value
 
-        pipe._early_exit("TEST_SYM", ["L1_CONTEXT_INVALID"], 42.0)
+        _pipeline_early_exit(pipe, "TEST_SYM", ["L1_CONTEXT_INVALID"], 42.0)
 
         # Verify metrics were incremented
         assert PIPELINE_RUNS.labels(symbol="TEST_SYM").value == runs_before + 1
@@ -309,7 +332,7 @@ class TestPipelineRecordMetrics:
             "ready": False,
             "bars": {"M15": 0}, "required": {"M15": 20}, "missing": {"M15": 20},
         }
-        pipe._context_bus = mock_bus
+        _set_pipeline_context_bus(pipe, mock_bus)
 
         before = WARMUP_BLOCKED.labels(symbol="WARMUP_SYM").value
         pipe.execute("WARMUP_SYM")
@@ -321,7 +344,7 @@ class TestPipelineRecordMetrics:
         for i in range(1, 10):
             gate = f"gate_{i}_{'tii' if i == 1 else 'x'}"
             # We'll check after
-        pipe._early_exit("GATE_TEST", ["TEST_ERR"], 10.0)
+        _pipeline_early_exit(pipe, "GATE_TEST", ["TEST_ERR"], 10.0)
 
         # All 9 gates should have a FAIL increment
         gate_names = [
@@ -339,7 +362,7 @@ class TestPipelineRecordMetrics:
         )
 
         # Directly test _record_metrics with a fake result
-        fake_result = {
+        fake_result: dict[str, Any] = {
             "latency_ms": 100.0,
             "l12_verdict": {
                 "verdict": "EXECUTE_BUY",
@@ -354,8 +377,70 @@ class TestPipelineRecordMetrics:
             "errors": [],
         }
         before = SIGNAL_TOTAL.labels(symbol="SIG_TEST", direction="BUY").value
-        WolfConstitutionalPipeline._record_metrics("SIG_TEST", fake_result)
+        WolfConstitutionalPipeline.record_metrics("SIG_TEST", fake_result)
         assert SIGNAL_TOTAL.labels(symbol="SIG_TEST", direction="BUY").value == before + 1
+
+    def test_signal_conditioning_gauges_recorded(self):
+        """Signal conditioning diagnostics in synthesis.system update gauges."""
+        from pipeline.wolf_constitutional_pipeline import (  # noqa: PLC0415
+            WolfConstitutionalPipeline,
+        )
+
+        fake_result: dict[str, Any] = {
+            "latency_ms": 50.0,
+            "l12_verdict": {"verdict": "HOLD", "gates_v74": {}},
+            "errors": [],
+            "synthesis": {
+                "system": {
+                    "signal_conditioning": {
+                        "samples_out": 77,
+                        "noise_ratio": 0.33,
+                        "microstructure_quality_score": 0.67,
+                    }
+                }
+            },
+        }
+
+        WolfConstitutionalPipeline.record_metrics("COND_TEST", fake_result)
+
+        assert SIGNAL_CONDITIONED_SAMPLES.labels(symbol="COND_TEST").value == 77.0
+        assert math.isclose(
+            SIGNAL_NOISE_RATIO.labels(symbol="COND_TEST").value,
+            0.33,
+            rel_tol=1e-9,
+            abs_tol=1e-12,
+        )
+        assert math.isclose(
+            SIGNAL_QUALITY_SCORE.labels(symbol="COND_TEST").value,
+            0.67,
+            rel_tol=1e-9,
+            abs_tol=1e-12,
+        )
+
+    def test_rqi_gauge_recorded(self):
+        """RQI score in synthesis.system should update the per-symbol gauge."""
+        from pipeline.wolf_constitutional_pipeline import (  # noqa: PLC0415
+            WolfConstitutionalPipeline,
+        )
+
+        fake_result: dict[str, Any] = {
+            "latency_ms": 25.0,
+            "l12_verdict": {"verdict": "HOLD", "gates_v74": {}},
+            "errors": [],
+            "synthesis": {
+                "system": {
+                    "rqi": 0.8125,
+                }
+            },
+        }
+
+        WolfConstitutionalPipeline.record_metrics("RQI_TEST", fake_result)
+        assert math.isclose(
+            RQI_SCORE.labels(symbol="RQI_TEST").value,
+            0.8125,
+            rel_tol=1e-9,
+            abs_tol=1e-12,
+        )
 
 
 # ===========================================================================
@@ -408,7 +493,7 @@ class TestExposition:
         self.registry = _fresh_registry()
 
     def teardown_method(self):
-        MetricsRegistry._instance = None
+        MetricsRegistry.reset_singleton()
 
     def test_help_and_type_lines(self):
         self.registry.counter("expo_c", "My counter help")
