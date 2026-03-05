@@ -92,7 +92,7 @@ class TestCachedRiskSingletons:
         mock_class = MagicMock()
         mock_class.get_instance.return_value = mock_rm
 
-        get_risk_manager = cast(Any, getattr(mod, "_get_risk_manager"))
+        get_risk_manager = mod._get_risk_manager
 
         with patch.dict("sys.modules", {"risk.risk_manager": MagicMock(RiskManager=mock_class)}):
             _reset_cached_singletons_if_available(mod)
