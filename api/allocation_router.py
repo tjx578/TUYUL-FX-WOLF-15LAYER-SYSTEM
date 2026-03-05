@@ -8,22 +8,17 @@ BUG FIXES APPLIED:
   [BUG-3] Redis hardcoded localhost → os.getenv("REDIS_URL") for Railway compatibility
 """
 
-import logging
 import contextlib
+import logging
 import os
 import threading
 import uuid
 from datetime import UTC, datetime
+from typing import Any, Protocol, cast
 
-import redis as redis_lib
 from fastapi import APIRouter, Depends, Header, HTTPException, status
 from pydantic import BaseModel, Field
-from redis import Redis
 
-from api.middleware.auth import verify_token
-from api.middleware.governance import enforce_write_policy
-from allocation.signal_service import SignalService
-from accounts.risk_engine import RiskEngine  # noqa: F401
 from accounts.account_model import (
     AccountState as DashAccountState,
 )
@@ -35,8 +30,13 @@ from accounts.account_model import (
 from accounts.account_model import (
     RiskMode as DashRiskMode,
 )
-from journal.trade_journal_service import trade_journal_automation_service
+from accounts.risk_engine import RiskEngine  # noqa: F401
+from allocation.signal_service import SignalService
+from api.middleware.auth import verify_token
+from api.middleware.governance import enforce_write_policy
+from infrastructure.redis_client import get_client
 from infrastructure.tracing import inject_trace_context, setup_tracer
+from journal.trade_journal_service import trade_journal_automation_service
 from risk.kill_switch import GlobalKillSwitch
 
 logger = logging.getLogger(__name__)
@@ -45,43 +45,38 @@ _allocation_router_tracer = setup_tracer("wolf-api")
 # Stale-data threshold: reject write actions if context data is older than this.
 STALE_DATA_THRESHOLD_SEC = int(os.getenv("STALE_DATA_THRESHOLD_SEC", "300"))
 
-# ── [BUG-3 FIX] Redis connection via env var ──────────────────────────────────
-# NOTE: This module still uses a sync Redis client for backwards-compatibility
-# with in-memory fallback helpers and Lua eval scripts.  New code should prefer
-# ``infrastructure.redis_client.get_async_redis`` (the shared async pool).
-# This sync singleton is scheduled for removal once all helpers are converted.
-def _make_redis() -> Redis | None:
-    from infrastructure.redis_url import get_redis_url
-    url = get_redis_url()
-    return redis_lib.from_url(url, decode_responses=True)  # type: ignore[return-value]
-
-
-try:
-    _redis: Redis | None = _make_redis()
-    if _redis:
-        from infrastructure.redis_url import get_safe_redis_url
-
-        _redis.ping()
-        logger.info("Redis connected: %s", get_safe_redis_url())
-except Exception as exc:  # pragma: no cover
-    logger.warning("Redis unavailable at startup: %s — using in-memory fallback", exc)
-    _redis = None
-
 
 # ── In-memory fallback stores ─────────────────────────────────────────────────
-_signal_pool: dict[str, dict] = {}
-_trade_ledger: dict[str, dict] = {}
-_account_registry: dict[str, dict] = {}
+_signal_pool: dict[str, dict[str, Any]] = {}
+_trade_ledger: dict[str, dict[str, Any]] = {}
+_account_registry: dict[str, dict[str, Any]] = {}
 _signal_service = SignalService()
 _kill_switch = GlobalKillSwitch()
 _confirm_lock = threading.Lock()
+
+
+class _TradeJournalAutomationServiceProtocol(Protocol):
+    def on_signal_taken(self, trade: dict[str, Any]) -> None:
+        ...
+
+    def on_trade_confirmed(self, trade: dict[str, Any]) -> None:
+        ...
+
+    def on_signal_skipped(self, signal_id: str, pair: str, reason: str) -> None:
+        ...
+
+    def on_trade_closed(self, trade: dict[str, Any], reason: str) -> None:
+        ...
+
+
+_journal_service = cast(_TradeJournalAutomationServiceProtocol, trade_journal_automation_service)
 
 ALLOC_REQUEST_STREAM = "allocation:request"
 IDEMPOTENCY_KEY_PREFIX = "idempotency:confirm:"
 IDEMPOTENCY_TTL_SEC = 60 * 60 * 24
 
 
-def _check_stale_data(pair: str) -> None:
+async def _check_stale_data(pair: str) -> None:
     """Reject write actions if the cached L12 verdict/context data is stale.
 
     Reads the verdict timestamp from Redis (or the L12 cache) and compares
@@ -92,19 +87,19 @@ def _check_stale_data(pair: str) -> None:
 
     verdict_ts: float | None = None
     try:
-        from storage.l12_cache import get_verdict  # noqa: PLC0415
+        from storage.l12_cache import get_verdict_async  # noqa: PLC0415
 
-        verdict = get_verdict(pair.upper())
+        verdict = await get_verdict_async(pair.upper())
         if verdict:
             ts_raw = verdict.get("timestamp") or verdict.get("ts") or verdict.get("updated_at")
             if ts_raw:
                 if isinstance(ts_raw, (int, float)):
                     verdict_ts = float(ts_raw)
                 elif isinstance(ts_raw, str):
-                    from datetime import datetime as _dt, timezone  # noqa: PLC0415
+                    from datetime import datetime as _dt  # noqa: PLC0415
 
                     parsed = _dt.fromisoformat(ts_raw.replace("Z", "+00:00"))
-                    verdict_ts = parsed.replace(tzinfo=parsed.tzinfo or timezone.utc).timestamp()
+                    verdict_ts = parsed.replace(tzinfo=parsed.tzinfo or UTC).timestamp()
     except Exception as exc:
         logger.debug("Stale data check skipped: %s", exc)
 
@@ -182,54 +177,73 @@ class RiskCalculateRequest(BaseModel):
 
 # ─── Helper: Redis read/write with in-memory fallback ────────────────────────
 
-def _redis_set(key: str, value: str, ex: int | None = None) -> None:
-    if _redis:
-        _redis.set(key, value, ex=ex)
+async def _redis_set(key: str, value: str, ex: int | None = None) -> bool:
+    try:
+        redis = cast(Any, await get_client())
+        await redis.set(key, value, ex=ex)
+        return True
+    except Exception as exc:
+        logger.debug("Redis SET fallback for %s: %s", key, exc)
+        return False
 
 
-def _redis_get(key: str) -> str | None:
-    if _redis:
-        val = _redis.get(key)
+async def _redis_get(key: str) -> str | None:
+    try:
+        redis = cast(Any, await get_client())
+        val = await redis.get(key)
         return val if isinstance(val, str) else None
-    return None
+    except Exception as exc:
+        logger.debug("Redis GET fallback for %s: %s", key, exc)
+        return None
 
 
-def _redis_hset(name: str, mapping: dict) -> None:
-    if _redis:
-        _redis.hset(name, mapping=mapping)
+async def _redis_hset(name: str, mapping: dict[str, Any]) -> bool:
+    try:
+        redis = cast(Any, await get_client())
+        await redis.hset(name, mapping=mapping)
+        return True
+    except Exception as exc:
+        logger.debug("Redis HSET fallback for %s: %s", name, exc)
+        return False
 
 
-def _redis_hgetall(name: str) -> dict:
-    if _redis:
-        result = _redis.hgetall(name)
-        return result if isinstance(result, dict) else {}
-    return {}
+async def _redis_hgetall(name: str) -> dict[str, Any]:
+    try:
+        redis = cast(Any, await get_client())
+        result = await redis.hgetall(name)
+        return cast(dict[str, Any], result) if isinstance(result, dict) else {}
+    except Exception as exc:
+        logger.debug("Redis HGETALL fallback for %s: %s", name, exc)
+        return {}
 
 
-def _redis_xadd(name: str, fields: dict[str, str]) -> str | None:
-    if _redis:
-        val = _redis.xadd(name, fields)
+async def _redis_xadd(name: str, fields: dict[str, str]) -> str | None:
+    try:
+        redis = cast(Any, await get_client())
+        val = await redis.xadd(name, cast(dict[Any, Any], fields))
         return val if isinstance(val, str) else None
-    return None
+    except Exception as exc:
+        logger.debug("Redis XADD fallback for %s: %s", name, exc)
+        return None
 
 
-def _idempotency_get(key: str) -> dict | None:
+async def _idempotency_get(key: str) -> dict[str, Any] | None:
     import json
 
-    raw = _redis_get(f"{IDEMPOTENCY_KEY_PREFIX}{key}")
+    raw = await _redis_get(f"{IDEMPOTENCY_KEY_PREFIX}{key}")
     if not raw:
         return None
     try:
         payload = json.loads(raw)
-        return payload if isinstance(payload, dict) else None
+        return cast(dict[str, Any], payload) if isinstance(payload, dict) else None
     except Exception:
         return None
 
 
-def _idempotency_set(key: str, response: dict) -> None:
+async def _idempotency_set(key: str, response: dict[str, Any]) -> None:
     import json
 
-    _redis_set(
+    await _redis_set(
         f"{IDEMPOTENCY_KEY_PREFIX}{key}",
         json.dumps(response),
         ex=IDEMPOTENCY_TTL_SEC,
@@ -265,7 +279,7 @@ def _build_risk_signal(
     )
 
 
-def _build_account_state(account_id: str, account: dict) -> DashAccountState:
+def _build_account_state(account_id: str, account: dict[str, Any]) -> DashAccountState:
     """Build a DashAccountState for lot-size calculation from account dict."""
     return DashAccountState(
         account_id=account_id,
@@ -288,16 +302,15 @@ def _as_bool(raw: object, default: bool = False) -> bool:
     return str(raw).strip().lower() in {"1", "true", "yes", "on", "enabled"}
 
 
-def _global_news_lock_enabled() -> bool:
-    if not _redis:
-        return False
+async def _global_news_lock_enabled() -> bool:
     try:
-        return bool(_redis.get("NEWS_LOCK:STATE"))
+        redis = await get_client()
+        return bool(await redis.get("NEWS_LOCK:STATE"))
     except Exception:
         return False
 
 
-def _runtime_take_precheck(account: dict) -> tuple[bool, str | None]:
+async def _runtime_take_precheck(account: dict[str, Any]) -> tuple[bool, str | None]:
     # Compliance mode default = ON (fail closed when explicitly OFF).
     if not _as_bool(account.get("compliance_mode", 1), default=True):
         return False, "COMPLIANCE_MODE_DISABLED"
@@ -325,61 +338,85 @@ def _runtime_take_precheck(account: dict) -> tuple[bool, str | None]:
     if open_trades >= max_open:
         return False, f"MAX_OPEN_TRADES {open_trades}/{max_open}"
 
-    if _as_bool(account.get("news_lock", 0), default=False) or _global_news_lock_enabled():
+    if _as_bool(account.get("news_lock", 0), default=False) or await _global_news_lock_enabled():
         return False, "NEWS_LOCK"
 
     return True, None
 
 
-def _atomic_transition_intended_to_pending(trade_id: str) -> dict:
+async def _atomic_transition_intended_to_pending(trade_id: str) -> dict[str, Any]:
     import json
 
     now = datetime.now(UTC).isoformat()
     key = f"TRADE:{trade_id}"
 
-    if _redis:
-        try:
-            script = """
-            local key = KEYS[1]
-            local now = ARGV[1]
-            local raw = redis.call('GET', key)
-            if not raw then
-              return {0, 'NOT_FOUND'}
-            end
-            local trade = cjson.decode(raw)
-            local current = tostring(trade['status'] or '')
-            if current ~= 'INTENDED' then
-              return {0, current}
-            end
-            trade['status'] = 'PENDING'
-            trade['updated_at'] = now
-            redis.call('SET', key, cjson.encode(trade), 'EX', 86400)
-            return {1, cjson.encode(trade)}
-            """
-            result = _redis.eval(script, 1, key, now)
-            if isinstance(result, list) and len(result) >= 2 and int(result[0]) == 1:
-                payload = str(result[1])
-                trade = json.loads(payload)
-                _trade_ledger[trade_id] = trade
-                return trade
+    try:
+        redis = cast(Any, await get_client())
+        script = """
+        local key = KEYS[1]
+        local now = ARGV[1]
+        local raw = redis.call('GET', key)
+        if not raw then
+          return {0, 'NOT_FOUND'}
+        end
+        local trade = cjson.decode(raw)
+        local current = tostring(trade['status'] or '')
+        if current ~= 'INTENDED' then
+          return {0, current}
+        end
+        trade['status'] = 'PENDING'
+        trade['updated_at'] = now
+        redis.call('SET', key, cjson.encode(trade), 'EX', 86400)
+        return {1, cjson.encode(trade)}
+        """
+        result_raw = await redis.eval(script, 1, key, now)
+        if isinstance(result_raw, list):
+            result = cast(list[object], result_raw)
+            if len(result) >= 2:
+                ok_raw = result[0]
+                payload_or_state_raw = result[1]
 
-            if isinstance(result, list) and len(result) >= 2:
-                state = str(result[1])
+                ok_int = 0
+                if isinstance(ok_raw, bool):
+                    ok_int = 1 if ok_raw else 0
+                elif isinstance(ok_raw, int):
+                    ok_int = ok_raw
+                elif isinstance(ok_raw, float):
+                    ok_int = int(ok_raw)
+                elif isinstance(ok_raw, str):
+                    with contextlib.suppress(ValueError):
+                        ok_int = int(ok_raw)
+
+                if ok_int == 1:
+                    if not isinstance(payload_or_state_raw, str):
+                        raise HTTPException(
+                            status_code=500,
+                            detail="Invalid Redis response payload type",
+                        )
+                    trade = json.loads(payload_or_state_raw)
+                    _trade_ledger[trade_id] = trade
+                    return trade
+
+                state = (
+                    payload_or_state_raw
+                    if isinstance(payload_or_state_raw, str)
+                    else str(payload_or_state_raw)
+                )
                 if state == "NOT_FOUND":
                     raise HTTPException(status_code=404, detail=f"Trade {trade_id} not found")
                 raise HTTPException(
                     status_code=409,
                     detail=f"Trade {trade_id} is {state}, must be INTENDED to confirm",
                 )
-        except HTTPException:
-            raise
-        except Exception as exc:
-            logger.warning("Atomic Redis confirm fallback triggered for %s: %s", trade_id, exc)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.warning("Atomic Redis confirm fallback triggered for %s: %s", trade_id, exc)
 
     with _confirm_lock:
         trade = _trade_ledger.get(trade_id)
         if not trade:
-            raw = _redis_get(key)
+            raw = await _redis_get(key)
             if not raw:
                 raise HTTPException(status_code=404, detail=f"Trade {trade_id} not found")
             trade = json.loads(raw)
@@ -393,11 +430,11 @@ def _atomic_transition_intended_to_pending(trade_id: str) -> dict:
         trade["status"] = "PENDING"
         trade["updated_at"] = now
         _trade_ledger[trade_id] = trade
-        _redis_set(key, json.dumps(trade), ex=86400)
+        await _redis_set(key, json.dumps(trade), ex=86400)
         return trade
 
 
-async def _confirm_trade_internal(trade_id: str, idempotency_key: str | None) -> dict:
+async def _confirm_trade_internal(trade_id: str, idempotency_key: str | None) -> dict[str, Any]:
     if _kill_switch.is_enabled():
         state = _kill_switch.snapshot()
         raise HTTPException(
@@ -406,24 +443,24 @@ async def _confirm_trade_internal(trade_id: str, idempotency_key: str | None) ->
         )
 
     if idempotency_key:
-        cached = _idempotency_get(idempotency_key)
+        cached = await _idempotency_get(idempotency_key)
         if cached:
             return cached
 
     # Stale-data guard: check trade pair freshness before confirming
     trade_data = _trade_ledger.get(trade_id)
     if not trade_data:
-        raw = _redis_get(f"TRADE:{trade_id}")
+        raw = await _redis_get(f"TRADE:{trade_id}")
         if raw:
             import json as _json  # noqa: PLC0415
             with contextlib.suppress(Exception):
                 trade_data = _json.loads(raw)
     if trade_data and trade_data.get("pair"):
-        _check_stale_data(trade_data["pair"])
+        await _check_stale_data(trade_data["pair"])
 
-    trade = _atomic_transition_intended_to_pending(trade_id)
+    trade = await _atomic_transition_intended_to_pending(trade_id)
 
-    trade_journal_automation_service.on_trade_confirmed(trade)
+    _journal_service.on_trade_confirmed(trade)
     with contextlib.suppress(Exception):
         from api.ws_routes import publish_live_update  # noqa: PLC0415
 
@@ -431,14 +468,14 @@ async def _confirm_trade_internal(trade_id: str, idempotency_key: str | None) ->
 
     response = {"trade_id": trade_id, "status": "PENDING"}
     if idempotency_key:
-        _idempotency_set(idempotency_key, response)
+        await _idempotency_set(idempotency_key, response)
     return response
 
 
 # ─── Routes ──────────────────────────────────────────────────────────────────
 
 @write_router.post("/trades/take")
-async def take_signal(req: TakeSignalRequest) -> dict:
+async def take_signal(req: TakeSignalRequest) -> dict[str, Any]:
     """
     Create a trade from an L12 EXECUTE signal.
     Lot size is calculated by RiskEngine — never from user input.
@@ -450,12 +487,12 @@ async def take_signal(req: TakeSignalRequest) -> dict:
             detail=f"Global kill switch is active: {state.get('reason', 'N/A')}",
         )
 
-    _check_stale_data(req.pair)
+    await _check_stale_data(req.pair)
 
     account = _account_registry.get(req.account_id)
     if not account:
         # Try Redis
-        acct_data = _redis_hgetall(f"ACCOUNT:{req.account_id}")
+        acct_data = await _redis_hgetall(f"ACCOUNT:{req.account_id}")
         if not acct_data:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -463,7 +500,7 @@ async def take_signal(req: TakeSignalRequest) -> dict:
             )
         account = acct_data
 
-    precheck_ok, precheck_reason = _runtime_take_precheck(account)
+    precheck_ok, precheck_reason = await _runtime_take_precheck(account)
     if not precheck_ok:
         raise HTTPException(
             status_code=status.HTTP_423_LOCKED,
@@ -503,7 +540,7 @@ async def take_signal(req: TakeSignalRequest) -> dict:
     trade_id = str(uuid.uuid4())
     now = datetime.now(UTC).isoformat()
 
-    trade = {
+    trade: dict[str, Any] = {
         "trade_id": trade_id,
         "signal_id": req.signal_id,
         "account_id": req.account_id,
@@ -526,7 +563,7 @@ async def take_signal(req: TakeSignalRequest) -> dict:
     import json  # noqa: E402
 
     _trade_ledger[trade_id] = trade
-    _redis_set(f"TRADE:{trade_id}", json.dumps(trade), ex=86400)
+    await _redis_set(f"TRADE:{trade_id}", json.dumps(trade), ex=86400)
 
     # Freeze + publish read-only signal contract
     signal_payload = {
@@ -541,13 +578,13 @@ async def take_signal(req: TakeSignalRequest) -> dict:
         "risk_reward_ratio": _build_risk_signal(req.pair, req.direction, req.entry, req.sl, req.tp).rr,
     }
     _signal_service.publish(signal_payload)
-    trade_journal_automation_service.on_signal_taken(trade)
+    _journal_service.on_signal_taken(trade)
 
     # Push to live websocket feed (best-effort)
     with contextlib.suppress(Exception):
         from api.ws_routes import publish_live_update  # noqa: PLC0415
-        await publish_live_update("trade_intended", trade)
-        await publish_live_update("signal", signal_payload)
+        await publish_live_update("trade_intended", cast(dict[str, object], trade))
+        await publish_live_update("signal", cast(dict[str, object], signal_payload))
 
     logger.info("Trade INTENDED: %s %s %s", trade_id, req.pair, req.direction)
     return {
@@ -559,7 +596,7 @@ async def take_signal(req: TakeSignalRequest) -> dict:
 
 
 @write_router.post("/signals/take")
-async def take_signal_multi(req: TakeSignalBatchRequest) -> dict:
+async def take_signal_multi(req: TakeSignalBatchRequest) -> dict[str, Any]:
     """
     Queue multi-account allocation requests (event-driven path).
     One Redis stream message is published per account.
@@ -571,7 +608,7 @@ async def take_signal_multi(req: TakeSignalBatchRequest) -> dict:
             detail=f"Global kill switch is active: {state.get('reason', 'N/A')}",
         )
 
-    _check_stale_data(req.pair)
+    await _check_stale_data(req.pair)
 
     with _allocation_router_tracer.start_as_current_span("allocation_enqueue") as span:
         span.set_attribute("signal.id", req.verdict_id)
@@ -590,7 +627,7 @@ async def take_signal_multi(req: TakeSignalBatchRequest) -> dict:
         }
         _signal_service.publish(signal_payload)
 
-        queued: list[dict] = []
+        queued: list[dict[str, Any]] = []
         for account_id in req.accounts:
             allocation_id = str(uuid.uuid4())
             payload = {
@@ -602,7 +639,7 @@ async def take_signal_multi(req: TakeSignalBatchRequest) -> dict:
                 "risk_percent": str(req.risk_percent),
             }
             inject_trace_context(payload)
-            stream_id = _redis_xadd(ALLOC_REQUEST_STREAM, payload)
+            stream_id = await _redis_xadd(ALLOC_REQUEST_STREAM, payload)
             queued.append(
                 {
                     "allocation_id": allocation_id,
@@ -612,7 +649,7 @@ async def take_signal_multi(req: TakeSignalBatchRequest) -> dict:
                 }
             )
 
-    if not _redis:
+    if not queued or any(item["stream_id"] is None for item in queued):
         raise HTTPException(
             status_code=503,
             detail="Redis stream unavailable; cannot enqueue allocation request",
@@ -627,7 +664,7 @@ async def take_signal_multi(req: TakeSignalBatchRequest) -> dict:
 
 
 @write_router.post("/trades/skip")
-async def skip_signal(req: SkipSignalRequest) -> dict:
+async def skip_signal(req: SkipSignalRequest) -> dict[str, Any]:
     """Log a skipped signal as J2: NO_TRADE journal entry."""
     entry_id = str(uuid.uuid4())
     now = datetime.now(UTC).isoformat()
@@ -642,17 +679,17 @@ async def skip_signal(req: SkipSignalRequest) -> dict:
         "timestamp": now,
     }
     import json
-    _redis_set(f"JOURNAL:{entry_id}", json.dumps(journal_entry), ex=604800)
-    trade_journal_automation_service.on_signal_skipped(req.signal_id, req.pair, req.reason or "MANUAL_SKIP")
+    await _redis_set(f"JOURNAL:{entry_id}", json.dumps(journal_entry), ex=604800)
+    _journal_service.on_signal_skipped(req.signal_id, req.pair, req.reason or "MANUAL_SKIP")
     with contextlib.suppress(Exception):
         from api.ws_routes import publish_live_update  # noqa: PLC0415
-        await publish_live_update("signal_skipped", journal_entry)
+        await publish_live_update("signal_skipped", cast(dict[str, object], journal_entry))
     logger.info("Signal SKIPPED: %s %s reason=%s", req.signal_id, req.pair, req.reason)
     return {"logged": True, "entry_id": entry_id, "journal_type": "J2"}
 
 
 @write_router.post("/signals/skip")
-async def skip_signal_alias(req: SkipSignalRequest) -> dict:
+async def skip_signal_alias(req: SkipSignalRequest) -> dict[str, Any]:
     """Compatibility alias for dashboard frontend."""
     return await skip_signal(req)
 
@@ -686,7 +723,7 @@ async def close_trade(req: CloseTradeRequest) -> dict:
 
     trade = _trade_ledger.get(req.trade_id)
     if not trade:
-        raw = _redis_get(f"TRADE:{req.trade_id}")
+        raw = await _redis_get(f"TRADE:{req.trade_id}")
         if not raw:
             raise HTTPException(status_code=404, detail=f"Trade {req.trade_id} not found")
         trade = json.loads(raw)
@@ -700,8 +737,8 @@ async def close_trade(req: CloseTradeRequest) -> dict:
         trade["pnl"] = req.pnl
 
     _trade_ledger[req.trade_id] = trade
-    _redis_set(f"TRADE:{req.trade_id}", json.dumps(trade), ex=604800)
-    trade_journal_automation_service.on_trade_closed(trade, req.reason or "MANUAL_CLOSE")
+    await _redis_set(f"TRADE:{req.trade_id}", json.dumps(trade), ex=604800)
+    _journal_service.on_trade_closed(trade, req.reason or "MANUAL_CLOSE")
     with contextlib.suppress(Exception):
         from api.ws_routes import publish_live_update  # noqa: PLC0415
         await publish_live_update("trade_closed", trade)
@@ -719,26 +756,31 @@ async def get_active_trades() -> dict:
     """Return all non-closed trades."""
     import json
 
-    active = []
+    active: list[dict[str, Any]] = []
 
     # From in-memory ledger
     for t in _trade_ledger.values():
-        if t.get("status") not in ("CLOSED", "CANCELLED", "SKIPPED"):
-            active.append(t)
+        if isinstance(t, dict):
+            trade_record = cast(dict[str, Any], t)
+            if trade_record.get("status") not in ("CLOSED", "CANCELLED", "SKIPPED"):
+                active.append(trade_record)
 
     # From Redis (if available and not already in memory)
-    if _redis:
-        try:
-            for key in _redis.scan_iter("TRADE:*"):
-                tid = key.split(":")[-1]
-                if tid not in _trade_ledger:
-                    raw = _redis.get(key)
-                    if raw and isinstance(raw, str):
-                        t = json.loads(raw)
-                        if t.get("status") not in ("CLOSED", "CANCELLED", "SKIPPED"):
-                            active.append(t)
-        except Exception as exc:
-            logger.warning("Redis scan error: %s", exc)
+    try:
+        redis = cast(Any, await get_client())
+        async for key in redis.scan_iter(match="TRADE:*"):
+            key_str = str(key)
+            tid = key_str.split(":")[-1]
+            if tid not in _trade_ledger:
+                raw = await redis.get(key_str)
+                if isinstance(raw, str):
+                    parsed = json.loads(raw)
+                    if isinstance(parsed, dict):
+                        trade_record = cast(dict[str, Any], parsed)
+                        if trade_record.get("status") not in ("CLOSED", "CANCELLED", "SKIPPED"):
+                            active.append(trade_record)
+    except Exception as exc:
+        logger.warning("Redis scan error: %s", exc)
 
     return {"trades": active, "count": len(active)}
 
@@ -772,7 +814,7 @@ async def calculate_risk_preview(req: RiskCalculateRequest) -> dict:
 
     account = _account_registry.get(req.account_id)
     if not account:
-        acct_data = _redis_hgetall(f"ACCOUNT:{req.account_id}")
+        acct_data = await _redis_hgetall(f"ACCOUNT:{req.account_id}")
         account = acct_data or {
             "balance": 10000,
             "equity": 10000,

@@ -45,7 +45,7 @@ from config_loader import load_pairs
 from dashboard.account_manager import AccountManager
 from dashboard.price_feed import PriceFeed
 from dashboard.trade_ledger import TradeLedger
-from storage.l12_cache import VERDICT_READY_CHANNEL, get_verdict
+from storage.l12_cache import VERDICT_READY_CHANNEL, get_verdict_async
 from storage.redis_client import redis_client
 
 router = fastapi.APIRouter()
@@ -62,7 +62,7 @@ def _ws_event(
     payload: dict[str, object],
     *,
     trace_id: str | None = None,
-) -> dict[str, object]:
+) -> dict[str, Any]:
     """Build a versioned WS event envelope.
 
     Standard fields:
@@ -447,7 +447,7 @@ class ConnectionManager:
         with contextlib.suppress(Exception):
             redis_client.client.delete(key)
 
-    def buffer_message(self, message: dict[str, object]) -> None:
+    def buffer_message(self, message: dict[str, Any]) -> None:
         """Store message in replay buffer."""
         self._message_buffer.append(message)
 
@@ -473,7 +473,7 @@ class ConnectionManager:
         if replayed > 0:
             logger.debug(f"WS [{self.name}] replayed {replayed} buffered messages")
 
-    async def broadcast(self, message: dict[str, object]) -> None:
+    async def broadcast(self, message: dict[str, Any]) -> None:
         """Broadcast message to all connected clients and buffer it."""
         self.buffer_message(message)
         disconnected: set[fastapi.WebSocket] = set()
@@ -525,6 +525,46 @@ async def publish_live_update(topic: str, payload: dict[str, object]) -> None:
     await live_manager.broadcast(
         _ws_event(f"live_event.{topic}", payload)
     )
+
+
+async def publish_signal_update(signal: Mapping[str, Any]) -> None:
+    """Publish a single frozen signal update to /ws/signals subscribers."""
+    payload = {str(k): v for k, v in signal.items()}
+    await signal_manager.broadcast(
+        _ws_event("signals.update", {"signal": payload})
+    )
+
+
+async def publish_pipeline_update(
+    pair: str,
+    pipeline_payload: Mapping[str, Any] | None = None,
+) -> bool:
+    """Publish a pipeline update to /ws/pipeline subscribers.
+
+    If ``pipeline_payload`` is omitted, this builds from the latest cached L12 verdict.
+    Returns ``True`` when an update was broadcast, ``False`` when no payload available.
+    """
+    pair_upper = pair.upper().strip()
+    if not pair_upper:
+        return False
+
+    payload_map: dict[str, Any]
+    if pipeline_payload is not None:
+        payload_map = {str(k): v for k, v in pipeline_payload.items()}
+    else:
+        verdict = await get_verdict_async(pair_upper)
+        if not isinstance(verdict, dict):
+            return False
+        verdict_typed: dict[str, Any] = cast(dict[str, Any], verdict)
+        payload_map = _build_pipeline_data(pair_upper, verdict_typed)
+
+    await pipeline_manager.broadcast(
+        _ws_event("pipeline.update", {
+            "pair": pair_upper,
+            "pipeline": payload_map,
+        })
+    )
+    return True
 
 
 # ---------------------------------------------------------------------------
@@ -592,7 +632,7 @@ async def websocket_prices(websocket: fastapi.WebSocket):
                 await price_manager.replay_buffer(websocket, float(since_ts))
 
         # Send initial snapshot
-        prices: dict[str, dict[str, Any]] = _price_feed.get_latest_prices() if hasattr(_price_feed, "get_latest_prices") else {}
+        prices: dict[str, dict[str, Any]] = await _price_feed.get_latest_prices_async() if hasattr(_price_feed, "get_latest_prices_async") else {}
         snapshot_msg = _ws_event("price.snapshot", {"prices": prices})
         await websocket.send_json(snapshot_msg)
 
@@ -610,7 +650,7 @@ async def websocket_prices(websocket: fastapi.WebSocket):
             except TimeoutError:
                 pass  # Fallback: check anyway after TICK_BATCH_INTERVAL
 
-            current: dict[str, dict[str, Any]] = _price_feed.get_latest_prices() if hasattr(_price_feed, "get_latest_prices") else {}
+            current: dict[str, dict[str, Any]] = await _price_feed.get_latest_prices_async() if hasattr(_price_feed, "get_latest_prices_async") else {}
             changed: dict[str, dict[str, Any]] = {}
 
             for symbol, price_data in current.items():
@@ -662,7 +702,7 @@ async def websocket_trades(websocket: fastapi.WebSocket):
         last_trade_snapshot: dict[str, str] = {}
 
         # Send initial snapshot
-        active_trades = _trade_ledger.get_active_trades()
+        active_trades = await _trade_ledger.get_active_trades_async()
         trades_data = [trade.model_dump() for trade in active_trades]
 
         await websocket.send_json(_ws_event("trade.snapshot", {"trades": trades_data}))
@@ -672,7 +712,7 @@ async def websocket_trades(websocket: fastapi.WebSocket):
             last_trade_snapshot[trade.trade_id] = trade.status.value
 
         while True:
-            active_trades = _trade_ledger.get_active_trades()
+            active_trades = await _trade_ledger.get_active_trades_async()
             current_snapshot = {t.trade_id: t.status.value for t in active_trades}
 
             changed_trades: list[Any] = []
@@ -844,24 +884,24 @@ def _verdict_signature(data: Mapping[str, Any] | None) -> str:
         return str(cast(object, data))
 
 
-def _get_verdict_snapshot(pair_filter: str | None = None) -> dict[str, dict[str, Any]]:
+async def _get_verdict_snapshot(pair_filter: str | None = None) -> dict[str, dict[str, Any]]:
     """Read current verdict cache for one pair or all enabled pairs."""
     symbols = [pair_filter.upper()] if pair_filter else _available_pairs()
     snapshot: dict[str, dict[str, Any]] = {}
     for symbol in symbols:
         with contextlib.suppress(Exception):
-            data = get_verdict(symbol)
+            data = await get_verdict_async(symbol)
             if isinstance(data, dict):
                 snapshot[symbol] = data
     return snapshot
 
 
-def _detect_changed_verdicts(
+async def _detect_changed_verdicts(
     last_signatures: dict[str, str],
     pair_filter: str | None = None,
 ) -> dict[str, dict[str, Any]]:
     """Return only verdict entries that changed since the last scan."""
-    current = _get_verdict_snapshot(pair_filter)
+    current = await _get_verdict_snapshot(pair_filter)
     changed: dict[str, dict[str, Any]] = {}
 
     for pair, verdict in current.items():
@@ -926,8 +966,8 @@ def _detect_changed_signals(
     return changed
 
 
-def _pipeline_snapshot(pair_filter: str | None = None) -> dict[str, dict[str, Any]]:
-    verdicts = _get_verdict_snapshot(pair_filter)
+async def _pipeline_snapshot(pair_filter: str | None = None) -> dict[str, dict[str, Any]]:
+    verdicts = await _get_verdict_snapshot(pair_filter)
     pipelines: dict[str, dict[str, Any]] = {}
     for pair, verdict in verdicts.items():
         with contextlib.suppress(Exception):
@@ -935,11 +975,11 @@ def _pipeline_snapshot(pair_filter: str | None = None) -> dict[str, dict[str, An
     return pipelines
 
 
-def _detect_changed_pipeline(
+async def _detect_changed_pipeline(
     last_signatures: dict[str, str],
     pair_filter: str | None = None,
 ) -> dict[str, dict[str, Any]]:
-    current = _pipeline_snapshot(pair_filter)
+    current = await _pipeline_snapshot(pair_filter)
     changed: dict[str, dict[str, Any]] = {}
 
     for pair, payload in current.items():
@@ -1004,10 +1044,10 @@ async def websocket_equity(websocket: fastapi.WebSocket):
             try:
                 from dashboard.account_manager import AccountManager  # noqa: PLC0415
                 am = AccountManager()
-                accounts = am.list_accounts()
+                accounts = await am.list_accounts_async()
 
                 if account_filter:
-                    account = am.get_account(account_filter)
+                    account = await am.get_account_async(account_filter)
                     accounts = [account] if account else []
 
                 if accounts:
@@ -1102,7 +1142,7 @@ async def websocket_verdict(websocket: fastapi.WebSocket):
     pubsub: Any | None = None
 
     try:
-        snapshot = _get_verdict_snapshot(pair_filter)
+        snapshot = await _get_verdict_snapshot(pair_filter)
         for pair, verdict in snapshot.items():
             signatures[pair] = _verdict_signature(verdict)
 
@@ -1134,7 +1174,7 @@ async def websocket_verdict(websocket: fastapi.WebSocket):
                     pair_raw: Any = event.get("pair", "")
                     pair = str(pair_raw).upper().strip()
                     if pair and (pair_filter is None or pair_filter == pair):
-                        verdict_raw = get_verdict(pair)
+                        verdict_raw = await get_verdict_async(pair)
                         if isinstance(verdict_raw, Mapping):
                             verdict_map = cast(Mapping[str, Any], verdict_raw)
                             verdict: dict[str, Any] = {k: v for k, v in verdict_map.items()}
@@ -1148,7 +1188,7 @@ async def websocket_verdict(websocket: fastapi.WebSocket):
 
             now_ts = time.time()
             if (not pushed) and (now_ts - last_scan_ts >= VERDICT_FALLBACK_INTERVAL):
-                changed = _detect_changed_verdicts(signatures, pair_filter)
+                changed = await _detect_changed_verdicts(signatures, pair_filter)
                 for pair, verdict in changed.items():
                     await websocket.send_json(_ws_event("verdict.update", {
                         "pair": pair,
@@ -1281,7 +1321,7 @@ async def websocket_pipeline(websocket: fastapi.WebSocket):
     pubsub: Any | None = None
 
     try:
-        snapshot = _pipeline_snapshot(pair_filter)
+        snapshot = await _pipeline_snapshot(pair_filter)
         for pair, payload in snapshot.items():
             signatures[pair] = _verdict_signature(payload)
 
@@ -1303,7 +1343,7 @@ async def websocket_pipeline(websocket: fastapi.WebSocket):
                 message_map = await asyncio.to_thread(_read_pubsub_message, pubsub, 1.0)
 
                 if message_map is not None and message_map.get("type") == "message":
-                    latest = _pipeline_snapshot(pair_filter)
+                    latest = await _pipeline_snapshot(pair_filter)
                     for pair, payload in latest.items():
                         signatures[pair] = _verdict_signature(payload)
                         await websocket.send_json(_ws_event("pipeline.update", {
@@ -1314,7 +1354,7 @@ async def websocket_pipeline(websocket: fastapi.WebSocket):
 
             now_ts = time.time()
             if (not pushed) and (now_ts - last_scan_ts >= PIPELINE_FALLBACK_INTERVAL):
-                changed = _detect_changed_pipeline(signatures, pair_filter)
+                changed = await _detect_changed_pipeline(signatures, pair_filter)
                 for pair, payload in changed.items():
                     await websocket.send_json(_ws_event("pipeline.update", {
                         "pair": pair,
@@ -1350,16 +1390,16 @@ async def websocket_live_feed(websocket: fastapi.WebSocket):
     try:
         await websocket.send_json(_ws_event("live.snapshot", {
             "signals": _signal_service.list_all(),
-            "accounts": [a.model_dump() for a in _account_manager.list_accounts()],
-            "trades": [t.model_dump() for t in _trade_ledger.get_active_trades()],
+            "accounts": [a.model_dump() for a in await _account_manager.list_accounts_async()],
+            "trades": [t.model_dump() for t in await _trade_ledger.get_active_trades_async()],
         }))
 
         while True:
             # Keepalive periodic state update for clients that miss individual events
             await websocket.send_json(_ws_event("live.heartbeat_state", {
                 "signal_count": len(_signal_service.list_all()),
-                "account_count": len(_account_manager.list_accounts()),
-                "active_trade_count": len(_trade_ledger.get_active_trades()),
+                "account_count": len(await _account_manager.list_accounts_async()),
+                "active_trade_count": len(await _trade_ledger.get_active_trades_async()),
             }))
             await asyncio.sleep(1.0)
 
