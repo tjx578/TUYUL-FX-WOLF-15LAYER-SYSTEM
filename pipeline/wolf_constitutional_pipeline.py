@@ -67,6 +67,9 @@ from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from typing import Any, cast
 
+from analysis.reflex_emc import EMCFilter
+from analysis.reflex_gate import ReflexGateController
+from analysis.reflex_multitf import compute_multitf_rqi
 from analysis.reflex_rqi import compute_rqi, latency_decay
 from config_loader import CONFIG
 
@@ -190,6 +193,17 @@ class WolfConstitutionalPipeline:
         settings = CONFIG.get("settings", {})
         self._rqi_sigma_sec = float(
             settings.get("rqi_sigma_sec", settings.get("loop_interval_sec", 60))
+        )
+
+        # ── RQI Enhancement: EMC filter + Gate controller ─────────
+        self._emc_filter = EMCFilter(
+            decay=float(settings.get("rqi_emc_decay", 0.8)),
+            sigma_base=self._rqi_sigma_sec,
+        )
+        self._reflex_gate = ReflexGateController(
+            open_threshold=float(settings.get("rqi_gate_open", 0.85)),
+            caution_threshold=float(settings.get("rqi_gate_caution", 0.60)),
+            caution_lot_scale=float(settings.get("rqi_gate_caution_lot", 0.5)),
         )
 
         # Engine Enrichment Layer (Phase 2.5 — 9 facade engines)
@@ -1023,20 +1037,50 @@ class WolfConstitutionalPipeline:
             reflex_coherence = float(l2.get("reflex_coherence", 0.0) or 0.0)
             emotion_delta = float(l5.get("emotion_delta", 0.0) or 0.0)
             delta_t_sec = max(0.0, time.time() - tick_ts) if tick_ts is not None else 0.0
+
+            # ── Adaptive sigma: widen latency tolerance under stress ──
+            adaptive_sigma = self._emc_filter.adaptive_sigma(emotion_delta)
+
+            # ── Legacy single RQI (backward compat) ───────────────────
             rqi_score = compute_rqi(
                 delta_t_sec=delta_t_sec,
                 coherence=reflex_coherence,
                 emotion_delta=emotion_delta,
-                sigma_sec=self._rqi_sigma_sec,
+                sigma_sec=adaptive_sigma,
             )
-            synthesis["system"]["rqi"] = round(rqi_score, 6)
+
+            # ── Multi-TF RQI from L2 per-TF probabilities ────────────
+            per_tf_detail: dict[str, Any] = l2.get("per_tf_bias", {})
+            multitf_result = compute_multitf_rqi(
+                per_tf_detail=per_tf_detail,
+                delta_t_sec=delta_t_sec,
+                emotion_delta=emotion_delta,
+                sigma_sec=adaptive_sigma,
+            )
+            rqi_multi = float(multitf_result.get("rqi_multi", 0.0))
+
+            # Use multi-TF RQI if available, else fall back to single
+            rqi_effective = rqi_multi if per_tf_detail else rqi_score
+
+            # ── EMC smoothing (stateful per symbol) ───────────────────
+            rqi_smoothed = self._emc_filter.smooth(symbol, rqi_effective)
+
+            # ── Reflex gate decision ──────────────────────────────────
+            gate_decision = self._reflex_gate.evaluate(rqi_smoothed)
+
+            synthesis["system"]["rqi"] = round(rqi_smoothed, 6)
+            synthesis["system"]["rqi_raw"] = round(rqi_effective, 6)
             synthesis["system"]["rqi_components"] = {
-                "latency_decay": round(latency_decay(delta_t_sec, self._rqi_sigma_sec), 6),
+                "latency_decay": round(latency_decay(delta_t_sec, adaptive_sigma), 6),
                 "reflex_coherence": round(max(0.0, min(1.0, reflex_coherence)), 6),
                 "emotion_stability": round(max(0.0, min(1.0, 1.0 - emotion_delta)), 6),
                 "delta_t_sec": round(delta_t_sec, 4),
                 "sigma_sec": round(self._rqi_sigma_sec, 4),
+                "sigma_adaptive": round(adaptive_sigma, 4),
             }
+            synthesis["system"]["rqi_multitf"] = multitf_result
+            synthesis["system"]["rqi_emc"] = self._emc_filter.get_session(symbol)
+            synthesis["system"]["reflex_gate"] = gate_decision.to_dict()
 
             # Inject enrichment data into synthesis for L12 visibility
             synthesis["enrichment"] = enrichment_data
