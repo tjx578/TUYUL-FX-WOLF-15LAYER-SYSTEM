@@ -202,7 +202,7 @@ class WolfConstitutionalPipeline:
         )
         self._reflex_gate = ReflexGateController(
             open_threshold=float(settings.get("rqi_gate_open", 0.85)),
-            caution_threshold=float(settings.get("rqi_gate_caution", 0.60)),
+            caution_threshold=float(settings.get("rqi_gate_caution", 0.70)),
             caution_lot_scale=float(settings.get("rqi_gate_caution_lot", 0.5)),
         )
 
