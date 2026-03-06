@@ -138,8 +138,8 @@ class TestAggregateMultitfRqi:
         result = aggregate_multitf_rqi(rqi_per_tf)
         # 0.2*0.30 + 0.5*0.88 + 0.3*0.92 = 0.06 + 0.44 + 0.276 = 0.776
         assert math.isclose(result, 0.776, rel_tol=1e-3)
-        # In CAUTION band [0.60, 0.85), not LOCK
-        assert result >= 0.60
+        # In CAUTION band [0.70, 0.85), not LOCK
+        assert result >= 0.70
 
 
 # ── End-to-end convenience function ──────────────────────────────────────────

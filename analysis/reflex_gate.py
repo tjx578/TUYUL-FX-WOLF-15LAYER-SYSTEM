@@ -9,8 +9,8 @@ input — L12 retains sole verdict authority.
 
 Gate bands (configurable):
     RQI >= 0.85  →  OPEN     lot_scale = 1.0
-    RQI >= 0.60  →  CAUTION  lot_scale = 0.5
-    RQI <  0.60  →  LOCK     lot_scale = 0.0
+    RQI >= 0.70  →  CAUTION  lot_scale = 0.5
+    RQI <  0.70  →  LOCK     lot_scale = 0.0
 """
 
 from __future__ import annotations
@@ -21,7 +21,7 @@ from typing import Any
 # ── Default thresholds ────────────────────────────────────────────────────────
 
 _DEFAULT_OPEN_THRESHOLD: float = 0.85
-_DEFAULT_CAUTION_THRESHOLD: float = 0.60
+_DEFAULT_CAUTION_THRESHOLD: float = 0.70
 
 _DEFAULT_OPEN_LOT_SCALE: float = 1.0
 _DEFAULT_CAUTION_LOT_SCALE: float = 0.5
