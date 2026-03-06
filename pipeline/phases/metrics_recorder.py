@@ -11,15 +11,23 @@ import contextlib
 from typing import Any, cast
 
 from core.metrics import (
+    CONF12_SCORE,
+    FRPC_SCORE,
     GATE_RESULT,
     PIPELINE_DURATION,
     PIPELINE_ERROR,
     PIPELINE_RUNS,
+    REFLECTIVE_DRIFT_RATIO,
     RQI_SCORE,
     SIGNAL_CONDITIONED_SAMPLES,
     SIGNAL_NOISE_RATIO,
     SIGNAL_QUALITY_SCORE,
     SIGNAL_TOTAL,
+    SOVEREIGNTY_LEVEL,
+    TII_SCORE,
+    TRQ3D_ALPHA,
+    TRQ3D_BETA,
+    TRQ3D_GAMMA,
     VERDICT_TOTAL,
 )
 
@@ -98,3 +106,40 @@ def record_pipeline_metrics(symbol: str, result: dict[str, Any]) -> None:
     )
     if rqi is not None:
         RQI_SCORE.labels(symbol=symbol).set(_to_float(rqi, 0.0))
+
+    # ── Sovereignty / drift observability ────────────────────────────────
+    enforcement = result.get("enforcement")
+    if isinstance(enforcement, dict):
+        drift_ratio = enforcement.get("drift_ratio")
+        if drift_ratio is not None:
+            REFLECTIVE_DRIFT_RATIO.labels(symbol=symbol).set(_to_float(drift_ratio))
+
+        execution_rights = enforcement.get("execution_rights", "")
+        if execution_rights in ("GRANTED", "RESTRICTED", "REVOKED"):
+            for level in ("GRANTED", "RESTRICTED", "REVOKED"):
+                SOVEREIGNTY_LEVEL.labels(symbol=symbol, level=level).set(
+                    1.0 if level == execution_rights else 0.0
+                )
+
+    # ── TRQ-3D axis gauges ───────────────────────────────────────────────
+    trq3d = result.get("synthesis", {}).get("trq3d", {})
+    if isinstance(trq3d, dict) and trq3d:
+        TRQ3D_ALPHA.labels(symbol=symbol).set(_to_float(trq3d.get("alpha", 0.0)))
+        TRQ3D_BETA.labels(symbol=symbol).set(_to_float(trq3d.get("beta", 0.0)))
+        TRQ3D_GAMMA.labels(symbol=symbol).set(_to_float(trq3d.get("gamma", 0.0)))
+
+    # ── Per-symbol score gauges ──────────────────────────────────────────
+    layers_data = result.get("synthesis", {}).get("layers", {})
+    if isinstance(layers_data, dict):
+        tii_sym = layers_data.get("L8_tii_sym")
+        if tii_sym is not None:
+            TII_SCORE.labels(symbol=symbol).set(_to_float(tii_sym))
+        conf12 = layers_data.get("conf12")
+        if conf12 is not None:
+            CONF12_SCORE.labels(symbol=symbol).set(_to_float(conf12))
+
+    fusion_frpc = result.get("synthesis", {}).get("fusion_frpc", {})
+    if isinstance(fusion_frpc, dict):
+        frpc_energy = fusion_frpc.get("frpc_energy")
+        if frpc_energy is not None:
+            FRPC_SCORE.labels(symbol=symbol).set(_to_float(frpc_energy))

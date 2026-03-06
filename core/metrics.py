@@ -454,6 +454,17 @@ def get_registry() -> MetricsRegistry:
 
 _R = get_registry()
 
+
+def get_wolf_registry() -> MetricsRegistry:
+    """Return the module-level registry that holds all pre-registered Wolf metrics.
+
+    Unlike ``get_registry()``, this always returns the registry captured at
+    import time (``_R``), which is guaranteed to contain every metric defined
+    in this module even if ``MetricsRegistry.reset_singleton()`` is called
+    during tests.
+    """
+    return _R
+
 # Pipeline execution latency (seconds)
 PIPELINE_DURATION = _R.histogram(
     "wolf_pipeline_duration_seconds",
@@ -570,6 +581,68 @@ RQI_SCORE = _R.gauge(
     "wolf_reflex_rqi_score",
     "Reflex Quality Index (RQI) score (0-1)",
     label_names=("symbol",),
+)
+
+# ── Constitutional observability gauges ───────────────────────────────────
+
+# Sovereignty level per symbol/level (GRANTED/RESTRICTED/REVOKED). Set to 1
+# for the active level; the other two levels are set to 0 each pipeline run.
+SOVEREIGNTY_LEVEL = _R.gauge(
+    "wolf_sovereignty_level",
+    "Sovereignty enforcement level (1=active, 0=inactive) per symbol and level",
+    label_names=("symbol", "level"),
+)
+
+# Reflective drift ratio between Pass-1 and Pass-2 αβγ scores.
+REFLECTIVE_DRIFT_RATIO = _R.gauge(
+    "wolf_reflective_drift_ratio",
+    "Two-pass reflective drift ratio (|pass1_abg - pass2_abg|)",
+    label_names=("symbol",),
+)
+
+# TRQ-3D axis gauges (from synthesis.trq3d).
+TRQ3D_ALPHA = _R.gauge(
+    "wolf_trq3d_alpha",
+    "TRQ-3D alpha axis value",
+    label_names=("symbol",),
+)
+
+TRQ3D_BETA = _R.gauge(
+    "wolf_trq3d_beta",
+    "TRQ-3D beta axis value",
+    label_names=("symbol",),
+)
+
+TRQ3D_GAMMA = _R.gauge(
+    "wolf_trq3d_gamma",
+    "TRQ-3D gamma axis value",
+    label_names=("symbol",),
+)
+
+# Per-symbol score gauges.
+TII_SCORE = _R.gauge(
+    "wolf_tii_score",
+    "Temporal Integrity Index (TII) score from L8",
+    label_names=("symbol",),
+)
+
+FRPC_SCORE = _R.gauge(
+    "wolf_frpc_score",
+    "Fusion Reflex Power Coefficient (FRPC) energy score from L2",
+    label_names=("symbol",),
+)
+
+CONF12_SCORE = _R.gauge(
+    "wolf_conf12_score",
+    "L12 configuration confidence score (conf12)",
+    label_names=("symbol",),
+)
+
+# Account drawdown gauge — set by dashboard/risk layer, NOT by analysis pipeline.
+ACCOUNT_DRAWDOWN_PERCENT = _R.gauge(
+    "wolf_account_drawdown_percent",
+    "Current account drawdown as a percentage of balance",
+    label_names=("account_id",),
 )
 
 # ── Tick rate per symbol ───────────────────────────────────
