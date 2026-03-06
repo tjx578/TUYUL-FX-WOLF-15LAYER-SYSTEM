@@ -519,3 +519,214 @@ class TestExposition:
         self.registry.counter("expo_nl", "newline test")
         text = self.registry.exposition()
         assert text.endswith("\n")
+
+
+# ===========================================================================
+# New constitutional observability metrics (9 new gauges)
+# ===========================================================================
+
+class TestNewConstitutionalMetrics:
+    """Verify that the 9 new constitutional observability metrics are registered."""
+
+    def test_sovereignty_level_exists(self):
+        from core.metrics import SOVEREIGNTY_LEVEL  # noqa: PLC0415
+        assert SOVEREIGNTY_LEVEL is not None
+        assert SOVEREIGNTY_LEVEL.name == "wolf_sovereignty_level"
+
+    def test_sovereignty_level_labels(self):
+        from core.metrics import SOVEREIGNTY_LEVEL  # noqa: PLC0415
+        SOVEREIGNTY_LEVEL.labels(symbol="EURUSD", level="GRANTED").set(1.0)
+        SOVEREIGNTY_LEVEL.labels(symbol="EURUSD", level="RESTRICTED").set(0.0)
+        SOVEREIGNTY_LEVEL.labels(symbol="EURUSD", level="REVOKED").set(0.0)
+        assert SOVEREIGNTY_LEVEL.labels(symbol="EURUSD", level="GRANTED").value == 1.0
+        assert SOVEREIGNTY_LEVEL.labels(symbol="EURUSD", level="RESTRICTED").value == 0.0
+        assert SOVEREIGNTY_LEVEL.labels(symbol="EURUSD", level="REVOKED").value == 0.0
+
+    def test_reflective_drift_ratio_exists(self):
+        from core.metrics import REFLECTIVE_DRIFT_RATIO  # noqa: PLC0415
+        assert REFLECTIVE_DRIFT_RATIO is not None
+        assert REFLECTIVE_DRIFT_RATIO.name == "wolf_reflective_drift_ratio"
+
+    def test_reflective_drift_ratio_labels(self):
+        from core.metrics import REFLECTIVE_DRIFT_RATIO  # noqa: PLC0415
+        REFLECTIVE_DRIFT_RATIO.labels(symbol="XAUUSD").set(0.08)
+        assert math.isclose(
+            REFLECTIVE_DRIFT_RATIO.labels(symbol="XAUUSD").value, 0.08, rel_tol=1e-9
+        )
+
+    def test_trq3d_gauges_exist(self):
+        from core.metrics import TRQ3D_ALPHA, TRQ3D_BETA, TRQ3D_GAMMA  # noqa: PLC0415
+        assert TRQ3D_ALPHA.name == "wolf_trq3d_alpha"
+        assert TRQ3D_BETA.name == "wolf_trq3d_beta"
+        assert TRQ3D_GAMMA.name == "wolf_trq3d_gamma"
+
+    def test_trq3d_labels(self):
+        from core.metrics import TRQ3D_ALPHA, TRQ3D_BETA, TRQ3D_GAMMA  # noqa: PLC0415
+        TRQ3D_ALPHA.labels(symbol="GBPUSD").set(0.72)
+        TRQ3D_BETA.labels(symbol="GBPUSD").set(0.68)
+        TRQ3D_GAMMA.labels(symbol="GBPUSD").set(0.90)
+        assert math.isclose(TRQ3D_ALPHA.labels(symbol="GBPUSD").value, 0.72, rel_tol=1e-9)
+        assert math.isclose(TRQ3D_BETA.labels(symbol="GBPUSD").value, 0.68, rel_tol=1e-9)
+        assert math.isclose(TRQ3D_GAMMA.labels(symbol="GBPUSD").value, 0.90, rel_tol=1e-9)
+
+    def test_tii_score_exists(self):
+        from core.metrics import TII_SCORE  # noqa: PLC0415
+        assert TII_SCORE is not None
+        assert TII_SCORE.name == "wolf_tii_score"
+
+    def test_tii_score_labels(self):
+        from core.metrics import TII_SCORE  # noqa: PLC0415
+        TII_SCORE.labels(symbol="USDJPY").set(0.75)
+        assert math.isclose(TII_SCORE.labels(symbol="USDJPY").value, 0.75, rel_tol=1e-9)
+
+    def test_frpc_score_exists(self):
+        from core.metrics import FRPC_SCORE  # noqa: PLC0415
+        assert FRPC_SCORE is not None
+        assert FRPC_SCORE.name == "wolf_frpc_score"
+
+    def test_frpc_score_labels(self):
+        from core.metrics import FRPC_SCORE  # noqa: PLC0415
+        FRPC_SCORE.labels(symbol="EURUSD").set(0.95)
+        assert math.isclose(FRPC_SCORE.labels(symbol="EURUSD").value, 0.95, rel_tol=1e-9)
+
+    def test_conf12_score_exists(self):
+        from core.metrics import CONF12_SCORE  # noqa: PLC0415
+        assert CONF12_SCORE is not None
+        assert CONF12_SCORE.name == "wolf_conf12_score"
+
+    def test_conf12_score_labels(self):
+        from core.metrics import CONF12_SCORE  # noqa: PLC0415
+        CONF12_SCORE.labels(symbol="XAUUSD").set(0.80)
+        assert math.isclose(CONF12_SCORE.labels(symbol="XAUUSD").value, 0.80, rel_tol=1e-9)
+
+    def test_account_drawdown_percent_exists(self):
+        from core.metrics import ACCOUNT_DRAWDOWN_PERCENT  # noqa: PLC0415
+        assert ACCOUNT_DRAWDOWN_PERCENT is not None
+        assert ACCOUNT_DRAWDOWN_PERCENT.name == "wolf_account_drawdown_percent"
+
+    def test_account_drawdown_percent_labels(self):
+        from core.metrics import ACCOUNT_DRAWDOWN_PERCENT  # noqa: PLC0415
+        ACCOUNT_DRAWDOWN_PERCENT.labels(account_id="ACC001").set(3.5)
+        assert math.isclose(
+            ACCOUNT_DRAWDOWN_PERCENT.labels(account_id="ACC001").value, 3.5, rel_tol=1e-9
+        )
+
+    def test_all_new_metrics_in_exposition(self):
+        """Verify all 9 new metric names appear in the exposition output."""
+        # Use get_wolf_registry() which always returns the module-level registry
+        # (captured at import time) rather than get_registry() which may return
+        # a reset singleton after TestExposition.teardown_method runs.
+        from core.metrics import get_wolf_registry  # noqa: PLC0415
+        text = get_wolf_registry().exposition()
+        new_metric_names = [
+            "wolf_sovereignty_level",
+            "wolf_reflective_drift_ratio",
+            "wolf_trq3d_alpha",
+            "wolf_trq3d_beta",
+            "wolf_trq3d_gamma",
+            "wolf_tii_score",
+            "wolf_frpc_score",
+            "wolf_conf12_score",
+            "wolf_account_drawdown_percent",
+        ]
+        for name in new_metric_names:
+            assert name in text, f"Metric '{name}' missing from exposition output"
+
+
+# ===========================================================================
+# Pipeline recorder - new constitutional gauges integration
+# ===========================================================================
+
+class TestPipelineRecordNewMetrics:
+    """Verify that record_pipeline_metrics records the 9 new constitutional gauges."""
+
+    def _base_result(self) -> dict[str, Any]:
+        return {
+            "latency_ms": 50.0,
+            "l12_verdict": {"verdict": "HOLD", "gates_v74": {}},
+            "errors": [],
+        }
+
+    def test_sovereignty_and_drift_recorded(self):
+        from core.metrics import REFLECTIVE_DRIFT_RATIO, SOVEREIGNTY_LEVEL  # noqa: PLC0415
+        from pipeline.wolf_constitutional_pipeline import WolfConstitutionalPipeline  # noqa: PLC0415
+
+        result = {
+            **self._base_result(),
+            "enforcement": {
+                "execution_rights": "RESTRICTED",
+                "drift_ratio": 0.17,
+            },
+        }
+        WolfConstitutionalPipeline.record_metrics("SOV_TEST", result)
+
+        assert SOVEREIGNTY_LEVEL.labels(symbol="SOV_TEST", level="RESTRICTED").value == 1.0
+        assert SOVEREIGNTY_LEVEL.labels(symbol="SOV_TEST", level="GRANTED").value == 0.0
+        assert SOVEREIGNTY_LEVEL.labels(symbol="SOV_TEST", level="REVOKED").value == 0.0
+        assert math.isclose(
+            REFLECTIVE_DRIFT_RATIO.labels(symbol="SOV_TEST").value, 0.17, rel_tol=1e-9
+        )
+
+    def test_trq3d_gauges_recorded(self):
+        from core.metrics import TRQ3D_ALPHA, TRQ3D_BETA, TRQ3D_GAMMA  # noqa: PLC0415
+        from pipeline.wolf_constitutional_pipeline import WolfConstitutionalPipeline  # noqa: PLC0415
+
+        result = {
+            **self._base_result(),
+            "synthesis": {
+                "trq3d": {"alpha": 0.71, "beta": 0.65, "gamma": 0.88},
+                "layers": {},
+                "fusion_frpc": {},
+            },
+        }
+        WolfConstitutionalPipeline.record_metrics("TRQ_TEST", result)
+
+        assert math.isclose(TRQ3D_ALPHA.labels(symbol="TRQ_TEST").value, 0.71, rel_tol=1e-9)
+        assert math.isclose(TRQ3D_BETA.labels(symbol="TRQ_TEST").value, 0.65, rel_tol=1e-9)
+        assert math.isclose(TRQ3D_GAMMA.labels(symbol="TRQ_TEST").value, 0.88, rel_tol=1e-9)
+
+    def test_tii_conf12_recorded(self):
+        from core.metrics import CONF12_SCORE, TII_SCORE  # noqa: PLC0415
+        from pipeline.wolf_constitutional_pipeline import WolfConstitutionalPipeline  # noqa: PLC0415
+
+        result = {
+            **self._base_result(),
+            "synthesis": {
+                "layers": {"L8_tii_sym": 0.63, "conf12": 0.78},
+                "fusion_frpc": {},
+            },
+        }
+        WolfConstitutionalPipeline.record_metrics("SCORE_TEST", result)
+
+        assert math.isclose(TII_SCORE.labels(symbol="SCORE_TEST").value, 0.63, rel_tol=1e-9)
+        assert math.isclose(CONF12_SCORE.labels(symbol="SCORE_TEST").value, 0.78, rel_tol=1e-9)
+
+    def test_frpc_energy_recorded(self):
+        from core.metrics import FRPC_SCORE  # noqa: PLC0415
+        from pipeline.wolf_constitutional_pipeline import WolfConstitutionalPipeline  # noqa: PLC0415
+
+        result = {
+            **self._base_result(),
+            "synthesis": {
+                "layers": {},
+                "fusion_frpc": {"frpc_energy": 0.94},
+            },
+        }
+        WolfConstitutionalPipeline.record_metrics("FRPC_TEST", result)
+
+        assert math.isclose(FRPC_SCORE.labels(symbol="FRPC_TEST").value, 0.94, rel_tol=1e-9)
+
+    def test_missing_enforcement_is_safe(self):
+        """Missing enforcement key should not raise errors."""
+        from pipeline.wolf_constitutional_pipeline import WolfConstitutionalPipeline  # noqa: PLC0415
+
+        result = {**self._base_result()}
+        # Should complete without exception
+        WolfConstitutionalPipeline.record_metrics("SAFE_TEST", result)
+
+    def test_none_enforcement_is_safe(self):
+        """None enforcement value should not raise errors."""
+        from pipeline.wolf_constitutional_pipeline import WolfConstitutionalPipeline  # noqa: PLC0415
+
+        result = {**self._base_result(), "enforcement": None}
+        WolfConstitutionalPipeline.record_metrics("NONE_TEST", result)
