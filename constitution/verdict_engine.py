@@ -22,7 +22,7 @@ class ExhaustionLayerInput:
     score: float
     confidence: float
     reason: str = ""
-    missing_tfs: list[str] = field(default_factory=list)
+    missing_tfs: list[str] = field(default_factory=list[str])
 
 
 # ── Pure gate functions (used by layer pipeline) ──────────────────────────────
@@ -84,6 +84,7 @@ class VerdictEngine:
         config: dict[str, Any] | None = None,
         thresholds: VerdictThresholds | None = None,
     ) -> None:
+        super().__init__()
         self.config: dict[str, Any] = config or {}
         self.thresholds: VerdictThresholds = thresholds or VerdictThresholds()
         self._kelly_gate_enabled: bool = bool(self.config.get("kelly_edge_gate_enabled", True))
@@ -345,7 +346,7 @@ _REQUIRED_SYNTHESIS_FIELDS: tuple[str, ...] = (
     "layers", "scores", "execution", "propfirm", "risk", "bias", "system",
 )
 
-# Constitutional gate thresholds (9 gates)
+# Constitutional gate thresholds (10 gates)
 _THRESH_TII: float = 0.65          # gate_1  — L8_tii_sym
 _THRESH_INTEGRITY: float = 0.75    # gate_2  — L8_integrity_index
 _THRESH_RR: float = 1.5            # gate_3  — execution.rr_ratio
@@ -353,6 +354,7 @@ _THRESH_FTA: float = 0.65          # gate_4  — scores.fta_score
 _THRESH_MONTE: float = 0.60        # gate_5  — layers.L7_monte_carlo_win
 _THRESH_LATENCY_MS: int = 250      # gate_8  — system.latency_ms
 _THRESH_CONF12: float = 0.75       # gate_9  — layers.conf12
+# Gate 10: Reflex Quality — LOCK is critical fail, CAUTION passes with lot_scale
 
 # Confidence label thresholds (based on wolf_30_point)
 _CONF_VERY_HIGH_MIN: int = 27
@@ -435,7 +437,15 @@ def generate_l12_verdict(synthesis: dict[str, Any]) -> dict[str, Any]:
     max_drawdown: float = float(risk.get("max_drawdown", 5.0))
     latency: int = int(system.get("latency_ms", 0))
 
-    # ── 9 Constitutional Gates ────────────────────────────────────────────────
+    # ── Gate 10: Reflex Quality (from reflex_gate controller) ─────────────────
+    reflex_gate_data: dict[str, Any] = system.get("reflex_gate", {})
+    reflex_gate_label: str = str(reflex_gate_data.get("gate", "OPEN")).upper()
+    reflex_lot_scale: float = float(reflex_gate_data.get("lot_scale", 1.0))
+
+    # LOCK = critical fail (hard block).  OPEN/CAUTION = pass.
+    g10 = "FAIL" if reflex_gate_label == "LOCK" else "PASS"
+
+    # ── 10 Constitutional Gates ───────────────────────────────────────────────
     g1 = "PASS" if tii >= _THRESH_TII else "FAIL"
     g2 = "PASS" if integrity >= _THRESH_INTEGRITY else "FAIL"
     g3 = "PASS" if rr >= _THRESH_RR else "FAIL"
@@ -456,13 +466,14 @@ def generate_l12_verdict(synthesis: dict[str, Any]) -> dict[str, Any]:
         "gate_7_drawdown": g7,
         "gate_8_latency": g8,
         "gate_9_conf12": g9,
+        "gate_10_reflex_quality": g10,
     }
     passed: int = sum(1 for v in gate_results.values() if v == "PASS")
     gate_results["passed"] = passed
-    gate_results["total"] = 9
+    gate_results["total"] = 10
 
-    all_pass: bool = passed == 9
-    critical_fail: bool = g6 == "FAIL" or g7 == "FAIL"
+    all_pass: bool = passed == 10
+    critical_fail: bool = g6 == "FAIL" or g7 == "FAIL" or g10 == "FAIL"
 
     # ── Direction from technical bias ─────────────────────────────────────────
     technical_bias: str = str(bias.get("technical", "NEUTRAL")).upper()
@@ -504,6 +515,8 @@ def generate_l12_verdict(synthesis: dict[str, Any]) -> dict[str, Any]:
         "proceed_to_L13": proceed,
         "gates": gate_results,
         "enrichment_applied": enrichment_applied,
+        "reflex_gate": reflex_gate_label,
+        "lot_scale": reflex_lot_scale,
         "scores": {
             "tii": tii,
             "integrity": integrity,
