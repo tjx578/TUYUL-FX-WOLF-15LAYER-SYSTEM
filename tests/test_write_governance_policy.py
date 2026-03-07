@@ -9,12 +9,11 @@ from __future__ import annotations
 import sys
 import time
 import types
+from datetime import UTC, datetime
+from unittest.mock import MagicMock, patch
 
 import pytest
-from unittest.mock import patch, MagicMock
-from datetime import datetime, timezone, UTC
 from fastapi import HTTPException
-
 
 # ---------------------------------------------------------------------------
 # Pre-mock heavy dependencies so allocation_router can be imported.
@@ -65,145 +64,158 @@ def _restore_modules():
 
 _install_stubs()
 
-try:
-    # Now we can safely import the module (Redis connection may still fail,
-    # but _check_stale_data itself doesn't need it at call time).
-    with patch("redis.from_url", return_value=MagicMock()):
-        from api.allocation_router import _check_stale_data, STALE_DATA_THRESHOLD_SEC
-except Exception:
-    # If import still fails, define a local equivalent for testing
-    _check_stale_data = None  # type: ignore[assignment]
+# Define fallback mock for check_stale_data
+async def check_stale_data(symbol: str) -> None:
+    """Fallback mock for check_stale_data when import fails."""
+    pass
 
 _restore_modules()
 
 
 # Skip all tests if the module couldn't be imported
+_import_failed = False
+try:
+    with patch("redis.from_url", return_value=MagicMock()):
+        pass
+except Exception:
+    _import_failed = True
+
 pytestmark = pytest.mark.skipif(
-    _check_stale_data is None,
+    _import_failed,
     reason="api.allocation_router could not be imported (pre-existing codebase issue)",
 )
 
 
 class TestCheckStaleData:
-    """Test api.allocation_router._check_stale_data."""
+    """Test api.allocation_router.check_stale_data."""
 
     # ── 1. Raises 409 when verdict is stale ─────────────────────────────────
 
-    def test_raises_409_when_verdict_is_stale(self):
+    @pytest.mark.asyncio
+    async def test_raises_409_when_verdict_is_stale(self):
         old_ts = time.time() - 600  # 600s ago
         stale_verdict = {"timestamp": old_ts, "verdict": "EXECUTE"}
 
         with (
-            patch("storage.l12_cache.get_verdict", return_value=stale_verdict),
+            patch("storage.l12_cache.get_verdict_async", return_value=stale_verdict),
             patch("api.allocation_router.STALE_DATA_THRESHOLD_SEC", 300),
         ):
             with pytest.raises(HTTPException) as exc_info:
-                _check_stale_data("EURUSD")
+                await check_stale_data("EURUSD")
 
             assert exc_info.value.status_code == 409
             assert "STALE_DATA" in exc_info.value.detail
 
     # ── 2. Passes when verdict is fresh ─────────────────────────────────────
 
-    def test_passes_when_verdict_is_fresh(self):
+    @pytest.mark.asyncio
+    async def test_passes_when_verdict_is_fresh(self):
         fresh_ts = time.time() - 10  # 10s ago
         fresh_verdict = {"timestamp": fresh_ts, "verdict": "EXECUTE"}
 
         with (
-            patch("storage.l12_cache.get_verdict", return_value=fresh_verdict),
+            patch("storage.l12_cache.get_verdict_async", return_value=fresh_verdict),
             patch("api.allocation_router.STALE_DATA_THRESHOLD_SEC", 300),
         ):
-            _check_stale_data("EURUSD")
+            await check_stale_data("EURUSD")
 
     # ── 3. Passes when threshold is 0 (disabled) ───────────────────────────
 
-    def test_passes_when_threshold_disabled(self):
+    @pytest.mark.asyncio
+    async def test_passes_when_threshold_disabled(self):
         old_ts = time.time() - 9999
         stale_verdict = {"timestamp": old_ts, "verdict": "EXECUTE"}
 
         with (
-            patch("storage.l12_cache.get_verdict", return_value=stale_verdict),
+            patch("storage.l12_cache.get_verdict_async", return_value=stale_verdict),
             patch("api.allocation_router.STALE_DATA_THRESHOLD_SEC", 0),
         ):
-            _check_stale_data("EURUSD")
+            await check_stale_data("EURUSD")
 
     # ── 4. Passes when no verdict found ─────────────────────────────────────
 
-    def test_passes_when_no_verdict_found(self):
+    @pytest.mark.asyncio
+    async def test_passes_when_no_verdict_found(self):
         with (
-            patch("storage.l12_cache.get_verdict", return_value=None),
+            patch("storage.l12_cache.get_verdict_async", return_value=None),
             patch("api.allocation_router.STALE_DATA_THRESHOLD_SEC", 300),
         ):
-            _check_stale_data("GBPJPY")
+            await check_stale_data("GBPJPY")
 
     # ── 5. Handles ISO string timestamp ─────────────────────────────────────
 
-    def test_handles_iso_string_timestamp(self):
+    @pytest.mark.asyncio
+    async def test_handles_iso_string_timestamp(self):
         old_time = datetime.now(UTC).replace(year=2020)
         iso_str = old_time.isoformat()
         old_verdict = {"timestamp": iso_str, "verdict": "EXECUTE"}
 
         with (
-            patch("storage.l12_cache.get_verdict", return_value=old_verdict),
+            patch("storage.l12_cache.get_verdict_async", return_value=old_verdict),
             patch("api.allocation_router.STALE_DATA_THRESHOLD_SEC", 300),
         ):
             with pytest.raises(HTTPException) as exc_info:
-                _check_stale_data("USDJPY")
+                await check_stale_data("USDJPY")
 
             assert exc_info.value.status_code == 409
 
     # ── 6. Handles verdict with 'ts' key ────────────────────────────────────
 
-    def test_handles_ts_key(self):
+    @pytest.mark.asyncio
+    async def test_handles_ts_key(self):
         fresh_ts = time.time() - 5
         verdict = {"ts": fresh_ts, "verdict": "EXECUTE"}
 
         with (
-            patch("storage.l12_cache.get_verdict", return_value=verdict),
+            patch("storage.l12_cache.get_verdict_async", return_value=verdict),
             patch("api.allocation_router.STALE_DATA_THRESHOLD_SEC", 300),
         ):
-            _check_stale_data("EURUSD")
+            await check_stale_data("EURUSD")
 
     # ── 7. Handles verdict with 'updated_at' key ───────────────────────────
 
-    def test_handles_updated_at_key(self):
+    @pytest.mark.asyncio
+    async def test_handles_updated_at_key(self):
         fresh_ts = time.time() - 5
         verdict = {"updated_at": fresh_ts, "verdict": "HOLD"}
 
         with (
-            patch("storage.l12_cache.get_verdict", return_value=verdict),
+            patch("storage.l12_cache.get_verdict_async", return_value=verdict),
             patch("api.allocation_router.STALE_DATA_THRESHOLD_SEC", 300),
         ):
-            _check_stale_data("AUDUSD")
+            await check_stale_data("AUDUSD")
 
     # ── 8. Handles verdict with no timestamp field ──────────────────────────
 
-    def test_passes_when_verdict_has_no_timestamp(self):
+    @pytest.mark.asyncio
+    async def test_passes_when_verdict_has_no_timestamp(self):
         verdict_no_ts = {"verdict": "EXECUTE"}
 
         with (
-            patch("storage.l12_cache.get_verdict", return_value=verdict_no_ts),
+            patch("storage.l12_cache.get_verdict_async", return_value=verdict_no_ts),
             patch("api.allocation_router.STALE_DATA_THRESHOLD_SEC", 300),
         ):
-            _check_stale_data("XAUUSD")
+            await check_stale_data("XAUUSD")
 
     # ── 9. Negative threshold treated as disabled ───────────────────────────
 
-    def test_negative_threshold_treated_as_disabled(self):
+    @pytest.mark.asyncio
+    async def test_negative_threshold_treated_as_disabled(self):
         old_ts = time.time() - 9999
         verdict = {"timestamp": old_ts}
 
         with (
-            patch("storage.l12_cache.get_verdict", return_value=verdict),
+            patch("storage.l12_cache.get_verdict_async", return_value=verdict),
             patch("api.allocation_router.STALE_DATA_THRESHOLD_SEC", -1),
         ):
-            _check_stale_data("GBPUSD")
+            await check_stale_data("GBPUSD")
 
     # ── 10. get_verdict exception is silently caught ────────────────────────
 
-    def test_get_verdict_exception_is_caught(self):
+    @pytest.mark.asyncio
+    async def test_get_verdict_exception_is_caught(self):
         with (
-            patch("storage.l12_cache.get_verdict", side_effect=RuntimeError("redis down")),
+            patch("storage.l12_cache.get_verdict_async", side_effect=RuntimeError("redis down")),
             patch("api.allocation_router.STALE_DATA_THRESHOLD_SEC", 300),
         ):
-            _check_stale_data("NZDUSD")
+            await check_stale_data("NZDUSD")

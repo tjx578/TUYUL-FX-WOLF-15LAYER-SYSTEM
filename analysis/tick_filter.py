@@ -1,24 +1,35 @@
 """
-Tick/price filtering utilities for analysis pipeline.
+Tick/price filtering utilities — **single source of truth**.
+
+Used by both analysis pipeline and ingest runtime.
 Handles spike detection, deduplication, and price reference tracking.
 
 Zone: analysis/ — no execution side-effects.
 """
 
+from __future__ import annotations
+
 import threading
 import time
 from collections import OrderedDict
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+
+
+def _default_per_symbol_spike_pct() -> dict[str, float]:
+    return {}
 
 
 @dataclass
 class TickFilterConfig:
     """Configuration for tick filtering thresholds."""
-    spike_threshold_pct: float = 3.0       # Max % move before flagging as spike
+    spike_threshold_pct: float = 3.0       # Default max % move before flagging as spike
     staleness_seconds: float = 300.0       # After this many seconds, force-accept new price
     dedup_ttl_seconds: float = 60.0        # TTL for dedup cache entries
     dedup_max_size: int = 5000             # Hard cap on dedup cache size
     dedup_evict_batch: int = 500           # Number of oldest entries to evict when cap hit
+    # Per-symbol spike thresholds override spike_threshold_pct when set.
+    # e.g. {"XAUUSD": 2.0, "GBPJPY": 1.0}
+    per_symbol_spike_pct: dict[str, float] = field(default_factory=_default_per_symbol_spike_pct)
 
 
 @dataclass
@@ -39,6 +50,7 @@ class LastPriceStore:
     """
 
     def __init__(self) -> None:
+        super().__init__()
         self._lock = threading.Lock()
         self._prices: dict[str, PriceEntry] = {}
 
@@ -65,6 +77,7 @@ class DedupCache:
     """
 
     def __init__(self, config: TickFilterConfig | None = None) -> None:
+        super().__init__()
         self._config = config or TickFilterConfig()
         self._lock = threading.Lock()
         self._cache: OrderedDict[str, float] = OrderedDict()
@@ -74,7 +87,7 @@ class DedupCache:
         cutoff = now - self._config.dedup_ttl_seconds
         # Evict from oldest (front of OrderedDict)
         while self._cache:
-            key, ts = next(iter(self._cache.items()))
+            _, ts = next(iter(self._cache.items()))
             if ts < cutoff:
                 self._cache.popitem(last=False)
             else:
@@ -143,6 +156,7 @@ class SpikeFilter:
     """
 
     def __init__(self, config: TickFilterConfig | None = None) -> None:
+        super().__init__()
         self._config = config or TickFilterConfig()
         self._store = LastPriceStore()
 
@@ -180,8 +194,13 @@ class SpikeFilter:
         pct_change = abs(price - last.price) / last.price * 100.0
         age_seconds = now - last.timestamp
 
+        # Resolve per-symbol threshold (falls back to global default)
+        threshold = self._config.per_symbol_spike_pct.get(
+            symbol, self._config.spike_threshold_pct
+        )
+
         # Within threshold — normal accept
-        if pct_change <= self._config.spike_threshold_pct:
+        if pct_change <= threshold:
             self._store.update(symbol, price, now)
             return SpikeCheckResult(
                 is_spike=False,

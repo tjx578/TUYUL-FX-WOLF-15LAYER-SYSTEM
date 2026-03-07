@@ -7,7 +7,7 @@ services:
       dockerfile: services/api/Dockerfile
     environment:
       REDIS_URL: redis://redis:6379/0
-      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/wolf15
+      DATABASE_URL: ${DATABASE_URL}
       PORT: 8000
     ports:
       - "8000:8000"
@@ -21,7 +21,7 @@ services:
       dockerfile: services/engine/Dockerfile
     environment:
       REDIS_URL: redis://redis:6379/0
-      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/wolf15
+      DATABASE_URL: ${DATABASE_URL}
       RUN_MODE: engine-only
     depends_on:
       - redis
@@ -43,7 +43,7 @@ services:
       dockerfile: services/orchestrator/Dockerfile
     environment:
       REDIS_URL: redis://redis:6379/0
-      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/wolf15
+      DATABASE_URL: ${DATABASE_URL}
     depends_on:
       - redis
       - postgres
@@ -56,8 +56,8 @@ services:
   postgres:
     image: postgres:16-alpine
     environment:
-      POSTGRES_DB: wolf15
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     ports:
       - "5432:5432"

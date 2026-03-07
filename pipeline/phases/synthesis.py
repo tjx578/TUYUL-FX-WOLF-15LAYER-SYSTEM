@@ -210,4 +210,9 @@ def build_l12_synthesis(
     synthesis["risk_of_ruin"] = layer_results.get("L7", {}).get("risk_of_ruin", 0.0)
     synthesis["l7_validation"] = layer_results.get("L7", {}).get("validation", "FAIL")
 
+    # Inference state — ephemeral abstract state from LiveContextBus
+    inference = layer_results.get("inference", {})
+    if inference:
+        synthesis["inference"] = inference
+
     return synthesis

@@ -1,35 +1,50 @@
-from analysis.candle_builder import process_tick_for_candle, update_vwap
-from infrastructure.stream_consumer import ConsumerConfig, StreamBinding, StreamConsumer
+"""
+DEPRECATED — This module is dead code. Do NOT import.
 
+The runtime tick processing path is:
+  ingest/dependencies.py :: _build_tick_handler()
+    → LiveContextBus.update_tick()
+    → RedisContextBridge.write_tick()
 
-# Producer (tick ingestion)
-async def publish_tick(symbol: str, tick_data: dict):
-    await redis_client.xadd(  # noqa: F821 # pyright: ignore[reportUndefinedVariable]
-        f"ticks:{symbol}",
-        fields=tick_data,
-        maxlen=10000  # auto-trim old ticks
+See: docs/REDIS_DEPLOYMENT.md for the authoritative data flow.
+
+This file is retained solely as a historical reference.
+It will be removed in a future release.
+"""
+
+from __future__ import annotations
+
+import os
+import warnings
+
+__all__: list[str] = []  # Nothing is public.
+
+_ALLOW_DEPRECATED = os.getenv("ALLOW_DEPRECATED_TICK_STREAM", "").lower() in ("1", "true")
+
+if not _ALLOW_DEPRECATED:
+    raise ImportError(
+        "analysis.tick_stream is deprecated and must not be imported. "
+        "The runtime tick path is ingest.dependencies._build_tick_handler(). "
+        "Set ALLOW_DEPRECATED_TICK_STREAM=1 to suppress this guard (tests only)."
     )
 
-# Consumer 1: CandleBuilder
-candle_consumer = StreamConsumer(
-    bindings=[
-        StreamBinding(
-            stream="ticks:EURUSD",
-            group="candle_builder_group",
-            callback=process_tick_for_candle, # pyright: ignore[reportArgumentType]
-        )
-    ],
-    config=ConsumerConfig(...) # pyright: ignore[reportArgumentType]
+warnings.warn(
+    "analysis.tick_stream is a deprecated blueprint. "
+    "Runtime tick handling lives in ingest.dependencies._build_tick_handler(). "
+    "Do not import this module in production.",
+    DeprecationWarning,
+    stacklevel=2,
 )
 
-# Consumer 2: VWAP
-vwap_consumer = StreamConsumer(
-    bindings=[
-        StreamBinding(
-            stream="ticks:EURUSD",
-            group="vwap_group",  # Different group = independent consumption
-            callback=update_vwap, # pyright: ignore[reportArgumentType]
-        )
-    ],
-    config=ConsumerConfig(...) # pyright: ignore[reportArgumentType]
-)
+
+# ── Original blueprint (preserved for reference, non-functional) ──
+#
+# from analysis.candle_builder import process_tick_for_candle, update_vwap
+# from infrastructure.stream_consumer import ConsumerConfig, StreamBinding, StreamConsumer
+#
+# async def publish_tick(symbol: str, tick_data: dict):
+#     """Blueprint: tick ingestion via Redis Streams."""
+#     ...
+#
+# candle_consumer = StreamConsumer(...)
+# vwap_consumer = StreamConsumer(...)

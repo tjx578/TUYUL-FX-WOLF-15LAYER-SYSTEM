@@ -6,6 +6,7 @@ from typing import Any
 
 from schemas.trade_models import Account
 
+from infrastructure.redis_client import get_client
 from storage.redis_client import redis_client
 
 
@@ -27,6 +28,20 @@ class AccountManager:
 
         return sorted(accounts.values(), key=lambda a: a.account_id)
 
+    async def list_accounts_async(self) -> list[Account]:
+        accounts: dict[str, Account] = dict(self._memory_accounts)
+
+        with contextlib.suppress(Exception):
+            client = await get_client()
+            async for key in client.scan_iter(match="ACCOUNT:*"):
+                raw_id = str(key).split(":", 1)[1]
+                account_id = str(raw_id)
+                payload = await client.hgetall(str(key))
+                if payload:
+                    accounts[account_id] = self._from_payload(account_id, payload)
+
+        return sorted(accounts.values(), key=lambda a: a.account_id)
+
     def get_account(self, account_id: str) -> Account | None:
         if account_id in self._memory_accounts:
             return self._memory_accounts[account_id]
@@ -43,10 +58,47 @@ class AccountManager:
 
         return None
 
+    async def get_account_async(self, account_id: str) -> Account | None:
+        if account_id in self._memory_accounts:
+            return self._memory_accounts[account_id]
+
+        payload: dict[str, Any] = {}
+        try:
+            client = await get_client()
+            payload = await client.hgetall(f"ACCOUNT:{account_id}")
+        except Exception:
+            payload = {}
+
+        if payload:
+            account = self._from_payload(account_id, payload)
+            self._memory_accounts[account_id] = account
+            return account
+
+        return None
+
     def upsert_account(self, account: Account) -> Account:
         self._memory_accounts[account.account_id] = account
         with contextlib.suppress(Exception):
             redis_client.client.hset(
+                f"ACCOUNT:{account.account_id}",
+                mapping={
+                    "name": account.name,
+                    "balance": account.balance,
+                    "equity": account.equity,
+                    "prop_firm": int(account.prop_firm),
+                    "max_daily_dd_percent": account.max_daily_dd_percent,
+                    "max_total_dd_percent": account.max_total_dd_percent,
+                    "max_concurrent_trades": account.max_concurrent_trades,
+                    "updated_at": datetime.now(UTC).isoformat(),
+                },
+            )
+        return account
+
+    async def upsert_account_async(self, account: Account) -> Account:
+        self._memory_accounts[account.account_id] = account
+        with contextlib.suppress(Exception):
+            client = await get_client()
+            await client.hset(
                 f"ACCOUNT:{account.account_id}",
                 mapping={
                     "name": account.name,

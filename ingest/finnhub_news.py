@@ -44,7 +44,9 @@ class FinnhubNews:
 
     def __init__(self) -> None:
         self._config = load_finnhub()
-        self._api_key: str = os.getenv("FINNHUB_API_KEY", "")
+        from ingest.finnhub_key_manager import finnhub_keys  # noqa: PLC0415
+        self._key_manager = finnhub_keys
+        self._api_key: str = self._key_manager.current_key()
         self._base_url: str = self._config["rest"].get("base_url", "https://finnhub.io/api/v1")
         self._timeout: int = self._config["rest"].get("timeout_sec", 20)
         self._retries: int = self._config["rest"].get("retries", 3)
@@ -84,12 +86,16 @@ class FinnhubNews:
         wait: float = 1.0
 
         for attempt in range(1, self._retries + 1):
+            # Refresh key from manager (may have rotated).
+            self._api_key = self._key_manager.current_key()
+            params["token"] = self._api_key
             try:
                 async with httpx.AsyncClient(timeout=self._timeout) as client:
                     response = await client.get(url, params=params)
                     response.raise_for_status()
                     data = response.json()
 
+                self._key_manager.report_success(self._api_key)
                 raw_events: list[dict[str, Any]] = data.get("economicCalendar", [])
 
                 filtered = self._filter_by_impact(raw_events)
@@ -101,6 +107,7 @@ class FinnhubNews:
 
             except httpx.HTTPStatusError as exc:
                 last_exc = exc
+                self._key_manager.report_failure(self._api_key, exc.response.status_code)
                 if exc.response.status_code == 429:
                     logger.warning(
                         f"Finnhub rate limited (attempt {attempt}/"

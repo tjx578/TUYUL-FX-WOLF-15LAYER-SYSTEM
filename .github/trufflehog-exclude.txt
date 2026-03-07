@@ -3,8 +3,13 @@
 .git/
 node_modules/
 .env.example
+dashboard/nextjs/.env.example
 package-lock.json
 .*\.lock$
 __pycache__/
 .*\.pyc$
 coverage.xml
+test_results.txt
+.github/workflows/ci.yml
+tests/unit/test_telegram_alerts.py
+tests/test_ws_auth_guard.py

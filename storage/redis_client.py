@@ -1,5 +1,17 @@
 """
 Redis Client Wrapper with Connection Pooling, Pub/Sub, and Streams support.
+
+.. deprecated::
+    This **sync** Redis singleton is superseded by the native-async pool in
+    ``infrastructure.redis_client`` (``RedisClientManager``).
+
+    New code must use::
+
+        from infrastructure.redis_client import get_client, get_async_redis
+
+    This module remains only for backward-compatibility with components that
+    still rely on synchronous Redis calls (e.g. ``storage`` helpers,
+    ``ws_routes``).  It will be removed once the async migration is complete.
 """
 
 import os

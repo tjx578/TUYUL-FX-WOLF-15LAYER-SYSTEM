@@ -1,14 +1,28 @@
-"""LiveContextBus - in-process context store for candles and ticks.
+"""LiveContextBus — ephemeral inference state machine.
 
-This module is analysis-only; it stores market context used by the pipeline.
-No execution logic, no side effects beyond internal state.
+NOT storage.  TUYUL thinks with state abstractions, not raw data.
+
+Two layers:
+  1. **Data layer** — candles, ticks, conditioned returns.
+     Raw market observations with overflow protection.
+  2. **Inference layer** — regime_state, volatility_regime, session_state,
+     liquidity_map, news_pressure_vector, signal_stack.
+     Derived abstract state that analysis layers produce and L12 consumes.
+
+This module is analysis-only; no execution logic, no side effects beyond
+internal state.  The inference layer is what makes the system stable —
+it reasons over abstractions, not noisy raw feeds.
 """
 
 from __future__ import annotations
 
+import time
+from threading import Lock
 from typing import Any
 
 from loguru import logger
+
+from config.pip_values import get_pip_multiplier
 
 # Maximum candle history entries per symbol:timeframe key.
 # Prevents unbounded memory growth during long-running sessions.
@@ -16,7 +30,17 @@ CANDLE_MAX_BUFFER = 250
 
 
 class LiveContextBus:
-    """Central in-memory bus for live market context (candles, ticks, etc.)."""
+    """Ephemeral inference state machine for live market context.
+
+    Singleton.  Two semantic layers:
+    - **data**: raw candles / ticks / conditioned returns.
+    - **inference**: abstract regime, session, liquidity, news pressure,
+      and signal-stack state produced by analysis layers.
+
+    All inference fields are ephemeral: they reflect the *current* system
+    belief and are overwritten on every refresh cycle.  No persistence
+    beyond in-process memory.
+    """
 
     _instance: LiveContextBus | None = None
 
@@ -31,11 +55,28 @@ class LiveContextBus:
     # ------------------------------------------------------------------
 
     def _init(self) -> None:
+        self._lock = Lock()
+
+        # ── Data layer (raw market observations) ──────────────────────
         # {symbol: {timeframe: [candle_dict, ...]}}
         self._candles: dict[str, dict[str, list[dict[str, Any]]]] = {}
         # {symbol: tick_dict}
         self._ticks: dict[str, dict[str, Any]] = {}
         self._candle_history: dict[str, list[dict[str, Any]]] = {}
+        # {symbol: conditioned return list}
+        self._conditioned_returns: dict[str, list[float]] = {}
+        # {symbol: diagnostics dict}
+        self._conditioning_meta: dict[str, dict[str, Any]] = {}
+
+        # ── Inference layer (abstract state — what TUYUL thinks with) ─
+        self._regime_state: dict[str, Any] = {}          # macro regime (0/1/2 + vix fields)
+        self._volatility_regime: str = "NORMAL"           # LOW / NORMAL / HIGH / EXTREME
+        self._session_state: dict[str, Any] = {}          # session window + multiplier
+        self._liquidity_map: dict[str, Any] = {}          # SMC zone abstractions
+        self._news_pressure_vector: dict[str, Any] = {}   # impact-weighted sentiment
+        self._news: dict[str, Any] = {}                   # raw news events
+        self._signal_stack: list[dict[str, Any]] = []     # pending signal candidates
+        self._inference_ts: float = 0.0                    # last inference update epoch
 
     # ------------------------------------------------------------------
     # Write API (analysis / consumer only — no execution logic)
@@ -94,8 +135,239 @@ class LiveContextBus:
             )
 
     def reset_state(self) -> None:
-        """Clear all internal candle history. Used for test isolation."""
-        self._candle_history: dict[str, list[dict[str, Any]]] = {}
+        """Clear all internal state. Used for test isolation."""
+        with self._lock:
+            # Data layer
+            self._candles = {}
+            self._ticks = {}
+            self._candle_history = {}
+            self._conditioned_returns = {}
+            self._conditioning_meta = {}
+            # Inference layer
+            self._regime_state = {}
+            self._volatility_regime = "NORMAL"
+            self._session_state = {}
+            self._liquidity_map = {}
+            self._news_pressure_vector = {}
+            self._news = {}
+            self._signal_stack = []
+            self._inference_ts = 0.0
+
+    def update_conditioned_returns(
+        self,
+        symbol: str,
+        returns: list[float],
+        diagnostics: dict[str, Any] | None = None,
+    ) -> None:
+        """Store latest conditioned return series and optional diagnostics."""
+        if not symbol:
+            return
+        self._conditioned_returns[symbol] = [float(r) for r in returns]
+        if diagnostics is not None:
+            self._conditioning_meta[symbol] = dict(diagnostics)
+
+    def get_conditioned_returns(
+        self,
+        symbol: str,
+        count: int | None = None,
+    ) -> list[float]:
+        """Return latest conditioned return series for a symbol."""
+        data = self._conditioned_returns.get(symbol, [])
+        if count is not None and count < len(data):
+            return data[-count:]
+        return list(data)
+
+    def get_conditioning_meta(self, symbol: str) -> dict[str, Any] | None:
+        """Return latest signal-conditioning diagnostics for a symbol."""
+        meta = self._conditioning_meta.get(symbol)
+        return dict(meta) if meta is not None else None
+
+    # ------------------------------------------------------------------
+    # Inference layer — write API
+    # These methods update the abstract state TUYUL reasons with.
+    # Each write is atomic (lock-protected) and timestamped.
+    # ------------------------------------------------------------------
+
+    def update_macro_state(self, state: dict[str, Any]) -> None:
+        """Update macro regime state (from MacroVolatilityEngine).
+
+        Expected fields: vix_level, vix_regime, regime_state (0/1/2),
+        volatility_multiplier, risk_multiplier, source, timestamp.
+        """
+        with self._lock:
+            self._regime_state = dict(state)
+            # Derive volatility_regime label from regime_state int
+            rs = state.get("regime_state", 1)
+            fallback_regime = str(state.get("vix_regime") or "NORMAL")
+            if rs == 0:
+                self._volatility_regime = "LOW"
+            elif rs == 1:
+                self._volatility_regime = "NORMAL"
+            elif rs == 2:
+                self._volatility_regime = "HIGH"
+            else:
+                self._volatility_regime = fallback_regime
+            self._inference_ts = time.time()
+
+    def update_news(self, news: dict[str, Any]) -> None:
+        """Update news events payload.
+
+        Expected shape: {"events": [...], "source": str}.
+        """
+        with self._lock:
+            self._news = dict(news)
+            self._inference_ts = time.time()
+
+    def update_session_state(self, state: dict[str, Any]) -> None:
+        """Update session window state (from L1 context analyzer).
+
+        Expected fields: session (e.g. "LONDON_OPEN"), session_multiplier,
+        is_overlap, major_session_active.
+        """
+        with self._lock:
+            self._session_state = dict(state)
+            self._inference_ts = time.time()
+
+    def update_liquidity_map(self, liq: dict[str, Any]) -> None:
+        """Update liquidity zone abstractions (from L9 SMC).
+
+        Expected fields: zones list, nearest_zone, zone_strength.
+        """
+        with self._lock:
+            self._liquidity_map = dict(liq)
+            self._inference_ts = time.time()
+
+    def update_news_pressure(self, pressure: dict[str, Any]) -> None:
+        """Update news pressure vector (from NewsEngine).
+
+        Expected fields: pressure_score, locked_symbols, high_impact_pending.
+        """
+        with self._lock:
+            self._news_pressure_vector = dict(pressure)
+            self._inference_ts = time.time()
+
+    def push_signal(self, signal: dict[str, Any]) -> None:
+        """Push a signal candidate onto the stack.
+
+        Keeps last 50 signals max (ephemeral — not a journal).
+        """
+        with self._lock:
+            self._signal_stack.append(dict(signal))
+            if len(self._signal_stack) > 50:
+                self._signal_stack = self._signal_stack[-50:]
+            self._inference_ts = time.time()
+
+    def clear_signal_stack(self) -> None:
+        """Clear the signal stack (e.g. after cycle completion)."""
+        with self._lock:
+            self._signal_stack = []
+
+    # ------------------------------------------------------------------
+    # Inference layer — read API
+    # All reads return copies to prevent mutation of internal state.
+    # ------------------------------------------------------------------
+
+    def get_macro_state(self) -> dict[str, Any]:
+        """Return current macro regime state (copy)."""
+        with self._lock:
+            return dict(self._regime_state)
+
+    def get_news(self) -> dict[str, Any] | None:
+        """Return current news events or None if empty."""
+        with self._lock:
+            return dict(self._news) if self._news else None
+
+    def get_session_state(self) -> dict[str, Any]:
+        """Return current session window state (copy)."""
+        with self._lock:
+            return dict(self._session_state)
+
+    def get_volatility_regime(self) -> str:
+        """Return current volatility regime label."""
+        with self._lock:
+            return self._volatility_regime
+
+    def get_liquidity_map(self) -> dict[str, Any]:
+        """Return current liquidity zone map (copy)."""
+        with self._lock:
+            return dict(self._liquidity_map)
+
+    def get_news_pressure(self) -> dict[str, Any]:
+        """Return current news pressure vector (copy)."""
+        with self._lock:
+            return dict(self._news_pressure_vector)
+
+    def get_signal_stack(self) -> list[dict[str, Any]]:
+        """Return current signal candidate stack (copy)."""
+        with self._lock:
+            return [dict(s) for s in self._signal_stack]
+
+    def inference_snapshot(self) -> dict[str, Any]:
+        """Return unified inference state — what TUYUL thinks with.
+
+        This is the abstract state the system reasons over.
+        Not raw data, but derived beliefs.
+        """
+        with self._lock:
+            return {
+                "regime_state": dict(self._regime_state),
+                "volatility_regime": self._volatility_regime,
+                "session_state": dict(self._session_state),
+                "liquidity_map": dict(self._liquidity_map),
+                "news_pressure_vector": dict(self._news_pressure_vector),
+                "signal_stack": [dict(s) for s in self._signal_stack],
+                "inference_ts": self._inference_ts,
+            }
+
+    # ------------------------------------------------------------------
+    # Convenience: single candle read (latest bar for symbol/tf)
+    # ------------------------------------------------------------------
+
+    def get_candle(self, symbol: str, timeframe: str) -> dict[str, Any] | None:
+        """Return the latest candle for symbol/timeframe, or None."""
+        key = f"{symbol}:{timeframe}"
+        buf = self._candle_history.get(key, [])
+        return dict(buf[-1]) if buf else None
+
+    def snapshot(self) -> dict[str, Any]:
+        """Return a shallow-immutable view of the live context state.
+
+        Includes both data layer and inference layer.
+        Intended for read-only API consumers and diagnostics.
+        """
+        with self._lock:
+            return {
+                # Data layer
+                "candles": {
+                    key: [dict(c) for c in candles]
+                    for key, candles in self._candle_history.items()
+                },
+                "ticks": {symbol: dict(tick) for symbol, tick in self._ticks.items()},
+                "conditioned_returns": {
+                    symbol: list(values)
+                    for symbol, values in self._conditioned_returns.items()
+                },
+                "conditioning_meta": {
+                    symbol: dict(meta)
+                    for symbol, meta in self._conditioning_meta.items()
+                },
+                # Inference layer
+                "macro": dict(self._regime_state),
+                "news": dict(self._news) if self._news else {},
+                "inference": {
+                    "regime_state": dict(self._regime_state),
+                    "volatility_regime": self._volatility_regime,
+                    "session_state": dict(self._session_state),
+                    "liquidity_map": dict(self._liquidity_map),
+                    "news_pressure_vector": dict(self._news_pressure_vector),
+                    "signal_stack": [dict(s) for s in self._signal_stack],
+                    "inference_ts": self._inference_ts,
+                },
+                "meta": {
+                    "inference_ts": self._inference_ts,
+                    "volatility_regime": self._volatility_regime,
+                },
+            }
 
     # ------------------------------------------------------------------
     # Read API
@@ -113,6 +385,79 @@ class LiveContextBus:
     def get_latest_tick(self, symbol: str) -> dict[str, Any] | None:
         """Return latest tick for symbol, or None if not yet received."""
         return self._ticks.get(symbol)
+
+    def check_price_drift(
+        self,
+        symbol: str,
+        max_drift_pips: float,
+    ) -> dict[str, Any]:
+        """Compare latest REST H1 close with WS mid-price to detect drift.
+
+        Args:
+            symbol:         Trading symbol (e.g. ``EURUSD``).
+            max_drift_pips: Maximum acceptable drift in pips.
+
+        Returns:
+            Stable dict consumed by ``H1RefreshScheduler``::
+
+                {
+                    "drifted":    bool,
+                    "drift_pips": float,
+                    "rest_close": float | None,
+                    "ws_mid":     float | None,
+                }
+        """
+        # Latest REST H1 bar close
+        h1_candles = self.get_candles(symbol, "H1")
+        rest_close: float | None = h1_candles[-1]["close"] if h1_candles else None
+
+        # Latest WS tick mid-price
+        tick = self.get_latest_tick(symbol)
+        ws_mid: float | None = None
+        if tick:
+            bid = tick.get("bid") or tick.get("price")
+            ask = tick.get("ask") or tick.get("price")
+            if bid is not None and ask is not None:
+                ws_mid = (float(bid) + float(ask)) / 2.0
+            elif bid is not None:
+                ws_mid = float(bid)
+
+        # Cannot compute drift without both prices
+        if rest_close is None or ws_mid is None:
+            return {
+                "drifted": False,
+                "drift_pips": 0.0,
+                "rest_close": rest_close,
+                "ws_mid": ws_mid,
+            }
+
+        # Convert raw price difference to pips
+        try:
+            multiplier = get_pip_multiplier(symbol)
+        except LookupError:
+            # Fall back to standard forex multiplier
+            multiplier = 10_000.0
+
+        drift_pips = abs(rest_close - ws_mid) * multiplier
+        drifted = drift_pips > max_drift_pips
+
+        if drifted:
+            logger.warning(
+                "Price drift alert: %s REST_close=%.5f WS_mid=%.5f "
+                "drift=%.1f pips (max=%.1f)",
+                symbol,
+                rest_close,
+                ws_mid,
+                drift_pips,
+                max_drift_pips,
+            )
+
+        return {
+            "drifted": drifted,
+            "drift_pips": drift_pips,
+            "rest_close": rest_close,
+            "ws_mid": ws_mid,
+        }
 
     def get_warmup_bar_count(self, symbol: str, timeframe: str) -> int:
         """Return number of bars currently stored for symbol/timeframe."""

@@ -3,8 +3,10 @@
 import os
 from unittest.mock import patch
 
+import pytest
+
 from infrastructure.redis_url import get_safe_redis_url
-from storage.redis_client import _sanitize_redis_url
+from storage.redis_client import _sanitize_redis_url  # pyright: ignore[reportPrivateUsage]
 
 
 def test_sanitize_redis_url_masks_password() -> None:
@@ -70,3 +72,54 @@ def test_redis_url_takes_priority_over_railway_vars() -> None:
         url = get_redis_url()
 
     assert url == "redis://explicit-host:6379/0"
+
+
+def test_get_redis_url_rejects_missing_auth_in_production() -> None:
+    from infrastructure.redis_url import get_redis_url
+
+    env = {
+        "ENV": "production",
+        "REDIS_URL": "rediss://redis.prod.internal:6379/0",
+    }
+    with patch.dict(os.environ, env, clear=True), pytest.raises(
+        RuntimeError,
+        match="AUTH credentials",
+    ):
+        get_redis_url()
+
+
+def test_get_redis_url_rejects_non_tls_in_production() -> None:
+    from infrastructure.redis_url import get_redis_url
+
+    env = {
+        "ENV": "production",
+        "REDIS_URL": "redis://:s3cret@redis.prod.internal:6379/0",
+    }
+    with patch.dict(os.environ, env, clear=True), pytest.raises(
+        RuntimeError,
+        match="TLS",
+    ):
+        get_redis_url()
+
+
+def test_get_redis_url_allows_secure_prod_url() -> None:
+    from infrastructure.redis_url import get_redis_url
+
+    env = {
+        "ENV": "production",
+        "REDIS_URL": "rediss://:s3cret@redis.prod.internal:6379/0",
+    }
+    with patch.dict(os.environ, env, clear=True):
+        assert get_redis_url() == "rediss://:s3cret@redis.prod.internal:6379/0"
+
+
+def test_get_redis_url_allows_break_glass_override_in_production() -> None:
+    from infrastructure.redis_url import get_redis_url
+
+    env = {
+        "ENV": "production",
+        "REDIS_URL": "redis://redis.prod.internal:6379/0",
+        "REDIS_ALLOW_INSECURE_IN_PROD": "true",
+    }
+    with patch.dict(os.environ, env, clear=True):
+        assert get_redis_url() == "redis://redis.prod.internal:6379/0"

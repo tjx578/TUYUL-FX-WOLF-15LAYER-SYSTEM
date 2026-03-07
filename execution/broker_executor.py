@@ -38,14 +38,14 @@ class BrokerExecutor:
         if self._guard is None:
             return GuardResult(allowed=True, code="NO_GUARD", severity="info")
         return self._guard.check(account_state, trade_risk)
-"""
-Broker Executor — low-level order placement abstraction.
 
-Wraps MT5 bridge / EA HTTP endpoint calls.
-No strategy logic. No direction computation.
-Execution authority only.
-"""
-from __future__ import annotations  # noqa: E402, F404
+# ---------------------------------------------------------------------------
+# Broker Executor — low-level order placement abstraction.
+#
+# Wraps MT5 bridge / EA HTTP endpoint calls.
+# No strategy logic. No direction computation.
+# Execution authority only.
+# ---------------------------------------------------------------------------
 
 import hashlib  # noqa: E402
 import time  # noqa: E402

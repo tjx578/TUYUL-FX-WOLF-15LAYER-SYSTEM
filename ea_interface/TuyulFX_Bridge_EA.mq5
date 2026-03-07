@@ -350,3 +350,64 @@ void ProcessCommandFile(const string filepath, const string filename)
     //--- 9. Archive the processed command file ----------------------
     ArchiveCommand(filepath, filename);
 }
+
+//+------------------------------------------------------------------+
+//| Redis channel for real-time command push (EA subscribes if available)
+EA_COMMAND_CHANNEL = "ea:commands"
+
+
+class FileBasedMT5Bridge:
+    """Dumb executor bridge — writes commands, reads reports. No strategy logic."""
+
+    def __init__(self, bridge_dir: str = "C:\\TuyulFX\\bridge"):
+        self._commands_dir = Path(bridge_dir) / "commands"
+        self._reports_dir = Path(bridge_dir) / "reports"
+        self._commands_dir.mkdir(parents=True, exist_ok=True)
+        self._reports_dir.mkdir(parents=True, exist_ok=True)
+        self._redis: Any | None = None
+
+        # Try to connect Redis for real-time push (best-effort)
+        try:
+            from storage.redis_client import redis_client  # noqa: PLC0415
+            self._redis = redis_client
+            logger.info("EA bridge: Redis real-time channel available")
+        except Exception:
+            logger.info("EA bridge: Redis unavailable, file-only mode")
+
+    def send_command(self, command: Any) -> bool:
+        """Write execution command as JSON file for EA to pick up.
+
+        Also publishes to Redis pub/sub for near-instant delivery
+        if the EA supports WebSocket/Redis subscription.
+
+        Authority: this method does NOT make trade decisions.
+        It only relays prepared execution plans.
+        """
+        payload = asdict(command)
+        filename = f"{command.signal_id}_{int(command.timestamp)}.json"
+        filepath = self._commands_dir / filename
+
+        # 1. Always write file (guaranteed delivery, EA polls this)
+        try:
+            filepath.write_text(json.dumps(payload, indent=2))
+            logger.info("EA command written: %s", filename)
+        except Exception as exc:
+            logger.error("Failed to write EA command file: %s", exc)
+            return False
+
+        # 2. Best-effort Redis pub/sub push (near-instant if EA subscribes)
+        if self._redis is not None:
+            try:
+                self._redis.publish(
+                    EA_COMMAND_CHANNEL,
+                    json.dumps({
+                        "command": payload,
+                        "file": filename,
+                        "ts": time.time(),
+                    }),
+                )
+                logger.debug("EA command pushed via Redis: %s", command.signal_id)
+            except Exception as exc:
+                logger.warning("Redis push failed (file fallback active): %s", exc)
+
+        return True

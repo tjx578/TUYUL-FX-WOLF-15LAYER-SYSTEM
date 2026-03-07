@@ -19,6 +19,8 @@ def build_execution_map(
     engines_invoked: list[str],
     halt_reason: str | None,
     constitutional_verdict: str,
+    layer_timings_ms: dict[str, float] | None = None,
+    dag: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Build normalized execution map payload for a single pipeline run."""
     seen_layers: set[str] = set()
@@ -39,7 +41,7 @@ def build_execution_map(
         seen_engines.add(value)
         normalized_engines.append(value)
 
-    return {
+    payload = {
         "pair": str(pair).upper().strip(),
         "timestamp": str(timestamp),
         "layers_executed": normalized_layers,
@@ -47,3 +49,12 @@ def build_execution_map(
         "halt_reason": halt_reason,
         "constitutional_verdict": str(constitutional_verdict or "UNKNOWN"),
     }
+    if isinstance(layer_timings_ms, dict):
+        payload["layer_timings_ms"] = {
+            str(k): float(v)
+            for k, v in layer_timings_ms.items()
+            if isinstance(k, str)
+        }
+    if isinstance(dag, dict):
+        payload["dag"] = dag
+    return payload

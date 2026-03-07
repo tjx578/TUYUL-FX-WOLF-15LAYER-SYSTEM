@@ -35,6 +35,8 @@ candles:
     h1_interval_sec: 3600             # Refresh H1 every 1 hour
     h1_bars: 5                        # Fetch last 5 bars on refresh
     price_drift_max_pips: 50.0        # Max allowed drift REST vs WS
+    m15_cold_start_min_bars: 10       # M15 bar count below which recovery triggers
+    m15_recovery_bars: 100            # Number of M15 bars to fetch on cold start
 
 symbols:
   include_forex: true
@@ -56,6 +58,18 @@ tick_filter:
   default_spike_pct: 0.5           # Fallback for unlisted symbols
   staleness_sec: 60.0              # Reset baseline after N seconds of silence
   dedup_window_sec: 0.05           # Reject identical (symbol+price+ts) within window
+
+# ── Signal conditioning (pre-L7 Monte Carlo) ─────────────────────
+signal_conditioning:
+  enabled: true
+  ema_span: 5
+  outlier_mad_scale: 6.0
+  min_samples: 20
+  adaptive_sampling: true
+  high_noise_ratio: 0.65
+  high_noise_stride: 2
+  realtime_window_ticks: 128
+  realtime_min_prices: 20
 
 news:
   enabled: true

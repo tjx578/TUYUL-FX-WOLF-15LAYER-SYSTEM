@@ -16,10 +16,11 @@ from datetime import datetime, timezone
 from typing import Optional
 
 import redis as redis_lib
+import redis.asyncio as aioredis
 from fastapi import APIRouter, Depends, HTTPException
 
 from api.middleware.auth import verify_token
-from infrastructure.redis_url import get_redis_url
+from infrastructure.redis_client import get_async_redis
 
 logger = logging.getLogger(__name__)
 
@@ -30,14 +31,11 @@ router = APIRouter(
 )
 
 
-def _get_redis() -> Optional[redis_lib.Redis]:
-    url = get_redis_url()
-    try:
-        r = redis_lib.from_url(url, decode_responses=True)
-        r.ping()
-        return r
-    except Exception:
-        return None
+def _get_redis() -> None:
+    """DEPRECATED — use ``get_async_redis`` dependency instead."""
+    raise NotImplementedError(
+        "_get_redis() is removed. Inject via Depends(get_async_redis)."
+    )
 
 
 # ─── Static instrument catalog ────────────────────────────────────────────────
@@ -153,11 +151,9 @@ def _get_current_session() -> str:
     return "ASIA"
 
 
-def _get_live_verdict(r: Optional[redis_lib.Redis], symbol: str) -> Optional[dict]:
-    if not r:
-        return None
+async def _get_live_verdict(r: aioredis.Redis, symbol: str) -> Optional[dict]:
     with contextlib.suppress(Exception):
-        raw = r.get(f"DASHBOARD:VERDICT:{symbol}")
+        raw = await r.get(f"DASHBOARD:VERDICT:{symbol}")
         if raw:
             return json.loads(raw)
     return None
@@ -168,11 +164,11 @@ def _get_live_verdict(r: Optional[redis_lib.Redis], symbol: str) -> Optional[dic
 @router.get("")
 async def list_instruments() -> dict:
     """List all instruments with metadata + live Wolf-15 status."""
-    r = _get_redis()
+    r: aioredis.Redis = await get_async_redis()
     result = []
     for symbol, info in INSTRUMENT_CATALOG.items():
         item = dict(info)
-        verdict = _get_live_verdict(r, symbol)
+        verdict = await _get_live_verdict(r, symbol)
         if verdict:
             item["live_verdict"] = verdict.get("verdict")
             item["live_confidence"] = verdict.get("confidence")
@@ -198,11 +194,11 @@ async def instrument_detail(symbol: str) -> dict:
     if not info:
         raise HTTPException(status_code=404, detail=f"Instrument {symbol_upper} not found")
 
-    r = _get_redis()
+    r: aioredis.Redis = await get_async_redis()
     detail = dict(info)
 
     # Live data from Redis
-    verdict = _get_live_verdict(r, symbol_upper)
+    verdict = await _get_live_verdict(r, symbol_upper)
     if verdict:
         detail["live"] = {
             "verdict": verdict.get("verdict"),
@@ -216,11 +212,10 @@ async def instrument_detail(symbol: str) -> dict:
         }
 
     # Live price
-    if r:
-        with contextlib.suppress(Exception):
-            raw_price = r.get(f"PRICE:{symbol_upper}")
-            if raw_price:
-                detail["price"] = json.loads(raw_price)
+    with contextlib.suppress(Exception):
+        raw_price = await r.get(f"PRICE:{symbol_upper}")
+        if raw_price:
+            detail["price"] = json.loads(raw_price)
 
     detail["current_session"] = _get_current_session()
     detail["timestamp"] = datetime.now(timezone.utc).isoformat()
@@ -231,7 +226,7 @@ async def instrument_detail(symbol: str) -> dict:
 async def instrument_regime(symbol: str) -> dict:
     """Current volatility regime for instrument (from L1-L5 analysis layers)."""
     symbol_upper = symbol.upper()
-    r = _get_redis()
+    r: aioredis.Redis = await get_async_redis()
 
     regime_data: dict = {
         "symbol": symbol_upper,
@@ -242,21 +237,20 @@ async def instrument_regime(symbol: str) -> dict:
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
 
-    if r:
-        try:
-            # Read from L1 context bus
-            raw = r.get(f"CONTEXT:{symbol_upper}:REGIME")
-            if raw:
-                regime_data.update(json.loads(raw))
-            else:
-                # Fallback: extract from L12 verdict context
-                verdict = _get_live_verdict(r, symbol_upper)
-                if verdict and verdict.get("scores"):
-                    scores = verdict["scores"]
-                    regime_data["regime"] = scores.get("regime", "UNKNOWN")
-                    regime_data["session"] = scores.get("session", _get_current_session())
-        except Exception as exc:
-            logger.warning("Regime data error for %s: %s", symbol_upper, exc)
+    try:
+        # Read from L1 context bus
+        raw = await r.get(f"CONTEXT:{symbol_upper}:REGIME")
+        if raw:
+            regime_data.update(json.loads(raw))
+        else:
+            # Fallback: extract from L12 verdict context
+            verdict = await _get_live_verdict(r, symbol_upper)
+            if verdict and verdict.get("scores"):
+                scores = verdict["scores"]
+                regime_data["regime"] = scores.get("regime", "UNKNOWN")
+                regime_data["session"] = scores.get("session", _get_current_session())
+    except Exception as exc:
+        logger.warning("Regime data error for %s: %s", symbol_upper, exc)
 
     return regime_data
 

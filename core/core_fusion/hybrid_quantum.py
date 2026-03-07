@@ -1,7 +1,7 @@
 """Hybrid Vault Quantum Engine -- Quantum ↔ Fusion reflective core."""
 
 import math
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from .vault_macro import VaultMacroLayer
 
@@ -14,7 +14,7 @@ class QuantumReflectiveEngine:
         self.bw = beta_weight
         self.gw = gamma_weight
 
-    def evaluate_reflective_entropy(self, closes: List[float]) -> Dict[str, Any]:
+    def evaluate_reflective_entropy(self, closes: list[float]) -> dict[str, Any]:
         if len(closes) < 20:
             return {"alpha": 0.0, "beta": 0.0, "gamma": 0.0, "alpha_beta_gamma": 0.0,
                     "reflective_energy": 0.5, "flux_state": "Insufficient_Data"}
@@ -36,7 +36,7 @@ class QuantumReflectiveEngine:
         return {"alpha": round(a, 6), "beta": round(b, 6), "gamma": round(g, 6),
                 "alpha_beta_gamma": abg, "reflective_energy": re, "flux_state": fs}
 
-    def _std(self, vals: List[float]) -> float:
+    def _std(self, vals: list[float]) -> float:
         if not vals or len(vals) < 2:
             return 0.0
         m = sum(vals) / len(vals)
@@ -46,14 +46,14 @@ class QuantumReflectiveEngine:
 class HybridReflectiveCore:
     """L9 Hybrid: Quantum entropy + Vault Macro -> Reflective Macro Coherence."""
 
-    def __init__(self, ema_period: int = 200, sma_periods: Optional[List[int]] = None,
+    def __init__(self, ema_period: int = 200, sma_periods: list[int] | None = None,
                  quantum_weight: float = 0.4, macro_weight: float = 0.6) -> None:
         self.quantum = QuantumReflectiveEngine()
         self.vault = VaultMacroLayer(ema_period=ema_period, sma_periods=sma_periods or [200, 800])
         self.qw = quantum_weight
         self.mw = macro_weight
 
-    def integrate(self, closes: List[float]) -> Dict[str, Any]:
+    def integrate(self, closes: list[float]) -> dict[str, Any]:
         if not closes:
             return {"error": "No price data"}
         qf = self.quantum.evaluate_reflective_entropy(closes)
@@ -84,7 +84,7 @@ class HybridReflectiveCore:
             "reflective_macro_coherence": rmc, "quantum_weight": self.qw, "macro_weight": self.mw,
         }
 
-    def get_execution_status(self, closes: List[float], tii_threshold: float = 0.93) -> Dict[str, Any]:
+    def get_execution_status(self, closes: list[float], tii_threshold: float = 0.93) -> dict[str, Any]:
         hd = self.integrate(closes)
         if "error" in hd:
             return {**hd, "pseudo_tii": 0.0, "execution_decision": "HOLD", "execution_reason": "Error in hybrid analysis"}

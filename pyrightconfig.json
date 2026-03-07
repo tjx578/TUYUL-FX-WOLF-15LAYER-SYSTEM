@@ -15,5 +15,8 @@
     "dashboard/nextjs",
     "migrations",
     "**/.*"
-  ]
+],
+"extraPaths": [
+    "./services/api"
+]
 }

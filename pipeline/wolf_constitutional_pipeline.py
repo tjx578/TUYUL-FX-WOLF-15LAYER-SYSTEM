@@ -35,6 +35,12 @@ Execution order (CRITICAL -- 8 phases):
     Phase 7: Sovereignty enforcement (drift detection + verdict downgrade)
     Phase 8: L14 JSON export + final result assembly
 
+Runtime model (capital-protection first):
+    SEMI-PARALLEL HALT-SAFE DAG
+    batch_1 -> sync barrier -> batch_2 -> sync barrier -> ...
+    If any runnable layer in a batch fails, the pipeline halts before
+    entering the next batch.
+
 Merged improvements over v7.4r∞:
     ✓ Two-pass L13 governance (from Sovereign pipeline)
     ✓ Drift-based sovereignty enforcement with verdict downgrade
@@ -50,21 +56,29 @@ Integrity: TIIₛᵧₘ ≥ 0.93 | FRPC ≥ 0.96 | RR ≥ 1:2.0
 
 from __future__ import annotations
 
+import asyncio
 import concurrent.futures
 import contextlib
 import time
 
 # stdlib imports
-from collections.abc import Callable
+from collections.abc import Callable, Coroutine
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from typing import Any, cast
+
+from analysis.reflex_emc import EMCFilter
+from analysis.reflex_gate import ReflexGateController
+from analysis.reflex_multitf import compute_multitf_rqi
+from analysis.reflex_rqi import compute_rqi, latency_decay
+from config_loader import CONFIG
 
 # third-party imports
 # import ...
 # local imports
 from constitution.signal_throttle import SignalThrottle
 from constitution.verdict_engine import generate_l12_verdict
+from core.dag_engine import DagEngine
 from core.metrics import (
     LAYER_LATENCY,
     SIGNAL_THROTTLED,
@@ -109,7 +123,9 @@ class WolfConstitutionalPipeline:
 
     Merged from Constitutional v7.4r∞ + Sovereign governance features.
     This is the ONLY entry point for analysis in the entire system.
-    All 15 layers (L1-L15) are executed sequentially with halt-on-failure.
+    Runtime is a semi-parallel halt-safe DAG with batch barriers.
+    Independent nodes inside the same DAG batch may run concurrently, while
+    cross-batch progression is strictly synchronized (batch -> barrier -> batch).
     Layer-12 is the SOLE decision authority (Constitutional Verdict).
 
     Key features:
@@ -154,6 +170,15 @@ class WolfConstitutionalPipeline:
         self._l10 = None
         self._l11 = None
 
+        # Signal conditioning (Phase-3 pre-L7)
+        from analysis.signal_conditioner import SignalConditioner  # noqa: PLC0415
+
+        _cond_cfg = cast(
+            dict[str, Any],
+            CONFIG.get("finnhub", {}).get("signal_conditioning", {}),
+        )
+        self._signal_conditioner = SignalConditioner.from_config(_cond_cfg)
+
         # Macro analyzers
         self._macro = None
         self._macro_vol = None
@@ -165,6 +190,22 @@ class WolfConstitutionalPipeline:
         # Signal rate throttle (max 3 EXECUTE per symbol in 5 minutes)
         self._signal_throttle = SignalThrottle(max_signals=3, window_seconds=300)
 
+        settings = CONFIG.get("settings", {})
+        self._rqi_sigma_sec = float(
+            settings.get("rqi_sigma_sec", settings.get("loop_interval_sec", 60))
+        )
+
+        # ── RQI Enhancement: EMC filter + Gate controller ─────────
+        self._emc_filter = EMCFilter(
+            decay=float(settings.get("rqi_emc_decay", 0.8)),
+            sigma_base=self._rqi_sigma_sec,
+        )
+        self._reflex_gate = ReflexGateController(
+            open_threshold=float(settings.get("rqi_gate_open", 0.85)),
+            caution_threshold=float(settings.get("rqi_gate_caution", 0.70)),
+            caution_lot_scale=float(settings.get("rqi_gate_caution_lot", 0.5)),
+        )
+
         # Engine Enrichment Layer (Phase 2.5 — 9 facade engines)
         self._enrichment: Any = None  # lazy-loaded
 
@@ -174,6 +215,10 @@ class WolfConstitutionalPipeline:
     # ──────────────────────────────────────────────────────
     #  Lazy-load all layer analyzers
     # ──────────────────────────────────────────────────────
+
+    def skip_analyzers(self) -> None:
+        """Replace _ensure_analyzers with a no-op (for tests)."""
+        self._ensure_analyzers = lambda: None
 
     def _ensure_analyzers(self) -> None:
         """Lazy load analyzers to avoid circular imports."""
@@ -243,6 +288,44 @@ class WolfConstitutionalPipeline:
         if self._l15_engine is None:
             self._l15_engine = L15MetaSovereigntyEngine()
 
+    @staticmethod
+    def _build_pipeline_dag() -> DagEngine:
+        """Build canonical layer DAG for execution planning and UI introspection."""
+        dag = DagEngine()
+        for lid in [
+            "L1", "L2", "L3", "L4", "L5", "SC", "L7", "L8", "L9",
+            "L11", "L6", "L10", "macro", "L12", "L13", "L14", "L15",
+        ]:
+            dag.add_node(lid)
+
+        dag.add_edge("L1", "L4")
+        dag.add_edge("L2", "L4")
+        dag.add_edge("L3", "L4")
+        dag.add_edge("L2", "L5")
+        dag.add_edge("L4", "L7")
+        dag.add_edge("L5", "L7")
+        dag.add_edge("L4", "SC")
+        dag.add_edge("L5", "SC")
+        dag.add_edge("SC", "L7")
+        dag.add_edge("L4", "L8")
+        dag.add_edge("L4", "L9")
+        dag.add_edge("L3", "L11")
+        dag.add_edge("L11", "L6")
+        dag.add_edge("L6", "L10")
+        dag.add_edge("L1", "macro")
+        dag.add_edge("L2", "macro")
+        dag.add_edge("L3", "macro")
+        dag.add_edge("L10", "L12")
+        dag.add_edge("L7", "L12")
+        dag.add_edge("L8", "L12")
+        dag.add_edge("L9", "L12")
+        dag.add_edge("L6", "L12")
+        dag.add_edge("macro", "L12")
+        dag.add_edge("L12", "L13")
+        dag.add_edge("L13", "L15")
+        dag.add_edge("L15", "L14")
+        return dag
+
     def _get_l13_engine(self) -> L13ReflectiveEngine:
         """Return the L13 engine, raising if not initialized."""
         assert self._l13_engine is not None, "L13 engine not initialized"
@@ -296,6 +379,57 @@ class WolfConstitutionalPipeline:
         )
         return result
 
+    @staticmethod
+    def _run_coro_sync(coro: Coroutine[Any, Any, Any]) -> Any:
+        """Run coroutine from sync code, even if caller already has an event loop."""
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:
+            return asyncio.run(coro)
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as loop_pool:
+            return loop_pool.submit(asyncio.run, coro).result()
+
+    @classmethod
+    def _run_dag_batch_calls(
+        cls,
+        dag_batches: list[list[str]],
+        batch_calls: dict[str, Callable[[], dict[str, Any]]],
+    ) -> dict[str, dict[str, Any]]:
+        """Execute callable layers in a halt-safe DAG batch pipeline.
+
+        Semantics:
+        - Within a batch: runnable layers execute concurrently.
+        - Between batches: strict synchronization barrier.
+        - Failure mode: fail-fast; if one runnable layer raises, no later
+          batch is entered.
+        """
+
+        async def _run_single(layer_id: str) -> tuple[str, dict[str, Any]]:
+            result = await asyncio.to_thread(batch_calls[layer_id])
+            return layer_id, result
+
+        async def _run_batches() -> dict[str, dict[str, Any]]:
+            output: dict[str, dict[str, Any]] = {}
+            for batch_idx, batch in enumerate(dag_batches, start=1):
+                runnable = [layer_id for layer_id in batch if layer_id in batch_calls]
+                if not runnable:
+                    continue
+                try:
+                    completed = await asyncio.gather(
+                        *(_run_single(layer_id) for layer_id in runnable),
+                    )
+                except Exception as exc:
+                    raise RuntimeError(
+                        "DAG_BATCH_FAILED: "
+                        f"batch={batch_idx}, runnable={','.join(runnable)}"
+                    ) from exc
+                for layer_id, layer_result in completed:
+                    output[layer_id] = layer_result
+            return output
+
+        return cast(dict[str, dict[str, Any]], cls._run_coro_sync(_run_batches()))
+
     # ══════════════════════════════════════════════════════════════
     #  MAIN EXECUTE -- the single canonical entry point
     # ══════════════════════════════════════════════════════════════
@@ -343,7 +477,30 @@ class WolfConstitutionalPipeline:
         errors: list[str] = []
         layers_executed: list[str] = []
         engines_invoked: list[str] = []
+        layer_timings_ms: dict[str, float] = {}
         now = datetime.now(_TZ_GMT8)
+        pipeline_dag = self._build_pipeline_dag()
+        dag_topology = pipeline_dag.topological_sort()
+        dag_batches = pipeline_dag.execution_batches()
+        dag_payload = {
+            "topology": dag_topology,
+            "batches": dag_batches,
+            "edges": [
+                {"from": edge.source, "to": edge.target}
+                for edge in pipeline_dag.to_edge_list()
+            ],
+        }
+
+        def _timed_layer_call(
+            func: Callable[..., Any],
+            layer_name: str,
+            *args: Any,
+            **kwargs: Any,
+        ) -> Any:
+            started = time.time()
+            result = self._timed_call(func, layer_name, symbol, *args, **kwargs)
+            layer_timings_ms[layer_name] = round((time.time() - started) * 1000.0, 3)
+            return result
 
         def _early_exit_with_map(
             _errors: list[str],
@@ -392,22 +549,29 @@ class WolfConstitutionalPipeline:
             engines_invoked.extend(["L1ContextAnalyzer", "L2MTAAnalyzer", "L3TechnicalAnalyzer"])
 
             assert self._l1 is not None
-            l1: dict[str, Any] = self._timed_call(self._l1.analyze, "L1", symbol, symbol)
-            layers_executed.append("L1")
+            assert self._l2 is not None
+            assert self._l3 is not None
+            l1_analyzer = self._l1
+            l2_analyzer = self._l2
+            l3_analyzer = self._l3
+            phase1_calls: dict[str, Callable[[], dict[str, Any]]] = {
+                "L1": lambda: cast(dict[str, Any], _timed_layer_call(l1_analyzer.analyze, "L1", symbol)),
+                "L2": lambda: cast(dict[str, Any], _timed_layer_call(l2_analyzer.analyze, "L2", symbol)),
+                "L3": lambda: cast(dict[str, Any], _timed_layer_call(l3_analyzer.analyze, "L3", symbol)),
+            }
+            phase1_results = self._run_dag_batch_calls(dag_batches, phase1_calls)
+
+            l1 = phase1_results["L1"]
+            l2 = phase1_results["L2"]
+            l3 = phase1_results["L3"]
+            layers_executed.extend(["L1", "L2", "L3"])
+
             if not l1.get("valid"):
                 errors.append("L1_CONTEXT_INVALID")
                 return _early_exit_with_map(errors, time.time() - start_time)
-
-            assert self._l2 is not None
-            l2: dict[str, Any] = self._timed_call(self._l2.analyze, "L2", symbol, symbol)
-            layers_executed.append("L2")
             if not l2.get("valid"):
                 errors.append("L2_MTA_INVALID")
                 return _early_exit_with_map(errors, time.time() - start_time)
-
-            assert self._l3 is not None
-            l3: dict[str, Any] = self._timed_call(self._l3.analyze, "L3", symbol, symbol)
-            layers_executed.append("L3")
             if not l3.get("valid"):
                 errors.append("L3_TECHNICAL_INVALID")
                 return _early_exit_with_map(errors, time.time() - start_time)
@@ -419,10 +583,17 @@ class WolfConstitutionalPipeline:
             engines_invoked.extend(["L4ScoringEngine", "L5PsychologyAnalyzer"])
 
             assert self._l4 is not None
-            l4: dict[str, Any] = self._timed_call(self._l4.score, "L4", symbol, l1, l2, l3)
-            layers_executed.append("L4")
             assert self._l5 is not None
-            l5: dict[str, Any] = self._timed_call(self._l5.analyze, "L5", symbol, symbol, volatility_profile=l2)
+            l4_engine = self._l4
+            l5_engine = self._l5
+            phase2_calls: dict[str, Callable[[], dict[str, Any]]] = {
+                "L4": lambda: cast(dict[str, Any], _timed_layer_call(l4_engine.score, "L4", l1, l2, l3)),
+                "L5": lambda: cast(dict[str, Any], _timed_layer_call(l5_engine.analyze, "L5", symbol, volatility_profile=l2)),
+            }
+            phase2_results = self._run_dag_batch_calls(dag_batches, phase2_calls)
+            l4 = phase2_results["L4"]
+            l5 = phase2_results["L5"]
+            layers_executed.append("L4")
             layers_executed.append("L5")
 
             # ═══════════════════════════════════════════════════════
@@ -449,6 +620,8 @@ class WolfConstitutionalPipeline:
             # Fallback: system_metrics pass-through (caller-provided / test).
 
             trade_returns: list[float] | None = None
+            trade_returns_preconditioned = False
+            preconditioning_diag: dict[str, Any] | None = None
             _bus_returns: list[float] | None = cast(
                 list[float] | None,
                 self._context_bus.get_trade_history(  # type: ignore[reportUnknownMemberType]
@@ -469,6 +642,56 @@ class WolfConstitutionalPipeline:
                 _raw = system_metrics.get("trade_returns", None)
                 if isinstance(_raw, (list, tuple)) and len(cast(list[Any], _raw)) > 0:
                     trade_returns = [float(r) for r in cast(list[Any], _raw)]
+
+            # Fallback: conditioned returns produced by realtime tick ingest.
+            if not trade_returns:
+                _cond_returns = cast(
+                    list[float],
+                    self._context_bus.get_conditioned_returns(symbol, count=200),  # type: ignore[reportUnknownMemberType]
+                )
+                if _cond_returns:
+                    trade_returns = _cond_returns
+                    trade_returns_preconditioned = True
+                    preconditioning_diag = cast(
+                        dict[str, Any] | None,
+                        self._context_bus.get_conditioning_meta(symbol),  # type: ignore[reportUnknownMemberType]
+                    )
+                    logger.info(
+                        "[Phase-3] %s Loaded %d conditioned returns via realtime tick path",
+                        symbol,
+                        len(_cond_returns),
+                    )
+
+            # Fallback: derive returns from candle closes and condition them.
+            if not trade_returns:
+                _h1 = cast(
+                    list[dict[str, Any]],
+                    self._context_bus.get_candles(symbol, "H1"),  # type: ignore[reportUnknownMemberType]
+                )
+                _m15 = cast(
+                    list[dict[str, Any]],
+                    self._context_bus.get_candles(symbol, "M15"),  # type: ignore[reportUnknownMemberType]
+                )
+                _candle_source = "H1" if len(_h1) >= len(_m15) else "M15"
+                _candles = _h1 if _candle_source == "H1" else _m15
+                _prices: list[float] = []
+                for c in _candles:
+                    _close = c.get("close")
+                    if isinstance(_close, (int, float, str)):
+                        with contextlib.suppress(TypeError, ValueError):
+                            _prices.append(float(_close))
+                if len(_prices) >= 2:
+                    _conditioned = self._signal_conditioner.condition_prices(_prices[-300:])
+                    trade_returns = _conditioned.conditioned_returns
+                    trade_returns_preconditioned = True
+                    preconditioning_diag = _conditioned.diagnostics()
+                    preconditioning_diag["source"] = f"candle_{_candle_source}"
+                    logger.info(
+                        "[Phase-3] %s Derived %d conditioned returns from %s candle closes",
+                        symbol,
+                        len(trade_returns),
+                        _candle_source,
+                    )
 
             # ── Bayesian prior state ─────────────────────────────────────────
             # Primary: derive from trade archive. Fallback: system_metrics.
@@ -504,28 +727,56 @@ class WolfConstitutionalPipeline:
                     float(max(0.0, min(1.0, _bias)))
 
             # ── Run L7 Probability Analyzer ──────────────────────────────────
-            assert self._l7 is not None
-            engines_invoked.append("L7ProbabilityAnalyzer")
-            l7: dict[str, Any] = self._timed_call(
-                self._l7.analyze,
-                "L7",
-                symbol,
-                symbol,
-                technical_score=technical_score,
-                trade_returns=trade_returns,
-                prior_wins=prior_wins,
-                prior_losses=prior_losses,
-            )
-            layers_executed.append("L7")
+            l7_trade_returns = trade_returns
+            conditioning_diag: dict[str, Any] | None = preconditioning_diag
+            if trade_returns and not trade_returns_preconditioned:
+                conditioned = self._signal_conditioner.condition_returns(trade_returns)
+                l7_trade_returns = conditioned.conditioned_returns
+                conditioning_diag = conditioned.diagnostics()
+                logger.info(
+                    "[Phase-3] %s SignalConditioner: in=%d out=%d noise=%.4f quality=%.4f stride=%d",
+                    symbol,
+                    conditioning_diag["samples_in"],
+                    conditioning_diag["samples_out"],
+                    conditioning_diag["noise_ratio"],
+                    conditioning_diag["microstructure_quality_score"],
+                    conditioning_diag["sampling_stride"],
+                )
 
+            assert self._l7 is not None
             assert self._l8 is not None
-            engines_invoked.append("L8TIIIntegrityAnalyzer")
-            l8: dict[str, Any] = self._timed_call(self._l8.analyze, "L8", symbol, symbol)
-            layers_executed.append("L8")
             assert self._l9 is not None
-            engines_invoked.append("L9SMCAnalyzer")
-            l9: dict[str, Any] = self._timed_call(self._l9.analyze, "L9", symbol, symbol)
-            layers_executed.append("L9")
+            l7_engine = self._l7
+            l8_engine = self._l8
+            l9_engine = self._l9
+            engines_invoked.extend([
+                "L7ProbabilityAnalyzer",
+                "L8TIIIntegrityAnalyzer",
+                "L9SMCAnalyzer",
+            ])
+            phase3_calls: dict[str, Callable[[], dict[str, Any]]] = {
+                "L7": lambda: cast(
+                    dict[str, Any],
+                    _timed_layer_call(
+                        l7_engine.analyze,
+                        "L7",
+                        symbol,
+                        technical_score=technical_score,
+                        trade_returns=l7_trade_returns,
+                        prior_wins=prior_wins,
+                        prior_losses=prior_losses,
+                    ),
+                ),
+                "L8": lambda: cast(dict[str, Any], _timed_layer_call(l8_engine.analyze, "L8", symbol)),
+                "L9": lambda: cast(dict[str, Any], _timed_layer_call(l9_engine.analyze, "L9", symbol)),
+            }
+            phase3_results = self._run_dag_batch_calls(dag_batches, phase3_calls)
+            l7 = phase3_results["L7"]
+            if conditioning_diag is not None:
+                l7["signal_conditioning"] = conditioning_diag
+            l8 = phase3_results["L8"]
+            l9 = phase3_results["L9"]
+            layers_executed.extend(["L7", "L8", "L9"])
 
             logger.info(
                 "[Phase-3] %s L7 complete: validation=%s win=%.1f%% pf=%.2f bayes=%.4f ror=%.4f mc_passed=%s",
@@ -543,7 +794,7 @@ class WolfConstitutionalPipeline:
             # CRITICAL: L11 BEFORE L6 (L6 needs RR from L11)
             # ═══════════════════════════════════════════════════════
             logger.info(f"[Pipeline v8.0] Phase 4: Execution & Decision -- {symbol}")
-            engines_invoked.extend(["L11RRAnalyzer", "L6RiskAnalyzer", "L10PositionAnalyzer"])
+            engines_invoked.extend(["L11RRAnalyzer", "L6RiskAnalyzer", "L10PositionAnalyzer", "MonthlyRegimeAnalyzer"])
 
             trend = l3.get("trend", "NEUTRAL")
             if trend == "BULLISH":
@@ -554,9 +805,23 @@ class WolfConstitutionalPipeline:
                 direction = "HOLD"
 
             l11: dict[str, Any] = {"valid": False, "rr": 0.0}
+            assert self._macro is not None
+            macro_engine = self._macro
+            phase4_batch0_calls: dict[str, Callable[[], dict[str, Any]]] = {
+                "macro": lambda: cast(dict[str, Any], _timed_layer_call(macro_engine.analyze, "macro", symbol)),
+            }
             if direction in ("BUY", "SELL"):
                 assert self._l11 is not None
-                l11 = self._timed_call(self._l11.calculate_rr, "L11", symbol, symbol, direction)
+                l11_engine = self._l11
+                phase4_batch0_calls["L11"] = lambda: cast(
+                    dict[str, Any],
+                    _timed_layer_call(l11_engine.calculate_rr, "L11", symbol, direction),
+                )
+
+            phase4_batch0_results = self._run_dag_batch_calls(dag_batches, phase4_batch0_calls)
+            macro = phase4_batch0_results["macro"]
+            if "L11" in phase4_batch0_results:
+                l11 = phase4_batch0_results["L11"]
                 layers_executed.append("L11")
             rr_value: float = float(l11.get("rr", 0.0))
 
@@ -616,10 +881,9 @@ class WolfConstitutionalPipeline:
                 errors.append("L6_ANALYZER_NOT_INITIALIZED")
                 return _early_exit_with_map(errors, time.time() - start_time)
 
-            l6: dict[str, Any] = self._timed_call(
+            l6: dict[str, Any] = _timed_layer_call(
                 self._l6.analyze,
                 "L6",
-                symbol,
                 rr=rr_value,
                 trade_returns=trade_returns,
                 account_state=_l6_account_state,
@@ -629,12 +893,8 @@ class WolfConstitutionalPipeline:
             risk_ok: Any = l6.get("risk_ok", False)
             smc_confidence: Any = l9.get("confidence", 0.0)
             assert self._l10 is not None
-            l10: dict[str, Any] = self._timed_call(self._l10.analyze, "L10", symbol, risk_ok, smc_confidence)
+            l10: dict[str, Any] = _timed_layer_call(self._l10.analyze, "L10", risk_ok, smc_confidence)
             layers_executed.append("L10")
-
-            assert self._macro is not None
-            engines_invoked.append("MonthlyRegimeAnalyzer")
-            macro: dict[str, Any] = self._timed_call(self._macro.analyze, "macro", symbol, symbol)
 
             # ═══════════════════════════════════════════════════════
             # PHASE 2.5 -- ENGINE ENRICHMENT LAYER (9 Facade Engines)
@@ -759,6 +1019,8 @@ class WolfConstitutionalPipeline:
                     if self._macro_vol is not None
                     else metrics.get("macro_vix_state", {})
                 ),
+                # Inference state — ephemeral abstract state TUYUL reasons with.
+                "inference": self._context_bus.inference_snapshot(),
             }
 
             synthesis = build_l12_synthesis(
@@ -767,6 +1029,58 @@ class WolfConstitutionalPipeline:
             )
             synthesis["system"]["latency_ms"] = current_latency_ms
             synthesis["system"]["safe_mode"] = safe_mode
+            synthesis["system"]["layer_timings_ms"] = dict(layer_timings_ms)
+            synthesis["system"]["dag"] = dict(dag_payload)
+            if conditioning_diag is not None:
+                synthesis["system"]["signal_conditioning"] = dict(conditioning_diag)
+
+            reflex_coherence = float(l2.get("reflex_coherence", 0.0) or 0.0)
+            emotion_delta = float(l5.get("emotion_delta", 0.0) or 0.0)
+            delta_t_sec = max(0.0, time.time() - tick_ts) if tick_ts is not None else 0.0
+
+            # ── Adaptive sigma: widen latency tolerance under stress ──
+            adaptive_sigma = self._emc_filter.adaptive_sigma(emotion_delta)
+
+            # ── Legacy single RQI (backward compat) ───────────────────
+            rqi_score = compute_rqi(
+                delta_t_sec=delta_t_sec,
+                coherence=reflex_coherence,
+                emotion_delta=emotion_delta,
+                sigma_sec=adaptive_sigma,
+            )
+
+            # ── Multi-TF RQI from L2 per-TF probabilities ────────────
+            per_tf_detail: dict[str, Any] = l2.get("per_tf_bias", {})
+            multitf_result = compute_multitf_rqi(
+                per_tf_detail=per_tf_detail,
+                delta_t_sec=delta_t_sec,
+                emotion_delta=emotion_delta,
+                sigma_sec=adaptive_sigma,
+            )
+            rqi_multi = float(multitf_result.get("rqi_multi", 0.0))
+
+            # Use multi-TF RQI if available, else fall back to single
+            rqi_effective = rqi_multi if per_tf_detail else rqi_score
+
+            # ── EMC smoothing (stateful per symbol) ───────────────────
+            rqi_smoothed = self._emc_filter.smooth(symbol, rqi_effective)
+
+            # ── Reflex gate decision ──────────────────────────────────
+            gate_decision = self._reflex_gate.evaluate(rqi_smoothed)
+
+            synthesis["system"]["rqi"] = round(rqi_smoothed, 6)
+            synthesis["system"]["rqi_raw"] = round(rqi_effective, 6)
+            synthesis["system"]["rqi_components"] = {
+                "latency_decay": round(latency_decay(delta_t_sec, adaptive_sigma), 6),
+                "reflex_coherence": round(max(0.0, min(1.0, reflex_coherence)), 6),
+                "emotion_stability": round(max(0.0, min(1.0, 1.0 - emotion_delta)), 6),
+                "delta_t_sec": round(delta_t_sec, 4),
+                "sigma_sec": round(self._rqi_sigma_sec, 4),
+                "sigma_adaptive": round(adaptive_sigma, 4),
+            }
+            synthesis["system"]["rqi_multitf"] = multitf_result
+            synthesis["system"]["rqi_emc"] = self._emc_filter.get_session(symbol)
+            synthesis["system"]["reflex_gate"] = gate_decision.to_dict()
 
             # Inject enrichment data into synthesis for L12 visibility
             synthesis["enrichment"] = enrichment_data
@@ -918,6 +1232,8 @@ class WolfConstitutionalPipeline:
                 engines_invoked=engines_invoked,
                 halt_reason=None,
                 constitutional_verdict=str(l12_verdict.get("verdict", "UNKNOWN")),
+                layer_timings_ms=layer_timings_ms,
+                dag=dag_payload,
             )
 
             latency_ms = (time.time() - start_time) * 1000
@@ -970,6 +1286,8 @@ class WolfConstitutionalPipeline:
                 e2e_latency = time.time() - tick_ts
                 TICK_TO_VERDICT_LATENCY.labels(symbol=symbol).observe(e2e_latency)  # noqa: F821
                 result_dict["tick_to_verdict_s"] = round(e2e_latency, 4)
+
+            result_dict["rqi"] = synthesis.get("system", {}).get("rqi", 0.0)
 
             self._record_metrics(symbol, result_dict)
             return result_dict
@@ -1063,6 +1381,11 @@ class WolfConstitutionalPipeline:
 
         Delegates to pipeline.phases.metrics_recorder.record_pipeline_metrics.
         """
+        record_pipeline_metrics(symbol, result)
+
+    @staticmethod
+    def record_metrics(symbol: str, result: dict[str, Any]) -> None:
+        """Public metrics recorder for tests and external callers."""
         record_pipeline_metrics(symbol, result)
 
     # ══════════════════════════════════════════════════════════════

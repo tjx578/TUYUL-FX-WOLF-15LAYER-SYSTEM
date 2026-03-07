@@ -68,6 +68,7 @@ class TestPeriodicRefresh:
                 "rest_close": 1.1005,
                 "ws_mid": 1.10055,
             }
+            mock_bus.get_warmup_bar_count.return_value = 50
             mock_bus_class.return_value = mock_bus
 
             # Mock CONFIG
@@ -130,6 +131,7 @@ class TestPriceDriftDetection:
                 "rest_close": 1.1005,
                 "ws_mid": 1.09975,
             }
+            mock_bus.get_warmup_bar_count.return_value = 50
             mock_bus_class.return_value = mock_bus
 
             with patch("ingest.h1_refresh_scheduler.CONFIG", {
@@ -181,6 +183,7 @@ class TestPriceDriftDetection:
                 "rest_close": 1.1005,
                 "ws_mid": 1.10055,
             }
+            mock_bus.get_warmup_bar_count.return_value = 50
             mock_bus_class.return_value = mock_bus
 
             with patch("ingest.h1_refresh_scheduler.CONFIG", {

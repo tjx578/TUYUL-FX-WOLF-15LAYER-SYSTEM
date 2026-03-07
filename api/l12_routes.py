@@ -80,8 +80,8 @@ def fetch_all_verdicts_alias() -> dict[str, Any]:
 @router.get("/api/v1/context", dependencies=[Depends(verify_token)])
 def fetch_context() -> dict[str, Any]:
     """Get live context snapshot."""
-    context_bus = LiveContextBus()
-    snapshot: dict[str, Any] = cast(dict[str, Any], context_bus.snapshot())
+    context_bus = cast(_SnapshotProvider, LiveContextBus())
+    snapshot = context_bus.snapshot()
 
     # Add timestamp info
     current_time = now_utc()
@@ -147,6 +147,32 @@ _LAYER_DEFS: list[dict[str, str]] = [
     {"id": "L15", "name": "Sovereign",   "zone": "POST"},
 ]
 
+_DEFAULT_DAG_EDGES: list[dict[str, str]] = [
+    {"from": "L1", "to": "L4"},
+    {"from": "L2", "to": "L4"},
+    {"from": "L3", "to": "L4"},
+    {"from": "L2", "to": "L5"},
+    {"from": "L4", "to": "L7"},
+    {"from": "L5", "to": "L7"},
+    {"from": "L4", "to": "L8"},
+    {"from": "L4", "to": "L9"},
+    {"from": "L3", "to": "L11"},
+    {"from": "L11", "to": "L6"},
+    {"from": "L6", "to": "L10"},
+    {"from": "L1", "to": "macro"},
+    {"from": "L2", "to": "macro"},
+    {"from": "L3", "to": "macro"},
+    {"from": "L10", "to": "L12"},
+    {"from": "L7", "to": "L12"},
+    {"from": "L8", "to": "L12"},
+    {"from": "L9", "to": "L12"},
+    {"from": "L6", "to": "L12"},
+    {"from": "macro", "to": "L12"},
+    {"from": "L12", "to": "L13"},
+    {"from": "L13", "to": "L15"},
+    {"from": "L15", "to": "L14"},
+]
+
 
 def _build_pipeline_data(pair: str, verdict_data: dict[str, Any]) -> dict[str, Any]:
     """Transform L12 verdict cache data into PipelineData shape for the UI."""
@@ -195,7 +221,7 @@ def _build_pipeline_data(pair: str, verdict_data: dict[str, Any]) -> dict[str, A
     pass_count = int(gates_raw.get("passed", 0))
     total_gates = int(gates_raw.get("total", 9))
 
-    layer_list: list[dict[str, str]] = []
+    layer_list: list[dict[str, Any]] = []
     for ldef in _LAYER_DEFS:
         lid = ldef["id"]
         val, detail = layer_score_map.get(lid, ("—", "—"))
@@ -227,7 +253,7 @@ def _build_pipeline_data(pair: str, verdict_data: dict[str, Any]) -> dict[str, A
 
     execution_map_raw = verdict_data.get("execution_map")
     if isinstance(execution_map_raw, dict):
-        execution_map = execution_map_raw
+        execution_map: dict[str, Any] = cast(dict[str, Any], execution_map_raw)
     else:
         execution_map = {
             "pair": pair,
@@ -237,6 +263,68 @@ def _build_pipeline_data(pair: str, verdict_data: dict[str, Any]) -> dict[str, A
             "halt_reason": None,
             "constitutional_verdict": verdict_str,
         }
+
+    system_raw: dict[str, Any] = verdict_data.get("system", {})
+    layer_timings_raw = execution_map.get("layer_timings_ms", system_raw.get("layer_timings_ms", {}))
+    if isinstance(layer_timings_raw, dict):
+        layer_timings_dict = cast(dict[str, Any], layer_timings_raw)
+        layer_timings_ms: dict[str, float] = {}
+        for k, v in layer_timings_dict.items():
+            if isinstance(v, (int, float, str)):
+                with contextlib.suppress(TypeError, ValueError):
+                    layer_timings_ms[k] = float(v)
+    else:
+        layer_timings_ms: dict[str, float] = {}
+
+    dag_raw = execution_map.get("dag", system_raw.get("dag", {}))
+    if isinstance(dag_raw, dict):
+        dag_payload = cast(dict[str, Any], dag_raw)
+        dag_topology = dag_payload.get("topology", [])
+        dag_batches = dag_payload.get("batches", [])
+        dag_edges = dag_payload.get("edges", _DEFAULT_DAG_EDGES)
+    else:
+        dag_topology = []
+        dag_batches = []
+        dag_edges = _DEFAULT_DAG_EDGES
+
+    if not isinstance(dag_topology, list):
+        dag_topology = []
+    if not isinstance(dag_batches, list):
+        dag_batches = []
+    if not isinstance(dag_edges, list):
+        dag_edges = _DEFAULT_DAG_EDGES
+
+    dag_edges_list = cast(list[Any], dag_edges)
+    dag_edges_typed: list[dict[str, Any]] = [
+        cast(dict[str, Any], edge)
+        for edge in dag_edges_list
+        if isinstance(edge, dict)
+    ]
+
+    deps_by_target: dict[str, list[str]] = {}
+    for edge in dag_edges_typed:
+        src = str(edge.get("from", "")).strip()
+        dst = str(edge.get("to", "")).strip()
+        if not src or not dst:
+            continue
+        deps_by_target.setdefault(dst, []).append(src)
+
+    for layer in layer_list:
+        lid = layer["id"]
+        timing = layer_timings_ms.get(lid)
+        layer["timingMs"] = round(float(timing), 3) if timing is not None else None
+        layer["deps"] = sorted(set(deps_by_target.get(lid, [])))
+
+    dag_nodes = [
+        {
+            "id": ldef["id"],
+            "name": ldef["name"],
+            "zone": ldef["zone"],
+            "status": next((layer["status"] for layer in layer_list if layer["id"] == ldef["id"]), "pass"),
+            "timingMs": layer_timings_ms.get(ldef["id"]),
+        }
+        for ldef in _LAYER_DEFS
+    ]
 
     return {
         "pair": pair,
@@ -248,6 +336,19 @@ def _build_pipeline_data(pair: str, verdict_data: dict[str, Any]) -> dict[str, A
         "gates": gate_list,
         "entry": entry,
         "execution_map": execution_map,
+        "profiling": {
+            "layer_timings_ms": layer_timings_ms,
+            "total_latency_ms": latency,
+        },
+        "observability": {
+            "signal_conditioning": verdict_data.get("system", {}).get("signal_conditioning", {}),
+        },
+        "dag": {
+            "nodes": dag_nodes,
+            "edges": dag_edges,
+            "topology": dag_topology,
+            "batches": dag_batches,
+        },
     }
 
 
