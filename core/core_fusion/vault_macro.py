@@ -1,16 +1,16 @@
 """Vault Macro Engine -- Reflective Gravity Anchor (EMA+SMA)."""
 
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 
 class VaultMacroLayer:
     """EMA-200 / SMA-200 / SMA-800 macro bias system."""
 
-    def __init__(self, ema_period: int = 200, sma_periods: Optional[List[int]] = None) -> None:
+    def __init__(self, ema_period: int = 200, sma_periods: list[int] | None = None) -> None:
         self.ema_period = ema_period
         self.sma_periods = sma_periods or [200, 800]
 
-    def calculate_ema(self, closes: List[float], period: int) -> float:
+    def calculate_ema(self, closes: list[float], period: int) -> float:
         if not closes:
             return 0.0
         a = 2 / (period + 1)
@@ -19,14 +19,14 @@ class VaultMacroLayer:
             ema = (p * a) + (ema * (1 - a))
         return round(float(ema), 5)
 
-    def calculate_sma(self, closes: List[float], period: int) -> float:
+    def calculate_sma(self, closes: list[float], period: int) -> float:
         if not closes:
             return 0.0
         if len(closes) < period:
             return round(float(sum(closes) / len(closes)), 5)
         return round(float(sum(closes[-period:]) / period), 5)
 
-    def derive_macro_bias(self, closes: List[float]) -> Dict[str, Any]:
+    def derive_macro_bias(self, closes: list[float]) -> dict[str, Any]:
         if not closes:
             return {"error": "No price data"}
         ema200 = self.calculate_ema(closes, self.ema_period)
@@ -39,7 +39,7 @@ class VaultMacroLayer:
                 "macro_bias": "Bullish" if pn > ema200 else "Bearish",
                 "distance_pct": dp, "structural_alignment": sa}
 
-    def _structural(self, ema200: float, sma_r: Dict[str, float], pn: float) -> str:
+    def _structural(self, ema200: float, sma_r: dict[str, float], pn: float) -> str:
         s200 = sma_r.get("sma_200", ema200)
         s800 = sma_r.get("sma_800", ema200)
         if pn > ema200 > s200 > s800:
@@ -52,7 +52,7 @@ class VaultMacroLayer:
             return "Bearish"
         return "Neutral"
 
-    def get_reflective_gravity_score(self, closes: List[float]) -> Dict[str, Any]:
+    def get_reflective_gravity_score(self, closes: list[float]) -> dict[str, Any]:
         md = self.derive_macro_bias(closes)
         if "error" in md:
             return md

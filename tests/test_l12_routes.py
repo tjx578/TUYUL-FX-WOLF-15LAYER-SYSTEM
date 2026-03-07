@@ -43,6 +43,12 @@ def test_build_pipeline_data_includes_execution_map_passthrough() -> None:
             "engines_invoked": ["RegimeClassifier", "FusionIntegrator", "TRQ3DEngine"],
             "halt_reason": None,
             "constitutional_verdict": "EXECUTE_BUY",
+            "layer_timings_ms": {"L1": 3.2, "L2": 4.1},
+            "dag": {
+                "topology": ["L1", "L2", "L4"],
+                "batches": [["L1", "L2"], ["L4"]],
+                "edges": [{"from": "L1", "to": "L4"}, {"from": "L2", "to": "L4"}],
+            },
         },
     }
 
@@ -51,6 +57,8 @@ def test_build_pipeline_data_includes_execution_map_passthrough() -> None:
     assert pipeline["execution_map"]["pair"] == "EURUSD"
     assert "L12" in pipeline["execution_map"]["layers_executed"]
     assert pipeline["execution_map"]["constitutional_verdict"] == "EXECUTE_BUY"
+    assert pipeline["profiling"]["layer_timings_ms"]["L1"] == 3.2
+    assert pipeline["dag"]["topology"] == ["L1", "L2", "L4"]
 
 
 def test_build_pipeline_data_generates_execution_map_fallback() -> None:
@@ -67,3 +75,31 @@ def test_build_pipeline_data_generates_execution_map_fallback() -> None:
     assert execution_map["constitutional_verdict"] == "HOLD"
     assert isinstance(execution_map["layers_executed"], list)
     assert len(execution_map["layers_executed"]) == len(pipeline["layers"])
+    assert "profiling" in pipeline
+    assert "dag" in pipeline
+    assert isinstance(pipeline["dag"]["edges"], list)
+
+
+def test_build_pipeline_data_includes_signal_conditioning_observability() -> None:
+    verdict_data = {
+        "verdict": "HOLD",
+        "confidence": 0.42,
+        "system": {
+            "latency_ms": 88,
+            "signal_conditioning": {
+                "samples_out": 55,
+                "noise_ratio": 0.21,
+                "microstructure_quality_score": 0.79,
+                "source": "candle_H1",
+            },
+        },
+        "gates": {"passed": 4, "total": 9, "gate_1_tii": "PASS"},
+    }
+
+    pipeline = l12_routes._build_pipeline_data("EURUSD", verdict_data)
+    obs = pipeline["observability"]["signal_conditioning"]
+
+    assert obs["samples_out"] == 55
+    assert obs["noise_ratio"] == 0.21
+    assert obs["microstructure_quality_score"] == 0.79
+    assert obs["source"] == "candle_H1"

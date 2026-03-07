@@ -15,10 +15,11 @@ from datetime import datetime, timezone, timedelta
 from typing import Optional
 
 import redis as redis_lib
+import redis.asyncio as aioredis
 from fastapi import APIRouter, Depends, Query
 
 from api.middleware.auth import verify_token
-from infrastructure.redis_url import get_redis_url
+from infrastructure.redis_client import get_async_redis
 
 logger = logging.getLogger(__name__)
 
@@ -29,27 +30,22 @@ router = APIRouter(
 )
 
 
-def _get_redis() -> Optional[redis_lib.Redis]:
-    url = get_redis_url()
-    try:
-        r = redis_lib.from_url(url, decode_responses=True)
-        r.ping()
-        return r
-    except Exception:
-        return None
+def _get_redis() -> None:
+    """DEPRECATED — use ``get_async_redis`` FastAPI dependency instead."""
+    raise NotImplementedError(
+        "_get_redis() is removed. Inject via Depends(get_async_redis)."
+    )
 
 
-def _load_journal_entries(
-    r: Optional[redis_lib.Redis],
+async def _load_journal_entries(
+    r: aioredis.Redis,
     since: Optional[datetime] = None,
 ) -> list[dict]:
     """Load all JOURNAL:* entries from Redis, optionally filtered by time."""
     entries: list[dict] = []
-    if not r:
-        return entries
     try:
-        for key in r.scan_iter("JOURNAL:*"):
-            raw = r.get(key)
+        async for key in r.scan_iter("JOURNAL:*"):
+            raw = await r.get(key)
             if not raw:
                 continue
             try:
@@ -190,9 +186,9 @@ async def journal_search(
     Filter journal entries by pair, regime, session, outcome, journal_type.
     Frontend: Journal page → filter controls
     """
-    r = _get_redis()
+    r: aioredis.Redis = await get_async_redis()
     since = datetime.now(timezone.utc) - timedelta(days=days_back)
-    all_entries = _load_journal_entries(r, since=since)
+    all_entries = await _load_journal_entries(r, since=since)
 
     filtered = all_entries
     if pair:
@@ -223,11 +219,11 @@ async def journal_search(
 
 @router.get("/today")
 async def journal_today() -> dict:
-    r = _get_redis()
+    r: aioredis.Redis = await get_async_redis()
     start_of_day = datetime.now(timezone.utc).replace(
         hour=0, minute=0, second=0, microsecond=0
     )
-    entries = _load_journal_entries(r, since=start_of_day)
+    entries = await _load_journal_entries(r, since=start_of_day)
     entries.sort(key=lambda e: e.get("timestamp", ""))
 
     return {
@@ -241,9 +237,9 @@ async def journal_today() -> dict:
 
 @router.get("/weekly")
 async def journal_weekly() -> list[dict]:
-    r = _get_redis()
+    r: aioredis.Redis = await get_async_redis()
     since = datetime.now(timezone.utc) - timedelta(days=7)
-    all_entries = _load_journal_entries(r, since=since)
+    all_entries = await _load_journal_entries(r, since=since)
 
     # Group by date
     by_date: dict[str, list[dict]] = {}
@@ -274,9 +270,9 @@ async def journal_weekly() -> list[dict]:
 @router.get("/metrics")
 async def journal_metrics(days_back: int = Query(default=30, ge=1, le=365)) -> dict:
     """Extended metrics including constitutional_violation_count, top_mistake_category."""
-    r = _get_redis()
+    r: aioredis.Redis = await get_async_redis()
     since = datetime.now(timezone.utc) - timedelta(days=days_back)
-    entries = _load_journal_entries(r, since=since)
+    entries = await _load_journal_entries(r, since=since)
     metrics = _compute_metrics(entries)
     metrics["period_days"] = days_back
     metrics["as_of"] = datetime.now(timezone.utc).isoformat()

@@ -19,9 +19,7 @@ from typing import Any  # noqa: UP035
 
 from ingest.candle_builder import (  # noqa: F401
     Candle,
-    CandleBuilder,
     MultiTimeframeCandleBuilder,
-    OnCandleComplete,
     Timeframe,
 )
 
@@ -36,14 +34,15 @@ class TickBuffer:
     """Thread-safe, non-destructive tick buffer."""
 
     def __init__(self, maxlen: int = 10000):
-        self._buffer: deque = deque(maxlen=maxlen)
+        super().__init__()
+        self._buffer: deque[dict[str, Any]] = deque(maxlen=maxlen)
         self._last_read_index: dict[str, int] = {}  # consumer_id -> last_index
 
-    def append(self, tick: dict) -> None:
+    def append(self, tick: dict[str, Any]) -> None:
         """Add tick to buffer (FIFO with max length)."""
         self._buffer.append(tick)
 
-    def consume(self, consumer_id: str) -> Iterator[dict]:
+    def consume(self, consumer_id: str) -> Iterator[dict[str, Any]]:
         """
         Non-destructive consumption.
         Each consumer tracks its own read position.
@@ -79,7 +78,7 @@ class _VWAPState:
     vwap: float | None = None
     tick_count: int = 0
 
-    def update(self, price: float, volume: float) -> float | None:
+    def update(self, price: float, volume: float | None) -> float | None:
         """Update VWAP with a new tick. Returns current VWAP or None."""
         self.tick_count += 1
         if volume is None or volume <= 0:
@@ -177,10 +176,11 @@ def _normalize_ts(ts: Any) -> datetime:
 
 
 # ---------------------------------------------------------------------------
-# Async callbacks — used by Redis stream consumers in tick_stream.py
+# Async callbacks — consumed by ingest/dependencies.py::_build_tick_handler()
+# (analysis/tick_stream.py is a deprecated blueprint; do not import it)
 # ---------------------------------------------------------------------------
 
-async def process_tick_for_candle(tick: dict) -> Candle | None:
+async def process_tick_for_candle(tick: dict[str, Any]) -> Candle | None:
     """
     Process one tick into multi-timeframe candles.
 
@@ -202,7 +202,7 @@ async def process_tick_for_candle(tick: dict) -> Candle | None:
     return None
 
 
-async def update_vwap(tick: dict) -> float | None:
+async def update_vwap(tick: dict[str, Any]) -> float | None:
     """
     Incremental session-VWAP update for the tick's symbol.
 
@@ -219,7 +219,7 @@ async def update_vwap(tick: dict) -> float | None:
     return _vwap_states[symbol].update(price, volume)
 
 
-def analyze_orderflow(tick: dict) -> dict[str, Any]:
+def analyze_orderflow(tick: dict[str, Any]) -> dict[str, Any]:
     """
     Basic order-flow analysis: tick-rule classification + volume delta.
 

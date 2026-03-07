@@ -31,6 +31,10 @@ pytest_cache/
 
 # ── Build artifacts ──────────────────────────
 final_results.txt
+full_results.txt
+collect_results.txt
+full_test_run.txt
+test_collect.txt
 *.log
 *.out
 
@@ -52,7 +56,7 @@ pnpm-debug.log*
 out/
 
 # ── IDE ──────────────────────────────────────
-.vscode/settings.json
+.vscode/
 .idea/
 *.swp
 *.swo

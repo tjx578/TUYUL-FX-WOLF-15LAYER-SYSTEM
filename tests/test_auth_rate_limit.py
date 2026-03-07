@@ -504,3 +504,144 @@ class TestRateLimitIntegration:
 
         # Cleanup
         _http_store.reset()
+
+
+# =========================================================================
+# Path-bucket routing tests (new granular buckets)
+# =========================================================================
+
+
+class TestPathBucketRouting:
+    """Test that _path_bucket correctly routes to the right bucket/limit."""
+
+    def test_ea_restart_bucket(self):
+        from api.middleware.rate_limit import EA_CONTROL_PER_MIN, _path_bucket  # noqa: PLC0415
+
+        result = _path_bucket("/ea/restart", "POST", False)
+        assert result is not None
+        assert result[0] == "ea_control"
+        assert result[1] == EA_CONTROL_PER_MIN
+
+    def test_ea_safe_mode_bucket(self):
+        from api.middleware.rate_limit import _path_bucket  # noqa: PLC0415
+
+        result = _path_bucket("/ea/safe-mode", "POST", False)
+        assert result is not None
+        assert result[0] == "ea_control"
+
+    def test_trades_take_bucket(self):
+        from api.middleware.rate_limit import TAKE_PER_MIN, _path_bucket  # noqa: PLC0415
+
+        result = _path_bucket("/trades/take", "POST", False)
+        assert result is not None
+        assert result[0] == "take"
+        assert result[1] == TAKE_PER_MIN
+
+    def test_signals_take_bucket(self):
+        from api.middleware.rate_limit import _path_bucket  # noqa: PLC0415
+
+        result = _path_bucket("/signals/take", "POST", False)
+        assert result is not None
+        assert result[0] == "take"
+
+    def test_trades_confirm_bucket(self):
+        from api.middleware.rate_limit import TRADE_WRITE_PER_MIN, _path_bucket  # noqa: PLC0415
+
+        result = _path_bucket("/trades/confirm", "POST", False)
+        assert result is not None
+        assert result[0] == "trade_write"
+        assert result[1] == TRADE_WRITE_PER_MIN
+
+    def test_trades_close_bucket(self):
+        from api.middleware.rate_limit import _path_bucket  # noqa: PLC0415
+
+        result = _path_bucket("/trades/close", "POST", False)
+        assert result is not None
+        assert result[0] == "trade_write"
+
+    def test_trades_skip_bucket(self):
+        from api.middleware.rate_limit import _path_bucket  # noqa: PLC0415
+
+        result = _path_bucket("/trades/skip", "POST", False)
+        assert result is not None
+        assert result[0] == "trade_write"
+
+    def test_signals_skip_bucket(self):
+        from api.middleware.rate_limit import _path_bucket  # noqa: PLC0415
+
+        result = _path_bucket("/signals/skip", "POST", False)
+        assert result is not None
+        assert result[0] == "trade_write"
+
+    def test_risk_calculate_bucket(self):
+        from api.middleware.rate_limit import RISK_CALC_PER_MIN, _path_bucket  # noqa: PLC0415
+
+        result = _path_bucket("/risk/calculate", "POST", False)
+        assert result is not None
+        assert result[0] == "risk_calc"
+        assert result[1] == RISK_CALC_PER_MIN
+
+    def test_account_create_bucket(self):
+        from api.middleware.rate_limit import ACCOUNT_WRITE_PER_MIN, _path_bucket  # noqa: PLC0415
+
+        result = _path_bucket("/accounts", "POST", False)
+        assert result is not None
+        assert result[0] == "account_write"
+        assert result[1] == ACCOUNT_WRITE_PER_MIN
+
+    def test_account_update_bucket(self):
+        from api.middleware.rate_limit import _path_bucket  # noqa: PLC0415
+
+        result = _path_bucket("/accounts/abc-123", "PUT", False)
+        assert result is not None
+        assert result[0] == "account_write"
+
+    def test_account_delete_bucket(self):
+        from api.middleware.rate_limit import _path_bucket  # noqa: PLC0415
+
+        result = _path_bucket("/accounts/abc-123", "DELETE", False)
+        assert result is not None
+        assert result[0] == "account_write"
+
+    def test_config_profiles_bucket(self):
+        from api.middleware.rate_limit import CONFIG_WRITE_PER_MIN, _path_bucket  # noqa: PLC0415
+
+        result = _path_bucket("/config/profiles/active", "POST", False)
+        assert result is not None
+        assert result[0] == "config_write"
+        assert result[1] == CONFIG_WRITE_PER_MIN
+
+    def test_redis_candle_delete_admin_bucket(self):
+        from api.middleware.rate_limit import ADMIN_PER_MIN, _path_bucket  # noqa: PLC0415
+
+        result = _path_bucket("/redis/candles", "DELETE", False)
+        assert result is not None
+        assert result[0] == "admin"
+        assert result[1] == ADMIN_PER_MIN
+
+    def test_news_lock_admin_bucket(self):
+        from api.middleware.rate_limit import _path_bucket  # noqa: PLC0415
+
+        result = _path_bucket("/calendar/news-lock/enable", "POST", False)
+        assert result is not None
+        assert result[0] == "admin"
+
+    def test_ws_connect_bucket(self):
+        from api.middleware.rate_limit import WS_CONNECT_PER_MIN, _path_bucket  # noqa: PLC0415
+
+        result = _path_bucket("/ws/feed", "GET", True)
+        assert result is not None
+        assert result[0] == "ws_connect"
+        assert result[1] == WS_CONNECT_PER_MIN
+
+    def test_get_request_no_special_bucket(self):
+        from api.middleware.rate_limit import _path_bucket  # noqa: PLC0415
+
+        result = _path_bucket("/api/v1/signals", "GET", False)
+        assert result is None  # Falls through to general HTTP bucket
+
+    def test_ea_control_tight_limit(self):
+        """EA control should be very tight (default 3/min)."""
+        from api.middleware.rate_limit import EA_CONTROL_PER_MIN  # noqa: PLC0415
+
+        assert EA_CONTROL_PER_MIN <= 5, "EA control should be tightly limited"

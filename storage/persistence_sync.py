@@ -114,17 +114,18 @@ class PersistenceSync:
 
     async def _sync_trade_ledger(self) -> None:
         client = self._redis.client
-        cursor = 0
-        while True:
-            cursor, keys = client.scan(cursor=cursor, match="wolf15:TRADE:*", count=50)
-            for key in keys:
-                trade_payload = self._redis.get(key)
-                if not trade_payload:
-                    continue
-                trade_data = json.loads(trade_payload)
-                await self._upsert_trade(trade_data)
-            if cursor == 0:
-                break
+        for pattern in ("TRADE:*", "wolf15:TRADE:*"):
+            cursor = 0
+            while True:
+                cursor, keys = client.scan(cursor=cursor, match=pattern, count=50)
+                for key in keys:
+                    trade_payload = self._redis.get(key)
+                    if not trade_payload:
+                        continue
+                    trade_data = json.loads(trade_payload)
+                    await self._upsert_trade(trade_data)
+                if cursor == 0:
+                    break
 
     async def _upsert_trade(self, trade: dict[str, Any]) -> None:
         trade_id = trade.get("trade_id")

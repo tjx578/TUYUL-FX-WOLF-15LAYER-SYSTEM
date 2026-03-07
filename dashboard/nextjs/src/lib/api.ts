@@ -22,6 +22,7 @@ import type {
 } from "@/types";
 import type { PipelineData } from "@/components/PipelinePanel";
 import { getApiBaseUrl } from "@/lib/env";
+import { bearerHeader } from "@/lib/auth";
 
 const API_BASE = getApiBaseUrl();
 
@@ -47,16 +48,22 @@ export const API_ENDPOINTS = {
   eaSafeMode: "/api/v1/ea/safe-mode",
   propFirmStatus: (accountId: string) => `/api/v1/prop-firm/${accountId}/status`,
   propFirmPhase: (accountId: string) => `/api/v1/prop-firm/${accountId}/phase`,
-  configProfiles: "/api/v1/config/profiles",
-  configActive: "/api/v1/config/profiles/active",
-  configEffective: "/api/v1/config/profiles/effective",
-  configOverride: "/api/v1/config/profiles/override",
-  configLock: "/api/v1/config/profiles/lock",
+  configProfile: "/api/v1/config/profile",
+  configProfileByName: (profileName: string) => `/api/v1/config/profile/${profileName}`,
+  configActive: "/api/v1/config/profile/active",
+  configEffective: "/api/v1/config/profile/effective",
+  configOverrides: "/api/v1/config/profile/overrides",
+  configOverrideLegacy: "/api/v1/config/profile/override",
+  configLock: "/api/v1/config/profile/lock",
+  configProfilesLegacy: "/api/v1/config/profiles",
 } as const;
 
 const fetcher = async (url: string) => {
+  const auth = bearerHeader();
   const res = await fetch(`${API_BASE}${url}`, {
-    credentials: "include",
+    headers: {
+      ...(auth ? { Authorization: auth } : {}),
+    },
   });
 
   if (!res.ok) {
@@ -87,11 +94,12 @@ const apiMutateWithHeaders = async (
             : {}),
         };
 
+  const auth = bearerHeader();
   const res = await fetch(`${API_BASE}${url}`, {
     method,
-    credentials: "include",
     headers: {
       "Content-Type": "application/json",
+      ...(auth ? { Authorization: auth } : {}),
       ...governanceHeaders,
       ...(headers ?? {}),
     },

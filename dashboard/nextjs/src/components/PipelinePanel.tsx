@@ -18,6 +18,33 @@ export interface PipelineLayer {
   status: "pass" | "warn" | "fail";
   val: string;
   detail: string;
+  timingMs?: number | null;
+  deps?: string[];
+}
+
+export interface PipelineDagNode {
+  id: string;
+  name: string;
+  zone: "COG" | "ANA" | "META" | "EXEC" | "VER" | "POST";
+  status: "pass" | "warn" | "fail";
+  timingMs?: number | null;
+}
+
+export interface PipelineDagEdge {
+  from: string;
+  to: string;
+}
+
+export interface PipelineDag {
+  nodes: PipelineDagNode[];
+  edges: PipelineDagEdge[];
+  topology: string[];
+  batches: string[][];
+}
+
+export interface PipelineProfiling {
+  layer_timings_ms: Record<string, number>;
+  total_latency_ms: number;
 }
 
 export interface PipelineGate {
@@ -47,6 +74,8 @@ export interface PipelineData {
   layers: PipelineLayer[];
   gates: PipelineGate[];
   entry: PipelineEntry;
+  profiling?: PipelineProfiling;
+  dag?: PipelineDag;
 }
 
 // ── Helpers ───────────────────────────────────────────────────
@@ -137,6 +166,9 @@ function LayerRow({ layer }: { layer: PipelineLayer }) {
           </span>
         </div>
         <M s={9} c={sc} w={700}>{layer.val}</M>
+        <L s={7} c={T.t4}>
+          {typeof layer.timingMs === "number" ? `${layer.timingMs.toFixed(1)}ms` : "-"}
+        </L>
       </div>
 
       {/* Status dot */}
@@ -147,6 +179,30 @@ function LayerRow({ layer }: { layer: PipelineLayer }) {
         boxShadow: `0 0 4px ${sc}60`,
         flexShrink: 0,
       }} />
+    </div>
+  );
+}
+
+function DagFlow({ dag }: { dag?: PipelineDag }) {
+  if (!dag || !Array.isArray(dag.batches) || dag.batches.length === 0) {
+    return null;
+  }
+
+  const flowText = dag.batches.map((batch) => batch.join(" + ")).join(" -> ");
+
+  return (
+    <div style={{
+      marginTop: 8,
+      padding: "8px",
+      borderRadius: RADIUS.sm,
+      border: `1px solid ${T.b0}`,
+      backgroundColor: T.bg1,
+    }}>
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 8, marginBottom: 6 }}>
+        <M s={9} c={T.t2} w={700}>DAG FLOW</M>
+        <L s={7} c={T.t4}>{dag.edges.length} edges</L>
+      </div>
+      <L s={8} c={T.t3}>{flowText}</L>
     </div>
   );
 }
@@ -263,6 +319,8 @@ export function PipelinePanel({ pair = "EURUSD" }: { pair?: string }) {
           <LayerRow key={l.id} layer={l} />
         ))}
       </div>
+
+      <DagFlow dag={pipeline.dag} />
 
       {/* ── Entry levels ── */}
       <InfoRow

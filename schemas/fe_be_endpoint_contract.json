@@ -61,11 +61,14 @@
       "news_lock_status": "/api/v1/calendar/news-lock/status"
     },
     "settings": {
-      "profiles": "/api/v1/config/profiles",
-      "active": "/api/v1/config/profiles/active",
-      "effective": "/api/v1/config/profiles/effective",
-      "override": "/api/v1/config/profiles/override",
-      "lock": "/api/v1/config/profiles/lock"
+      "profile": "/api/v1/config/profile",
+      "profile_item": "/api/v1/config/profile/{profile_name}",
+      "active": "/api/v1/config/profile/active",
+      "effective": "/api/v1/config/profile/effective",
+      "overrides": "/api/v1/config/profile/overrides",
+      "override_legacy": "/api/v1/config/profile/override",
+      "lock": "/api/v1/config/profile/lock",
+      "legacy_profiles": "/api/v1/config/profiles"
     }
   }
 }

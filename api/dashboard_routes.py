@@ -38,7 +38,7 @@ _price_feed = PriceFeed()
 @router.get("/api/v1/trades/{trade_id}")
 async def get_trade(trade_id: str) -> Trade:
     """Get single trade by ID."""
-    trade = _trade_ledger.get_trade(trade_id)
+    trade = await _trade_ledger.get_trade_async(trade_id)
     if not trade:
         raise HTTPException(status_code=404, detail=f"Trade not found: {trade_id}")
     return trade
@@ -52,14 +52,14 @@ async def get_trade(trade_id: str) -> Trade:
 @router.get("/api/v1/prices")
 async def get_all_prices() -> dict:
     """Get all live prices."""
-    prices = _price_feed.get_all_prices()
+    prices = await _price_feed.get_all_prices_async()
     return {"prices": prices, "count": len(prices)}
 
 
 @router.get("/api/v1/prices/{symbol}")
 async def get_price(symbol: str) -> dict:
     """Get single symbol price."""
-    price = _price_feed.get_price(symbol.upper())
+    price = await _price_feed.get_price_async(symbol.upper())
     if not price:
         raise HTTPException(status_code=404, detail=f"No price data for {symbol}")
     return {"symbol": symbol.upper(), "price": price}

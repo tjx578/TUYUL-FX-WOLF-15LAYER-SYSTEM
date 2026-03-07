@@ -2,6 +2,7 @@
 const nextConfig = {
   reactStrictMode: true,
   swcMinify: true,
+  output: "standalone",
   eslint: {
     // Allow builds to complete even if there are ESLint warnings/errors
     ignoreDuringBuilds: true,

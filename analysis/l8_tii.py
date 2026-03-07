@@ -16,12 +16,21 @@ Zone: analysis/ -- pure read-only analysis, no execution side-effects.
 
 import logging
 import math
+from dataclasses import dataclass
 from datetime import UTC, datetime
+from enum import Enum
 from typing import Any
 
 logger = logging.getLogger(__name__)
 
-__all__ = ["analyze_tii"]
+__all__ = [
+    "analyze_tii",
+    "TIIGrade",
+    "TIIInputs",
+    "TIIResult",
+    "classify_tii_grade",
+    "compute_tii",
+]
 
 # ── TII Component Weights ───────────────────────────────────────────
 _W_VWAP = 0.25
@@ -442,3 +451,126 @@ def analyze_tii(
         "meta_integrity": round(meta_integrity, 4),
         "timestamp": now.isoformat(),
     }
+
+
+# ============================================================
+# Structured TII API (used by tests/test_l8_tii.py)
+# ============================================================
+
+class TIIGrade(Enum):
+    """Qualitative grade for a TII score."""
+    PRISTINE = "PRISTINE"       # >= 90.0
+    CLEAN = "CLEAN"             # >= 75.0
+    ACCEPTABLE = "ACCEPTABLE"   # >= 55.0
+    QUESTIONABLE = "QUESTIONABLE"  # >= 35.0
+    COMPROMISED = "COMPROMISED" # < 35.0
+
+
+def classify_tii_grade(score: float) -> TIIGrade:
+    """Convert a numeric TII score (0-100) to a TIIGrade."""
+    if score >= 90.0:
+        return TIIGrade.PRISTINE
+    elif score >= 75.0:
+        return TIIGrade.CLEAN
+    elif score >= 55.0:
+        return TIIGrade.ACCEPTABLE
+    elif score >= 35.0:
+        return TIIGrade.QUESTIONABLE
+    else:
+        return TIIGrade.COMPROMISED
+
+
+@dataclass
+class TIIInputs:
+    """Structured inputs for the structured TII computation."""
+    setup_clarity: float
+    rule_compliance: float
+    risk_reward_quality: float
+    confluence_depth: float
+    timing_alignment: float
+
+    def __post_init__(self) -> None:
+        for field_name in (
+            "setup_clarity",
+            "rule_compliance",
+            "risk_reward_quality",
+            "confluence_depth",
+            "timing_alignment",
+        ):
+            val = getattr(self, field_name)
+            if not (0.0 <= val <= 100.0):
+                raise ValueError(f"{field_name} must be 0\u2013100, got {val}")
+
+
+@dataclass(frozen=True)
+class TIIResult:
+    """Result of the structured TII computation."""
+    symbol: str
+    tii_score: float
+    grade: TIIGrade
+    pass_threshold: bool
+    threshold_used: float
+    weakest_dimension: str
+    strongest_dimension: str
+    metadata: dict[str, Any]
+
+
+_DEFAULT_WEIGHTS: dict[str, float] = {
+    "setup_clarity": 0.20,
+    "rule_compliance": 0.25,
+    "risk_reward_quality": 0.20,
+    "confluence_depth": 0.20,
+    "timing_alignment": 0.15,
+}
+
+
+def compute_tii(
+    symbol: str,
+    inputs: TIIInputs,
+    threshold: float = 60.0,
+    metadata: dict[str, Any] | None = None,
+) -> TIIResult:
+    """Compute TII score from structured inputs.
+
+    Args:
+        symbol: Trading pair symbol.
+        inputs: TIIInputs dataclass with 5 dimension scores (0-100).
+        threshold: Pass/fail threshold (default 60.0).
+        metadata: Optional passthrough metadata dict.
+
+    Returns:
+        Frozen TIIResult with score, grade, pass/fail, and dimension analysis.
+    """
+    raw = {
+        "setup_clarity": inputs.setup_clarity,
+        "rule_compliance": inputs.rule_compliance,
+        "risk_reward_quality": inputs.risk_reward_quality,
+        "confluence_depth": inputs.confluence_depth,
+        "timing_alignment": inputs.timing_alignment,
+    }
+
+    # Weighted score
+    weighted_score = sum(raw[k] * _DEFAULT_WEIGHTS[k] for k in raw) / sum(_DEFAULT_WEIGHTS.values())
+
+    # Rule-compliance penalty: if rule_compliance < 50, cap at 85%
+    if inputs.rule_compliance < 50.0:
+        max_allowed = 50.0 + inputs.rule_compliance * 0.8
+        weighted_score = min(weighted_score, max_allowed)
+
+    tii_score = round(min(100.0, max(0.0, weighted_score)), 4)
+    grade = classify_tii_grade(tii_score)
+    pass_threshold = tii_score >= threshold
+
+    weakest = min(raw, key=lambda k: raw[k])
+    strongest = max(raw, key=lambda k: raw[k])
+
+    return TIIResult(
+        symbol=symbol,
+        tii_score=tii_score,
+        grade=grade,
+        pass_threshold=pass_threshold,
+        threshold_used=threshold,
+        weakest_dimension=weakest,
+        strongest_dimension=strongest,
+        metadata=metadata or {},
+    )

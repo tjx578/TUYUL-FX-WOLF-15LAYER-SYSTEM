@@ -1,39 +1,88 @@
+# ==========================================================================
+# TUYUL FX Wolf-15 — Multi-stage production Dockerfile
+# ==========================================================================
+# Stage 1: build wheels (with build tools, discarded at runtime)
+# Stage 2: lean runtime image (~150 MB smaller than single-stage)
+# ==========================================================================
+
 # ---------- STAGE 1: BUILD ----------
 FROM python:3.11-slim AS builder
 
-WORKDIR /app
+WORKDIR /build
 
-ENV PYTHONDONTWRITEBYTECODE=1
-ENV PYTHONUNBUFFERED=1
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential \
-    gcc \
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends build-essential gcc \
     && rm -rf /var/lib/apt/lists/*
 
-COPY pyproject.toml requirements.txt ./
-
-RUN pip install --upgrade pip
-RUN pip wheel --no-cache-dir --no-deps -r requirements.txt -w /wheels
+COPY requirements.txt .
+RUN pip install --upgrade pip \
+    && pip wheel --no-cache-dir --no-deps -r requirements.txt -w /wheels \
+    && pip wheel --no-cache-dir --no-deps gunicorn uvicorn -w /wheels
 
 # ---------- STAGE 2: RUNTIME ----------
-FROM python:3.11-slim
+FROM python:3.11-slim AS runtime
 
 WORKDIR /app
 
-ENV PYTHONDONTWRITEBYTECODE=1
-ENV PYTHONUNBUFFERED=1
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    ENV=production \
+    PORT=8000
 
-RUN adduser --disabled-password --gecos '' appuser
+# Install wheels from builder (no compiler needed)
+COPY --from=builder /wheels /tmp/wheels
+RUN pip install --no-cache-dir /tmp/wheels/* \
+    && rm -rf /tmp/wheels
 
-COPY --from=builder /wheels /wheels
-RUN pip install --no-cache-dir /wheels/*
+# Copy only application code (respect .dockerignore)
+COPY api/ api/
+COPY accounts/ accounts/
+COPY alerts/ alerts/
+COPY allocation/ allocation/
+COPY analysis/ analysis/
+COPY config/ config/
+COPY constitution/ constitution/
+COPY context/ context/
+COPY contracts/ contracts/
+COPY core/ core/
+COPY dashboard/ dashboard/
+COPY ea_interface/ ea_interface/
+COPY engine/ engine/
+COPY engines/ engines/
+COPY execution/ execution/
+COPY infrastructure/ infrastructure/
+COPY ingest/ ingest/
+COPY journal/ journal/
+COPY monitoring/ monitoring/
+COPY news/ news/
+COPY ops/ ops/
+COPY pipeline/ pipeline/
+COPY propfirm_manager/ propfirm_manager/
+COPY risk/ risk/
+COPY schemas/ schemas/
+COPY services/ services/
+COPY state/ state/
+COPY storage/ storage/
+COPY utils/ utils/
 
-COPY . .
+# Copy top-level entry points
+COPY api_server.py app.py config_loader.py main.py ingest_service.py ./
+COPY alembic.ini ./
 
-RUN chown -R appuser:appuser /app
+# Non-root user
+RUN groupadd --gid 1000 appuser \
+    && useradd --uid 1000 --gid appuser --shell /bin/bash --create-home appuser \
+    && chown -R appuser:appuser /app
+
 USER appuser
 
-EXPOSE 8000
+EXPOSE ${PORT}
 
-CMD ["bash"]
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:${PORT}/health')" || exit 1
+
+CMD ["python", "api_server.py"]

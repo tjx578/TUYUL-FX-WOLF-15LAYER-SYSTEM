@@ -4,6 +4,7 @@
   "fiscalYearStartMonth": 0,
   "graphTooltip": 0,
   "id": null,
+  "uid": "wolf-command-center",
   "links": [],
   "liveNow": false,
   "panels": [
@@ -26,22 +27,23 @@
     },
     {
       "type": "timeseries",
-      "title": "Allocation Approval Rate per Account",
+      "title": "Gate Pass Rate per Gate",
       "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0},
       "targets": [
         {
-          "expr": "sum by (account_id) (rate(wolf_alloc_success_total[5m])) / clamp_min(sum by (account_id) (rate(wolf_alloc_success_total[5m])) + sum by (account_id) (rate(wolf_alloc_reject_total[5m])), 1)",
+          "expr": "sum by (gate) (rate(wolf_pipeline_gate_result_total{result=\"PASS\"}[5m])) / clamp_min(sum by (gate) (rate(wolf_pipeline_gate_result_total[5m])), 1)",
+          "legendFormat": "{{gate}}",
           "refId": "A"
         }
       ]
     },
     {
       "type": "heatmap",
-      "title": "Execution Latency Histogram",
+      "title": "Tick-to-Verdict Latency Histogram",
       "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8},
       "targets": [
         {
-          "expr": "sum(rate(wolf_execution_latency_seconds_bucket[5m])) by (le)",
+          "expr": "sum(rate(wolf_tick_to_verdict_seconds_bucket[5m])) by (le)",
           "format": "heatmap",
           "refId": "A"
         }
@@ -63,13 +65,13 @@
       "type": "timeseries",
       "title": "Memory per Service",
       "gridPos": {"h": 8, "w": 12, "x": 12, "y": 16},
-      "targets": [{"expr": "wolf_process_memory_bytes", "refId": "A"}]
+      "targets": [{"expr": "process_resident_memory_bytes", "legendFormat": "{{job}}", "refId": "A"}]
     },
     {
       "type": "timeseries",
       "title": "Redis Stream Lag",
       "gridPos": {"h": 8, "w": 12, "x": 0, "y": 24},
-      "targets": [{"expr": "wolf_redis_stream_lag", "refId": "A"}]
+      "targets": [{"expr": "wolf_redis_stream_lag_seconds", "legendFormat": "{{stream}}", "refId": "A"}]
     },
     {
       "type": "traces",
@@ -77,6 +79,141 @@
       "gridPos": {"h": 8, "w": 12, "x": 12, "y": 24},
       "datasource": {"type": "tempo", "uid": "tempo"},
       "targets": [{"queryType": "traceql", "query": "{}", "refId": "A"}]
+    },
+    {
+      "type": "timeseries",
+      "title": "Gate Pass/Fail Rate (9 Constitutional Gates)",
+      "description": "Per-gate pass rate over time. Shows which constitutional gates are failing most often.",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 32},
+      "targets": [
+        {
+          "expr": "sum by (gate) (rate(wolf_pipeline_gate_result_total{result=\"PASS\"}[5m])) / clamp_min(sum by (gate) (rate(wolf_pipeline_gate_result_total[5m])), 1)",
+          "legendFormat": "{{gate}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "piechart",
+      "title": "Verdict Distribution (1h)",
+      "description": "Distribution of L12 verdict outcomes: EXECUTE_BUY, EXECUTE_SELL, HOLD, NO_TRADE, ABORT.",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 32},
+      "targets": [
+        {
+          "expr": "sum by (verdict) (increase(wolf_pipeline_verdict_total[1h]))",
+          "legendFormat": "{{verdict}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Reflective Drift Ratio",
+      "description": "Two-pass reflective drift (|pass1_abg - pass2_abg|). Threshold: 0.15 (GRANTED max), 0.20 (RESTRICTED max).",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 40},
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"color": "green", "value": null},
+              {"color": "yellow", "value": 0.15},
+              {"color": "red", "value": 0.20}
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "expr": "wolf_reflective_drift_ratio",
+          "legendFormat": "{{symbol}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Sovereignty Level per Symbol",
+      "description": "Current sovereignty enforcement level per symbol. GRANTED=green, RESTRICTED=yellow, REVOKED=red.",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 40},
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            {"type": "value", "options": {"0": {"text": "INACTIVE"}, "1": {"text": "ACTIVE"}}}
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"color": "green", "value": null},
+              {"color": "red", "value": 1}
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "expr": "wolf_sovereignty_level",
+          "legendFormat": "{{symbol}} / {{level}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "TRQ-3D Alpha / Beta / Gamma",
+      "description": "TRQ-3D three-axis values per symbol. Alpha=regime coherence, Beta=FRPC, Gamma=meta integrity.",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 48},
+      "targets": [
+        {
+          "expr": "wolf_trq3d_alpha",
+          "legendFormat": "alpha {{symbol}}",
+          "refId": "A"
+        },
+        {
+          "expr": "wolf_trq3d_beta",
+          "legendFormat": "beta {{symbol}}",
+          "refId": "B"
+        },
+        {
+          "expr": "wolf_trq3d_gamma",
+          "legendFormat": "gamma {{symbol}}",
+          "refId": "C"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Per-Symbol TII / FRPC / CONF12 Scores",
+      "description": "Constitutional score panel. Thresholds: TII≥0.60, FRPC≥0.93, CONF12≥0.75.",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 48},
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"color": "red", "value": null},
+              {"color": "green", "value": 0.60}
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "expr": "wolf_tii_score",
+          "legendFormat": "TII {{symbol}}",
+          "refId": "A"
+        },
+        {
+          "expr": "wolf_frpc_score",
+          "legendFormat": "FRPC {{symbol}}",
+          "refId": "B"
+        },
+        {
+          "expr": "wolf_conf12_score",
+          "legendFormat": "CONF12 {{symbol}}",
+          "refId": "C"
+        }
+      ]
     }
   ],
   "refresh": "10s",
@@ -88,6 +225,6 @@
   "timepicker": {},
   "timezone": "browser",
   "title": "Wolf Institutional Command Center",
-  "version": 2,
+  "version": 3,
   "weekStart": ""
 }

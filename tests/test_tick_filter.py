@@ -148,8 +148,8 @@ class TestDedupCache:
         # Within TTL — duplicate
         assert cache.is_duplicate("key1", now=1005.0) is True
 
-        # After TTL — no longer duplicate
-        assert cache.is_duplicate("key1", now=1011.0) is False
+        # After TTL from last access (1005 + 10 + 1 = 1016) — no longer duplicate
+        assert cache.is_duplicate("key1", now=1016.0) is False
 
     def test_hard_cap_eviction(self) -> None:
         cache = self._make_cache(ttl=3600.0, max_size=50)

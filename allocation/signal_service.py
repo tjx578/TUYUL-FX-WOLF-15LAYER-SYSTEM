@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import contextlib
+import json
 import time
 from typing import Any
 
@@ -8,6 +10,9 @@ from config_loader import load_pairs
 from schemas.signal_contract import FROZEN_SIGNAL_CONTRACT_VERSION, SignalContract
 from schemas.validator import validate_signal_contract
 from storage.l12_cache import get_verdict
+from storage.redis_client import redis_client
+
+SIGNAL_READY_CHANNEL = "events:signal_ready"
 
 
 class SignalService:
@@ -41,6 +46,14 @@ class SignalService:
             raise ValueError("; ".join(errors))
 
         self._registry.publish(contract)
+        event_payload = {
+            "event": "SIGNAL_READY",
+            "signal_id": contract.get("signal_id"),
+            "symbol": contract.get("symbol"),
+            "ts": time.time(),
+        }
+        with contextlib.suppress(Exception):
+            redis_client.publish(SIGNAL_READY_CHANNEL, json.dumps(event_payload))
         return contract
 
     def get(self, signal_id: str) -> dict[str, Any] | None:
