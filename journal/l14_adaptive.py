@@ -126,7 +126,7 @@ def _extract_pair_patterns(
         )
         wr = wins / len(group)
         severity = InsightSeverity.INFORMATIONAL
-        if wr >= 0.75 and len(group) >= 5 or wr <= 0.30 and len(group) >= 5:
+        if (wr >= 0.75 and len(group) >= 5) or (wr <= 0.30 and len(group) >= 5):
             severity = InsightSeverity.STRONG_ADVISORY
 
         insights.append(PatternInsight(
