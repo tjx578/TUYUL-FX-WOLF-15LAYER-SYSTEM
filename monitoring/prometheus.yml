@@ -13,3 +13,8 @@ scrape_configs:
   - job_name: 'wolf-ingest'
     static_configs:
       - targets: ['wolf-ingest:9103']
+
+  - job_name: 'wolf-dashboard'
+    static_configs:
+      - targets: ['wolf-dashboard:9104']
+
