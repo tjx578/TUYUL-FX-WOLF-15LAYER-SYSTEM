@@ -79,7 +79,7 @@ class ForexFactoryHtmlProvider:
 
         headers = {
             "User-Agent": (
-                "Mozilla/5.0 (compatible; TUYUL-FX/1.0; +https://github.com/tjx578)"
+                "Mozilla/5.0 (compatible; EconomicCalendarBot/1.0)"
             )
         }
 

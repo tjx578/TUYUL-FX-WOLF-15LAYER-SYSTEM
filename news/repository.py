@@ -249,5 +249,5 @@ class NewsRepository:
                 event.event_url,
                 event.status.value,
                 json.dumps(event.affected_pairs),
-                event.fetched_at or datetime.utcnow(),  # noqa: DTZ003 – Postgres expects naive UTC
+                event.fetched_at or datetime.now(UTC),
             )
