@@ -37,4 +37,8 @@ from journal.journal_gpt_bridge import compute_metrics, export_for_gpt  # noqa: 
 # ── Layer modules ─────────────────────────────────────────────────────────────
 from journal.l13_reflection import reflect, L13ReflectionRecord  # noqa: F401
 from journal.l14_adaptive import analyze_patterns, L14AdaptiveResult  # noqa: F401
+from journal.l14_underperform_miner import (  # noqa: F401
+    L14AdaptiveReflection,
+    analyze_underperforming_setups,
+)
 from journal.l15_health import check_health, L15HealthReport  # noqa: F401
