@@ -25,18 +25,27 @@ Integration into WolfConstitutionalPipeline.execute():
     3. penalty = report.current_setup_penalty (bounded 0..0.35)
     4. synthesis["layers"]["enrichment_confidence_adj"] -= penalty
   This feeds into L12 via existing enrichment mechanism — constitutional-compliant.
+
+Changelog (v1.1.0)
+-------------------
+- FIX: JournalRecord now frozen=True so mutation raises AttributeError.
+- FIX: PatternStats.reasons changed list[str] → tuple[str, ...] for immutability.
+- FIX: Added _MAX_GROUPED_KEYS = 5000 constant + early-exit memory guard.
+- FIX: 'pair' included in DEFAULT_DIMENSIONS for forex pair-level patterns.
+- FIX: min_penalty_score lowered to 0.30 to reflect actual formula output range.
+- FIX: Demo data replaced with mixed dataset so baseline ≠ pattern (gap > 0).
 """
 
 from __future__ import annotations
 
 from collections import defaultdict
-from dataclasses import dataclass, field, asdict
+from collections.abc import Iterable, Mapping
+from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from itertools import combinations
 from math import sqrt
 from statistics import mean, median
-from typing import Any, Iterable, Mapping
-
+from typing import Any
 
 # ---------------------------------------------------------------------------
 # Module-level constants
@@ -51,9 +60,9 @@ _MAX_GROUPED_KEYS: int = 5000
 # ---------------------------------------------------------------------------
 
 
-@dataclass(slots=True)
+@dataclass(frozen=True, slots=True)
 class JournalRecord:
-    """Normalised record extracted from a loose J3/J4 dict row."""
+    """Normalised, immutable view of a raw J3/J4 row."""
 
     stage: str
     setup_type: str
@@ -187,7 +196,7 @@ def _to_datetime(value: Any) -> datetime | None:
     text = str(value).strip()
     # (format, truncate_to_19) — truncate only for datetime formats that may
     # include sub-second or timezone suffixes that strptime cannot consume.
-    _FORMATS: tuple[tuple[str, bool], ...] = (
+    _FORMATS: tuple[tuple[str, bool], ...] = (  # noqa: N806
         ("%Y-%m-%d %H:%M:%S", True),
         ("%Y-%m-%dT%H:%M:%S", True),
         ("%Y-%m-%d", False),
@@ -348,9 +357,10 @@ class UnderperformPatternMiner:
         min_expectancy_gap: float = 0.25,
         min_negative_expectancy: float = -0.10,
         min_loss_streak: int = 3,
-        min_penalty_score: float = 0.55,
+        min_penalty_score: float = 0.30,  # FIX: was 0.55, formula rarely exceeds ~0.44
         max_patterns: int = 12,
     ) -> None:
+        super().__init__()
         self.min_trades = min_trades
         self.max_combo_size = max_combo_size
         self.min_expectancy_gap = min_expectancy_gap
@@ -405,7 +415,7 @@ class UnderperformPatternMiner:
                     grouped[(dims, tuple(values))].append(record)
 
         flagged: list[PatternStats] = []
-        for (dims, values), subset in grouped.items():
+        for (dims, dim_values), subset in grouped.items():
             if len(subset) < self.min_trades:
                 continue
 
@@ -451,9 +461,9 @@ class UnderperformPatternMiner:
 
             flagged.append(
                 PatternStats(
-                    signature=" | ".join(f"{d}={v}" for d, v in zip(dims, values)),
+                    signature=" | ".join(f"{d}={v}" for d, v in zip(dims, dim_values, strict=False)),
                     dimensions=dims,
-                    values=values,
+                    values=dim_values,
                     trades=len(subset),
                     wins=wins,
                     losses=losses,
@@ -506,6 +516,7 @@ class L14AdaptiveReflection:
     """
 
     def __init__(self, miner: UnderperformPatternMiner | None = None) -> None:
+        super().__init__()
         self.extractor = JournalExtractor()
         self.miner = miner or UnderperformPatternMiner()
 
@@ -580,7 +591,7 @@ class L14AdaptiveReflection:
         matches: list[PatternStats] = []
         for pattern in patterns:
             ok = True
-            for dim, value in zip(pattern.dimensions, pattern.values):
+            for dim, value in zip(pattern.dimensions, pattern.values, strict=False):
                 if normalized.get(dim) != value:
                     ok = False
                     break
@@ -594,7 +605,7 @@ class L14AdaptiveReflection:
     def _aggregate_penalty(self, matches: list[PatternStats]) -> float:
         if not matches:
             return 0.0
-        weighted = []
+        weighted: list[float] = []
         for pattern in matches:
             specificity = min(1.0, len(pattern.dimensions) / 3)
             weighted.append(pattern.penalty_score * (0.65 + 0.35 * specificity))
