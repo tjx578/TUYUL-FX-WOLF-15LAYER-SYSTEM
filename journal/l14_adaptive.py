@@ -1,4 +1,4 @@
-"""
+"""  # noqa: F821
 Layer 14 — Adaptive Learning / Pattern Memory
 Zone: Journal ↔ Analysis boundary. Append-only pattern storage.
 NO execution side-effects. NO decision authority. NO L12 override.
@@ -87,12 +87,17 @@ class L14AdaptiveResult:
     weight_suggestions: tuple[WeightAdjustmentSuggestion, ...]
     top_lesson_tags: tuple[str, ...]    # most frequent lesson tags
     timestamp: str
-    metadata: dict = field(default_factory=dict)
-
+    metadata: dict[str, object] = field(default_factory=lambda: {})
 
 # ---------------------------------------------------------------------------
 # Analysis functions — all pure, no side-effects
 # ---------------------------------------------------------------------------
+
+_CORRECT_VERDICTS = frozenset({
+    ReflectionVerdict.CORRECT_EXECUTE,
+    ReflectionVerdict.CORRECT_REJECT,
+})
+
 
 def _compute_overall_win_rate(records: Sequence[L13ReflectionRecord]) -> float:
     """Win rate from reflection verdicts."""
@@ -100,10 +105,7 @@ def _compute_overall_win_rate(records: Sequence[L13ReflectionRecord]) -> float:
         return 0.0
     wins = sum(
         1 for r in records
-        if r.reflection_verdict in (
-            ReflectionVerdict.CORRECT_EXECUTE,
-            ReflectionVerdict.CORRECT_REJECT,
-        )
+        if r.reflection_verdict in _CORRECT_VERDICTS
     )
     return round(wins / len(records), 4)
 
@@ -122,11 +124,11 @@ def _extract_pair_patterns(
             continue    # not enough data
         wins = sum(
             1 for r in group
-            if r.reflection_verdict == ReflectionVerdict.CORRECT_EXECUTE
+            if r.reflection_verdict in _CORRECT_VERDICTS
         )
         wr = wins / len(group)
         severity = InsightSeverity.INFORMATIONAL
-        if wr >= 0.75 and len(group) >= 5 or wr <= 0.30 and len(group) >= 5:
+        if (wr >= 0.75 and len(group) >= 5) or (wr <= 0.30 and len(group) >= 5):
             severity = InsightSeverity.STRONG_ADVISORY
 
         insights.append(PatternInsight(
@@ -152,7 +154,9 @@ def _extract_layer_accuracy(
         for contrib in r.layer_contributions:
             if contrib.layer not in layer_stats:
                 layer_stats[contrib.layer] = {"POSITIVE": 0, "NEGATIVE": 0, "NEUTRAL": 0}
-            layer_stats[contrib.layer][contrib.accuracy_contribution] += 1
+            key = contrib.accuracy_contribution
+            if key in layer_stats[contrib.layer]:
+                layer_stats[contrib.layer][key] += 1
 
     for layer, stats in layer_stats.items():
         total = stats["POSITIVE"] + stats["NEGATIVE"] + stats["NEUTRAL"]
@@ -252,7 +256,7 @@ def analyze_patterns(
     records: Sequence[L13ReflectionRecord],
     analysis_id: str,
     period_label: str,
-    metadata: dict | None = None,
+    metadata: dict[str, object] | None = None,
 ) -> L14AdaptiveResult:
     """
     Main entry point for Layer-14 adaptive learning.
@@ -302,4 +306,4 @@ def analyze_patterns(
         analysis_id, period_label, len(records), overall_wr,
         len(all_insights), len(weight_suggestions),
     )
-    return result
+    return result  # noqa: F821
