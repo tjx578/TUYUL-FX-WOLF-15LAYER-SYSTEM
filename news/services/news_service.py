@@ -243,8 +243,20 @@ class NewsService:
 
     async def get_source_health(self) -> dict[str, Any]:
         """Return health records for all known providers."""
+        # Provider names are pulled from the actual provider classes to avoid drift
+        from news.providers.forexfactory_json_provider import ForexFactoryJsonProvider
+        from news.providers.forexfactory_xml_provider import ForexFactoryXmlProvider
+        from news.providers.finnhub_provider import FinnhubProvider
+        from news.providers.forexfactory_html_provider import ForexFactoryHtmlProvider
+
+        known_providers = [
+            ForexFactoryJsonProvider.name,
+            ForexFactoryXmlProvider.name,
+            FinnhubProvider.name,
+            ForexFactoryHtmlProvider.name,
+        ]
         result: dict[str, Any] = {}
-        for name in ["forexfactory_json", "forexfactory_xml", "finnhub", "forexfactory_html"]:
+        for name in known_providers:
             health = await self._repo.get_source_health(name)
             if health:
                 result[name] = health
