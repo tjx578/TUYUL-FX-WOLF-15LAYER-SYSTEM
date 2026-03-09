@@ -11,7 +11,25 @@
 --   - Redis is the primary cache; this table is best-effort write-behind.
 -- =============================================================================
 
-CREATE TABLE IF NOT EXISTS economic_events (
+-- ...existing code...
+
+    -- Metadata
+    event_url           TEXT,
+    status              TEXT        NOT NULL DEFAULT 'SCHEDULED'
+                                    CHECK (status = 'SCHEDULED' OR status = 'RELEASED' OR status = 'REVISED' OR status = 'CANCELLED'),
+    affected_pairs      JSONB       NOT NULL DEFAULT '[]'::jsonb,
+    fetched_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+    -- Audit
+    created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+    PRIMARY KEY (event_id),
+    CHECK (impact IN ('HIGH', 'MEDIUM', 'LOW', 'HOLIDAY', 'UNKNOWN')),
+    CHECK (jsonb_typeof(affected_pairs) = 'array')
+);
+
+-- ...existing code...CREATE TABLE economic_events (
     -- Row identity
     event_id            TEXT        NOT NULL,
     canonical_id        TEXT        NOT NULL,
