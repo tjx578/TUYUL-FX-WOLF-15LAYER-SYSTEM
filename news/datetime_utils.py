@@ -11,7 +11,7 @@ which observes DST. This module provides:
 from __future__ import annotations
 
 import re
-from datetime import UTC, date, datetime, time, timezone
+from datetime import UTC, date, datetime, time
 from zoneinfo import ZoneInfo
 
 from news.exceptions import InvalidEventDateError
@@ -143,3 +143,31 @@ def date_to_iso(d: date) -> str:
 def today_et() -> date:
     """Return today's date in US/Eastern timezone."""
     return datetime.now(_ET).date()
+
+
+def to_iso_utc(dt: datetime | None) -> str | None:
+    """Return UTC ISO string for *dt*; return None when input is None."""
+    if dt is None:
+        return None
+    dt = dt.replace(tzinfo=UTC) if dt.tzinfo is None else dt.astimezone(UTC)
+    return dt.isoformat()
+
+
+def parse_forexfactory_datetime(date_str: str, time_str: str) -> datetime:
+    """Alias for parsing a Forex Factory ET wall-clock datetime to UTC."""
+    return parse_et_to_utc(date_str, time_str)
+
+
+def parse_forexfactory_event_time(date_str: str, raw_time: str | None) -> datetime | None:
+    """Parse FF event time to UTC or return None for timeless events."""
+    if is_timeless_time(raw_time):
+        return None
+    assert raw_time is not None
+    return parse_et_to_utc(date_str, raw_time)
+
+
+def parse_finnhub_datetime(value: str | int | float) -> datetime:
+    """Parse Finnhub timestamp value (ISO string or Unix epoch) to UTC."""
+    if isinstance(value, (int, float)):
+        return parse_unix_to_utc(value)
+    return parse_iso_to_utc(str(value))

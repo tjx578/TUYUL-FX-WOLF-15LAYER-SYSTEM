@@ -52,3 +52,25 @@ def get_affected_pairs(currency: str | None) -> list[str]:
     if not currency:
         return []
     return _CURRENCY_PAIRS.get(currency.strip().upper(), [])
+
+
+def affected_pairs_for_currency(currency: str | None) -> list[str]:
+    """Alias for get_affected_pairs for clearer call sites."""
+    return get_affected_pairs(currency)
+
+
+def affected_pairs_for_currencies(currencies: list[str] | tuple[str, ...] | set[str]) -> list[str]:
+    """Return unique affected pairs for a currency collection."""
+    seen: set[str] = set()
+    result: list[str] = []
+    for ccy in currencies:
+        for pair in get_affected_pairs(ccy):
+            if pair not in seen:
+                seen.add(pair)
+                result.append(pair)
+    return result
+
+
+def symbol_is_affected(symbol: str, currencies: list[str] | tuple[str, ...] | set[str]) -> bool:
+    """Return True when *symbol* belongs to affected pairs for any currency."""
+    return symbol.upper() in set(affected_pairs_for_currencies(currencies))

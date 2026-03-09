@@ -10,11 +10,11 @@ from __future__ import annotations
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 
 
-class ImpactLevel(str, Enum):
+class ImpactLevel(StrEnum):
     HIGH = "HIGH"
     MEDIUM = "MEDIUM"
     LOW = "LOW"
@@ -22,14 +22,14 @@ class ImpactLevel(str, Enum):
     UNKNOWN = "UNKNOWN"
 
 
-class EventStatus(str, Enum):
+class EventStatus(StrEnum):
     SCHEDULED = "SCHEDULED"
     RELEASED = "RELEASED"
     REVISED = "REVISED"
     CANCELLED = "CANCELLED"
 
 
-class SourceConfidence(str, Enum):
+class SourceConfidence(StrEnum):
     HIGH = "high"
     MEDIUM = "medium"
     LOW = "low"
@@ -97,9 +97,9 @@ class EconomicEvent:
     # Metadata
     event_url: str | None = None
     status: EventStatus = EventStatus.SCHEDULED
-    affected_pairs: list[str] = field(default_factory=list)
+    affected_pairs: list[str] = field(default_factory=lambda: [])
     fetched_at: datetime | None = None
-    raw: dict[str, Any] = field(default_factory=dict)
+    raw: dict[str, Any] = field(default_factory=lambda: dict[str, Any]())
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize to a plain dict suitable for JSON encoding."""
@@ -144,7 +144,7 @@ class BlockerStatus:
     is_locked: bool = False
     locked_by: EconomicEvent | None = None
     lock_reason: str = ""
-    upcoming: list[EconomicEvent] = field(default_factory=list)
+    upcoming: list[EconomicEvent] = field(default_factory=lambda: [])
     checked_at: datetime | None = None
 
     def to_dict(self) -> dict[str, Any]:
@@ -155,4 +155,21 @@ class BlockerStatus:
             "upcoming_count": len(self.upcoming),
             "upcoming": [e.to_dict() for e in self.upcoming],
             "checked_at": self.checked_at.isoformat() if self.checked_at else None,
+        }
+
+
+@dataclass
+class CalendarDaySnapshot:
+    """Day-level calendar payload contract for API/service consumers."""
+
+    date: str
+    events: list[EconomicEvent] = field(default_factory=lambda: [])
+    fetched_at: datetime | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "date": self.date,
+            "total": len(self.events),
+            "events": [e.to_dict() for e in self.events],
+            "fetched_at": self.fetched_at.isoformat() if self.fetched_at else None,
         }

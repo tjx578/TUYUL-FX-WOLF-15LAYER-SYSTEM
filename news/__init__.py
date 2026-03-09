@@ -13,7 +13,7 @@ NEWS_RULES         : Lock window rules by impact level.
 """
 
 from news.blocker_engine import BlockerEngine
-from news.models import BlockerStatus, EconomicEvent, ImpactLevel
+from news.models import BlockerStatus, CalendarDaySnapshot, EconomicEvent, ImpactLevel
 from news.news_engine import NewsEngine
 from news.news_rules import NEWS_RULES
 from news.services.news_service import NewsService
@@ -21,6 +21,7 @@ from news.services.news_service import NewsService
 __all__ = [
     "BlockerEngine",
     "BlockerStatus",
+    "CalendarDaySnapshot",
     "EconomicEvent",
     "ImpactLevel",
     "NEWS_RULES",
