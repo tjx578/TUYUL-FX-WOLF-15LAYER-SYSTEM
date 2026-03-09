@@ -108,12 +108,12 @@ async def test_cold_start_m15_merges_into_warmup_results(
     fake_fetcher = MagicMock()
     fake_fetcher.context_bus = MagicMock()
 
-    async def fake_fetch(symbol: str, tf: str, bars: int) -> list:
+    async def fake_fetch(symbol: str, tf: str, bars: int) -> list[dict[str, object]]:
         return [{"symbol": symbol, "timeframe": tf, "close": 1.0}]
 
     fake_fetcher.fetch = AsyncMock(side_effect=fake_fetch)
 
-    warmup_results: dict[str, dict[str, list]] = {
+    warmup_results: dict[str, dict[str, list[dict[str, object]]]] = {
         "EURUSD": {"H1": [{"close": 1.1}]},
         "GBPUSD": {"H1": [{"close": 1.3}]},
     }
@@ -139,7 +139,7 @@ async def test_cold_start_m15_noop_for_empty_symbols(
     ingest_service_module: Any,
 ) -> None:
     """Empty symbol list → nothing happens."""
-    warmup_results: dict = {}
+    warmup_results: dict[str, dict[str, list[dict[str, object]]]] = {}
     fake_fetcher = MagicMock()
     fake_fetcher.fetch = AsyncMock()
 
