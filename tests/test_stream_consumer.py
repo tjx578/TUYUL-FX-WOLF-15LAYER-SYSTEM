@@ -274,6 +274,39 @@ class TestPELRecovery:
         assert mock_redis.xack.await_count == 2  # Both ACK'd
 
 
+class TestReplaySemantics:
+    @pytest.mark.asyncio
+    async def test_replay_group_history_replays_and_acks(self) -> None:
+        callback = AsyncMock()
+        mock_redis = AsyncMock()
+        mock_redis.xgroup_setid = AsyncMock(return_value=True)
+        mock_redis.xreadgroup = AsyncMock(side_effect=[
+            [("signals:l12", [("1-0", {"symbol": "EURUSD"})])],
+            [],
+        ])
+        mock_redis.xack = AsyncMock(return_value=1)
+
+        binding = StreamBinding(stream="signals:l12", group="grp", callback=callback)
+        consumer = StreamConsumer(
+            bindings=[binding],
+            redis_client=mock_redis,
+            config=ConsumerConfig(replay_start_id="0-0", replay_max_messages=10),
+        )
+        consumer._running = True
+
+        replayed = await consumer._replay_group_history(binding)
+
+        assert replayed == 1
+        assert consumer.stats["replayed_messages"] == 1
+        callback.assert_awaited_once()
+        mock_redis.xgroup_setid.assert_awaited_once_with(
+            name="signals:l12",
+            groupname="grp",
+            id="0-0",
+        )
+        mock_redis.xack.assert_awaited_once_with("signals:l12", "grp", "1-0")
+
+
 # ─── Stream Priority ─────────────────────────────────────────
 
 class TestStreamPriority:

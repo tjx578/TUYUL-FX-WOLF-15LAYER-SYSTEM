@@ -22,6 +22,7 @@ from api.middleware.prometheus_middleware import (
     PrometheusMiddleware,
 )
 from core.metrics import PIPELINE_RUNS, VERDICT_TOTAL, get_registry
+from monitoring.pipeline_metrics import record_pipeline_latency
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -168,3 +169,37 @@ class TestRegistryContent:
             "wolf_system_healthy",
         }
         assert expected.issubset(names), f"Missing metrics: {expected - names}"
+
+
+class TestSLOEndpoint:
+    @pytest.fixture(autouse=True)
+    def client(self):
+        self._client = TestClient(_make_app())
+        yield
+        self._client.close()
+
+    def test_metrics_slo_endpoint_returns_shape(self):
+        response = self._client.get("/metrics/slo")
+        assert response.status_code == 200
+        payload = response.json()
+        assert "slo" in payload
+        assert "alerts" in payload
+
+    def test_metrics_slo_alerts_when_threshold_breached(self):
+        stage = "chaos_slo_stage"
+        for _ in range(8):
+            record_pipeline_latency(stage=stage, latency_ms=450.0)
+
+        response = self._client.get(
+            "/metrics/slo",
+            params={"latency_threshold_ms": 100.0, "min_samples": 5},
+        )
+        assert response.status_code == 200
+
+        payload = response.json()
+        assert payload["slo"]["healthy"] is False
+        assert any(alert["event"] == "SLO_THRESHOLD_BREACH" for alert in payload["alerts"])
+        assert any(
+            row["stage"] == stage and row["breach"] is True
+            for row in payload["slo"]["stages"]
+        )

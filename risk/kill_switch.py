@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import contextlib
 import json
+import os
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from threading import Lock
+from typing import Any
 
 from storage.redis_client import redis_client
 
@@ -24,6 +26,8 @@ class GlobalKillSwitch:
 
     _instance: "GlobalKillSwitch | None" = None
     _lock = Lock()
+    _state: KillSwitchState
+    _rw_lock: Lock
 
     def __new__(cls) -> "GlobalKillSwitch":
         if not cls._instance:
@@ -80,6 +84,37 @@ class GlobalKillSwitch:
 
     def is_enabled(self) -> bool:
         return bool(self._state.enabled)
+
+    def evaluate_and_trip(self, *, metrics: dict[str, Any]) -> dict[str, str | bool]:
+        """Trip kill switch automatically from risk/feed telemetry.
+
+        Supported metrics keys:
+        - daily_dd_percent: float
+        - rapid_loss_percent: float
+        - feed_stale_seconds: float
+        """
+        daily_dd = float(metrics.get("daily_dd_percent", 0.0) or 0.0)
+        rapid_loss = float(metrics.get("rapid_loss_percent", 0.0) or 0.0)
+        feed_stale = float(metrics.get("feed_stale_seconds", 0.0) or 0.0)
+
+        daily_threshold = float(os.getenv("KILL_SWITCH_DAILY_DD_PERCENT", "5.0"))
+        rapid_threshold = float(os.getenv("KILL_SWITCH_RAPID_LOSS_PERCENT", "2.0"))
+        stale_threshold = float(os.getenv("KILL_SWITCH_FEED_STALE_SEC", "60"))
+
+        if daily_dd >= daily_threshold:
+            return self.enable(
+                f"AUTO_DAILY_DD_BREACH:{daily_dd:.2f}%>= {daily_threshold:.2f}%"
+            )
+        if rapid_loss >= rapid_threshold:
+            return self.enable(
+                f"AUTO_RAPID_LOSS:{rapid_loss:.2f}%>= {rapid_threshold:.2f}%"
+            )
+        if feed_stale >= stale_threshold:
+            return self.enable(
+                f"AUTO_FEED_STALE:{feed_stale:.1f}s>= {stale_threshold:.1f}s"
+            )
+
+        return self.snapshot()
 
     def snapshot(self) -> dict[str, str | bool]:
         return {

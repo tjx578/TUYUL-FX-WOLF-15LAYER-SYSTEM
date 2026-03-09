@@ -8,7 +8,7 @@ APPEND-ONLY. No update. No delete.
 """
 
 import json
-
+import uuid
 from pathlib import Path
 
 from loguru import logger
@@ -77,22 +77,29 @@ class JournalWriter:
             "data": payload.model_dump(mode="json"),
         }
 
-        # Write to file (atomic write with temp file)
-        temp_path = file_path.with_suffix(".tmp")
         try:
-            with open(temp_path, "w", encoding="utf-8") as f:
+            # Enforce append-only behavior: create a brand new file only.
+            # If a collision occurs, generate a new immutable filename.
+            target_path = self._resolve_unique_path(file_path)
+            with open(target_path, "x", encoding="utf-8") as f:
                 json.dump(file_content, f, indent=2, ensure_ascii=False)
 
-            # Atomic rename
-            temp_path.rename(file_path)
-
-            logger.debug(f"Journal written: {file_path}")
-            return file_path
+            logger.debug(f"Journal written: {target_path}")
+            return target_path
 
         except Exception as exc:
-            # Clean up temp file if it exists
-            if temp_path.exists():
-                temp_path.unlink()
-
             logger.error(f"Failed to write journal: {exc}")
             raise OSError(f"Journal write failed: {exc}") from exc
+
+    @staticmethod
+    def _resolve_unique_path(file_path: Path) -> Path:
+        """Return a non-existing immutable file path derived from the base name."""
+        if not file_path.exists():
+            return file_path
+
+        stem = file_path.stem
+        suffix = file_path.suffix
+        while True:
+            candidate = file_path.with_name(f"{stem}_{uuid.uuid4().hex[:8]}{suffix}")
+            if not candidate.exists():
+                return candidate

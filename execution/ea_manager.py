@@ -7,9 +7,11 @@ No strategy logic. Execution authority only.
 from __future__ import annotations
 
 import json
+import os
 import time
 from queue import Empty, Queue
 from threading import Thread
+from enum import Enum
 from typing import Any, Optional
 
 from loguru import logger
@@ -20,6 +22,12 @@ from execution.trade_state_enum import TradeState
 
 TRADE_UPDATES_CHANNEL = "trade:updates"
 _MAX_RETRIES = 2
+
+
+class QueueOverloadMode(str, Enum):
+    """Backpressure behavior when queue is full."""
+    REJECT_NEW = "reject_new"
+    DROP_OLDEST = "drop_oldest"
 
 
 class EAManager:
@@ -38,10 +46,19 @@ class EAManager:
     ) -> None:
         self._executor = executor or BrokerExecutor()
         self._guard = guard or ExecutionGuard()
-        self._queue: Queue[ExecutionRequest] = Queue(maxsize=200)
+        queue_size = max(1, int(os.getenv("EA_QUEUE_MAXSIZE", "200")))
+        configured_mode = os.getenv("EA_QUEUE_OVERLOAD_MODE", QueueOverloadMode.REJECT_NEW.value)
+        try:
+            self._overload_mode = QueueOverloadMode(configured_mode)
+        except ValueError:
+            self._overload_mode = QueueOverloadMode.REJECT_NEW
+
+        self._queue: Queue[ExecutionRequest] = Queue(maxsize=queue_size)
         self._results: dict[str, ExecutionResult] = {}
         self._running = False
         self._worker_thread: Optional[Thread] = None
+        self._overload_rejections = 0
+        self._overload_drops = 0
 
     def start(self) -> None:
         """Start background dispatch thread."""
@@ -68,7 +85,21 @@ class EAManager:
         )
         if not gate.allowed:
             raise ValueError(f"Execution rejected: {gate.code} ({gate.details})")
-        self._queue.put(req, timeout=5)
+
+        if self._queue.full():
+            if self._overload_mode == QueueOverloadMode.REJECT_NEW:
+                self._overload_rejections += 1
+                raise ValueError("Execution queue overloaded: request rejected (backpressure)")
+
+            # DROP_OLDEST mode: evict one oldest request to preserve liveness.
+            try:
+                self._queue.get_nowait()
+                self._overload_drops += 1
+            except Empty:
+                self._overload_rejections += 1
+                raise ValueError("Execution queue overloaded: unable to evict oldest request") from None
+
+        self._queue.put_nowait(req)
         return req.request_id
 
     def get_result(self, request_id: str) -> Optional[ExecutionResult]:
@@ -83,6 +114,17 @@ class EAManager:
             result = self._dispatch_with_retry(req)
             self._results[req.request_id] = result
             self._emit_trade_event(req, result)
+
+    def queue_snapshot(self) -> dict[str, Any]:
+        """Return queue depth and overload counters for observability."""
+        return {
+            "queue_depth": self._queue.qsize(),
+            "queue_max": self._queue.maxsize,
+            "overload_mode": self._overload_mode.value,
+            "overload_rejections": self._overload_rejections,
+            "overload_drops": self._overload_drops,
+            "running": self._running,
+        }
 
     def _dispatch_with_retry(self, req: ExecutionRequest) -> ExecutionResult:
         for attempt in range(1, _MAX_RETRIES + 1):
