@@ -49,6 +49,7 @@ COPY context/ context/
 COPY contracts/ contracts/
 COPY core/ core/
 COPY dashboard/ dashboard/
+COPY deploy/ deploy/
 COPY ea_interface/ ea_interface/
 COPY engines/ engines/
 COPY execution/ execution/
