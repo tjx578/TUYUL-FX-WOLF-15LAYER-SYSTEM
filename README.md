@@ -225,6 +225,22 @@ Gate CI mencakup lint, type check, constitutional boundary, tests, coverage, das
   - Trigger otomatis: hanya setelah workflow `CI` sukses di branch `main`
     - Trigger manual: `workflow_dispatch`
 
+### Railway Service Manifests
+
+Mapping service ke file deploy Railway dan start script:
+
+| Service | Railway TOML | Start Script |
+| --- | --- | --- |
+| API | `railway.toml` | `deploy/railway/start_api.sh` |
+| Ingestor | `railway-ingestor.toml` | `deploy/railway/start_ingest.sh` |
+| Engine | `railway-engine.toml` | `deploy/railway/start_engine.sh` |
+| Allocation | `railway-allocation.toml` | `deploy/railway/start_allocation.sh` |
+| Execution | `railway-execution.toml` | `deploy/railway/start_execution.sh` |
+| Orchestrator | `railway-orchestrator.toml` | `deploy/railway/start_orchestrator.sh` |
+| Worker Backtest | `railway-worker-backtest.toml` | `deploy/railway/start_worker.sh` |
+| Worker Monte Carlo | `railway-worker-montecarlo.toml` | `deploy/railway/start_worker.sh` |
+| Worker Regime | `railway-worker-regime.toml` | `deploy/railway/start_worker.sh` |
+
 ### Required GitHub Secrets
 
 - `RAILWAY_TOKEN` → token deploy Railway (wajib untuk workflow deploy)
