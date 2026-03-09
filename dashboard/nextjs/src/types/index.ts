@@ -464,12 +464,60 @@ export interface PropFirmPhase {
 }
 
 export interface CalendarEvent {
-  id: string;
+  id?: string;
   time: string;
   currency: string;
   impact: "LOW" | "MEDIUM" | "HIGH";
-  event: string;
+  event?: string;
+  canonical_id?: string;
+  title?: string;
+  date?: string;
+  datetime_utc?: string | null;
+  is_timeless?: boolean;
+  minutes_away?: number | null;
+  is_imminent?: boolean;
+  source?: string;
   actual?: string | null;
   forecast?: string | null;
   previous?: string | null;
+}
+
+export interface CalendarDayResponse {
+  date: string;
+  total: number;
+  high_impact_count: number;
+  news_lock: {
+    active: boolean;
+    reason?: string | null;
+  };
+  events: CalendarEvent[];
+}
+
+export interface CalendarUpcomingResponse {
+  hours_ahead: number;
+  impact_filter?: string | null;
+  count: number;
+  events: CalendarEvent[];
+  has_high_impact: boolean;
+}
+
+export interface CalendarBlockerResponse {
+  is_locked: boolean;
+  lock_reason?: string;
+  upcoming_count: number;
+  checked_at?: string | null;
+  upcoming: CalendarEvent[];
+}
+
+export interface SourceHealthRecord {
+  source: string;
+  healthy: boolean;
+  last_checked?: string | null;
+  last_success?: string | null;
+  last_error?: string | null;
+}
+
+export interface CalendarHealthResponse {
+  sources: Record<string, SourceHealthRecord>;
+  checked_at: string;
 }

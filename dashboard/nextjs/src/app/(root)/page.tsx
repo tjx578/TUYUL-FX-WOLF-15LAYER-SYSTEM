@@ -46,6 +46,12 @@ export default function Home() {
     [verdictList],
   );
 
+  const activeTradeCount = useMemo(() => {
+    if (!activeTrades) return 0;
+    if (Array.isArray(activeTrades)) return activeTrades.length;
+    return Array.isArray(activeTrades.trades) ? activeTrades.trades.length : 0;
+  }, [activeTrades]);
+
   const hasDataError = vError || tradesError || contextError || executionError || accountsError;
 
   return (
@@ -112,8 +118,8 @@ export default function Home() {
         />
         <KpiCard
           label="OPEN TRADES"
-          value={activeTrades?.length ?? 0}
-          color={activeTrades?.length ? "var(--green)" : "var(--text-muted)"}
+          value={activeTradeCount}
+          color={activeTradeCount > 0 ? "var(--green)" : "var(--text-muted)"}
           sub="live positions"
         />
         <KpiCard

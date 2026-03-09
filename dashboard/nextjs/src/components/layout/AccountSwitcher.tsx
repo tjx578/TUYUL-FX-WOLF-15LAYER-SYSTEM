@@ -4,7 +4,7 @@ import { useMemo } from "react";
 import { useAccountStore } from "@/store/useAccountStore";
 
 export default function AccountSwitcher() {
-  const trades = useAccountStore((s) => s.trades);
+  const { trades } = useAccountStore();
   const label = useMemo(() => {
     const first = Object.values(trades)[0];
     return first?.account_id ?? "DEFAULT";
