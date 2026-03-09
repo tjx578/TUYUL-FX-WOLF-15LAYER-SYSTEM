@@ -51,7 +51,6 @@ COPY contracts/ contracts/
 COPY core/ core/
 COPY dashboard/ dashboard/
 COPY ea_interface/ ea_interface/
-COPY engine/ engine/
 COPY engines/ engines/
 COPY execution/ execution/
 COPY infrastructure/ infrastructure/
