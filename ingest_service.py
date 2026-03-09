@@ -1,13 +1,13 @@
 """Standalone ingest service for multi-container deployments."""
 
 import asyncio
+import contextlib
 import os
 import signal
 import sys
 import types
 from datetime import datetime
 from importlib import import_module
-import contextlib
 from typing import Any, Protocol
 
 import orjson  # noqa: I001  — needed before analysis imports for _seed_redis_candle_history
@@ -17,11 +17,11 @@ from analysis.macro.macro_regime_engine import MacroRegimeEngine
 from config_loader import CONFIG
 from context.system_state import SystemState, SystemStateManager
 from core.health_probe import HealthProbe
+from ingest.calendar_news import CalendarNewsIngestor
 from ingest.candle_builder import CandleBuilder, Timeframe
 from ingest.dependencies import create_finnhub_ws
 from ingest.finnhub_candles import FinnhubCandleFetcher
 from ingest.finnhub_market_news import FinnhubMarketNews
-from ingest.finnhub_news import FinnhubNews
 from ingest.h1_refresh_scheduler import H1RefreshScheduler
 from ingest.macro_monthly_scheduler import MacroMonthlyScheduler
 from storage.startup import init_persistent_storage, shutdown_persistent_storage
@@ -252,7 +252,7 @@ async def _safe_stop(
 
 
 async def run_ingest_services(has_api_key: bool) -> None:
-    """Run Finnhub WS, news, market news, and candle/scheduler loops."""
+    """Run ingest loops for WS, calendar, market news, and schedulers."""
     if not has_api_key:
         logger.info("Skipping ingest services - no API key configured")
         while not (_shutdown_event and _shutdown_event.is_set()):  # noqa: ASYNC110
@@ -292,7 +292,7 @@ async def run_ingest_services(has_api_key: bool) -> None:
             redis=redis,  # pyright: ignore[reportArgumentType]
             candle_callback=_on_tick,
         )
-        news_feed = FinnhubNews()
+        news_feed = CalendarNewsIngestor(redis_client=redis)
         market_news = FinnhubMarketNews()
         h1_refresh = H1RefreshScheduler()
 
@@ -305,7 +305,7 @@ async def run_ingest_services(has_api_key: bool) -> None:
         logger.info("Ingest readiness: READY")
 
         logger.info(
-            "Starting ingest services: WebSocket, News, MarketNews, CandleBuilder (M15 via tick callback), H1Refresh"
+            "Starting ingest services: WebSocket, CalendarNews, MarketNews, CandleBuilder (M15 via tick callback), H1Refresh"
         )
         await asyncio.gather(
             ws_feed.run(),
