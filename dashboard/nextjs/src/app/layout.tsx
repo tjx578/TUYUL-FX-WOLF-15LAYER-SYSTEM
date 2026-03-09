@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import QueryProvider from "@/components/providers/QueryProvider";
 import ToastViewport from "@/components/feedback/ToastViewport";
 import "./globals.css";
 
@@ -15,8 +16,10 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body>
-        {children}
-        <ToastViewport />
+        <QueryProvider>
+          {children}
+          <ToastViewport />
+        </QueryProvider>
       </body>
     </html>
   );
