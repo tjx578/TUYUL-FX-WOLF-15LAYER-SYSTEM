@@ -1,6 +1,9 @@
 import type { PropsWithChildren } from "react";
 import { Providers } from "@/components/Providers";
 import AuthBootstrap from "@/components/auth/AuthBootstrap";
+import ComplianceBanner from "@/components/feedback/ComplianceBanner";
+import Header from "@/components/layout/Header";
+import PreferencesPanel from "@/components/layout/PreferencesPanel";
 import Sidebar from "@/components/layout/Sidebar";
 import RouteTransition from "@/components/layout/RouteTransition";
 import { requireVerifiedSession } from "@/lib/serverAuth";
@@ -43,7 +46,10 @@ export default async function RootLayout({ children }: PropsWithChildren) {
             className="flex-1 overflow-auto"
             style={{ marginLeft: "var(--sidebar-w)", minHeight: "100vh", padding: "32px 40px" }}
           >
+            <Header />
+            <ComplianceBanner />
             <RouteTransition>{children}</RouteTransition>
+            <PreferencesPanel />
           </main>
         </div>
       </Providers>

@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import QueryProvider from "@/components/providers/QueryProvider";
+import SessionExpiryModal from "@/components/auth/SessionExpiryModal";
 import ToastViewport from "@/components/feedback/ToastViewport";
 import "./globals.css";
 
@@ -18,6 +19,7 @@ export default function RootLayout({
       <body>
         <QueryProvider>
           {children}
+          <SessionExpiryModal />
           <ToastViewport />
         </QueryProvider>
       </body>
