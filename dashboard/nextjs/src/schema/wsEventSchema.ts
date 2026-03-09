@@ -29,3 +29,4 @@ export const WsEventSchema = z.discriminatedUnion("type", [
 ]);
 
 export type WsEvent = z.infer<typeof WsEventSchema>;
+export type WsEventParsed = z.infer<typeof WsEventSchema>;
