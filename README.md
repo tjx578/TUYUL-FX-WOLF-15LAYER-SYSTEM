@@ -294,6 +294,24 @@ Operational behavior:
 - Severity `warning` memicu mode `SAFE`.
 - Status/transition dipublish kembali ke channel orchestrator dan disimpan ke `ORCHESTRATOR_STATE_KEY`.
 
+### Ingest Calendar News Runtime (ingest/calendar_news.py)
+
+Environment variables berikut dipakai oleh poller economic calendar berbasis provider chain:
+
+```env
+# Enable or disable calendar ingestion loop.
+# Default: true
+NEWS_INGEST_ENABLED=true
+
+# Polling interval in seconds for provider-chain calendar refresh.
+# Default: 300
+NEWS_POLL_INTERVAL_SEC=300
+
+# Provider priority selector used by news.provider_selector.
+# Default: forexfactory
+NEWS_PROVIDER=forexfactory
+```
+
 ---
 
 ## ⚠️ Safety Notes

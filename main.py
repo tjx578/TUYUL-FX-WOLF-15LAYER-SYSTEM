@@ -21,10 +21,10 @@ from infrastructure.tracing import (
     instrument_requests,
     setup_tracer,
 )
+from ingest.calendar_news import CalendarNewsIngestor
 from ingest.candle_builder import CandleBuilder
 from ingest.dependencies import create_finnhub_ws
 from ingest.finnhub_market_news import FinnhubMarketNews
-from ingest.finnhub_news import FinnhubNews
 from journal.journal_schema import ContextJournal, DecisionJournal, VerdictType
 from pipeline import WolfConstitutionalPipeline
 from storage.startup import init_persistent_storage, shutdown_persistent_storage
@@ -248,7 +248,7 @@ async def run_ingest_services(has_api_key: bool, redis: AsyncRedis) -> None:
         return
 
     ws_feed = await create_finnhub_ws(redis=redis)
-    news_feed = FinnhubNews()
+    news_feed = CalendarNewsIngestor(redis_client=redis)
     market_news = FinnhubMarketNews()
 
     # Create CandleBuilder instances for each enabled pair at default timeframe
@@ -258,7 +258,7 @@ async def run_ingest_services(has_api_key: bool, redis: AsyncRedis) -> None:
         for pair in PAIRS
     ]
 
-    logger.info("Starting ingest services: WebSocket, News, MarketNews, CandleBuilder")
+    logger.info("Starting ingest services: WebSocket, CalendarNews, MarketNews, CandleBuilder")
     try:
         cb_coros: list[Coroutine[object, object, object]] = [cb.run() for cb in candle_builders]  # pyright: ignore[reportAttributeAccessIssue, reportUnknownMemberType]
         await asyncio.gather(
