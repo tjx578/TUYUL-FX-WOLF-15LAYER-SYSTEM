@@ -100,7 +100,16 @@ def normalize_ff_event(
         raw.get("currency") or raw.get("country") or ""
     ).strip().upper()
 
-    raw_time: str = (raw.get("time") or raw.get("date") or "").strip()
+    raw_date_field: str = (raw.get("date") or "").strip()
+    raw_time_field: str = (raw.get("time") or "").strip()
+
+    # Detect ISO datetime in the date field (FF JSON current format)
+    # e.g. "2026-03-09T01:00:00-04:00" — no separate "time" field
+    if "T" in raw_date_field and not raw_time_field:
+        date_str = raw_date_field.split("T")[0]
+        raw_time = raw_date_field  # full ISO string; parse_et_to_utc handles it
+    else:
+        raw_time = raw_time_field or raw_date_field
     raw_impact: str = raw.get("impact", "")
 
     actual: str | None = raw.get("actual") or None

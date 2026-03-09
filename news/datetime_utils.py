@@ -75,7 +75,20 @@ def parse_et_to_utc(date_str: str, time_str: str) -> datetime:
     # Parse time
     m = _TIME_PATTERN.match(time_str.strip())
     if not m:
-        raise InvalidEventDateError(time_str, "does not match expected HH:MMam/pm format")
+        # Fallback: try ISO 8601 on time_str (e.g. "2026-03-09T01:00:00-04:00")
+        try:
+            return parse_iso_to_utc(time_str)
+        except InvalidEventDateError:
+            pass
+        # Last resort: try date_str if it contains a full ISO datetime
+        if "T" in date_str:
+            try:
+                return parse_iso_to_utc(date_str)
+            except InvalidEventDateError:
+                pass
+        raise InvalidEventDateError(
+            time_str, "does not match HH:MMam/pm or ISO 8601 format"
+        )
 
     hour = int(m.group("hour"))
     minute = int(m.group("minute"))
