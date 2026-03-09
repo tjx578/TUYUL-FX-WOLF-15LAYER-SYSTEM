@@ -251,6 +251,33 @@ Gate CI mencakup lint, type check, constitutional boundary, tests, coverage, das
 
 Lihat `.env.example` untuk daftar lengkap.
 
+### Orchestrator Runtime (services/orchestrator)
+
+Environment variables berikut dipakai oleh `services/orchestrator/state_manager.py`:
+
+```env
+# Redis pub/sub channel for orchestrator command + status events.
+# Default fallback: state.pubsub_channels.ORCHESTRATOR_COMMANDS
+ORCHESTRATOR_CHANNEL=wolf15:orchestrator:commands
+
+# Redis snapshot keys written/read by orchestrator
+ORCHESTRATOR_STATE_KEY=wolf15:orchestrator:state
+ORCHESTRATOR_ACCOUNT_STATE_KEY=wolf15:account:state
+ORCHESTRATOR_TRADE_RISK_KEY=wolf15:trade:risk
+
+# Loop tuning (seconds)
+ORCHESTRATOR_LOOP_SLEEP_SEC=0.5
+ORCHESTRATOR_COMPLIANCE_INTERVAL_SEC=5
+ORCHESTRATOR_HEARTBEAT_INTERVAL_SEC=30
+```
+
+Operational behavior:
+
+- `evaluate_compliance(account_state, trade_risk)` dieksekusi periodik.
+- Severity `critical` memicu mode `KILL_SWITCH`.
+- Severity `warning` memicu mode `SAFE`.
+- Status/transition dipublish kembali ke channel orchestrator dan disimpan ke `ORCHESTRATOR_STATE_KEY`.
+
 ---
 
 ## ⚠️ Safety Notes

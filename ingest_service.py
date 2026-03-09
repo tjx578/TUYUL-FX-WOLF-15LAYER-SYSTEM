@@ -228,7 +228,6 @@ async def _seed_redis_candle_history(
                 for candle in candles:
                     candle_json = orjson.dumps(candle).decode("utf-8")
                     pipe.rpush(key, candle_json)  # type: ignore[union-attr]
-                    pipe.rpush(key, candle_json)  # type: ignore[reportUnknownMemberType]
                 pipe.expire(key, _SEED_HISTORY_TTL)  # type: ignore[union-attr]
                 await pipe.execute()  # type: ignore[union-attr]  # type: ignore[reportUnknownMemberType]
                 seeded += 1

@@ -89,7 +89,26 @@ DATABASE_URL=postgresql+asyncpg://...
 ENV=production
 FORCE_HTTPS=true
 API_DOMAIN=api.yourdomain.com
+
+# Orchestrator runtime (services/orchestrator)
+ORCHESTRATOR_CHANNEL=wolf15:orchestrator:commands
+ORCHESTRATOR_STATE_KEY=wolf15:orchestrator:state
+ORCHESTRATOR_ACCOUNT_STATE_KEY=wolf15:account:state
+ORCHESTRATOR_TRADE_RISK_KEY=wolf15:trade:risk
+ORCHESTRATOR_LOOP_SLEEP_SEC=0.5
+ORCHESTRATOR_COMPLIANCE_INTERVAL_SEC=5
+ORCHESTRATOR_HEARTBEAT_INTERVAL_SEC=30
 ```
+
+Notes for orchestrator ops:
+
+- Channel `ORCHESTRATOR_CHANNEL` dipakai dua arah: command masuk dan status keluar.
+- Orchestrator menjalankan compliance tick periodik dari snapshot key account/risk.
+- Jika compliance severity `critical` maka mode dipaksa ke `KILL_SWITCH`; severity `warning` ke `SAFE`.
+
+Railway cron note:
+
+- `cronSchedule` di Railway dievaluasi dalam timezone `UTC`; sesuaikan jam nightly/weekly terhadap timezone operasional tim agar tidak ambigu.
 
 ### Frontend (Vercel)
 
