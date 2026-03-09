@@ -13,28 +13,32 @@ from loguru import logger
 
 try:
     from opentelemetry import trace
-    from opentelemetry.context import Context
     from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
     from opentelemetry.propagate import extract, inject
     from opentelemetry.sdk.resources import Resource
     from opentelemetry.sdk.trace import TracerProvider
     from opentelemetry.sdk.trace.export import BatchSpanProcessor
 
-    _HAS_OTEL = True
+    _has_otel = True
 except Exception:  # pragma: no cover - graceful degradation when OTEL deps missing
-    from opentelemetry import trace  # type: ignore
+    from opentelemetry import trace
 
-    Context = Any  # type: ignore[misc,assignment]
-    _HAS_OTEL = False
+    Resource: Any = None
+    TracerProvider: Any = None
+    OTLPSpanExporter: Any = None
+    BatchSpanProcessor: Any = None
+    extract: Any = None
+    inject: Any = None
+    _has_otel = False
 
 
-_PROVIDER_INITIALIZED = False
-_TRACER_CACHE: dict[str, trace.Tracer] = {}
-_FASTAPI_INSTRUMENTED = False
-_REDIS_INSTRUMENTED = False
-_ASYNCIO_INSTRUMENTED = False
-_REQUESTS_INSTRUMENTED = False
-_HTTPX_INSTRUMENTED = False
+_provider_initialized = False
+_tracer_cache: dict[str, trace.Tracer] = {}
+_fastapi_instrumented = False
+_redis_instrumented = False
+_asyncio_instrumented = False
+_requests_instrumented = False
+_httpx_instrumented = False
 
 TRACE_CONTEXT_FIELDS: tuple[str, ...] = ("traceparent", "tracestate", "baggage")
 
@@ -50,8 +54,8 @@ def _tracing_enabled() -> bool:
 
 
 def _init_provider_once(service_name: str) -> None:
-    global _PROVIDER_INITIALIZED  # noqa: PLW0603
-    if _PROVIDER_INITIALIZED or not _HAS_OTEL or not _tracing_enabled():
+    global _provider_initialized  # noqa: PLW0603
+    if _provider_initialized or not _has_otel or not _tracing_enabled():
         return
 
     endpoint = os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://tempo:4317")
@@ -69,7 +73,7 @@ def _init_provider_once(service_name: str) -> None:
         exporter = OTLPSpanExporter(endpoint=endpoint, insecure=insecure)
         provider.add_span_processor(BatchSpanProcessor(exporter))
         trace.set_tracer_provider(provider)
-        _PROVIDER_INITIALIZED = True
+        _provider_initialized = True
         logger.info(
             "Tracing enabled service={} endpoint={} env={}",
             service_name,
@@ -83,94 +87,94 @@ def _init_provider_once(service_name: str) -> None:
 def setup_tracer(service_name: str) -> trace.Tracer:
     """Initialise provider (once) and return a named tracer."""
     _init_provider_once(service_name)
-    cached = _TRACER_CACHE.get(service_name)
+    cached = _tracer_cache.get(service_name)
     if cached is not None:
         return cached
     tracer = trace.get_tracer(service_name)
-    _TRACER_CACHE[service_name] = tracer
+    _tracer_cache[service_name] = tracer
     return tracer
 
 
 def instrument_fastapi(app: Any) -> None:
     """Auto-instrument FastAPI app if instrumentation package is installed."""
-    global _FASTAPI_INSTRUMENTED  # noqa: PLW0603
-    if _FASTAPI_INSTRUMENTED or not _tracing_enabled():
+    global _fastapi_instrumented  # noqa: PLW0603
+    if _fastapi_instrumented or not _tracing_enabled():
         return
     try:
         from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 
         FastAPIInstrumentor.instrument_app(app)
-        _FASTAPI_INSTRUMENTED = True
+        _fastapi_instrumented = True
     except Exception:
         return
 
 
 def instrument_redis() -> None:
     """Auto-instrument redis client calls if package is installed."""
-    global _REDIS_INSTRUMENTED  # noqa: PLW0603
-    if _REDIS_INSTRUMENTED or not _tracing_enabled():
+    global _redis_instrumented  # noqa: PLW0603
+    if _redis_instrumented or not _tracing_enabled():
         return
     try:
         from opentelemetry.instrumentation.redis import RedisInstrumentor
 
-        RedisInstrumentor().instrument()
-        _REDIS_INSTRUMENTED = True
+        RedisInstrumentor().instrument()  # pyright: ignore[reportUnknownMemberType]
+        _redis_instrumented = True
     except Exception:
         return
 
 
 def instrument_asyncio() -> None:
     """Auto-instrument asyncio scheduling if package is installed."""
-    global _ASYNCIO_INSTRUMENTED  # noqa: PLW0603
-    if _ASYNCIO_INSTRUMENTED or not _tracing_enabled():
+    global _asyncio_instrumented  # noqa: PLW0603
+    if _asyncio_instrumented or not _tracing_enabled():
         return
     try:
         from opentelemetry.instrumentation.asyncio import AsyncioInstrumentor
 
         AsyncioInstrumentor().instrument()
-        _ASYNCIO_INSTRUMENTED = True
+        _asyncio_instrumented = True
     except Exception:
         return
 
 
 def instrument_requests() -> None:
     """Auto-instrument requests client calls if package is installed."""
-    global _REQUESTS_INSTRUMENTED  # noqa: PLW0603
-    if _REQUESTS_INSTRUMENTED or not _tracing_enabled():
+    global _requests_instrumented  # noqa: PLW0603
+    if _requests_instrumented or not _tracing_enabled():
         return
     try:
         from opentelemetry.instrumentation.requests import RequestsInstrumentor
 
         RequestsInstrumentor().instrument()
-        _REQUESTS_INSTRUMENTED = True
+        _requests_instrumented = True
     except Exception:
         return
 
 
 def instrument_httpx() -> None:
     """Auto-instrument httpx client calls if package is installed."""
-    global _HTTPX_INSTRUMENTED  # noqa: PLW0603
-    if _HTTPX_INSTRUMENTED or not _tracing_enabled():
+    global _httpx_instrumented  # noqa: PLW0603
+    if _httpx_instrumented or not _tracing_enabled():
         return
     try:
         from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor
 
         HTTPXClientInstrumentor().instrument()
-        _HTTPX_INSTRUMENTED = True
+        _httpx_instrumented = True
     except Exception:
         return
 
 
 def inject_trace_context(carrier: MutableMapping[str, Any]) -> None:
     """Inject current trace context into a mutable payload carrier."""
-    if not _HAS_OTEL:
+    if not _has_otel:
         return
     inject(carrier=carrier)
 
 
-def extract_trace_context(carrier: Mapping[str, Any]) -> Context | None:
+def extract_trace_context(carrier: Mapping[str, Any]) -> Any | None:
     """Extract trace context from a payload carrier."""
-    if not _HAS_OTEL:
+    if not _has_otel:
         return None
     return extract(carrier=carrier)
 

@@ -10,6 +10,7 @@ from datetime import UTC, datetime
 from typing import Any, Protocol, cast
 
 from loguru import logger
+from config.logging_bootstrap import configure_loguru_logging
 
 from services.orchestrator.compliance_guard import evaluate_compliance
 from services.orchestrator.execution_mode import ExecutionMode
@@ -17,6 +18,8 @@ from state.pubsub_channels import ORCHESTRATOR_COMMANDS
 from storage.redis_client import RedisClient
 
 ORCHESTRATOR_SOURCE = "wolf15-orchestrator"
+
+configure_loguru_logging()
 
 
 class OrchestratorPubSubProtocol(Protocol):

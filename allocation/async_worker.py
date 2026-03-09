@@ -17,13 +17,16 @@ import tracemalloc
 import uuid
 from collections.abc import Sequence
 from dataclasses import dataclass
+from typing import Any, cast
 
+import redis.asyncio as aioredis
 from loguru import logger
 from prometheus_client import Counter, Gauge, Histogram, start_http_server
 from redis.exceptions import ResponseError
 
 from allocation.allocation_models import AllocationRequest
 from allocation.allocation_service import AllocationService
+from config.logging_bootstrap import configure_loguru_logging
 from infrastructure.redis_client import get_client
 from infrastructure.tracing import (
     extract_trace_carrier,
@@ -36,6 +39,8 @@ from infrastructure.tracing import (
 ALLOC_REQUEST_STREAM = "allocation:request"
 ALLOC_GROUP = "alloc-group"
 EXECUTION_STREAM = "execution:queue"
+
+configure_loguru_logging()
 
 alloc_latency = Histogram(
     "wolf_allocation_latency_seconds",
@@ -88,6 +93,7 @@ class WorkerConfig:
 
 class AsyncAllocationWorker:
     def __init__(self, config: WorkerConfig | None = None) -> None:
+        super().__init__()
         self._cfg = config or WorkerConfig()
         self._service = AllocationService()
         self._sem = asyncio.Semaphore(self._cfg.max_concurrency)
@@ -130,7 +136,7 @@ class AsyncAllocationWorker:
             if tasks:
                 await asyncio.gather(*tasks)
 
-    async def _ensure_group(self, redis_client) -> None:
+    async def _ensure_group(self, redis_client: aioredis.Redis) -> None:
         try:
             await redis_client.xgroup_create(
                 name=self._cfg.stream,
@@ -142,7 +148,7 @@ class AsyncAllocationWorker:
             if "BUSYGROUP" not in str(exc):
                 raise
 
-    async def _handle_message(self, redis_client, stream_name: str, msg_id: str, msg: dict[str, str]) -> None:
+    async def _handle_message(self, redis_client: aioredis.Redis, stream_name: str, msg_id: str, msg: dict[str, str]) -> None:
         async with self._sem:
             parent_context = extract_trace_context(extract_trace_carrier(msg))
             with _alloc_tracer.start_as_current_span("allocation_process", context=parent_context) as span:
@@ -214,20 +220,19 @@ class AsyncAllocationWorker:
 
         if text.startswith("["):
             with contextlib.suppress(Exception):
-                parsed = json.loads(text)
-                if isinstance(parsed, list):
-                    return [str(a).strip() for a in parsed if str(a).strip()]
+                parsed: list[Any] = json.loads(text)
+                return [str(a).strip() for a in parsed if str(a).strip()]
 
         return [x.strip() for x in text.split(",") if x.strip()]
 
-    async def _update_runtime_metrics(self, redis_client) -> None:
+    async def _update_runtime_metrics(self, redis_client: aioredis.Redis) -> None:
         pending_count = 0
         try:
-            pending = await redis_client.xpending(self._cfg.stream, self._cfg.group)
+            pending: Any = await redis_client.xpending(self._cfg.stream, self._cfg.group)
             if isinstance(pending, dict):
-                pending_count = int(pending.get("pending", 0))
-            elif isinstance(pending, tuple) and pending:
-                pending_count = int(pending[0])
+                pending_count = int(str(cast(dict[str, Any], pending).get("pending", 0)))
+            elif isinstance(pending, (list, tuple)) and pending:
+                pending_count = int(str(cast(tuple[Any, ...], pending)[0]))
         except Exception:
             pending_count = 0
 
