@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from loguru import logger
+from config.logging_bootstrap import configure_loguru_logging
 
 from services.worker._job_utils import (
     load_json_payload,
@@ -20,6 +21,9 @@ from services.worker._job_utils import (
     write_json_artifact,
 )
 from utils.regime_auto_tuner import RegimeAutoTuner
+
+
+configure_loguru_logging()
 
 
 def run() -> None:

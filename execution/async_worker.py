@@ -17,6 +17,7 @@ from dataclasses import dataclass
 from loguru import logger
 from prometheus_client import Counter, Gauge, Histogram, start_http_server
 from redis.exceptions import ResponseError
+from config.logging_bootstrap import configure_loguru_logging
 
 from execution.broker_executor import BrokerExecutor, ExecutionRequest, OrderAction
 from infrastructure.redis_client import get_client
@@ -30,6 +31,8 @@ from infrastructure.tracing import (
 
 EXECUTION_STREAM = "execution:queue"
 EXEC_GROUP = "exec-group"
+
+configure_loguru_logging()
 
 execution_latency = Histogram(
     "wolf_execution_latency_seconds",

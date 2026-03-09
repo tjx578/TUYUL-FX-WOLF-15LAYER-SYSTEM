@@ -10,6 +10,7 @@ import os
 from typing import Any
 
 from loguru import logger
+from config.logging_bootstrap import configure_loguru_logging
 
 from engines.portfolio_monte_carlo_engine import PortfolioMonteCarloEngine
 from services.worker._job_utils import (
@@ -19,6 +20,9 @@ from services.worker._job_utils import (
     utc_now_iso,
     write_json_artifact,
 )
+
+
+configure_loguru_logging()
 
 
 def _build_engine() -> PortfolioMonteCarloEngine:
