@@ -8,4 +8,4 @@ restartPolicyType = "NEVER"
 cronSchedule = "0 1 * * *"
 
 [env]
-WOLF15_WORKER_JOB = "montecarlo"
+WOLF15_WORKER_ENTRY = "services.worker.montecarlo_job"
