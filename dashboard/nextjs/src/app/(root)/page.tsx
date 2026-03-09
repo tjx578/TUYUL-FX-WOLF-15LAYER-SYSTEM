@@ -17,6 +17,7 @@ import { VerdictCard } from "@/components/VerdictCard";
 import { SystemHealth } from "@/components/SystemHealth";
 import { TimezoneDisplay } from "@/components/TimezoneDisplay";
 import { TakeSignalForm } from "@/components/TakeSignalForm";
+import PageComplianceBanner from "@/components/feedback/PageComplianceBanner";
 import { useAlertsWS } from "@/lib/websocket";
 import { AlertFeed } from "@/components/PropFirmBadge";
 import type { L12Verdict } from "@/types";
@@ -49,6 +50,8 @@ export default function Home() {
 
   return (
     <div style={{ padding: "24px 28px", display: "flex", flexDirection: "column", gap: 20 }}>
+      <PageComplianceBanner page="dashboard" />
+
       {/* ── Top bar ── */}
       <div
         style={{

@@ -4,6 +4,7 @@ import { useMemo } from "react";
 import NavTabs from "@/components/NavTabs";
 import PaginationControls from "@/components/primitives/PaginationControls";
 import TableToolbar from "@/components/primitives/TableToolbar";
+import PageComplianceBanner from "@/components/feedback/PageComplianceBanner";
 import { useTradesQuery } from "@/hooks/queries/useTradesQuery";
 import { useUrlSyncedTableQuery } from "@/hooks/useUrlSyncedTableQuery";
 import { useTableQueryStore } from "@/store/useTableQueryStore";
@@ -49,6 +50,8 @@ export default function TradesPage() {
 
   return (
     <div style={{ padding: "22px 26px", display: "flex", flexDirection: "column", gap: 16 }}>
+      <PageComplianceBanner page="trades" />
+
       <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
         <div>
           <div style={{ fontSize: 20, fontWeight: 900, letterSpacing: "0.06em" }}>

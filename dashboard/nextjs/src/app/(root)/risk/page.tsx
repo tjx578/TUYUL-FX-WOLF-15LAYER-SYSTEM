@@ -7,6 +7,7 @@
 
 import { useState } from "react";
 import { useAccounts, useRiskSnapshot } from "@/lib/api";
+import PageComplianceBanner from "@/components/feedback/PageComplianceBanner";
 import { RiskGauge } from "@/components/RiskGauge";
 import { EquityCurve } from "@/components/EquityCurve";
 import { useRiskWS } from "@/lib/websocket";
@@ -21,6 +22,8 @@ export default function RiskPage() {
 
   return (
     <div style={{ padding: "24px 28px", display: "flex", flexDirection: "column", gap: 20 }}>
+      <PageComplianceBanner page="risk" />
+
       {/* ── Header ── */}
       <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
         <div>
