@@ -190,7 +190,14 @@ async def _cold_start_m15_for_warmup(
         for sym_data in warmup_results.values()
         if "M15" in sym_data and sym_data["M15"]
     )
-    logger.info("M15 cold-start complete: %d/%d symbols seeded", m15_count, len(enabled_symbols))
+    if m15_count == 0:
+        logger.warning(
+            "M15 cold-start: 0/%d symbols seeded — engine warmup gate "
+            "should NOT depend on M15 (use H1 instead)",
+            len(enabled_symbols),
+        )
+    else:
+        logger.info("M15 cold-start complete: %d/%d symbols seeded", m15_count, len(enabled_symbols))
 
 
 async def _run_warmup(

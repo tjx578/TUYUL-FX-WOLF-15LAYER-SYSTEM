@@ -109,3 +109,45 @@ async def test_seed_exhausts_retries_degraded_mode(monkeypatch: pytest.MonkeyPat
 
     # All retries exhausted
     assert consumer.load_candle_history.await_count == 3
+
+
+@pytest.mark.asyncio
+async def test_seed_warmup_gate_checks_h1_not_m15(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Warmup gate must pass when H1 is present but M15 is absent.
+
+    This is the critical regression test: previously the gate checked
+    ``{"M15": 1}`` which caused a deadlock when the ingest side could not
+    provide M15 (e.g., Finnhub premium-only resolution).
+    """
+
+    def check_warmup(symbol: str, min_bars: dict[str, int]) -> dict[str, Any]:
+        # The gate must request H1, not M15
+        assert "H1" in min_bars, f"Warmup gate should check H1, got {min_bars}"
+        assert "M15" not in min_bars, f"Warmup gate must NOT require M15, got {min_bars}"
+        # H1 is ready on first call
+        return {"ready": True}
+
+    bus = MagicMock()
+    bus.check_warmup = MagicMock(side_effect=check_warmup)
+
+    consumer = AsyncMock()
+    consumer.load_candle_history = AsyncMock()
+
+    monkeypatch.setenv("ENGINE_WARMUP_MAX_RETRIES", "3")
+    monkeypatch.setenv("ENGINE_WARMUP_RETRY_DELAY_SEC", "0")
+
+    with (
+        patch("main.PAIRS", _TEST_PAIRS),
+        patch("main.AsyncRedis") as mock_redis_cls,
+        patch("context.redis_consumer.RedisConsumer", return_value=consumer),
+        patch("context.live_context_bus.LiveContextBus", return_value=bus),
+        patch("infrastructure.redis_url.get_redis_url", return_value="redis://localhost"),
+    ):
+        mock_client = AsyncMock()
+        mock_redis_cls.from_url.return_value = mock_client
+
+        from main import _seed_from_redis  # pyright: ignore[reportPrivateUsage]
+        await _seed_from_redis()
+
+    # Succeeded on first attempt — no retries needed
+    assert consumer.load_candle_history.await_count == 1

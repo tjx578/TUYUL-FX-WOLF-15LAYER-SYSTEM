@@ -118,8 +118,13 @@ async def _seed_from_redis() -> None:
             for attempt in range(1, max_retries + 1):
                 await consumer.load_candle_history()
 
-                # Check how many pairs have at least *some* M15 data
-                _minimal_warmup = {"M15": 1}
+                # Check how many pairs have at least *some* H1 data.
+                # H1 is always present from REST warmup_all(); M15 may
+                # be absent when Finnhub returns 403 for 15-min resolution
+                # on the free tier.  Using H1 prevents a deadlock where
+                # the engine retries forever waiting for M15 that the
+                # ingest side could never provide.
+                _minimal_warmup = {"H1": 1}
                 seeded_count = sum(
                     1 for pair in PAIRS
                     if bus.check_warmup(pair, _minimal_warmup).get("ready")

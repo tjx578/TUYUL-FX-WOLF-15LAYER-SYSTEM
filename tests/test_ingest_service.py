@@ -178,3 +178,58 @@ async def test_seed_redis_includes_m15(
     rpush_keys = [call.args[0] for call in fake_pipe.rpush.call_args_list]
     assert "wolf15:candle_history:EURUSD:M15" in rpush_keys
     assert "wolf15:candle_history:EURUSD:H1" in rpush_keys
+
+
+@pytest.mark.asyncio
+async def test_cold_start_m15_failure_is_nonfatal(
+    ingest_service_module: Any,
+) -> None:
+    """When M15 REST fetch fails for every symbol, warmup_results still
+    contains higher-TF data and _seed_redis_candle_history can proceed."""
+    fake_fetcher = MagicMock()
+    fake_fetcher.context_bus = MagicMock()
+    fake_fetcher.fetch = AsyncMock(side_effect=Exception("403 Premium required"))
+
+    warmup_results: dict[str, dict[str, list[dict[str, object]]]] = {
+        "EURUSD": {"H1": [{"close": 1.1}]},
+    }
+
+    # Must NOT raise
+    await ingest_service_module._cold_start_m15_for_warmup(
+        fake_fetcher, ["EURUSD"], warmup_results, bars=50
+    )
+
+    # M15 should NOT appear (fetch failed), but H1 must survive
+    assert "M15" not in warmup_results.get("EURUSD", {})
+    assert "H1" in warmup_results["EURUSD"]
+
+
+@pytest.mark.asyncio
+async def test_seed_redis_works_without_m15(
+    ingest_service_module: Any,
+) -> None:
+    """_seed_redis_candle_history works correctly when M15 is absent
+    (only higher timeframes available)."""
+    fake_pipe = MagicMock()
+    fake_pipe.rpush = MagicMock()
+    fake_pipe.expire = MagicMock()
+    fake_pipe.execute = AsyncMock(return_value=[])
+
+    fake_redis = MagicMock()
+    fake_redis.pipeline = MagicMock(return_value=fake_pipe)
+    fake_redis.llen = AsyncMock(return_value=0)
+
+    warmup_results = {
+        "EURUSD": {
+            "H1": [{"close": 1.1}],
+            "D1": [{"close": 1.05}],
+        }
+    }
+
+    await ingest_service_module._seed_redis_candle_history(fake_redis, warmup_results)
+
+    rpush_keys = [call.args[0] for call in fake_pipe.rpush.call_args_list]
+    assert "wolf15:candle_history:EURUSD:H1" in rpush_keys
+    assert "wolf15:candle_history:EURUSD:D1" in rpush_keys
+    # M15 never seeded since it wasn't in warmup_results
+    assert "wolf15:candle_history:EURUSD:M15" not in rpush_keys
