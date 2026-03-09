@@ -1,16 +1,17 @@
 "use client";
 
-import type { PropsWithChildren } from "react";
+import React from "react";
+import type { PropsWithChildren, ReactNode } from "react";
 import type { UserRole } from "@/contracts/auth";
 import { hasRole } from "@/lib/auth";
 import { useAuthStore } from "@/store/useAuthStore";
 
 interface RequireRoleProps extends PropsWithChildren {
   allowedRoles: readonly UserRole[];
-  fallback?: React.ReactNode;
+  fallback?: ReactNode;
 }
 
-export default function RequireRole({
+export function RequireRole({
   allowedRoles,
   fallback = null,
   children,
@@ -28,3 +29,5 @@ export default function RequireRole({
 
   return <>{children}</>;
 }
+
+export default RequireRole;
