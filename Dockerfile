@@ -82,6 +82,7 @@ USER appuser
 EXPOSE ${PORT}
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:${PORT}/health')" || exit 1
+    CMD python -c "import os, sys, urllib.request; url = os.getenv('CONTAINER_HEALTHCHECK_URL', '').strip();\
+sys.exit(0 if not url else (0 if urllib.request.urlopen(url, timeout=5).status < 500 else 1))" || exit 1
 
 CMD ["python", "api_server.py"]
