@@ -103,17 +103,15 @@ async def test_run_ingest_services_closes_redis_when_ping_fails(
 async def test_cold_start_m15_merges_into_warmup_results(
     ingest_service_module: Any,
 ) -> None:
-    """_cold_start_m15_for_warmup should call _warmup_symbol_tf for each
-    symbol with 'M15' and merge candles into warmup_results."""
+    """_cold_start_m15_for_warmup should fetch M15 for each symbol
+    and merge candles into warmup_results."""
     fake_fetcher = MagicMock()
-    # Simulate _warmup_symbol_tf populating the shared results dict
-    async def fake_warmup_symbol_tf(
-        symbol: str, tf: str, bars: int, results: dict
-    ) -> None:
-        candle = {"symbol": symbol, "timeframe": tf, "close": 1.0}
-        results.setdefault(symbol, {})[tf] = [candle]
+    fake_fetcher.context_bus = MagicMock()
 
-    fake_fetcher._warmup_symbol_tf = AsyncMock(side_effect=fake_warmup_symbol_tf)
+    async def fake_fetch(symbol: str, tf: str, bars: int) -> list:
+        return [{"symbol": symbol, "timeframe": tf, "close": 1.0}]
+
+    fake_fetcher.fetch = AsyncMock(side_effect=fake_fetch)
 
     warmup_results: dict[str, dict[str, list]] = {
         "EURUSD": {"H1": [{"close": 1.1}]},
@@ -130,8 +128,10 @@ async def test_cold_start_m15_merges_into_warmup_results(
     # Existing H1 data must be preserved
     assert "H1" in warmup_results["EURUSD"]
     assert "H1" in warmup_results["GBPUSD"]
-    # _warmup_symbol_tf called once per symbol
-    assert fake_fetcher._warmup_symbol_tf.await_count == 2
+    # fetch called once per symbol with M15
+    assert fake_fetcher.fetch.await_count == 2
+    # context_bus.update_candle called for each candle
+    assert fake_fetcher.context_bus.update_candle.call_count == 2
 
 
 @pytest.mark.asyncio
@@ -141,13 +141,13 @@ async def test_cold_start_m15_noop_for_empty_symbols(
     """Empty symbol list → nothing happens."""
     warmup_results: dict = {}
     fake_fetcher = MagicMock()
-    fake_fetcher._warmup_symbol_tf = AsyncMock()
+    fake_fetcher.fetch = AsyncMock()
 
     await ingest_service_module._cold_start_m15_for_warmup(
         fake_fetcher, [], warmup_results
     )
 
-    fake_fetcher._warmup_symbol_tf.assert_not_awaited()
+    fake_fetcher.fetch.assert_not_awaited()
     assert warmup_results == {}
 
 
