@@ -38,4 +38,22 @@ describe("WsEventSchema", () => {
       expect(parsed.payload.reason).toBe("Redis stream lag");
     }
   });
+
+  it("parses PreferencesUpdated payload", () => {
+    const parsed = WsEventSchema.parse({
+      type: "PreferencesUpdated",
+      payload: {
+        density: "compact",
+        showLatency: false,
+        showHashes: true,
+        layoutPreset: "pipeline_focus",
+      },
+    });
+
+    expect(parsed.type).toBe("PreferencesUpdated");
+    if (parsed.type === "PreferencesUpdated") {
+      expect(parsed.payload.layoutPreset).toBe("pipeline_focus");
+      expect(parsed.payload.showHashes).toBe(true);
+    }
+  });
 });

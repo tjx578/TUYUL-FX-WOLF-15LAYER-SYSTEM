@@ -31,15 +31,32 @@ export default function PipelineDagCanvas({ symbol, accountId }: PipelineDagCanv
   }, [accountId, setDag, symbol]);
 
   const orderedNodes = useMemo(() => dag?.nodes ?? [], [dag]);
+  const hasCoordinates = useMemo(
+    () => orderedNodes.length > 0 && orderedNodes.every((node) => Number.isFinite(node.x) && Number.isFinite(node.y)),
+    [orderedNodes]
+  );
 
   return (
     <Card>
       <h3 className="mb-3 text-sm font-semibold text-slate-200">Pipeline DAG</h3>
-      <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
-        {orderedNodes.length === 0 ? (
-          <p className="text-xs text-slate-400">No DAG data available.</p>
-        ) : (
-          orderedNodes.map((node) => (
+      {orderedNodes.length === 0 ? (
+        <p className="text-xs text-slate-400">No DAG data available.</p>
+      ) : hasCoordinates ? (
+        <div className="relative min-h-[420px] overflow-auto rounded-lg border border-white/10 bg-slate-950/40">
+          {orderedNodes.map((node) => (
+            <div
+              key={node.id}
+              style={{ left: `${node.x}px`, top: `${node.y}px` }}
+              className={`absolute min-w-36 rounded-lg border px-3 py-2 text-xs ${STATE_COLOR[node.state] ?? STATE_COLOR.IDLE}`}
+            >
+              <div className="font-semibold">{node.label}</div>
+              <div className="opacity-80">{node.state}</div>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+          {orderedNodes.map((node) => (
             <div
               key={node.id}
               className={`rounded-lg border px-3 py-2 text-xs ${STATE_COLOR[node.state] ?? STATE_COLOR.IDLE}`}
@@ -47,9 +64,9 @@ export default function PipelineDagCanvas({ symbol, accountId }: PipelineDagCanv
               <div className="font-semibold">{node.label}</div>
               <div className="opacity-80">{node.state}</div>
             </div>
-          ))
-        )}
-      </div>
+          ))}
+        </div>
+      )}
     </Card>
   );
 }

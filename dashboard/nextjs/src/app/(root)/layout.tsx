@@ -5,6 +5,7 @@ import ComplianceBanner from "@/components/feedback/ComplianceBanner";
 import DegradationBanner from "@/components/feedback/DegradationBanner";
 import Header from "@/components/layout/Header";
 import PreferencesPanel from "@/components/layout/PreferencesPanel";
+import WorkspaceManager from "@/components/layout/WorkspaceManager";
 import Sidebar from "@/components/layout/Sidebar";
 import RouteTransition from "@/components/layout/RouteTransition";
 import { requireVerifiedSession } from "@/lib/serverAuth";
@@ -52,6 +53,7 @@ export default async function RootLayout({ children }: PropsWithChildren) {
             <ComplianceBanner />
             <RouteTransition>{children}</RouteTransition>
             <PreferencesPanel />
+            <WorkspaceManager />
           </main>
         </div>
       </Providers>
