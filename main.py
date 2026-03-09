@@ -100,6 +100,10 @@ async def _seed_from_redis() -> None:
     starts before ingest finishes seeding).  Controlled via env vars:
       - ENGINE_WARMUP_MAX_RETRIES  (default 15, ~2.5 min total wait)
       - ENGINE_WARMUP_RETRY_DELAY_SEC (default 10)
+
+    Readiness is checked against H1 (always seeded by ingest via REST).
+    M15 is NOT checked here — it is built from tick data and arrives
+    naturally ~15 minutes after the WebSocket connects.
     """
     max_retries = int(os.getenv("ENGINE_WARMUP_MAX_RETRIES", "15"))
     retry_delay = float(os.getenv("ENGINE_WARMUP_RETRY_DELAY_SEC", "10"))
@@ -115,53 +119,34 @@ async def _seed_from_redis() -> None:
             consumer = RedisConsumer(symbols=PAIRS, redis_client=redis_client)
             bus = LiveContextBus()
 
-            # Phase 1: try to get M15 data (ideal path)
-            _m15_warmup = {"M15": 1}
-            # Phase 2 fallback: accept any timeframe so engine isn't stuck
-            _any_warmup = {"H1": 1}
-            # After this many attempts, relax from M15 to any-TF
-            _relax_after = max(max_retries // 2, 3)
+            # Readiness: H1 is always seeded by ingest via REST warmup.
+            # M15 arrives from tick stream ~15 min after WebSocket connects
+            # and must NOT be used as the startup gate.
+            _h1_warmup = {"H1": 1}
 
             for attempt in range(1, max_retries + 1):
                 await consumer.load_candle_history()
 
-                # Check M15-specific warmup
-                m15_count = sum(
+                h1_count = sum(
                     1 for pair in PAIRS
-                    if bus.check_warmup(pair, _m15_warmup).get("ready")
+                    if bus.check_warmup(pair, _h1_warmup).get("ready")
                 )
 
-                if m15_count > 0:
+                if h1_count > 0:
                     logger.info(
                         "[SEED] Redis candle history loaded into LiveContextBus "
-                        "(%d/%d pairs with M15, attempt %d)",
-                        m15_count, len(PAIRS), attempt,
+                        "(%d/%d pairs with H1 data, attempt %d). "
+                        "M15 will arrive from tick stream after ~15 min.",
+                        h1_count, len(PAIRS), attempt,
                     )
                     return
 
-                # After _relax_after attempts, accept any-TF data so
-                # engine doesn't deadlock waiting for M15 that ingest
-                # may not have seeded.
-                if attempt >= _relax_after:
-                    any_tf_count = sum(
-                        1 for pair in PAIRS
-                        if bus.check_warmup(pair, _any_warmup).get("ready")
-                    )
-                    if any_tf_count > 0:
-                        logger.warning(
-                            "[SEED] M15 unavailable but %d/%d pairs have H1 data — "
-                            "proceeding without M15 (attempt %d). "
-                            "Pipeline warmup gate may still block until live M15 arrives.",
-                            any_tf_count, len(PAIRS), attempt,
-                        )
-                        return
-
-                # No data yet — ingest may still be seeding
+                # No H1 data yet — ingest may still be seeding
                 if attempt < max_retries:
                     logger.warning(
                         "[SEED] No candle data in Redis yet "
-                        "(M15=%d, attempt %d/%d) — waiting %.0fs",
-                        m15_count, attempt, max_retries, retry_delay,
+                        "(H1=%d, attempt %d/%d) — waiting %.0fs",
+                        h1_count, attempt, max_retries, retry_delay,
                     )
                     await asyncio.sleep(retry_delay)
 

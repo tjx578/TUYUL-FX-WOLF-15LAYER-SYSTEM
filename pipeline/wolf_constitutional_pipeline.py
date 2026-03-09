@@ -143,7 +143,6 @@ class WolfConstitutionalPipeline:
     # Prevents garbage indicator outputs during the first minutes
     # after system startup.
     WARMUP_MIN_BARS: dict[str, int] = {
-        "M15": 20,
         "H1": 20,
         "H4": 10,
         "D1": 5,
