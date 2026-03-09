@@ -3,9 +3,8 @@
 from __future__ import annotations
 
 import os
-
-from typing import Any
 from importlib import import_module
+from typing import Any
 
 from loguru import logger
 from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
@@ -116,6 +115,20 @@ class PostgresClient:
             }
         except Exception as exc:
             return {"connected": False, "error": str(exc)}
+
+    async def execute_in_transaction(
+        self,
+        operations: list[tuple[str, tuple[Any, ...]]],
+    ) -> list[str]:
+        """Execute multiple SQL statements atomically in one transaction."""
+        if self._pool is None:
+            return []
+        results: list[str] = []
+        async with self._pool.acquire() as conn, conn.transaction():
+            for query, args in operations:
+                result = await conn.execute(query, *args)
+                results.append(result)
+        return results
 
 
 pg_client = PostgresClient()
