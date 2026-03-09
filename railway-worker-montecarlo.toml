@@ -1,0 +1,8 @@
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "Dockerfile"
+
+[deploy]
+startCommand = "python -m services.worker.montecarlo_job"
+restartPolicyType = "NEVER"
+cronSchedule = "0 1 * * *"
