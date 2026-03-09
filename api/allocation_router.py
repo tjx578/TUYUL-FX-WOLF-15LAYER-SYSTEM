@@ -594,7 +594,7 @@ async def _confirm_trade_internal(
     persisted = await _persist_trade_write_through(
         trade,
         event_type="ORDER_PLACED",
-        event_payload={"source": "MANUAL"},
+        event_payload={"source": "MANUAL", "outbox_topic": "trade_confirmed", "execution_intent_id": intent_id},
     )
     if not persisted:
         _execution_idempotency.mark_failed(
@@ -763,7 +763,11 @@ async def take_signal(req: TakeSignalRequest) -> dict[str, Any]:
     persisted = await _persist_trade_write_through(
         trade,
         event_type="TRADE_INTENDED",
-        event_payload={"source": "MANUAL"},
+        event_payload={
+            "source": "MANUAL",
+            "outbox_topic": "trade_intended",
+            "execution_intent_id": execution_intent_id,
+        },
     )
     if not persisted:
         raise HTTPException(status_code=503, detail="Failed to persist trade intent")
@@ -959,9 +963,11 @@ async def close_trade(req: CloseTradeRequest) -> dict[str, Any]:
         event_type="TRADE_CLOSED",
         event_payload={
             "source": "MANUAL",
+            "outbox_topic": "trade_closed",
             "reason": req.reason,
             "close_price": req.close_price,
             "pnl": req.pnl,
+            "execution_intent_id": str(trade.get("execution_intent_id") or ""),
         },
     )
     if not persisted:
@@ -1042,6 +1048,7 @@ async def record_trade_lifecycle_event(req: TradeLifecycleEventRequest) -> dict[
         event_type=event_type,
         event_payload={
             "source": req.source,
+            "outbox_topic": "trade_lifecycle",
             "order_id": req.order_id,
             "reason": req.reason,
             "fill_price": req.fill_price,

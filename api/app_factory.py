@@ -15,6 +15,7 @@ Usage:
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 from collections.abc import AsyncIterator
@@ -87,13 +88,23 @@ def _assert_no_duplicate_routes(application: FastAPI) -> None:
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     logger.info("🐺 TUYUL FX Wolf-15 starting up…")
     from infrastructure.redis_client import close_pool, get_client
+    from storage.trade_outbox_worker import TradeOutboxWorker
 
     app.state.redis = await get_client()
     with suppress(Exception):
         await pg_client.initialize()
+    outbox_worker = TradeOutboxWorker(consumer_name="api-1")
+    outbox_task = asyncio.create_task(outbox_worker.run(), name="trade-outbox-worker")
+    app.state.trade_outbox_worker = outbox_worker
+    app.state.trade_outbox_task = outbox_task
     try:
         yield
     finally:
+        with suppress(Exception):
+            await outbox_worker.stop()
+        with suppress(asyncio.CancelledError):
+            outbox_task.cancel()
+            await outbox_task
         with suppress(Exception):
             await pg_client.close()
         await close_pool()
