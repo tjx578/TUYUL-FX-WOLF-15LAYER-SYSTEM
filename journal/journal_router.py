@@ -9,13 +9,13 @@ from threading import Lock
 
 from loguru import logger
 
+from journal.journal_repository import JournalRepository
 from journal.journal_schema import (
     ContextJournal,
     DecisionJournal,
     ExecutionJournal,
     ReflectiveJournal,
 )
-from journal.journal_writer import JournalWriter
 
 
 class JournalRouter:
@@ -37,9 +37,22 @@ class JournalRouter:
 
     def _init(self):
         """Initialize router state"""
-        self._writer = JournalWriter()
+        self._repository = JournalRepository()
+        # Keep _writer attribute for backward compatibility in tests that patch it.
+        self._writer = self._repository._writer  # pyright: ignore[reportPrivateUsage]
         self._event_count = 0
         self._rw_lock = Lock()
+
+    def _append(self, payload: ContextJournal | DecisionJournal | ExecutionJournal | ReflectiveJournal) -> None:
+        """Append one journal entry using repository by default.
+
+        If tests override ``_writer`` with a custom JournalWriter, honor that
+        override to keep deterministic file-path assertions.
+        """
+        if self._writer is self._repository._writer:  # pyright: ignore[reportPrivateUsage]
+            self._repository.append(payload)
+            return
+        self._writer.write(payload)
 
     # ========================
     # EVENT HANDLERS
@@ -55,7 +68,7 @@ class JournalRouter:
         with self._rw_lock:
             self._event_count += 1
             try:
-                self._writer.write(j1)
+                self._append(j1)
                 logger.debug(f"J1 recorded: {j1.pair} @ {j1.session}")
             except Exception as exc:
                 logger.error(f"J1 write failed: {exc}")
@@ -71,7 +84,7 @@ class JournalRouter:
         with self._rw_lock:
             self._event_count += 1
             try:
-                self._writer.write(j2)
+                self._append(j2)
                 logger.info(
                     f"J2 recorded: {j2.pair} | {j2.verdict.value} | "
                     f"Wolf={j2.wolf_30_score} | Gates={j2.gates_passed}/{j2.gates_total}"
@@ -90,7 +103,7 @@ class JournalRouter:
         with self._rw_lock:
             self._event_count += 1
             try:
-                self._writer.write(j3)
+                self._append(j3)
                 logger.info(
                     f"J3 recorded: {j3.pair} | {j3.direction} @ {j3.entry_price} | "
                     f"RR={j3.rr_ratio:.2f} | Risk={j3.risk_percent:.1f}%"
@@ -109,7 +122,7 @@ class JournalRouter:
         with self._rw_lock:
             self._event_count += 1
             try:
-                self._writer.write(j4)
+                self._append(j4)
                 logger.info(
                     f"J4 recorded: {j4.pair} | {j4.outcome.value} | "
                     f"Protected={j4.did_system_protect.value} | Discipline={j4.discipline_rating}/10"

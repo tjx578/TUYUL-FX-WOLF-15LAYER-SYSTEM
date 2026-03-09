@@ -18,6 +18,7 @@ import logging
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import StrEnum
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -287,7 +288,7 @@ def reflect(
     original_decision: OriginalDecision,
     trade_outcome: TradeOutcome,
     reflection_notes: str = "",
-    metadata: dict | None = None,
+    metadata: dict[str, Any] | None = None,
 ) -> L13ReflectionRecord:
     """
     Main entry point for Layer-13 post-trade reflection.
