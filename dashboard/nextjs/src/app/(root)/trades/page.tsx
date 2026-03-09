@@ -2,25 +2,50 @@
 
 import { useMemo } from "react";
 import NavTabs from "@/components/NavTabs";
-import TradesTable from "@/components/TradesTable";
-import { useAccountsRiskSnapshot, useActiveTrades } from "@/lib/api";
-import type { Trade } from "@/types";
+import PaginationControls from "@/components/primitives/PaginationControls";
+import TableToolbar from "@/components/primitives/TableToolbar";
+import { useTradesQuery } from "@/hooks/queries/useTradesQuery";
+import { useUrlSyncedTableQuery } from "@/hooks/useUrlSyncedTableQuery";
+import { useTableQueryStore } from "@/store/useTableQueryStore";
 
 export default function TradesPage() {
-  const { data, isLoading, mutate } = useActiveTrades();
-  const { data: snapshots, isLoading: snapshotLoading } = useAccountsRiskSnapshot();
+  const query = useTableQueryStore((state) => state.trades);
+  const setQuery = useTableQueryStore((state) => state.setTrades);
 
-  const trades = useMemo<Trade[]>(() => {
+  useUrlSyncedTableQuery({ state: query, setState: setQuery });
+
+  const { data, isLoading, isFetching } = useTradesQuery(undefined, query.page, query.pageSize);
+
+  const trades = useMemo(() => {
     if (!data) return [];
-    if (Array.isArray(data)) return data;
-    if (Array.isArray(data.trades)) return data.trades;
-    return [];
+    return Array.isArray(data) ? data : [];
   }, [data]);
 
-  const openCount = useMemo(
-    () => trades.filter((t) => t.status !== "CLOSED").length,
-    [trades]
-  );
+  const filtered = useMemo(() => {
+    const search = query.search?.toLowerCase().trim();
+
+    let next = trades;
+    if (search) {
+      next = next.filter((t) => {
+        const haystack = [t.trade_id, t.account_id, t.symbol, t.side, t.status]
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase();
+        return haystack.includes(search);
+      });
+    }
+
+    if (query.sortBy) {
+      const dir = query.sortDir === "desc" ? -1 : 1;
+      next = [...next].sort((a, b) => {
+        const av = String((a as Record<string, unknown>)[query.sortBy!] ?? "");
+        const bv = String((b as Record<string, unknown>)[query.sortBy!] ?? "");
+        return av.localeCompare(bv) * dir;
+      });
+    }
+
+    return next;
+  }, [query.search, query.sortBy, query.sortDir, trades]);
 
   return (
     <div style={{ padding: "22px 26px", display: "flex", flexDirection: "column", gap: 16 }}>
@@ -41,73 +66,56 @@ export default function TradesPage() {
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: "repeat(3, 1fr)",
+          gridTemplateColumns: "repeat(2, 1fr)",
           gap: 12,
         }}
       >
-        <Kpi label="ACTIVE" value={openCount} />
-        <Kpi label="TOTAL (CACHE)" value={trades.length} />
-        <Kpi label="REFRESH" value={"SWR"} />
+        <Kpi label="TOTAL (PAGE)" value={filtered.length} />
+        <Kpi label="QUERY STATE" value={isFetching ? "REFRESHING" : "SYNCED"} />
       </div>
 
-      <div>
-        <div style={{ fontSize: 10, letterSpacing: "0.1em", color: "var(--text-muted)", marginBottom: 8 }}>
-          ACCOUNT RISK SNAPSHOT
-        </div>
-        {snapshotLoading ? (
-          <div style={{ color: "var(--text-muted)", fontSize: 12 }}>Loading account risk…</div>
-        ) : (
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 10 }}>
-            {(snapshots ?? []).map((s) => (
-              <div
-                key={s.account_id}
-                style={{
-                  borderRadius: 12,
-                  border: `1px solid ${
-                    s.status === "CRITICAL"
-                      ? "rgba(255,61,87,0.45)"
-                      : s.status === "WARNING"
-                        ? "rgba(255,184,77,0.45)"
-                        : "rgba(86,214,138,0.45)"
-                  }`,
-                  background: "var(--bg-card)",
-                  padding: 12,
-                  display: "grid",
-                  gap: 5,
-                }}
-              >
-                <div style={{ fontWeight: 800, letterSpacing: "0.05em" }}>{s.account_id}</div>
-                <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
-                  DD {s.daily_dd_percent.toFixed(2)}% • Total {s.total_dd_percent.toFixed(2)}%
-                </div>
-                <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
-                  Open Risk {s.open_risk_percent.toFixed(2)}% • Open Trades {s.open_trades}/{s.max_concurrent}
-                </div>
-                <div
-                  style={{
-                    fontSize: 11,
-                    fontWeight: 800,
-                    color:
-                      s.status === "CRITICAL"
-                        ? "var(--red)"
-                        : s.status === "WARNING"
-                          ? "var(--yellow)"
-                          : "var(--green)",
-                  }}
-                >
-                  STATUS {s.status}{s.circuit_breaker ? " • CIRCUIT OPEN" : ""}
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
+      <TableToolbar
+        search={query.search}
+        onSearchChange={(value) => setQuery({ search: value, page: 1 })}
+        sortBy={query.sortBy}
+        onSortByChange={(value) => setQuery({ sortBy: value || undefined, page: 1 })}
+      />
 
       {isLoading ? (
         <div style={{ padding: "30px 0", color: "var(--text-muted)" }}>LOADING…</div>
       ) : (
-        <TradesTable trades={trades} onAfterAction={() => mutate()} />
+        <div style={{ overflowX: "auto", borderRadius: 12, border: "1px solid rgba(255,255,255,0.08)" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+            <thead>
+              <tr style={{ textAlign: "left", color: "var(--text-muted)" }}>
+                {["TRADE", "ACCOUNT", "SYMBOL", "SIDE", "LOT", "STATUS"].map((h) => (
+                  <th key={h} style={{ padding: "10px 12px", borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
+                    {h}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.map((t) => (
+                <tr key={t.trade_id}>
+                  <td style={{ padding: "10px 12px" }}>{t.trade_id}</td>
+                  <td style={{ padding: "10px 12px" }}>{t.account_id}</td>
+                  <td style={{ padding: "10px 12px" }}>{t.symbol}</td>
+                  <td style={{ padding: "10px 12px" }}>{t.side}</td>
+                  <td style={{ padding: "10px 12px" }}>{t.lot.toFixed(2)}</td>
+                  <td style={{ padding: "10px 12px" }}>{t.status ?? "—"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
+
+      <PaginationControls
+        page={query.page}
+        onPrev={() => setQuery({ page: Math.max(1, query.page - 1) })}
+        onNext={() => setQuery({ page: query.page + 1 })}
+      />
     </div>
   );
 }
