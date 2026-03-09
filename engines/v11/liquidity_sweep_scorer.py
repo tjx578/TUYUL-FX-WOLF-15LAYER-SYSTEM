@@ -73,6 +73,30 @@ class SweepResult:
 LiquiditySweepResult = SweepResult
 
 
+@dataclass(frozen=True)
+class SweepScoreResult:
+    """Frozen result returned by LiquiditySweepScorer.score()."""
+
+    sweep_detected: bool = False
+    sweep_quality: float = 0.0
+    equal_level_detected: bool = False
+    wick_rejection: float = 0.0
+    volume_spike: bool = False
+    failed_to_close: bool = False
+    multi_bar_pattern: bool = False
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "sweep_detected": self.sweep_detected,
+            "sweep_quality": self.sweep_quality,
+            "equal_level_detected": self.equal_level_detected,
+            "wick_rejection": self.wick_rejection,
+            "volume_spike": self.volume_spike,
+            "failed_to_close": self.failed_to_close,
+            "multi_bar_pattern": self.multi_bar_pattern,
+        }
+
+
 class LiquiditySweepScorer:
     """
     Scores liquidity sweep patterns for the Wolf-15 analysis system.
@@ -92,6 +116,11 @@ class LiquiditySweepScorer:
         max_reclaim_bars: int = 5,
         equal_level_tolerance: float = 0.0003,
         min_touches_for_level: int = 2,
+        *,
+        pattern_lookback: int | None = None,
+        wick_rejection_min: float = 0.50,
+        volume_spike_threshold: float = 1.5,
+        volume_lookback: int = 10,
     ) -> None:
         """
         Initialize the liquidity sweep scorer.
@@ -103,14 +132,149 @@ class LiquiditySweepScorer:
             max_reclaim_bars: Maximum bars allowed for reclaim to be valid.
             equal_level_tolerance: Price tolerance for identifying equal highs/lows.
             min_touches_for_level: Minimum touches to confirm a liquidity level.
+            pattern_lookback: Alias for lookback_period (used by score()).
+            wick_rejection_min: Minimum wick ratio to count as rejection.
+            volume_spike_threshold: Multiplier above average vol to flag spike.
+            volume_lookback: Bars to average volume over.
         """
         super().__init__()
         self.lookback_period = lookback_period
+        self._pattern_lookback = pattern_lookback if pattern_lookback is not None else 5
         self.sweep_threshold_pips = sweep_threshold_pips
         self.min_reclaim_bars = min_reclaim_bars
         self.max_reclaim_bars = max_reclaim_bars
         self.equal_level_tolerance = equal_level_tolerance
         self.min_touches_for_level = min_touches_for_level
+        self.wick_rejection_min = wick_rejection_min
+        self.volume_spike_threshold = volume_spike_threshold
+        self.volume_lookback = volume_lookback
+
+    # ── Public high-level API (candle-dict based) ─────────────────
+
+    def score(
+        self,
+        candles: list[dict[str, Any]],
+        direction: str = "bullish",
+    ) -> SweepScoreResult:
+        """Score liquidity sweep quality from a list of candle dicts.
+
+        This is the primary entry point called by V11DataAdapter and
+        L3_technical.  It accepts raw candle dicts (keys: open, high,
+        low, close, volume) and returns a frozen SweepScoreResult.
+
+        Args:
+            candles: List of candle dicts with OHLCV keys.
+            direction: 'bullish' or 'bearish'.
+
+        Returns:
+            Frozen SweepScoreResult.
+        """
+        if len(candles) < self._pattern_lookback:
+            return SweepScoreResult()
+
+        # -- extract arrays --------------------------------------------------
+        highs = np.array([float(c["high"]) for c in candles])
+        lows = np.array([float(c["low"]) for c in candles])
+        np.array([float(c["close"]) for c in candles])
+        np.array([float(c["open"]) for c in candles])
+        volumes = np.array([float(c.get("volume", 0)) for c in candles])
+
+        lookback = min(self.lookback_period, len(candles))
+
+        # -- equal-level detection -------------------------------------------
+        recent_lows = lows[-lookback :]
+        recent_highs = highs[-lookback :]
+
+        equal_level = False
+        if direction == "bullish":
+            equal_level = self._has_equal_levels(recent_lows)
+        else:
+            equal_level = self._has_equal_levels(recent_highs)
+
+        # -- volume spike ----------------------------------------------------
+        vol_spike = False
+        if len(volumes) > self.volume_lookback:
+            avg_vol = float(np.mean(volumes[-self.volume_lookback - 1 : -1]))
+            if avg_vol > 0:
+                vol_spike = float(volumes[-1]) >= avg_vol * self.volume_spike_threshold
+
+        # -- wick rejection --------------------------------------------------
+        last = candles[-1]
+        o, h, l, c = float(last["open"]), float(last["high"]), float(last["low"]), float(last["close"])  # noqa: E741
+        candle_range = h - l
+        wick = 0.0
+        if candle_range > 0:
+            if direction == "bullish":
+                lower_wick = min(o, c) - l
+                wick = lower_wick / candle_range
+            else:
+                upper_wick = h - max(o, c)
+                wick = upper_wick / candle_range
+
+        # -- failed to close beyond level ------------------------------------
+        failed_to_close = False
+        if direction == "bullish" and len(lows) >= 2:
+            prev_low = float(np.min(lows[-lookback : -1]))
+            failed_to_close = l < prev_low and c > prev_low
+        elif direction == "bearish" and len(highs) >= 2:
+            prev_high = float(np.max(highs[-lookback : -1]))
+            failed_to_close = h > prev_high and c < prev_high
+
+        # -- multi-bar pattern -----------------------------------------------
+        multi_bar = False
+        if len(candles) >= 3:
+            c3 = candles[-3:]
+            if direction == "bullish":
+                multi_bar = (
+                    float(c3[0]["close"]) > float(c3[0]["open"])
+                    and float(c3[1]["low"]) < float(c3[0]["low"])
+                    and float(c3[2]["close"]) > float(c3[1]["high"])
+                )
+            else:
+                multi_bar = (
+                    float(c3[0]["close"]) < float(c3[0]["open"])
+                    and float(c3[1]["high"]) > float(c3[0]["high"])
+                    and float(c3[2]["close"]) < float(c3[1]["low"])
+                )
+
+        # -- composite quality -----------------------------------------------
+        quality = 0.0
+        if equal_level:
+            quality += 0.25
+        if vol_spike:
+            quality += 0.20
+        if wick >= self.wick_rejection_min:
+            quality += 0.25
+        if failed_to_close:
+            quality += 0.15
+        if multi_bar:
+            quality += 0.15
+        quality = min(quality, 1.0)
+
+        sweep_detected = quality > 0.0
+
+        return SweepScoreResult(
+            sweep_detected=sweep_detected,
+            sweep_quality=quality,
+            equal_level_detected=equal_level,
+            wick_rejection=wick,
+            volume_spike=vol_spike,
+            failed_to_close=failed_to_close,
+            multi_bar_pattern=multi_bar,
+        )
+
+    def _has_equal_levels(self, prices: np.ndarray) -> bool:
+        """Return True if *prices* contain a cluster of equal values."""
+        if len(prices) < self.min_touches_for_level:
+            return False
+        sorted_p = np.sort(prices)
+        for i in range(len(sorted_p) - self.min_touches_for_level + 1):
+            window = sorted_p[i : i + self.min_touches_for_level]
+            if float(window[-1] - window[0]) <= self.equal_level_tolerance:
+                return True
+        return False
+
+    # ── Low-level numpy API (score_sweep) ─────────────────────────
 
     def identify_liquidity_levels(
         self,
