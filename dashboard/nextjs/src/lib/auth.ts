@@ -7,7 +7,21 @@
  * Storage: localStorage key "wolf15_token"  (browser-only, guard is built in)
  */
 
+import type { UserRole } from "@/contracts/auth";
+
 const TOKEN_KEY = "wolf15_token";
+
+export const ADMIN_ROLES = ["risk_admin", "config_admin", "approver"] as const;
+
+export function hasRole(
+  role: UserRole | undefined,
+  allowedRoles: readonly UserRole[]
+): boolean {
+  if (!role) {
+    return false;
+  }
+  return allowedRoles.includes(role);
+}
 
 /**
  * Retrieve the stored JWT.  Returns null if not set or called server-side.
@@ -41,3 +55,4 @@ export function bearerHeader(): string | undefined {
   const token = getToken();
   return token ? `Bearer ${token}` : undefined;
 }
+
