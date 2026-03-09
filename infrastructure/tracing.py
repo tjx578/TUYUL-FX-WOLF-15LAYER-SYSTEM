@@ -58,7 +58,7 @@ def _init_provider_once(service_name: str) -> None:
     if _provider_initialized or not _has_otel or not _tracing_enabled():
         return
 
-    endpoint = os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://tempo:4317")
+    endpoint = os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT", "").strip()
     insecure = _as_bool(os.getenv("OTEL_EXPORTER_OTLP_INSECURE"), default=True)
     service_version = os.getenv("OTEL_SERVICE_VERSION", "unknown")
     deployment_environment = os.getenv("OTEL_DEPLOYMENT_ENV", os.getenv("APP_ENV", "unknown"))
@@ -70,16 +70,25 @@ def _init_provider_once(service_name: str) -> None:
             "deployment.environment": deployment_environment,
         })
         provider = TracerProvider(resource=resource)
-        exporter = OTLPSpanExporter(endpoint=endpoint, insecure=insecure)
-        provider.add_span_processor(BatchSpanProcessor(exporter))
+        # Export is opt-in: if endpoint is unset, spans remain local/no-op export.
+        if endpoint:
+            exporter = OTLPSpanExporter(endpoint=endpoint, insecure=insecure)
+            provider.add_span_processor(BatchSpanProcessor(exporter))
         trace.set_tracer_provider(provider)
         _provider_initialized = True
-        logger.info(
-            "Tracing enabled service={} endpoint={} env={}",
-            service_name,
-            endpoint,
-            deployment_environment,
-        )
+        if endpoint:
+            logger.info(
+                "Tracing enabled service={} endpoint={} env={}",
+                service_name,
+                endpoint,
+                deployment_environment,
+            )
+        else:
+            logger.info(
+                "Tracing enabled service={} endpoint=disabled env={}",
+                service_name,
+                deployment_environment,
+            )
     except Exception as exc:  # pragma: no cover
         logger.warning("Tracing init failed service={} err={}", service_name, exc)
 
