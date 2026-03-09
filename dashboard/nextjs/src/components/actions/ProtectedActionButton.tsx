@@ -2,8 +2,10 @@
 
 import React from "react";
 import type { PropsWithChildren } from "react";
+import { buildAuthorityKey } from "@/lib/authorityKey";
 import { useToastStore } from "@/store/useToastStore";
 import { useAuthoritySurface } from "@/hooks/useAuthoritySurface";
+import { useAuthorityStore } from "@/store/useAuthorityStore";
 
 interface Props extends PropsWithChildren {
   action: string;
@@ -11,6 +13,8 @@ interface Props extends PropsWithChildren {
   tradeId?: string;
   disabled?: boolean;
   className?: string;
+  ariaLabel?: string;
+  invalidateOnSuccess?: boolean;
   onClick?: () => void | Promise<void>;
 }
 
@@ -20,10 +24,13 @@ export function ProtectedActionButton({
   tradeId,
   disabled,
   className,
+  ariaLabel,
+  invalidateOnSuccess = true,
   onClick,
   children,
 }: Props) {
   const pushToast = useToastStore((state) => state.push);
+  const invalidate = useAuthorityStore((state) => state.invalidate);
   const { authority, loading } = useAuthoritySurface({ action, accountId, tradeId });
 
   const canRun = Boolean(authority?.allowed);
@@ -50,6 +57,14 @@ export function ProtectedActionButton({
 
     try {
       await onClick?.();
+      if (invalidateOnSuccess) {
+        invalidate(buildAuthorityKey(action, accountId, tradeId));
+      }
+      pushToast({
+        title: "Action completed",
+        description: "Operation finished successfully.",
+        level: "success",
+      });
     } catch (error) {
       pushToast({
         title: "Action failed",
@@ -60,7 +75,14 @@ export function ProtectedActionButton({
   }
 
   return (
-    <button type="button" className={className} disabled={finalDisabled} onClick={handleClick}>
+    <button
+      type="button"
+      className={className}
+      disabled={finalDisabled}
+      onClick={handleClick}
+      aria-label={ariaLabel}
+      aria-disabled={finalDisabled}
+    >
       {children}
     </button>
   );
