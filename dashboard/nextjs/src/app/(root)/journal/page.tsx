@@ -11,6 +11,7 @@ import {
   useJournalWeekly,
   useJournalMetrics,
 } from "@/lib/api";
+import PageComplianceBanner from "@/components/feedback/PageComplianceBanner";
 import { JournalMetricsCard, JournalTimeline } from "@/components/JournalMetrics";
 
 export default function JournalPage() {
@@ -21,6 +22,8 @@ export default function JournalPage() {
 
   return (
     <div style={{ padding: "24px 28px", display: "flex", flexDirection: "column", gap: 20 }}>
+      <PageComplianceBanner page="journal" />
+
       {/* ── Header ── */}
       <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
         <div>
