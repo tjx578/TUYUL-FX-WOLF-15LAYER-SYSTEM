@@ -29,6 +29,8 @@ class RouterEntry:
 ROUTER_ENTRIES: list[RouterEntry] = [
     # Trade write lifecycle (take/skip/confirm/close/active + risk/calculate)
     RouterEntry("api.allocation_router", "write_router", "Trade write lifecycle"),
+    # Admin outbox inspect/replay
+    RouterEntry("api.outbox_router", "router", "Trade outbox admin endpoints"),
     # L12 verdicts, context, execution state, pairs
     RouterEntry("api.l12_routes", "router", "L12 verdicts / context / execution state"),
     # WebSocket feeds
