@@ -92,6 +92,20 @@ async def test_record_trade_event_expired_marks_cancelled(monkeypatch: pytest.Mo
 async def test_record_trade_event_replay_safe_by_execution_intent(monkeypatch: pytest.MonkeyPatch) -> None:
     import api.allocation_router as ar
 
+    store: dict[str, str] = {}
+
+    def _fake_set(key: str, value: str, nx: bool | None = None, ex: int | None = None):  # noqa: ARG001
+        if nx and key in store:
+            return False
+        store[key] = value
+        return True
+
+    def _fake_get(key: str):
+        return store.get(key)
+
+    monkeypatch.setattr("execution.idempotency_ledger.redis_client.client.set", _fake_set)
+    monkeypatch.setattr("execution.idempotency_ledger.redis_client.client.get", _fake_get)
+
     trade_id = "T-EVENT-3"
     trade_ledger = ar._trade_ledger  # pyright: ignore[reportPrivateUsage]
     trade_ledger[trade_id] = {
