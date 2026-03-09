@@ -130,6 +130,15 @@ async def _seed_from_finnhub() -> None:
         logger.info(
             f"[SEED] Finnhub warmup complete: {len(results)} symbols, {total} total bars"
         )
+
+        # M15 is excluded from warmup_all (normally built from WS ticks),
+        # but the pipeline warmup gate requires M15 bars.  Fetch via REST
+        # cold-start so the first analysis cycle isn't blocked.
+        m15_seeded = await fetcher.cold_start_m15(bars=100)
+        m15_total = sum(m15_seeded.values())
+        logger.info(
+            f"[SEED] M15 cold-start: {len(m15_seeded)} symbols, {m15_total} total bars"
+        )
     except Exception as exc:
         logger.error(f"[SEED] Failed to seed from Finnhub: {exc}")
 
