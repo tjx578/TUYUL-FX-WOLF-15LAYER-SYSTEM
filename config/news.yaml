@@ -1,0 +1,28 @@
+# Calendar/news subsystem configuration overlay (PR2/PR3)
+news:
+  provider: "forexfactory"
+  html_fallback_enabled: false
+  staleness_threshold_sec: 3600
+
+  providers:
+    forexfactory_json:
+      timeout_seconds: 10
+      max_retries: 3
+    forexfactory_xml:
+      timeout_seconds: 10
+      max_retries: 3
+    finnhub:
+      timeout_seconds: 10
+      max_retries: 3
+    forexfactory_html:
+      enabled: false
+      timeout_seconds: 15
+      max_retries: 2
+
+  blocker:
+    lookahead_minutes: 60
+    cooldown_minutes: 5
+
+  observability:
+    source_health_ttl_seconds: 1800
+    heatmap_timezone: "UTC"

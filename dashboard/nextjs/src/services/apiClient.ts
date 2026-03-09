@@ -11,14 +11,16 @@ const baseURL =
   process.env.NEXT_PUBLIC_API_BASE_URL ||
   process.env.INTERNAL_API_URL;
 
-if (!baseURL) {
-  throw new Error(
-    "Missing API base URL: set NEXT_PUBLIC_API_URL (or NEXT_PUBLIC_API_BASE_URL/INTERNAL_API_URL)."
+const resolvedBaseURL = (baseURL && baseURL.trim()) || "http://localhost:8000";
+if (!baseURL || baseURL.trim() === "") {
+  console.warn(
+    "[apiClient] Missing API base URL env; falling back to http://localhost:8000. " +
+      "Set NEXT_PUBLIC_API_URL or NEXT_PUBLIC_API_BASE_URL in production."
   );
 }
 
 export const apiClient = axios.create({
-  baseURL: baseURL.replace(/\/$/, ""),
+  baseURL: resolvedBaseURL.replace(/\/$/, ""),
   headers: {
     "Content-Type": "application/json",
   },
