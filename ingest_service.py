@@ -158,8 +158,8 @@ async def _cold_start_m15_for_warmup(
     function fills the gap so that ``_seed_redis_candle_history()`` writes
     M15 into Redis alongside the higher timeframes.
 
-    Uses the same ``_warmup_symbol_tf`` helper that ``warmup_all()`` uses so
-    that LiveContextBus is also seeded.
+    Uses the public ``fetch()`` API and seeds LiveContextBus via
+    ``context_bus.update_candle()``.
     """
     if not enabled_symbols:
         return
@@ -170,11 +170,20 @@ async def _cold_start_m15_for_warmup(
         len(enabled_symbols),
     )
 
-    tasks = [
-        fetcher._warmup_symbol_tf(symbol, "M15", bars, warmup_results)
-        for symbol in enabled_symbols
-    ]
-    await asyncio.gather(*tasks, return_exceptions=True)
+    async def _fetch_m15(symbol: str) -> None:
+        try:
+            candles = await fetcher.fetch(symbol, "M15", bars)
+            if not candles:
+                logger.warning("M15 cold-start: no bars for %s", symbol)
+                return
+            for candle in candles:
+                fetcher.context_bus.update_candle(candle)
+            warmup_results.setdefault(symbol, {})["M15"] = candles
+            logger.debug("M15 cold-start: %d bars for %s", len(candles), symbol)
+        except Exception as exc:
+            logger.error("M15 cold-start failed for %s: %s", symbol, exc)
+
+    await asyncio.gather(*[_fetch_m15(s) for s in enabled_symbols], return_exceptions=True)
 
     m15_count = sum(
         1
