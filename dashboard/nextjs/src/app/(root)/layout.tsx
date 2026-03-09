@@ -2,6 +2,7 @@ import type { PropsWithChildren } from "react";
 import { Providers } from "@/components/Providers";
 import AuthBootstrap from "@/components/auth/AuthBootstrap";
 import ComplianceBanner from "@/components/feedback/ComplianceBanner";
+import DegradationBanner from "@/components/feedback/DegradationBanner";
 import Header from "@/components/layout/Header";
 import PreferencesPanel from "@/components/layout/PreferencesPanel";
 import Sidebar from "@/components/layout/Sidebar";
@@ -47,6 +48,7 @@ export default async function RootLayout({ children }: PropsWithChildren) {
             style={{ marginLeft: "var(--sidebar-w)", minHeight: "100vh", padding: "32px 40px" }}
           >
             <Header />
+            <DegradationBanner />
             <ComplianceBanner />
             <RouteTransition>{children}</RouteTransition>
             <PreferencesPanel />

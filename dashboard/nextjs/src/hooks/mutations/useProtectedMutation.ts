@@ -2,9 +2,18 @@
 
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import type { ProtectedMutationConfig } from "@/contracts/protectedMutation";
+import type { ProtectedMutationResult } from "@/contracts/protectedMutationResult";
 import { buildAuthorityKey } from "@/lib/authorityKey";
 import { useToastStore } from "@/store/useToastStore";
 import { useAuthorityStore } from "@/store/useAuthorityStore";
+
+function getCorrelationId(result: unknown): string | null {
+  if (!result || typeof result !== "object") {
+    return null;
+  }
+  const value = (result as Partial<ProtectedMutationResult>).correlation_id;
+  return typeof value === "string" && value.trim() !== "" ? value : null;
+}
 
 export function useProtectedMutation<TVars, TResult>(
   config: ProtectedMutationConfig,
@@ -17,7 +26,7 @@ export function useProtectedMutation<TVars, TResult>(
   return useMutation({
     mutationKey: [config.mutationKey, config.accountId, config.tradeId],
     mutationFn,
-    onSuccess: async () => {
+    onSuccess: async (result) => {
       invalidateAuthority(buildAuthorityKey(config.mutationKey, config.accountId, config.tradeId));
 
       if (config.invalidateQueryKeys) {
@@ -26,9 +35,12 @@ export function useProtectedMutation<TVars, TResult>(
         );
       }
 
+      const correlationId = getCorrelationId(result);
       pushToast({
         title: config.successTitle,
-        description: config.successDescription,
+        description: correlationId
+          ? `${config.successDescription ?? "Request accepted."} Correlation ID: ${correlationId}`
+          : config.successDescription,
         level: "success",
       });
     },
