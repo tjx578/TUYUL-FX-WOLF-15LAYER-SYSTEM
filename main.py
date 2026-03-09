@@ -94,8 +94,18 @@ async def seed_candles_on_startup() -> None:
 
 
 async def _seed_from_redis() -> None:
-    """Load candle history from Redis Lists into LiveContextBus."""
+    """Load candle history from Redis Lists into LiveContextBus.
+
+    Retries with backoff when Redis has no data yet (race condition: engine
+    starts before ingest finishes seeding).  Controlled via env vars:
+      - ENGINE_WARMUP_MAX_RETRIES  (default 15, ~2.5 min total wait)
+      - ENGINE_WARMUP_RETRY_DELAY_SEC (default 10)
+    """
+    max_retries = int(os.getenv("ENGINE_WARMUP_MAX_RETRIES", "15"))
+    retry_delay = float(os.getenv("ENGINE_WARMUP_RETRY_DELAY_SEC", "10"))
+
     try:
+        from context.live_context_bus import LiveContextBus  # noqa: PLC0415
         from context.redis_consumer import RedisConsumer  # noqa: PLC0415
         from infrastructure.redis_url import get_redis_url  # noqa: PLC0415
 
@@ -103,8 +113,42 @@ async def _seed_from_redis() -> None:
         redis_client: AsyncRedis = AsyncRedis.from_url(redis_url)  # type: ignore[no-untyped-call]
         try:
             consumer = RedisConsumer(symbols=PAIRS, redis_client=redis_client)
-            await consumer.load_candle_history()
-            logger.info("[SEED] Redis candle history loaded into LiveContextBus")
+            bus = LiveContextBus()
+
+            for attempt in range(1, max_retries + 1):
+                await consumer.load_candle_history()
+
+                # Check how many pairs have at least *some* M15 data
+                _minimal_warmup = {"M15": 1}
+                seeded_count = sum(
+                    1 for pair in PAIRS
+                    if bus.check_warmup(pair, _minimal_warmup).get("ready")
+                )
+
+                if seeded_count > 0:
+                    logger.info(
+                        "[SEED] Redis candle history loaded into LiveContextBus "
+                        "(%d/%d pairs seeded, attempt %d)",
+                        seeded_count, len(PAIRS), attempt,
+                    )
+                    return
+
+                # No data yet — ingest may still be seeding
+                if attempt < max_retries:
+                    logger.warning(
+                        "[SEED] No candle data in Redis yet — "
+                        "waiting %.0fs before retry (%d/%d)",
+                        retry_delay, attempt, max_retries,
+                    )
+                    await asyncio.sleep(retry_delay)
+
+            # Exhausted all retries
+            logger.critical(
+                "[SEED] Redis still empty after %d retries (%.0fs total wait). "
+                "Engine will continue in DEGRADED mode — analysis will be blind "
+                "until live candles arrive.",
+                max_retries, max_retries * retry_delay,
+            )
         finally:
             await redis_client.aclose()
     except Exception as exc:
