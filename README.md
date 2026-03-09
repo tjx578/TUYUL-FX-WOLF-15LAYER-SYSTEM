@@ -139,8 +139,21 @@ audit · compliance · SOP · training.
 - `docs/FINAL_SYSTEM_REVIEW.md`
 - `docs/END_TO_END_SIMULATION.md`
 - `docs/GO_LIVE_CHECKLIST_PROP_FIRM.md`
+- `docs/OUTBOX_ADMIN_API.md` (inspect/replay outbox admin API)
 
 ⚠️ File di folder `docs/` **tidak pernah dipanggil oleh kode**.
+
+## Outbox Admin API (Ringkas)
+
+Endpoint outbox admin tersedia di prefix `/api/v1/outbox` (wajib auth).
+
+- `GET /api/v1/outbox/pending` (inspect + filter)
+- `GET /api/v1/outbox/{outbox_id}` (single record detail)
+- `POST /api/v1/outbox/retry-batch` (mass replay dengan safety cap)
+
+Contoh request-response lengkap:
+
+- `docs/OUTBOX_ADMIN_API.md`
 
 ---
 
