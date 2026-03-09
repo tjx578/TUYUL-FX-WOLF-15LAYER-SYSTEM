@@ -1,28 +1,24 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { Card } from "@/components/primitives/Card";
 import type { OperatorPreferences } from "@/contracts/preferences";
 import { usePreferencesQuery } from "@/hooks/queries/usePreferencesQuery";
 import { useSavePreferencesMutation } from "@/hooks/mutations/useSavePreferencesMutation";
-
-const defaultPrefs: OperatorPreferences = {
-  density: "comfortable",
-  showLatency: true,
-  showHashes: false,
-  layoutPreset: "default",
-};
+import { usePreferencesStore } from "@/store/usePreferencesStore";
 
 export default function PreferencesPanel() {
   const { data } = usePreferencesQuery();
   const saveMutation = useSavePreferencesMutation();
-  const [prefs, setPrefs] = useState<OperatorPreferences>(defaultPrefs);
+  const prefs = usePreferencesStore((state) => state.preferences);
+  const setPreferences = usePreferencesStore((state) => state.setPreferences);
+  const patchPreferences = usePreferencesStore((state) => state.patchPreferences);
 
   useEffect(() => {
     if (data) {
-      setPrefs(data);
+      setPreferences(data);
     }
-  }, [data]);
+  }, [data, setPreferences]);
 
   return (
     <Card className="mt-4">
@@ -33,7 +29,9 @@ export default function PreferencesPanel() {
           <select
             className="mt-1 w-full rounded border border-white/20 bg-slate-900 px-2 py-1"
             value={prefs.density}
-            onChange={(e) => setPrefs((p) => ({ ...p, density: e.target.value as OperatorPreferences["density"] }))}
+            onChange={(e) =>
+              patchPreferences({ density: e.target.value as OperatorPreferences["density"] })
+            }
           >
             <option value="comfortable">Comfortable</option>
             <option value="compact">Compact</option>
@@ -45,7 +43,7 @@ export default function PreferencesPanel() {
             className="mt-1 w-full rounded border border-white/20 bg-slate-900 px-2 py-1"
             value={prefs.layoutPreset}
             onChange={(e) =>
-              setPrefs((p) => ({ ...p, layoutPreset: e.target.value as OperatorPreferences["layoutPreset"] }))
+              patchPreferences({ layoutPreset: e.target.value as OperatorPreferences["layoutPreset"] })
             }
           >
             <option value="default">Default</option>
@@ -59,7 +57,7 @@ export default function PreferencesPanel() {
           <input
             type="checkbox"
             checked={prefs.showLatency}
-            onChange={(e) => setPrefs((p) => ({ ...p, showLatency: e.target.checked }))}
+            onChange={(e) => patchPreferences({ showLatency: e.target.checked })}
           />{" "}
           Show latency
         </label>
@@ -67,7 +65,7 @@ export default function PreferencesPanel() {
           <input
             type="checkbox"
             checked={prefs.showHashes}
-            onChange={(e) => setPrefs((p) => ({ ...p, showHashes: e.target.checked }))}
+            onChange={(e) => patchPreferences({ showHashes: e.target.checked })}
           />{" "}
           Show hashes
         </label>

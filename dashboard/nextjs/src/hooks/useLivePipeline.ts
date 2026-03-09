@@ -4,6 +4,7 @@ import { useEffect } from "react";
 import { fetchLatestPipelineResult } from "@/services/pipelineService";
 import { connectLiveUpdates } from "@/services/wsService";
 import { useAccountStore } from "@/store/useAccountStore";
+import { usePreferencesStore } from "@/store/usePreferencesStore";
 import { useRiskStore } from "@/store/useRiskStore";
 import { useSystemStore } from "@/store/useSystemStore";
 
@@ -14,6 +15,7 @@ interface UseLivePipelineOptions {
 
 export function useLivePipeline(options: UseLivePipelineOptions = {}) {
   const { setLatestPipelineResult, updateTrade } = useAccountStore();
+  const setPreferences = usePreferencesStore((s) => s.setPreferences);
   const setComplianceState = useRiskStore((s) => s.setComplianceState);
   const setWsStatus = useSystemStore((s) => s.setWsStatus);
   const setSystem = useSystemStore((s) => s.setSystem);
@@ -55,6 +57,10 @@ export function useLivePipeline(options: UseLivePipelineOptions = {}) {
         if (event.type === "ExecutionStateUpdated") {
           updateTrade(event.payload.trade);
         }
+
+        if (event.type === "PreferencesUpdated") {
+          setPreferences(event.payload);
+        }
       },
       onStatusChange: (status) => {
         setWsStatus(status);
@@ -83,6 +89,7 @@ export function useLivePipeline(options: UseLivePipelineOptions = {}) {
     options.accountId,
     setLatestPipelineResult,
     updateTrade,
+    setPreferences,
     setComplianceState,
     setMode,
     setSystem,

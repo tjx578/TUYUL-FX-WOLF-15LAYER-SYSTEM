@@ -1,13 +1,6 @@
-import { z } from "zod";
 import type { OperatorPreferences } from "@/contracts/preferences";
+import { PreferencesSchema } from "@/schema/preferencesSchema";
 import { apiClient } from "./apiClient";
-
-export const PreferencesSchema = z.object({
-  density: z.enum(["compact", "comfortable"]),
-  showLatency: z.boolean(),
-  showHashes: z.boolean(),
-  layoutPreset: z.enum(["default", "risk_focus", "pipeline_focus"]),
-});
 
 export async function fetchPreferences(): Promise<OperatorPreferences> {
   const { data } = await apiClient.get("/preferences");

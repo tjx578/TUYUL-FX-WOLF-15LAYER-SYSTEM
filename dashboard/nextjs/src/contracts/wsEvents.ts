@@ -1,5 +1,6 @@
 import type { ExecutionStateUpdatedPayload } from "./execution";
 import type { PipelineResultView } from "./pipelineResult";
+import type { OperatorPreferences } from "./preferences";
 
 export interface RiskStateView {
   account_id: string;
@@ -32,8 +33,14 @@ export interface SystemStatusUpdatedEvent {
   payload: SystemStatusView;
 }
 
+export interface PreferencesUpdatedEvent {
+  type: "PreferencesUpdated";
+  payload: OperatorPreferences;
+}
+
 export type WsEvent =
   | PipelineResultUpdatedEvent
   | ExecutionStateUpdatedEvent
   | RiskStateUpdatedEvent
-  | SystemStatusUpdatedEvent;
+  | SystemStatusUpdatedEvent
+  | PreferencesUpdatedEvent;

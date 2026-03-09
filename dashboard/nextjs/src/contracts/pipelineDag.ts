@@ -4,6 +4,8 @@ export interface PipelineDagNode {
   id: string;
   label: string;
   state: DagNodeState;
+  x?: number;
+  y?: number;
 }
 
 export interface PipelineDagEdge {

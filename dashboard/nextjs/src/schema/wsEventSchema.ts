@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { ExecutionStateUpdatedSchema } from "./executionSchema";
 import { PipelineResultSchema } from "./pipelineResultSchema";
+import { PreferencesSchema } from "./preferencesSchema";
 
 const RiskStateSchema = z.object({
   account_id: z.string().min(1),
@@ -33,11 +34,17 @@ export const SystemStatusUpdatedEventSchema = z.object({
   payload: SystemStatusSchema,
 });
 
+export const PreferencesUpdatedEventSchema = z.object({
+  type: z.literal("PreferencesUpdated"),
+  payload: PreferencesSchema,
+});
+
 export const WsEventSchema = z.discriminatedUnion("type", [
   PipelineResultUpdatedEventSchema,
   ExecutionStateUpdatedEventSchema,
   RiskStateUpdatedEventSchema,
   SystemStatusUpdatedEventSchema,
+  PreferencesUpdatedEventSchema,
 ]);
 
 export type WsEvent = z.infer<typeof WsEventSchema>;
