@@ -20,8 +20,7 @@ RUN apt-get update \
 
 COPY requirements.txt .
 RUN pip install --upgrade pip \
-    && pip wheel --no-cache-dir --no-deps -r requirements.txt -w /wheels \
-    && pip wheel --no-cache-dir --no-deps gunicorn uvicorn -w /wheels
+    && pip wheel --no-cache-dir --no-deps -r requirements.txt -w /wheels
 
 # ---------- STAGE 2: RUNTIME ----------
 FROM python:3.11-slim AS runtime
