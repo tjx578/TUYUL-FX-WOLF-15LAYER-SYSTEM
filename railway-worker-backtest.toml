@@ -3,6 +3,9 @@ builder = "DOCKERFILE"
 dockerfilePath = "Dockerfile"
 
 [deploy]
-startCommand = "python -m services.worker.nightly_backtest"
+startCommand = "bash deploy/railway/start_worker.sh"
 restartPolicyType = "NEVER"
 cronSchedule = "30 1 * * *"
+
+[env]
+WOLF15_WORKER_JOB = "backtest"

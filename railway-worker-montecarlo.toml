@@ -3,6 +3,9 @@ builder = "DOCKERFILE"
 dockerfilePath = "Dockerfile"
 
 [deploy]
-startCommand = "python -m services.worker.montecarlo_job"
+startCommand = "bash deploy/railway/start_worker.sh"
 restartPolicyType = "NEVER"
 cronSchedule = "0 1 * * *"
+
+[env]
+WOLF15_WORKER_JOB = "montecarlo"
