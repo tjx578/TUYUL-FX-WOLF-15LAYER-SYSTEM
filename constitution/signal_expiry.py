@@ -19,7 +19,7 @@ TIMEFRAME_TTL: dict[str, int] = {
 DEFAULT_TTL = 300
 
 
-def assign_expiry(signal: dict, primary_timeframe: str = "H1") -> dict[str, Any]:
+def assign_expiry(signal: dict[str, Any], primary_timeframe: str = "H1") -> dict[str, Any]:
     """Attach expires_at to an L12 signal."""
     ttl = TIMEFRAME_TTL.get(primary_timeframe, DEFAULT_TTL)
     signal["expires_at"] = time.time() + ttl
@@ -27,7 +27,7 @@ def assign_expiry(signal: dict, primary_timeframe: str = "H1") -> dict[str, Any]
     return signal
 
 
-def is_signal_valid(signal: dict) -> tuple[bool, str]:
+def is_signal_valid(signal: dict[str, Any]) -> tuple[bool, str]:
     """Check if signal is within expiry window. Call before execution."""
     expires_at = signal.get("expires_at")
     if expires_at is None:
