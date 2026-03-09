@@ -5,6 +5,7 @@ import type { PropsWithChildren } from "react";
 import { buildAuthorityKey } from "@/lib/authorityKey";
 import { useToastStore } from "@/store/useToastStore";
 import { useAuthoritySurface } from "@/hooks/useAuthoritySurface";
+import { useActionThrottle } from "@/hooks/useActionThrottle";
 import { useAuthorityStore } from "@/store/useAuthorityStore";
 
 interface Props extends PropsWithChildren {
@@ -15,6 +16,7 @@ interface Props extends PropsWithChildren {
   className?: string;
   ariaLabel?: string;
   invalidateOnSuccess?: boolean;
+  throttleMs?: number;
   onClick?: () => void | Promise<void>;
 }
 
@@ -26,12 +28,15 @@ export function ProtectedActionButton({
   className,
   ariaLabel,
   invalidateOnSuccess = true,
+  throttleMs = 1_500,
   onClick,
   children,
 }: Props) {
   const pushToast = useToastStore((state) => state.push);
   const invalidate = useAuthorityStore((state) => state.invalidate);
   const { authority, loading } = useAuthoritySurface({ action, accountId, tradeId });
+  const throttleKey = `protected-action:${buildAuthorityKey(action, accountId, tradeId)}`;
+  const throttle = useActionThrottle(throttleKey, throttleMs);
 
   const canRun = Boolean(authority?.allowed);
   const finalDisabled = disabled || loading || !canRun;
@@ -55,7 +60,18 @@ export function ProtectedActionButton({
       return;
     }
 
+    if (throttle.isThrottled()) {
+      const retryIn = throttle.getRemainingMs();
+      pushToast({
+        title: "Action throttled",
+        description: `Please wait ${Math.ceil(retryIn / 100) / 10}s before retrying this action.`,
+        level: "info",
+      });
+      return;
+    }
+
     try {
+      throttle.markNow();
       await onClick?.();
       if (invalidateOnSuccess) {
         invalidate(buildAuthorityKey(action, accountId, tradeId));

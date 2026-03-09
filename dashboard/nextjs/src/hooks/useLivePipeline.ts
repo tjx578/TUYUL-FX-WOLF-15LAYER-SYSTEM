@@ -4,6 +4,8 @@ import { useEffect } from "react";
 import { fetchLatestPipelineResult } from "@/services/pipelineService";
 import { connectLiveUpdates } from "@/services/wsService";
 import { useAccountStore } from "@/store/useAccountStore";
+import { useRiskStore } from "@/store/useRiskStore";
+import { useSystemStore } from "@/store/useSystemStore";
 
 interface UseLivePipelineOptions {
   symbol?: string;
@@ -12,6 +14,18 @@ interface UseLivePipelineOptions {
 
 export function useLivePipeline(options: UseLivePipelineOptions = {}) {
   const { setLatestPipelineResult, updateTrade } = useAccountStore();
+  const setComplianceState = useRiskStore((s) => s.setComplianceState);
+  const setWsStatus = useSystemStore((s) => s.setWsStatus);
+  const setSystem = useSystemStore((s) => s.setSystem);
+  const setMode = useSystemStore((s) => s.setMode);
+
+  const toComplianceState = (governance?: string): string => {
+    if (!governance || governance === "OK") return "COMPLIANCE_NORMAL";
+    if (governance === "BLOCKED") return "COMPLIANCE_BLOCK";
+    if (governance === "CAUTION") return "COMPLIANCE_CAUTION";
+    if (governance === "DOWNGRADED") return "COMPLIANCE_CAUTION";
+    return "COMPLIANCE_NORMAL";
+  };
 
   useEffect(() => {
     let mounted = true;
@@ -20,24 +34,43 @@ export function useLivePipeline(options: UseLivePipelineOptions = {}) {
       .then((result) => {
         if (mounted) {
           setLatestPipelineResult(result);
+          setComplianceState(toComplianceState(result.governance_state));
         }
       })
-      .catch(() => {
-        // Keep silent in PR-2; UI error/toast follows in next PR.
+      .catch((error) => {
+        setMode("DEGRADED");
+        setSystem({
+          mode: "DEGRADED",
+          reason: error instanceof Error ? error.message : "Initial pipeline fetch failed",
+        });
       });
 
     const ws = connectLiveUpdates({
       onEvent: (event) => {
         if (event.type === "PipelineResultUpdated") {
           setLatestPipelineResult(event.payload);
+          setComplianceState(toComplianceState(event.payload.governance_state));
         }
 
         if (event.type === "ExecutionStateUpdated") {
           updateTrade(event.payload.trade);
         }
       },
-      onError: () => {
-        // Keep silent in PR-2; UI error/toast follows in next PR.
+      onStatusChange: (status) => {
+        setWsStatus(status);
+        if (status !== "CONNECTED") {
+          setMode("DEGRADED");
+        }
+      },
+      onDegradation: (status) => {
+        setSystem(status);
+      },
+      onError: (error) => {
+        setMode("DEGRADED");
+        setSystem({
+          mode: "DEGRADED",
+          reason: error instanceof Error ? error.message : "Live updates channel error",
+        });
       },
     });
 
@@ -45,5 +78,14 @@ export function useLivePipeline(options: UseLivePipelineOptions = {}) {
       mounted = false;
       ws.close();
     };
-  }, [options.symbol, options.accountId, setLatestPipelineResult, updateTrade]);
+  }, [
+    options.symbol,
+    options.accountId,
+    setLatestPipelineResult,
+    updateTrade,
+    setComplianceState,
+    setMode,
+    setSystem,
+    setWsStatus,
+  ]);
 }

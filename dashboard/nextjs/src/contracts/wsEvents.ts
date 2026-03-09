@@ -6,6 +6,12 @@ export interface RiskStateView {
   dd_pct: number;
 }
 
+export interface SystemStatusView {
+  mode: "NORMAL" | "DEGRADED";
+  reason?: string;
+  updated_at?: string;
+}
+
 export interface PipelineResultUpdatedEvent {
   type: "PipelineResultUpdated";
   payload: PipelineResultView;
@@ -21,7 +27,13 @@ export interface RiskStateUpdatedEvent {
   payload: RiskStateView;
 }
 
+export interface SystemStatusUpdatedEvent {
+  type: "SystemStatusUpdated";
+  payload: SystemStatusView;
+}
+
 export type WsEvent =
   | PipelineResultUpdatedEvent
   | ExecutionStateUpdatedEvent
-  | RiskStateUpdatedEvent;
+  | RiskStateUpdatedEvent
+  | SystemStatusUpdatedEvent;

@@ -7,6 +7,12 @@ const RiskStateSchema = z.object({
   dd_pct: z.number(),
 });
 
+const SystemStatusSchema = z.object({
+  mode: z.union([z.literal("NORMAL"), z.literal("DEGRADED")]),
+  reason: z.string().optional(),
+  updated_at: z.string().optional(),
+});
+
 export const PipelineResultUpdatedEventSchema = z.object({
   type: z.literal("PipelineResultUpdated"),
   payload: PipelineResultSchema,
@@ -22,10 +28,16 @@ export const RiskStateUpdatedEventSchema = z.object({
   payload: RiskStateSchema,
 });
 
+export const SystemStatusUpdatedEventSchema = z.object({
+  type: z.literal("SystemStatusUpdated"),
+  payload: SystemStatusSchema,
+});
+
 export const WsEventSchema = z.discriminatedUnion("type", [
   PipelineResultUpdatedEventSchema,
   ExecutionStateUpdatedEventSchema,
   RiskStateUpdatedEventSchema,
+  SystemStatusUpdatedEventSchema,
 ]);
 
 export type WsEvent = z.infer<typeof WsEventSchema>;
