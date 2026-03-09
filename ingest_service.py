@@ -145,6 +145,54 @@ def _update_macro_regime(enabled_symbols: list[str]) -> None:
             logger.error(f"Macro regime failed for {symbol}: {exc}")
 
 
+async def _cold_start_m15_for_warmup(
+    fetcher: FinnhubCandleFetcher,
+    enabled_symbols: list[str],
+    warmup_results: dict[str, dict[str, list[dict[str, Any]]]],
+    bars: int = 100,
+) -> None:
+    """Fetch M15 candles via REST cold-start and merge into *warmup_results*.
+
+    ``warmup_all()`` deliberately excludes M15 (normally built from WS ticks),
+    but the engine's ``RedisConsumer`` warmup gate requires M15 bars.  This
+    function fills the gap so that ``_seed_redis_candle_history()`` writes
+    M15 into Redis alongside the higher timeframes.
+
+    Uses the public ``fetch()`` API and seeds LiveContextBus via
+    ``context_bus.update_candle()``.
+    """
+    if not enabled_symbols:
+        return
+
+    logger.info(
+        "M15 cold-start: fetching %d bars for %d symbols (Redis seed)",
+        bars,
+        len(enabled_symbols),
+    )
+
+    async def _fetch_m15(symbol: str) -> None:
+        try:
+            candles = await fetcher.fetch(symbol, "M15", bars)
+            if not candles:
+                logger.warning("M15 cold-start: no bars for %s", symbol)
+                return
+            for candle in candles:
+                fetcher.context_bus.update_candle(candle)
+            warmup_results.setdefault(symbol, {})["M15"] = candles
+            logger.debug("M15 cold-start: %d bars for %s", len(candles), symbol)
+        except Exception as exc:
+            logger.error("M15 cold-start failed for %s: %s", symbol, exc)
+
+    await asyncio.gather(*[_fetch_m15(s) for s in enabled_symbols], return_exceptions=True)
+
+    m15_count = sum(
+        1
+        for sym_data in warmup_results.values()
+        if "M15" in sym_data and sym_data["M15"]
+    )
+    logger.info("M15 cold-start complete: %d/%d symbols seeded", m15_count, len(enabled_symbols))
+
+
 async def _run_warmup(
     system_state: SystemStateManager, enabled_symbols: list[str]
 ) -> dict[str, dict[str, list[dict[str, Any]]]]:
@@ -159,6 +207,13 @@ async def _run_warmup(
         try:
             fetcher = FinnhubCandleFetcher()
             warmup_results = await fetcher.warmup_all()
+
+            # M15 is excluded from warmup_all() (normally built from WS
+            # ticks), but the engine's RedisConsumer warmup gate requires
+            # M15 bars.  Fetch via REST cold-start so they get seeded into
+            # Redis by _seed_redis_candle_history().
+            await _cold_start_m15_for_warmup(fetcher, enabled_symbols, warmup_results)
+
             system_state.validate_warmup(warmup_results) # pyright: ignore[reportUnknownMemberType]
             _update_macro_regime(enabled_symbols)
             _set_state_from_warmup(system_state)

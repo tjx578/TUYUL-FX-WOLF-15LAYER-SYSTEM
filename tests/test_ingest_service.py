@@ -94,3 +94,87 @@ async def test_run_ingest_services_closes_redis_when_ping_fails(
             await ingest_service_module.run_ingest_services(has_api_key=True)
 
     fake_redis.aclose.assert_awaited_once()
+
+
+# ── M15 cold-start Redis seeding tests ─────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_cold_start_m15_merges_into_warmup_results(
+    ingest_service_module: Any,
+) -> None:
+    """_cold_start_m15_for_warmup should fetch M15 for each symbol
+    and merge candles into warmup_results."""
+    fake_fetcher = MagicMock()
+    fake_fetcher.context_bus = MagicMock()
+
+    async def fake_fetch(symbol: str, tf: str, bars: int) -> list[dict[str, object]]:
+        return [{"symbol": symbol, "timeframe": tf, "close": 1.0}]
+
+    fake_fetcher.fetch = AsyncMock(side_effect=fake_fetch)
+
+    warmup_results: dict[str, dict[str, list[dict[str, object]]]] = {
+        "EURUSD": {"H1": [{"close": 1.1}]},
+        "GBPUSD": {"H1": [{"close": 1.3}]},
+    }
+
+    await ingest_service_module._cold_start_m15_for_warmup(
+        fake_fetcher, ["EURUSD", "GBPUSD"], warmup_results, bars=50
+    )
+
+    # M15 should now be present for both symbols
+    assert "M15" in warmup_results["EURUSD"]
+    assert "M15" in warmup_results["GBPUSD"]
+    # Existing H1 data must be preserved
+    assert "H1" in warmup_results["EURUSD"]
+    assert "H1" in warmup_results["GBPUSD"]
+    # fetch called once per symbol with M15
+    assert fake_fetcher.fetch.await_count == 2
+    # context_bus.update_candle called for each candle
+    assert fake_fetcher.context_bus.update_candle.call_count == 2
+
+
+@pytest.mark.asyncio
+async def test_cold_start_m15_noop_for_empty_symbols(
+    ingest_service_module: Any,
+) -> None:
+    """Empty symbol list → nothing happens."""
+    warmup_results: dict[str, dict[str, list[dict[str, object]]]] = {}
+    fake_fetcher = MagicMock()
+    fake_fetcher.fetch = AsyncMock()
+
+    await ingest_service_module._cold_start_m15_for_warmup(
+        fake_fetcher, [], warmup_results
+    )
+
+    fake_fetcher.fetch.assert_not_awaited()
+    assert warmup_results == {}
+
+
+@pytest.mark.asyncio
+async def test_seed_redis_includes_m15(
+    ingest_service_module: Any,
+) -> None:
+    """_seed_redis_candle_history must write M15 keys to Redis when present in warmup_results."""
+    fake_pipe = MagicMock()
+    fake_pipe.rpush = MagicMock()
+    fake_pipe.expire = MagicMock()
+    fake_pipe.execute = AsyncMock(return_value=[])
+
+    fake_redis = MagicMock()
+    fake_redis.pipeline = MagicMock(return_value=fake_pipe)
+    fake_redis.llen = AsyncMock(return_value=0)
+
+    warmup_results = {
+        "EURUSD": {
+            "H1": [{"close": 1.1}],
+            "M15": [{"close": 1.2}, {"close": 1.3}],
+        }
+    }
+
+    await ingest_service_module._seed_redis_candle_history(fake_redis, warmup_results)
+
+    # Collect all rpush calls — should contain both H1 and M15 keys
+    rpush_keys = [call.args[0] for call in fake_pipe.rpush.call_args_list]
+    assert "wolf15:candle_history:EURUSD:M15" in rpush_keys
+    assert "wolf15:candle_history:EURUSD:H1" in rpush_keys
