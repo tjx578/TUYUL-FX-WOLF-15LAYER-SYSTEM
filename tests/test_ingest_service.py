@@ -178,3 +178,57 @@ async def test_seed_redis_includes_m15(
     rpush_keys = [call.args[0] for call in fake_pipe.rpush.call_args_list]
     assert "wolf15:candle_history:EURUSD:M15" in rpush_keys
     assert "wolf15:candle_history:EURUSD:H1" in rpush_keys
+
+
+@pytest.mark.asyncio
+async def test_cold_start_m15_retries_on_total_failure(
+    ingest_service_module: Any,
+) -> None:
+    """When ALL symbol fetches fail, _cold_start_m15_for_warmup should retry
+    up to 3 times before giving up (0 symbols seeded)."""
+    fake_fetcher = MagicMock()
+    fake_fetcher.context_bus = MagicMock()
+    fake_fetcher.fetch = AsyncMock(side_effect=RuntimeError("API down"))
+
+    warmup_results: dict[str, dict[str, list[dict[str, object]]]] = {
+        "EURUSD": {"H1": [{"close": 1.1}]},
+    }
+
+    await ingest_service_module._cold_start_m15_for_warmup(
+        fake_fetcher, ["EURUSD"], warmup_results, bars=50
+    )
+
+    # fetch was called 3 times (1 symbol × 3 retry attempts)
+    assert fake_fetcher.fetch.await_count == 3
+    # M15 should NOT appear in warmup_results (all attempts failed)
+    assert "M15" not in warmup_results.get("EURUSD", {})
+
+
+@pytest.mark.asyncio
+async def test_cold_start_m15_succeeds_on_second_attempt(
+    ingest_service_module: Any,
+) -> None:
+    """If the first attempt fails but the second succeeds, should stop retrying."""
+    fake_fetcher = MagicMock()
+    fake_fetcher.context_bus = MagicMock()
+
+    call_count = 0
+
+    async def flaky_fetch(symbol: str, tf: str, bars: int) -> list[dict[str, object]]:
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            raise RuntimeError("temporary failure")
+        return [{"symbol": symbol, "timeframe": tf, "close": 1.0}]
+
+    fake_fetcher.fetch = AsyncMock(side_effect=flaky_fetch)
+
+    warmup_results: dict[str, dict[str, list[dict[str, object]]]] = {}
+
+    await ingest_service_module._cold_start_m15_for_warmup(
+        fake_fetcher, ["EURUSD"], warmup_results, bars=50
+    )
+
+    # Should have succeeded on attempt 2
+    assert call_count == 2
+    assert "M15" in warmup_results.get("EURUSD", {})

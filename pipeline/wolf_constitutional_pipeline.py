@@ -420,9 +420,19 @@ class WolfConstitutionalPipeline:
                         *(_run_single(layer_id) for layer_id in runnable),
                     )
                 except Exception as exc:
+                    logger.error(
+                        "DAG_BATCH_FAILED: batch=%d, runnable=%s, "
+                        "root_cause=%s: %s",
+                        batch_idx,
+                        ",".join(runnable),
+                        type(exc).__name__,
+                        exc,
+                        exc_info=True,
+                    )
                     raise RuntimeError(
-                        "DAG_BATCH_FAILED: "
-                        f"batch={batch_idx}, runnable={','.join(runnable)}"
+                        f"DAG_BATCH_FAILED: batch={batch_idx}, "
+                        f"runnable={','.join(runnable)}, "
+                        f"cause={type(exc).__name__}: {exc}"
                     ) from exc
                 for layer_id, layer_result in completed:
                     output[layer_id] = layer_result

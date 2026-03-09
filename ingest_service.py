@@ -183,14 +183,38 @@ async def _cold_start_m15_for_warmup(
         except Exception as exc:
             logger.error("M15 cold-start failed for %s: %s", symbol, exc)
 
-    await asyncio.gather(*[_fetch_m15(s) for s in enabled_symbols], return_exceptions=True)
+    _M15_COLD_START_MAX_RETRIES = 3  # noqa: N806
+    _M15_COLD_START_DELAY = 2.0  # noqa: N806
 
-    m15_count = sum(
-        1
-        for sym_data in warmup_results.values()
-        if "M15" in sym_data and sym_data["M15"]
+    for m15_attempt in range(1, _M15_COLD_START_MAX_RETRIES + 1):
+        await asyncio.gather(*[_fetch_m15(s) for s in enabled_symbols], return_exceptions=True)
+
+        m15_count = sum(
+            1
+            for sym_data in warmup_results.values()
+            if "M15" in sym_data and sym_data["M15"]
+        )
+        if m15_count > 0:
+            logger.info(
+                "M15 cold-start complete: %d/%d symbols seeded (attempt %d)",
+                m15_count, len(enabled_symbols), m15_attempt,
+            )
+            return
+
+        if m15_attempt < _M15_COLD_START_MAX_RETRIES:
+            logger.warning(
+                "M15 cold-start: 0/%d symbols seeded — "
+                "retrying in %.0fs (attempt %d/%d)",
+                len(enabled_symbols), _M15_COLD_START_DELAY,
+                m15_attempt, _M15_COLD_START_MAX_RETRIES,
+            )
+            await asyncio.sleep(_M15_COLD_START_DELAY)
+
+    logger.error(
+        "M15 cold-start FAILED after %d attempts: 0/%d symbols seeded. "
+        "Engine warmup gate will block until live M15 ticks arrive.",
+        _M15_COLD_START_MAX_RETRIES, len(enabled_symbols),
     )
-    logger.info("M15 cold-start complete: %d/%d symbols seeded", m15_count, len(enabled_symbols))
 
 
 async def _run_warmup(

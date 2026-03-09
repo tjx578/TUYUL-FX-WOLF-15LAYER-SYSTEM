@@ -115,30 +115,53 @@ async def _seed_from_redis() -> None:
             consumer = RedisConsumer(symbols=PAIRS, redis_client=redis_client)
             bus = LiveContextBus()
 
+            # Phase 1: try to get M15 data (ideal path)
+            _m15_warmup = {"M15": 1}
+            # Phase 2 fallback: accept any timeframe so engine isn't stuck
+            _any_warmup = {"H1": 1}
+            # After this many attempts, relax from M15 to any-TF
+            _relax_after = max(max_retries // 2, 3)
+
             for attempt in range(1, max_retries + 1):
                 await consumer.load_candle_history()
 
-                # Check how many pairs have at least *some* M15 data
-                _minimal_warmup = {"M15": 1}
-                seeded_count = sum(
+                # Check M15-specific warmup
+                m15_count = sum(
                     1 for pair in PAIRS
-                    if bus.check_warmup(pair, _minimal_warmup).get("ready")
+                    if bus.check_warmup(pair, _m15_warmup).get("ready")
                 )
 
-                if seeded_count > 0:
+                if m15_count > 0:
                     logger.info(
                         "[SEED] Redis candle history loaded into LiveContextBus "
-                        "(%d/%d pairs seeded, attempt %d)",
-                        seeded_count, len(PAIRS), attempt,
+                        "(%d/%d pairs with M15, attempt %d)",
+                        m15_count, len(PAIRS), attempt,
                     )
                     return
+
+                # After _relax_after attempts, accept any-TF data so
+                # engine doesn't deadlock waiting for M15 that ingest
+                # may not have seeded.
+                if attempt >= _relax_after:
+                    any_tf_count = sum(
+                        1 for pair in PAIRS
+                        if bus.check_warmup(pair, _any_warmup).get("ready")
+                    )
+                    if any_tf_count > 0:
+                        logger.warning(
+                            "[SEED] M15 unavailable but %d/%d pairs have H1 data — "
+                            "proceeding without M15 (attempt %d). "
+                            "Pipeline warmup gate may still block until live M15 arrives.",
+                            any_tf_count, len(PAIRS), attempt,
+                        )
+                        return
 
                 # No data yet — ingest may still be seeding
                 if attempt < max_retries:
                     logger.warning(
-                        "[SEED] No candle data in Redis yet — "
-                        "waiting %.0fs before retry (%d/%d)",
-                        retry_delay, attempt, max_retries,
+                        "[SEED] No candle data in Redis yet "
+                        "(M15=%d, attempt %d/%d) — waiting %.0fs",
+                        m15_count, attempt, max_retries, retry_delay,
                     )
                     await asyncio.sleep(retry_delay)
 
