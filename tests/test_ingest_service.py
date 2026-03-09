@@ -96,66 +96,15 @@ async def test_run_ingest_services_closes_redis_when_ping_fails(
     fake_redis.aclose.assert_awaited_once()
 
 
-# ── M15 cold-start Redis seeding tests ─────────────────────────────
+# ── Redis candle history seeding tests ─────────────────────────────────────
 
 
 @pytest.mark.asyncio
-async def test_cold_start_m15_merges_into_warmup_results(
+async def test_seed_redis_writes_h1_keys(
     ingest_service_module: Any,
 ) -> None:
-    """_cold_start_m15_for_warmup should fetch M15 for each symbol
-    and merge candles into warmup_results."""
-    fake_fetcher = MagicMock()
-    fake_fetcher.context_bus = MagicMock()
-
-    async def fake_fetch(symbol: str, tf: str, bars: int) -> list[dict[str, object]]:
-        return [{"symbol": symbol, "timeframe": tf, "close": 1.0}]
-
-    fake_fetcher.fetch = AsyncMock(side_effect=fake_fetch)
-
-    warmup_results: dict[str, dict[str, list[dict[str, object]]]] = {
-        "EURUSD": {"H1": [{"close": 1.1}]},
-        "GBPUSD": {"H1": [{"close": 1.3}]},
-    }
-
-    await ingest_service_module._cold_start_m15_for_warmup(
-        fake_fetcher, ["EURUSD", "GBPUSD"], warmup_results, bars=50
-    )
-
-    # M15 should now be present for both symbols
-    assert "M15" in warmup_results["EURUSD"]
-    assert "M15" in warmup_results["GBPUSD"]
-    # Existing H1 data must be preserved
-    assert "H1" in warmup_results["EURUSD"]
-    assert "H1" in warmup_results["GBPUSD"]
-    # fetch called once per symbol with M15
-    assert fake_fetcher.fetch.await_count == 2
-    # context_bus.update_candle called for each candle
-    assert fake_fetcher.context_bus.update_candle.call_count == 2
-
-
-@pytest.mark.asyncio
-async def test_cold_start_m15_noop_for_empty_symbols(
-    ingest_service_module: Any,
-) -> None:
-    """Empty symbol list → nothing happens."""
-    warmup_results: dict[str, dict[str, list[dict[str, object]]]] = {}
-    fake_fetcher = MagicMock()
-    fake_fetcher.fetch = AsyncMock()
-
-    await ingest_service_module._cold_start_m15_for_warmup(
-        fake_fetcher, [], warmup_results
-    )
-
-    fake_fetcher.fetch.assert_not_awaited()
-    assert warmup_results == {}
-
-
-@pytest.mark.asyncio
-async def test_seed_redis_includes_m15(
-    ingest_service_module: Any,
-) -> None:
-    """_seed_redis_candle_history must write M15 keys to Redis when present in warmup_results."""
+    """_seed_redis_candle_history must write REST-warmed timeframe keys (H1, H4, D1)
+    to Redis. M15 is NOT produced by ingest — it comes from tick data."""
     fake_pipe = MagicMock()
     fake_pipe.rpush = MagicMock()
     fake_pipe.expire = MagicMock()
@@ -168,67 +117,32 @@ async def test_seed_redis_includes_m15(
     warmup_results = {
         "EURUSD": {
             "H1": [{"close": 1.1}],
-            "M15": [{"close": 1.2}, {"close": 1.3}],
+            "H4": [{"close": 1.05}],
+            "D1": [{"close": 1.0}],
         }
     }
 
     await ingest_service_module._seed_redis_candle_history(fake_redis, warmup_results)
 
-    # Collect all rpush calls — should contain both H1 and M15 keys
     rpush_keys = [call.args[0] for call in fake_pipe.rpush.call_args_list]
-    assert "wolf15:candle_history:EURUSD:M15" in rpush_keys
     assert "wolf15:candle_history:EURUSD:H1" in rpush_keys
+    assert "wolf15:candle_history:EURUSD:H4" in rpush_keys
+    assert "wolf15:candle_history:EURUSD:D1" in rpush_keys
+    # M15 must NOT appear — it is built from tick data, not REST
+    assert "wolf15:candle_history:EURUSD:M15" not in rpush_keys
 
 
-@pytest.mark.asyncio
-async def test_cold_start_m15_retries_on_total_failure(
+def test_cold_start_m15_removed_from_module(
     ingest_service_module: Any,
 ) -> None:
-    """When ALL symbol fetches fail, _cold_start_m15_for_warmup should retry
-    up to 3 times before giving up (0 symbols seeded)."""
-    fake_fetcher = MagicMock()
-    fake_fetcher.context_bus = MagicMock()
-    fake_fetcher.fetch = AsyncMock(side_effect=RuntimeError("API down"))
+    """_cold_start_m15_for_warmup must not exist on ingest_service.
 
-    warmup_results: dict[str, dict[str, list[dict[str, object]]]] = {
-        "EURUSD": {"H1": [{"close": 1.1}]},
-    }
-
-    await ingest_service_module._cold_start_m15_for_warmup(
-        fake_fetcher, ["EURUSD"], warmup_results, bars=50
+    M15 comes from tick data (CandleBuilder), never from REST.
+    Fetching M15 from REST violates the architecture.
+    """
+    assert not hasattr(ingest_service_module, "_cold_start_m15_for_warmup"), (
+        "_cold_start_m15_for_warmup still present — should have been removed. "
+        "M15 must come from tick data only."
     )
 
-    # fetch was called 3 times (1 symbol × 3 retry attempts)
-    assert fake_fetcher.fetch.await_count == 3
-    # M15 should NOT appear in warmup_results (all attempts failed)
-    assert "M15" not in warmup_results.get("EURUSD", {})
 
-
-@pytest.mark.asyncio
-async def test_cold_start_m15_succeeds_on_second_attempt(
-    ingest_service_module: Any,
-) -> None:
-    """If the first attempt fails but the second succeeds, should stop retrying."""
-    fake_fetcher = MagicMock()
-    fake_fetcher.context_bus = MagicMock()
-
-    call_count = 0
-
-    async def flaky_fetch(symbol: str, tf: str, bars: int) -> list[dict[str, object]]:
-        nonlocal call_count
-        call_count += 1
-        if call_count == 1:
-            raise RuntimeError("temporary failure")
-        return [{"symbol": symbol, "timeframe": tf, "close": 1.0}]
-
-    fake_fetcher.fetch = AsyncMock(side_effect=flaky_fetch)
-
-    warmup_results: dict[str, dict[str, list[dict[str, object]]]] = {}
-
-    await ingest_service_module._cold_start_m15_for_warmup(
-        fake_fetcher, ["EURUSD"], warmup_results, bars=50
-    )
-
-    # Should have succeeded on attempt 2
-    assert call_count == 2
-    assert "M15" in warmup_results.get("EURUSD", {})
