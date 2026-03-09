@@ -46,7 +46,7 @@ ROUTER_ENTRIES: list[RouterEntry] = [
     # Instrument list + regime + sessions
     RouterEntry("api.instrument_routes", "router", "Instrument list + regime + sessions"),
     # Economic calendar + news-lock
-    RouterEntry("api.calendar_routes", "router", "Economic calendar + news-lock"),
+    RouterEntry("news.routes.calendar_routes", "router", "Economic calendar + news-lock"),
     # Frozen SignalContract read APIs
     RouterEntry("api.signals_router", "router", "Frozen signal read APIs"),
     # Read-only account APIs

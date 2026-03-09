@@ -45,6 +45,10 @@ class RepositoryError(NewsSubsystemError):
     """Raised for Redis or Postgres persistence failures."""
 
 
+class NewsNormalizationError(NewsSubsystemError):
+    """Raised when a raw provider event cannot be normalized safely."""
+
+
 class HtmlFallbackDisabledError(NewsSubsystemError):
     """Raised when HTML fallback is requested but not enabled via config."""
 

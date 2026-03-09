@@ -11,126 +11,100 @@
 --   - Redis is the primary cache; this table is best-effort write-behind.
 -- =============================================================================
 
--- ...existing code...
-
-    -- Metadata
-    event_url           TEXT,
-    status              TEXT        NOT NULL DEFAULT 'SCHEDULED'
-                                    CHECK (status = 'SCHEDULED' OR status = 'RELEASED' OR status = 'REVISED' OR status = 'CANCELLED'),
-    affected_pairs      JSONB       NOT NULL DEFAULT '[]'::jsonb,
-    fetched_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-
-    -- Audit
-    created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-
-    PRIMARY KEY (event_id),
-    CHECK (impact IN ('HIGH', 'MEDIUM', 'LOW', 'HOLIDAY', 'UNKNOWN')),
-    CHECK (jsonb_typeof(affected_pairs) = 'array')
-);
-
--- ...existing code...CREATE TABLE economic_events (
-    -- Row identity
-    event_id            TEXT        NOT NULL,
-    canonical_id        TEXT        NOT NULL,
-
-    -- Source provenance
-    source              TEXT        NOT NULL,
-    source_confidence   TEXT        NOT NULL CHECK (source_confidence IN ('high', 'medium', 'low')),
-
-    -- Content
-    title               TEXT        NOT NULL,
-    currency            TEXT        NOT NULL,
-    country             TEXT,
-
-    -- Impact
-    impact              TEXT        NOT NULL CHECK (impact IN ('HIGH', 'MEDIUM', 'LOW', 'HOLIDAY', 'UNKNOWN')),
-    impact_score        SMALLINT    NOT NULL DEFAULT 0,
-
-    -- Temporal
-    date                DATE        NOT NULL,
-    time                TEXT        NOT NULL DEFAULT '',
+DROP TABLE IF EXISTS economic_events;
+CREATE TABLE economic_events (
+    event_id            BIGSERIAL PRIMARY KEY,
+    canonical_id        TEXT NOT NULL,
+    date                DATE NOT NULL,
     datetime_utc        TIMESTAMPTZ,
-    timezone_source     TEXT        NOT NULL DEFAULT 'America/New_York',
-    is_timeless         BOOLEAN     NOT NULL DEFAULT FALSE,
-
-    -- Economic values
-    actual              TEXT,
-    forecast            TEXT,
-    previous            TEXT,
-    better_direction    TEXT,
+    currency            VARCHAR(3),
+    event_name          TEXT NOT NULL,
+    event_level         VARCHAR(50),
+    forecast            DECIMAL(20, 8),
+    previous            DECIMAL(20, 8),
+    actual              DECIMAL(20, 8),
+    source              VARCHAR(100) NOT NULL,
+    source_confidence   VARCHAR(20) NOT NULL,
+    impact              VARCHAR(20) NOT NULL
+                            CHECK (impact IN ('HIGH', 'MEDIUM', 'LOW', 'HOLIDAY', 'UNKNOWN')),
 
     -- Metadata
     event_url           TEXT,
-    status              TEXT        NOT NULL DEFAULT 'SCHEDULED'
-                                    CHECK (status IN ('SCHEDULED', 'RELEASED', 'REVISED', 'CANCELLED')),
-    affected_pairs      JSONB       NOT NULL DEFAULT '[]',
+    status              TEXT NOT NULL DEFAULT 'SCHEDULED'
+                            CHECK (status IN ('SCHEDULED', 'RELEASED', 'REVISED', 'CANCELLED')),
+    affected_pairs      JSONB NOT NULL DEFAULT '[]'::jsonb,
     fetched_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 
     -- Audit
     created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-
-    PRIMARY KEY (event_id)
+    updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- ---------------------------------------------------------------------------
 -- Partial unique index: one canonical record per high/medium-confidence event.
 -- Low-confidence (HTML scrape) events are not deduplicated by this index.
--- ---------------------------------------------------------------------------
-CREATE UNIQUE INDEX IF NOT EXISTS uidx_economic_events_canonical_hm
+-- Note: canonical_id is intentionally NOT marked UNIQUE at table level so that
+-- low-confidence duplicates are permitted.
+DROP INDEX IF EXISTS uidx_economic_events_canonical_hm;
+CREATE UNIQUE INDEX uidx_economic_events_canonical_hm
     ON economic_events (canonical_id)
-    WHERE source_confidence IN ('high', 'medium');
+    WHERE source_confidence = 'high' OR source_confidence = 'medium';
 
--- ---------------------------------------------------------------------------
 -- Supporting indexes for common query patterns.
--- ---------------------------------------------------------------------------
-
 -- Date lookup (most common access pattern)
-CREATE INDEX IF NOT EXISTS idx_economic_events_date
+DROP INDEX IF EXISTS idx_economic_events_date;
+CREATE INDEX idx_economic_events_date
     ON economic_events (date DESC);
 
 -- Currency filter
-CREATE INDEX IF NOT EXISTS idx_economic_events_currency
+DROP INDEX IF EXISTS idx_economic_events_currency;
+CREATE INDEX idx_economic_events_currency
     ON economic_events (currency);
 
 -- Impact filter
-CREATE INDEX IF NOT EXISTS idx_economic_events_impact
+DROP INDEX IF EXISTS idx_economic_events_impact;
+CREATE INDEX idx_economic_events_impact
     ON economic_events (impact);
 
 -- Source label
-CREATE INDEX IF NOT EXISTS idx_economic_events_source
+DROP INDEX IF EXISTS idx_economic_events_source;
+CREATE INDEX idx_economic_events_source
     ON economic_events (source);
 
 -- Status filter
-CREATE INDEX IF NOT EXISTS idx_economic_events_status
+DROP INDEX IF EXISTS idx_economic_events_status;
+CREATE INDEX idx_economic_events_status
     ON economic_events (status);
 
 -- Time-range queries (datetime_utc can be NULL for timeless events)
-CREATE INDEX IF NOT EXISTS idx_economic_events_datetime_utc
+DROP INDEX IF EXISTS idx_economic_events_datetime_utc;
+CREATE INDEX idx_economic_events_datetime_utc
     ON economic_events (datetime_utc)
     WHERE datetime_utc IS NOT NULL;
 
 -- Composite: date + impact (dashboard calendar filter)
-CREATE INDEX IF NOT EXISTS idx_economic_events_date_impact
+DROP INDEX IF EXISTS idx_economic_events_date_impact;
+CREATE INDEX idx_economic_events_date_impact
     ON economic_events (date DESC, impact);
 
 -- JSONB array membership: affected_pairs @> '["EURUSD"]'
-CREATE INDEX IF NOT EXISTS idx_economic_events_affected_pairs
+DROP INDEX IF EXISTS idx_economic_events_affected_pairs;
+CREATE INDEX idx_economic_events_affected_pairs
     ON economic_events USING GIN (affected_pairs);
 
--- ---------------------------------------------------------------------------
--- Auto-update updated_at trigger
--- ---------------------------------------------------------------------------
-CREATE OR REPLACE FUNCTION _update_economic_events_updated_at()
-RETURNS TRIGGER LANGUAGE plpgsql AS $$
+-- Validation trigger: ensure affected_pairs is a valid JSONB array
+DROP FUNCTION IF EXISTS _validate_economic_events();
+CREATE FUNCTION _validate_economic_events()
+RETURNS TRIGGER AS $$
 BEGIN
-    NEW.updated_at = NOW();
+    IF jsonb_typeof(NEW.affected_pairs) <> 'array' THEN
+        RAISE EXCEPTION 'affected_pairs must be a JSONB array';
+    END IF;
+    NEW.updated_at := NOW();
     RETURN NEW;
 END;
-$$;
+$$ LANGUAGE plpgsql;
 
-DROP TRIGGER IF EXISTS trg_economic_events_updated_at ON economic_events;
-CREATE TRIGGER trg_economic_events_updated_at
-    BEFORE UPDATE ON economic_events
-    FOR EACH ROW EXECUTE FUNCTION _update_economic_events_updated_at();
+DROP TRIGGER IF EXISTS trg_validate_economic_events ON economic_events;
+CREATE TRIGGER trg_validate_economic_events
+    BEFORE INSERT OR UPDATE ON economic_events
+    FOR EACH ROW EXECUTE FUNCTION _validate_economic_events();

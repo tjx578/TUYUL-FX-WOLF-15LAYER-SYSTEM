@@ -21,7 +21,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from news.datetime_utils import is_timeless_time, parse_et_to_utc, today_et
-from news.exceptions import InvalidEventDateError
+from news.exceptions import InvalidEventDateError, NewsNormalizationError
 from news.impact_mapper import impact_score, map_ff_impact
 from news.models import (
     EconomicEvent,
@@ -179,3 +179,24 @@ def normalize_ff_events(
         except InvalidEventDateError as exc:
             log.warning("Skipping FF event due to unparseable datetime: %s | raw=%s", exc, raw)
     return results
+
+
+def normalize_event(
+    raw: dict[str, Any],
+    date_str: str | None = None,
+    fetched_at: datetime | None = None,
+) -> EconomicEvent:
+    """Generic alias used by contract tests and provider adapters."""
+    try:
+        return normalize_ff_event(raw, date_str=date_str, fetched_at=fetched_at)
+    except InvalidEventDateError as exc:
+        raise NewsNormalizationError(str(exc)) from exc
+
+
+def normalize_events(
+    raw_events: list[dict[str, Any]],
+    date_str: str | None = None,
+    fetched_at: datetime | None = None,
+) -> list[EconomicEvent]:
+    """Generic batch alias used by contract tests and provider adapters."""
+    return normalize_ff_events(raw_events, date_str=date_str, fetched_at=fetched_at)
