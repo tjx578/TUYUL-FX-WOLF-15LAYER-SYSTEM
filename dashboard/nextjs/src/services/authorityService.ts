@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { AuthoritySurface } from "@/contracts/authority";
 import { apiClient } from "./apiClient";
 
 export const AuthoritySurfaceSchema = z.object({
@@ -8,11 +9,17 @@ export const AuthoritySurfaceSchema = z.object({
   code: z.string().min(1).optional(),
 });
 
-export type AuthoritySurface = z.infer<typeof AuthoritySurfaceSchema>;
-
-export async function fetchAuthoritySurface(action: string) {
+export async function fetchAuthoritySurface(
+  action: string,
+  accountId?: string,
+  tradeId?: string
+): Promise<AuthoritySurface> {
   const response = await apiClient.get("/api/v1/authority/surface", {
-    params: { action },
+    params: {
+      action,
+      account_id: accountId,
+      trade_id: tradeId,
+    },
   });
 
   return AuthoritySurfaceSchema.parse(response.data);
