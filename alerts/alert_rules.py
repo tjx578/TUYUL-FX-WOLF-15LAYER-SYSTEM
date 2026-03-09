@@ -14,5 +14,6 @@ ALERT_RULES = {
     "SYSTEM_VIOLATION": True,
     "PRICE_DRIFT": True,
     "M15_COLD_START": True,
+    "SLO_THRESHOLD_BREACH": True,
 }
 # Placeholder

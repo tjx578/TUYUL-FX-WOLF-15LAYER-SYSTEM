@@ -9,6 +9,7 @@ BUG FIXES APPLIED:
 """
 
 import contextlib
+import hashlib
 import logging
 import os
 import threading
@@ -34,6 +35,7 @@ from accounts.risk_engine import RiskEngine  # noqa: F401
 from allocation.signal_service import SignalService
 from api.middleware.auth import verify_token
 from api.middleware.governance import enforce_write_policy
+from execution.idempotency_ledger import ExecutionIdempotencyLedger
 from infrastructure.redis_client import get_client
 from infrastructure.tracing import inject_trace_context, setup_tracer
 from journal.trade_journal_service import trade_journal_automation_service
@@ -54,6 +56,7 @@ _account_registry: dict[str, dict[str, Any]] = {}
 _signal_service = SignalService()
 _kill_switch = GlobalKillSwitch()
 _confirm_lock = threading.Lock()
+_execution_idempotency = ExecutionIdempotencyLedger()
 
 
 class _TradeJournalAutomationServiceProtocol(Protocol):
@@ -75,6 +78,7 @@ _journal_service = cast(_TradeJournalAutomationServiceProtocol, trade_journal_au
 ALLOC_REQUEST_STREAM = "allocation:request"
 IDEMPOTENCY_KEY_PREFIX = "idempotency:confirm:"
 IDEMPOTENCY_TTL_SEC = 60 * 60 * 24
+TRADE_OUTBOX_STREAM = "trade:outbox"
 
 
 async def _check_stale_data(pair: str) -> None:
@@ -156,6 +160,7 @@ class SkipSignalRequest(BaseModel):
 
 class ConfirmTradeRequest(BaseModel):
     trade_id: str
+    execution_intent_id: str | None = None
 
 
 class CloseTradeRequest(BaseModel):
@@ -177,6 +182,7 @@ class TradeLifecycleEventRequest(BaseModel):
     pnl: float | None = None
     reason: str | None = None
     metadata: dict[str, Any] | None = None
+    execution_intent_id: str | None = None
 
 
 class RiskCalculateRequest(BaseModel):
@@ -260,14 +266,68 @@ async def _persist_trade_write_through(
     *,
     event_type: str | None = None,
     event_payload: dict[str, Any] | None = None,
-) -> None:
+) -> bool:
     """Best-effort PostgreSQL write-through for trade lifecycle changes."""
     with contextlib.suppress(Exception):
-        await persist_trade_snapshot(
+        return await persist_trade_snapshot(
             trade,
             event_type=event_type,
             event_payload=event_payload,
         )
+    return False
+
+
+def _intent_from_parts(*parts: str) -> str:
+    raw = "::".join([p.strip() for p in parts if p and p.strip()])
+    if not raw:
+        raw = str(uuid.uuid4())
+    return hashlib.sha256(raw.encode()).hexdigest()[:24]
+
+
+async def _enqueue_outbox_atomic(
+    *,
+    trade: dict[str, Any],
+    event_type: str,
+    topic: str,
+    payload: dict[str, Any],
+) -> str | None:
+    import json
+
+    outbox_id = str(uuid.uuid4())
+    trade_key = f"TRADE:{trade.get('trade_id')}"
+    now = datetime.now(UTC).isoformat()
+    event = {
+        "outbox_id": outbox_id,
+        "topic": topic,
+        "event_type": event_type,
+        "status": "PENDING",
+        "created_at": now,
+        "payload": payload,
+    }
+
+    try:
+        redis = cast(Any, await get_client())
+        script = """
+        local trade_key = KEYS[1]
+        local outbox_stream = KEYS[2]
+        local trade_json = ARGV[1]
+        local outbox_json = ARGV[2]
+        redis.call('SET', trade_key, trade_json, 'EX', 604800)
+        return redis.call('XADD', outbox_stream, '*', 'event', outbox_json)
+        """
+        result = await redis.eval(
+            script,
+            2,
+            trade_key,
+            TRADE_OUTBOX_STREAM,
+            json.dumps(trade),
+            json.dumps(event),
+        )
+        if isinstance(result, str):
+            return result
+    except Exception as exc:
+        logger.warning("Outbox enqueue failed for trade %s: %s", trade.get("trade_id"), exc)
+    return None
 
 
 # ─── Helper: RiskEngine signal/account construction ─────────────────────────
@@ -330,6 +390,27 @@ async def _global_news_lock_enabled() -> bool:
         return False
 
 
+async def _feed_staleness_seconds() -> float:
+    """Return feed staleness based on latest tick heartbeat in Redis."""
+    try:
+        redis = cast(Any, await get_client())
+        latest = await redis.get("ctx:tick:latest")
+        if not latest:
+            return float("inf")
+        if isinstance(latest, bytes):
+            latest = latest.decode("utf-8", errors="ignore")
+        import json as _json  # noqa: PLC0415
+
+        payload_raw = _json.loads(latest) if isinstance(latest, str) else {}
+        payload = cast(dict[str, Any], payload_raw) if isinstance(payload_raw, dict) else {}
+        ts = float(payload.get("timestamp", 0.0) or 0.0)
+        if ts <= 0:
+            return float("inf")
+        return max(0.0, datetime.now(UTC).timestamp() - ts)
+    except Exception:
+        return float("inf")
+
+
 async def _runtime_take_precheck(account: dict[str, Any]) -> tuple[bool, str | None]:
     # Compliance mode default = ON (fail closed when explicitly OFF).
     if not _as_bool(account.get("compliance_mode", 1), default=True):
@@ -341,6 +422,17 @@ async def _runtime_take_precheck(account: dict[str, Any]) -> tuple[bool, str | N
 
     daily_dd = float(account.get("daily_dd_percent", 0) or 0)
     daily_cap = float(account.get("max_daily_dd_percent", 5.0) or 5.0)
+    feed_stale_sec = await _feed_staleness_seconds()
+    _kill_switch.evaluate_and_trip(
+        metrics={
+            "daily_dd_percent": daily_dd,
+            "feed_stale_seconds": feed_stale_sec,
+        }
+    )
+    if _kill_switch.is_enabled():
+        state = _kill_switch.snapshot()
+        return False, f"KILL_SWITCH_ACTIVE: {state.get('reason', 'N/A')}"
+
     if daily_dd >= daily_cap:
         return False, f"DAILY_DD_LIMIT {daily_dd:.2f}% >= {daily_cap:.2f}%"
 
@@ -454,7 +546,11 @@ async def _atomic_transition_intended_to_pending(trade_id: str) -> dict[str, Any
         return trade
 
 
-async def _confirm_trade_internal(trade_id: str, idempotency_key: str | None) -> dict[str, Any]:
+async def _confirm_trade_internal(
+    trade_id: str,
+    idempotency_key: str | None,
+    execution_intent_id: str | None = None,
+) -> dict[str, Any]:
     if _kill_switch.is_enabled():
         state = _kill_switch.snapshot()
         raise HTTPException(
@@ -478,11 +574,41 @@ async def _confirm_trade_internal(trade_id: str, idempotency_key: str | None) ->
     if trade_data and trade_data.get("pair"):
         await _check_stale_data(trade_data["pair"])
 
+    signal_id = str((trade_data or {}).get("signal_id") or trade_id)
+    intent_id = execution_intent_id or str((trade_data or {}).get("execution_intent_id") or "")
+    if not intent_id:
+        intent_id = _intent_from_parts(signal_id, trade_id, "ORDER_PLACED")
+
+    claimed, existing = _execution_idempotency.claim_or_get(
+        signal_id=signal_id,
+        execution_intent_id=intent_id,
+        initial_payload={"trade_id": trade_id, "event_type": "ORDER_PLACED"},
+    )
+    if not claimed and existing.status == "SUCCEEDED":
+        cached_resp = dict(existing.payload.get("response") or {})
+        if cached_resp:
+            return cached_resp
+
     trade = await _atomic_transition_intended_to_pending(trade_id)
-    await _persist_trade_write_through(
+    trade["execution_intent_id"] = intent_id
+    persisted = await _persist_trade_write_through(
         trade,
         event_type="ORDER_PLACED",
         event_payload={"source": "MANUAL"},
+    )
+    if not persisted:
+        _execution_idempotency.mark_failed(
+            signal_id=signal_id,
+            execution_intent_id=intent_id,
+            payload={"reason": "PERSIST_FAILED", "trade_id": trade_id},
+        )
+        raise HTTPException(status_code=503, detail="Failed to persist trade confirmation")
+
+    await _enqueue_outbox_atomic(
+        trade=trade,
+        event_type="ORDER_PLACED",
+        topic="trade_confirmed",
+        payload={"trade": trade},
     )
 
     _journal_service.on_trade_confirmed(trade)
@@ -491,10 +617,53 @@ async def _confirm_trade_internal(trade_id: str, idempotency_key: str | None) ->
 
         await publish_live_update("trade_confirmed", trade)
 
-    response = {"trade_id": trade_id, "status": "PENDING"}
+    response = {"trade_id": trade_id, "status": "PENDING", "execution_intent_id": intent_id}
+    _execution_idempotency.mark_success(
+        signal_id=signal_id,
+        execution_intent_id=intent_id,
+        payload={"response": response, "trade_id": trade_id, "event_type": "ORDER_PLACED"},
+    )
     if idempotency_key:
         await _idempotency_set(idempotency_key, response)
     return response
+
+
+def _apply_trade_event_transition(current_status: str, event_type: str) -> tuple[str, bool]:
+    current = str(current_status or "INTENDED").upper()
+    mapping: dict[str, dict[str, str]] = {
+        "INTENDED": {
+            "ORDER_PLACED": "PENDING",
+            "SYSTEM_VIOLATION": "ABORTED",
+        },
+        "PENDING": {
+            "ORDER_PLACED": "PENDING",
+            "ORDER_FILLED": "OPEN",
+            "ORDER_CANCELLED": "CANCELLED",
+            "ORDER_EXPIRED": "CANCELLED",
+            "SYSTEM_VIOLATION": "ABORTED",
+        },
+        "OPEN": {
+            "ORDER_FILLED": "OPEN",
+            "SYSTEM_VIOLATION": "ABORTED",
+        },
+        "CANCELLED": {
+            "ORDER_CANCELLED": "CANCELLED",
+            "ORDER_EXPIRED": "CANCELLED",
+        },
+        "ABORTED": {
+            "SYSTEM_VIOLATION": "ABORTED",
+        },
+    }
+
+    next_status = mapping.get(current, {}).get(event_type)
+    if next_status is None:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Invalid trade transition: {current} + {event_type}",
+        )
+
+    replay = next_status == current
+    return next_status, replay
 
 
 # ─── Routes ──────────────────────────────────────────────────────────────────
@@ -563,6 +732,7 @@ async def take_signal(req: TakeSignalRequest) -> dict[str, Any]:
         )
 
     trade_id = str(uuid.uuid4())
+    execution_intent_id = _intent_from_parts(req.signal_id, trade_id, "TRADE_INTENDED")
     now = datetime.now(UTC).isoformat()
 
     trade: dict[str, Any] = {
@@ -573,6 +743,7 @@ async def take_signal(req: TakeSignalRequest) -> dict[str, Any]:
         "direction": req.direction,
         "status": "INTENDED",
         "source": "MANUAL",
+        "execution_intent_id": execution_intent_id,
         "risk_mode": req.risk_mode,
         "total_risk_percent": req.risk_percent,
         "total_risk_amount": float(account.get("balance", 10000)) * req.risk_percent / 100,
@@ -589,10 +760,19 @@ async def take_signal(req: TakeSignalRequest) -> dict[str, Any]:
 
     _trade_ledger[trade_id] = trade
     await _redis_set(f"TRADE:{trade_id}", json.dumps(trade), ex=86400)
-    await _persist_trade_write_through(
+    persisted = await _persist_trade_write_through(
         trade,
         event_type="TRADE_INTENDED",
         event_payload={"source": "MANUAL"},
+    )
+    if not persisted:
+        raise HTTPException(status_code=503, detail="Failed to persist trade intent")
+
+    await _enqueue_outbox_atomic(
+        trade=trade,
+        event_type="TRADE_INTENDED",
+        topic="trade_intended",
+        payload={"trade": trade},
     )
 
     # Freeze + publish read-only signal contract
@@ -619,6 +799,7 @@ async def take_signal(req: TakeSignalRequest) -> dict[str, Any]:
     logger.info("Trade INTENDED: %s %s %s", trade_id, req.pair, req.direction)
     return {
         "trade_id": trade_id,
+        "execution_intent_id": execution_intent_id,
         "lot_size": trade["lot_size"],
         "risk_calc": risk_result.model_dump(),
         "status": "INTENDED",
@@ -730,7 +911,11 @@ async def confirm_trade(
     x_idempotency_key: str | None = Header(default=None, alias="X-Idempotency-Key"),
 ) -> dict[str, Any]:
     """Trader confirmed order placement at broker: INTENDED → PENDING."""
-    response = await _confirm_trade_internal(req.trade_id, x_idempotency_key)
+    response = await _confirm_trade_internal(
+        req.trade_id,
+        x_idempotency_key,
+        req.execution_intent_id,
+    )
     logger.info("Trade PENDING: %s", req.trade_id)
     return response
 
@@ -738,10 +923,11 @@ async def confirm_trade(
 @write_router.post("/trades/{trade_id}/confirm")
 async def confirm_trade_by_id(
     trade_id: str,
+    execution_intent_id: str | None = None,
     x_idempotency_key: str | None = Header(default=None, alias="X-Idempotency-Key"),
 ) -> dict[str, Any]:
     """Path-parameter variant for dashboard compatibility."""
-    response = await _confirm_trade_internal(trade_id, x_idempotency_key)
+    response = await _confirm_trade_internal(trade_id, x_idempotency_key, execution_intent_id)
     logger.info("Trade PENDING (path): %s", trade_id)
     return response
 
@@ -768,7 +954,7 @@ async def close_trade(req: CloseTradeRequest) -> dict[str, Any]:
 
     _trade_ledger[req.trade_id] = trade
     await _redis_set(f"TRADE:{req.trade_id}", json.dumps(trade), ex=604800)
-    await _persist_trade_write_through(
+    persisted = await _persist_trade_write_through(
         trade,
         event_type="TRADE_CLOSED",
         event_payload={
@@ -777,6 +963,15 @@ async def close_trade(req: CloseTradeRequest) -> dict[str, Any]:
             "close_price": req.close_price,
             "pnl": req.pnl,
         },
+    )
+    if not persisted:
+        raise HTTPException(status_code=503, detail="Failed to persist trade close")
+
+    await _enqueue_outbox_atomic(
+        trade=trade,
+        event_type="TRADE_CLOSED",
+        topic="trade_closed",
+        payload={"trade": trade},
     )
     _journal_service.on_trade_closed(trade, req.reason or "MANUAL_CLOSE")
     with contextlib.suppress(Exception):
@@ -806,17 +1001,30 @@ async def record_trade_lifecycle_event(req: TradeLifecycleEventRequest) -> dict[
     now = datetime.now(UTC).isoformat()
     event_type = req.event_type
     reason = req.reason or event_type
+    signal_id = str(trade.get("signal_id") or req.trade_id)
+    execution_intent_id = req.execution_intent_id or _intent_from_parts(
+        signal_id,
+        req.trade_id,
+        event_type,
+        str(req.order_id or ""),
+    )
 
-    if event_type == "ORDER_PLACED":
-        trade["status"] = "PENDING"
-    elif event_type == "ORDER_FILLED":
-        trade["status"] = "OPEN"
-    elif event_type in {"ORDER_CANCELLED", "ORDER_EXPIRED"}:
-        trade["status"] = "CANCELLED"
-        trade["close_reason"] = reason
-        trade["closed_at"] = now
-    elif event_type == "SYSTEM_VIOLATION":
-        trade["status"] = "ABORTED"
+    claimed, existing = _execution_idempotency.claim_or_get(
+        signal_id=signal_id,
+        execution_intent_id=execution_intent_id,
+        initial_payload={"trade_id": req.trade_id, "event_type": event_type},
+    )
+    if not claimed and existing.status == "SUCCEEDED":
+        cached_resp = dict(existing.payload.get("response") or {})
+        if cached_resp:
+            return cached_resp
+
+    current_status = str(trade.get("status") or "INTENDED")
+    next_status, replay = _apply_trade_event_transition(current_status, event_type)
+    trade["status"] = next_status
+    trade["execution_intent_id"] = execution_intent_id
+
+    if next_status in {"CANCELLED", "ABORTED"}:
         trade["close_reason"] = reason
         trade["closed_at"] = now
 
@@ -829,7 +1037,7 @@ async def record_trade_lifecycle_event(req: TradeLifecycleEventRequest) -> dict[
     _trade_ledger[req.trade_id] = trade
     await _redis_set(f"TRADE:{req.trade_id}", json.dumps(trade), ex=604800)
 
-    await _persist_trade_write_through(
+    persisted = await _persist_trade_write_through(
         trade,
         event_type=event_type,
         event_payload={
@@ -839,8 +1047,42 @@ async def record_trade_lifecycle_event(req: TradeLifecycleEventRequest) -> dict[
             "fill_price": req.fill_price,
             "pnl": req.pnl,
             "metadata": req.metadata or {},
+            "execution_intent_id": execution_intent_id,
         },
     )
+    if not persisted:
+        _execution_idempotency.mark_failed(
+            signal_id=signal_id,
+            execution_intent_id=execution_intent_id,
+            payload={"reason": "PERSIST_FAILED", "trade_id": req.trade_id},
+        )
+        raise HTTPException(status_code=503, detail="Failed to persist lifecycle event")
+
+    await _enqueue_outbox_atomic(
+        trade=trade,
+        event_type=event_type,
+        topic="trade_lifecycle",
+        payload={
+            "trade_id": req.trade_id,
+            "event_type": event_type,
+            "status": trade.get("status"),
+            "source": req.source,
+            "execution_intent_id": execution_intent_id,
+        },
+    )
+
+    # Auto-trip global kill switch on catastrophic loss velocity / DD breach.
+    if req.pnl is not None:
+        balance = float(trade.get("total_risk_amount", 0.0) or 0.0) + float(req.pnl or 0.0)
+        rapid_loss_pct = 0.0
+        if balance > 0 and float(req.pnl) < 0:
+            rapid_loss_pct = abs(float(req.pnl)) / balance * 100.0
+        _kill_switch.evaluate_and_trip(
+            metrics={
+                "daily_dd_percent": float(trade.get("daily_dd_percent", 0.0) or 0.0),
+                "rapid_loss_percent": rapid_loss_pct,
+            }
+        )
 
     if event_type in {"ORDER_CANCELLED", "ORDER_EXPIRED", "SYSTEM_VIOLATION"}:
         _journal_service.on_trade_closed(trade, reason)
@@ -855,12 +1097,20 @@ async def record_trade_lifecycle_event(req: TradeLifecycleEventRequest) -> dict[
             "source": req.source,
         }))
 
-    return {
+    response = {
         "trade_id": req.trade_id,
         "event_type": event_type,
         "status": trade.get("status"),
+        "replay": replay,
+        "execution_intent_id": execution_intent_id,
         "persisted": True,
     }
+    _execution_idempotency.mark_success(
+        signal_id=signal_id,
+        execution_intent_id=execution_intent_id,
+        payload={"response": response, "trade_id": req.trade_id, "event_type": event_type},
+    )
+    return response
 
 
 @write_router.get("/trades/active")

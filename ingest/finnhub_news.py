@@ -10,7 +10,7 @@ Endpoint: GET /calendar/economic?from=YYYY-MM-DD&to=YYYY-MM-DD&token=KEY
 from __future__ import annotations
 
 import asyncio
-import os
+import random
 
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -56,6 +56,10 @@ class FinnhubNews:
             "impact_levels", {"high": True, "medium": True, "low": False}
         )
         self._context_bus = LiveContextBus()
+        self._cb_failures = 0
+        self._cb_threshold = int(self._config["rest"].get("circuit_breaker_failures", 5))
+        self._cb_open_until = 0.0
+        self._cb_cooldown_sec = int(self._config["rest"].get("circuit_breaker_cooldown_sec", 30))
 
         if not self._api_key:
             logger.error("FINNHUB_API_KEY not set - economic calendar will fail")
@@ -82,6 +86,12 @@ class FinnhubNews:
             "token": self._api_key,
         }
 
+        now_ts = datetime.now(UTC).timestamp()
+        if self._cb_open_until > now_ts:
+            raise FinnhubNewsError(
+                f"Finnhub circuit breaker OPEN for {self._cb_open_until - now_ts:.1f}s"
+            )
+
         last_exc: Exception | None = None
         wait: float = 1.0
 
@@ -99,6 +109,8 @@ class FinnhubNews:
                 raw_events: list[dict[str, Any]] = data.get("economicCalendar", [])
 
                 filtered = self._filter_by_impact(raw_events)
+                self._cb_failures = 0
+                self._cb_open_until = 0.0
                 logger.info(
                     f"Finnhub calendar: {len(raw_events)} total, "
                     f"{len(filtered)} after impact filter"
@@ -113,7 +125,8 @@ class FinnhubNews:
                         f"Finnhub rate limited (attempt {attempt}/"
                         f"{self._retries}), waiting {wait:.1f}s"
                     )
-                    await asyncio.sleep(wait)
+                    jitter = wait * 0.2 * random.random()
+                    await asyncio.sleep(wait + jitter)
                     wait *= self._backoff_factor
                 elif exc.response.status_code == 403:
                     logger.error(
@@ -130,11 +143,16 @@ class FinnhubNews:
                 logger.warning(
                     f"Finnhub connection error (attempt {attempt}/{self._retries}): {exc}"
                 )
-                await asyncio.sleep(wait)
+                jitter = wait * 0.2 * random.random()
+                await asyncio.sleep(wait + jitter)
                 wait = min(
                     wait * self._backoff_factor,
                     self._MAX_RETRY_WAIT_SEC,
                 )
+
+        self._cb_failures += 1
+        if self._cb_failures >= self._cb_threshold:
+            self._cb_open_until = datetime.now(UTC).timestamp() + self._cb_cooldown_sec
 
         raise FinnhubNewsError(f"Failed after {self._retries} retries: {last_exc}")
 

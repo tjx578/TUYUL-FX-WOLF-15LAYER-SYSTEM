@@ -28,10 +28,14 @@ class CancelRequest(BaseModel):
 @router.get("/queue")
 async def queue_stats() -> dict:
     """Return current execution queue depth."""
+    snapshot = _ea_manager.queue_snapshot()
     return {
-        "queue_depth": _ea_manager._queue.qsize(),
-        "max_size": _ea_manager._queue.maxsize,
-        "running": _ea_manager._running,
+        "queue_depth": snapshot["queue_depth"],
+        "max_size": snapshot["queue_max"],
+        "running": snapshot["running"],
+        "overload_mode": snapshot["overload_mode"],
+        "overload_rejections": snapshot["overload_rejections"],
+        "overload_drops": snapshot["overload_drops"],
     }
 
 

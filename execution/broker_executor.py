@@ -55,6 +55,12 @@ from enum import StrEnum  # noqa: E402
 import httpx  # noqa: E402
 from loguru import logger as _loguru_logger  # noqa: E402
 
+from execution.resilience import (  # noqa: E402
+    RetryPolicy,
+    SimpleCircuitBreaker,
+    call_with_retry,
+)
+
 
 class _LoggerLike(Protocol):
     def error(self, message: str, *args: Any, **kwargs: Any) -> Any: ...
@@ -114,9 +120,21 @@ class BrokerExecutor:  # noqa: F811
         self,
         ea_url: str = "http://localhost:8081",
         timeout: float = 10.0,
+        retry_policy: RetryPolicy | None = None,
+        circuit_breaker: SimpleCircuitBreaker | None = None,
     ) -> None:
         self._ea_url = ea_url.rstrip("/")
         self._timeout = timeout
+        self._retry_policy = retry_policy or RetryPolicy(
+            max_attempts=4,
+            base_delay_sec=0.25,
+            max_delay_sec=3.0,
+            jitter_ratio=0.2,
+        )
+        self._breaker = circuit_breaker or SimpleCircuitBreaker(
+            failure_threshold=5,
+            recovery_timeout_sec=30.0,
+        )
 
     def execute(self, req: ExecutionRequest) -> ExecutionResult:
         """Send a single execution request to EA bridge."""
@@ -133,13 +151,32 @@ class BrokerExecutor:  # noqa: F811
             "request_id": req.request_id,
             "meta": req.meta,
         }
-        try:
+
+        def _is_retryable(exc: Exception) -> bool:
+            if isinstance(exc, httpx.HTTPStatusError):
+                code = exc.response.status_code
+                return code in {408, 429, 500, 502, 503, 504}
+            return isinstance(
+                exc,
+                (httpx.ConnectError, httpx.ReadTimeout, httpx.WriteTimeout, httpx.RemoteProtocolError),
+            )
+
+        def _do_http_call() -> httpx.Response:
             response = httpx.post(
                 f"{self._ea_url}/execute",
                 json=payload,
                 timeout=self._timeout,
             )
             response.raise_for_status()
+            return response
+
+        try:
+            response = call_with_retry(
+                _do_http_call,
+                policy=self._retry_policy,
+                breaker=self._breaker,
+                is_retryable=_is_retryable,
+            )
             data = response.json()
             return ExecutionResult(
                 success=data.get("success", False),

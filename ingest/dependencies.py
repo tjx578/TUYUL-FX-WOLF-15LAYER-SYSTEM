@@ -105,6 +105,7 @@ class _LastTimestampProxy(dict[str, float]):
 
 _last_prices: dict[str, float] = _LastPriceProxy()
 _last_timestamps: dict[str, float] = _LastTimestampProxy()
+_last_exchange_ts_ms: dict[str, float] = {}
 
 # ── Tick deduplication state (legacy alias kept for test imports) ──
 
@@ -127,6 +128,20 @@ def _is_duplicate_tick(symbol: str, price: float, exchange_ts: float) -> bool:
     """
     key = f"{symbol}:{price}:{exchange_ts}"
     return _unified_dedup.is_duplicate(key, time.monotonic())
+
+
+def _is_out_of_order_tick(symbol: str, exchange_ts_ms: float) -> bool:
+    """Return True when exchange timestamp goes backwards for a symbol."""
+    previous = _last_exchange_ts_ms.get(symbol)
+    if previous is None:
+        _last_exchange_ts_ms[symbol] = exchange_ts_ms
+        return False
+
+    if exchange_ts_ms < previous:
+        return True
+
+    _last_exchange_ts_ms[symbol] = exchange_ts_ms
+    return False
 
 
 def _update_realtime_conditioning(
@@ -162,6 +177,7 @@ class _TickRateCounter:
     _timestamps: dict[str, deque[float]] = field(default_factory=lambda: dict[str, deque[float]]())
     _rejected: dict[str, int] = field(default_factory=lambda: dict[str, int]())
     _duplicates: dict[str, int] = field(default_factory=lambda: dict[str, int]())
+    _out_of_order: dict[str, int] = field(default_factory=lambda: dict[str, int]())
 
     def record(self, symbol: str) -> None:
         """Record an accepted tick."""
@@ -173,6 +189,9 @@ class _TickRateCounter:
 
     def record_duplicate(self, symbol: str) -> None:
         self._duplicates[symbol] = self._duplicates.get(symbol, 0) + 1
+
+    def record_out_of_order(self, symbol: str) -> None:
+        self._out_of_order[symbol] = self._out_of_order.get(symbol, 0) + 1
 
     def ticks_per_second(self, symbol: str) -> float:
         """Return ticks/sec over the sliding window for *symbol*."""
@@ -197,6 +216,7 @@ class _TickRateCounter:
                 "ticks_per_sec": round(len(dq) / self._window_sec, 2),
                 "rejected": self._rejected.get(symbol, 0),
                 "duplicates": self._duplicates.get(symbol, 0),
+                "out_of_order": self._out_of_order.get(symbol, 0),
             }
         return result
 
@@ -324,6 +344,19 @@ def _build_tick_handler(
                             price=tick_price,
                             exchange_ts=tick_ts_raw,
                             reason="duplicate",
+                        )
+                    continue
+
+                # ── Ordering guard: reject exchange timestamps that go backwards ──
+                if _is_out_of_order_tick(internal_symbol, tick_ts_raw):
+                    tick_metrics.record_out_of_order(internal_symbol)
+                    dlq = get_dlq()
+                    if dlq is not None:
+                        await dlq.push(
+                            symbol=internal_symbol,
+                            price=tick_price,
+                            exchange_ts=tick_ts_raw,
+                            reason="out_of_order",
                         )
                     continue
 

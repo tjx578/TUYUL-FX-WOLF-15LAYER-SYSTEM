@@ -12,6 +12,7 @@ from ingest.dependencies import (
     _is_duplicate_tick,
     _is_valid_tick,
     _last_prices,
+    _last_exchange_ts_ms,
     _last_timestamps,
     tick_metrics,
 )
@@ -21,6 +22,7 @@ class TestTickSpikeFilter:
     def setup_method(self):
         _last_prices.clear()
         _last_timestamps.clear()
+        _last_exchange_ts_ms.clear()
         _dedup_cache.clear()
 
     def test_first_tick_always_valid(self):
@@ -193,6 +195,7 @@ class TestTickRateMetrics:
         tick_metrics._timestamps.clear()
         tick_metrics._rejected.clear()
         tick_metrics._duplicates.clear()
+        tick_metrics._out_of_order.clear()
 
     def test_record_and_tps(self):
         now = time.monotonic()
