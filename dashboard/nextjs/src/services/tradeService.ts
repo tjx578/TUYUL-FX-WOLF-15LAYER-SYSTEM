@@ -10,10 +10,12 @@ const TradeActionResponseSchema = z.object({
 
 export type TradeActionResponse = z.infer<typeof TradeActionResponseSchema>;
 
-export async function fetchTrades(accountId?: string) {
+export async function fetchTrades(accountId?: string, page = 1, pageSize = 20) {
   const response = await apiClient.get("/api/v1/trades", {
     params: {
       ...(accountId ? { account_id: accountId } : {}),
+      page,
+      page_size: pageSize,
     },
   });
 
@@ -26,4 +28,12 @@ export async function submitTradeAction(tradeId: string, action: string) {
   });
 
   return TradeActionResponseSchema.parse(response.data);
+}
+
+export async function requestCloseTrade(tradeId: string) {
+  return submitTradeAction(tradeId, "CLOSE");
+}
+
+export async function requestCancelPending(tradeId: string) {
+  return submitTradeAction(tradeId, "CANCEL_PENDING");
 }

@@ -20,3 +20,14 @@ export async function fetchAuditLog(limit = 50) {
 
   return AuditEntryListSchema.parse(response.data);
 }
+
+export async function fetchAuditEntries(page = 1, pageSize = 20) {
+  const response = await apiClient.get("/api/v1/audit", {
+    params: {
+      page,
+      page_size: pageSize,
+    },
+  });
+
+  return AuditEntryListSchema.parse(response.data);
+}
