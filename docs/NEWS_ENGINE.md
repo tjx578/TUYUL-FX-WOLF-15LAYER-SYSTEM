@@ -4,6 +4,7 @@
 
 Calendar/news is advisory-only and must not make execution decisions.
 The engine provides:
+
 - event ingestion from provider chain
 - blocker advisory status for dashboard/risk monitoring
 - source health telemetry
