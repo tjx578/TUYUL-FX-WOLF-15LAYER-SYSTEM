@@ -8,6 +8,8 @@ for cold-start recovery via ``FinnhubCandleFetcher.cold_start_m15()``.
 """
 
 import asyncio
+import random
+import time
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -63,6 +65,40 @@ class FinnhubCandleFetcher:
         self.max_concurrent = self.warmup_config.get("max_concurrent", 5)
         self.semaphore = asyncio.Semaphore(self.max_concurrent)
         self.request_delay = self.warmup_config.get("request_delay_sec", 0.5)
+
+        # HTTP retry policy (used primarily for HTTP 429)
+        self.retries = int(self.rest_config.get("retries", 3))
+        self.backoff_factor = float(self.rest_config.get("backoff_factor", 1.5))
+        self.max_backoff_sec = float(self.rest_config.get("max_backoff_sec", 30.0))
+        self.backoff_jitter_sec = float(self.rest_config.get("backoff_jitter_sec", 0.25))
+
+        # Process-local request pacing to reduce bursty warmup traffic.
+        self._pace_lock = asyncio.Lock()
+        self._next_request_at = 0.0
+
+    async def _wait_for_request_slot(self) -> None:
+        """Serialize outgoing request pacing across concurrent warmup tasks."""
+        if self.request_delay <= 0:
+            return
+
+        async with self._pace_lock:
+            now = time.monotonic()
+            wait_for = self._next_request_at - now
+            if wait_for > 0:
+                await asyncio.sleep(wait_for)
+            self._next_request_at = max(self._next_request_at, time.monotonic()) + self.request_delay
+
+    @staticmethod
+    def _retry_after_seconds(value: str | None) -> float:
+        """Parse Retry-After header value into seconds."""
+        if not value:
+            return 0.0
+
+        value = value.strip()
+        try:
+            return max(0.0, float(value))
+        except (TypeError, ValueError):
+            return 0.0
 
     def convert_symbol(self, symbol: str) -> str:
         """
@@ -230,38 +266,57 @@ class FinnhubCandleFetcher:
         async with self.semaphore:
             try:
                 async with httpx.AsyncClient(timeout=self.timeout) as client:
-                    logger.debug(f"Fetching {symbol} {timeframe}: {bars} bars from Finnhub")
-                    response = await client.get(url, params=params)
+                    for attempt in range(self.retries + 1):
+                        active_key = self._key_manager.current_key() or self.api_key
+                        self.api_key = active_key
+                        params["token"] = active_key
 
-                    if response.status_code == 403:
-                        self._key_manager.report_failure(self.api_key, 403)
-                        raise FinnhubCandlePremiumError(
-                            f"Premium access required for {symbol} {timeframe}"
+                        await self._wait_for_request_slot()
+                        logger.debug(
+                            f"Fetching {symbol} {timeframe}: {bars} bars from Finnhub "
+                            f"(attempt {attempt + 1}/{self.retries + 1})"
                         )
-
-                    if response.status_code == 429:
-                        self._key_manager.report_failure(self.api_key, 429)
-                        # Refresh key (may have rotated)
-                        self.api_key = self._key_manager.current_key()
-                        # Rate limited - exponential backoff
-                        wait_time = float(response.headers.get("Retry-After", 2))
-                        logger.warning(f"Rate limited, waiting {wait_time}s")
-                        await asyncio.sleep(wait_time)
-                        # Retry once with (possibly new) key
-                        params["token"] = self.api_key
                         response = await client.get(url, params=params)
 
-                    response.raise_for_status()
-                    data = response.json()
+                        if response.status_code == 403:
+                            self._key_manager.report_failure(active_key, 403)
+                            raise FinnhubCandlePremiumError(
+                                f"Premium access required for {symbol} {timeframe}"
+                            )
 
-                    self._key_manager.report_success(self.api_key)
-                    candles = self.normalize_response(data, symbol, timeframe)
-                    logger.info(f"Fetched {len(candles)} {timeframe} bars for {symbol}")
+                        if response.status_code == 429:
+                            self._key_manager.report_failure(active_key, 429)
 
-                    # Delay to respect rate limits
-                    await asyncio.sleep(self.request_delay)
+                            if attempt >= self.retries:
+                                raise FinnhubCandleError(
+                                    f"Rate limited for {symbol} {timeframe} after {self.retries + 1} attempts"
+                                )
 
-                    return candles
+                            retry_after = self._retry_after_seconds(response.headers.get("Retry-After"))
+                            exponential = self.backoff_factor * (2 ** attempt)
+                            jitter = random.uniform(0.0, self.backoff_jitter_sec)
+                            wait_time = min(self.max_backoff_sec, max(retry_after, exponential) + jitter)
+
+                            logger.warning(
+                                "Rate limited on {} {} (attempt {}/{}), retrying in {:.2f}s",
+                                symbol,
+                                timeframe,
+                                attempt + 1,
+                                self.retries + 1,
+                                wait_time,
+                            )
+                            await asyncio.sleep(wait_time)
+                            continue
+
+                        response.raise_for_status()
+                        data = response.json()
+
+                        self._key_manager.report_success(active_key)
+                        candles = self.normalize_response(data, symbol, timeframe)
+                        logger.info(f"Fetched {len(candles)} {timeframe} bars for {symbol}")
+                        return candles
+
+                    raise FinnhubCandleError(f"Exhausted retries for {symbol} {timeframe}")
 
             except httpx.HTTPStatusError as exc:
                 if exc.response.status_code == 403:
