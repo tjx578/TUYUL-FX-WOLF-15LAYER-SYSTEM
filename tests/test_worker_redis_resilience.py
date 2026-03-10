@@ -10,11 +10,32 @@ Validates:
 from __future__ import annotations
 
 import asyncio
+import contextlib
 from typing import Any
 from unittest.mock import AsyncMock, patch
 
 import pytest
 import redis.asyncio as aioredis
+from prometheus_client import REGISTRY as _REG
+
+# Both allocation/ and execution/ workers define identically-named Prometheus
+# metrics at module level.  In production they run in separate processes; in
+# tests they coexist.  Force-import allocation first, then clear shared metric
+# names so the execution module can safely re-register them.
+try:  # noqa: SIM105
+    import allocation.async_worker  # noqa: F401  # pyright: ignore[reportUnusedImport]
+except Exception:
+    pass
+
+for _coll_name in list(getattr(_REG, "_names_to_collectors", {})):
+    if _coll_name.startswith("wolf_"):
+        with contextlib.suppress(Exception):
+            _REG.unregister(_REG._names_to_collectors[_coll_name])  # pyright: ignore[reportPrivateUsage]
+
+try:  # noqa: SIM105
+    import execution.async_worker  # noqa: F401  # pyright: ignore[reportUnusedImport]
+except Exception:
+    pass
 
 # ═══════════════════════════════════════════════════════════════════
 # Allocation Worker — run() retry + reconnect
