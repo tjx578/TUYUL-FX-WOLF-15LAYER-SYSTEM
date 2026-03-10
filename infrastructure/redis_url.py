@@ -31,6 +31,11 @@ def _is_local_redis_host(hostname: str | None) -> bool:
     return (hostname or "").strip().lower() in {"localhost", "127.0.0.1", "::1"}
 
 
+def _is_railway_private_network(hostname: str | None) -> bool:
+    """Railway private-network hostnames end with ``.railway.internal``."""
+    return (hostname or "").strip().lower().endswith(".railway.internal")
+
+
 def _validate_redis_security(url: str) -> str:
     """Enforce AUTH + TLS for non-local Redis in production.
 
@@ -44,6 +49,8 @@ def _validate_redis_security(url: str) -> str:
 
     parts = urlsplit(url)
     if _is_local_redis_host(parts.hostname):
+        return url
+    if _is_railway_private_network(parts.hostname):
         return url
 
     if not parts.password:
