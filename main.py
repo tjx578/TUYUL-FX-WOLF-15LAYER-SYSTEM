@@ -119,10 +119,14 @@ async def _seed_from_redis() -> None:
             consumer = RedisConsumer(symbols=PAIRS, redis_client=redis_client)
             bus = LiveContextBus()
 
-            # Readiness: H1 is always seeded by ingest via REST warmup.
+            # Primary gate: H1 is always seeded by ingest via REST warmup.
             # M15 arrives from tick stream ~15 min after WebSocket connects
             # and must NOT be used as the startup gate.
             _h1_warmup = {"H1": 1}
+
+            # Secondary verification: higher TFs that L1 context depends on.
+            # These don't block startup but emit explicit warnings.
+            _htf_verify = {"H4": 1, "D1": 1, "W1": 1, "MN": 1}
 
             for attempt in range(1, max_retries + 1):
                 await consumer.load_candle_history()
@@ -139,6 +143,18 @@ async def _seed_from_redis() -> None:
                         "M15 will arrive from tick stream after ~15 min.",
                         h1_count, len(PAIRS), attempt,
                     )
+
+                    # Verify higher timeframes and warn if missing
+                    for pair in PAIRS:
+                        htf_status = bus.check_warmup(pair, _htf_verify)
+                        if htf_status.get("missing"):
+                            missing_tfs = list(htf_status["missing"].keys())
+                            logger.warning(
+                                "[SEED] %s missing higher-TF data: %s — "
+                                "L1 context/regime analysis may be degraded "
+                                "until ingest delivers these timeframes.",
+                                pair, missing_tfs,
+                            )
                     return
 
                 # No H1 data yet — ingest may still be seeding

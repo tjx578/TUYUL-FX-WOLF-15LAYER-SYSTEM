@@ -63,6 +63,8 @@ ROUTER_ENTRIES: list[RouterEntry] = [
     RouterEntry("api.metrics_routes", "router", "Prometheus scrape endpoint"),
     # Redis observability + TCP_OVERWINDOW diagnostics
     RouterEntry("api.redis_health_routes", "router", "Redis observability + diagnostics"),
+    # Orchestrator governance state (read-only)
+    RouterEntry("api.orchestrator_routes", "router", "Orchestrator governance state"),
 ]
 
 

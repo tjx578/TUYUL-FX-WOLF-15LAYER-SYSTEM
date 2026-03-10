@@ -142,10 +142,16 @@ class WolfConstitutionalPipeline:
     # Minimum candle bars per timeframe before analysis is allowed.
     # Prevents garbage indicator outputs during the first minutes
     # after system startup.
+    # Note: M15 is excluded — it arrives from WS ticks, not REST warmup.
+    # W1/MN are included because L1 regime context depends on them.
+    # These are pipeline-gate minimums, intentionally lower than
+    # config/finnhub.yaml min_bars (which are fetch targets).
     WARMUP_MIN_BARS: dict[str, int] = {
         "H1": 20,
         "H4": 10,
         "D1": 5,
+        "W1": 4,
+        "MN": 2,
     }
 
     def __init__(self) -> None:
