@@ -21,7 +21,7 @@ from pydantic import BaseModel, Field
 
 from api.middleware.auth import create_token, decode_token, verify_token
 
-router = APIRouter(prefix="/auth", tags=["auth"])
+router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 
 # ── Response model ────────────────────────────────────────────────────────────
