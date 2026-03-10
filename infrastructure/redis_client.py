@@ -22,9 +22,14 @@ from __future__ import annotations
 import logging
 import os
 from dataclasses import dataclass
+from typing import cast
 from urllib.parse import urlsplit
 
 import redis.asyncio as aioredis
+from redis.backoff import ExponentialBackoff
+from redis.exceptions import ConnectionError as RedisConnectionError
+from redis.exceptions import TimeoutError as RedisTimeoutError
+from redis.retry import Retry
 
 logger = logging.getLogger(__name__)
 
@@ -124,19 +129,31 @@ class RedisClientManager:
             url = get_redis_url()
             use_tls = url.startswith("rediss://")
 
-            self._pool = aioredis.ConnectionPool.from_url(
+            # Retry with exponential backoff on connection errors and timeouts.
+            # This mirrors the tenacity retry logic in storage/redis_client.py
+            # but uses redis-py's native Retry mechanism which works at the
+            # connection level (retries inside parse_response / send_command).
+            retry = Retry(
+                backoff=ExponentialBackoff(cap=10, base=1),
+                retries=3,
+                supported_errors=(RedisConnectionError, RedisTimeoutError),
+            )
+
+            self._pool = aioredis.ConnectionPool.from_url(  # pyright: ignore[reportUnknownMemberType]
                 url,
                 decode_responses=cfg.decode_responses,
                 max_connections=cfg.max_connections,
                 socket_timeout=cfg.socket_timeout,
                 socket_connect_timeout=cfg.socket_connect_timeout,
                 retry_on_timeout=cfg.retry_on_timeout,
+                retry_on_error=[RedisConnectionError, RedisTimeoutError],
+                retry=retry,
                 health_check_interval=cfg.health_check_interval,
                 socket_keepalive=cfg.socket_keepalive,
                 **({"ssl": True} if use_tls else {}),
             )
             logger.info(
-                "Redis async pool created: %s:%d db=%d (native async, from_url, tls=%s)",
+                "Redis async pool created: %s:%d db=%d (native async, from_url, tls=%s, retry=3)",
                 cfg.host, cfg.port, cfg.db, use_tls,
             )
         return self._pool
@@ -144,6 +161,24 @@ class RedisClientManager:
     async def get_client(self, config: RedisConfig | None = None) -> aioredis.Redis:
         pool = await self.get_pool(config)
         return aioredis.Redis(connection_pool=pool)
+
+    async def reset_pool(self) -> None:
+        """Tear down and recreate the pool on next access.
+
+        Call this when the pool is suspected to be fully stale (e.g. after
+        repeated ConnectionError even with retries).
+        """
+        cfg = self._config
+        if self._pool is not None:
+            try:  # noqa: SIM105
+                await self._pool.aclose()
+            except Exception:  # noqa: BLE001
+                pass
+            self._pool = None
+            logger.warning("Redis async pool reset — will reconnect on next use")
+        # Pre-warm a new pool so the next caller doesn't pay the latency
+        if cfg is not None:
+            await self.get_pool(cfg)
 
     async def close(self) -> None:
         if self._pool is not None:
@@ -154,7 +189,9 @@ class RedisClientManager:
     async def health_check(self) -> bool:
         try:
             client = await self.get_client()
-            return await client.ping() # pyright: ignore[reportGeneralTypeIssues]
+            # redis-py async stub incorrectly types ping() as bool; at runtime it's a coroutine
+            result = cast(bool, await client.ping())  # type: ignore[misc]
+            return result
         except Exception:
             logger.warning("Redis health check failed")
             return False
