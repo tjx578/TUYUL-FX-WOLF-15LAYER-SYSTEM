@@ -43,15 +43,36 @@ class TradeOutboxWorker:
         self._max_batch = max_batch
         self._pg = pg or pg_client
         self._stopped = asyncio.Event()
+        self._group_ready = False
 
     async def stop(self) -> None:
         self._stopped.set()
 
     async def run(self) -> None:
-        redis = await get_client()
-        await self._ensure_group(redis)
+        redis: Any = None
 
         while not self._stopped.is_set():
+            # Lazily (re)acquire the Redis client if needed
+            if redis is None:
+                try:
+                    redis = await get_client()
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning("Outbox worker Redis connect failed: {}", exc)
+                    with contextlib.suppress(TimeoutError):
+                        await asyncio.wait_for(self._stopped.wait(), timeout=self._poll_interval)
+                    continue
+
+            # Ensure consumer group exists before consuming
+            if not self._group_ready:
+                try:
+                    await self._ensure_group(redis)
+                    self._group_ready = True
+                except Exception:  # noqa: BLE001
+                    # _ensure_group already logs; wait and retry next iteration
+                    with contextlib.suppress(TimeoutError):
+                        await asyncio.wait_for(self._stopped.wait(), timeout=self._poll_interval)
+                    continue
+
             processed = 0
             with contextlib.suppress(Exception):
                 processed += await self._consume_stream(redis)
@@ -71,8 +92,10 @@ class TradeOutboxWorker:
                 mkstream=True,
             )
         except Exception as exc:
-            if "BUSYGROUP" not in str(exc):
-                logger.warning("Outbox worker group init failed: {}", exc)
+            if "BUSYGROUP" in str(exc):
+                return  # group already exists — fine
+            logger.warning("Outbox worker group init failed: {}", exc)
+            raise
 
     async def _consume_stream(self, redis: Any) -> int:
         items = await redis.xreadgroup(
