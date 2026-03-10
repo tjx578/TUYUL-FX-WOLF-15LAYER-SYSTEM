@@ -22,7 +22,7 @@ from redis.exceptions import ResponseError
 
 from config.logging_bootstrap import configure_loguru_logging
 from execution.broker_executor import BrokerExecutor, ExecutionRequest, OrderAction
-from infrastructure.redis_client import get_client
+from infrastructure.redis_client import RedisConfig, get_client
 from infrastructure.tracing import (
     extract_trace_carrier,
     extract_trace_context,
@@ -72,6 +72,12 @@ class WorkerConfig:
     max_concurrency: int = 5
     metrics_port: int = int(os.getenv("EXEC_METRICS_PORT", "9103"))
 
+    @property
+    def redis_socket_timeout(self) -> float:
+        # Keep socket timeout comfortably above XREADGROUP block window.
+        # block_ms=5000 with socket_timeout=5.0 can produce spurious TimeoutError.
+        return max((self.block_ms / 1000.0) + 2.0, 10.0)
+
 
 class AsyncExecutionWorker:
     def __init__(self, config: WorkerConfig | None = None) -> None:
@@ -96,7 +102,14 @@ class AsyncExecutionWorker:
 
         while True:
             try:
-                redis_client = await get_client()
+                redis_client = await get_client(
+                    RedisConfig.from_env().__class__(
+                        **{
+                            **RedisConfig.from_env().__dict__,
+                            "socket_timeout": self._cfg.redis_socket_timeout,
+                        },
+                    ),
+                )
                 await self._ensure_group(redis_client)
                 backoff = 1.0  # Reset on successful connect
 

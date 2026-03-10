@@ -16,7 +16,7 @@ import os
 import tracemalloc
 import uuid
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, cast
 
 import redis.asyncio as aioredis
@@ -27,7 +27,7 @@ from redis.exceptions import ResponseError
 from allocation.allocation_models import AllocationRequest
 from allocation.allocation_service import AllocationService
 from config.logging_bootstrap import configure_loguru_logging
-from infrastructure.redis_client import get_client
+from infrastructure.redis_client import RedisConfig, get_client
 from infrastructure.tracing import (
     extract_trace_carrier,
     extract_trace_context,
@@ -90,6 +90,12 @@ class WorkerConfig:
     max_concurrency: int = 5
     metrics_port: int = int(os.getenv("ALLOC_METRICS_PORT", "9102"))
 
+    @property
+    def redis_socket_timeout(self) -> float:
+        # Keep socket timeout comfortably above XREADGROUP block window.
+        # block_ms=5000 with socket_timeout=5.0 can produce spurious TimeoutError.
+        return max((self.block_ms / 1000.0) + 2.0, 10.0)
+
 
 class AsyncAllocationWorker:
     def __init__(self, config: WorkerConfig | None = None) -> None:
@@ -101,7 +107,7 @@ class AsyncAllocationWorker:
     async def run(self) -> None:
         tracemalloc.start()
         logger.info(
-            "Allocation worker started (worker=%s stream=%s metrics=%s)",
+            "Allocation worker started (worker={} stream={} metrics={})",
             self._cfg.worker_name,
             self._cfg.stream,
             self._cfg.metrics_port,
@@ -112,7 +118,9 @@ class AsyncAllocationWorker:
 
         while True:
             try:
-                redis_client = await get_client()
+                base_cfg = RedisConfig.from_env()
+                redis_cfg = replace(base_cfg, socket_timeout=self._cfg.redis_socket_timeout)
+                redis_client = await get_client(redis_cfg)
                 await self._ensure_group(redis_client)
                 backoff = 1.0  # Reset on successful connect
 
@@ -132,7 +140,7 @@ class AsyncAllocationWorker:
                     ) as exc:
                         alloc_errors_total.inc()
                         logger.warning(
-                            "xreadgroup connection error: %s — reconnecting",
+                            "xreadgroup connection error: {} — reconnecting",
                             type(exc).__name__,
                         )
                         break  # Break inner loop → reconnect in outer loop
@@ -161,7 +169,7 @@ class AsyncAllocationWorker:
             except Exception as exc:
                 alloc_errors_total.inc()
                 logger.exception(
-                    "Allocation worker error: %s — retry in %.1fs", exc, backoff,
+                    "Allocation worker error: {} — retry in {:.1f}s", exc, backoff,
                 )
 
             await asyncio.sleep(backoff)
@@ -283,7 +291,7 @@ async def _main() -> None:
     while restarts <= _MAX_RESTARTS:
         try:
             logger.info(
-                "[SUPERVISOR] Starting allocation worker (attempt %d/%d)",
+                "[SUPERVISOR] Starting allocation worker (attempt {}/{})",
                 restarts + 1,
                 _MAX_RESTARTS + 1,
             )
@@ -296,7 +304,7 @@ async def _main() -> None:
         except Exception as exc:
             restarts += 1
             logger.error(
-                "[SUPERVISOR] Allocation worker crashed: %s (restart %d/%d)",
+                "[SUPERVISOR] Allocation worker crashed: {} (restart {}/{})",
                 exc,
                 restarts,
                 _MAX_RESTARTS,
