@@ -15,6 +15,10 @@ import type {
   ProbabilitySummary,
   ProbabilityCalibration,
   CalendarEvent,
+  CalendarDayResponse,
+  CalendarUpcomingResponse,
+  CalendarBlockerResponse,
+  CalendarHealthResponse,
   EALog,
   EAStatus,
   PropFirmPhase,
@@ -42,6 +46,8 @@ export const API_ENDPOINTS = {
   execution: "/api/v1/execution",
   calendar: "/api/v1/calendar",
   calendarUpcoming: "/api/v1/calendar/upcoming",
+  calendarBlocker: "/api/v1/calendar/blocker",
+  calendarHealth: "/api/v1/calendar/health",
   eaStatus: "/api/v1/ea/status",
   eaLogs: "/api/v1/ea/logs",
   eaRestart: "/api/v1/ea/restart",
@@ -200,16 +206,45 @@ export function useCalendarEvents(period = "today", impact?: string) {
   const endpoint = period === "upcoming"
     ? `${API_ENDPOINTS.calendarUpcoming}?${params.toString()}`
     : `${API_ENDPOINTS.calendar}?${params.toString()}`;
-  const { data, error, isLoading } = useSWR<any>(
+  const { data, error, isLoading } = useSWR<CalendarDayResponse | CalendarUpcomingResponse | CalendarEvent[]>(
     endpoint,
     fetcher
   );
-  const normalized = Array.isArray(data)
+  const raw = Array.isArray(data)
     ? data
     : Array.isArray(data?.events)
       ? data.events
       : [];
+
+  const normalized = raw.map((item: CalendarEvent) => {
+    const title = item.title ?? item.event ?? "";
+    const eventId = item.id ?? item.canonical_id ?? `${item.currency}:${title}:${item.time}`;
+    return {
+      ...item,
+      id: eventId,
+      event: item.event ?? title,
+      title,
+    } as CalendarEvent;
+  });
+
   return { data: normalized as CalendarEvent[], isLoading, isError: !!error, error };
+}
+
+export function useCalendarBlocker(symbol?: string) {
+  const query = symbol ? `?symbol=${encodeURIComponent(symbol)}` : "";
+  const { data, error, isLoading, mutate } = useSWR<CalendarBlockerResponse>(
+    `${API_ENDPOINTS.calendarBlocker}${query}`,
+    fetcher
+  );
+  return { data, isLoading, isError: !!error, error, mutate };
+}
+
+export function useCalendarSourceHealth() {
+  const { data, error, isLoading, mutate } = useSWR<CalendarHealthResponse>(
+    API_ENDPOINTS.calendarHealth,
+    fetcher
+  );
+  return { data, isLoading, isError: !!error, error, mutate };
 }
 
 export function useEAStatus() {

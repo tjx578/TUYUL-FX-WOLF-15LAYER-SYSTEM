@@ -44,7 +44,44 @@ async def test_persist_trade_snapshot_writes_trade_and_event() -> None:
     )
 
     assert ok is True
-    assert pg.execute.await_count == 2
+    assert pg.execute.await_count == 3
+
+
+@pytest.mark.asyncio
+async def test_persist_trade_snapshot_uses_transaction_when_available() -> None:
+    pg = cast(
+        Any,
+        SimpleNamespace(
+            is_available=True,
+            execute=AsyncMock(return_value="OK"),
+            execute_in_transaction=AsyncMock(return_value=["OK", "OK", "OK"]),
+        ),
+    )
+    trade: dict[str, Any] = {
+        "trade_id": "T-TX-1",
+        "signal_id": "SIG-TX-1",
+        "account_id": "ACC-TX-1",
+        "pair": "EURUSD",
+        "direction": "BUY",
+        "status": "PENDING",
+        "risk_mode": "FIXED",
+        "total_risk_percent": 1.0,
+        "total_risk_amount": 100.0,
+        "legs": [],
+        "created_at": datetime.now(UTC).isoformat(),
+        "updated_at": datetime.now(UTC).isoformat(),
+    }
+
+    ok = await persist_trade_snapshot(
+        trade,
+        event_type="ORDER_PLACED",
+        event_payload={"source": "MANUAL", "execution_intent_id": "intent-1"},
+        pg=pg,
+    )
+
+    assert ok is True
+    assert pg.execute_in_transaction.await_count == 1
+    pg.execute.assert_not_called()
 
 
 @pytest.mark.asyncio

@@ -23,6 +23,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import StrEnum
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -313,7 +314,7 @@ def check_health(
     report_id: str,
     layer_inputs: Sequence[LayerHealthInput],
     resources: SystemResourceInput | None = None,
-    metadata: dict | None = None,
+    metadata: dict[str, Any] | None = None,
 ) -> L15HealthReport:
     """
     Main entry point for Layer-15 system health check.

@@ -29,6 +29,8 @@ class RouterEntry:
 ROUTER_ENTRIES: list[RouterEntry] = [
     # Trade write lifecycle (take/skip/confirm/close/active + risk/calculate)
     RouterEntry("api.allocation_router", "write_router", "Trade write lifecycle"),
+    # Admin outbox inspect/replay
+    RouterEntry("api.outbox_router", "router", "Trade outbox admin endpoints"),
     # L12 verdicts, context, execution state, pairs
     RouterEntry("api.l12_routes", "router", "L12 verdicts / context / execution state"),
     # WebSocket feeds
@@ -44,7 +46,7 @@ ROUTER_ENTRIES: list[RouterEntry] = [
     # Instrument list + regime + sessions
     RouterEntry("api.instrument_routes", "router", "Instrument list + regime + sessions"),
     # Economic calendar + news-lock
-    RouterEntry("api.calendar_routes", "router", "Economic calendar + news-lock"),
+    RouterEntry("news.routes.calendar_routes", "router", "Economic calendar + news-lock"),
     # Frozen SignalContract read APIs
     RouterEntry("api.signals_router", "router", "Frozen signal read APIs"),
     # Read-only account APIs
@@ -61,6 +63,8 @@ ROUTER_ENTRIES: list[RouterEntry] = [
     RouterEntry("api.metrics_routes", "router", "Prometheus scrape endpoint"),
     # Redis observability + TCP_OVERWINDOW diagnostics
     RouterEntry("api.redis_health_routes", "router", "Redis observability + diagnostics"),
+    # Orchestrator governance state (read-only)
+    RouterEntry("api.orchestrator_routes", "router", "Orchestrator governance state"),
 ]
 
 

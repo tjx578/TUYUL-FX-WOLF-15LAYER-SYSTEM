@@ -18,8 +18,8 @@ import sys
 from copy import deepcopy
 from typing import Any
 
-from loguru import logger as loguru_logger
 from typing_extensions import override
+from config.logging_bootstrap import configure_loguru_logging
 
 # ── Process-level logging (must run before any app import) ────────────────────
 
@@ -32,23 +32,7 @@ def _configure_process_logging() -> None:
         force=True,
     )
 
-    loguru_logger.remove()
-    log_format = (
-        "<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level: <8}</level> | "
-        "<cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - "
-        "<level>{message}</level>"
-    )
-    loguru_logger.add(
-        sys.stdout,
-        format=log_format,
-        level="INFO",
-        filter=lambda record: record["level"].no < 40,
-    )
-    loguru_logger.add(
-        sys.stderr,
-        format=log_format,
-        level="ERROR",
-    )
+    configure_loguru_logging(level=os.getenv("WOLF15_LOG_LEVEL", "INFO"))
 
 
 _configure_process_logging()
@@ -115,9 +99,10 @@ def _build_uvicorn_log_config() -> dict[str, Any]:
         "level": "INFO",
         "propagate": False,
     }
+    access_level = os.getenv("UVICORN_ACCESS_LOG_LEVEL", "WARNING").upper().strip() or "WARNING"
     loggers["uvicorn.access"] = {
         "handlers": ["access"],
-        "level": "INFO",
+        "level": access_level,
         "propagate": False,
     }
 

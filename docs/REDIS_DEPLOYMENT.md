@@ -119,6 +119,11 @@ CONTEXT_MODE=redis          # redis | local (default: local)
 REDIS_URL=redis://redis:6379/0
 REDIS_PREFIX=wolf15
 REDIS_SOCKET_TIMEOUT_SEC=5
+
+# Economic calendar provider-chain ingestion (ingest/calendar_news.py)
+NEWS_INGEST_ENABLED=true
+NEWS_POLL_INTERVAL_SEC=300
+NEWS_PROVIDER=forexfactory
 ```
 
 ### Docker Compose

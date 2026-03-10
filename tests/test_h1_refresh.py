@@ -56,7 +56,7 @@ class TestPeriodicRefresh:
         ]
 
         mock_fetcher_instance.fetch = AsyncMock(return_value=h1_test_candles)
-        mock_fetcher_instance._aggregate_h4 = MagicMock(return_value=h4_test_candles)
+        mock_fetcher_instance.aggregate_h4 = MagicMock(return_value=h4_test_candles)
         mock_fetcher_class.return_value = mock_fetcher_instance
 
         # Mock context bus
@@ -82,7 +82,7 @@ class TestPeriodicRefresh:
         mock_fetcher_instance.fetch.assert_called()
 
         # Verify H4 aggregation was called
-        mock_fetcher_instance._aggregate_h4.assert_called_with(h1_test_candles)
+        mock_fetcher_instance.aggregate_h4.assert_called_with(h1_test_candles)
 
         # Verify context bus update_candle was called
         assert mock_bus.update_candle.called
@@ -119,7 +119,7 @@ class TestPriceDriftDetection:
         ]
 
         mock_fetcher_instance.fetch = AsyncMock(return_value=h1_test_candles)
-        mock_fetcher_instance._aggregate_h4 = MagicMock(return_value=[])
+        mock_fetcher_instance.aggregate_h4 = MagicMock(return_value=[])
         mock_fetcher_class.return_value = mock_fetcher_instance
 
         # Mock context bus with HIGH drift
@@ -171,7 +171,7 @@ class TestPriceDriftDetection:
         ]
 
         mock_fetcher_instance.fetch = AsyncMock(return_value=h1_test_candles)
-        mock_fetcher_instance._aggregate_h4 = MagicMock(return_value=[])
+        mock_fetcher_instance.aggregate_h4 = MagicMock(return_value=[])
         mock_fetcher_class.return_value = mock_fetcher_instance
 
         # Mock context bus with LOW drift

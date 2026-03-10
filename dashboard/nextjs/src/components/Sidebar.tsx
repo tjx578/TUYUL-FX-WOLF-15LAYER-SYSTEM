@@ -44,7 +44,11 @@ export function Sidebar() {
   const { data: health } = useHealth();
   const { data: trades } = useActiveTrades();
 
-  const activeCount = trades?.length ?? 0;
+  const activeCount = Array.isArray(trades)
+    ? trades.length
+    : Array.isArray(trades?.trades)
+      ? trades.trades.length
+      : 0;
   const isHealthy = health?.status === "ok";
 
   // Group nav items by section, preserving order

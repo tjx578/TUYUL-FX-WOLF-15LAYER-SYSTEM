@@ -3,9 +3,18 @@
 Lightweight health check to verify configs are readable and core modules import.
 """
 
-from loguru import logger
+import sys
+from pathlib import Path
 
-from config_loader import load_constitution, load_prop_firm, load_settings
+# Ensure repository root is importable when script is executed as
+# `python scripts/health_check.py`.
+REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from loguru import logger  # noqa: E402
+
+from config_loader import load_constitution, load_prop_firm, load_settings  # noqa: E402
 
 
 def main() -> int:

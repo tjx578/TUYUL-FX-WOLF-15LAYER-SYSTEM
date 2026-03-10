@@ -11,7 +11,7 @@ wolf_ticks_rejected_spike_total         — ticks dropped by SpikeFilter
 wolf_ticks_rejected_dedup_total         — ticks dropped by DedupCache
 wolf_ws_connections_active              — current open WS connections (gauge)
 wolf_redis_stream_lag_seconds           — consumer group read lag (histogram)
-wolf_pipeline_latency_ms                — end-to-end tick→context latency per stage
+wolf_ingest_pipeline_latency_ms         — ingest tick→context latency per stage
 
 Usage (ingest path)
 -------------------
@@ -35,6 +35,10 @@ Usage (ingest path)
 """
 
 from __future__ import annotations
+
+from dataclasses import dataclass
+
+from pipeline.constants import get_max_latency_ms
 
 from core.metrics import Counter, Gauge, Histogram, get_registry
 
@@ -84,11 +88,17 @@ REDIS_STREAM_LAG: Histogram = _R.histogram(
 # ── Pipeline latency ───────────────────────────────────────────────────────
 
 PIPELINE_LATENCY: Histogram = _R.histogram(
-    "wolf_pipeline_latency_ms",
+    "wolf_ingest_pipeline_latency_ms",
     "End-to-end latency per pipeline stage in milliseconds",
     label_names=("stage",),
     # stage examples: "tick_to_context", "context_to_verdict", "verdict_to_ws"
     buckets=(1, 5, 10, 25, 50, 100, 200, 500, 1000, 2000, 5000),
+)
+
+SLO_BREACH_TOTAL: Counter = _R.counter(
+    "wolf_slo_breach_total",
+    "Number of SLO threshold breaches by metric and stage",
+    label_names=("metric", "stage"),
 )
 
 # ---------------------------------------------------------------------------
@@ -129,3 +139,64 @@ def record_redis_lag(stream: str, lag_sec: float) -> None:
 def record_pipeline_latency(stage: str, latency_ms: float) -> None:
     """Record end-to-end latency for a named pipeline *stage* in milliseconds."""
     PIPELINE_LATENCY.labels(stage=stage).observe(latency_ms)
+
+
+@dataclass(frozen=True)
+class SLOStageStatus:
+    stage: str
+    samples: int
+    avg_latency_ms: float
+    threshold_ms: float
+    breach: bool
+
+
+def evaluate_latency_slo(
+    latency_threshold_ms: float | None = None,
+    min_samples: int = 5,
+) -> dict[str, object]:
+    """Compute per-stage latency SLO status from the histogram state."""
+    threshold = float(latency_threshold_ms or get_max_latency_ms())
+    results: list[SLOStageStatus] = []
+    breaches = 0
+
+    for key, child in PIPELINE_LATENCY._children.items():  # noqa: SLF001
+        labels = dict(key)
+        stage = labels.get("stage", "unknown")
+        samples = int(child.count)
+        if samples < max(1, min_samples):
+            continue
+
+        avg_latency = float(child.sum / samples) if samples else 0.0
+        breach = avg_latency > threshold
+        if breach:
+            breaches += 1
+            SLO_BREACH_TOTAL.labels(metric="pipeline_latency_ms", stage=stage).inc()
+
+        results.append(
+            SLOStageStatus(
+                stage=stage,
+                samples=samples,
+                avg_latency_ms=round(avg_latency, 3),
+                threshold_ms=threshold,
+                breach=breach,
+            )
+        )
+
+    results.sort(key=lambda item: item.stage)
+    return {
+        "metric": "pipeline_latency_ms",
+        "threshold_ms": threshold,
+        "min_samples": max(1, min_samples),
+        "breaches": breaches,
+        "healthy": breaches == 0,
+        "stages": [
+            {
+                "stage": row.stage,
+                "samples": row.samples,
+                "avg_latency_ms": row.avg_latency_ms,
+                "threshold_ms": row.threshold_ms,
+                "breach": row.breach,
+            }
+            for row in results
+        ],
+    }

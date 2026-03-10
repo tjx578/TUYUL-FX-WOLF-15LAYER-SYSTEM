@@ -44,6 +44,11 @@ class LiveContextBus:
 
     _instance: LiveContextBus | None = None
 
+    @classmethod
+    def reset_singleton(cls) -> None:
+        """Reset the singleton instance (for testing only)."""
+        cls._instance = None
+
     def __new__(cls) -> LiveContextBus:
         if cls._instance is None:
             cls._instance = super().__new__(cls)

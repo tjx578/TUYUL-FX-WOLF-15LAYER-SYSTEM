@@ -21,10 +21,10 @@ from infrastructure.tracing import (
     instrument_requests,
     setup_tracer,
 )
+from ingest.calendar_news import CalendarNewsIngestor
 from ingest.candle_builder import CandleBuilder
 from ingest.dependencies import create_finnhub_ws
 from ingest.finnhub_market_news import FinnhubMarketNews
-from ingest.finnhub_news import FinnhubNews
 from journal.journal_schema import ContextJournal, DecisionJournal, VerdictType
 from pipeline import WolfConstitutionalPipeline
 from storage.startup import init_persistent_storage, shutdown_persistent_storage
@@ -94,8 +94,22 @@ async def seed_candles_on_startup() -> None:
 
 
 async def _seed_from_redis() -> None:
-    """Load candle history from Redis Lists into LiveContextBus."""
+    """Load candle history from Redis Lists into LiveContextBus.
+
+    Retries with backoff when Redis has no data yet (race condition: engine
+    starts before ingest finishes seeding).  Controlled via env vars:
+      - ENGINE_WARMUP_MAX_RETRIES  (default 15, ~2.5 min total wait)
+      - ENGINE_WARMUP_RETRY_DELAY_SEC (default 10)
+
+    Readiness is checked against H1 (always seeded by ingest via REST).
+    M15 is NOT checked here — it is built from tick data and arrives
+    naturally ~15 minutes after the WebSocket connects.
+    """
+    max_retries = int(os.getenv("ENGINE_WARMUP_MAX_RETRIES", "15"))
+    retry_delay = float(os.getenv("ENGINE_WARMUP_RETRY_DELAY_SEC", "10"))
+
     try:
+        from context.live_context_bus import LiveContextBus  # noqa: PLC0415
         from context.redis_consumer import RedisConsumer  # noqa: PLC0415
         from infrastructure.redis_url import get_redis_url  # noqa: PLC0415
 
@@ -103,8 +117,62 @@ async def _seed_from_redis() -> None:
         redis_client: AsyncRedis = AsyncRedis.from_url(redis_url)  # type: ignore[no-untyped-call]
         try:
             consumer = RedisConsumer(symbols=PAIRS, redis_client=redis_client)
-            await consumer.load_candle_history()
-            logger.info("[SEED] Redis candle history loaded into LiveContextBus")
+            bus = LiveContextBus()
+
+            # Primary gate: H1 is always seeded by ingest via REST warmup.
+            # M15 arrives from tick stream ~15 min after WebSocket connects
+            # and must NOT be used as the startup gate.
+            _h1_warmup = {"H1": 1}
+
+            # Secondary verification: higher TFs that L1 context depends on.
+            # These don't block startup but emit explicit warnings.
+            _htf_verify = {"H4": 1, "D1": 1, "W1": 1, "MN": 1}
+
+            for attempt in range(1, max_retries + 1):
+                await consumer.load_candle_history()
+
+                h1_count = sum(
+                    1 for pair in PAIRS
+                    if bus.check_warmup(pair, _h1_warmup).get("ready")
+                )
+
+                if h1_count > 0:
+                    logger.info(
+                        "[SEED] Redis candle history loaded into LiveContextBus "
+                        "(%d/%d pairs with H1 data, attempt %d). "
+                        "M15 will arrive from tick stream after ~15 min.",
+                        h1_count, len(PAIRS), attempt,
+                    )
+
+                    # Verify higher timeframes and warn if missing
+                    for pair in PAIRS:
+                        htf_status = bus.check_warmup(pair, _htf_verify)
+                        if htf_status.get("missing"):
+                            missing_tfs = list(htf_status["missing"].keys())
+                            logger.warning(
+                                "[SEED] %s missing higher-TF data: %s — "
+                                "L1 context/regime analysis may be degraded "
+                                "until ingest delivers these timeframes.",
+                                pair, missing_tfs,
+                            )
+                    return
+
+                # No H1 data yet — ingest may still be seeding
+                if attempt < max_retries:
+                    logger.warning(
+                        "[SEED] No candle data in Redis yet "
+                        "(H1=%d, attempt %d/%d) — waiting %.0fs",
+                        h1_count, attempt, max_retries, retry_delay,
+                    )
+                    await asyncio.sleep(retry_delay)
+
+            # Exhausted all retries
+            logger.critical(
+                "[SEED] Redis still empty after %d retries (%.0fs total wait). "
+                "Engine will continue in DEGRADED mode — analysis will be blind "
+                "until live candles arrive.",
+                max_retries, max_retries * retry_delay,
+            )
         finally:
             await redis_client.aclose()
     except Exception as exc:
@@ -129,6 +197,15 @@ async def _seed_from_finnhub() -> None:
         )
         logger.info(
             f"[SEED] Finnhub warmup complete: {len(results)} symbols, {total} total bars"
+        )
+
+        # M15 is excluded from warmup_all (normally built from WS ticks),
+        # but the pipeline warmup gate requires M15 bars.  Fetch via REST
+        # cold-start so the first analysis cycle isn't blocked.
+        m15_seeded = await fetcher.cold_start_m15(bars=100)
+        m15_total = sum(m15_seeded.values())
+        logger.info(
+            f"[SEED] M15 cold-start: {len(m15_seeded)} symbols, {m15_total} total bars"
         )
     except Exception as exc:
         logger.error(f"[SEED] Failed to seed from Finnhub: {exc}")
@@ -248,7 +325,7 @@ async def run_ingest_services(has_api_key: bool, redis: AsyncRedis) -> None:
         return
 
     ws_feed = await create_finnhub_ws(redis=redis)
-    news_feed = FinnhubNews()
+    news_feed = CalendarNewsIngestor(redis_client=redis)
     market_news = FinnhubMarketNews()
 
     # Create CandleBuilder instances for each enabled pair at default timeframe
@@ -258,7 +335,7 @@ async def run_ingest_services(has_api_key: bool, redis: AsyncRedis) -> None:
         for pair in PAIRS
     ]
 
-    logger.info("Starting ingest services: WebSocket, News, MarketNews, CandleBuilder")
+    logger.info("Starting ingest services: WebSocket, CalendarNews, MarketNews, CandleBuilder")
     try:
         cb_coros: list[Coroutine[object, object, object]] = [cb.run() for cb in candle_builders]  # pyright: ignore[reportAttributeAccessIssue, reportUnknownMemberType]
         await asyncio.gather(

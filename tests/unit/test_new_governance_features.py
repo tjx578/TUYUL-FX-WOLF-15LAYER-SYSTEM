@@ -65,7 +65,9 @@ def test_config_profile_engine_activation() -> None:
     assert risk_cfg["default_risk_percent"] == 0.005
 
 
-def test_global_kill_switch_toggle() -> None:
+def test_global_kill_switch_toggle(monkeypatch) -> None:
+    monkeypatch.setattr("risk.kill_switch.redis_client.get", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr("risk.kill_switch.redis_client.set", lambda *_args, **_kwargs: None)
     ks = GlobalKillSwitch()
     enabled = ks.enable("TEST_HALT")
     assert enabled["enabled"] is True
@@ -74,6 +76,17 @@ def test_global_kill_switch_toggle() -> None:
     disabled = ks.disable("TEST_RESUME")
     assert disabled["enabled"] is False
     assert ks.is_enabled() is False
+
+
+def test_global_kill_switch_auto_trip_daily_dd(monkeypatch) -> None:
+    monkeypatch.setattr("risk.kill_switch.redis_client.get", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr("risk.kill_switch.redis_client.set", lambda *_args, **_kwargs: None)
+    ks = GlobalKillSwitch()
+    ks.disable("RESET")
+    state = ks.evaluate_and_trip(metrics={"daily_dd_percent": 99.0})
+    assert state["enabled"] is True
+    assert "AUTO_DAILY_DD_BREACH" in str(state["reason"])
+    ks.disable("RESET_AFTER_TEST")
 
 
 def test_ws_live_feed_endpoint_snapshot() -> None:

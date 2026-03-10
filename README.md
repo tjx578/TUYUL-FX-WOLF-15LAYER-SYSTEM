@@ -139,8 +139,21 @@ audit · compliance · SOP · training.
 - `docs/FINAL_SYSTEM_REVIEW.md`
 - `docs/END_TO_END_SIMULATION.md`
 - `docs/GO_LIVE_CHECKLIST_PROP_FIRM.md`
+- `docs/OUTBOX_ADMIN_API.md` (inspect/replay outbox admin API)
 
 ⚠️ File di folder `docs/` **tidak pernah dipanggil oleh kode**.
+
+## Outbox Admin API (Ringkas)
+
+Endpoint outbox admin tersedia di prefix `/api/v1/outbox` (wajib auth).
+
+- `GET /api/v1/outbox/pending` (inspect + filter)
+- `GET /api/v1/outbox/{outbox_id}` (single record detail)
+- `POST /api/v1/outbox/retry-batch` (mass replay dengan safety cap)
+
+Contoh request-response lengkap:
+
+- `docs/OUTBOX_ADMIN_API.md`
 
 ---
 
@@ -212,6 +225,22 @@ Gate CI mencakup lint, type check, constitutional boundary, tests, coverage, das
   - Trigger otomatis: hanya setelah workflow `CI` sukses di branch `main`
     - Trigger manual: `workflow_dispatch`
 
+### Railway Service Manifests
+
+Mapping service ke file deploy Railway dan start script:
+
+| Service | Railway TOML | Start Script |
+| --- | --- | --- |
+| API | `railway.toml` | `deploy/railway/start_api.sh` |
+| Ingestor | `railway-ingestor.toml` | `deploy/railway/start_ingest.sh` |
+| Engine | `railway-engine.toml` | `deploy/railway/start_engine.sh` |
+| Allocation | `railway-allocation.toml` | `deploy/railway/start_allocation.sh` |
+| Execution | `railway-execution.toml` | `deploy/railway/start_execution.sh` |
+| Orchestrator | `railway-orchestrator.toml` | `deploy/railway/start_orchestrator.sh` |
+| Worker Backtest | `railway-worker-backtest.toml` | `deploy/railway/start_worker.sh` |
+| Worker Monte Carlo | `railway-worker-montecarlo.toml` | `deploy/railway/start_worker.sh` |
+| Worker Regime | `railway-worker-regime.toml` | `deploy/railway/start_worker.sh` |
+
 ### Required GitHub Secrets
 
 - `RAILWAY_TOKEN` → token deploy Railway (wajib untuk workflow deploy)
@@ -237,6 +266,51 @@ Gate CI mencakup lint, type check, constitutional boundary, tests, coverage, das
 ## 🧩 Environment Variables
 
 Lihat `.env.example` untuk daftar lengkap.
+
+### Orchestrator Runtime (services/orchestrator)
+
+Environment variables berikut dipakai oleh `services/orchestrator/state_manager.py`:
+
+```env
+# Redis pub/sub channel for orchestrator command + status events.
+# Default fallback: state.pubsub_channels.ORCHESTRATOR_COMMANDS
+ORCHESTRATOR_CHANNEL=wolf15:orchestrator:commands
+
+# Redis snapshot keys written/read by orchestrator
+ORCHESTRATOR_STATE_KEY=wolf15:orchestrator:state
+ORCHESTRATOR_ACCOUNT_STATE_KEY=wolf15:account:state
+ORCHESTRATOR_TRADE_RISK_KEY=wolf15:trade:risk
+
+# Loop tuning (seconds)
+ORCHESTRATOR_LOOP_SLEEP_SEC=0.5
+ORCHESTRATOR_COMPLIANCE_INTERVAL_SEC=5
+ORCHESTRATOR_HEARTBEAT_INTERVAL_SEC=30
+```
+
+Operational behavior:
+
+- `evaluate_compliance(account_state, trade_risk)` dieksekusi periodik.
+- Severity `critical` memicu mode `KILL_SWITCH`.
+- Severity `warning` memicu mode `SAFE`.
+- Status/transition dipublish kembali ke channel orchestrator dan disimpan ke `ORCHESTRATOR_STATE_KEY`.
+
+### Ingest Calendar News Runtime (ingest/calendar_news.py)
+
+Environment variables berikut dipakai oleh poller economic calendar berbasis provider chain:
+
+```env
+# Enable or disable calendar ingestion loop.
+# Default: true
+NEWS_INGEST_ENABLED=true
+
+# Polling interval in seconds for provider-chain calendar refresh.
+# Default: 300
+NEWS_POLL_INTERVAL_SEC=300
+
+# Provider priority selector used by news.provider_selector.
+# Default: forexfactory
+NEWS_PROVIDER=forexfactory
+```
 
 ---
 

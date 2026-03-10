@@ -86,3 +86,58 @@ async def test_record_trade_event_expired_marks_cancelled(monkeypatch: pytest.Mo
     assert trade_ledger[trade_id]["status"] == "CANCELLED"
     assert "closed_at" in trade_ledger[trade_id]
     closed_hook.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_record_trade_event_replay_safe_by_execution_intent(monkeypatch: pytest.MonkeyPatch) -> None:
+    import api.allocation_router as ar
+
+    store: dict[str, str] = {}
+
+    def _fake_set(key: str, value: str, nx: bool | None = None, ex: int | None = None):  # noqa: ARG001
+        if nx and key in store:
+            return False
+        store[key] = value
+        return True
+
+    def _fake_get(key: str):
+        return store.get(key)
+
+    monkeypatch.setattr("execution.idempotency_ledger.redis_client.client.set", _fake_set)
+    monkeypatch.setattr("execution.idempotency_ledger.redis_client.client.get", _fake_get)
+
+    trade_id = "T-EVENT-3"
+    trade_ledger = ar._trade_ledger  # pyright: ignore[reportPrivateUsage]
+    trade_ledger[trade_id] = {
+        "trade_id": trade_id,
+        "signal_id": "SIG-3",
+        "account_id": "ACC-3",
+        "pair": "EURUSD",
+        "direction": "BUY",
+        "status": "PENDING",
+        "risk_mode": "FIXED",
+        "total_risk_percent": 1.0,
+        "total_risk_amount": 100.0,
+        "legs": [],
+        "created_at": datetime.now(UTC).isoformat(),
+        "updated_at": datetime.now(UTC).isoformat(),
+    }
+
+    monkeypatch.setattr(ar, "_redis_set", AsyncMock(return_value=True))
+    monkeypatch.setattr(ar, "_persist_trade_write_through", AsyncMock(return_value=True))
+    monkeypatch.setattr(ar, "_enqueue_outbox_atomic", AsyncMock(return_value="1-1"))
+    monkeypatch.setattr(ar, "_journal_service", Mock(on_trade_closed=Mock()))
+
+    req = ar.TradeLifecycleEventRequest(
+        trade_id=trade_id,
+        event_type="ORDER_FILLED",
+        source="EA",
+        execution_intent_id="intent-abc-1",
+    )
+
+    first = await ar.record_trade_lifecycle_event(req)
+    second = await ar.record_trade_lifecycle_event(req)
+
+    assert first["status"] == "OPEN"
+    assert second["status"] == "OPEN"
+    assert second["execution_intent_id"] == "intent-abc-1"

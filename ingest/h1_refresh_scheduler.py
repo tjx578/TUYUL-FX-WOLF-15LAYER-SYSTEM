@@ -106,7 +106,7 @@ class H1RefreshScheduler:
                     self.context_bus.update_candle(candle)
 
                 # Re-aggregate H4
-                h4_candles = self.fetcher._aggregate_h4(h1_candles)
+                h4_candles = self.fetcher.aggregate_h4(h1_candles)
                 for candle in h4_candles:
                     self.context_bus.update_candle(candle)
 

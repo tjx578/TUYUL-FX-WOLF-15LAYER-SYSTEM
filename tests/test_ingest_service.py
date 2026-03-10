@@ -4,6 +4,7 @@ import asyncio
 import importlib
 import sys
 import types
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -14,27 +15,37 @@ def ingest_service_module():
     """Load ingest_service with lightweight stubs for heavy dependencies."""
     # Stub WebSocket and other heavy dependencies first
     fake_websockets_module = types.ModuleType("websockets")
-    fake_websockets_module.connect = AsyncMock()
+    fake_websockets_module.connect = AsyncMock()  # type: ignore[attr-defined]
 
     fake_candle_module = types.ModuleType("ingest.candle_builder")
-    fake_news_module = types.ModuleType("ingest.finnhub_news")
+    fake_news_module = types.ModuleType("ingest.calendar_news")
     fake_dependencies_module = types.ModuleType("ingest.dependencies")
+    fake_macro_module = types.ModuleType("analysis.macro.macro_regime_engine")
 
     class FakeRunner:
+        def __init__(self, *args: object, **kwargs: object) -> None:
+            super().__init__()
+
         async def run(self):
             return None
 
-    fake_candle_module.CandleBuilder = FakeRunner
-    fake_news_module.FinnhubNews = FakeRunner
-    fake_dependencies_module.create_finnhub_ws = AsyncMock()
+    class FakeTimeframe:
+        M15 = "M15"
+
+    fake_candle_module.CandleBuilder = FakeRunner  # type: ignore[attr-defined]
+    fake_candle_module.Timeframe = FakeTimeframe  # type: ignore[attr-defined]
+    fake_news_module.CalendarNewsIngestor = FakeRunner  # type: ignore[attr-defined]
+    fake_dependencies_module.create_finnhub_ws = AsyncMock()  # type: ignore[attr-defined]
+    fake_macro_module.MacroRegimeEngine = MagicMock  # type: ignore[attr-defined]
 
     with patch.dict(
         sys.modules,
         {
             "websockets": fake_websockets_module,
             "ingest.candle_builder": fake_candle_module,
-            "ingest.finnhub_news": fake_news_module,
+            "ingest.calendar_news": fake_news_module,
             "ingest.dependencies": fake_dependencies_module,
+            "analysis.macro.macro_regime_engine": fake_macro_module,
         },
     ):
         module = importlib.import_module("ingest_service")
@@ -48,7 +59,7 @@ def ingest_service_module():
 
 @pytest.mark.asyncio
 async def test_run_ingest_services_no_api_key_exits_on_shutdown_event(
-    ingest_service_module,
+    ingest_service_module: Any,
 ) -> None:
     """No-API-key path should idle until shutdown event is set."""
     ingest_service_module._shutdown_event = asyncio.Event()
@@ -71,15 +82,67 @@ async def test_run_ingest_services_no_api_key_exits_on_shutdown_event(
 
 @pytest.mark.asyncio
 async def test_run_ingest_services_closes_redis_when_ping_fails(
-    ingest_service_module,
+    ingest_service_module: Any,
 ) -> None:
     """Redis client should be closed if setup fails after client creation."""
     fake_redis = MagicMock()
     fake_redis.ping = AsyncMock(side_effect=RuntimeError("ping failed"))
     fake_redis.aclose = AsyncMock()
 
-    with patch.object(ingest_service_module, "_build_redis_client", return_value=fake_redis):
+    with patch.object(ingest_service_module, "_build_redis_client", return_value=fake_redis):  # noqa: SIM117
         with pytest.raises(RuntimeError, match="ping failed"):
             await ingest_service_module.run_ingest_services(has_api_key=True)
 
     fake_redis.aclose.assert_awaited_once()
+
+
+# ── Redis candle history seeding tests ─────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_seed_redis_writes_h1_keys(
+    ingest_service_module: Any,
+) -> None:
+    """_seed_redis_candle_history must write REST-warmed timeframe keys (H1, H4, D1)
+    to Redis. M15 is NOT produced by ingest — it comes from tick data."""
+    fake_pipe = MagicMock()
+    fake_pipe.rpush = MagicMock()
+    fake_pipe.expire = MagicMock()
+    fake_pipe.execute = AsyncMock(return_value=[])
+
+    fake_redis = MagicMock()
+    fake_redis.pipeline = MagicMock(return_value=fake_pipe)
+    fake_redis.llen = AsyncMock(return_value=0)
+
+    warmup_results = {
+        "EURUSD": {
+            "H1": [{"close": 1.1}],
+            "H4": [{"close": 1.05}],
+            "D1": [{"close": 1.0}],
+        }
+    }
+
+    await ingest_service_module._seed_redis_candle_history(fake_redis, warmup_results)
+
+    rpush_keys = [call.args[0] for call in fake_pipe.rpush.call_args_list]
+    assert "wolf15:candle_history:EURUSD:H1" in rpush_keys
+    assert "wolf15:candle_history:EURUSD:H4" in rpush_keys
+    assert "wolf15:candle_history:EURUSD:D1" in rpush_keys
+    # M15 must NOT appear — it is built from tick data, not REST
+    assert "wolf15:candle_history:EURUSD:M15" not in rpush_keys
+
+
+def test_cold_start_m15_removed_from_module(
+    ingest_service_module: Any,
+) -> None:
+    """_cold_start_m15_for_warmup must not exist on ingest_service.
+
+    M15 comes from tick data (CandleBuilder), never from REST.
+    Fetching M15 from REST violates the architecture.
+    """
+    assert not hasattr(ingest_service_module, "_cold_start_m15_for_warmup"), (
+        "_cold_start_m15_for_warmup still present — should have been removed. "
+        "M15 must come from tick data only."
+    )
+
+

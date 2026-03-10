@@ -7,9 +7,7 @@ H4 aggregation, and warmup functionality.
 
 
 from datetime import UTC, datetime, tzinfo
-from unittest.mock import AsyncMock, MagicMock, patch
-
-from datetime import UTC, datetime, tzinfo
+from typing import Any
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -58,25 +56,25 @@ class TestSymbolConversion:
     def test_eurusd_conversion(self) -> None:
         """Test EURUSD -> OANDA:EUR_USD conversion."""
         fetcher = FinnhubCandleFetcher()
-        result = fetcher._convert_symbol("EURUSD")
+        result = fetcher.convert_symbol("EURUSD")
         assert result == "OANDA:EUR_USD"
 
     def test_xauusd_conversion(self) -> None:
         """Test XAUUSD -> OANDA:XAU_USD conversion."""
         fetcher = FinnhubCandleFetcher()
-        result = fetcher._convert_symbol("XAUUSD")
+        result = fetcher.convert_symbol("XAUUSD")
         assert result == "OANDA:XAU_USD"
 
     def test_already_prefixed_passthrough(self) -> None:
         """Test already-prefixed symbols pass through unchanged."""
         fetcher = FinnhubCandleFetcher()
-        result = fetcher._convert_symbol("OANDA:EUR_USD")
+        result = fetcher.convert_symbol("OANDA:EUR_USD")
         assert result == "OANDA:EUR_USD"
 
     def test_gbpjpy_conversion(self) -> None:
         """Test GBPJPY -> OANDA:GBP_JPY conversion."""
         fetcher = FinnhubCandleFetcher()
-        result = fetcher._convert_symbol("GBPJPY")
+        result = fetcher.convert_symbol("GBPJPY")
         assert result == "OANDA:GBP_JPY"
 
 
@@ -110,13 +108,13 @@ class TestNormalizeResponse:
     def test_bar_count(self) -> None:
         """Test normalized response has correct bar count."""
         fetcher = FinnhubCandleFetcher()
-        candles = fetcher._normalize_response(REAL_FINNHUB_RESPONSE, "EURUSD", "D1")
+        candles = fetcher.normalize_response(REAL_FINNHUB_RESPONSE, "EURUSD", "D1")
         assert len(candles) == 20
 
     def test_first_bar_ohlcv(self) -> None:
         """Test first bar OHLCV matches."""
         fetcher = FinnhubCandleFetcher()
-        candles = fetcher._normalize_response(REAL_FINNHUB_RESPONSE, "EURUSD", "D1")
+        candles = fetcher.normalize_response(REAL_FINNHUB_RESPONSE, "EURUSD", "D1")
 
         first = candles[0]
         assert first["open"] == 1.11674
@@ -128,7 +126,7 @@ class TestNormalizeResponse:
     def test_last_bar_ohlcv(self) -> None:
         """Test last bar OHLCV matches."""
         fetcher = FinnhubCandleFetcher()
-        candles = fetcher._normalize_response(REAL_FINNHUB_RESPONSE, "EURUSD", "D1")
+        candles = fetcher.normalize_response(REAL_FINNHUB_RESPONSE, "EURUSD", "D1")
 
         last = candles[-1]
         assert last["open"] == 1.10051
@@ -140,7 +138,7 @@ class TestNormalizeResponse:
     def test_timestamps_utc(self) -> None:
         """Test all timestamps are UTC."""
         fetcher = FinnhubCandleFetcher()
-        candles = fetcher._normalize_response(REAL_FINNHUB_RESPONSE, "EURUSD", "D1")
+        candles = fetcher.normalize_response(REAL_FINNHUB_RESPONSE, "EURUSD", "D1")
 
         for candle in candles:
             ts = candle["timestamp"]
@@ -150,7 +148,7 @@ class TestNormalizeResponse:
     def test_tzinfo_is_instance_not_type(self) -> None:
         """Regression: tzinfo must be an instance (e.g. timezone.utc), not the timezone class."""
         fetcher = FinnhubCandleFetcher()
-        candles = fetcher._normalize_response(REAL_FINNHUB_RESPONSE, "EURUSD", "D1")
+        candles = fetcher.normalize_response(REAL_FINNHUB_RESPONSE, "EURUSD", "D1")
 
         for candle in candles:
             ts = candle["timestamp"]
@@ -163,7 +161,7 @@ class TestNormalizeResponse:
     def test_ohlc_validity(self) -> None:
         """Test OHLC relationships are valid (high >= open,close; low <= open,close)."""
         fetcher = FinnhubCandleFetcher()
-        candles = fetcher._normalize_response(REAL_FINNHUB_RESPONSE, "EURUSD", "D1")
+        candles = fetcher.normalize_response(REAL_FINNHUB_RESPONSE, "EURUSD", "D1")
 
         for candle in candles:
             assert candle["high"] >= candle["open"]
@@ -175,13 +173,13 @@ class TestNormalizeResponse:
         """Test handling of no_data status."""
         fetcher = FinnhubCandleFetcher()
         no_data_response = {"s": "no_data"}
-        candles = fetcher._normalize_response(no_data_response, "EURUSD", "D1")
+        candles = fetcher.normalize_response(no_data_response, "EURUSD", "D1")
         assert candles == []
 
     def test_metadata_fields(self) -> None:
         """Test metadata fields are present."""
         fetcher = FinnhubCandleFetcher()
-        candles = fetcher._normalize_response(REAL_FINNHUB_RESPONSE, "EURUSD", "D1")
+        candles = fetcher.normalize_response(REAL_FINNHUB_RESPONSE, "EURUSD", "D1")
 
         first = candles[0]
         assert first["symbol"] == "EURUSD"
@@ -252,7 +250,7 @@ class TestH4Aggregation:
             },
         ]
 
-        h4_bars = fetcher._aggregate_h4(h1_bars)
+        h4_bars = fetcher.aggregate_h4(h1_bars)
 
         assert len(h4_bars) == 1
         h4 = h4_bars[0]
@@ -292,7 +290,7 @@ class TestH4Aggregation:
             for hour in range(8)
         ]
 
-        h4_bars = fetcher._aggregate_h4(h1_bars)
+        h4_bars = fetcher.aggregate_h4(h1_bars)
 
         # Should produce 2 H4 bars: 00:00-04:00 and 04:00-08:00
         assert len(h4_bars) == 2
@@ -339,3 +337,78 @@ class TestWarmup:
 
         # Verify fetch was called
         assert mock_fetch.called
+
+
+class TestPremiumFallback:
+    """Test that premium-blocked symbols fall back to alternative providers."""
+
+    @pytest.mark.asyncio
+    @patch("ingest.finnhub_candles.FinnhubCandleFetcher.try_fallback")
+    @patch("ingest.finnhub_candles.FinnhubCandleFetcher.fetch")
+    async def test_premium_error_triggers_fallback(
+        self, mock_fetch: AsyncMock, mock_fallback: AsyncMock
+    ) -> None:
+        """When fetch raises FinnhubCandlePremiumError, _try_fallback is invoked."""
+        from ingest.finnhub_candles import FinnhubCandlePremiumError
+
+        mock_fetch.side_effect = FinnhubCandlePremiumError("403 premium required")
+
+        fallback_candles = [
+            {
+                "symbol": "XAGUSD",
+                "timeframe": "D1",
+                "open": 30.00,
+                "high": 30.50,
+                "low": 29.80,
+                "close": 30.25,
+                "volume": 500,
+                "timestamp": datetime(2024, 6, 1, 0, 0, 0, tzinfo=UTC),
+                "source": "twelve_data",
+            }
+        ]
+        mock_fallback.return_value = fallback_candles
+
+        fetcher = FinnhubCandleFetcher()
+        results: dict[str, dict[str, list[dict[str, Any]]]] = {}
+
+        await fetcher.warmup_symbol_tf("XAGUSD", "D1", 10, results)
+
+        mock_fallback.assert_awaited_once_with("XAGUSD", "D1", 10)
+        assert "XAGUSD" in results
+        assert results["XAGUSD"]["D1"] == fallback_candles
+
+    @pytest.mark.asyncio
+    @patch("ingest.finnhub_candles.FinnhubCandleFetcher.try_fallback")
+    @patch("ingest.finnhub_candles.FinnhubCandleFetcher.fetch")
+    async def test_premium_no_fallback_available(
+        self, mock_fetch: AsyncMock, mock_fallback: AsyncMock
+    ) -> None:
+        """When fallback returns empty, results stay empty and no crash."""
+        from ingest.finnhub_candles import FinnhubCandlePremiumError
+
+        mock_fetch.side_effect = FinnhubCandlePremiumError("403")
+        mock_fallback.return_value = []
+
+        fetcher = FinnhubCandleFetcher()
+        results: dict[str, dict[str, list[dict[str, Any]]]] = {}
+
+        await fetcher.warmup_symbol_tf("XAGUSD", "D1", 10, results)
+
+        mock_fallback.assert_awaited_once()
+        assert "XAGUSD" not in results
+
+    @pytest.mark.asyncio
+    @patch("ingest.finnhub_candles.FinnhubCandleFetcher.fetch")
+    async def test_try_fallback_no_providers(self, mock_fetch: AsyncMock) -> None:
+        """_try_fallback returns [] when no fallback providers are configured."""
+        from ingest.finnhub_candles import FinnhubCandlePremiumError
+
+        mock_fetch.side_effect = FinnhubCandlePremiumError("403")
+
+        fetcher = FinnhubCandleFetcher()
+
+        with patch("ingest.fallback_provider.FallbackCandleProvider") as MockProvider:  # noqa: N806
+            MockProvider.return_value.available_providers = []
+            result = await fetcher.try_fallback("XAGUSD", "D1", 10)
+
+        assert result == []
