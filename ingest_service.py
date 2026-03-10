@@ -24,6 +24,7 @@ from ingest.finnhub_candles import FinnhubCandleFetcher
 from ingest.finnhub_market_news import FinnhubMarketNews
 from ingest.h1_refresh_scheduler import H1RefreshScheduler
 from ingest.macro_monthly_scheduler import MacroMonthlyScheduler
+from ingest.rest_poll_fallback import RestPollFallback
 from storage.startup import init_persistent_storage, shutdown_persistent_storage
 
 _shutdown_event: asyncio.Event | None = None
@@ -263,6 +264,7 @@ async def run_ingest_services(has_api_key: bool) -> None:
     enabled_symbols = _get_enabled_symbols()
     redis: RedisClient | None = None
     ws_feed = None
+    rest_poll = None
     news_feed = None
     market_news = None
     candle_builders: dict[str, CandleBuilder] = {}
@@ -293,6 +295,11 @@ async def run_ingest_services(has_api_key: bool) -> None:
             redis=redis,  # pyright: ignore[reportArgumentType]
             candle_callback=_on_tick,
         )
+        # REST poll fallback: automatically polls M15/H1 from REST when WS is down
+        rest_poll = RestPollFallback(
+            ws_connected_fn=lambda: ws_feed.is_connected if ws_feed else False,
+            symbols=enabled_symbols,
+        )
         news_feed = CalendarNewsIngestor(redis_client=redis)
         market_news = FinnhubMarketNews()
         h1_refresh = H1RefreshScheduler()
@@ -306,10 +313,11 @@ async def run_ingest_services(has_api_key: bool) -> None:
         logger.info("Ingest readiness: READY")
 
         logger.info(
-            "Starting ingest services: WebSocket, CalendarNews, MarketNews, CandleBuilder (M15 via tick callback), H1Refresh"
+            "Starting ingest services: WebSocket, RestPollFallback, CalendarNews, MarketNews, CandleBuilder (M15 via tick callback), H1Refresh"
         )
         await asyncio.gather(
             ws_feed.run(),
+            rest_poll.run(),
             news_feed.run(),
             market_news.run(),
             h1_refresh.run(),
@@ -321,6 +329,7 @@ async def run_ingest_services(has_api_key: bool) -> None:
     finally:
         cleanup_errors: list[tuple[str, Exception]] = []
         await _safe_stop("ws_feed", ws_feed, cleanup_errors)
+        await _safe_stop("rest_poll", rest_poll, cleanup_errors)
         await _safe_stop("news_feed", news_feed, cleanup_errors)
         await _safe_stop("market_news", market_news, cleanup_errors)
         if candle_builders:

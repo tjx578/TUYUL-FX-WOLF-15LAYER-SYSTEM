@@ -153,7 +153,17 @@ class FinnhubWebSocket:
             raise RuntimeError("No FINNHUB_API_KEY configured — cannot start WebSocket client.")
         self._attempt: int = 0
         self._running: bool = False
+        self._connected: bool = False
         self._ws: websockets.asyncio.client.ClientConnection | None = None
+
+    @property
+    def is_connected(self) -> bool:
+        """Whether the WebSocket is currently connected and receiving data."""
+        return self._connected
+
+    @is_connected.setter
+    def is_connected(self, value: bool) -> None:
+        self._connected = value
 
     async def _acquire_leader_lock(self) -> bool:
         """Attempt to acquire distributed leader lock.
@@ -221,6 +231,7 @@ class FinnhubWebSocket:
                 },
             )
             self._attempt = 0  # Reset on success
+            self._connected = True
             finnhub_ws_reconnect_current.labels(replica_id=self._replica_id).set(0)
             finnhub_ws_connections_total.labels(replica_id=self._replica_id).inc()
             finnhub_ws_connected.labels(replica_id=self._replica_id).set(1)
@@ -372,6 +383,7 @@ class FinnhubWebSocket:
                 await asyncio.sleep(backoff)
 
             finally:
+                self._connected = False
                 if self._ws is not None:
                     with contextlib.suppress(Exception):
                         await self._ws.close()
@@ -380,6 +392,7 @@ class FinnhubWebSocket:
     async def stop(self) -> None:
         """Gracefully shutdown the WebSocket client."""
         self._running = False
+        self._connected = False
         if self._ws is not None:
             with contextlib.suppress(Exception):
                 await self._ws.close()
