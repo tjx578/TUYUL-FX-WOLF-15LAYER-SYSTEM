@@ -74,7 +74,11 @@ def _init_provider_once(service_name: str) -> None:
         if endpoint:
             exporter = OTLPSpanExporter(endpoint=endpoint, insecure=insecure)
             provider.add_span_processor(BatchSpanProcessor(exporter))
-        trace.set_tracer_provider(provider)
+        # Only set if no real provider has been registered yet.
+        existing = trace.get_tracer_provider()
+        _is_proxy = type(existing).__name__ == "ProxyTracerProvider"
+        if _is_proxy:
+            trace.set_tracer_provider(provider)
         _provider_initialized = True
         if endpoint:
             logger.info(
