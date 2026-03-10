@@ -32,6 +32,11 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     ENV=production \
     PORT=8000
 
+# Postgres client lib required by psycopg / alembic at runtime
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends libpq5 \
+    && rm -rf /var/lib/apt/lists/*
+
 # Install wheels from builder (no compiler needed)
 COPY --from=builder /wheels /tmp/wheels
 RUN pip install --no-cache-dir /tmp/wheels/* \
