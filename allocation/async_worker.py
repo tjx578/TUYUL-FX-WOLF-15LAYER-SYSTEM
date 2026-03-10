@@ -27,7 +27,7 @@ from redis.exceptions import ResponseError
 from allocation.allocation_models import AllocationRequest
 from allocation.allocation_service import AllocationService
 from config.logging_bootstrap import configure_loguru_logging
-from infrastructure.redis_client import RedisConfig, get_client
+from infrastructure.redis_client import RedisConfig, close_pool, get_client
 from infrastructure.tracing import (
     extract_trace_carrier,
     extract_trace_context,
@@ -133,9 +133,12 @@ class AsyncAllocationWorker:
                             count=self._cfg.count,
                             block=self._cfg.block_ms,
                         )
+                    except aioredis.TimeoutError:
+                        # Long-poll timeout can occur on quiet streams when socket_timeout
+                        # is close to block_ms. Treat as empty poll, not a hard disconnect.
+                        response = []
                     except (
                         aioredis.ConnectionError,
-                        aioredis.TimeoutError,
                         OSError,
                     ) as exc:
                         alloc_errors_total.inc()
@@ -143,6 +146,7 @@ class AsyncAllocationWorker:
                             "xreadgroup connection error: {} — reconnecting",
                             type(exc).__name__,
                         )
+                        await close_pool()
                         break  # Break inner loop → reconnect in outer loop
 
                     await self._update_runtime_metrics(redis_client)

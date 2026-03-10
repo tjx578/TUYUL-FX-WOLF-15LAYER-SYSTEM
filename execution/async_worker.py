@@ -117,9 +117,12 @@ class AsyncExecutionWorker:
                             count=self._cfg.count,
                             block=self._cfg.block_ms,
                         )
+                    except aioredis.TimeoutError:
+                        # Long-poll timeout can occur on quiet streams when socket_timeout
+                        # is close to block_ms. Treat as empty poll, not a hard disconnect.
+                        response = []
                     except (
                         aioredis.ConnectionError,
-                        aioredis.TimeoutError,
                         OSError,
                     ) as exc:
                         execution_errors_total.inc()
