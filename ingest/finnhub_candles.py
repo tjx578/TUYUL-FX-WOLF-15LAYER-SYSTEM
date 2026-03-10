@@ -560,11 +560,11 @@ class FinnhubCandleFetcher:
                         symbol,
                     )
                 else:
-                    logger.warning("M15 cold-start: no bars returned for %s", symbol)
+                    logger.warning("M15 cold-start: no bars returned for {}", symbol)
             except FinnhubCandlePremiumError:
-                logger.error("M15 cold-start: premium required for %s", symbol)
+                logger.error("M15 cold-start: premium required for {}", symbol)
             except FinnhubCandleError as exc:
-                logger.error("M15 cold-start error for %s: %s", symbol, exc)
+                logger.error("M15 cold-start error for {}: {}", symbol, exc)
 
         logger.info(
             "M15 cold-start complete: %d/%d symbols recovered",
@@ -616,10 +616,10 @@ class FinnhubCandleFetcher:
                 results[symbol] = "free" if candles else "free"
             except FinnhubCandlePremiumError:
                 results[symbol] = "premium"
-                logger.warning("  %s → PREMIUM (403)", symbol)
+                logger.warning("  {} → PREMIUM (403)", symbol)
             except FinnhubCandleError:
                 results[symbol] = "error"
-                logger.warning("  %s → ERROR (non-403 failure)", symbol)
+                logger.warning("  {} → ERROR (non-403 failure)", symbol)
 
         free_count = sum(1 for v in results.values() if v == "free")
         premium_count = sum(1 for v in results.values() if v == "premium")

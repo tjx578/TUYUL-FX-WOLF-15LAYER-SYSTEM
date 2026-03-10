@@ -91,7 +91,7 @@ class CalendarNewsIngestor:
                     "updated_at": datetime.now(UTC).isoformat(),
                 }
                 self._context_bus.update_news(payload)
-                logger.info("Economic calendar updated via provider chain: %d events", len(events))
+                logger.info("Economic calendar updated via provider chain: {} events", len(events))
             except Exception as exc:
                 logger.error(f"Calendar news poll failed: {exc}")
 

@@ -336,13 +336,13 @@ class L2MTAAnalyzer:
             try:
                 self._reflex = ReflexEmotionCore()
             except Exception as exc:
-                logger.warning("[L2] ReflexEmotionCore init failed: %s", exc)
+                logger.warning("[L2] ReflexEmotionCore init failed: {}", exc)
 
         if FusionIntegrator is not None:
             try:
                 self._fusion = FusionIntegrator(gate_threshold=_L2_FUSION_GATE)
             except Exception as exc:
-                logger.warning("[L2] FusionIntegrator init failed: %s", exc)
+                logger.warning("[L2] FusionIntegrator init failed: {}", exc)
 
     # ──────────────────────────────────────────────────────────
     #  Adaptive TF weight selection
@@ -514,7 +514,7 @@ class L2MTAAnalyzer:
                 engine_reflex = float(result.reflex_coherence)
                 reflex_gate_str = str(result.gate)
             except Exception as exc:
-                logger.debug("[L2] Reflex engine error: %s", exc)
+                logger.debug("[L2] Reflex engine error: {}", exc)
 
         # ── Combined reflex_coherence ─────────────────────────
         # Blend Bayesian RC (math-derived) with engine RC (cognitive)
@@ -590,7 +590,7 @@ class L2MTAAnalyzer:
                     frpc_state = "DESYNC"
 
             except Exception as exc:
-                logger.debug("[L2] Fusion engine error: %s", exc)
+                logger.debug("[L2] Fusion engine error: {}", exc)
 
         # ── Fusion-based alignment override ───────────────────
         if conf12 >= 0.9 and frpc_energy >= 0.85:
