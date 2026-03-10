@@ -33,6 +33,10 @@ from tenacity import (  # noqa: E402
     wait_exponential,
 )
 
+from config.logging_bootstrap import configure_loguru_logging  # noqa: E402
+
+configure_loguru_logging()
+
 
 def _sanitize_redis_url(url: str) -> str:
     """Mask password in Redis URL for safe logging."""
