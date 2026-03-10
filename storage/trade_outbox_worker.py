@@ -107,21 +107,34 @@ class TradeOutboxWorker:
 
         return processed
 
+    _db_table_missing_warned: bool = False
+
     async def _relay_db_pending(self) -> int:
         if not self._pg.is_available:
             return 0
 
-        rows = await self._pg.fetch(
-            """
-            SELECT outbox_id, trade_id, event_type, topic, payload
-            FROM trade_outbox
-            WHERE status = 'PENDING'
-              AND next_attempt_at <= NOW()
-            ORDER BY created_at ASC
-            LIMIT $1
-            """,
-            self._max_batch,
-        )
+        try:
+            rows = await self._pg.fetch(
+                """
+                SELECT outbox_id, trade_id, event_type, topic, payload
+                FROM trade_outbox
+                WHERE status = 'PENDING'
+                  AND next_attempt_at <= NOW()
+                ORDER BY created_at ASC
+                LIMIT $1
+                """,
+                self._max_batch,
+            )
+        except Exception as exc:
+            if "does not exist" in str(exc):
+                if not self._db_table_missing_warned:
+                    logger.warning(
+                        "trade_outbox table missing — run 'alembic upgrade head'. "
+                        "DB-backed outbox relay disabled until table is created."
+                    )
+                    self._db_table_missing_warned = True
+                return 0
+            raise
 
         processed = 0
         for row in rows:
