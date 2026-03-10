@@ -12,7 +12,7 @@ import asyncio
 import os
 import tracemalloc
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import cast
 
 import redis.asyncio as aioredis
@@ -22,7 +22,7 @@ from redis.exceptions import ResponseError
 
 from config.logging_bootstrap import configure_loguru_logging
 from execution.broker_executor import BrokerExecutor, ExecutionRequest, OrderAction
-from infrastructure.redis_client import RedisConfig, get_client
+from infrastructure.redis_client import RedisConfig, close_pool, get_client
 from infrastructure.tracing import (
     extract_trace_carrier,
     extract_trace_context,
@@ -91,7 +91,7 @@ class AsyncExecutionWorker:
     async def run(self) -> None:
         tracemalloc.start()
         logger.info(
-            "Execution worker started (worker=%s stream=%s metrics=%s)",
+            "Execution worker started (worker={} stream={} metrics={})",
             self._cfg.worker_name,
             self._cfg.stream,
             self._cfg.metrics_port,
@@ -102,14 +102,9 @@ class AsyncExecutionWorker:
 
         while True:
             try:
-                redis_client = await get_client(
-                    RedisConfig.from_env().__class__(
-                        **{
-                            **RedisConfig.from_env().__dict__,
-                            "socket_timeout": self._cfg.redis_socket_timeout,
-                        },
-                    ),
-                )
+                base_cfg = RedisConfig.from_env()
+                redis_cfg = replace(base_cfg, socket_timeout=self._cfg.redis_socket_timeout)
+                redis_client = await get_client(redis_cfg)
                 await self._ensure_group(redis_client)
                 backoff = 1.0  # Reset on successful connect
 
@@ -132,6 +127,7 @@ class AsyncExecutionWorker:
                             "xreadgroup connection error: {} — reconnecting",
                             type(exc).__name__,
                         )
+                        await close_pool()
                         break  # Break inner loop → reconnect in outer loop
 
                     await self._update_runtime_metrics(redis_client)
@@ -262,7 +258,7 @@ async def _main() -> None:
     while restarts <= _MAX_RESTARTS:
         try:
             logger.info(
-                "[SUPERVISOR] Starting execution worker (attempt %d/%d)",
+                "[SUPERVISOR] Starting execution worker (attempt {}/{})",
                 restarts + 1,
                 _MAX_RESTARTS + 1,
             )
@@ -275,7 +271,7 @@ async def _main() -> None:
         except Exception as exc:
             restarts += 1
             logger.error(
-                "[SUPERVISOR] Execution worker crashed: %s (restart %d/%d)",
+                "[SUPERVISOR] Execution worker crashed: {} (restart {}/{})",
                 exc,
                 restarts,
                 _MAX_RESTARTS,
