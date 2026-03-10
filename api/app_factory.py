@@ -114,6 +114,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 # ── Middleware helpers ────────────────────────────────────────────────────────
 
 class ForwardedHTTPSRedirectMiddleware(BaseHTTPMiddleware):
+    # Paths that must never be redirected (internal health probes, metrics).
+    _EXEMPT_PATHS: frozenset[str] = frozenset({"/health", "/health/full", "/metrics"})
+
     def __init__(self, app: Any, force_https: bool) -> None:
         super().__init__(app)
         self.force_https = force_https
@@ -123,6 +126,9 @@ class ForwardedHTTPSRedirectMiddleware(BaseHTTPMiddleware):
         self, request: Request, call_next: RequestResponseEndpoint
     ) -> Response:
         if not self.force_https:
+            return await call_next(request)
+        # Allow internal health probes through without redirect
+        if request.url.path in self._EXEMPT_PATHS:
             return await call_next(request)
         forwarded_proto = request.headers.get("x-forwarded-proto", "").lower()
         if request.url.scheme != "https" and forwarded_proto != "https":
