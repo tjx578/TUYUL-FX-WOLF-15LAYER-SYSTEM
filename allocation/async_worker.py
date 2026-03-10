@@ -203,7 +203,7 @@ class AsyncAllocationWorker:
                 except Exception as exc:
                     alloc_errors_total.inc()
                     span.record_exception(exc)
-                    logger.exception("Allocation worker failed request_id=%s err=%s", request.request_id, exc)
+                    logger.exception("Allocation worker failed request_id={} err={}", request.request_id, exc)
                     return
 
                 for account_result in result.account_results:

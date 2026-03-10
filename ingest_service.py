@@ -61,7 +61,7 @@ def _validate_api_key() -> bool:
     if not finnhub_keys.available:
         logger.warning("WARNING: FINNHUB_API_KEY not configured; ingest running in DRY RUN mode.")
         return False
-    logger.info("FINNHUB_API_KEY validated (%d key(s) loaded)", finnhub_keys.key_count)
+    logger.info("FINNHUB_API_KEY validated ({} key(s) loaded)", finnhub_keys.key_count)
     return True
 
 
@@ -232,11 +232,11 @@ async def _seed_redis_candle_history(
                     pipe.rpush(key, candle_json)  # type: ignore[union-attr]
                 await pipe.execute()  # type: ignore[union-attr]  # type: ignore[reportUnknownMemberType]
                 seeded += 1
-                logger.info("[Seed] %s: %d bars written", key, len(candles))
+                logger.info("[Seed] {}: {} bars written", key, len(candles))
             except Exception as exc:
-                logger.error("[Seed] Failed to seed %s: %s", key, exc)
+                logger.error("[Seed] Failed to seed {}: {}", key, exc)
 
-    logger.info("[Seed] Completed: %d symbol/tf combos seeded to Redis", seeded)
+    logger.info("[Seed] Completed: {} symbol/tf combos seeded to Redis", seeded)
 
 
 async def _safe_stop(
