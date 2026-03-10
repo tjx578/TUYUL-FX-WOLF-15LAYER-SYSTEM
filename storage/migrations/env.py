@@ -16,8 +16,11 @@ if config.config_file_name is not None:
 
 # Allow DATABASE_URL env var to override alembic.ini value so that CI and
 # Docker environments don't need to edit the ini file.
+# Railway / Heroku use postgres:// but SQLAlchemy 2.x requires postgresql://.
 url = os.getenv("DATABASE_URL", "")
 if url:
+    if url.startswith("postgres://"):
+        url = url.replace("postgres://", "postgresql://", 1)
     config.set_main_option("sqlalchemy.url", url)
 
 # target_metadata can be set to a SQLAlchemy MetaData instance for
