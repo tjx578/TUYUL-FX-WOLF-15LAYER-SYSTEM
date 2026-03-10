@@ -24,7 +24,7 @@ from context.live_context_bus import LiveContextBus
 logger = logging.getLogger(__name__)
 
 # Timeframes fetched during warmup (must align with writers of Redis Lists)
-WARMUP_TIMEFRAMES: tuple[str, ...] = ("M15", "H1", "H4", "D1", "W1")
+WARMUP_TIMEFRAMES: tuple[str, ...] = ("M15", "H1", "H4", "D1", "W1", "MN")
 
 # Redis List key prefix for stored candle history
 CANDLE_HISTORY_KEY_PREFIX = "candle_history"

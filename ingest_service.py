@@ -187,9 +187,9 @@ class Stoppable(Protocol):
 
 
 # ── Redis candle history seeding ──────────────────────────────────
-# Matches the key format and TTL used by RedisContextBridge.write_candle().
+# Matches the key format used by RedisContextBridge.write_candle().
+# No TTL — Redis has persistent volume; candles stay until explicitly deleted.
 _SEED_HISTORY_MAXLEN = 300
-_SEED_HISTORY_TTL = 6 * 3600  # 6 h
 
 
 async def _seed_redis_candle_history(
@@ -230,7 +230,6 @@ async def _seed_redis_candle_history(
                 for candle in candles:
                     candle_json = orjson.dumps(candle).decode("utf-8")
                     pipe.rpush(key, candle_json)  # type: ignore[union-attr]
-                pipe.expire(key, _SEED_HISTORY_TTL)  # type: ignore[union-attr]
                 await pipe.execute()  # type: ignore[union-attr]  # type: ignore[reportUnknownMemberType]
                 seeded += 1
                 logger.info("[Seed] %s: %d bars written", key, len(candles))

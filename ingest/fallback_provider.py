@@ -11,7 +11,7 @@ Supported backends (env-key gated; disabled when key is absent):
   2. Alpha Vantage — ALPHA_VANTAGE_API_KEY
 
 All providers normalise candles to the same dict format used by
-``FinnhubCandleFetcher._normalize_response()``, so downstream code
+``FinnhubCandleFetcher.normalize_response()``, so downstream code
 (``LiveContextBus.update_candles``) sees no difference.
 
 Usage::
