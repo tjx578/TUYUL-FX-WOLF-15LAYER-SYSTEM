@@ -12,12 +12,13 @@ branch_labels = None
 depends_on = None
 
 
-# Define enums with create_type=False — we create them manually via raw SQL
-# to avoid checkfirst issues across SQLAlchemy / dialect versions.
-risk_profile_enum = sa.Enum("Conservative", "Balanced", "Aggressive", name="risk_profile_level", create_type=False)
-account_mode_enum = sa.Enum("PAPER", "LIVE", name="account_mode", create_type=False)
-ea_status_enum = sa.Enum("RUNNING", "STOPPED", name="ea_status", create_type=False)
-strategy_type_enum = sa.Enum("H1_SWING", "M15_SCALP", name="strategy_type", create_type=False)
+# Define enums as PostgreSQL ENUM with create_type=False.
+# We create types manually via raw SQL so op.create_table() will not emit
+# implicit CREATE TYPE statements that can fail on duplicate objects.
+risk_profile_enum = postgresql.ENUM("Conservative", "Balanced", "Aggressive", name="risk_profile_level", create_type=False)
+account_mode_enum = postgresql.ENUM("PAPER", "LIVE", name="account_mode", create_type=False)
+ea_status_enum = postgresql.ENUM("RUNNING", "STOPPED", name="ea_status", create_type=False)
+strategy_type_enum = postgresql.ENUM("H1_SWING", "M15_SCALP", name="strategy_type", create_type=False)
 
 
 def _create_enum_safe(name: str, values: list[str]) -> None:
