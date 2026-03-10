@@ -27,6 +27,8 @@ class RouterEntry:
 
 # ── Ordered list — controls mount sequence ────────────────────────────────────
 ROUTER_ENTRIES: list[RouterEntry] = [
+    # Auth session + refresh (must be first — dashboard blocks on /auth/session)
+    RouterEntry("api.auth_router", "router", "Auth session + token refresh"),
     # Trade write lifecycle (take/skip/confirm/close/active + risk/calculate)
     RouterEntry("api.allocation_router", "write_router", "Trade write lifecycle"),
     # Admin outbox inspect/replay
