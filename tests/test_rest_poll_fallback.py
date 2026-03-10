@@ -285,38 +285,32 @@ class TestRestPollFallback:
 class TestFinnhubWebSocketIsConnected:
     """Verify the is_connected property on FinnhubWebSocket."""
 
-    def test_initial_state_is_disconnected(self):
-        """New FinnhubWebSocket should report is_connected = False."""
-        import os
-        os.environ.setdefault("FINNHUB_API_KEY", "test_key")
+    def _make_ws(self):
+        """Helper: create a FinnhubWebSocket with key manager mocked."""
+        from ingest.finnhub_ws import FinnhubWebSocket
 
-        with patch("ingest.finnhub_ws.Redis"):
-            from ingest.finnhub_ws import FinnhubWebSocket
+        mock_keys = MagicMock()
+        mock_keys.current_key.return_value = "test_key"
 
-            mock_redis = MagicMock()
+        with patch("ingest.finnhub_ws.finnhub_keys", mock_keys), \
+             patch("ingest.finnhub_ws.Redis"):
             ws = FinnhubWebSocket(
-                redis=mock_redis,
+                redis=MagicMock(),
                 on_message=AsyncMock(),
                 symbols=["OANDA:EUR_USD"],
             )
-            assert ws.is_connected is False
+        return ws
+
+    def test_initial_state_is_disconnected(self):
+        """New FinnhubWebSocket should report is_connected = False."""
+        ws = self._make_ws()
+        assert ws.is_connected is False
 
     def test_connected_flag_set_after_connection(self):
         """Manually setting _connected should reflect in is_connected."""
-        import os
-        os.environ.setdefault("FINNHUB_API_KEY", "test_key")
+        ws = self._make_ws()
+        ws.is_connected = True
+        assert ws.is_connected is True
 
-        with patch("ingest.finnhub_ws.Redis"):
-            from ingest.finnhub_ws import FinnhubWebSocket
-
-            mock_redis = MagicMock()
-            ws = FinnhubWebSocket(
-                redis=mock_redis,
-                on_message=AsyncMock(),
-                symbols=["OANDA:EUR_USD"],
-            )
-            ws.is_connected = True
-            assert ws.is_connected is True
-
-            ws.is_connected = False
-            assert ws.is_connected is False
+        ws.is_connected = False
+        assert ws.is_connected is False
