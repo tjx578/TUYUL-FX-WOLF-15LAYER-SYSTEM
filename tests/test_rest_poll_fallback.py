@@ -292,7 +292,7 @@ class TestFinnhubWebSocketIsConnected:
         mock_keys = MagicMock()
         mock_keys.current_key.return_value = "test_key"
 
-        with patch("ingest.finnhub_ws.finnhub_keys", mock_keys), \
+        with patch("ingest.finnhub_key_manager.finnhub_keys", mock_keys), \
              patch("ingest.finnhub_ws.Redis"):
             ws = FinnhubWebSocket(
                 redis=MagicMock(),
