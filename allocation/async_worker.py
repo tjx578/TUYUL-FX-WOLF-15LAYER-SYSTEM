@@ -17,13 +17,16 @@ import tracemalloc
 import uuid
 from collections.abc import Sequence
 from dataclasses import dataclass
+from typing import Any, cast
 
+import redis.asyncio as aioredis
 from loguru import logger
 from prometheus_client import Counter, Gauge, Histogram, start_http_server
 from redis.exceptions import ResponseError
 
 from allocation.allocation_models import AllocationRequest
 from allocation.allocation_service import AllocationService
+from config.logging_bootstrap import configure_loguru_logging
 from infrastructure.redis_client import get_client
 from infrastructure.tracing import (
     extract_trace_carrier,
@@ -36,6 +39,8 @@ from infrastructure.tracing import (
 ALLOC_REQUEST_STREAM = "allocation:request"
 ALLOC_GROUP = "alloc-group"
 EXECUTION_STREAM = "execution:queue"
+
+configure_loguru_logging()
 
 alloc_latency = Histogram(
     "wolf_allocation_latency_seconds",
@@ -88,13 +93,13 @@ class WorkerConfig:
 
 class AsyncAllocationWorker:
     def __init__(self, config: WorkerConfig | None = None) -> None:
+        super().__init__()
         self._cfg = config or WorkerConfig()
         self._service = AllocationService()
         self._sem = asyncio.Semaphore(self._cfg.max_concurrency)
 
     async def run(self) -> None:
         tracemalloc.start()
-        start_http_server(self._cfg.metrics_port)
         logger.info(
             "Allocation worker started (worker=%s stream=%s metrics=%s)",
             self._cfg.worker_name,
@@ -102,35 +107,67 @@ class AsyncAllocationWorker:
             self._cfg.metrics_port,
         )
 
-        redis_client = await get_client()
-        await self._ensure_group(redis_client)
+        backoff = 1.0
+        max_backoff = 60.0
 
         while True:
-            response = await redis_client.xreadgroup(
-                groupname=self._cfg.group,
-                consumername=self._cfg.worker_name,
-                streams={self._cfg.stream: ">"},
-                count=self._cfg.count,
-                block=self._cfg.block_ms,
-            )
-            await self._update_runtime_metrics(redis_client)
+            try:
+                redis_client = await get_client()
+                await self._ensure_group(redis_client)
+                backoff = 1.0  # Reset on successful connect
 
-            if not response:
-                continue
+                while True:
+                    try:
+                        response = await redis_client.xreadgroup(
+                            groupname=self._cfg.group,
+                            consumername=self._cfg.worker_name,
+                            streams={self._cfg.stream: ">"},
+                            count=self._cfg.count,
+                            block=self._cfg.block_ms,
+                        )
+                    except (
+                        aioredis.ConnectionError,
+                        aioredis.TimeoutError,
+                        OSError,
+                    ) as exc:
+                        alloc_errors_total.inc()
+                        logger.warning(
+                            "xreadgroup connection error: %s — reconnecting",
+                            type(exc).__name__,
+                        )
+                        break  # Break inner loop → reconnect in outer loop
 
-            tasks: list[asyncio.Task[None]] = []
-            for stream_name, messages in response:
-                for msg_id, msg in messages:
-                    tasks.append(
-                        asyncio.create_task(
-                            self._handle_message(redis_client, stream_name, msg_id, msg),
-                        ),
-                    )
+                    await self._update_runtime_metrics(redis_client)
 
-            if tasks:
-                await asyncio.gather(*tasks)
+                    if not response:
+                        continue
 
-    async def _ensure_group(self, redis_client) -> None:
+                    tasks: list[asyncio.Task[None]] = []
+                    for stream_name, messages in response:
+                        for msg_id, msg in messages:
+                            tasks.append(
+                                asyncio.create_task(
+                                    self._handle_message(
+                                        redis_client, stream_name, msg_id, msg,
+                                    ),
+                                ),
+                            )
+                    if tasks:
+                        await asyncio.gather(*tasks)
+
+            except asyncio.CancelledError:
+                logger.info("Allocation worker cancelled — shutting down")
+                raise
+            except Exception as exc:
+                alloc_errors_total.inc()
+                logger.exception(
+                    "Allocation worker error: %s — retry in %.1fs", exc, backoff,
+                )
+
+            await asyncio.sleep(backoff)
+            backoff = min(backoff * 2, max_backoff)
+
+    async def _ensure_group(self, redis_client: aioredis.Redis) -> None:
         try:
             await redis_client.xgroup_create(
                 name=self._cfg.stream,
@@ -142,7 +179,7 @@ class AsyncAllocationWorker:
             if "BUSYGROUP" not in str(exc):
                 raise
 
-    async def _handle_message(self, redis_client, stream_name: str, msg_id: str, msg: dict[str, str]) -> None:
+    async def _handle_message(self, redis_client: aioredis.Redis, stream_name: str, msg_id: str, msg: dict[str, str]) -> None:
         async with self._sem:
             parent_context = extract_trace_context(extract_trace_carrier(msg))
             with _alloc_tracer.start_as_current_span("allocation_process", context=parent_context) as span:
@@ -214,20 +251,19 @@ class AsyncAllocationWorker:
 
         if text.startswith("["):
             with contextlib.suppress(Exception):
-                parsed = json.loads(text)
-                if isinstance(parsed, list):
-                    return [str(a).strip() for a in parsed if str(a).strip()]
+                parsed: list[Any] = json.loads(text)
+                return [str(a).strip() for a in parsed if str(a).strip()]
 
         return [x.strip() for x in text.split(",") if x.strip()]
 
-    async def _update_runtime_metrics(self, redis_client) -> None:
+    async def _update_runtime_metrics(self, redis_client: aioredis.Redis) -> None:
         pending_count = 0
         try:
-            pending = await redis_client.xpending(self._cfg.stream, self._cfg.group)
+            pending: Any = await redis_client.xpending(self._cfg.stream, self._cfg.group)
             if isinstance(pending, dict):
-                pending_count = int(pending.get("pending", 0))
-            elif isinstance(pending, tuple) and pending:
-                pending_count = int(pending[0])
+                pending_count = int(str(cast(dict[str, Any], pending).get("pending", 0)))
+            elif isinstance(pending, (list, tuple)) and pending:
+                pending_count = int(str(cast(tuple[Any, ...], pending)[0]))
         except Exception:
             pending_count = 0
 
@@ -237,9 +273,40 @@ class AsyncAllocationWorker:
         process_memory.labels(service="allocation").set(float(current_mem))
 
 
+_MAX_RESTARTS = int(os.getenv("ALLOC_MAX_RESTARTS", "10"))
+_RESTART_COOLDOWN = float(os.getenv("ALLOC_RESTART_COOLDOWN_SEC", "5.0"))
+
+
 async def _main() -> None:
-    worker = AsyncAllocationWorker()
-    await worker.run()
+    start_http_server(int(os.getenv("ALLOC_METRICS_PORT", "9102")))
+    restarts = 0
+    while restarts <= _MAX_RESTARTS:
+        try:
+            logger.info(
+                "[SUPERVISOR] Starting allocation worker (attempt %d/%d)",
+                restarts + 1,
+                _MAX_RESTARTS + 1,
+            )
+            worker = AsyncAllocationWorker()
+            await worker.run()
+            return  # clean exit
+        except asyncio.CancelledError:
+            logger.info("[SUPERVISOR] Allocation worker cancelled")
+            return
+        except Exception as exc:
+            restarts += 1
+            logger.error(
+                "[SUPERVISOR] Allocation worker crashed: %s (restart %d/%d)",
+                exc,
+                restarts,
+                _MAX_RESTARTS,
+            )
+            if restarts > _MAX_RESTARTS:
+                logger.critical(
+                    "[SUPERVISOR] Allocation worker exceeded max restarts — giving up"
+                )
+                return
+            await asyncio.sleep(_RESTART_COOLDOWN)
 
 
 if __name__ == "__main__":

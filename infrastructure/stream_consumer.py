@@ -63,6 +63,8 @@ class ConsumerConfig:
     batch_size: int = 10
     pending_sweep_interval: float = 30.0
     max_retries_per_message: int = 5
+    replay_start_id: str | None = None
+    replay_max_messages: int = 100
     backoff: BackoffConfig = field(
         default_factory=lambda: BackoffConfig(
             initial=1.0,
@@ -91,6 +93,7 @@ class ConsumerStats:
     messages_failed: int = 0
     pending_recovered: int = 0
     pending_autoclaimed: int = 0
+    replayed_messages: int = 0
     reconnects: int = 0
     last_message_at: float = 0.0
     last_error: str | None = None
@@ -129,6 +132,7 @@ class StreamConsumer:
         self._backoff = ExponentialBackoff(self._config.backoff)
         self._running = False
         self._tasks: list[asyncio.Task[None]] = []
+        self._bootstrap_replay_done = False
 
         logger.info(
             "StreamConsumer init: consumer=%s streams=%s backoff=%s",
@@ -152,6 +156,7 @@ class StreamConsumer:
             "messages_failed": self._stats.messages_failed,
             "pending_recovered": self._stats.pending_recovered,
             "pending_autoclaimed": self._stats.pending_autoclaimed,
+            "replayed_messages": self._stats.replayed_messages,
             "reconnects": self._stats.reconnects,
             "last_message_at": self._stats.last_message_at,
             "last_error": self._stats.last_error,
@@ -363,6 +368,65 @@ class StreamConsumer:
 
         return claimed
 
+    async def _replay_group_history(self, binding: StreamBinding) -> int:
+        """
+        Replay stream history for a group from ``replay_start_id`` and ACK each message.
+
+        This is an explicit bootstrap operation for controlled catch-up/replay semantics.
+        It is disabled by default and runs at most once per process start.
+        """
+        if self._config.replay_start_id is None:
+            return 0
+
+        client = await self._ensure_redis()
+        replayed = 0
+
+        await client.xgroup_setid(
+            name=binding.stream,
+            groupname=binding.group,
+            id=self._config.replay_start_id,
+        )
+
+        while self._running:
+            remaining = self._config.replay_max_messages - replayed
+            if remaining <= 0:
+                break
+
+            response = await client.xreadgroup(
+                groupname=binding.group,
+                consumername=self._consumer_name,
+                streams={binding.stream: ">"},
+                count=min(self._config.batch_size, remaining),
+                block=1,
+            )
+
+            if not response:
+                break
+
+            for _stream_name, messages in response:
+                for message_id, fields in messages:
+                    if await self._process_and_ack(binding, message_id, fields):
+                        replayed += 1
+                    if replayed >= self._config.replay_max_messages:
+                        break
+                if replayed >= self._config.replay_max_messages:
+                    break
+
+            if replayed >= self._config.replay_max_messages:
+                break
+
+        if replayed > 0:
+            self._stats.replayed_messages += replayed
+            logger.info(
+                "Bootstrap replay complete: stream=%s group=%s replayed=%d start_id=%s",
+                binding.stream,
+                binding.group,
+                replayed,
+                self._config.replay_start_id,
+            )
+
+        return replayed
+
     # ─── Main Loops ──────────────────────────────────────────
 
     async def _read_loop(self, binding: StreamBinding) -> None:
@@ -447,6 +511,12 @@ class StreamConsumer:
                 self._redis = None
                 await self._ensure_redis()
                 await self._ensure_groups()
+
+                if (not self._bootstrap_replay_done) and self._config.replay_start_id is not None:
+                    for binding in self._bindings:
+                        if binding.priority != StreamPriority.EPHEMERAL:
+                            await self._replay_group_history(binding)
+                    self._bootstrap_replay_done = True
 
                 # Recover pending BEFORE reading new
                 for binding in self._bindings:

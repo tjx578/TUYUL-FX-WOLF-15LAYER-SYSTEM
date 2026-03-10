@@ -1,13 +1,13 @@
 """Standalone ingest service for multi-container deployments."""
 
 import asyncio
+import contextlib
 import os
 import signal
 import sys
 import types
 from datetime import datetime
 from importlib import import_module
-import contextlib
 from typing import Any, Protocol
 
 import orjson  # noqa: I001  — needed before analysis imports for _seed_redis_candle_history
@@ -17,13 +17,14 @@ from analysis.macro.macro_regime_engine import MacroRegimeEngine
 from config_loader import CONFIG
 from context.system_state import SystemState, SystemStateManager
 from core.health_probe import HealthProbe
+from ingest.calendar_news import CalendarNewsIngestor
 from ingest.candle_builder import CandleBuilder, Timeframe
 from ingest.dependencies import create_finnhub_ws
 from ingest.finnhub_candles import FinnhubCandleFetcher
 from ingest.finnhub_market_news import FinnhubMarketNews
-from ingest.finnhub_news import FinnhubNews
 from ingest.h1_refresh_scheduler import H1RefreshScheduler
 from ingest.macro_monthly_scheduler import MacroMonthlyScheduler
+from ingest.rest_poll_fallback import RestPollFallback
 from storage.startup import init_persistent_storage, shutdown_persistent_storage
 
 _shutdown_event: asyncio.Event | None = None
@@ -159,6 +160,7 @@ async def _run_warmup(
         try:
             fetcher = FinnhubCandleFetcher()
             warmup_results = await fetcher.warmup_all()
+
             system_state.validate_warmup(warmup_results) # pyright: ignore[reportUnknownMemberType]
             _update_macro_regime(enabled_symbols)
             _set_state_from_warmup(system_state)
@@ -228,8 +230,6 @@ async def _seed_redis_candle_history(
                 for candle in candles:
                     candle_json = orjson.dumps(candle).decode("utf-8")
                     pipe.rpush(key, candle_json)  # type: ignore[union-attr]
-                    pipe.rpush(key, candle_json)  # type: ignore[reportUnknownMemberType]
-                pipe.expire(key, _SEED_HISTORY_TTL)  # type: ignore[union-attr]
                 await pipe.execute()  # type: ignore[union-attr]  # type: ignore[reportUnknownMemberType]
                 seeded += 1
                 logger.info("[Seed] %s: %d bars written", key, len(candles))
@@ -253,7 +253,7 @@ async def _safe_stop(
 
 
 async def run_ingest_services(has_api_key: bool) -> None:
-    """Run Finnhub WS, news, market news, and candle/scheduler loops."""
+    """Run ingest loops for WS, calendar, market news, and schedulers."""
     if not has_api_key:
         logger.info("Skipping ingest services - no API key configured")
         while not (_shutdown_event and _shutdown_event.is_set()):  # noqa: ASYNC110
@@ -263,6 +263,7 @@ async def run_ingest_services(has_api_key: bool) -> None:
     enabled_symbols = _get_enabled_symbols()
     redis: RedisClient | None = None
     ws_feed = None
+    rest_poll = None
     news_feed = None
     market_news = None
     candle_builders: dict[str, CandleBuilder] = {}
@@ -293,7 +294,12 @@ async def run_ingest_services(has_api_key: bool) -> None:
             redis=redis,  # pyright: ignore[reportArgumentType]
             candle_callback=_on_tick,
         )
-        news_feed = FinnhubNews()
+        # REST poll fallback: automatically polls M15/H1 from REST when WS is down
+        rest_poll = RestPollFallback(
+            ws_connected_fn=lambda: ws_feed.is_connected if ws_feed else False,
+            symbols=enabled_symbols,
+        )
+        news_feed = CalendarNewsIngestor(redis_client=redis)
         market_news = FinnhubMarketNews()
         h1_refresh = H1RefreshScheduler()
 
@@ -306,10 +312,11 @@ async def run_ingest_services(has_api_key: bool) -> None:
         logger.info("Ingest readiness: READY")
 
         logger.info(
-            "Starting ingest services: WebSocket, News, MarketNews, CandleBuilder (M15 via tick callback), H1Refresh"
+            "Starting ingest services: WebSocket, RestPollFallback, CalendarNews, MarketNews, CandleBuilder (M15 via tick callback), H1Refresh"
         )
         await asyncio.gather(
             ws_feed.run(),
+            rest_poll.run(),
             news_feed.run(),
             market_news.run(),
             h1_refresh.run(),
@@ -321,6 +328,7 @@ async def run_ingest_services(has_api_key: bool) -> None:
     finally:
         cleanup_errors: list[tuple[str, Exception]] = []
         await _safe_stop("ws_feed", ws_feed, cleanup_errors)
+        await _safe_stop("rest_poll", rest_poll, cleanup_errors)
         await _safe_stop("news_feed", news_feed, cleanup_errors)
         await _safe_stop("market_news", market_news, cleanup_errors)
         if candle_builders:

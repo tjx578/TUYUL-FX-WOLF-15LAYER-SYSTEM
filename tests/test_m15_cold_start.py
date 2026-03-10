@@ -108,7 +108,7 @@ class TestSchedulerM15ColdStartDetection:
         mock_fetcher_inst = MagicMock()
         mock_fetcher_inst.cold_start_m15 = AsyncMock(return_value={"EURUSD": 50})
         mock_fetcher_inst.fetch = AsyncMock(return_value=[])
-        mock_fetcher_inst._aggregate_h4 = MagicMock(return_value=[])
+        mock_fetcher_inst.aggregate_h4 = MagicMock(return_value=[])
         mock_fetcher_class.return_value = mock_fetcher_inst
 
         with patch("ingest.h1_refresh_scheduler.LiveContextBus") as mock_bus_class:
@@ -149,7 +149,7 @@ class TestSchedulerM15ColdStartDetection:
         mock_fetcher_inst = MagicMock()
         mock_fetcher_inst.cold_start_m15 = AsyncMock(return_value={})
         mock_fetcher_inst.fetch = AsyncMock(return_value=[])
-        mock_fetcher_inst._aggregate_h4 = MagicMock(return_value=[])
+        mock_fetcher_inst.aggregate_h4 = MagicMock(return_value=[])
         mock_fetcher_class.return_value = mock_fetcher_inst
 
         with patch("ingest.h1_refresh_scheduler.LiveContextBus") as mock_bus_class:

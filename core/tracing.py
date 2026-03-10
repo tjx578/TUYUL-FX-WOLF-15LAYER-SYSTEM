@@ -30,17 +30,25 @@ from __future__ import annotations
 
 import contextlib
 import os
+from collections.abc import Generator
 from contextlib import contextmanager
-from typing import TYPE_CHECKING, Generator
+from typing import TYPE_CHECKING, Any
 
 try:
     from opentelemetry import trace
     from opentelemetry.sdk.resources import Resource
     from opentelemetry.sdk.trace import TracerProvider
     from opentelemetry.sdk.trace.export import BatchSpanProcessor, ConsoleSpanExporter
-    _HAS_OTEL = True
+
+    _has_otel = True
 except ImportError:  # pragma: no cover
-    _HAS_OTEL = False
+    from opentelemetry import trace
+
+    Resource: Any = None
+    TracerProvider: Any = None
+    BatchSpanProcessor: Any = None
+    ConsoleSpanExporter: Any = None
+    _has_otel = False
 
 if TYPE_CHECKING:
     from opentelemetry.trace import Span
@@ -48,10 +56,10 @@ if TYPE_CHECKING:
 _SERVICE_NAME = os.getenv("OTEL_SERVICE_NAME", "wolf15-pipeline")
 _OTLP_ENDPOINT = os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT", "")
 
-_tracer: "trace.Tracer | None" = None  # type: ignore[name-defined]
+_tracer: trace.Tracer | None = None
 
 
-def _build_provider() -> "trace.TracerProvider":  # type: ignore[name-defined]
+def _build_provider() -> trace.TracerProvider:
     """Construct and configure the TracerProvider.
 
     If ``OTEL_EXPORTER_OTLP_ENDPOINT`` is set an OTLP exporter is wired up;
@@ -60,8 +68,8 @@ def _build_provider() -> "trace.TracerProvider":  # type: ignore[name-defined]
     attached and spans are produced but silently dropped (no stdout noise in
     tests/CI).
     """
-    if not _HAS_OTEL:
-        return trace.NoOpTracerProvider()  # type: ignore[attr-defined]
+    if not _has_otel:
+        return trace.NoOpTracerProvider()
 
     resource = Resource.create({"service.name": _SERVICE_NAME})
     provider = TracerProvider(resource=resource)
@@ -85,13 +93,18 @@ def _build_provider() -> "trace.TracerProvider":  # type: ignore[name-defined]
     return provider
 
 
-def get_tracer() -> "trace.Tracer":  # type: ignore[name-defined]
+def get_tracer() -> trace.Tracer:
     """Return the global Wolf-15 tracer (initialised once, then cached)."""
     global _tracer  # noqa: PLW0603
     if _tracer is None:
-        provider = _build_provider()
-        if _HAS_OTEL:
-            trace.set_tracer_provider(provider)
+        if _has_otel:
+            # Only set provider if none has been registered yet (another
+            # module such as infrastructure.tracing may have already done so).
+            existing = trace.get_tracer_provider()
+            _is_proxy = type(existing).__name__ == "ProxyTracerProvider"
+            if _is_proxy:
+                provider = _build_provider()
+                trace.set_tracer_provider(provider)
             _tracer = trace.get_tracer(__name__, schema_url="")
         else:
             # Minimal stub so callers never deal with None
@@ -104,7 +117,7 @@ def layer_span(
     layer_name: str,
     symbol: str = "",
     **extra_attributes: str | int | float | bool,
-) -> Generator["Span", None, None]:  # type: ignore[name-defined]
+) -> Generator[Span, None, None]:
     """Context manager that wraps a layer call in an OTEL span.
 
     Span attributes set automatically:
@@ -120,7 +133,7 @@ def layer_span(
     authority.
     """
     tracer = get_tracer()
-    if _HAS_OTEL:
+    if _has_otel:
         with tracer.start_as_current_span(f"wolf.layer.{layer_name}") as span:
             span.set_attribute("layer.name", layer_name)
             if symbol:
@@ -132,7 +145,7 @@ def layer_span(
             except Exception as exc:
                 span.record_exception(exc)
                 span.set_status(
-                    trace.StatusCode.ERROR,  # type: ignore[attr-defined]
+                    trace.StatusCode.ERROR,
                     description=str(exc),
                 )
                 raise
@@ -158,5 +171,5 @@ class _NullSpan:
 class _NoOpTracer:
     """Stub tracer used when opentelemetry is not installed."""
 
-    def start_as_current_span(self, _name: str, **_kwargs: object) -> "contextlib.AbstractContextManager[_NullSpan]":  # noqa: E501
+    def start_as_current_span(self, _name: str, **_kwargs: object) -> contextlib.AbstractContextManager[_NullSpan]:  # noqa: E501
         return contextlib.nullcontext(_NullSpan())

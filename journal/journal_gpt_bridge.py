@@ -12,14 +12,13 @@ GPT Role (LOCKED):
 """
 
 import json
-
 from collections import Counter
-from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
 from loguru import logger
 
+from journal.journal_repository import JournalRepository
 from utils.timezone_utils import now_utc
 
 
@@ -39,48 +38,11 @@ def _load_entries(
     Returns:
         List of journal entries (parsed JSON)
     """
-    entries = []
-    base_path = Path(base_dir)
-
-    if not base_path.exists():
-        logger.warning(f"Journal directory does not exist: {base_path}")
-        return entries
-
-    # Calculate date range
-    end_date = now_utc()
-    start_date = end_date - timedelta(days=date_range_days)
-
-    # Iterate through date directories
-    for date_dir in sorted(base_path.iterdir()):
-        if not date_dir.is_dir():
-            continue
-
-        # Parse directory name (YYYY-MM-DD format)
-        try:
-            dir_date = datetime.strptime(date_dir.name, "%Y-%m-%d")
-            dir_date = dir_date.replace(tzinfo=end_date.tzinfo)
-        except ValueError:
-            continue
-
-        # Skip if outside date range
-        if dir_date < start_date or dir_date > end_date:
-            continue
-
-        # Load all JSON files in this directory
-        for json_file in date_dir.glob("*.json"):
-            try:
-                with open(json_file, encoding="utf-8") as f:
-                    entry = json.load(f)
-
-                # Filter by journal type if specified
-                if journal_types and entry.get("journal_type") not in journal_types:
-                    continue
-
-                entries.append(entry)
-
-            except Exception as exc:
-                logger.warning(f"Failed to load {json_file}: {exc}")
-                continue
+    repository = JournalRepository(base_dir=base_dir)
+    entries = repository.load_entries(
+        date_range_days=date_range_days,
+        journal_types=journal_types,
+    )
 
     logger.info(f"Loaded {len(entries)} journal entries from last {date_range_days} days")
     return entries
@@ -104,7 +66,7 @@ def compute_metrics(entries: list[dict[str, Any]]) -> dict[str, Any]:
     total_executions = len(execution_entries)
 
     # Count verdicts
-    verdict_counts = Counter()
+    verdict_counts: Counter[str] = Counter()
     for entry in decision_entries:
         verdict = entry.get("data", {}).get("verdict")
         if verdict:
@@ -115,7 +77,7 @@ def compute_metrics(entries: list[dict[str, Any]]) -> dict[str, Any]:
     rejection_rate = (rejected / total_decisions * 100) if total_decisions > 0 else 0.0
 
     # Failed gates analysis
-    failed_gates_counter = Counter()
+    failed_gates_counter: Counter[str] = Counter()
     for entry in decision_entries:
         failed_gates = entry.get("data", {}).get("failed_gates", [])
         for gate in failed_gates:
@@ -124,7 +86,7 @@ def compute_metrics(entries: list[dict[str, Any]]) -> dict[str, Any]:
     top_failed_gates = failed_gates_counter.most_common(5)
 
     # Protection assessment (from J4 reflections)
-    protection_scores = []
+    protection_scores: list[int] = []
     override_count = 0
     for entry in reflection_entries:
         data = entry.get("data", {})
@@ -141,7 +103,7 @@ def compute_metrics(entries: list[dict[str, Any]]) -> dict[str, Any]:
     )
 
     # Average wolf score for EXECUTE verdicts
-    execute_wolf_scores = []
+    execute_wolf_scores: list[float] = []
     for entry in decision_entries:
         data = entry.get("data", {})
         verdict = data.get("verdict")

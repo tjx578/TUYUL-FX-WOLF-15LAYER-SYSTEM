@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Query
 from fastapi.responses import PlainTextResponse
 
 from core.metrics import (
@@ -22,6 +22,7 @@ from core.metrics import (
     SYSTEM_HEALTHY,
     get_registry,
 )
+from monitoring.pipeline_metrics import evaluate_latency_slo
 
 logger = logging.getLogger(__name__)
 
@@ -69,3 +70,37 @@ async def prometheus_metrics() -> PlainTextResponse:
     _refresh_runtime_gauges()
     payload = get_registry().exposition()
     return PlainTextResponse(content=payload, media_type=_CONTENT_TYPE)
+
+
+@router.get(
+    "/metrics/slo",
+    summary="SLO status for dashboard and alerting",
+    description=(
+        "Returns latency SLO status with threshold breach indicators for dashboard "
+        "panels and alert automation."
+    ),
+    include_in_schema=True,
+)
+async def metrics_slo(
+    latency_threshold_ms: float | None = Query(default=None, ge=1.0, le=10_000.0),
+    min_samples: int = Query(default=5, ge=1, le=10_000),
+) -> dict:
+    """Return SLO status derived from in-process metrics registry."""
+    _refresh_runtime_gauges()
+    status = evaluate_latency_slo(
+        latency_threshold_ms=latency_threshold_ms,
+        min_samples=min_samples,
+    )
+    alerts: list[dict[str, str]] = []
+    if not status["healthy"]:
+        alerts.append(
+            {
+                "event": "SLO_THRESHOLD_BREACH",
+                "severity": "warning",
+                "message": "Pipeline latency SLO breached on one or more stages",
+            }
+        )
+    return {
+        "slo": status,
+        "alerts": alerts,
+    }

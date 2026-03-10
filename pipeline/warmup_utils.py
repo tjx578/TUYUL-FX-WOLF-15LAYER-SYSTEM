@@ -58,20 +58,32 @@ def normalize_warmup(raw: Any, *, required: int) -> WarmupStatus:
 
         # bars bisa beda nama, coba beberapa opsi
         bars_val: Any = m.get("bars") or m.get("count") or m.get("available")
-        try:
-            bars = int(bars_val) if bars_val is not None else (required if ready_val else 0)
-        except (TypeError, ValueError):
-            bars = required if ready_val else 0
+        # check_warmup returns per-timeframe dicts; collapse to scalar
+        if isinstance(bars_val, Mapping):
+            int_bars = cast("Mapping[str, int]", bars_val)
+            bars = min(int_bars.values(), default=0) if int_bars else 0
+        else:
+            try:
+                bars = int(bars_val) if bars_val is not None else (required if ready_val else 0)
+            except (TypeError, ValueError):
+                bars = required if ready_val else 0
 
         req_val: Any = m.get("required")
-        try:
-            req = int(req_val) if req_val is not None else int(required)
-        except (TypeError, ValueError):
-            req = int(required)
+        if isinstance(req_val, Mapping):
+            int_req = cast("Mapping[str, int]", req_val)
+            req = min(int_req.values(), default=required) if int_req else int(required)
+        else:
+            try:
+                req = int(req_val) if req_val is not None else int(required)
+            except (TypeError, ValueError):
+                req = int(required)
 
         missing_val: Any = m.get("missing")
         if missing_val is None:
             missing = max(0, req - bars)
+        elif isinstance(missing_val, Mapping):
+            int_miss = cast("Mapping[str, int]", missing_val)
+            missing = max(int_miss.values(), default=0) if int_miss else 0
         else:
             try:
                 missing = max(0, int(missing_val))

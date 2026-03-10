@@ -6,9 +6,12 @@ Verifies that:
 - ERROR/CRITICAL logs go to stderr
 """
 
+import time
 from io import StringIO
 
 from loguru import logger
+
+from config.logging_bootstrap import LogBurstLimiter
 
 
 def test_split_stream_logging():
@@ -122,3 +125,14 @@ def test_level_boundary():
 
     # Cleanup
     logger.remove()
+
+
+def test_log_burst_limiter_allows_then_blocks_then_resets():
+    limiter = LogBurstLimiter(max_per_window=2, window_seconds=0.2)
+
+    assert limiter.allow("svc", "ERROR", "redis timeout") is True
+    assert limiter.allow("svc", "ERROR", "redis timeout") is True
+    assert limiter.allow("svc", "ERROR", "redis timeout") is False
+
+    time.sleep(0.25)
+    assert limiter.allow("svc", "ERROR", "redis timeout") is True

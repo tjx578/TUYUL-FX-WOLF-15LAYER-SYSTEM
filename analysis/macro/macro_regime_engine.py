@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, cast
 
 import orjson
-
 from loguru import logger
 
+from storage.redis_client import RedisClient
 from storage.redis_client import redis_client as redis_client_default
 
 
@@ -16,16 +16,17 @@ class MacroRegimeEngine:
     This implementation is intentionally small and deterministic for tests.
     """
 
-    def __init__(self, redis_client: redis_client_default | None = None) -> None: # pyright: ignore[reportInvalidTypeForm]
-        self.redis = redis_client or redis_client_default
+    def __init__(self, redis_client: RedisClient | None = None) -> None:
+        super().__init__()
+        self.redis: RedisClient = redis_client or redis_client_default
 
     def _load_mn_history(self, symbol: str, max_items: int = 240) -> list[dict[str, Any]]:
-        key = f"wolf15:candle:{symbol}:MN:history"
+        key = f"wolf15:candle_history:{symbol}:MN"
         try:
-            raw = self.redis.client.lrange(key, 0, -1)
+            raw = cast(list[bytes], self.redis.client.lrange(key, 0, -1))  # pyright: ignore[reportUnknownMemberType]
             if not raw:
                 return []
-            history = [orjson.loads(item) for item in raw] # pyright: ignore[reportGeneralTypeIssues]
+            history: list[dict[str, Any]] = [orjson.loads(item) for item in raw]
             return history[-max_items:]
         except Exception as exc:
             logger.error(f"Failed to load MN history for {symbol}: {exc}")

@@ -8,13 +8,10 @@ for cold-start recovery via ``FinnhubCandleFetcher.cold_start_m15()``.
 """
 
 import asyncio
-import os
-
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import httpx
-
 from loguru import logger
 
 from config_loader import CONFIG, load_finnhub
@@ -47,6 +44,7 @@ class FinnhubCandleFetcher:
     }
 
     def __init__(self) -> None:
+        super().__init__()
         from ingest.finnhub_key_manager import finnhub_keys  # noqa: PLC0415
         self._key_manager = finnhub_keys
         self.api_key = self._key_manager.current_key()
@@ -66,7 +64,7 @@ class FinnhubCandleFetcher:
         self.semaphore = asyncio.Semaphore(self.max_concurrent)
         self.request_delay = self.warmup_config.get("request_delay_sec", 0.5)
 
-    def _convert_symbol(self, symbol: str) -> str:
+    def convert_symbol(self, symbol: str) -> str:
         """
         Convert internal symbol to Finnhub format.
 
@@ -104,7 +102,7 @@ class FinnhubCandleFetcher:
         Returns:
             Unix timestamp for from parameter
         """
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         # Calculate time delta with 25% buffer
         buffer_multiplier = 1.25
@@ -125,7 +123,7 @@ class FinnhubCandleFetcher:
         from_dt = now - delta
         return int(from_dt.timestamp())
 
-    def _normalize_response(self, data: dict[str, Any], symbol: str, timeframe: str) -> list[dict[str, Any]]:
+    def normalize_response(self, data: dict[str, Any], symbol: str, timeframe: str) -> list[dict[str, Any]]:
         """
         Normalize Finnhub parallel arrays to list of candle dicts.
 
@@ -158,10 +156,10 @@ class FinnhubCandleFetcher:
             logger.error(f"Mismatched array lengths in Finnhub response for {symbol} {timeframe}")
             return []
 
-        candles = []
+        candles: list[dict[str, Any]] = []
         for i in range(length):
             # Convert Unix timestamp to datetime
-            timestamp = datetime.fromtimestamp(timestamps[i], tz=timezone.utc)
+            timestamp = datetime.fromtimestamp(timestamps[i], tz=UTC)
 
             candle = {
                 "symbol": symbol,
@@ -208,25 +206,26 @@ class FinnhubCandleFetcher:
         if timeframe == "H4":
             h1_bars = bars * 4  # Need 4× H1 bars to make H4 bars
             h1_candles = await self.fetch(symbol, "H1", h1_bars)
-            return self._aggregate_h4(h1_candles)
+            return self.aggregate_h4(h1_candles)
 
         if timeframe not in self.RESOLUTION_MAP:
             raise FinnhubCandleError(f"Unsupported timeframe: {timeframe}")
 
-        finnhub_symbol = self._convert_symbol(symbol)
+        finnhub_symbol = self.convert_symbol(symbol)
         resolution = self.RESOLUTION_MAP[timeframe]
         from_ts = self._calculate_from_ts(bars, timeframe)
-        to_ts = int(datetime.now(timezone.utc).timestamp())
+        to_ts = int(datetime.now(UTC).timestamp())
 
         url = f"{self.base_url}/forex/candle"
+        active_key = self._key_manager.current_key() or self.api_key
         params = {
             "symbol": finnhub_symbol,
             "resolution": resolution,
             "from": from_ts,
             "to": to_ts,
-            "token": self._key_manager.current_key() or self.api_key,
+            "token": active_key,
         }
-        self.api_key = params["token"]  # keep in sync
+        self.api_key = active_key  # keep in sync
 
         async with self.semaphore:
             try:
@@ -256,7 +255,7 @@ class FinnhubCandleFetcher:
                     data = response.json()
 
                     self._key_manager.report_success(self.api_key)
-                    candles = self._normalize_response(data, symbol, timeframe)
+                    candles = self.normalize_response(data, symbol, timeframe)
                     logger.info(f"Fetched {len(candles)} {timeframe} bars for {symbol}")
 
                     # Delay to respect rate limits
@@ -271,7 +270,7 @@ class FinnhubCandleFetcher:
             except Exception as exc:
                 raise FinnhubCandleError(f"Error fetching {symbol} {timeframe}: {exc}") from exc
 
-    def _aggregate_h4(self, h1_candles: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    def aggregate_h4(self, h1_candles: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """
         Aggregate H1 bars into H4 bars (4:1).
 
@@ -287,15 +286,12 @@ class FinnhubCandleFetcher:
         if not h1_candles:
             return []
 
-        h4_candles = []
+        h4_candles: list[dict[str, Any]] = []
         current_group: list[dict[str, Any]] = []
 
         for h1 in h1_candles:
             timestamp = h1["timestamp"]
-            if isinstance(timestamp, datetime):
-                ts = timestamp
-            else:
-                ts = datetime.fromtimestamp(timestamp, tz=timezone.utc)
+            ts = timestamp if isinstance(timestamp, datetime) else datetime.fromtimestamp(timestamp, tz=UTC)
 
             # Determine H4 period start for this H1 bar
             # H1 timestamp is the END of the period (e.g., 01:00 means 00:00-01:00)
@@ -315,10 +311,7 @@ class FinnhubCandleFetcher:
             # Check if this H1 belongs to current group
             if current_group:
                 first_ts = current_group[0]["timestamp"]
-                if isinstance(first_ts, datetime):
-                    first_dt = first_ts
-                else:
-                    first_dt = datetime.fromtimestamp(first_ts, tz=timezone.utc)
+                first_dt = first_ts if isinstance(first_ts, datetime) else datetime.fromtimestamp(first_ts, tz=UTC)
 
                 first_h1_start_hour = first_dt.hour - 1
                 if first_h1_start_hour < 0:
@@ -371,7 +364,7 @@ class FinnhubCandleFetcher:
         # H4 timestamp is the close time of the last H1 in the group
         timestamp = last["timestamp"]
         if not isinstance(timestamp, datetime):
-            timestamp = datetime.fromtimestamp(timestamp, tz=timezone.utc)
+            timestamp = datetime.fromtimestamp(timestamp, tz=UTC)
 
         return {
             "symbol": first["symbol"],
@@ -408,7 +401,7 @@ class FinnhubCandleFetcher:
         warmup_bars = self.warmup_config.get("bars", 100)
 
         # Ensure required timeframes are always present for analysis.
-        REQUIRED_TIMEFRAMES = ["H1", "H4", "D1", "W1", "MN"]
+        REQUIRED_TIMEFRAMES = ["H1", "H4", "D1", "W1", "MN"]  # noqa: N806
 
         configured_tfs = self.warmup_config.get("timeframes")
         if not configured_tfs:
@@ -429,7 +422,7 @@ class FinnhubCandleFetcher:
 
         # Create tasks for all symbol/timeframe combinations
         tasks = [
-            self._warmup_symbol_tf(symbol, tf, warmup_bars, results)
+            self.warmup_symbol_tf(symbol, tf, warmup_bars, results)
             for symbol in enabled_symbols
             for tf in timeframes
         ]
@@ -439,7 +432,7 @@ class FinnhubCandleFetcher:
         logger.info(f"Warmup complete: {len(results)} symbols warmed up")
         return results
 
-    async def _warmup_symbol_tf(
+    async def warmup_symbol_tf(
         self,
         symbol: str,
         timeframe: str,
@@ -476,11 +469,46 @@ class FinnhubCandleFetcher:
             )
 
         except FinnhubCandlePremiumError:
-            logger.error(f"Premium access required for {symbol} {timeframe}")
+            logger.warning(f"Premium access required for {symbol} {timeframe} — trying fallback providers")
+            candles = await self.try_fallback(symbol, timeframe, bars)
+            if candles:
+                for candle in candles:
+                    self.context_bus.update_candle(candle)
+                if symbol not in results:
+                    results[symbol] = {}
+                results[symbol][timeframe] = candles
+                logger.info(
+                    f"Fallback warmup {symbol} {timeframe}: {len(candles)} bars via fallback provider"
+                )
+            else:
+                logger.error(f"No fallback data for {symbol} {timeframe} (premium-blocked, no fallback providers)")
         except FinnhubCandleError as exc:
             logger.error(f"Error warming up {symbol} {timeframe}: {exc}")
         except Exception as exc:
             logger.exception(f"Unexpected error warming up {symbol} {timeframe}: {exc}")
+
+    # ------------------------------------------------------------------
+    # Fallback provider for premium-blocked symbols
+    # ------------------------------------------------------------------
+
+    async def try_fallback(
+        self, symbol: str, timeframe: str, bars: int
+    ) -> list[dict[str, Any]]:
+        """Attempt to fetch candles via the fallback provider chain.
+
+        Returns an empty list if no fallback providers are configured or
+        all providers fail.
+        """
+        try:
+            from ingest.fallback_provider import FallbackCandleProvider  # noqa: PLC0415
+
+            provider = FallbackCandleProvider()
+            if not provider.available_providers:
+                return []
+            return await provider.fetch(symbol, timeframe, bars)
+        except Exception as exc:
+            logger.warning(f"Fallback provider failed for {symbol} {timeframe}: {exc}")
+            return []
 
     # ------------------------------------------------------------------
     # M15 cold-start recovery

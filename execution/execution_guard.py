@@ -5,10 +5,10 @@ Final safety layer before any execution.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from threading import Lock
-from typing import Callable
 
 
 @dataclass(frozen=True)
@@ -22,6 +22,7 @@ class ExecutionGuard:
     """Execution-level gate for account-scoped and EA-scoped isolation."""
 
     def __init__(self) -> None:
+        super().__init__()
         self._lock = Lock()
         self._global_kill_enabled = False
         self._global_kill_reason = ""
@@ -34,8 +35,9 @@ class ExecutionGuard:
 
         self._prop_compliance_check: Callable[[str, str], bool] = lambda _signal_id, _account_id: True
         self._open_trades_provider: Callable[[str], int] = lambda _account_id: 0
+        self._orchestrator_mode_provider: Callable[[], str] = lambda: "NORMAL"
 
-    def allow_execution(self, verdict: dict) -> bool:
+    def allow_execution(self, verdict: dict[str, object]) -> bool:
         if not verdict:
             return False
 
@@ -46,10 +48,7 @@ class ExecutionGuard:
             return False
 
         # Hard lock: no market execution
-        if verdict.get("order_type", "PENDING_ONLY") != "PENDING_ONLY":
-            return False
-
-        return True
+        return verdict.get("order_type", "PENDING_ONLY") == "PENDING_ONLY"
 
     def set_global_kill_switch(self, enabled: bool, reason: str = "") -> None:
         with self._lock:
@@ -89,6 +88,10 @@ class ExecutionGuard:
     def set_open_trades_provider(self, provider: Callable[[str], int]) -> None:
         self._open_trades_provider = provider
 
+    def set_orchestrator_mode_provider(self, provider: Callable[[], str]) -> None:
+        """Set a callback that returns the current orchestrator mode (NORMAL/SAFE/KILL_SWITCH)."""
+        self._orchestrator_mode_provider = provider
+
     def validate_scope(
         self,
         *,
@@ -97,6 +100,13 @@ class ExecutionGuard:
     ) -> ExecutionGateResult:
         if not account_id or not account_id.strip():
             return ExecutionGateResult(False, "ACCOUNT_ID_REQUIRED", "Explicit account_id is mandatory")
+
+        # Check orchestrator mode before account-level gates
+        orchestrator_mode = self._orchestrator_mode_provider()
+        if orchestrator_mode == "KILL_SWITCH":
+            return ExecutionGateResult(False, "ORCHESTRATOR_KILL_SWITCH", "Orchestrator in KILL_SWITCH mode")
+        if orchestrator_mode == "SAFE":
+            return ExecutionGateResult(False, "ORCHESTRATOR_SAFE_MODE", "Orchestrator in SAFE mode — new execution blocked")
 
         with self._lock:
             if self._global_kill_enabled:
@@ -143,7 +153,7 @@ class ExecutionGuard:
                 if raw_until:
                     try:
                         until = datetime.fromisoformat(raw_until.replace("Z", "+00:00"))
-                        if until > datetime.now(timezone.utc):
+                        if until > datetime.now(UTC):
                             return ExecutionGateResult(False, "PAIR_COOLDOWN", f"{symbol} until {raw_until}")
                     except ValueError:
                         pass

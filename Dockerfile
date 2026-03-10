@@ -20,8 +20,7 @@ RUN apt-get update \
 
 COPY requirements.txt .
 RUN pip install --upgrade pip \
-    && pip wheel --no-cache-dir --no-deps -r requirements.txt -w /wheels \
-    && pip wheel --no-cache-dir --no-deps gunicorn uvicorn -w /wheels
+    && pip wheel --no-cache-dir --no-deps -r requirements.txt -w /wheels
 
 # ---------- STAGE 2: RUNTIME ----------
 FROM python:3.11-slim AS runtime
@@ -50,8 +49,8 @@ COPY context/ context/
 COPY contracts/ contracts/
 COPY core/ core/
 COPY dashboard/ dashboard/
+COPY deploy/ deploy/
 COPY ea_interface/ ea_interface/
-COPY engine/ engine/
 COPY engines/ engines/
 COPY execution/ execution/
 COPY infrastructure/ infrastructure/
@@ -83,6 +82,7 @@ USER appuser
 EXPOSE ${PORT}
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:${PORT}/health')" || exit 1
+    CMD python -c "import os, sys, urllib.request; url = os.getenv('CONTAINER_HEALTHCHECK_URL', '').strip();\
+sys.exit(0 if not url else (0 if urllib.request.urlopen(url, timeout=5).status < 500 else 1))" || exit 1
 
 CMD ["python", "api_server.py"]

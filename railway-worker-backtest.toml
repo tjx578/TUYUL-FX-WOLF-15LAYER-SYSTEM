@@ -1,0 +1,11 @@
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "Dockerfile"
+
+[deploy]
+startCommand = "bash deploy/railway/start_worker.sh"
+restartPolicyType = "NEVER"
+cronSchedule = "30 1 * * *"
+
+[env]
+WOLF15_WORKER_ENTRY = "services.worker.nightly_backtest"

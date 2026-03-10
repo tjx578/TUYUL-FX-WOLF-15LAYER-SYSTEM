@@ -29,7 +29,7 @@ import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import StrEnum
-from typing import Any, Optional, Protocol
+from typing import Any, Callable, Optional, Protocol
 
 logger = logging.getLogger(__name__)
 
@@ -124,6 +124,7 @@ class OrderRequest:
     entry_price: float
     stop_loss: float
     take_profit: float
+    execution_intent_id: str = ""
     comment: str = ""
     magic_number: int = 74001
     slippage_pips: float = 3.0
@@ -144,7 +145,7 @@ class OrderResult:
     message: str
     execution_mode: str
     timestamp: str
-    errors: tuple = ()  # Frozen requires tuple, not list
+    errors: tuple[str, ...] = ()  # Frozen requires tuple, not list
     mt5_ticket: int | None = None
 
 
@@ -169,15 +170,18 @@ def _generate_idempotency_key(request: OrderRequest) -> str:
     Based on signal_id + order parameters (NOT time).
     Same signal_id + same params = same key = duplicate.
     """
-    content = (
-        f"{request.signal_id}:"
-        f"{request.pair}:"
-        f"{request.order_type.value}:"
-        f"{request.entry_price}:"
-        f"{request.lot_size}:"
-        f"{request.stop_loss}:"
-        f"{request.take_profit}"
-    )
+    if request.execution_intent_id.strip():
+        content = f"{request.signal_id}:{request.execution_intent_id.strip()}"
+    else:
+        content = (
+            f"{request.signal_id}:"
+            f"{request.pair}:"
+            f"{request.order_type.value}:"
+            f"{request.entry_price}:"
+            f"{request.lot_size}:"
+            f"{request.stop_loss}:"
+            f"{request.take_profit}"
+        )
     return hashlib.sha256(content.encode()).hexdigest()[:24]
 
 
@@ -207,7 +211,7 @@ class PendingEngine:
         mt5_port: int = 8228,
         journal_writer: JournalWriter | None = None,
         max_lot_override: Optional[float] = None,  # noqa: UP045
-        now_factory=None,
+        now_factory: Callable[[], datetime] | None = None,
     ) -> None:
         """Initialize engine.
 

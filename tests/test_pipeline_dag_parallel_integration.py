@@ -133,3 +133,29 @@ def test_pipeline_batch_parallel_halts_before_next_batch_on_failure() -> None:
 
     assert "L4" in executed
     assert "L7" not in executed
+
+
+def test_dag_batch_failed_includes_root_cause_in_message() -> None:
+    """RuntimeError message must include the original exception type and message."""
+    dag_batches = WolfConstitutionalPipeline._build_pipeline_dag().execution_batches()  # pyright: ignore[reportPrivateUsage]
+
+    def _boom() -> dict[str, str]:
+        raise KeyError("missing_candle_data")
+
+    batch_calls: dict[str, Callable[[], dict[str, str]]] = {
+        "L1": _boom,
+    }
+
+    with pytest.raises(RuntimeError) as exc_info:
+        WolfConstitutionalPipeline._run_dag_batch_calls(  # pyright: ignore[reportPrivateUsage]
+            dag_batches,
+            batch_calls,
+        )
+
+    msg = str(exc_info.value)
+    # Must include root cause type and message (not just "batch=1, runnable=L1")
+    assert "KeyError" in msg
+    assert "missing_candle_data" in msg
+    assert "cause=" in msg
+    # Chained __cause__ must be the original exception
+    assert isinstance(exc_info.value.__cause__, KeyError)

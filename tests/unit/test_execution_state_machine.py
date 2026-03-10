@@ -142,3 +142,27 @@ class TestExecutionBoundary:
         strategy_fields = {"wolf_score", "tii_score", "frpc_score", "confluence"}
         overlap = order_fields & strategy_fields
         assert len(overlap) == 0, f"Execution order must not contain strategy fields: {overlap}"
+
+
+@pytest.mark.skipif(not HAS_SM, reason="state_machine not importable")
+def test_replay_terminal_event_is_noop() -> None:
+    sm = StateMachine()
+    sm._init()  # pyright: ignore[reportPrivateUsage]
+    sm.set_pending({"order_id": "T-1"})
+    sm.set_cancelled("TEST")
+
+    result = sm.set_cancelled("TEST")
+    snap = sm.snapshot()
+
+    assert result.replay is True
+    assert result.applied is False
+    assert snap["state"] == "CANCELLED"
+
+
+@pytest.mark.skipif(not HAS_SM, reason="state_machine not importable")
+def test_invalid_transition_raises() -> None:
+    sm = StateMachine()
+    sm._init()  # pyright: ignore[reportPrivateUsage]
+
+    with pytest.raises(ValueError):
+        sm.set_filled({"order_id": "T-2"})

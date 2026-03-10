@@ -142,11 +142,16 @@ class WolfConstitutionalPipeline:
     # Minimum candle bars per timeframe before analysis is allowed.
     # Prevents garbage indicator outputs during the first minutes
     # after system startup.
+    # Note: M15 is excluded — it arrives from WS ticks, not REST warmup.
+    # W1/MN are included because L1 regime context depends on them.
+    # These are pipeline-gate minimums, intentionally lower than
+    # config/finnhub.yaml min_bars (which are fetch targets).
     WARMUP_MIN_BARS: dict[str, int] = {
-        "M15": 20,
         "H1": 20,
         "H4": 10,
         "D1": 5,
+        "W1": 4,
+        "MN": 2,
     }
 
     def __init__(self) -> None:
@@ -420,9 +425,19 @@ class WolfConstitutionalPipeline:
                         *(_run_single(layer_id) for layer_id in runnable),
                     )
                 except Exception as exc:
+                    logger.error(
+                        "DAG_BATCH_FAILED: batch=%d, runnable=%s, "
+                        "root_cause=%s: %s",
+                        batch_idx,
+                        ",".join(runnable),
+                        type(exc).__name__,
+                        exc,
+                        exc_info=True,
+                    )
                     raise RuntimeError(
-                        "DAG_BATCH_FAILED: "
-                        f"batch={batch_idx}, runnable={','.join(runnable)}"
+                        f"DAG_BATCH_FAILED: batch={batch_idx}, "
+                        f"runnable={','.join(runnable)}, "
+                        f"cause={type(exc).__name__}: {exc}"
                     ) from exc
                 for layer_id, layer_result in completed:
                     output[layer_id] = layer_result
@@ -1087,6 +1102,52 @@ class WolfConstitutionalPipeline:
             if enrichment_data.get("confidence_adjustment"):
                 synthesis["layers"]["enrichment_confidence_adj"] = enrichment_data["confidence_adjustment"]
                 synthesis["layers"]["enrichment_score"] = enrichment_data.get("enrichment_score", 0.0)
+
+            # ── L14-B Adaptive Penalty Injection ─────────────────────
+            # Mines J3/J4 journal records for historically underperforming
+            # setup patterns and subtracts a bounded penalty from
+            # enrichment_confidence_adj BEFORE gates + L12 verdict.
+            # Advisory-only: does NOT override L12. Constitutional-compliant.
+            #
+            # Data source: system_metrics["j3_rows"] / ["j4_rows"]
+            # (caller-provided or loaded by the service layer).
+            l14b_report_dict: dict[str, Any] = {}
+            try:
+                j3_rows: list[dict[str, Any]] = list(metrics.get("j3_rows") or [])
+                j4_rows: list[dict[str, Any]] = list(metrics.get("j4_rows") or [])
+
+                if j3_rows or j4_rows:
+                    from journal.l14_underperform_miner import (  # noqa: PLC0415
+                        L14AdaptiveReflection,
+                        UnderperformPatternMiner,
+                    )
+                    _l14b_ctx: dict[str, Any] = {
+                        "pair": symbol,
+                        "direction": direction,
+                        "regime": l1.get("regime"),
+                        "session": l4.get("session"),
+                    }
+                    _l14b_engine = L14AdaptiveReflection(
+                        UnderperformPatternMiner(min_trades=8, max_combo_size=3),
+                    )
+                    _l14b_report = _l14b_engine.analyze(
+                        j3_rows, j4_rows, current_context=_l14b_ctx,
+                    )
+                    adaptive_penalty = _l14b_engine.penalty_for_current_setup(
+                        _l14b_report, max_penalty=0.35,
+                    )
+                    if adaptive_penalty > 0:
+                        current_adj = synthesis["layers"].get("enrichment_confidence_adj", 0.0)
+                        synthesis["layers"]["enrichment_confidence_adj"] = current_adj - adaptive_penalty
+                        logger.info(
+                            "[Pipeline v8.0] L14-B adaptive penalty %.3f applied for %s",
+                            adaptive_penalty, symbol,
+                        )
+                    l14b_report_dict = _l14b_report.to_dict()
+            except Exception as exc:
+                logger.warning("[Pipeline v8.0] L14-B adaptive reflection failed (non-fatal): %s", exc)
+
+            synthesis["l14b_adaptive"] = l14b_report_dict
 
             metrics.get("macro_vix_state", {})
 
