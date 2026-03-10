@@ -1,9 +1,8 @@
 """
 TUYUL FX Wolf-15 — Risk Event Log Routes
 =========================================
-NEW ENDPOINT:
+ENDPOINT:
   GET /api/v1/risk/events          → Risk event log (blocked trades, SL breach, news lock)
-  GET /api/v1/risk/{account_id}/snapshot  → (already exists, kept for completeness)
 """
 
 import os
@@ -154,37 +153,5 @@ def write_risk_event(
         logger.warning("Failed to write risk event: %s", exc)
 
 
-# ─── Endpoint: Risk Snapshot per account ─────────────────────────────────────
-
-@router.get("/risk/{account_id}/snapshot")
-async def risk_snapshot(account_id: str) -> dict:
-    """
-    Current risk state snapshot for an account.
-    Frontend: Risk Monitor page → DrawdownGauge, CircuitBreaker badge.
-    """
-    r: aioredis.Redis = await get_async_redis()
-    snapshot: dict = {}
-
-    try:
-        raw = await r.get(f"RISK:SNAPSHOT:{account_id}")
-        if raw:
-            snapshot = json.loads(raw)
-    except Exception as exc:
-        logger.warning("Risk snapshot Redis error: %s", exc)
-
-    # Fallback structure if nothing in Redis
-    if not snapshot:
-        snapshot = {
-            "account_id": account_id,
-            "daily_dd_percent": 0.0,
-            "daily_dd_limit": 5.0,
-            "total_dd_percent": 0.0,
-            "open_risk_percent": 0.0,
-            "open_trades": 0,
-            "circuit_breaker": "CLOSED",
-            "severity": "SAFE",
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-        }
-
-    snapshot["account_id"] = account_id
-    return snapshot
+# NOTE: GET /api/v1/risk/{account_id}/snapshot is served by risk/risk_router.py
+# (handler: get_account_snapshot via RiskEngineV2). Do NOT re-define it here.
