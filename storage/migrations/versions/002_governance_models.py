@@ -12,18 +12,28 @@ branch_labels = None
 depends_on = None
 
 
-risk_profile_enum = sa.Enum("Conservative", "Balanced", "Aggressive", name="risk_profile_level")
-account_mode_enum = sa.Enum("PAPER", "LIVE", name="account_mode")
-ea_status_enum = sa.Enum("RUNNING", "STOPPED", name="ea_status")
-strategy_type_enum = sa.Enum("H1_SWING", "M15_SCALP", name="strategy_type")
+# Define enums with create_type=False — we create them manually via raw SQL
+# to avoid checkfirst issues across SQLAlchemy / dialect versions.
+risk_profile_enum = sa.Enum("Conservative", "Balanced", "Aggressive", name="risk_profile_level", create_type=False)
+account_mode_enum = sa.Enum("PAPER", "LIVE", name="account_mode", create_type=False)
+ea_status_enum = sa.Enum("RUNNING", "STOPPED", name="ea_status", create_type=False)
+strategy_type_enum = sa.Enum("H1_SWING", "M15_SCALP", name="strategy_type", create_type=False)
+
+
+def _create_enum_safe(name: str, values: list[str]) -> None:
+    """Create a PostgreSQL ENUM type if it does not already exist."""
+    val_list = ", ".join(f"'{v}'" for v in values)
+    op.execute(sa.text(
+        f"DO $$ BEGIN CREATE TYPE {name} AS ENUM ({val_list}); "
+        f"EXCEPTION WHEN duplicate_object THEN NULL; END $$;"
+    ))
 
 
 def upgrade() -> None:
-    bind = op.get_bind()
-    risk_profile_enum.create(bind, checkfirst=True)
-    account_mode_enum.create(bind, checkfirst=True)
-    ea_status_enum.create(bind, checkfirst=True)
-    strategy_type_enum.create(bind, checkfirst=True)
+    _create_enum_safe("risk_profile_level", ["Conservative", "Balanced", "Aggressive"])
+    _create_enum_safe("account_mode", ["PAPER", "LIVE"])
+    _create_enum_safe("ea_status", ["RUNNING", "STOPPED"])
+    _create_enum_safe("strategy_type", ["H1_SWING", "M15_SCALP"])
 
     op.create_table(
         "prop_firm_rules",
@@ -88,8 +98,7 @@ def downgrade() -> None:
 
     op.drop_table("prop_firm_rules")
 
-    bind = op.get_bind()
-    strategy_type_enum.drop(bind, checkfirst=True)
-    ea_status_enum.drop(bind, checkfirst=True)
-    account_mode_enum.drop(bind, checkfirst=True)
-    risk_profile_enum.drop(bind, checkfirst=True)
+    op.execute(sa.text("DROP TYPE IF EXISTS strategy_type"))
+    op.execute(sa.text("DROP TYPE IF EXISTS ea_status"))
+    op.execute(sa.text("DROP TYPE IF EXISTS account_mode"))
+    op.execute(sa.text("DROP TYPE IF EXISTS risk_profile_level"))

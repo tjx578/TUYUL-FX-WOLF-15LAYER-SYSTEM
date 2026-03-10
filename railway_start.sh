@@ -10,9 +10,11 @@ fi
 # ── Run Alembic migrations (idempotent — safe to run on every deploy) ──
 if [[ -n "${DATABASE_URL:-}" ]]; then
   echo "[startup] Running database migrations…"
-  python -m alembic upgrade head || {
-    echo "[startup] WARNING: Alembic migration failed — app will start but DB-backed features may be degraded." >&2
-  }
+  if python -m alembic upgrade head 2>&1; then
+    echo "[startup] Migrations completed successfully."
+  else
+    echo "[startup] WARNING: Alembic migration failed (exit $?) — app will start but DB-backed features may be degraded." >&2
+  fi
 else
   echo "[startup] DATABASE_URL not set — skipping migrations."
 fi
