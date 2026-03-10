@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import os
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -122,3 +122,34 @@ class TestRedisClientManager:
         """Close on uninitialized manager should not raise."""
         mgr = RedisClientManager()
         await mgr.close()  # No error
+
+    @pytest.mark.asyncio
+    async def test_pool_has_retry_config(self) -> None:
+        """Pool must be created with a Retry object and retry_on_error list."""
+        from redis.retry import Retry
+
+        mgr = RedisClientManager()
+        with patch.dict(os.environ, {"REDIS_URL": "redis://localhost:6379/0"}, clear=True):
+            pool = await mgr.get_pool()
+            # ConnectionPool.from_url passes retry/retry_on_error to
+            # connection_kwargs; verify they propagate.
+            ckw: dict[str, object] = dict(pool.connection_kwargs)  # pyright: ignore[reportUnknownMemberType,reportUnknownArgumentType]
+            assert "retry" in ckw, "Retry object must be set on pool"
+            assert isinstance(ckw["retry"], Retry)
+            assert ckw.get("retry_on_error") is not None
+            await mgr.close()
+
+    @pytest.mark.asyncio
+    async def test_reset_pool_clears_and_recreates(self) -> None:
+        """reset_pool should close the old pool and pre-warm a new one."""
+        mgr = RedisClientManager()
+        with patch.dict(os.environ, {"REDIS_URL": "redis://localhost:6379/0"}, clear=True):
+            pool1 = await mgr.get_pool()
+            # Mock aclose so it doesn't actually talk to Redis
+            pool1.aclose = AsyncMock()
+            await mgr.reset_pool()
+            pool1.aclose.assert_awaited_once()
+            # A new pool should have been created (pre-warm)
+            pool2 = await mgr.get_pool()
+            assert pool2 is not pool1
+            await mgr.close()
