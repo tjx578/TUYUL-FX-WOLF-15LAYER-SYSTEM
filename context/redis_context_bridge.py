@@ -23,14 +23,8 @@ from storage.redis_client import RedisClient
 # If no tick arrives in 60s, key expires -> downstream knows feed is dead.
 LATEST_TICK_TTL_SECONDS: int = 60
 
-# Candle hash: 4 hours - covers full session overlap (e.g., London+NY).
-# Candles older than this are stale and should not inform decisions.
-CANDLE_HASH_TTL_SECONDS: int = 4 * 3600  # 14400s
-
-# Candle history list: 6 hours - long enough for engine restart/reconnect
-# to load warmup data that ingest already fetched.
-CANDLE_HISTORY_TTL_SECONDS: int = 6 * 3600  # 21600s
-
+# No TTL on candle keys — Redis has persistent volume.
+# Data stays until explicitly deleted or trimmed by LTRIM.
 # Max candle history entries per symbol/timeframe in Redis
 CANDLE_HISTORY_MAXLEN: int = 300
 
@@ -50,7 +44,8 @@ class RedisContextBridge:
     TTL Policy:
       - tick streams: MAXLEN ~10,000 (auto-trim on XADD)
       - latest_tick hashes: 60s TTL (stale feed detection)
-      - candle hashes: 4h TTL (session-relevant window)
+      - candle hashes: no TTL (persistent, overwritten on each new candle)
+      - candle history lists: no TTL (capped by LTRIM to 300 entries)
       - latest_news: 24h TTL (set via SET ex=)
     """
 
@@ -61,6 +56,7 @@ class RedisContextBridge:
         Args:
             redis_client: Optional RedisClient instance (uses singleton if None).
         """
+        super().__init__()
         self._redis = redis_client or RedisClient()
         self._prefix = "wolf15"  # Namespace prefix for all keys
         self._tick_stream_maxlen = 10000  # Max entries per tick stream
@@ -117,7 +113,7 @@ class RedisContextBridge:
         Operations:
           1. PUBLISH to channel "candle:{symbol}:{timeframe}"
           2. HSET to "candle:{symbol}:{timeframe}" for latest candle storage
-          3. EXPIRE on candle hash key (4h session window)
+          3. RPUSH+LTRIM candle history list (capped at 300 entries)
 
         Args:
             candle: Candle dictionary with keys: symbol, timeframe, open, high,
@@ -137,19 +133,16 @@ class RedisContextBridge:
             channel = f"candle:{symbol}:{timeframe}"
             self._redis.publish(channel, candle_json)
 
-            # 2. HSET latest candle
+            # 2. HSET latest candle (no TTL — persistent until overwritten)
             hash_key = f"{self._prefix}:candle:{symbol}:{timeframe}"
             self._redis.hset(hash_key, mapping={"data": candle_json})
 
-            # 3. Set TTL - candle data expires after session relevance window
-            self._redis.client.expire(hash_key, CANDLE_HASH_TTL_SECONDS)
-
-            # 4. Append to candle history list (enables engine warmup on startup)
+            # 3. Append to candle history list (enables engine warmup on startup)
+            #    LTRIM caps size; no TTL so data survives restarts.
             try:
                 list_key = f"{self._prefix}:candle_history:{symbol}:{timeframe}"
                 self._redis.client.rpush(list_key, candle_json)
                 self._redis.client.ltrim(list_key, -CANDLE_HISTORY_MAXLEN, -1)
-                self._redis.client.expire(list_key, CANDLE_HISTORY_TTL_SECONDS)
             except Exception as exc:
                 logger.error(f"Failed to write candle history list for {symbol} {timeframe}: {exc}")
 
@@ -242,10 +235,11 @@ class RedisContextBridge:
         """
         try:
             list_key = f"{self._prefix}:candle_history:{symbol}:{timeframe}"
+            raw: list[bytes]
             if count > 0:
-                raw = self._redis.client.lrange(list_key, -count, -1)
+                raw = list(self._redis.client.lrange(list_key, -count, -1))  # type: ignore[arg-type]
             else:
-                raw = self._redis.client.lrange(list_key, 0, -1)
+                raw = list(self._redis.client.lrange(list_key, 0, -1))  # type: ignore[arg-type]
             candles: list[dict[str, Any]] = []
             for item in raw:
                 with contextlib.suppress(Exception):
