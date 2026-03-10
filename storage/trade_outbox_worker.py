@@ -72,7 +72,7 @@ class TradeOutboxWorker:
             )
         except Exception as exc:
             if "BUSYGROUP" not in str(exc):
-                logger.warning("Outbox worker group init failed: %s", exc)
+                logger.warning("Outbox worker group init failed: {}", exc)
 
     async def _consume_stream(self, redis: Any) -> int:
         items = await redis.xreadgroup(
@@ -168,7 +168,7 @@ class TradeOutboxWorker:
             return True, None
         except Exception as exc:  # noqa: BLE001
             logger.warning(
-                "Outbox delivery failed outbox_id=%s topic=%s error=%s",
+                "Outbox delivery failed outbox_id={} topic={} error={}",
                 event.outbox_id,
                 event.topic,
                 exc,

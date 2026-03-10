@@ -116,7 +116,7 @@ class AsyncExecutionWorker:
                     ) as exc:
                         execution_errors_total.inc()
                         logger.warning(
-                            "xreadgroup connection error: %s — reconnecting",
+                            "xreadgroup connection error: {} — reconnecting",
                             type(exc).__name__,
                         )
                         break  # Break inner loop → reconnect in outer loop
@@ -145,7 +145,7 @@ class AsyncExecutionWorker:
             except Exception as exc:
                 execution_errors_total.inc()
                 logger.exception(
-                    "Execution worker error: %s — retry in %.1fs", exc, backoff,
+                    "Execution worker error: {} — retry in {:.1f}s", exc, backoff,
                 )
 
             await asyncio.sleep(backoff)
@@ -176,7 +176,7 @@ class AsyncExecutionWorker:
                 except ValueError as exc:
                     execution_errors_total.inc()
                     span.record_exception(exc)
-                    logger.error("Execution worker dropped malformed message id=%s err=%s", msg_id, exc)
+                    logger.error("Execution worker dropped malformed message id={} err={}", msg_id, exc)
                     await redis_client.xack(stream_name, self._cfg.group, msg_id)
                     return
 
@@ -193,7 +193,7 @@ class AsyncExecutionWorker:
                 else:
                     orders_failed.inc()
                     logger.error(
-                        "Execution failed request_id=%s code=%s err=%s",
+                        "Execution failed request_id={} code={} err={}",
                         request.request_id,
                         result.error_code,
                         result.error_msg,
