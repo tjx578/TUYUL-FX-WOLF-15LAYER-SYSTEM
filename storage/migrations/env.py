@@ -1,26 +1,49 @@
-"""Alembic environment configuration."""
+"""Alembic environment configuration.
+
+Uses **psycopg v3** (``psycopg``) as the PostgreSQL driver.
+The ``psycopg2`` package is intentionally NOT installed in the container image.
+"""
 
 from __future__ import annotations
 
 import os
+import re
 
 from logging.config import fileConfig
 
 from alembic import context
-from sqlalchemy import create_engine, engine_from_config, pool
+from sqlalchemy import engine_from_config, pool
 
 config = context.config
 
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-# Allow DATABASE_URL env var to override alembic.ini value so that CI and
-# Docker environments don't need to edit the ini file.
-# Railway / Heroku use postgres:// but SQLAlchemy 2.x requires postgresql://.
+# ---------------------------------------------------------------------------
+# DATABASE_URL → SQLAlchemy-compatible connection string (psycopg v3)
+# ---------------------------------------------------------------------------
+# Railway / Heroku often provide ``postgres://`` which SQLAlchemy 2.x rejects.
+# Some setups already specify a driver (``+psycopg2``, ``+asyncpg``, etc.).
+# We normalise everything to ``postgresql+psycopg://`` so that SQLAlchemy
+# always picks the psycopg **v3** driver — never the legacy psycopg2.
+# ---------------------------------------------------------------------------
+
+_PG_SCHEME_RE = re.compile(
+    r"^(?:postgres(?:ql)?(?:\+\w+)?)://",   # postgres[ql][+driver]://
+)
+
+
+def _normalise_pg_url(raw: str) -> str:
+    """Return *raw* with the scheme forced to ``postgresql+psycopg``."""
+    m = _PG_SCHEME_RE.match(raw)
+    if not m:
+        return raw                               # not a PG URL — leave it alone
+    return "postgresql+psycopg://" + raw[m.end():]
+
+
 url = os.getenv("DATABASE_URL", "")
 if url:
-    if url.startswith("postgres://"):
-        url = url.replace("postgres://", "postgresql://", 1)
+    url = _normalise_pg_url(url)
     config.set_main_option("sqlalchemy.url", url)
 
 # target_metadata can be set to a SQLAlchemy MetaData instance for
