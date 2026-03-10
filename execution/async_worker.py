@@ -13,12 +13,14 @@ import os
 import tracemalloc
 import uuid
 from dataclasses import dataclass
+from typing import cast
 
+import redis.asyncio as aioredis
 from loguru import logger
 from prometheus_client import Counter, Gauge, Histogram, start_http_server
 from redis.exceptions import ResponseError
-from config.logging_bootstrap import configure_loguru_logging
 
+from config.logging_bootstrap import configure_loguru_logging
 from execution.broker_executor import BrokerExecutor, ExecutionRequest, OrderAction
 from infrastructure.redis_client import get_client
 from infrastructure.tracing import (
@@ -73,6 +75,7 @@ class WorkerConfig:
 
 class AsyncExecutionWorker:
     def __init__(self, config: WorkerConfig | None = None) -> None:
+        super().__init__()
         self._cfg = config or WorkerConfig()
         self._sem = asyncio.Semaphore(self._cfg.max_concurrency)
         self._executor = BrokerExecutor(
@@ -81,7 +84,6 @@ class AsyncExecutionWorker:
 
     async def run(self) -> None:
         tracemalloc.start()
-        start_http_server(self._cfg.metrics_port)
         logger.info(
             "Execution worker started (worker=%s stream=%s metrics=%s)",
             self._cfg.worker_name,
@@ -89,34 +91,67 @@ class AsyncExecutionWorker:
             self._cfg.metrics_port,
         )
 
-        redis_client = await get_client()
-        await self._ensure_group(redis_client)
+        backoff = 1.0
+        max_backoff = 60.0
 
         while True:
-            response = await redis_client.xreadgroup(
-                groupname=self._cfg.group,
-                consumername=self._cfg.worker_name,
-                streams={self._cfg.stream: ">"},
-                count=self._cfg.count,
-                block=self._cfg.block_ms,
-            )
-            await self._update_runtime_metrics(redis_client)
+            try:
+                redis_client = await get_client()
+                await self._ensure_group(redis_client)
+                backoff = 1.0  # Reset on successful connect
 
-            if not response:
-                continue
+                while True:
+                    try:
+                        response = await redis_client.xreadgroup(
+                            groupname=self._cfg.group,
+                            consumername=self._cfg.worker_name,
+                            streams={self._cfg.stream: ">"},
+                            count=self._cfg.count,
+                            block=self._cfg.block_ms,
+                        )
+                    except (
+                        aioredis.ConnectionError,
+                        aioredis.TimeoutError,
+                        OSError,
+                    ) as exc:
+                        execution_errors_total.inc()
+                        logger.warning(
+                            "xreadgroup connection error: %s — reconnecting",
+                            type(exc).__name__,
+                        )
+                        break  # Break inner loop → reconnect in outer loop
 
-            tasks: list[asyncio.Task[None]] = []
-            for stream_name, messages in response:
-                for msg_id, msg in messages:
-                    tasks.append(
-                        asyncio.create_task(
-                            self._handle_message(redis_client, stream_name, msg_id, msg),
-                        ),
-                    )
-            if tasks:
-                await asyncio.gather(*tasks)
+                    await self._update_runtime_metrics(redis_client)
 
-    async def _ensure_group(self, redis_client) -> None:
+                    if not response:
+                        continue
+
+                    tasks: list[asyncio.Task[None]] = []
+                    for stream_name, messages in response:
+                        for msg_id, msg in messages:
+                            tasks.append(
+                                asyncio.create_task(
+                                    self._handle_message(
+                                        redis_client, stream_name, msg_id, msg,
+                                    ),
+                                ),
+                            )
+                    if tasks:
+                        await asyncio.gather(*tasks)
+
+            except asyncio.CancelledError:
+                logger.info("Execution worker cancelled — shutting down")
+                raise
+            except Exception as exc:
+                execution_errors_total.inc()
+                logger.exception(
+                    "Execution worker error: %s — retry in %.1fs", exc, backoff,
+                )
+
+            await asyncio.sleep(backoff)
+            backoff = min(backoff * 2, max_backoff)
+
+    async def _ensure_group(self, redis_client: aioredis.Redis) -> None:
         try:
             await redis_client.xgroup_create(
                 name=self._cfg.stream,
@@ -128,7 +163,7 @@ class AsyncExecutionWorker:
             if "BUSYGROUP" not in str(exc):
                 raise
 
-    async def _handle_message(self, redis_client, stream_name: str, msg_id: str, msg: dict[str, str]) -> None:
+    async def _handle_message(self, redis_client: aioredis.Redis, stream_name: str, msg_id: str, msg: dict[str, str]) -> None:
         async with self._sem:
             parent_context = extract_trace_context(extract_trace_carrier(msg))
             with _exec_tracer.start_as_current_span("execution_send", context=parent_context) as span:
@@ -185,14 +220,16 @@ class AsyncExecutionWorker:
         except KeyError as exc:
             raise ValueError(f"missing field: {exc.args[0]}") from exc
 
-    async def _update_runtime_metrics(self, redis_client) -> None:
+    async def _update_runtime_metrics(self, redis_client: aioredis.Redis) -> None:
         pending_count = 0
         try:
-            pending = await redis_client.xpending(self._cfg.stream, self._cfg.group)
-            if isinstance(pending, dict):
-                pending_count = int(pending.get("pending", 0))
-            elif isinstance(pending, tuple) and pending:
-                pending_count = int(pending[0])
+            pending_raw = await redis_client.xpending(self._cfg.stream, self._cfg.group)
+            if isinstance(pending_raw, dict):
+                raw_dict = cast(dict[str, object], pending_raw)
+                pending_value = raw_dict.get("pending", 0)
+                pending_count = int(pending_value) if pending_value is not None else 0  # type: ignore[arg-type]
+            elif isinstance(pending_raw, (list, tuple)) and pending_raw:
+                pending_count = int(pending_raw[0])  # pyright: ignore[reportUnknownArgumentType]
         except Exception:
             pending_count = 0
 
@@ -202,9 +239,40 @@ class AsyncExecutionWorker:
         process_memory.labels(service="execution").set(float(current_mem))
 
 
+_MAX_RESTARTS = int(os.getenv("EXEC_MAX_RESTARTS", "10"))
+_RESTART_COOLDOWN = float(os.getenv("EXEC_RESTART_COOLDOWN_SEC", "5.0"))
+
+
 async def _main() -> None:
-    worker = AsyncExecutionWorker()
-    await worker.run()
+    start_http_server(int(os.getenv("EXEC_METRICS_PORT", "9103")))
+    restarts = 0
+    while restarts <= _MAX_RESTARTS:
+        try:
+            logger.info(
+                "[SUPERVISOR] Starting execution worker (attempt %d/%d)",
+                restarts + 1,
+                _MAX_RESTARTS + 1,
+            )
+            worker = AsyncExecutionWorker()
+            await worker.run()
+            return  # clean exit
+        except asyncio.CancelledError:
+            logger.info("[SUPERVISOR] Execution worker cancelled")
+            return
+        except Exception as exc:
+            restarts += 1
+            logger.error(
+                "[SUPERVISOR] Execution worker crashed: %s (restart %d/%d)",
+                exc,
+                restarts,
+                _MAX_RESTARTS,
+            )
+            if restarts > _MAX_RESTARTS:
+                logger.critical(
+                    "[SUPERVISOR] Execution worker exceeded max restarts — giving up"
+                )
+                return
+            await asyncio.sleep(_RESTART_COOLDOWN)
 
 
 if __name__ == "__main__":
