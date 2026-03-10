@@ -252,7 +252,7 @@ class TestH4Aggregation:
             },
         ]
 
-        h4_bars = fetcher._aggregate_h4(h1_bars)
+        h4_bars = fetcher.aggregate_h4(h1_bars)
 
         assert len(h4_bars) == 1
         h4 = h4_bars[0]
@@ -292,7 +292,7 @@ class TestH4Aggregation:
             for hour in range(8)
         ]
 
-        h4_bars = fetcher._aggregate_h4(h1_bars)
+        h4_bars = fetcher.aggregate_h4(h1_bars)
 
         # Should produce 2 H4 bars: 00:00-04:00 and 04:00-08:00
         assert len(h4_bars) == 2
