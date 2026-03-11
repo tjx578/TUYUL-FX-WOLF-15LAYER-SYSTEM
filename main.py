@@ -312,7 +312,7 @@ def _validate_api_key() -> bool:
     if not finnhub_keys.available:
         logger.warning("WARNING: FINNHUB_API_KEY not configured; running in DRY RUN mode.")
         return False
-    logger.info("FINNHUB_API_KEY validated (%d key(s) loaded)", finnhub_keys.key_count)
+    logger.info("FINNHUB_API_KEY validated ({} key(s) loaded)", finnhub_keys.key_count)
     return True
 
 
@@ -378,7 +378,7 @@ async def _sanitize_redis_keys(redis_client: AsyncRedis) -> None:
         try:
             keys: list[bytes | str] = await redis_client.keys(pattern)  # type: ignore[assignment]
         except Exception as exc:
-            logger.warning("[Redis-sanitize] KEYS %s failed: %s", pattern, exc)
+            logger.warning("[Redis-sanitize] KEYS {} failed: {}", pattern, exc)
             continue
 
         for key in keys:
@@ -386,7 +386,7 @@ async def _sanitize_redis_keys(redis_client: AsyncRedis) -> None:
             try:
                 actual_type: str = await redis_client.type(key_str)
             except Exception as exc:
-                logger.warning("[Redis-sanitize] TYPE %s failed: %s", key_str, exc)
+                logger.warning("[Redis-sanitize] TYPE {} failed: {}", key_str, exc)
                 continue
 
             if actual_type == "none":
@@ -395,17 +395,17 @@ async def _sanitize_redis_keys(redis_client: AsyncRedis) -> None:
                 continue
 
             logger.warning(
-                "[Redis-sanitize] Key '%s' type mismatch: expected=%s, actual=%s → deleting",
+                "[Redis-sanitize] Key '{}' type mismatch: expected={}, actual={} → deleting",
                 key_str, expected_type, actual_type,
             )
             try:
                 await redis_client.delete(key_str)
                 total_deleted += 1
             except Exception as exc:
-                logger.error("[Redis-sanitize] Failed to delete '%s': %s", key_str, exc)
+                logger.error("[Redis-sanitize] Failed to delete '{}': {}", key_str, exc)
 
     if total_deleted:
-        logger.info("[Redis-sanitize] Cleaned %d conflicting key(s)", total_deleted)
+        logger.info("[Redis-sanitize] Cleaned {} conflicting key(s)", total_deleted)
     else:
         logger.debug("[Redis-sanitize] No type conflicts found")
 
