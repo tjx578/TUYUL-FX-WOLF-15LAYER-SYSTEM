@@ -12,7 +12,7 @@ import asyncio
 import os
 import tracemalloc
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import cast
 
 import redis.asyncio as aioredis
@@ -22,7 +22,7 @@ from redis.exceptions import ResponseError
 
 from config.logging_bootstrap import configure_loguru_logging
 from execution.broker_executor import BrokerExecutor, ExecutionRequest, OrderAction
-from infrastructure.redis_client import get_client
+from infrastructure.redis_client import RedisConfig, close_pool, get_client
 from infrastructure.tracing import (
     extract_trace_carrier,
     extract_trace_context,
@@ -72,6 +72,12 @@ class WorkerConfig:
     max_concurrency: int = 5
     metrics_port: int = int(os.getenv("EXEC_METRICS_PORT", "9103"))
 
+    @property
+    def redis_socket_timeout(self) -> float:
+        # Keep socket timeout comfortably above XREADGROUP block window.
+        # block_ms=5000 with socket_timeout=5.0 can produce spurious TimeoutError.
+        return max((self.block_ms / 1000.0) + 2.0, 10.0)
+
 
 class AsyncExecutionWorker:
     def __init__(self, config: WorkerConfig | None = None) -> None:
@@ -85,7 +91,7 @@ class AsyncExecutionWorker:
     async def run(self) -> None:
         tracemalloc.start()
         logger.info(
-            "Execution worker started (worker=%s stream=%s metrics=%s)",
+            "Execution worker started (worker={} stream={} metrics={})",
             self._cfg.worker_name,
             self._cfg.stream,
             self._cfg.metrics_port,
@@ -96,7 +102,9 @@ class AsyncExecutionWorker:
 
         while True:
             try:
-                redis_client = await get_client()
+                base_cfg = RedisConfig.from_env()
+                redis_cfg = replace(base_cfg, socket_timeout=self._cfg.redis_socket_timeout)
+                redis_client = await get_client(redis_cfg)
                 await self._ensure_group(redis_client)
                 backoff = 1.0  # Reset on successful connect
 
@@ -109,16 +117,20 @@ class AsyncExecutionWorker:
                             count=self._cfg.count,
                             block=self._cfg.block_ms,
                         )
+                    except aioredis.TimeoutError:
+                        # Long-poll timeout can occur on quiet streams when socket_timeout
+                        # is close to block_ms. Treat as empty poll, not a hard disconnect.
+                        response = []
                     except (
                         aioredis.ConnectionError,
-                        aioredis.TimeoutError,
                         OSError,
                     ) as exc:
                         execution_errors_total.inc()
                         logger.warning(
-                            "xreadgroup connection error: %s — reconnecting",
+                            "xreadgroup connection error: {} — reconnecting",
                             type(exc).__name__,
                         )
+                        await close_pool()
                         break  # Break inner loop → reconnect in outer loop
 
                     await self._update_runtime_metrics(redis_client)
@@ -145,7 +157,7 @@ class AsyncExecutionWorker:
             except Exception as exc:
                 execution_errors_total.inc()
                 logger.exception(
-                    "Execution worker error: %s — retry in %.1fs", exc, backoff,
+                    "Execution worker error: {} — retry in {:.1f}s", exc, backoff,
                 )
 
             await asyncio.sleep(backoff)
@@ -176,7 +188,7 @@ class AsyncExecutionWorker:
                 except ValueError as exc:
                     execution_errors_total.inc()
                     span.record_exception(exc)
-                    logger.error("Execution worker dropped malformed message id=%s err=%s", msg_id, exc)
+                    logger.error("Execution worker dropped malformed message id={} err={}", msg_id, exc)
                     await redis_client.xack(stream_name, self._cfg.group, msg_id)
                     return
 
@@ -193,7 +205,7 @@ class AsyncExecutionWorker:
                 else:
                     orders_failed.inc()
                     logger.error(
-                        "Execution failed request_id=%s code=%s err=%s",
+                        "Execution failed request_id={} code={} err={}",
                         request.request_id,
                         result.error_code,
                         result.error_msg,
@@ -249,7 +261,7 @@ async def _main() -> None:
     while restarts <= _MAX_RESTARTS:
         try:
             logger.info(
-                "[SUPERVISOR] Starting execution worker (attempt %d/%d)",
+                "[SUPERVISOR] Starting execution worker (attempt {}/{})",
                 restarts + 1,
                 _MAX_RESTARTS + 1,
             )
@@ -262,7 +274,7 @@ async def _main() -> None:
         except Exception as exc:
             restarts += 1
             logger.error(
-                "[SUPERVISOR] Execution worker crashed: %s (restart %d/%d)",
+                "[SUPERVISOR] Execution worker crashed: {} (restart {}/{})",
                 exc,
                 restarts,
                 _MAX_RESTARTS,
