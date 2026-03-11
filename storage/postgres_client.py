@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import os
 from importlib import import_module
 from typing import Any
@@ -37,11 +38,14 @@ class PostgresClient:
 
         try:
             asyncpg = _load_asyncpg_module()
-            self._pool = await asyncpg.create_pool(
-                dsn=dsn,
-                min_size=1,
-                max_size=10,
-                command_timeout=30,
+            self._pool = await asyncio.wait_for(
+                asyncpg.create_pool(
+                    dsn=dsn,
+                    min_size=1,
+                    max_size=10,
+                    command_timeout=30,
+                ),
+                timeout=30,
             )
             logger.info("PostgreSQL connection pool initialized")
         except Exception as exc:

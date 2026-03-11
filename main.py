@@ -706,6 +706,12 @@ async def main() -> None:
     has_api_key = _validate_api_key()
     context_mode = os.getenv("CONTEXT_MODE", "local").lower()
     logger.info(f"Context mode: {context_mode.upper()} | Run mode: {RUN_MODE.upper()}")
+
+    # ── Health probe FIRST so orchestrators see liveness immediately ─
+    tasks: list[asyncio.Task[object]] = [
+        asyncio.create_task(_health_probe.start(), name="HealthProbe"),
+    ]
+
     await init_persistent_storage()
 
     # ── Seed candles BEFORE analysis loop starts ────────────────────
@@ -714,11 +720,6 @@ async def main() -> None:
             await seed_candles_on_startup()
         except Exception as exc:
             logger.error(f"[SEED] Candle seeding failed (non-fatal): {exc}")
-
-    # ── Health probe (always runs) ──────────────────────────────────
-    tasks: list[asyncio.Task[object]] = [
-        asyncio.create_task(_health_probe.start(), name="HealthProbe"),
-    ]
 
     # ── HTTP server (only in all/api-only mode) ─────────────────────
     if RUN_MODE in ("all", "api-only"):

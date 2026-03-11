@@ -380,11 +380,12 @@ async def main() -> None:
     signal.signal(signal.SIGTERM, _handle_signal)
     signal.signal(signal.SIGINT, _handle_signal)
 
+    # Start health probe FIRST so Railway sees liveness immediately
+    # while the rest of initialization proceeds.
+    health_task = asyncio.create_task(_health_probe.start(), name="IngestHealthProbe")
+
     has_api_key = _validate_api_key()
     await init_persistent_storage()
-
-    # Start health probe alongside ingest services
-    health_task = asyncio.create_task(_health_probe.start(), name="IngestHealthProbe")
 
     try:
         await run_ingest_services(has_api_key)
