@@ -433,14 +433,32 @@ async def main() -> None:
         _health_probe.set_detail("startup_stage", "initializing_storage")
         await init_persistent_storage()
         _health_probe.set_detail("startup_stage", "running")
-        await run_ingest_services(has_api_key)
+
+        restart_attempt = 0
+        while not _shutdown_event.is_set():
+            try:
+                await run_ingest_services(has_api_key)
+                break
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                restart_attempt += 1
+                backoff = min(30.0, float(2 ** min(restart_attempt, 5)))
+                _health_probe.set_detail("runtime_restart", str(restart_attempt))
+                _health_probe.set_detail("runtime_error", str(exc)[:120])
+                logger.exception(
+                    "Ingest runtime failed (attempt {}), restarting in {:.1f}s: {}",
+                    restart_attempt,
+                    backoff,
+                    exc,
+                )
+                await asyncio.sleep(backoff)
     except KeyboardInterrupt:
         logger.info("KeyboardInterrupt received")
     except Exception as exc:
-        _health_probe.set_alive(False)
-        _health_probe.set_detail("dead_reason", str(exc)[:120])
-        logger.exception(f"Ingest service failed: {exc}")
-        sys.exit(1)
+        _health_probe.set_detail("fatal_error", str(exc)[:120])
+        logger.exception(f"Ingest bootstrap failed: {exc}")
+        raise
     finally:
         health_task.cancel()
         await _health_probe.stop()
