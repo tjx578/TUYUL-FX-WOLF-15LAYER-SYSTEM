@@ -175,6 +175,101 @@ services:
       retries: 3
     restart: unless-stopped
 
+  # ---------- Per-service builds (use service-level Dockerfiles) ----------
+  wolf-api:
+    build:
+      context: .
+      dockerfile: services/api/Dockerfile
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-wolf_user}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-wolf_trading}
+    ports:
+      - "8000:8000"
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    networks:
+      - wolf15_net
+
+  wolf-engine:
+    build:
+      context: .
+      dockerfile: services/engine/Dockerfile
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-wolf_user}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-wolf_trading}
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    networks:
+      - wolf15_net
+
+  wolf-ingest:
+    build:
+      context: .
+      dockerfile: services/ingest/Dockerfile
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - wolf15_net
+
+  wolf-orchestrator:
+    build:
+      context: .
+      dockerfile: services/orchestrator/Dockerfile
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - wolf15_net
+
+  wolf-worker:
+    build:
+      context: .
+      dockerfile: services/worker/Dockerfile
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
+      - WOLF15_WORKER_ENTRY=${WOLF15_WORKER_ENTRY:-montecarlo}
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - wolf15_net
+
 volumes:
   postgres_data:
     driver: local
