@@ -61,7 +61,7 @@ def _validate_api_key() -> bool:
     if not finnhub_keys.available:
         logger.warning("WARNING: FINNHUB_API_KEY not configured; ingest running in DRY RUN mode.")
         return False
-    logger.info("FINNHUB_API_KEY validated (%d key(s) loaded)", finnhub_keys.key_count)
+    logger.info("FINNHUB_API_KEY validated ({} key(s) loaded)", finnhub_keys.key_count)
     return True
 
 
@@ -114,6 +114,49 @@ async def _connect_redis() -> RedisClient:
         raise
     logger.info("Redis connection validated")
     return redis
+
+
+async def _connect_redis_with_retry() -> RedisClient:
+    """Connect to Redis with bounded retry/backoff during startup.
+
+    This keeps ingest process alive during transient Redis unavailability,
+    allowing platform liveness probes to pass while startup dependencies settle.
+    """
+    max_retries = int(os.getenv("INGEST_REDIS_CONNECT_MAX_RETRIES", "60"))
+    base_delay = float(os.getenv("INGEST_REDIS_CONNECT_DELAY_SEC", "2"))
+    max_delay = float(os.getenv("INGEST_REDIS_CONNECT_MAX_DELAY_SEC", "30"))
+
+    attempt = 0
+    while True:
+        if _shutdown_event and _shutdown_event.is_set():
+            raise RuntimeError("shutdown_requested")
+
+        attempt += 1
+        try:
+            client = await _connect_redis()
+            _health_probe.set_detail("redis", "connected")
+            _health_probe.set_detail("redis_retry", str(attempt))
+            return client
+        except Exception as exc:
+            _health_probe.set_detail("redis", "connecting")
+            _health_probe.set_detail("redis_retry", str(attempt))
+
+            if max_retries > 0 and attempt >= max_retries:
+                logger.error(
+                    "Redis connection failed after %d attempt(s): %s",
+                    attempt,
+                    exc,
+                )
+                raise
+
+            delay = min(max_delay, base_delay * (2 ** max(0, attempt - 1)))
+            logger.warning(
+                "Redis not ready yet (attempt %d): %s — retrying in %.1fs",
+                attempt,
+                exc,
+                delay,
+            )
+            await asyncio.sleep(delay)
 
 
 def _set_state_from_warmup(system_state: SystemStateManager) -> None:
@@ -232,11 +275,11 @@ async def _seed_redis_candle_history(
                     pipe.rpush(key, candle_json)  # type: ignore[union-attr]
                 await pipe.execute()  # type: ignore[union-attr]  # type: ignore[reportUnknownMemberType]
                 seeded += 1
-                logger.info("[Seed] %s: %d bars written", key, len(candles))
+                logger.info("[Seed] {}: {} bars written", key, len(candles))
             except Exception as exc:
-                logger.error("[Seed] Failed to seed %s: %s", key, exc)
+                logger.error("[Seed] Failed to seed {}: {}", key, exc)
 
-    logger.info("[Seed] Completed: %d symbol/tf combos seeded to Redis", seeded)
+    logger.info("[Seed] Completed: {} symbol/tf combos seeded to Redis", seeded)
 
 
 async def _safe_stop(
@@ -269,7 +312,7 @@ async def run_ingest_services(has_api_key: bool) -> None:
     candle_builders: dict[str, CandleBuilder] = {}
 
     try:
-        redis = await _connect_redis()
+        redis = await _connect_redis_with_retry()
         system_state = SystemStateManager()
         system_state.set_state(SystemState.WARMING_UP)
         warmup_results = await _run_warmup(system_state, enabled_symbols)
@@ -387,15 +430,40 @@ async def main() -> None:
     has_api_key = _validate_api_key()
     await init_persistent_storage()
 
+    # Start health probe alongside ingest services
+    health_task = asyncio.create_task(_health_probe.start(), name="IngestHealthProbe")
+
     try:
-        await run_ingest_services(has_api_key)
+        has_api_key = _validate_api_key()
+        _health_probe.set_detail("startup_stage", "initializing_storage")
+        await init_persistent_storage()
+        _health_probe.set_detail("startup_stage", "running")
+
+        restart_attempt = 0
+        while not _shutdown_event.is_set():
+            try:
+                await run_ingest_services(has_api_key)
+                break
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                restart_attempt += 1
+                backoff = min(30.0, float(2 ** min(restart_attempt, 5)))
+                _health_probe.set_detail("runtime_restart", str(restart_attempt))
+                _health_probe.set_detail("runtime_error", str(exc)[:120])
+                logger.exception(
+                    "Ingest runtime failed (attempt {}), restarting in {:.1f}s: {}",
+                    restart_attempt,
+                    backoff,
+                    exc,
+                )
+                await asyncio.sleep(backoff)
     except KeyboardInterrupt:
         logger.info("KeyboardInterrupt received")
     except Exception as exc:
-        _health_probe.set_alive(False)
-        _health_probe.set_detail("dead_reason", str(exc)[:120])
-        logger.exception(f"Ingest service failed: {exc}")
-        sys.exit(1)
+        _health_probe.set_detail("fatal_error", str(exc)[:120])
+        logger.exception(f"Ingest bootstrap failed: {exc}")
+        raise
     finally:
         health_task.cancel()
         await _health_probe.stop()
