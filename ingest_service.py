@@ -116,6 +116,49 @@ async def _connect_redis() -> RedisClient:
     return redis
 
 
+async def _connect_redis_with_retry() -> RedisClient:
+    """Connect to Redis with bounded retry/backoff during startup.
+
+    This keeps ingest process alive during transient Redis unavailability,
+    allowing platform liveness probes to pass while startup dependencies settle.
+    """
+    max_retries = int(os.getenv("INGEST_REDIS_CONNECT_MAX_RETRIES", "60"))
+    base_delay = float(os.getenv("INGEST_REDIS_CONNECT_DELAY_SEC", "2"))
+    max_delay = float(os.getenv("INGEST_REDIS_CONNECT_MAX_DELAY_SEC", "30"))
+
+    attempt = 0
+    while True:
+        if _shutdown_event and _shutdown_event.is_set():
+            raise RuntimeError("shutdown_requested")
+
+        attempt += 1
+        try:
+            client = await _connect_redis()
+            _health_probe.set_detail("redis", "connected")
+            _health_probe.set_detail("redis_retry", str(attempt))
+            return client
+        except Exception as exc:
+            _health_probe.set_detail("redis", "connecting")
+            _health_probe.set_detail("redis_retry", str(attempt))
+
+            if max_retries > 0 and attempt >= max_retries:
+                logger.error(
+                    "Redis connection failed after %d attempt(s): %s",
+                    attempt,
+                    exc,
+                )
+                raise
+
+            delay = min(max_delay, base_delay * (2 ** max(0, attempt - 1)))
+            logger.warning(
+                "Redis not ready yet (attempt %d): %s — retrying in %.1fs",
+                attempt,
+                exc,
+                delay,
+            )
+            await asyncio.sleep(delay)
+
+
 def _set_state_from_warmup(system_state: SystemStateManager) -> None:
     warmup_report = system_state.get_warmup_report()
     incomplete_count = sum(
@@ -269,7 +312,7 @@ async def run_ingest_services(has_api_key: bool) -> None:
     candle_builders: dict[str, CandleBuilder] = {}
 
     try:
-        redis = await _connect_redis()
+        redis = await _connect_redis_with_retry()
         system_state = SystemStateManager()
         system_state.set_state(SystemState.WARMING_UP)
         warmup_results = await _run_warmup(system_state, enabled_symbols)
