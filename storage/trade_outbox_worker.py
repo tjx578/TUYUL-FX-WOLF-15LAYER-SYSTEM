@@ -11,6 +11,7 @@ from typing import Any, cast
 from loguru import logger
 
 from infrastructure.redis_client import get_client
+from infrastructure.redis_url import get_safe_redis_url
 from storage.postgres_client import PostgresClient, pg_client
 
 TRADE_OUTBOX_STREAM = "trade:outbox"
@@ -43,24 +44,79 @@ class TradeOutboxWorker:
         self._max_batch = max_batch
         self._pg = pg or pg_client
         self._stopped = asyncio.Event()
+        self._group_ready = False
+        self._consecutive_failures = 0
+        self._max_backoff = 60.0
+        self._logged_startup = False
 
     async def stop(self) -> None:
         self._stopped.set()
 
+    def _backoff_delay(self) -> float:
+        """Exponential backoff: 1s, 2s, 4s, 8s … capped at _max_backoff."""
+        delay = min(self._max_backoff, self._poll_interval * (2 ** min(self._consecutive_failures, 10)))
+        return delay
+
+    async def _wait_or_stop(self, timeout: float) -> None:
+        with contextlib.suppress(TimeoutError):
+            await asyncio.wait_for(self._stopped.wait(), timeout=timeout)
+
     async def run(self) -> None:
-        redis = await get_client()
-        await self._ensure_group(redis)
+        redis: Any = None
+
+        if not self._logged_startup:
+            safe_url = get_safe_redis_url()
+            logger.info("Outbox worker starting — Redis target: {}", safe_url)
+            self._logged_startup = True
 
         while not self._stopped.is_set():
-            processed = 0
-            with contextlib.suppress(Exception):
-                processed += await self._consume_stream(redis)
-            with contextlib.suppress(Exception):
-                processed += await self._relay_db_pending()
+            # Lazily (re)acquire the Redis client if needed
+            if redis is None:
+                try:
+                    redis = await get_client()
+                    self._consecutive_failures = 0
+                except Exception as exc:  # noqa: BLE001
+                    self._consecutive_failures += 1
+                    delay = self._backoff_delay()
+                    logger.warning(
+                        "Outbox worker Redis connect failed (attempt {}, retry in {:.0f}s): {}",
+                        self._consecutive_failures,
+                        delay,
+                        exc,
+                    )
+                    await self._wait_or_stop(delay)
+                    continue
 
-            if processed == 0:
-                with contextlib.suppress(TimeoutError):
-                    await asyncio.wait_for(self._stopped.wait(), timeout=self._poll_interval)
+            # Ensure consumer group exists before consuming
+            if not self._group_ready:
+                try:
+                    await self._ensure_group(redis)
+                    self._group_ready = True
+                    self._consecutive_failures = 0
+                except Exception:  # noqa: BLE001
+                    # _ensure_group already logs; reset handle so we re-acquire
+                    self._consecutive_failures += 1
+                    redis = None
+                    self._group_ready = False
+                    await self._wait_or_stop(self._backoff_delay())
+                    continue
+
+            try:
+                processed = 0
+                with contextlib.suppress(Exception):
+                    processed += await self._consume_stream(redis)
+                with contextlib.suppress(Exception):
+                    processed += await self._relay_db_pending()
+
+                self._consecutive_failures = 0
+                if processed == 0:
+                    await self._wait_or_stop(self._poll_interval)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("Outbox worker loop error, resetting Redis handle: {}", exc)
+                redis = None
+                self._group_ready = False
+                self._consecutive_failures += 1
+                await self._wait_or_stop(self._backoff_delay())
 
     async def _ensure_group(self, redis: Any) -> None:
         try:
@@ -71,8 +127,10 @@ class TradeOutboxWorker:
                 mkstream=True,
             )
         except Exception as exc:
-            if "BUSYGROUP" not in str(exc):
-                logger.warning("Outbox worker group init failed: %s", exc)
+            if "BUSYGROUP" in str(exc):
+                return  # group already exists — fine
+            logger.warning("Outbox worker group init failed: {}", exc)
+            raise
 
     async def _consume_stream(self, redis: Any) -> int:
         items = await redis.xreadgroup(
@@ -107,21 +165,34 @@ class TradeOutboxWorker:
 
         return processed
 
+    _db_table_missing_warned: bool = False
+
     async def _relay_db_pending(self) -> int:
         if not self._pg.is_available:
             return 0
 
-        rows = await self._pg.fetch(
-            """
-            SELECT outbox_id, trade_id, event_type, topic, payload
-            FROM trade_outbox
-            WHERE status = 'PENDING'
-              AND next_attempt_at <= NOW()
-            ORDER BY created_at ASC
-            LIMIT $1
-            """,
-            self._max_batch,
-        )
+        try:
+            rows = await self._pg.fetch(
+                """
+                SELECT outbox_id, trade_id, event_type, topic, payload
+                FROM trade_outbox
+                WHERE status = 'PENDING'
+                  AND next_attempt_at <= NOW()
+                ORDER BY created_at ASC
+                LIMIT $1
+                """,
+                self._max_batch,
+            )
+        except Exception as exc:
+            if "does not exist" in str(exc):
+                if not self._db_table_missing_warned:
+                    logger.warning(
+                        "trade_outbox table missing — run 'alembic upgrade head'. "
+                        "DB-backed outbox relay disabled until table is created."
+                    )
+                    self._db_table_missing_warned = True
+                return 0
+            raise
 
         processed = 0
         for row in rows:
@@ -155,7 +226,7 @@ class TradeOutboxWorker:
             return True, None
         except Exception as exc:  # noqa: BLE001
             logger.warning(
-                "Outbox delivery failed outbox_id=%s topic=%s error=%s",
+                "Outbox delivery failed outbox_id={} topic={} error={}",
                 event.outbox_id,
                 event.topic,
                 exc,

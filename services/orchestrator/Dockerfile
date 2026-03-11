@@ -1,8 +1,25 @@
-FROM python:3.12-slim
+# ──────────────────────────────────────────────────────────────────────
+# Build from repository ROOT (the COPY commands reference root-level files):
+#   docker build -f services/orchestrator/Dockerfile .
+# ──────────────────────────────────────────────────────────────────────
+FROM python:3.11-slim
 
 WORKDIR /app
-COPY . /app
 
-RUN pip install --no-cache-dir -r requirements.txt
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends libpq5 curl \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY requirements.txt ./
+RUN pip install --no-cache-dir --upgrade pip \
+    && pip install --no-cache-dir -r requirements.txt
+
+COPY . .
+
+RUN groupadd --gid 1000 appuser \
+    && useradd --uid 1000 --gid appuser --shell /bin/bash --create-home appuser \
+    && chown -R appuser:appuser /app
+
+USER appuser
 
 CMD ["python", "-m", "services.orchestrator.state_manager"]
