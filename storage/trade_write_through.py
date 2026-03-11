@@ -144,7 +144,7 @@ async def persist_trade_snapshot(
             for query, args in operations:
                 await client.execute(query, *args)
     except Exception as exc:
-        logger.warning("Trade write-through failed for %s: %s", trade_id, exc)
+        logger.warning("Trade write-through failed for {}: {}", trade_id, exc)
         return False
 
     return True

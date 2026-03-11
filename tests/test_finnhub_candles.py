@@ -10,6 +10,7 @@ from datetime import UTC, datetime, tzinfo
 from typing import Any
 from unittest.mock import AsyncMock, patch
 
+import httpx
 import pytest
 
 from ingest.finnhub_candles import FinnhubCandleFetcher
@@ -412,3 +413,78 @@ class TestPremiumFallback:
             result = await fetcher.try_fallback("XAGUSD", "D1", 10)
 
         assert result == []
+
+
+class TestRateLimitRetries:
+    """Test HTTP 429 retry policy for REST candle fetches."""
+
+    @pytest.mark.asyncio
+    async def test_fetch_retries_429_then_succeeds(self) -> None:
+        """Fetcher should retry after HTTP 429 and eventually return candles."""
+
+        class _FakeResponse:
+            def __init__(self, status_code: int, payload: dict[str, Any], headers: dict[str, str] | None = None) -> None:
+                self.status_code = status_code
+                self._payload = payload
+                self.headers = headers or {}
+
+            def json(self) -> dict[str, Any]:
+                return self._payload
+
+            def raise_for_status(self) -> None:
+                if self.status_code >= 400:
+                    request = httpx.Request("GET", "https://finnhub.io/api/v1/forex/candle")
+                    raise httpx.HTTPStatusError(
+                        f"HTTP {self.status_code}",
+                        request=request,
+                        response=httpx.Response(self.status_code, request=request),
+                    )
+
+        class _FakeClient:
+            def __init__(self) -> None:
+                self.calls = 0
+
+            async def __aenter__(self) -> "_FakeClient":
+                return self
+
+            async def __aexit__(self, exc_type: object, exc: object, tb: object) -> None:
+                return None
+
+            async def get(self, _url: str, params: dict[str, Any]) -> _FakeResponse:
+                self.calls += 1
+                if self.calls == 1:
+                    return _FakeResponse(429, {"s": "no_data"}, headers={"Retry-After": "0"})
+                return _FakeResponse(
+                    200,
+                    {
+                        "s": "ok",
+                        "o": [1.0],
+                        "h": [1.1],
+                        "l": [0.9],
+                        "c": [1.05],
+                        "v": [100],
+                        "t": [1700000000],
+                    },
+                    headers={},
+                )
+
+        fetcher = FinnhubCandleFetcher()
+        fetcher.retries = 2
+        fetcher.request_delay = 0
+        fetcher.backoff_jitter_sec = 0
+        fetcher.backoff_factor = 0
+
+        fake_client = _FakeClient()
+        with patch("ingest.finnhub_candles.httpx.AsyncClient", return_value=fake_client), \
+             patch("ingest.finnhub_candles.asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
+            candles = await fetcher.fetch("XAUUSD", "W1", bars=1)
+
+        assert len(candles) == 1
+        assert fake_client.calls == 2
+        assert mock_sleep.await_count == 1
+
+    def test_retry_after_parser_handles_invalid_values(self) -> None:
+        """Retry-After parser should safely handle invalid header values."""
+        assert FinnhubCandleFetcher._retry_after_seconds("2.5") == 2.5
+        assert FinnhubCandleFetcher._retry_after_seconds("bad") == 0.0
+        assert FinnhubCandleFetcher._retry_after_seconds(None) == 0.0
