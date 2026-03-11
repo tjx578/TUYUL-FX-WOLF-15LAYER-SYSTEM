@@ -114,6 +114,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 # ── Middleware helpers ────────────────────────────────────────────────────────
 
 class ForwardedHTTPSRedirectMiddleware(BaseHTTPMiddleware):
+    # Paths that must never be redirected (internal health probes, metrics).
+    _EXEMPT_PATHS: frozenset[str] = frozenset({"/health", "/healthz", "/health/full", "/metrics"})
+
     def __init__(self, app: Any, force_https: bool) -> None:
         super().__init__(app)
         self.force_https = force_https
@@ -124,8 +127,27 @@ class ForwardedHTTPSRedirectMiddleware(BaseHTTPMiddleware):
     ) -> Response:
         if not self.force_https:
             return await call_next(request)
-        forwarded_proto = request.headers.get("x-forwarded-proto", "").lower()
-        if request.url.scheme != "https" and forwarded_proto != "https":
+        # Allow internal health probes through without redirect
+        if request.url.path in self._EXEMPT_PATHS:
+            return await call_next(request)
+
+        # Proxy-safe HTTPS detection.
+        # Some ingress layers send comma-separated values (e.g. "https,http")
+        # or RFC-7239 Forwarded header with proto key.
+        forwarded_proto_raw = request.headers.get("x-forwarded-proto", "")
+        proto_tokens = {
+            token.strip().lower()
+            for token in forwarded_proto_raw.split(",")
+            if token.strip()
+        }
+
+        forwarded_header = request.headers.get("forwarded", "").lower()
+        if "proto=https" in forwarded_header:
+            proto_tokens.add("https")
+
+        is_https = request.url.scheme == "https" or "https" in proto_tokens
+
+        if not is_https:
             return RedirectResponse(url=str(request.url.replace(scheme="https")), status_code=307)
         return await call_next(request)
 
@@ -240,10 +262,20 @@ def _register_dev_routes(app: FastAPI) -> None:
 # ── Health routes ─────────────────────────────────────────────────────────────
 
 def _register_health_routes(app: FastAPI) -> None:
+    async def root() -> dict[str, str]:
+        return {
+            "service": "tuyul-fx",
+            "status": "ok",
+            "health": "/health",
+        }
+
+    app.add_api_route("/", root, methods=["GET"])
+
     async def health() -> dict[str, str]:
         return {"status": "ok"}
 
     app.add_api_route("/health", health, methods=["GET"])
+    app.add_api_route("/healthz", health, methods=["GET"])
 
     async def full_health(request: Request) -> dict[str, Any]:
         from datetime import UTC, datetime
