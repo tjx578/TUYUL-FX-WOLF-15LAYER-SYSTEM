@@ -11,6 +11,7 @@ from typing import Any, cast
 from loguru import logger
 
 from infrastructure.redis_client import get_client
+from infrastructure.redis_url import get_safe_redis_url
 from storage.postgres_client import PostgresClient, pg_client
 
 TRADE_OUTBOX_STREAM = "trade:outbox"
@@ -44,22 +45,46 @@ class TradeOutboxWorker:
         self._pg = pg or pg_client
         self._stopped = asyncio.Event()
         self._group_ready = False
+        self._consecutive_failures = 0
+        self._max_backoff = 60.0
+        self._logged_startup = False
 
     async def stop(self) -> None:
         self._stopped.set()
 
+    def _backoff_delay(self) -> float:
+        """Exponential backoff: 1s, 2s, 4s, 8s … capped at _max_backoff."""
+        delay = min(self._max_backoff, self._poll_interval * (2 ** min(self._consecutive_failures, 10)))
+        return delay
+
+    async def _wait_or_stop(self, timeout: float) -> None:
+        with contextlib.suppress(TimeoutError):
+            await asyncio.wait_for(self._stopped.wait(), timeout=timeout)
+
     async def run(self) -> None:
         redis: Any = None
+
+        if not self._logged_startup:
+            safe_url = get_safe_redis_url()
+            logger.info("Outbox worker starting — Redis target: {}", safe_url)
+            self._logged_startup = True
 
         while not self._stopped.is_set():
             # Lazily (re)acquire the Redis client if needed
             if redis is None:
                 try:
                     redis = await get_client()
+                    self._consecutive_failures = 0
                 except Exception as exc:  # noqa: BLE001
-                    logger.warning("Outbox worker Redis connect failed: {}", exc)
-                    with contextlib.suppress(TimeoutError):
-                        await asyncio.wait_for(self._stopped.wait(), timeout=self._poll_interval)
+                    self._consecutive_failures += 1
+                    delay = self._backoff_delay()
+                    logger.warning(
+                        "Outbox worker Redis connect failed (attempt {}, retry in {:.0f}s): {}",
+                        self._consecutive_failures,
+                        delay,
+                        exc,
+                    )
+                    await self._wait_or_stop(delay)
                     continue
 
             # Ensure consumer group exists before consuming
@@ -67,21 +92,31 @@ class TradeOutboxWorker:
                 try:
                     await self._ensure_group(redis)
                     self._group_ready = True
+                    self._consecutive_failures = 0
                 except Exception:  # noqa: BLE001
-                    # _ensure_group already logs; wait and retry next iteration
-                    with contextlib.suppress(TimeoutError):
-                        await asyncio.wait_for(self._stopped.wait(), timeout=self._poll_interval)
+                    # _ensure_group already logs; reset handle so we re-acquire
+                    self._consecutive_failures += 1
+                    redis = None
+                    self._group_ready = False
+                    await self._wait_or_stop(self._backoff_delay())
                     continue
 
-            processed = 0
-            with contextlib.suppress(Exception):
-                processed += await self._consume_stream(redis)
-            with contextlib.suppress(Exception):
-                processed += await self._relay_db_pending()
+            try:
+                processed = 0
+                with contextlib.suppress(Exception):
+                    processed += await self._consume_stream(redis)
+                with contextlib.suppress(Exception):
+                    processed += await self._relay_db_pending()
 
-            if processed == 0:
-                with contextlib.suppress(TimeoutError):
-                    await asyncio.wait_for(self._stopped.wait(), timeout=self._poll_interval)
+                self._consecutive_failures = 0
+                if processed == 0:
+                    await self._wait_or_stop(self._poll_interval)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("Outbox worker loop error, resetting Redis handle: {}", exc)
+                redis = None
+                self._group_ready = False
+                self._consecutive_failures += 1
+                await self._wait_or_stop(self._backoff_delay())
 
     async def _ensure_group(self, redis: Any) -> None:
         try:
