@@ -423,13 +423,16 @@ async def main() -> None:
     signal.signal(signal.SIGTERM, _handle_signal)
     signal.signal(signal.SIGINT, _handle_signal)
 
-    has_api_key = _validate_api_key()
-    await init_persistent_storage()
-
-    # Start health probe alongside ingest services
+    # Start liveness probe as early as possible so platform health checks
+    # can succeed while startup dependencies initialize.
+    _health_probe.set_detail("startup_stage", "booting")
     health_task = asyncio.create_task(_health_probe.start(), name="IngestHealthProbe")
 
     try:
+        has_api_key = _validate_api_key()
+        _health_probe.set_detail("startup_stage", "initializing_storage")
+        await init_persistent_storage()
+        _health_probe.set_detail("startup_stage", "running")
         await run_ingest_services(has_api_key)
     except KeyboardInterrupt:
         logger.info("KeyboardInterrupt received")
