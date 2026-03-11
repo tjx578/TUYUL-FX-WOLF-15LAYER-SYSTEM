@@ -995,7 +995,7 @@ class WolfConstitutionalPipeline:
                     else:
                         logger.debug("[Phase-4→2.5] L6 LRCE updated: %.3f (stable)", _lrce)
                 except Exception as _lrce_exc:
-                    logger.debug("[Phase-4→2.5] LRCE patch skipped: %s", _lrce_exc)
+                    logger.debug("[Phase-4→2.5] LRCE patch skipped: {}", _lrce_exc)
 
             # ═══════════════════════════════════════════════════════
             # PHASE 5 -- L12 CONSTITUTIONAL VERDICT (SOLE AUTHORITY)
