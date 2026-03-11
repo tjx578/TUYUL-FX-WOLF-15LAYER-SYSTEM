@@ -256,14 +256,14 @@ async def _redis_window_hit(key: str, ttl_sec: int = 60) -> int | None:
         elif isinstance(value, (bytes, bytearray)):
             value_int = int(value.decode())
         else:
-            logger.debug("Redis rate limit fallback for key=%s: unsupported response type=%s", key, type(value).__name__)
+            logger.debug("Redis rate limit fallback for key={}: unsupported response type={}", key, type(value).__name__)
             return None
 
         if value_int == 1:
             await client.expire(key, ttl_sec)
         return value_int
     except Exception as exc:
-        logger.debug("Redis rate limit fallback for key=%s: %s", key, exc)
+        logger.debug("Redis rate limit fallback for key={}: {}", key, exc)
         return None
 
 
