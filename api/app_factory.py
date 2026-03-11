@@ -115,7 +115,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 class ForwardedHTTPSRedirectMiddleware(BaseHTTPMiddleware):
     # Paths that must never be redirected (internal health probes, metrics).
-    _EXEMPT_PATHS: frozenset[str] = frozenset({"/health", "/health/full", "/metrics"})
+    _EXEMPT_PATHS: frozenset[str] = frozenset({"/health", "/healthz", "/health/full", "/metrics"})
 
     def __init__(self, app: Any, force_https: bool) -> None:
         super().__init__(app)
@@ -250,6 +250,7 @@ def _register_health_routes(app: FastAPI) -> None:
         return {"status": "ok"}
 
     app.add_api_route("/health", health, methods=["GET"])
+    app.add_api_route("/healthz", health, methods=["GET"])
 
     async def full_health(request: Request) -> dict[str, Any]:
         from datetime import UTC, datetime
