@@ -5,3 +5,4 @@ dockerfilePath = "Dockerfile"
 [deploy]
 startCommand = "bash deploy/railway/start_api.sh"
 healthcheckPath = "/health"
+healthcheckTimeout = 300
