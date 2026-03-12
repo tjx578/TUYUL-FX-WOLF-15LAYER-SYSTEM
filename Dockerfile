@@ -73,9 +73,8 @@ COPY state/ state/
 COPY storage/ storage/
 COPY utils/ utils/
 
-# Copy top-level entry points
-COPY api_server.py app.py config_loader.py main.py ingest_service.py ./
-COPY alembic.ini ./
+# Copy top-level entry points & config
+COPY api_server.py app.py config_loader.py main.py ingest_service.py alembic.ini ./
 
 # Non-root user
 RUN groupadd --gid 1000 appuser \
