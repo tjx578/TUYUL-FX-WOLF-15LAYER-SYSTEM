@@ -15,7 +15,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=1
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends build-essential gcc \
+    && apt-get install -y --no-install-recommends build-essential gcc libpq-dev \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
@@ -33,8 +33,9 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PORT=8000
 
 # Postgres client lib required by psycopg / alembic at runtime
+# curl required for HEALTHCHECK
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends libpq5 \
+    && apt-get install -y --no-install-recommends libpq5 curl \
     && rm -rf /var/lib/apt/lists/*
 
 # Install wheels from builder (no compiler needed)
@@ -85,8 +86,7 @@ USER appuser
 
 EXPOSE ${PORT}
 
-HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-    CMD python -c "import os, sys, urllib.request; url = os.getenv('CONTAINER_HEALTHCHECK_URL', '').strip();\
-sys.exit(0 if not url else (0 if urllib.request.urlopen(url, timeout=5).status < 500 else 1))" || exit 1
+HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
+    CMD curl -f http://localhost:${PORT:-8000}/health || exit 1
 
 CMD ["python", "api_server.py"]
