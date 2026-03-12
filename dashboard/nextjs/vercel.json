@@ -1,5 +1,4 @@
 {
-  "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": "nextjs",
   "buildCommand": "npm run build",
   "outputDirectory": ".next",
@@ -14,14 +13,5 @@
       ]
     }
   ],
-  "rewrites": [
-    {
-      "source": "/api/:path*",
-      "destination": "${NEXT_PUBLIC_API_BASE_URL}/api/:path*"
-    },
-    {
-      "source": "/ws/:path*",
-      "destination": "${NEXT_PUBLIC_API_BASE_URL}/ws/:path*"
-    }
-  ]
+  "rewrites": []
 }
