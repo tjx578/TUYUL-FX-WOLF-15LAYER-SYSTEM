@@ -43,41 +43,8 @@ COPY --from=builder /wheels /tmp/wheels
 RUN pip install --no-cache-dir /tmp/wheels/* \
     && rm -rf /tmp/wheels
 
-# Copy only application code (respect .dockerignore)
-COPY api/ api/
-COPY accounts/ accounts/
-COPY alerts/ alerts/
-COPY allocation/ allocation/
-COPY analysis/ analysis/
-COPY config/ config/
-COPY constitution/ constitution/
-COPY context/ context/
-COPY contracts/ contracts/
-COPY core/ core/
-COPY dashboard/ dashboard/
-COPY deploy/ deploy/
-COPY ea_interface/ ea_interface/
-COPY engines/ engines/
-COPY execution/ execution/
-COPY infrastructure/ infrastructure/
-COPY ingest/ ingest/
-COPY journal/ journal/
-COPY monitoring/ monitoring/
-COPY news/ news/
-COPY ops/ ops/
-COPY pipeline/ pipeline/
-COPY propfirm_manager/ propfirm_manager/
-COPY risk/ risk/
-COPY schemas/ schemas/
-COPY services/ services/
-COPY state/ state/
-COPY storage/ storage/
-COPY utils/ utils/
-
-# Copy top-level entry points & config
-COPY api_server.py app.py config_loader.py main.py ingest_service.py ./
-# alembic.ini may not exist in all build contexts — glob trick avoids hard failure
-COPY alembic.in[i] ./
+# Copy application code (filtered by .dockerignore)
+COPY . .
 
 # Non-root user
 RUN groupadd --gid 1000 appuser \
