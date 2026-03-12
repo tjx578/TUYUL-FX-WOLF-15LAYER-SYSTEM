@@ -16,7 +16,7 @@ export function middleware(request: NextRequest) {
   // Coarse pre-screening only. Authoritative check is server-side in requireVerifiedSession().
   const role = request.headers.get("x-user-role");
   if (!role || !ADMIN_ROLES.has(role)) {
-    return NextResponse.redirect(new URL("/", request.url));
+    return NextResponse.redirect(new URL("/login", request.url));
   }
 
   return NextResponse.next();
