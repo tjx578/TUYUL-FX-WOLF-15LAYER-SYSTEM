@@ -16,7 +16,7 @@ fi
 exec gunicorn app:app \
   -k uvicorn.workers.UvicornWorker \
   --bind "0.0.0.0:${PORT:-8000}" \
-  --workers 2 \
-  --timeout 60 \
+  --workers "${GUNICORN_WORKERS:-1}" \
+  --timeout 120 \
   --graceful-timeout 30 \
   --keep-alive 5

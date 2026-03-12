@@ -90,21 +90,36 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     from infrastructure.redis_client import close_pool, get_client
     from storage.trade_outbox_worker import TradeOutboxWorker
 
-    app.state.redis = await get_client()
+    # Guard Redis connection — app must start even if Redis is temporarily
+    # unreachable so the /healthz probe can pass while infra catches up.
+    try:
+        app.state.redis = await get_client()
+    except Exception:
+        logger.warning("Redis unavailable at startup — will retry on first use")
+        app.state.redis = None
+
     with suppress(Exception):
         await pg_client.initialize()
-    outbox_worker = TradeOutboxWorker(consumer_name="api-1")
-    outbox_task = asyncio.create_task(outbox_worker.run(), name="trade-outbox-worker")
+
+    outbox_worker: TradeOutboxWorker | None = None
+    outbox_task: asyncio.Task[None] | None = None
+    try:
+        outbox_worker = TradeOutboxWorker(consumer_name="api-1")
+        outbox_task = asyncio.create_task(outbox_worker.run(), name="trade-outbox-worker")
+    except Exception:
+        logger.warning("Trade outbox worker failed to start — will operate without outbox")
     app.state.trade_outbox_worker = outbox_worker
     app.state.trade_outbox_task = outbox_task
     try:
         yield
     finally:
-        with suppress(Exception):
-            await outbox_worker.stop()
-        with suppress(asyncio.CancelledError):
-            outbox_task.cancel()
-            await outbox_task
+        if outbox_worker is not None:
+            with suppress(Exception):
+                await outbox_worker.stop()
+        if outbox_task is not None:
+            with suppress(asyncio.CancelledError):
+                outbox_task.cancel()
+                await outbox_task
         with suppress(Exception):
             await pg_client.close()
         await close_pool()
