@@ -20,6 +20,7 @@ build/
 *.egg
 .mypy_cache/
 .pytest_cache/
+.ruff_cache/
 .coverage
 htmlcov/
 .tox/
@@ -36,14 +37,23 @@ env/
 *.swo
 *~
 
+# Node
+node_modules/
+
 # Docker (avoid recursive copy)
 Dockerfile
+Dockerfile.*
 docker-compose*.yml
+.dockerignore
 
 # Documentation (not needed at runtime)
 *.md
+!README.md
 docs/
 LICENSE
+
+# Tests (not needed at runtime)
+tests/
 
 # Storage snapshots & archives (runtime-generated, not baked into image)
 storage/snapshots/
