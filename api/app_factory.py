@@ -170,9 +170,17 @@ class ForwardedHTTPSRedirectMiddleware(BaseHTTPMiddleware):
 def _add_cors(app: FastAPI) -> None:
     raw = os.getenv(
         "CORS_ORIGINS",
-        "http://localhost:3000,http://localhost:8000,https://railway-dashboard-production-de97.up.railway.app",
+        "http://localhost:3000,http://localhost:8000,"
+        "https://railway-dashboard-production-de97.up.railway.app",
     )
     origins = [o.strip() for o in raw.split(",") if o.strip()]
+    # Vercel preview/production URLs — add if set
+    vercel_url = os.getenv("VERCEL_FRONTEND_URL", "")
+    if vercel_url.strip():
+        for u in vercel_url.split(","):
+            u = u.strip().rstrip("/")
+            if u and u not in origins:
+                origins.append(u)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=origins,
