@@ -46,15 +46,15 @@ def load_json_payload(
     redis_key: str,
 ) -> Any:
     """Load JSON payload from env-inline, env-file, or Redis key (priority order)."""
-    inline = os.getenv(env_json_var)
+    inline = (os.getenv(env_json_var) or "").strip()
     if inline:
         return json.loads(inline)
 
-    file_path = os.getenv(env_file_var)
+    file_path = (os.getenv(env_file_var) or "").strip()
     if file_path:
         return _load_json_from_file(file_path)
 
-    raw = get_redis_client().get(redis_key)
+    raw = (get_redis_client().get(redis_key) or "").strip()
     if raw:
         return json.loads(raw)
 
