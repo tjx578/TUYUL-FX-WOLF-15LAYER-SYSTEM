@@ -12,7 +12,7 @@ function getApiBase(): string | null {
 }
 
 function toRedirectPath(): string {
-  return "/";
+  return "/login";
 }
 
 export async function getVerifiedSessionUser(): Promise<SessionUser | null> {
