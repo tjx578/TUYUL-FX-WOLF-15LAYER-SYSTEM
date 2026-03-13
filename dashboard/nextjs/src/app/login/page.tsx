@@ -1,13 +1,22 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState, useCallback, type FormEvent } from "react";
+import { useState, useEffect, useCallback, type FormEvent } from "react";
 import { getApiBaseUrl } from "@/lib/env";
 
 export default function LoginPage() {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [apiKey, setApiKey] = useState<string>(() =>
+    (process.env.NEXT_PUBLIC_API_KEY ?? "").toString().trim(),
+  );
+
+  useEffect(() => {
+    if (process.env.NEXT_PUBLIC_API_KEY) {
+      setApiKey(process.env.NEXT_PUBLIC_API_KEY.trim());
+    }
+  }, []);
 
   const handleSubmit = useCallback(
     async (e: FormEvent<HTMLFormElement>) => {
@@ -15,10 +24,9 @@ export default function LoginPage() {
       setError(null);
       setLoading(true);
 
-      const form = new FormData(e.currentTarget);
-      const apiKey = (form.get("apiKey") as string)?.trim();
+      const trimmedKey = apiKey.trim();
 
-      if (!apiKey) {
+      if (!trimmedKey) {
         setError("API key is required");
         setLoading(false);
         return;
@@ -28,7 +36,7 @@ export default function LoginPage() {
         const base = getApiBaseUrl();
         const res = await fetch(`${base}/auth/session`, {
           method: "GET",
-          headers: { authorization: `Bearer ${apiKey}` },
+          headers: { authorization: `Bearer ${trimmedKey}` },
           credentials: "include",
         });
 
@@ -64,6 +72,8 @@ export default function LoginPage() {
             type="password"
             autoComplete="off"
             placeholder="API Key"
+            value={apiKey}
+            onChange={(event) => setApiKey(event.target.value)}
             className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-2.5 text-sm outline-none placeholder:text-white/30 focus:border-cyan-400/60"
           />
 
