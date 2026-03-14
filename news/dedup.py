@@ -19,7 +19,7 @@ _CONFIDENCE_ORDER = {
 }
 
 
-def deduplicate_events(events: list[EconomicEvent]) -> list[EconomicEvent]:
+def deduplicate_events(events: list[EconomicEvent] | None) -> list[EconomicEvent]:
     """
     Remove duplicate events by canonical_id.
 
@@ -28,14 +28,17 @@ def deduplicate_events(events: list[EconomicEvent]) -> list[EconomicEvent]:
 
     Parameters
     ----------
-    events : list[EconomicEvent]
-        Raw event list from a single provider fetch.
+    events : list[EconomicEvent] | None
+        Raw event list from a single provider fetch. None is treated as empty.
 
     Returns
     -------
     list[EconomicEvent]
         Deduplicated list preserving relative order of the winning event.
     """
+    if events is None:
+        return []
+
     seen: dict[str, EconomicEvent] = {}
     ordered: list[str] = []  # insertion order for canonical_ids
 

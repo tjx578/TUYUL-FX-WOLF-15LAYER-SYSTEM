@@ -13,12 +13,12 @@ Tests for the news subsystem:
 
 from __future__ import annotations
 
-import json
 import sys
-from datetime import UTC, datetime, timedelta, timezone
+from collections.abc import Mapping
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -27,36 +27,35 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from news.blocker_engine import BlockerEngine
-from news.datetime_utils import (
+from news.blocker_engine import BlockerEngine  # noqa: E402
+from news.datetime_utils import (  # noqa: E402
     is_timeless_time,
     parse_et_to_utc,
     parse_iso_to_utc,
     parse_unix_to_utc,
 )
-from news.dedup import deduplicate_events
-from news.exceptions import (
+from news.dedup import deduplicate_events  # noqa: E402
+from news.exceptions import (  # noqa: E402
     HtmlFallbackDisabledError,
     InvalidEventDateError,
     NoProvidersConfiguredError,
 )
-from news.impact_mapper import impact_score, map_ff_impact, map_finnhub_impact
-from news.models import (
+from news.impact_mapper import impact_score, map_ff_impact, map_finnhub_impact  # noqa: E402
+from news.models import (  # noqa: E402
     BlockerStatus,
     EconomicEvent,
-    EventStatus,
     ImpactLevel,
     SourceConfidence,
 )
-from news.news_rules import NEWS_RULES
-from news.normalizers.forexfactory_normalizer import normalize_ff_event, normalize_ff_events
-from news.normalizers.finnhub_normalizer import normalize_finnhub_event, normalize_finnhub_events
-from news.pair_mapper import get_affected_pairs
-
+from news.news_rules import NEWS_RULES  # noqa: E402
+from news.normalizers.finnhub_normalizer import normalize_finnhub_event  # noqa: E402
+from news.normalizers.forexfactory_normalizer import normalize_ff_event, normalize_ff_events  # noqa: E402
+from news.pair_mapper import get_affected_pairs  # noqa: E402
 
 # ===========================================================================
 # Helpers
 # ===========================================================================
+
 
 def make_event(
     *,
@@ -97,6 +96,7 @@ NOW = datetime(2026, 3, 8, 13, 0, 0, tzinfo=UTC)  # fixed test "now"
 # ===========================================================================
 # BlockerEngine — core behavior
 # ===========================================================================
+
 
 class TestBlockerEngineCoreBlocked:
     def test_locked_by_high_impact_active_window(self):
@@ -150,6 +150,7 @@ class TestBlockerEngineCoreBlocked:
 # BlockerEngine — exact horizon overlap
 # ===========================================================================
 
+
 class TestBlockerEngineHorizonOverlap:
     def test_upcoming_event_in_horizon_appears(self):
         """Event 60 min in future should appear in upcoming list."""
@@ -173,10 +174,8 @@ class TestBlockerEngineHorizonOverlap:
         """Upcoming events should be sorted soonest first."""
         # Use events far enough ahead that neither is actively locking
         # HIGH events have 30-min pre-window, so events must be >30min away
-        e1 = make_event(title="Near", impact=ImpactLevel.HIGH,
-                         datetime_utc=NOW + timedelta(minutes=45))
-        e2 = make_event(title="Far", impact=ImpactLevel.HIGH,
-                         datetime_utc=NOW + timedelta(minutes=75))
+        e1 = make_event(title="Near", impact=ImpactLevel.HIGH, datetime_utc=NOW + timedelta(minutes=45))
+        e2 = make_event(title="Far", impact=ImpactLevel.HIGH, datetime_utc=NOW + timedelta(minutes=75))
         engine = BlockerEngine(lookahead_minutes=90)
         status = engine.evaluate([e2, e1], now=NOW)
         assert len(status.upcoming) == 2
@@ -187,6 +186,7 @@ class TestBlockerEngineHorizonOverlap:
 # ===========================================================================
 # BlockerEngine — timeless events
 # ===========================================================================
+
 
 class TestBlockerEngineTimeless:
     def test_timeless_event_never_locks(self):
@@ -217,6 +217,7 @@ class TestBlockerEngineTimeless:
 # ===========================================================================
 # BlockerEngine — tie-break logic
 # ===========================================================================
+
 
 class TestBlockerEngineTieBreak:
     def test_higher_impact_wins_tiebreak(self):
@@ -262,6 +263,7 @@ class TestBlockerEngineTieBreak:
 # BlockerEngine — malformed datetime skip
 # ===========================================================================
 
+
 class TestBlockerEngineMalformedSkip:
     def test_event_with_none_datetime_utc_skipped(self):
         """Non-timeless event with None datetime_utc should be safely skipped."""
@@ -275,6 +277,7 @@ class TestBlockerEngineMalformedSkip:
 # ===========================================================================
 # BlockerEngine — symbol filtering
 # ===========================================================================
+
 
 class TestBlockerEngineSymbolFilter:
     def test_symbol_filter_skips_unrelated_event(self):
@@ -302,6 +305,7 @@ class TestBlockerEngineSymbolFilter:
 # ===========================================================================
 # DST-safe datetime parsing
 # ===========================================================================
+
 
 class TestDatetimeUtils:
     def test_parse_et_summer_dst_on(self):
@@ -370,9 +374,10 @@ class TestDatetimeUtils:
 # FF Normalizer
 # ===========================================================================
 
+
 class TestForexFactoryNormalizer:
-    def _sample_raw(self, **kwargs) -> dict:
-        base = {
+    def _sample_raw(self, **kwargs: Any) -> dict[str, Any]:
+        base: dict[str, Any] = {
             "title": "Non-Farm Payrolls",
             "currency": "USD",
             "time": "8:30am",
@@ -449,7 +454,7 @@ class TestForexFactoryNormalizer:
 
     def test_batch_skips_invalid(self):
         """normalize_ff_events should skip (not crash) on invalid times."""
-        events = [
+        events: list[Mapping[str, Any]] = [
             self._sample_raw(time="8:30am"),
             self._sample_raw(time="99:99xx"),  # invalid
             self._sample_raw(time="2:00pm"),
@@ -462,9 +467,10 @@ class TestForexFactoryNormalizer:
 # Finnhub Normalizer
 # ===========================================================================
 
+
 class TestFinnhubNormalizer:
-    def _sample_raw(self, **kwargs) -> dict:
-        base = {
+    def _sample_raw(self, **kwargs: Any) -> dict[str, Any]:
+        base: dict[str, Any] = {
             "event": "US CPI",
             "currency": "USD",
             "country": "US",
@@ -523,6 +529,7 @@ class TestFinnhubNormalizer:
 # Pair Mapper
 # ===========================================================================
 
+
 class TestPairMapper:
     def test_usd_includes_major_pairs(self):
         pairs = get_affected_pairs("USD")
@@ -553,6 +560,7 @@ class TestPairMapper:
 # ===========================================================================
 # Impact Mapper
 # ===========================================================================
+
 
 class TestImpactMapper:
     def test_ff_high(self):
@@ -587,6 +595,7 @@ class TestImpactMapper:
 # Deduplication
 # ===========================================================================
 
+
 class TestDeduplication:
     def test_dedup_keeps_first_on_equal_confidence(self):
         e1 = make_event(title="E", canonical_id="abc", source_confidence=SourceConfidence.HIGH)
@@ -616,6 +625,7 @@ class TestDeduplication:
 # News Rules
 # ===========================================================================
 
+
 class TestNewsRules:
     def test_high_has_lock_window(self):
         rule = NEWS_RULES["HIGH"]
@@ -640,14 +650,17 @@ class TestNewsRules:
 # Provider selector
 # ===========================================================================
 
+
 class TestProviderSelector:
     def test_off_raises_no_providers(self):
         from news.provider_selector import build_provider_chain
+
         with pytest.raises(NoProvidersConfiguredError):
             build_provider_chain(news_provider="off")
 
     def test_forexfactory_chain_order(self):
         from news.provider_selector import build_provider_chain
+
         chain = build_provider_chain(news_provider="forexfactory", html_fallback_enabled=False)
         names = [p.name for p in chain]
         assert names[0] == "forexfactory_json"
@@ -656,6 +669,7 @@ class TestProviderSelector:
 
     def test_html_fallback_included_when_enabled(self):
         from news.provider_selector import build_provider_chain
+
         chain = build_provider_chain(news_provider="forexfactory", html_fallback_enabled=True)
         names = [p.name for p in chain]
         assert "forexfactory_html" in names
@@ -663,6 +677,7 @@ class TestProviderSelector:
 
     def test_finnhub_chain_order(self):
         from news.provider_selector import build_provider_chain
+
         chain = build_provider_chain(news_provider="finnhub", html_fallback_enabled=False)
         names = [p.name for p in chain]
         assert names[0] == "finnhub"
@@ -672,11 +687,13 @@ class TestProviderSelector:
 # HTML provider — opt-in guard
 # ===========================================================================
 
+
 class TestHtmlProviderOptIn:
     @pytest.mark.asyncio
-    async def test_html_provider_raises_when_disabled(self, monkeypatch):
+    async def test_html_provider_raises_when_disabled(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("NEWS_FF_HTML_FALLBACK_ENABLED", "false")
         from news.providers.forexfactory_html_provider import ForexFactoryHtmlProvider
+
         provider = ForexFactoryHtmlProvider()
         with pytest.raises(HtmlFallbackDisabledError):
             await provider.fetch_day("2026-03-08")
@@ -685,6 +702,7 @@ class TestHtmlProviderOptIn:
 # ===========================================================================
 # EconomicEvent model
 # ===========================================================================
+
 
 class TestEconomicEventModel:
     def test_to_dict_round_trip(self):
@@ -727,14 +745,16 @@ class TestEconomicEventModel:
 # Route backward-compatibility contract
 # ===========================================================================
 
+
 class TestCalendarRouteContract:
     """
     Validate that the calendar route response shapes match what consumers expect.
     Tests use a mocked NewsService so no real network/Redis calls are made.
     """
 
-    def _make_mock_service(self, events=None):
+    def _make_mock_service(self, events: list[Any] | None = None) -> Any:
         from unittest.mock import AsyncMock, MagicMock
+
         svc = MagicMock()
         svc.get_day_events = AsyncMock(return_value=events or [])
         svc.get_upcoming_events = AsyncMock(return_value=events or [])
@@ -750,7 +770,7 @@ class TestCalendarRouteContract:
     def test_calendar_response_has_required_keys(self):
         """The /calendar endpoint must return date, total, events, news_lock."""
         # We test the shape contract, not the HTTP layer
-        response = {
+        response: dict[str, Any] = {
             "date": "2026-03-08",
             "total": 0,
             "high_impact_count": 0,
@@ -761,7 +781,7 @@ class TestCalendarRouteContract:
             assert key in response
 
     def test_upcoming_response_has_required_keys(self):
-        response = {
+        response: dict[str, Any] = {
             "hours_ahead": 4,
             "impact_filter": "HIGH",
             "count": 0,
@@ -794,12 +814,12 @@ class TestCalendarRouteContract:
 # NewsService — first-provider-wins
 # ===========================================================================
 
+
 class TestNewsServiceFirstProviderWins:
     @pytest.mark.asyncio
     async def test_first_non_empty_provider_wins(self):
         """Service should return first provider's events and skip others."""
         from news.services.news_service import NewsService
-        from news.repository import NewsRepository
 
         events_a = [make_event(title="EventA", canonical_id="a")]
         events_b = [make_event(title="EventB", canonical_id="b")]
@@ -861,3 +881,37 @@ class TestNewsServiceFirstProviderWins:
         result = await svc.get_day_events("2026-03-08")
         assert len(result) == 1
         assert result[0].title == "EventB"
+
+    @pytest.mark.asyncio
+    async def test_provider_chain_unavailable_uses_stale_cache(self):
+        from news.exceptions import ProviderUnavailableError
+        from news.services.news_service import NewsService
+
+        provider_a = MagicMock()
+        provider_a.name = "providerA"
+        provider_a.fetch_day = AsyncMock(side_effect=ProviderUnavailableError("providerA", "HTTP 403"))
+
+        provider_b = MagicMock()
+        provider_b.name = "providerB"
+        provider_b.fetch_day = AsyncMock(side_effect=ProviderUnavailableError("providerB", "HTTP 403"))
+
+        mock_repo = MagicMock()
+        mock_repo.get_day_meta = AsyncMock(return_value=None)
+        mock_repo.get_day_events_raw = AsyncMock(
+            return_value=[make_event(title="Stale Event", canonical_id="stale1").to_dict()]
+        )
+        mock_repo.set_day_events = AsyncMock()
+        mock_repo.set_day_meta = AsyncMock()
+        mock_repo.upsert_events = AsyncMock()
+        mock_repo.set_source_health = AsyncMock()
+
+        svc = NewsService(
+            repository=mock_repo,
+            provider_chain=[provider_a, provider_b],
+        )
+        result = await svc.get_day_events("2026-03-08")
+
+        assert len(result) == 1
+        assert result[0].title == "Stale Event"
+        mock_repo.set_day_events.assert_not_called()
+        mock_repo.set_day_meta.assert_not_called()
