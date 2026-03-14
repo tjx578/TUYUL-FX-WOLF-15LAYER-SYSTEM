@@ -26,7 +26,7 @@ export async function getVerifiedSessionUser(): Promise<SessionUser | null> {
   const cookieHeader = h.get("cookie");
 
   try {
-    const response = await fetch(`${apiBase}/auth/session`, {
+    const response = await fetch(`${apiBase}/api/auth/session`, {
       method: "GET",
       headers: {
         ...(authHeader ? { authorization: authHeader } : {}),
