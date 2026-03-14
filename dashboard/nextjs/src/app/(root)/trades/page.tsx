@@ -102,7 +102,7 @@ export default function TradesPage() {
     let next = trades;
     if (search) {
       next = next.filter((t) => {
-        const haystack = [t.trade_id, t.account_id, t.pair ?? t.symbol, t.direction ?? t.side, t.status]
+        const haystack = [t.trade_id, t.account_id, t.symbol, t.side, t.status]
           .filter(Boolean)
           .join(" ")
           .toLowerCase();
