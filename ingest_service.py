@@ -407,12 +407,9 @@ async def main() -> None:
     # Start health probe FIRST so Railway sees liveness immediately
     # while the rest of initialization proceeds.
     health_task = asyncio.create_task(_health_probe.start(), name="IngestHealthProbe")
-
-    has_api_key = _validate_api_key()
-    await init_persistent_storage()
-
-    # Start health probe alongside ingest services
-    health_task = asyncio.create_task(_health_probe.start(), name="IngestHealthProbe")
+    # Yield to event loop so the health probe can bind its port
+    # before any potentially slow/failing initialization runs.
+    await asyncio.sleep(0.1)
 
     try:
         has_api_key = _validate_api_key()
