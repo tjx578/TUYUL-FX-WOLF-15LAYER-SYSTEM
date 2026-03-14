@@ -49,7 +49,17 @@ export default function Home() {
     return Array.isArray(activeTrades.trades) ? activeTrades.trades.length : 0;
   }, [activeTrades]);
 
-  const hasDataError = vError || tradesError || contextError || executionError || accountsError;
+  const dataErrors = useMemo(() => {
+    const errs: string[] = [];
+    if (vError) errs.push("verdicts");
+    if (tradesError) errs.push("trades");
+    if (contextError) errs.push("context");
+    if (executionError) errs.push("execution");
+    if (accountsError) errs.push("accounts");
+    return errs;
+  }, [vError, tradesError, contextError, executionError, accountsError]);
+
+  const hasDataError = dataErrors.length > 0;
 
   return (
     <div style={{ padding: "24px 28px", display: "flex", flexDirection: "column", gap: 20 }}>
@@ -100,7 +110,12 @@ export default function Home() {
             color: "var(--text-primary)",
           }}
         >
-          Data stream issue detected. Check backend health, Next.js rewrites, and CORS config.
+          <strong>Data stream issue detected</strong> — failed:{" "}
+          {dataErrors.join(", ")}.
+          <br />
+          <span style={{ fontSize: 11, color: "var(--text-muted)" }}>
+            Check: backend /health endpoint, INTERNAL_API_URL env var, CORS_ORIGINS config.
+          </span>
         </div>
       )}
 

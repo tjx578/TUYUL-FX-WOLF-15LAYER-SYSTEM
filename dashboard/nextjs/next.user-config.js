@@ -1,3 +1,12 @@
+/**
+ * @deprecated This file is NOT used by Next.js. The active config is next.config.js.
+ * Kept for reference only. Key differences from next.config.js:
+ *   - Uses API_BASE_URL instead of INTERNAL_API_URL
+ *   - /auth/:path* → /auth/:path* (WRONG — backend expects /api/auth/:path*)
+ *   - Missing standalone output toggle
+ *   - hardcoded output: "standalone" (breaks Vercel)
+ * DO NOT rename this to next.config.js without fixing the above.
+ */
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
