@@ -27,9 +27,7 @@ import type {
 import type { PipelineData } from "@/components/PipelinePanel";
 import { bearerHeader } from "@/lib/auth";
 
-// Use relative URLs (no base) — Next.js rewrites in next.config.js will proxy
-// these paths to the real backend via NEXT_INTERNAL_API_URL.
-// This avoids the need for NEXT_PUBLIC_API_BASE_URL to be set at build time.
+// Use relative paths — Next.js rewrites proxy /api/* to the backend.
 const API_BASE = "";
 
 export const API_ENDPOINTS = {
