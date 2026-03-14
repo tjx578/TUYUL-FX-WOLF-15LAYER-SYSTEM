@@ -17,6 +17,7 @@ Key rules
 from __future__ import annotations
 
 import hashlib
+from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime
 from typing import Any
 
@@ -55,6 +56,7 @@ def _build_canonical_id(
 def _round_to_5min(time_str: str) -> str:
     """Round HH:MMam/pm to nearest 5-minute bucket for canonical_id stability."""
     import re
+
     m = re.match(r"^(\d{1,2}):(\d{2})(am|pm)$", time_str.strip(), re.IGNORECASE)
     if not m:
         return time_str.strip().lower()
@@ -64,7 +66,7 @@ def _round_to_5min(time_str: str) -> str:
 
 
 def normalize_ff_event(
-    raw: dict[str, Any],
+    raw: Mapping[str, Any],
     date_str: str | None = None,
     fetched_at: datetime | None = None,
 ) -> EconomicEvent:
@@ -96,9 +98,7 @@ def normalize_ff_event(
     title: str = (raw.get("title") or raw.get("name") or raw.get("event") or "").strip()
 
     # FF "country" field is actually the currency code
-    currency: str = (
-        raw.get("currency") or raw.get("country") or ""
-    ).strip().upper()
+    currency: str = (raw.get("currency") or raw.get("country") or "").strip().upper()
 
     raw_date_field: str = (raw.get("date") or "").strip()
     raw_time_field: str = (raw.get("time") or "").strip()
@@ -163,12 +163,12 @@ def normalize_ff_event(
         status=status,
         affected_pairs=affected,
         fetched_at=fetched_at,
-        raw=raw,
+        raw=dict[str, Any](raw),
     )
 
 
 def normalize_ff_events(
-    raw_events: list[dict[str, Any]],
+    raw_events: Sequence[Mapping[str, Any]],
     date_str: str | None = None,
     fetched_at: datetime | None = None,
 ) -> list[EconomicEvent]:
@@ -179,6 +179,7 @@ def normalize_ff_events(
     with a warning-level log rather than crashing the entire batch.
     """
     import logging
+
     log = logging.getLogger(__name__)
 
     results: list[EconomicEvent] = []
@@ -191,7 +192,7 @@ def normalize_ff_events(
 
 
 def normalize_event(
-    raw: dict[str, Any],
+    raw: Mapping[str, Any],
     date_str: str | None = None,
     fetched_at: datetime | None = None,
 ) -> EconomicEvent:

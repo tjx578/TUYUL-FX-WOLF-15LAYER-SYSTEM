@@ -18,6 +18,7 @@ Key rules
 from __future__ import annotations
 
 import hashlib
+from collections.abc import Mapping
 from datetime import UTC, datetime
 from typing import Any
 
@@ -65,7 +66,7 @@ def _datetime_to_time_bucket(dt: datetime) -> str:
 
 
 def normalize_finnhub_event(
-    raw: dict[str, Any],
+    raw: Mapping[str, Any],
     fetched_at: datetime | None = None,
 ) -> EconomicEvent:
     """
@@ -96,7 +97,7 @@ def normalize_finnhub_event(
     currency: str = (raw.get("currency") or "").strip().upper()
 
     raw_country = raw.get("country")
-    country: str | None = raw_country.strip().upper() if _is_valid_country(raw_country) else None
+    country: str | None = str(raw_country).strip().upper() if _is_valid_country(raw_country) else None
 
     actual_val = raw.get("actual")
     forecast_val = raw.get("estimate") or raw.get("forecast")
@@ -133,10 +134,7 @@ def normalize_finnhub_event(
         is_timeless = True
 
     # ── Canonical ID ───────────────────────────────────────────────────────────
-    if datetime_utc is not None:
-        time_bucket = _datetime_to_time_bucket(datetime_utc)
-    else:
-        time_bucket = "timeless"
+    time_bucket = _datetime_to_time_bucket(datetime_utc) if datetime_utc is not None else "timeless"
 
     canonical_id = _build_canonical_id(title, currency, date_str, time_bucket)
 
@@ -168,18 +166,19 @@ def normalize_finnhub_event(
         status=status,
         affected_pairs=affected,
         fetched_at=fetched_at,
-        raw=raw,
+        raw=dict[str, Any](raw),
     )
 
 
 def normalize_finnhub_events(
-    raw_events: list[dict[str, Any]],
+    raw_events: list[Mapping[str, Any]],
     fetched_at: datetime | None = None,
 ) -> list[EconomicEvent]:
     """
     Normalise a list of Finnhub raw events, skipping unparseable entries.
     """
     import logging
+
     log = logging.getLogger(__name__)
 
     results: list[EconomicEvent] = []
