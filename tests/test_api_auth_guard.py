@@ -8,10 +8,9 @@ from __future__ import annotations
 
 import sys
 import types
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from unittest.mock import MagicMock, patch
-
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -58,9 +57,15 @@ def _ensure_stub(name: str) -> None:
         return
     mod = types.ModuleType(name)
     for attr in (
-        "EAManager", "ExecutionStateMachine", "BrokerExecutor",
-        "ExecutionRequest", "ExecutionResult", "RiskEngine",
-        "PropFirmManager", "BasePropFirmGuard", "GuardResult",
+        "EAManager",
+        "ExecutionStateMachine",
+        "BrokerExecutor",
+        "ExecutionRequest",
+        "ExecutionResult",
+        "RiskEngine",
+        "PropFirmManager",
+        "BasePropFirmGuard",
+        "GuardResult",
     ):
         setattr(mod, attr, MagicMock())
     sys.modules[name] = mod
@@ -74,16 +79,18 @@ for _m in _BROKEN_MODULES:
 # 1. accounts_router — GET /api/v1/accounts requires auth
 # ============================================================================
 
+
 class TestAccountsRouterAuth:
     @pytest.fixture(autouse=True)
     def _setup(self):
         _set_auth_secret()
         with (
-            patch("dashboard.account_manager.AccountManager") as MockAM,
+            patch("dashboard.account_manager.AccountManager") as MockAM,  # noqa: N806
             patch("journal.audit_trail.AuditTrail"),
             patch("storage.redis_client.redis_client", MagicMock()),
             patch("accounts.prop_rule_engine.validate_prop_sovereignty", return_value=(True, "")),
         ):
+            MockAM.return_value.list_accounts_async = AsyncMock(return_value=[])
             MockAM.return_value.list_accounts.return_value = []
 
             from api.accounts_router import router
@@ -110,6 +117,7 @@ class TestAccountsRouterAuth:
 # ============================================================================
 # 2. l12_routes — GET /api/v1/verdict/all requires auth
 # ============================================================================
+
 
 class TestL12RoutesAuth:
     @pytest.fixture(autouse=True)
@@ -141,6 +149,7 @@ class TestL12RoutesAuth:
 # ============================================================================
 # 3. ea_router — GET /api/v1/ea/status requires auth
 # ============================================================================
+
 
 class TestEARouterAuth:
     @pytest.fixture(autouse=True)
@@ -176,17 +185,19 @@ class TestEARouterAuth:
 # 4. config_profile_router — GET /api/v1/config/profiles requires auth
 # ============================================================================
 
+
 class TestConfigProfileRouterAuth:
     @pytest.fixture(autouse=True)
     def _setup(self):
         _set_auth_secret()
         with (
-            patch("config.profile_engine.ConfigProfileEngine") as MockEngine,
+            patch("config.profile_engine.ConfigProfileEngine") as MockEngine,  # noqa: N806
             patch("journal.audit_trail.AuditTrail"),
         ):
             MockEngine.return_value.get_active_profile.return_value = "default"
             MockEngine.return_value.list_profiles.return_value = []
-            MockEngine.return_value.list_scoped_overrides.return_value = []
+            MockEngine.return_value.list_profile_records.return_value = []
+            MockEngine.return_value.list_scoped_overrides.return_value = {}
             MockEngine.return_value.is_locked.return_value = False
 
             from api.config_profile_router import router
@@ -214,15 +225,17 @@ class TestConfigProfileRouterAuth:
 # 5. dashboard_routes — GET /api/v1/trades/{id} requires auth
 # ============================================================================
 
+
 class TestDashboardRoutesAuth:
     @pytest.fixture(autouse=True)
     def _setup(self):
         _set_auth_secret()
         with (
-            patch("dashboard.trade_ledger.TradeLedger") as MockTL,
+            patch("dashboard.trade_ledger.TradeLedger") as MockTL,  # noqa: N806
             patch("dashboard.price_feed.PriceFeed"),
         ):
             MockTL.return_value.get_trade.return_value = None
+            MockTL.return_value.get_trade_async = AsyncMock(return_value=None)
 
             from api.dashboard_routes import router
 
@@ -250,21 +263,27 @@ class TestDashboardRoutesAuth:
 # 6. Prices endpoint (auth required)
 # ============================================================================
 
+
 class TestPricesEndpointAuth:
     @pytest.fixture(autouse=True)
     def _setup(self):
         with (
-            patch("dashboard.price_feed.PriceFeed") as MockPF,
+            patch("dashboard.price_feed.PriceFeed") as MockPF,  # noqa: N806
             patch("dashboard.trade_ledger.TradeLedger"),
         ):
-            MockPF.return_value.get_all_prices.return_value = {}
+            mock_pf = MockPF.return_value
+            mock_pf.get_all_prices.return_value = {}
+            mock_pf.get_all_prices_async = AsyncMock(return_value={})
 
+            from api import dashboard_routes
             from api.dashboard_routes import router
 
-            self.app = FastAPI()
-            self.app.include_router(router)
-            self.client = TestClient(self.app)
-            yield
+            # Patch the module-level instance directly (created at import time)
+            with patch.object(dashboard_routes, "_price_feed", mock_pf):
+                self.app = FastAPI()
+                self.app.include_router(router)
+                self.client = TestClient(self.app)
+                yield
 
     def test_prices_without_auth_returns_401(self):
         resp = self.client.get("/api/v1/prices")
