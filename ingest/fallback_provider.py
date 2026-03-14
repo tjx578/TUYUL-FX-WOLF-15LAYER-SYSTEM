@@ -334,8 +334,8 @@ class FallbackCandleProvider:
             return
         key = self._cache_key(symbol, timeframe)
         try:
-            serialised = json.dumps(candles, default=str)
-            await self._redis.set(key, serialised, ex=_CANDLE_CACHE_TTL_SECONDS)
+            serialized = json.dumps(candles, default=str)
+            await self._redis.set(key, serialized, ex=_CANDLE_CACHE_TTL_SECONDS)
             logger.info(
                 "[FallbackCache] Wrote %d bars for %s %s (ttl=%ds)",
                 len(candles),
