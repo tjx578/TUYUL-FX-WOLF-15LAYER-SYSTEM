@@ -1,9 +1,11 @@
 """
-Auth Router — session validation and token refresh.
+Auth Router — session validation, login, logout, and token refresh.
 
 Endpoints:
-  GET  /auth/session  — validate JWT, return SessionUser payload.
-  POST /auth/refresh  — issue a fresh JWT from a still-valid token.
+  POST /auth/login    — validate API key, issue JWT, set HttpOnly cookie.
+  GET  /auth/session  — validate JWT (header or cookie), return SessionUser.
+  POST /auth/refresh  — issue a fresh JWT from a still-valid token, update cookie.
+  POST /auth/logout   — clear session cookie.
 
 The dashboard frontend (Next.js) calls these on every page render and
 on periodic client-side refresh.  The response shape matches the Zod
@@ -16,15 +18,24 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
-from api.middleware.auth import create_token, decode_token, verify_token
+from api.middleware.auth import (
+    clear_auth_cookie,
+    create_token,
+    decode_token,
+    set_auth_cookie,
+    validate_api_key,
+    verify_token,
+)
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 
 # ── Response model ────────────────────────────────────────────────────────────
+
 
 class SessionUserResponse(BaseModel):
     """Matches the frontend SessionUserSchema (Zod)."""
@@ -36,6 +47,7 @@ class SessionUserResponse(BaseModel):
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
+
 
 def _session_from_payload(payload: dict[str, Any]) -> SessionUserResponse:
     """
@@ -55,42 +67,89 @@ def _session_from_payload(payload: dict[str, Any]) -> SessionUserResponse:
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
 
+
+class LoginRequest(BaseModel):
+    """Request body for POST /auth/login."""
+
+    api_key: str = Field(..., min_length=1)
+
+
+@router.post("/login")
+async def login(body: LoginRequest, response: Response) -> dict[str, Any]:
+    """
+    Authenticate with an API key and receive a JWT + HttpOnly session cookie.
+
+    The cookie is set automatically; the ``token`` field in the response body
+    allows the frontend to store it for WebSocket auth (query-param based)
+    or as a fallback for clients that cannot use cookies.
+    """
+    key = body.api_key.strip()
+
+    # Try as JWT first (allows login with existing valid JWT)
+    payload = decode_token(key)
+    if payload is not None:
+        token = create_token(
+            sub=str(payload.get("sub", "dashboard")),
+            extra={k: payload[k] for k in ("email", "role", "name") if k in payload},
+        )
+        set_auth_cookie(response, token)
+        user = _session_from_payload(payload)
+        return {"token": token, **user.model_dump()}
+
+    # Try as static API key
+    if validate_api_key(key):
+        token = create_token(sub="api_key_user", extra={"auth_method": "api_key"})
+        set_auth_cookie(response, token)
+        user = _session_from_payload({"sub": "api_key_user", "auth_method": "api_key"})
+        return {"token": token, **user.model_dump()}
+
+    raise HTTPException(status_code=401, detail="Invalid API key")
+
+
 @router.get("/session", response_model=SessionUserResponse)
 async def get_session(
-    payload: dict[str, Any] = Depends(verify_token),
+    response: Response,
+    payload: dict[str, Any] = Depends(verify_token),  # noqa: B008
 ) -> SessionUserResponse:
     """
     Validate the caller's JWT / API key and return the session user.
 
-    Used by the Next.js server-side ``getVerifiedSessionUser()`` on every
-    page render.  Returns 401 (via ``verify_token``) when the token is
-    missing, expired, or invalid.
+    On success, refreshes the session cookie to extend its lifetime.
     """
+    if payload.get("sub"):
+        token = create_token(
+            sub=str(payload.get("sub", "dashboard")),
+            extra={k: payload[k] for k in ("email", "role", "name") if k in payload},
+        )
+        set_auth_cookie(response, token)
     return _session_from_payload(payload)
 
 
 @router.post("/refresh", response_model=SessionUserResponse)
 async def refresh_session(
-    payload: dict[str, Any] = Depends(verify_token),
+    response: Response,
+    payload: dict[str, Any] = Depends(verify_token),  # noqa: B008
 ) -> dict[str, Any]:
     """
-    Issue a fresh JWT from a still-valid token.
-
-    The old token must still be valid (not expired).  A brand-new token is
-    created with the same claims and a reset expiry window.  The response
-    includes both the new ``token`` and the ``SessionUser`` fields so the
-    client can update its store in one round-trip.
+    Issue a fresh JWT from a still-valid token, update the HttpOnly cookie.
     """
-    # Preserve claims from the original token
     extra: dict[str, Any] = {}
     for key in ("email", "role", "name"):
         if key in payload:
             extra[key] = payload[key]
 
     new_token = create_token(sub=str(payload.get("sub", "dashboard")), extra=extra or None)
+    set_auth_cookie(response, new_token)
     user = _session_from_payload(payload)
 
     return {
         "token": new_token,
         **user.model_dump(),
     }
+
+
+@router.post("/logout")
+async def logout(response: Response) -> dict[str, str]:
+    """Clear the session cookie."""
+    clear_auth_cookie(response)
+    return {"status": "logged_out"}

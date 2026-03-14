@@ -2,6 +2,7 @@ import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import type { SessionUser, UserRole } from "@/contracts/auth";
 import { SessionUserSchema } from "@/schema/authSchema";
+import { AUTH_SESSION } from "@/lib/endpoints";
 
 function getApiBase(): string | null {
   const base =
@@ -29,7 +30,7 @@ export async function getVerifiedSessionUser(): Promise<SessionUser | null> {
   const cookieHeader = h.get("cookie");
 
   try {
-    const response = await fetch(`${apiBase}/api/auth/session`, {
+    const response = await fetch(`${apiBase}${AUTH_SESSION}`, {
       method: "GET",
       headers: {
         ...(authHeader ? { authorization: authHeader } : {}),

@@ -2,6 +2,8 @@
 
 import { useRouter } from "next/navigation";
 import { useState, useEffect, useCallback, type FormEvent } from "react";
+import { AUTH_LOGIN } from "@/lib/endpoints";
+import { setToken } from "@/lib/auth";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -36,12 +38,12 @@ export default function LoginPage() {
       }
 
       try {
-        // Use relative /api/auth/session — Next.js rewrite proxies this to the
-        // backend without requiring NEXT_PUBLIC_* env vars in the browser bundle.
-        const res = await fetch(`/api/auth/session`, {
-          method: "GET",
-          headers: { authorization: `Bearer ${trimmedKey}` },
+        // POST to /api/auth/login — backend sets HttpOnly cookie + returns JWT in body.
+        const res = await fetch(AUTH_LOGIN, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
           credentials: "include",
+          body: JSON.stringify({ api_key: trimmedKey }),
         });
 
         if (!res.ok) {
@@ -54,8 +56,16 @@ export default function LoginPage() {
           return;
         }
 
-        // Persist the API key in sessionStorage so axios interceptors can attach it.
-        sessionStorage.setItem("api_key", trimmedKey);
+        const data = await res.json().catch(() => ({})) as { token?: string };
+
+        // Store the JWT for WebSocket auth (query-param) and axios fallback.
+        if (data.token) {
+          setToken(data.token);                       // localStorage: wolf15_token
+          sessionStorage.setItem("api_key", data.token); // sessionStorage: api_key (axios)
+        } else {
+          // Fallback: store the raw API key so existing Bearer flows still work.
+          sessionStorage.setItem("api_key", trimmedKey);
+        }
 
         router.push("/");
         router.refresh();
