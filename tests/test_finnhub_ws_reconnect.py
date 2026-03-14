@@ -14,20 +14,26 @@ Covers:
 
 import asyncio
 import json
-
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest  # pyright: ignore[reportMissingImports]
-
+import pytest
 
 # We need to import the websockets exceptions that the code catches
-from websockets.exceptions import (  # pyright: ignore[reportMissingImports]
+from websockets.exceptions import (
     ConnectionClosed,
     ConnectionClosedError,
-    InvalidStatusCode,
 )
 
-from ingest.finnhub_ws import (
+
+class _FakeInvalidStatusCodeError(Exception):
+    """Test stand-in for the deprecated websockets.InvalidStatusCode."""
+
+    def __init__(self, status_code: int, **kwargs: object) -> None:
+        self.status_code = status_code
+        super().__init__(f"HTTP {status_code}")
+
+
+from ingest.finnhub_ws import (  # noqa: E402
     BACKOFF_MULTIPLIER,
     INITIAL_BACKOFF_S,
     LEADER_LOCK_KEY,
@@ -44,6 +50,7 @@ from ingest.finnhub_ws import (
 # ---------------------------------------------------------------------------
 # Async iterator helper for mocking ``async for raw_msg in ws``
 # ---------------------------------------------------------------------------
+
 
 class AsyncMessageIterator:
     """Async iterator that yields pre-defined messages, simulating a WS stream."""
@@ -62,15 +69,17 @@ class AsyncMessageIterator:
         self._index += 1
         return msg
 
+
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture
 def mock_redis() -> MagicMock:
     """Async Redis client mock with leader-lock helpers."""
     redis = MagicMock()
-    redis.set = AsyncMock(return_value=True)   # lock acquired
+    redis.set = AsyncMock(return_value=True)  # lock acquired
     redis.get = AsyncMock(return_value="test-replica")
     redis.delete = AsyncMock(return_value=1)
     redis.expire = AsyncMock(return_value=True)
@@ -99,6 +108,7 @@ def ws_client(mock_redis: MagicMock, on_message: AsyncMock) -> FinnhubWebSocket:
 # ---------------------------------------------------------------------------
 # Backoff calculation (unit)
 # ---------------------------------------------------------------------------
+
 
 class TestBackoffCalculation:
     """Exhaustive tests for _calculate_backoff."""
@@ -155,13 +165,12 @@ class TestBackoffCalculation:
 # Leader election
 # ---------------------------------------------------------------------------
 
+
 class TestLeaderElection:
     """Redis-based leader election tests."""
 
     @pytest.mark.asyncio
-    async def test_acquire_leader_lock_success(
-        self, ws_client: FinnhubWebSocket, mock_redis: MagicMock
-    ) -> None:
+    async def test_acquire_leader_lock_success(self, ws_client: FinnhubWebSocket, mock_redis: MagicMock) -> None:
         """Lock acquired when Redis SET NX returns True."""
         mock_redis.set = AsyncMock(return_value=True)
         result = await ws_client._acquire_leader_lock()
@@ -174,18 +183,14 @@ class TestLeaderElection:
         )
 
     @pytest.mark.asyncio
-    async def test_acquire_leader_lock_failure(
-        self, ws_client: FinnhubWebSocket, mock_redis: MagicMock
-    ) -> None:
+    async def test_acquire_leader_lock_failure(self, ws_client: FinnhubWebSocket, mock_redis: MagicMock) -> None:
         """Lock not acquired when another replica holds it."""
         mock_redis.set = AsyncMock(return_value=False)
         result = await ws_client._acquire_leader_lock()
         assert result is False
 
     @pytest.mark.asyncio
-    async def test_renew_leader_lock_own_replica(
-        self, ws_client: FinnhubWebSocket, mock_redis: MagicMock
-    ) -> None:
+    async def test_renew_leader_lock_own_replica(self, ws_client: FinnhubWebSocket, mock_redis: MagicMock) -> None:
         """Renewal succeeds when current holder matches replica ID."""
         mock_redis.get = AsyncMock(return_value="test-replica")
         result = await ws_client._renew_leader_lock()
@@ -203,9 +208,7 @@ class TestLeaderElection:
         mock_redis.expire.assert_not_awaited()
 
     @pytest.mark.asyncio
-    async def test_renew_leader_lock_no_holder(
-        self, ws_client: FinnhubWebSocket, mock_redis: MagicMock
-    ) -> None:
+    async def test_renew_leader_lock_no_holder(self, ws_client: FinnhubWebSocket, mock_redis: MagicMock) -> None:
         """Renewal fails when lock key doesn't exist."""
         mock_redis.get = AsyncMock(return_value=None)
         result = await ws_client._renew_leader_lock()
@@ -216,13 +219,12 @@ class TestLeaderElection:
 # Subscribe
 # ---------------------------------------------------------------------------
 
+
 class TestSubscribe:
     """Tests for symbol subscription on connect."""
 
     @pytest.mark.asyncio
-    async def test_subscribe_sends_all_symbols(
-        self, ws_client: FinnhubWebSocket
-    ) -> None:
+    async def test_subscribe_sends_all_symbols(self, ws_client: FinnhubWebSocket) -> None:
         mock_ws = AsyncMock()
         await ws_client._subscribe(mock_ws)
 
@@ -236,13 +238,12 @@ class TestSubscribe:
 # Connect -- success and failure paths
 # ---------------------------------------------------------------------------
 
+
 class TestConnect:
     """Tests for _connect method."""
 
     @pytest.mark.asyncio
-    async def test_connect_success_resets_attempt(
-        self, ws_client: FinnhubWebSocket
-    ) -> None:
+    async def test_connect_success_resets_attempt(self, ws_client: FinnhubWebSocket) -> None:
         """Successful connect resets attempt counter to 0."""
         ws_client._attempt = 5
         mock_ws = AsyncMock()
@@ -252,42 +253,40 @@ class TestConnect:
         assert ws_client._attempt == 0
 
     @pytest.mark.asyncio
-    async def test_connect_429_raises_rate_limit_error(
-        self, ws_client: FinnhubWebSocket
-    ) -> None:
+    async def test_connect_429_raises_rate_limit_error(self, ws_client: FinnhubWebSocket) -> None:
         """HTTP 429 should raise FinnhubRateLimitError with computed retry_after."""
-        exc = InvalidStatusCode(429, headers=MagicMock())
+        exc = _FakeInvalidStatusCodeError(429)
         with patch("ingest.finnhub_ws.websockets.connect", new_callable=AsyncMock, side_effect=exc):
             with pytest.raises(FinnhubRateLimitError) as exc_info:
                 await ws_client._connect()
             assert exc_info.value.retry_after > 0
 
     @pytest.mark.asyncio
-    async def test_connect_non_429_raises_connection_error(
-        self, ws_client: FinnhubWebSocket
-    ) -> None:
+    async def test_connect_non_429_raises_connection_error(self, ws_client: FinnhubWebSocket) -> None:
         """Non-429 HTTP status raises FinnhubConnectionError."""
-        exc = InvalidStatusCode(503, headers=MagicMock())
+        exc = _FakeInvalidStatusCodeError(503)
         with patch("ingest.finnhub_ws.websockets.connect", new_callable=AsyncMock, side_effect=exc):  # noqa: SIM117
             with pytest.raises(FinnhubConnectionError, match="HTTP 503"):
                 await ws_client._connect()
 
     @pytest.mark.asyncio
-    async def test_connect_generic_exception_wraps(
-        self, ws_client: FinnhubWebSocket
-    ) -> None:
+    async def test_connect_generic_exception_wraps(self, ws_client: FinnhubWebSocket) -> None:
         """Arbitrary exceptions are wrapped in FinnhubConnectionError."""
-        with patch(
-            "ingest.finnhub_ws.websockets.connect",
-            new_callable=AsyncMock,
-            side_effect=OSError("network unreachable"),
-        ), pytest.raises(FinnhubConnectionError, match="network unreachable"):
+        with (
+            patch(
+                "ingest.finnhub_ws.websockets.connect",
+                new_callable=AsyncMock,
+                side_effect=OSError("network unreachable"),
+            ),
+            pytest.raises(FinnhubConnectionError, match="network unreachable"),
+        ):
             await ws_client._connect()
 
 
 # ---------------------------------------------------------------------------
 # Listen -- message dispatch
 # ---------------------------------------------------------------------------
+
 
 class TestListen:
     """Tests for _listen method (message dispatch, ping filtering)."""
@@ -317,9 +316,7 @@ class TestListen:
         on_message.assert_not_awaited()
 
     @pytest.mark.asyncio
-    async def test_listen_renews_lock_per_message(
-        self, ws_client: FinnhubWebSocket, mock_redis: MagicMock
-    ) -> None:
+    async def test_listen_renews_lock_per_message(self, ws_client: FinnhubWebSocket, mock_redis: MagicMock) -> None:
         """Leader lock is renewed during message processing."""
         trade_msg = json.dumps({"type": "trade", "data": []})
         mock_ws = AsyncMessageIterator([trade_msg, trade_msg])
@@ -349,8 +346,15 @@ class TestListen:
 # Run loop -- reconnect scenarios
 # ---------------------------------------------------------------------------
 
+
 class TestRunLoopReconnect:
     """Integration tests for the main run() reconnect loop."""
+
+    @pytest.fixture(autouse=True)
+    def _force_market_open(self):
+        """Ensure market-hours gate doesn't block run-loop tests."""
+        with patch("ingest.finnhub_ws.is_forex_market_open", return_value=True):
+            yield
 
     @pytest.mark.asyncio
     async def test_reconnect_on_connection_closed_error(
@@ -378,9 +382,7 @@ class TestRunLoopReconnect:
         assert mock_sleep.await_count >= 2
 
     @pytest.mark.asyncio
-    async def test_reconnect_on_os_error(
-        self, ws_client: FinnhubWebSocket, mock_redis: MagicMock
-    ) -> None:
+    async def test_reconnect_on_os_error(self, ws_client: FinnhubWebSocket, mock_redis: MagicMock) -> None:
         """OSError (network issues) should trigger backoff and retry."""
         call_count = 0
 
@@ -399,9 +401,7 @@ class TestRunLoopReconnect:
         assert call_count == 2
 
     @pytest.mark.asyncio
-    async def test_reconnect_on_rate_limit(
-        self, ws_client: FinnhubWebSocket, mock_redis: MagicMock
-    ) -> None:
+    async def test_reconnect_on_rate_limit(self, ws_client: FinnhubWebSocket, mock_redis: MagicMock) -> None:
         """HTTP 429 rate limit uses FinnhubRateLimitError.retry_after for sleep."""
         call_count = 0
 
@@ -419,9 +419,7 @@ class TestRunLoopReconnect:
 
         # Should have slept with the rate-limit retry_after value
         sleep_durations = [call.args[0] for call in mock_sleep.call_args_list]
-        assert any(d == 42.0 for d in sleep_durations), (
-            f"Expected sleep(42.0) for rate limit, got: {sleep_durations}"
-        )
+        assert any(d == 42.0 for d in sleep_durations), f"Expected sleep(42.0) for rate limit, got: {sleep_durations}"
 
     @pytest.mark.asyncio
     async def test_reconnect_on_generic_connection_error(
@@ -471,7 +469,6 @@ class TestRunLoopReconnect:
         # This test is more nuanced -- we need to mock at the run() level
         # Instead, use a simpler approach:
         attempts = []
-
 
         async def patched_run():
             ws_client._running = True
@@ -549,14 +546,10 @@ class TestRunLoopReconnect:
         # With exponential backoff, later sleeps should be >= earlier ones (on average)
         if len(backoff_sleeps) >= 2:
             # Due to jitter, just check the trend is generally upward
-            assert backoff_sleeps[-1] >= backoff_sleeps[0] * 0.5, (
-                f"Backoff not increasing: {backoff_sleeps}"
-            )
+            assert backoff_sleeps[-1] >= backoff_sleeps[0] * 0.5, f"Backoff not increasing: {backoff_sleeps}"
 
     @pytest.mark.asyncio
-    async def test_non_leader_waits_before_retry(
-        self, ws_client: FinnhubWebSocket, mock_redis: MagicMock
-    ) -> None:
+    async def test_non_leader_waits_before_retry(self, ws_client: FinnhubWebSocket, mock_redis: MagicMock) -> None:
         """Non-leader replicas should sleep for LEADER_LOCK_TTL_S / 2."""
         call_count = 0
 
@@ -573,10 +566,7 @@ class TestRunLoopReconnect:
                 await ws_client.run()
 
         # Should have slept with LEADER_LOCK_TTL_S / 2 for non-leader waits
-        leader_waits = [
-            call.args[0] for call in mock_sleep.call_args_list
-            if call.args[0] == LEADER_LOCK_TTL_S / 2
-        ]
+        leader_waits = [call.args[0] for call in mock_sleep.call_args_list if call.args[0] == LEADER_LOCK_TTL_S / 2]
         assert len(leader_waits) >= 2
 
 
@@ -584,22 +574,19 @@ class TestRunLoopReconnect:
 # Graceful stop
 # ---------------------------------------------------------------------------
 
+
 class TestGracefulStop:
     """Tests for the stop() method."""
 
     @pytest.mark.asyncio
-    async def test_stop_sets_running_false(
-        self, ws_client: FinnhubWebSocket, mock_redis: MagicMock
-    ) -> None:
+    async def test_stop_sets_running_false(self, ws_client: FinnhubWebSocket, mock_redis: MagicMock) -> None:
         """stop() should set _running to False."""
         ws_client._running = True
         await ws_client.stop()
         assert ws_client._running is False
 
     @pytest.mark.asyncio
-    async def test_stop_closes_open_websocket(
-        self, ws_client: FinnhubWebSocket, mock_redis: MagicMock
-    ) -> None:
+    async def test_stop_closes_open_websocket(self, ws_client: FinnhubWebSocket, mock_redis: MagicMock) -> None:
         """stop() should close an active WebSocket connection."""
         mock_ws = AsyncMock()
         mock_ws.closed = False
@@ -611,9 +598,7 @@ class TestGracefulStop:
         mock_ws.close.assert_awaited_once()
 
     @pytest.mark.asyncio
-    async def test_stop_releases_leader_lock(
-        self, ws_client: FinnhubWebSocket, mock_redis: MagicMock
-    ) -> None:
+    async def test_stop_releases_leader_lock(self, ws_client: FinnhubWebSocket, mock_redis: MagicMock) -> None:
         """stop() should release the leader lock if held by this replica."""
         mock_redis.get = AsyncMock(return_value="test-replica")
         ws_client._running = True
@@ -649,10 +634,9 @@ class TestGracefulStop:
         mock_ws.close.assert_not_awaited()
 
     @pytest.mark.asyncio
-    async def test_stop_during_run_loop(
-        self, ws_client: FinnhubWebSocket, mock_redis: MagicMock
-    ) -> None:
+    async def test_stop_during_run_loop(self, ws_client: FinnhubWebSocket, mock_redis: MagicMock) -> None:
         """Calling stop() while run() is active should terminate the loop."""
+
         async def fake_connect():
             await asyncio.sleep(0.1)
             return AsyncMock()
@@ -664,11 +648,12 @@ class TestGracefulStop:
         with patch.object(ws_client, "_connect", side_effect=fake_connect):  # noqa: SIM117
             with patch.object(ws_client, "_subscribe", new_callable=AsyncMock):
                 with patch.object(ws_client, "_listen", new_callable=AsyncMock):
-                    # Run both concurrently
-                    await asyncio.gather(
-                        ws_client.run(),
-                        stop_after_delay(),
-                    )
+                    with patch("ingest.finnhub_ws.is_forex_market_open", return_value=True):
+                        # Run both concurrently
+                        await asyncio.gather(
+                            ws_client.run(),
+                            stop_after_delay(),
+                        )
 
         assert ws_client._running is False
 
@@ -676,6 +661,7 @@ class TestGracefulStop:
 # ---------------------------------------------------------------------------
 # Symbol mapper edge cases (supplemental)
 # ---------------------------------------------------------------------------
+
 
 class TestSymbolMapperExtended:
     """Additional edge cases for FinnhubSymbolMapper."""
@@ -710,6 +696,7 @@ class TestSymbolMapperExtended:
 # ---------------------------------------------------------------------------
 # FinnhubRateLimitError
 # ---------------------------------------------------------------------------
+
 
 class TestRateLimitError:
     """Tests for FinnhubRateLimitError exception."""

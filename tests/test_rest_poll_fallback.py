@@ -9,7 +9,7 @@ import pytest
 
 
 @pytest.fixture(autouse=True)
-def _reset_singletons():  # pyright: ignore[reportUnusedFunction]
+def _reset_singletons():
     """Reset singletons before each test."""
     from context.live_context_bus import LiveContextBus
 
@@ -71,14 +71,18 @@ class TestRestPollFallback:
 
         with (
             patch("ingest.rest_poll_fallback.FinnhubCandleFetcher") as MockFetcher,  # noqa: N806
-            patch("ingest.rest_poll_fallback.load_finnhub", return_value={
-                "rest_poll_fallback": {
-                    "poll_interval_sec": 0.2,
-                    "grace_before_poll_sec": 0.05,
-                    "bars": 4,
-                    "refresh_h1": False,
-                }
-            }),
+            patch(
+                "ingest.rest_poll_fallback.load_finnhub",
+                return_value={
+                    "rest_poll_fallback": {
+                        "poll_interval_sec": 0.2,
+                        "grace_before_poll_sec": 0.05,
+                        "bars": 4,
+                        "refresh_h1": False,
+                    }
+                },
+            ),
+            patch("ingest.rest_poll_fallback.is_forex_market_open", return_value=True),
         ):
             mock_fetcher = MockFetcher.return_value
             mock_fetcher.fetch = AsyncMock(return_value=m15_candles)
@@ -110,14 +114,17 @@ class TestRestPollFallback:
 
         with (
             patch("ingest.rest_poll_fallback.FinnhubCandleFetcher") as MockFetcher,  # noqa: N806
-            patch("ingest.rest_poll_fallback.load_finnhub", return_value={
-                "rest_poll_fallback": {
-                    "poll_interval_sec": 0.2,
-                    "grace_before_poll_sec": 0.05,
-                    "bars": 4,
-                    "refresh_h1": False,
-                }
-            }),
+            patch(
+                "ingest.rest_poll_fallback.load_finnhub",
+                return_value={
+                    "rest_poll_fallback": {
+                        "poll_interval_sec": 0.2,
+                        "grace_before_poll_sec": 0.05,
+                        "bars": 4,
+                        "refresh_h1": False,
+                    }
+                },
+            ),
         ):
             mock_fetcher = MockFetcher.return_value
             mock_fetcher.fetch = AsyncMock(return_value=[])
@@ -159,14 +166,17 @@ class TestRestPollFallback:
 
         with (
             patch("ingest.rest_poll_fallback.FinnhubCandleFetcher") as MockFetcher,  # noqa: N806
-            patch("ingest.rest_poll_fallback.load_finnhub", return_value={
-                "rest_poll_fallback": {
-                    "poll_interval_sec": 1.0,
-                    "grace_before_poll_sec": 0.2,  # Grace longer than reconnect time
-                    "bars": 4,
-                    "refresh_h1": False,
-                }
-            }),
+            patch(
+                "ingest.rest_poll_fallback.load_finnhub",
+                return_value={
+                    "rest_poll_fallback": {
+                        "poll_interval_sec": 1.0,
+                        "grace_before_poll_sec": 0.2,  # Grace longer than reconnect time
+                        "bars": 4,
+                        "refresh_h1": False,
+                    }
+                },
+            ),
         ):
             mock_fetcher = MockFetcher.return_value
             mock_fetcher.fetch = AsyncMock(return_value=[])
@@ -203,15 +213,19 @@ class TestRestPollFallback:
 
         with (
             patch("ingest.rest_poll_fallback.FinnhubCandleFetcher") as MockFetcher,  # noqa: N806
-            patch("ingest.rest_poll_fallback.load_finnhub", return_value={
-                "rest_poll_fallback": {
-                    "poll_interval_sec": 0.2,
-                    "grace_before_poll_sec": 0.05,
-                    "bars": 4,
-                    "refresh_h1": True,
-                    "h1_bars": 2,
-                }
-            }),
+            patch(
+                "ingest.rest_poll_fallback.load_finnhub",
+                return_value={
+                    "rest_poll_fallback": {
+                        "poll_interval_sec": 0.2,
+                        "grace_before_poll_sec": 0.05,
+                        "bars": 4,
+                        "refresh_h1": True,
+                        "h1_bars": 2,
+                    }
+                },
+            ),
+            patch("ingest.rest_poll_fallback.is_forex_market_open", return_value=True),
         ):
             mock_fetcher = MockFetcher.return_value
             mock_fetcher.fetch = AsyncMock(side_effect=_fetch_side_effect)
@@ -252,14 +266,18 @@ class TestRestPollFallback:
 
         with (
             patch("ingest.rest_poll_fallback.FinnhubCandleFetcher") as MockFetcher,  # noqa: N806
-            patch("ingest.rest_poll_fallback.load_finnhub", return_value={
-                "rest_poll_fallback": {
-                    "poll_interval_sec": 0.15,
-                    "grace_before_poll_sec": 0.05,
-                    "bars": 4,
-                    "refresh_h1": False,
-                }
-            }),
+            patch(
+                "ingest.rest_poll_fallback.load_finnhub",
+                return_value={
+                    "rest_poll_fallback": {
+                        "poll_interval_sec": 0.15,
+                        "grace_before_poll_sec": 0.05,
+                        "bars": 4,
+                        "refresh_h1": False,
+                    }
+                },
+            ),
+            patch("ingest.rest_poll_fallback.is_forex_market_open", return_value=True),
         ):
             mock_fetcher = MockFetcher.return_value
             mock_fetcher.fetch = AsyncMock(side_effect=_failing_fetch)
@@ -292,8 +310,7 @@ class TestFinnhubWebSocketIsConnected:
         mock_keys = MagicMock()
         mock_keys.current_key.return_value = "test_key"
 
-        with patch("ingest.finnhub_key_manager.finnhub_keys", mock_keys), \
-             patch("ingest.finnhub_ws.Redis"):
+        with patch("ingest.finnhub_key_manager.finnhub_keys", mock_keys), patch("ingest.finnhub_ws.Redis"):
             ws = FinnhubWebSocket(
                 redis=MagicMock(),
                 on_message=AsyncMock(),
@@ -314,3 +331,43 @@ class TestFinnhubWebSocketIsConnected:
 
         ws.is_connected = False
         assert ws.is_connected is False
+
+
+class TestIsForexMarketOpen:
+    """Tests for the is_forex_market_open helper in finnhub_ws."""
+
+    @pytest.mark.parametrize(
+        "dow,hour,expected",
+        [
+            # Monday–Thursday: always open
+            (0, 0, True),  # Mon 00:00
+            (0, 12, True),  # Mon 12:00
+            (1, 23, True),  # Tue 23:00
+            (3, 5, True),  # Thu 05:00
+            # Friday: open until 22:00
+            (4, 0, True),  # Fri 00:00
+            (4, 21, True),  # Fri 21:00
+            (4, 22, False),  # Fri 22:00 — closed
+            (4, 23, False),  # Fri 23:00 — closed
+            # Saturday: always closed
+            (5, 0, False),
+            (5, 12, False),
+            (5, 23, False),
+            # Sunday: closed until 22:00
+            (6, 0, False),  # Sun 00:00
+            (6, 21, False),  # Sun 21:00
+            (6, 22, True),  # Sun 22:00 — open
+            (6, 23, True),  # Sun 23:00 — open
+        ],
+    )
+    def test_market_hours(self, dow: int, hour: int, expected: bool):
+        from datetime import datetime
+
+        from ingest.finnhub_ws import is_forex_market_open
+
+        # Build a datetime for the given weekday/hour.
+        # 2026-01-05 is a Monday (weekday=0).
+        base_monday = datetime(2026, 1, 5, tzinfo=UTC)
+        dt = base_monday.replace(day=5 + dow, hour=hour, minute=0, second=0)
+        assert dt.weekday() == dow
+        assert is_forex_market_open(dt) is expected

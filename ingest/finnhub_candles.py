@@ -48,6 +48,7 @@ class FinnhubCandleFetcher:
     def __init__(self) -> None:
         super().__init__()
         from ingest.finnhub_key_manager import finnhub_keys  # noqa: PLC0415
+
         self._key_manager = finnhub_keys
         self.api_key = self._key_manager.current_key()
         self.config = load_finnhub()
@@ -234,7 +235,7 @@ class FinnhubCandleFetcher:
         # path was taken.
         if timeframe == "M15":
             logger.info(
-                "M15 REST fallback activated for %s — normally built from WS ticks",
+                "M15 REST fallback activated for {} — normally built from WS ticks",
                 symbol,
             )
 
@@ -280,9 +281,7 @@ class FinnhubCandleFetcher:
 
                         if response.status_code == 403:
                             self._key_manager.report_failure(active_key, 403)
-                            raise FinnhubCandlePremiumError(
-                                f"Premium access required for {symbol} {timeframe}"
-                            )
+                            raise FinnhubCandlePremiumError(f"Premium access required for {symbol} {timeframe}")
 
                         if response.status_code == 429:
                             self._key_manager.report_failure(active_key, 429)
@@ -293,7 +292,7 @@ class FinnhubCandleFetcher:
                                 )
 
                             retry_after = self._retry_after_seconds(response.headers.get("Retry-After"))
-                            exponential = self.backoff_factor * (2 ** attempt)
+                            exponential = self.backoff_factor * (2**attempt)
                             jitter = random.uniform(0.0, self.backoff_jitter_sec)
                             wait_time = min(self.max_backoff_sec, max(retry_after, exponential) + jitter)
 
@@ -374,10 +373,7 @@ class FinnhubCandleFetcher:
 
                 first_h4_period_start_hour = (first_h1_start_hour // 4) * 4
                 first_h4_period_start = first_dt.replace(
-                    hour=first_h4_period_start_hour,
-                    minute=0,
-                    second=0,
-                    microsecond=0
+                    hour=first_h4_period_start_hour, minute=0, second=0, microsecond=0
                 )
                 if first_h1_start_hour < first_dt.hour - 1:
                     first_h4_period_start = first_h4_period_start - timedelta(days=1)
@@ -469,17 +465,14 @@ class FinnhubCandleFetcher:
                     timeframes.append(tf)
 
         logger.info(
-            f"Starting warmup for {len(enabled_symbols)} symbols, "
-            f"{len(timeframes)} timeframes, {warmup_bars} bars each"
+            f"Starting warmup for {len(enabled_symbols)} symbols, {len(timeframes)} timeframes, {warmup_bars} bars each"
         )
 
         results: dict[str, dict[str, list[dict[str, Any]]]] = {}
 
         # Create tasks for all symbol/timeframe combinations
         tasks = [
-            self.warmup_symbol_tf(symbol, tf, warmup_bars, results)
-            for symbol in enabled_symbols
-            for tf in timeframes
+            self.warmup_symbol_tf(symbol, tf, warmup_bars, results) for symbol in enabled_symbols for tf in timeframes
         ]
 
         await asyncio.gather(*tasks, return_exceptions=True)
@@ -519,9 +512,7 @@ class FinnhubCandleFetcher:
                 results[symbol] = {}
             results[symbol][timeframe] = candles
 
-            logger.debug(
-                f"Warmup {symbol} {timeframe}: {len(candles)} bars seeded to LiveContextBus"
-            )
+            logger.debug(f"Warmup {symbol} {timeframe}: {len(candles)} bars seeded to LiveContextBus")
 
         except FinnhubCandlePremiumError:
             logger.warning(f"Premium access required for {symbol} {timeframe} — trying fallback providers")
@@ -532,9 +523,7 @@ class FinnhubCandleFetcher:
                 if symbol not in results:
                     results[symbol] = {}
                 results[symbol][timeframe] = candles
-                logger.info(
-                    f"Fallback warmup {symbol} {timeframe}: {len(candles)} bars via fallback provider"
-                )
+                logger.info(f"Fallback warmup {symbol} {timeframe}: {len(candles)} bars via fallback provider")
             else:
                 logger.error(f"No fallback data for {symbol} {timeframe} (premium-blocked, no fallback providers)")
         except FinnhubCandleError as exc:
@@ -546,9 +535,7 @@ class FinnhubCandleFetcher:
     # Fallback provider for premium-blocked symbols
     # ------------------------------------------------------------------
 
-    async def try_fallback(
-        self, symbol: str, timeframe: str, bars: int
-    ) -> list[dict[str, Any]]:
+    async def try_fallback(self, symbol: str, timeframe: str, bars: int) -> list[dict[str, Any]]:
         """Attempt to fetch candles via the fallback provider chain.
 
         Returns an empty list if no fallback providers are configured or

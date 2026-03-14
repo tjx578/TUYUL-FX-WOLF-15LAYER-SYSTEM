@@ -6,7 +6,8 @@ import json
 import logging
 import os
 import random
-from collections.abc import Awaitable, Callable
+from collections.abc import AsyncIterable, Awaitable, Callable
+from datetime import UTC, datetime
 from typing import Any
 
 import websockets
@@ -58,6 +59,32 @@ PING_INTERVAL_S: float = 20.0
 PING_TIMEOUT_S: float = 10.0
 LEADER_LOCK_KEY: str = "finnhub:ws:leader"
 LEADER_LOCK_TTL_S: int = 60
+
+# Market hours: Forex open Sun 22:00 UTC → Fri 22:00 UTC
+WEEKEND_POLL_INTERVAL_S: float = 300.0  # Check every 5 min during weekend
+
+
+def is_forex_market_open(now: datetime | None = None) -> bool:
+    """Return True if the forex market is open.
+
+    Forex trades Sun 22:00 UTC through Fri 22:00 UTC.
+    Returns False during the weekend gap (Fri 22:00 → Sun 22:00).
+    """
+    if now is None:
+        now = datetime.now(UTC)
+    dow = now.weekday()  # Mon=0 … Sun=6
+    hour = now.hour
+    # Saturday: always closed
+    if dow == 5:
+        return False
+    # Sunday: closed until 22:00 UTC
+    if dow == 6:
+        return hour >= 22
+    # Friday: closed after 22:00 UTC
+    if dow == 4:
+        return hour < 22
+    # Mon–Thu: always open
+    return True
 
 
 class FinnhubSymbolMapper:
@@ -256,7 +283,7 @@ class FinnhubWebSocket:
 
     async def _listen(
         self,
-        ws: websockets.asyncio.client.ClientConnection,
+        ws: AsyncIterable[str] | websockets.asyncio.client.ClientConnection,
     ) -> None:
         """Listen for messages and dispatch to handler."""
         import time
@@ -293,6 +320,16 @@ class FinnhubWebSocket:
         )
 
         while self._running:
+            # --- Weekend gate: skip reconnect attempts when market is closed ---
+            if not is_forex_market_open():
+                logger.info(
+                    "Forex market closed (weekend) — sleeping until market open",
+                    extra={"replica_id": self._replica_id},
+                )
+                finnhub_ws_connected.labels(replica_id=self._replica_id).set(0)
+                await asyncio.sleep(WEEKEND_POLL_INTERVAL_S)
+                continue
+
             # --- Leader election ---
             if not await self._acquire_leader_lock():
                 logger.debug(
