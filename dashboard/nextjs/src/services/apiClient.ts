@@ -6,21 +6,12 @@ export interface ApiErrorPayload {
   details?: unknown;
 }
 
-const baseURL =
-  process.env.NEXT_PUBLIC_API_URL ||
-  process.env.NEXT_PUBLIC_API_BASE_URL ||
-  process.env.INTERNAL_API_URL;
-
-const resolvedBaseURL = (baseURL && baseURL.trim()) || "http://localhost:8000";
-if (!baseURL || baseURL.trim() === "") {
-  console.warn(
-    "[apiClient] Missing API base URL env; falling back to http://localhost:8000. " +
-      "Set NEXT_PUBLIC_API_URL or NEXT_PUBLIC_API_BASE_URL in production."
-  );
-}
-
+// Use an empty baseURL so all requests are sent as relative paths (e.g. /api/v1/trades).
+// Next.js rewrites in next.config.js proxy those paths to the real backend using
+// INTERNAL_API_URL (server-side only), so no NEXT_PUBLIC_* build-time var is needed
+// in the browser bundle.
 export const apiClient = axios.create({
-  baseURL: resolvedBaseURL.replace(/\/$/, ""),
+  baseURL: "",
   headers: {
     "Content-Type": "application/json",
   },
