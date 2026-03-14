@@ -27,6 +27,34 @@ function redirectToLogin(request: NextRequest): NextResponse {
   return NextResponse.redirect(loginUrl);
 }
 
+/**
+ * Decode a JWT payload without signature verification.
+ * Middleware runs at the Edge and cannot verify HMAC (no secret available),
+ * but it CAN reject tokens that are structurally invalid or expired,
+ * avoiding a wasted round-trip to the backend.
+ */
+function decodeJwtPayload(token: string): Record<string, unknown> | null {
+  try {
+    const parts = token.split(".");
+    if (parts.length !== 3) return null;
+    // Base64url → standard base64
+    const b64 = parts[1].replace(/-/g, "+").replace(/_/g, "/");
+    const json = atob(b64);
+    return JSON.parse(json) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+}
+
+function isTokenExpired(token: string): boolean {
+  const payload = decodeJwtPayload(token);
+  if (!payload) return true; // malformed → treat as expired
+  const exp = payload.exp;
+  if (typeof exp !== "number") return true;
+  // 30-second grace window to avoid edge-case clock skew
+  return exp < Date.now() / 1000 - 30;
+}
+
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
@@ -35,9 +63,9 @@ export function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  // ── General auth: session cookie must be present ──
+  // ── General auth: session cookie must be present and not expired ──
   const sessionCookie = request.cookies.get(SESSION_COOKIE);
-  if (!sessionCookie?.value) {
+  if (!sessionCookie?.value || isTokenExpired(sessionCookie.value)) {
     return redirectToLogin(request);
   }
 
