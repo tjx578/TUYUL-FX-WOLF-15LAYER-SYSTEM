@@ -42,12 +42,6 @@ export default function LoginPage() {
           body: JSON.stringify({ api_key: trimmedKey }),
         });
 
-        // Log response headers (set-cookie, etc.)
-        const responseHeaders: Record<string, string> = {};
-        res.headers.forEach((value, key) => { responseHeaders[key] = value; });
-        console.log("[v0] LOGIN response status:", res.status, res.statusText);
-        console.log("[v0] LOGIN response headers →", JSON.stringify(responseHeaders, null, 2));
-
         if (!res.ok) {
           const body = await res.json().catch(() => ({}));
           setError(
@@ -60,21 +54,27 @@ export default function LoginPage() {
 
         const data = await res.json().catch(() => ({})) as { token?: string };
 
-        // Store the JWT for WebSocket auth (query-param) and axios fallback.
-        if (data.token) {
-          setToken(data.token);                       // localStorage: wolf15_token
-          sessionStorage.setItem("api_key", data.token); // sessionStorage: api_key (axios)
-        } else {
-          // Fallback: store the raw API key so existing Bearer flows still work.
-          sessionStorage.setItem("api_key", trimmedKey);
-        }
+        // The token to persist — prefer the JWT from response body, else raw API key.
+        const sessionToken = data.token ?? trimmedKey;
 
-        console.log("[v0] LOGIN redirect → / (status: 200 → push)");
+        // 1. Store client-side for WebSocket auth and axios interceptor.
+        setToken(sessionToken);
+        sessionStorage.setItem("api_key", sessionToken);
+
+        // 2. Set a first-party HttpOnly cookie on the Vercel domain via a
+        //    Next.js API route so server components can read it on navigation.
+        //    (Cross-site cookies from Railway are blocked by browsers.)
+        await fetch("/api/set-session", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ token: sessionToken }),
+        });
+
         router.push("/");
         router.refresh();
       } catch (err) {
-        console.log("[v0] LOGIN fetch error:", err);
-        setError("Could not reach the API server. Check INTERNAL_API_URL is set.");
+        console.error("[v0] LOGIN fetch error:", err);
+        setError("Could not reach the API server. Check API_BASE_URL is set.");
         setLoading(false);
       }
     },
