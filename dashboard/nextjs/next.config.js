@@ -12,13 +12,13 @@ const nextConfig = {
     ];
   },
   async rewrites() {
-    // Use NEXT_INTERNAL_API_URL (server-side only, not exposed to browser).
-    // Next.js strips the NEXT_ prefix internally, so we need to use it here.
-    // Falls back to NEXT_PUBLIC_API_BASE_URL or localhost for local dev.
+    // Prefer server-side INTERNAL_API_URL (not exposed to browser),
+    // then fall back to the public env var, then localhost for local dev.
     const apiBase =
-      process.env.NEXT_INTERNAL_API_URL ||
+      process.env.INTERNAL_API_URL ||
       process.env.NEXT_PUBLIC_API_BASE_URL ||
       "http://localhost:8000";
+    console.log("[next.config] rewrites apiBase =", apiBase);
     return [
       // /api/:path* — strip the leading /api prefix and forward to the backend.
       // The backend already includes /api in its own router prefixes, so
