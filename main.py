@@ -114,11 +114,8 @@ async def _seed_from_redis() -> None:
             consumer = RedisConsumer(symbols=PAIRS, redis_client=redis_client)
             bus = LiveContextBus()
 
-            # Primary gate: H1 is always seeded by ingest via REST warmup.
-            # H4 is aggregated from H1 in ingest — require minimum 5 bars.
-            # M15 arrives from tick stream ~15 min after WebSocket connects
-            # and must NOT be used as the startup gate.
-            _h1_warmup = {"H1": 1, "H4": 5}
+            # Check both H1 and H4 - H4 is aggregated from H1 in ingest
+            _h4_warmup = {"H1": 1, "H4": 5}  # Require 5 H4 bars minimum
 
             # Secondary verification: higher TFs that L1 context depends on.
             # These don't block startup but emit explicit warnings.
@@ -127,7 +124,7 @@ async def _seed_from_redis() -> None:
             for attempt in range(1, max_retries + 1):
                 await consumer.load_candle_history()
 
-                h1_count = sum(1 for pair in PAIRS if bus.check_warmup(pair, _h1_warmup).get("ready"))
+                h1_count = sum(1 for pair in PAIRS if bus.check_warmup(pair, _h4_warmup).get("ready"))
 
                 if h1_count > 0:
                     logger.info(
