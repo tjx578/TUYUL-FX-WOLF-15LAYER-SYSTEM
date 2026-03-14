@@ -7,6 +7,8 @@
  * Usage:
  *   import { apiFetch } from "@/lib/fetcher";
  *   const data = await apiFetch("/api/v1/verdict/all");
+ *
+ * Note: Uses relative paths (no base URL) so Next.js rewrites proxy to the real backend.
  */
 import { bearerHeader } from "@/lib/auth";
 

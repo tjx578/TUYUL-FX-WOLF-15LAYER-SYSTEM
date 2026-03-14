@@ -15,7 +15,6 @@ import type {
   AlertEvent,
 } from "@/types";
 
-import { getWsBaseUrl } from "@/lib/env";
 import { getToken } from "@/lib/auth";
 
 // Lazily resolved on first use (not at module init) so window.location

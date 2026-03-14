@@ -1,10 +1,8 @@
 /**
- * Centralized env access for NEXT_PUBLIC_ vars.
- * process.env.NEXT_PUBLIC_* is replaced at build time by Next.js.
- *
- * Required env vars:
- *   NEXT_PUBLIC_API_BASE_URL   — backend REST base  (e.g. https://api.domain.com)
- *   NEXT_PUBLIC_WS_BASE_URL    — backend WS base    (e.g. wss://api.domain.com/ws)
+ * Centralized env access.
+ * NOTE: This file is now minimal since we use Next.js rewrites via next.config.js
+ * to proxy all requests to the backend. The API_BASE_URL is resolved server-side
+ * and never exposed to the browser.
  */
 
 // Legacy export kept for existing imports — reads from NEXT_PUBLIC_API_BASE_URL.
