@@ -23,7 +23,11 @@ export default function LoginPage() {
       setError(null);
       setLoading(true);
 
-      const trimmedKey = apiKey.trim();
+      // Read the key directly from the form so we always get the current value,
+      // regardless of any stale closure over `apiKey` state.
+      const form = e.currentTarget as HTMLFormElement;
+      const formData = new FormData(form);
+      const trimmedKey = ((formData.get("apiKey") as string) ?? apiKey).trim();
 
       if (!trimmedKey) {
         setError("API key is required");
@@ -32,8 +36,8 @@ export default function LoginPage() {
       }
 
       try {
-        // Use relative /api/... path so Next.js rewrite proxies to the backend.
-        // Avoids direct dependency on NEXT_PUBLIC_API_BASE_URL at runtime.
+        // Use relative /api/auth/session — Next.js rewrite proxies this to the
+        // backend without requiring NEXT_PUBLIC_* env vars in the browser bundle.
         const res = await fetch(`/api/auth/session`, {
           method: "GET",
           headers: { authorization: `Bearer ${trimmedKey}` },
@@ -41,19 +45,26 @@ export default function LoginPage() {
         });
 
         if (!res.ok) {
-          setError("Invalid API key or session could not be established");
+          const body = await res.json().catch(() => ({}));
+          setError(
+            (body as { detail?: string })?.detail ||
+            "Invalid API key or session could not be established"
+          );
           setLoading(false);
           return;
         }
 
+        // Persist the API key in sessionStorage so axios interceptors can attach it.
+        sessionStorage.setItem("api_key", trimmedKey);
+
         router.push("/");
         router.refresh();
       } catch {
-        setError("Could not reach the API server");
+        setError("Could not reach the API server. Check INTERNAL_API_URL is set.");
         setLoading(false);
       }
     },
-    [router],
+    [router, apiKey],
   );
 
   return (
