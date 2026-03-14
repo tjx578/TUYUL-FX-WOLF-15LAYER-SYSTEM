@@ -20,12 +20,15 @@ function toRedirectPath(): string {
 }
 
 export async function getVerifiedSessionUser(): Promise<SessionUser | null> {
+  // Always call headers() first so Next.js detects dynamic usage and
+  // never statically prerenders routes guarded by this function.
+  const h = await headers();
+
   const apiBase = getApiBase();
   if (!apiBase) {
     return null;
   }
 
-  const h = await headers();
   const authHeader = h.get("authorization");
   const cookieHeader = h.get("cookie");
 

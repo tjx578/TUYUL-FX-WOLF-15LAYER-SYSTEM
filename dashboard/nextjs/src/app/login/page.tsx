@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState, useEffect, useCallback, type FormEvent } from "react";
+import { useState, useCallback, type FormEvent } from "react";
 import { AUTH_LOGIN } from "@/lib/endpoints";
 import { setToken } from "@/lib/auth";
 
@@ -9,15 +9,7 @@ export default function LoginPage() {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [apiKey, setApiKey] = useState<string>(() =>
-    (process.env.NEXT_PUBLIC_API_KEY ?? "").toString().trim(),
-  );
-
-  useEffect(() => {
-    if (process.env.NEXT_PUBLIC_API_KEY) {
-      setApiKey(process.env.NEXT_PUBLIC_API_KEY.trim());
-    }
-  }, []);
+  const [apiKey, setApiKey] = useState("");
 
   const handleSubmit = useCallback(
     async (e: FormEvent<HTMLFormElement>) => {
