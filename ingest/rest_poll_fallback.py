@@ -17,6 +17,7 @@ from loguru import logger
 from config_loader import load_finnhub
 from context.live_context_bus import LiveContextBus
 from ingest.finnhub_candles import FinnhubCandleError, FinnhubCandleFetcher
+from ingest.finnhub_ws import is_forex_market_open
 
 
 class RestPollFallback:
@@ -44,13 +45,9 @@ class RestPollFallback:
         self._symbols = symbols
 
         # Polling interval while WS is down (seconds)
-        self._poll_interval: float = float(
-            rest_poll_cfg.get("poll_interval_sec", 90)
-        )
+        self._poll_interval: float = float(rest_poll_cfg.get("poll_interval_sec", 90))
         # Grace period before first poll after WS disconnect (seconds)
-        self._grace_sec: float = float(
-            rest_poll_cfg.get("grace_before_poll_sec", 30)
-        )
+        self._grace_sec: float = float(rest_poll_cfg.get("grace_before_poll_sec", 30))
         # How many M15 bars to fetch per poll cycle
         self._bars: int = int(rest_poll_cfg.get("bars", 4))
         # Also refresh H1 during fallback
@@ -80,9 +77,7 @@ class RestPollFallback:
                     break
 
                 # Grace period: WS might reconnect quickly
-                logger.info(
-                    f"WS disconnected — waiting {self._grace_sec:.0f}s grace before REST polling"
-                )
+                logger.info(f"WS disconnected — waiting {self._grace_sec:.0f}s grace before REST polling")
                 await asyncio.sleep(self._grace_sec)
 
                 # Re-check after grace
@@ -91,9 +86,7 @@ class RestPollFallback:
                     continue
 
                 # Enter polling loop
-                logger.warning(
-                    "WS still disconnected after grace — activating REST poll fallback"
-                )
+                logger.warning("WS still disconnected after grace — activating REST poll fallback")
 
                 await self._poll_loop()
 
@@ -116,6 +109,12 @@ class RestPollFallback:
         """Fetch M15 (and optionally H1) candles until WS reconnects."""
         cycle = 0
         while self._running and not self._ws_connected():
+            # Skip REST calls when forex market is closed (weekend)
+            if not is_forex_market_open():
+                logger.info("Forex market closed (weekend) — skipping REST poll cycle")
+                await asyncio.sleep(self._poll_interval)
+                continue
+
             cycle += 1
             logger.info(f"REST poll cycle #{cycle} for {len(self._symbols)} symbols")
 
@@ -140,9 +139,7 @@ class RestPollFallback:
                 self._context_bus.update_candle(candle)
 
             if m15_candles:
-                logger.debug(
-                    f"REST poll: seeded {len(m15_candles)} M15 bars for {symbol}"
-                )
+                logger.debug(f"REST poll: seeded {len(m15_candles)} M15 bars for {symbol}")
 
         except FinnhubCandleError as exc:
             logger.warning(f"REST poll M15 failed for {symbol}: {exc}")
