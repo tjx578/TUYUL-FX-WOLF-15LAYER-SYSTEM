@@ -16,10 +16,9 @@ export async function apiFetch(
   path: string,
   opts: RequestInit = {}
 ): Promise<Response> {
+  // Relative path — Next.js rewrites proxy /api/* to the backend.
   const auth = bearerHeader();
 
-  // Use relative paths — Next.js rewrites via next.config.js will handle
-  // proxying to the real backend using NEXT_INTERNAL_API_URL.
   return fetch(path, {
     ...opts,
     headers: {

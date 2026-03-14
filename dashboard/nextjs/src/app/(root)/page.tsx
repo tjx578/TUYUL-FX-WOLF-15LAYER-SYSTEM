@@ -21,10 +21,7 @@ import PageComplianceBanner from "@/components/feedback/PageComplianceBanner";
 import { useAlertsWS } from "@/lib/websocket";
 import { AlertFeed } from "@/components/PropFirmBadge";
 import type { L12Verdict } from "@/types";
-import { getApiBaseUrl } from "@/lib/env";
-
 export default function Home() {
-  const apiBase = getApiBaseUrl();
 
   const { data: verdictsRaw, isLoading: vLoading, isError: vError } = useAllVerdicts();
   const { data: activeTrades, isError: tradesError } = useActiveTrades();
@@ -83,7 +80,7 @@ export default function Home() {
             Institutional-grade pipeline analysis
           </p>
           <p style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 6 }}>
-            API: <span className="num">{apiBase || "NOT_SET"}</span>
+            API: <span className="num">relative (proxied)</span>
           </p>
         </div>
         <div style={{ marginLeft: "auto" }}>
@@ -103,8 +100,7 @@ export default function Home() {
             color: "var(--text-primary)",
           }}
         >
-          Data stream issue detected. Periksa NEXT_PUBLIC_API_URL / NEXT_PUBLIC_API_BASE_URL,
-          endpoint Railway, dan CORS backend.
+          Data stream issue detected. Check backend health, Next.js rewrites, and CORS config.
         </div>
       )}
 

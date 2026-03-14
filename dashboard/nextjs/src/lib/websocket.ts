@@ -17,15 +17,16 @@ import type {
 
 import { getToken } from "@/lib/auth";
 
-// Use relative WebSocket paths. Next.js rewrites in next.config.js proxy
-// /ws/* requests to the real backend via NEXT_INTERNAL_API_URL.
-// The browser will automatically convert http/https to ws/wss.
-function getWsUrl(path: string): string {
-  const protocol = typeof window !== "undefined" 
-    ? (window.location.protocol === "https:" ? "wss:" : "ws:")
-    : "ws:";
-  const host = typeof window !== "undefined" ? window.location.host : "localhost:3000";
-  return `${protocol}//${host}${path}`;
+// Lazily resolved on first use (not at module init) so window.location
+// is available. getWsBaseUrl() now derives ws/wss from the page origin
+// when NEXT_PUBLIC_WS_BASE_URL is not set, and Next.js rewrites proxy
+// /ws/* to the real backend.
+let _wsUrl: string | null = null;
+function getWsUrl(): string {
+  if (_wsUrl === null) {
+    _wsUrl = getWsBaseUrl();
+  }
+  return _wsUrl;
 }
 
 const RECONNECT_DELAY_MS = 3000;
@@ -57,13 +58,14 @@ export function useWolfWebSocket<T>(
     if (!mountedRef.current || !enabled) return;
     if (reconnectCount >= MAX_RECONNECT_ATTEMPTS) return;
 
+    const wsBase = getWsUrl();
     const token =
       typeof window !== "undefined"
         ? getToken()
         : null;
     const url = token
-      ? `${getWsUrl(path)}?token=${token}`
-      : `${getWsUrl(path)}`;
+      ? `${wsBase}${path}?token=${token}`
+      : `${wsBase}${path}`;
 
     try {
       const ws = new WebSocket(url);
