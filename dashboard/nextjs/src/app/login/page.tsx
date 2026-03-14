@@ -2,7 +2,6 @@
 
 import { useRouter } from "next/navigation";
 import { useState, useEffect, useCallback, type FormEvent } from "react";
-import { getApiBaseUrl } from "@/lib/env";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -33,8 +32,9 @@ export default function LoginPage() {
       }
 
       try {
-        const base = getApiBaseUrl();
-        const res = await fetch(`${base}/auth/session`, {
+        // Use relative /api/... path so Next.js rewrite proxies to the backend.
+        // Avoids direct dependency on NEXT_PUBLIC_API_BASE_URL at runtime.
+        const res = await fetch(`/api/auth/session`, {
           method: "GET",
           headers: { authorization: `Bearer ${trimmedKey}` },
           credentials: "include",
