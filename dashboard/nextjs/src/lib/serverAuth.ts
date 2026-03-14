@@ -60,8 +60,14 @@ export async function getVerifiedSessionUser(): Promise<SessionUser | null> {
     }
 
     const raw = await response.json();
-    return SessionUserSchema.parse(raw);
-  } catch {
+    const result = SessionUserSchema.safeParse(raw);
+    if (!result.success) {
+      console.error("[serverAuth] SessionUserSchema validation failed:", result.error.flatten());
+      return null;
+    }
+    return result.data;
+  } catch (err) {
+    console.error("[serverAuth] getVerifiedSessionUser error:", err);
     return null;
   }
 }
