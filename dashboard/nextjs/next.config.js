@@ -16,16 +16,6 @@ const nextConfig = {
     // Check in order: NEXT_PUBLIC_API_BASE_URL (if set at build time),
     // or API_BASE_URL (from Vercel env), or localhost for local dev.
     // NOTE: Do NOT use fallback to localhost in production — require explicit config.
-    const apiBase =
-      process.env.NEXT_PUBLIC_API_BASE_URL ||
-      process.env.API_BASE_URL ||
-      (process.env.NODE_ENV === "production"
-        ? (() => {
-            throw new Error(
-              "API_BASE_URL or NEXT_PUBLIC_API_BASE_URL must be set in production"
-            );
-          })()
-        : "http://localhost:8000");
     // Prefer server-side INTERNAL_API_URL (not exposed to browser),
     // then fall back to the public env var, then localhost for local dev.
     const apiBase =
