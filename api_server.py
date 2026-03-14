@@ -12,16 +12,22 @@ Run (Railway):
     python api_server.py
 """
 
-import logging
-import os
-import sys
-from copy import deepcopy
-from typing import Any
+from dotenv import load_dotenv
 
-from typing_extensions import override
-from config.logging_bootstrap import configure_loguru_logging
+load_dotenv()  # Load .env before any other imports read os.environ
+
+import logging  # noqa: E402
+import os  # noqa: E402
+import sys  # noqa: E402
+from copy import deepcopy  # noqa: E402
+from typing import Any  # noqa: E402
+
+from typing_extensions import override  # noqa: E402
+
+from config.logging_bootstrap import configure_loguru_logging  # noqa: E402
 
 # ── Process-level logging (must run before any app import) ────────────────────
+
 
 def _configure_process_logging() -> None:
     """Configure stdlib + loguru logging for correct stdout/stderr severity routing."""
@@ -46,6 +52,7 @@ logger = logging.getLogger(__name__)
 
 
 # ── Uvicorn log config ────────────────────────────────────────────────────────
+
 
 class _MaxLevelFilter(logging.Filter):
     def __init__(self, max_level: int) -> None:
