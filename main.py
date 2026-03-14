@@ -32,15 +32,12 @@ from utils.timezone_utils import is_trading_session, now_utc  # pyright: ignore[
 
 try:
     from engines.v11 import V11PipelineHook
+
     _v11_hook: V11PipelineHook | None = V11PipelineHook()
 except Exception:  # V11 optional — missing = skip
     _v11_hook = None
 
-PAIRS: list[str] = [
-    str(p["symbol"])
-    for p in CONFIG["pairs"]["pairs"]
-    if p.get("enabled", True)
-]
+PAIRS: list[str] = [str(p["symbol"]) for p in CONFIG["pairs"]["pairs"] if p.get("enabled", True)]
 
 _shutdown_event: asyncio.Event | None = None
 _pipeline = WolfConstitutionalPipeline()
@@ -58,6 +55,7 @@ _analysis_healthy = False
 
 # ── Candle seeding (warmup) ─────────────────────────────────────
 
+
 async def seed_candles_on_startup() -> None:
     """Seed candle history into LiveContextBus BEFORE the analysis loop starts.
 
@@ -68,9 +66,7 @@ async def seed_candles_on_startup() -> None:
     This ensures the pipeline warmup gate passes on the first analysis cycle.
     """
     context_mode = os.getenv("CONTEXT_MODE", "local").lower()
-    logger.info(
-        f"[SEED] Seeding candles on startup (mode={context_mode}, pairs={len(PAIRS)})"
-    )
+    logger.info(f"[SEED] Seeding candles on startup (mode={context_mode}, pairs={len(PAIRS)})")
 
     if context_mode == "redis":
         await _seed_from_redis()
@@ -87,9 +83,7 @@ async def seed_candles_on_startup() -> None:
         if status.get("ready"):
             ready_count += 1
         else:
-            logger.warning(
-                f"[SEED] {pair} warmup still insufficient after seeding: {status.get('missing')}"
-            )
+            logger.warning(f"[SEED] {pair} warmup still insufficient after seeding: {status.get('missing')}")
     logger.info(f"[SEED] Warmup ready: {ready_count}/{len(PAIRS)} pairs")
 
 
@@ -120,28 +114,28 @@ async def _seed_from_redis() -> None:
             bus = LiveContextBus()
 
             # Primary gate: H1 is always seeded by ingest via REST warmup.
+            # H4 is aggregated from H1 in ingest — require minimum 5 bars.
             # M15 arrives from tick stream ~15 min after WebSocket connects
             # and must NOT be used as the startup gate.
-            _h1_warmup = {"H1": 1}
+            _h1_warmup = {"H1": 1, "H4": 5}
 
             # Secondary verification: higher TFs that L1 context depends on.
             # These don't block startup but emit explicit warnings.
-            _htf_verify = {"H4": 1, "D1": 1, "W1": 1, "MN": 1}
+            _htf_verify = {"D1": 1, "W1": 1, "MN": 1}
 
             for attempt in range(1, max_retries + 1):
                 await consumer.load_candle_history()
 
-                h1_count = sum(
-                    1 for pair in PAIRS
-                    if bus.check_warmup(pair, _h1_warmup).get("ready")
-                )
+                h1_count = sum(1 for pair in PAIRS if bus.check_warmup(pair, _h1_warmup).get("ready"))
 
                 if h1_count > 0:
                     logger.info(
                         "[SEED] Redis candle history loaded into LiveContextBus "
                         "(%d/%d pairs with H1 data, attempt %d). "
                         "M15 will arrive from tick stream after ~15 min.",
-                        h1_count, len(PAIRS), attempt,
+                        h1_count,
+                        len(PAIRS),
+                        attempt,
                     )
 
                     # Verify higher timeframes and warn if missing
@@ -153,16 +147,19 @@ async def _seed_from_redis() -> None:
                                 "[SEED] %s missing higher-TF data: %s — "
                                 "L1 context/regime analysis may be degraded "
                                 "until ingest delivers these timeframes.",
-                                pair, missing_tfs,
+                                pair,
+                                missing_tfs,
                             )
                     return
 
                 # No H1 data yet — ingest may still be seeding
                 if attempt < max_retries:
                     logger.warning(
-                        "[SEED] No candle data in Redis yet "
-                        "(H1=%d, attempt %d/%d) — waiting %.0fs",
-                        h1_count, attempt, max_retries, retry_delay,
+                        "[SEED] No candle data in Redis yet (H1=%d, attempt %d/%d) — waiting %.0fs",
+                        h1_count,
+                        attempt,
+                        max_retries,
+                        retry_delay,
                     )
                     await asyncio.sleep(retry_delay)
 
@@ -171,7 +168,8 @@ async def _seed_from_redis() -> None:
                 "[SEED] Redis still empty after %d retries (%.0fs total wait). "
                 "Engine will continue in DEGRADED mode — analysis will be blind "
                 "until live candles arrive.",
-                max_retries, max_retries * retry_delay,
+                max_retries,
+                max_retries * retry_delay,
             )
         finally:
             await redis_client.aclose()
@@ -182,6 +180,7 @@ async def _seed_from_redis() -> None:
 async def _seed_from_finnhub() -> None:
     """Fetch historical candles from Finnhub REST API into LiveContextBus."""
     from ingest.finnhub_key_manager import finnhub_keys  # noqa: PLC0415
+
     if not finnhub_keys.available:
         logger.warning("[SEED] No Finnhub API key — skipping REST warmup")
         return
@@ -190,23 +189,15 @@ async def _seed_from_finnhub() -> None:
 
         fetcher = FinnhubCandleFetcher()
         results = await fetcher.warmup_all()
-        total = sum(
-            len(candles)
-            for tfs in results.values()
-            for candles in tfs.values()
-        )
-        logger.info(
-            f"[SEED] Finnhub warmup complete: {len(results)} symbols, {total} total bars"
-        )
+        total = sum(len(candles) for tfs in results.values() for candles in tfs.values())
+        logger.info(f"[SEED] Finnhub warmup complete: {len(results)} symbols, {total} total bars")
 
         # M15 is excluded from warmup_all (normally built from WS ticks),
         # but the pipeline warmup gate requires M15 bars.  Fetch via REST
         # cold-start so the first analysis cycle isn't blocked.
         m15_seeded = await fetcher.cold_start_m15(bars=100)
         m15_total = sum(m15_seeded.values())
-        logger.info(
-            f"[SEED] M15 cold-start: {len(m15_seeded)} symbols, {m15_total} total bars"
-        )
+        logger.info(f"[SEED] M15 cold-start: {len(m15_seeded)} symbols, {m15_total} total bars")
     except Exception as exc:
         logger.error(f"[SEED] Failed to seed from Finnhub: {exc}")
 
@@ -309,6 +300,7 @@ def _build_j2(pair: str, synthesis: dict[str, object], l12: dict[str, object]) -
 
 def _validate_api_key() -> bool:
     from ingest.finnhub_key_manager import finnhub_keys  # noqa: PLC0415
+
     if not finnhub_keys.available:
         logger.warning("WARNING: FINNHUB_API_KEY not configured; running in DRY RUN mode.")
         return False
@@ -330,10 +322,7 @@ async def run_ingest_services(has_api_key: bool, redis: AsyncRedis) -> None:
 
     # Create CandleBuilder instances for each enabled pair at default timeframe
     default_timeframe = CONFIG["settings"].get("default_timeframe", "1h")
-    candle_builders = [
-        CandleBuilder(symbol=pair, timeframe=default_timeframe)
-        for pair in PAIRS
-    ]
+    candle_builders = [CandleBuilder(symbol=pair, timeframe=default_timeframe) for pair in PAIRS]
 
     logger.info("Starting ingest services: WebSocket, CalendarNews, MarketNews, CandleBuilder")
     try:
@@ -366,11 +355,11 @@ async def _sanitize_redis_keys(redis_client: AsyncRedis) -> None:
     """
     # pattern → expected Redis type
     keys_expected: dict[str, str] = {
-        "wolf15:tick:*":            "stream",   # bridge XADD
-        "wolf15:latest_tick:*":     "hash",     # bridge HSET
-        "wolf15:candle:*":          "hash",     # bridge HSET (latest candle)
-        "wolf15:candle_history:*":  "list",     # bridge RPUSH / consumer LRANGE
-        "candle_history:*":         "list",     # legacy consumer LRANGE
+        "wolf15:tick:*": "stream",  # bridge XADD
+        "wolf15:latest_tick:*": "hash",  # bridge HSET
+        "wolf15:candle:*": "hash",  # bridge HSET (latest candle)
+        "wolf15:candle_history:*": "list",  # bridge RPUSH / consumer LRANGE
+        "candle_history:*": "list",  # legacy consumer LRANGE
     }
 
     total_deleted = 0
@@ -396,7 +385,9 @@ async def _sanitize_redis_keys(redis_client: AsyncRedis) -> None:
 
             logger.warning(
                 "[Redis-sanitize] Key '{}' type mismatch: expected={}, actual={} → deleting",
-                key_str, expected_type, actual_type,
+                key_str,
+                expected_type,
+                actual_type,
             )
             try:
                 await redis_client.delete(key_str)
@@ -477,9 +468,7 @@ async def _analyze_pair(pair: str) -> dict[str, object] | None:
             return result
         except TimeoutError as exc:
             span.record_exception(exc)
-            logger.error(
-                f"[Pipeline] TIMEOUT after {_PIPELINE_TIMEOUT_SEC}s for {pair} — skipping"
-            )
+            logger.error(f"[Pipeline] TIMEOUT after {_PIPELINE_TIMEOUT_SEC}s for {pair} — skipping")
             return None
         except Exception as exc:
             import traceback
@@ -507,14 +496,13 @@ async def analysis_loop() -> None:
         0.0,
         min(1.0, float(os.getenv("ANALYSIS_RQI_RETRIGGER_THRESHOLD", "0.72"))),
     )
-    rqi_force_stale_sec = float(
-        os.getenv("ANALYSIS_RQI_FORCE_STALE_SEC", str(max(1, loop_interval * 3)))
-    )
+    rqi_force_stale_sec = float(os.getenv("ANALYSIS_RQI_FORCE_STALE_SEC", str(max(1, loop_interval * 3))))
     logger.info(f"Analysis loop started (event-driven, fallback interval={loop_interval}s)")
 
     # ── asyncio.Event used as a lightweight signal ──────────────────
     _candle_signal = asyncio.Event()
     _pending_symbols: set[str] = set()
+
     def _on_candle_closed(event: Event) -> None:
         """Non-async callback – just record the symbol and wake the loop."""
         data: dict[str, object] = dict(event.data)  # type: ignore[arg-type]
@@ -659,14 +647,9 @@ async def _supervised_task(
             return
         except Exception as exc:
             restarts += 1
-            logger.error(
-                f"[SUPERVISOR] Task '{name}' crashed: {exc} "
-                f"(restart {restarts}/{max_restarts})"
-            )
+            logger.error(f"[SUPERVISOR] Task '{name}' crashed: {exc} (restart {restarts}/{max_restarts})")
             if restarts > max_restarts:
-                logger.critical(
-                    f"[SUPERVISOR] Task '{name}' exceeded max restarts — giving up"
-                )
+                logger.critical(f"[SUPERVISOR] Task '{name}' exceeded max restarts — giving up")
                 _health_probe.set_alive(False)
                 _health_probe.set_detail("dead_reason", f"{name}_crash_limit")
                 return
@@ -751,6 +734,7 @@ async def main() -> None:
         # ── Local dev: everything in one process (supervised) ───────
         if RUN_MODE in ("all", "ingest-only"):
             from infrastructure.redis_url import get_redis_url
+
             redis_url = get_redis_url()
             redis_client: AsyncRedis = AsyncRedis.from_url(redis_url)  # type: ignore[no-untyped-call]
             tasks.append(

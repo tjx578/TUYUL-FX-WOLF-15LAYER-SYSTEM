@@ -147,6 +147,7 @@ class FinnhubWebSocket:
         self._symbols = symbols
         self._replica_id = replica_id or os.environ.get("RAILWAY_REPLICA_ID", "unknown")
         from ingest.finnhub_key_manager import finnhub_keys  # noqa: PLC0415
+
         self._key_manager = finnhub_keys
         self._token = self._key_manager.current_key()
         if not self._token:
@@ -217,11 +218,14 @@ class FinnhubWebSocket:
         """
         url = FINNHUB_WS_URL.format(token=self._token)
         try:
-            ws = await websockets.connect(
-                url,
-                ping_interval=PING_INTERVAL_S,
-                ping_timeout=PING_TIMEOUT_S,
-                close_timeout=10,
+            ws = await asyncio.wait_for(
+                websockets.connect(
+                    url,
+                    ping_interval=PING_INTERVAL_S,
+                    ping_timeout=PING_TIMEOUT_S,
+                    close_timeout=10,
+                ),
+                timeout=30.0,
             )
             logger.info(
                 "Finnhub WS connected",
@@ -238,7 +242,7 @@ class FinnhubWebSocket:
             return ws
         except Exception as exc:
             # websockets raises InvalidStatusCode on HTTP error responses
-            status_code = getattr(exc, 'status_code', None)
+            status_code = getattr(exc, "status_code", None)
             if status_code == RATE_LIMIT_STATUS:
                 backoff = _calculate_backoff(
                     self._attempt,
@@ -256,6 +260,7 @@ class FinnhubWebSocket:
     ) -> None:
         """Listen for messages and dispatch to handler."""
         import time
+
         _RENEW_INTERVAL_S = 15  # noqa: N806
         _last_renew = 0.0
         async for raw_msg in ws:
@@ -310,7 +315,8 @@ class FinnhubWebSocket:
                 self._attempt += 1
                 backoff = _calculate_backoff(self._attempt)
                 finnhub_ws_reconnect_attempts.labels(
-                    replica_id=self._replica_id, error_type=type(exc).__name__,
+                    replica_id=self._replica_id,
+                    error_type=type(exc).__name__,
                 ).inc()
                 finnhub_ws_reconnect_current.labels(replica_id=self._replica_id).set(self._attempt)
                 finnhub_ws_connected.labels(replica_id=self._replica_id).set(0)
@@ -330,7 +336,8 @@ class FinnhubWebSocket:
             except FinnhubRateLimitError as exc:
                 self._attempt += 1
                 finnhub_ws_reconnect_attempts.labels(
-                    replica_id=self._replica_id, error_type="RateLimit429",
+                    replica_id=self._replica_id,
+                    error_type="RateLimit429",
                 ).inc()
                 finnhub_ws_reconnect_current.labels(replica_id=self._replica_id).set(self._attempt)
                 finnhub_ws_connected.labels(replica_id=self._replica_id).set(0)
@@ -348,7 +355,8 @@ class FinnhubWebSocket:
                 self._attempt += 1
                 backoff = _calculate_backoff(self._attempt)
                 finnhub_ws_reconnect_attempts.labels(
-                    replica_id=self._replica_id, error_type="FinnhubConnectionError",
+                    replica_id=self._replica_id,
+                    error_type="FinnhubConnectionError",
                 ).inc()
                 finnhub_ws_reconnect_current.labels(replica_id=self._replica_id).set(self._attempt)
                 finnhub_ws_connected.labels(replica_id=self._replica_id).set(0)
@@ -367,7 +375,8 @@ class FinnhubWebSocket:
                 self._attempt += 1
                 backoff = _calculate_backoff(self._attempt)
                 finnhub_ws_reconnect_attempts.labels(
-                    replica_id=self._replica_id, error_type="ConnectionClosed",
+                    replica_id=self._replica_id,
+                    error_type="ConnectionClosed",
                 ).inc()
                 finnhub_ws_reconnect_current.labels(replica_id=self._replica_id).set(self._attempt)
                 finnhub_ws_connected.labels(replica_id=self._replica_id).set(0)
