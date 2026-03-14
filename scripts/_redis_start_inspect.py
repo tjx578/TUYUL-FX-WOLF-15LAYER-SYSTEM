@@ -37,7 +37,7 @@ else:
 
 def ping() -> bool:
     try:
-        client: Redis = redis.Redis.from_url(URL, decode_responses=True)  # type: ignore[no-untyped-call]
+        client: Redis = redis.Redis.from_url(URL, decode_responses=True)
         result: bool = client.ping()  # type: ignore[assignment]
         return bool(result)
     except Exception:

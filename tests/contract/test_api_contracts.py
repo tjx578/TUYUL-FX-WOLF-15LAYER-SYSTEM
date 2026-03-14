@@ -27,23 +27,23 @@ from __future__ import annotations
 from collections.abc import Callable, Generator
 from typing import Any, cast
 
-import pytest  # type: ignore[import-untyped,reportUnknownMemberType]
+import pytest
 
-pytest.importorskip("httpx")  # type: ignore[no-untyped-call]
+pytest.importorskip("httpx")
 
-from fastapi.testclient import TestClient  # type: ignore[import-untyped]
+from fastapi.testclient import TestClient
 
 # ── App factory + auth override ────────────────────────────────────────────────
 
 
 def _make_client() -> Any:
     """Build TestClient with auth dependency overridden to always pass."""
-    from fastapi import FastAPI  # type: ignore[import-untyped]
+    from fastapi import FastAPI
 
-    from api.app_factory import create_app  # type: ignore[import-untyped]
+    from api.app_factory import create_app
     from api.middleware.auth import verify_token
 
-    application: FastAPI = cast(FastAPI, create_app())  # pyright: ignore[reportUnknownVariableType]
+    application: FastAPI = cast(FastAPI, create_app())
 
     # Override auth so tests never need a real JWT
     def _fake_auth() -> dict[str, str]:
@@ -51,11 +51,11 @@ def _make_client() -> Any:
 
     application.dependency_overrides[cast(Callable[..., Any], verify_token)] = _fake_auth
 
-    return TestClient(application, raise_server_exceptions=True)  # pyright: ignore[reportUnknownVariableType]
+    return TestClient(application, raise_server_exceptions=True)
 
 
 # Fixture: single client reused across all contract tests (session-scoped)
-@pytest.fixture(scope="module")  # type: ignore[misc]
+@pytest.fixture(scope="module")
 def client() -> Generator[Any, None, None]:
     yield _make_client()
 
@@ -93,7 +93,7 @@ class TestHealthContract:
         resp = client.get("/health/full")
         # May return 401/503 in isolated test env — only validate shape when 200.
         if resp.status_code != 200:
-            pytest.skip("Full health requires live infra")  # type: ignore
+            pytest.skip("Full health requires live infra")
         data: dict[str, Any] = resp.json()
         required = {"status", "service", "version", "redis", "postgres", "timestamp"}
         missing = required - data.keys()
@@ -154,7 +154,7 @@ class TestVerdictAllContract:
     def test_verdict_item_required_fields(self, client: Any) -> None:
         """Each item must contain the three required FE fields."""
         raw: Any = client.get("/api/v1/verdict/all").json()
-        items: list[dict[str, Any]] = raw if isinstance(raw, list) else list(raw.values())  # pyright: ignore[reportUnknownVariableType]
+        items: list[dict[str, Any]] = raw if isinstance(raw, list) else list(raw.values())
 
         if not items:
             pytest.skip("No verdicts available in test environment")
@@ -166,7 +166,7 @@ class TestVerdictAllContract:
 
     def test_confidence_is_numeric(self, client: Any) -> None:
         raw: Any = client.get("/api/v1/verdict/all").json()
-        items: list[dict[str, Any]] = raw if isinstance(raw, list) else list(raw.values())  # pyright: ignore[reportUnknownVariableType]
+        items: list[dict[str, Any]] = raw if isinstance(raw, list) else list(raw.values())
         if not items:
             pytest.skip("No verdicts")
         for item in items[:5]:
@@ -184,7 +184,7 @@ class TestVerdictAllContract:
             "ABORT",
         }
         raw: Any = client.get("/api/v1/verdict/all").json()
-        items: list[dict[str, Any]] = raw if isinstance(raw, list) else list(raw.values())  # pyright: ignore[reportUnknownVariableType]
+        items: list[dict[str, Any]] = raw if isinstance(raw, list) else list(raw.values())
         if not items:
             pytest.skip("No verdicts")
         for item in items[:5]:
@@ -221,16 +221,12 @@ class TestAccountsContract:
 
         items: list[dict[str, Any]]
         if isinstance(raw, list):
-            items = [cast(dict[str, Any], item) for item in raw if isinstance(item, dict)]  # pyright: ignore[reportUnknownVariableType]
+            items = [cast(dict[str, Any], item) for item in raw if isinstance(item, dict)]
         elif isinstance(raw, dict):
-            raw_dict: dict[str, Any] = raw  # pyright: ignore[reportUnknownVariableType]
+            raw_dict: dict[str, Any] = raw
             accounts_value = raw_dict.get("accounts", [])
             if isinstance(accounts_value, list):
-                items = [
-                    cast(dict[str, Any], item)
-                    for item in accounts_value  # pyright: ignore[reportUnknownVariableType]
-                    if isinstance(item, dict)
-                ]
+                items = [cast(dict[str, Any], item) for item in accounts_value if isinstance(item, dict)]
             else:
                 items = []
         else:
@@ -284,7 +280,7 @@ class TestRateLimitContract:
         We simulate one request and then manually test a fabricated 429 shape
         against what the middleware guarantees.
         """
-        from starlette.responses import JSONResponse  # type: ignore[import-untyped]
+        from starlette.responses import JSONResponse
 
         # The middleware always sets Retry-After on 429—verify that contract.
         resp_body: dict[str, Any] = {
@@ -292,12 +288,12 @@ class TestRateLimitContract:
             "retry_after_sec": 60,
         }
         response_headers: dict[str, str] = {"Retry-After": "60"}
-        resp: Any = JSONResponse(status_code=429, content=resp_body, headers=response_headers)  # pyright: ignore[reportUnknownVariableType]
+        resp: Any = JSONResponse(status_code=429, content=resp_body, headers=response_headers)
         assert resp.status_code == 429
         assert response_headers.get("Retry-After") == "60"
         assert "detail" in resp_body
         assert "retry_after_sec" in resp_body
 
 
-@pytest.mark.skip(reason="Not yet implemented")  # pyright: ignore[reportUnknownMemberType,reportUntypedFunctionDecorator]
+@pytest.mark.skip(reason="Not yet implemented")
 def test_something(): ...
