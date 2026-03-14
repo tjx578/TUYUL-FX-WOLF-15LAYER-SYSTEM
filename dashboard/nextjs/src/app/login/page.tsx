@@ -38,14 +38,18 @@ export default function LoginPage() {
       try {
         // Use relative /api/auth/session — Next.js rewrite proxies this to the
         // backend without requiring NEXT_PUBLIC_* env vars in the browser bundle.
+        console.log("[v0] Login: calling /api/auth/session");
         const res = await fetch(`/api/auth/session`, {
           method: "GET",
           headers: { authorization: `Bearer ${trimmedKey}` },
           credentials: "include",
         });
 
+        console.log("[v0] Login: response status", res.status, res.statusText);
+
         if (!res.ok) {
           const body = await res.json().catch(() => ({}));
+          console.log("[v0] Login: error body", body);
           setError(
             (body as { detail?: string })?.detail ||
             "Invalid API key or session could not be established"
