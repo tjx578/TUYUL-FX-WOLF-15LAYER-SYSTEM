@@ -45,6 +45,7 @@ class RedisConfig:
     Pool-tuning knobs (max_connections, timeouts) are always taken from this
     object regardless of how the pool is constructed.
     """
+
     host: str = "127.0.0.1"
     port: int = 6379
     password: str | None = None
@@ -83,16 +84,9 @@ class RedisConfig:
 
         # Individual env vars override URL-derived values (backward-compat)
         # Also check Railway-style vars (REDISHOST, etc.) as secondary fallback
-        host = (os.environ.get("REDIS_HOST")
-                or os.environ.get("REDISHOST")
-                or url_host)
-        port = int(os.environ.get("REDIS_PORT")
-                   or os.environ.get("REDISPORT")
-                   or url_port)
-        password = (os.environ.get("REDIS_PASSWORD")
-                    or os.environ.get("REDISPASSWORD")
-                    or url_password
-                    or None)
+        host = os.environ.get("REDIS_HOST") or os.environ.get("REDISHOST") or url_host
+        port = int(os.environ.get("REDIS_PORT") or os.environ.get("REDISPORT") or url_port)
+        password = os.environ.get("REDIS_PASSWORD") or os.environ.get("REDISPASSWORD") or url_password or None
         db = int(os.environ.get("REDIS_DB") or url_db)
 
         # Normalise empty string password to None
@@ -139,7 +133,7 @@ class RedisClientManager:
                 supported_errors=(RedisConnectionError, RedisTimeoutError),
             )
 
-            self._pool = aioredis.ConnectionPool.from_url(  # pyright: ignore[reportUnknownMemberType]
+            self._pool = aioredis.ConnectionPool.from_url(
                 url,
                 decode_responses=cfg.decode_responses,
                 max_connections=cfg.max_connections,
@@ -154,7 +148,10 @@ class RedisClientManager:
             )
             logger.info(
                 "Redis async pool created: %s:%d db=%d (native async, from_url, tls=%s, retry=3)",
-                cfg.host, cfg.port, cfg.db, use_tls,
+                cfg.host,
+                cfg.port,
+                cfg.db,
+                use_tls,
             )
         return self._pool
 
@@ -212,6 +209,7 @@ async def close_pool() -> None:
 
 
 # ── FastAPI dependency ────────────────────────────────────────────────────────
+
 
 async def get_async_redis() -> aioredis.Redis:
     """FastAPI ``Depends()`` provider for the shared async Redis client.
