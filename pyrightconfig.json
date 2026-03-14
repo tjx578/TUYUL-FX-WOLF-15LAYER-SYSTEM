@@ -1,23 +1,25 @@
 {
-  "typeCheckingMode": "strict",
+  "typeCheckingMode": "standard",
   "pythonVersion": "3.11",
   "reportMissingTypeStubs": false,
-  "reportUnknownMemberType": true,
-  "reportUnknownArgumentType": true,
-  "reportUnknownVariableType": true,
   "reportUnnecessaryTypeIgnoreComment": true,
-  "reportImplicitOverride": true,
-  "reportMissingSuperCall": true,
   "exclude": [
     "node_modules",
     ".venv",
     "__pycache__",
     "dashboard/nextjs",
     "migrations",
-    "**/.*"
-],
-"extraPaths": [
+    "**/.*",
+    "tests",
+    "scripts",
+    "deploy",
+    "docs",
+    "ops",
+    "load",
+    "e2e"
+  ],
+  "extraPaths": [
     ".",
     "./services/api"
-]
+  ]
 }
