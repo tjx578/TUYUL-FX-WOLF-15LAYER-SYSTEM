@@ -9,7 +9,10 @@ const apiBase =
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
-  output: "standalone",
+  // standalone is required for Docker/Railway (self-hosted) but must NOT be
+  // used on Vercel — it breaks route-group resolution. Set the env var in
+  // Dockerfile / railway.toml only.
+  ...(process.env.NEXT_OUTPUT_STANDALONE === "true" && { output: "standalone" }),
   async redirects() {
     return [
       {

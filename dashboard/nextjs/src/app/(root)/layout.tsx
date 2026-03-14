@@ -10,6 +10,8 @@ import Sidebar from "@/components/layout/Sidebar";
 import RouteTransition from "@/components/layout/RouteTransition";
 import { requireVerifiedSession } from "@/lib/serverAuth";
 
+export const dynamic = "force-dynamic";
+
 export default async function RootLayout({ children }: PropsWithChildren) {
   const user = await requireVerifiedSession();
 
