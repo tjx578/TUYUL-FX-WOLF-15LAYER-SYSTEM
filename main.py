@@ -5,6 +5,7 @@ import sys
 import time
 import types
 from collections.abc import Callable, Coroutine
+from typing import Any
 
 import uvicorn
 from loguru import logger
@@ -28,19 +29,16 @@ from ingest.finnhub_market_news import FinnhubMarketNews
 from journal.journal_schema import ContextJournal, DecisionJournal, VerdictType
 from pipeline import WolfConstitutionalPipeline
 from storage.startup import init_persistent_storage, shutdown_persistent_storage
-from utils.timezone_utils import is_trading_session, now_utc  # pyright: ignore[reportUnknownVariableType]
+from utils.timezone_utils import is_trading_session, now_utc
 
 try:
     from engines.v11 import V11PipelineHook
+
     _v11_hook: V11PipelineHook | None = V11PipelineHook()
 except Exception:  # V11 optional — missing = skip
     _v11_hook = None
 
-PAIRS: list[str] = [
-    str(p["symbol"])
-    for p in CONFIG["pairs"]["pairs"]
-    if p.get("enabled", True)
-]
+PAIRS: list[str] = [str(p["symbol"]) for p in CONFIG["pairs"]["pairs"] if p.get("enabled", True)]
 
 _shutdown_event: asyncio.Event | None = None
 _pipeline = WolfConstitutionalPipeline()
@@ -58,6 +56,7 @@ _analysis_healthy = False
 
 # ── Candle seeding (warmup) ─────────────────────────────────────
 
+
 async def seed_candles_on_startup() -> None:
     """Seed candle history into LiveContextBus BEFORE the analysis loop starts.
 
@@ -68,9 +67,7 @@ async def seed_candles_on_startup() -> None:
     This ensures the pipeline warmup gate passes on the first analysis cycle.
     """
     context_mode = os.getenv("CONTEXT_MODE", "local").lower()
-    logger.info(
-        f"[SEED] Seeding candles on startup (mode={context_mode}, pairs={len(PAIRS)})"
-    )
+    logger.info(f"[SEED] Seeding candles on startup (mode={context_mode}, pairs={len(PAIRS)})")
 
     if context_mode == "redis":
         await _seed_from_redis()
@@ -87,9 +84,7 @@ async def seed_candles_on_startup() -> None:
         if status.get("ready"):
             ready_count += 1
         else:
-            logger.warning(
-                f"[SEED] {pair} warmup still insufficient after seeding: {status.get('missing')}"
-            )
+            logger.warning(f"[SEED] {pair} warmup still insufficient after seeding: {status.get('missing')}")
     logger.info(f"[SEED] Warmup ready: {ready_count}/{len(PAIRS)} pairs")
 
 
@@ -114,34 +109,34 @@ async def _seed_from_redis() -> None:
         from infrastructure.redis_url import get_redis_url  # noqa: PLC0415
 
         redis_url = get_redis_url()
-        redis_client: AsyncRedis = AsyncRedis.from_url(redis_url)  # type: ignore[no-untyped-call]
+        redis_client: AsyncRedis = AsyncRedis.from_url(redis_url)
         try:
             consumer = RedisConsumer(symbols=PAIRS, redis_client=redis_client)
             bus = LiveContextBus()
 
             # Primary gate: H1 is always seeded by ingest via REST warmup.
+            # H4 is aggregated from H1 in ingest — require minimum 5 bars.
             # M15 arrives from tick stream ~15 min after WebSocket connects
             # and must NOT be used as the startup gate.
-            _h1_warmup = {"H1": 1}
+            _h1_warmup = {"H1": 1, "H4": 5}
 
             # Secondary verification: higher TFs that L1 context depends on.
             # These don't block startup but emit explicit warnings.
-            _htf_verify = {"H4": 1, "D1": 1, "W1": 1, "MN": 1}
+            _htf_verify = {"D1": 1, "W1": 1, "MN": 1}
 
             for attempt in range(1, max_retries + 1):
                 await consumer.load_candle_history()
 
-                h1_count = sum(
-                    1 for pair in PAIRS
-                    if bus.check_warmup(pair, _h1_warmup).get("ready")
-                )
+                h1_count = sum(1 for pair in PAIRS if bus.check_warmup(pair, _h1_warmup).get("ready"))
 
                 if h1_count > 0:
                     logger.info(
                         "[SEED] Redis candle history loaded into LiveContextBus "
                         "(%d/%d pairs with H1 data, attempt %d). "
                         "M15 will arrive from tick stream after ~15 min.",
-                        h1_count, len(PAIRS), attempt,
+                        h1_count,
+                        len(PAIRS),
+                        attempt,
                     )
 
                     # Verify higher timeframes and warn if missing
@@ -153,16 +148,19 @@ async def _seed_from_redis() -> None:
                                 "[SEED] %s missing higher-TF data: %s — "
                                 "L1 context/regime analysis may be degraded "
                                 "until ingest delivers these timeframes.",
-                                pair, missing_tfs,
+                                pair,
+                                missing_tfs,
                             )
                     return
 
                 # No H1 data yet — ingest may still be seeding
                 if attempt < max_retries:
                     logger.warning(
-                        "[SEED] No candle data in Redis yet "
-                        "(H1=%d, attempt %d/%d) — waiting %.0fs",
-                        h1_count, attempt, max_retries, retry_delay,
+                        "[SEED] No candle data in Redis yet (H1=%d, attempt %d/%d) — waiting %.0fs",
+                        h1_count,
+                        attempt,
+                        max_retries,
+                        retry_delay,
                     )
                     await asyncio.sleep(retry_delay)
 
@@ -171,7 +169,8 @@ async def _seed_from_redis() -> None:
                 "[SEED] Redis still empty after %d retries (%.0fs total wait). "
                 "Engine will continue in DEGRADED mode — analysis will be blind "
                 "until live candles arrive.",
-                max_retries, max_retries * retry_delay,
+                max_retries,
+                max_retries * retry_delay,
             )
         finally:
             await redis_client.aclose()
@@ -182,6 +181,7 @@ async def _seed_from_redis() -> None:
 async def _seed_from_finnhub() -> None:
     """Fetch historical candles from Finnhub REST API into LiveContextBus."""
     from ingest.finnhub_key_manager import finnhub_keys  # noqa: PLC0415
+
     if not finnhub_keys.available:
         logger.warning("[SEED] No Finnhub API key — skipping REST warmup")
         return
@@ -190,23 +190,15 @@ async def _seed_from_finnhub() -> None:
 
         fetcher = FinnhubCandleFetcher()
         results = await fetcher.warmup_all()
-        total = sum(
-            len(candles)
-            for tfs in results.values()
-            for candles in tfs.values()
-        )
-        logger.info(
-            f"[SEED] Finnhub warmup complete: {len(results)} symbols, {total} total bars"
-        )
+        total = sum(len(candles) for tfs in results.values() for candles in tfs.values())
+        logger.info(f"[SEED] Finnhub warmup complete: {len(results)} symbols, {total} total bars")
 
         # M15 is excluded from warmup_all (normally built from WS ticks),
         # but the pipeline warmup gate requires M15 bars.  Fetch via REST
         # cold-start so the first analysis cycle isn't blocked.
         m15_seeded = await fetcher.cold_start_m15(bars=100)
         m15_total = sum(m15_seeded.values())
-        logger.info(
-            f"[SEED] M15 cold-start: {len(m15_seeded)} symbols, {m15_total} total bars"
-        )
+        logger.info(f"[SEED] M15 cold-start: {len(m15_seeded)} symbols, {m15_total} total bars")
     except Exception as exc:
         logger.error(f"[SEED] Failed to seed from Finnhub: {exc}")
 
@@ -243,9 +235,9 @@ _RESTART_COOLDOWN = float(os.getenv("RESTART_COOLDOWN_SEC", "5.0"))
 _PIPELINE_TIMEOUT_SEC = 30.0
 
 
-def _build_j1(pair: str, synthesis: dict[str, object]) -> ContextJournal:
-    layers: dict[str, object] = dict(synthesis.get("layers") or {})  # type: ignore[arg-type]
-    bias: dict[str, object] = dict(synthesis.get("bias") or {})  # type: ignore[arg-type]
+def _build_j1(pair: str, synthesis: dict[str, Any]) -> ContextJournal:
+    layers: dict[str, Any] = dict(synthesis.get("layers") or {})
+    bias: dict[str, Any] = dict(synthesis.get("bias") or {})
     session = is_trading_session()
     return ContextJournal(
         timestamp=now_utc(),
@@ -253,16 +245,16 @@ def _build_j1(pair: str, synthesis: dict[str, object]) -> ContextJournal:
         session=session,
         market_regime=str(synthesis.get("market_regime", "UNKNOWN")),
         news_lock=bool(synthesis.get("news_lock", False)),
-        context_coherence=float(layers.get("conf12", 0.5)),  # type: ignore[arg-type]
+        context_coherence=float(layers.get("conf12", 0.5)),
         mta_alignment=bool(synthesis.get("mta_alignment", True)),
         technical_bias=str(bias.get("technical", "NEUTRAL")),
     )
 
 
-def _build_j2(pair: str, synthesis: dict[str, object], l12: dict[str, object]) -> DecisionJournal:
-    scores: dict[str, object] = dict(synthesis.get("scores") or {})  # type: ignore[arg-type]
-    layers: dict[str, object] = dict(synthesis.get("layers") or {})  # type: ignore[arg-type]
-    gates: dict[str, object] = dict(l12.get("gates") or {})  # type: ignore[arg-type]
+def _build_j2(pair: str, synthesis: dict[str, Any], l12: dict[str, Any]) -> DecisionJournal:
+    scores: dict[str, Any] = dict(synthesis.get("scores") or {})
+    layers: dict[str, Any] = dict(synthesis.get("layers") or {})
+    gates: dict[str, Any] = dict(l12.get("gates") or {})
     setup_id = f"{pair}_{now_utc().strftime('%Y%m%d_%H%M%S')}"
 
     failed_gates: list[str] = [
@@ -287,20 +279,20 @@ def _build_j2(pair: str, synthesis: dict[str, object], l12: dict[str, object]) -
         timestamp=now_utc(),
         pair=pair,
         setup_id=setup_id,
-        wolf_30_score=int(scores.get("wolf_30_point", 0)),  # type: ignore[arg-type]
-        f_score=int(scores.get("f_score", 0)),  # type: ignore[arg-type]
-        t_score=int(scores.get("t_score", 0)),  # type: ignore[arg-type]
-        fta_score=int((scores.get("fta_score") or 0) * 10),  # type: ignore[operator]
-        exec_score=int(scores.get("exec_score", 0)),  # type: ignore[arg-type]
-        tii_sym=float(layers.get("L8_tii_sym", 0.0)),  # type: ignore[arg-type]
-        integrity_index=float(layers.get("L8_integrity_index", 0.0)),  # type: ignore[arg-type]
-        monte_carlo_win=float(layers.get("L7_monte_carlo_win", 0.0)),  # type: ignore[arg-type]
-        conf12=float(layers.get("conf12", 0.0)),  # type: ignore[arg-type]
+        wolf_30_score=int(scores.get("wolf_30_point", 0)),
+        f_score=int(scores.get("f_score", 0)),
+        t_score=int(scores.get("t_score", 0)),
+        fta_score=int((scores.get("fta_score") or 0) * 10),
+        exec_score=int(scores.get("exec_score", 0)),
+        tii_sym=float(layers.get("L8_tii_sym", 0.0)),
+        integrity_index=float(layers.get("L8_integrity_index", 0.0)),
+        monte_carlo_win=float(layers.get("L7_monte_carlo_win", 0.0)),
+        conf12=float(layers.get("conf12", 0.0)),
         verdict=verdict_type,
         confidence=str(l12.get("confidence", "LOW")),
         wolf_status=str(l12.get("wolf_status", "NO_HUNT")),
-        gates_passed=int(gates.get("passed", 0)),  # type: ignore[arg-type]
-        gates_total=int(gates.get("total", 9)),  # type: ignore[arg-type]
+        gates_passed=int(gates.get("passed", 0)),
+        gates_total=int(gates.get("total", 9)),
         failed_gates=failed_gates,
         violations=[],
         primary_rejection_reason=primary_rejection_reason,
@@ -309,6 +301,7 @@ def _build_j2(pair: str, synthesis: dict[str, object], l12: dict[str, object]) -
 
 def _validate_api_key() -> bool:
     from ingest.finnhub_key_manager import finnhub_keys  # noqa: PLC0415
+
     if not finnhub_keys.available:
         logger.warning("WARNING: FINNHUB_API_KEY not configured; running in DRY RUN mode.")
         return False
@@ -330,14 +323,11 @@ async def run_ingest_services(has_api_key: bool, redis: AsyncRedis) -> None:
 
     # Create CandleBuilder instances for each enabled pair at default timeframe
     default_timeframe = CONFIG["settings"].get("default_timeframe", "1h")
-    candle_builders = [
-        CandleBuilder(symbol=pair, timeframe=default_timeframe)
-        for pair in PAIRS
-    ]
+    candle_builders = [CandleBuilder(symbol=pair, timeframe=default_timeframe) for pair in PAIRS]
 
     logger.info("Starting ingest services: WebSocket, CalendarNews, MarketNews, CandleBuilder")
     try:
-        cb_coros: list[Coroutine[object, object, object]] = [cb.run() for cb in candle_builders]  # pyright: ignore[reportAttributeAccessIssue, reportUnknownMemberType]
+        cb_coros: list[Coroutine[object, object, object]] = [cb.run() for cb in candle_builders]  # pyright: ignore[reportAttributeAccessIssue]
         await asyncio.gather(
             ws_feed.run(),
             news_feed.run(),
@@ -366,17 +356,17 @@ async def _sanitize_redis_keys(redis_client: AsyncRedis) -> None:
     """
     # pattern → expected Redis type
     keys_expected: dict[str, str] = {
-        "wolf15:tick:*":            "stream",   # bridge XADD
-        "wolf15:latest_tick:*":     "hash",     # bridge HSET
-        "wolf15:candle:*":          "hash",     # bridge HSET (latest candle)
-        "wolf15:candle_history:*":  "list",     # bridge RPUSH / consumer LRANGE
-        "candle_history:*":         "list",     # legacy consumer LRANGE
+        "wolf15:tick:*": "stream",  # bridge XADD
+        "wolf15:latest_tick:*": "hash",  # bridge HSET
+        "wolf15:candle:*": "hash",  # bridge HSET (latest candle)
+        "wolf15:candle_history:*": "list",  # bridge RPUSH / consumer LRANGE
+        "candle_history:*": "list",  # legacy consumer LRANGE
     }
 
     total_deleted = 0
     for pattern, expected_type in keys_expected.items():
         try:
-            keys: list[bytes | str] = await redis_client.keys(pattern)  # type: ignore[assignment]
+            keys: list[bytes | str] = await redis_client.keys(pattern)
         except Exception as exc:
             logger.warning("[Redis-sanitize] KEYS {} failed: {}", pattern, exc)
             continue
@@ -396,7 +386,9 @@ async def _sanitize_redis_keys(redis_client: AsyncRedis) -> None:
 
             logger.warning(
                 "[Redis-sanitize] Key '{}' type mismatch: expected={}, actual={} → deleting",
-                key_str, expected_type, actual_type,
+                key_str,
+                expected_type,
+                actual_type,
             )
             try:
                 await redis_client.delete(key_str)
@@ -421,7 +413,7 @@ async def run_redis_consumer() -> None:
     from infrastructure.redis_url import get_redis_url  # noqa: PLC0415
 
     redis_url = get_redis_url()
-    redis_client: AsyncRedis = AsyncRedis.from_url(redis_url)  # type: ignore[no-untyped-call]
+    redis_client: AsyncRedis = AsyncRedis.from_url(redis_url)
 
     # Clean keys with wrong type before consumer touches them
     await _sanitize_redis_keys(redis_client)
@@ -431,7 +423,7 @@ async def run_redis_consumer() -> None:
     await redis_consumer.run()
 
 
-async def _analyze_pair(pair: str) -> dict[str, object] | None:
+async def _analyze_pair(pair: str) -> dict[str, Any] | None:
     """Run pipeline for a single pair with timeout + thread offload."""
     with _engine_tracer.start_as_current_span("pipeline_full") as span:
         span.set_attribute("pair", pair)
@@ -441,11 +433,9 @@ async def _analyze_pair(pair: str) -> dict[str, object] | None:
             from context.live_context_bus import LiveContextBus  # noqa: PLC0415
 
             _bus = LiveContextBus()
-            _latest: dict[str, object] | None = _bus.get_latest_tick(pair)
+            _latest: dict[str, Any] | None = _bus.get_latest_tick(pair)
             _tick_ts: float | None = (
-                float(_latest.get("local_ts") or _latest.get("timestamp") or 0.0)  # type: ignore[arg-type]
-                if _latest
-                else None
+                float(_latest.get("local_ts") or _latest.get("timestamp") or 0.0) if _latest else None
             )
             if _tick_ts:
                 span.set_attribute("tick.timestamp", _tick_ts)
@@ -458,8 +448,8 @@ async def _analyze_pair(pair: str) -> dict[str, object] | None:
 
             # ── Journal J1 (context) and J2 (decision) after each pipeline run ──
             if result:
-                synthesis: dict[str, object] = dict(result.get("synthesis") or {})
-                l12: dict[str, object] = dict(result.get("l12") or {})
+                synthesis: dict[str, Any] = dict(result.get("synthesis") or {})
+                l12: dict[str, Any] = dict(result.get("l12") or {})
                 span.set_attribute("l12.verdict", str(l12.get("verdict", "")))
                 span.set_attribute("l12.confidence", str(l12.get("confidence", "")))
                 try:
@@ -477,9 +467,7 @@ async def _analyze_pair(pair: str) -> dict[str, object] | None:
             return result
         except TimeoutError as exc:
             span.record_exception(exc)
-            logger.error(
-                f"[Pipeline] TIMEOUT after {_PIPELINE_TIMEOUT_SEC}s for {pair} — skipping"
-            )
+            logger.error(f"[Pipeline] TIMEOUT after {_PIPELINE_TIMEOUT_SEC}s for {pair} — skipping")
             return None
         except Exception as exc:
             import traceback
@@ -507,17 +495,16 @@ async def analysis_loop() -> None:
         0.0,
         min(1.0, float(os.getenv("ANALYSIS_RQI_RETRIGGER_THRESHOLD", "0.72"))),
     )
-    rqi_force_stale_sec = float(
-        os.getenv("ANALYSIS_RQI_FORCE_STALE_SEC", str(max(1, loop_interval * 3)))
-    )
+    rqi_force_stale_sec = float(os.getenv("ANALYSIS_RQI_FORCE_STALE_SEC", str(max(1, loop_interval * 3))))
     logger.info(f"Analysis loop started (event-driven, fallback interval={loop_interval}s)")
 
     # ── asyncio.Event used as a lightweight signal ──────────────────
     _candle_signal = asyncio.Event()
     _pending_symbols: set[str] = set()
+
     def _on_candle_closed(event: Event) -> None:
         """Non-async callback – just record the symbol and wake the loop."""
-        data: dict[str, object] = dict(event.data)  # type: ignore[arg-type]
+        data: dict[str, object] = dict(event.data)
         symbol = data.get("symbol")
         if isinstance(symbol, str) and symbol:
             _pending_symbols.add(symbol)
@@ -613,9 +600,9 @@ async def analysis_loop() -> None:
 
             _symbol_last_analysis_ts[pair] = time.time()
             if isinstance(result, dict):
-                synthesis: dict[str, object] = dict(result.get("synthesis") or {})  # type: ignore[arg-type]
-                layers: dict[str, object] = dict(synthesis.get("layers") or {})  # type: ignore[arg-type]
-                discipline: dict[str, object] = dict(synthesis.get("wolf_discipline") or {})  # type: ignore[arg-type]
+                synthesis: dict[str, Any] = dict(result.get("synthesis") or {})
+                layers: dict[str, Any] = dict(synthesis.get("layers") or {})
+                discipline: dict[str, Any] = dict(synthesis.get("wolf_discipline") or {})
 
                 coherence = _to_float(layers.get("L2_reflex_coherence"), 0.0)
                 emotion_delta = _to_float(discipline.get("polarity_deviation"), 0.0)
@@ -659,14 +646,9 @@ async def _supervised_task(
             return
         except Exception as exc:
             restarts += 1
-            logger.error(
-                f"[SUPERVISOR] Task '{name}' crashed: {exc} "
-                f"(restart {restarts}/{max_restarts})"
-            )
+            logger.error(f"[SUPERVISOR] Task '{name}' crashed: {exc} (restart {restarts}/{max_restarts})")
             if restarts > max_restarts:
-                logger.critical(
-                    f"[SUPERVISOR] Task '{name}' exceeded max restarts — giving up"
-                )
+                logger.critical(f"[SUPERVISOR] Task '{name}' exceeded max restarts — giving up")
                 _health_probe.set_alive(False)
                 _health_probe.set_detail("dead_reason", f"{name}_crash_limit")
                 return
@@ -751,8 +733,9 @@ async def main() -> None:
         # ── Local dev: everything in one process (supervised) ───────
         if RUN_MODE in ("all", "ingest-only"):
             from infrastructure.redis_url import get_redis_url
+
             redis_url = get_redis_url()
-            redis_client: AsyncRedis = AsyncRedis.from_url(redis_url)  # type: ignore[no-untyped-call]
+            redis_client: AsyncRedis = AsyncRedis.from_url(redis_url)
             tasks.append(
                 asyncio.create_task(
                     _supervised_task(

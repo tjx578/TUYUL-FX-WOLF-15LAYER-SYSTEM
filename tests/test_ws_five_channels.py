@@ -18,6 +18,7 @@ Strategy:
   - Use TestClient.websocket_connect() for WS connection assertions.
   - CandleAggregator is tested standalone (unit) without WS overhead.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -30,6 +31,7 @@ import pytest
 try:
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
+
     has_fastapi: bool = True
 except ImportError:
     has_fastapi = False
@@ -46,6 +48,7 @@ pytestmark = pytest.mark.skipif(
 # ──────────────────────────────────────────────────────────────────────────────
 # App factory
 # ──────────────────────────────────────────────────────────────────────────────
+
 
 def _make_app() -> Any:
     """Create a minimal FastAPI app with the real ws_router and mocked auth."""
@@ -64,18 +67,18 @@ _FAKE_USER = {"sub": "test-user", "role": "trader"}
 
 def _approx(expected: float, *, rel: float | None = None, abs_tol: float | None = None) -> Any:
     if rel is not None and abs_tol is not None:
-        return pytest.approx(expected, rel=rel, abs=abs_tol)  # pyright: ignore[reportUnknownMemberType]
+        return pytest.approx(expected, rel=rel, abs=abs_tol)
     if rel is not None:
-        return pytest.approx(expected, rel=rel)  # pyright: ignore[reportUnknownMemberType]
+        return pytest.approx(expected, rel=rel)
     if abs_tol is not None:
-        return pytest.approx(expected, abs=abs_tol)  # pyright: ignore[reportUnknownMemberType]
-    return pytest.approx(expected)  # pyright: ignore[reportUnknownMemberType]
+        return pytest.approx(expected, abs=abs_tol)
+    return pytest.approx(expected)
 
 
 def _compute_drawdown_proxy(equity: float, peak: float) -> float:
     from api import ws_routes as ws_routes_module  # noqa: PLC0415
 
-    fn = ws_routes_module._compute_drawdown  # pyright: ignore[reportPrivateUsage]
+    fn = ws_routes_module._compute_drawdown
     return float(fn(equity, peak))
 
 
@@ -85,12 +88,14 @@ def _trade_model_stub(trade_id: str = "T001", status: str = "PENDING") -> MagicM
     t.trade_id = trade_id
     t.status = MagicMock()
     t.status.value = status
-    t.model_dump = MagicMock(return_value={
-        "trade_id": trade_id,
-        "symbol": "EURUSD",
-        "status": status,
-        "direction": "BUY",
-    })
+    t.model_dump = MagicMock(
+        return_value={
+            "trade_id": trade_id,
+            "symbol": "EURUSD",
+            "status": status,
+            "direction": "BUY",
+        }
+    )
     return t
 
 
@@ -98,12 +103,14 @@ def _trade_model_stub(trade_id: str = "T001", status: str = "PENDING") -> MagicM
 # CandleAggregator unit tests (no WS overhead)
 # ──────────────────────────────────────────────────────────────────────────────
 
+
 class TestCandleAggregator:
     """Test CandleAggregator standalone — not through WebSocket."""
 
     @pytest.fixture
     def agg(self) -> Any:
         from api.ws_routes import CandleAggregator  # noqa: PLC0415
+
         return CandleAggregator()
 
     def test_first_tick_opens_bars(self, agg: Any):
@@ -133,14 +140,12 @@ class TestCandleAggregator:
     def test_bar_rolls_over_on_timeframe_boundary(self, agg: Any):
         """Tick crossing M1 boundary must close old bar and open a new one."""
         ts_bar1 = 1_700_000_000.0  # start of some minute
-        ts_bar2 = ts_bar1 + 61     # next minute
+        ts_bar2 = ts_bar1 + 61  # next minute
 
         agg.ingest_tick("EURUSD", bid=1.085, ask=1.0851, ts=ts_bar1)
         completed = agg.ingest_tick("EURUSD", bid=1.086, ask=1.0861, ts=ts_bar2)
 
-        assert any(c["timeframe"] == "M1" for c in completed), (
-            "Expected a closed M1 bar on timeframe rollover"
-        )
+        assert any(c["timeframe"] == "M1" for c in completed), "Expected a closed M1 bar on timeframe rollover"
 
     def test_multi_symbol_no_cross_contamination(self, agg: Any):
         """Ticks for different symbols must not pollute each other's bars."""
@@ -180,12 +185,14 @@ class TestCandleAggregator:
 # ConnectionManager unit tests
 # ──────────────────────────────────────────────────────────────────────────────
 
+
 class TestConnectionManager:
     """Test ConnectionManager in isolation with AsyncMock WebSockets."""
 
     @pytest.fixture
     def manager(self) -> Any:
         from api.ws_routes import ConnectionManager  # noqa: PLC0415
+
         return ConnectionManager(name="test", buffer_size=10)
 
     def _make_mock_ws(self, client_id: str = "ws-1") -> MagicMock:
@@ -291,6 +298,7 @@ class TestConnectionManager:
 # /ws/prices  channel
 # ──────────────────────────────────────────────────────────────────────────────
 
+
 @pytest.mark.ws
 class TestWsPricesChannel:
     """WebSocket /ws/prices endpoint tests."""
@@ -314,7 +322,7 @@ class TestWsPricesChannel:
             patch("api.ws_routes._price_feed", new=mock_feed),
             patch("api.ws_routes._price_event", new=asyncio.Event()),
         ):
-            yield TestClient(app) # pyright: ignore[reportOptionalCall]
+            yield TestClient(app)  # pyright: ignore[reportOptionalCall]
 
     def test_price_channel_receives_snapshot(self, client: Any):
         """First message on /ws/prices must be event_type='price.snapshot'."""
@@ -341,6 +349,7 @@ class TestWsPricesChannel:
 # /ws/trades  channel
 # ──────────────────────────────────────────────────────────────────────────────
 
+
 @pytest.mark.ws
 class TestWsTradesChannel:
     """WebSocket /ws/trades endpoint tests."""
@@ -358,7 +367,7 @@ class TestWsTradesChannel:
             patch("api.ws_routes.ws_auth_guard", new=AsyncMock(return_value=_FAKE_USER)),
             patch("api.ws_routes._trade_ledger", new=mock_ledger),
         ):
-            yield TestClient(app) # pyright: ignore[reportOptionalCall]
+            yield TestClient(app)  # pyright: ignore[reportOptionalCall]
 
     def test_trades_channel_receives_snapshot(self, client: Any):
         """First message on /ws/trades must be event_type='trade.snapshot'."""
@@ -385,6 +394,7 @@ class TestWsTradesChannel:
 # /ws/candles  channel
 # ──────────────────────────────────────────────────────────────────────────────
 
+
 @pytest.mark.ws
 class TestWsCandlesChannel:
     """WebSocket /ws/candles endpoint tests."""
@@ -405,7 +415,7 @@ class TestWsCandlesChannel:
             patch("api.ws_routes.ws_auth_guard", new=AsyncMock(return_value=_FAKE_USER)),
             patch("api.ws_routes._candle_agg", new=agg),
         ):
-            yield TestClient(app) # pyright: ignore[reportOptionalCall]
+            yield TestClient(app)  # pyright: ignore[reportOptionalCall]
 
     def test_candles_channel_receives_snapshot(self, client_with_bars: Any):
         """First message on /ws/candles must be event_type='candle.snapshot'."""
@@ -445,6 +455,7 @@ class TestWsCandlesChannel:
 # /ws/risk  channel
 # ──────────────────────────────────────────────────────────────────────────────
 
+
 @pytest.mark.ws
 class TestWsRiskChannel:
     """WebSocket /ws/risk endpoint tests."""
@@ -457,7 +468,7 @@ class TestWsRiskChannel:
             patch("api.ws_routes._get_risk_manager", return_value=None),
             patch("api.ws_routes._get_circuit_breaker", return_value=None),
         ):
-            yield TestClient(app) # pyright: ignore[reportOptionalCall]
+            yield TestClient(app)  # pyright: ignore[reportOptionalCall]
 
     def test_risk_channel_receives_first_message(self, client: Any):
         """First message on /ws/risk must be event_type='risk.state'."""
@@ -494,6 +505,7 @@ class TestWsRiskChannel:
 # /ws/equity  channel
 # ──────────────────────────────────────────────────────────────────────────────
 
+
 @pytest.mark.ws
 class TestWsEquityChannel:
     """WebSocket /ws/equity endpoint tests."""
@@ -512,7 +524,7 @@ class TestWsEquityChannel:
             patch("api.ws_routes.ws_auth_guard", new=AsyncMock(return_value=_FAKE_USER)),
             patch("dashboard.account_manager.AccountManager", return_value=mock_am),
         ):
-            yield TestClient(app) # pyright: ignore[reportOptionalCall]
+            yield TestClient(app)  # pyright: ignore[reportOptionalCall]
 
     @pytest.fixture
     def client_with_account(self):
@@ -570,6 +582,7 @@ class TestWsEquityChannel:
 # /ws/verdict channel
 # ──────────────────────────────────────────────────────────────────────────────
 
+
 @pytest.mark.ws
 class TestWsVerdictChannel:
     """WebSocket /ws/verdict endpoint tests."""
@@ -618,7 +631,7 @@ class TestWsVerdictChannel:
             patch("api.ws_routes.get_verdict_async", new=AsyncMock(side_effect=_fake_get_verdict)),
             patch("api.ws_routes.load_pairs", return_value=[{"symbol": "EURUSD", "enabled": True}]),
         ):
-            yield TestClient(app) # pyright: ignore[reportOptionalCall]
+            yield TestClient(app)  # pyright: ignore[reportOptionalCall]
 
     def test_verdict_channel_receives_snapshot(self, client: Any):
         """First message on /ws/verdict must be event_type='verdict.snapshot'."""
@@ -646,6 +659,7 @@ class TestWsVerdictChannel:
 # ──────────────────────────────────────────────────────────────────────────────
 # /ws/signals channel
 # ──────────────────────────────────────────────────────────────────────────────
+
 
 @pytest.mark.ws
 class TestWsSignalsChannel:
@@ -693,7 +707,7 @@ class TestWsSignalsChannel:
             patch("api.ws_routes.redis_client.pubsub", return_value=_FakePubSub()),
             patch("api.ws_routes._signal_service", new=mock_signal_service),
         ):
-            yield TestClient(app) # pyright: ignore[reportOptionalCall]
+            yield TestClient(app)  # pyright: ignore[reportOptionalCall]
 
     def test_signals_channel_receives_snapshot(self, client: Any):
         with client.websocket_connect("/ws/signals?token=testtoken") as ws:
@@ -717,6 +731,7 @@ class TestWsSignalsChannel:
 # ──────────────────────────────────────────────────────────────────────────────
 # /ws/pipeline channel
 # ──────────────────────────────────────────────────────────────────────────────
+
 
 @pytest.mark.ws
 class TestWsPipelineChannel:
@@ -778,7 +793,7 @@ class TestWsPipelineChannel:
             patch("api.ws_routes.get_verdict_async", new=AsyncMock(side_effect=_fake_get_verdict)),
             patch("api.ws_routes.load_pairs", return_value=[{"symbol": "EURUSD", "enabled": True}]),
         ):
-            yield TestClient(app) # pyright: ignore[reportOptionalCall]
+            yield TestClient(app)  # pyright: ignore[reportOptionalCall]
 
     def test_pipeline_channel_receives_snapshot(self, client: Any):
         with client.websocket_connect("/ws/pipeline?token=testtoken") as ws:
@@ -801,12 +816,15 @@ class TestWsPipelineChannel:
             assert update["event_type"] == "pipeline.update"
             assert update["payload"]["pair"] == "EURUSD"
             assert update["payload"]["pipeline"]["pair"] == "EURUSD"
-            assert update["payload"]["pipeline"]["observability"]["signal_conditioning"]["microstructure_quality_score"] == _approx(0.82)
+            assert update["payload"]["pipeline"]["observability"]["signal_conditioning"][
+                "microstructure_quality_score"
+            ] == _approx(0.82)
 
 
 # ──────────────────────────────────────────────────────────────────────────────
 # _compute_drawdown helper
 # ──────────────────────────────────────────────────────────────────────────────
+
 
 class TestComputeDrawdown:
     """Unit tests for the equity channel's drawdown helper."""
@@ -830,6 +848,7 @@ class TestComputeDrawdown:
 # ──────────────────────────────────────────────────────────────────────────────
 # Auth rejection across all channels
 # ──────────────────────────────────────────────────────────────────────────────
+
 
 class TestWsAuthRejection:
     """
@@ -873,13 +892,9 @@ class TestWsAuthRejection:
 
         with (
             patch("api.ws_routes.ws_auth_guard", new=AsyncMock(return_value={"sub": "user"})),
-            patch("asyncio.create_task", return_value=MagicMock(
-                done=lambda: True, cancel=lambda: None
-            )),
+            patch("asyncio.create_task", return_value=MagicMock(done=lambda: True, cancel=lambda: None)),
         ):
             result = await mgr.connect(ws)
 
         assert result is True
         assert ws in mgr.active_connections
-
-

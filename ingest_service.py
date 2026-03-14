@@ -17,6 +17,7 @@ from analysis.macro.macro_regime_engine import MacroRegimeEngine
 from config_loader import CONFIG
 from context.system_state import SystemState, SystemStateManager
 from core.health_probe import HealthProbe
+from infrastructure.circuit_breaker import CircuitBreaker
 from ingest.calendar_news import CalendarNewsIngestor
 from ingest.candle_builder import CandleBuilder, Timeframe
 from ingest.dependencies import create_finnhub_ws
@@ -34,16 +35,34 @@ BASE_DELAY = 1.0
 # ── Health probe for container orchestration ──────────────────────
 # Railway injects PORT for its proxy/healthcheck. Prefer INGEST_HEALTH_PORT,
 # then fall back to PORT (Railway-injected), then default 8082.
-_INGEST_HEALTH_PORT = int(
-    os.getenv("INGEST_HEALTH_PORT") or os.getenv("PORT", "8082")
-)
+_INGEST_HEALTH_PORT = int(os.getenv("INGEST_HEALTH_PORT") or os.getenv("PORT", "8082"))
 _health_probe = HealthProbe(port=_INGEST_HEALTH_PORT, service_name="ingest")
 _ingest_ready = False
+# Degraded mode: warmup failed but stale Redis cache is available.
+# The service stays alive and serves cached data rather than crashing.
+_ingest_degraded = False
+
+# Circuit breaker for the warmup / provider chain.
+# Configurable via WOLF15_INGEST_CB_* env vars (ingest-specific overrides).
+# Falls back to WOLF15_CB_* generic defaults when WOLF15_INGEST_CB_* are absent.
+_warmup_circuit = CircuitBreaker(
+    name="ingest_warmup",
+    failure_threshold=int(os.getenv("WOLF15_INGEST_CB_FAILURE_THRESHOLD", "3")),
+    recovery_timeout=float(os.getenv("WOLF15_INGEST_CB_RECOVERY_TIMEOUT", "120")),
+    half_open_success_threshold=int(os.getenv("WOLF15_INGEST_CB_HALF_OPEN_ATTEMPTS", "1")),
+)
 
 
 def _ingest_readiness() -> bool:
-    """Readiness gate: True once Redis is connected and warmup is done."""
-    return _ingest_ready
+    """Readiness gate.
+
+    Returns ``True`` when:
+    - (a) Normal operation: Redis connected + warmup complete (``_ingest_ready``), OR
+    - (b) Degraded mode: warmup failed but stale Redis cache is available
+          (``_ingest_degraded``), keeping the healthcheck passing so the
+          container is not killed and can serve cached data.
+    """
+    return _ingest_ready or _ingest_degraded
 
 
 _health_probe.set_readiness_check(_ingest_readiness)
@@ -58,6 +77,7 @@ class RedisClient(Protocol):
 
 def _validate_api_key() -> bool:
     from ingest.finnhub_key_manager import finnhub_keys  # noqa: PLC0415
+
     if not finnhub_keys.available:
         logger.warning("WARNING: FINNHUB_API_KEY not configured; ingest running in DRY RUN mode.")
         return False
@@ -65,17 +85,42 @@ def _validate_api_key() -> bool:
     return True
 
 
+async def _has_stale_cache(redis: RedisClient) -> bool:
+    """Return ``True`` if Redis holds any previously seeded candle history.
+
+    Scans for keys matching ``wolf15:candle_history:*`` using ``SCAN`` to avoid
+    blocking the server.  A single key with at least one entry is sufficient to
+    declare stale-cache availability.
+    """
+    try:
+        cursor = 0
+        pattern = "wolf15:candle_history:*"
+        while True:
+            cursor, keys = await redis.scan(cursor, match=pattern, count=20)  # type: ignore[attr-defined]
+            for key in keys:
+                length: int = await redis.llen(key)  # type: ignore[attr-defined]
+                if length > 0:
+                    logger.info(
+                        "[StaleCache] Found stale candle cache: {} ({} bars)",
+                        key,
+                        length,
+                    )
+                    return True
+            if cursor == 0:
+                break
+    except Exception as exc:
+        logger.warning("[StaleCache] Cache scan failed: {}", exc)
+    return False
+
+
 def _get_enabled_symbols() -> list[str]:
     from typing import cast
+
     raw: Any = CONFIG.get("pairs", {}).get("pairs", [])
     if not isinstance(raw, list):
         return []
     pairs: list[dict[str, Any]] = cast(list[dict[str, Any]], raw)
-    return [
-        p["symbol"]
-        for p in pairs
-        if isinstance(p, dict) and p.get("enabled") # pyright: ignore[reportUnnecessaryIsInstance]
-    ]
+    return [p["symbol"] for p in pairs if isinstance(p, dict) and p.get("enabled")]
 
 
 def _build_redis_client() -> RedisClient:
@@ -161,18 +206,13 @@ async def _connect_redis_with_retry() -> RedisClient:
 
 def _set_state_from_warmup(system_state: SystemStateManager) -> None:
     warmup_report = system_state.get_warmup_report()
-    incomplete_count = sum(
-        1 for status in warmup_report.values() if status.status.value != "COMPLETE"
-    )
+    incomplete_count = sum(1 for status in warmup_report.values() if status.status.value != "COMPLETE")
     if incomplete_count == 0:
         system_state.set_state(SystemState.READY)
         logger.info("Warmup complete - system state: READY")
         return
     system_state.set_state(SystemState.DEGRADED)
-    logger.warning(
-        f"Warmup complete with {incomplete_count} incomplete symbols - "
-        "system state: DEGRADED"
-    )
+    logger.warning(f"Warmup complete with {incomplete_count} incomplete symbols - system state: DEGRADED")
 
 
 def _update_macro_regime(enabled_symbols: list[str]) -> None:
@@ -196,7 +236,20 @@ async def _run_warmup(
 
     Returns the warmup results dict (symbol -> timeframe -> candles) so the
     caller can seed Redis for cross-container consumption.
+
+    When the circuit breaker is OPEN (repeated failures) the warmup is skipped
+    entirely to avoid hammering a 403-returning provider.  The caller should
+    check the circuit state and use the stale cache instead.
     """
+    if _warmup_circuit.is_open():
+        logger.warning(
+            "[Warmup] Circuit breaker OPEN (failure_count={}) — skipping warmup, "
+            "will use stale cache fallback",
+            _warmup_circuit.failure_count,
+        )
+        system_state.set_state(SystemState.DEGRADED)
+        return {}
+
     logger.info("Starting warmup: fetching historical candles from Finnhub REST API")
     last_exc: Exception | None = None
     for attempt in range(1, MAX_RETRIES + 1):
@@ -204,21 +257,34 @@ async def _run_warmup(
             fetcher = FinnhubCandleFetcher()
             warmup_results = await fetcher.warmup_all()
 
-            system_state.validate_warmup(warmup_results) # pyright: ignore[reportUnknownMemberType]
+            system_state.validate_warmup(warmup_results)
             _update_macro_regime(enabled_symbols)
             _set_state_from_warmup(system_state)
+            _warmup_circuit.record_success()
             return warmup_results  # success — relay results for Redis seeding
         except Exception as exc:
             last_exc = exc
+            _warmup_circuit.record_failure()
             delay = BASE_DELAY * (2 ** (attempt - 1))
             logger.warning(
-                f"Warmup attempt {attempt}/{MAX_RETRIES} failed: {exc}  "
-                f"retrying in {delay:.1f}s"
+                "[Warmup] Attempt {}/{} failed (circuit={}): {}  retrying in {:.1f}s",
+                attempt,
+                MAX_RETRIES,
+                _warmup_circuit.state.value,
+                exc,
+                delay,
             )
             _health_probe.set_detail("warmup_retry", f"{attempt}/{MAX_RETRIES}")
+            _health_probe.set_detail("circuit_state", _warmup_circuit.state.value)
+            if _warmup_circuit.is_open():
+                logger.warning(
+                    "[Warmup] Circuit OPEN after {} failure(s) — aborting retry loop",
+                    _warmup_circuit.failure_count,
+                )
+                break
             await asyncio.sleep(delay)
 
-    logger.error(f"Warmup failed after {MAX_RETRIES} attempts (non-fatal): {last_exc}")
+    logger.error("[Warmup] Failed after {} attempts (non-fatal): {}", MAX_RETRIES, last_exc)
     system_state.set_state(SystemState.DEGRADED)
     return {}  # empty — no candles to seed
 
@@ -230,9 +296,9 @@ class Stoppable(Protocol):
 
 
 # ── Redis candle history seeding ──────────────────────────────────
-# Matches the key format and TTL used by RedisContextBridge.write_candle().
+# Matches the key format used by RedisContextBridge.write_candle().
+# Data is persistent in Redis volume — no TTL needed.
 _SEED_HISTORY_MAXLEN = 300
-_SEED_HISTORY_TTL = 6 * 3600  # 6 h
 
 
 async def _seed_redis_candle_history(
@@ -263,17 +329,15 @@ async def _seed_redis_candle_history(
             with contextlib.suppress(Exception):
                 existing: int = await redis.llen(key)  # type: ignore[attr-defined]
                 if existing >= len(candles):
-                    logger.debug(
-                        "[Seed] %s already has %d bars, skip", key, existing
-                    )
+                    logger.debug("[Seed] %s already has %d bars, skip", key, existing)
                     continue
 
             try:
                 pipe = redis.pipeline()  # type: ignore[attr-defined]
                 for candle in candles:
                     candle_json = orjson.dumps(candle).decode("utf-8")
-                    pipe.rpush(key, candle_json)  # type: ignore[union-attr]
-                await pipe.execute()  # type: ignore[union-attr]  # type: ignore[reportUnknownMemberType]
+                    pipe.rpush(key, candle_json)
+                await pipe.execute()
                 seeded += 1
                 logger.info("[Seed] {}: {} bars written", key, len(candles))
             except Exception as exc:
@@ -282,9 +346,7 @@ async def _seed_redis_candle_history(
     logger.info("[Seed] Completed: {} symbol/tf combos seeded to Redis", seeded)
 
 
-async def _safe_stop(
-    name: str, obj: Any, cleanup_errors: list[tuple[str, Exception]]
-) -> None:
+async def _safe_stop(name: str, obj: Any, cleanup_errors: list[tuple[str, Exception]]) -> None:
     stop = getattr(obj, "stop", None)
     if stop is None:
         return
@@ -321,11 +383,33 @@ async def run_ingest_services(has_api_key: bool) -> None:
         # without waiting for live candle completion (fixes race condition).
         await _seed_redis_candle_history(redis, warmup_results)
 
+        # ── Degraded-mode stale cache gate ────────────────────────────────
+        # When warmup produced no results (Finnhub/providers all 403 or timed
+        # out), check whether Redis already holds candle data from a prior run.
+        # If it does, mark the service as "degraded-ready" so the healthcheck
+        # passes and the container stays alive to serve cached data.
+        global _ingest_ready, _ingest_degraded
+        if not warmup_results:
+            if await _has_stale_cache(redis):
+                _ingest_degraded = True
+                _health_probe.set_detail("warmup", "degraded_stale_cache")
+                _health_probe.set_detail("circuit_state", _warmup_circuit.state.value)
+                logger.warning(
+                    "[Ingest] Warmup failed but stale cache found in Redis — "
+                    "service running in DEGRADED mode (readiness=True, circuit={})",
+                    _warmup_circuit.state.value,
+                )
+            else:
+                _health_probe.set_detail("warmup", "failed_no_cache")
+                logger.error(
+                    "[Ingest] Warmup failed and no stale cache available — "
+                    "service will remain NOT READY (circuit={})",
+                    _warmup_circuit.state.value,
+                )
+        # ── End degraded-mode gate ────────────────────────────────────────
+
         # Build candle builders as dict for O(1) lookup
-        candle_builders = {
-            symbol: CandleBuilder(symbol=symbol, timeframe=Timeframe.M15)
-            for symbol in enabled_symbols
-        }
+        candle_builders = {symbol: CandleBuilder(symbol=symbol, timeframe=Timeframe.M15) for symbol in enabled_symbols}
 
         # Tick callback: route to CandleBuilder per symbol
         def _on_tick(symbol: str, price: float, ts: datetime, volume: float) -> None:
@@ -347,7 +431,6 @@ async def run_ingest_services(has_api_key: bool) -> None:
         h1_refresh = H1RefreshScheduler()
 
         # Mark ingest as ready after warmup + connection
-        global _ingest_ready
         _ingest_ready = True
         _health_probe.set_detail("warmup", "complete")
         _health_probe.set_detail("redis", "connected")

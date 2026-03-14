@@ -64,11 +64,13 @@ def _init_provider_once(service_name: str) -> None:
     deployment_environment = os.getenv("OTEL_DEPLOYMENT_ENV", os.getenv("APP_ENV", "unknown"))
 
     try:
-        resource = Resource(attributes={
-            "service.name": service_name,
-            "service.version": service_version,
-            "deployment.environment": deployment_environment,
-        })
+        resource = Resource(
+            attributes={
+                "service.name": service_name,
+                "service.version": service_version,
+                "deployment.environment": deployment_environment,
+            }
+        )
         provider = TracerProvider(resource=resource)
         # Export is opt-in: if endpoint is unset, spans remain local/no-op export.
         if endpoint:
@@ -130,7 +132,7 @@ def instrument_redis() -> None:
     try:
         from opentelemetry.instrumentation.redis import RedisInstrumentor
 
-        RedisInstrumentor().instrument()  # pyright: ignore[reportUnknownMemberType]
+        RedisInstrumentor().instrument()
         _redis_instrumented = True
     except Exception:
         return
