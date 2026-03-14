@@ -38,11 +38,24 @@ export default function LoginPage() {
       try {
         // Use relative /api/auth/session — Next.js rewrite proxies this to the
         // backend without requiring NEXT_PUBLIC_* env vars in the browser bundle.
+        const requestHeaders = {
+          authorization: `Bearer ${trimmedKey}`,
+          origin: window.location.origin,
+          cookie: document.cookie || "(none)",
+        };
+        console.log("[v0] LOGIN request headers →", JSON.stringify(requestHeaders, null, 2));
+
         const res = await fetch(`/api/auth/session`, {
           method: "GET",
-          headers: { authorization: `Bearer ${trimmedKey}` },
+          headers: { authorization: requestHeaders.authorization },
           credentials: "include",
         });
+
+        // Log response headers (set-cookie, etc.)
+        const responseHeaders: Record<string, string> = {};
+        res.headers.forEach((value, key) => { responseHeaders[key] = value; });
+        console.log("[v0] LOGIN response status:", res.status, res.statusText);
+        console.log("[v0] LOGIN response headers →", JSON.stringify(responseHeaders, null, 2));
 
         if (!res.ok) {
           const body = await res.json().catch(() => ({}));
@@ -57,9 +70,11 @@ export default function LoginPage() {
         // Persist the API key in sessionStorage so axios interceptors can attach it.
         sessionStorage.setItem("api_key", trimmedKey);
 
+        console.log("[v0] LOGIN redirect → / (status: 200 → push)");
         router.push("/");
         router.refresh();
-      } catch {
+      } catch (err) {
+        console.log("[v0] LOGIN fetch error:", err);
         setError("Could not reach the API server. Check INTERNAL_API_URL is set.");
         setLoading(false);
       }
