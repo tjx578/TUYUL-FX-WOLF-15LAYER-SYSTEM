@@ -12,15 +12,15 @@ interface TimezoneDisplayProps {
 }
 
 export function TimezoneDisplay({ compact = false }: TimezoneDisplayProps) {
-  const [tick, setTick] = useState(0);
+  const [now, setNow] = useState<number | null>(null);
 
   useEffect(() => {
-    const id = setInterval(() => setTick((t) => t + 1), 1000);
+    setNow(Date.now());
+    const id = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(id);
   }, []);
 
-  const now = Date.now();
-  const session = sessionLabel();
+  const session = now !== null ? sessionLabel() : "";
 
   if (compact) {
     return (
@@ -33,7 +33,7 @@ export function TimezoneDisplay({ compact = false }: TimezoneDisplayProps) {
             fontWeight: 700,
           }}
         >
-          {formatTime(now)}
+          {now !== null ? formatTime(now) : "--:--:--"}
         </span>
         <span
           style={{
@@ -42,7 +42,7 @@ export function TimezoneDisplay({ compact = false }: TimezoneDisplayProps) {
             letterSpacing: "0.06em",
           }}
         >
-          {session} SESSION
+          {session ? `${session} SESSION` : ""}
         </span>
       </div>
     );
@@ -61,12 +61,12 @@ export function TimezoneDisplay({ compact = false }: TimezoneDisplayProps) {
         className="num"
         style={{ fontSize: 16, color: "var(--text-primary)", fontWeight: 700 }}
       >
-        {formatTime(now)}
+        {now !== null ? formatTime(now) : "--:--:--"}
       </span>
       <span
         style={{ fontSize: 11, color: "var(--text-muted)", letterSpacing: "0.04em" }}
       >
-        {formatDate(now)} · {session}
+        {now !== null ? `${formatDate(now)} · ${session}` : ""}
       </span>
     </div>
   );
