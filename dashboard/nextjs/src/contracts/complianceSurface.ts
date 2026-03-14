@@ -3,7 +3,9 @@ export type CompliancePage =
   | "trades"
   | "risk"
   | "news"
-  | "journal";
+  | "journal"
+  | "accounts"
+  | "pipeline";
 
 export type ComplianceTone = "info" | "warning" | "error";
 
