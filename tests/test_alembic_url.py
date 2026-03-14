@@ -14,33 +14,33 @@ from storage.migrations.env import _normalise_pg_url
     [
         # Railway / Heroku legacy scheme
         (
-            "postgres://user:pass@host:5432/db",
-            "postgresql+psycopg://user:pass@host:5432/db",
+            "postgres://test_user@localhost:5432/test_db",
+            "postgresql+psycopg://test_user@localhost:5432/test_db",
         ),
         # Standard scheme without driver
         (
-            "postgresql://user:pass@host:5432/db",
-            "postgresql+psycopg://user:pass@host:5432/db",
+            "postgresql://test_user@localhost:5432/test_db",
+            "postgresql+psycopg://test_user@localhost:5432/test_db",
         ),
         # Already has +psycopg (v3) — must still normalise (idempotent)
         (
-            "postgresql+psycopg://user:pass@host/db",
-            "postgresql+psycopg://user:pass@host/db",
+            "postgresql+psycopg://test_user@localhost/test_db",
+            "postgresql+psycopg://test_user@localhost/test_db",
         ),
         # Legacy psycopg2 driver → must be replaced
         (
-            "postgresql+psycopg2://user:pass@host/db",
-            "postgresql+psycopg://user:pass@host/db",
+            "postgresql+psycopg2://test_user@localhost/test_db",
+            "postgresql+psycopg://test_user@localhost/test_db",
         ),
         # asyncpg driver → replaced to sync psycopg for Alembic
         (
-            "postgresql+asyncpg://user:pass@host/db",
-            "postgresql+psycopg://user:pass@host/db",
+            "postgresql+asyncpg://test_user@localhost/test_db",
+            "postgresql+psycopg://test_user@localhost/test_db",
         ),
         # postgres:// with query parameters
         (
-            "postgres://user:pass@host:5432/db?sslmode=require",
-            "postgresql+psycopg://user:pass@host:5432/db?sslmode=require",
+            "postgres://test_user@localhost:5432/test_db?sslmode=require",
+            "postgresql+psycopg://test_user@localhost:5432/test_db?sslmode=require",
         ),
         # Non-PG URL left untouched
         (
@@ -58,7 +58,6 @@ def test_normalise_pg_url(raw: str, expected: str) -> None:
 def test_no_psycopg2_import() -> None:
     """Ensure psycopg2 is never imported by the migrations env module."""
     import importlib
-    import sys
 
     # Reload to be sure we inspect the latest code
     mod = importlib.import_module("storage.migrations.env")
