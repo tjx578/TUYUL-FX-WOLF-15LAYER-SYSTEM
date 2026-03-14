@@ -34,9 +34,7 @@ BASE_DELAY = 1.0
 # ── Health probe for container orchestration ──────────────────────
 # Railway injects PORT for its proxy/healthcheck. Prefer INGEST_HEALTH_PORT,
 # then fall back to PORT (Railway-injected), then default 8082.
-_INGEST_HEALTH_PORT = int(
-    os.getenv("INGEST_HEALTH_PORT") or os.getenv("PORT", "8082")
-)
+_INGEST_HEALTH_PORT = int(os.getenv("INGEST_HEALTH_PORT") or os.getenv("PORT", "8082"))
 _health_probe = HealthProbe(port=_INGEST_HEALTH_PORT, service_name="ingest")
 _ingest_ready = False
 
@@ -58,6 +56,7 @@ class RedisClient(Protocol):
 
 def _validate_api_key() -> bool:
     from ingest.finnhub_key_manager import finnhub_keys  # noqa: PLC0415
+
     if not finnhub_keys.available:
         logger.warning("WARNING: FINNHUB_API_KEY not configured; ingest running in DRY RUN mode.")
         return False
@@ -67,6 +66,7 @@ def _validate_api_key() -> bool:
 
 def _get_enabled_symbols() -> list[str]:
     from typing import cast
+
     raw: Any = CONFIG.get("pairs", {}).get("pairs", [])
     if not isinstance(raw, list):
         return []
@@ -74,7 +74,7 @@ def _get_enabled_symbols() -> list[str]:
     return [
         p["symbol"]
         for p in pairs
-        if isinstance(p, dict) and p.get("enabled") # pyright: ignore[reportUnnecessaryIsInstance]
+        if isinstance(p, dict) and p.get("enabled")  # pyright: ignore[reportUnnecessaryIsInstance]
     ]
 
 
@@ -161,18 +161,13 @@ async def _connect_redis_with_retry() -> RedisClient:
 
 def _set_state_from_warmup(system_state: SystemStateManager) -> None:
     warmup_report = system_state.get_warmup_report()
-    incomplete_count = sum(
-        1 for status in warmup_report.values() if status.status.value != "COMPLETE"
-    )
+    incomplete_count = sum(1 for status in warmup_report.values() if status.status.value != "COMPLETE")
     if incomplete_count == 0:
         system_state.set_state(SystemState.READY)
         logger.info("Warmup complete - system state: READY")
         return
     system_state.set_state(SystemState.DEGRADED)
-    logger.warning(
-        f"Warmup complete with {incomplete_count} incomplete symbols - "
-        "system state: DEGRADED"
-    )
+    logger.warning(f"Warmup complete with {incomplete_count} incomplete symbols - system state: DEGRADED")
 
 
 def _update_macro_regime(enabled_symbols: list[str]) -> None:
@@ -204,17 +199,14 @@ async def _run_warmup(
             fetcher = FinnhubCandleFetcher()
             warmup_results = await fetcher.warmup_all()
 
-            system_state.validate_warmup(warmup_results) # pyright: ignore[reportUnknownMemberType]
+            system_state.validate_warmup(warmup_results)  # pyright: ignore[reportUnknownMemberType]
             _update_macro_regime(enabled_symbols)
             _set_state_from_warmup(system_state)
             return warmup_results  # success — relay results for Redis seeding
         except Exception as exc:
             last_exc = exc
             delay = BASE_DELAY * (2 ** (attempt - 1))
-            logger.warning(
-                f"Warmup attempt {attempt}/{MAX_RETRIES} failed: {exc}  "
-                f"retrying in {delay:.1f}s"
-            )
+            logger.warning(f"Warmup attempt {attempt}/{MAX_RETRIES} failed: {exc}  retrying in {delay:.1f}s")
             _health_probe.set_detail("warmup_retry", f"{attempt}/{MAX_RETRIES}")
             await asyncio.sleep(delay)
 
@@ -230,9 +222,9 @@ class Stoppable(Protocol):
 
 
 # ── Redis candle history seeding ──────────────────────────────────
-# Matches the key format and TTL used by RedisContextBridge.write_candle().
+# Matches the key format used by RedisContextBridge.write_candle().
+# Data is persistent in Redis volume — no TTL needed.
 _SEED_HISTORY_MAXLEN = 300
-_SEED_HISTORY_TTL = 6 * 3600  # 6 h
 
 
 async def _seed_redis_candle_history(
@@ -263,9 +255,7 @@ async def _seed_redis_candle_history(
             with contextlib.suppress(Exception):
                 existing: int = await redis.llen(key)  # type: ignore[attr-defined]
                 if existing >= len(candles):
-                    logger.debug(
-                        "[Seed] %s already has %d bars, skip", key, existing
-                    )
+                    logger.debug("[Seed] %s already has %d bars, skip", key, existing)
                     continue
 
             try:
@@ -282,9 +272,7 @@ async def _seed_redis_candle_history(
     logger.info("[Seed] Completed: {} symbol/tf combos seeded to Redis", seeded)
 
 
-async def _safe_stop(
-    name: str, obj: Any, cleanup_errors: list[tuple[str, Exception]]
-) -> None:
+async def _safe_stop(name: str, obj: Any, cleanup_errors: list[tuple[str, Exception]]) -> None:
     stop = getattr(obj, "stop", None)
     if stop is None:
         return
@@ -322,10 +310,7 @@ async def run_ingest_services(has_api_key: bool) -> None:
         await _seed_redis_candle_history(redis, warmup_results)
 
         # Build candle builders as dict for O(1) lookup
-        candle_builders = {
-            symbol: CandleBuilder(symbol=symbol, timeframe=Timeframe.M15)
-            for symbol in enabled_symbols
-        }
+        candle_builders = {symbol: CandleBuilder(symbol=symbol, timeframe=Timeframe.M15) for symbol in enabled_symbols}
 
         # Tick callback: route to CandleBuilder per symbol
         def _on_tick(symbol: str, price: float, ts: datetime, volume: float) -> None:
