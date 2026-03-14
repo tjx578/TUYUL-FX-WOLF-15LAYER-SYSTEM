@@ -2,7 +2,6 @@
 
 import { useMemo, useState } from "react";
 import { API_ENDPOINTS, useHealth } from "@/lib/api";
-import { getApiBaseUrl } from "@/lib/env";
 
 const TABS = [
   "General",
@@ -27,8 +26,6 @@ export default function SettingsPage() {
   const [scopeKey, setScopeKey] = useState("DEFAULT");
   const [overrideJson, setOverrideJson] = useState('{"settings":{}}');
   const [message, setMessage] = useState<string>("");
-  const apiBase = getApiBaseUrl();
-
   const endpointList = useMemo(
     () => [
       API_ENDPOINTS.configProfile,
@@ -41,7 +38,7 @@ export default function SettingsPage() {
   );
 
   const sendWrite = async (url: string, method: string, body: unknown) => {
-    const res = await fetch(`${apiBase}${url}`, {
+    const res = await fetch(url, {
       method,
       credentials: "include",
       headers: {

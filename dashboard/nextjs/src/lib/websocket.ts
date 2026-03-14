@@ -18,10 +18,17 @@ import type {
 import { getWsBaseUrl } from "@/lib/env";
 import { getToken } from "@/lib/auth";
 
-// Resolved once when the module is first imported.
-// getWsBaseUrl() reads NEXT_PUBLIC_WS_BASE_URL directly — no fragile
-// http → ws replacement that silently produces ws:// in production.
-const WS_URL = getWsBaseUrl();
+// Lazily resolved on first use (not at module init) so window.location
+// is available. getWsBaseUrl() now derives ws/wss from the page origin
+// when NEXT_PUBLIC_WS_BASE_URL is not set, and Next.js rewrites proxy
+// /ws/* to the real backend.
+let _wsUrl: string | null = null;
+function getWsUrl(): string {
+  if (_wsUrl === null) {
+    _wsUrl = getWsBaseUrl();
+  }
+  return _wsUrl;
+}
 
 const RECONNECT_DELAY_MS = 3000;
 const MAX_RECONNECT_ATTEMPTS = 10;
@@ -52,13 +59,14 @@ export function useWolfWebSocket<T>(
     if (!mountedRef.current || !enabled) return;
     if (reconnectCount >= MAX_RECONNECT_ATTEMPTS) return;
 
+    const wsBase = getWsUrl();
     const token =
       typeof window !== "undefined"
         ? getToken()
         : null;
     const url = token
-      ? `${WS_URL}${path}?token=${token}`
-      : `${WS_URL}${path}`;
+      ? `${wsBase}${path}?token=${token}`
+      : `${wsBase}${path}`;
 
     try {
       const ws = new WebSocket(url);

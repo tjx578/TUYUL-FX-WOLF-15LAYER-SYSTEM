@@ -8,17 +8,16 @@
  *   import { apiFetch } from "@/lib/fetcher";
  *   const data = await apiFetch("/api/v1/verdict/all");
  */
-import { getApiBaseUrl } from "@/lib/env";
 import { bearerHeader } from "@/lib/auth";
 
 export async function apiFetch(
   path: string,
   opts: RequestInit = {}
 ): Promise<Response> {
-  const base = getApiBaseUrl();
+  // Relative path — Next.js rewrites proxy /api/* to the backend.
   const auth = bearerHeader();
 
-  return fetch(`${base}${path}`, {
+  return fetch(path, {
     ...opts,
     headers: {
       "Content-Type": "application/json",
