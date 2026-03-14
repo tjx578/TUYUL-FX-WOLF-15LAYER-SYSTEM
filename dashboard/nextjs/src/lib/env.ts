@@ -1,75 +1,38 @@
 /**
- * Centralized env access for NEXT_PUBLIC_ vars.
- * process.env.NEXT_PUBLIC_* is replaced at build time by Next.js.
- *
- * Required env vars:
- *   NEXT_PUBLIC_API_BASE_URL   — backend REST base  (e.g. https://api.domain.com)
- *   NEXT_PUBLIC_WS_BASE_URL    — backend WS base    (e.g. wss://api.domain.com/ws)
+ * Centralized env access.
+ * NOTE: This file is now minimal since we use Next.js rewrites via next.config.js
+ * to proxy all requests to the backend. The API_BASE_URL is resolved server-side
+ * and never exposed to the browser.
  */
 
-// Legacy export kept for existing imports — reads from NEXT_PUBLIC_API_BASE_URL.
-export const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_BASE_URL ?? "";
-
-const REQUIRED_PUBLIC_VARS: string[] = [
-  "NEXT_PUBLIC_API_BASE_URL",
-  "NEXT_PUBLIC_WS_BASE_URL",
-];
+// Legacy export kept for backward compatibility — returns empty string
+// since we no longer use a client-side base URL.
+export const API_BASE_URL = "";
 
 /**
- * Validates required public environment variables at runtime.
- * Call once at app startup (e.g. in layout.tsx or root page).
- * Does NOT throw — logs warnings so the dashboard stays up.
+ * Legacy validation function — now a no-op since all proxying is server-side.
+ * Kept for backward compatibility with existing imports.
  */
 export function validateEnv(): void {
-  const missing: string[] = [];
-
-  for (const key of REQUIRED_PUBLIC_VARS) {
-    const val = process.env[key];
-    if (!val || val.trim() === "") {
-      missing.push(key);
-    }
-  }
-
-  if (missing.length > 0) {
-    console.warn(
-      "[env] WARNING: Missing required env vars:",
-      missing.join(", "),
-      "— dashboard may show blank or stale data."
-    );
-  }
+  // No-op: env validation is now done in next.config.js
 }
 
 /**
- * Returns REST API base URL.
- * Canonical source: NEXT_PUBLIC_API_BASE_URL.
- * Falls back to NEXT_PUBLIC_API_URL for backward compatibility.
+ * Legacy function — returns empty string.
+ * All API calls should use relative paths (e.g. /api/v1/...) which are
+ * proxied by Next.js rewrites to the real backend via API_BASE_URL.
+ * This function is kept for backward compatibility only.
  */
 export function getApiBaseUrl(): string {
-  const url =
-    process.env.NEXT_PUBLIC_API_BASE_URL ||
-    process.env.NEXT_PUBLIC_API_URL;
-  if (!url || url.trim() === "") {
-    const fallback = "http://localhost:8000";
-    console.warn(`[env] NEXT_PUBLIC_API_BASE_URL not set — falling back to ${fallback}`);
-    return fallback;
-  }
-  return url.replace(/\/$/, ""); // strip trailing slash
+  return "";
 }
 
 /**
- * Returns WebSocket base URL.
- * Canonical source: NEXT_PUBLIC_WS_BASE_URL.
- *
- * Why explicit? Deriving via replace(/^http/, "ws") produces ws:// on plain
- * HTTP origins and breaks on wss:// in production. Always set this explicitly.
+ * Legacy function — returns empty string.
+ * WebSocket paths should use the relative /ws/... pattern.
+ * The browser automatically converts http/https to ws/wss.
+ * This function is kept for backward compatibility only.
  */
 export function getWsBaseUrl(): string {
-  const url = process.env.NEXT_PUBLIC_WS_BASE_URL;
-  if (!url || url.trim() === "") {
-    const fallback = "ws://localhost:8000/ws";
-    console.warn(`[env] NEXT_PUBLIC_WS_BASE_URL not set — falling back to ${fallback}`);
-    return fallback;
-  }
-  return url.replace(/\/$/, ""); // strip trailing slash
+  return "";
 }
