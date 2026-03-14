@@ -3,7 +3,6 @@
 import { useRouter } from "next/navigation";
 import { useState, useCallback, type FormEvent } from "react";
 import { AUTH_LOGIN } from "@/lib/endpoints";
-import { getApiBaseUrl } from "@/lib/env";
 import { setToken } from "@/lib/auth";
 
 export default function LoginPage() {
@@ -31,11 +30,9 @@ export default function LoginPage() {
       }
 
       try {
-        // POST to /api/auth/login — backend sets HttpOnly cookie + returns JWT in body.
-        const apiBase = getApiBaseUrl();
-        const loginUrl = `${apiBase}${AUTH_LOGIN}`;
-
-        const res = await fetch(loginUrl, {
+        // POST to /api/auth/login via Next.js rewrite proxy (relative path).
+        // No base URL needed — next.config.js rewrites /api/* to the backend.
+        const res = await fetch(AUTH_LOGIN, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           credentials: "include",
