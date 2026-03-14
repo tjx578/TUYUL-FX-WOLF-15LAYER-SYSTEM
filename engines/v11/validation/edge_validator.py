@@ -52,8 +52,8 @@ class EdgeValidationResult:
     status: EdgeStatus = EdgeStatus.INSUFFICIENT_DATA
     metrics: EdgeMetrics = field(default_factory=EdgeMetrics)
     score: float = 0.0
-    degradation_warnings: list[str] = field(default_factory=list) # pyright: ignore[reportUnknownVariableType]
-    details: dict[str, Any] = field(default_factory=dict) # pyright: ignore[reportUnknownVariableType]
+    degradation_warnings: list[str] = field(default_factory=list)
+    details: dict[str, Any] = field(default_factory=dict)
 
 
 class EdgeValidator:
@@ -110,9 +110,7 @@ class EdgeValidator:
 
         # Trim to rolling window
         if len(self._results[setup_type]) > self.rolling_window:
-            self._results[setup_type] = self._results[setup_type][
-                -self.rolling_window :
-            ]
+            self._results[setup_type] = self._results[setup_type][-self.rolling_window :]
 
     def validate_edge(self, setup_type: str) -> EdgeValidationResult:
         """
@@ -139,28 +137,20 @@ class EdgeValidator:
         # Check win rate
         win_rate_valid = metrics.win_rate >= self.min_win_rate
         if not win_rate_valid:
-            warnings.append(
-                f"Win rate {metrics.win_rate:.1%} below threshold {self.min_win_rate:.1%}"
-            )
+            warnings.append(f"Win rate {metrics.win_rate:.1%} below threshold {self.min_win_rate:.1%}")
 
         # Check profit factor
         pf_valid = metrics.profit_factor >= self.min_profit_factor
         if not pf_valid:
-            warnings.append(
-                f"Profit factor {metrics.profit_factor:.1f} below threshold {self.min_profit_factor:.1f}"
-            )
+            warnings.append(f"Profit factor {metrics.profit_factor:.1f} below threshold {self.min_profit_factor:.1f}")
 
         # Check for sufficient sample size
         if metrics.sample_size < self.min_sample_size:
-            warnings.append(
-                f"Sample size {metrics.sample_size} below minimum {self.min_sample_size}"
-            )
+            warnings.append(f"Sample size {metrics.sample_size} below minimum {self.min_sample_size}")
 
         # Check for significant p-value
         if metrics.p_value < self.significance_level:
-            warnings.append(
-                f"P-value {metrics.p_value:.1f} below significance level {self.significance_level:.1f}"
-            )
+            warnings.append(f"P-value {metrics.p_value:.1f} below significance level {self.significance_level:.1f}")
 
         # Has edge if:
         # 1. p_value < alpha (significant)
@@ -168,10 +158,10 @@ class EdgeValidator:
         # 3. n_trades >= min_trades
         # 4. expected_value > 0
         has_edge = (
-            metrics.p_value < self.significance_level and
-            win_rate_valid and
-            metrics.sample_size >= self.min_sample_size and
-            metrics.profit_factor > 0
+            metrics.p_value < self.significance_level
+            and win_rate_valid
+            and metrics.sample_size >= self.min_sample_size
+            and metrics.profit_factor > 0
         )
 
         return EdgeValidationResult(
@@ -283,7 +273,7 @@ class EdgeValidator:
         try:
             # Use math.comb for binomial coefficient (Python 3.8+)
             binom_coeff = math.comb(n, k)
-            prob: float = binom_coeff * (p ** k) * ((1 - p) ** (n - k))
+            prob: float = binom_coeff * (p**k) * ((1 - p) ** (n - k))
             return prob
         except Exception:
             return 0.0
@@ -308,9 +298,9 @@ class EdgeValidator:
         z = self._z_score(1 - self.significance_level)
 
         # Wilson score formula
-        denominator = 1 + (z ** 2) / n
-        center = p_hat + (z ** 2) / (2 * n)
-        margin = z * math.sqrt((p_hat * (1 - p_hat) + (z ** 2) / (4 * n)) / n)
+        denominator = 1 + (z**2) / n
+        center = p_hat + (z**2) / (2 * n)
+        margin = z * math.sqrt((p_hat * (1 - p_hat) + (z**2) / (4 * n)) / n)
 
         lower = (center - margin) / denominator
         upper = (center + margin) / denominator
@@ -344,7 +334,7 @@ class EdgeValidator:
         if target_wr == 0 or target_wr == 1:
             return 100  # Default for edge cases
 
-        n = (z ** 2 * target_wr * (1 - target_wr)) / (margin ** 2)
+        n = (z**2 * target_wr * (1 - target_wr)) / (margin**2)
 
         return int(math.ceil(n))  # noqa: F821
 

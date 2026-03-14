@@ -5,6 +5,7 @@ import sys
 import time
 import types
 from collections.abc import Callable, Coroutine
+from typing import Any
 
 import uvicorn
 from loguru import logger
@@ -28,7 +29,7 @@ from ingest.finnhub_market_news import FinnhubMarketNews
 from journal.journal_schema import ContextJournal, DecisionJournal, VerdictType
 from pipeline import WolfConstitutionalPipeline
 from storage.startup import init_persistent_storage, shutdown_persistent_storage
-from utils.timezone_utils import is_trading_session, now_utc  # pyright: ignore[reportUnknownVariableType]
+from utils.timezone_utils import is_trading_session, now_utc
 
 try:
     from engines.v11 import V11PipelineHook
@@ -108,7 +109,7 @@ async def _seed_from_redis() -> None:
         from infrastructure.redis_url import get_redis_url  # noqa: PLC0415
 
         redis_url = get_redis_url()
-        redis_client: AsyncRedis = AsyncRedis.from_url(redis_url)  # type: ignore[no-untyped-call]
+        redis_client: AsyncRedis = AsyncRedis.from_url(redis_url)
         try:
             consumer = RedisConsumer(symbols=PAIRS, redis_client=redis_client)
             bus = LiveContextBus()
@@ -234,9 +235,9 @@ _RESTART_COOLDOWN = float(os.getenv("RESTART_COOLDOWN_SEC", "5.0"))
 _PIPELINE_TIMEOUT_SEC = 30.0
 
 
-def _build_j1(pair: str, synthesis: dict[str, object]) -> ContextJournal:
-    layers: dict[str, object] = dict(synthesis.get("layers") or {})  # type: ignore[arg-type]
-    bias: dict[str, object] = dict(synthesis.get("bias") or {})  # type: ignore[arg-type]
+def _build_j1(pair: str, synthesis: dict[str, Any]) -> ContextJournal:
+    layers: dict[str, Any] = dict(synthesis.get("layers") or {})
+    bias: dict[str, Any] = dict(synthesis.get("bias") or {})
     session = is_trading_session()
     return ContextJournal(
         timestamp=now_utc(),
@@ -244,16 +245,16 @@ def _build_j1(pair: str, synthesis: dict[str, object]) -> ContextJournal:
         session=session,
         market_regime=str(synthesis.get("market_regime", "UNKNOWN")),
         news_lock=bool(synthesis.get("news_lock", False)),
-        context_coherence=float(layers.get("conf12", 0.5)),  # type: ignore[arg-type]
+        context_coherence=float(layers.get("conf12", 0.5)),
         mta_alignment=bool(synthesis.get("mta_alignment", True)),
         technical_bias=str(bias.get("technical", "NEUTRAL")),
     )
 
 
-def _build_j2(pair: str, synthesis: dict[str, object], l12: dict[str, object]) -> DecisionJournal:
-    scores: dict[str, object] = dict(synthesis.get("scores") or {})  # type: ignore[arg-type]
-    layers: dict[str, object] = dict(synthesis.get("layers") or {})  # type: ignore[arg-type]
-    gates: dict[str, object] = dict(l12.get("gates") or {})  # type: ignore[arg-type]
+def _build_j2(pair: str, synthesis: dict[str, Any], l12: dict[str, Any]) -> DecisionJournal:
+    scores: dict[str, Any] = dict(synthesis.get("scores") or {})
+    layers: dict[str, Any] = dict(synthesis.get("layers") or {})
+    gates: dict[str, Any] = dict(l12.get("gates") or {})
     setup_id = f"{pair}_{now_utc().strftime('%Y%m%d_%H%M%S')}"
 
     failed_gates: list[str] = [
@@ -278,20 +279,20 @@ def _build_j2(pair: str, synthesis: dict[str, object], l12: dict[str, object]) -
         timestamp=now_utc(),
         pair=pair,
         setup_id=setup_id,
-        wolf_30_score=int(scores.get("wolf_30_point", 0)),  # type: ignore[arg-type]
-        f_score=int(scores.get("f_score", 0)),  # type: ignore[arg-type]
-        t_score=int(scores.get("t_score", 0)),  # type: ignore[arg-type]
-        fta_score=int((scores.get("fta_score") or 0) * 10),  # type: ignore[operator]
-        exec_score=int(scores.get("exec_score", 0)),  # type: ignore[arg-type]
-        tii_sym=float(layers.get("L8_tii_sym", 0.0)),  # type: ignore[arg-type]
-        integrity_index=float(layers.get("L8_integrity_index", 0.0)),  # type: ignore[arg-type]
-        monte_carlo_win=float(layers.get("L7_monte_carlo_win", 0.0)),  # type: ignore[arg-type]
-        conf12=float(layers.get("conf12", 0.0)),  # type: ignore[arg-type]
+        wolf_30_score=int(scores.get("wolf_30_point", 0)),
+        f_score=int(scores.get("f_score", 0)),
+        t_score=int(scores.get("t_score", 0)),
+        fta_score=int((scores.get("fta_score") or 0) * 10),
+        exec_score=int(scores.get("exec_score", 0)),
+        tii_sym=float(layers.get("L8_tii_sym", 0.0)),
+        integrity_index=float(layers.get("L8_integrity_index", 0.0)),
+        monte_carlo_win=float(layers.get("L7_monte_carlo_win", 0.0)),
+        conf12=float(layers.get("conf12", 0.0)),
         verdict=verdict_type,
         confidence=str(l12.get("confidence", "LOW")),
         wolf_status=str(l12.get("wolf_status", "NO_HUNT")),
-        gates_passed=int(gates.get("passed", 0)),  # type: ignore[arg-type]
-        gates_total=int(gates.get("total", 9)),  # type: ignore[arg-type]
+        gates_passed=int(gates.get("passed", 0)),
+        gates_total=int(gates.get("total", 9)),
         failed_gates=failed_gates,
         violations=[],
         primary_rejection_reason=primary_rejection_reason,
@@ -326,7 +327,7 @@ async def run_ingest_services(has_api_key: bool, redis: AsyncRedis) -> None:
 
     logger.info("Starting ingest services: WebSocket, CalendarNews, MarketNews, CandleBuilder")
     try:
-        cb_coros: list[Coroutine[object, object, object]] = [cb.run() for cb in candle_builders]  # pyright: ignore[reportAttributeAccessIssue, reportUnknownMemberType]
+        cb_coros: list[Coroutine[object, object, object]] = [cb.run() for cb in candle_builders]  # pyright: ignore[reportAttributeAccessIssue]
         await asyncio.gather(
             ws_feed.run(),
             news_feed.run(),
@@ -365,7 +366,7 @@ async def _sanitize_redis_keys(redis_client: AsyncRedis) -> None:
     total_deleted = 0
     for pattern, expected_type in keys_expected.items():
         try:
-            keys: list[bytes | str] = await redis_client.keys(pattern)  # type: ignore[assignment]
+            keys: list[bytes | str] = await redis_client.keys(pattern)
         except Exception as exc:
             logger.warning("[Redis-sanitize] KEYS {} failed: {}", pattern, exc)
             continue
@@ -412,7 +413,7 @@ async def run_redis_consumer() -> None:
     from infrastructure.redis_url import get_redis_url  # noqa: PLC0415
 
     redis_url = get_redis_url()
-    redis_client: AsyncRedis = AsyncRedis.from_url(redis_url)  # type: ignore[no-untyped-call]
+    redis_client: AsyncRedis = AsyncRedis.from_url(redis_url)
 
     # Clean keys with wrong type before consumer touches them
     await _sanitize_redis_keys(redis_client)
@@ -422,7 +423,7 @@ async def run_redis_consumer() -> None:
     await redis_consumer.run()
 
 
-async def _analyze_pair(pair: str) -> dict[str, object] | None:
+async def _analyze_pair(pair: str) -> dict[str, Any] | None:
     """Run pipeline for a single pair with timeout + thread offload."""
     with _engine_tracer.start_as_current_span("pipeline_full") as span:
         span.set_attribute("pair", pair)
@@ -432,11 +433,9 @@ async def _analyze_pair(pair: str) -> dict[str, object] | None:
             from context.live_context_bus import LiveContextBus  # noqa: PLC0415
 
             _bus = LiveContextBus()
-            _latest: dict[str, object] | None = _bus.get_latest_tick(pair)
+            _latest: dict[str, Any] | None = _bus.get_latest_tick(pair)
             _tick_ts: float | None = (
-                float(_latest.get("local_ts") or _latest.get("timestamp") or 0.0)  # type: ignore[arg-type]
-                if _latest
-                else None
+                float(_latest.get("local_ts") or _latest.get("timestamp") or 0.0) if _latest else None
             )
             if _tick_ts:
                 span.set_attribute("tick.timestamp", _tick_ts)
@@ -449,8 +448,8 @@ async def _analyze_pair(pair: str) -> dict[str, object] | None:
 
             # ── Journal J1 (context) and J2 (decision) after each pipeline run ──
             if result:
-                synthesis: dict[str, object] = dict(result.get("synthesis") or {})
-                l12: dict[str, object] = dict(result.get("l12") or {})
+                synthesis: dict[str, Any] = dict(result.get("synthesis") or {})
+                l12: dict[str, Any] = dict(result.get("l12") or {})
                 span.set_attribute("l12.verdict", str(l12.get("verdict", "")))
                 span.set_attribute("l12.confidence", str(l12.get("confidence", "")))
                 try:
@@ -505,7 +504,7 @@ async def analysis_loop() -> None:
 
     def _on_candle_closed(event: Event) -> None:
         """Non-async callback – just record the symbol and wake the loop."""
-        data: dict[str, object] = dict(event.data)  # type: ignore[arg-type]
+        data: dict[str, object] = dict(event.data)
         symbol = data.get("symbol")
         if isinstance(symbol, str) and symbol:
             _pending_symbols.add(symbol)
@@ -601,9 +600,9 @@ async def analysis_loop() -> None:
 
             _symbol_last_analysis_ts[pair] = time.time()
             if isinstance(result, dict):
-                synthesis: dict[str, object] = dict(result.get("synthesis") or {})  # type: ignore[arg-type]
-                layers: dict[str, object] = dict(synthesis.get("layers") or {})  # type: ignore[arg-type]
-                discipline: dict[str, object] = dict(synthesis.get("wolf_discipline") or {})  # type: ignore[arg-type]
+                synthesis: dict[str, Any] = dict(result.get("synthesis") or {})
+                layers: dict[str, Any] = dict(synthesis.get("layers") or {})
+                discipline: dict[str, Any] = dict(synthesis.get("wolf_discipline") or {})
 
                 coherence = _to_float(layers.get("L2_reflex_coherence"), 0.0)
                 emotion_delta = _to_float(discipline.get("polarity_deviation"), 0.0)
@@ -736,7 +735,7 @@ async def main() -> None:
             from infrastructure.redis_url import get_redis_url
 
             redis_url = get_redis_url()
-            redis_client: AsyncRedis = AsyncRedis.from_url(redis_url)  # type: ignore[no-untyped-call]
+            redis_client: AsyncRedis = AsyncRedis.from_url(redis_url)
             tasks.append(
                 asyncio.create_task(
                     _supervised_task(

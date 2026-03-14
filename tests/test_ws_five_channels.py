@@ -78,7 +78,7 @@ def _approx(expected: float, *, rel: float | None = None, abs_tol: float | None 
 def _compute_drawdown_proxy(equity: float, peak: float) -> float:
     from api import ws_routes as ws_routes_module  # noqa: PLC0415
 
-    fn = ws_routes_module._compute_drawdown  # pyright: ignore[reportPrivateUsage]
+    fn = ws_routes_module._compute_drawdown
     return float(fn(equity, peak))
 
 
