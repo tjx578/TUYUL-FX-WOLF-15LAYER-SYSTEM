@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState, useCallback, type FormEvent } from "react";
 import { AUTH_LOGIN } from "@/lib/endpoints";
+import { getApiBaseUrl } from "@/lib/env";
 import { setToken } from "@/lib/auth";
 
 export default function LoginPage() {
@@ -31,7 +32,10 @@ export default function LoginPage() {
 
       try {
         // POST to /api/auth/login — backend sets HttpOnly cookie + returns JWT in body.
-        const res = await fetch(AUTH_LOGIN, {
+        const apiBase = getApiBaseUrl();
+        const loginUrl = `${apiBase}${AUTH_LOGIN}`;
+
+        const res = await fetch(loginUrl, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           credentials: "include",
