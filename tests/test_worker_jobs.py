@@ -10,6 +10,7 @@ from services.worker import montecarlo_job, nightly_backtest, regime_recalibrati
 
 class _FakeMCResult:
     passed_threshold = True
+    portfolio_win_probability = 0.61
 
     def to_dict(self) -> dict[str, object]:
         return {"portfolio_win_probability": 0.61, "passed_threshold": True}
@@ -149,3 +150,78 @@ def test_regime_recalibration_runs_and_publishes(monkeypatch: MonkeyPatch) -> No
 
     assert published["job"] == "regime_recalibration"
     assert published["vr_count"] == 40
+
+
+# ═══════════════════════════════════════════════════════════════════
+# Crash-protection: run() handles missing data gracefully
+# ═══════════════════════════════════════════════════════════════════
+
+def test_montecarlo_run_handles_none_payload_gracefully(monkeypatch: MonkeyPatch) -> None:
+    """run() must not raise when load_json_payload returns None."""
+    called = {"publish": False}
+
+    def _no_data(**_kwargs: Any) -> None:
+        return
+
+    def _capture_publish(*_args: object, **_kwargs: object) -> None:
+        called["publish"] = True
+
+    monkeypatch.setattr(montecarlo_job, "load_json_payload", _no_data)
+    monkeypatch.setattr(montecarlo_job, "publish_result", _capture_publish)
+
+    # Should not raise
+    montecarlo_job.run()
+
+    assert called["publish"] is False
+
+
+def test_montecarlo_run_handles_load_exception_gracefully(monkeypatch: MonkeyPatch) -> None:
+    """run() must catch exceptions from load_json_payload and log them."""
+    called = {"publish": False}
+
+    def _explode(**_kwargs: Any) -> None:
+        raise RuntimeError("Redis unavailable — connection refused")
+
+    def _capture_publish(*_args: object, **_kwargs: object) -> None:
+        called["publish"] = True
+
+    monkeypatch.setattr(montecarlo_job, "load_json_payload", _explode)
+    monkeypatch.setattr(montecarlo_job, "publish_result", _capture_publish)
+
+    # Should not raise — exception is caught inside run()
+    montecarlo_job.run()
+
+    assert called["publish"] is False
+
+
+def test_montecarlo_validate_startup_no_sources(monkeypatch: MonkeyPatch) -> None:
+    """_validate_startup() returns False when no data sources are configured."""
+    monkeypatch.delenv("WOLF15_MC_RETURN_MATRIX_JSON", raising=False)
+    monkeypatch.delenv("WOLF15_MC_RETURN_MATRIX_FILE", raising=False)
+    monkeypatch.delenv("REDIS_URL", raising=False)
+
+    from services.worker.montecarlo_job import _validate_startup  # pyright: ignore[reportPrivateUsage]
+
+    assert _validate_startup() is False
+
+
+def test_montecarlo_validate_startup_with_redis_url(monkeypatch: MonkeyPatch) -> None:
+    """_validate_startup() returns True when REDIS_URL is set."""
+    monkeypatch.delenv("WOLF15_MC_RETURN_MATRIX_JSON", raising=False)
+    monkeypatch.delenv("WOLF15_MC_RETURN_MATRIX_FILE", raising=False)
+    monkeypatch.setenv("REDIS_URL", "redis://localhost:6379/0")
+
+    from services.worker.montecarlo_job import _validate_startup  # pyright: ignore[reportPrivateUsage]
+
+    assert _validate_startup() is True
+
+
+def test_montecarlo_validate_startup_with_inline_json(monkeypatch: MonkeyPatch) -> None:
+    """_validate_startup() returns True when inline JSON env var is set."""
+    monkeypatch.setenv("WOLF15_MC_RETURN_MATRIX_JSON", '{"EURUSD": [1.0]}')
+    monkeypatch.delenv("WOLF15_MC_RETURN_MATRIX_FILE", raising=False)
+    monkeypatch.delenv("REDIS_URL", raising=False)
+
+    from services.worker.montecarlo_job import _validate_startup  # pyright: ignore[reportPrivateUsage]
+
+    assert _validate_startup() is True
