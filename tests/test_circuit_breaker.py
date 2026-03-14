@@ -168,3 +168,13 @@ class TestCircuitBreakerEnvConfig:
         for _ in range(4):
             cb.record_failure()
         assert cb.state is CircuitState.CLOSED
+
+    def test_zero_recovery_timeout_allowed(self) -> None:
+        """recovery_timeout=0 must not be silently treated as unset (None check, not or)."""
+        cb = CircuitBreaker(name="test", failure_threshold=1, recovery_timeout=0.0)
+        assert cb._recovery_timeout == 0.0  # pyright: ignore[reportPrivateUsage]
+
+    def test_zero_failure_threshold_allowed(self) -> None:
+        """failure_threshold=0 must not be silently replaced by the env default."""
+        cb = CircuitBreaker(name="test", failure_threshold=0, recovery_timeout=9999)
+        assert cb._failure_threshold == 0  # pyright: ignore[reportPrivateUsage]

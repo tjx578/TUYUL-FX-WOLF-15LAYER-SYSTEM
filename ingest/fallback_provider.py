@@ -39,6 +39,7 @@ Usage::
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import logging
 import os
@@ -50,8 +51,24 @@ import httpx  # pyright: ignore[reportMissingImports]
 
 logger = logging.getLogger(__name__)
 
-# Redis cache TTL for persisted candles (default 7 days)
-_CANDLE_CACHE_TTL_SECONDS: int = int(os.getenv("WOLF15_CANDLE_CACHE_TTL_DAYS", "7")) * 86_400
+# Redis cache TTL for persisted candles (default 7 days).
+# Parsed defensively: a non-integer or non-positive env var falls back to the default.
+def _parse_candle_cache_ttl() -> int:
+    try:
+        days = int(os.getenv("WOLF15_CANDLE_CACHE_TTL_DAYS", "7"))
+        if days > 0:
+            return days * 86_400
+    except (ValueError, TypeError):
+        pass
+    logger.warning(
+        "[FallbackProvider] Invalid WOLF15_CANDLE_CACHE_TTL_DAYS value '%s'; "
+        "falling back to 7-day default",
+        os.getenv("WOLF15_CANDLE_CACHE_TTL_DAYS"),
+    )
+    return 7 * 86_400
+
+
+_CANDLE_CACHE_TTL_SECONDS: int = _parse_candle_cache_ttl()
 _CANDLE_CACHE_KEY_PREFIX = "WOLF15:CANDLE_CACHE"
 
 
@@ -347,7 +364,12 @@ class FallbackCandleProvider:
             logger.warning("[FallbackCache] Write failed for %s %s: %s", symbol, timeframe, exc)
 
     async def _read_cache(self, symbol: str, timeframe: str) -> list[dict[str, Any]]:
-        """Read candles from Redis cache; return empty list on miss or error."""
+        """Read candles from Redis cache; return empty list on miss or error.
+
+        Timestamps stored as ISO strings (via ``json.dumps(..., default=str)``) are
+        rehydrated back to ``datetime`` objects so callers receive the same type as
+        a live ``FinnhubCandleFetcher`` response.
+        """
         if self._redis is None:
             return []
         key = self._cache_key(symbol, timeframe)
@@ -355,6 +377,13 @@ class FallbackCandleProvider:
             raw = await self._redis.get(key)
             if raw:
                 candles: list[dict[str, Any]] = json.loads(raw)
+                # Rehydrate timestamp strings → datetime so the output matches
+                # FinnhubCandleFetcher.normalize_response() (datetime with UTC tz).
+                for candle in candles:
+                    ts = candle.get("timestamp")
+                    if isinstance(ts, str):
+                        with contextlib.suppress(ValueError, TypeError):
+                            candle["timestamp"] = datetime.fromisoformat(ts).replace(tzinfo=UTC)
                 logger.warning(
                     "[FallbackCache] Serving %d stale bars for %s %s (all live providers failed)",
                     len(candles),

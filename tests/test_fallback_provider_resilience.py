@@ -198,3 +198,87 @@ class TestCacheKeyFormat:
     def test_cache_key_different_symbol(self) -> None:
         key = FallbackCandleProvider._cache_key("GBPUSD", "D1")  # pyright: ignore[reportPrivateUsage]
         assert key == "WOLF15:CANDLE_CACHE:GBPUSD:D1"
+
+
+# ══════════════════════════════════════════════════════════════════════
+#  TTL defensive parsing
+# ══════════════════════════════════════════════════════════════════════
+
+class TestCancleCacheTtlParsing:
+    """_parse_candle_cache_ttl() must handle bad env var values gracefully."""
+
+    def test_valid_days_returns_correct_seconds(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("WOLF15_CANDLE_CACHE_TTL_DAYS", "3")
+        from ingest.fallback_provider import _parse_candle_cache_ttl  # noqa: PLC0415
+        assert _parse_candle_cache_ttl() == 3 * 86_400
+
+    def test_non_integer_falls_back_to_default(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("WOLF15_CANDLE_CACHE_TTL_DAYS", "not_a_number")
+        from ingest.fallback_provider import _parse_candle_cache_ttl  # noqa: PLC0415
+        assert _parse_candle_cache_ttl() == 7 * 86_400
+
+    def test_zero_falls_back_to_default(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("WOLF15_CANDLE_CACHE_TTL_DAYS", "0")
+        from ingest.fallback_provider import _parse_candle_cache_ttl  # noqa: PLC0415
+        assert _parse_candle_cache_ttl() == 7 * 86_400
+
+    def test_negative_falls_back_to_default(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("WOLF15_CANDLE_CACHE_TTL_DAYS", "-5")
+        from ingest.fallback_provider import _parse_candle_cache_ttl  # noqa: PLC0415
+        assert _parse_candle_cache_ttl() == 7 * 86_400
+
+
+# ══════════════════════════════════════════════════════════════════════
+#  Timestamp rehydration on cache read
+# ══════════════════════════════════════════════════════════════════════
+
+class TestTimestampRehydration:
+    """Cached candles with ISO string timestamps must be rehydrated to datetime."""
+
+    @pytest.mark.asyncio
+    async def test_iso_string_timestamp_rehydrated_to_datetime(self) -> None:
+        from datetime import UTC, datetime  # noqa: PLC0415
+
+        ts = datetime(2026, 3, 14, 10, 0, 0, tzinfo=UTC)
+        cached = [{"symbol": "EURUSD", "close": 1.1, "timestamp": ts.isoformat()}]
+
+        mock_redis = AsyncMock()
+        mock_redis.get = AsyncMock(return_value=json.dumps(cached))
+
+        provider = FallbackCandleProvider(redis_client=mock_redis)
+        provider._providers = []  # pyright: ignore[reportPrivateUsage]  # force cache path
+
+        result = await provider.fetch("EURUSD", "H1")
+        assert len(result) == 1
+        assert isinstance(result[0]["timestamp"], datetime), (
+            "Cached timestamp string must be rehydrated to datetime"
+        )
+        assert result[0]["timestamp"].tzinfo is not None, "datetime must be timezone-aware"
+
+    @pytest.mark.asyncio
+    async def test_candle_without_timestamp_key_returned_unchanged(self) -> None:
+        """Candles that have no timestamp field must not be modified."""
+        cached = [{"symbol": "EURUSD", "close": 1.1}]  # no timestamp key
+
+        mock_redis = AsyncMock()
+        mock_redis.get = AsyncMock(return_value=json.dumps(cached))
+
+        provider = FallbackCandleProvider(redis_client=mock_redis)
+        provider._providers = []  # pyright: ignore[reportPrivateUsage]
+
+        result = await provider.fetch("EURUSD", "H1")
+        assert result == cached
+
+    @pytest.mark.asyncio
+    async def test_unparseable_timestamp_string_left_as_is(self) -> None:
+        """An unparseable timestamp string must not raise — candle is returned as-is."""
+        cached = [{"symbol": "EURUSD", "close": 1.1, "timestamp": "not-a-datetime"}]
+
+        mock_redis = AsyncMock()
+        mock_redis.get = AsyncMock(return_value=json.dumps(cached))
+
+        provider = FallbackCandleProvider(redis_client=mock_redis)
+        provider._providers = []  # pyright: ignore[reportPrivateUsage]
+
+        result = await provider.fetch("EURUSD", "H1")
+        assert result[0]["timestamp"] == "not-a-datetime"

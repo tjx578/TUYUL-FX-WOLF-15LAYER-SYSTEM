@@ -43,7 +43,8 @@ _ingest_ready = False
 _ingest_degraded = False
 
 # Circuit breaker for the warmup / provider chain.
-# Configurable via WOLF15_CB_* env vars; defaults are conservative for ingest.
+# Configurable via WOLF15_INGEST_CB_* env vars (ingest-specific overrides).
+# Falls back to WOLF15_CB_* generic defaults when WOLF15_INGEST_CB_* are absent.
 _warmup_circuit = CircuitBreaker(
     name="ingest_warmup",
     failure_threshold=int(os.getenv("WOLF15_INGEST_CB_FAILURE_THRESHOLD", "3")),
