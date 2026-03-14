@@ -18,6 +18,18 @@ export const apiClient = axios.create({
   timeout: 15000,
 });
 
+// Attach the stored API key as a Bearer token on every request.
+apiClient.interceptors.request.use((config) => {
+  if (typeof window !== "undefined") {
+    const key = sessionStorage.getItem("api_key");
+    if (key) {
+      config.headers = config.headers ?? {};
+      config.headers["Authorization"] = `Bearer ${key}`;
+    }
+  }
+  return config;
+});
+
 export function toApiErrorPayload(error: unknown): ApiErrorPayload {
   if (axios.isAxiosError(error)) {
     const axiosError = error as AxiosError<{ code?: string; message?: string; details?: unknown }>;
