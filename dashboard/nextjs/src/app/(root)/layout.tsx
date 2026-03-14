@@ -10,6 +10,8 @@ import Sidebar from "@/components/layout/Sidebar";
 import RouteTransition from "@/components/layout/RouteTransition";
 import { requireVerifiedSession } from "@/lib/serverAuth";
 
+export const dynamic = "force-dynamic";
+
 export default async function RootLayout({ children }: PropsWithChildren) {
   const user = await requireVerifiedSession();
 
@@ -33,8 +35,20 @@ export default async function RootLayout({ children }: PropsWithChildren) {
         }}
       />
 
-      <div className="pointer-events-none fixed inset-0 z-0 opacity-[0.04] bg-[url('/grid.png')]" />
-      <div className="pointer-events-none fixed inset-0 z-0 opacity-[0.025] bg-[url('/noise.png')]" />
+      <div
+        className="pointer-events-none fixed inset-0 z-0 opacity-[0.04]"
+        style={{
+          backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='40'%3E%3Cpath d='M0 0h40v40H0z' fill='none' stroke='%23ffffff' stroke-width='0.5'/%3E%3C/svg%3E")`,
+          backgroundRepeat: "repeat",
+        }}
+      />
+      <div
+        className="pointer-events-none fixed inset-0 z-0 opacity-[0.025]"
+        style={{
+          backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='1'/%3E%3C/svg%3E")`,
+          backgroundRepeat: "repeat",
+        }}
+      />
       <div
         className="pointer-events-none fixed inset-0 z-0"
         style={{ boxShadow: "inset 0 0 200px rgba(0,0,0,0.8)" }}

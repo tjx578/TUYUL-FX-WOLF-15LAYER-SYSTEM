@@ -67,6 +67,7 @@ export const API_ENDPOINTS = {
 const fetcher = async (url: string) => {
   const auth = bearerHeader();
   const res = await fetch(`${API_BASE}${url}`, {
+    credentials: "include",
     headers: {
       ...(auth ? { Authorization: auth } : {}),
     },
@@ -103,6 +104,7 @@ const apiMutateWithHeaders = async (
   const auth = bearerHeader();
   const res = await fetch(`${API_BASE}${url}`, {
     method,
+    credentials: "include",
     headers: {
       "Content-Type": "application/json",
       ...(auth ? { Authorization: auth } : {}),
