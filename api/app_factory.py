@@ -48,6 +48,7 @@ logger = logging.getLogger(__name__)
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
+
 def _env_bool(key: str, default: bool) -> bool:
     return os.getenv(key, str(default)).strip().lower() in {"1", "true", "yes", "on"}
 
@@ -66,10 +67,7 @@ def _assert_no_duplicate_routes(application: FastAPI) -> None:
         for method in methods:
             key = (method.upper(), path)
             if key in seen:
-                msg = (
-                    f"DUPLICATE ROUTE: {method} {path} — "
-                    f"handler '{name}' conflicts with '{seen[key]}'"
-                )
+                msg = f"DUPLICATE ROUTE: {method} {path} — handler '{name}' conflicts with '{seen[key]}'"
                 duplicates.append(msg)
             else:
                 seen[key] = name
@@ -83,6 +81,7 @@ def _assert_no_duplicate_routes(application: FastAPI) -> None:
 
 
 # ── Lifespan ──────────────────────────────────────────────────────────────────
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -128,6 +127,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 # ── Middleware helpers ────────────────────────────────────────────────────────
 
+
 class ForwardedHTTPSRedirectMiddleware(BaseHTTPMiddleware):
     # Paths that must never be redirected (internal health probes, metrics).
     _EXEMPT_PATHS: frozenset[str] = frozenset({"/health", "/healthz", "/health/full", "/metrics"})
@@ -137,9 +137,7 @@ class ForwardedHTTPSRedirectMiddleware(BaseHTTPMiddleware):
         self.force_https = force_https
 
     @override
-    async def dispatch(
-        self, request: Request, call_next: RequestResponseEndpoint
-    ) -> Response:
+    async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
         if not self.force_https:
             return await call_next(request)
         # Allow internal health probes through without redirect
@@ -150,11 +148,7 @@ class ForwardedHTTPSRedirectMiddleware(BaseHTTPMiddleware):
         # Some ingress layers send comma-separated values (e.g. "https,http")
         # or RFC-7239 Forwarded header with proto key.
         forwarded_proto_raw = request.headers.get("x-forwarded-proto", "")
-        proto_tokens = {
-            token.strip().lower()
-            for token in forwarded_proto_raw.split(",")
-            if token.strip()
-        }
+        proto_tokens = {token.strip().lower() for token in forwarded_proto_raw.split(",") if token.strip()}
 
         forwarded_header = request.headers.get("forwarded", "").lower()
         if "proto=https" in forwarded_header:
@@ -170,10 +164,9 @@ class ForwardedHTTPSRedirectMiddleware(BaseHTTPMiddleware):
 def _add_cors(app: FastAPI) -> None:
     raw = os.getenv(
         "CORS_ORIGINS",
-        "http://localhost:3000,http://localhost:8000,"
-        "https://railway-dashboard-production-de97.up.railway.app",
+        "http://localhost:3000,http://localhost:8000,https://railway-dashboard-production-de97.up.railway.app",
     )
-    origins = [o.strip() for o in raw.split(",") if o.strip()]
+    origins = [o.strip().rstrip("/") for o in raw.split(",") if o.strip()]
     # Vercel preview/production URLs — add if set
     vercel_url = os.getenv("VERCEL_FRONTEND_URL", "")
     if vercel_url.strip():
@@ -181,6 +174,15 @@ def _add_cors(app: FastAPI) -> None:
             u = u.strip().rstrip("/")
             if u and u not in origins:
                 origins.append(u)
+    # Deduplicate while preserving order
+    seen: set[str] = set()
+    deduped: list[str] = []
+    for o in origins:
+        if o not in seen:
+            seen.add(o)
+            deduped.append(o)
+    origins = deduped
+    logger.info("CORS allowed origins: %s", origins)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=origins,
@@ -204,9 +206,7 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         self.csp_value = csp_value
 
     @override
-    async def dispatch(
-        self, request: Request, call_next: RequestResponseEndpoint
-    ) -> Response:
+    async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
         response = await call_next(request)
         headers = response.headers
 
@@ -224,10 +224,7 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
 
 def _add_security_middleware(app: FastAPI, force_https: bool) -> None:
     _csp_domain = os.getenv("API_DOMAIN", "localhost")
-    csp_default = (
-        "default-src 'self'; "
-        f"connect-src 'self' https://{_csp_domain} wss://{_csp_domain};"
-    )
+    csp_default = f"default-src 'self'; connect-src 'self' https://{_csp_domain} wss://{_csp_domain};"
     csp_value = os.getenv("CSP_HEADER", csp_default)
 
     app.add_middleware(ForwardedHTTPSRedirectMiddleware, force_https=force_https)
@@ -235,6 +232,7 @@ def _add_security_middleware(app: FastAPI, force_https: bool) -> None:
 
 
 # ── Dev / Debug routes ────────────────────────────────────────────────────────
+
 
 def _register_dev_routes(app: FastAPI) -> None:
     """Register debug-only endpoints (disabled in production runtime)."""
@@ -250,7 +248,7 @@ def _register_dev_routes(app: FastAPI) -> None:
 
         try:
             r = await get_client()
-            all_keys: list[bytes | str] = await r.keys("*")  # type: ignore[assignment]
+            all_keys: list[bytes | str] = await r.keys("*")
             decoded = sorted(k if isinstance(k, str) else k.decode() for k in all_keys)
             prefixes: dict[str, int] = {}
             for k in decoded:
@@ -266,11 +264,13 @@ def _register_dev_routes(app: FastAPI) -> None:
         routes: list[dict[str, Any]] = []
         for route in app.routes:
             if hasattr(route, "methods") and hasattr(route, "path"):
-                routes.append({
-                    "path": getattr(route, "path", "unknown"),
-                    "methods": list(route.methods),  # type: ignore[arg-type]
-                    "name": getattr(route, "name", "unknown"),
-                })
+                routes.append(
+                    {
+                        "path": getattr(route, "path", "unknown"),
+                        "methods": list(route.methods),  # type: ignore[arg-type]
+                        "name": getattr(route, "name", "unknown"),
+                    }
+                )
 
         def _sort_key(r: dict[str, Any]) -> str:
             p = r.get("path", "unknown")
@@ -283,6 +283,7 @@ def _register_dev_routes(app: FastAPI) -> None:
 
 
 # ── Health routes ─────────────────────────────────────────────────────────────
+
 
 def _register_health_routes(app: FastAPI) -> None:
     async def root() -> dict[str, str]:
@@ -325,11 +326,7 @@ def _register_health_routes(app: FastAPI) -> None:
         with suppress(Exception):
             r = request.app.state.redis
             locked = await r.get("system:lockdown")
-            lockdown_state = (
-                "locked"
-                if str(locked).lower() in {"1", "true", "locked", "on"}
-                else "normal"
-            )
+            lockdown_state = "locked" if str(locked).lower() in {"1", "true", "locked", "on"} else "normal"
 
         return {
             "status": "ok" if redis_ok and bool(postgres_health.get("connected")) else "degraded",
@@ -355,6 +352,7 @@ def _register_health_routes(app: FastAPI) -> None:
 
 
 # ── Factory ───────────────────────────────────────────────────────────────────
+
 
 def create_app() -> FastAPI:
     """Build and return the fully-configured FastAPI application."""

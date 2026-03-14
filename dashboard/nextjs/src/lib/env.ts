@@ -57,6 +57,10 @@ export function getApiBaseUrl(): string {
  * When NEXT_PUBLIC_WS_BASE_URL is not set, derive from the browser's
  * current origin so that http→ws and https→wss are correct automatically.
  * Next.js rewrites proxy /ws/* to the real backend.
+ *
+ * NOTE: Vercel serverless does NOT support WebSocket upgrades.
+ * If deploying the dashboard to Vercel, you MUST set NEXT_PUBLIC_WS_BASE_URL
+ * to point directly to the Railway backend (e.g. wss://your-api.up.railway.app).
  */
 export function getWsBaseUrl(): string {
   const url = process.env.NEXT_PUBLIC_WS_BASE_URL;
@@ -64,6 +68,16 @@ export function getWsBaseUrl(): string {
     // Derive from current page origin (works in both dev and prod)
     if (typeof window !== "undefined") {
       const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
+      // Warn in dev if on Vercel without explicit WS URL
+      if (
+        process.env.NODE_ENV === "development" &&
+        window.location.hostname.includes("vercel")
+      ) {
+        console.warn(
+          "[env] Vercel detected without NEXT_PUBLIC_WS_BASE_URL — WebSocket connections will fail. " +
+          "Set NEXT_PUBLIC_WS_BASE_URL to your Railway backend wss:// URL."
+        );
+      }
       return `${proto}//${window.location.host}`;
     }
     // SSR fallback — won't actually be used for real WS connections

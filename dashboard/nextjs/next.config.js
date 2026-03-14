@@ -6,6 +6,20 @@ const apiBase =
   process.env.NEXT_PUBLIC_API_BASE_URL ||
   "http://localhost:8000";
 
+// Warn at build time if apiBase is localhost in a production-ish environment.
+// This means Next.js rewrites will proxy to nothing in production.
+if (
+  apiBase.includes("localhost") &&
+  (process.env.NODE_ENV === "production" || process.env.VERCEL === "1")
+) {
+  console.warn(
+    "\n⚠️  [next.config] WARNING: apiBase resolved to",
+    apiBase,
+    "\n   Set INTERNAL_API_URL env var to your Railway backend URL.",
+    "\n   All API rewrites will fail in production without this!\n"
+  );
+}
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
