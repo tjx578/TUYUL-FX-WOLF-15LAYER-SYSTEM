@@ -25,10 +25,10 @@ import type {
   PropFirmStatus,
 } from "@/types";
 import type { PipelineData } from "@/components/PipelinePanel";
-import { getApiBaseUrl } from "@/lib/env";
 import { bearerHeader } from "@/lib/auth";
 
-const API_BASE = getApiBaseUrl();
+// Use relative paths — Next.js rewrites proxy /api/* to the backend.
+const API_BASE = "";
 
 export const API_ENDPOINTS = {
   health: "/health",
