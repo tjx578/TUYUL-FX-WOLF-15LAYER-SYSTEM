@@ -2,7 +2,9 @@ import { z } from "zod";
 
 export const SessionUserSchema = z.object({
   user_id: z.string().min(1),
-  email: z.string().email(),
+  // Accept any non-empty string — the backend uses `sub` as email fallback
+  // when authenticating via static API key (e.g. "api_key_user").
+  email: z.string().min(1),
   role: z.enum([
     "viewer",
     "operator",
