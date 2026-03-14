@@ -1,14 +1,12 @@
 """
-Integration tests for the ``/auth/session`` compat endpoint and the
-primary ``/api/auth/session`` endpoint.
+Integration tests for auth endpoints:
 
-Verifies:
-  - ``/auth/session`` returns 200 regardless of auth state.
-  - Authenticated calls return ``{ authenticated: true, user, expires_at }``.
-  - Unauthenticated calls return ``{ authenticated: false, user: null, expires_at: null }``.
-  - Invalid tokens return ``{ authenticated: false, ... }`` (no 401).
-  - The primary ``/api/auth/session`` returns 401 for missing/invalid tokens.
-  - Response shape is consistent (``authenticated``, ``user``, ``expires_at``).
+1. Compat ``/auth/session`` — always 200, ``authenticated`` flag.
+2. Primary ``/api/auth/session`` — 401 or SessionUserResponse.
+3. Login ``/api/auth/login`` — issues JWT + sets cookie.
+4. Refresh ``/api/auth/refresh`` — re-issues JWT + updates cookie.
+5. Logout ``/api/auth/logout`` — clears cookie.
+6. Cookie-based auth on compat endpoint.
 """
 
 from __future__ import annotations
@@ -58,7 +56,7 @@ def compat_client():
 @pytest.fixture()
 def primary_client():
     """TestClient mounting the primary ``/api/auth`` router."""
-    _set_auth_secret()
+    _set_auth_secret(api_key=_TEST_API_KEY)
     from api.auth_router import router
 
     app = FastAPI()
@@ -75,7 +73,6 @@ def compat_client_with_apikey():
     app = FastAPI()
     app.include_router(router)
     yield TestClient(app)
-    # Reset API_KEY so other tests aren't affected
     _set_auth_secret(api_key="")
 
 
@@ -114,7 +111,7 @@ class TestAuthSessionCompat:
         assert body["user"]["email"] == "test@example.com"
         assert body["user"]["role"] == "operator"
         assert body["user"]["name"] == "Test User"
-        assert body["expires_at"] is not None  # ISO timestamp from JWT exp
+        assert body["expires_at"] is not None
 
     def test_invalid_token_returns_unauthenticated(self, compat_client: TestClient):
         resp = compat_client.get(
@@ -157,6 +154,36 @@ class TestAuthSessionCompat:
         assert resp.status_code == 200
         assert resp.json()["authenticated"] is False
 
+    def test_cookie_based_auth(self, compat_client_with_apikey: TestClient):
+        """Session cookie (no Authorization header) should authenticate."""
+        from api.middleware.auth import COOKIE_NAME
+
+        _set_auth_secret(api_key=_TEST_API_KEY)
+        token = _make_token(sub="cookie_user", email="cookie@test.com", role="viewer")
+        compat_client_with_apikey.cookies.set(COOKIE_NAME, token)
+        resp = compat_client_with_apikey.get("/auth/session")
+        compat_client_with_apikey.cookies.clear()
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["authenticated"] is True
+        assert body["user"]["user_id"] == "cookie_user"
+
+    def test_bearer_takes_precedence_over_cookie(self, compat_client: TestClient):
+        """Authorization header wins when both header and cookie are present."""
+        from api.middleware.auth import COOKIE_NAME
+
+        _set_auth_secret()
+        header_token = _make_token(sub="header_user")
+        cookie_token = _make_token(sub="cookie_user")
+        compat_client.cookies.set(COOKIE_NAME, cookie_token)
+        resp = compat_client.get(
+            "/auth/session",
+            headers={"Authorization": f"Bearer {header_token}"},
+        )
+        compat_client.cookies.clear()
+        assert resp.status_code == 200
+        assert resp.json()["user"]["user_id"] == "header_user"
+
 
 # ============================================================================
 # 2. Primary endpoint — /api/auth/session
@@ -198,7 +225,35 @@ class TestAuthSessionPrimary:
 
 
 # ============================================================================
-# 3. Login endpoint — POST /api/auth/login
+# 3. Refresh endpoint — /api/auth/refresh
+# ============================================================================
+
+
+class TestAuthRefresh:
+    """``POST /api/auth/refresh`` — re-issues JWT + updates cookie."""
+
+    def test_refresh_with_valid_token(self, primary_client: TestClient):
+        from api.middleware.auth import COOKIE_NAME
+
+        _set_auth_secret(api_key=_TEST_API_KEY)
+        token = _make_token(sub="usr_42", email="t@test.com", role="operator")
+        resp = primary_client.post(
+            "/api/auth/refresh",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert "token" in body
+        assert body["user_id"] == "usr_42"
+        assert COOKIE_NAME in resp.cookies
+
+    def test_refresh_without_token_returns_401(self, primary_client: TestClient):
+        resp = primary_client.post("/api/auth/refresh")
+        assert resp.status_code == 401
+
+
+# ============================================================================
+# 4. Login endpoint — POST /api/auth/login
 # ============================================================================
 
 
@@ -258,7 +313,7 @@ class TestAuthLogin:
 
 
 # ============================================================================
-# 4. Logout endpoint — POST /api/auth/logout
+# 5. Logout endpoint — POST /api/auth/logout
 # ============================================================================
 
 
@@ -284,7 +339,7 @@ class TestAuthLogout:
 
 
 # ============================================================================
-# 5. Cookie-based session auth
+# 6. Cookie-based session auth
 # ============================================================================
 
 
@@ -342,7 +397,7 @@ class TestCookieAuth:
 
 
 # ============================================================================
-# 6. Compat endpoint — cookie fallback
+# 7. Compat endpoint — cookie fallback
 # ============================================================================
 
 
