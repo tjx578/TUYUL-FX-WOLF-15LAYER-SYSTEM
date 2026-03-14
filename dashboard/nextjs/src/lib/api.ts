@@ -25,10 +25,12 @@ import type {
   PropFirmStatus,
 } from "@/types";
 import type { PipelineData } from "@/components/PipelinePanel";
-import { getApiBaseUrl } from "@/lib/env";
 import { bearerHeader } from "@/lib/auth";
 
-const API_BASE = getApiBaseUrl();
+// Use relative URLs (no base) — Next.js rewrites in next.config.js will proxy
+// these paths to the real backend via NEXT_INTERNAL_API_URL.
+// This avoids the need for NEXT_PUBLIC_API_BASE_URL to be set at build time.
+const API_BASE = "";
 
 export const API_ENDPOINTS = {
   health: "/health",
