@@ -9,7 +9,8 @@ from journal.journal_schema import ContextJournal, DecisionJournal, VerdictType
 
 
 class _FakePostgres:
-    def __init__(self) -> None:  # pyright: ignore[reportMissingSuperCall]
+    def __init__(self) -> None:
+        super().__init__()
         self.calls: list[tuple[str, tuple[object, ...]]] = []
 
     @property
