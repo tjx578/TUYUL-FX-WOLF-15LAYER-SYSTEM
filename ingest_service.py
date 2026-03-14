@@ -71,11 +71,7 @@ def _get_enabled_symbols() -> list[str]:
     if not isinstance(raw, list):
         return []
     pairs: list[dict[str, Any]] = cast(list[dict[str, Any]], raw)
-    return [
-        p["symbol"]
-        for p in pairs
-        if isinstance(p, dict) and p.get("enabled")  # pyright: ignore[reportUnnecessaryIsInstance]
-    ]
+    return [p["symbol"] for p in pairs if isinstance(p, dict) and p.get("enabled")]
 
 
 def _build_redis_client() -> RedisClient:
@@ -199,7 +195,7 @@ async def _run_warmup(
             fetcher = FinnhubCandleFetcher()
             warmup_results = await fetcher.warmup_all()
 
-            system_state.validate_warmup(warmup_results)  # pyright: ignore[reportUnknownMemberType]
+            system_state.validate_warmup(warmup_results)
             _update_macro_regime(enabled_symbols)
             _set_state_from_warmup(system_state)
             return warmup_results  # success — relay results for Redis seeding
@@ -262,8 +258,8 @@ async def _seed_redis_candle_history(
                 pipe = redis.pipeline()  # type: ignore[attr-defined]
                 for candle in candles:
                     candle_json = orjson.dumps(candle).decode("utf-8")
-                    pipe.rpush(key, candle_json)  # type: ignore[union-attr]
-                await pipe.execute()  # type: ignore[union-attr]  # type: ignore[reportUnknownMemberType]
+                    pipe.rpush(key, candle_json)
+                await pipe.execute()
                 seeded += 1
                 logger.info("[Seed] {}: {} bars written", key, len(candles))
             except Exception as exc:

@@ -23,7 +23,7 @@ class MacroRegimeEngine:
     def _load_mn_history(self, symbol: str, max_items: int = 240) -> list[dict[str, Any]]:
         key = f"wolf15:candle_history:{symbol}:MN"
         try:
-            raw = cast(list[bytes], self.redis.client.lrange(key, 0, -1))  # pyright: ignore[reportUnknownMemberType]
+            raw = cast(list[bytes], self.redis.client.lrange(key, 0, -1))
             if not raw:
                 return []
             history: list[dict[str, Any]] = [orjson.loads(item) for item in raw]
