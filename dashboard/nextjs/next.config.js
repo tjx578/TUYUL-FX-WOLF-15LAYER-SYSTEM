@@ -19,12 +19,32 @@ const nextConfig = {
       process.env.NEXT_PUBLIC_API_BASE_URL ||
       "http://localhost:8000";
     return [
+      // /api/* — covers most service calls (e.g. /api/v1/trades, /api/v1/accounts)
       {
         source: "/api/:path*",
         destination: `${apiBase}/api/:path*`,
       },
-      // Also proxy bare /auth/* so the login page can call /api/auth/session
-      // via the /api prefix rewrite above without needing the env var client-side.
+      // /auth/* — used by sessionService (/auth/refresh) and login (/auth/session)
+      {
+        source: "/auth/:path*",
+        destination: `${apiBase}/auth/:path*`,
+      },
+      // /preferences/* — used by preferencesService
+      {
+        source: "/preferences/:path*",
+        destination: `${apiBase}/preferences/:path*`,
+      },
+      // /preferences (exact, no trailing segment)
+      {
+        source: "/preferences",
+        destination: `${apiBase}/preferences`,
+      },
+      // /pipeline/* — used by pipelineDagService (/pipeline/dag)
+      {
+        source: "/pipeline/:path*",
+        destination: `${apiBase}/pipeline/:path*`,
+      },
+      // /ws/* — WebSocket upgrade proxy
       {
         source: "/ws/:path*",
         destination: `${apiBase}/ws/:path*`,
