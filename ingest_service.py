@@ -100,7 +100,7 @@ async def _has_stale_cache(redis: RedisClient) -> bool:
                 length: int = await redis.llen(key)  # type: ignore[attr-defined]
                 if length > 0:
                     logger.info(
-                        "[StaleCachne] Found stale candle cache: {} ({} bars)",
+                        "[StaleCache] Found stale candle cache: {} ({} bars)",
                         key,
                         length,
                     )

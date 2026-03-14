@@ -161,7 +161,7 @@ def test_montecarlo_run_handles_none_payload_gracefully(monkeypatch: MonkeyPatch
     called = {"publish": False}
 
     def _no_data(**_kwargs: Any) -> None:
-        return None
+        return
 
     def _capture_publish(*_args: object, **_kwargs: object) -> None:
         called["publish"] = True
