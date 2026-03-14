@@ -38,10 +38,10 @@ const nextConfig = {
         source: "/api/:path*",
         destination: `${apiBase}/api/:path*`,
       },
-      // /auth/* — sessionService calls /auth/refresh (no /api prefix)
+      // /auth/* — sessionService calls /auth/refresh; backend prefix is /api/auth
       {
         source: "/auth/:path*",
-        destination: `${apiBase}/auth/:path*`,
+        destination: `${apiBase}/api/auth/:path*`,
       },
       // /preferences — preferencesService calls /preferences and /preferences/:id
       {
