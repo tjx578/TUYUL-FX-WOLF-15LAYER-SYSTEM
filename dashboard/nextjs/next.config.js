@@ -19,27 +19,35 @@ const nextConfig = {
       process.env.NEXT_PUBLIC_API_BASE_URL ||
       "http://localhost:8000";
     return [
-      // /api/* — covers most service calls (e.g. /api/v1/trades, /api/v1/accounts)
+      // /api/:path* — strip the leading /api prefix and forward to the backend.
+      // The backend already includes /api in its own router prefixes, so
+      // /api/v1/trades  → ${apiBase}/v1/trades  ✓
+      // /api/auth/session → ${apiBase}/auth/session ✓  (backend prefix is /api/auth)
+      // Wait — backend router prefix is /api/auth, so destination must keep /api.
+      // Solution: keep /api in destination so /api/auth/session → ${apiBase}/api/auth/session.
+      // But /api/v1/trades → ${apiBase}/api/v1/trades also needs /api retained.
+      // Therefore: rewrite /api/:path* → ${apiBase}/api/:path* is correct AS LONG AS
+      // no service prefixes its call path with /api AGAIN.  Services already use full
+      // paths like /api/v1/trades (no double-prefix), so this is fine.
       {
         source: "/api/:path*",
         destination: `${apiBase}/api/:path*`,
       },
-      // /auth/* — used by sessionService (/auth/refresh) and login (/auth/session)
+      // /auth/* — sessionService calls /auth/refresh (no /api prefix)
       {
         source: "/auth/:path*",
         destination: `${apiBase}/auth/:path*`,
       },
-      // /preferences/* — used by preferencesService
-      {
-        source: "/preferences/:path*",
-        destination: `${apiBase}/preferences/:path*`,
-      },
-      // /preferences (exact, no trailing segment)
+      // /preferences — preferencesService calls /preferences and /preferences/:id
       {
         source: "/preferences",
         destination: `${apiBase}/preferences`,
       },
-      // /pipeline/* — used by pipelineDagService (/pipeline/dag)
+      {
+        source: "/preferences/:path*",
+        destination: `${apiBase}/preferences/:path*`,
+      },
+      // /pipeline — pipelineDagService calls /pipeline/dag
       {
         source: "/pipeline/:path*",
         destination: `${apiBase}/pipeline/:path*`,
