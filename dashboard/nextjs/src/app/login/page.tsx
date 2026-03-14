@@ -42,6 +42,12 @@ export default function LoginPage() {
           body: JSON.stringify({ api_key: trimmedKey }),
         });
 
+        // Log response headers (set-cookie, etc.)
+        const responseHeaders: Record<string, string> = {};
+        res.headers.forEach((value, key) => { responseHeaders[key] = value; });
+        console.log("[v0] LOGIN response status:", res.status, res.statusText);
+        console.log("[v0] LOGIN response headers →", JSON.stringify(responseHeaders, null, 2));
+
         if (!res.ok) {
           const body = await res.json().catch(() => ({}));
           setError(
@@ -63,9 +69,11 @@ export default function LoginPage() {
           sessionStorage.setItem("api_key", trimmedKey);
         }
 
+        console.log("[v0] LOGIN redirect → / (status: 200 → push)");
         router.push("/");
         router.refresh();
-      } catch {
+      } catch (err) {
+        console.log("[v0] LOGIN fetch error:", err);
         setError("Could not reach the API server. Check INTERNAL_API_URL is set.");
         setLoading(false);
       }
