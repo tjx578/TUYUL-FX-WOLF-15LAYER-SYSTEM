@@ -21,10 +21,10 @@ import hashlib
 import hmac
 import os
 import time
-from typing import Any
+from typing import Any, Literal
 
-from fastapi import Header, HTTPException, Query, WebSocket  # pyright: ignore[reportMissingImports]
-from loguru import logger  # pyright: ignore[reportMissingImports]
+from fastapi import Header, HTTPException, Query, Request, Response, WebSocket
+from loguru import logger
 
 # ---------------------------------------------------------------------------
 # Config
@@ -57,6 +57,20 @@ if not _is_strong_jwt_secret(JWT_SECRET):
     )
 elif _LEGACY_JWT_SECRET and not _DASHBOARD_JWT_SECRET:
     logger.warning("Using legacy JWT_SECRET env var; please migrate to DASHBOARD_JWT_SECRET.")
+
+# ---------------------------------------------------------------------------
+# Cookie configuration
+# ---------------------------------------------------------------------------
+
+COOKIE_NAME: str = os.getenv("AUTH_COOKIE_NAME", "wolf15_session")
+COOKIE_SECURE: bool = os.getenv("AUTH_COOKIE_SECURE", "true").strip().lower() in {"1", "true", "yes"}
+_SameSite = Literal["lax", "strict", "none"]
+_VALID_SAMESITE: set[_SameSite] = {"lax", "strict", "none"}
+_raw_samesite = os.getenv("AUTH_COOKIE_SAMESITE", "lax").strip().lower()
+COOKIE_SAMESITE: _SameSite = _raw_samesite if _raw_samesite in _VALID_SAMESITE else "lax"
+COOKIE_DOMAIN: str | None = os.getenv("AUTH_COOKIE_DOMAIN", "").strip() or None
+COOKIE_PATH: str = os.getenv("AUTH_COOKIE_PATH", "/")
+COOKIE_MAX_AGE: int = TOKEN_EXPIRE_MIN * 60
 
 # ---------------------------------------------------------------------------
 # Lightweight JWT helpers (no external lib needed -- HMAC-SHA256 only)
@@ -172,6 +186,7 @@ def decode_token(raw: str) -> dict[str, Any] | None:
 # API key validation
 # ---------------------------------------------------------------------------
 
+
 def validate_api_key(key: str) -> bool:
     """
     Validate a static API key (constant-time comparison).
@@ -184,43 +199,87 @@ def validate_api_key(key: str) -> bool:
 
 
 # ---------------------------------------------------------------------------
+# Cookie helpers
+# ---------------------------------------------------------------------------
+
+
+def set_auth_cookie(response: Response, token: str) -> None:
+    """Set an HttpOnly session cookie containing the JWT."""
+    response.set_cookie(
+        key=COOKIE_NAME,
+        value=token,
+        httponly=True,
+        secure=COOKIE_SECURE,
+        samesite=COOKIE_SAMESITE,
+        domain=COOKIE_DOMAIN,
+        path=COOKIE_PATH,
+        max_age=COOKIE_MAX_AGE,
+    )
+
+
+def clear_auth_cookie(response: Response) -> None:
+    """Delete the session cookie."""
+    response.delete_cookie(
+        key=COOKIE_NAME,
+        httponly=True,
+        secure=COOKIE_SECURE,
+        samesite=COOKIE_SAMESITE,
+        domain=COOKIE_DOMAIN,
+        path=COOKIE_PATH,
+    )
+
+
+def _extract_cookie_token(request: Request | None) -> str | None:
+    """Read the session JWT from the request cookie, if present."""
+    if request is None:
+        return None
+    return request.cookies.get(COOKIE_NAME)
+
+
+# ---------------------------------------------------------------------------
 # FastAPI HTTP dependency
 # ---------------------------------------------------------------------------
 
-def verify_token(authorization: str = Header(None)) -> dict[str, Any]:
+
+def verify_token(
+    request: Request,
+    authorization: str = Header(None),
+) -> dict[str, Any]:
     """
     FastAPI dependency for HTTP routes.
 
-    Accepts:
-      - ``Authorization: Bearer <jwt>``
-      - ``Authorization: Bearer <api_key>``
+    Accepts (checked in order):
+      1. ``Authorization: Bearer <jwt>``
+      2. ``Authorization: Bearer <api_key>``
+      3. HttpOnly session cookie (``wolf15_session``)
 
     Raises HTTPException 401 on failure.
     Returns payload dict on success.
     """
-    if not authorization:
-        raise HTTPException(status_code=401, detail="Missing Authorization header")
+    # ── 1. Try Authorization header ──
+    if authorization:
+        scheme, _, token = authorization.partition(" ")
+        if scheme.lower() == "bearer" and token:
+            payload = decode_token(token)
+            if payload is not None:
+                return payload
+            if validate_api_key(token):
+                return {"sub": "api_key_user", "auth_method": "api_key"}
 
-    # Strip 'Bearer ' prefix
-    scheme, _, token = authorization.partition(" ")
-    if scheme.lower() != "bearer" or not token:
-        raise HTTPException(status_code=401, detail="Invalid Authorization scheme. Use: Bearer <token>")
+    # ── 2. Fallback: HttpOnly cookie ──
+    cookie_token = _extract_cookie_token(request)
+    if cookie_token:
+        payload = decode_token(cookie_token)
+        if payload is not None:
+            return payload
 
-    # Try JWT first
-    payload = decode_token(token)
-    if payload is not None:
-        return payload
-
-    # Fall back to API key
-    if validate_api_key(token):
-        return {"sub": "api_key_user", "auth_method": "api_key"}
-
-    raise HTTPException(status_code=401, detail="Invalid or expired token")
+    raise HTTPException(status_code=401, detail="Missing or invalid credentials")
 
 
 # ---------------------------------------------------------------------------
 # FastAPI WebSocket dependency (query-param based)
 # ---------------------------------------------------------------------------
+
 
 async def verify_ws_token(
     websocket: WebSocket,
