@@ -4,7 +4,10 @@ import type { SessionUser, UserRole } from "@/contracts/auth";
 import { SessionUserSchema } from "@/schema/authSchema";
 
 function getApiBase(): string | null {
-  const base = process.env.INTERNAL_API_URL || process.env.NEXT_PUBLIC_API_URL;
+  const base =
+    process.env.INTERNAL_API_URL ||
+    process.env.NEXT_PUBLIC_API_URL ||
+    process.env.NEXT_PUBLIC_API_BASE_URL;
   if (!base || base.trim() === "") {
     return null;
   }
