@@ -12,13 +12,20 @@ const nextConfig = {
     ];
   },
   async rewrites() {
-    // Use NEXT_INTERNAL_API_URL (server-side only, not exposed to browser).
-    // Next.js strips the NEXT_ prefix internally, so we need to use it here.
-    // Falls back to NEXT_PUBLIC_API_BASE_URL or localhost for local dev.
+    // Resolve the backend API base URL for server-side proxy rewrites.
+    // Check in order: NEXT_PUBLIC_API_BASE_URL (if set at build time),
+    // or API_BASE_URL (from Vercel env), or localhost for local dev.
+    // NOTE: Do NOT use fallback to localhost in production — require explicit config.
     const apiBase =
-      process.env.NEXT_INTERNAL_API_URL ||
       process.env.NEXT_PUBLIC_API_BASE_URL ||
-      "http://localhost:8000";
+      process.env.API_BASE_URL ||
+      (process.env.NODE_ENV === "production"
+        ? (() => {
+            throw new Error(
+              "API_BASE_URL or NEXT_PUBLIC_API_BASE_URL must be set in production"
+            );
+          })()
+        : "http://localhost:8000");
     return [
       // /api/:path* — strip the leading /api prefix and forward to the backend.
       // The backend already includes /api in its own router prefixes, so
