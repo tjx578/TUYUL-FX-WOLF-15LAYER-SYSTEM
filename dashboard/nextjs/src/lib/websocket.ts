@@ -16,6 +16,7 @@ import type {
 } from "@/types";
 
 import { getToken } from "@/lib/auth";
+import { getWsBaseUrl } from "@/lib/env";
 
 // Lazily resolved on first use (not at module init) so window.location
 // is available. getWsBaseUrl() now derives ws/wss from the page origin
