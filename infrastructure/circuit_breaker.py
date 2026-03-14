@@ -86,14 +86,17 @@ class CircuitBreaker:
         half_open_success_threshold: int | None = None,
     ) -> None:
         self.name = name
-        self._failure_threshold: int = failure_threshold or int(
-            os.getenv("WOLF15_CB_FAILURE_THRESHOLD", "5")
+        self._failure_threshold: int = (
+            failure_threshold if failure_threshold is not None
+            else int(os.getenv("WOLF15_CB_FAILURE_THRESHOLD", "5"))
         )
-        self._recovery_timeout: float = recovery_timeout or float(
-            os.getenv("WOLF15_CB_RECOVERY_TIMEOUT", "60")
+        self._recovery_timeout: float = (
+            recovery_timeout if recovery_timeout is not None
+            else float(os.getenv("WOLF15_CB_RECOVERY_TIMEOUT", "60"))
         )
-        self._half_open_success_threshold: int = half_open_success_threshold or int(
-            os.getenv("WOLF15_CB_HALF_OPEN_ATTEMPTS", "2")
+        self._half_open_success_threshold: int = (
+            half_open_success_threshold if half_open_success_threshold is not None
+            else int(os.getenv("WOLF15_CB_HALF_OPEN_ATTEMPTS", "2"))
         )
         self._state: CircuitState = CircuitState.CLOSED
         self._failure_count: int = 0
