@@ -46,6 +46,12 @@ class SessionUserResponse(BaseModel):
     name: str | None = None
 
 
+class RefreshResponse(SessionUserResponse):
+    """Refresh response includes the new JWT alongside user info."""
+
+    token: str
+
+
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 
@@ -125,7 +131,7 @@ async def get_session(
     return _session_from_payload(payload)
 
 
-@router.post("/refresh", response_model=SessionUserResponse)
+@router.post("/refresh", response_model=RefreshResponse)
 async def refresh_session(
     response: Response,
     payload: dict[str, Any] = Depends(verify_token),  # noqa: B008

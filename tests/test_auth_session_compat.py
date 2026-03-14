@@ -195,3 +195,187 @@ class TestAuthSessionPrimary:
         assert body["email"] == "test@example.com"
         assert body["role"] == "operator"
         assert body["name"] == "Test User"
+
+
+# ============================================================================
+# 3. Login endpoint — POST /api/auth/login
+# ============================================================================
+
+
+class TestAuthLogin:
+    """``POST /api/auth/login`` — validates API key, returns JWT + sets cookie."""
+
+    @pytest.fixture()
+    def login_client(self):
+        _set_auth_secret(api_key=_TEST_API_KEY)
+        from api.auth_router import router
+
+        app = FastAPI()
+        app.include_router(router)
+        yield TestClient(app)
+        _set_auth_secret(api_key="")
+
+    def test_login_with_valid_api_key_returns_token_and_cookie(self, login_client: TestClient):
+        resp = login_client.post(
+            "/api/auth/login",
+            json={"api_key": _TEST_API_KEY},
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert "token" in body
+        assert body["user_id"] == "api_key_user"
+
+        # Must set HttpOnly session cookie
+        cookie_header = resp.headers.get("set-cookie", "")
+        assert "wolf15_session=" in cookie_header
+        assert "httponly" in cookie_header.lower()
+
+    def test_login_with_invalid_key_returns_401(self, login_client: TestClient):
+        resp = login_client.post(
+            "/api/auth/login",
+            json={"api_key": "wrong-key"},
+        )
+        assert resp.status_code == 401
+
+    def test_login_with_empty_key_returns_422(self, login_client: TestClient):
+        resp = login_client.post(
+            "/api/auth/login",
+            json={"api_key": ""},
+        )
+        assert resp.status_code == 422
+
+    def test_login_with_valid_jwt_returns_new_token(self, login_client: TestClient):
+        _set_auth_secret()
+        existing_jwt = _make_token(sub="usr_99", email="jwt@test.com", role="admin")
+        resp = login_client.post(
+            "/api/auth/login",
+            json={"api_key": existing_jwt},
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["user_id"] == "usr_99"
+        assert "wolf15_session=" in resp.headers.get("set-cookie", "")
+
+
+# ============================================================================
+# 4. Logout endpoint — POST /api/auth/logout
+# ============================================================================
+
+
+class TestAuthLogout:
+    """``POST /api/auth/logout`` — clears session cookie."""
+
+    @pytest.fixture()
+    def logout_client(self):
+        _set_auth_secret()
+        from api.auth_router import router
+
+        app = FastAPI()
+        app.include_router(router)
+        return TestClient(app)
+
+    def test_logout_clears_cookie(self, logout_client: TestClient):
+        resp = logout_client.post("/api/auth/logout")
+        assert resp.status_code == 200
+        assert resp.json()["status"] == "logged_out"
+        # Cookie should be cleared (max-age=0 or expires in the past)
+        cookie_header = resp.headers.get("set-cookie", "")
+        assert "wolf15_session=" in cookie_header
+
+
+# ============================================================================
+# 5. Cookie-based session auth
+# ============================================================================
+
+
+class TestCookieAuth:
+    """Verify that session endpoints accept HttpOnly cookie as auth."""
+
+    @pytest.fixture()
+    def cookie_client(self):
+        _set_auth_secret()
+        from api.auth_router import router
+
+        app = FastAPI()
+        app.include_router(router)
+        return TestClient(app)
+
+    def test_session_via_cookie_returns_user(self, cookie_client: TestClient):
+        """GET /api/auth/session should accept the session cookie."""
+        _set_auth_secret()
+        from api.middleware.auth import COOKIE_NAME
+
+        token = _make_token(sub="cookie_user", email="c@test.com", role="trader")
+        cookie_client.cookies.set(COOKIE_NAME, token)
+
+        resp = cookie_client.get("/api/auth/session")
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["user_id"] == "cookie_user"
+        assert body["role"] == "trader"
+
+    def test_session_refreshes_cookie(self, cookie_client: TestClient):
+        """GET /api/auth/session should refresh the session cookie on success."""
+        _set_auth_secret()
+        token = _make_token(sub="usr_1")
+        resp = cookie_client.get(
+            "/api/auth/session",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert resp.status_code == 200
+        assert "wolf15_session=" in resp.headers.get("set-cookie", "")
+
+    def test_refresh_via_cookie(self, cookie_client: TestClient):
+        """POST /api/auth/refresh should work with cookie-only auth."""
+        _set_auth_secret()
+        from api.middleware.auth import COOKIE_NAME
+
+        token = _make_token(sub="cookie_user", email="c@test.com", role="admin")
+        cookie_client.cookies.set(COOKIE_NAME, token)
+
+        resp = cookie_client.post("/api/auth/refresh")
+        assert resp.status_code == 200
+        body = resp.json()
+        assert "token" in body
+        assert body["user_id"] == "cookie_user"
+        assert "wolf15_session=" in resp.headers.get("set-cookie", "")
+
+
+# ============================================================================
+# 6. Compat endpoint — cookie fallback
+# ============================================================================
+
+
+class TestAuthCompatCookie:
+    """``GET /auth/session`` — should also accept HttpOnly cookie."""
+
+    @pytest.fixture()
+    def compat_cookie_client(self):
+        _set_auth_secret()
+        from api.routes.auth_compat import router
+
+        app = FastAPI()
+        app.include_router(router)
+        return TestClient(app)
+
+    def test_compat_session_via_cookie(self, compat_cookie_client: TestClient):
+        _set_auth_secret()
+        from api.middleware.auth import COOKIE_NAME
+
+        token = _make_token(sub="compat_cookie", email="cc@test.com", role="viewer")
+        compat_cookie_client.cookies.set(COOKIE_NAME, token)
+
+        resp = compat_cookie_client.get("/auth/session")
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["authenticated"] is True
+        assert body["user"]["user_id"] == "compat_cookie"
+
+    def test_compat_invalid_cookie_returns_unauthenticated(self, compat_cookie_client: TestClient):
+        from api.middleware.auth import COOKIE_NAME
+
+        compat_cookie_client.cookies.set(COOKIE_NAME, "garbage-token")
+
+        resp = compat_cookie_client.get("/auth/session")
+        assert resp.status_code == 200
+        assert resp.json()["authenticated"] is False
