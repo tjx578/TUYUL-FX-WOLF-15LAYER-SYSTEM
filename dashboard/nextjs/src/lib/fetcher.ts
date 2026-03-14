@@ -21,6 +21,7 @@ export async function apiFetch(
 
   return fetch(path, {
     ...opts,
+    credentials: "include",
     headers: {
       "Content-Type": "application/json",
       ...(auth ? { Authorization: auth } : {}),

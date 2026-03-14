@@ -2,9 +2,13 @@ import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import type { SessionUser, UserRole } from "@/contracts/auth";
 import { SessionUserSchema } from "@/schema/authSchema";
+import { AUTH_SESSION } from "@/lib/endpoints";
 
 function getApiBase(): string | null {
-  const base = process.env.INTERNAL_API_URL || process.env.NEXT_PUBLIC_API_URL;
+  const base =
+    process.env.INTERNAL_API_URL ||
+    process.env.NEXT_PUBLIC_API_URL ||
+    process.env.NEXT_PUBLIC_API_BASE_URL;
   if (!base || base.trim() === "") {
     return null;
   }
@@ -16,17 +20,20 @@ function toRedirectPath(): string {
 }
 
 export async function getVerifiedSessionUser(): Promise<SessionUser | null> {
+  // Always call headers() first so Next.js detects dynamic usage and
+  // never statically prerenders routes guarded by this function.
+  const h = await headers();
+
   const apiBase = getApiBase();
   if (!apiBase) {
     return null;
   }
 
-  const h = await headers();
   const authHeader = h.get("authorization");
   const cookieHeader = h.get("cookie");
 
   try {
-    const response = await fetch(`${apiBase}/auth/session`, {
+    const response = await fetch(`${apiBase}${AUTH_SESSION}`, {
       method: "GET",
       headers: {
         ...(authHeader ? { authorization: authHeader } : {}),

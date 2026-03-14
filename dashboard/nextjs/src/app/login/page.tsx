@@ -1,21 +1,16 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState, useEffect, useCallback, type FormEvent } from "react";
+import { useState, useCallback, type FormEvent } from "react";
+import { AUTH_LOGIN } from "@/lib/endpoints";
+import { getApiBaseUrl } from "@/lib/env";
+import { setToken } from "@/lib/auth";
 
 export default function LoginPage() {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [apiKey, setApiKey] = useState<string>(() =>
-    (process.env.NEXT_PUBLIC_API_KEY ?? "").toString().trim(),
-  );
-
-  useEffect(() => {
-    if (process.env.NEXT_PUBLIC_API_KEY) {
-      setApiKey(process.env.NEXT_PUBLIC_API_KEY.trim());
-    }
-  }, []);
+  const [apiKey, setApiKey] = useState("");
 
   const handleSubmit = useCallback(
     async (e: FormEvent<HTMLFormElement>) => {
@@ -36,19 +31,15 @@ export default function LoginPage() {
       }
 
       try {
-        // Use relative /api/auth/session — Next.js rewrite proxies this to the
-        // backend without requiring NEXT_PUBLIC_* env vars in the browser bundle.
-        const requestHeaders = {
-          authorization: `Bearer ${trimmedKey}`,
-          origin: window.location.origin,
-          cookie: document.cookie || "(none)",
-        };
-        console.log("[v0] LOGIN request headers →", JSON.stringify(requestHeaders, null, 2));
+        // POST to /api/auth/login — backend sets HttpOnly cookie + returns JWT in body.
+        const apiBase = getApiBaseUrl();
+        const loginUrl = `${apiBase}${AUTH_LOGIN}`;
 
-        const res = await fetch(`/api/auth/session`, {
-          method: "GET",
-          headers: { authorization: requestHeaders.authorization },
+        const res = await fetch(loginUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
           credentials: "include",
+          body: JSON.stringify({ api_key: trimmedKey }),
         });
 
         // Log response headers (set-cookie, etc.)
@@ -67,8 +58,16 @@ export default function LoginPage() {
           return;
         }
 
-        // Persist the API key in sessionStorage so axios interceptors can attach it.
-        sessionStorage.setItem("api_key", trimmedKey);
+        const data = await res.json().catch(() => ({})) as { token?: string };
+
+        // Store the JWT for WebSocket auth (query-param) and axios fallback.
+        if (data.token) {
+          setToken(data.token);                       // localStorage: wolf15_token
+          sessionStorage.setItem("api_key", data.token); // sessionStorage: api_key (axios)
+        } else {
+          // Fallback: store the raw API key so existing Bearer flows still work.
+          sessionStorage.setItem("api_key", trimmedKey);
+        }
 
         console.log("[v0] LOGIN redirect → / (status: 200 → push)");
         router.push("/");

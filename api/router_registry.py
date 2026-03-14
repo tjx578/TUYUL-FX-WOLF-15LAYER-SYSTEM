@@ -20,8 +20,8 @@ if TYPE_CHECKING:
 class RouterEntry:
     """Declarative descriptor for a mounted router."""
 
-    module: str      # e.g. "api.allocation_router"
-    attr: str        # e.g. "write_router"
+    module: str  # e.g. "api.allocation_router"
+    attr: str  # e.g. "write_router"
     description: str  # human-readable comment
 
 
@@ -29,6 +29,8 @@ class RouterEntry:
 ROUTER_ENTRIES: list[RouterEntry] = [
     # Auth session + refresh (must be first — dashboard blocks on /auth/session)
     RouterEntry("api.auth_router", "router", "Auth session + token refresh"),
+    # Legacy /auth/session compat (read-only, no JWT required)
+    RouterEntry("api.routes.auth_compat", "router", "Auth compat session probe"),
     # Trade write lifecycle (take/skip/confirm/close/active + risk/calculate)
     RouterEntry("api.allocation_router", "write_router", "Trade write lifecycle"),
     # Admin outbox inspect/replay
