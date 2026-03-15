@@ -665,3 +665,86 @@ wolf_vault_sync_score = Gauge(
     "Current vault health composite score (0-1)",
     ["symbol"],
 )
+
+# ══════════════════════════════════════════════════════════
+#  Trading performance metrics
+# ══════════════════════════════════════════════════════════
+
+TRADES_TOTAL = _R.counter(
+    "wolf_trades_total",
+    "Total trades executed by outcome",
+    label_names=("symbol", "outcome"),  # outcome: win, loss, breakeven
+)
+
+PNL_REALIZED_TOTAL = _R.counter(
+    "wolf_pnl_realized_total",
+    "Cumulative realized PnL in account currency",
+    label_names=("symbol",),
+)
+
+PNL_REALIZED_CURRENT = _R.gauge(
+    "wolf_pnl_realized_current",
+    "Running realized PnL gauge for real-time tracking",
+    label_names=("account_id",),
+)
+
+WIN_RATE = _R.gauge(
+    "wolf_win_rate",
+    "Current rolling win rate (0-1)",
+    label_names=("symbol",),
+)
+
+DRAWDOWN_MAX_PERCENT = _R.gauge(
+    "wolf_drawdown_max_percent",
+    "Maximum drawdown percentage observed (high-water mark)",
+    label_names=("account_id",),
+)
+
+DAILY_LOSS_PERCENT = _R.gauge(
+    "wolf_daily_loss_percent",
+    "Current daily loss as percentage of starting balance",
+    label_names=("account_id",),
+)
+
+# ══════════════════════════════════════════════════════════
+#  Feed health metrics
+# ══════════════════════════════════════════════════════════
+
+FEED_STALE_TOTAL = _R.counter(
+    "wolf_feed_stale_total",
+    "Number of feed stale events detected",
+    label_names=("symbol",),
+)
+
+FEED_RECONNECT_TOTAL = _R.counter(
+    "wolf_feed_reconnect_total",
+    "Number of feed reconnection attempts",
+    label_names=("source",),  # source: finnhub, forexfactory
+)
+
+CIRCUIT_BREAKER_STATE = _R.gauge(
+    "wolf_circuit_breaker_state",
+    "Circuit breaker state (0=CLOSED, 1=HALF_OPEN, 2=OPEN)",
+    label_names=("name",),
+)
+
+CIRCUIT_BREAKER_TRIPS = _R.counter(
+    "wolf_circuit_breaker_trips_total",
+    "Number of circuit breaker trip events (CLOSED→OPEN)",
+    label_names=("name",),
+)
+
+# ══════════════════════════════════════════════════════════
+#  Kill switch metrics
+# ══════════════════════════════════════════════════════════
+
+KILL_SWITCH_ACTIVE = _R.gauge(
+    "wolf_kill_switch_active",
+    "Kill switch status (1=tripped, 0=normal)",
+)
+
+KILL_SWITCH_TRIPS_TOTAL = _R.counter(
+    "wolf_kill_switch_trips_total",
+    "Number of times kill switch has been tripped",
+    label_names=("reason",),
+)
