@@ -5,13 +5,16 @@
 // Data: WS /ws/prices + REST fallback
 // ============================================================
 
+import { useCallback } from "react";
 import { usePricesREST } from "@/lib/api";
-import { usePriceMap } from "@/lib/websocket";
+import { useLivePrices } from "@/lib/realtime";
 import type { PriceData } from "@/types";
 
 export default function PricesPage() {
-  const { data: restPrices } = usePricesREST();
-  const { priceMap, connected } = usePriceMap();
+  const { data: restPrices, mutate } = usePricesREST();
+  const handleSeqGap = useCallback(() => { mutate(); }, [mutate]);
+  const { priceMap, status } = useLivePrices(true, false, handleSeqGap);
+  const connected = status === "LIVE";
 
   // Merge WS + REST; WS wins
   const allPrices: PriceData[] = (() => {
@@ -101,8 +104,8 @@ export default function PricesPage() {
                   (p.change_percent_24h ?? 0) > 0
                     ? "var(--green)"
                     : (p.change_percent_24h ?? 0) < 0
-                    ? "var(--red)"
-                    : "var(--text-muted)";
+                      ? "var(--red)"
+                      : "var(--text-muted)";
 
                 return (
                   <tr key={p.symbol}>

@@ -25,7 +25,8 @@ interface UseLiveRiskResult {
 export function useLiveRisk(
   initialSnapshot: RiskSnapshot | null = null,
   accountId?: string,
-  enabled = true
+  enabled = true,
+  onSeqGap?: () => void
 ): UseLiveRiskResult {
   const [snapshot, setSnapshot] = useState<RiskSnapshot | null>(initialSnapshot);
   const [status, setStatus] = useState<WsConnectionStatus>("CONNECTING");
@@ -72,6 +73,7 @@ export function useLiveRisk(
         }
       },
       onDegradation: () => setStatus("DEGRADED"),
+      onSeqGap: () => onSeqGap?.(),
       onError: () => setStatus("DEGRADED"),
     });
 

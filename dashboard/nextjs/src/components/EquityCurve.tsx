@@ -5,7 +5,7 @@
 // Data: WS /ws/equity → DrawdownData[]
 // ============================================================
 
-import { useEquityHistory } from "@/lib/websocket";
+import { useLiveEquity } from "@/lib/realtime";
 
 interface EquityCurveProps {
   accountId?: string;
@@ -51,7 +51,8 @@ export function EquityCurve({
   height = 120,
   showBalance = true,
 }: EquityCurveProps) {
-  const { history, connected } = useEquityHistory(accountId, 500);
+  const { history, status } = useLiveEquity(accountId, 500);
+  const connected = status === "LIVE";
 
   const equityPoints = history.map((p: { equity: any; }) => p.equity);
   const balancePoints = history.map((p: { balance: any; }) => p.balance);
@@ -73,8 +74,8 @@ export function EquityCurve({
   const gradId = `eq-area-${accountId ?? "default"}`;
   const glowId = `eq-glow-${accountId ?? "default"}`;
   const lineColor = isUp ? "#00F5A0" : "#FF4D4F";
-  const areaTop   = isUp ? "rgba(0,245,160,0.40)" : "rgba(255,61,87,0.35)";
-  const areaBot   = isUp ? "rgba(0,245,160,0.02)" : "rgba(255,61,87,0.02)";
+  const areaTop = isUp ? "rgba(0,245,160,0.40)" : "rgba(255,61,87,0.35)";
+  const areaBot = isUp ? "rgba(0,245,160,0.02)" : "rgba(255,61,87,0.02)";
 
   return (
     <div className="card elevation-1" style={{ display: "flex", flexDirection: "column", gap: 10 }}>
@@ -137,7 +138,7 @@ export function EquityCurve({
             <defs>
               {/* Area gradient: opaque top → transparent bottom */}
               <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%"  stopColor={areaTop} />
+                <stop offset="0%" stopColor={areaTop} />
                 <stop offset="100%" stopColor={areaBot} />
               </linearGradient>
               {/* SVG blur filter for line glow */}

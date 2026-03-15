@@ -94,12 +94,12 @@ const apiMutateWithHeaders = async (
     method.toUpperCase() === "GET"
       ? {}
       : {
-          "X-Edit-Mode": "ON",
-          "X-Action-Reason": "UI_WRITE_ACTION",
-          ...(process.env.NEXT_PUBLIC_ACTION_PIN
-            ? { "X-Action-Pin": process.env.NEXT_PUBLIC_ACTION_PIN }
-            : {}),
-        };
+        "X-Edit-Mode": "ON",
+        "X-Action-Reason": "UI_WRITE_ACTION",
+        ...(process.env.NEXT_PUBLIC_ACTION_PIN
+          ? { "X-Action-Pin": process.env.NEXT_PUBLIC_ACTION_PIN }
+          : {}),
+      };
 
   const auth = bearerHeader();
   const res = await fetch(`${API_BASE}${url}`, {
@@ -282,11 +282,11 @@ export function usePropFirmStatus(accountId: string) {
 }
 
 export function usePricesREST() {
-  const { data, error, isLoading } = useSWR<PriceData[]>(
+  const { data, error, isLoading, mutate } = useSWR<PriceData[]>(
     "/api/v1/prices",
     fetcher
   );
-  return { data, isLoading, isError: !!error, error };
+  return { data, isLoading, isError: !!error, error, mutate };
 }
 
 export function usePairs() {

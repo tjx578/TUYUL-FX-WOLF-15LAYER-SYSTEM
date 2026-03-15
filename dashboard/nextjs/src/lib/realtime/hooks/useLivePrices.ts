@@ -27,7 +27,7 @@ interface UseLivePricesResult {
  * @param rafBatch - Enable RAF batching for ultra-high symbol counts (50+).
  *                   When true, price updates are collapsed to one setState per frame.
  */
-export function useLivePrices(enabled = true, rafBatch = false): UseLivePricesResult {
+export function useLivePrices(enabled = true, rafBatch = false, onSeqGap?: () => void): UseLivePricesResult {
   const [priceMap, setPriceMap] = useState<Record<string, PriceData>>({});
   const [status, setStatus] = useState<WsConnectionStatus>("CONNECTING");
   const [isStale, setIsStale] = useState(false);
@@ -87,6 +87,7 @@ export function useLivePrices(enabled = true, rafBatch = false): UseLivePricesRe
       onDegradation: () => {
         setStatus("DEGRADED");
       },
+      onSeqGap: () => onSeqGap?.(),
       onError: () => {
         setStatus("DEGRADED");
       },

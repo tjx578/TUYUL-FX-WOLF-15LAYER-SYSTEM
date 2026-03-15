@@ -39,15 +39,18 @@ export function mergeSingle<T extends { timestamp?: string | number }>(
 }
 
 /**
- * Apply a delta to a list (upsert by ID field).
+ * Apply a delta to a list (upsert by key).
  * Items missing from delta keep their snapshot state.
+ * @param getKey  extractor for the identity field (default: `(x) => x.id`)
  */
-export function mergeList<T extends { id?: string }>(
+export function mergeList<T>(
   snapshot: T[],
-  delta: T
+  delta: T,
+  getKey: (item: T) => string | undefined = (x) => (x as Record<string, unknown>).id as string | undefined
 ): T[] {
-  if (!delta.id) return [...snapshot, delta];
-  const idx = snapshot.findIndex((item) => item.id === delta.id);
+  const key = getKey(delta);
+  if (!key) return [...snapshot, delta];
+  const idx = snapshot.findIndex((item) => getKey(item) === key);
   if (idx === -1) return [...snapshot, delta];
   const next = [...snapshot];
   next[idx] = delta;

@@ -13,7 +13,7 @@
  *   NEXT_PUBLIC_WS_BASE_URL    required  direct wss:// origin for Railway
  *
  * REMOVED (do NOT use):
- *   NEXT_PUBLIC_WS_URL         was in wsService.ts — deprecated, never set this
+ *   NEXT_PUBLIC_WS_URL         was in wsService.ts (deleted) — never set this
  *   NEXT_PUBLIC_API_URL        legacy alias — use NEXT_PUBLIC_API_BASE_URL
  */
 
@@ -56,8 +56,8 @@ export function getWsBaseUrl(): string {
       ) {
         console.warn(
           "[env] WARNING: NEXT_PUBLIC_WS_BASE_URL is not set in a production-like environment. " +
-            "WebSocket connections will fail. " +
-            "Set NEXT_PUBLIC_WS_BASE_URL=wss://your-api.up.railway.app in your Vercel project."
+          "WebSocket connections will fail. " +
+          "Set NEXT_PUBLIC_WS_BASE_URL=wss://your-api.up.railway.app in your Vercel project."
         );
       }
       return `${proto}//${window.location.host}`;
@@ -82,8 +82,8 @@ export function validateEnv(): void {
   if ((!wsUrl || wsUrl.trim() === "") && isVercel) {
     console.warn(
       "[env] NEXT_PUBLIC_WS_BASE_URL is not configured. " +
-        "Live data channels will not connect on Vercel. " +
-        "Set NEXT_PUBLIC_WS_BASE_URL to your Railway backend wss:// URL."
+      "Live data channels will not connect on Vercel. " +
+      "Set NEXT_PUBLIC_WS_BASE_URL to your Railway backend wss:// URL."
     );
   }
 
@@ -91,7 +91,7 @@ export function validateEnv(): void {
   if (process.env.NEXT_PUBLIC_WS_URL) {
     console.warn(
       "[env] NEXT_PUBLIC_WS_URL is deprecated and has no effect. " +
-        "Use NEXT_PUBLIC_WS_BASE_URL instead."
+      "Use NEXT_PUBLIC_WS_BASE_URL instead."
     );
   }
 

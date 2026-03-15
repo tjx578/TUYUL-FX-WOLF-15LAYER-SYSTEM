@@ -109,9 +109,50 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         logger.warning("Trade outbox worker failed to start — will operate without outbox")
     app.state.trade_outbox_worker = outbox_worker
     app.state.trade_outbox_task = outbox_task
+
+    # ── Cross-instance WS relay (Redis Pub/Sub) ──
+    from infrastructure.cross_instance_relay import CrossInstanceRelay
+
+    relay: CrossInstanceRelay | None = None
+    if app.state.redis is not None and _env_bool("ENABLE_WS_RELAY", True):
+        try:
+            from api.ws_routes import (
+                candle_manager,
+                equity_manager,
+                live_manager,
+                pipeline_manager,
+                price_manager,
+                risk_manager,
+                signal_manager,
+                trade_manager,
+                verdict_manager,
+            )
+
+            relay = CrossInstanceRelay(redis_client=app.state.redis)
+            await relay.start(
+                {
+                    "prices": price_manager,
+                    "trades": trade_manager,
+                    "candles": candle_manager,
+                    "risk": risk_manager,
+                    "equity": equity_manager,
+                    "verdict": verdict_manager,
+                    "signals": signal_manager,
+                    "pipeline": pipeline_manager,
+                    "live": live_manager,
+                }
+            )
+            app.state.ws_relay = relay
+        except Exception:
+            logger.warning("CrossInstanceRelay failed to start — single-instance mode")
+            relay = None
+
     try:
         yield
     finally:
+        if relay is not None:
+            with suppress(Exception):
+                await relay.stop()
         if outbox_worker is not None:
             with suppress(Exception):
                 await outbox_worker.stop()

@@ -11,7 +11,7 @@ import { useAccounts, useRiskSnapshot } from "@/lib/api";
 import PageComplianceBanner from "@/components/feedback/PageComplianceBanner";
 import { RiskGauge } from "@/components/RiskGauge";
 import { EquityCurve } from "@/components/EquityCurve";
-import { useRiskWS } from "@/lib/websocket";
+import { useLiveRisk } from "@/lib/realtime";
 import type { Account } from "@/types";
 
 // ── Risk stat cell ────────────────────────────────────────────
@@ -33,14 +33,15 @@ function RiskStat({ label, value, color }: { label: string; value: string; color
 
 function RiskContent({ accountId }: { accountId: string }) {
   const { data: snapshot } = useRiskSnapshot(accountId);
-  const { data: wsSnapshot, connected } = useRiskWS(accountId);
+  const { snapshot: wsSnapshot, status } = useLiveRisk(snapshot ?? null, accountId);
+  const connected = status === "LIVE";
   const live = wsSnapshot ?? snapshot;
 
   const cbColor = live?.circuit_breaker === "OPEN"
     ? "var(--red)"
     : live?.circuit_breaker === "HALF_OPEN"
-    ? "var(--yellow)"
-    : "var(--green)";
+      ? "var(--yellow)"
+      : "var(--green)";
 
   return (
     <div style={{ display: "grid", gridTemplateColumns: "360px 1fr", gap: 20, alignItems: "start" }}>
@@ -82,10 +83,10 @@ function RiskContent({ accountId }: { accountId: string }) {
             </thead>
             <tbody>
               {[
-                { range: "< 30%",  mult: "1.00x", effect: "Full risk",     color: "var(--green)" },
-                { range: "30–60%", mult: "0.75x", effect: "Reduced",       color: "var(--text-secondary)" },
-                { range: "60–80%", mult: "0.50x", effect: "Half size",     color: "var(--yellow)" },
-                { range: "> 80%",  mult: "0.25x", effect: "Emergency",     color: "var(--red)" },
+                { range: "< 30%", mult: "1.00x", effect: "Full risk", color: "var(--green)" },
+                { range: "30–60%", mult: "0.75x", effect: "Reduced", color: "var(--text-secondary)" },
+                { range: "60–80%", mult: "0.50x", effect: "Half size", color: "var(--yellow)" },
+                { range: "> 80%", mult: "0.25x", effect: "Emergency", color: "var(--red)" },
               ].map(({ range, mult, effect, color }) => (
                 <tr key={range}>
                   <td className="num">{range}</td>
