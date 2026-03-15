@@ -3,7 +3,7 @@
 import { useMemo } from "react";
 import type { CompliancePage } from "@/contracts/complianceSurface";
 import { buildComplianceSurface } from "@/lib/complianceSurface";
-import { useRiskStore } from "@/store/useRiskStore";
+import { useSystemStore } from "@/store/useSystemStore";
 
 interface PageComplianceBannerProps {
   page: CompliancePage;
@@ -20,7 +20,7 @@ function toneClass(tone: "info" | "warning" | "error"): string {
 }
 
 export default function PageComplianceBanner({ page }: PageComplianceBannerProps) {
-  const complianceState = useRiskStore((state) => state.complianceState);
+  const complianceState = useSystemStore((state) => state.complianceState);
 
   const surface = useMemo(
     () => buildComplianceSurface(page, complianceState),

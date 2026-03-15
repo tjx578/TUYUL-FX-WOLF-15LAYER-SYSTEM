@@ -108,6 +108,7 @@ def build_l12_synthesis(
             ),
             "L8_tii_sym": tii_sym,
             "L8_integrity_index": integrity,
+            "L8_twms_score": layer_results.get("L8", {}).get("twms_score", 0.0),
             "L9_dvg_confidence": layer_results.get("L9", {}).get("dvg_confidence", 0.0),
             "L9_liquidity_score": layer_results.get("L9", {}).get("liquidity_score", 0.0),
             "conf12": conf12,
@@ -175,6 +176,14 @@ def build_l12_synthesis(
             "fvg_present": layer_results.get("L9", {}).get("fvg_present", False),
             "sweep_detected": layer_results.get("L9", {}).get("sweep_detected", False),
             "bias": layer_results.get("L9", {}).get("smart_money_bias", "NEUTRAL"),
+            # v7 SMC event markers
+            "bos_detected": layer_results.get("L9", {}).get("bos_detected", False),
+            "choch_detected": layer_results.get("L9", {}).get("choch_detected", False),
+            "displacement": layer_results.get("L9", {}).get("displacement", False),
+            "liquidity_sweep": layer_results.get("L9", {}).get("liquidity_sweep", False),
+            "fib_retracement_hit": layer_results.get("L3", {}).get("fib_retracement_hit", False),
+            "volume_profile_poc": layer_results.get("L3", {}).get("volume_profile_poc", 0.0),
+            "vpc_zones": layer_results.get("L3", {}).get("vpc_zones", []),
         },
         "wolf_discipline": {
             "score": wolf_30_point / 30.0 if wolf_30_point else 0.0,
@@ -208,6 +217,7 @@ def build_l12_synthesis(
     synthesis["bayesian_ci_high"] = layer_results.get("L7", {}).get("bayesian_ci_high", 0.0)
     synthesis["mc_passed_threshold"] = layer_results.get("L7", {}).get("mc_passed_threshold", False)
     synthesis["risk_of_ruin"] = layer_results.get("L7", {}).get("risk_of_ruin", 0.0)
+    synthesis["profit_factor"] = layer_results.get("L7", {}).get("profit_factor", 0.0)
     synthesis["l7_validation"] = layer_results.get("L7", {}).get("validation", "FAIL")
 
     # Inference state — ephemeral abstract state from LiveContextBus

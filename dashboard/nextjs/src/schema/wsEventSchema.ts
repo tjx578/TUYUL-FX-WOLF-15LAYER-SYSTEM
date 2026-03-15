@@ -39,12 +39,31 @@ export const PreferencesUpdatedEventSchema = z.object({
   payload: PreferencesSchema,
 });
 
+// Domain-specific WS endpoint events (prices, risk)
+export const PriceUpdatedEventSchema = z.object({
+  type: z.literal("PriceUpdated"),
+  payload: z.record(z.string(), z.unknown()),
+});
+
+export const PricesSnapshotEventSchema = z.object({
+  type: z.literal("PricesSnapshot"),
+  payload: z.record(z.string(), z.unknown()),
+});
+
+export const RiskUpdatedEventSchema = z.object({
+  type: z.literal("RiskUpdated"),
+  payload: z.record(z.string(), z.unknown()),
+});
+
 export const WsEventSchema = z.discriminatedUnion("type", [
   PipelineResultUpdatedEventSchema,
   ExecutionStateUpdatedEventSchema,
   RiskStateUpdatedEventSchema,
   SystemStatusUpdatedEventSchema,
   PreferencesUpdatedEventSchema,
+  PriceUpdatedEventSchema,
+  PricesSnapshotEventSchema,
+  RiskUpdatedEventSchema,
 ]);
 
 export type WsEvent = z.infer<typeof WsEventSchema>;

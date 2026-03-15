@@ -1601,6 +1601,13 @@ class WolfConstitutionalPipeline:
                     "fvg_present": False,
                     "sweep_detected": False,
                     "bias": "NEUTRAL",
+                    "bos_detected": False,
+                    "choch_detected": False,
+                    "displacement": False,
+                    "liquidity_sweep": False,
+                    "fib_retracement_hit": False,
+                    "volume_profile_poc": 0.0,
+                    "vpc_zones": [],
                 },
                 "wolf_discipline": {
                     "score": 0.0,

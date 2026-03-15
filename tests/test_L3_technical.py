@@ -15,7 +15,6 @@ Covers:
 from __future__ import annotations
 
 import math
-
 from unittest import mock
 
 import numpy as np
@@ -92,13 +91,15 @@ def _make_candle_dicts(
         spread = noise if noise > 0 else max(abs(step) * 0.3, 1e-6)
         h = c + abs(rng.normal(0, spread))
         low = c - abs(rng.normal(0, spread))
-        candles.append({
-            "open": c - step * 0.1,
-            "high": float(max(h, c)),
-            "low": float(min(low, c)),
-            "close": float(c),
-            "volume": float(1000 + rng.randint(0, 500)),
-        })
+        candles.append(
+            {
+                "open": c - step * 0.1,
+                "high": float(max(h, c)),
+                "low": float(min(low, c)),
+                "close": float(c),
+                "volume": float(1000 + rng.randint(0, 500)),
+            }
+        )
     return candles
 
 
@@ -146,9 +147,7 @@ class TestComputeATR:
     def test_flat_market_atr_zero(self):
         """All bars identical → ATR = 0."""
         n = 30
-        assert L3TechnicalAnalyzer._compute_atr(
-            [1.10] * n, [1.10] * n, [1.10] * n, period=14
-        ) == 0.0
+        assert L3TechnicalAnalyzer._compute_atr([1.10] * n, [1.10] * n, [1.10] * n, period=14) == 0.0
 
     def test_period_one_single_tr(self):
         """period=1 → ATR = last TR only."""
@@ -212,7 +211,11 @@ class TestDetectTrend:
     def test_strong_fx_uptrend_bullish(self, analyzer: L3TechnicalAnalyzer):
         """EURUSD clear uptrend → BULLISH."""
         h, l, c, _ = _make_trending_data(  # noqa: E741
-            start=1.050, step=0.002, n=80, noise=0.0005, direction="up",
+            start=1.050,
+            step=0.002,
+            n=80,
+            noise=0.0005,
+            direction="up",
         )
         atr = L3TechnicalAnalyzer._compute_atr(h, l, c, period=14)
         trend, strength = analyzer._detect_trend(h, l, c, atr)
@@ -222,7 +225,11 @@ class TestDetectTrend:
     def test_strong_fx_downtrend_bearish(self, analyzer: L3TechnicalAnalyzer):
         """EURUSD clear downtrend → BEARISH."""
         h, l, c, _ = _make_trending_data(  # noqa: E741
-            start=1.150, step=0.002, n=80, noise=0.0005, direction="down",
+            start=1.150,
+            step=0.002,
+            n=80,
+            noise=0.0005,
+            direction="down",
         )
         atr = L3TechnicalAnalyzer._compute_atr(h, l, c, period=14)
         trend, strength = analyzer._detect_trend(h, l, c, atr)
@@ -243,7 +250,11 @@ class TestDetectTrend:
     def test_gold_uptrend_bullish(self, analyzer: L3TechnicalAnalyzer):
         """XAUUSD uptrend → BULLISH (multi-asset safe)."""
         h, l, c, _ = _make_trending_data(  # noqa: E741
-            start=1900.0, step=5.0, n=80, noise=3.0, direction="up",
+            start=1900.0,
+            step=5.0,
+            n=80,
+            noise=3.0,
+            direction="up",
         )
         atr = L3TechnicalAnalyzer._compute_atr(h, l, c, period=14)
         trend, _ = analyzer._detect_trend(h, l, c, atr)
@@ -252,7 +263,11 @@ class TestDetectTrend:
     def test_gold_downtrend_bearish(self, analyzer: L3TechnicalAnalyzer):
         """XAUUSD downtrend → BEARISH."""
         h, l, c, _ = _make_trending_data(  # noqa: E741
-            start=2050.0, step=5.0, n=80, noise=3.0, direction="down",
+            start=2050.0,
+            step=5.0,
+            n=80,
+            noise=3.0,
+            direction="down",
         )
         atr = L3TechnicalAnalyzer._compute_atr(h, l, c, period=14)
         trend, _ = analyzer._detect_trend(h, l, c, atr)
@@ -261,7 +276,11 @@ class TestDetectTrend:
     def test_btc_downtrend_bearish(self, analyzer: L3TechnicalAnalyzer):
         """BTC downtrend → BEARISH."""
         h, l, c, _ = _make_trending_data(  # noqa: E741
-            start=45000.0, step=200.0, n=80, noise=80.0, direction="down",
+            start=45000.0,
+            step=200.0,
+            n=80,
+            noise=80.0,
+            direction="down",
         )
         atr = L3TechnicalAnalyzer._compute_atr(h, l, c, period=14)
         trend, _ = analyzer._detect_trend(h, l, c, atr)
@@ -280,7 +299,11 @@ class TestDetectTrend:
         """Strength is always in [0, 1]."""
         for direction in ("up", "down", "flat"):
             h, l, c, _ = _make_trending_data(  # noqa: E741
-                start=1.05, step=0.003, n=80, noise=0.0005, direction=direction,
+                start=1.05,
+                step=0.003,
+                n=80,
+                noise=0.0005,
+                direction=direction,
             )
             atr = L3TechnicalAnalyzer._compute_atr(h, l, c, period=14)
             _, strength = analyzer._detect_trend(h, l, c, atr)
@@ -315,7 +338,11 @@ class TestADXWilder:
     def test_strong_trend_high_adx(self, analyzer: L3TechnicalAnalyzer):
         """Strong monotonic uptrend → ADX > 25."""
         h, l, c, _ = _make_trending_data(  # noqa: E741
-            start=1.050, step=0.003, n=80, noise=0.0003, direction="up",
+            start=1.050,
+            step=0.003,
+            n=80,
+            noise=0.0003,
+            direction="up",
         )
         adx = analyzer._adx_wilder(h, l, c, period=14)
         assert adx >= 25.0, f"Expected ADX >= 25 for strong trend, got {adx:.1f}"
@@ -345,7 +372,11 @@ class TestADXWilder:
     def test_gold_trending_adx_high(self, analyzer: L3TechnicalAnalyzer):
         """XAUUSD strong trend → ADX >= 20."""
         h, l, c, _ = _make_trending_data(  # noqa: E741
-            start=1900.0, step=8.0, n=80, noise=2.0, direction="up",
+            start=1900.0,
+            step=8.0,
+            n=80,
+            noise=2.0,
+            direction="up",
         )
         adx = analyzer._adx_wilder(h, l, c, period=14)
         assert adx >= 20.0
@@ -359,7 +390,11 @@ class TestADXWilder:
     def test_adx_not_nan(self, analyzer: L3TechnicalAnalyzer):
         """ADX never NaN."""
         h, l, c, _ = _make_trending_data(  # noqa: E741
-            start=1.05, step=0.001, n=80, noise=0.0008, direction="up",
+            start=1.05,
+            step=0.001,
+            n=80,
+            noise=0.0008,
+            direction="up",
         )
         adx = analyzer._adx_wilder(h, l, c, period=14)
         assert not math.isnan(adx)
@@ -377,7 +412,10 @@ class TestAnalyzeStructure:
     def test_weak_insufficient_data(self):
         """< 20 bars → WEAK, confidence 0."""
         result = L3TechnicalAnalyzer._analyze_structure(
-            [1.1] * 10, [1.0] * 10, [1.05] * 10, atr=0.001,
+            [1.1] * 10,
+            [1.0] * 10,
+            [1.05] * 10,
+            atr=0.001,
         )
         assert result["validity"] == "WEAK"
         assert result["confidence"] == 0.0
@@ -419,18 +457,9 @@ class TestAnalyzeStructure:
         # prev_high = max(highs[-20:-5]): from first 15+5=20 bars
         # Need: last_high <= prev_high AND last_low >= prev_low
         # But recent_range >= 3*ATR
-        highs = (
-            [1.1020] * 15 + [1.0980] * 5
-            + [1.1000, 1.0990, 1.1005, 1.1010, 1.1015]
-        )
-        lows = (
-            [1.0980] * 15 + [1.0960] * 5
-            + [1.0970, 1.0965, 1.0975, 1.0980, 1.0985]
-        )
-        closes = (
-            [1.1000] * 15 + [1.0970] * 5
-            + [1.0985, 1.0975, 1.0990, 1.0995, 1.1000]
-        )
+        highs = [1.1020] * 15 + [1.0980] * 5 + [1.1000, 1.0990, 1.1005, 1.1010, 1.1015]
+        lows = [1.0980] * 15 + [1.0960] * 5 + [1.0970, 1.0965, 1.0975, 1.0980, 1.0985]
+        closes = [1.1000] * 15 + [1.0970] * 5 + [1.0985, 1.0975, 1.0990, 1.0995, 1.1000]
         # prev_high = max(highs[5:20]) = 1.1020, last_high = 1.1015 → no BOS up
         # prev_low = min(lows[5:20]) = 1.0960, last_low = 1.0985 → no BOS down
         # range = 1.1020 - 1.0960 = 0.006 >= 3*0.001 = 0.003
@@ -457,7 +486,10 @@ class TestAnalyzeStructure:
     def test_output_keys_present(self):
         """Every return dict has validity, confidence, score."""
         result = L3TechnicalAnalyzer._analyze_structure(
-            [1.1] * 25, [1.0] * 25, [1.05] * 25, atr=0.01,
+            [1.1] * 25,
+            [1.0] * 25,
+            [1.05] * 25,
+            atr=0.01,
         )
         assert "validity" in result
         assert "confidence" in result
@@ -476,16 +508,28 @@ class TestFibRetracementHit:
 
     def test_insufficient_data_false(self):
         """< 40 bars → False."""
-        assert L3TechnicalAnalyzer._fib_retracement_hit(
-            [1.1] * 30, [1.0] * 30, [1.05] * 30, atr=0.001,
-        ) is False
+        assert (
+            L3TechnicalAnalyzer._fib_retracement_hit(
+                [1.1] * 30,
+                [1.0] * 30,
+                [1.05] * 30,
+                atr=0.001,
+            )
+            is False
+        )
 
     def test_flat_swing_false(self):
         """swing_high == swing_low (diff=0) → False."""
         n = 50
-        assert L3TechnicalAnalyzer._fib_retracement_hit(
-            [1.10] * n, [1.10] * n, [1.10] * n, atr=0.001,
-        ) is False
+        assert (
+            L3TechnicalAnalyzer._fib_retracement_hit(
+                [1.10] * n,
+                [1.10] * n,
+                [1.10] * n,
+                atr=0.001,
+            )
+            is False
+        )
 
     def test_at_382_level(self):
         """Price at 38.2% retracement → True."""
@@ -495,9 +539,15 @@ class TestFibRetracementHit:
         highs = [1.10] * n
         lows = [1.05] * n
         closes = [1.08] * 49 + [1.0809]
-        assert L3TechnicalAnalyzer._fib_retracement_hit(
-            highs, lows, closes, atr=0.005,
-        ) is True
+        assert (
+            L3TechnicalAnalyzer._fib_retracement_hit(
+                highs,
+                lows,
+                closes,
+                atr=0.005,
+            )
+            is True
+        )
 
     def test_at_500_level(self):
         """Price at 50% retracement → True."""
@@ -505,9 +555,15 @@ class TestFibRetracementHit:
         highs = [1.10] * n
         lows = [1.05] * n
         closes = [1.08] * 49 + [1.0750]  # 50% = 1.10 - 0.025 = 1.075
-        assert L3TechnicalAnalyzer._fib_retracement_hit(
-            highs, lows, closes, atr=0.005,
-        ) is True
+        assert (
+            L3TechnicalAnalyzer._fib_retracement_hit(
+                highs,
+                lows,
+                closes,
+                atr=0.005,
+            )
+            is True
+        )
 
     def test_at_618_level(self):
         """Price at 61.8% retracement → True."""
@@ -516,9 +572,15 @@ class TestFibRetracementHit:
         lows = [1.05] * n
         # 61.8% level = 1.10 - 0.05*0.618 = 1.0691
         closes = [1.08] * 49 + [1.0691]
-        assert L3TechnicalAnalyzer._fib_retracement_hit(
-            highs, lows, closes, atr=0.005,
-        ) is True
+        assert (
+            L3TechnicalAnalyzer._fib_retracement_hit(
+                highs,
+                lows,
+                closes,
+                atr=0.005,
+            )
+            is True
+        )
 
     def test_at_786_level(self):
         """Price at 78.6% retracement → True."""
@@ -527,9 +589,15 @@ class TestFibRetracementHit:
         lows = [1.05] * n
         # 78.6% level = 1.10 - 0.05*0.786 = 1.0607
         closes = [1.08] * 49 + [1.0607]
-        assert L3TechnicalAnalyzer._fib_retracement_hit(
-            highs, lows, closes, atr=0.005,
-        ) is True
+        assert (
+            L3TechnicalAnalyzer._fib_retracement_hit(
+                highs,
+                lows,
+                closes,
+                atr=0.005,
+            )
+            is True
+        )
 
     def test_far_from_all_levels_false(self):
         """Price far from every fib level → False."""
@@ -538,9 +606,15 @@ class TestFibRetracementHit:
         lows = [1.05] * n
         # Price at 1.10 — away from all retracement levels
         closes = [1.08] * 49 + [1.10]
-        assert L3TechnicalAnalyzer._fib_retracement_hit(
-            highs, lows, closes, atr=0.001,
-        ) is False
+        assert (
+            L3TechnicalAnalyzer._fib_retracement_hit(
+                highs,
+                lows,
+                closes,
+                atr=0.001,
+            )
+            is False
+        )
 
 
 # ── 5b: Volume Profile POC ──────────────────────────────────────────
@@ -550,9 +624,15 @@ class TestVolumeProfilePOC:
     """Volume profile Point of Control proximity."""
 
     def test_insufficient_data_false(self):
-        assert L3TechnicalAnalyzer._volume_profile_poc_hit(
-            [1.10] * 20, [1000] * 20, bins=20, atr=0.001,
-        ) is False
+        assert (
+            L3TechnicalAnalyzer._volume_profile_poc_hit(
+                [1.10] * 20,
+                [1000] * 20,
+                bins=20,
+                atr=0.001,
+            )
+            is False
+        )
 
     def test_price_at_poc(self):
         """Most volume at current price → True."""
@@ -560,7 +640,10 @@ class TestVolumeProfilePOC:
         closes = [1.10] * 25 + [1.05, 1.06, 1.07, 1.08, 1.10]
         volumes = [float(v) for v in [5000] * 25 + [100, 100, 100, 100, 5000]]
         assert L3TechnicalAnalyzer._volume_profile_poc_hit(
-            closes, volumes, bins=20, atr=0.005,
+            closes,
+            volumes,
+            bins=20,
+            atr=0.005,
         )
 
     def test_price_far_from_poc_false(self):
@@ -568,7 +651,10 @@ class TestVolumeProfilePOC:
         closes = [1.10] * 28 + [1.10, 1.05]
         volumes = [float(v) for v in [5000] * 28 + [5000, 100]]
         assert not L3TechnicalAnalyzer._volume_profile_poc_hit(
-            closes, volumes, bins=20, atr=0.001,
+            closes,
+            volumes,
+            bins=20,
+            atr=0.001,
         )
 
     def test_flat_prices_always_near_poc(self):
@@ -578,9 +664,15 @@ class TestVolumeProfilePOC:
         volumes = [float(v) for v in [1000] * n]
         # flat → all bins same, but price = POC mid → True (with any atr > 0)
         # Actually with flat prices, p_max == p_min → returns False
-        assert L3TechnicalAnalyzer._volume_profile_poc_hit(
-            closes, volumes, bins=20, atr=0.001,
-        ) is False
+        assert (
+            L3TechnicalAnalyzer._volume_profile_poc_hit(
+                closes,
+                volumes,
+                bins=20,
+                atr=0.001,
+            )
+            is False
+        )
 
 
 # ── 5c: Order Block ─────────────────────────────────────────────────
@@ -590,16 +682,28 @@ class TestDetectOrderBlock:
     """Order block: impulse + opposite candle + retest proximity."""
 
     def test_insufficient_data_false(self):
-        assert L3TechnicalAnalyzer._detect_orderblock(
-            [1.1] * 20, [1.0] * 20, [1.05] * 20, atr=0.01,
-        ) is False
+        assert (
+            L3TechnicalAnalyzer._detect_orderblock(
+                [1.1] * 20,
+                [1.0] * 20,
+                [1.05] * 20,
+                atr=0.01,
+            )
+            is False
+        )
 
     def test_no_impulse_false(self):
         """All candles same range → no impulse → False."""
         n = 30
-        assert L3TechnicalAnalyzer._detect_orderblock(
-            [1.105] * n, [1.095] * n, [1.10] * n, atr=0.01,
-        ) is False
+        assert (
+            L3TechnicalAnalyzer._detect_orderblock(
+                [1.105] * n,
+                [1.095] * n,
+                [1.10] * n,
+                atr=0.01,
+            )
+            is False
+        )
 
     def test_bullish_ob_detected(self):
         """Impulse + prior bearish candle + retest near OB → True."""
@@ -641,9 +745,14 @@ class TestDetectFVG:
     """FVG: bullish gap, bearish gap, no gap."""
 
     def test_insufficient_data_false(self):
-        assert L3TechnicalAnalyzer._detect_fvg(
-            [1.1] * 5, [1.0] * 5, [1.05] * 5,
-        ) is False
+        assert (
+            L3TechnicalAnalyzer._detect_fvg(
+                [1.1] * 5,
+                [1.0] * 5,
+                [1.05] * 5,
+            )
+            is False
+        )
 
     def test_bullish_fvg_detected(self):
         """Gap up with unfilled middle → True."""
@@ -678,8 +787,8 @@ class TestDetectFVG:
         """Gap exists but middle candle fully fills it → False."""
         # Construct data where every potential gap is fully filled.
         # Smoothly rising, each middle candle spans both neighbors.
-        highs  = [1.100, 1.102, 1.104, 1.106, 1.108, 1.110, 1.112, 1.114, 1.116, 1.118]
-        lows   = [1.095, 1.097, 1.099, 1.101, 1.103, 1.105, 1.107, 1.109, 1.111, 1.113]
+        highs = [1.100, 1.102, 1.104, 1.106, 1.108, 1.110, 1.112, 1.114, 1.116, 1.118]
+        lows = [1.095, 1.097, 1.099, 1.101, 1.103, 1.105, 1.107, 1.109, 1.111, 1.113]
         closes = [1.098, 1.100, 1.102, 1.104, 1.106, 1.108, 1.110, 1.112, 1.114, 1.116]
         # Adjacent candles overlap heavily → no gap at any triplet
         assert L3TechnicalAnalyzer._detect_fvg(highs, lows, closes) is False
@@ -823,101 +932,176 @@ class TestComputeTechScore:
     """Balanced score: 25+25+20+20+10 = 100 max."""
 
     def test_all_zero_returns_zero(self):
-        assert L3TechnicalAnalyzer._compute_tech_score(
-            trend_strength=0.0, structure_score=0.0,
-            confluence_count=0, liquidity_score=0.0, trq3d_energy=0.0,
-        ) == 0
+        assert (
+            L3TechnicalAnalyzer._compute_tech_score(
+                trend_strength=0.0,
+                structure_score=0.0,
+                confluence_count=0,
+                liquidity_score=0.0,
+                trq3d_energy=0.0,
+            )
+            == 0
+        )
 
     def test_all_max_returns_100(self):
-        assert L3TechnicalAnalyzer._compute_tech_score(
-            trend_strength=1.0, structure_score=1.0,
-            confluence_count=4, liquidity_score=1.0, trq3d_energy=1.0,
-        ) == 100
+        assert (
+            L3TechnicalAnalyzer._compute_tech_score(
+                trend_strength=1.0,
+                structure_score=1.0,
+                confluence_count=4,
+                liquidity_score=1.0,
+                trq3d_energy=1.0,
+            )
+            == 100
+        )
 
     def test_trend_component_25(self):
         """trend_strength=1.0, rest zero → 25."""
-        assert L3TechnicalAnalyzer._compute_tech_score(
-            trend_strength=1.0, structure_score=0.0,
-            confluence_count=0, liquidity_score=0.0, trq3d_energy=0.0,
-        ) == 25
+        assert (
+            L3TechnicalAnalyzer._compute_tech_score(
+                trend_strength=1.0,
+                structure_score=0.0,
+                confluence_count=0,
+                liquidity_score=0.0,
+                trq3d_energy=0.0,
+            )
+            == 25
+        )
 
     def test_structure_component_25(self):
         """structure_score=1.0, rest zero → 25."""
-        assert L3TechnicalAnalyzer._compute_tech_score(
-            trend_strength=0.0, structure_score=1.0,
-            confluence_count=0, liquidity_score=0.0, trq3d_energy=0.0,
-        ) == 25
+        assert (
+            L3TechnicalAnalyzer._compute_tech_score(
+                trend_strength=0.0,
+                structure_score=1.0,
+                confluence_count=0,
+                liquidity_score=0.0,
+                trq3d_energy=0.0,
+            )
+            == 25
+        )
 
     def test_confluence_component_20(self):
         """4 confluence, rest zero → 20."""
-        assert L3TechnicalAnalyzer._compute_tech_score(
-            trend_strength=0.0, structure_score=0.0,
-            confluence_count=4, liquidity_score=0.0, trq3d_energy=0.0,
-        ) == 20
+        assert (
+            L3TechnicalAnalyzer._compute_tech_score(
+                trend_strength=0.0,
+                structure_score=0.0,
+                confluence_count=4,
+                liquidity_score=0.0,
+                trq3d_energy=0.0,
+            )
+            == 20
+        )
 
     def test_single_confluence_5(self):
         """1 confluence → 5."""
-        assert L3TechnicalAnalyzer._compute_tech_score(
-            trend_strength=0.0, structure_score=0.0,
-            confluence_count=1, liquidity_score=0.0, trq3d_energy=0.0,
-        ) == 5
+        assert (
+            L3TechnicalAnalyzer._compute_tech_score(
+                trend_strength=0.0,
+                structure_score=0.0,
+                confluence_count=1,
+                liquidity_score=0.0,
+                trq3d_energy=0.0,
+            )
+            == 5
+        )
 
     def test_liquidity_component_20(self):
         """liquidity=1.0, rest zero → 20."""
-        assert L3TechnicalAnalyzer._compute_tech_score(
-            trend_strength=0.0, structure_score=0.0,
-            confluence_count=0, liquidity_score=1.0, trq3d_energy=0.0,
-        ) == 20
+        assert (
+            L3TechnicalAnalyzer._compute_tech_score(
+                trend_strength=0.0,
+                structure_score=0.0,
+                confluence_count=0,
+                liquidity_score=1.0,
+                trq3d_energy=0.0,
+            )
+            == 20
+        )
 
     def test_trq3d_component_10(self):
         """trq3d=1.0, rest zero → 10."""
-        assert L3TechnicalAnalyzer._compute_tech_score(
-            trend_strength=0.0, structure_score=0.0,
-            confluence_count=0, liquidity_score=0.0, trq3d_energy=1.0,
-        ) == 10
+        assert (
+            L3TechnicalAnalyzer._compute_tech_score(
+                trend_strength=0.0,
+                structure_score=0.0,
+                confluence_count=0,
+                liquidity_score=0.0,
+                trq3d_energy=1.0,
+            )
+            == 10
+        )
 
     def test_half_values_50(self):
         """Half of each → 12.5+12.5+10+10+5 = 50."""
-        assert L3TechnicalAnalyzer._compute_tech_score(
-            trend_strength=0.5, structure_score=0.5,
-            confluence_count=2, liquidity_score=0.5, trq3d_energy=0.5,
-        ) == 50
+        assert (
+            L3TechnicalAnalyzer._compute_tech_score(
+                trend_strength=0.5,
+                structure_score=0.5,
+                confluence_count=2,
+                liquidity_score=0.5,
+                trq3d_energy=0.5,
+            )
+            == 50
+        )
 
     def test_negative_inputs_clipped_to_zero(self):
         """Negative inputs → clipped → 0."""
-        assert L3TechnicalAnalyzer._compute_tech_score(
-            trend_strength=-0.5, structure_score=-1.0,
-            confluence_count=-2, liquidity_score=-0.3, trq3d_energy=-0.8,
-        ) == 0
+        assert (
+            L3TechnicalAnalyzer._compute_tech_score(
+                trend_strength=-0.5,
+                structure_score=-1.0,
+                confluence_count=-2,
+                liquidity_score=-0.3,
+                trq3d_energy=-0.8,
+            )
+            == 0
+        )
 
     def test_over_max_inputs_clipped_to_100(self):
         """Over-max inputs → clipped → 100."""
-        assert L3TechnicalAnalyzer._compute_tech_score(
-            trend_strength=5.0, structure_score=3.0,
-            confluence_count=10, liquidity_score=2.0, trq3d_energy=4.0,
-        ) == 100
+        assert (
+            L3TechnicalAnalyzer._compute_tech_score(
+                trend_strength=5.0,
+                structure_score=3.0,
+                confluence_count=10,
+                liquidity_score=2.0,
+                trq3d_energy=4.0,
+            )
+            == 100
+        )
 
     def test_return_type_int(self):
         """Score always int."""
         score = L3TechnicalAnalyzer._compute_tech_score(
-            trend_strength=0.33, structure_score=0.67,
-            confluence_count=1, liquidity_score=0.5, trq3d_energy=0.2,
+            trend_strength=0.33,
+            structure_score=0.67,
+            confluence_count=1,
+            liquidity_score=0.5,
+            trq3d_energy=0.2,
         )
         assert isinstance(score, int)
 
     def test_score_never_exceeds_100(self):
         """Even with extreme inputs, capped at 100."""
         score = L3TechnicalAnalyzer._compute_tech_score(
-            trend_strength=999.0, structure_score=999.0,
-            confluence_count=999, liquidity_score=999.0, trq3d_energy=999.0,
+            trend_strength=999.0,
+            structure_score=999.0,
+            confluence_count=999,
+            liquidity_score=999.0,
+            trq3d_energy=999.0,
         )
         assert score == 100
 
     def test_score_never_below_zero(self):
         """Even with extreme negative inputs, floor at 0."""
         score = L3TechnicalAnalyzer._compute_tech_score(
-            trend_strength=-999.0, structure_score=-999.0,
-            confluence_count=-999, liquidity_score=-999.0, trq3d_energy=-999.0,
+            trend_strength=-999.0,
+            structure_score=-999.0,
+            confluence_count=-999,
+            liquidity_score=-999.0,
+            trq3d_energy=-999.0,
         )
         assert score == 0
 
@@ -937,16 +1121,35 @@ class TestInsufficientData:
     def test_all_keys_present(self):
         result = L3TechnicalAnalyzer._insufficient_data("XAUUSD")
         v5_keys = {
-            "technical_score", "structure_validity", "confluence_points",
-            "trq3d_energy", "drift", "trend", "confidence",
-            "structure_score", "valid",
+            "technical_score",
+            "structure_validity",
+            "confluence_points",
+            "trq3d_energy",
+            "drift",
+            "trend",
+            "confidence",
+            "structure_score",
+            "valid",
         }
         v6_keys = {
-            "edge_probability", "edge_detail", "drift_state",
-            "trend_strength", "adx", "atr", "atr_expansion",
+            "edge_probability",
+            "edge_detail",
+            "drift_state",
+            "trend_strength",
+            "adx",
+            "atr",
+            "atr_expansion",
             "liquidity_score",
         }
-        expected_keys = v5_keys | v6_keys
+        v7_keys = {
+            "fvg_detected",
+            "ob_detected",
+            "fib_retracement_hit",
+            "volume_profile_poc",
+            "volume_profile_poc_hit",
+            "vpc_zones",
+        }
+        expected_keys = v5_keys | v6_keys | v7_keys
         assert set(result.keys()) == expected_keys
 
     def test_safe_defaults(self):
@@ -1089,18 +1292,26 @@ class TestComputeEdgeProbability:
 
     def test_all_zero_low_edge(self):
         p, _ = _compute_edge_probability(
-            trend_strength=0.0, structure_score=0.0,
-            confluence_count=0, liquidity_score=0.0,
-            trq3d_energy=0.0, adx_norm=0.0, atr_expansion=0.0,
+            trend_strength=0.0,
+            structure_score=0.0,
+            confluence_count=0,
+            liquidity_score=0.0,
+            trq3d_energy=0.0,
+            adx_norm=0.0,
+            atr_expansion=0.0,
             drift=0.0,
         )
         assert p < 0.10
 
     def test_all_max_high_edge(self):
         p, _ = _compute_edge_probability(
-            trend_strength=1.0, structure_score=1.0,
-            confluence_count=4, liquidity_score=1.0,
-            trq3d_energy=1.0, adx_norm=1.0, atr_expansion=1.0,
+            trend_strength=1.0,
+            structure_score=1.0,
+            confluence_count=4,
+            liquidity_score=1.0,
+            trq3d_energy=1.0,
+            adx_norm=1.0,
+            atr_expansion=1.0,
             drift=0.0,
         )
         assert p > 0.85
@@ -1122,14 +1333,23 @@ class TestComputeEdgeProbability:
 
     def test_detail_keys_complete(self):
         _, detail = _compute_edge_probability(
-            trend_strength=0.5, structure_score=0.5,
-            confluence_count=2, liquidity_score=0.5,
-            trq3d_energy=0.5, adx_norm=0.3, atr_expansion=0.5,
+            trend_strength=0.5,
+            structure_score=0.5,
+            confluence_count=2,
+            liquidity_score=0.5,
+            trq3d_energy=0.5,
+            adx_norm=0.3,
+            atr_expansion=0.5,
             drift=0.003,
         )
         required = {
-            "features", "logit_z", "p_edge_raw",
-            "drift", "drift_state", "drift_factor", "p_edge_adj",
+            "features",
+            "logit_z",
+            "p_edge_raw",
+            "drift",
+            "drift_state",
+            "drift_factor",
+            "p_edge_adj",
         }
         assert required.issubset(detail.keys())
 
@@ -1141,9 +1361,13 @@ class TestComputeEdgeProbability:
         expected_adj = expected_raw * 1.0
 
         p, detail = _compute_edge_probability(
-            trend_strength=0.80, structure_score=0.85,
-            confluence_count=3, liquidity_score=0.70,
-            trq3d_energy=0.65, adx_norm=0.40, atr_expansion=0.50,
+            trend_strength=0.80,
+            structure_score=0.85,
+            confluence_count=3,
+            liquidity_score=0.70,
+            trq3d_energy=0.65,
+            adx_norm=0.40,
+            atr_expansion=0.50,
             drift=0.002,
         )
         assert abs(p - expected_adj) < 0.01
@@ -1163,15 +1387,23 @@ class TestBullishBearishSymmetry:
     def test_same_features_same_drift_identical_edge(self):
         """Exact same features → exact same P_edge."""
         p1, d1 = _compute_edge_probability(
-            trend_strength=0.80, structure_score=0.85,
-            confluence_count=3, liquidity_score=0.70,
-            trq3d_energy=0.65, adx_norm=0.40, atr_expansion=0.50,
+            trend_strength=0.80,
+            structure_score=0.85,
+            confluence_count=3,
+            liquidity_score=0.70,
+            trq3d_energy=0.65,
+            adx_norm=0.40,
+            atr_expansion=0.50,
             drift=0.004,
         )
         p2, d2 = _compute_edge_probability(
-            trend_strength=0.80, structure_score=0.85,
-            confluence_count=3, liquidity_score=0.70,
-            trq3d_energy=0.65, adx_norm=0.40, atr_expansion=0.50,
+            trend_strength=0.80,
+            structure_score=0.85,
+            confluence_count=3,
+            liquidity_score=0.70,
+            trq3d_energy=0.65,
+            adx_norm=0.40,
+            atr_expansion=0.50,
             drift=0.004,
         )
         assert p1 == p2
@@ -1181,13 +1413,17 @@ class TestBullishBearishSymmetry:
     def test_tech_score_symmetric_bull_bear(self):
         """_compute_tech_score with same strength → same score."""
         bull_score = L3TechnicalAnalyzer._compute_tech_score(
-            trend_strength=0.80, structure_score=0.85,
-            confluence_count=3, liquidity_score=0.70,
+            trend_strength=0.80,
+            structure_score=0.85,
+            confluence_count=3,
+            liquidity_score=0.70,
             trq3d_energy=0.65,
         )
         bear_score = L3TechnicalAnalyzer._compute_tech_score(
-            trend_strength=0.80, structure_score=0.85,
-            confluence_count=3, liquidity_score=0.70,
+            trend_strength=0.80,
+            structure_score=0.85,
+            confluence_count=3,
+            liquidity_score=0.70,
             trq3d_energy=0.65,
         )
         assert bull_score == bear_score
@@ -1195,10 +1431,18 @@ class TestBullishBearishSymmetry:
     def test_detect_trend_strength_symmetric(self, analyzer: L3TechnicalAnalyzer):
         """BULLISH strength formula = BEARISH strength formula."""
         h_up, l_up, c_up, _ = _make_trending_data(
-            start=1.050, step=0.002, n=80, noise=0.0005, direction="up",
+            start=1.050,
+            step=0.002,
+            n=80,
+            noise=0.0005,
+            direction="up",
         )
         h_dn, l_dn, c_dn, _ = _make_trending_data(
-            start=1.150, step=0.002, n=80, noise=0.0005, direction="down",
+            start=1.150,
+            step=0.002,
+            n=80,
+            noise=0.0005,
+            direction="down",
         )
         atr_up = L3TechnicalAnalyzer._compute_atr(h_up, l_up, c_up)
         atr_dn = L3TechnicalAnalyzer._compute_atr(h_dn, l_dn, c_dn)
@@ -1208,9 +1452,7 @@ class TestBullishBearishSymmetry:
 
         assert trend_up == "BULLISH"
         assert trend_dn == "BEARISH"
-        assert abs(str_up - str_dn) < 0.15, (
-            f"Strength asymmetry too large: bull={str_up:.3f} bear={str_dn:.3f}"
-        )
+        assert abs(str_up - str_dn) < 0.15, f"Strength asymmetry too large: bull={str_up:.3f} bear={str_dn:.3f}"
 
     def test_structure_bos_up_equals_bos_down(self):
         """BOS upward score == BOS downward score (both 0.85)."""
@@ -1243,15 +1485,23 @@ class TestBullishBearishSymmetry:
             (0.015, "OVEREXTENDED"),
         ]:
             p_bull, d_bull = _compute_edge_probability(
-                trend_strength=0.75, structure_score=0.85,
-                confluence_count=3, liquidity_score=0.65,
-                trq3d_energy=0.60, adx_norm=0.40, atr_expansion=0.55,
+                trend_strength=0.75,
+                structure_score=0.85,
+                confluence_count=3,
+                liquidity_score=0.65,
+                trq3d_energy=0.60,
+                adx_norm=0.40,
+                atr_expansion=0.55,
                 drift=drift,
             )
             p_bear, d_bear = _compute_edge_probability(
-                trend_strength=0.75, structure_score=0.85,
-                confluence_count=3, liquidity_score=0.65,
-                trq3d_energy=0.60, adx_norm=0.40, atr_expansion=0.55,
+                trend_strength=0.75,
+                structure_score=0.85,
+                confluence_count=3,
+                liquidity_score=0.65,
+                trq3d_energy=0.60,
+                adx_norm=0.40,
+                atr_expansion=0.55,
                 drift=drift,
             )
 
@@ -1270,14 +1520,28 @@ class TestBullishBearishSymmetry:
         ],
     )
     def test_multi_asset_direction_symmetry(
-        self, analyzer: L3TechnicalAnalyzer, asset: str, start_bull: float, start_bear: float, step: float, noise: float,
+        self,
+        analyzer: L3TechnicalAnalyzer,
+        asset: str,
+        start_bull: float,
+        start_bear: float,
+        step: float,
+        noise: float,
     ) -> None:
         """Each asset: bullish and bearish detected + both score > 0."""
         h_up, l_up, c_up, _ = _make_trending_data(
-            start=start_bull, step=step, n=80, noise=noise, direction="up",
+            start=start_bull,
+            step=step,
+            n=80,
+            noise=noise,
+            direction="up",
         )
         h_dn, l_dn, c_dn, _ = _make_trending_data(
-            start=start_bear, step=step, n=80, noise=noise, direction="down",
+            start=start_bear,
+            step=step,
+            n=80,
+            noise=noise,
+            direction="down",
         )
 
         atr_up = L3TechnicalAnalyzer._compute_atr(h_up, l_up, c_up)
@@ -1302,9 +1566,13 @@ class TestDriftContext:
 
     def test_fresh_full_factor(self):
         p, d = _compute_edge_probability(
-            trend_strength=0.8, structure_score=0.85,
-            confluence_count=3, liquidity_score=0.7,
-            trq3d_energy=0.6, adx_norm=0.4, atr_expansion=0.5,
+            trend_strength=0.8,
+            structure_score=0.85,
+            confluence_count=3,
+            liquidity_score=0.7,
+            trq3d_energy=0.6,
+            adx_norm=0.4,
+            atr_expansion=0.5,
             drift=0.001,
         )
         assert d["drift_state"] == "FRESH"
@@ -1314,9 +1582,13 @@ class TestDriftContext:
 
     def test_extending_reduced_factor(self):
         p, d = _compute_edge_probability(
-            trend_strength=0.8, structure_score=0.85,
-            confluence_count=3, liquidity_score=0.7,
-            trq3d_energy=0.6, adx_norm=0.4, atr_expansion=0.5,
+            trend_strength=0.8,
+            structure_score=0.85,
+            confluence_count=3,
+            liquidity_score=0.7,
+            trq3d_energy=0.6,
+            adx_norm=0.4,
+            atr_expansion=0.5,
             drift=0.005,
         )
         assert d["drift_state"] == "EXTENDING"
@@ -1325,9 +1597,13 @@ class TestDriftContext:
 
     def test_overextended_most_reduced(self):
         p, d = _compute_edge_probability(
-            trend_strength=0.8, structure_score=0.85,
-            confluence_count=3, liquidity_score=0.7,
-            trq3d_energy=0.6, adx_norm=0.4, atr_expansion=0.5,
+            trend_strength=0.8,
+            structure_score=0.85,
+            confluence_count=3,
+            liquidity_score=0.7,
+            trq3d_energy=0.6,
+            adx_norm=0.4,
+            atr_expansion=0.5,
             drift=0.015,
         )
         assert d["drift_state"] == "OVEREXTENDED"
@@ -1337,9 +1613,13 @@ class TestDriftContext:
     def test_drift_monotonic_decrease(self):
         """Higher drift → lower P_adj (same raw features)."""
         kwargs = {
-            "trend_strength": 0.8, "structure_score": 0.85,
-            "confluence_count": (3), "liquidity_score": 0.7,
-            "trq3d_energy": 0.6, "adx_norm": 0.4, "atr_expansion": 0.5,
+            "trend_strength": 0.8,
+            "structure_score": 0.85,
+            "confluence_count": (3),
+            "liquidity_score": 0.7,
+            "trq3d_energy": 0.6,
+            "adx_norm": 0.4,
+            "atr_expansion": 0.5,
         }
         p_fresh, _ = _compute_edge_probability(drift=0.001, **kwargs)
         p_ext, _ = _compute_edge_probability(drift=0.005, **kwargs)
@@ -1357,16 +1637,20 @@ class TestV5ScoringUnchanged:
 
     def test_all_zero_inputs(self):
         score = L3TechnicalAnalyzer._compute_tech_score(
-            trend_strength=0.0, structure_score=0.0,
-            confluence_count=0, liquidity_score=0.0,
+            trend_strength=0.0,
+            structure_score=0.0,
+            confluence_count=0,
+            liquidity_score=0.0,
             trq3d_energy=0.0,
         )
         assert score == 0
 
     def test_all_max_inputs(self):
         score = L3TechnicalAnalyzer._compute_tech_score(
-            trend_strength=1.0, structure_score=1.0,
-            confluence_count=4, liquidity_score=1.0,
+            trend_strength=1.0,
+            structure_score=1.0,
+            confluence_count=4,
+            liquidity_score=1.0,
             trq3d_energy=1.0,
         )
         assert score == 100
@@ -1374,8 +1658,10 @@ class TestV5ScoringUnchanged:
     def test_formula_components(self):
         """25+25+20+20+10 = 100 max."""
         score = L3TechnicalAnalyzer._compute_tech_score(
-            trend_strength=0.5, structure_score=0.5,
-            confluence_count=2, liquidity_score=0.5,
+            trend_strength=0.5,
+            structure_score=0.5,
+            confluence_count=2,
+            liquidity_score=0.5,
             trq3d_energy=0.5,
         )
         expected = round(0.5 * 25 + 0.5 * 25 + 2 * 5 + 0.5 * 20 + 0.5 * 10)
@@ -1384,16 +1670,20 @@ class TestV5ScoringUnchanged:
     def test_clamping_above_max(self):
         """Over-range inputs still cap at 100."""
         score = L3TechnicalAnalyzer._compute_tech_score(
-            trend_strength=2.0, structure_score=2.0,
-            confluence_count=10, liquidity_score=2.0,
+            trend_strength=2.0,
+            structure_score=2.0,
+            confluence_count=10,
+            liquidity_score=2.0,
             trq3d_energy=2.0,
         )
         assert score == 100
 
     def test_negative_inputs_clamp_to_zero(self):
         score = L3TechnicalAnalyzer._compute_tech_score(
-            trend_strength=-1.0, structure_score=-1.0,
-            confluence_count=-5, liquidity_score=-1.0,
+            trend_strength=-1.0,
+            structure_score=-1.0,
+            confluence_count=-5,
+            liquidity_score=-1.0,
             trq3d_energy=-1.0,
         )
         assert score == 0
@@ -1410,9 +1700,15 @@ class TestOutputContract:
     def test_insufficient_data_v5_keys(self):
         result = L3TechnicalAnalyzer._insufficient_data("EURUSD")
         v5_keys = {
-            "technical_score", "structure_validity", "confluence_points",
-            "trq3d_energy", "drift", "trend", "confidence",
-            "structure_score", "valid",
+            "technical_score",
+            "structure_validity",
+            "confluence_points",
+            "trq3d_energy",
+            "drift",
+            "trend",
+            "confidence",
+            "structure_score",
+            "valid",
         }
         assert v5_keys.issubset(result.keys())
         assert result["valid"] is False
@@ -1420,8 +1716,13 @@ class TestOutputContract:
     def test_insufficient_data_v6_keys(self):
         result = L3TechnicalAnalyzer._insufficient_data("EURUSD")
         v6_keys = {
-            "edge_probability", "edge_detail", "drift_state",
-            "trend_strength", "adx", "atr", "atr_expansion",
+            "edge_probability",
+            "edge_detail",
+            "drift_state",
+            "trend_strength",
+            "adx",
+            "atr",
+            "atr_expansion",
             "liquidity_score",
         }
         assert v6_keys.issubset(result.keys())
@@ -1440,9 +1741,13 @@ class TestBoundarySafety:
 
     def test_extreme_positive_features(self):
         p, _ = _compute_edge_probability(
-            trend_strength=1e6, structure_score=1e6,
-            confluence_count=1000, liquidity_score=1e6,
-            trq3d_energy=1e6, adx_norm=1e6, atr_expansion=1e6,
+            trend_strength=1e6,
+            structure_score=1e6,
+            confluence_count=1000,
+            liquidity_score=1e6,
+            trq3d_energy=1e6,
+            adx_norm=1e6,
+            atr_expansion=1e6,
             drift=0.0,
         )
         assert 0.0 <= p <= 1.0
@@ -1450,9 +1755,13 @@ class TestBoundarySafety:
 
     def test_extreme_negative_features(self):
         p, _ = _compute_edge_probability(
-            trend_strength=-1e6, structure_score=-1e6,
-            confluence_count=-1000, liquidity_score=-1e6,
-            trq3d_energy=-1e6, adx_norm=-1e6, atr_expansion=-1e6,
+            trend_strength=-1e6,
+            structure_score=-1e6,
+            confluence_count=-1000,
+            liquidity_score=-1e6,
+            trq3d_energy=-1e6,
+            adx_norm=-1e6,
+            atr_expansion=-1e6,
             drift=0.0,
         )
         assert 0.0 <= p <= 1.0
@@ -1460,9 +1769,13 @@ class TestBoundarySafety:
 
     def test_zero_drift_valid(self):
         _p, d = _compute_edge_probability(
-            trend_strength=0.5, structure_score=0.5,
-            confluence_count=2, liquidity_score=0.5,
-            trq3d_energy=0.5, adx_norm=0.3, atr_expansion=0.5,
+            trend_strength=0.5,
+            structure_score=0.5,
+            confluence_count=2,
+            liquidity_score=0.5,
+            trq3d_energy=0.5,
+            adx_norm=0.3,
+            atr_expansion=0.5,
             drift=0.0,
         )
         assert d["drift_state"] == "FRESH"
@@ -1470,9 +1783,13 @@ class TestBoundarySafety:
 
     def test_very_large_drift(self):
         p, d = _compute_edge_probability(
-            trend_strength=0.5, structure_score=0.5,
-            confluence_count=2, liquidity_score=0.5,
-            trq3d_energy=0.5, adx_norm=0.3, atr_expansion=0.5,
+            trend_strength=0.5,
+            structure_score=0.5,
+            confluence_count=2,
+            liquidity_score=0.5,
+            trq3d_energy=0.5,
+            adx_norm=0.3,
+            atr_expansion=0.5,
             drift=100.0,
         )
         assert d["drift_state"] == "OVEREXTENDED"
