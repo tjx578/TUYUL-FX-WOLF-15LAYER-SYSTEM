@@ -1,0 +1,1 @@
+[{"targets": ["wolf-allocation:9102"], "labels": {"service": "allocation", "env": "docker"}}]

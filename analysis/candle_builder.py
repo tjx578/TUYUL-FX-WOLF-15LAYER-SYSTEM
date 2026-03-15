@@ -147,7 +147,7 @@ _completed_candle_log: deque[Candle] = deque(maxlen=500)
 
 
 def _on_candle_complete(candle: Candle) -> None:
-    """Callback: log completed candles (no execution side-effects)."""
+    """Callback: log completed candles and enqueue for PostgreSQL persistence."""
     _completed_candle_log.append(candle)
     logger.info(
         "candle_complete symbol=%s tf=%s open=%s close=%s vol=%s ticks=%d",
@@ -158,6 +158,12 @@ def _on_candle_complete(candle: Candle) -> None:
         candle.volume,
         candle.tick_count,
     )
+    try:
+        from storage.candle_persistence import enqueue_candle
+
+        enqueue_candle(candle)
+    except Exception:
+        pass  # persistence is best-effort; never block the pipeline
 
 
 def _get_builder(symbol: str) -> MultiTimeframeCandleBuilder:

@@ -1,0 +1,337 @@
+apiVersion: 1
+
+groups:
+  - orgId: 1
+    name: Wolf Feed Health
+    folder: Wolf Alerts
+    interval: 10s
+    rules:
+      - uid: wolf-feed-dead
+        title: "Feed Dead"
+        condition: B
+        for: 30s
+        labels:
+          severity: critical
+          team: trading
+        annotations:
+          summary: "No ticks received for {{ $labels.symbol }} in {{ $values.A }}s"
+          description: "Feed is dead — no tick received for over 30 seconds. Signals are stale."
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: wolf_feed_age_seconds
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: A
+          - refId: B
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [30]
+                  operator:
+                    type: and
+                  reducer:
+                    type: last
+        noDataState: Alerting
+        execErrState: Alerting
+
+      - uid: wolf-ws-down
+        title: "WebSocket Down — All Connections Lost"
+        condition: B
+        for: 10s
+        labels:
+          severity: critical
+          team: infra
+        annotations:
+          summary: "All WebSocket connections lost — ingest halted"
+          description: "No active WS connections. New ticks cannot be received."
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: wolf_ws_connections_active
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: A
+          - refId: B
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator:
+                    type: lt
+                    params: [1]
+                  operator:
+                    type: and
+                  reducer:
+                    type: last
+        noDataState: Alerting
+        execErrState: Alerting
+
+      - uid: wolf-finnhub-ws-down
+        title: "Finnhub WS Disconnected"
+        condition: B
+        for: 15s
+        labels:
+          severity: critical
+          team: infra
+        annotations:
+          summary: "Finnhub WS disconnected for replica {{ $labels.replica_id }}"
+          description: "Finnhub WebSocket connection is down. Feed data will be stale."
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: finnhub_ws_connected
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: A
+          - refId: B
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator:
+                    type: lt
+                    params: [1]
+                  operator:
+                    type: and
+                  reducer:
+                    type: last
+        noDataState: Alerting
+        execErrState: Alerting
+
+  - orgId: 1
+    name: Wolf Drawdown
+    folder: Wolf Alerts
+    interval: 10s
+    rules:
+      - uid: wolf-daily-loss-breach
+        title: "Daily Loss Limit Breach (>4%)"
+        condition: B
+        for: 0s
+        labels:
+          severity: critical
+          team: risk
+        annotations:
+          summary: "CRITICAL daily loss {{ $values.A }}% for {{ $labels.account_id }}"
+          description: "Daily loss exceeds 4% FTMO limit. Trading should be halted immediately."
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: wolf_daily_loss_percent
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: A
+          - refId: B
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [4]
+                  operator:
+                    type: and
+                  reducer:
+                    type: last
+        noDataState: OK
+        execErrState: Alerting
+
+      - uid: wolf-drawdown-breach
+        title: "Max Drawdown Breach (>8%)"
+        condition: B
+        for: 0s
+        labels:
+          severity: critical
+          team: risk
+        annotations:
+          summary: "CRITICAL drawdown {{ $values.A }}% for {{ $labels.account_id }}"
+          description: "Max drawdown limit (8% FTMO) breached. Kill switch should activate."
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: wolf_drawdown_max_percent
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: A
+          - refId: B
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [8]
+                  operator:
+                    type: and
+                  reducer:
+                    type: last
+        noDataState: OK
+        execErrState: Alerting
+
+      - uid: wolf-drawdown-warning
+        title: "Drawdown Warning (>6%)"
+        condition: B
+        for: 0s
+        labels:
+          severity: warning
+          team: risk
+        annotations:
+          summary: "Drawdown at {{ $values.A }}% for {{ $labels.account_id }}"
+          description: "Approaching max drawdown limit (8%). Review positions."
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: wolf_drawdown_max_percent
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: A
+          - refId: B
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [6]
+                  operator:
+                    type: and
+                  reducer:
+                    type: last
+        noDataState: OK
+        execErrState: Alerting
+
+  - orgId: 1
+    name: Wolf Pipeline
+    folder: Wolf Alerts
+    interval: 30s
+    rules:
+      - uid: wolf-pipeline-error-rate
+        title: "Pipeline Error Rate Elevated"
+        condition: B
+        for: 2m
+        labels:
+          severity: warning
+          team: trading
+        annotations:
+          summary: "Pipeline errors above threshold — {{ $values.A }} errors/sec"
+          description: "Sustained pipeline errors detected. Check error_code labels for root cause."
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: sum(rate(wolf_pipeline_error_total[5m]))
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: A
+          - refId: B
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [0.05]
+                  operator:
+                    type: and
+                  reducer:
+                    type: last
+        noDataState: OK
+        execErrState: Alerting
+
+      - uid: wolf-pipeline-latency-high
+        title: "Pipeline p95 Latency > 2s"
+        condition: B
+        for: 2m
+        labels:
+          severity: warning
+          team: trading
+        annotations:
+          summary: "Pipeline p95 latency at {{ $values.A }}s"
+          description: "Pipeline is slow — signals may be delayed."
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: histogram_quantile(0.95, sum(rate(wolf_pipeline_duration_seconds_bucket[5m])) by (le))
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: A
+          - refId: B
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [2.0]
+                  operator:
+                    type: and
+                  reducer:
+                    type: last
+        noDataState: OK
+        execErrState: Alerting
