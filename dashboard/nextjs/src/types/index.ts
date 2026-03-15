@@ -192,7 +192,32 @@ export interface Account {
   max_daily_dd_percent: number;
   max_total_dd_percent: number;
   max_concurrent_trades: number;
+  data_source?: string;
+  compliance_mode?: boolean;
   created_at?: string;
+  // Capital deployment fields
+  readiness_score?: number;
+  usable_capital?: number;
+  eligibility_flags?: EligibilityFlags;
+  lock_reasons?: string[];
+}
+
+export interface EligibilityFlags {
+  compliance_ok: boolean;
+  circuit_breaker_ok: boolean;
+  not_locked: boolean;
+  no_news_lock: boolean;
+  daily_dd_ok: boolean;
+  total_dd_ok: boolean;
+  slots_available: boolean;
+  ea_linked: boolean;
+}
+
+export interface CapitalDeploymentResponse {
+  count: number;
+  total_usable_capital: number;
+  avg_readiness_score: number;
+  accounts: Account[];
 }
 
 export interface AccountCreate {
@@ -455,13 +480,48 @@ export interface PaginatedResponse<T> {
 
 export interface EAStatus {
   healthy: boolean;
-  workers: number;
+  running: boolean;
+  engine_state: string;
+  queue_depth: number;
+  queue_max: number;
+  safe_mode: boolean;
+  agents_total: number;
+  agents_connected: number;
+  total_failures: number;
+  recent_failures: AgentFailure[];
+  cooldown_active: boolean;
+  updated_at: string;
+}
+
+export interface AgentFailure {
+  agent_id: string;
+  reason: string;
+  at: string;
+}
+
+export interface EAAgent {
+  agent_id: string;
+  account_id: string;
+  profile: string;
+  status: "connected" | "disconnected" | "degraded" | "cooldown";
+  healthy: boolean;
+  last_heartbeat: string;
+  last_success: string;
+  last_failure: string;
+  failure_reason: string;
+  trades_executed: number;
+  trades_failed: number;
+  uptime_seconds: number;
+  version: string;
+  scope: string;
 }
 
 export interface EALog {
   id: string;
   timestamp: string;
+  level: string;
   message: string;
+  agent_id?: string;
 }
 
 export interface PropFirmPhase {
