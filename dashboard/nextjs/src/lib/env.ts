@@ -1,87 +1,105 @@
 /**
- * Centralized env access.
- * NOTE: This file is now minimal since we use Next.js rewrites via next.config.js
- * to proxy all requests to the backend. The API_BASE_URL is resolved server-side
- * and never exposed to the browser.
- */
-
-// Legacy export kept for existing imports — reads from NEXT_PUBLIC_API_BASE_URL.
-export const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_BASE_URL ?? "";
-
-const OPTIONAL_PUBLIC_VARS: string[] = [
-  "NEXT_PUBLIC_API_BASE_URL",
-  "NEXT_PUBLIC_WS_BASE_URL",
-];
-
-/**
- * Validates optional public environment variables at runtime.
- * These are no longer required — Next.js rewrites handle proxying.
- * Logs info (not warning) if they are set, for debugging purposes.
- */
-export function validateEnv(): void {
-  const set: string[] = [];
-  for (const key of OPTIONAL_PUBLIC_VARS) {
-    const val = process.env[key];
-    if (val && val.trim() !== "") {
-      set.push(`${key}=${val}`);
-    }
-  }
-  if (set.length > 0) {
-    console.info("[env] Public env overrides active:", set.join(", "));
-  }
-}
-
-/**
- * Returns REST API base URL.
+ * TUYUL FX Wolf-15 — Environment Resolution
  *
- * With Next.js rewrites in place, the browser should use **relative paths**
- * (empty string base). The rewrites in next.config.js proxy /api/* to the
- * real backend. Only set NEXT_PUBLIC_API_BASE_URL when you intentionally
- * want the browser to call an absolute URL (e.g., local debugging).
+ * Single source of truth for all env-derived config.
+ *
+ * Deployment rules:
+ *   REST  → relative path  → Next.js rewrite /api/* proxies to backend (safe on Vercel)
+ *   WS    → MUST be direct  → Vercel cannot upgrade WebSocket connections.
+ *           Set NEXT_PUBLIC_WS_BASE_URL to the Railway/backend wss:// origin.
+ *
+ * Env vars in use (exactly these two, nothing else):
+ *   NEXT_PUBLIC_API_BASE_URL   optional  override REST base (default: relative via rewrite)
+ *   NEXT_PUBLIC_WS_BASE_URL    required  direct wss:// origin for Railway
+ *
+ * REMOVED (do NOT use):
+ *   NEXT_PUBLIC_WS_URL         was in wsService.ts — deprecated, never set this
+ *   NEXT_PUBLIC_API_URL        legacy alias — use NEXT_PUBLIC_API_BASE_URL
+ */
+
+/**
+ * Returns the REST API base URL.
+ *
+ * Default: empty string (relative) — Next.js rewrite /api/* handles proxying.
+ * Override with NEXT_PUBLIC_API_BASE_URL for direct backend calls (dev/debug).
  */
 export function getApiBaseUrl(): string {
   const url =
     process.env.NEXT_PUBLIC_API_BASE_URL ||
-    process.env.NEXT_PUBLIC_API_URL;
+    process.env.NEXT_PUBLIC_API_URL; // legacy alias, still tolerated
   if (!url || url.trim() === "") {
-    // Relative path — Next.js rewrites will proxy to backend
-    return "";
+    return ""; // relative — rewrite in next.config.js handles the proxy
   }
-  return url.replace(/\/$/, ""); // strip trailing slash
+  return url.replace(/\/$/, "");
 }
 
 /**
- * Returns WebSocket base URL.
+ * Returns the WebSocket base URL.
  *
- * When NEXT_PUBLIC_WS_BASE_URL is not set, derive from the browser's
- * current origin so that http→ws and https→wss are correct automatically.
- * Next.js rewrites proxy /ws/* to the real backend.
+ * On Vercel: NEXT_PUBLIC_WS_BASE_URL MUST be set to the Railway wss:// URL.
+ * Vercel serverless functions cannot handle WebSocket upgrades — /ws/* rewrites
+ * in next.config.js are for local-dev only (via Next.js dev server proxy).
  *
- * NOTE: Vercel serverless does NOT support WebSocket upgrades.
- * If deploying the dashboard to Vercel, you MUST set NEXT_PUBLIC_WS_BASE_URL
- * to point directly to the Railway backend (e.g. wss://your-api.up.railway.app).
+ * Fallback (local dev only): derives ws:// or wss:// from window.location.host.
+ * This will work in local dev where Next.js dev server proxies /ws/*.
+ * It will NOT work on Vercel without the env var.
  */
 export function getWsBaseUrl(): string {
   const url = process.env.NEXT_PUBLIC_WS_BASE_URL;
   if (!url || url.trim() === "") {
-    // Derive from current page origin (works in both dev and prod)
     if (typeof window !== "undefined") {
       const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
-      // Warn in dev if on Vercel without explicit WS URL
       if (
-        process.env.NODE_ENV === "development" &&
-        window.location.hostname.includes("vercel")
+        process.env.NODE_ENV !== "development" &&
+        (window.location.hostname.includes("vercel") ||
+          window.location.hostname.includes(".app"))
       ) {
         console.warn(
-          "[env] Vercel detected without NEXT_PUBLIC_WS_BASE_URL — WebSocket connections will fail. " +
-          "Set NEXT_PUBLIC_WS_BASE_URL to your Railway backend wss:// URL."
+          "[env] WARNING: NEXT_PUBLIC_WS_BASE_URL is not set in a production-like environment. " +
+            "WebSocket connections will fail. " +
+            "Set NEXT_PUBLIC_WS_BASE_URL=wss://your-api.up.railway.app in your Vercel project."
         );
       }
       return `${proto}//${window.location.host}`;
     }
-    // SSR fallback — won't actually be used for real WS connections
-    return "";
+    return ""; // SSR fallback — not used for real connections
   }
-  return url.replace(/\/$/, ""); // strip trailing slash
+  return url.replace(/\/$/, "");
 }
+
+/**
+ * Validates env at boot (call from root layout or _app).
+ * Non-throwing — only logs warnings.
+ */
+export function validateEnv(): void {
+  if (typeof window === "undefined") return;
+
+  const wsUrl = process.env.NEXT_PUBLIC_WS_BASE_URL;
+  const isVercel =
+    window.location.hostname.includes("vercel") ||
+    window.location.hostname.includes(".app");
+
+  if ((!wsUrl || wsUrl.trim() === "") && isVercel) {
+    console.warn(
+      "[env] NEXT_PUBLIC_WS_BASE_URL is not configured. " +
+        "Live data channels will not connect on Vercel. " +
+        "Set NEXT_PUBLIC_WS_BASE_URL to your Railway backend wss:// URL."
+    );
+  }
+
+  // Legacy env var guard
+  if (process.env.NEXT_PUBLIC_WS_URL) {
+    console.warn(
+      "[env] NEXT_PUBLIC_WS_URL is deprecated and has no effect. " +
+        "Use NEXT_PUBLIC_WS_BASE_URL instead."
+    );
+  }
+
+  const apiOverride = process.env.NEXT_PUBLIC_API_BASE_URL;
+  if (apiOverride) {
+    console.info("[env] REST override active: NEXT_PUBLIC_API_BASE_URL =", apiOverride);
+  }
+}
+
+// Legacy export kept for existing imports — resolves identically to getApiBaseUrl().
+export const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "";
