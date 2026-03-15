@@ -201,6 +201,11 @@ class ForwardedHTTPSRedirectMiddleware(BaseHTTPMiddleware):
         if request.url.path in self._EXEMPT_PATHS:
             return await call_next(request)
 
+        # Never redirect CORS preflight — browsers send OPTIONS over the
+        # original scheme and won't follow a 307 redirect for preflight.
+        if request.method.upper() == "OPTIONS":
+            return await call_next(request)
+
         # Proxy-safe HTTPS detection.
         # Some ingress layers send comma-separated values (e.g. "https,http")
         # or RFC-7239 Forwarded header with proto key.
@@ -442,11 +447,15 @@ def create_app() -> FastAPI:
     instrument_httpx()
     instrument_fastapi(app)
 
-    # Middleware stack
+    # Middleware stack — order matters!
+    # FastAPI/Starlette executes middleware in REVERSE add-order (last-added = outermost).
+    # CORS must be outermost so preflight OPTIONS responses always carry
+    # Access-Control-Allow-* headers, even when an inner middleware (rate-limit)
+    # short-circuits.
     _add_security_middleware(app, force_https)
-    _add_cors(app)
     app.add_middleware(PrometheusMiddleware)
     app.add_middleware(RateLimitMiddleware)
+    _add_cors(app)  # outermost — handles preflight before anything else
 
     # Mount all routers from the registry
     for router, description in load_routers():

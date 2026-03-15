@@ -33,12 +33,15 @@ export async function probeSession(
     cookie?: string,
     authorization?: string,
 ): Promise<CompatSessionUser | null> {
+    // All env vars should be the base origin (no /api suffix).
+    // Strip trailing slash and any accidental /api suffix to prevent
+    // double-prefix when AUTH_SESSION already starts with /api/.
     const apiBase = (
         process.env.INTERNAL_API_URL ||
         process.env.NEXT_PUBLIC_API_URL ||
         process.env.NEXT_PUBLIC_API_BASE_URL ||
         ""
-    ).replace(/\/$/, "");
+    ).replace(/\/+$/, "").replace(/\/api$/, "");
 
     if (!apiBase.trim()) {
         return null;

@@ -1,10 +1,16 @@
 // Resolve the backend API base URL for server-side proxy rewrites.
 // Prefer server-side INTERNAL_API_URL (not exposed to browser),
 // then fall back to the public env var, then localhost for local dev.
-const apiBase =
+// IMPORTANT: this must be the base origin (e.g. https://api.example.com)
+// WITHOUT a /api suffix — the rewrite rules below already append /api/:path*.
+const rawApiBase =
   process.env.INTERNAL_API_URL ||
   process.env.NEXT_PUBLIC_API_BASE_URL ||
   "http://localhost:8000";
+
+// Normalize: strip trailing slash and any accidental /api suffix to prevent
+// double-prefix (/api/api/...) when combined with rewrite destinations.
+const apiBase = rawApiBase.replace(/\/+$/, "").replace(/\/api$/, "");
 
 // Warn at build time if apiBase is localhost in a production-ish environment.
 // This means Next.js rewrites will proxy to nothing in production.
