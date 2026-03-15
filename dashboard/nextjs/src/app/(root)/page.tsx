@@ -40,16 +40,14 @@ function statusColor(status: string) {
 }
 
 function verdictIsActionable(v: L12Verdict): boolean {
-  return (
-    String(v.verdict ?? "").startsWith("EXECUTE") &&
-    !v.blocked &&
-    !v.expired
-  );
+  const notExpired =
+    !v.expires_at || v.expires_at > Math.floor(Date.now() / 1000);
+  return String(v.verdict ?? "").startsWith("EXECUTE") && notExpired;
 }
 
 function urgencyScore(v: L12Verdict): number {
   const conf = v.confidence ?? 0;
-  const rr = v.risk_reward ?? 1;
+  const rr = v.risk_reward_ratio ?? 1;
   return conf * rr;
 }
 

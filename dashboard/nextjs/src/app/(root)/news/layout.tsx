@@ -1,4 +1,5 @@
-import type { Metadata, PropsWithChildren } from "next";
+import type { Metadata } from "next";
+import type { PropsWithChildren } from "react";
 
 export const metadata: Metadata = {
   title: "Market Events",
