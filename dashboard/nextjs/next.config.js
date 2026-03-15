@@ -62,11 +62,12 @@ const nextConfig = {
         source: "/pipeline/:path*",
         destination: `${apiBase}/pipeline/:path*`,
       },
-      // /ws/* — WebSocket upgrade proxy
-      {
-        source: "/ws/:path*",
-        destination: `${apiBase}/ws/:path*`,
-      },
+      // NOTE: /ws/* WebSocket rewrite is intentionally removed.
+      // Vercel serverless cannot upgrade WebSocket connections — the rewrite
+      // appeared to work but silently failed in production.
+      // WS connections MUST be direct: set NEXT_PUBLIC_WS_BASE_URL to the
+      // Railway wss:// origin. Local dev still works via Next.js dev-server
+      // proxy when NEXT_PUBLIC_WS_BASE_URL is unset (falls back to origin).
     ];
   },
   eslint: {
