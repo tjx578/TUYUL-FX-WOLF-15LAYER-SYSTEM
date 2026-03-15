@@ -4,31 +4,21 @@
 // TUYUL FX Wolf-15 — Command Center (/)
 // PRD: Global Status Strip, Urgency Rail, Critical Risk Strip,
 //      System Health Cluster, Market Context, Event Banner,
-//      Quick Actions, Kill Switch
+//      Quick Actions, Stale Data Banner, Recent Changes
+// Orchestration: useCommandCenterState (REST → WS live merge)
 // ============================================================
 
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import Link from "next/link";
-import {
-  useAllVerdicts,
-  useActiveTrades,
-  useContext,
-  useExecution,
-  useAccounts,
-  useAccountsRiskSnapshot,
-  useHealth,
-  useCalendarBlocker,
-  type ActiveTradesResponse,
-  type AccountRiskSnapshot,
-} from "@/lib/api";
+import { useCommandCenterState } from "@/hooks/useCommandCenterState";
 import { TakeSignalForm } from "@/components/TakeSignalForm";
 import PageComplianceBanner from "@/components/feedback/PageComplianceBanner";
 import DataStreamDiagnostic from "@/components/feedback/DataStreamDiagnostic";
 import { VerdictCard } from "@/components/VerdictCard";
 import { SystemHealth } from "@/components/SystemHealth";
-import { useLiveAlerts } from "@/lib/realtime";
+import { useAlertsWS } from "@/lib/websocket";
 import { useSystemStore } from "@/store/useSystemStore";
-import type { L12Verdict, Trade, Account, CalendarBlockerResponse } from "@/types";
+import type { L12Verdict, Trade, Account } from "@/types";
 
 // ── Helpers ──────────────────────────────────────────────────
 
@@ -347,13 +337,11 @@ function UrgencyRail({ signals, accounts, onTake }: UrgencyRailProps) {
 }
 
 interface CriticalRiskStripProps {
-  snapshots: AccountRiskSnapshot[];
+  breached: { account_id: string; circuit_breaker: boolean; daily_dd_percent?: number; total_dd_percent?: number }[];
+  warned: { account_id: string; daily_dd_percent?: number; status?: string }[];
 }
 
-function CriticalRiskStrip({ snapshots }: CriticalRiskStripProps) {
-  const breached = snapshots.filter((s) => s.status === "CRITICAL" || s.circuit_breaker);
-  const warned = snapshots.filter((s) => s.status === "WARNING" && !s.circuit_breaker);
-
+function CriticalRiskStrip({ breached, warned }: CriticalRiskStripProps) {
   if (breached.length === 0 && warned.length === 0) return null;
 
   return (
@@ -362,11 +350,11 @@ function CriticalRiskStrip({ snapshots }: CriticalRiskStripProps) {
         display: "flex",
         flexDirection: "column",
         gap: 6,
-        padding: "10px 16px",
+        padding: "10px 14px",
         borderRadius: "var(--radius-sm)",
         border: "1px solid var(--border-danger)",
         borderLeft: "3px solid var(--red)",
-        background: "rgba(255,59,48,0.05)",
+        background: "rgba(255,61,87,0.05)",
       }}
       role="alert"
       aria-label="Critical risk alerts"
@@ -386,12 +374,7 @@ function CriticalRiskStrip({ snapshots }: CriticalRiskStripProps) {
       {breached.map((s) => (
         <div
           key={s.account_id}
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 10,
-            fontSize: 11,
-          }}
+          style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 11 }}
         >
           <span
             style={{
@@ -404,23 +387,19 @@ function CriticalRiskStrip({ snapshots }: CriticalRiskStripProps) {
             }}
             aria-hidden="true"
           />
-          <span
-            style={{
-              fontFamily: "var(--font-mono)",
-              fontWeight: 700,
-              color: "var(--text-primary)",
-            }}
-          >
+          <span style={{ fontFamily: "var(--font-mono)", fontWeight: 700, color: "var(--text-primary)" }}>
             {s.account_id}
           </span>
           {s.circuit_breaker && (
             <span
-              className="badge"
               style={{
+                fontFamily: "var(--font-mono)",
+                fontSize: 9,
+                padding: "2px 7px",
+                borderRadius: 3,
                 background: "var(--red-glow)",
                 color: "var(--red)",
                 border: "1px solid var(--border-danger)",
-                fontSize: 9,
               }}
             >
               CIRCUIT BREAKER
@@ -447,12 +426,7 @@ function CriticalRiskStrip({ snapshots }: CriticalRiskStripProps) {
       {warned.map((s) => (
         <div
           key={s.account_id}
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 10,
-            fontSize: 11,
-          }}
+          style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 11 }}
         >
           <span
             style={{
@@ -464,18 +438,19 @@ function CriticalRiskStrip({ snapshots }: CriticalRiskStripProps) {
             }}
             aria-hidden="true"
           />
-          <span
-            style={{
-              fontFamily: "var(--font-mono)",
-              fontWeight: 700,
-              color: "var(--text-secondary)",
-            }}
-          >
+          <span style={{ fontFamily: "var(--font-mono)", fontWeight: 700, color: "var(--text-secondary)" }}>
             {s.account_id}
           </span>
           <span
-            className="badge badge-gold"
-            style={{ fontSize: 9 }}
+            style={{
+              fontFamily: "var(--font-mono)",
+              fontSize: 9,
+              padding: "2px 7px",
+              borderRadius: 3,
+              background: "rgba(255,215,64,0.10)",
+              color: "var(--yellow)",
+              border: "1px solid rgba(255,215,64,0.25)",
+            }}
           >
             WARNING
           </span>
@@ -489,11 +464,11 @@ function CriticalRiskStrip({ snapshots }: CriticalRiskStripProps) {
 }
 
 interface EventBannerProps {
-  blocker: CalendarBlockerResponse | undefined;
+  blocker: { blocked: boolean; reason?: string; event?: string } | undefined;
 }
 
 function EventBanner({ blocker }: EventBannerProps) {
-  if (!blocker?.is_locked) return null;
+  if (!blocker?.blocked) return null;
 
   return (
     <div
@@ -501,7 +476,7 @@ function EventBanner({ blocker }: EventBannerProps) {
         display: "flex",
         alignItems: "center",
         gap: 12,
-        padding: "9px 16px",
+        padding: "9px 14px",
         borderRadius: "var(--radius-sm)",
         border: "1px solid var(--border-warn)",
         borderLeft: "3px solid var(--yellow)",
@@ -541,6 +516,8 @@ function EventBanner({ blocker }: EventBannerProps) {
     </div>
   );
 }
+
+// ── KpiCard ──────────────────────────────────────────────────
 
 interface KpiCardProps {
   label: string;
@@ -609,7 +586,13 @@ function KpiCard({ label, value, color, sub, pulse, href }: KpiCardProps) {
       )}
     </div>
   );
-  return href ? <Link href={href} style={{ textDecoration: "none" }}>{inner}</Link> : inner;
+  return href ? (
+    <Link href={href} style={{ textDecoration: "none" }}>
+      {inner}
+    </Link>
+  ) : (
+    inner
+  );
 }
 
 // ── Main Page ─────────────────────────────────────────────────
@@ -623,7 +606,7 @@ export default function CommandCenterPage() {
   const { data: riskSnapshots, isError: riskError } = useAccountsRiskSnapshot();
   const { data: health } = useHealth();
   const { data: calendarBlocker } = useCalendarBlocker();
-  const { alerts } = useLiveAlerts();
+  const { alerts } = useAlertsWS();
 
   const wsStatus = useSystemStore((s) => s.wsStatus);
   const mode = useSystemStore((s) => s.mode);
@@ -681,7 +664,7 @@ export default function CommandCenterPage() {
   const recentAlerts = useMemo(() => alerts.slice(0, 5), [alerts]);
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       <PageComplianceBanner page="dashboard" />
 
       {/* ── Page header ── */}
@@ -699,8 +682,15 @@ export default function CommandCenterPage() {
           >
             COMMAND CENTER
           </h1>
-          <p style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 3, margin: 0 }}>
-            What matters now — signals, risk, system state
+          <p
+            style={{
+              fontSize: 11,
+              color: "var(--text-muted)",
+              marginTop: 3,
+              margin: 0,
+            }}
+          >
+            Live signal + risk state — Wolf-15 system
           </p>
         </div>
       </div>
@@ -709,33 +699,61 @@ export default function CommandCenterPage() {
       <GlobalStatusStrip
         health={health}
         wsStatus={wsStatus}
-        mode={mode}
+        mode={isSystemDegraded ? "DEGRADED" : "NORMAL"}
         executionState={execution?.state}
         openTradeCount={activeTrades.length}
+        isStale={isStale}
       />
 
-      {/* 2. Event Banner — high-impact news blackout */}
-      <EventBanner blocker={calendarBlocker ?? undefined} />
+      {/* 2. Stale / degraded banner */}
+      <StaleDataBanner
+        isStale={isStale}
+        isSystemDegraded={isSystemDegraded}
+        wsStatus={wsStatus}
+        dataErrors={dataErrors}
+      />
 
-      {/* 3. Critical Risk Strip */}
-      <CriticalRiskStrip snapshots={snapshotList} />
+      {/* 3. Event Banner — high-impact news blackout */}
+      <EventBanner
+        blocker={
+          calendarBlocker
+            ? {
+              blocked: calendarBlocker.is_locked,
+              reason: calendarBlocker.lock_reason,
+              event:
+                calendarBlocker.upcoming?.[0]?.event ??
+                calendarBlocker.upcoming?.[0]?.title,
+            }
+            : undefined
+        }
+      />
 
-      {/* 4. Data stream diagnostic */}
+      {/* 4. Critical Risk Strip */}
+      <CriticalRiskStrip breached={criticalSnapshots} warned={warnSnapshots} />
+
+      {/* 5. Data stream diagnostic */}
       {dataErrors.length > 0 && (
         <DataStreamDiagnostic
           failedStreams={dataErrors}
-          allStreams={["verdicts", "trades", "context", "execution", "accounts", "risk"]}
+          allStreams={[
+            "verdicts",
+            "trades",
+            "context",
+            "execution",
+            "accounts",
+            "risk",
+          ]}
         />
       )}
 
-      {/* 5. Urgency Rail — top 3 actionable signals */}
+      {/* 6. Urgency Rail — top 3 actionable signals */}
       <UrgencyRail
         signals={topActionableSignals}
         accounts={accounts}
         onTake={setSelectedVerdict}
       />
 
-      {/* 6. KPI bar */}
+      {/* 7. KPI bar */}
       <div className="overview-kpi-grid">
         <KpiCard
           label="ACTIONABLE SIGNALS"
@@ -756,7 +774,7 @@ export default function CommandCenterPage() {
           label="HIGH CONFIDENCE"
           value={highConfidence}
           color={highConfidence > 0 ? "var(--cyan)" : "var(--text-muted)"}
-          sub="conf ≥ 75%"
+          sub="conf >= 75%"
           href="/trades/signals"
         />
         <KpiCard
@@ -768,13 +786,17 @@ export default function CommandCenterPage() {
                 execution?.state === "SCANNING" ? "var(--blue)" :
                   "var(--text-muted)"
           }
-          sub={execution ? `${execution.signal_count ?? 0} signals today` : "no data"}
+          sub={
+            execution
+              ? `${execution.signal_count ?? 0} signals today`
+              : "no data"
+          }
         />
       </div>
 
-      {/* 7. Main grid: verdicts left, system right */}
+      {/* 8. Main grid: verdicts left, system right */}
       <div className="overview-main-grid">
-        {/* Left: all verdict cards */}
+        {/* Left: signal universe */}
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
           <div
             style={{
@@ -794,7 +816,25 @@ export default function CommandCenterPage() {
                 LOADING...
               </span>
             )}
-            <span className="badge badge-gold" style={{ marginLeft: "auto", fontSize: 9 }}>
+            {isStale && !vLoading && (
+              <span
+                style={{
+                  fontSize: 9,
+                  color: "var(--yellow)",
+                  fontWeight: 700,
+                  fontFamily: "var(--font-mono)",
+                  padding: "1px 5px",
+                  borderRadius: 3,
+                  background: "rgba(255,215,64,0.08)",
+                }}
+              >
+                STALE
+              </span>
+            )}
+            <span
+              className="badge badge-blue"
+              style={{ marginLeft: "auto", fontSize: 9 }}
+            >
               {verdictList.length} PAIRS
             </span>
             {context?.session && (
@@ -825,7 +865,13 @@ export default function CommandCenterPage() {
                 textAlign: "center",
               }}
             >
-              <div style={{ marginBottom: 6, fontSize: 13, color: "var(--text-secondary)" }}>
+              <div
+                style={{
+                  marginBottom: 6,
+                  fontSize: 13,
+                  color: "var(--text-secondary)",
+                }}
+              >
                 No verdicts available
               </div>
               <div style={{ fontSize: 11 }}>
@@ -917,11 +963,11 @@ export default function CommandCenterPage() {
                 ACCOUNT READINESS
               </div>
               {accounts.slice(0, 4).map((acc: Account) => {
-                const snap = snapshotList.find((s) => s.account_id === acc.account_id);
+                const snap = snapshotList.find((s) => s.account_id === acc.id);
                 const ready = !snap || (snap.status === "SAFE" && !snap.circuit_breaker);
                 return (
                   <div
-                    key={acc.account_id}
+                    key={acc.id}
                     style={{
                       display: "flex",
                       alignItems: "center",
@@ -950,7 +996,7 @@ export default function CommandCenterPage() {
                         whiteSpace: "nowrap",
                       }}
                     >
-                      {acc.account_name ?? acc.account_id}
+                      {acc.account_name ?? acc.id}
                     </span>
                     <span
                       style={{
