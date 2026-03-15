@@ -69,10 +69,13 @@ _health_probe.set_readiness_check(_ingest_readiness)
 
 
 class RedisClient(Protocol):
-    """Minimal async Redis client contract used by ingest service."""
+    """Async Redis client contract used by ingest service."""
 
     async def ping(self) -> Any: ...
     async def aclose(self) -> None: ...
+    async def scan(self, cursor: int, *, match: str, count: int) -> tuple[int, list[str]]: ...
+    async def llen(self, name: str) -> int: ...
+    def pipeline(self) -> Any: ...
 
 
 def _validate_api_key() -> bool:
@@ -96,9 +99,9 @@ async def _has_stale_cache(redis: RedisClient) -> bool:
         cursor = 0
         pattern = "wolf15:candle_history:*"
         while True:
-            cursor, keys = await redis.scan(cursor, match=pattern, count=20)  # type: ignore[attr-defined]
+            cursor, keys = await redis.scan(cursor, match=pattern, count=20)
             for key in keys:
-                length: int = await redis.llen(key)  # type: ignore[attr-defined]
+                length: int = await redis.llen(key)
                 if length > 0:
                     logger.info(
                         "[StaleCache] Found stale candle cache: {} ({} bars)",
@@ -326,13 +329,13 @@ async def _seed_redis_candle_history(
             key = f"wolf15:candle_history:{symbol}:{timeframe}"
 
             with contextlib.suppress(Exception):
-                existing: int = await redis.llen(key)  # type: ignore[attr-defined]
+                existing: int = await redis.llen(key)
                 if existing >= len(candles):
                     logger.debug("[Seed] %s already has %d bars, skip", key, existing)
                     continue
 
             try:
-                pipe = redis.pipeline()  # type: ignore[attr-defined]
+                pipe = redis.pipeline()
                 for candle in candles:
                     candle_json = orjson.dumps(candle).decode("utf-8")
                     pipe.rpush(key, candle_json)
