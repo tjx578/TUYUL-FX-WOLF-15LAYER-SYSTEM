@@ -24,7 +24,8 @@ interface UseLiveTradesResult {
  */
 export function useLiveTrades(
   initialTrades: Trade[] = [],
-  enabled = true
+  enabled = true,
+  onSeqGap?: () => void
 ): UseLiveTradesResult {
   const [trades, setTrades] = useState<Trade[]>(initialTrades);
   const [status, setStatus] = useState<WsConnectionStatus>("CONNECTING");
@@ -57,7 +58,7 @@ export function useLiveTrades(
       onEvent: (event) => {
         if (event.type === "ExecutionStateUpdated") {
           setTrades((prev) =>
-            mergeList(prev, event.payload.trade as unknown as Trade)
+            mergeList(prev, event.payload.trade as unknown as Trade, (t) => t.trade_id)
           );
           setLastUpdatedAt(Date.now());
           resetStaleTimer();
@@ -71,6 +72,7 @@ export function useLiveTrades(
         }
       },
       onDegradation: () => setStatus("DEGRADED"),
+      onSeqGap: () => onSeqGap?.(),
       onError: () => setStatus("DEGRADED"),
     });
 

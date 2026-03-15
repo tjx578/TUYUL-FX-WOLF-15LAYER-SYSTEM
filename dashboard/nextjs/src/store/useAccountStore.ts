@@ -9,10 +9,10 @@ interface AccountStoreState {
 
 type Listener = () => void;
 
-const state: AccountStoreState = {
+let snapshot: AccountStoreState = Object.freeze({
   latestPipelineResult: null,
   trades: {},
-};
+});
 
 const listeners = new Set<Listener>();
 
@@ -26,24 +26,27 @@ function subscribe(listener: Listener) {
 }
 
 function getSnapshot() {
-  return state;
+  return snapshot;
 }
 
 export function useAccountStore() {
-  const snapshot = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
+  const snap = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
 
   const setLatestPipelineResult = (result: PipelineResult) => {
-    state.latestPipelineResult = result;
+    snapshot = Object.freeze({ ...snapshot, latestPipelineResult: result });
     emit();
   };
 
   const updateTrade = (trade: ExecutionTrade) => {
-    state.trades[trade.trade_id] = trade;
+    snapshot = Object.freeze({
+      ...snapshot,
+      trades: { ...snapshot.trades, [trade.trade_id]: trade },
+    });
     emit();
   };
 
   return {
-    ...snapshot,
+    ...snap,
     setLatestPipelineResult,
     updateTrade,
   };

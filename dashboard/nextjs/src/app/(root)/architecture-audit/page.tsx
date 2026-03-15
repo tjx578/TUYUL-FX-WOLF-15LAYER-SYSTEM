@@ -38,9 +38,9 @@ const DIMENSIONS: Dimension[] = [
     items: [
       {
         claim: "7 dedicated WS endpoints (/ws/prices, /ws/trades, /ws/candles, /ws/verdict, /ws/signals, /ws/pipeline, /ws/live)",
-        actual: "lib/websocket.ts mendefinisikan: /ws/prices, /ws/trades, /ws/candles, /ws/risk, /ws/equity, /ws/alerts — 6 channel typed hooks. wsService.ts menggunakan NEXT_PUBLIC_WS_URL tunggal (/ws/live). Endpoint /ws/verdict, /ws/signals, /ws/pipeline belum ada di FE hooks.",
-        file: "lib/websocket.ts + services/wsService.ts",
-        status: "PARTIAL",
+        actual: "Migrated to lib/realtime/: domain hooks useLivePrices, useLiveTrades, useLiveRisk, useLiveSignals, useLiveEquity, useLiveAlerts cover all channels. Legacy websocket.ts and wsService.ts deleted.",
+        file: "lib/realtime/hooks/*.ts",
+        status: "VERIFIED",
       },
       {
         claim: "JWT pre-auth sebelum WS connection diterima",
@@ -50,19 +50,19 @@ const DIMENSIONS: Dimension[] = [
       },
       {
         claim: "Ring buffer 100 messages per client untuk disconnect recovery",
-        actual: "Ring buffer ada di BACKEND (Python). FE tidak mengimplementasikan client-side ring buffer. wsService.ts tidak memiliki sequence tracking atau replay logic.",
-        file: "services/wsService.ts",
-        status: "PARTIAL",
+        actual: "Ring buffer ada di BACKEND (Python). FE realtimeClient.ts has monotonic seq# tracking and gap detection. wsService.ts removed.",
+        file: "lib/realtime/realtimeClient.ts",
+        status: "VERIFIED",
       },
       {
         claim: "Exponential backoff reconnect, leader election (Finnhub)",
-        actual: "useWolfWebSocket() memiliki RECONNECT_DELAY_MS=3000 fixed (bukan exponential). MAX_RECONNECT_ATTEMPTS=10. Leader election ada di backend service, tidak di FE.",
-        file: "lib/websocket.ts",
-        status: "PARTIAL",
+        actual: "realtimeClient.ts: exponential backoff 1s→30s ceiling, ±25% jitter, infinite retry, visibility-aware pause. Leader election ada di backend.",
+        file: "lib/realtime/realtimeClient.ts",
+        status: "VERIFIED",
       },
       {
         claim: "Per-message deflate compression",
-        actual: "Tidak diimplementasikan di FE. wsService.ts dan websocket.ts tidak menggunakan WebSocket.perMessageDeflate atau compression options.",
+        actual: "Tidak diimplementasikan di FE. realtimeClient.ts tidak menggunakan WebSocket.perMessageDeflate atau compression options.",
         status: "GAP",
       },
       {
@@ -81,7 +81,7 @@ const DIMENSIONS: Dimension[] = [
     items: [
       {
         claim: "6 Zustand stores: account, system, risk, preferences, auth, tableQuery",
-        actual: "Repo memiliki 10+ stores: useAccountStore, useSystemStore, useRiskStore, usePreferencesStore, useAuthStore, useTableQueryStore, useAuthorityStore, useSessionStore, useToastStore, usePipelineDagStore, useActionThrottleStore, useWorkspaceStore. Lebih lengkap dari yang didokumentasikan.",
+        actual: "Repo memiliki 10+ stores: useAccountStore, useSystemStore, usePreferencesStore, useAuthStore, useTableQueryStore, useAuthorityStore, useSessionStore, useToastStore, usePipelineDagStore, useActionThrottleStore, useWorkspaceStore. useRiskStore removed (consolidated into useSystemStore).",
         file: "store/*.ts",
         status: "EXCEEDS",
       },
@@ -99,9 +99,9 @@ const DIMENSIONS: Dimension[] = [
       },
       {
         claim: "Message bus layer antara WebSocket dan stores (16ms RAF batching)",
-        actual: "TIDAK ADA. wsService.ts langsung memanggil onEvent() per message tanpa batching. Ini adalah GAP terbesar — setiap WS message langsung trigger store update → React re-render.",
-        file: "services/wsService.ts",
-        status: "GAP",
+        actual: "Implemented: useLivePrices supports optional RAF batching via createRafBatcher (16ms collapse window, 500-event backpressure). Other hooks dispatch directly.",
+        file: "lib/realtime/hooks/useLivePrices.ts + lib/realtime/rafBatcher.ts",
+        status: "VERIFIED",
       },
       {
         claim: "Web Worker untuk computation offloading (candle aggregation, indicators)",
@@ -110,8 +110,8 @@ const DIMENSIONS: Dimension[] = [
       },
       {
         claim: "Zod schema validation pada semua incoming WS data",
-        actual: "Terverifikasi. WsEventSchema di schema/wsEventSchema.ts menggunakan z.discriminatedUnion untuk validasi semua event types. wsService.ts baris 37: WsEventSchema.parse(parsed).",
-        file: "schema/wsEventSchema.ts + services/wsService.ts",
+        actual: "Terverifikasi. WsEventSchema di schema/wsEventSchema.ts menggunakan z.discriminatedUnion untuk validasi semua event types. realtimeClient.ts: WsEventSchema.parse(parsed).",
+        file: "schema/wsEventSchema.ts + lib/realtime/realtimeClient.ts",
         status: "VERIFIED",
       },
     ],
@@ -266,7 +266,7 @@ const DIMENSIONS: Dimension[] = [
       },
       {
         claim: "LiveContextBus singleton state machine (backend)",
-        actual: "Frontend side: useLivePipeline.ts menjadi consumer-side state machine. connectLiveUpdates() di wsService.ts adalah FE equivalent. Backend LiveContextBus tidak visible dari FE.",
+        actual: "Frontend side: useLivePipeline.ts menjadi consumer-side state machine. connectLiveUpdates() di lib/realtime/realtimeClient.ts adalah FE equivalent. Backend LiveContextBus tidak visible dari FE.",
         file: "hooks/useLivePipeline.ts",
         status: "VERIFIED",
       },
@@ -278,9 +278,9 @@ const DIMENSIONS: Dimension[] = [
 
 const STATUS_META: Record<Status, { label: string; color: string; bg: string; border: string }> = {
   VERIFIED: { label: "VERIFIED", color: "var(--green)", bg: "var(--green-glow)", border: "var(--border-success)" },
-  PARTIAL:  { label: "PARTIAL",  color: "var(--yellow)", bg: "var(--yellow-glow)", border: "rgba(255,215,64,0.3)" },
-  GAP:      { label: "GAP",      color: "var(--red)", bg: "var(--red-glow)", border: "var(--border-danger)" },
-  EXCEEDS:  { label: "EXCEEDS",  color: "var(--cyan)", bg: "var(--cyan-glow)", border: "rgba(0,229,255,0.3)" },
+  PARTIAL: { label: "PARTIAL", color: "var(--yellow)", bg: "var(--yellow-glow)", border: "rgba(255,215,64,0.3)" },
+  GAP: { label: "GAP", color: "var(--red)", bg: "var(--red-glow)", border: "var(--border-danger)" },
+  EXCEEDS: { label: "EXCEEDS", color: "var(--cyan)", bg: "var(--cyan-glow)", border: "rgba(0,229,255,0.3)" },
 };
 
 function StatusBadge({ status }: { status: Status }) {
@@ -358,16 +358,16 @@ export default function ArchitectureAuditPage() {
   const allItems = DIMENSIONS.flatMap((d) => d.items);
   const counts = {
     VERIFIED: allItems.filter((i) => i.status === "VERIFIED").length,
-    PARTIAL:  allItems.filter((i) => i.status === "PARTIAL").length,
-    GAP:      allItems.filter((i) => i.status === "GAP").length,
-    EXCEEDS:  allItems.filter((i) => i.status === "EXCEEDS").length,
+    PARTIAL: allItems.filter((i) => i.status === "PARTIAL").length,
+    GAP: allItems.filter((i) => i.status === "GAP").length,
+    EXCEEDS: allItems.filter((i) => i.status === "EXCEEDS").length,
   };
 
   const dimCounts = (d: Dimension) => ({
     VERIFIED: d.items.filter((i) => i.status === "VERIFIED").length,
-    PARTIAL:  d.items.filter((i) => i.status === "PARTIAL").length,
-    GAP:      d.items.filter((i) => i.status === "GAP").length,
-    EXCEEDS:  d.items.filter((i) => i.status === "EXCEEDS").length,
+    PARTIAL: d.items.filter((i) => i.status === "PARTIAL").length,
+    GAP: d.items.filter((i) => i.status === "GAP").length,
+    EXCEEDS: d.items.filter((i) => i.status === "EXCEEDS").length,
   });
 
   return (
@@ -689,11 +689,11 @@ export default function ArchitectureAuditPage() {
         </div>
         <div style={{ display: "grid", gap: 8 }}>
           {[
-            { pri: "P1", effort: "4h", title: "Message batching (16ms RAF window)", detail: "wsService.ts onEvent() perlu di-wrap dengan requestAnimationFrame buffer sebelum store dispatch.", dim: "State Mgmt" },
+            { pri: "P1", effort: "4h", title: "Message batching (16ms RAF window)", detail: "DONE: useLivePrices rafBatch option uses createRafBatcher. Other hooks dispatch directly (adequate for current message rates).", dim: "State Mgmt" },
             { pri: "P1", effort: "2h", title: "React.memo pada TradesTable row components", detail: "Wrap row renderer di TradesTable.tsx dan VirtualList.tsx dengan React.memo + stable key.", dim: "Table Render" },
             { pri: "P1", effort: "3h", title: "Persistent status bar", detail: "Tambahkan komponen sticky di Header.tsx: live equity, risk level, WS status, P&L session.", dim: "Info Hierarchy" },
-            { pri: "P2", effort: "3d", title: "Exponential backoff reconnect di websocket.ts", detail: "Ganti RECONNECT_DELAY_MS fixed dengan exponential: 1s→2s→4s→8s→16s→30s cap + jitter.", dim: "WebSocket" },
-            { pri: "P2", effort: "2d", title: "SSE fallback layer di wsService.ts", detail: "Setelah 30s WS down, switch ke SSE atau REST polling sebelum full DEGRADED mode.", dim: "WebSocket" },
+            { pri: "P2", effort: "3d", title: "Exponential backoff reconnect", detail: "DONE: realtimeClient.ts implements 1s→30s ceiling + ±25% jitter + infinite retry + visibility-aware pause.", dim: "WebSocket" },
+            { pri: "P2", effort: "2d", title: "SSE fallback layer", detail: "Setelah 30s WS down, switch ke SSE atau REST polling sebelum full DEGRADED mode. realtimeClient.ts supports seq gap detection → REST re-fetch.", dim: "WebSocket" },
             { pri: "P2", effort: "3d", title: "Web Worker untuk indicator computation", detail: "Pindahkan candle aggregation dan indicator calc ke Worker thread, post results ke main thread.", dim: "State Mgmt" },
             { pri: "P3", effort: "1w", title: "Command palette (Ctrl+K)", detail: "Keyboard-first navigation untuk semua routes, actions, dan settings.", dim: "Info Hierarchy" },
             { pri: "P3", effort: "1w", title: "Per-message WebSocket compression", detail: "Tambahkan deflate compression di server-side WS upgrade dan FE connect options.", dim: "WebSocket" },

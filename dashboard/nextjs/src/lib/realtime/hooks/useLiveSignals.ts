@@ -23,7 +23,8 @@ interface UseLiveSignalsResult {
  */
 export function useLiveSignals(
   initialVerdicts: L12Verdict[] = [],
-  enabled = true
+  enabled = true,
+  onSeqGap?: () => void
 ): UseLiveSignalsResult {
   const [verdicts, setVerdicts] = useState<L12Verdict[]>(initialVerdicts);
   const [status, setStatus] = useState<WsConnectionStatus>("CONNECTING");
@@ -73,6 +74,7 @@ export function useLiveSignals(
         }
       },
       onDegradation: () => setStatus("DEGRADED"),
+      onSeqGap: () => onSeqGap?.(),
       onError: () => setStatus("DEGRADED"),
     });
 

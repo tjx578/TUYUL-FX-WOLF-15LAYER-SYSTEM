@@ -26,9 +26,9 @@ import PageComplianceBanner from "@/components/feedback/PageComplianceBanner";
 import DataStreamDiagnostic from "@/components/feedback/DataStreamDiagnostic";
 import { VerdictCard } from "@/components/VerdictCard";
 import { SystemHealth } from "@/components/SystemHealth";
-import { useAlertsWS } from "@/lib/websocket";
+import { useLiveAlerts } from "@/lib/realtime";
 import { useSystemStore } from "@/store/useSystemStore";
-import type { L12Verdict, Trade, Account } from "@/types";
+import type { L12Verdict, Trade, Account, CalendarBlockerResponse } from "@/types";
 
 // ── Helpers ──────────────────────────────────────────────────
 
@@ -489,11 +489,11 @@ function CriticalRiskStrip({ snapshots }: CriticalRiskStripProps) {
 }
 
 interface EventBannerProps {
-  blocker: { blocked: boolean; reason?: string; event?: string } | undefined;
+  blocker: CalendarBlockerResponse | undefined;
 }
 
 function EventBanner({ blocker }: EventBannerProps) {
-  if (!blocker?.blocked) return null;
+  if (!blocker?.is_locked) return null;
 
   return (
     <div
@@ -523,9 +523,7 @@ function EventBanner({ blocker }: EventBannerProps) {
         NEWS BLACKOUT
       </span>
       <span style={{ fontSize: 11, color: "var(--text-secondary)" }}>
-        {blocker.event
-          ? `High-impact event: ${blocker.event}`
-          : blocker.reason ?? "High-impact event window active — trading signals are blocked."}
+        {blocker.lock_reason ?? "High-impact event window active — trading signals are blocked."}
       </span>
       <Link
         href="/news"
@@ -625,7 +623,7 @@ export default function CommandCenterPage() {
   const { data: riskSnapshots, isError: riskError } = useAccountsRiskSnapshot();
   const { data: health } = useHealth();
   const { data: calendarBlocker } = useCalendarBlocker();
-  const { alerts } = useAlertsWS();
+  const { alerts } = useLiveAlerts();
 
   const wsStatus = useSystemStore((s) => s.wsStatus);
   const mode = useSystemStore((s) => s.mode);
@@ -671,12 +669,12 @@ export default function CommandCenterPage() {
 
   const dataErrors = useMemo(() => {
     const errs: string[] = [];
-    if (vError)        errs.push("verdicts");
-    if (tradesError)   errs.push("trades");
-    if (contextError)  errs.push("context");
+    if (vError) errs.push("verdicts");
+    if (tradesError) errs.push("trades");
+    if (contextError) errs.push("context");
     if (executionError) errs.push("execution");
     if (accountsError) errs.push("accounts");
-    if (riskError)     errs.push("risk");
+    if (riskError) errs.push("risk");
     return errs;
   }, [vError, tradesError, contextError, executionError, accountsError, riskError]);
 
@@ -766,9 +764,9 @@ export default function CommandCenterPage() {
           value={execution?.state ?? "—"}
           color={
             execution?.state === "SIGNAL_READY" ? "var(--accent)" :
-            execution?.state === "EXECUTING"    ? "var(--green)"  :
-            execution?.state === "SCANNING"     ? "var(--blue)"   :
-            "var(--text-muted)"
+              execution?.state === "EXECUTING" ? "var(--green)" :
+                execution?.state === "SCANNING" ? "var(--blue)" :
+                  "var(--text-muted)"
           }
           sub={execution ? `${execution.signal_count ?? 0} signals today` : "no data"}
         />
@@ -873,10 +871,10 @@ export default function CommandCenterPage() {
               </div>
               {(
                 [
-                  { label: "SESSION",    value: context.session },
-                  { label: "REGIME",     value: context.regime },
+                  { label: "SESSION", value: context.session },
+                  { label: "REGIME", value: context.regime },
                   { label: "VOLATILITY", value: context.volatility },
-                  { label: "TREND",      value: context.trend },
+                  { label: "TREND", value: context.trend },
                 ] as const
               ).map(({ label, value }) =>
                 value ? (
@@ -919,11 +917,11 @@ export default function CommandCenterPage() {
                 ACCOUNT READINESS
               </div>
               {accounts.slice(0, 4).map((acc: Account) => {
-                const snap = snapshotList.find((s) => s.account_id === acc.id);
+                const snap = snapshotList.find((s) => s.account_id === acc.account_id);
                 const ready = !snap || (snap.status === "SAFE" && !snap.circuit_breaker);
                 return (
                   <div
-                    key={acc.id}
+                    key={acc.account_id}
                     style={{
                       display: "flex",
                       alignItems: "center",
@@ -952,7 +950,7 @@ export default function CommandCenterPage() {
                         whiteSpace: "nowrap",
                       }}
                     >
-                      {acc.account_name ?? acc.id}
+                      {acc.account_name ?? acc.account_id}
                     </span>
                     <span
                       style={{

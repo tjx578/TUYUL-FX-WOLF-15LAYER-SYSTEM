@@ -19,3 +19,5 @@ export { useLivePrices } from "./hooks/useLivePrices";
 export { useLiveTrades } from "./hooks/useLiveTrades";
 export { useLiveRisk } from "./hooks/useLiveRisk";
 export { useLiveSignals } from "./hooks/useLiveSignals";
+export { useLiveEquity } from "./hooks/useLiveEquity";
+export { useLiveAlerts } from "./hooks/useLiveAlerts";

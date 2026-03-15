@@ -50,6 +50,9 @@ interface ConnectLiveUpdatesOptions {
   onError?: (error: unknown) => void;
   onStatusChange?: (status: WsConnectionStatus) => void;
   onDegradation?: (status: SystemStatusView) => void;
+  /** Fired when a monotonic seq gap is detected. Callers should re-fetch the
+   *  full REST snapshot to fill the gap. `missed` = number of lost messages. */
+  onSeqGap?: (missed: number) => void;
 }
 
 // ─── CONNECT LIVE UPDATES ────────────────────────────────────
@@ -57,7 +60,7 @@ interface ConnectLiveUpdatesOptions {
 export function connectLiveUpdates(
   options: ConnectLiveUpdatesOptions
 ): WsControls {
-  const { path, onEvent, onError, onStatusChange, onDegradation } = options;
+  const { path, onEvent, onError, onStatusChange, onDegradation, onSeqGap } = options;
 
   let socket: WebSocket | null = null;
   let reconnectAttempt = 0;
@@ -123,6 +126,7 @@ export function connectLiveUpdates(
           if (lastSeq > 0 && seq !== lastSeq + 1) {
             const missed = seq - lastSeq - 1;
             gapCount++;
+            onSeqGap?.(missed);
             onDegradation?.({
               mode: "DEGRADED",
               reason: `Sequence gap detected: expected ${lastSeq + 1}, got ${seq} (${missed} message(s) lost)`,

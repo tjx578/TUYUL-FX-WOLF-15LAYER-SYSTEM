@@ -3,6 +3,12 @@
 // Smooth number transition + directional color flash.
 // Up → emerald flash | Down → red flash
 // Production-safe: degrades gracefully if value unchanged.
+//
+// PERF AUDIT (Part G): Only hot-path framer-motion usage.
+// Mitigations: React.memo(), imperative animate() (no reconciliation),
+// conditional motion.span (only renders on direction change).
+// Other framer-motion consumers (VerdictCard, RiskGauge, micro, EquityChart,
+// RouteTransition) are non-hot-path — update frequencies 2s–15s+.
 // ============================================================
 "use client";
 
