@@ -13,6 +13,7 @@ import { useState } from "react";
 import AccountSwitcher from "./AccountSwitcher";
 import { useAuthStore } from "@/store/useAuthStore";
 import { hasRole } from "@/lib/auth";
+import type { UserRole } from "@/contracts/auth";
 import { useActiveTrades, useHealth } from "@/lib/api";
 import { useMemo } from "react";
 
@@ -65,26 +66,26 @@ function ChevronIcon({ open }: { open: boolean }) {
 
 const ICONS: Record<string, string> = {
   // Tier-1: COMMAND
-  "/":               "M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z",
+  "/": "M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z",
   "/trades/signals": "M13 2L3 14h9l-1 8 10-12h-9l1-8z",
-  "/trades":         "M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z",
-  "/risk":           "M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z",
+  "/trades": "M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z",
+  "/risk": "M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z",
   // Tier-2: OPERATIONS
-  "/accounts":       "M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z",
-  "/ea-manager":     "M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17H3a2 2 0 01-2-2V5a2 2 0 012-2h14a2 2 0 012 2v10a2 2 0 01-2 2h-2",
-  "/prop-firm":      "M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z",
-  "/news":           "M19 3H5a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2V5a2 2 0 00-2-2zM9 7h6M9 11h6M9 15h4",
-  "/journal":        "M4 6h16M4 10h16M4 14h8",
+  "/accounts": "M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z",
+  "/ea-manager": "M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17H3a2 2 0 01-2-2V5a2 2 0 012-2h14a2 2 0 012 2v10a2 2 0 01-2 2h-2",
+  "/prop-firm": "M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z",
+  "/news": "M19 3H5a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2V5a2 2 0 00-2-2zM9 7h6M9 11h6M9 15h4",
+  "/journal": "M4 6h16M4 10h16M4 14h8",
   // Tier-3: CONTROL
-  "/settings":       "M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z",
+  "/settings": "M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z",
   // Analytics & Engineering (advanced/foldable)
-  "/pipeline":       "M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5",
-  "/probability":    "M16 8a6 6 0 016 6v7h-4v-7a2 2 0 00-2-2 2 2 0 00-2 2v7h-4v-7a6 6 0 016-6zM2 9h4v12H2z",
-  "/prices":         "M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z",
-  "/cockpit":        "M12 2a10 10 0 110 20A10 10 0 0112 2zm0 0v10m0 0l4-4m-4 4l-4-4",
-  "/signals":        "M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z",
+  "/pipeline": "M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5",
+  "/probability": "M16 8a6 6 0 016 6v7h-4v-7a2 2 0 00-2-2 2 2 0 00-2 2v7h-4v-7a6 6 0 016-6zM2 9h4v12H2z",
+  "/prices": "M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z",
+  "/cockpit": "M12 2a10 10 0 110 20A10 10 0 0112 2zm0 0v10m0 0l4-4m-4 4l-4-4",
+  "/signals": "M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z",
   // Admin
-  "/audit":          "M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z",
+  "/audit": "M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z",
   "/architecture-audit": "M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2",
 };
 
@@ -100,19 +101,19 @@ type NavItem = {
 
 // Tier-1: Live operator pages — must be reachable in 1 click at all times
 const TIER1_COMMAND: NavItem[] = [
-  { href: "/",               label: "Command Center" },
+  { href: "/", label: "Command Center" },
   { href: "/trades/signals", label: "Signal Board" },
-  { href: "/trades",         label: "Trade Desk" },
-  { href: "/risk",           label: "Risk Command" },
+  { href: "/trades", label: "Trade Desk" },
+  { href: "/risk", label: "Risk Command" },
 ];
 
 // Tier-2: Operational context — important but not every-minute
 const TIER2_OPERATIONS: NavItem[] = [
-  { href: "/accounts",   label: "Capital Accounts" },
+  { href: "/accounts", label: "Capital Accounts" },
   { href: "/ea-manager", label: "Agent Control" },
-  { href: "/prop-firm",  label: "Compliance Hub" },
-  { href: "/news",       label: "Market Events" },
-  { href: "/journal",    label: "Operator Journal" },
+  { href: "/prop-firm", label: "Compliance Hub" },
+  { href: "/news", label: "Market Events" },
+  { href: "/journal", label: "Operator Journal" },
 ];
 
 // Tier-3: Control plane
@@ -122,17 +123,17 @@ const TIER3_CONTROL: NavItem[] = [
 
 // Advanced section (foldable) — analytics, engineering, deep diagnosis
 const ADVANCED_ITEMS: NavItem[] = [
-  { href: "/pipeline",    label: "Pipeline Monitor" },
+  { href: "/pipeline", label: "Pipeline Monitor" },
   { href: "/probability", label: "Probability Monitor" },
-  { href: "/prices",      label: "Price Feed Monitor" },
-  { href: "/cockpit",     label: "Supervisory Cockpit" },
-  { href: "/signals",     label: "Signal Explorer" },
+  { href: "/prices", label: "Price Feed Monitor" },
+  { href: "/cockpit", label: "Supervisory Cockpit" },
+  { href: "/signals", label: "Signal Explorer" },
 ];
 
 // Admin only
 const ADMIN_ITEMS: NavItem[] = [
-  { href: "/audit",              label: "Audit Console",    roles: ["risk_admin", "config_admin", "approver"] },
-  { href: "/architecture-audit", label: "Arch Audit",       roles: ["risk_admin", "config_admin", "approver"] },
+  { href: "/audit", label: "Audit Console", roles: ["risk_admin", "config_admin", "approver"] },
+  { href: "/architecture-audit", label: "Arch Audit", roles: ["risk_admin", "config_admin", "approver"] },
 ];
 
 // ── SystemPulse ───────────────────────────────────────────────
@@ -190,7 +191,7 @@ function NavSection({
   items: NavItem[];
   pathname: string;
   tradeCount: number;
-  user: { role?: string; email?: string } | null;
+  user: { role?: UserRole; email?: string } | null;
 }) {
   const visible = items.filter(
     (item) => !item.roles || hasRole(user?.role, item.roles)
@@ -243,7 +244,7 @@ function AdvancedSection({
   user,
 }: {
   pathname: string;
-  user: { role?: string; email?: string } | null;
+  user: { role?: UserRole; email?: string } | null;
 }) {
   // Auto-open if current path is inside advanced section
   const isInsideAdvanced = ADVANCED_ITEMS.some(
