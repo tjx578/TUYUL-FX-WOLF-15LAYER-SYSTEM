@@ -10,17 +10,15 @@ Endpoint: GET /news?category=forex&token=KEY
 from __future__ import annotations
 
 import asyncio
-import os
-
 from datetime import UTC, datetime
 from typing import Any
 
-import httpx  # pyright: ignore[reportMissingImports]
-
+import httpx
 from loguru import logger
 
 from config_loader import load_finnhub
 from context.live_context_bus import LiveContextBus
+from news.sentiment.sentiment_engine import get_default_scorer
 
 
 class MarketNewsError(Exception):
@@ -47,6 +45,7 @@ class FinnhubMarketNews:
     def __init__(self) -> None:
         self._config = load_finnhub()
         from ingest.finnhub_key_manager import finnhub_keys  # noqa: PLC0415
+
         self._key_manager = finnhub_keys
         self._api_key: str = self._key_manager.current_key()
         self._base_url: str = self._config["rest"].get("base_url", "https://finnhub.io/api/v1")
@@ -65,7 +64,7 @@ class FinnhubMarketNews:
             {
                 "bullish": ["hawkish", "rate hike", "strong", "beat", "surge"],
                 "bearish": ["dovish", "rate cut", "weak", "miss", "decline"],
-            }
+            },
         )
         self._sentiment_keywords: dict[str, list[str]] = {
             "bullish": [k.lower() for k in raw_keywords.get("bullish", [])],
@@ -74,6 +73,7 @@ class FinnhubMarketNews:
 
         self._context_bus = LiveContextBus()
         self._last_id: int = 0  # Track highest article ID for deduplication
+        self._scorer = get_default_scorer()
 
         if not self._api_key:
             logger.error("FINNHUB_API_KEY not set - market news will fail")
@@ -115,7 +115,7 @@ class FinnhubMarketNews:
                 articles: list[dict[str, Any]] = data if isinstance(data, list) else []
 
                 # Limit number of articles
-                articles = articles[:self._max_articles]
+                articles = articles[: self._max_articles]
 
                 # Normalize and score sentiment
                 normalized = [self._normalize_article(article) for article in articles]
@@ -125,27 +125,18 @@ class FinnhubMarketNews:
                     max_id = max(article["id"] for article in normalized if article["id"])
                     self._last_id = max(max_id, self._last_id)
 
-                logger.info(
-                    f"Finnhub market news: {len(normalized)} articles fetched "
-                    f"(last_id={self._last_id})"
-                )
+                logger.info(f"Finnhub market news: {len(normalized)} articles fetched (last_id={self._last_id})")
                 return normalized
 
             except httpx.HTTPStatusError as exc:
                 last_exc = exc
                 self._key_manager.report_failure(self._api_key, exc.response.status_code)
                 if exc.response.status_code == 429:
-                    logger.warning(
-                        f"Finnhub rate limited (attempt {attempt}/"
-                        f"{self._retries}), waiting {wait:.1f}s"
-                    )
+                    logger.warning(f"Finnhub rate limited (attempt {attempt}/{self._retries}), waiting {wait:.1f}s")
                     await asyncio.sleep(wait)
                     wait *= self._backoff_factor
                 elif exc.response.status_code == 403:
-                    logger.error(
-                        f"Finnhub HTTP 403 Forbidden - check API key permissions "
-                        f"and endpoint URL: {url}"
-                    )
+                    logger.error(f"Finnhub HTTP 403 Forbidden - check API key permissions and endpoint URL: {url}")
                     raise MarketNewsError(f"HTTP 403 Forbidden: {url}") from exc
                 else:
                     logger.error(f"Finnhub HTTP {exc.response.status_code}: {exc.response.text}")
@@ -153,9 +144,7 @@ class FinnhubMarketNews:
 
             except (httpx.ConnectError, httpx.ReadTimeout) as exc:
                 last_exc = exc
-                logger.warning(
-                    f"Finnhub connection error (attempt {attempt}/{self._retries}): {exc}"
-                )
+                logger.warning(f"Finnhub connection error (attempt {attempt}/{self._retries}): {exc}")
                 await asyncio.sleep(wait)
                 wait = min(
                     wait * self._backoff_factor,
@@ -179,8 +168,8 @@ class FinnhubMarketNews:
         summary = article.get("summary", "")
         text = f"{headline} {summary}"
 
-        # Score sentiment
-        sentiment_score, sentiment_label = self._score_sentiment(text)
+        # Score sentiment using the sentiment engine (FinBERT/keyword hybrid)
+        sentiment_result = self._scorer.score(text)
 
         # Convert timestamp to ISO format
         timestamp = article.get("datetime", 0)
@@ -196,14 +185,20 @@ class FinnhubMarketNews:
             "image": article.get("image", ""),
             "datetime": timestamp,
             "datetime_iso": datetime_iso,
-            "sentiment": sentiment_label,
-            "sentiment_score": sentiment_score,
+            "sentiment": sentiment_result.label,
+            "sentiment_score": sentiment_result.score,
+            "sentiment_confidence": sentiment_result.confidence,
+            "sentiment_method": sentiment_result.method,
+            "sentiment_entities": sentiment_result.entities,
             "provider": "finnhub",
         }
 
     def _score_sentiment(self, text: str) -> tuple[float, str]:
         """
-        Score sentiment using keyword matching.
+        Score sentiment using the configured sentiment engine.
+
+        Delegates to the HybridScorer (FinBERT → keyword fallback)
+        rather than primitive keyword matching.
 
         Args:
             text: Combined headline + summary text
@@ -213,33 +208,8 @@ class FinnhubMarketNews:
             - score ranges from -1.0 (bearish) to 1.0 (bullish)
             - label is "bullish", "bearish", or "neutral"
         """
-        text_lower = text.lower()
-
-        bullish_count = sum(
-            1 for keyword in self._sentiment_keywords["bullish"]
-            if keyword in text_lower
-        )
-        bearish_count = sum(
-            1 for keyword in self._sentiment_keywords["bearish"]
-            if keyword in text_lower
-        )
-
-        # Normalize score between -1.0 and 1.0
-        total = bullish_count + bearish_count
-        if total == 0:
-            score = 0.0
-        else:
-            score = (bullish_count - bearish_count) / total
-
-        # Classify label
-        if score > 0.2:
-            label = "bullish"
-        elif score < -0.2:
-            label = "bearish"
-        else:
-            label = "neutral"
-
-        return score, label
+        result = self._scorer.score(text)
+        return result.score, result.label
 
     async def run(self) -> None:
         """Main polling loop."""
@@ -248,10 +218,7 @@ class FinnhubMarketNews:
             logger.warning("Finnhub market news ingestion disabled in config")
             return
 
-        logger.info(
-            f"Finnhub market news poller started (interval={self._poll_interval}s, "
-            f"category={self._category})"
-        )
+        logger.info(f"Finnhub market news poller started (interval={self._poll_interval}s, category={self._category})")
 
         while True:
             try:
