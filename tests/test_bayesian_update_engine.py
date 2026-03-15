@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-import pytest  # pyright: ignore[reportMissingImports]
+import pytest
 
-from engines.bayesian_update_engine import (  # pyright: ignore[reportMissingImports]
+from engines.bayesian_update_engine import (
     BayesianProbabilityEngine,
     BayesianResult,
 )

@@ -39,6 +39,8 @@ ROUTER_ENTRIES: list[RouterEntry] = [
     RouterEntry("api.l12_routes", "router", "L12 verdicts / context / execution state"),
     # WebSocket feeds
     RouterEntry("api.ws_routes", "router", "WebSocket feeds"),
+    # Trade Desk read endpoints (desk/detail/exposure)
+    RouterEntry("api.trades_router", "router", "Trade Desk read endpoints"),
     # Prices, accounts, trade-by-id (read-only dashboard)
     RouterEntry("api.dashboard_routes", "router", "Dashboard read-only routes"),
     # Constitutional health + equity history

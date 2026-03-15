@@ -34,19 +34,19 @@ Produces:
 Authority Boundary:
     ANALYSIS-ONLY. No execution side-effects.
     Layer-12 Constitution is the sole decision authority.
-"""
+"""  # noqa: N999
 
 from __future__ import annotations
 
 from typing import Any
 
-from loguru import logger  # pyright: ignore[reportMissingImports]
+from loguru import logger
 
-from engines.bayesian_update_engine import (  # pyright: ignore[reportMissingImports]
+from engines.bayesian_update_engine import (
     BayesianProbabilityEngine,
     BayesianResult,
 )
-from engines.monte_carlo_engine import (  # pyright: ignore[reportMissingImports]
+from engines.monte_carlo_engine import (
     MonteCarloEngine,
     MonteCarloResult,
 )
@@ -55,28 +55,29 @@ from engines.monte_carlo_engine import (  # pyright: ignore[reportMissingImports
 # WalkForwardValidator provides out-of-sample overfitting guard as an
 # enrichment layer on top of the MC + Bayesian probability gate.
 try:
-    from engines.walk_forward_validation_engine import (  # pyright: ignore[reportMissingImports]
+    from engines.walk_forward_validation_engine import (
         WalkForwardValidator,
     )
+
     _wf_validator: WalkForwardValidator | None = WalkForwardValidator()
 except Exception:  # pragma: no cover
     _wf_validator = None
 
 # ── Gate thresholds ──────────────────────────────────────────────────────────
-_MC_WIN_THRESHOLD = 0.60       # Win-rate ≥ 60% -> PASS tier
-_MC_WIN_CONDITIONAL = 0.55     # Win-rate ≥ 55% -> CONDITIONAL tier
-_PF_THRESHOLD = 1.5            # Profit factor ≥ 1.5 -> PASS tier
-_PF_CONDITIONAL = 1.2          # Profit factor ≥ 1.2 -> CONDITIONAL tier
-_MIN_TRADES = 30               # Minimum sample for bootstrap MC
+_MC_WIN_THRESHOLD = 0.60  # Win-rate ≥ 60% -> PASS tier
+_MC_WIN_CONDITIONAL = 0.55  # Win-rate ≥ 55% -> CONDITIONAL tier
+_PF_THRESHOLD = 1.5  # Profit factor ≥ 1.5 -> PASS tier
+_PF_CONDITIONAL = 1.2  # Profit factor ≥ 1.2 -> CONDITIONAL tier
+_MIN_TRADES = 30  # Minimum sample for bootstrap MC
 
 # ── CONF12 blending weights ─────────────────────────────────────────────────
-_CONF12_W_BAYES = 0.6          # Bayesian posterior weight in conf12_raw
-_CONF12_W_MC = 0.4             # MC win probability weight in conf12_raw
+_CONF12_W_BAYES = 0.6  # Bayesian posterior weight in conf12_raw
+_CONF12_W_MC = 0.4  # MC win probability weight in conf12_raw
 
 # ── Bayesian evidence blending weights ───────────────────────────────────────
-_EVIDENCE_W_MC = 0.4           # MC win probability contribution to evidence
-_EVIDENCE_W_DVG = 0.3          # Divergence confidence contribution
-_EVIDENCE_W_LIQ = 0.3          # Liquidity score contribution
+_EVIDENCE_W_MC = 0.4  # MC win probability contribution to evidence
+_EVIDENCE_W_DVG = 0.3  # Divergence confidence contribution
+_EVIDENCE_W_LIQ = 0.3  # Liquidity score contribution
 
 
 class L7ProbabilityAnalyzer:
@@ -166,8 +167,7 @@ class L7ProbabilityAnalyzer:
         # ── Guard: insufficient data -> graceful fallback ─────────────
         if len(returns) < _MIN_TRADES:
             logger.warning(
-                "[L7] {symbol} -- Insufficient trade history "
-                "({available}/{required}). Using fallback.",
+                "[L7] {symbol} -- Insufficient trade history ({available}/{required}). Using fallback.",
                 symbol=symbol,
                 available=len(returns),
                 required=_MIN_TRADES,
@@ -186,11 +186,7 @@ class L7ProbabilityAnalyzer:
             _dvg = max(0.0, min(1.0, dvg_confidence))
             _liq = max(0.0, min(1.0, liquidity_score))
 
-            evidence_score = (
-                _mc_wp * _EVIDENCE_W_MC
-                + _dvg * _EVIDENCE_W_DVG
-                + _liq * _EVIDENCE_W_LIQ
-            )
+            evidence_score = _mc_wp * _EVIDENCE_W_MC + _dvg * _EVIDENCE_W_DVG + _liq * _EVIDENCE_W_LIQ
             # Final clamp (should already be [0,1] but be explicit)
             evidence_score = max(0.0, min(1.0, evidence_score))
 
@@ -201,7 +197,7 @@ class L7ProbabilityAnalyzer:
             )
 
             # ── Gate Logic ───────────────────────────────────────────
-            wp = mc_result.win_probability   # 0.0 - 1.0
+            wp = mc_result.win_probability  # 0.0 - 1.0
             pf = mc_result.profit_factor
 
             if wp >= _MC_WIN_THRESHOLD and pf >= _PF_THRESHOLD:
@@ -215,10 +211,7 @@ class L7ProbabilityAnalyzer:
             # Blended confidence for Layer-12 consumption.
             # Bayesian posterior carries more weight (0.6) because it
             # incorporates both prior belief and new MC evidence.
-            conf12_raw = (
-                bayes_result.posterior_win_probability * _CONF12_W_BAYES
-                + wp * _CONF12_W_MC
-            )
+            conf12_raw = bayes_result.posterior_win_probability * _CONF12_W_BAYES + wp * _CONF12_W_MC
 
             result: dict[str, Any] = {
                 # ── Core MC outputs ──────────────────────────────────
@@ -229,7 +222,6 @@ class L7ProbabilityAnalyzer:
                 "expected_value": mc_result.expected_value,
                 "mc_passed_threshold": mc_result.passed_threshold,
                 "simulations": mc_result.simulations,
-
                 # ── Bayesian outputs ─────────────────────────────────
                 "posterior_win_probability": bayes_result.posterior_win_probability,
                 "confidence_interval": (
@@ -240,14 +232,11 @@ class L7ProbabilityAnalyzer:
                 "bayesian_posterior": bayes_result.posterior_win_probability,
                 "bayesian_ci_low": bayes_result.confidence_interval_low,
                 "bayesian_ci_high": bayes_result.confidence_interval_high,
-
                 # ── Blended / Derived ────────────────────────────────
                 "conf12_raw": round(conf12_raw, 4),
-
                 # ── Gate result ──────────────────────────────────────
                 "validation": validation,
                 "valid": True,
-
                 # ── Metadata ─────────────────────────────────────────
                 "symbol": symbol,
             }
@@ -325,25 +314,21 @@ class L7ProbabilityAnalyzer:
             "win_probability": 0.0,
             "profit_factor": 0.0,
             "max_drawdown": 0.0,
-            "risk_of_ruin": 1.0,        # Worst case: fail-safe
+            "risk_of_ruin": 1.0,  # Worst case: fail-safe
             "expected_value": 0.0,
             "mc_passed_threshold": False,
             "simulations": 0,
-
             # ── Bayesian outputs (zeroed) ────────────────────────────
             "posterior_win_probability": 0.0,
             "confidence_interval": (0.0, 0.0),
             "bayesian_posterior": 0.0,
             "bayesian_ci_low": 0.0,
             "bayesian_ci_high": 0.0,
-
             # ── Blended / Derived ────────────────────────────────────
             "conf12_raw": 0.0,
-
             # ── Gate result ──────────────────────────────────────────
             "validation": "FAIL",
-            "valid": True,              # Layer executed successfully
-
+            "valid": True,  # Layer executed successfully
             # ── Metadata ─────────────────────────────────────────────
             "symbol": symbol,
             "note": f"insufficient_data_{available_trades}/{_MIN_TRADES}",

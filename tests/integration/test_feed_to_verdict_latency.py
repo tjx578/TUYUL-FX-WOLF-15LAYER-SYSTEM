@@ -4,7 +4,7 @@ Target: < 2 seconds for a single pair analysis cycle.
 """
 import time
 
-import pytest  # pyright: ignore[reportMissingImports]
+import pytest
 
 
 @pytest.mark.integration

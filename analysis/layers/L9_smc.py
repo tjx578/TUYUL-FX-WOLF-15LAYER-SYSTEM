@@ -32,11 +32,10 @@ import numpy as np
 from loguru import logger
 
 try:
-    from core.core_fusion_unified import (  # pyright: ignore[reportMissingImports]
+    import core.core_cognitive_unified
+    from core.core_fusion import (
         LiquidityZoneMapper,
     )
-
-    import core.core_cognitive_unified
 except ImportError as exc:
     logger.warning(f"[L9] Could not load core modules: {exc}")
     core = None

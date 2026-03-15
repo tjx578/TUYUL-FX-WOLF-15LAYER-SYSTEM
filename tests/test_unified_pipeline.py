@@ -14,7 +14,7 @@ Covers:
 
 import time
 
-import pytest  # pyright: ignore[reportMissingImports]
+import pytest
 
 from pipeline.engines import L13ReflectiveEngine, L15MetaSovereigntyEngine
 from pipeline.result import PipelineResult

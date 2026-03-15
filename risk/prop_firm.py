@@ -8,7 +8,6 @@ for real-time compliance checks.
 
 from __future__ import annotations
 
-import os
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from pathlib import Path
@@ -26,9 +25,9 @@ def load_prop_firm() -> dict[str, Any]:
 
     if config_path.exists():
         try:
-            import yaml  # type: ignore[import-untyped]
+            import yaml
 
-            with open(config_path, "r") as fh:
+            with open(config_path) as fh:
                 data = yaml.safe_load(fh)
             if isinstance(data, dict):
                 return data
@@ -56,6 +55,7 @@ def load_prop_firm() -> dict[str, Any]:
 @dataclass
 class AccountState:
     """Typed account state for validation."""
+
     balance: float
     equity: float
     daily_loss: float
@@ -78,6 +78,7 @@ class AccountState:
 @dataclass
 class TradeRisk:
     """Typed trade risk for validation."""
+
     category: str
     risk_percent: float
     rr_ratio: float
@@ -104,6 +105,7 @@ class TradeRisk:
 @dataclass
 class GuardResult:
     """Standard result from a prop-firm guard check."""
+
     allowed: bool
     code: str
     severity: str  # "info" | "warning" | "block"
@@ -279,24 +281,17 @@ class PropFirmRules:
 
         # Check market allowed
         if not self.is_market_allowed(category):
-            violations.append(
-                f"Market category '{category}' not allowed by prop firm"
-            )
+            violations.append(f"Market category '{category}' not allowed by prop firm")
 
         # Check risk limit
         max_risk = self.max_risk_allowed()
         if risk_percent > max_risk:
-            violations.append(
-                f"Risk {risk_percent*100:.2f}% exceeds max "
-                f"{max_risk*100:.2f}%"
-            )
+            violations.append(f"Risk {risk_percent * 100:.2f}% exceeds max {max_risk * 100:.2f}%")
 
         # Check RR requirement
         min_rr = self.min_rr_required()
         if rr_ratio < min_rr:
-            violations.append(
-                f"RR {rr_ratio:.2f} below minimum {min_rr:.2f}"
-            )
+            violations.append(f"RR {rr_ratio:.2f} below minimum {min_rr:.2f}")
 
         return {
             "compliant": len(violations) == 0,

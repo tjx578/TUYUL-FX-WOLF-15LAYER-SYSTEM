@@ -4,22 +4,22 @@ Constitutional boundary: dashboard cannot override Layer-12 verdict.
 """
 
 
-import pytest  # pyright: ignore[reportMissingImports]
+import pytest
 
 try:
-    from dashboard.app import app as dashboard_app  # pyright: ignore[reportMissingImports]
+    from dashboard.app import app as dashboard_app
     HAS_DASHBOARD = True
 except ImportError:
     try:
-        from dashboard.main import (  # pyright: ignore[reportMissingImports]
-            app as dashboard_app,  # pyright: ignore[reportMissingImports]  # noqa: F401
+        from dashboard.main import (
+            app as dashboard_app,  # noqa: F401
         )
         HAS_DASHBOARD = True
     except ImportError:
         HAS_DASHBOARD = False
 
 try:
-    from httpx import ASGITransport, AsyncClient  # pyright: ignore[reportMissingImports]  # noqa: F401, I001
+    from httpx import ASGITransport, AsyncClient  # noqa: F401, I001
     HAS_HTTPX = True
 except ImportError:
     HAS_HTTPX = False

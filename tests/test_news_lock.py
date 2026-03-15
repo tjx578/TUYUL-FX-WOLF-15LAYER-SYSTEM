@@ -1,6 +1,6 @@
 from datetime import UTC, datetime, timedelta
 
-import pytest  # pyright: ignore[reportMissingImports]
+import pytest
 
 from context.live_context_bus import LiveContextBus
 from news.news_engine import NewsEngine

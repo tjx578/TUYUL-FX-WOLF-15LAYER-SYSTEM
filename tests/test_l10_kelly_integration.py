@@ -41,7 +41,7 @@ Authority: ANALYSIS + RISK ZONE integration.
 
 from __future__ import annotations
 
-import numpy as np  # pyright: ignore[reportMissingImports]
+import numpy as np
 
 from constitution.verdict_engine import VerdictEngine
 from engines.dynamic_position_sizing_engine import (

@@ -3,9 +3,9 @@ Tests for Layer 5 — Market Psychology & Trader Sentiment Analysis.
 Zone: Analysis. No execution side-effects.
 """
 
-import pytest  # pyright: ignore[reportMissingImports]
+import pytest
 
-from analysis.l5_psychology import (  # pyright: ignore[reportMissingImports]
+from analysis.l5_psychology import (
     BAD_DAY_PNL_PCT,
     EXTREME_SENTIMENT_THRESHOLD,
     LOSS_STREAK_CAUTION,

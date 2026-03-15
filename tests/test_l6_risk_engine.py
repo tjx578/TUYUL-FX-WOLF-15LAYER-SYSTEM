@@ -282,7 +282,7 @@ class TestRollingSharpe:
 
     def test_good_sharpe_no_degradation(self, engine: L6RiskAnalyzer) -> None:
         """Positive Sharpe above threshold → no degradation penalty."""
-        import numpy as np  # pyright: ignore[reportMissingImports]  # noqa: PLC0415
+        import numpy as np  # noqa: PLC0415
 
         rng = np.random.default_rng(42)
         # Positive mean returns → good Sharpe

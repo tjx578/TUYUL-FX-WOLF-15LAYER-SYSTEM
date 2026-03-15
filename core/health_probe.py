@@ -27,10 +27,9 @@ import asyncio
 import contextlib
 import json
 import time
-
 from typing import TYPE_CHECKING
 
-from loguru import logger  # pyright: ignore[reportMissingImports]
+from loguru import logger
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -81,9 +80,7 @@ class HealthProbe:
 
     # ── HTTP handling ───────────────────────────────────────────────
 
-    async def _handle(
-        self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter
-    ) -> None:
+    async def _handle(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         try:
             data = await asyncio.wait_for(reader.read(4096), timeout=5.0)
             request_line = data.decode("utf-8", errors="replace").split("\r\n")[0]
@@ -175,9 +172,7 @@ class HealthProbe:
 
     async def start(self) -> None:
         """Start the probe server (blocks forever via ``serve_forever``)."""
-        self._server = await asyncio.start_server(
-            self._handle, "0.0.0.0", self._port
-        )
+        self._server = await asyncio.start_server(self._handle, "0.0.0.0", self._port)
         logger.info(
             f"Health probe listening on :{self._port} "
             f"(service={self._service_name}, endpoints=/healthz /readyz /status)"

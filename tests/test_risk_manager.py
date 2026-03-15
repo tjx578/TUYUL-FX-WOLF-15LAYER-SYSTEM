@@ -17,7 +17,7 @@ Tests cover:
 
 from __future__ import annotations
 
-import pytest  # pyright: ignore[reportMissingImports]
+import pytest
 
 from risk.risk_manager import RiskManager
 

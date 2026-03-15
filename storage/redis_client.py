@@ -75,6 +75,7 @@ class RedisClient:
     def _init(self) -> None:
         """Initialize Redis connection pool."""
         from infrastructure.redis_url import get_redis_url
+
         url = get_redis_url()
         socket_timeout = int(os.getenv("REDIS_SOCKET_TIMEOUT_SEC", "5"))
 
@@ -85,7 +86,7 @@ class RedisClient:
         # server-side via Redis --tcp-keepalive.  Passing
         # socket_keepalive_options with TCP_KEEPIDLE etc. causes EINVAL
         # on some container runtimes (e.g. Railway Alpine).
-        self._pool = redis.ConnectionPool.from_url(  # type: ignore[reportUnknownMemberType]
+        self._pool = redis.ConnectionPool.from_url(
             url,
             decode_responses=True,
             socket_timeout=socket_timeout,
@@ -102,9 +103,7 @@ class RedisClient:
         )
 
     @retry(
-        retry=retry_if_exception_type(
-            (redis.exceptions.ConnectionError, redis.exceptions.TimeoutError)
-        ),
+        retry=retry_if_exception_type((redis.exceptions.ConnectionError, redis.exceptions.TimeoutError)),
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=1, min=1, max=10),
         reraise=True,
@@ -119,13 +118,11 @@ class RedisClient:
         Raises:
             redis.exceptions.ConnectionError: If connection fails after retries.
         """
-        result: bool = cast(bool, self.client.ping())  # type: ignore[reportUnknownMemberType]
+        result: bool = cast(bool, self.client.ping())
         return result
 
     @retry(
-        retry=retry_if_exception_type(
-            (redis.exceptions.ConnectionError, redis.exceptions.TimeoutError)
-        ),
+        retry=retry_if_exception_type((redis.exceptions.ConnectionError, redis.exceptions.TimeoutError)),
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=1, min=1, max=10),
         reraise=True,
@@ -135,9 +132,7 @@ class RedisClient:
         self.client.set(key, value, ex=ex)
 
     @retry(
-        retry=retry_if_exception_type(
-            (redis.exceptions.ConnectionError, redis.exceptions.TimeoutError)
-        ),
+        retry=retry_if_exception_type((redis.exceptions.ConnectionError, redis.exceptions.TimeoutError)),
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=1, min=1, max=10),
         reraise=True,
@@ -147,9 +142,7 @@ class RedisClient:
         return cast(str | None, self.client.get(key))
 
     @retry(
-        retry=retry_if_exception_type(
-            (redis.exceptions.ConnectionError, redis.exceptions.TimeoutError)
-        ),
+        retry=retry_if_exception_type((redis.exceptions.ConnectionError, redis.exceptions.TimeoutError)),
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=1, min=1, max=10),
         reraise=True,
@@ -167,13 +160,11 @@ class RedisClient:
             Number of fields that were added.
         """
         if mapping:
-            return cast(int, self.client.hset(name, mapping=mapping))  # type: ignore[reportUnknownMemberType]
-        return cast(int, self.client.hset(name, **kwargs))  # type: ignore[reportUnknownMemberType]
+            return cast(int, self.client.hset(name, mapping=mapping))
+        return cast(int, self.client.hset(name, **kwargs))
 
     @retry(
-        retry=retry_if_exception_type(
-            (redis.exceptions.ConnectionError, redis.exceptions.TimeoutError)
-        ),
+        retry=retry_if_exception_type((redis.exceptions.ConnectionError, redis.exceptions.TimeoutError)),
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=1, min=1, max=10),
         reraise=True,
@@ -183,9 +174,7 @@ class RedisClient:
         return cast(str | None, self.client.hget(name, key))
 
     @retry(
-        retry=retry_if_exception_type(
-            (redis.exceptions.ConnectionError, redis.exceptions.TimeoutError)
-        ),
+        retry=retry_if_exception_type((redis.exceptions.ConnectionError, redis.exceptions.TimeoutError)),
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=1, min=1, max=10),
         reraise=True,
@@ -201,12 +190,10 @@ class RedisClient:
         Returns:
             redis.client.PubSub instance for subscribing.
         """
-        return cast(redis.client.PubSub, self.client.pubsub())  # type: ignore[reportUnknownMemberType]
+        return cast(redis.client.PubSub, self.client.pubsub())
 
     @retry(
-        retry=retry_if_exception_type(
-            (redis.exceptions.ConnectionError, redis.exceptions.TimeoutError)
-        ),
+        retry=retry_if_exception_type((redis.exceptions.ConnectionError, redis.exceptions.TimeoutError)),
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=1, min=1, max=10),
         reraise=True,
@@ -222,12 +209,10 @@ class RedisClient:
         Returns:
             Number of subscribers that received the message.
         """
-        return cast(int, self.client.publish(channel, message))  # type: ignore[reportUnknownMemberType]
+        return cast(int, self.client.publish(channel, message))
 
     @retry(
-        retry=retry_if_exception_type(
-            (redis.exceptions.ConnectionError, redis.exceptions.TimeoutError)
-        ),
+        retry=retry_if_exception_type((redis.exceptions.ConnectionError, redis.exceptions.TimeoutError)),
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=1, min=1, max=10),
         reraise=True,
@@ -256,9 +241,7 @@ class RedisClient:
         return cast(str, self.client.xadd(name, fields, id=id, maxlen=maxlen, approximate=approximate))  # type: ignore[arg-type]
 
     @retry(
-        retry=retry_if_exception_type(
-            (redis.exceptions.ConnectionError, redis.exceptions.TimeoutError)
-        ),
+        retry=retry_if_exception_type((redis.exceptions.ConnectionError, redis.exceptions.TimeoutError)),
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=1, min=1, max=10),
         reraise=True,
@@ -280,12 +263,10 @@ class RedisClient:
         Returns:
             List of [stream_name, [(entry_id, fields), ...]] tuples.
         """
-        return cast(StreamResponse, self.client.xread(streams, count=count, block=block)) # type: ignore
+        return cast(StreamResponse, self.client.xread(streams, count=count, block=block))  # type: ignore
 
     @retry(
-        retry=retry_if_exception_type(
-            (redis.exceptions.ConnectionError, redis.exceptions.TimeoutError)
-        ),
+        retry=retry_if_exception_type((redis.exceptions.ConnectionError, redis.exceptions.TimeoutError)),
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=1, min=1, max=10),
         reraise=True,
@@ -311,12 +292,10 @@ class RedisClient:
         Returns:
             List of [stream_name, [(entry_id, fields), ...]] tuples.
         """
-        return cast(StreamResponse, self.client.xreadgroup(groupname, consumername, streams, count=count, block=block)) # type: ignore
+        return cast(StreamResponse, self.client.xreadgroup(groupname, consumername, streams, count=count, block=block))  # type: ignore
 
     @retry(
-        retry=retry_if_exception_type(
-            (redis.exceptions.ConnectionError, redis.exceptions.TimeoutError)
-        ),
+        retry=retry_if_exception_type((redis.exceptions.ConnectionError, redis.exceptions.TimeoutError)),
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=1, min=1, max=10),
         reraise=True,

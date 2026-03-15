@@ -7,7 +7,7 @@ Tests cover:
 - get_all_v11_config()
 """
 
-import pytest  # pyright: ignore[reportMissingImports]
+import pytest
 
 from engines.v11.config import get_v11, is_v11_enabled, get_all_v11_config
 

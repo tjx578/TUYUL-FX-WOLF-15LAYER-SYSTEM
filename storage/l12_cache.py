@@ -37,7 +37,7 @@ async def set_verdict_async(pair: str, data: dict[str, Any]) -> None:
         "ts": time.time(),
     }
     with contextlib.suppress(Exception):
-        await client.publish(VERDICT_READY_CHANNEL, json.dumps(event_payload))  # type: ignore[arg-type]
+        await client.publish(VERDICT_READY_CHANNEL, json.dumps(event_payload))
 
 
 def get_verdict(pair: str) -> dict[str, Any] | None:

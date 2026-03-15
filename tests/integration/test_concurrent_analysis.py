@@ -5,7 +5,7 @@ Verifies no data leakage or race conditions between pairs.
 import concurrent.futures
 import threading
 
-import pytest  # pyright: ignore[reportMissingImports]
+import pytest
 
 
 @pytest.mark.integration

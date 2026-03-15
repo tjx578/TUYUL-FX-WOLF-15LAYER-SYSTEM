@@ -14,7 +14,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 from unittest.mock import MagicMock
 
-import pytest  # pyright: ignore[reportMissingImports]
+import pytest
 
 from ingest.candle_builder import CandleBuilder
 

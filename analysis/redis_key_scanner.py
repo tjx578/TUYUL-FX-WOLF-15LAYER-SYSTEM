@@ -2,6 +2,7 @@
 Read-only Redis key scanner for market data discovery.
 Analysis zone only — no execution side-effects.
 """
+
 import os
 
 import redis
@@ -18,8 +19,8 @@ def scan_keys(pattern: str = "*", host: str = "127.0.0.1", port: int = 6379) -> 
     keys: list[str] = []
     cursor: int = 0
     while True:
-        cursor, batch = r.scan(cursor=cursor, match=pattern, count=100)  # type: ignore[misc]
-        keys.extend(batch) # type: ignore
+        cursor, batch = r.scan(cursor=cursor, match=pattern, count=100)
+        keys.extend(batch)  # type: ignore
         if cursor == 0:
             break
     return sorted(keys)

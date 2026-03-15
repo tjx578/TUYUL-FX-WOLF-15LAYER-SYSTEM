@@ -23,6 +23,7 @@ from typing import Any, cast
 _jwt_available = False
 try:
     import jwt as _jwt  # PyJWT
+
     _jwt_available = True
 except ImportError:
     _jwt = None
@@ -30,6 +31,7 @@ except ImportError:
 
 class AuthErrorCode(Enum):
     """Machine-readable WebSocket authentication error codes."""
+
     TOKEN_EXPIRED = "TOKEN_EXPIRED"
     TOKEN_REVOKED = "TOKEN_REVOKED"
     TOKEN_INVALID = "TOKEN_INVALID"
@@ -45,6 +47,7 @@ class AuthError(ValueError):
 @dataclass
 class SessionInfo:
     """Validated session information."""
+
     user_id: str
     session_id: str
     issued_at: float = field(default_factory=time.time)
@@ -74,7 +77,9 @@ def reject_token_in_url(query_string: str) -> None:
     for part in query_string.split("&"):
         key = part.split("=")[0].lower().strip()
         if key in _TOKEN_IN_URL_PARAMS:
-            raise AuthError(f"{AuthErrorCode.TOKEN_IN_URL.value}: credential found in URL query string — use Sec-WebSocket-Protocol header")
+            raise AuthError(
+                f"{AuthErrorCode.TOKEN_IN_URL.value}: credential found in URL query string — use Sec-WebSocket-Protocol header"
+            )
 
 
 def _parse_ws_subprotocol_token(ws: Any) -> str | None:
@@ -103,10 +108,8 @@ def _parse_ws_subprotocol_token(ws: Any) -> str | None:
         lower = stripped.lower()
         for prefix in ("auth.", "token."):
             if lower.startswith(prefix):
-                return stripped[len(prefix):]
+                return stripped[len(prefix) :]
     return None
-
-
 
 
 class WSTokenManager:
@@ -138,12 +141,13 @@ class WSTokenManager:
             "exp": now + self._max_age,
         }
         if _jwt_available and _jwt is not None:
-            token = _jwt.encode(payload, self._secret, algorithm="HS256")  # type: ignore[union-attr]
+            token = _jwt.encode(payload, self._secret, algorithm="HS256")
             if isinstance(token, bytes):
                 token = token.decode("utf-8")
         else:
             # Fallback: simple base64-encoded JSON (not production-safe)
             import base64
+
             token = base64.urlsafe_b64encode(json.dumps(payload).encode()).decode()
         return {"token": token, "session_id": session_id}
 
@@ -161,12 +165,18 @@ class WSTokenManager:
         """
         try:
             if _jwt_available and _jwt is not None:
-                payload = cast(dict[str, Any], _jwt.decode( # type: ignore
-                    token, self._secret, algorithms=["HS256"],
-                    options={"verify_exp": True},
-                ))
+                payload = cast(
+                    dict[str, Any],
+                    _jwt.decode(
+                        token,
+                        self._secret,
+                        algorithms=["HS256"],
+                        options={"verify_exp": True},
+                    ),
+                )
             else:
                 import base64
+
                 raw = base64.urlsafe_b64decode(token + "==")
                 payload = json.loads(raw.decode())
                 if "exp" in payload and time.time() > payload["exp"]:

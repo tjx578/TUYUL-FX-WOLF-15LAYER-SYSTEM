@@ -23,7 +23,7 @@ class BrokerExecutor:
     to the broker API.  It never re-evaluates market conditions or risk.
     """
 
-    def __init__(self, guard: BasePropFirmGuard | None = None) -> None: # type: ignore
+    def __init__(self, guard: BasePropFirmGuard | None = None) -> None:
         self._guard = guard
 
     def preflight_check(
@@ -38,6 +38,7 @@ class BrokerExecutor:
         if self._guard is None:
             return GuardResult(allowed=True, code="NO_GUARD", severity="info")
         return self._guard.check(account_state, trade_risk)
+
 
 # ---------------------------------------------------------------------------
 # Broker Executor — low-level order placement abstraction.

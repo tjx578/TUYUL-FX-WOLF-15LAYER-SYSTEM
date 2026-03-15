@@ -2,7 +2,7 @@
 
 import threading
 
-from analysis.tick_filter import (  # pyright: ignore[reportMissingImports]
+from analysis.tick_filter import (
     DedupCache,
     LastPriceStore,
     SpikeFilter,

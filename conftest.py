@@ -2,12 +2,12 @@
 Root conftest -- shared fixtures for the entire Wolf-15 test suite.
 Fast by default: heavy fixtures are session-scoped or lazy.
 """
+
 import sys
 import time
-
 from pathlib import Path
 
-import pytest  # pyright: ignore[reportMissingImports]
+import pytest
 
 # Ensure project root is importable
 ROOT = Path(__file__).parent
@@ -24,7 +24,10 @@ def _enforce_timeout(request):
     elapsed = time.perf_counter() - start
     if elapsed > 5.0 and "slow" not in [m.name for m in request.node.iter_markers()]:
         import warnings  # noqa: PLC0415
-        warnings.warn(f"Test {request.node.nodeid} took {elapsed:.1f}s -- consider marking @pytest.mark.slow", stacklevel=2)
+
+        warnings.warn(
+            f"Test {request.node.nodeid} took {elapsed:.1f}s -- consider marking @pytest.mark.slow", stacklevel=2
+        )
 
 
 # ── Sample Layer-12 verdict ───────────────────────────────────────

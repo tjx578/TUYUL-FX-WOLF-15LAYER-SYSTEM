@@ -1,4 +1,4 @@
-"""Backward-compatible re-export.  Canonical location: analysis.formulas.tii_formula"""
+"""Backward-compatible re-export.  Canonical TII: analysis.l8_tii"""
 
 from analysis.formulas.tii_formula import calculate_tii  # noqa: F401
 

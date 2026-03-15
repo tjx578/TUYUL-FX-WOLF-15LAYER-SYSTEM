@@ -27,14 +27,13 @@ Upgrade path:
                  inherently asset-agnostic via price-normalized features
 
 Zone: analysis/ -- pure read-only analysis, no execution side-effects.
-"""
+"""  # noqa: N999
 
 from __future__ import annotations
 
 import logging
 import math
 import statistics
-
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from typing import Any
@@ -44,7 +43,7 @@ logger = logging.getLogger(__name__)
 # ── Optional Engine Enrichment ────────────────────────────────────────────
 try:
     from engines.regime_classifier_ml import (
-        RegimeClassifier,  # pyright: ignore[reportMissingImports]
+        RegimeClassifier,
     )
 
     _regime_classifier: RegimeClassifier | None = RegimeClassifier()
@@ -566,21 +565,15 @@ def _validate_market_data(
     check_count = min(len(closes), _MIN_BARS)
     for i, c in enumerate(closes[-check_count:]):
         if not math.isfinite(c):
-            raise ContextError(
-                f"closes[{len(closes) - check_count + i}] = {c} is not finite"
-            )
+            raise ContextError(f"closes[{len(closes) - check_count + i}] = {c} is not finite")
         if c <= 0:
-            raise ContextError(
-                f"closes[{len(closes) - check_count + i}] = {c} must be positive"
-            )
+            raise ContextError(f"closes[{len(closes) - check_count + i}] = {c} must be positive")
 
     if highs and lows:
         check_len = min(len(highs), len(lows), _MIN_BARS)
         for i in range(len(highs) - check_len, len(highs)):
             if highs[i] < lows[i]:
-                raise ContextError(
-                    f"high[{i}]={highs[i]} < low[{i}]={lows[i]}"
-                )
+                raise ContextError(f"high[{i}]={highs[i]} < low[{i}]={lows[i]}")
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -631,18 +624,10 @@ def analyze_context(
     """
     w = weights or DEFAULT_WEIGHTS
 
-    closes: list[float] = market_data.get(
-        "closes", market_data.get("close", [])
-    )
-    highs: list[float] = market_data.get(
-        "highs", market_data.get("high", [])
-    )
-    lows: list[float] = market_data.get(
-        "lows", market_data.get("low", [])
-    )
-    volumes: list[float] = market_data.get(
-        "volumes", market_data.get("volume", [])
-    )
+    closes: list[float] = market_data.get("closes", market_data.get("close", []))
+    highs: list[float] = market_data.get("highs", market_data.get("high", []))
+    lows: list[float] = market_data.get("lows", market_data.get("low", []))
+    volumes: list[float] = market_data.get("volumes", market_data.get("volume", []))
 
     if not closes or len(closes) < _MIN_BARS:
         return ContextResult(
@@ -724,7 +709,12 @@ def analyze_context(
 
     # ── Alignment ─────────────────────────────────────────────────
     alignment = _compute_alignment(
-        closes[-1], ema20, ema50, ema9, s, regime,
+        closes[-1],
+        ema20,
+        ema50,
+        ema9,
+        s,
+        regime,
     )
 
     # ── Hurst Enrichment (full result from engine) ────────────────
@@ -748,10 +738,19 @@ def analyze_context(
             logger.debug("L1 Hurst enrichment skipped: %s", exc)
 
     logger.debug(
-        "L1 v3: pair=%s P=%.4f CC=%.4f regime=%s vol=%s(%s) "
-        "csi=%.4f session=%s X=[S=%.6f A=%.6f H=%.4f Vz=%.4f]",
-        pair, p_trend, cc, regime, vol_level,
-        _classify_asset(pair), csi, session, s, a, h, vz,
+        "L1 v3: pair=%s P=%.4f CC=%.4f regime=%s vol=%s(%s) csi=%.4f session=%s X=[S=%.6f A=%.6f H=%.4f Vz=%.4f]",
+        pair,
+        p_trend,
+        cc,
+        regime,
+        vol_level,
+        _classify_asset(pair),
+        csi,
+        session,
+        s,
+        a,
+        h,
+        vz,
     )
 
     result = ContextResult(
@@ -831,5 +830,7 @@ class L1ContextAnalyzer:
         }
 
         return analyze_context(
-            market_data, pair=symbol, weights=self._weights,
+            market_data,
+            pair=symbol,
+            weights=self._weights,
         )

@@ -3,7 +3,7 @@ Integration test: full signal lifecycle from verdict -> risk check -> journal.
 Tests the entire authority chain respects boundaries.
 """
 
-import pytest  # pyright: ignore[reportMissingImports]
+import pytest
 
 
 @pytest.mark.integration

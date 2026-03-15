@@ -63,15 +63,16 @@ class TradeLedger:
     def get_active_trades(self) -> list[Trade]:
         trades: dict[str, Trade] = dict(self._memory_trades)
         with contextlib.suppress(Exception):
-            for key in redis_client.client.scan_iter(match="TRADE:*"):  # type: ignore[misc]
-                key_str: str = key if isinstance(key, str) else str(key)  # type: ignore[arg-type]
+            for key in redis_client.client.scan_iter(match="TRADE:*"):
+                key_str: str = key if isinstance(key, str) else str(key)
                 trade_id = key_str.split(":", 1)[1]
                 raw = redis_client.client.get(key_str)
                 if isinstance(raw, str):
                     trades[trade_id] = self._from_dict(json.loads(raw))
 
         return [
-            t for t in sorted(trades.values(), key=lambda x: x.updated_at, reverse=True)
+            t
+            for t in sorted(trades.values(), key=lambda x: x.updated_at, reverse=True)
             if t.status not in {TradeStatus.CANCELLED, TradeStatus.CLOSED, TradeStatus.SKIPPED}
         ]
 
@@ -79,8 +80,8 @@ class TradeLedger:
         trades: dict[str, Trade] = dict(self._memory_trades)
         with contextlib.suppress(Exception):
             client = await get_client()
-            async for key in client.scan_iter(match="TRADE:*"):  # type: ignore[misc]
-                key_obj: str | bytes = key  # type: ignore[assignment]
+            async for key in client.scan_iter(match="TRADE:*"):
+                key_obj: str | bytes = key
                 if isinstance(key_obj, str):
                     key_str = key_obj
                 elif isinstance(key_obj, bytes):
@@ -114,25 +115,68 @@ class TradeLedger:
                     trades[trade.trade_id] = trade
 
         return [
-            t for t in sorted(trades.values(), key=lambda x: x.updated_at, reverse=True)
+            t
+            for t in sorted(trades.values(), key=lambda x: x.updated_at, reverse=True)
             if t.status not in {TradeStatus.CANCELLED, TradeStatus.CLOSED, TradeStatus.SKIPPED}
         ]
+
+    async def get_all_trades_async(self) -> list[Trade]:
+        """Return all trades (active + terminal) from Redis and Postgres."""
+        trades: dict[str, Trade] = dict(self._memory_trades)
+        with contextlib.suppress(Exception):
+            client = await get_client()
+            async for key in client.scan_iter(match="TRADE:*"):
+                key_obj: str | bytes = key
+                if isinstance(key_obj, str):
+                    key_str = key_obj
+                elif isinstance(key_obj, bytes):
+                    key_str = key_obj.decode()
+                else:
+                    key_str = ""
+                trade_id = key_str.split(":", 1)[1]
+                raw = await client.get(key_str)
+                if isinstance(raw, str):
+                    trades[trade_id] = self._from_dict(json.loads(raw))
+
+        with contextlib.suppress(Exception):
+            rows = await pg_client.fetch(
+                """
+                SELECT trade_id, signal_id, account_id, pair, direction, status, risk_mode,
+                       total_risk_percent, total_risk_amount, pnl, close_reason, legs,
+                       created_at, updated_at, closed_at
+                FROM trade_history
+                ORDER BY updated_at DESC
+                LIMIT 500
+                """
+            )
+            for row in rows:
+                data = dict(row)
+                for field in ("created_at", "updated_at", "closed_at"):
+                    if data.get(field) is not None:
+                        data[field] = data[field].isoformat()
+                trade = self._from_dict(data)
+                if trade.trade_id not in trades:
+                    trades[trade.trade_id] = trade
+
+        return sorted(trades.values(), key=lambda x: x.updated_at, reverse=True)
 
     def _from_dict(self, data: dict[str, object]) -> Trade:
         legs_payload = data.get("legs")
         if not legs_payload or not isinstance(legs_payload, list):
-            legs_payload = [{
-                "leg": 1,
-                "entry": float(str(data.get("entry_price") or 0.0)),
-                "sl": float(str(data.get("stop_loss") or 0.0)),
-                "tp": float(str(data.get("take_profit") or 0.0)),
-                "lot": float(str(data.get("lot_size") or 0.01)),
-                "status": str(data.get("status", "INTENDED")),
-            }]
+            legs_payload = [
+                {
+                    "leg": 1,
+                    "entry": float(str(data.get("entry_price") or 0.0)),
+                    "sl": float(str(data.get("stop_loss") or 0.0)),
+                    "tp": float(str(data.get("take_profit") or 0.0)),
+                    "lot": float(str(data.get("lot_size") or 0.01)),
+                    "status": str(data.get("status", "INTENDED")),
+                }
+            ]
 
         legs: list[TradeLeg] = []
-        for leg in legs_payload:  # type: ignore[assignment]
-            leg_dict: dict[str, object] = dict(leg) if isinstance(leg, dict) else {}  # type: ignore[arg-type]
+        for leg in legs_payload:
+            leg_dict: dict[str, object] = dict(leg) if isinstance(leg, dict) else {}
             # Sanitize and cast leg fields with explicit type conversion and error handling
             try:
                 leg_num = int(float(str(leg_dict.get("leg", 1))))
@@ -165,14 +209,16 @@ class TradeLedger:
             except ValueError:
                 leg_status = TradeStatus.INTENDED
 
-            legs.append(TradeLeg(
-                leg=leg_num,
-                entry=entry,
-                sl=sl,
-                tp=tp,
-                lot=lot,
-                status=leg_status,
-            ))
+            legs.append(
+                TradeLeg(
+                    leg=leg_num,
+                    entry=entry,
+                    sl=sl,
+                    tp=tp,
+                    lot=lot,
+                    status=leg_status,
+                )
+            )
 
         status_raw = str(data.get("status", "INTENDED"))
         try:
@@ -191,6 +237,7 @@ class TradeLedger:
         if close_reason_raw is not None:
             try:
                 from schemas.trade_models import CloseReason
+
                 close_reason = CloseReason(str(close_reason_raw))
             except (ValueError, ImportError):
                 close_reason = None

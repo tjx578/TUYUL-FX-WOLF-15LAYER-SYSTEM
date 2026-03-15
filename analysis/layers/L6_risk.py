@@ -31,12 +31,11 @@ Produces:
   max_risk_pct       (float) effective risk cap after all adjustments
   risk_ok            (bool)  False ↔ hard block
   valid              (bool)  always True
-"""
+"""  # noqa: N999
 
 from __future__ import annotations
 
 import logging
-
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -47,17 +46,19 @@ __all__ = ["L6RiskAnalyzer"]
 # Optional Engine Enrichment (VolClustering / CorrelationRisk)
 # ─────────────────────────────────────────────────────────────────────
 try:
-    from engines.volatility_clustering_model import (  # pyright: ignore[reportMissingImports]
+    from engines.volatility_clustering_model import (
         VolatilityClusteringModel,
     )
+
     _vol_cluster_model: VolatilityClusteringModel | None = VolatilityClusteringModel()
 except Exception:  # pragma: no cover
     _vol_cluster_model = None
 
 try:
-    from engines.correlation_risk_engine import (  # pyright: ignore[reportMissingImports]
+    from engines.correlation_risk_engine import (
         CorrelationRiskEngine,
     )
+
     _corr_engine: CorrelationRiskEngine | None = CorrelationRiskEngine()
 except Exception:  # pragma: no cover
     _corr_engine = None
@@ -66,14 +67,15 @@ except Exception:  # pragma: no cover
 # ─────────────────────────────────────────────────────────────────────
 # Config defaults (overridden from config YAML when available)
 # ─────────────────────────────────────────────────────────────────────
-_DEFAULT_MAX_DAILY_DD = 0.05   # 5%  (prop_firm.yaml: drawdown.max_daily_percent)
-_DEFAULT_MAX_TOTAL_DD = 0.10   # 10% (prop_firm.yaml: drawdown.max_total_percent)
+_DEFAULT_MAX_DAILY_DD = 0.05  # 5%  (prop_firm.yaml: drawdown.max_daily_percent)
+_DEFAULT_MAX_TOTAL_DD = 0.10  # 10% (prop_firm.yaml: drawdown.max_total_percent)
 _DEFAULT_BASE_RISK_PCT = 0.01  # 1%  (risk.yaml: position_sizing.default_risk_percent)
 
 
 # ─────────────────────────────────────────────────────────────────────
 # L6 Risk Engine
 # ─────────────────────────────────────────────────────────────────────
+
 
 class L6RiskAnalyzer:
     """Layer 6: Capital Firewall Risk Engine (v4 PRODUCTION).
@@ -129,7 +131,8 @@ class L6RiskAnalyzer:
         return max(0.0, (peak - equity) / peak)
 
     def _classify_drawdown(
-        self, current_dd: float,
+        self,
+        current_dd: float,
     ) -> tuple[str, float, str, bool]:
         """Classify drawdown into tier.
 
@@ -185,7 +188,7 @@ class L6RiskAnalyzer:
             return 0.0
 
         try:
-            import numpy as np  # noqa: PLC0415  # pyright: ignore[reportMissingImports]
+            import numpy as np  # noqa: PLC0415
 
             r = np.array(returns[-self.sharpe_lookback :], dtype=np.float64)
             std = float(np.std(r))
@@ -269,18 +272,14 @@ class L6RiskAnalyzer:
             current_dd = raw_dd / 100.0 if raw_dd > 1.0 else raw_dd
 
         # Daily DD as fraction
-        daily_dd = (
-            daily_loss_pct / 100.0 if daily_loss_pct > 1.0 else daily_loss_pct
-        )
+        daily_dd = daily_loss_pct / 100.0 if daily_loss_pct > 1.0 else daily_loss_pct
 
         warnings: list[str] = []
 
         # ══════════════════════════════════════════════════════════
         # 1️⃣  DRAWDOWN TIERS
         # ══════════════════════════════════════════════════════════
-        drawdown_level, risk_multiplier, risk_status, hard_block = (
-            self._classify_drawdown(current_dd)
-        )
+        drawdown_level, risk_multiplier, risk_status, hard_block = self._classify_drawdown(current_dd)
 
         if consec_losses >= 3:
             risk_multiplier *= 0.5
@@ -312,14 +311,12 @@ class L6RiskAnalyzer:
         risk_multiplier *= corr_mult
         if corr_mult < 1.0:
             risk_status = "CORRELATION_STRESS"
-            warnings.append(
-                f"CORRELATION_STRESS(exposure={corr_exposure:.2f})"
-            )
+            warnings.append(f"CORRELATION_STRESS(exposure={corr_exposure:.2f})")
 
         # Correlation risk engine enrichment (optional, from engines/)
         if _corr_engine is not None and pair_returns and len(pair_returns) >= 2:
             try:
-                import numpy as np  # noqa: PLC0415  # pyright: ignore[reportMissingImports]
+                import numpy as np  # noqa: PLC0415
 
                 labels = sorted(pair_returns.keys())
                 series = [pair_returns[lbl] for lbl in labels]
@@ -354,7 +351,7 @@ class L6RiskAnalyzer:
         # ══════════════════════════════════════════════════════════
         sharpe = self._rolling_sharpe(trade_returns or [])
 
-        if trade_returns and len(trade_returns) >= self.sharpe_lookback:
+        if trade_returns and len(trade_returns) >= self.sharpe_lookback:  # noqa: SIM102
             if sharpe < self.sharpe_degradation_threshold:
                 risk_multiplier *= 0.6
                 if risk_status == "OPTIMAL":
@@ -367,16 +364,12 @@ class L6RiskAnalyzer:
         if daily_dd > self._max_daily_dd:
             hard_block = True
             risk_status = "DAILY_LIMIT_BREACH"
-            warnings.append(
-                f"DAILY_DD_BREACH({daily_dd:.4f}>{self._max_daily_dd:.4f})"
-            )
+            warnings.append(f"DAILY_DD_BREACH({daily_dd:.4f}>{self._max_daily_dd:.4f})")
 
         if current_dd > self._max_total_dd:
             hard_block = True
             risk_status = "TOTAL_DD_BREACH"
-            warnings.append(
-                f"TOTAL_DD_BREACH({current_dd:.4f}>{self._max_total_dd:.4f})"
-            )
+            warnings.append(f"TOTAL_DD_BREACH({current_dd:.4f}>{self._max_total_dd:.4f})")
 
         # ══════════════════════════════════════════════════════════
         # 7️⃣  KELLY FRACTION DAMPENER
@@ -398,8 +391,7 @@ class L6RiskAnalyzer:
             warnings.append(f"LOW_RR_RATIO({rr:.2f})")
 
         logger.info(
-            "[L6] dd=%.4f level=%s status=%s mult=%.4f lrce=%.4f "
-            "sharpe=%.3f kelly=%.4f risk_ok=%s",
+            "[L6] dd=%.4f level=%s status=%s mult=%.4f lrce=%.4f sharpe=%.3f kelly=%.4f risk_ok=%s",
             current_dd,
             drawdown_level,
             risk_status,

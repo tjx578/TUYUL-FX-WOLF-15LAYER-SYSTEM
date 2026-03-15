@@ -47,7 +47,7 @@ from abc import ABC, abstractmethod
 from datetime import UTC, datetime
 from typing import Any
 
-import httpx  # pyright: ignore[reportMissingImports]
+import httpx
 
 logger = logging.getLogger(__name__)
 

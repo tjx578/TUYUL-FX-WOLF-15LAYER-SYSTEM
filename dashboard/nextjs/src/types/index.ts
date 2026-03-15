@@ -82,6 +82,11 @@ export interface L12Scores {
   session: string;
   confluence_score?: number;
   volume_profile_score?: number;
+  // Wolf 30-point breakdown (L4)
+  f_score?: number;     // Fundamental 0-8
+  t_score?: number;     // Technical 0-12
+  fta_score?: number;   // Alignment 0-5
+  exec_score?: number;  // Execution 0-5
 }
 
 export interface L12Verdict {

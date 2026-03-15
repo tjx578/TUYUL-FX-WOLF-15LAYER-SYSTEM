@@ -1,7 +1,7 @@
 from datetime import UTC, datetime
 from unittest.mock import MagicMock, patch
 
-import pytest  # pyright: ignore[reportMissingImports]
+import pytest
 
 
 @pytest.mark.asyncio

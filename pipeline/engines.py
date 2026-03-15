@@ -52,7 +52,7 @@ class L13ReflectiveEngine:
         meta_integrity = 1.0
 
         lrce_score = self._compute_lrce(synthesis)
-        frpc_score = self._compute_frpc(synthesis, l12_verdict)
+        frpc_score = self._compute_verdict_consistency(synthesis, l12_verdict)
 
         # αβγ from TRQ-3D -- meta_integrity modulates gamma channel
         alpha = lrce_score
@@ -76,11 +76,7 @@ class L13ReflectiveEngine:
             "drift": drift,
             "lrce_field": lrce_field,
             "field_state": "EXPANSION" if abg_score >= 0.80 else "COMPRESSION",
-            "execution_window": (
-                "OPTIMAL" if abg_score >= 0.85
-                else "GOOD" if abg_score >= 0.70
-                else "POOR"
-            ),
+            "execution_window": ("OPTIMAL" if abg_score >= 0.85 else "GOOD" if abg_score >= 0.70 else "POOR"),
         }
 
         # ── Probability calibration (L7 Bayesian posterior tracking) ──
@@ -95,7 +91,7 @@ class L13ReflectiveEngine:
         if calibration["calibration_grade"] in ("D", "F"):
             _penalty = 0.05 if calibration["calibration_grade"] == "D" else 0.10
             reflection["reflective_confidence"] = round(
-                max(0.0, reflection.get("reflective_confidence", 0.5) - _penalty), # pyright: ignore[reportOperatorIssue]
+                max(0.0, float(reflection.get("reflective_confidence", 0.5)) - _penalty),
                 4,
             )
             reflection["calibration_warning"] = (
@@ -120,9 +116,7 @@ class L13ReflectiveEngine:
         """Check if direction is aligned with technical bias."""
         if direction == "BUY" and technical_bias == "BULLISH":
             return True
-        if direction == "SELL" and technical_bias == "BEARISH":
-            return True
-        return False
+        return bool(direction == "SELL" and technical_bias == "BEARISH")
 
     def _compute_lrce(self, synthesis: dict[str, Any]) -> float:
         """Compute Layer Recursive Coherence (directional alignment)."""
@@ -137,12 +131,17 @@ class L13ReflectiveEngine:
             return 0.7
         return 0.3
 
-    def _compute_frpc(
+    def _compute_verdict_consistency(
         self,
         synthesis: dict[str, Any],
         l12_verdict: dict[str, Any],
     ) -> float:
-        """Compute Fusion Recursive Pattern Check (verdict/bias consistency)."""
+        """Compute verdict/bias consistency score.
+
+        Returns a discrete consistency measure {0.3, 0.5, 0.7, 0.8, 1.0}
+        based on alignment between L12 verdict and technical bias.
+        NOT the canonical FRPC from ``analysis.formulas.frpc_formula``.
+        """
         verdict = l12_verdict.get("verdict", "HOLD")
         technical_bias = synthesis.get("bias", {}).get("technical", "NEUTRAL")
         direction = synthesis.get("execution", {}).get("direction")
@@ -211,7 +210,7 @@ class L13ReflectiveEngine:
                 "note": f"insufficient_samples_{len(predicted)}/5",
             }
 
-        import numpy as np  # pyright: ignore[reportMissingImports] # local import to avoid module-level dep in engines  # noqa: PLC0415
+        import numpy as np  # noqa: PLC0415
 
         pred_arr = np.array(predicted)
         act_arr = np.array(actual)
@@ -275,7 +274,7 @@ class L13ReflectiveEngine:
                 "sample_size": len(ror_values),
             }
 
-        import numpy as np  # pyright: ignore[reportMissingImports] # noqa: PLC0415
+        import numpy as np  # noqa: PLC0415
 
         arr = np.array(ror_values)
         n = len(arr)
@@ -340,37 +339,38 @@ class L15MetaSovereigntyEngine:
         wolf_score = synthesis.get("scores", {}).get("wolf_30_point", 0)
 
         # ── Zona health aggregation ──
-        zona_1_pass = all([
-            synthesis.get("layers", {}).get("L1_context_coherence", 0) >= 0.90,
-            synthesis.get("layers", {}).get("L2_reflex_coherence", 0) >= 0.88,
-            synthesis.get("layers", {}).get("L3_trq3d_energy", 0) >= 0.65,
-        ])
-        zona_2_pass = wolf_score >= 24
-        zona_3_pass = all([
-            gates.get("gate_1_tii") == "PASS",
-            gates.get("gate_2_montecarlo") == "PASS",
-        ])
-        zona_4_pass = l12_verdict.get("verdict", "").startswith("EXECUTE")
-        zona_5_pass = (
-            reflective_pass1 is not None
-            and reflective_pass1.get("abg_score", 0) >= 0.70
+        zona_1_pass = all(
+            [
+                synthesis.get("layers", {}).get("L1_context_coherence", 0) >= 0.90,
+                synthesis.get("layers", {}).get("L2_reflex_coherence", 0) >= 0.88,
+                synthesis.get("layers", {}).get("L3_trq3d_energy", 0) >= 0.65,
+            ]
         )
+        zona_2_pass = wolf_score >= 24  # 24/30 = 80% minimum wolf quality for Zona 2
+        zona_3_pass = all(
+            [
+                gates.get("gate_1_tii") == "PASS",
+                gates.get("gate_2_montecarlo") == "PASS",
+            ]
+        )
+        zona_4_pass = l12_verdict.get("verdict", "").startswith("EXECUTE")
+        zona_5_pass = reflective_pass1 is not None and reflective_pass1.get("abg_score", 0) >= 0.70
 
-        all_harmonized = all([
-            zona_1_pass, zona_2_pass, zona_3_pass,
-            zona_4_pass, zona_5_pass,
-        ])
+        all_harmonized = all(
+            [
+                zona_1_pass,
+                zona_2_pass,
+                zona_3_pass,
+                zona_4_pass,
+                zona_5_pass,
+            ]
+        )
 
         # ── Meta integrity score (weighted composite) ──
         pass1_abg = reflective_pass1.get("abg_score", 0.0) if reflective_pass1 else 0.0
         vault_sync = sovereignty.get("vault_sync", 0.0)
         frpc = reflective_pass1.get("frpc_score", 0.0) if reflective_pass1 else 0.0
-        meta_integrity = (
-            pass1_abg * 0.40
-            + vault_sync * 0.30
-            + frpc * 0.20
-            + (integrity * 0.10)
-        )
+        meta_integrity = pass1_abg * 0.40 + vault_sync * 0.30 + frpc * 0.20 + (integrity * 0.10)
 
         return {
             "meta_integrity": meta_integrity,
@@ -439,17 +439,17 @@ class L15MetaSovereigntyEngine:
         verdict_downgraded = False
         original_verdict = l12_verdict.get("verdict", "HOLD")
 
-        if execution_rights == "GRANTED":
+        if execution_rights == "GRANTED":  # noqa: SIM102
             # Even if vault says GRANTED, check drift stability
             if vault_sync < self.VAULT_SYNC_MIN_GRANTED or drift_ratio > self.DRIFT_MAX_GRANTED:
                 execution_rights = "RESTRICTED"
 
-        if execution_rights == "RESTRICTED":
+        if execution_rights == "RESTRICTED":  # noqa: SIM102
             # Restricted: allow but with caution
             if vault_sync < self.VAULT_SYNC_MIN_RESTRICTED or drift_ratio > self.DRIFT_MAX_RESTRICTED:
                 execution_rights = "REVOKED"
 
-        if execution_rights == "REVOKED":
+        if execution_rights == "REVOKED":  # noqa: SIM102
             # Safety: downgrade EXECUTE verdict to HOLD
             if l12_verdict.get("verdict", "").startswith("EXECUTE"):
                 l12_verdict["verdict"] = "HOLD"

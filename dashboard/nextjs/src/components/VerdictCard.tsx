@@ -225,6 +225,34 @@ export function VerdictCard({
         </div>
       )}
 
+      {/* ── Wolf 30-Point Breakdown ── */}
+      {verdict.scores?.f_score != null && (
+        <motion.div
+          initial={{ opacity: 0, y: 4 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.4, duration: 0.3 }}
+          style={{
+            display: "flex",
+            gap: 4,
+            fontSize: 9,
+            fontFamily: "var(--font-mono)",
+            color: "var(--text-muted)",
+            letterSpacing: "0.04em",
+          }}
+        >
+          {([
+            { label: "F", value: verdict.scores.f_score, max: 8 },
+            { label: "T", value: verdict.scores.t_score, max: 12 },
+            { label: "FTA", value: verdict.scores.fta_score, max: 5 },
+            { label: "E", value: verdict.scores.exec_score, max: 5 },
+          ] as { label: string; value: number | undefined; max: number }[]).map(({ label, value, max }) => (
+            <span key={label} style={{ opacity: (value ?? 0) >= max * 0.7 ? 1 : 0.6 }}>
+              {label}:{value ?? 0}/{max}
+            </span>
+          ))}
+        </motion.div>
+      )}
+
       {/* ── RR ── */}
       {verdict.risk_reward_ratio && (
         <div

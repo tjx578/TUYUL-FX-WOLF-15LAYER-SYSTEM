@@ -18,13 +18,13 @@ Produces:
     - entry_zone (str)
     - reason (str)
     - valid (bool)
-"""
+"""  # noqa: N999
 
 from __future__ import annotations
 
 from typing import Any
 
-from loguru import logger  # pyright: ignore[reportMissingImports]
+from loguru import logger
 
 try:
     import core.core_quantum_unified
@@ -93,9 +93,7 @@ class L11RRAnalyzer:
     # ------------------------------------------------------------------
     # Main entry
     # ------------------------------------------------------------------
-    def calculate_rr(
-        self, symbol: str, direction: str, *, entry: float | None = None
-    ) -> dict[str, Any]:
+    def calculate_rr(self, symbol: str, direction: str, *, entry: float | None = None) -> dict[str, Any]:
         """
         Calculate risk-reward and select battle strategy.
 
@@ -145,10 +143,7 @@ class L11RRAnalyzer:
             tp1 = round(entry - tp_distance, 5)
 
         # --- RR ---
-        if sl_distance > 0:
-            rr = round(tp_distance / sl_distance, 2)
-        else:
-            rr = 0.0
+        rr = round(tp_distance / sl_distance, 2) if sl_distance > 0 else 0.0
 
         if rr < _MIN_RR:
             return {

@@ -6,7 +6,7 @@ Zone: context/ — pure validation, no side-effects.
 
 from __future__ import annotations
 
-from loguru import logger  # pyright: ignore[reportMissingImports]
+from loguru import logger
 
 _REQUIRED_TICK_FIELDS = {"symbol", "bid", "ask", "timestamp"}
 _REQUIRED_CANDLE_FIELDS = {"symbol", "timeframe", "open", "high", "low", "close", "timestamp"}

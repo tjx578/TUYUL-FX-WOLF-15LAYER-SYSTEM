@@ -4,7 +4,7 @@ Constitutional boundary: execution must contain NO strategy logic.
 """
 import time
 
-import pytest  # pyright: ignore[reportMissingImports]
+import pytest
 
 try:
     from execution.state_machine import (  # pyright: ignore[reportAttributeAccessIssue] # noqa: F401

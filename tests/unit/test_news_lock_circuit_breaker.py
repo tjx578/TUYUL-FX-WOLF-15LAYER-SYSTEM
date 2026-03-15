@@ -5,19 +5,19 @@ import time
 
 from datetime import datetime
 
-import pytest  # pyright: ignore[reportMissingImports]
+import pytest
 
 try:
-    from execution.news_lock import (  # pyright: ignore[reportMissingImports]
-        NewsLockEngine,  # pyright: ignore[reportMissingImports]  # noqa: F401
+    from execution.news_lock import (
+        NewsLockEngine,  # noqa: F401
     )
     HAS_NEWS_LOCK = True
 except ImportError:
     HAS_NEWS_LOCK = False
 
 try:
-    from execution.circuit_breaker import (  # pyright: ignore[reportMissingImports]
-        CircuitBreaker,  # pyright: ignore[reportMissingImports]  # noqa: F401
+    from execution.circuit_breaker import (
+        CircuitBreaker,  # noqa: F401
     )
     HAS_CB = True
 except ImportError:

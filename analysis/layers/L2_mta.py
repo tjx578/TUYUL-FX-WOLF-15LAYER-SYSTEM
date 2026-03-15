@@ -28,35 +28,35 @@ Downstream gates that depend on L2:
     L15 Zona 1: L2_reflex_coherence >= 0.88
 
 Zone: analysis/ — Perception & Context (read-only, no execution).
-"""
+"""  # noqa: N999
 
 from __future__ import annotations
 
 import math
-
 from typing import Any
 
 try:
-    from loguru import logger  # pyright: ignore[reportMissingImports]
+    from loguru import logger
 except ImportError:  # pragma: no cover
     import logging
-    logger = logging.getLogger(__name__)  # type: ignore[assignment]
+
+    logger = logging.getLogger(__name__)
 
 
 # ── Engine imports (correct paths, verified from repo) ────────────
 try:
-    from core.core_cognitive_unified import (  # pyright: ignore[reportMissingImports]
+    from core.core_cognitive_unified import (
         ReflexEmotionCore,
     )
 except ImportError:
-    ReflexEmotionCore = None  # type: ignore[assignment,misc]
+    ReflexEmotionCore = None
 
 try:
-    from core.core_fusion.integrator import (  # pyright: ignore[reportMissingImports]
+    from core.core_fusion.integrator import (
         FusionIntegrator,
     )
 except ImportError:
-    FusionIntegrator = None  # type: ignore[assignment,misc]
+    FusionIntegrator = None
 
 __all__ = ["L2MTA", "L2MTAAnalyzer"]
 
@@ -73,20 +73,32 @@ _BETA_WICK: float = 0.6
 
 # ── Static TF weights (fallback / TRANSITION regime) ─────────────
 _TF_WEIGHTS_DEFAULT: dict[str, float] = {
-    "MN": 0.35, "W1": 0.25, "D1": 0.15,
-    "H4": 0.15, "H1": 0.07, "M15": 0.03,
+    "MN": 0.35,
+    "W1": 0.25,
+    "D1": 0.15,
+    "H4": 0.15,
+    "H1": 0.07,
+    "M15": 0.03,
 }
 
 # Trend regime: amplify HTF structural bias
 _TF_WEIGHTS_TREND: dict[str, float] = {
-    "MN": 0.40, "W1": 0.25, "D1": 0.15,
-    "H4": 0.10, "H1": 0.07, "M15": 0.03,
+    "MN": 0.40,
+    "W1": 0.25,
+    "D1": 0.15,
+    "H4": 0.10,
+    "H1": 0.07,
+    "M15": 0.03,
 }
 
 # Range regime: amplify LTF mean-reversion signals
 _TF_WEIGHTS_RANGE: dict[str, float] = {
-    "MN": 0.15, "W1": 0.15, "D1": 0.15,
-    "H4": 0.20, "H1": 0.20, "M15": 0.15,
+    "MN": 0.15,
+    "W1": 0.15,
+    "D1": 0.15,
+    "H4": 0.20,
+    "H1": 0.20,
+    "M15": 0.15,
 }
 
 # TF hierarchy order (HTF → LTF) for Bayesian prior chain
@@ -97,8 +109,11 @@ _LOG2: float = math.log(2.0)
 
 # ── Volatility dampener map ───────────────────────────────────────
 _VOL_DAMPENER: dict[str, float] = {
-    "EXTREME": 0.60, "HIGH": 0.80, "LOW": 0.90,
-    "DEAD": 0.70, "NORMAL": 1.00,
+    "EXTREME": 0.60,
+    "HIGH": 0.80,
+    "LOW": 0.90,
+    "DEAD": 0.70,
+    "NORMAL": 1.00,
 }
 
 # FusionIntegrator default gate = 0.96 (L12 level).
@@ -112,6 +127,7 @@ _SLOPE_LOOKBACK: int = 5
 # ═══════════════════════════════════════════════════════════════════
 # §1  PURE MATH FUNCTIONS
 # ═══════════════════════════════════════════════════════════════════
+
 
 def _sigmoid(x: float) -> float:
     """Numerically stable sigmoid σ(x) → (0, 1)."""
@@ -180,7 +196,9 @@ def _candle_features(candle: dict[str, Any] | None) -> tuple[float, float, float
 
 
 def _per_tf_probability(
-    slope: float, body_str: float, wick_rej: float,
+    slope: float,
+    body_str: float,
+    wick_rej: float,
 ) -> float:
     """Compute P_i = σ(β₁·slope + β₂·body_str + β₃·wick_rej).
 
@@ -268,10 +286,7 @@ def _hierarchical_bayesian_fusion(
     geo_bear = math.exp(log_bear)
     z = geo_bull + geo_bear
 
-    if z > 0:
-        p_mta = geo_bull / z
-    else:
-        p_mta = 0.5
+    p_mta = geo_bull / z if z > 0 else 0.5
 
     return p_mta, 1.0 - p_mta
 
@@ -299,6 +314,7 @@ def _entropy_alignment(p_bull: float, p_bear: float) -> float:
 # §2  ANALYZER CLASS
 # ═══════════════════════════════════════════════════════════════════
 
+
 class L2MTAAnalyzer:
     """Layer 2: Bayesian Multi-Timeframe Alignment.
 
@@ -314,12 +330,12 @@ class L2MTAAnalyzer:
 
     def __init__(self, *, redis_client: Any = None) -> None:
         self._redis_client = redis_client
-        self.context: Any = None   # Candle source (mock-able in tests)
-        self.bus: Any = None       # Candle bus (mock-able in integration)
+        self.context: Any = None  # Candle source (mock-able in tests)
+        self.bus: Any = None  # Candle bus (mock-able in integration)
 
         # Lazy-loaded engines
         self._reflex: ReflexEmotionCore | None = None  # type: ignore[type-arg]
-        self._fusion: FusionIntegrator | None = None   # type: ignore[type-arg]
+        self._fusion: FusionIntegrator | None = None  # type: ignore[type-arg]
         self._engines_loaded: bool = False
 
     # ──────────────────────────────────────────────────────────
@@ -367,7 +383,7 @@ class L2MTAAnalyzer:
         if source is None:
             return None
         try:
-            return source.get_layer_cache("L1", symbol)  # type: ignore[union-attr]
+            return source.get_layer_cache("L1", symbol)
         except (AttributeError, Exception):
             return None
 
@@ -456,7 +472,8 @@ class L2MTAAnalyzer:
 
         # ── Hierarchical Bayesian Fusion ──────────────────────
         p_mta_bull, p_mta_bear = _hierarchical_bayesian_fusion(
-            tf_probs, weights,
+            tf_probs,
+            weights,
         )
 
         # ── Entropy Conflict Penalty ──────────────────────────
@@ -467,9 +484,7 @@ class L2MTAAnalyzer:
         bayesian_rc = round(p_mta * alignment_strength, 4)
 
         # ── Volatility dampener ───────────────────────────────
-        vol_level = (
-            l1_ctx.get("volatility_level", "NORMAL") if l1_ctx else "NORMAL"
-        )
+        vol_level = l1_ctx.get("volatility_level", "NORMAL") if l1_ctx else "NORMAL"
         dampener = _VOL_DAMPENER.get(vol_level, 1.0)
         bayesian_rc_damped = round(bayesian_rc * dampener, 4)
 
@@ -483,7 +498,8 @@ class L2MTAAnalyzer:
 
         # Signed composite bias for backward compatibility
         composite_bias = round(
-            (p_mta_bull - 0.5) * 2.0 * dampener, 5,
+            (p_mta_bull - 0.5) * 2.0 * dampener,
+            5,
         )
 
         aligned = alignment_strength >= 0.6
@@ -504,9 +520,7 @@ class L2MTAAnalyzer:
         if self._reflex is not None and l1_ctx is not None:
             try:
                 market_data = {
-                    "volatility": float(
-                        l1_ctx.get("atr_pct", 0.0)
-                    ) / 100.0,
+                    "volatility": float(l1_ctx.get("atr_pct", 0.0)) / 100.0,
                     "momentum": composite_bias,
                     "volume_ratio": 1.0,
                 }
@@ -521,7 +535,8 @@ class L2MTAAnalyzer:
         # Bayesian is primary (0.65), engine is secondary (0.35)
         if engine_reflex > 0:
             reflex_coherence = round(
-                bayesian_rc_damped * 0.65 + engine_reflex * 0.35, 4,
+                bayesian_rc_damped * 0.65 + engine_reflex * 0.35,
+                4,
             )
         else:
             reflex_coherence = bayesian_rc_damped
@@ -537,14 +552,16 @@ class L2MTAAnalyzer:
                 fusion_market = {
                     "alpha": max(0.5, min(2.0, 1.0 + composite_bias)),
                     "beta": max(
-                        0.5, min(2.0, 1.0 + reflex_coherence * 0.5),
+                        0.5,
+                        min(2.0, 1.0 + reflex_coherence * 0.5),
                     ),
                     "gamma": 1.0,
                     "lambda_esi": 0.06,
                     "pair": symbol,
                     "timeframe": "MTA",
                     "base_bias": max(
-                        0.01, min(1.0, abs(composite_bias) + 0.5),
+                        0.01,
+                        min(1.0, abs(composite_bias) + 0.5),
                     ),
                 }
 
@@ -569,22 +586,17 @@ class L2MTAAnalyzer:
                         conf12 = float(lineage.get("final", 0.0))
 
                 field_ctx = fusion_out.get(
-                    "fusion_output", {},
+                    "fusion_output",
+                    {},
                 ).get("field_context", {})
                 frpc_energy = float(
                     field_ctx.get("field_integrity", 0.0),
                 )
                 field_phase = str(field_ctx.get("phase", "CONSOLIDATION"))
 
-                if (
-                    fusion_out.get("status") == "OK"
-                    and frpc_energy >= 0.85
-                ):
+                if fusion_out.get("status") == "OK" and frpc_energy >= 0.85:
                     frpc_state = "SYNC"
-                elif (
-                    fusion_out.get("status") == "OK"
-                    and frpc_energy >= 0.5
-                ):
+                elif fusion_out.get("status") == "OK" and frpc_energy >= 0.5:
                     frpc_state = "PARTIAL"
                 else:
                     frpc_state = "DESYNC"
@@ -599,15 +611,23 @@ class L2MTAAnalyzer:
 
         # ── Sensitivity multiplier for L3 ─────────────────────
         sensitivity = self._compute_sensitivity(
-            reflex_coherence, alignment_strength, conf12,
+            reflex_coherence,
+            alignment_strength,
+            conf12,
         )
 
         logger.debug(
-            "[L2] %s regime=%s dir=%s p_bull=%.4f p_bear=%.4f "
-            "AS=%.4f RC=%.4f conf12=%.4f frpc=%s sens=%.3f",
-            symbol, regime, direction, p_mta_bull, p_mta_bear,
-            alignment_strength, reflex_coherence, conf12,
-            frpc_state, sensitivity,
+            "[L2] %s regime=%s dir=%s p_bull=%.4f p_bear=%.4f AS=%.4f RC=%.4f conf12=%.4f frpc=%s sens=%.3f",
+            symbol,
+            regime,
+            direction,
+            p_mta_bull,
+            p_mta_bear,
+            alignment_strength,
+            reflex_coherence,
+            conf12,
+            frpc_state,
+            sensitivity,
         )
 
         return {
@@ -642,7 +662,9 @@ class L2MTAAnalyzer:
     # ──────────────────────────────────────────────────────────
 
     def compute(
-        self, symbol: str, macro_bias: str | None = None,
+        self,
+        symbol: str,
+        macro_bias: str | None = None,
     ) -> dict[str, Any]:
         """Compute MTA with per-TF detail dict (integration entry point).
 

@@ -217,7 +217,7 @@ class MT5DataFeed(DataFeedAdapter):
 
     async def connect(self) -> bool:
         try:
-            import MetaTrader5 as mt5  # pyright: ignore[reportMissingImports] # pyright: ignore[reportMissingImports] # noqa: N813, PLC0415
+            import MetaTrader5 as mt5  # noqa: N813, PLC0415  # pyright: ignore[reportMissingImports]
         except ImportError:
             raise ImportError(  # noqa: B904
                 "MetaTrader5 package not installed. Install with: pip install MetaTrader5"
@@ -240,14 +240,14 @@ class MT5DataFeed(DataFeedAdapter):
 
     async def disconnect(self) -> None:
         with contextlib.suppress(Exception):
-            import MetaTrader5 as mt5  # pyright: ignore[reportMissingImports] # pyright: ignore[reportMissingImports] # pyright: ignore[reportMissingImports] # noqa: N813, PLC0415
+            import MetaTrader5 as mt5  # noqa: N813, PLC0415  # pyright: ignore[reportMissingImports]
 
             mt5.shutdown()
         self._connected = False
         self._running = False
 
     async def subscribe(self, symbols: list[str], timeframes: list[str]) -> None:
-        import MetaTrader5 as mt5  # pyright: ignore[reportMissingImports] # noqa: N813, PLC0415
+        import MetaTrader5 as mt5  # noqa: N813, PLC0415  # pyright: ignore[reportMissingImports]
 
         self._symbols = symbols
         for symbol in symbols:
@@ -282,7 +282,7 @@ class MT5DataFeed(DataFeedAdapter):
         Poll MT5 for ticks. MT5 Python API is synchronous/poll-based,
         so we poll in an async loop.
         """
-        import MetaTrader5 as mt5  # pyright: ignore[reportMissingImports] # noqa: N813, PLC0415
+        import MetaTrader5 as mt5  # noqa: N813, PLC0415  # pyright: ignore[reportMissingImports]
 
         self._running = True
         while self._running:

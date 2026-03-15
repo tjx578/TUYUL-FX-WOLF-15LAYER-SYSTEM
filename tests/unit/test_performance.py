@@ -3,7 +3,7 @@ Performance regression tests -- keep CI fast.
 """
 import time
 
-import pytest  # pyright: ignore[reportMissingImports]
+import pytest
 
 
 class TestPerformanceBaselines:

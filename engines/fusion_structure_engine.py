@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any
 
-import numpy as np  # pyright: ignore[reportMissingImports]
+import numpy as np
 
 logger = logging.getLogger(__name__)
 

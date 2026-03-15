@@ -1,8 +1,8 @@
 """Tests for analysis/candle_accumulator.py — gap detection, bounded history, no-assert."""
 
-import pytest  # pyright: ignore[reportMissingImports]
+import pytest
 
-from analysis.candle_accumulator import (  # pyright: ignore[reportMissingImports]
+from analysis.candle_accumulator import (
     CandleAccumulator,
     CandleAccumulatorConfig,
     _CandleBuilder,

@@ -10,7 +10,7 @@ Tests cover:
 - Quality score computation
 """
 
-import pytest  # pyright: ignore[reportMissingImports]
+import pytest
 
 from engines.v11.liquidity_sweep_scorer import LiquiditySweepScorer
 

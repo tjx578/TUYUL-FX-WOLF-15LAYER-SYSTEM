@@ -17,7 +17,7 @@ import time
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest  # pyright: ignore[reportMissingImports]
+import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -269,7 +269,7 @@ class TestVerifyToken:
     """Tests for the HTTP Bearer token verification dependency."""
 
     def test_missing_header_raises_401(self):
-        from fastapi import HTTPException  # pyright: ignore[reportMissingImports] # noqa: PLC0415
+        from fastapi import HTTPException # noqa: PLC0415
 
         from dashboard.backend.auth import verify_token  # noqa: PLC0415
 
@@ -278,7 +278,7 @@ class TestVerifyToken:
         assert exc_info.value.status_code == 401
 
     def test_invalid_scheme_raises_401(self):
-        from fastapi import HTTPException  # pyright: ignore[reportMissingImports] # noqa: PLC0415
+        from fastapi import HTTPException # noqa: PLC0415
 
         from dashboard.backend.auth import verify_token  # noqa: PLC0415
 
@@ -301,7 +301,7 @@ class TestVerifyToken:
             assert result["sub"] == "api_key_user"
 
     def test_invalid_token_raises_401(self):
-        from fastapi import HTTPException  # pyright: ignore[reportMissingImports] # noqa: PLC0415
+        from fastapi import HTTPException # noqa: PLC0415
 
         from dashboard.backend.auth import verify_token  # noqa: PLC0415
 
@@ -423,8 +423,8 @@ class TestRateLimitIntegration:
     def test_rate_limit_headers_present(self):
         """Responses should include X-RateLimit-* headers."""
         import fastapi  # type: ignore # noqa: PLC0415
-        from fastapi.testclient import (  # noqa: PLC0415 # pyright: ignore[reportMissingImports]
-            TestClient,  # pyright: ignore[reportMissingImports]
+        from fastapi.testclient import (  # noqa: PLC0415
+            TestClient,
         )
 
         from api.middleware.rate_limit import RateLimitMiddleware  # noqa: PLC0415
@@ -444,9 +444,9 @@ class TestRateLimitIntegration:
 
     def test_exempt_paths_skip_rate_limit(self):
         """Health and root endpoints should NOT have rate limit headers."""
-        import fastapi  # pyright: ignore[reportMissingImports] # noqa: PLC0415
-        from fastapi.testclient import (  # noqa: PLC0415 # pyright: ignore[reportMissingImports]
-            TestClient,  # pyright: ignore[reportMissingImports]
+        import fastapi # noqa: PLC0415
+        from fastapi.testclient import (  # noqa: PLC0415
+            TestClient,
         )
 
         from api.middleware.rate_limit import RateLimitMiddleware  # noqa: PLC0415
@@ -466,9 +466,9 @@ class TestRateLimitIntegration:
 
     def test_burst_triggers_429(self):
         """Exceeding burst limit should return 429."""
-        import fastapi  # pyright: ignore[reportMissingImports] # noqa: PLC0415
-        from fastapi.testclient import (  # noqa: PLC0415 # pyright: ignore[reportMissingImports]
-            TestClient,  # pyright: ignore[reportMissingImports]
+        import fastapi # noqa: PLC0415
+        from fastapi.testclient import (  # noqa: PLC0415
+            TestClient,
         )
 
         from api.middleware.rate_limit import (  # noqa: PLC0415
