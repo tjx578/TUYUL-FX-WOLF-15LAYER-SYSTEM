@@ -14,25 +14,46 @@ interface ConnectLiveUpdatesOptions {
   onDegradation?: (status: SystemStatusView) => void;
 }
 
-function getWsUrl(): string {
+function getWsUrl(): string | null {
   const wsUrl = process.env.NEXT_PUBLIC_WS_URL;
   if (!wsUrl || wsUrl.trim() === "") {
-    throw new Error(
-      "Missing NEXT_PUBLIC_WS_URL. Set NEXT_PUBLIC_WS_URL (e.g. ws://localhost:8000/ws/live)."
-    );
+    return null;
   }
   return wsUrl;
 }
 
 export function connectLiveUpdates(options: ConnectLiveUpdatesOptions): WsControls {
   const url = getWsUrl();
-  const socket = new WebSocket(url);
 
-  socket.onopen = () => {
+  // No WS URL configured — immediately report DISCONNECTED/degraded, no crash.
+  if (!url) {
+    options.onStatusChange?.("DISCONNECTED");
+    options.onDegradation?.({
+      mode: "DEGRADED",
+      reason: "Backend unreachable: NEXT_PUBLIC_WS_URL not configured. Operating in offline mode.",
+    });
+    return { close: () => {} };
+  }
+
+  let socket: WebSocket;
+  try {
+    socket = new WebSocket(url);
+  } catch {
+    options.onStatusChange?.("DISCONNECTED");
+    options.onDegradation?.({
+      mode: "DEGRADED",
+      reason: `WebSocket connection failed to ${url}. Backend may be offline.`,
+    });
+    return { close: () => {} };
+  }
+
+  const socketRef = socket;
+
+  socketRef.onopen = () => {
     options.onStatusChange?.("CONNECTED");
   };
 
-  socket.onmessage = (message) => {
+  socketRef.onmessage = (message) => {
     try {
       const parsed = JSON.parse(message.data as string);
       const event = WsEventSchema.parse(parsed);
@@ -45,19 +66,25 @@ export function connectLiveUpdates(options: ConnectLiveUpdatesOptions): WsContro
     }
   };
 
-  socket.onerror = (error) => {
+  socketRef.onerror = () => {
     options.onStatusChange?.("RECONNECTING");
-    options.onError?.(error);
+    options.onDegradation?.({
+      mode: "DEGRADED",
+      reason: "WebSocket connection error. Backend may be offline or unreachable.",
+    });
   };
 
-  socket.onclose = () => {
+  socketRef.onclose = () => {
     options.onStatusChange?.("DISCONNECTED");
   };
 
   return {
     close: () => {
-      if (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING) {
-        socket.close();
+      if (
+        socketRef.readyState === WebSocket.OPEN ||
+        socketRef.readyState === WebSocket.CONNECTING
+      ) {
+        socketRef.close();
       }
     },
   };
