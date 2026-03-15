@@ -30,6 +30,7 @@ logger = logging.getLogger(__name__)
 # TickBuffer — shared non-destructive tick buffer
 # ---------------------------------------------------------------------------
 
+
 class TickBuffer:
     """Thread-safe, non-destructive tick buffer."""
 
@@ -70,11 +71,13 @@ tick_buffer = TickBuffer()
 # VWAP accumulator — per-symbol incremental session VWAP
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class _VWAPState:
     """Mutable VWAP accumulator for a single symbol within a session."""
-    cum_pv: float = 0.0       # cumulative price * volume
-    cum_vol: float = 0.0      # cumulative volume
+
+    cum_pv: float = 0.0  # cumulative price * volume
+    cum_vol: float = 0.0  # cumulative volume
     vwap: float | None = None
     tick_count: int = 0
 
@@ -93,9 +96,11 @@ class _VWAPState:
 # Order-flow accumulator — per-symbol buy/sell delta tracker
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class _OrderFlowState:
     """Basic order-flow delta tracker: classifies ticks by tick-rule."""
+
     last_price: float | None = None
     buy_volume: float = 0.0
     sell_volume: float = 0.0
@@ -177,8 +182,8 @@ def _normalize_ts(ts: Any) -> datetime:
 
 # ---------------------------------------------------------------------------
 # Async callbacks — consumed by ingest/dependencies.py::_build_tick_handler()
-# (analysis/tick_stream.py is a deprecated blueprint; do not import it)
 # ---------------------------------------------------------------------------
+
 
 async def process_tick_for_candle(tick: dict[str, Any]) -> Candle | None:
     """
@@ -239,6 +244,7 @@ def analyze_orderflow(tick: dict[str, Any]) -> dict[str, Any]:
 # Convenience consumers (iterate over TickBuffer)
 # ---------------------------------------------------------------------------
 
+
 async def consume_ticks_for_candles() -> None:
     """CandleBuilder consumes ticks non-destructively from the shared buffer."""
     for tick in tick_buffer.consume("candle_builder"):
@@ -260,6 +266,7 @@ async def consume_ticks_for_orderflow() -> None:
 # ---------------------------------------------------------------------------
 # Query helpers (read-only, no side-effects)
 # ---------------------------------------------------------------------------
+
 
 def get_vwap(symbol: str) -> float | None:
     """Return current session VWAP for a symbol, or None."""

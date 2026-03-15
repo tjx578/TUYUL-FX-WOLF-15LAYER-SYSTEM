@@ -1,29 +1,23 @@
 from __future__ import annotations
 
-from typing import Any, Literal, TypedDict
+from typing import Literal, TypedDict
 
+from analysis.formulas.frpc_formula import calculate_frpc
+from analysis.formulas.tii_formula import calculate_tii
 from analysis.volatility_regime_engine import calculate_atr_expansion_ratio, detect_volatility_regime
 from config.thresholds import get_thresholds
 from constitution.verdict_engine import (
+    MetaResults,
+    VerdictType,
     layer12_verdict_layer,
     meta_gate_model_integrity,
     meta_gate_statistical_edge,
     meta_gate_structural_edge,
 )
-from core.frpc_engine import calculate_frpc
-from core.tii_engine import calculate_tii
 
 # ── Type definitions ──────────────────────────────────────────────────────────
 
 RegimeType = Literal["LOW_VOL", "NORMAL_VOL", "HIGH_VOL"]
-MetaGateResult = Literal["PASS", "FAIL", "CONDITIONAL"]
-VerdictType = Literal["EXECUTE", "EXECUTE_REDUCED_RISK", "HOLD"]
-
-
-class MetaResults(TypedDict):
-    structural: MetaGateResult
-    model_integrity: MetaGateResult
-    statistical: MetaGateResult
 
 
 class PipelineResult(TypedDict):

@@ -1,14 +1,25 @@
-
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Literal, TypedDict
+
+MetaGateResult = Literal["PASS", "FAIL", "CONDITIONAL"]
+VerdictType = Literal["EXECUTE", "EXECUTE_REDUCED_RISK", "HOLD"]
+
+
+class MetaResults(TypedDict):
+    structural: MetaGateResult
+    model_integrity: MetaGateResult
+    statistical: MetaGateResult
+
 
 # ── Data contracts ────────────────────────────────────────────────────────────
+
 
 @dataclass
 class VerdictThresholds:
     """Constitutional score thresholds for the evaluate() V1 path."""
+
     wolf_min_score: float = 0.70
     tii_min_score: float = 0.90
     frpc_min_score: float = 0.93
@@ -19,6 +30,7 @@ class VerdictThresholds:
 @dataclass
 class ExhaustionLayerInput:
     """L7 exhaustion data passed into the constitutional evaluate() gate."""
+
     score: float
     confidence: float
     reason: str = ""
@@ -27,11 +39,14 @@ class ExhaustionLayerInput:
 
 # ── Pure gate functions (used by layer pipeline) ──────────────────────────────
 
+
 def meta_gate_structural_edge(exhaustion_conf: float, liquidity: float) -> bool:
     return min(exhaustion_conf, liquidity) >= 0.70
 
 
-def meta_gate_model_integrity(tii: float, frpc: float, integrity: float, thresholds: dict[str, float]) -> str:
+def meta_gate_model_integrity(
+    tii: float, frpc: float, integrity: float, thresholds: dict[str, float]
+) -> MetaGateResult:
     pass_all = tii >= thresholds["tii"] and frpc >= thresholds["frpc"] and integrity >= thresholds["integrity"]
     conditional = (
         (thresholds["tii"] - 0.03 <= tii < thresholds["tii"])
@@ -45,7 +60,9 @@ def meta_gate_model_integrity(tii: float, frpc: float, integrity: float, thresho
     return "FAIL"
 
 
-def meta_gate_statistical_edge(mc_win: float, mc_pf: float, rr: float, posterior: float, thresholds: dict[str, float]) -> bool:
+def meta_gate_statistical_edge(
+    mc_win: float, mc_pf: float, rr: float, posterior: float, thresholds: dict[str, float]
+) -> bool:
     return (
         mc_win >= thresholds["mc_win"]
         and mc_pf >= thresholds["mc_pf"]
@@ -54,7 +71,7 @@ def meta_gate_statistical_edge(mc_win: float, mc_pf: float, rr: float, posterior
     )
 
 
-def layer12_verdict_layer(meta_results: dict[str, str]) -> str:
+def layer12_verdict_layer(meta_results: MetaResults) -> VerdictType:
     pass_count = sum(1 for v in meta_results.values() if v == "PASS")
     conditional_count = sum(1 for v in meta_results.values() if v == "CONDITIONAL")
     if pass_count == 3:
@@ -65,6 +82,7 @@ def layer12_verdict_layer(meta_results: dict[str, str]) -> str:
 
 
 # ── VerdictEngine: sole constitutional authority (Layer 12) ───────────────────
+
 
 class VerdictEngine:
     """
@@ -343,17 +361,23 @@ class VerdictEngine:
 
 # Required top-level keys that a valid synthesis dict must provide.
 _REQUIRED_SYNTHESIS_FIELDS: tuple[str, ...] = (
-    "layers", "scores", "execution", "propfirm", "risk", "bias", "system",
+    "layers",
+    "scores",
+    "execution",
+    "propfirm",
+    "risk",
+    "bias",
+    "system",
 )
 
 # Constitutional gate thresholds (10 gates)
-_THRESH_TII: float = 0.65          # gate_1  — L8_tii_sym
-_THRESH_INTEGRITY: float = 0.75    # gate_2  — L8_integrity_index
-_THRESH_RR: float = 1.5            # gate_3  — execution.rr_ratio
-_THRESH_FTA: float = 0.65          # gate_4  — scores.fta_score
-_THRESH_MONTE: float = 0.60        # gate_5  — layers.L7_monte_carlo_win
-_THRESH_LATENCY_MS: int = 250      # gate_8  — system.latency_ms
-_THRESH_CONF12: float = 0.75       # gate_9  — layers.conf12
+_THRESH_TII: float = 0.65  # gate_1  — L8_tii_sym
+_THRESH_INTEGRITY: float = 0.75  # gate_2  — L8_integrity_index
+_THRESH_RR: float = 1.5  # gate_3  — execution.rr_ratio
+_THRESH_FTA: float = 0.65  # gate_4  — scores.fta_score
+_THRESH_MONTE: float = 0.60  # gate_5  — layers.L7_monte_carlo_win
+_THRESH_LATENCY_MS: int = 250  # gate_8  — system.latency_ms
+_THRESH_CONF12: float = 0.75  # gate_9  — layers.conf12
 # Gate 10: Reflex Quality — LOCK is critical fail, CAUTION passes with lot_scale
 
 # Confidence label thresholds (based on wolf_30_point)

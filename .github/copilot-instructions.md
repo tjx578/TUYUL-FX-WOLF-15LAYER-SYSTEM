@@ -16,14 +16,17 @@ If a request conflicts with these, propose an alternative design that preserves 
 
 | Zone | Directory | Authority | Key files |
 |------|-----------|-----------|-----------|
-| Analysis | `analysis/`, `analysis/layers/` | Read-only metrics (L1–L11). No side-effects. | `analysis/layers/l1_context.py` … `l11_rr.py` |
+| Analysis | `analysis/`, `analysis/layers/`, `analysis/formulas/` | Read-only metrics (L1–L11) + pure calc formulas. No side-effects. | `analysis/layers/l1_context.py` … `l11_rr.py`, `analysis/formulas/tii_formula.py`, `analysis/formulas/frpc_formula.py` |
 | Constitution | `constitution/` | **Sole decision gate (L12).** | `constitution/gatekeeper.py` (9-gate sequential), `constitution/verdict_engine.py` (V1/V2) |
 | Execution | `execution/` | Blind order placement. No strategy logic. | `execution/state_machine.py` (Enum FSM: IDLE→PENDING_ACTIVE→FILLED/CANCELLED) |
 | Dashboard | `dashboard/` | Account governor + ledger + monitoring. | `dashboard/backend/`, `dashboard/nextjs/` (Next.js App Router) |
 | Risk | `risk/`, `accounts/` | Prop firm guards + account limits. | `risk/prop_firm.py` — `check(account_state, trade_risk) → {allowed, code, severity}` |
-| Journal | `journal/` | Immutable audit (J1–J4). No decision power. | `journal/journal_writer.py` (append-only), `journal/audit_trail.py` (hash-chained JSONL + Postgres) |
+| Journal | `journal/` | Immutable audit (J1–J4). No decision power. | `journal/journal_writer.py` (append-only), `journal/audit_trail.py` (hash-chained JSONL + Postgres), `journal/builders.py` (J1/J2 entry builders) |
+| Startup | `startup/` | Engine lifecycle (seeding, supervision, signal handling). No market logic. | `startup/candle_seeding.py`, `startup/task_supervisor.py`, `startup/signal_handlers.py`, `startup/analysis_loop.py` |
 
 **Pipeline orchestrator**: `analysis/orchestrators/unified_pipeline.py` (~1600 lines) runs all 15 layers in 8 phases. This is the primary analytical entrypoint — not `main.py`.
+
+**Engine orchestrator**: `main.py` is a slim ~280-line orchestrator that composes lifecycle modules from `startup/` package.
 
 ---
 
