@@ -1,29 +1,237 @@
 "use client";
 
 // ============================================================
-// TUYUL FX Wolf-15 — Accounts Page (/accounts)
-// Features: AccountCard grid, risk indicators, create modal,
-//           prop-firm badge, equity/balance display
+// TUYUL FX Wolf-15 — Capital Accounts Page (/accounts)
+// Capital deployment view with readiness score, usable capital,
+// eligibility flags, lock/compliance inheritance, account cards.
 // ============================================================
 
 import { useState } from "react";
-import { useAccounts, useAccountsRiskSnapshot } from "@/lib/api";
-import { AccountCard, CreateAccountForm } from "@/components/AccountPanel";
+import { useCapitalDeployment, useAccountsRiskSnapshot } from "@/lib/api";
+import { AccountCard } from "@/components/AccountPanel";
+import AccountReadinessBadge from "@/components/AccountReadinessBadge";
+import AccountDetailDrawer from "@/components/AccountDetailDrawer";
+import CreateAccountModal from "@/components/CreateAccountModal";
 import PageComplianceBanner from "@/components/feedback/PageComplianceBanner";
 import type { Account } from "@/types";
 
-// ── Portfolio summary ─────────────────────────────────────────
+// ── Portfolio Summary Strip ───────────────────────────────────
 
-function PortfolioKpi({ label, value, color }: { label: string; value: string; color?: string }) {
+function PortfolioSummaryStrip({
+  accounts,
+  totalUsable,
+  avgReadiness,
+}: {
+  accounts: Account[];
+  totalUsable: number;
+  avgReadiness: number;
+}) {
+  const totalBalance = accounts.reduce((s, a) => s + (a.balance ?? 0), 0);
+  const totalEquity = accounts.reduce((s, a) => s + (a.equity ?? 0), 0);
+  const propCount = accounts.filter((a) => a.prop_firm).length;
+  const eaCount = accounts.filter((a) => a.data_source === "EA").length;
+
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 10 }}>
+      <KpiCard label="TOTAL BALANCE" value={`$${totalBalance.toLocaleString()}`} />
+      <KpiCard
+        label="TOTAL EQUITY"
+        value={`$${totalEquity.toLocaleString()}`}
+        color={totalEquity >= totalBalance ? "var(--green)" : "var(--red)"}
+      />
+      <KpiCard
+        label="USABLE CAPITAL"
+        value={`$${totalUsable.toLocaleString()}`}
+        color="var(--green)"
+      />
+      <KpiCard
+        label="AVG READINESS"
+        value={`${Math.round(avgReadiness * 100)}%`}
+        color={avgReadiness >= 0.7 ? "var(--green)" : avgReadiness >= 0.4 ? "var(--yellow)" : "var(--red)"}
+      />
+      <KpiCard label="ACCOUNTS" value={String(accounts.length)} color="var(--blue)" />
+      <KpiCard
+        label="PROP / EA"
+        value={`${propCount} / ${eaCount}`}
+        color={propCount > 0 ? "var(--accent, var(--yellow))" : "var(--text-muted)"}
+      />
+    </div>
+  );
+}
+
+function KpiCard({ label, value, color }: { label: string; value: string; color?: string }) {
   return (
     <div
       className="card"
       style={{ display: "flex", flexDirection: "column", gap: 4, padding: "12px 15px" }}
     >
-      <div style={{ fontSize: 9, letterSpacing: "0.12em", color: "var(--text-muted)", fontWeight: 700, fontFamily: "var(--font-mono)" }}>
+      <div
+        style={{
+          fontSize: 9,
+          letterSpacing: "0.12em",
+          color: "var(--text-muted)",
+          fontWeight: 700,
+          fontFamily: "var(--font-mono)",
+        }}
+      >
         {label}
       </div>
-      <div className="num" style={{ fontSize: 20, fontWeight: 700, color: color ?? "var(--text-primary)" }}>
+      <div
+        className="num"
+        style={{ fontSize: 18, fontWeight: 700, color: color ?? "var(--text-primary)" }}
+      >
+        {value}
+      </div>
+    </div>
+  );
+}
+
+// ── Account Grid Card (enhanced) ─────────────────────────────
+
+function AccountGridCard({
+  account,
+  riskSnap,
+  onClick,
+}: {
+  account: Account;
+  riskSnap?: { status: string; circuit_breaker: boolean };
+  onClick: () => void;
+}) {
+  const readiness = account.readiness_score ?? 0;
+  const usable = account.usable_capital ?? 0;
+
+  return (
+    <div
+      role="listitem"
+      className="card cursor-pointer transition-all duration-200 hover:border-[var(--blue)]"
+      style={{ padding: 16, display: "flex", flexDirection: "column", gap: 10 }}
+      onClick={onClick}
+    >
+      {/* Top row: name + readiness */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+        <div>
+          <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text-primary)" }}>
+            {account.account_name}
+          </div>
+          <div style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 2, display: "flex", gap: 6, alignItems: "center" }}>
+            <span>{account.broker}</span>
+            <span>·</span>
+            <span>{account.currency}</span>
+            {account.data_source === "EA" && (
+              <span
+                style={{
+                  fontSize: 8,
+                  fontWeight: 700,
+                  padding: "1px 4px",
+                  borderRadius: 3,
+                  background: "var(--blue)15",
+                  color: "var(--blue)",
+                }}
+              >
+                EA
+              </span>
+            )}
+          </div>
+        </div>
+        <AccountReadinessBadge score={readiness} />
+      </div>
+
+      {/* Stats */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 8 }}>
+        <Stat label="BALANCE" value={`$${account.balance?.toLocaleString()}`} />
+        <Stat label="EQUITY" value={`$${account.equity?.toLocaleString()}`} />
+        <Stat
+          label="USABLE CAPITAL"
+          value={`$${usable.toLocaleString()}`}
+          color="var(--green)"
+        />
+        <Stat
+          label="OPEN"
+          value={`${account.open_trades}/${account.max_concurrent_trades}`}
+        />
+      </div>
+
+      {/* Bottom row: prop + locks */}
+      <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+        {account.prop_firm && (
+          <span
+            style={{
+              fontSize: 9,
+              fontWeight: 700,
+              padding: "2px 6px",
+              borderRadius: 9999,
+              background: "var(--accent, var(--yellow))12",
+              color: "var(--accent, var(--yellow))",
+              border: "1px solid var(--accent, var(--yellow))20",
+            }}
+          >
+            {account.prop_firm_code?.toUpperCase() ?? "PROP"}
+          </span>
+        )}
+        {riskSnap?.status === "CRITICAL" && (
+          <span
+            style={{
+              fontSize: 9,
+              fontWeight: 700,
+              padding: "2px 6px",
+              borderRadius: 9999,
+              background: "var(--red)12",
+              color: "var(--red)",
+              border: "1px solid var(--red)20",
+            }}
+          >
+            CRITICAL
+          </span>
+        )}
+        {riskSnap?.status === "WARNING" && (
+          <span
+            style={{
+              fontSize: 9,
+              fontWeight: 700,
+              padding: "2px 6px",
+              borderRadius: 9999,
+              background: "var(--yellow)12",
+              color: "var(--yellow)",
+              border: "1px solid var(--yellow)20",
+            }}
+          >
+            WARNING
+          </span>
+        )}
+        {(account.lock_reasons?.length ?? 0) > 0 && (
+          <span
+            style={{
+              fontSize: 9,
+              fontWeight: 700,
+              padding: "2px 6px",
+              borderRadius: 9999,
+              background: "var(--red)08",
+              color: "var(--red)",
+            }}
+          >
+            🔒 {account.lock_reasons?.length} lock{(account.lock_reasons?.length ?? 0) > 1 ? "s" : ""}
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function Stat({
+  label,
+  value,
+  color = "var(--text-primary)",
+}: {
+  label: string;
+  value: string;
+  color?: string;
+}) {
+  return (
+    <div>
+      <div style={{ fontSize: 9, color: "var(--text-muted)", letterSpacing: "0.08em", marginBottom: 2 }}>
+        {label}
+      </div>
+      <div className="num" style={{ fontSize: 13, fontWeight: 600, color }}>
         {value}
       </div>
     </div>
@@ -32,21 +240,27 @@ function PortfolioKpi({ label, value, color }: { label: string; value: string; c
 
 // ── Main Page ─────────────────────────────────────────────────
 
-export default function AccountsPage() {
-  const { data: accounts, isLoading, isError, mutate } = useAccounts() as ReturnType<typeof useAccounts> & { mutate?: () => void };
+export default function CapitalAccountsPage() {
+  const {
+    data: accounts,
+    totalUsableCapital,
+    avgReadinessScore,
+    isLoading,
+    isError,
+    mutate,
+  } = useCapitalDeployment();
   const { data: riskSnapshots } = useAccountsRiskSnapshot();
   const [showCreate, setShowCreate] = useState(false);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [drawerAccountId, setDrawerAccountId] = useState<string | null>(null);
 
-  // Portfolio totals
-  const totalBalance = (accounts ?? []).reduce((s, a) => s + (a.balance ?? 0), 0);
-  const totalEquity  = (accounts ?? []).reduce((s, a) => s + (a.equity ?? 0), 0);
-  const criticalCount = (accounts ?? []).filter((a) => a.risk_state === "CRITICAL").length;
-  const propCount     = (accounts ?? []).filter((a) => a.prop_firm).length;
+  const criticalCount = (riskSnapshots ?? []).filter((s) => s.status === "CRITICAL").length;
+  const drawerAccount = drawerAccountId
+    ? accounts.find((a) => a.account_id === drawerAccountId) ?? null
+    : null;
 
   const handleCreated = () => {
     setShowCreate(false);
-    if (typeof mutate === "function") mutate();
+    mutate();
   };
 
   return (
@@ -66,10 +280,10 @@ export default function AccountsPage() {
               fontFamily: "var(--font-display)",
             }}
           >
-            ACCOUNTS
+            CAPITAL ACCOUNTS
           </h1>
           <p style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 3 }}>
-            Multi-account portfolio — drawdown tracking + risk state
+            Capital deployment view — readiness, usable capital, lock state
           </p>
         </div>
         <div style={{ marginLeft: "auto" }}>
@@ -83,30 +297,13 @@ export default function AccountsPage() {
         </div>
       </div>
 
-      {/* ── Portfolio KPIs ── */}
-      {!isLoading && !isError && (accounts ?? []).length > 0 && (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0,1fr))", gap: 12 }}>
-          <PortfolioKpi
-            label="TOTAL BALANCE"
-            value={`$${totalBalance.toLocaleString()}`}
-            color="var(--text-primary)"
-          />
-          <PortfolioKpi
-            label="TOTAL EQUITY"
-            value={`$${totalEquity.toLocaleString()}`}
-            color={totalEquity >= totalBalance ? "var(--green)" : "var(--red)"}
-          />
-          <PortfolioKpi
-            label="ACCOUNTS"
-            value={String((accounts ?? []).length)}
-            color="var(--blue)"
-          />
-          <PortfolioKpi
-            label="PROP FIRMS"
-            value={`${propCount} / ${(accounts ?? []).length}`}
-            color={propCount > 0 ? "var(--accent)" : "var(--text-muted)"}
-          />
-        </div>
+      {/* ── Portfolio Summary Strip ── */}
+      {!isLoading && !isError && accounts.length > 0 && (
+        <PortfolioSummaryStrip
+          accounts={accounts}
+          totalUsable={totalUsableCapital}
+          avgReadiness={avgReadinessScore}
+        />
       )}
 
       {/* ── Risk alert banner ── */}
@@ -135,7 +332,9 @@ export default function AccountsPage() {
               flexShrink: 0,
             }}
           />
-          <strong style={{ color: "var(--red)" }}>{criticalCount} account{criticalCount > 1 ? "s" : ""} in CRITICAL state</strong>
+          <strong style={{ color: "var(--red)" }}>
+            {criticalCount} account{criticalCount > 1 ? "s" : ""} in CRITICAL state
+          </strong>
           <span style={{ color: "var(--text-muted)" }}>— review drawdown limits immediately.</span>
         </div>
       )}
@@ -148,7 +347,7 @@ export default function AccountsPage() {
           aria-label="Loading accounts"
         >
           {Array.from({ length: 3 }).map((_, i) => (
-            <div key={i} className="skeleton card" style={{ height: 180 }} />
+            <div key={i} className="skeleton card" style={{ height: 200 }} />
           ))}
         </div>
       )}
@@ -161,82 +360,52 @@ export default function AccountsPage() {
           style={{ padding: "28px 20px", textAlign: "center" }}
         >
           <div style={{ fontSize: 13, color: "var(--red)", marginBottom: 6 }}>
-            Failed to load accounts
+            Failed to load capital accounts
           </div>
           <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
-            Check the backend connection. Endpoint: /api/v1/accounts
+            Check the backend connection. Endpoint: /api/v1/accounts/capital-deployment
           </div>
         </div>
       )}
 
       {/* ── Empty state ── */}
-      {!isLoading && !isError && (accounts ?? []).length === 0 && (
+      {!isLoading && !isError && accounts.length === 0 && (
         <div
           className="panel"
           style={{ padding: "40px 20px", textAlign: "center" }}
         >
           <div style={{ fontSize: 14, color: "var(--text-secondary)", marginBottom: 8 }}>
-            No accounts found
+            No capital accounts found
           </div>
           <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 16 }}>
-            Add your first trading account to start tracking.
+            Add your first trading account to start tracking capital deployment.
           </div>
-          <button
-            className="btn btn-primary"
-            onClick={() => setShowCreate(true)}
-          >
+          <button className="btn btn-primary" onClick={() => setShowCreate(true)}>
             + ADD FIRST ACCOUNT
           </button>
         </div>
       )}
 
       {/* ── Account grid ── */}
-      {!isLoading && !isError && (accounts ?? []).length > 0 && (
+      {!isLoading && !isError && accounts.length > 0 && (
         <div
-          style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))", gap: 14 }}
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))",
+            gap: 14,
+          }}
           role="list"
-          aria-label="Account cards"
+          aria-label="Capital account cards"
         >
-          {(accounts ?? []).map((account: Account) => {
+          {accounts.map((account: Account) => {
             const snap = riskSnapshots?.find((s) => s.account_id === account.account_id);
             return (
-              <div key={account.account_id} role="listitem">
-                <AccountCard
-                  account={account}
-                  selected={selectedId === account.account_id}
-                  onClick={() =>
-                    setSelectedId((prev) =>
-                      prev === account.account_id ? null : account.account_id
-                    )
-                  }
-                />
-                {/* Expanded risk snapshot */}
-                {selectedId === account.account_id && snap && (
-                  <div
-                    className="animate-fade-in panel"
-                    style={{ marginTop: 8, padding: "12px 14px" }}
-                  >
-                    <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: "0.12em", color: "var(--text-muted)", fontFamily: "var(--font-mono)", marginBottom: 10 }}>
-                      RISK SNAPSHOT
-                    </div>
-                    <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10 }}>
-                      {[
-                        { label: "DAILY DD",    value: `${snap.daily_dd_percent?.toFixed(2)}%`, color: snap.daily_dd_percent > 3 ? "var(--red)" : "var(--green)" },
-                        { label: "TOTAL DD",    value: `${snap.total_dd_percent?.toFixed(2)}%`, color: snap.total_dd_percent > 5 ? "var(--red)" : "var(--text-primary)" },
-                        { label: "OPEN RISK",   value: `${snap.open_risk_percent?.toFixed(2)}%`, color: "var(--text-primary)" },
-                        { label: "OPEN TRADES", value: String(snap.open_trades),                 color: "var(--blue)" },
-                        { label: "STATUS",      value: snap.status,                              color: snap.status === "SAFE" ? "var(--green)" : snap.status === "WARNING" ? "var(--yellow)" : "var(--red)" },
-                        { label: "CIRCUIT BR.", value: snap.circuit_breaker ? "OPEN" : "CLOSED", color: snap.circuit_breaker ? "var(--red)" : "var(--green)" },
-                      ].map(({ label, value, color }) => (
-                        <div key={label}>
-                          <div style={{ fontSize: 9, color: "var(--text-muted)", letterSpacing: "0.08em", marginBottom: 2 }}>{label}</div>
-                          <div className="num" style={{ fontSize: 12, fontWeight: 700, color }}>{value}</div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
+              <AccountGridCard
+                key={account.account_id}
+                account={account}
+                riskSnap={snap}
+                onClick={() => setDrawerAccountId(account.account_id)}
+              />
             );
           })}
         </div>
@@ -244,33 +413,18 @@ export default function AccountsPage() {
 
       {/* ── Create account modal ── */}
       {showCreate && (
-        <div
-          role="dialog"
-          aria-modal="true"
-          aria-label="Create account"
-          style={{
-            position: "fixed",
-            inset: 0,
-            background: "var(--bg-overlay)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            zIndex: 100,
-            padding: 16,
-            backdropFilter: "blur(4px)",
-          }}
-          onClick={() => setShowCreate(false)}
-        >
-          <div
-            className="animate-fade-in"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <CreateAccountForm
-              onCreated={handleCreated}
-              onCancel={() => setShowCreate(false)}
-            />
-          </div>
-        </div>
+        <CreateAccountModal
+          onCreated={handleCreated}
+          onCancel={() => setShowCreate(false)}
+        />
+      )}
+
+      {/* ── Account detail drawer ── */}
+      {drawerAccount && (
+        <AccountDetailDrawer
+          account={drawerAccount}
+          onClose={() => setDrawerAccountId(null)}
+        />
       )}
     </div>
   );

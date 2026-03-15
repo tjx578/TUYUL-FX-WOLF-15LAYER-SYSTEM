@@ -4,6 +4,7 @@ import type {
   Trade,
   AccountCreate,
   Account,
+  CapitalDeploymentResponse,
   JournalMetrics,
   DailyJournal,
   RiskSnapshot,
@@ -21,6 +22,7 @@ import type {
   CalendarHealthResponse,
   EALog,
   EAStatus,
+  EAAgent,
   PropFirmPhase,
   PropFirmStatus,
 } from "@/types";
@@ -34,6 +36,7 @@ export const API_ENDPOINTS = {
   health: "/health",
   accounts: "/api/v1/accounts",
   accountsRiskSnapshot: "/api/v1/accounts/risk-snapshot",
+  accountsCapitalDeployment: "/api/v1/accounts/capital-deployment",
   tradesActive: "/api/v1/trades/active",
   tradesTake: "/api/v1/trades/take",
   tradesSkip: "/api/v1/trades/skip",
@@ -50,6 +53,7 @@ export const API_ENDPOINTS = {
   calendarHealth: "/api/v1/calendar/health",
   eaStatus: "/api/v1/ea/status",
   eaLogs: "/api/v1/ea/logs",
+  eaAgents: "/api/v1/ea/agents",
   eaRestart: "/api/v1/ea/restart",
   eaSafeMode: "/api/v1/ea/safe-mode",
   propFirmStatus: (accountId: string) => `/api/v1/prop-firm/${accountId}/status`,
@@ -129,7 +133,7 @@ export interface ActiveTradesResponse {
 // ─── HOOKS ───────────────────────────────────────────────────
 
 export function useAccounts() {
-  const { data, error, isLoading } = useSWR<Account[] | { accounts: Account[] }>(
+  const { data, error, isLoading, mutate } = useSWR<Account[] | { accounts: Account[] }>(
     API_ENDPOINTS.accounts,
     fetcher
   );
@@ -138,7 +142,23 @@ export function useAccounts() {
     : Array.isArray(data?.accounts)
       ? data.accounts
       : [];
-  return { data: normalized, isLoading, isError: !!error, error };
+  return { data: normalized, isLoading, isError: !!error, error, mutate };
+}
+
+export function useCapitalDeployment() {
+  const { data, error, isLoading, mutate } = useSWR<CapitalDeploymentResponse>(
+    API_ENDPOINTS.accountsCapitalDeployment,
+    fetcher
+  );
+  return {
+    data: data?.accounts ?? [],
+    totalUsableCapital: data?.total_usable_capital ?? 0,
+    avgReadinessScore: data?.avg_readiness_score ?? 0,
+    isLoading,
+    isError: !!error,
+    error,
+    mutate,
+  };
 }
 
 export function useActiveTrades() {
@@ -250,19 +270,29 @@ export function useCalendarSourceHealth() {
 }
 
 export function useEAStatus() {
-  const { data, error, isLoading } = useSWR<EAStatus>(
+  const { data, error, isLoading, mutate } = useSWR<EAStatus>(
     API_ENDPOINTS.eaStatus,
-    fetcher
-  );
-  return { data, isLoading, isError: !!error, error };
-}
-
-export function useEALogs() {
-  const { data, error, isLoading, mutate } = useSWR<EALog[]>(
-    API_ENDPOINTS.eaLogs,
-    fetcher
+    fetcher,
+    { refreshInterval: 5000 },
   );
   return { data, isLoading, isError: !!error, error, mutate };
+}
+
+export function useEALogs(agentId?: string) {
+  const url = agentId
+    ? `${API_ENDPOINTS.eaLogs}?agent_id=${encodeURIComponent(agentId)}`
+    : API_ENDPOINTS.eaLogs;
+  const { data, error, isLoading, mutate } = useSWR<EALog[]>(url, fetcher);
+  return { data, isLoading, isError: !!error, error, mutate };
+}
+
+export function useEAAgents() {
+  const { data, error, isLoading, mutate } = useSWR<EAAgent[]>(
+    API_ENDPOINTS.eaAgents,
+    fetcher,
+    { refreshInterval: 5000 },
+  );
+  return { data: data ?? [], isLoading, isError: !!error, error, mutate };
 }
 
 export function usePropFirmPhase(accountId: string) {
