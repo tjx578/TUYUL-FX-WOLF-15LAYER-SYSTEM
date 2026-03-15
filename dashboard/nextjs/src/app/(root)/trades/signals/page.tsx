@@ -1,44 +1,69 @@
 "use client";
 
 // ============================================================
-// TUYUL FX Wolf-15 — Signal Queue Page (/trades/signals)
+// TUYUL FX Wolf-15 — Signal Board (/trades/signals) P0
 // Flow: View EXECUTE verdicts → TAKE or SKIP
+// State: Eligible / Blocked / Cooldown / Expired / Ignored
 // ============================================================
 
-import { useState } from "react";
-import { useAllVerdicts, useAccounts, usePairs } from "@/lib/api";
-import { VerdictCard } from "@/components/VerdictCard";
-import { GateStatus } from "@/components/GateStatus";
-import { TakeSignalForm } from "@/components/TakeSignalForm";
-import type { L12Verdict } from "@/types";
+import { useSignalBoardState, type SignalTab } from "@/hooks/useSignalBoardState";
+import { SignalRowCard } from "@/components/signal-board/SignalRowCard";
+import { SignalDetailPanel } from "@/components/signal-board/SignalDetailPanel";
 
-export default function SignalQueuePage() {
-  const { data: verdicts, isLoading, mutate } = useAllVerdicts();
-  const { data: accounts } = useAccounts();
-  const { data: pairs } = usePairs();
+const TABS: SignalTab[] = ["ELIGIBLE", "BLOCKED", "COOLDOWN", "EXPIRED", "IGNORED"];
 
-  const [selectedVerdict, setSelectedVerdict] = useState<L12Verdict | null>(null);
-  const [filterMode, setFilterMode] = useState<"ALL" | "EXECUTE" | "HOLD">("ALL");
-  const [selectedPair, setSelectedPair] = useState<string>("ALL");
+export default function SignalBoardPage() {
+  const state = useSignalBoardState();
 
-  const allVerdicts = Object.values(verdicts ?? {});
+  const {
+    activeTab,
+    setActiveTab,
+    eligible,
+    blocked,
+    cooldown,
+    expired,
+    ignored,
+    counts,
+    selectedPair,
+    setSelectedPair,
+    selectedSignal,
+    selectSignal,
+    calendarLocked,
+    calendarLockReason,
+    riskPreviews,
+    riskPreviewLoading,
+    riskPreviewError,
+    runRiskPreview,
+    clearRiskPreview,
+    accounts,
+    pairs,
+    isLoading,
+    mutate,
+  } = state;
 
-  const filtered = allVerdicts.filter((v) => {
-    const matchMode =
-      filterMode === "ALL" ||
-      (filterMode === "EXECUTE" && v.verdict.toString().startsWith("EXECUTE")) ||
-      (filterMode === "HOLD" && v.verdict === "HOLD");
-    const matchPair =
-      selectedPair === "ALL" || v.symbol === selectedPair;
-    return matchMode && matchPair;
-  });
+  const tabSignals = (() => {
+    switch (activeTab) {
+      case "ELIGIBLE":
+        return eligible;
+      case "BLOCKED":
+        return blocked;
+      case "COOLDOWN":
+        return cooldown;
+      case "EXPIRED":
+        return expired;
+      case "IGNORED":
+        return ignored;
+    }
+  })();
 
-  const executeSignals = allVerdicts.filter((v) =>
-    v.verdict.toString().startsWith("EXECUTE")
-  );
+  function handleDone() {
+    selectSignal(null);
+    clearRiskPreview();
+    mutate();
+  }
 
   return (
-    <div style={{ padding: "24px 28px", display: "flex", flexDirection: "column", gap: 20 }}>
+    <div style={{ padding: "24px 28px", display: "flex", flexDirection: "column", gap: 18 }}>
       {/* ── Header ── */}
       <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
         <div>
@@ -46,50 +71,96 @@ export default function SignalQueuePage() {
             style={{
               fontSize: 20,
               fontWeight: 700,
-              letterSpacing: "0.04em",
+              letterSpacing: "0.05em",
               color: "var(--text-primary)",
               margin: 0,
             }}
           >
-            SIGNAL QUEUE
+            SIGNAL BOARD
           </h1>
-          <p style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2 }}>
-            TAKE or SKIP L12 execution signals
+          <p
+            style={{
+              fontSize: 11,
+              color: "var(--text-muted)",
+              marginTop: 2,
+              letterSpacing: "0.02em",
+            }}
+          >
+            TAKE or SKIP execution verdicts
           </p>
         </div>
 
         <div style={{ marginLeft: "auto", display: "flex", gap: 8, alignItems: "center" }}>
-          {executeSignals.length > 0 && (
-            <span className="badge badge-gold">
-              {executeSignals.length} EXECUTE
+          {counts.ELIGIBLE > 0 && (
+            <span className="badge badge-blue">
+              {counts.ELIGIBLE} ELIGIBLE
+            </span>
+          )}
+          {counts.BLOCKED > 0 && (
+            <span className="badge badge-red">
+              {counts.BLOCKED} BLOCKED
             </span>
           )}
         </div>
       </div>
 
-      {/* ── Filters ── */}
-      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-        {(["ALL", "EXECUTE", "HOLD"] as const).map((m) => (
-          <button
-            key={m}
-            className="btn btn-ghost"
-            style={{
-              fontSize: 11,
-              padding: "5px 12px",
-              opacity: filterMode === m ? 1 : 0.5,
-              borderColor: filterMode === m ? "var(--accent)" : "var(--bg-border)",
-              color: filterMode === m ? "var(--accent)" : "var(--text-muted)",
-            }}
-            onClick={() => setFilterMode(m)}
-          >
-            {m}
-          </button>
-        ))}
+      {/* ── Controls ── */}
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 10,
+          padding: "10px 14px",
+          borderRadius: "var(--radius-md)",
+          background: "var(--bg-panel)",
+          border: "1px solid var(--border-default)",
+        }}
+      >
+        {/* Tabs */}
+        {TABS.map((tab) => {
+          const count = counts[tab];
+          const active = activeTab === tab;
+          return (
+            <button
+              key={tab}
+              className="btn btn-ghost"
+              style={{
+                fontSize: 11,
+                padding: "6px 12px",
+                fontWeight: active ? 700 : 500,
+                opacity: active ? 1 : 0.5,
+                borderColor: active ? "var(--accent)" : "transparent",
+                color: active ? "var(--accent)" : "var(--text-muted)",
+                position: "relative",
+              }}
+              onClick={() => setActiveTab(tab)}
+            >
+              {tab}
+              {count > 0 && (
+                <span
+                  style={{
+                    marginLeft: 6,
+                    background: active ? "var(--accent)" : "rgba(255,255,255,0.1)",
+                    color: active ? "#000" : "var(--text-muted)",
+                    borderRadius: 8,
+                    padding: "1px 5px",
+                    fontSize: 9,
+                    fontWeight: 800,
+                    fontFamily: "var(--font-mono)",
+                  }}
+                >
+                  {count}
+                </span>
+              )}
+            </button>
+          );
+        })}
 
+        {/* Pair filter */}
         <select
           value={selectedPair}
           onChange={(e) => setSelectedPair(e.target.value)}
-          style={{ fontSize: 12, padding: "5px 10px", marginLeft: 8 }}
+          style={{ fontSize: 11, padding: "6px 10px", marginLeft: "auto" }}
         >
           <option value="ALL">ALL PAIRS</option>
           {(pairs ?? []).map((p) => (
@@ -99,91 +170,85 @@ export default function SignalQueuePage() {
           ))}
         </select>
 
-        <button
-          className="btn btn-ghost"
-          style={{ marginLeft: "auto", fontSize: 11 }}
-          onClick={() => mutate()}
-        >
+        {/* Refresh */}
+        <button className="btn btn-ghost" style={{ fontSize: 11 }} onClick={mutate}>
           ↻ REFRESH
         </button>
       </div>
 
       {/* ── Two-column layout: verdict list + detail ── */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 380px", gap: 20, alignItems: "start" }}>
-        {/* ── Left: verdict cards ── */}
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: selectedSignal ? "1fr 400px" : "1fr",
+          gap: 20,
+          alignItems: "start",
+        }}
+      >
+        {/* ── Left: signal cards ── */}
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
           {isLoading && (
-            <div style={{ fontSize: 12, color: "var(--text-muted)", padding: 16 }}>
+            <div
+              style={{
+                fontSize: 12,
+                color: "var(--text-muted)",
+                padding: 24,
+                textAlign: "center",
+              }}
+            >
               Loading signals...
             </div>
           )}
 
-          {!isLoading && filtered.length === 0 && (
+          {!isLoading && tabSignals.length === 0 && (
             <div
+              className="card"
               style={{
                 fontSize: 12,
                 color: "var(--text-muted)",
                 padding: "32px",
                 textAlign: "center",
-                background: "var(--bg-panel)",
-                borderRadius: 8,
               }}
             >
-              No signals match the current filter.
+              {activeTab === "ELIGIBLE" && "No eligible signals. Wait for new verdicts or check other tabs."}
+              {activeTab === "BLOCKED" && "No blocked signals. All clear!"}
+              {activeTab === "COOLDOWN" && "No signals in cooldown."}
+              {activeTab === "EXPIRED" && "No expired signals."}
+              {activeTab === "IGNORED" && "No ignored signals (HOLD/NO_TRADE verdicts)."}
             </div>
           )}
 
-          {filtered.map((v) => (
-            <VerdictCard
-              key={v.symbol}
+          {tabSignals.map((v) => (
+            <SignalRowCard
+              key={`${v.symbol}_${v.timestamp}`}
               verdict={v}
-              selected={selectedVerdict?.symbol === v.symbol}
-              onTake={() => setSelectedVerdict(v)}
-              onSkip={() => setSelectedVerdict(v)}
+              tab={activeTab}
+              selected={selectedSignal?.symbol === v.symbol && selectedSignal?.timestamp === v.timestamp}
+              calendarLocked={calendarLocked}
+              calendarLockReason={calendarLockReason}
+              onSelect={() => selectSignal(v)}
             />
           ))}
         </div>
 
         {/* ── Right: detail panel ── */}
-        <div style={{ display: "flex", flexDirection: "column", gap: 14, position: "sticky", top: 24 }}>
-          {selectedVerdict ? (
-            <>
-              {/* Gate check */}
-              {selectedVerdict.gates?.length > 0 && (
-                <div className="card">
-                  <GateStatus gates={selectedVerdict.gates} />
-                </div>
-              )}
-
-              {/* Take/Skip form */}
-              {accounts && (
-                <TakeSignalForm
-                  verdict={selectedVerdict}
-                  accounts={accounts}
-                  onDone={() => {
-                    setSelectedVerdict(null);
-                    mutate();
-                  }}
-                  onCancel={() => setSelectedVerdict(null)}
-                />
-              )}
-            </>
-          ) : (
-            <div
-              style={{
-                padding: 24,
-                textAlign: "center",
-                fontSize: 12,
-                color: "var(--text-muted)",
-                background: "var(--bg-panel)",
-                borderRadius: 8,
-                border: "1px dashed var(--bg-border)",
-              }}
-            >
-              Select a signal to view gates &amp; take/skip options
-            </div>
-          )}
-        </div>
+        {selectedSignal && accounts && (
+          <SignalDetailPanel
+            signal={selectedSignal}
+            accounts={accounts}
+            riskPreviews={riskPreviews}
+            riskPreviewLoading={riskPreviewLoading}
+            riskPreviewError={riskPreviewError}
+            calendarLocked={calendarLocked}
+            calendarLockReason={calendarLockReason}
+            onRunPreview={runRiskPreview}
+            onDone={handleDone}
+            onClose={() => {
+              selectSignal(null);
+              clearRiskPreview();
+            }}
+          />
+        )}
       </div>
     </div>
   );
