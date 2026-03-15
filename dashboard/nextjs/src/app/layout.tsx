@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import QueryProvider from "@/components/providers/QueryProvider";
 import SessionExpiryModal from "@/components/auth/SessionExpiryModal";
 import ToastViewport from "@/components/feedback/ToastViewport";
@@ -12,8 +12,12 @@ export const metadata: Metadata = {
   description: "Institutional-grade multi-layer prop-firm control surface: Command Center, Signal Board, Risk Command, Trade Desk, and governed compliance.",
   keywords: ["forex", "trading", "wolf-15", "prop firm", "institutional", "pipeline", "risk", "signal board"],
   authors: [{ name: "TUYUL FX" }],
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
   themeColor: "#050a14",
-  viewport: "width=device-width, initial-scale=1",
 };
 
 export default function RootLayout({
