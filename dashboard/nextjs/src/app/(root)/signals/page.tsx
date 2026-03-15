@@ -1,7 +1,6 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import NavTabs from "@/components/NavTabs";
 import { VerdictCard } from "@/components/VerdictCard";
 import { TakeSignalForm } from "@/components/TakeSignalForm";
 import { useAllVerdicts, useAccounts } from "@/lib/api";
@@ -48,9 +47,7 @@ export default function SignalsPage() {
             Filter & inspect L12 verdicts. Sorted by confidence.
           </div>
         </div>
-        <div style={{ marginLeft: "auto" }}>
-          <NavTabs />
-        </div>
+        
       </div>
 
       {/* Controls */}
