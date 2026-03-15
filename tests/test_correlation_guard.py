@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from unittest.mock import MagicMock, patch
+
 import pytest
 
 from risk.correlation_guard import (
@@ -11,10 +13,14 @@ from risk.correlation_guard import (
 
 
 @pytest.fixture(autouse=True)
-def _reset_singleton():
-    """Reset singleton between tests."""
+def _reset_singleton_and_mock_redis():
+    """Reset singleton and mock Redis between tests."""
     CorrelationGuard.reset_instance()
-    yield
+    with patch("risk.correlation_guard.RedisClient") as mock_cls:
+        mock_instance = MagicMock()
+        mock_instance.get.return_value = None
+        mock_cls.return_value = mock_instance
+        yield
     CorrelationGuard.reset_instance()
 
 
