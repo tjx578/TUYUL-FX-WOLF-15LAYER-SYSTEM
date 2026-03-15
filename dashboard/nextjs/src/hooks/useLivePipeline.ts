@@ -2,7 +2,7 @@
 
 import { useEffect } from "react";
 import { fetchLatestPipelineResult } from "@/services/pipelineService";
-import { connectLiveUpdates } from "@/services/wsService";
+import { connectLiveUpdates } from "@/lib/realtime/realtimeClient";
 import { useAccountStore } from "@/store/useAccountStore";
 import { usePreferencesStore } from "@/store/usePreferencesStore";
 import { useRiskStore } from "@/store/useRiskStore";
@@ -13,6 +13,13 @@ interface UseLivePipelineOptions {
   accountId?: string;
 }
 
+const toComplianceState = (governance?: string): string => {
+  if (!governance || governance === "OK") return "COMPLIANCE_NORMAL";
+  if (governance === "BLOCKED") return "COMPLIANCE_BLOCK";
+  if (governance === "CAUTION" || governance === "DOWNGRADED") return "COMPLIANCE_CAUTION";
+  return "COMPLIANCE_NORMAL";
+};
+
 export function useLivePipeline(options: UseLivePipelineOptions = {}) {
   const { setLatestPipelineResult, updateTrade } = useAccountStore();
   const setPreferences = usePreferencesStore((s) => s.setPreferences);
@@ -21,17 +28,10 @@ export function useLivePipeline(options: UseLivePipelineOptions = {}) {
   const setSystem = useSystemStore((s) => s.setSystem);
   const setMode = useSystemStore((s) => s.setMode);
 
-  const toComplianceState = (governance?: string): string => {
-    if (!governance || governance === "OK") return "COMPLIANCE_NORMAL";
-    if (governance === "BLOCKED") return "COMPLIANCE_BLOCK";
-    if (governance === "CAUTION") return "COMPLIANCE_CAUTION";
-    if (governance === "DOWNGRADED") return "COMPLIANCE_CAUTION";
-    return "COMPLIANCE_NORMAL";
-  };
-
   useEffect(() => {
     let mounted = true;
 
+    // Bootstrap: initial REST snapshot
     fetchLatestPipelineResult(options.symbol, options.accountId)
       .then((result) => {
         if (mounted) {
@@ -47,8 +47,12 @@ export function useLivePipeline(options: UseLivePipelineOptions = {}) {
         });
       });
 
+    // Stream: live pipeline via /ws/live (unified event channel)
     const ws = connectLiveUpdates({
+      path: "/ws/live",
       onEvent: (event) => {
+        if (!mounted) return;
+
         if (event.type === "PipelineResultUpdated") {
           setLatestPipelineResult(event.payload);
           setComplianceState(toComplianceState(event.payload.governance_state));
@@ -64,8 +68,10 @@ export function useLivePipeline(options: UseLivePipelineOptions = {}) {
       },
       onStatusChange: (status) => {
         setWsStatus(status);
-        if (status !== "CONNECTED") {
+        if (status !== "LIVE") {
           setMode("DEGRADED");
+        } else {
+          setMode("LIVE");
         }
       },
       onDegradation: (status) => {
@@ -75,7 +81,7 @@ export function useLivePipeline(options: UseLivePipelineOptions = {}) {
         setMode("DEGRADED");
         setSystem({
           mode: "DEGRADED",
-          reason: error instanceof Error ? error.message : "Live updates channel error",
+          reason: error instanceof Error ? error.message : "Live pipeline channel error",
         });
       },
     });

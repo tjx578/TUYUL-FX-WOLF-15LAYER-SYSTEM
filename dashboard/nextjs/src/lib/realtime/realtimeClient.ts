@@ -1,0 +1,217 @@
+/**
+ * TUYUL FX Wolf-15 — Realtime Client
+ *
+ * Core WebSocket client abstraction with production-grade reconnect discipline:
+ *   - Exponential backoff with jitter (1s → 30s ceiling)
+ *   - Infinite retry with no hard attempt cap
+ *   - Stale detection timer
+ *   - Visibility-aware pause (tab hidden → reduce reconnect aggression)
+ *   - Auth token attachment
+ *   - Connection status machine
+ *
+ * DO NOT use raw WebSocket() directly in application code.
+ * DO use domain hooks (useLivePrices, useLiveTrades, etc.) instead.
+ */
+
+import { WsEventSchema, type WsEventParsed } from "@/schema/wsEventSchema";
+import type { SystemStatusView } from "@/contracts/wsEvents";
+import { getToken } from "@/lib/auth";
+import { getWsBaseUrl } from "@/lib/env";
+
+// ─── CONNECTION STATUS MACHINE ───────────────────────────────
+
+export type WsConnectionStatus =
+  | "CONNECTING"
+  | "LIVE"
+  | "DEGRADED"
+  | "RECONNECTING"
+  | "STALE"
+  | "DISCONNECTED";
+
+export interface WsControls {
+  close: () => void;
+  send: (payload: unknown) => void;
+}
+
+// ─── RECONNECT CONFIG ────────────────────────────────────────
+
+const RECONNECT_BASE_MS = 1000; // 1s
+const RECONNECT_CEILING_MS = 30000; // 30s
+const RECONNECT_JITTER_PCT = 0.25; // ±25%
+const STALE_THRESHOLD_MS = 5000; // 5s no message → STALE
+
+// ─── CLIENT OPTIONS ──────────────────────────────────────────
+
+interface ConnectLiveUpdatesOptions {
+  path: string;
+  onEvent: (event: WsEventParsed) => void;
+  onError?: (error: unknown) => void;
+  onStatusChange?: (status: WsConnectionStatus) => void;
+  onDegradation?: (status: SystemStatusView) => void;
+}
+
+// ─── CONNECT LIVE UPDATES ────────────────────────────────────
+
+export function connectLiveUpdates(
+  options: ConnectLiveUpdatesOptions
+): WsControls {
+  const { path, onEvent, onError, onStatusChange, onDegradation } = options;
+
+  let socket: WebSocket | null = null;
+  let reconnectAttempt = 0;
+  let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  let staleTimer: ReturnType<typeof setTimeout> | null = null;
+  let intentionallyClosed = false;
+  let lastMessageAt = Date.now();
+  let visibilityPaused = false;
+
+  const wsBaseUrl = getWsBaseUrl();
+  if (!wsBaseUrl || wsBaseUrl.trim() === "") {
+    onStatusChange?.("DISCONNECTED");
+    onDegradation?.({
+      mode: "DEGRADED",
+      reason:
+        "NEXT_PUBLIC_WS_BASE_URL not configured. Set it to your Railway wss:// origin.",
+    });
+    return { close: () => {}, send: () => {} };
+  }
+
+  const connect = () => {
+    if (intentionallyClosed) return;
+    if (visibilityPaused && reconnectAttempt > 3) return; // reduce churn when hidden
+
+    onStatusChange?.(reconnectAttempt === 0 ? "CONNECTING" : "RECONNECTING");
+
+    const token = typeof window !== "undefined" ? getToken() : null;
+    const url = token ? `${wsBaseUrl}${path}?token=${token}` : `${wsBaseUrl}${path}`;
+
+    try {
+      socket = new WebSocket(url);
+    } catch (err) {
+      onError?.(err);
+      scheduleReconnect();
+      return;
+    }
+
+    socket.onopen = () => {
+      if (intentionallyClosed) return;
+      reconnectAttempt = 0;
+      lastMessageAt = Date.now();
+      onStatusChange?.("LIVE");
+      startStaleTimer();
+    };
+
+    socket.onmessage = (msg) => {
+      if (intentionallyClosed) return;
+      lastMessageAt = Date.now();
+      resetStaleTimer();
+
+      try {
+        const parsed = JSON.parse(msg.data as string);
+        const event = WsEventSchema.parse(parsed);
+        onEvent(event);
+
+        if (event.type === "SystemStatusUpdated") {
+          onDegradation?.(event.payload);
+        }
+      } catch (err) {
+        onError?.(err);
+      }
+    };
+
+    socket.onerror = () => {
+      if (intentionallyClosed) return;
+      onStatusChange?.("DEGRADED");
+      onDegradation?.({
+        mode: "DEGRADED",
+        reason: "WebSocket connection error. Backend may be offline or unreachable.",
+      });
+    };
+
+    socket.onclose = () => {
+      if (intentionallyClosed) return;
+      onStatusChange?.("DISCONNECTED");
+      clearStaleTimer();
+      scheduleReconnect();
+    };
+  };
+
+  const scheduleReconnect = () => {
+    if (intentionallyClosed) return;
+    if (reconnectTimer) clearTimeout(reconnectTimer);
+
+    reconnectAttempt++;
+    const delay = calculateBackoff(reconnectAttempt);
+    reconnectTimer = setTimeout(connect, delay);
+  };
+
+  const calculateBackoff = (attempt: number): number => {
+    const raw = Math.min(RECONNECT_BASE_MS * 2 ** attempt, RECONNECT_CEILING_MS);
+    const jitter = raw * RECONNECT_JITTER_PCT * (Math.random() * 2 - 1);
+    return Math.max(RECONNECT_BASE_MS, raw + jitter);
+  };
+
+  const startStaleTimer = () => {
+    clearStaleTimer();
+    staleTimer = setTimeout(() => {
+      if (intentionallyClosed) return;
+      const elapsed = Date.now() - lastMessageAt;
+      if (elapsed >= STALE_THRESHOLD_MS) {
+        onStatusChange?.("STALE");
+      }
+    }, STALE_THRESHOLD_MS);
+  };
+
+  const resetStaleTimer = () => {
+    clearStaleTimer();
+    startStaleTimer();
+  };
+
+  const clearStaleTimer = () => {
+    if (staleTimer) {
+      clearTimeout(staleTimer);
+      staleTimer = null;
+    }
+  };
+
+  const handleVisibilityChange = () => {
+    if (typeof document === "undefined") return;
+    visibilityPaused = document.hidden;
+    // If tab becomes visible and we're disconnected, try reconnect immediately
+    if (!visibilityPaused && socket?.readyState !== WebSocket.OPEN) {
+      reconnectAttempt = Math.max(0, reconnectAttempt - 2); // boost priority
+      if (reconnectTimer) clearTimeout(reconnectTimer);
+      scheduleReconnect();
+    }
+  };
+
+  if (typeof document !== "undefined") {
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+  }
+
+  // Start initial connection
+  connect();
+
+  return {
+    close: () => {
+      intentionallyClosed = true;
+      if (reconnectTimer) clearTimeout(reconnectTimer);
+      clearStaleTimer();
+      if (typeof document !== "undefined") {
+        document.removeEventListener("visibilitychange", handleVisibilityChange);
+      }
+      if (
+        socket &&
+        (socket.readyState === WebSocket.OPEN ||
+          socket.readyState === WebSocket.CONNECTING)
+      ) {
+        socket.close();
+      }
+    },
+    send: (payload: unknown) => {
+      if (socket?.readyState === WebSocket.OPEN) {
+        socket.send(JSON.stringify(payload));
+      }
+    },
+  };
+}
