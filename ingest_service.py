@@ -36,7 +36,7 @@ BASE_DELAY = 1.0
 # Railway injects PORT for its proxy/healthcheck. Prefer INGEST_HEALTH_PORT,
 # then fall back to PORT (Railway-injected), then default 8082.
 _INGEST_HEALTH_PORT = int(os.getenv("INGEST_HEALTH_PORT") or os.getenv("PORT", "8082"))
-_health_probe = HealthProbe(port=_INGEST_HEALTH_PORT, service_name="ingest")
+_health_probe: HealthProbe = HealthProbe(port=_INGEST_HEALTH_PORT, service_name="ingest")
 _ingest_ready = False
 # Degraded mode: warmup failed but stale Redis cache is available.
 # The service stays alive and serves cached data rather than crashing.
@@ -167,9 +167,9 @@ async def _connect_redis_with_retry() -> RedisClient:
     This keeps ingest process alive during transient Redis unavailability,
     allowing platform liveness probes to pass while startup dependencies settle.
     """
-    max_retries = int(os.getenv("INGEST_REDIS_CONNECT_MAX_RETRIES", "60"))
+    max_retries = int(os.getenv("INGEST_REDIS_CONNECT_MAX_RETRIES", "15"))
     base_delay = float(os.getenv("INGEST_REDIS_CONNECT_DELAY_SEC", "2"))
-    max_delay = float(os.getenv("INGEST_REDIS_CONNECT_MAX_DELAY_SEC", "30"))
+    max_delay = float(os.getenv("INGEST_REDIS_CONNECT_MAX_DELAY_SEC", "10"))
 
     attempt = 0
     while True:
@@ -243,8 +243,7 @@ async def _run_warmup(
     """
     if _warmup_circuit.is_open():
         logger.warning(
-            "[Warmup] Circuit breaker OPEN (failure_count={}) — skipping warmup, "
-            "will use stale cache fallback",
+            "[Warmup] Circuit breaker OPEN (failure_count={}) — skipping warmup, will use stale cache fallback",
             _warmup_circuit.failure_count,
         )
         system_state.set_state(SystemState.DEGRADED)
@@ -402,8 +401,7 @@ async def run_ingest_services(has_api_key: bool) -> None:
             else:
                 _health_probe.set_detail("warmup", "failed_no_cache")
                 logger.error(
-                    "[Ingest] Warmup failed and no stale cache available — "
-                    "service will remain NOT READY (circuit={})",
+                    "[Ingest] Warmup failed and no stale cache available — service will remain NOT READY (circuit={})",
                     _warmup_circuit.state.value,
                 )
         # ── End degraded-mode gate ────────────────────────────────────────
@@ -480,9 +478,33 @@ def _handle_signal(signum: int, frame: types.FrameType | None) -> None:
         _shutdown_event.set()
 
 
-async def main() -> None:
-    global _shutdown_event
+async def main(
+    *,
+    _bootstrap_probe: HealthProbe | None = None,
+) -> None:
+    """Ingest service entry point.
+
+    Parameters
+    ----------
+    _bootstrap_probe:
+        If provided, an already-started :class:`HealthProbe` created by
+        ``ingest_worker.py``.  ``main()`` reuses it so Railway's prober
+        never sees a gap while the port is re-bound.
+    """
+    global _shutdown_event, _health_probe
     _shutdown_event = asyncio.Event()
+
+    # ── Probe ownership ──────────────────────────────────────────
+    owns_probe: bool
+    health_task: asyncio.Task[None] | None
+    if _bootstrap_probe is not None:
+        _health_probe = _bootstrap_probe
+        _health_probe.set_readiness_check(_ingest_readiness)
+        owns_probe = False
+        health_task = None  # already running in caller
+    else:
+        owns_probe = True
+        health_task = None  # assigned below
 
     logger.remove()
     logger.add(
@@ -506,12 +528,13 @@ async def main() -> None:
     signal.signal(signal.SIGTERM, _handle_signal)
     signal.signal(signal.SIGINT, _handle_signal)
 
-    # Start health probe FIRST so Railway sees liveness immediately
-    # while the rest of initialization proceeds.
-    health_task = asyncio.create_task(_health_probe.start(), name="IngestHealthProbe")
-    # Yield to event loop so the health probe can bind its port
-    # before any potentially slow/failing initialization runs.
-    await asyncio.sleep(0.1)
+    if owns_probe:
+        # Start health probe FIRST so Railway sees liveness immediately
+        # while the rest of initialization proceeds.
+        health_task = asyncio.create_task(_health_probe.start(), name="IngestHealthProbe")
+        # Yield to event loop so the health probe can bind its port
+        # before any potentially slow/failing initialization runs.
+        await asyncio.sleep(0.1)
 
     try:
         has_api_key = _validate_api_key()
@@ -543,10 +566,17 @@ async def main() -> None:
     except Exception as exc:
         _health_probe.set_detail("fatal_error", str(exc)[:120])
         logger.exception(f"Ingest bootstrap failed: {exc}")
-        raise
+        # Stay alive so the health probe keeps responding to Railway.
+        # (When launched via ingest_worker, the caller owns the probe and
+        #  will hold the process open; in standalone mode we wait here.)
+        if owns_probe and _shutdown_event:
+            with contextlib.suppress(asyncio.CancelledError):
+                await _shutdown_event.wait()
     finally:
-        health_task.cancel()
-        await _health_probe.stop()
+        if health_task is not None:
+            health_task.cancel()
+        if owns_probe:
+            await _health_probe.stop()
         await shutdown_persistent_storage()
         logger.info("Ingest service shutdown complete")
 

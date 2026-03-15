@@ -147,9 +147,25 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             logger.warning("CrossInstanceRelay failed to start — single-instance mode")
             relay = None
 
+    # ── Peer health checker (inter-service monitoring) ──
+    from infrastructure.peer_health import PeerHealthChecker
+
+    peer_checker: PeerHealthChecker | None = None
+    if _env_bool("ENABLE_PEER_HEALTH", True):
+        try:
+            peer_checker = PeerHealthChecker(self_name="api")
+            await peer_checker.start()
+            app.state.peer_health_checker = peer_checker
+        except Exception:
+            logger.warning("PeerHealthChecker failed to start — fleet health unavailable")
+            peer_checker = None
+
     try:
         yield
     finally:
+        if peer_checker is not None:
+            with suppress(Exception):
+                await peer_checker.stop()
         if relay is not None:
             with suppress(Exception):
                 await relay.stop()

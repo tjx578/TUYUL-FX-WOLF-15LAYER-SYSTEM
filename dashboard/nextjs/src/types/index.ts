@@ -167,6 +167,7 @@ export interface Trade {
 // ─── ACCOUNT ─────────────────────────────────────────────────
 
 export interface Account {
+  id: any;
   name: ReactNode;
   label: string;
   account_id: string;
