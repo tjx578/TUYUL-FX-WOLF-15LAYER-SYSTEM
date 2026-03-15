@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import json
 import logging
-
 from pathlib import Path
 from typing import Any
 
@@ -17,6 +16,7 @@ logger = logging.getLogger("tuyul.schemas")
 
 try:
     import jsonschema  # pyright: ignore[reportMissingModuleSource]
+
     HAS_JSONSCHEMA = True
 except ImportError:
     HAS_JSONSCHEMA = False
@@ -55,23 +55,10 @@ def validate_l12_signal(signal: dict[str, Any]) -> tuple[bool, list[str]]:
     - Constitution -> Dashboard
     - Dashboard -> Execution
     """
-    if not HAS_JSONSCHEMA:
-        logger.warning("Skipping L12 validation -- jsonschema not available")
-        return True, []
-
-    schema = _load_schema("l12_signal_schema.json")
-    if schema is None:
-        return False, ["Schema file not found"]
-
     errors: list[str] = []
-    try:
-        jsonschema.validate(instance=signal, schema=schema) # pyright: ignore[reportPossiblyUnboundVariable]
-    except jsonschema.ValidationError as e: # pyright: ignore[reportPossiblyUnboundVariable]
-        errors.append(f"Validation error: {e.message} at {list(e.absolute_path)}")
-    except jsonschema.SchemaError as e: # pyright: ignore[reportPossiblyUnboundVariable]
-        errors.append(f"Schema error: {e.message}")
 
-    # Constitutional boundary check: signal must NOT contain account state
+    # Constitutional boundary check: signal must NOT contain account state.
+    # This is a non-negotiable rule and runs regardless of jsonschema availability.
     forbidden_keys = {"balance", "equity", "account_balance", "lot_size", "risk_amount"}
     found_forbidden = forbidden_keys.intersection(signal.keys())
     if found_forbidden:
@@ -79,6 +66,20 @@ def validate_l12_signal(signal: dict[str, Any]) -> tuple[bool, list[str]]:
             f"CONSTITUTIONAL VIOLATION: L12 signal contains account-level keys: {found_forbidden}. "
             f"Lot sizing is dashboard authority, not analysis/constitution."
         )
+
+    if not HAS_JSONSCHEMA:
+        logger.warning("Skipping L12 schema validation -- jsonschema not available")
+    else:
+        schema = _load_schema("l12_signal_schema.json")
+        if schema is None:
+            errors.append("Schema file not found")
+        else:
+            try:
+                jsonschema.validate(instance=signal, schema=schema)  # pyright: ignore[reportPossiblyUnboundVariable]
+            except jsonschema.ValidationError as e:  # pyright: ignore[reportPossiblyUnboundVariable]
+                errors.append(f"Validation error: {e.message} at {list(e.absolute_path)}")
+            except jsonschema.SchemaError as e:  # pyright: ignore[reportPossiblyUnboundVariable]
+                errors.append(f"Schema error: {e.message}")
 
     if errors:
         for err in errors:
@@ -99,8 +100,8 @@ def validate_alert(alert: dict[str, Any]) -> tuple[bool, list[str]]:
 
     errors: list[str] = []
     try:
-        jsonschema.validate(instance=alert, schema=schema) # pyright: ignore[reportPossiblyUnboundVariable]
-    except jsonschema.ValidationError as e: # pyright: ignore[reportPossiblyUnboundVariable]
+        jsonschema.validate(instance=alert, schema=schema)  # pyright: ignore[reportPossiblyUnboundVariable]
+    except jsonschema.ValidationError as e:  # pyright: ignore[reportPossiblyUnboundVariable]
         errors.append(f"Validation error: {e.message}")
 
     return len(errors) == 0, errors
@@ -126,8 +127,7 @@ def validate_signal_contract(signal: dict[str, Any]) -> tuple[bool, list[str]]:
     version = str(signal.get("contract_version", ""))
     if version != FROZEN_SIGNAL_CONTRACT_VERSION:
         errors.append(
-            "Frozen SignalContract mismatch: "
-            f"expected {FROZEN_SIGNAL_CONTRACT_VERSION}, got {version or 'missing'}"
+            f"Frozen SignalContract mismatch: expected {FROZEN_SIGNAL_CONTRACT_VERSION}, got {version or 'missing'}"
         )
 
     if errors:
