@@ -28,6 +28,7 @@ Upgrade (v3):
 import asyncio
 import contextlib
 import importlib
+import itertools
 import json
 import os
 import time
@@ -125,8 +126,10 @@ def _build_pipeline_data(pair: str, verdict_data: dict[str, Any]) -> dict[str, A
         confidence_num = float(confidence)
 
     wolf_status = str(verdict_data.get("wolf_status", "—"))
-    latency = int(cast(dict[str, Any], verdict_data.get("system", {})).get("latency_ms", 0)
-                  or gates_raw.get("gate_8_latency_val", 0))
+    latency = int(
+        cast(dict[str, Any], verdict_data.get("system", {})).get("latency_ms", 0)
+        or gates_raw.get("gate_8_latency_val", 0)
+    )
 
     gate_list: list[dict[str, Any]] = []
     for key, label in _GATE_LABELS.items():
@@ -150,15 +153,21 @@ def _build_pipeline_data(pair: str, verdict_data: dict[str, Any]) -> dict[str, A
     for ldef in _LAYER_DEFS:
         lid = ldef["id"]
         val, detail = layer_score_map.get(lid, ("—", "—"))
-        status = "pass" if lid != "L12" else ("pass" if pass_count == total_gates else ("warn" if pass_count >= 7 else "fail"))
-        layer_list.append({
-            "id": lid,
-            "name": ldef["name"],
-            "zone": ldef["zone"],
-            "status": status,
-            "val": val,
-            "detail": detail,
-        })
+        status = (
+            "pass"
+            if lid != "L12"
+            else ("pass" if pass_count == total_gates else ("warn" if pass_count >= 7 else "fail"))
+        )
+        layer_list.append(
+            {
+                "id": lid,
+                "name": ldef["name"],
+                "zone": ldef["zone"],
+                "status": status,
+                "val": val,
+                "detail": detail,
+            }
+        )
 
     entry = {
         "price": execution.get("entry_price", 0),
@@ -201,14 +210,14 @@ def _build_pipeline_data(pair: str, verdict_data: dict[str, Any]) -> dict[str, A
         },
     }
 
+
 # Maximum concurrent WebSocket connections per manager
 MAX_WS_CONNECTIONS = int(os.getenv("WS_MAX_CONNECTIONS", "50"))
 # Deprecated: auth is now always enforced regardless of this flag.
 WS_REQUIRE_AUTH = os.getenv("WS_REQUIRE_AUTH", "true").strip().lower() in {"1", "true", "yes", "on"}
 if not WS_REQUIRE_AUTH:
     logger.warning(
-        "WS_REQUIRE_AUTH=false is deprecated and ignored. "
-        "WebSocket auth is now always enforced. Remove this env var."
+        "WS_REQUIRE_AUTH=false is deprecated and ignored. WebSocket auth is now always enforced. Remove this env var."
     )
 
 # Tick-by-tick push interval (near real-time, batched per 100ms to avoid flood)
@@ -237,6 +246,7 @@ MESSAGE_BUFFER_SIZE = 100  # last N messages kept for replay on reconnect
 # ---------------------------------------------------------------------------
 # Candle Aggregator -- builds OHLC bars from tick stream
 # ---------------------------------------------------------------------------
+
 
 class CandleBar(TypedDict):
     open: float
@@ -277,12 +287,14 @@ class CandleAggregator:
             if current is None or current["ts_open"] != bar_open_ts:
                 # New bar -- emit old one if exists
                 if current is not None:
-                    completed.append({
-                        "symbol": symbol,
-                        "timeframe": tf_name,
-                        "bar": current,
-                        "status": "closed",
-                    })
+                    completed.append(
+                        {
+                            "symbol": symbol,
+                            "timeframe": tf_name,
+                            "bar": current,
+                            "status": "closed",
+                        }
+                    )
                 # Start new bar
                 self._bars[symbol][tf_name] = {
                     "open": mid,
@@ -316,6 +328,7 @@ _candle_agg = CandleAggregator()
 # Connection Manager with heartbeat + message buffer
 # ---------------------------------------------------------------------------
 
+
 class ConnectionManager:
     """Manages WebSocket connections with authentication, heartbeat, and replay buffer."""
 
@@ -329,6 +342,8 @@ class ConnectionManager:
         self._session_keys: dict[fastapi.WebSocket, str] = {}
         # Ring buffer of recent messages for replay on reconnect
         self._message_buffer: deque[dict[str, object]] = deque(maxlen=buffer_size)
+        # Monotonic sequence counter for deterministic gap detection
+        self._seq_counter = itertools.count(1)
 
     async def connect(self, websocket: fastapi.WebSocket) -> bool:
         """
@@ -338,9 +353,7 @@ class ConnectionManager:
         """
         # Enforce connection cap
         if len(self.active_connections) >= MAX_WS_CONNECTIONS:
-            logger.warning(
-                f"WS [{self.name}] max connections reached ({MAX_WS_CONNECTIONS}), rejecting"
-            )
+            logger.warning(f"WS [{self.name}] max connections reached ({MAX_WS_CONNECTIONS}), rejecting")
             await websocket.close(code=4429, reason="Too many connections")
             return False
 
@@ -454,20 +467,32 @@ class ConnectionManager:
         """Store message in replay buffer."""
         self._message_buffer.append(message)
 
-    async def replay_buffer(self, websocket: fastapi.WebSocket, since_ts: float | None = None) -> None:
+    async def replay_buffer(
+        self,
+        websocket: fastapi.WebSocket,
+        since_ts: float | None = None,
+        since_seq: int | None = None,
+    ) -> None:
         """
         Replay buffered messages to a reconnecting client.
 
         Args:
             websocket: The reconnected client.
             since_ts: Only replay messages after this timestamp. If None, replay all.
+            since_seq: Only replay messages with seq > since_seq (preferred over since_ts).
         """
         replayed = 0
         for msg in self._message_buffer:
-            msg_ts_raw = msg.get("ts", 0.0)
-            msg_ts = float(msg_ts_raw) if isinstance(msg_ts_raw, (int, float)) else 0.0
-            if since_ts is not None and msg_ts <= since_ts:
-                continue
+            # Prefer seq-based filtering when available
+            if since_seq is not None:
+                msg_seq = msg.get("seq", 0)
+                if isinstance(msg_seq, int) and msg_seq <= since_seq:
+                    continue
+            elif since_ts is not None:
+                msg_ts_raw = msg.get("ts", 0.0)
+                msg_ts = float(msg_ts_raw) if isinstance(msg_ts_raw, (int, float)) else 0.0
+                if msg_ts <= since_ts:
+                    continue
             try:
                 await websocket.send_json(msg)
                 replayed += 1
@@ -477,7 +502,11 @@ class ConnectionManager:
             logger.debug(f"WS [{self.name}] replayed {replayed} buffered messages")
 
     async def broadcast(self, message: dict[str, Any]) -> None:
-        """Broadcast message to all connected clients and buffer it."""
+        """Broadcast message to all connected clients and buffer it.
+
+        Stamps each message with a monotonic ``seq`` for client-side gap detection.
+        """
+        message["seq"] = next(self._seq_counter)
         self.buffer_message(message)
         disconnected: set[fastapi.WebSocket] = set()
 
@@ -525,17 +554,13 @@ async def notify_price_update():
 
 async def publish_live_update(topic: str, payload: dict[str, object]) -> None:
     """Publish an event to /ws/live subscribers using versioned envelope."""
-    await live_manager.broadcast(
-        _ws_event(f"live_event.{topic}", payload)
-    )
+    await live_manager.broadcast(_ws_event(f"live_event.{topic}", payload))
 
 
 async def publish_signal_update(signal: Mapping[str, Any]) -> None:
     """Publish a single frozen signal update to /ws/signals subscribers."""
     payload = {str(k): v for k, v in signal.items()}
-    await signal_manager.broadcast(
-        _ws_event("signals.update", {"signal": payload})
-    )
+    await signal_manager.broadcast(_ws_event("signals.update", {"signal": payload}))
 
 
 async def publish_pipeline_update(
@@ -561,10 +586,13 @@ async def publish_pipeline_update(
         payload_map = _build_pipeline_data(pair_upper, verdict)
 
     await pipeline_manager.broadcast(
-        _ws_event("pipeline.update", {
-            "pair": pair_upper,
-            "pipeline": payload_map,
-        })
+        _ws_event(
+            "pipeline.update",
+            {
+                "pair": pair_upper,
+                "pipeline": payload_map,
+            },
+        )
     )
     return True
 
@@ -583,6 +611,7 @@ def _get_risk_manager():
     if _cached_risk_manager is None:
         try:
             from risk.risk_manager import RiskManager as _RM  # noqa: N814, PLC0415
+
             _cached_risk_manager = _RM.get_instance()
         except Exception:
             _cached_risk_manager = None
@@ -597,6 +626,7 @@ def _get_circuit_breaker():
             # CircuitBreaker requires initial_balance; try loading from config
             from config_loader import load_risk  # noqa: PLC0415
             from risk.circuit_breaker import CircuitBreaker as _CB  # noqa: N814, PLC0415
+
             risk_cfg = load_risk()
             initial_balance = risk_cfg.get("initial_balance", 10_000.0)
             _cached_circuit_breaker = _CB(initial_balance=initial_balance)
@@ -608,6 +638,7 @@ def _get_circuit_breaker():
 # ---------------------------------------------------------------------------
 # WS /ws/prices -- Tick-by-tick price stream
 # ---------------------------------------------------------------------------
+
 
 @router.websocket("/ws/prices")
 async def websocket_prices(websocket: fastapi.WebSocket):
@@ -634,7 +665,9 @@ async def websocket_prices(websocket: fastapi.WebSocket):
                 await price_manager.replay_buffer(websocket, float(since_ts))
 
         # Send initial snapshot
-        prices: dict[str, dict[str, Any]] = await _price_feed.get_latest_prices_async() if hasattr(_price_feed, "get_latest_prices_async") else {}
+        prices: dict[str, dict[str, Any]] = (
+            await _price_feed.get_latest_prices_async() if hasattr(_price_feed, "get_latest_prices_async") else {}
+        )
         snapshot_msg = _ws_event("price.snapshot", {"prices": prices})
         await websocket.send_json(snapshot_msg)
 
@@ -652,7 +685,9 @@ async def websocket_prices(websocket: fastapi.WebSocket):
             except TimeoutError:
                 pass  # Fallback: check anyway after TICK_BATCH_INTERVAL
 
-            current: dict[str, dict[str, Any]] = await _price_feed.get_latest_prices_async() if hasattr(_price_feed, "get_latest_prices_async") else {}
+            current: dict[str, dict[str, Any]] = (
+                await _price_feed.get_latest_prices_async() if hasattr(_price_feed, "get_latest_prices_async") else {}
+            )
             changed: dict[str, dict[str, Any]] = {}
 
             for symbol, price_data in current.items():
@@ -685,6 +720,7 @@ async def websocket_prices(websocket: fastapi.WebSocket):
 # ---------------------------------------------------------------------------
 # WS /ws/trades -- Event-driven trade updates
 # ---------------------------------------------------------------------------
+
 
 @router.websocket("/ws/trades")
 async def websocket_trades(websocket: fastapi.WebSocket):
@@ -729,10 +765,15 @@ async def websocket_trades(websocket: fastapi.WebSocket):
                 del last_trade_snapshot[trade_id]
 
             if changed_trades or removed_trade_ids:
-                await websocket.send_json(_ws_event("trade.update", {
-                    "changed": [t.model_dump() for t in changed_trades],
-                    "removed": list(removed_trade_ids),
-                }))
+                await websocket.send_json(
+                    _ws_event(
+                        "trade.update",
+                        {
+                            "changed": [t.model_dump() for t in changed_trades],
+                            "removed": list(removed_trade_ids),
+                        },
+                    )
+                )
 
             # 250ms for near-instant trade event delivery
             await asyncio.sleep(TRADE_CHECK_INTERVAL)
@@ -748,6 +789,7 @@ async def websocket_trades(websocket: fastapi.WebSocket):
 # ---------------------------------------------------------------------------
 # WS /ws/candles -- Real-time candle bar stream
 # ---------------------------------------------------------------------------
+
 
 @router.websocket("/ws/candles")
 async def websocket_candles(websocket: fastapi.WebSocket):
@@ -786,6 +828,7 @@ async def websocket_candles(websocket: fastapi.WebSocket):
 # ---------------------------------------------------------------------------
 # WS /ws/risk -- Risk state stream
 # ---------------------------------------------------------------------------
+
 
 @router.websocket("/ws/risk")
 async def websocket_risk(websocket: fastapi.WebSocket):
@@ -1035,9 +1078,14 @@ async def websocket_equity(websocket: fastapi.WebSocket):
 
     try:
         # Send initial snapshot with history
-        await websocket.send_json(_ws_event("equity.snapshot", {
-            "history": list(_equity_history),
-        }))
+        await websocket.send_json(
+            _ws_event(
+                "equity.snapshot",
+                {
+                    "history": list(_equity_history),
+                },
+            )
+        )
 
         while True:
             # Fetch current account state
@@ -1045,6 +1093,7 @@ async def websocket_equity(websocket: fastapi.WebSocket):
 
             try:
                 from dashboard.account_manager import AccountManager  # noqa: PLC0415
+
                 am = AccountManager()
                 accounts = await am.list_accounts_async()
 
@@ -1065,32 +1114,38 @@ async def websocket_equity(websocket: fastapi.WebSocket):
 
                     drawdown_pct = _compute_drawdown(equity, peak_equity)
 
-                    equity_point.update({
-                        "equity": equity,
-                        "balance": balance,
-                        "floating_pnl": floating_pnl,
-                        "peak_equity": peak_equity,
-                        "drawdown_pct": drawdown_pct,
-                    })
+                    equity_point.update(
+                        {
+                            "equity": equity,
+                            "balance": balance,
+                            "floating_pnl": floating_pnl,
+                            "peak_equity": peak_equity,
+                            "drawdown_pct": drawdown_pct,
+                        }
+                    )
                 else:
-                    equity_point.update({
+                    equity_point.update(
+                        {
+                            "equity": 0.0,
+                            "balance": 0.0,
+                            "floating_pnl": 0.0,
+                            "peak_equity": 0.0,
+                            "drawdown_pct": 0.0,
+                        }
+                    )
+
+            except Exception as exc:
+                logger.debug(f"Equity fetch failed: {exc}")
+                equity_point.update(
+                    {
                         "equity": 0.0,
                         "balance": 0.0,
                         "floating_pnl": 0.0,
                         "peak_equity": 0.0,
                         "drawdown_pct": 0.0,
-                    })
-
-            except Exception as exc:
-                logger.debug(f"Equity fetch failed: {exc}")
-                equity_point.update({
-                    "equity": 0.0,
-                    "balance": 0.0,
-                    "floating_pnl": 0.0,
-                    "peak_equity": 0.0,
-                    "drawdown_pct": 0.0,
-                    "error": str(exc),
-                })
+                        "error": str(exc),
+                    }
+                )
 
             raw_equity = equity_point.get("equity", 0.0)
             current_equity = float(raw_equity) if isinstance(raw_equity, (int, float)) else 0.0
@@ -1118,6 +1173,7 @@ async def websocket_equity(websocket: fastapi.WebSocket):
 # ---------------------------------------------------------------------------
 # WS /ws/verdict -- Real-time L12 verdict stream
 # ---------------------------------------------------------------------------
+
 
 @router.websocket("/ws/verdict")
 async def websocket_verdict(websocket: fastapi.WebSocket):
@@ -1148,10 +1204,15 @@ async def websocket_verdict(websocket: fastapi.WebSocket):
         for pair, verdict in snapshot.items():
             signatures[pair] = _verdict_signature(verdict)
 
-        await websocket.send_json(_ws_event("verdict.snapshot", {
-            "pair": pair_filter,
-            "verdicts": snapshot,
-        }))
+        await websocket.send_json(
+            _ws_event(
+                "verdict.snapshot",
+                {
+                    "pair": pair_filter,
+                    "verdicts": snapshot,
+                },
+            )
+        )
 
         with contextlib.suppress(Exception):
             pubsub = redis_client.pubsub()
@@ -1182,20 +1243,30 @@ async def websocket_verdict(websocket: fastapi.WebSocket):
                             verdict: dict[str, Any] = {k: v for k, v in verdict_map.items()}
                             signature = _verdict_signature(verdict)
                             signatures[pair] = signature
-                            await websocket.send_json(_ws_event("verdict.update", {
-                                "pair": pair,
-                                "verdict": verdict,
-                            }))
+                            await websocket.send_json(
+                                _ws_event(
+                                    "verdict.update",
+                                    {
+                                        "pair": pair,
+                                        "verdict": verdict,
+                                    },
+                                )
+                            )
                             pushed = True
 
             now_ts = time.time()
             if (not pushed) and (now_ts - last_scan_ts >= VERDICT_FALLBACK_INTERVAL):
                 changed = await _detect_changed_verdicts(signatures, pair_filter)
                 for pair, verdict in changed.items():
-                    await websocket.send_json(_ws_event("verdict.update", {
-                        "pair": pair,
-                        "verdict": verdict,
-                    }))
+                    await websocket.send_json(
+                        _ws_event(
+                            "verdict.update",
+                            {
+                                "pair": pair,
+                                "verdict": verdict,
+                            },
+                        )
+                    )
                 last_scan_ts = now_ts
 
             await asyncio.sleep(0.05)
@@ -1215,6 +1286,7 @@ async def websocket_verdict(websocket: fastapi.WebSocket):
 # ---------------------------------------------------------------------------
 # WS /ws/signals -- Real-time frozen SignalContract stream
 # ---------------------------------------------------------------------------
+
 
 @router.websocket("/ws/signals")
 async def websocket_signals(websocket: fastapi.WebSocket):
@@ -1245,10 +1317,15 @@ async def websocket_signals(websocket: fastapi.WebSocket):
         for key, signal in snapshot.items():
             signatures[key] = _signal_signature(signal)
 
-        await websocket.send_json(_ws_event("signals.snapshot", {
-            "symbol": symbol_filter,
-            "signals": list(snapshot.values()),
-        }))
+        await websocket.send_json(
+            _ws_event(
+                "signals.snapshot",
+                {
+                    "symbol": symbol_filter,
+                    "signals": list(snapshot.values()),
+                },
+            )
+        )
 
         with contextlib.suppress(Exception):
             pubsub = redis_client.pubsub()
@@ -1266,18 +1343,28 @@ async def websocket_signals(websocket: fastapi.WebSocket):
                     latest = _signal_snapshot(symbol_filter)
                     for key, signal in latest.items():
                         signatures[key] = _signal_signature(signal)
-                        await websocket.send_json(_ws_event("signals.update", {
-                            "signal": signal,
-                        }))
+                        await websocket.send_json(
+                            _ws_event(
+                                "signals.update",
+                                {
+                                    "signal": signal,
+                                },
+                            )
+                        )
                         pushed = True
 
             now_ts = time.time()
             if (not pushed) and (now_ts - last_scan_ts >= SIGNAL_FALLBACK_INTERVAL):
                 changed = _detect_changed_signals(signatures, symbol_filter)
                 for signal in changed.values():
-                    await websocket.send_json(_ws_event("signals.update", {
-                        "signal": signal,
-                    }))
+                    await websocket.send_json(
+                        _ws_event(
+                            "signals.update",
+                            {
+                                "signal": signal,
+                            },
+                        )
+                    )
                 last_scan_ts = now_ts
 
             await asyncio.sleep(0.05)
@@ -1297,6 +1384,7 @@ async def websocket_signals(websocket: fastapi.WebSocket):
 # ---------------------------------------------------------------------------
 # WS /ws/pipeline -- Real-time pipeline panel stream
 # ---------------------------------------------------------------------------
+
 
 @router.websocket("/ws/pipeline")
 async def websocket_pipeline(websocket: fastapi.WebSocket):
@@ -1327,10 +1415,15 @@ async def websocket_pipeline(websocket: fastapi.WebSocket):
         for pair, payload in snapshot.items():
             signatures[pair] = _verdict_signature(payload)
 
-        await websocket.send_json(_ws_event("pipeline.snapshot", {
-            "pair": pair_filter,
-            "pipelines": snapshot,
-        }))
+        await websocket.send_json(
+            _ws_event(
+                "pipeline.snapshot",
+                {
+                    "pair": pair_filter,
+                    "pipelines": snapshot,
+                },
+            )
+        )
 
         with contextlib.suppress(Exception):
             pubsub = redis_client.pubsub()
@@ -1348,20 +1441,30 @@ async def websocket_pipeline(websocket: fastapi.WebSocket):
                     latest = await _pipeline_snapshot(pair_filter)
                     for pair, payload in latest.items():
                         signatures[pair] = _verdict_signature(payload)
-                        await websocket.send_json(_ws_event("pipeline.update", {
-                            "pair": pair,
-                            "pipeline": payload,
-                        }))
+                        await websocket.send_json(
+                            _ws_event(
+                                "pipeline.update",
+                                {
+                                    "pair": pair,
+                                    "pipeline": payload,
+                                },
+                            )
+                        )
                         pushed = True
 
             now_ts = time.time()
             if (not pushed) and (now_ts - last_scan_ts >= PIPELINE_FALLBACK_INTERVAL):
                 changed = await _detect_changed_pipeline(signatures, pair_filter)
                 for pair, payload in changed.items():
-                    await websocket.send_json(_ws_event("pipeline.update", {
-                        "pair": pair,
-                        "pipeline": payload,
-                    }))
+                    await websocket.send_json(
+                        _ws_event(
+                            "pipeline.update",
+                            {
+                                "pair": pair,
+                                "pipeline": payload,
+                            },
+                        )
+                    )
                 last_scan_ts = now_ts
 
             await asyncio.sleep(0.05)
@@ -1382,6 +1485,7 @@ async def websocket_pipeline(websocket: fastapi.WebSocket):
 # WS /ws/live -- Unified live feed (signals + accounts + trades)
 # ---------------------------------------------------------------------------
 
+
 @router.websocket("/ws/live")
 async def websocket_live_feed(websocket: fastapi.WebSocket):
     """Unified live feed for dashboard widgets and risk preview modal state."""
@@ -1390,19 +1494,29 @@ async def websocket_live_feed(websocket: fastapi.WebSocket):
         return
 
     try:
-        await websocket.send_json(_ws_event("live.snapshot", {
-            "signals": _signal_service.list_all(),
-            "accounts": [a.model_dump() for a in await _account_manager.list_accounts_async()],
-            "trades": [t.model_dump() for t in await _trade_ledger.get_active_trades_async()],
-        }))
+        await websocket.send_json(
+            _ws_event(
+                "live.snapshot",
+                {
+                    "signals": _signal_service.list_all(),
+                    "accounts": [a.model_dump() for a in await _account_manager.list_accounts_async()],
+                    "trades": [t.model_dump() for t in await _trade_ledger.get_active_trades_async()],
+                },
+            )
+        )
 
         while True:
             # Keepalive periodic state update for clients that miss individual events
-            await websocket.send_json(_ws_event("live.heartbeat_state", {
-                "signal_count": len(_signal_service.list_all()),
-                "account_count": len(await _account_manager.list_accounts_async()),
-                "active_trade_count": len(await _trade_ledger.get_active_trades_async()),
-            }))
+            await websocket.send_json(
+                _ws_event(
+                    "live.heartbeat_state",
+                    {
+                        "signal_count": len(_signal_service.list_all()),
+                        "account_count": len(await _account_manager.list_accounts_async()),
+                        "active_trade_count": len(await _trade_ledger.get_active_trades_async()),
+                    },
+                )
+            )
             await asyncio.sleep(1.0)
 
     except fastapi.WebSocketDisconnect:

@@ -108,6 +108,7 @@ def build_l12_synthesis(
             ),
             "L8_tii_sym": tii_sym,
             "L8_integrity_index": integrity,
+            "L8_twms_score": layer_results.get("L8", {}).get("twms_score", 0.0),
             "L9_dvg_confidence": layer_results.get("L9", {}).get("dvg_confidence", 0.0),
             "L9_liquidity_score": layer_results.get("L9", {}).get("liquidity_score", 0.0),
             "conf12": conf12,
@@ -208,6 +209,7 @@ def build_l12_synthesis(
     synthesis["bayesian_ci_high"] = layer_results.get("L7", {}).get("bayesian_ci_high", 0.0)
     synthesis["mc_passed_threshold"] = layer_results.get("L7", {}).get("mc_passed_threshold", False)
     synthesis["risk_of_ruin"] = layer_results.get("L7", {}).get("risk_of_ruin", 0.0)
+    synthesis["profit_factor"] = layer_results.get("L7", {}).get("profit_factor", 0.0)
     synthesis["l7_validation"] = layer_results.get("L7", {}).get("validation", "FAIL")
 
     # Inference state — ephemeral abstract state from LiveContextBus

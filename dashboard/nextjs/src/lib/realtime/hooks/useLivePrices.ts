@@ -6,6 +6,7 @@ import { connectLiveUpdates } from "@/lib/realtime/realtimeClient";
 import type { WsConnectionStatus } from "@/lib/realtime/connectionState";
 import { STALE_THRESHOLDS_MS } from "@/lib/realtime/connectionState";
 import { mergeMap } from "@/lib/realtime/merge";
+import { createRafBatcher } from "@/lib/realtime/rafBatcher";
 
 interface UseLivePricesResult {
   priceMap: Record<string, PriceData>;
@@ -21,8 +22,12 @@ interface UseLivePricesResult {
  * Stream:    /ws/prices — Record<string, PriceData> deltas.
  * Merge:     mergeMap — WS delta keys override snapshot keys.
  * Stale:     3s no message → isStale = true.
+ *
+ * @param enabled - Whether to connect to the price stream.
+ * @param rafBatch - Enable RAF batching for ultra-high symbol counts (50+).
+ *                   When true, price updates are collapsed to one setState per frame.
  */
-export function useLivePrices(enabled = true): UseLivePricesResult {
+export function useLivePrices(enabled = true, rafBatch = false): UseLivePricesResult {
   const [priceMap, setPriceMap] = useState<Record<string, PriceData>>({});
   const [status, setStatus] = useState<WsConnectionStatus>("CONNECTING");
   const [isStale, setIsStale] = useState(false);
@@ -42,14 +47,34 @@ export function useLivePrices(enabled = true): UseLivePricesResult {
   useEffect(() => {
     if (!enabled) return;
 
+    // Optional RAF batcher for ultra-high symbol counts
+    const batcher = rafBatch
+      ? createRafBatcher<PriceData>({
+        onFlush: (batch) => {
+          setPriceMap((prev) => mergeMap(prev, batch));
+          setLastUpdatedAt(Date.now());
+          resetStaleTimer();
+        },
+      })
+      : null;
+
     const controls = connectLiveUpdates({
       path: "/ws/prices",
       onEvent: (event) => {
         if (event.type === "PriceUpdated" || event.type === "PricesSnapshot") {
           const payload = event.payload as Record<string, PriceData>;
-          setPriceMap((prev) => mergeMap(prev, payload));
-          setLastUpdatedAt(Date.now());
-          resetStaleTimer();
+
+          if (batcher) {
+            // RAF-batched: queue each symbol separately for last-write-wins collapse
+            for (const [symbol, data] of Object.entries(payload)) {
+              batcher.push(symbol, data);
+            }
+          } else {
+            // Direct dispatch (default path for low symbol counts)
+            setPriceMap((prev) => mergeMap(prev, payload));
+            setLastUpdatedAt(Date.now());
+            resetStaleTimer();
+          }
         }
       },
       onStatusChange: (s) => {
@@ -69,9 +94,10 @@ export function useLivePrices(enabled = true): UseLivePricesResult {
 
     return () => {
       controls.close();
+      batcher?.dispose();
       if (staleTimerRef.current) clearTimeout(staleTimerRef.current);
     };
-  }, [enabled, resetStaleTimer]);
+  }, [enabled, rafBatch, resetStaleTimer]);
 
   return { priceMap, status, isStale, lastUpdatedAt };
 }
