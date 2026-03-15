@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import time
+from unittest.mock import patch
+
+import pytest
 
 from analysis.incremental_monte_carlo import (
     IncrementalDelta,
@@ -19,6 +22,28 @@ def _pair(symbol: str, win_prob: float = 0.55, avg_win: float = 100.0, avg_loss:
         avg_win=avg_win,
         avg_loss=avg_loss,
     )
+
+
+def _fake_mc_result() -> PortfolioMCResult:
+    return PortfolioMCResult(
+        portfolio_win_rate=0.55,
+        portfolio_profit_factor=1.3,
+        portfolio_risk_of_ruin=0.05,
+        portfolio_max_drawdown=-0.08,
+        portfolio_expected_value=100.0,
+        diversification_ratio=0.7,
+        advisory_flag="PASS",
+    )
+
+
+@pytest.fixture(autouse=True)
+def _mock_mc_engine():
+    """Mock the underlying MC simulation to avoid scipy dependency."""
+    with patch(
+        "analysis.incremental_monte_carlo.run_portfolio_monte_carlo",
+        side_effect=lambda *a, **kw: _fake_mc_result(),
+    ):
+        yield
 
 
 class TestFullRun:

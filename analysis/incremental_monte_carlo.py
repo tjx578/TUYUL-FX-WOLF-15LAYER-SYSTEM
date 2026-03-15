@@ -42,6 +42,7 @@ class MCCacheEntry:
     pair_hash: str
     n_simulations: int
     is_incremental: bool = False  # True if this was an incremental update
+    staleness_threshold: float = _STALENESS_THRESHOLD_SECONDS
 
     @property
     def age_seconds(self) -> float:
@@ -49,7 +50,7 @@ class MCCacheEntry:
 
     @property
     def is_stale(self) -> bool:
-        return self.age_seconds > _STALENESS_THRESHOLD_SECONDS
+        return self.age_seconds > self.staleness_threshold
 
 
 @dataclass
@@ -132,6 +133,25 @@ class IncrementalMonteCarlo:
         self._pair_specs = list(pair_specs)
         self._correlations = dict(correlations) if correlations else {}
 
+        if not pair_specs:
+            empty = PortfolioMCResult(
+                portfolio_win_rate=0.0,
+                portfolio_profit_factor=0.0,
+                portfolio_risk_of_ruin=1.0,
+                portfolio_max_drawdown=0.0,
+                portfolio_expected_value=0.0,
+                diversification_ratio=0.0,
+                advisory_flag="BLOCK",
+            )
+            self._cache = MCCacheEntry(
+                result=empty,
+                computed_at=time.time(),
+                pair_hash="",
+                n_simulations=0,
+                staleness_threshold=self._staleness,
+            )
+            return empty
+
         result = run_portfolio_monte_carlo(
             pair_specs=pair_specs,
             historical_correlations=correlations,
@@ -145,6 +165,7 @@ class IncrementalMonteCarlo:
             pair_hash=self._compute_pair_hash(pair_specs),
             n_simulations=self._n_sims_full,
             is_incremental=False,
+            staleness_threshold=self._staleness,
         )
 
         self._persist_cache()
@@ -208,6 +229,7 @@ class IncrementalMonteCarlo:
                 pair_hash=self._compute_pair_hash(updated_specs),
                 n_simulations=self._n_sims_incr,
                 is_incremental=True,
+                staleness_threshold=self._staleness,
             )
             self._persist_cache()
 
@@ -258,6 +280,7 @@ class IncrementalMonteCarlo:
                 computed_at=time.time(),
                 pair_hash="",
                 n_simulations=0,
+                staleness_threshold=self._staleness,
             )
             delta = None
             if old_result:
@@ -286,6 +309,7 @@ class IncrementalMonteCarlo:
             pair_hash=self._compute_pair_hash(updated_specs),
             n_simulations=self._n_sims_incr,
             is_incremental=True,
+            staleness_threshold=self._staleness,
         )
         self._persist_cache()
 
