@@ -39,6 +39,14 @@ Output contract (consumed by L4, L12 synthesis, L13, L15):
     atr_expansion           float       vol_factor ratio [0.7, 2.0]
     liquidity_score         float 0-1   sweep quality from engine
 
+    === v7 SMC event markers (ADDITIVE) ===
+    fvg_detected            bool        Fair Value Gap detected (3-candle imbalance)
+    ob_detected             bool        Order Block detected (impulse + retest)
+    fib_retracement_hit     bool        Price near key Fibonacci level
+    volume_profile_poc      float       POC price level (highest-volume bin mid)
+    volume_profile_poc_hit  bool        Price near POC
+    vpc_zones               list[dict]  High-volume cluster zones [{price_low,price_high,volume,strength}]
+
 Version: v6 (Logistic Edge Enrichment + Drift Context)
 Preserves all v5-final infrastructure:
     - ATR-based vol_factor, confluence band, TRQ3D normalization
@@ -46,13 +54,12 @@ Preserves all v5-final infrastructure:
     - BOS + range filter structure, Volume Profile, Order Block, FVG
     - LiquiditySweepScorer integration, per-call TRQ3D
     - Balanced scoring: 25+25+20+20+10 = 100 max (UNCHANGED)
-"""
+"""  # noqa: N999
 
 from __future__ import annotations
 
 import logging
 import math
-
 from typing import Any
 
 import numpy as np
@@ -82,21 +89,22 @@ _EDGE_BIAS: float = -3.5
 
 # Drift context thresholds — same for BULLISH and BEARISH
 # Drift = |price - VWAP| / price (distance from equilibrium)
-_DRIFT_FRESH: float = 0.003       # entry phase: full edge
-_DRIFT_EXTENDING: float = 0.008   # continuation: moderate edge
+_DRIFT_FRESH: float = 0.003  # entry phase: full edge
+_DRIFT_EXTENDING: float = 0.008  # continuation: moderate edge
 # Above EXTENDING = OVEREXTENDED: late entry
 
 # Drift context multipliers (NOT penalty — context factor)
 _DRIFT_FACTORS: dict[str, float] = {
-    "FRESH": 1.00,          # early entry → full conviction
-    "EXTENDING": 0.85,      # trend continuation → slightly reduced
-    "OVEREXTENDED": 0.65,   # late entry → reduced (not killed)
+    "FRESH": 1.00,  # early entry → full conviction
+    "EXTENDING": 0.85,  # trend continuation → slightly reduced
+    "OVEREXTENDED": 0.65,  # late entry → reduced (not killed)
 }
 
 
 # ═══════════════════════════════════════════════════════════════════════
 # §0.1  PURE MATH
 # ═══════════════════════════════════════════════════════════════════════
+
 
 def _sigmoid(x: float) -> float:
     """Numerically stable sigmoid σ(x) → (0, 1)."""
@@ -246,7 +254,10 @@ class L3TechnicalAnalyzer:
         confluence = self._find_confluence(highs, lows, closes, volumes, atr)
 
         trq3d = self._compute_trq3d(
-            symbol, candles_h1, candles_h4, candles_d1,
+            symbol,
+            candles_h1,
+            candles_h4,
+            candles_d1,
         )
 
         # Liquidity sweep scorer expects candle dicts + direction string
@@ -315,6 +326,13 @@ class L3TechnicalAnalyzer:
             "atr": atr,
             "atr_expansion": atr_expansion,
             "liquidity_score": liq_score,
+            # ── v7 SMC event markers (ADDITIVE) ───────────────────
+            "fvg_detected": confluence.get("fvg_detected", False),
+            "ob_detected": confluence.get("ob_detected", False),
+            "fib_retracement_hit": confluence.get("fib_retracement_hit", False),
+            "volume_profile_poc": confluence.get("volume_profile_poc", 0.0),
+            "volume_profile_poc_hit": confluence.get("volume_profile_poc_hit", False),
+            "vpc_zones": confluence.get("vpc_zones", []),
         }
 
     # ═══════════════════════════════════════════════════════════════
@@ -459,17 +477,23 @@ class L3TechnicalAnalyzer:
         down_move = l[:-1] - l[1:]
 
         plus_dm = np.where(
-            (up_move > down_move) & (up_move > 0), up_move, 0.0,
+            (up_move > down_move) & (up_move > 0),
+            up_move,
+            0.0,
         )
         minus_dm = np.where(
-            (down_move > up_move) & (down_move > 0), down_move, 0.0,
+            (down_move > up_move) & (down_move > 0),
+            down_move,
+            0.0,
         )
 
-        tr = np.maximum.reduce([
-            h[1:] - l[1:],
-            np.abs(h[1:] - c[:-1]),
-            np.abs(l[1:] - c[:-1]),
-        ])
+        tr = np.maximum.reduce(
+            [
+                h[1:] - l[1:],
+                np.abs(h[1:] - c[:-1]),
+                np.abs(l[1:] - c[:-1]),
+            ]
+        )
 
         def _rma(x: np.ndarray, n: int) -> np.ndarray:
             """Wilder smoothing (Running Moving Average)."""
@@ -548,20 +572,42 @@ class L3TechnicalAnalyzer:
         closes: list[float],
         volumes: list[float],
         atr: float,
-    ) -> dict[str, int]:
-        """Count smart-money confluence zones (max 4)."""
+    ) -> dict[str, Any]:
+        """Count smart-money confluence zones (max 4) + individual markers."""
         count = 0
 
-        if self._fib_retracement_hit(highs, lows, closes, atr):
-            count += 1
-        if self._volume_profile_poc_hit(closes, volumes, bins=20, atr=atr):
-            count += 1
-        if self._detect_orderblock(highs, lows, closes, atr):
-            count += 1
-        if self._detect_fvg(highs, lows, closes):
+        fib_hit = self._fib_retracement_hit(highs, lows, closes, atr)
+        if fib_hit:
             count += 1
 
-        return {"count": int(min(count, 4))}
+        poc_hit = self._volume_profile_poc_hit(closes, volumes, bins=20, atr=atr)
+        if poc_hit:
+            count += 1
+
+        ob_detected = self._detect_orderblock(highs, lows, closes, atr)
+        if ob_detected:
+            count += 1
+
+        fvg_detected = self._detect_fvg(highs, lows, closes)
+        if fvg_detected:
+            count += 1
+
+        # v7: Volume Profile POC price level (float)
+        poc_price = self._compute_poc_price(closes, volumes, bins=20)
+
+        # v7: Volume Profile Cluster zones
+        vpc_zones = self._compute_vpc_zones(closes, volumes, bins=20, atr=atr)
+
+        return {
+            "count": int(min(count, 4)),
+            # v7 individual event markers
+            "fvg_detected": fvg_detected,
+            "ob_detected": ob_detected,
+            "fib_retracement_hit": fib_hit,
+            "volume_profile_poc_hit": poc_hit,
+            "volume_profile_poc": poc_price,
+            "vpc_zones": vpc_zones,
+        }
 
     # ── Fibonacci ────────────────────────────────────────────────
 
@@ -624,7 +670,9 @@ class L3TechnicalAnalyzer:
         vol_by_bin = np.zeros(bins, dtype=np.float64)
 
         idxs = np.clip(
-            np.digitize(window_prices, edges) - 1, 0, bins - 1,
+            np.digitize(window_prices, edges) - 1,
+            0,
+            bins - 1,
         )
         for idx, v in zip(idxs, window_vols, strict=False):
             vol_by_bin[int(idx)] += float(v)
@@ -656,7 +704,8 @@ class L3TechnicalAnalyzer:
             return False
 
         ranges = np.array(highs[-30:], dtype=np.float64) - np.array(
-            lows[-30:], dtype=np.float64,
+            lows[-30:],
+            dtype=np.float64,
         )
         avg_r = float(np.mean(ranges[:-1]))
         if avg_r <= 0:
@@ -719,6 +768,99 @@ class L3TechnicalAnalyzer:
 
         return False
 
+    # ── Volume Profile POC price level (v7) ──────────────────────
+
+    @staticmethod
+    def _compute_poc_price(
+        closes: list[float],
+        volumes: list[float],
+        bins: int = 20,
+    ) -> float:
+        """Return the Point of Control price level (highest-volume bin mid).
+
+        Returns 0.0 on insufficient data.
+        """
+        if len(closes) < 30:
+            return 0.0
+
+        window_prices = np.array(closes[-30:], dtype=np.float64)
+        window_vols = np.array(volumes[-30:], dtype=np.float64)
+
+        p_min = float(np.min(window_prices))
+        p_max = float(np.max(window_prices))
+        if p_max <= p_min:
+            return 0.0
+
+        edges = np.linspace(p_min, p_max, bins + 1)
+        vol_by_bin = np.zeros(bins, dtype=np.float64)
+
+        idxs = np.clip(
+            np.digitize(window_prices, edges) - 1,
+            0,
+            bins - 1,
+        )
+        for idx, v in zip(idxs, window_vols, strict=False):
+            vol_by_bin[int(idx)] += float(v)
+
+        poc_bin = int(np.argmax(vol_by_bin))
+        return float((edges[poc_bin] + edges[poc_bin + 1]) / 2.0)
+
+    # ── Volume Profile Cluster zones (v7) ────────────────────────
+
+    @staticmethod
+    def _compute_vpc_zones(
+        closes: list[float],
+        volumes: list[float],
+        bins: int = 20,
+        atr: float = 0.0,
+    ) -> list[dict[str, Any]]:
+        """Compute Volume Profile Cluster (VPC) zones.
+
+        Returns a list of high-volume price zones where volume
+        exceeds 1.5× the average bin volume (HVN clusters).
+        Each zone: {"price_low", "price_high", "volume", "strength"}.
+        """
+        if len(closes) < 30:
+            return []
+
+        window_prices = np.array(closes[-30:], dtype=np.float64)
+        window_vols = np.array(volumes[-30:], dtype=np.float64)
+
+        p_min = float(np.min(window_prices))
+        p_max = float(np.max(window_prices))
+        if p_max <= p_min:
+            return []
+
+        edges = np.linspace(p_min, p_max, bins + 1)
+        vol_by_bin = np.zeros(bins, dtype=np.float64)
+
+        idxs = np.clip(
+            np.digitize(window_prices, edges) - 1,
+            0,
+            bins - 1,
+        )
+        for idx, v in zip(idxs, window_vols, strict=False):
+            vol_by_bin[int(idx)] += float(v)
+
+        avg_vol = float(np.mean(vol_by_bin))
+        if avg_vol <= 0:
+            return []
+
+        hvn_threshold = 1.5
+        zones: list[dict[str, Any]] = []
+        for i in range(bins):
+            if vol_by_bin[i] > avg_vol * hvn_threshold:
+                zones.append(
+                    {
+                        "price_low": round(float(edges[i]), 6),
+                        "price_high": round(float(edges[i + 1]), 6),
+                        "volume": round(float(vol_by_bin[i]), 2),
+                        "strength": round(float(vol_by_bin[i] / avg_vol), 4),
+                    }
+                )
+
+        return zones
+
     # ═══════════════════════════════════════════════════════════════
     # §6  TRQ-3D (per-call instance, ATR-normalized energy)
     # ═══════════════════════════════════════════════════════════════
@@ -762,10 +904,7 @@ class L3TechnicalAnalyzer:
         # ATR normalization (preferred over price-only)
         atr = L3TechnicalAnalyzer._compute_atr(highs, lows, closes, period=14)
 
-        if atr > 0:
-            normalized_energy = raw_energy / max(atr * 1000.0, 1e-9)
-        else:
-            normalized_energy = raw_energy / max(price, 1e-9)
+        normalized_energy = raw_energy / max(atr * 1000.0, 1e-09) if atr > 0 else raw_energy / max(price, 1e-09)
 
         energy = float(min(1.0, max(0.0, normalized_energy)))
 
@@ -808,9 +947,14 @@ class L3TechnicalAnalyzer:
         liq_pts = float(np.clip(liquidity_score, 0.0, 1.0)) * 20.0
         trq_pts = float(np.clip(trq3d_energy, 0.0, 1.0)) * 10.0
 
-        return int(min(100, round(
-            trend_pts + struct_pts + conf_pts + liq_pts + trq_pts,
-        )))
+        return int(
+            min(
+                100,
+                round(
+                    trend_pts + struct_pts + conf_pts + liq_pts + trq_pts,
+                ),
+            )
+        )
 
     # ═══════════════════════════════════════════════════════════════
     # §8  FALLBACK (insufficient data)
@@ -840,4 +984,11 @@ class L3TechnicalAnalyzer:
             "atr": 0.0,
             "atr_expansion": 1.0,
             "liquidity_score": 0.0,
+            # v7 SMC event markers
+            "fvg_detected": False,
+            "ob_detected": False,
+            "fib_retracement_hit": False,
+            "volume_profile_poc": 0.0,
+            "volume_profile_poc_hit": False,
+            "vpc_zones": [],
         }
