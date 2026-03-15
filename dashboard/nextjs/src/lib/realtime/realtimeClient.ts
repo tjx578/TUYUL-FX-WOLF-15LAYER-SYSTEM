@@ -31,6 +31,8 @@ export type WsConnectionStatus =
 export interface WsControls {
   close: () => void;
   send: (payload: unknown) => void;
+  /** Number of sequence gaps detected since connection opened. */
+  readonly gapCount: number;
 }
 
 // ─── RECONNECT CONFIG ────────────────────────────────────────
@@ -65,6 +67,10 @@ export function connectLiveUpdates(
   let lastMessageAt = Date.now();
   let visibilityPaused = false;
 
+  // Monotonic sequence tracking for gap detection
+  let lastSeq = 0;
+  let gapCount = 0;
+
   const wsBaseUrl = getWsBaseUrl();
   if (!wsBaseUrl || wsBaseUrl.trim() === "") {
     onStatusChange?.("DISCONNECTED");
@@ -73,7 +79,7 @@ export function connectLiveUpdates(
       reason:
         "NEXT_PUBLIC_WS_BASE_URL not configured. Set it to your Railway wss:// origin.",
     });
-    return { close: () => {}, send: () => {} };
+    return { close: () => { }, send: () => { }, gapCount: 0 };
   }
 
   const connect = () => {
@@ -97,6 +103,8 @@ export function connectLiveUpdates(
       if (intentionallyClosed) return;
       reconnectAttempt = 0;
       lastMessageAt = Date.now();
+      // Reset seq tracking on fresh connection (server may have restarted)
+      lastSeq = 0;
       onStatusChange?.("LIVE");
       startStaleTimer();
     };
@@ -108,6 +116,21 @@ export function connectLiveUpdates(
 
       try {
         const parsed = JSON.parse(msg.data as string);
+
+        // ── Monotonic seq# gap detection ──
+        const seq = typeof parsed.seq === "number" ? parsed.seq : 0;
+        if (seq > 0) {
+          if (lastSeq > 0 && seq !== lastSeq + 1) {
+            const missed = seq - lastSeq - 1;
+            gapCount++;
+            onDegradation?.({
+              mode: "DEGRADED",
+              reason: `Sequence gap detected: expected ${lastSeq + 1}, got ${seq} (${missed} message(s) lost)`,
+            });
+          }
+          lastSeq = seq;
+        }
+
         const event = WsEventSchema.parse(parsed);
         onEvent(event);
 
@@ -212,6 +235,9 @@ export function connectLiveUpdates(
       if (socket?.readyState === WebSocket.OPEN) {
         socket.send(JSON.stringify(payload));
       }
+    },
+    get gapCount() {
+      return gapCount;
     },
   };
 }

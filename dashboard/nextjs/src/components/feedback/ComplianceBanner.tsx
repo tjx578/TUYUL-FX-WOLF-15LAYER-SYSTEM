@@ -1,6 +1,6 @@
 "use client";
 
-import { useRiskStore } from "@/store/useRiskStore";
+import { useSystemStore } from "@/store/useSystemStore";
 
 function bannerTone(state?: string): string | null {
   if (!state || state === "COMPLIANCE_NORMAL") return null;
@@ -10,7 +10,7 @@ function bannerTone(state?: string): string | null {
 }
 
 export default function ComplianceBanner() {
-  const complianceState = useRiskStore((state) => state.complianceState);
+  const complianceState = useSystemStore((state) => state.complianceState);
   const tone = bannerTone(complianceState);
 
   if (!tone) return null;

@@ -6,7 +6,7 @@
 // ============================================================
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { memo, useEffect, useRef, useState } from "react";
 import { animate, motion } from "framer-motion";
 
 interface AnimatedNumberProps {
@@ -21,7 +21,7 @@ interface AnimatedNumberProps {
   directionFlash?: boolean;
 }
 
-export default function AnimatedNumber({
+function AnimatedNumber({
   value,
   decimals = 2,
   prefix = "",
@@ -79,3 +79,8 @@ export default function AnimatedNumber({
     </span>
   );
 }
+
+// Re-export as memo to avoid re-renders from parent on hot-path (tick-rate price updates).
+// framer-motion audit: animate() is imperative (no React reconciliation cost),
+// motion.span only renders when directionFlash fires (conditional).
+export default memo(AnimatedNumber);

@@ -1,22 +1,26 @@
 import { create } from "zustand";
 import type { SystemStatusView } from "@/contracts/wsEvents";
+import type { WsConnectionStatus } from "@/lib/realtime/connectionState";
 
-type WsStatus = "CONNECTED" | "DISCONNECTED" | "RECONNECTING";
 type DegradationMode = "NORMAL" | "DEGRADED";
 
 interface SystemStore {
   system: SystemStatusView | null;
-  wsStatus: WsStatus;
+  wsStatus: WsConnectionStatus;
   mode: DegradationMode;
+  /** Consolidated from former useRiskStore */
+  complianceState: string;
   setSystem: (system: SystemStatusView | null) => void;
-  setWsStatus: (status: WsStatus) => void;
+  setWsStatus: (status: WsConnectionStatus) => void;
   setMode: (mode: DegradationMode) => void;
+  setComplianceState: (state?: string) => void;
 }
 
 export const useSystemStore = create<SystemStore>((set) => ({
   system: null,
   wsStatus: "DISCONNECTED",
   mode: "NORMAL",
+  complianceState: "COMPLIANCE_NORMAL",
   setSystem: (system) =>
     set({
       system,
@@ -24,4 +28,5 @@ export const useSystemStore = create<SystemStore>((set) => ({
     }),
   setWsStatus: (wsStatus) => set({ wsStatus }),
   setMode: (mode) => set({ mode }),
+  setComplianceState: (state) => set({ complianceState: state ?? "COMPLIANCE_NORMAL" }),
 }));

@@ -2,6 +2,10 @@
 
 // ============================================================
 // TUYUL FX Wolf-15 — VerdictCard
+// framer-motion audit: motion.div/motion.span use stable keys
+// ("W", "TII", "FRPC") so initial/animate only fire on mount,
+// not on re-render. Verdict updates are warm-path (~15s stale
+// threshold), not tick-rate. No hot-path concern.
 // ============================================================
 
 import type { L12Verdict, VerdictType } from "@/types";
@@ -20,18 +24,18 @@ interface VerdictCardProps {
 }
 
 const VERDICT_COLORS: Record<string, string> = {
-  EXECUTE_BUY:  "var(--green)",
+  EXECUTE_BUY: "var(--green)",
   EXECUTE_SELL: "var(--red)",
-  EXECUTE:      "var(--green)",
-  HOLD:         "var(--yellow)",
-  NO_TRADE:     "var(--text-muted)",
-  ABORT:        "var(--red)",
+  EXECUTE: "var(--green)",
+  HOLD: "var(--yellow)",
+  NO_TRADE: "var(--text-muted)",
+  ABORT: "var(--red)",
 };
 
 function confidenceLabel(c: number): string {
   if (c >= 0.85) return "VERY HIGH";
-  if (c >= 0.7)  return "HIGH";
-  if (c >= 0.5)  return "MEDIUM";
+  if (c >= 0.7) return "HIGH";
+  if (c >= 0.5) return "MEDIUM";
   return "LOW";
 }
 
@@ -105,8 +109,8 @@ export function VerdictCard({
         >
           {[
             { label: "ENTRY", value: verdict.entry_price },
-            { label: "SL",    value: verdict.stop_loss },
-            { label: "TP",    value: verdict.take_profit_1 },
+            { label: "SL", value: verdict.stop_loss },
+            { label: "TP", value: verdict.take_profit_1 },
           ].map(({ label, value }) => (
             <div
               key={label}
@@ -153,7 +157,7 @@ export function VerdictCard({
               width: `${confidencePct}%`,
               background:
                 confidencePct >= 75 ? "var(--green)" :
-                confidencePct >= 50 ? "var(--yellow)" : "var(--red)",
+                  confidencePct >= 50 ? "var(--yellow)" : "var(--red)",
             }}
           />
         </div>
@@ -163,8 +167,8 @@ export function VerdictCard({
       {verdict.scores && (
         <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
           {([
-            { label: "W",    value: verdict.scores.wolf_score },
-            { label: "TII",  value: verdict.scores.tii_score },
+            { label: "W", value: verdict.scores.wolf_score },
+            { label: "TII", value: verdict.scores.tii_score },
             { label: "FRPC", value: verdict.scores.frpc_score },
           ] as { label: string; value: number | undefined }[]).map(({ label, value }, index) => {
             const passing = (value ?? 0) >= 60;
