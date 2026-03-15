@@ -34,5 +34,17 @@ class RiskCalculationError(RiskError):
     """Raised when risk calculations fail or produce invalid results."""
 
 
+class CorrelationRiskExceeded(RiskError):  # noqa: N818
+    """Raised when correlated position group exceeds combined exposure limit."""
+
+
+class SlippageLimitExceeded(RiskError):  # noqa: N818
+    """Raised when estimated execution cost makes a trade impractical."""
+
+
+class TrailingDrawdownBreached(RiskError):  # noqa: N818
+    """Raised when trailing drawdown floor is breached."""
+
+
 class RedisConnectionError(RiskError):
     """Raised when Redis operations fail critically."""
