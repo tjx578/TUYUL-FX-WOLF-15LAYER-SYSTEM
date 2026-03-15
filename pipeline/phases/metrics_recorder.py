@@ -12,12 +12,18 @@ from typing import Any, cast
 
 from core.metrics import (
     CONF12_SCORE,
+    EAF_SCORE,
     FRPC_SCORE,
+    FTA_SCORE,
     GATE_RESULT,
+    L7_PROFIT_FACTOR,
+    L7_RISK_OF_RUIN,
+    L7_WIN_PROBABILITY,
     PIPELINE_DURATION,
     PIPELINE_ERROR,
     PIPELINE_RUNS,
     REFLECTIVE_DRIFT_RATIO,
+    REGIME_CONFIDENCE,
     RQI_SCORE,
     SIGNAL_CONDITIONED_SAMPLES,
     SIGNAL_NOISE_RATIO,
@@ -27,8 +33,13 @@ from core.metrics import (
     TII_SCORE,
     TRQ3D_ALPHA,
     TRQ3D_BETA,
+    TRQ3D_DRIFT,
+    TRQ3D_ENERGY,
     TRQ3D_GAMMA,
+    TWMS_SCORE,
+    VAULT_SYNC,
     VERDICT_TOTAL,
+    WOLF_30PT_SCORE,
 )
 
 
@@ -82,28 +93,16 @@ def record_pipeline_metrics(symbol: str, result: dict[str, Any]) -> None:
         PIPELINE_ERROR.labels(error_code=code).inc()
 
     # Signal conditioning observability (if available)
-    conditioning = (
-        result.get("synthesis", {})
-        .get("system", {})
-        .get("signal_conditioning", {})
-    )
+    conditioning = result.get("synthesis", {}).get("system", {}).get("signal_conditioning", {})
     if isinstance(conditioning, dict) and conditioning:
         conditioning_data = cast(dict[str, Any], conditioning)
-        SIGNAL_CONDITIONED_SAMPLES.labels(symbol=symbol).set(
-            _to_float(conditioning_data.get("samples_out", 0.0))
-        )
-        SIGNAL_NOISE_RATIO.labels(symbol=symbol).set(
-            _to_float(conditioning_data.get("noise_ratio", 0.0))
-        )
+        SIGNAL_CONDITIONED_SAMPLES.labels(symbol=symbol).set(_to_float(conditioning_data.get("samples_out", 0.0)))
+        SIGNAL_NOISE_RATIO.labels(symbol=symbol).set(_to_float(conditioning_data.get("noise_ratio", 0.0)))
         SIGNAL_QUALITY_SCORE.labels(symbol=symbol).set(
             _to_float(conditioning_data.get("microstructure_quality_score", 0.0))
         )
 
-    rqi = (
-        result.get("synthesis", {})
-        .get("system", {})
-        .get("rqi")
-    )
+    rqi = result.get("synthesis", {}).get("system", {}).get("rqi")
     if rqi is not None:
         RQI_SCORE.labels(symbol=symbol).set(_to_float(rqi, 0.0))
 
@@ -117,9 +116,7 @@ def record_pipeline_metrics(symbol: str, result: dict[str, Any]) -> None:
         execution_rights = enforcement.get("execution_rights", "")
         if execution_rights in ("GRANTED", "RESTRICTED", "REVOKED"):
             for level in ("GRANTED", "RESTRICTED", "REVOKED"):
-                SOVEREIGNTY_LEVEL.labels(symbol=symbol, level=level).set(
-                    1.0 if level == execution_rights else 0.0
-                )
+                SOVEREIGNTY_LEVEL.labels(symbol=symbol, level=level).set(1.0 if level == execution_rights else 0.0)
 
     # ── TRQ-3D axis gauges ───────────────────────────────────────────────
     trq3d = result.get("synthesis", {}).get("trq3d", {})
@@ -143,3 +140,53 @@ def record_pipeline_metrics(symbol: str, result: dict[str, Any]) -> None:
         frpc_energy = fusion_frpc.get("frpc_energy")
         if frpc_energy is not None:
             FRPC_SCORE.labels(symbol=symbol).set(_to_float(frpc_energy))
+
+    # ── Monte Carlo observability (L7) ───────────────────────────────────
+    synthesis = result.get("synthesis", {})
+    mc_win = synthesis.get("layers", {}).get("L7_monte_carlo_win")
+    if mc_win is not None:
+        L7_WIN_PROBABILITY.labels(symbol=symbol).set(_to_float(mc_win))
+
+    mc_pf = synthesis.get("profit_factor")
+    if mc_pf is not None:
+        L7_PROFIT_FACTOR.labels(symbol=symbol).set(_to_float(mc_pf))
+
+    mc_ror = synthesis.get("risk_of_ruin")
+    if mc_ror is not None:
+        L7_RISK_OF_RUIN.labels(symbol=symbol).set(_to_float(mc_ror))
+
+    # ── TIER 2 diagnostic gauges ─────────────────────────────────────────
+    trq3d_energy = trq3d.get("mean_energy") if isinstance(trq3d, dict) else None
+    if trq3d_energy is not None:
+        TRQ3D_ENERGY.labels(symbol=symbol).set(_to_float(trq3d_energy))
+
+    trq3d_drift = trq3d.get("drift") if isinstance(trq3d, dict) else None
+    if trq3d_drift is not None:
+        TRQ3D_DRIFT.labels(symbol=symbol).set(_to_float(trq3d_drift))
+
+    twms = layers_data.get("L8_twms_score") if isinstance(layers_data, dict) else None
+    if twms is not None:
+        TWMS_SCORE.labels(symbol=symbol).set(_to_float(twms))
+
+    eaf = synthesis.get("wolf_discipline", {}).get("eaf_score")
+    if eaf is not None:
+        EAF_SCORE.labels(symbol=symbol).set(_to_float(eaf))
+
+    scores = synthesis.get("scores", {})
+    wolf_30pt = scores.get("wolf_30_point")
+    if wolf_30pt is not None:
+        WOLF_30PT_SCORE.labels(symbol=symbol).set(_to_float(wolf_30pt))
+
+    fta = scores.get("fta_score")
+    if fta is not None:
+        FTA_SCORE.labels(symbol=symbol).set(_to_float(fta))
+
+    regime_conf = layers_data.get("L1_context_coherence") if isinstance(layers_data, dict) else None
+    if regime_conf is not None:
+        REGIME_CONFIDENCE.labels(symbol=symbol).set(_to_float(regime_conf))
+
+    vault_sync = (
+        result.get("enforcement", {}).get("vault_sync") if isinstance(result.get("enforcement"), dict) else None
+    )
+    if vault_sync is not None:
+        VAULT_SYNC.labels(symbol=symbol).set(_to_float(vault_sync))

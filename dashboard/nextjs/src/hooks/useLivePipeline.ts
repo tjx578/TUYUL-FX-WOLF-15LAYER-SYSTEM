@@ -5,7 +5,6 @@ import { fetchLatestPipelineResult } from "@/services/pipelineService";
 import { connectLiveUpdates } from "@/lib/realtime/realtimeClient";
 import { useAccountStore } from "@/store/useAccountStore";
 import { usePreferencesStore } from "@/store/usePreferencesStore";
-import { useRiskStore } from "@/store/useRiskStore";
 import { useSystemStore } from "@/store/useSystemStore";
 
 interface UseLivePipelineOptions {
@@ -23,7 +22,7 @@ const toComplianceState = (governance?: string): string => {
 export function useLivePipeline(options: UseLivePipelineOptions = {}) {
   const { setLatestPipelineResult, updateTrade } = useAccountStore();
   const setPreferences = usePreferencesStore((s) => s.setPreferences);
-  const setComplianceState = useRiskStore((s) => s.setComplianceState);
+  const setComplianceState = useSystemStore((s) => s.setComplianceState);
   const setWsStatus = useSystemStore((s) => s.setWsStatus);
   const setSystem = useSystemStore((s) => s.setSystem);
   const setMode = useSystemStore((s) => s.setMode);
@@ -71,7 +70,7 @@ export function useLivePipeline(options: UseLivePipelineOptions = {}) {
         if (status !== "LIVE") {
           setMode("DEGRADED");
         } else {
-          setMode("LIVE");
+          setMode("NORMAL");
         }
       },
       onDegradation: (status) => {

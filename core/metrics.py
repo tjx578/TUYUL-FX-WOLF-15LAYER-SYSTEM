@@ -40,14 +40,26 @@ if TYPE_CHECKING:
 # ──────────────────────────────────────────────────────────
 
 DEFAULT_BUCKETS: tuple[float, ...] = (
-    0.005, 0.01, 0.025, 0.05, 0.075,
-    0.1, 0.25, 0.5, 0.75, 1.0, 2.5, 5.0, 10.0,
+    0.005,
+    0.01,
+    0.025,
+    0.05,
+    0.075,
+    0.1,
+    0.25,
+    0.5,
+    0.75,
+    1.0,
+    2.5,
+    5.0,
+    10.0,
 )
 
 
 # ══════════════════════════════════════════════════════════
 #  Label key helpers
 # ══════════════════════════════════════════════════════════
+
 
 def _label_key(labels: dict[str, str]) -> tuple[tuple[str, str], ...]:
     """Stable hashable key for a label dict."""
@@ -65,6 +77,7 @@ def _label_str(labels: dict[str, str]) -> str:
 # ══════════════════════════════════════════════════════════
 #  Counter
 # ══════════════════════════════════════════════════════════
+
 
 class _CounterChild:
     """A single labelled counter series."""
@@ -132,6 +145,7 @@ class Counter:
 # ══════════════════════════════════════════════════════════
 #  Gauge
 # ══════════════════════════════════════════════════════════
+
 
 class _GaugeChild:
     """A single labelled gauge series."""
@@ -214,6 +228,7 @@ class Gauge:
 # ══════════════════════════════════════════════════════════
 #  Histogram
 # ══════════════════════════════════════════════════════════
+
 
 class _HistogramChild:
     """A single labelled histogram series."""
@@ -318,6 +333,7 @@ class Histogram:
 #  MetricsRegistry (singleton)
 # ══════════════════════════════════════════════════════════
 
+
 class MetricsRegistry:
     """Central registry holding all registered metrics.
 
@@ -337,8 +353,8 @@ class MetricsRegistry:
             with cls._init_lock:
                 if cls._instance is None:
                     inst = super().__new__(cls)
-                    inst._metrics: list[Counter | Gauge | Histogram] = [] # pyright: ignore[reportInvalidTypeForm]
-                    inst._names: set[str] = set() # pyright: ignore[reportInvalidTypeForm]
+                    inst._metrics: list[Counter | Gauge | Histogram] = []  # pyright: ignore[reportInvalidTypeForm]
+                    inst._names: set[str] = set()  # pyright: ignore[reportInvalidTypeForm]
                     inst._lock = threading.Lock()
                     cls._instance = inst
         return cls._instance
@@ -464,6 +480,7 @@ def get_wolf_registry() -> MetricsRegistry:
     during tests.
     """
     return _R
+
 
 # Pipeline execution latency (seconds)
 PIPELINE_DURATION = _R.histogram(
@@ -747,4 +764,78 @@ KILL_SWITCH_TRIPS_TOTAL = _R.counter(
     "wolf_kill_switch_trips_total",
     "Number of times kill switch has been tripped",
     label_names=("reason",),
+)
+
+# ══════════════════════════════════════════════════════════
+#  Monte Carlo observability gauges (L7)
+# ══════════════════════════════════════════════════════════
+
+L7_WIN_PROBABILITY = _R.gauge(
+    "wolf_l7_win_probability",
+    "L7 Monte Carlo bootstrap win probability (0-1)",
+    label_names=("symbol",),
+)
+
+L7_PROFIT_FACTOR = _R.gauge(
+    "wolf_l7_profit_factor",
+    "L7 Monte Carlo profit factor (gross_profit / gross_loss)",
+    label_names=("symbol",),
+)
+
+L7_RISK_OF_RUIN = _R.gauge(
+    "wolf_l7_risk_of_ruin",
+    "L7 Monte Carlo risk of ruin fraction (0-1)",
+    label_names=("symbol",),
+)
+
+# ══════════════════════════════════════════════════════════
+#  TIER 2 diagnostic gauges
+# ══════════════════════════════════════════════════════════
+
+TRQ3D_ENERGY = _R.gauge(
+    "wolf_trq3d_energy",
+    "TRQ-3D mean energy (mean|delta_price| / ATR)",
+    label_names=("symbol",),
+)
+
+TRQ3D_DRIFT = _R.gauge(
+    "wolf_trq3d_drift",
+    "TRQ-3D drift (|price - VWAP| / price)",
+    label_names=("symbol",),
+)
+
+TWMS_SCORE = _R.gauge(
+    "wolf_twms_score",
+    "Triple Wolf Momentum Score (MFI+CCI+RSI+Momentum composite, 0-1)",
+    label_names=("symbol",),
+)
+
+EAF_SCORE = _R.gauge(
+    "wolf_eaf_score",
+    "Emotional Awareness Factor ((1-bias)*stability*focus*discipline, 0-1)",
+    label_names=("symbol",),
+)
+
+WOLF_30PT_SCORE = _R.gauge(
+    "wolf_30pt_score",
+    "Wolf 30-Point discipline checklist score (0-30)",
+    label_names=("symbol",),
+)
+
+FTA_SCORE = _R.gauge(
+    "wolf_fta_score",
+    "FTA composite score (f_score * t_score * fta_multiplier)",
+    label_names=("symbol",),
+)
+
+REGIME_CONFIDENCE = _R.gauge(
+    "wolf_regime_confidence",
+    "L1 market regime detection confidence (0-1)",
+    label_names=("symbol",),
+)
+
+VAULT_SYNC = _R.gauge(
+    "wolf_vault_sync",
+    "Vault sync composite score from sovereignty enforcement (0-1)",
+    label_names=("symbol",),
 )
