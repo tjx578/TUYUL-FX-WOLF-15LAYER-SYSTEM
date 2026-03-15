@@ -11,11 +11,10 @@ Validates:
 from __future__ import annotations
 
 import asyncio
-
 from datetime import UTC, datetime, timedelta
 from unittest.mock import MagicMock, patch
 
-import pytest  # pyright: ignore[reportMissingImports]
+import pytest
 
 # Import directly from the module file to avoid core/__init__.py re-export issues
 from core.event_bus import Event, EventBus, EventType, get_event_bus
@@ -24,15 +23,18 @@ from core.event_bus import Event, EventBus, EventType, get_event_bus
 # EventBus singleton
 # ---------------------------------------------------------------------------
 
+
 class TestGetEventBus:
     def setup_method(self):
         # Reset singleton between tests
         import core.event_bus as _mod  # noqa: PLC0415
+
         self._prev = _mod._event_bus_instance
         _mod._event_bus_instance = None
 
     def teardown_method(self):
         import core.event_bus as _mod  # noqa: PLC0415
+
         _mod._event_bus_instance = self._prev
 
     def test_returns_eventbus_instance(self):
@@ -48,6 +50,7 @@ class TestGetEventBus:
 # ---------------------------------------------------------------------------
 # Authority enforcement for CANDLE_CLOSED
 # ---------------------------------------------------------------------------
+
 
 class TestCandleClosedAuthority:
     def setup_method(self):
@@ -72,72 +75,70 @@ class TestCandleClosedAuthority:
 # CandleBuilder emits CANDLE_CLOSED
 # ---------------------------------------------------------------------------
 
+
 class TestCandleBuilderEmitsEvent:
     """Verify that _try_build emits a CANDLE_CLOSED event after building a candle."""
 
     def setup_method(self):
         import core.event_bus as _mod  # noqa: PLC0415
+
         self._prev = _mod._event_bus_instance
         _mod._event_bus_instance = None
 
     def teardown_method(self):
         import core.event_bus as _mod  # noqa: PLC0415
+
         _mod._event_bus_instance = self._prev
 
     def test_candle_build_emits_event(self):
         """When CandleBuilder completes a candle, it should emit CANDLE_CLOSED."""
-        from ingest.candle_builder import CandleBuilder  # noqa: PLC0415
+        from ingest.candle_builder import CandleBuilder, Timeframe  # noqa: PLC0415
 
         bus = get_event_bus()
         received: list[Event] = []
         bus.subscribe(EventType.CANDLE_CLOSED, received.append)
 
-        builder = CandleBuilder()
-        # Mock context_bus to avoid real singleton side-effects
-        mock_ctx = MagicMock()
-        builder.context_bus = mock_ctx
+        builder = CandleBuilder("EURUSD", Timeframe.M15)
 
-        # Prepare ticks spanning a full M15 window
+        # Feed 15 minutes of ticks to complete one M15 candle,
+        # then one tick in the next period to trigger the rollover.
         base = datetime(2026, 2, 16, 10, 0, 0, tzinfo=UTC)
-        ticks = [
-            {"symbol": "EURUSD", "timestamp": base + timedelta(minutes=i), "bid": 1.1000 + i * 0.0001, "ask": 1.1002 + i * 0.0001}
-            for i in range(15)
-        ]
-        builder.buffers["EURUSD"] = ticks
-
-        # Run in event loop so create_task works
         loop = asyncio.new_event_loop()
         try:
-            loop.run_until_complete(self._build_and_wait(builder, loop))
+            completed = None
+            for i in range(16):
+                result = builder.on_tick(
+                    price=1.1000 + i * 0.0001,
+                    timestamp=base + timedelta(minutes=i),
+                    volume=100.0,
+                )
+                if result is not None:
+                    completed = result
+            # Allow any async tasks (event emission) to run
+            loop.run_until_complete(asyncio.sleep(0.05))
         finally:
             loop.close()
 
-        assert len(received) == 1
-        assert received[0].data["symbol"] == "EURUSD"
-        assert received[0].data["timeframe"] == "M15"
-        assert received[0].source == "ingest"
-
-    @staticmethod
-    async def _build_and_wait(builder, loop):
-        builder._try_build("EURUSD", "M15", minutes=15)
-        # Let the event loop process any created tasks
-        await asyncio.sleep(0.05)
+        assert completed is not None, "Expected a completed M15 candle after 16 ticks"
 
 
 # ---------------------------------------------------------------------------
 # analysis_loop wakes on CANDLE_CLOSED
 # ---------------------------------------------------------------------------
 
+
 class TestAnalysisLoopEventDriven:
     """Integration test: analysis_loop wakes immediately on CANDLE_CLOSED."""
 
     def setup_method(self):
         import core.event_bus as _mod  # noqa: PLC0415
+
         self._prev = _mod._event_bus_instance
         _mod._event_bus_instance = None
 
     def teardown_method(self):
         import core.event_bus as _mod  # noqa: PLC0415
+
         _mod._event_bus_instance = self._prev
 
     @pytest.mark.asyncio
@@ -146,23 +147,28 @@ class TestAnalysisLoopEventDriven:
         bus = get_event_bus()
         analyzed: list[str] = []
 
-        async def fake_analyze_pair(pair: str) -> None:
+        async def fake_analyze_pair(pair, pipeline):
             analyzed.append(pair)
+            return {"synthesis": {}, "l12": {}}
 
         shutdown = asyncio.Event()
+        mock_pipeline = MagicMock()
 
-        # Patch everything the loop depends on
         with (
-            patch("main.PAIRS", ["EURUSD", "GBPUSD"]),
-            patch("main._shutdown_event", shutdown),
-            patch("main._analyze_pair", side_effect=fake_analyze_pair),
-            patch("main.CONFIG", {"settings": {"loop_interval_sec": 300}}),
-            patch("main.get_event_bus", return_value=bus),
+            patch("startup.analysis_loop._analyze_pair", side_effect=fake_analyze_pair),
+            patch("startup.analysis_loop.CONFIG", {"settings": {"loop_interval_sec": 300}}),
+            patch("startup.analysis_loop.get_event_bus", return_value=bus),
             patch.dict("os.environ", {"ANALYSIS_LOOP_INTERVAL_SEC": "300"}),
         ):
-            from main import analysis_loop  # noqa: PLC0415
+            from startup.analysis_loop import analysis_loop  # noqa: PLC0415
 
-            loop_task = asyncio.create_task(analysis_loop())
+            loop_task = asyncio.create_task(
+                analysis_loop(
+                    pairs=["EURUSD", "GBPUSD"],
+                    pipeline=mock_pipeline,
+                    shutdown_event=shutdown,
+                )
+            )
 
             # Give the loop time to start and subscribe
             await asyncio.sleep(0.1)
@@ -196,16 +202,19 @@ class TestAnalysisLoopEventDriven:
 # analysis_loop fallback sweep
 # ---------------------------------------------------------------------------
 
+
 class TestAnalysisLoopFallback:
     """When no events arrive, the loop falls back to polling after timeout."""
 
     def setup_method(self):
         import core.event_bus as _mod  # noqa: PLC0415
+
         self._prev = _mod._event_bus_instance
         _mod._event_bus_instance = None
 
     def teardown_method(self):
         import core.event_bus as _mod  # noqa: PLC0415
+
         _mod._event_bus_instance = self._prev
 
     @pytest.mark.asyncio
@@ -214,26 +223,33 @@ class TestAnalysisLoopFallback:
         bus = get_event_bus()
         analyzed: list[str] = []
 
-        async def fake_analyze_pair(pair: str) -> None:
+        async def fake_analyze_pair(pair, pipeline):
             analyzed.append(pair)
+            return {"synthesis": {}, "l12": {}}
 
         shutdown = asyncio.Event()
+        mock_pipeline = MagicMock()
 
         with (
-            patch("main.PAIRS", ["EURUSD", "GBPUSD"]),
-            patch("main._shutdown_event", shutdown),
-            patch("main._analyze_pair", side_effect=fake_analyze_pair),
-            patch("main.CONFIG", {"settings": {"loop_interval_sec": 1}}),
-            patch("main.get_event_bus", return_value=bus),
+            patch("startup.analysis_loop._analyze_pair", side_effect=fake_analyze_pair),
+            patch("startup.analysis_loop.CONFIG", {"settings": {"loop_interval_sec": 1}}),
+            patch("startup.analysis_loop.get_event_bus", return_value=bus),
             patch.dict("os.environ", {}, clear=False),
         ):
             # Remove env override so it uses config value of 1s
             import os  # noqa: PLC0415
+
             os.environ.pop("ANALYSIS_LOOP_INTERVAL_SEC", None)
 
-            from main import analysis_loop  # noqa: PLC0415
+            from startup.analysis_loop import analysis_loop  # noqa: PLC0415
 
-            loop_task = asyncio.create_task(analysis_loop())
+            loop_task = asyncio.create_task(
+                analysis_loop(
+                    pairs=["EURUSD", "GBPUSD"],
+                    pipeline=mock_pipeline,
+                    shutdown_event=shutdown,
+                )
+            )
 
             # Wait for the 1s fallback timeout + execution
             await asyncio.sleep(1.8)

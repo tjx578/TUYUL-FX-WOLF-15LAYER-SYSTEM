@@ -1,10 +1,17 @@
-"""
-FastAPI entrypoint shim for ASGI auto-discovery.
+"""ASGI auto-discovery shim — delegates to ``api_server.app``.
 
-Deployment tools (Railway, Gunicorn, uvicorn) that look for ``app:app``
-will find the fully-configured application here without any duplication.
+Entrypoint map (the three distinct entrypoints):
+  ┌─────────────────┬─────────────────────┬──────────────────────────────┐
+  │ Entrypoint      │ Purpose             │ When used                    │
+  ├─────────────────┼─────────────────────┼──────────────────────────────┤
+  │ app.py          │ ASGI shim (this)    │ ``gunicorn app:app``         │
+  │ api_server.py   │ FastAPI + uvicorn   │ ``python api_server.py``     │
+  │ main.py         │ Engine orchestrator │ ``python main.py``           │
+  └─────────────────┴─────────────────────┴──────────────────────────────┘
 
-The single source of truth is ``api_server.py``.
+``app.py`` and ``api_server.py`` share the *same* FastAPI instance
+(created in ``api/app_factory.py``).  ``main.py`` is the engine
+process — it embeds the API optionally via RUN_MODE=all.
 """
 
 from api_server import app  # noqa: F401  — re-exported for ASGI discovery

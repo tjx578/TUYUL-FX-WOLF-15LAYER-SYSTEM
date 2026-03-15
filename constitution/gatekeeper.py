@@ -3,19 +3,55 @@ Gatekeeper - Constitutional 9-Gate Enforcement
 NO EXECUTION | NO DISCRETION
 """
 
+import copy
+import logging
 from typing import Any
 
-from config_loader import load_constitution
+from config_loader import load_constitution, load_pairs
 from constitution.violation_log import ViolationLogger
+
+logger = logging.getLogger("WOLF_CONSTITUTION")
 
 
 class Gatekeeper:
     def __init__(self):
-        self.constitution = load_constitution()
+        self._constitution = self._freeze_constitution()
+        self._allowed_timeframes = self._build_allowed_timeframes()
+        self._enabled_symbols = self._build_enabled_symbols()
         self.logger = ViolationLogger()
 
+    @property
+    def constitution(self) -> dict[str, Any]:
+        return self._constitution
+
+    @staticmethod
+    def _freeze_constitution() -> dict[str, Any]:
+        """Return a deep-frozen snapshot of the constitution YAML."""
+        return copy.deepcopy(load_constitution())
+
+    def _build_allowed_timeframes(self) -> set[str]:
+        tf_laws = self._constitution.get("timeframe_laws", {})
+        allowed = set()
+        if setup := tf_laws.get("setup_tf_only"):
+            allowed.add(setup)
+        if monitor := tf_laws.get("monitor_tf_only"):
+            allowed.add(monitor)
+        return allowed or {"H1", "M15"}  # fallback to constitutional defaults
+
+    @staticmethod
+    def _build_enabled_symbols() -> set[str]:
+        pairs = load_pairs()
+        return {p["symbol"] for p in pairs if p.get("enabled", False)}
+
+    def reload(self) -> None:
+        """Hot-reload constitution from YAML. Call when config changes."""
+        self._constitution = self._freeze_constitution()
+        self._allowed_timeframes = self._build_allowed_timeframes()
+        self._enabled_symbols = self._build_enabled_symbols()
+        logger.info("Constitution reloaded — gates re-armed")
+
     def evaluate(self, candidate: dict) -> dict[str, Any]:
-        symbol = candidate.get("symbol")
+        symbol: str = candidate.get("symbol", "UNKNOWN")
 
         gates = [
             self._gate_integrity,
@@ -75,10 +111,23 @@ class Gatekeeper:
         return c["L10"].get("position_ok", False), "position_not_ok"
 
     def _gate_timeframe(self, c: dict):
-        return True, "tf_ok"  # enforced by design (H1/M15)
+        """Reject candidates whose timeframe is not constitutionally allowed."""
+        tf = c.get("timeframe") or c.get("L1", {}).get("timeframe")
+        if tf is None:
+            # If no timeframe tag is present, fail closed — require explicit data
+            return False, "timeframe_missing"
+        if tf not in self._allowed_timeframes:
+            return False, f"timeframe_violation:{tf}_not_in_{self._allowed_timeframes}"
+        return True, "tf_ok"
 
     def _gate_market_law(self, c: dict):
-        return True, "market_law_ok"  # enforced by pair config; all enabled pairs allowed
+        """Reject candidates whose symbol is not in the enabled pairs list."""
+        symbol = c.get("symbol")
+        if not symbol:
+            return False, "symbol_missing"
+        if symbol not in self._enabled_symbols:
+            return False, f"symbol_not_enabled:{symbol}"
+        return True, "market_law_ok"
 
     def _gate_execution_rule(self, c: dict):
         rule = self.constitution["execution_rules"]["order_type"]
