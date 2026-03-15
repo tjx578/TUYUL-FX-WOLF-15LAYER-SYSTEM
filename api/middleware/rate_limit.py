@@ -41,6 +41,7 @@ from infrastructure.redis_client import get_client
 # Configuration
 # ---------------------------------------------------------------------------
 
+
 def _env_int(key: str, default: int) -> int:
     try:
         return int(os.getenv(key, str(default)))
@@ -100,16 +101,18 @@ if TRUSTED_PROXY_ENABLED and TRUST_ALL_PROXIES:
     )
 
 # Paths exempted from rate limiting (health, root).
-EXEMPT_PATHS: set[str] = {"/", "/health", "/docs", "/openapi.json", "/redoc"}
+EXEMPT_PATHS: set[str] = {"/", "/health", "/healthz", "/health/full", "/docs", "/openapi.json", "/redoc"}
 
 
 # ---------------------------------------------------------------------------
 # Sliding window storage
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class _ClientWindow:
     """Sliding-window timestamps for a single client IP."""
+
     timestamps: list[float] = field(default_factory=lambda: [])
 
 
@@ -164,10 +167,7 @@ class SlidingWindowStore:
     def _cleanup(self, now: float) -> None:
         """Remove IPs with no hits in the window (called under lock)."""
         cutoff = now - self._window
-        stale_keys = [
-            ip for ip, w in self._clients.items()
-            if not w.timestamps or w.timestamps[-1] < cutoff
-        ]
+        stale_keys = [ip for ip, w in self._clients.items() if not w.timestamps or w.timestamps[-1] < cutoff]
         for key in stale_keys:
             del self._clients[key]
 
@@ -201,6 +201,7 @@ def get_ws_store() -> SlidingWindowStore:
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _client_ip(request: Request) -> str:
     """Extract client IP, trusting X-Forwarded-For only from trusted proxies."""
@@ -256,7 +257,9 @@ async def _redis_window_hit(key: str, ttl_sec: int = 60) -> int | None:
         elif isinstance(value, (bytes, bytearray)):
             value_int = int(value.decode())
         else:
-            logger.debug("Redis rate limit fallback for key={}: unsupported response type={}", key, type(value).__name__)
+            logger.debug(
+                "Redis rate limit fallback for key={}: unsupported response type={}", key, type(value).__name__
+            )
             return None
 
         if value_int == 1:
@@ -291,22 +294,23 @@ def _path_bucket(path: str, method: str, is_ws_upgrade: bool) -> tuple[str, int,
     if method in {"POST", "PUT", "PATCH", "DELETE"}:
         # ── EA control (restart / safe-mode) — very tight ──
         # Paths are /api/v1/ea/restart, /api/v1/ea/safe-mode
-        if "/ea/" in lowered and any(
-            seg in lowered for seg in ("/restart", "/safe-mode")
-        ):
+        if "/ea/" in lowered and any(seg in lowered for seg in ("/restart", "/safe-mode")):
             return ("ea_control", EA_CONTROL_PER_MIN, _ea_control_store)
 
         # ── Trade take (original bucket) ──
-        if ("/trades/take" in lowered
-                or "/signals/take" in lowered
-                or ("/accounts/" in lowered and "/take" in lowered)):
+        if "/trades/take" in lowered or "/signals/take" in lowered or ("/accounts/" in lowered and "/take" in lowered):
             return ("take", TAKE_PER_MIN, _take_store)
 
         # ── Trade lifecycle (confirm / close / skip) ──
-        if any(seg in lowered for seg in (
-            "/trades/confirm", "/trades/close", "/trades/skip",
-            "/signals/skip",
-        )):
+        if any(
+            seg in lowered
+            for seg in (
+                "/trades/confirm",
+                "/trades/close",
+                "/trades/skip",
+                "/signals/skip",
+            )
+        ):
             return ("trade_write", TRADE_WRITE_PER_MIN, _trade_write_store)
 
         # ── Risk calculate (compute-heavy) ──
@@ -332,6 +336,7 @@ def _path_bucket(path: str, method: str, is_ws_upgrade: bool) -> tuple[str, int,
 # FastAPI / Starlette middleware
 # ---------------------------------------------------------------------------
 
+
 class RateLimitMiddleware(BaseHTTPMiddleware):
     """
     Per-IP rate limiting middleware for HTTP and WebSocket upgrade requests.
@@ -346,10 +351,12 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         self.ws_store = _ws_store
 
     @override
-    async def dispatch(
-        self, request: Request, call_next: RequestResponseEndpoint
-    ) -> Response:
+    async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
         if not RATE_LIMIT_ENABLED:
+            return await call_next(request)
+
+        # Never rate-limit CORS preflight — the CORSMiddleware handles these.
+        if request.method.upper() == "OPTIONS":
             return await call_next(request)
 
         path = request.url.path
@@ -384,9 +391,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         if _is_websocket(request):
             allowed, count = await _check_bucket("ws", ip, WS_PER_MIN, self.ws_store)
             if not allowed:
-                logger.warning(
-                    f"WS rate limit exceeded: {ip} ({count}/{WS_PER_MIN} per min)"
-                )
+                logger.warning(f"WS rate limit exceeded: {ip} ({count}/{WS_PER_MIN} per min)")
                 return JSONResponse(
                     status_code=429,
                     content={
@@ -402,9 +407,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         allowed, count = await _check_bucket("http", ip, limit, self.http_store)
 
         if not allowed:
-            logger.warning(
-                f"HTTP rate limit exceeded: {ip} ({count}/{limit} per min)"
-            )
+            logger.warning(f"HTTP rate limit exceeded: {ip} ({count}/{limit} per min)")
             return JSONResponse(
                 status_code=429,
                 content={
@@ -417,8 +420,6 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         # Add rate limit headers to response
         response = await call_next(request)
         response.headers["X-RateLimit-Limit"] = str(REQUESTS_PER_MIN)
-        response.headers["X-RateLimit-Remaining"] = str(
-            max(0, limit - count)
-        )
+        response.headers["X-RateLimit-Remaining"] = str(max(0, limit - count))
 
         return response

@@ -36,11 +36,21 @@ from api.middleware.auth import decode_token, validate_api_key
 logger = logging.getLogger(__name__)
 
 _WS_ALLOWED_ORIGINS_RAW = os.getenv("WS_ALLOWED_ORIGINS", "").strip()
-WS_ALLOWED_ORIGINS = {
-    origin.strip().rstrip("/")
-    for origin in _WS_ALLOWED_ORIGINS_RAW.split(",")
-    if origin.strip()
-}
+# If WS_ALLOWED_ORIGINS is not explicitly set, inherit from CORS_ORIGINS so
+# the Vercel frontend domain is automatically allowed for WebSocket connections.
+if _WS_ALLOWED_ORIGINS_RAW:
+    _ws_origins_source = _WS_ALLOWED_ORIGINS_RAW
+else:
+    _ws_origins_source = os.getenv("CORS_ORIGINS", "").strip()
+
+WS_ALLOWED_ORIGINS = {origin.strip().rstrip("/") for origin in _ws_origins_source.split(",") if origin.strip()}
+# Also pick up VERCEL_FRONTEND_URL if set (matches CORS logic in app_factory).
+_vercel_url = os.getenv("VERCEL_FRONTEND_URL", "").strip()
+if _vercel_url:
+    for u in _vercel_url.split(","):
+        u = u.strip().rstrip("/")
+        if u:
+            WS_ALLOWED_ORIGINS.add(u)
 
 
 class WSAuthError(Exception):
@@ -50,6 +60,7 @@ class WSAuthError(Exception):
 # ---------------------------------------------------------------------------
 # Shared helpers — usable by both HTTP and WS layers
 # ---------------------------------------------------------------------------
+
 
 def extract_token(headers: dict[str, str], query_params: dict[str, str]) -> str | None:
     """Extract a bearer token from headers or a ``token`` query param.
