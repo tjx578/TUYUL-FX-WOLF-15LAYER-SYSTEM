@@ -15,10 +15,10 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
-from news.models import EconomicEvent, ImpactLevel
+from news.models import EconomicEvent
 
 logger = logging.getLogger(__name__)
 
@@ -29,10 +29,10 @@ _BLOCKER_KEY = "news:blocker:{symbol}"
 _HEALTH_KEY = "news:health:{source}"
 _UPCOMING_KEY = "news:upcoming:{lookahead_h}h:{min_impact}"
 
-_DAY_TTL = 3600 * 6          # 6 hours
-_BLOCKER_TTL = 60 * 5        # 5 minutes
-_HEALTH_TTL = 60 * 30        # 30 minutes
-_UPCOMING_TTL = 60 * 10      # 10 minutes
+_DAY_TTL = 3600 * 6  # 6 hours
+_BLOCKER_TTL = 60 * 5  # 5 minutes
+_HEALTH_TTL = 60 * 30  # 30 minutes
+_UPCOMING_TTL = 60 * 10  # 10 minutes
 
 
 def _events_to_json(events: list[EconomicEvent]) -> str:
@@ -40,7 +40,7 @@ def _events_to_json(events: list[EconomicEvent]) -> str:
 
 
 def _events_from_json(raw: str) -> list[dict[str, Any]]:
-    return json.loads(raw)  # type: ignore[no-any-return]
+    return json.loads(raw)
 
 
 class NewsRepository:
@@ -89,7 +89,7 @@ class NewsRepository:
         try:
             raw = await self._redis.get(_DAY_META_KEY.format(date=date_str))
             if raw:
-                return json.loads(raw)  # type: ignore[no-any-return]
+                return json.loads(raw)
         except Exception:
             logger.exception("Redis get_day_meta failed for %s", date_str)
         return None
@@ -112,7 +112,7 @@ class NewsRepository:
         try:
             raw = await self._redis.get(_BLOCKER_KEY.format(symbol=symbol or "ALL"))
             if raw:
-                return json.loads(raw)  # type: ignore[no-any-return]
+                return json.loads(raw)
         except Exception:
             logger.exception("Redis get_blocker_status failed for %s", symbol)
         return None
@@ -135,7 +135,7 @@ class NewsRepository:
         try:
             raw = await self._redis.get(_HEALTH_KEY.format(source=source))
             if raw:
-                return json.loads(raw)  # type: ignore[no-any-return]
+                return json.loads(raw)
         except Exception:
             logger.exception("Redis get_source_health failed for %s", source)
         return None
@@ -153,15 +153,13 @@ class NewsRepository:
 
     # ── Upcoming events ────────────────────────────────────────────────────────
 
-    async def get_upcoming_raw(
-        self, lookahead_hours: int, min_impact: str
-    ) -> list[dict[str, Any]] | None:
+    async def get_upcoming_raw(self, lookahead_hours: int, min_impact: str) -> list[dict[str, Any]] | None:
         """Return cached upcoming events or None."""
         key = _UPCOMING_KEY.format(lookahead_h=lookahead_hours, min_impact=min_impact)
         try:
             raw = await self._redis.get(key)
             if raw:
-                return json.loads(raw)  # type: ignore[no-any-return]
+                return json.loads(raw)
         except Exception:
             logger.exception("Redis get_upcoming_raw failed")
         return None
@@ -199,9 +197,7 @@ class NewsRepository:
             try:
                 await self._upsert_one(event)
             except Exception:
-                logger.exception(
-                    "Postgres upsert failed for canonical_id=%s", event.canonical_id
-                )
+                logger.exception("Postgres upsert failed for canonical_id=%s", event.canonical_id)
 
     async def _upsert_one(self, event: EconomicEvent) -> None:
         """Upsert a single event into the economic_events table."""

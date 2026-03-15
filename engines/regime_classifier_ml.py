@@ -24,7 +24,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-import numpy as np  # pyright: ignore[reportMissingImports]
+import numpy as np
 
 _MIN_PRICES = 25  # Hurst needs lag range(2, 20) + enough returns
 

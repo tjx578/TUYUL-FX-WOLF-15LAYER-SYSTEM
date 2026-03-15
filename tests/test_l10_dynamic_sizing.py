@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
-import numpy as np  # pyright: ignore[reportMissingImports]
+import numpy as np
 
 from analysis.layers.L10_position_sizing import (
     _DYNAMIC_SIZING_ENABLED,

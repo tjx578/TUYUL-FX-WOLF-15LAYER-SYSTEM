@@ -4,7 +4,7 @@ Unit tests for VIX Proxy Estimator.
 Tests synthetic VIX estimation from forex candle data.
 """
 
-import numpy as np  # pyright: ignore[reportMissingImports]
+import numpy as np
 
 from analysis.macro.vix_proxy_estimator import VIXProxyEstimator, VIXProxyState
 

@@ -4,10 +4,10 @@ Constitutional boundary: journal has NO decision power, write-only.
 """
 import copy
 
-import pytest  # pyright: ignore[reportMissingImports]
+import pytest
 
 try:
-    from journal.writer import JournalWriter  # pyright: ignore[reportMissingImports]
+    from journal.writer import JournalWriter
     HAS_JOURNAL = True
 except ImportError:
     HAS_JOURNAL = False

@@ -23,7 +23,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-import numpy as np  # pyright: ignore[reportMissingImports]
+import numpy as np
 
 
 @dataclass(frozen=True)
@@ -32,7 +32,7 @@ class CorrelationRiskResult:
 
     max_correlation: float
     average_correlation: float
-    concentration_risk: float      # Eigenvalue-based [0, 1]
+    concentration_risk: float  # Eigenvalue-based [0, 1]
     num_pairs: int
     high_correlation_pairs: tuple[tuple[int, int, float], ...]
     passed: bool
@@ -45,8 +45,7 @@ class CorrelationRiskResult:
             "concentration_risk": self.concentration_risk,
             "num_pairs": self.num_pairs,
             "high_correlation_pairs": [
-                {"pair_i": i, "pair_j": j, "correlation": c}
-                for i, j, c in self.high_correlation_pairs
+                {"pair_i": i, "pair_j": j, "correlation": c} for i, j, c in self.high_correlation_pairs
             ],
             "passed": self.passed,
         }
@@ -105,20 +104,16 @@ class CorrelationRiskEngine:
         num_pairs, num_obs = mat.shape
 
         if num_pairs < 2:
-            raise ValueError(
-                f"Minimum 2 pairs required for correlation analysis, got {num_pairs}"
-            )
+            raise ValueError(f"Minimum 2 pairs required for correlation analysis, got {num_pairs}")
         if num_obs < self._min_obs:
-            raise ValueError(
-                f"Minimum {self._min_obs} observations per pair, got {num_obs}"
-            )
+            raise ValueError(f"Minimum {self._min_obs} observations per pair, got {num_obs}")
 
         # ── Clean NaN / Inf ──────────────────────────────────────────
         if np.any(~np.isfinite(mat)):
             mat = np.nan_to_num(mat, nan=0.0, posinf=0.0, neginf=0.0)
 
         # ── Correlation matrix ───────────────────────────────────────
-        corr_matrix = np.corrcoef(mat)
+        corr_matrix = np.atleast_2d(np.corrcoef(mat))
         # Constant series -> NaN correlations -> replace with 0
         corr_matrix = np.nan_to_num(corr_matrix, nan=0.0)
 
@@ -156,7 +151,8 @@ class CorrelationRiskEngine:
 
     @staticmethod
     def _eigenvalue_concentration(
-        corr_matrix: np.ndarray, num_pairs: int,
+        corr_matrix: np.ndarray,
+        num_pairs: int,
     ) -> float:
         """Compute Herfindahl-Hirschman index of eigenvalue shares.
 
@@ -175,7 +171,7 @@ class CorrelationRiskEngine:
                 return 0.0
 
             normalized = eigenvalues / total
-            hhi = float(np.sum(normalized ** 2))
+            hhi = float(np.sum(normalized**2))
 
             min_hhi = 1.0 / num_pairs
             if num_pairs <= 1:

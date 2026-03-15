@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import numpy as np  # pyright: ignore[reportMissingImports]
+import numpy as np
 
 from analysis.layers.L7_probability import L7ProbabilityAnalyzer
 

@@ -16,8 +16,8 @@ Tests cover:
 
 from __future__ import annotations
 
-import numpy as np  # pyright: ignore[reportMissingImports]
-import pytest  # pyright: ignore[reportMissingImports]
+import numpy as np
+import pytest
 
 from engines.correlation_risk_engine import (
     CorrelationRiskEngine,

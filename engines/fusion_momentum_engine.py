@@ -9,11 +9,10 @@ ANALYSIS-ONLY module. No execution side-effects.
 from __future__ import annotations
 
 import logging
-
 from dataclasses import dataclass, field
 from typing import Any, Dict  # noqa: UP035
 
-import numpy as np  # pyright: ignore[reportMissingImports]
+import numpy as np
 
 logger = logging.getLogger(__name__)
 
@@ -21,6 +20,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # Result
 # ---------------------------------------------------------------------------
+
 
 @dataclass
 class MomentumResult:
@@ -66,6 +66,7 @@ class MomentumResult:
 # Indicator helpers
 # ---------------------------------------------------------------------------
 
+
 def _ema(data: np.ndarray, period: int) -> np.ndarray:
     """Exponential moving average."""
     alpha = 2.0 / (period + 1)
@@ -96,9 +97,7 @@ def _rsi(closes: np.ndarray, period: int = 14) -> float:
     return 100.0 - (100.0 / (1.0 + rs))
 
 
-def _macd(
-    closes: np.ndarray, fast: int = 12, slow: int = 26, signal: int = 9
-) -> tuple[float, float, float]:
+def _macd(closes: np.ndarray, fast: int = 12, slow: int = 26, signal: int = 9) -> tuple[float, float, float]:
     if len(closes) < slow + signal:
         return 0.0, 0.0, 0.0
     ema_fast = _ema(closes, fast)
@@ -110,15 +109,18 @@ def _macd(
 
 
 def _stochastic(
-    highs: np.ndarray, lows: np.ndarray, closes: np.ndarray,
-    k_period: int = 14, d_period: int = 3,
+    highs: np.ndarray,
+    lows: np.ndarray,
+    closes: np.ndarray,
+    k_period: int = 14,
+    d_period: int = 3,
 ) -> tuple[float, float]:
     if len(closes) < k_period:
         return 50.0, 50.0
     k_values: list[float] = []
     for i in range(k_period - 1, len(closes)):
-        highest = float(np.max(highs[i - k_period + 1:i + 1]))
-        lowest = float(np.min(lows[i - k_period + 1:i + 1]))
+        highest = float(np.max(highs[i - k_period + 1 : i + 1]))
+        lowest = float(np.min(lows[i - k_period + 1 : i + 1]))
         if highest == lowest:
             k_values.append(50.0)
         else:
@@ -129,9 +131,7 @@ def _stochastic(
     return k_values[-1], d_value
 
 
-def _adx(
-    highs: np.ndarray, lows: np.ndarray, closes: np.ndarray, period: int = 14
-) -> tuple[float, float, float]:
+def _adx(highs: np.ndarray, lows: np.ndarray, closes: np.ndarray, period: int = 14) -> tuple[float, float, float]:
     """Compute ADX, +DI, -DI."""
     if len(highs) < period + 1:
         return 0.0, 0.0, 0.0
@@ -171,6 +171,7 @@ def _adx(
 # ---------------------------------------------------------------------------
 # Engine
 # ---------------------------------------------------------------------------
+
 
 class FusionMomentumEngine:
     """Fusion Momentum Engine -- analysis only, no side-effects."""
@@ -222,9 +223,7 @@ class FusionMomentumEngine:
         rsi_signal = "OVERBOUGHT" if rsi_val > 70 else ("OVERSOLD" if rsi_val < 30 else "NEUTRAL")
 
         # MACD cross
-        prev_macd_val, prev_macd_sig, _ = _macd(
-            closes[:-1], self.macd_fast, self.macd_slow, self.macd_signal
-        )
+        prev_macd_val, prev_macd_sig, _ = _macd(closes[:-1], self.macd_fast, self.macd_slow, self.macd_signal)
         macd_cross = "NONE"
         if prev_macd_val <= prev_macd_sig and macd_val > macd_sig:
             macd_cross = "BULLISH_CROSS"

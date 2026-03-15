@@ -25,7 +25,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-import numpy as np  # pyright: ignore[reportMissingImports]
+import numpy as np
 
 _DEFAULT_MAX_LAG = 5
 _DEFAULT_CLUSTERING_THRESHOLD = 0.20

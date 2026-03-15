@@ -11,7 +11,7 @@ Tests cover:
 
 from unittest.mock import patch
 
-import pytest  # pyright: ignore[reportMissingImports]
+import pytest
 
 from dashboard.price_watcher import PriceWatcher
 from schemas.trade_models import CloseReason, RiskMode, Trade, TradeLeg, TradeStatus

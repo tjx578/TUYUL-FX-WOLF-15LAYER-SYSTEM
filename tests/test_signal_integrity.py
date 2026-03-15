@@ -4,7 +4,7 @@ Tests for signal integrity -- expiry, dedup, validation.
 
 import time
 
-import pytest  # pyright: ignore[reportMissingImports]
+import pytest
 
 from constitution.signal_integrity import SignalIntegrityGuard, SignalMetadata
 

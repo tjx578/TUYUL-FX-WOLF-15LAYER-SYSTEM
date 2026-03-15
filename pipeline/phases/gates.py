@@ -11,7 +11,7 @@ from __future__ import annotations
 from typing import Any
 
 try:
-    from loguru import logger  # pyright: ignore[reportMissingImports]
+    from loguru import logger
 except ImportError:
     import logging
 

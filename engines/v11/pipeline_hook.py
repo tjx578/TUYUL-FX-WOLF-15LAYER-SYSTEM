@@ -21,7 +21,7 @@ from dataclasses import dataclass
 from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any
 
-from loguru import logger  # pyright: ignore[reportMissingImports]
+from loguru import logger
 
 from engines.v11.config import get_v11, is_v11_enabled
 

@@ -12,7 +12,7 @@ from datetime import datetime
 from pathlib import Path
 from uuid import uuid4
 
-import pytest  # pyright: ignore[reportMissingImports]
+import pytest
 import yaml  # pyright: ignore[reportMissingModuleSource]
 
 from accounts.risk_engine import RiskEngine

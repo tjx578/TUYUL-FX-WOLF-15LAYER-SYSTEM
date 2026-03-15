@@ -5,22 +5,25 @@ Covers connection lifecycle, message format, and broadcast behavior.
 
 from unittest.mock import AsyncMock
 
-import pytest  # pyright: ignore[reportMissingImports]
+import pytest
 
 try:
-    from dashboard.ws_routes import router as ws_router  # pyright: ignore[reportMissingImports]
+    from api.ws_routes import router as ws_router
+
     HAS_WS = True
 except ImportError:
     try:
-        from dashboard.ws_routes import ws_router  # pyright: ignore[reportMissingImports]
+        from dashboard.ws_routes import router as ws_router  # type: ignore[import-not-found]
+
         HAS_WS = True
     except ImportError:
         HAS_WS = False
 
 try:
-    from fastapi import FastAPI  # pyright: ignore[reportMissingImports]
-    from fastapi.testclient import TestClient  # pyright: ignore[reportMissingImports]  # noqa: F401
-    from fastapi.websockets import WebSocket  # pyright: ignore[reportMissingImports]  # noqa: F401
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient  # noqa: F401
+    from fastapi.websockets import WebSocket  # noqa: F401
+
     HAS_FASTAPI = True
 except ImportError:
     HAS_FASTAPI = False
@@ -50,7 +53,7 @@ class TestWebSocketMessageFormat:
             "timestamp": "2026-02-15T10:30:00Z",
         }
         assert msg["type"] == "RISK_ALERT"
-        assert msg["data"]["severity"] in ("INFO", "WARNING", "CRITICAL") # type: ignore
+        assert msg["data"]["severity"] in ("INFO", "WARNING", "CRITICAL")
 
     def test_trade_event_push_format(self):
         msg = {
@@ -64,13 +67,18 @@ class TestWebSocketMessageFormat:
         }
         assert msg["type"] == "TRADE_EVENT"
 
-    @pytest.mark.parametrize("msg_type", [
-        "SIGNAL_UPDATE", "RISK_ALERT", "TRADE_EVENT",
-        "ACCOUNT_UPDATE", "SYSTEM_STATUS",
-    ])
+    @pytest.mark.parametrize(
+        "msg_type",
+        [
+            "SIGNAL_UPDATE",
+            "RISK_ALERT",
+            "TRADE_EVENT",
+            "ACCOUNT_UPDATE",
+            "SYSTEM_STATUS",
+        ],
+    )
     def test_message_type_enum(self, msg_type):
-        valid = {"SIGNAL_UPDATE", "RISK_ALERT", "TRADE_EVENT",
-                 "ACCOUNT_UPDATE", "SYSTEM_STATUS"}
+        valid = {"SIGNAL_UPDATE", "RISK_ALERT", "TRADE_EVENT", "ACCOUNT_UPDATE", "SYSTEM_STATUS"}
         assert msg_type in valid
 
 
@@ -94,7 +102,7 @@ class TestWebSocketLifecycle:
     @pytest.mark.asyncio
     async def test_broadcast_to_all_clients(self):
         clients = []
-        for i in range(5):
+        for _i in range(5):
             ws = AsyncMock()
             ws.send_json = AsyncMock()
             clients.append(ws)
@@ -146,8 +154,8 @@ class TestWebSocketLifecycle:
     @pytest.mark.skipif(not HAS_FASTAPI or not HAS_WS, reason="FastAPI or ws_routes not available")
     def test_ws_endpoint_exists(self):
         """Verify that the WS route is registered."""
-        app = FastAPI() # type: ignore
-        app.include_router(ws_router) # type: ignore
-        routes = [r.path for r in app.routes]
+        app = FastAPI()  # type: ignore
+        app.include_router(ws_router)  # type: ignore
+        routes = [getattr(r, "path", None) for r in app.routes]
         # At least one websocket route should exist
         assert len(routes) > 0

@@ -4,7 +4,7 @@
 import json
 from pathlib import Path
 
-import pytest  # pyright: ignore[reportMissingImports]
+import pytest
 
 try:
     from constitution.verdict_engine import (  # pyright: ignore[reportAttributeAccessIssue] # noqa: F401

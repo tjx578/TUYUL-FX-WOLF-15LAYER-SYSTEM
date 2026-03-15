@@ -12,15 +12,12 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-import os
 import time
-
 from datetime import UTC, datetime
 from typing import Any
 
-import httpx  # pyright: ignore[reportMissingImports]
-
-from loguru import logger  # pyright: ignore[reportMissingImports]
+import httpx
+from loguru import logger
 
 from analysis.macro.vix_analysis_engine import VIXAnalysisEngine
 from analysis.macro.vix_proxy_estimator import VIXProxyEstimator
@@ -33,9 +30,9 @@ API_TIMEOUT = 5.0
 
 # Multipliers per regime state
 MULTIPLIERS = {
-    0: {"volatility": 0.8, "risk": 1.2},   # Tranquil
-    1: {"volatility": 1.0, "risk": 1.0},   # Stressed
-    2: {"volatility": 1.3, "risk": 0.3},   # Crisis
+    0: {"volatility": 0.8, "risk": 1.2},  # Tranquil
+    1: {"volatility": 1.0, "risk": 1.0},  # Stressed
+    2: {"volatility": 1.3, "risk": 0.3},  # Crisis
 }
 
 
@@ -46,6 +43,7 @@ class MacroVolatilityEngine:
         self.redis = redis_client
         self.context = LiveContextBus()
         from ingest.finnhub_key_manager import finnhub_keys  # noqa: PLC0415
+
         self._key_manager = finnhub_keys
         self.api_key = self._key_manager.current_key() or None
 
@@ -163,10 +161,7 @@ class MacroVolatilityEngine:
         except Exception as exc:
             logger.error(f"[MACRO] ContextBus update failed: {exc}")
 
-        logger.info(
-            f"[MACRO] {state['vix_regime']} "
-            f"(VIX={state['vix_level']}, risk={state['risk_multiplier']})"
-        )
+        logger.info(f"[MACRO] {state['vix_regime']} (VIX={state['vix_level']}, risk={state['risk_multiplier']})")
 
     def get_state(self) -> dict[str, Any]:
         """Get latest macro state."""

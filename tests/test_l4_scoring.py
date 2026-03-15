@@ -11,7 +11,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import pytest
 
-from analysis.l4_scoring import (  # pyright: ignore[reportMissingImports]
+from analysis.l4_scoring import (
     DEFAULT_PASS_THRESHOLD,
     FactorScores,
     L4Result,

@@ -5,7 +5,7 @@ import json
 
 from pathlib import Path
 
-import pytest  # pyright: ignore[reportMissingImports]
+import pytest
 
 SCHEMAS_DIR = Path(__file__).parents[2] / "schemas"
 

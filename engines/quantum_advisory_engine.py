@@ -10,7 +10,6 @@ ANALYSIS-ONLY module. No execution side-effects.
 from __future__ import annotations
 
 import logging
-
 from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any
@@ -21,6 +20,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # Result
 # ---------------------------------------------------------------------------
+
 
 # Backward-compat enum (tests/older callers may use AdvisorySignal)
 class AdvisorySignal(StrEnum):
@@ -37,12 +37,12 @@ class AdvisoryResult:
 
     # Advisory recommendation
     advisory_action: str = "HOLD"  # "EXECUTE" | "HOLD" | "NO_TRADE" | "ABORT"
-    direction: str = "NONE"        # "BUY" | "SELL" | "NONE"
+    direction: str = "NONE"  # "BUY" | "SELL" | "NONE"
 
     # Composite scores
     wolf_score: float = 0.0  # 0.0-100.0 Wolf composite score
-    tii_score: float = 0.0   # Trade Idea Index (0-100)
-    frpc_score: float = 0.0  # Full Risk-Performance Composite (0-100)
+    tii_score: float = 0.0  # Advisory Trade Idea Index (0-100). NOT the canonical L8 TII.
+    frpc_score: float = 0.0  # Advisory Risk-Performance Composite (0-100). NOT the canonical FRPC.
 
     # Component contributions
     structure_weight: float = 0.0
@@ -74,6 +74,7 @@ class AdvisoryResult:
 # ---------------------------------------------------------------------------
 # Engine
 # ---------------------------------------------------------------------------
+
 
 class QuantumAdvisoryEngine:
     """Quantum Advisory Engine -- final analysis synthesis.
@@ -146,11 +147,11 @@ class QuantumAdvisoryEngine:
         # Direction consensus
         direction = self._determine_direction(engine_outputs)
 
-        # TII (Trade Idea Index)
-        tii = self._compute_tii(engine_outputs, wolf_score)
+        # Advisory Trade Idea Index (NOT the canonical L8 TII from analysis.l8_tii)
+        tii = self._compute_advisory_tii(engine_outputs, wolf_score)
 
-        # FRPC
-        frpc = self._compute_frpc(engine_outputs, wolf_score, tii)
+        # Advisory Risk-Performance Composite (NOT the canonical FRPC from analysis.formulas.frpc_formula)
+        frpc = self._compute_advisory_rpc(engine_outputs, wolf_score, tii)
 
         # Trade parameters from precision engine
         precision = engine_outputs.get("precision")
@@ -162,7 +163,9 @@ class QuantumAdvisoryEngine:
         # Advisory decision
         advisory_action = self._decide_action(wolf_score, tii, direction, engine_outputs, reasons, warnings)
 
-        confidence = min(1.0, len([s for s in scores.values() if s > 0]) / len(self.weights) * 0.6 + wolf_score / 100 * 0.4)
+        confidence = min(
+            1.0, len([s for s in scores.values() if s > 0]) / len(self.weights) * 0.6 + wolf_score / 100 * 0.4
+        )
 
         return AdvisoryResult(
             advisory_action=advisory_action,
@@ -229,8 +232,13 @@ class QuantumAdvisoryEngine:
         return "NONE"
 
     @staticmethod
-    def _compute_tii(engine_outputs: dict[str, Any], wolf_score: float) -> float:
-        """Trade Idea Index: quality of the trade idea."""
+    def _compute_advisory_tii(engine_outputs: dict[str, Any], wolf_score: float) -> float:
+        """Advisory Trade Idea Index: quality of the trade idea.
+
+        This is an advisory-level composite (wolf*0.4 + coherence*0.25 +
+        context*0.15 + RR*0.2, range 0-100). NOT the canonical L8 TII
+        from ``analysis.l8_tii`` which uses VWAP/energy/bias/reflective/meta.
+        """
         coherence = engine_outputs.get("coherence")
         coherence_val = getattr(coherence, "coherence_score", 0.5) if coherence else 0.5
 
@@ -244,8 +252,13 @@ class QuantumAdvisoryEngine:
         return max(0.0, min(100.0, tii))
 
     @staticmethod
-    def _compute_frpc(engine_outputs: dict[str, Any], wolf_score: float, tii: float) -> float:
-        """Full Risk-Performance Composite."""
+    def _compute_advisory_rpc(engine_outputs: dict[str, Any], wolf_score: float, tii: float) -> float:
+        """Advisory Risk-Performance Composite.
+
+        Weighted blend of wolf/tii/win_prob/risk (range 0-100). NOT the
+        canonical FRPC from ``analysis.formulas.frpc_formula`` which uses
+        tanh compression of fusion/trq/intensity with alpha-sync.
+        """
         risk_sim = engine_outputs.get("risk_simulation")
         win_prob = getattr(risk_sim, "win_probability", 0.5) if risk_sim else 0.5
         risk_score = getattr(risk_sim, "risk_score", 0.5) if risk_sim else 0.5

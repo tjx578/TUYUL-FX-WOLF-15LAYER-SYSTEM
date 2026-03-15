@@ -21,13 +21,12 @@ Backward compatibility:
   • Semua output field dari kedua file original tetap ada
 
 Zone: analysis/ -- pure computation, zero side-effects.
-"""
+"""  # noqa: N999
 
 from __future__ import annotations
 
 import logging
 import math
-
 from datetime import UTC, datetime
 from typing import Any, Final
 
@@ -37,37 +36,33 @@ logger = logging.getLogger(__name__)
 # Loads position_sizing section for Kelly+CVaR engine parameters.
 # Graceful fallback to empty dict if config unavailable.
 try:
-    from config_loader import CONFIG as _APP_CONFIG  # pyright: ignore[reportMissingImports]
-    _PS_CFG: dict[str, Any] = (
-        _APP_CONFIG.get("constitution", {}).get("position_sizing", {})
-    )
+    from config_loader import CONFIG as _APP_CONFIG
+
+    _PS_CFG: dict[str, Any] = _APP_CONFIG.get("constitution", {}).get("position_sizing", {})
 except Exception:  # pragma: no cover
     _PS_CFG = {}
 
-_DYNAMIC_SIZING_ENABLED: Final[bool] = bool(
-    _PS_CFG.get("enable_dynamic_sizing", False)
-)
+_DYNAMIC_SIZING_ENABLED: Final[bool] = bool(_PS_CFG.get("enable_dynamic_sizing", False))
 
 # ── DynamicPositionSizingEngine (Kelly + CVaR + Vol + Bayesian) ──────────
 # Created once with constitution.yaml parameters.  When enabled, its
 # risk_percent output REPLACES the static max_risk_pct in Phase 5.
 try:
-    from engines.dynamic_position_sizing_engine import (  # pyright: ignore[reportMissingImports]
+    from engines.dynamic_position_sizing_engine import (
         DynamicPositionSizingEngine,
         PositionSizingResult,
     )
+
     _dps_engine: DynamicPositionSizingEngine | None = DynamicPositionSizingEngine(
         max_risk_cap=float(_PS_CFG.get("max_kelly_risk_cap", 0.03)),
-        kelly_fraction_multiplier=float(
-            _PS_CFG.get("kelly_fraction_multiplier", 0.5)
-        ),
+        kelly_fraction_multiplier=float(_PS_CFG.get("kelly_fraction_multiplier", 0.5)),
         cvar_confidence=float(_PS_CFG.get("cvar_confidence", 0.95)),
         cvar_sensitivity=float(_PS_CFG.get("cvar_sensitivity", 5.0)),
         min_returns=int(_PS_CFG.get("min_returns_history", 10)),
     )
 except Exception:  # pragma: no cover
     _dps_engine = None
-    PositionSizingResult = None  # type: ignore[assignment,misc]
+    PositionSizingResult = None
 
 __all__ = ["L10PositionAnalyzer", "analyze_risk_geometry"]
 
@@ -94,19 +89,34 @@ _PIP_MULT_STANDARD: Final = 10_000.0
 
 PIP_VALUES_USD: Final[dict[str, float]] = {
     # Majors
-    "EURUSD": 10.0,   "GBPUSD": 10.0,   "AUDUSD": 10.0,
-    "NZDUSD": 10.0,   "USDJPY": 6.67,   "USDCHF": 10.0,
+    "EURUSD": 10.0,
+    "GBPUSD": 10.0,
+    "AUDUSD": 10.0,
+    "NZDUSD": 10.0,
+    "USDJPY": 6.67,
+    "USDCHF": 10.0,
     "USDCAD": 7.50,
     # Crosses
-    "GBPJPY": 6.67,   "EURJPY": 6.67,   "EURGBP": 12.50,
-    "AUDJPY": 6.67,   "NZDJPY": 6.67,   "CADJPY": 6.67,
-    "CHFJPY": 6.67,   "EURAUD": 6.50,   "EURNZD": 6.00,
-    "EURCAD": 7.50,   "GBPAUD": 6.50,   "GBPNZD": 6.00,
-    "GBPCAD": 7.50,   "GBPCHF": 10.0,   "AUDNZD": 6.00,
-    "AUDCAD": 7.50,   "NZDCAD": 7.50,
+    "GBPJPY": 6.67,
+    "EURJPY": 6.67,
+    "EURGBP": 12.50,
+    "AUDJPY": 6.67,
+    "NZDJPY": 6.67,
+    "CADJPY": 6.67,
+    "CHFJPY": 6.67,
+    "EURAUD": 6.50,
+    "EURNZD": 6.00,
+    "EURCAD": 7.50,
+    "GBPAUD": 6.50,
+    "GBPNZD": 6.00,
+    "GBPCAD": 7.50,
+    "GBPCHF": 10.0,
+    "AUDNZD": 6.00,
+    "AUDCAD": 7.50,
+    "NZDCAD": 7.50,
     # Metals
-    "XAUUSD": 10.0,   # 100 oz × $0.10/pip = $10/pip per lot
-    "XAGUSD": 50.0,   # 5000 oz × $0.01/pip = $50/pip per lot
+    "XAUUSD": 10.0,  # 100 oz × $0.10/pip = $10/pip per lot
+    "XAGUSD": 50.0,  # 5000 oz × $0.01/pip = $50/pip per lot
 }
 
 _DEFAULT_PIP_VALUE: Final = 10.0
@@ -136,11 +146,11 @@ _LOT_STEP: Final = 0.01
 # Higher confidence -> allows bigger position; lower -> defensive cut.
 _FTA_BANDS: Final[list[tuple[float, float, float, str]]] = [
     # (min_conf, max_conf, multiplier, label)
-    (0.90, 1.01, 1.20, "VERY_HIGH"),   # ≥90% -> 120% of base risk
-    (0.75, 0.90, 1.00, "HIGH"),         # 75-89% -> 100% (baseline)
-    (0.60, 0.75, 0.80, "MODERATE"),     # 60-74% -> 80%
-    (0.40, 0.60, 0.60, "LOW"),          # 40-59% -> 60%
-    (0.00, 0.40, 0.50, "VERY_LOW"),     # <40%   -> 50% (defensive)
+    (0.90, 1.01, 1.20, "VERY_HIGH"),  # ≥90% -> 120% of base risk
+    (0.75, 0.90, 1.00, "HIGH"),  # 75-89% -> 100% (baseline)
+    (0.60, 0.75, 0.80, "MODERATE"),  # 60-74% -> 80%
+    (0.40, 0.60, 0.60, "LOW"),  # 40-59% -> 60%
+    (0.00, 0.40, 0.50, "VERY_LOW"),  # <40%   -> 50% (defensive)
 ]
 
 # Prop firm compliance gates
@@ -153,6 +163,7 @@ _PROP_MIN_RR: Final = 1.5
 # ═══════════════════════════════════════════════════════════════════════
 # §3  HELPER FUNCTIONS
 # ═══════════════════════════════════════════════════════════════════════
+
 
 def _get_pip_multiplier(pair: str) -> float:
     """Price-difference -> pip conversion multiplier."""
@@ -276,19 +287,11 @@ def _check_prop_compliance(
     """Check prop firm risk rules.  Return list of violations (empty = OK)."""
     v: list[str] = []
     if effective_risk_pct > _PROP_MAX_DAILY_DD_PCT:
-        v.append(
-            f"PROP_DAILY_DD(risk {effective_risk_pct:.2f}% "
-            f"> max {_PROP_MAX_DAILY_DD_PCT}%)"
-        )
+        v.append(f"PROP_DAILY_DD(risk {effective_risk_pct:.2f}% > max {_PROP_MAX_DAILY_DD_PCT}%)")
     if daily_dd_pct > _PROP_MAX_TOTAL_DD_PCT:
-        v.append(
-            f"PROP_TOTAL_DD(dd {daily_dd_pct:.2f}% "
-            f"> max {_PROP_MAX_TOTAL_DD_PCT}%)"
-        )
+        v.append(f"PROP_TOTAL_DD(dd {daily_dd_pct:.2f}% > max {_PROP_MAX_TOTAL_DD_PCT}%)")
     if open_positions >= _PROP_MAX_POSITIONS:
-        v.append(
-            f"PROP_MAX_POSITIONS({open_positions} >= {_PROP_MAX_POSITIONS})"
-        )
+        v.append(f"PROP_MAX_POSITIONS({open_positions} >= {_PROP_MAX_POSITIONS})")
     if 0 < rr_ratio < _PROP_MIN_RR:
         v.append(f"PROP_MIN_RR(rr {rr_ratio:.2f} < min {_PROP_MIN_RR})")
     return v
@@ -297,6 +300,7 @@ def _check_prop_compliance(
 # ═══════════════════════════════════════════════════════════════════════
 # §4  MAIN ANALYZER CLASS
 # ═══════════════════════════════════════════════════════════════════════
+
 
 class L10PositionAnalyzer:
     """Layer 10: Position Sizing & Risk Geometry -- PRODUCTION.
@@ -411,10 +415,7 @@ class L10PositionAnalyzer:
         if explicit_dir:
             direction: str | None = explicit_dir.upper()
             if inferred_dir and direction != inferred_dir:
-                warnings.append(
-                    f"DIRECTION_MISMATCH(explicit={direction}, "
-                    f"inferred={inferred_dir})"
-                )
+                warnings.append(f"DIRECTION_MISMATCH(explicit={direction}, inferred={inferred_dir})")
         else:
             direction = inferred_dir
 
@@ -483,11 +484,7 @@ class L10PositionAnalyzer:
                     win_probability=win_probability,
                     avg_win=avg_win,
                     avg_loss=avg_loss,
-                    posterior_probability=(
-                        bayesian_posterior
-                        if bayesian_posterior is not None
-                        else win_probability
-                    ),
+                    posterior_probability=(bayesian_posterior if bayesian_posterior is not None else win_probability),
                     returns_history=trade_returns,
                     volatility_multiplier=volatility_multiplier,
                 )
@@ -497,9 +494,7 @@ class L10PositionAnalyzer:
                     sizing_source = "DYNAMIC_KELLY"
                 else:
                     sizing_source = "STATIC_KELLY_NO_EDGE"
-                    warnings.append(
-                        f"KELLY_NO_EDGE(kelly_raw={dps_result.kelly_raw:.4f})"
-                    )
+                    warnings.append(f"KELLY_NO_EDGE(kelly_raw={dps_result.kelly_raw:.4f})")
             except Exception as exc:
                 logger.debug("L10 dynamic sizing computation skipped: %s", exc)
 
@@ -511,21 +506,17 @@ class L10PositionAnalyzer:
         max_risk_pct = float(rd.get("max_risk_pct", _DEFAULT_RISK_PCT))
         risk_multiplier = float(rd.get("risk_multiplier", 1.0))
 
-        if kelly_override_pct is not None:
+        if kelly_override_pct is not None:  # noqa: SIM108
             # Kelly-optimal fraction replaces static base
             base_risk_pct = kelly_override_pct
         else:
             base_risk_pct = max_risk_pct * risk_multiplier
 
         if base_risk_pct > _MAX_RISK_PCT:
-            warnings.append(
-                f"RISK_CAPPED({base_risk_pct:.2f}% -> {_MAX_RISK_PCT}%)"
-            )
+            warnings.append(f"RISK_CAPPED({base_risk_pct:.2f}% -> {_MAX_RISK_PCT}%)")
             base_risk_pct = _MAX_RISK_PCT
         elif base_risk_pct < _MIN_RISK_PCT:
-            warnings.append(
-                f"RISK_BELOW_MIN({base_risk_pct:.2f}% < {_MIN_RISK_PCT}%)"
-            )
+            warnings.append(f"RISK_BELOW_MIN({base_risk_pct:.2f}% < {_MIN_RISK_PCT}%)")
 
         # ── PHASE 6: FTA confidence adjustment ──────────────────────
         #
@@ -553,15 +544,16 @@ class L10PositionAnalyzer:
             risk_amount = 0.0
             lot_size = _LOT_MIN
         else:
-            risk_amount = round(
-                account_balance * (adjusted_risk_pct / 100.0), 2
-            )
+            risk_amount = round(account_balance * (adjusted_risk_pct / 100.0), 2)
             lot_size = _compute_lot_size(risk_amount, sl_pips, pip_value)
 
         # ── PHASE 8: Prop firm compliance ────────────────────────────
 
         prop_violations = _check_prop_compliance(
-            adjusted_risk_pct, rr_ratio, open_positions, daily_dd_pct,
+            adjusted_risk_pct,
+            rr_ratio,
+            open_positions,
+            daily_dd_pct,
         )
         if prop_violations:
             warnings.extend(prop_violations)
@@ -591,9 +583,19 @@ class L10PositionAnalyzer:
         logger.debug(
             "L10 sizing: pair=%s dir=%s sl=%.1f tp=%.1f rr=%.2f(%s) "
             "fta=%.1f(%s) risk=%.2f%% lot=%.2f ok=%s meta=%s src=%s",
-            pair, direction, sl_pips, tp_pips, rr_ratio, rr_quality,
-            fta_score, fta_label, adjusted_risk_pct, lot_size,
-            position_ok, meta_state, sizing_source,
+            pair,
+            direction,
+            sl_pips,
+            tp_pips,
+            rr_ratio,
+            rr_quality,
+            fta_score,
+            fta_label,
+            adjusted_risk_pct,
+            lot_size,
+            position_ok,
+            meta_state,
+            sizing_source,
         )
 
         result: dict[str, Any] = {
@@ -637,9 +639,7 @@ class L10PositionAnalyzer:
             "kelly_edge_negative": dps_result.edge_negative if dps_result else None,
             "cvar_adjustment": dps_result.cvar_adjustment if dps_result else None,
             "cvar_value": dps_result.cvar_value if dps_result else None,
-            "volatility_adjustment": (
-                dps_result.volatility_adjustment if dps_result else None
-            ),
+            "volatility_adjustment": (dps_result.volatility_adjustment if dps_result else None),
             "dps_result": dps_result.to_dict() if dps_result else None,
             # ── Metadata ──
             "warnings": warnings,
@@ -653,6 +653,7 @@ class L10PositionAnalyzer:
 # ═══════════════════════════════════════════════════════════════════════
 # §5  BACKWARD-COMPATIBLE STANDALONE FUNCTION
 # ═══════════════════════════════════════════════════════════════════════
+
 
 def analyze_risk_geometry(
     trade_params: dict[str, Any],

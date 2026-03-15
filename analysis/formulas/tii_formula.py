@@ -1,12 +1,17 @@
-"""TII (Trade Integrity Index) formula.
+"""TII (Trade Integrity Index) formula — redirect to canonical implementation.
 
 Zone: analysis/formulas/ — pure calculation, no side-effects.
 
-Computes a tanh-normalised integrity score from pre-scored components.
-Consumed by constitution/layer12_pipeline.py for the L12 verdict.
+**Canonical TII lives in ``analysis.l8_tii._compute_tii``** (5-component
+weighted model: VWAP alignment, energy coherence, bias confirmation,
+reflective stability, meta integrity).  This module provides a thin
+adapter so existing callers (``constitution/layer12_pipeline.py``,
+``core/tii_engine.py``) keep working without change.
 """
 
-from numpy import tanh
+from __future__ import annotations
+
+from analysis.l8_tii import _compute_tii
 
 __all__ = ["calculate_tii"]
 
@@ -20,13 +25,26 @@ def calculate_tii(
     vwap: float,
     atr: float,
 ) -> float | None:
-    """Compute Trade Integrity Index from pre-scored components.
+    """Compute TII via canonical 5-component model (``analysis.l8_tii``).
 
-    Returns tanh-normalised score in [0, 0.999], or None if inputs invalid.
+    Parameters are mapped to the canonical interface:
+        trq         → trq_energy  (field energy)
+        intensity   → reflective_intensity  (L1 confidence proxy)
+        integrity   → meta_integrity  (data-completeness)
+        price, vwap → passed through
+        atr         → validation guard only (not used in computation)
+        bias_strength → passed through
+
+    Returns the TII score (0.0–1.0) or ``None`` if inputs are invalid.
     """
     if vwap == 0 or atr <= 0 or price <= 0:
-        return None  # Invalid data
-    deviation = abs(price - vwap) / atr
-    raw_tii = (trq * intensity * bias_strength * integrity) / (1 + deviation)
-    tii_index = tanh(raw_tii)
-    return min(max(tii_index, 0.0), 0.999)
+        return None
+    result = _compute_tii(
+        price=price,
+        vwap=vwap,
+        trq_energy=trq,
+        bias_strength=bias_strength,
+        reflective_intensity=max(0.0, min(1.0, intensity)),
+        meta_integrity=max(0.0, min(1.0, integrity)),
+    )
+    return result["tii"]

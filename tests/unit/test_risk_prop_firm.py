@@ -4,7 +4,7 @@ Constitutional boundary: guard is binding for risk legality, not for market deci
 """
 import copy
 
-import pytest  # pyright: ignore[reportMissingImports]
+import pytest
 
 try:
     from risk.prop_firm import PropFirmGuard, check  # pyright: ignore[reportAttributeAccessIssue]

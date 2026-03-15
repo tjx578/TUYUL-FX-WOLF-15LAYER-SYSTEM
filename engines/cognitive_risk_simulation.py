@@ -10,11 +10,10 @@ from __future__ import annotations
 
 import logging
 import math
-
 from dataclasses import dataclass, field
 from typing import Any
 
-import numpy as np  # pyright: ignore[reportMissingImports]
+import numpy as np
 
 logger = logging.getLogger(__name__)
 
@@ -22,6 +21,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # Result
 # ---------------------------------------------------------------------------
+
 
 @dataclass
 class RiskSimulationResult:
@@ -61,6 +61,7 @@ class RiskSimulationResult:
 # ---------------------------------------------------------------------------
 # Engine
 # ---------------------------------------------------------------------------
+
 
 class CognitiveRiskSimulation:
     """Risk simulation engine -- analysis only, no execution.
@@ -107,26 +108,20 @@ class CognitiveRiskSimulation:
             Proposed trade levels (from precision engine).
         """
         if not candles or direction == "NONE":
-            return RiskSimulationResult(
-                metadata={"symbol": symbol, "error": "no_data_or_direction"}
-            )
+            return RiskSimulationResult(metadata={"symbol": symbol, "error": "no_data_or_direction"})
 
         primary_tf = self._select_primary(candles)
         tf_candles = candles[primary_tf]
 
         if len(tf_candles) < 20:
-            return RiskSimulationResult(
-                metadata={"symbol": symbol, "error": "insufficient_candles"}
-            )
+            return RiskSimulationResult(metadata={"symbol": symbol, "error": "insufficient_candles"})
 
         closes = np.array([c.get("close", 0.0) for c in tf_candles], dtype=np.float64)
         returns = np.diff(np.log(closes[closes > 0]))
         returns = returns[np.isfinite(returns)]
 
         if len(returns) < 10:
-            return RiskSimulationResult(
-                metadata={"symbol": symbol, "error": "insufficient_returns"}
-            )
+            return RiskSimulationResult(metadata={"symbol": symbol, "error": "insufficient_returns"})
 
         mu = float(np.mean(returns))
         sigma = float(np.std(returns))
@@ -169,7 +164,7 @@ class CognitiveRiskSimulation:
         risk_dist = abs(entry_price - stop_loss)
         reward_dist = abs(take_profit - entry_price)
         expected_rr = (reward_dist / risk_dist) if risk_dist > 0 else 0.0
-        win_prob * reward_dist - loss_prob * risk_dist # type: ignore
+        win_prob * reward_dist - loss_prob * risk_dist  # type: ignore
 
         avg_mae = float(np.mean(mae_list)) if mae_list else 0.0
         avg_mfe = float(np.mean(mfe_list)) if mfe_list else 0.0
@@ -210,9 +205,7 @@ class CognitiveRiskSimulation:
             metadata={"symbol": symbol, "primary_tf": primary_tf, "mu": mu, "sigma": sigma},
         )
 
-    def _simulate_path(
-        self, start_price: float, mu: float, sigma: float, steps: int
-    ) -> np.ndarray:
+    def _simulate_path(self, start_price: float, mu: float, sigma: float, steps: int) -> np.ndarray:
         """Simulate a GBM price path."""
         shocks = self.rng.normal(mu, sigma, steps)
         log_prices = np.cumsum(shocks)
@@ -234,10 +227,7 @@ class CognitiveRiskSimulation:
         outcome = "NEUTRAL"
 
         for price in path[1:]:
-            if is_buy:
-                pnl = price - entry
-            else:
-                pnl = entry - price
+            pnl = price - entry if is_buy else entry - price
 
             mfe = max(mfe, pnl)
             if pnl < -mae:

@@ -2,7 +2,7 @@
 Tests for prop firm guard -- critical for live trading safety.
 """
 
-import pytest  # pyright: ignore[reportMissingImports]
+import pytest
 
 from risk.enhanced_prop_guard import (
     FTMO_PROFILE,

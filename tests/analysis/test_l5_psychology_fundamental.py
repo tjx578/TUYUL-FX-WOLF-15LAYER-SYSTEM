@@ -5,7 +5,7 @@ Zone: analysis/ — pure computation, no side-effects.
 
 from datetime import UTC, datetime
 
-import pytest  # pyright: ignore[reportMissingImports]
+import pytest
 
 from analysis.layers.L5_psychology_fundamental import (
     L5AnalysisLayer,

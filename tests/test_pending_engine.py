@@ -6,7 +6,7 @@ from datetime import UTC, datetime
 from typing import Any
 from unittest.mock import MagicMock, patch
 
-import pytest  # pyright: ignore[reportMissingImports]
+import pytest
 
 from execution.pending_engine import (
     _BROKER_MAX_LOT,

@@ -4,14 +4,14 @@ Tests for Telegram alert system.
 
 from unittest.mock import AsyncMock, MagicMock
 
-import pytest  # pyright: ignore[reportMissingImports]
+import pytest
 
 try:
-    from dashboard.telegram import TelegramBot, send_alert  # pyright: ignore[reportMissingImports]
+    from dashboard.telegram import TelegramBot, send_alert
     HAS_TELEGRAM = True
 except ImportError:
     try:
-        from notifications.telegram import (  # pyright: ignore[reportMissingImports]
+        from notifications.telegram import (
             TelegramBot,  # noqa: F401
             send_alert,  # noqa: F401
         )

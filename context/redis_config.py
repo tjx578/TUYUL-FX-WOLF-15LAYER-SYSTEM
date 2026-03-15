@@ -9,7 +9,7 @@ def create_redis_client() -> Redis:
     cfg = RedisConfig.from_env()
     url = get_redis_url()
     # ssl is inferred from URL scheme (rediss:// = TLS, redis:// = plain)
-    client: Redis = Redis.from_url(  # type: ignore[no-untyped-call]
+    client: Redis = Redis.from_url(
         url,
         decode_responses=cfg.decode_responses,
         max_connections=cfg.max_connections,

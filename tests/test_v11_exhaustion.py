@@ -9,7 +9,7 @@ Tests cover:
 - Confidence scoring
 """
 
-import pytest  # pyright: ignore[reportMissingImports]
+import pytest
 
 from engines.v11.exhaustion_detector import (
     ExhaustionDetector,

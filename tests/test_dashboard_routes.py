@@ -8,9 +8,9 @@ Tests cover:
   - Price endpoints
 """
 
-import pytest  # pyright: ignore[reportMissingImports]
+import pytest
 
-from fastapi.testclient import TestClient  # pyright: ignore[reportMissingImports]
+from fastapi.testclient import TestClient
 
 from api_server import app
 from dashboard.account_manager import AccountManager

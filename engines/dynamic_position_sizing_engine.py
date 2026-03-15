@@ -45,15 +45,15 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-import numpy as np  # pyright: ignore[reportMissingImports]
+import numpy as np
 
 # ── Defaults ─────────────────────────────────────────────────────────────────
-_DEFAULT_MAX_RISK_CAP = 0.03          # 3% absolute maximum risk per trade
-_DEFAULT_KELLY_FRACTION = 0.5         # Half-Kelly (conservative institutional)
-_DEFAULT_CVAR_CONFIDENCE = 0.95       # 95% CVaR (5th percentile)
-_DEFAULT_CVAR_SENSITIVITY = 5.0       # CVaR dampening coefficient
-_DEFAULT_MIN_RETURNS = 10             # Minimum return history for CVaR
-_DEFAULT_MIN_VOL_MULT = 0.01         # Floor for volatility multiplier
+_DEFAULT_MAX_RISK_CAP = 0.03  # 3% absolute maximum risk per trade
+_DEFAULT_KELLY_FRACTION = 0.5  # Half-Kelly (conservative institutional)
+_DEFAULT_CVAR_CONFIDENCE = 0.95  # 95% CVaR (5th percentile)
+_DEFAULT_CVAR_SENSITIVITY = 5.0  # CVaR dampening coefficient
+_DEFAULT_MIN_RETURNS = 10  # Minimum return history for CVaR
+_DEFAULT_MIN_VOL_MULT = 0.01  # Floor for volatility multiplier
 
 
 @dataclass(frozen=True)
@@ -66,22 +66,22 @@ class PositionSizingResult:
     """
 
     # ── Component outputs ────────────────────────────────────────────
-    kelly_raw: float              # Raw full-Kelly fraction (can be negative)
-    kelly_fraction: float         # Fractional Kelly after clamp [0, 1]
-    cvar_adjustment: float        # CVaR dampening factor (0, 1]
+    kelly_raw: float  # Raw full-Kelly fraction (can be negative)
+    kelly_fraction: float  # Fractional Kelly after clamp [0, 1]
+    cvar_adjustment: float  # CVaR dampening factor (0, 1]
     volatility_adjustment: float  # Volatility dampening factor (0, 1]
-    posterior_adjustment: float   # Bayesian posterior scaling [0, 1]
+    posterior_adjustment: float  # Bayesian posterior scaling [0, 1]
 
     # ── Final output ─────────────────────────────────────────────────
-    final_fraction: float         # Recommended risk fraction [0, max_risk_cap]
-    risk_percent: float           # final_fraction × 100 for display
-    max_risk_cap: float           # Applied cap value
+    final_fraction: float  # Recommended risk fraction [0, max_risk_cap]
+    risk_percent: float  # final_fraction × 100 for display
+    max_risk_cap: float  # Applied cap value
 
     # ── Diagnostics ──────────────────────────────────────────────────
-    edge_negative: bool           # True if Kelly raw was negative (no edge)
-    cvar_value: float             # Computed CVaR (Expected Shortfall)
-    var_value: float              # Computed VaR at confidence level
-    payoff_ratio: float           # avg_win / abs(avg_loss)
+    edge_negative: bool  # True if Kelly raw was negative (no edge)
+    cvar_value: float  # Computed CVaR (Expected Shortfall)
+    var_value: float  # Computed VaR at confidence level
+    payoff_ratio: float  # avg_win / abs(avg_loss)
 
     # ── Backward Compatibility Aliases ────────────────────────────────
     # risk_engine_v2 and dashboard read these names.
@@ -150,9 +150,7 @@ class DynamicPositionSizingEngine:
         if not 0.0 < max_risk_cap <= 1.0:
             raise ValueError(f"max_risk_cap must be in (0, 1], got {max_risk_cap}")
         if not 0.0 < kelly_fraction_multiplier <= 1.0:
-            raise ValueError(
-                f"kelly_fraction_multiplier must be in (0, 1], got {kelly_fraction_multiplier}"
-            )
+            raise ValueError(f"kelly_fraction_multiplier must be in (0, 1], got {kelly_fraction_multiplier}")
         if not 0.0 < cvar_confidence < 1.0:
             raise ValueError(f"cvar_confidence must be in (0, 1), got {cvar_confidence}")
         if cvar_sensitivity <= 0.0:
@@ -194,8 +192,12 @@ class DynamicPositionSizingEngine:
         """
         # ── Input validation ─────────────────────────────────────────
         self._validate_inputs(
-            win_probability, avg_win, avg_loss,
-            posterior_probability, returns_history, volatility_multiplier,
+            win_probability,
+            avg_win,
+            avg_loss,
+            posterior_probability,
+            returns_history,
+            volatility_multiplier,
         )
 
         abs_avg_loss = abs(avg_loss)
@@ -237,12 +239,7 @@ class DynamicPositionSizingEngine:
         # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
         # FINAL HYBRID FRACTION
         # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-        final_fraction = (
-            kelly_fraction
-            * cvar_adjustment
-            * volatility_adjustment
-            * posterior_adjustment
-        )
+        final_fraction = kelly_fraction * cvar_adjustment * volatility_adjustment * posterior_adjustment
 
         # Absolute cap -- prop-firm safety
         final_fraction = max(0.0, min(final_fraction, self._max_risk_cap))
@@ -275,33 +272,24 @@ class DynamicPositionSizingEngine:
     ) -> None:
         """Validate all inputs with explicit error messages."""
         if not 0.0 <= win_probability <= 1.0:
-            raise ValueError(
-                f"win_probability must be in [0, 1], got {win_probability}"
-            )
+            raise ValueError(f"win_probability must be in [0, 1], got {win_probability}")
         if avg_win <= 0.0:
-            raise ValueError(
-                f"avg_win must be > 0 (average winning P&L), got {avg_win}"
-            )
+            raise ValueError(f"avg_win must be > 0 (average winning P&L), got {avg_win}")
         if avg_loss == 0.0:
-            raise ValueError(
-                "avg_loss cannot be zero (division by zero in payoff ratio)"
-            )
+            raise ValueError("avg_loss cannot be zero (division by zero in payoff ratio)")
         if not 0.0 <= posterior_probability <= 1.0:
-            raise ValueError(
-                f"posterior_probability must be in [0, 1], got {posterior_probability}"
-            )
+            raise ValueError(f"posterior_probability must be in [0, 1], got {posterior_probability}")
         if len(returns_history) < self._min_returns:
             raise ValueError(
                 f"returns_history needs ≥ {self._min_returns} observations "
                 f"for CVaR computation, got {len(returns_history)}"
             )
         if volatility_multiplier < 0.0:
-            raise ValueError(
-                f"volatility_multiplier must be ≥ 0, got {volatility_multiplier}"
-            )
+            raise ValueError(f"volatility_multiplier must be ≥ 0, got {volatility_multiplier}")
 
     def _compute_cvar(
-        self, returns_history: list[float],
+        self,
+        returns_history: list[float],
     ) -> tuple[float, float, float]:
         """Compute VaR, CVaR (Expected Shortfall), and the CVaR adjustment factor.
 
@@ -318,7 +306,7 @@ class DynamicPositionSizingEngine:
         # CVaR = mean of returns ≤ VaR (Expected Shortfall)
         tail = arr[arr <= var_value]
 
-        if len(tail) == 0:
+        if len(tail) == 0:  # noqa: SIM108
             # No returns at or below VaR -> use VaR as CVaR (conservative)
             cvar_value = var_value
         else:

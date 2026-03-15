@@ -6,7 +6,7 @@ TII measures how "clean" a setup is — alignment across multiple
 quality dimensions. It is NOT a trade decision; that's L12's job.
 """
 
-import pytest  # pyright: ignore[reportMissingImports]
+import pytest
 
 from analysis.l8_tii import (
     TIIGrade,  # pyright: ignore[reportAttributeAccessIssue]

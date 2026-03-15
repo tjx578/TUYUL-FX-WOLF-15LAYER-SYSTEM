@@ -19,7 +19,7 @@ import math
 from dataclasses import dataclass
 from typing import Any
 
-import numpy as np  # pyright: ignore[reportMissingImports]
+import numpy as np
 
 
 def _normal_cdf(x: np.ndarray) -> np.ndarray:
@@ -30,7 +30,7 @@ def _normal_cdf(x: np.ndarray) -> np.ndarray:
     """
     return 0.5 * (1.0 + np.vectorize(math.erf)(x / np.sqrt(2.0)))
 
-from numpy.typing import NDArray  # pyright: ignore[reportMissingImports]  # noqa: E402
+from numpy.typing import NDArray  # noqa: E402
 
 
 @dataclass(frozen=True)

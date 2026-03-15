@@ -1,7 +1,7 @@
 import asyncio
 import datetime
 
-from loguru import logger  # pyright: ignore[reportMissingImports]
+from loguru import logger
 
 from analysis.macro.macro_regime_engine import MacroRegimeEngine
 from ingest.finnhub_candles import FinnhubCandleFetcher

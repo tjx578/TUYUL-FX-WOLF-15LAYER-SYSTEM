@@ -8,7 +8,7 @@ Tests cover:
 - Has edge determination
 """
 
-import pytest  # pyright: ignore[reportMissingImports]
+import pytest
 
 from engines.v11.validation import EdgeValidator
 

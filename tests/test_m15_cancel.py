@@ -1,4 +1,4 @@
-import pytest  # pyright: ignore[reportMissingImports]
+import pytest
 
 from execution.cancel_engine import CancelEngine
 from execution.state_machine import ExecutionStateMachine

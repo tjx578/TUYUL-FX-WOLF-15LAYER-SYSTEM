@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-import numpy as np  # pyright: ignore[reportMissingImports]
-import pytest  # pyright: ignore[reportMissingImports]
+import numpy as np
+import pytest
 
-from engines.monte_carlo_engine import (  # pyright: ignore[reportMissingImports]
+from engines.monte_carlo_engine import (
     MonteCarloEngine,
     MonteCarloResult,
 )

@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
-import pytest  # pyright: ignore[reportMissingImports]
+import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 

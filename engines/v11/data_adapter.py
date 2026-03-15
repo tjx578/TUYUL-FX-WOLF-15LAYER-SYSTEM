@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from loguru import logger  # pyright: ignore[reportMissingImports]
+from loguru import logger
 
 from context.live_context_bus import LiveContextBus
 from engines.correlation_risk_engine import CorrelationRiskEngine

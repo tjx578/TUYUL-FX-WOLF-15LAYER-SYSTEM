@@ -31,6 +31,7 @@ from core.metrics import Counter, Histogram, get_registry
 # Configuration
 # ---------------------------------------------------------------------------
 
+
 def _env_bool(key: str, default: bool) -> bool:
     return os.getenv(key, str(default)).lower() in ("true", "1", "yes")
 
@@ -79,7 +80,7 @@ class PrometheusMiddleware(BaseHTTPMiddleware):
     def __init__(self, app: ASGIApp) -> None:
         super().__init__(app)
 
-    async def dispatch(self, request: Request, call_next):  # type: ignore[override]
+    async def dispatch(self, request: Request, call_next):
         if not MIDDLEWARE_ENABLED or request.url.path in _SKIP_PATHS:
             return await call_next(request)
 
