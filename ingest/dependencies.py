@@ -12,12 +12,13 @@ from typing import TYPE_CHECKING, Any, cast
 
 from redis.asyncio import Redis
 
+from analysis.latency_tracker import LatencyTracker
+from analysis.signal_conditioner import SignalConditioner
 from analysis.tick_filter import (
     DedupCache,
     SpikeFilter,
     TickFilterConfig,
 )
-from analysis.signal_conditioner import SignalConditioner
 from config_loader import CONFIG
 from context.live_context_bus import LiveContextBus
 from ingest.finnhub_ws import FinnhubSymbolMapper, FinnhubWebSocket
@@ -34,10 +35,7 @@ _TICK_CFG: dict[str, Any] = CONFIG.get("finnhub", {}).get("tick_filter", {})
 _SC_CFG: dict[str, Any] = CONFIG.get("finnhub", {}).get("signal_conditioning", {})
 
 # Per-symbol spike rejection thresholds (percentage) — config-driven
-SPIKE_THRESHOLDS: dict[str, float] = {
-    str(k): float(v)
-    for k, v in _TICK_CFG.get("spike_thresholds", {}).items()
-} or {
+SPIKE_THRESHOLDS: dict[str, float] = {str(k): float(v) for k, v in _TICK_CFG.get("spike_thresholds", {}).items()} or {
     # Inline fallback only if config section is absent entirely
     "XAUUSD": 2.0,
     "GBPJPY": 1.0,
@@ -76,6 +74,7 @@ _symbol_tick_prices: dict[str, deque[float]] = {}
 # Tests import _last_prices / _last_timestamps and mutate them directly.
 # These proxy dicts synchronise writes with the underlying SpikeFilter store.
 
+
 class _LastPriceProxy(dict[str, float]):
     """Dict proxy that mirrors writes into the SpikeFilter's LastPriceStore."""
 
@@ -109,7 +108,8 @@ _last_exchange_ts_ms: dict[str, float] = {}
 
 # ── Tick deduplication state (legacy alias kept for test imports) ──
 
-class _DedupCacheProxy(dict):  # type: ignore[type-arg]
+
+class _DedupCacheProxy(dict):
     """Legacy proxy: clear() also resets the unified DedupCache."""
 
     def clear(self) -> None:
@@ -117,7 +117,7 @@ class _DedupCacheProxy(dict):  # type: ignore[type-arg]
         _unified_dedup.clear()
 
 
-_dedup_cache: dict[tuple[str, float, float], float] = _DedupCacheProxy()  # type: ignore[assignment]
+_dedup_cache: dict[tuple[str, float, float], float] = _DedupCacheProxy()
 _DEDUP_CACHE_MAX = 5_000  # kept for backward compat
 
 
@@ -158,9 +158,11 @@ def _update_realtime_conditioning(
         return
 
     conditioned = _signal_conditioner.condition_prices(list(window))
-    diagnostics = conditioned.diagnostics()
-    diagnostics["source"] = "tick_realtime"
-    diagnostics["timestamp"] = ts
+    diagnostics: dict[str, str | float | int] = {
+        **conditioned.diagnostics(),
+        "source": "tick_realtime",
+        "timestamp": ts,
+    }
     context_bus.update_conditioned_returns(
         symbol=symbol,
         returns=conditioned.conditioned_returns,
@@ -303,6 +305,7 @@ def _build_tick_handler(
 ) -> Callable[[dict[str, Any]], Awaitable[None]]:
     """Create WS message handler that normalizes and writes ticks to context."""
     context_bus = LiveContextBus()
+    _latency_tracker = LatencyTracker()
 
     async def _handle_tick(data: dict[str, Any]) -> None:
         try:
@@ -396,6 +399,7 @@ def _build_tick_handler(
                     "source": "finnhub_ws",
                 }
                 context_bus.update_tick(normalized_tick)
+                _latency_tracker.record_tick(internal_symbol)
                 _update_realtime_conditioning(
                     context_bus=context_bus,
                     symbol=internal_symbol,
@@ -439,6 +443,7 @@ async def create_finnhub_ws(
     """Factory for FinnhubWebSocket with defaults and tick normalization."""
     # Initialise DLQ singleton (idempotent — safe to call multiple times)
     from ingest.tick_dlq import init_dlq
+
     init_dlq(redis)
 
     mapper = FinnhubSymbolMapper(prefix="OANDA")
@@ -452,7 +457,7 @@ async def create_finnhub_ws(
             mapper=mapper,
             allowed_symbols=allowed_symbols,
             candle_callback=candle_callback,
-        ), # pyright: ignore[reportArgumentType]
+        ),
         symbols=external_symbols,
     )
 
@@ -460,5 +465,5 @@ async def create_finnhub_ws(
 async def create_default_finnhub_ws() -> FinnhubWebSocket:
     """Factory that builds Redis client and configured Finnhub WS instance."""
     redis_url = os.getenv("REDIS_URL", _DEFAULT_REDIS_URL)
-    redis: Redis = Redis.from_url(redis_url, decode_responses=True)  # type: ignore[misc]
+    redis: Redis = Redis.from_url(redis_url, decode_responses=True)
     return await create_finnhub_ws(redis=redis)
