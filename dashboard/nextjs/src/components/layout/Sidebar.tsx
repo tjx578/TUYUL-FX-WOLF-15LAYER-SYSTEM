@@ -29,7 +29,7 @@ function Icon({ d, size = 14 }: { d: string; size?: number }) {
       strokeWidth={1.8}
       strokeLinecap="round"
       strokeLinejoin="round"
-      style={{ flexShrink: 0, opacity: 0.85 }}
+      style={{ flexShrink: 0, opacity: 0.9 }}
       aria-hidden="true"
     >
       <path d={d} />

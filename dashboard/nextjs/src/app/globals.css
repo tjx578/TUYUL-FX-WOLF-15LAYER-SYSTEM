@@ -5,55 +5,62 @@
 /* ============================================================
    WOLF-15 TERMINAL — PRODUCTION DESIGN TOKENS
    Institutional dark trading terminal
-   Colors: 5 max — #050A14 bg / #0B1623 panel / #F5A623 gold /
+   Colors: 5 — #080C14 bg / #0E1420 panel / #1A6EFF blue /
            #00E676 green / #FF3D57 red
    ============================================================ */
 
 :root {
   /* ── BACKGROUNDS ── */
-  --bg-base:      #050a14;
-  --bg-panel:     #0b1623;
-  --bg-card:      #0f1d2a;
-  --bg-elevated:  #131f2e;
-  --bg-hover:     #162235;
-  --bg-border:    #1e2d40;
-  --bg-overlay:   rgba(5, 10, 20, 0.88);
+  --bg-base:      #080c14;
+  --bg-panel:     #0e1420;
+  --bg-card:      #121922;
+  --bg-elevated:  #161e28;
+  --bg-hover:     #1a2230;
+  --bg-border:    #1e2a3a;
+  --bg-overlay:   rgba(8, 12, 20, 0.90);
 
-  /* ── ACCENT — WOLF GOLD ── */
-  --accent:       #f5a623;
-  --accent-dim:   #c17d13;
-  --accent-glow:  rgba(245, 166, 35, 0.18);
-  --accent-muted: rgba(245, 166, 35, 0.10);
+  /* ── ACCENT — ELECTRIC BLUE ── */
+  --accent:       #1a6eff;
+  --accent-dim:   #1255cc;
+  --accent-glow:  rgba(26, 110, 255, 0.20);
+  --accent-muted: rgba(26, 110, 255, 0.10);
+
+  /* ── WOLF GOLD (secondary accent — alerts, badges only) ── */
+  --gold:         #f5a623;
+  --gold-dim:     #c17d13;
+  --gold-glow:    rgba(245, 166, 35, 0.18);
+  --gold-muted:   rgba(245, 166, 35, 0.10);
 
   /* ── STATUS COLORS ── */
   --green:        #00e676;
   --green-dim:    #00994d;
-  --green-glow:   rgba(0, 230, 118, 0.18);
+  --green-glow:   rgba(0, 230, 118, 0.15);
   --red:          #ff3d57;
   --red-dim:      #cc0026;
-  --red-glow:     rgba(255, 61, 87, 0.18);
+  --red-glow:     rgba(255, 61, 87, 0.15);
   --yellow:       #ffd740;
-  --yellow-glow:  rgba(255, 215, 64, 0.15);
-  --blue:         #448aff;
-  --blue-glow:    rgba(68, 138, 255, 0.18);
-  --cyan:         #00e5ff;
-  --cyan-glow:    rgba(0, 229, 255, 0.18);
-  --purple:       #e040fb;
-  --teal:         #00ccb8;
+  --yellow-glow:  rgba(255, 215, 64, 0.13);
+  --blue:         #1a6eff;
+  --blue-glow:    rgba(26, 110, 255, 0.20);
+  --cyan:         #00d4ff;
+  --cyan-glow:    rgba(0, 212, 255, 0.15);
+  --purple:       #b040fb;
+  --teal:         #00b8a9;
 
   /* ── TEXT ── */
-  --text-primary:   rgba(232, 237, 243, 0.96);
-  --text-secondary: rgba(125, 154, 181, 0.90);
-  --text-muted:     rgba(74, 99, 122, 0.90);
-  --text-faint:     rgba(74, 99, 122, 0.50);
+  --text-primary:   rgba(225, 232, 242, 0.96);
+  --text-secondary: rgba(118, 148, 178, 0.92);
+  --text-muted:     rgba(70, 95, 120, 0.90);
+  --text-faint:     rgba(70, 95, 120, 0.50);
 
   /* ── BORDERS ── */
-  --border-default: rgba(30, 45, 64, 0.90);
-  --border-subtle:  rgba(255, 255, 255, 0.05);
-  --border-strong:  rgba(255, 255, 255, 0.12);
-  --border-accent:  rgba(245, 166, 35, 0.30);
-  --border-danger:  rgba(255, 61, 87, 0.30);
-  --border-success: rgba(0, 230, 118, 0.30);
+  --border-default: rgba(30, 42, 58, 0.95);
+  --border-subtle:  rgba(255, 255, 255, 0.04);
+  --border-strong:  rgba(255, 255, 255, 0.10);
+  --border-accent:  rgba(26, 110, 255, 0.35);
+  --border-danger:  rgba(255, 61, 87, 0.28);
+  --border-success: rgba(0, 230, 118, 0.28);
+  --border-warn:    rgba(255, 215, 64, 0.25);
 
   /* ── TYPOGRAPHY ── */
   --font-display: "Rajdhani", "Inter", sans-serif;
@@ -61,27 +68,28 @@
   --font-mono:    "Share Tech Mono", "Space Mono", monospace;
 
   /* ── LAYOUT ── */
-  --sidebar-w:    224px;
+  --sidebar-w:    220px;
   --header-h:     52px;
-  --radius-sm:    4px;
-  --radius-md:    6px;
-  --radius-lg:    10px;
-  --radius-xl:    14px;
+  --radius-sm:    5px;
+  --radius-md:    8px;
+  --radius-lg:    12px;
+  --radius-xl:    16px;
 
   /* ── SHADOWS ── */
-  --shadow-card:   0 4px 24px rgba(0, 0, 0, 0.5);
-  --shadow-panel:  0 8px 40px rgba(0, 0, 0, 0.6);
-  --shadow-modal:  0 24px 80px rgba(0, 0, 0, 0.8);
+  --shadow-card:   0 2px 16px rgba(0, 0, 0, 0.45);
+  --shadow-panel:  0 6px 32px rgba(0, 0, 0, 0.55);
+  --shadow-modal:  0 20px 70px rgba(0, 0, 0, 0.80);
 }
 
 /* ── TAILWIND v4 THEME TOKENS ── */
 @theme inline {
   --font-sans: "Inter", sans-serif;
   --font-mono: "Share Tech Mono", monospace;
-  --color-bg-primary:  var(--bg-base);
-  --color-bg-panel:    var(--bg-panel);
+  --color-bg-primary:   var(--bg-base);
+  --color-bg-panel:     var(--bg-panel);
   --color-text-primary: var(--text-primary);
-  --color-accent:      var(--accent);
+  --color-accent:       var(--accent);
+  --color-accent-gold:  var(--gold);
 }
 
 /* ─── RESET ─── */
@@ -113,6 +121,7 @@ html, body {
   background: var(--bg-panel);
   border: 1px solid var(--border-default);
   border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-card);
 }
 
 /* ─── CARD ─── */
@@ -121,6 +130,7 @@ html, body {
   border: 1px solid var(--border-default);
   border-radius: var(--radius-md);
   padding: 16px;
+  box-shadow: var(--shadow-card);
 }
 
 /* ─── MONO NUMBERS ─── */
@@ -149,7 +159,8 @@ html, body {
 .badge-yellow { background: var(--yellow-glow); color: var(--yellow); border: 1px solid rgba(255,215,64,0.25); }
 .badge-blue   { background: var(--blue-glow);   color: var(--blue);   border: 1px solid rgba(68,138,255,0.25); }
 .badge-cyan   { background: var(--cyan-glow);   color: var(--cyan);   border: 1px solid rgba(0,229,255,0.25);  }
-.badge-gold   { background: var(--accent-muted);color: var(--accent); border: 1px solid var(--border-accent);  }
+.badge-gold   { background: var(--gold-muted);  color: var(--gold);   border: 1px solid rgba(245,166,35,0.28); }
+.badge-blue   { background: var(--blue-glow);   color: var(--blue);   border: 1px solid var(--border-accent);  }
 .badge-muted  { background: rgba(74,99,122,0.12); color: var(--text-muted); border: 1px solid var(--border-default); }
 
 /* ─── BUTTONS ─── */
@@ -172,8 +183,8 @@ html, body {
 }
 .btn:disabled { opacity: 0.38; cursor: not-allowed; }
 
-.btn-primary  { background: var(--accent); color: #000; border: 1px solid var(--accent-dim); }
-.btn-primary:hover:not(:disabled) { background: #f7b84a; box-shadow: 0 0 14px var(--accent-glow); }
+.btn-primary  { background: var(--accent); color: #fff; border: 1px solid var(--accent-dim); }
+.btn-primary:hover:not(:disabled) { background: #2e7fff; box-shadow: 0 0 18px var(--accent-glow); }
 
 .btn-take     { background: var(--green-glow); color: var(--green); border: 1px solid var(--border-success); }
 .btn-take:hover:not(:disabled) { background: rgba(0,230,118,0.24); box-shadow: 0 0 10px var(--green-glow); }
@@ -266,7 +277,7 @@ tr:hover td { background: var(--bg-hover); color: var(--text-primary); }
   z-index: 50;
   display: flex;
   flex-direction: column;
-  background: linear-gradient(180deg, #060c18 0%, #040910 100%);
+  background: #070b12;
   border-right: 1px solid rgba(255, 255, 255, 0.05);
   overflow: hidden;
 }
@@ -274,38 +285,38 @@ tr:hover td { background: var(--bg-hover); color: var(--text-primary); }
 .sidebar-logo {
   display: flex;
   align-items: center;
-  gap: 11px;
-  padding: 20px 16px 16px;
+  gap: 10px;
+  padding: 18px 14px 14px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.05);
   flex-shrink: 0;
 }
 .sidebar-logo-mark {
-  width: 34px;
-  height: 34px;
+  width: 32px;
+  height: 32px;
   border-radius: 8px;
-  background: linear-gradient(135deg, #f5a623 0%, #c17d13 100%);
+  background: var(--accent);
   flex-shrink: 0;
-  box-shadow: 0 0 18px rgba(245, 166, 35, 0.40);
+  box-shadow: 0 0 16px rgba(26, 110, 255, 0.45);
   display: flex;
   align-items: center;
   justify-content: center;
   font-family: var(--font-display);
-  font-size: 15px;
+  font-size: 14px;
   font-weight: 800;
-  color: #000;
+  color: #fff;
   letter-spacing: -0.02em;
 }
 .sidebar-logo-name {
   font-family: var(--font-display);
   font-weight: 800;
-  font-size: 16px;
-  letter-spacing: 0.08em;
+  font-size: 15px;
+  letter-spacing: 0.06em;
   color: var(--text-primary);
   line-height: 1.1;
 }
 .sidebar-logo-sub {
   font-family: var(--font-mono);
-  font-size: 9px;
+  font-size: 8px;
   letter-spacing: 0.14em;
   color: var(--text-muted);
   margin-top: 1px;
@@ -315,14 +326,14 @@ tr:hover td { background: var(--bg-hover); color: var(--text-primary); }
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 7px 16px;
+  padding: 6px 14px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.04);
   flex-shrink: 0;
 }
 
 .sidebar-nav {
   flex: 1;
-  padding: 8px 0;
+  padding: 10px 8px 8px;
   overflow-y: auto;
   overflow-x: hidden;
 }
@@ -330,56 +341,61 @@ tr:hover td { background: var(--bg-hover); color: var(--text-primary); }
   font-family: var(--font-mono);
   font-size: 8px;
   font-weight: 700;
-  letter-spacing: 0.16em;
-  color: rgba(255, 255, 255, 0.18);
-  padding: 10px 16px 3px;
+  letter-spacing: 0.14em;
+  color: rgba(255, 255, 255, 0.16);
+  padding: 10px 8px 4px;
   text-transform: uppercase;
 }
 .sidebar-link {
   display: flex;
   align-items: center;
   gap: 9px;
-  padding: 8px 16px;
-  font-family: var(--font-display);
+  padding: 8px 10px;
+  border-radius: var(--radius-md);
+  font-family: var(--font-body);
   font-size: 13px;
-  font-weight: 600;
-  letter-spacing: 0.03em;
+  font-weight: 500;
+  letter-spacing: 0.01em;
   color: var(--text-muted);
   text-decoration: none;
-  border-left: 2px solid transparent;
-  transition: all 0.12s ease;
+  border: none;
+  transition: background 0.12s ease, color 0.12s ease;
   position: relative;
+  margin-bottom: 1px;
 }
 .sidebar-link:hover {
-  background: rgba(255, 255, 255, 0.04);
+  background: rgba(255, 255, 255, 0.05);
   color: var(--text-secondary);
-  border-left-color: rgba(255,255,255,0.12);
 }
 .sidebar-link--active {
-  color: var(--accent);
-  background: rgba(245, 166, 35, 0.06);
-  border-left-color: var(--accent);
+  background: var(--accent);
+  color: #fff;
+  font-weight: 600;
 }
 .sidebar-link--active:hover {
-  background: rgba(245, 166, 35, 0.09);
+  background: #2e7fff;
+  color: #fff;
 }
 .sidebar-badge-count {
   margin-left: auto;
   min-width: 18px;
   height: 18px;
   border-radius: 9px;
-  background: var(--accent);
-  color: #000;
+  background: rgba(255, 255, 255, 0.2);
+  color: #fff;
   font-size: 9px;
   font-weight: 800;
   display: flex;
   align-items: center;
   justify-content: center;
   font-family: var(--font-mono);
-  padding: 0 4px;
+  padding: 0 5px;
+}
+.sidebar-link--active .sidebar-badge-count {
+  background: rgba(255, 255, 255, 0.25);
 }
 .sidebar-footer {
-  padding: 10px 16px;
+  padding: 10px 14px;
   border-top: 1px solid rgba(255, 255, 255, 0.05);
   flex-shrink: 0;
 }
