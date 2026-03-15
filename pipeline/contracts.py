@@ -125,6 +125,14 @@ class SMCContract(BaseModel):
     fvg_present: bool = False
     sweep_detected: bool = False
     bias: str = "NEUTRAL"
+    # v7 SMC event markers
+    bos_detected: bool = False
+    choch_detected: bool = False
+    displacement: bool = False
+    liquidity_sweep: bool = False
+    fib_retracement_hit: bool = False
+    volume_profile_poc: float = 0.0
+    vpc_zones: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class WolfDisciplineContract(BaseModel):

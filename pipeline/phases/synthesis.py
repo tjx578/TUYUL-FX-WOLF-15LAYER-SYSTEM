@@ -176,6 +176,14 @@ def build_l12_synthesis(
             "fvg_present": layer_results.get("L9", {}).get("fvg_present", False),
             "sweep_detected": layer_results.get("L9", {}).get("sweep_detected", False),
             "bias": layer_results.get("L9", {}).get("smart_money_bias", "NEUTRAL"),
+            # v7 SMC event markers
+            "bos_detected": layer_results.get("L9", {}).get("bos_detected", False),
+            "choch_detected": layer_results.get("L9", {}).get("choch_detected", False),
+            "displacement": layer_results.get("L9", {}).get("displacement", False),
+            "liquidity_sweep": layer_results.get("L9", {}).get("liquidity_sweep", False),
+            "fib_retracement_hit": layer_results.get("L3", {}).get("fib_retracement_hit", False),
+            "volume_profile_poc": layer_results.get("L3", {}).get("volume_profile_poc", 0.0),
+            "vpc_zones": layer_results.get("L3", {}).get("vpc_zones", []),
         },
         "wolf_discipline": {
             "score": wolf_30_point / 30.0 if wolf_30_point else 0.0,
