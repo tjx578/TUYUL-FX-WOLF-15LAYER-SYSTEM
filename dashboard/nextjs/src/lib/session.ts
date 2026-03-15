@@ -1,9 +1,23 @@
 import { AUTH_SESSION } from "@/lib/endpoints";
+import type { UserRole } from "@/contracts/auth";
+
+const VALID_ROLES: readonly string[] = [
+    "viewer",
+    "operator",
+    "risk_admin",
+    "config_admin",
+    "approver",
+];
+
+function parseRole(raw: unknown): UserRole | null {
+    const s = String(raw ?? "");
+    return VALID_ROLES.includes(s) ? (s as UserRole) : null;
+}
 
 export type CompatSessionUser = {
     user_id: string;
     email: string;
-    role: string;
+    role: UserRole;
 };
 
 /**
@@ -44,10 +58,13 @@ export async function probeSession(
         if (!res.ok) return null;
 
         const data: Record<string, unknown> = await res.json();
+        const role = parseRole(data.role);
+        if (!role) return null;
+
         return {
             user_id: String(data.user_id ?? data.sub ?? ""),
             email: String(data.email ?? ""),
-            role: String(data.role ?? ""),
+            role,
         };
     } catch {
         return null;
