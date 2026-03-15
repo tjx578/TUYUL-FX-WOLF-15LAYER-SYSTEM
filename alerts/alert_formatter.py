@@ -53,5 +53,78 @@ Reason : {reason}
 ────────────────────────────
 """
 
+    @staticmethod
+    def format_feed_stale(symbol: str, age_seconds: float) -> str:
+        ts = format_dual_timezone(now_utc())
 
-# Placeholder
+        return f"""
+🔴 FEED STALE
+────────────────────────────
+Symbol   : {symbol}
+Last Tick : {age_seconds:.1f}s ago
+Severity : {"CRITICAL" if age_seconds > 30 else "WARNING"}
+{ts}
+────────────────────────────
+"""
+
+    @staticmethod
+    def format_drawdown_alert(
+        account_id: str,
+        drawdown_percent: float,
+        daily_loss_percent: float,
+        severity: str,
+    ) -> str:
+        ts = format_dual_timezone(now_utc())
+
+        return f"""
+💰 DRAWDOWN ALERT — {severity}
+────────────────────────────
+Account     : {account_id}
+Drawdown    : {drawdown_percent:.2f}%
+Daily Loss  : {daily_loss_percent:.2f}%
+{ts}
+────────────────────────────
+"""
+
+    @staticmethod
+    def format_kill_switch(reason: str) -> str:
+        ts = format_dual_timezone(now_utc())
+
+        return f"""
+🛑 KILL SWITCH TRIPPED
+════════════════════════════
+ALL TRADING HALTED
+Reason : {reason}
+{ts}
+════════════════════════════
+"""
+
+    @staticmethod
+    def format_circuit_breaker(name: str, state: str, failures: int) -> str:
+        ts = format_dual_timezone(now_utc())
+
+        return f"""
+⚡ CIRCUIT BREAKER — {state}
+────────────────────────────
+Service    : {name}
+State      : {state}
+Failures   : {failures}
+{ts}
+────────────────────────────
+"""
+
+    @staticmethod
+    def format_pipeline_latency(
+        latency_seconds: float,
+        stage: str,
+    ) -> str:
+        ts = format_dual_timezone(now_utc())
+
+        return f"""
+⏱️ PIPELINE LATENCY HIGH
+────────────────────────────
+Stage    : {stage}
+Latency  : {latency_seconds:.3f}s
+{ts}
+────────────────────────────
+"""

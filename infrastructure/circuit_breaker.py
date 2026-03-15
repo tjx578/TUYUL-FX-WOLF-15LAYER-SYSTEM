@@ -49,6 +49,8 @@ from threading import Lock
 
 from loguru import logger
 
+from core.metrics import CIRCUIT_BREAKER_STATE, CIRCUIT_BREAKER_TRIPS
+
 
 class CircuitState(Enum):
     """Circuit breaker states."""
@@ -87,15 +89,14 @@ class CircuitBreaker:
     ) -> None:
         self.name = name
         self._failure_threshold: int = (
-            failure_threshold if failure_threshold is not None
-            else int(os.getenv("WOLF15_CB_FAILURE_THRESHOLD", "5"))
+            failure_threshold if failure_threshold is not None else int(os.getenv("WOLF15_CB_FAILURE_THRESHOLD", "5"))
         )
         self._recovery_timeout: float = (
-            recovery_timeout if recovery_timeout is not None
-            else float(os.getenv("WOLF15_CB_RECOVERY_TIMEOUT", "60"))
+            recovery_timeout if recovery_timeout is not None else float(os.getenv("WOLF15_CB_RECOVERY_TIMEOUT", "60"))
         )
         self._half_open_success_threshold: int = (
-            half_open_success_threshold if half_open_success_threshold is not None
+            half_open_success_threshold
+            if half_open_success_threshold is not None
             else int(os.getenv("WOLF15_CB_HALF_OPEN_ATTEMPTS", "2"))
         )
         self._state: CircuitState = CircuitState.CLOSED
@@ -132,6 +133,7 @@ class CircuitBreaker:
         ):
             self._state = CircuitState.HALF_OPEN
             self._success_count = 0
+            CIRCUIT_BREAKER_STATE.labels(name=self.name).set(1)
             logger.info(
                 "[CircuitBreaker:{}] OPEN → HALF_OPEN after {:.0f}s timeout",
                 self.name,
@@ -159,6 +161,7 @@ class CircuitBreaker:
                     self._state = CircuitState.CLOSED
                     self._failure_count = 0
                     self._success_count = 0
+                    CIRCUIT_BREAKER_STATE.labels(name=self.name).set(0)
                     logger.info(
                         "[CircuitBreaker:{}] HALF_OPEN → CLOSED after {} success(es)",
                         self.name,
@@ -183,9 +186,10 @@ class CircuitBreaker:
             ):
                 prev = state.value
                 self._state = CircuitState.OPEN
+                CIRCUIT_BREAKER_STATE.labels(name=self.name).set(2)
+                CIRCUIT_BREAKER_TRIPS.labels(name=self.name).inc()
                 logger.warning(
-                    "[CircuitBreaker:{}] {} → OPEN after {} failure(s) — "
-                    "will retry after {:.0f}s",
+                    "[CircuitBreaker:{}] {} → OPEN after {} failure(s) — will retry after {:.0f}s",
                     self.name,
                     prev,
                     self._failure_count,

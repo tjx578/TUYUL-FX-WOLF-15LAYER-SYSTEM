@@ -214,6 +214,214 @@
           "refId": "C"
         }
       ]
+    },
+    {
+      "type": "row",
+      "title": "📈 Trading Performance",
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 56},
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "type": "stat",
+      "title": "Win Rate",
+      "description": "Rolling win rate per symbol.",
+      "gridPos": {"h": 8, "w": 6, "x": 0, "y": 57},
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"color": "red", "value": null},
+              {"color": "yellow", "value": 0.40},
+              {"color": "green", "value": 0.55}
+            ]
+          }
+        }
+      },
+      "targets": [{"expr": "wolf_win_rate", "legendFormat": "{{symbol}}", "refId": "A"}]
+    },
+    {
+      "type": "timeseries",
+      "title": "Realized PnL",
+      "description": "Running realized PnL per account.",
+      "gridPos": {"h": 8, "w": 10, "x": 6, "y": 57},
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"color": "red", "value": null},
+              {"color": "green", "value": 0}
+            ]
+          }
+        }
+      },
+      "targets": [
+        {"expr": "wolf_pnl_realized_current", "legendFormat": "{{account_id}}", "refId": "A"}
+      ]
+    },
+    {
+      "type": "gauge",
+      "title": "Daily Loss %",
+      "description": "Current daily loss as percentage of starting balance. Red threshold at 4% (FTMO), 5% (max).",
+      "gridPos": {"h": 8, "w": 8, "x": 16, "y": 57},
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "max": 10,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"color": "green", "value": null},
+              {"color": "yellow", "value": 3},
+              {"color": "red", "value": 4}
+            ]
+          }
+        }
+      },
+      "targets": [
+        {"expr": "wolf_daily_loss_percent", "legendFormat": "{{account_id}}", "refId": "A"}
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Drawdown % (High-Water)",
+      "description": "Maximum drawdown from high-water mark per account. Red at 8% (FTMO overall limit).",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 65},
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"color": "green", "value": null},
+              {"color": "yellow", "value": 6},
+              {"color": "red", "value": 8}
+            ]
+          }
+        }
+      },
+      "targets": [
+        {"expr": "wolf_drawdown_max_percent", "legendFormat": "{{account_id}}", "refId": "A"},
+        {"expr": "wolf_account_drawdown_percent", "legendFormat": "current {{account_id}}", "refId": "B"}
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Trade Outcomes (Win / Loss / BE)",
+      "description": "Cumulative trade count by outcome per symbol.",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 65},
+      "targets": [
+        {
+          "expr": "sum by (outcome) (increase(wolf_trades_total[1h]))",
+          "legendFormat": "{{outcome}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "row",
+      "title": "🔌 Feed & Infrastructure Health",
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 73},
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "type": "timeseries",
+      "title": "Feed Age (seconds since last tick)",
+      "description": "Per-symbol feed staleness. Alert threshold at 30s.",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 74},
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"color": "green", "value": null},
+              {"color": "yellow", "value": 15},
+              {"color": "red", "value": 30}
+            ]
+          }
+        }
+      },
+      "targets": [
+        {"expr": "wolf_feed_age_seconds", "legendFormat": "{{symbol}}", "refId": "A"}
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Circuit Breaker Status",
+      "description": "0=CLOSED (ok), 1=HALF_OPEN (recovering), 2=OPEN (tripped).",
+      "gridPos": {"h": 8, "w": 6, "x": 12, "y": 74},
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            {"type": "value", "options": {"0": {"text": "CLOSED", "color": "green"}, "1": {"text": "HALF_OPEN", "color": "yellow"}, "2": {"text": "OPEN", "color": "red"}}}
+          ]
+        }
+      },
+      "targets": [
+        {"expr": "wolf_circuit_breaker_state", "legendFormat": "{{name}}", "refId": "A"}
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Kill Switch",
+      "description": "Kill switch status. 1=TRIPPED (all trading halted).",
+      "gridPos": {"h": 8, "w": 6, "x": 18, "y": 74},
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            {"type": "value", "options": {"0": {"text": "NORMAL", "color": "green"}, "1": {"text": "TRIPPED", "color": "red"}}}
+          ]
+        }
+      },
+      "targets": [
+        {"expr": "wolf_kill_switch_active", "refId": "A"}
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Ingest Pipeline Latency (per stage)",
+      "description": "End-to-end latency per ingest pipeline stage. SLO threshold visible as annotation.",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 82},
+      "fieldConfig": {
+        "defaults": {"unit": "ms"}
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(wolf_ingest_pipeline_latency_ms_bucket[5m])) by (le, stage))",
+          "legendFormat": "p95 {{stage}}",
+          "refId": "A"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum(rate(wolf_ingest_pipeline_latency_ms_bucket[5m])) by (le, stage))",
+          "legendFormat": "p99 {{stage}}",
+          "refId": "B"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Feed Stale & Reconnect Events",
+      "description": "Rate of feed stale detections and reconnect attempts.",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 82},
+      "targets": [
+        {
+          "expr": "sum(rate(wolf_feed_stale_total[5m])) by (symbol) * 60",
+          "legendFormat": "stale {{symbol}}",
+          "refId": "A"
+        },
+        {
+          "expr": "sum(rate(wolf_feed_reconnect_total[5m])) by (source) * 60",
+          "legendFormat": "reconnect {{source}}",
+          "refId": "B"
+        }
+      ]
     }
   ],
   "refresh": "10s",
