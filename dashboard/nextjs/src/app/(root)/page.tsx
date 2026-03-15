@@ -293,7 +293,7 @@ function UrgencyRail({ signals, accounts, onTake }: UrgencyRailProps) {
               CONF {((sig.confidence ?? 0) * 100).toFixed(0)}%
             </span>
 
-            {sig.risk_reward && (
+            {sig.risk_reward_ratio && (
               <span
                 style={{
                   fontFamily: "var(--font-mono)",
@@ -301,11 +301,11 @@ function UrgencyRail({ signals, accounts, onTake }: UrgencyRailProps) {
                   color: "var(--text-secondary)",
                 }}
               >
-                RR {sig.risk_reward.toFixed(1)}
+                RR {sig.risk_reward_ratio.toFixed(1)}
               </span>
             )}
 
-            {sig.expiry && (
+            {sig.expires_at && (
               <span
                 style={{
                   fontFamily: "var(--font-mono)",
@@ -314,7 +314,7 @@ function UrgencyRail({ signals, accounts, onTake }: UrgencyRailProps) {
                   marginLeft: "auto",
                 }}
               >
-                EXP {sig.expiry}
+                EXP {new Date(sig.expires_at * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
               </span>
             )}
 
