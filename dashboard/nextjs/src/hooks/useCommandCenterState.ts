@@ -21,7 +21,7 @@ import {
   type AccountRiskSnapshot,
 } from "@/lib/api";
 import { useLiveSignals } from "@/lib/realtime/hooks/useLiveSignals";
-import { useAlertsWS } from "@/lib/websocket";
+import { useLiveAlerts } from "@/lib/realtime";
 import { useSystemStore } from "@/store/useSystemStore";
 import type { L12Verdict, Trade, Account } from "@/types";
 
@@ -77,7 +77,7 @@ export function useCommandCenterState(): CommandCenterState {
   const { data: riskSnapshots, isError: riskError } = useAccountsRiskSnapshot();
   const { data: health } = useHealth();
   const { data: calendarBlocker } = useCalendarBlocker();
-  const { alerts } = useAlertsWS();
+  const { alerts } = useLiveAlerts();
 
   const wsStatus = useSystemStore((s) => s.wsStatus);
   const mode = useSystemStore((s) => s.mode);
@@ -150,12 +150,12 @@ export function useCommandCenterState(): CommandCenterState {
 
   const dataErrors = useMemo(() => {
     const errs: string[] = [];
-    if (vError)         errs.push("verdicts");
-    if (tradesError)    errs.push("trades");
-    if (contextError)   errs.push("context");
+    if (vError) errs.push("verdicts");
+    if (tradesError) errs.push("trades");
+    if (contextError) errs.push("context");
     if (executionError) errs.push("execution");
-    if (accountsError)  errs.push("accounts");
-    if (riskError)      errs.push("risk");
+    if (accountsError) errs.push("accounts");
+    if (riskError) errs.push("risk");
     return errs;
   }, [vError, tradesError, contextError, executionError, accountsError, riskError]);
 

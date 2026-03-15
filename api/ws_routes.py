@@ -521,6 +521,12 @@ class ConnectionManager:
         for conn in disconnected:
             self.disconnect(conn)
 
+    async def send_stamped(self, websocket: fastapi.WebSocket, message: dict[str, Any]) -> None:
+        """Send a seq-stamped message to a single client and buffer it."""
+        message["seq"] = next(self._seq_counter)
+        self.buffer_message(message)
+        await websocket.send_json(message)
+
 
 # Create connection managers
 price_manager = ConnectionManager(name="prices")
@@ -706,8 +712,7 @@ async def websocket_prices(websocket: fastapi.WebSocket):
 
             if changed:
                 tick_msg = _ws_event("price.tick", {"changes": changed})
-                price_manager.buffer_message(tick_msg)
-                await websocket.send_json(tick_msg)
+                await price_manager.send_stamped(websocket, tick_msg)
 
     except fastapi.WebSocketDisconnect:
         price_manager.disconnect(websocket)
@@ -765,7 +770,8 @@ async def websocket_trades(websocket: fastapi.WebSocket):
                 del last_trade_snapshot[trade_id]
 
             if changed_trades or removed_trade_ids:
-                await websocket.send_json(
+                await trade_manager.send_stamped(
+                    websocket,
                     _ws_event(
                         "trade.update",
                         {
@@ -814,7 +820,7 @@ async def websocket_candles(websocket: fastapi.WebSocket):
 
         while True:
             bars = _candle_agg.get_current_bars(symbol_filter)
-            await websocket.send_json(_ws_event("candle.forming", {"bars": bars}))
+            await candle_manager.send_stamped(websocket, _ws_event("candle.forming", {"bars": bars}))
             await asyncio.sleep(CANDLE_UPDATE_INTERVAL)
 
     except fastapi.WebSocketDisconnect:
@@ -880,8 +886,7 @@ async def websocket_risk(websocket: fastapi.WebSocket):
                 risk_state["drawdown"] = None
 
             msg = _ws_event("risk.state", risk_state)
-            risk_manager.buffer_message(msg)
-            await websocket.send_json(msg)
+            await risk_manager.send_stamped(websocket, msg)
             await asyncio.sleep(RISK_STATE_INTERVAL)
 
     except fastapi.WebSocketDisconnect:
@@ -1158,7 +1163,7 @@ async def websocket_equity(websocket: fastapi.WebSocket):
                 last_equity = current_equity
 
             # Push update to client
-            await websocket.send_json(_ws_event("equity.update", equity_point))
+            await equity_manager.send_stamped(websocket, _ws_event("equity.update", equity_point))
 
             await asyncio.sleep(EQUITY_PUSH_INTERVAL)
 
@@ -1243,7 +1248,8 @@ async def websocket_verdict(websocket: fastapi.WebSocket):
                             verdict: dict[str, Any] = {k: v for k, v in verdict_map.items()}
                             signature = _verdict_signature(verdict)
                             signatures[pair] = signature
-                            await websocket.send_json(
+                            await verdict_manager.send_stamped(
+                                websocket,
                                 _ws_event(
                                     "verdict.update",
                                     {
@@ -1258,7 +1264,8 @@ async def websocket_verdict(websocket: fastapi.WebSocket):
             if (not pushed) and (now_ts - last_scan_ts >= VERDICT_FALLBACK_INTERVAL):
                 changed = await _detect_changed_verdicts(signatures, pair_filter)
                 for pair, verdict in changed.items():
-                    await websocket.send_json(
+                    await verdict_manager.send_stamped(
+                        websocket,
                         _ws_event(
                             "verdict.update",
                             {
@@ -1343,7 +1350,8 @@ async def websocket_signals(websocket: fastapi.WebSocket):
                     latest = _signal_snapshot(symbol_filter)
                     for key, signal in latest.items():
                         signatures[key] = _signal_signature(signal)
-                        await websocket.send_json(
+                        await signal_manager.send_stamped(
+                            websocket,
                             _ws_event(
                                 "signals.update",
                                 {
@@ -1357,7 +1365,8 @@ async def websocket_signals(websocket: fastapi.WebSocket):
             if (not pushed) and (now_ts - last_scan_ts >= SIGNAL_FALLBACK_INTERVAL):
                 changed = _detect_changed_signals(signatures, symbol_filter)
                 for signal in changed.values():
-                    await websocket.send_json(
+                    await signal_manager.send_stamped(
+                        websocket,
                         _ws_event(
                             "signals.update",
                             {
@@ -1441,7 +1450,8 @@ async def websocket_pipeline(websocket: fastapi.WebSocket):
                     latest = await _pipeline_snapshot(pair_filter)
                     for pair, payload in latest.items():
                         signatures[pair] = _verdict_signature(payload)
-                        await websocket.send_json(
+                        await pipeline_manager.send_stamped(
+                            websocket,
                             _ws_event(
                                 "pipeline.update",
                                 {
@@ -1456,7 +1466,8 @@ async def websocket_pipeline(websocket: fastapi.WebSocket):
             if (not pushed) and (now_ts - last_scan_ts >= PIPELINE_FALLBACK_INTERVAL):
                 changed = await _detect_changed_pipeline(signatures, pair_filter)
                 for pair, payload in changed.items():
-                    await websocket.send_json(
+                    await pipeline_manager.send_stamped(
+                        websocket,
                         _ws_event(
                             "pipeline.update",
                             {
@@ -1507,7 +1518,8 @@ async def websocket_live_feed(websocket: fastapi.WebSocket):
 
         while True:
             # Keepalive periodic state update for clients that miss individual events
-            await websocket.send_json(
+            await live_manager.send_stamped(
+                websocket,
                 _ws_event(
                     "live.heartbeat_state",
                     {

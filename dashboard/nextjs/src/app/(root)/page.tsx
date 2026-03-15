@@ -16,9 +16,8 @@ import PageComplianceBanner from "@/components/feedback/PageComplianceBanner";
 import DataStreamDiagnostic from "@/components/feedback/DataStreamDiagnostic";
 import { VerdictCard } from "@/components/VerdictCard";
 import { SystemHealth } from "@/components/SystemHealth";
-import { useAlertsWS } from "@/lib/websocket";
-import { useSystemStore } from "@/store/useSystemStore";
-import type { L12Verdict, Trade, Account } from "@/types";
+import StaleDataBanner from "@/components/command-center/StaleDataBanner";
+import type { L12Verdict, Account } from "@/types";
 
 // ── Helpers ──────────────────────────────────────────────────
 
@@ -27,18 +26,6 @@ function statusColor(status: string) {
   if (status === "WARNING" || status === "WARN") return "var(--yellow)";
   if (status === "CRITICAL" || status === "error") return "var(--red)";
   return "var(--text-muted)";
-}
-
-function verdictIsActionable(v: L12Verdict): boolean {
-  const notExpired =
-    !v.expires_at || v.expires_at > Math.floor(Date.now() / 1000);
-  return String(v.verdict ?? "").startsWith("EXECUTE") && notExpired;
-}
-
-function urgencyScore(v: L12Verdict): number {
-  const conf = v.confidence ?? 0;
-  const rr = v.risk_reward_ratio ?? 1;
-  return conf * rr;
 }
 
 // ── Sub-components ────────────────────────────────────────────
@@ -498,7 +485,7 @@ function EventBanner({ blocker }: EventBannerProps) {
         NEWS BLACKOUT
       </span>
       <span style={{ fontSize: 11, color: "var(--text-secondary)" }}>
-        {blocker.lock_reason ?? "High-impact event window active — trading signals are blocked."}
+        {blocker.reason ?? "High-impact event window active — trading signals are blocked."}
       </span>
       <Link
         href="/news"
@@ -598,70 +585,29 @@ function KpiCard({ label, value, color, sub, pulse, href }: KpiCardProps) {
 // ── Main Page ─────────────────────────────────────────────────
 
 export default function CommandCenterPage() {
-  const { data: verdictsRaw, isLoading: vLoading, isError: vError } = useAllVerdicts();
-  const { data: activeTradesData, isError: tradesError } = useActiveTrades();
-  const { data: context, isError: contextError } = useContext();
-  const { data: execution, isError: executionError } = useExecution();
-  const { data: accounts, isError: accountsError } = useAccounts();
-  const { data: riskSnapshots, isError: riskError } = useAccountsRiskSnapshot();
-  const { data: health } = useHealth();
-  const { data: calendarBlocker } = useCalendarBlocker();
-  const { alerts } = useAlertsWS();
-
-  const wsStatus = useSystemStore((s) => s.wsStatus);
-  const mode = useSystemStore((s) => s.mode);
+  const {
+    verdictList,
+    activeTrades,
+    accounts,
+    snapshotList,
+    context,
+    execution,
+    health,
+    calendarBlocker,
+    recentAlerts,
+    topActionableSignals,
+    executeCount,
+    highConfidence,
+    criticalSnapshots,
+    warnSnapshots,
+    isSystemDegraded,
+    isStale,
+    wsStatus,
+    dataErrors,
+    vLoading,
+  } = useCommandCenterState();
 
   const [selectedVerdict, setSelectedVerdict] = useState<L12Verdict | null>(null);
-
-  const verdictList = useMemo<L12Verdict[]>(
-    () => (Array.isArray(verdictsRaw) ? verdictsRaw : []),
-    [verdictsRaw]
-  );
-
-  const activeTrades = useMemo<Trade[]>(() => {
-    if (!activeTradesData) return [];
-    if (Array.isArray(activeTradesData)) return activeTradesData as Trade[];
-    const resp = activeTradesData as ActiveTradesResponse;
-    return Array.isArray(resp.trades) ? resp.trades : [];
-  }, [activeTradesData]);
-
-  const snapshotList = useMemo<AccountRiskSnapshot[]>(
-    () => (Array.isArray(riskSnapshots) ? riskSnapshots : []),
-    [riskSnapshots]
-  );
-
-  // Top 3 actionable signals, ranked by urgency score
-  const topActionableSignals = useMemo(
-    () =>
-      verdictList
-        .filter(verdictIsActionable)
-        .sort((a, b) => urgencyScore(b) - urgencyScore(a))
-        .slice(0, 3),
-    [verdictList]
-  );
-
-  const executeCount = useMemo(
-    () => verdictList.filter((v) => String(v.verdict ?? "").startsWith("EXECUTE")).length,
-    [verdictList]
-  );
-
-  const highConfidence = useMemo(
-    () => verdictList.filter((v) => (v.confidence ?? 0) >= 0.75).length,
-    [verdictList]
-  );
-
-  const dataErrors = useMemo(() => {
-    const errs: string[] = [];
-    if (vError) errs.push("verdicts");
-    if (tradesError) errs.push("trades");
-    if (contextError) errs.push("context");
-    if (executionError) errs.push("execution");
-    if (accountsError) errs.push("accounts");
-    if (riskError) errs.push("risk");
-    return errs;
-  }, [vError, tradesError, contextError, executionError, accountsError, riskError]);
-
-  const recentAlerts = useMemo(() => alerts.slice(0, 5), [alerts]);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
@@ -702,7 +648,6 @@ export default function CommandCenterPage() {
         mode={isSystemDegraded ? "DEGRADED" : "NORMAL"}
         executionState={execution?.state}
         openTradeCount={activeTrades.length}
-        isStale={isStale}
       />
 
       {/* 2. Stale / degraded banner */}
@@ -880,7 +825,7 @@ export default function CommandCenterPage() {
             </div>
           ) : (
             <div className="overview-verdict-grid">
-              {verdictList.map((v) => (
+              {verdictList.map((v: L12Verdict) => (
                 <VerdictCard
                   key={`${v.symbol}-${v.timestamp}`}
                   verdict={v}
