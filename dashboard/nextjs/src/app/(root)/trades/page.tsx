@@ -7,7 +7,6 @@
 // ============================================================
 
 import { useMemo } from "react";
-import NavTabs from "@/components/NavTabs";
 import PaginationControls from "@/components/primitives/PaginationControls";
 import TableToolbar from "@/components/primitives/TableToolbar";
 import PageComplianceBanner from "@/components/feedback/PageComplianceBanner";
@@ -154,7 +153,6 @@ export default function TradesPage() {
               REFRESHING...
             </span>
           )}
-          <NavTabs />
         </div>
       </div>
 
