@@ -3,12 +3,18 @@
 Starts a lightweight health probe **before** importing the heavy
 ``ingest_service`` module so that Railway's ``/healthz`` check passes
 even when module-level imports or config loading fail.
+
+The heavy import is run in a thread executor so the asyncio event loop
+stays responsive — without this, ``ingest_service``'s module-level
+imports (numpy, pandas, config loading, etc.) block the loop and the
+health probe cannot answer Railway's periodic ``/healthz`` probes.
 """
 
 from __future__ import annotations
 
 import asyncio
 import contextlib
+import importlib
 import os
 import signal
 import types
@@ -34,7 +40,14 @@ async def _bootstrap_and_run() -> None:
 
         configure_loguru_logging()
 
-        from ingest_service import main as run_main
+        # Import ingest_service in a thread so heavy module-level imports
+        # (numpy, pandas, config YAML, etc.) don't block the event loop.
+        # This keeps the health probe responsive during the import.
+        probe.set_detail("startup_stage", "importing_ingest_service")
+        loop = asyncio.get_running_loop()
+        ingest_mod = await loop.run_in_executor(None, importlib.import_module, "ingest_service")
+        run_main = ingest_mod.main
+        probe.set_detail("startup_stage", "running")
 
         # Hand the already-running probe to main() so there is no
         # port-rebind gap visible to Railway's prober.
