@@ -1,4 +1,5 @@
-"""Tests for _seed_from_redis retry-with-backoff logic in main.py."""
+"""Tests for _seed_from_redis retry-with-backoff logic in startup/candle_seeding.py."""
+
 from __future__ import annotations
 
 from typing import Any
@@ -44,17 +45,13 @@ async def test_seed_succeeds_first_try(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("ENGINE_WARMUP_RETRY_DELAY_SEC", "0")
 
     with (
-        patch("main.PAIRS", _TEST_PAIRS),
-        patch("main.AsyncRedis") as mock_redis_cls,
         patch("context.redis_consumer.RedisConsumer", return_value=consumer),
         patch("context.live_context_bus.LiveContextBus", return_value=bus),
         patch("infrastructure.redis_url.get_redis_url", return_value="redis://localhost"),
     ):
-        mock_client = AsyncMock()
-        mock_redis_cls.from_url.return_value = mock_client
+        from startup.candle_seeding import _seed_from_redis
 
-        from main import _seed_from_redis  # pyright: ignore[reportPrivateUsage]
-        await _seed_from_redis()
+        await _seed_from_redis(_TEST_PAIRS)
 
     # load_candle_history called exactly once
     assert consumer.load_candle_history.await_count == 1
@@ -69,17 +66,13 @@ async def test_seed_retries_then_succeeds(monkeypatch: pytest.MonkeyPatch) -> No
     monkeypatch.setenv("ENGINE_WARMUP_RETRY_DELAY_SEC", "0")  # no actual wait in tests
 
     with (
-        patch("main.PAIRS", _TEST_PAIRS),
-        patch("main.AsyncRedis") as mock_redis_cls,
         patch("context.redis_consumer.RedisConsumer", return_value=consumer),
         patch("context.live_context_bus.LiveContextBus", return_value=bus),
         patch("infrastructure.redis_url.get_redis_url", return_value="redis://localhost"),
     ):
-        mock_client = AsyncMock()
-        mock_redis_cls.from_url.return_value = mock_client
+        from startup.candle_seeding import _seed_from_redis
 
-        from main import _seed_from_redis  # pyright: ignore[reportPrivateUsage]
-        await _seed_from_redis()
+        await _seed_from_redis(_TEST_PAIRS)
 
     # Should have called load 3 times (failed twice, succeeded on third)
     assert consumer.load_candle_history.await_count == 3
@@ -94,18 +87,14 @@ async def test_seed_exhausts_retries_degraded_mode(monkeypatch: pytest.MonkeyPat
     monkeypatch.setenv("ENGINE_WARMUP_RETRY_DELAY_SEC", "0")
 
     with (
-        patch("main.PAIRS", _TEST_PAIRS),
-        patch("main.AsyncRedis") as mock_redis_cls,
         patch("context.redis_consumer.RedisConsumer", return_value=consumer),
         patch("context.live_context_bus.LiveContextBus", return_value=bus),
         patch("infrastructure.redis_url.get_redis_url", return_value="redis://localhost"),
     ):
-        mock_client = AsyncMock()
-        mock_redis_cls.from_url.return_value = mock_client
+        from startup.candle_seeding import _seed_from_redis
 
-        from main import _seed_from_redis  # pyright: ignore[reportPrivateUsage]
         # Must not raise — degraded mode
-        await _seed_from_redis()
+        await _seed_from_redis(_TEST_PAIRS)
 
     # All retries exhausted
     assert consumer.load_candle_history.await_count == 3
