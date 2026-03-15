@@ -35,9 +35,7 @@ async def init_persistent_storage() -> PersistenceSync | None:
             recovery_service = PersistenceSync(pg=pg_client, redis=redis)
             await recovery_service.recover_from_postgres()
     except Exception as exc:
-        logger.warning(
-            f"Redis unavailable during PG sync init; skipping recovery: {exc}"
-        )
+        logger.warning(f"Redis unavailable during PG sync init; skipping recovery: {exc}")
 
     try:
         _sync_service = PersistenceSync(interval_sec=30.0, pg=pg_client, redis=redis)
@@ -46,6 +44,14 @@ async def init_persistent_storage() -> PersistenceSync | None:
     except Exception as exc:
         logger.warning(f"Persistence sync startup failed: {exc}")
         return None
+
+    # Start OHLC candle persistence flush loop
+    try:
+        from storage.candle_persistence import start_candle_persistence
+
+        await start_candle_persistence()
+    except Exception as exc:
+        logger.warning(f"Candle persistence startup failed: {exc}")
 
     return _sync_service
 
@@ -63,6 +69,14 @@ async def shutdown_persistent_storage() -> None:
         with contextlib.suppress(asyncio.CancelledError):
             await _sync_task
         _sync_task = None
+
+    # Stop OHLC candle persistence
+    try:
+        from storage.candle_persistence import stop_candle_persistence
+
+        await stop_candle_persistence()
+    except Exception:
+        pass
 
     await pg_client.close()
 
