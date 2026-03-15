@@ -277,8 +277,8 @@ tr:hover td { background: var(--bg-hover); color: var(--text-primary); }
   z-index: 50;
   display: flex;
   flex-direction: column;
-  background: #070b12;
-  border-right: 1px solid rgba(255, 255, 255, 0.05);
+  background: #000000;
+  border-right: 1px solid rgba(255, 255, 255, 0.07);
   overflow: hidden;
 }
 
@@ -287,7 +287,7 @@ tr:hover td { background: var(--bg-hover); color: var(--text-primary); }
   align-items: center;
   gap: 10px;
   padding: 18px 14px 14px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
   flex-shrink: 0;
 }
 .sidebar-logo-mark {
@@ -311,14 +311,14 @@ tr:hover td { background: var(--bg-hover); color: var(--text-primary); }
   font-weight: 800;
   font-size: 15px;
   letter-spacing: 0.06em;
-  color: var(--text-primary);
+  color: #ffffff;
   line-height: 1.1;
 }
 .sidebar-logo-sub {
   font-family: var(--font-mono);
   font-size: 8px;
   letter-spacing: 0.14em;
-  color: var(--text-muted);
+  color: rgba(255, 255, 255, 0.40);
   margin-top: 1px;
 }
 
@@ -327,7 +327,7 @@ tr:hover td { background: var(--bg-hover); color: var(--text-primary); }
   align-items: center;
   gap: 8px;
   padding: 6px 14px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
   flex-shrink: 0;
 }
 
@@ -342,7 +342,7 @@ tr:hover td { background: var(--bg-hover); color: var(--text-primary); }
   font-size: 8px;
   font-weight: 700;
   letter-spacing: 0.14em;
-  color: rgba(255, 255, 255, 0.16);
+  color: rgba(255, 255, 255, 0.28);
   padding: 10px 8px 4px;
   text-transform: uppercase;
 }
@@ -354,9 +354,9 @@ tr:hover td { background: var(--bg-hover); color: var(--text-primary); }
   border-radius: var(--radius-md);
   font-family: var(--font-body);
   font-size: 13px;
-  font-weight: 500;
+  font-weight: 400;
   letter-spacing: 0.01em;
-  color: var(--text-muted);
+  color: rgba(255, 255, 255, 0.75);
   text-decoration: none;
   border: none;
   transition: background 0.12s ease, color 0.12s ease;
@@ -364,17 +364,17 @@ tr:hover td { background: var(--bg-hover); color: var(--text-primary); }
   margin-bottom: 1px;
 }
 .sidebar-link:hover {
-  background: rgba(255, 255, 255, 0.05);
-  color: var(--text-secondary);
+  background: rgba(255, 255, 255, 0.06);
+  color: #ffffff;
 }
 .sidebar-link--active {
   background: var(--accent);
-  color: #fff;
+  color: #ffffff;
   font-weight: 600;
 }
 .sidebar-link--active:hover {
   background: #2e7fff;
-  color: #fff;
+  color: #ffffff;
 }
 .sidebar-badge-count {
   margin-left: auto;
@@ -396,7 +396,7 @@ tr:hover td { background: var(--bg-hover); color: var(--text-primary); }
 }
 .sidebar-footer {
   padding: 10px 14px;
-  border-top: 1px solid rgba(255, 255, 255, 0.05);
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
   flex-shrink: 0;
 }
 
