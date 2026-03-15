@@ -717,7 +717,17 @@ export default function CommandCenterPage() {
       />
 
       {/* 2. Event Banner — high-impact news blackout */}
-      <EventBanner blocker={calendarBlocker ?? undefined} />
+      <EventBanner
+        blocker={
+          calendarBlocker
+            ? {
+                blocked: calendarBlocker.is_locked,
+                reason: calendarBlocker.lock_reason,
+                event: calendarBlocker.upcoming?.[0]?.event ?? calendarBlocker.upcoming?.[0]?.title,
+              }
+            : undefined
+        }
+      />
 
       {/* 3. Critical Risk Strip */}
       <CriticalRiskStrip snapshots={snapshotList} />
