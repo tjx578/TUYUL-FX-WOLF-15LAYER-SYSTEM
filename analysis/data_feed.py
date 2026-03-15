@@ -8,7 +8,6 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import time
-
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import Enum
@@ -73,20 +72,16 @@ class DataFeedAdapter(ABC):
     """Abstract base for all broker data feed connections."""
 
     @abstractmethod
-    async def connect(self) -> bool:
-        ...
+    async def connect(self) -> bool: ...
 
     @abstractmethod
-    async def disconnect(self) -> None:
-        ...
+    async def disconnect(self) -> None: ...
 
     @abstractmethod
-    async def subscribe(self, symbols: list[str], timeframes: list[str]) -> None:
-        ...
+    async def subscribe(self, symbols: list[str], timeframes: list[str]) -> None: ...
 
     @abstractmethod
-    def get_health(self) -> FeedHealth:
-        ...
+    def get_health(self) -> FeedHealth: ...
 
 
 class StalenessGuard:
@@ -115,6 +110,93 @@ class StalenessGuard:
         return [s for s in self._last_tick if self.is_stale(s)]
 
 
+class FallbackTickFeedAdapter:
+    """Manages a priority chain of DataFeedAdapter instances.
+
+    When the primary feed disconnects or goes stale, automatically
+    promotes the next healthy adapter in the chain.  This closes the
+    single-data-source gap — if Finnhub is down the system can
+    transparently fail over to an MT5 or other adapter.
+
+    Zone: analysis/ — pure read-only feed management, no execution.
+    """
+
+    def __init__(
+        self,
+        adapters: list[DataFeedAdapter],
+        *,
+        max_stale_seconds: float = 10.0,
+        failover_cooldown_seconds: float = 30.0,
+    ) -> None:
+        if not adapters:
+            raise ValueError("FallbackTickFeedAdapter requires at least one adapter")
+        self._adapters = adapters
+        self._active_index: int = 0
+        self._max_stale = max_stale_seconds
+        self._cooldown = failover_cooldown_seconds
+        self._last_failover: float = 0.0
+        self._staleness = StalenessGuard(max_stale_seconds=max_stale_seconds)
+
+    @property
+    def active_adapter(self) -> DataFeedAdapter:
+        return self._adapters[self._active_index]
+
+    @property
+    def active_index(self) -> int:
+        return self._active_index
+
+    def get_health(self) -> FeedHealth:
+        return self.active_adapter.get_health()
+
+    async def connect(self) -> bool:
+        """Try connecting each adapter in order; return True on first success."""
+        for i, adapter in enumerate(self._adapters):
+            try:
+                ok = await adapter.connect()
+                if ok:
+                    self._active_index = i
+                    return True
+            except Exception:
+                continue
+        return False
+
+    async def disconnect(self) -> None:
+        for adapter in self._adapters:
+            with contextlib.suppress(Exception):
+                await adapter.disconnect()
+
+    async def subscribe(self, symbols: list[str], timeframes: list[str]) -> None:
+        await self.active_adapter.subscribe(symbols, timeframes)
+
+    def check_failover(self) -> bool:
+        """Check active adapter health and failover if stale/disconnected.
+
+        Returns True if a failover occurred.
+        """
+        now = time.time()
+        if now - self._last_failover < self._cooldown:
+            return False
+
+        health = self.active_adapter.get_health()
+        if health.is_healthy:
+            return False
+
+        # Try next adapter
+        for offset in range(1, len(self._adapters)):
+            candidate_idx = (self._active_index + offset) % len(self._adapters)
+            candidate = self._adapters[candidate_idx]
+            candidate_health = candidate.get_health()
+            if candidate_health.status == FeedStatus.CONNECTED:
+                self._active_index = candidate_idx
+                self._last_failover = now
+                return True
+
+        return False
+
+    def adapter_names(self) -> list[str]:
+        return [type(a).__name__ for a in self._adapters]
+
+
 class MT5DataFeed(DataFeedAdapter):
     """
     MetaTrader 5 data feed adapter via MetaTrader5 Python package.
@@ -138,8 +220,7 @@ class MT5DataFeed(DataFeedAdapter):
             import MetaTrader5 as mt5  # pyright: ignore[reportMissingImports] # pyright: ignore[reportMissingImports] # noqa: N813, PLC0415
         except ImportError:
             raise ImportError(  # noqa: B904
-                "MetaTrader5 package not installed. "
-                "Install with: pip install MetaTrader5"
+                "MetaTrader5 package not installed. Install with: pip install MetaTrader5"
             )
 
         init_kwargs = {}
@@ -160,12 +241,14 @@ class MT5DataFeed(DataFeedAdapter):
     async def disconnect(self) -> None:
         with contextlib.suppress(Exception):
             import MetaTrader5 as mt5  # pyright: ignore[reportMissingImports] # pyright: ignore[reportMissingImports] # pyright: ignore[reportMissingImports] # noqa: N813, PLC0415
+
             mt5.shutdown()
         self._connected = False
         self._running = False
 
     async def subscribe(self, symbols: list[str], timeframes: list[str]) -> None:
         import MetaTrader5 as mt5  # pyright: ignore[reportMissingImports] # noqa: N813, PLC0415
+
         self._symbols = symbols
         for symbol in symbols:
             mt5.symbol_select(symbol, True)

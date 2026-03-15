@@ -16,6 +16,7 @@ from typing import Any
 
 from loguru import logger
 
+from analysis.latency_tracker import LatencyTracker
 from analysis.reflex_rqi import compute_rqi
 from config_loader import CONFIG
 from core.event_bus import Event, EventType, get_event_bus
@@ -34,6 +35,7 @@ async def _analyze_pair(
     pipeline: WolfConstitutionalPipeline,
 ) -> dict[str, Any] | None:
     """Run pipeline for a single pair with timeout + thread offload."""
+    _lt = LatencyTracker()
     with _engine_tracer.start_as_current_span("pipeline_full") as span:
         span.set_attribute("pair", pair)
         span.set_attribute("pipeline.timeout_sec", _PIPELINE_TIMEOUT_SEC)
@@ -48,12 +50,14 @@ async def _analyze_pair(
             if _tick_ts:
                 span.set_attribute("tick.timestamp", _tick_ts)
 
+            _lt.record_analysis_start(pair)
             result = await asyncio.wait_for(
                 asyncio.to_thread(lambda: pipeline.execute(pair, None, tick_ts=_tick_ts)),
                 timeout=_PIPELINE_TIMEOUT_SEC,
             )
 
             if result:
+                _lt.record_verdict_emit(pair)
                 synthesis: dict[str, Any] = dict(result.get("synthesis") or {})
                 l12: dict[str, Any] = dict(result.get("l12") or {})
                 span.set_attribute("l12.verdict", str(l12.get("verdict", "")))
@@ -109,12 +113,14 @@ async def analysis_loop(
 
     _candle_signal = asyncio.Event()
     _pending_symbols: set[str] = set()
+    _candle_latency_tracker = LatencyTracker()
 
     def _on_candle_closed(event: Event) -> None:
         data: dict[str, object] = dict(event.data)
         symbol = data.get("symbol")
         if isinstance(symbol, str) and symbol:
             _pending_symbols.add(symbol)
+            _candle_latency_tracker.record_candle_complete(symbol)
         _candle_signal.set()
 
     bus = get_event_bus()
