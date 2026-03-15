@@ -38,10 +38,7 @@ logger = logging.getLogger(__name__)
 _WS_ALLOWED_ORIGINS_RAW = os.getenv("WS_ALLOWED_ORIGINS", "").strip()
 # If WS_ALLOWED_ORIGINS is not explicitly set, inherit from CORS_ORIGINS so
 # the Vercel frontend domain is automatically allowed for WebSocket connections.
-if _WS_ALLOWED_ORIGINS_RAW:
-    _ws_origins_source = _WS_ALLOWED_ORIGINS_RAW
-else:
-    _ws_origins_source = os.getenv("CORS_ORIGINS", "").strip()
+_ws_origins_source = _WS_ALLOWED_ORIGINS_RAW or os.getenv("CORS_ORIGINS", "").strip()
 
 WS_ALLOWED_ORIGINS = {origin.strip().rstrip("/") for origin in _ws_origins_source.split(",") if origin.strip()}
 # Also pick up VERCEL_FRONTEND_URL if set (matches CORS logic in app_factory).
@@ -137,10 +134,7 @@ def _has_account_access(payload: dict[str, Any], requested_account: str | None) 
     if account in allowed_accounts:
         return True
 
-    if "account:*" in scopes or f"account:{account}" in scopes:
-        return True
-
-    return False
+    return bool("account:*" in scopes or f"account:{account}" in scopes)
 
 
 async def ws_authenticate(websocket: WebSocket) -> bool:

@@ -254,7 +254,7 @@ async def _redis_window_hit(key: str, ttl_sec: int = 60) -> int | None:
             value_int = value
         elif isinstance(value, str):
             value_int = int(value)
-        elif isinstance(value, (bytes, bytearray)):
+        elif isinstance(value, bytes | bytearray):
             value_int = int(value.decode())
         else:
             logger.debug(
