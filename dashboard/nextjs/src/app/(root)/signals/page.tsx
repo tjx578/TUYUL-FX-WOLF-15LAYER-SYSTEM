@@ -1,164 +1,195 @@
 "use client";
 
-import { useMemo, useState } from "react";
+// ============================================================
+// TUYUL FX Wolf-15 — Signal Explorer
+// Path: /signals
+// Research surface — deep L12 inspection with compare + rationale
+// NO execution from here — TAKE redirects to Signal Board
+// ============================================================
+
+import { useMemo } from "react";
+import { useSignalExplorerState } from "@/hooks/useSignalExplorerState";
+import { SignalInspectorHeader } from "@/components/signal-explorer/SignalInspectorHeader";
+import { ExplorerFiltersBar } from "@/components/signal-explorer/ExplorerFiltersBar";
+import { SignalComparePanel } from "@/components/signal-explorer/SignalComparePanel";
+import { SignalRationaleDrawer } from "@/components/signal-explorer/SignalRationaleDrawer";
 import { VerdictCard } from "@/components/VerdictCard";
-import { TakeSignalForm } from "@/components/TakeSignalForm";
-import { useAllVerdicts, useAccounts } from "@/lib/api";
 import type { L12Verdict } from "@/types";
 
-type FilterMode = "ALL" | "EXECUTE" | "NON_EXECUTE";
+export default function SignalExplorerPage() {
+  const state = useSignalExplorerState();
 
-export default function SignalsPage() {
-  const { data: verdictMap, isLoading } = useAllVerdicts();
-  const { data: accounts } = useAccounts();
+  const {
+    filteredVerdicts,
+    context,
+    isLoading,
+    filters,
+    setQuery,
+    setVerdictFilter,
+    setSessionFilter,
+    setSortKey,
+    toggleSortDir,
+    toggleGateFilter,
+    resetFilters,
+    inspected,
+    setInspected,
+    compareMode,
+    setCompareMode,
+    compareSlots,
+    toggleCompare,
+    clearCompare,
+    counts,
+  } = state;
 
-  const [query, setQuery] = useState("");
-  const [mode, setMode] = useState<FilterMode>("ALL");
-  const [selected, setSelected] = useState<L12Verdict | null>(null);
-
-  const list = useMemo(() => {
-    const all = Object.values(verdictMap ?? {});
-    const q = query.trim().toUpperCase();
-    return all
-      .filter((v) => (q ? v.symbol.toUpperCase().includes(q) : true))
-      .filter((v) => {
-        const isExec = v.verdict.toString().startsWith("EXECUTE");
-        if (mode === "EXECUTE") return isExec;
-        if (mode === "NON_EXECUTE") return !isExec;
-        return true;
-      })
-      .sort((a, b) => (b.confidence ?? 0) - (a.confidence ?? 0));
-  }, [verdictMap, query, mode]);
-
-  const execCount = useMemo(
-    () => list.filter((v) => v.verdict.toString().startsWith("EXECUTE")).length,
-    [list]
+  const compareCount = useMemo(
+    () => [compareSlots.a, compareSlots.b].filter(Boolean).length,
+    [compareSlots]
   );
 
+  const handleCardClick = (v: L12Verdict) => {
+    if (compareMode) {
+      toggleCompare(v);
+    } else {
+      setInspected(v);
+    }
+  };
+
+  const handleRemoveFromCompare = (symbol: string) => {
+    if (compareSlots.a?.symbol === symbol) {
+      toggleCompare(compareSlots.a);
+    }
+    if (compareSlots.b?.symbol === symbol) {
+      toggleCompare(compareSlots.b);
+    }
+  };
+
   return (
-    <div style={{ padding: "22px 26px", display: "flex", flexDirection: "column", gap: 16 }}>
+    <div style={{ padding: "22px 26px", display: "flex", flexDirection: "column", gap: 18 }}>
       {/* Header */}
-      <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-        <div>
-          <div style={{ fontSize: 20, fontWeight: 900, letterSpacing: "0.06em" }}>
-            SIGNALS
-          </div>
-          <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2 }}>
-            Filter & inspect L12 verdicts. Sorted by confidence.
-          </div>
-        </div>
-        
-      </div>
+      <SignalInspectorHeader
+        context={context}
+        totalCount={counts.total}
+        filteredCount={counts.filtered}
+        compareMode={compareMode}
+        compareCount={compareCount}
+      />
 
-      {/* Controls */}
-      <div
-        style={{
-          display: "flex",
-          gap: 10,
-          flexWrap: "wrap",
-          alignItems: "center",
-          padding: "12px 12px",
-          borderRadius: 12,
-          background: "var(--bg-card)",
-          border: "1px solid rgba(255,255,255,0.08)",
-        }}
-      >
-        <input
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search pair (e.g. EURUSD)…"
-          style={{
-            width: 240,
-            padding: "10px 12px",
-            borderRadius: 10,
-            border: "1px solid rgba(255,255,255,0.12)",
-            background: "rgba(0,0,0,0.25)",
-            color: "var(--text-primary)",
-            outline: "none",
-          }}
+      {/* Filters bar */}
+      <ExplorerFiltersBar
+        filters={filters}
+        counts={counts}
+        compareMode={compareMode}
+        onQueryChange={setQuery}
+        onVerdictFilter={setVerdictFilter}
+        onSessionFilter={setSessionFilter}
+        onSortKey={setSortKey}
+        onToggleSortDir={toggleSortDir}
+        onToggleGateFilter={toggleGateFilter}
+        onReset={resetFilters}
+        onToggleCompareMode={() => setCompareMode(!compareMode)}
+      />
+
+      {/* Compare panel (visible if mode ON and ≥1 selected) */}
+      {compareMode && compareCount > 0 && (
+        <SignalComparePanel
+          slots={compareSlots}
+          onClear={clearCompare}
+          onRemove={handleRemoveFromCompare}
         />
+      )}
 
-        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-          {(["ALL", "EXECUTE", "NON_EXECUTE"] as FilterMode[]).map((m) => (
-            <button
-              key={m}
-              onClick={() => setMode(m)}
+      {/* Main layout: grid + optional rationale drawer */}
+      <div style={{ display: "flex", gap: 16 }}>
+        {/* Signal grid */}
+        <div style={{ flex: 1, minWidth: 0 }}>
+          {isLoading ? (
+            <div
               style={{
-                padding: "9px 10px",
-                borderRadius: 10,
-                border: "1px solid rgba(255,255,255,0.10)",
-                background: mode === m ? "rgba(0,245,160,0.10)" : "transparent",
-                color: mode === m ? "var(--text-primary)" : "var(--text-muted)",
-                fontSize: 10,
-                letterSpacing: "0.12em",
-                fontWeight: 900,
-                cursor: "pointer",
+                padding: "40px 0",
+                textAlign: "center",
+                fontSize: 11,
+                color: "var(--text-muted)",
+                letterSpacing: "0.08em",
               }}
             >
-              {m}
-            </button>
-          ))}
-        </div>
-
-        <div style={{ marginLeft: "auto", display: "flex", gap: 10, alignItems: "center" }}>
-          <span
-            className="badge badge-gold"
-            style={{ fontSize: 9, letterSpacing: "0.12em" }}
-          >
-            {execCount} EXECUTE
-          </span>
-          <span
-            className="badge badge-muted"
-            style={{ fontSize: 9, letterSpacing: "0.12em" }}
-          >
-            {list.length} TOTAL
-          </span>
-        </div>
-      </div>
-
-      {/* Grid */}
-      {isLoading ? (
-        <div style={{ padding: "30px 0", color: "var(--text-muted)" }}>LOADING…</div>
-      ) : (
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))",
-            gap: 12,
-          }}
-        >
-          {list.map((v) => (
-            <div key={v.symbol} onClick={() => setSelected(v)}>
-              <VerdictCard verdict={v} selected={selected?.symbol === v.symbol} onTake={() => setSelected(v)} onSkip={() => setSelected(v)} />
+              LOADING VERDICTS…
             </div>
-          ))}
+          ) : filteredVerdicts.length === 0 ? (
+            <div
+              style={{
+                padding: "60px 0",
+                textAlign: "center",
+                fontSize: 11,
+                color: "var(--text-muted)",
+                letterSpacing: "0.08em",
+              }}
+            >
+              No signals match the current filters.
+            </div>
+          ) : (
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))",
+                gap: 12,
+              }}
+            >
+              {filteredVerdicts.map((v) => {
+                const selected = inspected?.symbol === v.symbol;
+                const inCompare =
+                  compareSlots.a?.symbol === v.symbol ||
+                  compareSlots.b?.symbol === v.symbol;
+                return (
+                  <div
+                    key={v.symbol}
+                    onClick={() => handleCardClick(v)}
+                    style={{
+                      position: "relative",
+                      cursor: "pointer",
+                      opacity: inCompare ? 0.6 : 1,
+                    }}
+                  >
+                    <VerdictCard
+                      verdict={v}
+                      selected={compareMode ? inCompare : selected}
+                    />
+                    {inCompare && compareMode && (
+                      <div
+                        style={{
+                          position: "absolute",
+                          top: 8,
+                          right: 8,
+                          width: 20,
+                          height: 20,
+                          borderRadius: "50%",
+                          background: "var(--cyan)",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          fontSize: 11,
+                          color: "#000",
+                          fontWeight: 800,
+                          boxShadow: "0 0 12px rgba(0,212,255,0.60)",
+                        }}
+                      >
+                        ✓
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
-      )}
 
-      {/* TakeSignal overlay */}
-      {selected && accounts && (
-        <div
-          style={{
-            position: "fixed",
-            inset: 0,
-            background: "rgba(0,0,0,0.7)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            zIndex: 100,
-          }}
-          onClick={() => setSelected(null)}
-        >
-          <div onClick={(e) => e.stopPropagation()}>
-            <TakeSignalForm
-              verdict={selected}
-              accounts={accounts}
-              onDone={() => setSelected(null)}
-              onCancel={() => setSelected(null)}
-            />
-          </div>
-        </div>
-      )}
+        {/* Rationale drawer (only if NOT in compare mode and something selected) */}
+        {!compareMode && inspected && (
+          <SignalRationaleDrawer
+            verdict={inspected}
+            onClose={() => setInspected(null)}
+          />
+        )}
+      </div>
     </div>
   );
 }
