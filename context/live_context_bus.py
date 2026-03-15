@@ -74,14 +74,18 @@ class LiveContextBus:
         self._conditioning_meta: dict[str, dict[str, Any]] = {}
 
         # ── Inference layer (abstract state — what TUYUL thinks with) ─
-        self._regime_state: dict[str, Any] = {}          # macro regime (0/1/2 + vix fields)
-        self._volatility_regime: str = "NORMAL"           # LOW / NORMAL / HIGH / EXTREME
-        self._session_state: dict[str, Any] = {}          # session window + multiplier
-        self._liquidity_map: dict[str, Any] = {}          # SMC zone abstractions
-        self._news_pressure_vector: dict[str, Any] = {}   # impact-weighted sentiment
-        self._news: dict[str, Any] = {}                   # raw news events
-        self._signal_stack: list[dict[str, Any]] = []     # pending signal candidates
-        self._inference_ts: float = 0.0                    # last inference update epoch
+        self._regime_state: dict[str, Any] = {}  # macro regime (0/1/2 + vix fields)
+        self._volatility_regime: str = "NORMAL"  # LOW / NORMAL / HIGH / EXTREME
+        self._session_state: dict[str, Any] = {}  # session window + multiplier
+        self._liquidity_map: dict[str, Any] = {}  # SMC zone abstractions
+        self._news_pressure_vector: dict[str, Any] = {}  # impact-weighted sentiment
+        self._news: dict[str, Any] = {}  # raw news events
+        self._signal_stack: list[dict[str, Any]] = []  # pending signal candidates
+        self._inference_ts: float = 0.0  # last inference update epoch
+
+        # ── Account / trade layer ─────────────────────────────────────
+        self._account_state: dict[str, dict[str, Any]] = {}  # {symbol: account_snapshot}
+        self._trade_history: dict[str, list[float]] = {}  # {symbol: [return_pct, ...]}
 
     # ------------------------------------------------------------------
     # Write API (analysis / consumer only — no execution logic)
@@ -123,9 +127,7 @@ class LiveContextBus:
         symbol = str(candle.get("symbol", "")).strip()
         timeframe = str(candle.get("timeframe", "")).strip()
         if not symbol or not timeframe:
-            logger.warning(
-                "LiveContextBus.update_candle: candle missing symbol/timeframe — ignored"
-            )
+            logger.warning("LiveContextBus.update_candle: candle missing symbol/timeframe — ignored")
             return
         self.push_candle(candle)
 
@@ -135,9 +137,7 @@ class LiveContextBus:
         if symbol:
             self._ticks[str(symbol)] = tick
         else:
-            logger.warning(
-                "LiveContextBus.update_tick: tick missing 'symbol' key — ignored"
-            )
+            logger.warning("LiveContextBus.update_tick: tick missing 'symbol' key — ignored")
 
     def reset_state(self) -> None:
         """Clear all internal state. Used for test isolation."""
@@ -343,19 +343,10 @@ class LiveContextBus:
         with self._lock:
             return {
                 # Data layer
-                "candles": {
-                    key: [dict(c) for c in candles]
-                    for key, candles in self._candle_history.items()
-                },
+                "candles": {key: [dict(c) for c in candles] for key, candles in self._candle_history.items()},
                 "ticks": {symbol: dict(tick) for symbol, tick in self._ticks.items()},
-                "conditioned_returns": {
-                    symbol: list(values)
-                    for symbol, values in self._conditioned_returns.items()
-                },
-                "conditioning_meta": {
-                    symbol: dict(meta)
-                    for symbol, meta in self._conditioning_meta.items()
-                },
+                "conditioned_returns": {symbol: list(values) for symbol, values in self._conditioned_returns.items()},
+                "conditioning_meta": {symbol: dict(meta) for symbol, meta in self._conditioning_meta.items()},
                 # Inference layer
                 "macro": dict(self._regime_state),
                 "news": dict(self._news) if self._news else {},
@@ -448,8 +439,7 @@ class LiveContextBus:
 
         if drifted:
             logger.warning(
-                "Price drift alert: %s REST_close=%.5f WS_mid=%.5f "
-                "drift=%.1f pips (max=%.1f)",
+                "Price drift alert: %s REST_close=%.5f WS_mid=%.5f drift=%.1f pips (max=%.1f)",
                 symbol,
                 rest_close,
                 ws_mid,
@@ -518,8 +508,7 @@ class LiveContextBus:
                 ready = False
                 missing[tf] = shortfall
                 logger.debug(
-                    "LiveContextBus: warmup not ready for %s:%s"
-                    " — have %d, need %d (missing %d)",
+                    "LiveContextBus: warmup not ready for %s:%s — have %d, need %d (missing %d)",
                     symbol,
                     tf,
                     have,
@@ -535,9 +524,7 @@ class LiveContextBus:
             "details": details,
         }
 
-    def get_candle_history(
-        self, symbol: str, timeframe: str, count: int | None = None
-    ) -> list[dict[str, Any]]:
+    def get_candle_history(self, symbol: str, timeframe: str, count: int | None = None) -> list[dict[str, Any]]:
         """Return stored candle history for *symbol*/*timeframe*.
 
         Args:
@@ -553,3 +540,40 @@ class LiveContextBus:
         if count is not None and count < len(data):
             return data[-count:]
         return data
+
+    # ------------------------------------------------------------------
+    # Account / trade history
+    # ------------------------------------------------------------------
+
+    def update_account_state(self, symbol: str, state: dict[str, Any]) -> None:
+        """Store the latest account-state snapshot for *symbol*."""
+        with self._lock:
+            self._account_state[symbol] = state
+
+    def get_account_state(self, symbol: str) -> dict[str, Any]:
+        """Return stored account-state snapshot (empty dict if none)."""
+        with self._lock:
+            return dict(self._account_state.get(symbol, {}))
+
+    def update_trade_history(self, symbol: str, returns: list[float]) -> None:
+        """Replace the stored trade-return series for *symbol*."""
+        with self._lock:
+            self._trade_history[symbol] = list(returns)
+
+    def get_trade_history(self, symbol: str, lookback: int | None = None) -> list[float] | None:
+        """Return stored trade returns for *symbol*.
+
+        Args:
+            symbol:   Trading symbol.
+            lookback: If given, return only the last *lookback* values.
+
+        Returns:
+            List of return floats, or ``None`` if no data stored.
+        """
+        with self._lock:
+            data = self._trade_history.get(symbol)
+            if data is None:
+                return None
+            if lookback is not None and lookback < len(data):
+                return data[-lookback:]
+            return list(data)

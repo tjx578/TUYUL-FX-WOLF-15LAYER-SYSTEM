@@ -196,9 +196,7 @@ class WolfConstitutionalPipeline:
         self._signal_throttle = SignalThrottle(max_signals=3, window_seconds=300)
 
         settings = CONFIG.get("settings", {})
-        self._rqi_sigma_sec = float(
-            settings.get("rqi_sigma_sec", settings.get("loop_interval_sec", 60))
-        )
+        self._rqi_sigma_sec = float(settings.get("rqi_sigma_sec", settings.get("loop_interval_sec", 60)))
 
         # ── RQI Enhancement: EMC filter + Gate controller ─────────
         self._emc_filter = EMCFilter(
@@ -298,8 +296,23 @@ class WolfConstitutionalPipeline:
         """Build canonical layer DAG for execution planning and UI introspection."""
         dag = DagEngine()
         for lid in [
-            "L1", "L2", "L3", "L4", "L5", "SC", "L7", "L8", "L9",
-            "L11", "L6", "L10", "macro", "L12", "L13", "L14", "L15",
+            "L1",
+            "L2",
+            "L3",
+            "L4",
+            "L5",
+            "SC",
+            "L7",
+            "L8",
+            "L9",
+            "L11",
+            "L6",
+            "L10",
+            "macro",
+            "L12",
+            "L13",
+            "L14",
+            "L15",
         ]:
             dag.add_node(lid)
 
@@ -374,7 +387,9 @@ class WolfConstitutionalPipeline:
             except concurrent.futures.TimeoutError:
                 logger.error(
                     "[Pipeline] Layer %s TIMEOUT (>%.0fs) for %s — aborting layer",
-                    layer_name, _LAYER_TIMEOUT_SEC, symbol,
+                    layer_name,
+                    _LAYER_TIMEOUT_SEC,
+                    symbol,
                 )
                 raise TimeoutError(  # noqa: B904
                     f"Layer {layer_name} exceeded {_LAYER_TIMEOUT_SEC}s timeout"
@@ -426,8 +441,7 @@ class WolfConstitutionalPipeline:
                     )
                 except Exception as exc:
                     logger.error(
-                        "DAG_BATCH_FAILED: batch=%d, runnable=%s, "
-                        "root_cause=%s: %s",
+                        "DAG_BATCH_FAILED: batch=%d, runnable=%s, root_cause=%s: %s",
                         batch_idx,
                         ",".join(runnable),
                         type(exc).__name__,
@@ -500,10 +514,7 @@ class WolfConstitutionalPipeline:
         dag_payload = {
             "topology": dag_topology,
             "batches": dag_batches,
-            "edges": [
-                {"from": edge.source, "to": edge.target}
-                for edge in pipeline_dag.to_edge_list()
-            ],
+            "edges": [{"from": edge.source, "to": edge.target} for edge in pipeline_dag.to_edge_list()],
         }
 
         def _timed_layer_call(
@@ -556,6 +567,31 @@ class WolfConstitutionalPipeline:
                 result["warmup"] = warmup
                 return result
 
+        # ═══════════════════════════════════════════════════════
+        # DATA QUALITY GATE -- assess candle gap ratio / staleness
+        # and compute confidence penalty to degrade gracefully
+        # rather than trading on bad data.
+        # ═══════════════════════════════════════════════════════
+        from analysis.data_quality_gate import DataQualityGate  # noqa: PLC0415
+
+        _dq_gate = DataQualityGate()
+        _dq_penalty: float = 0.0
+        _dq_reports: list[dict[str, Any]] = []
+        for tf in self.WARMUP_MIN_BARS:
+            candles = self._context_bus.get_candles(symbol, tf)
+            dq_report = _dq_gate.assess(symbol, tf, candles)
+            _dq_reports.append(dq_report.to_dict())
+            if dq_report.confidence_penalty > _dq_penalty:
+                _dq_penalty = dq_report.confidence_penalty
+
+        if _dq_penalty > 0:
+            logger.warning(
+                "[Pipeline v8.0] %s DATA QUALITY degraded — penalty=%.2f, reports=%s",
+                symbol,
+                _dq_penalty,
+                [r for r in _dq_reports if r["degraded"]],
+            )
+
         try:
             # ═══════════════════════════════════════════════════════
             # PHASE 1 -- ZONA PERCEPTION & CONTEXT (L1, L2, L3)
@@ -603,7 +639,9 @@ class WolfConstitutionalPipeline:
             l5_engine = self._l5
             phase2_calls: dict[str, Callable[[], dict[str, Any]]] = {
                 "L4": lambda: cast(dict[str, Any], _timed_layer_call(l4_engine.score, "L4", l1, l2, l3)),
-                "L5": lambda: cast(dict[str, Any], _timed_layer_call(l5_engine.analyze, "L5", symbol, volatility_profile=l2)),
+                "L5": lambda: cast(
+                    dict[str, Any], _timed_layer_call(l5_engine.analyze, "L5", symbol, volatility_profile=l2)
+                ),
             }
             phase2_results = self._run_dag_batch_calls(dag_batches, phase2_calls)
             l4 = phase2_results["L4"]
@@ -639,7 +677,7 @@ class WolfConstitutionalPipeline:
             preconditioning_diag: dict[str, Any] | None = None
             _bus_returns: list[float] | None = cast(
                 list[float] | None,
-                self._context_bus.get_trade_history(  # type: ignore[reportUnknownMemberType]
+                self._context_bus.get_trade_history(
                     symbol=symbol,
                     lookback=200,
                 ),
@@ -662,14 +700,14 @@ class WolfConstitutionalPipeline:
             if not trade_returns:
                 _cond_returns = cast(
                     list[float],
-                    self._context_bus.get_conditioned_returns(symbol, count=200),  # type: ignore[reportUnknownMemberType]
+                    self._context_bus.get_conditioned_returns(symbol, count=200),
                 )
                 if _cond_returns:
                     trade_returns = _cond_returns
                     trade_returns_preconditioned = True
                     preconditioning_diag = cast(
                         dict[str, Any] | None,
-                        self._context_bus.get_conditioning_meta(symbol),  # type: ignore[reportUnknownMemberType]
+                        self._context_bus.get_conditioning_meta(symbol),
                     )
                     logger.info(
                         "[Phase-3] %s Loaded %d conditioned returns via realtime tick path",
@@ -681,11 +719,11 @@ class WolfConstitutionalPipeline:
             if not trade_returns:
                 _h1 = cast(
                     list[dict[str, Any]],
-                    self._context_bus.get_candles(symbol, "H1"),  # type: ignore[reportUnknownMemberType]
+                    self._context_bus.get_candles(symbol, "H1"),
                 )
                 _m15 = cast(
                     list[dict[str, Any]],
-                    self._context_bus.get_candles(symbol, "M15"),  # type: ignore[reportUnknownMemberType]
+                    self._context_bus.get_candles(symbol, "M15"),
                 )
                 _candle_source = "H1" if len(_h1) >= len(_m15) else "M15"
                 _candles = _h1 if _candle_source == "H1" else _m15
@@ -764,11 +802,13 @@ class WolfConstitutionalPipeline:
             l7_engine = self._l7
             l8_engine = self._l8
             l9_engine = self._l9
-            engines_invoked.extend([
-                "L7ProbabilityAnalyzer",
-                "L8TIIIntegrityAnalyzer",
-                "L9SMCAnalyzer",
-            ])
+            engines_invoked.extend(
+                [
+                    "L7ProbabilityAnalyzer",
+                    "L8TIIIntegrityAnalyzer",
+                    "L9SMCAnalyzer",
+                ]
+            )
             phase3_calls: dict[str, Callable[[], dict[str, Any]]] = {
                 "L7": lambda: cast(
                     dict[str, Any],
@@ -849,7 +889,7 @@ class WolfConstitutionalPipeline:
 
             _bus_account: dict[str, Any] = cast(
                 dict[str, Any],
-                self._context_bus.get_account_state(symbol),  # type: ignore[reportUnknownMemberType]
+                self._context_bus.get_account_state(symbol),
             )
 
             # Enrich with layer data that only the pipeline has
@@ -947,13 +987,15 @@ class WolfConstitutionalPipeline:
                     stop_loss=l11.get("stop_loss", l11.get("sl", 0.0)),
                     take_profit=l11.get("take_profit_1", l11.get("tp1", l11.get("tp", 0.0))),
                 )
-                engines_invoked.extend([
-                    "EngineEnrichmentLayer",
-                    "RegimeClassifier",
-                    "FusionIntegrator",
-                    "TRQ3DEngine",
-                    "QuantumReflectiveBridge",
-                ])
+                engines_invoked.extend(
+                    [
+                        "EngineEnrichmentLayer",
+                        "RegimeClassifier",
+                        "FusionIntegrator",
+                        "TRQ3DEngine",
+                        "QuantumReflectiveBridge",
+                    ]
+                )
                 enrichment_data = enrichment_result.to_dict()
                 logger.info(
                     "[Pipeline v8.0] Phase 2.5: Enrichment -- %s score=%.3f engines_ok=%d/9",
@@ -978,7 +1020,7 @@ class WolfConstitutionalPipeline:
                         "bias_strength": float(enrichment_data.get("bias_strength", 0.0)),
                         "posterior": float(enrichment_data.get("posterior", 0.0)),
                     }
-                    _lrce = self._l6._compute_lrce(_lrce_input)  # pyright: ignore[reportPrivateUsage]
+                    _lrce = self._l6._compute_lrce(_lrce_input)
                     l6["lrce"] = round(_lrce, 4)
 
                     if _lrce > self._l6.lrce_block_threshold:
@@ -1030,9 +1072,7 @@ class WolfConstitutionalPipeline:
                 # MacroVolatilityEngine — prefer live engine state; fall back to
                 # caller-supplied system_metrics (test harness / manual override).
                 "macro_vix_state": (
-                    self._macro_vol.get_state()
-                    if self._macro_vol is not None
-                    else metrics.get("macro_vix_state", {})
+                    self._macro_vol.get_state() if self._macro_vol is not None else metrics.get("macro_vix_state", {})
                 ),
                 # Inference state — ephemeral abstract state TUYUL reasons with.
                 "inference": self._context_bus.inference_snapshot(),
@@ -1097,11 +1137,23 @@ class WolfConstitutionalPipeline:
             synthesis["system"]["rqi_emc"] = self._emc_filter.get_session(symbol)
             synthesis["system"]["reflex_gate"] = gate_decision.to_dict()
 
+            # ── Data quality penalty injection ────────────────────────
+            synthesis["system"]["data_quality"] = {
+                "penalty": round(_dq_penalty, 4),
+                "reports": _dq_reports,
+            }
+
             # Inject enrichment data into synthesis for L12 visibility
             synthesis["enrichment"] = enrichment_data
             if enrichment_data.get("confidence_adjustment"):
                 synthesis["layers"]["enrichment_confidence_adj"] = enrichment_data["confidence_adjustment"]
                 synthesis["layers"]["enrichment_score"] = enrichment_data.get("enrichment_score", 0.0)
+
+            # Apply data quality confidence penalty (advisory — does not override L12)
+            if _dq_penalty > 0:
+                current_adj = synthesis["layers"].get("enrichment_confidence_adj", 0.0)
+                synthesis["layers"]["enrichment_confidence_adj"] = current_adj - _dq_penalty
+                synthesis["layers"]["data_quality_penalty"] = round(_dq_penalty, 4)
 
             # ── L14-B Adaptive Penalty Injection ─────────────────────
             # Mines J3/J4 journal records for historically underperforming
@@ -1121,6 +1173,7 @@ class WolfConstitutionalPipeline:
                         L14AdaptiveReflection,
                         UnderperformPatternMiner,
                     )
+
                     _l14b_ctx: dict[str, Any] = {
                         "pair": symbol,
                         "direction": direction,
@@ -1131,17 +1184,21 @@ class WolfConstitutionalPipeline:
                         UnderperformPatternMiner(min_trades=8, max_combo_size=3),
                     )
                     _l14b_report = _l14b_engine.analyze(
-                        j3_rows, j4_rows, current_context=_l14b_ctx,
+                        j3_rows,
+                        j4_rows,
+                        current_context=_l14b_ctx,
                     )
                     adaptive_penalty = _l14b_engine.penalty_for_current_setup(
-                        _l14b_report, max_penalty=0.35,
+                        _l14b_report,
+                        max_penalty=0.35,
                     )
                     if adaptive_penalty > 0:
                         current_adj = synthesis["layers"].get("enrichment_confidence_adj", 0.0)
                         synthesis["layers"]["enrichment_confidence_adj"] = current_adj - adaptive_penalty
                         logger.info(
                             "[Pipeline v8.0] L14-B adaptive penalty %.3f applied for %s",
-                            adaptive_penalty, symbol,
+                            adaptive_penalty,
+                            symbol,
                         )
                     l14b_report_dict = _l14b_report.to_dict()
             except Exception as exc:
