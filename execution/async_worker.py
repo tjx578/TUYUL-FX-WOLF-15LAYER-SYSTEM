@@ -13,14 +13,16 @@ import os
 import tracemalloc
 import uuid
 from dataclasses import dataclass, replace
-from typing import cast
+from typing import Any, cast
 
 import redis.asyncio as aioredis
+from alembic.environment import Any  # noqa: F811
 from loguru import logger
 from prometheus_client import Counter, Gauge, Histogram, start_http_server
 from redis.exceptions import ResponseError
 
 from config.logging_bootstrap import configure_loguru_logging
+from core.health_probe import HealthProbe
 from execution.broker_executor import BrokerExecutor, ExecutionRequest, OrderAction
 from infrastructure.redis_client import RedisConfig, close_pool, get_client
 from infrastructure.tracing import (
@@ -144,7 +146,10 @@ class AsyncExecutionWorker:
                             tasks.append(
                                 asyncio.create_task(
                                     self._handle_message(
-                                        redis_client, stream_name, msg_id, msg,
+                                        redis_client,
+                                        stream_name,
+                                        msg_id,
+                                        msg,
                                     ),
                                 ),
                             )
@@ -157,7 +162,9 @@ class AsyncExecutionWorker:
             except Exception as exc:
                 execution_errors_total.inc()
                 logger.exception(
-                    "Execution worker error: {} — retry in {:.1f}s", exc, backoff,
+                    "Execution worker error: {} — retry in {:.1f}s",
+                    exc,
+                    backoff,
                 )
 
             await asyncio.sleep(backoff)
@@ -175,7 +182,9 @@ class AsyncExecutionWorker:
             if "BUSYGROUP" not in str(exc):
                 raise
 
-    async def _handle_message(self, redis_client: aioredis.Redis, stream_name: str, msg_id: str, msg: dict[str, str]) -> None:
+    async def _handle_message(
+        self, redis_client: aioredis.Redis, stream_name: str, msg_id: str, msg: dict[str, str]
+    ) -> None:
         async with self._sem:
             parent_context = extract_trace_context(extract_trace_carrier(msg))
             with _exec_tracer.start_as_current_span("execution_send", context=parent_context) as span:
@@ -240,8 +249,8 @@ class AsyncExecutionWorker:
                 raw_dict = cast(dict[str, object], pending_raw)
                 pending_value = raw_dict.get("pending", 0)
                 pending_count = int(pending_value) if pending_value is not None else 0  # type: ignore[arg-type]
-            elif isinstance(pending_raw, (list, tuple)) and pending_raw:
-                pending_count = int(pending_raw[0])  # pyright: ignore[reportUnknownArgumentType]
+            elif isinstance(pending_raw, list | tuple) and pending_raw:
+                pending_count = int(str(cast(tuple[Any, ...], pending_raw)[0]))
         except Exception:
             pending_count = 0
 
@@ -257,6 +266,12 @@ _RESTART_COOLDOWN = float(os.getenv("EXEC_RESTART_COOLDOWN_SEC", "5.0"))
 
 async def _main() -> None:
     start_http_server(int(os.getenv("EXEC_METRICS_PORT", "9103")))
+
+    health_port = int(os.getenv("PORT", os.getenv("EXEC_HEALTH_PORT", "8084")))
+    probe = HealthProbe(port=health_port, service_name="execution")
+    asyncio.create_task(probe.start())
+    logger.info("Execution health probe started on :{}", health_port)
+
     restarts = 0
     while restarts <= _MAX_RESTARTS:
         try:
@@ -280,9 +295,7 @@ async def _main() -> None:
                 _MAX_RESTARTS,
             )
             if restarts > _MAX_RESTARTS:
-                logger.critical(
-                    "[SUPERVISOR] Execution worker exceeded max restarts — giving up"
-                )
+                logger.critical("[SUPERVISOR] Execution worker exceeded max restarts — giving up")
                 return
             await asyncio.sleep(_RESTART_COOLDOWN)
 

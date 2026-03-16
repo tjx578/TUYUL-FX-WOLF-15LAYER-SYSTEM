@@ -28,6 +28,32 @@ __all__ = ["analysis_loop"]
 
 _PIPELINE_TIMEOUT_SEC = 30.0
 _engine_tracer = setup_tracer("wolf-engine-loop")
+_ERROR_LOG_WINDOW_SEC = float(os.getenv("PIPELINE_ERROR_LOG_WINDOW_SEC", "30"))
+_error_log_state: dict[str, dict[str, float | int]] = {}
+
+
+def _log_pipeline_exception(pair: str, exc: BaseException, *, kind: str) -> None:
+    """Rate-limit repeated pipeline exceptions to prevent log floods."""
+    now = time.time()
+    signature = f"{kind}:{type(exc).__name__}:{exc}"
+    state = _error_log_state.get(signature)
+
+    # Emit full traceback at most once per window for each unique signature.
+    if state is None or (now - float(state["last_emit"])) >= _ERROR_LOG_WINDOW_SEC:
+        suppressed = int(state["suppressed"]) if state else 0
+        if suppressed > 0:
+            logger.warning(
+                "[Pipeline] {} repeating signature={} (suppressed={} over {}s)",
+                kind,
+                signature,
+                suppressed,
+                int(_ERROR_LOG_WINDOW_SEC),
+            )
+        logger.exception("[Pipeline] {} for {}: {}", kind, pair, exc)
+        _error_log_state[signature] = {"last_emit": now, "suppressed": 0}
+        return
+
+    state["suppressed"] = int(state["suppressed"]) + 1
 
 
 async def _analyze_pair(
@@ -77,13 +103,11 @@ async def _analyze_pair(
             return result
         except TimeoutError as exc:
             span.record_exception(exc)
-            logger.error(f"[Pipeline] TIMEOUT after {_PIPELINE_TIMEOUT_SEC}s for {pair} — skipping")
+            _log_pipeline_exception(pair, exc, kind="TIMEOUT")
             return None
         except Exception as exc:
-            import traceback
-
             span.record_exception(exc)
-            logger.error(f"[Pipeline] Error for {pair}: {exc}\n{traceback.format_exc()}")
+            _log_pipeline_exception(pair, exc, kind="ERROR")
             return None
 
 
@@ -130,7 +154,7 @@ async def analysis_loop(
     _symbol_last_analysis_ts: dict[str, float] = {}
 
     def _to_float(value: object, default: float = 0.0) -> float:
-        if isinstance(value, (int, float)):
+        if isinstance(value, int | float):
             return float(value)
         if isinstance(value, str):
             try:

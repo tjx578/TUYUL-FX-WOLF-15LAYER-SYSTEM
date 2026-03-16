@@ -53,24 +53,20 @@ STALE_DATA_THRESHOLD_SEC = int(os.getenv("STALE_DATA_THRESHOLD_SEC", "300"))
 _signal_pool: dict[str, dict[str, Any]] = {}
 _trade_ledger: dict[str, dict[str, Any]] = {}
 _account_registry: dict[str, dict[str, Any]] = {}
-_signal_service = SignalService()
+_signal_service: SignalService | None = None
 _kill_switch = GlobalKillSwitch()
 _confirm_lock = threading.Lock()
 _execution_idempotency = ExecutionIdempotencyLedger()
 
 
 class _TradeJournalAutomationServiceProtocol(Protocol):
-    def on_signal_taken(self, trade: dict[str, Any]) -> None:
-        ...
+    def on_signal_taken(self, trade: dict[str, Any]) -> None: ...
 
-    def on_trade_confirmed(self, trade: dict[str, Any]) -> None:
-        ...
+    def on_trade_confirmed(self, trade: dict[str, Any]) -> None: ...
 
-    def on_signal_skipped(self, signal_id: str, pair: str, reason: str) -> None:
-        ...
+    def on_signal_skipped(self, signal_id: str, pair: str, reason: str) -> None: ...
 
-    def on_trade_closed(self, trade: dict[str, Any], reason: str) -> None:
-        ...
+    def on_trade_closed(self, trade: dict[str, Any], reason: str) -> None: ...
 
 
 _journal_service = cast(_TradeJournalAutomationServiceProtocol, trade_journal_automation_service)
@@ -79,6 +75,20 @@ ALLOC_REQUEST_STREAM = "allocation:request"
 IDEMPOTENCY_KEY_PREFIX = "idempotency:confirm:"
 IDEMPOTENCY_TTL_SEC = 60 * 60 * 24
 TRADE_OUTBOX_STREAM = "trade:outbox"
+
+
+def _get_signal_service() -> SignalService:
+    """Lazily create SignalService so app boot does not require Redis."""
+    global _signal_service
+    if _signal_service is None:
+        try:
+            _signal_service = SignalService()
+        except RuntimeError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=f"Signal service unavailable: {exc}",
+            ) from exc
+    return _signal_service
 
 
 async def _check_stale_data(pair: str) -> None:
@@ -98,7 +108,7 @@ async def _check_stale_data(pair: str) -> None:
         if verdict:
             ts_raw = verdict.get("timestamp") or verdict.get("ts") or verdict.get("updated_at")
             if ts_raw:
-                if isinstance(ts_raw, (int, float)):
+                if isinstance(ts_raw, int | float):
                     verdict_ts = float(ts_raw)
                 elif isinstance(ts_raw, str):
                     from datetime import datetime as _dt  # noqa: PLC0415
@@ -114,8 +124,9 @@ async def _check_stale_data(pair: str) -> None:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail=f"STALE_DATA: verdict for {pair} is {int(age)}s old "
-                       f"(threshold: {STALE_DATA_THRESHOLD_SEC}s). Refresh context first.",
+                f"(threshold: {STALE_DATA_THRESHOLD_SEC}s). Refresh context first.",
             )
+
 
 # ── [BUG-1 FIX] Use FastAPI's APIRouter directly — no shadowing ───────────────
 write_router = APIRouter(
@@ -126,6 +137,7 @@ write_router = APIRouter(
 
 
 # ─── Pydantic request/response models ────────────────────────────────────────
+
 
 class TakeSignalRequest(BaseModel):
     signal_id: str
@@ -197,6 +209,7 @@ class RiskCalculateRequest(BaseModel):
 
 
 # ─── Helper: Redis read/write with in-memory fallback ────────────────────────
+
 
 async def _redis_set(key: str, value: str, ex: int | None = None) -> bool:
     try:
@@ -331,6 +344,7 @@ async def _enqueue_outbox_atomic(
 
 
 # ─── Helper: RiskEngine signal/account construction ─────────────────────────
+
 
 def _build_risk_signal(
     pair: str,
@@ -509,11 +523,7 @@ async def _atomic_transition_intended_to_pending(trade_id: str) -> dict[str, Any
                     _trade_ledger[trade_id] = trade
                     return trade
 
-                state = (
-                    payload_or_state_raw
-                    if isinstance(payload_or_state_raw, str)
-                    else str(payload_or_state_raw)
-                )
+                state = payload_or_state_raw if isinstance(payload_or_state_raw, str) else str(payload_or_state_raw)
                 if state == "NOT_FOUND":
                     raise HTTPException(status_code=404, detail=f"Trade {trade_id} not found")
                 raise HTTPException(
@@ -569,6 +579,7 @@ async def _confirm_trade_internal(
         raw = await _redis_get(f"TRADE:{trade_id}")
         if raw:
             import json as _json  # noqa: PLC0415
+
             with contextlib.suppress(Exception):
                 trade_data = _json.loads(raw)
     if trade_data and trade_data.get("pair"):
@@ -667,6 +678,7 @@ def _apply_trade_event_transition(current_status: str, event_type: str) -> tuple
 
 
 # ─── Routes ──────────────────────────────────────────────────────────────────
+
 
 @write_router.post("/trades/take")
 async def take_signal(req: TakeSignalRequest) -> dict[str, Any]:
@@ -791,12 +803,13 @@ async def take_signal(req: TakeSignalRequest) -> dict[str, Any]:
         "take_profit_1": req.tp,
         "risk_reward_ratio": _build_risk_signal(req.pair, req.direction, req.entry, req.sl, req.tp).rr,
     }
-    _signal_service.publish(signal_payload)
+    _get_signal_service().publish(signal_payload)
     _journal_service.on_signal_taken(trade)
 
     # Push to live websocket feed (best-effort)
     with contextlib.suppress(Exception):
         from api.ws_routes import publish_live_update  # noqa: PLC0415
+
         await publish_live_update("trade_intended", cast(dict[str, object], trade))
         await publish_live_update("signal", cast(dict[str, object], signal_payload))
 
@@ -840,7 +853,7 @@ async def take_signal_multi(req: TakeSignalBatchRequest) -> dict[str, Any]:
             "take_profit_1": req.tp,
             "risk_reward_ratio": _build_risk_signal(req.pair, req.direction, req.entry, req.sl, req.tp).rr,
         }
-        _signal_service.publish(signal_payload)
+        _get_signal_service().publish(signal_payload)
 
         queued: list[dict[str, Any]] = []
         for account_id in req.accounts:
@@ -848,7 +861,7 @@ async def take_signal_multi(req: TakeSignalBatchRequest) -> dict[str, Any]:
             payload = {
                 "request_id": allocation_id,
                 "signal_id": req.verdict_id,
-                "account_ids": f"[\"{account_id}\"]",
+                "account_ids": f'["{account_id}"]',
                 "operator": req.operator,
                 "action": "TAKE",
                 "risk_percent": str(req.risk_percent),
@@ -894,10 +907,12 @@ async def skip_signal(req: SkipSignalRequest) -> dict[str, Any]:
         "timestamp": now,
     }
     import json
+
     await _redis_set(f"JOURNAL:{entry_id}", json.dumps(journal_entry), ex=604800)
     _journal_service.on_signal_skipped(req.signal_id, req.pair, req.reason or "MANUAL_SKIP")
     with contextlib.suppress(Exception):
         from api.ws_routes import publish_live_update  # noqa: PLC0415
+
         await publish_live_update("signal_skipped", cast(dict[str, object], journal_entry))
     logger.info("Signal SKIPPED: %s %s reason=%s", req.signal_id, req.pair, req.reason)
     return {"logged": True, "entry_id": entry_id, "journal_type": "J2"}
@@ -982,6 +997,7 @@ async def close_trade(req: CloseTradeRequest) -> dict[str, Any]:
     _journal_service.on_trade_closed(trade, req.reason or "MANUAL_CLOSE")
     with contextlib.suppress(Exception):
         from api.ws_routes import publish_live_update  # noqa: PLC0415
+
         await publish_live_update("trade_closed", trade)
 
     logger.info("Trade CLOSED: %s reason=%s pnl=%s", req.trade_id, req.reason, req.pnl)
@@ -1097,12 +1113,18 @@ async def record_trade_lifecycle_event(req: TradeLifecycleEventRequest) -> dict[
     with contextlib.suppress(Exception):
         from api.ws_routes import publish_live_update  # noqa: PLC0415
 
-        await publish_live_update("trade_lifecycle", cast(dict[str, object], {
-            "trade_id": req.trade_id,
-            "event_type": event_type,
-            "status": trade.get("status"),
-            "source": req.source,
-        }))
+        await publish_live_update(
+            "trade_lifecycle",
+            cast(
+                dict[str, object],
+                {
+                    "trade_id": req.trade_id,
+                    "event_type": event_type,
+                    "status": trade.get("status"),
+                    "source": req.source,
+                },
+            ),
+        )
 
     response = {
         "trade_id": req.trade_id,

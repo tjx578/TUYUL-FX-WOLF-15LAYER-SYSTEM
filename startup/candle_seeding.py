@@ -51,8 +51,10 @@ async def _seed_from_redis(pairs: list[str]) -> None:
     Retries with backoff when Redis has no data yet (race condition: engine
     starts before ingest finishes seeding).
     """
-    max_retries = int(os.getenv("ENGINE_WARMUP_MAX_RETRIES", "15"))
-    retry_delay = float(os.getenv("ENGINE_WARMUP_RETRY_DELAY_SEC", "10"))
+    # Defaults target cross-service race in Railway: ingest warmup for 30x5 TF
+    # can take several minutes before the first Redis history is available.
+    max_retries = int(os.getenv("ENGINE_WARMUP_MAX_RETRIES", "60"))
+    retry_delay = float(os.getenv("ENGINE_WARMUP_RETRY_DELAY_SEC", "5"))
 
     try:
         from context.live_context_bus import LiveContextBus  # noqa: PLC0415
@@ -78,7 +80,7 @@ async def _seed_from_redis(pairs: list[str]) -> None:
                 if h1_count > 0:
                     logger.info(
                         "[SEED] Redis candle history loaded into LiveContextBus "
-                        "(%d/%d pairs with H1 data, attempt %d). "
+                        "({}/{} pairs with H1 data, attempt {}). "
                         "M15 will arrive from tick stream after ~15 min.",
                         h1_count,
                         len(pairs),
@@ -100,7 +102,7 @@ async def _seed_from_redis(pairs: list[str]) -> None:
 
                 if attempt < max_retries:
                     logger.warning(
-                        "[SEED] No candle data in Redis yet (H1=%d, attempt %d/%d) — waiting %.0fs",
+                        "[SEED] No candle data in Redis yet (H1={}, attempt {}/{}) — waiting {:.0f}s",
                         h1_count,
                         attempt,
                         max_retries,
@@ -109,7 +111,7 @@ async def _seed_from_redis(pairs: list[str]) -> None:
                     await asyncio.sleep(retry_delay)
 
             logger.critical(
-                "[SEED] Redis still empty after %d retries (%.0fs total wait). "
+                "[SEED] Redis still empty after {} retries ({:.0f}s total wait). "
                 "Engine will continue in DEGRADED mode — analysis will be blind "
                 "until live candles arrive.",
                 max_retries,

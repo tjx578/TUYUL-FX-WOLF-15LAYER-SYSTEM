@@ -59,13 +59,39 @@ class TestDataQualityGate:
         assert "low_tick_candles" in report.reasons[0]
 
     def test_stale_data_triggers_degradation(self) -> None:
-        gate = DataQualityGate(DataQualityConfig(stale_threshold_seconds=10.0))
+        gate = DataQualityGate(DataQualityConfig(stale_threshold_seconds=10.0, stale_candle_multiplier=0.0))
         candles = [_make_candle() for _ in range(50)]
         old_ts = time.time() - 60.0
         report = gate.assess("EURUSD", "M15", candles, last_update_ts=old_ts)
         assert report.degraded is True
         assert report.staleness_seconds > 50.0
         assert any("stale" in r for r in report.reasons)
+
+    def test_h1_not_stale_within_two_candles(self) -> None:
+        gate = DataQualityGate()
+        candles = [_make_candle() for _ in range(50)]
+        # H1 default stale threshold = max(300s, 2 * 3600s) = 7200s
+        old_ts = time.time() - 3900.0
+        report = gate.assess("EURUSD", "H1", candles, last_update_ts=old_ts)
+        assert report.degraded is False
+        assert not any("stale_data" in r for r in report.reasons)
+
+    def test_h1_stale_after_two_candles(self) -> None:
+        gate = DataQualityGate()
+        candles = [_make_candle() for _ in range(50)]
+        old_ts = time.time() - 8000.0
+        report = gate.assess("EURUSD", "H1", candles, last_update_ts=old_ts)
+        assert report.degraded is True
+        assert any("stale_data" in r for r in report.reasons)
+
+    def test_monthly_not_stale_for_short_age(self) -> None:
+        gate = DataQualityGate()
+        candles = [_make_candle() for _ in range(50)]
+        # MN default stale threshold = 2 * 30 days
+        old_ts = time.time() - (10 * 24 * 3600)
+        report = gate.assess("EURUSD", "MN", candles, last_update_ts=old_ts)
+        assert report.degraded is False
+        assert not any("stale_data" in r for r in report.reasons)
 
     def test_empty_candles_max_penalty(self) -> None:
         gate = DataQualityGate()

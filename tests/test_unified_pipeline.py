@@ -13,20 +13,23 @@ Covers:
 """
 
 import time
+from datetime import UTC, datetime
 
 import pytest
 
 from pipeline.engines import L13ReflectiveEngine, L15MetaSovereigntyEngine
 from pipeline.result import PipelineResult
 from pipeline.wolf_constitutional_pipeline import (
-    WolfConstitutionalPipeline,
     _LAYER_TIMEOUT_SEC,
+    WolfConstitutionalPipeline,
+    _coerce_timestamp_to_epoch,
     build_l12_synthesis,
 )
 
 # ══════════════════════════════════════════════════════════════
 #  FIXTURES
 # ══════════════════════════════════════════════════════════════
+
 
 def _make_synthesis(
     direction: str = "BUY",
@@ -96,9 +99,31 @@ def _make_synthesis(
         "cognitive": {"regime": "TREND", "dominant_force": "NEUTRAL", "cbv": 0.0, "csi": 0.0},
         "fusion_frpc": {"conf12": 0.85, "frpc_energy": 0.0, "lambda_esi": 0.003, "integrity": integrity},
         "trq3d": {"alpha": 0.0, "beta": 0.0, "gamma": 0.0, "drift": 0.02, "mean_energy": 0.7, "intensity": 0.0},
-        "smc": {"structure": "RANGE", "smart_money_signal": "NEUTRAL", "liquidity_zone": "0.00000", "ob_present": False, "fvg_present": False, "sweep_detected": False, "bias": "NEUTRAL"},
-        "wolf_discipline": {"score": wolf_score / 30.0, "polarity_deviation": 0.0, "lambda_balance": "ACTIVE", "bias_symmetry": "NEUTRAL", "eaf_score": 0.0, "emotional_state": "CALM"},
-        "macro": {"regime": "TREND", "phase": "NEUTRAL", "volatility_ratio": 1.0, "mn_aligned": False, "liquidity": {}, "bias_override": {}},
+        "smc": {
+            "structure": "RANGE",
+            "smart_money_signal": "NEUTRAL",
+            "liquidity_zone": "0.00000",
+            "ob_present": False,
+            "fvg_present": False,
+            "sweep_detected": False,
+            "bias": "NEUTRAL",
+        },
+        "wolf_discipline": {
+            "score": wolf_score / 30.0,
+            "polarity_deviation": 0.0,
+            "lambda_balance": "ACTIVE",
+            "bias_symmetry": "NEUTRAL",
+            "eaf_score": 0.0,
+            "emotional_state": "CALM",
+        },
+        "macro": {
+            "regime": "TREND",
+            "phase": "NEUTRAL",
+            "volatility_ratio": 1.0,
+            "mn_aligned": False,
+            "liquidity": {},
+            "bias_override": {},
+        },
         "macro_vix": {"regime_state": 1, "risk_multiplier": 1.0},
         "system": {"latency_ms": 50.0, "safe_mode": False},
     }
@@ -145,6 +170,7 @@ def _make_sovereignty(execution_rights: str = "GRANTED", vault_sync: float = 1.0
 #  L13 REFLECTIVE ENGINE
 # ══════════════════════════════════════════════════════════════
 
+
 class TestL13ReflectiveEngine:
     """Tests for L13ReflectiveEngine.reflect(symbol, historical_verdicts, current_layer_results).
 
@@ -166,9 +192,9 @@ class TestL13ReflectiveEngine:
         )
 
         assert result["meta_integrity"] == 1.0
-        assert result["gamma"] == 1.0       # hardcoded meta_integrity
-        assert result["alpha"] == 1.0       # BUY + BULLISH = aligned -> LRCE 1.0
-        assert result["beta"] == 0.5        # HOLD + BULLISH -> 0.5
+        assert result["gamma"] == 1.0  # hardcoded meta_integrity
+        assert result["alpha"] == 1.0  # BUY + BULLISH = aligned -> LRCE 1.0
+        assert result["beta"] == 0.5  # HOLD + BULLISH -> 0.5
         # abg = 1.0*0.4 + 0.5*0.3 + 1.0*0.3 = 0.85
         assert result["abg_score"] == pytest.approx(0.85)
         assert result["field_state"] == "EXPANSION"
@@ -181,8 +207,8 @@ class TestL13ReflectiveEngine:
 
         result = engine.reflect("EURUSD", [], synthesis)
 
-        assert result["alpha"] == 0.7       # BUY + NEUTRAL -> 0.7
-        assert result["beta"] == 0.8        # HOLD + NEUTRAL -> 0.8
+        assert result["alpha"] == 0.7  # BUY + NEUTRAL -> 0.7
+        assert result["beta"] == 0.8  # HOLD + NEUTRAL -> 0.8
         # abg = 0.7*0.4 + 0.8*0.3 + 1.0*0.3 = 0.82
         assert result["abg_score"] == pytest.approx(0.82)
         assert result["field_state"] == "EXPANSION"
@@ -195,8 +221,8 @@ class TestL13ReflectiveEngine:
 
         result = engine.reflect("EURUSD", [], synthesis)
 
-        assert result["alpha"] == 0.3       # Misaligned
-        assert result["beta"] == 0.5        # HOLD + BEARISH -> 0.5
+        assert result["alpha"] == 0.3  # Misaligned
+        assert result["beta"] == 0.5  # HOLD + BEARISH -> 0.5
         # abg = 0.3*0.4 + 0.5*0.3 + 1.0*0.3 = 0.57
         assert result["abg_score"] == pytest.approx(0.57)
         assert result["field_state"] == "COMPRESSION"
@@ -209,12 +235,12 @@ class TestL13ReflectiveEngine:
 
         result = engine.reflect("EURUSD", [], synthesis)
 
-        assert result["alpha"] == 0.5       # HOLD -> 0.5
-        assert result["beta"] == 0.8        # HOLD + NEUTRAL -> 0.8
+        assert result["alpha"] == 0.5  # HOLD -> 0.5
+        assert result["beta"] == 0.8  # HOLD + NEUTRAL -> 0.8
         # abg = 0.5*0.4 + 0.8*0.3 + 1.0*0.3 = 0.74
         assert result["abg_score"] == pytest.approx(0.74)
         assert result["field_state"] == "COMPRESSION"  # 0.74 < 0.80
-        assert result["execution_window"] == "GOOD"     # 0.74 >= 0.70
+        assert result["execution_window"] == "GOOD"  # 0.74 >= 0.70
 
     def test_reflect_probability_calibration_insufficient(self):
         """Empty historical_verdicts should produce N/A calibration grade."""
@@ -247,6 +273,7 @@ class TestL13ReflectiveEngine:
 # ══════════════════════════════════════════════════════════════
 #  L15 META SOVEREIGNTY ENGINE
 # ══════════════════════════════════════════════════════════════
+
 
 class TestL15MetaSovereigntyEngine:
     """Tests for L15MetaSovereigntyEngine."""
@@ -348,6 +375,7 @@ class TestL15MetaSovereigntyEngine:
 #  TWO-PASS GOVERNANCE INTEGRATION
 # ══════════════════════════════════════════════════════════════
 
+
 class TestTwoPassGovernance:
     """Tests for the two-pass L13 governance flow.
 
@@ -393,8 +421,8 @@ class TestTwoPassGovernance:
         aligned = _make_synthesis(direction="BUY", technical_bias="BULLISH")
         misaligned = _make_synthesis(direction="BUY", technical_bias="BEARISH")
 
-        pass1 = l13.reflect("EURUSD", [], aligned)       # abg ~ 0.85
-        pass2 = l13.reflect("EURUSD", [], misaligned)    # abg ~ 0.57
+        pass1 = l13.reflect("EURUSD", [], aligned)  # abg ~ 0.85
+        pass2 = l13.reflect("EURUSD", [], misaligned)  # abg ~ 0.57
 
         assert pass1["abg_score"] > pass2["abg_score"]
         drift = abs(pass1["abg_score"] - pass2["abg_score"])
@@ -414,6 +442,7 @@ class TestTwoPassGovernance:
 # ══════════════════════════════════════════════════════════════
 #  PIPELINE RESULT
 # ══════════════════════════════════════════════════════════════
+
 
 class TestPipelineResult:
     """Tests for PipelineResult dataclass."""
@@ -484,6 +513,7 @@ class TestPipelineResult:
 #  BUILD L12 SYNTHESIS (module-level function)
 # ══════════════════════════════════════════════════════════════
 
+
 class TestBuildL12Synthesis:
     """Tests for build_l12_synthesis(layer_results).
 
@@ -496,50 +526,77 @@ class TestBuildL12Synthesis:
         """Create layer_results dict with uppercase keys matching build_l12_synthesis."""
         return {
             "L1": {
-                "valid": True, "regime": "TREND", "dominant_force": "BULL",
-                "regime_confidence": 0.92, "csi": 0.5,
+                "valid": True,
+                "regime": "TREND",
+                "dominant_force": "BULL",
+                "regime_confidence": 0.92,
+                "csi": 0.5,
             },
             "L2": {
-                "valid": True, "reflex_coherence": 0.9, "conf12": 0.85,
-                "frpc_energy": 0.1, "frpc_state": "SYNC",
+                "valid": True,
+                "reflex_coherence": 0.9,
+                "conf12": 0.85,
+                "frpc_energy": 0.1,
+                "frpc_state": "SYNC",
             },
             "L3": {
-                "valid": True, "trend": "BULLISH", "trq3d_energy": 0.7, "drift": 0.01,
+                "valid": True,
+                "trend": "BULLISH",
+                "trq3d_energy": 0.7,
+                "drift": 0.01,
             },
             # No wolf_30_point dict -- avoids the unbound technical_score path
             # in the if-branch.  The else-branch computes wolf_30_point from
             # technical_score and L7 win_probability.
             "L4": {"technical_score": 80},
             "L5": {
-                "psychology_score": 75, "current_drawdown": 1.5,
-                "eaf_score": 0.0, "emotion_delta": 0.0,
+                "psychology_score": 75,
+                "current_drawdown": 1.5,
+                "eaf_score": 0.0,
+                "emotion_delta": 0.0,
             },
             "L6": {
-                "risk_ok": True, "propfirm_compliant": True,
-                "drawdown_level": "LEVEL_0", "risk_multiplier": 1.0,
-                "risk_status": "ACCEPTABLE", "lrce": 0.85,
+                "risk_ok": True,
+                "propfirm_compliant": True,
+                "drawdown_level": "LEVEL_0",
+                "risk_multiplier": 1.0,
+                "risk_status": "ACCEPTABLE",
+                "lrce": 0.85,
             },
             "L7": {
-                "win_probability": 65.0, "bayesian_posterior": 0.62,
-                "bayesian_ci_low": 0.45, "bayesian_ci_high": 0.78,
-                "mc_passed_threshold": True, "risk_of_ruin": 0.05,
+                "win_probability": 65.0,
+                "bayesian_posterior": 0.62,
+                "bayesian_ci_low": 0.45,
+                "bayesian_ci_high": 0.78,
+                "mc_passed_threshold": True,
+                "risk_of_ruin": 0.05,
                 "validation": "PASS",
             },
             "L8": {"tii_sym": 0.95, "integrity": 0.98},
             "L9": {
-                "confidence": 0.8, "dvg_confidence": 0.8, "liquidity_score": 0.75,
-                "smart_money_signal": "NEUTRAL", "ob_present": False,
-                "fvg_present": False, "sweep_detected": False,
+                "confidence": 0.8,
+                "dvg_confidence": 0.8,
+                "liquidity_score": 0.75,
+                "smart_money_signal": "NEUTRAL",
+                "ob_present": False,
+                "fvg_present": False,
+                "sweep_detected": False,
                 "smart_money_bias": "NEUTRAL",
             },
             "L10": {
-                "position_ok": True, "fta_score": 0.85, "fta_multiplier": 1.0,
-                "final_lot_size": 0.01, "adjusted_risk_pct": 1.0,
+                "position_ok": True,
+                "fta_score": 0.85,
+                "fta_multiplier": 1.0,
+                "final_lot_size": 0.01,
+                "adjusted_risk_pct": 1.0,
                 "adjusted_risk_amount": 100.0,
             },
             "L11": {
-                "valid": True, "rr": 2.5, "entry_price": 1.10000,
-                "stop_loss": 1.09500, "take_profit_1": 1.11250,
+                "valid": True,
+                "rr": 2.5,
+                "entry_price": 1.10000,
+                "stop_loss": 1.09500,
+                "take_profit_1": 1.11250,
                 "battle_strategy": "SHADOW_STRIKE",
             },
             "macro": "TREND",
@@ -553,8 +610,13 @@ class TestBuildL12Synthesis:
         synthesis = build_l12_synthesis(layer_results)
 
         required_keys = [
-            "scores", "layers", "execution", "risk",
-            "propfirm", "bias", "system",
+            "scores",
+            "layers",
+            "execution",
+            "risk",
+            "propfirm",
+            "bias",
+            "system",
         ]
         for key in required_keys:
             assert key in synthesis, f"Missing required key: {key}"
@@ -629,17 +691,17 @@ class TestBuildL12Synthesis:
 #  _TIMED_CALL PER-LAYER TIMEOUT
 # ══════════════════════════════════════════════════════════════
 
+
 class TestTimedCallTimeout:
     """Tests for WolfConstitutionalPipeline._timed_call per-layer timeout."""
 
     def test_timed_call_completes_fast_function(self):
         """A function that completes within the timeout should return normally."""
+
         def fast_fn(x):
             return x * 2
 
-        result = WolfConstitutionalPipeline._timed_call(
-            fast_fn, "TEST_LAYER", "EURUSD", 21
-        )
+        result = WolfConstitutionalPipeline._timed_call(fast_fn, "TEST_LAYER", "EURUSD", 21)
 
         assert result == 42
 
@@ -654,10 +716,29 @@ class TestTimedCallTimeout:
             time.sleep(1)  # longer than 0.1s, shorter than default 10s
 
         with pytest.raises(TimeoutError, match="timeout"):
-            WolfConstitutionalPipeline._timed_call(
-                hanging_fn, "HANGING_LAYER", "EURUSD"
-            )
+            WolfConstitutionalPipeline._timed_call(hanging_fn, "HANGING_LAYER", "EURUSD")
 
     def test_layer_timeout_constant_is_positive(self):
         """_LAYER_TIMEOUT_SEC must be a positive float."""
         assert _LAYER_TIMEOUT_SEC > 0
+
+
+class TestTimestampCoercion:
+    """Regression tests for tolerant timestamp coercion in pipeline quality gate."""
+
+    def test_accepts_iso8601_with_timezone(self):
+        ts = _coerce_timestamp_to_epoch("2026-03-16T06:00:00+00:00")
+        assert ts == pytest.approx(1773640800.0)
+
+    def test_accepts_numeric_string(self):
+        ts = _coerce_timestamp_to_epoch("1773640800.0")
+        assert ts == pytest.approx(1773640800.0)
+
+    def test_accepts_datetime(self):
+        dt = datetime(2026, 3, 16, 6, 0, tzinfo=UTC)
+        ts = _coerce_timestamp_to_epoch(dt)
+        assert ts == pytest.approx(1773640800.0)
+
+    def test_returns_none_for_invalid_values(self):
+        assert _coerce_timestamp_to_epoch("not-a-timestamp") is None
+        assert _coerce_timestamp_to_epoch(None) is None

@@ -6,7 +6,7 @@ from unittest.mock import patch
 import pytest
 
 from infrastructure.redis_url import get_safe_redis_url
-from storage.redis_client import _sanitize_redis_url  # pyright: ignore[reportPrivateUsage]
+from storage.redis_client import _sanitize_redis_url
 
 
 def test_sanitize_redis_url_masks_password() -> None:
@@ -81,9 +81,12 @@ def test_get_redis_url_rejects_missing_auth_in_production() -> None:
         "ENV": "production",
         "REDIS_URL": "rediss://redis.prod.internal:6379/0",
     }
-    with patch.dict(os.environ, env, clear=True), pytest.raises(
-        RuntimeError,
-        match="AUTH credentials",
+    with (
+        patch.dict(os.environ, env, clear=True),
+        pytest.raises(
+            RuntimeError,
+            match="AUTH credentials",
+        ),
     ):
         get_redis_url()
 
@@ -95,9 +98,12 @@ def test_get_redis_url_rejects_non_tls_in_production() -> None:
         "ENV": "production",
         "REDIS_URL": "redis://:s3cret@redis.prod.internal:6379/0",
     }
-    with patch.dict(os.environ, env, clear=True), pytest.raises(
-        RuntimeError,
-        match="TLS",
+    with (
+        patch.dict(os.environ, env, clear=True),
+        pytest.raises(
+            RuntimeError,
+            match="TLS",
+        ),
     ):
         get_redis_url()
 
@@ -123,3 +129,46 @@ def test_get_redis_url_allows_break_glass_override_in_production() -> None:
     }
     with patch.dict(os.environ, env, clear=True):
         assert get_redis_url() == "redis://redis.prod.internal:6379/0"
+
+
+def test_get_redis_url_raises_on_railway_when_redis_env_missing() -> None:
+    from infrastructure.redis_url import get_redis_url
+
+    env = {
+        "RAILWAY_ENVIRONMENT": "production",
+    }
+    with (
+        patch.dict(os.environ, env, clear=True),
+        pytest.raises(
+            RuntimeError,
+            match="Redis configuration missing on Railway",
+        ),
+    ):
+        get_redis_url()
+
+
+def test_get_redis_url_raises_on_railway_when_only_environment_id_present() -> None:
+    from infrastructure.redis_url import get_redis_url
+
+    env = {
+        "RAILWAY_ENVIRONMENT_ID": "env_123",
+    }
+    with (
+        patch.dict(os.environ, env, clear=True),
+        pytest.raises(
+            RuntimeError,
+            match="Redis configuration missing on Railway",
+        ),
+    ):
+        get_redis_url()
+
+
+def test_get_redis_url_allows_localhost_fallback_on_railway_with_override() -> None:
+    from infrastructure.redis_url import get_redis_url
+
+    env = {
+        "RAILWAY_ENVIRONMENT": "production",
+        "REDIS_ALLOW_LOCALHOST_FALLBACK": "true",
+    }
+    with patch.dict(os.environ, env, clear=True):
+        assert get_redis_url() == "redis://localhost:6379/0"

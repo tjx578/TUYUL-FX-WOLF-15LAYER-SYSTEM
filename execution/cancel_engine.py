@@ -10,14 +10,15 @@ from execution.state_machine import ExecutionStateMachine
 
 class CancelEngine:
     def __init__(self):
-        self.state = ExecutionStateMachine()
+        self._registry = ExecutionStateMachine()
 
-    def cancel(self, reason: str = "M15_INVALIDATION"):
-        if not self.state.is_pending():
+    def cancel(self, symbol: str, reason: str = "M15_INVALIDATION"):
+        sm = self._registry.get(symbol)
+        if not sm.is_pending():
             return
 
-        self.state.set_cancelled(reason)
-        logger.warning(f"\u274c ORDER CANCELLED \u2192 {reason}")
+        sm.set_cancelled(reason)
+        logger.warning("\u274c ORDER CANCELLED for {} \u2192 {}", symbol, reason)
 
 
 # Placeholder

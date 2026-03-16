@@ -17,8 +17,7 @@ router: APIRouter = APIRouter()
 
 
 class _SnapshotProvider(Protocol):
-    def snapshot(self) -> dict[str, Any]:
-        ...
+    def snapshot(self) -> dict[str, Any]: ...
 
 
 def _load_available_pairs() -> list[dict[str, str | bool]]:
@@ -28,11 +27,13 @@ def _load_available_pairs() -> list[dict[str, str | bool]]:
         symbol = str(pair.get("symbol", "")).upper().strip()
         if not symbol:
             continue
-        available.append({
-            "symbol": symbol,
-            "name": str(pair.get("name") or symbol),
-            "enabled": bool(pair.get("enabled", True)),
-        })
+        available.append(
+            {
+                "symbol": symbol,
+                "name": str(pair.get("name") or symbol),
+                "enabled": bool(pair.get("enabled", True)),
+            }
+        )
     return available
 
 
@@ -93,16 +94,18 @@ def fetch_context() -> dict[str, Any]:
 
 @router.get("/api/v1/execution", dependencies=[Depends(verify_token)])
 def fetch_execution() -> dict[str, Any]:
-    """Get current execution state."""
-    state_machine = cast(_SnapshotProvider, ExecutionStateMachine())
-    execution_state = state_machine.snapshot()
+    """Get current execution state for all tracked symbols."""
+    registry = ExecutionStateMachine()
+    execution_state = registry.snapshot_all()
 
     # Add timezone info
     current_time = now_utc()
-    execution_state["current_time_utc"] = format_utc(current_time)
-    execution_state["current_time_local"] = format_local(current_time)
 
-    return execution_state
+    return {
+        "symbols": execution_state,
+        "current_time_utc": format_utc(current_time),
+        "current_time_local": format_local(current_time),
+    }
 
 
 @router.get("/api/v1/pairs")
@@ -130,21 +133,21 @@ _GATE_LABELS: dict[str, str] = {
 
 # Canonical 15-layer definitions
 _LAYER_DEFS: list[dict[str, str]] = [
-    {"id": "L1",  "name": "Context",     "zone": "COG"},
-    {"id": "L2",  "name": "MTA",         "zone": "COG"},
-    {"id": "L3",  "name": "Technical",   "zone": "ANA"},
-    {"id": "L4",  "name": "Scoring",     "zone": "ANA"},
-    {"id": "L5",  "name": "Psychology",  "zone": "META"},
-    {"id": "L6",  "name": "Risk",        "zone": "META"},
-    {"id": "L7",  "name": "Monte Carlo", "zone": "ANA"},
-    {"id": "L8",  "name": "TII",         "zone": "ANA"},
-    {"id": "L9",  "name": "SMC/VP",      "zone": "ANA"},
-    {"id": "L10", "name": "Position",    "zone": "EXEC"},
-    {"id": "L11", "name": "Execution",   "zone": "EXEC"},
-    {"id": "L12", "name": "Verdict",     "zone": "VER"},
-    {"id": "L13", "name": "Reflect",     "zone": "POST"},
-    {"id": "L14", "name": "Export",      "zone": "POST"},
-    {"id": "L15", "name": "Sovereign",   "zone": "POST"},
+    {"id": "L1", "name": "Context", "zone": "COG"},
+    {"id": "L2", "name": "MTA", "zone": "COG"},
+    {"id": "L3", "name": "Technical", "zone": "ANA"},
+    {"id": "L4", "name": "Scoring", "zone": "ANA"},
+    {"id": "L5", "name": "Psychology", "zone": "META"},
+    {"id": "L6", "name": "Risk", "zone": "META"},
+    {"id": "L7", "name": "Monte Carlo", "zone": "ANA"},
+    {"id": "L8", "name": "TII", "zone": "ANA"},
+    {"id": "L9", "name": "SMC/VP", "zone": "ANA"},
+    {"id": "L10", "name": "Position", "zone": "EXEC"},
+    {"id": "L11", "name": "Execution", "zone": "EXEC"},
+    {"id": "L12", "name": "Verdict", "zone": "VER"},
+    {"id": "L13", "name": "Reflect", "zone": "POST"},
+    {"id": "L14", "name": "Export", "zone": "POST"},
+    {"id": "L15", "name": "Sovereign", "zone": "POST"},
 ]
 
 _DEFAULT_DAG_EDGES: list[dict[str, str]] = [
@@ -192,26 +195,27 @@ def _build_pipeline_data(pair: str, verdict_data: dict[str, Any]) -> dict[str, A
         confidence_num = float(confidence)
 
     wolf_status: str = verdict_data.get("wolf_status", "—")
-    latency: int = int(verdict_data.get("system", {}).get("latency_ms", 0)
-                       or gates_raw.get("gate_8_latency_val", 0))
+    latency: int = int(verdict_data.get("system", {}).get("latency_ms", 0) or gates_raw.get("gate_8_latency_val", 0))
 
     # ── Build gate array ──────────────────────────────────────────────────
     gate_list: list[dict[str, Any]] = []
     for key, label in _GATE_LABELS.items():
         gate_val = gates_raw.get(key)
         passed = gate_val == "PASS" if isinstance(gate_val, str) else bool(gate_val)
-        gate_list.append({
-            "name": label,
-            "val": gate_val if gate_val is not None else "—",
-            "thr": "—",
-            "pass": passed,
-        })
+        gate_list.append(
+            {
+                "name": label,
+                "val": gate_val if gate_val is not None else "—",
+                "thr": "—",
+                "pass": passed,
+            }
+        )
 
     # ── Build layer array with available scores ───────────────────────────
     # Map known score keys to layer IDs
     layer_score_map: dict[str, tuple[str, str]] = {
-        "L7":  (str(layers_raw.get("L7_monte_carlo_win", "—")), "MC"),
-        "L8":  (str(scores.get("tii", layers_raw.get("L8_tii_sym", "—"))), "integ"),
+        "L7": (str(layers_raw.get("L7_monte_carlo_win", "—")), "MC"),
+        "L8": (str(scores.get("tii", layers_raw.get("L8_tii_sym", "—"))), "integ"),
         "L12": (
             f"{gates_raw.get('passed', '?')}/{gates_raw.get('total', '?')}",
             verdict_str.split("_")[0] if "_" in verdict_str else verdict_str,
@@ -230,14 +234,16 @@ def _build_pipeline_data(pair: str, verdict_data: dict[str, Any]) -> dict[str, A
             status = "pass" if pass_count == total_gates else ("warn" if pass_count >= 7 else "fail")
         else:
             status = "pass"  # default — layers don't have individual pass/fail in cache
-        layer_list.append({
-            "id": lid,
-            "name": ldef["name"],
-            "zone": ldef["zone"],
-            "status": status,
-            "val": val,
-            "detail": detail,
-        })
+        layer_list.append(
+            {
+                "id": lid,
+                "name": ldef["name"],
+                "zone": ldef["zone"],
+                "status": status,
+                "val": val,
+                "detail": detail,
+            }
+        )
 
     # ── Entry data (from execution block if present) ──────────────────────
     entry: dict[str, Any] = {
@@ -270,7 +276,7 @@ def _build_pipeline_data(pair: str, verdict_data: dict[str, Any]) -> dict[str, A
         layer_timings_dict = cast(dict[str, Any], layer_timings_raw)
         layer_timings_ms: dict[str, float] = {}
         for k, v in layer_timings_dict.items():
-            if isinstance(v, (int, float, str)):
+            if isinstance(v, int | float | str):
                 with contextlib.suppress(TypeError, ValueError):
                     layer_timings_ms[k] = float(v)
     else:
@@ -296,9 +302,7 @@ def _build_pipeline_data(pair: str, verdict_data: dict[str, Any]) -> dict[str, A
 
     dag_edges_list = cast(list[Any], dag_edges)
     dag_edges_typed: list[dict[str, Any]] = [
-        cast(dict[str, Any], edge)
-        for edge in dag_edges_list
-        if isinstance(edge, dict)
+        cast(dict[str, Any], edge) for edge in dag_edges_list if isinstance(edge, dict)
     ]
 
     deps_by_target: dict[str, list[str]] = {}

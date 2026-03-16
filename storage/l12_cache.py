@@ -1,7 +1,8 @@
-import contextlib
 import json
 import time
 from typing import Any
+
+from loguru import logger
 
 from infrastructure.redis_client import get_client
 from storage.redis_client import redis_client
@@ -23,8 +24,10 @@ def set_verdict(pair: str, data: dict[str, Any]) -> None:
         "pair": pair,
         "ts": time.time(),
     }
-    with contextlib.suppress(Exception):
+    try:
         redis_client.publish(VERDICT_READY_CHANNEL, json.dumps(event_payload))
+    except Exception:
+        logger.warning("[L12Cache] Failed to publish VERDICT_READY for %s", pair, exc_info=True)
 
 
 async def set_verdict_async(pair: str, data: dict[str, Any]) -> None:
@@ -36,8 +39,10 @@ async def set_verdict_async(pair: str, data: dict[str, Any]) -> None:
         "pair": pair,
         "ts": time.time(),
     }
-    with contextlib.suppress(Exception):
+    try:
         await client.publish(VERDICT_READY_CHANNEL, json.dumps(event_payload))
+    except Exception:
+        logger.warning("[L12Cache] Failed to publish async VERDICT_READY for %s", pair, exc_info=True)
 
 
 def get_verdict(pair: str) -> dict[str, Any] | None:

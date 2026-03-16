@@ -9,7 +9,7 @@ import asyncio
 
 from loguru import logger
 
-from config_loader import CONFIG, load_finnhub
+from config_loader import get_enabled_symbols, load_finnhub
 from context.live_context_bus import LiveContextBus
 from context.system_state import SystemStateManager
 from ingest.finnhub_candles import FinnhubCandleFetcher
@@ -69,7 +69,7 @@ class H1RefreshScheduler:
 
     async def refresh_all_symbols(self) -> None:
         """Refresh H1/H4 for all enabled symbols and check M15 coldness."""
-        enabled_symbols = CONFIG["pairs"].get("symbols", [])
+        enabled_symbols = get_enabled_symbols()
         if not enabled_symbols:
             logger.warning("No enabled symbols for H1 refresh")
             return
@@ -119,20 +119,13 @@ class H1RefreshScheduler:
                         f"{drift_check['drift_pips']:.1f} pips "
                         f"(REST={drift_check['rest_close']}, WS={drift_check['ws_mid']})"
                     )
-                    self.system_state.mark_symbol_degraded(
-                        symbol,
-                        f"Price drift {drift_check['drift_pips']:.1f} pips"
-                    )
+                    self.system_state.mark_symbol_degraded(symbol, f"Price drift {drift_check['drift_pips']:.1f} pips")
                 else:
-                    logger.debug(
-                        f"{symbol} price drift OK: {drift_check['drift_pips']:.1f} pips"
-                    )
+                    logger.debug(f"{symbol} price drift OK: {drift_check['drift_pips']:.1f} pips")
                     # Check if symbol was degraded and can be recovered
                     self.system_state.mark_symbol_recovered(symbol)
 
-                logger.debug(
-                    f"Refreshed {symbol}: {len(h1_candles)} H1, {len(h4_candles)} H4"
-                )
+                logger.debug(f"Refreshed {symbol}: {len(h1_candles)} H1, {len(h4_candles)} H4")
 
             except Exception as exc:
                 logger.error(f"Error refreshing {symbol}: {exc}")

@@ -45,7 +45,7 @@ const nextConfig = {
   async rewrites() {
     console.log("[next.config] rewrites apiBase =", apiBase);
     return [
-      // /health — backend health check endpoint (does NOT have /api prefix)
+      // /health — health checks called directly by frontend diagnostics/hooks
       {
         source: "/health",
         destination: `${apiBase}/health`,
