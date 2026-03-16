@@ -17,6 +17,7 @@ import DataStreamDiagnostic from "@/components/feedback/DataStreamDiagnostic";
 import { VerdictCard } from "@/components/VerdictCard";
 import { SystemHealth } from "@/components/SystemHealth";
 import StaleDataBanner from "@/components/command-center/StaleDataBanner";
+import { useSessionLabel } from "@/hooks/useSessionLabel";
 import type { L12Verdict, Account } from "@/types";
 
 // ── Helpers ──────────────────────────────────────────────────
@@ -608,6 +609,7 @@ export default function CommandCenterPage() {
   } = useCommandCenterState();
 
   const [selectedVerdict, setSelectedVerdict] = useState<L12Verdict | null>(null);
+  const liveSession = useSessionLabel();
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
@@ -784,7 +786,7 @@ export default function CommandCenterPage() {
             </span>
             {context?.session && (
               <span className="badge badge-cyan" style={{ fontSize: 9 }}>
-                {context.session}
+                {liveSession}
               </span>
             )}
           </div>
@@ -862,7 +864,7 @@ export default function CommandCenterPage() {
               </div>
               {(
                 [
-                  { label: "SESSION", value: context.session },
+                  { label: "SESSION", value: liveSession },
                   { label: "REGIME", value: context.regime },
                   { label: "VOLATILITY", value: context.volatility },
                   { label: "TREND", value: context.trend },
