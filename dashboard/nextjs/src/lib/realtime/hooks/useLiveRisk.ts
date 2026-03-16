@@ -37,6 +37,7 @@ export function useLiveRisk(
   const [lastUpdatedAt, setLastUpdatedAt] = useState<number | null>(null);
 
   const staleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const wsActiveRef = useRef(false);
 
   // Sync initial snapshot
   useEffect(() => {

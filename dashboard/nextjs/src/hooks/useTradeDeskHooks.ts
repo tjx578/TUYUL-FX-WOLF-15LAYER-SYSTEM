@@ -168,7 +168,7 @@ export function useTradeDeskState() {
   }, [applyDeskSnapshot]);
 
   // Start WS subscriptions (now using connectLiveUpdates with proper reconnect)
-  useTradeDeskLiveTrades();
+  useLiveTrades();
 
   return {
     activeTab: store.activeTab,
