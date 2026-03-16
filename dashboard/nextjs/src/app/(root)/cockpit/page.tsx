@@ -760,6 +760,7 @@ export default function CockpitPage() {
   const [wolfScores, setWolfScores] = useState<WolfScores>(WOLF_DEFAULTS);
   const [wolfMaxTotal, setWolfMaxTotal] = useState(WOLF_MAX_TOTAL_DEFAULT);
   const [verdictStatus, setVerdictStatus] = useState<VerdictStatus>(STATUS_DEFAULTS);
+  const [wolfScoreStale, setWolfScoreStale] = useState(false);
 
   // Auto-select first account when data arrives
   useEffect(() => {
@@ -792,11 +793,38 @@ export default function CockpitPage() {
         system?: Record<string, unknown>;
       }>;
 
-      if (entries.length > 0 && entries[0]) {
-        const entry = entries[0];
+      if (entries.length > 0) {
+        // Aggregate scores across all verdicts (portfolio-wide)
+        const aggScores: Record<string, unknown> = {};
+        const aggGates: Record<string, unknown> = { passed: 0, total: 0 };
+        const aggSystem: Record<string, unknown> = { latency_ms: 0 };
+
+        for (const e of entries) {
+          const es = e?.scores ?? {};
+          const eg = e?.gates ?? {};
+          const esys = e?.system ?? {};
+
+          for (const [k, v] of Object.entries(es)) {
+            if (toNumber(v, 0) > toNumber(aggScores[k], 0)) aggScores[k] = v;
+          }
+          aggGates.passed = toNumber(aggGates.passed, 0) + toNumber(eg.passed, 0);
+          aggGates.total = toNumber(aggGates.total, 0) + toNumber(eg.total, 0);
+          if (toNumber(esys.latency_ms, 0) > toNumber(aggSystem.latency_ms, 0)) {
+            aggSystem.latency_ms = esys.latency_ms;
+          }
+        }
+
+        // Use the best wolf score entry for display, aggregate gates/latency
+        const bestEntry = entries.reduce((best, e) => {
+          const bestWolf = toNumber((best?.scores as Record<string, unknown> | undefined)?.wolf_score, 0);
+          const curWolf = toNumber((e?.scores as Record<string, unknown> | undefined)?.wolf_score, 0);
+          return curWolf > bestWolf ? e : best;
+        }, entries[0]);
+
+        const entry = bestEntry!;
         const s = entry.scores ?? {};
-        const gates = entry.gates ?? {};
-        const system = entry.system ?? {};
+        const gates = aggGates;
+        const system = aggSystem;
 
         const wolf30Raw = s.wolf_30_point;
         const wolf30Obj = (wolf30Raw && typeof wolf30Raw === "object")
@@ -829,9 +857,10 @@ export default function CockpitPage() {
           pipelineTotal: Math.max(1, Math.round(toNumber(gates.total, STATUS_DEFAULTS.pipelineTotal))),
           latencyMs: Math.max(0, Math.round(toNumber(system.latency_ms, STATUS_DEFAULTS.latencyMs))),
         });
+        setWolfScoreStale(false);
       }
     } catch {
-      // Silently keep previous scores on error
+      setWolfScoreStale(true);
     }
   }, []);
 

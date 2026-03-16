@@ -66,16 +66,16 @@ const nextConfig = {
       // /preferences — preferencesService calls /preferences and /preferences/:id
       {
         source: "/preferences",
-        destination: `${apiBase}/preferences`,
+        destination: `${apiBase}/api/v1/preferences`,
       },
       {
         source: "/preferences/:path*",
-        destination: `${apiBase}/preferences/:path*`,
+        destination: `${apiBase}/api/v1/preferences/:path*`,
       },
       // /pipeline — pipelineDagService calls /pipeline/dag
       {
         source: "/pipeline/:path*",
-        destination: `${apiBase}/pipeline/:path*`,
+        destination: `${apiBase}/api/v1/pipeline/:path*`,
       },
       // NOTE: /ws/* WebSocket rewrite is intentionally removed.
       // Vercel serverless cannot upgrade WebSocket connections — the rewrite

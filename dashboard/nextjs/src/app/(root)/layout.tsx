@@ -1,6 +1,7 @@
 import type { PropsWithChildren } from "react";
 import { Providers } from "@/components/Providers";
 import AuthBootstrap from "@/components/auth/AuthBootstrap";
+import LivePipelineProvider from "@/components/LivePipelineProvider";
 import ComplianceBanner from "@/components/feedback/ComplianceBanner";
 import DegradationBanner from "@/components/feedback/DegradationBanner";
 import Header from "@/components/layout/Header";
@@ -56,6 +57,7 @@ export default async function RootLayout({ children }: PropsWithChildren) {
 
       <Providers>
         <AuthBootstrap user={user} />
+        <LivePipelineProvider />
         <div className="relative z-10 flex min-h-screen">
           <Sidebar />
           <main

@@ -14,10 +14,15 @@ export default function DegradationBanner() {
   const [staleSeconds, setStaleSeconds] = useState(0);
   const [dismissed, setDismissed] = useState(false);
 
+  const reasonLower = system?.reason?.toLowerCase() ?? "";
   const isOffline =
-    system?.reason?.toLowerCase().includes("unreachable") ||
-    system?.reason?.toLowerCase().includes("offline") ||
-    system?.reason?.toLowerCase().includes("econnrefused");
+    wsStatus === "DISCONNECTED" ||
+    reasonLower.includes("unreachable") ||
+    reasonLower.includes("offline") ||
+    reasonLower.includes("econnrefused") ||
+    reasonLower.includes("connection refused") ||
+    reasonLower.includes("etimedout") ||
+    reasonLower.includes("enetunreach");
 
   const isDegraded = mode === "DEGRADED" || wsStatus === "RECONNECTING" || wsStatus === "DISCONNECTED";
 
@@ -48,8 +53,8 @@ export default function DegradationBanner() {
     (wsStatus === "RECONNECTING"
       ? "Live channel reconnecting — data may be stale."
       : wsStatus === "DISCONNECTED"
-      ? "Backend connection lost — operating with last known data."
-      : "System reported degraded mode.");
+        ? "Backend connection lost — operating with last known data."
+        : "System reported degraded mode.");
 
   const staleLabel =
     staleSeconds < 60

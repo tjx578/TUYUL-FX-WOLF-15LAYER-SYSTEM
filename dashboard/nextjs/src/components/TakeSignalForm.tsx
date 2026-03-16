@@ -38,7 +38,16 @@ export function TakeSignalForm({
   const [error, setError] = useState<string | null>(null);
 
   const isExecutable = verdict.verdict.toString().startsWith("EXECUTE");
-  const direction = verdict.direction ?? (verdict.verdict === "EXECUTE_BUY" ? "BUY" : "SELL") as "BUY" | "SELL";
+  const direction: "BUY" | "SELL" | undefined =
+    verdict.direction ??
+    (String(verdict.verdict).includes("BUY")
+      ? "BUY"
+      : String(verdict.verdict).includes("SELL")
+        ? "SELL"
+        : undefined);
+  const [directionError, setDirectionError] = useState<string | null>(
+    !direction ? "Signal direction unknown — cannot execute" : null
+  );
 
   function toggleAccount(accountId: string) {
     setSelectedAccountIds((prev) =>
@@ -69,6 +78,10 @@ export function TakeSignalForm({
 
   async function handleTake() {
     if (!selectedAccountIds.length) return;
+    if (!direction) {
+      setError("Signal direction unknown — cannot execute");
+      return;
+    }
 
     const rejected = new Set(
       previews.filter((p) => !p.allowed).map((p) => p.account_id)
@@ -347,7 +360,7 @@ export function TakeSignalForm({
       )}
 
       {/* Error */}
-      {error && (
+      {(error || directionError) && (
         <div
           style={{
             fontSize: 11,
@@ -357,7 +370,7 @@ export function TakeSignalForm({
             borderRadius: 4,
           }}
         >
-          {error}
+          {error || directionError}
         </div>
       )}
 
@@ -367,7 +380,7 @@ export function TakeSignalForm({
           <button
             className="btn btn-take"
             style={{ flex: 1 }}
-            disabled={loading || !selectedAccountIds.length}
+            disabled={loading || !selectedAccountIds.length || !direction}
             onClick={handleTake}
           >
             {loading ? "PROCESSING..." : "▶ CONFIRM TAKE"}
