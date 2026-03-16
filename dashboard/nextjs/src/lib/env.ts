@@ -10,7 +10,7 @@
  *
  * Env vars in use (exactly these two, nothing else):
  *   NEXT_PUBLIC_API_BASE_URL   optional  override REST base (default: relative via rewrite)
- *   NEXT_PUBLIC_WS_BASE_URL    required  direct wss:// origin for Railway
+ *   NEXT_PUBLIC_WS_BASE_URL    required  bare wss:// ORIGIN for Railway — NO /ws suffix!
  *
  * REMOVED (do NOT use):
  *   NEXT_PUBLIC_WS_URL         was in wsService.ts (deleted) — never set this
@@ -57,14 +57,22 @@ export function getWsBaseUrl(): string {
         console.warn(
           "[env] WARNING: NEXT_PUBLIC_WS_BASE_URL is not set in a production-like environment. " +
           "WebSocket connections will fail. " +
-          "Set NEXT_PUBLIC_WS_BASE_URL=wss://your-api.up.railway.app in your Vercel project."
+          "Set NEXT_PUBLIC_WS_BASE_URL=wss://your-api.up.railway.app (bare origin, NO /ws suffix) in your Vercel project."
         );
       }
       return `${proto}//${window.location.host}`;
     }
     return ""; // SSR fallback — not used for real connections
   }
-  return url.replace(/\/$/, "");
+  // Strip trailing slash AND accidental /ws suffix — hooks already append /ws/<channel>
+  const stripped = url.replace(/\/$/, "").replace(/\/ws$/, "");
+  if (stripped !== url.replace(/\/$/, "")) {
+    console.warn(
+      "[env] NEXT_PUBLIC_WS_BASE_URL contains /ws suffix which was automatically stripped. " +
+      "Set the value to the bare origin (e.g. wss://your-api.up.railway.app) to avoid double /ws paths."
+    );
+  }
+  return stripped;
 }
 
 /**

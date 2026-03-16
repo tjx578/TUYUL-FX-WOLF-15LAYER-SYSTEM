@@ -31,7 +31,7 @@ const CHECKLIST = [
   },
   {
     label: "NEXT_PUBLIC_WS_BASE_URL env var",
-    detail: "Set NEXT_PUBLIC_WS_BASE_URL to your Railway wss:// origin. Example: wss://wolf15-api.up.railway.app — required for Live Feed on Vercel.",
+    detail: "Set NEXT_PUBLIC_WS_BASE_URL to the bare wss:// ORIGIN only — NO /ws suffix! Correct: wss://wolf15-api.up.railway.app — Wrong: wss://wolf15-api.up.railway.app/ws (causes double /ws path and instant disconnect).",
     key: "env-ws",
   },
   {
