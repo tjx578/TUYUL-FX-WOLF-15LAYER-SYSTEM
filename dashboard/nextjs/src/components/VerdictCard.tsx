@@ -67,6 +67,9 @@ export function VerdictCard({
     <Panel
       glow={verdictGlow(v, selected ?? false)}
       className={`animate-fade-in flex flex-col gap-3 cursor-pointer transition-all duration-150${pulse ? " live-pulse" : ""}`}
+      role="button"
+      tabIndex={0}
+      aria-label={`${verdict.symbol} verdict: ${v}, confidence ${confidencePct}%`}
     >
       {/* ── Header ── */}
       <div className="flex items-center gap-2">

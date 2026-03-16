@@ -145,7 +145,7 @@ function SystemPulse() {
   if (isLoading) {
     return (
       <div className="sidebar-status" style={{ gap: 6 }}>
-        <span style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--text-muted)", display: "inline-block" }} />
+        <span aria-hidden="true" style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--text-muted)", display: "inline-block" }} />
         <span style={{ fontFamily: "var(--font-mono)", fontSize: 9, color: "var(--text-muted)", letterSpacing: "0.08em" }}>
           CHECKING…
         </span>
@@ -156,6 +156,7 @@ function SystemPulse() {
   return (
     <div className="sidebar-status">
       <span
+        aria-hidden="true"
         style={{
           width: 6,
           height: 6,

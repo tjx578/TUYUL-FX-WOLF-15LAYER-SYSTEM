@@ -58,7 +58,7 @@ export function bearerHeader(): string | undefined {
     return `Bearer ${token}`;
   }
 
-  if (typeof window !== "undefined" && process.env.NODE_ENV === "production") {
+  if (typeof window !== "undefined" && process.env.NODE_ENV === "development") {
     console.error(
       "[auth] bearerHeader(): no JWT available. " +
       "REST calls are still auth-injected by server middleware, " +

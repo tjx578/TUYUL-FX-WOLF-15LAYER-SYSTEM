@@ -33,6 +33,7 @@ function ExecPip({ state }: { state?: string }) {
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
       <span
+        aria-hidden="true"
         style={{
           width: 6,
           height: 6,

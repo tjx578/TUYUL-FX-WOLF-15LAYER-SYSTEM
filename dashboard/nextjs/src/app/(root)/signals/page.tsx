@@ -2,19 +2,16 @@
 
 import { useMemo, useState } from "react";
 import { VerdictCard } from "@/components/VerdictCard";
-import { TakeSignalForm } from "@/components/TakeSignalForm";
-import { useAllVerdicts, useAccounts } from "@/lib/api";
+import { useAllVerdicts } from "@/lib/api";
 import type { L12Verdict } from "@/types";
 
 type FilterMode = "ALL" | "EXECUTE" | "NON_EXECUTE";
 
 export default function SignalsPage() {
   const { data: verdicts, isLoading } = useAllVerdicts();
-  const { data: accounts } = useAccounts();
 
   const [query, setQuery] = useState("");
   const [mode, setMode] = useState<FilterMode>("ALL");
-  const [selected, setSelected] = useState<L12Verdict | null>(null);
 
   // useAllVerdicts returns L12Verdict[] (already normalized)
   const list = useMemo(() => {
@@ -129,35 +126,10 @@ export default function SignalsPage() {
           }}
         >
           {list.map((v) => (
-            <div key={v.symbol} onClick={() => setSelected(v)}>
-              <VerdictCard verdict={v} selected={selected?.symbol === v.symbol} onTake={() => setSelected(v)} onSkip={() => setSelected(v)} />
+            <div key={v.symbol}>
+              <VerdictCard verdict={v} />
             </div>
           ))}
-        </div>
-      )}
-
-      {/* TakeSignal overlay */}
-      {selected && accounts && (
-        <div
-          style={{
-            position: "fixed",
-            inset: 0,
-            background: "rgba(0,0,0,0.7)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            zIndex: 100,
-          }}
-          onClick={() => setSelected(null)}
-        >
-          <div onClick={(e) => e.stopPropagation()}>
-            <TakeSignalForm
-              verdict={selected}
-              accounts={accounts}
-              onDone={() => setSelected(null)}
-              onCancel={() => setSelected(null)}
-            />
-          </div>
         </div>
       )}
     </div>

@@ -115,9 +115,9 @@ export default function AccountDetailDrawer({ account, onClose }: AccountDetailD
                                 borderRadius: 9999,
                                 fontSize: 10,
                                 fontWeight: 700,
-                                background: account.data_source === "EA" ? "var(--blue)20" : "var(--text-muted)15",
+                                background: account.data_source === "EA" ? "rgba(26, 110, 255, 0.12)" : "rgba(70, 95, 120, 0.08)",
                                 color: account.data_source === "EA" ? "var(--blue)" : "var(--text-muted)",
-                                border: `1px solid ${account.data_source === "EA" ? "var(--blue)30" : "var(--text-muted)20"}`,
+                                border: `1px solid ${account.data_source === "EA" ? "rgba(26, 110, 255, 0.19)" : "rgba(70, 95, 120, 0.12)"}`,
                             }}
                         >
                             {account.data_source === "EA" ? "EA-LINKED" : "MANUAL"}
@@ -129,9 +129,9 @@ export default function AccountDetailDrawer({ account, onClose }: AccountDetailD
                                     borderRadius: 9999,
                                     fontSize: 10,
                                     fontWeight: 700,
-                                    background: "var(--accent, var(--yellow))15",
+                                    background: "rgba(26, 110, 255, 0.08)",
                                     color: "var(--accent, var(--yellow))",
-                                    border: "1px solid var(--accent, var(--yellow))25",
+                                    border: "1px solid rgba(26, 110, 255, 0.15)",
                                 }}
                             >
                                 PROP FIRM — {account.prop_firm_code?.toUpperCase()}
