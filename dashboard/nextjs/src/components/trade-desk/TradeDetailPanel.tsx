@@ -143,8 +143,8 @@ export function TradeDetailPanel({ tradeId, onClose }: TradeDetailPanelProps) {
         );
     }
 
-    const pair = trade.pair ?? trade.symbol ?? "—";
-    const dir = trade.direction ?? trade.side;
+    const pair = trade.pair ?? "—";
+    const dir = trade.direction;
 
     return (
         <div
@@ -189,7 +189,7 @@ export function TradeDetailPanel({ tradeId, onClose }: TradeDetailPanelProps) {
                 <DetailField label="STATUS" value={<TradeStatusBadge status={trade.status} />} />
                 <DetailField label="ACCOUNT" value={trade.account_id?.slice(0, 12)} />
                 <DetailField label="ENTRY" value={trade.entry_price?.toFixed(5)} />
-                <DetailField label="LOT" value={(trade.lot_size ?? trade.lot)?.toFixed(2)} />
+                <DetailField label="LOT" value={trade.lot_size?.toFixed(2)} />
                 <DetailField label="STOP LOSS" value={trade.stop_loss?.toFixed(5)} color="var(--red)" />
                 <DetailField label="TAKE PROFIT" value={trade.take_profit?.toFixed(5)} color="var(--green)" />
                 {trade.pnl !== undefined && (

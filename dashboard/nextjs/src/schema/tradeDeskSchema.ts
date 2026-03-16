@@ -49,7 +49,11 @@ export const ExposureSummarySchema = z.object({
 
 // ── Extended Trade Schema ────────────────────────────────────
 
-export const TradeDeskTradeSchema = z.object({
+/**
+ * Raw schema accepts both backend field aliases (symbol/pair, side/direction, lot/lot_size).
+ * The transform normalises into canonical names so consumers don't need fallback chains.
+ */
+const TradeDeskTradeRaw = z.object({
   trade_id: z.string().min(1),
   signal_id: z.string().optional(),
   account_id: z.string().min(1),
@@ -73,6 +77,28 @@ export const TradeDeskTradeSchema = z.object({
   total_risk_percent: z.number().optional(),
   total_risk_amount: z.number().optional(),
 });
+
+export const TradeDeskTradeSchema = TradeDeskTradeRaw.transform((t) => ({
+  trade_id: t.trade_id,
+  signal_id: t.signal_id,
+  account_id: t.account_id,
+  pair: t.pair ?? t.symbol,
+  direction: (t.direction ?? t.side) as "BUY" | "SELL" | undefined,
+  lot_size: t.lot_size ?? t.lot,
+  status: t.status,
+  entry_price: t.entry_price,
+  stop_loss: t.stop_loss,
+  take_profit: t.take_profit,
+  pnl: t.pnl,
+  opened_at: t.opened_at,
+  closed_at: t.closed_at,
+  created_at: t.created_at,
+  confirmed_at: t.confirmed_at,
+  close_reason: t.close_reason,
+  current_price: t.current_price,
+  total_risk_percent: t.total_risk_percent,
+  total_risk_amount: t.total_risk_amount,
+}));
 
 // ── Desk Response ────────────────────────────────────────────
 
