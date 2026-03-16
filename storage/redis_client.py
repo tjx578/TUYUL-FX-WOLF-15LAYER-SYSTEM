@@ -342,5 +342,32 @@ class RedisClient:
             raise
 
 
-# Singleton instance for imports
-redis_client = RedisClient()
+class _LazyRedisClient:
+    """Lazy proxy that defers ``RedisClient()`` construction until first use.
+
+    This prevents the module-level singleton from crashing the import chain
+    when Redis is unreachable or ``REDIS_URL`` is not configured (e.g. during
+    Railway cold-start before env vars are injected).  All attribute access is
+    transparently forwarded to the underlying ``RedisClient`` instance.
+    """
+
+    def __init__(self) -> None:
+        object.__setattr__(self, "_instance", None)
+
+    def _resolve(self) -> RedisClient:
+        inst = object.__getattribute__(self, "_instance")
+        if inst is None:
+            inst = RedisClient()
+            object.__setattr__(self, "_instance", inst)
+        return inst
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._resolve(), name)
+
+    def __setattr__(self, name: str, value: Any) -> None:
+        setattr(self._resolve(), name, value)
+
+
+# Singleton instance for imports — lazily initialized on first attribute access
+# so that importing this module never crashes even when Redis is unavailable.
+redis_client: RedisClient = _LazyRedisClient()  # type: ignore[assignment]
