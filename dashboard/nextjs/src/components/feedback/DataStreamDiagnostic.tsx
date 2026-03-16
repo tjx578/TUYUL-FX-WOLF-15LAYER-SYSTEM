@@ -64,27 +64,9 @@ export default function DataStreamDiagnostic({
 
   // NEXT_PUBLIC_ vars must be accessed as literal identifiers so the
   // Next.js compiler can statically inline them into the client bundle.
+  // Do NOT use intermediate variables or optional chaining — both break inlining.
   const hasWsUrl = !!(process.env.NEXT_PUBLIC_WS_BASE_URL);
   const hasApiBase = !!(process.env.NEXT_PUBLIC_API_BASE_URL);
-  // Detect missing env vars client-side for the checklist.
-  // Rules:
-  //  1. Access NEXT_PUBLIC_ vars as literal identifiers — NO optional chaining,
-  //     NO dynamic lookup — so Next.js compiler statically inlines them at build.
-  //  2. INTERNAL_API_URL has no NEXT_PUBLIC_ prefix → server-side only → never
-  //     available in the browser bundle. Never reference it here.
-  // NEXT_PUBLIC_ vars are inlined at build time — must use the literal identifier
-  // so the Next.js compiler can statically replace them in the client bundle.
-  const wsBaseRaw = process.env.NEXT_PUBLIC_WS_BASE_URL;
-  const apiBaseRaw = process.env.NEXT_PUBLIC_API_BASE_URL;
-
-  const wsBaseUrl = typeof wsBaseRaw === "string" ? wsBaseRaw.trim() : "";
-  const apiBaseUrl = typeof apiBaseRaw === "string" ? apiBaseRaw.trim() : "";
-  const hasWsUrl = wsBaseUrl.length > 0;
-  // INTERNAL_API_URL is server-side only — detect indirectly via NEXT_PUBLIC_API_BASE_URL
-  // or fall back to hostname check (localhost = likely not on Vercel with real backend).
-  const hasApiBase =
-    apiBaseUrl.length > 0 ||
-    (typeof window !== "undefined" && !window.location.hostname.includes("localhost"));
 
   const handlePing = useCallback(async () => {
     setPinging(true);
