@@ -339,12 +339,41 @@ tr:hover td { background: var(--bg-hover); color: var(--text-primary); }
 }
 .sidebar-section-label {
   font-family: var(--font-mono);
-  font-size: 8px;
+  font-size: 9px;
   font-weight: 700;
-  letter-spacing: 0.14em;
-  color: rgba(255, 255, 255, 0.28);
-  padding: 10px 8px 4px;
+  letter-spacing: 0.16em;
+  color: rgba(120, 190, 255, 0.95);
+  padding: 10px 8px 5px;
   text-transform: uppercase;
+  text-shadow:
+    0 0 4px rgba(26, 110, 255, 1),
+    0 0 10px rgba(26, 110, 255, 0.85),
+    0 0 22px rgba(26, 110, 255, 0.60),
+    0 0 40px rgba(26, 110, 255, 0.30),
+    0 2px 6px rgba(0, 0, 0, 0.90);
+  position: relative;
+  display: inline-block;
+  width: 100%;
+}
+.sidebar-section-label::after {
+  content: "";
+  display: block;
+  position: absolute;
+  bottom: 0;
+  left: 8px;
+  right: 8px;
+  height: 1px;
+  background: linear-gradient(
+    to right,
+    transparent,
+    rgba(26, 110, 255, 0.70) 20%,
+    rgba(26, 110, 255, 0.90) 50%,
+    rgba(26, 110, 255, 0.70) 80%,
+    transparent
+  );
+  box-shadow:
+    0 0 6px rgba(26, 110, 255, 0.80),
+    0 0 14px rgba(26, 110, 255, 0.50);
 }
 .sidebar-link {
   display: flex;
