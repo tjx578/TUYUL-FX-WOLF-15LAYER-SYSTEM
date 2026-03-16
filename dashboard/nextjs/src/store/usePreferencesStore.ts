@@ -1,13 +1,6 @@
 import { create } from "zustand";
 import type { OperatorPreferences } from "@/contracts/preferences";
 
-export interface PreferencesPayload {
-  density: "compact" | "comfortable";
-  showLatency: boolean;
-  showHashes: boolean;
-  layoutPreset: "default" | "risk_focus" | "pipeline_focus";
-}
-
 const DEFAULT_PREFERENCES: OperatorPreferences = {
   density: "comfortable",
   showLatency: true,
@@ -17,8 +10,8 @@ const DEFAULT_PREFERENCES: OperatorPreferences = {
 
 interface PreferencesStore {
   preferences: OperatorPreferences;
-  setPreferences: (payload: PreferencesPayload) => void;
-  patchPreferences: (patch: Partial<PreferencesPayload>) => void;
+  setPreferences: (payload: OperatorPreferences) => void;
+  patchPreferences: (patch: Partial<OperatorPreferences>) => void;
   resetPreferences: () => void;
 }
 

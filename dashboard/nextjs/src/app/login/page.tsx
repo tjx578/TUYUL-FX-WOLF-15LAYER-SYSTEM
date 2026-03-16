@@ -3,6 +3,7 @@
 import { Suspense, useState, useTransition } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { AUTH_LOGIN } from "@/lib/endpoints";
+import { setToken } from "@/lib/auth";
 
 export default function LoginPage() {
   return (
@@ -27,12 +28,7 @@ function LoginForm() {
 
     startTransition(async () => {
       try {
-        const apiBase =
-          process.env.NEXT_PUBLIC_API_BASE_URL ??
-          process.env.NEXT_PUBLIC_API_URL ??
-          "";
-
-        const res = await fetch(`${apiBase}${AUTH_LOGIN}`, {
+        const res = await fetch(AUTH_LOGIN, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ api_key: apiKey }),
@@ -48,6 +44,7 @@ function LoginForm() {
         const { token } = (await res.json()) as { token?: string };
 
         if (token) {
+          setToken(token);
           await fetch("/api/set-session", {
             method: "POST",
             headers: { "Content-Type": "application/json" },

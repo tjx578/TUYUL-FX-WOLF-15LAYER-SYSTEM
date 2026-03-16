@@ -11,7 +11,7 @@
 // Execution decisions remain with Layer-12 / Constitution.
 // ============================================================
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import {
   T, RADIUS, FONT_MONO, FONT_DISPLAY,
   PROP_FIRMS, ROLE_CONFIG, GLOBAL_CSS,
@@ -22,6 +22,12 @@ import {
 } from "@/components/ui";
 import { PipelinePanel } from "@/components/panels/PipelinePanel";
 import { apiClient } from "@/services/apiClient";
+import {
+  useAccounts,
+  useAccountsRiskSnapshot,
+  useContext as useMarketContext,
+} from "@/lib/api";
+import type { Account } from "@/types";
 
 // ── Wolf score shape from API ─────────────────────────────────
 interface WolfScores {
@@ -74,40 +80,67 @@ interface CockpitAccount {
   role: string;
 }
 
-// ── Mock data ─────────────────────────────────────────────────
-const ACCOUNTS: CockpitAccount[] = [
-  {
-    id: "ftmo-1", firm: "FTMO", phase: "Challenge", num: "#402918",
-    currency: "USD", balance: 100000, equity: 101420, startBal: 100000,
-    dailyDD: { used: 0.6, limit: 5 }, maxDD: { used: 1.1, limit: 10 },
-    profit: 1.42, target: 10, tradesToday: 0, maxTradesDay: 1,
-    lossStreak: 0, openPos: 1, floatDD: 0.0, tradeDays: 8, minDays: 4,
+// ── Map API Account + risk snapshot → CockpitAccount ──────────
+function toCockpitAccount(
+  a: Account,
+  snap?: { daily_dd_percent: number; total_dd_percent: number; open_trades: number; open_risk_percent: number },
+): CockpitAccount {
+  const startBal = a.balance; // starting_balance mapped to balance from API
+  const equity = a.equity ?? a.balance;
+  const profitPct = startBal > 0 ? ((equity - startBal) / startBal) * 100 : 0;
+  return {
+    id: a.account_id,
+    firm: (a.prop_firm_code ?? "FTMO").toUpperCase(),
+    phase: "Live", // enriched below via prop-firm endpoint if available
+    num: `#${a.account_id.slice(-6)}`,
+    currency: a.currency ?? "USD",
+    balance: a.balance,
+    equity,
+    startBal,
+    dailyDD: { used: snap?.daily_dd_percent ?? a.daily_dd_percent ?? 0, limit: a.max_daily_dd_percent ?? 5 },
+    maxDD: { used: snap?.total_dd_percent ?? a.total_dd_percent ?? 0, limit: a.max_total_dd_percent ?? 10 },
+    profit: profitPct,
+    target: 10,
+    tradesToday: snap?.open_trades ?? a.open_trades ?? 0,
+    maxTradesDay: a.max_concurrent_trades ?? 1,
+    lossStreak: 0,
+    openPos: snap?.open_trades ?? a.open_trades ?? 0,
+    floatDD: snap?.open_risk_percent ?? a.open_risk_percent ?? 0,
+    tradeDays: 0,
+    minDays: 0,
     rules: { maxRisk: 0.5, condRisk: 0.7, tpMode: "TP1_ONLY", scaleIn: false, revengeBlock: true },
-    wsStatus: "connected", role: "trader",
-  },
-  {
-    id: "mff-1", firm: "MFF", phase: "Phase 2", num: "#881204",
-    currency: "USD", balance: 50000, equity: 51890, startBal: 50000,
-    dailyDD: { used: 0.2, limit: 5 }, maxDD: { used: 0.8, limit: 8 },
-    profit: 3.78, target: 5, tradesToday: 1, maxTradesDay: 2,
-    lossStreak: 0, openPos: 1, floatDD: 0.12, tradeDays: 12, minDays: 0,
-    rules: { maxRisk: 0.8, condRisk: 1.0, tpMode: "TP1_TP2", scaleIn: false, revengeBlock: true },
-    wsStatus: "connected", role: "risk",
-  },
-];
+    wsStatus: "connected",
+    role: "trader",
+  };
+}
 
 // ── Pipeline summary is fetched live by PipelinePanel ─────────
 // ── Status bar items ──────────────────────────────────────────
-function buildStatusItems(wolf: WolfScores, wolfMaxTotal: number, status: VerdictStatus) {
+interface MarketCtx {
+  regime: string;
+  volatility: string;
+  trend: string;
+}
+
+const MARKET_CTX_DEFAULTS: MarketCtx = { regime: "—", volatility: "—", trend: "—" };
+
+function ctxColor(value: string): string {
+  const v = value.toUpperCase();
+  if (v.includes("RISK-ON") || v.includes("BULLISH") || v.includes("HIGH")) return T.emerald;
+  if (v.includes("RISK-OFF") || v.includes("BEARISH") || v.includes("LOW")) return T.red;
+  return T.amber;
+}
+
+function buildStatusItems(wolf: WolfScores, wolfMaxTotal: number, status: VerdictStatus, ctx: MarketCtx) {
   const maxTotal = wolfMaxTotal > 0 ? wolfMaxTotal : WOLF_MAX_TOTAL_DEFAULT;
   const wolfRatio = maxTotal > 0 ? wolf.wolf_score / maxTotal : 0;
   const wolfLabel = `PACK ${wolf.wolf_score}/${maxTotal}`;
   const wolfColor = wolfRatio >= 0.75 ? T.gold : wolfRatio >= 0.6 ? T.amber : T.red;
   const allPass = status.pipelineTotal > 0 && status.pipelinePass >= status.pipelineTotal;
   return [
-    { l: "Regime", v: "RISK-ON", c: T.emerald },
-    { l: "Force", v: "LIQUIDITY", c: T.cyan },
-    { l: "Bias", v: "BULLISH", c: T.emerald },
+    { l: "Regime", v: ctx.regime, c: ctxColor(ctx.regime) },
+    { l: "Force", v: ctx.volatility, c: ctxColor(ctx.volatility) },
+    { l: "Bias", v: ctx.trend, c: ctxColor(ctx.trend) },
     { l: "TII", v: status.tii.toFixed(2), c: status.tii >= 0.9 ? T.emerald : status.tii >= 0.75 ? T.amber : T.red },
     {
       l: "Integrity",
@@ -126,8 +159,8 @@ function buildStatusItems(wolf: WolfScores, wolfMaxTotal: number, status: Verdic
 // ────────────────────────────────────────────────────────────
 
 // ── Status Bar ───────────────────────────────────────────────
-function StatusBar({ wolf, wolfMaxTotal, status }: { wolf: WolfScores; wolfMaxTotal: number; status: VerdictStatus }) {
-  const statusItems = buildStatusItems(wolf, wolfMaxTotal, status);
+function StatusBar({ wolf, wolfMaxTotal, status, ctx }: { wolf: WolfScores; wolfMaxTotal: number; status: VerdictStatus; ctx: MarketCtx }) {
+  const statusItems = buildStatusItems(wolf, wolfMaxTotal, status, ctx);
   const allPass = status.pipelineTotal > 0 && status.pipelinePass >= status.pipelineTotal;
   return (
     <div style={{
@@ -699,13 +732,41 @@ function WsStreamCard({ accounts }: { accounts: CockpitAccount[] }) {
 // MAIN PAGE
 // ────────────────────────────────────────────────────────────
 export default function CockpitPage() {
-  const [accounts] = useState<CockpitAccount[]>(ACCOUNTS);
-  const [activeId, setActiveId] = useState(accounts[0].id);
+  // ── Live account data from API ──
+  const { data: rawAccounts, isLoading: accLoading } = useAccounts();
+  const { data: riskSnaps } = useAccountsRiskSnapshot();
+  const { data: ctxData } = useMarketContext();
+
+  const accounts = useMemo<CockpitAccount[]>(() => {
+    if (!rawAccounts || rawAccounts.length === 0) return [];
+    return rawAccounts.map((a: Account) => {
+      const snap = riskSnaps?.find((s) => s.account_id === a.account_id);
+      return toCockpitAccount(a, snap);
+    });
+  }, [rawAccounts, riskSnaps]);
+
+  const marketCtx = useMemo<MarketCtx>(() => {
+    if (!ctxData) return MARKET_CTX_DEFAULTS;
+    return {
+      regime: ctxData.regime || MARKET_CTX_DEFAULTS.regime,
+      volatility: ctxData.volatility || MARKET_CTX_DEFAULTS.volatility,
+      trend: ctxData.trend || MARKET_CTX_DEFAULTS.trend,
+    };
+  }, [ctxData]);
+
+  const [activeId, setActiveId] = useState("");
   const [killSwitch, setKillSwitch] = useState(false);
   const [clock, setClock] = useState("");
   const [wolfScores, setWolfScores] = useState<WolfScores>(WOLF_DEFAULTS);
   const [wolfMaxTotal, setWolfMaxTotal] = useState(WOLF_MAX_TOTAL_DEFAULT);
   const [verdictStatus, setVerdictStatus] = useState<VerdictStatus>(STATUS_DEFAULTS);
+
+  // Auto-select first account when data arrives
+  useEffect(() => {
+    if (accounts.length > 0 && !accounts.some((a) => a.id === activeId)) {
+      setActiveId(accounts[0].id);
+    }
+  }, [accounts, activeId]);
 
   // Clock tick — client-only to avoid SSR mismatch
   useEffect(() => {
@@ -782,6 +843,17 @@ export default function CockpitPage() {
 
   const acc = accounts.find((a) => a.id === activeId) ?? accounts[0];
 
+  if (accLoading || accounts.length === 0) {
+    return (
+      <div style={{
+        minHeight: "100vh", backgroundColor: T.bg0, color: T.t1,
+        fontFamily: FONT_MONO, display: "flex", alignItems: "center", justifyContent: "center",
+      }}>
+        <M s={14} c={T.t3}>{accLoading ? "Loading accounts…" : "No accounts configured"}</M>
+      </div>
+    );
+  }
+
   return (
     <div
       className="grid-bg"
@@ -791,7 +863,7 @@ export default function CockpitPage() {
       <style>{GLOBAL_CSS}</style>
 
       {/* ── Status bar ── */}
-      <StatusBar wolf={wolfScores} wolfMaxTotal={wolfMaxTotal} status={verdictStatus} />
+      <StatusBar wolf={wolfScores} wolfMaxTotal={wolfMaxTotal} status={verdictStatus} ctx={marketCtx} />
 
       {/* ── Kill switch banner ── */}
       {killSwitch && (

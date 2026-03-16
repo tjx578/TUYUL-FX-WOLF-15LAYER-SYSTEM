@@ -3,8 +3,6 @@
 // Mirrors: dashboard/backend/schemas.py + schemas/trade_models.py
 // ============================================================
 
-import { ReactNode } from "react";
-
 // ─── ENUMS ───────────────────────────────────────────────────
 
 export enum TradeStatus {
@@ -144,7 +142,7 @@ export interface TradeLeg {
 }
 
 export interface Trade {
-  risk_percent: any;
+  risk_percent: number;
   trade_id: string;
   signal_id: string;
   account_id: string;
@@ -172,8 +170,8 @@ export interface Trade {
 // ─── ACCOUNT ─────────────────────────────────────────────────
 
 export interface Account {
-  id: any;
-  name: ReactNode;
+  id: string;
+  name: string;
   label: string;
   account_id: string;
   broker: string;
