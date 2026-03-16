@@ -25,6 +25,7 @@ from api.middleware.governance import enforce_write_policy
 
 # ── In-memory async Redis mock for test isolation ─────────────────────────────
 
+
 class _FakeRedis:
     """Minimal async Redis mock that stores data in memory."""
 
@@ -140,6 +141,7 @@ app.dependency_overrides[enforce_write_policy] = _mock_write_policy
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
+
 def _valid_account_payload(
     name: str = "Test Account",
     balance: float = 100000.0,
@@ -199,6 +201,7 @@ def _take_signal(
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
 
+
 @pytest.fixture
 def client() -> TestClient:
     return TestClient(app)
@@ -235,7 +238,7 @@ def _patch_redis() -> Any:
         patch("api.journal_routes.get_async_redis", _mock_get_async_redis),
         patch(
             "api.allocation_router._persist_trade_write_through",
-            new_callable=lambda: lambda: AsyncMock(return_value=True),
+            new=AsyncMock(return_value=True),
         ),
     ):
         yield
