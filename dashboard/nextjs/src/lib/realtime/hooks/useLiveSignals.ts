@@ -32,10 +32,14 @@ export function useLiveSignals(
   const [lastUpdatedAt, setLastUpdatedAt] = useState<number | null>(null);
 
   const staleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** Once WS has delivered at least one verdict, REST must not overwrite. */
+  const wsDeliveredRef = useRef(false);
 
-  // Sync initial snapshot from REST
+  // Sync initial snapshot from REST — only when WS hasn't delivered yet
   useEffect(() => {
-    if (initialVerdicts.length > 0) setVerdicts(initialVerdicts);
+    if (initialVerdicts.length > 0 && !wsDeliveredRef.current) {
+      setVerdicts(initialVerdicts);
+    }
   }, [initialVerdicts]);
 
   const resetStaleTimer = useCallback(() => {
@@ -53,7 +57,9 @@ export function useLiveSignals(
     const controls = connectLiveUpdates({
       path: "/ws/verdict",
       onEvent: (event) => {
+        // ── Legacy frontend event ──
         if (event.type === "PipelineResultUpdated") {
+          wsDeliveredRef.current = true;
           const payload = event.payload as unknown as L12Verdict;
           setVerdicts((prev) => {
             const idx = prev.findIndex((v) => v.symbol === payload.symbol);
@@ -62,6 +68,67 @@ export function useLiveSignals(
             next[idx] = payload;
             return next;
           });
+          setLastUpdatedAt(Date.now());
+          resetStaleTimer();
+        }
+
+        // ── Backend-native verdict.update (normalised to VerdictUpdated) ──
+        if (event.type === "VerdictUpdated") {
+          wsDeliveredRef.current = true;
+          const { pair, verdict } = event.payload as {
+            pair: string;
+            verdict: Record<string, unknown>;
+          };
+          const mapped: L12Verdict = {
+            symbol: pair,
+            verdict: (verdict.verdict as L12Verdict["verdict"]) ?? "HOLD",
+            confidence: typeof verdict.confidence === "number" ? verdict.confidence : 0,
+            gates: Array.isArray(verdict.gates) ? verdict.gates : [],
+            timestamp: typeof verdict.timestamp === "number" ? verdict.timestamp : Date.now(),
+            direction: verdict.direction as L12Verdict["direction"],
+            entry_price: verdict.entry_price as number | undefined,
+            stop_loss: verdict.stop_loss as number | undefined,
+            take_profit_1: verdict.take_profit_1 as number | undefined,
+            risk_reward_ratio: verdict.risk_reward_ratio as number | undefined,
+            wolf_status: verdict.wolf_status as string | undefined,
+            scores: verdict.scores as L12Verdict["scores"],
+            expires_at: verdict.expires_at as number | undefined,
+          };
+          setVerdicts((prev) => {
+            const idx = prev.findIndex((v) => v.symbol === pair);
+            if (idx === -1) return [mapped, ...prev];
+            const next = [...prev];
+            next[idx] = mapped;
+            return next;
+          });
+          setLastUpdatedAt(Date.now());
+          resetStaleTimer();
+        }
+
+        // ── Backend verdict.snapshot (normalised to VerdictSnapshot) ──
+        if (event.type === "VerdictSnapshot") {
+          wsDeliveredRef.current = true;
+          const { verdicts: verdictMap } = event.payload as {
+            verdicts: Record<string, Record<string, unknown>>;
+          };
+          const mapped: L12Verdict[] = Object.entries(verdictMap).map(
+            ([pair, v]) => ({
+              symbol: pair,
+              verdict: (v.verdict as L12Verdict["verdict"]) ?? "HOLD",
+              confidence: typeof v.confidence === "number" ? v.confidence : 0,
+              gates: Array.isArray(v.gates) ? v.gates : [],
+              timestamp: typeof v.timestamp === "number" ? v.timestamp : Date.now(),
+              direction: v.direction as L12Verdict["direction"],
+              entry_price: v.entry_price as number | undefined,
+              stop_loss: v.stop_loss as number | undefined,
+              take_profit_1: v.take_profit_1 as number | undefined,
+              risk_reward_ratio: v.risk_reward_ratio as number | undefined,
+              wolf_status: v.wolf_status as string | undefined,
+              scores: v.scores as L12Verdict["scores"],
+              expires_at: v.expires_at as number | undefined,
+            })
+          );
+          setVerdicts(mapped);
           setLastUpdatedAt(Date.now());
           resetStaleTimer();
         }
