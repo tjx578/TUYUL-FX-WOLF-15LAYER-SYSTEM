@@ -9,6 +9,6 @@ export const PipelineResultSchema = z.object({
   governance_state: z
     .enum(["OK", "CAUTION", "DOWNGRADED", "BLOCKED"])
     .optional(),
-});
+}).passthrough();
 
 export type PipelineResult = z.infer<typeof PipelineResultSchema>;

@@ -207,8 +207,22 @@ export function useAllVerdicts() {
     API_ENDPOINTS.verdictAll,
     fetcher
   );
-  const normalized = Array.isArray(data) ? data : Object.values(data ?? {});
+  const normalized = normalizeVerdictResponse(data);
   return { data: normalized, isLoading, isError: !!error, error, mutate };
+}
+
+function normalizeVerdictResponse(
+  data: L12Verdict[] | Record<string, L12Verdict> | undefined
+): L12Verdict[] {
+  if (!data) return [];
+  if (Array.isArray(data)) return data;
+  // Handle { verdicts: L12Verdict[] | Record<string, L12Verdict> } envelope
+  if ("verdicts" in data) {
+    const inner = (data as Record<string, unknown>).verdicts;
+    if (Array.isArray(inner)) return inner as L12Verdict[];
+    if (inner && typeof inner === "object") return Object.values(inner as Record<string, L12Verdict>);
+  }
+  return Object.values(data);
 }
 
 export function useHealth() {
