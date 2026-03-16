@@ -236,7 +236,8 @@ export function useHealth() {
 export function useContext() {
   const { data, error, isLoading } = useSWR<ContextSnapshot>(
     API_ENDPOINTS.context,
-    fetcher
+    fetcher,
+    { refreshInterval: 30_000 },
   );
   return { data, isLoading, isError: !!error, error };
 }
