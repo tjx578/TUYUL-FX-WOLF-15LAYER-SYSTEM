@@ -64,14 +64,16 @@ export default function DataStreamDiagnostic({
   // Detect missing env vars client-side for the checklist.
   // NEXT_PUBLIC_ vars are inlined at build time — must use the literal identifier
   // so the Next.js compiler can statically replace them in the client bundle.
-  const wsBaseUrl = process.env.NEXT_PUBLIC_WS_BASE_URL;
-  const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
+  const wsBaseRaw = process.env.NEXT_PUBLIC_WS_BASE_URL;
+  const apiBaseRaw = process.env.NEXT_PUBLIC_API_BASE_URL;
 
-  const hasWsUrl = !!wsBaseUrl && wsBaseUrl.trim() !== "";
+  const wsBaseUrl = typeof wsBaseRaw === "string" ? wsBaseRaw.trim() : "";
+  const apiBaseUrl = typeof apiBaseRaw === "string" ? apiBaseRaw.trim() : "";
+  const hasWsUrl = wsBaseUrl.length > 0;
   // INTERNAL_API_URL is server-side only — detect indirectly via NEXT_PUBLIC_API_BASE_URL
   // or fall back to hostname check (localhost = likely not on Vercel with real backend).
   const hasApiBase =
-    (!!apiBaseUrl && apiBaseUrl.trim() !== "") ||
+    apiBaseUrl.length > 0 ||
     (typeof window !== "undefined" && !window.location.hostname.includes("localhost"));
 
   const handlePing = useCallback(async () => {
