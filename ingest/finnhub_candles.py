@@ -16,7 +16,7 @@ from typing import Any
 import httpx
 from loguru import logger
 
-from config_loader import CONFIG, load_finnhub
+from config_loader import CONFIG, get_enabled_symbols, load_finnhub
 from context.live_context_bus import LiveContextBus
 
 
@@ -468,7 +468,8 @@ class FinnhubCandleFetcher:
             return {}
 
         # Get enabled symbols from config (supports pairs.symbols and pairs.pairs)
-        enabled_symbols = self._enabled_symbols_from_config(CONFIG)
+        enabled_symbols = get_enabled_symbols()
+        logger.info("[Warmup] enabled symbols count=%d symbols=%s", len(enabled_symbols), enabled_symbols[:10])
         if not enabled_symbols:
             logger.warning("No enabled symbols found for warmup")
             return {}

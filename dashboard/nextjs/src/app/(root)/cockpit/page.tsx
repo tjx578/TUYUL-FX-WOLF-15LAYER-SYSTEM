@@ -11,7 +11,7 @@
 // Execution decisions remain with Layer-12 / Constitution.
 // ============================================================
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import {
   T, RADIUS, FONT_MONO, FONT_DISPLAY,
   PROP_FIRMS, ROLE_CONFIG, GLOBAL_CSS,
@@ -21,9 +21,22 @@ import {
   Card, Bar, Ring, StreamBadge,
 } from "@/components/ui";
 import { PipelinePanel } from "@/components/PipelinePanel";
+import { apiClient } from "@/services/apiClient";
+
+// ── Wolf score shape from API ─────────────────────────────────
+interface WolfScores {
+  wolf_score: number;
+  f_score: number;
+  t_score: number;
+  fta_score: number;
+  exec_score: number;
+}
+
+const WOLF_DEFAULTS: WolfScores = { wolf_score: 0, f_score: 0, t_score: 0, fta_score: 0, exec_score: 0 };
+const WOLF_MAX = { f: 8, t: 12, fta: 5, exec: 5, total: 30 };
 
 // ── Local account / order types (MT5 live model) ─────────────
-interface DdStat      { used: number; limit: number }
+interface DdStat { used: number; limit: number }
 interface AccountRules { maxRisk: number; condRisk: number; tpMode: string; scaleIn: boolean; revengeBlock: boolean }
 
 interface CockpitAccount {
@@ -74,29 +87,34 @@ const ACCOUNTS: CockpitAccount[] = [
 ];
 
 // ── Pipeline summary is fetched live by PipelinePanel ─────────
-const PIPELINE_PASS  = 0;  // placeholder — real counts come from the component
+const PIPELINE_PASS = 0;  // placeholder — real counts come from the component
 const PIPELINE_TOTAL = 15;
-const ALL_PASS       = false;
+const ALL_PASS = false;
 
 // ── Status bar items ──────────────────────────────────────────
-const STATUS_ITEMS = [
-  { l: "Regime",    v: "RISK-ON",          c: T.emerald },
-  { l: "Force",     v: "LIQUIDITY",         c: T.cyan   },
-  { l: "Bias",      v: "BULLISH",           c: T.emerald },
-  { l: "TII",       v: "0.94",             c: T.emerald },
-  { l: "Integrity", v: "0.98",             c: T.emerald },
-  { l: "MC",        v: "PASS",             c: T.emerald },
-  { l: "Pipeline",  v: `${PIPELINE_PASS}/${PIPELINE_TOTAL}`, c: ALL_PASS ? T.emerald : T.amber },
-  { l: "Latency",   v: "142ms",            c: T.teal   },
-  { l: "Wolf",      v: "PACK 27/30",       c: T.gold   },
-];
+function buildStatusItems(wolf: WolfScores) {
+  const wolfLabel = `PACK ${wolf.wolf_score}/${WOLF_MAX.total}`;
+  const wolfColor = wolf.wolf_score >= 23 ? T.gold : wolf.wolf_score >= 18 ? T.amber : T.red;
+  return [
+    { l: "Regime", v: "RISK-ON", c: T.emerald },
+    { l: "Force", v: "LIQUIDITY", c: T.cyan },
+    { l: "Bias", v: "BULLISH", c: T.emerald },
+    { l: "TII", v: "0.94", c: T.emerald },
+    { l: "Integrity", v: "0.98", c: T.emerald },
+    { l: "MC", v: "PASS", c: T.emerald },
+    { l: "Pipeline", v: `${PIPELINE_PASS}/${PIPELINE_TOTAL}`, c: ALL_PASS ? T.emerald : T.amber },
+    { l: "Latency", v: "142ms", c: T.teal },
+    { l: "Wolf", v: wolfLabel, c: wolfColor },
+  ];
+}
 
 // ────────────────────────────────────────────────────────────
 // SUB-COMPONENTS
 // ────────────────────────────────────────────────────────────
 
 // ── Status Bar ───────────────────────────────────────────────
-function StatusBar() {
+function StatusBar({ wolf }: { wolf: WolfScores }) {
+  const statusItems = buildStatusItems(wolf);
   return (
     <div style={{
       display: "flex", alignItems: "center",
@@ -105,7 +123,7 @@ function StatusBar() {
       backgroundColor: T.bg1,
       overflowX: "auto",
     }}>
-      {STATUS_ITEMS.map((item, i) => (
+      {statusItems.map((item, i) => (
         <div key={i} style={{
           display: "flex", alignItems: "center", gap: 6,
           padding: "0 12px", height: "100%",
@@ -168,16 +186,16 @@ function KillSwitchBanner({ onAck }: { onAck: () => void }) {
 
 // ── Account Card ─────────────────────────────────────────────
 function AccountCard({ acc }: { acc: CockpitAccount }) {
-  const firm   = PROP_FIRMS[acc.firm] ?? PROP_FIRMS.FTMO;
+  const firm = PROP_FIRMS[acc.firm] ?? PROP_FIRMS.FTMO;
   const target = firm.targets[acc.phase] ?? 10;
   const pnlPct = ((acc.equity - acc.balance) / acc.balance) * 100;
 
   const stats: { l: string; v: React.ReactNode; danger: boolean }[] = [
-    { l: "Loss Streak", v: acc.lossStreak,                          danger: acc.lossStreak >= 2 },
-    { l: "Open Pos",    v: acc.openPos,                             danger: false },
-    { l: "Float DD",    v: `${acc.floatDD.toFixed(1)}%`,            danger: acc.floatDD >= 1 },
-    { l: "Today",       v: `${acc.tradesToday}/${acc.maxTradesDay}`, danger: acc.tradesToday >= acc.maxTradesDay },
-    { l: "Trade Days",  v: acc.tradeDays,                           danger: false },
+    { l: "Loss Streak", v: acc.lossStreak, danger: acc.lossStreak >= 2 },
+    { l: "Open Pos", v: acc.openPos, danger: false },
+    { l: "Float DD", v: `${acc.floatDD.toFixed(1)}%`, danger: acc.floatDD >= 1 },
+    { l: "Today", v: `${acc.tradesToday}/${acc.maxTradesDay}`, danger: acc.tradesToday >= acc.maxTradesDay },
+    { l: "Trade Days", v: acc.tradeDays, danger: false },
     {
       l: "Min Days",
       v: acc.minDays > 0
@@ -238,7 +256,7 @@ function AccountCard({ acc }: { acc: CockpitAccount }) {
       {/* DD bars */}
       <div style={{ display: "flex", flexDirection: "column", gap: 7, marginBottom: 10 }}>
         <Bar value={acc.dailyDD.used} max={acc.dailyDD.limit} label="Daily DD" color={T.blue} />
-        <Bar value={acc.maxDD.used}   max={acc.maxDD.limit}   label="Max DD"   color={T.purple} warn={0.5} danger={0.8} />
+        <Bar value={acc.maxDD.used} max={acc.maxDD.limit} label="Max DD" color={T.purple} warn={0.5} danger={0.8} />
       </div>
 
       {/* Stats grid */}
@@ -259,20 +277,22 @@ function AccountCard({ acc }: { acc: CockpitAccount }) {
 }
 
 // ── Wolf Discipline Card ──────────────────────────────────────
-function WolfDisciplineCard() {
+function WolfDisciplineCard({ wolf }: { wolf: WolfScores }) {
+  const total = wolf.wolf_score;
   const ROWS = [
-    { l: "Fundamental",   s: 7,  m: 7,  c: T.blue    },
-    { l: "Technical x13", s: 11, m: 13, c: T.emerald },
-    { l: "FTA x4",        s: 4,  m: 4,  c: T.cyan    },
-    { l: "Execution x6",  s: 5,  m: 6,  c: T.amber   },
+    { l: "Fundamental", s: wolf.f_score, m: WOLF_MAX.f, c: T.blue },
+    { l: "Technical x12", s: wolf.t_score, m: WOLF_MAX.t, c: T.emerald },
+    { l: "FTA x5", s: wolf.fta_score, m: WOLF_MAX.fta, c: T.cyan },
+    { l: "Execution x5", s: wolf.exec_score, m: WOLF_MAX.exec, c: T.amber },
   ];
+  const ringColor = total >= 23 ? T.gold : total >= 18 ? T.emerald : T.amber;
 
   return (
-    <Card title="WOLF DISCIPLINE" sub="30-Point Governance Score" icon="🐺" accentColor="ok">
+    <Card title="WOLF DISCIPLINE" sub="30-Point Governance Score" icon="🐺" accentColor={total >= 23 ? "ok" : "warn"}>
       <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-        <Ring value={27} max={30} size={78} sw={5} color={T.gold}>
-          <M s={18} w={700} c={T.gold}>27</M>
-          <M s={8} c={T.t4}>/30</M>
+        <Ring value={total} max={WOLF_MAX.total} size={78} sw={5} color={ringColor}>
+          <M s={18} w={700} c={ringColor}>{total}</M>
+          <M s={8} c={T.t4}>/{WOLF_MAX.total}</M>
         </Ring>
         <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 5 }}>
           {ROWS.map((row) => {
@@ -311,7 +331,7 @@ function AllAccountsCard({
       {accounts.map((a, i) => {
         const pnlPct = ((a.equity - a.startBal) / a.startBal) * 100;
         const ddDayRatio = a.dailyDD.used / a.dailyDD.limit;
-        const ddMaxRatio = a.maxDD.used  / a.maxDD.limit;
+        const ddMaxRatio = a.maxDD.used / a.maxDD.limit;
 
         return (
           <div
@@ -345,8 +365,8 @@ function AllAccountsCard({
             <div style={{ display: "flex", gap: 12 }}>
               {([
                 { l: "Daily DD", v: `${a.dailyDD.used}/${a.dailyDD.limit}%`, c: ddDayRatio >= 0.6 ? T.amber : T.t2 },
-                { l: "Max DD",   v: `${a.maxDD.used}/${a.maxDD.limit}%`,     c: ddMaxRatio >= 0.5 ? T.amber : T.t2 },
-                { l: "Balance",  v: `$${(a.balance / 1000).toFixed(0)}k`,    c: T.t2 },
+                { l: "Max DD", v: `${a.maxDD.used}/${a.maxDD.limit}%`, c: ddMaxRatio >= 0.5 ? T.amber : T.t2 },
+                { l: "Balance", v: `$${(a.balance / 1000).toFixed(0)}k`, c: T.t2 },
               ]).map((s) => (
                 <div key={s.l}>
                   <L s={7} c={T.t4}>{s.l}</L>
@@ -364,10 +384,10 @@ function AllAccountsCard({
 // ── Over-Trade Guards Card ────────────────────────────────────
 function OverTradeGuardsCard({ acc }: { acc: CockpitAccount }) {
   const guards = [
-    { l: "Trades/Day",    cur: acc.tradesToday, max: 1,       ok: acc.tradesToday < 1    },
-    { l: "Active Trades", cur: acc.openPos,     max: 1,       ok: acc.openPos < 2        },
-    { l: "Loss Streak",   cur: acc.lossStreak,  max: 2,       ok: acc.lossStreak < 2     },
-    { l: "News Block",    cur: "Clear",          max: "±30m",  ok: true                   },
+    { l: "Trades/Day", cur: acc.tradesToday, max: 1, ok: acc.tradesToday < 1 },
+    { l: "Active Trades", cur: acc.openPos, max: 1, ok: acc.openPos < 2 },
+    { l: "Loss Streak", cur: acc.lossStreak, max: 2, ok: acc.lossStreak < 2 },
+    { l: "News Block", cur: "Clear", max: "±30m", ok: true },
   ];
 
   return (
@@ -398,10 +418,10 @@ function ActionBar({
   clock: string;
 }) {
   const btns = [
-    { label: "📔 Journal",                              c: T.emerald },
+    { label: "📔 Journal", c: T.emerald },
     { label: killSwitch ? "🔓 Reset Kill" : "🛑 Kill Switch", c: T.red, action: onToggleKill },
-    { label: "📊 Report",                               c: T.blue  },
-    { label: "📤 Export",                               c: T.cyan  },
+    { label: "📊 Report", c: T.blue },
+    { label: "📤 Export", c: T.cyan },
   ];
 
   return (
@@ -438,12 +458,12 @@ function ActionBar({
 // ── Position Sizer Card ───────────────────────────────────────
 function PositionSizerCard() {
   const CFG = [
-    { l: "Risk Mode",    v: "0.5%"    },
-    { l: "Max Risk",     v: "1.0%"    },
-    { l: "Commission",   v: "$7/lot"  },
-    { l: "Max Spread",   v: "3 pips"  },
-    { l: "R:R Lock",     v: "1:2.0"   },
-    { l: "Virtual SL/TP", v: "OFF"   },
+    { l: "Risk Mode", v: "0.5%" },
+    { l: "Max Risk", v: "1.0%" },
+    { l: "Commission", v: "$7/lot" },
+    { l: "Max Spread", v: "3 pips" },
+    { l: "R:R Lock", v: "1:2.0" },
+    { l: "Virtual SL/TP", v: "OFF" },
   ];
 
   return (
@@ -483,7 +503,7 @@ function PositionSizerCard() {
 // ── Exit Strategy Card ────────────────────────────────────────
 function ExitStrategyCard() {
   const LEVELS = [
-    { level: 1, mode: "RR", val: 1.0, pct: 50, be: true  },
+    { level: 1, mode: "RR", val: 1.0, pct: 50, be: true },
     { level: 2, mode: "RR", val: 2.0, pct: 50, be: false },
   ];
 
@@ -523,17 +543,17 @@ function ExitStrategyCard() {
 // ── Drawdown Meter Card (3 rings) ─────────────────────────────
 function DrawdownMeterCard({ acc }: { acc: CockpitAccount }) {
   const METERS = [
-    { l: "DAILY DD",  v: acc.dailyDD.used, max: acc.dailyDD.limit, base: T.blue   },
-    { l: "TOTAL DD",  v: acc.maxDD.used,   max: acc.maxDD.limit,   base: T.purple },
-    { l: "FLOAT DD",  v: acc.floatDD,      max: 5,                 base: T.amber  },
+    { l: "DAILY DD", v: acc.dailyDD.used, max: acc.dailyDD.limit, base: T.blue },
+    { l: "TOTAL DD", v: acc.maxDD.used, max: acc.maxDD.limit, base: T.purple },
+    { l: "FLOAT DD", v: acc.floatDD, max: 5, base: T.amber },
   ];
 
   const SCALE = [
-    { range: "<2%",  mult: "1.0x",  c: T.emerald },
-    { range: "2-4%", mult: "0.8x",  c: T.teal   },
-    { range: "4-6%", mult: "0.5x",  c: T.amber  },
-    { range: "6-8%", mult: "0.25x", c: T.red    },
-    { range: "≥8%",  mult: "STOP",  c: T.red    },
+    { range: "<2%", mult: "1.0x", c: T.emerald },
+    { range: "2-4%", mult: "0.8x", c: T.teal },
+    { range: "4-6%", mult: "0.5x", c: T.amber },
+    { range: "6-8%", mult: "0.25x", c: T.red },
+    { range: "≥8%", mult: "STOP", c: T.red },
   ];
 
   return (
@@ -577,16 +597,16 @@ function DrawdownMeterCard({ acc }: { acc: CockpitAccount }) {
 
 // ── Prop Firm Rules Card ──────────────────────────────────────
 function PropFirmRulesCard({ acc }: { acc: CockpitAccount }) {
-  const firm   = PROP_FIRMS[acc.firm] ?? PROP_FIRMS.FTMO;
+  const firm = PROP_FIRMS[acc.firm] ?? PROP_FIRMS.FTMO;
   const target = firm.targets[acc.phase] ?? 10;
 
   const items = [
-    { l: "Daily DD",   v: `${firm.dailyDD}%`,                                        c: T.t1     },
-    { l: "Max DD",     v: `${firm.maxDD}%`,                                           c: T.t1     },
-    { l: "Target",     v: `${target}%`,                                               c: T.emerald },
-    { l: "News Block", v: firm.newsBlock > 0 ? `±${firm.newsBlock}m` : "None",        c: firm.newsBlock > 0 ? T.amber : T.t3 },
-    { l: "Phase",      v: acc.phase,                                                  c: T.gold   },
-    { l: "Status",     v: "ACTIVE",                                                   c: T.emerald },
+    { l: "Daily DD", v: `${firm.dailyDD}%`, c: T.t1 },
+    { l: "Max DD", v: `${firm.maxDD}%`, c: T.t1 },
+    { l: "Target", v: `${target}%`, c: T.emerald },
+    { l: "News Block", v: firm.newsBlock > 0 ? `±${firm.newsBlock}m` : "None", c: firm.newsBlock > 0 ? T.amber : T.t3 },
+    { l: "Phase", v: acc.phase, c: T.gold },
+    { l: "Status", v: "ACTIVE", c: T.emerald },
   ];
 
   return (
@@ -663,10 +683,11 @@ function WsStreamCard({ accounts }: { accounts: CockpitAccount[] }) {
 // MAIN PAGE
 // ────────────────────────────────────────────────────────────
 export default function CockpitPage() {
-  const [accounts]    = useState<CockpitAccount[]>(ACCOUNTS);
+  const [accounts] = useState<CockpitAccount[]>(ACCOUNTS);
   const [activeId, setActiveId] = useState(accounts[0].id);
-  const [killSwitch,  setKillSwitch]  = useState(false);
-  const [clock,       setClock]       = useState("");
+  const [killSwitch, setKillSwitch] = useState(false);
+  const [clock, setClock] = useState("");
+  const [wolfScores, setWolfScores] = useState<WolfScores>(WOLF_DEFAULTS);
 
   // Clock tick — client-only to avoid SSR mismatch
   useEffect(() => {
@@ -674,6 +695,34 @@ export default function CockpitPage() {
     const id = setInterval(() => setClock(new Date().toLocaleTimeString()), 1000);
     return () => clearInterval(id);
   }, []);
+
+  // Fetch wolf scores from API — poll every 15 s
+  const fetchWolfScores = useCallback(async () => {
+    try {
+      const res = await apiClient.get("/api/v1/verdict/all");
+      const verdicts = res.data ?? {};
+      // Pick the first active pair's scores (or aggregate best)
+      const entries = Object.values(verdicts) as Array<{ scores?: Partial<WolfScores> }>;
+      if (entries.length > 0 && entries[0]?.scores) {
+        const s = entries[0].scores;
+        setWolfScores({
+          wolf_score: Math.round(s.wolf_score ?? 0),
+          f_score: Math.round(s.f_score ?? 0),
+          t_score: Math.round(s.t_score ?? 0),
+          fta_score: Math.round(s.fta_score ?? 0),
+          exec_score: Math.round(s.exec_score ?? 0),
+        });
+      }
+    } catch {
+      // Silently keep previous scores on error
+    }
+  }, []);
+
+  useEffect(() => {
+    void fetchWolfScores();
+    const id = setInterval(() => void fetchWolfScores(), 15_000);
+    return () => clearInterval(id);
+  }, [fetchWolfScores]);
 
   const acc = accounts.find((a) => a.id === activeId) ?? accounts[0];
 
@@ -686,7 +735,7 @@ export default function CockpitPage() {
       <style>{GLOBAL_CSS}</style>
 
       {/* ── Status bar ── */}
-      <StatusBar />
+      <StatusBar wolf={wolfScores} />
 
       {/* ── Kill switch banner ── */}
       {killSwitch && (
@@ -700,7 +749,7 @@ export default function CockpitPage() {
           {/* ── LEFT column ── */}
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
             <AccountCard acc={acc} />
-            <WolfDisciplineCard />
+            <WolfDisciplineCard wolf={wolfScores} />
             <AllAccountsCard accounts={accounts} activeId={activeId} onSelect={setActiveId} />
             <OverTradeGuardsCard acc={acc} />
           </div>

@@ -9,9 +9,8 @@ from ingest.finnhub_candles import FinnhubCandleError, FinnhubCandleFetcher
 @pytest.mark.asyncio
 async def test_warmup_includes_required_timeframes():
     """Even if config lists only H1, warmup_all must fetch H1,H4,D1,W1,MN."""
-    fake_config = {"pairs": {"symbols": ["EURUSD"]}}
 
-    with patch("ingest.finnhub_candles.CONFIG", fake_config):
+    with patch("ingest.finnhub_candles.get_enabled_symbols", return_value=["EURUSD"]):
         fetcher = FinnhubCandleFetcher()
         # Simulate a misconfigured warmup that only lists H1
         fetcher.warmup_config = {"enabled": True, "timeframes": ["H1"], "bars": 2}
@@ -47,16 +46,8 @@ async def test_warmup_includes_required_timeframes():
 @pytest.mark.asyncio
 async def test_warmup_reads_symbols_from_pairs_list_when_symbols_missing():
     """Warmup must support config that only provides pairs.pairs entries."""
-    fake_config = {
-        "pairs": {
-            "pairs": [
-                {"symbol": "EURUSD", "enabled": True},
-                {"symbol": "USDJPY", "enabled": False},
-            ]
-        }
-    }
 
-    with patch("ingest.finnhub_candles.CONFIG", fake_config):
+    with patch("ingest.finnhub_candles.get_enabled_symbols", return_value=["EURUSD"]):
         fetcher = FinnhubCandleFetcher()
         fetcher.warmup_config = {"enabled": True, "timeframes": ["H1"], "bars": 1}
 
