@@ -5,6 +5,7 @@ import { useTradeDeskStore } from "@/store/useTradeDeskStore";
 import { TradeDeskResponseSchema } from "@/schema/tradeDeskSchema";
 import type { TradeDeskTrade } from "@/schema/tradeDeskSchema";
 import { bearerHeader } from "@/lib/auth";
+import { getWsBaseUrl } from "@/lib/env";
 
 // ─── useLiveTrades ───────────────────────────────────────────
 // Connects to /ws/trades and patches the TradeDeskStore on each event.
@@ -20,8 +21,10 @@ export function useLiveTrades() {
     if (typeof window === "undefined") return;
 
     const token = sessionStorage.getItem("api_key") ?? "";
-    const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-    const url = `${protocol}//${window.location.host}/ws/trades?token=${encodeURIComponent(token)}`;
+    const wsBase = getWsBaseUrl();
+    const url = token
+      ? `${wsBase}/ws/trades?token=${encodeURIComponent(token)}`
+      : `${wsBase}/ws/trades`;
 
     const ws = new WebSocket(url);
     wsRef.current = ws;
@@ -81,8 +84,10 @@ export function useLivePrices() {
     if (typeof window === "undefined") return;
 
     const token = sessionStorage.getItem("api_key") ?? "";
-    const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-    const url = `${protocol}//${window.location.host}/ws/prices?token=${encodeURIComponent(token)}`;
+    const wsBase = getWsBaseUrl();
+    const url = token
+      ? `${wsBase}/ws/prices?token=${encodeURIComponent(token)}`
+      : `${wsBase}/ws/prices`;
 
     const ws = new WebSocket(url);
     wsRef.current = ws;
