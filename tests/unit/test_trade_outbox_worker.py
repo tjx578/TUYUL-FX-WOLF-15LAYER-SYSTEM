@@ -30,7 +30,7 @@ async def test_mark_db_retry_increments_attempts() -> None:
         payload={"trade_id": "T-1"},
     )
 
-    await worker._mark_db_retry(event, "publish failed")  # pyright: ignore[reportPrivateUsage]
+    await worker._mark_db_retry(event, "publish failed")
 
     assert pg.fetchrow.await_count == 1
     assert pg.execute.await_count == 1
@@ -55,7 +55,7 @@ async def test_deliver_event_calls_ws_publisher(monkeypatch: pytest.MonkeyPatch)
         payload={"trade": {"trade_id": "T-2", "status": "INTENDED"}},
     )
 
-    ok, err = await worker._deliver_event(event)  # pyright: ignore[reportPrivateUsage]
+    ok, err = await worker._deliver_event(event)
 
     assert ok is True
     assert err is None
@@ -79,7 +79,6 @@ async def test_run_retries_ensure_group_on_redis_failure() -> None:
     worker = TradeOutboxWorker(poll_interval_sec=0.01)
 
     iteration_count = 0
-    original_run = TradeOutboxWorker.run
 
     async def _run_limited(self: Any) -> None:
         """Run the worker but stop after group becomes ready."""
@@ -119,25 +118,36 @@ async def test_run_retries_ensure_group_on_redis_failure() -> None:
 async def test_ensure_group_raises_on_non_busygroup_error() -> None:
     """_ensure_group re-raises non-BUSYGROUP exceptions so the caller can retry."""
     fake_redis = AsyncMock()
-    fake_redis.xgroup_create = AsyncMock(
-        side_effect=ConnectionError("Connection refused")
-    )
+    fake_redis.xgroup_create = AsyncMock(side_effect=ConnectionError("Connection refused"))
 
     worker = TradeOutboxWorker()
 
     with pytest.raises(ConnectionError, match="Connection refused"):
-        await worker._ensure_group(fake_redis)  # pyright: ignore[reportPrivateUsage]
+        await worker._ensure_group(fake_redis)
 
 
 @pytest.mark.asyncio
 async def test_ensure_group_ignores_busygroup_error() -> None:
     """_ensure_group silently succeeds when the group already exists."""
     fake_redis = AsyncMock()
-    fake_redis.xgroup_create = AsyncMock(
-        side_effect=Exception("BUSYGROUP Consumer Group name already exists")
-    )
+    fake_redis.xgroup_create = AsyncMock(side_effect=Exception("BUSYGROUP Consumer Group name already exists"))
 
     worker = TradeOutboxWorker()
 
     # Should not raise
-    await worker._ensure_group(fake_redis)  # pyright: ignore[reportPrivateUsage]
+    await worker._ensure_group(fake_redis)
+
+
+@pytest.mark.asyncio
+async def test_run_stops_on_nonrecoverable_redis_config_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    worker = TradeOutboxWorker(poll_interval_sec=0.01)
+
+    async def _boom() -> Any:
+        raise RuntimeError("Redis configuration missing on Railway")
+
+    monkeypatch.setattr("storage.trade_outbox_worker.get_client", _boom)
+
+    await asyncio.wait_for(worker.run(), timeout=0.5)
+
+    # Worker exits immediately instead of looping retries.
+    assert worker._stopped.is_set() is False

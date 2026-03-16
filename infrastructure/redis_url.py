@@ -40,8 +40,11 @@ def _is_railway_runtime() -> bool:
     """Detect Railway runtime through standard platform-provided env vars."""
     return bool(
         os.environ.get("RAILWAY_ENVIRONMENT")
+        or os.environ.get("RAILWAY_ENVIRONMENT_ID")
         or os.environ.get("RAILWAY_PROJECT_ID")
         or os.environ.get("RAILWAY_SERVICE_ID")
+        or os.environ.get("RAILWAY_DEPLOYMENT_ID")
+        or os.environ.get("RAILWAY_REPLICA_ID")
     )
 
 
