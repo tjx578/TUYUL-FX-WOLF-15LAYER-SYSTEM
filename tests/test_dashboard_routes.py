@@ -234,12 +234,15 @@ def _patch_redis() -> Any:
     """Patch Redis client at the infrastructure level so ALL modules get the mock."""
     import infrastructure.redis_client as _rc
 
-    # Sync Redis mock — prevents real connections from storage.redis_client users
-    _sync_mock = MagicMock()
-    _sync_mock.publish.return_value = 0
-    _sync_mock.get.return_value = None
-    _sync_mock.set.return_value = True
-    _sync_mock.ping.return_value = True
+    # Mock the signal service to avoid sync Redis calls in SignalRegistry
+    _mock_signal_svc = MagicMock()
+    _mock_signal_svc.publish.side_effect = lambda payload: {
+        "signal_id": payload.get("signal_id", "SIG-TEST"),
+        "symbol": payload.get("symbol", "UNKNOWN"),
+        "verdict": payload.get("verdict", "EXECUTE"),
+        "confidence": payload.get("confidence", 0.8),
+        **payload,
+    }
 
     with (
         patch.object(_rc._manager, "get_client", new=AsyncMock(return_value=_fake_redis)),
@@ -247,8 +250,7 @@ def _patch_redis() -> Any:
             "api.allocation_router._persist_trade_write_through",
             new=AsyncMock(return_value=True),
         ),
-        patch("allocation.signal_service.redis_client", _sync_mock),
-        patch("storage.l12_cache.redis_client", _sync_mock),
+        patch("api.allocation_router._get_signal_service", return_value=_mock_signal_svc),
     ):
         yield
 
