@@ -14,19 +14,18 @@ export interface RuntimeHealth {
 }
 
 export function getRuntimeHealth(): RuntimeHealth {
-    const apiBase =
-        process.env.NEXT_PUBLIC_API_BASE_URL?.trim() ||
-        process.env.INTERNAL_API_URL?.trim() ||
-        "";
+    const publicApiBaseRaw = process.env.NEXT_PUBLIC_API_BASE_URL;
+    const publicApiKeyRaw = process.env.NEXT_PUBLIC_API_KEY;
+    const publicWsBaseRaw = process.env.NEXT_PUBLIC_WS_BASE_URL;
 
-    const apiKeyPresent = Boolean(process.env.NEXT_PUBLIC_API_KEY?.trim());
-
-    const wsBase = process.env.NEXT_PUBLIC_WS_BASE_URL?.trim() || "";
+    const apiBase = typeof publicApiBaseRaw === "string" ? publicApiBaseRaw.trim() : "";
+    const wsBase = typeof publicWsBaseRaw === "string" ? publicWsBaseRaw.trim() : "";
+    const apiKeyPresent = typeof publicApiKeyRaw === "string" && publicApiKeyRaw.trim().length > 0;
 
     return {
-        apiBaseResolved: Boolean(apiBase),
+        apiBaseResolved: apiBase.length > 0,
         apiKeyPresent,
-        wsBaseResolved: Boolean(wsBase),
+        wsBaseResolved: wsBase.length > 0,
         nodeEnv: process.env.NODE_ENV ?? "unknown",
     };
 }
