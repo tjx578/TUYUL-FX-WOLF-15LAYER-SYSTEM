@@ -2,7 +2,6 @@ from datetime import UTC, datetime, tzinfo
 from unittest.mock import AsyncMock, patch
 
 import pytest
-from datetime import UTC, datetime
 
 from ingest.finnhub_candles import FinnhubCandleError, FinnhubCandleFetcher
 
@@ -45,9 +44,53 @@ async def test_warmup_includes_required_timeframes():
         assert "EURUSD" in results
 
 
+@pytest.mark.asyncio
+async def test_warmup_reads_symbols_from_pairs_list_when_symbols_missing():
+    """Warmup must support config that only provides pairs.pairs entries."""
+    fake_config = {
+        "pairs": {
+            "pairs": [
+                {"symbol": "EURUSD", "enabled": True},
+                {"symbol": "USDJPY", "enabled": False},
+            ]
+        }
+    }
+
+    with patch("ingest.finnhub_candles.CONFIG", fake_config):
+        fetcher = FinnhubCandleFetcher()
+        fetcher.warmup_config = {"enabled": True, "timeframes": ["H1"], "bars": 1}
+
+        called_symbols: list[str] = []
+
+        async def fake_fetch(symbol: str, timeframe: str, bars: int = 100):
+            called_symbols.append(symbol)
+            return [
+                {
+                    "symbol": symbol,
+                    "timeframe": timeframe,
+                    "open": 1.0,
+                    "high": 1.1,
+                    "low": 0.9,
+                    "close": 1.05,
+                    "volume": 1,
+                    "timestamp": datetime.now(UTC),
+                    "source": "rest_api",
+                }
+            ]
+
+        fetcher.fetch = AsyncMock(side_effect=fake_fetch)
+
+        results = await fetcher.warmup_all()
+
+        assert called_symbols
+        assert set(called_symbols) == {"EURUSD"}
+        assert "EURUSD" in results
+
+
 # ---------------------------------------------------------------------------
 # Regression: tzinfo must always be an instance, never the class itself
 # ---------------------------------------------------------------------------
+
 
 class TestTzinfoIsInstance:
     """
@@ -60,20 +103,21 @@ class TestTzinfoIsInstance:
 
     def test_utc_is_instance_not_class(self) -> None:
         """UTC constant used in source must be an instance, not a type."""
-        assert not isinstance(UTC, type), (
-            "UTC is a class/type - expected an instance like timezone.utc"
-        )
+        assert not isinstance(UTC, type), "UTC is a class/type - expected an instance like timezone.utc"
         assert isinstance(UTC, tzinfo)
 
     def test_utc_equals_timezone_utc(self) -> None:
         """UTC must be the same object as timezone.utc."""
         assert UTC is UTC  # noqa: PLR0124
 
-    @pytest.mark.parametrize("year,month,day", [
-        (2024, 1, 1),
-        (2024, 6, 27),
-        (2025, 12, 31),
-    ])
+    @pytest.mark.parametrize(
+        "year,month,day",
+        [
+            (2024, 1, 1),
+            (2024, 6, 27),
+            (2025, 12, 31),
+        ],
+    )
     def test_datetime_constructor_with_utc(self, year: int, month: int, day: int) -> None:
         """datetime(..., tzinfo=UTC) must not raise TypeError."""
         dt = datetime(year, month, day, tzinfo=UTC)
@@ -96,6 +140,7 @@ class TestTzinfoIsInstance:
 # ---------------------------------------------------------------------------
 # Parametrized warmup per-timeframe tests
 # ---------------------------------------------------------------------------
+
 
 class TestWarmupPerTimeframe:
     """Verify warmup works for every required timeframe individually."""
