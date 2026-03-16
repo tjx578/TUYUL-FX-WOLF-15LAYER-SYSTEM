@@ -2,16 +2,19 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
+import threading
 import time
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, Protocol, cast
 
 from loguru import logger
-from config.logging_bootstrap import configure_loguru_logging
 
+from config.logging_bootstrap import configure_loguru_logging
+from core.health_probe import HealthProbe
 from services.orchestrator.compliance_guard import evaluate_compliance
 from services.orchestrator.execution_mode import ExecutionMode
 from state.pubsub_channels import ORCHESTRATOR_COMMANDS
@@ -255,7 +258,23 @@ class StateManager:
             self.close()
 
 
+def _start_health_probe_in_thread() -> None:
+    """Run HealthProbe on a daemon thread so the sync event loop isn't blocked."""
+    port = int(os.getenv("PORT", os.getenv("ORCHESTRATOR_HEALTH_PORT", "8083")))
+    probe = HealthProbe(port=port, service_name="orchestrator")
+
+    def _run() -> None:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        loop.run_until_complete(probe.start())
+
+    t = threading.Thread(target=_run, daemon=True)
+    t.start()
+    logger.info("Orchestrator health probe started on :{}", port)
+
+
 def run() -> None:
+    _start_health_probe_in_thread()
     StateManager().run_forever()
 
 

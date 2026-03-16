@@ -16,7 +16,7 @@ from typing import Any
 import httpx
 from loguru import logger
 
-from config_loader import CONFIG, load_finnhub
+from config_loader import CONFIG, get_enabled_symbols, load_finnhub
 from context.live_context_bus import LiveContextBus
 
 
@@ -125,6 +125,30 @@ class FinnhubCandleFetcher:
             formatted = symbol
 
         return f"{self.symbol_prefix}:{formatted}"
+
+    @staticmethod
+    def _enabled_symbols_from_config(config: dict[str, Any]) -> list[str]:
+        """Resolve enabled symbols from either pairs.symbols or pairs.pairs."""
+        pairs_cfg = config.get("pairs", {})
+
+        symbols = pairs_cfg.get("symbols", [])
+        if isinstance(symbols, list):
+            normalized = [str(s) for s in symbols if isinstance(s, str) and s]
+            if normalized:
+                return normalized
+
+        pairs = pairs_cfg.get("pairs", [])
+        if not isinstance(pairs, list):
+            return []
+
+        enabled: list[str] = []
+        for pair in pairs:
+            if not isinstance(pair, dict):
+                continue
+            symbol = pair.get("symbol")
+            if isinstance(symbol, str) and symbol and pair.get("enabled"):
+                enabled.append(symbol)
+        return enabled
 
     def _calculate_from_ts(self, bars: int, timeframe: str) -> int:
         """
@@ -443,8 +467,9 @@ class FinnhubCandleFetcher:
             logger.info("Warmup disabled in config")
             return {}
 
-        # Get enabled symbols from config
-        enabled_symbols = CONFIG["pairs"].get("symbols", [])
+        # Get enabled symbols from config (supports pairs.symbols and pairs.pairs)
+        enabled_symbols = get_enabled_symbols()
+        logger.info("[Warmup] enabled symbols count=%d symbols=%s", len(enabled_symbols), enabled_symbols[:10])
         if not enabled_symbols:
             logger.warning("No enabled symbols found for warmup")
             return {}

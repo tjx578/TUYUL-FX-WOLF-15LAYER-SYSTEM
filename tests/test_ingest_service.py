@@ -20,6 +20,10 @@ def ingest_service_module():
     fake_candle_module = types.ModuleType("ingest.candle_builder")
     fake_news_module = types.ModuleType("ingest.calendar_news")
     fake_dependencies_module = types.ModuleType("ingest.dependencies")
+    fake_rest_poll_module = types.ModuleType("ingest.rest_poll_fallback")
+    fake_market_news_module = types.ModuleType("ingest.finnhub_market_news")
+    fake_h1_scheduler_module = types.ModuleType("ingest.h1_refresh_scheduler")
+    fake_macro_scheduler_module = types.ModuleType("ingest.macro_monthly_scheduler")
     fake_macro_module = types.ModuleType("analysis.macro.macro_regime_engine")
 
     class FakeRunner:
@@ -36,6 +40,10 @@ def ingest_service_module():
     fake_candle_module.Timeframe = FakeTimeframe  # type: ignore[attr-defined]
     fake_news_module.CalendarNewsIngestor = FakeRunner  # type: ignore[attr-defined]
     fake_dependencies_module.create_finnhub_ws = AsyncMock()  # type: ignore[attr-defined]
+    fake_rest_poll_module.RestPollFallback = FakeRunner  # type: ignore[attr-defined]
+    fake_market_news_module.FinnhubMarketNews = FakeRunner  # type: ignore[attr-defined]
+    fake_h1_scheduler_module.H1RefreshScheduler = FakeRunner  # type: ignore[attr-defined]
+    fake_macro_scheduler_module.MacroMonthlyScheduler = FakeRunner  # type: ignore[attr-defined]
     fake_macro_module.MacroRegimeEngine = MagicMock  # type: ignore[attr-defined]
 
     with patch.dict(
@@ -45,6 +53,10 @@ def ingest_service_module():
             "ingest.candle_builder": fake_candle_module,
             "ingest.calendar_news": fake_news_module,
             "ingest.dependencies": fake_dependencies_module,
+            "ingest.rest_poll_fallback": fake_rest_poll_module,
+            "ingest.finnhub_market_news": fake_market_news_module,
+            "ingest.h1_refresh_scheduler": fake_h1_scheduler_module,
+            "ingest.macro_monthly_scheduler": fake_macro_scheduler_module,
             "analysis.macro.macro_regime_engine": fake_macro_module,
         },
     ):
@@ -132,6 +144,42 @@ async def test_seed_redis_writes_h1_keys(
     assert "wolf15:candle_history:EURUSD:M15" not in rpush_keys
 
 
+@pytest.mark.asyncio
+async def test_seed_redis_still_pushes_when_llen_fails(
+    ingest_service_module: Any,
+) -> None:
+    """LLEN errors (e.g. WRONGTYPE) must not block RPUSH attempt."""
+    fake_pipe = MagicMock()
+    fake_pipe.rpush = MagicMock()
+    fake_pipe.execute = AsyncMock(return_value=[])
+
+    fake_redis = MagicMock()
+    fake_redis.pipeline = MagicMock(return_value=fake_pipe)
+    fake_redis.llen = AsyncMock(side_effect=RuntimeError("WRONGTYPE"))
+
+    warmup_results = {
+        "EURUSD": {
+            "H1": [
+                {
+                    "symbol": "EURUSD",
+                    "timeframe": "H1",
+                    "open": 1.0,
+                    "high": 1.1,
+                    "low": 0.9,
+                    "close": 1.05,
+                    "volume": 1,
+                    "source": "rest_api",
+                }
+            ]
+        }
+    }
+
+    await ingest_service_module._seed_redis_candle_history(fake_redis, warmup_results)
+
+    fake_pipe.rpush.assert_called()
+    fake_pipe.execute.assert_awaited_once()
+
+
 def test_cold_start_m15_removed_from_module(
     ingest_service_module: Any,
 ) -> None:
@@ -140,9 +188,6 @@ def test_cold_start_m15_removed_from_module(
     M15 comes from tick data (CandleBuilder), never from REST.
     Fetching M15 from REST violates the architecture.
     """
-    assert not hasattr(ingest_service_module, "_cold_start_m15_for_warmup"), (
-        "_cold_start_m15_for_warmup still present — should have been removed. "
-        "M15 must come from tick data only."
-    )
-
-
+    assert not hasattr(
+        ingest_service_module, "_cold_start_m15_for_warmup"
+    ), "_cold_start_m15_for_warmup still present — should have been removed. M15 must come from tick data only."

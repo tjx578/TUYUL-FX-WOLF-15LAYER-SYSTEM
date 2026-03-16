@@ -36,6 +36,18 @@ def _is_railway_private_network(hostname: str | None) -> bool:
     return (hostname or "").strip().lower().endswith(".railway.internal")
 
 
+def _is_railway_runtime() -> bool:
+    """Detect Railway runtime through standard platform-provided env vars."""
+    return bool(
+        os.environ.get("RAILWAY_ENVIRONMENT")
+        or os.environ.get("RAILWAY_ENVIRONMENT_ID")
+        or os.environ.get("RAILWAY_PROJECT_ID")
+        or os.environ.get("RAILWAY_SERVICE_ID")
+        or os.environ.get("RAILWAY_DEPLOYMENT_ID")
+        or os.environ.get("RAILWAY_REPLICA_ID")
+    )
+
+
 def _validate_redis_security(url: str) -> str:
     """Enforce AUTH + TLS for non-local Redis in production.
 
@@ -54,13 +66,9 @@ def _validate_redis_security(url: str) -> str:
         return url
 
     if not parts.password:
-        raise RuntimeError(
-            "In production, Redis URL must include AUTH credentials (password)."
-        )
+        raise RuntimeError("In production, Redis URL must include AUTH credentials (password).")
     if parts.scheme != "rediss":
-        raise RuntimeError(
-            "In production, Redis URL must use TLS (rediss:// scheme)."
-        )
+        raise RuntimeError("In production, Redis URL must use TLS (rediss:// scheme).")
     return url
 
 
@@ -112,6 +120,15 @@ def get_redis_url() -> str:
     railway_url = _build_url_from_railway_vars()
     if railway_url:
         return _validate_redis_security(railway_url)
+
+    # Fail-loud on Railway to avoid silently connecting to localhost in containers.
+    allow_local_fallback = _is_true(os.environ.get("REDIS_ALLOW_LOCALHOST_FALLBACK"))
+    if _is_railway_runtime() and not allow_local_fallback:
+        raise RuntimeError(
+            "Redis configuration missing on Railway: set REDIS_URL or REDIS_PRIVATE_URL "
+            "(or REDISHOST/REDISPORT/REDISPASSWORD). "
+            "If this is intentional for debugging, set REDIS_ALLOW_LOCALHOST_FALLBACK=true."
+        )
 
     return _validate_redis_security(_DEFAULT_REDIS_URL)
 

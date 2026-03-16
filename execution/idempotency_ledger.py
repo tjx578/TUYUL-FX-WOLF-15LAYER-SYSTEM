@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-import contextlib
 import json
 import threading
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, cast
+
+from loguru import logger
 
 from storage.redis_client import redis_client
 
@@ -56,7 +57,7 @@ class ExecutionIdempotencyLedger:
             "payload": initial_payload or {},
         }
 
-        with contextlib.suppress(Exception):
+        try:
             redis_key = f"{_LEDGER_PREFIX}{key}"
             ok = redis_client.client.set(redis_key, json.dumps(initial), nx=True, ex=self._ttl_sec)
             if ok:
@@ -69,6 +70,8 @@ class ExecutionIdempotencyLedger:
                 if isinstance(existing_raw, dict):
                     existing = cast(dict[str, Any], existing_raw)
                     return False, self._to_record(existing)
+        except Exception:
+            logger.warning("[IdempotencyLedger] Redis claim_or_get failed for %s", key, exc_info=True)
 
         with self._lock:
             if key in self._fallback:
@@ -106,7 +109,7 @@ class ExecutionIdempotencyLedger:
 
     def get(self, *, signal_id: str, execution_intent_id: str) -> LedgerRecord | None:
         key = self.compose_key(signal_id, execution_intent_id)
-        with contextlib.suppress(Exception):
+        try:
             raw = redis_client.client.get(f"{_LEDGER_PREFIX}{key}")
             if isinstance(raw, bytes):
                 raw = raw.decode("utf-8", errors="ignore")
@@ -115,6 +118,8 @@ class ExecutionIdempotencyLedger:
                 if isinstance(data_raw, dict):
                     data = cast(dict[str, Any], data_raw)
                     return self._to_record(data)
+        except Exception:
+            logger.warning("[IdempotencyLedger] Redis get failed for %s", key, exc_info=True)
         with self._lock:
             item = self._fallback.get(key)
             return self._to_record(item) if item else None
@@ -145,12 +150,14 @@ class ExecutionIdempotencyLedger:
             "payload": base_payload,
         }
 
-        with contextlib.suppress(Exception):
+        try:
             redis_client.client.set(
                 f"{_LEDGER_PREFIX}{key}",
                 json.dumps(updated),
                 ex=self._ttl_sec,
             )
+        except Exception:
+            logger.warning("[IdempotencyLedger] Redis mark failed for %s", key, exc_info=True)
 
         with self._lock:
             self._fallback[key] = updated

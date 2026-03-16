@@ -41,7 +41,7 @@ from __future__ import annotations
 import logging
 import math
 import os
-
+import warnings
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import StrEnum
@@ -57,12 +57,11 @@ logger = logging.getLogger(__name__)
 # AI / Orchestrator MUST NEVER enable this.
 # This is the master kill-switch for any execution attempts.
 
-_REFLECTIVE_EXECUTION_ALLOWED = (
-    os.getenv("TUYUL_REFLECTIVE_EXECUTION_ALLOWED", "0") == "1"
-)
+_REFLECTIVE_EXECUTION_ALLOWED = os.getenv("TUYUL_REFLECTIVE_EXECUTION_ALLOWED", "0") == "1"
 
 GOVERNANCE_MODE = "ANALYSIS_ONLY"
 BINDING_STATUS = "NON_BINDING"
+
 
 def _check_execution_guard() -> tuple[bool, str]:
     """Check if execution is allowed.
@@ -80,44 +79,64 @@ def _check_execution_guard() -> tuple[bool, str]:
 # 🔧 SECTION 2: EXCEPTIONS
 # =============================================================================
 
+
 class ReflectiveError(Exception):
     """Base exception for reflective system."""
+
     pass
+
 
 class TIIValidationError(ReflectiveError):
     """TII validation failed."""
+
     pass
+
 
 class FieldStabilityError(ReflectiveError):
     """Field stability calculation error."""
+
     pass
+
 
 class PipelineError(ReflectiveError):
     """Pipeline execution error."""
+
     pass
+
 
 class VaultIntegrityError(ReflectiveError):
     """Vault integrity check failed."""
+
     pass
+
 
 class BridgeSyncError(ReflectiveError):
     """Bridge synchronization error."""
+
     pass
+
 
 class EAFCalculationError(ReflectiveError):
     """EAF calculation error."""
+
     pass
+
 
 class FRPCError(ReflectiveError):
     """FRPC calculation error."""
+
     pass
+
 
 class EvolutionError(ReflectiveError):
     """Evolution engine error."""
+
     pass
+
 
 class GovernanceBlockError(ReflectiveError):
     """Execution blocked by governance."""
+
     pass
 
 
@@ -125,58 +144,74 @@ class GovernanceBlockError(ReflectiveError):
 # 🔧 SECTION 3: ENUMS
 # =============================================================================
 
+
 class FieldState(StrEnum):
     """Field stability states."""
+
     ACCUMULATION = "accumulation"
     EXPANSION = "expansion"
     CONTRACTION = "contraction"
     REVERSAL = "reversal"
     STABLE = "stable"
 
+
 class TIIClassification(StrEnum):
     """TII classification levels."""
+
     STRONG_VALID = "strong_valid"
     VALID = "valid"
     MARGINAL = "marginal"
     WEAK = "weak"
     INVALID = "invalid"
 
+
 class TIIStatus(StrEnum):
     """TII execution status."""
+
     APPROVED = "approved"
     MARGINAL = "marginal"
     REJECTED = "rejected"
 
+
 class PipelineMode(StrEnum):
     """Pipeline operation modes."""
+
     BALANCED = "balanced"
     INVERSION = "inversion"
     AGGRESSIVE = "aggressive"
     DEFENSIVE = "defensive"
 
+
 class VaultSyncStatus(StrEnum):
     """Vault synchronization status."""
+
     SYNCED = "synced"
     PENDING = "pending"
     DRIFT = "drift"
     ERROR = "error"
 
+
 class IntegrityLevel(StrEnum):
     """Integrity assessment levels."""
+
     FULL = "full"
     PARTIAL = "partial"
     DEGRADED = "degraded"
     CRITICAL = "critical"
 
+
 class SyncStatus(StrEnum):
     """Cross-system sync status."""
+
     SYNCED = "synced"
     PENDING = "pending"
     DRIFT = "drift"
     ERROR = "error"
 
+
 class EmotionalState(StrEnum):
     """Trader emotional states."""
+
     CALM = "calm"
     FOCUSED = "focused"
     ANXIOUS = "anxious"
@@ -186,8 +221,10 @@ class EmotionalState(StrEnum):
     OVERCONFIDENT = "overconfident"
     FATIGUED = "fatigued"
 
+
 class TradingBehavior(StrEnum):
     """Detectable trading behaviors."""
+
     NORMAL = "normal"
     REVENGE_TRADING = "revenge_trading"
     FOMO = "fomo"
@@ -196,48 +233,62 @@ class TradingBehavior(StrEnum):
     IMPULSIVE = "impulsive"
     DISCIPLINED = "disciplined"
 
+
 class PropagationState(StrEnum):
     """FRPC propagation states."""
+
     FULL_SYNC = "full_sync"
     PARTIAL_SYNC = "partial_sync"
     DRIFT = "drift"
     DESYNC = "desync"
 
+
 class ReflectiveEnergyState(StrEnum):
     """Lorentzian energy states."""
+
     STABLE = "stable"
     HIGH_FLUX = "high_flux"
     LOW_SYNC = "low_sync"
 
+
 class MetaState(StrEnum):
     """Meta-layer states."""
+
     SYNCHRONIZED = "synchronized"
     COHERENT = "coherent"
     LEARNING = "learning"
     DRIFT_DETECTED = "drift_detected"
 
+
 class ExecutionStatus(StrEnum):
     """Execution status (always blocked in analysis mode)."""
+
     BLOCKED = "blocked"
     DEFERRED = "deferred"
     ANALYSIS_ONLY = "analysis_only"
 
+
 class DisciplineCategory(StrEnum):
     """Wolf discipline checklist categories."""
+
     ENTRY = "entry"
     RISK = "risk"
     PSYCHOLOGICAL = "psychological"
     PROPFIRM = "propfirm"
 
+
 class ReflectiveAdjustment(StrEnum):
     """Types of reflective adjustments."""
+
     BOOST = "boost"
     NEUTRAL = "neutral"
     CAUTION = "caution"
     BLOCK = "block"
 
+
 class TimeFrame(StrEnum):
     """Supported timeframes."""
+
     M1 = "M1"
     M5 = "M5"
     M15 = "M15"
@@ -247,16 +298,20 @@ class TimeFrame(StrEnum):
     D1 = "D1"
     W1 = "W1"
 
+
 class EnergyLevel(StrEnum):
     """Energy level classifications."""
+
     CRITICAL_LOW = "critical_low"
     LOW = "low"
     NEUTRAL = "neutral"
     HIGH = "high"
     CRITICAL_HIGH = "critical_high"
 
+
 class BiasContext(StrEnum):
     """Market bias context (descriptive only, not directive)."""
+
     BULLISH_CONTEXT = "bullish_context"
     BEARISH_CONTEXT = "bearish_context"
     NEUTRAL_CONTEXT = "neutral_context"
@@ -332,9 +387,11 @@ GOVERNANCE_CONFIG = {
 # 🔧 SECTION 5: DATACLASSES
 # =============================================================================
 
+
 @dataclass
 class TIIThresholds:
     """TII threshold configuration."""
+
     strong_valid: float = 0.93
     valid: float = 0.90
     marginal: float = 0.85
@@ -356,6 +413,7 @@ class TIIThresholds:
 @dataclass
 class TIIResult:
     """Result from TII calculation."""
+
     tii: float
     status: TIIClassification
     components: dict[str, float]
@@ -365,6 +423,7 @@ class TIIResult:
 @dataclass
 class FRPCResult:
     """Result from FRPC calculation."""
+
     frpc: float
     propagation_state: PropagationState
     alpha_sync: float = 0.0
@@ -375,6 +434,7 @@ class FRPCResult:
 @dataclass
 class FieldStabilityResult:
     """Result from field stability analysis."""
+
     gradient: float
     integrity_index: float
     field_state: FieldState
@@ -386,6 +446,7 @@ class FieldStabilityResult:
 @dataclass
 class QuadEnergyResult:
     """Result from quad energy calculation."""
+
     mean_energy: float
     reflective_coherence: float
     drift: float
@@ -395,6 +456,7 @@ class QuadEnergyResult:
 @dataclass
 class TRQ3DResult:
     """Result from TRQ3D analysis."""
+
     total_energy: float
     coherence_score: float
     alignment_score: float
@@ -408,6 +470,7 @@ class TRQ3DResult:
 @dataclass
 class SymmetryEvaluation:
     """Result from symmetry patch evaluation."""
+
     tii_sym: float
     polarity: float
     phase: str
@@ -419,6 +482,7 @@ class SymmetryEvaluation:
 @dataclass
 class TradeExecutionResult:
     """Result from trade execution (always blocked in analysis mode)."""
+
     timestamp: str
     pair: str
     status: ExecutionStatus
@@ -429,6 +493,7 @@ class TradeExecutionResult:
 @dataclass
 class EAFResult:
     """Result from EAF calculation."""
+
     eaf_score: float
     emotional_bias: float
     stability_index: float
@@ -446,6 +511,7 @@ class EAFResult:
 @dataclass
 class EmotionalInput:
     """Input for EAF calculation."""
+
     recent_wins: int = 0
     recent_losses: int = 0
     consecutive_losses: int = 0
@@ -463,6 +529,7 @@ class EmotionalInput:
 @dataclass
 class QuantumState:
     """Quantum layer state."""
+
     probability_ready: bool = False
     neural_active: bool = False
     scenario: str = "UNKNOWN"
@@ -473,6 +540,7 @@ class QuantumState:
 @dataclass
 class ReflectiveState:
     """Reflective layer state."""
+
     frpc: float = 0.0
     tii: float = 0.0
     coherence: float = 0.0
@@ -483,6 +551,7 @@ class ReflectiveState:
 @dataclass
 class BridgeState:
     """Bridge synchronization state."""
+
     quantum_state: QuantumState
     reflective_state: ReflectiveState
     sync_status: SyncStatus
@@ -492,6 +561,7 @@ class BridgeState:
 @dataclass
 class PipelineState:
     """Pipeline execution state."""
+
     mode: PipelineMode
     tii_threshold: float
     wlwci_weight: float
@@ -501,6 +571,7 @@ class PipelineState:
 @dataclass
 class VaultStatus:
     """Vault synchronization status."""
+
     name: str
     sync_status: VaultSyncStatus
     last_sync: str
@@ -510,6 +581,7 @@ class VaultStatus:
 @dataclass
 class IntegrityAuditResult:
     """Result from integrity audit."""
+
     score: float
     level: IntegrityLevel
     issues: list[str]
@@ -519,6 +591,7 @@ class IntegrityAuditResult:
 @dataclass
 class ReflectiveCycleResult:
     """Result from reflective cycle."""
+
     metrics: dict[str, Any]
     config: dict[str, Any]
     active_mode: PipelineMode
@@ -529,6 +602,7 @@ class ReflectiveCycleResult:
 @dataclass
 class DisciplineCheckResult:
     """Result of a single discipline check."""
+
     category: DisciplineCategory
     check_name: str
     passed: bool
@@ -539,6 +613,7 @@ class DisciplineCheckResult:
 @dataclass
 class WolfDisciplineScore:
     """Complete Wolf discipline evaluation."""
+
     total_score: float
     entry_score: float
     risk_score: float
@@ -553,6 +628,7 @@ class WolfDisciplineScore:
 @dataclass
 class CalibrationSummary:
     """Risk calibration summary."""
+
     status: str
     total_samples: int
     mean_error: float
@@ -562,6 +638,7 @@ class CalibrationSummary:
 @dataclass
 class VolumeQuadrantResult:
     """Result from volume quadrant analysis."""
+
     timestamp: str
     high: float
     low: float
@@ -577,6 +654,7 @@ class VolumeQuadrantResult:
 @dataclass
 class BotSyncState:
     """State of bot synchronization."""
+
     timestamp: str
     status: str
     bias: str
@@ -589,6 +667,7 @@ class BotSyncState:
 @dataclass
 class EvolutionSnapshot:
     """Evolution engine snapshot."""
+
     timestamp: str
     reflective_integrity: float
     meta_weights: dict[str, float]
@@ -597,6 +676,7 @@ class EvolutionSnapshot:
 @dataclass
 class FeedbackSnapshot:
     """Feedback loop snapshot."""
+
     pair: str
     reflective_integrity: float
     meta_state: str
@@ -611,6 +691,7 @@ class FeedbackSnapshot:
 @dataclass
 class ReflectiveFeedbackState:
     """Reflective feedback state."""
+
     timestamp: str
     samples: int
     gradient: float
@@ -621,6 +702,7 @@ class ReflectiveFeedbackState:
 @dataclass
 class AnalysisPayload:
     """Complete analysis payload for orchestrator consumption."""
+
     schema_version: str
     analysis_mode: str
     timestamp: str
@@ -633,6 +715,7 @@ class AnalysisPayload:
 # =============================================================================
 # ⚙️ SECTION 6: ALGO PRECISION ENGINE (TII) - ANALYSIS ONLY
 # =============================================================================
+
 
 def algo_precision_engine(
     price: float = 0.0,
@@ -688,6 +771,7 @@ def get_tii_status(tii: float) -> str:
 # 🌀 SECTION 7: FRPC - REFLECTIVE PROPAGATION COEFFICIENT
 # =============================================================================
 
+
 def fusion_reflective_propagation_coefficient(
     fusion_score: float = 0.0,
     trq_energy: float = 0.0,
@@ -706,11 +790,11 @@ def fusion_reflective_propagation_coefficient(
     gamma_phase = (alpha - gamma) ** 2 + (beta - alpha) ** 2
 
     raw = (
-        math.tanh(fusion_score) *
-        math.tanh(trq_energy) *
-        math.tanh(reflective_intensity) *
-        alpha_sync /
-        (1 + gamma_phase)
+        math.tanh(fusion_score)
+        * math.tanh(trq_energy)
+        * math.tanh(reflective_intensity)
+        * alpha_sync
+        / (1 + gamma_phase)
     )
 
     frpc = round(max(0.0, min(raw * integrity_index, 0.999)), 4)
@@ -737,6 +821,7 @@ def fusion_reflective_propagation_coefficient(
 # ⚡ SECTION 8: FIELD STABILITY + ENERGY
 # =============================================================================
 
+
 def adaptive_field_stabilizer(
     alpha: float,
     beta: float,
@@ -745,10 +830,7 @@ def adaptive_field_stabilizer(
     """
     Analyze α-β-γ field stability and compute gradient.
     """
-    gradient = round(
-        (abs(alpha - beta) + abs(beta - gamma) + abs(alpha - gamma)) / 3,
-        5
-    )
+    gradient = round((abs(alpha - beta) + abs(beta - gamma) + abs(alpha - gamma)) / 3, 5)
 
     if gradient < 0.02:
         state = FieldState.ACCUMULATION
@@ -824,6 +906,7 @@ def compute_reflective_gradient(alpha: float, beta: float, gamma: float) -> dict
 # 🔁 SECTION 9: TRQ3D - SANITIZED CONTEXT (NO BUY/SELL DIRECTIVES)
 # =============================================================================
 
+
 def trq3d_context(
     energies: list[float],
     directions: list[int],
@@ -879,7 +962,9 @@ def trq3d_engine_func(
         volume_series = [100, 120, 150, 90, 110]
 
     price_momentum = abs(price_series[-1] - price_series[0]) / (price_series[0] or 1) * 100
-    price_volatility = sum(abs(price_series[i] - price_series[i-1]) for i in range(1, len(price_series))) / len(price_series)
+    price_volatility = sum(abs(price_series[i] - price_series[i - 1]) for i in range(1, len(price_series))) / len(
+        price_series
+    )
     volume_strength = sum(volume_series) / (len(volume_series) * max(volume_series or [1]))
 
     alpha = min(1.0, max(0.0, price_momentum / 10))
@@ -888,7 +973,7 @@ def trq3d_engine_func(
     mean_energy = (alpha + beta + gamma) / 3
     reflective_intensity = mean_energy * 0.95
 
-    #Descriptive phase only
+    # Descriptive phase only
     if alpha > 0.7 and gamma > 0.6:
         phase = "expansion_context"
     elif alpha < 0.3 and gamma < 0.4:
@@ -914,10 +999,27 @@ def trq3d_engine_func(
 # 📊 SECTION 10: EAF CALCULATOR - EMOTIONAL AWARENESS
 # =============================================================================
 
+_EAF_DEPRECATION = (
+    "EAFScoreCalculator uses a multiplicative EAF formula that collapses to zero "
+    "when any single factor is weak. Use analysis.layers.L5_psychology_fundamental._eaf_score "
+    "(convex weighted-average EAF) via L5AnalysisLayer.analyze() instead."
+)
+
+
 class EAFScoreCalculator:
-    """Calculator for Emotional Awareness Factor (EAF)."""
+    """Calculator for Emotional Awareness Factor (EAF).
+
+    .. deprecated::
+        This class uses a **multiplicative** EAF formula
+        ``(1 - bias) * stability * focus * discipline`` which collapses to
+        zero when any single factor is weak.  The canonical replacement is
+        the **convex weighted-average** EAF in
+        ``analysis.layers.L5_psychology_fundamental._eaf_score`` (used by
+        ``L5AnalysisLayer.analyze()``).
+    """
 
     def __init__(self):
+        warnings.warn(_EAF_DEPRECATION, DeprecationWarning, stacklevel=2)
         self.config = EAF_CONFIG.copy()
         self._history: list[EAFResult] = []
 
@@ -948,10 +1050,10 @@ class EAFScoreCalculator:
             fatigue_score += 0.2
 
         total_bias = (
-            fear_score * self.config["fear_weight"] +
-            greed_score * self.config["greed_weight"] +
-            frustration_score * self.config["frustration_weight"] +
-            fatigue_score * self.config["fatigue_weight"]
+            fear_score * self.config["fear_weight"]
+            + greed_score * self.config["greed_weight"]
+            + frustration_score * self.config["frustration_weight"]
+            + fatigue_score * self.config["fatigue_weight"]
         )
 
         scores = {
@@ -975,7 +1077,9 @@ class EAFScoreCalculator:
 
         stability_index = max(0.0, 1.0 - input_data.consecutive_losses * 0.1)
         focus_level = max(0.0, 1.0 - input_data.session_duration_minutes / 480)
-        discipline_score = 1.0 if input_data.stop_moved_count == 0 else max(0.5, 1.0 - input_data.stop_moved_count * 0.15)
+        discipline_score = (
+            1.0 if input_data.stop_moved_count == 0 else max(0.5, 1.0 - input_data.stop_moved_count * 0.15)
+        )
 
         eaf_score = (1 - emotional_bias) * stability_index * focus_level * discipline_score
 
@@ -1014,7 +1118,9 @@ class EAFScoreCalculator:
             warnings=warnings,
             recommendations=recommendations,
             cooldown_required=input_data.consecutive_losses >= self.config["max_consecutive_losses"],
-            cooldown_minutes=int(self.config["cooldown_after_losses_minutes"]) if input_data.consecutive_losses >= self.config["max_consecutive_losses"] else 0,
+            cooldown_minutes=int(self.config["cooldown_after_losses_minutes"])
+            if input_data.consecutive_losses >= self.config["max_consecutive_losses"]
+            else 0,
         )
 
         self._history.append(result)
@@ -1024,6 +1130,7 @@ class EAFScoreCalculator:
 # =============================================================================
 # 🐺 SECTION 11: WOLF-REFLECTIVE INTEGRATOR
 # =============================================================================
+
 
 class WolfReflectiveIntegrator:
     """Integrator between Wolf Discipline Framework and Reflective System."""
@@ -1063,10 +1170,10 @@ class WolfReflectiveIntegrator:
         propfirm_score = calc_score(prop_checks)
 
         total_score = (
-            entry_score * self.config["entry_weight"] +
-            risk_score * self.config["risk_weight"] +
-            psychological_score * self.config["psychological_weight"] +
-            propfirm_score * self.config["propfirm_weight"]
+            entry_score * self.config["entry_weight"]
+            + risk_score * self.config["risk_weight"]
+            + psychological_score * self.config["psychological_weight"]
+            + propfirm_score * self.config["propfirm_weight"]
         )
 
         critical_failures = [c.check_name for c in checks if not c.passed and c.weight >= 1.0]
@@ -1134,6 +1241,7 @@ class WolfReflectiveIntegrator:
 # 📊 SECTION 12: VOLUME QUADRANT ENGINE
 # =============================================================================
 
+
 def reflective_volume_quadrant_engine(
     price_series: list[float],
     volume_series: list[float],
@@ -1144,9 +1252,15 @@ def reflective_volume_quadrant_engine(
     if len(price_series) < 4 or len(volume_series) < 4:
         return VolumeQuadrantResult(
             timestamp=datetime.now(UTC).isoformat(),
-            high=0, low=0, vwap=vwap, threshold=0,
-            quadrants={}, rvi=0, bias="insufficient_data",
-            key_support_demand=0, liquidity_pool=0,
+            high=0,
+            low=0,
+            vwap=vwap,
+            threshold=0,
+            quadrants={},
+            rvi=0,
+            bias="insufficient_data",
+            key_support_demand=0,
+            liquidity_pool=0,
         )
 
     high, low = max(price_series), min(price_series)
@@ -1158,8 +1272,12 @@ def reflective_volume_quadrant_engine(
     adaptive_threshold = float(threshold) if threshold else max(0.0005, min(0.002, volatility_ratio * 0.25))
 
     q1_vol = sum(v for p, v in zip(price_series, volume_series, strict=True) if p > midpoint + adaptive_threshold)
-    q2_vol = sum(v for p, v in zip(price_series, volume_series, strict=True) if midpoint < p <= midpoint + adaptive_threshold)
-    q3_vol = sum(v for p, v in zip(price_series, volume_series, strict=True) if midpoint - adaptive_threshold < p <= midpoint)
+    q2_vol = sum(
+        v for p, v in zip(price_series, volume_series, strict=True) if midpoint < p <= midpoint + adaptive_threshold
+    )
+    q3_vol = sum(
+        v for p, v in zip(price_series, volume_series, strict=True) if midpoint - adaptive_threshold < p <= midpoint
+    )
     q4_vol = sum(v for p, v in zip(price_series, volume_series, strict=True) if p <= midpoint - adaptive_threshold)
 
     total_vol = q1_vol + q2_vol + q3_vol + q4_vol
@@ -1188,17 +1306,22 @@ def reflective_volume_quadrant_engine(
 
     return VolumeQuadrantResult(
         timestamp=datetime.now(UTC).isoformat(),
-        high=round(high, 5), low=round(low, 5), vwap=round(vwap, 5),
+        high=round(high, 5),
+        low=round(low, 5),
+        vwap=round(vwap, 5),
         threshold=round(adaptive_threshold, 6),
         quadrants={"Q1": q1, "Q2": q2, "Q3": q3, "Q4": q4},
-        rvi=rvi, bias=bias,
-        key_support_demand=round(key_zone, 5), liquidity_pool=round(liq, 5),
+        rvi=rvi,
+        bias=bias,
+        key_support_demand=round(key_zone, 5),
+        liquidity_pool=round(liq, 5),
     )
 
 
 # =============================================================================
 # 🔒 SECTION 13: EXECUTION STUB (HARDCODED BLOCK)
 # =============================================================================
+
 
 def execute_reflective_trade(
     pair: str = "UNKNOWN",
@@ -1235,10 +1358,7 @@ def generate_trade_targets(
     rr = max(rr_ratio, 2.0)
     risk = abs(entry_price - stop_loss)
 
-    if direction.lower() in ["buy", "bullish_context"]:
-        tp1 = entry_price + (risk * rr)
-    else:
-        tp1 = entry_price - (risk * rr)
+    tp1 = entry_price + risk * rr if direction.lower() in ["buy", "bullish_context"] else entry_price - risk * rr
 
     return {
         "tp_levels": [round(tp1, 5)],
@@ -1252,6 +1372,7 @@ def generate_trade_targets(
 # =============================================================================
 # 🧩 SECTION 14: ANALYSIS ADAPTER v2.1
 # =============================================================================
+
 
 def build_analysis_payload_v2_1(
     *,
@@ -1272,7 +1393,6 @@ def build_analysis_payload_v2_1(
         "schema_version": "2.1",
         "analysis_mode": "NON_EXECUTION",
         "timestamp": datetime.now(UTC).isoformat(),
-
         "fusion_momentum": {
             "energy": {
                 "mean": quad.mean_energy,
@@ -1289,7 +1409,6 @@ def build_analysis_payload_v2_1(
             },
             "bias_context": trq3d.bias_context.value,
         },
-
         "fusion_structure": {
             "field_state": field.field_state.value,
             "integrity_index": field.integrity_index,
@@ -1301,9 +1420,10 @@ def build_analysis_payload_v2_1(
                 "tii_sym": symmetry.tii_sym if symmetry else 0.0,
                 "polarity": symmetry.polarity if symmetry else 0.0,
                 "phase": symmetry.phase if symmetry else "unknown",
-            } if symmetry else {},
+            }
+            if symmetry
+            else {},
         },
-
         "precision": {
             "tii": {
                 "score": tii.tii,
@@ -1317,22 +1437,24 @@ def build_analysis_payload_v2_1(
                 "gamma_phase": frpc.gamma_phase,
             },
         },
-
         "psychology": {
             "eaf_score": eaf.eaf_score if eaf else None,
             "emotional_state": eaf.detected_state.value if eaf else None,
             "trading_behavior": eaf.detected_behavior.value if eaf else None,
             "can_trade": eaf.can_trade if eaf else None,
             "warnings": eaf.warnings if eaf else [],
-        } if eaf else {},
+        }
+        if eaf
+        else {},
         "discipline": {
             "total_score": wolf.total_score if wolf else None,
             "entry_score": wolf.entry_score if wolf else None,
             "risk_score": wolf.risk_score if wolf else None,
             "psychological_score": wolf.psychological_score if wolf else None,
             "critical_failures": wolf.critical_failures if wolf else [],
-        } if wolf else {},
-
+        }
+        if wolf
+        else {},
         "governance": {
             "execution_allowed": False,
             "binding": "ANALYSIS_ONLY",
@@ -1346,8 +1468,16 @@ def build_analysis_payload_v2_1(
 # 🏭 SECTION 15: FACTORY FUNCTIONS
 # =============================================================================
 
+
 def create_eaf_calculator() -> EAFScoreCalculator:
-    """Create EAF calculator instance."""
+    """Create EAF calculator instance.
+
+    .. deprecated::
+        Returns the multiplicative EAFScoreCalculator.  Prefer
+        ``analysis.layers.L5_psychology_fundamental.L5AnalysisLayer``
+        which uses the convex weighted-average EAF.
+    """
+    warnings.warn(_EAF_DEPRECATION, DeprecationWarning, stacklevel=2)
     return EAFScoreCalculator()
 
 
@@ -1529,8 +1659,7 @@ if __name__ == "__main__":
     logger.info("\n🧩 Building Analysis Payload v2.1...")
     symmetry = SymmetryEvaluation(tii_sym=0.85, polarity=0.002, phase="stable")
     payload = build_analysis_payload_v2_1(
-        tii=tii, frpc=frpc, field=field, quad=quad, trq3d=trq3d,
-        symmetry=symmetry, eaf=eaf, wolf=score
+        tii=tii, frpc=frpc, field=field, quad=quad, trq3d=trq3d, symmetry=symmetry, eaf=eaf, wolf=score
     )
     logger.info("  Schema: %s", payload["schema_version"])
     logger.info("  Mode: %s", payload["analysis_mode"])

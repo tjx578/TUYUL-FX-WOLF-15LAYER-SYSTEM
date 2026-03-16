@@ -24,6 +24,10 @@ from loguru import logger
 
 async def _bootstrap_and_run() -> None:
     """Start health probe first, then import and run ingest service."""
+    from config.logging_bootstrap import configure_loguru_logging
+
+    configure_loguru_logging()
+
     # core.health_probe only depends on stdlib + loguru — safe early import.
     from core.health_probe import HealthProbe
 
@@ -36,10 +40,6 @@ async def _bootstrap_and_run() -> None:
     logger.info("Bootstrap health probe listening on :{}", port)
 
     try:
-        from config.logging_bootstrap import configure_loguru_logging
-
-        configure_loguru_logging()
-
         # Import ingest_service in a thread so heavy module-level imports
         # (numpy, pandas, config YAML, etc.) don't block the event loop.
         # This keeps the health probe responsive during the import.
@@ -75,6 +75,9 @@ async def _bootstrap_and_run() -> None:
 
 
 def run() -> None:
+    from config.logging_bootstrap import configure_loguru_logging
+
+    configure_loguru_logging()
     logger.info("Starting wolf15-ingest service")
     asyncio.run(_bootstrap_and_run())
 
