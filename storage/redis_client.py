@@ -77,7 +77,7 @@ class RedisClient:
         from infrastructure.redis_url import get_redis_url
 
         url = get_redis_url()
-        socket_timeout = int(os.getenv("REDIS_SOCKET_TIMEOUT_SEC", "5"))
+        socket_timeout = int(os.getenv("REDIS_SOCKET_TIMEOUT_SEC", "10"))
 
         # TCP_OVERWINDOW fix: enable keepalive, reduce pool size,
         # add health-check interval to prune idle connections.

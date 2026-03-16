@@ -123,23 +123,30 @@ class WSTokenManager:
 
     def __init__(self, secret_key: str, max_age: int = 3600) -> None:
         super().__init__()
+        if not secret_key:
+            raise ValueError("WS_SECRET_KEY must not be empty")
         self._secret = secret_key
         self._max_age = max_age
-        self._revoked: set[str] = set()
+        self._revoked: set[str] = set()  # revoked session-ids
+        self._revoked_tokens: set[str] = set()  # revoked individual JWT strings
+        # session_id -> {"user_id": str, "tokens": list[str], "expires_at": float}
+        self._sessions: dict[str, dict[str, Any]] = {}
 
-    def create_token(self, user_id: str) -> dict[str, str]:
+    def create_token(self, user_id: str, *, _session_id: str | None = None) -> dict[str, str]:
         """Create a signed JWT for the given user.
 
         Returns:
-            Dict with keys 'token' and 'session_id'.
+            Dict with keys 'token', 'session_id', 'expires_in'.
         """
-        session_id = secrets.token_hex(16)
+        session_id = _session_id or secrets.token_hex(16)
         now = time.time()
+        exp = now + self._max_age
         payload: dict[str, Any] = {
             "sub": user_id,
             "sid": session_id,
+            "jti": secrets.token_hex(8),
             "iat": now,
-            "exp": now + self._max_age,
+            "exp": exp,
         }
         if _jwt_available and _jwt is not None:
             token = _jwt.encode(payload, self._secret, algorithm="HS256")
@@ -150,20 +157,28 @@ class WSTokenManager:
             import base64
 
             token = base64.urlsafe_b64encode(json.dumps(payload).encode()).decode()
-        return {"token": token, "session_id": session_id}
+
+        # Track session
+        if session_id not in self._sessions:
+            self._sessions[session_id] = {
+                "user_id": user_id,
+                "tokens": [],
+                "expires_at": exp,
+            }
+        self._sessions[session_id]["tokens"].append(token)
+        self._sessions[session_id]["expires_at"] = exp
+
+        return {"token": token, "session_id": session_id, "expires_in": str(self._max_age)}
 
     def validate_token(self, token: str) -> SessionInfo:
         """Validate and decode a JWT.
 
-        Args:
-            token: The JWT to validate.
-
-        Returns:
-            SessionInfo with user_id and session details.
-
         Raises:
             AuthError: If token is invalid, expired, or revoked.
         """
+        if token in self._revoked_tokens:
+            raise AuthError(AuthErrorCode.TOKEN_REVOKED.value)
+
         try:
             if _jwt_available and _jwt is not None:
                 payload = cast(
@@ -185,6 +200,10 @@ class WSTokenManager:
         except AuthError:
             raise
         except Exception as exc:
+            # Map known PyJWT exceptions to specific codes
+            exc_name = type(exc).__name__
+            if "ExpiredSignature" in exc_name:
+                raise AuthError(AuthErrorCode.TOKEN_EXPIRED.value) from exc
             raise AuthError(f"{AuthErrorCode.TOKEN_INVALID.value}: {exc}") from exc
 
         session_id: str = payload.get("sid", "")
@@ -199,33 +218,73 @@ class WSTokenManager:
         )
 
     def revoke_session(self, session_id: str) -> None:
-        """Revoke a session by its session_id."""
+        """Revoke a session and all its tokens."""
         self._revoked.add(session_id)
+        rec = self._sessions.get(session_id)
+        if rec:
+            for tok in rec["tokens"]:
+                self._revoked_tokens.add(tok)
 
-    def rotate_token(self, old_token: str) -> dict[str, str]:
-        """Validate old token, revoke it, and issue a new one.
+    def rotate_token(self, session_id: str) -> dict[str, str]:
+        """Issue a new token for an existing session, revoking old tokens.
 
         Args:
-            old_token: The JWT to rotate.
+            session_id: The session to rotate.
 
         Returns:
-            New token dict with 'token' and 'session_id'.
+            New token dict with 'token', 'session_id', 'expires_in'.
+
+        Raises:
+            AuthError: If session is unknown, revoked, or expired.
         """
-        session = self.validate_token(old_token)
-        self.revoke_session(session.session_id)
-        return self.create_token(session.user_id)
+        if session_id in self._revoked:
+            raise AuthError(f"{AuthErrorCode.TOKEN_INVALID.value}: session revoked")
+
+        rec = self._sessions.get(session_id)
+        if not rec:
+            raise AuthError(f"{AuthErrorCode.TOKEN_INVALID.value}: session not found")
+
+        if time.time() > rec["expires_at"]:
+            raise AuthError(f"{AuthErrorCode.TOKEN_INVALID.value}: session expired")
+
+        # Revoke all existing tokens for this session
+        for tok in rec["tokens"]:
+            self._revoked_tokens.add(tok)
+        rec["tokens"].clear()
+
+        # Create new token reusing the same session_id
+        return self.create_token(rec["user_id"], _session_id=session_id)
+
+    def revoke_all_for_user(self, user_id: str) -> int:
+        """Revoke all sessions belonging to a user.
+
+        Returns:
+            Number of sessions revoked.
+        """
+        to_revoke = [
+            sid for sid, rec in self._sessions.items() if rec["user_id"] == user_id and sid not in self._revoked
+        ]
+        for sid in to_revoke:
+            self.revoke_session(sid)
+        return len(to_revoke)
 
 
-async def authenticate_websocket(ws: Any, manager: WSTokenManager) -> SessionInfo:
+async def authenticate_websocket(
+    ws: Any,
+    manager: WSTokenManager,
+    timeout: float = 10.0,
+) -> SessionInfo:
     """Full WebSocket authentication flow.
 
     1. Reject token in URL query string.
     2. Try Sec-WebSocket-Protocol header token.
     3. Fall back to first message JSON auth.
+    4. Send auth_ok on success; send_error_and_close on failure.
 
     Args:
         ws: WebSocket instance.
         manager: WSTokenManager for token validation.
+        timeout: Seconds to wait for auth message (default 10).
 
     Returns:
         SessionInfo on success.
@@ -246,18 +305,41 @@ async def authenticate_websocket(ws: Any, manager: WSTokenManager) -> SessionInf
     # 3. Try first message
     if not token:
         try:
-            raw = await asyncio.wait_for(ws.receive_text(), timeout=10.0)
-            data = json.loads(raw)
-            token = data.get("token")
+            raw = await asyncio.wait_for(ws.receive_text(), timeout=timeout)
         except TimeoutError:
+            await _send_error_and_close(ws, AuthErrorCode.AUTH_TIMEOUT, "Authentication timeout", close_code=1008)
             raise AuthError(AuthErrorCode.AUTH_TIMEOUT.value)  # noqa: B904
-        except Exception:
-            raise AuthError(AuthErrorCode.TOKEN_INVALID.value)  # noqa: B904
 
-    if not token:
+        try:
+            data = json.loads(raw)
+        except (json.JSONDecodeError, ValueError):
+            await _send_error_and_close(ws, AuthErrorCode.NO_TOKEN, "Malformed JSON", close_code=1002)
+            raise AuthError(AuthErrorCode.NO_TOKEN.value)  # noqa: B904
+
+        if not isinstance(data, dict) or "token" not in data:
+            await _send_error_and_close(ws, AuthErrorCode.NO_TOKEN, "Missing token field", close_code=1002)
+            raise AuthError(AuthErrorCode.NO_TOKEN.value)
+
+        token = data["token"]
+
+    # 4. Reject empty / blank tokens
+    if not token or (isinstance(token, str) and not token.strip()):
+        await _send_error_and_close(ws, AuthErrorCode.NO_TOKEN, "Empty token", close_code=1008)
         raise AuthError(AuthErrorCode.NO_TOKEN.value)
 
-    return manager.validate_token(token)
+    # 5. Validate
+    try:
+        session = manager.validate_token(token)
+    except AuthError as exc:
+        error_code = _map_auth_error_to_code(exc)
+        await _send_error_and_close(ws, error_code, str(exc), close_code=1008)
+        raise
+
+    # 6. Send auth_ok confirmation
+    with contextlib.suppress(Exception):
+        await ws.send_text(json.dumps({"type": "auth_ok", "session_id": session.session_id}))
+
+    return session
 
 
 def _map_auth_error_to_code(error: AuthError) -> AuthErrorCode:
