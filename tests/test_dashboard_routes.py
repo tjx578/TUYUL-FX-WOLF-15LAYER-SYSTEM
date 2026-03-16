@@ -15,7 +15,7 @@ import fnmatch
 import json
 import time
 from typing import Any
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
@@ -234,12 +234,21 @@ def _patch_redis() -> Any:
     """Patch Redis client at the infrastructure level so ALL modules get the mock."""
     import infrastructure.redis_client as _rc
 
+    # Sync Redis mock — prevents real connections from storage.redis_client users
+    _sync_mock = MagicMock()
+    _sync_mock.publish.return_value = 0
+    _sync_mock.get.return_value = None
+    _sync_mock.set.return_value = True
+    _sync_mock.ping.return_value = True
+
     with (
         patch.object(_rc._manager, "get_client", new=AsyncMock(return_value=_fake_redis)),
         patch(
             "api.allocation_router._persist_trade_write_through",
             new=AsyncMock(return_value=True),
         ),
+        patch("allocation.signal_service.redis_client", _sync_mock),
+        patch("storage.l12_cache.redis_client", _sync_mock),
     ):
         yield
 
