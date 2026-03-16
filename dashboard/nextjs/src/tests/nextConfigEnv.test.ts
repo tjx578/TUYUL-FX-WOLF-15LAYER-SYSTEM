@@ -1,4 +1,7 @@
+// @vitest-environment node
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { createRequire } from "module";
+import { fileURLToPath } from "url";
 import path from "path";
 
 /**
@@ -10,6 +13,10 @@ import path from "path";
  *   - Resolve the correct apiBase when env vars are provided.
  *   - Fall back to localhost in development when env vars are absent.
  */
+
+const require = createRequire(import.meta.url);
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const CONFIG_PATH = path.resolve(__dirname, "../../next.config.js");
 
