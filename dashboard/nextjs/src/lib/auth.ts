@@ -52,13 +52,25 @@ export function removeToken(): void {
  * Returns undefined when no token is stored so callers can omit the header.
  */
 export function bearerHeader(): string | undefined {
-  const token = getToken();
+  const token = getTransportToken();
   if (token) {
     return `Bearer ${token}`;
   }
 
-  // Service-to-service/dashboard fallback for environments that use static API keys.
+  return undefined;
+}
+
+/**
+ * Token used for API/WS transports.
+ * Prioritizes user JWT, then falls back to static API key for service-mode access.
+ */
+export function getTransportToken(): string | null {
+  const jwt = getToken();
+  if (jwt) {
+    return jwt;
+  }
+
   const apiKey = process.env.NEXT_PUBLIC_API_KEY?.trim();
-  return apiKey ? `Bearer ${apiKey}` : undefined;
+  return apiKey || null;
 }
 

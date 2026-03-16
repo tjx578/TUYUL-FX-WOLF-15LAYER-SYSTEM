@@ -4,7 +4,7 @@ import { useEffect, useRef, useCallback } from "react";
 import { useTradeDeskStore } from "@/store/useTradeDeskStore";
 import { TradeDeskResponseSchema } from "@/schema/tradeDeskSchema";
 import type { TradeDeskTrade } from "@/schema/tradeDeskSchema";
-import { bearerHeader } from "@/lib/auth";
+import { bearerHeader, getTransportToken } from "@/lib/auth";
 
 // ─── useLiveTrades ───────────────────────────────────────────
 // Connects to /ws/trades and patches the TradeDeskStore on each event.
@@ -19,9 +19,10 @@ export function useLiveTrades() {
   const connect = useCallback(() => {
     if (typeof window === "undefined") return;
 
-    const token = sessionStorage.getItem("api_key") ?? "";
+    const token = getTransportToken() ?? "";
     const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-    const url = `${protocol}//${window.location.host}/ws/trades?token=${encodeURIComponent(token)}`;
+    const tokenQuery = token ? `?token=${encodeURIComponent(token)}` : "";
+    const url = `${protocol}//${window.location.host}/ws/trades${tokenQuery}`;
 
     const ws = new WebSocket(url);
     wsRef.current = ws;
@@ -80,9 +81,10 @@ export function useLivePrices() {
   const connect = useCallback(() => {
     if (typeof window === "undefined") return;
 
-    const token = sessionStorage.getItem("api_key") ?? "";
+    const token = getTransportToken() ?? "";
     const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-    const url = `${protocol}//${window.location.host}/ws/prices?token=${encodeURIComponent(token)}`;
+    const tokenQuery = token ? `?token=${encodeURIComponent(token)}` : "";
+    const url = `${protocol}//${window.location.host}/ws/prices${tokenQuery}`;
 
     const ws = new WebSocket(url);
     wsRef.current = ws;
