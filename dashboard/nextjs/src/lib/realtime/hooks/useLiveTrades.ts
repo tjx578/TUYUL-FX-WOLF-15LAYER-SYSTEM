@@ -21,6 +21,9 @@ interface UseLiveTradesResult {
  * Stream:    /ws/trades — individual Trade delta events.
  * Merge:     mergeList — upserts by trade.id.
  * Stale:     8s no message → isStale = true.
+ *
+ * Race-safe: once WS delivers data, stale REST snapshots are ignored to prevent
+ * older REST responses from overwriting newer WS deltas.
  */
 export function useLiveTrades(
   initialTrades: Trade[] = [],
@@ -33,6 +36,7 @@ export function useLiveTrades(
   const [lastUpdatedAt, setLastUpdatedAt] = useState<number | null>(null);
 
   const staleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const wsActiveRef = useRef(false);
 
   // Sync initial snapshot when SWR resolves
   useEffect(() => {
@@ -52,6 +56,8 @@ export function useLiveTrades(
 
   useEffect(() => {
     if (!enabled) return;
+    // Reset WS tracking on fresh connection cycle
+    wsActiveRef.current = false;
 
     const controls = connectLiveUpdates({
       path: "/ws/trades",
@@ -69,10 +75,16 @@ export function useLiveTrades(
         if (s === "LIVE") resetStaleTimer();
         if (s === "DISCONNECTED" || s === "DEGRADED") {
           if (staleTimerRef.current) clearTimeout(staleTimerRef.current);
+          // Allow REST to sync again after disconnect
+          wsActiveRef.current = false;
         }
       },
       onDegradation: () => setStatus("DEGRADED"),
-      onSeqGap: () => onSeqGap?.(),
+      onSeqGap: () => {
+        // On gap, allow REST to re-sync since we may have missed data
+        wsActiveRef.current = false;
+        onSeqGap?.();
+      },
       onError: () => setStatus("DEGRADED"),
     });
 

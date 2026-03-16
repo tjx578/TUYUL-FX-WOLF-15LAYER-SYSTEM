@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
-const COOKIE_NAME = "wolf15_session_token";
+const COOKIE_NAME = "wolf15_session";
 const MAX_AGE = 60 * 60 * 8; // 8 hours
 
 /**

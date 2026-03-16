@@ -70,10 +70,10 @@ export function useLiveTrades() {
   }, [connect]);
 }
 
-// ─── useLivePrices ───────────────────────────────────────────
-// Connects to /ws/prices and returns a ref map of current prices.
+// ─── useTradeDeskLivePrices ──────────────────────────────────
+// Connects to /ws/prices via connectLiveUpdates() and returns a ref map.
 
-export function useLivePrices() {
+export function useTradeDeskLivePrices() {
   const pricesRef = useRef<Record<string, number>>({});
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -96,10 +96,10 @@ export function useLivePrices() {
         if (payload.symbol && typeof payload.price === "number") {
           pricesRef.current = {
             ...pricesRef.current,
-            [payload.symbol]: payload.price,
+            [payload.symbol as string]: payload.price as number,
           };
         } else if (payload.prices && typeof payload.prices === "object") {
-          pricesRef.current = { ...pricesRef.current, ...payload.prices };
+          pricesRef.current = { ...pricesRef.current, ...(payload.prices as Record<string, number>) };
         }
       } catch {
         // Ignore
@@ -116,14 +116,6 @@ export function useLivePrices() {
     };
   }, []);
 
-  useEffect(() => {
-    connect();
-    return () => {
-      if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
-      wsRef.current?.close();
-    };
-  }, [connect]);
-
   return pricesRef;
 }
 
@@ -133,6 +125,9 @@ export function useLivePrices() {
 export function useTradeDeskState() {
   const store = useTradeDeskStore();
   const applyDeskSnapshot = useTradeDeskStore((s) => s.applyDeskSnapshot);
+
+  // Track whether WS has pushed data — prevents stale REST snapshot from overwriting
+  const wsActiveRef = useRef(false);
 
   // Initial REST fetch
   useEffect(() => {
@@ -151,7 +146,10 @@ export function useTradeDeskState() {
         const json = await res.json();
         const parsed = TradeDeskResponseSchema.safeParse(json);
         if (!cancelled && parsed.success) {
-          applyDeskSnapshot(parsed.data);
+          // Only apply REST snapshot if WS hasn't already delivered fresher data
+          if (!wsActiveRef.current) {
+            applyDeskSnapshot(parsed.data);
+          }
         }
       } catch {
         // Silently fail initial fetch — WS will provide updates
@@ -160,8 +158,8 @@ export function useTradeDeskState() {
 
     fetchDesk();
 
-    // Re-fetch every 10s as a fallback
-    const interval = setInterval(fetchDesk, 10_000);
+    // Re-fetch every 30s as a fallback (was 10s; reduced since WS is reliable now)
+    const interval = setInterval(fetchDesk, 30_000);
 
     return () => {
       cancelled = true;
@@ -169,7 +167,7 @@ export function useTradeDeskState() {
     };
   }, [applyDeskSnapshot]);
 
-  // Start WS subscriptions
+  // Start WS subscriptions (now using connectLiveUpdates with proper reconnect)
   useLiveTrades();
 
   return {

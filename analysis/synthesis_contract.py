@@ -34,8 +34,12 @@ class SynthesisContractV2:
                 "symbol": symbol,
                 "latency_ms": round(system_latency_ms, 2),
                 "contract_version": 2,
+                "formula_versions": {
+                    "tii": "analysis.l8_tii._compute_tii:v1",
+                    "frpc": "analysis.formulas.frpc_formula.calculate_frpc:v1",
+                    "wolf_30": "analysis.layers.L4_session_scoring:wolf30-v1",
+                },
             },
-
             "macro": {
                 "vix_level": float(macro_state.get("vix_level", 15.0)),
                 "vix_regime": str(macro_state.get("vix_regime", "STRESSED")),
@@ -46,7 +50,6 @@ class SynthesisContractV2:
                 "volatility_multiplier": float(macro_state.get("volatility_multiplier", 1.0)),
                 "risk_multiplier": float(macro_state.get("risk_multiplier", 1.0)),
             },
-
             "layers": {
                 "L1": layer_results.get("L1", {}),
                 "L2": layer_results.get("L2", {}),
@@ -60,7 +63,6 @@ class SynthesisContractV2:
                 "L10": layer_results.get("L10", {}),
                 "L11": layer_results.get("L11", {}),
             },
-
             "scores": {
                 "fta_score": float(layer_results.get("L4", {}).get("fta_score", 0)),
                 "monte_carlo_win": float(layer_results.get("L7", {}).get("win_probability", 0)),
@@ -68,7 +70,6 @@ class SynthesisContractV2:
                 "integrity_index": float(layer_results.get("L8", {}).get("integrity_index", 0)),
                 "conf12": float(layer_results.get("L11", {}).get("conf12", 0)),
             },
-
             "execution": {
                 "direction": str(execution_data.get("direction", "NONE")),
                 "entry": float(execution_data.get("entry", 0)),
@@ -77,7 +78,6 @@ class SynthesisContractV2:
                 "rr_ratio": float(execution_data.get("rr_ratio", 0)),
                 "lot_size": float(execution_data.get("lot_size", 0)),
             },
-
             "risk": {
                 "current_drawdown_pct": float(risk_data.get("current_drawdown_pct", 0)),
                 "propfirm_compliant": bool(risk_data.get("propfirm_compliant", True)),
@@ -85,14 +85,8 @@ class SynthesisContractV2:
                 "macro_regime_state": int(macro_state.get("regime_state", 1)),
                 "risk_multiplier_applied": float(macro_state.get("risk_multiplier", 1.0)),
             },
-
             "validation": {
-                "all_layers_valid": bool(
-                    all(
-                        layer_results.get(f"L{i}", {}).get("valid", True)
-                        for i in range(1, 12)
-                    )
-                ),
+                "all_layers_valid": bool(all(layer_results.get(f"L{i}", {}).get("valid", True) for i in range(1, 12))),
                 "macro_integrated": macro_state is not None,
                 "execution_ready": bool(execution_data.get("entry", 0) > 0),
             },

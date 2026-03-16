@@ -157,10 +157,9 @@ html, body {
 .badge-green  { background: var(--green-glow);  color: var(--green);  border: 1px solid var(--border-success); }
 .badge-red    { background: var(--red-glow);    color: var(--red);    border: 1px solid var(--border-danger);  }
 .badge-yellow { background: var(--yellow-glow); color: var(--yellow); border: 1px solid rgba(255,215,64,0.25); }
-.badge-blue   { background: var(--blue-glow);   color: var(--blue);   border: 1px solid rgba(68,138,255,0.25); }
+.badge-blue   { background: var(--blue-glow);   color: var(--blue);   border: 1px solid var(--border-accent);  }
 .badge-cyan   { background: var(--cyan-glow);   color: var(--cyan);   border: 1px solid rgba(0,229,255,0.25);  }
 .badge-gold   { background: var(--gold-muted);  color: var(--gold);   border: 1px solid rgba(245,166,35,0.28); }
-.badge-blue   { background: var(--blue-glow);   color: var(--blue);   border: 1px solid var(--border-accent);  }
 .badge-muted  { background: rgba(74,99,122,0.12); color: var(--text-muted); border: 1px solid var(--border-default); }
 
 /* ─── BUTTONS ─── */

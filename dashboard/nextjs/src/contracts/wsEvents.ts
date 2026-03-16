@@ -38,9 +38,91 @@ export interface PreferencesUpdatedEvent {
   payload: OperatorPreferences;
 }
 
+// ── Backend-native event types (normalised by realtimeClient) ──
+
+export interface VerdictUpdatedEvent {
+  type: "VerdictUpdated";
+  payload: { pair: string; verdict: Record<string, unknown> };
+}
+
+export interface VerdictSnapshotEvent {
+  type: "VerdictSnapshot";
+  payload: { pair: string | null; verdicts: Record<string, Record<string, unknown>> };
+}
+
+export interface PipelineUpdatedEvent {
+  type: "PipelineUpdated";
+  payload: { pair: string; pipeline: Record<string, unknown> };
+}
+
+export interface PingEvent {
+  type: "ping";
+  ts?: number;
+}
+
+// ── Domain-specific WS endpoint events ─────────────────────────
+
+export interface PriceUpdatedEvent {
+  type: "PriceUpdated";
+  payload: Record<string, unknown>;
+}
+
+export interface PricesSnapshotEvent {
+  type: "PricesSnapshot";
+  payload: Record<string, unknown>;
+}
+
+export interface RiskUpdatedEvent {
+  type: "RiskUpdated";
+  payload: Record<string, unknown>;
+}
+
+export interface SignalUpdatedEvent {
+  type: "SignalUpdated";
+  payload: Record<string, unknown>;
+}
+
+export interface TradeSnapshotEvent {
+  type: "TradeSnapshot";
+  payload: Record<string, unknown>;
+}
+
+export interface TradeUpdatedEvent {
+  type: "TradeUpdated";
+  payload: Record<string, unknown>;
+}
+
+export interface CandleSnapshotEvent {
+  type: "CandleSnapshot";
+  payload: Record<string, unknown>;
+}
+
+export interface CandleFormingEvent {
+  type: "CandleForming";
+  payload: Record<string, unknown>;
+}
+
+export interface EquityUpdatedEvent {
+  type: "EquityUpdated";
+  payload: Record<string, unknown>;
+}
+
 export type WsEvent =
   | PipelineResultUpdatedEvent
   | ExecutionStateUpdatedEvent
   | RiskStateUpdatedEvent
   | SystemStatusUpdatedEvent
-  | PreferencesUpdatedEvent;
+  | PreferencesUpdatedEvent
+  | VerdictUpdatedEvent
+  | VerdictSnapshotEvent
+  | PipelineUpdatedEvent
+  | PingEvent
+  | PriceUpdatedEvent
+  | PricesSnapshotEvent
+  | RiskUpdatedEvent
+  | SignalUpdatedEvent
+  | TradeSnapshotEvent
+  | TradeUpdatedEvent
+  | CandleSnapshotEvent
+  | CandleFormingEvent
+  | EquityUpdatedEvent;

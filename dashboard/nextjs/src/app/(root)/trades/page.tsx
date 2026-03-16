@@ -18,7 +18,7 @@ import {
   ExposureSummaryPanel,
   ExecutionAnomalyBanner,
 } from "@/components/trade-desk";
-import { useTradeDeskState, useLivePrices } from "@/hooks/useTradeDeskHooks";
+import { useTradeDeskState, useTradeDeskLivePrices } from "@/hooks/useTradeDeskHooks";
 import type { TradeDeskTrade } from "@/schema/tradeDeskSchema";
 
 // ── KPI summary ───────────────────────────────────────────────
@@ -55,16 +55,16 @@ export default function TradeDeskPage() {
   } = useTradeDeskState();
 
   // Live prices (ref-based, no re-render per tick)
-  useLivePrices();
+  useTradeDeskLivePrices();
 
   // Current tab trades
   const currentTrades: TradeDeskTrade[] = useMemo(() => {
     switch (activeTab) {
-      case "pending":   return pendingTrades;
-      case "open":      return openTrades;
-      case "closed":    return closedTrades;
+      case "pending": return pendingTrades;
+      case "open": return openTrades;
+      case "closed": return closedTrades;
       case "cancelled": return cancelledTrades;
-      default:          return openTrades;
+      default: return openTrades;
     }
   }, [activeTab, pendingTrades, openTrades, closedTrades, cancelledTrades]);
 

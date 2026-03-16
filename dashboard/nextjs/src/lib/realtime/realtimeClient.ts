@@ -18,6 +18,35 @@ import type { SystemStatusView } from "@/contracts/wsEvents";
 import { getTransportToken } from "@/lib/auth";
 import { getWsBaseUrl } from "@/lib/env";
 
+// ─── BACKEND ENVELOPE NORMALISATION ──────────────────────────
+// Backend _ws_event() uses `event_type` field; frontend schema discriminates on `type`.
+// Map backend dotted event names → PascalCase type discriminators.
+
+const EVENT_TYPE_MAP: Record<string, string> = {
+  "verdict.update": "VerdictUpdated",
+  "verdict.snapshot": "VerdictSnapshot",
+  "pipeline.update": "PipelineUpdated",
+  "price.snapshot": "PricesSnapshot",
+  "price.tick": "PriceUpdated",
+  "risk.state": "RiskUpdated",
+  "signals.update": "SignalUpdated",
+  "trade.snapshot": "TradeSnapshot",
+  "trade.update": "TradeUpdated",
+  "candle.snapshot": "CandleSnapshot",
+  "candle.forming": "CandleForming",
+  "equity.update": "EquityUpdated",
+};
+
+function normalizeWsEvent(raw: Record<string, unknown>): Record<string, unknown> {
+  // Backend envelope has event_type + payload wrapper
+  if (typeof raw.event_type === "string" && raw.payload !== undefined) {
+    const mapped = EVENT_TYPE_MAP[raw.event_type] ?? raw.event_type;
+    return { ...raw, type: mapped };
+  }
+  // Direct messages (ping, auth_error) already have `type`
+  return raw;
+}
+
 // ─── CONNECTION STATUS MACHINE ───────────────────────────────
 
 export type WsConnectionStatus =
@@ -53,6 +82,9 @@ interface ConnectLiveUpdatesOptions {
   /** Fired when a monotonic seq gap is detected. Callers should re-fetch the
    *  full REST snapshot to fill the gap. `missed` = number of lost messages. */
   onSeqGap?: (missed: number) => void;
+  /** Fired for every parsed JSON message before Zod validation.
+   *  Useful for custom event types not in the WsEventSchema (e.g. trade desk events). */
+  onRawMessage?: (data: Record<string, unknown>) => void;
 }
 
 // ─── CONNECT LIVE UPDATES ────────────────────────────────────
@@ -60,7 +92,7 @@ interface ConnectLiveUpdatesOptions {
 export function connectLiveUpdates(
   options: ConnectLiveUpdatesOptions
 ): WsControls {
-  const { path, onEvent, onError, onStatusChange, onDegradation, onSeqGap } = options;
+  const { path, onEvent, onError, onStatusChange, onDegradation, onSeqGap, onRawMessage } = options;
 
   let socket: WebSocket | null = null;
   let reconnectAttempt = 0;
@@ -108,6 +140,9 @@ export function connectLiveUpdates(
       lastMessageAt = Date.now();
       // Reset seq tracking on fresh connection (server may have restarted)
       lastSeq = 0;
+      if (process.env.NODE_ENV === "development") {
+        console.debug(`[WS] CONNECTED path=${path} ts=${new Date().toISOString()}`);
+      }
       onStatusChange?.("LIVE");
       startStaleTimer();
     };
@@ -119,6 +154,16 @@ export function connectLiveUpdates(
 
       try {
         const parsed = JSON.parse(msg.data as string);
+
+        // ── WS event type diagnostics ──
+        if (process.env.NODE_ENV === "development") {
+          const evtType = parsed.type ?? "UNKNOWN";
+          const seq = typeof parsed.seq === "number" ? parsed.seq : "-";
+          console.debug(`[WS] event=${evtType} seq=${seq} ts=${new Date().toISOString()}`);
+        }
+
+        // ── Fire raw handler before Zod validation ──
+        onRawMessage?.(parsed);
 
         // ── Monotonic seq# gap detection ──
         const seq = typeof parsed.seq === "number" ? parsed.seq : 0;
@@ -157,6 +202,9 @@ export function connectLiveUpdates(
 
     socket.onclose = () => {
       if (intentionallyClosed) return;
+      if (process.env.NODE_ENV === "development") {
+        console.debug(`[WS] DISCONNECTED path=${path} attempt=${reconnectAttempt} ts=${new Date().toISOString()}`);
+      }
       onStatusChange?.("DISCONNECTED");
       clearStaleTimer();
       scheduleReconnect();
