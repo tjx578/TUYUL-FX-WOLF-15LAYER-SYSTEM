@@ -24,7 +24,14 @@ export default function DegradationBanner() {
     reasonLower.includes("etimedout") ||
     reasonLower.includes("enetunreach");
 
-  const isDegraded = mode === "DEGRADED" || wsStatus === "RECONNECTING" || wsStatus === "DISCONNECTED";
+  const signalWsStatus = useSystemStore((s) => s.signalWsStatus);
+
+  const isDegraded =
+    mode === "DEGRADED" ||
+    wsStatus === "RECONNECTING" ||
+    wsStatus === "DISCONNECTED" ||
+    signalWsStatus === "DISCONNECTED" ||
+    signalWsStatus === "DEGRADED";
 
   // Track stale duration
   useEffect(() => {

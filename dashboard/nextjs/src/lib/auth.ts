@@ -60,9 +60,9 @@ export function bearerHeader(): string | undefined {
 
   if (typeof window !== "undefined" && process.env.NODE_ENV === "production") {
     console.error(
-      "[auth] bearerHeader(): no JWT and no NEXT_PUBLIC_API_KEY. " +
-      "All authenticated API calls will fail. " +
-      "Set NEXT_PUBLIC_API_KEY in Vercel env vars or log in."
+      "[auth] bearerHeader(): no JWT available. " +
+      "REST calls are still auth-injected by server middleware, " +
+      "but direct client-to-backend requests will fail. Log in to resolve."
     );
   }
 
@@ -71,16 +71,33 @@ export function bearerHeader(): string | undefined {
 
 /**
  * Token used for API/WS transports.
- * Prioritizes user JWT, then falls back to static API key for service-mode access.
+ * Returns the user JWT from localStorage, or null.
+ *
+ * NOTE: The static API key fallback (NEXT_PUBLIC_API_KEY) has been removed
+ * to prevent leaking the key into the client JavaScript bundle.
+ * For REST, Next.js middleware injects auth server-side.
+ * For WebSocket, use fetchWsTicket() which calls a server route.
  */
 export function getTransportToken(): string | null {
-  const jwt = getToken();
-  if (jwt) {
-    return jwt;
-  }
+  return getToken();
+}
 
-  const apiKeyRaw = process.env.NEXT_PUBLIC_API_KEY;
-  const apiKey = typeof apiKeyRaw === "string" ? apiKeyRaw.trim() : "";
-  return apiKey || null;
+/**
+ * Fetch a WebSocket auth ticket from the server.
+ * The server route reads the session cookie or the server-only API_KEY
+ * env var — neither is exposed to the client bundle.
+ */
+export async function fetchWsTicket(): Promise<string | null> {
+  const jwt = getToken();
+  if (jwt) return jwt;
+
+  try {
+    const res = await fetch("/api/auth/ws-ticket");
+    if (!res.ok) return null;
+    const data = await res.json() as { token?: string };
+    return data.token ?? null;
+  } catch {
+    return null;
+  }
 }
 

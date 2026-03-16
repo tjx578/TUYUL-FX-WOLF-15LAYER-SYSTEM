@@ -8,6 +8,8 @@
 
 import { SWRConfig } from "swr";
 import { HttpError } from "@/lib/fetcher";
+import { useAuthStore } from "@/store/useAuthStore";
+import { useSessionStore } from "@/store/useSessionStore";
 
 export function Providers({ children }: { children: React.ReactNode }) {
   return (
@@ -18,6 +20,13 @@ export function Providers({ children }: { children: React.ReactNode }) {
         dedupingInterval: 15_000,
         shouldRetryOnError: true,
         errorRetryCount: 3,
+        onError: (error) => {
+          // Global 401 handler: clear stale auth state and trigger session expiry
+          if (error instanceof HttpError && error.status === 401) {
+            useAuthStore.getState().clear();
+            useSessionStore.getState().setExpiredReason("SESSION_EXPIRED");
+          }
+        },
         onErrorRetry: (error, _key, _config, revalidate, { retryCount }) => {
           // Skip retry for auth errors — they are not transient
           if (error instanceof HttpError && (error.status === 401 || error.status === 403)) {

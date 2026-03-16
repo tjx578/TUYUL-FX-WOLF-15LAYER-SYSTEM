@@ -2,10 +2,7 @@
 
 // ============================================================
 // TUYUL FX Wolf-15 — VerdictCard
-// framer-motion audit: motion.div/motion.span use stable keys
-// ("W", "TII", "FRPC") so initial/animate only fire on mount,
-// not on re-render. Verdict updates are warm-path (~15s stale
-// threshold), not tick-rate. No hot-path concern.
+// Gate glow + breakdowns use CSS transitions (no framer-motion).
 // ============================================================
 
 import type { L12Verdict, VerdictType } from "@/types";
@@ -13,7 +10,6 @@ import { formatTime } from "@/lib/timezone";
 import Panel from "@/components/ui/Panel";
 import StatusBadge from "@/components/ui/StatusBadge";
 import Button from "@/components/ui/Button";
-import { motion } from "framer-motion";
 import { useLivePulse } from "@/hooks/useLivePulse";
 
 interface VerdictCardProps {
@@ -174,11 +170,8 @@ export function VerdictCard({
             const threshold = label === "W" ? 22 : label === "TII" ? 0.75 : 0.70;
             const passing = (value ?? 0) >= threshold;
             return (
-              <motion.div
+              <div
                 key={label}
-                initial={{ opacity: 0, scale: 0.8 }}
-                animate={{ opacity: 1, scale: 1 }}
-                transition={{ delay: index * 0.08, duration: 0.3, ease: "easeOut" }}
                 style={{
                   display: "flex",
                   alignItems: "center",
@@ -187,18 +180,18 @@ export function VerdictCard({
                   borderRadius: 6,
                   background: passing ? "rgba(0,245,160,0.08)" : "rgba(255,255,255,0.04)",
                   border: `1px solid ${passing ? "rgba(0,245,160,0.25)" : "rgba(255,255,255,0.08)"}`,
+                  transition: "background 0.3s ease, border-color 0.3s ease",
                 }}
               >
-                <motion.div
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: passing ? 1 : 0.3 }}
-                  transition={{ delay: index * 0.08 + 0.15, duration: 0.25 }}
+                <div
                   style={{
                     width: 6,
                     height: 6,
                     borderRadius: "50%",
                     background: passing ? "var(--green)" : "var(--text-muted)",
                     boxShadow: passing ? "0 0 6px rgba(0,245,160,0.8)" : "none",
+                    opacity: passing ? 1 : 0.3,
+                    transition: "opacity 0.3s ease, background 0.3s ease, box-shadow 0.3s ease",
                   }}
                 />
                 <span style={{
@@ -209,29 +202,23 @@ export function VerdictCard({
                 }}>
                   {label}:{value?.toFixed(0) ?? "—"}
                 </span>
-              </motion.div>
+              </div>
             );
           })}
           {verdict.scores.regime && (
-            <motion.span
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ delay: 0.32, duration: 0.3 }}
+            <span
               className="badge badge-muted"
               style={{ fontSize: 9, marginLeft: "auto" }}
             >
               {verdict.scores.regime}
-            </motion.span>
+            </span>
           )}
         </div>
       )}
 
       {/* ── Wolf 30-Point Breakdown ── */}
       {verdict.scores?.f_score != null && (
-        <motion.div
-          initial={{ opacity: 0, y: 4 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.4, duration: 0.3 }}
+        <div
           style={{
             display: "flex",
             gap: 4,
@@ -251,7 +238,7 @@ export function VerdictCard({
               {label}:{value ?? 0}/{max}
             </span>
           ))}
-        </motion.div>
+        </div>
       )}
 
       {/* ── RR ── */}

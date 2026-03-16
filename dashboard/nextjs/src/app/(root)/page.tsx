@@ -991,19 +991,35 @@ export default function CommandCenterPage() {
               >
                 RECENT ALERTS
               </div>
-              {recentAlerts.map((a, idx) => (
-                <div
-                  key={idx}
-                  style={{
-                    fontSize: 11,
-                    color: "var(--text-secondary)",
-                    borderLeft: "2px solid var(--border-default)",
-                    paddingLeft: 8,
-                  }}
-                >
-                  {typeof a === "string" ? a : (a as { message?: string }).message ?? JSON.stringify(a)}
-                </div>
-              ))}
+              {recentAlerts.map((a, idx) => {
+                let text: string;
+                if (typeof a === "string") {
+                  text = a;
+                } else {
+                  text = (a as { message?: string }).message ?? JSON.stringify(a);
+                }
+                // Truncate overly long alert payloads to prevent layout break
+                const MAX_ALERT_LEN = 300;
+                if (text.length > MAX_ALERT_LEN) {
+                  text = text.slice(0, MAX_ALERT_LEN) + "…";
+                }
+                return (
+                  <div
+                    key={idx}
+                    style={{
+                      fontSize: 11,
+                      color: "var(--text-secondary)",
+                      borderLeft: "2px solid var(--border-default)",
+                      paddingLeft: 8,
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {text}
+                  </div>
+                );
+              })}
             </div>
           )}
 

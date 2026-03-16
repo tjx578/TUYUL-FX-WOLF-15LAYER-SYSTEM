@@ -272,6 +272,17 @@ export function PipelinePanel({ pair = "EURUSD" }: { pair?: string }) {
   }
 
   const pipeline = data as PipelineData;
+
+  if (!pipeline?.layers || !Array.isArray(pipeline.layers)) {
+    return (
+      <Card title="WOLF-15 PIPELINE" sub={pair} accentColor="warn" icon="◈">
+        <div style={{ textAlign: "center", padding: 24, color: T.red }}>
+          <M s={10} c={T.red} w={600}>Invalid pipeline data</M>
+        </div>
+      </Card>
+    );
+  }
+
   const passCount = pipeline.layers.filter((l) => l.status === "pass").length;
   const totalCount = pipeline.layers.length;
   const allPass = passCount === totalCount;
