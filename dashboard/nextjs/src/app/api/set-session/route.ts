@@ -16,8 +16,14 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   const body = await request.json().catch(() => ({})) as { token?: string };
   const token = body.token?.trim();
 
-  if (!token) {
-    return NextResponse.json({ error: "token required" }, { status: 400 });
+  if (!token || token.length < 10 || token.length > 4096) {
+    return NextResponse.json({ error: "invalid token" }, { status: 400 });
+  }
+
+  // Validate JWT structure (header.payload.signature)
+  const parts = token.split(".");
+  if (parts.length !== 3) {
+    return NextResponse.json({ error: "malformed token" }, { status: 400 });
   }
 
   const response = NextResponse.json({ ok: true });

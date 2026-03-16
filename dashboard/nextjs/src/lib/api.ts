@@ -202,10 +202,11 @@ export function useActiveTrades() {
   return { data, isLoading, isError: !!error, error, mutate };
 }
 
-export function useAllVerdicts() {
+export function useAllVerdicts(options?: { refreshInterval?: number }) {
   const { data, error, isLoading, mutate } = useSWR<L12Verdict[] | Record<string, L12Verdict>>(
     API_ENDPOINTS.verdictAll,
-    fetcher
+    fetcher,
+    options?.refreshInterval ? { refreshInterval: options.refreshInterval } : undefined
   );
   const normalized = normalizeVerdictResponse(data);
   return { data: normalized, isLoading, isError: !!error, error, mutate };

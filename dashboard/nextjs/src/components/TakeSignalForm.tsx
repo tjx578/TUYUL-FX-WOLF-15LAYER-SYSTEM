@@ -4,7 +4,7 @@
 // TUYUL FX Wolf-15 — TakeSignalForm (modal overlay)
 // ============================================================
 
-import { useState } from "react";
+import { useState, useRef } from "react";
 import type { L12Verdict, Account } from "@/types";
 import {
   previewRiskMulti,
@@ -36,6 +36,7 @@ export function TakeSignalForm({
   const [previewing, setPreviewing] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const submittingRef = useRef(false);
 
   const isExecutable = verdict.verdict.toString().startsWith("EXECUTE");
   const direction: "BUY" | "SELL" | undefined =
@@ -77,6 +78,7 @@ export function TakeSignalForm({
   }
 
   async function handleTake() {
+    if (submittingRef.current) return;
     if (!selectedAccountIds.length) return;
     if (!direction) {
       setError("Signal direction unknown — cannot execute");
@@ -92,6 +94,7 @@ export function TakeSignalForm({
       return;
     }
 
+    submittingRef.current = true;
     setLoading(true);
     setError(null);
     try {
@@ -111,6 +114,7 @@ export function TakeSignalForm({
       setError(e instanceof Error ? e.message : "Failed to take signal");
     } finally {
       setLoading(false);
+      submittingRef.current = false;
     }
   }
 
