@@ -8,6 +8,8 @@ const STATUS_STYLES: Record<string, { bg: string; color: string; border: string 
     OPEN: { bg: "var(--green-glow)", color: "var(--green)", border: "var(--border-success)" },
     PENDING: { bg: "var(--yellow-glow, rgba(255,200,0,0.08))", color: "var(--yellow, #ffc800)", border: "var(--border-warning, rgba(255,200,0,0.25))" },
     INTENDED: { bg: "var(--blue-glow, rgba(56,189,248,0.08))", color: "var(--blue, #38bdf8)", border: "var(--border-info, rgba(56,189,248,0.25))" },
+    PARTIALLY_FILLED: { bg: "var(--orange-glow, rgba(251,146,60,0.08))", color: "var(--orange, #fb923c)", border: "var(--border-warning, rgba(251,146,60,0.25))" },
+    REJECTED: { bg: "var(--red-glow, rgba(255,77,79,0.08))", color: "var(--red, #ff4d4f)", border: "var(--border-danger, rgba(255,77,79,0.25))" },
     CLOSED: { bg: "var(--bg-elevated)", color: "var(--text-muted)", border: "var(--border-subtle)" },
     CANCELLED: { bg: "var(--bg-elevated)", color: "var(--text-muted)", border: "var(--border-subtle)" },
     SKIPPED: { bg: "var(--bg-elevated)", color: "var(--text-muted)", border: "var(--border-subtle)" },

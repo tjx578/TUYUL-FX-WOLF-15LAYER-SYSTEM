@@ -103,9 +103,12 @@ function AccountGridCard({
   return (
     <div
       role="listitem"
+      tabIndex={0}
       className="card cursor-pointer transition-all duration-200 hover:border-[var(--blue)]"
       style={{ padding: 16, display: "flex", flexDirection: "column", gap: 10 }}
       onClick={onClick}
+      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onClick(); } }}
+      aria-label={`Account ${account.account_name}, ${account.broker}, balance $${account.balance?.toLocaleString()}`}
     >
       {/* Top row: name + readiness */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
@@ -124,7 +127,7 @@ function AccountGridCard({
                   fontWeight: 700,
                   padding: "1px 4px",
                   borderRadius: 3,
-                  background: "var(--blue)15",
+                  background: "rgba(26, 110, 255, 0.08)",
                   color: "var(--blue)",
                 }}
               >
@@ -160,9 +163,9 @@ function AccountGridCard({
               fontWeight: 700,
               padding: "2px 6px",
               borderRadius: 9999,
-              background: "var(--accent, var(--yellow))12",
+              background: "rgba(26, 110, 255, 0.07)",
               color: "var(--accent, var(--yellow))",
-              border: "1px solid var(--accent, var(--yellow))20",
+              border: "1px solid rgba(26, 110, 255, 0.12)",
             }}
           >
             {account.prop_firm_code?.toUpperCase() ?? "PROP"}
@@ -175,9 +178,9 @@ function AccountGridCard({
               fontWeight: 700,
               padding: "2px 6px",
               borderRadius: 9999,
-              background: "var(--red)12",
+              background: "rgba(255, 61, 87, 0.07)",
               color: "var(--red)",
-              border: "1px solid var(--red)20",
+              border: "1px solid rgba(255, 61, 87, 0.12)",
             }}
           >
             CRITICAL
@@ -190,9 +193,9 @@ function AccountGridCard({
               fontWeight: 700,
               padding: "2px 6px",
               borderRadius: 9999,
-              background: "var(--yellow)12",
+              background: "rgba(255, 215, 64, 0.07)",
               color: "var(--yellow)",
-              border: "1px solid var(--yellow)20",
+              border: "1px solid rgba(255, 215, 64, 0.12)",
             }}
           >
             WARNING
@@ -205,7 +208,7 @@ function AccountGridCard({
               fontWeight: 700,
               padding: "2px 6px",
               borderRadius: 9999,
-              background: "var(--red)08",
+              background: "rgba(255, 61, 87, 0.03)",
               color: "var(--red)",
             }}
           >

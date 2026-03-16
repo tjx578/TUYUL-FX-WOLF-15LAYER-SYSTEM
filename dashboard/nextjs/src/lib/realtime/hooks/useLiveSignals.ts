@@ -55,8 +55,9 @@ export function useLiveSignals(
     const controls = connectLiveUpdates({
       path: "/ws/verdict",
       onEvent: (event) => {
-        if (event.type === "PipelineResultUpdated") {
+        if (event.type === "PipelineResultUpdated" && event.payload) {
           const payload = event.payload as unknown as L12Verdict;
+          if (!payload.symbol) return;
           setVerdicts((prev) => {
             const idx = prev.findIndex((v) => v.symbol === payload.symbol);
             if (idx === -1) return [payload, ...prev];

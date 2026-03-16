@@ -4,6 +4,7 @@ import type {
   Trade,
   AccountCreate,
   Account,
+  CreateAccountRequest,
   CapitalDeploymentResponse,
   JournalMetrics,
   DailyJournal,
@@ -495,7 +496,7 @@ export async function skipSignal(req: SkipSignalRequest): Promise<void> {
 }
 
 export async function createAccount(data: AccountCreate & { data_source?: string }): Promise<Account> {
-  return apiMutate(API_ENDPOINTS.accounts, {
+  const body: CreateAccountRequest = {
     account_name: data.account_name,
     broker: data.broker,
     currency: data.currency,
@@ -512,7 +513,8 @@ export async function createAccount(data: AccountCreate & { data_source?: string
     max_total_dd_percent: 8,
     max_concurrent_trades: 1,
     reason: "ACCOUNT_CREATE_FROM_UI",
-  });
+  };
+  return apiMutate(API_ENDPOINTS.accounts, body);
 }
 
 export async function restartEA(): Promise<void> {

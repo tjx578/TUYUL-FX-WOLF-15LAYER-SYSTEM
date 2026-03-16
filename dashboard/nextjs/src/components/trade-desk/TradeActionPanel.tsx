@@ -3,7 +3,7 @@
 import React from "react";
 import { useConfirmTradeMutation } from "@/hooks/mutations/useConfirmTradeMutation";
 import { useCloseTradeMutation } from "@/hooks/mutations/useCloseTradeMutation";
-import type { TradeDeskTrade } from "@/schema/tradeDeskSchema";
+import { TERMINAL_STATUSES, type TradeDeskTrade } from "@/schema/tradeDeskSchema";
 
 // ── TradeActionPanel ─────────────────────────────────────────
 
@@ -17,7 +17,7 @@ export function TradeActionPanel({ trade }: TradeActionPanelProps) {
 
     const isPending = trade.status === "INTENDED" || trade.status === "PENDING";
     const isOpen = trade.status === "OPEN";
-    const isTerminal = trade.status === "CLOSED" || trade.status === "CANCELLED" || trade.status === "SKIPPED";
+    const isTerminal = (TERMINAL_STATUSES as readonly string[]).includes(trade.status);
 
     if (isTerminal) {
         return (

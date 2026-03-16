@@ -52,16 +52,16 @@ export function useLivePipeline(options: UseLivePipelineOptions = {}) {
       onEvent: (event) => {
         if (!mounted) return;
 
-        if (event.type === "PipelineResultUpdated") {
+        if (event.type === "PipelineResultUpdated" && event.payload) {
           setLatestPipelineResult(event.payload);
           setComplianceState(toComplianceState(event.payload.governance_state));
         }
 
-        if (event.type === "ExecutionStateUpdated") {
+        if (event.type === "ExecutionStateUpdated" && event.payload?.trade) {
           updateTrade(event.payload.trade);
         }
 
-        if (event.type === "PreferencesUpdated") {
+        if (event.type === "PreferencesUpdated" && event.payload) {
           setPreferences(event.payload);
         }
       },

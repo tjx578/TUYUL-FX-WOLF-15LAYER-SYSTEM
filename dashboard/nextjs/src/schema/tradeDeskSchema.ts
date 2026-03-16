@@ -47,6 +47,19 @@ export const ExposureSummarySchema = z.object({
   total_trades: z.number(),
 });
 
+// ── Trade Status Enum ─────────────────────────────────────────
+
+export const TRADE_STATUSES = [
+  "INTENDED", "PENDING", "OPEN", "CLOSED",
+  "CANCELLED", "SKIPPED", "PARTIALLY_FILLED", "REJECTED",
+] as const;
+
+export type TradeStatus = (typeof TRADE_STATUSES)[number];
+
+export const TERMINAL_STATUSES: readonly TradeStatus[] = [
+  "CLOSED", "CANCELLED", "SKIPPED", "REJECTED",
+] as const;
+
 // ── Extended Trade Schema ────────────────────────────────────
 
 /**
@@ -63,7 +76,7 @@ const TradeDeskTradeRaw = z.object({
   direction: z.string().optional(),
   lot: z.number().optional(),
   lot_size: z.number().optional(),
-  status: z.string().min(1),
+  status: z.enum(TRADE_STATUSES).or(z.string().min(1)),
   entry_price: z.number().optional(),
   stop_loss: z.number().optional(),
   take_profit: z.number().optional(),

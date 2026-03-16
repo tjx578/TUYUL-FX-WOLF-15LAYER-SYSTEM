@@ -40,8 +40,8 @@
   --red-glow:     rgba(255, 61, 87, 0.15);
   --yellow:       #ffd740;
   --yellow-glow:  rgba(255, 215, 64, 0.13);
-  --blue:         #1a6eff;
-  --blue-glow:    rgba(26, 110, 255, 0.20);
+  --blue:         var(--accent);
+  --blue-glow:    var(--accent-glow);
   --cyan:         #00d4ff;
   --cyan-glow:    rgba(0, 212, 255, 0.15);
   --purple:       #b040fb;
