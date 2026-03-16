@@ -8,9 +8,9 @@ api/ws_routes.py.
 from __future__ import annotations
 
 import time
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
 
 _TEST_SECRET = "test-jwt-secret-that-is-at-least-32-chars-long!"
 
@@ -33,6 +33,7 @@ def _make_mock_websocket(
 # ============================================================================
 # ws_auth_guard tests
 # ============================================================================
+
 
 class TestWsAuthGuard:
     """Test api.middleware.ws_auth.ws_auth_guard."""
@@ -147,7 +148,7 @@ class TestWsAuthGuard:
         with (
             patch("api.middleware.ws_auth.decode_token", return_value=None),
             patch("api.middleware.ws_auth.validate_api_key", return_value=True),
-            patch("api.middleware.ws_auth.verify_token", return_value=api_key_payload) as mock_vt,
+            patch("api.middleware.ws_auth.verify_token", return_value=api_key_payload),
         ):
             from api.middleware.ws_auth import ws_auth_guard
 
@@ -219,10 +220,39 @@ class TestWsAuthGuard:
         assert result is not None
         assert result["sub"] == "test_user"
 
+    @pytest.mark.asyncio
+    async def test_no_origin_header_passes_to_token_validation(self):
+        """Non-browser clients (EA, services) send no Origin header.
+
+        They should bypass the origin check and proceed to token validation.
+        """
+        now = int(time.time())
+        payload = {
+            "sub": "ea_service",
+            "iat": now,
+            "exp": now + 3600,
+            "role": "admin",
+        }
+        with (
+            patch("api.middleware.ws_auth.WS_ALLOWED_ORIGINS", {"https://allowed.example"}),
+            patch("api.middleware.ws_auth.decode_token", return_value=payload),
+        ):
+            from api.middleware.ws_auth import ws_auth_guard
+
+            ws = _make_mock_websocket(
+                query_params={"token": "valid.jwt.token"},
+                headers={},  # no origin — non-browser client
+            )
+            result = await ws_auth_guard(ws)
+
+        assert result is not None
+        assert result["sub"] == "ea_service"
+
 
 # ============================================================================
 # extract_token tests
 # ============================================================================
+
 
 class TestExtractToken:
     def test_extracts_from_query_param(self):
@@ -256,6 +286,7 @@ class TestExtractToken:
 # ============================================================================
 # _ws_event envelope tests
 # ============================================================================
+
 
 class TestWsEventEnvelope:
     def test_envelope_structure(self):
