@@ -129,7 +129,8 @@ class TradeOutboxWorker:
         except Exception as exc:
             if "BUSYGROUP" in str(exc):
                 return  # group already exists — fine
-            logger.warning("Outbox worker group init failed: {}", exc)
+            safe_url = get_safe_redis_url()
+            logger.warning("Outbox worker group init failed (target={}): {}", safe_url, exc)
             raise
 
     async def _consume_stream(self, redis: Any) -> int:
@@ -217,11 +218,7 @@ class TradeOutboxWorker:
             from api.ws_routes import publish_live_update  # noqa: PLC0415
 
             payload_obj = event.payload.get("trade")
-            payload = (
-                cast(dict[str, Any], payload_obj)
-                if isinstance(payload_obj, dict)
-                else event.payload
-            )
+            payload = cast(dict[str, Any], payload_obj) if isinstance(payload_obj, dict) else event.payload
             await publish_live_update(event.topic, cast(dict[str, object], payload))
             return True, None
         except Exception as exc:  # noqa: BLE001
