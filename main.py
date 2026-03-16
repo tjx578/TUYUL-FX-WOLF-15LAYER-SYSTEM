@@ -140,6 +140,12 @@ async def run_ingest_services(has_api_key: bool, redis: AsyncRedis) -> None:
 
 async def _sanitize_redis_keys(redis_client: AsyncRedis) -> None:
     """Delete keys whose Redis type conflicts with what writers/consumers expect."""
+
+    def _normalize_redis_type(value: bytes | str) -> str:
+        if isinstance(value, bytes | bytearray):
+            return value.decode().lower()
+        return str(value).lower()
+
     keys_expected: dict[str, str] = {
         "wolf15:tick:*": "stream",
         "wolf15:latest_tick:*": "hash",
@@ -159,10 +165,12 @@ async def _sanitize_redis_keys(redis_client: AsyncRedis) -> None:
         for key in keys:
             key_str = key if isinstance(key, str) else key.decode()
             try:
-                actual_type: str = await redis_client.type(key_str)
+                actual_type_raw: bytes | str = await redis_client.type(key_str)
             except Exception as exc:
                 logger.warning("[Redis-sanitize] TYPE {} failed: {}", key_str, exc)
                 continue
+
+            actual_type = _normalize_redis_type(actual_type_raw)
 
             if actual_type == "none":
                 continue
