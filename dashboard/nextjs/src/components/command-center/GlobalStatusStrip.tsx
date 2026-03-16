@@ -44,12 +44,12 @@ export default function GlobalStatusStrip({
       label: "LIVE FEED",
       value: isStale ? "STALE" : wsStatus,
       color:
-        wsStatus === "CONNECTED" && !isStale
+        wsStatus === "LIVE" && !isStale
           ? "var(--green)"
-          : isStale || wsStatus === "RECONNECTING"
+          : isStale || wsStatus === "RECONNECTING" || wsStatus === "CONNECTING" || wsStatus === "DEGRADED" || wsStatus === "STALE"
           ? "var(--yellow)"
           : "var(--red)",
-      pulse: wsStatus === "CONNECTED" && !isStale,
+      pulse: wsStatus === "LIVE" && !isStale,
     },
     {
       label: "ENGINE",
