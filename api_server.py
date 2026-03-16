@@ -12,19 +12,37 @@ Run (Railway):
     python api_server.py
 """
 
-from dotenv import load_dotenv
-
-load_dotenv()  # Load .env before any other imports read os.environ
-
 import logging  # noqa: E402
 import os  # noqa: E402
 import sys  # noqa: E402
 from copy import deepcopy  # noqa: E402
 from typing import Any  # noqa: E402
 
+from dotenv import load_dotenv
 from typing_extensions import override  # noqa: E402
 
 from config.logging_bootstrap import configure_loguru_logging  # noqa: E402
+
+
+def _is_railway_runtime() -> bool:
+    return bool(
+        os.environ.get("RAILWAY_ENVIRONMENT")
+        or os.environ.get("RAILWAY_ENVIRONMENT_ID")
+        or os.environ.get("RAILWAY_PROJECT_ID")
+        or os.environ.get("RAILWAY_SERVICE_ID")
+        or os.environ.get("RAILWAY_DEPLOYMENT_ID")
+        or os.environ.get("RAILWAY_REPLICA_ID")
+    )
+
+
+def _env_true(value: str | None) -> bool:
+    return (value or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+# Load .env only for local/dev workflows. On Railway, rely on platform env vars
+# unless explicitly forced via WOLF15_LOAD_DOTENV=true.
+if _env_true(os.getenv("WOLF15_LOAD_DOTENV")) or not _is_railway_runtime():
+    load_dotenv(override=False)
 
 # ── Process-level logging (must run before any app import) ────────────────────
 
