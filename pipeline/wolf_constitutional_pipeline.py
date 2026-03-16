@@ -63,7 +63,7 @@ import time
 
 # stdlib imports
 from collections.abc import Callable, Coroutine
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta, timezone
 from types import SimpleNamespace
 from typing import Any, cast
 
@@ -109,6 +109,30 @@ _TZ_GMT8 = timezone(timedelta(hours=8))
 # Per-layer execution timeout (seconds).  Layers that exceed this are
 # aborted and recorded as FATAL_ERROR so the pipeline can fail fast.
 _LAYER_TIMEOUT_SEC: float = 30.0
+
+
+def _coerce_timestamp_to_epoch(value: Any) -> float | None:
+    """Convert numeric/ISO timestamp variants to epoch seconds."""
+    if value is None or isinstance(value, bool):
+        return None
+    if isinstance(value, int | float):
+        return float(value)
+    if isinstance(value, datetime):
+        dt = value if value.tzinfo is not None else value.replace(tzinfo=UTC)
+        return dt.timestamp()
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return None
+        try:
+            return float(text)
+        except ValueError:
+            with contextlib.suppress(ValueError):
+                dt = datetime.fromisoformat(text.replace("Z", "+00:00"))
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=UTC)
+                return dt.timestamp()
+    return None
 
 
 # ══════════════════════════════════════════════════════════════
@@ -585,8 +609,7 @@ class WolfConstitutionalPipeline:
             if candles:
                 _last_c = candles[-1]
                 _last_ts = _last_c.get("timestamp_close") or _last_c.get("timestamp") or _last_c.get("time")
-                if _last_ts is not None:
-                    _last_ts = float(_last_ts)
+                _last_ts = _coerce_timestamp_to_epoch(_last_ts)
             dq_report = _dq_gate.assess(symbol, tf, candles, last_update_ts=_last_ts)
             _dq_reports.append(dq_report.to_dict())
             if dq_report.confidence_penalty > _dq_penalty:
