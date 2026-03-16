@@ -52,8 +52,8 @@ class RedisConfig:
     db: int = 0
     decode_responses: bool = True
     max_connections: int = 20
-    socket_timeout: float = 5.0
-    socket_connect_timeout: float = 5.0
+    socket_timeout: float = 10.0
+    socket_connect_timeout: float = 10.0
     retry_on_timeout: bool = True
     health_check_interval: int = 30
     socket_keepalive: bool = True
@@ -93,7 +93,18 @@ class RedisConfig:
         if password == "":
             password = None
 
-        return cls(host=host, port=port, password=password, db=db)
+        # Allow env-var override for socket timeout (parity with storage/redis_client.py)
+        timeout_str = os.environ.get("REDIS_SOCKET_TIMEOUT_SEC")
+        socket_timeout = float(timeout_str) if timeout_str else cls.socket_timeout
+
+        return cls(
+            host=host,
+            port=port,
+            password=password,
+            db=db,
+            socket_timeout=socket_timeout,
+            socket_connect_timeout=socket_timeout,
+        )
 
 
 class RedisClientManager:
@@ -129,7 +140,7 @@ class RedisClientManager:
             # connection level (retries inside parse_response / send_command).
             retry = Retry(
                 backoff=ExponentialBackoff(cap=10, base=1),
-                retries=3,
+                retries=5,
                 supported_errors=(RedisConnectionError, RedisTimeoutError),
             )
 

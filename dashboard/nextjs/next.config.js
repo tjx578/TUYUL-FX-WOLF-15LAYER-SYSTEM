@@ -1,30 +1,30 @@
 // Resolve the backend API base URL for server-side proxy rewrites.
 // Prefer server-side INTERNAL_API_URL (not exposed to browser),
-// then fall back to the public env var, then localhost for local dev.
+// then fall back to the public env var.
 // IMPORTANT: this must be the base origin (e.g. https://api.example.com)
 // WITHOUT a /api suffix — the rewrite rules below already append /api/:path*.
+const isProd =
+  process.env.NODE_ENV === "production" || process.env.VERCEL === "1";
+
 const rawApiBase =
   process.env.INTERNAL_API_URL ||
   process.env.NEXT_PUBLIC_API_BASE_URL ||
-  "http://localhost:8000";
+  "";
+
+// Hard fail in production — no silent localhost fallback.
+if (isProd && !rawApiBase) {
+  throw new Error(
+    "[next.config] FATAL: Missing INTERNAL_API_URL or NEXT_PUBLIC_API_BASE_URL in production. " +
+    "All API rewrites will route to nowhere. Set this in Vercel/Railway env vars."
+  );
+}
+
+// Local dev fallback — only when env vars are absent AND not production.
+const resolvedBase = rawApiBase || "http://localhost:8000";
 
 // Normalize: strip trailing slash and any accidental /api suffix to prevent
 // double-prefix (/api/api/...) when combined with rewrite destinations.
-const apiBase = rawApiBase.replace(/\/+$/, "").replace(/\/api$/, "");
-
-// Warn at build time if apiBase is localhost in a production-ish environment.
-// This means Next.js rewrites will proxy to nothing in production.
-if (
-  apiBase.includes("localhost") &&
-  (process.env.NODE_ENV === "production" || process.env.VERCEL === "1")
-) {
-  console.warn(
-    "\n⚠️  [next.config] WARNING: apiBase resolved to",
-    apiBase,
-    "\n   Set INTERNAL_API_URL env var to your Railway backend URL.",
-    "\n   All API rewrites will fail in production without this!\n"
-  );
-}
+const apiBase = resolvedBase.replace(/\/+$/, "").replace(/\/api$/, "");
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {

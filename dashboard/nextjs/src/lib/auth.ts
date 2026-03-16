@@ -50,11 +50,20 @@ export function removeToken(): void {
 /**
  * Build the Authorization header value.
  * Returns undefined when no token is stored so callers can omit the header.
+ * Logs a loud error in production to surface missing auth config.
  */
 export function bearerHeader(): string | undefined {
   const token = getTransportToken();
   if (token) {
     return `Bearer ${token}`;
+  }
+
+  if (typeof window !== "undefined" && process.env.NODE_ENV === "production") {
+    console.error(
+      "[auth] bearerHeader(): no JWT and no NEXT_PUBLIC_API_KEY. " +
+      "All authenticated API calls will fail. " +
+      "Set NEXT_PUBLIC_API_KEY in Vercel env vars or log in."
+    );
   }
 
   return undefined;

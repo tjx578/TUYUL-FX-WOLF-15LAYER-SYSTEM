@@ -28,6 +28,7 @@ import type {
 } from "@/types";
 import type { PipelineData } from "@/components/PipelinePanel";
 import { bearerHeader } from "@/lib/auth";
+import { HttpError } from "@/lib/fetcher";
 
 // Use relative paths — Next.js rewrites proxy /api/* to the backend.
 const API_BASE = "";
@@ -78,7 +79,21 @@ const fetcher = async (url: string) => {
   });
 
   if (!res.ok) {
-    throw new Error(`Failed to fetch data: ${res.status} ${res.statusText}`);
+    let info: unknown = null;
+    try {
+      info = await res.json();
+    } catch {
+      try {
+        info = await res.text();
+      } catch {
+        info = null;
+      }
+    }
+    throw new HttpError(
+      `Request failed: ${res.status} ${res.statusText}`,
+      res.status,
+      info
+    );
   }
 
   return res.json();
@@ -119,7 +134,21 @@ const apiMutateWithHeaders = async (
   });
 
   if (!res.ok) {
-    throw new Error(`Request failed: ${res.status} ${res.statusText}`);
+    let info: unknown = null;
+    try {
+      info = await res.json();
+    } catch {
+      try {
+        info = await res.text();
+      } catch {
+        info = null;
+      }
+    }
+    throw new HttpError(
+      `Request failed: ${res.status} ${res.statusText}`,
+      res.status,
+      info
+    );
   }
 
   return res.json().catch(() => undefined);
