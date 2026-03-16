@@ -12,21 +12,20 @@ Tests cover:
 import pytest
 
 from dashboard.trade_ledger import TradeLedger
-from schemas.trade_models import TradeStatus, CloseReason
 from schemas.trade_models import CloseReason, TradeStatus
 
 
 @pytest.fixture
 def trade_ledger():
     """Create a fresh TradeLedger instance for each test."""
-    from unittest.mock import MagicMock
+    from unittest.mock import MagicMock, patch
 
     # Note: Using singleton, so clear cache before each test
     ledger = TradeLedger()
-    ledger._cache.clear()
+    ledger._memory_trades.clear()
     # Mock Redis to avoid connection timeouts in CI
-    ledger._redis = MagicMock()
-    return ledger
+    with patch("dashboard.trade_ledger.redis_client", MagicMock()):
+        yield ledger
 
 
 def test_create_trade(trade_ledger):

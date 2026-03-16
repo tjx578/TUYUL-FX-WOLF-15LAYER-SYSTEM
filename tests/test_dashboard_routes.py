@@ -9,12 +9,11 @@ Tests cover:
 """
 
 import pytest
-
 from fastapi.testclient import TestClient
 
+from api.middleware.auth import verify_token
 from api_server import app
 from dashboard.account_manager import AccountManager
-from dashboard.backend.auth import verify_token
 from dashboard.trade_ledger import TradeLedger
 
 
@@ -38,11 +37,11 @@ def clear_caches():
     """Clear service caches before each test."""
     # Clear account manager cache
     account_mgr = AccountManager()
-    account_mgr._cache.clear()
+    account_mgr._memory_accounts.clear()
 
     # Clear trade ledger cache
     trade_ledger = TradeLedger()
-    trade_ledger._cache.clear()
+    trade_ledger._memory_trades.clear()
 
     yield
 
