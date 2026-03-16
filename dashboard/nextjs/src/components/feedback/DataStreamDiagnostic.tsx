@@ -62,10 +62,6 @@ export default function DataStreamDiagnostic({
   } | null>(null);
   const [retrying, setRetrying] = useState(false);
 
-  // NEXT_PUBLIC_ vars must be accessed as literal identifiers so the
-  // Next.js compiler can statically inline them into the client bundle.
-  const hasWsUrl = !!(process.env.NEXT_PUBLIC_WS_BASE_URL);
-  const hasApiBase = !!(process.env.NEXT_PUBLIC_API_BASE_URL);
   // Detect missing env vars client-side for the checklist.
   // Rules:
   //  1. Access NEXT_PUBLIC_ vars as literal identifiers — NO optional chaining,
