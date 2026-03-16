@@ -76,7 +76,7 @@ export function Dot({
   color: string; pulse?: boolean; size?: number;
 }) {
   return (
-    <span style={{
+    <span aria-hidden="true" style={{
       display: "inline-block",
       width: size,
       height: size,
@@ -122,10 +122,10 @@ const VERDICT_BADGE_STYLES: Record<
   "execute" | "hold" | "no-trade" | "abort",
   { color: string; bg: string; border: string }
 > = {
-  execute:   { color: T.emerald, bg: `${T.emerald}12`, border: `${T.emerald}28` },
-  hold:      { color: T.amber,   bg: `${T.amber}12`,   border: `${T.amber}28`   },
-  "no-trade":{ color: T.t4,      bg: `${T.t4}12`,      border: `${T.t4}20`      },
-  abort:     { color: T.red,     bg: `${T.red}18`,      border: `${T.red}35`     },
+  execute: { color: T.emerald, bg: `${T.emerald}12`, border: `${T.emerald}28` },
+  hold: { color: T.amber, bg: `${T.amber}12`, border: `${T.amber}28` },
+  "no-trade": { color: T.t4, bg: `${T.t4}12`, border: `${T.t4}20` },
+  abort: { color: T.red, bg: `${T.red}18`, border: `${T.red}35` },
 };
 
 export function VerdictBadge({
@@ -186,14 +186,14 @@ export function Card({
 }) {
   const bc =
     accentColor === "danger" ? T.bDanger :
-    accentColor === "warn"   ? T.bWarn   :
-    accentColor === "ok"     ? T.bAccent : T.b1;
+      accentColor === "warn" ? T.bWarn :
+        accentColor === "ok" ? T.bAccent : T.b1;
 
   const topBorder =
-    accentColor === "danger" ? `2px solid ${T.red}50`     :
-    accentColor === "warn"   ? `2px solid ${T.amber}50`   :
-    accentColor === "ok"     ? `2px solid ${T.emerald}50` :
-    "2px solid transparent";
+    accentColor === "danger" ? `2px solid ${T.red}50` :
+      accentColor === "warn" ? `2px solid ${T.amber}50` :
+        accentColor === "ok" ? `2px solid ${T.emerald}50` :
+          "2px solid transparent";
 
   return (
     <div
@@ -541,11 +541,11 @@ export function Tabs({
 // ── WebSocket stream badge (Framer Motion enhanced) ──────────
 // Shows live WS connection status. Framer Motion fade-in on status change.
 const STREAM_CFG: Record<string, { c: string; label: string }> = {
-  connected:      { c: T.emerald, label: "LIVE"  },
-  authenticating: { c: T.amber,   label: "AUTH"  },
-  reconnecting:   { c: T.amber,   label: "RECONN"},
-  disconnected:   { c: T.t4,      label: "OFF"   },
-  error:          { c: T.red,     label: "ERR"   },
+  connected: { c: T.emerald, label: "LIVE" },
+  authenticating: { c: T.amber, label: "AUTH" },
+  reconnecting: { c: T.amber, label: "RECONN" },
+  disconnected: { c: T.t4, label: "OFF" },
+  error: { c: T.red, label: "ERR" },
 };
 
 export function StreamBadge({ status }: { status: string }) {

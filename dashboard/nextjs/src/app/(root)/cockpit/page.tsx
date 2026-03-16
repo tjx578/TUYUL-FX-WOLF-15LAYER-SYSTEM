@@ -386,7 +386,11 @@ function AllAccountsCard({
         return (
           <div
             key={a.id}
+            role="button"
+            tabIndex={0}
+            aria-label={`Account ${a.firm} ${a.phase}, balance $${(a.balance / 1000).toFixed(0)}k`}
             onClick={() => onSelect(a.id)}
+            onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onSelect(a.id); } }}
             style={{
               padding: "7px 9px", borderRadius: RADIUS.sm,
               marginBottom: i < accounts.length - 1 ? 5 : 0,

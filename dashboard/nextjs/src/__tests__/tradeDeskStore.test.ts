@@ -19,6 +19,7 @@ import type { TradeDeskTrade, TradeDeskResponse, ExposureSummary } from "@/schem
 function makeTrade(overrides: Partial<TradeDeskTrade> = {}): TradeDeskTrade {
   return {
     trade_id: "T-001",
+    signal_id: undefined,
     account_id: "ACC-001",
     status: "OPEN",
     pair: "EURUSD",
@@ -27,6 +28,15 @@ function makeTrade(overrides: Partial<TradeDeskTrade> = {}): TradeDeskTrade {
     entry_price: 1.1,
     stop_loss: 1.095,
     take_profit: 1.11,
+    pnl: undefined,
+    opened_at: undefined,
+    closed_at: undefined,
+    created_at: undefined,
+    confirmed_at: undefined,
+    close_reason: undefined,
+    current_price: undefined,
+    total_risk_percent: undefined,
+    total_risk_amount: undefined,
     ...overrides,
   };
 }
@@ -134,7 +144,7 @@ describe("Selected trade preservation on delta", () => {
     expect(useTradeDeskStore.getState().selectedTradeId).toBe("T-2");
   });
 
-  it("should keep selectedTradeId even after snapshot (trade might be in process)", () => {
+  it("should clear selectedTradeId when trade no longer exists in snapshot", () => {
     useTradeDeskStore.setState({ selectedTradeId: "T-GONE" });
 
     const response = makeDeskResponse({
@@ -143,8 +153,8 @@ describe("Selected trade preservation on delta", () => {
     });
 
     useTradeDeskStore.getState().applyDeskSnapshot(response);
-    // Store preserves selection to avoid flicker
-    expect(useTradeDeskStore.getState().selectedTradeId).toBe("T-GONE");
+    // Phase 2 fix: selection is cleared when the trade disappears from all lists
+    expect(useTradeDeskStore.getState().selectedTradeId).toBeNull();
   });
 });
 

@@ -3,6 +3,22 @@ import { NextRequest, NextResponse } from "next/server";
 const COOKIE_NAME = "wolf15_session";
 const MAX_AGE = 60 * 60 * 8; // 8 hours
 
+// Simple in-memory rate limiter: max 10 requests per 60s per IP
+const RATE_WINDOW_MS = 60_000;
+const RATE_MAX = 10;
+const rateBuckets = new Map<string, { count: number; resetAt: number }>();
+
+function isRateLimited(ip: string): boolean {
+  const now = Date.now();
+  const bucket = rateBuckets.get(ip);
+  if (!bucket || now >= bucket.resetAt) {
+    rateBuckets.set(ip, { count: 1, resetAt: now + RATE_WINDOW_MS });
+    return false;
+  }
+  bucket.count++;
+  return bucket.count > RATE_MAX;
+}
+
 /**
  * POST /api/set-session
  * Body: { token: string }
@@ -13,6 +29,16 @@ const MAX_AGE = 60 * 60 * 8; // 8 hours
  * its own domain, which the browser blocks as cross-site.
  */
 export async function POST(request: NextRequest): Promise<NextResponse> {
+  const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "unknown";
+  if (isRateLimited(ip)) {
+    return NextResponse.json({ error: "too many requests" }, { status: 429 });
+  }
+
+  const contentLength = parseInt(request.headers.get("content-length") ?? "0", 10);
+  if (contentLength > 8192) {
+    return NextResponse.json({ error: "payload too large" }, { status: 413 });
+  }
+
   const body = await request.json().catch(() => ({})) as { token?: string };
   const token = body.token?.trim();
 

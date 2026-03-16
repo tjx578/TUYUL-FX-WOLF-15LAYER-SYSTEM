@@ -14,10 +14,10 @@
  * Merge a WS delta into an existing map (e.g. prices, trades by ID).
  * Delta keys override snapshot keys; snapshot keys with no delta are kept.
  */
-export function mergeMap<T extends Record<string, unknown>>(
-  snapshot: T,
-  delta: Partial<T>
-): T {
+export function mergeMap<K extends string, V>(
+  snapshot: Record<K, V>,
+  delta: Record<string, V>
+): Record<string, V> {
   return { ...snapshot, ...delta };
 }
 
@@ -25,13 +25,13 @@ export function mergeMap<T extends Record<string, unknown>>(
  * Merge a single record delta into a snapshot, guarded by timestamp.
  * If delta.timestamp <= snapshot.timestamp, the delta is discarded (stale guard).
  */
-export function mergeSingle<T extends { timestamp?: string | number }>(
+export function mergeSingle<T extends object>(
   snapshot: T | null,
   delta: T
 ): T {
   if (!snapshot) return delta;
-  const snapshotTs = snapshot.timestamp ?? 0;
-  const deltaTs = delta.timestamp ?? 0;
+  const snapshotTs = (snapshot as Record<string, unknown>).timestamp ?? 0;
+  const deltaTs = (delta as Record<string, unknown>).timestamp ?? 0;
   const snapshotTime = typeof snapshotTs === "string" ? Date.parse(snapshotTs) : snapshotTs;
   const deltaTime = typeof deltaTs === "string" ? Date.parse(deltaTs) : deltaTs;
   if (deltaTime < snapshotTime) return snapshot; // stale delta — discard

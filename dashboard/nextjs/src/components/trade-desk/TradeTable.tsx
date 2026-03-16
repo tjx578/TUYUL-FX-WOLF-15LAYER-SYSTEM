@@ -53,7 +53,11 @@ export function TradeTableRow({ trade, isSelected, onSelect, mismatchFlags }: Tr
     return (
         <tr
             data-testid={`trade-row-${trade.trade_id}`}
+            role="button"
+            tabIndex={0}
+            aria-label={`Trade ${pair} ${dir ?? ""} — ${trade.status}`}
             onClick={() => onSelect(trade.trade_id)}
+            onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onSelect(trade.trade_id); } }}
             style={{
                 cursor: "pointer",
                 borderBottom: "1px solid var(--border-subtle, rgba(255,255,255,0.06))",

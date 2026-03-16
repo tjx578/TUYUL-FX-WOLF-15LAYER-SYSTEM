@@ -54,7 +54,7 @@ export function getWsBaseUrl(): string {
     if (typeof window !== "undefined") {
       const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
       if (
-        process.env.NODE_ENV !== "development" &&
+        process.env.NODE_ENV === "development" &&
         (window.location.hostname.includes("vercel") ||
           window.location.hostname.includes(".app"))
       ) {
@@ -70,7 +70,7 @@ export function getWsBaseUrl(): string {
   }
   // Strip trailing slash AND accidental /ws suffix — hooks already append /ws/<channel>
   const stripped = url.replace(/\/$/, "").replace(/\/ws$/, "");
-  if (stripped !== url.replace(/\/$/, "")) {
+  if (stripped !== url.replace(/\/$/, "") && process.env.NODE_ENV === "development") {
     console.warn(
       "[env] NEXT_PUBLIC_WS_BASE_URL contains /ws suffix which was automatically stripped. " +
       "Set the value to the bare origin (e.g. wss://your-api.up.railway.app) to avoid double /ws paths."
@@ -92,7 +92,7 @@ export function validateEnv(): void {
     window.location.hostname.includes("vercel") ||
     window.location.hostname.includes(".app");
 
-  if ((!wsUrl || wsUrl.trim() === "") && isVercel) {
+  if ((!wsUrl || wsUrl.trim() === "") && isVercel && process.env.NODE_ENV === "development") {
     console.warn(
       "[env] NEXT_PUBLIC_WS_BASE_URL is not configured. " +
       "Live data channels will not connect on Vercel. " +
@@ -101,7 +101,7 @@ export function validateEnv(): void {
   }
 
   // Legacy env var guard
-  if (process.env.NEXT_PUBLIC_WS_URL) {
+  if (process.env.NEXT_PUBLIC_WS_URL && process.env.NODE_ENV === "development") {
     console.warn(
       "[env] NEXT_PUBLIC_WS_URL is deprecated and has no effect. " +
       "Use NEXT_PUBLIC_WS_BASE_URL instead."
@@ -110,7 +110,7 @@ export function validateEnv(): void {
 
   const apiOverrideRaw = process.env.NEXT_PUBLIC_API_BASE_URL;
   const apiOverride = typeof apiOverrideRaw === "string" ? apiOverrideRaw.trim() : "";
-  if (apiOverride) {
+  if (apiOverride && process.env.NODE_ENV === "development") {
     console.info("[env] REST override active: NEXT_PUBLIC_API_BASE_URL =", apiOverride);
   }
 }

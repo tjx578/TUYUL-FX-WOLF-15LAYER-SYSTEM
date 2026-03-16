@@ -42,10 +42,13 @@ export default function PipelineDagCanvas({ symbol, accountId }: PipelineDagCanv
       {orderedNodes.length === 0 ? (
         <p className="text-xs text-slate-400">No DAG data available.</p>
       ) : hasCoordinates ? (
-        <div className="relative min-h-[420px] overflow-auto rounded-lg border border-white/10 bg-slate-950/40">
+        <div role="list" aria-label="Pipeline layers" className="relative min-h-[420px] overflow-auto rounded-lg border border-white/10 bg-slate-950/40">
           {orderedNodes.map((node) => (
             <div
               key={node.id}
+              tabIndex={0}
+              role="listitem"
+              aria-label={`Layer ${node.label}: ${node.state}`}
               style={{ left: `${node.x}px`, top: `${node.y}px` }}
               className={`absolute min-w-36 rounded-lg border px-3 py-2 text-xs ${STATE_COLOR[node.state] ?? STATE_COLOR.IDLE}`}
             >
@@ -55,10 +58,13 @@ export default function PipelineDagCanvas({ symbol, accountId }: PipelineDagCanv
           ))}
         </div>
       ) : (
-        <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+        <div role="list" aria-label="Pipeline layers" className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
           {orderedNodes.map((node) => (
             <div
               key={node.id}
+              tabIndex={0}
+              role="listitem"
+              aria-label={`Layer ${node.label}: ${node.state}`}
               className={`rounded-lg border px-3 py-2 text-xs ${STATE_COLOR[node.state] ?? STATE_COLOR.IDLE}`}
             >
               <div className="font-semibold">{node.label}</div>
