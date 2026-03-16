@@ -8,6 +8,7 @@
 
 import { useState, useCallback } from "react";
 import { mutate } from "swr";
+import { getRuntimeHealth } from "@/lib/runtimeHealth";
 
 interface DataStreamDiagnosticProps {
   failedStreams: string[];
@@ -15,12 +16,12 @@ interface DataStreamDiagnosticProps {
 }
 
 const STREAM_ENDPOINTS: Record<string, string> = {
-  verdicts:  "/api/v1/verdict/all",
-  trades:    "/api/v1/trades/active",
-  context:   "/api/v1/context",
+  verdicts: "/api/v1/verdict/all",
+  trades: "/api/v1/trades/active",
+  context: "/api/v1/context",
   execution: "/api/v1/execution",
-  accounts:  "/api/v1/accounts",
-  risk:      "/api/v1/accounts/risk-snapshot",
+  accounts: "/api/v1/accounts",
+  risk: "/api/v1/accounts/risk-snapshot",
 };
 
 const CHECKLIST = [
@@ -51,7 +52,7 @@ export default function DataStreamDiagnostic({
   allStreams,
 }: DataStreamDiagnosticProps) {
   const [expanded, setExpanded] = useState(false);
-  const [pinging, setPinging]   = useState(false);
+  const [pinging, setPinging] = useState(false);
   const [pingResult, setPingResult] = useState<{
     ok: boolean;
     latency?: number;
@@ -82,9 +83,18 @@ export default function DataStreamDiagnostic({
       await Promise.all(
         failedStreams.map((s) => {
           const ep = STREAM_ENDPOINTS[s];
-          return ep ? mutate(ep) : Promise.resolve();
+          if (!ep) {
+            console.error(
+              `[DataStreamDiagnostic] Missing endpoint mapping for stream key: ${s}`
+            );
+            return Promise.resolve();
+          }
+          // Force a real network fetch — mutate(ep) alone only rotates cache.
+          return mutate(ep, undefined, { revalidate: true });
         })
       );
+    } catch (err) {
+      console.error("[DataStreamDiagnostic] Retry failed", err);
     } finally {
       setTimeout(() => setRetrying(false), 800);
     }
@@ -249,6 +259,37 @@ export default function DataStreamDiagnostic({
           <div style={{ fontSize: 10, color: "var(--text-faint)", marginTop: 4 }}>
             Go to Settings &rarr; Vars to update INTERNAL_API_URL on this Vercel project.
           </div>
+
+          {/* ── Runtime health snapshot ── */}
+          {(() => {
+            const health = getRuntimeHealth();
+            return (
+              <div
+                style={{
+                  display: "flex",
+                  gap: 12,
+                  padding: "8px 10px",
+                  background: "var(--bg-card)",
+                  borderRadius: "var(--radius-sm)",
+                  border: "1px solid var(--border-default)",
+                  marginTop: 4,
+                }}
+              >
+                <span style={{ fontFamily: "var(--font-mono)", fontSize: 9, fontWeight: 700, letterSpacing: "0.12em", color: "var(--text-muted)" }}>
+                  RUNTIME CONFIG
+                </span>
+                <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: health.apiBaseResolved ? "var(--green)" : "var(--red)", fontWeight: 700 }}>
+                  API BASE: {health.apiBaseResolved ? "OK" : "MISSING"}
+                </span>
+                <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: health.apiKeyPresent ? "var(--green)" : "var(--red)", fontWeight: 700 }}>
+                  API KEY: {health.apiKeyPresent ? "OK" : "MISSING"}
+                </span>
+                <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: health.wsBaseResolved ? "var(--green)" : "var(--red)", fontWeight: 700 }}>
+                  WS BASE: {health.wsBaseResolved ? "OK" : "MISSING"}
+                </span>
+              </div>
+            );
+          })()}
         </div>
       )}
     </div>

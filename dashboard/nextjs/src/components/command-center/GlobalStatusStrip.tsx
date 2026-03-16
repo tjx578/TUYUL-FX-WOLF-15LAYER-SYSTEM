@@ -6,9 +6,11 @@
 // Shows: BACKEND | LIVE FEED | ENGINE | OPEN TRADES | MODE
 // ============================================================
 
+import type { WsConnectionStatus } from "@/lib/realtime/connectionState";
+
 interface GlobalStatusStripProps {
   health: { status: string } | undefined;
-  wsStatus: string;
+  wsStatus: WsConnectionStatus;
   mode: string;
   executionState: string | undefined;
   openTradeCount: number;
@@ -47,8 +49,8 @@ export default function GlobalStatusStrip({
         wsStatus === "LIVE" && !isStale
           ? "var(--green)"
           : isStale || wsStatus === "RECONNECTING" || wsStatus === "CONNECTING" || wsStatus === "DEGRADED" || wsStatus === "STALE"
-          ? "var(--yellow)"
-          : "var(--red)",
+            ? "var(--yellow)"
+            : "var(--red)",
       pulse: wsStatus === "LIVE" && !isStale,
     },
     {
@@ -58,10 +60,10 @@ export default function GlobalStatusStrip({
         executionState === "SIGNAL_READY"
           ? "var(--accent)"
           : executionState === "EXECUTING"
-          ? "var(--green)"
-          : executionState === "SCANNING"
-          ? "var(--blue)"
-          : "var(--text-muted)",
+            ? "var(--green)"
+            : executionState === "SCANNING"
+              ? "var(--blue)"
+              : "var(--text-muted)",
       pulse: executionState === "EXECUTING",
     },
     {
