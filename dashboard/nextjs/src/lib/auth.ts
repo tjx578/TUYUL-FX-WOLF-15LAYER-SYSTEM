@@ -53,6 +53,12 @@ export function removeToken(): void {
  */
 export function bearerHeader(): string | undefined {
   const token = getToken();
-  return token ? `Bearer ${token}` : undefined;
+  if (token) {
+    return `Bearer ${token}`;
+  }
+
+  // Service-to-service/dashboard fallback for environments that use static API keys.
+  const apiKey = process.env.NEXT_PUBLIC_API_KEY?.trim();
+  return apiKey ? `Bearer ${apiKey}` : undefined;
 }
 
