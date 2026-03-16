@@ -46,9 +46,9 @@ interface TradeTableRowProps {
 }
 
 export function TradeTableRow({ trade, isSelected, onSelect, mismatchFlags }: TradeTableRowProps) {
-    const pair = trade.pair ?? trade.symbol ?? "—";
-    const dir = trade.direction ?? trade.side;
-    const lot = trade.lot_size ?? trade.lot;
+    const pair = trade.pair ?? "—";
+    const dir = trade.direction;
+    const lot = trade.lot_size;
 
     return (
         <tr

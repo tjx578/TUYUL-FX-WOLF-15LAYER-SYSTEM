@@ -112,6 +112,8 @@ jobs:
     defaults:
       run:
         working-directory: dashboard/nextjs
+    env:
+      INTERNAL_API_URL: http://localhost:8000
     steps:
       - name: Checkout
         uses: actions/checkout@v4

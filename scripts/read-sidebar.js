@@ -2,7 +2,6 @@ import { execSync } from 'child_process';
 
 const files = [
   'dashboard/nextjs/src/components/layout/Sidebar.tsx',
-  'dashboard/nextjs/src/components/Sidebar.tsx',
   'dashboard/nextjs/src/app/(root)/layout.tsx',
   'dashboard/nextjs/src/app/globals.css',
   'dashboard/nextjs/src/app/layout.tsx',

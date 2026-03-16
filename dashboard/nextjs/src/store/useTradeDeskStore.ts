@@ -104,8 +104,8 @@ export const useTradeDeskStore = create<TradeDeskState>((set) => ({
         anomalies: data.anomalies,
         counts: data.counts,
         serverTs: data.server_ts,
-        // Only clear selection if trade no longer exists
-        selectedTradeId: selectedStillExists ? state.selectedTradeId : state.selectedTradeId,
+        // Clear selection if trade no longer exists in any list
+        selectedTradeId: selectedStillExists ? state.selectedTradeId : null,
       };
     }),
 
