@@ -1,4 +1,5 @@
 import axios, { AxiosError } from "axios";
+import { bearerHeader } from "@/lib/auth";
 
 export interface ApiErrorPayload {
   code?: string;
@@ -19,14 +20,14 @@ export const apiClient = axios.create({
   timeout: 15000,
 });
 
-// Attach the stored API key as a Bearer token on every request.
+// Attach JWT (or fallback API key) from the unified auth module on every request.
+// Single source of truth: lib/auth.ts — reads localStorage("wolf15_token")
+// then falls back to NEXT_PUBLIC_API_KEY env var.
 apiClient.interceptors.request.use((config) => {
-  if (typeof window !== "undefined") {
-    const key = sessionStorage.getItem("api_key");
-    if (key) {
-      config.headers = config.headers ?? {};
-      config.headers["Authorization"] = `Bearer ${key}`;
-    }
+  const auth = bearerHeader();
+  if (auth) {
+    config.headers = config.headers ?? {};
+    config.headers["Authorization"] = auth;
   }
   return config;
 });

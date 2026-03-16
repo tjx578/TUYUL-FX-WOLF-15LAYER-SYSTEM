@@ -1,128 +1,106 @@
 "use client";
 
-import { useEffect, useRef, useCallback } from "react";
+import { useEffect, useRef, useCallback, useState } from "react";
 import { useTradeDeskStore } from "@/store/useTradeDeskStore";
 import { TradeDeskResponseSchema } from "@/schema/tradeDeskSchema";
 import type { TradeDeskTrade } from "@/schema/tradeDeskSchema";
-import { bearerHeader, getTransportToken } from "@/lib/auth";
+import { bearerHeader } from "@/lib/auth";
+import { connectLiveUpdates } from "@/lib/realtime/realtimeClient";
+import type { WsConnectionStatus } from "@/lib/realtime/connectionState";
+import { STALE_THRESHOLDS_MS } from "@/lib/realtime/connectionState";
 
-// ─── useLiveTrades ───────────────────────────────────────────
-// Connects to /ws/trades and patches the TradeDeskStore on each event.
+// ─── useTradeDeskLiveTrades ──────────────────────────────────
+// Connects to /ws/trades via connectLiveUpdates() and patches TradeDeskStore.
+// Uses onRawMessage for trade desk custom event types (trade_update, trade_removed,
+// execution_mismatch) that are not in the standard WsEventSchema.
 
-export function useLiveTrades() {
-  const wsRef = useRef<WebSocket | null>(null);
-  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+export function useTradeDeskLiveTrades() {
   const patchTrade = useTradeDeskStore((s) => s.patchTrade);
   const removeTrade = useTradeDeskStore((s) => s.removeTrade);
   const setExecutionMismatch = useTradeDeskStore((s) => s.setExecutionMismatch);
 
-  const connect = useCallback(() => {
-    if (typeof window === "undefined") return;
-
-    const token = getTransportToken() ?? "";
-    const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-    const tokenQuery = token ? `?token=${encodeURIComponent(token)}` : "";
-    const url = `${protocol}//${window.location.host}/ws/trades${tokenQuery}`;
-
-    const ws = new WebSocket(url);
-    wsRef.current = ws;
-
-    ws.onmessage = (ev) => {
-      try {
-        const msg = JSON.parse(ev.data);
-        const eventType = msg.event_type ?? msg.type;
-        const payload = msg.payload ?? msg;
+  useEffect(() => {
+    const controls = connectLiveUpdates({
+      path: "/ws/trades",
+      onEvent: (event) => {
+        // Handle standard typed events (ExecutionStateUpdated)
+        if (event.type === "ExecutionStateUpdated") {
+          const trade = event.payload.trade as unknown as TradeDeskTrade;
+          if (trade?.trade_id) {
+            patchTrade(trade);
+          }
+        }
+      },
+      onRawMessage: (msg) => {
+        // Handle trade desk custom events that aren't in WsEventSchema
+        const eventType = (msg as Record<string, unknown>).event_type ??
+          (msg as Record<string, unknown>).type;
+        const payload = ((msg as Record<string, unknown>).payload ?? msg) as Record<string, unknown>;
 
         if (eventType === "trade_update" || eventType === "TRADE_UPDATE") {
-          const trade = payload as TradeDeskTrade;
+          const trade = payload as unknown as TradeDeskTrade;
           if (trade.trade_id) {
             patchTrade(trade);
           }
         } else if (eventType === "trade_removed" || eventType === "TRADE_REMOVED") {
-          const tradeId = payload.trade_id;
+          const tradeId = payload.trade_id as string | undefined;
           if (tradeId) removeTrade(tradeId);
         } else if (eventType === "execution_mismatch" || eventType === "EXECUTION_MISMATCH") {
-          const tradeId = payload.trade_id;
-          const flags = payload.flags ?? [payload.message ?? "SYNC_MISMATCH"];
+          const tradeId = payload.trade_id as string | undefined;
+          const flags = (payload.flags as string[] | undefined) ??
+            [(payload.message as string | undefined) ?? "SYNC_MISMATCH"];
           if (tradeId) setExecutionMismatch(tradeId, flags);
         }
-      } catch {
-        // Ignore parse errors (heartbeat pings etc.)
-      }
-    };
+      },
+      onStatusChange: () => { /* status tracked at system store level if needed */ },
+      onDegradation: () => { /* handled by system store */ },
+      onError: () => { /* reconnect is handled automatically */ },
+    });
 
-    ws.onclose = () => {
-      wsRef.current = null;
-      reconnectTimerRef.current = setTimeout(connect, 3000);
-    };
-
-    ws.onerror = () => {
-      ws.close();
+    return () => {
+      controls.close();
     };
   }, [patchTrade, removeTrade, setExecutionMismatch]);
-
-  useEffect(() => {
-    connect();
-    return () => {
-      if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
-      wsRef.current?.close();
-    };
-  }, [connect]);
 }
 
-// ─── useLivePrices ───────────────────────────────────────────
-// Connects to /ws/prices and returns a ref map of current prices.
+// ─── useTradeDeskLivePrices ──────────────────────────────────
+// Connects to /ws/prices via connectLiveUpdates() and returns a ref map.
 
-export function useLivePrices() {
+export function useTradeDeskLivePrices() {
   const pricesRef = useRef<Record<string, number>>({});
-  const wsRef = useRef<WebSocket | null>(null);
-  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const connect = useCallback(() => {
-    if (typeof window === "undefined") return;
-
-    const token = getTransportToken() ?? "";
-    const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-    const tokenQuery = token ? `?token=${encodeURIComponent(token)}` : "";
-    const url = `${protocol}//${window.location.host}/ws/prices${tokenQuery}`;
-
-    const ws = new WebSocket(url);
-    wsRef.current = ws;
-
-    ws.onmessage = (ev) => {
-      try {
-        const msg = JSON.parse(ev.data);
-        const payload = msg.payload ?? msg;
-        if (payload.symbol && typeof payload.price === "number") {
+  useEffect(() => {
+    const controls = connectLiveUpdates({
+      path: "/ws/prices",
+      onEvent: (event) => {
+        if (event.type === "PriceUpdated" || event.type === "PricesSnapshot") {
+          const payload = event.payload as Record<string, unknown>;
+          // Handle map format: { EURUSD: { price: 1.1, ... }, ... }
+          for (const [symbol, data] of Object.entries(payload)) {
+            if (typeof data === "object" && data !== null && "price" in data) {
+              pricesRef.current[symbol] = (data as { price: number }).price;
+            }
+          }
+        }
+      },
+      onRawMessage: (msg) => {
+        // Handle legacy individual price format: { symbol, price }
+        const payload = ((msg as Record<string, unknown>).payload ?? msg) as Record<string, unknown>;
+        if (typeof payload.symbol === "string" && typeof payload.price === "number") {
           pricesRef.current = {
             ...pricesRef.current,
             [payload.symbol]: payload.price,
           };
         } else if (payload.prices && typeof payload.prices === "object") {
-          pricesRef.current = { ...pricesRef.current, ...payload.prices };
+          pricesRef.current = { ...pricesRef.current, ...(payload.prices as Record<string, number>) };
         }
-      } catch {
-        // Ignore
-      }
-    };
+      },
+    });
 
-    ws.onclose = () => {
-      wsRef.current = null;
-      reconnectTimerRef.current = setTimeout(connect, 3000);
-    };
-
-    ws.onerror = () => {
-      ws.close();
+    return () => {
+      controls.close();
     };
   }, []);
-
-  useEffect(() => {
-    connect();
-    return () => {
-      if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
-      wsRef.current?.close();
-    };
-  }, [connect]);
 
   return pricesRef;
 }
@@ -133,6 +111,9 @@ export function useLivePrices() {
 export function useTradeDeskState() {
   const store = useTradeDeskStore();
   const applyDeskSnapshot = useTradeDeskStore((s) => s.applyDeskSnapshot);
+
+  // Track whether WS has pushed data — prevents stale REST snapshot from overwriting
+  const wsActiveRef = useRef(false);
 
   // Initial REST fetch
   useEffect(() => {
@@ -151,7 +132,10 @@ export function useTradeDeskState() {
         const json = await res.json();
         const parsed = TradeDeskResponseSchema.safeParse(json);
         if (!cancelled && parsed.success) {
-          applyDeskSnapshot(parsed.data);
+          // Only apply REST snapshot if WS hasn't already delivered fresher data
+          if (!wsActiveRef.current) {
+            applyDeskSnapshot(parsed.data);
+          }
         }
       } catch {
         // Silently fail initial fetch — WS will provide updates
@@ -160,8 +144,8 @@ export function useTradeDeskState() {
 
     fetchDesk();
 
-    // Re-fetch every 10s as a fallback
-    const interval = setInterval(fetchDesk, 10_000);
+    // Re-fetch every 30s as a fallback (was 10s; reduced since WS is reliable now)
+    const interval = setInterval(fetchDesk, 30_000);
 
     return () => {
       cancelled = true;
@@ -169,8 +153,8 @@ export function useTradeDeskState() {
     };
   }, [applyDeskSnapshot]);
 
-  // Start WS subscriptions
-  useLiveTrades();
+  // Start WS subscriptions (now using connectLiveUpdates with proper reconnect)
+  useTradeDeskLiveTrades();
 
   return {
     activeTab: store.activeTab,

@@ -38,9 +38,35 @@ export interface PreferencesUpdatedEvent {
   payload: OperatorPreferences;
 }
 
+// ── Backend-native event types (normalised by realtimeClient) ──
+
+export interface VerdictUpdatedEvent {
+  type: "VerdictUpdated";
+  payload: { pair: string; verdict: Record<string, unknown> };
+}
+
+export interface VerdictSnapshotEvent {
+  type: "VerdictSnapshot";
+  payload: { pair: string | null; verdicts: Record<string, Record<string, unknown>> };
+}
+
+export interface PipelineUpdatedEvent {
+  type: "PipelineUpdated";
+  payload: { pair: string; pipeline: Record<string, unknown> };
+}
+
+export interface PingEvent {
+  type: "ping";
+  ts?: number;
+}
+
 export type WsEvent =
   | PipelineResultUpdatedEvent
   | ExecutionStateUpdatedEvent
   | RiskStateUpdatedEvent
   | SystemStatusUpdatedEvent
-  | PreferencesUpdatedEvent;
+  | PreferencesUpdatedEvent
+  | VerdictUpdatedEvent
+  | VerdictSnapshotEvent
+  | PipelineUpdatedEvent
+  | PingEvent;

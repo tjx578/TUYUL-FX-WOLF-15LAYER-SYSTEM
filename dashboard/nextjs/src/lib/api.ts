@@ -26,7 +26,7 @@ import type {
   PropFirmPhase,
   PropFirmStatus,
 } from "@/types";
-import type { PipelineData } from "@/components/PipelinePanel";
+import type { PipelineData } from "@/components/panels/PipelinePanel";
 import { bearerHeader } from "@/lib/auth";
 import { HttpError } from "@/lib/fetcher";
 

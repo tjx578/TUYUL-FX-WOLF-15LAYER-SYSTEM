@@ -20,7 +20,7 @@ import {
   M, L, Dot, Badge, Divider,
   Card, Bar, Ring, StreamBadge,
 } from "@/components/ui";
-import { PipelinePanel } from "@/components/PipelinePanel";
+import { PipelinePanel } from "@/components/panels/PipelinePanel";
 import { apiClient } from "@/services/apiClient";
 
 // ── Wolf score shape from API ─────────────────────────────────

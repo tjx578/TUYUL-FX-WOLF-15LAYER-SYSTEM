@@ -1,6 +1,11 @@
 import { z } from "zod";
 import { ExecutionStateUpdatedSchema } from "./executionSchema";
-import { PipelineResultSchema } from "./pipelineResultSchema";
+import {
+  PipelineResultSchema,
+  VerdictUpdatedPayloadSchema,
+  VerdictSnapshotPayloadSchema,
+  PipelineUpdatedPayloadSchema,
+} from "./pipelineResultSchema";
 import { PreferencesSchema } from "./preferencesSchema";
 
 const RiskStateSchema = z.object({
@@ -13,6 +18,8 @@ const SystemStatusSchema = z.object({
   reason: z.string().optional(),
   updated_at: z.string().optional(),
 });
+
+// ── Legacy / frontend-native event types ──
 
 export const PipelineResultUpdatedEventSchema = z.object({
   type: z.literal("PipelineResultUpdated"),
@@ -55,7 +62,30 @@ export const RiskUpdatedEventSchema = z.object({
   payload: z.record(z.string(), z.unknown()),
 });
 
+// ── Backend-native event types (envelope normalised by realtimeClient) ──
+
+export const VerdictUpdatedEventSchema = z.object({
+  type: z.literal("VerdictUpdated"),
+  payload: VerdictUpdatedPayloadSchema,
+});
+
+export const VerdictSnapshotEventSchema = z.object({
+  type: z.literal("VerdictSnapshot"),
+  payload: VerdictSnapshotPayloadSchema,
+});
+
+export const PipelineUpdatedEventSchema = z.object({
+  type: z.literal("PipelineUpdated"),
+  payload: PipelineUpdatedPayloadSchema,
+});
+
+export const PingEventSchema = z.object({
+  type: z.literal("ping"),
+  ts: z.number().optional(),
+});
+
 export const WsEventSchema = z.discriminatedUnion("type", [
+  // Legacy / frontend-native
   PipelineResultUpdatedEventSchema,
   ExecutionStateUpdatedEventSchema,
   RiskStateUpdatedEventSchema,
@@ -64,6 +94,11 @@ export const WsEventSchema = z.discriminatedUnion("type", [
   PriceUpdatedEventSchema,
   PricesSnapshotEventSchema,
   RiskUpdatedEventSchema,
+  // Backend-native (normalised envelope)
+  VerdictUpdatedEventSchema,
+  VerdictSnapshotEventSchema,
+  PipelineUpdatedEventSchema,
+  PingEventSchema,
 ]);
 
 export type WsEvent = z.infer<typeof WsEventSchema>;
