@@ -13,6 +13,7 @@ Authority: Dashboard-layer security. No market decisions.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import secrets
 import time
@@ -257,3 +258,32 @@ async def authenticate_websocket(ws: Any, manager: WSTokenManager) -> SessionInf
         raise AuthError(AuthErrorCode.NO_TOKEN.value)
 
     return manager.validate_token(token)
+
+
+def _map_auth_error_to_code(error: AuthError) -> AuthErrorCode:
+    """Map an AuthError to the corresponding AuthErrorCode.
+
+    Inspects the error message for known error code values.
+    Falls back to TOKEN_INVALID for unrecognised messages.
+    """
+    msg = str(error)
+    for code in AuthErrorCode:
+        if code.value in msg:
+            return code
+    return AuthErrorCode.TOKEN_INVALID
+
+
+async def _send_error_and_close(
+    ws: Any,
+    error_code: AuthErrorCode,
+    message: str,
+    close_code: int = 1008,
+) -> None:
+    """Send an auth_error JSON payload and close the WebSocket.
+
+    Silently swallows exceptions from already-closed connections.
+    """
+    with contextlib.suppress(Exception):
+        await ws.send_text(json.dumps({"type": "auth_error", "code": error_code.value, "message": message}))
+    with contextlib.suppress(Exception):
+        await ws.close(code=close_code)

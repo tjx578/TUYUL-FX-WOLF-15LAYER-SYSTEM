@@ -40,4 +40,19 @@ class FTMOGuard(BasePropFirmGuard):
                 f"Total DD would reach {total_dd_after:.2f}%, max {max_total_dd}%",
             )
 
+        # Warning thresholds (80% of limits)
+        warn_daily = max_daily_dd * 0.8
+        warn_total = max_total_dd * 0.8
+
+        if daily_dd_after >= warn_daily:
+            return self._warn(
+                "WARN_HIGH_DAILY_DD",
+                f"Daily DD would be {daily_dd_after:.2f}%, approaching limit of {max_daily_dd}%",
+            )
+        if total_dd_after >= warn_total:
+            return self._warn(
+                "WARN_HIGH_TOTAL_DD",
+                f"Total DD would be {total_dd_after:.2f}%, approaching limit of {max_total_dd}%",
+            )
+
         return self._allow()

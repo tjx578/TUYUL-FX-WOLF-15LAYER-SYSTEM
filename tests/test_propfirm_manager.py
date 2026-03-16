@@ -10,7 +10,6 @@ Validates:
 
 import pytest
 
-from accounts.account_model import RiskSeverity
 from propfirm_manager.profile_manager import PropFirmManager
 from propfirm_manager.profiles.aqua_instant_pro.guard import (
     AquaInstantProGuard,
@@ -49,7 +48,7 @@ class TestFTMOGuard:
 
         assert result.allowed is True
         assert result.code == "ALLOW"
-        assert result.severity == RiskSeverity.SAFE
+        assert result.severity == "allow"
 
     def test_ftmo_denies_when_daily_dd_exceeded(self):
         """FTMO denies when daily DD limit would be exceeded."""
@@ -80,7 +79,7 @@ class TestFTMOGuard:
         assert result.allowed is False
         assert "DENY" in result.code
         assert "daily" in result.details.lower()
-        assert result.severity == RiskSeverity.CRITICAL
+        assert result.severity == "deny"
 
     def test_ftmo_denies_when_max_open_trades_reached(self):
         """FTMO denies when max open trades reached."""
@@ -110,7 +109,7 @@ class TestFTMOGuard:
 
         assert result.allowed is False
         assert "OPEN_TRADES" in result.code
-        assert result.severity == RiskSeverity.CRITICAL
+        assert result.severity == "deny"
 
     def test_ftmo_warns_at_80_percent_threshold(self):
         """FTMO warns when approaching DD limits (80%)."""
@@ -140,7 +139,7 @@ class TestFTMOGuard:
 
         assert result.allowed is True
         assert "WARN" in result.code
-        assert result.severity == RiskSeverity.WARNING
+        assert result.severity == "warn"
 
 
 class TestAquaInstantProGuard:
