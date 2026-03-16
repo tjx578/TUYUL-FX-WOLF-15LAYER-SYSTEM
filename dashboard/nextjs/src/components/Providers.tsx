@@ -17,21 +17,6 @@ export function Providers({ children }: { children: React.ReactNode }) {
         revalidateOnReconnect: true,
         shouldRetryOnError: true,
         errorRetryCount: 3,
-        onErrorRetry: (error, _key, _config, revalidate, { retryCount }) => {
-          const status = (error as HttpError)?.status;
-
-          // Auth errors are not transient — don't spam the backend.
-          if (status === 401 || status === 403) return;
-
-          // 404 is usually a routing problem, not a transient error.
-          if (status === 404) return;
-
-          if (retryCount >= 3) return;
-
-          setTimeout(() => {
-            revalidate({ retryCount });
-          }, 1500);
-        },
       }}
     >
       {children}
