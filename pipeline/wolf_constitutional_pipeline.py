@@ -586,7 +586,7 @@ class WolfConstitutionalPipeline:
 
         if _dq_penalty > 0:
             logger.warning(
-                "[Pipeline v8.0] %s DATA QUALITY degraded — penalty=%.2f, reports=%s",
+                "[Pipeline v8.0] {} DATA QUALITY degraded - penalty={:.2f}, reports={}",
                 symbol,
                 _dq_penalty,
                 [r for r in _dq_reports if r["degraded"]],
@@ -693,7 +693,7 @@ class WolfConstitutionalPipeline:
             # Fallback: system_metrics pass-through (for test harness / manual override)
             if not trade_returns and system_metrics:
                 _raw = system_metrics.get("trade_returns", None)
-                if isinstance(_raw, (list, tuple)) and len(cast(list[Any], _raw)) > 0:
+                if isinstance(_raw, list | tuple) and len(cast(list[Any], _raw)) > 0:
                     trade_returns = [float(r) for r in cast(list[Any], _raw)]
 
             # Fallback: conditioned returns produced by realtime tick ingest.
@@ -730,7 +730,7 @@ class WolfConstitutionalPipeline:
                 _prices: list[float] = []
                 for c in _candles:
                     _close = c.get("close")
-                    if isinstance(_close, (int, float, str)):
+                    if isinstance(_close, int | float | str):
                         with contextlib.suppress(TypeError, ValueError):
                             _prices.append(float(_close))
                 if len(_prices) >= 2:

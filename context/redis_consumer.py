@@ -111,6 +111,7 @@ class RedisConsumer:
         self._config = config or RedisConsumerConfig()
 
         self._stop_event = asyncio.Event()
+        self._logged_empty_seed = False
 
     def stop(self) -> None:
         """Request the consumer to stop gracefully."""
@@ -129,6 +130,21 @@ class RedisConsumer:
 
         Calling this method more than once replaces (not appends) the stored candles.
         """
+        has_seed = await self._has_any_candle_seed()
+        if not has_seed:
+            if not self._logged_empty_seed:
+                logger.warning(
+                    "RedisConsumer: warmup skipped — no candle keys in Redis yet " "(waiting for ingest seed)"
+                )
+                self._logged_empty_seed = True
+            else:
+                logger.debug("RedisConsumer: warmup still waiting for first Redis candle seed")
+            return
+
+        if self._logged_empty_seed:
+            logger.info("RedisConsumer: Redis candle seed detected — loading warmup history")
+            self._logged_empty_seed = False
+
         for symbol in self._symbols:
             for timeframe in WARMUP_TIMEFRAMES:
                 raw_entries = await self._warmup_candle_history(symbol, timeframe)
@@ -167,6 +183,32 @@ class RedisConsumer:
                     symbol,
                     timeframe,
                 )
+
+    async def _has_any_candle_seed(self) -> bool:
+        """Fast probe to avoid O(symbol*timeframe) warmup scans when Redis is empty."""
+        patterns = (
+            "wolf15:candle_history:*",
+            "candle_history:*",
+            "wolf15:candle:*",
+        )
+
+        for pattern in patterns:
+            try:
+                cursor, keys = await self._redis.scan(0, match=pattern, count=1)
+                if keys:
+                    return True
+                if cursor and cursor != 0:
+                    # Continue scanning only when Redis indicates more keys.
+                    next_cursor = cursor
+                    while next_cursor:
+                        next_cursor, keys = await self._redis.scan(next_cursor, match=pattern, count=50)
+                        if keys:
+                            return True
+            except Exception:
+                # If scan is unsupported (e.g. in some tests/mocks), proceed with regular warmup path.
+                return True
+
+        return False
 
     async def _warmup_candle_history(self, symbol: str, timeframe: str) -> list[bytes]:
         """
@@ -220,13 +262,6 @@ class RedisConsumer:
 
         # Missing data is expected during startup races (engine before ingest).
         # Keep this as debug to avoid noisy false alarms in platform logs.
-        logger.debug(
-            "warmup_candle_history | symbol=%s tf=%s no_data_found " "tried list_prefixes=%s hash_key=%s",
-            symbol,
-            timeframe,
-            _get_candle_prefixes(),
-            hash_key,
-        )
         return []
 
     # ------------------------------------------------------------------

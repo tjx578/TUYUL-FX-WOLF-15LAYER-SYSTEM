@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# ── Validate Redis connectivity env var ──
+if [[ -z "${REDIS_URL:-}" && -z "${REDIS_PRIVATE_URL:-}" && -z "${REDISHOST:-}" ]]; then
+  echo "[startup] WARNING: No Redis URL configured (REDIS_URL / REDIS_PRIVATE_URL / REDISHOST). Outbox worker and real-time features will fail." >&2
+fi
+
 # ── Run Alembic migrations (idempotent — safe on every deploy) ──
 if [[ -n "${DATABASE_URL:-}" ]]; then
   echo "[startup] Running database migrations…"
