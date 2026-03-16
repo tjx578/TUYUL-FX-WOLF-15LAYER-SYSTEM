@@ -579,7 +579,15 @@ class WolfConstitutionalPipeline:
         _dq_reports: list[dict[str, Any]] = []
         for tf in self.WARMUP_MIN_BARS:
             candles = self._context_bus.get_candles(symbol, tf)
-            dq_report = _dq_gate.assess(symbol, tf, candles)
+            # Extract last-update timestamp from the newest candle so the
+            # staleness check uses real data instead of defaulting to inf.
+            _last_ts: float | None = None
+            if candles:
+                _last_c = candles[-1]
+                _last_ts = _last_c.get("timestamp_close") or _last_c.get("timestamp") or _last_c.get("time")
+                if _last_ts is not None:
+                    _last_ts = float(_last_ts)
+            dq_report = _dq_gate.assess(symbol, tf, candles, last_update_ts=_last_ts)
             _dq_reports.append(dq_report.to_dict())
             if dq_report.confidence_penalty > _dq_penalty:
                 _dq_penalty = dq_report.confidence_penalty
