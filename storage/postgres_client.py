@@ -44,6 +44,12 @@ class PostgresClient:
                     min_size=1,
                     max_size=10,
                     command_timeout=30,
+                    max_inactive_connection_lifetime=60.0,
+                    server_settings={
+                        "tcp_keepalives_idle": "30",
+                        "tcp_keepalives_interval": "10",
+                        "tcp_keepalives_count": "3",
+                    },
                 ),
                 timeout=30,
             )
