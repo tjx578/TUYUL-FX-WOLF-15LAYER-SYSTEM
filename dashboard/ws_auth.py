@@ -123,6 +123,8 @@ class WSTokenManager:
 
     def __init__(self, secret_key: str, max_age: int = 3600) -> None:
         super().__init__()
+        if not secret_key:
+            raise ValueError("WS_SECRET_KEY must not be empty")
         self._secret = secret_key
         self._max_age = max_age
         self._revoked: set[str] = set()  # revoked session-ids
@@ -252,6 +254,19 @@ class WSTokenManager:
 
         # Create new token reusing the same session_id
         return self.create_token(rec["user_id"], _session_id=session_id)
+
+    def revoke_all_for_user(self, user_id: str) -> int:
+        """Revoke all sessions belonging to a user.
+
+        Returns:
+            Number of sessions revoked.
+        """
+        to_revoke = [
+            sid for sid, rec in self._sessions.items() if rec["user_id"] == user_id and sid not in self._revoked
+        ]
+        for sid in to_revoke:
+            self.revoke_session(sid)
+        return len(to_revoke)
 
 
 async def authenticate_websocket(
