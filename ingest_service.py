@@ -14,7 +14,7 @@ import orjson  # noqa: I001  — needed before analysis imports for _seed_redis_
 from loguru import logger
 
 from analysis.macro.macro_regime_engine import MacroRegimeEngine
-from config_loader import CONFIG
+from config_loader import get_enabled_symbols
 from context.system_state import SystemState, SystemStateManager
 from core.health_probe import HealthProbe
 from infrastructure.circuit_breaker import CircuitBreaker
@@ -116,14 +116,7 @@ async def _has_stale_cache(redis: RedisClient) -> bool:
     return False
 
 
-def _get_enabled_symbols() -> list[str]:
-    from typing import cast
-
-    raw: Any = CONFIG.get("pairs", {}).get("pairs", [])
-    if not isinstance(raw, list):
-        return []
-    pairs: list[dict[str, Any]] = cast(list[dict[str, Any]], raw)
-    return [p["symbol"] for p in pairs if isinstance(p, dict) and p.get("enabled")]
+# Symbol resolution delegated to config_loader.get_enabled_symbols()
 
 
 def _build_redis_client() -> RedisClient:
@@ -378,7 +371,8 @@ async def run_ingest_services(has_api_key: bool) -> None:
             await asyncio.sleep(1)
         return
 
-    enabled_symbols = _get_enabled_symbols()
+    enabled_symbols = get_enabled_symbols()
+    logger.info("[Ingest] enabled symbols count=%d symbols=%s", len(enabled_symbols), enabled_symbols[:10])
     redis: RedisClient | None = None
     ws_feed = None
     rest_poll = None
@@ -391,6 +385,11 @@ async def run_ingest_services(has_api_key: bool) -> None:
         system_state = SystemStateManager()
         system_state.set_state(SystemState.WARMING_UP)
         warmup_results = await _run_warmup(system_state, enabled_symbols)
+        logger.info(
+            "[Warmup] results count=%d symbols_with_data=%s",
+            len(warmup_results),
+            list(warmup_results.keys())[:10],
+        )
 
         # Seed Redis Lists so the engine's RedisConsumer can warm up
         # without waiting for live candle completion (fixes race condition).

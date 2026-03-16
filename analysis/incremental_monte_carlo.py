@@ -13,6 +13,7 @@ Zone: analysis/
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import logging
@@ -373,27 +374,63 @@ class IncrementalMonteCarlo:
         return hashlib.sha256("|".join(key_data).encode()).hexdigest()[:16]
 
     def _persist_cache(self) -> None:
-        """Persist cache metadata to Redis (result is too large for Redis)."""
-        if not self._redis or not self._cache:
+        """Persist cache metadata to Redis and PostgreSQL."""
+        if not self._cache:
+            return
+
+        # --- Redis (metadata only) ---
+        if self._redis:
+            try:
+                meta = {
+                    "computed_at": self._cache.computed_at,
+                    "pair_hash": self._cache.pair_hash,
+                    "n_simulations": self._cache.n_simulations,
+                    "is_incremental": self._cache.is_incremental,
+                    "advisory": self._cache.result.advisory_flag,
+                    "risk_of_ruin": self._cache.result.portfolio_risk_of_ruin,
+                    "max_drawdown": self._cache.result.portfolio_max_drawdown,
+                    "pair_count": len(self._pair_specs),
+                }
+                if hasattr(self._redis, "set"):
+                    self._redis.set(  # type: ignore[union-attr]
+                        _REDIS_MC_META_KEY,
+                        json.dumps(meta),
+                    )
+            except Exception as e:
+                logger.warning("Failed to persist MC cache metadata: %s", e)
+
+        # --- PostgreSQL (full result for historical trending) ---
+        self._persist_to_postgres()
+
+    def _persist_to_postgres(self) -> None:
+        """Fire-and-forget async write of MC result to PostgreSQL."""
+        if not self._cache:
             return
         try:
-            meta = {
-                "computed_at": self._cache.computed_at,
-                "pair_hash": self._cache.pair_hash,
-                "n_simulations": self._cache.n_simulations,
-                "is_incremental": self._cache.is_incremental,
-                "advisory": self._cache.result.advisory_flag,
-                "risk_of_ruin": self._cache.result.portfolio_risk_of_ruin,
-                "max_drawdown": self._cache.result.portfolio_max_drawdown,
-                "pair_count": len(self._pair_specs),
-            }
-            if hasattr(self._redis, "set"):
-                self._redis.set(  # type: ignore[union-attr]
-                    _REDIS_MC_META_KEY,
-                    json.dumps(meta),
+            from storage.mc_persistence import persist_mc_result  # noqa: PLC0415
+        except ImportError:
+            return
+
+        cache = self._cache
+        pair_specs = list(self._pair_specs)
+
+        async def _write() -> None:
+            try:
+                await persist_mc_result(
+                    result=cache.result,
+                    pair_specs=pair_specs,
+                    is_incremental=cache.is_incremental,
+                    computed_at=cache.computed_at,
                 )
-        except Exception as e:
-            logger.warning("Failed to persist MC cache metadata: %s", e)
+            except Exception as exc:
+                logger.warning("MC postgres persistence failed: %s", exc)
+
+        try:
+            loop = asyncio.get_running_loop()
+            loop.create_task(_write())
+        except RuntimeError:
+            # No running event loop — skip async persistence
+            logger.debug("MC postgres persistence skipped: no running event loop")
 
     def _clear_redis_cache(self) -> None:
         """Clear Redis cache."""

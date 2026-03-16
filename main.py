@@ -27,7 +27,7 @@ import uvicorn
 from loguru import logger
 from redis.asyncio import Redis as AsyncRedis
 
-from config_loader import CONFIG
+from config_loader import CONFIG, get_enabled_symbols
 from core.health_probe import HealthProbe
 from infrastructure.tracing import (
     instrument_asyncio,
@@ -54,7 +54,7 @@ try:
 except Exception:  # V11 optional — missing = skip
     _v11_hook = None
 
-PAIRS: list[str] = [str(p["symbol"]) for p in CONFIG["pairs"]["pairs"] if p.get("enabled", True)]
+PAIRS: list[str] = get_enabled_symbols()
 
 _shutdown_event: asyncio.Event | None = None
 _pipeline = WolfConstitutionalPipeline()

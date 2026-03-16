@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-import contextlib
 import json
 import time
 from typing import Any
+
+from loguru import logger
 
 from allocation.signal_registry import SignalRegistry
 from config_loader import load_pairs
@@ -52,8 +53,12 @@ class SignalService:
             "symbol": contract.get("symbol"),
             "ts": time.time(),
         }
-        with contextlib.suppress(Exception):
+        try:
             redis_client.publish(SIGNAL_READY_CHANNEL, json.dumps(event_payload))
+        except Exception:
+            logger.warning(
+                "[SignalService] Failed to publish SIGNAL_READY for %s", contract.get("signal_id"), exc_info=True
+            )
         return contract
 
     def get(self, signal_id: str) -> dict[str, Any] | None:

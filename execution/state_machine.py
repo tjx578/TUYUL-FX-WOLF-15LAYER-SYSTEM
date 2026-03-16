@@ -1,4 +1,15 @@
-"""Execution state machine with strict, replay-safe transitions."""
+"""Execution state machine with strict, replay-safe transitions.
+
+Supports per-symbol FSM instances via ``StateMachineRegistry``.
+Each symbol gets its own independent ``StateMachine`` so multi-pair
+concurrent execution never collides.
+
+Backward compatibility:
+    ``ExecutionStateMachine`` is now an alias for ``StateMachineRegistry``
+    (a thread-safe singleton).  Code that previously called
+    ``ExecutionStateMachine().set_pending(...)`` should migrate to
+    ``ExecutionStateMachine().get(symbol).set_pending(...)``.
+"""
 
 from __future__ import annotations
 
@@ -55,18 +66,9 @@ _EVENT_TO_TERMINAL = {
 
 
 class StateMachine:
-    _instance = None
-    _instance_lock = Lock()
+    """Single-symbol FSM.  Not a singleton — one instance per symbol."""
 
-    def __new__(cls):
-        if not cls._instance:
-            with cls._instance_lock:
-                if not cls._instance:
-                    cls._instance = super().__new__(cls)
-                    cls._instance._init()
-        return cls._instance
-
-    def _init(self) -> None:
+    def __init__(self) -> None:
         self.state = OrderState.IDLE
         self.order: dict[str, Any] | None = None
         self.reason: str | None = None
@@ -93,9 +95,7 @@ class StateMachine:
 
             next_state = _TRANSITIONS.get(current, {}).get(event)
             if next_state is None:
-                raise ValueError(
-                    f"Invalid transition: {current.value} + {event.value}"
-                )
+                raise ValueError(f"Invalid transition: {current.value} + {event.value}")
 
             self.state = next_state
             self.last_event = event.value
@@ -138,4 +138,91 @@ class StateMachine:
         }
 
 
-ExecutionStateMachine = StateMachine
+class StateMachineRegistry:
+    """Thread-safe registry of per-symbol ``StateMachine`` instances.
+
+    Usage::
+
+        registry = StateMachineRegistry()   # singleton
+        sm = registry.get("EURUSD")
+        sm.set_pending({"order_id": "T-1", "symbol": "EURUSD"})
+    """
+
+    _instance: StateMachineRegistry | None = None
+    _instance_lock = Lock()
+    _machines: dict[str, StateMachine]
+    _reg_lock: Lock
+
+    def __new__(cls) -> StateMachineRegistry:
+        if cls._instance is None:
+            with cls._instance_lock:
+                if cls._instance is None:
+                    inst = super().__new__(cls)
+                    inst._machines = {}
+                    inst._reg_lock = Lock()
+                    cls._instance = inst
+        return cls._instance
+
+    # -- per-symbol access -------------------------------------------------
+
+    def get(self, symbol: str) -> StateMachine:
+        """Return the FSM for *symbol*, creating one on first access."""
+        sym = symbol.upper()
+        if sym not in self._machines:
+            with self._reg_lock:
+                if sym not in self._machines:
+                    self._machines[sym] = StateMachine()
+        return self._machines[sym]
+
+    def symbols(self) -> list[str]:
+        """Return list of tracked symbols."""
+        return list(self._machines.keys())
+
+    def snapshot_all(self) -> dict[str, dict[str, Any]]:
+        """Return ``{symbol: snapshot}`` for every tracked symbol."""
+        return {sym: sm.snapshot() for sym, sm in self._machines.items()}
+
+    def reset(self, symbol: str) -> None:
+        """Reset FSM for *symbol* back to IDLE.  Useful after trade lifecycle."""
+        sym = symbol.upper()
+        with self._reg_lock:
+            self._machines[sym] = StateMachine()
+
+    def reset_all(self) -> None:
+        """Clear all tracked symbols.  **Test-only.**"""
+        with self._reg_lock:
+            self._machines.clear()
+
+    # -- backward-compat shims (delegate to unnamed / first symbol) -------
+    # These let old callers that did ``ExecutionStateMachine().is_pending()``
+    # continue to work during the migration period.  They operate on a
+    # reserved ``__default__`` symbol.
+
+    _DEFAULT = "__default__"
+
+    def _default(self) -> StateMachine:
+        return self.get(self._DEFAULT)
+
+    def set_pending(self, order: dict[str, Any]) -> TransitionResult:
+        return self._default().set_pending(order)
+
+    def set_cancelled(self, reason: str) -> TransitionResult:
+        return self._default().set_cancelled(reason)
+
+    def set_filled(self, fill_info: dict[str, Any]) -> TransitionResult:
+        return self._default().set_filled(fill_info)
+
+    def is_pending(self) -> bool:
+        return self._default().is_pending()
+
+    def snapshot(self) -> dict[str, Any]:
+        return self._default().snapshot()
+
+    # -- singleton-compat for old code that called ``_init()`` on tests ---
+
+    def _init(self) -> None:
+        """Reset default symbol FSM — backward compat for tests."""
+        self.reset(self._DEFAULT)
+
+
+ExecutionStateMachine = StateMachineRegistry
