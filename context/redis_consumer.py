@@ -63,6 +63,7 @@ _get_candle_prefixes = get_candle_prefixes
 # Hash key prefix for latest single candle (HSET by RedisContextBridge)
 CANDLE_HASH_PREFIX: str = "wolf15:candle"
 
+
 @dataclass(frozen=True)
 class RedisConsumerConfig:
     """Runtime config for RedisConsumer.
@@ -132,11 +133,12 @@ class RedisConsumer:
             for timeframe in WARMUP_TIMEFRAMES:
                 raw_entries = await self._warmup_candle_history(symbol, timeframe)
                 if not raw_entries:
-                    logger.info(
-                        "RedisConsumer: no data for %s:%s (tried all prefixes)",
-                        symbol,
-                        timeframe,
-                    )
+                    if timeframe != "M15":
+                        logger.debug(
+                            "RedisConsumer: no data for %s:%s (tried all prefixes)",
+                            symbol,
+                            timeframe,
+                        )
                     continue
 
                 # Derive a display key from the first successful prefix for logging
@@ -193,9 +195,7 @@ class RedisConsumer:
                     return raw_entries
             except Exception as exc:
                 # WRONGTYPE or connection error — log and try next prefix
-                logger.warning(
-                    "warmup_candle_history | lrange failed on %s: %s", key, exc
-                )
+                logger.warning("warmup_candle_history | lrange failed on %s: %s", key, exc)
 
         # ── Priority 2: Hash key (single latest candle) ──
         # wolf15:candle:{sym}:{tf} is written via HSET by RedisContextBridge.
@@ -216,13 +216,12 @@ class RedisConsumer:
                     )
                     return [raw_json]
         except Exception as exc:
-            logger.warning(
-                "warmup_candle_history | hgetall failed on %s: %s", hash_key, exc
-            )
+            logger.warning("warmup_candle_history | hgetall failed on %s: %s", hash_key, exc)
 
-        logger.warning(
-            "warmup_candle_history | symbol=%s tf=%s no_data_found "
-            "tried list_prefixes=%s hash_key=%s",
+        # Missing data is expected during startup races (engine before ingest).
+        # Keep this as debug to avoid noisy false alarms in platform logs.
+        logger.debug(
+            "warmup_candle_history | symbol=%s tf=%s no_data_found " "tried list_prefixes=%s hash_key=%s",
             symbol,
             timeframe,
             _get_candle_prefixes(),
@@ -269,7 +268,7 @@ class RedisConsumer:
         data = message.get("data")
         if data is None:
             return None
-        if isinstance(data, (bytes, bytearray)):
+        if isinstance(data, bytes | bytearray):
             return bytes(data)
         # Sometimes data can be str (depending on decode_responses)
         if isinstance(data, str):
