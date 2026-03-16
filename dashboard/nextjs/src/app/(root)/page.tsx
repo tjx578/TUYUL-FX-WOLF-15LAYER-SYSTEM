@@ -58,8 +58,8 @@ function GlobalStatusStrip({
     {
       label: "LIVE FEED",
       value: wsStatus,
-      color: wsStatus === "CONNECTED" ? "var(--green)" : wsStatus === "RECONNECTING" ? "var(--yellow)" : "var(--red)",
-      pulse: wsStatus === "CONNECTED",
+      color: wsStatus === "LIVE" ? "var(--green)" : (wsStatus === "RECONNECTING" || wsStatus === "CONNECTING" || wsStatus === "DEGRADED" || wsStatus === "STALE") ? "var(--yellow)" : "var(--red)",
+      pulse: wsStatus === "LIVE",
     },
     {
       label: "ENGINE",

@@ -20,28 +20,29 @@ const STREAM_ENDPOINTS: Record<string, string> = {
   context:   "/api/v1/context",
   execution: "/api/v1/execution",
   accounts:  "/api/v1/accounts",
+  risk:      "/api/v1/accounts/risk-snapshot",
 };
 
 const CHECKLIST = [
   {
     label: "INTERNAL_API_URL env var",
-    detail: "Set on Vercel project settings. Example: https://wolf15-api.up.railway.app",
+    detail: "Set INTERNAL_API_URL (server-side) on Vercel project Vars. Example: https://wolf15-api.up.railway.app — WITHOUT trailing /api",
     key: "env-url",
   },
   {
+    label: "NEXT_PUBLIC_WS_BASE_URL env var",
+    detail: "Set NEXT_PUBLIC_WS_BASE_URL to the bare wss:// ORIGIN only — NO /ws suffix! Correct: wss://wolf15-api.up.railway.app — Wrong: wss://wolf15-api.up.railway.app/ws (causes double /ws path and instant disconnect).",
+    key: "env-ws",
+  },
+  {
     label: "/health endpoint reachable",
-    detail: "Backend must respond 200 at GET /health",
+    detail: "Backend must respond 200 at GET /health (no /api prefix). Check PING /health result above.",
     key: "health",
   },
   {
     label: "CORS_ORIGINS includes dashboard domain",
-    detail: "Backend CORS config must allow the Vercel deployment URL",
+    detail: "Backend CORS config must allow the Vercel deployment URL and wss:// origin for WebSocket upgrades.",
     key: "cors",
-  },
-  {
-    label: "Next.js rewrite proxy configured",
-    detail: "next.config.js rewrites /api/* → INTERNAL_API_URL",
-    key: "rewrite",
   },
 ];
 
