@@ -126,6 +126,30 @@ class FinnhubCandleFetcher:
 
         return f"{self.symbol_prefix}:{formatted}"
 
+    @staticmethod
+    def _enabled_symbols_from_config(config: dict[str, Any]) -> list[str]:
+        """Resolve enabled symbols from either pairs.symbols or pairs.pairs."""
+        pairs_cfg = config.get("pairs", {})
+
+        symbols = pairs_cfg.get("symbols", [])
+        if isinstance(symbols, list):
+            normalized = [str(s) for s in symbols if isinstance(s, str) and s]
+            if normalized:
+                return normalized
+
+        pairs = pairs_cfg.get("pairs", [])
+        if not isinstance(pairs, list):
+            return []
+
+        enabled: list[str] = []
+        for pair in pairs:
+            if not isinstance(pair, dict):
+                continue
+            symbol = pair.get("symbol")
+            if isinstance(symbol, str) and symbol and pair.get("enabled"):
+                enabled.append(symbol)
+        return enabled
+
     def _calculate_from_ts(self, bars: int, timeframe: str) -> int:
         """
         Calculate from timestamp for fetching historical bars.
@@ -443,8 +467,8 @@ class FinnhubCandleFetcher:
             logger.info("Warmup disabled in config")
             return {}
 
-        # Get enabled symbols from config
-        enabled_symbols = CONFIG["pairs"].get("symbols", [])
+        # Get enabled symbols from config (supports pairs.symbols and pairs.pairs)
+        enabled_symbols = self._enabled_symbols_from_config(CONFIG)
         if not enabled_symbols:
             logger.warning("No enabled symbols found for warmup")
             return {}

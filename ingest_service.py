@@ -328,16 +328,27 @@ async def _seed_redis_candle_history(
 
             key = f"wolf15:candle_history:{symbol}:{timeframe}"
 
-            with contextlib.suppress(Exception):
+            try:
                 existing: int = await redis.llen(key)
                 if existing >= len(candles):
                     logger.debug("[Seed] %s already has %d bars, skip", key, existing)
                     continue
+            except Exception as exc:
+                logger.warning(
+                    "[Seed] LLEN failed for {} (will attempt RPUSH anyway): {}",
+                    key,
+                    exc,
+                )
 
             try:
                 pipe = redis.pipeline()
                 for candle in candles:
-                    candle_json = orjson.dumps(candle).decode("utf-8")
+                    normalized = dict(candle)
+                    ts = normalized.get("timestamp")
+                    if isinstance(ts, datetime):
+                        # Use explicit ISO-8601 to keep payload stable across clients.
+                        normalized["timestamp"] = ts.isoformat()
+                    candle_json = orjson.dumps(normalized).decode("utf-8")
                     pipe.rpush(key, candle_json)
                 await pipe.execute()
                 seeded += 1
