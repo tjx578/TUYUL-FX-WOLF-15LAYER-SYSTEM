@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import json
+import os
 import random
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -16,6 +17,24 @@ from storage.postgres_client import PostgresClient, pg_client
 
 TRADE_OUTBOX_STREAM = "trade:outbox"
 TRADE_OUTBOX_GROUP = "trade-outbox-workers"
+
+
+def _is_railway_runtime() -> bool:
+    return bool(
+        os.environ.get("RAILWAY_ENVIRONMENT")
+        or os.environ.get("RAILWAY_ENVIRONMENT_ID")
+        or os.environ.get("RAILWAY_PROJECT_ID")
+        or os.environ.get("RAILWAY_SERVICE_ID")
+        or os.environ.get("RAILWAY_DEPLOYMENT_ID")
+        or os.environ.get("RAILWAY_REPLICA_ID")
+    )
+
+
+def _is_nonrecoverable_redis_config_error(exc: Exception) -> bool:
+    text = str(exc)
+    if "Redis configuration missing on Railway" in text:
+        return True
+    return _is_railway_runtime() and "localhost:6379" in text and "Connection refused" in text
 
 
 @dataclass(frozen=True)
@@ -76,6 +95,12 @@ class TradeOutboxWorker:
                     redis = await get_client()
                     self._consecutive_failures = 0
                 except Exception as exc:  # noqa: BLE001
+                    if _is_nonrecoverable_redis_config_error(exc):
+                        logger.error(
+                            "Outbox worker disabled due to non-recoverable Redis configuration error: {}",
+                            exc,
+                        )
+                        return
                     self._consecutive_failures += 1
                     delay = self._backoff_delay()
                     logger.warning(

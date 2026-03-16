@@ -147,6 +147,22 @@ def test_get_redis_url_raises_on_railway_when_redis_env_missing() -> None:
         get_redis_url()
 
 
+def test_get_redis_url_raises_on_railway_when_only_environment_id_present() -> None:
+    from infrastructure.redis_url import get_redis_url
+
+    env = {
+        "RAILWAY_ENVIRONMENT_ID": "env_123",
+    }
+    with (
+        patch.dict(os.environ, env, clear=True),
+        pytest.raises(
+            RuntimeError,
+            match="Redis configuration missing on Railway",
+        ),
+    ):
+        get_redis_url()
+
+
 def test_get_redis_url_allows_localhost_fallback_on_railway_with_override() -> None:
     from infrastructure.redis_url import get_redis_url
 
