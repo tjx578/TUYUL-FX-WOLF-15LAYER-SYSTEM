@@ -13,18 +13,24 @@ import importlib
 import json
 import logging
 from datetime import UTC, datetime
+from typing import Any
 
 import redis.asyncio as aioredis
-from fastapi import APIRouter, Depends, HTTPException
-
-from .middleware.auth import verify_token
+from fastapi import APIRouter, Depends, Header, HTTPException, Request
 
 logger = logging.getLogger(__name__)
+
+
+def _verify_token(request: Request, authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    """Resolve auth dependency at runtime to avoid static import path issues."""
+    auth_module = importlib.import_module("api.middleware.auth")
+    return auth_module.verify_token(request=request, authorization=authorization)
+
 
 router = APIRouter(
     prefix="/api/v1/instruments",
     tags=["instruments"],
-    dependencies=[Depends(verify_token)],
+    dependencies=[Depends(_verify_token)],
 )
 
 
