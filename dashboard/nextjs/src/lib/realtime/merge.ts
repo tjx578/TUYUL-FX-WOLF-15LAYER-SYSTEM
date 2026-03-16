@@ -25,7 +25,7 @@ export function mergeMap<K extends string, V>(
  * Merge a single record delta into a snapshot, guarded by timestamp.
  * If delta.timestamp <= snapshot.timestamp, the delta is discarded (stale guard).
  */
-export function mergeSingle<T extends Record<string, unknown>>(
+export function mergeSingle<T extends object>(
   snapshot: T | null,
   delta: T
 ): T {
