@@ -34,10 +34,11 @@ export function useLiveRisk(
   const [lastUpdatedAt, setLastUpdatedAt] = useState<number | null>(null);
 
   const staleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const hasReceivedWsData = useRef(false);
 
-  // Sync initial snapshot
+  // Sync initial snapshot (only before WS takes over)
   useEffect(() => {
-    if (initialSnapshot) setSnapshot(initialSnapshot);
+    if (!hasReceivedWsData.current && initialSnapshot) setSnapshot(initialSnapshot);
   }, [initialSnapshot]);
 
   const resetStaleTimer = useCallback(() => {
@@ -58,6 +59,7 @@ export function useLiveRisk(
       path,
       onEvent: (event) => {
         if (event.type === "RiskUpdated") {
+          hasReceivedWsData.current = true;
           setSnapshot((prev) =>
             mergeSingle(prev, event.payload as unknown as RiskSnapshot)
           );
