@@ -202,10 +202,11 @@ export function useActiveTrades() {
   return { data, isLoading, isError: !!error, error, mutate };
 }
 
-export function useAllVerdicts() {
+export function useAllVerdicts(options?: { refreshInterval?: number }) {
   const { data, error, isLoading, mutate } = useSWR<L12Verdict[] | Record<string, L12Verdict>>(
     API_ENDPOINTS.verdictAll,
-    fetcher
+    fetcher,
+    options?.refreshInterval ? { refreshInterval: options.refreshInterval } : undefined
   );
   const normalized = normalizeVerdictResponse(data);
   return { data: normalized, isLoading, isError: !!error, error, mutate };
@@ -236,7 +237,8 @@ export function useHealth() {
 export function useContext() {
   const { data, error, isLoading } = useSWR<ContextSnapshot>(
     API_ENDPOINTS.context,
-    fetcher
+    fetcher,
+    { refreshInterval: 30_000 },
   );
   return { data, isLoading, isError: !!error, error };
 }
@@ -492,7 +494,7 @@ export async function skipSignal(req: SkipSignalRequest): Promise<void> {
   await apiMutate("/api/v1/signals/skip", req);
 }
 
-export async function createAccount(data: AccountCreate): Promise<Account> {
+export async function createAccount(data: AccountCreate & { data_source?: string }): Promise<Account> {
   return apiMutate(API_ENDPOINTS.accounts, {
     account_name: data.account_name,
     broker: data.broker,
@@ -504,7 +506,7 @@ export async function createAccount(data: AccountCreate): Promise<Account> {
     leverage: 100,
     commission_model: "standard",
     notes: "",
-    data_source: "MANUAL",
+    data_source: data.data_source || "MANUAL",
     prop_firm: Boolean(data.prop_firm_code),
     max_daily_dd_percent: 4,
     max_total_dd_percent: 8,

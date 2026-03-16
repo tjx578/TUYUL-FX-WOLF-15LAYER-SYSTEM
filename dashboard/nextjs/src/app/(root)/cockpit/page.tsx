@@ -11,7 +11,7 @@
 // Execution decisions remain with Layer-12 / Constitution.
 // ============================================================
 
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useMemo } from "react";
 import {
   T, RADIUS, FONT_MONO, FONT_DISPLAY,
   PROP_FIRMS, ROLE_CONFIG, GLOBAL_CSS,
@@ -21,12 +21,13 @@ import {
   Card, Bar, Ring, StreamBadge,
 } from "@/components/ui";
 import { PipelinePanel } from "@/components/panels/PipelinePanel";
-import { apiClient } from "@/services/apiClient";
 import {
   useAccounts,
   useAccountsRiskSnapshot,
   useContext as useMarketContext,
+  useAllVerdicts,
 } from "@/lib/api";
+import { useClock } from "@/hooks/useClock";
 import type { Account } from "@/types";
 
 // ── Wolf score shape from API ─────────────────────────────────
@@ -756,10 +757,85 @@ export default function CockpitPage() {
 
   const [activeId, setActiveId] = useState("");
   const [killSwitch, setKillSwitch] = useState(false);
-  const [clock, setClock] = useState("");
-  const [wolfScores, setWolfScores] = useState<WolfScores>(WOLF_DEFAULTS);
-  const [wolfMaxTotal, setWolfMaxTotal] = useState(WOLF_MAX_TOTAL_DEFAULT);
-  const [verdictStatus, setVerdictStatus] = useState<VerdictStatus>(STATUS_DEFAULTS);
+
+  // Shared clock — single interval across all consumers
+  const clockTs = useClock();
+  const clock = new Date(clockTs).toLocaleTimeString();
+
+  // Wolf scores via SWR (deduplicates with other useAllVerdicts consumers)
+  const { data: allVerdicts, isError: wolfScoreStale } = useAllVerdicts({ refreshInterval: 15_000 });
+
+  const { wolfScores, wolfMaxTotal, verdictStatus } = useMemo(() => {
+    const toNumber = (value: unknown, fallback = 0): number => {
+      const parsed = Number(value);
+      return Number.isFinite(parsed) ? parsed : fallback;
+    };
+
+    if (!allVerdicts || allVerdicts.length === 0) {
+      return { wolfScores: WOLF_DEFAULTS, wolfMaxTotal: WOLF_MAX_TOTAL_DEFAULT, verdictStatus: STATUS_DEFAULTS };
+    }
+
+    const entries = allVerdicts as unknown as Array<{
+      scores?: Record<string, unknown>;
+      gates?: Record<string, unknown>;
+      system?: Record<string, unknown>;
+    }>;
+
+    const aggGates: Record<string, unknown> = { passed: 0, total: 0 };
+    const aggSystem: Record<string, unknown> = { latency_ms: 0 };
+
+    for (const e of entries) {
+      const eg = e?.gates ?? {};
+      const esys = e?.system ?? {};
+      aggGates.passed = toNumber(aggGates.passed, 0) + toNumber(eg.passed, 0);
+      aggGates.total = toNumber(aggGates.total, 0) + toNumber(eg.total, 0);
+      if (toNumber(esys.latency_ms, 0) > toNumber(aggSystem.latency_ms, 0)) {
+        aggSystem.latency_ms = esys.latency_ms;
+      }
+    }
+
+    const bestEntry = entries.reduce((best, e) => {
+      const bestWolf = toNumber((best?.scores as Record<string, unknown> | undefined)?.wolf_score, 0);
+      const curWolf = toNumber((e?.scores as Record<string, unknown> | undefined)?.wolf_score, 0);
+      return curWolf > bestWolf ? e : best;
+    }, entries[0]);
+
+    const entry = bestEntry!;
+    const s = entry.scores ?? {};
+
+    const wolf30Raw = s.wolf_30_point;
+    const wolf30Obj = (wolf30Raw && typeof wolf30Raw === "object")
+      ? (wolf30Raw as Record<string, unknown>)
+      : null;
+
+    const parsedMaxTotal = Math.max(
+      1,
+      Math.round(toNumber(wolf30Obj?.max_possible, WOLF_MAX_TOTAL_DEFAULT)),
+    );
+
+    return {
+      wolfScores: {
+        wolf_score: Math.round(
+          toNumber(
+            wolf30Obj?.total,
+            toNumber(s.wolf_30_point, toNumber(s.wolf_score, 0)),
+          ),
+        ),
+        f_score: Math.round(toNumber(wolf30Obj?.f_score, toNumber(s.f_score, 0))),
+        t_score: Math.round(toNumber(wolf30Obj?.t_score, toNumber(s.t_score, 0))),
+        fta_score: Math.round(toNumber(wolf30Obj?.fta_score, toNumber(s.fta_score, 0))),
+        exec_score: Math.round(toNumber(wolf30Obj?.exec_score, toNumber(s.exec_score, 0))),
+      },
+      wolfMaxTotal: parsedMaxTotal,
+      verdictStatus: {
+        tii: toNumber(s.tii, STATUS_DEFAULTS.tii),
+        integrity: toNumber(s.integrity, STATUS_DEFAULTS.integrity),
+        pipelinePass: Math.max(0, Math.round(toNumber(aggGates.passed, STATUS_DEFAULTS.pipelinePass))),
+        pipelineTotal: Math.max(1, Math.round(toNumber(aggGates.total, STATUS_DEFAULTS.pipelineTotal))),
+        latencyMs: Math.max(0, Math.round(toNumber(aggSystem.latency_ms, STATUS_DEFAULTS.latencyMs))),
+      },
+    };
+  }, [allVerdicts]);
 
   // Auto-select first account when data arrives
   useEffect(() => {
@@ -767,79 +843,6 @@ export default function CockpitPage() {
       setActiveId(accounts[0].id);
     }
   }, [accounts, activeId]);
-
-  // Clock tick — client-only to avoid SSR mismatch
-  useEffect(() => {
-    setClock(new Date().toLocaleTimeString());
-    const id = setInterval(() => setClock(new Date().toLocaleTimeString()), 1000);
-    return () => clearInterval(id);
-  }, []);
-
-  // Fetch wolf scores from API — poll every 15 s
-  const fetchWolfScores = useCallback(async () => {
-    const toNumber = (value: unknown, fallback = 0): number => {
-      const parsed = Number(value);
-      return Number.isFinite(parsed) ? parsed : fallback;
-    };
-
-    try {
-      const res = await apiClient.get("/api/v1/verdict/all");
-      const verdicts = res.data ?? {};
-      // Pick first available verdict; schema can vary between score-contract versions.
-      const entries = Object.values(verdicts) as Array<{
-        scores?: Record<string, unknown>;
-        gates?: Record<string, unknown>;
-        system?: Record<string, unknown>;
-      }>;
-
-      if (entries.length > 0 && entries[0]) {
-        const entry = entries[0];
-        const s = entry.scores ?? {};
-        const gates = entry.gates ?? {};
-        const system = entry.system ?? {};
-
-        const wolf30Raw = s.wolf_30_point;
-        const wolf30Obj = (wolf30Raw && typeof wolf30Raw === "object")
-          ? (wolf30Raw as Record<string, unknown>)
-          : null;
-
-        const parsedMaxTotal = Math.max(
-          1,
-          Math.round(toNumber(wolf30Obj?.max_possible, WOLF_MAX_TOTAL_DEFAULT)),
-        );
-
-        setWolfScores({
-          wolf_score: Math.round(
-            toNumber(
-              wolf30Obj?.total,
-              toNumber(s.wolf_30_point, toNumber(s.wolf_score, 0)),
-            ),
-          ),
-          f_score: Math.round(toNumber(wolf30Obj?.f_score, toNumber(s.f_score, 0))),
-          t_score: Math.round(toNumber(wolf30Obj?.t_score, toNumber(s.t_score, 0))),
-          fta_score: Math.round(toNumber(wolf30Obj?.fta_score, toNumber(s.fta_score, 0))),
-          exec_score: Math.round(toNumber(wolf30Obj?.exec_score, toNumber(s.exec_score, 0))),
-        });
-
-        setWolfMaxTotal(parsedMaxTotal);
-        setVerdictStatus({
-          tii: toNumber(s.tii, STATUS_DEFAULTS.tii),
-          integrity: toNumber(s.integrity, STATUS_DEFAULTS.integrity),
-          pipelinePass: Math.max(0, Math.round(toNumber(gates.passed, STATUS_DEFAULTS.pipelinePass))),
-          pipelineTotal: Math.max(1, Math.round(toNumber(gates.total, STATUS_DEFAULTS.pipelineTotal))),
-          latencyMs: Math.max(0, Math.round(toNumber(system.latency_ms, STATUS_DEFAULTS.latencyMs))),
-        });
-      }
-    } catch {
-      // Silently keep previous scores on error
-    }
-  }, []);
-
-  useEffect(() => {
-    void fetchWolfScores();
-    const id = setInterval(() => void fetchWolfScores(), 15_000);
-    return () => clearInterval(id);
-  }, [fetchWolfScores]);
 
   const acc = accounts.find((a) => a.id === activeId) ?? accounts[0];
 

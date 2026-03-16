@@ -30,7 +30,11 @@ import type { L12Verdict, Trade, Account } from "@/types";
 function verdictIsActionable(v: L12Verdict): boolean {
   const notExpired =
     !v.expires_at || v.expires_at > Math.floor(Date.now() / 1000);
-  return String(v.verdict ?? "").startsWith("EXECUTE") && notExpired;
+  const vs = String(v.verdict ?? "");
+  const isExecute = vs === "EXECUTE_BUY" || vs === "EXECUTE_SELL";
+  const hasDirection =
+    v.direction === "BUY" || v.direction === "SELL" || isExecute;
+  return isExecute && hasDirection && notExpired;
 }
 
 function urgencyScore(v: L12Verdict): number {

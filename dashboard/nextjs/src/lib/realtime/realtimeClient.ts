@@ -15,7 +15,7 @@
 
 import { WsEventSchema, type WsEventParsed } from "@/schema/wsEventSchema";
 import type { SystemStatusView } from "@/contracts/wsEvents";
-import { getTransportToken } from "@/lib/auth";
+import { getTransportToken, fetchWsTicket } from "@/lib/auth";
 import { getWsBaseUrl } from "@/lib/env";
 
 // ─── BACKEND ENVELOPE NORMALISATION ──────────────────────────
@@ -117,13 +117,16 @@ export function connectLiveUpdates(
     return { close: () => { }, send: () => { }, gapCount: 0 };
   }
 
-  const connect = () => {
+  const connect = async () => {
     if (intentionallyClosed) return;
     if (visibilityPaused && reconnectAttempt > 3) return; // reduce churn when hidden
 
     onStatusChange?.(reconnectAttempt === 0 ? "CONNECTING" : "RECONNECTING");
 
-    const token = typeof window !== "undefined" ? getTransportToken() : null;
+    // Prefer synchronous JWT, fall back to server-side WS ticket
+    const token = typeof window !== "undefined"
+      ? (getTransportToken() ?? await fetchWsTicket())
+      : null;
     const url = token ? `${wsBaseUrl}${path}?token=${token}` : `${wsBaseUrl}${path}`;
 
     try {

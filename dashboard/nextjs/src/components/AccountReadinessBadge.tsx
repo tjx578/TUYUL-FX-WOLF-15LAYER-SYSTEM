@@ -25,9 +25,10 @@ function readinessLabel(score: number): string {
 }
 
 export default function AccountReadinessBadge({ score, size = "sm" }: AccountReadinessBadgeProps) {
-    const pct = Math.round(score * 100);
-    const color = readinessColor(score);
-    const label = readinessLabel(score);
+    const normalizedScore = score > 1 ? score / 100 : score;
+    const pct = Math.round(normalizedScore * 100);
+    const color = readinessColor(normalizedScore);
+    const label = readinessLabel(normalizedScore);
     const fontSize = size === "md" ? 11 : 9;
     const padding = size === "md" ? "4px 8px" : "2px 6px";
 

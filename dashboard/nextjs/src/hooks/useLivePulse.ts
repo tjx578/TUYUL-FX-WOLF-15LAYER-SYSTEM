@@ -7,24 +7,20 @@
 // ============================================================
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 export function useLivePulse<T>(value: T): boolean {
   const [pulse, setPulse] = useState(false);
-  const [prev, setPrev] = useState<T>(value);
+  const prevRef = useRef(value);
 
   useEffect(() => {
-    if (prev !== value) {
+    if (prevRef.current !== value) {
+      prevRef.current = value;
       setPulse(true);
-      setPrev(value);
-
-      const timeout = setTimeout(() => {
-        setPulse(false);
-      }, 600);
-
-      return () => clearTimeout(timeout);
+      const id = setTimeout(() => setPulse(false), 600);
+      return () => clearTimeout(id);
     }
-  }, [value, prev]);
+  }, [value]);
 
   return pulse;
 }
