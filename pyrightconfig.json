@@ -20,6 +20,7 @@
   ],
   "extraPaths": [
     ".",
-    "./services/api"
+    "./services/api",
+    "./infrastructure"
   ]
 }
