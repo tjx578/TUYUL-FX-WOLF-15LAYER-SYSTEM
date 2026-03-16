@@ -5,6 +5,7 @@ import type { L12Verdict } from "@/types";
 import { connectLiveUpdates } from "@/lib/realtime/realtimeClient";
 import type { WsConnectionStatus } from "@/lib/realtime/connectionState";
 import { STALE_THRESHOLDS_MS } from "@/lib/realtime/connectionState";
+import { useSystemStore } from "@/store/useSystemStore";
 
 interface UseLiveSignalsResult {
   verdicts: L12Verdict[];
@@ -130,6 +131,7 @@ export function useLiveSignals(
       },
       onStatusChange: (s) => {
         setStatus(s);
+        useSystemStore.getState().setSignalWsStatus(s);
         if (s === "LIVE") resetStaleTimer();
         if (s === "DISCONNECTED" || s === "DEGRADED") {
           if (staleTimerRef.current) clearTimeout(staleTimerRef.current);

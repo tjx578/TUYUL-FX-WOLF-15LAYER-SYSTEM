@@ -13,6 +13,16 @@ interface EquityCurveProps {
   showBalance?: boolean;
 }
 
+function safeMinMax(pts: number[]): [number, number] {
+  let min = pts[0];
+  let max = pts[0];
+  for (let i = 1; i < pts.length; i++) {
+    if (pts[i] < min) min = pts[i];
+    if (pts[i] > max) max = pts[i];
+  }
+  return [min, max];
+}
+
 function buildPath(
   points: number[],
   width: number,
@@ -20,8 +30,7 @@ function buildPath(
   padding = 4
 ): string {
   if (points.length < 2) return "";
-  const min = Math.min(...points);
-  const max = Math.max(...points);
+  const [min, max] = safeMinMax(points);
   const range = max - min || 1;
   const xStep = (width - padding * 2) / (points.length - 1);
 
@@ -59,7 +68,7 @@ export function EquityCurve({
 
   const latest = history[history.length - 1];
   const first = history[0];
-  const equityChange = latest && first
+  const equityChange = latest && first && first.equity !== 0
     ? ((latest.equity - first.equity) / first.equity) * 100
     : null;
   const isUp = (equityChange ?? 0) >= 0;
@@ -189,7 +198,7 @@ export function EquityCurve({
             {equityPoints.length > 0 && (() => {
               const pts = equityPoints;
               const W2 = W, H2 = H, pad = 4;
-              const min = Math.min(...pts), max = Math.max(...pts);
+              const [min, max] = safeMinMax(pts);
               const range = max - min || 1;
               const xStep = (W2 - pad * 2) / (pts.length - 1);
               const x = pad + (pts.length - 1) * xStep;

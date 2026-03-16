@@ -14,9 +14,9 @@ import type { CalendarEvent } from "@/types";
 // ── Impact badge ──────────────────────────────────────────────
 
 const IMPACT_STYLE: Record<string, { bg: string; color: string; cls: string }> = {
-  HIGH:   { bg: "var(--red-glow)",    color: "var(--red)",    cls: "badge-red"    },
+  HIGH: { bg: "var(--red-glow)", color: "var(--red)", cls: "badge-red" },
   MEDIUM: { bg: "var(--yellow-glow)", color: "var(--yellow)", cls: "badge-yellow" },
-  LOW:    { bg: "rgba(68,138,255,0.12)", color: "var(--blue)", cls: "badge-blue"  },
+  LOW: { bg: "rgba(68,138,255,0.12)", color: "var(--blue)", cls: "badge-blue" },
 };
 
 function ImpactBadge({ impact }: { impact: string }) {
@@ -27,8 +27,8 @@ function ImpactBadge({ impact }: { impact: string }) {
 // ── Event row ─────────────────────────────────────────────────
 
 function EventRow({ event, idx }: { event: CalendarEvent; idx: number }) {
-  const isHigh      = event.impact === "HIGH";
-  const isImminent  = event.is_imminent;
+  const isHigh = event.impact === "HIGH";
+  const isImminent = event.is_imminent;
 
   return (
     <tr
@@ -160,9 +160,9 @@ const IMPACT_FILTERS = ["ALL", "HIGH", "MEDIUM", "LOW"] as const;
 const CURRENCY_FILTER_OPTS = ["ALL", "USD", "EUR", "GBP", "JPY", "AUD", "CAD", "CHF", "NZD"];
 
 export default function NewsPage() {
-  const [impactFilter, setImpactFilter]     = useState<string>("ALL");
+  const [impactFilter, setImpactFilter] = useState<string>("ALL");
   const [currencyFilter, setCurrencyFilter] = useState<string>("ALL");
-  const [period, setPeriod]                 = useState<"today" | "upcoming">("today");
+  const [period, setPeriod] = useState<"today" | "upcoming">("today");
 
   const { data, isLoading } = useCalendarEvents(
     period,
@@ -176,8 +176,10 @@ export default function NewsPage() {
     return data.filter((e: CalendarEvent) => e.currency === currencyFilter);
   }, [data, currencyFilter]);
 
-  const highCount   = filtered.filter((e) => e.impact === "HIGH").length;
-  const mediumCount = filtered.filter((e) => e.impact === "MEDIUM").length;
+  const { highCount, mediumCount } = useMemo(() => ({
+    highCount: filtered.filter((e) => e.impact === "HIGH").length,
+    mediumCount: filtered.filter((e) => e.impact === "MEDIUM").length,
+  }), [filtered]);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
@@ -243,7 +245,7 @@ export default function NewsPage() {
                 fontSize: 10,
                 padding: "5px 11px",
                 borderColor: impactFilter === f ? (IMPACT_STYLE[f]?.color ?? "var(--border-strong)") : "var(--border-default)",
-                color:       impactFilter === f ? (IMPACT_STYLE[f]?.color ?? "var(--text-primary)")  : "var(--text-muted)",
+                color: impactFilter === f ? (IMPACT_STYLE[f]?.color ?? "var(--text-primary)") : "var(--text-muted)",
               }}
               onClick={() => setImpactFilter(f)}
               aria-pressed={impactFilter === f}

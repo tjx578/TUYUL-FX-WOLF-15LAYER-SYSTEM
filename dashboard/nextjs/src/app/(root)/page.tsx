@@ -17,6 +17,7 @@ import DataStreamDiagnostic from "@/components/feedback/DataStreamDiagnostic";
 import { VerdictCard } from "@/components/VerdictCard";
 import { SystemHealth } from "@/components/SystemHealth";
 import StaleDataBanner from "@/components/command-center/StaleDataBanner";
+import { useSessionLabel } from "@/hooks/useSessionLabel";
 import type { L12Verdict, Account } from "@/types";
 
 // ── Helpers ──────────────────────────────────────────────────
@@ -608,6 +609,7 @@ export default function CommandCenterPage() {
   } = useCommandCenterState();
 
   const [selectedVerdict, setSelectedVerdict] = useState<L12Verdict | null>(null);
+  const liveSession = useSessionLabel();
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
@@ -784,7 +786,7 @@ export default function CommandCenterPage() {
             </span>
             {context?.session && (
               <span className="badge badge-cyan" style={{ fontSize: 9 }}>
-                {context.session}
+                {liveSession}
               </span>
             )}
           </div>
@@ -862,7 +864,7 @@ export default function CommandCenterPage() {
               </div>
               {(
                 [
-                  { label: "SESSION", value: context.session },
+                  { label: "SESSION", value: liveSession },
                   { label: "REGIME", value: context.regime },
                   { label: "VOLATILITY", value: context.volatility },
                   { label: "TREND", value: context.trend },
@@ -989,19 +991,35 @@ export default function CommandCenterPage() {
               >
                 RECENT ALERTS
               </div>
-              {recentAlerts.map((a, idx) => (
-                <div
-                  key={idx}
-                  style={{
-                    fontSize: 11,
-                    color: "var(--text-secondary)",
-                    borderLeft: "2px solid var(--border-default)",
-                    paddingLeft: 8,
-                  }}
-                >
-                  {typeof a === "string" ? a : (a as { message?: string }).message ?? JSON.stringify(a)}
-                </div>
-              ))}
+              {recentAlerts.map((a, idx) => {
+                let text: string;
+                if (typeof a === "string") {
+                  text = a;
+                } else {
+                  text = (a as { message?: string }).message ?? JSON.stringify(a);
+                }
+                // Truncate overly long alert payloads to prevent layout break
+                const MAX_ALERT_LEN = 300;
+                if (text.length > MAX_ALERT_LEN) {
+                  text = text.slice(0, MAX_ALERT_LEN) + "…";
+                }
+                return (
+                  <div
+                    key={idx}
+                    style={{
+                      fontSize: 11,
+                      color: "var(--text-secondary)",
+                      borderLeft: "2px solid var(--border-default)",
+                      paddingLeft: 8,
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {text}
+                  </div>
+                );
+              })}
             </div>
           )}
 

@@ -9,15 +9,16 @@ import type { L12Verdict } from "@/types";
 type FilterMode = "ALL" | "EXECUTE" | "NON_EXECUTE";
 
 export default function SignalsPage() {
-  const { data: verdictMap, isLoading } = useAllVerdicts();
+  const { data: verdicts, isLoading } = useAllVerdicts();
   const { data: accounts } = useAccounts();
 
   const [query, setQuery] = useState("");
   const [mode, setMode] = useState<FilterMode>("ALL");
   const [selected, setSelected] = useState<L12Verdict | null>(null);
 
+  // useAllVerdicts returns L12Verdict[] (already normalized)
   const list = useMemo(() => {
-    const all = Object.values(verdictMap ?? {});
+    const all = verdicts ?? [];
     const q = query.trim().toUpperCase();
     return all
       .filter((v) => (q ? v.symbol.toUpperCase().includes(q) : true))
@@ -28,7 +29,7 @@ export default function SignalsPage() {
         return true;
       })
       .sort((a, b) => (b.confidence ?? 0) - (a.confidence ?? 0));
-  }, [verdictMap, query, mode]);
+  }, [verdicts, query, mode]);
 
   const execCount = useMemo(
     () => list.filter((v) => v.verdict.toString().startsWith("EXECUTE")).length,
@@ -47,7 +48,7 @@ export default function SignalsPage() {
             Filter & inspect L12 verdicts. Sorted by confidence.
           </div>
         </div>
-        
+
       </div>
 
       {/* Controls */}

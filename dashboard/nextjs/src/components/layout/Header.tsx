@@ -9,21 +9,22 @@
 import { useAuthStore } from "@/store/useAuthStore";
 import { useExecution, useContext } from "@/lib/api";
 import { TimezoneDisplay } from "@/components/TimezoneDisplay";
+import { useSessionLabel } from "@/hooks/useSessionLabel";
 
 const EXECUTION_COLORS: Record<string, string> = {
-  IDLE:         "var(--text-muted)",
-  SCANNING:     "var(--blue)",
+  IDLE: "var(--text-muted)",
+  SCANNING: "var(--blue)",
   SIGNAL_READY: "var(--accent)",
-  EXECUTING:    "var(--green)",
-  COOLDOWN:     "var(--yellow)",
+  EXECUTING: "var(--green)",
+  COOLDOWN: "var(--yellow)",
 };
 
 const ROLE_COLORS: Record<string, string> = {
-  viewer:       "var(--text-muted)",
-  operator:     "var(--blue)",
-  risk_admin:   "var(--yellow)",
+  viewer: "var(--text-muted)",
+  operator: "var(--blue)",
+  risk_admin: "var(--yellow)",
   config_admin: "var(--accent)",
-  approver:     "var(--green)",
+  approver: "var(--green)",
 };
 
 function ExecPip({ state }: { state?: string }) {
@@ -53,6 +54,7 @@ export default function Header() {
   const user = useAuthStore((state) => state.user);
   const { data: execution } = useExecution();
   const { data: context } = useContext();
+  const liveSession = useSessionLabel();
 
   const roleColor = ROLE_COLORS[user?.role ?? "viewer"] ?? "var(--text-muted)";
 
@@ -86,7 +88,7 @@ export default function Header() {
         <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
           <div style={{ fontSize: 9, color: "var(--text-muted)", letterSpacing: "0.10em", fontWeight: 700 }}>SESSION</div>
           <div style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--cyan)", fontWeight: 700 }}>
-            {context?.session ?? "—"}
+            {liveSession}
           </div>
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
