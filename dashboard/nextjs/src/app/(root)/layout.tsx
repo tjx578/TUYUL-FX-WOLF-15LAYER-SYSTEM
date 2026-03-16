@@ -60,7 +60,7 @@ export default async function RootLayout({ children }: PropsWithChildren) {
           <Sidebar />
           <main
             className="flex-1 overflow-auto"
-            style={{ marginLeft: "var(--sidebar-w)", minHeight: "100vh", padding: "32px 40px" }}
+            style={{ marginLeft: "var(--sidebar-w)", minHeight: "100vh", padding: "32px 40px", background: "#000000" }}
           >
             <Header />
             <DegradationBanner />
