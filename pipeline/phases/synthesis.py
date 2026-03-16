@@ -208,6 +208,11 @@ def build_l12_synthesis(
         "system": {
             "latency_ms": 0.0,
             "safe_mode": False,
+            "formula_versions": {
+                "tii": "analysis.l8_tii._compute_tii:v1",
+                "frpc": "analysis.formulas.frpc_formula.calculate_frpc:v1",
+                "wolf_30": "analysis.layers.L4_session_scoring:wolf30-v1",
+            },
         },
     }
 
