@@ -59,7 +59,7 @@ class TestDataQualityGate:
         assert "low_tick_candles" in report.reasons[0]
 
     def test_stale_data_triggers_degradation(self) -> None:
-        gate = DataQualityGate(DataQualityConfig(stale_threshold_seconds=10.0))
+        gate = DataQualityGate(DataQualityConfig(stale_threshold_seconds=10.0, stale_candle_multiplier=0.0))
         candles = [_make_candle() for _ in range(50)]
         old_ts = time.time() - 60.0
         report = gate.assess("EURUSD", "M15", candles, last_update_ts=old_ts)
