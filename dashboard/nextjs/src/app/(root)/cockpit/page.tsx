@@ -32,8 +32,18 @@ interface WolfScores {
   exec_score: number;
 }
 
+interface VerdictStatus {
+  tii: number;
+  integrity: number;
+  pipelinePass: number;
+  pipelineTotal: number;
+  latencyMs: number;
+}
+
 const WOLF_DEFAULTS: WolfScores = { wolf_score: 0, f_score: 0, t_score: 0, fta_score: 0, exec_score: 0 };
-const WOLF_MAX = { f: 8, t: 12, fta: 5, exec: 5, total: 30 };
+const WOLF_MAX = { f: 8, t: 12, fta: 5, exec: 5 };
+const WOLF_MAX_TOTAL_DEFAULT = 30;
+const STATUS_DEFAULTS: VerdictStatus = { tii: 0, integrity: 0, pipelinePass: 0, pipelineTotal: 10, latencyMs: 0 };
 
 // ── Local account / order types (MT5 live model) ─────────────
 interface DdStat { used: number; limit: number }
@@ -87,23 +97,26 @@ const ACCOUNTS: CockpitAccount[] = [
 ];
 
 // ── Pipeline summary is fetched live by PipelinePanel ─────────
-const PIPELINE_PASS = 0;  // placeholder — real counts come from the component
-const PIPELINE_TOTAL = 15;
-const ALL_PASS = false;
-
 // ── Status bar items ──────────────────────────────────────────
-function buildStatusItems(wolf: WolfScores) {
-  const wolfLabel = `PACK ${wolf.wolf_score}/${WOLF_MAX.total}`;
-  const wolfColor = wolf.wolf_score >= 23 ? T.gold : wolf.wolf_score >= 18 ? T.amber : T.red;
+function buildStatusItems(wolf: WolfScores, wolfMaxTotal: number, status: VerdictStatus) {
+  const maxTotal = wolfMaxTotal > 0 ? wolfMaxTotal : WOLF_MAX_TOTAL_DEFAULT;
+  const wolfRatio = maxTotal > 0 ? wolf.wolf_score / maxTotal : 0;
+  const wolfLabel = `PACK ${wolf.wolf_score}/${maxTotal}`;
+  const wolfColor = wolfRatio >= 0.75 ? T.gold : wolfRatio >= 0.6 ? T.amber : T.red;
+  const allPass = status.pipelineTotal > 0 && status.pipelinePass >= status.pipelineTotal;
   return [
     { l: "Regime", v: "RISK-ON", c: T.emerald },
     { l: "Force", v: "LIQUIDITY", c: T.cyan },
     { l: "Bias", v: "BULLISH", c: T.emerald },
-    { l: "TII", v: "0.94", c: T.emerald },
-    { l: "Integrity", v: "0.98", c: T.emerald },
+    { l: "TII", v: status.tii.toFixed(2), c: status.tii >= 0.9 ? T.emerald : status.tii >= 0.75 ? T.amber : T.red },
+    {
+      l: "Integrity",
+      v: status.integrity.toFixed(2),
+      c: status.integrity >= 0.9 ? T.emerald : status.integrity >= 0.75 ? T.amber : T.red,
+    },
     { l: "MC", v: "PASS", c: T.emerald },
-    { l: "Pipeline", v: `${PIPELINE_PASS}/${PIPELINE_TOTAL}`, c: ALL_PASS ? T.emerald : T.amber },
-    { l: "Latency", v: "142ms", c: T.teal },
+    { l: "Pipeline", v: `${status.pipelinePass}/${status.pipelineTotal}`, c: allPass ? T.emerald : T.amber },
+    { l: "Latency", v: `${status.latencyMs}ms`, c: status.latencyMs <= 250 ? T.teal : T.amber },
     { l: "Wolf", v: wolfLabel, c: wolfColor },
   ];
 }
@@ -113,8 +126,9 @@ function buildStatusItems(wolf: WolfScores) {
 // ────────────────────────────────────────────────────────────
 
 // ── Status Bar ───────────────────────────────────────────────
-function StatusBar({ wolf }: { wolf: WolfScores }) {
-  const statusItems = buildStatusItems(wolf);
+function StatusBar({ wolf, wolfMaxTotal, status }: { wolf: WolfScores; wolfMaxTotal: number; status: VerdictStatus }) {
+  const statusItems = buildStatusItems(wolf, wolfMaxTotal, status);
+  const allPass = status.pipelineTotal > 0 && status.pipelinePass >= status.pipelineTotal;
   return (
     <div style={{
       display: "flex", alignItems: "center",
@@ -138,9 +152,9 @@ function StatusBar({ wolf }: { wolf: WolfScores }) {
         marginLeft: "auto", display: "flex", alignItems: "center",
         gap: 7, paddingLeft: 16, flexShrink: 0,
       }}>
-        <Dot color={ALL_PASS ? T.emerald : T.amber} pulse size={5} />
-        <L s={9} c={ALL_PASS ? T.emerald : T.amber} w={700}>
-          {ALL_PASS ? "ALLOWED TO TRADE" : "WAITING FOR SIGNAL"}
+        <Dot color={allPass ? T.emerald : T.amber} pulse size={5} />
+        <L s={9} c={allPass ? T.emerald : T.amber} w={700}>
+          {allPass ? "ALLOWED TO TRADE" : "WAITING FOR SIGNAL"}
         </L>
       </div>
     </div>
@@ -277,22 +291,24 @@ function AccountCard({ acc }: { acc: CockpitAccount }) {
 }
 
 // ── Wolf Discipline Card ──────────────────────────────────────
-function WolfDisciplineCard({ wolf }: { wolf: WolfScores }) {
+function WolfDisciplineCard({ wolf, wolfMaxTotal }: { wolf: WolfScores; wolfMaxTotal: number }) {
   const total = wolf.wolf_score;
+  const maxTotal = wolfMaxTotal > 0 ? wolfMaxTotal : WOLF_MAX_TOTAL_DEFAULT;
   const ROWS = [
     { l: "Fundamental", s: wolf.f_score, m: WOLF_MAX.f, c: T.blue },
     { l: "Technical x12", s: wolf.t_score, m: WOLF_MAX.t, c: T.emerald },
     { l: "FTA x5", s: wolf.fta_score, m: WOLF_MAX.fta, c: T.cyan },
     { l: "Execution x5", s: wolf.exec_score, m: WOLF_MAX.exec, c: T.amber },
   ];
-  const ringColor = total >= 23 ? T.gold : total >= 18 ? T.emerald : T.amber;
+  const totalRatio = maxTotal > 0 ? total / maxTotal : 0;
+  const ringColor = totalRatio >= 0.75 ? T.gold : totalRatio >= 0.6 ? T.emerald : T.amber;
 
   return (
-    <Card title="WOLF DISCIPLINE" sub="30-Point Governance Score" icon="🐺" accentColor={total >= 23 ? "ok" : "warn"}>
+    <Card title="WOLF DISCIPLINE" sub={`${maxTotal}-Point Governance Score`} icon="🐺" accentColor={totalRatio >= 0.75 ? "ok" : "warn"}>
       <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-        <Ring value={total} max={WOLF_MAX.total} size={78} sw={5} color={ringColor}>
+        <Ring value={total} max={maxTotal} size={78} sw={5} color={ringColor}>
           <M s={18} w={700} c={ringColor}>{total}</M>
-          <M s={8} c={T.t4}>/{WOLF_MAX.total}</M>
+          <M s={8} c={T.t4}>/{maxTotal}</M>
         </Ring>
         <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 5 }}>
           {ROWS.map((row) => {
@@ -688,6 +704,8 @@ export default function CockpitPage() {
   const [killSwitch, setKillSwitch] = useState(false);
   const [clock, setClock] = useState("");
   const [wolfScores, setWolfScores] = useState<WolfScores>(WOLF_DEFAULTS);
+  const [wolfMaxTotal, setWolfMaxTotal] = useState(WOLF_MAX_TOTAL_DEFAULT);
+  const [verdictStatus, setVerdictStatus] = useState<VerdictStatus>(STATUS_DEFAULTS);
 
   // Clock tick — client-only to avoid SSR mismatch
   useEffect(() => {
@@ -698,19 +716,57 @@ export default function CockpitPage() {
 
   // Fetch wolf scores from API — poll every 15 s
   const fetchWolfScores = useCallback(async () => {
+    const toNumber = (value: unknown, fallback = 0): number => {
+      const parsed = Number(value);
+      return Number.isFinite(parsed) ? parsed : fallback;
+    };
+
     try {
       const res = await apiClient.get("/api/v1/verdict/all");
       const verdicts = res.data ?? {};
-      // Pick the first active pair's scores (or aggregate best)
-      const entries = Object.values(verdicts) as Array<{ scores?: Partial<WolfScores> }>;
-      if (entries.length > 0 && entries[0]?.scores) {
-        const s = entries[0].scores;
+      // Pick first available verdict; schema can vary between score-contract versions.
+      const entries = Object.values(verdicts) as Array<{
+        scores?: Record<string, unknown>;
+        gates?: Record<string, unknown>;
+        system?: Record<string, unknown>;
+      }>;
+
+      if (entries.length > 0 && entries[0]) {
+        const entry = entries[0];
+        const s = entry.scores ?? {};
+        const gates = entry.gates ?? {};
+        const system = entry.system ?? {};
+
+        const wolf30Raw = s.wolf_30_point;
+        const wolf30Obj = (wolf30Raw && typeof wolf30Raw === "object")
+          ? (wolf30Raw as Record<string, unknown>)
+          : null;
+
+        const parsedMaxTotal = Math.max(
+          1,
+          Math.round(toNumber(wolf30Obj?.max_possible, WOLF_MAX_TOTAL_DEFAULT)),
+        );
+
         setWolfScores({
-          wolf_score: Math.round(s.wolf_score ?? 0),
-          f_score: Math.round(s.f_score ?? 0),
-          t_score: Math.round(s.t_score ?? 0),
-          fta_score: Math.round(s.fta_score ?? 0),
-          exec_score: Math.round(s.exec_score ?? 0),
+          wolf_score: Math.round(
+            toNumber(
+              wolf30Obj?.total,
+              toNumber(s.wolf_30_point, toNumber(s.wolf_score, 0)),
+            ),
+          ),
+          f_score: Math.round(toNumber(wolf30Obj?.f_score, toNumber(s.f_score, 0))),
+          t_score: Math.round(toNumber(wolf30Obj?.t_score, toNumber(s.t_score, 0))),
+          fta_score: Math.round(toNumber(wolf30Obj?.fta_score, toNumber(s.fta_score, 0))),
+          exec_score: Math.round(toNumber(wolf30Obj?.exec_score, toNumber(s.exec_score, 0))),
+        });
+
+        setWolfMaxTotal(parsedMaxTotal);
+        setVerdictStatus({
+          tii: toNumber(s.tii, STATUS_DEFAULTS.tii),
+          integrity: toNumber(s.integrity, STATUS_DEFAULTS.integrity),
+          pipelinePass: Math.max(0, Math.round(toNumber(gates.passed, STATUS_DEFAULTS.pipelinePass))),
+          pipelineTotal: Math.max(1, Math.round(toNumber(gates.total, STATUS_DEFAULTS.pipelineTotal))),
+          latencyMs: Math.max(0, Math.round(toNumber(system.latency_ms, STATUS_DEFAULTS.latencyMs))),
         });
       }
     } catch {
@@ -735,7 +791,7 @@ export default function CockpitPage() {
       <style>{GLOBAL_CSS}</style>
 
       {/* ── Status bar ── */}
-      <StatusBar wolf={wolfScores} />
+      <StatusBar wolf={wolfScores} wolfMaxTotal={wolfMaxTotal} status={verdictStatus} />
 
       {/* ── Kill switch banner ── */}
       {killSwitch && (
@@ -749,7 +805,7 @@ export default function CockpitPage() {
           {/* ── LEFT column ── */}
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
             <AccountCard acc={acc} />
-            <WolfDisciplineCard wolf={wolfScores} />
+            <WolfDisciplineCard wolf={wolfScores} wolfMaxTotal={wolfMaxTotal} />
             <AllAccountsCard accounts={accounts} activeId={activeId} onSelect={setActiveId} />
             <OverTradeGuardsCard acc={acc} />
           </div>
