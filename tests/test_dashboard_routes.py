@@ -244,15 +244,22 @@ def _patch_redis() -> Any:
         **payload,
     }
 
+    import api.allocation_router as _alloc_mod
+
     with (
         patch.object(_rc._manager, "get_client", new=AsyncMock(return_value=_fake_redis)),
         patch(
             "api.allocation_router._persist_trade_write_through",
             new=AsyncMock(return_value=True),
         ),
-        patch("api.allocation_router._get_signal_service", return_value=_mock_signal_svc),
     ):
-        yield
+        # Inject mock signal service directly into the module global
+        old_svc = _alloc_mod._signal_service
+        _alloc_mod._signal_service = _mock_signal_svc
+        try:
+            yield
+        finally:
+            _alloc_mod._signal_service = old_svc
 
 
 # ── Account tests ─────────────────────────────────────────────────────────────

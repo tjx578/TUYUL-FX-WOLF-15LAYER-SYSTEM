@@ -24,13 +24,16 @@
  * Override with NEXT_PUBLIC_API_BASE_URL for direct backend calls (dev/debug).
  */
 export function getApiBaseUrl(): string {
-  const url =
-    process.env.NEXT_PUBLIC_API_BASE_URL ||
-    process.env.NEXT_PUBLIC_API_URL; // legacy alias, still tolerated
-  if (!url || url.trim() === "") {
+  const apiBaseRaw = process.env.NEXT_PUBLIC_API_BASE_URL;
+  const apiLegacyRaw = process.env.NEXT_PUBLIC_API_URL; // legacy alias, still tolerated
+  const url = typeof apiBaseRaw === "string" && apiBaseRaw.trim() !== ""
+    ? apiBaseRaw
+    : apiLegacyRaw;
+  const normalized = typeof url === "string" ? url.trim() : "";
+  if (normalized.length === 0) {
     return ""; // relative — rewrite in next.config.js handles the proxy
   }
-  return url.replace(/\/$/, "");
+  return normalized.replace(/\/$/, "");
 }
 
 /**
@@ -45,8 +48,9 @@ export function getApiBaseUrl(): string {
  * It will NOT work on Vercel without the env var.
  */
 export function getWsBaseUrl(): string {
-  const url = process.env.NEXT_PUBLIC_WS_BASE_URL;
-  if (!url || url.trim() === "") {
+  const wsBaseRaw = process.env.NEXT_PUBLIC_WS_BASE_URL;
+  const url = typeof wsBaseRaw === "string" ? wsBaseRaw.trim() : "";
+  if (url.length === 0) {
     if (typeof window !== "undefined") {
       const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
       if (
@@ -82,7 +86,8 @@ export function getWsBaseUrl(): string {
 export function validateEnv(): void {
   if (typeof window === "undefined") return;
 
-  const wsUrl = process.env.NEXT_PUBLIC_WS_BASE_URL;
+  const wsUrlRaw = process.env.NEXT_PUBLIC_WS_BASE_URL;
+  const wsUrl = typeof wsUrlRaw === "string" ? wsUrlRaw.trim() : "";
   const isVercel =
     window.location.hostname.includes("vercel") ||
     window.location.hostname.includes(".app");
@@ -103,11 +108,13 @@ export function validateEnv(): void {
     );
   }
 
-  const apiOverride = process.env.NEXT_PUBLIC_API_BASE_URL;
+  const apiOverrideRaw = process.env.NEXT_PUBLIC_API_BASE_URL;
+  const apiOverride = typeof apiOverrideRaw === "string" ? apiOverrideRaw.trim() : "";
   if (apiOverride) {
     console.info("[env] REST override active: NEXT_PUBLIC_API_BASE_URL =", apiOverride);
   }
 }
 
 // Legacy export kept for existing imports — resolves identically to getApiBaseUrl().
-export const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "";
+const apiBaseConstRaw = process.env.NEXT_PUBLIC_API_BASE_URL;
+export const API_BASE_URL = typeof apiBaseConstRaw === "string" ? apiBaseConstRaw.trim() : "";
