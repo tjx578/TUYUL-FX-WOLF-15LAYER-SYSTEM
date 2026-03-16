@@ -183,7 +183,6 @@ async def ws_auth_guard(websocket: WebSocket) -> dict[str, Any] | None:
             # Browser client with a disallowed origin — reject immediately.
             logger.warning("WS auth rejected: forbidden origin %s", origin)
             with contextlib.suppress(Exception):
-                await websocket.send_json({"type": "auth_error", "detail": "Forbidden origin"})
                 await websocket.close(code=4003, reason="Forbidden origin")
             return None
         # No origin header = non-browser client (EA, service-to-service).
@@ -193,7 +192,6 @@ async def ws_auth_guard(websocket: WebSocket) -> dict[str, Any] | None:
     if not token:
         logger.warning("WS auth rejected: missing token")
         with contextlib.suppress(Exception):
-            await websocket.send_json({"type": "auth_error", "detail": "Missing authentication token"})
             await websocket.close(code=4001, reason="Missing authentication token")
         return None
 
@@ -204,13 +202,11 @@ async def ws_auth_guard(websocket: WebSocket) -> dict[str, Any] | None:
             if exp is None:
                 logger.warning("WS auth rejected: JWT missing exp claim")
                 with contextlib.suppress(Exception):
-                    await websocket.send_json({"type": "auth_error", "detail": "Token missing exp claim"})
                     await websocket.close(code=4001, reason="Token missing exp claim")
                 return None
             if int(exp) <= int(time.time()):
                 logger.warning("WS auth rejected: token expired")
                 with contextlib.suppress(Exception):
-                    await websocket.send_json({"type": "auth_error", "detail": "Token expired"})
                     await websocket.close(code=4001, reason="Token expired")
                 return None
 
@@ -218,7 +214,6 @@ async def ws_auth_guard(websocket: WebSocket) -> dict[str, Any] | None:
         if not _has_account_access(payload, requested_account):
             logger.warning("WS auth rejected: account scope denied")
             with contextlib.suppress(Exception):
-                await websocket.send_json({"type": "auth_error", "detail": "Account scope denied"})
                 await websocket.close(code=4003, reason="Account scope denied")
             return None
 
@@ -229,7 +224,6 @@ async def ws_auth_guard(websocket: WebSocket) -> dict[str, Any] | None:
 
     logger.warning("WS auth rejected: invalid or expired token")
     with contextlib.suppress(Exception):
-        await websocket.send_json({"type": "auth_error", "detail": "Invalid or expired token"})
         await websocket.close(code=4001, reason="Invalid or expired token")
     return None
 
