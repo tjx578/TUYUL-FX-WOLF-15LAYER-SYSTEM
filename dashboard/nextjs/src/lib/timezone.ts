@@ -35,11 +35,11 @@ export function formatDateTime(ts: number | string | Date, tz = TZ): string {
 
 export function sessionLabel(): string {
   const h = nowInTz().getHours();
-  if (h >= 0 && h < 8) return "ASIA";
-  if (h >= 8 && h < 13) return "LONDON";
-  if (h >= 13 && h < 17) return "NY";
-  if (h >= 17 && h < 21) return "NY_LATE";
-  return "OFF_HOURS";
+  // Must match backend utils/timezone_utils.py is_trading_session()
+  if (h >= 7 && h < 15) return "ASIA";
+  if (h >= 15 && h < 21) return "LONDON";
+  if (h >= 21 || h < 5) return "NEW_YORK";
+  return "OFF_SESSION";
 }
 
 export function msUntilNextHour(): number {

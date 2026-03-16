@@ -9,28 +9,35 @@ NEW ENDPOINTS:
 """
 
 import contextlib
+import importlib
 import json
 import logging
 from datetime import UTC, datetime
+from typing import Any
 
 import redis.asyncio as aioredis
-from fastapi import APIRouter, Depends, HTTPException
-
-from api.middleware.auth import verify_token
-from infrastructure.redis_client import get_async_redis
+from fastapi import APIRouter, Depends, Header, HTTPException, Request
 
 logger = logging.getLogger(__name__)
+
+
+def _verify_token(request: Request, authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    """Resolve auth dependency at runtime to avoid static import path issues."""
+    auth_module = importlib.import_module("api.middleware.auth")
+    return auth_module.verify_token(request=request, authorization=authorization)
+
 
 router = APIRouter(
     prefix="/api/v1/instruments",
     tags=["instruments"],
-    dependencies=[Depends(verify_token)],
+    dependencies=[Depends(_verify_token)],
 )
 
 
-def _get_redis() -> None:
-    """DEPRECATED — use ``get_async_redis`` dependency instead."""
-    raise NotImplementedError("_get_redis() is removed. Inject via Depends(get_async_redis).")
+async def _get_redis() -> aioredis.Redis:
+    """Resolve Redis dependency at runtime to avoid static import path issues."""
+    redis_module = importlib.import_module("infrastructure.redis_client")
+    return await redis_module.get_async_redis()
 
 
 # ─── Static instrument catalog ────────────────────────────────────────────────
@@ -173,7 +180,7 @@ def _get_current_session() -> str:
         return "LONDON"
     if 13 <= hour < 16:
         return "OVERLAP"
-    if 13 <= hour < 22:
+    if 16 <= hour < 22:
         return "NY"
     return "ASIA"
 
@@ -190,9 +197,8 @@ async def _get_live_verdict(r: aioredis.Redis, symbol: str) -> dict | None:
 
 
 @router.get("")
-async def list_instruments() -> dict:
+async def list_instruments(r: aioredis.Redis = Depends(_get_redis)) -> dict:  # noqa: B008
     """List all instruments with metadata + live Wolf-15 status."""
-    r: aioredis.Redis = await get_async_redis()
     result = []
     for symbol, info in INSTRUMENT_CATALOG.items():
         item = dict(info)
@@ -216,13 +222,12 @@ async def list_instruments() -> dict:
 
 
 @router.get("/{symbol}")
-async def instrument_detail(symbol: str) -> dict:
+async def instrument_detail(symbol: str, r: aioredis.Redis = Depends(_get_redis)) -> dict:  # noqa: B008
     symbol_upper = symbol.upper()
     info = INSTRUMENT_CATALOG.get(symbol_upper)
     if not info:
         raise HTTPException(status_code=404, detail=f"Instrument {symbol_upper} not found")
 
-    r: aioredis.Redis = await get_async_redis()
     detail = dict(info)
 
     # Live data from Redis
@@ -251,10 +256,11 @@ async def instrument_detail(symbol: str) -> dict:
 
 
 @router.get("/{symbol}/regime")
-async def instrument_regime(symbol: str) -> dict:
+async def instrument_regime(symbol: str, r: aioredis.Redis = Depends(_get_redis)) -> dict:  # noqa: B008
     """Current volatility regime for instrument (from L1-L5 analysis layers)."""
     symbol_upper = symbol.upper()
-    r: aioredis.Redis = await get_async_redis()
+    if symbol_upper not in INSTRUMENT_CATALOG:
+        raise HTTPException(status_code=404, detail=f"Instrument {symbol_upper} not found")
 
     regime_data: dict = {
         "symbol": symbol_upper,
@@ -287,7 +293,9 @@ async def instrument_regime(symbol: str) -> dict:
 async def instrument_sessions(symbol: str) -> dict:
     """Trading hours and session strength per instrument."""
     symbol_upper = symbol.upper()
-    info = INSTRUMENT_CATALOG.get(symbol_upper, {})
+    info = INSTRUMENT_CATALOG.get(symbol_upper)
+    if info is None:
+        raise HTTPException(status_code=404, detail=f"Instrument {symbol_upper} not found")
 
     symbol_sessions = info.get("sessions", ["LONDON", "NY"])
     current = _get_current_session()
