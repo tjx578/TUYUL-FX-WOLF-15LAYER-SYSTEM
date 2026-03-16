@@ -32,14 +32,10 @@ export function useLiveSignals(
   const [lastUpdatedAt, setLastUpdatedAt] = useState<number | null>(null);
 
   const staleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  /** Once WS has delivered at least one verdict, REST must not overwrite. */
-  const wsDeliveredRef = useRef(false);
 
-  // Sync initial snapshot from REST — only when WS hasn't delivered yet
+  // Sync initial snapshot from REST
   useEffect(() => {
-    if (initialVerdicts.length > 0 && !wsDeliveredRef.current) {
-      setVerdicts(initialVerdicts);
-    }
+    if (initialVerdicts.length > 0) setVerdicts(initialVerdicts);
   }, [initialVerdicts]);
 
   const resetStaleTimer = useCallback(() => {
@@ -57,9 +53,7 @@ export function useLiveSignals(
     const controls = connectLiveUpdates({
       path: "/ws/verdict",
       onEvent: (event) => {
-        // ── Legacy frontend event ──
         if (event.type === "PipelineResultUpdated") {
-          wsDeliveredRef.current = true;
           const payload = event.payload as unknown as L12Verdict;
           setVerdicts((prev) => {
             const idx = prev.findIndex((v) => v.symbol === payload.symbol);
