@@ -22,6 +22,9 @@ exec gunicorn app:app \
   -k uvicorn.workers.UvicornWorker \
   --bind "0.0.0.0:${PORT:-8000}" \
   --workers "${GUNICORN_WORKERS:-1}" \
+  --log-level "${GUNICORN_LOG_LEVEL:-info}" \
+  --access-logfile /dev/stdout \
+  --error-logfile /dev/stdout \
   --timeout 120 \
   --graceful-timeout 30 \
   --keep-alive 5
