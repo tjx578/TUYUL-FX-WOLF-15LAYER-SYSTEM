@@ -16,7 +16,7 @@ export default async function RootLayout({ children }: PropsWithChildren) {
   const user = await requireVerifiedSession();
 
   return (
-    <div className="relative min-h-screen bg-bg-primary text-text-primary overflow-x-hidden">
+    <div className="relative min-h-screen text-text-primary overflow-x-hidden" style={{ backgroundColor: "#000000" }}>
       <div
         className="pointer-events-none fixed -top-80 -right-80 w-[900px] h-[900px] rounded-full z-0"
         style={{ background: "rgba(0,229,255,0.10)", filter: "blur(220px)" }}
