@@ -227,6 +227,25 @@ export interface AccountCreate {
   currency: string;
 }
 
+export interface CreateAccountRequest {
+  account_name: string;
+  broker: string;
+  currency: string;
+  starting_balance: number;
+  current_balance: number;
+  equity: number;
+  equity_high: number;
+  leverage: number;
+  commission_model: string;
+  notes: string;
+  data_source: string;
+  prop_firm: boolean;
+  max_daily_dd_percent: number;
+  max_total_dd_percent: number;
+  max_concurrent_trades: number;
+  reason: string;
+}
+
 // ─── RISK ─────────────────────────────────────────────────────
 
 export interface RiskProfile {

@@ -84,6 +84,11 @@ export const useTradeDeskStore = create<TradeDeskState>((set) => ({
 
   applyDeskSnapshot: (data) =>
     set((state) => {
+      // Skip stale snapshot — WS patches are more recent
+      if (state.serverTs && data.server_ts <= state.serverTs) {
+        return {};
+      }
+
       // Preserve selectedTradeId if the trade still exists in any list
       const allTrades = [
         ...data.trades.pending,

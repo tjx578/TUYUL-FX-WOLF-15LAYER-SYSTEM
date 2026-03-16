@@ -37,6 +37,29 @@ const nextConfig = {
   // used on Vercel — it breaks route-group resolution. Set the env var in
   // Dockerfile / railway.toml only.
   ...(process.env.NEXT_OUTPUT_STANDALONE === "true" && { output: "standalone" }),
+  async headers() {
+    return [
+      {
+        source: "/(.*)",
+        headers: [
+          {
+            key: "Content-Security-Policy",
+            value: [
+              "default-src 'self'",
+              "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+              "font-src https://fonts.gstatic.com",
+              "connect-src 'self' wss://*.railway.app https://*.railway.app",
+              "img-src 'self' data:",
+              "script-src 'self' 'unsafe-eval'",
+            ].join("; "),
+          },
+          { key: "X-Frame-Options", value: "DENY" },
+          { key: "X-Content-Type-Options", value: "nosniff" },
+          { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+        ],
+      },
+    ];
+  },
   async redirects() {
     return [
       {
