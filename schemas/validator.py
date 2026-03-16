@@ -15,7 +15,7 @@ from schemas.signal_contract import FROZEN_SIGNAL_CONTRACT_VERSION
 logger = logging.getLogger("tuyul.schemas")
 
 try:
-    import jsonschema  # pyright: ignore[reportMissingModuleSource]
+    import jsonschema
 
     HAS_JSONSCHEMA = True
 except ImportError:
