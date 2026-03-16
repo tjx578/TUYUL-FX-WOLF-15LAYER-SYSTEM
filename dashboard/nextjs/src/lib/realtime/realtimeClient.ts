@@ -180,15 +180,12 @@ export function connectLiveUpdates(
           lastSeq = seq;
         }
 
-        const event = WsEventSchema.safeParse(normalizeWsEvent(parsed));
-        if (event.success) {
-          onEvent(event.data);
-          if (event.data.type === "SystemStatusUpdated") {
-            onDegradation?.(event.data.payload);
-          }
+        const event = WsEventSchema.parse(parsed);
+        onEvent(event);
+
+        if (event.type === "SystemStatusUpdated") {
+          onDegradation?.(event.payload);
         }
-        // Unknown / unrecognised event types are silently skipped — stale timer
-        // was already reset above so the connection stays LIVE.
       } catch (err) {
         onError?.(err);
       }

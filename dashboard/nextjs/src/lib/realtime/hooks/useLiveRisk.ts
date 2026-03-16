@@ -37,14 +37,10 @@ export function useLiveRisk(
   const [lastUpdatedAt, setLastUpdatedAt] = useState<number | null>(null);
 
   const staleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // Track whether WS has delivered data — prevents stale REST from overwriting
-  const wsActiveRef = useRef(false);
 
-  // Sync initial snapshot from REST, but only if WS hasn't pushed newer data
+  // Sync initial snapshot
   useEffect(() => {
-    if (initialSnapshot && !wsActiveRef.current) {
-      setSnapshot(initialSnapshot);
-    }
+    if (initialSnapshot) setSnapshot(initialSnapshot);
   }, [initialSnapshot]);
 
   const resetStaleTimer = useCallback(() => {
@@ -67,7 +63,6 @@ export function useLiveRisk(
       path,
       onEvent: (event) => {
         if (event.type === "RiskUpdated") {
-          wsActiveRef.current = true;
           setSnapshot((prev) =>
             mergeSingle(prev, event.payload as unknown as RiskSnapshot)
           );

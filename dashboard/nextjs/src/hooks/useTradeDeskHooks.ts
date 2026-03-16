@@ -1,66 +1,73 @@
 "use client";
 
-import { useEffect, useRef, useCallback, useState } from "react";
+import { useEffect, useRef, useCallback } from "react";
 import { useTradeDeskStore } from "@/store/useTradeDeskStore";
 import { TradeDeskResponseSchema } from "@/schema/tradeDeskSchema";
 import type { TradeDeskTrade } from "@/schema/tradeDeskSchema";
-import { bearerHeader } from "@/lib/auth";
-import { connectLiveUpdates } from "@/lib/realtime/realtimeClient";
-import type { WsConnectionStatus } from "@/lib/realtime/connectionState";
-import { STALE_THRESHOLDS_MS } from "@/lib/realtime/connectionState";
+import { bearerHeader, getTransportToken } from "@/lib/auth";
 
-// ─── useTradeDeskLiveTrades ──────────────────────────────────
-// Connects to /ws/trades via connectLiveUpdates() and patches TradeDeskStore.
-// Uses onRawMessage for trade desk custom event types (trade_update, trade_removed,
-// execution_mismatch) that are not in the standard WsEventSchema.
+// ─── useLiveTrades ───────────────────────────────────────────
+// Connects to /ws/trades and patches the TradeDeskStore on each event.
 
-export function useTradeDeskLiveTrades() {
+export function useLiveTrades() {
+  const wsRef = useRef<WebSocket | null>(null);
+  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const patchTrade = useTradeDeskStore((s) => s.patchTrade);
   const removeTrade = useTradeDeskStore((s) => s.removeTrade);
   const setExecutionMismatch = useTradeDeskStore((s) => s.setExecutionMismatch);
 
-  useEffect(() => {
-    const controls = connectLiveUpdates({
-      path: "/ws/trades",
-      onEvent: (event) => {
-        // Handle standard typed events (ExecutionStateUpdated)
-        if (event.type === "ExecutionStateUpdated") {
-          const trade = event.payload.trade as unknown as TradeDeskTrade;
-          if (trade?.trade_id) {
-            patchTrade(trade);
-          }
-        }
-      },
-      onRawMessage: (msg) => {
-        // Handle trade desk custom events that aren't in WsEventSchema
-        const eventType = (msg as Record<string, unknown>).event_type ??
-          (msg as Record<string, unknown>).type;
-        const payload = ((msg as Record<string, unknown>).payload ?? msg) as Record<string, unknown>;
+  const connect = useCallback(() => {
+    if (typeof window === "undefined") return;
+
+    const token = getTransportToken() ?? "";
+    const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+    const tokenQuery = token ? `?token=${encodeURIComponent(token)}` : "";
+    const url = `${protocol}//${window.location.host}/ws/trades${tokenQuery}`;
+
+    const ws = new WebSocket(url);
+    wsRef.current = ws;
+
+    ws.onmessage = (ev) => {
+      try {
+        const msg = JSON.parse(ev.data);
+        const eventType = msg.event_type ?? msg.type;
+        const payload = msg.payload ?? msg;
 
         if (eventType === "trade_update" || eventType === "TRADE_UPDATE") {
-          const trade = payload as unknown as TradeDeskTrade;
+          const trade = payload as TradeDeskTrade;
           if (trade.trade_id) {
             patchTrade(trade);
           }
         } else if (eventType === "trade_removed" || eventType === "TRADE_REMOVED") {
-          const tradeId = payload.trade_id as string | undefined;
+          const tradeId = payload.trade_id;
           if (tradeId) removeTrade(tradeId);
         } else if (eventType === "execution_mismatch" || eventType === "EXECUTION_MISMATCH") {
-          const tradeId = payload.trade_id as string | undefined;
-          const flags = (payload.flags as string[] | undefined) ??
-            [(payload.message as string | undefined) ?? "SYNC_MISMATCH"];
+          const tradeId = payload.trade_id;
+          const flags = payload.flags ?? [payload.message ?? "SYNC_MISMATCH"];
           if (tradeId) setExecutionMismatch(tradeId, flags);
         }
-      },
-      onStatusChange: () => { /* status tracked at system store level if needed */ },
-      onDegradation: () => { /* handled by system store */ },
-      onError: () => { /* reconnect is handled automatically */ },
-    });
+      } catch {
+        // Ignore parse errors (heartbeat pings etc.)
+      }
+    };
 
-    return () => {
-      controls.close();
+    ws.onclose = () => {
+      wsRef.current = null;
+      reconnectTimerRef.current = setTimeout(connect, 3000);
+    };
+
+    ws.onerror = () => {
+      ws.close();
     };
   }, [patchTrade, removeTrade, setExecutionMismatch]);
+
+  useEffect(() => {
+    connect();
+    return () => {
+      if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
+      wsRef.current?.close();
+    };
+  }, [connect]);
 }
 
 // ─── useTradeDeskLivePrices ──────────────────────────────────
@@ -68,37 +75,44 @@ export function useTradeDeskLiveTrades() {
 
 export function useTradeDeskLivePrices() {
   const pricesRef = useRef<Record<string, number>>({});
+  const wsRef = useRef<WebSocket | null>(null);
+  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  useEffect(() => {
-    const controls = connectLiveUpdates({
-      path: "/ws/prices",
-      onEvent: (event) => {
-        if (event.type === "PriceUpdated" || event.type === "PricesSnapshot") {
-          const payload = event.payload as Record<string, unknown>;
-          // Handle map format: { EURUSD: { price: 1.1, ... }, ... }
-          for (const [symbol, data] of Object.entries(payload)) {
-            if (typeof data === "object" && data !== null && "price" in data) {
-              pricesRef.current[symbol] = (data as { price: number }).price;
-            }
-          }
-        }
-      },
-      onRawMessage: (msg) => {
-        // Handle legacy individual price format: { symbol, price }
-        const payload = ((msg as Record<string, unknown>).payload ?? msg) as Record<string, unknown>;
-        if (typeof payload.symbol === "string" && typeof payload.price === "number") {
+  const connect = useCallback(() => {
+    if (typeof window === "undefined") return;
+
+    const token = getTransportToken() ?? "";
+    const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+    const tokenQuery = token ? `?token=${encodeURIComponent(token)}` : "";
+    const url = `${protocol}//${window.location.host}/ws/prices${tokenQuery}`;
+
+    const ws = new WebSocket(url);
+    wsRef.current = ws;
+
+    ws.onmessage = (ev) => {
+      try {
+        const msg = JSON.parse(ev.data);
+        const payload = msg.payload ?? msg;
+        if (payload.symbol && typeof payload.price === "number") {
           pricesRef.current = {
             ...pricesRef.current,
-            [payload.symbol]: payload.price,
+            [payload.symbol as string]: payload.price as number,
           };
         } else if (payload.prices && typeof payload.prices === "object") {
           pricesRef.current = { ...pricesRef.current, ...(payload.prices as Record<string, number>) };
         }
-      },
-    });
+      } catch {
+        // Ignore
+      }
+    };
 
-    return () => {
-      controls.close();
+    ws.onclose = () => {
+      wsRef.current = null;
+      reconnectTimerRef.current = setTimeout(connect, 3000);
+    };
+
+    ws.onerror = () => {
+      ws.close();
     };
   }, []);
 

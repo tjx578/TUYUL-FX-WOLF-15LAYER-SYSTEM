@@ -36,12 +36,10 @@ export function useLiveTrades(
   const [lastUpdatedAt, setLastUpdatedAt] = useState<number | null>(null);
 
   const staleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // Track whether WS has delivered data — prevents stale REST from overwriting
-  const wsActiveRef = useRef(false);
 
-  // Sync initial snapshot when SWR resolves, but only if WS hasn't pushed newer data
+  // Sync initial snapshot when SWR resolves
   useEffect(() => {
-    if (initialTrades.length > 0 && !wsActiveRef.current) {
+    if (initialTrades.length > 0) {
       setTrades(initialTrades);
     }
   }, [initialTrades]);
@@ -64,7 +62,6 @@ export function useLiveTrades(
       path: "/ws/trades",
       onEvent: (event) => {
         if (event.type === "ExecutionStateUpdated") {
-          wsActiveRef.current = true;
           setTrades((prev) =>
             mergeList(prev, event.payload.trade as unknown as Trade, (t) => t.trade_id)
           );
