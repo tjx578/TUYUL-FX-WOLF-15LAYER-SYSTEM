@@ -47,7 +47,8 @@ export function removeToken(): void {
   localStorage.removeItem(TOKEN_KEY);
 }
 
-// Track if we've already warned about missing auth to avoid console spam
+// Track if we've already warned about missing auth to avoid console spam.
+// v2: switched to console.warn and single-fire guard 2026-03-16
 let hasWarnedNoAuth = false;
 
 /**
