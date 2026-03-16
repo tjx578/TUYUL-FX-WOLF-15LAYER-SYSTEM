@@ -15,7 +15,7 @@
 
 import { WsEventSchema, type WsEventParsed } from "@/schema/wsEventSchema";
 import type { SystemStatusView } from "@/contracts/wsEvents";
-import { getToken } from "@/lib/auth";
+import { getTransportToken } from "@/lib/auth";
 import { getWsBaseUrl } from "@/lib/env";
 
 // ─── CONNECTION STATUS MACHINE ───────────────────────────────
@@ -91,7 +91,7 @@ export function connectLiveUpdates(
 
     onStatusChange?.(reconnectAttempt === 0 ? "CONNECTING" : "RECONNECTING");
 
-    const token = typeof window !== "undefined" ? getToken() : null;
+    const token = typeof window !== "undefined" ? getTransportToken() : null;
     const url = token ? `${wsBaseUrl}${path}?token=${token}` : `${wsBaseUrl}${path}`;
 
     try {
