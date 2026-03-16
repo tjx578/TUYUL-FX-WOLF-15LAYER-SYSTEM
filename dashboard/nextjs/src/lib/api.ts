@@ -493,7 +493,7 @@ export async function skipSignal(req: SkipSignalRequest): Promise<void> {
   await apiMutate("/api/v1/signals/skip", req);
 }
 
-export async function createAccount(data: AccountCreate): Promise<Account> {
+export async function createAccount(data: AccountCreate & { data_source?: string }): Promise<Account> {
   return apiMutate(API_ENDPOINTS.accounts, {
     account_name: data.account_name,
     broker: data.broker,
@@ -505,7 +505,7 @@ export async function createAccount(data: AccountCreate): Promise<Account> {
     leverage: 100,
     commission_model: "standard",
     notes: "",
-    data_source: "MANUAL",
+    data_source: data.data_source || "MANUAL",
     prop_firm: Boolean(data.prop_firm_code),
     max_daily_dd_percent: 4,
     max_total_dd_percent: 8,

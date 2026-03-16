@@ -171,7 +171,8 @@ export function VerdictCard({
             { label: "TII", value: verdict.scores.tii_score },
             { label: "FRPC", value: verdict.scores.frpc_score },
           ] as { label: string; value: number | undefined }[]).map(({ label, value }, index) => {
-            const passing = (value ?? 0) >= 60;
+            const threshold = label === "W" ? 22 : label === "TII" ? 0.75 : 0.70;
+            const passing = (value ?? 0) >= threshold;
             return (
               <motion.div
                 key={label}
