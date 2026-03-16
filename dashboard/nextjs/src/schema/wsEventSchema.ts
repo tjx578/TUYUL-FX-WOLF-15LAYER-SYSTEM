@@ -55,6 +55,27 @@ export const RiskUpdatedEventSchema = z.object({
   payload: z.record(z.string(), z.unknown()),
 });
 
+// Additional event types forwarded from backend that are not in the core schema
+export const VerdictUpdatedEventSchema = z.object({
+  type: z.literal("VerdictUpdated"),
+  payload: z.record(z.string(), z.unknown()),
+});
+
+export const TradeUpdateEventSchema = z.object({
+  type: z.literal("TradeUpdate"),
+  payload: z.record(z.string(), z.unknown()),
+});
+
+export const AlertBroadcastEventSchema = z.object({
+  type: z.literal("AlertBroadcast"),
+  payload: z.record(z.string(), z.unknown()),
+});
+
+export const SignalGeneratedEventSchema = z.object({
+  type: z.literal("SignalGenerated"),
+  payload: z.record(z.string(), z.unknown()),
+});
+
 export const WsEventSchema = z.discriminatedUnion("type", [
   PipelineResultUpdatedEventSchema,
   ExecutionStateUpdatedEventSchema,
@@ -64,6 +85,10 @@ export const WsEventSchema = z.discriminatedUnion("type", [
   PriceUpdatedEventSchema,
   PricesSnapshotEventSchema,
   RiskUpdatedEventSchema,
+  VerdictUpdatedEventSchema,
+  TradeUpdateEventSchema,
+  AlertBroadcastEventSchema,
+  SignalGeneratedEventSchema,
 ]);
 
 export type WsEvent = z.infer<typeof WsEventSchema>;

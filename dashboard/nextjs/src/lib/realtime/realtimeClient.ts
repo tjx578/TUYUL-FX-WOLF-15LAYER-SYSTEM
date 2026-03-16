@@ -135,11 +135,30 @@ export function connectLiveUpdates(
           lastSeq = seq;
         }
 
-        const event = WsEventSchema.parse(parsed);
-        onEvent(event);
+        // Skip control frames — not application events
+        const msgType = parsed.type as string | undefined;
+        if (msgType === "heartbeat" || msgType === "ping" || msgType === "pong") {
+          return;
+        }
 
-        if (event.type === "SystemStatusUpdated") {
-          onDegradation?.(event.payload);
+        const result = WsEventSchema.safeParse(parsed);
+        if (result.success) {
+          onEvent(result.data);
+          if (result.data.type === "SystemStatusUpdated") {
+            onDegradation?.(result.data.payload);
+          }
+        } else {
+          // Forward as unknown event so domain hooks can still handle it
+          if (msgType && (parsed as Record<string, unknown>).payload !== undefined) {
+            onEvent({ type: msgType, payload: (parsed as Record<string, unknown>).payload } as WsEventParsed);
+          }
+          if (process.env.NODE_ENV !== "production") {
+            console.warn(
+              "[ws] Unrecognized event type, forwarded as raw:",
+              msgType,
+              result.error.issues?.[0]?.message,
+            );
+          }
         }
       } catch (err) {
         onError?.(err);
