@@ -250,7 +250,7 @@ class AsyncExecutionWorker:
                 pending_value = raw_dict.get("pending", 0)
                 pending_count = int(pending_value) if pending_value is not None else 0  # type: ignore[arg-type]
             elif isinstance(pending_raw, list | tuple) and pending_raw:
-                pending_count = int(str(cast(tuple[Any, ...], pending_raw)[0]))  # noqa: F821
+                pending_count = int(str(cast(tuple[Any, ...], pending_raw)[0]))
         except Exception:
             pending_count = 0
 
