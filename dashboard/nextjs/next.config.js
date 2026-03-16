@@ -45,6 +45,11 @@ const nextConfig = {
   async rewrites() {
     console.log("[next.config] rewrites apiBase =", apiBase);
     return [
+      // /health — health checks called directly by frontend diagnostics/hooks
+      {
+        source: "/health",
+        destination: `${apiBase}/health`,
+      },
       {
         source: "/api/:path*",
         destination: `${apiBase}/api/:path*`,
