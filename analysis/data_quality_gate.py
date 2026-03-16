@@ -59,7 +59,8 @@ class DataQualityConfig:
     max_gap_ratio: float = 0.10  # >10% gap candles = degraded
     min_tick_count: int = 3  # candles with <3 ticks are suspect
     max_low_tick_ratio: float = 0.15  # >15% low-tick candles = degraded
-    stale_threshold_seconds: float = 300.0  # >5 min = stale
+    stale_threshold_seconds: float = 300.0  # hard floor for staleness checks
+    stale_candle_multiplier: float = 2.0  # allow up to N candle periods before stale
     gap_penalty_per_pct: float = 0.5  # penalty per 1% gap ratio (max 0.3)
     low_tick_penalty_per_pct: float = 0.3
     stale_penalty: float = 0.15
@@ -75,6 +76,37 @@ class DataQualityGate:
 
     def __init__(self, config: DataQualityConfig | None = None) -> None:
         self._config = config or DataQualityConfig()
+
+    @staticmethod
+    def _timeframe_to_seconds(timeframe: str) -> float | None:
+        tf = timeframe.strip().upper()
+        if not tf:
+            return None
+        if tf == "MN":
+            return 30.0 * 24.0 * 3600.0
+
+        unit = tf[0]
+        value = tf[1:]
+        if not value.isdigit():
+            return None
+        n = max(1, int(value))
+        if unit == "M":
+            return n * 60.0
+        if unit == "H":
+            return n * 3600.0
+        if unit == "D":
+            return n * 86400.0
+        if unit == "W":
+            return n * 604800.0
+        return None
+
+    def _stale_threshold_for_timeframe(self, timeframe: str) -> float:
+        cfg = self._config
+        base = max(0.0, float(cfg.stale_threshold_seconds))
+        tf_seconds = self._timeframe_to_seconds(timeframe)
+        if tf_seconds is None:
+            return base
+        return max(base, tf_seconds * max(0.0, float(cfg.stale_candle_multiplier)))
 
     def assess(
         self,
@@ -141,9 +173,10 @@ class DataQualityGate:
             penalty += lt_penalty
             reasons.append(f"low_tick_candles:{low_tick_ratio:.2%}")
 
-        if staleness > cfg.stale_threshold_seconds:
+        stale_threshold = self._stale_threshold_for_timeframe(timeframe)
+        if staleness > stale_threshold:
             penalty += cfg.stale_penalty
-            reasons.append(f"stale_data:{staleness:.0f}s")
+            reasons.append(f"stale_data:{staleness:.0f}s>thr:{stale_threshold:.0f}s")
 
         penalty = min(penalty, cfg.max_penalty)
         degraded = len(reasons) > 0
