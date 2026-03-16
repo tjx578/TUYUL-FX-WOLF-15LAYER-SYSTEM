@@ -307,7 +307,7 @@ export default function DataStreamDiagnostic({
             </div>
           ))}
           <div style={{ fontSize: 10, color: "var(--text-faint)", marginTop: 4 }}>
-            Go to Settings &rarr; Vars to update INTERNAL_API_URL and NEXT_PUBLIC_WS_BASE_URL on this Vercel project.
+            Go to Settings &rarr; Vars to update NEXT_PUBLIC_API_BASE_URL and NEXT_PUBLIC_WS_BASE_URL on this Vercel project.
           </div>
 
           {/* ── Runtime health snapshot ── */}

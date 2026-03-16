@@ -15,7 +15,7 @@ import fnmatch
 import json
 import time
 from typing import Any
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
@@ -234,12 +234,23 @@ def _patch_redis() -> Any:
     """Patch Redis client at the infrastructure level so ALL modules get the mock."""
     import infrastructure.redis_client as _rc
 
+    # Mock the signal service to avoid sync Redis calls in SignalRegistry
+    _mock_signal_svc = MagicMock()
+    _mock_signal_svc.publish.side_effect = lambda payload: {
+        "signal_id": payload.get("signal_id", "SIG-TEST"),
+        "symbol": payload.get("symbol", "UNKNOWN"),
+        "verdict": payload.get("verdict", "EXECUTE"),
+        "confidence": payload.get("confidence", 0.8),
+        **payload,
+    }
+
     with (
         patch.object(_rc._manager, "get_client", new=AsyncMock(return_value=_fake_redis)),
         patch(
             "api.allocation_router._persist_trade_write_through",
             new=AsyncMock(return_value=True),
         ),
+        patch("api.allocation_router._get_signal_service", return_value=_mock_signal_svc),
     ):
         yield
 

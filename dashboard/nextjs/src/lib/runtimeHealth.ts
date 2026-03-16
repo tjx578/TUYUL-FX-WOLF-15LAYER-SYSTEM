@@ -14,24 +14,18 @@ export interface RuntimeHealth {
 }
 
 export function getRuntimeHealth(): RuntimeHealth {
-    // IMPORTANT: NEXT_PUBLIC_ env vars must be accessed as literal identifiers —
-    // NOT via optional chaining or dynamic lookup — so the Next.js compiler can
-    // statically inline their values into the client bundle at build time.
-    // Using process.env.SOME_VAR?.trim() causes the value to be undefined in the
-    // browser even when the env var is correctly set on Vercel.
-    const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL || "";
+    const publicApiBaseRaw = process.env.NEXT_PUBLIC_API_BASE_URL;
+    const publicApiKeyRaw = process.env.NEXT_PUBLIC_API_KEY;
+    const publicWsBaseRaw = process.env.NEXT_PUBLIC_WS_BASE_URL;
 
-    // INTERNAL_API_URL is server-side only (no NEXT_PUBLIC_ prefix) — it is never
-    // available in the browser bundle. Do NOT reference it here.
-
-    const apiKeyPresent = !!(process.env.NEXT_PUBLIC_API_KEY);
-
-    const wsBase = process.env.NEXT_PUBLIC_WS_BASE_URL || "";
+    const apiBase = typeof publicApiBaseRaw === "string" ? publicApiBaseRaw.trim() : "";
+    const wsBase = typeof publicWsBaseRaw === "string" ? publicWsBaseRaw.trim() : "";
+    const apiKeyPresent = typeof publicApiKeyRaw === "string" && publicApiKeyRaw.trim().length > 0;
 
     return {
-        apiBaseResolved: wsBase !== "" || apiBase !== "",
+        apiBaseResolved: apiBase.length > 0,
         apiKeyPresent,
-        wsBaseResolved: wsBase !== "",
+        wsBaseResolved: wsBase.length > 0,
         nodeEnv: process.env.NODE_ENV ?? "unknown",
     };
 }
