@@ -79,7 +79,8 @@ export function getTransportToken(): string | null {
     return jwt;
   }
 
-  const apiKey = process.env.NEXT_PUBLIC_API_KEY?.trim();
+  const apiKeyRaw = process.env.NEXT_PUBLIC_API_KEY;
+  const apiKey = typeof apiKeyRaw === "string" ? apiKeyRaw.trim() : "";
   return apiKey || null;
 }
 

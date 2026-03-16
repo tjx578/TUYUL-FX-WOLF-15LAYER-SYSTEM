@@ -33,15 +33,21 @@ export async function probeSession(
     cookie?: string,
     authorization?: string,
 ): Promise<CompatSessionUser | null> {
+    const isBrowser = typeof window !== "undefined";
+    const internalApiRaw = process.env.INTERNAL_API_URL;
+    const publicApiLegacyRaw = process.env.NEXT_PUBLIC_API_URL;
+    const publicApiBaseRaw = process.env.NEXT_PUBLIC_API_BASE_URL;
+
+    // Browser code cannot access INTERNAL_API_URL (server-only), so it must
+    // resolve from NEXT_PUBLIC_* values only.
+    const apiBaseRaw = isBrowser
+        ? (publicApiLegacyRaw || publicApiBaseRaw || "")
+        : (internalApiRaw || publicApiLegacyRaw || publicApiBaseRaw || "");
+
     // All env vars should be the base origin (no /api suffix).
     // Strip trailing slash and any accidental /api suffix to prevent
     // double-prefix when AUTH_SESSION already starts with /api/.
-    const apiBase = (
-        process.env.INTERNAL_API_URL ||
-        process.env.NEXT_PUBLIC_API_URL ||
-        process.env.NEXT_PUBLIC_API_BASE_URL ||
-        ""
-    ).replace(/\/+$/, "").replace(/\/api$/, "");
+    const apiBase = apiBaseRaw.replace(/\/+$/, "").replace(/\/api$/, "");
 
     if (!apiBase.trim()) {
         return null;
