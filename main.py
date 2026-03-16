@@ -155,6 +155,7 @@ async def _sanitize_redis_keys(redis_client: AsyncRedis) -> None:
     }
 
     total_deleted = 0
+    mismatch_diagnostic_logged = False
     for pattern, expected_type in keys_expected.items():
         try:
             keys: list[bytes | str] = await redis_client.keys(pattern)
@@ -176,6 +177,16 @@ async def _sanitize_redis_keys(redis_client: AsyncRedis) -> None:
                 continue
             if actual_type == expected_type:
                 continue
+
+            if not mismatch_diagnostic_logged:
+                logger.warning(
+                    "[Redis-sanitize] Mismatch diagnostic (one-time): key='{}' raw_type={!r} normalized_type={} expected_type={}",
+                    key_str,
+                    actual_type_raw,
+                    actual_type,
+                    expected_type,
+                )
+                mismatch_diagnostic_logged = True
 
             logger.warning(
                 "[Redis-sanitize] Key '{}' type mismatch: expected={}, actual={} → deleting",
