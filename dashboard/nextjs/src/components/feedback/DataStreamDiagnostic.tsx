@@ -60,6 +60,14 @@ export default function DataStreamDiagnostic({
   } | null>(null);
   const [retrying, setRetrying] = useState(false);
 
+  // Detect missing env vars client-side for the checklist
+  const hasApiBase = typeof window !== "undefined"
+    // If rewrites resolve to localhost we know INTERNAL_API_URL is unset
+    ? !window.location.hostname.includes("localhost")
+    : true;
+  const hasWsUrl = typeof process !== "undefined"
+    && !!process.env.NEXT_PUBLIC_WS_BASE_URL;
+
   const handlePing = useCallback(async () => {
     setPinging(true);
     setPingResult(null);
@@ -82,7 +90,10 @@ export default function DataStreamDiagnostic({
       await Promise.all(
         failedStreams.map((s) => {
           const ep = STREAM_ENDPOINTS[s];
-          return ep ? mutate(ep) : Promise.resolve();
+          if (!ep) return Promise.resolve();
+          // Pass undefined as data + revalidate: true to force a fresh network
+          // request even when SWR has an error cached from exhausted retries.
+          return mutate(ep, undefined, { revalidate: true });
         })
       );
     } finally {
@@ -227,6 +238,56 @@ export default function DataStreamDiagnostic({
           <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: "0.12em", color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}>
             DIAGNOSTIC CHECKLIST
           </div>
+
+          {/* Live env var status banners */}
+          <div
+            style={{
+              padding: "8px 10px",
+              borderRadius: "var(--radius-sm)",
+              background: hasApiBase ? "var(--green-glow)" : "rgba(255,61,87,0.10)",
+              border: `1px solid ${hasApiBase ? "var(--border-success)" : "var(--border-danger)"}`,
+              display: "flex",
+              alignItems: "flex-start",
+              gap: 10,
+            }}
+          >
+            <span style={{ fontSize: 9, fontWeight: 700, fontFamily: "var(--font-mono)", color: hasApiBase ? "var(--green)" : "var(--red)", flexShrink: 0, marginTop: 1 }}>
+              {hasApiBase ? "OK" : "MISSING"}
+            </span>
+            <div>
+              <div style={{ fontSize: 11, fontWeight: 700, color: "var(--text-secondary)" }}>INTERNAL_API_URL</div>
+              <div style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 2 }}>
+                {hasApiBase
+                  ? "Env var appears set — Next.js rewrites will proxy to backend."
+                  : "NOT SET on Vercel. Go to Settings → Vars → add INTERNAL_API_URL=https://your-api.up.railway.app (no /api suffix). This is the #1 cause of all 6 stream failures."}
+              </div>
+            </div>
+          </div>
+
+          <div
+            style={{
+              padding: "8px 10px",
+              borderRadius: "var(--radius-sm)",
+              background: hasWsUrl ? "var(--green-glow)" : "rgba(255,165,0,0.08)",
+              border: `1px solid ${hasWsUrl ? "var(--border-success)" : "var(--border-warn)"}`,
+              display: "flex",
+              alignItems: "flex-start",
+              gap: 10,
+            }}
+          >
+            <span style={{ fontSize: 9, fontWeight: 700, fontFamily: "var(--font-mono)", color: hasWsUrl ? "var(--green)" : "var(--yellow)", flexShrink: 0, marginTop: 1 }}>
+              {hasWsUrl ? "OK" : "MISSING"}
+            </span>
+            <div>
+              <div style={{ fontSize: 11, fontWeight: 700, color: "var(--text-secondary)" }}>NEXT_PUBLIC_WS_BASE_URL</div>
+              <div style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 2 }}>
+                {hasWsUrl
+                  ? "Env var set — WebSocket will connect to configured origin."
+                  : "NOT SET. Add NEXT_PUBLIC_WS_BASE_URL=wss://your-api.up.railway.app (bare origin, NO /ws suffix). Causes LIVE FEED DISCONNECTED."}
+              </div>
+            </div>
+          </div>
+
           {CHECKLIST.map(({ label, detail, key }) => (
             <div
               key={key}
@@ -247,7 +308,7 @@ export default function DataStreamDiagnostic({
             </div>
           ))}
           <div style={{ fontSize: 10, color: "var(--text-faint)", marginTop: 4 }}>
-            Go to Settings &rarr; Vars to update INTERNAL_API_URL on this Vercel project.
+            Go to Settings &rarr; Vars to update INTERNAL_API_URL and NEXT_PUBLIC_WS_BASE_URL on this Vercel project.
           </div>
         </div>
       )}
