@@ -231,11 +231,11 @@ def _reset_state() -> Any:
 
 @pytest.fixture(autouse=True)
 def _patch_redis() -> Any:
-    """Patch Redis client in all route modules."""
+    """Patch Redis client at the infrastructure level so ALL modules get the mock."""
+    import infrastructure.redis_client as _rc
+
     with (
-        patch("api.accounts_router.get_client", _mock_get_client),
-        patch("api.allocation_router.get_client", _mock_get_client),
-        patch("api.journal_routes.get_async_redis", _mock_get_async_redis),
+        patch.object(_rc._manager, "get_client", new=AsyncMock(return_value=_fake_redis)),
         patch(
             "api.allocation_router._persist_trade_write_through",
             new=AsyncMock(return_value=True),

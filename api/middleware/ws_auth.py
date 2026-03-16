@@ -179,12 +179,15 @@ async def ws_auth_guard(websocket: WebSocket) -> dict[str, Any] | None:
     """
     if WS_ALLOWED_ORIGINS:
         origin = (websocket.headers.get("origin") or "").strip().rstrip("/")
-        if not origin or origin not in WS_ALLOWED_ORIGINS:
-            logger.warning("WS auth rejected: forbidden origin")
+        if origin and origin not in WS_ALLOWED_ORIGINS:
+            # Browser client with a disallowed origin — reject immediately.
+            logger.warning("WS auth rejected: forbidden origin %s", origin)
             with contextlib.suppress(Exception):
                 await websocket.send_json({"type": "auth_error", "detail": "Forbidden origin"})
                 await websocket.close(code=4003, reason="Forbidden origin")
             return None
+        # No origin header = non-browser client (EA, service-to-service).
+        # Allow through; token validation below will still gate access.
 
     token = extract_token(dict(websocket.headers), dict(websocket.query_params))
     if not token:
