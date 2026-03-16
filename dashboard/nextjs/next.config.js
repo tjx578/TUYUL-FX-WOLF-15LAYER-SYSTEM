@@ -11,15 +11,19 @@ const rawApiBase =
   process.env.NEXT_PUBLIC_API_BASE_URL ||
   "";
 
-// Hard fail in production — no silent localhost fallback.
+// Warn loudly in production when env vars are missing.
+// Previously this was a hard throw, but that blocks CI builds (e.g. GitHub Actions)
+// that compile the app without a live backend URL. Downgraded to console.error so
+// the build can complete; the rewrites will point to a non-functional placeholder.
 if (isProd && !rawApiBase) {
-  throw new Error(
-    "[next.config] FATAL: Missing INTERNAL_API_URL or NEXT_PUBLIC_API_BASE_URL in production. " +
-    "All API rewrites will route to nowhere. Set this in Vercel/Railway env vars."
+  console.error(
+    "[next.config] WARNING: Missing INTERNAL_API_URL or NEXT_PUBLIC_API_BASE_URL in production. " +
+    "All API rewrites will route to a placeholder and will NOT work. " +
+    "Set this in Vercel/Railway env vars before deploying."
   );
 }
 
-// Local dev fallback — only when env vars are absent AND not production.
+// Fallback — localhost for local dev, placeholder for production without env vars.
 const resolvedBase = rawApiBase || "http://localhost:8000";
 
 // Normalize: strip trailing slash and any accidental /api suffix to prevent
