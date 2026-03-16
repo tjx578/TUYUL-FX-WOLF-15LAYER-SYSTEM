@@ -26,8 +26,9 @@ const STREAM_ENDPOINTS: Record<string, string> = {
 
 const CHECKLIST = [
   {
-    label: "INTERNAL_API_URL env var",
-    detail: "Set INTERNAL_API_URL (server-side) on Vercel project Vars. Example: https://wolf15-api.up.railway.app — WITHOUT trailing /api",
+    label: "NEXT_PUBLIC_API_BASE_URL env var (dashboard override)",
+    detail:
+      "Set NEXT_PUBLIC_API_BASE_URL only if you need the dashboard to call a different origin than INTERNAL_API_URL. Example: https://wolf15-api.up.railway.app — WITHOUT trailing /api. INTERNAL_API_URL itself is server-side only and cannot be verified from this browser diagnostic.",
     key: "env-url",
   },
   {
