@@ -173,7 +173,7 @@ def _get_current_session() -> str:
         return "LONDON"
     if 13 <= hour < 16:
         return "OVERLAP"
-    if 13 <= hour < 22:
+    if 16 <= hour < 22:
         return "NY"
     return "ASIA"
 
