@@ -32,6 +32,7 @@ export function useLiveSignals(
   const [lastUpdatedAt, setLastUpdatedAt] = useState<number | null>(null);
 
   const staleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const wsDeliveredRef = useRef(false);
 
   // Sync initial snapshot from REST
   useEffect(() => {
