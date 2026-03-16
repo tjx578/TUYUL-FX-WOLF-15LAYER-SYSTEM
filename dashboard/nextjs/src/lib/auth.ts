@@ -47,22 +47,27 @@ export function removeToken(): void {
   localStorage.removeItem(TOKEN_KEY);
 }
 
+// Track if we've already warned about missing auth to avoid console spam
+let hasWarnedNoAuth = false;
+
 /**
  * Build the Authorization header value.
  * Returns undefined when no token is stored so callers can omit the header.
- * Logs a loud error in production to surface missing auth config.
+ * Logs a single warning in development when no token is available.
  */
 export function bearerHeader(): string | undefined {
   const token = getTransportToken();
   if (token) {
+    hasWarnedNoAuth = false; // Reset so we warn again if token disappears
     return `Bearer ${token}`;
   }
 
-  if (typeof window !== "undefined" && process.env.NODE_ENV === "development") {
-    console.error(
-      "[auth] bearerHeader(): no JWT available. " +
-      "REST calls are still auth-injected by server middleware, " +
-      "but direct client-to-backend requests will fail. Log in to resolve."
+  // Only warn once per session to avoid console spam on every fetch
+  if (typeof window !== "undefined" && process.env.NODE_ENV === "development" && !hasWarnedNoAuth) {
+    hasWarnedNoAuth = true;
+    console.warn(
+      "[auth] No JWT available — user not logged in. " +
+      "REST calls use server middleware auth; direct client-to-backend calls may fail."
     );
   }
 
