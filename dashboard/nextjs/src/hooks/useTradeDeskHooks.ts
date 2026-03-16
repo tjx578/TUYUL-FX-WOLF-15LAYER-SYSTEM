@@ -1,73 +1,49 @@
 "use client";
 
-import { useEffect, useRef, useCallback } from "react";
+import { useEffect, useRef } from "react";
 import { useTradeDeskStore } from "@/store/useTradeDeskStore";
 import { TradeDeskResponseSchema } from "@/schema/tradeDeskSchema";
 import type { TradeDeskTrade } from "@/schema/tradeDeskSchema";
-import { bearerHeader, getTransportToken } from "@/lib/auth";
+import { bearerHeader } from "@/lib/auth";
+import { connectLiveUpdates } from "@/lib/realtime/realtimeClient";
+import type { WsEventParsed } from "@/schema/wsEventSchema";
 
 // ─── useLiveTrades ───────────────────────────────────────────
 // Connects to /ws/trades and patches the TradeDeskStore on each event.
 
 export function useLiveTrades() {
-  const wsRef = useRef<WebSocket | null>(null);
-  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const patchTrade = useTradeDeskStore((s) => s.patchTrade);
   const removeTrade = useTradeDeskStore((s) => s.removeTrade);
   const setExecutionMismatch = useTradeDeskStore((s) => s.setExecutionMismatch);
 
-  const connect = useCallback(() => {
-    if (typeof window === "undefined") return;
+  useEffect(() => {
+    const controls = connectLiveUpdates({
+      path: "/ws/trades",
+      onEvent: (event) => {
+        const eventType = (event as Record<string, unknown>).type as string;
+        const payload = (event as Record<string, unknown>).payload as Record<string, unknown>;
 
-    const token = getTransportToken() ?? "";
-    const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-    const tokenQuery = token ? `?token=${encodeURIComponent(token)}` : "";
-    const url = `${protocol}//${window.location.host}/ws/trades${tokenQuery}`;
-
-    const ws = new WebSocket(url);
-    wsRef.current = ws;
-
-    ws.onmessage = (ev) => {
-      try {
-        const msg = JSON.parse(ev.data);
-        const eventType = msg.event_type ?? msg.type;
-        const payload = msg.payload ?? msg;
-
-        if (eventType === "trade_update" || eventType === "TRADE_UPDATE") {
-          const trade = payload as TradeDeskTrade;
-          if (trade.trade_id) {
-            patchTrade(trade);
-          }
+        if (eventType === "trade_update" || eventType === "TRADE_UPDATE" || eventType === "TradeUpdate") {
+          const trade = payload as unknown as TradeDeskTrade;
+          if (trade.trade_id) patchTrade(trade);
         } else if (eventType === "trade_removed" || eventType === "TRADE_REMOVED") {
-          const tradeId = payload.trade_id;
+          const tradeId = payload.trade_id as string;
           if (tradeId) removeTrade(tradeId);
         } else if (eventType === "execution_mismatch" || eventType === "EXECUTION_MISMATCH") {
-          const tradeId = payload.trade_id;
-          const flags = payload.flags ?? [payload.message ?? "SYNC_MISMATCH"];
+          const tradeId = payload.trade_id as string;
+          const flags = (payload.flags as string[]) ?? [(payload.message as string) ?? "SYNC_MISMATCH"];
           if (tradeId) setExecutionMismatch(tradeId, flags);
         }
-      } catch {
-        // Ignore parse errors (heartbeat pings etc.)
-      }
-    };
+      },
+      onError: (err) => {
+        if (process.env.NODE_ENV !== "production") {
+          console.warn("[useLiveTrades] WS error:", err);
+        }
+      },
+    });
 
-    ws.onclose = () => {
-      wsRef.current = null;
-      reconnectTimerRef.current = setTimeout(connect, 3000);
-    };
-
-    ws.onerror = () => {
-      ws.close();
-    };
+    return () => controls.close();
   }, [patchTrade, removeTrade, setExecutionMismatch]);
-
-  useEffect(() => {
-    connect();
-    return () => {
-      if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
-      wsRef.current?.close();
-    };
-  }, [connect]);
 }
 
 // ─── useLivePrices ───────────────────────────────────────────
@@ -75,54 +51,30 @@ export function useLiveTrades() {
 
 export function useLivePrices() {
   const pricesRef = useRef<Record<string, number>>({});
-  const wsRef = useRef<WebSocket | null>(null);
-  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const connect = useCallback(() => {
-    if (typeof window === "undefined") return;
-
-    const token = getTransportToken() ?? "";
-    const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-    const tokenQuery = token ? `?token=${encodeURIComponent(token)}` : "";
-    const url = `${protocol}//${window.location.host}/ws/prices${tokenQuery}`;
-
-    const ws = new WebSocket(url);
-    wsRef.current = ws;
-
-    ws.onmessage = (ev) => {
-      try {
-        const msg = JSON.parse(ev.data);
-        const payload = msg.payload ?? msg;
+  useEffect(() => {
+    const controls = connectLiveUpdates({
+      path: "/ws/prices",
+      onEvent: (event: WsEventParsed) => {
+        const payload = (event as Record<string, unknown>).payload as Record<string, unknown>;
         if (payload.symbol && typeof payload.price === "number") {
           pricesRef.current = {
             ...pricesRef.current,
-            [payload.symbol]: payload.price,
+            [payload.symbol as string]: payload.price as number,
           };
         } else if (payload.prices && typeof payload.prices === "object") {
-          pricesRef.current = { ...pricesRef.current, ...payload.prices };
+          pricesRef.current = { ...pricesRef.current, ...(payload.prices as Record<string, number>) };
         }
-      } catch {
-        // Ignore
-      }
-    };
+      },
+      onError: (err) => {
+        if (process.env.NODE_ENV !== "production") {
+          console.warn("[useLivePrices] WS error:", err);
+        }
+      },
+    });
 
-    ws.onclose = () => {
-      wsRef.current = null;
-      reconnectTimerRef.current = setTimeout(connect, 3000);
-    };
-
-    ws.onerror = () => {
-      ws.close();
-    };
+    return () => controls.close();
   }, []);
-
-  useEffect(() => {
-    connect();
-    return () => {
-      if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
-      wsRef.current?.close();
-    };
-  }, [connect]);
 
   return pricesRef;
 }

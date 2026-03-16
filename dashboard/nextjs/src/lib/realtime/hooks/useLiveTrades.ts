@@ -33,10 +33,11 @@ export function useLiveTrades(
   const [lastUpdatedAt, setLastUpdatedAt] = useState<number | null>(null);
 
   const staleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const hasReceivedWsData = useRef(false);
 
-  // Sync initial snapshot when SWR resolves
+  // Sync initial snapshot when SWR resolves (only before WS takes over)
   useEffect(() => {
-    if (initialTrades.length > 0) {
+    if (!hasReceivedWsData.current && initialTrades.length > 0) {
       setTrades(initialTrades);
     }
   }, [initialTrades]);
@@ -57,6 +58,7 @@ export function useLiveTrades(
       path: "/ws/trades",
       onEvent: (event) => {
         if (event.type === "ExecutionStateUpdated") {
+          hasReceivedWsData.current = true;
           setTrades((prev) =>
             mergeList(prev, event.payload.trade as unknown as Trade, (t) => t.trade_id)
           );
