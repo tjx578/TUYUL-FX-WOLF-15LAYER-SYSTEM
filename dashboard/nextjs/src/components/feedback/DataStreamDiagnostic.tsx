@@ -68,8 +68,6 @@ export default function DataStreamDiagnostic({
   //     NO dynamic lookup — so Next.js compiler statically inlines them at build.
   //  2. INTERNAL_API_URL has no NEXT_PUBLIC_ prefix → server-side only → never
   //     available in the browser bundle. Never reference it here.
-  const hasWsUrl = !!(process.env.NEXT_PUBLIC_WS_BASE_URL);
-  const hasApiBase = !!(process.env.NEXT_PUBLIC_API_BASE_URL);
   // NEXT_PUBLIC_ vars are inlined at build time — must use the literal identifier
   // so the Next.js compiler can statically replace them in the client bundle.
   const wsBaseRaw = process.env.NEXT_PUBLIC_WS_BASE_URL;
