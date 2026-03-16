@@ -27,6 +27,7 @@ from redis.exceptions import ResponseError
 from allocation.allocation_models import AllocationRequest
 from allocation.allocation_service import AllocationService
 from config.logging_bootstrap import configure_loguru_logging
+from core.health_probe import HealthProbe
 from infrastructure.redis_client import RedisConfig, close_pool, get_client
 from infrastructure.tracing import (
     extract_trace_carrier,
@@ -160,7 +161,10 @@ class AsyncAllocationWorker:
                             tasks.append(
                                 asyncio.create_task(
                                     self._handle_message(
-                                        redis_client, stream_name, msg_id, msg,
+                                        redis_client,
+                                        stream_name,
+                                        msg_id,
+                                        msg,
                                     ),
                                 ),
                             )
@@ -173,7 +177,9 @@ class AsyncAllocationWorker:
             except Exception as exc:
                 alloc_errors_total.inc()
                 logger.exception(
-                    "Allocation worker error: {} — retry in {:.1f}s", exc, backoff,
+                    "Allocation worker error: {} — retry in {:.1f}s",
+                    exc,
+                    backoff,
                 )
 
             await asyncio.sleep(backoff)
@@ -191,7 +197,9 @@ class AsyncAllocationWorker:
             if "BUSYGROUP" not in str(exc):
                 raise
 
-    async def _handle_message(self, redis_client: aioredis.Redis, stream_name: str, msg_id: str, msg: dict[str, str]) -> None:
+    async def _handle_message(
+        self, redis_client: aioredis.Redis, stream_name: str, msg_id: str, msg: dict[str, str]
+    ) -> None:
         async with self._sem:
             parent_context = extract_trace_context(extract_trace_carrier(msg))
             with _alloc_tracer.start_as_current_span("allocation_process", context=parent_context) as span:
@@ -254,7 +262,7 @@ class AsyncAllocationWorker:
 
     @staticmethod
     def _parse_accounts(raw_accounts: str | Sequence[str]) -> list[str]:
-        if isinstance(raw_accounts, (list, tuple)):
+        if isinstance(raw_accounts, list | tuple):
             return [str(a).strip() for a in raw_accounts if str(a).strip()]
 
         text = str(raw_accounts or "").strip()
@@ -274,7 +282,7 @@ class AsyncAllocationWorker:
             pending: Any = await redis_client.xpending(self._cfg.stream, self._cfg.group)
             if isinstance(pending, dict):
                 pending_count = int(str(cast(dict[str, Any], pending).get("pending", 0)))
-            elif isinstance(pending, (list, tuple)) and pending:
+            elif isinstance(pending, list | tuple) and pending:
                 pending_count = int(str(cast(tuple[Any, ...], pending)[0]))
         except Exception:
             pending_count = 0
@@ -291,6 +299,12 @@ _RESTART_COOLDOWN = float(os.getenv("ALLOC_RESTART_COOLDOWN_SEC", "5.0"))
 
 async def _main() -> None:
     start_http_server(int(os.getenv("ALLOC_METRICS_PORT", "9102")))
+
+    health_port = int(os.getenv("PORT", os.getenv("ALLOC_HEALTH_PORT", "8085")))
+    probe = HealthProbe(port=health_port, service_name="allocation")
+    asyncio.create_task(probe.start())
+    logger.info("Allocation health probe started on :{}", health_port)
+
     restarts = 0
     while restarts <= _MAX_RESTARTS:
         try:
@@ -314,9 +328,7 @@ async def _main() -> None:
                 _MAX_RESTARTS,
             )
             if restarts > _MAX_RESTARTS:
-                logger.critical(
-                    "[SUPERVISOR] Allocation worker exceeded max restarts — giving up"
-                )
+                logger.critical("[SUPERVISOR] Allocation worker exceeded max restarts — giving up")
                 return
             await asyncio.sleep(_RESTART_COOLDOWN)
 
