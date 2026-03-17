@@ -322,6 +322,19 @@ async def _seed_redis_candle_history(
 
             key = f"wolf15:candle_history:{symbol}:{timeframe}"
 
+            # Always delete existing data and write fresh candles.
+            # Previous logic skipped write if Redis had >= bars, but this caused
+            # stale data to persist indefinitely when Finnhub returned same count.
+            try:
+                deleted = await redis.delete(key)
+                if deleted:
+                    logger.debug("[Seed] Cleared stale data from %s", key)
+            except Exception as exc:
+                logger.warning(
+                    "[Seed] DELETE failed for %s (will attempt RPUSH anyway): %s",
+                    key,
+                    exc,
+                )
             # Always delete stale candles before writing fresh data.
             # Previous logic compared llen(key) vs len(candles) and skipped
             # when counts matched — this left stale data in Redis forever.
