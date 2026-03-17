@@ -60,14 +60,14 @@ const TradeRow = React.memo(
             {t.status}
           </span>
         </td>
-        <td style={{ padding: "8px 10px", color: "var(--text-secondary)" }}>{t.account_id ?? "-"}</td>
-        <td style={{ padding: "8px 10px", fontWeight: 600, color: "var(--text-primary)" }}>{t.pair}</td>
-        <td style={{ padding: "8px 10px", fontWeight: 700, color: dirColor }}>{t.direction}</td>
-        <td style={{ padding: "8px 10px", color: "var(--text-secondary)" }}>{t.lot_size.toFixed(2)}</td>
-        <td style={{ padding: "8px 10px", color: "var(--text-secondary)" }}>{t.entry_price.toFixed(5)}</td>
-        <td style={{ padding: "8px 10px", color: "var(--text-secondary)" }}>{t.sl?.toFixed(5) ?? "-"}</td>
-        <td style={{ padding: "8px 10px", color: "var(--text-secondary)" }}>{t.tp?.toFixed(5) ?? "-"}</td>
-        <td style={{ padding: "8px 10px", fontWeight: 700, color: pnlColor }}>
+        <td className="num" style={{ padding: "8px 10px", color: "var(--text-secondary)" }}>{t.account_id ?? "-"}</td>
+        <td className="num" style={{ padding: "8px 10px", fontWeight: 600, color: "var(--text-primary)" }}>{t.pair}</td>
+        <td className="num" style={{ padding: "8px 10px", fontWeight: 700, color: dirColor }}>{t.direction}</td>
+        <td className="num" style={{ padding: "8px 10px", color: "var(--text-secondary)" }}>{t.lot_size.toFixed(2)}</td>
+        <td className="num" style={{ padding: "8px 10px", color: "var(--text-secondary)" }}>{t.entry_price.toFixed(5)}</td>
+        <td className="num" style={{ padding: "8px 10px", color: "var(--text-secondary)" }}>{t.sl?.toFixed(5) ?? "-"}</td>
+        <td className="num" style={{ padding: "8px 10px", color: "var(--text-secondary)" }}>{t.tp?.toFixed(5) ?? "-"}</td>
+        <td className="num" style={{ padding: "8px 10px", fontWeight: 700, color: pnlColor }}>
           {pnl >= 0 ? "+" : ""}
           {pnl.toFixed(2)}
         </td>
