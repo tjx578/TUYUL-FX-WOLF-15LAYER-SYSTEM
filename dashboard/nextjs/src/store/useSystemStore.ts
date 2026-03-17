@@ -2,7 +2,14 @@ import { create } from "zustand";
 import type { SystemStatusView } from "@/contracts/wsEvents";
 import type { WsConnectionStatus } from "@/lib/realtime/connectionState";
 
-type DegradationMode = "NORMAL" | "SSE" | "POLLING" | "DEGRADED";
+type DegradationMode =
+  | "NORMAL"
+  | "SSE"
+  | "POLLING"
+  | "DEGRADED"
+  | "RECONNECTING_WS"
+  | "POLLING_REST"
+  | "STALE";
 
 interface SystemStore {
   system: SystemStatusView | null;
@@ -16,9 +23,11 @@ interface SystemStore {
   setSignalWsStatus: (status: WsConnectionStatus) => void;
   setMode: (mode: DegradationMode) => void;
   setComplianceState: (state?: string) => void;
+  /** True when mode represents any form of transport degradation. */
+  isDegraded: () => boolean;
 }
 
-export const useSystemStore = create<SystemStore>((set) => ({
+export const useSystemStore = create<SystemStore>((set, get) => ({
   system: null,
   wsStatus: "DISCONNECTED",
   signalWsStatus: "DISCONNECTED",
@@ -33,4 +42,8 @@ export const useSystemStore = create<SystemStore>((set) => ({
   setSignalWsStatus: (signalWsStatus) => set({ signalWsStatus }),
   setMode: (mode) => set({ mode }),
   setComplianceState: (state) => set({ complianceState: state ?? "COMPLIANCE_NORMAL" }),
+  isDegraded: (): boolean => {
+    const { mode } = get();
+    return mode === "DEGRADED" || mode === "RECONNECTING_WS" || mode === "POLLING_REST" || mode === "STALE";
+  },
 }));

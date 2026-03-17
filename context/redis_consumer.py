@@ -357,7 +357,12 @@ class RedisConsumer:
         return None
 
     def _handle_candle_dict(self, candle: dict[str, Any]) -> None:
-        """Validate and push a candle update into the context bus."""
+        """Validate and push a candle update into the context bus.
+
+        Also updates feed-timestamp tracking and emits a ``CANDLE_CLOSED``
+        event so the analysis loop wakes immediately instead of waiting
+        for its 60-second timer fallback.
+        """
         symbol = candle.get("symbol")
         timeframe = candle.get("timeframe")
 
@@ -372,6 +377,34 @@ class RedisConsumer:
 
         # Push as live candle update (push_candle expects a single candle dict)
         self._bus.push_candle(candle)
+
+        # Update feed-timestamp so is_feed_stale() works in redis mode.
+        self._bus.record_feed_update(symbol.strip())
+
+        # Emit CANDLE_CLOSED so analysis_loop wakes immediately.
+        self._emit_candle_closed(symbol.strip(), timeframe.strip())
+
+    def _emit_candle_closed(self, symbol: str, timeframe: str) -> None:
+        """Fire CANDLE_CLOSED event on the in-process EventBus.
+
+        Source is ``"ingest"`` because RedisConsumer is the engine-side
+        proxy for the ingest service (authority boundary preserved).
+        """
+        try:
+            from core.event_bus import Event, EventType, get_event_bus  # noqa: PLC0415
+
+            bus = get_event_bus()
+            event = Event(
+                type=EventType.CANDLE_CLOSED,
+                source="ingest",
+                data={"symbol": symbol, "timeframe": timeframe},
+            )
+            # EventBus.emit is async; schedule it on the running loop.
+            loop = asyncio.get_running_loop()
+            loop.create_task(bus.emit(event))
+        except Exception:
+            # Best-effort — don't crash the pub/sub consumer
+            logger.debug("RedisConsumer: failed to emit CANDLE_CLOSED for %s", symbol, exc_info=True)
 
     async def _consume_pubsub(self) -> None:
         """Consume pub/sub messages forever (until stop_event)."""

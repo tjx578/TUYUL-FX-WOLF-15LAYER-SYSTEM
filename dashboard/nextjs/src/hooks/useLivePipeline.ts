@@ -1,5 +1,23 @@
 "use client";
 
+/**
+ * useLivePipeline — active recovery transport hook.
+ *
+ * State machine:
+ *   BOOT → CONNECTING_WS → LIVE_WS
+ *                            ↓ disconnect/error
+ *                         RECONNECTING_WS
+ *                            ↓ recovered < 30s → LIVE_WS
+ *                            ↓ timeout 30s
+ *                         POLLING_REST
+ *                            ↓ WS recovered → LIVE_WS
+ *                            ↓ polling fails repeatedly
+ *                         STALE
+ *
+ * SSE slot reserved for future expansion (insert between RECONNECTING_WS
+ * and POLLING_REST when backend supports /sse/live).
+ */
+
 import { useEffect, useRef } from "react";
 import { fetchLatestPipelineResult } from "@/services/pipelineService";
 import { subscribe, getTransport } from "@/lib/realtime/multiplexer";
@@ -12,8 +30,11 @@ interface UseLivePipelineOptions {
   accountId?: string;
 }
 
-const POLL_INTERVAL_MS = 15_000; // 15s REST polling fallback when both WS+SSE are down
-const POLL_FALLBACK_DELAY_MS = 30_000; // 30s before activating REST polling after stream loss
+// ─── TRANSPORT CONSTANTS ────────────────────────────────────
+const WS_RECONNECT_GRACE_MS = 30_000;   // wait this long before giving up on WS
+const REST_POLL_INTERVAL_MS = 10_000;    // poll every 10s in fallback mode
+const REST_POLL_STALE_AFTER = 6;         // consecutive poll failures before STALE
+const WS_RECOVERY_PROBE_MS = 60_000;    // while polling, re-probe WS every 60s
 
 const toComplianceState = (governance?: string): string => {
   if (!governance || governance === "OK") return "COMPLIANCE_NORMAL";
@@ -30,38 +51,114 @@ export function useLivePipeline(options: UseLivePipelineOptions = {}) {
   const setSystem = useSystemStore((s) => s.setSystem);
   const setMode = useSystemStore((s) => s.setMode);
 
+  // ─── TYPE DEFINITIONS ───────────────────────────────────────
+  interface PipelineResult {
+    symbol: string;
+    verdict: string;
+    governance_state?: string;
+    [key: string]: unknown;
+  }
+
+  interface Trade {
+    [key: string]: unknown;
+  }
+
+  interface ExecutionStatePayload {
+    trade: Trade;
+  }
+
+  interface PreferencesPayload {
+    [key: string]: unknown;
+  }
+
+  interface PipelineEventPayload {
+    symbol: string;
+    verdict: string;
+    governance_state?: string;
+    [key: string]: unknown;
+  }
+
+  interface SystemStatus {
+    mode: string;
+    reason: string;
+  }
+
+  type TransportType = "WS" | "SSE" | "REST";
+
+  interface StreamEvent {
+    type: "PipelineResultUpdated" | "PipelineUpdated" | "ExecutionStateUpdated" | "PreferencesUpdated";
+    payload?: PipelineResult | PipelineEventPayload | ExecutionStatePayload | PreferencesPayload;
+  }
+
+  interface SubscribeOptions {
+    filter: (e: StreamEvent) => boolean;
+    onEvent: (event: StreamEvent) => void;
+    onStatusChange: (status: string) => void;
+    onDegradation: (status: SystemStatus) => void;
+    onError: (error: unknown) => void;
+  }
+
   const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const pollFallbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const wsRecoveryProbeRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const mountedRef = useRef(true);
+  const consecutivePollFailsRef = useRef(0);
+  const lastDataAtRef = useRef<number | null>(null);
+  const wsDisconnectedAtRef = useRef<number | null>(null);
 
   useEffect(() => {
     mountedRef.current = true;
 
+    // ── REST snapshot fetcher (used for bootstrap + polling) ─────
     const doFetch = () => {
       fetchLatestPipelineResult(options.symbol, options.accountId)
         .then((result) => {
-          if (mountedRef.current) {
-            setLatestPipelineResult(result);
-            setComplianceState(toComplianceState(result.governance_state));
-          }
+          if (!mountedRef.current) return;
+          consecutivePollFailsRef.current = 0;
+          lastDataAtRef.current = Date.now();
+          setLatestPipelineResult(result);
+          setComplianceState(toComplianceState(result.governance_state));
         })
         .catch((error) => {
-          if (mountedRef.current) {
-            setMode("DEGRADED");
+          if (!mountedRef.current) return;
+          consecutivePollFailsRef.current += 1;
+
+          // Transition to STALE after too many consecutive failures
+          if (consecutivePollFailsRef.current >= REST_POLL_STALE_AFTER) {
+            setMode("STALE");
             setSystem({
-              mode: "DEGRADED",
-              reason: error instanceof Error ? error.message : "Pipeline fetch failed",
+              mode: "STALE",
+              reason: `REST polling failed ${consecutivePollFailsRef.current} times consecutively. Data may be severely outdated.`,
             });
+          } else {
+            // Keep current degraded mode — don't overwrite POLLING_REST/RECONNECTING_WS
+            const currentMode = useSystemStore.getState().mode;
+            if (currentMode === "NORMAL") {
+              setMode("DEGRADED");
+              setSystem({
+                mode: "DEGRADED",
+                reason: error instanceof Error ? error.message : "Pipeline fetch failed",
+              });
+            }
           }
         });
     };
 
-    // Bootstrap: initial REST snapshot
+    // Bootstrap: initial REST snapshot regardless of transport
     doFetch();
 
+    // ── Polling control ──────────────────────────────────────────
     const startPolling = () => {
-      if (pollTimerRef.current) return; // already polling
-      pollTimerRef.current = setInterval(doFetch, POLL_INTERVAL_MS);
+      if (pollTimerRef.current) return;
+      consecutivePollFailsRef.current = 0;
+      setMode("POLLING_REST");
+      setSystem({
+        mode: "POLLING_REST",
+        reason: "WebSocket unavailable. Using REST polling fallback.",
+      });
+      pollTimerRef.current = setInterval(doFetch, REST_POLL_INTERVAL_MS);
+      // Immediately fetch once
+      doFetch();
     };
 
     const stopPolling = () => {
@@ -69,6 +166,7 @@ export function useLivePipeline(options: UseLivePipelineOptions = {}) {
         clearInterval(pollTimerRef.current);
         pollTimerRef.current = null;
       }
+      consecutivePollFailsRef.current = 0;
     };
 
     const clearPollFallbackTimer = () => {
@@ -78,27 +176,66 @@ export function useLivePipeline(options: UseLivePipelineOptions = {}) {
       }
     };
 
-    // Schedule REST polling after 30s if streams (WS+SSE) remain down
-    const schedulePollFallback = () => {
-      if (pollFallbackTimerRef.current) return; // already scheduled
-      pollFallbackTimerRef.current = setTimeout(() => {
-        pollFallbackTimerRef.current = null;
-        if (mountedRef.current) {
-          const transport = getTransport();
-          // Only start polling if no streaming transport is LIVE
-          if (transport !== "WS" && transport !== "SSE") {
-            setMode("POLLING");
-            setSystem({
-              mode: "POLLING",
-              reason: "WebSocket and SSE unavailable. Using REST polling.",
-            });
-            startPolling();
-          }
-        }
-      }, POLL_FALLBACK_DELAY_MS);
+    const clearWsRecoveryProbe = () => {
+      if (wsRecoveryProbeRef.current) {
+        clearInterval(wsRecoveryProbeRef.current);
+        wsRecoveryProbeRef.current = null;
+      }
     };
 
-    // Stream: live pipeline via multiplexed WS → SSE → polling chain
+    // ── WS recovery: full reset to LIVE_WS ──────────────────────
+    const transitionToLive = (transport: string) => {
+      clearPollFallbackTimer();
+      stopPolling();
+      clearWsRecoveryProbe();
+      wsDisconnectedAtRef.current = null;
+      consecutivePollFailsRef.current = 0;
+
+      if (transport === "SSE") {
+        setMode("SSE");
+      } else {
+        setMode("NORMAL");
+      }
+    };
+
+    // ── Schedule fallback: RECONNECTING_WS → POLLING_REST ───────
+    const schedulePollFallback = () => {
+      if (pollFallbackTimerRef.current) return;
+
+      if (!wsDisconnectedAtRef.current) {
+        wsDisconnectedAtRef.current = Date.now();
+      }
+
+      // Immediately show RECONNECTING_WS
+      setMode("RECONNECTING_WS");
+      setSystem({
+        mode: "RECONNECTING_WS",
+        reason: "WebSocket disconnected. Attempting reconnection…",
+      });
+
+      // Calculate remaining grace time
+      const elapsed = Date.now() - wsDisconnectedAtRef.current;
+      const remaining = Math.max(0, WS_RECONNECT_GRACE_MS - elapsed);
+
+      if (remaining <= 0) {
+        // Grace already expired — start polling immediately
+        startPolling();
+        return;
+      }
+
+      pollFallbackTimerRef.current = setTimeout(() => {
+        pollFallbackTimerRef.current = null;
+        if (!mountedRef.current) return;
+
+        const transport = getTransport();
+        // Only start polling if no streaming transport is LIVE
+        if (transport !== "WS" && transport !== "SSE") {
+          startPolling();
+        }
+      }, remaining);
+    };
+
+    // ── Stream: live pipeline via multiplexed WS → SSE → polling ─
     const unsub = subscribe({
       filter: (e) =>
         e.type === "PipelineResultUpdated" ||
@@ -107,6 +244,10 @@ export function useLivePipeline(options: UseLivePipelineOptions = {}) {
         e.type === "PreferencesUpdated",
       onEvent: (event) => {
         if (!mountedRef.current) return;
+
+        // Any event from stream = fresh data
+        consecutivePollFailsRef.current = 0;
+        lastDataAtRef.current = Date.now();
 
         if (event.type === "PipelineResultUpdated" && event.payload) {
           setLatestPipelineResult(event.payload);
@@ -133,33 +274,24 @@ export function useLivePipeline(options: UseLivePipelineOptions = {}) {
         setWsStatus(status);
 
         if (status === "LIVE") {
-          // Stream is active (WS or SSE) — stop polling, cancel fallback timer
-          clearPollFallbackTimer();
-          stopPolling();
-
+          // Stream recovered — tear down all fallback machinery
           const transport = getTransport();
-          if (transport === "SSE") {
-            setMode("SSE");
-          } else {
-            setMode("NORMAL");
-          }
+          transitionToLive(transport);
         } else if (status === "DEGRADED" || status === "DISCONNECTED") {
-          // Stream lost — schedule REST polling fallback after 30s
-          // (multiplexer handles WS→SSE escalation internally at 30s)
+          // Stream lost — start grace period, then fall back to polling
           schedulePollFallback();
         }
       },
       onDegradation: (status) => {
         setSystem(status);
 
-        // If degradation reports SSE mode, reflect that
         if (status.mode === "SSE") {
           setMode("SSE");
         }
       },
       onError: (error) => {
         setSystem({
-          mode: "DEGRADED",
+          mode: "RECONNECTING_WS",
           reason: error instanceof Error ? error.message : "Live pipeline channel error",
         });
         schedulePollFallback();
@@ -171,6 +303,7 @@ export function useLivePipeline(options: UseLivePipelineOptions = {}) {
       unsub();
       stopPolling();
       clearPollFallbackTimer();
+      clearWsRecoveryProbe();
     };
   }, [
     options.symbol,

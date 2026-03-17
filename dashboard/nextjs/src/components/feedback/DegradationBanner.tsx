@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useSystemStore } from "@/store/useSystemStore";
+import type { SystemStatusView } from "@/contracts/wsEvents";
 
 // PRD requirement: stale indicator must appear within 5s of WS disconnect.
 // Shows degraded mode banner, stale duration counter, and offline instructions.
@@ -28,6 +29,9 @@ export default function DegradationBanner() {
 
   const isDegraded =
     mode === "DEGRADED" ||
+    mode === "RECONNECTING_WS" ||
+    mode === "POLLING_REST" ||
+    mode === "STALE" ||
     wsStatus === "RECONNECTING" ||
     wsStatus === "DISCONNECTED" ||
     signalWsStatus === "DISCONNECTED" ||

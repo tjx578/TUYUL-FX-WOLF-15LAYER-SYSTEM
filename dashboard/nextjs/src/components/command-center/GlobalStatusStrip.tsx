@@ -33,7 +33,19 @@ export default function GlobalStatusStrip({
   isStale,
 }: GlobalStatusStripProps) {
   const backendOk = health?.status === "ok";
-  const degraded = mode === "DEGRADED";
+  const degraded = mode === "DEGRADED" || mode === "RECONNECTING_WS" || mode === "POLLING_REST" || mode === "STALE";
+
+  const systemModeLabel =
+    mode === "STALE" ? "STALE"
+      : mode === "POLLING_REST" ? "POLLING"
+        : mode === "RECONNECTING_WS" ? "RECONNECTING"
+          : degraded ? "DEGRADED"
+            : "NORMAL";
+
+  const systemModeColor =
+    mode === "STALE" ? "var(--red)"
+      : degraded ? "var(--yellow)"
+        : "var(--green)";
 
   const items = [
     {
@@ -74,8 +86,8 @@ export default function GlobalStatusStrip({
     },
     {
       label: "SYSTEM MODE",
-      value: degraded ? "DEGRADED" : "NORMAL",
-      color: degraded ? "var(--yellow)" : "var(--green)",
+      value: systemModeLabel,
+      color: systemModeColor,
       pulse: degraded,
     },
   ];
