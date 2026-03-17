@@ -301,6 +301,33 @@ class VerdictEngine:
                 "gate_summary": dict,
             }
         """
+        # ── STALE DATA CIRCUIT BREAKER (Constitutional Safety Gate) ──
+        # Prevents EXECUTE verdicts when the data feed is stale.
+        # This is a read-only check — no execution authority.
+        # Local import to avoid circular dependency with context layer at
+        # module load time; verdict_engine is imported by many analysis modules.
+        from context.live_context_bus import LiveContextBus  # noqa: PLC0415
+
+        _bus = LiveContextBus()
+        _stale_threshold_sec = float(self.config.get("feed_stale_threshold_sec", 120.0))
+        if _bus.is_feed_stale(symbol, threshold_sec=_stale_threshold_sec):
+            _feed_age = _bus.get_feed_age(symbol)
+            return {
+                "verdict": "HOLD",
+                "confidence": 0.0,
+                "symbol": symbol,
+                "reason": (
+                    f"CIRCUIT_BREAKER: feed stale ({_feed_age:.0f}s > {_stale_threshold_sec:.0f}s threshold)"
+                    if _feed_age is not None
+                    else "CIRCUIT_BREAKER: no feed data"
+                ),
+                "circuit_breaker": True,
+                "feed_stale_seconds": _feed_age,
+                "gate_summary": {"total": 0, "passed": 0, "pass_ratio": 0.0},
+                "enrichment_applied": False,
+                "enrichment_context": {},
+            }
+
         # Inject Gate 11 if enabled and data is present
         kelly_gate_result: dict[str, Any] | None = None
         kelly_edge_data = layer_results.get("kelly_edge_data")
