@@ -145,6 +145,10 @@ def _claim_set(payload: dict[str, Any], key: str) -> set[str]:
 
 
 def _has_account_access(payload: dict[str, Any], requested_account: str | None) -> bool:
+    # API keys are service-level credentials (dashboard, EA) — implicit full access.
+    if payload.get("auth_method") == "api_key":
+        return True
+
     role = str(payload.get("role", "")).strip().lower()
     if role == "admin":
         return True
