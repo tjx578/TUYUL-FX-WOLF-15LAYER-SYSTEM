@@ -74,6 +74,7 @@ class RedisClient(Protocol):
     async def ping(self) -> Any: ...
     async def aclose(self) -> None: ...
     async def delete(self, name: str) -> int: ...
+    async def rename(self, src: str, dst: str) -> bool: ...
     async def scan(self, cursor: int, *, match: str, count: int) -> tuple[int, list[str]]: ...
     async def llen(self, name: str) -> int: ...
     async def rpush(self, name: str, *values: str) -> int: ...
@@ -346,24 +347,17 @@ async def _seed_redis_candle_history(
                 continue
 
             key = f"wolf15:candle_history:{symbol}:{timeframe}"
+            # ── FIX RC-1: Non-destructive atomic swap ─────────────
+            # Write new data to a temp key, then RENAME atomically.
+            # If the new seed fails, old data survives in Redis.
+            temp_key = f"{key}:_seed_tmp"
 
-            # ── FIX RC-1: Always fresh-write on restart ──────────────
-            # OLD: skip jika existing >= len(candles)
-            # BUG: stale data tidak pernah di-replace karena count match
-            # NEW: delete-then-rewrite setiap warmup restart
             try:
-                existing: int = await redis.llen(key)
-                if existing > 0:
-                    await redis.delete(key)
-                    logger.debug(
-                        "[Seed] %s cleared %d stale bars, will rewrite",
-                        key,
-                        existing,
-                    )
+                await redis.delete(temp_key)
             except Exception as exc:
                 logger.warning(
-                    "[Seed] DELETE/LLEN failed for %s (will attempt RPUSH anyway): %s",
-                    key,
+                    "[Seed] DELETE temp key failed for %s (will attempt RPUSH anyway): %s",
+                    temp_key,
                     exc,
                 )
 
@@ -377,19 +371,29 @@ async def _seed_redis_candle_history(
                         normalized["timestamp"] = ts.isoformat()
                     serialized.append(orjson.dumps(normalized).decode("utf-8"))
 
-                # Write in small chunks to avoid connection drops with large payloads.
+                # Write in small chunks to temp key
                 for i in range(0, len(serialized), _SEED_RPUSH_CHUNK_SIZE):
                     chunk = serialized[i : i + _SEED_RPUSH_CHUNK_SIZE]
-                    await redis.rpush(key, *chunk)
+                    await redis.rpush(temp_key, *chunk)
 
-                seeded += 1
-                logger.info(
-                    "[Seed] {}: {} bars written",
-                    key,
-                    len(serialized),
-                )
+                # Atomic swap: only replace if new data was written
+                if await redis.llen(temp_key) > 0:
+                    await redis.rename(temp_key, key)
+                    seeded += 1
+                    logger.info(
+                        "[Seed] {}: {} bars written (atomic swap)",
+                        key,
+                        len(serialized),
+                    )
+                else:
+                    await redis.delete(temp_key)
+                    logger.warning("[Seed] %s: temp key empty after write — keeping old data", key)
+
             except Exception as exc:
-                logger.error("[Seed] Failed to seed {}: {}", key, exc)
+                # Cleanup temp key on failure; old data preserved in `key`
+                with contextlib.suppress(Exception):
+                    await redis.delete(temp_key)
+                logger.error("[Seed] Failed to seed {}: {} — old data preserved", key, exc)
 
     logger.info("[Seed] Completed: {} symbol/tf combos seeded to Redis", seeded)
 

@@ -19,9 +19,10 @@ from loguru import logger
 from storage.redis_client import RedisClient
 
 # === TTL Constants ===
-# Latest tick: 60s - acts as stale feed circuit breaker.
-# If no tick arrives in 60s, key expires -> downstream knows feed is dead.
-LATEST_TICK_TTL_SECONDS: int = 60
+# Latest tick: 1 hour — keeps last-known price available even during WS outages.
+# Staleness is detected via the timestamp INSIDE the hash field, NOT via key expiry.
+# This prevents data loss during temporary WS disconnects (rate limits, weekends).
+LATEST_TICK_TTL_SECONDS: int = 3600
 
 # No TTL on candle keys — Redis has persistent volume.
 # Data stays until explicitly deleted or trimmed by LTRIM.
@@ -43,7 +44,7 @@ class RedisContextBridge:
 
     TTL Policy:
       - tick streams: MAXLEN ~10,000 (auto-trim on XADD)
-      - latest_tick hashes: 60s TTL (stale feed detection)
+      - latest_tick hashes: 3600s TTL (keeps last-known price; staleness via timestamp field)
       - candle hashes: no TTL (persistent, overwritten on each new candle)
       - candle history lists: no TTL (capped by LTRIM to 300 entries)
       - latest_news: 24h TTL (set via SET ex=)
@@ -68,7 +69,8 @@ class RedisContextBridge:
         Operations:
           1. XADD to stream "tick:{symbol}" with maxlen cap
           2. HSET to "latest_tick:{symbol}" for fast latest-tick lookup
-          3. EXPIRE on latest_tick key (60s stale feed detection)
+          3. EXPIRE on latest_tick key (3600s — keeps data during WS outages;
+             staleness detected via timestamp field, not key expiry)
           4. PUBLISH to "tick_updates" channel for real-time notification
 
         Args:
@@ -97,7 +99,8 @@ class RedisContextBridge:
             self._redis.hset(latest_key, mapping={"data": tick_json})
 
             # 3. Set TTL - resets countdown on every tick.
-            #    If no tick in 60s -> key expires -> stale feed detected.
+            #    Key persists for 1h after last tick, keeping last-known price
+            #    available during WS outages. Staleness detected via timestamp field.
             self._redis.client.expire(latest_key, LATEST_TICK_TTL_SECONDS)
 
             # 4. PUBLISH notification
@@ -216,9 +219,7 @@ class RedisContextBridge:
             logger.error(f"Failed to read latest candle from Redis: {exc}")
             return None
 
-    def read_candle_history(
-        self, symbol: str, timeframe: str, count: int = 0
-    ) -> list[dict[str, Any]]:
+    def read_candle_history(self, symbol: str, timeframe: str, count: int = 0) -> list[dict[str, Any]]:
         """
         Read candle history list from Redis.
 
@@ -246,9 +247,7 @@ class RedisContextBridge:
                     candles.append(orjson.loads(item))
             return candles
         except Exception as exc:
-            logger.error(
-                f"Failed to read candle history from Redis for {symbol} {timeframe}: {exc}"
-            )
+            logger.error(f"Failed to read candle history from Redis for {symbol} {timeframe}: {exc}")
             return []
 
     def read_latest_news(self) -> dict[str, Any] | None:

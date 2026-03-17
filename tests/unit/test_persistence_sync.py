@@ -29,26 +29,28 @@ from storage.persistence_sync import PersistenceSync
 #  In-memory Redis mock (sync interface matching storage.redis_client)
 # ──────────────────────────────────────────────────────────────────
 
+
 class FakeAsyncClient:
     """Async Redis client interface used by _sync_trade_ledger (scan/get)."""
 
     def __init__(self, store: dict[str, str]) -> None:
         self._store = store
 
-    async def scan(self, cursor: int = 0, match: str = "*", count: int = 50) -> tuple[int, list[str]]:
+    async def scan(self, cursor: int = 0, match: str = "*", count: int = 50, **kwargs: Any) -> tuple[int, list[str]]:
         matched = [k for k in self._store if fnmatch.fnmatch(k, match)]
         return (0, matched)
 
-    async def get(self, key: str) -> str | None:
-        return self._store.get(key)
+    async def get(self, name: str) -> str | None:
+        return self._store.get(name)
 
 
 class FakeRedis:
-    """In-memory dict-backed Redis mock with scan support."""
+    """In-memory dict-backed Redis mock with scan and list support."""
 
     def __init__(self) -> None:
         super().__init__()
         self._store: dict[str, str] = {}
+        self._lists: dict[str, list[str]] = {}
         # Expose .client for stream scan operations
         self.client: FakeRedis = self
 
@@ -59,16 +61,39 @@ class FakeRedis:
         return self._store.get(key)
 
     def delete(self, key: str) -> int:
-        return 1 if self._store.pop(key, None) is not None else 0
+        removed_str = self._store.pop(key, None) is not None
+        removed_list = self._lists.pop(key, None) is not None
+        return 1 if (removed_str or removed_list) else 0
 
     def scan(self, cursor: int = 0, match: str = "*", count: int = 50):
         """Simplified scan: return all matching keys in a single pass."""
         import fnmatch
+
         matched = [k for k in self._store if fnmatch.fnmatch(k, match)]
         return (0, matched)  # cursor=0 means done
 
+    def rpush(self, key: str, *values: str) -> int:
+        if key not in self._lists:
+            self._lists[key] = []
+        self._lists[key].extend(values)
+        return len(self._lists[key])
+
+    def llen(self, key: str) -> int:
+        return len(self._lists.get(key, []))
+
+    def ltrim(self, key: str, start: int, end: int) -> None:
+        if key in self._lists:
+            self._lists[key] = self._lists[key][start:] if end == -1 else self._lists[key][start : end + 1]
+
+    def lrange(self, key: str, start: int, end: int) -> list[str]:
+        lst = self._lists.get(key, [])
+        if end == -1:
+            return lst[start:]
+        return lst[start : end + 1]
+
     def clear(self) -> None:
         self._store.clear()
+        self._lists.clear()
 
     def dump(self) -> dict[str, str]:
         return dict(self._store)
@@ -77,6 +102,7 @@ class FakeRedis:
 # ──────────────────────────────────────────────────────────────────
 #  In-memory PostgreSQL mock (async interface matching PostgresClient)
 # ──────────────────────────────────────────────────────────────────
+
 
 class FakePostgres:
     """In-memory async PG mock that stores INSERT data and supports queries."""
@@ -92,38 +118,44 @@ class FakePostgres:
     async def execute(self, query: str, *args: Any) -> None:
         query_lower = query.strip().lower()
         if "risk_snapshots" in query_lower and "insert" in query_lower:
-            self._tables["risk_snapshots"].append({
-                "snapshot_type": args[0],
-                "account_id": args[1],
-                "state_data": args[2],
-                "created_at": args[3],
-            })
+            self._tables["risk_snapshots"].append(
+                {
+                    "snapshot_type": args[0],
+                    "account_id": args[1],
+                    "state_data": args[2],
+                    "created_at": args[3],
+                }
+            )
         elif "trade_history" in query_lower and "insert" in query_lower:
-            self._tables["trade_history"].append({
-                "trade_id": args[0],
-                "signal_id": args[1],
-                "account_id": args[2],
-                "pair": args[3],
-                "direction": args[4],
-                "status": args[5],
-                "risk_mode": args[6],
-                "total_risk_percent": args[7],
-                "total_risk_amount": args[8],
-                "pnl": args[9],
-                "close_reason": args[10],
-                "legs": args[11],
-                "metadata": args[12],
-                "created_at": args[13],
-                "updated_at": args[14],
-                "closed_at": args[15],
-            })
+            self._tables["trade_history"].append(
+                {
+                    "trade_id": args[0],
+                    "signal_id": args[1],
+                    "account_id": args[2],
+                    "pair": args[3],
+                    "direction": args[4],
+                    "status": args[5],
+                    "risk_mode": args[6],
+                    "total_risk_percent": args[7],
+                    "total_risk_amount": args[8],
+                    "pnl": args[9],
+                    "close_reason": args[10],
+                    "legs": args[11],
+                    "metadata": args[12],
+                    "created_at": args[13],
+                    "updated_at": args[14],
+                    "closed_at": args[15],
+                }
+            )
         elif "system_events" in query_lower and "insert" in query_lower:
-            self._tables["system_events"].append({
-                "event_type": args[0],
-                "account_id": args[1],
-                "severity": args[2],
-                "payload": args[3],
-            })
+            self._tables["system_events"].append(
+                {
+                    "event_type": args[0],
+                    "account_id": args[1],
+                    "severity": args[2],
+                    "payload": args[3],
+                }
+            )
 
     async def fetchrow(self, query: str, *args: Any) -> dict[str, Any] | None:
         query_lower = query.strip().lower()
@@ -133,10 +165,7 @@ class FakePostgres:
                 snapshot_type = "DRAWDOWN"
             elif "circuit_breaker" in query_lower:
                 snapshot_type = "CIRCUIT_BREAKER"
-            rows = [
-                r for r in self._tables["risk_snapshots"]
-                if r["snapshot_type"] == snapshot_type
-            ]
+            rows = [r for r in self._tables["risk_snapshots"] if r["snapshot_type"] == snapshot_type]
             if rows:
                 return rows[-1]  # latest
         return None
@@ -145,15 +174,19 @@ class FakePostgres:
         query_lower = query.strip().lower()
         if "trade_history" in query_lower:
             return [
-                t for t in self._tables["trade_history"]
+                t
+                for t in self._tables["trade_history"]
                 if t.get("status") not in ("CLOSED", "CANCELLED", "SKIPPED", "ABORTED")
             ]
+        if "ohlc_candles" in query_lower:
+            return self._tables.get("ohlc_candles", [])
         return []
 
 
 # ──────────────────────────────────────────────────────────────────
 #  Fixtures
 # ──────────────────────────────────────────────────────────────────
+
 
 @pytest.fixture
 def fake_redis() -> FakeRedis:
@@ -174,6 +207,7 @@ def sync_service(fake_redis: FakeRedis, fake_pg: FakePostgres) -> PersistenceSyn
 # ──────────────────────────────────────────────────────────────────
 #  Drawdown state round-trip
 # ──────────────────────────────────────────────────────────────────
+
 
 class TestDrawdownPersistence:
     @pytest.mark.asyncio
@@ -200,7 +234,10 @@ class TestDrawdownPersistence:
 
     @pytest.mark.asyncio
     async def test_recovery_restores_drawdown_to_redis(
-        self, fake_redis: FakeRedis, fake_pg: FakePostgres, sync_service: PersistenceSync,
+        self,
+        fake_redis: FakeRedis,
+        fake_pg: FakePostgres,
+        sync_service: PersistenceSync,
     ) -> None:
         """After PG has a snapshot, clearing Redis and recovering restores state."""
         # Step 1: Seed Redis and sync to PG
@@ -229,6 +266,7 @@ class TestDrawdownPersistence:
 #  Circuit breaker state round-trip
 # ──────────────────────────────────────────────────────────────────
 
+
 class TestCircuitBreakerPersistence:
     @pytest.mark.asyncio
     async def test_sync_writes_cb_to_pg(
@@ -240,10 +278,7 @@ class TestCircuitBreakerPersistence:
 
         await sync_service._sync_risk_snapshots()
 
-        cb_rows = [
-            r for r in fake_pg._tables["risk_snapshots"]
-            if r["snapshot_type"] == "CIRCUIT_BREAKER"
-        ]
+        cb_rows = [r for r in fake_pg._tables["risk_snapshots"] if r["snapshot_type"] == "CIRCUIT_BREAKER"]
         assert len(cb_rows) == 1
         data = json.loads(cb_rows[0]["state_data"])
         assert data["state"] == "OPEN"
@@ -251,7 +286,10 @@ class TestCircuitBreakerPersistence:
 
     @pytest.mark.asyncio
     async def test_recovery_restores_cb_to_redis(
-        self, fake_redis: FakeRedis, fake_pg: FakePostgres, sync_service: PersistenceSync,
+        self,
+        fake_redis: FakeRedis,
+        fake_pg: FakePostgres,
+        sync_service: PersistenceSync,
     ) -> None:
         fake_redis.set("wolf15:circuit_breaker:state", "HALF_OPEN")
         fake_redis.set("wolf15:circuit_breaker:data", "cooldown|1")
@@ -268,6 +306,7 @@ class TestCircuitBreakerPersistence:
 # ──────────────────────────────────────────────────────────────────
 #  Trade ledger round-trip
 # ──────────────────────────────────────────────────────────────────
+
 
 class TestTradeLedger:
     @pytest.mark.asyncio
@@ -348,6 +387,7 @@ class TestTradeLedger:
 #  Empty state handling
 # ──────────────────────────────────────────────────────────────────
 
+
 class TestEmptyState:
     @pytest.mark.asyncio
     async def test_sync_with_empty_redis(
@@ -382,11 +422,10 @@ class TestEmptyState:
 #  System events
 # ──────────────────────────────────────────────────────────────────
 
+
 class TestSystemEvents:
     @pytest.mark.asyncio
-    async def test_log_event_writes_to_pg(
-        self, fake_pg: FakePostgres, sync_service: PersistenceSync
-    ) -> None:
+    async def test_log_event_writes_to_pg(self, fake_pg: FakePostgres, sync_service: PersistenceSync) -> None:
         await sync_service.log_event(
             "CIRCUIT_BREAKER_OPENED",
             account_id="acct-1",
@@ -411,6 +450,7 @@ class TestSystemEvents:
 #  Run loop
 # ──────────────────────────────────────────────────────────────────
 
+
 class TestRunLoop:
     @pytest.mark.asyncio
     async def test_run_stops_on_stop(
@@ -432,9 +472,97 @@ class TestRunLoop:
         assert len(fake_pg._tables["risk_snapshots"]) >= 1
 
     @pytest.mark.asyncio
-    async def test_run_skips_when_pg_unavailable(
-        self, fake_pg: FakePostgres, sync_service: PersistenceSync
-    ) -> None:
+    async def test_run_skips_when_pg_unavailable(self, fake_pg: FakePostgres, sync_service: PersistenceSync) -> None:
         """run() exits immediately when PG is not available."""
         fake_pg.is_available = False
         await sync_service.run()  # should return immediately
+
+
+# ──────────────────────────────────────────────────────────────────
+#  Candle history recovery from PostgreSQL
+# ──────────────────────────────────────────────────────────────────
+
+
+class TestCandleHistoryRecovery:
+    @pytest.mark.asyncio
+    async def test_candle_recovery_fills_empty_redis(
+        self, fake_redis: FakeRedis, fake_pg: FakePostgres, sync_service: PersistenceSync
+    ) -> None:
+        """When Redis candle lists are empty, recovery pulls from ohlc_candles table."""
+        fake_pg._tables["ohlc_candles"] = [
+            {
+                "symbol": "EURUSD",
+                "timeframe": "H1",
+                "open_time": datetime(2026, 3, 17, 10, 0, tzinfo=UTC),
+                "close_time": datetime(2026, 3, 17, 11, 0, tzinfo=UTC),
+                "open": 1.084,
+                "high": 1.086,
+                "low": 1.083,
+                "close": 1.085,
+                "volume": 500.0,
+                "tick_count": 120,
+            },
+            {
+                "symbol": "EURUSD",
+                "timeframe": "H1",
+                "open_time": datetime(2026, 3, 17, 11, 0, tzinfo=UTC),
+                "close_time": datetime(2026, 3, 17, 12, 0, tzinfo=UTC),
+                "open": 1.085,
+                "high": 1.087,
+                "low": 1.084,
+                "close": 1.086,
+                "volume": 450.0,
+                "tick_count": 110,
+            },
+        ]
+
+        count = await sync_service._recover_candle_history()
+
+        assert count == 1  # 1 symbol/tf combo
+        key = "wolf15:candle_history:EURUSD:H1"
+        assert fake_redis.client.llen(key) == 2
+
+        # Verify candle data round-trips
+        items = fake_redis.client.lrange(key, 0, -1)
+        first = json.loads(items[0])
+        assert first["symbol"] == "EURUSD"
+        assert first["close"] == 1.085
+
+    @pytest.mark.asyncio
+    async def test_candle_recovery_skips_when_redis_has_data(
+        self, fake_redis: FakeRedis, fake_pg: FakePostgres, sync_service: PersistenceSync
+    ) -> None:
+        """Recovery should NOT overwrite existing Redis candle data."""
+        # Pre-populate Redis
+        fake_redis.client.rpush("wolf15:candle_history:EURUSD:H1", '{"existing": true}')
+
+        fake_pg._tables["ohlc_candles"] = [
+            {
+                "symbol": "EURUSD",
+                "timeframe": "H1",
+                "open_time": datetime(2026, 3, 17, 10, 0, tzinfo=UTC),
+                "close_time": datetime(2026, 3, 17, 11, 0, tzinfo=UTC),
+                "open": 1.084,
+                "high": 1.086,
+                "low": 1.083,
+                "close": 1.085,
+                "volume": 500.0,
+                "tick_count": 120,
+            },
+        ]
+
+        count = await sync_service._recover_candle_history()
+
+        assert count == 0  # Skipped — existing data preserved
+        assert fake_redis.client.llen("wolf15:candle_history:EURUSD:H1") == 1
+        items = fake_redis.client.lrange("wolf15:candle_history:EURUSD:H1", 0, -1)
+        assert json.loads(items[0]) == {"existing": True}
+
+    @pytest.mark.asyncio
+    async def test_candle_recovery_with_no_pg_data(
+        self, fake_redis: FakeRedis, fake_pg: FakePostgres, sync_service: PersistenceSync
+    ) -> None:
+        """Recovery with no ohlc_candles data returns 0 and doesn't crash."""
+        fake_pg._tables["ohlc_candles"] = []
+        count = await sync_service._recover_candle_history()
+        assert count == 0

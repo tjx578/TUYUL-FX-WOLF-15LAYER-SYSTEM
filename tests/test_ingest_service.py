@@ -116,11 +116,12 @@ async def test_seed_redis_writes_h1_keys(
     ingest_service_module: Any,
 ) -> None:
     """_seed_redis_candle_history must write REST-warmed timeframe keys (H1, H4, D1)
-    to Redis. M15 is NOT produced by ingest — it comes from tick data."""
+    to Redis via temp key + atomic RENAME. M15 is NOT produced by ingest."""
     fake_redis = MagicMock()
-    fake_redis.llen = AsyncMock(return_value=0)
+    fake_redis.llen = AsyncMock(return_value=1)
     fake_redis.delete = AsyncMock()
     fake_redis.rpush = AsyncMock()
+    fake_redis.rename = AsyncMock()
 
     warmup_results = {
         "EURUSD": {
@@ -132,23 +133,32 @@ async def test_seed_redis_writes_h1_keys(
 
     await ingest_service_module._seed_redis_candle_history(fake_redis, warmup_results)
 
+    # rpush goes to temp keys
     rpush_keys = [call.args[0] for call in fake_redis.rpush.call_args_list]
-    assert "wolf15:candle_history:EURUSD:H1" in rpush_keys
-    assert "wolf15:candle_history:EURUSD:H4" in rpush_keys
-    assert "wolf15:candle_history:EURUSD:D1" in rpush_keys
+    assert "wolf15:candle_history:EURUSD:H1:_seed_tmp" in rpush_keys
+    assert "wolf15:candle_history:EURUSD:H4:_seed_tmp" in rpush_keys
+    assert "wolf15:candle_history:EURUSD:D1:_seed_tmp" in rpush_keys
+
+    # rename swaps temp → actual key
+    rename_calls = [(call.args[0], call.args[1]) for call in fake_redis.rename.call_args_list]
+    assert ("wolf15:candle_history:EURUSD:H1:_seed_tmp", "wolf15:candle_history:EURUSD:H1") in rename_calls
+    assert ("wolf15:candle_history:EURUSD:H4:_seed_tmp", "wolf15:candle_history:EURUSD:H4") in rename_calls
+    assert ("wolf15:candle_history:EURUSD:D1:_seed_tmp", "wolf15:candle_history:EURUSD:D1") in rename_calls
+
     # M15 must NOT appear — it is built from tick data, not REST
-    assert "wolf15:candle_history:EURUSD:M15" not in rpush_keys
+    assert "wolf15:candle_history:EURUSD:M15:_seed_tmp" not in rpush_keys
 
 
 @pytest.mark.asyncio
 async def test_seed_redis_still_pushes_when_delete_fails(
     ingest_service_module: Any,
 ) -> None:
-    """DELETE errors must not block RPUSH attempt."""
+    """DELETE errors on temp key must not block RPUSH attempt."""
     fake_redis = MagicMock()
-    fake_redis.llen = AsyncMock(return_value=5)
+    fake_redis.llen = AsyncMock(return_value=1)
     fake_redis.delete = AsyncMock(side_effect=RuntimeError("READONLY"))
     fake_redis.rpush = AsyncMock()
+    fake_redis.rename = AsyncMock()
 
     warmup_results = {
         "EURUSD": {
@@ -169,6 +179,7 @@ async def test_seed_redis_still_pushes_when_delete_fails(
 
     await ingest_service_module._seed_redis_candle_history(fake_redis, warmup_results)
 
+    # rpush should still be called despite delete failure
     fake_redis.rpush.assert_awaited_once()
 
 
@@ -191,12 +202,14 @@ async def test_seed_redis_chunks_large_payload(
 ) -> None:
     """When candle count exceeds the chunk size, rpush must be called multiple times.
 
-    _SEED_RPUSH_CHUNK_SIZE = 50, so 120 candles → 3 rpush calls (50 + 50 + 20).
+    _SEED_RPUSH_CHUNK_SIZE = 50, so 120 candles → 3 rpush calls (50 + 50 + 20),
+    all to the temp key. Then a single rename swaps temp → actual.
     """
     fake_redis = MagicMock()
-    fake_redis.llen = AsyncMock(return_value=0)
+    fake_redis.llen = AsyncMock(return_value=120)
     fake_redis.delete = AsyncMock()
     fake_redis.rpush = AsyncMock()
+    fake_redis.rename = AsyncMock()
 
     candles = [{"close": float(i)} for i in range(120)]
     warmup_results = {"EURUSD": {"H1": candles}}
@@ -205,9 +218,14 @@ async def test_seed_redis_chunks_large_payload(
 
     # 120 candles ÷ 50 chunk size = 3 calls (50 + 50 + 20)
     assert fake_redis.rpush.await_count == 3
-    # Each call's first arg is the Redis key
+    # Each call's first arg is the temp Redis key
     for call in fake_redis.rpush.call_args_list:
-        assert call.args[0] == "wolf15:candle_history:EURUSD:H1"
+        assert call.args[0] == "wolf15:candle_history:EURUSD:H1:_seed_tmp"
     # Verify chunk sizes: first two chunks hold 50, last holds 20
     chunk_sizes = [len(call.args) - 1 for call in fake_redis.rpush.call_args_list]
     assert chunk_sizes == [50, 50, 20]
+    # Single rename at the end
+    fake_redis.rename.assert_awaited_once_with(
+        "wolf15:candle_history:EURUSD:H1:_seed_tmp",
+        "wolf15:candle_history:EURUSD:H1",
+    )
