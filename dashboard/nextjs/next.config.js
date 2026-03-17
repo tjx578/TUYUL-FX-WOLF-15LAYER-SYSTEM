@@ -66,7 +66,7 @@ const nextConfig = {
               "default-src 'self'",
               "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
               "font-src https://fonts.gstatic.com",
-              "connect-src 'self' wss://*.railway.app https://*.railway.app",
+              "connect-src 'self' wss://*.railway.app https://*.railway.app wss://*.vercel.app https://*.vercel.app",
               "img-src 'self' data:",
               "script-src 'self' 'unsafe-eval' 'unsafe-inline'",
             ].join("; "),

@@ -117,17 +117,16 @@ export function middleware(request: NextRequest): NextResponse {
 export const config = {
     matcher: [
         /*
-         * Match semua KECUALI:
+         * Match ALL routes EXCEPT:
          *   /login          — login page (prevent infinite redirect)
-         *   /api/           — API routes + proxy
-         *   /auth/          — auth proxy to backend
-         *   /health         — health check proxy
-         *   /pipeline/      — pipeline proxy
-         *   /preferences/   — preferences proxy
          *   /_next/static   — JS/CSS chunks
          *   /_next/image    — optimised images
          *   /favicon.ico    — browser icon
+         *
+         * Proxy routes (/api/, /auth/, /health, /pipeline/, /preferences/)
+         * ARE matched so handleProxyRoute() can inject Authorization headers.
+         * The isProxyRoute() check inside middleware() routes them correctly.
          */
-        "/((?!login|api/|auth/|health(?:/|$)|pipeline(?:/|$)|preferences(?:/|$)|_next/|favicon\\.ico).*)",
+        "/((?!login|_next/|favicon\\.ico).*)",
     ],
 };
