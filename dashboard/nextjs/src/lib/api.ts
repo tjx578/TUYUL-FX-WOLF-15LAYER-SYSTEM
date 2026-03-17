@@ -30,6 +30,7 @@ import type {
 import type { PipelineData } from "@/components/panels/PipelinePanel";
 import { bearerHeader } from "@/lib/auth";
 import { HttpError } from "@/lib/fetcher";
+import { useSessionStore } from "@/store/useSessionStore";
 
 // Use relative paths — Next.js rewrites proxy /api/* to the backend.
 const API_BASE = "";
@@ -71,6 +72,13 @@ export const API_ENDPOINTS = {
 } as const;
 
 const fetcher = async (url: string) => {
+  // Bail immediately if session is known-expired to avoid 401 flood:
+  // when 10+ SWR hooks fire simultaneously after expiry, each would hit
+  // the backend and get 401. Short-circuit here to prevent the cascade.
+  if (useSessionStore.getState().expiredReason) {
+    throw new HttpError("Session expired", 401);
+  }
+
   const auth = bearerHeader();
   const res = await fetch(`${API_BASE}${url}`, {
     credentials: "include",
