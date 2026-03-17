@@ -229,3 +229,37 @@ async def test_seed_redis_chunks_large_payload(
         "wolf15:candle_history:EURUSD:H1:_seed_tmp",
         "wolf15:candle_history:EURUSD:H1",
     )
+
+
+# ── Conditional warmup tests (Redis-first skip) ──────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_has_stale_cache_returns_true_when_candle_key_exists(
+    ingest_service_module: Any,
+) -> None:
+    """_has_stale_cache must return True when at least one candle_history key has data."""
+    fake_redis = MagicMock()
+
+    async def mock_scan(cursor: int, match: str, count: int) -> tuple[int, list[str]]:
+        if cursor == 0:
+            return (0, ["wolf15:candle_history:EURUSD:H1"])
+        return (0, [])
+
+    fake_redis.scan = AsyncMock(side_effect=mock_scan)
+    fake_redis.llen = AsyncMock(return_value=50)
+
+    result = await ingest_service_module._has_stale_cache(fake_redis)
+    assert result is True
+
+
+@pytest.mark.asyncio
+async def test_has_stale_cache_returns_false_when_no_candle_keys(
+    ingest_service_module: Any,
+) -> None:
+    """_has_stale_cache must return False when SCAN yields no candle_history keys."""
+    fake_redis = MagicMock()
+    fake_redis.scan = AsyncMock(return_value=(0, []))
+
+    result = await ingest_service_module._has_stale_cache(fake_redis)
+    assert result is False

@@ -16,6 +16,10 @@ _sync_task: asyncio.Task[None] | None = None
 
 
 def _has_candle_data(redis: RedisClient) -> bool:
+    """Check if Redis has any candle history keys using SCAN.
+
+    Uses the ``SCAN`` cursor to avoid blocking the server.  A single key with
+    at least one entry is enough to declare that Redis holds candle data.
     """Return True if Redis holds any candle history keys.
 
     Uses SCAN to avoid blocking the server.  A single non-empty list is
@@ -31,6 +35,7 @@ def _has_candle_data(redis: RedisClient) -> bool:
             if cursor == 0:
                 break
     except Exception as exc:
+        logger.warning(f"Candle data SCAN failed: {exc}")
         logger.warning("Failed to scan Redis for candle data — assuming empty: {}", exc)
         return False
     return False

@@ -286,6 +286,11 @@ class PersistenceSync:
         return True
 
     async def recover_risk_state_only(self) -> bool:
+        """Recover only risk/trade state from PostgreSQL, skipping candle history.
+
+        Used when Redis already has candle data (detected via SCAN) but is
+        missing risk/account state keys (e.g. ``wolf15:peak_equity``).
+        Avoids overwriting existing candle history during a partial recovery.
         """Recover only risk/trade state from PostgreSQL (candle history skipped).
 
         Used when Redis already has candle data (post-restart with live cache)
@@ -342,6 +347,10 @@ class PersistenceSync:
                     payload[field] = value.isoformat()
             self._redis.set(key, json.dumps(payload))
 
+        # NOTE: _recover_candle_history() is intentionally NOT called here.
+        # Candle data already exists in Redis — leave it untouched.
+        logger.info(
+            "PostgreSQL risk-state recovery complete (candle history preserved); active trades=%d",
         logger.info(
             "PostgreSQL risk-only recovery complete; active trades=%d (candle history preserved)",
             len(trades),
