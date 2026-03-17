@@ -8,7 +8,7 @@ export interface RiskStateView {
 }
 
 export interface SystemStatusView {
-  mode: "NORMAL" | "DEGRADED";
+  mode: "NORMAL" | "SSE" | "POLLING" | "DEGRADED";
   reason?: string;
   updated_at?: string;
 }

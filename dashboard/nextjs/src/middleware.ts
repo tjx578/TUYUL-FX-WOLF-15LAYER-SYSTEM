@@ -1,23 +1,49 @@
 import { NextRequest, NextResponse } from "next/server";
 
 /**
- * Next.js Edge Middleware — Server-side auth injection
+ * Next.js Edge Middleware — Unified auth guard + auth-header injection
  *
- * For proxied REST requests (rewritten to the backend via next.config.js),
- * injects the Authorization header server-side so the API key is never
- * shipped in the client JavaScript bundle.
+ * This single middleware replaces two previously-conflicting files
+ * (root middleware.ts was dead code because Next.js only loads src/middleware.ts
+ *  when using the src/ directory layout).
  *
- * Priority:
- *   1. Existing Authorization header from client (JWT from localStorage)
- *   2. wolf15_session cookie (set by /api/set-session after login)
- *   3. Server-only API_KEY env var (fallback for service-mode access)
+ * Responsibility split by path:
+ *
+ * A) PROXY ROUTES (/api/*, /health, /auth/*, /preferences/*, /pipeline/*):
+ *    Inject Authorization header server-side so secrets stay out of the
+ *    client JS bundle.  Never redirect — backend decides auth failures.
+ *    Priority: existing header > session cookie > server API_KEY.
+ *
+ * B) PAGE ROUTES (everything else except /login, static assets):
+ *    Enforce session cookie.  Missing cookie → 307 redirect to /login.
+ *    Admin-only paths additionally require x-user-role header.
  */
-export function middleware(request: NextRequest): NextResponse {
-    // Don't inject auth on internal Next.js API routes (they handle their own auth)
-    if (request.nextUrl.pathname.startsWith("/api/auth/")) {
-        return NextResponse.next();
-    }
-    if (request.nextUrl.pathname.startsWith("/api/set-session")) {
+
+const SESSION_COOKIE = "wolf15_session";
+const ROLE_HEADER = "x-user-role";
+const ADMIN_ROLES = new Set(["risk_admin", "config_admin", "approver"]);
+const ADMIN_PATHS = ["/audit"];
+
+// Proxy route prefixes that are rewritten to the backend by next.config.js.
+// These MUST NOT be auth-checked by the middleware (no redirect).
+const PROXY_PREFIXES = [
+    "/api/",
+    "/health",
+    "/auth/",
+    "/preferences",
+    "/pipeline",
+];
+
+function isProxyRoute(pathname: string): boolean {
+    return PROXY_PREFIXES.some((p) => pathname.startsWith(p));
+}
+
+// ── A) Auth-header injection for proxy routes ──────────────────────────
+function handleProxyRoute(request: NextRequest): NextResponse {
+    const { pathname } = request.nextUrl;
+
+    // Internal Next.js API routes handle their own auth
+    if (pathname.startsWith("/api/auth/") || pathname.startsWith("/api/set-session")) {
         return NextResponse.next();
     }
 
@@ -27,7 +53,7 @@ export function middleware(request: NextRequest): NextResponse {
     }
 
     // Try session cookie first
-    const sessionToken = request.cookies.get("wolf15_session")?.value?.trim();
+    const sessionToken = request.cookies.get(SESSION_COOKIE)?.value?.trim();
     if (sessionToken) {
         const headers = new Headers(request.headers);
         headers.set("authorization", `Bearer ${sessionToken}`);
@@ -45,12 +71,63 @@ export function middleware(request: NextRequest): NextResponse {
     return NextResponse.next();
 }
 
+// ── B) Session guard for page routes ───────────────────────────────────
+function handlePageRoute(request: NextRequest): NextResponse {
+    const { pathname } = request.nextUrl;
+
+    // /login is always accessible
+    if (pathname.startsWith("/login")) {
+        return NextResponse.next();
+    }
+
+    const sessionCookie = request.cookies.get(SESSION_COOKIE)?.value;
+
+    // Redirect unauthenticated requests to /login
+    if (!sessionCookie) {
+        const loginUrl = new URL("/login", request.url);
+        loginUrl.searchParams.set("callbackUrl", pathname);
+        return NextResponse.redirect(loginUrl, 307);
+    }
+
+    // Admin-only paths require an admin role header
+    const isAdminPath = ADMIN_PATHS.some((p) => pathname.startsWith(p));
+    if (isAdminPath) {
+        const role = request.headers.get(ROLE_HEADER);
+        if (!role || !ADMIN_ROLES.has(role)) {
+            const loginUrl = new URL("/login", request.url);
+            loginUrl.searchParams.set("callbackUrl", pathname);
+            return NextResponse.redirect(loginUrl, 307);
+        }
+    }
+
+    return NextResponse.next();
+}
+
+// ── Entrypoint ─────────────────────────────────────────────────────────
+export function middleware(request: NextRequest): NextResponse {
+    const { pathname } = request.nextUrl;
+
+    if (isProxyRoute(pathname)) {
+        return handleProxyRoute(request);
+    }
+
+    return handlePageRoute(request);
+}
+
 export const config = {
     matcher: [
-        "/api/:path*",
-        "/health",
-        "/auth/:path*",
-        "/preferences/:path*",
-        "/pipeline/:path*",
+        /*
+         * Match semua KECUALI:
+         *   /login          — login page (prevent infinite redirect)
+         *   /api/           — API routes + proxy
+         *   /auth/          — auth proxy to backend
+         *   /health         — health check proxy
+         *   /pipeline/      — pipeline proxy
+         *   /preferences/   — preferences proxy
+         *   /_next/static   — JS/CSS chunks
+         *   /_next/image    — optimised images
+         *   /favicon.ico    — browser icon
+         */
+        "/((?!login|api/|auth/|health(?:/|$)|pipeline(?:/|$)|preferences(?:/|$)|_next/|favicon\\.ico).*)",
     ],
 };

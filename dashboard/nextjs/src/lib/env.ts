@@ -53,15 +53,15 @@ export function getWsBaseUrl(): string {
   if (url.length === 0) {
     if (typeof window !== "undefined") {
       const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
-      if (
-        process.env.NODE_ENV === "development" &&
-        (window.location.hostname.includes("vercel") ||
-          window.location.hostname.includes(".app"))
-      ) {
-        console.warn(
-          "[env] WARNING: NEXT_PUBLIC_WS_BASE_URL is not set in a production-like environment. " +
-          "WebSocket connections will fail. " +
-          "Set NEXT_PUBLIC_WS_BASE_URL=wss://your-api.up.railway.app (bare origin, NO /ws suffix) in your Vercel project."
+      const isDeployedHost =
+        window.location.hostname.includes("vercel") ||
+        window.location.hostname.includes(".app");
+      if (isDeployedHost) {
+        console.error(
+          "[env] CRITICAL: NEXT_PUBLIC_WS_BASE_URL is NOT SET. " +
+          "All WebSocket streams will fail on Vercel (serverless cannot upgrade WS). " +
+          "Go to Vercel → Settings → Environment Variables → add: " +
+          "NEXT_PUBLIC_WS_BASE_URL=wss://your-api.up.railway.app (bare origin, NO /ws suffix)."
         );
       }
       return `${proto}//${window.location.host}`;
@@ -92,16 +92,28 @@ export function validateEnv(): void {
     window.location.hostname.includes("vercel") ||
     window.location.hostname.includes(".app");
 
-  if ((!wsUrl || wsUrl.trim() === "") && isVercel && process.env.NODE_ENV === "development") {
-    console.warn(
-      "[env] NEXT_PUBLIC_WS_BASE_URL is not configured. " +
-      "Live data channels will not connect on Vercel. " +
-      "Set NEXT_PUBLIC_WS_BASE_URL to your Railway backend wss:// URL."
+  if ((!wsUrl || wsUrl.length === 0) && isVercel) {
+    console.error(
+      "[env] CRITICAL: NEXT_PUBLIC_WS_BASE_URL is NOT SET. " +
+      "All 6 live data streams will fail on Vercel. " +
+      "Go to Vercel → Settings → Environment Variables → add: " +
+      "NEXT_PUBLIC_WS_BASE_URL=wss://your-api.up.railway.app (bare origin, NO /ws suffix)."
+    );
+  }
+
+  const internalUrl = process.env.INTERNAL_API_URL;
+  const internalSet = typeof internalUrl === "string" && internalUrl.trim().length > 0;
+  if (!internalSet && isVercel) {
+    console.error(
+      "[env] CRITICAL: INTERNAL_API_URL is NOT SET. " +
+      "All API rewrites/proxies will fail (server-side fetches, middleware, session). " +
+      "Go to Vercel → Settings → Environment Variables → add: " +
+      "INTERNAL_API_URL=https://your-api.up.railway.app (NO /api suffix)."
     );
   }
 
   // Legacy env var guard
-  if (process.env.NEXT_PUBLIC_WS_URL && process.env.NODE_ENV === "development") {
+  if (process.env.NEXT_PUBLIC_WS_URL) {
     console.warn(
       "[env] NEXT_PUBLIC_WS_URL is deprecated and has no effect. " +
       "Use NEXT_PUBLIC_WS_BASE_URL instead."
