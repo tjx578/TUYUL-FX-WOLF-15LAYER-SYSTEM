@@ -14,18 +14,14 @@ export interface RuntimeHealth {
 }
 
 export function getRuntimeHealth(): RuntimeHealth {
-    const publicApiBaseRaw = process.env.NEXT_PUBLIC_API_BASE_URL;
-    const publicApiKeyRaw = process.env.NEXT_PUBLIC_API_KEY;
-    const publicWsBaseRaw = process.env.NEXT_PUBLIC_WS_BASE_URL;
-
-    const apiBase = typeof publicApiBaseRaw === "string" ? publicApiBaseRaw.trim() : "";
-    const wsBase = typeof publicWsBaseRaw === "string" ? publicWsBaseRaw.trim() : "";
-    const apiKeyPresent = typeof publicApiKeyRaw === "string" && publicApiKeyRaw.trim().length > 0;
-
+    // CRITICAL: Next.js statically inlines NEXT_PUBLIC_ env vars ONLY when the
+    // full identifier appears as a direct expression — not via intermediate vars.
+    // `const x = process.env.NEXT_PUBLIC_FOO; x` → x is undefined in browser.
+    // `!!(process.env.NEXT_PUBLIC_FOO)` → correctly inlined at build time.
     return {
-        apiBaseResolved: apiBase.length > 0,
-        apiKeyPresent,
-        wsBaseResolved: wsBase.length > 0,
+        apiBaseResolved: !!(process.env.NEXT_PUBLIC_API_BASE_URL),
+        apiKeyPresent:   !!(process.env.NEXT_PUBLIC_API_KEY),
+        wsBaseResolved:  !!(process.env.NEXT_PUBLIC_WS_BASE_URL),
         nodeEnv: process.env.NODE_ENV ?? "unknown",
     };
 }
