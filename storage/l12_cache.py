@@ -10,6 +10,7 @@ from storage.redis_client import redis_client
 
 KEY_PREFIX = "L12:VERDICT:"
 VERDICT_READY_CHANNEL = "events:l12_verdict_ready"
+VERDICT_STREAM = "stream:l12_verdict"
 
 # Durable Redis Stream for verdict events — survives subscriber disconnects.
 VERDICT_STREAM = "stream:l12_verdict"
@@ -18,6 +19,8 @@ VERDICT_STREAM_MAXLEN = 1000
 # TTL for verdict cache: 10 minutes. Prevents stale data lingering forever
 # if the pipeline crashes. The pipeline runs every ~60s under normal conditions.
 VERDICT_TTL_SEC = 600
+# Maximum entries retained in the verdict stream (ring-buffer behaviour)
+VERDICT_STREAM_MAXLEN = 1000
 
 
 def set_verdict(pair: str, data: dict[str, Any]) -> None:
