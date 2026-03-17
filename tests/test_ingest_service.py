@@ -117,14 +117,10 @@ async def test_seed_redis_writes_h1_keys(
 ) -> None:
     """_seed_redis_candle_history must write REST-warmed timeframe keys (H1, H4, D1)
     to Redis. M15 is NOT produced by ingest — it comes from tick data."""
-    fake_pipe = MagicMock()
-    fake_pipe.rpush = MagicMock()
-    fake_pipe.expire = MagicMock()
-    fake_pipe.execute = AsyncMock(return_value=[])
-
     fake_redis = MagicMock()
-    fake_redis.pipeline = MagicMock(return_value=fake_pipe)
+    fake_redis.llen = AsyncMock(return_value=0)
     fake_redis.delete = AsyncMock()
+    fake_redis.rpush = AsyncMock()
 
     warmup_results = {
         "EURUSD": {
@@ -136,7 +132,7 @@ async def test_seed_redis_writes_h1_keys(
 
     await ingest_service_module._seed_redis_candle_history(fake_redis, warmup_results)
 
-    rpush_keys = [call.args[0] for call in fake_pipe.rpush.call_args_list]
+    rpush_keys = [call.args[0] for call in fake_redis.rpush.call_args_list]
     assert "wolf15:candle_history:EURUSD:H1" in rpush_keys
     assert "wolf15:candle_history:EURUSD:H4" in rpush_keys
     assert "wolf15:candle_history:EURUSD:D1" in rpush_keys
@@ -149,13 +145,10 @@ async def test_seed_redis_still_pushes_when_delete_fails(
     ingest_service_module: Any,
 ) -> None:
     """DELETE errors must not block RPUSH attempt."""
-    fake_pipe = MagicMock()
-    fake_pipe.rpush = MagicMock()
-    fake_pipe.execute = AsyncMock(return_value=[])
-
     fake_redis = MagicMock()
-    fake_redis.pipeline = MagicMock(return_value=fake_pipe)
+    fake_redis.llen = AsyncMock(return_value=5)
     fake_redis.delete = AsyncMock(side_effect=RuntimeError("READONLY"))
+    fake_redis.rpush = AsyncMock()
 
     warmup_results = {
         "EURUSD": {
@@ -176,8 +169,7 @@ async def test_seed_redis_still_pushes_when_delete_fails(
 
     await ingest_service_module._seed_redis_candle_history(fake_redis, warmup_results)
 
-    fake_pipe.rpush.assert_called()
-    fake_pipe.execute.assert_awaited_once()
+    fake_redis.rpush.assert_awaited_once()
 
 
 def test_cold_start_m15_removed_from_module(

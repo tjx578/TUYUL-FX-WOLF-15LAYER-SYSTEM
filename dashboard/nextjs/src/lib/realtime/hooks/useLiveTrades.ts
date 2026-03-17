@@ -72,14 +72,15 @@ export function useLiveTrades(
       onStatusChange: (s) => {
         setStatus(s);
         if (s === "LIVE") resetStaleTimer();
-        if (s === "DISCONNECTED" || s === "DEGRADED") {
+        if (s === "DISCONNECTED") {
           if (staleTimerRef.current) clearTimeout(staleTimerRef.current);
           wsActiveRef.current = false;
         }
       },
-      onDegradation: () => setStatus("DEGRADED"),
+      onDegradation: () => {
+        setStatus((prev) => (prev === "LIVE" ? "DEGRADED" : prev));
+      },
       onSeqGap: () => {
-        wsActiveRef.current = false;
         onSeqGap?.();
       },
       onError: () => setStatus("DEGRADED"),

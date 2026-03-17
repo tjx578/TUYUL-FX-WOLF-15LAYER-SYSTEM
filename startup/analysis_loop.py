@@ -26,7 +26,10 @@ from pipeline import WolfConstitutionalPipeline
 
 __all__ = ["analysis_loop"]
 
-_PIPELINE_TIMEOUT_SEC = 30.0
+# Hard deadline for a single pipeline execution.  Prevents indefinite hangs
+# (e.g.  CPU-bound computation or Redis latency spike) from blocking the
+# entire analysis loop.  Override via ``PIPELINE_TIMEOUT_SEC`` env var.
+_PIPELINE_TIMEOUT_SEC = float(os.getenv("PIPELINE_TIMEOUT_SEC", "30"))
 _engine_tracer = setup_tracer("wolf-engine-loop")
 _ERROR_LOG_WINDOW_SEC = float(os.getenv("PIPELINE_ERROR_LOG_WINDOW_SEC", "30"))
 _error_log_state: dict[str, dict[str, float | int]] = {}
