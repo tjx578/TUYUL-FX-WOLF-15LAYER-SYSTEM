@@ -78,12 +78,12 @@ export function useLivePrices(enabled = true, rafBatch = false, onSeqGap?: () =>
       onStatusChange: (s) => {
         setStatus(s);
         if (s === "LIVE") resetStaleTimer();
-        if (s === "DISCONNECTED" || s === "DEGRADED") {
+        if (s === "DISCONNECTED") {
           if (staleTimerRef.current) clearTimeout(staleTimerRef.current);
         }
       },
       onDegradation: () => {
-        setStatus("DEGRADED");
+        setStatus((prev) => (prev === "LIVE" ? "DEGRADED" : prev));
       },
       onSeqGap: () => onSeqGap?.(),
       onError: () => {

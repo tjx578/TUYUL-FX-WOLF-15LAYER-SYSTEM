@@ -35,6 +35,7 @@ from accounts.risk_engine import RiskEngine  # noqa: F401
 from allocation.signal_service import SignalService
 from api.middleware.auth import verify_token
 from api.middleware.governance import enforce_write_policy
+from config_loader import load_pairs
 from execution.idempotency_ledger import ExecutionIdempotencyLedger
 from infrastructure.redis_client import get_client
 from infrastructure.tracing import inject_trace_context, setup_tracer
@@ -404,36 +405,47 @@ async def _global_news_lock_enabled() -> bool:
         return False
 
 
-async def _feed_staleness_seconds(pair: str = "") -> float:
+async def _feed_staleness_seconds() -> float:
     """Return feed staleness based on latest tick heartbeat in Redis.
 
-    Reads from ``wolf15:latest_tick:{pair}`` (Hash, field "data") — the key
-    written by ``RedisContextBridge.write_tick()``.  Falls back gracefully
-    when the key is absent or expired (TTL 60s acts as a circuit-breaker).
-
-    Args:
-        pair: Trading pair symbol (e.g. "EURUSD").  When empty the function
-              returns ``float("inf")`` because staleness cannot be determined
-              without knowing which symbol to check.
+    Reads ``wolf15:latest_tick:{symbol}`` HSET keys written by
+    ``RedisContextBridge.write_tick()``.  Returns the staleness of the
+    *freshest* tick across all configured pairs (best-case metric).
     """
-    if not pair:
-        return float("inf")
     try:
+        redis = cast(Any, await get_client())
         import json as _json  # noqa: PLC0415
 
-        redis = cast(Any, await get_client())
-        # wolf15:latest_tick:{symbol} is a Hash with field "data" = JSON tick
-        raw = await redis.hget(f"wolf15:latest_tick:{pair}", "data")
-        if not raw:
+        pairs = load_pairs()
+        if not pairs:
             return float("inf")
-        if isinstance(raw, bytes):
-            raw = raw.decode("utf-8", errors="ignore")
-        payload_raw = _json.loads(raw) if isinstance(raw, str) else {}
-        payload = cast(dict[str, Any], payload_raw) if isinstance(payload_raw, dict) else {}
-        ts = float(payload.get("timestamp", 0.0) or 0.0)
-        if ts <= 0:
-            return float("inf")
-        return max(0.0, datetime.now(UTC).timestamp() - ts)
+
+        best_staleness = float("inf")
+        now_ts = datetime.now(UTC).timestamp()
+
+        for pair_cfg in pairs:
+            symbol = str(pair_cfg.get("symbol", ""))
+            if not symbol:
+                continue
+            raw_hash = await redis.hgetall(f"wolf15:latest_tick:{symbol}")
+            if not raw_hash:
+                continue
+            data_raw = raw_hash.get("data") or raw_hash.get(b"data")
+            if not data_raw:
+                continue
+            if isinstance(data_raw, bytes):
+                data_raw = data_raw.decode("utf-8", errors="ignore")
+            payload = _json.loads(data_raw) if isinstance(data_raw, str) else {}
+            if not isinstance(payload, dict):
+                continue
+            ts = float(payload.get("timestamp", 0.0) or 0.0)
+            if ts <= 0:
+                continue
+            staleness = max(0.0, now_ts - ts)
+            if staleness < best_staleness:
+                best_staleness = staleness
+
+        return best_staleness
     except Exception:
         return float("inf")
 

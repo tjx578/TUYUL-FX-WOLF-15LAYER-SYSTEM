@@ -346,8 +346,11 @@ class ConnectionManager:
         self._send_locks: dict[fastapi.WebSocket, asyncio.Lock] = {}
         # Ring buffer of recent messages for replay on reconnect
         self._message_buffer: deque[dict[str, object]] = deque(maxlen=buffer_size)
-        # Monotonic sequence counter for deterministic gap detection
-        self._seq_counter = itertools.count(1)
+        # Per-connection sequence counters — each client gets its own monotonic
+        # counter so send_stamped() to one client doesn't create gaps for another.
+        self._per_conn_seq: dict[fastapi.WebSocket, itertools.count[int]] = {}
+        # Global buffer ordering counter (not sent to clients)
+        self._buffer_seq = itertools.count(1)
 
     async def connect(self, websocket: fastapi.WebSocket) -> bool:
         """
@@ -371,6 +374,7 @@ class ConnectionManager:
         self.active_connections.add(websocket)
         self._last_heartbeat[websocket] = time.time()
         self._send_locks[websocket] = asyncio.Lock()
+        self._per_conn_seq[websocket] = itertools.count(1)
         self._register_session(websocket, user)
 
         # Start heartbeat ping task for this connection
@@ -384,6 +388,7 @@ class ConnectionManager:
         self.active_connections.discard(websocket)
         self._last_heartbeat.pop(websocket, None)
         self._send_locks.pop(websocket, None)
+        self._per_conn_seq.pop(websocket, None)
         self._unregister_session(websocket)
         task = self._ping_tasks.pop(websocket, None)
         if task and not task.done():
@@ -503,12 +508,16 @@ class ConnectionManager:
             since_ts: Only replay messages after this timestamp. If None, replay all.
             since_seq: Only replay messages with seq > since_seq (preferred over since_ts).
         """
+        conn_counter = self._per_conn_seq.get(websocket)
+        if conn_counter is None:
+            return
+
         replayed = 0
         for msg in self._message_buffer:
-            # Prefer seq-based filtering when available
+            # Prefer seq-based filtering using buffer ordering seq
             if since_seq is not None:
-                msg_seq = msg.get("seq", 0)
-                if isinstance(msg_seq, int) and msg_seq <= since_seq:
+                msg_buf_seq = msg.get("_buf_seq", 0)
+                if isinstance(msg_buf_seq, int) and msg_buf_seq <= since_seq:
                     continue
             elif since_ts is not None:
                 msg_ts_raw = msg.get("ts", 0.0)
@@ -516,12 +525,13 @@ class ConnectionManager:
                 if msg_ts <= since_ts:
                     continue
             try:
+                replay_msg = {**msg, "seq": next(conn_counter)}
                 lock = self._send_locks.get(websocket)
                 if lock:
                     async with lock:
-                        await websocket.send_json(msg)
+                        await websocket.send_json(replay_msg)
                 else:
-                    await websocket.send_json(msg)
+                    await websocket.send_json(replay_msg)
                 replayed += 1
             except Exception:
                 break
@@ -531,20 +541,25 @@ class ConnectionManager:
     async def broadcast(self, message: dict[str, Any]) -> None:
         """Broadcast message to all connected clients and buffer it.
 
-        Stamps each message with a monotonic ``seq`` for client-side gap detection.
+        Each client receives its own per-connection ``seq`` so that
+        ``send_stamped()`` to one client does not create gaps for another.
         """
-        message["seq"] = next(self._seq_counter)
+        message["_buf_seq"] = next(self._buffer_seq)
         self.buffer_message(message)
         disconnected: set[fastapi.WebSocket] = set()
 
         for connection in self.active_connections:
             try:
+                conn_counter = self._per_conn_seq.get(connection)
+                if conn_counter is None:
+                    continue
+                msg_copy = {**message, "seq": next(conn_counter)}
                 lock = self._send_locks.get(connection)
                 if lock:
                     async with lock:
-                        await connection.send_json(message)
+                        await connection.send_json(msg_copy)
                 else:
-                    await connection.send_json(message)
+                    await connection.send_json(msg_copy)
             except Exception as exc:
                 logger.debug(f"Failed to send to client: {exc}")
                 disconnected.add(connection)
@@ -556,9 +571,14 @@ class ConnectionManager:
     async def send_stamped(self, websocket: fastapi.WebSocket, message: dict[str, Any]) -> bool:
         """Send a seq-stamped message to a single client and buffer it.
 
+        Uses the per-connection counter so other clients see no gap.
         Returns True on success, False if the connection was already closed.
         """
-        message["seq"] = next(self._seq_counter)
+        conn_counter = self._per_conn_seq.get(websocket)
+        if conn_counter is None:
+            return False
+        message["seq"] = next(conn_counter)
+        message["_buf_seq"] = next(self._buffer_seq)
         self.buffer_message(message)
         try:
             lock = self._send_locks.get(websocket)
@@ -1574,20 +1594,18 @@ async def websocket_live_feed(websocket: fastapi.WebSocket):
         )
 
         while websocket in live_manager.active_connections:
-            # Detect whether the engine pipeline is actively producing verdicts.
-            # A verdict older than 120 s suggests the pipeline has stalled.
-            # Fail safely — if Redis is unavailable, treat status as unknown.
-            try:
-                all_verdicts = await get_all_verdicts_async()
-                _engine_stall_threshold_sec = 120.0
-                engine_stalled: bool = not all_verdicts or all(
-                    is_verdict_stale(v, max_age_sec=_engine_stall_threshold_sec) for v in all_verdicts
-                )
-                engine_status = "stalled" if engine_stalled else "ok"
-            except Exception:
-                engine_status = "unknown"
+            # Keepalive periodic state update for clients that miss individual events.
+            # Includes engine health so dashboard can distinguish "WS alive,
+            # engine stalled" from "WS dead".
+            engine_producing = False
+            with contextlib.suppress(Exception):
+                _pairs = load_pairs()
+                _sample_symbol = str(_pairs[0].get("symbol", "")) if _pairs else ""
+                if _sample_symbol:
+                    _v = await get_verdict_async(_sample_symbol)
+                    if _v and "_cached_at" in _v:
+                        engine_producing = (time.time() - float(_v["_cached_at"])) < 120
 
-            # Keepalive periodic state update for clients that miss individual events
             ok = await live_manager.send_stamped(
                 websocket,
                 _ws_event(
@@ -1596,8 +1614,8 @@ async def websocket_live_feed(websocket: fastapi.WebSocket):
                         "signal_count": len(_signal_service.list_all()),
                         "account_count": len(await _account_manager.list_accounts_async()),
                         "active_trade_count": len(await _trade_ledger.get_active_trades_async()),
-                        "engine_status": engine_status,
                         "server_ts": time.time(),
+                        "engine_status": "ok" if engine_producing else "stalled",
                     },
                 ),
             )

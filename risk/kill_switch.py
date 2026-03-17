@@ -104,17 +104,24 @@ class GlobalKillSwitch:
         stale_threshold = float(os.getenv("KILL_SWITCH_FEED_STALE_SEC", "60"))
 
         if daily_dd >= daily_threshold:
-            return self.enable(
-                f"AUTO_DAILY_DD_BREACH:{daily_dd:.2f}%>= {daily_threshold:.2f}%"
-            )
+            return self.enable(f"AUTO_DAILY_DD_BREACH:{daily_dd:.2f}%>= {daily_threshold:.2f}%")
         if rapid_loss >= rapid_threshold:
-            return self.enable(
-                f"AUTO_RAPID_LOSS:{rapid_loss:.2f}%>= {rapid_threshold:.2f}%"
-            )
+            return self.enable(f"AUTO_RAPID_LOSS:{rapid_loss:.2f}%>= {rapid_threshold:.2f}%")
         if feed_stale >= stale_threshold:
-            return self.enable(
-                f"AUTO_FEED_STALE:{feed_stale:.1f}s>= {stale_threshold:.1f}s"
+            return self.enable(f"AUTO_FEED_STALE:{feed_stale:.1f}s>= {stale_threshold:.1f}s")
+
+        # Auto-recover from feed-stale trips when feed is fresh again.
+        # Uses 50% hysteresis to prevent rapid on/off cycling.
+        # Only auto-recovers AUTO_FEED_STALE — DD/loss trips require manual release.
+        if self.is_enabled() and "AUTO_FEED_STALE" in self._state.reason and feed_stale < stale_threshold * 0.5:
+            import logging as _logging  # noqa: PLC0415
+
+            _logging.getLogger(__name__).info(
+                "Kill switch auto-recovery: feed fresh at %.1fs (threshold %.1fs)",
+                feed_stale,
+                stale_threshold,
             )
+            return self.disable(f"AUTO_RECOVERY:feed_fresh_at_{feed_stale:.1f}s")
 
         # Auto-recover when the kill switch was tripped by feed staleness and
         # the feed is now fresh again.  Uses 50 % hysteresis to prevent rapid

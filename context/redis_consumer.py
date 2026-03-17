@@ -189,38 +189,35 @@ class RedisConsumer:
         max_retries: int = 10,
         base_delay: float = 3.0,
     ) -> bool:
-        """Retry :meth:`load_candle_history` until candle seed appears in Redis.
+        """Retry warmup until candle seed appears in Redis.
 
-        This resolves the race condition where the engine starts before the
-        ingest service has seeded any candles.  The method backs off
-        exponentially (capped at 4 doublings) between attempts and logs
-        progress at each step.
+        Uses exponential backoff (capped at base_delay * 16) to wait for
+        the ingest service to seed candle data, preventing the engine from
+        starting in a permanently empty state.
 
-        Args:
-            max_retries: Maximum number of attempts before giving up.
-            base_delay:  Initial delay in seconds between retries.
-
-        Returns:
-            ``True`` if at least one symbol has H1 candle data loaded,
-            ``False`` if all attempts were exhausted without success.
+        Returns ``True`` if warmup loaded data for at least one symbol, ``False``
+        if all retries were exhausted.
         """
         for attempt in range(max_retries):
             await self.load_candle_history()
 
-            # Consider warmup successful when any symbol has at least one H1 bar
             for symbol in self._symbols:
-                if self._bus.get_warmup_bar_count(symbol, "H1") > 0:
-                    logger.info(
-                        "RedisConsumer: warmup succeeded on attempt %d/%d for %s",
-                        attempt + 1,
-                        max_retries,
-                        symbol,
-                    )
-                    return True
+                for tf in WARMUP_TIMEFRAMES:
+                    candles = self._bus.get_candles(symbol, tf)
+                    if candles:
+                        logger.info(
+                            "Warmup succeeded on attempt %d/%d (%s:%s has %d candles)",
+                            attempt + 1,
+                            max_retries,
+                            symbol,
+                            tf,
+                            len(candles),
+                        )
+                        return True
 
             delay = base_delay * (2 ** min(attempt, 4))
             logger.warning(
-                "RedisConsumer: warmup attempt %d/%d found no data — retrying in %.1fs",
+                "Warmup attempt %d/%d failed — retrying in %.1fs",
                 attempt + 1,
                 max_retries,
                 delay,
@@ -228,7 +225,7 @@ class RedisConsumer:
             await asyncio.sleep(delay)
 
         logger.error(
-            "RedisConsumer: warmup FAILED after %d attempts — engine starting degraded",
+            "Warmup FAILED after %d attempts — engine starting degraded",
             max_retries,
         )
         return False
