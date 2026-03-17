@@ -22,5 +22,7 @@
     ".",
     "./services/api",
     "./infrastructure"
-  ]
+  ],
+  "venvPath": ".",
+  "venv": ".venv"
 }

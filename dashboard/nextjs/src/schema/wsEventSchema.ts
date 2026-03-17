@@ -14,7 +14,7 @@ const RiskStateSchema = z.object({
 });
 
 const SystemStatusSchema = z.object({
-  mode: z.union([z.literal("NORMAL"), z.literal("DEGRADED")]),
+  mode: z.union([z.literal("NORMAL"), z.literal("SSE"), z.literal("POLLING"), z.literal("DEGRADED")]),
   reason: z.string().optional(),
   updated_at: z.string().optional(),
 });
