@@ -21,6 +21,8 @@ def _has_candle_data(redis: RedisClient) -> bool:
     Uses SCAN to avoid blocking the server. A single key is enough to
     conclude candle data is present. Returns False on Redis errors so callers
     can fall back to PostgreSQL recovery.
+    Uses ``SCAN`` to avoid blocking the server. A single key is sufficient to
+    conclude that candle data survived the restart.
     """
     try:
         cursor = 0
@@ -32,6 +34,7 @@ def _has_candle_data(redis: RedisClient) -> bool:
                 break
     except Exception as exc:
         logger.warning("Failed to scan Redis for candle data — assuming empty: {}", exc)
+        logger.warning("Failed to scan Redis for candle data; assuming empty: {}", exc)
         return False
     return False
 
