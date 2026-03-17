@@ -2,7 +2,7 @@ import { create } from "zustand";
 import type { SystemStatusView } from "@/contracts/wsEvents";
 import type { WsConnectionStatus } from "@/lib/realtime/connectionState";
 
-type DegradationMode = "NORMAL" | "DEGRADED";
+type DegradationMode = "NORMAL" | "SSE" | "POLLING" | "DEGRADED";
 
 interface SystemStore {
   system: SystemStatusView | null;
