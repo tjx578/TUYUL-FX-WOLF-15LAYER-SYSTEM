@@ -135,7 +135,7 @@ async def analysis_loop(
         0.0,
         min(1.0, float(os.getenv("ANALYSIS_RQI_RETRIGGER_THRESHOLD", "0.72"))),
     )
-    rqi_force_stale_sec = float(os.getenv("ANALYSIS_RQI_FORCE_STALE_SEC", str(max(1, loop_interval * 3))))
+    rqi_force_stale_sec = float(os.getenv("ANALYSIS_RQI_FORCE_STALE_SEC", str(max(1, loop_interval * 2))))
     logger.info(f"Analysis loop started (event-driven, fallback interval={loop_interval}s)")
 
     _candle_signal = asyncio.Event()
