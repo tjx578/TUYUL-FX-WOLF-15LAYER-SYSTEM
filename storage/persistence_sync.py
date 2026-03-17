@@ -285,6 +285,69 @@ class PersistenceSync:
         )
         return True
 
+    async def recover_risk_state_only(self) -> bool:
+        """Recover only risk/trade state from PostgreSQL (candle history skipped).
+
+        Used when Redis already has candle data (post-restart with live cache)
+        but is missing peak_equity / drawdown / circuit-breaker keys.
+        Candle recovery is intentionally omitted to avoid double-seeding.
+        """
+        if not self._pg.is_available:
+            return False
+
+        drawdown_row = await self._pg.fetchrow(
+            """
+            SELECT state_data FROM risk_snapshots
+            WHERE snapshot_type = 'DRAWDOWN'
+            ORDER BY created_at DESC
+            LIMIT 1
+            """
+        )
+        if drawdown_row:
+            drawdown_data = _load_state_json(drawdown_row["state_data"])
+            self._redis.set("wolf15:drawdown:daily", str(drawdown_data.get("daily_dd", 0.0)))
+            self._redis.set("wolf15:drawdown:weekly", str(drawdown_data.get("weekly_dd", 0.0)))
+            self._redis.set("wolf15:drawdown:total", str(drawdown_data.get("total_dd", 0.0)))
+            self._redis.set("wolf15:peak_equity", str(drawdown_data.get("peak_equity", 0.0)))
+
+        cb_row = await self._pg.fetchrow(
+            """
+            SELECT state_data FROM risk_snapshots
+            WHERE snapshot_type = 'CIRCUIT_BREAKER'
+            ORDER BY created_at DESC
+            LIMIT 1
+            """
+        )
+        if cb_row:
+            cb_data = _load_state_json(cb_row["state_data"])
+            self._redis.set("wolf15:circuit_breaker:state", cb_data.get("state", "CLOSED"))
+            self._redis.set("wolf15:circuit_breaker:data", cb_data.get("data", "|0"))
+            self._redis.set(
+                "wolf15:consecutive_losses",
+                str(cb_data.get("consecutive_losses", 0)),
+            )
+
+        trades = await self._pg.fetch(
+            """
+            SELECT * FROM trade_history
+            WHERE status NOT IN ('CLOSED', 'CANCELLED', 'SKIPPED', 'ABORTED')
+            ORDER BY created_at DESC
+            """
+        )
+        for trade in trades:
+            key = f"wolf15:TRADE:{trade['trade_id']}"
+            payload = dict(trade)
+            for field, value in list(payload.items()):
+                if isinstance(value, datetime):
+                    payload[field] = value.isoformat()
+            self._redis.set(key, json.dumps(payload))
+
+        logger.info(
+            "PostgreSQL risk-only recovery complete; active trades=%d (candle history preserved)",
+            len(trades),
+        )
+        return True
+
     async def _recover_candle_history(self) -> int:
         """Recover candle history from ohlc_candles table into Redis lists.
 
