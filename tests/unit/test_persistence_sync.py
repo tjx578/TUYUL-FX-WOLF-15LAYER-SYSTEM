@@ -16,6 +16,7 @@ internal methods. This validates state survives a "restart" scenario:
 from __future__ import annotations
 
 import asyncio
+import fnmatch
 import json
 from datetime import UTC, datetime
 from typing import Any
@@ -27,6 +28,20 @@ from storage.persistence_sync import PersistenceSync
 # ──────────────────────────────────────────────────────────────────
 #  In-memory Redis mock (sync interface matching storage.redis_client)
 # ──────────────────────────────────────────────────────────────────
+
+class FakeAsyncClient:
+    """Async Redis client interface used by _sync_trade_ledger (scan/get)."""
+
+    def __init__(self, store: dict[str, str]) -> None:
+        self._store = store
+
+    async def scan(self, cursor: int = 0, match: str = "*", count: int = 50) -> tuple[int, list[str]]:
+        matched = [k for k in self._store if fnmatch.fnmatch(k, match)]
+        return (0, matched)
+
+    async def get(self, key: str) -> str | None:
+        return self._store.get(key)
+
 
 class FakeRedis:
     """In-memory dict-backed Redis mock with scan support."""
@@ -152,7 +167,8 @@ def fake_pg() -> FakePostgres:
 
 @pytest.fixture
 def sync_service(fake_redis: FakeRedis, fake_pg: FakePostgres) -> PersistenceSync:
-    return PersistenceSync(interval_sec=1.0, pg=fake_pg, redis=fake_redis)  # type: ignore[arg-type]
+    async_client = FakeAsyncClient(fake_redis._store)
+    return PersistenceSync(interval_sec=1.0, pg=fake_pg, redis=fake_redis, async_redis_client=async_client)  # type: ignore[arg-type]
 
 
 # ──────────────────────────────────────────────────────────────────
