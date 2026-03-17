@@ -152,4 +152,5 @@ if __name__ == "__main__":
         port=_resolve_port(),
         log_level="info",
         log_config=_build_uvicorn_log_config(),
+        ws_per_message_deflate=True,
     )
