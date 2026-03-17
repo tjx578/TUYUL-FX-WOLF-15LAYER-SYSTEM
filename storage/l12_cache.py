@@ -1,3 +1,4 @@
+import contextlib
 import json
 import time
 from typing import Any
@@ -9,6 +10,10 @@ from storage.redis_client import redis_client
 
 KEY_PREFIX = "L12:VERDICT:"
 VERDICT_READY_CHANNEL = "events:l12_verdict_ready"
+
+# Durable Redis Stream for verdict events — survives subscriber disconnects.
+VERDICT_STREAM = "stream:l12_verdict"
+VERDICT_STREAM_MAXLEN = 1000
 
 # TTL for verdict cache: 10 minutes. Prevents stale data lingering forever
 # if the pipeline crashes. The pipeline runs every ~60s under normal conditions.
@@ -24,6 +29,15 @@ def set_verdict(pair: str, data: dict[str, Any]) -> None:
         "pair": pair,
         "ts": time.time(),
     }
+    # Durable event via Redis Stream (consumer-group safe, survives disconnect)
+    with contextlib.suppress(Exception):
+        redis_client.xadd(
+            VERDICT_STREAM,
+            {"pair": pair, "ts": str(time.time()), "data": json.dumps(data_with_ts)},
+            maxlen=VERDICT_STREAM_MAXLEN,
+            approximate=True,
+        )
+    # Best-effort pub/sub for backward compat (ephemeral, may be lost)
     try:
         redis_client.publish(VERDICT_READY_CHANNEL, json.dumps(event_payload))
     except Exception:
@@ -39,6 +53,15 @@ async def set_verdict_async(pair: str, data: dict[str, Any]) -> None:
         "pair": pair,
         "ts": time.time(),
     }
+    # Durable event via Redis Stream
+    with contextlib.suppress(Exception):
+        await client.xadd(
+            VERDICT_STREAM,
+            {"pair": pair, "ts": str(time.time()), "data": json.dumps(data_with_ts)},
+            maxlen=VERDICT_STREAM_MAXLEN,
+            approximate=True,
+        )
+    # Best-effort pub/sub for backward compat
     try:
         await client.publish(VERDICT_READY_CHANNEL, json.dumps(event_payload))
     except Exception:
