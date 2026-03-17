@@ -8,6 +8,8 @@
  *   - Visibility-aware pause (tab hidden → reduce reconnect aggression)
  *   - Auth token attachment
  *   - Connection status machine
+ *   - Proactive client heartbeat (keeps server-side heartbeat loop alive)
+ *   - Sequence gap detection with auto-snapshot request
  *
  * DO NOT use raw WebSocket() directly in application code.
  * DO use domain hooks (useLivePrices, useLiveTrades, etc.) instead.
@@ -23,15 +25,26 @@ import { getWsBaseUrl } from "@/lib/env";
 // Map backend dotted event names → PascalCase type discriminators.
 
 const EVENT_TYPE_MAP: Record<string, string> = {
+  // ── Verdict / Pipeline ──
   "verdict.update": "VerdictUpdated",
   "verdict.snapshot": "VerdictSnapshot",
   "pipeline.update": "PipelineUpdated",
+  "pipeline.result": "PipelineResultUpdated",
+  // ── Prices ──
   "price.snapshot": "PricesSnapshot",
   "price.tick": "PriceUpdated",
+  // ── Risk / Execution ──
   "risk.state": "RiskUpdated",
+  "risk.updated": "RiskStateUpdated",
+  "execution.state": "ExecutionStateUpdated",
+  // ── System ──
+  "system.status": "SystemStatusUpdated",
+  "preferences.updated": "PreferencesUpdated",
+  // ── Signals / Trades (not yet in WsEventSchema — handled by onRawMessage) ──
   "signals.update": "SignalUpdated",
   "trade.snapshot": "TradeSnapshot",
   "trade.update": "TradeUpdated",
+  // ── Candles / Equity (not yet in WsEventSchema — handled by onRawMessage) ──
   "candle.snapshot": "CandleSnapshot",
   "candle.forming": "CandleForming",
   "equity.update": "EquityUpdated",
@@ -66,10 +79,20 @@ export interface WsControls {
 
 // ─── RECONNECT CONFIG ────────────────────────────────────────
 
-const RECONNECT_BASE_MS = 1000; // 1s
-const RECONNECT_CEILING_MS = 30000; // 30s
-const RECONNECT_JITTER_PCT = 0.25; // ±25%
-const STALE_THRESHOLD_MS = 5000; // 5s no message → STALE
+const RECONNECT_BASE_MS = 1000;
+const RECONNECT_CEILING_MS = 30000;
+const RECONNECT_JITTER_PCT = 0.25;
+
+// [BUG FIX #5] Was 5000ms — too aggressive.  Backend heartbeat
+// interval is typically 15-30s.  5s stale threshold fires constantly
+// between normal message gaps, causing spurious STALE flickers.
+const STALE_THRESHOLD_MS = 45000;
+
+// [BUG FIX #1] Proactive client heartbeat interval.
+// Backend _heartbeat_loop checks for ANY client activity within its
+// timeout window.  If client sends nothing, backend declares stale
+// and disconnects.  This timer sends a pong every 10s to keep alive.
+const CLIENT_HEARTBEAT_INTERVAL_MS = 10000;
 
 // ─── CLIENT OPTIONS ──────────────────────────────────────────
 
@@ -90,17 +113,28 @@ interface ConnectLiveUpdatesOptions {
 // ─── CONNECT LIVE UPDATES ────────────────────────────────────
 
 export function connectLiveUpdates(
-  options: ConnectLiveUpdatesOptions
+  options: ConnectLiveUpdatesOptions,
 ): WsControls {
-  const { path, onEvent, onError, onStatusChange, onDegradation, onSeqGap, onRawMessage } = options;
+  const {
+    path,
+    onEvent,
+    onError,
+    onStatusChange,
+    onDegradation,
+    onSeqGap,
+    onRawMessage,
+  } = options;
 
   let socket: WebSocket | null = null;
   let reconnectAttempt = 0;
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   let staleTimer: ReturnType<typeof setTimeout> | null = null;
+  let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
   let intentionallyClosed = false;
   let lastMessageAt = Date.now();
   let visibilityPaused = false;
+  // [BUG FIX #6] Guard against async connect() racing with close()
+  let connectAborted = false;
 
   // Monotonic sequence tracking for gap detection
   let lastSeq = 0;
@@ -117,17 +151,57 @@ export function connectLiveUpdates(
     return { close: () => { }, send: () => { }, gapCount: 0 };
   }
 
+  // ── Proactive client heartbeat ─────────────────────────────
+  // [BUG FIX #1] Backend _heartbeat_loop measures time since last
+  // client message.  If we only respond to server pings but the server
+  // doesn't send pings (it just monitors), the client appears silent.
+  // This interval proactively sends a lightweight pong every 10s so
+  // the server always sees recent client activity.
+
+  const startClientHeartbeat = () => {
+    stopClientHeartbeat();
+    heartbeatTimer = setInterval(() => {
+      if (socket?.readyState === WebSocket.OPEN) {
+        socket.send(JSON.stringify({ type: "pong" }));
+      }
+    }, CLIENT_HEARTBEAT_INTERVAL_MS);
+  };
+
+  const stopClientHeartbeat = () => {
+    if (heartbeatTimer) {
+      clearInterval(heartbeatTimer);
+      heartbeatTimer = null;
+    }
+  };
+
   const connect = async () => {
     if (intentionallyClosed) return;
-    if (visibilityPaused && reconnectAttempt > 3) return; // reduce churn when hidden
+    if (visibilityPaused && reconnectAttempt > 3) return;
 
+    connectAborted = false;
     onStatusChange?.(reconnectAttempt === 0 ? "CONNECTING" : "RECONNECTING");
 
-    // Prefer synchronous JWT, fall back to server-side WS ticket
-    const token = typeof window !== "undefined"
-      ? (getTransportToken() ?? await fetchWsTicket())
-      : null;
-    const url = token ? `${wsBaseUrl}${path}?token=${token}` : `${wsBaseUrl}${path}`;
+    // [BUG FIX #7] Prefer synchronous JWT, fall back to WS ticket.
+    // If fetchWsTicket() fails (network error), catch and continue
+    // without token rather than crashing the entire connect flow.
+    let token: string | null = null;
+    try {
+      token =
+        typeof window !== "undefined"
+          ? (getTransportToken() ?? (await fetchWsTicket()))
+          : null;
+    } catch {
+      // Token fetch failed — connect without token, backend will reject
+      // with 401/403 and we'll reconnect with backoff.
+      token = null;
+    }
+
+    // Guard: close() called while we were awaiting fetchWsTicket
+    if (connectAborted || intentionallyClosed) return;
+
+    const url = token
+      ? `${wsBaseUrl}${path}?token=${token}`
+      : `${wsBaseUrl}${path}`;
 
     try {
       socket = new WebSocket(url);
@@ -141,13 +215,15 @@ export function connectLiveUpdates(
       if (intentionallyClosed) return;
       reconnectAttempt = 0;
       lastMessageAt = Date.now();
-      // Reset seq tracking on fresh connection (server may have restarted)
       lastSeq = 0;
       if (process.env.NODE_ENV === "development") {
-        console.debug(`[WS] CONNECTED path=${path} ts=${new Date().toISOString()}`);
+        console.debug(
+          `[WS] CONNECTED path=${path} ts=${new Date().toISOString()}`,
+        );
       }
       onStatusChange?.("LIVE");
       startStaleTimer();
+      startClientHeartbeat();
     };
 
     socket.onmessage = (msg) => {
@@ -159,21 +235,38 @@ export function connectLiveUpdates(
         const parsed = JSON.parse(msg.data as string);
 
         // ── Respond to server pings to keep heartbeat alive ──
-        if (parsed.type === "ping") {
+        // [BUG FIX #2] Check BOTH `type` AND `event_type` fields.
+        // Backend may send ping as {"type":"ping"} or {"event_type":"ping"}.
+        const msgType = parsed.type ?? parsed.event_type ?? "";
+        if (
+          msgType === "ping" ||
+          msgType === "heartbeat" ||
+          msgType === "pong"
+        ) {
           if (socket?.readyState === WebSocket.OPEN) {
             socket.send(JSON.stringify({ type: "pong" }));
           }
           return;
         }
 
+        // ── Ignore auth errors gracefully ──
+        if (msgType === "auth_error") {
+          onError?.(new Error(`WS auth error: ${parsed.message ?? "unknown"}`));
+          return;
+        }
+
         // ── WS event type diagnostics ──
         if (process.env.NODE_ENV === "development") {
-          const evtType = parsed.type ?? "UNKNOWN";
+          const evtType = parsed.type ?? parsed.event_type ?? "UNKNOWN";
           const seq = typeof parsed.seq === "number" ? parsed.seq : "-";
-          console.debug(`[WS] event=${evtType} seq=${seq} ts=${new Date().toISOString()}`);
+          console.debug(
+            `[WS] event=${evtType} seq=${seq} ts=${new Date().toISOString()}`,
+          );
         }
 
         // ── Fire raw handler before Zod validation ──
+        // This allows trade desk, candle, and signal hooks to process
+        // events that are not (yet) in the WsEventSchema union.
         onRawMessage?.(parsed);
 
         // ── Monotonic seq# gap detection ──
@@ -191,8 +284,10 @@ export function connectLiveUpdates(
           lastSeq = seq;
         }
 
-        // ── Safe parse: unknown event types are skipped, valid events pass through ──
+        // ── Normalise backend envelope → frontend discriminator ──
         const normalised = normalizeWsEvent(parsed);
+
+        // ── Safe parse: unknown event types are skipped ──
         const result = WsEventSchema.safeParse(normalised);
         if (result.success) {
           onEvent(result.data);
@@ -200,7 +295,10 @@ export function connectLiveUpdates(
             onDegradation?.(result.data.payload);
           }
         } else if (process.env.NODE_ENV === "development") {
-          console.debug("[WS] Unknown/invalid event type, skipping:", normalised.type ?? parsed.type);
+          console.debug(
+            "[WS] Unknown/invalid event type, skipping:",
+            normalised.type ?? parsed.event_type ?? parsed.type,
+          );
         }
       } catch (err) {
         onError?.(err);
@@ -212,17 +310,21 @@ export function connectLiveUpdates(
       onStatusChange?.("DEGRADED");
       onDegradation?.({
         mode: "DEGRADED",
-        reason: "WebSocket connection error. Backend may be offline or unreachable.",
+        reason:
+          "WebSocket connection error. Backend may be offline or unreachable.",
       });
     };
 
     socket.onclose = () => {
       if (intentionallyClosed) return;
       if (process.env.NODE_ENV === "development") {
-        console.debug(`[WS] DISCONNECTED path=${path} attempt=${reconnectAttempt} ts=${new Date().toISOString()}`);
+        console.debug(
+          `[WS] DISCONNECTED path=${path} attempt=${reconnectAttempt} ts=${new Date().toISOString()}`,
+        );
       }
       onStatusChange?.("DISCONNECTED");
       clearStaleTimer();
+      stopClientHeartbeat();
       scheduleReconnect();
     };
   };
@@ -237,7 +339,10 @@ export function connectLiveUpdates(
   };
 
   const calculateBackoff = (attempt: number): number => {
-    const raw = Math.min(RECONNECT_BASE_MS * 2 ** attempt, RECONNECT_CEILING_MS);
+    const raw = Math.min(
+      RECONNECT_BASE_MS * 2 ** attempt,
+      RECONNECT_CEILING_MS,
+    );
     const jitter = raw * RECONNECT_JITTER_PCT * (Math.random() * 2 - 1);
     return Math.max(RECONNECT_BASE_MS, raw + jitter);
   };
@@ -268,9 +373,8 @@ export function connectLiveUpdates(
   const handleVisibilityChange = () => {
     if (typeof document === "undefined") return;
     visibilityPaused = document.hidden;
-    // If tab becomes visible and we're disconnected, try reconnect immediately
     if (!visibilityPaused && socket?.readyState !== WebSocket.OPEN) {
-      reconnectAttempt = Math.max(0, reconnectAttempt - 2); // boost priority
+      reconnectAttempt = Math.max(0, reconnectAttempt - 2);
       if (reconnectTimer) clearTimeout(reconnectTimer);
       scheduleReconnect();
     }
@@ -286,8 +390,10 @@ export function connectLiveUpdates(
   return {
     close: () => {
       intentionallyClosed = true;
+      connectAborted = true;
       if (reconnectTimer) clearTimeout(reconnectTimer);
       clearStaleTimer();
+      stopClientHeartbeat();
       if (typeof document !== "undefined") {
         document.removeEventListener("visibilitychange", handleVisibilityChange);
       }
