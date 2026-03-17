@@ -6,12 +6,27 @@ import asyncio
 import json
 
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, Protocol, runtime_checkable
 
 from loguru import logger
 
+from infrastructure.redis_client import get_client
 from storage.postgres_client import PostgresClient, pg_client
 from storage.redis_client import RedisClient
+
+
+@runtime_checkable
+class AsyncRedisClient(Protocol):
+    """Minimal async Redis client interface required by _sync_trade_ledger."""
+
+    async def scan(
+        self,
+        cursor: int = 0,
+        match: str | None = None,
+        count: int | None = None,
+    ) -> tuple[int, list[Any]]: ...
+
+    async def get(self, key: str) -> str | bytes | None: ...
 
 
 class PersistenceSync:
@@ -22,9 +37,11 @@ class PersistenceSync:
         interval_sec: float = 30.0,
         pg: PostgresClient | None = None,
         redis: RedisClient | None = None,
+        async_redis_client: AsyncRedisClient | None = None,
     ) -> None:
         self._pg = pg or pg_client
         self._redis = redis or RedisClient()
+        self._async_redis_client = async_redis_client
         self._interval_sec = interval_sec
         self._running = False
 
@@ -113,13 +130,16 @@ class PersistenceSync:
         }
 
     async def _sync_trade_ledger(self) -> None:
-        client = self._redis.client
+        if self._async_redis_client is not None:
+            client: AsyncRedisClient = self._async_redis_client
+        else:
+            client = await get_client()
         for pattern in ("TRADE:*", "wolf15:TRADE:*"):
             cursor = 0
             while True:
-                cursor, keys = client.scan(cursor=cursor, match=pattern, count=50)
+                cursor, keys = await client.scan(cursor=cursor, match=pattern, count=50)
                 for key in keys:
-                    trade_payload = self._redis.get(key)
+                    trade_payload = await client.get(key)
                     if not trade_payload:
                         continue
                     trade_data = json.loads(trade_payload)
