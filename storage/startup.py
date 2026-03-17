@@ -15,6 +15,25 @@ _sync_service: PersistenceSync | None = None
 _sync_task: asyncio.Task[None] | None = None
 
 
+def _has_candle_data(redis: RedisClient) -> bool:
+    """Check if Redis has any candle history keys using SCAN.
+
+    Uses the ``SCAN`` cursor to avoid blocking the server.  A single key with
+    at least one entry is enough to declare that Redis holds candle data.
+    """
+    try:
+        cursor = 0
+        while True:
+            cursor, keys = redis.client.scan(cursor, match="wolf15:candle_history:*", count=20)
+            if keys:
+                return True
+            if cursor == 0:
+                break
+    except Exception as exc:
+        logger.warning(f"Candle data SCAN failed: {exc}")
+    return False
+
+
 async def init_persistent_storage() -> PersistenceSync | None:
     """Initialize PostgreSQL and start sync service if configured."""
     global _sync_service, _sync_task
@@ -30,10 +49,19 @@ async def init_persistent_storage() -> PersistenceSync | None:
 
     redis = RedisClient()
     try:
-        if not redis.get("wolf15:peak_equity"):
-            logger.warning("Redis appears empty; attempting recovery from PostgreSQL")
+        has_candles = _has_candle_data(redis)
+        has_risk_data = bool(redis.get("wolf15:peak_equity"))
+
+        if not has_candles and not has_risk_data:
+            logger.warning("Redis truly empty (no candle history, no risk state); attempting recovery from PostgreSQL")
             recovery_service = PersistenceSync(pg=pg_client, redis=redis)
             await recovery_service.recover_from_postgres()
+        elif not has_risk_data:
+            logger.info("Redis has candle data but missing peak_equity — risk state only recovery from PostgreSQL")
+            recovery_service = PersistenceSync(pg=pg_client, redis=redis)
+            await recovery_service.recover_risk_state_only()
+        else:
+            logger.info("Redis has existing data — skipping PostgreSQL recovery")
     except Exception as exc:
         logger.warning(f"Redis unavailable during PG sync init; skipping recovery: {exc}")
 
