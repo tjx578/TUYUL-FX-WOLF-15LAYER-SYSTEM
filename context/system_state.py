@@ -116,6 +116,14 @@ class SystemStateManager:
         with self._rw_lock:
             current = self._state
 
+            if current == new_state:
+                logger.debug(
+                    "Ignoring no-op system state transition: {} -> {}",
+                    current.value,
+                    new_state.value,
+                )
+                return
+
             # Validate transition
             valid_next = self._VALID_TRANSITIONS.get(current, set())
             if new_state not in valid_next:
@@ -128,6 +136,13 @@ class SystemStateManager:
 
         # Publish to Redis if in redis mode
         self._publish_state(new_state)
+
+    def reset(self) -> None:
+        """Reset state manager to INITIALIZING for clean retry attempts."""
+        with self._rw_lock:
+            self._state = SystemState.INITIALIZING
+            self._warmup_report = {}
+        logger.warning("System state manager reset to INITIALIZING")
 
     def get_state(self) -> SystemState:
         """Get current system state."""

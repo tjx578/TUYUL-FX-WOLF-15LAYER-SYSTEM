@@ -464,7 +464,7 @@ async def run_ingest_services(has_api_key: bool) -> None:
                 "M15 will build from real-time WebSocket ticks."
             )
             warmup_results: dict[str, dict[str, list[dict[str, Any]]]] = {}
-            system_state.set_state(SystemState.LIVE)
+            system_state.set_state(SystemState.READY)
         else:
             logger.info("[Ingest] Redis empty — running Finnhub REST warmup")
             warmup_results = await _run_warmup(system_state, enabled_symbols)
@@ -696,6 +696,8 @@ async def main(
                     backoff,
                     exc,
                 )
+                with contextlib.suppress(Exception):
+                    SystemStateManager().reset()
                 await asyncio.sleep(backoff)
     except KeyboardInterrupt:
         logger.info("KeyboardInterrupt received")
