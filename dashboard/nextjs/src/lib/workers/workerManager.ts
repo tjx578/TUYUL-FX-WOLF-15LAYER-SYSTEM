@@ -58,17 +58,17 @@ export function createWorkerManager<
         if (!worker) {
             worker = factory();
             worker.onmessage = (e: MessageEvent<TResp | WorkerErrorResponse>) => {
-                const data = e.data as Record<string, unknown>;
-                const id = data.id as string;
+                const data = e.data;
+                const id = data.id;
                 const entry = pending.get(id);
                 if (!entry) return; // orphaned response — ignore
                 pending.delete(id);
                 clearTimeout(entry.timer);
 
-                if (data.type === "error") {
-                    entry.reject(new Error((data as unknown as WorkerErrorResponse).error));
+                if ("type" in data && data.type === "error") {
+                    entry.reject(new Error((data as WorkerErrorResponse).error));
                 } else {
-                    entry.resolve(e.data as TResp);
+                    entry.resolve(data as TResp);
                 }
             };
             worker.onerror = (ev) => {
