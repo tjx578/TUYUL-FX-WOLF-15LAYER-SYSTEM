@@ -2,6 +2,7 @@
  * TUYUL FX Wolf-15 — Realtime Client
  *
  * Core WebSocket client abstraction with production-grade reconnect discipline:
+ *   - Per-message deflate compression (negotiated via Sec-WebSocket-Extensions)
  *   - Exponential backoff with jitter (1s → 30s ceiling)
  *   - Infinite retry with no hard attempt cap
  *   - Stale detection timer
@@ -78,6 +79,8 @@ export interface WsControls {
   send: (payload: unknown) => void;
   /** Number of sequence gaps detected since connection opened. */
   readonly gapCount: number;
+  /** Whether per-message deflate compression was negotiated. */
+  readonly compressionActive: boolean;
 }
 
 // ─── RECONNECT CONFIG ────────────────────────────────────────
@@ -146,6 +149,8 @@ export function connectLiveUpdates(
   let consecutiveGoodMessages = 0;
   // Track current connection status for auto-recovery logic
   let currentStatus: WsConnectionStatus = "DISCONNECTED";
+  // Per-message deflate compression state
+  let compressionActive = false;
 
   /** Update status and notify caller. */
   const emitStatus = (s: WsConnectionStatus) => {
@@ -161,7 +166,7 @@ export function connectLiveUpdates(
       reason:
         "NEXT_PUBLIC_WS_BASE_URL not configured. Set it to your Railway wss:// origin.",
     });
-    return { close: () => { }, send: () => { }, gapCount: 0 };
+    return { close: () => { }, send: () => { }, gapCount: 0, compressionActive: false };
   }
 
   // ── Proactive client heartbeat ─────────────────────────────
@@ -228,11 +233,22 @@ export function connectLiveUpdates(
       reconnectAttempt = 0;
       lastMessageAt = Date.now();
       lastSeq = 0;
+
+      // ── Per-message deflate compression check ──
+      // Browser negotiates permessage-deflate via Sec-WebSocket-Extensions
+      // header during handshake. We verify it was accepted by the server.
+      compressionActive = socket?.extensions?.includes("permessage-deflate") ?? false;
       if (process.env.NODE_ENV === "development") {
         console.debug(
-          `[WS] CONNECTED path=${path} ts=${new Date().toISOString()}`,
+          `[WS] CONNECTED path=${path} compression=${compressionActive ? "deflate" : "none"} ts=${new Date().toISOString()}`,
         );
+        if (!compressionActive) {
+          console.warn(
+            "[WS] Per-message deflate NOT negotiated. Ensure server enables permessage-deflate extension for reduced payload sizes.",
+          );
+        }
       }
+
       emitStatus("LIVE");
       startStaleTimer();
       startClientHeartbeat();
@@ -438,6 +454,9 @@ export function connectLiveUpdates(
     },
     get gapCount() {
       return gapCount;
+    },
+    get compressionActive() {
+      return compressionActive;
     },
   };
 }

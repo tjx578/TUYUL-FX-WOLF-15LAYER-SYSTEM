@@ -26,3 +26,4 @@ export { useLiveRisk } from "./hooks/useLiveRisk";
 export { useLiveSignals } from "./hooks/useLiveSignals";
 export { useLiveEquity } from "./hooks/useLiveEquity";
 export { useLiveAlerts } from "./hooks/useLiveAlerts";
+export { useLiveCandles } from "./hooks/useLiveCandles";

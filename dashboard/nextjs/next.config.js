@@ -69,6 +69,7 @@ const nextConfig = {
               "connect-src 'self' wss://*.railway.app https://*.railway.app wss://*.vercel.app https://*.vercel.app",
               "img-src 'self' data:",
               "script-src 'self' 'unsafe-eval' 'unsafe-inline'",
+              "worker-src 'self' blob:",
             ].join("; "),
           },
           { key: "X-Frame-Options", value: "DENY" },
