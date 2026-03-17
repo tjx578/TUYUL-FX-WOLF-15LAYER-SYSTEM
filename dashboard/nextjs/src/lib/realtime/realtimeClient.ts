@@ -20,6 +20,7 @@ import { WsEventSchema, type WsEventParsed } from "@/schema/wsEventSchema";
 import type { SystemStatusView } from "@/contracts/wsEvents";
 import { getTransportToken, fetchWsTicket } from "@/lib/auth";
 import { getWsBaseUrl } from "@/lib/env";
+import { STALE_THRESHOLDS_MS } from "@/lib/realtime/connectionState";
 
 // ─── BACKEND ENVELOPE NORMALISATION ──────────────────────────
 // Backend _ws_event() uses `event_type` field; frontend schema discriminates on `type`.
@@ -89,10 +90,11 @@ const RECONNECT_BASE_MS = 1000;
 const RECONNECT_CEILING_MS = 30000;
 const RECONNECT_JITTER_PCT = 0.25;
 
-// [BUG FIX #5] Was 5000ms — too aggressive.  Backend heartbeat
-// interval is typically 15-30s.  5s stale threshold fires constantly
-// between normal message gaps, causing spurious STALE flickers.
-const STALE_THRESHOLD_MS = 45000;
+// [BUG FIX #9] Was 45000ms — still too low for analysis-driven messages
+// (analysis loop = 60s).  Derive from per-domain thresholds in
+// connectionState.ts so the global WS stale timer never fires before
+// the slowest domain-specific timer.
+const STALE_THRESHOLD_MS = Math.max(...Object.values(STALE_THRESHOLDS_MS));
 
 // [BUG FIX #1] Proactive client heartbeat interval.
 // Backend _heartbeat_loop checks for ANY client activity within its

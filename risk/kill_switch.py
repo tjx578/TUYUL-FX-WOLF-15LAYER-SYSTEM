@@ -114,27 +114,12 @@ class GlobalKillSwitch:
         # Uses 50% hysteresis to prevent rapid on/off cycling.
         # Only auto-recovers AUTO_FEED_STALE — DD/loss trips require manual release.
         if self.is_enabled() and "AUTO_FEED_STALE" in self._state.reason and feed_stale < stale_threshold * 0.5:
-            import logging as _logging  # noqa: PLC0415
-
-            _logging.getLogger(__name__).info(
-                "Kill switch auto-recovery: feed fresh at %.1fs (threshold %.1fs)",
-                feed_stale,
-                stale_threshold,
-            )
-            return self.disable(f"AUTO_RECOVERY:feed_fresh_at_{feed_stale:.1f}s")
-
-        # Auto-recover when the kill switch was tripped by feed staleness and
-        # the feed is now fresh again.  Uses 50 % hysteresis to prevent rapid
-        # enable/disable cycling (requires feed_stale < 0.5 × threshold).
-        if self.is_enabled() and "AUTO_FEED_STALE" in self._state.reason and feed_stale < stale_threshold * 0.5:
             logger.info(
                 "Kill switch auto-recovery: feed fresh at %.1fs (threshold %.1fs)",
                 feed_stale,
                 stale_threshold,
             )
-            return self.disable(
-                f"AUTO_RECOVERY:feed_fresh_at_{feed_stale:.1f}s"
-            )
+            return self.disable(f"AUTO_RECOVERY:feed_fresh_at_{feed_stale:.1f}s")
 
         return self.snapshot()
 

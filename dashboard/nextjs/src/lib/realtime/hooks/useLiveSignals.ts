@@ -20,7 +20,7 @@ interface UseLiveSignalsResult {
  * Bootstrap: caller provides initial verdicts from REST (useAllVerdicts / SWR).
  * Stream:    multiplexed /ws/live — PipelineResultUpdated + VerdictUpdated events.
  * Merge:     replace list (backend sends full updated list on change).
- * Stale:     15s no message → isStale = true.
+ * Stale:     90s no message → isStale = true (STALE_THRESHOLDS_MS.verdicts).
  */
 export function useLiveSignals(
   initialVerdicts: L12Verdict[] = [],
