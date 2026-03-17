@@ -1,4 +1,4 @@
-export type Verdict = "EXECUTE_BUY" | "EXECUTE_SELL" | "HOLD" | "NO_TRADE";
+export type Verdict = "EXECUTE" | "EXECUTE_BUY" | "EXECUTE_SELL" | "EXECUTE_REDUCED_RISK" | "HOLD" | "NO_TRADE" | "ABORT";
 
 export type GateState = "PASS" | "FAIL" | "SKIP";
 

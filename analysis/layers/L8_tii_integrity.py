@@ -31,6 +31,7 @@ from analysis.l8_tii import (
     _classify_tii,
     _compute_tii,
     _compute_twms,
+    classify_tii_grade,
 )
 
 logger = logging.getLogger(__name__)
@@ -82,12 +83,19 @@ def _estimate_vwap(closes: list[float]) -> float:
 
 
 def _estimate_energy(closes: list[float]) -> float:
-    """Estimate TRQ energy from recent price volatility."""
+    """Estimate TRQ energy from recent price volatility.
+
+    Scale factor 1000 maps typical FX bar-to-bar moves to the ~0–10
+    energy range; the canonical ``_fallback_energy`` in ``l8_tii``
+    uses 500 for a 0–5 range, but this wrapper is only used when the
+    canonical path is bypassed.
+    """
     if not closes or len(closes) < 3:
         return 0.0
     recent = closes[-_ENERGY_LOOKBACK:]
     diffs = [abs(recent[i] - recent[i - 1]) for i in range(1, len(recent))]
-    return (sum(diffs) / len(diffs)) * 1000 if diffs else 0.0
+    _ENERGY_SCALE = 1000  # Broader range than canonical (500) for fallback  # noqa: N806
+    return (sum(diffs) / len(diffs)) * _ENERGY_SCALE if diffs else 0.0
 
 
 def _estimate_bias(closes: list[float]) -> float:
@@ -170,9 +178,13 @@ def analyze_tii(
     # ── Gate ──
     gate_passed = tii_result["tii"] >= gate_threshold
 
+    # ── TII Grade (0-1 → 0-100 scale for grading) ──
+    tii_grade = classify_tii_grade(tii_result["tii"] * 100.0)
+
     return {
         "tii_sym": tii_result["tii"],
         "tii_status": tii_result["tii_status"],
+        "tii_grade": tii_grade.value,
         "integrity": integrity,
         "twms_score": twms["twms_score"],
         "gate_status": "OPEN" if gate_passed else "CLOSED",
@@ -254,7 +266,11 @@ class L8TIIIntegrityAnalyzer:
                 tii_raw = float(layer_outputs.get("tii_score", 0.0))
                 if frpc > 0 and tii_raw > 0:
                     cm = self._confidence_mult.calculate(frpc, tii_raw)
-                    core_adjustment = (cm.multiplier - 1.0) * 0.05  # Small adjustment
+                    # Dampen the raw multiplier delta to a small TII adjustment
+                    # (±0.05). This keeps core enhancement as a tiebreaker without
+                    # dominating the 5-component TII model.
+                    _CORE_DAMPEN = 0.05  # noqa: N806
+                    core_adjustment = (cm.multiplier - 1.0) * _CORE_DAMPEN
                     logger.debug("[L8] Core confidence adjustment: %.4f", core_adjustment)
             except Exception as exc:
                 logger.debug("[L8] Core adjustment skipped: %s", exc)

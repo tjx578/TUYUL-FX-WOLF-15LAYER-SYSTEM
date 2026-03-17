@@ -107,6 +107,16 @@ export interface EquityUpdatedEvent {
   payload: Record<string, unknown>;
 }
 
+export interface AlertCreatedEvent {
+  type: "AlertCreated";
+  payload: Record<string, unknown>;
+}
+
+export interface AlertUpdatedEvent {
+  type: "AlertUpdated";
+  payload: Record<string, unknown>;
+}
+
 export type WsEvent =
   | PipelineResultUpdatedEvent
   | ExecutionStateUpdatedEvent
@@ -125,4 +135,6 @@ export type WsEvent =
   | TradeUpdatedEvent
   | CandleSnapshotEvent
   | CandleFormingEvent
-  | EquityUpdatedEvent;
+  | EquityUpdatedEvent
+  | AlertCreatedEvent
+  | AlertUpdatedEvent;

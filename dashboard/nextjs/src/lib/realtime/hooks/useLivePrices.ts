@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback } from "react";
 import type { PriceData } from "@/types";
-import { connectLiveUpdates } from "@/lib/realtime/realtimeClient";
+import { subscribe } from "@/lib/realtime/multiplexer";
 import type { WsConnectionStatus } from "@/lib/realtime/connectionState";
 import { STALE_THRESHOLDS_MS } from "@/lib/realtime/connectionState";
 import { mergeMap } from "@/lib/realtime/merge";
@@ -19,7 +19,7 @@ interface UseLivePricesResult {
  * useLivePrices
  *
  * Bootstrap: REST snapshot via SWR (provided externally or inline fetch).
- * Stream:    /ws/prices — Record<string, PriceData> deltas.
+ * Stream:    multiplexed /ws/live — PriceUpdated / PricesSnapshot events.
  * Merge:     mergeMap — WS delta keys override snapshot keys.
  * Stale:     3s no message → isStale = true.
  *
@@ -58,19 +58,17 @@ export function useLivePrices(enabled = true, rafBatch = false, onSeqGap?: () =>
       })
       : null;
 
-    const controls = connectLiveUpdates({
-      path: "/ws/prices",
+    const unsub = subscribe({
+      filter: (e) => e.type === "PriceUpdated" || e.type === "PricesSnapshot",
       onEvent: (event) => {
         if (event.type === "PriceUpdated" || event.type === "PricesSnapshot") {
           const payload = event.payload as Record<string, PriceData>;
 
           if (batcher) {
-            // RAF-batched: queue each symbol separately for last-write-wins collapse
             for (const [symbol, data] of Object.entries(payload)) {
               batcher.push(symbol, data);
             }
           } else {
-            // Direct dispatch (default path for low symbol counts)
             setPriceMap((prev) => mergeMap(prev, payload));
             setLastUpdatedAt(Date.now());
             resetStaleTimer();
@@ -94,7 +92,7 @@ export function useLivePrices(enabled = true, rafBatch = false, onSeqGap?: () =>
     });
 
     return () => {
-      controls.close();
+      unsub();
       batcher?.dispose();
       if (staleTimerRef.current) clearTimeout(staleTimerRef.current);
     };

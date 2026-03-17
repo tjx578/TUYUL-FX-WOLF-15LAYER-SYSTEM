@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback } from "react";
 import type { L12Verdict } from "@/types";
-import { connectLiveUpdates } from "@/lib/realtime/realtimeClient";
+import { subscribe } from "@/lib/realtime/multiplexer";
 import type { WsConnectionStatus } from "@/lib/realtime/connectionState";
 import { STALE_THRESHOLDS_MS } from "@/lib/realtime/connectionState";
 import { useSystemStore } from "@/store/useSystemStore";
@@ -18,7 +18,7 @@ interface UseLiveSignalsResult {
  * useLiveSignals
  *
  * Bootstrap: caller provides initial verdicts from REST (useAllVerdicts / SWR).
- * Stream:    /ws/verdict and /ws/signals — PipelineResultUpdated + VerdictUpdated.
+ * Stream:    multiplexed /ws/live — PipelineResultUpdated + VerdictUpdated events.
  * Merge:     replace list (backend sends full updated list on change).
  * Stale:     15s no message → isStale = true.
  */
@@ -52,14 +52,20 @@ export function useLiveSignals(
   useEffect(() => {
     if (!enabled) return;
 
-    const controls = connectLiveUpdates({
-      path: "/ws/verdict",
+    const unsub = subscribe({
+      filter: (e) =>
+        e.type === "PipelineResultUpdated" ||
+        e.type === "VerdictUpdated" ||
+        e.type === "VerdictSnapshot" ||
+        e.type === "SignalUpdated",
       onEvent: (event) => {
         if (event.type === "PipelineResultUpdated" && event.payload) {
           const payload = event.payload as unknown as L12Verdict;
           if (!payload.symbol) return;
           setVerdicts((prev) => {
             const idx = prev.findIndex((v) => v.symbol === payload.symbol);
+            // Timestamp guard: reject WS update older than current state
+            if (idx !== -1 && payload.timestamp <= prev[idx].timestamp) return prev;
             if (idx === -1) return [payload, ...prev];
             const next = [...prev];
             next[idx] = payload;
@@ -76,12 +82,13 @@ export function useLiveSignals(
             pair: string;
             verdict: Record<string, unknown>;
           };
+          const incomingTs = typeof verdict.timestamp === "number" ? verdict.timestamp : Date.now();
           const mapped: L12Verdict = {
             symbol: pair,
             verdict: (verdict.verdict as L12Verdict["verdict"]) ?? "HOLD",
             confidence: typeof verdict.confidence === "number" ? verdict.confidence : 0,
             gates: Array.isArray(verdict.gates) ? verdict.gates : [],
-            timestamp: typeof verdict.timestamp === "number" ? verdict.timestamp : Date.now(),
+            timestamp: incomingTs,
             direction: verdict.direction as L12Verdict["direction"],
             entry_price: verdict.entry_price as number | undefined,
             stop_loss: verdict.stop_loss as number | undefined,
@@ -93,6 +100,8 @@ export function useLiveSignals(
           };
           setVerdicts((prev) => {
             const idx = prev.findIndex((v) => v.symbol === pair);
+            // Timestamp guard: reject WS update older than current state
+            if (idx !== -1 && incomingTs <= prev[idx].timestamp) return prev;
             if (idx === -1) return [mapped, ...prev];
             const next = [...prev];
             next[idx] = mapped;
@@ -125,7 +134,17 @@ export function useLiveSignals(
               expires_at: v.expires_at as number | undefined,
             })
           );
-          setVerdicts(mapped);
+          // Snapshot replaces all — use latest timestamps per symbol
+          setVerdicts((prev) => {
+            const merged = new Map(prev.map((v) => [v.symbol, v]));
+            for (const incoming of mapped) {
+              const existing = merged.get(incoming.symbol);
+              if (!existing || incoming.timestamp >= existing.timestamp) {
+                merged.set(incoming.symbol, incoming);
+              }
+            }
+            return Array.from(merged.values());
+          });
           setLastUpdatedAt(Date.now());
           resetStaleTimer();
         }
@@ -144,7 +163,7 @@ export function useLiveSignals(
     });
 
     return () => {
-      controls.close();
+      unsub();
       if (staleTimerRef.current) clearTimeout(staleTimerRef.current);
     };
   }, [enabled, resetStaleTimer]);

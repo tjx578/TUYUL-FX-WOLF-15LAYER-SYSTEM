@@ -189,13 +189,16 @@ def _compute_tii(
     reflect_score = _clamp(reflective_intensity)
     meta_score = _clamp(meta_integrity)
 
-    tii = round(_clamp(
-        vwap_score * _W_VWAP
-        + energy_score * _W_ENERGY
-        + bias_score * _W_BIAS
-        + reflect_score * _W_REFLECTIVE
-        + meta_score * _W_META
-    ), 4)
+    tii = round(
+        _clamp(
+            vwap_score * _W_VWAP
+            + energy_score * _W_ENERGY
+            + bias_score * _W_BIAS
+            + reflect_score * _W_REFLECTIVE
+            + meta_score * _W_META
+        ),
+        4,
+    )
 
     status = _classify_tii(tii)
     gate_open = tii >= _TII_GATE_THRESHOLD
@@ -292,8 +295,13 @@ def _fallback_energy(closes: list[float]) -> float:
     """Estimate TRQ-like energy from price movement intensity.
 
     Uses average absolute bar-to-bar change normalized to price level.
-    This maps roughly to the 0-5 range that _score_energy_coherence expects
+    This maps to the 0–5 range that ``_score_energy_coherence`` expects
     (tanh(energy * 0.3) mapping).
+
+    The ``_ENERGY_SCALE`` factor (500) is calibrated so that typical FX
+    bar-to-bar moves (~0.1–0.5% of price) produce energy values in the
+    1–4 range, matching the tanh input domain where differentiation is
+    highest (tanh(0.3–1.5) ≈ 0.29–0.91).
     """
     recent = closes[-_MIN_BARS:]
     if len(recent) < 2:
@@ -301,8 +309,8 @@ def _fallback_energy(closes: list[float]) -> float:
     price_level = recent[-1] if recent[-1] != 0 else 1.0
     diffs = [abs(recent[i] - recent[i - 1]) for i in range(1, len(recent))]
     avg_diff = sum(diffs) / len(diffs)
-    # Normalize to price level, then scale to energy range (~0-5)
-    return (avg_diff / price_level) * 500
+    _ENERGY_SCALE = 500  # Maps normalized diff to ~0-5 energy range  # noqa: N806
+    return (avg_diff / price_level) * _ENERGY_SCALE
 
 
 def _fallback_bias(closes: list[float]) -> float:
@@ -395,12 +403,17 @@ def analyze_tii(
     if not degraded_fields:
         meta_integrity = _META_FULL_DATA
     else:
-        # Scale penalty by how many fields are estimated
-        penalty = len(degraded_fields) * 0.06
+        # Each degraded field (vwap, energy, bias, reflective) reduces
+        # meta-integrity by 6%. With max 4 fields degraded, worst case
+        # is 0.70 - 0.24 = 0.46, floored at 0.40 to ensure the TII
+        # component still contributes some signal rather than zero.
+        _PENALTY_PER_FIELD = 0.06  # noqa: N806
+        penalty = len(degraded_fields) * _PENALTY_PER_FIELD
         meta_integrity = max(0.4, _META_DEGRADED - penalty)
         logger.info(
             "L8 degraded mode: estimated fields=%s, meta_integrity=%.2f",
-            degraded_fields, meta_integrity,
+            degraded_fields,
+            meta_integrity,
         )
 
     # ── TII computation ──
@@ -429,14 +442,22 @@ def analyze_tii(
 
     logger.debug(
         "L8 tii=%.4f status=%s gate=%s integrity=%.4f twms=%.4f degraded=%s",
-        tii_result["tii"], tii_result["tii_status"],
-        tii_result["gate_status"], integrity, twms["twms_score"],
+        tii_result["tii"],
+        tii_result["tii_status"],
+        tii_result["gate_status"],
+        integrity,
+        twms["twms_score"],
         degraded_fields or "none",
     )
+
+    # Map 0-1 TII to 0-100 scale for TIIGrade classification
+    tii_pct = tii_result["tii"] * 100.0
+    grade = classify_tii_grade(tii_pct)
 
     return {
         "tii_sym": tii_result["tii"],
         "tii_status": tii_result["tii_status"],
+        "tii_grade": grade.value,
         "integrity": integrity,
         "twms_score": twms["twms_score"],
         "gate_status": tii_result["gate_status"],
@@ -457,13 +478,15 @@ def analyze_tii(
 # Structured TII API (used by tests/test_l8_tii.py)
 # ============================================================
 
+
 class TIIGrade(Enum):
     """Qualitative grade for a TII score."""
-    PRISTINE = "PRISTINE"       # >= 90.0
-    CLEAN = "CLEAN"             # >= 75.0
-    ACCEPTABLE = "ACCEPTABLE"   # >= 55.0
+
+    PRISTINE = "PRISTINE"  # >= 90.0
+    CLEAN = "CLEAN"  # >= 75.0
+    ACCEPTABLE = "ACCEPTABLE"  # >= 55.0
     QUESTIONABLE = "QUESTIONABLE"  # >= 35.0
-    COMPROMISED = "COMPROMISED" # < 35.0
+    COMPROMISED = "COMPROMISED"  # < 35.0
 
 
 def classify_tii_grade(score: float) -> TIIGrade:
@@ -483,6 +506,7 @@ def classify_tii_grade(score: float) -> TIIGrade:
 @dataclass
 class TIIInputs:
     """Structured inputs for the structured TII computation."""
+
     setup_clarity: float
     rule_compliance: float
     risk_reward_quality: float
@@ -505,6 +529,7 @@ class TIIInputs:
 @dataclass(frozen=True)
 class TIIResult:
     """Result of the structured TII computation."""
+
     symbol: str
     tii_score: float
     grade: TIIGrade
@@ -552,7 +577,11 @@ def compute_tii(
     # Weighted score
     weighted_score = sum(raw[k] * _DEFAULT_WEIGHTS[k] for k in raw) / sum(_DEFAULT_WEIGHTS.values())
 
-    # Rule-compliance penalty: if rule_compliance < 50, cap at 85%
+    # Rule-compliance penalty: traders with poor rule compliance (<50%)
+    # cannot achieve a high TII regardless of other dimensions.
+    # Formula: cap = 50 + 0.8 * compliance. At compliance=0 → cap=50,
+    # at compliance=49 → cap=89.2. This creates a soft ceiling that
+    # prevents gaming other dimensions to bypass compliance gaps.
     if inputs.rule_compliance < 50.0:
         max_allowed = 50.0 + inputs.rule_compliance * 0.8
         weighted_score = min(weighted_score, max_allowed)

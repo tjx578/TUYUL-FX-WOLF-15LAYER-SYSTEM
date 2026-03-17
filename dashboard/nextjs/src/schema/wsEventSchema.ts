@@ -111,6 +111,16 @@ export const EquityUpdatedEventSchema = z.object({
   payload: z.record(z.string(), z.unknown()),
 });
 
+export const AlertCreatedEventSchema = z.object({
+  type: z.literal("AlertCreated"),
+  payload: z.record(z.string(), z.unknown()),
+});
+
+export const AlertUpdatedEventSchema = z.object({
+  type: z.literal("AlertUpdated"),
+  payload: z.record(z.string(), z.unknown()),
+});
+
 export const WsEventSchema = z.discriminatedUnion("type", [
   // Legacy / frontend-native
   PipelineResultUpdatedEventSchema,
@@ -132,6 +142,8 @@ export const WsEventSchema = z.discriminatedUnion("type", [
   CandleSnapshotEventSchema,
   CandleFormingEventSchema,
   EquityUpdatedEventSchema,
+  AlertCreatedEventSchema,
+  AlertUpdatedEventSchema,
 ]);
 
 export type WsEvent = z.infer<typeof WsEventSchema>;
