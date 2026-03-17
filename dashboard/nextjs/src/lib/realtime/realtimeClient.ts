@@ -181,19 +181,18 @@ export function connectLiveUpdates(
     connectAborted = false;
     onStatusChange?.(reconnectAttempt === 0 ? "CONNECTING" : "RECONNECTING");
 
-    // [BUG FIX #7] Prefer synchronous JWT, fall back to WS ticket.
-    // If fetchWsTicket() fails (network error), catch and continue
-    // without token rather than crashing the entire connect flow.
+    // [BUG FIX #7+#8] Prefer WS ticket from server route (returns session
+    // cookie or server-side API_KEY — never exposes key in client bundle).
+    // Only fall back to localStorage JWT if the ticket fetch fails.
+    // This ensures WS auth works even when the cached JWT lacks a role claim.
     let token: string | null = null;
     try {
-      token =
-        typeof window !== "undefined"
-          ? (getTransportToken() ?? (await fetchWsTicket()))
-          : null;
+      if (typeof window !== "undefined") {
+        token = (await fetchWsTicket()) ?? getTransportToken();
+      }
     } catch {
-      // Token fetch failed — connect without token, backend will reject
-      // with 401/403 and we'll reconnect with backoff.
-      token = null;
+      // Ticket fetch failed (network error) — try localStorage JWT as last resort.
+      token = getTransportToken();
     }
 
     // Guard: close() called while we were awaiting fetchWsTicket
