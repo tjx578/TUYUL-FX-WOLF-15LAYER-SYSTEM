@@ -117,6 +117,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     if app.state.redis is not None and _env_bool("ENABLE_WS_RELAY", True):
         try:
             from api.ws_routes import (
+                alerts_manager,
                 candle_manager,
                 equity_manager,
                 live_manager,
@@ -140,6 +141,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                     "signals": signal_manager,
                     "pipeline": pipeline_manager,
                     "live": live_manager,
+                    "alerts": alerts_manager,
                 }
             )
             app.state.ws_relay = relay
