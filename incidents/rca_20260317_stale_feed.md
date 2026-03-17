@@ -81,7 +81,7 @@ The dashboard "stale feed" warning is a **correct symptom**, not a bug in monito
 |---|---|---|---|
 | 1 | Platform / DevOps | Always deploy engine + ingest in the same Railway environment or linked services | ✅ Done |
 | 2 | Backend | Non-destructive candle seed (atomic RENAME) | ✅ Done |
-| 3 | Backend | Extend `LATEST_TICK_TTL_SECONDS` to 3 600 | ✅ Done |
+| 3 | Backend | Extend `LATEST_TICK_TTL_SECONDS` to 3,600 | ✅ Done |
 | 4 | Backend | `RestPollFallback` must write to Redis | ✅ Done |
 | 5 | Backend | Multi-sentinel key check + downgrade log level to INFO | ✅ Done |
 | 6 | Platform | Add startup health check: abort engine if Redis candle lists empty AND no ingest heartbeat | 🔲 Planned |
