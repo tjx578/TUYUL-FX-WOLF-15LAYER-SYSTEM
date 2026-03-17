@@ -142,7 +142,7 @@ class PersistenceSync:
         for pattern in ("TRADE:*", "wolf15:TRADE:*"):
             cursor = 0
             while True:
-                cursor, keys = client.scan(cursor=cursor, match=pattern, count=50)  # type: ignore
+                cursor, keys = await client.scan(cursor=cursor, match=pattern, count=50)  # type: ignore[arg-type]
                 for key in keys:
                     trade_payload = await client.get(key)
                     if not trade_payload:
