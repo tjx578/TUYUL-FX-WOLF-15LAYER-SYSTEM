@@ -24,16 +24,11 @@
  * Override with NEXT_PUBLIC_API_BASE_URL for direct backend calls (dev/debug).
  */
 export function getApiBaseUrl(): string {
-  const apiBaseRaw = process.env.NEXT_PUBLIC_API_BASE_URL;
-  const apiLegacyRaw = process.env.NEXT_PUBLIC_API_URL; // legacy alias, still tolerated
-  const url = typeof apiBaseRaw === "string" && apiBaseRaw.trim() !== ""
-    ? apiBaseRaw
-    : apiLegacyRaw;
-  const normalized = typeof url === "string" ? url.trim() : "";
-  if (normalized.length === 0) {
-    return ""; // relative — rewrite in next.config.js handles the proxy
-  }
-  return normalized.replace(/\/$/, "");
+  // Use literal identifiers so Next.js compiler inlines values at build time.
+  const primary = process.env.NEXT_PUBLIC_API_BASE_URL || "";
+  const legacy  = process.env.NEXT_PUBLIC_API_URL || "";
+  const url = primary || legacy;
+  return url.trim().replace(/\/$/, "");
 }
 
 /**
@@ -48,8 +43,8 @@ export function getApiBaseUrl(): string {
  * It will NOT work on Vercel without the env var.
  */
 export function getWsBaseUrl(): string {
-  const wsBaseRaw = process.env.NEXT_PUBLIC_WS_BASE_URL;
-  const url = typeof wsBaseRaw === "string" ? wsBaseRaw.trim() : "";
+  // Literal identifier — Next.js inlines this at build time.
+  const url = (process.env.NEXT_PUBLIC_WS_BASE_URL || "").trim();
   if (url.length === 0) {
     if (typeof window !== "undefined") {
       const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
@@ -86,8 +81,7 @@ export function getWsBaseUrl(): string {
 export function validateEnv(): void {
   if (typeof window === "undefined") return;
 
-  const wsUrlRaw = process.env.NEXT_PUBLIC_WS_BASE_URL;
-  const wsUrl = typeof wsUrlRaw === "string" ? wsUrlRaw.trim() : "";
+  const wsUrl = (process.env.NEXT_PUBLIC_WS_BASE_URL || "").trim();
   const isVercel =
     window.location.hostname.includes("vercel") ||
     window.location.hostname.includes(".app");
@@ -101,8 +95,9 @@ export function validateEnv(): void {
     );
   }
 
-  const internalUrl = process.env.INTERNAL_API_URL;
-  const internalSet = typeof internalUrl === "string" && internalUrl.trim().length > 0;
+  // INTERNAL_API_URL is server-side only — not available in browser.
+  // Use NEXT_PUBLIC_API_BASE_URL as the proxy indicator on client side.
+  const internalSet = !!(process.env.NEXT_PUBLIC_API_BASE_URL);
   if (!internalSet && isVercel) {
     console.error(
       "[env] CRITICAL: INTERNAL_API_URL is NOT SET. " +
@@ -128,5 +123,4 @@ export function validateEnv(): void {
 }
 
 // Legacy export kept for existing imports — resolves identically to getApiBaseUrl().
-const apiBaseConstRaw = process.env.NEXT_PUBLIC_API_BASE_URL;
-export const API_BASE_URL = typeof apiBaseConstRaw === "string" ? apiBaseConstRaw.trim() : "";
+export const API_BASE_URL = (process.env.NEXT_PUBLIC_API_BASE_URL || "").trim();
