@@ -140,8 +140,9 @@ class LiveContextBus:
         symbol = tick.get("symbol")
         if symbol:
             sym = str(symbol)
-            self._ticks[sym] = tick
-            self._feed_timestamps[sym] = time.time()
+            with self._lock:
+                self._ticks[sym] = tick
+                self._feed_timestamps[sym] = time.time()
         else:
             logger.warning("LiveContextBus.update_tick: tick missing 'symbol' key — ignored")
 
