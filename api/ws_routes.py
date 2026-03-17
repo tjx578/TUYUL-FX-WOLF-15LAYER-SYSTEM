@@ -403,7 +403,10 @@ class ConnectionManager:
                 if msg_type in {"pong", "heartbeat", "ping"}:
                     self._last_heartbeat[websocket] = time.time()
                     self._touch_session(websocket)
+        except asyncio.CancelledError:
+            pass
         except Exception:
+            logger.debug(f"WS [{self.name}] receive loop ended")
             self.disconnect(websocket)
 
     async def _heartbeat_loop(self, websocket: fastapi.WebSocket) -> None:
@@ -433,6 +436,10 @@ class ConnectionManager:
                         websocket.send_json({"type": "ping", "ts": time.time()}),
                         timeout=WS_PONG_TIMEOUT,
                     )
+                    # Successful send proves the connection is at least half-alive.
+                    # Reset heartbeat so staleness only triggers after *two* missed
+                    # ping/pong cycles (send succeeds but no pong comes back).
+                    self._last_heartbeat[websocket] = time.time()
                     self._touch_session(websocket)
                 except (TimeoutError, Exception):
                     logger.info(f"WS [{self.name}] heartbeat failed, disconnecting client")
@@ -690,7 +697,7 @@ async def websocket_prices(websocket: fastapi.WebSocket):
         # Track last known prices to push only diffs
         last_prices: dict[str, dict[str, Any]] = prices.copy()
 
-        while True:
+        while websocket in price_manager.active_connections:
             # Wait for price event OR timeout (whichever comes first)
             try:
                 await asyncio.wait_for(
@@ -722,13 +729,14 @@ async def websocket_prices(websocket: fastapi.WebSocket):
 
             if changed:
                 tick_msg = _ws_event("price.tick", {"changes": changed})
-                await price_manager.send_stamped(websocket, tick_msg)
+                if not await price_manager.send_stamped(websocket, tick_msg):
+                    break
 
     except fastapi.WebSocketDisconnect:
-        price_manager.disconnect(websocket)
-        logger.info("Price WebSocket client disconnected")
+        pass
     except Exception as exc:
         logger.error(f"Price WebSocket error: {exc}")
+    finally:
         price_manager.disconnect(websocket)
 
 
@@ -764,7 +772,7 @@ async def websocket_trades(websocket: fastapi.WebSocket):
         for trade in active_trades:
             last_trade_snapshot[trade.trade_id] = trade.status.value
 
-        while True:
+        while websocket in trade_manager.active_connections:
             active_trades = await _trade_ledger.get_active_trades_async()
             current_snapshot = {t.trade_id: t.status.value for t in active_trades}
 
@@ -780,7 +788,7 @@ async def websocket_trades(websocket: fastapi.WebSocket):
                 del last_trade_snapshot[trade_id]
 
             if changed_trades or removed_trade_ids:
-                await trade_manager.send_stamped(
+                ok = await trade_manager.send_stamped(
                     websocket,
                     _ws_event(
                         "trade.update",
@@ -790,15 +798,17 @@ async def websocket_trades(websocket: fastapi.WebSocket):
                         },
                     ),
                 )
+                if not ok:
+                    break
 
             # 250ms for near-instant trade event delivery
             await asyncio.sleep(TRADE_CHECK_INTERVAL)
 
     except fastapi.WebSocketDisconnect:
-        trade_manager.disconnect(websocket)
-        logger.info("Trade WebSocket client disconnected")
+        pass
     except Exception as exc:
         logger.error(f"Trade WebSocket error: {exc}")
+    finally:
         trade_manager.disconnect(websocket)
 
 
@@ -828,16 +838,17 @@ async def websocket_candles(websocket: fastapi.WebSocket):
         bars = _candle_agg.get_current_bars(symbol_filter)
         await websocket.send_json(_ws_event("candle.snapshot", {"bars": bars}))
 
-        while True:
+        while websocket in candle_manager.active_connections:
             bars = _candle_agg.get_current_bars(symbol_filter)
-            await candle_manager.send_stamped(websocket, _ws_event("candle.forming", {"bars": bars}))
+            if not await candle_manager.send_stamped(websocket, _ws_event("candle.forming", {"bars": bars})):
+                break
             await asyncio.sleep(CANDLE_UPDATE_INTERVAL)
 
     except fastapi.WebSocketDisconnect:
-        candle_manager.disconnect(websocket)
-        logger.info("Candle WebSocket client disconnected")
+        pass
     except Exception as exc:
         logger.error(f"Candle WebSocket error: {exc}")
+    finally:
         candle_manager.disconnect(websocket)
 
 
@@ -860,7 +871,7 @@ async def websocket_risk(websocket: fastapi.WebSocket):
     logger.info("Risk WebSocket client connected")
 
     try:
-        while True:
+        while websocket in risk_manager.active_connections:
             # Build risk state from cached singletons
             risk_state: dict[str, Any] = {"ts": time.time()}
 
@@ -896,14 +907,15 @@ async def websocket_risk(websocket: fastapi.WebSocket):
                 risk_state["drawdown"] = None
 
             msg = _ws_event("risk.state", risk_state)
-            await risk_manager.send_stamped(websocket, msg)
+            if not await risk_manager.send_stamped(websocket, msg):
+                break
             await asyncio.sleep(RISK_STATE_INTERVAL)
 
     except fastapi.WebSocketDisconnect:
-        risk_manager.disconnect(websocket)
-        logger.info("Risk WebSocket client disconnected")
+        pass
     except Exception as exc:
         logger.error(f"Risk WebSocket error: {exc}")
+    finally:
         risk_manager.disconnect(websocket)
 
 
@@ -1173,15 +1185,16 @@ async def websocket_equity(websocket: fastapi.WebSocket):
                 last_equity = current_equity
 
             # Push update to client
-            await equity_manager.send_stamped(websocket, _ws_event("equity.update", equity_point))
+            if not await equity_manager.send_stamped(websocket, _ws_event("equity.update", equity_point)):
+                break
 
             await asyncio.sleep(EQUITY_PUSH_INTERVAL)
 
     except fastapi.WebSocketDisconnect:
-        equity_manager.disconnect(websocket)
-        logger.info("Equity WebSocket client disconnected")
+        pass
     except Exception as exc:
         logger.error(f"Equity WebSocket error: {exc}")
+    finally:
         equity_manager.disconnect(websocket)
 
 
