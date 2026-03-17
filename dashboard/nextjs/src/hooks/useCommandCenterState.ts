@@ -47,7 +47,7 @@ export interface CommandCenterState {
   // raw data
   verdictList: L12Verdict[];
   activeTrades: Trade[];
-  accounts: Account[];
+  accounts: Account[]; // always an array, never undefined
   snapshotList: AccountRiskSnapshot[];
   context: ReturnType<typeof useContext>["data"];
   execution: ReturnType<typeof useExecution>["data"];
@@ -77,7 +77,7 @@ export function useCommandCenterState(): CommandCenterState {
   const { data: activeTradesData, isError: tradesError } = useActiveTrades();
   const { data: context, isError: contextError } = useContext();
   const { data: execution, isError: executionError } = useExecution();
-  const { data: accounts, isError: accountsError } = useAccounts();
+  const { data: accountsRaw, isError: accountsError } = useAccounts();
   const { data: riskSnapshots, isError: riskError } = useAccountsRiskSnapshot();
   const { data: health } = useHealth();
   const { data: calendarBlocker } = useCalendarBlocker();
@@ -106,6 +106,14 @@ export function useCommandCenterState(): CommandCenterState {
     const resp = activeTradesData as ActiveTradesResponse;
     return Array.isArray(resp.trades) ? resp.trades : [];
   }, [activeTradesData]);
+
+  // Normalize accounts — useAccounts().data can be undefined when backend is
+  // unreachable. Accessing .length/.slice() on undefined throws a TypeError
+  // which crashes the page and triggers the error boundary (blank screen).
+  const accounts = useMemo<Account[]>(
+    () => (Array.isArray(accountsRaw) ? accountsRaw : []),
+    [accountsRaw]
+  );
 
   const snapshotList = useMemo<AccountRiskSnapshot[]>(
     () => (Array.isArray(riskSnapshots) ? riskSnapshots : []),
