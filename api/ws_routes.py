@@ -1580,6 +1580,8 @@ async def websocket_live_feed(websocket: fastapi.WebSocket):
         return
 
     try:
+        from storage.l12_cache import get_all_verdicts_async, is_verdict_stale  # noqa: PLC0415
+
         await websocket.send_json(
             _ws_event(
                 "live.snapshot",
