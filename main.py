@@ -90,6 +90,7 @@ async def _run_http_server() -> None:
         port=port,
         workers=1,
         log_level="info",
+        ws_per_message_deflate=True,
     )
     server = uvicorn.Server(config)
     await server.serve()
