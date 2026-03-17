@@ -48,6 +48,9 @@ const EVENT_TYPE_MAP: Record<string, string> = {
   "candle.snapshot": "CandleSnapshot",
   "candle.forming": "CandleForming",
   "equity.update": "EquityUpdated",
+  // ── Live feed events ──
+  "live.heartbeat_state": "SystemStatusUpdated",
+  "live.snapshot": "SystemStatusUpdated",
 };
 
 function normalizeWsEvent(raw: Record<string, unknown>): Record<string, unknown> {
@@ -139,10 +142,20 @@ export function connectLiveUpdates(
   // Monotonic sequence tracking for gap detection
   let lastSeq = 0;
   let gapCount = 0;
+  // Track consecutive messages without gaps for DEGRADED recovery
+  let consecutiveGoodMessages = 0;
+  // Track current connection status for auto-recovery logic
+  let currentStatus: WsConnectionStatus = "DISCONNECTED";
+
+  /** Update status and notify caller. */
+  const emitStatus = (s: WsConnectionStatus) => {
+    currentStatus = s;
+    onStatusChange?.(s);
+  };
 
   const wsBaseUrl = getWsBaseUrl();
   if (!wsBaseUrl || wsBaseUrl.trim() === "") {
-    onStatusChange?.("DISCONNECTED");
+    emitStatus("DISCONNECTED");
     onDegradation?.({
       mode: "DEGRADED",
       reason:
@@ -179,7 +192,7 @@ export function connectLiveUpdates(
     if (visibilityPaused && reconnectAttempt > 3) return;
 
     connectAborted = false;
-    onStatusChange?.(reconnectAttempt === 0 ? "CONNECTING" : "RECONNECTING");
+    emitStatus(reconnectAttempt === 0 ? "CONNECTING" : "RECONNECTING");
 
     // [BUG FIX #7+#8] Prefer WS ticket from server route (returns session
     // cookie or server-side API_KEY — never exposes key in client bundle).
@@ -220,7 +233,7 @@ export function connectLiveUpdates(
           `[WS] CONNECTED path=${path} ts=${new Date().toISOString()}`,
         );
       }
-      onStatusChange?.("LIVE");
+      emitStatus("LIVE");
       startStaleTimer();
       startClientHeartbeat();
     };
@@ -274,13 +287,27 @@ export function connectLiveUpdates(
           if (lastSeq > 0 && seq !== lastSeq + 1) {
             const missed = seq - lastSeq - 1;
             gapCount++;
+            consecutiveGoodMessages = 0;
             onSeqGap?.(missed);
-            onDegradation?.({
-              mode: "DEGRADED",
-              reason: `Sequence gap detected: expected ${lastSeq + 1}, got ${seq} (${missed} message(s) lost)`,
-            });
+            // Only escalate to DEGRADED for significant gaps (>2 messages)
+            if (missed > 2) {
+              onDegradation?.({
+                mode: "DEGRADED",
+                reason: `Sequence gap detected: expected ${lastSeq + 1}, got ${seq} (${missed} message(s) lost)`,
+              });
+            }
+          } else {
+            consecutiveGoodMessages++;
           }
           lastSeq = seq;
+        }
+
+        // Auto-recover from DEGRADED when messages keep flowing
+        if (currentStatus === "DEGRADED" || currentStatus === "STALE") {
+          if (consecutiveGoodMessages >= 3) {
+            emitStatus("LIVE");
+            consecutiveGoodMessages = 0;
+          }
         }
 
         // ── Normalise backend envelope → frontend discriminator ──
@@ -306,7 +333,7 @@ export function connectLiveUpdates(
 
     socket.onerror = () => {
       if (intentionallyClosed) return;
-      onStatusChange?.("DEGRADED");
+      emitStatus("DEGRADED");
       onDegradation?.({
         mode: "DEGRADED",
         reason:
@@ -321,7 +348,7 @@ export function connectLiveUpdates(
           `[WS] DISCONNECTED path=${path} attempt=${reconnectAttempt} ts=${new Date().toISOString()}`,
         );
       }
-      onStatusChange?.("DISCONNECTED");
+      emitStatus("DISCONNECTED");
       clearStaleTimer();
       stopClientHeartbeat();
       scheduleReconnect();
@@ -352,7 +379,7 @@ export function connectLiveUpdates(
       if (intentionallyClosed) return;
       const elapsed = Date.now() - lastMessageAt;
       if (elapsed >= STALE_THRESHOLD_MS) {
-        onStatusChange?.("STALE");
+        emitStatus("STALE");
       }
     }, STALE_THRESHOLD_MS);
   };

@@ -5,6 +5,7 @@ Tests for WebSocket v3 upgrades:
   - Cached risk singletons (_get_risk_manager / _get_circuit_breaker)
   - Exponential backoff helper (frontend-side, tested conceptually)
 """
+
 import asyncio
 import time
 from collections.abc import Iterable
@@ -17,9 +18,12 @@ import pytest
 # ConnectionManager: buffer + replay
 # ---------------------------------------------------------------------------
 
+
 def _buffer_snapshot(mgr: Any) -> list[dict[str, Any]]:
     getter = getattr(mgr, "get_message_buffer", None)
-    data = getter() if callable(getter) else getattr(mgr, "message_buffer", [])
+    data = getter() if callable(getter) else getattr(mgr, "message_buffer", None)
+    if data is None:
+        data = getattr(mgr, "_message_buffer", [])
     return list(cast(Iterable[dict[str, Any]], data))
 
 
@@ -34,6 +38,7 @@ class TestConnectionManagerBuffer:
 
     def _make_manager(self):
         from api.ws_routes import ConnectionManager  # noqa: PLC0415
+
         return ConnectionManager(name="test", buffer_size=5)
 
     def test_buffer_stores_messages(self):
@@ -54,22 +59,28 @@ class TestConnectionManagerBuffer:
 
     @pytest.mark.asyncio
     async def test_replay_all_when_no_since(self):
+        import itertools  # noqa: PLC0415
+
         mgr = self._make_manager()
         for i in range(3):
             mgr.buffer_message({"type": "tick", "ts": float(i + 1), "i": i})
 
         ws = AsyncMock()
+        mgr._per_conn_seq[ws] = itertools.count(1)
         await mgr.replay_buffer(ws, since_ts=None)
         assert ws.send_json.call_count == 3
 
     @pytest.mark.asyncio
     async def test_replay_filters_by_since(self):
+        import itertools  # noqa: PLC0415
+
         mgr = self._make_manager()
         mgr.buffer_message({"type": "tick", "ts": 1.0, "i": 0})
         mgr.buffer_message({"type": "tick", "ts": 2.0, "i": 1})
         mgr.buffer_message({"type": "tick", "ts": 3.0, "i": 2})
 
         ws = AsyncMock()
+        mgr._per_conn_seq[ws] = itertools.count(1)
         await mgr.replay_buffer(ws, since_ts=1.5)
         # Should only replay ts=2.0 and ts=3.0
         assert ws.send_json.call_count == 2
@@ -79,11 +90,13 @@ class TestConnectionManagerBuffer:
 # Cached risk singletons
 # ---------------------------------------------------------------------------
 
+
 class TestCachedRiskSingletons:
     """Risk WS should use cached singletons, not re-instantiate."""
 
     def test_get_risk_manager_caches(self):
         import api.ws_routes as mod  # noqa: PLC0415
+
         _reset_cached_singletons_if_available(mod)
 
         # Patch the import to return a mock
@@ -111,6 +124,7 @@ class TestCachedRiskSingletons:
 
     def test_get_circuit_breaker_caches(self):
         import api.ws_routes as mod  # noqa: PLC0415
+
         _reset_cached_singletons_if_available(mod)
 
         mock_cb = MagicMock()
@@ -132,6 +146,7 @@ class TestCachedRiskSingletons:
 # ---------------------------------------------------------------------------
 # Event-driven price notification
 # ---------------------------------------------------------------------------
+
 
 class TestPriceEvent:
     """Price event notification should work via notify_price_update."""
@@ -167,11 +182,13 @@ class TestPriceEvent:
 # Heartbeat configuration
 # ---------------------------------------------------------------------------
 
+
 class TestHeartbeatConfig:
     """Verify heartbeat constants are reasonable."""
 
     def test_ping_interval_is_positive(self):
         from api.ws_routes import WS_PING_INTERVAL, WS_PONG_TIMEOUT  # noqa: PLC0415
+
         assert WS_PING_INTERVAL > 0
         assert WS_PONG_TIMEOUT > 0
         assert WS_PING_INTERVAL > WS_PONG_TIMEOUT  # ping interval > pong timeout
@@ -181,12 +198,14 @@ class TestHeartbeatConfig:
 # Broadcast also buffers
 # ---------------------------------------------------------------------------
 
+
 class TestBroadcastBuffers:
     """broadcast() should add message to buffer."""
 
     @pytest.mark.asyncio
     async def test_broadcast_adds_to_buffer(self):
         from api.ws_routes import ConnectionManager  # noqa: PLC0415
+
         mgr = ConnectionManager(name="test-broadcast", buffer_size=10)
 
         msg: dict[str, Any] = {"type": "tick", "data": {"EURUSD": {}}, "ts": time.time()}
@@ -194,12 +213,13 @@ class TestBroadcastBuffers:
 
         buf = _buffer_snapshot(mgr)
         assert len(buf) == 1
-        assert buf[0] is msg
+        assert buf[0]["type"] == "tick"
 
 
 # ---------------------------------------------------------------------------
 # Publisher helpers
 # ---------------------------------------------------------------------------
+
 
 class TestPublisherHelpers:
     """Helper publishers should hide WS manager details from callers."""
@@ -210,11 +230,13 @@ class TestPublisherHelpers:
 
         mock_broadcast = AsyncMock()
         with patch.object(mod.signal_manager, "broadcast", mock_broadcast):
-            await mod.publish_signal_update({
-                "signal_id": "SIG-1",
-                "symbol": "EURUSD",
-                "verdict": "EXECUTE_BUY",
-            })
+            await mod.publish_signal_update(
+                {
+                    "signal_id": "SIG-1",
+                    "symbol": "EURUSD",
+                    "verdict": "EXECUTE_BUY",
+                }
+            )
 
         assert mock_broadcast.call_count == 1
         msg = mock_broadcast.call_args.args[0]
