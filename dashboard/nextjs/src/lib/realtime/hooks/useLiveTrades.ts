@@ -6,6 +6,7 @@ import { subscribe } from "@/lib/realtime/multiplexer";
 import type { WsConnectionStatus } from "@/lib/realtime/connectionState";
 import { STALE_THRESHOLDS_MS } from "@/lib/realtime/connectionState";
 import { mergeList } from "@/lib/realtime/merge";
+import { createRafListBatcher } from "@/lib/realtime/rafBatcher";
 
 interface UseLiveTradesResult {
   trades: Trade[];
@@ -58,15 +59,29 @@ export function useLiveTrades(
     if (!enabled) return;
     wsActiveRef.current = false;
 
+    // RAF batcher: collapses multiple ExecutionStateUpdated events within the
+    // same animation frame (~16ms) into a single setState call, preventing
+    // a re-render per WS message during burst sequences.
+    const batcher = createRafListBatcher<Trade>({
+      getKey: (t) => t.trade_id,
+      onFlush: (items) => {
+        setTrades((prev) => {
+          let next = prev;
+          for (const item of items) {
+            next = mergeList(next, item, (t) => t.trade_id);
+          }
+          return next;
+        });
+        setLastUpdatedAt(Date.now());
+        resetStaleTimer();
+      },
+    });
+
     const unsub = subscribe({
       filter: (e) => e.type === "ExecutionStateUpdated" || e.type === "TradeUpdated" || e.type === "TradeSnapshot",
       onEvent: (event) => {
         if (event.type === "ExecutionStateUpdated") {
-          setTrades((prev) =>
-            mergeList(prev, event.payload.trade as unknown as Trade, (t) => t.trade_id)
-          );
-          setLastUpdatedAt(Date.now());
-          resetStaleTimer();
+          batcher.push(event.payload.trade as unknown as Trade);
         }
       },
       onStatusChange: (s) => {
@@ -88,6 +103,7 @@ export function useLiveTrades(
 
     return () => {
       unsub();
+      batcher.dispose();
       if (staleTimerRef.current) clearTimeout(staleTimerRef.current);
     };
   }, [enabled, resetStaleTimer]);
