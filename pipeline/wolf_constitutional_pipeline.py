@@ -178,6 +178,9 @@ class WolfConstitutionalPipeline:
         "MN": 2,
     }
 
+    # Avoid log storms when a symbol remains degraded for long periods.
+    DQ_WARNING_LOG_INTERVAL_SEC: float = 900.0
+
     def __init__(self) -> None:
         """Initialize with lazy loading to avoid circular imports."""
         super().__init__()
@@ -238,6 +241,9 @@ class WolfConstitutionalPipeline:
 
         # Vault health checker (lazy-initialized on first use)
         self._vault_checker: Any = None  # type: VaultHealthChecker | None
+
+        # Per-symbol data quality warning state for log throttling.
+        self._dq_warning_state: dict[str, dict[str, Any]] = {}
 
     # ──────────────────────────────────────────────────────
     #  Lazy-load all layer analyzers
@@ -615,13 +621,37 @@ class WolfConstitutionalPipeline:
             if dq_report.confidence_penalty > _dq_penalty:
                 _dq_penalty = dq_report.confidence_penalty
 
+        _degraded_reports = [r for r in _dq_reports if r["degraded"]]
         if _dq_penalty > 0:
-            logger.warning(
-                "[Pipeline v8.0] {} DATA QUALITY degraded - penalty={:.2f}, reports={}",
-                symbol,
-                _dq_penalty,
-                [r for r in _dq_reports if r["degraded"]],
+            now_ts = time.time()
+            reason_key = tuple(sorted(";".join(r.get("reasons", [])) for r in _degraded_reports))
+            state = self._dq_warning_state.get(symbol, {})
+            should_log = (
+                not state.get("degraded", False)
+                or state.get("reason_key") != reason_key
+                or (now_ts - float(state.get("last_log_ts", 0.0))) >= self.DQ_WARNING_LOG_INTERVAL_SEC
             )
+            if should_log:
+                logger.warning(
+                    "[Pipeline v8.0] {} DATA QUALITY degraded - penalty={:.2f}, reports={}",
+                    symbol,
+                    _dq_penalty,
+                    _degraded_reports,
+                )
+                self._dq_warning_state[symbol] = {
+                    "degraded": True,
+                    "reason_key": reason_key,
+                    "last_log_ts": now_ts,
+                }
+        else:
+            state = self._dq_warning_state.get(symbol)
+            if state and state.get("degraded", False):
+                logger.info("[Pipeline v8.0] {} DATA QUALITY recovered", symbol)
+            self._dq_warning_state[symbol] = {
+                "degraded": False,
+                "reason_key": (),
+                "last_log_ts": 0.0,
+            }
 
         try:
             # ═══════════════════════════════════════════════════════

@@ -39,6 +39,7 @@ __version__ = "2.0.0"
 __codename__ = "Wolf Engine Facade"
 
 if TYPE_CHECKING:
+    from . import v11 as v11  # noqa: F401  # expose sub-package for static analysis
     from .cognitive_context_engine import (
         InstitutionalPresence,
         LiquidityContext,
@@ -69,61 +70,61 @@ if TYPE_CHECKING:
 _LAZY_IMPORTS: dict[str, tuple[str, str | None]] = {
     # --- Cognitive ---
     "CognitiveCoherenceEngine": (".cognitive_coherence_engine", None),
-    "CoherenceSnapshot":        (".cognitive_coherence_engine", None),
-    "CoherenceState":           (".cognitive_coherence_engine", None),
-    "CognitiveContextEngine":   (".cognitive_context_engine", None),
-    "CognitiveContext":         (".cognitive_context_engine", None),
-    "InstitutionalPresence":    (".cognitive_context_engine", None),
-    "LiquidityContext":         (".cognitive_context_engine", None),
-    "MarketRegime":             (".cognitive_context_engine", None),
-    "MarketStructure":          (".cognitive_context_engine", None),
-    "CognitiveRiskSimulation":  (".cognitive_risk_simulation", None),
-    "RiskSimulationResult":     (".cognitive_risk_simulation", None),
+    "CoherenceSnapshot": (".cognitive_coherence_engine", None),
+    "CoherenceState": (".cognitive_coherence_engine", None),
+    "CognitiveContextEngine": (".cognitive_context_engine", None),
+    "CognitiveContext": (".cognitive_context_engine", None),
+    "InstitutionalPresence": (".cognitive_context_engine", None),
+    "LiquidityContext": (".cognitive_context_engine", None),
+    "MarketRegime": (".cognitive_context_engine", None),
+    "MarketStructure": (".cognitive_context_engine", None),
+    "CognitiveRiskSimulation": (".cognitive_risk_simulation", None),
+    "RiskSimulationResult": (".cognitive_risk_simulation", None),
     # --- Fusion ---
-    "FusionMomentumEngine":     (".fusion_momentum_engine", None),
-    "MomentumResult":           (".fusion_momentum_engine", None),
-    "FusionPrecisionEngine":    (".fusion_precision_engine", None),
-    "PrecisionResult":          (".fusion_precision_engine", None),
-    "FusionStructureEngine":    (".fusion_structure_engine", None),
-    "StructureResult":          (".fusion_structure_engine", None),
-    "StructureState":           (".fusion_structure_engine", None),
+    "FusionMomentumEngine": (".fusion_momentum_engine", None),
+    "MomentumResult": (".fusion_momentum_engine", None),
+    "FusionPrecisionEngine": (".fusion_precision_engine", None),
+    "PrecisionResult": (".fusion_precision_engine", None),
+    "FusionStructureEngine": (".fusion_structure_engine", None),
+    "StructureResult": (".fusion_structure_engine", None),
+    "StructureState": (".fusion_structure_engine", None),
     # --- Quantum ---
-    "QuantumAdvisoryEngine":    (".quantum_advisory_engine", None),
-    "AdvisoryResult":           (".quantum_advisory_engine", None),
-    "AdvisorySignal":           (".quantum_advisory_engine", None),
-    "QuantumFieldEngine":       (".quantum_field_engine", None),
-    "FieldResult":              (".quantum_field_engine", None),
+    "QuantumAdvisoryEngine": (".quantum_advisory_engine", None),
+    "AdvisoryResult": (".quantum_advisory_engine", None),
+    "AdvisorySignal": (".quantum_advisory_engine", None),
+    "QuantumFieldEngine": (".quantum_field_engine", None),
+    "FieldResult": (".quantum_field_engine", None),
     "QuantumProbabilityEngine": (".quantum_probability_engine", None),
-    "ProbabilityResult":        (".quantum_probability_engine", None),
+    "ProbabilityResult": (".quantum_probability_engine", None),
 }
 
 # Backward-compat aliases: resolved lazily via the same mechanism.
 _LAZY_ALIASES: dict[str, str] = {
     "CognitiveCoherence": "CoherenceSnapshot",
-    "FusionMomentum":     "MomentumResult",
-    "FusionPrecision":    "PrecisionResult",
-    "FusionStructure":    "StructureResult",
+    "FusionMomentum": "MomentumResult",
+    "FusionPrecision": "PrecisionResult",
+    "FusionStructure": "StructureResult",
 }
 
 __all__ = [
     # Quantum types
-    "AdvisoryResult", # pyright: ignore[reportUnsupportedDunderAll]
+    "AdvisoryResult",  # pyright: ignore[reportUnsupportedDunderAll]
     # Backward-compat aliases
-    "AdvisorySignal", # pyright: ignore[reportUnsupportedDunderAll]
-    "CognitiveCoherence", # pyright: ignore[reportUnsupportedDunderAll]
+    "AdvisorySignal",  # pyright: ignore[reportUnsupportedDunderAll]
+    "CognitiveCoherence",  # pyright: ignore[reportUnsupportedDunderAll]
     # Cognitive engines
-    "CognitiveCoherenceEngine", # pyright: ignore[reportUnsupportedDunderAll]
-    "CognitiveContextEngine", # pyright: ignore[reportUnsupportedDunderAll]
-    "CognitiveRiskSimulation", # pyright: ignore[reportUnsupportedDunderAll]
+    "CognitiveCoherenceEngine",  # pyright: ignore[reportUnsupportedDunderAll]
+    "CognitiveContextEngine",  # pyright: ignore[reportUnsupportedDunderAll]
+    "CognitiveRiskSimulation",  # pyright: ignore[reportUnsupportedDunderAll]
     # Cognitive types
-    "CoherenceSnapshot", # pyright: ignore[reportUnsupportedDunderAll]
-    "CoherenceState", # pyright: ignore[reportUnsupportedDunderAll]
-    "FieldResult", # pyright: ignore[reportUnsupportedDunderAll]
-    "FusionMomentum", # pyright: ignore[reportUnsupportedDunderAll]
+    "CoherenceSnapshot",  # pyright: ignore[reportUnsupportedDunderAll]
+    "CoherenceState",  # pyright: ignore[reportUnsupportedDunderAll]
+    "FieldResult",  # pyright: ignore[reportUnsupportedDunderAll]
+    "FusionMomentum",  # pyright: ignore[reportUnsupportedDunderAll]
     # Fusion engines
-    "FusionMomentumEngine", # pyright: ignore[reportUnsupportedDunderAll]
-    "FusionPrecision", # pyright: ignore[reportUnsupportedDunderAll]
-    "FusionPrecisionEngine", # pyright: ignore[reportUnsupportedDunderAll]
+    "FusionMomentumEngine",  # pyright: ignore[reportUnsupportedDunderAll]
+    "FusionPrecision",  # pyright: ignore[reportUnsupportedDunderAll]
+    "FusionPrecisionEngine",  # pyright: ignore[reportUnsupportedDunderAll]
     "FusionStructure",
     "FusionStructureEngine",
     "InstitutionalPresence",
@@ -204,7 +205,11 @@ def create_engine_suite() -> dict[str, object]:
             suite[key] = cls()
         except Exception as exc:
             import logging  # noqa: PLC0415
+
             logging.getLogger(__name__).warning(
-                "Engine %r (%s) skipped: %s", key, cls_name, exc,
+                "Engine %r (%s) skipped: %s",
+                key,
+                cls_name,
+                exc,
             )
     return suite
