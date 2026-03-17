@@ -1,9 +1,12 @@
 /**
- * TUYUL FX Wolf-15 — WebSocket Connection Multiplexer
+ * TUYUL FX Wolf-15 — Realtime Connection Multiplexer
  *
- * Maintains a SINGLE WebSocket connection to /ws/live and fans out events
- * to all registered subscribers. This eliminates the overhead of N parallel
- * WebSocket connections (one per domain hook).
+ * Maintains a SINGLE realtime connection and fans out events to all
+ * registered subscribers. Transport fallback chain:
+ *
+ *   1. WebSocket (/ws/live)  — full-duplex, preferred
+ *   2. SSE (/sse/live)       — uni-directional, works through Vercel/CDN
+ *   3. REST polling           — last resort after 30s of WS+SSE failure
  *
  * Usage (in domain hooks):
  *   const unsub = subscribe({
@@ -15,17 +18,23 @@
  *   unsub();
  *
  * Lifecycle:
- *   - First subscriber triggers connection to /ws/live.
- *   - Last subscriber leaving closes the connection.
- *   - New subscribers arriving while connected get current status immediately.
+ *   - First subscriber triggers connection (WS first).
+ *   - WS DEGRADED/DISCONNECTED for 30s → SSE fallback.
+ *   - SSE DEGRADED → REST polling fallback.
+ *   - Last subscriber leaving closes all transports.
  *
  * For custom event types not in WsEventSchema (e.g. trade desk events),
  * use the `onRawMessage` callback which fires before Zod validation.
  */
 
 import { connectLiveUpdates, type WsControls, type WsConnectionStatus } from "./realtimeClient";
+import { connectSse, type SseControls } from "./sseClient";
 import type { WsEventParsed } from "@/schema/wsEventSchema";
 import type { SystemStatusView } from "@/contracts/wsEvents";
+
+// ─── TRANSPORT LAYER ─────────────────────────────────────────
+
+export type TransportMode = "WS" | "SSE" | "POLLING" | "NONE";
 
 // ─── TYPES ───────────────────────────────────────────────────
 
@@ -43,67 +52,184 @@ export interface MultiplexerSubscribeOptions {
 
 // ─── STATE ───────────────────────────────────────────────────
 
-let connection: WsControls | null = null;
+let wsConnection: WsControls | null = null;
+let sseConnection: SseControls | null = null;
 let currentStatus: WsConnectionStatus = "DISCONNECTED";
+let currentTransport: TransportMode = "NONE";
 let subscriberCounter = 0;
 const subscribers = new Map<number, MultiplexerSubscribeOptions>();
 
-// ─── INTERNAL ────────────────────────────────────────────────
+// SSE fallback timer: triggers SSE after 30s of WS failure
+const SSE_FALLBACK_DELAY_MS = 30_000;
+let sseFallbackTimer: ReturnType<typeof setTimeout> | null = null;
+let wsFailedAt: number | null = null;
 
-function openConnection(): void {
-    if (connection) return;
+// ─── INTERNAL: FAN-OUT HELPERS ───────────────────────────────
 
-    connection = connectLiveUpdates({
-        path: "/ws/live",
-        onEvent: (event) => {
-            for (const sub of subscribers.values()) {
-                if (!sub.filter || sub.filter(event)) {
-                    sub.onEvent?.(event);
-                }
-            }
-        },
-        onRawMessage: (data) => {
-            for (const sub of subscribers.values()) {
-                sub.onRawMessage?.(data);
-            }
-        },
+function fanOutEvent(event: WsEventParsed): void {
+    for (const sub of subscribers.values()) {
+        if (!sub.filter || sub.filter(event)) {
+            sub.onEvent?.(event);
+        }
+    }
+}
+
+function fanOutRaw(data: Record<string, unknown>): void {
+    for (const sub of subscribers.values()) {
+        sub.onRawMessage?.(data);
+    }
+}
+
+function fanOutStatus(status: WsConnectionStatus): void {
+    currentStatus = status;
+    for (const sub of subscribers.values()) {
+        sub.onStatusChange?.(status);
+    }
+}
+
+function fanOutDegradation(status: SystemStatusView): void {
+    for (const sub of subscribers.values()) {
+        sub.onDegradation?.(status);
+    }
+}
+
+function fanOutSeqGap(missed: number): void {
+    for (const sub of subscribers.values()) {
+        sub.onSeqGap?.(missed);
+    }
+}
+
+function fanOutError(error: unknown): void {
+    for (const sub of subscribers.values()) {
+        sub.onError?.(error);
+    }
+}
+
+// ─── INTERNAL: TRANSPORT MANAGEMENT ──────────────────────────
+
+function clearSseFallbackTimer(): void {
+    if (sseFallbackTimer) {
+        clearTimeout(sseFallbackTimer);
+        sseFallbackTimer = null;
+    }
+    wsFailedAt = null;
+}
+
+function closeSseTransport(): void {
+    if (sseConnection) {
+        sseConnection.close();
+        sseConnection = null;
+    }
+}
+
+function openSseConnection(): void {
+    if (sseConnection) return;
+
+    if (process.env.NODE_ENV === "development") {
+        console.debug("[MUX] WS failed for 30s — activating SSE fallback");
+    }
+
+    currentTransport = "SSE";
+
+    sseConnection = connectSse({
+        path: "/sse/live",
+        onEvent: fanOutEvent,
+        onRawMessage: fanOutRaw,
         onStatusChange: (status) => {
-            currentStatus = status;
-            for (const sub of subscribers.values()) {
-                sub.onStatusChange?.(status);
+            if (status === "LIVE") {
+                // SSE is working — update status to LIVE
+                fanOutStatus("LIVE");
+                fanOutDegradation({ mode: "SSE", reason: "Connected via SSE fallback" });
+            } else if (status === "DEGRADED") {
+                // SSE also failed — signal DEGRADED for REST polling fallback
+                fanOutStatus("DEGRADED");
+                fanOutDegradation({
+                    mode: "DEGRADED",
+                    reason: "Both WebSocket and SSE failed. REST polling active.",
+                });
             }
         },
-        onDegradation: (status) => {
-            for (const sub of subscribers.values()) {
-                sub.onDegradation?.(status);
-            }
-        },
-        onSeqGap: (missed) => {
-            for (const sub of subscribers.values()) {
-                sub.onSeqGap?.(missed);
-            }
-        },
-        onError: (error) => {
-            for (const sub of subscribers.values()) {
-                sub.onError?.(error);
-            }
-        },
+        onDegradation: fanOutDegradation,
+        onError: fanOutError,
     });
+}
+
+function startSseFallbackTimer(): void {
+    if (sseFallbackTimer) return; // already scheduled
+    if (sseConnection) return; // SSE already active
+
+    wsFailedAt = Date.now();
+    sseFallbackTimer = setTimeout(() => {
+        sseFallbackTimer = null;
+        // Only activate SSE if WS is still not LIVE
+        if (currentStatus !== "LIVE" && subscribers.size > 0) {
+            openSseConnection();
+        }
+    }, SSE_FALLBACK_DELAY_MS);
+}
+
+function openWsConnection(): void {
+    if (wsConnection) return;
+
+    currentTransport = "WS";
+
+    wsConnection = connectLiveUpdates({
+        path: "/ws/live",
+        onEvent: fanOutEvent,
+        onRawMessage: fanOutRaw,
+        onStatusChange: (status) => {
+            if (status === "LIVE") {
+                // WS recovered — tear down SSE if it was active
+                clearSseFallbackTimer();
+                if (sseConnection) {
+                    closeSseTransport();
+                    if (process.env.NODE_ENV === "development") {
+                        console.debug("[MUX] WS recovered — SSE fallback closed");
+                    }
+                }
+                currentTransport = "WS";
+                fanOutStatus("LIVE");
+            } else if (status === "DISCONNECTED" || status === "DEGRADED") {
+                // WS failed — start SSE fallback timer (30s)
+                startSseFallbackTimer();
+                fanOutStatus(status);
+            } else {
+                fanOutStatus(status);
+            }
+        },
+        onDegradation: fanOutDegradation,
+        onSeqGap: fanOutSeqGap,
+        onError: fanOutError,
+    });
+}
+
+function closeAllTransports(): void {
+    clearSseFallbackTimer();
+
+    if (wsConnection) {
+        wsConnection.close();
+        wsConnection = null;
+    }
+
+    closeSseTransport();
+
+    currentTransport = "NONE";
+    currentStatus = "DISCONNECTED";
 }
 
 // ─── PUBLIC API ──────────────────────────────────────────────
 
 /**
- * Subscribe to the shared WebSocket connection.
+ * Subscribe to the shared realtime connection (WS → SSE → polling fallback).
  * Returns an unsubscribe function — call it in useEffect cleanup.
  */
 export function subscribe(options: MultiplexerSubscribeOptions): () => void {
     const id = ++subscriberCounter;
     subscribers.set(id, options);
 
-    // Open the connection on first subscriber
+    // Open websocket on first subscriber
     if (subscribers.size === 1) {
-        openConnection();
+        openWsConnection();
     } else {
         // Notify new subscriber of current status immediately
         options.onStatusChange?.(currentStatus);
@@ -111,19 +237,18 @@ export function subscribe(options: MultiplexerSubscribeOptions): () => void {
 
     return () => {
         subscribers.delete(id);
-        if (subscribers.size === 0 && connection) {
-            connection.close();
-            connection = null;
-            currentStatus = "DISCONNECTED";
+        if (subscribers.size === 0) {
+            closeAllTransports();
         }
     };
 }
 
 /**
- * Send a message through the shared connection (e.g. subscription filters).
+ * Send a message through the shared WS connection (e.g. subscription filters).
+ * No-op when transport is SSE or polling (uni-directional).
  */
 export function send(payload: unknown): void {
-    connection?.send(payload);
+    wsConnection?.send(payload);
 }
 
 /**
@@ -134,12 +259,17 @@ export function getStatus(): WsConnectionStatus {
 }
 
 /**
- * Force-close the shared connection and clear all subscribers.
+ * Current active transport layer.
+ */
+export function getTransport(): TransportMode {
+    return currentTransport;
+}
+
+/**
+ * Force-close all transports and clear all subscribers.
  * Use on logout or when tearing down the app.
  */
 export function closeAll(): void {
-    connection?.close();
-    connection = null;
+    closeAllTransports();
     subscribers.clear();
-    currentStatus = "DISCONNECTED";
 }

@@ -2,7 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import { fetchLatestPipelineResult } from "@/services/pipelineService";
-import { subscribe } from "@/lib/realtime/multiplexer";
+import { subscribe, getTransport } from "@/lib/realtime/multiplexer";
 import { useAccountStore } from "@/store/useAccountStore";
 import { usePreferencesStore } from "@/store/usePreferencesStore";
 import { useSystemStore } from "@/store/useSystemStore";
@@ -12,7 +12,8 @@ interface UseLivePipelineOptions {
   accountId?: string;
 }
 
-const POLL_INTERVAL_MS = 15_000; // 15s REST polling fallback when WS is down
+const POLL_INTERVAL_MS = 15_000; // 15s REST polling fallback when both WS+SSE are down
+const POLL_FALLBACK_DELAY_MS = 30_000; // 30s before activating REST polling after stream loss
 
 const toComplianceState = (governance?: string): string => {
   if (!governance || governance === "OK") return "COMPLIANCE_NORMAL";
@@ -30,6 +31,7 @@ export function useLivePipeline(options: UseLivePipelineOptions = {}) {
   const setMode = useSystemStore((s) => s.setMode);
 
   const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const pollFallbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mountedRef = useRef(true);
 
   useEffect(() => {
@@ -69,7 +71,34 @@ export function useLivePipeline(options: UseLivePipelineOptions = {}) {
       }
     };
 
-    // Stream: live pipeline via multiplexed /ws/live
+    const clearPollFallbackTimer = () => {
+      if (pollFallbackTimerRef.current) {
+        clearTimeout(pollFallbackTimerRef.current);
+        pollFallbackTimerRef.current = null;
+      }
+    };
+
+    // Schedule REST polling after 30s if streams (WS+SSE) remain down
+    const schedulePollFallback = () => {
+      if (pollFallbackTimerRef.current) return; // already scheduled
+      pollFallbackTimerRef.current = setTimeout(() => {
+        pollFallbackTimerRef.current = null;
+        if (mountedRef.current) {
+          const transport = getTransport();
+          // Only start polling if no streaming transport is LIVE
+          if (transport !== "WS" && transport !== "SSE") {
+            setMode("POLLING");
+            setSystem({
+              mode: "POLLING",
+              reason: "WebSocket and SSE unavailable. Using REST polling.",
+            });
+            startPolling();
+          }
+        }
+      }, POLL_FALLBACK_DELAY_MS);
+    };
+
+    // Stream: live pipeline via multiplexed WS → SSE → polling chain
     const unsub = subscribe({
       filter: (e) =>
         e.type === "PipelineResultUpdated" ||
@@ -102,25 +131,38 @@ export function useLivePipeline(options: UseLivePipelineOptions = {}) {
       },
       onStatusChange: (status) => {
         setWsStatus(status);
+
         if (status === "LIVE") {
-          setMode("NORMAL");
+          // Stream is active (WS or SSE) — stop polling, cancel fallback timer
+          clearPollFallbackTimer();
           stopPolling();
-        } else {
-          setMode("DEGRADED");
-          // #90: Start REST polling fallback when WS is not LIVE
-          startPolling();
+
+          const transport = getTransport();
+          if (transport === "SSE") {
+            setMode("SSE");
+          } else {
+            setMode("NORMAL");
+          }
+        } else if (status === "DEGRADED" || status === "DISCONNECTED") {
+          // Stream lost — schedule REST polling fallback after 30s
+          // (multiplexer handles WS→SSE escalation internally at 30s)
+          schedulePollFallback();
         }
       },
       onDegradation: (status) => {
         setSystem(status);
+
+        // If degradation reports SSE mode, reflect that
+        if (status.mode === "SSE") {
+          setMode("SSE");
+        }
       },
       onError: (error) => {
-        setMode("DEGRADED");
         setSystem({
           mode: "DEGRADED",
           reason: error instanceof Error ? error.message : "Live pipeline channel error",
         });
-        startPolling();
+        schedulePollFallback();
       },
     });
 
@@ -128,6 +170,7 @@ export function useLivePipeline(options: UseLivePipelineOptions = {}) {
       mountedRef.current = false;
       unsub();
       stopPolling();
+      clearPollFallbackTimer();
     };
   }, [
     options.symbol,
