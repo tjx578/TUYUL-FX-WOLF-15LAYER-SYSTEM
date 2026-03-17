@@ -31,7 +31,7 @@ const PROXY_PREFIXES = [
     "/health",
     "/auth/",
     "/preferences",
-    "/pipeline/",
+    "/pipeline",
 ];
 
 function isProxyRoute(pathname: string): boolean {
@@ -128,6 +128,6 @@ export const config = {
          *   /_next/image    — optimised images
          *   /favicon.ico    — browser icon
          */
-        "/((?!login|api/|auth/|health|pipeline/|preferences/|_next/static|_next/image|favicon\\.ico).*)",
+        "/((?!login|api/|auth/|health(?:/|$)|pipeline(?:/|$)|preferences(?:/|$)|_next/|favicon\\.ico).*)",
     ],
 };
