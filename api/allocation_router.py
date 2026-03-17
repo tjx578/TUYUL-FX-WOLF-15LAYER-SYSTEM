@@ -48,6 +48,9 @@ _allocation_router_tracer = setup_tracer("wolf-api")
 
 # Stale-data threshold: reject write actions if context data is older than this.
 STALE_DATA_THRESHOLD_SEC = int(os.getenv("STALE_DATA_THRESHOLD_SEC", "300"))
+# Grace period after pipeline recovery: allow first fresh verdict through even if
+# age slightly exceeds the stale threshold (prevents the post-outage death spiral).
+RECOVERY_GRACE_SEC = int(os.getenv("STALE_RECOVERY_GRACE_SEC", "120"))
 
 
 # ── In-memory fallback stores ─────────────────────────────────────────────────
@@ -97,6 +100,12 @@ async def _check_stale_data(pair: str) -> None:
 
     Reads the verdict timestamp from Redis (or the L12 cache) and compares
     it against ``STALE_DATA_THRESHOLD_SEC``.  Raises 409 if stale.
+
+    A ``RECOVERY_GRACE_SEC`` window is applied after the threshold: verdicts
+    whose age falls between ``STALE_DATA_THRESHOLD_SEC`` and
+    ``STALE_DATA_THRESHOLD_SEC + RECOVERY_GRACE_SEC`` are allowed through
+    with a warning.  This prevents the post-outage death spiral where the
+    first fresh verdict after a pipeline restart is immediately rejected.
     """
     if STALE_DATA_THRESHOLD_SEC <= 0:
         return
@@ -121,12 +130,28 @@ async def _check_stale_data(pair: str) -> None:
 
     if verdict_ts is not None:
         age = datetime.now(UTC).timestamp() - verdict_ts
-        if age > STALE_DATA_THRESHOLD_SEC:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail=f"STALE_DATA: verdict for {pair} is {int(age)}s old "
-                f"(threshold: {STALE_DATA_THRESHOLD_SEC}s). Refresh context first.",
+        # Logic: check freshness first (early return avoids nesting), then
+        # grace period, then hard reject.  Equivalent to:
+        #   if age > threshold AND age > threshold+grace: reject
+        if age <= STALE_DATA_THRESHOLD_SEC:
+            return  # Fresh — proceed
+
+        # Verdict is stale. Check if it falls within the recovery grace window:
+        # the first verdict after a pipeline restart may be slightly over threshold
+        # but should still be allowed through to break the rejection cycle.
+        if age <= STALE_DATA_THRESHOLD_SEC + RECOVERY_GRACE_SEC:
+            logger.warning(
+                "[StaleGuard] %s verdict age=%.0fs exceeds threshold=%ds "
+                "but within recovery grace=%ds — allowing execution",
+                pair, age, STALE_DATA_THRESHOLD_SEC, RECOVERY_GRACE_SEC,
             )
+            return  # Grace period — allow
+
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"STALE_DATA: verdict for {pair} is {int(age)}s old "
+            f"(threshold: {STALE_DATA_THRESHOLD_SEC}s). Refresh context first.",
+        )
 
 
 # ── [BUG-1 FIX] Use FastAPI's APIRouter directly — no shadowing ───────────────
