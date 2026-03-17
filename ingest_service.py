@@ -352,7 +352,6 @@ async def _seed_redis_candle_history(
                         normalized["timestamp"] = ts.isoformat()
                     serialized.append(orjson.dumps(normalized).decode("utf-8"))
 
-                # Single RPUSH with all values — atomic, no pipeline flush issues
                 if serialized:
                     await redis.rpush(key, *serialized)
 
