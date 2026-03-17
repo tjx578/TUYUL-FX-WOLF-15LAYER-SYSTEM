@@ -184,6 +184,52 @@ class RedisConsumer:
                     timeframe,
                 )
 
+    async def load_candle_history_with_retry(
+        self,
+        max_retries: int = 10,
+        base_delay: float = 3.0,
+    ) -> bool:
+        """Retry warmup until candle seed appears in Redis.
+
+        Uses exponential backoff (capped at base_delay * 16) to wait for
+        the ingest service to seed candle data, preventing the engine from
+        starting in a permanently empty state.
+
+        Returns ``True`` if warmup loaded data for at least one symbol, ``False``
+        if all retries were exhausted.
+        """
+        for attempt in range(max_retries):
+            await self.load_candle_history()
+
+            for symbol in self._symbols:
+                for tf in WARMUP_TIMEFRAMES:
+                    candles = self._bus.get_candles(symbol, tf)
+                    if candles:
+                        logger.info(
+                            "Warmup succeeded on attempt %d/%d (%s:%s has %d candles)",
+                            attempt + 1,
+                            max_retries,
+                            symbol,
+                            tf,
+                            len(candles),
+                        )
+                        return True
+
+            delay = base_delay * (2 ** min(attempt, 4))
+            logger.warning(
+                "Warmup attempt %d/%d failed — retrying in %.1fs",
+                attempt + 1,
+                max_retries,
+                delay,
+            )
+            await asyncio.sleep(delay)
+
+        logger.error(
+            "Warmup FAILED after %d attempts — engine starting degraded",
+            max_retries,
+        )
+        return False
+
     async def _has_any_candle_seed(self) -> bool:
         """Fast probe to avoid O(symbol*timeframe) warmup scans when Redis is empty."""
         patterns = (

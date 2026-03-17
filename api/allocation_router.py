@@ -35,6 +35,7 @@ from accounts.risk_engine import RiskEngine  # noqa: F401
 from allocation.signal_service import SignalService
 from api.middleware.auth import verify_token
 from api.middleware.governance import enforce_write_policy
+from config_loader import load_pairs
 from execution.idempotency_ledger import ExecutionIdempotencyLedger
 from infrastructure.redis_client import get_client
 from infrastructure.tracing import inject_trace_context, setup_tracer
@@ -405,22 +406,46 @@ async def _global_news_lock_enabled() -> bool:
 
 
 async def _feed_staleness_seconds() -> float:
-    """Return feed staleness based on latest tick heartbeat in Redis."""
+    """Return feed staleness based on latest tick heartbeat in Redis.
+
+    Reads ``wolf15:latest_tick:{symbol}`` HSET keys written by
+    ``RedisContextBridge.write_tick()``.  Returns the staleness of the
+    *freshest* tick across all configured pairs (best-case metric).
+    """
     try:
         redis = cast(Any, await get_client())
-        latest = await redis.get("ctx:tick:latest")
-        if not latest:
-            return float("inf")
-        if isinstance(latest, bytes):
-            latest = latest.decode("utf-8", errors="ignore")
         import json as _json  # noqa: PLC0415
 
-        payload_raw = _json.loads(latest) if isinstance(latest, str) else {}
-        payload = cast(dict[str, Any], payload_raw) if isinstance(payload_raw, dict) else {}
-        ts = float(payload.get("timestamp", 0.0) or 0.0)
-        if ts <= 0:
+        pairs = load_pairs()
+        if not pairs:
             return float("inf")
-        return max(0.0, datetime.now(UTC).timestamp() - ts)
+
+        best_staleness = float("inf")
+        now_ts = datetime.now(UTC).timestamp()
+
+        for pair_cfg in pairs:
+            symbol = str(pair_cfg.get("symbol", ""))
+            if not symbol:
+                continue
+            raw_hash = await redis.hgetall(f"wolf15:latest_tick:{symbol}")
+            if not raw_hash:
+                continue
+            data_raw = raw_hash.get("data") or raw_hash.get(b"data")
+            if not data_raw:
+                continue
+            if isinstance(data_raw, bytes):
+                data_raw = data_raw.decode("utf-8", errors="ignore")
+            payload = _json.loads(data_raw) if isinstance(data_raw, str) else {}
+            if not isinstance(payload, dict):
+                continue
+            ts = float(payload.get("timestamp", 0.0) or 0.0)
+            if ts <= 0:
+                continue
+            staleness = max(0.0, now_ts - ts)
+            if staleness < best_staleness:
+                best_staleness = staleness
+
+        return best_staleness
     except Exception:
         return float("inf")
 

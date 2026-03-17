@@ -1572,7 +1572,18 @@ async def websocket_live_feed(websocket: fastapi.WebSocket):
         )
 
         while websocket in live_manager.active_connections:
-            # Keepalive periodic state update for clients that miss individual events
+            # Keepalive periodic state update for clients that miss individual events.
+            # Includes engine health so dashboard can distinguish "WS alive,
+            # engine stalled" from "WS dead".
+            engine_producing = False
+            with contextlib.suppress(Exception):
+                _pairs = load_pairs()
+                _sample_symbol = str(_pairs[0].get("symbol", "")) if _pairs else ""
+                if _sample_symbol:
+                    _v = await get_verdict_async(_sample_symbol)
+                    if _v and "_cached_at" in _v:
+                        engine_producing = (time.time() - float(_v["_cached_at"])) < 120
+
             ok = await live_manager.send_stamped(
                 websocket,
                 _ws_event(
@@ -1581,6 +1592,8 @@ async def websocket_live_feed(websocket: fastapi.WebSocket):
                         "signal_count": len(_signal_service.list_all()),
                         "account_count": len(await _account_manager.list_accounts_async()),
                         "active_trade_count": len(await _trade_ledger.get_active_trades_async()),
+                        "server_ts": time.time(),
+                        "engine_status": "ok" if engine_producing else "stalled",
                     },
                 ),
             )
