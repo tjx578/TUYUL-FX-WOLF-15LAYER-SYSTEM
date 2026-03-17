@@ -14,13 +14,13 @@ export type WsConnectionStatus =
   | "DISCONNECTED";
 
 export const STALE_THRESHOLDS_MS: Record<string, number> = {
-  prices: 3000,   // aggressive — prices should tick every second
-  trades: 8000,
-  risk: 10000,
-  equity: 10000,
-  signals: 15000,
-  verdicts: 15000,
-  pipeline: 15000,
-  candles: 1500,  // candle aggregator pushes every 500ms
-  alerts: 30000,  // alerts are event-driven, not periodic
+  prices: 5000,     // tick data — should arrive frequently
+  trades: 10000,    // trade events
+  risk: 15000,      // risk updates
+  equity: 15000,    // equity snapshots
+  signals: 90000,   // analysis loop = 60s + buffer
+  verdicts: 90000,  // verdict updates follow analysis loop
+  pipeline: 90000,  // pipeline results follow analysis loop
+  candles: 20000,   // candle close events (M15 = every 15 min, but partial updates more frequent)
+  alerts: 60000,    // alerts are event-driven
 } as const;

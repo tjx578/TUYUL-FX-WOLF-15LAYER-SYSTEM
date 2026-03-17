@@ -8,7 +8,7 @@ from context.live_context_bus import LiveContextBus
 class TestFeedStaleness:
     def setup_method(self):
         # Reset singleton for clean test
-        LiveContextBus._instance = None
+        LiveContextBus.reset_singleton()
         self.bus = LiveContextBus()
 
     def test_no_data_is_stale(self):
