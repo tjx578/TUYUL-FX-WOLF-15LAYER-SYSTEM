@@ -107,9 +107,9 @@ async def login(body: LoginRequest, response: Response) -> dict[str, Any]:
 
     # Try as static API key
     if validate_api_key(key):
-        token = create_token(sub="api_key_user", extra={"auth_method": "api_key"})
+        token = create_token(sub="api_key_user", extra={"role": "operator", "auth_method": "api_key"})
         set_auth_cookie(response, token)
-        user = _session_from_payload({"sub": "api_key_user", "auth_method": "api_key"})
+        user = _session_from_payload({"sub": "api_key_user", "role": "operator", "auth_method": "api_key"})
         return {"token": token, **user.model_dump()}
 
     # Diagnostic logging — never log actual keys, only metadata
