@@ -110,8 +110,8 @@ export default function GlobalStatusStrip({
           }}
         >
           <span
+            className="num"
             style={{
-              fontFamily: "var(--font-mono)",
               fontSize: 8,
               letterSpacing: "0.10em",
               color: "var(--text-faint)",
@@ -136,8 +136,8 @@ export default function GlobalStatusStrip({
               />
             )}
             <span
+              className="num"
               style={{
-                fontFamily: "var(--font-mono)",
                 fontSize: 10,
                 fontWeight: 800,
                 color: item.color,

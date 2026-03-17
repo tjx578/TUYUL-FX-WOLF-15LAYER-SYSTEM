@@ -5,6 +5,7 @@ import { useTradeDeskStore } from "@/store/useTradeDeskStore";
 import { TradeDeskResponseSchema } from "@/schema/tradeDeskSchema";
 import type { TradeDeskTrade } from "@/schema/tradeDeskSchema";
 import { bearerHeader, getTransportToken } from "@/lib/auth";
+import { createRafListBatcher } from "@/lib/realtime/rafBatcher";
 
 // ─── useLiveTrades ───────────────────────────────────────────
 // Connects to /ws/trades and patches the TradeDeskStore on each event.
@@ -27,6 +28,17 @@ export function useLiveTrades() {
     const ws = new WebSocket(url);
     wsRef.current = ws;
 
+    // RAF batcher: collapses burst trade_update events within the same frame
+    // into a single patchTrade call per trade_id (last-write-wins).
+    const patchBatcher = createRafListBatcher<TradeDeskTrade>({
+      getKey: (t) => t.trade_id,
+      onFlush: (trades) => {
+        for (const trade of trades) {
+          patchTrade(trade);
+        }
+      },
+    });
+
     ws.onmessage = (ev) => {
       try {
         const msg = JSON.parse(ev.data);
@@ -36,14 +48,17 @@ export function useLiveTrades() {
         if (eventType === "trade_update" || eventType === "TRADE_UPDATE") {
           const trade = payload as TradeDeskTrade;
           if (trade.trade_id) {
-            patchTrade(trade);
+            // Queue into RAF batcher — flushes once per animation frame
+            patchBatcher.push(trade);
           }
         } else if (eventType === "trade_removed" || eventType === "TRADE_REMOVED") {
           const tradeId = payload.trade_id;
+          // Removals are low-frequency; apply directly without batching
           if (tradeId) removeTrade(tradeId);
         } else if (eventType === "execution_mismatch" || eventType === "EXECUTION_MISMATCH") {
           const tradeId = payload.trade_id;
           const flags = payload.flags ?? [payload.message ?? "SYNC_MISMATCH"];
+          // Mismatch flags are low-frequency; apply directly without batching
           if (tradeId) setExecutionMismatch(tradeId, flags);
         }
       } catch {
@@ -52,6 +67,7 @@ export function useLiveTrades() {
     };
 
     ws.onclose = () => {
+      patchBatcher.dispose();
       wsRef.current = null;
       reconnectTimerRef.current = setTimeout(connect, 3000);
     };

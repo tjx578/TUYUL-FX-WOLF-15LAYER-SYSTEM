@@ -1,26 +1,23 @@
 // ============================================================
 // TUYUL FX Wolf-15 — AnimatedNumber (PnL Counter Engine)
-// Smooth number transition + directional color flash.
+// CSS-only smooth number transition + directional color flash.
 // Up → emerald flash | Down → red flash
 // Production-safe: degrades gracefully if value unchanged.
 //
-// PERF AUDIT (Part G): Only hot-path framer-motion usage.
-// Mitigations: React.memo(), imperative animate() (no reconciliation),
-// conditional motion.span (only renders on direction change).
-// Other framer-motion consumers (VerdictCard, RiskGauge, micro, EquityChart,
-// RouteTransition) are non-hot-path — update frequencies 2s–15s+.
+// PERF AUDIT (Part G): Zero external animation library dependencies.
+// Uses requestAnimationFrame for number interpolation (no React reconciliation),
+// CSS keyframes for color flash (no JS overhead during animation).
 // ============================================================
 "use client";
 
-import { memo, useEffect, useRef, useState } from "react";
-import { animate, motion } from "framer-motion";
+import { memo, useEffect, useRef, useState, useCallback } from "react";
 
 interface AnimatedNumberProps {
   value: number;
   decimals?: number;
   /** Optional prefix, e.g. "$" or "+" */
   prefix?: string;
-  /** Duration in seconds */
+  /** Duration in milliseconds */
   duration?: number;
   className?: string;
   /** Enable directional color flash on change */
@@ -31,13 +28,28 @@ function AnimatedNumber({
   value,
   decimals = 2,
   prefix = "",
-  duration = 0.6,
+  duration = 600,
   className,
   directionFlash = false,
 }: AnimatedNumberProps) {
   const [display, setDisplay] = useState(value);
-  const [direction, setDirection] = useState<"up" | "down" | null>(null);
+  const [flashClass, setFlashClass] = useState<string | null>(null);
   const prevRef = useRef(value);
+  const rafRef = useRef<number | null>(null);
+  const startTimeRef = useRef<number | null>(null);
+  const fromRef = useRef(value);
+
+  // Cleanup RAF on unmount
+  useEffect(() => {
+    return () => {
+      if (rafRef.current !== null) {
+        cancelAnimationFrame(rafRef.current);
+      }
+    };
+  }, []);
+
+  // easeOutCubic for smooth deceleration
+  const easeOutCubic = useCallback((t: number) => 1 - Math.pow(1 - t, 3), []);
 
   useEffect(() => {
     const from = prevRef.current;
@@ -46,40 +58,60 @@ function AnimatedNumber({
     // Skip animation for identical values
     if (from === value) return;
 
-    if (directionFlash) {
-      setDirection(value > from ? "up" : "down");
+    // Cancel any ongoing animation
+    if (rafRef.current !== null) {
+      cancelAnimationFrame(rafRef.current);
     }
 
-    const controls = animate(from, value, {
-      duration,
-      ease: "easeOut",
-      onUpdate: (v) => setDisplay(v),
-    });
+    // Trigger CSS flash class
+    if (directionFlash) {
+      const dir = value > from ? "flash-up" : "flash-down";
+      setFlashClass(dir);
+    }
 
-    return controls.stop;
-  }, [value, duration, directionFlash]);
+    // Setup RAF-based number interpolation
+    fromRef.current = from;
+    startTimeRef.current = null;
 
-  if (directionFlash && direction !== null) {
-    return (
-      <motion.span
-        className={className}
-        animate={{
-          color:
-            direction === "up"
-              ? ["#00F5A0", "var(--text-primary)"]
-              : ["#FF4D4F", "var(--text-primary)"],
-        }}
-        transition={{ duration: 0.6, ease: "easeOut" }}
-        onAnimationComplete={() => setDirection(null)}
-      >
-        {prefix}
-        {display.toFixed(decimals)}
-      </motion.span>
-    );
-  }
+    const animate = (timestamp: number) => {
+      if (startTimeRef.current === null) {
+        startTimeRef.current = timestamp;
+      }
+
+      const elapsed = timestamp - startTimeRef.current;
+      const progress = Math.min(elapsed / duration, 1);
+      const easedProgress = easeOutCubic(progress);
+
+      const currentValue = fromRef.current + (value - fromRef.current) * easedProgress;
+      setDisplay(currentValue);
+
+      if (progress < 1) {
+        rafRef.current = requestAnimationFrame(animate);
+      } else {
+        rafRef.current = null;
+        startTimeRef.current = null;
+      }
+    };
+
+    rafRef.current = requestAnimationFrame(animate);
+  }, [value, duration, directionFlash, easeOutCubic]);
+
+  // Clear flash class after animation completes (600ms matches CSS keyframe)
+  useEffect(() => {
+    if (flashClass === null) return;
+
+    const timer = setTimeout(() => {
+      setFlashClass(null);
+    }, 600);
+
+    return () => clearTimeout(timer);
+  }, [flashClass]);
+
+  // Combine className with flash class
+  const combinedClass = [className, flashClass].filter(Boolean).join(" ") || undefined;
 
   return (
-    <span className={className}>
+    <span className={combinedClass}>
       {prefix}
       {display.toFixed(decimals)}
     </span>
@@ -87,6 +119,6 @@ function AnimatedNumber({
 }
 
 // Re-export as memo to avoid re-renders from parent on hot-path (tick-rate price updates).
-// framer-motion audit: animate() is imperative (no React reconciliation cost),
-// motion.span only renders when directionFlash fires (conditional).
+// CSS-only flash animation: uses .flash-up / .flash-down classes defined in globals.css
+// with @keyframes value-flash-up / value-flash-down (no JS animation overhead).
 export default memo(AnimatedNumber);
