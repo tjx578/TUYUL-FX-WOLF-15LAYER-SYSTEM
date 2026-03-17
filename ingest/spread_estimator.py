@@ -12,46 +12,17 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-# Average spreads in pips per pair (during normal London/NY session)
-# Source: typical retail broker conditions for major/minor/cross pairs
-PAIR_SPREADS_PIPS: dict[str, float] = {
-    # Majors
-    "EURUSD": 1.0,
-    "GBPUSD": 1.2,
-    "USDJPY": 1.0,
-    "USDCHF": 1.3,
-    "AUDUSD": 1.2,
-    "USDCAD": 1.4,
-    "NZDUSD": 1.5,
-    # Minors / Crosses
-    "EURGBP": 1.5,
-    "EURJPY": 1.5,
-    "GBPJPY": 2.0,
-    "AUDJPY": 1.8,
-    "EURAUD": 2.0,
-    "EURCHF": 1.8,
-    "GBPAUD": 2.5,
-    "GBPCAD": 2.5,
-    "GBPCHF": 2.5,
-    "AUDCAD": 2.0,
-    "AUDNZD": 2.0,
-    "NZDJPY": 2.0,
-    "CADJPY": 2.0,
-    "CHFJPY": 2.0,
-    # Exotics (wider)
-    "USDMXN": 30.0,
-    "USDTRY": 50.0,
-    "USDZAR": 40.0,
-    "USDSGD": 3.0,
-    "USDHKD": 3.0,
-    "XAUUSD": 30.0,
-}
+from config.pair_spreads import DEFAULT_SPREAD_PIPS, PAIR_SPREADS_PIPS  # noqa: F401
 
 # Pip value per pair (how many price units = 1 pip)
 PIP_VALUES: dict[str, float] = {
     # JPY pairs: 1 pip = 0.01
-    "USDJPY": 0.01, "EURJPY": 0.01, "GBPJPY": 0.01,
-    "AUDJPY": 0.01, "NZDJPY": 0.01, "CADJPY": 0.01,
+    "USDJPY": 0.01,
+    "EURJPY": 0.01,
+    "GBPJPY": 0.01,
+    "AUDJPY": 0.01,
+    "NZDJPY": 0.01,
+    "CADJPY": 0.01,
     "CHFJPY": 0.01,
     # Gold
     "XAUUSD": 0.10,
@@ -61,7 +32,7 @@ DEFAULT_PIP_VALUE = 0.0001  # For most pairs
 
 # Session multipliers (spreads widen during off-peak)
 SESSION_MULTIPLIER = {
-    "OVERLAP": 1.0,      # London-NY overlap: tightest
+    "OVERLAP": 1.0,  # London-NY overlap: tightest
     "LONDON": 1.1,
     "NEWYORK": 1.1,
     "TOKYO": 1.4,
@@ -121,7 +92,7 @@ def estimate_spread(
     pip_value = PIP_VALUES.get(sym_clean, DEFAULT_PIP_VALUE)
 
     # Get base spread in pips
-    base_spread_pips = PAIR_SPREADS_PIPS.get(sym_clean, 2.0)
+    base_spread_pips = PAIR_SPREADS_PIPS.get(sym_clean, DEFAULT_SPREAD_PIPS)
 
     # Session multiplier
     if timestamp:

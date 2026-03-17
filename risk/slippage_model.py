@@ -63,45 +63,9 @@ class SlippageEstimate:
 
 
 # ── Pair liquidity profiles ─────────────────────────────────────────
-# Base spreads in pips under normal (London session) conditions.
-
-_BASE_SPREADS: dict[str, float] = {
-    # Forex majors — tight spreads
-    "EURUSD": 1.0,
-    "GBPUSD": 1.2,
-    "USDJPY": 1.0,
-    "USDCHF": 1.3,
-    "AUDUSD": 1.2,
-    "NZDUSD": 1.4,
-    "USDCAD": 1.3,
-    # Crosses — wider spreads
-    "EURJPY": 1.5,
-    "GBPJPY": 2.0,
-    "EURGBP": 1.3,
-    "EURAUD": 2.0,
-    "EURNZD": 2.5,
-    "EURCAD": 2.0,
-    "EURCHF": 1.5,
-    "GBPAUD": 2.5,
-    "GBPNZD": 3.0,
-    "GBPCAD": 2.5,
-    "GBPCHF": 2.0,
-    "AUDNZD": 2.0,
-    "AUDCAD": 2.0,
-    "AUDCHF": 2.0,
-    "AUDJPY": 1.8,
-    "NZDJPY": 2.0,
-    "NZDCAD": 2.5,
-    "NZDCHF": 2.5,
-    "CADJPY": 2.0,
-    "CADCHF": 2.5,
-    "CHFJPY": 2.0,
-    # Commodities — wider spreads
-    "XAUUSD": 3.0,
-    "XAGUSD": 3.5,
-}
-
-_DEFAULT_BASE_SPREAD = 2.0  # Fallback for unknown pairs
+# Imported from shared config (single source of truth).
+from config.pair_spreads import DEFAULT_SPREAD_PIPS as _DEFAULT_BASE_SPREAD  # noqa: E402
+from config.pair_spreads import PAIR_SPREADS_PIPS as _BASE_SPREADS  # noqa: E402
 
 # ── Session multipliers ──────────────────────────────────────────────
 _SESSION_SPREAD_MULT: dict[str, float] = {
