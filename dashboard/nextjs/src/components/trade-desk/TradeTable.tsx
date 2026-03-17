@@ -1,6 +1,6 @@
 "use client";
 
-import React from "react";
+import React, { useCallback } from "react";
 import type { TradeDeskTrade } from "@/schema/tradeDeskSchema";
 import { TradeStatusBadge, SyncMismatchIndicator } from "./TradeStatusBadge";
 
@@ -45,7 +45,8 @@ interface TradeTableRowProps {
     mismatchFlags?: string[];
 }
 
-export function TradeTableRow({ trade, isSelected, onSelect, mismatchFlags }: TradeTableRowProps) {
+export const TradeTableRow = React.memo(
+  function TradeTableRow({ trade, isSelected, onSelect, mismatchFlags }: TradeTableRowProps) {
     const pair = trade.pair ?? "—";
     const dir = trade.direction;
     const lot = trade.lot_size;
@@ -116,7 +117,15 @@ export function TradeTableRow({ trade, isSelected, onSelect, mismatchFlags }: Tr
             </td>
         </tr>
     );
-}
+  },
+  (prev, next) =>
+    prev.trade.trade_id === next.trade.trade_id &&
+    prev.trade.pnl === next.trade.pnl &&
+    prev.trade.status === next.trade.status &&
+    prev.isSelected === next.isSelected &&
+    prev.onSelect === next.onSelect &&
+    prev.mismatchFlags === next.mismatchFlags,
+);
 
 // ── TradeTable ───────────────────────────────────────────────
 
@@ -137,6 +146,9 @@ export function TradeTable({
     executionMismatchFlags = {},
     emptyMessage = "No trades in this tab.",
 }: TradeTableProps) {
+    // stable reference so memoized rows don't re-render on every parent render
+    const handleSelect = useCallback((id: string) => onSelectTrade(id), [onSelectTrade]);
+
     if (trades.length === 0) {
         return (
             <div
@@ -172,7 +184,7 @@ export function TradeTable({
                             key={t.trade_id}
                             trade={t}
                             isSelected={selectedTradeId === t.trade_id}
-                            onSelect={onSelectTrade}
+                            onSelect={handleSelect}
                             mismatchFlags={executionMismatchFlags[t.trade_id]}
                         />
                     ))}

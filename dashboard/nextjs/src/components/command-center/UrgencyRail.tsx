@@ -47,8 +47,8 @@ export default function UrgencyRail({ signals, accounts, onTake }: UrgencyRailPr
           aria-hidden="true"
         />
         <span
+          className="num"
           style={{
-            fontFamily: "var(--font-mono)",
             fontSize: 9,
             fontWeight: 800,
             color: "var(--accent)",
@@ -59,9 +59,9 @@ export default function UrgencyRail({ signals, accounts, onTake }: UrgencyRailPr
         </span>
         <Link
           href="/trades/signals"
+          className="num"
           style={{
             marginLeft: "auto",
-            fontFamily: "var(--font-mono)",
             fontSize: 9,
             color: "var(--text-muted)",
             textDecoration: "none",
@@ -95,8 +95,8 @@ export default function UrgencyRail({ signals, accounts, onTake }: UrgencyRailPr
             >
               {/* Pair */}
               <span
+                className="num"
                 style={{
-                  fontFamily: "var(--font-mono)",
                   fontSize: 12,
                   fontWeight: 800,
                   color: "var(--text-primary)",
@@ -108,8 +108,8 @@ export default function UrgencyRail({ signals, accounts, onTake }: UrgencyRailPr
 
               {/* Verdict badge */}
               <span
+                className="num"
                 style={{
-                  fontFamily: "var(--font-mono)",
                   fontSize: 9,
                   fontWeight: 700,
                   letterSpacing: "0.05em",
@@ -126,8 +126,8 @@ export default function UrgencyRail({ signals, accounts, onTake }: UrgencyRailPr
 
               {/* Confidence */}
               <span
+                className="num"
                 style={{
-                  fontFamily: "var(--font-mono)",
                   fontSize: 10,
                   color: "var(--text-muted)",
                 }}
@@ -138,8 +138,8 @@ export default function UrgencyRail({ signals, accounts, onTake }: UrgencyRailPr
               {/* RR */}
               {sig.risk_reward_ratio && (
                 <span
+                  className="num"
                   style={{
-                    fontFamily: "var(--font-mono)",
                     fontSize: 10,
                     color:
                       sig.risk_reward_ratio >= 2
@@ -155,8 +155,8 @@ export default function UrgencyRail({ signals, accounts, onTake }: UrgencyRailPr
               {/* Expiry */}
               {sig.expires_at && (
                 <span
+                  className="num"
                   style={{
-                    fontFamily: "var(--font-mono)",
                     fontSize: 9,
                     color: "var(--yellow)",
                     marginLeft: "auto",
@@ -174,6 +174,7 @@ export default function UrgencyRail({ signals, accounts, onTake }: UrgencyRailPr
               <button
                 onClick={() => onTake(sig)}
                 disabled={accounts.length === 0}
+                className="num"
                 style={{
                   padding: "4px 14px",
                   borderRadius: "var(--radius-sm)",
@@ -184,7 +185,6 @@ export default function UrgencyRail({ signals, accounts, onTake }: UrgencyRailPr
                   fontWeight: 800,
                   letterSpacing: "0.08em",
                   cursor: accounts.length === 0 ? "not-allowed" : "pointer",
-                  fontFamily: "var(--font-mono)",
                   opacity: accounts.length === 0 ? 0.4 : 1,
                   flexShrink: 0,
                   marginLeft: sig.expires_at ? 0 : "auto",

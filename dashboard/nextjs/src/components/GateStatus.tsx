@@ -19,9 +19,9 @@ export function GateStatus({ gates, compact = false }: GateStatusProps) {
     return (
       <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
         <span
+          className="num"
           style={{
             fontSize: 11,
-            fontFamily: "var(--font-mono)",
             color: allPassed ? "var(--green)" : "var(--yellow)",
           }}
         >
@@ -101,9 +101,9 @@ export function GateStatus({ gates, compact = false }: GateStatusProps) {
           </span>
           {gate.message && (
             <span
+              className="num"
               style={{
                 fontSize: 10,
-                fontFamily: "var(--font-mono)",
                 color: "var(--text-muted)",
               }}
             >
