@@ -68,6 +68,7 @@ class CrossInstanceRelay:
         self._redis: aioredis.Redis | None = redis_client
         self._managers: dict[str, object] = {}  # name → ConnectionManager
         self._pubsub: aioredis.client.PubSub | None = None  # pyright: ignore[reportAttributeAccessIssue]
+        self._pubsub_client: aioredis.Redis | None = None  # dedicated client with no socket timeout
         self._listener_task: asyncio.Task[None] | None = None
         self._running = False
 
@@ -176,11 +177,32 @@ class CrossInstanceRelay:
                 backoff = min(backoff * 2, max_backoff)
 
     async def _ensure_pubsub(self) -> None:
-        """(Re)create pubsub subscription if needed."""
+        """(Re)create pubsub subscription if needed.
+
+        Uses a dedicated Redis client with no socket_timeout so the
+        long-polling Pub/Sub listener can block indefinitely without
+        triggering spurious TimeoutErrors.
+        """
         if self._pubsub is not None:
             return
-        client = await self._ensure_redis()
-        pubsub = client.pubsub()
+
+        if self._pubsub_client is None:
+            from infrastructure.redis_url import get_redis_url
+
+            url = get_redis_url()
+            use_tls = url.startswith("rediss://")
+            pool = aioredis.ConnectionPool.from_url(
+                url,
+                decode_responses=True,
+                max_connections=2,
+                socket_timeout=None,  # Pub/Sub idles — no read timeout
+                socket_connect_timeout=10.0,  # connect still has a deadline
+                socket_keepalive=True,
+                **({"ssl": True} if use_tls else {}),
+            )
+            self._pubsub_client = aioredis.Redis(connection_pool=pool)
+
+        pubsub = self._pubsub_client.pubsub()
         channels = [f"{WS_CROSS_INSTANCE_PREFIX}{name}" for name in self._managers]
         await pubsub.subscribe(*channels)
         self._pubsub = pubsub
@@ -195,6 +217,10 @@ class CrossInstanceRelay:
             except Exception:
                 pass
             self._pubsub = None
+        if self._pubsub_client:
+            with contextlib.suppress(Exception):
+                await self._pubsub_client.aclose()
+            self._pubsub_client = None
 
     async def broadcast(self, manager_name: str, message: dict) -> None:
         """
@@ -209,11 +235,19 @@ class CrossInstanceRelay:
             if broadcast_fn is not None:
                 await broadcast_fn(message)
 
-        # Publish to Redis for peer instances
-        client = await self._ensure_redis()
-        channel = f"{WS_CROSS_INSTANCE_PREFIX}{manager_name}"
-        envelope = json.dumps({"instance": _INSTANCE_ID, "payload": message})
-        await client.publish(channel, envelope)
+        # Publish to Redis for peer instances (best-effort; timeout must not
+        # crash the caller — local broadcast already succeeded above).
+        try:
+            client = await self._ensure_redis()
+            channel = f"{WS_CROSS_INSTANCE_PREFIX}{manager_name}"
+            envelope = json.dumps({"instance": _INSTANCE_ID, "payload": message})
+            await client.publish(channel, envelope)
+        except Exception:
+            logger.warning(
+                "CrossInstanceRelay: publish failed for %s (Redis timeout?)",
+                manager_name,
+                exc_info=True,
+            )
 
     async def stop(self) -> None:
         """Stop listening and clean up."""
