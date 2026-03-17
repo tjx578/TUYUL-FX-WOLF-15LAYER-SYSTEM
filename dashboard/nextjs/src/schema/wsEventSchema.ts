@@ -79,6 +79,38 @@ export const PipelineUpdatedEventSchema = z.object({
   payload: PipelineUpdatedPayloadSchema,
 });
 
+// ── Domain event types (mapped from backend by realtimeClient) ──
+
+export const SignalUpdatedEventSchema = z.object({
+  type: z.literal("SignalUpdated"),
+  payload: z.record(z.string(), z.unknown()),
+});
+
+export const TradeSnapshotEventSchema = z.object({
+  type: z.literal("TradeSnapshot"),
+  payload: z.record(z.string(), z.unknown()),
+});
+
+export const TradeUpdatedEventSchema = z.object({
+  type: z.literal("TradeUpdated"),
+  payload: z.record(z.string(), z.unknown()),
+});
+
+export const CandleSnapshotEventSchema = z.object({
+  type: z.literal("CandleSnapshot"),
+  payload: z.record(z.string(), z.unknown()),
+});
+
+export const CandleFormingEventSchema = z.object({
+  type: z.literal("CandleForming"),
+  payload: z.record(z.string(), z.unknown()),
+});
+
+export const EquityUpdatedEventSchema = z.object({
+  type: z.literal("EquityUpdated"),
+  payload: z.record(z.string(), z.unknown()),
+});
+
 export const WsEventSchema = z.discriminatedUnion("type", [
   // Legacy / frontend-native
   PipelineResultUpdatedEventSchema,
@@ -93,6 +125,13 @@ export const WsEventSchema = z.discriminatedUnion("type", [
   VerdictUpdatedEventSchema,
   VerdictSnapshotEventSchema,
   PipelineUpdatedEventSchema,
+  // Domain events (mapped from backend)
+  SignalUpdatedEventSchema,
+  TradeSnapshotEventSchema,
+  TradeUpdatedEventSchema,
+  CandleSnapshotEventSchema,
+  CandleFormingEventSchema,
+  EquityUpdatedEventSchema,
 ]);
 
 export type WsEvent = z.infer<typeof WsEventSchema>;

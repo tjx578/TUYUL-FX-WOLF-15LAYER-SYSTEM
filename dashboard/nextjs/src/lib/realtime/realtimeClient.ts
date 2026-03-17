@@ -183,11 +183,16 @@ export function connectLiveUpdates(
           lastSeq = seq;
         }
 
-        const event = WsEventSchema.parse(parsed);
-        onEvent(event);
-
-        if (event.type === "SystemStatusUpdated") {
-          onDegradation?.(event.payload);
+        // ── Safe parse: unknown event types are skipped, valid events pass through ──
+        const normalised = normalizeWsEvent(parsed);
+        const result = WsEventSchema.safeParse(normalised);
+        if (result.success) {
+          onEvent(result.data);
+          if (result.data.type === "SystemStatusUpdated") {
+            onDegradation?.(result.data.payload);
+          }
+        } else if (process.env.NODE_ENV === "development") {
+          console.debug("[WS] Unknown/invalid event type, skipping:", normalised.type ?? parsed.type);
         }
       } catch (err) {
         onError?.(err);
