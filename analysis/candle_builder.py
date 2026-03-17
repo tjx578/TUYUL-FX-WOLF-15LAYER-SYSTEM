@@ -10,12 +10,15 @@ Zone: analysis (read-only re-export). No side-effects.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from collections import deque
 from collections.abc import Iterator
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any  # noqa: UP035
+
+import orjson
 
 from ingest.candle_builder import (  # noqa: F401
     Candle,
@@ -145,6 +148,9 @@ _orderflow_states: dict[str, _OrderFlowState] = {}
 # Store the most recently completed candles for downstream consumers
 _completed_candle_log: deque[Candle] = deque(maxlen=500)
 
+# Max length for the per-symbol Redis candle history list
+_REDIS_HISTORY_MAXLEN = 500
+
 
 def _on_candle_complete(candle: Candle) -> None:
     """Callback: log completed candles and enqueue for PostgreSQL persistence."""
@@ -164,6 +170,30 @@ def _on_candle_complete(candle: Candle) -> None:
         enqueue_candle(candle)
     except Exception:
         pass  # persistence is best-effort; never block the pipeline
+
+    # Write completed candle to Redis list for engine consumption.
+    # This is the bridge between real-time tick→candle flow and the engine
+    # pipeline which reads from wolf15:candle_history:{SYMBOL}:{TF}.
+    try:
+        loop = asyncio.get_running_loop()
+        loop.create_task(_push_candle_to_redis(candle))
+    except RuntimeError:
+        pass  # no running loop — skip (e.g. unit tests)
+
+
+async def _push_candle_to_redis(candle: Candle) -> None:
+    """Fire-and-forget: append a completed candle to the Redis history list."""
+
+    try:
+        from infrastructure.redis_client import get_client
+
+        redis = await get_client()
+        key = f"wolf15:candle_history:{candle.symbol}:{candle.timeframe}"
+        candle_json = orjson.dumps(candle.to_dict()).decode("utf-8")
+        await redis.rpush(key, candle_json)  # type: ignore[misc]
+        await redis.ltrim(key, -_REDIS_HISTORY_MAXLEN, -1)  # type: ignore[misc]
+    except Exception as exc:
+        logger.debug("Redis candle push failed (best-effort): %s", exc)
 
 
 def _get_builder(symbol: str) -> MultiTimeframeCandleBuilder:
