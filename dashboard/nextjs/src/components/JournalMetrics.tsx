@@ -192,9 +192,9 @@ function TimelineEntry({ entry }: { entry: JournalEntry }) {
     >
       {/* Time */}
       <span
+        className="num"
         style={{
           fontSize: 10,
-          fontFamily: "var(--font-mono)",
           color: "var(--text-muted)",
           minWidth: 55,
           flexShrink: 0,

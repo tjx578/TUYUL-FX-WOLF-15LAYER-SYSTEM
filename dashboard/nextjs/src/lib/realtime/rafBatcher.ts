@@ -9,14 +9,23 @@
  * frame (~16ms at 60fps), collapsing duplicate keys (e.g. same symbol
  * price updates) so only the latest value per key reaches the consumer.
  *
- * Usage:
+ * Two variants:
+ *   - createRafBatcher<T>  — key→value map batcher (prices, map-keyed data)
+ *   - createRafListBatcher<T> — list upsert batcher (trades, list-keyed data)
+ *
+ * Usage (map):
  *   const batcher = createRafBatcher<PriceData>({
- *     keyFn: (event) => event.symbol,
  *     onFlush: (batch) => setPriceMap((prev) => mergeMap(prev, batch)),
  *   });
- *   // In WS onMessage:
  *   batcher.push(symbol, priceData);
- *   // On cleanup:
+ *   batcher.dispose();
+ *
+ * Usage (list):
+ *   const batcher = createRafListBatcher<Trade>({
+ *     getKey: (t) => t.trade_id,
+ *     onFlush: (items) => setTrades((prev) => applyUpserts(prev, items)),
+ *   });
+ *   batcher.push(trade);
  *   batcher.dispose();
  *
  * When RAF batching is not needed, pass events directly to stores as before.
@@ -102,6 +111,91 @@ export function createRafBatcher<T>(options: RafBatcherOptions<T>): RafBatcher<T
         dispose,
         get pending() {
             return count;
+        },
+    };
+}
+
+// ── createRafListBatcher ──────────────────────────────────────
+//
+// List-aware variant of the RAF batcher.
+// Pending items are stored as a Map<key, T> (last-write-wins per key),
+// then flushed as an ordered array once per animation frame.
+//
+// Suitable for trade lists where the same trade_id may arrive multiple times
+// within a single frame burst and only the latest state should be applied.
+
+export interface RafListBatcherOptions<T> {
+    /** Extract the deduplication key from an item. */
+    getKey: (item: T) => string;
+    /** Called once per frame with the deduplicated upsert array. */
+    onFlush: (items: T[]) => void;
+    /** Maximum pending items before an immediate flush (backpressure). */
+    maxBufferSize?: number;
+}
+
+export interface RafListBatcher<T> {
+    push: (item: T) => void;
+    flush: () => void;
+    dispose: () => void;
+    readonly pending: number;
+}
+
+export function createRafListBatcher<T>(options: RafListBatcherOptions<T>): RafListBatcher<T> {
+    const { getKey, onFlush, maxBufferSize = DEFAULT_MAX_BUFFER } = options;
+
+    let buffer = new Map<string, T>();
+    let rafId: number | null = null;
+    let disposed = false;
+
+    function scheduleFlush() {
+        if (rafId !== null || disposed) return;
+        rafId = requestAnimationFrame(() => {
+            rafId = null;
+            doFlush();
+        });
+    }
+
+    function doFlush() {
+        if (buffer.size === 0) return;
+        const items = Array.from(buffer.values());
+        buffer = new Map();
+        onFlush(items);
+    }
+
+    function push(item: T) {
+        if (disposed) return;
+        buffer.set(getKey(item), item);
+
+        if (buffer.size >= maxBufferSize) {
+            if (rafId !== null) {
+                cancelAnimationFrame(rafId);
+                rafId = null;
+            }
+            doFlush();
+        } else {
+            scheduleFlush();
+        }
+    }
+
+    function flush() {
+        if (rafId !== null) {
+            cancelAnimationFrame(rafId);
+            rafId = null;
+        }
+        doFlush();
+    }
+
+    function dispose() {
+        disposed = true;
+        flush();
+    }
+
+    return {
+        push,
+        flush,
+        dispose,
+        get pending() {
+            return buffer.size;
         },
     };
 }

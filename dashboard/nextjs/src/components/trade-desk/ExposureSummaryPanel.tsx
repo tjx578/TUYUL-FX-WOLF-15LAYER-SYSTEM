@@ -63,6 +63,7 @@ export function ExposureSummaryPanel({ exposure }: ExposureSummaryPanelProps) {
                         {exposure.by_pair.map((p) => (
                             <div
                                 key={p.pair}
+                                className="num"
                                 style={{
                                     display: "flex",
                                     justifyContent: "space-between",
@@ -71,7 +72,6 @@ export function ExposureSummaryPanel({ exposure }: ExposureSummaryPanelProps) {
                                     borderRadius: 4,
                                     background: "var(--bg-elevated)",
                                     fontSize: 11,
-                                    fontFamily: "var(--font-mono)",
                                 }}
                             >
                                 <span style={{ fontWeight: 700, color: "var(--text-primary)" }}>{p.pair}</span>
@@ -109,6 +109,7 @@ export function ExposureSummaryPanel({ exposure }: ExposureSummaryPanelProps) {
                         {exposure.by_account.map((a) => (
                             <div
                                 key={a.account_id}
+                                className="num"
                                 style={{
                                     display: "flex",
                                     justifyContent: "space-between",
@@ -117,7 +118,6 @@ export function ExposureSummaryPanel({ exposure }: ExposureSummaryPanelProps) {
                                     borderRadius: 4,
                                     background: "var(--bg-elevated)",
                                     fontSize: 11,
-                                    fontFamily: "var(--font-mono)",
                                 }}
                             >
                                 <span style={{ color: "var(--text-secondary)" }}>{a.account_id.slice(0, 12)}</span>
