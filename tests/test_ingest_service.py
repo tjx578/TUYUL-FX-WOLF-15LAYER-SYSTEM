@@ -183,3 +183,31 @@ def test_cold_start_m15_removed_from_module(
     assert not hasattr(
         ingest_service_module, "_cold_start_m15_for_warmup"
     ), "_cold_start_m15_for_warmup still present — should have been removed. M15 must come from tick data only."
+
+
+@pytest.mark.asyncio
+async def test_seed_redis_chunks_large_payload(
+    ingest_service_module: Any,
+) -> None:
+    """When candle count exceeds the chunk size, rpush must be called multiple times.
+
+    _SEED_RPUSH_CHUNK_SIZE = 50, so 120 candles → 3 rpush calls (50 + 50 + 20).
+    """
+    fake_redis = MagicMock()
+    fake_redis.llen = AsyncMock(return_value=0)
+    fake_redis.delete = AsyncMock()
+    fake_redis.rpush = AsyncMock()
+
+    candles = [{"close": float(i)} for i in range(120)]
+    warmup_results = {"EURUSD": {"H1": candles}}
+
+    await ingest_service_module._seed_redis_candle_history(fake_redis, warmup_results)
+
+    # 120 candles ÷ 50 chunk size = 3 calls (50 + 50 + 20)
+    assert fake_redis.rpush.await_count == 3
+    # Each call's first arg is the Redis key
+    for call in fake_redis.rpush.call_args_list:
+        assert call.args[0] == "wolf15:candle_history:EURUSD:H1"
+    # Verify chunk sizes: first two chunks hold 50, last holds 20
+    chunk_sizes = [len(call.args) - 1 for call in fake_redis.rpush.call_args_list]
+    assert chunk_sizes == [50, 50, 20]
