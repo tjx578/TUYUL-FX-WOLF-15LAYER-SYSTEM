@@ -33,7 +33,7 @@ import json
 import os
 import time
 import uuid as _uuid
-from collections import defaultdict, deque
+from collections import deque
 from collections.abc import Mapping
 from typing import Any, TypedDict, cast
 
@@ -260,14 +260,63 @@ class CandleBar(TypedDict):
 
 
 class CandleAggregator:
-    """Builds OHLC candle bars from incoming tick data in real-time."""
+    """Builds OHLC candle bars from incoming tick data in real-time.
+
+    Delegates to ``ingest.candle_builder.CandleBuilder`` for the actual OHLC
+    construction, keeping a single source of truth for candle building logic.
+
+    Unlike the pipeline's ``MultiTimeframeCandleBuilder`` (which chains
+    M1→M5→…), this class feeds ticks directly into *every* timeframe so
+    the WS endpoint can push forming bars at all resolutions immediately.
+    """
 
     TIMEFRAMES = {"M1": 60, "M5": 300, "M15": 900, "H1": 3600}
 
     def __init__(self) -> None:
         super().__init__()
-        # {symbol: {timeframe: {open, high, low, close, volume, ts_open, ts_close}}}
-        self._bars: dict[str, dict[str, CandleBar]] = defaultdict(dict)
+        from datetime import UTC
+        from datetime import datetime as _dt
+
+        from ingest.candle_builder import CandleBuilder, Timeframe
+
+        self._dt = _dt
+        self._utc = UTC
+        self._CandleBuilder = CandleBuilder
+        self._tf_enum = {
+            "M1": Timeframe.M1,
+            "M5": Timeframe.M5,
+            "M15": Timeframe.M15,
+            "H1": Timeframe.H1,
+        }
+        # Per-symbol, per-timeframe builders (each fed directly by ticks)
+        self._builders: dict[str, dict[str, CandleBuilder]] = {}
+        self._pending_completed: list[dict[str, object]] = []
+
+    def _ensure_builders(self, symbol: str) -> dict[str, Any]:
+        if symbol not in self._builders:
+            self._builders[symbol] = {}
+            for tf_name, tf_enum in self._tf_enum.items():
+                self._builders[symbol][tf_name] = self._CandleBuilder(
+                    symbol=symbol,
+                    timeframe=tf_enum,
+                    on_complete=lambda c: self._pending_completed.append(
+                        {
+                            "symbol": c.symbol,
+                            "timeframe": c.timeframe,
+                            "bar": {
+                                "open": c.open,
+                                "high": c.high,
+                                "low": c.low,
+                                "close": c.close,
+                                "volume": c.tick_count,
+                                "ts_open": c.open_time.timestamp(),
+                                "ts_close": c.close_time.timestamp(),
+                            },
+                            "status": "closed",
+                        }
+                    ),
+                )
+        return self._builders[symbol]
 
     def _bar_key(self, timestamp: float, seconds: int) -> float:
         """Floor timestamp to bar open."""
@@ -279,47 +328,41 @@ class CandleAggregator:
         Returns list of completed bars (if any bar rolled over).
         """
         mid = round((bid + ask) / 2, 6)
-        completed: list[dict[str, object]] = []
+        self._pending_completed.clear()
 
-        for tf_name, tf_seconds in self.TIMEFRAMES.items():
-            bar_open_ts = self._bar_key(ts, tf_seconds)
-            current = self._bars[symbol].get(tf_name)
+        builders = self._ensure_builders(symbol)
+        timestamp = self._dt.fromtimestamp(ts, tz=self._utc)
+        for cb in builders.values():
+            cb.on_tick(mid, timestamp, volume=1.0)
 
-            if current is None or current["ts_open"] != bar_open_ts:
-                # New bar -- emit old one if exists
-                if current is not None:
-                    completed.append(
-                        {
-                            "symbol": symbol,
-                            "timeframe": tf_name,
-                            "bar": current,
-                            "status": "closed",
-                        }
-                    )
-                # Start new bar
-                self._bars[symbol][tf_name] = {
-                    "open": mid,
-                    "high": mid,
-                    "low": mid,
-                    "close": mid,
-                    "volume": 1,
-                    "ts_open": bar_open_ts,
-                    "ts_close": bar_open_ts + tf_seconds,
-                }
-            else:
-                # Update existing bar
-                current["high"] = max(current["high"], mid)
-                current["low"] = min(current["low"], mid)
-                current["close"] = mid
-                current["volume"] += 1
-
-        return completed
+        return list(self._pending_completed)
 
     def get_current_bars(self, symbol: str | None = None) -> dict[str, dict[str, CandleBar]]:
         """Return all current (forming) bars."""
-        if symbol:
-            return {symbol: dict(self._bars.get(symbol, {}))}
-        return {s: dict(bars) for s, bars in self._bars.items()}
+        result: dict[str, dict[str, CandleBar]] = {}
+        symbols = [symbol] if symbol else list(self._builders.keys())
+
+        for sym in symbols:
+            sym_builders = self._builders.get(sym)
+            if sym_builders is None:
+                result[sym] = {}
+                continue
+            bars: dict[str, CandleBar] = {}
+            for tf_name, cb in sym_builders.items():
+                partial = cb.current_partial
+                if partial is not None:
+                    bars[tf_name] = {
+                        "open": partial.open,
+                        "high": partial.high,
+                        "low": partial.low,
+                        "close": partial.close,
+                        "volume": partial.tick_count,
+                        "ts_open": partial.open_time.timestamp(),
+                        "ts_close": partial.close_time.timestamp(),
+                    }
+            result[sym] = bars
+
+        return result
 
 
 _candle_agg = CandleAggregator()
@@ -1580,8 +1623,6 @@ async def websocket_live_feed(websocket: fastapi.WebSocket):
         return
 
     try:
-        from storage.l12_cache import get_all_verdicts_async, is_verdict_stale  # noqa: PLC0415
-
         await websocket.send_json(
             _ws_event(
                 "live.snapshot",
