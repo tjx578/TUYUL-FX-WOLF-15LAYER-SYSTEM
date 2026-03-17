@@ -404,18 +404,31 @@ async def _global_news_lock_enabled() -> bool:
         return False
 
 
-async def _feed_staleness_seconds() -> float:
-    """Return feed staleness based on latest tick heartbeat in Redis."""
+async def _feed_staleness_seconds(pair: str = "") -> float:
+    """Return feed staleness based on latest tick heartbeat in Redis.
+
+    Reads from ``wolf15:latest_tick:{pair}`` (Hash, field "data") — the key
+    written by ``RedisContextBridge.write_tick()``.  Falls back gracefully
+    when the key is absent or expired (TTL 60s acts as a circuit-breaker).
+
+    Args:
+        pair: Trading pair symbol (e.g. "EURUSD").  When empty the function
+              returns ``float("inf")`` because staleness cannot be determined
+              without knowing which symbol to check.
+    """
+    if not pair:
+        return float("inf")
     try:
-        redis = cast(Any, await get_client())
-        latest = await redis.get("ctx:tick:latest")
-        if not latest:
-            return float("inf")
-        if isinstance(latest, bytes):
-            latest = latest.decode("utf-8", errors="ignore")
         import json as _json  # noqa: PLC0415
 
-        payload_raw = _json.loads(latest) if isinstance(latest, str) else {}
+        redis = cast(Any, await get_client())
+        # wolf15:latest_tick:{symbol} is a Hash with field "data" = JSON tick
+        raw = await redis.hget(f"wolf15:latest_tick:{pair}", "data")
+        if not raw:
+            return float("inf")
+        if isinstance(raw, bytes):
+            raw = raw.decode("utf-8", errors="ignore")
+        payload_raw = _json.loads(raw) if isinstance(raw, str) else {}
         payload = cast(dict[str, Any], payload_raw) if isinstance(payload_raw, dict) else {}
         ts = float(payload.get("timestamp", 0.0) or 0.0)
         if ts <= 0:
@@ -425,7 +438,7 @@ async def _feed_staleness_seconds() -> float:
         return float("inf")
 
 
-async def _runtime_take_precheck(account: dict[str, Any]) -> tuple[bool, str | None]:
+async def _runtime_take_precheck(account: dict[str, Any], pair: str = "") -> tuple[bool, str | None]:
     # Compliance mode default = ON (fail closed when explicitly OFF).
     if not _as_bool(account.get("compliance_mode", 1), default=True):
         return False, "COMPLIANCE_MODE_DISABLED"
@@ -436,7 +449,7 @@ async def _runtime_take_precheck(account: dict[str, Any]) -> tuple[bool, str | N
 
     daily_dd = float(account.get("daily_dd_percent", 0) or 0)
     daily_cap = float(account.get("max_daily_dd_percent", 5.0) or 5.0)
-    feed_stale_sec = await _feed_staleness_seconds()
+    feed_stale_sec = await _feed_staleness_seconds(pair)
     _kill_switch.evaluate_and_trip(
         metrics={
             "daily_dd_percent": daily_dd,
@@ -706,7 +719,7 @@ async def take_signal(req: TakeSignalRequest) -> dict[str, Any]:
             )
         account = acct_data
 
-    precheck_ok, precheck_reason = await _runtime_take_precheck(account)
+    precheck_ok, precheck_reason = await _runtime_take_precheck(account, pair=req.pair)
     if not precheck_ok:
         raise HTTPException(
             status_code=status.HTTP_423_LOCKED,

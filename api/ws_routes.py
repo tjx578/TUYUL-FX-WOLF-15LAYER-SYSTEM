@@ -1560,6 +1560,8 @@ async def websocket_live_feed(websocket: fastapi.WebSocket):
         return
 
     try:
+        from storage.l12_cache import get_all_verdicts_async, is_verdict_stale  # noqa: PLC0415
+
         await websocket.send_json(
             _ws_event(
                 "live.snapshot",
@@ -1572,6 +1574,19 @@ async def websocket_live_feed(websocket: fastapi.WebSocket):
         )
 
         while websocket in live_manager.active_connections:
+            # Detect whether the engine pipeline is actively producing verdicts.
+            # A verdict older than 120 s suggests the pipeline has stalled.
+            # Fail safely — if Redis is unavailable, treat status as unknown.
+            try:
+                all_verdicts = await get_all_verdicts_async()
+                _engine_stall_threshold_sec = 120.0
+                engine_stalled: bool = not all_verdicts or all(
+                    is_verdict_stale(v, max_age_sec=_engine_stall_threshold_sec) for v in all_verdicts
+                )
+                engine_status = "stalled" if engine_stalled else "ok"
+            except Exception:
+                engine_status = "unknown"
+
             # Keepalive periodic state update for clients that miss individual events
             ok = await live_manager.send_stamped(
                 websocket,
@@ -1581,6 +1596,8 @@ async def websocket_live_feed(websocket: fastapi.WebSocket):
                         "signal_count": len(_signal_service.list_all()),
                         "account_count": len(await _account_manager.list_accounts_async()),
                         "active_trade_count": len(await _trade_ledger.get_active_trades_async()),
+                        "engine_status": engine_status,
+                        "server_ts": time.time(),
                     },
                 ),
             )
