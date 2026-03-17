@@ -46,6 +46,7 @@ from config_loader import load_pairs
 from dashboard.account_manager import AccountManager
 from dashboard.price_feed import PriceFeed
 from dashboard.trade_ledger import TradeLedger
+from state.pubsub_channels import RISK_EVENTS
 from storage.l12_cache import VERDICT_READY_CHANNEL, get_verdict_async
 from storage.redis_client import redis_client
 
@@ -490,7 +491,7 @@ class ConnectionManager:
                     continue
             elif since_ts is not None:
                 msg_ts_raw = msg.get("ts", 0.0)
-                msg_ts = float(msg_ts_raw) if isinstance(msg_ts_raw, (int, float)) else 0.0
+                msg_ts = float(msg_ts_raw) if isinstance(msg_ts_raw, int | float) else 0.0
                 if msg_ts <= since_ts:
                     continue
             try:
@@ -521,11 +522,19 @@ class ConnectionManager:
         for conn in disconnected:
             self.disconnect(conn)
 
-    async def send_stamped(self, websocket: fastapi.WebSocket, message: dict[str, Any]) -> None:
-        """Send a seq-stamped message to a single client and buffer it."""
+    async def send_stamped(self, websocket: fastapi.WebSocket, message: dict[str, Any]) -> bool:
+        """Send a seq-stamped message to a single client and buffer it.
+
+        Returns True on success, False if the connection was already closed.
+        """
         message["seq"] = next(self._seq_counter)
         self.buffer_message(message)
-        await websocket.send_json(message)
+        try:
+            await websocket.send_json(message)
+            return True
+        except Exception:
+            self.disconnect(websocket)
+            return False
 
 
 # Create connection managers
@@ -538,6 +547,7 @@ verdict_manager = ConnectionManager(name="verdict")
 signal_manager = ConnectionManager(name="signals")
 pipeline_manager = ConnectionManager(name="pipeline")
 live_manager = ConnectionManager(name="live")
+alerts_manager = ConnectionManager(name="alerts")
 
 # Service instances
 _price_feed = PriceFeed()
@@ -778,7 +788,7 @@ async def websocket_trades(websocket: fastapi.WebSocket):
                             "changed": [t.model_dump() for t in changed_trades],
                             "removed": list(removed_trade_ids),
                         },
-                    )
+                    ),
                 )
 
             # 250ms for near-instant trade event delivery
@@ -1153,7 +1163,7 @@ async def websocket_equity(websocket: fastapi.WebSocket):
                 )
 
             raw_equity = equity_point.get("equity", 0.0)
-            current_equity = float(raw_equity) if isinstance(raw_equity, (int, float)) else 0.0
+            current_equity = float(raw_equity) if isinstance(raw_equity, int | float) else 0.0
 
             # Only append to history if equity changed (avoid flat duplicates)
             if last_equity is None or current_equity != last_equity:
@@ -1256,7 +1266,7 @@ async def websocket_verdict(websocket: fastapi.WebSocket):
                                         "pair": pair,
                                         "verdict": verdict,
                                     },
-                                )
+                                ),
                             )
                             pushed = True
 
@@ -1272,7 +1282,7 @@ async def websocket_verdict(websocket: fastapi.WebSocket):
                                 "pair": pair,
                                 "verdict": verdict,
                             },
-                        )
+                        ),
                     )
                 last_scan_ts = now_ts
 
@@ -1357,7 +1367,7 @@ async def websocket_signals(websocket: fastapi.WebSocket):
                                 {
                                     "signal": signal,
                                 },
-                            )
+                            ),
                         )
                         pushed = True
 
@@ -1372,7 +1382,7 @@ async def websocket_signals(websocket: fastapi.WebSocket):
                             {
                                 "signal": signal,
                             },
-                        )
+                        ),
                     )
                 last_scan_ts = now_ts
 
@@ -1458,7 +1468,7 @@ async def websocket_pipeline(websocket: fastapi.WebSocket):
                                     "pair": pair,
                                     "pipeline": payload,
                                 },
-                            )
+                            ),
                         )
                         pushed = True
 
@@ -1474,7 +1484,7 @@ async def websocket_pipeline(websocket: fastapi.WebSocket):
                                 "pair": pair,
                                 "pipeline": payload,
                             },
-                        )
+                        ),
                     )
                 last_scan_ts = now_ts
 
@@ -1516,9 +1526,9 @@ async def websocket_live_feed(websocket: fastapi.WebSocket):
             )
         )
 
-        while True:
+        while websocket in live_manager.active_connections:
             # Keepalive periodic state update for clients that miss individual events
-            await live_manager.send_stamped(
+            ok = await live_manager.send_stamped(
                 websocket,
                 _ws_event(
                     "live.heartbeat_state",
@@ -1527,13 +1537,82 @@ async def websocket_live_feed(websocket: fastapi.WebSocket):
                         "account_count": len(await _account_manager.list_accounts_async()),
                         "active_trade_count": len(await _trade_ledger.get_active_trades_async()),
                     },
-                )
+                ),
             )
+            if not ok:
+                break
             await asyncio.sleep(1.0)
 
     except fastapi.WebSocketDisconnect:
-        live_manager.disconnect(websocket)
-        logger.info("Live WebSocket client disconnected")
+        pass
     except Exception as exc:
         logger.error(f"Live WebSocket error: {exc}")
+    finally:
         live_manager.disconnect(websocket)
+
+
+# ---------------------------------------------------------------------------
+# WS /ws/alerts -- Event-driven alert stream (risk events, trade events)
+# ---------------------------------------------------------------------------
+
+
+@router.websocket("/ws/alerts")
+async def websocket_alerts(websocket: fastapi.WebSocket):
+    """
+    WebSocket endpoint for real-time alert events.
+
+    Subscribes to RISK_EVENTS pub/sub and pushes alert payloads to
+    connected dashboard clients.  Event-driven only — no polling fallback.
+
+    Query params:
+      ?token=<jwt_or_api_key>
+    """
+    connected = await alerts_manager.connect(websocket)
+    if not connected:
+        return
+
+    logger.info("Alerts WebSocket client connected")
+    pubsub: Any | None = None
+
+    try:
+        with contextlib.suppress(Exception):
+            pubsub = redis_client.pubsub()
+            pubsub.subscribe(RISK_EVENTS)  # noqa: F821
+
+        while True:
+            pushed = False
+
+            if pubsub is not None:
+                message_map = await asyncio.to_thread(_read_pubsub_message, pubsub, 1.0)
+
+                if message_map is not None and message_map.get("type") == "message":
+                    raw: Any = message_map.get("data")
+                    event: dict[str, Any] = {}
+                    with contextlib.suppress(Exception):
+                        parsed = json.loads(raw)
+                        if isinstance(parsed, dict):
+                            event = cast(dict[str, Any], parsed)
+
+                    if event:
+                        await alerts_manager.send_stamped(
+                            websocket,
+                            _ws_event("alert.event", event),
+                        )
+                        pushed = True
+
+            if not pushed:
+                await asyncio.sleep(0.5)
+
+    except (fastapi.WebSocketDisconnect, RuntimeError):
+        alerts_manager.disconnect(websocket)
+        logger.info("Alerts WebSocket client disconnected")
+    except Exception as exc:
+        alerts_manager.disconnect(websocket)
+        if "close message has been sent" in str(exc):
+            logger.info("Alerts WebSocket client disconnected (close race)")
+        else:
+            logger.error(f"Alerts WebSocket error: {exc}")
+    finally:
+        if pubsub is not None:
+            with contextlib.suppress(Exception):
+                pubsub.close()

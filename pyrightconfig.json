@@ -3,6 +3,7 @@
   "pythonVersion": "3.11",
   "reportMissingTypeStubs": false,
   "reportUnnecessaryTypeIgnoreComment": true,
+  "include": ["."],
   "exclude": [
     "node_modules",
     ".venv",

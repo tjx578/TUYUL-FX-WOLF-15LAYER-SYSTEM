@@ -158,6 +158,14 @@ export function connectLiveUpdates(
       try {
         const parsed = JSON.parse(msg.data as string);
 
+        // ── Respond to server pings to keep heartbeat alive ──
+        if (parsed.type === "ping") {
+          if (socket?.readyState === WebSocket.OPEN) {
+            socket.send(JSON.stringify({ type: "pong" }));
+          }
+          return;
+        }
+
         // ── WS event type diagnostics ──
         if (process.env.NODE_ENV === "development") {
           const evtType = parsed.type ?? "UNKNOWN";
