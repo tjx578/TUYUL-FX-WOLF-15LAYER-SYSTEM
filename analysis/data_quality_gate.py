@@ -18,6 +18,7 @@ gracefully rather than trading on bad data.
 from __future__ import annotations
 
 import time
+import os
 from dataclasses import dataclass
 from typing import Any
 
@@ -75,7 +76,35 @@ class DataQualityGate:
     """
 
     def __init__(self, config: DataQualityConfig | None = None) -> None:
-        self._config = config or DataQualityConfig()
+        self._config = config or self._load_config_from_env()
+
+    @staticmethod
+    def _env_float(name: str, default: float) -> float:
+        value = os.getenv(name)
+        if value is None:
+            return default
+        try:
+            return float(value.strip())
+        except (ValueError, AttributeError):
+            return default
+
+    @classmethod
+    def _load_config_from_env(cls) -> DataQualityConfig:
+        """Load tunable data-quality thresholds from environment variables."""
+        return DataQualityConfig(
+            stale_threshold_seconds=cls._env_float(
+                "WOLF_DQ_STALE_THRESHOLD_SECONDS",
+                DataQualityConfig.stale_threshold_seconds,
+            ),
+            stale_candle_multiplier=cls._env_float(
+                "WOLF_DQ_STALE_CANDLE_MULTIPLIER",
+                3.0,
+            ),
+            stale_penalty=cls._env_float(
+                "WOLF_DQ_STALE_PENALTY",
+                DataQualityConfig.stale_penalty,
+            ),
+        )
 
     @staticmethod
     def _timeframe_to_seconds(timeframe: str) -> float | None:
