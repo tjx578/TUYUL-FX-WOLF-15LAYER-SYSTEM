@@ -76,7 +76,7 @@ class RedisClient(Protocol):
     async def delete(self, name: str) -> int: ...
     async def scan(self, cursor: int, *, match: str, count: int) -> tuple[int, list[str]]: ...
     async def llen(self, name: str) -> int: ...
-    def pipeline(self) -> Any: ...
+    async def rpush(self, name: str, *values: str) -> int: ...
 
 
 def _validate_api_key() -> bool:
@@ -343,18 +343,25 @@ async def _seed_redis_candle_history(
                 )
 
             try:
-                pipe = redis.pipeline()
+                serialized: list[str] = []
                 for candle in candles:
                     normalized = dict(candle)
                     ts = normalized.get("timestamp")
                     if isinstance(ts, datetime):
                         # Use explicit ISO-8601 to keep payload stable across clients.
                         normalized["timestamp"] = ts.isoformat()
-                    candle_json = orjson.dumps(normalized).decode("utf-8")
-                    pipe.rpush(key, candle_json)
-                await pipe.execute()
+                    serialized.append(orjson.dumps(normalized).decode("utf-8"))
+
+                # Single RPUSH with all values — atomic, no pipeline flush issues
+                if serialized:
+                    await redis.rpush(key, *serialized)
+
                 seeded += 1
-                logger.info("[Seed] {}: {} bars written", key, len(candles))
+                logger.info(
+                    "[Seed] {}: {} bars written",
+                    key,
+                    len(serialized),
+                )
             except Exception as exc:
                 logger.error("[Seed] Failed to seed {}: {}", key, exc)
 
