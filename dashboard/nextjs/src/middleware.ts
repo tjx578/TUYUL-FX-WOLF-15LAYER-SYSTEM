@@ -117,15 +117,17 @@ export function middleware(request: NextRequest): NextResponse {
 export const config = {
     matcher: [
         /*
-         * Match ALL request paths EXCEPT static assets:
-         *   _next/static  — JS/CSS chunks
-         *   _next/image   — optimised images
-         *   favicon.ico   — browser icon
-         *
-         * Inside the function, proxy routes vs page routes are split
-         * so that proxy routes get auth-injection and page routes
-         * get session-guard redirects.
+         * Match semua KECUALI:
+         *   /login          — login page (prevent infinite redirect)
+         *   /api/           — API routes + proxy
+         *   /auth/          — auth proxy to backend
+         *   /health         — health check proxy
+         *   /pipeline/      — pipeline proxy
+         *   /preferences/   — preferences proxy
+         *   /_next/static   — JS/CSS chunks
+         *   /_next/image    — optimised images
+         *   /favicon.ico    — browser icon
          */
-        "/((?!_next/static|_next/image|favicon\\.ico).*)",
+        "/((?!login|api/|auth/|health|pipeline/|preferences/|_next/static|_next/image|favicon\\.ico).*)",
     ],
 };
