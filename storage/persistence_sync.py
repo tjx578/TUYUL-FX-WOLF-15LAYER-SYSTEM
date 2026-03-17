@@ -23,9 +23,10 @@ class AsyncRedisClient(Protocol):
         cursor: int = 0,
         match: str | None = None,
         count: int | None = None,
+        **kwargs: Any,
     ) -> tuple[int, list[Any]]: ...
 
-    async def get(self, key: str) -> str | bytes | None: ...
+    async def get(self, name: str) -> str | bytes | None: ...
 
 
 class PersistenceSync:
@@ -138,11 +139,11 @@ class PersistenceSync:
         if self._async_redis_client is not None:
             client: AsyncRedisClient = self._async_redis_client
         else:
-            client = await get_client()
+            client = await get_client()  # type: ignore[assignment]  # redis.asyncio.Redis ResponseT
         for pattern in ("TRADE:*", "wolf15:TRADE:*"):
             cursor = 0
             while True:
-                cursor, keys = await client.scan(cursor=cursor, match=pattern, count=50)  # type: ignore[arg-type]
+                cursor, keys = await client.scan(cursor=cursor, match=pattern, count=50)
                 for key in keys:
                     trade_payload = await client.get(key)
                     if not trade_payload:
@@ -271,8 +272,87 @@ class PersistenceSync:
                     payload[field] = value.isoformat()
             self._redis.set(key, json.dumps(payload))
 
-        logger.info(f"PostgreSQL recovery complete; active trades={len(trades)}")
+        # ── Candle history recovery ──────────────────────────────────────
+        # When Redis candle lists are empty (post-restart with no WS data),
+        # pull recent candles from the ohlc_candles table so the engine has
+        # warmup data immediately instead of waiting for live candle completion.
+        candle_count = await self._recover_candle_history()
+
+        logger.info(
+            "PostgreSQL recovery complete; active trades=%d, candle keys=%d",
+            len(trades),
+            candle_count,
+        )
         return True
+
+    async def _recover_candle_history(self) -> int:
+        """Recover candle history from ohlc_candles table into Redis lists.
+
+        Only writes if the target Redis list is empty (avoids overwriting
+        fresh data from the ingest warmup path).
+
+        Returns the number of symbol/timeframe combos recovered.
+        """
+        if not self._pg.is_available:
+            return 0
+
+        try:
+            rows = await self._pg.fetch(
+                """
+                SELECT symbol, timeframe, open_time, close_time,
+                       open, high, low, close, volume, tick_count
+                FROM ohlc_candles
+                WHERE open_time > NOW() - INTERVAL '7 days'
+                ORDER BY symbol, timeframe, open_time ASC
+                """
+            )
+        except Exception as exc:
+            logger.warning("Candle history recovery query failed: %s", exc)
+            return 0
+
+        if not rows:
+            return 0
+
+        # Group rows by (symbol, timeframe)
+        grouped: dict[tuple[str, str], list[str]] = {}
+        for row in rows:
+            sym = row["symbol"]
+            tf = row["timeframe"]
+            candle_dict = {
+                "symbol": sym,
+                "timeframe": tf,
+                "open": row["open"],
+                "high": row["high"],
+                "low": row["low"],
+                "close": row["close"],
+                "volume": row["volume"],
+                "tick_count": row["tick_count"],
+                "timestamp": row["open_time"].isoformat()
+                if isinstance(row["open_time"], datetime)
+                else str(row["open_time"]),
+            }
+            grouped.setdefault((sym, tf), []).append(json.dumps(candle_dict))
+
+        recovered = 0
+        for (sym, tf), candle_jsons in grouped.items():
+            key = f"wolf15:candle_history:{sym}:{tf}"
+            try:
+                existing: int = self._redis.client.llen(key)  # type: ignore[assignment]  # sync Redis
+                if existing > 0:
+                    continue  # Don't overwrite data already seeded by ingest
+
+                for i in range(0, len(candle_jsons), 50):
+                    chunk = candle_jsons[i : i + 50]
+                    self._redis.client.rpush(key, *chunk)
+                self._redis.client.ltrim(key, -300, -1)
+                recovered += 1
+                logger.debug("[PG Recovery] %s: %d candles restored", key, len(candle_jsons))
+            except Exception as exc:
+                logger.warning("[PG Recovery] Failed for %s: %s", key, exc)
+
+        if recovered:
+            logger.info("[PG Recovery] Restored candle history for %d symbol/tf combos", recovered)
+        return recovered
 
 
 def _as_datetime(value: Any) -> datetime:
