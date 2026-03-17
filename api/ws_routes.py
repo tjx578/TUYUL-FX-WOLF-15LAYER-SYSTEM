@@ -1114,7 +1114,7 @@ async def websocket_equity(websocket: fastapi.WebSocket):
             )
         )
 
-        while True:
+        while websocket in equity_manager.active_connections:
             # Fetch current account state
             equity_point: dict[str, object] = {"ts": time.time()}
 
@@ -1248,7 +1248,7 @@ async def websocket_verdict(websocket: fastapi.WebSocket):
 
         last_scan_ts = 0.0
 
-        while True:
+        while websocket in verdict_manager.active_connections:
             pushed = False
 
             if pubsub is not None:
@@ -1271,7 +1271,7 @@ async def websocket_verdict(websocket: fastapi.WebSocket):
                             verdict: dict[str, Any] = {k: v for k, v in verdict_map.items()}
                             signature = _verdict_signature(verdict)
                             signatures[pair] = signature
-                            await verdict_manager.send_stamped(
+                            if not await verdict_manager.send_stamped(
                                 websocket,
                                 _ws_event(
                                     "verdict.update",
@@ -1280,14 +1280,15 @@ async def websocket_verdict(websocket: fastapi.WebSocket):
                                         "verdict": verdict,
                                     },
                                 ),
-                            )
+                            ):
+                                break
                             pushed = True
 
             now_ts = time.time()
             if (not pushed) and (now_ts - last_scan_ts >= VERDICT_FALLBACK_INTERVAL):
                 changed = await _detect_changed_verdicts(signatures, pair_filter)
                 for pair, verdict in changed.items():
-                    await verdict_manager.send_stamped(
+                    if not await verdict_manager.send_stamped(
                         websocket,
                         _ws_event(
                             "verdict.update",
@@ -1296,18 +1297,18 @@ async def websocket_verdict(websocket: fastapi.WebSocket):
                                 "verdict": verdict,
                             },
                         ),
-                    )
+                    ):
+                        break
                 last_scan_ts = now_ts
 
             await asyncio.sleep(0.05)
 
     except fastapi.WebSocketDisconnect:
-        verdict_manager.disconnect(websocket)
-        logger.info("Verdict WebSocket client disconnected")
+        pass
     except Exception as exc:
         logger.error(f"Verdict WebSocket error: {exc}")
-        verdict_manager.disconnect(websocket)
     finally:
+        verdict_manager.disconnect(websocket)
         if pubsub is not None:
             with contextlib.suppress(Exception):
                 pubsub.close()
@@ -1363,7 +1364,7 @@ async def websocket_signals(websocket: fastapi.WebSocket):
 
         last_scan_ts = 0.0
 
-        while True:
+        while websocket in signal_manager.active_connections:
             pushed = False
 
             if pubsub is not None:
@@ -1373,7 +1374,7 @@ async def websocket_signals(websocket: fastapi.WebSocket):
                     latest = _signal_snapshot(symbol_filter)
                     for key, signal in latest.items():
                         signatures[key] = _signal_signature(signal)
-                        await signal_manager.send_stamped(
+                        if not await signal_manager.send_stamped(
                             websocket,
                             _ws_event(
                                 "signals.update",
@@ -1381,14 +1382,15 @@ async def websocket_signals(websocket: fastapi.WebSocket):
                                     "signal": signal,
                                 },
                             ),
-                        )
+                        ):
+                            break
                         pushed = True
 
             now_ts = time.time()
             if (not pushed) and (now_ts - last_scan_ts >= SIGNAL_FALLBACK_INTERVAL):
                 changed = _detect_changed_signals(signatures, symbol_filter)
                 for signal in changed.values():
-                    await signal_manager.send_stamped(
+                    if not await signal_manager.send_stamped(
                         websocket,
                         _ws_event(
                             "signals.update",
@@ -1396,18 +1398,18 @@ async def websocket_signals(websocket: fastapi.WebSocket):
                                 "signal": signal,
                             },
                         ),
-                    )
+                    ):
+                        break
                 last_scan_ts = now_ts
 
             await asyncio.sleep(0.05)
 
     except fastapi.WebSocketDisconnect:
-        signal_manager.disconnect(websocket)
-        logger.info("Signals WebSocket client disconnected")
+        pass
     except Exception as exc:
         logger.error(f"Signals WebSocket error: {exc}")
-        signal_manager.disconnect(websocket)
     finally:
+        signal_manager.disconnect(websocket)
         if pubsub is not None:
             with contextlib.suppress(Exception):
                 pubsub.close()
@@ -1463,7 +1465,7 @@ async def websocket_pipeline(websocket: fastapi.WebSocket):
 
         last_scan_ts = 0.0
 
-        while True:
+        while websocket in pipeline_manager.active_connections:
             pushed = False
 
             if pubsub is not None:
@@ -1473,7 +1475,7 @@ async def websocket_pipeline(websocket: fastapi.WebSocket):
                     latest = await _pipeline_snapshot(pair_filter)
                     for pair, payload in latest.items():
                         signatures[pair] = _verdict_signature(payload)
-                        await pipeline_manager.send_stamped(
+                        if not await pipeline_manager.send_stamped(
                             websocket,
                             _ws_event(
                                 "pipeline.update",
@@ -1482,14 +1484,15 @@ async def websocket_pipeline(websocket: fastapi.WebSocket):
                                     "pipeline": payload,
                                 },
                             ),
-                        )
+                        ):
+                            break
                         pushed = True
 
             now_ts = time.time()
             if (not pushed) and (now_ts - last_scan_ts >= PIPELINE_FALLBACK_INTERVAL):
                 changed = await _detect_changed_pipeline(signatures, pair_filter)
                 for pair, payload in changed.items():
-                    await pipeline_manager.send_stamped(
+                    if not await pipeline_manager.send_stamped(
                         websocket,
                         _ws_event(
                             "pipeline.update",
@@ -1498,18 +1501,18 @@ async def websocket_pipeline(websocket: fastapi.WebSocket):
                                 "pipeline": payload,
                             },
                         ),
-                    )
+                    ):
+                        break
                 last_scan_ts = now_ts
 
             await asyncio.sleep(0.05)
 
     except fastapi.WebSocketDisconnect:
-        pipeline_manager.disconnect(websocket)
-        logger.info("Pipeline WebSocket client disconnected")
+        pass
     except Exception as exc:
         logger.error(f"Pipeline WebSocket error: {exc}")
-        pipeline_manager.disconnect(websocket)
     finally:
+        pipeline_manager.disconnect(websocket)
         if pubsub is not None:
             with contextlib.suppress(Exception):
                 pubsub.close()
@@ -1592,7 +1595,7 @@ async def websocket_alerts(websocket: fastapi.WebSocket):
             pubsub = redis_client.pubsub()
             pubsub.subscribe(RISK_EVENTS)  # noqa: F821
 
-        while True:
+        while websocket in alerts_manager.active_connections:
             pushed = False
 
             if pubsub is not None:
@@ -1607,25 +1610,22 @@ async def websocket_alerts(websocket: fastapi.WebSocket):
                             event = cast(dict[str, Any], parsed)
 
                     if event:
-                        await alerts_manager.send_stamped(
+                        if not await alerts_manager.send_stamped(
                             websocket,
                             _ws_event("alert.event", event),
-                        )
+                        ):
+                            break
                         pushed = True
 
             if not pushed:
                 await asyncio.sleep(0.5)
 
-    except (fastapi.WebSocketDisconnect, RuntimeError):
-        alerts_manager.disconnect(websocket)
-        logger.info("Alerts WebSocket client disconnected")
+    except fastapi.WebSocketDisconnect:
+        pass
     except Exception as exc:
-        alerts_manager.disconnect(websocket)
-        if "close message has been sent" in str(exc):
-            logger.info("Alerts WebSocket client disconnected (close race)")
-        else:
-            logger.error(f"Alerts WebSocket error: {exc}")
+        logger.error(f"Alerts WebSocket error: {exc}")
     finally:
+        alerts_manager.disconnect(websocket)
         if pubsub is not None:
             with contextlib.suppress(Exception):
                 pubsub.close()
