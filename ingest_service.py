@@ -295,6 +295,7 @@ class Stoppable(Protocol):
 # Matches the key format used by RedisContextBridge.write_candle().
 # Data is persistent in Redis volume — no TTL needed.
 _SEED_HISTORY_MAXLEN = 300
+_SEED_RPUSH_CHUNK_SIZE = 50
 
 
 async def _seed_redis_candle_history(
@@ -352,8 +353,10 @@ async def _seed_redis_candle_history(
                         normalized["timestamp"] = ts.isoformat()
                     serialized.append(orjson.dumps(normalized).decode("utf-8"))
 
-                if serialized:
-                    await redis.rpush(key, *serialized)
+                # Write in small chunks to avoid connection drops with large payloads.
+                for i in range(0, len(serialized), _SEED_RPUSH_CHUNK_SIZE):
+                    chunk = serialized[i : i + _SEED_RPUSH_CHUNK_SIZE]
+                    await redis.rpush(key, *chunk)
 
                 seeded += 1
                 logger.info(

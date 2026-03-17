@@ -117,14 +117,10 @@ async def test_seed_redis_writes_h1_keys(
 ) -> None:
     """_seed_redis_candle_history must write REST-warmed timeframe keys (H1, H4, D1)
     to Redis. M15 is NOT produced by ingest — it comes from tick data."""
-    fake_pipe = MagicMock()
-    fake_pipe.rpush = MagicMock()
-    fake_pipe.expire = MagicMock()
-    fake_pipe.execute = AsyncMock(return_value=[])
-
     fake_redis = MagicMock()
-    fake_redis.pipeline = MagicMock(return_value=fake_pipe)
+    fake_redis.llen = AsyncMock(return_value=0)
     fake_redis.delete = AsyncMock()
+    fake_redis.rpush = AsyncMock()
 
     warmup_results = {
         "EURUSD": {
@@ -136,7 +132,7 @@ async def test_seed_redis_writes_h1_keys(
 
     await ingest_service_module._seed_redis_candle_history(fake_redis, warmup_results)
 
-    rpush_keys = [call.args[0] for call in fake_pipe.rpush.call_args_list]
+    rpush_keys = [call.args[0] for call in fake_redis.rpush.call_args_list]
     assert "wolf15:candle_history:EURUSD:H1" in rpush_keys
     assert "wolf15:candle_history:EURUSD:H4" in rpush_keys
     assert "wolf15:candle_history:EURUSD:D1" in rpush_keys
@@ -149,13 +145,10 @@ async def test_seed_redis_still_pushes_when_delete_fails(
     ingest_service_module: Any,
 ) -> None:
     """DELETE errors must not block RPUSH attempt."""
-    fake_pipe = MagicMock()
-    fake_pipe.rpush = MagicMock()
-    fake_pipe.execute = AsyncMock(return_value=[])
-
     fake_redis = MagicMock()
-    fake_redis.pipeline = MagicMock(return_value=fake_pipe)
+    fake_redis.llen = AsyncMock(return_value=1)
     fake_redis.delete = AsyncMock(side_effect=RuntimeError("READONLY"))
+    fake_redis.rpush = AsyncMock()
 
     warmup_results = {
         "EURUSD": {
@@ -176,8 +169,7 @@ async def test_seed_redis_still_pushes_when_delete_fails(
 
     await ingest_service_module._seed_redis_candle_history(fake_redis, warmup_results)
 
-    fake_pipe.rpush.assert_called()
-    fake_pipe.execute.assert_awaited_once()
+    fake_redis.rpush.assert_awaited()
 
 
 def test_cold_start_m15_removed_from_module(
@@ -191,3 +183,31 @@ def test_cold_start_m15_removed_from_module(
     assert not hasattr(
         ingest_service_module, "_cold_start_m15_for_warmup"
     ), "_cold_start_m15_for_warmup still present — should have been removed. M15 must come from tick data only."
+
+
+@pytest.mark.asyncio
+async def test_seed_redis_chunks_large_payload(
+    ingest_service_module: Any,
+) -> None:
+    """When candle count exceeds the chunk size, rpush must be called multiple times.
+
+    _SEED_RPUSH_CHUNK_SIZE = 50, so 120 candles → 3 rpush calls (50 + 50 + 20).
+    """
+    fake_redis = MagicMock()
+    fake_redis.llen = AsyncMock(return_value=0)
+    fake_redis.delete = AsyncMock()
+    fake_redis.rpush = AsyncMock()
+
+    candles = [{"close": float(i)} for i in range(120)]
+    warmup_results = {"EURUSD": {"H1": candles}}
+
+    await ingest_service_module._seed_redis_candle_history(fake_redis, warmup_results)
+
+    # 120 candles ÷ 50 chunk size = 3 calls (50 + 50 + 20)
+    assert fake_redis.rpush.await_count == 3
+    # Each call's first arg is the Redis key
+    for call in fake_redis.rpush.call_args_list:
+        assert call.args[0] == "wolf15:candle_history:EURUSD:H1"
+    # Verify chunk sizes: first two chunks hold 50, last holds 20
+    chunk_sizes = [len(call.args) - 1 for call in fake_redis.rpush.call_args_list]
+    assert chunk_sizes == [50, 50, 20]
