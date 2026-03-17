@@ -107,3 +107,130 @@ export async function fetchWsTicket(): Promise<string | null> {
   }
 }
 
+// ============================================
+// JWT Auto-Refresh
+// ============================================
+
+const REFRESH_BUFFER_MS = 10 * 60 * 1000; // 10 minutes before expiry
+let refreshTimerId: ReturnType<typeof setTimeout> | null = null;
+
+/**
+ * Decode JWT payload without a library (browser-safe).
+ * Returns { exp, iat, sub, ... } or null if invalid.
+ */
+function decodeJwtPayload(token: string): Record<string, unknown> | null {
+  try {
+    const parts = token.split(".");
+    if (parts.length !== 3) return null;
+    const payload = JSON.parse(atob(parts[1]));
+    return payload;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Milliseconds until the token should be refreshed (expiry minus buffer).
+ * Returns 0 if already expired or about to expire.
+ */
+function msUntilRefresh(token: string): number {
+  const payload = decodeJwtPayload(token);
+  if (!payload || typeof payload.exp !== "number") return 0;
+
+  const expiresAtMs = payload.exp * 1000;
+  const refreshAtMs = expiresAtMs - REFRESH_BUFFER_MS;
+  const now = Date.now();
+
+  return Math.max(0, refreshAtMs - now);
+}
+
+/**
+ * Attempt token refresh via backend.
+ * On success: update localStorage + session cookie + reschedule.
+ * On failure: clear token + redirect to login.
+ */
+async function performRefresh(): Promise<void> {
+  const currentToken = getToken();
+  if (!currentToken) return;
+
+  try {
+    const res = await fetch("/api/auth/refresh", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${currentToken}`,
+      },
+      credentials: "include",
+    });
+
+    if (res.ok) {
+      const data = await res.json() as { token?: string };
+      if (data.token) {
+        setToken(data.token);
+        // Update session cookie (best-effort)
+        await fetch("/api/set-session", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ token: data.token }),
+          credentials: "include",
+        }).catch(() => { });
+        scheduleRefresh(data.token);
+        if (process.env.NODE_ENV === "development") {
+          console.debug("[auth] Token refreshed, next refresh scheduled");
+        }
+      }
+    } else {
+      // Refresh failed — token invalid or expired
+      removeToken();
+      if (typeof window !== "undefined") {
+        window.location.href = "/login";
+      }
+    }
+  } catch {
+    // Network error — retry in 30s
+    refreshTimerId = setTimeout(performRefresh, 30_000);
+  }
+}
+
+/**
+ * Schedule auto-refresh based on token expiry.
+ * Call after login success and after each refresh.
+ */
+export function scheduleRefresh(token?: string): void {
+  if (typeof window === "undefined") return;
+
+  if (refreshTimerId) {
+    clearTimeout(refreshTimerId);
+    refreshTimerId = null;
+  }
+
+  const t = token || getToken();
+  if (!t) return;
+
+  const waitMs = msUntilRefresh(t);
+
+  if (waitMs <= 0) {
+    // Token already expired or about to — refresh NOW
+    performRefresh();
+    return;
+  }
+
+  refreshTimerId = setTimeout(performRefresh, waitMs);
+
+  if (process.env.NODE_ENV === "development") {
+    console.debug(
+      `[auth] Refresh scheduled in ${Math.round(waitMs / 60000)} min`
+    );
+  }
+}
+
+/**
+ * Stop auto-refresh (call on logout).
+ */
+export function cancelRefresh(): void {
+  if (refreshTimerId) {
+    clearTimeout(refreshTimerId);
+    refreshTimerId = null;
+  }
+}
+
