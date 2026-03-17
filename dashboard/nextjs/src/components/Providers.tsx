@@ -1,52 +1,13 @@
 "use client";
 
 // ============================================================
-// TUYUL FX Wolf-15 — Client Providers (SWR, etc.)
-// Smart retry policy: skip 401/403 (auth errors are not transient),
-// retry network/server errors up to 3 times with 1.5s delay.
+// TUYUL FX Wolf-15 — Client Providers
+// Previously wrapped children in SWRConfig. All data-fetching now
+// uses React Query exclusively — 401 handling and retry policy live
+// in queryClient.ts (consumed by QueryProvider in root layout).
+// This wrapper is kept for route-group layout compatibility.
 // ============================================================
 
-import { SWRConfig } from "swr";
-import { HttpError } from "@/lib/fetcher";
-import { useAuthStore } from "@/store/useAuthStore";
-import { useSessionStore } from "@/store/useSessionStore";
-
 export function Providers({ children }: { children: React.ReactNode }) {
-  return (
-    <SWRConfig
-      value={{
-        revalidateOnFocus: false,
-        revalidateOnReconnect: true,
-        dedupingInterval: 15_000,
-        shouldRetryOnError: true,
-        errorRetryCount: 3,
-        onError: (error) => {
-          // Global 401 handler: clear stale auth state and trigger session expiry.
-          // Guard: only fire once — when 10+ SWR hooks get 401 simultaneously,
-          // each would trigger this handler. Skip if already marked expired.
-          if (error instanceof HttpError && error.status === 401) {
-            const session = useSessionStore.getState();
-            if (!session.expiredReason) {
-              useAuthStore.getState().clear();
-              session.setExpiredReason("SESSION_EXPIRED");
-            }
-          }
-        },
-        onErrorRetry: (error, _key, _config, revalidate, { retryCount }) => {
-          // Skip retry for auth errors — they are not transient
-          if (error instanceof HttpError && (error.status === 401 || error.status === 403)) {
-            return;
-          }
-          // Skip retry for 404 — endpoint doesn't exist
-          if (error instanceof HttpError && error.status === 404) {
-            return;
-          }
-          if (retryCount >= 3) return;
-          setTimeout(() => void revalidate({ retryCount }), 1500 * (retryCount + 1));
-        },
-      }}
-    >
-      {children}
-    </SWRConfig>
-  );
+  return <>{children}</>;
 }

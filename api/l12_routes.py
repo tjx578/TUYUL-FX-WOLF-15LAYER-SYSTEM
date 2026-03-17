@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import contextlib
+import time
 from typing import Any, Protocol, cast
 
 from fastapi import Depends, HTTPException
@@ -10,7 +11,7 @@ from api.middleware.auth import verify_token
 from config_loader import load_pairs
 from context.live_context_bus import LiveContextBus
 from execution.state_machine import ExecutionStateMachine
-from storage.l12_cache import get_verdict
+from storage.l12_cache import VERDICT_TTL_SEC, get_verdict
 from utils.timezone_utils import format_local, format_utc, now_utc
 
 router: APIRouter = APIRouter()
@@ -40,6 +41,17 @@ def _load_available_pairs() -> list[dict[str, str | bool]]:
 AVAILABLE_PAIRS: list[dict[str, str | bool]] = _load_available_pairs()
 
 
+def _build_meta(data: dict[str, Any]) -> dict[str, Any]:
+    """Build _meta block with cache age for staleness detection."""
+    cached_at = data.get("_cached_at")
+    age = round(time.time() - float(cached_at), 3) if cached_at is not None else None
+    return {
+        "age_seconds": age,
+        "cached_at": cached_at,
+        "cache_ttl_seconds": VERDICT_TTL_SEC,
+    }
+
+
 @router.get("/api/v1/l12/{pair}", dependencies=[Depends(verify_token)])
 def fetch_l12(pair: str):
     """Get L12 verdict for a specific pair with timezone info."""
@@ -54,6 +66,9 @@ def fetch_l12(pair: str):
             data["time_utc"] = format_utc(current_time)
             data["time_local"] = format_local(current_time)
 
+    # Inject staleness metadata
+    data["_meta"] = _build_meta(data)
+
     return data
 
 
@@ -67,6 +82,7 @@ def fetch_all_verdicts() -> dict[str, Any]:
             continue
         data = get_verdict(pair)
         if data:
+            data["_meta"] = _build_meta(data)
             verdicts[pair] = data
 
     return verdicts

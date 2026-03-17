@@ -124,7 +124,7 @@ async def test_seed_redis_writes_h1_keys(
 
     fake_redis = MagicMock()
     fake_redis.pipeline = MagicMock(return_value=fake_pipe)
-    fake_redis.llen = AsyncMock(return_value=0)
+    fake_redis.delete = AsyncMock()
 
     warmup_results = {
         "EURUSD": {
@@ -145,17 +145,17 @@ async def test_seed_redis_writes_h1_keys(
 
 
 @pytest.mark.asyncio
-async def test_seed_redis_still_pushes_when_llen_fails(
+async def test_seed_redis_still_pushes_when_delete_fails(
     ingest_service_module: Any,
 ) -> None:
-    """LLEN errors (e.g. WRONGTYPE) must not block RPUSH attempt."""
+    """DELETE errors must not block RPUSH attempt."""
     fake_pipe = MagicMock()
     fake_pipe.rpush = MagicMock()
     fake_pipe.execute = AsyncMock(return_value=[])
 
     fake_redis = MagicMock()
     fake_redis.pipeline = MagicMock(return_value=fake_pipe)
-    fake_redis.llen = AsyncMock(side_effect=RuntimeError("WRONGTYPE"))
+    fake_redis.delete = AsyncMock(side_effect=RuntimeError("READONLY"))
 
     warmup_results = {
         "EURUSD": {

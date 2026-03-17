@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback } from "react";
 import type { AlertEvent } from "@/types";
-import { connectLiveUpdates } from "@/lib/realtime/realtimeClient";
+import { subscribe } from "@/lib/realtime/multiplexer";
 import type { WsConnectionStatus } from "@/lib/realtime/connectionState";
 import { STALE_THRESHOLDS_MS } from "@/lib/realtime/connectionState";
 
@@ -16,7 +16,7 @@ interface UseLiveAlertsResult {
 /**
  * useLiveAlerts
  *
- * Stream:  /ws/alerts — event-driven alert broadcasts.
+ * Stream:  multiplexed /ws/live — alert event broadcasts.
  * Accumulates AlertEvents in reverse-chronological order (newest first), capped at 50.
  * Stale:   30s no message → isStale = true (alerts are event-driven, not periodic).
  */
@@ -40,8 +40,9 @@ export function useLiveAlerts(enabled = true, onSeqGap?: () => void): UseLiveAle
     useEffect(() => {
         if (!enabled) return;
 
-        const controls = connectLiveUpdates({
-            path: "/ws/alerts",
+        const unsub = subscribe({
+            // Alert events — accept any event type that looks like an alert
+            // (backend may use various event types for alerts)
             onEvent: (event) => {
                 const payload = event.payload as unknown as AlertEvent;
                 if (payload) {
@@ -49,6 +50,10 @@ export function useLiveAlerts(enabled = true, onSeqGap?: () => void): UseLiveAle
                     setLastUpdatedAt(Date.now());
                     resetStaleTimer();
                 }
+            },
+            filter: (e) => {
+                const t = e.type;
+                return t === "AlertCreated" || t === "AlertUpdated" || t === "SystemStatusUpdated";
             },
             onStatusChange: (s) => {
                 setStatus(s);
@@ -63,7 +68,7 @@ export function useLiveAlerts(enabled = true, onSeqGap?: () => void): UseLiveAle
         });
 
         return () => {
-            controls.close();
+            unsub();
             if (staleTimerRef.current) clearTimeout(staleTimerRef.current);
         };
     }, [enabled, resetStaleTimer]);

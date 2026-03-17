@@ -47,12 +47,13 @@ export enum ScalingModel {
 }
 
 export enum VerdictType {
+  EXECUTE = "EXECUTE",
   EXECUTE_BUY = "EXECUTE_BUY",
   EXECUTE_SELL = "EXECUTE_SELL",
+  EXECUTE_REDUCED_RISK = "EXECUTE_REDUCED_RISK",
   NO_TRADE = "NO_TRADE",
   HOLD = "HOLD",
   ABORT = "ABORT",
-  EXECUTE = "EXECUTE",
 }
 
 export enum CircuitBreakerState {

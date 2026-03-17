@@ -35,6 +35,7 @@ Usage (in ws_routes.py or app startup):
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import logging
 import os
@@ -67,6 +68,7 @@ class CrossInstanceRelay:
         self._redis: aioredis.Redis | None = redis_client
         self._managers: dict[str, object] = {}  # name → ConnectionManager
         self._pubsub: aioredis.client.PubSub | None = None  # pyright: ignore[reportAttributeAccessIssue]
+        self._pubsub_client: aioredis.Redis | None = None  # dedicated client with no socket timeout
         self._listener_task: asyncio.Task[None] | None = None
         self._running = False
 
@@ -89,72 +91,138 @@ class CrossInstanceRelay:
         self._managers = managers
         self._running = True
 
-        client = await self._ensure_redis()
-        self._pubsub = client.pubsub()
-
-        channels = [f"{WS_CROSS_INSTANCE_PREFIX}{name}" for name in managers]
-        await self._pubsub.subscribe(*channels)  # pyright: ignore[reportOptionalMemberAccess]
+        await self._ensure_pubsub()
 
         logger.info(
             "CrossInstanceRelay started: channels=%s, instance=%s",
-            channels, _INSTANCE_ID,
+            [f"{WS_CROSS_INSTANCE_PREFIX}{name}" for name in managers],
+            _INSTANCE_ID,
         )
 
         self._listener_task = asyncio.create_task(self._listen())
 
     async def _listen(self) -> None:
-        """Listen for peer broadcasts and relay to local managers."""
-        assert self._pubsub is not None
-        try:
-            async for message in self._pubsub.listen():
+        """Listen for peer broadcasts and relay to local managers.
+
+        Automatically reconnects on transient errors (e.g. Redis timeout)
+        with exponential backoff up to 30 s.
+        """
+        backoff = 1.0
+        max_backoff = 30.0
+
+        while self._running:
+            try:
+                await self._ensure_pubsub()
+                assert self._pubsub is not None
+                backoff = 1.0  # reset on successful connection
+
+                async for message in self._pubsub.listen():
+                    if not self._running:
+                        return
+                    if message["type"] != "message":
+                        continue
+
+                    channel = message["channel"]
+                    if isinstance(channel, bytes):
+                        channel = channel.decode()
+
+                    data_raw = message["data"]
+                    if isinstance(data_raw, bytes):
+                        data_raw = data_raw.decode()
+
+                    try:
+                        envelope = json.loads(data_raw)
+                    except (json.JSONDecodeError, TypeError):
+                        logger.debug("CrossInstanceRelay: invalid JSON, skipping")
+                        continue
+
+                    # Skip own messages
+                    if envelope.get("instance") == _INSTANCE_ID:
+                        continue
+
+                    payload = envelope.get("payload")
+                    if not isinstance(payload, dict):
+                        continue
+
+                    # Extract manager name from channel suffix
+                    manager_name = channel.removeprefix(WS_CROSS_INSTANCE_PREFIX)
+                    manager = self._managers.get(manager_name)
+                    if manager is None:
+                        continue
+
+                    # Relay to local clients (call broadcast directly to push + buffer)
+                    try:
+                        broadcast_fn = getattr(manager, "broadcast", None)
+                        if broadcast_fn is not None:
+                            await broadcast_fn(payload)
+                    except Exception:
+                        logger.exception(
+                            "CrossInstanceRelay: relay failed for %s",
+                            manager_name,
+                        )
+
+            except asyncio.CancelledError:
+                return
+            except Exception:
                 if not self._running:
-                    break
-                if message["type"] != "message":
-                    continue
+                    return
+                logger.warning(
+                    "CrossInstanceRelay: listener error, reconnecting in %.0fs",
+                    backoff,
+                    exc_info=True,
+                )
+                # Clean up stale pubsub before reconnect
+                await self._close_pubsub()
+                await asyncio.sleep(backoff)
+                backoff = min(backoff * 2, max_backoff)
 
-                channel = message["channel"]
-                if isinstance(channel, bytes):
-                    channel = channel.decode()
+    async def _ensure_pubsub(self) -> None:
+        """(Re)create pubsub subscription if needed.
 
-                data_raw = message["data"]
-                if isinstance(data_raw, bytes):
-                    data_raw = data_raw.decode()
+        Uses a dedicated Redis client with no socket_timeout so the
+        long-polling Pub/Sub listener can block indefinitely without
+        triggering spurious TimeoutErrors.
+        """
+        if self._pubsub is not None:
+            return
 
-                try:
-                    envelope = json.loads(data_raw)
-                except (json.JSONDecodeError, TypeError):
-                    logger.debug("CrossInstanceRelay: invalid JSON, skipping")
-                    continue
+        if self._pubsub_client is None:
+            from infrastructure.redis_url import get_redis_url
 
-                # Skip own messages
-                if envelope.get("instance") == _INSTANCE_ID:
-                    continue
+            url = get_redis_url()
+            use_tls = url.startswith("rediss://")
+            pool = aioredis.ConnectionPool.from_url(
+                url,
+                decode_responses=True,
+                max_connections=2,
+                socket_timeout=None,  # Pub/Sub idles — no read timeout
+                socket_connect_timeout=10.0,  # connect still has a deadline
+                socket_keepalive=True,
+                health_check_interval=30,
+                retry_on_timeout=True,
+                **({"ssl": True} if use_tls else {}),
+            )
+            self._pubsub_client = aioredis.Redis(connection_pool=pool)
 
-                payload = envelope.get("payload")
-                if not isinstance(payload, dict):
-                    continue
+        pubsub = self._pubsub_client.pubsub()
+        channels = [f"{WS_CROSS_INSTANCE_PREFIX}{name}" for name in self._managers]
+        await pubsub.subscribe(*channels)
+        self._pubsub = pubsub
+        logger.info("CrossInstanceRelay: (re)subscribed to %s", channels)
 
-                # Extract manager name from channel suffix
-                manager_name = channel.removeprefix(WS_CROSS_INSTANCE_PREFIX)
-                manager = self._managers.get(manager_name)
-                if manager is None:
-                    continue
-
-                # Relay to local clients (call broadcast directly to push + buffer)
-                try:
-                    broadcast_fn = getattr(manager, "broadcast", None)
-                    if broadcast_fn is not None:
-                        await broadcast_fn(payload)
-                except Exception:
-                    logger.exception(
-                        "CrossInstanceRelay: relay failed for %s", manager_name,
-                    )
-
-        except asyncio.CancelledError:
-            pass
-        except Exception:
-            if self._running:
-                logger.exception("CrossInstanceRelay: listener crashed")
+    async def _close_pubsub(self) -> None:
+        """Safely close stale pubsub connection."""
+        if self._pubsub:
+            try:
+                await self._pubsub.unsubscribe()
+                await self._pubsub.aclose()
+            except Exception:
+                pass
+            self._pubsub = None
+        if self._pubsub_client:
+            with contextlib.suppress(Exception):
+                await self._pubsub_client.aclose()
+            self._pubsub_client = None
 
     async def broadcast(self, manager_name: str, message: dict) -> None:
         """
@@ -169,20 +237,27 @@ class CrossInstanceRelay:
             if broadcast_fn is not None:
                 await broadcast_fn(message)
 
-        # Publish to Redis for peer instances
-        client = await self._ensure_redis()
-        channel = f"{WS_CROSS_INSTANCE_PREFIX}{manager_name}"
-        envelope = json.dumps({"instance": _INSTANCE_ID, "payload": message})
-        await client.publish(channel, envelope)
+        # Publish to Redis for peer instances (best-effort; timeout must not
+        # crash the caller — local broadcast already succeeded above).
+        try:
+            client = await self._ensure_redis()
+            channel = f"{WS_CROSS_INSTANCE_PREFIX}{manager_name}"
+            envelope = json.dumps({"instance": _INSTANCE_ID, "payload": message})
+            await client.publish(channel, envelope)
+        except Exception:
+            logger.warning(
+                "CrossInstanceRelay: publish failed for %s (Redis timeout?)",
+                manager_name,
+                exc_info=True,
+            )
 
     async def stop(self) -> None:
         """Stop listening and clean up."""
         self._running = False
-        if self._pubsub:
-            await self._pubsub.unsubscribe()
-            await self._pubsub.aclose()
-            self._pubsub = None
         if self._listener_task and not self._listener_task.done():
             self._listener_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await self._listener_task
             self._listener_task = None
+        await self._close_pubsub()
         logger.info("CrossInstanceRelay stopped")

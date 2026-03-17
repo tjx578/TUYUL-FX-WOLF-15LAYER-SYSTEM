@@ -5,6 +5,11 @@
 // PRD: useCommandCenterState
 // Wires: REST snapshot → WS live merge (verdicts + risk)
 // Derives: topActionableSignals, criticalAlerts, isSystemDegraded, isStale
+//
+// Split into granular sub-hooks to prevent re-render cascades.
+// Components should prefer using individual sub-hooks (e.g.
+// useCommandCenterVerdicts, useCommandCenterStatus) rather than
+// the full useCommandCenterState if they only need a slice.
 // ============================================================
 
 import { useMemo } from "react";
@@ -41,7 +46,147 @@ function urgencyScore(v: L12Verdict): number {
   return (v.confidence ?? 0) * (v.risk_reward_ratio ?? 1);
 }
 
-// ── hook ─────────────────────────────────────────────────────
+// ── Granular sub-hooks ──────────────────────────────────────
+
+/**
+ * Live-merged verdict list with WS overlay on REST bootstrap.
+ * Only re-renders when verdicts or live signal status changes.
+ */
+export function useCommandCenterVerdicts() {
+  const { data: verdictsRaw, isLoading: vLoading, isError: vError } = useAllVerdicts();
+
+  const restVerdicts = useMemo<L12Verdict[]>(
+    () => (Array.isArray(verdictsRaw) ? verdictsRaw : []),
+    [verdictsRaw]
+  );
+
+  const {
+    verdicts: verdictList,
+    status: liveStatus,
+    isStale: verdictStale,
+  } = useLiveSignals(restVerdicts, true);
+
+  const topActionableSignals = useMemo(
+    () =>
+      verdictList
+        .filter(verdictIsActionable)
+        .sort((a, b) => urgencyScore(b) - urgencyScore(a))
+        .slice(0, 3),
+    [verdictList]
+  );
+
+  const executeCount = useMemo(
+    () => verdictList.filter((v) => String(v.verdict ?? "").startsWith("EXECUTE")).length,
+    [verdictList]
+  );
+
+  const highConfidence = useMemo(
+    () => verdictList.filter((v) => (v.confidence ?? 0) >= 0.75).length,
+    [verdictList]
+  );
+
+  return useMemo(
+    () => ({
+      verdictList,
+      topActionableSignals,
+      executeCount,
+      highConfidence,
+      verdictStale,
+      liveStatus,
+      vLoading,
+      vError,
+    }),
+    [verdictList, topActionableSignals, executeCount, highConfidence, verdictStale, liveStatus, vLoading, vError]
+  );
+}
+
+/**
+ * Active trades, normalised from REST.
+ * Only re-renders when trades data changes.
+ */
+export function useCommandCenterTrades() {
+  const { data: activeTradesData, isError: tradesError } = useActiveTrades();
+
+  const activeTrades = useMemo<Trade[]>(() => {
+    if (!activeTradesData) return [];
+    if (Array.isArray(activeTradesData)) return activeTradesData as Trade[];
+    const resp = activeTradesData as ActiveTradesResponse;
+    return Array.isArray(resp.trades) ? resp.trades : [];
+  }, [activeTradesData]);
+
+  return useMemo(
+    () => ({ activeTrades, tradesError }),
+    [activeTrades, tradesError]
+  );
+}
+
+/**
+ * Account & risk snapshot data.
+ * Only re-renders when account or risk data changes.
+ */
+export function useCommandCenterRisk() {
+  const { data: accountsRaw, isError: accountsError } = useAccounts();
+  const { data: riskSnapshots, isError: riskError } = useAccountsRiskSnapshot();
+
+  const accounts = useMemo<Account[]>(
+    () => (Array.isArray(accountsRaw) ? accountsRaw : []),
+    [accountsRaw]
+  );
+
+  const snapshotList = useMemo<AccountRiskSnapshot[]>(
+    () => (Array.isArray(riskSnapshots) ? riskSnapshots : []),
+    [riskSnapshots]
+  );
+
+  const criticalSnapshots = useMemo(
+    () => snapshotList.filter((s) => s.status === "CRITICAL" || s.circuit_breaker),
+    [snapshotList]
+  );
+
+  const warnSnapshots = useMemo(
+    () => snapshotList.filter((s) => s.status === "WARNING" && !s.circuit_breaker),
+    [snapshotList]
+  );
+
+  return useMemo(
+    () => ({ accounts, snapshotList, criticalSnapshots, warnSnapshots, accountsError, riskError }),
+    [accounts, snapshotList, criticalSnapshots, warnSnapshots, accountsError, riskError]
+  );
+}
+
+/**
+ * System status: WS, mode, degradation, health.
+ * Only re-renders when system status or health changes.
+ */
+export function useCommandCenterStatus() {
+  const { data: context, isError: contextError } = useContext();
+  const { data: execution, isError: executionError } = useExecution();
+  const { data: health } = useHealth();
+  const { data: calendarBlocker } = useCalendarBlocker();
+  const { alerts } = useLiveAlerts();
+
+  const wsStatus = useSystemStore((s) => s.wsStatus);
+  const mode = useSystemStore((s) => s.mode);
+
+  const recentAlerts = useMemo(() => alerts.slice(0, 6), [alerts]);
+
+  return useMemo(
+    () => ({
+      context,
+      execution,
+      health,
+      calendarBlocker,
+      recentAlerts,
+      wsStatus,
+      mode,
+      contextError,
+      executionError,
+    }),
+    [context, execution, health, calendarBlocker, recentAlerts, wsStatus, mode, contextError, executionError]
+  );
+}
+
+// ── Full composite hook (backward compatible) ───────────────
 
 export interface CommandCenterState {
   // raw data
@@ -72,127 +217,50 @@ export interface CommandCenterState {
 }
 
 export function useCommandCenterState(): CommandCenterState {
-  // ── REST snapshots ────────────────────────────────────────
-  const { data: verdictsRaw, isLoading: vLoading, isError: vError } = useAllVerdicts();
-  const { data: activeTradesData, isError: tradesError } = useActiveTrades();
-  const { data: context, isError: contextError } = useContext();
-  const { data: execution, isError: executionError } = useExecution();
-  const { data: accountsRaw, isError: accountsError } = useAccounts();
-  const { data: riskSnapshots, isError: riskError } = useAccountsRiskSnapshot();
-  const { data: health } = useHealth();
-  const { data: calendarBlocker } = useCalendarBlocker();
-  const { alerts } = useLiveAlerts();
-
-  const wsStatus = useSystemStore((s) => s.wsStatus);
-  const mode = useSystemStore((s) => s.mode);
-
-  // ── REST → initial normalisation ─────────────────────────
-  const restVerdicts = useMemo<L12Verdict[]>(
-    () => (Array.isArray(verdictsRaw) ? verdictsRaw : []),
-    [verdictsRaw]
-  );
-
-  // ── WS live merge for verdicts (REST bootstrap) ───────────
-  const {
-    verdicts: verdictList,
-    status: liveStatus,
-    isStale: verdictStale,
-  } = useLiveSignals(restVerdicts, true);
-
-  // ── Normalise active trades ───────────────────────────────
-  const activeTrades = useMemo<Trade[]>(() => {
-    if (!activeTradesData) return [];
-    if (Array.isArray(activeTradesData)) return activeTradesData as Trade[];
-    const resp = activeTradesData as ActiveTradesResponse;
-    return Array.isArray(resp.trades) ? resp.trades : [];
-  }, [activeTradesData]);
-
-  // Normalize accounts — useAccounts().data can be undefined when backend is
-  // unreachable. Accessing .length/.slice() on undefined throws a TypeError
-  // which crashes the page and triggers the error boundary (blank screen).
-  const accounts = useMemo<Account[]>(
-    () => (Array.isArray(accountsRaw) ? accountsRaw : []),
-    [accountsRaw]
-  );
-
-  const snapshotList = useMemo<AccountRiskSnapshot[]>(
-    () => (Array.isArray(riskSnapshots) ? riskSnapshots : []),
-    [riskSnapshots]
-  );
-
-  // ── Derived state ─────────────────────────────────────────
-  const topActionableSignals = useMemo(
-    () =>
-      verdictList
-        .filter(verdictIsActionable)
-        .sort((a, b) => urgencyScore(b) - urgencyScore(a))
-        .slice(0, 3),
-    [verdictList]
-  );
-
-  const executeCount = useMemo(
-    () => verdictList.filter((v) => String(v.verdict ?? "").startsWith("EXECUTE")).length,
-    [verdictList]
-  );
-
-  const highConfidence = useMemo(
-    () => verdictList.filter((v) => (v.confidence ?? 0) >= 0.75).length,
-    [verdictList]
-  );
-
-  const criticalSnapshots = useMemo(
-    () => snapshotList.filter((s) => s.status === "CRITICAL" || s.circuit_breaker),
-    [snapshotList]
-  );
-
-  const warnSnapshots = useMemo(
-    () => snapshotList.filter((s) => s.status === "WARNING" && !s.circuit_breaker),
-    [snapshotList]
-  );
+  const verdicts = useCommandCenterVerdicts();
+  const trades = useCommandCenterTrades();
+  const risk = useCommandCenterRisk();
+  const status = useCommandCenterStatus();
 
   const isSystemDegraded =
-    mode === "DEGRADED" ||
-    wsStatus === "DISCONNECTED" ||
-    wsStatus === "RECONNECTING" ||
-    liveStatus === "DEGRADED" ||
-    liveStatus === "STALE" ||
-    health?.status !== "ok";
-
-  const isStale = verdictStale;
+    status.mode === "DEGRADED" ||
+    status.wsStatus === "DISCONNECTED" ||
+    status.wsStatus === "RECONNECTING" ||
+    verdicts.liveStatus === "DEGRADED" ||
+    verdicts.liveStatus === "STALE" ||
+    status.health?.status !== "ok";
 
   const dataErrors = useMemo(() => {
     const errs: string[] = [];
-    if (vError) errs.push("verdicts");
-    if (tradesError) errs.push("trades");
-    if (contextError) errs.push("context");
-    if (executionError) errs.push("execution");
-    if (accountsError) errs.push("accounts");
-    if (riskError) errs.push("risk");
+    if (verdicts.vError) errs.push("verdicts");
+    if (trades.tradesError) errs.push("trades");
+    if (status.contextError) errs.push("context");
+    if (status.executionError) errs.push("execution");
+    if (risk.accountsError) errs.push("accounts");
+    if (risk.riskError) errs.push("risk");
     return errs;
-  }, [vError, tradesError, contextError, executionError, accountsError, riskError]);
-
-  const recentAlerts = useMemo(() => alerts.slice(0, 6), [alerts]);
+  }, [verdicts.vError, trades.tradesError, status.contextError, status.executionError, risk.accountsError, risk.riskError]);
 
   return {
-    verdictList,
-    activeTrades,
-    accounts,
-    snapshotList,
-    context,
-    execution,
-    health,
-    calendarBlocker,
-    recentAlerts,
-    topActionableSignals,
-    executeCount,
-    highConfidence,
-    criticalSnapshots,
-    warnSnapshots,
+    verdictList: verdicts.verdictList,
+    activeTrades: trades.activeTrades,
+    accounts: risk.accounts,
+    snapshotList: risk.snapshotList,
+    context: status.context,
+    execution: status.execution,
+    health: status.health,
+    calendarBlocker: status.calendarBlocker,
+    recentAlerts: status.recentAlerts,
+    topActionableSignals: verdicts.topActionableSignals,
+    executeCount: verdicts.executeCount,
+    highConfidence: verdicts.highConfidence,
+    criticalSnapshots: risk.criticalSnapshots,
+    warnSnapshots: risk.warnSnapshots,
     isSystemDegraded,
-    isStale,
-    wsStatus,
-    mode,
+    isStale: verdicts.verdictStale,
+    wsStatus: status.wsStatus,
+    mode: status.mode,
     dataErrors,
-    vLoading,
+    vLoading: verdicts.vLoading,
   };
 }
