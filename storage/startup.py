@@ -20,6 +20,11 @@ def _has_candle_data(redis: RedisClient) -> bool:
 
     Uses the ``SCAN`` cursor to avoid blocking the server.  A single key with
     at least one entry is enough to declare that Redis holds candle data.
+    """Return True if Redis holds any candle history keys.
+
+    Uses SCAN to avoid blocking the server.  A single non-empty list is
+    sufficient to conclude that candle data survived the restart.
+    Returns False on any Redis error so the caller falls back to recovery.
     """
     try:
         cursor = 0
@@ -31,6 +36,8 @@ def _has_candle_data(redis: RedisClient) -> bool:
                 break
     except Exception as exc:
         logger.warning(f"Candle data SCAN failed: {exc}")
+        logger.warning("Failed to scan Redis for candle data — assuming empty: {}", exc)
+        return False
     return False
 
 

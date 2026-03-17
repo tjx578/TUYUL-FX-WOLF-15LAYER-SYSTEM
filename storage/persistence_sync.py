@@ -291,6 +291,11 @@ class PersistenceSync:
         Used when Redis already has candle data (detected via SCAN) but is
         missing risk/account state keys (e.g. ``wolf15:peak_equity``).
         Avoids overwriting existing candle history during a partial recovery.
+        """Recover only risk/trade state from PostgreSQL (candle history skipped).
+
+        Used when Redis already has candle data (post-restart with live cache)
+        but is missing peak_equity / drawdown / circuit-breaker keys.
+        Candle recovery is intentionally omitted to avoid double-seeding.
         """
         if not self._pg.is_available:
             return False
@@ -346,6 +351,8 @@ class PersistenceSync:
         # Candle data already exists in Redis — leave it untouched.
         logger.info(
             "PostgreSQL risk-state recovery complete (candle history preserved); active trades=%d",
+        logger.info(
+            "PostgreSQL risk-only recovery complete; active trades=%d (candle history preserved)",
             len(trades),
         )
         return True

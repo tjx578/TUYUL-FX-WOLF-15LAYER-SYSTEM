@@ -452,10 +452,20 @@ async def run_ingest_services(has_api_key: bool) -> None:
         warmup_results: dict[str, dict[str, list[dict[str, Any]]]] = {}
 
         if redis_has_data:
+        global _ingest_ready, _ingest_degraded
+
+        # ── Redis-first: skip Finnhub warmup if Redis already has candle data ──
+        # After a normal restart Redis typically retains all seeded candle
+        # history from the prior run.  Running a full Finnhub REST warmup in
+        # this case wastes API quota, takes minutes, and causes a stale-data
+        # window for the engine and dashboard.  WebSocket reconnects immediately
+        # and M15 candles resume building from live ticks.
+        if await _has_stale_cache(redis):
             logger.info(
                 "[Ingest] Redis candle cache detected — skipping Finnhub REST warmup. "
                 "M15 will build from real-time WebSocket ticks."
             )
+            warmup_results: dict[str, dict[str, list[dict[str, Any]]]] = {}
             system_state.set_state(SystemState.LIVE)
         else:
             logger.info("[Ingest] Redis empty — running Finnhub REST warmup")
@@ -493,6 +503,33 @@ async def run_ingest_services(has_api_key: bool) -> None:
                     _warmup_circuit.state.value,
                 )
         # ── End degraded-mode gate ────────────────────────────────────────
+
+            # Seed Redis Lists so the engine's RedisConsumer can warm up
+            # without waiting for live candle completion (fixes race condition).
+            await _seed_redis_candle_history(redis, warmup_results)
+
+            # ── Degraded-mode stale cache gate ────────────────────────────────
+            # When warmup produced no results (Finnhub/providers all 403 or timed
+            # out), check whether Redis already holds candle data from a prior run.
+            # If it does, mark the service as "degraded-ready" so the healthcheck
+            # passes and the container stays alive to serve cached data.
+            if not warmup_results:
+                if await _has_stale_cache(redis):
+                    _ingest_degraded = True
+                    _health_probe.set_detail("warmup", "degraded_stale_cache")
+                    _health_probe.set_detail("circuit_state", _warmup_circuit.state.value)
+                    logger.warning(
+                        "[Ingest] Warmup failed but stale cache found in Redis — "
+                        "service running in DEGRADED mode (readiness=True, circuit={})",
+                        _warmup_circuit.state.value,
+                    )
+                else:
+                    _health_probe.set_detail("warmup", "failed_no_cache")
+                    logger.error(
+                        "[Ingest] Warmup failed and no stale cache available — service will remain NOT READY (circuit={})",
+                        _warmup_circuit.state.value,
+                    )
+            # ── End degraded-mode gate ────────────────────────────────────────
 
         # ── Build M15 → H1 candle chain with Redis RPUSH callbacks ────
         # Every completed M15 and H1 candle is written to Redis so the
