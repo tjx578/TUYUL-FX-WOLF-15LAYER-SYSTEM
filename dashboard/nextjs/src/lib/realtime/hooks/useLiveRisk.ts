@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback } from "react";
 import type { RiskSnapshot } from "@/types";
-import { connectLiveUpdates } from "@/lib/realtime/realtimeClient";
+import { subscribe } from "@/lib/realtime/multiplexer";
 import type { WsConnectionStatus } from "@/lib/realtime/connectionState";
 import { STALE_THRESHOLDS_MS } from "@/lib/realtime/connectionState";
 import { mergeSingle } from "@/lib/realtime/merge";
@@ -18,7 +18,7 @@ interface UseLiveRiskResult {
  * useLiveRisk
  *
  * Bootstrap: caller provides initial snapshot from REST (useRiskSnapshot / SWR).
- * Stream:    /ws/risk — full RiskSnapshot replacement every 1s.
+ * Stream:    multiplexed /ws/live — RiskUpdated events.
  * Merge:     mergeSingle — stale guard by timestamp.
  * Stale:     10s no message → isStale = true.
  *
@@ -55,18 +55,16 @@ export function useLiveRisk(
 
   useEffect(() => {
     if (!enabled) return;
-    // Reset WS tracking on fresh connection cycle
     wsActiveRef.current = false;
 
-    const path = accountId ? `/ws/risk?account_id=${accountId}` : "/ws/risk";
-
-    const controls = connectLiveUpdates({
-      path,
+    const unsub = subscribe({
+      filter: (e) => e.type === "RiskUpdated",
       onEvent: (event) => {
         if (event.type === "RiskUpdated") {
-          setSnapshot((prev) =>
-            mergeSingle(prev, event.payload as unknown as RiskSnapshot)
-          );
+          // Filter by accountId client-side if specified
+          const payload = event.payload as unknown as RiskSnapshot;
+          if (accountId && payload && payload.account_id !== accountId) return;
+          setSnapshot((prev) => mergeSingle(prev, payload));
           setLastUpdatedAt(Date.now());
           resetStaleTimer();
         }
@@ -76,13 +74,11 @@ export function useLiveRisk(
         if (s === "LIVE") resetStaleTimer();
         if (s === "DISCONNECTED" || s === "DEGRADED") {
           if (staleTimerRef.current) clearTimeout(staleTimerRef.current);
-          // Allow REST to sync again after disconnect
           wsActiveRef.current = false;
         }
       },
       onDegradation: () => setStatus("DEGRADED"),
       onSeqGap: () => {
-        // On gap, allow REST to re-sync since we may have missed data
         wsActiveRef.current = false;
         onSeqGap?.();
       },
@@ -90,7 +86,7 @@ export function useLiveRisk(
     });
 
     return () => {
-      controls.close();
+      unsub();
       if (staleTimerRef.current) clearTimeout(staleTimerRef.current);
     };
   }, [enabled, accountId, resetStaleTimer]);

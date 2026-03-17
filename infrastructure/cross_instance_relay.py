@@ -198,6 +198,8 @@ class CrossInstanceRelay:
                 socket_timeout=None,  # Pub/Sub idles — no read timeout
                 socket_connect_timeout=10.0,  # connect still has a deadline
                 socket_keepalive=True,
+                health_check_interval=30,
+                retry_on_timeout=True,
                 **({"ssl": True} if use_tls else {}),
             )
             self._pubsub_client = aioredis.Redis(connection_pool=pool)

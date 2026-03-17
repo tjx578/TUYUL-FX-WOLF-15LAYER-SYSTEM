@@ -126,7 +126,7 @@ class L7ProbabilityAnalyzer:
         Use this when trade_returns cannot be passed per-call (e.g.,
         shared history across multiple symbol analyses).
         """
-        if not isinstance(returns, (list, tuple)):
+        if not isinstance(returns, list | tuple):
             raise TypeError(f"Expected list[float], got {type(returns).__name__}")
         self._trade_history = [float(r) for r in returns]
 
@@ -251,14 +251,30 @@ class L7ProbabilityAnalyzer:
                     result["wf_regime_consistency"] = wf_result.regime_consistency
                     result["wf_avg_profit_factor"] = wf_result.avg_profit_factor
                     # Downgrade validation tier if walk-forward fails
-                    if not wf_result.passed and validation == "PASS":
-                        result["validation"] = "CONDITIONAL"
-                        validation = "CONDITIONAL"  # for log
+                    if not wf_result.passed:
+                        if validation == "PASS":
+                            result["validation"] = "CONDITIONAL"
+                            validation = "CONDITIONAL"
+                        elif validation == "CONDITIONAL":
+                            result["validation"] = "FAIL"
+                            validation = "FAIL"
+                        logger.warning(
+                            "[L7] {symbol} WF validation failed — " "downgraded to {validation}",
+                            symbol=symbol,
+                            validation=validation,
+                        )
                 except Exception as wf_exc:
-                    logger.debug(
-                        "[L7] Walk-forward enrichment skipped: {exc}",
+                    logger.warning(
+                        "[L7] Walk-forward enrichment failed: {exc}",
                         exc=wf_exc,
                     )
+                    # Populate WF fields with defaults so downstream
+                    # consumers always see a consistent schema.
+                    result.setdefault("wf_passed", None)
+                    result.setdefault("wf_stability_score", None)
+                    result.setdefault("wf_avg_win_rate", None)
+                    result.setdefault("wf_regime_consistency", None)
+                    result.setdefault("wf_avg_profit_factor", None)
 
             logger.info(
                 "[L7] {symbol} -> {validation} | "

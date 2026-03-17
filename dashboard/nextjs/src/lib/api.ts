@@ -1,4 +1,4 @@
-import useSWR from "swr";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type {
   L12Verdict,
   Trade,
@@ -170,10 +170,27 @@ export interface ActiveTradesResponse {
 
 // ─── HOOKS ───────────────────────────────────────────────────
 
+// Wrapper to keep return shape consistent across all query hooks.
+// mutate() returns a function that invalidates the query key,
+// keeping the same invalidation ergonomics as SWR's mutate().
+function useApiQuery<T>(
+  key: string | null,
+  opts?: { refetchInterval?: number },
+) {
+  const queryClient = useQueryClient();
+  const { data, error, isLoading } = useQuery<T>({
+    queryKey: [key],
+    queryFn: () => fetcher(key!),
+    enabled: !!key,
+    ...(opts?.refetchInterval ? { refetchInterval: opts.refetchInterval } : {}),
+  });
+  const mutate = () => queryClient.invalidateQueries({ queryKey: [key] });
+  return { data, isLoading, isError: !!error, error, mutate };
+}
+
 export function useAccounts() {
-  const { data, error, isLoading, mutate } = useSWR<Account[] | { accounts: Account[] }>(
+  const { data, error, isLoading, mutate } = useApiQuery<Account[] | { accounts: Account[] }>(
     API_ENDPOINTS.accounts,
-    fetcher
   );
   const normalized = Array.isArray(data)
     ? data
@@ -184,9 +201,8 @@ export function useAccounts() {
 }
 
 export function useCapitalDeployment() {
-  const { data, error, isLoading, mutate } = useSWR<CapitalDeploymentResponse>(
+  const { data, error, isLoading, mutate } = useApiQuery<CapitalDeploymentResponse>(
     API_ENDPOINTS.accountsCapitalDeployment,
-    fetcher
   );
   return {
     data: data?.accounts ?? [],
@@ -200,22 +216,18 @@ export function useCapitalDeployment() {
 }
 
 export function useActiveTrades() {
-  // Current backend shape: { trades: [...], count: n }
-  // Keep union for backward compatibility with legacy Trade[] responses.
-  const { data, error, isLoading, mutate } = useSWR<
+  const { data, error, isLoading, mutate } = useApiQuery<
     ActiveTradesResponse | Trade[]
   >(
     API_ENDPOINTS.tradesActive,
-    fetcher
   );
   return { data, isLoading, isError: !!error, error, mutate };
 }
 
 export function useAllVerdicts(options?: { refreshInterval?: number }) {
-  const { data, error, isLoading, mutate } = useSWR<L12Verdict[] | Record<string, L12Verdict>>(
+  const { data, error, isLoading, mutate } = useApiQuery<L12Verdict[] | Record<string, L12Verdict>>(
     API_ENDPOINTS.verdictAll,
-    fetcher,
-    options?.refreshInterval ? { refreshInterval: options.refreshInterval } : undefined
+    options?.refreshInterval ? { refetchInterval: options.refreshInterval } : undefined,
   );
   const normalized = normalizeVerdictResponse(data);
   return { data: normalized, isLoading, isError: !!error, error, mutate };
@@ -236,42 +248,37 @@ function normalizeVerdictResponse(
 }
 
 export function useHealth() {
-  const { data, error, isLoading } = useSWR<SystemHealth>(
+  const { data, error, isLoading } = useApiQuery<SystemHealth>(
     API_ENDPOINTS.health,
-    fetcher
   );
   return { data, isLoading, isError: !!error, error };
 }
 
 export function useContext() {
-  const { data, error, isLoading } = useSWR<ContextSnapshot>(
+  const { data, error, isLoading } = useApiQuery<ContextSnapshot>(
     API_ENDPOINTS.context,
-    fetcher,
-    { refreshInterval: 30_000 },
+    { refetchInterval: 30_000 },
   );
   return { data, isLoading, isError: !!error, error };
 }
 
 export function useExecution() {
-  const { data, error, isLoading } = useSWR<ExecutionState>(
+  const { data, error, isLoading } = useApiQuery<ExecutionState>(
     API_ENDPOINTS.execution,
-    fetcher
   );
   return { data, isLoading, isError: !!error, error };
 }
 
 export function useRiskSnapshot(accountId: string) {
-  const { data, error, isLoading } = useSWR<RiskSnapshot>(
+  const { data, error, isLoading } = useApiQuery<RiskSnapshot>(
     accountId ? API_ENDPOINTS.riskSnapshotByAccount(accountId) : null,
-    fetcher
   );
   return { data, isLoading, isError: !!error, error };
 }
 
 export function usePipeline(pair: string) {
-  const { data, error, isLoading } = useSWR<PipelineData>(
+  const { data, error, isLoading } = useApiQuery<PipelineData>(
     pair ? `/api/v1/pipeline/${pair}` : null,
-    fetcher
   );
   return { data, error, isLoading };
 }
@@ -282,9 +289,8 @@ export function useCalendarEvents(period = "today", impact?: string) {
   const endpoint = period === "upcoming"
     ? `${API_ENDPOINTS.calendarUpcoming}?${params.toString()}`
     : `${API_ENDPOINTS.calendar}?${params.toString()}`;
-  const { data, error, isLoading } = useSWR<CalendarDayResponse | CalendarUpcomingResponse | CalendarEvent[]>(
+  const { data, error, isLoading } = useApiQuery<CalendarDayResponse | CalendarUpcomingResponse | CalendarEvent[]>(
     endpoint,
-    fetcher
   );
   const raw = Array.isArray(data)
     ? data
@@ -308,26 +314,23 @@ export function useCalendarEvents(period = "today", impact?: string) {
 
 export function useCalendarBlocker(symbol?: string) {
   const query = symbol ? `?symbol=${encodeURIComponent(symbol)}` : "";
-  const { data, error, isLoading, mutate } = useSWR<CalendarBlockerResponse>(
+  const { data, error, isLoading, mutate } = useApiQuery<CalendarBlockerResponse>(
     `${API_ENDPOINTS.calendarBlocker}${query}`,
-    fetcher
   );
   return { data, isLoading, isError: !!error, error, mutate };
 }
 
 export function useCalendarSourceHealth() {
-  const { data, error, isLoading, mutate } = useSWR<CalendarHealthResponse>(
+  const { data, error, isLoading, mutate } = useApiQuery<CalendarHealthResponse>(
     API_ENDPOINTS.calendarHealth,
-    fetcher
   );
   return { data, isLoading, isError: !!error, error, mutate };
 }
 
 export function useEAStatus() {
-  const { data, error, isLoading, mutate } = useSWR<EAStatus>(
+  const { data, error, isLoading, mutate } = useApiQuery<EAStatus>(
     API_ENDPOINTS.eaStatus,
-    fetcher,
-    { refreshInterval: 5000 },
+    { refetchInterval: 5000 },
   );
   return { data, isLoading, isError: !!error, error, mutate };
 }
@@ -336,87 +339,77 @@ export function useEALogs(agentId?: string) {
   const url = agentId
     ? `${API_ENDPOINTS.eaLogs}?agent_id=${encodeURIComponent(agentId)}`
     : API_ENDPOINTS.eaLogs;
-  const { data, error, isLoading, mutate } = useSWR<EALog[]>(url, fetcher);
+  const { data, error, isLoading, mutate } = useApiQuery<EALog[]>(url);
   return { data, isLoading, isError: !!error, error, mutate };
 }
 
 export function useEAAgents() {
-  const { data, error, isLoading, mutate } = useSWR<EAAgent[]>(
+  const { data, error, isLoading, mutate } = useApiQuery<EAAgent[]>(
     API_ENDPOINTS.eaAgents,
-    fetcher,
-    { refreshInterval: 5000 },
+    { refetchInterval: 5000 },
   );
   return { data: data ?? [], isLoading, isError: !!error, error, mutate };
 }
 
 export function usePropFirmPhase(accountId: string) {
-  const { data, error, isLoading } = useSWR<PropFirmPhase>(
+  const { data, error, isLoading } = useApiQuery<PropFirmPhase>(
     accountId ? API_ENDPOINTS.propFirmPhase(accountId) : null,
-    fetcher
   );
   return { data, isLoading, isError: !!error, error };
 }
 
 export function usePropFirmStatus(accountId: string) {
-  const { data, error, isLoading } = useSWR<PropFirmStatus>(
+  const { data, error, isLoading } = useApiQuery<PropFirmStatus>(
     accountId ? API_ENDPOINTS.propFirmStatus(accountId) : null,
-    fetcher
   );
   return { data, isLoading, isError: !!error, error };
 }
 
 export function usePricesREST() {
-  const { data, error, isLoading, mutate } = useSWR<PriceData[]>(
+  const { data, error, isLoading, mutate } = useApiQuery<PriceData[]>(
     "/api/v1/prices",
-    fetcher
   );
   return { data, isLoading, isError: !!error, error, mutate };
 }
 
 export function usePairs() {
-  const { data, error, isLoading } = useSWR<PairInfo[]>(
+  const { data, error, isLoading } = useApiQuery<PairInfo[]>(
     "/api/v1/pairs",
-    fetcher
   );
   return { data, isLoading, isError: !!error, error };
 }
 
 export function useProbabilitySummary() {
-  const { data, error, isLoading } = useSWR<ProbabilitySummary>(
+  const { data, error, isLoading } = useApiQuery<ProbabilitySummary>(
     "/api/v1/probability/summary",
-    fetcher
   );
   return { data, isLoading, isError: !!error, error };
 }
 
 export function useProbabilityCalibration() {
-  const { data, error, isLoading } = useSWR<ProbabilityCalibration>(
+  const { data, error, isLoading } = useApiQuery<ProbabilityCalibration>(
     "/api/v1/probability/calibration",
-    fetcher
   );
   return { data, isLoading, isError: !!error, error };
 }
 
 export function useJournalToday() {
-  const { data, error, isLoading } = useSWR<DailyJournal>(
+  const { data, error, isLoading } = useApiQuery<DailyJournal>(
     "/api/v1/journal/today",
-    fetcher
   );
   return { data, isLoading, isError: !!error, error };
 }
 
 export function useJournalWeekly() {
-  const { data, error, isLoading } = useSWR<DailyJournal[]>(
+  const { data, error, isLoading } = useApiQuery<DailyJournal[]>(
     "/api/v1/journal/weekly",
-    fetcher
   );
   return { data, isLoading, isError: !!error, error };
 }
 
 export function useJournalMetrics() {
-  const { data, error, isLoading } = useSWR<JournalMetrics>(
+  const { data, error, isLoading } = useApiQuery<JournalMetrics>(
     "/api/v1/journal/metrics",
-    fetcher
   );
   return { data, isLoading, isError: !!error, error };
 }
@@ -433,9 +426,8 @@ export interface AccountRiskSnapshot {
 }
 
 export function useAccountsRiskSnapshot() {
-  const { data, error, isLoading, mutate } = useSWR<AccountRiskSnapshot[]>(
+  const { data, error, isLoading, mutate } = useApiQuery<AccountRiskSnapshot[]>(
     API_ENDPOINTS.accountsRiskSnapshot,
-    fetcher
   );
   return { data, isLoading, isError: !!error, error, mutate };
 }
