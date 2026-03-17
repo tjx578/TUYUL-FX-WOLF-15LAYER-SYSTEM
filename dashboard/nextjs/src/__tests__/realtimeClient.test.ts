@@ -26,7 +26,7 @@ vi.mock("@/lib/env", () => ({
 // Mock WsEventSchema to accept any object with a `type` field
 vi.mock("@/schema/wsEventSchema", () => ({
     WsEventSchema: {
-        parse: vi.fn((data: Record<string, unknown>) => data),
+        safeParse: vi.fn((data: Record<string, unknown>) => ({ success: true, data })),
     },
 }));
 
