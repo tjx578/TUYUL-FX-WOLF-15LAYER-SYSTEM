@@ -20,6 +20,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response
+from loguru import logger
 from pydantic import BaseModel, Field
 
 from api.middleware.auth import (
@@ -89,6 +90,8 @@ async def login(body: LoginRequest, response: Response) -> dict[str, Any]:
     allows the frontend to store it for WebSocket auth (query-param based)
     or as a fallback for clients that cannot use cookies.
     """
+    from api.middleware.auth import API_KEY as CONFIGURED_API_KEY  # noqa: N811
+
     key = body.api_key.strip()
 
     # Try as JWT first (allows login with existing valid JWT)
@@ -109,7 +112,18 @@ async def login(body: LoginRequest, response: Response) -> dict[str, Any]:
         user = _session_from_payload({"sub": "api_key_user", "auth_method": "api_key"})
         return {"token": token, **user.model_dump()}
 
-    raise HTTPException(status_code=401, detail="Invalid API key")
+    # Diagnostic logging — never log actual keys, only metadata
+    logger.warning(
+        "Login failed: DASHBOARD_API_KEY configured={}, key_len_match={}, jwt_decode={}",
+        bool(CONFIGURED_API_KEY),
+        len(key) == len(CONFIGURED_API_KEY) if CONFIGURED_API_KEY else "N/A",
+        "no",
+    )
+    detail = "Invalid API key"
+    if not CONFIGURED_API_KEY:
+        detail = "Server misconfiguration: DASHBOARD_API_KEY not set"
+        logger.error("DASHBOARD_API_KEY env var is empty — all login attempts will fail")
+    raise HTTPException(status_code=401, detail=detail)
 
 
 @router.get("/session", response_model=SessionUserResponse)
