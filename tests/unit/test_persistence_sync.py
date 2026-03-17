@@ -566,3 +566,81 @@ class TestCandleHistoryRecovery:
         fake_pg._tables["ohlc_candles"] = []
         count = await sync_service._recover_candle_history()
         assert count == 0
+
+
+# ──────────────────────────────────────────────────────────────────
+#  recover_risk_state_only — partial recovery preserving candle data
+# ──────────────────────────────────────────────────────────────────
+
+
+class TestRecoverRiskStateOnly:
+    @pytest.mark.asyncio
+    async def test_recover_risk_state_restores_drawdown_without_touching_candles(
+        self,
+        fake_redis: FakeRedis,
+        fake_pg: FakePostgres,
+        sync_service: PersistenceSync,
+    ) -> None:
+        """recover_risk_state_only restores drawdown state but leaves candle keys intact."""
+        # Seed drawdown snapshot in PG
+        fake_redis.set("wolf15:drawdown:daily", "100.0")
+        fake_redis.set("wolf15:drawdown:weekly", "200.0")
+        fake_redis.set("wolf15:drawdown:total", "300.0")
+        fake_redis.set("wolf15:peak_equity", "105000.0")
+        await sync_service._sync_risk_snapshots()
+
+        # Simulate partial wipe — candles survive, risk keys lost
+        del fake_redis._store["wolf15:peak_equity"]
+        del fake_redis._store["wolf15:drawdown:daily"]
+        # Candle key remains
+        fake_redis._lists["wolf15:candle_history:EURUSD:H1"] = ['{"close": 1.1}']
+
+        ok = await sync_service.recover_risk_state_only()
+        assert ok is True
+
+        # Risk state is restored
+        assert fake_redis.get("wolf15:peak_equity") == "105000.0"
+        assert fake_redis.get("wolf15:drawdown:daily") == "100.0"
+
+        # Candle data is untouched
+        assert fake_redis.client.llen("wolf15:candle_history:EURUSD:H1") == 1
+
+    @pytest.mark.asyncio
+    async def test_recover_risk_state_only_does_not_seed_candles(
+        self,
+        fake_redis: FakeRedis,
+        fake_pg: FakePostgres,
+        sync_service: PersistenceSync,
+    ) -> None:
+        """recover_risk_state_only must never write to candle_history keys."""
+        fake_pg._tables["ohlc_candles"] = [
+            {
+                "symbol": "EURUSD",
+                "timeframe": "H1",
+                "open_time": datetime(2024, 1, 1, tzinfo=UTC),
+                "close_time": datetime(2024, 1, 1, 1, tzinfo=UTC),
+                "open": 1.09,
+                "high": 1.11,
+                "low": 1.08,
+                "close": 1.10,
+                "volume": 500.0,
+                "tick_count": 60,
+            }
+        ]
+        await sync_service.recover_risk_state_only()
+
+        # candle keys must NOT be created
+        candle_keys = [k for k in fake_redis._lists if k.startswith("wolf15:candle_history:")]
+        assert candle_keys == [], "recover_risk_state_only must not write candle keys"
+
+    @pytest.mark.asyncio
+    async def test_recover_risk_state_only_returns_false_when_pg_unavailable(
+        self,
+        fake_pg: FakePostgres,
+        fake_redis: FakeRedis,
+        sync_service: PersistenceSync,
+    ) -> None:
+        """Returns False when PostgreSQL is not available."""
+        fake_pg.is_available = False
+        ok = await sync_service.recover_risk_state_only()
+        assert ok is False

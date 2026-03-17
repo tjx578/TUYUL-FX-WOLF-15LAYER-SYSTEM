@@ -439,16 +439,36 @@ async def run_ingest_services(has_api_key: bool) -> None:
         redis = await _connect_redis_with_retry()
         system_state = SystemStateManager()
         system_state.set_state(SystemState.WARMING_UP)
-        warmup_results = await _run_warmup(system_state, enabled_symbols)
-        logger.info(
-            "[Warmup] results count=%d symbols_with_data=%s",
-            len(warmup_results),
-            list(warmup_results.keys())[:10],
-        )
 
-        # Seed Redis Lists so the engine's RedisConsumer can warm up
-        # without waiting for live candle completion (fixes race condition).
-        await _seed_redis_candle_history(redis, warmup_results)
+        # ── Redis-first: skip Finnhub REST warmup when cache already present ──
+        # Candle data flow:
+        #   M15  — built from real-time WebSocket ticks via CandleBuilder
+        #   H1   — built from completed M15 candles via CandleBuilder
+        #   H4/D1/W1/MN — fetched via Finnhub REST (only when Redis is empty)
+        # After a normal restart Redis typically holds all timeframe history.
+        # Reconnecting the WebSocket and building new M15 candles from live
+        # ticks is sufficient — there is no need to re-fetch from REST.
+        redis_has_data = await _has_stale_cache(redis)
+        warmup_results: dict[str, dict[str, list[dict[str, Any]]]] = {}
+
+        if redis_has_data:
+            logger.info(
+                "[Ingest] Redis candle cache detected — skipping Finnhub REST warmup. "
+                "M15 will build from real-time WebSocket ticks."
+            )
+            system_state.set_state(SystemState.LIVE)
+        else:
+            logger.info("[Ingest] Redis empty — running Finnhub REST warmup")
+            warmup_results = await _run_warmup(system_state, enabled_symbols)
+            logger.info(
+                "[Warmup] results count=%d symbols_with_data=%s",
+                len(warmup_results),
+                list(warmup_results.keys())[:10],
+            )
+
+            # Seed Redis Lists so the engine's RedisConsumer can warm up
+            # without waiting for live candle completion (fixes race condition).
+            await _seed_redis_candle_history(redis, warmup_results)
 
         # ── Degraded-mode stale cache gate ────────────────────────────────
         # When warmup produced no results (Finnhub/providers all 403 or timed
@@ -456,7 +476,7 @@ async def run_ingest_services(has_api_key: bool) -> None:
         # If it does, mark the service as "degraded-ready" so the healthcheck
         # passes and the container stays alive to serve cached data.
         global _ingest_ready, _ingest_degraded
-        if not warmup_results:
+        if not warmup_results and not redis_has_data:
             if await _has_stale_cache(redis):
                 _ingest_degraded = True
                 _health_probe.set_detail("warmup", "degraded_stale_cache")
