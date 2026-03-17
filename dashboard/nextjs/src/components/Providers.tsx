@@ -21,10 +21,15 @@ export function Providers({ children }: { children: React.ReactNode }) {
         shouldRetryOnError: true,
         errorRetryCount: 3,
         onError: (error) => {
-          // Global 401 handler: clear stale auth state and trigger session expiry
+          // Global 401 handler: clear stale auth state and trigger session expiry.
+          // Guard: only fire once — when 10+ SWR hooks get 401 simultaneously,
+          // each would trigger this handler. Skip if already marked expired.
           if (error instanceof HttpError && error.status === 401) {
-            useAuthStore.getState().clear();
-            useSessionStore.getState().setExpiredReason("SESSION_EXPIRED");
+            const session = useSessionStore.getState();
+            if (!session.expiredReason) {
+              useAuthStore.getState().clear();
+              session.setExpiredReason("SESSION_EXPIRED");
+            }
           }
         },
         onErrorRetry: (error, _key, _config, revalidate, { retryCount }) => {
