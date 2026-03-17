@@ -87,7 +87,7 @@ class DataFeedAdapter(ABC):
 class StalenessGuard:
     """Detects when data feed goes stale -- prevents analysis on old data."""
 
-    def __init__(self, max_stale_seconds: float = 5.0):
+    def __init__(self, max_stale_seconds: float = 30.0):
         self._max_stale = max_stale_seconds
         self._last_tick: dict[str, float] = {}
 

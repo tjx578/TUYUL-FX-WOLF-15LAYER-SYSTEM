@@ -16,9 +16,10 @@ VERDICT_STREAM = "stream:l12_verdict"
 VERDICT_STREAM = "stream:l12_verdict"
 VERDICT_STREAM_MAXLEN = 1000
 
-# TTL for verdict cache: 10 minutes. Prevents stale data lingering forever
-# if the pipeline crashes. The pipeline runs every ~60s under normal conditions.
-VERDICT_TTL_SEC = 600
+# TTL for verdict cache: 1 hour. Staleness detection uses _cached_at field
+# comparison (see is_verdict_stale()), not TTL expiry. The TTL is a safety net
+# for abandoned data only — the pipeline runs every ~60s under normal conditions.
+VERDICT_TTL_SEC = 3600
 # Maximum entries retained in the verdict stream (ring-buffer behaviour)
 VERDICT_STREAM_MAXLEN = 1000
 
