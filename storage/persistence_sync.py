@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-
 from datetime import UTC, datetime
 from typing import Any
 
@@ -43,6 +42,12 @@ class PersistenceSync:
                 await self._sync_trade_ledger()
             except Exception as exc:
                 logger.error(f"Persistence sync cycle failed: {exc}")
+                # Evict dead pool connections so next cycle gets a fresh one
+                try:
+                    if hasattr(self._pg, "_pool") and self._pg._pool is not None:
+                        await self._pg._pool.expire_connections()
+                except Exception:
+                    pass
             await asyncio.sleep(self._interval_sec)
 
     async def stop(self) -> None:
@@ -117,7 +122,7 @@ class PersistenceSync:
         for pattern in ("TRADE:*", "wolf15:TRADE:*"):
             cursor = 0
             while True:
-                cursor, keys = client.scan(cursor=cursor, match=pattern, count=50)
+                cursor, keys = client.scan(cursor=cursor, match=pattern, count=50)  # type: ignore
                 for key in keys:
                     trade_payload = self._redis.get(key)
                     if not trade_payload:
