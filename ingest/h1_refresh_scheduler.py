@@ -6,7 +6,9 @@ Detects price drift between REST and WebSocket feeds.
 """
 
 import asyncio
+from typing import Any
 
+import orjson
 from loguru import logger
 
 from config_loader import get_enabled_symbols, load_finnhub
@@ -26,7 +28,7 @@ class H1RefreshScheduler:
     - Mark symbols as degraded if drift exceeds threshold
     """
 
-    def __init__(self) -> None:
+    def __init__(self, redis_client: Any = None) -> None:
         self.config = load_finnhub()
         self.refresh_config = self.config.get("candles", {}).get("refresh", {})
 
@@ -39,6 +41,8 @@ class H1RefreshScheduler:
         self.fetcher = FinnhubCandleFetcher()
         self.context_bus = LiveContextBus()
         self.system_state = SystemStateManager()
+        self._redis = redis_client
+        self._redis_maxlen = 300
 
         # Semaphore for concurrent refresh
         self.semaphore = asyncio.Semaphore(3)
@@ -104,11 +108,13 @@ class H1RefreshScheduler:
                 # Seed LiveContextBus
                 for candle in h1_candles:
                     self.context_bus.update_candle(candle)
+                await self._push_candles_to_redis(h1_candles)
 
                 # Re-aggregate H4
                 h4_candles = self.fetcher.aggregate_h4(h1_candles)
                 for candle in h4_candles:
                     self.context_bus.update_candle(candle)
+                await self._push_candles_to_redis(h4_candles)
 
                 # Check price drift
                 drift_check = self.context_bus.check_price_drift(symbol, self.max_drift_pips)
@@ -162,3 +168,20 @@ class H1RefreshScheduler:
                 logger.info(f"M15 cold-start recovered {count} bars for {sym}")
         except Exception as exc:
             logger.error(f"M15 cold-start recovery failed: {exc}")
+
+    async def _push_candles_to_redis(self, candles: list[dict[str, Any]]) -> None:
+        """RPUSH candle dicts to Redis history lists (best-effort)."""
+        if not self._redis or not candles:
+            return
+        for candle in candles:
+            symbol = candle.get("symbol")
+            timeframe = candle.get("timeframe")
+            if not symbol or not timeframe:
+                continue
+            key = f"wolf15:candle_history:{symbol}:{timeframe}"
+            try:
+                candle_json = orjson.dumps(candle).decode("utf-8")
+                await self._redis.rpush(key, candle_json)
+                await self._redis.ltrim(key, -self._redis_maxlen, -1)
+            except Exception as exc:
+                logger.warning("[H1Refresh] RPUSH failed %s: %s", key, exc)
