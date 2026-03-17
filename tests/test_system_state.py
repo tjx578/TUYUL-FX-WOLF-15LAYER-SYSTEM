@@ -82,6 +82,27 @@ class TestStateTransitions:
         manager.set_state(SystemState.INITIALIZING)
         assert manager.get_state() == SystemState.INITIALIZING
 
+    def test_noop_transition_is_allowed(self) -> None:
+        """Setting current state again must be a no-op, not an error."""
+        manager = SystemStateManager()
+        with manager._rw_lock:
+            manager._state = SystemState.WARMING_UP
+
+        manager.set_state(SystemState.WARMING_UP)
+        assert manager.get_state() == SystemState.WARMING_UP
+
+    def test_reset_sets_initializing_and_clears_report(self) -> None:
+        """Reset should clear warmup report and return to INITIALIZING."""
+        manager = SystemStateManager()
+        with manager._rw_lock:
+            manager._state = SystemState.DEGRADED
+            manager._warmup_report["EURUSD"] = WarmupStatus(symbol="EURUSD")
+
+        manager.reset()
+
+        assert manager.get_state() == SystemState.INITIALIZING
+        assert manager.get_warmup_report() == {}
+
 
 class TestReadyCheck:
     """Test is_ready() check."""
