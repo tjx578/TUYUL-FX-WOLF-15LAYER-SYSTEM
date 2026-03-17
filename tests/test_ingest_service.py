@@ -146,7 +146,7 @@ async def test_seed_redis_still_pushes_when_delete_fails(
 ) -> None:
     """DELETE errors must not block RPUSH attempt."""
     fake_redis = MagicMock()
-    fake_redis.llen = AsyncMock(return_value=1)
+    fake_redis.llen = AsyncMock(return_value=5)
     fake_redis.delete = AsyncMock(side_effect=RuntimeError("READONLY"))
     fake_redis.rpush = AsyncMock()
 
@@ -169,7 +169,7 @@ async def test_seed_redis_still_pushes_when_delete_fails(
 
     await ingest_service_module._seed_redis_candle_history(fake_redis, warmup_results)
 
-    fake_redis.rpush.assert_awaited()
+    fake_redis.rpush.assert_awaited_once()
 
 
 def test_cold_start_m15_removed_from_module(

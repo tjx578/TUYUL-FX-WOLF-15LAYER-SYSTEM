@@ -450,7 +450,7 @@ async def _feed_staleness_seconds() -> float:
         return float("inf")
 
 
-async def _runtime_take_precheck(account: dict[str, Any]) -> tuple[bool, str | None]:
+async def _runtime_take_precheck(account: dict[str, Any], pair: str = "") -> tuple[bool, str | None]:
     # Compliance mode default = ON (fail closed when explicitly OFF).
     if not _as_bool(account.get("compliance_mode", 1), default=True):
         return False, "COMPLIANCE_MODE_DISABLED"
@@ -461,7 +461,7 @@ async def _runtime_take_precheck(account: dict[str, Any]) -> tuple[bool, str | N
 
     daily_dd = float(account.get("daily_dd_percent", 0) or 0)
     daily_cap = float(account.get("max_daily_dd_percent", 5.0) or 5.0)
-    feed_stale_sec = await _feed_staleness_seconds()
+    feed_stale_sec = await _feed_staleness_seconds(pair)
     _kill_switch.evaluate_and_trip(
         metrics={
             "daily_dd_percent": daily_dd,
@@ -731,7 +731,7 @@ async def take_signal(req: TakeSignalRequest) -> dict[str, Any]:
             )
         account = acct_data
 
-    precheck_ok, precheck_reason = await _runtime_take_precheck(account)
+    precheck_ok, precheck_reason = await _runtime_take_precheck(account, pair=req.pair)
     if not precheck_ok:
         raise HTTPException(
             status_code=status.HTTP_423_LOCKED,
