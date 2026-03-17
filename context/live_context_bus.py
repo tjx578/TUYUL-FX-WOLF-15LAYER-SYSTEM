@@ -87,6 +87,10 @@ class LiveContextBus:
         self._account_state: dict[str, dict[str, Any]] = {}  # {symbol: account_snapshot}
         self._trade_history: dict[str, list[float]] = {}  # {symbol: [return_pct, ...]}
 
+        # ── Feed staleness tracking ────────────────────────────────────
+        # Records wall-clock time of the most recent tick per symbol.
+        self._feed_timestamps: dict[str, float] = {}  # {symbol: epoch_sec}
+
     # ------------------------------------------------------------------
     # Write API (analysis / consumer only — no execution logic)
     # ------------------------------------------------------------------
@@ -135,7 +139,9 @@ class LiveContextBus:
         """Store latest tick for a symbol. Tick must contain 'symbol' key."""
         symbol = tick.get("symbol")
         if symbol:
-            self._ticks[str(symbol)] = tick
+            sym = str(symbol)
+            self._ticks[sym] = tick
+            self._feed_timestamps[sym] = time.time()
         else:
             logger.warning("LiveContextBus.update_tick: tick missing 'symbol' key — ignored")
 
@@ -157,6 +163,8 @@ class LiveContextBus:
             self._news = {}
             self._signal_stack = []
             self._inference_ts = 0.0
+            # Feed staleness tracking
+            self._feed_timestamps = {}
 
     def update_conditioned_returns(
         self,
@@ -382,10 +390,43 @@ class LiveContextBus:
         """Return latest tick for symbol, or None if not yet received."""
         return self._ticks.get(symbol)
 
+    # ------------------------------------------------------------------
+    # Feed staleness API (read-only — no execution logic)
+    # ------------------------------------------------------------------
+
+    def get_feed_age(self, symbol: str) -> float | None:
+        """Return seconds since the last tick for *symbol*, or None if no tick received."""
+        ts = self._feed_timestamps.get(symbol)
+        if ts is None:
+            return None
+        return time.time() - ts
+
+    def is_feed_stale(self, symbol: str, threshold_sec: float = 30.0) -> bool:
+        """Return True if the feed for *symbol* has not updated within *threshold_sec* seconds."""
+        age = self.get_feed_age(symbol)
+        if age is None:
+            return True
+        return age > threshold_sec
+
+    def get_feed_status(self, symbol: str) -> str:
+        """Return a human-readable feed status for *symbol*.
+
+        Returns:
+            "CONNECTED"  — tick received within the last 30 seconds.
+            "DEGRADED"   — tick received within the last 120 seconds.
+            "DOWN"       — tick received but older than 120 seconds.
+            "NO_DATA"    — no tick ever received for this symbol.
+        """
+        age = self.get_feed_age(symbol)
+        if age is None:
+            return "NO_DATA"
+        if age <= 30.0:
+            return "CONNECTED"
+        if age <= 120.0:
+            return "DEGRADED"
+        return "DOWN"
+
     def check_price_drift(
-        self,
-        symbol: str,
-        max_drift_pips: float,
     ) -> dict[str, Any]:
         """Compare latest REST H1 close with WS mid-price to detect drift.
 

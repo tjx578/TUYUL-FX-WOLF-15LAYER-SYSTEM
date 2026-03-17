@@ -2,15 +2,25 @@
 
 from __future__ import annotations
 
+import time
+
 import pytest
 
 from constitution.verdict_engine import VerdictEngine
+from context.live_context_bus import LiveContextBus
 
 # ── Issue 8: Enrichment consumed in VerdictEngine.produce_verdict ────
 
 
 class TestVerdictEngineEnrichmentInjection:
     """Verify enrichment scores modulate confidence in the class-based path."""
+
+    def setup_method(self) -> None:
+        # Reset singleton and inject a fresh tick so the stale-feed
+        # circuit breaker does not fire during these unit tests.
+        LiveContextBus.reset_singleton()
+        bus = LiveContextBus()
+        bus.update_tick({"symbol": "EURUSD", "bid": 1.085, "ask": 1.086, "timestamp": time.time()})
 
     def _make_layer_results(
         self,
