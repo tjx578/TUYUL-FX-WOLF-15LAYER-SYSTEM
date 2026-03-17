@@ -77,6 +77,7 @@ class RedisClient(Protocol):
     async def scan(self, cursor: int, *, match: str, count: int) -> tuple[int, list[str]]: ...
     async def llen(self, name: str) -> int: ...
     async def rpush(self, name: str, *values: str) -> int: ...
+    async def ltrim(self, name: str, start: int, end: int) -> Any: ...
 
 
 def _validate_api_key() -> bool:
@@ -291,11 +292,34 @@ class Stoppable(Protocol):
     async def stop(self) -> None: ...
 
 
-# ── Redis candle history seeding ──────────────────────────────────
+# ── Redis candle history — shared helpers ─────────────────────────
 # Matches the key format used by RedisContextBridge.write_candle().
 # Data is persistent in Redis volume — no TTL needed.
 _SEED_HISTORY_MAXLEN = 300
 _SEED_RPUSH_CHUNK_SIZE = 50
+
+
+async def _push_candle_to_redis(
+    redis: RedisClient,
+    candle_dict: dict[str, Any],
+) -> None:
+    """Append a single completed candle to Redis history list.
+
+    Called fire-and-forget from CandleBuilder on_complete callbacks and
+    from the REST refresh schedulers.  Keeps the Redis Lists that the
+    engine's RedisConsumer reads in sync with live candle production.
+    """
+    symbol = candle_dict.get("symbol")
+    timeframe = candle_dict.get("timeframe")
+    if not symbol or not timeframe:
+        return
+    key = f"wolf15:candle_history:{symbol}:{timeframe}"
+    try:
+        candle_json = orjson.dumps(candle_dict).decode("utf-8")
+        await redis.rpush(key, candle_json)
+        await redis.ltrim(key, -_SEED_HISTORY_MAXLEN, -1)
+    except Exception as exc:
+        logger.warning("[CandleBridge] RPUSH failed %s: %s", key, exc)
 
 
 async def _seed_redis_candle_history(
@@ -437,8 +461,46 @@ async def run_ingest_services(has_api_key: bool) -> None:
                 )
         # ── End degraded-mode gate ────────────────────────────────────────
 
-        # Build candle builders as dict for O(1) lookup
-        candle_builders = {symbol: CandleBuilder(symbol=symbol, timeframe=Timeframe.M15) for symbol in enabled_symbols}
+        # ── Build M15 → H1 candle chain with Redis RPUSH callbacks ────
+        # Every completed M15 and H1 candle is written to Redis so the
+        # engine container (separate process) sees fresh data.
+        loop = asyncio.get_running_loop()
+        h1_builders: dict[str, CandleBuilder] = {}
+
+        def _h1_on_complete(candle: Any) -> None:
+            """H1 complete → RPUSH to Redis."""
+            loop.create_task(_push_candle_to_redis(redis, candle.to_dict()))
+
+        for _sym in enabled_symbols:
+            h1_builders[_sym] = CandleBuilder(
+                symbol=_sym,
+                timeframe=Timeframe.H1,
+                on_complete=_h1_on_complete,
+            )
+
+        def _make_m15_callback(sym: str) -> Any:
+            """Factory — avoids closure-in-loop pitfall."""
+
+            def _cb(candle: Any) -> None:
+                loop.create_task(_push_candle_to_redis(redis, candle.to_dict()))
+                h1b = h1_builders.get(sym)
+                if h1b is not None:
+                    h1b.on_candle(candle)
+
+            return _cb
+
+        candle_builders = {
+            symbol: CandleBuilder(
+                symbol=symbol,
+                timeframe=Timeframe.M15,
+                on_complete=_make_m15_callback(symbol),
+            )
+            for symbol in enabled_symbols
+        }
+        logger.info(
+            "[CandleBridge] M15→H1 chain wired for %d symbols — completed candles will RPUSH to Redis",
+            len(enabled_symbols),
+        )
 
         # Tick callback: route to CandleBuilder per symbol
         def _on_tick(symbol: str, price: float, ts: datetime, volume: float) -> None:
@@ -454,10 +516,11 @@ async def run_ingest_services(has_api_key: bool) -> None:
         rest_poll = RestPollFallback(
             ws_connected_fn=lambda: ws_feed.is_connected if ws_feed else False,
             symbols=enabled_symbols,
+            redis_client=redis,
         )
         news_feed = CalendarNewsIngestor(redis_client=redis)
         market_news = FinnhubMarketNews()
-        h1_refresh = H1RefreshScheduler()
+        h1_refresh = H1RefreshScheduler(redis_client=redis)
 
         # Mark ingest as ready after warmup + connection
         _ingest_ready = True

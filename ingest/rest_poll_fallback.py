@@ -12,6 +12,7 @@ is False.  Once WS reconnects, polling pauses until the next outage.
 import asyncio
 from typing import Any
 
+import orjson
 from loguru import logger
 
 from config_loader import load_finnhub
@@ -36,6 +37,7 @@ class RestPollFallback:
         self,
         ws_connected_fn: Any,
         symbols: list[str],
+        redis_client: Any = None,
     ) -> None:
         super().__init__()
         cfg = load_finnhub()
@@ -43,6 +45,8 @@ class RestPollFallback:
 
         self._ws_connected = ws_connected_fn
         self._symbols = symbols
+        self._redis = redis_client
+        self._redis_maxlen = 300
 
         # Polling interval while WS is down (seconds)
         self._poll_interval: float = float(rest_poll_cfg.get("poll_interval_sec", 90))
@@ -137,6 +141,7 @@ class RestPollFallback:
             m15_candles = await self._fetcher.fetch(symbol, "M15", self._bars)
             for candle in m15_candles:
                 self._context_bus.update_candle(candle)
+            await self._push_candles_to_redis(m15_candles)
 
             if m15_candles:
                 logger.debug(f"REST poll: seeded {len(m15_candles)} M15 bars for {symbol}")
@@ -154,9 +159,11 @@ class RestPollFallback:
 
                 # Also aggregate H4
                 if h1_candles:
+                    await self._push_candles_to_redis(h1_candles)
                     h4_candles = self._fetcher.aggregate_h4(h1_candles)
                     for candle in h4_candles:
                         self._context_bus.update_candle(candle)
+                    await self._push_candles_to_redis(h4_candles)
 
             except FinnhubCandleError as exc:
                 logger.warning(f"REST poll H1 failed for {symbol}: {exc}")
@@ -167,3 +174,20 @@ class RestPollFallback:
         """Signal the fallback scheduler to stop."""
         self._running = False
         logger.info("RestPollFallback stopping")
+
+    async def _push_candles_to_redis(self, candles: list[dict[str, Any]]) -> None:
+        """RPUSH candle dicts to Redis history lists (best-effort)."""
+        if not self._redis or not candles:
+            return
+        for candle in candles:
+            symbol = candle.get("symbol")
+            timeframe = candle.get("timeframe")
+            if not symbol or not timeframe:
+                continue
+            key = f"wolf15:candle_history:{symbol}:{timeframe}"
+            try:
+                candle_json = orjson.dumps(candle).decode("utf-8")
+                await self._redis.rpush(key, candle_json)
+                await self._redis.ltrim(key, -self._redis_maxlen, -1)
+            except Exception as exc:
+                logger.warning("[RestPoll] RPUSH failed %s: %s", key, exc)
