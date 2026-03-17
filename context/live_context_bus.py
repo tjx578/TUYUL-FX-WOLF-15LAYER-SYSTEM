@@ -146,6 +146,17 @@ class LiveContextBus:
         else:
             logger.warning("LiveContextBus.update_tick: tick missing 'symbol' key — ignored")
 
+    def record_feed_update(self, symbol: str) -> None:
+        """Record that fresh data arrived for *symbol* (updates feed-timestamp).
+
+        Called by RedisConsumer when a candle arrives via Pub/Sub so that
+        ``is_feed_stale()`` / ``get_feed_status()`` work correctly in
+        CONTEXT_MODE=redis where ``update_tick()`` is never called.
+        """
+        if symbol:
+            with self._lock:
+                self._feed_timestamps[str(symbol)] = time.time()
+
     def reset_state(self) -> None:
         """Clear all internal state. Used for test isolation."""
         with self._lock:
@@ -427,8 +438,7 @@ class LiveContextBus:
             return "DEGRADED"
         return "DOWN"
 
-    def check_price_drift(
-    ) -> dict[str, Any]:
+    def check_price_drift(self, symbol: str, max_drift_pips: float = 5.0) -> dict[str, Any]:
         """Compare latest REST H1 close with WS mid-price to detect drift.
 
         Args:

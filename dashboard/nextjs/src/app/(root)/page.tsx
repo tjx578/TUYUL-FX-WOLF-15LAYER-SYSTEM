@@ -47,7 +47,19 @@ function GlobalStatusStrip({
   openTradeCount,
 }: GlobalStatusStripProps) {
   const backendOk = health?.status === "ok";
-  const degraded = mode === "DEGRADED";
+  const degraded = mode === "DEGRADED" || mode === "RECONNECTING_WS" || mode === "POLLING_REST" || mode === "STALE";
+
+  const modeLabel =
+    mode === "STALE" ? "STALE"
+      : mode === "POLLING_REST" ? "POLLING"
+        : mode === "RECONNECTING_WS" ? "RECONNECTING"
+          : degraded ? "DEGRADED"
+            : "NORMAL";
+
+  const modeColor =
+    mode === "STALE" ? "var(--red)"
+      : degraded ? "var(--yellow)"
+        : "var(--green)";
 
   const items = [
     {
@@ -76,8 +88,8 @@ function GlobalStatusStrip({
     },
     {
       label: "MODE",
-      value: degraded ? "DEGRADED" : "NORMAL",
-      color: degraded ? "var(--yellow)" : "var(--green)",
+      value: modeLabel,
+      color: modeColor,
       pulse: degraded,
     },
   ];

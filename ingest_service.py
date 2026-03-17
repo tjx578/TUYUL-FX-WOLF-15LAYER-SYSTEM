@@ -79,6 +79,7 @@ class RedisClient(Protocol):
     async def llen(self, name: str) -> int: ...
     async def rpush(self, name: str, *values: str) -> int: ...
     async def ltrim(self, name: str, start: int, end: int) -> Any: ...
+    async def publish(self, channel: str, message: str) -> int: ...
 
 
 def _validate_api_key() -> bool:
@@ -304,11 +305,15 @@ async def _push_candle_to_redis(
     redis: RedisClient,
     candle_dict: dict[str, Any],
 ) -> None:
-    """Append a single completed candle to Redis history list.
+    """Append a single completed candle to Redis history list + PUBLISH.
 
     Called fire-and-forget from CandleBuilder on_complete callbacks and
     from the REST refresh schedulers.  Keeps the Redis Lists that the
     engine's RedisConsumer reads in sync with live candle production.
+
+    Also PUBLISHes the candle to ``candle:{symbol}:{timeframe}`` so the
+    engine-side RedisConsumer.pub/sub loop receives the update in real-time
+    instead of only seeing it on the next LRANGE warmup.
     """
     symbol = candle_dict.get("symbol")
     timeframe = candle_dict.get("timeframe")
@@ -319,8 +324,12 @@ async def _push_candle_to_redis(
         candle_json = orjson.dumps(candle_dict).decode("utf-8")
         await redis.rpush(key, candle_json)
         await redis.ltrim(key, -_SEED_HISTORY_MAXLEN, -1)
+
+        # Notify engine-side RedisConsumer via Pub/Sub (matches its psubscribe patterns)
+        pub_channel = f"candle:{symbol}:{timeframe}"
+        await redis.publish(pub_channel, candle_json)
     except Exception as exc:
-        logger.warning("[CandleBridge] RPUSH failed %s: %s", key, exc)
+        logger.warning("[CandleBridge] RPUSH/PUBLISH failed %s: %s", key, exc)
 
 
 async def _seed_redis_candle_history(

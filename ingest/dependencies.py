@@ -302,6 +302,7 @@ def _build_tick_handler(
     mapper: FinnhubSymbolMapper,
     allowed_symbols: set[str],
     candle_callback: Callable[[str, float, datetime, float], None] | None = None,
+    tick_redis_callback: Callable[[dict[str, Any]], None] | None = None,
 ) -> Callable[[dict[str, Any]], Awaitable[None]]:
     """Create WS message handler that normalizes and writes ticks to context."""
     context_bus = LiveContextBus()
@@ -400,6 +401,11 @@ def _build_tick_handler(
                 }
                 context_bus.update_tick(normalized_tick)
                 _latency_tracker.record_tick(internal_symbol)
+
+                # Persist tick to Redis for cross-container staleness tracking
+                if tick_redis_callback is not None:
+                    tick_redis_callback(normalized_tick)
+
                 _update_realtime_conditioning(
                     context_bus=context_bus,
                     symbol=internal_symbol,
@@ -451,12 +457,30 @@ async def create_finnhub_ws(
     allowed_symbols = set(internal_symbols)
     external_symbols = [mapper.register(symbol) for symbol in internal_symbols]
 
+    # Wire tick → Redis persistence so wolf15:latest_tick:{symbol} stays current.
+    # Uses RedisContextBridge.write_tick() which does XADD + HSET + PUBLISH.
+    from context.redis_context_bridge import RedisContextBridge  # noqa: PLC0415
+
+    bridge: RedisContextBridge | None = None
+    try:
+        bridge = RedisContextBridge()
+    except Exception:
+        logger.warning("Failed to create RedisContextBridge for tick persistence — skipping")
+
+    def _tick_to_redis(tick: dict[str, Any]) -> None:
+        if bridge is not None:
+            try:  # noqa: SIM105
+                bridge.write_tick(tick)
+            except Exception:
+                pass  # Best-effort; don't break tick processing
+
     return FinnhubWebSocket(
         redis=redis,
         on_message=_build_tick_handler(
             mapper=mapper,
             allowed_symbols=allowed_symbols,
             candle_callback=candle_callback,
+            tick_redis_callback=_tick_to_redis if bridge else None,
         ),
         symbols=external_symbols,
     )

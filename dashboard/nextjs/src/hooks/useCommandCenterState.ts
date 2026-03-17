@@ -165,8 +165,8 @@ export function useCommandCenterStatus() {
   const { data: calendarBlocker } = useCalendarBlocker();
   const { alerts } = useLiveAlerts();
 
-  const wsStatus = useSystemStore((s) => s.wsStatus);
-  const mode = useSystemStore((s) => s.mode);
+  const wsStatus = useSystemStore((s: { wsStatus: string }) => s.wsStatus);
+  const mode = useSystemStore((s: { mode: any; }) => s.mode);
 
   const recentAlerts = useMemo(() => alerts.slice(0, 6), [alerts]);
 
@@ -224,6 +224,9 @@ export function useCommandCenterState(): CommandCenterState {
 
   const isSystemDegraded =
     status.mode === "DEGRADED" ||
+    status.mode === "RECONNECTING_WS" ||
+    status.mode === "POLLING_REST" ||
+    status.mode === "STALE" ||
     status.wsStatus === "DISCONNECTED" ||
     status.wsStatus === "RECONNECTING" ||
     verdicts.liveStatus === "DEGRADED" ||
