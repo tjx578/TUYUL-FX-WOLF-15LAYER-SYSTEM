@@ -6,9 +6,18 @@
 const isProd =
   process.env.NODE_ENV === "production" || process.env.VERCEL === "1";
 
+// Read backend URL from all possible env var names across different platforms:
+//   INTERNAL_API_URL          — Vercel (set manually in project vars)
+//   NEXT_PUBLIC_API_BASE_URL  — Vercel (public, set manually in project vars)
+//   API_BASE_URL              — Railway (set in railway service vars)
+//   API_DOMAIN                — Railway (alternative domain var in railway)
 const rawApiBase =
   process.env.INTERNAL_API_URL ||
   process.env.NEXT_PUBLIC_API_BASE_URL ||
+  process.env.API_BASE_URL ||
+  (process.env.API_DOMAIN
+    ? `https://${process.env.API_DOMAIN}`
+    : "") ||
   "";
 
 // Warn loudly in production when env vars are missing.
@@ -33,6 +42,15 @@ const apiBase = resolvedBase.replace(/\/+$/, "").replace(/\/api$/, "");
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+  // Expose the resolved backend URL to the client bundle so NEXT_PUBLIC_
+  // env var checks in DataStreamDiagnostic / runtimeHealth work correctly
+  // even when the user only set API_BASE_URL on Railway.
+  env: {
+    NEXT_PUBLIC_API_BASE_URL: apiBase,
+    NEXT_PUBLIC_WS_BASE_URL:
+      process.env.NEXT_PUBLIC_WS_BASE_URL ||
+      apiBase.replace(/^https:\/\//, "wss://").replace(/^http:\/\//, "ws://"),
+  },
   // standalone is required for Docker/Railway (self-hosted) but must NOT be
   // used on Vercel — it breaks route-group resolution. Set the env var in
   // Dockerfile / railway.toml only.
