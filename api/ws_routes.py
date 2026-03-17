@@ -341,6 +341,9 @@ class ConnectionManager:
         self._recv_tasks: dict[fastapi.WebSocket, asyncio.Task[None]] = {}
         self._last_heartbeat: dict[fastapi.WebSocket, float] = {}
         self._session_keys: dict[fastapi.WebSocket, str] = {}
+        # Per-connection send lock — prevents concurrent send_json calls
+        # (heartbeat ping vs endpoint data push) from corrupting the WS frame.
+        self._send_locks: dict[fastapi.WebSocket, asyncio.Lock] = {}
         # Ring buffer of recent messages for replay on reconnect
         self._message_buffer: deque[dict[str, object]] = deque(maxlen=buffer_size)
         # Monotonic sequence counter for deterministic gap detection
@@ -367,6 +370,7 @@ class ConnectionManager:
         await websocket.accept()
         self.active_connections.add(websocket)
         self._last_heartbeat[websocket] = time.time()
+        self._send_locks[websocket] = asyncio.Lock()
         self._register_session(websocket, user)
 
         # Start heartbeat ping task for this connection
@@ -379,6 +383,7 @@ class ConnectionManager:
         """Remove WebSocket connection and cancel its heartbeat."""
         self.active_connections.discard(websocket)
         self._last_heartbeat.pop(websocket, None)
+        self._send_locks.pop(websocket, None)
         self._unregister_session(websocket)
         task = self._ping_tasks.pop(websocket, None)
         if task and not task.done():
@@ -432,10 +437,19 @@ class ConnectionManager:
                     break
 
                 try:
-                    await asyncio.wait_for(
-                        websocket.send_json({"type": "ping", "ts": time.time()}),
-                        timeout=WS_PONG_TIMEOUT,
-                    )
+                    lock = self._send_locks.get(websocket)
+                    ping_payload = {"type": "ping", "ts": time.time()}
+                    if lock:
+                        async with lock:
+                            await asyncio.wait_for(
+                                websocket.send_json(ping_payload),
+                                timeout=WS_PONG_TIMEOUT,
+                            )
+                    else:
+                        await asyncio.wait_for(
+                            websocket.send_json(ping_payload),
+                            timeout=WS_PONG_TIMEOUT,
+                        )
                     # Successful send proves the connection is at least half-alive.
                     # Reset heartbeat so staleness only triggers after *two* missed
                     # ping/pong cycles (send succeeds but no pong comes back).
@@ -502,7 +516,12 @@ class ConnectionManager:
                 if msg_ts <= since_ts:
                     continue
             try:
-                await websocket.send_json(msg)
+                lock = self._send_locks.get(websocket)
+                if lock:
+                    async with lock:
+                        await websocket.send_json(msg)
+                else:
+                    await websocket.send_json(msg)
                 replayed += 1
             except Exception:
                 break
@@ -520,7 +539,12 @@ class ConnectionManager:
 
         for connection in self.active_connections:
             try:
-                await connection.send_json(message)
+                lock = self._send_locks.get(connection)
+                if lock:
+                    async with lock:
+                        await connection.send_json(message)
+                else:
+                    await connection.send_json(message)
             except Exception as exc:
                 logger.debug(f"Failed to send to client: {exc}")
                 disconnected.add(connection)
@@ -537,7 +561,12 @@ class ConnectionManager:
         message["seq"] = next(self._seq_counter)
         self.buffer_message(message)
         try:
-            await websocket.send_json(message)
+            lock = self._send_locks.get(websocket)
+            if lock:
+                async with lock:
+                    await websocket.send_json(message)
+            else:
+                await websocket.send_json(message)
             return True
         except Exception:
             self.disconnect(websocket)
