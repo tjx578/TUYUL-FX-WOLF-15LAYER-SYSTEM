@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback } from "react";
 import type { Trade } from "@/types";
-import { connectLiveUpdates } from "@/lib/realtime/realtimeClient";
+import { subscribe } from "@/lib/realtime/multiplexer";
 import type { WsConnectionStatus } from "@/lib/realtime/connectionState";
 import { STALE_THRESHOLDS_MS } from "@/lib/realtime/connectionState";
 import { mergeList } from "@/lib/realtime/merge";
@@ -18,7 +18,7 @@ interface UseLiveTradesResult {
  * useLiveTrades
  *
  * Bootstrap: caller provides initial trades from REST (via useActiveTrades / SWR).
- * Stream:    /ws/trades — individual Trade delta events.
+ * Stream:    multiplexed /ws/live — ExecutionStateUpdated events.
  * Merge:     mergeList — upserts by trade.id.
  * Stale:     8s no message → isStale = true.
  *
@@ -56,11 +56,10 @@ export function useLiveTrades(
 
   useEffect(() => {
     if (!enabled) return;
-    // Reset WS tracking on fresh connection cycle
     wsActiveRef.current = false;
 
-    const controls = connectLiveUpdates({
-      path: "/ws/trades",
+    const unsub = subscribe({
+      filter: (e) => e.type === "ExecutionStateUpdated" || e.type === "TradeUpdated" || e.type === "TradeSnapshot",
       onEvent: (event) => {
         if (event.type === "ExecutionStateUpdated") {
           setTrades((prev) =>
@@ -75,13 +74,11 @@ export function useLiveTrades(
         if (s === "LIVE") resetStaleTimer();
         if (s === "DISCONNECTED" || s === "DEGRADED") {
           if (staleTimerRef.current) clearTimeout(staleTimerRef.current);
-          // Allow REST to sync again after disconnect
           wsActiveRef.current = false;
         }
       },
       onDegradation: () => setStatus("DEGRADED"),
       onSeqGap: () => {
-        // On gap, allow REST to re-sync since we may have missed data
         wsActiveRef.current = false;
         onSeqGap?.();
       },
@@ -89,7 +86,7 @@ export function useLiveTrades(
     });
 
     return () => {
-      controls.close();
+      unsub();
       if (staleTimerRef.current) clearTimeout(staleTimerRef.current);
     };
   }, [enabled, resetStaleTimer]);

@@ -117,6 +117,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     if app.state.redis is not None and _env_bool("ENABLE_WS_RELAY", True):
         try:
             from api.ws_routes import (
+                alerts_manager,
                 candle_manager,
                 equity_manager,
                 live_manager,
@@ -140,6 +141,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                     "signals": signal_manager,
                     "pipeline": pipeline_manager,
                     "live": live_manager,
+                    "alerts": alerts_manager,
                 }
             )
             app.state.ws_relay = relay
@@ -245,9 +247,26 @@ def _add_cors(app: FastAPI) -> None:
             deduped.append(o)
     origins = deduped
     logger.info("CORS allowed origins: %s", origins)
+    # Regex for dynamic origins (e.g. Vercel preview deployments).
+    origin_regex = os.getenv("CORS_ORIGIN_REGEX", "").strip() or None
+    if origin_regex:
+        logger.info("CORS origin regex: %s", origin_regex)
+    else:
+        # Auto-derive regex for Vercel preview deployments from static origins.
+        import re as _re
+
+        _vercel_patterns: list[str] = []
+        for o in origins:
+            if o.endswith(".vercel.app"):
+                _prefix = _re.escape(o.rsplit(".vercel.app", 1)[0])
+                _vercel_patterns.append(f"{_prefix}(-[a-z0-9-]+)?\\.vercel\\.app")
+        if _vercel_patterns:
+            origin_regex = "|".join(_vercel_patterns)
+            logger.info("CORS origin regex (auto-derived for Vercel previews): %s", origin_regex)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=origins,
+        allow_origin_regex=origin_regex,
         allow_credentials=True,
         allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
         allow_headers=[

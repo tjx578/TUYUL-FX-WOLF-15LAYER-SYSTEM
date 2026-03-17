@@ -56,4 +56,34 @@ describe("WsEventSchema", () => {
       expect(parsed.payload.showHashes).toBe(true);
     }
   });
+
+  it("parses domain event types mapped from backend", () => {
+    const types = [
+      "SignalUpdated",
+      "TradeSnapshot",
+      "TradeUpdated",
+      "CandleSnapshot",
+      "CandleForming",
+      "EquityUpdated",
+    ] as const;
+
+    for (const t of types) {
+      const result = WsEventSchema.safeParse({
+        type: t,
+        payload: { symbol: "EURUSD" },
+      });
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.type).toBe(t);
+      }
+    }
+  });
+
+  it("rejects unknown event type with safeParse", () => {
+    const result = WsEventSchema.safeParse({
+      type: "SomeFutureEvent",
+      payload: {},
+    });
+    expect(result.success).toBe(false);
+  });
 });

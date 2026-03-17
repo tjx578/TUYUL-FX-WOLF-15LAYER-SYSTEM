@@ -24,11 +24,11 @@
  * Override with NEXT_PUBLIC_API_BASE_URL for direct backend calls (dev/debug).
  */
 export function getApiBaseUrl(): string {
-  // Use literal identifiers so Next.js compiler inlines values at build time.
-  const primary = process.env.NEXT_PUBLIC_API_BASE_URL || "";
-  const legacy  = process.env.NEXT_PUBLIC_API_URL || "";
-  const url = primary || legacy;
-  return url.trim().replace(/\/$/, "");
+  // Literal identifiers only — Next.js inlines NEXT_PUBLIC_* at build time.
+  // DO NOT assign to intermediate variables.
+  return (process.env.NEXT_PUBLIC_API_BASE_URL || process.env.NEXT_PUBLIC_API_URL || "")
+    .trim()
+    .replace(/\/$/, "");
 }
 
 /**
@@ -43,9 +43,9 @@ export function getApiBaseUrl(): string {
  * It will NOT work on Vercel without the env var.
  */
 export function getWsBaseUrl(): string {
-  // Literal identifier — Next.js inlines this at build time.
-  const url = (process.env.NEXT_PUBLIC_WS_BASE_URL || "").trim();
-  if (url.length === 0) {
+  // Literal process.env.NEXT_PUBLIC_WS_BASE_URL — Next.js inlines at build time.
+  // DO NOT assign to intermediate variable.
+  if (!(process.env.NEXT_PUBLIC_WS_BASE_URL || "").trim()) {
     if (typeof window !== "undefined") {
       const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
       const isDeployedHost =
@@ -64,8 +64,8 @@ export function getWsBaseUrl(): string {
     return ""; // SSR fallback — not used for real connections
   }
   // Strip trailing slash AND accidental /ws suffix — hooks already append /ws/<channel>
-  const stripped = url.replace(/\/$/, "").replace(/\/ws$/, "");
-  if (stripped !== url.replace(/\/$/, "") && process.env.NODE_ENV === "development") {
+  const stripped = (process.env.NEXT_PUBLIC_WS_BASE_URL ?? "").trim().replace(/\/$/, "").replace(/\/ws$/, "");
+  if (stripped !== (process.env.NEXT_PUBLIC_WS_BASE_URL ?? "").trim().replace(/\/$/, "") && process.env.NODE_ENV === "development") {
     console.warn(
       "[env] NEXT_PUBLIC_WS_BASE_URL contains /ws suffix which was automatically stripped. " +
       "Set the value to the bare origin (e.g. wss://your-api.up.railway.app) to avoid double /ws paths."
@@ -81,12 +81,12 @@ export function getWsBaseUrl(): string {
 export function validateEnv(): void {
   if (typeof window === "undefined") return;
 
-  const wsUrl = (process.env.NEXT_PUBLIC_WS_BASE_URL || "").trim();
   const isVercel =
     window.location.hostname.includes("vercel") ||
     window.location.hostname.includes(".app");
 
-  if ((!wsUrl || wsUrl.length === 0) && isVercel) {
+  // Inline literal reads — Next.js inlines NEXT_PUBLIC_* at build time.
+  if (!(process.env.NEXT_PUBLIC_WS_BASE_URL || "").trim() && isVercel) {
     console.error(
       "[env] CRITICAL: NEXT_PUBLIC_WS_BASE_URL is NOT SET. " +
       "All 6 live data streams will fail on Vercel. " +
@@ -97,8 +97,7 @@ export function validateEnv(): void {
 
   // INTERNAL_API_URL is server-side only — not available in browser.
   // Use NEXT_PUBLIC_API_BASE_URL as the proxy indicator on client side.
-  const internalSet = !!(process.env.NEXT_PUBLIC_API_BASE_URL);
-  if (!internalSet && isVercel) {
+  if (!(process.env.NEXT_PUBLIC_API_BASE_URL) && isVercel) {
     console.error(
       "[env] CRITICAL: INTERNAL_API_URL is NOT SET. " +
       "All API rewrites/proxies will fail (server-side fetches, middleware, session). " +
@@ -115,12 +114,10 @@ export function validateEnv(): void {
     );
   }
 
-  const apiOverrideRaw = process.env.NEXT_PUBLIC_API_BASE_URL;
-  const apiOverride = typeof apiOverrideRaw === "string" ? apiOverrideRaw.trim() : "";
-  if (apiOverride && process.env.NODE_ENV === "development") {
-    console.info("[env] REST override active: NEXT_PUBLIC_API_BASE_URL =", apiOverride);
+  if ((process.env.NEXT_PUBLIC_API_BASE_URL || "").trim() && process.env.NODE_ENV === "development") {
+    console.info("[env] REST override active: NEXT_PUBLIC_API_BASE_URL =", (process.env.NEXT_PUBLIC_API_BASE_URL || "").trim());
   }
 }
 
 // Legacy export kept for existing imports — resolves identically to getApiBaseUrl().
-export const API_BASE_URL = (process.env.NEXT_PUBLIC_API_BASE_URL || "").trim();
+export const API_BASE_URL = (process.env.NEXT_PUBLIC_API_BASE_URL || process.env.NEXT_PUBLIC_API_URL || "").trim().replace(/\/$/, "");

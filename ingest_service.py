@@ -73,6 +73,7 @@ class RedisClient(Protocol):
 
     async def ping(self) -> Any: ...
     async def aclose(self) -> None: ...
+    async def delete(self, name: str) -> int: ...
     async def scan(self, cursor: int, *, match: str, count: int) -> tuple[int, list[str]]: ...
     async def llen(self, name: str) -> int: ...
     def pipeline(self) -> Any: ...
@@ -334,6 +335,13 @@ async def _seed_redis_candle_history(
                     key,
                     exc,
                 )
+            # Always delete stale candles before writing fresh data.
+            # Previous logic compared llen(key) vs len(candles) and skipped
+            # when counts matched — this left stale data in Redis forever.
+            try:
+                await redis.delete(key)
+            except Exception as exc:
+                logger.warning("[Seed] DELETE failed for %s: %s", key, exc)
 
             try:
                 pipe = redis.pipeline()

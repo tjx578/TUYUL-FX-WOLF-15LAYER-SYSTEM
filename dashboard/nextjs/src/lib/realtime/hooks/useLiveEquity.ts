@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback } from "react";
 import type { DrawdownData } from "@/types";
-import { connectLiveUpdates } from "@/lib/realtime/realtimeClient";
+import { subscribe } from "@/lib/realtime/multiplexer";
 import type { WsConnectionStatus } from "@/lib/realtime/connectionState";
 import { STALE_THRESHOLDS_MS } from "@/lib/realtime/connectionState";
 
@@ -16,7 +16,7 @@ interface UseLiveEquityResult {
 /**
  * useLiveEquity
  *
- * Stream:  /ws/equity — equity.update events every 2s.
+ * Stream:  multiplexed /ws/live — EquityUpdated events every 2s.
  * Accumulates DrawdownData points into a capped history array.
  * Stale:   10s no message → isStale = true.
  */
@@ -47,21 +47,19 @@ export function useLiveEquity(
     useEffect(() => {
         if (!enabled) return;
 
-        const path = accountId
-            ? `/ws/equity?account_id=${accountId}`
-            : "/ws/equity";
-
-        const controls = connectLiveUpdates({
-            path,
+        const unsub = subscribe({
+            filter: (e) => e.type === "EquityUpdated",
             onEvent: (event) => {
-                const payload = event.payload as unknown as DrawdownData;
-                if (payload) {
-                    setHistory((prev) =>
-                        [...prev, payload].slice(-maxPointsRef.current)
-                    );
-                    setLastUpdatedAt(Date.now());
-                    resetStaleTimer();
-                }
+                const raw = event.payload as Record<string, unknown>;
+                if (!raw) return;
+                // Filter by accountId client-side if specified
+                if (accountId && raw.account_id !== accountId) return;
+                const payload = raw as unknown as DrawdownData;
+                setHistory((prev) =>
+                    [...prev, payload].slice(-maxPointsRef.current)
+                );
+                setLastUpdatedAt(Date.now());
+                resetStaleTimer();
             },
             onStatusChange: (s) => {
                 setStatus(s);
@@ -76,7 +74,7 @@ export function useLiveEquity(
         });
 
         return () => {
-            controls.close();
+            unsub();
             if (staleTimerRef.current) clearTimeout(staleTimerRef.current);
         };
     }, [enabled, accountId, resetStaleTimer]);

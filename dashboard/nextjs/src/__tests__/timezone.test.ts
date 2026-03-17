@@ -8,7 +8,7 @@
  */
 
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { formatTime, formatDate, formatDateTime, sessionLabel, msUntilNextHour, nowInTz } from "@/lib/timezone";
+import { formatTime, formatDate, formatDateTime, sessionLabel, msUntilNextHour, nowInTz, nowHourInTz } from "@/lib/timezone";
 
 afterEach(() => {
     vi.useRealTimers();
@@ -83,12 +83,20 @@ describe("msUntilNextHour", () => {
 });
 
 // ══════════════════════════════════════════════════════════════
-//  nowInTz
+//  nowInTz (deprecated) + nowHourInTz
 // ══════════════════════════════════════════════════════════════
 
 describe("nowInTz", () => {
     it("should return a Date object", () => {
         const now = nowInTz();
         expect(now).toBeInstanceOf(Date);
+    });
+});
+
+describe("nowHourInTz", () => {
+    it("should return a number between 0 and 23", () => {
+        const h = nowHourInTz();
+        expect(h).toBeGreaterThanOrEqual(0);
+        expect(h).toBeLessThanOrEqual(23);
     });
 });

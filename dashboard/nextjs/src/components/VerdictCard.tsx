@@ -23,6 +23,7 @@ const VERDICT_COLORS: Record<string, string> = {
   EXECUTE_BUY: "var(--green)",
   EXECUTE_SELL: "var(--red)",
   EXECUTE: "var(--green)",
+  EXECUTE_REDUCED_RISK: "var(--yellow)",
   HOLD: "var(--yellow)",
   NO_TRADE: "var(--text-muted)",
   ABORT: "var(--red)",
@@ -170,7 +171,8 @@ export function VerdictCard({
             { label: "TII", value: verdict.scores.tii_score },
             { label: "FRPC", value: verdict.scores.frpc_score },
           ] as { label: string; value: number | undefined }[]).map(({ label, value }, index) => {
-            const threshold = label === "W" ? 22 : label === "TII" ? 0.75 : 0.70;
+            // Constitutional thresholds: wolf ≥ 0.70 (21/30), tii ≥ 0.90, frpc ≥ 0.93
+            const threshold = label === "W" ? 21 : label === "TII" ? 0.90 : 0.93;
             const passing = (value ?? 0) >= threshold;
             return (
               <div
@@ -203,7 +205,7 @@ export function VerdictCard({
                   color: passing ? "var(--green)" : "var(--text-muted)",
                   letterSpacing: "0.06em",
                 }}>
-                  {label}:{value?.toFixed(0) ?? "—"}
+                  {label}:{label === "W" ? (value ?? 0).toFixed(0) : (value ?? 0).toFixed(2)}
                 </span>
               </div>
             );

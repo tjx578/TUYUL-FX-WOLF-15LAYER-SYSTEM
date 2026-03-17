@@ -25,6 +25,7 @@ from __future__ import annotations
 import contextlib
 import logging
 import os
+import re
 import time
 from typing import Any
 
@@ -48,6 +49,34 @@ if _vercel_url:
         u = u.strip().rstrip("/")
         if u:
             WS_ALLOWED_ORIGINS.add(u)
+
+# Regex pattern for dynamic origins (e.g. Vercel preview deployments).
+# Set CORS_ORIGIN_REGEX to a regex like r"https://tuyul-fx-.*\.vercel\.app"
+_ORIGIN_REGEX_RAW = os.getenv("CORS_ORIGIN_REGEX", "").strip()
+_ORIGIN_REGEX: re.Pattern[str] | None = None
+if _ORIGIN_REGEX_RAW:
+    try:
+        _ORIGIN_REGEX = re.compile(_ORIGIN_REGEX_RAW)
+    except re.error:
+        logger.error("Invalid CORS_ORIGIN_REGEX: %s", _ORIGIN_REGEX_RAW)
+else:
+    # Auto-derive regex for Vercel preview deployments from static origins.
+    # Preview URLs follow the pattern: <project>-<hash>-<scope>.vercel.app
+    _vercel_patterns: list[str] = []
+    for _o in WS_ALLOWED_ORIGINS:
+        if _o.endswith(".vercel.app"):
+            _prefix = re.escape(_o.rsplit(".vercel.app", 1)[0])
+            _vercel_patterns.append(f"{_prefix}(-[a-z0-9-]+)?\\.vercel\\.app")
+    if _vercel_patterns:
+        with contextlib.suppress(re.error):
+            _ORIGIN_REGEX = re.compile("|".join(_vercel_patterns))
+
+
+def _is_origin_allowed(origin: str) -> bool:
+    """Check origin against exact set and optional regex pattern."""
+    if origin in WS_ALLOWED_ORIGINS:
+        return True
+    return bool(_ORIGIN_REGEX is not None and _ORIGIN_REGEX.fullmatch(origin))
 
 
 class WSAuthError(Exception):
@@ -116,6 +145,10 @@ def _claim_set(payload: dict[str, Any], key: str) -> set[str]:
 
 
 def _has_account_access(payload: dict[str, Any], requested_account: str | None) -> bool:
+    # API keys are service-level credentials (dashboard, EA) — implicit full access.
+    if payload.get("auth_method") == "api_key":
+        return True
+
     role = str(payload.get("role", "")).strip().lower()
     if role == "admin":
         return True
@@ -177,9 +210,9 @@ async def ws_auth_guard(websocket: WebSocket) -> dict[str, Any] | None:
     Returns:
         User payload dict if authenticated, ``None`` if auth failed.
     """
-    if WS_ALLOWED_ORIGINS:
+    if WS_ALLOWED_ORIGINS or _ORIGIN_REGEX:
         origin = (websocket.headers.get("origin") or "").strip().rstrip("/")
-        if origin and origin not in WS_ALLOWED_ORIGINS:
+        if origin and not _is_origin_allowed(origin):
             # Browser client with a disallowed origin — reject immediately.
             logger.warning("WS auth rejected: forbidden origin %s", origin)
             with contextlib.suppress(Exception):

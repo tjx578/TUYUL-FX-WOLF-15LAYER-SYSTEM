@@ -3,7 +3,7 @@
 import { Suspense, useState, useTransition } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { AUTH_LOGIN } from "@/lib/endpoints";
-import { setToken } from "@/lib/auth";
+import { setToken, scheduleRefresh } from "@/lib/auth";
 
 export default function LoginPage() {
   return (
@@ -51,6 +51,7 @@ function LoginForm() {
             body: JSON.stringify({ token }),
             credentials: "include",
           });
+          scheduleRefresh(token);
         }
 
         router.replace(callbackUrl);

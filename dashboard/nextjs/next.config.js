@@ -104,14 +104,15 @@ const nextConfig = {
         source: "/auth/:path*",
         destination: `${apiBase}/api/auth/:path*`,
       },
-      // /preferences — preferencesService calls /preferences and /preferences/:id
+      // /preferences — legacy rewrite kept for any remaining callers;
+      // preferencesService now calls /api/v1/config/profile/* directly.
       {
         source: "/preferences",
-        destination: `${apiBase}/api/v1/preferences`,
+        destination: `${apiBase}/api/v1/config/profile/effective`,
       },
       {
         source: "/preferences/:path*",
-        destination: `${apiBase}/api/v1/preferences/:path*`,
+        destination: `${apiBase}/api/v1/config/profile/:path*`,
       },
       // /pipeline — pipelineDagService calls /pipeline/dag
       {
