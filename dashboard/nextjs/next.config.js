@@ -50,7 +50,7 @@ const nextConfig = {
               "font-src https://fonts.gstatic.com",
               "connect-src 'self' wss://*.railway.app https://*.railway.app",
               "img-src 'self' data:",
-              "script-src 'self' 'unsafe-eval'",
+              "script-src 'self' 'unsafe-eval' 'unsafe-inline'",
             ].join("; "),
           },
           { key: "X-Frame-Options", value: "DENY" },
