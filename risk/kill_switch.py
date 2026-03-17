@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import contextlib
 import json
+import logging
 import os
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -11,6 +12,8 @@ from typing import Any
 from storage.redis_client import redis_client
 
 _KILL_SWITCH_KEY = "RISK:KILL_SWITCH:GLOBAL"
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -119,6 +122,19 @@ class GlobalKillSwitch:
                 stale_threshold,
             )
             return self.disable(f"AUTO_RECOVERY:feed_fresh_at_{feed_stale:.1f}s")
+
+        # Auto-recover when the kill switch was tripped by feed staleness and
+        # the feed is now fresh again.  Uses 50 % hysteresis to prevent rapid
+        # enable/disable cycling (requires feed_stale < 0.5 × threshold).
+        if self.is_enabled() and "AUTO_FEED_STALE" in self._state.reason and feed_stale < stale_threshold * 0.5:
+            logger.info(
+                "Kill switch auto-recovery: feed fresh at %.1fs (threshold %.1fs)",
+                feed_stale,
+                stale_threshold,
+            )
+            return self.disable(
+                f"AUTO_RECOVERY:feed_fresh_at_{feed_stale:.1f}s"
+            )
 
         return self.snapshot()
 
