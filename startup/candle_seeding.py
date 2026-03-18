@@ -26,10 +26,11 @@ async def seed_candles_on_startup(pairs: list[str], warmup_min_bars: dict[str, i
     context_mode = os.getenv("CONTEXT_MODE", "local").lower()
     logger.info(f"[SEED] Seeding candles on startup (mode={context_mode}, pairs={len(pairs)})")
 
+    hydration_report: dict[str, object]
     if context_mode == "redis":
-        await _seed_from_redis(pairs)
+        hydration_report = await _seed_from_redis(pairs)
     else:
-        await _seed_from_finnhub(pairs)
+        hydration_report = await _seed_from_finnhub(pairs)
 
     # Verify warmup status
     from context.live_context_bus import LiveContextBus  # noqa: PLC0415
@@ -41,11 +42,18 @@ async def seed_candles_on_startup(pairs: list[str], warmup_min_bars: dict[str, i
         if status.get("ready"):
             ready_count += 1
         else:
-            logger.warning(f"[SEED] {pair} warmup still insufficient after seeding: {status.get('missing')}")
+            logger.warning(f"[SEED] {pair} warmup still insufficient after seeding: {status.get(missing)}")
     logger.info(f"[SEED] Warmup ready: {ready_count}/{len(pairs)} pairs")
+    logger.info(
+        "[SEED] Hydration report: source={} seeded_pairs={} attempts={} status={}",
+        hydration_report.get("source", "unknown"),
+        hydration_report.get("seeded_pairs", 0),
+        hydration_report.get("attempts", 0),
+        hydration_report.get("status", "unknown"),
+    )
 
 
-async def _seed_from_redis(pairs: list[str]) -> None:
+async def _seed_from_redis(pairs: list[str]) -> dict[str, object]:
     """Load candle history from Redis Lists into LiveContextBus.
 
     Retries with backoff when Redis has no data yet (race condition: engine
@@ -98,7 +106,7 @@ async def _seed_from_redis(pairs: list[str]) -> None:
                                 pair,
                                 missing_tfs,
                             )
-                    return
+                    return {"source": "redis", "seeded_pairs": h1_count, "attempts": attempt, "status": "ok"}
 
                 if attempt < max_retries:
                     logger.warning(
@@ -117,19 +125,23 @@ async def _seed_from_redis(pairs: list[str]) -> None:
                 max_retries,
                 max_retries * retry_delay,
             )
+            return {"source": "redis", "seeded_pairs": 0, "attempts": max_retries, "status": "degraded"}
         finally:
             await redis_client.aclose()
     except Exception as exc:
         logger.error(f"[SEED] Failed to seed from Redis: {exc}")
+        return {"source": "redis", "seeded_pairs": 0, "attempts": 1, "status": "failed"}
 
 
-async def _seed_from_finnhub(pairs: list[str]) -> None:
+async def _seed_from_finnhub(pairs: list[str]) -> dict[str, object]:
     """Fetch historical candles from Finnhub REST API into LiveContextBus."""
     from ingest.finnhub_key_manager import finnhub_keys  # noqa: PLC0415
 
     if not finnhub_keys.available:
         logger.warning("[SEED] No Finnhub API key — skipping REST warmup")
-        return
+        return {"source": "finnhub", "seeded_pairs": 0, "attempts": 1, "status": "skipped"}
+
+    del pairs  # symbols are sourced from fetcher warmup config
     try:
         from ingest.finnhub_candles import FinnhubCandleFetcher  # noqa: PLC0415
 
@@ -141,5 +153,7 @@ async def _seed_from_finnhub(pairs: list[str]) -> None:
         m15_seeded = await fetcher.cold_start_m15(bars=100)
         m15_total = sum(m15_seeded.values())
         logger.info(f"[SEED] M15 cold-start: {len(m15_seeded)} symbols, {m15_total} total bars")
+        return {"source": "finnhub", "seeded_pairs": len(results), "attempts": 1, "status": "ok"}
     except Exception as exc:
         logger.error(f"[SEED] Failed to seed from Finnhub: {exc}")
+        return {"source": "finnhub", "seeded_pairs": 0, "attempts": 1, "status": "failed"}
