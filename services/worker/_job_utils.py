@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import os
 from datetime import UTC, datetime
+from json import JSONDecodeError
 from pathlib import Path
 from typing import Any, cast
 
@@ -39,6 +40,24 @@ def get_redis_client() -> RedisClient:
     return RedisClient()
 
 
+def _looks_like_placeholder_json(raw: str) -> bool:
+    normalized = raw.strip().lower()
+    return normalized in {
+        "json string",
+        "(json string)",
+        "<json string>",
+        "your_json_here",
+        "<your_json_here>",
+    }
+
+
+def _load_json_string(raw: str, *, source: str) -> Any:
+    try:
+        return json.loads(raw)
+    except JSONDecodeError as exc:
+        raise ValueError(f"invalid JSON in {source}: {exc}") from exc
+
+
 def load_json_payload(
     *,
     env_json_var: str,
@@ -48,7 +67,20 @@ def load_json_payload(
     """Load JSON payload from env-inline, env-file, or Redis key (priority order)."""
     inline = (os.getenv(env_json_var) or "").strip()
     if inline:
-        return json.loads(inline)
+        if _looks_like_placeholder_json(inline):
+            logger.warning(
+                "{} is set to a placeholder value; ignoring inline JSON and checking fallback sources",
+                env_json_var,
+            )
+        else:
+            try:
+                return _load_json_string(inline, source=f"env var {env_json_var}")
+            except ValueError as exc:
+                logger.warning("{}", exc)
+                logger.warning(
+                    "Ignoring invalid inline JSON from {} and checking fallback sources",
+                    env_json_var,
+                )
 
     file_path = (os.getenv(env_file_var) or "").strip()
     if file_path:
@@ -56,7 +88,7 @@ def load_json_payload(
 
     raw = (get_redis_client().get(redis_key) or "").strip()
     if raw:
-        return json.loads(raw)
+        return _load_json_string(raw, source=f"Redis key {redis_key}")
 
     return None
 
