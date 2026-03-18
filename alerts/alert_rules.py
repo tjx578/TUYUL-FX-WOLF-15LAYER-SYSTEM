@@ -30,6 +30,8 @@ ALERT_RULES: dict[str, bool] = {
     "KILL_SWITCH_TRIPPED": True,
     "CIRCUIT_BREAKER_OPEN": True,
     "PIPELINE_LATENCY_HIGH": True,
+    "HEARTBEAT_ABSENT": True,
+    "MASS_FEED_STALENESS": True,
 }
 
 
@@ -43,6 +45,9 @@ class AlertThresholds:
     # Feed staleness (seconds since last tick)
     feed_stale_warning_seconds: float = 15.0
     feed_stale_critical_seconds: float = 30.0
+    heartbeat_absent_seconds: float = 20.0
+    mass_staleness_min_symbols: int = 4
+    mass_staleness_ratio: float = 0.6
 
     # Drawdown thresholds (percentage of balance)
     daily_loss_warning_percent: float = 3.0
