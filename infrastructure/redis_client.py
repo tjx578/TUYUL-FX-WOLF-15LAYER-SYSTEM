@@ -1,20 +1,24 @@
 """
 Redis client factory — native async, connection pool management.
 
-Zone: infrastructure/ — shared utility, no business logic.
+TUYUL FX v2 Architecture:
+------------------------------------------------------------
+• Redis is a first-class architecture component: stream bridge, context sync, heartbeat, fanout, and durability.
+• Not just transport — Redis coordinates multi-container pub/sub, cross-service context, verdict sync, producer heartbeat, and recovery snapshots.
+• Redis is the primary bridge for low-latency state, history, and freshness tracking across ingest, analysis, execution, and dashboard services.
+• All durability, fanout, and recovery logic is handled via Redis Streams, Lists, and Pub/Sub (see infrastructure/redis/stream_publisher.py, stream_consumer.py).
+• Heartbeat and freshness lane: Redis stores producer heartbeat, last_seen timestamps, and readiness checks for all critical data (tick, candle, verdict).
+• Readiness = fresh data present, not just process alive; explicit freshness checks and heartbeat tracking for all producers/consumers.
+• Redis is the authoritative context sync for multi-service orchestration, not just a message bus.
 
 Key design: uses redis.asyncio natively. No run_in_executor anywhere.
 
-Config source: REDIS_URL (via infrastructure.redis_url) — identical to the
-sync RedisClient in storage/redis_client.py.  This eliminates the duplicate
-config-source problem (I1: two clients potentially connecting to different
-servers) and ensures Railway/Docker deployments work with just REDIS_URL
-without requiring separate REDIS_HOST/REDIS_PORT env vars (I2).
+Config source: REDIS_URL (via infrastructure.redis_url) — identical to the sync RedisClient in storage/redis_client.py.  This eliminates the duplicate config-source problem (I1: two clients potentially connecting to different servers) and ensures Railway/Docker deployments work with just REDIS_URL without requiring separate REDIS_HOST/REDIS_PORT env vars (I2).
 
 Priority for connection target:
-  1. REDIS_URL  (Railway / Docker / production — single source of truth)
-  2. Individual REDIS_HOST / REDIS_PORT / REDIS_PASSWORD / REDIS_DB overrides
-  3. localhost:6379 dev fallback
+    1. REDIS_URL  (Railway / Docker / production — single source of truth)
+    2. Individual REDIS_HOST / REDIS_PORT / REDIS_PASSWORD / REDIS_DB overrides
+    3. localhost:6379 dev fallback
 """
 
 from __future__ import annotations

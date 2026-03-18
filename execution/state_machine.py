@@ -1,8 +1,14 @@
-"""Execution state machine with strict, replay-safe transitions.
+"""
+Execution Bridge — strict, replay-safe state machine for EA/broker order intent.
 
-Supports per-symbol FSM instances via ``StateMachineRegistry``.
-Each symbol gets its own independent ``StateMachine`` so multi-pair
-concurrent execution never collides.
+TUYUL FX v2 Architecture:
+------------------------------------------------------------
+• This module is the execution bridge: connects pipeline verdicts (L12) to EA/broker, not consumer observability.
+• Separate from output/observability (dashboard, journal, metrics, alerts).
+• Handles order intent, compliance, kill switch, and authority gating.
+• No analytical or decision logic — only state transitions for execution.
+• Each symbol gets its own independent StateMachine (multi-pair safe).
+• Authority boundaries: only pipeline verdict (L12) can trigger execution; EventBus is orchestration/trigger only.
 
 Backward compatibility:
     ``ExecutionStateMachine`` is now an alias for ``StateMachineRegistry``
