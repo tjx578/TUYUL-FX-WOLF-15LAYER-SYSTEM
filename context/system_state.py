@@ -67,10 +67,26 @@ class SystemStateManager:
     # Valid state transitions
     _VALID_TRANSITIONS: dict[SystemState, set[SystemState]] = {
         SystemState.INITIALIZING: {SystemState.WARMING_UP, SystemState.ERROR},
-        SystemState.WARMING_UP: {SystemState.READY, SystemState.DEGRADED, SystemState.ERROR},
-        SystemState.READY: {SystemState.DEGRADED, SystemState.ERROR},
-        SystemState.DEGRADED: {SystemState.READY, SystemState.ERROR},
-        SystemState.ERROR: {SystemState.INITIALIZING},  # Allow restart
+        SystemState.WARMING_UP: {
+            SystemState.READY,
+            SystemState.DEGRADED,
+            SystemState.ERROR,
+        },
+        # Allow re-entering warmup from READY/DEGRADED/ERROR during runtime retries.
+        SystemState.READY: {
+            SystemState.WARMING_UP,
+            SystemState.DEGRADED,
+            SystemState.ERROR,
+        },
+        SystemState.DEGRADED: {
+            SystemState.WARMING_UP,
+            SystemState.READY,
+            SystemState.ERROR,
+        },
+        SystemState.ERROR: {
+            SystemState.INITIALIZING,
+            SystemState.WARMING_UP,
+        },  # Allow restart
     }
 
     def __new__(cls) -> SystemStateManager:
@@ -90,12 +106,15 @@ class SystemStateManager:
         # Load config
         self.config = load_finnhub()
         self.warmup_config = self.config.get("candles", {}).get("warmup", {})
-        self.min_bars = self.warmup_config.get("min_bars", {
-            "W1": 20,
-            "D1": 50,
-            "H4": 10,
-            "H1": 50,
-        })
+        self.min_bars = self.warmup_config.get(
+            "min_bars",
+            {
+                "W1": 20,
+                "D1": 50,
+                "H4": 10,
+                "H1": 50,
+            },
+        )
 
         # Redis support for multi-container
         self._mode = os.getenv("CONTEXT_MODE", "local").lower()

@@ -63,15 +63,14 @@ class TestStateTransitions:
         manager.set_state(SystemState.READY)
         assert manager.get_state() == SystemState.READY
 
-    def test_invalid_transition_rejected(self) -> None:
-        """Test invalid transitions raise ValueError."""
+    def test_ready_to_warming_up_allowed_for_retry(self) -> None:
+        """READY -> WARMING_UP is valid to support warmup retry paths."""
         manager = SystemStateManager()
         with manager._rw_lock:
             manager._state = SystemState.READY
 
-        # READY -> WARMING_UP is invalid
-        with pytest.raises(ValueError, match="Invalid state transition"):
-            manager.set_state(SystemState.WARMING_UP)
+        manager.set_state(SystemState.WARMING_UP)
+        assert manager.get_state() == SystemState.WARMING_UP
 
     def test_error_to_initializing(self) -> None:
         """Test ERROR -> INITIALIZING transition (restart)."""
@@ -224,7 +223,7 @@ class TestWarmupValidation:
             "EURUSD": {
                 "W1": [{"bar": i} for i in range(10)],  # < 20
                 "D1": [{"bar": i} for i in range(30)],  # < 50
-                "H4": [{"bar": i} for i in range(5)],   # < 10
+                "H4": [{"bar": i} for i in range(5)],  # < 10
                 "H1": [{"bar": i} for i in range(25)],  # < 50
             }
         }
