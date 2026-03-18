@@ -136,3 +136,24 @@ class TelegramNotifier:
 
         text = AlertFormatter.format_pipeline_latency(latency_seconds, stage)
         self._send(text)
+
+    def on_heartbeat_absent(self, age_seconds: float) -> None:
+        """Alert when live heartbeat stream goes absent."""
+        if not ALERT_RULES.get("HEARTBEAT_ABSENT", False):
+            return
+
+        text = AlertFormatter.format_heartbeat_absent(age_seconds)
+        self._send(text, critical=True)
+
+    def on_mass_staleness(
+        self,
+        stale_count: int,
+        total_symbols: int,
+        threshold_seconds: float,
+    ) -> None:
+        """Alert when most symbols become stale at once."""
+        if not ALERT_RULES.get("MASS_FEED_STALENESS", False):
+            return
+
+        text = AlertFormatter.format_mass_staleness(stale_count, total_symbols, threshold_seconds)
+        self._send(text, critical=True)
