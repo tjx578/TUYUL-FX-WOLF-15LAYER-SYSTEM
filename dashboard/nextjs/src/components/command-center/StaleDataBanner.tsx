@@ -7,12 +7,15 @@
 // ============================================================
 
 import { useEffect, useState } from "react";
+import type { FeedStatus } from "@/types";
 
 interface StaleDataBannerProps {
   isStale: boolean;
   isSystemDegraded: boolean;
   wsStatus: string;
   dataErrors: string[];
+  feedStatus?: FeedStatus;
+  feedDetail?: string;
 }
 
 export default function StaleDataBanner({
@@ -20,11 +23,13 @@ export default function StaleDataBanner({
   isSystemDegraded,
   wsStatus,
   dataErrors,
+  feedStatus,
+  feedDetail,
 }: StaleDataBannerProps) {
   const [staleSince, setStaleSince] = useState<number | null>(null);
   const [staleSeconds, setStaleSeconds] = useState(0);
 
-  const shouldShow = isStale || isSystemDegraded;
+  const shouldShow = isStale || isSystemDegraded || (!!feedStatus && feedStatus !== "fresh");
 
   useEffect(() => {
     if (shouldShow && staleSince === null) {
@@ -46,17 +51,21 @@ export default function StaleDataBanner({
 
   if (!shouldShow) return null;
 
-  const isOffline = wsStatus === "DISCONNECTED";
+  const isOffline = wsStatus === "DISCONNECTED" || feedStatus === "no_transport";
   const staleLabel =
     staleSeconds < 60
       ? `${staleSeconds}s`
       : `${Math.floor(staleSeconds / 60)}m ${staleSeconds % 60}s`;
 
-  const message = isOffline
-    ? "Backend connection lost — operating with last known data."
-    : wsStatus === "RECONNECTING"
-    ? "Live channel reconnecting — verdicts may be stale."
-    : "Verdict data is stale — live feed not responding.";
+  const message = feedStatus === "config_error"
+    ? "Stale threshold config invalid — fix backend env before trusting feed freshness."
+    : feedStatus === "no_producer"
+      ? "No producer heartbeat/tick detected — dashboard is waiting for authority last_seen_ts."
+      : isOffline
+        ? "Backend connection lost — operating with last known data."
+        : wsStatus === "RECONNECTING"
+          ? "Live channel reconnecting — verdicts may be stale."
+          : "Verdict data is stale — live feed not responding.";
 
   return (
     <div
@@ -94,7 +103,7 @@ export default function StaleDataBanner({
           flexShrink: 0,
         }}
       >
-        {isOffline ? "OFFLINE" : "STALE DATA"}
+        {feedStatus ? feedStatus.toUpperCase() : isOffline ? "OFFLINE" : "STALE DATA"}
       </span>
       <span
         style={{
@@ -112,6 +121,9 @@ export default function StaleDataBanner({
       <span style={{ fontSize: 11, color: "var(--text-secondary)", flex: 1 }}>
         {message}
       </span>
+      {feedDetail && (
+        <span style={{ fontSize: 11, color: "var(--text-muted)", flex: 1.2 }}>{feedDetail}</span>
+      )}
       {dataErrors.length > 0 && (
         <span
           style={{

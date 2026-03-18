@@ -7,14 +7,23 @@
 // ============================================================
 
 import type { WsConnectionStatus } from "@/lib/realtime/connectionState";
+import type { FeedStatus } from "@/types";
 
 interface GlobalStatusStripProps {
-  health: { status: string } | undefined;
+  health: { status: string; feed_status?: FeedStatus } | undefined;
   wsStatus: WsConnectionStatus;
   mode: string;
   executionState: string | undefined;
   openTradeCount: number;
   isStale: boolean;
+}
+
+function feedStatusColor(status?: FeedStatus): string {
+  if (status === "fresh") return "var(--green)";
+  if (status === "stale_preserved") return "var(--yellow)";
+  if (status === "no_producer") return "#ff9f0a";
+  if (status === "no_transport" || status === "config_error") return "var(--red)";
+  return "var(--text-muted)";
 }
 
 function statusColor(status: string) {
@@ -56,14 +65,14 @@ export default function GlobalStatusStrip({
     },
     {
       label: "LIVE FEED",
-      value: isStale ? "STALE" : wsStatus,
-      color:
+      value: health?.feed_status?.toUpperCase() ?? (isStale ? "STALE" : wsStatus),
+      color: health?.feed_status ? feedStatusColor(health.feed_status) :
         wsStatus === "LIVE" && !isStale
           ? "var(--green)"
           : isStale || wsStatus === "RECONNECTING" || wsStatus === "CONNECTING" || wsStatus === "DEGRADED" || wsStatus === "STALE"
             ? "var(--yellow)"
             : "var(--red)",
-      pulse: wsStatus === "LIVE" && !isStale,
+      pulse: health?.feed_status === "fresh" || (wsStatus === "LIVE" && !isStale),
     },
     {
       label: "ENGINE",

@@ -5,12 +5,27 @@
 // ============================================================
 
 import { useHealth } from "@/lib/api";
+import type { FeedStatus } from "@/types";
+
+const FEED_STATUS_COLOR: Record<FeedStatus, string> = {
+  fresh: "var(--green)",
+  stale_preserved: "var(--yellow)",
+  no_producer: "#ff9f0a",
+  no_transport: "var(--red)",
+  config_error: "var(--red)",
+};
+
+function formatFeedStatus(status?: FeedStatus): string {
+  return status ? status.toUpperCase() : "UNKNOWN";
+}
 
 export function SystemHealth() {
   const { data: health, isLoading } = useHealth();
 
   const isHealthy = health?.status === "ok";
   const statusColor = isHealthy ? "var(--green)" : "var(--red)";
+  const feedStatus = health?.feed_status;
+  const feedColor = feedStatus ? FEED_STATUS_COLOR[feedStatus] : "var(--text-muted)";
 
   return (
     <div
@@ -57,6 +72,24 @@ export function SystemHealth() {
               {health?.status?.toUpperCase() ?? "UNKNOWN"}
             </span>
           </div>
+
+          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, gap: 12 }}>
+            <span style={{ color: "var(--text-muted)" }}>Feed</span>
+            <span style={{ color: feedColor, fontWeight: 600, textAlign: "right" }}>
+              {formatFeedStatus(feedStatus)}
+            </span>
+          </div>
+
+          {health?.feed_staleness_seconds !== undefined && (
+            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, gap: 12 }}>
+              <span style={{ color: "var(--text-muted)" }}>Last Seen</span>
+              <span className="num" style={{ color: "var(--text-secondary)", textAlign: "right" }}>
+                {Number.isFinite(health.feed_staleness_seconds)
+                  ? `${Math.round(health.feed_staleness_seconds)}s ago`
+                  : "N/A"}
+              </span>
+            </div>
+          )}
 
           {health?.redis_connected !== undefined && (
             <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11 }}>
