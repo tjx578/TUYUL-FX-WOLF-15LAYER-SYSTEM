@@ -359,6 +359,19 @@ class Stoppable(Protocol):
     async def stop(self) -> None: ...
 
 
+async def _run_supervised(name: str, runner: Any, restart_delay: float = 5.0) -> None:
+    """Run a long-lived task with restart isolation for scheduled/background services."""
+    while not (_shutdown_event and _shutdown_event.is_set()):
+        try:
+            await runner.run()
+            return
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("[%s] crashed - restarting in %.1fs", name, restart_delay)
+            await asyncio.sleep(restart_delay)
+
+
 # ── Redis candle history — shared helpers ─────────────────────────
 # Matches the key format used by RedisContextBridge.write_candle().
 # Data is persistent in Redis volume — no TTL needed.
@@ -653,16 +666,17 @@ async def run_ingest_services(has_api_key: bool) -> None:
         _health_probe.set_detail("system_state", system_state.get_state().value)
         logger.info("Ingest readiness: READY")
 
+        macro_monthly = MacroMonthlyScheduler(enabled_symbols)
         logger.info(
-            "Starting ingest services: WebSocket, RestPollFallback, CalendarNews, MarketNews, CandleBuilder (M15 via tick callback), H1Refresh"
+            "Starting ingest services: WebSocket + supervised background refresh/poll/news tasks"
         )
         await asyncio.gather(
             ws_feed.run(),
-            rest_poll.run(),
-            news_feed.run(),
-            market_news.run(),
-            h1_refresh.run(),
-            MacroMonthlyScheduler(enabled_symbols).run(),
+            _run_supervised("rest_poll_fallback", rest_poll),
+            _run_supervised("calendar_news", news_feed),
+            _run_supervised("market_news", market_news),
+            _run_supervised("h1_refresh", h1_refresh),
+            _run_supervised("macro_monthly_refresh", macro_monthly),
         )
     except asyncio.CancelledError:
         logger.info("Ingest services cancelled - shutting down")

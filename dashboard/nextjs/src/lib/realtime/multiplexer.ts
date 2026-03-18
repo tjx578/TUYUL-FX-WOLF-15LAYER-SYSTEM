@@ -29,6 +29,7 @@
 
 import { connectLiveUpdates, type WsControls, type WsConnectionStatus } from "./realtimeClient";
 import { connectSse, type SseControls } from "./sseClient";
+import { getApiBaseUrl } from "@/lib/env";
 import type { WsEventParsed } from "@/schema/wsEventSchema";
 import type { SystemStatusView } from "@/contracts/wsEvents";
 
@@ -157,7 +158,8 @@ function startPollingFallback(): void {
     const tick = async () => {
         try {
             const t0 = Date.now();
-            const res = await fetch("/health", { credentials: "include" });
+            const apiBase = getApiBaseUrl();
+            const res = await fetch(`${apiBase}/health`, { credentials: "include" });
             const latency = Date.now() - t0;
             if (!res.ok) {
                 fanOutStatus("STALE");
