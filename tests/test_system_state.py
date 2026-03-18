@@ -102,6 +102,18 @@ class TestStateTransitions:
         assert manager.get_state() == SystemState.INITIALIZING
         assert manager.get_warmup_report() == {}
 
+    def test_reset_publishes_initializing(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Reset should publish INITIALIZING for multi-container retries."""
+        manager = SystemStateManager()
+        published: list[SystemState] = []
+        monkeypatch.setattr(manager, "_publish_state", published.append)
+
+        manager.reset()
+
+        assert published == [SystemState.INITIALIZING]
+
 
 class TestReadyCheck:
     """Test is_ready() check."""
