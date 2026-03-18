@@ -128,3 +128,30 @@ Latency  : {latency_seconds:.3f}s
 {ts}
 ────────────────────────────
 """
+
+    @staticmethod
+    def format_heartbeat_absent(age_seconds: float) -> str:
+        ts = format_dual_timezone(now_utc())
+
+        return f"""
+💔 HEARTBEAT ABSENT
+────────────────────────────
+Last heartbeat seen : {age_seconds:.1f}s ago
+Impact             : Operator dashboard may be stale
+{ts}
+────────────────────────────
+"""
+
+    @staticmethod
+    def format_mass_staleness(stale_count: int, total_symbols: int, threshold_seconds: float) -> str:
+        ts = format_dual_timezone(now_utc())
+
+        return f"""
+🧊 MASS FEED STALENESS
+────────────────────────────
+Stale symbols : {stale_count}/{total_symbols}
+Threshold     : > {threshold_seconds:.0f}s
+Impact        : Market feed likely degraded upstream
+{ts}
+────────────────────────────
+"""
