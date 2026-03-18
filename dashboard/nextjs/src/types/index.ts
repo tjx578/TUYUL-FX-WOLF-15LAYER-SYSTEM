@@ -380,17 +380,24 @@ export interface CandleData {
 
 // ─── SYSTEM ───────────────────────────────────────────────────
 
+export type FeedStatus = "fresh" | "stale_preserved" | "no_producer" | "no_transport" | "config_error";
+
 export interface SystemHealth {
   status: "ok" | "degraded" | "error";
   service: string;
   version: string;
-  uptime_seconds: number;
   redis_connected: boolean;
   mt5_connected: boolean;
   active_pairs: number;
   active_trades: number;
+  feed_status?: FeedStatus;
+  feed_staleness_seconds?: number;
+  feed_threshold_seconds?: number;
+  feed_last_seen_ts?: number | null;
+  detail?: string;
+  uptime_seconds?: number;
   last_verdict_at?: number;
-  timestamp: number;
+  timestamp?: number | string;
 }
 
 export interface ContextSnapshot {

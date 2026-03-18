@@ -41,7 +41,12 @@ from infrastructure.redis_client import get_client
 from infrastructure.tracing import inject_trace_context, setup_tracer
 from journal.trade_journal_service import trade_journal_automation_service
 from risk.kill_switch import GlobalKillSwitch
-from state.data_freshness import FeedFreshnessSnapshot, classify_feed_freshness, stale_threshold_seconds
+from state.data_freshness import (
+    FeedFreshnessSnapshot,
+    classify_feed_freshness,
+    stale_threshold_config,
+    stale_threshold_seconds,
+)
 from storage.trade_write_through import persist_trade_snapshot
 
 logger = logging.getLogger(__name__)
@@ -464,16 +469,18 @@ async def _feed_freshness_snapshot(pair: str = "") -> FeedFreshnessSnapshot:
             pairs = load_pairs()
             symbols = [str(p.get("symbol", "")).strip().upper() for p in pairs if p.get("symbol")]
 
+        threshold_seconds, config_ok = stale_threshold_config()
+
         if not symbols:
             return classify_feed_freshness(
                 transport_ok=True,
                 has_producer_signal=False,
                 staleness_seconds=float("inf"),
-                threshold_seconds=float(STALE_DATA_THRESHOLD_SEC),
+                threshold_seconds=threshold_seconds,
+                config_ok=config_ok,
             )
 
-        best_staleness = float("inf")
-        now_ts = datetime.now(UTC).timestamp()
+        best_last_seen_ts: float | None = None
         has_tick = False
 
         for symbol in symbols:
@@ -489,22 +496,25 @@ async def _feed_freshness_snapshot(pair: str = "") -> FeedFreshnessSnapshot:
             if ts <= 0:
                 continue
             has_tick = True
-            staleness = max(0.0, now_ts - ts)
-            if staleness < best_staleness:
-                best_staleness = staleness
+            if best_last_seen_ts is None or ts > best_last_seen_ts:
+                best_last_seen_ts = ts
 
         return classify_feed_freshness(
             transport_ok=True,
             has_producer_signal=has_tick,
-            staleness_seconds=best_staleness,
-            threshold_seconds=float(STALE_DATA_THRESHOLD_SEC),
+            last_seen_ts=best_last_seen_ts,
+            now_ts=datetime.now(UTC).timestamp(),
+            threshold_seconds=threshold_seconds,
+            config_ok=config_ok,
         )
     except Exception:
+        threshold_seconds, config_ok = stale_threshold_config()
         return classify_feed_freshness(
             transport_ok=False,
             has_producer_signal=False,
             staleness_seconds=float("inf"),
-            threshold_seconds=float(STALE_DATA_THRESHOLD_SEC),
+            threshold_seconds=threshold_seconds,
+            config_ok=config_ok,
         )
 
 

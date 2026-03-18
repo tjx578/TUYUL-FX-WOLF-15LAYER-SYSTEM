@@ -18,7 +18,7 @@ import { VerdictCard } from "@/components/VerdictCard";
 import { SystemHealth } from "@/components/SystemHealth";
 import StaleDataBanner from "@/components/command-center/StaleDataBanner";
 import { useSessionLabel } from "@/hooks/useSessionLabel";
-import type { L12Verdict, Account } from "@/types";
+import type { L12Verdict, Account, FeedStatus } from "@/types";
 
 // ── Helpers ──────────────────────────────────────────────────
 
@@ -32,11 +32,19 @@ function statusColor(status: string) {
 // ── Sub-components ────────────────────────────────────────────
 
 interface GlobalStatusStripProps {
-  health: { status: string } | undefined;
+  health: { status: string; feed_status?: FeedStatus } | undefined;
   wsStatus: string;
   mode: string;
   executionState: string | undefined;
   openTradeCount: number;
+}
+
+function feedStatusColor(status?: FeedStatus) {
+  if (status === "fresh") return "var(--green)";
+  if (status === "stale_preserved") return "var(--yellow)";
+  if (status === "no_producer") return "#ff9f0a";
+  if (status === "no_transport" || status === "config_error") return "var(--red)";
+  return "var(--text-muted)";
 }
 
 function GlobalStatusStrip({
@@ -70,9 +78,9 @@ function GlobalStatusStrip({
     },
     {
       label: "LIVE FEED",
-      value: wsStatus,
-      color: wsStatus === "LIVE" ? "var(--green)" : (wsStatus === "RECONNECTING" || wsStatus === "CONNECTING" || wsStatus === "DEGRADED" || wsStatus === "STALE") ? "var(--yellow)" : "var(--red)",
-      pulse: wsStatus === "LIVE",
+      value: health?.feed_status?.toUpperCase() ?? wsStatus,
+      color: health?.feed_status ? feedStatusColor(health.feed_status) : wsStatus === "LIVE" ? "var(--green)" : (wsStatus === "RECONNECTING" || wsStatus === "CONNECTING" || wsStatus === "DEGRADED" || wsStatus === "STALE") ? "var(--yellow)" : "var(--red)",
+      pulse: health?.feed_status === "fresh" || wsStatus === "LIVE",
     },
     {
       label: "ENGINE",
@@ -670,6 +678,8 @@ export default function CommandCenterPage() {
         isSystemDegraded={isSystemDegraded}
         wsStatus={wsStatus}
         dataErrors={dataErrors}
+        feedStatus={health?.feed_status}
+        feedDetail={health?.detail}
       />
 
       {/* 3. Event Banner — high-impact news blackout */}
