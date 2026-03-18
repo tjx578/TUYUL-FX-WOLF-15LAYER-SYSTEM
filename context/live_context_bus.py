@@ -9,6 +9,8 @@ TUYUL FX v2 Architecture:
 • LiveContextBus is always synchronized with Redis (latest_tick, candle_history, verdicts, heartbeat) and PostgreSQL (durable candle storage, journal/trades, recovery snapshots).
 • Startup hydration/recovery: state is seeded from Redis first, fallback to PG, atomic restore, non-destructive.
 • Stale-but-preserved, empty, and no-producer states are tracked via feed staleness and heartbeat.
+• Heartbeat/freshness lane: explicit producer heartbeat, freshness timestamp, and readiness checks based on data freshness (not just process status).
+• Readiness = fresh data present, not just process alive; stale-but-preserved vs empty vs no-producer distinction is tracked.
 • All authority remains in Layer-12 (verdict engine); EventBus is orchestration/trigger only.
 
 Layers:
