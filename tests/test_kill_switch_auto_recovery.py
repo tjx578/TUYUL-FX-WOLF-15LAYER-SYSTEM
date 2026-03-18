@@ -14,6 +14,7 @@ import pytest
 def _mock_redis(monkeypatch):
     """Prevent real Redis calls in singleton."""
     monkeypatch.setattr("risk.kill_switch.redis_client", MagicMock())
+    monkeypatch.setenv("STALE_DATA_THRESHOLD_SEC", "60")
 
 
 @pytest.fixture()
@@ -100,8 +101,8 @@ class TestAutoRecoveryFromFeedStale:
         assert result["enabled"] is False
 
     def test_custom_stale_threshold_via_env(self, kill_switch, monkeypatch):
-        """Custom KILL_SWITCH_FEED_STALE_SEC changes both trip and recovery."""
-        monkeypatch.setenv("KILL_SWITCH_FEED_STALE_SEC", "120")
+        """Custom stale authority env changes both trip and recovery."""
+        monkeypatch.setenv("WOLF_STALE_THRESHOLD_SECONDS", "120")
 
         # 80s < 120 threshold → should NOT trip
         result = kill_switch.evaluate_and_trip(metrics={"feed_stale_seconds": 80.0})
