@@ -32,6 +32,7 @@ class TestDataQualityGate:
         report = gate.assess("EURUSD", "M15", candles, last_update_ts=time.time())
         assert report.degraded is False
         assert report.confidence_penalty == 0.0
+        assert report.freshness_state == "fresh"
         assert report.gap_candles == 0
         assert report.gap_ratio == 0.0
 
@@ -64,6 +65,7 @@ class TestDataQualityGate:
         old_ts = time.time() - 60.0
         report = gate.assess("EURUSD", "M15", candles, last_update_ts=old_ts)
         assert report.degraded is True
+        assert report.freshness_state == "stale_preserved"
         assert report.staleness_seconds > 50.0
         assert any("stale" in r for r in report.reasons)
 
@@ -79,7 +81,7 @@ class TestDataQualityGate:
     def test_h1_stale_after_two_candles(self) -> None:
         gate = DataQualityGate()
         candles = [_make_candle() for _ in range(50)]
-        old_ts = time.time() - 8000.0
+        old_ts = time.time() - 12000.0
         report = gate.assess("EURUSD", "H1", candles, last_update_ts=old_ts)
         assert report.degraded is True
         assert any("stale_data" in r for r in report.reasons)
@@ -97,6 +99,7 @@ class TestDataQualityGate:
         gate = DataQualityGate()
         report = gate.assess("EURUSD", "M15", [])
         assert report.degraded is True
+        assert report.freshness_state == "no_producer"
         assert report.confidence_penalty == DataQualityConfig().max_penalty
         assert "no_candles" in report.reasons
 
