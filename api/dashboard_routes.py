@@ -20,9 +20,9 @@ NOTE: Do NOT add POST /api/v1/trades/* here — those belong to write_router onl
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
-from dashboard.account_manager import AccountManager
-from dashboard.price_feed import PriceFeed
-from dashboard.trade_ledger import TradeLedger
+from accounts.account_repository import AccountManager
+from ingest.price_feed import PriceFeed
+from journal.journal_repository import TradeLedger
 from schemas.trade_models import Account, Trade
 
 router = APIRouter()

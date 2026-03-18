@@ -17,17 +17,17 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 from redis import Redis
 
-from dashboard.backend.auth import verify_token
-from dashboard.backend.risk_engine import RiskEngine  # noqa: F401 — imported after fix
-from dashboard.backend.schemas import (
+from api.auth import verify_token
+from accounts.risk_engine import RiskEngine  # noqa: F401 — imported after fix
+from accounts.account_model import (
     AccountState as DashAccountState,
 )
-from dashboard.backend.schemas import (
+from accounts.account_model import (
     Layer12Signal,
     RiskCalculationResult,
     RiskSeverity,
 )
-from dashboard.backend.schemas import (
+from accounts.account_model import (
     RiskMode as DashRiskMode,
 )
 
@@ -180,6 +180,7 @@ def _build_account_state(account_id: str, account: dict) -> DashAccountState:
 
 # ─── Routes ──────────────────────────────────────────────────────────────────
 
+@write_router.post("/allocation/take")
 @write_router.post("/trades/take")
 async def take_signal(req: TakeSignalRequest) -> dict:
     """

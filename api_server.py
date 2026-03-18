@@ -62,6 +62,7 @@ def _configure_process_logging() -> None:
 
 _configure_process_logging()
 
+from api.accounts_router import router as accounts_router  # noqa: E402
 from api.calendar_routes import router as calendar_router  # noqa: E402
 
 # ── New routers (7 new endpoints) ─────────────────────────────────────────────
@@ -73,6 +74,10 @@ from api.journal_routes import router as journal_router  # noqa: E402
 # ── Existing routers ───────────────────────────────────────────────────────────
 from api.l12_routes import router as l12_router  # noqa: E402
 from api.metrics_routes import router as metrics_router  # noqa: E402
+from api.prop_router import router as prop_router  # noqa: E402
+from api.risk_router import router as risk_router  # noqa: E402
+from api.signals_router import router as signals_router  # noqa: E402
+from api.execution_router import router as execution_router  # noqa: E402
 from api.middleware.prometheus_middleware import PrometheusMiddleware  # noqa: E402
 from api.middleware.rate_limit import RateLimitMiddleware  # noqa: E402  # noqa: E402
 from api.redis_health_routes import router as redis_health_router  # noqa: E402
@@ -80,7 +85,7 @@ from api.risk_events_routes import router as risk_events_router  # noqa: E402
 from api.ws_routes import router as ws_router  # noqa: E402
 
 # ── Fixed routers ─────────────────────────────────────────────────────────────
-from dashboard.backend.trade_input_api import write_router  # BUG-1/2/3 FIXED  # noqa: E402
+from api.allocation_router import write_router  # BUG-1/2/3 FIXED  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
@@ -228,6 +233,11 @@ app.add_middleware(RateLimitMiddleware)
 # ── Mount routers ─────────────────────────────────────────────────────────────
 # Trade write lifecycle (take/skip/confirm/close/active + risk/calculate)
 app.include_router(write_router)
+app.include_router(signals_router)
+app.include_router(accounts_router)
+app.include_router(prop_router)
+app.include_router(risk_router)
+app.include_router(execution_router)
 # L12 verdicts, context, execution state, pairs
 app.include_router(l12_router)
 # WebSocket feeds

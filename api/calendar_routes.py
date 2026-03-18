@@ -29,7 +29,7 @@ except ImportError:
 
 import contextlib
 
-from dashboard.backend.auth import verify_token
+from api.auth import verify_token
 from infrastructure.redis_url import get_redis_url
 
 logger = logging.getLogger(__name__)
