@@ -1,17 +1,24 @@
-"""LiveContextBus — ephemeral inference state machine.
+"""
+LiveContextBus — runtime state hub (ephemeral, NOT durable source of truth)
 
-NOT storage.  TUYUL thinks with state abstractions, not raw data.
+TUYUL FX v2 Architecture:
+------------------------------------------------------------
+• LiveContextBus is ONLY for fast, in-process consumption by analysis pipeline.
+• It is NOT a permanent storage or source of truth.
+• All durability, fanout, heartbeat, and recovery handled by Redis/PostgreSQL.
+• LiveContextBus is always synchronized with Redis (latest_tick, candle_history, verdicts, heartbeat) and PostgreSQL (durable candle storage, journal/trades, recovery snapshots).
+• Startup hydration/recovery: state is seeded from Redis first, fallback to PG, atomic restore, non-destructive.
+• Stale-but-preserved, empty, and no-producer states are tracked via feed staleness and heartbeat.
+• All authority remains in Layer-12 (verdict engine); EventBus is orchestration/trigger only.
 
-Two layers:
-  1. **Data layer** — candles, ticks, conditioned returns.
-     Raw market observations with overflow protection.
-  2. **Inference layer** — regime_state, volatility_regime, session_state,
-     liquidity_map, news_pressure_vector, signal_stack.
-     Derived abstract state that analysis layers produce and L12 consumes.
+Layers:
+    1. Data layer — candles, ticks, conditioned returns (raw market observations, overflow protection).
+    2. Inference layer — regime_state, volatility_regime, session_state, liquidity_map, news_pressure_vector, signal_stack (derived abstract state for analysis, consumed by L12).
 
-This module is analysis-only; no execution logic, no side effects beyond
-internal state.  The inference layer is what makes the system stable —
-it reasons over abstractions, not noisy raw feeds.
+This module is analysis-only; no execution logic, no side effects beyond internal state.
+The inference layer reasons over abstractions, not noisy raw feeds.
+
+Durability and recovery are handled externally (see startup/candle_seeding.py, infrastructure/redis_client.py, journal/audit_trail.py).
 """
 
 from __future__ import annotations
