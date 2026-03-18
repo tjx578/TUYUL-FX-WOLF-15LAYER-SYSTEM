@@ -72,20 +72,27 @@ class AlertMonitor:
         """
         fired: list[dict] = []
         fired.extend(self._check_feed_staleness())
+        fired.extend(self._check_heartbeat_absence())
+        fired.extend(self._check_mass_staleness())
         fired.extend(self._check_drawdown())
         fired.extend(self._check_kill_switch())
         fired.extend(self._check_circuit_breakers())
         return fired
+
+    def _feed_age_samples(self) -> list[tuple[str, float]]:
+        samples: list[tuple[str, float]] = []
+        for key, child in FEED_AGE._children.items():
+            labels = dict(key)
+            symbol = labels.get("symbol", "UNKNOWN")
+            samples.append((symbol, float(child.value)))
+        return samples
 
     def _check_feed_staleness(self) -> list[dict]:
         fired: list[dict] = []
         if not ALERT_RULES.get("FEED_STALE", False):
             return fired
 
-        for key, child in FEED_AGE._children.items():
-            labels = dict(key)
-            symbol = labels.get("symbol", "UNKNOWN")
-            age = child.value
+        for symbol, age in self._feed_age_samples():
 
             if age > self._thresholds.feed_stale_critical_seconds:
                 alert_key = f"feed_stale_critical:{symbol}"
@@ -103,6 +110,81 @@ class AlertMonitor:
                     alert = {"type": "FEED_STALE", "symbol": symbol, "age": age, "severity": "WARNING"}
                     fired.append(alert)
                     logger.info("Feed stale WARNING: %s at %.1fs", symbol, age)
+
+        return fired
+
+    def _check_heartbeat_absence(self) -> list[dict]:
+        fired: list[dict] = []
+        if not ALERT_RULES.get("HEARTBEAT_ABSENT", False):
+            return fired
+
+        samples = self._feed_age_samples()
+        if not samples:
+            return fired
+
+        freshest_age = min(age for _, age in samples)
+        if freshest_age <= self._thresholds.heartbeat_absent_seconds:
+            return fired
+
+        alert_key = "heartbeat_absent"
+        if self._cooldown.should_fire(alert_key):
+            self._notifier.on_heartbeat_absent(freshest_age)
+            fired.append(
+                {
+                    "type": "HEARTBEAT_ABSENT",
+                    "age": freshest_age,
+                    "symbols": len(samples),
+                    "severity": "CRITICAL",
+                }
+            )
+            logger.error("Heartbeat absent: freshest feed age %.1fs across %d symbols", freshest_age, len(samples))
+
+        return fired
+
+    def _check_mass_staleness(self) -> list[dict]:
+        fired: list[dict] = []
+        if not ALERT_RULES.get("MASS_FEED_STALENESS", False):
+            return fired
+
+        samples = self._feed_age_samples()
+        total_symbols = len(samples)
+        if total_symbols == 0:
+            return fired
+
+        stale_count = sum(
+            1
+            for _, age in samples
+            if age > self._thresholds.feed_stale_warning_seconds
+        )
+
+        stale_ratio = stale_count / total_symbols
+        minimum_symbols_hit = stale_count >= self._thresholds.mass_staleness_min_symbols
+        ratio_hit = stale_ratio >= self._thresholds.mass_staleness_ratio
+        if not (minimum_symbols_hit and ratio_hit):
+            return fired
+
+        alert_key = "mass_feed_staleness"
+        if self._cooldown.should_fire(alert_key):
+            self._notifier.on_mass_staleness(
+                stale_count=stale_count,
+                total_symbols=total_symbols,
+                threshold_seconds=self._thresholds.feed_stale_warning_seconds,
+            )
+            fired.append(
+                {
+                    "type": "MASS_FEED_STALENESS",
+                    "stale_count": stale_count,
+                    "total_symbols": total_symbols,
+                    "stale_ratio": stale_ratio,
+                    "severity": "CRITICAL",
+                }
+            )
+            logger.error(
+                "Mass feed staleness: %d/%d symbols stale (%.1f%%)",
+                stale_count,
+                total_symbols,
+                stale_ratio * 100.0,
+            )
 
         return fired
 
