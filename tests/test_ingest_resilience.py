@@ -90,6 +90,9 @@ class TestIngestReadinessDegradedMode:
         ingest_service_module._ingest_degraded = False
         ingest_service_module._producer_present = True
         ingest_service_module._producer_last_heartbeat_ts = ingest_service_module.time()
+        ingest_service_module._pair_last_tick_ts = {
+            "EURUSD": ingest_service_module.time(),
+        }
         assert ingest_service_module._ingest_readiness() is True
 
     def test_readiness_true_when_degraded_if_producer_healthy(
@@ -99,6 +102,9 @@ class TestIngestReadinessDegradedMode:
         ingest_service_module._ingest_degraded = True
         ingest_service_module._producer_present = True
         ingest_service_module._producer_last_heartbeat_ts = ingest_service_module.time()
+        ingest_service_module._pair_last_tick_ts = {
+            "EURUSD": ingest_service_module.time(),
+        }
         assert ingest_service_module._ingest_readiness() is True
 
     def test_readiness_false_when_producer_missing(
@@ -108,6 +114,9 @@ class TestIngestReadinessDegradedMode:
         ingest_service_module._ingest_degraded = False
         ingest_service_module._producer_present = False
         ingest_service_module._producer_last_heartbeat_ts = ingest_service_module.time()
+        ingest_service_module._pair_last_tick_ts = {
+            "EURUSD": ingest_service_module.time(),
+        }
         assert ingest_service_module._ingest_readiness() is False
 
     def test_readiness_false_when_producer_heartbeat_stale(
@@ -121,6 +130,27 @@ class TestIngestReadinessDegradedMode:
             - ingest_service_module._PRODUCER_FRESHNESS_SEC
             - 1
         )
+        ingest_service_module._pair_last_tick_ts = {
+            "EURUSD": ingest_service_module.time(),
+        }
+        assert ingest_service_module._ingest_readiness() is False
+
+    def test_readiness_false_when_all_pairs_stale(
+        self, ingest_service_module: Any
+    ) -> None:
+        ingest_service_module._ingest_ready = True
+        ingest_service_module._ingest_degraded = False
+        ingest_service_module._producer_present = True
+        ingest_service_module._producer_last_heartbeat_ts = ingest_service_module.time()
+        stale_ts = (
+            ingest_service_module.time()
+            - ingest_service_module._PRODUCER_FRESHNESS_SEC
+            - 1
+        )
+        ingest_service_module._pair_last_tick_ts = {
+            "EURUSD": stale_ts,
+            "GBPUSD": stale_ts,
+        }
         assert ingest_service_module._ingest_readiness() is False
 
 

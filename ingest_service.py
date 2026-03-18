@@ -46,6 +46,7 @@ _ingest_ready = False
 _ingest_degraded = False
 _producer_present = False
 _producer_last_heartbeat_ts = 0.0
+_pair_last_tick_ts: dict[str, float] = {}
 
 _PRODUCER_HEARTBEAT_KEY = "wolf15:ingest:producer_heartbeat"
 _PRODUCER_HEARTBEAT_INTERVAL_SEC = max(
@@ -68,19 +69,37 @@ _warmup_circuit = CircuitBreaker(
 )
 
 
+def _fresh_pair_count() -> int:
+    now_ts = time()
+    fresh = 0
+    for last_tick_ts in _pair_last_tick_ts.values():
+        if last_tick_ts > 0 and (now_ts - last_tick_ts) <= _PRODUCER_FRESHNESS_SEC:
+            fresh += 1
+    return fresh
+
+
+def _mark_pair_tick(symbol: str, ts: float | None = None) -> None:
+    pair = str(symbol).strip().upper()
+    if not pair:
+        return
+    _pair_last_tick_ts[pair] = time() if ts is None else float(ts)
+
+
 def _ingest_readiness() -> bool:
     """Readiness gate.
 
     Returns ``True`` only when:
-    - (a) startup state is ready/degraded; and
-    - (b) producer heartbeat is fresh; and
-    - (c) producer is present.
+    - (a) startup state is ready/degraded;
+    - (b) producer heartbeat is fresh;
+    - (c) producer is present; and
+    - (d) at least one tracked pair still has a fresh tick.
 
     This prevents false-positive readiness during stale-cache-only scenarios.
     """
     base_ready = _ingest_ready or _ingest_degraded
     producer_ready = _producer_present and _producer_fresh()
-    return base_ready and producer_ready
+    pairs_ready = _fresh_pair_count() > 0
+    return base_ready and producer_ready and pairs_ready
 
 
 _health_probe.set_readiness_check(_ingest_readiness)
@@ -126,6 +145,7 @@ async def _producer_heartbeat_loop(ws_feed: Any, redis: RedisClient) -> None:
             "producer_heartbeat_age_sec",
             f"{max(0.0, time() - _producer_last_heartbeat_ts):.2f}",
         )
+        _health_probe.set_detail("fresh_pairs", str(_fresh_pair_count()))
 
         if connected:
             payload = {"producer": "finnhub_ws", "ts": time()}
@@ -494,6 +514,7 @@ async def run_ingest_services(has_api_key: bool) -> None:
     global _producer_present, _producer_last_heartbeat_ts
     _producer_present = False
     _producer_last_heartbeat_ts = 0.0
+    _pair_last_tick_ts.clear()
 
     if not has_api_key:
         logger.info("Skipping ingest services - no API key configured")
@@ -624,6 +645,7 @@ async def run_ingest_services(has_api_key: bool) -> None:
 
         # Tick callback: route to CandleBuilder per symbol
         def _on_tick(symbol: str, price: float, ts: datetime, volume: float) -> None:
+            _mark_pair_tick(symbol, ts.timestamp())
             cb = candle_builders.get(symbol)
             if cb is not None:
                 cb.on_tick(price, ts, volume)
