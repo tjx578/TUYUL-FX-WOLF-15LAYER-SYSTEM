@@ -162,6 +162,7 @@ class SystemStateManager:
             self._state = SystemState.INITIALIZING
             self._warmup_report = {}
         logger.warning("System state manager reset to INITIALIZING")
+        self._publish_state(SystemState.INITIALIZING)
 
     def get_state(self) -> SystemState:
         """Get current system state."""
