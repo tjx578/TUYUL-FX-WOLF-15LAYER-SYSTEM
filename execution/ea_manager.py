@@ -46,6 +46,7 @@ class EAManager:
     ) -> None:
         self._executor = executor or BrokerExecutor()
         self._guard = guard or ExecutionGuard()
+        self._configure_freshness_gate()
         queue_size = max(1, int(os.getenv("EA_QUEUE_MAXSIZE", "200")))
         configured_mode = os.getenv("EA_QUEUE_OVERLOAD_MODE", QueueOverloadMode.REJECT_NEW.value)
         try:
@@ -59,6 +60,27 @@ class EAManager:
         self._worker_thread: Optional[Thread] = None
         self._overload_rejections = 0
         self._overload_drops = 0
+
+    def _configure_freshness_gate(self) -> None:
+        """Wire feed-freshness severity provider into the execution guard."""
+        try:
+            from context.live_context_bus import LiveContextBus  # noqa: PLC0415
+
+            bus = LiveContextBus()
+
+            def _severity(symbol: str) -> str:
+                status = bus.get_feed_status(symbol)
+                mapping = {
+                    "CONNECTED": "LOW",
+                    "DEGRADED": "MEDIUM",
+                    "DOWN": "HIGH",
+                    "NO_DATA": "CRITICAL",
+                }
+                return mapping.get(status, "UNKNOWN")
+
+            self._guard.set_freshness_severity_provider(_severity)
+        except Exception as exc:
+            logger.warning(f"EAManager: freshness gate wiring skipped: {exc}")
 
     def start(self) -> None:
         """Start background dispatch thread."""

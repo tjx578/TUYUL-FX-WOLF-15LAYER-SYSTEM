@@ -40,6 +40,8 @@ from ingest.calendar_news import CalendarNewsIngestor
 from ingest.candle_builder import CandleBuilder
 from ingest.dependencies import create_finnhub_ws
 from ingest.finnhub_market_news import FinnhubMarketNews
+from ingest.h1_refresh_scheduler import H1RefreshScheduler
+from ingest.rest_poll_fallback import RestPollFallback
 from pipeline import WolfConstitutionalPipeline
 from startup.analysis_loop import analysis_loop
 from startup.candle_seeding import seed_candles_on_startup
@@ -115,19 +117,30 @@ async def run_ingest_services(has_api_key: bool, redis: AsyncRedis) -> None:
         return
 
     ws_feed = await create_finnhub_ws(redis=redis)
+    rest_poll = RestPollFallback(
+        ws_connected_fn=lambda: ws_feed.is_connected if ws_feed else False,
+        symbols=PAIRS,
+        redis_client=redis,
+    )
     news_feed = CalendarNewsIngestor(redis_client=redis)
     market_news = FinnhubMarketNews()
+    h1_refresh = H1RefreshScheduler(redis_client=redis)
 
     default_timeframe = CONFIG["settings"].get("default_timeframe", "1h")
     candle_builders = [CandleBuilder(symbol=pair, timeframe=default_timeframe) for pair in PAIRS]
 
-    logger.info("Starting ingest services: WebSocket, CalendarNews, MarketNews, CandleBuilder")
+    logger.info(
+        "Starting ingest services: WebSocket, RestPollFallback, CalendarNews, "
+        "MarketNews, CandleBuilder, H1Refresh"
+    )
     try:
         cb_coros: list[Coroutine[object, object, object]] = [cb.run() for cb in candle_builders]  # pyright: ignore[reportAttributeAccessIssue]
         await asyncio.gather(
             ws_feed.run(),
+            rest_poll.run(),
             news_feed.run(),
             market_news.run(),
+            h1_refresh.run(),
             *cb_coros,
         )
     except asyncio.CancelledError:
@@ -135,6 +148,7 @@ async def run_ingest_services(has_api_key: bool, redis: AsyncRedis) -> None:
         raise
     finally:
         await ws_feed.stop()
+        await rest_poll.stop()
         await redis.aclose()
         logger.info("Ingest services cleanup complete")
 
