@@ -376,8 +376,25 @@ def _register_health_routes(app: FastAPI) -> None:
 
     app.add_api_route("/", root, methods=["GET"])
 
-    async def health() -> dict[str, str]:
-        return {"status": "ok"}
+    async def health() -> dict[str, Any]:
+        from api.allocation_router import _feed_freshness_snapshot  # noqa: PLC0415
+
+        feed_snapshot = await _feed_freshness_snapshot()
+
+        return {
+            "status": "ok",
+            "service": "tuyul-fx",
+            "version": "10.0.0",
+            "redis_connected": feed_snapshot.state != "no_transport",
+            "mt5_connected": False,
+            "active_pairs": 0,
+            "active_trades": 0,
+            "feed_status": feed_snapshot.state,
+            "feed_staleness_seconds": feed_snapshot.staleness_seconds,
+            "feed_threshold_seconds": feed_snapshot.threshold_seconds,
+            "feed_last_seen_ts": feed_snapshot.last_seen_ts,
+            "detail": feed_snapshot.detail,
+        }
 
     app.add_api_route("/health", health, methods=["GET"])
     app.add_api_route("/healthz", health, methods=["GET"])
@@ -409,8 +426,17 @@ def _register_health_routes(app: FastAPI) -> None:
             locked = await r.get("system:lockdown")
             lockdown_state = "locked" if str(locked).lower() in {"1", "true", "locked", "on"} else "normal"
 
+        from api.allocation_router import _feed_freshness_snapshot  # noqa: PLC0415
+
+        feed_snapshot = await _feed_freshness_snapshot()
+        overall_status = "ok" if redis_ok and bool(postgres_health.get("connected")) else "degraded"
+        if feed_snapshot.state in {"no_transport", "config_error"}:
+            overall_status = "error"
+        elif feed_snapshot.state != "fresh" and overall_status == "ok":
+            overall_status = "degraded"
+
         return {
-            "status": "ok" if redis_ok and bool(postgres_health.get("connected")) else "degraded",
+            "status": overall_status,
             "service": "tuyul-fx",
             "version": "10.0.0",
             "redis": {"connected": redis_ok},
@@ -421,6 +447,11 @@ def _register_health_routes(app: FastAPI) -> None:
             "mt5_connected": False,
             "active_pairs": 0,
             "active_trades": 0,
+            "feed_status": feed_snapshot.state,
+            "feed_staleness_seconds": feed_snapshot.staleness_seconds,
+            "feed_threshold_seconds": feed_snapshot.threshold_seconds,
+            "feed_last_seen_ts": feed_snapshot.last_seen_ts,
+            "feed_detail": feed_snapshot.detail,
             "timestamp": datetime.now(UTC).isoformat(),
         }
 

@@ -95,15 +95,23 @@ def fetch_all_verdicts_alias() -> dict[str, Any]:
 
 
 @router.get("/api/v1/context", dependencies=[Depends(verify_token)])
-def fetch_context() -> dict[str, Any]:
+async def fetch_context() -> dict[str, Any]:
     """Get live context snapshot."""
+    from api.allocation_router import _feed_freshness_snapshot  # noqa: PLC0415
+
     context_bus = cast(_SnapshotProvider, LiveContextBus())
     snapshot = context_bus.snapshot()
+    feed_snapshot = await _feed_freshness_snapshot()
 
     # Add timestamp info
     current_time = now_utc()
     snapshot["timestamp_utc"] = format_utc(current_time)
     snapshot["timestamp_local"] = format_local(current_time)
+    snapshot["feed_status"] = feed_snapshot.state
+    snapshot["feed_staleness_seconds"] = feed_snapshot.staleness_seconds
+    snapshot["feed_threshold_seconds"] = feed_snapshot.threshold_seconds
+    snapshot["feed_last_seen_ts"] = feed_snapshot.last_seen_ts
+    snapshot["feed_detail"] = feed_snapshot.detail
 
     return snapshot
 
