@@ -64,21 +64,14 @@ def _restore_modules():
 
 _install_stubs()
 
-# Define fallback mock for check_stale_data
-async def check_stale_data(symbol: str) -> None:
-    """Fallback mock for check_stale_data when import fails."""
-    pass
-
-_restore_modules()
-
-
-# Skip all tests if the module couldn't be imported
+# Resolve the real helper while dependency stubs are active.
 _import_failed = False
 try:
-    with patch("redis.from_url", return_value=MagicMock()):
-        pass
+    from api.allocation_router import _check_stale_data as check_stale_data
 except Exception:
     _import_failed = True
+
+_restore_modules()
 
 pytestmark = pytest.mark.skipif(
     _import_failed,
@@ -219,3 +212,41 @@ class TestCheckStaleData:
             patch("api.allocation_router.STALE_DATA_THRESHOLD_SEC", 300),
         ):
             await check_stale_data("NZDUSD")
+
+
+class TestEnsureLiveProducer:
+    """New trade entry must be blocked when producer heartbeat is absent."""
+
+    @pytest.mark.asyncio
+    async def test_blocks_when_feed_has_no_producer(self):
+        from state.data_freshness import FeedFreshnessSnapshot
+        from api.allocation_router import _ensure_live_producer
+
+        snapshot = FeedFreshnessSnapshot(
+            state="no_producer",
+            staleness_seconds=float("inf"),
+            threshold_seconds=300.0,
+            detail="no producer heartbeat/tick",
+        )
+
+        with patch("api.allocation_router._feed_freshness_snapshot", return_value=snapshot):
+            with pytest.raises(HTTPException) as exc_info:
+                await _ensure_live_producer("EURUSD")
+
+        assert exc_info.value.status_code == 423
+        assert "LIVE_PRODUCER_REQUIRED" in exc_info.value.detail
+
+    @pytest.mark.asyncio
+    async def test_allows_when_feed_is_fresh(self):
+        from state.data_freshness import FeedFreshnessSnapshot
+        from api.allocation_router import _ensure_live_producer
+
+        snapshot = FeedFreshnessSnapshot(
+            state="fresh",
+            staleness_seconds=1.0,
+            threshold_seconds=300.0,
+            detail="within freshness threshold",
+        )
+
+        with patch("api.allocation_router._feed_freshness_snapshot", return_value=snapshot):
+            await _ensure_live_producer("EURUSD")

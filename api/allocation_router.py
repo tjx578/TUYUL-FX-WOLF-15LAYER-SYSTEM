@@ -52,6 +52,7 @@ STALE_DATA_THRESHOLD_SEC = int(stale_threshold_seconds())
 # Grace period after pipeline recovery: allow first fresh verdict through even if
 # age slightly exceeds the stale threshold (prevents the post-outage death spiral).
 RECOVERY_GRACE_SEC = int(os.getenv("STALE_RECOVERY_GRACE_SEC", "120"))
+PRODUCER_REQUIRED_STATES = {"no_producer", "no_transport"}
 
 
 # ── In-memory fallback stores ─────────────────────────────────────────────────
@@ -94,6 +95,19 @@ def _get_signal_service() -> SignalService:
                 detail=f"Signal service unavailable: {exc}",
             ) from exc
     return _signal_service
+
+
+async def _ensure_live_producer(pair: str) -> None:
+    """Reject new trade entry when the live producer signal is absent."""
+    snapshot = await _feed_freshness_snapshot(pair)
+    if snapshot.state in PRODUCER_REQUIRED_STATES:
+        raise HTTPException(
+            status_code=status.HTTP_423_LOCKED,
+            detail=(
+                f"LIVE_PRODUCER_REQUIRED: {pair} feed state is {snapshot.state} "
+                f"({snapshot.detail}). No new trades allowed until producer recovers."
+            ),
+        )
 
 
 async def _check_stale_data(pair: str) -> None:
@@ -768,6 +782,7 @@ async def take_signal(req: TakeSignalRequest) -> dict[str, Any]:
             detail=f"Global kill switch is active: {state.get('reason', 'N/A')}",
         )
 
+    await _ensure_live_producer(req.pair)
     await _check_stale_data(req.pair)
 
     account = _account_registry.get(req.account_id)
@@ -911,6 +926,7 @@ async def take_signal_multi(req: TakeSignalBatchRequest) -> dict[str, Any]:
             detail=f"Global kill switch is active: {state.get('reason', 'N/A')}",
         )
 
+    await _ensure_live_producer(req.pair)
     await _check_stale_data(req.pair)
 
     with _allocation_router_tracer.start_as_current_span("allocation_enqueue") as span:

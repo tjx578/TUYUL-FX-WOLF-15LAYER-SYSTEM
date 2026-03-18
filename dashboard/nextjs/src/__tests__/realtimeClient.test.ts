@@ -129,7 +129,7 @@ describe("connectLiveUpdates", () => {
         const ws = MockWebSocket._latest()!;
         expect(ws).toBeDefined();
         expect(ws.url).toContain("wss://test.example.com/ws/test");
-        expect(ws.url).toContain("token=mock-jwt-token");
+        expect(ws.url).toContain("token=mock-ws-ticket");
 
         ws.simulateOpen();
         expect(statuses).toContain("CONNECTING");
@@ -215,8 +215,8 @@ describe("connectLiveUpdates", () => {
         ws.simulateOpen();
         expect(statuses[statuses.length - 1]).toBe("LIVE");
 
-        // Advance past stale threshold
-        vi.advanceTimersByTime(5500);
+        // Advance past the shared stale threshold ceiling used by realtimeClient
+        vi.advanceTimersByTime(95_000);
         expect(statuses).toContain("STALE");
     });
 
