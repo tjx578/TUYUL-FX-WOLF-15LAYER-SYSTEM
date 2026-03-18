@@ -261,6 +261,32 @@ class TestDrawdownPersistence:
         assert fake_redis.get("wolf15:drawdown:total") == "600.0"
         assert fake_redis.get("wolf15:peak_equity") == "110000.0"
 
+    @pytest.mark.asyncio
+    async def test_explicit_hydration_records_metadata(
+        self,
+        fake_redis: FakeRedis,
+        fake_pg: FakePostgres,
+        sync_service: PersistenceSync,
+    ) -> None:
+        """Explicit Redis <- PG hydration writes a recovery metadata key."""
+        fake_redis.set("wolf15:drawdown:daily", "200.0")
+        fake_redis.set("wolf15:drawdown:weekly", "400.0")
+        fake_redis.set("wolf15:drawdown:total", "600.0")
+        fake_redis.set("wolf15:peak_equity", "110000.0")
+        await sync_service._sync_risk_snapshots()
+
+        fake_redis.clear()
+
+        ok = await sync_service.hydrate_redis_from_postgres(mode="full")
+        assert ok is True
+
+        meta_raw = fake_redis.get("wolf15:recovery:last_hydration")
+        assert meta_raw is not None
+        meta = json.loads(meta_raw)
+        assert meta["mode"] == "full"
+        assert meta["source"] == "postgres"
+
+
 
 # ──────────────────────────────────────────────────────────────────
 #  Circuit breaker state round-trip
