@@ -112,6 +112,37 @@ class TestFeedStaleness:
             ALERT_RULES["FEED_STALE"] = original
 
 
+class TestSystemicStaleness:
+    def test_heartbeat_absence_alert(self, monitor, mock_notifier):
+        FEED_AGE.labels(symbol="EURUSD").set(31.0)
+        FEED_AGE.labels(symbol="GBPUSD").set(40.0)
+
+        fired = monitor.evaluate()
+
+        hb = [a for a in fired if a.get("type") == "HEARTBEAT_ABSENT"]
+        assert len(hb) == 1
+        mock_notifier.on_heartbeat_absent.assert_called_once_with(31.0)
+
+    def test_mass_staleness_alert(self, mock_notifier):
+        thresholds = AlertThresholds(mass_staleness_min_symbols=3, mass_staleness_ratio=0.5)
+        monitor = AlertMonitor(notifier=mock_notifier, thresholds=thresholds)
+
+        FEED_AGE.labels(symbol="EURUSD").set(20.0)
+        FEED_AGE.labels(symbol="GBPUSD").set(22.0)
+        FEED_AGE.labels(symbol="USDJPY").set(19.0)
+        FEED_AGE.labels(symbol="AUDUSD").set(5.0)
+
+        fired = monitor.evaluate()
+
+        mass = [a for a in fired if a.get("type") == "MASS_FEED_STALENESS"]
+        assert len(mass) == 1
+        mock_notifier.on_mass_staleness.assert_called_once_with(
+            stale_count=3,
+            total_symbols=4,
+            threshold_seconds=thresholds.feed_stale_warning_seconds,
+        )
+
+
 # ═══════════════════════════════════════════════════════════════════════════
 #  Drawdown alerts
 # ═══════════════════════════════════════════════════════════════════════════
@@ -226,6 +257,8 @@ class TestAlertRules:
             "KILL_SWITCH_TRIPPED",
             "CIRCUIT_BREAKER_OPEN",
             "PIPELINE_LATENCY_HIGH",
+            "HEARTBEAT_ABSENT",
+            "MASS_FEED_STALENESS",
         ]
         for key in expected:
             assert key in ALERT_RULES, f"Missing rule: {key}"
@@ -233,6 +266,9 @@ class TestAlertRules:
     def test_default_thresholds_reasonable(self):
         t = DEFAULT_THRESHOLDS
         assert 10 < t.feed_stale_warning_seconds < t.feed_stale_critical_seconds
+        assert 10 < t.heartbeat_absent_seconds < t.feed_stale_critical_seconds
+        assert 0 < t.mass_staleness_ratio <= 1
+        assert t.mass_staleness_min_symbols >= 2
         assert 0 < t.daily_loss_warning_percent < t.daily_loss_critical_percent
         assert 0 < t.max_drawdown_warning_percent < t.max_drawdown_critical_percent
 
@@ -289,3 +325,17 @@ class TestAlertFormatter:
         msg = AlertFormatter.format_pipeline_latency(3.456, "tick_to_context")
         assert "3.456s" in msg
         assert "tick_to_context" in msg
+
+    def test_format_heartbeat_absent(self):
+        from alerts.alert_formatter import AlertFormatter
+
+        msg = AlertFormatter.format_heartbeat_absent(31.5)
+        assert "31.5s" in msg
+        assert "HEARTBEAT ABSENT" in msg
+
+    def test_format_mass_staleness(self):
+        from alerts.alert_formatter import AlertFormatter
+
+        msg = AlertFormatter.format_mass_staleness(8, 10, 15)
+        assert "8/10" in msg
+        assert "> 15s" in msg
