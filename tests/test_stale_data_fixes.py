@@ -115,6 +115,7 @@ def _make_fresh_kill_switch(monkeypatch: Any) -> Any:
     from risk.kill_switch import GlobalKillSwitch
 
     GlobalKillSwitch._instance = None
+    monkeypatch.setenv("STALE_DATA_THRESHOLD_SEC", "60")
     monkeypatch.setattr("risk.kill_switch.redis_client.get", lambda *_a, **_kw: None)
     monkeypatch.setattr("risk.kill_switch.redis_client.set", lambda *_a, **_kw: None)
     return GlobalKillSwitch()

@@ -9,6 +9,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from context.system_state import SystemStateManager
+
 
 @pytest.fixture
 def ingest_service_module():
@@ -97,13 +99,15 @@ async def test_run_ingest_services_closes_redis_when_ping_fails(
     ingest_service_module: Any,
 ) -> None:
     """Redis client should be closed if setup fails after client creation."""
+    SystemStateManager().reset()
     fake_redis = MagicMock()
-    fake_redis.ping = AsyncMock(side_effect=RuntimeError("ping failed"))
     fake_redis.aclose = AsyncMock()
 
-    with patch.object(ingest_service_module, "_build_redis_client", return_value=fake_redis):  # noqa: SIM117
-        with pytest.raises(RuntimeError, match="ping failed"):
-            await ingest_service_module.run_ingest_services(has_api_key=True)
+    with patch.object(ingest_service_module, "_connect_redis_with_retry", new=AsyncMock(return_value=fake_redis)):  # noqa: SIM117
+        with patch.object(ingest_service_module, "_has_stale_cache", new=AsyncMock(return_value=False)):
+            with patch.object(ingest_service_module, "_run_warmup", new=AsyncMock(side_effect=RuntimeError("ping failed"))):
+                with pytest.raises(RuntimeError, match="ping failed"):
+                    await ingest_service_module.run_ingest_services(has_api_key=True)
 
     fake_redis.aclose.assert_awaited_once()
 
@@ -263,3 +267,51 @@ async def test_has_stale_cache_returns_false_when_no_candle_keys(
 
     result = await ingest_service_module._has_stale_cache(fake_redis)
     assert result is False
+
+
+def test_ingest_service_does_not_reference_live_state(ingest_service_module: Any) -> None:
+    """Startup should use valid SystemState members only (no LIVE)."""
+    source_path = ingest_service_module.__file__
+    assert source_path is not None
+    with open(source_path, encoding="utf-8") as handle:
+        source = handle.read()
+    assert "SystemState.LIVE" not in source
+
+
+@pytest.mark.asyncio
+async def test_main_resets_system_state_after_runtime_failure(
+    ingest_service_module: Any,
+) -> None:
+    """Runtime retry path should reset SystemStateManager between attempts."""
+    ingest_service_module._shutdown_event = asyncio.Event()
+
+    async def fake_run_ingest_services(_has_api_key: bool) -> None:
+        ingest_service_module._shutdown_event.set()
+        raise RuntimeError("boom")
+
+    with patch.object(ingest_service_module, "_validate_api_key", return_value=True):
+        with patch.object(ingest_service_module, "init_persistent_storage", new=AsyncMock()):
+            with patch.object(
+                ingest_service_module,
+                "shutdown_persistent_storage",
+                new=AsyncMock(),
+            ):
+                with patch.object(
+                    ingest_service_module,
+                    "run_ingest_services",
+                    side_effect=fake_run_ingest_services,
+                ):
+                    with patch.object(ingest_service_module, "_health_probe") as probe:
+                        probe.start = AsyncMock()
+                        probe.stop = AsyncMock()
+                        probe.set_detail = MagicMock()
+                        probe.set_readiness_check = MagicMock()
+                        with patch.object(
+                            ingest_service_module.SystemStateManager,
+                            "reset",
+                            autospec=True,
+                        ) as reset_mock:
+                            with patch.object(ingest_service_module.asyncio, "sleep", new=AsyncMock()):
+                                await ingest_service_module.main(_bootstrap_probe=probe)
+
+    assert reset_mock.call_count == 1

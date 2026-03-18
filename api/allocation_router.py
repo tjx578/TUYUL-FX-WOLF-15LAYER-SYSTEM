@@ -41,13 +41,14 @@ from infrastructure.redis_client import get_client
 from infrastructure.tracing import inject_trace_context, setup_tracer
 from journal.trade_journal_service import trade_journal_automation_service
 from risk.kill_switch import GlobalKillSwitch
+from state.data_freshness import FeedFreshnessSnapshot, classify_feed_freshness, stale_threshold_seconds
 from storage.trade_write_through import persist_trade_snapshot
 
 logger = logging.getLogger(__name__)
 _allocation_router_tracer = setup_tracer("wolf-api")
 
 # Stale-data threshold: reject write actions if context data is older than this.
-STALE_DATA_THRESHOLD_SEC = int(os.getenv("STALE_DATA_THRESHOLD_SEC", "300"))
+STALE_DATA_THRESHOLD_SEC = int(stale_threshold_seconds())
 # Grace period after pipeline recovery: allow first fresh verdict through even if
 # age slightly exceeds the stale threshold (prevents the post-outage death spiral).
 RECOVERY_GRACE_SEC = int(os.getenv("STALE_RECOVERY_GRACE_SEC", "120"))
@@ -430,7 +431,7 @@ async def _global_news_lock_enabled() -> bool:
         return False
 
 
-async def _feed_staleness_seconds() -> float:
+async def _feed_freshness_snapshot(pair: str = "") -> FeedFreshnessSnapshot:
     """Return feed staleness based on latest tick heartbeat in Redis.
 
     Reads ``wolf15:latest_tick:{symbol}`` HSET keys written by
@@ -441,21 +442,28 @@ async def _feed_staleness_seconds() -> float:
         redis = cast(Any, await get_client())
         import json as _json  # noqa: PLC0415
 
-        pairs = load_pairs()
-        if not pairs:
-            return float("inf")
+        symbols: list[str] = []
+        pair_norm = str(pair or "").strip().upper()
+        if pair_norm:
+            symbols = [pair_norm]
+        else:
+            pairs = load_pairs()
+            symbols = [str(p.get("symbol", "")).strip().upper() for p in pairs if p.get("symbol")]
+
+        if not symbols:
+            return classify_feed_freshness(
+                transport_ok=True,
+                has_producer_signal=False,
+                staleness_seconds=float("inf"),
+                threshold_seconds=float(STALE_DATA_THRESHOLD_SEC),
+            )
 
         best_staleness = float("inf")
         now_ts = datetime.now(UTC).timestamp()
+        has_tick = False
 
-        for pair_cfg in pairs:
-            symbol = str(pair_cfg.get("symbol", ""))
-            if not symbol:
-                continue
-            raw_hash = await redis.hgetall(f"wolf15:latest_tick:{symbol}")
-            if not raw_hash:
-                continue
-            data_raw = raw_hash.get("data") or raw_hash.get(b"data")
+        for symbol in symbols:
+            data_raw = await redis.hget(f"wolf15:latest_tick:{symbol}", "data")
             if not data_raw:
                 continue
             if isinstance(data_raw, bytes):
@@ -466,13 +474,29 @@ async def _feed_staleness_seconds() -> float:
             ts = float(payload.get("timestamp", 0.0) or 0.0)
             if ts <= 0:
                 continue
+            has_tick = True
             staleness = max(0.0, now_ts - ts)
             if staleness < best_staleness:
                 best_staleness = staleness
 
-        return best_staleness
+        return classify_feed_freshness(
+            transport_ok=True,
+            has_producer_signal=has_tick,
+            staleness_seconds=best_staleness,
+            threshold_seconds=float(STALE_DATA_THRESHOLD_SEC),
+        )
     except Exception:
-        return float("inf")
+        return classify_feed_freshness(
+            transport_ok=False,
+            has_producer_signal=False,
+            staleness_seconds=float("inf"),
+            threshold_seconds=float(STALE_DATA_THRESHOLD_SEC),
+        )
+
+
+async def _feed_staleness_seconds(pair: str = "") -> float:
+    snapshot = await _feed_freshness_snapshot(pair)
+    return snapshot.staleness_seconds
 
 
 async def _runtime_take_precheck(account: dict[str, Any], pair: str = "") -> tuple[bool, str | None]:
@@ -486,11 +510,12 @@ async def _runtime_take_precheck(account: dict[str, Any], pair: str = "") -> tup
 
     daily_dd = float(account.get("daily_dd_percent", 0) or 0)
     daily_cap = float(account.get("max_daily_dd_percent", 5.0) or 5.0)
-    feed_stale_sec = await _feed_staleness_seconds(pair)
+    feed_snapshot = await _feed_freshness_snapshot(pair)
     _kill_switch.evaluate_and_trip(
         metrics={
             "daily_dd_percent": daily_dd,
-            "feed_stale_seconds": feed_stale_sec,
+            "feed_stale_seconds": feed_snapshot.staleness_seconds,
+            "feed_freshness_state": feed_snapshot.state,
         }
     )
     if _kill_switch.is_enabled():

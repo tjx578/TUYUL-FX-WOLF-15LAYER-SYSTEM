@@ -10,6 +10,7 @@ from threading import Lock
 from typing import Any
 
 from storage.redis_client import redis_client
+from state.data_freshness import stale_threshold_seconds
 
 _KILL_SWITCH_KEY = "RISK:KILL_SWITCH:GLOBAL"
 
@@ -94,6 +95,7 @@ class GlobalKillSwitch:
         - daily_dd_percent: float
         - rapid_loss_percent: float
         - feed_stale_seconds: float
+        - feed_freshness_state: fresh | stale_preserved | no_producer | no_transport
         """
         daily_dd = float(metrics.get("daily_dd_percent", 0.0) or 0.0)
         rapid_loss = float(metrics.get("rapid_loss_percent", 0.0) or 0.0)
@@ -101,12 +103,17 @@ class GlobalKillSwitch:
 
         daily_threshold = float(os.getenv("KILL_SWITCH_DAILY_DD_PERCENT", "5.0"))
         rapid_threshold = float(os.getenv("KILL_SWITCH_RAPID_LOSS_PERCENT", "2.0"))
-        stale_threshold = float(os.getenv("KILL_SWITCH_FEED_STALE_SEC", "60"))
+        stale_threshold = stale_threshold_seconds()
+        feed_freshness_state = str(metrics.get("feed_freshness_state", "")).strip().lower()
 
         if daily_dd >= daily_threshold:
             return self.enable(f"AUTO_DAILY_DD_BREACH:{daily_dd:.2f}%>= {daily_threshold:.2f}%")
         if rapid_loss >= rapid_threshold:
             return self.enable(f"AUTO_RAPID_LOSS:{rapid_loss:.2f}%>= {rapid_threshold:.2f}%")
+        if feed_freshness_state == "no_transport":
+            return self.enable("AUTO_FEED_NO_TRANSPORT")
+        if feed_freshness_state == "no_producer":
+            return self.enable("AUTO_FEED_NO_PRODUCER")
         if feed_stale >= stale_threshold:
             return self.enable(f"AUTO_FEED_STALE:{feed_stale:.1f}s>= {stale_threshold:.1f}s")
 

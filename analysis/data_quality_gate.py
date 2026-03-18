@@ -18,8 +18,11 @@ gracefully rather than trading on bad data.
 from __future__ import annotations
 
 import time
+import os
 from dataclasses import dataclass
 from typing import Any
+
+from state.data_freshness import FeedFreshnessState, classify_feed_freshness, stale_threshold_seconds
 
 
 @dataclass(frozen=True)
@@ -35,6 +38,7 @@ class DataQualityReport:
     degraded: bool
     confidence_penalty: float
     staleness_seconds: float
+    freshness_state: FeedFreshnessState
     reasons: tuple[str, ...]
 
     def to_dict(self) -> dict[str, Any]:
@@ -48,6 +52,7 @@ class DataQualityReport:
             "degraded": self.degraded,
             "confidence_penalty": round(self.confidence_penalty, 4),
             "staleness_seconds": round(self.staleness_seconds, 2),
+            "freshness_state": self.freshness_state,
             "reasons": list(self.reasons),
         }
 
@@ -59,7 +64,7 @@ class DataQualityConfig:
     max_gap_ratio: float = 0.10  # >10% gap candles = degraded
     min_tick_count: int = 3  # candles with <3 ticks are suspect
     max_low_tick_ratio: float = 0.15  # >15% low-tick candles = degraded
-    stale_threshold_seconds: float = 300.0  # hard floor for staleness checks
+    stale_threshold_seconds: float = 300.0  # loaded from stale_threshold_seconds() by default loader
     stale_candle_multiplier: float = 2.0  # allow up to N candle periods before stale
     gap_penalty_per_pct: float = 0.5  # penalty per 1% gap ratio (max 0.3)
     low_tick_penalty_per_pct: float = 0.3
@@ -75,7 +80,35 @@ class DataQualityGate:
     """
 
     def __init__(self, config: DataQualityConfig | None = None) -> None:
-        self._config = config or DataQualityConfig()
+        self._config = config or self._load_config_from_env()
+
+    @staticmethod
+    def _env_float(name: str, default: float) -> float:
+        value = os.getenv(name)
+        if value is None:
+            return default
+        try:
+            return float(value.strip())
+        except (ValueError, AttributeError):
+            return default
+
+    @classmethod
+    def _load_config_from_env(cls) -> DataQualityConfig:
+        """Load tunable data-quality thresholds from environment variables."""
+        return DataQualityConfig(
+            stale_threshold_seconds=cls._env_float(
+                "WOLF_DQ_STALE_THRESHOLD_SECONDS",
+                stale_threshold_seconds(),
+            ),
+            stale_candle_multiplier=cls._env_float(
+                "WOLF_DQ_STALE_CANDLE_MULTIPLIER",
+                3.0,
+            ),
+            stale_penalty=cls._env_float(
+                "WOLF_DQ_STALE_PENALTY",
+                DataQualityConfig.stale_penalty,
+            ),
+        )
 
     @staticmethod
     def _timeframe_to_seconds(timeframe: str) -> float | None:
@@ -142,6 +175,7 @@ class DataQualityGate:
                 degraded=True,
                 confidence_penalty=cfg.max_penalty,
                 staleness_seconds=float("inf"),
+                freshness_state="no_producer",
                 reasons=("no_candles",),
             )
 
@@ -174,9 +208,18 @@ class DataQualityGate:
             reasons.append(f"low_tick_candles:{low_tick_ratio:.2%}")
 
         stale_threshold = self._stale_threshold_for_timeframe(timeframe)
-        if staleness > stale_threshold:
+        freshness = classify_feed_freshness(
+            transport_ok=True,
+            has_producer_signal=last_update_ts is not None,
+            staleness_seconds=staleness,
+            threshold_seconds=stale_threshold,
+        )
+        if freshness.state == "stale_preserved":
             penalty += cfg.stale_penalty
             reasons.append(f"stale_data:{staleness:.0f}s>thr:{stale_threshold:.0f}s")
+        elif freshness.state in {"no_producer", "no_transport"}:
+            penalty += cfg.stale_penalty
+            reasons.append(f"stale_data:{freshness.state}")
 
         penalty = min(penalty, cfg.max_penalty)
         degraded = len(reasons) > 0
@@ -191,5 +234,6 @@ class DataQualityGate:
             degraded=degraded,
             confidence_penalty=penalty,
             staleness_seconds=staleness,
+            freshness_state=freshness.state,
             reasons=tuple(reasons),
         )
