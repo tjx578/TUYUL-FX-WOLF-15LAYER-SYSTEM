@@ -36,6 +36,8 @@ class ExecutionGuard:
         self._prop_compliance_check: Callable[[str, str], bool] = lambda _signal_id, _account_id: True
         self._open_trades_provider: Callable[[str], int] = lambda _account_id: 0
         self._orchestrator_mode_provider: Callable[[], str] = lambda: "NORMAL"
+        self._freshness_severity_provider: Callable[[str], str] = lambda _symbol: "UNKNOWN"
+        self._blocked_freshness_severity: set[str] = {"HIGH", "CRITICAL"}
 
     def allow_execution(self, verdict: dict[str, object]) -> bool:
         if not verdict:
@@ -91,6 +93,14 @@ class ExecutionGuard:
     def set_orchestrator_mode_provider(self, provider: Callable[[], str]) -> None:
         """Set a callback that returns the current orchestrator mode (NORMAL/SAFE/KILL_SWITCH)."""
         self._orchestrator_mode_provider = provider
+
+    def set_freshness_severity_provider(self, provider: Callable[[str], str]) -> None:
+        """Set callback returning feed freshness severity for a symbol."""
+        self._freshness_severity_provider = provider
+
+    def set_blocked_freshness_severity(self, severities: set[str]) -> None:
+        """Configure freshness severities that must block execution."""
+        self._blocked_freshness_severity = {str(item).upper() for item in severities}
 
     def validate_scope(
         self,
@@ -163,6 +173,15 @@ class ExecutionGuard:
                 open_trades = self._open_trades_provider(account_id)
                 if open_trades >= max_open:
                     return ExecutionGateResult(False, "MAX_CONCURRENT_TRADES", f"{open_trades}/{max_open}")
+
+        if symbol:
+            freshness_severity = str(self._freshness_severity_provider(symbol)).upper()
+            if freshness_severity in self._blocked_freshness_severity:
+                return ExecutionGateResult(
+                    False,
+                    "FEED_FRESHNESS_BLOCK",
+                    f"{symbol} freshness severity={freshness_severity}",
+                )
 
         if not self._prop_compliance_check(signal_id, account_id):
             return ExecutionGateResult(False, "PROP_COMPLIANCE", "prop guard rejected")

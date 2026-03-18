@@ -67,10 +67,26 @@ class SystemStateManager:
     # Valid state transitions
     _VALID_TRANSITIONS: dict[SystemState, set[SystemState]] = {
         SystemState.INITIALIZING: {SystemState.WARMING_UP, SystemState.ERROR},
-        SystemState.WARMING_UP: {SystemState.READY, SystemState.DEGRADED, SystemState.ERROR},
-        SystemState.READY: {SystemState.DEGRADED, SystemState.ERROR},
-        SystemState.DEGRADED: {SystemState.READY, SystemState.ERROR},
-        SystemState.ERROR: {SystemState.INITIALIZING},  # Allow restart
+        SystemState.WARMING_UP: {
+            SystemState.READY,
+            SystemState.DEGRADED,
+            SystemState.ERROR,
+        },
+        # Allow re-entering warmup from READY/DEGRADED/ERROR during runtime retries.
+        SystemState.READY: {
+            SystemState.WARMING_UP,
+            SystemState.DEGRADED,
+            SystemState.ERROR,
+        },
+        SystemState.DEGRADED: {
+            SystemState.WARMING_UP,
+            SystemState.READY,
+            SystemState.ERROR,
+        },
+        SystemState.ERROR: {
+            SystemState.INITIALIZING,
+            SystemState.WARMING_UP,
+        },  # Allow restart
     }
 
     def __new__(cls) -> SystemStateManager:
@@ -90,12 +106,15 @@ class SystemStateManager:
         # Load config
         self.config = load_finnhub()
         self.warmup_config = self.config.get("candles", {}).get("warmup", {})
-        self.min_bars = self.warmup_config.get("min_bars", {
-            "W1": 20,
-            "D1": 50,
-            "H4": 10,
-            "H1": 50,
-        })
+        self.min_bars = self.warmup_config.get(
+            "min_bars",
+            {
+                "W1": 20,
+                "D1": 50,
+                "H4": 10,
+                "H1": 50,
+            },
+        )
 
         # Redis support for multi-container
         self._mode = os.getenv("CONTEXT_MODE", "local").lower()
@@ -116,6 +135,14 @@ class SystemStateManager:
         with self._rw_lock:
             current = self._state
 
+            if current == new_state:
+                logger.debug(
+                    "Ignoring no-op system state transition: {} -> {}",
+                    current.value,
+                    new_state.value,
+                )
+                return
+
             # Validate transition
             valid_next = self._VALID_TRANSITIONS.get(current, set())
             if new_state not in valid_next:
@@ -128,6 +155,13 @@ class SystemStateManager:
 
         # Publish to Redis if in redis mode
         self._publish_state(new_state)
+
+    def reset(self) -> None:
+        """Reset state manager to INITIALIZING for clean retry attempts."""
+        with self._rw_lock:
+            self._state = SystemState.INITIALIZING
+            self._warmup_report = {}
+        logger.warning("System state manager reset to INITIALIZING")
 
     def get_state(self) -> SystemState:
         """Get current system state."""

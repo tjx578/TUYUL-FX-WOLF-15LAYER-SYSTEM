@@ -6,9 +6,10 @@
 // Per-stream status grid, /health ping, env checklist, retry.
 // ============================================================
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { mutate } from "swr";
 import { getRuntimeHealth } from "@/lib/runtimeHealth";
+import { getTransportDiagnostics, type TransportDiagnostics } from "@/lib/realtime/multiplexer";
 
 interface DataStreamDiagnosticProps {
   failedStreams: string[];
@@ -61,6 +62,14 @@ export default function DataStreamDiagnostic({
     error?: string;
   } | null>(null);
   const [retrying, setRetrying] = useState(false);
+  const [transportDiag, setTransportDiag] = useState<TransportDiagnostics>(() => getTransportDiagnostics());
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setTransportDiag(getTransportDiagnostics());
+    }, 1000);
+    return () => clearInterval(timer);
+  }, []);
 
   // NEXT_PUBLIC_ vars must be accessed as literal identifiers so the
   // Next.js compiler can statically inline them into the client bundle.
@@ -232,6 +241,34 @@ export default function DataStreamDiagnostic({
       {/* ── Expanded details: checklist ── */}
       {expanded && (
         <div className="animate-fade-in" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          <div
+            style={{
+              padding: "8px 10px",
+              borderRadius: "var(--radius-sm)",
+              background: "var(--bg-card)",
+              border: "1px solid var(--border-default)",
+              display: "grid",
+              gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+              gap: 8,
+            }}
+          >
+            <span style={{ fontSize: 10, color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}>
+              TRANSPORT: <strong style={{ color: "var(--text-secondary)" }}>{transportDiag.transport}</strong>
+            </span>
+            <span style={{ fontSize: 10, color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}>
+              STATUS: <strong style={{ color: "var(--text-secondary)" }}>{transportDiag.status}</strong>
+            </span>
+            <span style={{ fontSize: 10, color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}>
+              WS DOWN: <strong style={{ color: "var(--text-secondary)" }}>{Math.round(transportDiag.wsFailedForMs / 1000)}s</strong>
+            </span>
+            <span style={{ fontSize: 10, color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}>
+              POLL HB: <strong style={{ color: "var(--text-secondary)" }}>{transportDiag.lastPollingHeartbeatAt ? "OK" : "N/A"}</strong>
+            </span>
+            <span style={{ fontSize: 10, color: "var(--text-muted)", gridColumn: "1 / -1" }}>
+              Cause: {transportDiag.reason}
+            </span>
+          </div>
+
           <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: "0.12em", color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}>
             DIAGNOSTIC CHECKLIST
           </div>
