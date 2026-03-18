@@ -28,7 +28,7 @@ from typing import Any
 import fastapi
 from fastapi import WebSocket
 
-from dashboard.backend.auth import decode_token, validate_api_key
+from api.middleware.auth import decode_token, validate_api_key
 
 logger = logging.getLogger(__name__)
 
