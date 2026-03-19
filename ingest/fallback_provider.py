@@ -2,7 +2,7 @@
 Fallback Data Provider — resilience layer for when Finnhub is unavailable.
 
 Provides a pluggable chain of secondary REST candle sources that can
-substitute for ``FinnhubCandleFetcher`` during outages.  The module
+substitute for ``FinnhubCandleFetcher`` during outages. The module
 exposes a single async ``fetch()`` that walks the provider chain in
 priority order and returns on the first success.
 
@@ -15,10 +15,10 @@ All providers normalise candles to the same dict format used by
 (``LiveContextBus.update_candles``) sees no difference.
 
 When all configured providers fail (or none are configured), the provider
-attempts a Redis stale-cache read as a last resort.  If that also misses the
+attempts a Redis stale-cache read as a last resort. If that also misses the
 provider returns an empty list — it never raises — so the caller (and the
 circuit breaker in ``ingest_service.py``) can decide how to handle
-degradation.  This prevents container crashes when all external APIs are
+degregation. This prevents container crashes when all external APIs are
 blocked (e.g. 403 Finnhub + 403 ForexFactory).
 
 Cache keys follow the pattern:
@@ -51,6 +51,15 @@ import httpx
 
 logger = logging.getLogger(__name__)
 
+
+class FallbackProviderError(Exception):
+    """Base exception for fallback provider failures."""
+
+
+class ProviderResponseError(FallbackProviderError):
+    """Raised when an upstream provider returns an invalid payload."""
+
+
 # Redis cache TTL for persisted candles (default 7 days).
 # Parsed defensively: a non-integer or non-positive env var falls back to the default.
 def _parse_candle_cache_ttl() -> int:
@@ -70,6 +79,144 @@ def _parse_candle_cache_ttl() -> int:
 
 _CANDLE_CACHE_TTL_SECONDS: int = _parse_candle_cache_ttl()
 _CANDLE_CACHE_KEY_PREFIX = "WOLF15:CANDLE_CACHE"
+_SUPPORTED_INTRADAY_TIME_PARSE_FORMATS: tuple[str, ...] = ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d")
+_EXPECTED_CANDLE_KEYS: frozenset[str] = frozenset(
+    {
+        "symbol",
+        "timeframe",
+        "open",
+        "high",
+        "low",
+        "close",
+        "volume",
+        "timestamp",
+        "source",
+    }
+)
+
+
+# ══════════════════════════════════════════════════════════
+#  Shared helpers
+# ══════════════════════════════════════════════════════════
+
+def _parse_provider_timestamp(value: str) -> datetime:
+    """Parse provider timestamp strings into UTC datetimes.
+
+    Args:
+        value: Provider timestamp string.
+
+    Returns:
+        Timezone-aware UTC datetime.
+
+    Raises:
+        ValueError: If the timestamp cannot be parsed.
+    """
+    for fmt in _SUPPORTED_INTRADAY_TIME_PARSE_FORMATS:
+        with contextlib.suppress(ValueError):
+            return datetime.strptime(value, fmt).replace(tzinfo=UTC)
+
+    parsed = datetime.fromisoformat(value)
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=UTC)
+    return parsed.astimezone(UTC)
+
+
+def _normalize_candle(
+    *,
+    symbol: str,
+    timeframe: str,
+    open_price: float,
+    high_price: float,
+    low_price: float,
+    close_price: float,
+    timestamp: datetime,
+    source: str,
+    volume: float = 0.0,
+) -> dict[str, Any]:
+    """Return a canonical candle payload matching Finnhub normalisation."""
+    ts_utc = timestamp if timestamp.tzinfo is not None else timestamp.replace(tzinfo=UTC)
+    ts_utc = ts_utc.astimezone(UTC)
+    candle: dict[str, Any] = {
+        "symbol": symbol,
+        "timeframe": timeframe,
+        "open": float(open_price),
+        "high": float(high_price),
+        "low": float(low_price),
+        "close": float(close_price),
+        "volume": float(volume),
+        "timestamp": ts_utc,
+        "source": source,
+    }
+    return candle
+
+
+def _serialize_candles(candles: list[dict[str, Any]]) -> str:
+    """Serialize candles to a strict JSON payload for Redis cache storage."""
+    serialized_rows: list[dict[str, Any]] = []
+    for candle in candles:
+        missing = _EXPECTED_CANDLE_KEYS.difference(candle)
+        if missing:
+            raise ProviderResponseError(
+                f"Cannot serialize candle with missing keys: {sorted(missing)}"
+            )
+
+        timestamp = candle["timestamp"]
+        if not isinstance(timestamp, datetime):
+            raise ProviderResponseError("Cannot serialize candle with non-datetime timestamp")
+
+        ts_utc = timestamp if timestamp.tzinfo is not None else timestamp.replace(tzinfo=UTC)
+        ts_utc = ts_utc.astimezone(UTC)
+
+        serialized_rows.append(
+            {
+                "symbol": str(candle["symbol"]),
+                "timeframe": str(candle["timeframe"]),
+                "open": float(candle["open"]),
+                "high": float(candle["high"]),
+                "low": float(candle["low"]),
+                "close": float(candle["close"]),
+                "volume": float(candle["volume"]),
+                "timestamp": ts_utc.isoformat(),
+                "source": str(candle["source"]),
+            }
+        )
+    return json.dumps(serialized_rows, separators=(",", ":"))
+
+
+def _aggregate_h4_from_h1(symbol: str, candles: list[dict[str, Any]], source: str) -> list[dict[str, Any]]:
+    """Aggregate ordered H1 candles into ordered H4 candles.
+
+    Drops incomplete trailing windows to avoid fabricating partial H4 bars.
+    """
+    if len(candles) < 4:
+        return []
+
+    ordered = sorted(
+        candles,
+        key=lambda candle: candle["timestamp"] if isinstance(candle["timestamp"], datetime) else datetime.min.replace(tzinfo=UTC),
+    )
+    aggregated: list[dict[str, Any]] = []
+    for idx in range(0, len(ordered) - 3, 4):
+        window = ordered[idx : idx + 4]
+        if len(window) < 4:
+            continue
+
+        first = window[0]
+        last = window[-1]
+        aggregated.append(
+            _normalize_candle(
+                symbol=symbol,
+                timeframe="H4",
+                open_price=float(first["open"]),
+                high_price=max(float(item["high"]) for item in window),
+                low_price=min(float(item["low"]) for item in window),
+                close_price=float(last["close"]),
+                volume=sum(float(item.get("volume", 0.0)) for item in window),
+                timestamp=last["timestamp"],
+                source=source,
+            )
+        )
+    return aggregated
 
 
 # ══════════════════════════════════════════════════════════
@@ -88,7 +235,7 @@ class CandleProviderBase(ABC):
         timeframe: str,
         bars: int = 100,
     ) -> list[dict[str, Any]]:
-        """Return normalised candle dicts or raise on failure."""
+        """Return normalised candle dicts or raise on failure."""  
 
 
 # ══════════════════════════════════════════════════════════
@@ -153,27 +300,41 @@ class TwelveDataProvider(CandleProviderBase):
             raise RuntimeError(f"TwelveData error: {data.get('message', 'unknown')}")
 
         values = data.get("values", [])
+        if not isinstance(values, list):
+            raise ProviderResponseError("TwelveData response missing list 'values'")
+
         candles: list[dict[str, Any]] = []
-        for v in reversed(values):  # API returns newest-first
-            ts = datetime.strptime(v["datetime"], "%Y-%m-%d %H:%M:%S").replace(
-                tzinfo=UTC,
-            )
-            candles.append({
-                "symbol": symbol,
-                "timeframe": timeframe,
-                "open": float(v["open"]),
-                "high": float(v["high"]),
-                "low": float(v["low"]),
-                "close": float(v["close"]),
-                "volume": 0,  # TwelveData forex volume unavailable
-                "timestamp": ts,
-                "source": "twelve_data",
-            })
+        for row in reversed(values):  # API returns newest-first
+            if not isinstance(row, dict):
+                logger.warning("[TwelveData] Skipping non-dict candle row for %s %s", symbol, timeframe)
+                continue
+            try:
+                ts = _parse_provider_timestamp(str(row["datetime"]))
+                candles.append(
+                    _normalize_candle(
+                        symbol=symbol,
+                        timeframe=timeframe,
+                        open_price=float(row["open"]),
+                        high_price=float(row["high"]),
+                        low_price=float(row["low"]),
+                        close_price=float(row["close"]),
+                        volume=0.0,
+                        timestamp=ts,
+                        source=self.name,
+                    )
+                )
+            except (KeyError, TypeError, ValueError) as exc:
+                logger.warning(
+                    "[TwelveData] Skipping malformed candle row for %s %s: %s",
+                    symbol,
+                    timeframe,
+                    exc,
+                )
 
         logger.info(
             "[TwelveData] Fetched %d %s bars for %s", len(candles), timeframe, symbol,
         )
-        return candles
+        return candles[-bars:] if bars > 0 else []
 
 
 # ══════════════════════════════════════════════════════════
@@ -194,7 +355,6 @@ class AlphaVantageProvider(CandleProviderBase):
 
     _INTERVAL_MAP: dict[str, str] = {
         "H1": "60min",
-        "H4": "60min",  # requires aggregation like Finnhub
     }
 
     def __init__(self) -> None:
@@ -217,7 +377,8 @@ class AlphaVantageProvider(CandleProviderBase):
         if not self.api_key:
             raise RuntimeError("ALPHA_VANTAGE_API_KEY not configured")
 
-        function = self._FUNCTION_MAP.get(timeframe)
+        effective_timeframe = "H1" if timeframe == "H4" else timeframe
+        function = self._FUNCTION_MAP.get(effective_timeframe)
         if function is None:
             raise ValueError(f"Unsupported timeframe for AlphaVantage: {timeframe}")
 
@@ -229,12 +390,10 @@ class AlphaVantageProvider(CandleProviderBase):
             "to_symbol": to_currency,
             "apikey": self.api_key,
             "datatype": "json",
+            "outputsize": "full" if bars > 100 else "compact",
         }
         if function == "FX_INTRADAY":
-            params["interval"] = self._INTERVAL_MAP.get(timeframe, "60min")
-            params["outputsize"] = "full" if bars > 100 else "compact"
-        else:
-            params["outputsize"] = "full" if bars > 100 else "compact"
+            params["interval"] = self._INTERVAL_MAP[effective_timeframe]
 
         async with httpx.AsyncClient(timeout=self.timeout) as client:
             resp = await client.get(self.base_url, params=params)
@@ -245,37 +404,50 @@ class AlphaVantageProvider(CandleProviderBase):
             msg = data.get("Error Message") or data.get("Note", "rate-limited")
             raise RuntimeError(f"AlphaVantage error: {msg}")
 
-        # Find the time-series key (varies by function)
-        ts_key = next((k for k in data if "Time Series" in k), None)
+        ts_key = next((key for key in data if "Time Series" in key), None)
         if ts_key is None:
-            raise RuntimeError("AlphaVantage response missing Time Series key")
+            raise ProviderResponseError("AlphaVantage response missing Time Series key")
 
-        raw_series: dict[str, Any] = data[ts_key]
+        raw_series = data.get(ts_key)
+        if not isinstance(raw_series, dict):
+            raise ProviderResponseError("AlphaVantage Time Series payload is not a mapping")
+
+        ordered_items = sorted(raw_series.items())
+        if bars > 0 and timeframe != "H4":
+            ordered_items = ordered_items[-bars:]
 
         candles: list[dict[str, Any]] = []
-        for ts_str, vals in sorted(raw_series.items()):
+        for ts_str, vals in ordered_items:
+            if not isinstance(vals, dict):
+                logger.warning("[AlphaVantage] Skipping non-dict candle row for %s %s", symbol, timeframe)
+                continue
             try:
-                ts = datetime.strptime(ts_str, "%Y-%m-%d %H:%M:%S").replace(
-                    tzinfo=UTC,
+                ts = _parse_provider_timestamp(ts_str)
+                candles.append(
+                    _normalize_candle(
+                        symbol=symbol,
+                        timeframe=effective_timeframe,
+                        open_price=float(vals["1. open"]),
+                        high_price=float(vals["2. high"]),
+                        low_price=float(vals["3. low"]),
+                        close_price=float(vals["4. close"]),
+                        volume=0.0,
+                        timestamp=ts,
+                        source=self.name,
+                    )
                 )
-            except ValueError:
-                ts = datetime.strptime(ts_str, "%Y-%m-%d").replace(
-                    tzinfo=UTC,
+            except (KeyError, TypeError, ValueError) as exc:
+                logger.warning(
+                    "[AlphaVantage] Skipping malformed candle row for %s %s: %s",
+                    symbol,
+                    timeframe,
+                    exc,
                 )
 
-            candles.append({
-                "symbol": symbol,
-                "timeframe": timeframe,
-                "open": float(vals.get("1. open", 0)),
-                "high": float(vals.get("2. high", 0)),
-                "low": float(vals.get("3. low", 0)),
-                "close": float(vals.get("4. close", 0)),
-                "volume": 0,
-                "timestamp": ts,
-                "source": "alpha_vantage",
-            })
-            if len(candles) >= bars:
-                break
+        if timeframe == "H4":
+            candles = _aggregate_h4_from_h1(symbol, candles, self.name)
+            if bars > 0:
+                candles = candles[-bars:]
 
         logger.info(
             "[AlphaVantage] Fetched %d %s bars for %s", len(candles), timeframe, symbol,
@@ -293,7 +465,7 @@ class FallbackCandleProvider:
     Providers whose API key is missing are silently skipped.
 
     When all configured providers fail (or none are configured), the provider
-    attempts a Redis stale-cache read as a last resort.  If that also misses
+    attempts a Redis stale-cache read as a last resort. If that also misses
     it returns an empty list — it never raises — so the circuit breaker in
     ``ingest_service.py`` can handle the degraded state gracefully.
 
@@ -308,7 +480,7 @@ class FallbackCandleProvider:
     retry_delay : float
         Seconds between retries.
     redis_client : Any | None
-        Optional async Redis client for cache read/write.  When ``None``,
+        Optional async Redis client for cache read/write. When ``None``,
         cache operations are silently skipped.
     """
 
@@ -320,11 +492,10 @@ class FallbackCandleProvider:
         redis_client: Any | None = None,
     ) -> None:
         self._providers: list[CandleProviderBase] = self._build_chain()
-        self._max_retries = max_retries
-        self._retry_delay = retry_delay
+        self._max_retries = max(1, max_retries)
+        self._retry_delay = max(0.0, retry_delay)
         self._redis: Any | None = redis_client
 
-    # ── Build chain from environment ────────────────────────────
     @staticmethod
     def _build_chain() -> list[CandleProviderBase]:
         chain: list[CandleProviderBase] = []
@@ -337,21 +508,25 @@ class FallbackCandleProvider:
     @property
     def available_providers(self) -> list[str]:
         """Names of providers that have valid API keys configured."""
-        return [p.name for p in self._providers]
-
-    # ── Cache helpers ────────────────────────────────────────────
+        return [provider.name for provider in self._providers]
 
     @staticmethod
     def _cache_key(symbol: str, timeframe: str) -> str:
         return f"{_CANDLE_CACHE_KEY_PREFIX}:{symbol}:{timeframe}"
 
-    async def _write_cache(self, symbol: str, timeframe: str, candles: list[dict[str, Any]]) -> None:
+    async def _write_cache(
+        self,
+        symbol: str,
+        timeframe: str,
+        candles: list[dict[str, Any]],
+    ) -> None:
         """Write candles to Redis with TTL; silently skip on any error."""
         if self._redis is None or not candles:
             return
+
         key = self._cache_key(symbol, timeframe)
         try:
-            serialized = json.dumps(candles, default=str)
+            serialized = _serialize_candles(candles)
             await self._redis.set(key, serialized, ex=_CANDLE_CACHE_TTL_SECONDS)
             logger.info(
                 "[FallbackCache] Wrote %d bars for %s %s (ttl=%ds)",
@@ -360,40 +535,75 @@ class FallbackCandleProvider:
                 timeframe,
                 _CANDLE_CACHE_TTL_SECONDS,
             )
+        except (ProviderResponseError, TypeError, ValueError) as exc:
+            logger.warning(
+                "[FallbackCache] Serialization failed for %s %s: %s",
+                symbol,
+                timeframe,
+                exc,
+            )
         except Exception as exc:
             logger.warning("[FallbackCache] Write failed for %s %s: %s", symbol, timeframe, exc)
 
     async def _read_cache(self, symbol: str, timeframe: str) -> list[dict[str, Any]]:
         """Read candles from Redis cache; return empty list on miss or error.
 
-        Timestamps stored as ISO strings (via ``json.dumps(..., default=str)``) are
-        rehydrated back to ``datetime`` objects so callers receive the same type as
-        a live ``FinnhubCandleFetcher`` response.
+        Timestamps stored as ISO strings are rehydrated back to ``datetime``
+        objects so callers receive the same type as a live
+        ``FinnhubCandleFetcher`` response.
         """
         if self._redis is None:
             return []
+
         key = self._cache_key(symbol, timeframe)
         try:
             raw = await self._redis.get(key)
-            if raw:
-                candles: list[dict[str, Any]] = json.loads(raw)
-                # Rehydrate timestamp strings → datetime so the output matches
-                # FinnhubCandleFetcher.normalize_response() (datetime with UTC tz).
-                for candle in candles:
-                    ts = candle.get("timestamp")
-                    if isinstance(ts, str):
-                        with contextlib.suppress(ValueError, TypeError):
-                            candle["timestamp"] = datetime.fromisoformat(ts).replace(tzinfo=UTC)
+            if not raw:
+                return []
+
+            payload = raw.decode("utf-8") if isinstance(raw, (bytes, bytearray)) else str(raw)
+            loaded = json.loads(payload)
+            if not isinstance(loaded, list):
+                raise ProviderResponseError("Cached candle payload is not a list")
+
+            candles: list[dict[str, Any]] = []
+            for row in loaded:
+                if not isinstance(row, dict):
+                    logger.warning("[FallbackCache] Skipping non-dict cached candle for %s %s", symbol, timeframe)
+                    continue
+                try:
+                    candles.append(
+                        _normalize_candle(
+                            symbol=str(row["symbol"]),
+                            timeframe=str(row["timeframe"]),
+                            open_price=float(row["open"]),
+                            high_price=float(row["high"]),
+                            low_price=float(row["low"]),
+                            close_price=float(row["close"]),
+                            volume=float(row.get("volume", 0.0)),
+                            timestamp=_parse_provider_timestamp(str(row["timestamp"])),
+                            source=str(row["source"]),
+                        )
+                    )
+                except (KeyError, TypeError, ValueError) as exc:
+                    logger.warning(
+                        "[FallbackCache] Skipping malformed cached candle for %s %s: %s",
+                        symbol,
+                        timeframe,
+                        exc,
+                    )
+
+            if candles:
                 logger.warning(
                     "[FallbackCache] Serving %d stale bars for %s %s (all live providers failed)",
                     len(candles),
                     symbol,
                     timeframe,
                 )
-                return candles
+            return candles
         except Exception as exc:
             logger.warning("[FallbackCache] Read failed for %s %s: %s", symbol, timeframe, exc)
-        return []
+            return []
 
     async def fetch(
         self,
@@ -411,7 +621,7 @@ class FallbackCandleProvider:
 
         Notes
         -----
-        This method never raises.  All provider failures are logged as warnings.
+        This method never raises. All provider failures are logged as warnings.
         Callers should treat an empty return as a degradation signal.
         """
         if not self._providers:
@@ -439,19 +649,30 @@ class FallbackCandleProvider:
                         )
                         await self._write_cache(symbol, timeframe, candles)
                         return candles
-                except Exception as exc:  # noqa: BLE001
+                except (httpx.HTTPError, RuntimeError, ValueError, ProviderResponseError) as exc:
                     last_error = exc
                     logger.warning(
-                        "[Fallback] %s attempt %d/%d failed for %s %s: %s",
+                        "[Fallback] %s attempt %d/%d failed for %s %s: %s: %s",
                         provider.name,
                         attempt,
                         self._max_retries,
                         symbol,
                         timeframe,
+                        exc.__class__.__name__,
                         exc,
                     )
                     if attempt < self._max_retries:
                         await asyncio.sleep(self._retry_delay)
+                except Exception as exc:
+                    last_error = exc
+                    logger.exception(
+                        "[Fallback] Unexpected %s failure for %s %s on attempt %d/%d",
+                        provider.name,
+                        symbol,
+                        attempt,
+                        self._max_retries,
+                    )
+                    break
 
         logger.warning(
             "[Fallback] All providers exhausted for %s %s (last_error=%s) — "
