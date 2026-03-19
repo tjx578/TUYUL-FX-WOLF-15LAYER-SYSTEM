@@ -94,6 +94,16 @@ class TestP0_2_HeartbeatKey:  # noqa: N801
 
         assert _parse_heartbeat_timestamp(raw) == pytest.approx(1742378400.123)
 
+    def test_pipeline_parses_numeric_heartbeat_payload(self):
+        from pipeline.wolf_constitutional_pipeline import _parse_heartbeat_timestamp
+
+        assert _parse_heartbeat_timestamp("1742378400.5") == pytest.approx(1742378400.5)
+
+    def test_pipeline_parses_dict_heartbeat_payload(self):
+        from pipeline.wolf_constitutional_pipeline import _parse_heartbeat_timestamp
+
+        assert _parse_heartbeat_timestamp({"ts": "1742378401"}) == pytest.approx(1742378401.0)
+
 
 # ---------------------------------------------------------------------------
 # P0-3: last_seen_ts instead of short TTL

@@ -118,9 +118,17 @@ def _parse_heartbeat_timestamp(raw: Any) -> float | None:
 
     import orjson as _orjson  # noqa: PLC0415
 
-    payload = _orjson.loads(raw)
-    ts = float(payload.get("ts", 0))
-    return ts if ts > 0 else None
+    payload: Any = raw
+    if isinstance(raw, str | bytes | bytearray):
+        with contextlib.suppress(Exception):
+            payload = _orjson.loads(raw)
+
+    if isinstance(payload, dict):
+        ts = _coerce_timestamp_to_epoch(payload.get("ts"))
+        return ts if ts is not None and ts > 0 else None
+
+    ts = _coerce_timestamp_to_epoch(payload)
+    return ts if ts is not None and ts > 0 else None
 
 
 def _coerce_timestamp_to_epoch(value: Any) -> float | None:
@@ -696,7 +704,7 @@ class WolfConstitutionalPipeline:
                 with _ctx2.suppress(Exception):
                     _hb_raw = _redis_client.get(HEARTBEAT_INGEST)
                     if _hb_raw is not None:
-                        _heartbeat_ts = float(_hb_raw)
+                        _heartbeat_ts = _parse_heartbeat_timestamp(_hb_raw)
                 with _ctx2.suppress(Exception):
                     _ks_raw = _redis_client.get(KILL_SWITCH)
                     if _ks_raw is not None:
