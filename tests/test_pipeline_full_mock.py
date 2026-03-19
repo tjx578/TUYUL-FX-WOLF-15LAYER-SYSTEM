@@ -18,8 +18,6 @@ the entire 8-phase pipeline code path end-to-end and validates:
 - Error list accumulation
 """
 
-# pyright: reportPrivateUsage=false
-
 from __future__ import annotations
 
 import time
@@ -200,13 +198,10 @@ def mocked_pipeline(monkeypatch: pytest.MonkeyPatch):
                 return f'{{"ts": {time.time()}}}'.encode()
             return None
 
-    # Governance gate can use either self._redis or RedisClient(); force both to no-I/O stubs.
+    # Governance gate imports RedisClient inside execute(); force a no-I/O stub.
     monkeypatch.setattr("storage.redis_client.RedisClient", lambda: _FakeRedisClient())
 
     pipeline = WolfConstitutionalPipeline()
-
-    # Prevent execute() from touching the process-level Redis client.
-    pipeline._redis = _FakeRedisClient()  # pyright: ignore[reportAttributeAccessIssue]
 
     # Replace lazy loader so it doesn't import real analyzers
     pipeline._ensure_analyzers = lambda: None
