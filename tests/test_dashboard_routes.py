@@ -149,6 +149,13 @@ def _stable_risk_result(*_a: Any, **_kw: Any) -> RiskCalculationResult:
     )
 
 
+class _StableRiskEngine:
+    """Deterministic risk engine stub for route tests."""
+
+    def calculate_lot(self, *args: Any, **kwargs: Any) -> RiskCalculationResult:  # noqa: ARG002
+        return _stable_risk_result()
+
+
 # ── App setup with auth overrides ─────────────────────────────────────────────
 
 from api_server import app  # noqa: E402
@@ -311,7 +318,7 @@ def _patch_redis() -> Any:
         patch("api.allocation_router._kill_switch", new=_KillSwitchOff()),
         patch("api.allocation_router._ensure_live_producer", new=AsyncMock(return_value=None)),
         patch("api.allocation_router._runtime_take_precheck", new=AsyncMock(return_value=(True, None))),
-        patch("api.allocation_router.RiskEngine.calculate_lot", side_effect=_stable_risk_result),
+        patch("api.allocation_router.RiskEngine", new=_StableRiskEngine),
         patch(
             "api.allocation_router._persist_trade_write_through",
             new=AsyncMock(return_value=True),
