@@ -422,6 +422,10 @@ class LiveContextBus:
             return None
         return time.time() - ts
 
+    def get_feed_timestamp(self, symbol: str) -> float | None:
+        """Return raw epoch timestamp of last feed update for *symbol*, or None."""
+        return self._feed_timestamps.get(symbol)
+
     def is_feed_stale(self, symbol: str, threshold_sec: float = 30.0) -> bool:
         """Return True if the feed for *symbol* has not updated within *threshold_sec* seconds."""
         age = self.get_feed_age(symbol)
@@ -446,6 +450,57 @@ class LiveContextBus:
         if age <= 120.0:
             return "DEGRADED"
         return "DOWN"
+
+    def get_feed_timestamps(self) -> dict[str, float]:
+        """Return copy of all per-symbol feed timestamps (epoch seconds)."""
+        with self._lock:
+            return dict(self._feed_timestamps)
+
+    def get_all_feed_status(self) -> dict[str, dict[str, Any]]:
+        """Return feed status for every tracked symbol.
+
+        Returns:
+            ``{symbol: {"status": str, "age_seconds": float|None, "last_seen_ts": float|None}}``
+        """
+        with self._lock:
+            result: dict[str, dict[str, Any]] = {}
+            now = time.time()
+            for sym, ts in self._feed_timestamps.items():
+                age = now - ts
+                if age <= 30.0:
+                    status = "CONNECTED"
+                elif age <= 120.0:
+                    status = "DEGRADED"
+                else:
+                    status = "DOWN"
+                result[sym] = {"status": status, "age_seconds": round(age, 2), "last_seen_ts": ts}
+            return result
+
+    @property
+    def warmup_state(self) -> dict[str, Any]:
+        """Return warmup readiness summary for all tracked symbols/timeframes.
+
+        Returns:
+            ``{"symbols": {symbol: {"ready": bool, "bar_counts": {tf: int}}}}``
+        """
+        symbols: dict[str, dict[str, Any]] = {}
+        with self._lock:
+            seen_symbols: set[str] = set()
+            for key in self._candle_history:
+                parts = key.split(":", 1)
+                if parts:
+                    seen_symbols.add(parts[0])
+            for sym in seen_symbols:
+                bar_counts: dict[str, int] = {}
+                for key, buf in self._candle_history.items():
+                    if key.startswith(f"{sym}:"):
+                        tf = key.split(":", 1)[1]
+                        bar_counts[tf] = len(buf)
+                symbols[sym] = {
+                    "ready": any(c > 0 for c in bar_counts.values()),
+                    "bar_counts": bar_counts,
+                }
+        return {"symbols": symbols}
 
     def check_price_drift(self, symbol: str, max_drift_pips: float = 5.0) -> dict[str, Any]:
         """Compare latest REST H1 close with WS mid-price to detect drift.
