@@ -18,6 +18,8 @@ from loguru import logger
 if TYPE_CHECKING:
     from redis.asyncio import Redis as AsyncRedis
 
+    from context.live_context_bus import LiveContextBus
+
 __all__ = ["seed_candles_on_startup"]
 
 
@@ -42,7 +44,7 @@ async def seed_candles_on_startup(pairs: list[str], warmup_min_bars: dict[str, i
         if status.get("ready"):
             ready_count += 1
         else:
-            logger.warning(f"[SEED] {pair} warmup still insufficient after seeding: {status.get(missing)}")
+            logger.warning(f"[SEED] {pair} warmup still insufficient after seeding: {status.get('missing')}")
     logger.info(f"[SEED] Warmup ready: {ready_count}/{len(pairs)} pairs")
     logger.info(
         "[SEED] Hydration report: source={} seeded_pairs={} attempts={} status={}",
@@ -120,11 +122,20 @@ async def _seed_from_redis(pairs: list[str]) -> dict[str, object]:
 
             logger.critical(
                 "[SEED] Redis still empty after {} retries ({:.0f}s total wait). "
-                "Engine will continue in DEGRADED mode — analysis will be blind "
-                "until live candles arrive.",
+                "Attempting PostgreSQL candle recovery before degraded mode.",
                 max_retries,
                 max_retries * retry_delay,
             )
+            # Fallback: recover candle history from PostgreSQL snapshots
+            pg_recovered = await _try_restore_from_postgres(pairs, bus)
+            if pg_recovered > 0:
+                logger.info("[SEED] PostgreSQL recovery seeded %d pairs into LiveContextBus", pg_recovered)
+                return {
+                    "source": "postgres_fallback",
+                    "seeded_pairs": pg_recovered,
+                    "attempts": max_retries,
+                    "status": "recovered",
+                }
             return {"source": "redis", "seeded_pairs": 0, "attempts": max_retries, "status": "degraded"}
         finally:
             await redis_client.aclose()
@@ -157,3 +168,82 @@ async def _seed_from_finnhub(pairs: list[str]) -> dict[str, object]:
     except Exception as exc:
         logger.error(f"[SEED] Failed to seed from Finnhub: {exc}")
         return {"source": "finnhub", "seeded_pairs": 0, "attempts": 1, "status": "failed"}
+
+
+async def _try_restore_from_postgres(
+    pairs: list[str],
+    bus: LiveContextBus | None = None,
+) -> int:
+    """Attempt to recover candle history from PostgreSQL ohlc_candles table.
+
+    This is a last-resort fallback when Redis is empty or unresponsive.
+    Loads recent candles per symbol/tf directly into LiveContextBus.
+    Data recovered this way is marked STALE_PRESERVED (not live).
+
+    Returns:
+        Number of symbol/tf combos successfully recovered.
+    """
+    try:
+        from storage.postgres_client import pg_client  # noqa: PLC0415
+
+        if not pg_client.is_available:
+            await pg_client.initialize()
+        if not pg_client.is_available:
+            logger.warning("[SEED] PostgreSQL not available for candle recovery")
+            return 0
+
+        pool = pg_client._pool  # noqa: SLF001
+        if pool is None:
+            return 0
+
+        from context.live_context_bus import LiveContextBus  # noqa: PLC0415
+
+        ctx_bus = bus if bus is not None else LiveContextBus()
+        timeframes = ["M15", "H1", "H4", "D1", "W1", "MN"]
+        recovered = 0
+
+        async with pool.acquire() as conn:
+            for symbol in pairs:
+                for tf in timeframes:
+                    try:
+                        rows = await conn.fetch(
+                            """
+                            SELECT open_time, close_time, open, high, low, close, volume, tick_count
+                            FROM ohlc_candles
+                            WHERE symbol = $1 AND timeframe = $2
+                            ORDER BY open_time DESC
+                            LIMIT 250
+                            """,
+                            symbol,
+                            tf,
+                        )
+                        if not rows:
+                            continue
+                        candles = [
+                            {
+                                "symbol": symbol,
+                                "timeframe": tf,
+                                "open_time": r["open_time"],
+                                "close_time": r["close_time"],
+                                "open": float(r["open"]),
+                                "high": float(r["high"]),
+                                "low": float(r["low"]),
+                                "close": float(r["close"]),
+                                "volume": float(r["volume"]) if r["volume"] else 0.0,
+                                "tick_count": int(r["tick_count"]) if r["tick_count"] else 0,
+                                "_source": "postgres_recovery",
+                            }
+                            for r in reversed(rows)  # oldest first
+                        ]
+                        ctx_bus.set_candle_history(symbol, tf, candles)
+                        recovered += 1
+                        logger.info("[SEED] PG recovery: %s:%s — %d candles", symbol, tf, len(candles))
+                    except Exception as row_exc:
+                        logger.warning("[SEED] PG recovery failed for %s:%s: %s", symbol, tf, row_exc)
+
+        logger.info("[SEED] PostgreSQL candle recovery complete: %d symbol/tf combos", recovered)
+        return recovered
+
+    except Exception as exc:
+        logger.error("[SEED] PostgreSQL candle recovery failed: %s", exc)
+        return 0
