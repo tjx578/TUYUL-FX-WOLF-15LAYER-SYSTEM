@@ -14,7 +14,7 @@ tags:
 path: docs/architecture/migration-backlog-p2.md
 ---
 
- TUYUL-FX Migration Backlog P2
+TUYUL-FX Migration Backlog P2
 
 **Document path:** `docs/architecture/migration-backlog-p2.md`  
 **Status:** Official Execution Backlog  
