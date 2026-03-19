@@ -28,6 +28,7 @@ from monitoring.pipeline_metrics import record_pipeline_latency
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _make_app() -> FastAPI:
     """Return a minimal FastAPI app with the metrics router and middleware."""
     app = FastAPI()
@@ -71,6 +72,7 @@ class TestMetricsEndpoint:
         assert "# HELP wolf_pipeline_runs_total" in body
         assert "# TYPE wolf_pipeline_runs_total counter" in body
         assert "# HELP wolf_pipeline_verdict_total" in body
+        assert "# HELP wolf_orchestrator_ready" in body
 
     def test_response_ends_with_newline(self):
         r = self._client.get("/metrics")
@@ -107,34 +109,22 @@ class TestPrometheusMiddleware:
         self._client.close()
 
     def test_request_counter_increments(self):
-        before = HTTP_REQUESTS_TOTAL.labels(
-            method="GET", path_template="/api/v1/ping", status_code="200"
-        ).value
+        before = HTTP_REQUESTS_TOTAL.labels(method="GET", path_template="/api/v1/ping", status_code="200").value
         self._client.get("/api/v1/ping")
-        after = HTTP_REQUESTS_TOTAL.labels(
-            method="GET", path_template="/api/v1/ping", status_code="200"
-        ).value
+        after = HTTP_REQUESTS_TOTAL.labels(method="GET", path_template="/api/v1/ping", status_code="200").value
         assert after == before + 1
 
     def test_duration_histogram_records(self):
-        before_count = HTTP_REQUEST_DURATION.labels(
-            method="GET", path_template="/api/v1/ping"
-        ).count
+        before_count = HTTP_REQUEST_DURATION.labels(method="GET", path_template="/api/v1/ping").count
         self._client.get("/api/v1/ping")
-        after_count = HTTP_REQUEST_DURATION.labels(
-            method="GET", path_template="/api/v1/ping"
-        ).count
+        after_count = HTTP_REQUEST_DURATION.labels(method="GET", path_template="/api/v1/ping").count
         assert after_count == before_count + 1
 
     def test_metrics_path_not_instrumented(self):
         """Scraping /metrics should not add an entry for /metrics itself."""
-        before = HTTP_REQUESTS_TOTAL.labels(
-            method="GET", path_template="/metrics", status_code="200"
-        ).value
+        before = HTTP_REQUESTS_TOTAL.labels(method="GET", path_template="/metrics", status_code="200").value
         self._client.get("/metrics")
-        after = HTTP_REQUESTS_TOTAL.labels(
-            method="GET", path_template="/metrics", status_code="200"
-        ).value
+        after = HTTP_REQUESTS_TOTAL.labels(method="GET", path_template="/metrics", status_code="200").value
         assert after == before, "/metrics must not be instrumented (cardinality guard)"
 
     def test_counter_shows_in_metrics_output(self):
@@ -167,6 +157,9 @@ class TestRegistryContent:
             "wolf_pipeline_latency_ms",
             "wolf_active_pairs",
             "wolf_system_healthy",
+            "wolf_orchestrator_heartbeat_age_seconds",
+            "wolf_orchestrator_ready",
+            "wolf_orchestrator_mode",
         }
         assert expected.issubset(names), f"Missing metrics: {expected - names}"
 
@@ -199,7 +192,4 @@ class TestSLOEndpoint:
         payload = response.json()
         assert payload["slo"]["healthy"] is False
         assert any(alert["event"] == "SLO_THRESHOLD_BREACH" for alert in payload["alerts"])
-        assert any(
-            row["stage"] == stage and row["breach"] is True
-            for row in payload["slo"]["stages"]
-        )
+        assert any(row["stage"] == stage and row["breach"] is True for row in payload["slo"]["stages"])

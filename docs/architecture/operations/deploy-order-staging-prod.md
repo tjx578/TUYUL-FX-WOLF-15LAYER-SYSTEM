@@ -41,7 +41,11 @@ Service scripts:
 
 1. Safety and visibility
 
-- [ ] Health endpoints are defined for API and orchestrator
+- [ ] Health endpoints are role-scoped and defined for API, ingest, engine, and orchestrator
+- [ ] API /readyz passes freshness and producer heartbeat gates
+- [ ] Engine /healthz responds on ENGINE_HEALTH_PORT/PORT
+- [ ] Ingest /healthz responds on INGEST_HEALTH_PORT/PORT
+- [ ] Orchestrator /healthz responds on ORCHESTRATOR_HEALTH_PORT/PORT
 - [ ] Logging/alerts are enabled for startup failures and restart loops
 - [ ] Change window and rollback owner are assigned
 
@@ -72,10 +76,13 @@ Goal: validate release behavior before production cutover.
 
 1. Validate runtime after each group
 
-- [ ] API /health returns healthy dependencies
+- [ ] API /healthz responds 200
+- [ ] API /readyz responds 200 (no freshness/heartbeat block reason)
 - [ ] Ingest publishes fresh ticks/candles
-- [ ] Engine preflight passes and processes stream
-- [ ] Orchestrator heartbeat and mode state are visible
+- [ ] Ingest /healthz responds 200 on service port
+- [ ] Engine preflight passes and /healthz responds 200 on service port
+- [ ] Orchestrator /healthz responds 200 on service port
+- [ ] Orchestrator heartbeat age and readiness are visible in observability surfaces
 - [ ] Allocation and execution consume expected events
 
 1. Validate one-shot workers
@@ -120,10 +127,12 @@ Goal: controlled rollout with fail-fast schema readiness and clear rollback.
 
 1. Immediate production checks
 
-- [ ] API /health healthy
+- [ ] API /healthz healthy
+- [ ] API /readyz healthy
 - [ ] Engine is running with RUN_MODE=engine-only
 - [ ] Fresh market data is flowing from ingest to engine
 - [ ] Orchestrator compliance/mode state is valid
+- [ ] Orchestrator heartbeat age remains below readiness threshold
 - [ ] No elevated 5xx and no restart loops
 
 1. Post-cutover checks (first 60 minutes)

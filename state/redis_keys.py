@@ -51,6 +51,7 @@ def candle_history_temp(symbol: str, timeframe: str) -> str:
 # ── Heartbeats ────────────────────────────────────────────────────────────────
 HEARTBEAT_INGEST = f"{PREFIX}:heartbeat:ingest"
 HEARTBEAT_ENGINE = f"{PREFIX}:heartbeat:engine"
+ORCHESTRATOR_STATE = f"{PREFIX}:orchestrator:state"
 
 
 def heartbeat_ingest_symbol(symbol: str) -> str:
