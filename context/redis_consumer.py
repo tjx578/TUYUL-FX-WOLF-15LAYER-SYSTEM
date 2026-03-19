@@ -12,6 +12,7 @@ It must provide an async `.run()` method because main.py calls it.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import os
 from dataclasses import dataclass
@@ -80,7 +81,7 @@ class RedisConsumerConfig:
         "candle_updates:*",
         "wolf15:candle:*",  # ← add this
     )
-    pubsub_channels: tuple[str, ...] = ("candles", "candle_updates", "candle")
+    pubsub_channels: tuple[str, ...] = ("candles", "candle_updates", "candle", "tick_updates")
 
 
 class RedisConsumer:
@@ -356,6 +357,20 @@ class RedisConsumer:
             return data.encode("utf-8")
         return None
 
+    @staticmethod
+    def _extract_channel(message: dict[str, Any]) -> str | None:
+        """Extract channel name from redis pubsub message dict."""
+        channel = message.get("channel")
+        if channel is None:
+            return None
+        if isinstance(channel, bytes | bytearray):
+            with contextlib.suppress(Exception):
+                return bytes(channel).decode("utf-8", errors="ignore")
+            return None
+        if isinstance(channel, str):
+            return channel
+        return None
+
     def _handle_candle_dict(self, candle: dict[str, Any]) -> None:
         """Validate and push a candle update into the context bus.
 
@@ -383,6 +398,18 @@ class RedisConsumer:
 
         # Emit CANDLE_CLOSED so analysis_loop wakes immediately.
         self._emit_candle_closed(symbol.strip(), timeframe.strip())
+
+    def _handle_tick_dict(self, tick: dict[str, Any]) -> None:
+        """Refresh feed freshness from tick pub/sub updates.
+
+        In redis mode the ingest service publishes ``tick_updates`` frequently,
+        while candles close only on timeframe boundaries (e.g., M15). Recording
+        feed updates from ticks prevents false hard-stale/no-producer holds.
+        """
+        symbol = tick.get("symbol")
+        if not isinstance(symbol, str) or not symbol.strip():
+            return
+        self._bus.record_feed_update(symbol.strip())
 
     def _emit_candle_closed(self, symbol: str, timeframe: str) -> None:
         """Fire CANDLE_CLOSED event on the in-process EventBus.
@@ -430,6 +457,8 @@ class RedisConsumer:
                     await asyncio.sleep(0.05)
                     continue
 
+                channel = self._extract_channel(message) or ""
+
                 payload = self._extract_payload(message)
                 if not payload:
                     continue
@@ -441,13 +470,19 @@ class RedisConsumer:
                     continue
 
                 if isinstance(decoded, dict):
-                    self._handle_candle_dict(cast(dict[str, Any], decoded))
+                    if channel == "tick_updates":
+                        self._handle_tick_dict(cast(dict[str, Any], decoded))
+                    else:
+                        self._handle_candle_dict(cast(dict[str, Any], decoded))
                 elif isinstance(decoded, list):
-                    # Some publishers might batch candles
+                    # Some publishers might batch payloads.
                     for item in cast(list[Any], decoded):
                         if isinstance(item, dict):
                             typed_item: dict[str, Any] = {str(k): v for k, v in cast(dict[str, Any], item).items()}
-                            self._handle_candle_dict(typed_item)
+                            if channel == "tick_updates":
+                                self._handle_tick_dict(typed_item)
+                            else:
+                                self._handle_candle_dict(typed_item)
 
         finally:
             try:
