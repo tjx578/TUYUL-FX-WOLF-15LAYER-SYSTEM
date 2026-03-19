@@ -1,5 +1,7 @@
 # Wolf-15 Production Go-Live (Vercel + Railway)
 
+See also: docs/architecture/operations/deploy-order-staging-prod.md for step-by-step deployment order in staging and production.
+
 ## 1) Final Architecture
 
 - Browser → HTTPS → Vercel (Next.js)

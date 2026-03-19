@@ -2,11 +2,7 @@ from api import l12_routes
 
 
 def test_fetch_pairs_includes_configured_cross_pair() -> None:
-    symbols = {
-        pair["symbol"]
-        for pair in l12_routes.fetch_pairs()
-        if isinstance(pair.get("symbol"), str)
-    }
+    symbols = {pair["symbol"] for pair in l12_routes.fetch_pairs() if isinstance(pair.get("symbol"), str)}
     assert "GBPJPY" in symbols
 
 
@@ -27,7 +23,10 @@ def test_fetch_all_verdicts_reads_configured_pairs(monkeypatch) -> None:
 
     verdicts = l12_routes.fetch_all_verdicts()
 
-    assert verdicts == {"GBPJPY": {"symbol": "GBPJPY", "verdict": "HOLD"}}
+    assert "GBPJPY" in verdicts
+    assert verdicts["GBPJPY"]["symbol"] == "GBPJPY"
+    assert verdicts["GBPJPY"]["verdict"] == "HOLD"
+    assert verdicts["GBPJPY"]["_meta"]["cache_ttl_seconds"] == l12_routes.VERDICT_TTL_SEC
 
 
 def test_build_pipeline_data_includes_execution_map_passthrough() -> None:

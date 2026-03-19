@@ -232,14 +232,15 @@ Mapping service ke file deploy Railway dan start script:
 | Service | Railway TOML | Start Script |
 | --- | --- | --- |
 | API | `railway.toml` | `deploy/railway/start_api.sh` |
+| Migrator | `railway-migrator.toml` | `deploy/railway/start_migrator.sh` |
 | Ingestor | `railway-ingestor.toml` | `deploy/railway/start_ingest.sh` |
 | Engine | `railway-engine.toml` | `deploy/railway/start_engine.sh` |
 | Allocation | `railway-allocation.toml` | `deploy/railway/start_allocation.sh` |
 | Execution | `railway-execution.toml` | `deploy/railway/start_execution.sh` |
 | Orchestrator | `railway-orchestrator.toml` | `deploy/railway/start_orchestrator.sh` |
-| Worker Backtest | `railway-worker-backtest.toml` | `deploy/railway/start_worker.sh` |
-| Worker Monte Carlo | `railway-worker-montecarlo.toml` | `deploy/railway/start_worker.sh` |
-| Worker Regime | `railway-worker-regime.toml` | `deploy/railway/start_worker.sh` |
+| Worker Backtest | `railway-worker-backtest.toml` | `deploy/railway/start_worker.sh services.worker.nightly_backtest` |
+| Worker Monte Carlo | `railway-worker-montecarlo.toml` | `deploy/railway/start_worker.sh services.worker.montecarlo_job` |
+| Worker Regime | `railway-worker-regime.toml` | `deploy/railway/start_worker.sh services.worker.regime_recalibration` |
 
 ### Required GitHub Secrets
 
