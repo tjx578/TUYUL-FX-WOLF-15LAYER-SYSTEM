@@ -9,6 +9,27 @@ import pytest
 
 from ingest.fallback_provider import _CANDLE_CACHE_KEY_PREFIX, FallbackCandleProvider
 
+
+def _cached_candle(
+    *,
+    symbol: str = "EURUSD",
+    timeframe: str = "H1",
+    close: float = 1.1,
+    timestamp: str = "2026-03-14T10:00:00+00:00",
+    source: str = "twelve_data",
+) -> dict[str, float | str]:
+    return {
+        "symbol": symbol,
+        "timeframe": timeframe,
+        "open": close - 0.001,
+        "high": close + 0.001,
+        "low": close - 0.002,
+        "close": close,
+        "volume": 1000.0,
+        "timestamp": timestamp,
+        "source": source,
+    }
+
 # ══════════════════════════════════════════════════════════════════════
 #  No providers configured
 # ══════════════════════════════════════════════════════════════════════
@@ -32,7 +53,7 @@ class TestNoProvidersConfigured:
         monkeypatch.delenv("TWELVE_DATA_API_KEY", raising=False)
         monkeypatch.delenv("ALPHA_VANTAGE_API_KEY", raising=False)
 
-        cached_candles = [{"symbol": "EURUSD", "close": 1.1, "source": "twelve_data"}]
+        cached_candles = [_cached_candle()]
         mock_redis = AsyncMock()
         mock_redis.get = AsyncMock(return_value=json.dumps(cached_candles))
 
@@ -70,14 +91,14 @@ class TestAllProvidersFail:
         failing = MagicMock()
         failing.name = "fake_provider"
         failing.fetch = AsyncMock(side_effect=RuntimeError("503 provider down"))
-        provider._providers = [failing]  # pyright: ignore[reportPrivateUsage]
+        provider._providers = [failing]
 
         result = await provider.fetch("EURUSD", "H1")
         assert result == []
 
     @pytest.mark.asyncio
     async def test_falls_back_to_redis_when_all_providers_fail(self) -> None:
-        cached_candles = [{"symbol": "EURUSD", "close": 1.09, "source": "twelve_data"}]
+        cached_candles = [_cached_candle(close=1.09)]
         mock_redis = AsyncMock()
         mock_redis.get = AsyncMock(return_value=json.dumps(cached_candles))
 
@@ -86,7 +107,7 @@ class TestAllProvidersFail:
         failing = MagicMock()
         failing.name = "fake_provider"
         failing.fetch = AsyncMock(side_effect=RuntimeError("403 Forbidden"))
-        provider._providers = [failing]  # pyright: ignore[reportPrivateUsage]
+        provider._providers = [failing]
 
         result = await provider.fetch("EURUSD", "H1")
         assert result == cached_candles
@@ -101,7 +122,7 @@ class TestAllProvidersFail:
         failing = MagicMock()
         failing.name = "fake_provider"
         failing.fetch = AsyncMock(side_effect=RuntimeError("503 provider down"))
-        provider._providers = [failing]  # pyright: ignore[reportPrivateUsage]
+        provider._providers = [failing]
 
         result = await provider.fetch("EURUSD", "H1")
         assert result == []
@@ -116,7 +137,7 @@ class TestAllProvidersFail:
         failing = MagicMock()
         failing.name = "fake_provider"
         failing.fetch = AsyncMock(side_effect=RuntimeError("403"))
-        provider._providers = [failing]  # pyright: ignore[reportPrivateUsage]
+        provider._providers = [failing]
 
         result = await provider.fetch("EURUSD", "H1")
         assert result == []
@@ -141,7 +162,7 @@ class TestWriteThroughCache:
         succeed = MagicMock()
         succeed.name = "twelve_data"
         succeed.fetch = AsyncMock(return_value=fresh_candles)
-        provider._providers = [succeed]  # pyright: ignore[reportPrivateUsage]
+        provider._providers = [succeed]
 
         result = await provider.fetch("EURUSD", "H1")
         assert result == fresh_candles
@@ -165,7 +186,7 @@ class TestWriteThroughCache:
         succeed = MagicMock()
         succeed.name = "twelve_data"
         succeed.fetch = AsyncMock(return_value=fresh_candles)
-        provider._providers = [succeed]  # pyright: ignore[reportPrivateUsage]
+        provider._providers = [succeed]
 
         result = await provider.fetch("GBPUSD", "H1")
         assert result == fresh_candles
@@ -180,7 +201,7 @@ class TestWriteThroughCache:
         succeed = MagicMock()
         succeed.name = "twelve_data"
         succeed.fetch = AsyncMock(return_value=fresh_candles)
-        provider._providers = [succeed]  # pyright: ignore[reportPrivateUsage]
+        provider._providers = [succeed]
 
         result = await provider.fetch("USDJPY", "H1")
         assert result == fresh_candles
@@ -192,11 +213,11 @@ class TestWriteThroughCache:
 
 class TestCacheKeyFormat:
     def test_cache_key_matches_expected_pattern(self) -> None:
-        key = FallbackCandleProvider._cache_key("EURUSD", "H1")  # pyright: ignore[reportPrivateUsage]
+        key = FallbackCandleProvider._cache_key("EURUSD", "H1")
         assert key == "WOLF15:CANDLE_CACHE:EURUSD:H1"
 
     def test_cache_key_different_symbol(self) -> None:
-        key = FallbackCandleProvider._cache_key("GBPUSD", "D1")  # pyright: ignore[reportPrivateUsage]
+        key = FallbackCandleProvider._cache_key("GBPUSD", "D1")
         assert key == "WOLF15:CANDLE_CACHE:GBPUSD:D1"
 
 
@@ -240,13 +261,13 @@ class TestTimestampRehydration:
         from datetime import UTC, datetime  # noqa: PLC0415
 
         ts = datetime(2026, 3, 14, 10, 0, 0, tzinfo=UTC)
-        cached = [{"symbol": "EURUSD", "close": 1.1, "timestamp": ts.isoformat()}]
+        cached = [_cached_candle(timestamp=ts.isoformat())]
 
         mock_redis = AsyncMock()
         mock_redis.get = AsyncMock(return_value=json.dumps(cached))
 
         provider = FallbackCandleProvider(redis_client=mock_redis)
-        provider._providers = []  # pyright: ignore[reportPrivateUsage]  # force cache path
+        provider._providers = []  # force cache path
 
         result = await provider.fetch("EURUSD", "H1")
         assert len(result) == 1
@@ -257,28 +278,29 @@ class TestTimestampRehydration:
 
     @pytest.mark.asyncio
     async def test_candle_without_timestamp_key_returned_unchanged(self) -> None:
-        """Candles that have no timestamp field must not be modified."""
-        cached = [{"symbol": "EURUSD", "close": 1.1}]  # no timestamp key
+        """Malformed cached rows without timestamp must be skipped."""
+        cached = [_cached_candle()]
+        del cached[0]["timestamp"]
 
         mock_redis = AsyncMock()
         mock_redis.get = AsyncMock(return_value=json.dumps(cached))
 
         provider = FallbackCandleProvider(redis_client=mock_redis)
-        provider._providers = []  # pyright: ignore[reportPrivateUsage]
+        provider._providers = []
 
         result = await provider.fetch("EURUSD", "H1")
-        assert result == cached
+        assert result == []
 
     @pytest.mark.asyncio
     async def test_unparseable_timestamp_string_left_as_is(self) -> None:
-        """An unparseable timestamp string must not raise — candle is returned as-is."""
-        cached = [{"symbol": "EURUSD", "close": 1.1, "timestamp": "not-a-datetime"}]
+        """Malformed cached rows with bad timestamp must be skipped."""
+        cached = [_cached_candle(timestamp="not-a-datetime")]
 
         mock_redis = AsyncMock()
         mock_redis.get = AsyncMock(return_value=json.dumps(cached))
 
         provider = FallbackCandleProvider(redis_client=mock_redis)
-        provider._providers = []  # pyright: ignore[reportPrivateUsage]
+        provider._providers = []
 
         result = await provider.fetch("EURUSD", "H1")
-        assert result[0]["timestamp"] == "not-a-datetime"
+        assert result == []
