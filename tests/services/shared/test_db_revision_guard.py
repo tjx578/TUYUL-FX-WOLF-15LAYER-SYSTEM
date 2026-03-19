@@ -5,8 +5,9 @@ from sqlalchemy.ext.asyncio import create_async_engine
 
 from services.shared.db_revision_guard import DatabaseSchemaError, assert_required_tables
 
-
 pytestmark = pytest.mark.asyncio
+
+pytest.importorskip("aiosqlite")
 
 
 async def test_assert_required_tables_raises_for_missing_table() -> None:
