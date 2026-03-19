@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -30,9 +31,11 @@ def _cached_candle(
         "source": source,
     }
 
+
 # ══════════════════════════════════════════════════════════════════════
 #  No providers configured
 # ══════════════════════════════════════════════════════════════════════
+
 
 class TestNoProvidersConfigured:
     """When no provider API keys are set, fetch() must not raise."""
@@ -47,9 +50,7 @@ class TestNoProvidersConfigured:
         assert result == []
 
     @pytest.mark.asyncio
-    async def test_attempts_cache_read_when_redis_provided(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    async def test_attempts_cache_read_when_redis_provided(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.delenv("TWELVE_DATA_API_KEY", raising=False)
         monkeypatch.delenv("ALPHA_VANTAGE_API_KEY", raising=False)
 
@@ -59,12 +60,14 @@ class TestNoProvidersConfigured:
 
         provider = FallbackCandleProvider(redis_client=mock_redis)
         result = await provider.fetch("EURUSD", "H1")
-        assert result == cached_candles
+        assert len(result) == 1
+        assert result[0]["symbol"] == "EURUSD"
+        assert result[0]["timeframe"] == "H1"
+        assert result[0]["source"] == "twelve_data"
+        assert isinstance(result[0]["timestamp"], datetime)
 
     @pytest.mark.asyncio
-    async def test_returns_empty_when_redis_cache_miss(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    async def test_returns_empty_when_redis_cache_miss(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.delenv("TWELVE_DATA_API_KEY", raising=False)
         monkeypatch.delenv("ALPHA_VANTAGE_API_KEY", raising=False)
 
@@ -79,6 +82,7 @@ class TestNoProvidersConfigured:
 # ══════════════════════════════════════════════════════════════════════
 #  All providers fail — fallback to Redis cache
 # ══════════════════════════════════════════════════════════════════════
+
 
 class TestAllProvidersFail:
     """When all providers raise, fetch() must return cache or empty list."""
@@ -110,7 +114,11 @@ class TestAllProvidersFail:
         provider._providers = [failing]
 
         result = await provider.fetch("EURUSD", "H1")
-        assert result == cached_candles
+        assert len(result) == 1
+        assert result[0]["symbol"] == "EURUSD"
+        assert result[0]["timeframe"] == "H1"
+        assert result[0]["source"] == "twelve_data"
+        assert isinstance(result[0]["timestamp"], datetime)
 
     @pytest.mark.asyncio
     async def test_returns_empty_list_when_all_fail_and_cache_miss(self) -> None:
@@ -147,12 +155,25 @@ class TestAllProvidersFail:
 #  Write-through cache on success
 # ══════════════════════════════════════════════════════════════════════
 
+
 class TestWriteThroughCache:
     """Successful fetches should be written to Redis cache."""
 
     @pytest.mark.asyncio
     async def test_writes_to_cache_on_success(self) -> None:
-        fresh_candles = [{"symbol": "EURUSD", "close": 1.1, "source": "twelve_data"}]
+        fresh_candles = [
+            {
+                "symbol": "EURUSD",
+                "timeframe": "H1",
+                "open": 1.099,
+                "high": 1.101,
+                "low": 1.098,
+                "close": 1.1,
+                "volume": 1000.0,
+                "timestamp": datetime(2026, 3, 14, 10, 0, 0, tzinfo=UTC),
+                "source": "twelve_data",
+            }
+        ]
 
         mock_redis = AsyncMock()
         mock_redis.set = AsyncMock()
@@ -211,6 +232,7 @@ class TestWriteThroughCache:
 #  Cache key format
 # ══════════════════════════════════════════════════════════════════════
 
+
 class TestCacheKeyFormat:
     def test_cache_key_matches_expected_pattern(self) -> None:
         key = FallbackCandleProvider._cache_key("EURUSD", "H1")
@@ -225,33 +247,39 @@ class TestCacheKeyFormat:
 #  TTL defensive parsing
 # ══════════════════════════════════════════════════════════════════════
 
+
 class TestCancleCacheTtlParsing:
     """_parse_candle_cache_ttl() must handle bad env var values gracefully."""
 
     def test_valid_days_returns_correct_seconds(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("WOLF15_CANDLE_CACHE_TTL_DAYS", "3")
         from ingest.fallback_provider import _parse_candle_cache_ttl  # noqa: PLC0415
+
         assert _parse_candle_cache_ttl() == 3 * 86_400
 
     def test_non_integer_falls_back_to_default(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("WOLF15_CANDLE_CACHE_TTL_DAYS", "not_a_number")
         from ingest.fallback_provider import _parse_candle_cache_ttl  # noqa: PLC0415
+
         assert _parse_candle_cache_ttl() == 7 * 86_400
 
     def test_zero_falls_back_to_default(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("WOLF15_CANDLE_CACHE_TTL_DAYS", "0")
         from ingest.fallback_provider import _parse_candle_cache_ttl  # noqa: PLC0415
+
         assert _parse_candle_cache_ttl() == 7 * 86_400
 
     def test_negative_falls_back_to_default(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("WOLF15_CANDLE_CACHE_TTL_DAYS", "-5")
         from ingest.fallback_provider import _parse_candle_cache_ttl  # noqa: PLC0415
+
         assert _parse_candle_cache_ttl() == 7 * 86_400
 
 
 # ══════════════════════════════════════════════════════════════════════
 #  Timestamp rehydration on cache read
 # ══════════════════════════════════════════════════════════════════════
+
 
 class TestTimestampRehydration:
     """Cached candles with ISO string timestamps must be rehydrated to datetime."""
@@ -271,9 +299,7 @@ class TestTimestampRehydration:
 
         result = await provider.fetch("EURUSD", "H1")
         assert len(result) == 1
-        assert isinstance(result[0]["timestamp"], datetime), (
-            "Cached timestamp string must be rehydrated to datetime"
-        )
+        assert isinstance(result[0]["timestamp"], datetime), "Cached timestamp string must be rehydrated to datetime"
         assert result[0]["timestamp"].tzinfo is not None, "datetime must be timezone-aware"
 
     @pytest.mark.asyncio

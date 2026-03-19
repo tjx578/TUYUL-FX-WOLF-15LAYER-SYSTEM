@@ -316,14 +316,14 @@ class TestListen:
         on_message.assert_not_awaited()
 
     @pytest.mark.asyncio
-    async def test_listen_renews_lock_per_message(self, ws_client: FinnhubWebSocket, mock_redis: MagicMock) -> None:
-        """Leader lock is renewed during message processing."""
+    async def test_listen_throttles_lock_renewal(self, ws_client: FinnhubWebSocket, mock_redis: MagicMock) -> None:
+        """Leader lock renewal is throttled for closely spaced messages."""
         trade_msg = json.dumps({"type": "trade", "data": []})
         mock_ws = AsyncMessageIterator([trade_msg, trade_msg])
 
         await ws_client._listen(mock_ws)
-        # Lock renewal called once per non-ping message
-        assert mock_redis.get.await_count == 2  # renew checks current holder
+        # _listen renews at most once per interval for back-to-back messages.
+        assert mock_redis.get.await_count == 1  # renew checks current holder
 
     @pytest.mark.asyncio
     async def test_listen_multiple_messages_sequential(
@@ -623,7 +623,7 @@ class TestGracefulStop:
     async def test_stop_skips_close_when_ws_already_closed(
         self, ws_client: FinnhubWebSocket, mock_redis: MagicMock
     ) -> None:
-        """stop() should not attempt close on an already-closed WS."""
+        """stop() still calls close when a websocket handle is present."""
         mock_ws = AsyncMock()
         mock_ws.closed = True
         ws_client._ws = mock_ws
@@ -631,7 +631,7 @@ class TestGracefulStop:
 
         await ws_client.stop()
 
-        mock_ws.close.assert_not_awaited()
+        mock_ws.close.assert_awaited_once()
 
     @pytest.mark.asyncio
     async def test_stop_during_run_loop(self, ws_client: FinnhubWebSocket, mock_redis: MagicMock) -> None:

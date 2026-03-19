@@ -1,13 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Ensure DB schema is ready before engine boots.
-if [[ -n "${DATABASE_URL:-}" ]]; then
-	echo "[startup] Running database migrations…"
-	python -m alembic upgrade head 2>&1
-	echo "[startup] Migrations completed successfully."
-else
-	echo "[startup] DATABASE_URL not set — skipping migrations."
+# Migration ownership lives in wolf15-migrator (one-shot). Engine only validates readiness.
+if [[ -z "${DATABASE_URL:-}" ]]; then
+	echo "[startup] DATABASE_URL is required for engine preflight." >&2
+	exit 1
 fi
 
 export RUN_MODE="engine-only"
