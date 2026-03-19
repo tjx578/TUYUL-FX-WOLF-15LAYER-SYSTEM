@@ -19,10 +19,11 @@ from loguru import logger
 from storage.redis_client import RedisClient
 
 # === TTL Constants ===
-# Latest tick: 1 hour — keeps last-known price available even during WS outages.
-# Staleness is detected via the timestamp INSIDE the hash field, NOT via key expiry.
+# Latest tick: 24 hours housekeeping TTL — keeps last-known price available.
+# Staleness is detected via the `last_seen_ts` field INSIDE the hash, NOT via key expiry.
+# The long TTL only exists for garbage collection; it does NOT define freshness.
 # This prevents data loss during temporary WS disconnects (rate limits, weekends).
-LATEST_TICK_TTL_SECONDS: int = 3600
+LATEST_TICK_TTL_SECONDS: int = 86400  # 24h housekeeping only
 
 # No TTL on candle keys — Redis has persistent volume.
 # Data stays until explicitly deleted or trimmed by LTRIM.
@@ -44,7 +45,7 @@ class RedisContextBridge:
 
     TTL Policy:
       - tick streams: MAXLEN ~10,000 (auto-trim on XADD)
-      - latest_tick hashes: 3600s TTL (keeps last-known price; staleness via timestamp field)
+      - latest_tick hashes: 24h housekeeping TTL (staleness via last_seen_ts field, NOT key expiry)
       - candle hashes: no TTL (persistent, overwritten on each new candle)
       - candle history lists: no TTL (capped by LTRIM to 300 entries)
       - latest_news: 24h TTL (set via SET ex=)
@@ -94,13 +95,20 @@ class RedisContextBridge:
                 approximate=True,
             )
 
-            # 2. HSET latest tick
-            latest_key = f"{self._prefix}:latest_tick:{symbol}"
-            self._redis.hset(latest_key, mapping={"data": tick_json})
+            # 2. HSET latest tick + last_seen_ts for freshness classification
+            import time as _time
 
-            # 3. Set TTL - resets countdown on every tick.
-            #    Key persists for 1h after last tick, keeping last-known price
-            #    available during WS outages. Staleness detected via timestamp field.
+            latest_key = f"{self._prefix}:latest_tick:{symbol}"
+            self._redis.hset(
+                latest_key,
+                mapping={
+                    "data": tick_json,
+                    "last_seen_ts": str(_time.time()),
+                },
+            )
+
+            # 3. Long housekeeping TTL (24h) — NOT a freshness indicator.
+            #    Freshness is computed from the last_seen_ts field above.
             self._redis.client.expire(latest_key, LATEST_TICK_TTL_SECONDS)
 
             # 4. PUBLISH notification
@@ -136,9 +144,17 @@ class RedisContextBridge:
             channel = f"candle:{symbol}:{timeframe}"
             self._redis.publish(channel, candle_json)
 
-            # 2. HSET latest candle (no TTL — persistent until overwritten)
+            # 2. HSET latest candle + last_seen_ts (no TTL — persistent until overwritten)
+            import time as _time
+
             hash_key = f"{self._prefix}:candle:{symbol}:{timeframe}"
-            self._redis.hset(hash_key, mapping={"data": candle_json})
+            self._redis.hset(
+                hash_key,
+                mapping={
+                    "data": candle_json,
+                    "last_seen_ts": str(_time.time()),
+                },
+            )
 
             # 3. Append to candle history list (enables engine warmup on startup)
             #    LTRIM caps size; no TTL so data survives restarts.
@@ -185,15 +201,23 @@ class RedisContextBridge:
             symbol: Trading pair symbol.
 
         Returns:
-            Tick dictionary or None if not found (also None if feed is stale
-            and TTL has expired the key).
+            Tick dictionary or None if not found.  Includes ``last_seen_ts``
+            if present in the hash (written by write_tick).
         """
         try:
             key = f"{self._prefix}:latest_tick:{symbol}"
-            tick_json = self._redis.hget(key, "data")
-            if tick_json:
-                return orjson.loads(tick_json)
-            return None
+            raw_map = self._redis.hgetall(key)
+            if not raw_map:
+                return None
+            data_str = raw_map.get("data")
+            if not data_str:
+                return None
+            tick = orjson.loads(data_str)
+            # Attach last_seen_ts from hash so readers can compute freshness
+            last_seen = raw_map.get("last_seen_ts")
+            if last_seen:
+                tick["last_seen_ts"] = float(last_seen)
+            return tick
         except Exception as exc:
             logger.error(f"Failed to read latest tick from Redis: {exc}")
             return None
@@ -207,14 +231,22 @@ class RedisContextBridge:
             timeframe: Timeframe (e.g., "M15", "H1").
 
         Returns:
-            Candle dictionary or None if not found.
+            Candle dictionary or None if not found.  Includes ``last_seen_ts``
+            if present in the hash (written by write_candle).
         """
         try:
             key = f"{self._prefix}:candle:{symbol}:{timeframe}"
-            candle_json = self._redis.hget(key, "data")
-            if candle_json:
-                return orjson.loads(candle_json)
-            return None
+            raw_map = self._redis.hgetall(key)
+            if not raw_map:
+                return None
+            data_str = raw_map.get("data")
+            if not data_str:
+                return None
+            candle = orjson.loads(data_str)
+            last_seen = raw_map.get("last_seen_ts")
+            if last_seen:
+                candle["last_seen_ts"] = float(last_seen)
+            return candle
         except Exception as exc:
             logger.error(f"Failed to read latest candle from Redis: {exc}")
             return None

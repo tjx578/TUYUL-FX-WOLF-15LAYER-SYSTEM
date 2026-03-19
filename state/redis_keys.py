@@ -37,6 +37,7 @@ def latest_candle(symbol: str, timeframe: str) -> str:
 
 # ── List history (warmup / recovery) ─────────────────────────────────────────
 
+
 def candle_history(symbol: str, timeframe: str) -> str:
     """Candle history list: wolf15:candle_history:{symbol}:{timeframe}."""
     return f"{PREFIX}:candle_history:{symbol}:{timeframe}"
@@ -79,5 +80,6 @@ def channel_candle(symbol: str, timeframe: str) -> str:
 # ── Max-lengths and caps ─────────────────────────────────────────────────────
 TICK_STREAM_MAXLEN = 10_000
 CANDLE_HISTORY_MAXLEN = 300
-LATEST_TICK_TTL_SECONDS = 3600
+# Housekeeping TTL only — freshness is computed from last_seen_ts field, NOT key expiry.
+LATEST_TICK_TTL_SECONDS = 86400  # 24h housekeeping
 LATEST_NEWS_TTL_SECONDS = 86400

@@ -9,13 +9,14 @@
  *                         RECONNECTING_WS
  *                            ↓ recovered < 30s → LIVE_WS
  *                            ↓ timeout 30s
+ *                         CONNECTING_SSE → LIVE_SSE
+ *                            ↓ SSE fails
  *                         POLLING_REST
  *                            ↓ WS recovered → LIVE_WS
  *                            ↓ polling fails repeatedly
  *                         STALE
  *
- * SSE slot reserved for future expansion (insert between RECONNECTING_WS
- * and POLLING_REST when backend supports /sse/live).
+ * Transport ladder: WS → SSE → REST polling (managed by multiplexer).
  */
 
 import { useEffect, useRef } from "react";

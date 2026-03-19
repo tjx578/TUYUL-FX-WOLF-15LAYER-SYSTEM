@@ -102,9 +102,7 @@ class TestStateTransitions:
         assert manager.get_state() == SystemState.INITIALIZING
         assert manager.get_warmup_report() == {}
 
-    def test_reset_publishes_initializing(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_reset_publishes_initializing(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Reset should publish INITIALIZING for multi-container retries."""
         manager = SystemStateManager()
         published: list[SystemState] = []
@@ -113,6 +111,76 @@ class TestStateTransitions:
         manager.reset()
 
         assert published == [SystemState.INITIALIZING]
+
+    # ── P0-1: Invalid transition, same-state no-op, retry idempotency ──
+
+    def test_invalid_transition_raises_value_error(self) -> None:
+        """Invalid transition (e.g. INITIALIZING -> READY) must raise ValueError."""
+        manager = SystemStateManager()
+        with manager._rw_lock:
+            manager._state = SystemState.INITIALIZING
+
+        with pytest.raises(ValueError, match="Invalid state transition"):
+            manager.set_state(SystemState.READY)
+
+    @pytest.mark.parametrize("state", list(SystemState))
+    def test_same_state_transition_is_noop_for_every_state(self, state: SystemState) -> None:
+        """Every state must tolerate a same-state set_state() call silently."""
+        manager = SystemStateManager()
+        with manager._rw_lock:
+            manager._state = state
+
+        manager.set_state(state)  # must NOT raise
+        assert manager.get_state() == state
+
+    def test_reset_is_idempotent(self) -> None:
+        """Calling reset() multiple times must not raise or corrupt state."""
+        manager = SystemStateManager()
+        with manager._rw_lock:
+            manager._state = SystemState.DEGRADED
+
+        manager.reset()
+        manager.reset()
+        manager.reset()
+
+        assert manager.get_state() == SystemState.INITIALIZING
+        assert manager.get_warmup_report() == {}
+
+    def test_reset_then_warmup_cycle_is_valid(self) -> None:
+        """After reset, the full startup cycle must be reachable."""
+        manager = SystemStateManager()
+        with manager._rw_lock:
+            manager._state = SystemState.ERROR
+
+        manager.reset()
+        assert manager.get_state() == SystemState.INITIALIZING
+
+        manager.set_state(SystemState.WARMING_UP)
+        assert manager.get_state() == SystemState.WARMING_UP
+
+        manager.set_state(SystemState.READY)
+        assert manager.get_state() == SystemState.READY
+
+    @pytest.mark.parametrize(
+        "from_state, to_state",
+        [
+            (SystemState.INITIALIZING, SystemState.READY),
+            (SystemState.INITIALIZING, SystemState.DEGRADED),
+            (SystemState.WARMING_UP, SystemState.INITIALIZING),
+            (SystemState.READY, SystemState.INITIALIZING),
+            (SystemState.DEGRADED, SystemState.INITIALIZING),
+            (SystemState.ERROR, SystemState.READY),
+            (SystemState.ERROR, SystemState.DEGRADED),
+        ],
+    )
+    def test_all_invalid_transitions_raise(self, from_state: SystemState, to_state: SystemState) -> None:
+        """Exhaustive check that disallowed transitions raise ValueError."""
+        manager = SystemStateManager()
+        with manager._rw_lock:
+            manager._state = from_state
+
+        with pytest.raises(ValueError):
+            manager.set_state(to_state)
 
 
 class TestReadyCheck:

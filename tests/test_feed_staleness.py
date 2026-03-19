@@ -34,10 +34,10 @@ class TestFeedStaleness:
             "source": "test",
         }
         self.bus.update_tick(tick)
-        assert self.bus.get_feed_status("EURUSD") == "CONNECTED"
+        assert self.bus.get_feed_status("EURUSD") == "LIVE"
 
     def test_feed_status_no_data(self):
-        assert self.bus.get_feed_status("UNKNOWN_PAIR") == "NO_DATA"
+        assert self.bus.get_feed_status("UNKNOWN_PAIR") == "NO_PRODUCER"
 
     def test_get_feed_age_none_when_no_data(self):
         assert self.bus.get_feed_age("UNKNOWN_PAIR") is None

@@ -4,21 +4,20 @@ EA Manager — manages the EA command queue and broker executor bridge.
 Wraps BrokerExecutor with retry, logging, and Redis event emission.
 No strategy logic. Execution authority only.
 """
+
 from __future__ import annotations
 
-import json
 import os
 import time
+from enum import Enum
 from queue import Empty, Queue
 from threading import Thread
-from enum import Enum
-from typing import Any, Optional
+from typing import Any
 
 from loguru import logger
 
 from execution.broker_executor import BrokerExecutor, ExecutionRequest, ExecutionResult
 from execution.execution_guard import ExecutionGuard
-from execution.trade_state_enum import TradeState
 
 TRADE_UPDATES_CHANNEL = "trade:updates"
 _MAX_RETRIES = 2
@@ -26,6 +25,7 @@ _MAX_RETRIES = 2
 
 class QueueOverloadMode(str, Enum):
     """Backpressure behavior when queue is full."""
+
     REJECT_NEW = "reject_new"
     DROP_OLDEST = "drop_oldest"
 
@@ -41,8 +41,8 @@ class EAManager:
 
     def __init__(
         self,
-        executor: Optional[BrokerExecutor] = None,
-        guard: Optional[ExecutionGuard] = None,
+        executor: BrokerExecutor | None = None,
+        guard: ExecutionGuard | None = None,
     ) -> None:
         self._executor = executor or BrokerExecutor()
         self._guard = guard or ExecutionGuard()
@@ -57,7 +57,7 @@ class EAManager:
         self._queue: Queue[ExecutionRequest] = Queue(maxsize=queue_size)
         self._results: dict[str, ExecutionResult] = {}
         self._running = False
-        self._worker_thread: Optional[Thread] = None
+        self._worker_thread: Thread | None = None
         self._overload_rejections = 0
         self._overload_drops = 0
 
@@ -71,10 +71,12 @@ class EAManager:
             def _severity(symbol: str) -> str:
                 status = bus.get_feed_status(symbol)
                 mapping = {
-                    "CONNECTED": "LOW",
-                    "DEGRADED": "MEDIUM",
-                    "DOWN": "HIGH",
-                    "NO_DATA": "CRITICAL",
+                    "LIVE": "LOW",
+                    "DEGRADED_BUT_REFRESHING": "MEDIUM",
+                    "STALE_PRESERVED": "HIGH",
+                    "NO_PRODUCER": "CRITICAL",
+                    "NO_TRANSPORT": "CRITICAL",
+                    "CONFIG_ERROR": "CRITICAL",
                 }
                 return mapping.get(status, "UNKNOWN")
 
@@ -97,13 +99,17 @@ class EAManager:
     def submit(self, req: ExecutionRequest) -> str:
         """Enqueue an execution request. Returns request_id."""
         signal_id = str(req.meta.get("signal_id", "") or "") if req.meta else ""
-        gate = self._guard.execute(
-            signal_id=signal_id,
-            account_id=req.account_id,
-            symbol=req.symbol,
-        ) if signal_id else self._guard.validate_scope(
-            account_id=req.account_id,
-            ea_instance_id=str(req.meta.get("ea_instance_id", "") or "") if req.meta else None,
+        gate = (
+            self._guard.execute(
+                signal_id=signal_id,
+                account_id=req.account_id,
+                symbol=req.symbol,
+            )
+            if signal_id
+            else self._guard.validate_scope(
+                account_id=req.account_id,
+                ea_instance_id=str(req.meta.get("ea_instance_id", "") or "") if req.meta else None,
+            )
         )
         if not gate.allowed:
             raise ValueError(f"Execution rejected: {gate.code} ({gate.details})")
@@ -124,7 +130,7 @@ class EAManager:
         self._queue.put_nowait(req)
         return req.request_id
 
-    def get_result(self, request_id: str) -> Optional[ExecutionResult]:
+    def get_result(self, request_id: str) -> ExecutionResult | None:
         return self._results.get(request_id)
 
     def _dispatch_loop(self) -> None:
@@ -178,6 +184,7 @@ class EAManager:
         }
         try:
             from storage.redis_client import RedisClient  # noqa: PLC0415
+
             rc = RedisClient()
             rc.xadd(TRADE_UPDATES_CHANNEL, {k: str(v) for k, v in payload.items()}, maxlen=10000)
         except Exception as exc:

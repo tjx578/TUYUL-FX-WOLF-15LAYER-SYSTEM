@@ -24,7 +24,7 @@ from typing import Any
 
 from fastapi import Depends, FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import RedirectResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from typing_extensions import override
 
@@ -376,10 +376,35 @@ def _register_health_routes(app: FastAPI) -> None:
 
     app.add_api_route("/", root, methods=["GET"])
 
-    async def health() -> dict[str, Any]:
+    async def _read_heartbeat_age(request: Request) -> tuple[float | None, bool]:
+        """Read ingest producer heartbeat from Redis. Returns (age_seconds, alive)."""
+        import time as _time
+
+        import orjson as _orjson
+
+        from state.redis_keys import HEARTBEAT_INGEST
+
+        try:
+            r = request.app.state.redis
+            if r is None:
+                return None, False
+            raw = await r.get(HEARTBEAT_INGEST)
+            if not raw:
+                return None, False
+            payload = _orjson.loads(raw)
+            ts = float(payload.get("ts", 0))
+            if ts <= 0:
+                return None, False
+            age = max(0.0, _time.time() - ts)
+            return round(age, 2), age <= 60.0
+        except Exception:
+            return None, False
+
+    async def health(request: Request) -> dict[str, Any]:
         from api.allocation_router import _feed_freshness_snapshot  # noqa: PLC0415
 
         feed_snapshot = await _feed_freshness_snapshot()
+        hb_age, hb_alive = await _read_heartbeat_age(request)
 
         return {
             "status": "ok",
@@ -394,10 +419,55 @@ def _register_health_routes(app: FastAPI) -> None:
             "feed_threshold_seconds": feed_snapshot.threshold_seconds,
             "feed_last_seen_ts": feed_snapshot.last_seen_ts,
             "detail": feed_snapshot.detail,
+            "producer_heartbeat_age_seconds": hb_age,
+            "producer_alive": hb_alive,
         }
 
     app.add_api_route("/health", health, methods=["GET"])
     app.add_api_route("/healthz", health, methods=["GET"])
+
+    async def readyz(request: Request) -> JSONResponse:
+        """Readiness probe — freshness-aware.
+
+        Unlike ``/healthz`` (process liveness), this endpoint checks
+        whether the system is actually *safe to serve traffic*:
+        feed freshness, producer heartbeat, and warmup state.
+        """
+        from api.allocation_router import _feed_freshness_snapshot  # noqa: PLC0415
+        from state.data_freshness import FreshnessClass  # noqa: PLC0415
+
+        feed_snapshot = await _feed_freshness_snapshot()
+        hb_age, hb_alive = await _read_heartbeat_age(request)
+        freshness_class = feed_snapshot.freshness_class
+
+        checks: dict[str, Any] = {
+            "feed_freshness_class": freshness_class.value,
+            "feed_staleness_seconds": feed_snapshot.staleness_seconds,
+            "producer_alive": hb_alive,
+            "producer_heartbeat_age_seconds": hb_age,
+        }
+
+        reasons: list[str] = []
+
+        # Feed freshness gate
+        if freshness_class in (FreshnessClass.NO_PRODUCER, FreshnessClass.NO_TRANSPORT, FreshnessClass.CONFIG_ERROR):
+            reasons.append(f"feed_{freshness_class.value.lower()}")
+        elif freshness_class == FreshnessClass.STALE_PRESERVED:
+            reasons.append("feed_stale_preserved")
+
+        # Producer heartbeat gate
+        if not hb_alive:
+            reasons.append("producer_heartbeat_dead")
+
+        ready = len(reasons) == 0
+        status_code = 200 if ready else 503
+        checks["ready"] = ready
+        if reasons:
+            checks["reasons"] = reasons
+
+        return JSONResponse(content=checks, status_code=status_code)
+
+    app.add_api_route("/readyz", readyz, methods=["GET"])
 
     async def full_health(request: Request) -> dict[str, Any]:
         from datetime import UTC, datetime
@@ -435,6 +505,8 @@ def _register_health_routes(app: FastAPI) -> None:
         elif feed_snapshot.state != "fresh" and overall_status == "ok":
             overall_status = "degraded"
 
+        hb_age, hb_alive = await _read_heartbeat_age(request)
+
         return {
             "status": overall_status,
             "service": "tuyul-fx",
@@ -452,6 +524,8 @@ def _register_health_routes(app: FastAPI) -> None:
             "feed_threshold_seconds": feed_snapshot.threshold_seconds,
             "feed_last_seen_ts": feed_snapshot.last_seen_ts,
             "feed_detail": feed_snapshot.detail,
+            "producer_heartbeat_age_seconds": hb_age,
+            "producer_alive": hb_alive,
             "timestamp": datetime.now(UTC).isoformat(),
         }
 

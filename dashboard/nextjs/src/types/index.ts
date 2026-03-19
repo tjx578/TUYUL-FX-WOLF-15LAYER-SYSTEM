@@ -382,6 +382,15 @@ export interface CandleData {
 
 export type FeedStatus = "fresh" | "stale_preserved" | "no_producer" | "no_transport" | "config_error";
 
+/** Approved pipeline-wide freshness class labels (matches backend FreshnessClass enum). */
+export type FreshnessClassLabel =
+  | "LIVE"
+  | "DEGRADED_BUT_REFRESHING"
+  | "STALE_PRESERVED"
+  | "NO_PRODUCER"
+  | "NO_TRANSPORT"
+  | "CONFIG_ERROR";
+
 export interface SystemHealth {
   status: "ok" | "degraded" | "error";
   service: string;
@@ -395,6 +404,8 @@ export interface SystemHealth {
   feed_threshold_seconds?: number;
   feed_last_seen_ts?: number | null;
   detail?: string;
+  producer_heartbeat_age_seconds?: number | null;
+  producer_alive?: boolean;
   uptime_seconds?: number;
   last_verdict_at?: number;
   timestamp?: number | string;

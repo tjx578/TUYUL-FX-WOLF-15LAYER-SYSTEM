@@ -234,12 +234,16 @@ def assess_governance(
     elif not warmup_ready or freshness.staleness_seconds > HARD_STALE_THRESHOLD_SEC:
         action = GovernanceAction.HOLD
     elif freshness.state in ("no_producer", "no_transport"):
-        # No producer AND no recovery: HOLD
-        if not producer_alive:  # noqa: SIM108
-            action = GovernanceAction.HOLD
-        else:
-            # Transport issue but producer still alive → reduced
-            action = GovernanceAction.ALLOW_REDUCED
+        # P0-6: conservative — if freshness cannot be proven, HOLD.
+        # Even if producer heartbeat is alive but no data arrived,
+        # new-trade flow must remain blocked.
+        action = GovernanceAction.HOLD
+    elif freshness.state == "stale_preserved":
+        # P0-6: stale-preserved supports visibility/diagnosis only,
+        # not silent normal-mode trading.
+        action = GovernanceAction.HOLD
+        if "stale_preserved" not in " ".join(reasons):
+            reasons.append("stale_preserved_hold")
     elif dq_penalty >= DQ_PENALTY_HOLD_THRESHOLD:
         action = GovernanceAction.HOLD
     elif total_penalty > 0 or dq_degraded:

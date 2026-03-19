@@ -32,6 +32,11 @@ from typing import Any
 from loguru import logger
 
 from config.pip_values import get_pip_multiplier
+from state.data_freshness import (
+    FreshnessClass,
+    classify_feed_freshness,
+    stale_threshold_seconds,
+)
 
 # Maximum candle history entries per symbol:timeframe key.
 # Prevents unbounded memory growth during long-running sessions.
@@ -426,30 +431,36 @@ class LiveContextBus:
         """Return raw epoch timestamp of last feed update for *symbol*, or None."""
         return self._feed_timestamps.get(symbol)
 
-    def is_feed_stale(self, symbol: str, threshold_sec: float = 30.0) -> bool:
-        """Return True if the feed for *symbol* has not updated within *threshold_sec* seconds."""
+    def is_feed_stale(self, symbol: str, threshold_sec: float | None = None) -> bool:
+        """Return True if the feed for *symbol* has not updated within *threshold_sec* seconds.
+
+        Defaults to the centralized stale threshold from ``state.data_freshness``.
+        """
+        if threshold_sec is None:
+            threshold_sec = stale_threshold_seconds()
         age = self.get_feed_age(symbol)
         if age is None:
             return True
         return age > threshold_sec
 
     def get_feed_status(self, symbol: str) -> str:
-        """Return a human-readable feed status for *symbol*.
+        """Return the canonical freshness class for *symbol*.
 
-        Returns:
-            "CONNECTED"  — tick received within the last 30 seconds.
-            "DEGRADED"   — tick received within the last 120 seconds.
-            "DOWN"       — tick received but older than 120 seconds.
-            "NO_DATA"    — no tick ever received for this symbol.
+        Returns one of the ``FreshnessClass`` enum values (string):
+            ``"LIVE"``                     — tick received within FRESHNESS_LIVE_MAX_AGE_SEC.
+            ``"DEGRADED_BUT_REFRESHING"``  — tick within stale threshold but lagging.
+            ``"STALE_PRESERVED"``          — tick beyond stale threshold.
+            ``"NO_PRODUCER"``              — no tick ever received for this symbol.
         """
-        age = self.get_feed_age(symbol)
-        if age is None:
-            return "NO_DATA"
-        if age <= 30.0:
-            return "CONNECTED"
-        if age <= 120.0:
-            return "DEGRADED"
-        return "DOWN"
+        ts = self._feed_timestamps.get(symbol)
+        if ts is None:
+            return FreshnessClass.NO_PRODUCER.value
+        snap = classify_feed_freshness(
+            transport_ok=True,
+            has_producer_signal=True,
+            last_seen_ts=ts,
+        )
+        return snap.freshness_class.value
 
     def get_feed_timestamps(self) -> dict[str, float]:
         """Return copy of all per-symbol feed timestamps (epoch seconds)."""
@@ -461,18 +472,21 @@ class LiveContextBus:
 
         Returns:
             ``{symbol: {"status": str, "age_seconds": float|None, "last_seen_ts": float|None}}``
+
+        Status uses the canonical ``FreshnessClass`` labels.
         """
         with self._lock:
             result: dict[str, dict[str, Any]] = {}
             now = time.time()
             for sym, ts in self._feed_timestamps.items():
                 age = now - ts
-                if age <= 30.0:
-                    status = "CONNECTED"
-                elif age <= 120.0:
-                    status = "DEGRADED"
-                else:
-                    status = "DOWN"
+                snap = classify_feed_freshness(
+                    transport_ok=True,
+                    has_producer_signal=True,
+                    last_seen_ts=ts,
+                    now_ts=now,
+                )
+                status = snap.freshness_class.value
                 result[sym] = {"status": status, "age_seconds": round(age, 2), "last_seen_ts": ts}
             return result
 

@@ -10,6 +10,8 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from threading import Lock
 
+from loguru import logger
+
 
 @dataclass(frozen=True)
 class ExecutionGateResult:
@@ -116,7 +118,9 @@ class ExecutionGuard:
         if orchestrator_mode == "KILL_SWITCH":
             return ExecutionGateResult(False, "ORCHESTRATOR_KILL_SWITCH", "Orchestrator in KILL_SWITCH mode")
         if orchestrator_mode == "SAFE":
-            return ExecutionGateResult(False, "ORCHESTRATOR_SAFE_MODE", "Orchestrator in SAFE mode — new execution blocked")
+            return ExecutionGateResult(
+                False, "ORCHESTRATOR_SAFE_MODE", "Orchestrator in SAFE mode — new execution blocked"
+            )
 
         with self._lock:
             if self._global_kill_enabled:
@@ -177,6 +181,11 @@ class ExecutionGuard:
         if symbol:
             freshness_severity = str(self._freshness_severity_provider(symbol)).upper()
             if freshness_severity in self._blocked_freshness_severity:
+                logger.warning(
+                    "ExecutionGuard FEED_FRESHNESS_BLOCK: symbol={} severity={} | trade blocked due to stale/no-producer",
+                    symbol,
+                    freshness_severity,
+                )
                 return ExecutionGateResult(
                     False,
                     "FEED_FRESHNESS_BLOCK",
