@@ -7,5 +7,10 @@ if [[ -z "${DATABASE_URL:-}" ]]; then
 	exit 1
 fi
 
+if [[ -n "${PORT:-}" ]]; then
+	export ENGINE_HEALTH_PORT="${PORT}"
+fi
+
+export WOLF15_SERVICE_ROLE="engine"
 export RUN_MODE="engine-only"
 exec python -m services.engine.runner

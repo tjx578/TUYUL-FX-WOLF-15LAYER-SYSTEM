@@ -11,6 +11,8 @@ if [[ -z "${DATABASE_URL:-}" ]]; then
   echo "[startup] WARNING: DATABASE_URL not set; DB-backed API routes may fail." >&2
 fi
 
+export WOLF15_SERVICE_ROLE="api"
+
 exec gunicorn app:app \
   -k deploy.uvicorn_worker.UvicornWorker \
   --bind "0.0.0.0:${PORT:-8000}" \
