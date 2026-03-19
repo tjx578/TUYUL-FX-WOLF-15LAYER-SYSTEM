@@ -18,6 +18,7 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from fastapi.routing import APIRoute
 from fastapi.testclient import TestClient
 
 from api.middleware.auth import verify_token
@@ -111,6 +112,17 @@ class _FakeRedis:
         pass
 
 
+class _KillSwitchOff:
+    def is_enabled(self) -> bool:
+        return False
+
+    def snapshot(self) -> dict[str, Any]:
+        return {"enabled": False, "reason": "", "updated_at": ""}
+
+    def evaluate_and_trip(self, *, metrics: dict[str, Any]) -> dict[str, Any]:  # noqa: ARG002
+        return self.snapshot()
+
+
 _fake_redis = _FakeRedis()
 
 
@@ -141,6 +153,19 @@ def _override_auth_dependencies() -> Any:
     previous = dict(app.dependency_overrides)
     app.dependency_overrides[verify_token] = _mock_verify_token
     app.dependency_overrides[enforce_write_policy] = _mock_write_policy
+
+    # Also override the exact route-bound dependency callables in case other
+    # tests reloaded/mocked modules and changed function object identity.
+    for route in app.routes:
+        if not isinstance(route, APIRoute):
+            continue
+        if not str(route.path).startswith("/api/v1/"):
+            continue
+        for dep in route.dependant.dependencies:
+            call = getattr(dep, "call", None)
+            if callable(call):
+                app.dependency_overrides[call] = _mock_write_policy
+
     yield
     app.dependency_overrides.clear()
     app.dependency_overrides.update(previous)
@@ -268,6 +293,7 @@ def _patch_redis() -> Any:
 
     with (
         patch.object(_rc._manager, "get_client", new=AsyncMock(return_value=_fake_redis)),
+        patch("api.allocation_router._kill_switch", new=_KillSwitchOff()),
         patch("api.allocation_router._ensure_live_producer", new=AsyncMock(return_value=None)),
         patch("api.allocation_router._runtime_take_precheck", new=AsyncMock(return_value=(True, None))),
         patch(
