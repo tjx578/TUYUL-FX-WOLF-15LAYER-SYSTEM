@@ -135,8 +135,15 @@ async def _mock_write_policy() -> None:
     return None
 
 
-app.dependency_overrides[verify_token] = _mock_verify_token
-app.dependency_overrides[enforce_write_policy] = _mock_write_policy
+@pytest.fixture(autouse=True)
+def _override_auth_dependencies() -> Any:
+    """Isolate dependency overrides to this test module's test scope."""
+    previous = dict(app.dependency_overrides)
+    app.dependency_overrides[verify_token] = _mock_verify_token
+    app.dependency_overrides[enforce_write_policy] = _mock_write_policy
+    yield
+    app.dependency_overrides.clear()
+    app.dependency_overrides.update(previous)
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -222,9 +229,22 @@ def _reset_state() -> Any:
     _fake_redis._str["ctx:tick:latest"] = json.dumps({"timestamp": time.time()})
 
     import api.allocation_router as alloc
+    from api.middleware import rate_limit as rl
 
     alloc._trade_ledger.clear()
     alloc._account_registry.clear()
+
+    # Reset in-memory rate-limit buckets so tests don't leak 429 state.
+    rl._http_store.reset()
+    rl._ws_store.reset()
+    rl._take_store.reset()
+    rl._config_store.reset()
+    rl._ws_connect_store.reset()
+    rl._ea_control_store.reset()
+    rl._account_write_store.reset()
+    rl._trade_write_store.reset()
+    rl._risk_calc_store.reset()
+    rl._admin_store.reset()
 
     yield
 
@@ -248,6 +268,8 @@ def _patch_redis() -> Any:
 
     with (
         patch.object(_rc._manager, "get_client", new=AsyncMock(return_value=_fake_redis)),
+        patch("api.allocation_router._ensure_live_producer", new=AsyncMock(return_value=None)),
+        patch("api.allocation_router._runtime_take_precheck", new=AsyncMock(return_value=(True, None))),
         patch(
             "api.allocation_router._persist_trade_write_through",
             new=AsyncMock(return_value=True),
