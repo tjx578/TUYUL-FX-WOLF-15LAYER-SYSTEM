@@ -435,6 +435,30 @@ Recommended order:
 
 ---
 
+## 9. Executable Rollout Tracker
+
+Status field values:
+
+- PLANNED
+- IN_PROGRESS
+- BLOCKED
+- DONE
+
+| ID | Item | Owner | Target Date | Status |
+| --- | --- | --- | --- | --- |
+| P2-1 | Separate API and engine runtime more cleanly where needed | platform-backend | 2026-03-27 | IN_PROGRESS |
+| P2-2 | Make orchestrator an explicit first-class deployed service | platform-orchestrator | 2026-03-28 | IN_PROGRESS |
+| P2-3 | Finalize canonical event schemas and validate emit paths | contracts-core | 2026-04-01 | PLANNED |
+| P2-4 | Harden metrics, health, and machine auth boundaries | observability-security | 2026-04-03 | PLANNED |
+| P2-5 | Enrich portfolio and trade-detail read models for operator truth | api-dashboard | 2026-04-07 | PLANNED |
+| P2-6 | Add replay/forensic support for RCA where feasible | observability-data | 2026-04-10 | PLANNED |
+| P2-7 | Make rate limiting more actor-aware where needed | api-security | 2026-04-12 | PLANNED |
+| P2-8 | Harden V11 and execution-path observability at p95/p99 | engine-execution-observability | 2026-04-14 | PLANNED |
+| P2-9 | Improve dashboard/operator command center ergonomics | dashboard-ux | 2026-04-17 | PLANNED |
+| P2-10 | Add P2 contract, load, and rollout validation | qa-platform | 2026-04-21 | PLANNED |
+
+---
+
 ## Closing Principle
 
 P2 is complete only when the system becomes not just safer, but easier to trust, operate, and investigate under pressure.
