@@ -25,11 +25,11 @@ import json
 import logging
 import os
 import uuid
-
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import StrEnum
-from typing import Any, Callable, Optional, Protocol
+from typing import Any, Protocol
 
 logger = logging.getLogger(__name__)
 
@@ -44,6 +44,7 @@ __all__ = [
 
 
 # ── Enums ────────────────────────────────────────────────────────────
+
 
 class ExecutionMode(StrEnum):
     LIVE = "LIVE"
@@ -81,10 +82,11 @@ _SELL_TYPES = frozenset({OrderType.SELL, OrderType.SELL_LIMIT, OrderType.SELL_ST
 # Strategy limits (R:R, pip quality) are enforced upstream in L10/L12.
 
 _BROKER_MIN_LOT = 0.01
-_BROKER_MAX_LOT = 100.0   # Broker-level absolute max; prop firm may be tighter
+_BROKER_MAX_LOT = 100.0  # Broker-level absolute max; prop firm may be tighter
 
 
 # ── Journal Protocol ─────────────────────────────────────────────────
+
 
 class JournalWriter(Protocol):
     """Protocol for J3 execution journal integration."""
@@ -110,6 +112,7 @@ class _InMemoryJournal:
 
 # ── Data Classes ─────────────────────────────────────────────────────
 
+
 @dataclass(frozen=True)
 class OrderRequest:
     """Immutable order request.
@@ -117,6 +120,7 @@ class OrderRequest:
     The ``signal_id`` field links this execution back to the L12 verdict
     that authorized it.  It is required for traceability.
     """
+
     signal_id: str
     pair: str
     order_type: OrderType
@@ -133,6 +137,7 @@ class OrderRequest:
 @dataclass(frozen=True)
 class OrderResult:
     """Immutable result of an order execution attempt."""
+
     status: OrderStatus
     order_id: str
     signal_id: str
@@ -150,6 +155,7 @@ class OrderResult:
 
 
 # ── Order ID Generation ──────────────────────────────────────────────
+
 
 def _generate_order_id(signal_id: str) -> str:
     """Generate a unique order ID anchored to the L12 signal_id.
@@ -187,6 +193,7 @@ def _generate_idempotency_key(request: OrderRequest) -> str:
 
 # ── Engine ───────────────────────────────────────────────────────────
 
+
 class PendingEngine:
     """Execution engine with multi-mode support.
 
@@ -210,7 +217,7 @@ class PendingEngine:
         mt5_host: str = "localhost",
         mt5_port: int = 8228,
         journal_writer: JournalWriter | None = None,
-        max_lot_override: Optional[float] = None,  # noqa: UP045
+        max_lot_override: float | None = None,  # noqa: UP045
         now_factory: Callable[[], datetime] | None = None,
     ) -> None:
         """Initialize engine.
@@ -247,7 +254,8 @@ class PendingEngine:
 
         logger.info(
             "PendingEngine initialized: mode=%s max_lot=%.2f",
-            self.mode.value, self._max_lot,
+            self.mode.value,
+            self._max_lot,
         )
 
     @staticmethod
@@ -259,9 +267,7 @@ class PendingEngine:
         try:
             return ExecutionMode(env_mode)
         except ValueError:
-            logger.warning(
-                "Unknown TUYUL_EXECUTION_MODE='%s', defaulting to DRY", env_mode
-            )
+            logger.warning("Unknown TUYUL_EXECUTION_MODE='%s', defaulting to DRY", env_mode)
             return ExecutionMode.DRY
 
     def submit(self, request: OrderRequest) -> OrderResult:
@@ -367,13 +373,9 @@ class PendingEngine:
 
         # Lot bounds (broker-level)
         if req.lot_size < _BROKER_MIN_LOT:
-            errors.append(
-                f"lot_size {req.lot_size} below broker min {_BROKER_MIN_LOT}"
-            )
+            errors.append(f"lot_size {req.lot_size} below broker min {_BROKER_MIN_LOT}")
         if req.lot_size > self._max_lot:
-            errors.append(
-                f"lot_size {req.lot_size} exceeds max {self._max_lot}"
-            )
+            errors.append(f"lot_size {req.lot_size} exceeds max {self._max_lot}")
 
         # SL/TP direction consistency
         if req.entry_price > 0 and req.stop_loss > 0 and req.take_profit > 0:
@@ -397,14 +399,15 @@ class PendingEngine:
 
         return errors
 
-    def _execute_dry(
-        self, req: OrderRequest, order_id: str, now: datetime
-    ) -> OrderResult:
+    def _execute_dry(self, req: OrderRequest, order_id: str, now: datetime) -> OrderResult:
         """DRY mode -- validate only, no execution."""
         logger.info(
             "[DRY] Order validated: %s %s %s @ %.5f (signal: %s)",
-            order_id, req.order_type.value, req.pair,
-            req.entry_price, req.signal_id,
+            order_id,
+            req.order_type.value,
+            req.pair,
+            req.entry_price,
+            req.signal_id,
         )
         return OrderResult(
             status=OrderStatus.DRY_RUN,
@@ -421,14 +424,16 @@ class PendingEngine:
             timestamp=now.isoformat(),
         )
 
-    def _execute_paper(
-        self, req: OrderRequest, order_id: str, now: datetime
-    ) -> OrderResult:
+    def _execute_paper(self, req: OrderRequest, order_id: str, now: datetime) -> OrderResult:
         """PAPER mode -- simulate fill at entry price."""
         logger.info(
             "[PAPER] Order filled: %s %s %s %.2f lots @ %.5f (signal: %s)",
-            order_id, req.order_type.value, req.pair,
-            req.lot_size, req.entry_price, req.signal_id,
+            order_id,
+            req.order_type.value,
+            req.pair,
+            req.lot_size,
+            req.entry_price,
+            req.signal_id,
         )
         return OrderResult(
             status=OrderStatus.PAPER_FILLED,
@@ -445,16 +450,29 @@ class PendingEngine:
             timestamp=now.isoformat(),
         )
 
-    def _execute_live(
-        self, req: OrderRequest, order_id: str, now: datetime
-    ) -> OrderResult:
+    def _execute_live(self, req: OrderRequest, order_id: str, now: datetime) -> OrderResult:
         """LIVE mode -- submit to MT5 via socket/API.
 
         Protocol: JSON over TCP to MT5 EA listener.
         """
         import socket as sock_mod  # noqa: PLC0415
 
-        payload = json.dumps(OrderRequest).encode() + b"\n"
+        payload_dict = {
+            "order_id": order_id,
+            "signal_id": req.signal_id,
+            "pair": req.pair,
+            "order_type": req.order_type.value,
+            "lot_size": req.lot_size,
+            "entry_price": req.entry_price,
+            "stop_loss": req.stop_loss,
+            "take_profit": req.take_profit,
+            "execution_intent_id": req.execution_intent_id,
+            "comment": req.comment,
+            "magic_number": req.magic_number,
+            "slippage_pips": req.slippage_pips,
+            "timestamp": now.isoformat(),
+        }
+        payload = json.dumps(payload_dict, separators=(",", ":")).encode() + b"\n"
 
         # Common rejection builder
         def _reject(msg: str, error_key: str) -> OrderResult:
@@ -490,9 +508,7 @@ class PendingEngine:
         except (TimeoutError, ConnectionRefusedError, ConnectionResetError) as e:
             return _reject(f"MT5 connection failed: {e}", "MT5_CONNECTION_FAILED")
         except json.JSONDecodeError as e:
-            return _reject(
-                f"MT5 returned invalid JSON: {e}", "MT5_INVALID_RESPONSE"
-            )
+            return _reject(f"MT5 returned invalid JSON: {e}", "MT5_INVALID_RESPONSE")
         except OSError as e:
             return _reject(f"Network error: {e}", "MT5_NETWORK_ERROR")
 
@@ -501,7 +517,9 @@ class PendingEngine:
             fill_price = float(resp.get("price", req.entry_price))
             logger.info(
                 "[LIVE] Order FILLED: %s ticket=%s price=%.5f",
-                order_id, ticket, fill_price,
+                order_id,
+                ticket,
+                fill_price,
             )
             return OrderResult(
                 status=OrderStatus.FILLED,
