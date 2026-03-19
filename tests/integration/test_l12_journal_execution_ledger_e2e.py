@@ -27,6 +27,21 @@ class _FakeRiskEngine:
         )
 
 
+class _KillSwitchOff:
+    def is_enabled(self) -> bool:
+        return False
+
+    def snapshot(self) -> dict[str, str | bool]:
+        return {
+            "enabled": False,
+            "reason": "",
+            "updated_at": datetime.now(UTC).isoformat(),
+        }
+
+    def evaluate_and_trip(self, *, metrics: dict[str, object]) -> dict[str, str | bool]:  # noqa: ARG002
+        return self.snapshot()
+
+
 @pytest.mark.asyncio
 @pytest.mark.integration
 @pytest.mark.slow
@@ -35,6 +50,9 @@ async def test_minimal_l12_to_journal_execution_ledger_pipeline(
     tmp_path: Path,
 ) -> None:
     import api.allocation_router as ar
+
+    # Prevent singleton/global kill-switch bleed from other tests.
+    monkeypatch.setattr(ar, "_kill_switch", _KillSwitchOff())
 
     # L12 output is treated as sole authority input contract for downstream pipeline.
     l12_signal_id = "SIG-E2E-PIPE-001"
@@ -47,12 +65,12 @@ async def test_minimal_l12_to_journal_execution_ledger_pipeline(
     assert l12_verdict == "EXECUTE_BUY"
 
     archive_dir = tmp_path / "decision_archive"
-    journal_router._writer = JournalWriter(base_dir=str(archive_dir))  # pyright: ignore[reportPrivateUsage]
-    journal_router._event_count = 0  # pyright: ignore[reportPrivateUsage]
+    journal_router._writer = JournalWriter(base_dir=str(archive_dir))
+    journal_router._event_count = 0
 
-    ar._trade_ledger.clear()  # pyright: ignore[reportPrivateUsage]
-    ar._account_registry.clear()  # pyright: ignore[reportPrivateUsage]
-    ar._account_registry["ACC-E2E-1"] = {  # pyright: ignore[reportPrivateUsage]
+    ar._trade_ledger.clear()
+    ar._account_registry.clear()
+    ar._account_registry["ACC-E2E-1"] = {
         "balance": 10000.0,
         "equity": 10000.0,
         "equity_high": 10000.0,
@@ -70,6 +88,7 @@ async def test_minimal_l12_to_journal_execution_ledger_pipeline(
     }
 
     monkeypatch.setattr(ar, "RiskEngine", _FakeRiskEngine)
+    monkeypatch.setattr(ar, "_ensure_live_producer", AsyncMock(return_value=None))
     monkeypatch.setattr(ar, "_check_stale_data", AsyncMock(return_value=None))
     monkeypatch.setattr(ar, "_runtime_take_precheck", AsyncMock(return_value=(True, None)))
     monkeypatch.setattr(ar, "_persist_trade_write_through", AsyncMock(return_value=True))
@@ -95,10 +114,10 @@ async def test_minimal_l12_to_journal_execution_ledger_pipeline(
     monkeypatch.setattr("execution.idempotency_ledger.redis_client.client.get", _idem_get)
 
     async def _fast_atomic_confirm(trade_id: str) -> dict[str, object]:
-        trade = ar._trade_ledger[trade_id]  # pyright: ignore[reportPrivateUsage]
+        trade = ar._trade_ledger[trade_id]
         trade["status"] = "PENDING"
         trade["updated_at"] = datetime.now(UTC).isoformat()
-        ar._trade_ledger[trade_id] = trade  # pyright: ignore[reportPrivateUsage]
+        ar._trade_ledger[trade_id] = trade
         return trade
 
     monkeypatch.setattr(ar, "_atomic_transition_intended_to_pending", _fast_atomic_confirm)
@@ -118,12 +137,12 @@ async def test_minimal_l12_to_journal_execution_ledger_pipeline(
     )
     trade_id = str(take_resp["trade_id"])
 
-    assert ar._trade_ledger[trade_id]["status"] == "INTENDED"  # pyright: ignore[reportPrivateUsage]
-    assert ar._trade_ledger[trade_id]["direction"] == l12_direction  # pyright: ignore[reportPrivateUsage]
+    assert ar._trade_ledger[trade_id]["status"] == "INTENDED"
+    assert ar._trade_ledger[trade_id]["direction"] == l12_direction
 
     confirm_resp = await ar.confirm_trade(ar.ConfirmTradeRequest(trade_id=trade_id))
     assert confirm_resp["status"] == "PENDING"
-    assert ar._trade_ledger[trade_id]["status"] == "PENDING"  # pyright: ignore[reportPrivateUsage]
+    assert ar._trade_ledger[trade_id]["status"] == "PENDING"
 
     lifecycle_resp = await ar.record_trade_lifecycle_event(
         ar.TradeLifecycleEventRequest(
@@ -135,7 +154,7 @@ async def test_minimal_l12_to_journal_execution_ledger_pipeline(
         )
     )
     assert lifecycle_resp["status"] == "OPEN"
-    assert ar._trade_ledger[trade_id]["status"] == "OPEN"  # pyright: ignore[reportPrivateUsage]
+    assert ar._trade_ledger[trade_id]["status"] == "OPEN"
 
     close_resp = await ar.close_trade(
         ar.CloseTradeRequest(
@@ -146,7 +165,7 @@ async def test_minimal_l12_to_journal_execution_ledger_pipeline(
         )
     )
     assert close_resp["status"] == "CLOSED"
-    assert ar._trade_ledger[trade_id]["status"] == "CLOSED"  # pyright: ignore[reportPrivateUsage]
+    assert ar._trade_ledger[trade_id]["status"] == "CLOSED"
 
     repo = JournalRepository(base_dir=str(archive_dir))
     entries = repo.load_entries(date_range_days=1)
@@ -171,6 +190,9 @@ async def test_system_violation_still_records_j4_reflection(
 ) -> None:
     import api.allocation_router as ar
 
+    # Prevent singleton/global kill-switch bleed from other tests.
+    monkeypatch.setattr(ar, "_kill_switch", _KillSwitchOff())
+
     l12_signal_id = "SIG-E2E-PIPE-NEG-001"
     l12_symbol = "GBPUSD"
     l12_direction = "SELL"
@@ -179,12 +201,12 @@ async def test_system_violation_still_records_j4_reflection(
     l12_tp1 = 1.25100
 
     archive_dir = tmp_path / "decision_archive_neg"
-    journal_router._writer = JournalWriter(base_dir=str(archive_dir))  # pyright: ignore[reportPrivateUsage]
-    journal_router._event_count = 0  # pyright: ignore[reportPrivateUsage]
+    journal_router._writer = JournalWriter(base_dir=str(archive_dir))
+    journal_router._event_count = 0
 
-    ar._trade_ledger.clear()  # pyright: ignore[reportPrivateUsage]
-    ar._account_registry.clear()  # pyright: ignore[reportPrivateUsage]
-    ar._account_registry["ACC-E2E-NEG-1"] = {  # pyright: ignore[reportPrivateUsage]
+    ar._trade_ledger.clear()
+    ar._account_registry.clear()
+    ar._account_registry["ACC-E2E-NEG-1"] = {
         "balance": 10000.0,
         "equity": 10000.0,
         "equity_high": 10000.0,
@@ -202,6 +224,7 @@ async def test_system_violation_still_records_j4_reflection(
     }
 
     monkeypatch.setattr(ar, "RiskEngine", _FakeRiskEngine)
+    monkeypatch.setattr(ar, "_ensure_live_producer", AsyncMock(return_value=None))
     monkeypatch.setattr(ar, "_check_stale_data", AsyncMock(return_value=None))
     monkeypatch.setattr(ar, "_runtime_take_precheck", AsyncMock(return_value=(True, None)))
     monkeypatch.setattr(ar, "_persist_trade_write_through", AsyncMock(return_value=True))
@@ -227,10 +250,10 @@ async def test_system_violation_still_records_j4_reflection(
     monkeypatch.setattr("execution.idempotency_ledger.redis_client.client.get", _idem_get)
 
     async def _fast_atomic_confirm(trade_id: str) -> dict[str, object]:
-        trade = ar._trade_ledger[trade_id]  # pyright: ignore[reportPrivateUsage]
+        trade = ar._trade_ledger[trade_id]
         trade["status"] = "PENDING"
         trade["updated_at"] = datetime.now(UTC).isoformat()
-        ar._trade_ledger[trade_id] = trade  # pyright: ignore[reportPrivateUsage]
+        ar._trade_ledger[trade_id] = trade
         return trade
 
     monkeypatch.setattr(ar, "_atomic_transition_intended_to_pending", _fast_atomic_confirm)
@@ -263,7 +286,7 @@ async def test_system_violation_still_records_j4_reflection(
         )
     )
     assert violation_resp["status"] == "ABORTED"
-    assert ar._trade_ledger[trade_id]["status"] == "ABORTED"  # pyright: ignore[reportPrivateUsage]
+    assert ar._trade_ledger[trade_id]["status"] == "ABORTED"
 
     repo = JournalRepository(base_dir=str(archive_dir))
     entries = repo.load_entries(date_range_days=1)
