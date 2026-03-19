@@ -11,6 +11,8 @@ Covers:
 
 from __future__ import annotations
 
+import time
+
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -193,3 +195,32 @@ class TestSLOEndpoint:
         assert payload["slo"]["healthy"] is False
         assert any(alert["event"] == "SLO_THRESHOLD_BREACH" for alert in payload["alerts"])
         assert any(row["stage"] == stage and row["breach"] is True for row in payload["slo"]["stages"])
+
+
+class TestOrchestratorMetricsFromRedis:
+    @pytest.fixture(autouse=True)
+    def client(self):
+        self._client = TestClient(_make_app())
+        yield
+        self._client.close()
+
+    def test_metrics_reflect_orchestrator_ready_and_mode(self, monkeypatch):
+        now = int(time.time())
+
+        class _FakeRedis:
+            async def get(self, _key: str):
+                return '{"mode":"SAFE","timestamp":' + str(now) + ',"event":"HEARTBEAT","reason":"compliance:test"}'
+
+        async def _fake_get_async_redis():
+            return _FakeRedis()
+
+        monkeypatch.setattr("api.metrics_routes.get_async_redis", _fake_get_async_redis)
+        monkeypatch.setenv("ORCHESTRATOR_HEARTBEAT_INTERVAL_SEC", "30")
+
+        response = self._client.get("/metrics")
+        assert response.status_code == 200
+        body = response.text
+
+        assert 'wolf_orchestrator_mode{mode="SAFE"}' in body
+        assert "wolf_orchestrator_ready 1" in body or "wolf_orchestrator_ready 1.0" in body
+        assert "wolf_orchestrator_heartbeat_age_seconds" in body

@@ -50,6 +50,7 @@ Required role-scoped env vars for deployment manifests and startup scripts:
 - WOLF15_SERVICE_ROLE=engine
 - ENGINE_HEALTH_PORT=${PORT}
 - Ingest
+- WOLF15_SERVICE_ROLE=ingest
 - INGEST_HEALTH_PORT=${PORT}
 - Orchestrator
 - WOLF15_SERVICE_ROLE=orchestrator
