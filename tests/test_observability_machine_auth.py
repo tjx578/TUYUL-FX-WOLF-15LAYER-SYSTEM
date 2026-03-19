@@ -4,7 +4,7 @@ from fastapi import FastAPI
 from fastapi.routing import APIRoute
 from fastapi.testclient import TestClient
 
-from api.app_factory import create_app
+from api.app_factory import _register_health_routes
 from api.metrics_routes import router as metrics_router
 
 
@@ -36,7 +36,8 @@ def test_metrics_requires_machine_key_when_required(monkeypatch) -> None:
 
 
 def test_healthz_readyz_are_machine_auth_protected() -> None:
-    app = create_app()
+    app = FastAPI()
+    _register_health_routes(app)
     route_map = {route.path: route for route in app.routes if isinstance(route, APIRoute)}
 
     for path in ("/healthz", "/readyz"):
