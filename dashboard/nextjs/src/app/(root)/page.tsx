@@ -614,6 +614,7 @@ export default function CommandCenterPage() {
     context,
     execution,
     health,
+    orchestrator,
     calendarBlocker,
     recentAlerts,
     topActionableSignals,
@@ -759,6 +760,23 @@ export default function CommandCenterPage() {
             execution
               ? `${execution.signal_count ?? 0} signals today`
               : "no data"
+          }
+        />
+        <KpiCard
+          label="ORCHESTRATOR"
+          value={orchestrator?.orchestrator_ready ? "READY" : (orchestrator?.mode ?? "UNKNOWN")}
+          color={
+            orchestrator?.orchestrator_ready
+              ? "var(--green)"
+              : orchestrator?.mode === "SAFE"
+                ? "var(--yellow)"
+                : "var(--red)"
+          }
+          sub={
+            orchestrator?.orchestrator_heartbeat_age_seconds !== undefined &&
+              orchestrator?.orchestrator_heartbeat_age_seconds !== null
+              ? `hb ${Math.round(orchestrator.orchestrator_heartbeat_age_seconds)}s`
+              : "heartbeat n/a"
           }
         />
       </div>

@@ -40,6 +40,17 @@ This document makes Railway deployment part of the architecture surface instead 
 - must stay not-ready until listener boot completes
 - readiness should be interpreted with heartbeat age from state key
 
+## Observability Auth Boundary
+
+- /metrics, /healthz, and /readyz use dedicated machine-auth dependency
+- machine-auth is separated from dashboard user JWT/session auth
+- machine auth supports header X-Machine-Key or Bearer machine key
+- env controls:
+- OBSERVABILITY_AUTH_MODE=optional|required|disabled
+- OBSERVABILITY_MACHINE_KEY (or MACHINE_OBSERVABILITY_KEY)
+- recommended production mode: required
+- for platforms that cannot set probe headers, keep optional until probe auth support exists
+
 ## Service Environment Baseline
 
 Required role-scoped env vars for deployment manifests and startup scripts:
@@ -56,6 +67,9 @@ Required role-scoped env vars for deployment manifests and startup scripts:
 - WOLF15_SERVICE_ROLE=orchestrator
 - ORCHESTRATOR_HEALTH_PORT=${PORT}
 - ORCHESTRATOR_HEARTBEAT_INTERVAL_SEC (default 30)
+- Observability Auth
+- OBSERVABILITY_AUTH_MODE=required
+- OBSERVABILITY_MACHINE_KEY=your-shared-secret
 
 ## Deployment rule
 

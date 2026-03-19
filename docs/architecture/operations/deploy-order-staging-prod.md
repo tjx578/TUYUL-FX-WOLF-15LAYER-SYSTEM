@@ -42,6 +42,8 @@ Service scripts:
 1. Safety and visibility
 
 - [ ] Health endpoints are role-scoped and defined for API, ingest, engine, and orchestrator
+- [ ] OBSERVABILITY_AUTH_MODE is set per environment policy (optional or required)
+- [ ] OBSERVABILITY_MACHINE_KEY is set when mode=required
 - [ ] API /readyz passes freshness and producer heartbeat gates
 - [ ] Engine /healthz responds on ENGINE_HEALTH_PORT/PORT
 - [ ] Ingest /healthz responds on INGEST_HEALTH_PORT/PORT
@@ -78,6 +80,7 @@ Goal: validate release behavior before production cutover.
 
 - [ ] API /healthz responds 200
 - [ ] API /readyz responds 200 (no freshness/heartbeat block reason)
+- [ ] /metrics allows machine auth header and rejects bad key when required mode is enabled
 - [ ] Ingest publishes fresh ticks/candles
 - [ ] Ingest /healthz responds 200 on service port
 - [ ] Engine preflight passes and /healthz responds 200 on service port
@@ -129,6 +132,7 @@ Goal: controlled rollout with fail-fast schema readiness and clear rollback.
 
 - [ ] API /healthz healthy
 - [ ] API /readyz healthy
+- [ ] /metrics machine auth policy enforced as configured
 - [ ] Engine is running with RUN_MODE=engine-only
 - [ ] Fresh market data is flowing from ingest to engine
 - [ ] Orchestrator compliance/mode state is valid

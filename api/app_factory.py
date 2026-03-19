@@ -29,6 +29,7 @@ from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoin
 from typing_extensions import override
 
 from api.middleware.auth import verify_token
+from api.middleware.machine_auth import verify_observability_machine_auth
 from api.middleware.prometheus_middleware import PrometheusMiddleware
 from api.middleware.rate_limit import RateLimitMiddleware
 from api.router_registry import load_routers
@@ -424,7 +425,12 @@ def _register_health_routes(app: FastAPI) -> None:
         }
 
     app.add_api_route("/health", health, methods=["GET"])
-    app.add_api_route("/healthz", health, methods=["GET"])
+    app.add_api_route(
+        "/healthz",
+        health,
+        methods=["GET"],
+        dependencies=[Depends(verify_observability_machine_auth)],
+    )
 
     async def readyz(request: Request) -> JSONResponse:
         """Readiness probe — freshness-aware.
@@ -467,7 +473,12 @@ def _register_health_routes(app: FastAPI) -> None:
 
         return JSONResponse(content=checks, status_code=status_code)
 
-    app.add_api_route("/readyz", readyz, methods=["GET"])
+    app.add_api_route(
+        "/readyz",
+        readyz,
+        methods=["GET"],
+        dependencies=[Depends(verify_observability_machine_auth)],
+    )
 
     async def full_health(request: Request) -> dict[str, Any]:
         from datetime import UTC, datetime

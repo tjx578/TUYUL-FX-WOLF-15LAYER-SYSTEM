@@ -21,6 +21,7 @@ import {
   useAccounts,
   useAccountsRiskSnapshot,
   useHealth,
+  useOrchestratorState,
   useCalendarBlocker,
   type ActiveTradesResponse,
   type AccountRiskSnapshot,
@@ -28,7 +29,7 @@ import {
 import { useLiveSignals } from "@/lib/realtime/hooks/useLiveSignals";
 import { useLiveAlerts } from "@/lib/realtime";
 import { useSystemStore } from "@/store/useSystemStore";
-import type { L12Verdict, Trade, Account } from "@/types";
+import type { L12Verdict, Trade, Account, OrchestratorState } from "@/types";
 
 // ── helpers ─────────────────────────────────────────────────
 
@@ -162,6 +163,7 @@ export function useCommandCenterStatus() {
   const { data: context, isError: contextError } = useContext();
   const { data: execution, isError: executionError } = useExecution();
   const { data: health } = useHealth();
+  const { data: orchestrator } = useOrchestratorState();
   const { data: calendarBlocker } = useCalendarBlocker();
   const { alerts } = useLiveAlerts();
 
@@ -175,6 +177,7 @@ export function useCommandCenterStatus() {
       context,
       execution,
       health,
+      orchestrator,
       calendarBlocker,
       recentAlerts,
       wsStatus,
@@ -182,7 +185,18 @@ export function useCommandCenterStatus() {
       contextError,
       executionError,
     }),
-    [context, execution, health, calendarBlocker, recentAlerts, wsStatus, mode, contextError, executionError]
+    [
+      context,
+      execution,
+      health,
+      orchestrator,
+      calendarBlocker,
+      recentAlerts,
+      wsStatus,
+      mode,
+      contextError,
+      executionError,
+    ]
   );
 }
 
@@ -197,6 +211,7 @@ export interface CommandCenterState {
   context: ReturnType<typeof useContext>["data"];
   execution: ReturnType<typeof useExecution>["data"];
   health: ReturnType<typeof useHealth>["data"];
+  orchestrator: OrchestratorState | undefined;
   calendarBlocker: ReturnType<typeof useCalendarBlocker>["data"];
   recentAlerts: unknown[];
 
@@ -231,6 +246,7 @@ export function useCommandCenterState(): CommandCenterState {
     status.wsStatus === "RECONNECTING" ||
     verdicts.liveStatus === "DEGRADED" ||
     verdicts.liveStatus === "STALE" ||
+    status.orchestrator?.orchestrator_ready === false ||
     status.health?.status !== "ok";
 
   const dataErrors = useMemo(() => {
@@ -252,6 +268,7 @@ export function useCommandCenterState(): CommandCenterState {
     context: status.context,
     execution: status.execution,
     health: status.health,
+    orchestrator: status.orchestrator,
     calendarBlocker: status.calendarBlocker,
     recentAlerts: status.recentAlerts,
     topActionableSignals: verdicts.topActionableSignals,

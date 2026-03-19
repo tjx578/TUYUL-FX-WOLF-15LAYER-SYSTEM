@@ -411,6 +411,16 @@ export interface SystemHealth {
   timestamp?: number | string;
 }
 
+export interface OrchestratorState {
+  mode: string;
+  reason: string;
+  compliance_code: string;
+  updated_at?: string;
+  event?: string;
+  orchestrator_heartbeat_age_seconds?: number | null;
+  orchestrator_ready?: boolean;
+}
+
 export interface ContextSnapshot {
   session: string;
   regime: string;
