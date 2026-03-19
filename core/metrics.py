@@ -755,6 +755,22 @@ INGEST_FRESH_PAIRS = _R.gauge(
     "Number of symbols with fresh ticks in ingest service",
 )
 
+ORCHESTRATOR_HEARTBEAT_AGE_SECONDS = _R.gauge(
+    "wolf_orchestrator_heartbeat_age_seconds",
+    "Seconds since last orchestrator heartbeat/state publish",
+)
+
+ORCHESTRATOR_READY = _R.gauge(
+    "wolf_orchestrator_ready",
+    "Orchestrator readiness derived from heartbeat age (1=ready, 0=not ready)",
+)
+
+ORCHESTRATOR_MODE = _R.gauge(
+    "wolf_orchestrator_mode",
+    "Orchestrator mode one-hot gauge (label=mode)",
+    label_names=("mode",),
+)
+
 INGEST_CACHE_MODE = _R.gauge(
     "wolf_ingest_cache_mode",
     "Ingest startup cache mode as one-hot gauge by mode label",
