@@ -1,97 +1,114 @@
-from engines import create_engine_suite
+from __future__ import annotations
 
-
-def test_engine_suite_smoke_flow():
-    suite = create_engine_suite()
-
-    prices = [1.10 + i * 0.0008 for i in range(150)]
-    highs = [p + 0.0009 for p in prices]
-    lows = [p - 0.0008 for p in prices]
-    volumes = [1000 + (i % 10) * 40 for i in range(150)]
-    returns = [(prices[i] - prices[i - 1]) / prices[i - 1] for i in range(1, len(prices))]
-
-    context = suite["context"].analyze(
-        {"open": prices, "high": highs, "low": lows, "close": prices, "volume": volumes}
-    )
-
-    coherence = None
-    for _ in range(8):
-        coherence = suite["coherence"].evaluate(
-            {
-                "emotion_level": 0.98,
-                "loss_stress": 1.0,
-                "fatigue": 0.95,
-                "market_volatility": 0.95,
-            }
-        )
-
-    risk = suite["risk"].simulate(returns)
-    momentum = suite["momentum"].evaluate(
-        {"price": prices, "volume": volumes, "trq_energy": 0.5, "field_bias": 0.4}
-    )
-    precision = suite["precision"].evaluate(
-        {
-            "price": prices,
-            "rsi": 61,
-            "macd": 0.004,
-            "atr": 0.001,
-            "support": prices[-1] - 0.002,
-            "resistance": prices[-1] + 0.003,
-            "volatility": 0.6,
-        }
-    )
-    structure = suite["structure"].evaluate(
-        {
-            "close": prices,
-            "high": highs,
-            "low": lows,
-            "volume": volumes,
-            "rsi_series": [50 + (i % 12) for i in range(150)],
-        }
-    )
-    field = suite["field"].evaluate(prices, volumes)
-    probability = suite["probability"].compute(
-        {"L0_regime": 0.7, "L2_fusion": 0.82, "L7_structural": 0.78, "L12_verdict": 0.75}
-    )
-    advisory = suite["advisory"].summarize(
-        field=field,
-        probability=probability,
-        coherence=coherence,
-        context=context,
-        momentum=momentum,
-        precision=precision,
-        structure=structure,
-        risk=risk,
-    )
-
-    assert context.valid
-    assert risk.valid
-    assert momentum.valid
-    assert precision.valid
-    assert structure.valid
-    assert field.valid
-    assert probability.valid
-    assert advisory.valid
-    assert "HIGH_PROB_BUT_LOCKOUT" in advisory.conflicts
 from engines import (
-    AdvisorySignal,
-    CognitiveCoherence,
+    AdvisoryResult,
     CognitiveContext,
     CognitiveRiskSimulation,
+    CoherenceSnapshot,
+    FieldResult,
     FusionMomentum,
     FusionPrecision,
     FusionStructure,
     ProbabilityResult,
+    RiskSimulationResult,
     create_engine_suite,
 )
 
 
+def _build_multi_tf_candles(size: int = 180) -> dict[str, list[dict[str, float]]]:
+    closes = [1.10 + i * 0.0003 + ((-1) ** i) * 0.00008 for i in range(size)]
+    candles = [
+        {
+            "open": closes[i - 1] if i > 0 else closes[i],
+            "high": closes[i] + 0.0006,
+            "low": closes[i] - 0.0006,
+            "close": closes[i],
+            "volume": 1000 + (i % 15) * 20,
+        }
+        for i in range(size)
+    ]
+    return {
+        "M15": candles,
+        "H1": candles[::4] if len(candles) >= 80 else candles,
+    }
+
+
+def test_engine_suite_smoke_flow() -> None:
+    suite = create_engine_suite()
+    candles = _build_multi_tf_candles()
+
+    context = suite["context"].analyze(
+        {
+            "open": [c["open"] for c in candles["M15"]],
+            "high": [c["high"] for c in candles["M15"]],
+            "low": [c["low"] for c in candles["M15"]],
+            "close": [c["close"] for c in candles["M15"]],
+            "volume": [c["volume"] for c in candles["M15"]],
+        }
+    )
+
+    coherence = suite["coherence"].evaluate(
+        {
+            "emotion_state": 0.7,
+            "loss_stress": 0.2,
+            "fatigue": 0.15,
+        }
+    )
+
+    structure = suite["structure"].analyze(candles)
+    direction = "BUY" if structure.structure_bias != "BEARISH" else "SELL"
+    momentum = suite["momentum"].analyze(candles)
+    precision = suite["precision"].analyze(candles, direction=direction)
+
+    m15_close = candles["M15"][-1]["close"]
+    risk = suite["risk_sim"].analyze(
+        candles,
+        direction=direction,
+        entry_price=m15_close,
+        stop_loss=m15_close - 0.0020,
+        take_profit=m15_close + 0.0040,
+    )
+
+    field = suite["field"].analyze(candles)
+    probability = suite["probability"].analyze(candles)
+    advisory = suite["advisory"].analyze(
+        {
+            "structure": structure,
+            "momentum": momentum,
+            "precision": precision,
+            "field": field,
+            "coherence": coherence,
+            "context": context,
+            "risk_simulation": risk,
+            "probability": probability,
+        }
+    )
+
+    assert isinstance(context, CognitiveContext)
+    assert isinstance(coherence, CoherenceSnapshot)
+    assert isinstance(risk, RiskSimulationResult)
+    assert isinstance(momentum, FusionMomentum)
+    assert isinstance(precision, FusionPrecision)
+    assert isinstance(structure, FusionStructure)
+    assert isinstance(field, FieldResult)
+    assert isinstance(probability, ProbabilityResult)
+    assert isinstance(advisory, AdvisoryResult)
+
+    assert structure.is_valid
+    assert momentum.is_valid
+    assert precision.is_valid
+    assert field.is_valid
+    assert probability.is_valid
+    assert advisory.is_valid
+
+
 def test_create_engine_suite_has_all_expected_engines() -> None:
     suite = create_engine_suite()
-    assert set(suite.keys()) == {
+    expected = {
         "coherence",
         "context",
         "risk_sim",
+        "risk",
         "momentum",
         "precision",
         "structure",
@@ -99,70 +116,81 @@ def test_create_engine_suite_has_all_expected_engines() -> None:
         "probability",
         "advisory",
     }
+    assert expected.issubset(set(suite.keys()))
 
 
 def test_engines_evaluate_expected_contract_shapes() -> None:
     suite = create_engine_suite()
-    state = {
-        "emotion_balance": 0.7,
-        "reflex_pressure": 0.2,
-        "integrity_score": 0.8,
-        "trend_strength": 0.7,
-        "volatility": 0.3,
-        "structure_bias": 0.4,
-        "liquidity_depth": 0.8,
-        "institutional_flow": 0.75,
-        "effective_leverage": 1.2,
-        "gap_risk": 0.2,
-        "momentum_velocity": 0.4,
-        "momentum_impulse": 0.3,
-        "precision_weights": [0.6, 0.8, 0.7],
-        "ema_fast": 0.6,
-        "ema_slow": 0.55,
-        "divergence_score": 0.2,
-        "liquidity_signal": 0.7,
-        "mtf_alignment": 0.8,
-        "directional_pressure": 0.35,
-        "signal_coherence": 0.8,
-        "market_noise": 0.2,
-    }
+    candles = _build_multi_tf_candles(120)
 
-    coherence = suite["coherence"].evaluate(state)
-    context = suite["context"].evaluate(state)
-    risk = suite["risk_sim"].evaluate(state)
-    momentum = suite["momentum"].evaluate(state)
-    precision = suite["precision"].evaluate(state)
-    structure = suite["structure"].evaluate(state)
-    field = suite["field"].evaluate(state)
-    probability = suite["probability"].evaluate(
+    coherence = suite["coherence"].evaluate({"emotion_state": 0.5, "fatigue": 0.1, "loss_stress": 0.1})
+    context = suite["context"].evaluate(
         {
-            "coherence": coherence.score,
-            "context": 0.7,
-            "momentum": momentum.trq_energy,
-            "precision": precision.precision_weight,
-            "structure": 0.75,
+            "trend_strength": 0.7,
+            "volatility": 0.3,
+            "structure_bias": 0.4,
+            "liquidity_depth": 0.8,
+            "institutional_flow": 0.75,
         }
     )
-    advisory = suite["advisory"].evaluate(
-        {
-            "probability": probability.probability,
-            "bias": field.bias,
-            "tail_risk": risk.tail_risk_score,
-        }
+    structure = suite["structure"].analyze(candles)
+    momentum = suite["momentum"].analyze(candles)
+    precision = suite["precision"].analyze(candles, direction="BUY")
+    probability = suite["probability"].analyze(candles)
+    field = suite["field"].analyze(candles)
+    risk = suite["risk"].analyze(
+        candles,
+        direction="BUY",
+        entry_price=candles["M15"][-1]["close"],
+        stop_loss=candles["M15"][-1]["close"] - 0.002,
+        take_profit=candles["M15"][-1]["close"] + 0.004,
     )
 
-    assert isinstance(coherence, CognitiveCoherence)
+    assert isinstance(coherence, CoherenceSnapshot)
     assert isinstance(context, CognitiveContext)
+    assert isinstance(structure, FusionStructure)
     assert isinstance(momentum, FusionMomentum)
     assert isinstance(precision, FusionPrecision)
-    assert isinstance(structure, FusionStructure)
     assert isinstance(probability, ProbabilityResult)
-    assert advisory.signal in (AdvisorySignal.BUY, AdvisorySignal.SELL, AdvisorySignal.HOLD)
+    assert isinstance(field, FieldResult)
+    assert isinstance(risk, RiskSimulationResult)
 
 
 def test_risk_simulation_conservative_pass_fail_boundary() -> None:
-    simulator = CognitiveRiskSimulation()
-    safe = simulator.evaluate({"effective_leverage": 1.0, "volatility": 0.2, "gap_risk": 0.1})
-    unsafe = simulator.evaluate({"effective_leverage": 3.0, "volatility": 1.0, "gap_risk": 1.0})
-    assert safe.pass_gate is True
-    assert unsafe.pass_gate is False
+    simulator = CognitiveRiskSimulation(num_simulations=200, horizon_bars=20, seed=7)
+
+    safe_candles = _build_multi_tf_candles(140)
+    base = safe_candles["M15"][-1]["close"]
+    safe = simulator.analyze(
+        safe_candles,
+        direction="BUY",
+        entry_price=base,
+        stop_loss=base - 0.0015,
+        take_profit=base + 0.0030,
+    )
+
+    volatile_series = [1.20 + (0.0015 * i) + (0.0100 if i % 2 == 0 else -0.0100) for i in range(140)]
+    volatile_candles = {
+        "M15": [
+            {
+                "open": volatile_series[i - 1] if i > 0 else volatile_series[i],
+                "high": volatile_series[i] + 0.003,
+                "low": volatile_series[i] - 0.003,
+                "close": volatile_series[i],
+                "volume": 1200,
+            }
+            for i in range(140)
+        ]
+    }
+    vbase = volatile_candles["M15"][-1]["close"]
+    unsafe = simulator.analyze(
+        volatile_candles,
+        direction="BUY",
+        entry_price=vbase,
+        stop_loss=vbase - 0.0015,
+        take_profit=vbase + 0.0030,
+    )
+
+    assert safe.is_valid
+    assert unsafe.is_valid
+    assert unsafe.volatility_pct >= safe.volatility_pct

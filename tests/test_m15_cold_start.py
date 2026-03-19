@@ -123,8 +123,9 @@ class TestSchedulerM15ColdStartDetection:
             }
             mock_bus_class.return_value = mock_bus
 
-            with patch("ingest.h1_refresh_scheduler.CONFIG", {
-                "pairs": {"symbols": ["EURUSD"]}
+            with patch("ingest.h1_refresh_scheduler.load_finnhub", return_value={
+                "pairs": {"symbols": ["EURUSD"]},
+                "candles": {"refresh": {}},
             }):
                 scheduler = H1RefreshScheduler()
                 await scheduler.refresh_all_symbols()
@@ -164,8 +165,9 @@ class TestSchedulerM15ColdStartDetection:
             }
             mock_bus_class.return_value = mock_bus
 
-            with patch("ingest.h1_refresh_scheduler.CONFIG", {
-                "pairs": {"symbols": ["EURUSD"]}
+            with patch("ingest.h1_refresh_scheduler.load_finnhub", return_value={
+                "pairs": {"symbols": ["EURUSD"]},
+                "candles": {"refresh": {}},
             }):
                 scheduler = H1RefreshScheduler()
                 await scheduler.refresh_all_symbols()

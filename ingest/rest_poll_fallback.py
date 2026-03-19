@@ -19,6 +19,7 @@ from config_loader import load_finnhub
 from context.live_context_bus import LiveContextBus
 from ingest.finnhub_candles import FinnhubCandleError, FinnhubCandleFetcher
 from ingest.finnhub_ws import is_forex_market_open
+from storage.candle_persistence import enqueue_candle_dict
 
 
 class RestPollFallback:
@@ -189,5 +190,6 @@ class RestPollFallback:
                 candle_json = orjson.dumps(candle).decode("utf-8")
                 await self._redis.rpush(key, candle_json)
                 await self._redis.ltrim(key, -self._redis_maxlen, -1)
+                enqueue_candle_dict(candle)
             except Exception as exc:
                 logger.warning("[RestPoll] RPUSH failed %s: %s", key, exc)

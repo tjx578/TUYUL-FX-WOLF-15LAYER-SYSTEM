@@ -8,8 +8,8 @@ Provides REST API for:
 - Trade lifecycle tracking
 """
 
-import uuid
 import os
+import uuid
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, Header, HTTPException
@@ -21,18 +21,20 @@ from accounts.account_model import (
 )
 from accounts.account_model import (
     Layer12Signal,
-    RiskMode as DashRiskMode,
     RiskSeverity,
 )
-from accounts.risk_engine import RiskEngine
+from accounts.account_model import (
+    RiskMode as DashRiskMode,
+)
 from accounts.account_repository import AccountRepository, AccountRiskState, EAInstanceConfig
 from accounts.prop_rule_engine import get_prop_template, validate_prop_sovereignty
 from accounts.risk_calculator import AccountScopedRiskEngine
-from api.middleware.governance import enforce_write_policy
+from accounts.risk_engine import RiskEngine
 from allocation.signal_service import SignalService
+from api.middleware.governance import enforce_write_policy
 from journal.audit_trail import AuditAction, AuditTrail
-from risk.kill_switch import GlobalKillSwitch
 from risk.exceptions import RiskException
+from risk.kill_switch import GlobalKillSwitch
 from risk.risk_engine_v2 import RiskEngineV2, SignalInput
 from risk.risk_profile import RiskMode, RiskProfile, load_risk_profile, save_risk_profile
 from storage.redis_client import redis_client
@@ -274,7 +276,7 @@ def _build_risk_signal(payload: dict, signal_id: str) -> Layer12Signal:
 
 
 def _build_account_state(account_id: str) -> DashAccountState:
-    payload = redis_client.client.hgetall(f"ACCOUNT:{account_id}") or {}
+    payload = redis_client.hgetall(f"ACCOUNT:{account_id}") or {}
     return DashAccountState(
         account_id=account_id,
         balance=float(payload.get("balance", 10000) or 10000),
@@ -348,7 +350,7 @@ async def evaluate_signal(
         result = engine.evaluate(signal, vix_level=req.vix_level, session=req.session)
 
         # Auto-register if requested and allowed
-        if req.auto_register and result.allowed:
+        if req.auto_register and result.allowed and result.lots is not None:
             engine.register_intended_trade(signal, result.lots)
 
         return {
@@ -381,7 +383,7 @@ async def save_profile(
             max_total_dd=req.max_total_dd,
             max_open_trades=req.max_open_trades,
             risk_mode=RiskMode(req.risk_mode),
-            split_ratio=tuple(req.split_ratio),
+            split_ratio=(req.split_ratio[0], req.split_ratio[1]),
         )
         save_risk_profile(account_id, profile)
         return {"status": "saved", "profile": profile.to_dict()}
@@ -415,9 +417,7 @@ async def close_trade(
         engine.close_trade(req.trade_id, req.entry_number)
         return {"status": "closed", "trade_id": req.trade_id, "entry_number": req.entry_number}
     except Exception as exc:
-        logger.error(
-            "Failed to close trade", account_id=account_id, trade_id=req.trade_id, error=str(exc)
-        )
+        logger.error("Failed to close trade", account_id=account_id, trade_id=req.trade_id, error=str(exc))
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
@@ -551,12 +551,11 @@ async def upsert_account_context(
     if not ok:
         raise HTTPException(status_code=422, detail=reason or "PROP_SOVEREIGNTY_VIOLATION")
 
-    if not req.compliance_mode:
-        if not _pin_matches(x_action_pin):
-            raise HTTPException(
-                status_code=403,
-                detail="Invalid or missing X-Action-Pin for compliance_mode OFF",
-            )
+    if not req.compliance_mode and not _pin_matches(x_action_pin):
+        raise HTTPException(
+            status_code=403,
+            detail="Invalid or missing X-Action-Pin for compliance_mode OFF",
+        )
 
     system_state, lockdown_reason = _derive_lockdown(req)
 
@@ -788,3 +787,81 @@ async def operator_change_prop_template(account_id: str, req: OperatorActionRequ
         },
     )
     return {"status": "logged", "action": "CHANGE_PROP_TEMPLATE", "account_id": account_id}
+
+
+# ── Compliance auto-mode (P1-9) ──────────────────────────────────────────────
+
+
+@router.get("/accounts/{account_id}/compliance")
+async def get_compliance_status(account_id: str) -> dict:
+    """Return current compliance mode and DD usage for an account."""
+    state = _account_repo.get_state(account_id)
+    if not state:
+        raise HTTPException(status_code=404, detail=f"Account not found: {account_id}")
+
+    from risk.compliance_engine import ComplianceAutoModeEngine, ComplianceMode  # noqa: PLC0415
+
+    engine = ComplianceAutoModeEngine()
+    result = engine.evaluate(
+        account_id=account_id,
+        daily_loss_used_percent=state.daily_loss_used_percent,
+        max_daily_loss_percent=state.max_daily_loss_percent,
+        total_loss_used_percent=state.total_loss_used_percent,
+        max_total_loss_percent=state.max_total_loss_percent,
+        current_mode=ComplianceMode.NORMAL,
+        daily_dd_block_threshold_percent=state.daily_dd_block_threshold_percent,
+        total_dd_block_threshold_percent=state.total_dd_block_threshold_percent,
+    )
+    return {
+        "account_id": account_id,
+        "compliance_mode": result.current_mode.value,
+        "daily_usage_percent": round(result.daily_usage_percent, 2),
+        "total_usage_percent": round(result.total_usage_percent, 2),
+        "reason": result.reason,
+        "thresholds": {
+            "warn": result.daily_threshold_warn,
+            "block_daily": result.daily_threshold_block,
+            "block_total": result.total_threshold_block,
+        },
+    }
+
+
+@router.post("/accounts/{account_id}/compliance/evaluate")
+async def evaluate_compliance(account_id: str) -> dict:
+    """Evaluate compliance mode and emit event if changed. Idempotent."""
+    state = _account_repo.get_state(account_id)
+    if not state:
+        raise HTTPException(status_code=404, detail=f"Account not found: {account_id}")
+
+    from risk.compliance_engine import ComplianceAutoModeEngine, ComplianceMode  # noqa: PLC0415
+
+    engine = ComplianceAutoModeEngine()
+    # Read current persisted mode from Redis if available
+    current_mode = ComplianceMode.NORMAL
+    try:
+        import json as _json  # noqa: PLC0415
+
+        raw = redis_client.get(f"wolf15:compliance:state:{account_id}")
+        if raw:
+            cached = _json.loads(raw)
+            current_mode = ComplianceMode(cached.get("mode", "NORMAL"))
+    except Exception:
+        pass
+
+    result = await engine.evaluate_and_emit(
+        account_id=account_id,
+        daily_loss_used_percent=state.daily_loss_used_percent,
+        max_daily_loss_percent=state.max_daily_loss_percent,
+        total_loss_used_percent=state.total_loss_used_percent,
+        max_total_loss_percent=state.max_total_loss_percent,
+        current_mode=current_mode,
+        daily_dd_block_threshold_percent=state.daily_dd_block_threshold_percent,
+        total_dd_block_threshold_percent=state.total_dd_block_threshold_percent,
+    )
+    return {
+        "account_id": account_id,
+        "previous_mode": result.previous_mode.value,
+        "current_mode": result.current_mode.value,
+        "changed": result.changed,
+        "reason": result.reason,
+    }

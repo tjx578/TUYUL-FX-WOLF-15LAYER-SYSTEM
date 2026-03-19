@@ -315,3 +315,42 @@ async def test_main_resets_system_state_after_runtime_failure(
                                 await ingest_service_module.main(_bootstrap_probe=probe)
 
     assert reset_mock.call_count == 1
+
+
+@pytest.mark.asyncio
+async def test_bootstrap_cache_and_warmup_prefers_stale_cache(
+    ingest_service_module: Any,
+) -> None:
+    fake_redis = MagicMock()
+    system_state = SystemStateManager()
+    system_state.reset()
+    system_state.set_state(ingest_service_module.SystemState.WARMING_UP)
+
+    with patch.object(ingest_service_module, "_has_stale_cache", new=AsyncMock(return_value=True)):
+        with patch.object(ingest_service_module, "_run_warmup", new=AsyncMock()) as warmup_mock:
+            result, redis_has_data, mode = await ingest_service_module._bootstrap_cache_and_warmup(
+                redis=fake_redis,
+                system_state=system_state,
+                enabled_symbols=["EURUSD"],
+            )
+
+    assert result == {}
+    assert redis_has_data is True
+    assert mode == "stale_cache"
+    warmup_mock.assert_not_called()
+
+
+def test_set_startup_mode_flags_degraded_on_stale_cache(
+    ingest_service_module: Any,
+) -> None:
+    ingest_service_module._ingest_ready = False
+    ingest_service_module._ingest_degraded = False
+
+    ingest_service_module._set_startup_mode(
+        mode="stale_cache",
+        warmup_results={},
+        redis_has_data=True,
+    )
+
+    assert ingest_service_module._ingest_ready is False
+    assert ingest_service_module._ingest_degraded is True

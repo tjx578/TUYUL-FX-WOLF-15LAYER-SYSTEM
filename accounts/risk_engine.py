@@ -26,7 +26,6 @@ Lot formula:
 import logging
 import math
 
-from config.pip_values import DEFAULT_PIP_VALUE, PipLookupError, get_pip_info
 from accounts.account_model import (
     AccountState,
     Layer12Signal,
@@ -34,12 +33,24 @@ from accounts.account_model import (
     RiskMode,
     RiskSeverity,
 )
+from config.pip_values import DEFAULT_PIP_VALUE, PipLookupError, get_pip_info
 from propfirm_manager.profile_manager import PropFirmManager
 
 logger = logging.getLogger(__name__)
 
 
+def _map_guard_severity(severity: str) -> RiskSeverity:
+    """Convert prop-firm guard severity labels to dashboard RiskSeverity."""
+    normalized = str(severity or "").strip().lower()
+    if normalized == "deny":
+        return RiskSeverity.CRITICAL
+    if normalized == "warn":
+        return RiskSeverity.WARNING
+    return RiskSeverity.SAFE
+
+
 # ─── Drawdown multiplier (adaptive risk reduction) ───────────────────────────
+
 
 def dd_multiplier(daily_dd_percent: float) -> float:
     """
@@ -59,6 +70,7 @@ def dd_multiplier(daily_dd_percent: float) -> float:
 
 
 # ─── Main Risk Engine ─────────────────────────────────────────────────────────
+
 
 class RiskMultiplierAggregator:
     """
@@ -155,7 +167,7 @@ class RiskMultiplierAggregator:
                     risk_used_percent=round(adj_risk_pct, 3),
                     daily_dd_after=round(dd_after, 3),
                     total_dd_after=round(total_dd_after, 3),
-                    severity=guard.severity,
+                    severity=_map_guard_severity(guard.severity),
                     reason=f"{guard.code}: {guard.details}",
                 )
         except Exception as exc:
@@ -163,18 +175,13 @@ class RiskMultiplierAggregator:
 
         # ── 7. Severity label ─────────────────────────────────────────────────
         severity = (
-            RiskSeverity.CRITICAL if dd_after >= 4.0 else
-            RiskSeverity.WARNING  if dd_after >= 2.5 else
-            RiskSeverity.SAFE
+            RiskSeverity.CRITICAL if dd_after >= 4.0 else RiskSeverity.WARNING if dd_after >= 2.5 else RiskSeverity.SAFE
         )
 
         # ── 8. Split legs ─────────────────────────────────────────────────────
         split_lots = None
         if risk_mode == RiskMode.SPLIT and split_ratios:
-            split_lots = [
-                max(self.MIN_LOT, self._round_lot(lot * r))
-                for r in split_ratios
-            ]
+            split_lots = [max(self.MIN_LOT, self._round_lot(lot * r)) for r in split_ratios]
 
         return RiskCalculationResult(
             trade_allowed=True,

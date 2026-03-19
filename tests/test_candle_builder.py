@@ -190,8 +190,8 @@ class TestMultiTimeframe:
         base = datetime(2026, 2, 17, 10, 0, tzinfo=UTC)
 
         # Feed 1 tick per minute for 75 minutes (10:00–11:14)
-        # This should produce: 5 M15 candles (10:00,10:15,10:30,10:45,11:00)
-        # and 1 H1 candle (10:00)
+        # This should produce 5 completed M15 candles by rollover.
+        # After flush_all(), the in-progress H1 (11:00 period) is also force-closed.
         for minute in range(75):
             t = base + timedelta(minutes=minute)
             price = 1.1000 + (minute % 15) * 0.0001
@@ -205,11 +205,15 @@ class TestMultiTimeframe:
         # With 75 minutes: 5 full M15 periods completed by rollover
         assert len(results["M15"]) == 5
 
-        # H1: the 10:00 hour completes when 11:00's first M15 arrives
-        assert len(results["H1"]) == 1
-        h1 = results["H1"][0]
-        assert h1.open_time == base
-        assert h1.timeframe == "H1"
+        # H1 candles:
+        # - 10:00 period completes on rollover
+        # - 11:00 period is force-closed by flush_all
+        assert len(results["H1"]) == 2
+        first_h1 = results["H1"][0]
+        second_h1 = results["H1"][1]
+        assert first_h1.open_time == base
+        assert first_h1.timeframe == "H1"
+        assert second_h1.open_time == base + timedelta(hours=1)
 
     def test_default_timeframes(self):
         mtf = MultiTimeframeCandleBuilder("GBPUSD")

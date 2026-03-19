@@ -123,6 +123,7 @@ class AsyncAllocationWorker:
                 redis_cfg = replace(base_cfg, socket_timeout=self._cfg.redis_socket_timeout)
                 redis_client = await get_client(redis_cfg)
                 await self._ensure_group(redis_client)
+                await self._recover_pending(redis_client)
                 backoff = 1.0  # Reset on successful connect
 
                 while True:
@@ -196,6 +197,40 @@ class AsyncAllocationWorker:
         except ResponseError as exc:
             if "BUSYGROUP" not in str(exc):
                 raise
+
+    async def _recover_pending(self, redis_client: aioredis.Redis) -> int:
+        """Claim and re-process orphaned PEL messages (P1-10).
+
+        Messages idle > 60s are assumed orphaned (crashed consumer).
+        Returns the number of messages recovered.
+        """
+        min_idle_ms = 60_000
+        count = 50
+        recovered = 0
+        try:
+            claimed = await redis_client.xautoclaim(
+                name=self._cfg.stream,
+                groupname=self._cfg.group,
+                consumername=self._cfg.worker_name,
+                min_idle_time=min_idle_ms,
+                start_id="0-0",
+                count=count,
+            )
+            # xautoclaim returns (next_start_id, messages, deleted_ids)
+            if claimed and len(claimed) >= 2:
+                messages = claimed[1]
+                for msg_id, msg in messages:
+                    if msg:
+                        await self._handle_message(redis_client, self._cfg.stream, msg_id, msg)
+                        recovered += 1
+            if recovered > 0:
+                logger.info(
+                    "[PEL-Recovery] Reclaimed and processed {} orphaned messages",
+                    recovered,
+                )
+        except Exception as exc:
+            logger.warning("[PEL-Recovery] Failed: {}", exc)
+        return recovered
 
     async def _handle_message(
         self, redis_client: aioredis.Redis, stream_name: str, msg_id: str, msg: dict[str, str]
