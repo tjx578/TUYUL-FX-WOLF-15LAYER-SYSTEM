@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import time
 
+import orjson
 import pytest
 
 from context.system_state import SystemState, SystemStateManager
@@ -85,6 +86,13 @@ class TestP0_2_HeartbeatKey:  # noqa: N801
         from state.redis_keys import HEARTBEAT_INGEST
 
         assert ingest_service._PRODUCER_HEARTBEAT_KEY == HEARTBEAT_INGEST
+
+    def test_pipeline_parses_json_heartbeat_payload(self):
+        from pipeline.wolf_constitutional_pipeline import _parse_heartbeat_timestamp
+
+        raw = orjson.dumps({"producer": "finnhub_ws", "ts": 1742378400.123})
+
+        assert _parse_heartbeat_timestamp(raw) == pytest.approx(1742378400.123)
 
 
 # ---------------------------------------------------------------------------
