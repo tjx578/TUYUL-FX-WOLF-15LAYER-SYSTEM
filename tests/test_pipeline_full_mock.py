@@ -193,17 +193,20 @@ def mocked_pipeline(monkeypatch: pytest.MonkeyPatch):
     """
 
     class _FakeRedisClient:
-        def get(self, _key: str) -> None:
+        def get(self, _key: str) -> bytes | None:
             from state.redis_keys import HEARTBEAT_INGEST
 
             if _key == HEARTBEAT_INGEST:
                 return f'{{"ts": {time.time()}}}'.encode()
             return None
 
-    # Governance gate imports RedisClient inside execute(); force a no-I/O stub.
+    # Governance gate can use either self._redis or RedisClient(); force both to no-I/O stubs.
     monkeypatch.setattr("storage.redis_client.RedisClient", lambda: _FakeRedisClient())
 
     pipeline = WolfConstitutionalPipeline()
+
+    # Prevent execute() from touching the process-level Redis client.
+    pipeline._redis = _FakeRedisClient()  # pyright: ignore[reportAttributeAccessIssue]
 
     # Replace lazy loader so it doesn't import real analyzers
     pipeline._ensure_analyzers = lambda: None
