@@ -38,6 +38,11 @@
   - Ingest: `/healthz` on `INGEST_HEALTH_PORT` / `PORT`
   - Engine: `/healthz` on `ENGINE_HEALTH_PORT` / `PORT`
   - Orchestrator: `/healthz` on `ORCHESTRATOR_HEALTH_PORT` / `PORT`
+- Observability machine-auth boundary:
+  - Endpoints: `/metrics`, `/healthz`, `/readyz`
+  - Headers: `X-Machine-Key: <key>` or `Authorization: Bearer <key>`
+  - Env mode: `OBSERVABILITY_AUTH_MODE=optional|required|disabled`
+  - Env key: `OBSERVABILITY_MACHINE_KEY` (fallback `MACHINE_OBSERVABILITY_KEY`)
 - Orchestrator observability surfaces:
   - Redis state key: `wolf15:orchestrator:state`
   - API read model: `GET /api/v1/orchestrator/state`

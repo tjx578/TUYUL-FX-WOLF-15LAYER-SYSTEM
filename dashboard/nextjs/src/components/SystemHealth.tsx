@@ -5,6 +5,7 @@
 // ============================================================
 
 import { useHealth } from "@/lib/api";
+import { useOrchestratorState } from "@/lib/api";
 import type { FeedStatus, FreshnessClassLabel } from "@/types";
 
 /** Map backend internal feed_status to the approved FreshnessClass label. */
@@ -42,6 +43,7 @@ const FRESHNESS_DISPLAY: Record<FreshnessClassLabel, string> = {
 
 export function SystemHealth() {
   const { data: health, isLoading } = useHealth();
+  const { data: orchestrator } = useOrchestratorState();
 
   const isHealthy = health?.status === "ok";
   const statusColor = isHealthy ? "var(--green)" : "var(--red)";
@@ -126,6 +128,37 @@ export function SystemHealth() {
               </span>
             </div>
           )}
+
+          {orchestrator?.orchestrator_ready !== undefined && (
+            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, gap: 12 }}>
+              <span style={{ color: "var(--text-muted)" }}>Orchestrator</span>
+              <span
+                className="num"
+                style={{
+                  color: orchestrator.orchestrator_ready ? "var(--green)" : "var(--red)",
+                  textAlign: "right",
+                }}
+              >
+                {orchestrator.orchestrator_ready ? "READY" : (orchestrator.mode ?? "NOT_READY")}
+              </span>
+            </div>
+          )}
+
+          {orchestrator?.orchestrator_heartbeat_age_seconds !== undefined &&
+            orchestrator?.orchestrator_heartbeat_age_seconds !== null && (
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, gap: 12 }}>
+                <span style={{ color: "var(--text-muted)" }}>Orch HB</span>
+                <span
+                  className="num"
+                  style={{
+                    color: orchestrator.orchestrator_ready ? "var(--green)" : "var(--yellow)",
+                    textAlign: "right",
+                  }}
+                >
+                  {`${Math.round(orchestrator.orchestrator_heartbeat_age_seconds)}s ago`}
+                </span>
+              </div>
+            )}
 
           {health?.redis_connected !== undefined && (
             <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11 }}>

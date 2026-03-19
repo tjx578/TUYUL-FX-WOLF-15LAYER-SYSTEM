@@ -10,6 +10,7 @@ import type {
   DailyJournal,
   RiskSnapshot,
   SystemHealth,
+  OrchestratorState,
   ContextSnapshot,
   ExecutionState,
   PairInfo,
@@ -37,6 +38,7 @@ const API_BASE = "";
 
 export const API_ENDPOINTS = {
   health: "/health",
+  orchestratorState: "/api/v1/orchestrator/state",
   accounts: "/api/v1/accounts",
   accountsRiskSnapshot: "/api/v1/accounts/risk-snapshot",
   accountsCapitalDeployment: "/api/v1/accounts/capital-deployment",
@@ -252,6 +254,14 @@ export function useHealth() {
     API_ENDPOINTS.health,
   );
   return { data, isLoading, isError: !!error, error };
+}
+
+export function useOrchestratorState() {
+  const { data, error, isLoading, mutate } = useApiQuery<OrchestratorState>(
+    API_ENDPOINTS.orchestratorState,
+    { refetchInterval: 15_000 },
+  );
+  return { data, isLoading, isError: !!error, error, mutate };
 }
 
 export function useContext() {

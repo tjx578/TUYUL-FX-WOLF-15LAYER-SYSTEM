@@ -16,9 +16,10 @@ import logging
 import os
 import time
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Depends, Query
 from fastapi.responses import PlainTextResponse
 
+from api.middleware.machine_auth import verify_observability_machine_auth
 from core.metrics import (
     ACTIVE_PAIRS,
     ORCHESTRATOR_HEARTBEAT_AGE_SECONDS,
@@ -34,7 +35,7 @@ from state.redis_keys import ORCHESTRATOR_STATE
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(tags=["observability"])
+router = APIRouter(tags=["observability"], dependencies=[Depends(verify_observability_machine_auth)])
 
 _CONTENT_TYPE = "text/plain; version=0.0.4; charset=utf-8"
 
