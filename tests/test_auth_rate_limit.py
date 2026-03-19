@@ -447,7 +447,7 @@ class TestRateLimitIntegration:
 
     def test_rate_limit_headers_present(self):
         """Responses should include X-RateLimit-* headers."""
-        import fastapi  # type: ignore # noqa: PLC0415
+        import fastapi  # noqa: PLC0415
         from fastapi.testclient import (  # noqa: PLC0415
             TestClient,
         )
@@ -489,7 +489,7 @@ class TestRateLimitIntegration:
         # Exempt paths don't get rate limit headers
         assert "X-RateLimit-Limit" not in resp.headers
 
-    def test_burst_triggers_429(self):
+    def test_burst_triggers_429(self, monkeypatch):
         """Exceeding burst limit should return 429."""
         import fastapi  # noqa: PLC0415
         from fastapi.testclient import (  # noqa: PLC0415
@@ -500,6 +500,11 @@ class TestRateLimitIntegration:
             RateLimitMiddleware,
             _http_store,
         )
+
+        # Force deterministic in-memory limiter and a small limit for fast tests.
+        monkeypatch.setattr("api.middleware.rate_limit.RATE_LIMIT_BACKEND", "memory")
+        monkeypatch.setattr("api.middleware.rate_limit.REQUESTS_PER_MIN", 2)
+        monkeypatch.setattr("api.middleware.rate_limit.BURST", 0)
 
         # Reset state
         _http_store.reset()
@@ -513,10 +518,9 @@ class TestRateLimitIntegration:
 
         client = TestClient(app)
 
-        # Flood with requests up to and beyond the limit
-        # Default: 120 + 20 burst = 140
+        # Flood with requests up to and beyond the test limit.
         hit_429 = False
-        for _ in range(160):
+        for _ in range(6):
             resp = client.get("/api/v1/test")
             if resp.status_code == 429:
                 hit_429 = True
