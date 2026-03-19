@@ -21,6 +21,7 @@ import pytest
 from fastapi.routing import APIRoute
 from fastapi.testclient import TestClient
 
+from accounts.account_model import RiskCalculationResult, RiskSeverity
 from api.middleware.auth import verify_token
 from api.middleware.governance import enforce_write_policy
 
@@ -132,6 +133,20 @@ async def _mock_get_client(*_a: Any, **_kw: Any) -> _FakeRedis:
 
 async def _mock_get_async_redis() -> _FakeRedis:
     return _fake_redis
+
+
+def _stable_risk_result(*_a: Any, **_kw: Any) -> RiskCalculationResult:
+    """Return a concrete risk result to avoid suite-level MagicMock leakage."""
+    return RiskCalculationResult(
+        trade_allowed=True,
+        recommended_lot=0.1,
+        max_safe_lot=0.1,
+        risk_used_percent=1.0,
+        daily_dd_after=0.0,
+        total_dd_after=0.0,
+        severity=RiskSeverity.SAFE,
+        reason="test",
+    )
 
 
 # ── App setup with auth overrides ─────────────────────────────────────────────
@@ -296,6 +311,7 @@ def _patch_redis() -> Any:
         patch("api.allocation_router._kill_switch", new=_KillSwitchOff()),
         patch("api.allocation_router._ensure_live_producer", new=AsyncMock(return_value=None)),
         patch("api.allocation_router._runtime_take_precheck", new=AsyncMock(return_value=(True, None))),
+        patch("api.allocation_router.RiskEngine.calculate_lot", side_effect=_stable_risk_result),
         patch(
             "api.allocation_router._persist_trade_write_through",
             new=AsyncMock(return_value=True),
