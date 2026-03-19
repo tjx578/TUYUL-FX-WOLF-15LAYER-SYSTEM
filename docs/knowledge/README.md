@@ -1,3 +1,16 @@
 # Knowledge
 
-Folder ini sengaja disiapkan untuk dokumen knowledge di masa depan. Saat ini belum ada file repo yang dipetakan ke kategori ini.
+`knowledge/` contains human learning references that support reasoning, onboarding, and research translation.
+
+## Rules
+
+- useful for humans
+- not a source of executable truth
+- not a substitute for architecture or code
+- may inform future models, documentation, and review checklists
+
+## Current domains
+
+- `macro/` for cross-asset and macro context
+- `price-action/` for chart reading references
+- `platform/` for MT5 and MQL5 platform knowledge
