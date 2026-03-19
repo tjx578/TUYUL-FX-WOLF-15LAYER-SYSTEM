@@ -24,7 +24,7 @@ class PipLookupError(LookupError):
     def __init__(self, pair: str, table_name: str) -> None:
         self.pair = pair
         self.table_name = table_name
-        super().__init__(f"Pair '{pair}' not found in {table_name}.")
+        super().__init__(f"Pair '{pair}' not found in {table_name}. Use is_pair_supported() to check availability.")
 
 
 DEFAULT_PIP_VALUE: float = 10.0

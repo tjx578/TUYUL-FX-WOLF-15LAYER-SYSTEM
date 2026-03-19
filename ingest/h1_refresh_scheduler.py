@@ -15,6 +15,7 @@ from config_loader import get_enabled_symbols, load_finnhub
 from context.live_context_bus import LiveContextBus
 from context.system_state import SystemStateManager
 from ingest.finnhub_candles import FinnhubCandleFetcher
+from storage.candle_persistence import enqueue_candle_dict
 
 
 class H1RefreshScheduler:
@@ -183,5 +184,6 @@ class H1RefreshScheduler:
                 candle_json = orjson.dumps(candle).decode("utf-8")
                 await self._redis.rpush(key, candle_json)
                 await self._redis.ltrim(key, -self._redis_maxlen, -1)
+                enqueue_candle_dict(candle)
             except Exception as exc:
                 logger.warning("[H1Refresh] RPUSH failed %s: %s", key, exc)

@@ -13,6 +13,7 @@ from storage.candle_persistence import (
     _buffer,
     _flush_batch,
     enqueue_candle,
+    enqueue_candle_dict,
 )
 
 
@@ -55,6 +56,46 @@ class TestEnqueueCandle:
         for i in range(10):
             enqueue_candle(_make_candle(offset_min=i))
         assert len(_buffer) == 10
+        _buffer.clear()
+
+    def test_enqueue_candle_dict_with_open_close_time(self) -> None:
+        _buffer.clear()
+        payload = {
+            "symbol": "EURUSD",
+            "timeframe": "M15",
+            "open_time": "2026-03-15T12:00:00+00:00",
+            "close_time": "2026-03-15T12:15:00+00:00",
+            "open": 1.1,
+            "high": 1.2,
+            "low": 1.0,
+            "close": 1.15,
+            "volume": 10.0,
+            "tick_count": 5,
+        }
+
+        enqueue_candle_dict(payload)
+
+        assert len(_buffer) == 1
+        assert _buffer[0].symbol == "EURUSD"
+        assert _buffer[0].timeframe == "M15"
+        _buffer.clear()
+
+    def test_enqueue_candle_dict_with_timestamp_fallback(self) -> None:
+        _buffer.clear()
+        payload = {
+            "symbol": "EURUSD",
+            "timeframe": "H1",
+            "timestamp": "2026-03-15T12:00:00+00:00",
+            "open": 1.1,
+            "high": 1.2,
+            "low": 1.0,
+            "close": 1.15,
+        }
+
+        enqueue_candle_dict(payload)
+
+        assert len(_buffer) == 1
+        assert _buffer[0].close_time == datetime(2026, 3, 15, 13, 0, tzinfo=UTC)
         _buffer.clear()
 
 

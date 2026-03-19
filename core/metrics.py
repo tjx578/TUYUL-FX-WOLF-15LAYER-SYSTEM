@@ -739,6 +739,28 @@ FEED_RECONNECT_TOTAL = _R.counter(
     label_names=("source",),  # source: finnhub, forexfactory
 )
 
+# Ingest runtime observability (service-level)
+INGEST_WS_CONNECTED = _R.gauge(
+    "wolf_ingest_ws_connected",
+    "Ingest websocket connection status (1=connected, 0=disconnected)",
+)
+
+INGEST_HEARTBEAT_AGE_SECONDS = _R.gauge(
+    "wolf_ingest_heartbeat_age_seconds",
+    "Seconds since last ingest producer heartbeat",
+)
+
+INGEST_FRESH_PAIRS = _R.gauge(
+    "wolf_ingest_fresh_pairs",
+    "Number of symbols with fresh ticks in ingest service",
+)
+
+INGEST_CACHE_MODE = _R.gauge(
+    "wolf_ingest_cache_mode",
+    "Ingest startup cache mode as one-hot gauge by mode label",
+    label_names=("mode",),
+)
+
 CIRCUIT_BREAKER_STATE = _R.gauge(
     "wolf_circuit_breaker_state",
     "Circuit breaker state (0=CLOSED, 1=HALF_OPEN, 2=OPEN)",

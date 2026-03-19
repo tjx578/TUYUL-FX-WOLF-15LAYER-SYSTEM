@@ -9,9 +9,9 @@ Authority boundaries:
   - Does NOT execute trades (that is execution worker's domain).
   - DOES clamp lot size per account risk profile.
 """
+
 from __future__ import annotations
 
-from datetime import datetime, timezone
 from typing import Any
 
 from loguru import logger
@@ -19,13 +19,13 @@ from loguru import logger
 from accounts.account_repository import AccountRepository, AccountRiskState
 from accounts.account_risk_engine import AccountRiskEngine
 from accounts.risk_calculator import AccountScopedRiskEngine
+from allocation.allocation_audit import AllocationAudit
 from allocation.allocation_models import (
     AccountAllocationResult,
     AllocationRequest,
     AllocationResult,
     AllocationStatus,
 )
-from allocation.allocation_audit import AllocationAudit
 from allocation.signal_registry import SignalRegistry
 from config.pip_values import DEFAULT_PIP_VALUE, PipLookupError, get_pip_info
 from infrastructure.tracing import inject_trace_context
@@ -56,7 +56,14 @@ class AllocationService:
 
         Returns AllocationResult with per-account outcomes.
         Does NOT block on execution — pushes to Redis stream asynchronously.
+        Idempotent on request_id — duplicate requests return cached result.
         """
+        # ── Idempotency guard (P1-10) ────────────────────────────────────
+        cached = self._check_idempotency(request.request_id)
+        if cached is not None:
+            logger.info("AllocationService: idempotent hit for request_id=%s", request.request_id)
+            return cached
+
         signal_raw = self._registry.get_by_id(request.signal_id)
         if not signal_raw:
             return AllocationResult(
@@ -104,25 +111,29 @@ class AllocationService:
         for account_id in request.account_ids:
             account_state = self._repo.get_state(account_id)
             if not account_state:
-                account_results.append(AccountAllocationResult(
-                    account_id=account_id,
-                    approved=False,
-                    allowed=False,
-                    status="REJECT",
-                    reason="account_not_found",
-                    severity="CRITICAL",
-                ))
+                account_results.append(
+                    AccountAllocationResult(
+                        account_id=account_id,
+                        approved=False,
+                        allowed=False,
+                        status="REJECT",
+                        reason="account_not_found",
+                        severity="CRITICAL",
+                    )
+                )
                 continue
 
             if account_state.in_pair_cooldown(symbol):
-                account_results.append(AccountAllocationResult(
-                    account_id=account_id,
-                    approved=False,
-                    allowed=False,
-                    status="REJECT",
-                    reason="pair_cooldown_active",
-                    severity="WARNING",
-                ))
+                account_results.append(
+                    AccountAllocationResult(
+                        account_id=account_id,
+                        approved=False,
+                        allowed=False,
+                        status="REJECT",
+                        reason="pair_cooldown_active",
+                        severity="WARNING",
+                    )
+                )
                 continue
 
             result = self._calculate_account_plan(
@@ -138,9 +149,11 @@ class AllocationService:
         approved = sum(1 for r in account_results if r.allowed)
         rejected = len(account_results) - approved
         status = (
-            AllocationStatus.APPROVED if approved == len(account_results) and approved > 0 else
-            AllocationStatus.PARTIALLY_APPROVED if approved > 0 else
-            AllocationStatus.REJECTED
+            AllocationStatus.APPROVED
+            if approved == len(account_results) and approved > 0
+            else AllocationStatus.PARTIALLY_APPROVED
+            if approved > 0
+            else AllocationStatus.REJECTED
         )
 
         final_result = AllocationResult(
@@ -152,8 +165,73 @@ class AllocationService:
             rejected_count=rejected,
         )
         self._audit.record(request, final_result)
+        self._record_idempotency(request.request_id, final_result)
         logger.info(f"AllocationService: {request.request_id} → approved={approved} rejected={rejected}")
         return final_result
+
+    # ── Idempotency guard (P1-10) ──────────────────────────────────────────
+
+    _IDEM_PREFIX = "allocation:idem:"
+    _IDEM_TTL = 60 * 60 * 24  # 24 hours
+
+    def _check_idempotency(self, request_id: str) -> AllocationResult | None:
+        """Return cached AllocationResult if request_id was already processed."""
+        try:
+            import json  # noqa: PLC0415
+
+            from storage.redis_client import RedisClient  # noqa: PLC0415
+
+            raw = RedisClient().get(f"{self._IDEM_PREFIX}{request_id}")
+            if raw:
+                data = json.loads(raw)
+                return AllocationResult(
+                    request_id=data["request_id"],
+                    signal_id=data["signal_id"],
+                    status=AllocationStatus(data["status"]),
+                    account_results=[AccountAllocationResult(**ar) for ar in data.get("account_results", [])],
+                    approved_count=data.get("approved_count", 0),
+                    rejected_count=data.get("rejected_count", 0),
+                )
+        except Exception:
+            pass
+        return None
+
+    def _record_idempotency(self, request_id: str, result: AllocationResult) -> None:
+        """Cache allocation result keyed by request_id for dedup."""
+        try:
+            import json  # noqa: PLC0415
+
+            from storage.redis_client import RedisClient  # noqa: PLC0415
+
+            data = {
+                "request_id": result.request_id,
+                "signal_id": result.signal_id,
+                "status": result.status.value,
+                "account_results": [
+                    {
+                        "account_id": ar.account_id,
+                        "approved": ar.approved,
+                        "allowed": ar.allowed,
+                        "lot_size": ar.lot_size,
+                        "risk_percent": ar.risk_percent,
+                        "daily_buffer_percent": ar.daily_buffer_percent,
+                        "total_buffer_percent": ar.total_buffer_percent,
+                        "status": ar.status,
+                        "reason": ar.reason,
+                        "severity": ar.severity,
+                    }
+                    for ar in result.account_results
+                ],
+                "approved_count": result.approved_count,
+                "rejected_count": result.rejected_count,
+            }
+            RedisClient().set(
+                f"{self._IDEM_PREFIX}{request_id}",
+                json.dumps(data),
+                ex=self._IDEM_TTL,
+            )
+        except Exception:
+            logger.debug("AllocationService: idem cache write failed", exc_info=True)
 
     def _calculate_account_plan(
         self,
@@ -226,6 +304,7 @@ class AllocationService:
     ) -> None:
         try:
             from storage.redis_client import RedisClient  # noqa: PLC0415
+
             rc = RedisClient()
             execution_plan = dict(signal_raw.get("execution_plan_json") or {})
             plan = {
@@ -234,7 +313,9 @@ class AllocationService:
                 "account_id": account_id,
                 "symbol": signal_raw.get("pair") or signal_raw.get("symbol"),
                 "verdict": signal_raw.get("verdict"),
-                "entry_price": str(execution_plan.get("entry_price", signal_raw.get("entry_price", signal_raw.get("entry", "")))),
+                "entry_price": str(
+                    execution_plan.get("entry_price", signal_raw.get("entry_price", signal_raw.get("entry", "")))
+                ),
                 "stop_loss": str(execution_plan.get("stop_loss", signal_raw.get("stop_loss", ""))),
                 "take_profit_1": str(execution_plan.get("take_profit_1", signal_raw.get("take_profit_1", ""))),
                 "order_type": execution_plan.get("order_type", signal_raw.get("order_type", "PENDING_ONLY")),
@@ -245,4 +326,5 @@ class AllocationService:
             inject_trace_context(plan)
             rc.xadd(EXECUTION_STREAM, plan)
         except Exception as exc:
-            logger.error(f"AllocationService: failed to push execution plan: {exc}")
+            logger.error(f"AllocationService: failed to push execution plan for {account_id}: {exc}")
+            raise RuntimeError(f"Execution plan push failed for account {account_id}: {exc}") from exc

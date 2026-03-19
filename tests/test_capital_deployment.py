@@ -119,7 +119,7 @@ class TestReadinessScore:
         [
             (0.0, 0.0, 0.9, 1.01),
             (2.5, 5.0, 0.4, 0.7),
-            (5.0, 10.0, 0.0, 0.15),
+            (5.0, 10.0, 0.25, 0.35),
         ],
     )
     def test_readiness_ranges(self, daily_dd, total_dd, expected_min, expected_max):

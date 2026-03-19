@@ -22,6 +22,7 @@ Strategy:
 from __future__ import annotations
 
 import asyncio
+import itertools
 import time
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -242,12 +243,17 @@ class TestConnectionManager:
         clients = [self._make_mock_ws(f"ws-{i}") for i in range(4)]
         for c in clients:
             manager.active_connections.add(c)
+            manager._per_conn_seq[c] = itertools.count(1)  # noqa: SLF001
 
         msg = {"type": "ping", "ts": 1.0}
         await manager.broadcast(msg)
 
         for c in clients:
-            c.send_json.assert_called_once_with(msg)
+            c.send_json.assert_called_once()
+            sent = c.send_json.call_args.args[0]
+            assert sent["type"] == "ping"
+            assert sent["ts"] == 1.0
+            assert "seq" in sent
 
     @pytest.mark.asyncio
     async def test_broadcast_removes_broken_clients(self, manager: Any):
@@ -257,6 +263,8 @@ class TestConnectionManager:
         bad.send_json.side_effect = RuntimeError("conn closed")
 
         manager.active_connections.update({good, bad})
+        manager._per_conn_seq[good] = itertools.count(1)  # noqa: SLF001
+        manager._per_conn_seq[bad] = itertools.count(1)  # noqa: SLF001
         await manager.broadcast({"type": "test"})
 
         assert good in manager.active_connections
@@ -278,6 +286,7 @@ class TestConnectionManager:
             manager.buffer_message({"seq": i, "ts": float(i)})
 
         ws = self._make_mock_ws()
+        manager._per_conn_seq[ws] = itertools.count(1)  # noqa: SLF001
         await manager.replay_buffer(ws)
         assert ws.send_json.call_count == 3
 
@@ -289,6 +298,7 @@ class TestConnectionManager:
         manager.buffer_message({"seq": 2, "ts": 3000.0})
 
         ws = self._make_mock_ws()
+        manager._per_conn_seq[ws] = itertools.count(1)  # noqa: SLF001
         await manager.replay_buffer(ws, since_ts=1500.0)
         # Only seq 1 and 2 are newer than 1500.0
         assert ws.send_json.call_count == 2
@@ -315,7 +325,7 @@ class TestWsPricesChannel:
             "GBPUSD": {"bid": 1.2600, "ask": 1.2602, "ts": time.time()},
         }
         mock_feed = MagicMock()
-        mock_feed.get_latest_prices = MagicMock(return_value=fake_prices)
+        mock_feed.get_latest_prices_async = AsyncMock(return_value=fake_prices)
 
         with (
             patch("api.ws_routes.ws_auth_guard", new=AsyncMock(return_value=_FAKE_USER)),
@@ -360,7 +370,7 @@ class TestWsTradesChannel:
             pytest.skip("fastapi not installed")
         trades = [_trade_model_stub("T001", "PENDING"), _trade_model_stub("T002", "OPEN")]
         mock_ledger = MagicMock()
-        mock_ledger.get_active_trades = MagicMock(return_value=trades)
+        mock_ledger.get_active_trades_async = AsyncMock(return_value=trades)
 
         app = _make_app()
         with (
@@ -627,7 +637,7 @@ class TestWsVerdictChannel:
 
         with (
             patch("api.ws_routes.ws_auth_guard", new=AsyncMock(return_value=_FAKE_USER)),
-            patch("api.ws_routes.redis_client.pubsub", return_value=_FakePubSub()),
+            patch("api.ws_routes.redis_client", new=MagicMock(pubsub=MagicMock(return_value=_FakePubSub()))),
             patch("api.ws_routes.get_verdict_async", new=AsyncMock(side_effect=_fake_get_verdict)),
             patch("api.ws_routes.load_pairs", return_value=[{"symbol": "EURUSD", "enabled": True}]),
         ):
@@ -704,7 +714,7 @@ class TestWsSignalsChannel:
 
         with (
             patch("api.ws_routes.ws_auth_guard", new=AsyncMock(return_value=_FAKE_USER)),
-            patch("api.ws_routes.redis_client.pubsub", return_value=_FakePubSub()),
+            patch("api.ws_routes.redis_client", new=MagicMock(pubsub=MagicMock(return_value=_FakePubSub()))),
             patch("api.ws_routes._signal_service", new=mock_signal_service),
         ):
             yield TestClient(app)  # pyright: ignore[reportOptionalCall]
@@ -789,7 +799,7 @@ class TestWsPipelineChannel:
 
         with (
             patch("api.ws_routes.ws_auth_guard", new=AsyncMock(return_value=_FAKE_USER)),
-            patch("api.ws_routes.redis_client.pubsub", return_value=_FakePubSub()),
+            patch("api.ws_routes.redis_client", new=MagicMock(pubsub=MagicMock(return_value=_FakePubSub()))),
             patch("api.ws_routes.get_verdict_async", new=AsyncMock(side_effect=_fake_get_verdict)),
             patch("api.ws_routes.load_pairs", return_value=[{"symbol": "EURUSD", "enabled": True}]),
         ):

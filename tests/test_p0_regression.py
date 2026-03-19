@@ -178,9 +178,18 @@ class TestP0_5_ReadinessEndpoint:  # noqa: N801
 
     def test_readyz_route_registered(self):
         """The factory must register a /readyz route distinct from /healthz."""
-        from api.app_factory import create_app
+        from unittest.mock import MagicMock, patch
 
-        app = create_app()
+        mock_redis = MagicMock()
+        mock_redis.get.return_value = None
+        mock_redis.ping.return_value = True
+        mock_redis.client = mock_redis
+
+        with patch("storage.redis_client.RedisClient.__new__", return_value=mock_redis):
+            from api.app_factory import create_app
+
+            app = create_app()
+
         paths = {getattr(r, "path", None) for r in app.routes}
         assert "/readyz" in paths
         assert "/healthz" in paths
@@ -227,6 +236,23 @@ class TestP0_6_GovernanceHold:  # noqa: N801
             now_ts=now,
         )
         assert verdict.action == GovernanceAction.HOLD
+
+    def test_stale_preserved_holds_even_with_fresh_heartbeat(self):
+        """Fresh producer heartbeat must not override stale_preserved HOLD policy."""
+        now = time.time()
+        threshold = stale_threshold_seconds()
+
+        verdict = assess_governance(
+            symbol="EURUSD",
+            last_seen_ts=now - threshold - 30.0,
+            transport_ok=True,
+            heartbeat_ts=now - 1.0,
+            warmup_ready=True,
+            now_ts=now,
+        )
+
+        assert verdict.action == GovernanceAction.HOLD
+        assert any("stale_preserved" in reason for reason in verdict.reasons)
 
     def test_fresh_data_allows(self):
         now = time.time()

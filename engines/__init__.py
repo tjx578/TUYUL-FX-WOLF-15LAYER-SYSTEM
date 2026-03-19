@@ -33,22 +33,26 @@ Usage:
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 __version__ = "2.0.0"
 __codename__ = "Wolf Engine Facade"
 
 if TYPE_CHECKING:
+    from typing import TypedDict
+
     from . import v11 as v11  # noqa: F401  # expose sub-package for static analysis
+    from .cognitive_coherence_engine import CognitiveCoherenceEngine
     from .cognitive_context_engine import (
+        CognitiveContextEngine,
         InstitutionalPresence,
         LiquidityContext,
         MarketRegime,
         MarketStructure,
     )
-    from .cognitive_risk_simulation import RiskSimulationResult
-    from .fusion_momentum_engine import MomentumResult
-    from .fusion_precision_engine import PrecisionResult
+    from .cognitive_risk_simulation import CognitiveRiskSimulation, RiskSimulationResult
+    from .fusion_momentum_engine import FusionMomentumEngine, MomentumResult
+    from .fusion_precision_engine import FusionPrecisionEngine, PrecisionResult
     from .fusion_structure_engine import (
         FusionStructureEngine,
         StructureResult,
@@ -60,6 +64,18 @@ if TYPE_CHECKING:
         ProbabilityResult,
         QuantumProbabilityEngine,
     )
+
+    class EngineSuite(TypedDict):
+        coherence: CognitiveCoherenceEngine
+        context: CognitiveContextEngine
+        risk_sim: CognitiveRiskSimulation
+        risk: CognitiveRiskSimulation
+        momentum: FusionMomentumEngine
+        precision: FusionPrecisionEngine
+        structure: FusionStructureEngine
+        field: QuantumFieldEngine
+        probability: QuantumProbabilityEngine
+        advisory: QuantumAdvisoryEngine
 
     FusionStructure = StructureResult
 
@@ -175,7 +191,7 @@ def __getattr__(name: str):
 # ---------------------------------------------------------------------------
 # Factory function (also lazy — engines are only imported when called)
 # ---------------------------------------------------------------------------
-def create_engine_suite() -> dict[str, object]:
+def create_engine_suite() -> EngineSuite:
     """Factory: create all 9 engines with default configuration.
 
     Returns:
@@ -212,4 +228,4 @@ def create_engine_suite() -> dict[str, object]:
                 cls_name,
                 exc,
             )
-    return suite
+    return cast("EngineSuite", suite)

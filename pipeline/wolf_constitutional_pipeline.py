@@ -684,7 +684,18 @@ class WolfConstitutionalPipeline:
                 with _ctx2.suppress(Exception):
                     _hb_raw = _redis_client.get(HEARTBEAT_INGEST)
                     if _hb_raw is not None:
-                        _heartbeat_ts = float(_hb_raw)
+                        try:
+                            import orjson as _orjson  # noqa: PLC0415
+
+                            _hb_payload = _orjson.loads(_hb_raw)
+                            _hb_ts = float(_hb_payload.get("ts", 0))
+                            _heartbeat_ts = _hb_ts if _hb_ts > 0 else None
+                        except (ValueError, KeyError, TypeError) as _hb_err:
+                            logger.warning(
+                                "[Governance] Failed to parse heartbeat payload: {} — raw={!r}",
+                                _hb_err,
+                                _hb_raw[:120] if isinstance(_hb_raw, (str, bytes)) else _hb_raw,
+                            )
                 with _ctx2.suppress(Exception):
                     _ks_raw = _redis_client.get(KILL_SWITCH)
                     if _ks_raw is not None:
