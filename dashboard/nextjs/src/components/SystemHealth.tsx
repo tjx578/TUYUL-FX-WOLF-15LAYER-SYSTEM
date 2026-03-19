@@ -5,27 +5,48 @@
 // ============================================================
 
 import { useHealth } from "@/lib/api";
-import type { FeedStatus } from "@/types";
+import type { FeedStatus, FreshnessClassLabel } from "@/types";
 
-const FEED_STATUS_COLOR: Record<FeedStatus, string> = {
-  fresh: "var(--green)",
-  stale_preserved: "var(--yellow)",
-  no_producer: "#ff9f0a",
-  no_transport: "var(--red)",
-  config_error: "var(--red)",
+/** Map backend internal feed_status to the approved FreshnessClass label. */
+const toFreshnessLabel = (
+  feedStatus?: FeedStatus,
+  staleness?: number,
+): FreshnessClassLabel => {
+  if (!feedStatus) return "LIVE";
+  if (feedStatus === "config_error") return "CONFIG_ERROR";
+  if (feedStatus === "no_transport") return "NO_TRANSPORT";
+  if (feedStatus === "no_producer") return "NO_PRODUCER";
+  if (feedStatus === "stale_preserved") return "STALE_PRESERVED";
+  // "fresh" — split by staleness age: ≤30s = LIVE, else DEGRADED_BUT_REFRESHING
+  if (staleness !== undefined && staleness > 30) return "DEGRADED_BUT_REFRESHING";
+  return "LIVE";
 };
 
-function formatFeedStatus(status?: FeedStatus): string {
-  return status ? status.toUpperCase() : "UNKNOWN";
-}
+const FRESHNESS_COLOR: Record<FreshnessClassLabel, string> = {
+  LIVE: "var(--green)",
+  DEGRADED_BUT_REFRESHING: "var(--yellow)",
+  STALE_PRESERVED: "#ff9f0a",
+  NO_PRODUCER: "var(--red)",
+  NO_TRANSPORT: "var(--red)",
+  CONFIG_ERROR: "var(--red)",
+};
+
+const FRESHNESS_DISPLAY: Record<FreshnessClassLabel, string> = {
+  LIVE: "LIVE",
+  DEGRADED_BUT_REFRESHING: "DEGRADED",
+  STALE_PRESERVED: "STALE",
+  NO_PRODUCER: "NO PRODUCER",
+  NO_TRANSPORT: "NO TRANSPORT",
+  CONFIG_ERROR: "CONFIG ERROR",
+};
 
 export function SystemHealth() {
   const { data: health, isLoading } = useHealth();
 
   const isHealthy = health?.status === "ok";
   const statusColor = isHealthy ? "var(--green)" : "var(--red)";
-  const feedStatus = health?.feed_status;
-  const feedColor = feedStatus ? FEED_STATUS_COLOR[feedStatus] : "var(--text-muted)";
+  const freshnessLabel = toFreshnessLabel(health?.feed_status, health?.feed_staleness_seconds);
+  const feedColor = FRESHNESS_COLOR[freshnessLabel];
 
   return (
     <div
@@ -76,7 +97,7 @@ export function SystemHealth() {
           <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, gap: 12 }}>
             <span style={{ color: "var(--text-muted)" }}>Feed</span>
             <span style={{ color: feedColor, fontWeight: 600, textAlign: "right" }}>
-              {formatFeedStatus(feedStatus)}
+              {FRESHNESS_DISPLAY[freshnessLabel]}
             </span>
           </div>
 
@@ -87,6 +108,21 @@ export function SystemHealth() {
                 {Number.isFinite(health.feed_staleness_seconds)
                   ? `${Math.round(health.feed_staleness_seconds)}s ago`
                   : "N/A"}
+              </span>
+            </div>
+          )}
+
+          {health?.producer_heartbeat_age_seconds !== undefined && health.producer_heartbeat_age_seconds !== null && (
+            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, gap: 12 }}>
+              <span style={{ color: "var(--text-muted)" }}>Heartbeat</span>
+              <span
+                className="num"
+                style={{
+                  color: health.producer_alive ? "var(--green)" : "var(--red)",
+                  textAlign: "right",
+                }}
+              >
+                {`${Math.round(health.producer_heartbeat_age_seconds)}s ago`}
               </span>
             </div>
           )}

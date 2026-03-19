@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import time
 from dataclasses import dataclass
+from enum import Enum
 from typing import Literal
 
 FeedFreshnessState = Literal[
@@ -12,6 +13,40 @@ FeedFreshnessState = Literal[
     "no_transport",
     "config_error",
 ]
+
+
+class FreshnessClass(str, Enum):
+    """Approved pipeline-wide freshness classification.
+
+    This is the single canonical set of freshness labels used across
+    analysis, governance, dashboard, and execution layers.
+    """
+
+    LIVE = "LIVE"
+    DEGRADED_BUT_REFRESHING = "DEGRADED_BUT_REFRESHING"
+    STALE_PRESERVED = "STALE_PRESERVED"
+    NO_PRODUCER = "NO_PRODUCER"
+    NO_TRANSPORT = "NO_TRANSPORT"
+    CONFIG_ERROR = "CONFIG_ERROR"
+
+
+# ---------------------------------------------------------------------------
+# Centralized threshold constants — single source of truth
+# ---------------------------------------------------------------------------
+
+
+def _env_threshold(name: str, default: float) -> float:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    try:
+        return max(0.0, float(str(raw).strip()))
+    except (TypeError, ValueError):
+        return default
+
+
+#: Ticks within this age are classified as LIVE (real-time).
+FRESHNESS_LIVE_MAX_AGE_SEC: float = _env_threshold("WOLF_FRESHNESS_LIVE_MAX_AGE_SEC", 30.0)
 
 _DEFAULT_STALE_THRESHOLD_SECONDS = 300.0
 
@@ -45,6 +80,22 @@ class FeedFreshnessSnapshot:
     @property
     def is_fresh(self) -> bool:
         return self.state == "fresh"
+
+    @property
+    def freshness_class(self) -> FreshnessClass:
+        """Map internal state + staleness to the approved FreshnessClass enum."""
+        _fixed: dict[FeedFreshnessState, FreshnessClass] = {
+            "config_error": FreshnessClass.CONFIG_ERROR,
+            "no_transport": FreshnessClass.NO_TRANSPORT,
+            "no_producer": FreshnessClass.NO_PRODUCER,
+            "stale_preserved": FreshnessClass.STALE_PRESERVED,
+        }
+        if self.state in _fixed:
+            return _fixed[self.state]
+        # state == "fresh" — split into LIVE vs DEGRADED_BUT_REFRESHING
+        if self.staleness_seconds <= FRESHNESS_LIVE_MAX_AGE_SEC:
+            return FreshnessClass.LIVE
+        return FreshnessClass.DEGRADED_BUT_REFRESHING
 
 
 def classify_feed_freshness(
