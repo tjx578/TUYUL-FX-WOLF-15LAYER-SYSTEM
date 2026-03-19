@@ -111,6 +111,18 @@ _TZ_GMT8 = timezone(timedelta(hours=8))
 _LAYER_TIMEOUT_SEC: float = 30.0
 
 
+def _parse_heartbeat_timestamp(raw: Any) -> float | None:
+    """Extract a valid heartbeat timestamp from a Redis JSON payload."""
+    if raw is None:
+        return None
+
+    import orjson as _orjson  # noqa: PLC0415
+
+    payload = _orjson.loads(raw)
+    ts = float(payload.get("ts", 0))
+    return ts if ts > 0 else None
+
+
 def _coerce_timestamp_to_epoch(value: Any) -> float | None:
     """Convert numeric/ISO timestamp variants to epoch seconds."""
     if value is None or isinstance(value, bool):
@@ -684,18 +696,7 @@ class WolfConstitutionalPipeline:
                 with _ctx2.suppress(Exception):
                     _hb_raw = _redis_client.get(HEARTBEAT_INGEST)
                     if _hb_raw is not None:
-                        try:
-                            import orjson as _orjson  # noqa: PLC0415
-
-                            _hb_payload = _orjson.loads(_hb_raw)
-                            _hb_ts = float(_hb_payload.get("ts", 0))
-                            _heartbeat_ts = _hb_ts if _hb_ts > 0 else None
-                        except (ValueError, KeyError, TypeError) as _hb_err:
-                            logger.warning(
-                                "[Governance] Failed to parse heartbeat payload: {} — raw={!r}",
-                                _hb_err,
-                                _hb_raw[:120] if isinstance(_hb_raw, (str, bytes)) else _hb_raw,
-                            )
+                        _heartbeat_ts = float(_hb_raw)
                 with _ctx2.suppress(Exception):
                     _ks_raw = _redis_client.get(KILL_SWITCH)
                     if _ks_raw is not None:
