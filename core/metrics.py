@@ -538,6 +538,20 @@ WARMUP_BLOCKED = _R.counter(
     label_names=("symbol",),
 )
 
+# Warmup fetch failures (empty result, API error, premium blocked)
+WARMUP_FAILURES = _R.counter(
+    "wolf_warmup_failures_total",
+    "Warmup fetch failures by symbol, timeframe, and reason",
+    label_names=("symbol", "tf", "reason"),
+)
+
+# Invalid candles rejected (sentinel -1, OHLC violation)
+CANDLE_INVALID_TOTAL = _R.counter(
+    "wolf_candle_invalid_total",
+    "Candles rejected due to sentinel -1 or OHLC sanity failure",
+    label_names=("symbol", "timeframe", "stage"),
+)
+
 # Signal throttle counter (verdict downgraded EXECUTE → HOLD)
 SIGNAL_THROTTLED = _R.counter(
     "wolf_signal_throttled_total",
