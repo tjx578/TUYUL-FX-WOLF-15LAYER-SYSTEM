@@ -15,6 +15,7 @@ import { bearerHeader } from "@/lib/auth";
 /**
  * Typed fetch error — carries HTTP status so callers (SWR retry, diagnostic panels)
  * can distinguish auth failures (401/403) from network errors.
+ * `retryAfterMs` is populated for 429 responses from the `Retry-After` header.
  */
 export class HttpError extends Error {
   status?: number;
@@ -72,6 +73,18 @@ export async function swrFetcher<T = unknown>(url: string): Promise<T> {
       res.status,
       info
     );
+    if (res.status === 429) {
+      const retryAfter = res.headers.get("Retry-After");
+      if (retryAfter) {
+        // Retry-After can be a delay-seconds integer or an HTTP-date string (RFC 7231)
+        const parsed = parseInt(retryAfter, 10);
+        error.retryAfterMs = !isNaN(parsed)
+          ? parsed * 1000
+          : Math.max(0, new Date(retryAfter).getTime() - Date.now());
+      } else {
+        error.retryAfterMs = 60_000; // default: 60s when no header is present
+      }
+    }
 
     // Attach Retry-After so callers (React Query, SWR) can respect the cooldown
     if (res.status === 429) {
