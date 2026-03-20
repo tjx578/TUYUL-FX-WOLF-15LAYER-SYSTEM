@@ -26,6 +26,7 @@ const localStorageMock = {
 
 beforeEach(() => {
     storageMap.clear();
+    clearWsTicketCache();
     Object.defineProperty(globalThis, "localStorage", { value: localStorageMock, writable: true });
 });
 
@@ -43,6 +44,7 @@ import {
     bearerHeader,
     getTransportToken,
     fetchWsTicket,
+    clearWsTicketCache,
     ADMIN_ROLES,
 } from "@/lib/auth";
 
