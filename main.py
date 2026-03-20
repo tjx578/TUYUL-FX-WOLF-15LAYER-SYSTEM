@@ -130,8 +130,7 @@ async def run_ingest_services(has_api_key: bool, redis: AsyncRedis) -> None:
     candle_builders = [CandleBuilder(symbol=pair, timeframe=default_timeframe) for pair in PAIRS]
 
     logger.info(
-        "Starting ingest services: WebSocket, RestPollFallback, CalendarNews, "
-        "MarketNews, CandleBuilder, H1Refresh"
+        "Starting ingest services: WebSocket, RestPollFallback, CalendarNews, " "MarketNews, CandleBuilder, H1Refresh"
     )
     try:
         cb_coros: list[Coroutine[object, object, object]] = [cb.run() for cb in candle_builders]  # pyright: ignore[reportAttributeAccessIssue]
@@ -269,9 +268,9 @@ async def main() -> None:
     logger.add(
         sys.stdout,
         format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | "
-               "<level>{level: <8}</level> | "
-               "<cyan>{name}</cyan>:<cyan>{function}</cyan> - "
-               "<level>{message}</level>",
+        "<level>{level: <8}</level> | "
+        "<cyan>{name}</cyan>:<cyan>{function}</cyan> - "
+        "<level>{message}</level>",
         level="INFO",
         filter=lambda record: record["level"].no < 40,  # Below ERROR
     )
@@ -280,31 +279,9 @@ async def main() -> None:
     logger.add(
         sys.stderr,
         format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | "
-               "<level>{level: <8}</level> | "
-               "<cyan>{name}</cyan>:<cyan>{function}</cyan> - "
-               "<level>{message}</level>",
-        level="ERROR",
-    )
-
-    # Register signal handlers
-    signal.signal(signal.SIGINT, _signal_handler)
-    signal.signal(signal.SIGTERM, _signal_handler)
-    logger.remove()
-    logger.add(
-        sys.stdout,
-        format=(
-            "<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level: <8}</level> | "
-            "<cyan>{name}</cyan>:<cyan>{function}</cyan> - <level>{message}</level>"
-        ),
-        level="INFO",
-        filter=lambda record: record["level"].no < 40,
-    )
-    logger.add(
-        sys.stderr,
-        format=(
-            "<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level: <8}</level> | "
-            "<cyan>{name}</cyan>:<cyan>{function}</cyan> - <level>{message}</level>"
-        ),
+        "<level>{level: <8}</level> | "
+        "<cyan>{name}</cyan>:<cyan>{function}</cyan> - "
+        "<level>{message}</level>",
         level="ERROR",
     )
 
