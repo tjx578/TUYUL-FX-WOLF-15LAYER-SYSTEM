@@ -46,10 +46,6 @@ export function createQueryClient() {
           // Respect the global rate-limit cooldown window
           if (Date.now() < _rateLimitedUntil) {
             return false;
-            // 429 = rate limited — retrying only amplifies the problem
-            if (error.status === 429) {
-              return false;
-            }
           }
           return failureCount < 3;
         },

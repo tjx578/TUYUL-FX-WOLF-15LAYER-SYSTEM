@@ -115,10 +115,6 @@ export function clearWsTicketCache(): void {
  * Includes TTL cache + in-flight dedup to avoid hammering the server
  * during rapid WS reconnect cycles (root cause of 429 cascades).
  */
-let _ticketCache: { token: string; expiresAt: number } | null = null;
-let _ticketPromise: Promise<string | null> | null = null;
-const TICKET_CACHE_TTL_MS = 4 * 60 * 1000; // 4 minutes (JWT typically valid 30 min)
-
 export async function fetchWsTicket(): Promise<string | null> {
   const jwt = getToken();
   if (jwt) return jwt;
