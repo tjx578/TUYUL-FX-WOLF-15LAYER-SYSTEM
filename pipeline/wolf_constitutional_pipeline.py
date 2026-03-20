@@ -293,11 +293,10 @@ class WolfConstitutionalPipeline:
             L5PsychologyAnalyzer,
         )
         from analysis.layers.L6_risk import L6RiskAnalyzer  # noqa: PLC0415
-        from analysis.layers.L7_probability import L7ProbabilityAnalyzer  # noqa: PLC0415
-        from analysis.layers.L8_tii_integrity import L8TIIIntegrityAnalyzer  # noqa: PLC0415
         from analysis.layers.L9_smc import L9SMCAnalyzer  # noqa: PLC0415
         from analysis.layers.L11_rr import L11RRAnalyzer  # noqa: PLC0415
         from analysis.macro.monthly_regime import MonthlyRegimeAnalyzer  # noqa: PLC0415
+        from core.L7_L8_minimal import get_l7_analyzer, get_l8_adapter  # noqa: PLC0415
 
         self._l1 = L1ContextAnalyzer()
         self._l2 = L2MTAAnalyzer()
@@ -305,8 +304,8 @@ class WolfConstitutionalPipeline:
         self._l4 = L4ScoringEngine()
         self._l5 = L5PsychologyAnalyzer()
         self._l6 = L6RiskAnalyzer()
-        self._l7 = L7ProbabilityAnalyzer()
-        self._l8 = L8TIIIntegrityAnalyzer()
+        self._l7 = get_l7_analyzer()
+        self._l8 = get_l8_adapter()
         self._l9 = L9SMCAnalyzer()
         self._l10 = analysis.layers.L10_position_sizing.L10PositionAnalyzer()
         self._l11 = L11RRAnalyzer()
@@ -1010,7 +1009,17 @@ class WolfConstitutionalPipeline:
                         prior_losses=prior_losses,
                     ),
                 ),
-                "L8": lambda: cast(dict[str, Any], _timed_layer_call(l8_engine.analyze, "L8", symbol)),
+                "L8": lambda: cast(
+                    dict[str, Any],
+                    _timed_layer_call(
+                        l8_engine.analyze,
+                        "L8",
+                        symbol,
+                        l1=l1,
+                        l3=l3,
+                        indicators=l3,
+                    ),
+                ),
                 "L9": lambda: cast(dict[str, Any], _timed_layer_call(l9_engine.analyze, "L9", symbol)),
             }
             phase3_results = self._run_dag_batch_calls(dag_batches, phase3_calls)
