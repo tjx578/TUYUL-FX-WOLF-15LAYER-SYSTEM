@@ -88,11 +88,30 @@ export function getTransportToken(): string | null {
   return getToken();
 }
 
+// ─── WS Ticket Cache ─────────────────────────────────────────────────────────
+// Tickets are valid ~30 min; we cache for 4 min to stay well within that window
+// while avoiding stampedes on every reconnect attempt.
+let _ticketCache: { token: string; expiresAt: number } | null = null;
+let _ticketPromise: Promise<string | null> | null = null;
+const TICKET_CACHE_TTL_MS = 4 * 60 * 1000; // 4 min
+
+/**
+ * Invalidate the cached WS ticket.
+ * Call on logout or when a 401 is received on the WS connection.
+ */
+export function clearWsTicketCache(): void {
+  _ticketCache = null;
+  _ticketPromise = null;
+}
+
 /**
  * Fetch a WebSocket auth ticket from the server.
  * The server route reads the session cookie or the server-only API_KEY
  * env var — neither is exposed to the client bundle.
  *
+ * Caching: tickets are cached for 4 min and concurrent calls share the same
+ * in-flight Promise so a burst of reconnect attempts never fans into multiple
+ * /api/auth/ws-ticket requests.
  * Includes TTL cache + in-flight dedup to avoid hammering the server
  * during rapid WS reconnect cycles (root cause of 429 cascades).
  */
@@ -109,6 +128,7 @@ export async function fetchWsTicket(): Promise<string | null> {
     return _ticketCache.token;
   }
 
+  // Deduplicate concurrent requests — return the in-flight promise if one exists
   // Dedup: if an in-flight request exists, await the same promise
   if (_ticketPromise) return _ticketPromise;
 
