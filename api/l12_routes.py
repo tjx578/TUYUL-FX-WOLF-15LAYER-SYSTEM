@@ -117,11 +117,17 @@ def fetch_l12(pair: str):
 
 @router.get("/api/v1/verdict/all", dependencies=[Depends(verify_token)])
 def fetch_all_verdicts() -> dict[str, Any]:
-    """Get verdicts for all available pairs."""
+    """Get verdicts for all available pairs.
+
+    Includes degraded verdicts so the frontend can distinguish
+    'pipeline ran but failed' from 'no data yet'.
+    """
     verdicts: dict[str, Any] = {}
     for pair_info in AVAILABLE_PAIRS:
         pair = pair_info["symbol"]
         if not isinstance(pair, str):
+            continue
+        if not pair_info.get("enabled", True):
             continue
         data = get_verdict(pair)
         if data:

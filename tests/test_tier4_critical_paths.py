@@ -355,6 +355,6 @@ class TestPropFirmGuardCriticalPath:
             result = PropFirmGuard().check(state, risk)
             # If trade + existing loss > limit, should not be allowed
             if state["daily_pnl"] + risk["risk_amount"] * -1 < -state["daily_loss_limit"]:
-                assert result["allowed"] is False
+                assert result.allowed is False
         except ImportError:
             pytest.skip("risk.prop_firm not available")

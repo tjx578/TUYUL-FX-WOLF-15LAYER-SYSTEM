@@ -46,5 +46,9 @@ class TrailingDrawdownBreached(RiskError):  # noqa: N818
     """Raised when trailing drawdown floor is breached."""
 
 
+class PropFirmConfigError(RiskError):
+    """Raised when prop firm configuration is missing, corrupt, or invalid."""
+
+
 class RedisConnectionError(RiskError):
     """Raised when Redis operations fail critically."""

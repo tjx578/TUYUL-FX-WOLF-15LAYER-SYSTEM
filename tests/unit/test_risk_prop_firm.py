@@ -2,23 +2,15 @@
 Tests for risk/prop_firm.py -- prop firm guard enforcement.
 Constitutional boundary: guard is binding for risk legality, not for market decisions.
 """
+
+from __future__ import annotations
+
 import copy
+import importlib.util
 
 import pytest
 
-try:
-    from risk.prop_firm import PropFirmGuard, check  # pyright: ignore[reportAttributeAccessIssue]
-    HAS_PROPFIRM = True # pyright: ignore[reportAttributeAccessIssue]
-except ImportError:
-    try:
-        from risk.prop_firm import (
-            PropFirmGuard,  # pyright: ignore[reportAttributeAccessIssue]  # noqa: F401
-        )
-        HAS_PROPFIRM = True
-        check = None
-    except ImportError:
-        HAS_PROPFIRM = False
-        check = None
+HAS_PROPFIRM = importlib.util.find_spec("risk.prop_firm") is not None
 
 
 class TestPropFirmGuardContract:
@@ -76,32 +68,41 @@ class TestPropFirmGuardContract:
         pct_loss = ((state["balance"] - state["equity"]) / state["balance"]) * 100
         assert pct_loss > 10.0, "Should detect total loss breach"
 
-    @pytest.mark.parametrize("lot,max_lot,expected", [
-        (0.5, 5.0, True),
-        (5.0, 5.0, True),
-        (6.0, 5.0, False),
-        (0.01, 5.0, True),
-    ])
+    @pytest.mark.parametrize(
+        "lot,max_lot,expected",
+        [
+            (0.5, 5.0, True),
+            (5.0, 5.0, True),
+            (6.0, 5.0, False),
+            (0.01, 5.0, True),
+        ],
+    )
     def test_lot_size_limit(self, lot, max_lot, expected):
         assert (lot <= max_lot) == expected
 
-    @pytest.mark.parametrize("open_pos,max_pos,expected", [
-        (2, 10, True),
-        (10, 10, False),
-        (0, 10, True),
-        (9, 10, True),
-    ])
+    @pytest.mark.parametrize(
+        "open_pos,max_pos,expected",
+        [
+            (2, 10, True),
+            (10, 10, False),
+            (0, 10, True),
+            (9, 10, True),
+        ],
+    )
     def test_max_positions_limit(self, open_pos, max_pos, expected):
         can_open = open_pos < max_pos
         assert can_open == expected
 
     @pytest.mark.skipif(not HAS_PROPFIRM, reason="risk.prop_firm not importable")
-    def test_check_returns_dict(self, sample_account_state, sample_trade_risk):
-        if check is not None:
-            result = check(sample_account_state, sample_trade_risk)
-            assert isinstance(result, dict)
-            assert "allowed" in result
-            assert "code" in result
+    def test_check_returns_guard_result(self, sample_account_state, sample_trade_risk):
+        from risk.prop_firm import GuardResult, PropFirmGuard
+
+        guard = PropFirmGuard()
+        result = guard.check(sample_account_state, sample_trade_risk)
+
+        assert isinstance(result, GuardResult)
+        assert hasattr(result, "allowed")
+        assert hasattr(result, "code")
 
 
 class TestPropFirmProfiles:
