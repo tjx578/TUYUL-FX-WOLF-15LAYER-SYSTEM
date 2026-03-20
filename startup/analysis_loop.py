@@ -10,6 +10,7 @@ periodically even if no candles close.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import os
 import time
 from typing import Any
@@ -190,6 +191,11 @@ async def _analyze_pair(
                 except Exception as persist_exc:
                     VERDICT_PATH_EVENT_TOTAL.labels(event="verdict_persisted", symbol=pair, status="error").inc()
                     logger.warning("[VerdictPath] persist failed | pair={} error={}", pair, persist_exc)
+                    # Fallback: write a degraded verdict so the dashboard is never empty
+                    try:
+                        set_verdict(pair, _build_degraded_verdict(pair, f"PERSIST_ERROR:{type(persist_exc).__name__}"))
+                    except Exception:
+                        logger.warning("[VerdictPath] degraded fallback also failed | pair={}", pair)
 
                 _lt.record_verdict_emit(pair)
                 synthesis: dict[str, Any] = dict(result.get("synthesis") or {})
@@ -345,10 +351,8 @@ async def analysis_loop(
         for pair, result in zip(symbols_to_run, results, strict=False):
             if isinstance(result, Exception):
                 logger.error(f"[ERROR] {pair} | {result}")
-                try:
+                with contextlib.suppress(Exception):
                     set_verdict(pair, _build_degraded_verdict(pair, f"GATHER_ERROR:{type(result).__name__}"))
-                except Exception:
-                    pass
                 continue
 
             # Only mark as analyzed when a real result was produced.
