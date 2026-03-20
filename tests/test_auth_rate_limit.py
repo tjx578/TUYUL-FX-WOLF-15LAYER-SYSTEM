@@ -26,7 +26,7 @@ if str(ROOT) not in sys.path:
 
 @pytest.fixture(autouse=True)
 def _configure_jwt_secret(monkeypatch):
-    from api.middleware import auth as dashboard_auth  # noqa: PLC0415
+    import api.middleware.auth as dashboard_auth  # noqa: PLC0415
 
     test_secret = "test-dashboard-secret-at-least-32-chars"
     monkeypatch.setattr(dashboard_auth, "JWT_SECRET", test_secret)
@@ -160,7 +160,7 @@ class TestJWT:
     def test_decode_rejects_signature_from_different_secret(self):
         import json  # noqa: PLC0415
 
-        from api.middleware import auth as dashboard_auth  # noqa: PLC0415
+        import api.middleware.auth as dashboard_auth  # noqa: PLC0415
 
         now = int(time.time())
         header_b64 = dashboard_auth._b64url_encode(  # noqa: SLF001
@@ -185,7 +185,7 @@ class TestJWT:
         assert payload is None
 
     def test_create_token_raises_if_secret_missing(self):
-        from api.middleware import auth as dashboard_auth  # noqa: PLC0415
+        import api.middleware.auth as dashboard_auth  # noqa: PLC0415
 
         with (
             patch.object(dashboard_auth, "JWT_SECRET", ""),
@@ -201,7 +201,7 @@ class TestJWT:
     def test_decode_accepts_pyjwt_encoded_token(self):
         jwt = pytest.importorskip("jwt")
 
-        from api.middleware import auth as dashboard_auth  # noqa: PLC0415
+        import api.middleware.auth as dashboard_auth  # noqa: PLC0415
 
         shared_secret = "shared-secret-at-least-32-bytes-long"
         now = int(time.time())
@@ -227,7 +227,7 @@ class TestJWT:
     def test_custom_token_is_decodable_by_pyjwt(self):
         jwt = pytest.importorskip("jwt")
 
-        from api.middleware import auth as dashboard_auth  # noqa: PLC0415
+        import api.middleware.auth as dashboard_auth  # noqa: PLC0415
 
         shared_secret = "shared-secret-at-least-32-bytes-long"
         with (
@@ -405,7 +405,7 @@ class TestWSAuth:
     async def test_ws_accepts_pyjwt_token_with_shared_secret(self):
         jwt = pytest.importorskip("jwt")
 
-        from api.middleware import auth as dashboard_auth  # noqa: PLC0415
+        import api.middleware.auth as dashboard_auth  # noqa: PLC0415
         from api.middleware.ws_auth import ws_authenticate  # noqa: PLC0415
 
         shared_secret = "shared-secret-at-least-32-bytes-long"
@@ -534,6 +534,108 @@ class TestRateLimitIntegration:
         # Cleanup
         _http_store.reset()
 
+    def test_authenticated_actors_isolated_on_same_ip(self, monkeypatch):
+        """Different authenticated actors should not collide on a shared IP."""
+        import fastapi  # noqa: PLC0415
+        from fastapi.testclient import TestClient  # noqa: PLC0415
+
+        from api.middleware.auth import create_token  # noqa: PLC0415
+        from api.middleware.rate_limit import RateLimitMiddleware, _http_store  # noqa: PLC0415
+
+        monkeypatch.setattr("api.middleware.rate_limit.RATE_LIMIT_BACKEND", "memory")
+        monkeypatch.setattr("api.middleware.rate_limit.REQUESTS_PER_MIN", 1)
+        monkeypatch.setattr("api.middleware.rate_limit.BURST", 0)
+        _http_store.reset()
+
+        app = fastapi.FastAPI()
+        app.add_middleware(RateLimitMiddleware)
+
+        @app.get("/api/v1/test")
+        async def _test():
+            return {"ok": True}
+
+        token_a = create_token(sub="operator_a")
+        token_b = create_token(sub="operator_b")
+        client = TestClient(app)
+
+        resp_a1 = client.get("/api/v1/test", headers={"Authorization": f"Bearer {token_a}"})
+        resp_b1 = client.get("/api/v1/test", headers={"Authorization": f"Bearer {token_b}"})
+        resp_a2 = client.get("/api/v1/test", headers={"Authorization": f"Bearer {token_a}"})
+
+        assert resp_a1.status_code == 200
+        assert resp_b1.status_code == 200
+        assert resp_a2.status_code == 429
+
+        _http_store.reset()
+
+    def test_trade_write_limits_partition_by_account(self, monkeypatch):
+        """Trade-write limits should isolate different accounts for the same actor."""
+        import fastapi  # noqa: PLC0415
+        from fastapi.testclient import TestClient  # noqa: PLC0415
+
+        from api.middleware.auth import create_token  # noqa: PLC0415
+        from api.middleware.rate_limit import RateLimitMiddleware, _trade_write_store  # noqa: PLC0415
+
+        monkeypatch.setattr("api.middleware.rate_limit.RATE_LIMIT_BACKEND", "memory")
+        monkeypatch.setattr("api.middleware.rate_limit.TRADE_WRITE_PER_MIN", 1)
+        _trade_write_store.reset()
+
+        app = fastapi.FastAPI()
+        app.add_middleware(RateLimitMiddleware)
+
+        @app.post("/api/v1/trades/confirm")
+        async def _confirm(payload: dict):
+            return {"ok": True, "payload": payload}
+
+        token = create_token(sub="desk_operator")
+        headers = {"Authorization": f"Bearer {token}"}
+        client = TestClient(app)
+
+        resp_acc_1 = client.post("/api/v1/trades/confirm", headers=headers, json={"account_id": "ACC-1"})
+        resp_acc_2 = client.post("/api/v1/trades/confirm", headers=headers, json={"account_id": "ACC-2"})
+        resp_acc_1_again = client.post("/api/v1/trades/confirm", headers=headers, json={"account_id": "ACC-1"})
+
+        assert resp_acc_1.status_code == 200
+        assert resp_acc_2.status_code == 200
+        assert resp_acc_1_again.status_code == 429
+
+        _trade_write_store.reset()
+
+    def test_take_limits_partition_by_ea_instance(self, monkeypatch):
+        """Take bucket should isolate EA instances under the same actor/account."""
+        import fastapi  # noqa: PLC0415
+        from fastapi.testclient import TestClient  # noqa: PLC0415
+
+        from api.middleware.auth import create_token  # noqa: PLC0415
+        from api.middleware.rate_limit import RateLimitMiddleware, _take_store  # noqa: PLC0415
+
+        monkeypatch.setattr("api.middleware.rate_limit.RATE_LIMIT_BACKEND", "memory")
+        monkeypatch.setattr("api.middleware.rate_limit.TAKE_PER_MIN", 1)
+        _take_store.reset()
+
+        app = fastapi.FastAPI()
+        app.add_middleware(RateLimitMiddleware)
+
+        @app.post("/api/v1/execution/take-signal")
+        async def _take(payload: dict):
+            return {"ok": True, "payload": payload}
+
+        token = create_token(sub="desk_operator")
+        headers = {"Authorization": f"Bearer {token}"}
+        client = TestClient(app)
+
+        body_1 = {"account_id": "ACC-1", "ea_instance_id": "EA-A"}
+        body_2 = {"account_id": "ACC-1", "ea_instance_id": "EA-B"}
+        resp_1 = client.post("/api/v1/execution/take-signal", headers=headers, json=body_1)
+        resp_2 = client.post("/api/v1/execution/take-signal", headers=headers, json=body_2)
+        resp_1_again = client.post("/api/v1/execution/take-signal", headers=headers, json=body_1)
+
+        assert resp_1.status_code == 200
+        assert resp_2.status_code == 200
+        assert resp_1_again.status_code == 429
+
+        _take_store.reset()
+
 
 # =========================================================================
 # Path-bucket routing tests (new granular buckets)
@@ -570,6 +672,13 @@ class TestPathBucketRouting:
         from api.middleware.rate_limit import _path_bucket  # noqa: PLC0415
 
         result = _path_bucket("/signals/take", "POST", False)
+        assert result is not None
+        assert result[0] == "take"
+
+    def test_execution_take_signal_bucket(self):
+        from api.middleware.rate_limit import _path_bucket  # noqa: PLC0415
+
+        result = _path_bucket("/api/v1/execution/take-signal", "POST", False)
         assert result is not None
         assert result[0] == "take"
 

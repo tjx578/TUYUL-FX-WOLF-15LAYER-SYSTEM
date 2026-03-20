@@ -13,13 +13,16 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 // ── Env-var-dependent module: re-import per test ─────────────
 
 function setEnv(env: Record<string, string | undefined>) {
-    for (const [key, val] of Object.entries(env)) {
-        if (val === undefined) {
-            delete process.env[key];
-        } else {
-            process.env[key] = val;
-        }
-    }
+    const mergedEnv: Record<string, string | undefined> = {
+        ...process.env,
+        ...env,
+    };
+
+    const sanitizedEnv = Object.fromEntries(
+        Object.entries(mergedEnv).filter(([, val]) => val !== undefined),
+    ) as NodeJS.ProcessEnv;
+
+    process.env = sanitizedEnv;
 }
 
 // We need to clear module cache for each test since env.ts reads
@@ -34,11 +37,13 @@ async function freshImport() {
 
 beforeEach(() => {
     // Clear relevant env vars
-    delete process.env.NEXT_PUBLIC_API_BASE_URL;
-    delete process.env.NEXT_PUBLIC_API_URL;
-    delete process.env.NEXT_PUBLIC_WS_BASE_URL;
-    delete process.env.NEXT_PUBLIC_WS_URL;
-    delete process.env.NEXT_PUBLIC_TIMEZONE;
+    setEnv({
+        NEXT_PUBLIC_API_BASE_URL: undefined,
+        NEXT_PUBLIC_API_URL: undefined,
+        NEXT_PUBLIC_WS_BASE_URL: undefined,
+        NEXT_PUBLIC_WS_URL: undefined,
+        NEXT_PUBLIC_TIMEZONE: undefined,
+    });
 });
 
 afterEach(() => {

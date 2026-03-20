@@ -190,7 +190,7 @@ export default function DegradationBanner() {
                 borderRadius: 3,
               }}
             >
-              NEXT_PUBLIC_WS_URL
+              NEXT_PUBLIC_WS_BASE_URL
             </code>{" "}
             to connect to your backend.
           </p>
