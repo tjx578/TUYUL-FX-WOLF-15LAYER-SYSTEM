@@ -8,7 +8,6 @@ for cold-start recovery via ``FinnhubCandleFetcher.cold_start_m15()``.
 """
 
 import asyncio
-import random
 import time
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -322,60 +321,44 @@ class FinnhubCandleFetcher:
         async with self.semaphore:
             try:
                 async with httpx.AsyncClient(timeout=self.timeout) as client:
-                    for attempt in range(self.retries + 1):
-                        active_key = self._key_manager.current_key() or self.api_key
-                        self.api_key = active_key
-                        params["token"] = active_key
+                    active_key = self._key_manager.current_key() or self.api_key
+                    self.api_key = active_key
+                    params["token"] = active_key
 
-                        await self._wait_for_request_slot()
-                        logger.debug(
-                            f"Fetching {symbol} {timeframe}: {bars} bars from Finnhub "
-                            f"(attempt {attempt + 1}/{self.retries + 1})"
+                    await self._wait_for_request_slot()
+                    logger.debug(
+                        "Fetching {} {}: {} bars from Finnhub (single attempt, no retry)",
+                        symbol,
+                        timeframe,
+                        bars,
+                    )
+                    response = await client.get(url, params=params)
+
+                    if response.status_code == 429:
+                        self._key_manager.report_failure(active_key, 429)
+                        raise FinnhubCandleError(
+                            f"[429] Rate limited for {symbol} {timeframe} — "
+                            "warmup akan skip, WS akan feed data secara live"
                         )
-                        response = await client.get(url, params=params)
 
-                        if response.status_code == 403:
-                            self._key_manager.report_failure(active_key, 403)
-                            raise FinnhubCandlePremiumError(f"Premium access required for {symbol} {timeframe}")
+                    if response.status_code == 403:
+                        self._key_manager.report_failure(active_key, 403)
+                        raise FinnhubCandlePremiumError(f"Premium access required for {symbol} {timeframe}")
 
-                        if response.status_code == 429:
-                            self._key_manager.report_failure(active_key, 429)
+                    response.raise_for_status()
+                    data = response.json()
 
-                            if attempt >= self.retries:
-                                raise FinnhubCandleError(
-                                    f"Rate limited for {symbol} {timeframe} after {self.retries + 1} attempts"
-                                )
-
-                            retry_after = self._retry_after_seconds(response.headers.get("Retry-After"))
-                            exponential = self.backoff_factor * (2**attempt)
-                            jitter = random.uniform(0.0, self.backoff_jitter_sec)
-                            wait_time = min(self.max_backoff_sec, max(retry_after, exponential) + jitter)
-
-                            logger.warning(
-                                "Rate limited on {} {} (attempt {}/{}), retrying in {:.2f}s",
-                                symbol,
-                                timeframe,
-                                attempt + 1,
-                                self.retries + 1,
-                                wait_time,
-                            )
-                            await asyncio.sleep(wait_time)
-                            continue
-
-                        response.raise_for_status()
-                        data = response.json()
-
-                        self._key_manager.report_success(active_key)
-                        candles = self.normalize_response(data, symbol, timeframe)
-                        logger.info(f"Fetched {len(candles)} {timeframe} bars for {symbol}")
-                        return candles
-
-                    raise FinnhubCandleError(f"Exhausted retries for {symbol} {timeframe}")
+                    self._key_manager.report_success(active_key)
+                    candles = self.normalize_response(data, symbol, timeframe)
+                    logger.info("Fetched {} {} bars for {}", len(candles), timeframe, symbol)
+                    return candles
 
             except httpx.HTTPStatusError as exc:
                 if exc.response.status_code == 403:
                     raise FinnhubCandlePremiumError(str(exc)) from exc
-                raise FinnhubCandleError(f"HTTP error fetching {symbol} {timeframe}: {exc}") from exc
+                raise FinnhubCandleError(f"HTTP error {symbol} {timeframe}: {exc}") from exc
+            except (FinnhubCandleError, FinnhubCandlePremiumError):
+                raise
             except Exception as exc:
                 raise FinnhubCandleError(f"Error fetching {symbol} {timeframe}: {exc}") from exc
 

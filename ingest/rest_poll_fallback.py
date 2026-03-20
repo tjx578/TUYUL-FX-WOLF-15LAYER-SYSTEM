@@ -138,6 +138,20 @@ class RestPollFallback:
 
     async def _poll_symbol(self, symbol: str) -> None:
         """Fetch M15 + optional H1 for a single symbol and seed the context bus."""
+        from ingest.finnhub_key_manager import finnhub_keys  # noqa: PLC0415
+
+        # ── GUARD: skip REST poll while Finnhub key is in cooldown ────
+        key_statuses = finnhub_keys.status()
+        if key_statuses and all(k["suspended"] for k in key_statuses):
+            remaining = max(k["cooldown_remaining_sec"] for k in key_statuses)
+            logger.warning(
+                "[RestPoll] Finnhub key suspended (%.0fs cooldown) — "
+                "skipping REST poll for %s, WS candle builder akan catchup",
+                remaining,
+                symbol,
+            )
+            return
+
         try:
             m15_candles = await self._fetcher.fetch(symbol, "M15", self._bars)
             for candle in m15_candles:
