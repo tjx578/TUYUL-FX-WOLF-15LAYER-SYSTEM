@@ -1,3 +1,3 @@
 """
-Analysis layers package — L1 through L11.
+Analysis package - Layer synthesis and market analysis.
 """

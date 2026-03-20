@@ -1,18 +1,56 @@
 """
 Redis Client Wrapper with Connection Pooling, Pub/Sub, and Streams support.
+
+.. deprecated::
+    This **sync** Redis singleton is superseded by the native-async pool in
+    ``infrastructure.redis_client`` (``RedisClientManager``).
+
+    New code must use::
+
+        from infrastructure.redis_client import get_client, get_async_redis
+
+    This module remains only for backward-compatibility with components that
+    still rely on synchronous Redis calls (e.g. ``storage`` helpers,
+    ``ws_routes``).  It will be removed once the async migration is complete.
 """
 
 import os
-from typing import Any, Optional
+from typing import Any, Optional, cast  # noqa: UP035
+from urllib.parse import urlsplit, urlunsplit
 
-import redis
-from loguru import logger
-from tenacity import (
+# Type alias for Redis stream read responses:
+# list of (stream_name, list of (entry_id, fields)) tuples.
+StreamResponse = list[tuple[str, list[tuple[str, dict[str, str]]]]]
+
+import redis  # noqa: E402
+import redis.client  # noqa: E402
+import redis.exceptions  # noqa: E402
+from loguru import logger  # noqa: E402
+from tenacity import (  # noqa: E402
     retry,
+    retry_if_exception_type,
     stop_after_attempt,
     wait_exponential,
-    retry_if_exception_type,
 )
+
+from config.logging_bootstrap import configure_loguru_logging  # noqa: E402
+
+configure_loguru_logging()
+
+
+def _sanitize_redis_url(url: str) -> str:
+    """Mask password in Redis URL for safe logging."""
+    parts = urlsplit(url)
+    if not parts.netloc or "@" not in parts.netloc:
+        return url
+
+    userinfo, hostinfo = parts.netloc.rsplit("@", 1)
+    if ":" not in userinfo:
+        return url
+
+    username, _password = userinfo.split(":", 1)
+    safe_netloc = f"{username}:***@{hostinfo}"
+    return urlunsplit((parts.scheme, safe_netloc, parts.path, parts.query, parts.fragment))
 
 
 class RedisClient:
@@ -36,24 +74,36 @@ class RedisClient:
 
     def _init(self) -> None:
         """Initialize Redis connection pool."""
-        url = os.getenv("REDIS_URL") or "redis://localhost:6379/0"
-        socket_timeout = int(os.getenv("REDIS_SOCKET_TIMEOUT_SEC", "5"))
+        from infrastructure.redis_url import get_redis_url
 
-        # Create connection pool for reuse
+        url = get_redis_url()
+        socket_timeout = int(os.getenv("REDIS_SOCKET_TIMEOUT_SEC", "10"))
+
+        # TCP_OVERWINDOW fix: enable keepalive, reduce pool size,
+        # add health-check interval to prune idle connections.
+        # NOTE: Only SO_KEEPALIVE is set here (socket_keepalive=True).
+        # Detailed keepalive timing (idle/interval/count) is handled
+        # server-side via Redis --tcp-keepalive.  Passing
+        # socket_keepalive_options with TCP_KEEPIDLE etc. causes EINVAL
+        # on some container runtimes (e.g. Railway Alpine).
         self._pool = redis.ConnectionPool.from_url(
             url,
             decode_responses=True,
             socket_timeout=socket_timeout,
             socket_connect_timeout=socket_timeout,
-            max_connections=50,
+            max_connections=10,
+            socket_keepalive=True,
+            health_check_interval=30,
+            retry_on_timeout=True,
         )
         self.client = redis.Redis(connection_pool=self._pool)
-        logger.info(f"Redis client initialized with connection pool: {url}")
+        logger.info(
+            "Redis client initialized with connection pool: {}",
+            _sanitize_redis_url(url),
+        )
 
     @retry(
-        retry=retry_if_exception_type(
-            (redis.exceptions.ConnectionError, redis.exceptions.TimeoutError)
-        ),
+        retry=retry_if_exception_type((redis.exceptions.ConnectionError, redis.exceptions.TimeoutError)),
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=1, min=1, max=10),
         reraise=True,
@@ -68,43 +118,36 @@ class RedisClient:
         Raises:
             redis.exceptions.ConnectionError: If connection fails after retries.
         """
-        return self.client.ping()
+        result: bool = cast(bool, self.client.ping())
+        return result
 
     @retry(
-        retry=retry_if_exception_type(
-            (redis.exceptions.ConnectionError, redis.exceptions.TimeoutError)
-        ),
+        retry=retry_if_exception_type((redis.exceptions.ConnectionError, redis.exceptions.TimeoutError)),
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=1, min=1, max=10),
         reraise=True,
     )
-    def set(self, key: str, value: str, ex: Optional[int] = None) -> None:
+    def set(self, key: str, value: str, ex: int | None = None) -> None:
         """Set key-value with optional expiration."""
         self.client.set(key, value, ex=ex)
 
     @retry(
-        retry=retry_if_exception_type(
-            (redis.exceptions.ConnectionError, redis.exceptions.TimeoutError)
-        ),
+        retry=retry_if_exception_type((redis.exceptions.ConnectionError, redis.exceptions.TimeoutError)),
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=1, min=1, max=10),
         reraise=True,
     )
-    def get(self, key: str) -> Optional[str]:
+    def get(self, key: str) -> str | None:
         """Get value by key."""
-        return self.client.get(key)
+        return cast(str | None, self.client.get(key))
 
     @retry(
-        retry=retry_if_exception_type(
-            (redis.exceptions.ConnectionError, redis.exceptions.TimeoutError)
-        ),
+        retry=retry_if_exception_type((redis.exceptions.ConnectionError, redis.exceptions.TimeoutError)),
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=1, min=1, max=10),
         reraise=True,
     )
-    def hset(
-        self, name: str, mapping: Optional[dict] = None, **kwargs: Any
-    ) -> int:
+    def hset(self, name: str, mapping: dict[str, Any] | None = None, **kwargs: Any) -> int:
         """
         Set hash field(s).
 
@@ -117,33 +160,38 @@ class RedisClient:
             Number of fields that were added.
         """
         if mapping:
-            return self.client.hset(name, mapping=mapping)
-        else:
-            return self.client.hset(name, **kwargs)
+            return cast(int, self.client.hset(name, mapping=mapping))
+        return cast(int, self.client.hset(name, **kwargs))
 
     @retry(
-        retry=retry_if_exception_type(
-            (redis.exceptions.ConnectionError, redis.exceptions.TimeoutError)
-        ),
+        retry=retry_if_exception_type((redis.exceptions.ConnectionError, redis.exceptions.TimeoutError)),
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=1, min=1, max=10),
         reraise=True,
     )
-    def hget(self, name: str, key: str) -> Optional[str]:
+    def hget(self, name: str, key: str) -> str | None:
         """Get hash field value."""
-        return self.client.hget(name, key)
+        return cast(str | None, self.client.hget(name, key))
 
     @retry(
-        retry=retry_if_exception_type(
-            (redis.exceptions.ConnectionError, redis.exceptions.TimeoutError)
-        ),
+        retry=retry_if_exception_type((redis.exceptions.ConnectionError, redis.exceptions.TimeoutError)),
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=1, max=10),
+        reraise=True,
+    )
+    def hgetall(self, name: str) -> dict[str, str]:
+        """Get all fields and values of a hash."""
+        return cast(dict[str, str], self.client.hgetall(name))
+
+    @retry(
+        retry=retry_if_exception_type((redis.exceptions.ConnectionError, redis.exceptions.TimeoutError)),
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=1, min=1, max=10),
         reraise=True,
     )
     def delete(self, key: str) -> int:
         """Delete key."""
-        return self.client.delete(key)
+        return cast(int, self.client.delete(key))
 
     def pubsub(self) -> redis.client.PubSub:
         """
@@ -152,12 +200,10 @@ class RedisClient:
         Returns:
             redis.client.PubSub instance for subscribing.
         """
-        return self.client.pubsub()
+        return cast(redis.client.PubSub, self.client.pubsub())
 
     @retry(
-        retry=retry_if_exception_type(
-            (redis.exceptions.ConnectionError, redis.exceptions.TimeoutError)
-        ),
+        retry=retry_if_exception_type((redis.exceptions.ConnectionError, redis.exceptions.TimeoutError)),
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=1, min=1, max=10),
         reraise=True,
@@ -173,12 +219,10 @@ class RedisClient:
         Returns:
             Number of subscribers that received the message.
         """
-        return self.client.publish(channel, message)
+        return cast(int, self.client.publish(channel, message))
 
     @retry(
-        retry=retry_if_exception_type(
-            (redis.exceptions.ConnectionError, redis.exceptions.TimeoutError)
-        ),
+        retry=retry_if_exception_type((redis.exceptions.ConnectionError, redis.exceptions.TimeoutError)),
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=1, min=1, max=10),
         reraise=True,
@@ -188,7 +232,7 @@ class RedisClient:
         name: str,
         fields: dict[str, Any],
         id: str = "*",
-        maxlen: Optional[int] = None,
+        maxlen: int | None = None,
         approximate: bool = True,
     ) -> str:
         """
@@ -204,14 +248,10 @@ class RedisClient:
         Returns:
             Entry ID assigned by Redis.
         """
-        return self.client.xadd(
-            name, fields, id=id, maxlen=maxlen, approximate=approximate
-        )
+        return cast(str, self.client.xadd(name, fields, id=id, maxlen=maxlen, approximate=approximate))  # type: ignore[arg-type]
 
     @retry(
-        retry=retry_if_exception_type(
-            (redis.exceptions.ConnectionError, redis.exceptions.TimeoutError)
-        ),
+        retry=retry_if_exception_type((redis.exceptions.ConnectionError, redis.exceptions.TimeoutError)),
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=1, min=1, max=10),
         reraise=True,
@@ -219,9 +259,9 @@ class RedisClient:
     def xread(
         self,
         streams: dict[str, str],
-        count: Optional[int] = None,
-        block: Optional[int] = None,
-    ) -> list:
+        count: int | None = None,
+        block: int | None = None,
+    ) -> StreamResponse:
         """
         Read from Redis Streams.
 
@@ -233,12 +273,10 @@ class RedisClient:
         Returns:
             List of [stream_name, [(entry_id, fields), ...]] tuples.
         """
-        return self.client.xread(streams, count=count, block=block)
+        return cast(StreamResponse, self.client.xread(streams, count=count, block=block))  # type: ignore
 
     @retry(
-        retry=retry_if_exception_type(
-            (redis.exceptions.ConnectionError, redis.exceptions.TimeoutError)
-        ),
+        retry=retry_if_exception_type((redis.exceptions.ConnectionError, redis.exceptions.TimeoutError)),
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=1, min=1, max=10),
         reraise=True,
@@ -248,9 +286,9 @@ class RedisClient:
         groupname: str,
         consumername: str,
         streams: dict[str, str],
-        count: Optional[int] = None,
-        block: Optional[int] = None,
-    ) -> list:
+        count: int | None = None,
+        block: int | None = None,
+    ) -> StreamResponse:
         """
         Read from Redis Streams using a consumer group.
 
@@ -264,14 +302,10 @@ class RedisClient:
         Returns:
             List of [stream_name, [(entry_id, fields), ...]] tuples.
         """
-        return self.client.xreadgroup(
-            groupname, consumername, streams, count=count, block=block
-        )
+        return cast(StreamResponse, self.client.xreadgroup(groupname, consumername, streams, count=count, block=block))  # type: ignore
 
     @retry(
-        retry=retry_if_exception_type(
-            (redis.exceptions.ConnectionError, redis.exceptions.TimeoutError)
-        ),
+        retry=retry_if_exception_type((redis.exceptions.ConnectionError, redis.exceptions.TimeoutError)),
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=1, min=1, max=10),
         reraise=True,
@@ -299,16 +333,51 @@ class RedisClient:
             redis.exceptions.ResponseError: If group already exists.
         """
         try:
-            return self.client.xgroup_create(
-                name, groupname, id=id, mkstream=mkstream
-            )
+            return cast(bool, self.client.xgroup_create(name, groupname, id=id, mkstream=mkstream))
         except redis.exceptions.ResponseError as e:
-            if "BUSYGROUP" in str(e):
+            err = str(e)
+            if "BUSYGROUP" in err:
                 # Group already exists, this is fine
                 logger.debug(f"Consumer group {groupname} already exists on {name}")
                 return False
+            if "WRONGTYPE" in err:
+                # Key exists with incompatible type → delete and retry
+                logger.warning(
+                    "Key '%s' has wrong type for stream → deleting and recreating",
+                    name,
+                )
+                self.client.delete(name)
+                self.client.xgroup_create(name, groupname, id=id, mkstream=mkstream)
+                return True
             raise
 
 
-# Singleton instance for imports
-redis_client = RedisClient()
+class _LazyRedisClient:
+    """Lazy proxy that defers ``RedisClient()`` construction until first use.
+
+    This prevents the module-level singleton from crashing the import chain
+    when Redis is unreachable or ``REDIS_URL`` is not configured (e.g. during
+    Railway cold-start before env vars are injected).  All attribute access is
+    transparently forwarded to the underlying ``RedisClient`` instance.
+    """
+
+    def __init__(self) -> None:
+        object.__setattr__(self, "_instance", None)
+
+    def _resolve(self) -> RedisClient:
+        inst = object.__getattribute__(self, "_instance")
+        if inst is None:
+            inst = RedisClient()
+            object.__setattr__(self, "_instance", inst)
+        return inst
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._resolve(), name)
+
+    def __setattr__(self, name: str, value: Any) -> None:
+        setattr(self._resolve(), name, value)
+
+
+# Singleton instance for imports — lazily initialized on first attribute access
+# so that importing this module never crashes even when Redis is unavailable.
+redis_client: RedisClient = _LazyRedisClient()  # type: ignore[assignment]

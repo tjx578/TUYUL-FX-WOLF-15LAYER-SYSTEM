@@ -1,0 +1,29 @@
+{
+  "typeCheckingMode": "standard",
+  "pythonVersion": "3.11",
+  "reportMissingTypeStubs": false,
+  "reportUnnecessaryTypeIgnoreComment": true,
+  "include": ["."],
+  "exclude": [
+    "node_modules",
+    ".venv",
+    "__pycache__",
+    "dashboard/nextjs",
+    "migrations",
+    "**/.*",
+    "tests",
+    "scripts",
+    "deploy",
+    "docs",
+    "ops",
+    "load",
+    "e2e"
+  ],
+  "extraPaths": [
+    ".",
+    "./services/api",
+    "./infrastructure"
+  ],
+  "venvPath": ".",
+  "venv": ".venv"
+}

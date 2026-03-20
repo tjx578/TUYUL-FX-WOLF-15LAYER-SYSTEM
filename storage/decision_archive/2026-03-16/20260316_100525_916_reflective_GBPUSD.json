@@ -1,0 +1,16 @@
+{
+  "journal_type": "reflective",
+  "recorded_at": "2026-03-16T10:05:25.916009+00:00",
+  "data": {
+    "timestamp": "2026-03-16T10:05:25.912011Z",
+    "setup_id": "GBPUSD_1773655525",
+    "pair": "GBPUSD",
+    "outcome": "SKIPPED",
+    "did_system_protect": "YES",
+    "was_rejection_correct": null,
+    "discipline_rating": 10,
+    "override_attempted": false,
+    "learning_note": "Too risky",
+    "system_adjustment_candidate": false
+  }
+}

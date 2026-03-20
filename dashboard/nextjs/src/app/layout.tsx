@@ -1,12 +1,23 @@
-import type { Metadata } from 'next';
-import './globals.css';
+import type { Metadata, Viewport } from "next";
+import QueryProvider from "@/components/providers/QueryProvider";
+import SessionExpiryModal from "@/components/auth/SessionExpiryModal";
+import ToastViewport from "@/components/feedback/ToastViewport";
+import "./globals.css";
 
 export const metadata: Metadata = {
-  title: 'TUYUL FX WOLF 15-LAYER SYSTEM',
-  description: 'Professional Forex Trading System Dashboard',
-  icons: {
-    icon: '/favicon.ico',
+  title: {
+    default: "TUYUL FX | WOLF-15 Terminal",
+    template: "%s — TUYUL FX",
   },
+  description: "Institutional-grade multi-layer prop-firm control surface: Command Center, Signal Board, Risk Command, Trade Desk, and governed compliance.",
+  keywords: ["forex", "trading", "wolf-15", "prop firm", "institutional", "pipeline", "risk", "signal board"],
+  authors: [{ name: "TUYUL FX" }],
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  themeColor: "#050a14",
 };
 
 export default function RootLayout({
@@ -16,9 +27,14 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body className="min-h-screen bg-wolf-darker antialiased">
-        {children}
+      <body>
+        <QueryProvider>
+          {children}
+          <SessionExpiryModal />
+          <ToastViewport />
+        </QueryProvider>
       </body>
     </html>
   );
 }
+

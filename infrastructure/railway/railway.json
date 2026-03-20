@@ -1,0 +1,35 @@
+{
+  "services": [
+    {
+      "name": "wolf15-api",
+      "startCommand": "bash deploy/railway/start_api.sh",
+      "healthcheckPath": "/health",
+      "public": true
+    },
+    {
+      "name": "wolf15-engine",
+      "startCommand": "bash deploy/railway/start_engine.sh",
+      "public": false
+    },
+    {
+      "name": "wolf15-ingest",
+      "startCommand": "bash deploy/railway/start_ingest.sh",
+      "public": false
+    },
+    {
+      "name": "wolf15-orchestrator",
+      "startCommand": "bash deploy/railway/start_orchestrator.sh",
+      "public": false
+    },
+    {
+      "name": "wolf15-migrator",
+      "startCommand": "bash deploy/railway/start_migrator.sh",
+      "public": false
+    },
+    {
+      "name": "wolf15-worker",
+      "startCommand": "bash deploy/railway/start_worker.sh services.worker.montecarlo_job",
+      "public": false
+    }
+  ]
+}

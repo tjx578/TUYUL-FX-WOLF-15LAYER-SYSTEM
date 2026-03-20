@@ -3,14 +3,12 @@ Technical Indicators
 Pure calculation layer.
 """
 
-from typing import List, Optional
-
 import numpy as np
 
 
 class IndicatorEngine:
     @staticmethod
-    def ema(prices: List[float], period: int) -> Optional[float]:
+    def ema(prices: list[float], period: int) -> float | None:
         if len(prices) < period:
             return None
 
@@ -19,7 +17,7 @@ class IndicatorEngine:
         return float(np.dot(prices[-period:], weights))
 
     @staticmethod
-    def rsi(prices: List[float], period: int = 14) -> Optional[float]:
+    def rsi(prices: list[float], period: int = 14) -> float | None:
         if len(prices) < period + 1:
             return None
 
@@ -38,11 +36,11 @@ class IndicatorEngine:
 
     @staticmethod
     def atr(
-        highs: List[float],
-        lows: List[float],
-        closes: List[float],
+        highs: list[float],
+        lows: list[float],
+        closes: list[float],
         period: int = 14,
-    ) -> Optional[float]:
+    ) -> float | None:
         if len(highs) < period:
             return None
 
@@ -56,4 +54,6 @@ class IndicatorEngine:
             trs.append(tr)
 
         return float(np.mean(trs[-period:]))
+
+
 # Placeholder

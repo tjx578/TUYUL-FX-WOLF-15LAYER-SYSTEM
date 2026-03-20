@@ -33,6 +33,7 @@ chmod +x setup_vps.sh
 ```
 
 The script will:
+
 - Update system packages
 - Install Python 3.11+, Redis, Nginx, Node.js
 - Install Certbot for SSL
@@ -72,6 +73,7 @@ nano .env
 ```
 
 **Important environment variables:**
+
 ```bash
 APP_ENV="prod"
 TRADING_MODE="paper"  # or "live" when ready
@@ -90,7 +92,13 @@ TELEGRAM_CHAT_ID="your_chat_id"
 
 # Dashboard
 DASHBOARD_ENABLED="true"
-DASHBOARD_JWT_SECRET="CHANGE_ME_TO_RANDOM_STRING"
+DASHBOARD_JWT_SECRET="<generate_64_hex_chars_with_openssl_rand>"
+```
+
+Generate a strong JWT secret before saving `.env`:
+
+```bash
+openssl rand -hex 32
 ```
 
 Save and exit (Ctrl+X, Y, Enter).
@@ -286,6 +294,7 @@ cd /opt/tuyulfx
 ```
 
 The script will:
+
 1. Create backup
 2. Pull latest code
 3. Update dependencies
@@ -459,6 +468,7 @@ ExecStart=/opt/tuyulfx/venv/bin/gunicorn api_server:app \
 ```
 
 Reload and restart:
+
 ```bash
 sudo systemctl daemon-reload
 sudo systemctl restart tuyulfx-api.service
@@ -474,6 +484,7 @@ maxmemory-policy allkeys-lru
 ```
 
 Restart Redis:
+
 ```bash
 sudo systemctl restart redis-server
 ```
@@ -482,7 +493,7 @@ sudo systemctl restart redis-server
 
 ## Support & Resources
 
-- **GitHub**: https://github.com/tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM
+- **GitHub**: <https://github.com/tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM>
 - **Issues**: Open issue on GitHub
 - **Documentation**: See `/docs` directory
 
@@ -520,9 +531,10 @@ sudo journalctl -u "tuyulfx-*" -f
 
 ---
 
-**Deployment Complete! 🎉**
+## Deployment Complete! 🎉
 
 Your TUYUL FX WOLF 15-LAYER SYSTEM is now running on Hostinger VPS with:
+
 - ✅ Python trading engine
 - ✅ FastAPI dashboard API
 - ✅ Finnhub WebSocket ingest

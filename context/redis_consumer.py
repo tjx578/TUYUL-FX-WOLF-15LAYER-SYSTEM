@@ -1,280 +1,521 @@
-"""
-Redis Consumer for Engine Container.
+"""RedisConsumer — subscribes to Redis pub/sub and loads candle history on startup.
 
-Consumes tick/candle/news data from Redis and feeds it into the local
-LiveContextBus, enabling the engine container to receive data from the
-ingest container in a multi-container deployment.
+Zones: analysis (context ingestion). No execution side-effects.
+
+This module is responsible for:
+1) Warmup load: read Redis Lists into LiveContextBus
+2) Realtime: subscribe to pub/sub channels and push candle updates into LiveContextBus
+
+It must provide an async `.run()` method because main.py calls it.
 """
+
+from __future__ import annotations
 
 import asyncio
-from typing import Optional
+import contextlib
+import logging
+import os
+from dataclasses import dataclass
+from typing import Any, cast
 
 import orjson
-from loguru import logger
 
 from context.live_context_bus import LiveContextBus
-from storage.redis_client import RedisClient
+
+logger = logging.getLogger(__name__)
+
+# Timeframes fetched during warmup (must align with writers of Redis Lists)
+WARMUP_TIMEFRAMES: tuple[str, ...] = ("M15", "H1", "H4", "D1", "W1", "MN")
+
+# Redis List key prefix for stored candle history
+CANDLE_HISTORY_KEY_PREFIX = "candle_history"
+
+# Default ordered list of prefixes that hold *List* data (safe for LRANGE warmup).
+# NOTE: wolf15:candle:{sym}:{tf} is a Hash (HSET by RedisContextBridge)
+#       — handled separately via HGETALL as a single-bar fallback.
+#
+# Override at runtime via env var (comma-separated, first-wins):
+#   CANDLE_HISTORY_KEY_PREFIXES=wolf15:candle_history,candle_history
+CANDLE_HISTORY_LIST_PREFIXES: list[str] = [
+    "wolf15:candle_history",
+    "candle_history",
+]
+
+
+def get_candle_prefixes() -> list[str]:
+    """Resolve candle List prefixes at call-time.
+
+    Reading at call-time (not import-time) lets tests override
+    ``CANDLE_HISTORY_KEY_PREFIXES`` without reloading the module.
+    Falls back to module defaults when the env var is absent, empty, or
+    contains only whitespace/commas.
+    """
+    env_val = os.environ.get("CANDLE_HISTORY_KEY_PREFIXES", "").strip()
+    if env_val:
+        parsed = [p.strip() for p in env_val.split(",") if p.strip()]
+        if parsed:
+            return parsed
+    return list(CANDLE_HISTORY_LIST_PREFIXES)
+
+
+# Private alias kept for backward-compat with internal callers
+_get_candle_prefixes = get_candle_prefixes
+
+# Hash key prefix for latest single candle (HSET by RedisContextBridge)
+CANDLE_HASH_PREFIX: str = "wolf15:candle"
+
+
+@dataclass(frozen=True)
+class RedisConsumerConfig:
+    """Runtime config for RedisConsumer.
+
+    pubsub_patterns:
+        Redis pattern subscriptions. We use psubscribe to allow per-symbol channels.
+        If your publisher uses exact channels only, include them here and we will also
+        subscribe via `subscribe()` as a fallback.
+    """
+
+    pubsub_patterns: tuple[str, ...] = (
+        "candles:*",
+        "candle:*",
+        "candle_updates:*",
+        "wolf15:candle:*",  # ← add this
+    )
+    pubsub_channels: tuple[str, ...] = ("candles", "candle_updates", "candle", "tick_updates")
 
 
 class RedisConsumer:
-    """
-    Consumes market data from Redis and populates local LiveContextBus.
+    """Consumes candle data from Redis (pub/sub + list history).
 
-    This runs as a background task in the engine container to receive:
-      - Ticks from Redis Streams (using consumer groups)
-      - Candles from Redis Pub/Sub
-      - News from Redis Pub/Sub
+    On startup, call :meth:`load_candle_history` to populate
+    :class:`LiveContextBus` from Redis Lists before subscribing to pub/sub.
 
-    The consumed data is fed into the local LiveContextBus so all existing
-    analysis code works unchanged.
+    Expected candle message payload:
+        JSON dict with at least:
+            - symbol: str
+            - timeframe: str
+        Other fields are passed through.
     """
 
     def __init__(
         self,
         symbols: list[str],
-        redis_client: Optional[RedisClient] = None,
-        context_bus: Optional[LiveContextBus] = None,
+        redis_client: Any,
+        context_bus: LiveContextBus | None = None,
+        *,
+        config: RedisConsumerConfig | None = None,
     ) -> None:
-        """
-        Initialize Redis consumer.
+        super().__init__()
+        self._symbols = list(symbols)
+        self._redis = redis_client
+        self._bus = context_bus or LiveContextBus()
+        self._config = config or RedisConsumerConfig()
 
-        Args:
-            symbols: List of trading pair symbols to consume.
-            redis_client: Optional RedisClient instance.
-            context_bus: Optional LiveContextBus instance.
-        """
-        self._symbols = symbols
-        self._redis = redis_client or RedisClient()
-        self._context_bus = context_bus or LiveContextBus()
-        self._prefix = "wolf15"
-        self._group_name = "engine_group"
-        self._consumer_name = "engine_consumer_1"
-        self._running = False
-        self._tasks: list[asyncio.Task] = []
+        self._stop_event = asyncio.Event()
+        self._logged_empty_seed = False
 
-    async def start(self) -> None:
-        """Start all consumer tasks."""
-        if self._running:
-            logger.warning("RedisConsumer already running")
+    def stop(self) -> None:
+        """Request the consumer to stop gracefully."""
+        self._stop_event.set()
+
+    # ------------------------------------------------------------------
+    # Startup warmup
+    # ------------------------------------------------------------------
+
+    async def load_candle_history(self) -> None:
+        """Load candle history from Redis Lists into LiveContextBus.
+
+        Tries every prefix in CANDLE_HISTORY_KEY_PREFIXES in order and uses the
+        first one that returns data for each symbol × timeframe combination.
+        Per-key errors are caught and logged.
+
+        Calling this method more than once replaces (not appends) the stored candles.
+        """
+        has_seed = await self._has_any_candle_seed()
+        if not has_seed:
+            if not self._logged_empty_seed:
+                logger.warning(
+                    "RedisConsumer: warmup skipped — no candle keys in Redis yet " "(waiting for ingest seed)"
+                )
+                self._logged_empty_seed = True
+            else:
+                logger.debug("RedisConsumer: warmup still waiting for first Redis candle seed")
             return
 
-        self._running = True
-        logger.info(f"Starting RedisConsumer for symbols: {self._symbols}")
+        if self._logged_empty_seed:
+            logger.info("RedisConsumer: Redis candle seed detected — loading warmup history")
+            self._logged_empty_seed = False
 
-        # Create consumer groups for tick streams
-        await self._create_consumer_groups()
-
-        # Start consumer tasks
-        self._tasks = [
-            asyncio.create_task(self._consume_ticks()),
-            asyncio.create_task(self._consume_candles()),
-            asyncio.create_task(self._consume_news()),
-        ]
-
-        logger.info("RedisConsumer started")
-
-    async def stop(self) -> None:
-        """Stop all consumer tasks."""
-        if not self._running:
-            return
-
-        self._running = False
-        logger.info("Stopping RedisConsumer...")
-
-        # Cancel all tasks
-        for task in self._tasks:
-            task.cancel()
-
-        # Wait for tasks to complete
-        await asyncio.gather(*self._tasks, return_exceptions=True)
-        self._tasks.clear()
-
-        logger.info("RedisConsumer stopped")
-
-    async def _create_consumer_groups(self) -> None:
-        """Create consumer groups for all tick streams."""
         for symbol in self._symbols:
-            stream_key = f"{self._prefix}:tick:{symbol}"
-            try:
-                # Run blocking Redis call in executor
-                await asyncio.get_event_loop().run_in_executor(
-                    None,
-                    self._redis.xgroup_create,
-                    stream_key,
-                    self._group_name,
-                    "0",  # Start from beginning
-                    True,  # Create stream if not exists
-                )
-                logger.debug(
-                    f"Consumer group {self._group_name} created for {stream_key}"
-                )
-            except Exception as exc:
-                logger.debug(
-                    f"Consumer group creation skipped for {stream_key}: {exc}"
-                )
+            for timeframe in WARMUP_TIMEFRAMES:
+                raw_entries = await self._warmup_candle_history(symbol, timeframe)
+                if not raw_entries:
+                    if timeframe != "M15":
+                        logger.debug(
+                            "RedisConsumer: no data for %s:%s (tried all prefixes)",
+                            symbol,
+                            timeframe,
+                        )
+                    continue
 
-    async def _consume_ticks(self) -> None:
-        """
-        Consume ticks from Redis Streams using consumer groups.
-
-        Reads from tick:{symbol} streams and feeds into LiveContextBus.
-        """
-        logger.info("Tick consumer task started")
-
-        # Build streams dict for XREADGROUP
-        streams = {
-            f"{self._prefix}:tick:{symbol}": ">" for symbol in self._symbols
-        }
-
-        while self._running:
-            try:
-                # XREADGROUP with blocking (1000ms timeout)
-                result = await asyncio.get_event_loop().run_in_executor(
-                    None,
-                    self._redis.xreadgroup,
-                    self._group_name,
-                    self._consumer_name,
-                    streams,
-                    10,  # Count: max 10 entries per stream
-                    1000,  # Block: 1000ms
-                )
-
-                if result:
-                    for stream_name, entries in result:
-                        for entry_id, fields in entries:
-                            tick_json = fields.get("data")
-                            if tick_json:
-                                try:
-                                    tick = orjson.loads(tick_json)
-                                    # Feed into local context bus
-                                    self._context_bus.update_tick(tick)
-                                    logger.debug(
-                                        f"Tick consumed from Redis: "
-                                        f"{tick.get('symbol')}"
-                                    )
-                                except Exception as parse_exc:
-                                    logger.error(
-                                        f"Failed to parse tick: {parse_exc}"
-                                    )
-
-            except asyncio.CancelledError:
-                logger.info("Tick consumer task cancelled")
-                break
-            except Exception as exc:
-                logger.error(f"Error in tick consumer: {exc}")
-                await asyncio.sleep(1)  # Backoff on error
-
-        logger.info("Tick consumer task stopped")
-
-    async def _consume_candles(self) -> None:
-        """
-        Consume candles from Redis Pub/Sub.
-
-        Subscribes to candle:* channels and feeds into LiveContextBus.
-        """
-        logger.info("Candle consumer task started")
-
-        # Create Pub/Sub instance
-        pubsub = self._redis.pubsub()
-
-        try:
-            # Subscribe to candle channels for all symbols and timeframes
-            channels = []
-            for symbol in self._symbols:
-                channels.extend(
-                    [
-                        f"candle:{symbol}:M15",
-                        f"candle:{symbol}:H1",
-                    ]
-                )
-
-            await asyncio.get_event_loop().run_in_executor(
-                None, pubsub.subscribe, *channels
-            )
-            logger.info(f"Subscribed to {len(channels)} candle channels")
-
-            while self._running:
-                try:
-                    # Get message with timeout
-                    message = await asyncio.get_event_loop().run_in_executor(
-                        None, pubsub.get_message, True, 1.0  # Timeout: 1 second
-                    )
-
-                    if message and message["type"] == "message":
-                        candle_json = message["data"]
-                        try:
-                            candle = orjson.loads(candle_json)
-                            # Feed into local context bus
-                            self._context_bus.update_candle(candle)
-                            logger.debug(
-                                f"Candle consumed from Redis: "
-                                f"{candle.get('symbol')} "
-                                f"{candle.get('timeframe')}"
+                # Derive a display key from the first successful prefix for logging
+                key_display = f"<prefix>:{symbol}:{timeframe}"
+                candles: list[dict[str, Any]] = []
+                for raw in raw_entries:
+                    try:
+                        candle: Any = orjson.loads(raw)
+                        if isinstance(candle, dict):
+                            candles.append(cast(dict[str, Any], candle))
+                        else:
+                            logger.warning(
+                                "RedisConsumer: non-dict candle in key %s — skipped",
+                                key_display,
                             )
-                        except Exception as parse_exc:
-                            logger.error(f"Failed to parse candle: {parse_exc}")
+                    except Exception:
+                        logger.warning(
+                            "RedisConsumer: skipping malformed candle bytes in key %s",
+                            key_display,
+                        )
 
-                except asyncio.CancelledError:
-                    logger.info("Candle consumer task cancelled")
-                    break
-                except Exception as exc:
-                    logger.error(f"Error in candle consumer: {exc}")
-                    await asyncio.sleep(1)
+                self._bus.set_candle_history(symbol, timeframe, candles)
+                logger.info(
+                    "RedisConsumer: warmup loaded %d candles for %s:%s",
+                    len(candles),
+                    symbol,
+                    timeframe,
+                )
 
-        finally:
-            await asyncio.get_event_loop().run_in_executor(
-                None, pubsub.unsubscribe
+    async def load_candle_history_with_retry(
+        self,
+        max_retries: int = 10,
+        base_delay: float = 3.0,
+    ) -> bool:
+        """Retry warmup until candle seed appears in Redis.
+
+        Uses exponential backoff (capped at base_delay * 16) to wait for
+        the ingest service to seed candle data, preventing the engine from
+        starting in a permanently empty state.
+
+        Returns ``True`` if warmup loaded data for at least one symbol, ``False``
+        if all retries were exhausted.
+        """
+        for attempt in range(max_retries):
+            await self.load_candle_history()
+
+            for symbol in self._symbols:
+                for tf in WARMUP_TIMEFRAMES:
+                    candles = self._bus.get_candles(symbol, tf)
+                    if candles:
+                        logger.info(
+                            "Warmup succeeded on attempt %d/%d (%s:%s has %d candles)",
+                            attempt + 1,
+                            max_retries,
+                            symbol,
+                            tf,
+                            len(candles),
+                        )
+                        return True
+
+            delay = base_delay * (2 ** min(attempt, 4))
+            logger.warning(
+                "Warmup attempt %d/%d failed — retrying in %.1fs",
+                attempt + 1,
+                max_retries,
+                delay,
             )
-            await asyncio.get_event_loop().run_in_executor(None, pubsub.close)
+            await asyncio.sleep(delay)
 
-        logger.info("Candle consumer task stopped")
+        logger.error(
+            "Warmup FAILED after %d attempts — engine starting degraded",
+            max_retries,
+        )
+        return False
 
-    async def _consume_news(self) -> None:
+    async def _has_any_candle_seed(self) -> bool:
+        """Fast probe to avoid O(symbol*timeframe) warmup scans when Redis is empty."""
+        patterns = (
+            "wolf15:candle_history:*",
+            "candle_history:*",
+            "wolf15:candle:*",
+        )
+
+        for pattern in patterns:
+            try:
+                cursor, keys = await self._redis.scan(0, match=pattern, count=1)
+                if keys:
+                    return True
+                if cursor and cursor != 0:
+                    # Continue scanning only when Redis indicates more keys.
+                    next_cursor = cursor
+                    while next_cursor:
+                        next_cursor, keys = await self._redis.scan(next_cursor, match=pattern, count=50)
+                        if keys:
+                            return True
+            except Exception:
+                # If scan is unsupported (e.g. in some tests/mocks), proceed with regular warmup path.
+                return True
+
+        return False
+
+    async def _warmup_candle_history(self, symbol: str, timeframe: str) -> list[bytes]:
         """
-        Consume news from Redis Pub/Sub.
+        Load candle history from Redis, trying multiple sources.
 
-        Subscribes to news_updates channel and feeds into LiveContextBus.
+        Priority:
+          1. List keys (wolf15:candle_history, candle_history) — correct type for LRANGE
+          2. Hash key (wolf15:candle) — single latest candle via HGETALL fallback
+
+        Each call is wrapped in try/except so a WRONGTYPE error on one key
+        does not prevent the remaining fallbacks from being tried.
         """
-        logger.info("News consumer task started")
+        # ── Priority 1: List keys (safe for LRANGE) ──
+        for prefix in _get_candle_prefixes():
+            key = f"{prefix}:{symbol}:{timeframe}"
+            try:
+                raw_entries: list[bytes] = await self._redis.lrange(key, 0, -1)
+                if raw_entries:
+                    logger.info(
+                        "warmup_candle_history | symbol=%s tf=%s prefix_used=%s count=%d",
+                        symbol,
+                        timeframe,
+                        prefix,
+                        len(raw_entries),
+                    )
+                    return raw_entries
+            except Exception as exc:
+                # WRONGTYPE or connection error — log and try next prefix
+                logger.warning("warmup_candle_history | lrange failed on %s: %s", key, exc)
 
-        # Create Pub/Sub instance
-        pubsub = self._redis.pubsub()
-
+        # ── Priority 2: Hash key (single latest candle) ──
+        # wolf15:candle:{sym}:{tf} is written via HSET by RedisContextBridge.
+        # It only holds the *latest* candle, but 1 bar > 0 bars.
+        hash_key = f"{CANDLE_HASH_PREFIX}:{symbol}:{timeframe}"
         try:
-            # Subscribe to news channel
-            await asyncio.get_event_loop().run_in_executor(
-                None, pubsub.subscribe, "news_updates"
-            )
-            logger.info("Subscribed to news_updates channel")
+            data: dict[str | bytes, str | bytes] = await self._redis.hgetall(hash_key)
+            if data:
+                # Hash stores {"data": "<json>"} — extract the JSON payload
+                raw_json = data.get("data") or data.get(b"data")
+                if raw_json:
+                    if isinstance(raw_json, str):
+                        raw_json = raw_json.encode("utf-8")
+                    logger.info(
+                        "warmup_candle_history | symbol=%s tf=%s source=hash_fallback count=1",
+                        symbol,
+                        timeframe,
+                    )
+                    return [raw_json]
+        except Exception as exc:
+            logger.warning("warmup_candle_history | hgetall failed on %s: %s", hash_key, exc)
 
-            while self._running:
+        # Missing data is expected during startup races (engine before ingest).
+        # Keep this as debug to avoid noisy false alarms in platform logs.
+        return []
+
+    # ------------------------------------------------------------------
+    # Pub/Sub realtime consumption
+    # ------------------------------------------------------------------
+
+    async def _subscribe(self, pubsub: Any) -> None:
+        """Subscribe to configured patterns/channels.
+
+        Uses psubscribe for patterns and subscribe for plain channels (best effort).
+        """
+        # Pattern subscriptions (psubscribe)
+        try:
+            if self._config.pubsub_patterns:
+                await pubsub.psubscribe(*self._config.pubsub_patterns)
+                logger.info(
+                    "RedisConsumer: psubscribed patterns=%s",
+                    list(self._config.pubsub_patterns),
+                )
+        except Exception:
+            logger.exception("RedisConsumer: psubscribe failed")
+
+        # Plain channel subscriptions (subscribe)
+        try:
+            if self._config.pubsub_channels:
+                await pubsub.subscribe(*self._config.pubsub_channels)
+                logger.info(
+                    "RedisConsumer: subscribed channels=%s",
+                    list(self._config.pubsub_channels),
+                )
+        except Exception:
+            logger.exception("RedisConsumer: subscribe failed")
+
+    @staticmethod
+    def _extract_payload(message: dict[str, Any]) -> bytes | None:
+        """Extract message payload from redis-py pubsub message dict."""
+        # redis-py typically yields:
+        # {'type': 'message'|'pmessage', 'pattern': b'..'(optional), 'channel': b'..', 'data': b'...'}
+        data = message.get("data")
+        if data is None:
+            return None
+        if isinstance(data, bytes | bytearray):
+            return bytes(data)
+        # Sometimes data can be str (depending on decode_responses)
+        if isinstance(data, str):
+            return data.encode("utf-8")
+        return None
+
+    @staticmethod
+    def _extract_channel(message: dict[str, Any]) -> str | None:
+        """Extract channel name from redis pubsub message dict."""
+        channel = message.get("channel")
+        if channel is None:
+            return None
+        if isinstance(channel, bytes | bytearray):
+            with contextlib.suppress(Exception):
+                return bytes(channel).decode("utf-8", errors="ignore")
+            return None
+        if isinstance(channel, str):
+            return channel
+        return None
+
+    def _handle_candle_dict(self, candle: dict[str, Any]) -> None:
+        """Validate and push a candle update into the context bus.
+
+        Also updates feed-timestamp tracking and emits a ``CANDLE_CLOSED``
+        event so the analysis loop wakes immediately instead of waiting
+        for its 60-second timer fallback.
+        """
+        symbol = candle.get("symbol")
+        timeframe = candle.get("timeframe")
+
+        if not isinstance(symbol, str) or not symbol.strip():
+            return
+        if not isinstance(timeframe, str) or not timeframe.strip():
+            return
+
+        # Ensure canonical symbol/timeframe in the candle dict
+        candle["symbol"] = symbol.strip()
+        candle["timeframe"] = timeframe.strip()
+
+        # Push as live candle update (push_candle expects a single candle dict)
+        self._bus.push_candle(candle)
+
+        # Update feed-timestamp so is_feed_stale() works in redis mode.
+        self._bus.record_feed_update(symbol.strip())
+
+        # Emit CANDLE_CLOSED so analysis_loop wakes immediately.
+        self._emit_candle_closed(symbol.strip(), timeframe.strip())
+
+    def _handle_tick_dict(self, tick: dict[str, Any]) -> None:
+        """Refresh feed freshness from tick pub/sub updates.
+
+        In redis mode the ingest service publishes ``tick_updates`` frequently,
+        while candles close only on timeframe boundaries (e.g., M15). Recording
+        feed updates from ticks prevents false hard-stale/no-producer holds.
+        """
+        symbol = tick.get("symbol")
+        if not isinstance(symbol, str) or not symbol.strip():
+            return
+        self._bus.record_feed_update(symbol.strip())
+
+    def _emit_candle_closed(self, symbol: str, timeframe: str) -> None:
+        """Fire CANDLE_CLOSED event on the in-process EventBus.
+
+        Source is ``"ingest"`` because RedisConsumer is the engine-side
+        proxy for the ingest service (authority boundary preserved).
+        """
+        try:
+            from core.event_bus import Event, EventType, get_event_bus  # noqa: PLC0415
+
+            bus = get_event_bus()
+            event = Event(
+                type=EventType.CANDLE_CLOSED,
+                source="ingest",
+                data={"symbol": symbol, "timeframe": timeframe},
+            )
+            # EventBus.emit is async; schedule it on the running loop.
+            loop = asyncio.get_running_loop()
+            loop.create_task(bus.emit(event))
+        except Exception:
+            # Best-effort — don't crash the pub/sub consumer
+            logger.debug("RedisConsumer: failed to emit CANDLE_CLOSED for %s", symbol, exc_info=True)
+
+    async def _consume_pubsub(self) -> None:
+        """Consume pub/sub messages forever (until stop_event)."""
+        pubsub = self._redis.pubsub()
+        try:
+            await self._subscribe(pubsub)
+
+            # Main loop
+            while not self._stop_event.is_set():
                 try:
-                    # Get message with timeout
-                    message = await asyncio.get_event_loop().run_in_executor(
-                        None, pubsub.get_message, True, 1.0  # Timeout: 1 second
+                    message: dict[str, Any] | None = await pubsub.get_message(
+                        ignore_subscribe_messages=True,
+                        timeout=1.0,
+                    )
+                except TypeError:
+                    # Some redis clients use sync-style get_message without await.
+                    message = pubsub.get_message(
+                        ignore_subscribe_messages=True,
+                        timeout=1.0,
                     )
 
-                    if message and message["type"] == "message":
-                        news_json = message["data"]
-                        try:
-                            news = orjson.loads(news_json)
-                            # Feed into local context bus
-                            self._context_bus.update_news(news)
-                            logger.debug("News consumed from Redis")
-                        except Exception as parse_exc:
-                            logger.error(f"Failed to parse news: {parse_exc}")
+                if not message:
+                    await asyncio.sleep(0.05)
+                    continue
 
-                except asyncio.CancelledError:
-                    logger.info("News consumer task cancelled")
-                    break
-                except Exception as exc:
-                    logger.error(f"Error in news consumer: {exc}")
-                    await asyncio.sleep(1)
+                channel = self._extract_channel(message) or ""
+
+                payload = self._extract_payload(message)
+                if not payload:
+                    continue
+
+                try:
+                    decoded = orjson.loads(payload)
+                except Exception:
+                    logger.debug("RedisConsumer: non-JSON pubsub payload ignored")
+                    continue
+
+                if isinstance(decoded, dict):
+                    if channel == "tick_updates":
+                        self._handle_tick_dict(cast(dict[str, Any], decoded))
+                    else:
+                        self._handle_candle_dict(cast(dict[str, Any], decoded))
+                elif isinstance(decoded, list):
+                    # Some publishers might batch payloads.
+                    for item in cast(list[Any], decoded):
+                        if isinstance(item, dict):
+                            typed_item: dict[str, Any] = {str(k): v for k, v in cast(dict[str, Any], item).items()}
+                            if channel == "tick_updates":
+                                self._handle_tick_dict(typed_item)
+                            else:
+                                self._handle_candle_dict(typed_item)
 
         finally:
-            await asyncio.get_event_loop().run_in_executor(
-                None, pubsub.unsubscribe
-            )
-            await asyncio.get_event_loop().run_in_executor(None, pubsub.close)
+            try:
+                await pubsub.close()
+            except Exception:
+                # don't crash shutdown
+                logger.debug("RedisConsumer: pubsub close failed", exc_info=True)
 
-        logger.info("News consumer task stopped")
+    # ------------------------------------------------------------------
+    # Public lifecycle
+    # ------------------------------------------------------------------
+
+    async def run(self) -> None:
+        """Main entrypoint expected by main.py.
+
+        Steps:
+        1) Warmup: load candle history from Redis Lists
+        2) Realtime: start pubsub consumer (best-effort)
+        3) Block forever until stop requested (or task cancelled)
+        """
+        logger.info("RedisConsumer: starting (symbols=%d)", len(self._symbols))
+
+        # Warmup is critical for pipeline readiness
+        await self.load_candle_history()
+
+        # Realtime consumer is best-effort; do not crash if pubsub fails
+        try:
+            await self._consume_pubsub()
+        except asyncio.CancelledError:
+            logger.info("RedisConsumer: cancelled")
+            raise
+        except Exception:
+            logger.exception("RedisConsumer: pubsub loop crashed; continuing idle")
+            # Idle loop to keep task alive (mirrors main.py behavior)
+            while not self._stop_event.is_set():
+                await asyncio.sleep(1.0)
