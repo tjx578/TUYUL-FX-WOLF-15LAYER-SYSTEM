@@ -19,8 +19,10 @@ interface DataStreamDiagnosticProps {
 const STREAM_ENDPOINTS: Record<string, string> = {
   verdicts: "/api/v1/verdict/all",
   trades: "/api/v1/trades/active",
-  context: "/api/v1/context",
-  execution: "/api/v1/execution",
+  // NOTE: "context" is a backend SSE/polling stream — no standalone REST endpoint.
+  // It is excluded from retry targets to prevent spurious 404/429 on retry.
+  context: "",
+  execution: "/api/v1/execution/state",
   accounts: "/api/v1/accounts",
   risk: "/api/v1/accounts/risk-snapshot",
 };
@@ -99,7 +101,8 @@ export default function DataStreamDiagnostic({
       await Promise.all(
         failedStreams.map((s) => {
           const ep = STREAM_ENDPOINTS[s];
-          return ep ? mutate(ep) : Promise.resolve();
+          // Skip streams with no REST endpoint (e.g. "context") to avoid 404/429.
+          return ep && ep.trim() ? mutate(ep) : Promise.resolve();
         })
       );
     } finally {
