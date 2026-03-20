@@ -9,6 +9,18 @@ from typing import Any, Literal, Protocol, runtime_checkable
 
 from loguru import logger
 
+from core.redis_keys import (
+    CIRCUIT_BREAKER_DATA,
+    CIRCUIT_BREAKER_STATE,
+    CONSECUTIVE_LOSSES,
+    DRAWDOWN_DAILY,
+    DRAWDOWN_TOTAL,
+    DRAWDOWN_WEEKLY,
+    PEAK_EQUITY,
+    RECOVERY_LAST_HYDRATION,
+    TRADE_SCAN_PATTERNS,
+    trade_key,
+)
 from infrastructure.redis_client import get_client
 from storage.postgres_client import PostgresClient, pg_client
 from storage.redis_client import RedisClient
@@ -105,10 +117,10 @@ class PersistenceSync:
             )
 
     def _collect_drawdown_state(self) -> dict[str, Any]:
-        daily = self._redis.get("wolf15:drawdown:daily")
-        weekly = self._redis.get("wolf15:drawdown:weekly")
-        total = self._redis.get("wolf15:drawdown:total")
-        peak = self._redis.get("wolf15:peak_equity")
+        daily = self._redis.get(DRAWDOWN_DAILY)
+        weekly = self._redis.get(DRAWDOWN_WEEKLY)
+        total = self._redis.get(DRAWDOWN_TOTAL)
+        peak = self._redis.get(PEAK_EQUITY)
 
         if not any([daily, weekly, total, peak]):
             return {}
@@ -123,9 +135,9 @@ class PersistenceSync:
         }
 
     def _collect_circuit_breaker_state(self) -> dict[str, Any]:
-        state = self._redis.get("wolf15:circuit_breaker:state")
-        data = self._redis.get("wolf15:circuit_breaker:data")
-        consecutive = self._redis.get("wolf15:consecutive_losses")
+        state = self._redis.get(CIRCUIT_BREAKER_STATE)
+        data = self._redis.get(CIRCUIT_BREAKER_DATA)
+        consecutive = self._redis.get(CONSECUTIVE_LOSSES)
 
         if not state:
             return {}
@@ -143,7 +155,7 @@ class PersistenceSync:
             client: AsyncRedisClient = self._async_redis_client
         else:
             client = await get_client()  # type: ignore[assignment]  # redis.asyncio.Redis ResponseT
-        for pattern in ("TRADE:*", "wolf15:TRADE:*"):
+        for pattern in TRADE_SCAN_PATTERNS:
             cursor = 0
             while True:
                 cursor, keys = await client.scan(cursor=cursor, match=pattern, count=50)
@@ -253,7 +265,7 @@ class PersistenceSync:
             "hydrated_at": datetime.now(UTC).isoformat(),
             "source": "postgres",
         }
-        self._redis.set("wolf15:recovery:last_hydration", json.dumps(hydration_meta))
+        self._redis.set(RECOVERY_LAST_HYDRATION, json.dumps(hydration_meta))
 
         if mode == "full":
             logger.info(
@@ -279,10 +291,10 @@ class PersistenceSync:
         )
         if drawdown_row:
             drawdown_data = _load_state_json(drawdown_row["state_data"])
-            self._redis.set("wolf15:drawdown:daily", str(drawdown_data.get("daily_dd", 0.0)))
-            self._redis.set("wolf15:drawdown:weekly", str(drawdown_data.get("weekly_dd", 0.0)))
-            self._redis.set("wolf15:drawdown:total", str(drawdown_data.get("total_dd", 0.0)))
-            self._redis.set("wolf15:peak_equity", str(drawdown_data.get("peak_equity", 0.0)))
+            self._redis.set(DRAWDOWN_DAILY, str(drawdown_data.get("daily_dd", 0.0)))
+            self._redis.set(DRAWDOWN_WEEKLY, str(drawdown_data.get("weekly_dd", 0.0)))
+            self._redis.set(DRAWDOWN_TOTAL, str(drawdown_data.get("total_dd", 0.0)))
+            self._redis.set(PEAK_EQUITY, str(drawdown_data.get("peak_equity", 0.0)))
 
         cb_row = await self._pg.fetchrow(
             """
@@ -294,10 +306,10 @@ class PersistenceSync:
         )
         if cb_row:
             cb_data = _load_state_json(cb_row["state_data"])
-            self._redis.set("wolf15:circuit_breaker:state", cb_data.get("state", "CLOSED"))
-            self._redis.set("wolf15:circuit_breaker:data", cb_data.get("data", "|0"))
+            self._redis.set(CIRCUIT_BREAKER_STATE, cb_data.get("state", "CLOSED"))
+            self._redis.set(CIRCUIT_BREAKER_DATA, cb_data.get("data", "|0"))
             self._redis.set(
-                "wolf15:consecutive_losses",
+                CONSECUTIVE_LOSSES,
                 str(cb_data.get("consecutive_losses", 0)),
             )
 
@@ -309,7 +321,7 @@ class PersistenceSync:
             """
         )
         for trade in trades:
-            key = f"wolf15:TRADE:{trade['trade_id']}"
+            key = trade_key(trade["trade_id"])
             payload = dict(trade)
             for field, value in list(payload.items()):
                 if isinstance(value, datetime):

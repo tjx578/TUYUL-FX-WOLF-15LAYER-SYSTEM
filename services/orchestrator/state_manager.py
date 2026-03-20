@@ -16,6 +16,7 @@ from loguru import logger
 
 from config.logging_bootstrap import configure_loguru_logging
 from core.health_probe import HealthProbe
+from core.redis_keys import ACCOUNT_STATE, ORCHESTRATOR_STATE, TRADE_RISK
 from services.orchestrator.compliance_guard import evaluate_compliance
 from services.orchestrator.execution_mode import ExecutionMode
 from state.pubsub_channels import ORCHESTRATOR_COMMANDS
@@ -83,9 +84,9 @@ class StateManager:
         self._pubsub: OrchestratorPubSubProtocol | None = None
 
         self._channel = os.getenv("ORCHESTRATOR_CHANNEL", ORCHESTRATOR_COMMANDS)
-        self._state_key = os.getenv("ORCHESTRATOR_STATE_KEY", "wolf15:orchestrator:state")
-        self._account_state_key = os.getenv("ORCHESTRATOR_ACCOUNT_STATE_KEY", "wolf15:account:state")
-        self._trade_risk_key = os.getenv("ORCHESTRATOR_TRADE_RISK_KEY", "wolf15:trade:risk")
+        self._state_key = os.getenv("ORCHESTRATOR_STATE_KEY", ORCHESTRATOR_STATE)
+        self._account_state_key = os.getenv("ORCHESTRATOR_ACCOUNT_STATE_KEY", ACCOUNT_STATE)
+        self._trade_risk_key = os.getenv("ORCHESTRATOR_TRADE_RISK_KEY", TRADE_RISK)
 
         self._loop_sleep_sec = max(0.1, float(os.getenv("ORCHESTRATOR_LOOP_SLEEP_SEC", "0.5")))
         self._compliance_interval_sec = max(1.0, float(os.getenv("ORCHESTRATOR_COMPLIANCE_INTERVAL_SEC", "5")))

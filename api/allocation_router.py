@@ -35,6 +35,7 @@ from accounts.risk_engine import RiskEngine  # noqa: F401
 from allocation.signal_service import SignalService
 from api.middleware.governance import enforce_write_policy
 from config_loader import load_pairs
+from core.redis_keys import latest_tick as _latest_tick_key
 from execution.idempotency_ledger import ExecutionIdempotencyLedger
 from infrastructure.redis_client import get_client
 from infrastructure.tracing import inject_trace_context, setup_tracer
@@ -506,7 +507,7 @@ async def _feed_freshness_snapshot(pair: str = "") -> FeedFreshnessSnapshot:
             # P0: Read `last_seen_ts` hash field directly — this is the
             # authoritative write-time timestamp set by RedisContextBridge.
             # Falls back to `timestamp` inside the JSON data payload.
-            last_seen_raw = await redis.hget(f"wolf15:latest_tick:{symbol}", "last_seen_ts")
+            last_seen_raw = await redis.hget(_latest_tick_key(symbol), "last_seen_ts")
             ts: float = 0.0
             if last_seen_raw:
                 try:
@@ -515,7 +516,7 @@ async def _feed_freshness_snapshot(pair: str = "") -> FeedFreshnessSnapshot:
                     ts = 0.0
 
             if ts <= 0:
-                data_raw = await redis.hget(f"wolf15:latest_tick:{symbol}", "data")
+                data_raw = await redis.hget(_latest_tick_key(symbol), "data")
                 if not data_raw:
                     continue
                 if isinstance(data_raw, bytes):

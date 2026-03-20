@@ -6,6 +6,7 @@ from typing import Any, cast
 import orjson
 from loguru import logger
 
+from core.redis_keys import candle_history
 from storage.redis_client import RedisClient
 from storage.redis_client import redis_client as redis_client_default
 
@@ -21,7 +22,7 @@ class MacroRegimeEngine:
         self.redis: RedisClient = redis_client or redis_client_default
 
     def _load_mn_history(self, symbol: str, max_items: int = 240) -> list[dict[str, Any]]:
-        key = f"wolf15:candle_history:{symbol}:MN"
+        key = candle_history(symbol, "MN")
         try:
             raw = cast(list[bytes], self.redis.client.lrange(key, 0, -1))
             if not raw:

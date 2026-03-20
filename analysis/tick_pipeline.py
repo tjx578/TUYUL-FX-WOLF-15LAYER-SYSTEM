@@ -11,15 +11,12 @@ Zone: analysis/ — no execution side-effects.
 
 from __future__ import annotations
 
-import asyncio
 import logging
 from collections import deque
 from collections.abc import Iterator
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any  # noqa: UP035
-
-import orjson
 
 from ingest.candle_builder import (  # noqa: F401
     Candle,
@@ -173,28 +170,10 @@ def _on_candle_complete(candle: Candle) -> None:
         pass  # persistence is best-effort; never block the pipeline
 
     # Write completed candle to Redis list for engine consumption.
-    # This is the bridge between real-time tick→candle flow and the engine
-    # pipeline which reads from wolf15:candle_history:{SYMBOL}:{TF}.
-    try:
-        loop = asyncio.get_running_loop()
-        loop.create_task(_push_candle_to_redis(candle))
-    except RuntimeError:
-        pass  # no running loop — skip (e.g. unit tests)
+    # Uses sync-safe bridge to avoid coroutine-never-awaited bugs.
+    from core.candle_bridge_fix import publish_candle_sync
 
-
-async def _push_candle_to_redis(candle: Candle) -> None:
-    """Fire-and-forget: append a completed candle to the Redis history list."""
-
-    try:
-        from infrastructure.redis_client import get_client
-
-        redis = await get_client()
-        key = f"wolf15:candle_history:{candle.symbol}:{candle.timeframe}"
-        candle_json = orjson.dumps(candle.to_dict()).decode("utf-8")
-        await redis.rpush(key, candle_json)  # type: ignore[misc]
-        await redis.ltrim(key, -_REDIS_HISTORY_MAXLEN, -1)  # type: ignore[misc]
-    except Exception as exc:
-        logger.debug("Redis candle push failed (best-effort): %s", exc)
+    publish_candle_sync(candle.to_dict())
 
 
 def _get_builder(symbol: str) -> MultiTimeframeCandleBuilder:

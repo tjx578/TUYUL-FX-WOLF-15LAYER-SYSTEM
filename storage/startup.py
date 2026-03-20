@@ -7,6 +7,7 @@ import contextlib
 
 from loguru import logger
 
+from core.redis_keys import CANDLE_HISTORY_SCAN, PEAK_EQUITY
 from storage.persistence_sync import PersistenceSync
 from storage.postgres_client import pg_client
 from storage.redis_client import RedisClient
@@ -27,7 +28,7 @@ def _has_candle_data(redis: RedisClient) -> bool:
     try:
         cursor = 0
         while True:
-            cursor, keys = redis.client.scan(cursor, match="wolf15:candle_history:*", count=20)
+            cursor, keys = redis.client.scan(cursor, match=CANDLE_HISTORY_SCAN, count=20)  # type: ignore[misc]
             if keys:
                 return True
             if cursor == 0:
@@ -55,7 +56,7 @@ async def init_persistent_storage() -> PersistenceSync | None:
     redis = RedisClient()
     try:
         has_candles = _has_candle_data(redis)
-        has_risk_data = bool(redis.get("wolf15:peak_equity"))
+        has_risk_data = bool(redis.get(PEAK_EQUITY))
 
         if not has_candles and not has_risk_data:
             logger.warning("Redis truly empty (no candle history, no risk state); attempting recovery from PostgreSQL")

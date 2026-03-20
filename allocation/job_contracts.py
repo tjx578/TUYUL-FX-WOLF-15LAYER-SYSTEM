@@ -18,6 +18,15 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import StrEnum
 
+from core.redis_keys import (
+    WORKER_BACKTEST_INPUT,
+    WORKER_BACKTEST_RESULT,
+    WORKER_MC_INPUT,
+    WORKER_MC_RESULT,
+    WORKER_REGIME_INPUT,
+    WORKER_REGIME_RESULT,
+)
+
 
 class IdempotencyClass(StrEnum):
     """How safe is re-execution of this job?"""
@@ -71,10 +80,10 @@ WORKER_JOB_CONTRACTS: dict[str, WorkerJobContract] = {
         reads_from=(
             "MONTE_CARLO_RETURN_MATRIX",
             "MONTE_CARLO_RETURN_MATRIX_FILE",
-            "WOLF15:RETURN_MATRIX",
+            WORKER_MC_INPUT,
         ),
         writes_to=(
-            "WOLF15:WORKER:MONTE_CARLO:LAST_RESULT",
+            WORKER_MC_RESULT,
             "storage/snapshots/worker/montecarlo_latest.json",
         ),
         description="Monte Carlo simulation on return matrix. Overwrite-safe.",
@@ -88,10 +97,10 @@ WORKER_JOB_CONTRACTS: dict[str, WorkerJobContract] = {
         reads_from=(
             "BACKTEST_TRADE_RETURNS",
             "BACKTEST_TRADE_RETURNS_FILE",
-            "WOLF15:TRADE_RETURNS",
+            WORKER_BACKTEST_INPUT,
         ),
         writes_to=(
-            "WOLF15:WORKER:BACKTEST:LAST_RESULT",
+            WORKER_BACKTEST_RESULT,
             "storage/snapshots/worker/nightly_backtest_latest.json",
         ),
         description="Nightly backtest evaluation. Overwrite-safe.",
@@ -105,10 +114,10 @@ WORKER_JOB_CONTRACTS: dict[str, WorkerJobContract] = {
         reads_from=(
             "REGIME_VR_VALUES",
             "REGIME_VR_VALUES_FILE",
-            "WOLF15:REGIME:VR_VALUES",
+            WORKER_REGIME_INPUT,
         ),
         writes_to=(
-            "WOLF15:WORKER:REGIME_RECALIBRATION:LAST_RESULT",
+            WORKER_REGIME_RESULT,
             "storage/snapshots/worker/regime_recalibration_latest.json",
             "config/thresholds.auto.json",
         ),

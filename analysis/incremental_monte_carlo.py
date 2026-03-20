@@ -25,11 +25,12 @@ from analysis.portfolio_monte_carlo import (
     PortfolioMCResult,
     run_portfolio_monte_carlo,
 )
+from core.redis_keys import MC_CACHE_PREFIX, MC_META_KEY
 
 logger = logging.getLogger(__name__)
 
-_REDIS_MC_CACHE_PREFIX = "wolf15:analysis:mc_cache:"
-_REDIS_MC_META_KEY = "wolf15:analysis:mc_meta"
+_REDIS_MC_CACHE_PREFIX = MC_CACHE_PREFIX
+_REDIS_MC_META_KEY = MC_META_KEY
 _DEFAULT_TTL_SECONDS = 300  # 5 min cache
 _STALENESS_THRESHOLD_SECONDS = 600  # 10 min = stale
 

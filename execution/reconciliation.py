@@ -20,6 +20,7 @@ from typing import Any
 
 from loguru import logger
 
+from core.redis_keys import RECONCILIATION_EVENTS
 from execution.execution_intent import (
     ExecutionIntentRecord,
     ExecutionIntentRepository,
@@ -249,7 +250,7 @@ class ExecutionReconciler:
 
             publisher = StreamPublisher()
             await publisher.publish(
-                stream="wolf15:reconciliation:events",
+                stream=RECONCILIATION_EVENTS,
                 fields={
                     "event_type": "RECONCILIATION_COMPLETED",
                     "count": str(len(results)),

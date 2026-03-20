@@ -66,8 +66,7 @@ _DEFAULT_CORRELATION_MAP: dict[frozenset[str], float] = {
     frozenset({"EURUSD", "USDCHF"}): 0.90,  # Inverse correlation (direction matters)
 }
 
-_REDIS_CORRELATION_MAP_KEY = "wolf15:risk:correlation_map"
-_REDIS_CORR_GROUP_EXPOSURE_PREFIX = "wolf15:risk:corr_group_exposure:"
+from core.redis_keys import RISK_CORRELATION_MAP as _REDIS_CORRELATION_MAP_KEY  # noqa: N811
 
 
 class CorrelationGuard:

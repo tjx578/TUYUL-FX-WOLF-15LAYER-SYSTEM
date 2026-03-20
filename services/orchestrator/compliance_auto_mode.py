@@ -26,6 +26,8 @@ from typing import Any
 
 from loguru import logger
 
+from core.redis_keys import COMPLIANCE_AUTO_MODE
+
 
 class AutoTradingState(StrEnum):
     """Auto-trading mode states."""
@@ -152,7 +154,7 @@ class ComplianceAutoMode:
 
             publisher = StreamPublisher()
             await publisher.publish(
-                stream="wolf15:compliance:auto_mode",
+                stream=COMPLIANCE_AUTO_MODE,
                 fields={
                     "event_type": f"AUTO_MODE_{transition.new_state.value}",
                     **transition.to_dict(),

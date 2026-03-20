@@ -21,6 +21,14 @@ from typing import Any, cast
 import orjson
 
 from context.live_context_bus import LiveContextBus
+from core.redis_keys import (
+    CANDLE_HASH_PREFIX as CANDLE_HASH_PREFIX_KEY,
+)
+from core.redis_keys import (
+    CANDLE_HASH_SCAN,
+    CANDLE_HISTORY_PREFIX,
+    CANDLE_HISTORY_SCAN,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -37,7 +45,7 @@ CANDLE_HISTORY_KEY_PREFIX = "candle_history"
 # Override at runtime via env var (comma-separated, first-wins):
 #   CANDLE_HISTORY_KEY_PREFIXES=wolf15:candle_history,candle_history
 CANDLE_HISTORY_LIST_PREFIXES: list[str] = [
-    "wolf15:candle_history",
+    CANDLE_HISTORY_PREFIX,  # noqa: F821
     "candle_history",
 ]
 
@@ -62,7 +70,7 @@ def get_candle_prefixes() -> list[str]:
 _get_candle_prefixes = get_candle_prefixes
 
 # Hash key prefix for latest single candle (HSET by RedisContextBridge)
-CANDLE_HASH_PREFIX: str = "wolf15:candle"
+CANDLE_HASH_PREFIX: str = CANDLE_HASH_PREFIX_KEY  # noqa: F821
 
 
 @dataclass(frozen=True)
@@ -79,7 +87,7 @@ class RedisConsumerConfig:
         "candles:*",
         "candle:*",
         "candle_updates:*",
-        "wolf15:candle:*",  # ← add this
+        CANDLE_HASH_SCAN,  # wolf15:candle:*  # noqa: F821
     )
     pubsub_channels: tuple[str, ...] = ("candles", "candle_updates", "candle", "tick_updates")
 
@@ -101,14 +109,14 @@ class RedisConsumer:
         self,
         symbols: list[str],
         redis_client: Any,
-        context_bus: LiveContextBus | None = None,
+        context_bus: LiveContextBus | None = None,  # noqa: F821
         *,
         config: RedisConsumerConfig | None = None,
     ) -> None:
         super().__init__()
         self._symbols = list(symbols)
         self._redis = redis_client
-        self._bus = context_bus or LiveContextBus()
+        self._bus = context_bus or LiveContextBus()  # noqa: F821
         self._config = config or RedisConsumerConfig()
 
         self._stop_event = asyncio.Event()
@@ -234,9 +242,9 @@ class RedisConsumer:
     async def _has_any_candle_seed(self) -> bool:
         """Fast probe to avoid O(symbol*timeframe) warmup scans when Redis is empty."""
         patterns = (
-            "wolf15:candle_history:*",
+            CANDLE_HISTORY_SCAN,  # noqa: F821
             "candle_history:*",
-            "wolf15:candle:*",
+            CANDLE_HASH_SCAN,  # noqa: F821
         )
 
         for pattern in patterns:
@@ -438,8 +446,7 @@ class RedisConsumer:
                 data={"symbol": symbol, "timeframe": timeframe},
             )
             # EventBus.emit is async; schedule it on the running loop.
-            loop = asyncio.get_running_loop()
-            loop.create_task(bus.emit(event))
+            asyncio.ensure_future(bus.emit(event))
         except Exception:
             # Best-effort — don't crash the pub/sub consumer
             logger.debug("RedisConsumer: failed to emit CANDLE_CLOSED for %s", symbol, exc_info=True)

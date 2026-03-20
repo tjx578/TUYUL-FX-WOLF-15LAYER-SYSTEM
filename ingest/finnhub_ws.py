@@ -7,7 +7,7 @@ import logging
 import os
 import random
 import time
-from collections.abc import AsyncIterable, Awaitable, Callable
+from collections.abc import AsyncIterable, Awaitable, Callable, Coroutine
 from typing import Any
 
 import websockets
@@ -19,6 +19,8 @@ from websockets.exceptions import (
     ConnectionClosed,
     ConnectionClosedError,
 )
+
+from core.redis_keys import WS_CONNECTED_AT
 
 logger = logging.getLogger(__name__)
 
@@ -149,7 +151,7 @@ class FinnhubWebSocket:
         symbols: list[str],
         *,
         replica_id: str | None = None,
-        on_connect: Callable[[], Awaitable[None]] | None = None,
+        on_connect: Callable[[], Coroutine[Any, Any, None]] | None = None,
     ) -> None:
         super().__init__()
         self._redis = redis
@@ -323,7 +325,7 @@ class FinnhubWebSocket:
             # Record WS connect timestamp for pipeline warmup grace period
             with contextlib.suppress(Exception):
                 await self._redis.set(
-                    "wolf15:ws:connected_at",
+                    WS_CONNECTED_AT,
                     str(time.time()),
                     ex=3600,  # expire after 1 hour
                 )

@@ -18,6 +18,7 @@ from typing import Any
 
 from loguru import logger
 
+from core.redis_keys import EXECUTION_TRUTH
 from execution.execution_intent import (
     ExecutionIntentRecord,
     ExecutionLifecycleState,
@@ -215,7 +216,7 @@ class ExecutionTruthFeed:
 
             publisher = StreamPublisher()
             await publisher.publish(
-                stream="wolf15:execution:truth",
+                stream=EXECUTION_TRUTH,
                 fields={
                     "event_type": f"EXECUTION_TRUTH_{intent.state.value}",
                     "execution_intent_id": intent.execution_intent_id,

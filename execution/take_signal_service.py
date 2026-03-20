@@ -18,6 +18,7 @@ from typing import Any
 
 from loguru import logger
 
+from core.redis_keys import TAKE_SIGNAL_EVENTS
 from execution.take_signal_models import (
     TakeSignalCreateRequest,
     TakeSignalRecord,
@@ -196,7 +197,7 @@ class TakeSignalService:
 
             publisher = StreamPublisher()
             await publisher.publish(
-                stream="wolf15:take_signal:events",
+                stream=TAKE_SIGNAL_EVENTS,
                 fields={
                     "event_type": event_type,
                     "take_id": record.take_id,

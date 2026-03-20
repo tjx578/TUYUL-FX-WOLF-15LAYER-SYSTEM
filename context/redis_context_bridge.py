@@ -16,6 +16,16 @@ from typing import Any
 import orjson
 from loguru import logger
 
+from core.redis_keys import (
+    CANDLE_HISTORY_MAXLEN as _CANDLE_HISTORY_MAXLEN,
+)
+from core.redis_keys import (
+    candle_history as _candle_history_key,
+)
+from core.redis_keys import (
+    channel_candle,
+    latest_candle,
+)
 from storage.redis_client import RedisClient
 
 # === TTL Constants ===
@@ -144,13 +154,13 @@ class RedisContextBridge:
             candle_json = orjson.dumps(candle).decode("utf-8")
 
             # 1. PUBLISH to channel
-            channel = f"candle:{symbol}:{timeframe}"
+            channel = channel_candle(symbol, timeframe)
             self._redis.publish(channel, candle_json)
 
             # 2. HSET latest candle + last_seen_ts (no TTL — persistent until overwritten)
             import time as _time
 
-            hash_key = f"{self._prefix}:candle:{symbol}:{timeframe}"
+            hash_key = latest_candle(symbol, timeframe)
             self._redis.hset(
                 hash_key,
                 mapping={
@@ -162,9 +172,9 @@ class RedisContextBridge:
             # 3. Append to candle history list (enables engine warmup on startup)
             #    LTRIM caps size; no TTL so data survives restarts.
             try:
-                list_key = f"{self._prefix}:candle_history:{symbol}:{timeframe}"
+                list_key = _candle_history_key(symbol, timeframe)
                 self._redis.client.rpush(list_key, candle_json)
-                self._redis.client.ltrim(list_key, -CANDLE_HISTORY_MAXLEN, -1)
+                self._redis.client.ltrim(list_key, -_CANDLE_HISTORY_MAXLEN, -1)
             except Exception as exc:
                 logger.error(f"Failed to write candle history list for {symbol} {timeframe}: {exc}")
 
@@ -238,7 +248,7 @@ class RedisContextBridge:
             if present in the hash (written by write_candle).
         """
         try:
-            key = f"{self._prefix}:candle:{symbol}:{timeframe}"
+            key = latest_candle(symbol, timeframe)
             raw_map = self._redis.hgetall(key)
             if not raw_map:
                 return None

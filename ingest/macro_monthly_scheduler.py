@@ -6,6 +6,7 @@ import orjson
 from loguru import logger
 
 from analysis.macro.macro_regime_engine import MacroRegimeEngine
+from core.redis_keys import candle_history, channel_candle
 from ingest.finnhub_candles import FinnhubCandleFetcher
 from storage.candle_persistence import enqueue_candle_dict
 
@@ -77,13 +78,13 @@ class MacroMonthlyScheduler:
             timeframe = candle.get("timeframe")
             if not symbol or not timeframe:
                 continue
-            key = f"wolf15:candle_history:{symbol}:{timeframe}"
+            key = candle_history(symbol, timeframe)
             try:
                 candle_json = orjson.dumps(candle).decode("utf-8")
                 await self._redis.rpush(key, candle_json)
                 await self._redis.ltrim(key, -self._redis_maxlen, -1)
                 enqueue_candle_dict(candle)
-                pub_channel = f"candle:{symbol}:{timeframe}"
+                pub_channel = channel_candle(symbol, timeframe)
                 await self._redis.publish(pub_channel, candle_json)
             except Exception as exc:
                 logger.warning("[MacroMonthly] Redis push failed %s: %s", key, exc)
