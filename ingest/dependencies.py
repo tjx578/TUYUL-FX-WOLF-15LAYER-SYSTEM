@@ -30,6 +30,10 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+# ── Per-symbol last-tick tracking (for REST fallback silence detection) ──
+_pair_last_tick_ts: dict[str, float] = {}
+PAIR_WS_SILENCE_THRESHOLD_S: float = 300.0  # 5 min without WS tick → REST poll
+
 # ── Tick-filter config (loaded from config/finnhub.yaml) ──────────
 _TICK_CFG: dict[str, Any] = CONFIG.get("finnhub", {}).get("tick_filter", {})
 _SC_CFG: dict[str, Any] = CONFIG.get("finnhub", {}).get("signal_conditioning", {})
@@ -401,6 +405,9 @@ def _build_tick_handler(
                 }
                 context_bus.update_tick(normalized_tick)
                 _latency_tracker.record_tick(internal_symbol)
+
+                # Track per-symbol tick time for REST fallback silence detection
+                _pair_last_tick_ts[internal_symbol] = time.time()
 
                 # Persist tick to Redis for cross-container staleness tracking
                 if tick_redis_callback is not None:

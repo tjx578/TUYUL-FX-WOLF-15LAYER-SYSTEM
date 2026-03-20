@@ -1,6 +1,7 @@
 """Tests for ingest.rest_poll_fallback – REST polling when WebSocket is down."""
 
 import asyncio
+import time
 from datetime import UTC
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -10,11 +11,19 @@ import pytest
 
 @pytest.fixture(autouse=True)
 def _reset_singletons():
-    """Reset singletons before each test."""
+    """Reset singletons and per-symbol tick tracking before each test."""
     from context.live_context_bus import LiveContextBus
 
     LiveContextBus.reset_singleton()
+
+    # Seed _pair_last_tick_ts so that silence detector treats symbols as
+    # recently active.  Tests that need specific silence behaviour can
+    # override this via an explicit patch.
+    from ingest.dependencies import _pair_last_tick_ts
+
+    _pair_last_tick_ts.clear()
     yield
+    _pair_last_tick_ts.clear()
 
 
 def _make_candle(symbol: str, timeframe: str, close: float, ts: float = 1700000000.0):
@@ -38,7 +47,12 @@ class TestRestPollFallback:
 
     @pytest.mark.asyncio
     async def test_does_not_poll_when_ws_connected(self):
-        """When WS is connected, RestPollFallback should wait — never fetch."""
+        """When WS is connected and all pairs recently ticked, RestPollFallback should idle."""
+        # Mark EURUSD as recently active so silence detector does not trigger
+        from ingest.dependencies import _pair_last_tick_ts
+
+        _pair_last_tick_ts["EURUSD"] = time.time()
+
         with (
             patch("ingest.rest_poll_fallback.FinnhubCandleFetcher") as MockFetcher,  # noqa: N806
             patch("ingest.rest_poll_fallback.load_finnhub", return_value={}),
@@ -112,6 +126,11 @@ class TestRestPollFallback:
         """RestPollFallback should stop polling as soon as WS reconnects."""
         ws_connected = False
 
+        # Seed so silence detection does not re-trigger after reconnect
+        from ingest.dependencies import _pair_last_tick_ts
+
+        _pair_last_tick_ts["EURUSD"] = time.time()
+
         with (
             patch("ingest.rest_poll_fallback.FinnhubCandleFetcher") as MockFetcher,  # noqa: N806
             patch(
@@ -163,6 +182,11 @@ class TestRestPollFallback:
 
         def _ws_connected():
             return asyncio.get_event_loop().time() >= reconnect_at
+
+        # Mark EURUSD as recently active so post-reconnect silence check is inert
+        from ingest.dependencies import _pair_last_tick_ts
+
+        _pair_last_tick_ts["EURUSD"] = time.time()
 
         with (
             patch("ingest.rest_poll_fallback.FinnhubCandleFetcher") as MockFetcher,  # noqa: N806

@@ -1,15 +1,15 @@
 """
-REST polling fallback for when WebSocket is disconnected.
+REST polling fallback — hybrid mode.
 
-When the Finnhub WebSocket cannot connect or stays disconnected,
-this scheduler periodically fetches M15 candles from the REST API
-to keep the analysis pipeline fed with fresh data.
-
-Activation is automatic: it polls only while ``ws_feed.is_connected``
-is False.  Once WS reconnects, polling pauses until the next outage.
+Activates in two scenarios:
+1. **WS fully down** — polls all symbols (original behaviour).
+2. **WS connected but specific pairs silent** — polls only the pairs
+   that haven't received a WebSocket tick within the silence threshold
+   (e.g. exotic/minor crosses on Finnhub's OANDA feed).
 """
 
 import asyncio
+import time
 from typing import Any
 
 import orjson
@@ -23,13 +23,12 @@ from storage.candle_persistence import enqueue_candle_dict
 
 
 class RestPollFallback:
-    """Periodic REST candle poller that activates when WebSocket is down.
+    """Periodic REST candle poller — hybrid WS-down / per-symbol-silence mode.
 
     Parameters
     ----------
     ws_connected_fn:
         Callable returning True when the WebSocket is connected.
-        Typically ``lambda: ws_feed.is_connected``.
     symbols:
         List of internal symbols to poll (e.g. ``["EURUSD", "XAUUSD"]``).
     """
@@ -58,6 +57,8 @@ class RestPollFallback:
         # Also refresh H1 during fallback
         self._refresh_h1: bool = bool(rest_poll_cfg.get("refresh_h1", True))
         self._h1_bars: int = int(rest_poll_cfg.get("h1_bars", 2))
+        # Per-symbol silence check interval (when WS is up)
+        self._silence_check_interval: float = float(rest_poll_cfg.get("silence_check_interval_sec", 60))
 
         self._fetcher = FinnhubCandleFetcher()
         self._context_bus = LiveContextBus()
@@ -70,33 +71,38 @@ class RestPollFallback:
         )
 
     async def run(self) -> None:
-        """Main loop — runs forever, polls only when WS is disconnected."""
+        """Main loop — hybrid: WS-down full poll + per-symbol silence poll."""
         self._running = True
-        logger.info("RestPollFallback started — monitoring WS connection state")
+        logger.info("RestPollFallback started — monitoring WS connection + per-symbol silence")
 
         while self._running:
             try:
-                # Wait until WS is down
-                await self._wait_for_ws_down()
-                if not self._running:
-                    break
+                if not self._ws_connected():
+                    # ── WS fully down path (original behaviour) ──
+                    logger.info(f"WS disconnected — waiting {self._grace_sec:.0f}s grace before REST polling")
+                    await asyncio.sleep(self._grace_sec)
 
-                # Grace period: WS might reconnect quickly
-                logger.info(f"WS disconnected — waiting {self._grace_sec:.0f}s grace before REST polling")
-                await asyncio.sleep(self._grace_sec)
+                    if self._ws_connected():
+                        logger.info("WS reconnected during grace period — skipping REST poll")
+                        continue
 
-                # Re-check after grace
-                if self._ws_connected():
-                    logger.info("WS reconnected during grace period — skipping REST poll")
-                    continue
-
-                # Enter polling loop
-                logger.warning("WS still disconnected after grace — activating REST poll fallback")
-
-                await self._poll_loop()
-
-                # WS reconnected or stopped
-                logger.info("REST poll fallback deactivated — WS reconnected")
+                    logger.warning("WS still disconnected after grace — activating full REST poll fallback")
+                    await self._poll_loop_ws_down()
+                    logger.info("REST poll fallback deactivated — WS reconnected")
+                else:
+                    # ── WS connected: check for per-symbol silence ──
+                    silent = self._get_silent_pairs()
+                    if silent:
+                        logger.info(
+                            f"WS connected but {len(silent)} pairs silent — "
+                            f"REST polling: {', '.join(sorted(silent))}"
+                        )
+                        if is_forex_market_open():
+                            for symbol in silent:
+                                if not self._running:
+                                    break
+                                await self._poll_symbol(symbol)
+                    await asyncio.sleep(self._silence_check_interval)
 
             except asyncio.CancelledError:
                 logger.info("RestPollFallback cancelled")
@@ -105,12 +111,19 @@ class RestPollFallback:
                 logger.exception("RestPollFallback unexpected error — restarting loop")
                 await asyncio.sleep(5)
 
-    async def _wait_for_ws_down(self) -> None:
-        """Block until WS reports disconnected (or stopped)."""
-        while self._running and self._ws_connected():
-            await asyncio.sleep(5)
+    def _get_silent_pairs(self) -> list[str]:
+        """Return pairs whose last WS tick exceeds the silence threshold."""
+        from ingest.dependencies import PAIR_WS_SILENCE_THRESHOLD_S, _pair_last_tick_ts
 
-    async def _poll_loop(self) -> None:
+        now = time.time()
+        silent: list[str] = []
+        for symbol in self._symbols:
+            last = _pair_last_tick_ts.get(symbol, 0.0)
+            if now - last > PAIR_WS_SILENCE_THRESHOLD_S:
+                silent.append(symbol)
+        return silent
+
+    async def _poll_loop_ws_down(self) -> None:
         """Fetch M15 (and optionally H1) candles until WS reconnects."""
         cycle = 0
         while self._running and not self._ws_connected():
