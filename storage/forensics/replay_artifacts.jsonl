@@ -31,3 +31,9 @@
 {"files.associations": {
     "*.jsonl": "plaintext"
 }}
+{"artifact_id":"rfa_2922f4210c48499b","captured_at":"2026-03-20T06:44:07.602305+00:00","artifact_type":"verdict_provenance","correlation_id":"EURUSD","payload":{"pair":"EURUSD","verdict":"EXECUTE","confidence":0.85,"timestamp":null,"cached_at":1773989047.599308,"scores":null,"gates":null}}
+{"artifact_id":"rfa_5046cb5e2f074332","captured_at":"2026-03-20T06:44:07.614298+00:00","artifact_type":"verdict_provenance","correlation_id":"GBPUSD","payload":{"pair":"GBPUSD","verdict":"HOLD","confidence":null,"timestamp":null,"cached_at":1773989047.610301,"scores":null,"gates":null}}
+{"artifact_id":"rfa_0eecddcd1ebc4154","captured_at":"2026-03-20T06:44:07.624291+00:00","artifact_type":"verdict_provenance","correlation_id":"XAUUSD","payload":{"pair":"XAUUSD","verdict":"NO_TRADE","confidence":null,"timestamp":null,"cached_at":1773989047.622293,"scores":null,"gates":null}}
+{"artifact_id":"rfa_b97b0dcf9af0431f","captured_at":"2026-03-20T06:44:07.635285+00:00","artifact_type":"verdict_provenance","correlation_id":"EURUSD","payload":{"pair":"EURUSD","verdict":"EXECUTE","confidence":null,"timestamp":null,"cached_at":1773989047.6332865,"scores":null,"gates":null}}
+{"artifact_id":"rfa_d98a9ca6380f4b10","captured_at":"2026-03-20T06:44:07.647278+00:00","artifact_type":"verdict_provenance","correlation_id":"EURUSD","payload":{"pair":"EURUSD","verdict":"EXECUTE","confidence":null,"timestamp":null,"cached_at":1773989047.6422815,"scores":null,"gates":null}}
+{"artifact_id":"rfa_385e46213a5a4d2e","captured_at":"2026-03-20T06:44:07.667265+00:00","artifact_type":"verdict_provenance","correlation_id":"EURUSD","payload":{"pair":"EURUSD","verdict":"EXECUTE","confidence":null,"timestamp":null,"cached_at":1773989047.6672652,"scores":null,"gates":null}}
