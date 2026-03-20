@@ -590,7 +590,7 @@ async def _seed_redis_candle_history(
                 continue
             candles = clean_candles
 
-            key = f"wolf15:candle_history:{symbol}:{timeframe}"
+            key = candle_history(symbol, timeframe)
             # ── FIX RC-1: Non-destructive atomic swap ─────────────
             # Write new data to a temp key, then RENAME atomically.
             # If the new seed fails, old data survives in Redis.

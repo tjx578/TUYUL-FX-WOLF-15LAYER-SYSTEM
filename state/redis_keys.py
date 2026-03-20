@@ -7,6 +7,7 @@ New code should import from `core.redis_keys` directly.
 
 from core.redis_keys import (  # noqa: F401
     ACCOUNT_STATE,
+    API_GROUP,
     CANDLE_CACHE_PREFIX,
     CANDLE_HASH_PREFIX,
     CANDLE_HASH_SCAN,
@@ -24,11 +25,13 @@ from core.redis_keys import (  # noqa: F401
     DRAWDOWN_DAILY,
     DRAWDOWN_TOTAL,
     DRAWDOWN_WEEKLY,
+    ENGINE_GROUP,
     EXECUTION_INTENTS,
     EXECUTION_TRUTH,
     FIREWALL_EVENTS,
     HEARTBEAT_ENGINE,
     HEARTBEAT_INGEST,
+    INGEST_GROUP,
     KILL_SWITCH,
     LATEST_NEWS,
     LATEST_NEWS_TTL_SECONDS,

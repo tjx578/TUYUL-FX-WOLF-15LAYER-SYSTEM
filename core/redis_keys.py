@@ -234,6 +234,13 @@ LATEST_NEWS_TTL_SECONDS = 86400
 WS_CONNECTED_AT_TTL = 3600  # 1h
 
 # ══════════════════════════════════════════════════════════════════════════════
+#  CONSUMER GROUPS
+# ══════════════════════════════════════════════════════════════════════════════
+INGEST_GROUP = f"{PREFIX}:ingest:group"
+ENGINE_GROUP = f"{PREFIX}:engine:group"
+API_GROUP = f"{PREFIX}:api:group"
+
+# ══════════════════════════════════════════════════════════════════════════════
 #  TYPE MAP (for sanitizer / health checks)
 # ══════════════════════════════════════════════════════════════════════════════
 TYPE_MAP: dict[str, str] = {
