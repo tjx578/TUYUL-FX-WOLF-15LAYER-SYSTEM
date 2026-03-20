@@ -132,8 +132,19 @@ class WSTokenManager:
         # session_id -> {"user_id": str, "tokens": list[str], "expires_at": float}
         self._sessions: dict[str, dict[str, Any]] = {}
 
-    def create_token(self, user_id: str, *, _session_id: str | None = None) -> dict[str, str]:
+    def create_token(
+        self,
+        user_id: str,
+        *,
+        role: str = "trader",
+        _session_id: str | None = None,
+    ) -> dict[str, str]:
         """Create a signed JWT for the given user.
+
+        Args:
+            user_id: Subject claim.
+            role: User role — 'trader', 'admin', 'viewer'. Default 'trader'.
+            _session_id: Reuse an existing session (internal, for rotation).
 
         Returns:
             Dict with keys 'token', 'session_id', 'expires_in'.
@@ -145,6 +156,7 @@ class WSTokenManager:
             "sub": user_id,
             "sid": session_id,
             "jti": secrets.token_hex(8),
+            "role": role,
             "iat": now,
             "exp": exp,
         }
@@ -162,6 +174,7 @@ class WSTokenManager:
         if session_id not in self._sessions:
             self._sessions[session_id] = {
                 "user_id": user_id,
+                "role": role,
                 "tokens": [],
                 "expires_at": exp,
             }
@@ -252,8 +265,8 @@ class WSTokenManager:
             self._revoked_tokens.add(tok)
         rec["tokens"].clear()
 
-        # Create new token reusing the same session_id
-        return self.create_token(rec["user_id"], _session_id=session_id)
+        # Create new token reusing the same session_id (preserve role)
+        return self.create_token(rec["user_id"], role=rec.get("role", "trader"), _session_id=session_id)
 
     def revoke_all_for_user(self, user_id: str) -> int:
         """Revoke all sessions belonging to a user.
