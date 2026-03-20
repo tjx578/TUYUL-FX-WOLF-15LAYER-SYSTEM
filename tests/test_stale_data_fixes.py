@@ -27,33 +27,42 @@ class TestFeedStalenessSecondsKeyFix:
     @pytest.mark.asyncio
     async def test_returns_inf_when_no_pair_given(self) -> None:
         """Empty pair → inf (cannot determine staleness without symbol)."""
-        from api.allocation_router import _feed_staleness_seconds  # type: ignore[attr-defined]
+        from api.allocation_router import _feed_staleness_seconds
 
         result = await _feed_staleness_seconds("")
         assert result == float("inf")
 
     @pytest.mark.asyncio
     async def test_reads_wolf15_hash_key_not_ctx_tick_latest(self) -> None:
-        """Must use HGET wolf15:latest_tick:{pair} data, NOT GET ctx:tick:latest."""
-        from api.allocation_router import _feed_staleness_seconds  # type: ignore[attr-defined]
+        """Must use HGET wolf15:latest_tick:{pair}, NOT GET ctx:tick:latest.
+
+        P0: Prefers last_seen_ts hash field; falls back to data payload.
+        """
+        from api.allocation_router import _feed_staleness_seconds
 
         tick_ts = time.time() - 5.0  # 5 s ago → fresh
-        tick_json = json.dumps({"symbol": "EURUSD", "timestamp": tick_ts})
 
         mock_redis = AsyncMock()
-        # HGET should return the JSON; old GET ctx:tick:latest would return None
-        mock_redis.hget = AsyncMock(return_value=tick_json.encode())
+
+        # P0: _feed_freshness_snapshot now reads last_seen_ts first
+        def _hget_side_effect(key: str, field: str):
+            if field == "last_seen_ts":
+                return str(tick_ts).encode()
+            return None
+
+        mock_redis.hget = AsyncMock(side_effect=_hget_side_effect)
 
         with patch("api.allocation_router.get_client", new=AsyncMock(return_value=mock_redis)):
             result = await _feed_staleness_seconds("EURUSD")
 
         assert result == pytest.approx(5.0, abs=1.0)
-        mock_redis.hget.assert_called_once_with("wolf15:latest_tick:EURUSD", "data")
+        # First call must be for last_seen_ts (P0: authoritative field)
+        mock_redis.hget.assert_any_call("wolf15:latest_tick:EURUSD", "last_seen_ts")
 
     @pytest.mark.asyncio
     async def test_returns_inf_when_hash_key_missing(self) -> None:
         """Expired/missing key (None from HGET) → inf."""
-        from api.allocation_router import _feed_staleness_seconds  # type: ignore[attr-defined]
+        from api.allocation_router import _feed_staleness_seconds
 
         mock_redis = AsyncMock()
         mock_redis.hget = AsyncMock(return_value=None)
@@ -66,7 +75,7 @@ class TestFeedStalenessSecondsKeyFix:
     @pytest.mark.asyncio
     async def test_returns_inf_when_timestamp_is_zero(self) -> None:
         """Tick with timestamp=0 → inf (invalid data)."""
-        from api.allocation_router import _feed_staleness_seconds  # type: ignore[attr-defined]
+        from api.allocation_router import _feed_staleness_seconds
 
         tick_json = json.dumps({"symbol": "EURUSD", "timestamp": 0.0})
         mock_redis = AsyncMock()
@@ -80,7 +89,7 @@ class TestFeedStalenessSecondsKeyFix:
     @pytest.mark.asyncio
     async def test_returns_inf_on_redis_exception(self) -> None:
         """Redis error → inf (fail safe)."""
-        from api.allocation_router import _feed_staleness_seconds  # type: ignore[attr-defined]
+        from api.allocation_router import _feed_staleness_seconds
 
         mock_redis = AsyncMock()
         mock_redis.hget = AsyncMock(side_effect=ConnectionError("Redis down"))
@@ -93,7 +102,7 @@ class TestFeedStalenessSecondsKeyFix:
     @pytest.mark.asyncio
     async def test_never_reads_old_ctx_tick_latest_key(self) -> None:
         """The old broken key ctx:tick:latest must never be accessed."""
-        from api.allocation_router import _feed_staleness_seconds  # type: ignore[attr-defined]
+        from api.allocation_router import _feed_staleness_seconds
 
         mock_redis = AsyncMock()
         mock_redis.hget = AsyncMock(return_value=None)
@@ -285,10 +294,10 @@ class TestLoadCandleHistoryWithRetry:
     def fresh_bus(self):
         from context.live_context_bus import LiveContextBus
 
-        LiveContextBus._instance = None  # type: ignore[assignment]
+        LiveContextBus._instance = None
         bus = LiveContextBus()
         yield bus
-        LiveContextBus._instance = None  # type: ignore[assignment]
+        LiveContextBus._instance = None
 
     @pytest.mark.asyncio
     async def test_returns_true_on_first_attempt(self, fresh_bus) -> None:
