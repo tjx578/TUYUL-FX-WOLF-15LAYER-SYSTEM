@@ -447,10 +447,15 @@ def fetch_internal_verdict_path(pair: str | None = None) -> dict[str, Any]:
         if isinstance(p.get("symbol"), str) and bool(p.get("enabled", True))
     ]
     targets = [pair.upper()] if pair else enabled_symbols
+    redis_error: str | None = None
 
     rows: list[dict[str, Any]] = []
     for symbol in targets:
-        raw = get_verdict(symbol)
+        raw: dict[str, Any] | None = None
+        try:
+            raw = get_verdict(symbol)
+        except Exception as exc:
+            redis_error = str(exc)
         warmup = context_bus.check_warmup(symbol, _WARMUP_MIN_BARS)
         ts_raw = (raw or {}).get("_cached_at") if raw else None
         if ts_raw is None and raw:
@@ -486,5 +491,7 @@ def fetch_internal_verdict_path(pair: str | None = None) -> dict[str, Any]:
     return {
         "generated_at": time.time(),
         "requested_pair": pair.upper() if pair else None,
+        "redis_ok": redis_error is None,
+        "redis_error": redis_error,
         "pairs": rows,
     }
