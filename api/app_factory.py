@@ -442,9 +442,15 @@ def _register_health_routes(app: FastAPI) -> None:
         }
 
     app.add_api_route("/health", health, methods=["GET"])
-    # /healthz is the liveness probe — must be unauthenticated so
-    # Railway (and k8s) infrastructure healthchecks always succeed.
-    app.add_api_route("/healthz", health, methods=["GET"])
+
+    # /healthz is the liveness probe — must be unauthenticated and
+    # return instantly with NO external dependencies (no Redis, no DB).
+    # Railway (and k8s) infrastructure healthchecks must always succeed
+    # as long as the process is alive and accepting HTTP.
+    async def healthz() -> dict[str, str]:
+        return {"status": "alive", "service": "tuyul-fx"}
+
+    app.add_api_route("/healthz", healthz, methods=["GET"])
 
     async def readyz(request: Request) -> JSONResponse:
         """Readiness probe — freshness-aware.
