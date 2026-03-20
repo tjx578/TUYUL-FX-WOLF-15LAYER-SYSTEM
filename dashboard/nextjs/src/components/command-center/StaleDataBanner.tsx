@@ -60,12 +60,14 @@ export default function StaleDataBanner({
   const message = feedStatus === "config_error"
     ? "Stale threshold config invalid — fix backend env before trusting feed freshness."
     : feedStatus === "no_producer"
-      ? "No producer heartbeat/tick detected — dashboard is waiting for authority last_seen_ts."
-      : isOffline
-        ? "Backend connection lost — operating with last known data."
-        : wsStatus === "RECONNECTING"
-          ? "Live channel reconnecting — verdicts may be stale."
-          : "Verdict data is stale — live feed not responding.";
+      ? "No producer heartbeat/tick detected — system has never received data or producer is offline."
+      : feedStatus === "stale_preserved"
+        ? "Feed data is stale — last tick exceeded freshness threshold. Governance enforces HOLD."
+        : isOffline
+          ? "Backend connection lost — operating with last known data."
+          : wsStatus === "RECONNECTING"
+            ? "Live channel reconnecting — verdicts may be stale."
+            : "Verdict data is stale — live feed not responding.";
 
   return (
     <div
