@@ -33,8 +33,7 @@ from accounts.account_model import (
 )
 from accounts.risk_engine import RiskEngine  # noqa: F401
 from allocation.signal_service import SignalService
-from .middleware.auth import verify_token
-from .middleware.governance import enforce_write_policy
+from api.middleware.governance import enforce_write_policy
 from config_loader import load_pairs
 from execution.idempotency_ledger import ExecutionIdempotencyLedger
 from infrastructure.redis_client import get_client
@@ -48,6 +47,8 @@ from state.data_freshness import (
     stale_threshold_seconds,
 )
 from storage.trade_write_through import persist_trade_snapshot
+
+from .middleware.auth import verify_token
 
 logger = logging.getLogger(__name__)
 _allocation_router_tracer = setup_tracer("wolf-api")
@@ -163,7 +164,10 @@ async def _check_stale_data(pair: str) -> None:
             logger.warning(
                 "[StaleGuard] %s verdict age=%.0fs exceeds threshold=%ds "
                 "but within recovery grace=%ds — allowing execution",
-                pair, age, STALE_DATA_THRESHOLD_SEC, RECOVERY_GRACE_SEC,
+                pair,
+                age,
+                STALE_DATA_THRESHOLD_SEC,
+                RECOVERY_GRACE_SEC,
             )
             return  # Grace period — allow
 
