@@ -20,6 +20,7 @@ import { bearerHeader } from "@/lib/auth";
 export class HttpError extends Error {
   status?: number;
   info?: unknown;
+  /** Milliseconds the client should wait before retrying (populated from Retry-After header on 429). */
   retryAfterMs?: number;
 
   constructor(message: string, status?: number, info?: unknown) {
@@ -84,6 +85,15 @@ export async function swrFetcher<T = unknown>(url: string): Promise<T> {
         error.retryAfterMs = 60_000; // default: 60s when no header is present
       }
     }
+
+    // Attach Retry-After so callers (React Query, SWR) can respect the cooldown
+    if (res.status === 429) {
+      const retryAfter = res.headers.get("Retry-After");
+      error.retryAfterMs = retryAfter
+        ? parseInt(retryAfter, 10) * 1000
+        : 60_000;
+    }
+
     throw error;
   }
 

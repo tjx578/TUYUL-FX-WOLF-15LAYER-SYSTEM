@@ -112,7 +112,13 @@ export function clearWsTicketCache(): void {
  * Caching: tickets are cached for 4 min and concurrent calls share the same
  * in-flight Promise so a burst of reconnect attempts never fans into multiple
  * /api/auth/ws-ticket requests.
+ * Includes TTL cache + in-flight dedup to avoid hammering the server
+ * during rapid WS reconnect cycles (root cause of 429 cascades).
  */
+let _ticketCache: { token: string; expiresAt: number } | null = null;
+let _ticketPromise: Promise<string | null> | null = null;
+const TICKET_CACHE_TTL_MS = 4 * 60 * 1000; // 4 minutes (JWT typically valid 30 min)
+
 export async function fetchWsTicket(): Promise<string | null> {
   const jwt = getToken();
   if (jwt) return jwt;
@@ -123,6 +129,7 @@ export async function fetchWsTicket(): Promise<string | null> {
   }
 
   // Deduplicate concurrent requests — return the in-flight promise if one exists
+  // Dedup: if an in-flight request exists, await the same promise
   if (_ticketPromise) return _ticketPromise;
 
   _ticketPromise = (async () => {
