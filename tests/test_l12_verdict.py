@@ -125,53 +125,53 @@ class TestL12VerdictGateFailures:
     """Test L12 verdict with various gate failures."""
 
     def test_tii_gate_failure(self) -> None:
-        """Test verdict when TII gate fails."""
+        """Test verdict when TII gate fails — single non-critical failure triggers near-pass."""
         synthesis = _make_synthesis(tii=0.50)  # Below threshold
 
         verdict = generate_l12_verdict(synthesis)
 
-        # Should fail
-        assert verdict["verdict"] in ["NO_TRADE", "HOLD"]
+        # Single non-critical gate failure → near-pass → EXECUTE_REDUCED_RISK
+        assert verdict["verdict"] in ["NO_TRADE", "HOLD", "EXECUTE_REDUCED_RISK_BUY", "EXECUTE_REDUCED_RISK_SELL"]
         assert verdict["gates"]["gate_1_tii"] == "FAIL"
 
     def test_integrity_gate_failure(self) -> None:
-        """Test verdict when integrity gate fails."""
+        """Test verdict when integrity gate fails — single non-critical failure triggers near-pass."""
         synthesis = _make_synthesis(integrity=0.50)
 
         verdict = generate_l12_verdict(synthesis)
 
-        assert verdict["verdict"] in ["NO_TRADE", "HOLD"]
+        assert verdict["verdict"] in ["NO_TRADE", "HOLD", "EXECUTE_REDUCED_RISK_BUY", "EXECUTE_REDUCED_RISK_SELL"]
         assert verdict["gates"]["gate_2_integrity"] == "FAIL"
 
     def test_rr_gate_failure(self) -> None:
-        """Test verdict when RR gate fails."""
+        """Test verdict when RR gate fails — single non-critical failure triggers near-pass."""
         synthesis = _make_synthesis(rr=1.0)  # Below 1.5 threshold
 
         verdict = generate_l12_verdict(synthesis)
 
-        assert verdict["verdict"] in ["NO_TRADE", "HOLD"]
+        assert verdict["verdict"] in ["NO_TRADE", "HOLD", "EXECUTE_REDUCED_RISK_BUY", "EXECUTE_REDUCED_RISK_SELL"]
         assert verdict["gates"]["gate_3_rr"] == "FAIL"
 
     def test_fta_gate_failure(self) -> None:
-        """Test verdict when FTA score gate fails."""
+        """Test verdict when FTA score gate fails — single non-critical failure triggers near-pass."""
         synthesis = _make_synthesis(fta=0.5)
 
         verdict = generate_l12_verdict(synthesis)
 
-        assert verdict["verdict"] in ["NO_TRADE", "HOLD"]
+        assert verdict["verdict"] in ["NO_TRADE", "HOLD", "EXECUTE_REDUCED_RISK_BUY", "EXECUTE_REDUCED_RISK_SELL"]
         assert verdict["gates"]["gate_4_fta"] == "FAIL"
 
     def test_monte_carlo_gate_failure(self) -> None:
-        """Test verdict when Monte Carlo gate fails."""
+        """Test verdict when Monte Carlo gate fails — single non-critical failure triggers near-pass."""
         synthesis = _make_synthesis(monte=0.5)
 
         verdict = generate_l12_verdict(synthesis)
 
-        assert verdict["verdict"] in ["NO_TRADE", "HOLD"]
+        assert verdict["verdict"] in ["NO_TRADE", "HOLD", "EXECUTE_REDUCED_RISK_BUY", "EXECUTE_REDUCED_RISK_SELL"]
         assert verdict["gates"]["gate_5_montecarlo"] == "FAIL"
 
     def test_propfirm_gate_failure(self) -> None:
-        """Test verdict when prop firm compliance fails."""
+        """Test verdict when prop firm compliance fails — critical gate, always NO_TRADE."""
         synthesis = _make_synthesis(propfirm_compliant=False)
 
         verdict = generate_l12_verdict(synthesis)
@@ -180,7 +180,7 @@ class TestL12VerdictGateFailures:
         assert verdict["gates"]["gate_6_propfirm"] == "FAIL"
 
     def test_drawdown_gate_failure(self) -> None:
-        """Test verdict when drawdown exceeds limit."""
+        """Test verdict when drawdown exceeds limit — critical gate, always NO_TRADE."""
         synthesis = _make_synthesis(drawdown=6.0)  # Above 5.0 threshold
 
         verdict = generate_l12_verdict(synthesis)
@@ -189,25 +189,25 @@ class TestL12VerdictGateFailures:
         assert verdict["gates"]["gate_7_drawdown"] == "FAIL"
 
     def test_latency_gate_failure(self) -> None:
-        """Test verdict when latency is too high."""
+        """Test verdict when latency is too high — single non-critical failure triggers near-pass."""
         synthesis = _make_synthesis(latency=300)  # Above 250ms threshold
 
         verdict = generate_l12_verdict(synthesis)
 
-        assert verdict["verdict"] in ["NO_TRADE", "HOLD"]
+        assert verdict["verdict"] in ["NO_TRADE", "HOLD", "EXECUTE_REDUCED_RISK_BUY", "EXECUTE_REDUCED_RISK_SELL"]
         assert verdict["gates"]["gate_8_latency"] == "FAIL"
 
     def test_conf12_gate_failure(self) -> None:
-        """Test verdict when confidence is too low."""
+        """Test verdict when confidence is too low — single non-critical failure triggers near-pass."""
         synthesis = _make_synthesis(conf12=0.5)
 
         verdict = generate_l12_verdict(synthesis)
 
-        assert verdict["verdict"] in ["NO_TRADE", "HOLD"]
+        assert verdict["verdict"] in ["NO_TRADE", "HOLD", "EXECUTE_REDUCED_RISK_BUY", "EXECUTE_REDUCED_RISK_SELL"]
         assert verdict["gates"]["gate_9_conf12"] == "FAIL"
 
     def test_multiple_gate_failures(self) -> None:
-        """Test verdict when multiple gates fail."""
+        """Test verdict when multiple gates fail including a critical one."""
         synthesis = _make_synthesis(
             tii=0.5,
             rr=1.0,
@@ -216,7 +216,7 @@ class TestL12VerdictGateFailures:
 
         verdict = generate_l12_verdict(synthesis)
 
-        # Should fail
+        # drawdown=6.0 triggers critical_fail → NO_TRADE
         assert verdict["verdict"] in ["NO_TRADE", "HOLD"]
 
         # Multiple gates should fail
@@ -229,7 +229,7 @@ class TestL12VerdictTypes:
     """Test different verdict types."""
 
     def test_no_trade_verdict(self) -> None:
-        """Test NO_TRADE verdict is generated."""
+        """Test NO_TRADE verdict is generated for critical gate failures."""
         # Fail critical gates
         synthesis = _make_synthesis(
             propfirm_compliant=False,
@@ -241,13 +241,13 @@ class TestL12VerdictTypes:
         assert verdict["verdict"] in ["NO_TRADE", "HOLD"]
 
     def test_hold_verdict(self) -> None:
-        """Test HOLD verdict is generated."""
-        # Marginal failures
-        synthesis = _make_synthesis(conf12=0.7)
+        """Test HOLD verdict when 7 or fewer gates pass (below near-pass threshold)."""
+        # Fail 3 non-critical gates to drop below near-pass threshold of 8
+        synthesis = _make_synthesis(tii=0.3, integrity=0.3, rr=0.5)
 
         verdict = generate_l12_verdict(synthesis)
 
-        # Should be NO_TRADE or HOLD
+        # Should be HOLD (3 failures, no critical fail, < 8 passing)
         assert verdict["verdict"] in ["NO_TRADE", "HOLD"]
 
     def test_execute_buy_verdict(self) -> None:
@@ -269,6 +269,16 @@ class TestL12VerdictTypes:
 
         # Should execute
         assert verdict["verdict"] in ["EXECUTE_BUY", "EXECUTE_SELL"]
+
+    def test_execute_reduced_risk_near_pass(self) -> None:
+        """Test EXECUTE_REDUCED_RISK is generated when 8-9 non-critical gates pass."""
+        # Fail 1 non-critical gate → 9 pass → near-pass
+        synthesis = _make_synthesis(tii=0.50)
+
+        verdict = generate_l12_verdict(synthesis)
+
+        assert verdict["verdict"] in ["EXECUTE_REDUCED_RISK_BUY", "EXECUTE_REDUCED_RISK_SELL"]
+        assert verdict["proceed_to_L13"] is True
 
 
 class TestL12CannotBeBypassed:
@@ -306,19 +316,20 @@ class TestL12CannotBeBypassed:
         assert "verdict" in verdict
         assert verdict["verdict"] is not None
 
-    def test_l12_gates_must_all_pass_for_execute(self) -> None:
-        """Test all gates must pass for EXECUTE verdict."""
-        # Start with all passing
+    def test_l12_gates_must_all_pass_for_full_execute(self) -> None:
+        """Test all gates must pass for full EXECUTE verdict; near-pass yields EXECUTE_REDUCED_RISK."""
+        # Start with all passing → full EXECUTE
         synthesis = _make_synthesis()
         verdict_pass = generate_l12_verdict(synthesis)
 
-        # Now fail one gate
+        # Fail one non-critical gate → near-pass → EXECUTE_REDUCED_RISK (not full EXECUTE)
         synthesis_fail = _make_synthesis(tii=0.5)
         verdict_fail = generate_l12_verdict(synthesis_fail)
 
-        # First should execute, second should not
+        # Full EXECUTE requires all 10 gates
         assert verdict_pass["verdict"] in ["EXECUTE_BUY", "EXECUTE_SELL"]
-        assert verdict_fail["verdict"] in ["NO_TRADE", "HOLD"]
+        # Near-pass (9/10) yields EXECUTE_REDUCED_RISK
+        assert verdict_fail["verdict"] in ["EXECUTE_REDUCED_RISK_BUY", "EXECUTE_REDUCED_RISK_SELL"]
 
 
 class TestL12EnrichmentInjection:
@@ -354,12 +365,12 @@ class TestL12EnrichmentInjection:
         assert verdict["enrichment_applied"] is False
 
     def test_enrichment_never_overrides_verdict(self) -> None:
-        """Enrichment adjusts confidence, never the verdict."""
-        # Fail a gate → HOLD verdict
-        synthesis = _make_synthesis(tii=0.3)
+        """Enrichment adjusts confidence, never upgrades HOLD to EXECUTE."""
+        # Fail 3 non-critical gates → 7 pass → HOLD (below near-pass threshold of 8)
+        synthesis = _make_synthesis(tii=0.3, integrity=0.3, rr=0.5)
         synthesis["layers"]["enrichment_score"] = 0.95
         verdict = generate_l12_verdict(synthesis)
-        # Even with very high enrichment, verdict stays HOLD
+        # Even with very high enrichment, HOLD stays HOLD
         assert verdict["verdict"] == "HOLD"
         assert verdict["enrichment_applied"] is False  # HOLD + high score → no adjustment
 
