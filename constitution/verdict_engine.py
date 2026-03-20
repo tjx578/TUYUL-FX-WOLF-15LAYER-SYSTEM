@@ -518,20 +518,6 @@ def generate_l12_verdict(
     max_drawdown: float = float(risk.get("max_drawdown", 5.0))
     latency: int = int(system.get("latency_ms", 0))
 
-    # ── Regime-adaptive threshold selection ──────────────────────────────────
-    _regime_type: str = str(synthesis.get("regime_type", "NORMAL_VOL"))
-    try:
-        from config.thresholds import get_thresholds as _get_regime_thresholds  # noqa: PLC0415
-        _regime_thresholds: dict[str, float] = _get_regime_thresholds(_regime_type)  # type: ignore[arg-type]
-    except (ImportError, KeyError):
-        _regime_thresholds = {}
-
-    _effective_tii: float = _regime_thresholds.get("tii", _THRESH_TII)
-    _effective_integrity: float = _regime_thresholds.get("integrity", _THRESH_INTEGRITY)
-    _effective_rr: float = _regime_thresholds.get("rr", _THRESH_RR)
-    _effective_monte: float = _regime_thresholds.get("mc_win", _THRESH_MONTE)
-    _effective_conf12: float = _regime_thresholds.get("conf12", _THRESH_CONF12)
-
     # ── Gate 10: Reflex Quality (from reflex_gate controller) ─────────────────
     reflex_gate_data: dict[str, Any] = system.get("reflex_gate", {})
     reflex_gate_label: str = str(reflex_gate_data.get("gate", "OPEN")).upper()
@@ -540,16 +526,6 @@ def generate_l12_verdict(
     # LOCK = critical fail (hard block).  OPEN/CAUTION = pass.
     g10 = "FAIL" if reflex_gate_label == "LOCK" else "PASS"
 
-    # ── 10 Constitutional Gates ───────────────────────────────────────────────
-    g1 = "PASS" if tii >= _effective_tii else "FAIL"
-    g2 = "PASS" if integrity >= _effective_integrity else "FAIL"
-    g3 = "PASS" if rr >= _effective_rr else "FAIL"
-    g4 = "PASS" if fta >= _THRESH_FTA else "FAIL"
-    g5 = "PASS" if monte >= _effective_monte else "FAIL"
-    g6 = "PASS" if compliant else "FAIL"
-    g7 = "PASS" if drawdown < max_drawdown else "FAIL"
-    g8 = "PASS" if latency <= _THRESH_LATENCY_MS else "FAIL"
-    g9 = "PASS" if conf12 >= _effective_conf12 else "FAIL"
     # ── Regime-adaptive thresholds ────────────────────────────────────────────
     regime: str = _resolve_regime(synthesis)
     try:
