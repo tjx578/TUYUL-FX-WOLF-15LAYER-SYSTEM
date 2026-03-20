@@ -39,12 +39,29 @@ export function setToken(token: string): void {
   localStorage.setItem(TOKEN_KEY, token);
 }
 
+// ── WS ticket cache + in-flight deduplication ──────────────
+// Declared here (above removeToken) so clearWsTicketCache() is defined
+// before removeToken() calls it.
+const WS_TICKET_CACHE_TTL_MS = 55_000;
+let _wsTicketCache: { token: string; expiresAt: number } | null = null;
+let _wsTicketInflight: Promise<string | null> | null = null;
+
+/**
+ * Invalidate the WS ticket cache (called on removeToken / logout).
+ */
+export function clearWsTicketCache(): void {
+  _wsTicketCache = null;
+  _wsTicketInflight = null;
+}
+
 /**
  * Remove the stored JWT (logout / session expiry).
+ * Also clears the WS ticket cache so the next connect() fetches a fresh ticket.
  */
 export function removeToken(): void {
   if (typeof window === "undefined") return;
   localStorage.removeItem(TOKEN_KEY);
+  clearWsTicketCache();
 }
 
 // Track if we've already warned about missing auth to avoid console spam.
@@ -109,6 +126,10 @@ export function clearWsTicketCache(): void {
  * The server route reads the session cookie or the server-only API_KEY
  * env var — neither is exposed to the client bundle.
  *
+ * Includes:
+ *  - In-memory cache (55s TTL) to survive multiple reconnect attempts.
+ *  - In-flight deduplication so concurrent calls share ONE fetch.
+ *  - Graceful 429/error fallback to localStorage JWT.
  * Caching: tickets are cached for 4 min and concurrent calls share the same
  * in-flight Promise so a burst of reconnect attempts never fans into multiple
  * /api/auth/ws-ticket requests.
@@ -116,9 +137,31 @@ export function clearWsTicketCache(): void {
  * during rapid WS reconnect cycles (root cause of 429 cascades).
  */
 export async function fetchWsTicket(): Promise<string | null> {
+  // 1. Short-circuit: stored JWT is the fastest path (no network call).
   const jwt = getToken();
   if (jwt) return jwt;
 
+  // 2. Return cached ticket if still valid.
+  if (_wsTicketCache && Date.now() < _wsTicketCache.expiresAt) {
+    return _wsTicketCache.token;
+  }
+
+  // 3. Deduplicate: if a fetch is already in-flight, wait for it.
+  if (_wsTicketInflight) {
+    return _wsTicketInflight;
+  }
+
+  // 4. New fetch — set inflight guard immediately to prevent parallel calls.
+  _wsTicketInflight = (async (): Promise<string | null> => {
+    try {
+      const res = await fetch("/api/auth/ws-ticket");
+      if (res.status === 429) {
+        // Rate-limited — return null; caller will fall back to localStorage JWT.
+        if (process.env.NODE_ENV === "development") {
+          console.warn("[auth] /api/auth/ws-ticket rate-limited (429). Using localStorage JWT.");
+        }
+        return null;
+      }
   // Return cached ticket if still valid
   if (_ticketCache && Date.now() < _ticketCache.expiresAt) {
     return _ticketCache.token;
@@ -135,12 +178,18 @@ export async function fetchWsTicket(): Promise<string | null> {
       const data = await res.json() as { token?: string };
       const token = data.token ?? null;
       if (token) {
+        _wsTicketCache = { token, expiresAt: Date.now() + WS_TICKET_CACHE_TTL_MS };
         _ticketCache = { token, expiresAt: Date.now() + TICKET_CACHE_TTL_MS };
       }
       return token;
     } catch {
       return null;
     } finally {
+      _wsTicketInflight = null;
+    }
+  })();
+
+  return _wsTicketInflight;
       _ticketPromise = null;
     }
   })();

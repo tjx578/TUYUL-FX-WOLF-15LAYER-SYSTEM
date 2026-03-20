@@ -83,6 +83,12 @@ let pollingTimer: ReturnType<typeof setTimeout> | null = null;
 let pollingActive = false;
 let lastPollingHeartbeatAt: number | null = null;
 
+// Circuit breaker for polling: stop hammering /health after repeated 429s.
+const POLLING_CIRCUIT_OPEN_AFTER = 3;   // consecutive 429s before circuit opens
+const POLLING_CIRCUIT_RESET_MS = 60_000; // reopen circuit after 60s
+let _pollingConsecutive429s = 0;
+let _pollingCircuitOpenAt: number | null = null;
+
 // ─── INTERNAL: FAN-OUT HELPERS ───────────────────────────────
 
 function fanOutEvent(event: WsEventParsed): void {
@@ -163,6 +169,15 @@ function startPollingFallback(): void {
     });
 
     const tick = async () => {
+        // Circuit breaker: skip tick if circuit is open (too many 429s).
+        if (_pollingCircuitOpenAt !== null) {
+            if (Date.now() - _pollingCircuitOpenAt < POLLING_CIRCUIT_RESET_MS) {
+                return; // circuit still open — wait for reset window
+            }
+            // Reset circuit after cooling down
+            _pollingCircuitOpenAt = null;
+            _pollingConsecutive429s = 0;
+        }
         if (!pollingActive) return;
 
         try {
@@ -170,6 +185,22 @@ function startPollingFallback(): void {
             const apiBase = getApiBaseUrl();
             const res = await fetch(`${apiBase}/health`, { credentials: "include" });
             const latency = Date.now() - t0;
+
+            if (res.status === 429) {
+                _pollingConsecutive429s++;
+                if (_pollingConsecutive429s >= POLLING_CIRCUIT_OPEN_AFTER) {
+                    _pollingCircuitOpenAt = Date.now();
+                    fanOutStatus("DEGRADED");
+                    fanOutDegradation({
+                        mode: "POLLING",
+                        reason: `Rate-limited (429) by backend ${_pollingConsecutive429s} times. Pausing polling for ${POLLING_CIRCUIT_RESET_MS / 1000}s.`,
+                    });
+                }
+                return;
+            }
+
+            _pollingConsecutive429s = 0;
+
             if (res.status === 429) {
                 // Back off exponentially — don't hammer a rate-limited server
                 pollingBackoffMs = Math.min(pollingBackoffMs * 2, POLLING_MAX_BACKOFF_MS);
@@ -307,6 +338,10 @@ function closeAllTransports(): void {
     }
 
     closeSseTransport();
+
+    // Reset circuit breaker state on full transport teardown.
+    _pollingConsecutive429s = 0;
+    _pollingCircuitOpenAt = null;
 
     currentTransport = "NONE";
     currentStatus = "DISCONNECTED";
