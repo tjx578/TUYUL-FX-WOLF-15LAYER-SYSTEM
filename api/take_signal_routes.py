@@ -12,8 +12,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
-from .middleware.auth import verify_token
-from .middleware.governance import enforce_write_policy
+from api.middleware.governance import enforce_write_policy
 from contracts.api_response_schema import ApiResponse
 from execution.take_signal_models import (
     TakeSignalCreateRequest,
@@ -24,6 +23,8 @@ from execution.take_signal_service import (
     SignalNotFoundError,
     TakeSignalService,
 )
+
+from .middleware.auth import verify_token
 
 router = APIRouter(
     prefix="/api/v1/execution",

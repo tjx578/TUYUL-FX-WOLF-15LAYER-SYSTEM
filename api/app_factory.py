@@ -28,11 +28,10 @@ from fastapi.responses import JSONResponse, RedirectResponse
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from typing_extensions import override
 
-from .middleware.auth import verify_token
-from .middleware.machine_auth import verify_observability_machine_auth
-from .middleware.prometheus_middleware import PrometheusMiddleware
-from .middleware.rate_limit import RateLimitMiddleware
-from .router_registry import load_routers
+from api.middleware.machine_auth import verify_observability_machine_auth
+from api.middleware.prometheus_middleware import PrometheusMiddleware
+from api.middleware.rate_limit import RateLimitMiddleware
+from api.router_registry import load_routers
 from context.runtime_state import RuntimeState
 from infrastructure.tracing import (
     instrument_asyncio,
@@ -43,6 +42,8 @@ from infrastructure.tracing import (
     setup_tracer,
 )
 from storage.postgres_client import pg_client
+
+from .middleware.auth import verify_token
 
 logger = logging.getLogger(__name__)
 
