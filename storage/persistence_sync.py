@@ -19,6 +19,7 @@ from core.redis_keys import (
     PEAK_EQUITY,
     RECOVERY_LAST_HYDRATION,
     TRADE_SCAN_PATTERNS,
+    candle_history,
     trade_key,
 )
 from infrastructure.redis_client import get_client
@@ -379,7 +380,7 @@ class PersistenceSync:
 
         recovered = 0
         for (sym, tf), candle_jsons in grouped.items():
-            key = f"wolf15:candle_history:{sym}:{tf}"
+            key = candle_history(sym, tf)
             try:
                 existing: int = self._redis.client.llen(key)  # type: ignore[assignment]  # sync Redis
                 if existing > 0:

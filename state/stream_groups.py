@@ -1,5 +1,10 @@
-"""Redis stream consumer groups used by distributed workers."""
+"""Redis stream consumer groups used by distributed workers.
 
-INGEST_GROUP = "wolf15:ingest:group"
-ENGINE_GROUP = "wolf15:engine:group"
-API_GROUP = "wolf15:api:group"
+Backward-compatibility shim — canonical source is now core/redis_keys.py.
+"""
+
+from core.redis_keys import (  # noqa: F401
+    API_GROUP,
+    ENGINE_GROUP,
+    INGEST_GROUP,
+)
