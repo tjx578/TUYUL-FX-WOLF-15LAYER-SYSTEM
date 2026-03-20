@@ -22,7 +22,12 @@ import time
 from dataclasses import dataclass
 from typing import Any
 
-from state.data_freshness import FeedFreshnessState, classify_feed_freshness, stale_threshold_seconds
+from state.data_freshness import (
+    FeedFreshnessState,
+    FreshnessClass,
+    classify_feed_freshness,
+    stale_threshold_seconds,
+)
 from utils.market_hours import weekend_gap_seconds
 
 
@@ -41,6 +46,18 @@ class DataQualityReport:
     staleness_seconds: float
     freshness_state: FeedFreshnessState
     reasons: tuple[str, ...]
+
+    @property
+    def freshness_class(self) -> FreshnessClass:
+        """Return the canonical FreshnessClass for this report's freshness state."""
+        _MAP: dict[FeedFreshnessState, FreshnessClass] = {  # noqa: N806
+            "fresh": FreshnessClass.LIVE,  # conservative: caller can refine via staleness_seconds
+            "stale_preserved": FreshnessClass.STALE_PRESERVED,
+            "no_producer": FreshnessClass.NO_PRODUCER,
+            "no_transport": FreshnessClass.NO_TRANSPORT,
+            "config_error": FreshnessClass.CONFIG_ERROR,
+        }
+        return _MAP.get(self.freshness_state, FreshnessClass.STALE_PRESERVED)
 
     def to_dict(self) -> dict[str, Any]:
         return {

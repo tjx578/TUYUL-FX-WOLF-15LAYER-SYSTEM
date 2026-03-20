@@ -13,7 +13,12 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import TYPE_CHECKING
 
-from state.data_freshness import FRESHNESS_LIVE_MAX_AGE_SEC
+from state.data_freshness import (
+    FEED_ADAPTER_STALE_SEC,
+    FRESHNESS_LIVE_MAX_AGE_SEC,
+    FreshnessClass,
+    classify_feed_freshness,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -69,6 +74,21 @@ class FeedHealth:
     def is_healthy(self) -> bool:
         return self.status == FeedStatus.CONNECTED and self.staleness_seconds < FRESHNESS_LIVE_MAX_AGE_SEC
 
+    @property
+    def freshness_class(self) -> FreshnessClass:
+        """Map adapter health to the canonical FreshnessClass."""
+        if self.status == FeedStatus.DISCONNECTED:
+            return FreshnessClass.NO_TRANSPORT
+        if self.status == FeedStatus.RECONNECTING:
+            return FreshnessClass.NO_TRANSPORT
+        # CONNECTED or STALE
+        snap = classify_feed_freshness(
+            transport_ok=True,
+            has_producer_signal=self.staleness_seconds < float("inf"),
+            staleness_seconds=self.staleness_seconds,
+        )
+        return snap.freshness_class
+
 
 class DataFeedAdapter(ABC):
     """Abstract base for all broker data feed connections."""
@@ -89,8 +109,8 @@ class DataFeedAdapter(ABC):
 class StalenessGuard:
     """Detects when data feed goes stale -- prevents analysis on old data."""
 
-    def __init__(self, max_stale_seconds: float = 30.0):
-        self._max_stale = max_stale_seconds
+    def __init__(self, max_stale_seconds: float | None = None):
+        self._max_stale = max_stale_seconds if max_stale_seconds is not None else FRESHNESS_LIVE_MAX_AGE_SEC
         self._last_tick: dict[str, float] = {}
 
     def update(self, symbol: str) -> None:
@@ -127,17 +147,18 @@ class FallbackTickFeedAdapter:
         self,
         adapters: list[DataFeedAdapter],
         *,
-        max_stale_seconds: float = 10.0,
+        max_stale_seconds: float | None = None,
         failover_cooldown_seconds: float = 30.0,
     ) -> None:
         if not adapters:
             raise ValueError("FallbackTickFeedAdapter requires at least one adapter")
         self._adapters = adapters
         self._active_index: int = 0
-        self._max_stale = max_stale_seconds
+        resolved_stale = max_stale_seconds if max_stale_seconds is not None else FEED_ADAPTER_STALE_SEC
+        self._max_stale = resolved_stale
         self._cooldown = failover_cooldown_seconds
         self._last_failover: float = 0.0
-        self._staleness = StalenessGuard(max_stale_seconds=max_stale_seconds)
+        self._staleness = StalenessGuard(max_stale_seconds=resolved_stale)
 
     @property
     def active_adapter(self) -> DataFeedAdapter:
@@ -262,7 +283,7 @@ class MT5DataFeed(DataFeedAdapter):
             max_staleness = max(max_staleness, st)
 
         status = FeedStatus.CONNECTED if self._connected else FeedStatus.DISCONNECTED
-        if self._connected and max_staleness > 5.0:
+        if self._connected and max_staleness > FRESHNESS_LIVE_MAX_AGE_SEC:
             status = FeedStatus.STALE
 
         return FeedHealth(

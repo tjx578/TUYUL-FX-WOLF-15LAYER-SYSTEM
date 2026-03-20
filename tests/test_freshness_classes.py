@@ -5,6 +5,7 @@ import time
 import pytest
 
 from state.data_freshness import (
+    FEED_ADAPTER_STALE_SEC,
     FRESHNESS_LIVE_MAX_AGE_SEC,
     FreshnessClass,
     classify_feed_freshness,
@@ -165,3 +166,278 @@ class TestLiveContextBusFreshness:
         self.bus.update_tick({"symbol": "EURUSD", "bid": 1.08, "ask": 1.09, "timestamp": time.time()})
         # Default threshold is 300s — a just-received tick should not be stale
         assert self.bus.is_feed_stale("EURUSD") is False
+
+
+# ---------------------------------------------------------------------------
+# Threshold tier constants
+# ---------------------------------------------------------------------------
+
+
+class TestThresholdTiers:
+    """Verify that the centralized threshold constants form a valid hierarchy."""
+
+    def test_live_threshold_positive(self):
+        assert FRESHNESS_LIVE_MAX_AGE_SEC > 0
+
+    def test_adapter_stale_positive(self):
+        assert FEED_ADAPTER_STALE_SEC > 0  # noqa: F821
+
+    def test_stale_threshold_positive(self):
+        assert stale_threshold_seconds() > 0
+
+    def test_live_lte_stale_threshold(self):
+        """LIVE boundary must not exceed the overall stale threshold."""
+        assert stale_threshold_seconds() >= FRESHNESS_LIVE_MAX_AGE_SEC
+
+    def test_adapter_stale_lte_stale_threshold(self):
+        """Adapter health gate should trigger before or at the pipeline stale gate."""
+        assert stale_threshold_seconds() >= FEED_ADAPTER_STALE_SEC  # noqa: F821
+
+
+# ---------------------------------------------------------------------------
+# FeedHealth.freshness_class alignment (data_feed.py)
+# ---------------------------------------------------------------------------
+
+
+class TestFeedHealthFreshnessClass:
+    """FeedHealth must expose a freshness_class aligned with centralized classification."""
+
+    def test_connected_live(self):
+        from analysis.data_feed import FeedHealth, FeedStatus
+
+        h = FeedHealth(
+            status=FeedStatus.CONNECTED,
+            last_tick_time=time.time(),
+            latency_ms=1.0,
+            staleness_seconds=5.0,
+        )
+        assert h.freshness_class == FreshnessClass.LIVE
+
+    def test_connected_degraded(self):
+        from analysis.data_feed import FeedHealth, FeedStatus
+
+        h = FeedHealth(
+            status=FeedStatus.CONNECTED,
+            last_tick_time=time.time(),
+            latency_ms=1.0,
+            staleness_seconds=FRESHNESS_LIVE_MAX_AGE_SEC + 5.0,
+        )
+        assert h.freshness_class == FreshnessClass.DEGRADED_BUT_REFRESHING
+
+    def test_connected_stale_preserved(self):
+        from analysis.data_feed import FeedHealth, FeedStatus
+
+        h = FeedHealth(
+            status=FeedStatus.CONNECTED,
+            last_tick_time=time.time(),
+            latency_ms=1.0,
+            staleness_seconds=stale_threshold_seconds() + 10.0,
+        )
+        assert h.freshness_class == FreshnessClass.STALE_PRESERVED
+
+    def test_disconnected_no_transport(self):
+        from analysis.data_feed import FeedHealth, FeedStatus
+
+        h = FeedHealth(
+            status=FeedStatus.DISCONNECTED,
+            last_tick_time=0.0,
+            latency_ms=0.0,
+            staleness_seconds=0.0,
+        )
+        assert h.freshness_class == FreshnessClass.NO_TRANSPORT
+
+    def test_reconnecting_no_transport(self):
+        from analysis.data_feed import FeedHealth, FeedStatus
+
+        h = FeedHealth(
+            status=FeedStatus.RECONNECTING,
+            last_tick_time=0.0,
+            latency_ms=0.0,
+            staleness_seconds=0.0,
+        )
+        assert h.freshness_class == FreshnessClass.NO_TRANSPORT
+
+
+# ---------------------------------------------------------------------------
+# StalenessGuard defaults to centralized constant
+# ---------------------------------------------------------------------------
+
+
+class TestStalenessGuardAligned:
+    def test_default_threshold_matches_live_max(self):
+        from analysis.data_feed import StalenessGuard
+
+        guard = StalenessGuard()
+        assert guard._max_stale == FRESHNESS_LIVE_MAX_AGE_SEC
+
+    def test_explicit_override_still_works(self):
+        from analysis.data_feed import StalenessGuard
+
+        guard = StalenessGuard(max_stale_seconds=60.0)
+        assert guard._max_stale == 60.0
+
+
+# ---------------------------------------------------------------------------
+# FallbackTickFeedAdapter defaults to centralized constant
+# ---------------------------------------------------------------------------
+
+
+class TestFallbackAdapterAligned:
+    def test_default_stale_matches_adapter_constant(self):
+        from analysis.data_feed import DataFeedAdapter, FallbackTickFeedAdapter, FeedHealth, FeedStatus
+
+        class _Stub(DataFeedAdapter):
+            async def connect(self):
+                return True
+
+            async def disconnect(self):
+                pass
+
+            async def subscribe(self, symbols, timeframes):
+                pass
+
+            def get_health(self):
+                return FeedHealth(
+                    status=FeedStatus.CONNECTED,
+                    last_tick_time=time.time(),
+                    latency_ms=0,
+                    staleness_seconds=0,
+                )
+
+        chain = FallbackTickFeedAdapter([_Stub()])
+        assert chain._max_stale == FEED_ADAPTER_STALE_SEC
+
+
+# ---------------------------------------------------------------------------
+# DataQualityReport.freshness_class property
+# ---------------------------------------------------------------------------
+
+
+class TestDataQualityReportFreshnessClass:
+    def test_fresh_maps_to_live(self):
+        from analysis.data_quality_gate import DataQualityReport
+
+        r = DataQualityReport(
+            symbol="X",
+            timeframe="M15",
+            total_candles=50,
+            gap_candles=0,
+            gap_ratio=0.0,
+            low_tick_candles=0,
+            degraded=False,
+            confidence_penalty=0.0,
+            staleness_seconds=5.0,
+            freshness_state="fresh",
+            reasons=(),
+        )
+        assert r.freshness_class == FreshnessClass.LIVE
+
+    def test_stale_preserved_maps(self):
+        from analysis.data_quality_gate import DataQualityReport
+
+        r = DataQualityReport(
+            symbol="X",
+            timeframe="M15",
+            total_candles=50,
+            gap_candles=0,
+            gap_ratio=0.0,
+            low_tick_candles=0,
+            degraded=True,
+            confidence_penalty=0.15,
+            staleness_seconds=500.0,
+            freshness_state="stale_preserved",
+            reasons=("stale",),
+        )
+        assert r.freshness_class == FreshnessClass.STALE_PRESERVED
+
+    def test_no_producer_maps(self):
+        from analysis.data_quality_gate import DataQualityReport
+
+        r = DataQualityReport(
+            symbol="X",
+            timeframe="M15",
+            total_candles=0,
+            gap_candles=0,
+            gap_ratio=0.0,
+            low_tick_candles=0,
+            degraded=True,
+            confidence_penalty=0.5,
+            staleness_seconds=float("inf"),
+            freshness_state="no_producer",
+            reasons=("no_candles",),
+        )
+        assert r.freshness_class == FreshnessClass.NO_PRODUCER
+
+    def test_no_transport_maps(self):
+        from analysis.data_quality_gate import DataQualityReport
+
+        r = DataQualityReport(
+            symbol="X",
+            timeframe="M15",
+            total_candles=0,
+            gap_candles=0,
+            gap_ratio=0.0,
+            low_tick_candles=0,
+            degraded=True,
+            confidence_penalty=0.5,
+            staleness_seconds=float("inf"),
+            freshness_state="no_transport",
+            reasons=(),
+        )
+        assert r.freshness_class == FreshnessClass.NO_TRANSPORT
+
+
+# ---------------------------------------------------------------------------
+# Cross-module agreement: same input → same FreshnessClass
+# ---------------------------------------------------------------------------
+
+
+class TestCrossModuleAgreement:
+    """All three modules must agree on classification for identical inputs."""
+
+    @pytest.mark.parametrize(
+        "staleness_sec,expected_class",
+        [
+            (0.0, FreshnessClass.LIVE),
+            (5.0, FreshnessClass.LIVE),
+            (FRESHNESS_LIVE_MAX_AGE_SEC, FreshnessClass.LIVE),
+            (FRESHNESS_LIVE_MAX_AGE_SEC + 0.1, FreshnessClass.DEGRADED_BUT_REFRESHING),
+            (60.0, FreshnessClass.DEGRADED_BUT_REFRESHING),
+            (299.0, FreshnessClass.DEGRADED_BUT_REFRESHING),
+        ],
+    )
+    def test_classify_and_feed_health_agree(self, staleness_sec, expected_class):
+        """classify_feed_freshness and FeedHealth.freshness_class must agree."""
+        from analysis.data_feed import FeedHealth, FeedStatus
+
+        snap = classify_feed_freshness(
+            transport_ok=True,
+            has_producer_signal=True,
+            staleness_seconds=staleness_sec,
+        )
+        assert snap.freshness_class == expected_class
+
+        h = FeedHealth(
+            status=FeedStatus.CONNECTED,
+            last_tick_time=time.time(),
+            latency_ms=1.0,
+            staleness_seconds=staleness_sec,
+        )
+        assert h.freshness_class == expected_class
+
+    def test_stale_preserved_agreement(self):
+        from analysis.data_feed import FeedHealth, FeedStatus
+
+        big = stale_threshold_seconds() + 10.0
+        snap = classify_feed_freshness(
+            transport_ok=True,
+            has_producer_signal=True,
+            staleness_seconds=big,
+        )
+        h = FeedHealth(
+            status=FeedStatus.CONNECTED,
+            last_tick_time=time.time(),
+            latency_ms=1.0,
+            staleness_seconds=big,
+        )
+        assert snap.freshness_class == h.freshness_class == FreshnessClass.STALE_PRESERVED
