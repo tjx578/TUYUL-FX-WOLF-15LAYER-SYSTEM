@@ -6,6 +6,7 @@ import json
 import logging
 import os
 import random
+import time
 from collections.abc import AsyncIterable, Awaitable, Callable
 from typing import Any
 
@@ -148,12 +149,14 @@ class FinnhubWebSocket:
         symbols: list[str],
         *,
         replica_id: str | None = None,
+        on_connect: Callable[[], Awaitable[None]] | None = None,
     ) -> None:
         super().__init__()
         self._redis = redis
         self._on_message: Callable[[dict[str, Any]], Awaitable[None]] = on_message
         self._symbols = symbols
         self._replica_id = replica_id or os.environ.get("RAILWAY_REPLICA_ID", "unknown")
+        self._on_connect = on_connect
         from ingest.finnhub_key_manager import finnhub_keys  # noqa: PLC0415
 
         self._key_manager = finnhub_keys
@@ -317,6 +320,17 @@ class FinnhubWebSocket:
             )
             self._attempt = 0  # Reset on success
             self._connected = True
+            # Record WS connect timestamp for pipeline warmup grace period
+            with contextlib.suppress(Exception):
+                await self._redis.set(
+                    "wolf15:ws:connected_at",
+                    str(time.time()),
+                    ex=3600,  # expire after 1 hour
+                )
+            # Fire on_connect callback (e.g. HTF refresh) — best effort
+            if self._on_connect is not None:
+                with contextlib.suppress(Exception):
+                    asyncio.create_task(self._on_connect(), name="WsOnConnectCallback")
             # Start background lock renewal so TTL doesn't expire mid-session
             self._lock_renewal_task = asyncio.create_task(
                 self._lock_renewal_loop(),

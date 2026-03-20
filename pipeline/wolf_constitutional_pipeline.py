@@ -695,8 +695,9 @@ class WolfConstitutionalPipeline:
         )
         _heartbeat_ts: float | None = None
         _kill_switch_val: str | None = None
+        _ws_connected_at: float | None = None
         try:
-            from state.redis_keys import HEARTBEAT_INGEST, KILL_SWITCH  # noqa: PLC0415
+            from state.redis_keys import HEARTBEAT_INGEST, KILL_SWITCH, WS_CONNECTED_AT  # noqa: PLC0415
 
             _redis_client = getattr(self, "_redis", None)
             if _redis_client is None:
@@ -717,6 +718,10 @@ class WolfConstitutionalPipeline:
                     _ks_raw = _redis_client.get(KILL_SWITCH)
                     if _ks_raw is not None:
                         _kill_switch_val = str(_ks_raw)
+                with _ctx2.suppress(Exception):
+                    _ws_raw = _redis_client.get(WS_CONNECTED_AT)
+                    if _ws_raw is not None:
+                        _ws_connected_at = float(str(_ws_raw))
         except Exception:
             pass  # Redis unavailable — governance proceeds with env defaults
 
@@ -734,6 +739,7 @@ class WolfConstitutionalPipeline:
             dq_penalty=_dq_penalty,
             dq_degraded=len(_degraded_reports) > 0,
             kill_switch_value=_kill_switch_val,
+            ws_connected_at=_ws_connected_at,
         )
 
         if _governance.action == GovernanceAction.BLOCK:

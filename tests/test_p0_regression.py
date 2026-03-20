@@ -515,6 +515,92 @@ class TestP0_6_GovernanceHold:  # noqa: N801
 
 
 # ---------------------------------------------------------------------------
+# P0-6b: WS warmup grace period — stale_preserved → ALLOW_REDUCED during grace
+# ---------------------------------------------------------------------------
+
+
+class TestP0_6b_WsWarmupGrace:  # noqa: N801
+    """After WS reconnects, stale_preserved should downgrade to ALLOW_REDUCED
+    during the warmup grace window instead of forcing HOLD."""
+
+    def test_stale_preserved_allows_reduced_during_warmup(self):
+        """During warmup grace, stale_preserved → ALLOW_REDUCED."""
+        now = time.time()
+        threshold = stale_threshold_seconds()
+        verdict = assess_governance(
+            symbol="EURUSD",
+            last_seen_ts=now - threshold - 10.0,  # beyond stale threshold
+            transport_ok=True,
+            heartbeat_ts=now - 5.0,
+            warmup_ready=True,
+            ws_connected_at=now - 60.0,  # WS connected 60s ago (within 300s grace)
+            now_ts=now,
+        )
+        assert verdict.action == GovernanceAction.ALLOW_REDUCED
+        assert any("ws_warmup_grace" in r for r in verdict.reasons)
+
+    def test_stale_preserved_holds_after_warmup_expires(self):
+        """After warmup grace window expires, stale_preserved → HOLD as before."""
+        now = time.time()
+        threshold = stale_threshold_seconds()
+        verdict = assess_governance(
+            symbol="EURUSD",
+            last_seen_ts=now - threshold - 10.0,
+            transport_ok=True,
+            heartbeat_ts=now - 5.0,
+            warmup_ready=True,
+            ws_connected_at=now - 400.0,  # WS connected 400s ago (past 300s grace)
+            now_ts=now,
+        )
+        assert verdict.action == GovernanceAction.HOLD
+
+    def test_hard_stale_holds_even_during_warmup(self):
+        """Hard stale (>600s) must still HOLD even during warmup grace."""
+        from state.governance_gate import HARD_STALE_THRESHOLD_SEC
+
+        now = time.time()
+        verdict = assess_governance(
+            symbol="EURUSD",
+            last_seen_ts=now - HARD_STALE_THRESHOLD_SEC - 100.0,
+            transport_ok=True,
+            heartbeat_ts=now - 5.0,
+            warmup_ready=True,
+            ws_connected_at=now - 30.0,  # WS just connected
+            now_ts=now,
+        )
+        assert verdict.action == GovernanceAction.HOLD
+
+    def test_no_producer_holds_even_during_warmup(self):
+        """no_producer must still HOLD regardless of warmup grace."""
+        now = time.time()
+        verdict = assess_governance(
+            symbol="EURUSD",
+            last_seen_ts=None,
+            transport_ok=True,
+            heartbeat_ts=now - 5.0,
+            warmup_ready=True,
+            ws_connected_at=now - 30.0,
+            now_ts=now,
+        )
+        assert verdict.action == GovernanceAction.HOLD
+
+    def test_no_ws_connected_at_behaves_as_before(self):
+        """When ws_connected_at is None, stale_preserved still forces HOLD."""
+        now = time.time()
+        threshold = stale_threshold_seconds()
+        verdict = assess_governance(
+            symbol="EURUSD",
+            last_seen_ts=now - threshold - 10.0,
+            transport_ok=True,
+            heartbeat_ts=now - 5.0,
+            warmup_ready=True,
+            ws_connected_at=None,  # No WS timestamp → legacy behavior
+            now_ts=now,
+        )
+        assert verdict.action == GovernanceAction.HOLD
+
+
+# ---------------------------------------------------------------------------
 # Cross-cutting: freshness class transition completeness
 # ---------------------------------------------------------------------------
 

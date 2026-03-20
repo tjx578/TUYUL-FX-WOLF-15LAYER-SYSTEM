@@ -63,6 +63,9 @@ def heartbeat_ingest_symbol(symbol: str) -> str:
 KILL_SWITCH = f"{PREFIX}:system:kill_switch"
 SYSTEM_STATE = f"{PREFIX}:system:state"
 
+# ── WS connection timestamp (for warmup grace period) ────────────────────────
+WS_CONNECTED_AT = f"{PREFIX}:ws:connected_at"
+
 # ── Account / Context ────────────────────────────────────────────────────────
 ACCOUNT_STATE = f"{PREFIX}:account:state"
 LATEST_NEWS = f"{PREFIX}:latest_news"
