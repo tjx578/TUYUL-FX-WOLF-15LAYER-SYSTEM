@@ -96,6 +96,7 @@ class StateManager:
         self._trade_risk: dict[str, Any] = {}
         self._last_compliance_check = 0.0
         self._last_heartbeat = 0.0
+        self._recovery_count: int = 0
 
     def configure_intervals(self, compliance_interval_sec: float, heartbeat_interval_sec: float) -> None:
         self._compliance_interval_sec = max(1.0, float(compliance_interval_sec))
@@ -212,6 +213,18 @@ class StateManager:
     def _evaluate_compliance_tick(self) -> None:
         result = evaluate_compliance(self._account_state, self._trade_risk)
         target_mode = _mode_from_compliance(result.allowed, result.severity)
+
+        # Auto-recovery: require 3 consecutive normal checks before resuming
+        if target_mode == ExecutionMode.NORMAL and self._state.mode != ExecutionMode.NORMAL:
+            self._recovery_count += 1
+            if self._recovery_count < 3:
+                logger.info(
+                    "compliance recovery check {}/3",
+                    self._recovery_count,
+                )
+                return
+        elif target_mode != ExecutionMode.NORMAL:
+            self._recovery_count = 0
 
         if self._state.mode != target_mode or self._state.compliance_code != result.code:
             self._state = OrchestratorState(

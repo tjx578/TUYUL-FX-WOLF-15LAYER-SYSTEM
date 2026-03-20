@@ -80,13 +80,15 @@ def test_compliance_critical_sets_kill_switch() -> None:
 def test_compliance_warning_sets_safe() -> None:
     redis = _FakeRedis()
     manager = _new_manager(redis)
-    manager.update_account_state({
-        "balance": 10000,
-        "equity": 9800,
-        "compliance_mode": True,
-        "daily_dd_percent": 4.6,
-        "max_daily_dd_percent": 5.0,
-    })
+    manager.update_account_state(
+        {
+            "balance": 10000,
+            "equity": 9800,
+            "compliance_mode": True,
+            "daily_dd_percent": 4.6,
+            "max_daily_dd_percent": 5.0,
+        }
+    )
 
     manager.process_once(now=10.0)
 
@@ -99,18 +101,26 @@ def test_healthy_compliance_back_to_normal() -> None:
     redis = _FakeRedis()
     manager = _new_manager(redis)
     manager.set_mode(ExecutionMode.SAFE, reason="manual")
-    manager.update_account_state({
-        "balance": 10000,
-        "equity": 9990,
-        "compliance_mode": True,
-        "daily_dd_percent": 1.0,
-        "max_daily_dd_percent": 5.0,
-        "total_dd_percent": 2.0,
-        "max_total_dd_percent": 10.0,
-    })
+    manager.update_account_state(
+        {
+            "balance": 10000,
+            "equity": 9990,
+            "compliance_mode": True,
+            "daily_dd_percent": 1.0,
+            "max_daily_dd_percent": 5.0,
+            "total_dd_percent": 2.0,
+            "max_total_dd_percent": 10.0,
+        }
+    )
 
+    # Auto-recovery requires 3 consecutive normal compliance checks
     manager.process_once(now=10.0)
+    assert manager.snapshot().mode == ExecutionMode.SAFE  # check 1/3
 
+    manager.process_once(now=20.0)
+    assert manager.snapshot().mode == ExecutionMode.SAFE  # check 2/3
+
+    manager.process_once(now=30.0)  # check 3/3 → recovers
     snap = manager.snapshot()
     assert snap.mode == ExecutionMode.NORMAL
     assert snap.compliance_code == "OK"
