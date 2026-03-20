@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import asyncio
 from datetime import UTC, datetime, timedelta
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -158,6 +158,7 @@ class TestAnalysisLoopEventDriven:
             patch("startup.analysis_loop._analyze_pair", side_effect=fake_analyze_pair),
             patch("startup.analysis_loop.CONFIG", {"settings": {"loop_interval_sec": 300}}),
             patch("startup.analysis_loop.get_event_bus", return_value=bus),
+            patch("startup.analysis_loop._engine_heartbeat_loop", new_callable=AsyncMock),
             patch.dict("os.environ", {"ANALYSIS_LOOP_INTERVAL_SEC": "300"}),
         ):
             from startup.analysis_loop import analysis_loop  # noqa: PLC0415
@@ -234,6 +235,7 @@ class TestAnalysisLoopFallback:
             patch("startup.analysis_loop._analyze_pair", side_effect=fake_analyze_pair),
             patch("startup.analysis_loop.CONFIG", {"settings": {"loop_interval_sec": 1}}),
             patch("startup.analysis_loop.get_event_bus", return_value=bus),
+            patch("startup.analysis_loop._engine_heartbeat_loop", new_callable=AsyncMock),
             patch.dict("os.environ", {}, clear=False),
         ):
             # Remove env override so it uses config value of 1s
