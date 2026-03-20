@@ -58,7 +58,8 @@ FINNHUB_WS_URL: str = "wss://ws.finnhub.io?token={token}"
 PING_INTERVAL_S: float = 20.0
 PING_TIMEOUT_S: float = 10.0
 LEADER_LOCK_KEY: str = "finnhub:ws:leader"
-LEADER_LOCK_TTL_S: int = 60
+LEADER_LOCK_TTL_S: int = 30
+LEADER_LOCK_RENEWAL_S: float = 20.0  # Renew every 20s (must be < TTL)
 
 # Market hours: Forex open Sun 22:00 UTC → Fri 22:00 UTC
 WEEKEND_POLL_INTERVAL_S: float = 300.0  # Check every 5 min during weekend
@@ -163,6 +164,7 @@ class FinnhubWebSocket:
         self._running: bool = False
         self._connected: bool = False
         self._ws: websockets.asyncio.client.ClientConnection | None = None
+        self._lock_renewal_task: asyncio.Task[None] | None = None
 
     @property
     def is_connected(self) -> bool:
@@ -179,9 +181,14 @@ class FinnhubWebSocket:
         Only one replica should maintain the WS connection to avoid
         multiplying connection attempts against Finnhub's rate limit.
 
+        Idempotent: if this replica already holds the lock, it is
+        renewed and True is returned (prevents self-deadlock after
+        a WS crash within the same process).
+
         Returns:
-            True if this replica acquired the lock.
+            True if this replica acquired (or already holds) the lock.
         """
+        # Fast path: try to claim an empty slot.
         acquired = await self._redis.set(
             LEADER_LOCK_KEY,
             self._replica_id,
@@ -193,7 +200,40 @@ class FinnhubWebSocket:
                 "Acquired Finnhub WS leader lock",
                 extra={"replica_id": self._replica_id},
             )
-        return bool(acquired)
+            return True
+
+        # Lock exists — check if *we* already own it (idempotent re-acquire).
+        current = await self._redis.get(LEADER_LOCK_KEY)
+        if current == self._replica_id:
+            await self._redis.expire(LEADER_LOCK_KEY, LEADER_LOCK_TTL_S)
+            logger.debug(
+                "Re-acquired own leader lock (idempotent)",
+                extra={"replica_id": self._replica_id},
+            )
+            return True
+
+        return False
+
+    async def _release_leader_lock(self) -> None:
+        """Release leader lock if held by this replica.
+
+        Safe to call unconditionally — only deletes the key when its
+        value matches our replica_id (compare-and-delete).
+        """
+        try:
+            current = await self._redis.get(LEADER_LOCK_KEY)
+            if current == self._replica_id:
+                await self._redis.delete(LEADER_LOCK_KEY)
+                logger.info(
+                    "Released Finnhub WS leader lock",
+                    extra={"replica_id": self._replica_id},
+                )
+        except Exception as exc:
+            logger.warning(
+                "Failed to release leader lock: %s",
+                exc,
+                extra={"replica_id": self._replica_id},
+            )
 
     async def _renew_leader_lock(self) -> bool:
         """Renew leader lock if still held by this replica."""
@@ -202,6 +242,40 @@ class FinnhubWebSocket:
             await self._redis.expire(LEADER_LOCK_KEY, LEADER_LOCK_TTL_S)
             return True
         return False
+
+    async def _lock_renewal_loop(self) -> None:
+        """Continuously renew leader lock while WS is connected.
+
+        Runs as a background task. If renewal fails (lock stolen or
+        expired), force-disconnect the WS so the main loop can
+        re-acquire or yield to another replica.
+        """
+        while self._running and self._connected:
+            try:
+                renewed = await self._renew_leader_lock()
+                if not renewed:
+                    logger.warning(
+                        "[LeaderLock] Lost lock — triggering reconnect",
+                        extra={"replica_id": self._replica_id},
+                    )
+                    self._connected = False
+                    if self._ws is not None:
+                        with contextlib.suppress(Exception):
+                            await self._ws.close()
+                    return
+            except Exception as exc:
+                logger.warning(
+                    "[LeaderLock] Renewal error: %s",
+                    exc,
+                    extra={"replica_id": self._replica_id},
+                )
+            await asyncio.sleep(LEADER_LOCK_RENEWAL_S)
+
+    def _cancel_lock_renewal(self) -> None:
+        """Cancel the background lock renewal task if running."""
+        if self._lock_renewal_task is not None and not self._lock_renewal_task.done():
+            self._lock_renewal_task.cancel()
+        self._lock_renewal_task = None
 
     async def _subscribe(
         self,
@@ -243,6 +317,11 @@ class FinnhubWebSocket:
             )
             self._attempt = 0  # Reset on success
             self._connected = True
+            # Start background lock renewal so TTL doesn't expire mid-session
+            self._lock_renewal_task = asyncio.create_task(
+                self._lock_renewal_loop(),
+                name="LeaderLockRenewal",
+            )
             finnhub_ws_reconnect_current.labels(replica_id=self._replica_id).set(0)
             finnhub_ws_connections_total.labels(replica_id=self._replica_id).inc()
             finnhub_ws_connected.labels(replica_id=self._replica_id).set(1)
@@ -265,22 +344,17 @@ class FinnhubWebSocket:
         self,
         ws: AsyncIterable[str] | websockets.asyncio.client.ClientConnection,
     ) -> None:
-        """Listen for messages and dispatch to handler."""
-        import time
+        """Listen for messages and dispatch to handler.
 
-        _RENEW_INTERVAL_S = 15  # noqa: N806
-        _last_renew = 0.0
+        Lock renewal is handled by the background ``_lock_renewal_loop``
+        task started in ``_connect()``.
+        """
         async for raw_msg in ws:
             data = json.loads(raw_msg)
 
             if data.get("type") == "ping":
                 continue
 
-            # Renew lock periodically during message processing (throttled)
-            now = time.monotonic()
-            if now - _last_renew >= _RENEW_INTERVAL_S:
-                await self._renew_leader_lock()
-                _last_renew = now
             await self._on_message(data)
 
     async def run(self) -> None:
@@ -424,24 +498,29 @@ class FinnhubWebSocket:
 
             finally:
                 self._connected = False
+                self._cancel_lock_renewal()
                 if self._ws is not None:
                     with contextlib.suppress(Exception):
                         await self._ws.close()
                     self._ws = None
+                # Release leader lock so this (or another) replica can
+                # re-acquire immediately instead of waiting for TTL expiry.
+                await self._release_leader_lock()
 
     async def stop(self) -> None:
         """Gracefully shutdown the WebSocket client."""
         self._running = False
         self._connected = False
+        self._cancel_lock_renewal()
         if self._ws is not None:
             with contextlib.suppress(Exception):
                 await self._ws.close()
         finnhub_ws_connected.labels(replica_id=self._replica_id).set(0)
-        # Release leader lock
-        current = await self._redis.get(LEADER_LOCK_KEY)
-        if current == self._replica_id:
+        # Force-release lock regardless of holder — this replica is shutting
+        # down, so if *we* held the lock it must go immediately.
+        with contextlib.suppress(Exception):
             await self._redis.delete(LEADER_LOCK_KEY)
         logger.info(
-            "Finnhub WS client stopped",
+            "Finnhub WS client stopped + lock released",
             extra={"replica_id": self._replica_id},
         )

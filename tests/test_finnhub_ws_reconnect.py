@@ -186,8 +186,46 @@ class TestLeaderElection:
     async def test_acquire_leader_lock_failure(self, ws_client: FinnhubWebSocket, mock_redis: MagicMock) -> None:
         """Lock not acquired when another replica holds it."""
         mock_redis.set = AsyncMock(return_value=False)
+        mock_redis.get = AsyncMock(return_value="other-replica")
         result = await ws_client._acquire_leader_lock()
         assert result is False
+
+    @pytest.mark.asyncio
+    async def test_acquire_leader_lock_idempotent_reacquire(
+        self, ws_client: FinnhubWebSocket, mock_redis: MagicMock
+    ) -> None:
+        """Lock re-acquired when this replica already owns it (idempotent).
+
+        This prevents self-deadlock when the WS crashes and the same
+        replica loops back to re-acquire before the TTL expires.
+        """
+        mock_redis.set = AsyncMock(return_value=False)  # nx=True fails
+        mock_redis.get = AsyncMock(return_value="test-replica")  # we own it
+        result = await ws_client._acquire_leader_lock()
+        assert result is True
+        mock_redis.expire.assert_awaited_once_with(LEADER_LOCK_KEY, LEADER_LOCK_TTL_S)
+
+    @pytest.mark.asyncio
+    async def test_release_leader_lock_own_replica(self, ws_client: FinnhubWebSocket, mock_redis: MagicMock) -> None:
+        """Release deletes the key when this replica holds it."""
+        mock_redis.get = AsyncMock(return_value="test-replica")
+        await ws_client._release_leader_lock()
+        mock_redis.delete.assert_awaited_once_with(LEADER_LOCK_KEY)
+
+    @pytest.mark.asyncio
+    async def test_release_leader_lock_other_replica(self, ws_client: FinnhubWebSocket, mock_redis: MagicMock) -> None:
+        """Release does NOT delete the key when another replica holds it."""
+        mock_redis.get = AsyncMock(return_value="other-replica")
+        await ws_client._release_leader_lock()
+        mock_redis.delete.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_release_leader_lock_redis_error_swallowed(
+        self, ws_client: FinnhubWebSocket, mock_redis: MagicMock
+    ) -> None:
+        """Redis errors during release are swallowed (logged, not raised)."""
+        mock_redis.get = AsyncMock(side_effect=ConnectionError("redis gone"))
+        await ws_client._release_leader_lock()  # should NOT raise
 
     @pytest.mark.asyncio
     async def test_renew_leader_lock_own_replica(self, ws_client: FinnhubWebSocket, mock_redis: MagicMock) -> None:
@@ -213,6 +251,111 @@ class TestLeaderElection:
         mock_redis.get = AsyncMock(return_value=None)
         result = await ws_client._renew_leader_lock()
         assert result is False
+
+
+# ---------------------------------------------------------------------------
+# Lock renewal loop
+# ---------------------------------------------------------------------------
+
+
+class TestLockRenewalLoop:
+    """Tests for the background _lock_renewal_loop task."""
+
+    @pytest.mark.asyncio
+    async def test_renewal_loop_renews_while_connected(
+        self, ws_client: FinnhubWebSocket, mock_redis: MagicMock
+    ) -> None:
+        """Loop renews the lock and sleeps for LEADER_LOCK_RENEWAL_S."""
+        ws_client._running = True
+        ws_client._connected = True
+        mock_redis.get = AsyncMock(return_value="test-replica")
+
+        renewal_count = 0
+
+        async def track_expire(*args, **kwargs):
+            nonlocal renewal_count
+            renewal_count += 1
+            # Stop after 2 renewals so test doesn't run forever
+            if renewal_count >= 2:
+                ws_client._connected = False
+            return True
+
+        mock_redis.expire = AsyncMock(side_effect=track_expire)
+
+        with patch("ingest.finnhub_ws.asyncio.sleep", new_callable=AsyncMock):
+            await ws_client._lock_renewal_loop()
+
+        assert renewal_count >= 2
+
+    @pytest.mark.asyncio
+    async def test_renewal_loop_disconnects_on_lost_lock(
+        self, ws_client: FinnhubWebSocket, mock_redis: MagicMock
+    ) -> None:
+        """Loop closes WS and returns when lock is stolen by another replica."""
+        ws_client._running = True
+        ws_client._connected = True
+        mock_ws = AsyncMock()
+        ws_client._ws = mock_ws
+        # Lock held by someone else now
+        mock_redis.get = AsyncMock(return_value="other-replica")
+
+        with patch("ingest.finnhub_ws.asyncio.sleep", new_callable=AsyncMock):
+            await ws_client._lock_renewal_loop()
+
+        assert ws_client._connected is False
+        mock_ws.close.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_renewal_loop_survives_redis_error(self, ws_client: FinnhubWebSocket, mock_redis: MagicMock) -> None:
+        """Transient Redis errors don't kill the renewal loop."""
+        ws_client._running = True
+        ws_client._connected = True
+        call_count = 0
+
+        async def flaky_get(key):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                raise ConnectionError("redis blip")
+            # Second call: succeed, then stop
+            ws_client._connected = False
+            return "test-replica"
+
+        mock_redis.get = AsyncMock(side_effect=flaky_get)
+
+        with patch("ingest.finnhub_ws.asyncio.sleep", new_callable=AsyncMock):
+            await ws_client._lock_renewal_loop()
+
+        # Should survive the error and continue
+        assert call_count >= 2
+
+    def test_cancel_lock_renewal_cancels_running_task(self, ws_client: FinnhubWebSocket) -> None:
+        """_cancel_lock_renewal cancels a running task and clears the reference."""
+        fake_task = MagicMock()
+        fake_task.done.return_value = False
+        ws_client._lock_renewal_task = fake_task
+
+        ws_client._cancel_lock_renewal()
+
+        fake_task.cancel.assert_called_once()
+        assert ws_client._lock_renewal_task is None
+
+    def test_cancel_lock_renewal_noop_when_no_task(self, ws_client: FinnhubWebSocket) -> None:
+        """_cancel_lock_renewal is safe to call when no task exists."""
+        ws_client._lock_renewal_task = None
+        ws_client._cancel_lock_renewal()  # should not raise
+        assert ws_client._lock_renewal_task is None
+
+    def test_cancel_lock_renewal_noop_when_task_done(self, ws_client: FinnhubWebSocket) -> None:
+        """_cancel_lock_renewal does not cancel an already-finished task."""
+        fake_task = MagicMock()
+        fake_task.done.return_value = True
+        ws_client._lock_renewal_task = fake_task
+
+        ws_client._cancel_lock_renewal()
+
+        fake_task.cancel.assert_not_called()
+        assert ws_client._lock_renewal_task is None
 
 
 # ---------------------------------------------------------------------------
@@ -316,14 +459,18 @@ class TestListen:
         on_message.assert_not_awaited()
 
     @pytest.mark.asyncio
-    async def test_listen_throttles_lock_renewal(self, ws_client: FinnhubWebSocket, mock_redis: MagicMock) -> None:
-        """Leader lock renewal is throttled for closely spaced messages."""
+    async def test_listen_no_inline_lock_renewal(
+        self, ws_client: FinnhubWebSocket, on_message: AsyncMock, mock_redis: MagicMock
+    ) -> None:
+        """_listen no longer renews the lock inline (handled by background task)."""
         trade_msg = json.dumps({"type": "trade", "data": []})
         mock_ws = AsyncMessageIterator([trade_msg, trade_msg])
+        mock_redis.get.reset_mock()
+        mock_redis.expire.reset_mock()
 
         await ws_client._listen(mock_ws)
-        # _listen renews at most once per interval for back-to-back messages.
-        assert mock_redis.get.await_count == 1  # renew checks current holder
+        # No inline renewal calls — background _lock_renewal_loop handles it.
+        mock_redis.expire.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_listen_multiple_messages_sequential(
@@ -519,6 +666,35 @@ class TestRunLoopReconnect:
         assert ws_client._attempt >= 5
 
     @pytest.mark.asyncio
+    async def test_finally_releases_leader_lock(self, ws_client: FinnhubWebSocket, mock_redis: MagicMock) -> None:
+        """Lock must be released in finally block so reconnect doesn't self-deadlock."""
+        call_count = 0
+        delete_calls: list[str] = []
+
+        async def track_delete(key: str) -> int:
+            delete_calls.append(key)
+            return 1
+
+        mock_redis.delete = AsyncMock(side_effect=track_delete)
+
+        async def fake_connect():
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                raise ConnectionClosedError(None, None)
+            ws_client._running = False
+            return AsyncMock()
+
+        with patch.object(ws_client, "_connect", side_effect=fake_connect):  # noqa: SIM117
+            with patch("ingest.finnhub_ws.asyncio.sleep", new_callable=AsyncMock):
+                await ws_client.run()
+
+        # Lock should have been released in the finally block after the first failure
+        assert (
+            LEADER_LOCK_KEY in delete_calls
+        ), f"Leader lock not released in finally block. delete calls: {delete_calls}"
+
+    @pytest.mark.asyncio
     async def test_backoff_increases_with_consecutive_failures(
         self, ws_client: FinnhubWebSocket, mock_redis: MagicMock
     ) -> None:
@@ -599,8 +775,7 @@ class TestGracefulStop:
 
     @pytest.mark.asyncio
     async def test_stop_releases_leader_lock(self, ws_client: FinnhubWebSocket, mock_redis: MagicMock) -> None:
-        """stop() should release the leader lock if held by this replica."""
-        mock_redis.get = AsyncMock(return_value="test-replica")
+        """stop() force-deletes the leader lock unconditionally."""
         ws_client._running = True
 
         await ws_client.stop()
@@ -608,16 +783,33 @@ class TestGracefulStop:
         mock_redis.delete.assert_awaited_once_with(LEADER_LOCK_KEY)
 
     @pytest.mark.asyncio
-    async def test_stop_does_not_release_other_replicas_lock(
+    async def test_stop_force_deletes_even_other_replicas_lock(
         self, ws_client: FinnhubWebSocket, mock_redis: MagicMock
     ) -> None:
-        """stop() should NOT release lock held by a different replica."""
+        """stop() force-deletes lock even if another replica holds it.
+
+        Rationale: this replica is shutting down, and a stuck lock from
+        a crashed sibling should not block the next startup.
+        """
         mock_redis.get = AsyncMock(return_value="other-replica")
         ws_client._running = True
 
         await ws_client.stop()
 
-        mock_redis.delete.assert_not_awaited()
+        mock_redis.delete.assert_awaited_once_with(LEADER_LOCK_KEY)
+
+    @pytest.mark.asyncio
+    async def test_stop_cancels_lock_renewal_task(self, ws_client: FinnhubWebSocket, mock_redis: MagicMock) -> None:
+        """stop() cancels the background lock renewal task."""
+        fake_task = MagicMock()
+        fake_task.done.return_value = False
+        ws_client._lock_renewal_task = fake_task
+        ws_client._running = True
+
+        await ws_client.stop()
+
+        fake_task.cancel.assert_called_once()
+        assert ws_client._lock_renewal_task is None
 
     @pytest.mark.asyncio
     async def test_stop_skips_close_when_ws_already_closed(
