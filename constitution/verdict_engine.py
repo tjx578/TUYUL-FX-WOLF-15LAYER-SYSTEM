@@ -403,8 +403,8 @@ _THRESH_INTEGRITY: float = 0.75  # gate_2  — L8_integrity_index
 _THRESH_RR: float = 1.5  # gate_3  — execution.rr_ratio
 _THRESH_FTA: float = 0.65  # gate_4  — scores.fta_score
 _THRESH_MONTE: float = 0.60  # gate_5  — layers.L7_monte_carlo_win
-_THRESH_LATENCY_MS: int = 250  # gate_8  — system.latency_ms
-_THRESH_CONF12: float = 0.75  # gate_9  — layers.conf12
+_THRESH_LATENCY_MS: int = 500  # gate_8  — system.latency_ms
+_THRESH_CONF12: float = 0.60  # gate_9  — layers.conf12
 # Gate 10: Reflex Quality — LOCK is critical fail, CAUTION passes with lot_scale
 
 # Confidence label thresholds (based on wolf_30_point)

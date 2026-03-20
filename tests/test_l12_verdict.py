@@ -190,7 +190,7 @@ class TestL12VerdictGateFailures:
 
     def test_latency_gate_failure(self) -> None:
         """Test verdict when latency is too high."""
-        synthesis = _make_synthesis(latency=300)  # Above 250ms threshold
+        synthesis = _make_synthesis(latency=600)  # Above 500ms threshold
 
         verdict = generate_l12_verdict(synthesis)
 
@@ -243,7 +243,7 @@ class TestL12VerdictTypes:
     def test_hold_verdict(self) -> None:
         """Test HOLD verdict is generated."""
         # Marginal failures
-        synthesis = _make_synthesis(conf12=0.7)
+        synthesis = _make_synthesis(conf12=0.5)
 
         verdict = generate_l12_verdict(synthesis)
 

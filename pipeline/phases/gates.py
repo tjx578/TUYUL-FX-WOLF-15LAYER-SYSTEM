@@ -42,7 +42,7 @@ def evaluate_9_gates(synthesis: dict[str, Any]) -> dict[str, Any]:
     Returns:
         dict with per-gate booleans, overall pass, and metadata.
     """
-    # Gate 1: TIIsym >= 0.93
+    # Gate 1: TIIsym >= 0.65
     tii = synthesis.get("L8", {}).get("tii_sym", 0.0)
     g1 = tii >= get_tii_min()
 
@@ -65,15 +65,15 @@ def evaluate_9_gates(synthesis: dict[str, Any]) -> dict[str, Any]:
     frpc_state = synthesis.get("L2", {}).get("frpc_state", "DESYNC")
     g3 = frpc_state == "SYNC"
 
-    # Gate 4: CONF12 >= 0.75
+    # Gate 4: CONF12 >= 0.60
     conf12 = synthesis.get("L2", {}).get("conf12", 0.0)
     g4 = conf12 >= get_conf12_min()
 
-    # Gate 5: RR >= 1:2.0
+    # Gate 5: RR >= 1:1.5
     rr = synthesis.get("L11", {}).get("rr", 0.0)
     g5 = rr >= get_rr_min()
 
-    # Gate 6: Integrity >= 0.97
+    # Gate 6: Integrity >= 0.75
     integrity = synthesis.get("L8", {}).get("integrity", 0.0)
     g6 = integrity >= get_integrity_min()
 
@@ -85,7 +85,7 @@ def evaluate_9_gates(synthesis: dict[str, Any]) -> dict[str, Any]:
     drawdown = synthesis.get("risk", {}).get("current_drawdown", 0.0)
     g8 = drawdown <= get_max_drawdown()
 
-    # Gate 9: Latency <= 250ms
+    # Gate 9: Latency <= 500ms
     latency = synthesis.get("system", {}).get("latency_ms", 0.0)
     g9 = latency <= get_max_latency_ms()
 

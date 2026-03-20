@@ -194,19 +194,19 @@ class TestNineGateConcurrentLoad:
             )
 
     def test_gate_8_latency_threshold_fails_above_limit(self) -> None:
-        """Gate 8 (latency) must FAIL when synthesis latency_ms exceeds 250 ms."""
-        synthesis = _make_synthesis(symbol="EURUSD", latency_ms=300)
+        """Gate 8 (latency) must FAIL when synthesis latency_ms exceeds 500 ms."""
+        synthesis = _make_synthesis(symbol="EURUSD", latency_ms=600)
         result = generate_l12_verdict(synthesis)
         assert result["gates"]["gate_8_latency"] == "FAIL", (
-            "Gate 8 (latency) should FAIL for 300 ms synthesis latency"
+            "Gate 8 (latency) should FAIL for 600 ms synthesis latency"
         )
 
     def test_gate_8_latency_threshold_passes_at_limit(self) -> None:
-        """Gate 8 (latency) must PASS when synthesis latency_ms is within 250 ms."""
-        synthesis = _make_synthesis(symbol="EURUSD", latency_ms=200)
+        """Gate 8 (latency) must PASS when synthesis latency_ms is within 500 ms."""
+        synthesis = _make_synthesis(symbol="EURUSD", latency_ms=400)
         result = generate_l12_verdict(synthesis)
         assert result["gates"]["gate_8_latency"] == "PASS", (
-            "Gate 8 (latency) should PASS for 200 ms synthesis latency"
+            "Gate 8 (latency) should PASS for 400 ms synthesis latency"
         )
 
     def test_sustained_load_50_sequential_calls(self) -> None:

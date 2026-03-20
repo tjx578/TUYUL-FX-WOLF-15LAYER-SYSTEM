@@ -2,14 +2,14 @@
 # WOLF-15 CONSTITUTIONAL THRESHOLDS (v7.4r∞)
 # ===================================================================
 # Top-level verdict gates (read directly by verdict_engine.py)
-tii_min: 0.93
-integrity_min: 0.97
-rr_min: 2.0
-fta_min: 0.75
-monte_min: 0.55
-conf12_min: 0.75
+tii_min: 0.65
+integrity_min: 0.75
+rr_min: 1.5
+fta_min: 0.65
+monte_min: 0.50
+conf12_min: 0.60
 max_drawdown: 5.0
-max_latency_ms: 250
+max_latency_ms: 500
 
 # ===================================================================
 # AUTHORITY
@@ -29,7 +29,7 @@ market_law:
 # L8 — TII (Convex Weighted v2)
 # ===================================================================
 tii:
-  constitutional_min: 0.93
+  constitutional_min: 0.65
   weights:
     structure: 0.25
     discipline: 0.25
@@ -67,8 +67,8 @@ monte_carlo:
   default_runs: 1000
   default_horizon: 50
   gate:
-    win_prob_min: 68.0
-    profit_factor_min: 2.0
+    win_prob_min: 55.0
+    profit_factor_min: 1.6
     max_drawdown: 5.0
 
 # ===================================================================
@@ -273,7 +273,7 @@ timeframe_laws:
 # ===================================================================
 gates:
   total_gates: 10
-  required_pass: 10
+  required_pass: 7
 
 # ===================================================================
 # VIOLATION POLICY
