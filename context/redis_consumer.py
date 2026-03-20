@@ -21,6 +21,7 @@ from typing import Any, cast
 import orjson
 
 from context.live_context_bus import LiveContextBus
+from core.redis_consumer_fix import get_bars_fixed, sanitize_redis_keys
 from core.redis_keys import (
     CANDLE_HASH_PREFIX as CANDLE_HASH_PREFIX_KEY,
 )
@@ -125,6 +126,14 @@ class RedisConsumer:
     def stop(self) -> None:
         """Request the consumer to stop gracefully."""
         self._stop_event.set()
+
+    # ------------------------------------------------------------------
+    # Type-aware bar reader (delegates to core.redis_consumer_fix)
+    # ------------------------------------------------------------------
+
+    async def get_bars(self, symbol: str, timeframe: str, required: int = 5) -> list[dict[str, Any]]:
+        """Return recent candle bars, checking key TYPE before access."""
+        return await get_bars_fixed(self._redis, symbol, timeframe, required)
 
     # ------------------------------------------------------------------
     # Startup warmup
@@ -517,11 +526,18 @@ class RedisConsumer:
         """Main entrypoint expected by main.py.
 
         Steps:
+        0) Sanitise: delete keys with wrong Redis type (defence-in-depth)
         1) Warmup: load candle history from Redis Lists
         2) Realtime: start pubsub consumer (best-effort)
         3) Block forever until stop requested (or task cancelled)
         """
         logger.info("RedisConsumer: starting (symbols=%d)", len(self._symbols))
+
+        # Sanitise keys BEFORE warmup so LRANGE never hits a HASH
+        try:
+            await sanitize_redis_keys(self._redis)
+        except Exception as exc:
+            logger.warning("RedisConsumer: key sanitise failed (non-fatal): %s", exc)
 
         # Warmup is critical for pipeline readiness
         await self.load_candle_history()

@@ -76,6 +76,11 @@ async def _seed_from_redis(pairs: list[str]) -> dict[str, object]:
 
         redis_client: AsyncRedis = AsyncRedis.from_url(redis_url)
         try:
+            # Sanitise conflicting key types BEFORE warmup reads
+            from core.redis_consumer_fix import sanitize_redis_keys  # noqa: PLC0415
+
+            await sanitize_redis_keys(redis_client)
+
             consumer = RedisConsumer(symbols=pairs, redis_client=redis_client)
             bus = LiveContextBus()
 

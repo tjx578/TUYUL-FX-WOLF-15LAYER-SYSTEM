@@ -153,66 +153,14 @@ async def run_ingest_services(has_api_key: bool, redis: AsyncRedis) -> None:
 
 
 async def _sanitize_redis_keys(redis_client: AsyncRedis) -> None:
-    """Delete keys whose Redis type conflicts with what writers/consumers expect."""
-    from core.redis_keys import TYPE_MAP  # noqa: PLC0415
+    """Delete keys whose Redis type conflicts with what writers/consumers expect.
 
-    def _normalize_redis_type(value: bytes | str) -> str:
-        if isinstance(value, bytes | bytearray):
-            return value.decode().lower()
-        return str(value).lower()
+    Delegates to the shared implementation in ``core.redis_consumer_fix``
+    which uses SCAN (instead of KEYS) and proactive TYPE checks.
+    """
+    from core.redis_consumer_fix import sanitize_redis_keys  # noqa: PLC0415
 
-    keys_expected: dict[str, str] = TYPE_MAP
-
-    total_deleted = 0
-    mismatch_diagnostic_logged = False
-    for pattern, expected_type in keys_expected.items():
-        try:
-            keys: list[bytes | str] = await redis_client.keys(pattern)
-        except Exception as exc:
-            logger.warning("[Redis-sanitize] KEYS {} failed: {}", pattern, exc)
-            continue
-
-        for key in keys:
-            key_str = key if isinstance(key, str) else key.decode()
-            try:
-                actual_type_raw: bytes | str = await redis_client.type(key_str)
-            except Exception as exc:
-                logger.warning("[Redis-sanitize] TYPE {} failed: {}", key_str, exc)
-                continue
-
-            actual_type = _normalize_redis_type(actual_type_raw)
-
-            if actual_type == "none":
-                continue
-            if actual_type == expected_type:
-                continue
-
-            if not mismatch_diagnostic_logged:
-                logger.warning(
-                    "[Redis-sanitize] Mismatch diagnostic (one-time): key='{}' raw_type={!r} normalized_type={} expected_type={}",
-                    key_str,
-                    actual_type_raw,
-                    actual_type,
-                    expected_type,
-                )
-                mismatch_diagnostic_logged = True
-
-            logger.warning(
-                "[Redis-sanitize] Key '{}' type mismatch: expected={}, actual={} → deleting",
-                key_str,
-                expected_type,
-                actual_type,
-            )
-            try:
-                await redis_client.delete(key_str)
-                total_deleted += 1
-            except Exception as exc:
-                logger.error("[Redis-sanitize] Failed to delete '{}': {}", key_str, exc)
-
-    if total_deleted:
-        logger.info("[Redis-sanitize] Cleaned {} conflicting key(s)", total_deleted)
-    else:
-        logger.debug("[Redis-sanitize] No type conflicts found")
+    await sanitize_redis_keys(redis_client)
 
 
 async def run_redis_consumer() -> None:
