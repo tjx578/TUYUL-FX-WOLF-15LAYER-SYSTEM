@@ -28,6 +28,7 @@ import {
 } from "@/lib/api";
 import { useLiveSignals } from "@/lib/realtime/hooks/useLiveSignals";
 import { useLiveAlerts } from "@/lib/realtime";
+import { classifyVerdictEmptyState, type VerdictEmptyState } from "@/lib/verdictEmptyState";
 import { useSystemStore } from "@/store/useSystemStore";
 import type { L12Verdict, Trade, Account, OrchestratorState } from "@/types";
 
@@ -226,6 +227,7 @@ export interface CommandCenterState {
   wsStatus: string;
   mode: string;
   dataErrors: string[];
+  verdictEmptyState: VerdictEmptyState | null;
 
   // loading
   vLoading: boolean;
@@ -260,6 +262,26 @@ export function useCommandCenterState(): CommandCenterState {
     return errs;
   }, [verdicts.vError, trades.tradesError, status.contextError, status.executionError, risk.accountsError, risk.riskError]);
 
+  const verdictEmptyState = useMemo(() => {
+    return classifyVerdictEmptyState({
+      verdictCount: verdicts.verdictList.length,
+      isLoading: verdicts.vLoading,
+      verdictStale: verdicts.verdictStale,
+      liveStatus: verdicts.liveStatus,
+      mode: status.mode,
+      wsStatus: status.wsStatus,
+      feedStatus: status.health?.feed_status,
+    });
+  }, [
+    verdicts.vLoading,
+    verdicts.verdictList.length,
+    verdicts.verdictStale,
+    verdicts.liveStatus,
+    status.mode,
+    status.wsStatus,
+    status.health?.feed_status,
+  ]);
+
   return {
     verdictList: verdicts.verdictList,
     activeTrades: trades.activeTrades,
@@ -281,6 +303,7 @@ export function useCommandCenterState(): CommandCenterState {
     wsStatus: status.wsStatus,
     mode: status.mode,
     dataErrors,
+    verdictEmptyState,
     vLoading: verdicts.vLoading,
   };
 }

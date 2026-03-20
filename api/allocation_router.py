@@ -38,6 +38,7 @@ from config_loader import load_pairs
 from execution.idempotency_ledger import ExecutionIdempotencyLedger
 from infrastructure.redis_client import get_client
 from infrastructure.tracing import inject_trace_context, setup_tracer
+from journal.forensic_replay import append_replay_artifact
 from journal.trade_journal_service import trade_journal_automation_service
 from risk.kill_switch import GlobalKillSwitch
 from state.data_freshness import (
@@ -87,6 +88,20 @@ ALLOC_REQUEST_STREAM = "allocation:request"
 IDEMPOTENCY_KEY_PREFIX = "idempotency:confirm:"
 IDEMPOTENCY_TTL_SEC = 60 * 60 * 24
 TRADE_OUTBOX_STREAM = "trade:outbox"
+
+
+def _append_forensic_artifact(
+    artifact_type: str,
+    *,
+    correlation_id: str,
+    payload: dict[str, Any],
+) -> None:
+    with contextlib.suppress(Exception):
+        append_replay_artifact(
+            artifact_type,
+            correlation_id=correlation_id,
+            payload=payload,
+        )
 
 
 def _get_signal_service() -> SignalService:
@@ -539,6 +554,20 @@ async def _runtime_take_precheck(account: dict[str, Any], pair: str = "") -> tup
     daily_dd = float(account.get("daily_dd_percent", 0) or 0)
     daily_cap = float(account.get("max_daily_dd_percent", 5.0) or 5.0)
     feed_snapshot = await _feed_freshness_snapshot(pair)
+    _append_forensic_artifact(
+        "freshness_snapshot",
+        correlation_id=str(pair or "GLOBAL").upper(),
+        payload={
+            "pair": str(pair or "").upper(),
+            "state": feed_snapshot.state,
+            "freshness_class": feed_snapshot.freshness_class.value,
+            "staleness_seconds": feed_snapshot.staleness_seconds,
+            "threshold_seconds": feed_snapshot.threshold_seconds,
+            "last_seen_ts": feed_snapshot.last_seen_ts,
+            "detail": feed_snapshot.detail,
+            "account_id": str(account.get("account_id") or ""),
+        },
+    )
     _kill_switch.evaluate_and_trip(
         metrics={
             "daily_dd_percent": daily_dd,
@@ -723,6 +752,30 @@ async def _confirm_trade_internal(
         event_type="ORDER_PLACED",
         topic="trade_confirmed",
         payload={"trade": trade},
+    )
+    _append_forensic_artifact(
+        "execution_lifecycle",
+        correlation_id=intent_id,
+        payload={
+            "trade_id": trade_id,
+            "signal_id": signal_id,
+            "event_type": "ORDER_PLACED",
+            "source": "MANUAL",
+            "status": trade.get("status"),
+            "execution_intent_id": intent_id,
+        },
+    )
+    _append_forensic_artifact(
+        "event_history",
+        correlation_id=intent_id,
+        payload={
+            "category": "trade_event",
+            "trade_id": trade_id,
+            "signal_id": signal_id,
+            "event_type": "ORDER_PLACED",
+            "status": trade.get("status"),
+            "source": "MANUAL",
+        },
     )
 
     _journal_service.on_trade_confirmed(trade)
@@ -1196,6 +1249,38 @@ async def record_trade_lifecycle_event(req: TradeLifecycleEventRequest) -> dict[
             "status": trade.get("status"),
             "source": req.source,
             "execution_intent_id": execution_intent_id,
+        },
+    )
+    _append_forensic_artifact(
+        "execution_lifecycle",
+        correlation_id=execution_intent_id,
+        payload={
+            "trade_id": req.trade_id,
+            "signal_id": signal_id,
+            "event_type": event_type,
+            "status_before": current_status,
+            "status_after": trade.get("status"),
+            "replay": replay,
+            "source": req.source,
+            "order_id": req.order_id,
+            "reason": reason,
+            "fill_price": req.fill_price,
+            "pnl": req.pnl,
+            "execution_intent_id": execution_intent_id,
+        },
+    )
+    _append_forensic_artifact(
+        "event_history",
+        correlation_id=execution_intent_id,
+        payload={
+            "category": "trade_event",
+            "trade_id": req.trade_id,
+            "signal_id": signal_id,
+            "event_type": event_type,
+            "status": trade.get("status"),
+            "source": req.source,
+            "reason": reason,
+            "replay": replay,
         },
     )
 
