@@ -13,7 +13,8 @@
  */
 
 import { useEffect, useMemo, useRef } from "react";
-import { createChart, ColorType, CandlestickData, Time } from "lightweight-charts";
+import { createChart, ColorType } from "lightweight-charts";
+import type { CandlestickData, Time } from "lightweight-charts";
 import type { CandleData } from "@/types";
 
 // Infer types from library return values
