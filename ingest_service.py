@@ -178,6 +178,13 @@ async def _producer_heartbeat_loop(ws_feed: Any, redis: RedisClient) -> None:
     while not (_shutdown_event and _shutdown_event.is_set()):
         connected = bool(getattr(ws_feed, "is_connected", False))
         _update_producer_health(connected)
+        _health_probe.set_detail("producer_present", "1" if connected else "0")
+        _health_probe.set_detail("producer_fresh", "1" if _producer_fresh() else "0")
+        _health_probe.set_detail(
+            "producer_heartbeat_age_sec",
+            f"{max(0.0, time() - _producer_last_heartbeat_ts):.2f}",
+        )
+        _health_probe.set_detail("fresh_pairs", str(_fresh_pair_count()))
         _emit_ingest_runtime_metrics(connected)
 
         if connected:
@@ -691,6 +698,7 @@ async def run_ingest_services(has_api_key: bool) -> None:
 
         # Tick callback: route to CandleBuilder per symbol
         def _on_tick(symbol: str, price: float, ts: datetime, volume: float) -> None:
+            _mark_pair_tick(symbol, ts.timestamp())
             tick_ts = ts.timestamp()
             if _is_duplicate_pair_tick(symbol, price, tick_ts):
                 return
