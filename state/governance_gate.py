@@ -106,6 +106,11 @@ HARD_STALE_THRESHOLD_SEC = _env_float("WOLF_GOVERNANCE_HARD_STALE_SEC", 600.0)
 # Heartbeat max age: producer considered dead if heartbeat older than this
 HEARTBEAT_MAX_AGE_SEC = _env_float("WOLF_GOVERNANCE_HEARTBEAT_MAX_AGE_SEC", 60.0)
 
+# WS warmup grace period: after WS reconnects, allow this many seconds
+# of stale_preserved before enforcing HOLD, so HTF candles have time
+# to refresh organically or via HTFRefreshScheduler.
+WS_WARMUP_GRACE_SEC = _env_float("WOLF_WS_WARMUP_GRACE_SEC", 300.0)
+
 # Data quality penalty that triggers forced HOLD
 DQ_PENALTY_HOLD_THRESHOLD = _env_float("WOLF_GOVERNANCE_DQ_PENALTY_HOLD", 0.40)
 
@@ -165,6 +170,8 @@ def assess_governance(
     dq_degraded: bool = False,
     # Kill-switch
     kill_switch_value: str | None = None,
+    # WS warmup grace
+    ws_connected_at: float | None = None,
     # Overrides
     now_ts: float | None = None,
 ) -> GovernanceVerdict:
@@ -233,6 +240,16 @@ def assess_governance(
 
     total_penalty = min(total_penalty, 1.0)
 
+    # ── WS Warmup grace check ────────────────────────────────────
+    # After WS reconnects, HTF candles (H1/H4/D1) may still be stale
+    # because they haven't completed yet. During this grace window,
+    # stale_preserved is downgraded from HOLD → ALLOW_REDUCED so the
+    # pipeline can resume with reduced confidence instead of blocking.
+    in_ws_warmup = False
+    if ws_connected_at is not None and ws_connected_at > 0:
+        ws_age = now - ws_connected_at
+        in_ws_warmup = 0 <= ws_age < WS_WARMUP_GRACE_SEC
+
     # ── Decision ─────────────────────────────────────────────────
     # BLOCK conditions (hard)
     if ks_active:
@@ -247,11 +264,23 @@ def assess_governance(
     elif not warmup_ready or freshness.staleness_seconds > HARD_STALE_THRESHOLD_SEC:
         action = GovernanceAction.HOLD
     elif freshness.state == "stale_preserved":
-        # P0-6: stale-preserved supports visibility/diagnosis only,
-        # not silent normal-mode trading.
-        action = GovernanceAction.HOLD
-        if "stale_preserved" not in " ".join(reasons):
-            reasons.append("stale_preserved_hold")
+        if in_ws_warmup:
+            # WS just reconnected — HTF candles are stale but will refresh soon.
+            # Downgrade to ALLOW_REDUCED with penalty instead of hard HOLD.
+            action = GovernanceAction.ALLOW_REDUCED
+            total_penalty = min(total_penalty + 0.10, 1.0)
+            reasons.append(f"ws_warmup_grace:{now - ws_connected_at:.0f}s")
+            logger.info(
+                "Governance WS warmup grace for {}: stale_preserved but WS reconnected {:.0f}s ago — ALLOW_REDUCED",
+                symbol,
+                now - ws_connected_at,
+            )
+        else:
+            # P0-6: stale-preserved supports visibility/diagnosis only,
+            # not silent normal-mode trading.
+            action = GovernanceAction.HOLD
+            if "stale_preserved" not in " ".join(reasons):
+                reasons.append("stale_preserved_hold")
     elif dq_penalty >= DQ_PENALTY_HOLD_THRESHOLD:
         action = GovernanceAction.HOLD
     elif total_penalty > 0 or dq_degraded:

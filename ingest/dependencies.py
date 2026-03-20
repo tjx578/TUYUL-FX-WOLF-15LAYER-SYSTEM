@@ -445,6 +445,7 @@ async def create_finnhub_ws(
     redis: Redis,
     symbols: list[str] | None = None,
     candle_callback: Callable[[str, float, datetime, float], None] | None = None,
+    on_connect: Callable[[], Awaitable[None]] | None = None,
 ) -> FinnhubWebSocket:
     """Factory for FinnhubWebSocket with defaults and tick normalization."""
     # Initialise DLQ singleton (idempotent — safe to call multiple times)
@@ -483,6 +484,7 @@ async def create_finnhub_ws(
             tick_redis_callback=_tick_to_redis if bridge else None,
         ),
         symbols=external_symbols,
+        on_connect=on_connect,
     )
 
 

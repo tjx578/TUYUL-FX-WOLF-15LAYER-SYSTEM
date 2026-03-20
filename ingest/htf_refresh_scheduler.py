@@ -73,6 +73,18 @@ class HTFRefreshScheduler:
             except Exception as exc:
                 logger.exception("HTF refresh error: {}", exc)
 
+    async def force_refresh_now(self) -> None:
+        """Trigger an immediate D1/W1 refresh (e.g. after WS reconnect).
+
+        Called from outside the regular loop to shorten the recovery window
+        when HTF candles are stale due to a WS disconnect/reconnect cycle.
+        """
+        logger.info("HTFRefreshScheduler: force refresh triggered (WS reconnect)")
+        try:
+            await self.refresh_all_symbols()
+        except Exception as exc:
+            logger.error("HTFRefreshScheduler: force refresh failed: {}", exc)
+
     async def refresh_all_symbols(self) -> None:
         """Refresh D1/W1 for every enabled symbol."""
         symbols = get_enabled_symbols()

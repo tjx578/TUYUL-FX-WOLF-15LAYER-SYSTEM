@@ -755,9 +755,15 @@ async def run_ingest_services(has_api_key: bool) -> None:
             if cb is not None:
                 cb.on_tick(price, ts, volume)
 
+        # Create HTF refresh scheduler early so we can wire its force_refresh_now
+        # as the on_connect callback for the WS feed. This ensures HTF candles are
+        # refreshed immediately after WS reconnects, shortening the stale window.
+        htf_refresh = HTFRefreshScheduler(redis_client=redis)
+
         ws_feed = await create_finnhub_ws(
             redis=redis,  # pyright: ignore[reportArgumentType]
             candle_callback=_on_tick,
+            on_connect=htf_refresh.force_refresh_now,
         )
         producer_heartbeat_task = asyncio.create_task(
             _producer_heartbeat_loop(ws_feed=ws_feed, redis=redis),
@@ -778,7 +784,6 @@ async def run_ingest_services(has_api_key: bool) -> None:
         news_feed = CalendarNewsIngestor(redis_client=redis)
         market_news = FinnhubMarketNews()
         h1_refresh = H1RefreshScheduler(redis_client=redis)
-        htf_refresh = HTFRefreshScheduler(redis_client=redis)
 
         _health_probe.set_detail("redis", "connected")
         _health_probe.set_detail("system_state", system_state.get_state().value)
