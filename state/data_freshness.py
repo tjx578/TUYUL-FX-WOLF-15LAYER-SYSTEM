@@ -32,6 +32,10 @@ class FreshnessClass(str, Enum):
 
 # ---------------------------------------------------------------------------
 # Centralized threshold constants — single source of truth
+#
+# Tier 1  FRESHNESS_LIVE_MAX_AGE_SEC   (30 s)  — LIVE vs DEGRADED boundary
+# Tier 2  FEED_ADAPTER_STALE_SEC       (30 s)  — adapter health-check gate
+# Tier 3  stale_threshold_seconds()    (300 s)  — DEGRADED vs STALE_PRESERVED
 # ---------------------------------------------------------------------------
 
 
@@ -47,6 +51,11 @@ def _env_threshold(name: str, default: float) -> float:
 
 #: Ticks within this age are classified as LIVE (real-time).
 FRESHNESS_LIVE_MAX_AGE_SEC: float = _env_threshold("WOLF_FRESHNESS_LIVE_MAX_AGE_SEC", 30.0)
+
+#: Feed-adapter health-check threshold.
+#: If a DataFeedAdapter has not produced a tick within this window the
+#: adapter is considered unhealthy and eligible for failover.
+FEED_ADAPTER_STALE_SEC: float = _env_threshold("WOLF_FEED_ADAPTER_STALE_SEC", 30.0)
 
 _DEFAULT_STALE_THRESHOLD_SECONDS = 300.0
 
