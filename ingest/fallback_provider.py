@@ -72,8 +72,7 @@ def _parse_candle_cache_ttl() -> int:
     except (ValueError, TypeError):
         pass
     logger.warning(
-        "[FallbackProvider] Invalid WOLF15_CANDLE_CACHE_TTL_DAYS value '%s'; "
-        "falling back to 7-day default",
+        "[FallbackProvider] Invalid WOLF15_CANDLE_CACHE_TTL_DAYS value '%s'; " "falling back to 7-day default",
         os.getenv("WOLF15_CANDLE_CACHE_TTL_DAYS"),
     )
     return 7 * 86_400
@@ -100,6 +99,7 @@ _EXPECTED_CANDLE_KEYS: frozenset[str] = frozenset(
 # ══════════════════════════════════════════════════════════
 #  Shared helpers
 # ══════════════════════════════════════════════════════════
+
 
 def _parse_provider_timestamp(value: str) -> datetime:
     """Parse provider timestamp strings into UTC datetimes.
@@ -158,9 +158,7 @@ def _serialize_candles(candles: list[dict[str, Any]]) -> str:
     for candle in candles:
         missing = _EXPECTED_CANDLE_KEYS.difference(candle)
         if missing:
-            raise ProviderResponseError(
-                f"Cannot serialize candle with missing keys: {sorted(missing)}"
-            )
+            raise ProviderResponseError(f"Cannot serialize candle with missing keys: {sorted(missing)}")
 
         timestamp = candle["timestamp"]
         if not isinstance(timestamp, datetime):
@@ -195,7 +193,9 @@ def _aggregate_h4_from_h1(symbol: str, candles: list[dict[str, Any]], source: st
 
     ordered = sorted(
         candles,
-        key=lambda candle: candle["timestamp"] if isinstance(candle["timestamp"], datetime) else datetime.min.replace(tzinfo=UTC),
+        key=lambda candle: candle["timestamp"]
+        if isinstance(candle["timestamp"], datetime)
+        else datetime.min.replace(tzinfo=UTC),
     )
     aggregated: list[dict[str, Any]] = []
     for idx in range(0, len(ordered) - 3, 4):
@@ -225,6 +225,7 @@ def _aggregate_h4_from_h1(symbol: str, candles: list[dict[str, Any]], source: st
 #  Abstract base
 # ══════════════════════════════════════════════════════════
 
+
 class CandleProviderBase(ABC):
     """Interface every candle provider must implement."""
 
@@ -237,12 +238,13 @@ class CandleProviderBase(ABC):
         timeframe: str,
         bars: int = 100,
     ) -> list[dict[str, Any]]:
-        """Return normalised candle dicts or raise on failure."""  
+        """Return normalised candle dicts or raise on failure."""
 
 
 # ══════════════════════════════════════════════════════════
 #  Twelve Data provider
 # ══════════════════════════════════════════════════════════
+
 
 class TwelveDataProvider(CandleProviderBase):
     """REST candle provider backed by Twelve Data (https://twelvedata.com)."""
@@ -334,7 +336,10 @@ class TwelveDataProvider(CandleProviderBase):
                 )
 
         logger.info(
-            "[TwelveData] Fetched %d %s bars for %s", len(candles), timeframe, symbol,
+            "[TwelveData] Fetched %d %s bars for %s",
+            len(candles),
+            timeframe,
+            symbol,
         )
         return candles[-bars:] if bars > 0 else []
 
@@ -342,6 +347,7 @@ class TwelveDataProvider(CandleProviderBase):
 # ══════════════════════════════════════════════════════════
 #  Alpha Vantage provider
 # ══════════════════════════════════════════════════════════
+
 
 class AlphaVantageProvider(CandleProviderBase):
     """REST candle provider backed by Alpha Vantage."""
@@ -452,7 +458,10 @@ class AlphaVantageProvider(CandleProviderBase):
                 candles = candles[-bars:]
 
         logger.info(
-            "[AlphaVantage] Fetched %d %s bars for %s", len(candles), timeframe, symbol,
+            "[AlphaVantage] Fetched %d %s bars for %s",
+            len(candles),
+            timeframe,
+            symbol,
         )
         return candles
 
@@ -460,6 +469,7 @@ class AlphaVantageProvider(CandleProviderBase):
 # ══════════════════════════════════════════════════════════
 #  Fallback chain orchestrator
 # ══════════════════════════════════════════════════════════
+
 
 class FallbackCandleProvider:
     """Walk a priority-ordered list of providers, returning the first success.
@@ -563,7 +573,7 @@ class FallbackCandleProvider:
             if not raw:
                 return []
 
-            payload = raw.decode("utf-8") if isinstance(raw, (bytes, bytearray)) else str(raw)
+            payload = raw.decode("utf-8") if isinstance(raw, bytes | bytearray) else str(raw)
             loaded = json.loads(payload)
             if not isinstance(loaded, list):
                 raise ProviderResponseError("Cached candle payload is not a list")
@@ -677,8 +687,7 @@ class FallbackCandleProvider:
                     break
 
         logger.warning(
-            "[Fallback] All providers exhausted for %s %s (last_error=%s) — "
-            "attempting stale cache",
+            "[Fallback] All providers exhausted for %s %s (last_error=%s) — " "attempting stale cache",
             symbol,
             timeframe,
             last_error,
