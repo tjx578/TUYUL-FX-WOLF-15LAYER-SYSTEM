@@ -201,15 +201,7 @@ function startPollingFallback(): void {
 
             _pollingConsecutive429s = 0;
 
-            if (res.status === 429) {
-                // Back off exponentially — don't hammer a rate-limited server
-                pollingBackoffMs = Math.min(pollingBackoffMs * 2, POLLING_MAX_BACKOFF_MS);
-                fanOutStatus("STALE");
-                fanOutDegradation({
-                    mode: "POLLING",
-                    reason: `Polling rate-limited (429). Backing off to ${pollingBackoffMs / 1000}s.`,
-                });
-            } else if (!res.ok) {
+            if (!res.ok) {
                 pollingBackoffMs = Math.min(pollingBackoffMs * 2, POLLING_MAX_BACKOFF_MS);
                 fanOutStatus("STALE");
                 fanOutDegradation({
