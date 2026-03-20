@@ -17,6 +17,7 @@ Zone: state/ — governance read-only check, no execution side-effects.
 
 from __future__ import annotations
 
+import math
 import os
 import time
 from dataclasses import dataclass
@@ -202,8 +203,9 @@ def assess_governance(
         now_ts=now,
     )
 
-    # Hard stale threshold
-    if freshness.staleness_seconds > HARD_STALE_THRESHOLD_SEC:
+    # Hard stale threshold — only report when staleness is finite;
+    # infinite staleness is already covered by no_producer / no_transport.
+    if not math.isinf(freshness.staleness_seconds) and freshness.staleness_seconds > HARD_STALE_THRESHOLD_SEC:
         reasons.append(f"hard_stale:{freshness.staleness_seconds:.0f}s>" f"{HARD_STALE_THRESHOLD_SEC:.0f}s")
 
     if freshness.state == "no_producer":
@@ -217,7 +219,10 @@ def assess_governance(
     # ── D. Producer health ───────────────────────────────────────
     producer_alive, hb_age = check_producer_health(heartbeat_ts, max_age_sec=HEARTBEAT_MAX_AGE_SEC, now_ts=now)
     if not producer_alive:
-        reasons.append(f"producer_heartbeat_dead:{hb_age:.0f}s")
+        if math.isinf(hb_age):
+            reasons.append("producer_heartbeat_dead:no_heartbeat")
+        else:
+            reasons.append(f"producer_heartbeat_dead:{hb_age:.0f}s")
 
     # ── E. Data quality ──────────────────────────────────────────
     total_penalty += max(0.0, dq_penalty)
@@ -230,13 +235,13 @@ def assess_governance(
     # BLOCK conditions (hard)
     if ks_active:
         action = GovernanceAction.BLOCK
-    # HOLD conditions
-    elif not warmup_ready or freshness.staleness_seconds > HARD_STALE_THRESHOLD_SEC:
-        action = GovernanceAction.HOLD
+    # HOLD conditions — check specific states first, then generic staleness
     elif freshness.state in ("no_producer", "no_transport"):
         # P0-6: conservative — if freshness cannot be proven, HOLD.
         # Even if producer heartbeat is alive but no data arrived,
         # new-trade flow must remain blocked.
+        action = GovernanceAction.HOLD
+    elif not warmup_ready or freshness.staleness_seconds > HARD_STALE_THRESHOLD_SEC:
         action = GovernanceAction.HOLD
     elif freshness.state == "stale_preserved":
         # P0-6: stale-preserved supports visibility/diagnosis only,

@@ -7,13 +7,13 @@ import logging
 import os
 import random
 from collections.abc import AsyncIterable, Awaitable, Callable
-from datetime import UTC, datetime
 from typing import Any
 
 import websockets
 import websockets.asyncio.client
 from prometheus_client import Counter, Gauge
 from redis.asyncio import Redis
+from websockets.asyncio.client import connect as _ws_connect
 from websockets.exceptions import (
     ConnectionClosed,
     ConnectionClosedError,
@@ -63,28 +63,8 @@ LEADER_LOCK_TTL_S: int = 60
 # Market hours: Forex open Sun 22:00 UTC → Fri 22:00 UTC
 WEEKEND_POLL_INTERVAL_S: float = 300.0  # Check every 5 min during weekend
 
-
-def is_forex_market_open(now: datetime | None = None) -> bool:
-    """Return True if the forex market is open.
-
-    Forex trades Sun 22:00 UTC through Fri 22:00 UTC.
-    Returns False during the weekend gap (Fri 22:00 → Sun 22:00).
-    """
-    if now is None:
-        now = datetime.now(UTC)
-    dow = now.weekday()  # Mon=0 … Sun=6
-    hour = now.hour
-    # Saturday: always closed
-    if dow == 5:
-        return False
-    # Sunday: closed until 22:00 UTC
-    if dow == 6:
-        return hour >= 22
-    # Friday: closed after 22:00 UTC
-    if dow == 4:
-        return hour < 22
-    # Mon–Thu: always open
-    return True
+# Re-export from shared utility for backward compatibility.
+from utils.market_hours import is_forex_market_open  # noqa: E402, F401
 
 
 class FinnhubSymbolMapper:
@@ -246,7 +226,7 @@ class FinnhubWebSocket:
         url = FINNHUB_WS_URL.format(token=self._token)
         try:
             ws = await asyncio.wait_for(
-                websockets.connect(
+                _ws_connect(
                     url,
                     ping_interval=PING_INTERVAL_S,
                     ping_timeout=PING_TIMEOUT_S,

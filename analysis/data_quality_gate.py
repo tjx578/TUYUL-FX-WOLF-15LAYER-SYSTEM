@@ -17,12 +17,13 @@ gracefully rather than trading on bad data.
 
 from __future__ import annotations
 
-import time
 import os
+import time
 from dataclasses import dataclass
 from typing import Any
 
 from state.data_freshness import FeedFreshnessState, classify_feed_freshness, stale_threshold_seconds
+from utils.market_hours import weekend_gap_seconds
 
 
 @dataclass(frozen=True)
@@ -187,9 +188,15 @@ class DataQualityGate:
         low_tick = sum(1 for c in window if (c.get("tick_count", cfg.min_tick_count) < cfg.min_tick_count))
         low_tick_ratio = low_tick / total
 
-        # Staleness
+        # Staleness — subtract weekend closure time so data from
+        # Friday evening doesn't falsely flag as stale on Saturday.
         now = time.time()
-        staleness = (now - last_update_ts) if last_update_ts else float("inf")
+        if last_update_ts:
+            raw_staleness = now - last_update_ts
+            weekend_gap = weekend_gap_seconds(last_update_ts, now)
+            staleness = max(0.0, raw_staleness - weekend_gap)
+        else:
+            staleness = float("inf")
 
         # Compute penalty
         reasons: list[str] = []
