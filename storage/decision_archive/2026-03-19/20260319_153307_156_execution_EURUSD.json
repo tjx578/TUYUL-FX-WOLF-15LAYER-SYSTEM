@@ -1,0 +1,19 @@
+{
+  "journal_type": "execution",
+  "recorded_at": "2026-03-19T15:33:07.156323+00:00",
+  "data": {
+    "timestamp": "2026-03-19T15:33:07.156323Z",
+    "setup_id": "EURUSD_1773934382",
+    "pair": "EURUSD",
+    "direction": "BUY",
+    "entry_price": 1.085,
+    "stop_loss": 1.08,
+    "take_profit_1": 1.095,
+    "rr_ratio": 1.0,
+    "risk_percent": 2.0,
+    "lot_size": 4.0,
+    "execution_mode": "TP1_ONLY",
+    "order_type": "PENDING_ONLY",
+    "sm_state": "PENDING"
+  }
+}

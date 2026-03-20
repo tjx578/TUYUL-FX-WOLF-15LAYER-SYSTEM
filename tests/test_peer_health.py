@@ -77,7 +77,7 @@ class TestServiceRegistry:
     def test_returns_all_services(self) -> None:
         peers = get_peer_services()
         names = {p.name for p in peers}
-        assert names == {"api", "engine", "ingest"}
+        assert names == {"api", "engine", "ingest", "orchestrator"}
 
     def test_excludes_self(self) -> None:
         peers = get_peer_services(exclude_self="api")
@@ -85,6 +85,7 @@ class TestServiceRegistry:
         assert "api" not in names
         assert "engine" in names
         assert "ingest" in names
+        assert "orchestrator" in names
 
 
 # ── PeerHealthChecker integration tests (mocked HTTP) ─────────────────────────

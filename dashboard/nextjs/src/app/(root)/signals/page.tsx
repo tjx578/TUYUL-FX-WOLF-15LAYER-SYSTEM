@@ -2,16 +2,30 @@
 
 import { useMemo, useState } from "react";
 import { VerdictCard } from "@/components/VerdictCard";
-import { useAllVerdicts } from "@/lib/api";
+import VerdictEmptyStatePanel from "@/components/feedback/VerdictEmptyStatePanel";
+import { useAllVerdicts, useHealth } from "@/lib/api";
+import { useLiveSignals } from "@/lib/realtime/hooks/useLiveSignals";
+import { classifyVerdictEmptyState } from "@/lib/verdictEmptyState";
+import { useSystemStore } from "@/store/useSystemStore";
 import type { L12Verdict } from "@/types";
 
 type FilterMode = "ALL" | "EXECUTE" | "NON_EXECUTE";
 
 export default function SignalsPage() {
-  const { data: verdicts, isLoading } = useAllVerdicts();
+  const { data: verdictsRaw, isLoading } = useAllVerdicts();
+  const { data: health } = useHealth();
+  const systemMode = useSystemStore((s) => s.mode);
+  const wsStatus = useSystemStore((s) => s.wsStatus);
+
+  const restVerdicts = useMemo(() => verdictsRaw ?? [], [verdictsRaw]);
+  const {
+    verdicts,
+    status: liveStatus,
+    isStale: verdictStale,
+  } = useLiveSignals(restVerdicts, true);
 
   const [query, setQuery] = useState("");
-  const [mode, setMode] = useState<FilterMode>("ALL");
+  const [filterMode, setFilterMode] = useState<FilterMode>("ALL");
 
   // useAllVerdicts returns L12Verdict[] (already normalized)
   const list = useMemo(() => {
@@ -21,12 +35,26 @@ export default function SignalsPage() {
       .filter((v) => (q ? v.symbol.toUpperCase().includes(q) : true))
       .filter((v) => {
         const isExec = v.verdict.toString().startsWith("EXECUTE");
-        if (mode === "EXECUTE") return isExec;
-        if (mode === "NON_EXECUTE") return !isExec;
+        if (filterMode === "EXECUTE") return isExec;
+        if (filterMode === "NON_EXECUTE") return !isExec;
         return true;
       })
       .sort((a, b) => (b.confidence ?? 0) - (a.confidence ?? 0));
-  }, [verdicts, query, mode]);
+  }, [verdicts, query, filterMode]);
+
+  const verdictEmptyState = useMemo(
+    () =>
+      classifyVerdictEmptyState({
+        verdictCount: list.length,
+        isLoading,
+        verdictStale,
+        liveStatus,
+        mode: systemMode,
+        wsStatus,
+        feedStatus: health?.feed_status,
+      }),
+    [list.length, isLoading, verdictStale, liveStatus, systemMode, wsStatus, health?.feed_status]
+  );
 
   const execCount = useMemo(
     () => list.filter((v) => v.verdict.toString().startsWith("EXECUTE")).length,
@@ -80,13 +108,13 @@ export default function SignalsPage() {
           {(["ALL", "EXECUTE", "NON_EXECUTE"] as FilterMode[]).map((m) => (
             <button
               key={m}
-              onClick={() => setMode(m)}
+              onClick={() => setFilterMode(m)}
               style={{
                 padding: "9px 10px",
                 borderRadius: 10,
                 border: "1px solid rgba(255,255,255,0.10)",
-                background: mode === m ? "rgba(0,245,160,0.10)" : "transparent",
-                color: mode === m ? "var(--text-primary)" : "var(--text-muted)",
+                background: filterMode === m ? "rgba(0,245,160,0.10)" : "transparent",
+                color: filterMode === m ? "var(--text-primary)" : "var(--text-muted)",
                 fontSize: 10,
                 letterSpacing: "0.12em",
                 fontWeight: 900,
@@ -117,6 +145,11 @@ export default function SignalsPage() {
       {/* Grid */}
       {isLoading ? (
         <div style={{ padding: "30px 0", color: "var(--text-muted)" }}>LOADING…</div>
+      ) : list.length === 0 ? (
+        <VerdictEmptyStatePanel
+          state={verdictEmptyState}
+          fallbackDetail="Adjust filter or wait for the next L12 cycle."
+        />
       ) : (
         <div
           style={{

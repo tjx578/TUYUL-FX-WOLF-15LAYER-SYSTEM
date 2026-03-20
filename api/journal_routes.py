@@ -8,18 +8,16 @@ NEW ENDPOINTS:
   GET /api/v1/journal/metrics → Extended metrics including constitutional_violation_count
 """
 
-import os
 import json
 import logging
-from datetime import datetime, timezone, timedelta
-from typing import Optional
+from datetime import UTC, datetime, timedelta
 
-import redis as redis_lib
 import redis.asyncio as aioredis
 from fastapi import APIRouter, Depends, Query
 
-from api.middleware.auth import verify_token
 from infrastructure.redis_client import get_async_redis
+
+from .middleware.auth import verify_token
 
 logger = logging.getLogger(__name__)
 
@@ -32,14 +30,12 @@ router = APIRouter(
 
 def _get_redis() -> None:
     """DEPRECATED — use ``get_async_redis`` FastAPI dependency instead."""
-    raise NotImplementedError(
-        "_get_redis() is removed. Inject via Depends(get_async_redis)."
-    )
+    raise NotImplementedError("_get_redis() is removed. Inject via Depends(get_async_redis).")
 
 
 async def _load_journal_entries(
     r: aioredis.Redis,
-    since: Optional[datetime] = None,
+    since: datetime | None = None,
 ) -> list[dict]:
     """Load all JOURNAL:* entries from Redis, optionally filtered by time."""
     entries: list[dict] = []
@@ -69,12 +65,12 @@ async def _load_journal_entries(
 
 def _compute_metrics(entries: list[dict]) -> dict:
     """Compute journal metrics from a list of entries."""
-    takes   = [e for e in entries if e.get("action") == "TAKE"]
-    skips   = [e for e in entries if e.get("action") == "SKIP"]
-    closes  = [e for e in entries if e.get("action") == "CLOSE"]
-    wins    = [e for e in closes if e.get("outcome") == "WIN"]
-    losses  = [e for e in closes if e.get("outcome") == "LOSS"]
-    be      = [e for e in closes if e.get("outcome") == "BREAKEVEN"]
+    takes = [e for e in entries if e.get("action") == "TAKE"]
+    skips = [e for e in entries if e.get("action") == "SKIP"]
+    closes = [e for e in entries if e.get("action") == "CLOSE"]
+    wins = [e for e in closes if e.get("outcome") == "WIN"]
+    losses = [e for e in closes if e.get("outcome") == "LOSS"]
+    be = [e for e in closes if e.get("outcome") == "BREAKEVEN"]
 
     total_pnl = sum(e.get("pnl", 0.0) for e in closes)
     rr_values = [e.get("rr_achieved", 0.0) for e in closes if e.get("rr_achieved")]
@@ -82,36 +78,33 @@ def _compute_metrics(entries: list[dict]) -> dict:
 
     total_closed = len(wins) + len(losses) + len(be)
     win_rate = round(len(wins) / total_closed, 4) if total_closed > 0 else 0.0
-    rejection_rate = (
-        round(len(skips) / (len(takes) + len(skips)), 4)
-        if (len(takes) + len(skips)) > 0
-        else 0.0
-    )
+    rejection_rate = round(len(skips) / (len(takes) + len(skips)), 4) if (len(takes) + len(skips)) > 0 else 0.0
 
     # Profit factor
     gross_profit = sum(e.get("pnl", 0.0) for e in wins)
     gross_loss = abs(sum(e.get("pnl", 0.0) for e in losses))
-    profit_factor = (
-        round(gross_profit / gross_loss, 3) if gross_loss > 0 else 0.0
-    )
+    profit_factor = round(gross_profit / gross_loss, 3) if gross_loss > 0 else 0.0
 
     # Expectancy = (win_rate * avg_win_rr) - (loss_rate * avg_loss_rr)
     avg_win_rr = (
-        round(sum(e.get("rr_achieved", 0.0) for e in wins if e.get("rr_achieved")) / len(wins), 3)
-        if wins else 0.0
+        round(sum(e.get("rr_achieved", 0.0) for e in wins if e.get("rr_achieved")) / len(wins), 3) if wins else 0.0
     )
     avg_loss_rr = (
         round(abs(sum(e.get("rr_achieved", 0.0) for e in losses if e.get("rr_achieved"))) / len(losses), 3)
-        if losses else 0.0
+        if losses
+        else 0.0
     )
     loss_rate = 1 - win_rate
     expectancy = round(win_rate * avg_win_rr - loss_rate * avg_loss_rr, 3)
 
     # Constitutional violations = SKIP entries with reason containing "CONSTITUTIONAL" or "GATE"
-    constitutional_violations = len([
-        e for e in skips
-        if any(kw in str(e.get("reason", "")).upper() for kw in ("CONSTITUTIONAL", "GATE", "L12", "CIRCUIT"))
-    ])
+    constitutional_violations = len(
+        [
+            e
+            for e in skips
+            if any(kw in str(e.get("reason", "")).upper() for kw in ("CONSTITUTIONAL", "GATE", "L12", "CIRCUIT"))
+        ]
+    )
 
     # Top mistake category (most common skip reason keyword)
     skip_reasons = [e.get("reason", "") for e in skips]
@@ -171,14 +164,15 @@ def _categorize_skip(reason: str) -> str:
 
 # ─── Routes ──────────────────────────────────────────────────────────────────
 
+
 @router.get("/search")
 async def journal_search(
-    pair: Optional[str] = Query(default=None),
-    regime: Optional[str] = Query(default=None),
-    session: Optional[str] = Query(default=None),
-    outcome: Optional[str] = Query(default=None, pattern="^(WIN|LOSS|BREAKEVEN)?$"),
-    journal_type: Optional[str] = Query(default=None, pattern="^(J1|J2|J3|J4)?$"),
-    action: Optional[str] = Query(default=None, pattern="^(TAKE|SKIP|OPEN|CLOSE)?$"),
+    pair: str | None = Query(default=None),
+    regime: str | None = Query(default=None),
+    session: str | None = Query(default=None),
+    outcome: str | None = Query(default=None, pattern="^(WIN|LOSS|BREAKEVEN)?$"),
+    journal_type: str | None = Query(default=None, pattern="^(J1|J2|J3|J4)?$"),
+    action: str | None = Query(default=None, pattern="^(TAKE|SKIP|OPEN|CLOSE)?$"),
     limit: int = Query(default=100, ge=1, le=500),
     days_back: int = Query(default=7, ge=1, le=90),
 ) -> dict:
@@ -187,7 +181,7 @@ async def journal_search(
     Frontend: Journal page → filter controls
     """
     r: aioredis.Redis = await get_async_redis()
-    since = datetime.now(timezone.utc) - timedelta(days=days_back)
+    since = datetime.now(UTC) - timedelta(days=days_back)
     all_entries = await _load_journal_entries(r, since=since)
 
     filtered = all_entries
@@ -210,8 +204,12 @@ async def journal_search(
     return {
         "total": len(filtered),
         "filters": {
-            "pair": pair, "regime": regime, "session": session,
-            "outcome": outcome, "journal_type": journal_type, "action": action,
+            "pair": pair,
+            "regime": regime,
+            "session": session,
+            "outcome": outcome,
+            "journal_type": journal_type,
+            "action": action,
         },
         "entries": filtered,
     }
@@ -220,9 +218,7 @@ async def journal_search(
 @router.get("/today")
 async def journal_today() -> dict:
     r: aioredis.Redis = await get_async_redis()
-    start_of_day = datetime.now(timezone.utc).replace(
-        hour=0, minute=0, second=0, microsecond=0
-    )
+    start_of_day = datetime.now(UTC).replace(hour=0, minute=0, second=0, microsecond=0)
     entries = await _load_journal_entries(r, since=start_of_day)
     entries.sort(key=lambda e: e.get("timestamp", ""))
 
@@ -238,7 +234,7 @@ async def journal_today() -> dict:
 @router.get("/weekly")
 async def journal_weekly() -> list[dict]:
     r: aioredis.Redis = await get_async_redis()
-    since = datetime.now(timezone.utc) - timedelta(days=7)
+    since = datetime.now(UTC) - timedelta(days=7)
     all_entries = await _load_journal_entries(r, since=since)
 
     # Group by date
@@ -255,15 +251,15 @@ async def journal_weekly() -> list[dict]:
     result = []
     for date, day_entries in sorted(by_date.items(), reverse=True):
         day_entries.sort(key=lambda e: e.get("timestamp", ""))
-        result.append({
-            "date": date,
-            "entries": day_entries,
-            "metrics": _compute_metrics(day_entries),
-            "net_pnl": round(
-                sum(e.get("pnl", 0.0) for e in day_entries if e.get("action") == "CLOSE"), 2
-            ),
-            "sessions": list({e.get("session", "") for e in day_entries if e.get("session")}),
-        })
+        result.append(
+            {
+                "date": date,
+                "entries": day_entries,
+                "metrics": _compute_metrics(day_entries),
+                "net_pnl": round(sum(e.get("pnl", 0.0) for e in day_entries if e.get("action") == "CLOSE"), 2),
+                "sessions": list({e.get("session", "") for e in day_entries if e.get("session")}),
+            }
+        )
     return result
 
 
@@ -271,9 +267,9 @@ async def journal_weekly() -> list[dict]:
 async def journal_metrics(days_back: int = Query(default=30, ge=1, le=365)) -> dict:
     """Extended metrics including constitutional_violation_count, top_mistake_category."""
     r: aioredis.Redis = await get_async_redis()
-    since = datetime.now(timezone.utc) - timedelta(days=days_back)
+    since = datetime.now(UTC) - timedelta(days=days_back)
     entries = await _load_journal_entries(r, since=since)
     metrics = _compute_metrics(entries)
     metrics["period_days"] = days_back
-    metrics["as_of"] = datetime.now(timezone.utc).isoformat()
+    metrics["as_of"] = datetime.now(UTC).isoformat()
     return metrics

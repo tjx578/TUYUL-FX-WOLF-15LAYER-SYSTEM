@@ -6,12 +6,13 @@
 // eligibility flags, lock/compliance inheritance, account cards.
 // ============================================================
 
-import { useState } from "react";
+import React, { useState } from "react";
 import { useCapitalDeployment, useAccountsRiskSnapshot } from "@/lib/api";
 import { AccountCard } from "@/components/AccountPanel";
 import AccountReadinessBadge from "@/components/AccountReadinessBadge";
 import AccountDetailDrawer from "@/components/AccountDetailDrawer";
 import CreateAccountModal from "@/components/CreateAccountModal";
+import OrchestratorReadinessStrip from "@/components/OrchestratorReadinessStrip";
 import PageComplianceBanner from "@/components/feedback/PageComplianceBanner";
 import type { Account } from "@/types";
 
@@ -299,6 +300,8 @@ export default function CapitalAccountsPage() {
           </button>
         </div>
       </div>
+
+      <OrchestratorReadinessStrip />
 
       {/* ── Portfolio Summary Strip ── */}
       {!isLoading && !isError && accounts.length > 0 && (

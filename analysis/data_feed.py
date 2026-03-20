@@ -13,6 +13,8 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import TYPE_CHECKING
 
+from state.data_freshness import FRESHNESS_LIVE_MAX_AGE_SEC
+
 if TYPE_CHECKING:
     from collections.abc import Callable
 
@@ -65,7 +67,7 @@ class FeedHealth:
 
     @property
     def is_healthy(self) -> bool:
-        return self.status == FeedStatus.CONNECTED and self.staleness_seconds < 5.0
+        return self.status == FeedStatus.CONNECTED and self.staleness_seconds < FRESHNESS_LIVE_MAX_AGE_SEC
 
 
 class DataFeedAdapter(ABC):

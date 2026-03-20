@@ -44,10 +44,6 @@ _BROKEN_MODULES = [
     "execution.ea_manager",
     "execution.state_machine",
     "accounts.risk_engine",
-    "propfirm_manager",
-    "propfirm_manager.profile_manager",
-    "propfirm_manager.profiles",
-    "propfirm_manager.profiles.base_guard",
 ]
 
 

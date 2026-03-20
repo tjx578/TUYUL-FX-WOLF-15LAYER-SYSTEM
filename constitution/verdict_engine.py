@@ -434,7 +434,11 @@ def _downgrade_confidence(conf: str) -> str:
     return _CONFIDENCE_LEVELS[max(idx - 1, 0)]
 
 
-def generate_l12_verdict(synthesis: dict[str, Any]) -> dict[str, Any]:
+def generate_l12_verdict(
+    synthesis: dict[str, Any],
+    *,
+    governance_penalty: float = 0.0,
+) -> dict[str, Any]:
     """
     Generate a Layer-12 constitutional verdict from a synthesis dict.
 
@@ -448,6 +452,9 @@ def generate_l12_verdict(synthesis: dict[str, Any]) -> dict[str, Any]:
     Args:
         synthesis: Nested dict containing layers, scores, execution, propfirm,
             risk, bias, system, etc. (output of build_l12_synthesis()).
+        governance_penalty: Confidence penalty (0.0–1.0) from the governance
+            gate.  Non-zero values degrade confidence and may downgrade
+            EXECUTE → EXECUTE_REDUCED_RISK when stale/degraded data is present.
 
     Returns:
         verdict dict containing:
@@ -557,6 +564,19 @@ def generate_l12_verdict(synthesis: dict[str, Any]) -> dict[str, Any]:
 
     wolf_status: str = "ACTIVE" if passed >= 7 else "WEAK"
 
+    # ── Governance penalty: degrade confidence / downgrade verdict ─────────
+    governance_penalty = max(0.0, min(1.0, governance_penalty))
+    governance_downgraded = False
+    if governance_penalty > 0 and verdict.startswith("EXECUTE_"):
+        # Heavy penalty (>= 0.30) → downgrade to EXECUTE_REDUCED_RISK
+        if governance_penalty >= 0.30 and not verdict.endswith("_REDUCED_RISK"):
+            verdict = "EXECUTE_REDUCED_RISK"
+            governance_downgraded = True
+        # Confidence label downgrade for any non-trivial penalty
+        if governance_penalty >= 0.10:
+            confidence = _downgrade_confidence(confidence)
+            governance_downgraded = True
+
     return {
         "symbol": symbol,
         "verdict": verdict,
@@ -568,6 +588,8 @@ def generate_l12_verdict(synthesis: dict[str, Any]) -> dict[str, Any]:
         "enrichment_applied": enrichment_applied,
         "reflex_gate": reflex_gate_label,
         "lot_scale": reflex_lot_scale,
+        "governance_penalty": round(governance_penalty, 4),
+        "governance_downgraded": governance_downgraded,
         "scores": {
             "tii": tii,
             "integrity": integrity,

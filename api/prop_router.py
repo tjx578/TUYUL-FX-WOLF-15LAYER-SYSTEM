@@ -8,12 +8,14 @@ These endpoints expose risk guard output only — no market direction authority.
 Limits are read from config/prop_firm.yaml via risk.prop_firm.PropFirmRules.
 Per-account phase progress is not yet persisted — see the /phase endpoint note.
 """
+
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from api.middleware.auth import verify_token
 from risk.prop_firm import PropFirmRules
+
+from .middleware.auth import verify_token
 
 router = APIRouter(prefix="/api/v1/prop-firm", tags=["prop-firm"], dependencies=[Depends(verify_token)])
 

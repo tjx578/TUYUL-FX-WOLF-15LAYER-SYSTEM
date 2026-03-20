@@ -1,17 +1,26 @@
-"""LiveContextBus — ephemeral inference state machine.
+"""
+LiveContextBus — runtime state hub (ephemeral, NOT durable source of truth)
 
-NOT storage.  TUYUL thinks with state abstractions, not raw data.
+TUYUL FX v2 Architecture:
+------------------------------------------------------------
+• LiveContextBus is ONLY for fast, in-process consumption by analysis pipeline.
+• It is NOT a permanent storage or source of truth.
+• All durability, fanout, heartbeat, and recovery handled by Redis/PostgreSQL.
+• LiveContextBus is always synchronized with Redis (latest_tick, candle_history, verdicts, heartbeat) and PostgreSQL (durable candle storage, journal/trades, recovery snapshots).
+• Startup hydration/recovery: state is seeded from Redis first, fallback to PG, atomic restore, non-destructive.
+• Stale-but-preserved, empty, and no-producer states are tracked via feed staleness and heartbeat.
+• Heartbeat/freshness lane: explicit producer heartbeat, freshness timestamp, and readiness checks based on data freshness (not just process status).
+• Readiness = fresh data present, not just process alive; stale-but-preserved vs empty vs no-producer distinction is tracked.
+• All authority remains in Layer-12 (verdict engine); EventBus is orchestration/trigger only.
 
-Two layers:
-  1. **Data layer** — candles, ticks, conditioned returns.
-     Raw market observations with overflow protection.
-  2. **Inference layer** — regime_state, volatility_regime, session_state,
-     liquidity_map, news_pressure_vector, signal_stack.
-     Derived abstract state that analysis layers produce and L12 consumes.
+Layers:
+    1. Data layer — candles, ticks, conditioned returns (raw market observations, overflow protection).
+    2. Inference layer — regime_state, volatility_regime, session_state, liquidity_map, news_pressure_vector, signal_stack (derived abstract state for analysis, consumed by L12).
 
-This module is analysis-only; no execution logic, no side effects beyond
-internal state.  The inference layer is what makes the system stable —
-it reasons over abstractions, not noisy raw feeds.
+This module is analysis-only; no execution logic, no side effects beyond internal state.
+The inference layer reasons over abstractions, not noisy raw feeds.
+
+Durability and recovery are handled externally (see startup/candle_seeding.py, infrastructure/redis_client.py, journal/audit_trail.py).
 """
 
 from __future__ import annotations
@@ -23,6 +32,11 @@ from typing import Any
 from loguru import logger
 
 from config.pip_values import get_pip_multiplier
+from state.data_freshness import (
+    FreshnessClass,
+    classify_feed_freshness,
+    stale_threshold_seconds,
+)
 
 # Maximum candle history entries per symbol:timeframe key.
 # Prevents unbounded memory growth during long-running sessions.
@@ -413,30 +427,94 @@ class LiveContextBus:
             return None
         return time.time() - ts
 
-    def is_feed_stale(self, symbol: str, threshold_sec: float = 30.0) -> bool:
-        """Return True if the feed for *symbol* has not updated within *threshold_sec* seconds."""
+    def get_feed_timestamp(self, symbol: str) -> float | None:
+        """Return raw epoch timestamp of last feed update for *symbol*, or None."""
+        return self._feed_timestamps.get(symbol)
+
+    def is_feed_stale(self, symbol: str, threshold_sec: float | None = None) -> bool:
+        """Return True if the feed for *symbol* has not updated within *threshold_sec* seconds.
+
+        Defaults to the centralized stale threshold from ``state.data_freshness``.
+        """
+        if threshold_sec is None:
+            threshold_sec = stale_threshold_seconds()
         age = self.get_feed_age(symbol)
         if age is None:
             return True
         return age > threshold_sec
 
     def get_feed_status(self, symbol: str) -> str:
-        """Return a human-readable feed status for *symbol*.
+        """Return the canonical freshness class for *symbol*.
+
+        Returns one of the ``FreshnessClass`` enum values (string):
+            ``"LIVE"``                     — tick received within FRESHNESS_LIVE_MAX_AGE_SEC.
+            ``"DEGRADED_BUT_REFRESHING"``  — tick within stale threshold but lagging.
+            ``"STALE_PRESERVED"``          — tick beyond stale threshold.
+            ``"NO_PRODUCER"``              — no tick ever received for this symbol.
+        """
+        ts = self._feed_timestamps.get(symbol)
+        if ts is None:
+            return FreshnessClass.NO_PRODUCER.value
+        snap = classify_feed_freshness(
+            transport_ok=True,
+            has_producer_signal=True,
+            last_seen_ts=ts,
+        )
+        return snap.freshness_class.value
+
+    def get_feed_timestamps(self) -> dict[str, float]:
+        """Return copy of all per-symbol feed timestamps (epoch seconds)."""
+        with self._lock:
+            return dict(self._feed_timestamps)
+
+    def get_all_feed_status(self) -> dict[str, dict[str, Any]]:
+        """Return feed status for every tracked symbol.
 
         Returns:
-            "CONNECTED"  — tick received within the last 30 seconds.
-            "DEGRADED"   — tick received within the last 120 seconds.
-            "DOWN"       — tick received but older than 120 seconds.
-            "NO_DATA"    — no tick ever received for this symbol.
+            ``{symbol: {"status": str, "age_seconds": float|None, "last_seen_ts": float|None}}``
+
+        Status uses the canonical ``FreshnessClass`` labels.
         """
-        age = self.get_feed_age(symbol)
-        if age is None:
-            return "NO_DATA"
-        if age <= 30.0:
-            return "CONNECTED"
-        if age <= 120.0:
-            return "DEGRADED"
-        return "DOWN"
+        with self._lock:
+            result: dict[str, dict[str, Any]] = {}
+            now = time.time()
+            for sym, ts in self._feed_timestamps.items():
+                age = now - ts
+                snap = classify_feed_freshness(
+                    transport_ok=True,
+                    has_producer_signal=True,
+                    last_seen_ts=ts,
+                    now_ts=now,
+                )
+                status = snap.freshness_class.value
+                result[sym] = {"status": status, "age_seconds": round(age, 2), "last_seen_ts": ts}
+            return result
+
+    @property
+    def warmup_state(self) -> dict[str, Any]:
+        """Return warmup readiness summary for all tracked symbols/timeframes.
+
+        Returns:
+            ``{"symbols": {symbol: {"ready": bool, "bar_counts": {tf: int}}}}``
+        """
+        symbols: dict[str, dict[str, Any]] = {}
+        with self._lock:
+            seen_symbols: set[str] = set()
+            for key in self._candle_history:
+                parts = key.split(":", 1)
+                if parts:
+                    seen_symbols.add(parts[0])
+            for sym in seen_symbols:
+                bar_counts: dict[str, int] = {}
+                for key, buf in self._candle_history.items():
+                    if key.startswith(f"{sym}:"):
+                        tf = key.split(":", 1)[1]
+                        bar_counts[tf] = len(buf)
+                symbols[sym] = {
+                    "ready": any(c > 0 for c in bar_counts.values()),
+                    "bar_counts": bar_counts,
+                }
+        return {"symbols": symbols}
 
     def check_price_drift(self, symbol: str, max_drift_pips: float = 5.0) -> dict[str, Any]:
         """Compare latest REST H1 close with WS mid-price to detect drift.

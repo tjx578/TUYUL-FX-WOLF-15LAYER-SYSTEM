@@ -60,11 +60,11 @@ async def init_persistent_storage() -> PersistenceSync | None:
         if not has_candles and not has_risk_data:
             logger.warning("Redis truly empty (no candle history, no risk state); attempting recovery from PostgreSQL")
             recovery_service = PersistenceSync(pg=pg_client, redis=redis)
-            await recovery_service.recover_from_postgres()
+            await recovery_service.hydrate_redis_from_postgres(mode="full")
         elif not has_risk_data:
             logger.info("Redis has candle data but missing peak_equity — risk state only recovery from PostgreSQL")
             recovery_service = PersistenceSync(pg=pg_client, redis=redis)
-            await recovery_service.recover_risk_state_only()
+            await recovery_service.hydrate_redis_from_postgres(mode="risk_only")
         else:
             logger.info("Redis has existing data — skipping PostgreSQL recovery")
     except Exception as exc:

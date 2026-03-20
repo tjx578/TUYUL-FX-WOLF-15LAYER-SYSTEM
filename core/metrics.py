@@ -545,6 +545,13 @@ SIGNAL_THROTTLED = _R.counter(
     label_names=("symbol",),
 )
 
+# Explicit end-to-end verdict path events (pipeline -> cache -> stream)
+VERDICT_PATH_EVENT_TOTAL = _R.counter(
+    "wolf_verdict_path_events_total",
+    "Observability events along the runtime verdict path",
+    label_names=("event", "symbol", "status"),
+)
+
 # Per-layer execution latency (seconds) — observe inside pipeline execute()
 LAYER_LATENCY = _R.histogram(
     "wolf_layer_latency_seconds",
@@ -737,6 +744,44 @@ FEED_RECONNECT_TOTAL = _R.counter(
     "wolf_feed_reconnect_total",
     "Number of feed reconnection attempts",
     label_names=("source",),  # source: finnhub, forexfactory
+)
+
+# Ingest runtime observability (service-level)
+INGEST_WS_CONNECTED = _R.gauge(
+    "wolf_ingest_ws_connected",
+    "Ingest websocket connection status (1=connected, 0=disconnected)",
+)
+
+INGEST_HEARTBEAT_AGE_SECONDS = _R.gauge(
+    "wolf_ingest_heartbeat_age_seconds",
+    "Seconds since last ingest producer heartbeat",
+)
+
+INGEST_FRESH_PAIRS = _R.gauge(
+    "wolf_ingest_fresh_pairs",
+    "Number of symbols with fresh ticks in ingest service",
+)
+
+ORCHESTRATOR_HEARTBEAT_AGE_SECONDS = _R.gauge(
+    "wolf_orchestrator_heartbeat_age_seconds",
+    "Seconds since last orchestrator heartbeat/state publish",
+)
+
+ORCHESTRATOR_READY = _R.gauge(
+    "wolf_orchestrator_ready",
+    "Orchestrator readiness derived from heartbeat age (1=ready, 0=not ready)",
+)
+
+ORCHESTRATOR_MODE = _R.gauge(
+    "wolf_orchestrator_mode",
+    "Orchestrator mode one-hot gauge (label=mode)",
+    label_names=("mode",),
+)
+
+INGEST_CACHE_MODE = _R.gauge(
+    "wolf_ingest_cache_mode",
+    "Ingest startup cache mode as one-hot gauge by mode label",
+    label_names=("mode",),
 )
 
 CIRCUIT_BREAKER_STATE = _R.gauge(

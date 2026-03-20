@@ -18,6 +18,12 @@ from analysis.macro.macro_regime_engine import MacroRegimeEngine
 from config_loader import get_enabled_symbols
 from context.system_state import SystemState, SystemStateManager
 from core.health_probe import HealthProbe
+from core.metrics import (
+    INGEST_CACHE_MODE,
+    INGEST_FRESH_PAIRS,
+    INGEST_HEARTBEAT_AGE_SECONDS,
+    INGEST_WS_CONNECTED,
+)
 from infrastructure.circuit_breaker import CircuitBreaker
 from ingest.calendar_news import CalendarNewsIngestor
 from ingest.candle_builder import CandleBuilder, Timeframe
@@ -27,6 +33,8 @@ from ingest.finnhub_market_news import FinnhubMarketNews
 from ingest.h1_refresh_scheduler import H1RefreshScheduler
 from ingest.macro_monthly_scheduler import MacroMonthlyScheduler
 from ingest.rest_poll_fallback import RestPollFallback
+from state.redis_keys import HEARTBEAT_INGEST
+from storage.candle_persistence import enqueue_candle_dict
 from storage.startup import init_persistent_storage, shutdown_persistent_storage
 
 _shutdown_event: asyncio.Event | None = None
@@ -37,9 +45,7 @@ BASE_DELAY = 1.0
 # Railway injects PORT for its proxy/healthcheck. Prefer INGEST_HEALTH_PORT,
 # then fall back to PORT (Railway-injected), then default 8082.
 _INGEST_HEALTH_PORT = int(os.getenv("INGEST_HEALTH_PORT") or os.getenv("PORT", "8082"))
-_health_probe: HealthProbe = HealthProbe(
-    port=_INGEST_HEALTH_PORT, service_name="ingest"
-)
+_health_probe: HealthProbe = HealthProbe(port=_INGEST_HEALTH_PORT, service_name="ingest")
 _ingest_ready = False
 # Degraded mode: warmup failed but stale Redis cache is available.
 # The service stays alive and serves cached data rather than crashing.
@@ -47,14 +53,12 @@ _ingest_degraded = False
 _producer_present = False
 _producer_last_heartbeat_ts = 0.0
 _pair_last_tick_ts: dict[str, float] = {}
+_pair_last_tick_fingerprint: dict[str, tuple[float, float]] = {}
 
-_PRODUCER_HEARTBEAT_KEY = "wolf15:ingest:producer_heartbeat"
-_PRODUCER_HEARTBEAT_INTERVAL_SEC = max(
-    1.0, float(os.getenv("INGEST_PRODUCER_HEARTBEAT_INTERVAL_SEC", "5"))
-)
-_PRODUCER_FRESHNESS_SEC = max(
-    5.0, float(os.getenv("INGEST_PRODUCER_FRESHNESS_SEC", "20"))
-)
+_PRODUCER_HEARTBEAT_KEY = HEARTBEAT_INGEST
+_PRODUCER_HEARTBEAT_INTERVAL_SEC = max(1.0, float(os.getenv("INGEST_PRODUCER_HEARTBEAT_INTERVAL_SEC", "5")))
+_PRODUCER_FRESHNESS_SEC = max(5.0, float(os.getenv("INGEST_PRODUCER_FRESHNESS_SEC", "20")))
+_CACHE_MODES = ("unknown", "warmup", "stale_cache", "failed_no_cache")
 
 # Circuit breaker for the warmup / provider chain.
 # Configurable via WOLF15_INGEST_CB_* env vars (ingest-specific overrides).
@@ -63,9 +67,7 @@ _warmup_circuit = CircuitBreaker(
     name="ingest_warmup",
     failure_threshold=int(os.getenv("WOLF15_INGEST_CB_FAILURE_THRESHOLD", "3")),
     recovery_timeout=float(os.getenv("WOLF15_INGEST_CB_RECOVERY_TIMEOUT", "120")),
-    half_open_success_threshold=int(
-        os.getenv("WOLF15_INGEST_CB_HALF_OPEN_ATTEMPTS", "1")
-    ),
+    half_open_success_threshold=int(os.getenv("WOLF15_INGEST_CB_HALF_OPEN_ATTEMPTS", "1")),
 )
 
 
@@ -83,6 +85,45 @@ def _mark_pair_tick(symbol: str, ts: float | None = None) -> None:
     if not pair:
         return
     _pair_last_tick_ts[pair] = time() if ts is None else float(ts)
+
+
+def _set_cache_mode(mode: str) -> None:
+    selected = str(mode).strip().lower() or "unknown"
+    for cache_mode in _CACHE_MODES:
+        INGEST_CACHE_MODE.labels(mode=cache_mode).set(1.0 if cache_mode == selected else 0.0)
+    _health_probe.set_detail("cache_mode", selected)
+
+
+def _emit_ingest_runtime_metrics(connected: bool) -> None:
+    heartbeat_age = max(0.0, time() - _producer_last_heartbeat_ts) if _producer_last_heartbeat_ts > 0 else float("inf")
+    fresh_pairs = _fresh_pair_count()
+
+    INGEST_WS_CONNECTED.set(1.0 if connected else 0.0)
+    INGEST_FRESH_PAIRS.set(float(fresh_pairs))
+    INGEST_HEARTBEAT_AGE_SECONDS.set(heartbeat_age if heartbeat_age != float("inf") else 9.99e8)
+
+    _health_probe.set_detail("producer_present", "1" if connected else "0")
+    _health_probe.set_detail("producer_fresh", "1" if _producer_fresh() else "0")
+    _health_probe.set_detail(
+        "producer_heartbeat_age_sec", f"{heartbeat_age if heartbeat_age != float('inf') else 0.0:.2f}"
+    )
+    _health_probe.set_detail("fresh_pairs", str(fresh_pairs))
+
+
+def _is_duplicate_pair_tick(symbol: str, price: float, ts: float) -> bool:
+    """Return True when tick fingerprint matches the last accepted tick.
+
+    This protects M15 candle builders from duplicate events that can still slip
+    through upstream filters during reconnect bursts.
+    """
+    pair = str(symbol).strip().upper()
+    if not pair:
+        return False
+    fingerprint = (float(ts), float(price))
+    if _pair_last_tick_fingerprint.get(pair) == fingerprint:
+        return True
+    _pair_last_tick_fingerprint[pair] = fingerprint
+    return False
 
 
 def _ingest_readiness() -> bool:
@@ -112,9 +153,7 @@ class RedisClient(Protocol):
     async def aclose(self) -> None: ...
     async def delete(self, name: str) -> int: ...
     async def rename(self, src: str, dst: str) -> bool: ...
-    async def scan(
-        self, cursor: int, *, match: str, count: int
-    ) -> tuple[int, list[str]]: ...
+    async def scan(self, cursor: int, *, match: str, count: int) -> tuple[int, list[str]]: ...
     async def llen(self, name: str) -> int: ...
     async def rpush(self, name: str, *values: str) -> int: ...
     async def ltrim(self, name: str, start: int, end: int) -> Any: ...
@@ -146,13 +185,12 @@ async def _producer_heartbeat_loop(ws_feed: Any, redis: RedisClient) -> None:
             f"{max(0.0, time() - _producer_last_heartbeat_ts):.2f}",
         )
         _health_probe.set_detail("fresh_pairs", str(_fresh_pair_count()))
+        _emit_ingest_runtime_metrics(connected)
 
         if connected:
             payload = {"producer": "finnhub_ws", "ts": time()}
             with contextlib.suppress(Exception):
-                await redis.set(
-                    _PRODUCER_HEARTBEAT_KEY, orjson.dumps(payload).decode("utf-8")
-                )
+                await redis.set(_PRODUCER_HEARTBEAT_KEY, orjson.dumps(payload).decode("utf-8"))
 
         await asyncio.sleep(_PRODUCER_HEARTBEAT_INTERVAL_SEC)
 
@@ -161,9 +199,7 @@ def _validate_api_key() -> bool:
     from ingest.finnhub_key_manager import finnhub_keys  # noqa: PLC0415
 
     if not finnhub_keys.available:
-        logger.warning(
-            "WARNING: FINNHUB_API_KEY not configured; ingest running in DRY RUN mode."
-        )
+        logger.warning("WARNING: FINNHUB_API_KEY not configured; ingest running in DRY RUN mode.")
         return False
     logger.info("FINNHUB_API_KEY validated ({} key(s) loaded)", finnhub_keys.key_count)
     return True
@@ -204,9 +240,7 @@ def _build_redis_client() -> RedisClient:
     try:
         redis_asyncio = import_module("redis.asyncio")
     except ModuleNotFoundError as exc:
-        raise RuntimeError(
-            "Missing dependency 'redis'. Install it with: pip install redis"
-        ) from exc
+        raise RuntimeError("Missing dependency 'redis'. Install it with: pip install redis") from exc
 
     redis_cls = redis_asyncio.Redis
     redis_url = os.getenv("REDIS_URL")
@@ -285,17 +319,13 @@ async def _connect_redis_with_retry() -> RedisClient:
 
 def _set_state_from_warmup(system_state: SystemStateManager) -> None:
     warmup_report = system_state.get_warmup_report()
-    incomplete_count = sum(
-        1 for status in warmup_report.values() if status.status.value != "COMPLETE"
-    )
+    incomplete_count = sum(1 for status in warmup_report.values() if status.status.value != "COMPLETE")
     if incomplete_count == 0:
         system_state.set_state(SystemState.READY)
         logger.info("Warmup complete - system state: READY")
         return
     system_state.set_state(SystemState.DEGRADED)
-    logger.warning(
-        f"Warmup complete with {incomplete_count} incomplete symbols - system state: DEGRADED"
-    )
+    logger.warning(f"Warmup complete with {incomplete_count} incomplete symbols - system state: DEGRADED")
 
 
 def _update_macro_regime(enabled_symbols: list[str]) -> None:
@@ -366,17 +396,91 @@ async def _run_warmup(
                 break
             await asyncio.sleep(delay)
 
-    logger.error(
-        "[Warmup] Failed after {} attempts (non-fatal): {}", MAX_RETRIES, last_exc
-    )
+    logger.error("[Warmup] Failed after {} attempts (non-fatal): {}", MAX_RETRIES, last_exc)
     system_state.set_state(SystemState.DEGRADED)
     return {}  # empty — no candles to seed
+
+
+async def _bootstrap_cache_and_warmup(
+    redis: RedisClient,
+    system_state: SystemStateManager,
+    enabled_symbols: list[str],
+) -> tuple[dict[str, dict[str, list[dict[str, Any]]]], bool, str]:
+    """Run deterministic startup phases and return warmup/cache outcome."""
+    redis_has_data = await _has_stale_cache(redis)
+    warmup_results: dict[str, dict[str, list[dict[str, Any]]]] = {}
+
+    if redis_has_data:
+        logger.info(
+            "[Ingest] Redis candle cache detected — skipping Finnhub REST warmup. "
+            "M15 will build from real-time WebSocket ticks."
+        )
+        system_state.set_state(SystemState.DEGRADED)
+        return warmup_results, True, "stale_cache"
+
+    logger.info("[Ingest] Redis empty — running Finnhub REST warmup")
+    warmup_results = await _run_warmup(system_state, enabled_symbols)
+    logger.info(
+        "[Warmup] results count=%d symbols_with_data=%s",
+        len(warmup_results),
+        list(warmup_results.keys())[:10],
+    )
+    await _seed_redis_candle_history(redis, warmup_results)
+
+    if warmup_results:
+        return warmup_results, False, "warmup"
+    return warmup_results, False, "failed_no_cache"
+
+
+def _set_startup_mode(
+    *,
+    mode: str,
+    warmup_results: dict[str, dict[str, list[dict[str, Any]]]],
+    redis_has_data: bool,
+) -> None:
+    global _ingest_ready, _ingest_degraded
+
+    _set_cache_mode(mode)
+
+    if mode == "warmup":
+        _ingest_ready = True
+        _ingest_degraded = False
+        _health_probe.set_detail("warmup", "complete")
+        return
+
+    if mode == "stale_cache":
+        _ingest_ready = False
+        _ingest_degraded = True
+        _health_probe.set_detail("warmup", "skipped_redis_cache")
+        return
+
+    if not warmup_results and not redis_has_data:
+        _ingest_ready = False
+        _ingest_degraded = False
+        _health_probe.set_detail("warmup", "failed_no_cache")
+        logger.error(
+            "[Ingest] Warmup failed and no stale cache available — service will remain NOT READY (circuit={})",
+            _warmup_circuit.state.value,
+        )
 
 
 class Stoppable(Protocol):
     """Any object that exposes an async stop() method."""
 
     async def stop(self) -> None: ...
+
+
+async def _run_supervised(name: str, runner: Any, restart_delay: float = 5.0) -> None:
+    """Run a long-lived task with restart isolation for scheduled/background services."""
+    while not (_shutdown_event and _shutdown_event.is_set()):
+        try:
+            await runner.run()
+            return
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("[%s] crashed - restarting in %.1fs", name, restart_delay)
+            await asyncio.sleep(restart_delay)
 
 
 # ── Redis candle history — shared helpers ─────────────────────────
@@ -409,6 +513,9 @@ async def _push_candle_to_redis(
         candle_json = orjson.dumps(candle_dict).decode("utf-8")
         await redis.rpush(key, candle_json)
         await redis.ltrim(key, -_SEED_HISTORY_MAXLEN, -1)
+
+        # Persist for restart/redeploy recovery via PostgreSQL writer loop.
+        enqueue_candle_dict(candle_dict)
 
         # Notify engine-side RedisConsumer via Pub/Sub (matches its psubscribe patterns)
         pub_channel = f"candle:{symbol}:{timeframe}"
@@ -481,24 +588,18 @@ async def _seed_redis_candle_history(
                     )
                 else:
                     await redis.delete(temp_key)
-                    logger.warning(
-                        "[Seed] %s: temp key empty after write — keeping old data", key
-                    )
+                    logger.warning("[Seed] %s: temp key empty after write — keeping old data", key)
 
             except Exception as exc:
                 # Cleanup temp key on failure; old data preserved in `key`
                 with contextlib.suppress(Exception):
                     await redis.delete(temp_key)
-                logger.error(
-                    "[Seed] Failed to seed {}: {} — old data preserved", key, exc
-                )
+                logger.error("[Seed] Failed to seed {}: {} — old data preserved", key, exc)
 
     logger.info("[Seed] Completed: {} symbol/tf combos seeded to Redis", seeded)
 
 
-async def _safe_stop(
-    name: str, obj: Any, cleanup_errors: list[tuple[str, Exception]]
-) -> None:
+async def _safe_stop(name: str, obj: Any, cleanup_errors: list[tuple[str, Exception]]) -> None:
     stop = getattr(obj, "stop", None)
     if stop is None:
         return
@@ -515,6 +616,8 @@ async def run_ingest_services(has_api_key: bool) -> None:
     _producer_present = False
     _producer_last_heartbeat_ts = 0.0
     _pair_last_tick_ts.clear()
+    _pair_last_tick_fingerprint.clear()
+    _set_cache_mode("unknown")
 
     if not has_api_key:
         logger.info("Skipping ingest services - no API key configured")
@@ -541,66 +644,16 @@ async def run_ingest_services(has_api_key: bool) -> None:
         system_state = SystemStateManager()
         system_state.set_state(SystemState.WARMING_UP)
 
-        # ── Redis-first: skip Finnhub REST warmup when cache already present ──
-        # Candle data flow:
-        #   M15  — built from real-time WebSocket ticks via CandleBuilder
-        #   H1   — built from completed M15 candles via CandleBuilder
-        #   H4/D1/W1/MN — fetched via Finnhub REST (only when Redis is empty)
-        # After a normal restart Redis typically holds all timeframe history.
-        # Reconnecting the WebSocket and building new M15 candles from live
-        # ticks is sufficient — there is no need to re-fetch from REST.
-        redis_has_data = await _has_stale_cache(redis)
-        warmup_results: dict[str, dict[str, list[dict[str, Any]]]] = {}
-
-        # ── Redis-first: skip Finnhub warmup if Redis already has candle data ──
-        # After a normal restart Redis typically retains all seeded candle
-        # history from the prior run.  Running a full Finnhub REST warmup in
-        # this case wastes API quota, takes minutes, and causes a stale-data
-        # window for the engine and dashboard.  WebSocket reconnects immediately
-        # and M15 candles resume building from live ticks.
-        if await _has_stale_cache(redis):
-            logger.info(
-                "[Ingest] Redis candle cache detected — skipping Finnhub REST warmup. "
-                "M15 will build from real-time WebSocket ticks."
-            )
-            warmup_results: dict[str, dict[str, list[dict[str, Any]]]] = {}
-            system_state.set_state(SystemState.READY)
-        else:
-            logger.info("[Ingest] Redis empty — running Finnhub REST warmup")
-            warmup_results = await _run_warmup(system_state, enabled_symbols)
-            logger.info(
-                "[Warmup] results count=%d symbols_with_data=%s",
-                len(warmup_results),
-                list(warmup_results.keys())[:10],
-            )
-
-            # Seed Redis Lists so the engine's RedisConsumer can warm up
-            # without waiting for live candle completion (fixes race condition).
-            await _seed_redis_candle_history(redis, warmup_results)
-
-        # ── Degraded-mode stale cache gate ────────────────────────────────
-        # When warmup produced no results (Finnhub/providers all 403 or timed
-        # out), check whether Redis already holds candle data from a prior run.
-        # If it does, mark the service as "degraded-ready" so the healthcheck
-        # passes and the container stays alive to serve cached data.
-        global _ingest_ready, _ingest_degraded
-        if not warmup_results and not redis_has_data:
-            if await _has_stale_cache(redis):
-                _ingest_degraded = True
-                _health_probe.set_detail("warmup", "degraded_stale_cache")
-                _health_probe.set_detail("circuit_state", _warmup_circuit.state.value)
-                logger.warning(
-                    "[Ingest] Warmup failed but stale cache found in Redis — "
-                    "service running in DEGRADED mode (readiness=True, circuit={})",
-                    _warmup_circuit.state.value,
-                )
-            else:
-                _health_probe.set_detail("warmup", "failed_no_cache")
-                logger.error(
-                    "[Ingest] Warmup failed and no stale cache available — service will remain NOT READY (circuit={})",
-                    _warmup_circuit.state.value,
-                )
-        # ── End degraded-mode gate ────────────────────────────────────────
+        warmup_results, redis_has_data, startup_mode = await _bootstrap_cache_and_warmup(
+            redis=redis,
+            system_state=system_state,
+            enabled_symbols=enabled_symbols,
+        )
+        _set_startup_mode(
+            mode=startup_mode,
+            warmup_results=warmup_results,
+            redis_has_data=redis_has_data,
+        )
 
         # ── Build M15 → H1 candle chain with Redis RPUSH callbacks ────
         # Every completed M15 and H1 candle is written to Redis so the
@@ -646,6 +699,10 @@ async def run_ingest_services(has_api_key: bool) -> None:
         # Tick callback: route to CandleBuilder per symbol
         def _on_tick(symbol: str, price: float, ts: datetime, volume: float) -> None:
             _mark_pair_tick(symbol, ts.timestamp())
+            tick_ts = ts.timestamp()
+            if _is_duplicate_pair_tick(symbol, price, tick_ts):
+                return
+            _mark_pair_tick(symbol, tick_ts)
             cb = candle_builders.get(symbol)
             if cb is not None:
                 cb.on_tick(price, ts, volume)
@@ -658,9 +715,15 @@ async def run_ingest_services(has_api_key: bool) -> None:
             _producer_heartbeat_loop(ws_feed=ws_feed, redis=redis),
             name="IngestProducerHeartbeat",
         )
+
         # REST poll fallback: automatically polls M15/H1 from REST when WS is down
+        def _ws_connected_fn() -> bool:
+            with contextlib.suppress(Exception):
+                return bool(getattr(ws_feed, "is_connected", False))
+            return False
+
         rest_poll = RestPollFallback(
-            ws_connected_fn=lambda: ws_feed.is_connected if ws_feed else False,
+            ws_connected_fn=_ws_connected_fn,
             symbols=enabled_symbols,
             redis_client=redis,
         )
@@ -668,23 +731,24 @@ async def run_ingest_services(has_api_key: bool) -> None:
         market_news = FinnhubMarketNews()
         h1_refresh = H1RefreshScheduler(redis_client=redis)
 
-        # Mark ingest as ready after warmup + connection
-        _ingest_ready = True
-        _health_probe.set_detail("warmup", "complete")
         _health_probe.set_detail("redis", "connected")
         _health_probe.set_detail("system_state", system_state.get_state().value)
-        logger.info("Ingest readiness: READY")
-
         logger.info(
-            "Starting ingest services: WebSocket, RestPollFallback, CalendarNews, MarketNews, CandleBuilder (M15 via tick callback), H1Refresh"
+            "Ingest startup mode: %s | ready=%s degraded=%s",
+            startup_mode,
+            _ingest_ready,
+            _ingest_degraded,
         )
+
+        macro_monthly = MacroMonthlyScheduler(enabled_symbols)
+        logger.info("Starting ingest services: WebSocket + supervised background refresh/poll/news tasks")
         await asyncio.gather(
-            ws_feed.run(),
-            rest_poll.run(),
-            news_feed.run(),
-            market_news.run(),
-            h1_refresh.run(),
-            MacroMonthlyScheduler(enabled_symbols).run(),
+            _run_supervised("finnhub_ws", ws_feed),
+            _run_supervised("rest_poll_fallback", rest_poll),
+            _run_supervised("calendar_news", news_feed),
+            _run_supervised("market_news", market_news),
+            _run_supervised("h1_refresh", h1_refresh),
+            _run_supervised("macro_monthly_refresh", macro_monthly),
         )
     except asyncio.CancelledError:
         logger.info("Ingest services cancelled - shutting down")
@@ -738,6 +802,7 @@ async def main(
     global _shutdown_event, _health_probe
     _shutdown_event = asyncio.Event()
 
+    # Configure logging — split streams for Railway compatibility
     # ── Probe ownership ──────────────────────────────────────────
     owns_probe: bool
     health_task: asyncio.Task[None] | None
@@ -751,8 +816,25 @@ async def main(
         health_task = None  # assigned below
 
     logger.remove()
+
+    # INFO/WARNING → stdout (Railway classifies as "info")
     logger.add(
         sys.stdout,
+        format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | "
+               "<level>{level: <8}</level> | "
+               "<cyan>{name}</cyan>:<cyan>{function}</cyan> - "
+               "<level>{message}</level>",
+        level="INFO",
+        filter=lambda record: record["level"].no < 40,  # Below ERROR
+    )
+
+    # ERROR/CRITICAL → stderr (Railway classifies as "error")
+    logger.add(
+        sys.stderr,
+        format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | "
+               "<level>{level: <8}</level> | "
+               "<cyan>{name}</cyan>:<cyan>{function}</cyan> - "
+               "<level>{message}</level>",
         format=(
             "<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level: <8}</level> | "
             "<cyan>{name}</cyan>:<cyan>{function}</cyan> - <level>{message}</level>"
@@ -775,9 +857,7 @@ async def main(
     if owns_probe:
         # Start health probe FIRST so Railway sees liveness immediately
         # while the rest of initialization proceeds.
-        health_task = asyncio.create_task(
-            _health_probe.start(), name="IngestHealthProbe"
-        )
+        health_task = asyncio.create_task(_health_probe.start(), name="IngestHealthProbe")
         # Yield to event loop so the health probe can bind its port
         # before any potentially slow/failing initialization runs.
         await asyncio.sleep(0.1)

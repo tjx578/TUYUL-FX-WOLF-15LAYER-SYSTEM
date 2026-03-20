@@ -179,6 +179,16 @@ class RedisClient:
         wait=wait_exponential(multiplier=1, min=1, max=10),
         reraise=True,
     )
+    def hgetall(self, name: str) -> dict[str, str]:
+        """Get all fields and values of a hash."""
+        return cast(dict[str, str], self.client.hgetall(name))
+
+    @retry(
+        retry=retry_if_exception_type((redis.exceptions.ConnectionError, redis.exceptions.TimeoutError)),
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=1, max=10),
+        reraise=True,
+    )
     def delete(self, key: str) -> int:
         """Delete key."""
         return cast(int, self.client.delete(key))

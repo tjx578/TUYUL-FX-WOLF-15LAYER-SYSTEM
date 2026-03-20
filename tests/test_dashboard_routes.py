@@ -18,8 +18,10 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from fastapi.routing import APIRoute
 from fastapi.testclient import TestClient
 
+from accounts.account_model import RiskCalculationResult, RiskSeverity
 from api.middleware.auth import verify_token
 from api.middleware.governance import enforce_write_policy
 
@@ -111,6 +113,17 @@ class _FakeRedis:
         pass
 
 
+class _KillSwitchOff:
+    def is_enabled(self) -> bool:
+        return False
+
+    def snapshot(self) -> dict[str, Any]:
+        return {"enabled": False, "reason": "", "updated_at": ""}
+
+    def evaluate_and_trip(self, *, metrics: dict[str, Any]) -> dict[str, Any]:  # noqa: ARG002
+        return self.snapshot()
+
+
 _fake_redis = _FakeRedis()
 
 
@@ -120,6 +133,27 @@ async def _mock_get_client(*_a: Any, **_kw: Any) -> _FakeRedis:
 
 async def _mock_get_async_redis() -> _FakeRedis:
     return _fake_redis
+
+
+def _stable_risk_result(*_a: Any, **_kw: Any) -> RiskCalculationResult:
+    """Return a concrete risk result to avoid suite-level MagicMock leakage."""
+    return RiskCalculationResult(
+        trade_allowed=True,
+        recommended_lot=0.1,
+        max_safe_lot=0.1,
+        risk_used_percent=1.0,
+        daily_dd_after=0.0,
+        total_dd_after=0.0,
+        severity=RiskSeverity.SAFE,
+        reason="test",
+    )
+
+
+class _StableRiskEngine:
+    """Deterministic risk engine stub for route tests."""
+
+    def calculate_lot(self, *args: Any, **kwargs: Any) -> RiskCalculationResult:  # noqa: ARG002
+        return _stable_risk_result()
 
 
 # ── App setup with auth overrides ─────────────────────────────────────────────
@@ -135,8 +169,28 @@ async def _mock_write_policy() -> None:
     return None
 
 
-app.dependency_overrides[verify_token] = _mock_verify_token
-app.dependency_overrides[enforce_write_policy] = _mock_write_policy
+@pytest.fixture(autouse=True)
+def _override_auth_dependencies() -> Any:
+    """Isolate dependency overrides to this test module's test scope."""
+    previous = dict(app.dependency_overrides)
+    app.dependency_overrides[verify_token] = _mock_verify_token
+    app.dependency_overrides[enforce_write_policy] = _mock_write_policy
+
+    # Also override the exact route-bound dependency callables in case other
+    # tests reloaded/mocked modules and changed function object identity.
+    for route in app.routes:
+        if not isinstance(route, APIRoute):
+            continue
+        if not str(route.path).startswith("/api/v1/"):
+            continue
+        for dep in route.dependant.dependencies:
+            call = getattr(dep, "call", None)
+            if callable(call):
+                app.dependency_overrides[call] = _mock_write_policy
+
+    yield
+    app.dependency_overrides.clear()
+    app.dependency_overrides.update(previous)
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -222,9 +276,22 @@ def _reset_state() -> Any:
     _fake_redis._str["ctx:tick:latest"] = json.dumps({"timestamp": time.time()})
 
     import api.allocation_router as alloc
+    from api.middleware import rate_limit as rl
 
     alloc._trade_ledger.clear()
     alloc._account_registry.clear()
+
+    # Reset in-memory rate-limit buckets so tests don't leak 429 state.
+    rl._http_store.reset()
+    rl._ws_store.reset()
+    rl._take_store.reset()
+    rl._config_store.reset()
+    rl._ws_connect_store.reset()
+    rl._ea_control_store.reset()
+    rl._account_write_store.reset()
+    rl._trade_write_store.reset()
+    rl._risk_calc_store.reset()
+    rl._admin_store.reset()
 
     yield
 
@@ -248,6 +315,10 @@ def _patch_redis() -> Any:
 
     with (
         patch.object(_rc._manager, "get_client", new=AsyncMock(return_value=_fake_redis)),
+        patch("api.allocation_router._kill_switch", new=_KillSwitchOff()),
+        patch("api.allocation_router._ensure_live_producer", new=AsyncMock(return_value=None)),
+        patch("api.allocation_router._runtime_take_precheck", new=AsyncMock(return_value=(True, None))),
+        patch("api.allocation_router.RiskEngine", new=_StableRiskEngine),
         patch(
             "api.allocation_router._persist_trade_write_through",
             new=AsyncMock(return_value=True),

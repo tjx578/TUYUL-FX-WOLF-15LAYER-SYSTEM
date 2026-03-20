@@ -30,6 +30,7 @@ def _normal_cdf(x: np.ndarray) -> np.ndarray:
     """
     return 0.5 * (1.0 + np.vectorize(math.erf)(x / np.sqrt(2.0)))
 
+
 from numpy.typing import NDArray  # noqa: E402
 
 
@@ -53,7 +54,7 @@ class PortfolioMonteCarloResult:
 
     # Correlation & diversification
     correlation_matrix: tuple[tuple[float, ...], ...]
-    diversification_ratio: float    # 1.0 = no diversification, <1 = good
+    diversification_ratio: float  # 1.0 = no diversification, <1 = good
 
     # Metadata
     simulations: int
@@ -198,9 +199,12 @@ class PortfolioMonteCarloEngine:
         # ── Run simulations ──────────────────────────────────────────
         portfolio_pnls: list[float] = []
         portfolio_drawdowns: list[float] = []
+        portfolio_ruin_flags: list[bool] = []
+        pair_sim_pnls = np.zeros((num_pairs, self.simulations), dtype=np.float64)
         pair_win_counts = np.zeros(num_pairs, dtype=np.float64)
         pair_profit_sums = np.zeros(num_pairs, dtype=np.float64)
         pair_loss_sums = np.zeros(num_pairs, dtype=np.float64)
+        ruin_threshold = -capital * self.ruin_capital_fraction
 
         for _ in range(self.simulations):
             # Generate correlated uniform indices via copula approach
@@ -211,14 +215,10 @@ class PortfolioMonteCarloEngine:
             # Convert correlated normals to bootstrap indices
             # Use CDF to get uniform, then map to indices
             uniform = _normal_cdf(correlated_z)
-            indices = np.clip(
-                (uniform * n_trades).astype(int), 0, n_trades - 1
-            )
+            indices = np.clip((uniform * n_trades).astype(int), 0, n_trades - 1)
 
             # Sample returns using correlated indices
-            sampled = np.array([
-                mat[p, indices[p]] for p in range(num_pairs)
-            ])
+            sampled = np.array([mat[p, indices[p]] for p in range(num_pairs)])
             # sampled shape: (num_pairs, n_trades)
 
             # Per-pair metrics for this simulation
@@ -229,16 +229,19 @@ class PortfolioMonteCarloEngine:
                 pair_profit_sums[p] += float(wins.sum())
                 pair_loss_sums[p] += float(abs(losses.sum()))
 
+            pair_sim_pnls[:, len(portfolio_pnls)] = sampled.sum(axis=1)
+
             # Portfolio P&L = sum across pairs per time step
             portfolio_returns = sampled.sum(axis=0)
             total_pnl = float(portfolio_returns.sum())
             portfolio_pnls.append(total_pnl)
 
-            # Portfolio drawdown
+            # Portfolio drawdown and path-based ruin
             cumulative = np.cumsum(portfolio_returns)
             peak = np.maximum.accumulate(cumulative)
             dd = cumulative - peak
             portfolio_drawdowns.append(float(np.min(dd)))
+            portfolio_ruin_flags.append(bool(np.any(cumulative <= ruin_threshold)))
 
         # ── Aggregate results ────────────────────────────────────────
         pair_win_probs = tuple(
@@ -251,46 +254,40 @@ class PortfolioMonteCarloEngine:
         )
         pair_pfs = tuple(
             round(
-                float(pair_profit_sums[p] / pair_loss_sums[p])
-                if pair_loss_sums[p] > 0
-                else 0.0,
+                (
+                    float(pair_profit_sums[p] / pair_loss_sums[p])
+                    if pair_loss_sums[p] > 0
+                    else (float("inf") if pair_profit_sums[p] > 0 else 0.0)
+                ),
                 2,
             )
             for p in range(num_pairs)
         )
 
-        portfolio_win_prob = float(np.mean([
-            1.0 if pnl > 0 else 0.0 for pnl in portfolio_pnls
-        ]))
+        portfolio_win_prob = float(
+            np.mean([1.0 if pnl > 0 else 0.0 for pnl in portfolio_pnls])
+        )
         portfolio_ev = float(np.mean(portfolio_pnls))
         total_portfolio_profit = sum(max(0, p) for p in portfolio_pnls)
         total_portfolio_loss = sum(abs(min(0, p)) for p in portfolio_pnls)
         portfolio_pf = (
             total_portfolio_profit / total_portfolio_loss
             if total_portfolio_loss > 0
-            else 0.0
+            else (float("inf") if total_portfolio_profit > 0 else 0.0)
         )
 
-        ruin_threshold = -capital * self.ruin_capital_fraction
-        portfolio_ror = float(
-            np.mean(np.asarray(portfolio_pnls) < ruin_threshold)
-        )
+        portfolio_ror = float(np.mean(portfolio_ruin_flags))
 
         mean_dd = float(np.mean(portfolio_drawdowns))
-        p95_dd = float(np.percentile(portfolio_drawdowns, 5))  # 5th pctl of negatives
+        p95_dd = float(np.percentile(np.abs(portfolio_drawdowns), 95))
 
         # ── Diversification ratio ────────────────────────────────────
         # Ratio of portfolio vol to sum of individual vols
         # < 1.0 means diversification is working
-        individual_vols = np.array([
-            np.std([mat[p, self._rng.integers(0, n_trades)] for _ in range(100)])
-            for p in range(num_pairs)
-        ])
+        individual_vols = np.std(pair_sim_pnls, axis=1)
         portfolio_vol = np.std(portfolio_pnls) if len(portfolio_pnls) > 1 else 1e-10
         sum_vols = float(individual_vols.sum())
-        div_ratio = round(
-            float(portfolio_vol / sum_vols) if sum_vols > 0 else 1.0, 4
-        )
+        div_ratio = round(float(portfolio_vol / sum_vols) if sum_vols > 0 else 1.0, 4)
 
         # ── Pass/fail ────────────────────────────────────────────────
         passed = (
@@ -311,8 +308,7 @@ class PortfolioMonteCarloEngine:
             portfolio_max_drawdown_mean=round(mean_dd, 2),
             portfolio_max_drawdown_p95=round(p95_dd, 2),
             correlation_matrix=tuple(
-                tuple(round(float(c), 4) for c in row)
-                for row in corr_matrix
+                tuple(round(float(c), 4) for c in row) for row in corr_matrix
             ),
             diversification_ratio=div_ratio,
             simulations=self.simulations,
@@ -322,7 +318,8 @@ class PortfolioMonteCarloEngine:
 
     @staticmethod
     def _nearest_psd(
-        matrix: NDArray[np.float64], aggressive: bool = False,
+        matrix: NDArray[np.float64],
+        aggressive: bool = False,
     ) -> NDArray[np.float64]:
         """Adjust correlation matrix to be positive semi-definite.
 

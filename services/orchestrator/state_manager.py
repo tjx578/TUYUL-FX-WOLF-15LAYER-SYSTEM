@@ -7,6 +7,7 @@ import json
 import os
 import threading
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, Protocol, cast
@@ -21,6 +22,7 @@ from state.pubsub_channels import ORCHESTRATOR_COMMANDS
 from storage.redis_client import RedisClient
 
 ORCHESTRATOR_SOURCE = "wolf15-orchestrator"
+_ORCHESTRATOR_READY = threading.Event()
 
 configure_loguru_logging()
 
@@ -245,10 +247,13 @@ class StateManager:
             self._last_heartbeat = now_ts
             self.publish_state("HEARTBEAT")
 
-    def run_forever(self) -> None:
+    def run_forever(self, on_started: Callable[[], None] | None = None) -> None:
         self.start_listener()
         self.publish_state("BOOT")
         logger.info("wolf15-orchestrator started in {}", self.snapshot().mode)
+
+        if on_started is not None:
+            on_started()
 
         try:
             while True:
@@ -258,10 +263,16 @@ class StateManager:
             self.close()
 
 
-def _start_health_probe_in_thread() -> None:
+def _start_health_probe_in_thread(readiness_check: Callable[[], bool] | None = None) -> None:
     """Run HealthProbe on a daemon thread so the sync event loop isn't blocked."""
-    port = int(os.getenv("PORT", os.getenv("ORCHESTRATOR_HEALTH_PORT", "8083")))
-    probe = HealthProbe(port=port, service_name="orchestrator")
+    port = int(os.getenv("ORCHESTRATOR_HEALTH_PORT", os.getenv("PORT", "8083")))
+    probe = HealthProbe(
+        port=port,
+        service_name="orchestrator",
+        readiness_check=readiness_check,
+    )
+    probe.set_detail("service_role", "orchestrator")
+    probe.set_detail("source", ORCHESTRATOR_SOURCE)
 
     def _run() -> None:
         loop = asyncio.new_event_loop()
@@ -274,8 +285,9 @@ def _start_health_probe_in_thread() -> None:
 
 
 def run() -> None:
-    _start_health_probe_in_thread()
-    StateManager().run_forever()
+    _ORCHESTRATOR_READY.clear()
+    _start_health_probe_in_thread(readiness_check=lambda: _ORCHESTRATOR_READY.is_set())
+    StateManager().run_forever(on_started=_ORCHESTRATOR_READY.set)
 
 
 if __name__ == "__main__":

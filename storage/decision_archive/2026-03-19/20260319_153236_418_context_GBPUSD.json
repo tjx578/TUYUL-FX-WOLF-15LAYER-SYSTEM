@@ -1,0 +1,14 @@
+{
+  "journal_type": "context",
+  "recorded_at": "2026-03-19T15:32:36.418232+00:00",
+  "data": {
+    "timestamp": "2026-03-19T15:32:36.418232Z",
+    "pair": "GBPUSD",
+    "session": "UNKNOWN",
+    "market_regime": "UNKNOWN",
+    "news_lock": false,
+    "context_coherence": 0.5,
+    "mta_alignment": true,
+    "technical_bias": "NEUTRAL"
+  }
+}

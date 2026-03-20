@@ -33,6 +33,8 @@ ROUTER_ENTRIES: list[RouterEntry] = [
     RouterEntry("api.routes.auth_compat", "router", "Auth compat session probe"),
     # Trade write lifecycle (take/skip/confirm/close/active + risk/calculate)
     RouterEntry("api.allocation_router", "write_router", "Trade write lifecycle"),
+    # Take-signal operational binding (P1-1)
+    RouterEntry("api.take_signal_routes", "router", "Take-signal binding API"),
     # Admin outbox inspect/replay
     RouterEntry("api.outbox_router", "router", "Trade outbox admin endpoints"),
     # L12 verdicts, context, execution state, pairs
@@ -73,6 +75,8 @@ ROUTER_ENTRIES: list[RouterEntry] = [
     RouterEntry("api.system_health_routes", "router", "Aggregated fleet health"),
     # Orchestrator governance state (read-only)
     RouterEntry("api.orchestrator_routes", "router", "Orchestrator governance state"),
+    # Settings governance (read/write/rollback/audit) — P1-8
+    RouterEntry("api.settings_routes", "router", "Settings governance API"),
 ]
 
 

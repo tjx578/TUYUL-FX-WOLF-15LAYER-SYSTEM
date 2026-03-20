@@ -21,14 +21,16 @@ import {
   useAccounts,
   useAccountsRiskSnapshot,
   useHealth,
+  useOrchestratorState,
   useCalendarBlocker,
   type ActiveTradesResponse,
   type AccountRiskSnapshot,
 } from "@/lib/api";
 import { useLiveSignals } from "@/lib/realtime/hooks/useLiveSignals";
 import { useLiveAlerts } from "@/lib/realtime";
+import { classifyVerdictEmptyState, type VerdictEmptyState } from "@/lib/verdictEmptyState";
 import { useSystemStore } from "@/store/useSystemStore";
-import type { L12Verdict, Trade, Account } from "@/types";
+import type { L12Verdict, Trade, Account, OrchestratorState } from "@/types";
 
 // ── helpers ─────────────────────────────────────────────────
 
@@ -162,6 +164,7 @@ export function useCommandCenterStatus() {
   const { data: context, isError: contextError } = useContext();
   const { data: execution, isError: executionError } = useExecution();
   const { data: health } = useHealth();
+  const { data: orchestrator } = useOrchestratorState();
   const { data: calendarBlocker } = useCalendarBlocker();
   const { alerts } = useLiveAlerts();
 
@@ -175,6 +178,7 @@ export function useCommandCenterStatus() {
       context,
       execution,
       health,
+      orchestrator,
       calendarBlocker,
       recentAlerts,
       wsStatus,
@@ -182,7 +186,18 @@ export function useCommandCenterStatus() {
       contextError,
       executionError,
     }),
-    [context, execution, health, calendarBlocker, recentAlerts, wsStatus, mode, contextError, executionError]
+    [
+      context,
+      execution,
+      health,
+      orchestrator,
+      calendarBlocker,
+      recentAlerts,
+      wsStatus,
+      mode,
+      contextError,
+      executionError,
+    ]
   );
 }
 
@@ -197,6 +212,7 @@ export interface CommandCenterState {
   context: ReturnType<typeof useContext>["data"];
   execution: ReturnType<typeof useExecution>["data"];
   health: ReturnType<typeof useHealth>["data"];
+  orchestrator: OrchestratorState | undefined;
   calendarBlocker: ReturnType<typeof useCalendarBlocker>["data"];
   recentAlerts: unknown[];
 
@@ -211,6 +227,7 @@ export interface CommandCenterState {
   wsStatus: string;
   mode: string;
   dataErrors: string[];
+  verdictEmptyState: VerdictEmptyState | null;
 
   // loading
   vLoading: boolean;
@@ -231,6 +248,7 @@ export function useCommandCenterState(): CommandCenterState {
     status.wsStatus === "RECONNECTING" ||
     verdicts.liveStatus === "DEGRADED" ||
     verdicts.liveStatus === "STALE" ||
+    status.orchestrator?.orchestrator_ready === false ||
     status.health?.status !== "ok";
 
   const dataErrors = useMemo(() => {
@@ -244,6 +262,26 @@ export function useCommandCenterState(): CommandCenterState {
     return errs;
   }, [verdicts.vError, trades.tradesError, status.contextError, status.executionError, risk.accountsError, risk.riskError]);
 
+  const verdictEmptyState = useMemo(() => {
+    return classifyVerdictEmptyState({
+      verdictCount: verdicts.verdictList.length,
+      isLoading: verdicts.vLoading,
+      verdictStale: verdicts.verdictStale,
+      liveStatus: verdicts.liveStatus,
+      mode: status.mode,
+      wsStatus: status.wsStatus,
+      feedStatus: status.health?.feed_status,
+    });
+  }, [
+    verdicts.vLoading,
+    verdicts.verdictList.length,
+    verdicts.verdictStale,
+    verdicts.liveStatus,
+    status.mode,
+    status.wsStatus,
+    status.health?.feed_status,
+  ]);
+
   return {
     verdictList: verdicts.verdictList,
     activeTrades: trades.activeTrades,
@@ -252,6 +290,7 @@ export function useCommandCenterState(): CommandCenterState {
     context: status.context,
     execution: status.execution,
     health: status.health,
+    orchestrator: status.orchestrator,
     calendarBlocker: status.calendarBlocker,
     recentAlerts: status.recentAlerts,
     topActionableSignals: verdicts.topActionableSignals,
@@ -264,6 +303,7 @@ export function useCommandCenterState(): CommandCenterState {
     wsStatus: status.wsStatus,
     mode: status.mode,
     dataErrors,
+    verdictEmptyState,
     vLoading: verdicts.vLoading,
   };
 }

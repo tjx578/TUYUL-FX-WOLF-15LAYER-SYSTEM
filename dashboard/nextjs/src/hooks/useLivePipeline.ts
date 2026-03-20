@@ -9,13 +9,14 @@
  *                         RECONNECTING_WS
  *                            ↓ recovered < 30s → LIVE_WS
  *                            ↓ timeout 30s
+ *                         CONNECTING_SSE → LIVE_SSE
+ *                            ↓ SSE fails
  *                         POLLING_REST
  *                            ↓ WS recovered → LIVE_WS
  *                            ↓ polling fails repeatedly
  *                         STALE
  *
- * SSE slot reserved for future expansion (insert between RECONNECTING_WS
- * and POLLING_REST when backend supports /sse/live).
+ * Transport ladder: WS → SSE → REST polling (managed by multiplexer).
  */
 
 import { useEffect, useRef } from "react";
@@ -43,6 +44,32 @@ const toComplianceState = (governance?: string): string => {
   return "COMPLIANCE_NORMAL";
 };
 
+/**
+ * Map backend-provided governance/freshness info to explicit UI freshness state
+ * per the Final Data Flow Architecture (LIVE / DEGRADED_BUT_REFRESHING /
+ * STALE_PRESERVED / NO_PRODUCER / NO_TRANSPORT).
+ */
+type FreshnessStateUI =
+  | "LIVE"
+  | "DEGRADED_BUT_REFRESHING"
+  | "STALE_PRESERVED"
+  | "NO_PRODUCER"
+  | "NO_TRANSPORT";
+
+const toFreshnessState = (result?: Record<string, unknown>): FreshnessStateUI => {
+  if (!result) return "LIVE";
+  const gov = result.governance as Record<string, unknown> | undefined;
+  if (!gov) return "LIVE";
+  const feedFreshness = gov.feed_freshness as string | undefined;
+  const producerAlive = gov.producer_alive as boolean | undefined;
+  if (feedFreshness === "no_transport") return "NO_TRANSPORT";
+  if (feedFreshness === "no_producer" || producerAlive === false) return "NO_PRODUCER";
+  if (feedFreshness === "stale_preserved") return "STALE_PRESERVED";
+  const action = gov.action as string | undefined;
+  if (action === "ALLOW_REDUCED") return "DEGRADED_BUT_REFRESHING";
+  return "LIVE";
+};
+
 export function useLivePipeline(options: UseLivePipelineOptions = {}) {
   const { setLatestPipelineResult, updateTrade } = useAccountStore();
   const setPreferences = usePreferencesStore((s) => s.setPreferences);
@@ -50,6 +77,10 @@ export function useLivePipeline(options: UseLivePipelineOptions = {}) {
   const setWsStatus = useSystemStore((s) => s.setWsStatus);
   const setSystem = useSystemStore((s) => s.setSystem);
   const setMode = useSystemStore((s) => s.setMode);
+  const setFreshnessState = useSystemStore((s) => s.setFreshnessState);
+  const setProducerHeartbeatAge = useSystemStore((s) => s.setProducerHeartbeatAge);
+  const setLastDataTimestamp = useSystemStore((s) => s.setLastDataTimestamp);
+  const setActiveTransport = useSystemStore((s) => s.setActiveTransport);
 
   // ─── TYPE DEFINITIONS ───────────────────────────────────────
   interface PipelineResult {
@@ -118,6 +149,8 @@ export function useLivePipeline(options: UseLivePipelineOptions = {}) {
           lastDataAtRef.current = Date.now();
           setLatestPipelineResult(result);
           setComplianceState(toComplianceState(result.governance_state));
+          setFreshnessState(toFreshnessState(result as unknown as Record<string, unknown>));
+          setLastDataTimestamp(Date.now());
         })
         .catch((error) => {
           if (!mountedRef.current) return;
@@ -152,6 +185,7 @@ export function useLivePipeline(options: UseLivePipelineOptions = {}) {
       if (pollTimerRef.current) return;
       consecutivePollFailsRef.current = 0;
       setMode("POLLING_REST");
+      setActiveTransport("REST");
       setSystem({
         mode: "POLLING_REST",
         reason: "WebSocket unavailable. Using REST polling fallback.",
@@ -252,6 +286,8 @@ export function useLivePipeline(options: UseLivePipelineOptions = {}) {
         if (event.type === "PipelineResultUpdated" && event.payload) {
           setLatestPipelineResult(event.payload);
           setComplianceState(toComplianceState(event.payload.governance_state));
+          setFreshnessState(toFreshnessState(event.payload as unknown as Record<string, unknown>));
+          setLastDataTimestamp(Date.now());
         }
 
         if (event.type === "PipelineUpdated" && event.payload) {
@@ -259,6 +295,8 @@ export function useLivePipeline(options: UseLivePipelineOptions = {}) {
           if ("symbol" in raw && "verdict" in raw) {
             setLatestPipelineResult(raw as unknown as Parameters<typeof setLatestPipelineResult>[0]);
             setComplianceState(toComplianceState(raw.governance_state as string | undefined));
+            setFreshnessState(toFreshnessState(raw));
+            setLastDataTimestamp(Date.now());
           }
         }
 
@@ -277,6 +315,7 @@ export function useLivePipeline(options: UseLivePipelineOptions = {}) {
           // Stream recovered — tear down all fallback machinery
           const transport = getTransport();
           transitionToLive(transport);
+          setActiveTransport(transport as "WS" | "SSE" | "REST");
         } else if (status === "DEGRADED" || status === "DISCONNECTED") {
           // Stream lost — start grace period, then fall back to polling
           schedulePollFallback();
@@ -315,5 +354,9 @@ export function useLivePipeline(options: UseLivePipelineOptions = {}) {
     setMode,
     setSystem,
     setWsStatus,
+    setFreshnessState,
+    setProducerHeartbeatAge,
+    setLastDataTimestamp,
+    setActiveTransport,
   ]);
 }
