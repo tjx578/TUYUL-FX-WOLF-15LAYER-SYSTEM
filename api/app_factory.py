@@ -414,12 +414,19 @@ def _register_health_routes(app: FastAPI) -> None:
             return None, False
 
     async def health(request: Request) -> dict[str, Any]:
+        import math  # noqa: PLC0415
+
         from api.allocation_router import _feed_freshness_snapshot  # noqa: PLC0415
         from state.redis_keys import HEARTBEAT_ENGINE  # noqa: PLC0415
 
         feed_snapshot = await _feed_freshness_snapshot()
         hb_age, hb_alive = await _read_heartbeat_age(request)
         engine_hb_age, engine_alive = await _read_heartbeat_age(request, key=HEARTBEAT_ENGINE)
+
+        # Sanitize non-finite floats so json.dumps never emits bare
+        # ``Infinity``/``NaN`` (not valid JSON; breaks dashboard parsing).
+        staleness = feed_snapshot.staleness_seconds
+        safe_staleness = staleness if math.isfinite(staleness) else None
 
         return {
             "status": "ok",
@@ -431,7 +438,7 @@ def _register_health_routes(app: FastAPI) -> None:
             "active_trades": 0,
             "feed_status": feed_snapshot.state,
             "freshness_class": feed_snapshot.freshness_class.value,
-            "feed_staleness_seconds": feed_snapshot.staleness_seconds,
+            "feed_staleness_seconds": safe_staleness,
             "feed_threshold_seconds": feed_snapshot.threshold_seconds,
             "feed_last_seen_ts": feed_snapshot.last_seen_ts,
             "detail": feed_snapshot.detail,
@@ -459,6 +466,8 @@ def _register_health_routes(app: FastAPI) -> None:
         whether the system is actually *safe to serve traffic*:
         feed freshness, producer heartbeat, and warmup state.
         """
+        import math as _math  # noqa: PLC0415
+
         from api.allocation_router import _feed_freshness_snapshot  # noqa: PLC0415
         from state.data_freshness import FreshnessClass  # noqa: PLC0415
         from state.redis_keys import HEARTBEAT_ENGINE  # noqa: PLC0415
@@ -468,9 +477,10 @@ def _register_health_routes(app: FastAPI) -> None:
         engine_hb_age, engine_alive = await _read_heartbeat_age(request, key=HEARTBEAT_ENGINE)
         freshness_class = feed_snapshot.freshness_class
 
+        _staleness = feed_snapshot.staleness_seconds
         checks: dict[str, Any] = {
             "feed_freshness_class": freshness_class.value,
-            "feed_staleness_seconds": feed_snapshot.staleness_seconds,
+            "feed_staleness_seconds": _staleness if _math.isfinite(_staleness) else None,
             "producer_alive": hb_alive,
             "producer_heartbeat_age_seconds": hb_age,
             "engine_alive": engine_alive,
@@ -510,6 +520,7 @@ def _register_health_routes(app: FastAPI) -> None:
     )
 
     async def full_health(request: Request) -> dict[str, Any]:
+        import math
         from datetime import UTC, datetime
 
         import redis.asyncio as aioredis
@@ -563,7 +574,9 @@ def _register_health_routes(app: FastAPI) -> None:
             "active_trades": 0,
             "feed_status": feed_snapshot.state,
             "freshness_class": feed_snapshot.freshness_class.value,
-            "feed_staleness_seconds": feed_snapshot.staleness_seconds,
+            "feed_staleness_seconds": (
+                feed_snapshot.staleness_seconds if math.isfinite(feed_snapshot.staleness_seconds) else None
+            ),
             "feed_threshold_seconds": feed_snapshot.threshold_seconds,
             "feed_last_seen_ts": feed_snapshot.last_seen_ts,
             "feed_detail": feed_snapshot.detail,
