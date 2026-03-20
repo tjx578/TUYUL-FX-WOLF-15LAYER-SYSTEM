@@ -92,19 +92,44 @@ export function getTransportToken(): string | null {
  * Fetch a WebSocket auth ticket from the server.
  * The server route reads the session cookie or the server-only API_KEY
  * env var — neither is exposed to the client bundle.
+ *
+ * Includes TTL cache + in-flight dedup to avoid hammering the server
+ * during rapid WS reconnect cycles (root cause of 429 cascades).
  */
+let _ticketCache: { token: string; expiresAt: number } | null = null;
+let _ticketPromise: Promise<string | null> | null = null;
+const TICKET_CACHE_TTL_MS = 4 * 60 * 1000; // 4 minutes (JWT typically valid 30 min)
+
 export async function fetchWsTicket(): Promise<string | null> {
   const jwt = getToken();
   if (jwt) return jwt;
 
-  try {
-    const res = await fetch("/api/auth/ws-ticket");
-    if (!res.ok) return null;
-    const data = await res.json() as { token?: string };
-    return data.token ?? null;
-  } catch {
-    return null;
+  // Return cached ticket if still valid
+  if (_ticketCache && Date.now() < _ticketCache.expiresAt) {
+    return _ticketCache.token;
   }
+
+  // Dedup: if an in-flight request exists, await the same promise
+  if (_ticketPromise) return _ticketPromise;
+
+  _ticketPromise = (async () => {
+    try {
+      const res = await fetch("/api/auth/ws-ticket");
+      if (!res.ok) return null;
+      const data = await res.json() as { token?: string };
+      const token = data.token ?? null;
+      if (token) {
+        _ticketCache = { token, expiresAt: Date.now() + TICKET_CACHE_TTL_MS };
+      }
+      return token;
+    } catch {
+      return null;
+    } finally {
+      _ticketPromise = null;
+    }
+  })();
+
+  return _ticketPromise;
 }
 
 // ============================================

@@ -212,6 +212,8 @@ def verdict_health() -> dict[str, Any]:
 @router.get("/api/v1/context", dependencies=[Depends(verify_token)])
 async def fetch_context() -> dict[str, Any]:
     """Get live context snapshot."""
+    import math  # noqa: PLC0415
+
     from api.allocation_router import _feed_freshness_snapshot  # noqa: PLC0415
 
     context_bus = cast(_SnapshotProvider, LiveContextBus())
@@ -223,7 +225,10 @@ async def fetch_context() -> dict[str, Any]:
     snapshot["timestamp_utc"] = format_utc(current_time)
     snapshot["timestamp_local"] = format_local(current_time)
     snapshot["feed_status"] = feed_snapshot.state
-    snapshot["feed_staleness_seconds"] = feed_snapshot.staleness_seconds
+    # Sanitize non-finite floats — json.dumps emits bare ``Infinity``/``NaN``
+    # which are not valid JSON and cause JSON.parse failures in the dashboard.
+    staleness = feed_snapshot.staleness_seconds
+    snapshot["feed_staleness_seconds"] = staleness if math.isfinite(staleness) else None
     snapshot["feed_threshold_seconds"] = feed_snapshot.threshold_seconds
     snapshot["feed_last_seen_ts"] = feed_snapshot.last_seen_ts
     snapshot["feed_detail"] = feed_snapshot.detail

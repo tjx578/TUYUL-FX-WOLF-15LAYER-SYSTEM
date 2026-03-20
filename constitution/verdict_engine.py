@@ -397,15 +397,38 @@ _REQUIRED_SYNTHESIS_FIELDS: tuple[str, ...] = (
     "system",
 )
 
-# Constitutional gate thresholds (10 gates)
+# Constitutional gate thresholds — LEGACY fallbacks (used only when regime
+# detection is unavailable).  Active path now reads from THRESHOLD_TABLE via
+# config.thresholds.get_thresholds(regime).
 _THRESH_TII: float = 0.65  # gate_1  — L8_tii_sym
 _THRESH_INTEGRITY: float = 0.75  # gate_2  — L8_integrity_index
 _THRESH_RR: float = 1.5  # gate_3  — execution.rr_ratio
-_THRESH_FTA: float = 0.65  # gate_4  — scores.fta_score
+_THRESH_FTA: float = 0.65  # gate_4  — scores.fta_score (no THRESHOLD_TABLE entry)
 _THRESH_MONTE: float = 0.60  # gate_5  — layers.L7_monte_carlo_win
-_THRESH_LATENCY_MS: int = 250  # gate_8  — system.latency_ms
+_THRESH_LATENCY_MS: int = 250  # gate_8  — system.latency_ms (no THRESHOLD_TABLE entry)
 _THRESH_CONF12: float = 0.75  # gate_9  — layers.conf12
 # Gate 10: Reflex Quality — LOCK is critical fail, CAUTION passes with lot_scale
+
+# VIX regime_state → THRESHOLD_TABLE key (fallback when volatility_regime absent)
+_REGIME_STATE_MAP: dict[int, str] = {
+    1: "LOW_VOL",
+    2: "NORMAL_VOL",
+    3: "HIGH_VOL",
+}
+
+
+def _resolve_regime(synthesis: dict[str, Any]) -> str:
+    """Resolve volatility regime from synthesis dict.
+
+    Priority: synthesis["volatility_regime"] (injected by build_l12_synthesis
+    from L1's ATR-based volatility_level) → macro_vix.regime_state → default.
+    """
+    vol_regime = synthesis.get("volatility_regime")
+    if vol_regime in ("LOW_VOL", "NORMAL_VOL", "HIGH_VOL"):
+        return vol_regime
+    regime_state = synthesis.get("macro_vix", {}).get("regime_state", 2)
+    return _REGIME_STATE_MAP.get(regime_state, "NORMAL_VOL")
+
 
 # Confidence label thresholds (based on wolf_30_point)
 _CONF_VERY_HIGH_MIN: int = 27
@@ -527,6 +550,35 @@ def generate_l12_verdict(
     g7 = "PASS" if drawdown < max_drawdown else "FAIL"
     g8 = "PASS" if latency <= _THRESH_LATENCY_MS else "FAIL"
     g9 = "PASS" if conf12 >= _effective_conf12 else "FAIL"
+    # ── Regime-adaptive thresholds ────────────────────────────────────────────
+    regime: str = _resolve_regime(synthesis)
+    try:
+        from config.thresholds import get_thresholds  # noqa: PLC0415
+
+        regime_th = get_thresholds(regime)  # type: ignore[arg-type]  # validated by _resolve_regime
+        th_tii = regime_th["tii"]
+        th_integrity = regime_th["integrity"]
+        th_rr = regime_th["rr"]
+        th_mc_win = regime_th["mc_win"]
+        th_conf12 = regime_th["conf12"]
+    except Exception:
+        # Fallback to legacy constants if threshold lookup fails
+        th_tii = _THRESH_TII
+        th_integrity = _THRESH_INTEGRITY
+        th_rr = _THRESH_RR
+        th_mc_win = _THRESH_MONTE
+        th_conf12 = _THRESH_CONF12
+
+    # ── 10 Constitutional Gates (regime-adaptive) ─────────────────────────────
+    g1 = "PASS" if tii >= th_tii else "FAIL"
+    g2 = "PASS" if integrity >= th_integrity else "FAIL"
+    g3 = "PASS" if rr >= th_rr else "FAIL"
+    g4 = "PASS" if fta >= _THRESH_FTA else "FAIL"
+    g5 = "PASS" if monte >= th_mc_win else "FAIL"
+    g6 = "PASS" if compliant else "FAIL"
+    g7 = "PASS" if drawdown < max_drawdown else "FAIL"
+    g8 = "PASS" if latency <= _THRESH_LATENCY_MS else "FAIL"
+    g9 = "PASS" if conf12 >= th_conf12 else "FAIL"
 
     gate_results: dict[str, Any] = {
         "gate_1_tii": g1,
@@ -608,6 +660,7 @@ def generate_l12_verdict(
         "lot_scale": reflex_lot_scale,
         "governance_penalty": round(governance_penalty, 4),
         "governance_downgraded": governance_downgraded,
+        "regime": regime,
         "scores": {
             "tii": tii,
             "integrity": integrity,

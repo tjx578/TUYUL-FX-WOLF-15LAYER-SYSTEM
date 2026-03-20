@@ -14,6 +14,7 @@ THRESHOLD_TABLE: dict[str, dict[str, float]] = {
         "rr": 2.0,
         "risk_mult": 0.8,
         "conf12": 0.78,  # Tighter — data quality is higher in low-vol regimes
+        "conf12": 0.78,
     },
     "NORMAL_VOL": {
         "tii": 0.90,
@@ -25,6 +26,7 @@ THRESHOLD_TABLE: dict[str, dict[str, float]] = {
         "rr": 2.0,
         "risk_mult": 1.0,
         "conf12": 0.72,  # Standard — balanced threshold for normal conditions
+        "conf12": 0.72,
     },
     "HIGH_VOL": {
         "tii": 0.88,
@@ -36,8 +38,10 @@ THRESHOLD_TABLE: dict[str, dict[str, float]] = {
         "rr": 2.2,
         "risk_mult": 1.1,
         "conf12": 0.65,  # Relaxed — natural conf12 drop expected in high-vol regimes
+        "conf12": 0.65,
     },
 }
+
 
 def get_thresholds(regime: REGIME_TYPE) -> dict[str, float]:
     return THRESHOLD_TABLE[regime]
