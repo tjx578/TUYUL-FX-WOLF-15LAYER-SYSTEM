@@ -119,6 +119,208 @@ class TestP0_3_LastSeenTs:  # noqa: N801
         # TTL must be long (housekeeping, e.g. 86400s), not used for freshness
         assert LATEST_TICK_TTL_SECONDS >= 86400
 
+    # -- tick writer stores last_seen_ts -----------------------------------
+
+    def test_write_tick_stores_last_seen_ts(self):
+        """write_tick must HSET a 'last_seen_ts' field alongside 'data'."""
+        from unittest.mock import MagicMock
+
+        from context.redis_context_bridge import RedisContextBridge
+
+        mock_redis = MagicMock()
+        bridge = RedisContextBridge(redis_client=mock_redis)
+        bridge.write_tick({"symbol": "EURUSD", "bid": 1.08, "ask": 1.09, "timestamp": time.time()})
+
+        # hset must have been called with a mapping containing last_seen_ts
+        hset_call = mock_redis.hset.call_args
+        assert hset_call is not None
+        mapping = hset_call[1].get("mapping") or hset_call.kwargs.get("mapping")
+        assert "last_seen_ts" in mapping
+        assert float(mapping["last_seen_ts"]) > 0
+
+    def test_write_tick_does_not_expire(self):
+        """write_tick must NOT call .expire() — key persists indefinitely."""
+        import inspect
+
+        from context.redis_context_bridge import RedisContextBridge
+
+        source = inspect.getsource(RedisContextBridge.write_tick)
+        assert ".expire(" not in source
+
+    # -- candle writer stores last_seen_ts ---------------------------------
+
+    def test_write_candle_stores_last_seen_ts(self):
+        """write_candle must HSET a 'last_seen_ts' field alongside 'data'."""
+        from unittest.mock import MagicMock
+
+        from context.redis_context_bridge import RedisContextBridge
+
+        mock_redis = MagicMock()
+        mock_redis.client = mock_redis  # rpush/ltrim go via .client
+        bridge = RedisContextBridge(redis_client=mock_redis)
+        bridge.write_candle(
+            {
+                "symbol": "EURUSD",
+                "timeframe": "H1",
+                "open": 1.08,
+                "high": 1.09,
+                "low": 1.07,
+                "close": 1.085,
+                "timestamp": time.time(),
+            }
+        )
+
+        hset_call = mock_redis.hset.call_args
+        assert hset_call is not None
+        mapping = hset_call[1].get("mapping") or hset_call.kwargs.get("mapping")
+        assert "last_seen_ts" in mapping
+        assert float(mapping["last_seen_ts"]) > 0
+
+    # -- read_latest_tick returns last_seen_ts ------------------------------
+
+    def test_read_latest_tick_includes_last_seen_ts(self):
+        """read_latest_tick must attach last_seen_ts from the hash."""
+        from unittest.mock import MagicMock
+
+        from context.redis_context_bridge import RedisContextBridge
+
+        now = time.time()
+        tick_data = orjson.dumps({"symbol": "EURUSD", "bid": 1.08}).decode()
+        mock_redis = MagicMock()
+        mock_redis.hgetall.return_value = {"data": tick_data, "last_seen_ts": str(now)}
+        bridge = RedisContextBridge(redis_client=mock_redis)
+
+        result = bridge.read_latest_tick("EURUSD")
+        assert result is not None
+        assert "last_seen_ts" in result
+        assert abs(result["last_seen_ts"] - now) < 1.0
+
+    # -- read_latest_candle returns last_seen_ts ----------------------------
+
+    def test_read_latest_candle_includes_last_seen_ts(self):
+        """read_latest_candle must attach last_seen_ts from the hash."""
+        from unittest.mock import MagicMock
+
+        from context.redis_context_bridge import RedisContextBridge
+
+        now = time.time()
+        candle_data = orjson.dumps({"symbol": "EURUSD", "timeframe": "H1", "close": 1.08}).decode()
+        mock_redis = MagicMock()
+        mock_redis.hgetall.return_value = {"data": candle_data, "last_seen_ts": str(now)}
+        bridge = RedisContextBridge(redis_client=mock_redis)
+
+        result = bridge.read_latest_candle("EURUSD", "H1")
+        assert result is not None
+        assert "last_seen_ts" in result
+        assert abs(result["last_seen_ts"] - now) < 1.0
+
+    # -- tick survives short outage ----------------------------------------
+
+    def test_tick_survives_short_outage(self):
+        """A tick written 2 minutes ago must still be readable (no TTL eviction)."""
+        from unittest.mock import MagicMock
+
+        from context.redis_context_bridge import RedisContextBridge
+
+        two_min_ago = time.time() - 120
+        tick_data = orjson.dumps({"symbol": "GBPUSD", "bid": 1.25}).decode()
+        mock_redis = MagicMock()
+        mock_redis.hgetall.return_value = {"data": tick_data, "last_seen_ts": str(two_min_ago)}
+        bridge = RedisContextBridge(redis_client=mock_redis)
+
+        tick = bridge.read_latest_tick("GBPUSD")
+        assert tick is not None, "Tick must survive a 2-minute outage (no short TTL)"
+        assert tick["last_seen_ts"] == pytest.approx(two_min_ago, abs=1.0)
+
+    def test_candle_survives_short_outage(self):
+        """A candle written 5 minutes ago must still be readable."""
+        from unittest.mock import MagicMock
+
+        from context.redis_context_bridge import RedisContextBridge
+
+        five_min_ago = time.time() - 300
+        candle_data = orjson.dumps({"symbol": "GBPUSD", "timeframe": "M15", "close": 1.25}).decode()
+        mock_redis = MagicMock()
+        mock_redis.hgetall.return_value = {"data": candle_data, "last_seen_ts": str(five_min_ago)}
+        bridge = RedisContextBridge(redis_client=mock_redis)
+
+        candle = bridge.read_latest_candle("GBPUSD", "M15")
+        assert candle is not None, "Candle must survive a 5-minute outage"
+        assert candle["last_seen_ts"] == pytest.approx(five_min_ago, abs=1.0)
+
+    # -- freshness computed from timestamp, not key absence -----------------
+
+    def test_freshness_from_last_seen_ts_not_key_absence(self):
+        """classify_feed_freshness must use last_seen_ts, NOT treat key absence as stale."""
+        # 10 seconds old → LIVE
+        snap = classify_feed_freshness(
+            transport_ok=True,
+            has_producer_signal=True,
+            last_seen_ts=time.time() - 10,
+        )
+        assert snap.freshness_class == FreshnessClass.LIVE
+
+    def test_stale_preserved_distinguishable_from_no_producer(self):
+        """Old data (last_seen_ts present) must be STALE_PRESERVED, not NO_PRODUCER."""
+        old_ts = time.time() - 86400  # 24 hours ago
+        snap = classify_feed_freshness(
+            transport_ok=True,
+            has_producer_signal=True,
+            last_seen_ts=old_ts,
+        )
+        assert snap.freshness_class == FreshnessClass.STALE_PRESERVED
+        assert snap.last_seen_ts == pytest.approx(old_ts, abs=1.0)
+        assert snap.state == "stale_preserved"
+
+        # Contrast with genuinely no data
+        snap_none = classify_feed_freshness(
+            transport_ok=True,
+            has_producer_signal=False,
+        )
+        assert snap_none.freshness_class == FreshnessClass.NO_PRODUCER
+
+    # -- stale state remains diagnosable ------------------------------------
+
+    def test_stale_snapshot_carries_diagnostic_fields(self):
+        """FeedFreshnessSnapshot must carry last_seen_ts + staleness_seconds for diagnosis."""
+        old_ts = time.time() - 600  # 10 minutes ago
+        snap = classify_feed_freshness(
+            transport_ok=True,
+            has_producer_signal=True,
+            last_seen_ts=old_ts,
+        )
+        # Must carry diagnostic data for inspection
+        assert snap.last_seen_ts is not None
+        assert snap.last_seen_ts == pytest.approx(old_ts, abs=1.0)
+        assert snap.staleness_seconds == pytest.approx(600.0, abs=2.0)
+        assert snap.threshold_seconds > 0
+        assert snap.detail  # non-empty explanation
+
+    def test_live_context_bus_stale_is_diagnosable(self):
+        """LiveContextBus feed status must expose age and last_seen_ts for diagnosis."""
+        from context.live_context_bus import LiveContextBus
+
+        LiveContextBus.reset_singleton()
+        bus = LiveContextBus()
+        bus.update_tick({"symbol": "EURUSD", "bid": 1.08, "ask": 1.09, "timestamp": time.time()})
+
+        # Feed age should be diagnosable
+        age = bus.get_feed_age("EURUSD")
+        assert age is not None
+        assert age < 2.0  # just written
+
+        ts = bus.get_feed_timestamp("EURUSD")
+        assert ts is not None
+        assert ts > 0
+
+        # All-feed status must include per-symbol diagnostics
+        all_status = bus.get_all_feed_status()
+        assert "EURUSD" in all_status
+        entry = all_status["EURUSD"]
+        assert "status" in entry
+        assert "age_seconds" in entry
+        assert "last_seen_ts" in entry
+
 
 # ---------------------------------------------------------------------------
 # P0-4: Unified freshness classes
@@ -425,6 +627,7 @@ class TestP0_8_EngineHeartbeat:  # noqa: N801
         import asyncio
 
         from startup.analysis_loop import _engine_heartbeat_loop
+
         assert asyncio.iscoroutinefunction(_engine_heartbeat_loop)
 
 

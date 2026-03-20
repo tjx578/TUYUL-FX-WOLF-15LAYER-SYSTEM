@@ -293,11 +293,22 @@ class RedisConsumer:
         try:
             data: dict[str | bytes, str | bytes] = await self._redis.hgetall(hash_key)
             if data:
-                # Hash stores {"data": "<json>"} — extract the JSON payload
+                # Hash stores {"data": "<json>", "last_seen_ts": "<epoch>"}
                 raw_json = data.get("data") or data.get(b"data")
                 if raw_json:
                     if isinstance(raw_json, str):
                         raw_json = raw_json.encode("utf-8")
+                    # Inject last_seen_ts into candle payload so warmup
+                    # data carries freshness metadata (P0-3).
+                    last_seen = data.get("last_seen_ts") or data.get(b"last_seen_ts")
+                    if last_seen:
+                        try:
+                            candle_dict = orjson.loads(raw_json)
+                            ts_str = last_seen if isinstance(last_seen, str) else last_seen.decode("utf-8")
+                            candle_dict["last_seen_ts"] = float(ts_str)
+                            raw_json = orjson.dumps(candle_dict)
+                        except Exception:
+                            pass  # original payload is still valid without enrichment
                     logger.info(
                         "warmup_candle_history | symbol=%s tf=%s source=hash_fallback count=1",
                         symbol,
