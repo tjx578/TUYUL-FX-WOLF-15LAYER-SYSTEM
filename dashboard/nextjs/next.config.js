@@ -6,6 +6,96 @@
 const isProd =
   process.env.NODE_ENV === "production" || process.env.VERCEL === "1";
 
+function _firstNonEmpty(...values) {
+  for (const value of values) {
+    if (typeof value === "string" && value.trim()) {
+      return value.trim();
+    }
+  }
+  return "";
+}
+
+function _isProtectedDeployment() {
+  const explicitFailFast = _firstNonEmpty(
+    process.env.NEXT_CONFIG_FAIL_FAST,
+    process.env.NEXT_CONFIG_PROTECTED_ENV,
+  );
+  if (["1", "true", "yes"].includes(explicitFailFast.toLowerCase())) {
+    return true;
+  }
+
+  const vercelEnv = _firstNonEmpty(process.env.VERCEL_ENV).toLowerCase();
+  if (vercelEnv === "production") {
+    return true;
+  }
+
+  const railwayEnv = _firstNonEmpty(process.env.RAILWAY_ENVIRONMENT).toLowerCase();
+  if (railwayEnv === "production") {
+    return true;
+  }
+
+  const branch = _firstNonEmpty(
+    process.env.VERCEL_GIT_COMMIT_REF,
+    process.env.RAILWAY_GIT_BRANCH,
+    process.env.GITHUB_REF_NAME,
+    process.env.CI_BRANCH,
+  ).toLowerCase();
+  return branch === "main" || branch === "master";
+}
+
+function _normalizeWsBase(value) {
+  return (value || "").trim().replace(/\/+$/, "").replace(/\/ws$/, "");
+}
+
+function _validateWsBase(wsBase, { protectedDeploy, explicitlyConfigured }) {
+  if (protectedDeploy && !explicitlyConfigured) {
+    throw new Error(
+      "[next.config] Missing NEXT_PUBLIC_WS_BASE_URL for protected deployment. " +
+      "Set it to your Railway websocket origin (e.g. wss://<service>.up.railway.app)."
+    );
+  }
+
+  if (!wsBase) {
+    return;
+  }
+
+  let parsed;
+  try {
+    parsed = new URL(wsBase);
+  } catch {
+    throw new Error(
+      `[next.config] Invalid NEXT_PUBLIC_WS_BASE_URL='${wsBase}'. Use a full ws:// or wss:// origin.`
+    );
+  }
+
+  if (parsed.protocol !== "ws:" && parsed.protocol !== "wss:") {
+    throw new Error(
+      `[next.config] NEXT_PUBLIC_WS_BASE_URL must use ws:// or wss://, got '${parsed.protocol}'.`
+    );
+  }
+
+  if (parsed.pathname && parsed.pathname !== "/") {
+    throw new Error(
+      "[next.config] NEXT_PUBLIC_WS_BASE_URL must be a bare origin (no path, no /ws suffix)."
+    );
+  }
+
+  const host = (parsed.hostname || "").toLowerCase();
+  if (host.includes("vercel.app") || host.includes("vercel.com")) {
+    throw new Error(
+      "[next.config] NEXT_PUBLIC_WS_BASE_URL must target backend/Railway origin directly, not Vercel domain."
+    );
+  }
+
+  if (protectedDeploy && host !== "localhost" && !host.includes("railway.app")) {
+    throw new Error(
+      "[next.config] Protected deployment requires NEXT_PUBLIC_WS_BASE_URL to point directly to Railway origin (wss://*.railway.app)."
+    );
+  }
+}
+
+const isProtectedDeployment = _isProtectedDeployment();
+
 // Read backend URL from all possible env var names across different platforms:
 //   INTERNAL_API_URL          — Vercel (set manually in project vars)
 //   NEXT_PUBLIC_API_BASE_URL  — Vercel (public, set manually in project vars)
@@ -21,15 +111,17 @@ const rawApiBase =
   "";
 
 // Warn loudly in production when env vars are missing.
-// Previously this was a hard throw, but that blocks CI builds (e.g. GitHub Actions)
-// that compile the app without a live backend URL. Downgraded to console.error so
-// the build can complete; the rewrites will point to a non-functional placeholder.
+// Protected deployments (main/prod) are fail-fast to avoid shipping placeholders.
+// Non-protected deployments can continue with warnings for preview/debug workflows.
 if (isProd && !rawApiBase) {
-  console.error(
-    "[next.config] WARNING: Missing INTERNAL_API_URL or NEXT_PUBLIC_API_BASE_URL in production. " +
+  const message =
+    "[next.config] Missing INTERNAL_API_URL or NEXT_PUBLIC_API_BASE_URL in production. " +
     "All API rewrites will route to a placeholder and will NOT work. " +
-    "Set this in Vercel/Railway env vars before deploying."
-  );
+    "Set this in Vercel/Railway env vars before deploying.";
+  if (isProtectedDeployment) {
+    throw new Error(`${message} Protected deployment is fail-fast by policy.`);
+  }
+  console.error(`[next.config] WARNING: ${message}`);
 }
 
 // Fallback — localhost for local dev, placeholder for production without env vars.
@@ -39,6 +131,14 @@ const resolvedBase = rawApiBase || "http://localhost:8000";
 // double-prefix (/api/api/...) when combined with rewrite destinations.
 const apiBase = resolvedBase.replace(/\/+$/, "").replace(/\/api$/, "");
 
+const configuredWsBase = _normalizeWsBase(process.env.NEXT_PUBLIC_WS_BASE_URL || "");
+const wsBase = configuredWsBase || apiBase.replace(/^https:\/\//, "wss://").replace(/^http:\/\//, "ws://");
+
+_validateWsBase(wsBase, {
+  protectedDeploy: isProtectedDeployment,
+  explicitlyConfigured: Boolean(configuredWsBase),
+});
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
@@ -47,9 +147,7 @@ const nextConfig = {
   // even when the user only set API_BASE_URL on Railway.
   env: {
     NEXT_PUBLIC_API_BASE_URL: apiBase,
-    NEXT_PUBLIC_WS_BASE_URL:
-      process.env.NEXT_PUBLIC_WS_BASE_URL ||
-      apiBase.replace(/^https:\/\//, "wss://").replace(/^http:\/\//, "ws://"),
+    NEXT_PUBLIC_WS_BASE_URL: wsBase,
   },
   // standalone is required for Docker/Railway (self-hosted) but must NOT be
   // used on Vercel — it breaks route-group resolution. Set the env var in
