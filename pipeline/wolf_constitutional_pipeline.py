@@ -83,6 +83,7 @@ from core.metrics import (
     LAYER_LATENCY,
     SIGNAL_THROTTLED,
     TICK_TO_VERDICT_LATENCY,
+    VERDICT_PATH_EVENT_TOTAL,
 )
 from core.tracing import layer_span
 from pipeline.engines import L13ReflectiveEngine, L15MetaSovereigntyEngine
@@ -551,6 +552,8 @@ class WolfConstitutionalPipeline:
         safe_mode = bool(metrics.get("safe_mode", False))
 
         start_time = time.time()
+        logger.info("[VerdictPath] pipeline started | symbol={} safe_mode={}", symbol, safe_mode)
+        VERDICT_PATH_EVENT_TOTAL.labels(event="pipeline_started", symbol=symbol, status="ok").inc()
         self._ensure_analyzers()
         self._ensure_governance_engines()
         errors: list[str] = []
@@ -603,6 +606,11 @@ class WolfConstitutionalPipeline:
                 missing = warmup["missing"]
                 layers_executed.append("L0")
                 engines_invoked.append("WarmupGate")
+                VERDICT_PATH_EVENT_TOTAL.labels(event="warmup_rejected", symbol=symbol, status="hold").inc()
+                logger.warning(
+                    f"[VerdictPath] warmup rejected | symbol={symbol} "
+                    f"bars={warmup['bars']} required={warmup['required']} missing={missing}"
+                )
                 logger.warning(
                     f"[Pipeline v8.0] {symbol} WARMUP INSUFFICIENT — "
                     f"bars={warmup['bars']}, required={warmup['required']}, "
@@ -731,6 +739,13 @@ class WolfConstitutionalPipeline:
         if _governance.action == GovernanceAction.BLOCK:
             layers_executed.append("GovernanceGate")
             engines_invoked.append("GovernanceGate")
+            VERDICT_PATH_EVENT_TOTAL.labels(event="governance_blocked", symbol=symbol, status="block").inc()
+            logger.warning(
+                "[VerdictPath] governance blocked | symbol={} reasons={} penalty={}",
+                symbol,
+                list(_governance.reasons),
+                round(_governance.confidence_penalty, 4),
+            )
             result = _early_exit_with_map(
                 [f"GOVERNANCE_BLOCK:{','.join(_governance.reasons)}"],
                 time.time() - start_time,
@@ -741,6 +756,13 @@ class WolfConstitutionalPipeline:
         if _governance.action == GovernanceAction.HOLD:
             layers_executed.append("GovernanceGate")
             engines_invoked.append("GovernanceGate")
+            VERDICT_PATH_EVENT_TOTAL.labels(event="governance_blocked", symbol=symbol, status="hold").inc()
+            logger.warning(
+                "[VerdictPath] governance hold | symbol={} reasons={} penalty={}",
+                symbol,
+                list(_governance.reasons),
+                round(_governance.confidence_penalty, 4),
+            )
             result = _early_exit_with_map(
                 [f"GOVERNANCE_HOLD:{','.join(_governance.reasons)}"],
                 time.time() - start_time,
