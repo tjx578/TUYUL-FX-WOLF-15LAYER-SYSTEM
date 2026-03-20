@@ -154,3 +154,32 @@ def test_internal_verdict_path_reports_key_and_warmup(monkeypatch) -> None:
 
     assert rows["GBPJPY"]["redis_key_exists"] is False
     assert rows["GBPJPY"]["warmup_status"]["ready"] is False
+
+
+def test_internal_verdict_path_survives_redis_error(monkeypatch) -> None:
+    monkeypatch.setattr(
+        l12_routes,
+        "AVAILABLE_PAIRS",
+        [
+            {"symbol": "EURUSD", "name": "EURUSD", "enabled": True},
+        ],
+    )
+
+    def _boom(_pair: str):
+        raise RuntimeError("redis unavailable")
+
+    class _FakeBus:
+        def check_warmup(self, _symbol: str, _min_bars: dict[str, int]):
+            return {"ready": False, "bars": {"H1": 0}, "required": {"H1": 20}, "missing": {"H1": 20}}
+
+    monkeypatch.setattr(l12_routes, "get_verdict", _boom)
+    monkeypatch.setattr(l12_routes, "LiveContextBus", lambda: _FakeBus())
+
+    payload = l12_routes.fetch_internal_verdict_path(pair="EURUSD")
+    row = payload["pairs"][0]
+
+    assert payload["redis_ok"] is False
+    assert payload["redis_error"] == "redis unavailable"
+    assert row["pair"] == "EURUSD"
+    assert row["redis_key_exists"] is False
+    assert row["warmup_status"]["ready"] is False
