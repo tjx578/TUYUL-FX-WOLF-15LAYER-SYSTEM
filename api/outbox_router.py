@@ -7,9 +7,10 @@ from typing import Any, cast
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 
-from .middleware.auth import verify_token
-from .middleware.governance import enforce_write_policy
+from api.middleware.governance import enforce_write_policy
 from storage.postgres_client import pg_client
+
+from .middleware.auth import verify_token
 
 router = APIRouter(
     prefix="/api/v1/outbox",

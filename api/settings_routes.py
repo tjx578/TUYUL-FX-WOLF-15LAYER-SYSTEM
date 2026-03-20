@@ -13,9 +13,8 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
-from .middleware.auth import verify_token
-from .middleware.governance import enforce_write_policy
-from .settings_governance import (
+from api.middleware.governance import enforce_write_policy
+from api.settings_governance import (
     SettingsAuditEntry,
     SettingsGovernanceService,
     SettingsResponse,
@@ -23,6 +22,8 @@ from .settings_governance import (
     SettingsWriteRequest,
 )
 from contracts.api_response_schema import ApiResponse
+
+from .middleware.auth import verify_token
 
 router = APIRouter(
     prefix="/api/v1/settings",
