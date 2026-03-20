@@ -44,7 +44,16 @@ function _isProtectedDeployment() {
 }
 
 function _normalizeWsBase(value) {
-  return (value || "").trim().replace(/\/+$/, "").replace(/\/ws$/, "");
+  const raw = (value || "").trim().replace(/\/+$/, "");
+  if (!raw) return "";
+  try {
+    const u = new URL(raw);
+    // Extract bare origin — strip any path (/ws, /api, etc.)
+    return `${u.protocol}//${u.host}`;
+  } catch {
+    // Not a valid URL yet — strip known suffixes for best effort
+    return raw.replace(/\/ws$/i, "");
+  }
 }
 
 function _validateWsBase(wsBase, { protectedDeploy, explicitlyConfigured }) {
@@ -76,7 +85,7 @@ function _validateWsBase(wsBase, { protectedDeploy, explicitlyConfigured }) {
 
   if (parsed.pathname && parsed.pathname !== "/") {
     throw new Error(
-      "[next.config] NEXT_PUBLIC_WS_BASE_URL must be a bare origin (no path, no /ws suffix)."
+      `[next.config] NEXT_PUBLIC_WS_BASE_URL must be a bare origin (no path, no /ws suffix). Got: '${wsBase}' (pathname='${parsed.pathname}').`
     );
   }
 
@@ -132,7 +141,7 @@ const resolvedBase = rawApiBase || "http://localhost:8000";
 const apiBase = resolvedBase.replace(/\/+$/, "").replace(/\/api$/, "");
 
 const configuredWsBase = _normalizeWsBase(process.env.NEXT_PUBLIC_WS_BASE_URL || "");
-const wsBase = configuredWsBase || apiBase.replace(/^https:\/\//, "wss://").replace(/^http:\/\//, "ws://");
+const wsBase = configuredWsBase || _normalizeWsBase(apiBase.replace(/^https:\/\//, "wss://").replace(/^http:\/\//, "ws://"));
 
 _validateWsBase(wsBase, {
   protectedDeploy: isProtectedDeployment,
