@@ -8,7 +8,17 @@ Authority: Layer-12 is the SOLE CONSTITUTIONAL AUTHORITY.
 
 from __future__ import annotations
 
+import os
 from typing import Any
+
+# Mapping from L1 volatility_level labels to THRESHOLD_TABLE regime keys
+_VOL_LEVEL_TO_REGIME: dict[str, str] = {
+    "EXTREME": "HIGH_VOL",
+    "HIGH": "HIGH_VOL",
+    "NORMAL": "NORMAL_VOL",
+    "LOW": "LOW_VOL",
+    "DEAD": "LOW_VOL",
+}
 
 
 def build_l12_synthesis(
@@ -80,10 +90,17 @@ def build_l12_synthesis(
     conf12 = layer_results.get("L2", {}).get("conf12", (tii_sym + integrity) / 2.0)
     current_drawdown = layer_results.get("L5", {}).get("current_drawdown", 0.0)
     prop_compliant = layer_results.get("L6", {}).get("propfirm_compliant", True)
+    # If propfirm checks are disabled, force compliant=True
+    if os.getenv("PROPFIRM_MODE") == "disabled":
+        prop_compliant = True
     psychology_score = layer_results.get("L5", {}).get("psychology_score", 0)
     eaf_score = layer_results.get("L5", {}).get("eaf_score", 0.0)
 
     vix_regime_state = layer_results.get("macro_vix_state", {}).get("regime_state", 1)
+
+    # Derive volatility regime from L1's volatility_level (ATR-based)
+    l1_vol_level = str(layer_results.get("L1", {}).get("volatility_level", "NORMAL")).upper()
+    volatility_regime = _VOL_LEVEL_TO_REGIME.get(l1_vol_level, "NORMAL_VOL")
 
     synthesis = {
         "pair": symbol,
@@ -205,6 +222,7 @@ def build_l12_synthesis(
             "regime_state": vix_regime_state,
             "risk_multiplier": layer_results.get("macro_vix_state", {}).get("risk_multiplier", 1.0),
         },
+        "volatility_regime": volatility_regime,
         "system": {
             "latency_ms": 0.0,
             "safe_mode": False,

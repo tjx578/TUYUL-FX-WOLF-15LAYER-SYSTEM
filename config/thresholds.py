@@ -13,7 +13,7 @@ THRESHOLD_TABLE: dict[str, dict[str, float]] = {
         "posterior": 0.65,
         "rr": 2.0,
         "risk_mult": 0.8,
-        "conf12": 0.75,
+        "conf12": 0.78,
     },
     "NORMAL_VOL": {
         "tii": 0.90,
@@ -24,7 +24,7 @@ THRESHOLD_TABLE: dict[str, dict[str, float]] = {
         "posterior": 0.62,
         "rr": 2.0,
         "risk_mult": 1.0,
-        "conf12": 0.75,
+        "conf12": 0.72,
     },
     "HIGH_VOL": {
         "tii": 0.88,
@@ -35,9 +35,10 @@ THRESHOLD_TABLE: dict[str, dict[str, float]] = {
         "posterior": 0.60,
         "rr": 2.2,
         "risk_mult": 1.1,
-        "conf12": 0.75,
+        "conf12": 0.65,
     },
 }
+
 
 def get_thresholds(regime: REGIME_TYPE) -> dict[str, float]:
     return THRESHOLD_TABLE[regime]

@@ -22,10 +22,10 @@ def _make_synthesis(
     synth = {
         "pair": "XAUUSD",
         "layers": {
-            "L8_tii_sym": 0.80,
-            "L8_integrity_index": 0.85,
+            "L8_tii_sym": 0.95,
+            "L8_integrity_index": 0.98,
             "L7_monte_carlo_win": 0.70,
-            "conf12": 0.80,
+            "conf12": 0.85,
             "enrichment_score": 0.0,
         },
         "scores": {
@@ -33,7 +33,7 @@ def _make_synthesis(
             "wolf_30_point": 25,
         },
         "execution": {
-            "rr_ratio": 2.0,
+            "rr_ratio": 2.5,
         },
         "propfirm": {
             "compliant": True,
