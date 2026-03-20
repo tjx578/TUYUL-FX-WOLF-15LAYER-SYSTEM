@@ -29,6 +29,7 @@ from redis.asyncio import Redis as AsyncRedis
 
 from config_loader import CONFIG, get_enabled_symbols
 from core.health_probe import HealthProbe
+from core.startup_validator import validate_engine_startup_async
 from infrastructure.tracing import (
     instrument_asyncio,
     instrument_httpx,
@@ -233,6 +234,12 @@ async def main() -> None:
     logger.info("=" * 60)
     logger.info("WOLF 15-LAYER TRADING SYSTEM")
     logger.info("=" * 60)
+
+    # ── Startup validation ──────────────────────────────────────────
+    startup_check = await validate_engine_startup_async()
+    if not startup_check.ok:
+        logger.error("Startup validation FAILED — aborting")
+        return
 
     has_api_key = _validate_api_key()
     context_mode = os.getenv("CONTEXT_MODE", "local").lower()

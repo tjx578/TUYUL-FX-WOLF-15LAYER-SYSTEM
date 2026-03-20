@@ -16,7 +16,7 @@ from loguru import logger
 
 from config.logging_bootstrap import configure_loguru_logging
 from core.health_probe import HealthProbe
-from core.redis_keys import ACCOUNT_STATE, ORCHESTRATOR_STATE, TRADE_RISK
+from core.redis_keys import ACCOUNT_STATE, KILL_SWITCH, ORCHESTRATOR_STATE, TRADE_RISK
 from services.orchestrator.compliance_guard import evaluate_compliance
 from services.orchestrator.execution_mode import ExecutionMode
 from state.pubsub_channels import ORCHESTRATOR_COMMANDS
@@ -146,6 +146,35 @@ class StateManager:
         finally:
             self._pubsub = None
 
+    def _sync_kill_switch(self, mode: ExecutionMode) -> None:
+        """Persist kill switch state to Redis so other services can read it."""
+        try:
+            if mode == ExecutionMode.KILL_SWITCH:
+                self._redis.set(
+                    KILL_SWITCH,
+                    json.dumps(
+                        {
+                            "active": True,
+                            "source": ORCHESTRATOR_SOURCE,
+                            "reason": self._state.reason,
+                            "activated_at": _utc_now_iso(),
+                        }
+                    ),
+                )
+            else:
+                self._redis.set(
+                    KILL_SWITCH,
+                    json.dumps(
+                        {
+                            "active": False,
+                            "source": ORCHESTRATOR_SOURCE,
+                            "cleared_at": _utc_now_iso(),
+                        }
+                    ),
+                )
+        except Exception as exc:
+            logger.error("Failed to sync kill switch to Redis: {}", exc)
+
     def publish_state(self, event: str, details: dict[str, Any] | None = None) -> None:
         payload: dict[str, Any] = {
             "source": ORCHESTRATOR_SOURCE,
@@ -188,11 +217,13 @@ class StateManager:
         if command in {"SET_MODE", "MODE_SET"}:
             raw_mode = str(payload.get("mode", "")).upper()
             if raw_mode in ExecutionMode.__members__:
+                new_mode = ExecutionMode[raw_mode]
                 self.set_mode(
-                    ExecutionMode[raw_mode],
+                    new_mode,
                     reason=str(payload.get("reason") or "command"),
                     compliance_code="EXTERNAL_COMMAND",
                 )
+                self._sync_kill_switch(new_mode)
                 self.publish_state("MODE_CHANGED", {"origin": "command"})
 
     def _poll_channel(self) -> None:
@@ -239,6 +270,8 @@ class StateManager:
                 result.code,
                 result.severity,
             )
+            # Persist kill switch state to Redis so other services can read it
+            self._sync_kill_switch(target_mode)
             self.publish_state(
                 "MODE_CHANGED",
                 {
