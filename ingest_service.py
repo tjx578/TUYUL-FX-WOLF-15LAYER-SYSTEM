@@ -66,8 +66,8 @@ _CACHE_MODES = ("unknown", "warmup", "stale_cache", "failed_no_cache")
 # Falls back to WOLF15_CB_* generic defaults when WOLF15_INGEST_CB_* are absent.
 _warmup_circuit = CircuitBreaker(
     name="ingest_warmup",
-    failure_threshold=int(os.getenv("WOLF15_INGEST_CB_FAILURE_THRESHOLD", "3")),
-    recovery_timeout=float(os.getenv("WOLF15_INGEST_CB_RECOVERY_TIMEOUT", "120")),
+    failure_threshold=int(os.getenv("WOLF15_INGEST_CB_FAILURE_THRESHOLD", "10")),
+    recovery_timeout=float(os.getenv("WOLF15_INGEST_CB_RECOVERY_TIMEOUT", "90")),
     half_open_success_threshold=int(os.getenv("WOLF15_INGEST_CB_HALF_OPEN_ATTEMPTS", "1")),
 )
 
@@ -127,21 +127,42 @@ def _is_duplicate_pair_tick(symbol: str, price: float, ts: float) -> bool:
     return False
 
 
-def _ingest_readiness() -> bool:
-    """Readiness gate.
+_WS_CONNECT_GRACE_SEC = float(os.getenv("INGEST_WS_CONNECT_GRACE_SEC", "45"))
 
-    Returns ``True`` only when:
+
+def _ingest_readiness() -> bool:
+    """Readiness gate with grace period for freshly-connected WS.
+
+    Returns ``True`` when:
     - (a) startup state is ready/degraded;
     - (b) producer heartbeat is fresh;
-    - (c) producer is present; and
-    - (d) at least one tracked pair still has a fresh tick.
-
-    This prevents false-positive readiness during stale-cache-only scenarios.
+    - (c) at least one tracked pair has a fresh tick **OR** WS just
+      connected and is still within the grace window (waiting for
+      first tick — avoids DEGRADED-STALE loop).
     """
     base_ready = _ingest_ready or _ingest_degraded
+    if not base_ready:
+        return False
+
     producer_ready = _producer_present and _producer_fresh()
+    if not producer_ready:
+        return False
+
     pairs_ready = _fresh_pair_count() > 0
-    return base_ready and producer_ready and pairs_ready
+    if pairs_ready:
+        return True
+
+    # ── Grace period: WS baru connect, tunggu tick pertama ────────
+    if _producer_last_heartbeat_ts > 0:
+        ws_age = time() - _producer_last_heartbeat_ts
+        if ws_age <= _WS_CONNECT_GRACE_SEC:
+            logger.debug(
+                "[Readiness] WS fresh (age=%.1fs) — grace window active, " "menunggu tick pertama masuk",
+                ws_age,
+            )
+            return True
+
+    return False
 
 
 _health_probe.set_readiness_check(_ingest_readiness)

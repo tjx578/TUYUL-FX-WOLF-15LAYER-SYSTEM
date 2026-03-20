@@ -47,6 +47,7 @@ _COOLDOWN_SEC: int = int(os.getenv("FINNHUB_KEY_COOLDOWN_SEC", str(_DEFAULT_COOL
 @dataclass
 class _KeyState:
     """Per-key health tracking."""
+
     key: str
     failures: int = 0
     last_failure_time: float = 0.0
@@ -147,6 +148,15 @@ class FinnhubKeyManager:
                 if rotated:
                     return self._keys[self._active_index].key
 
+            # Single-key mode: warn when key is in cooldown (no alternative).
+            if state.suspended and len(self._keys) == 1:
+                remaining = max(0.0, state.suspend_until - now)
+                if remaining > 0:
+                    logger.warning(
+                        "[FINNHUB-KEY] Single key sedang cooldown (%.0fs sisa) — " "request berikutnya mungkin 429",
+                        remaining,
+                    )
+
             return state.key
 
     def report_failure(self, key: str, status_code: int) -> None:
@@ -183,8 +193,7 @@ class FinnhubKeyManager:
             state.suspend_until = now + cooldown
 
             logger.warning(
-                "[FINNHUB-KEY] Key #%d %s (total failures: %d). "
-                "Suspended for %ds.",
+                "[FINNHUB-KEY] Key #%d %s (total failures: %d). " "Suspended for %ds.",
                 idx,
                 reason,
                 state.failures,
@@ -227,14 +236,16 @@ class FinnhubKeyManager:
         result: list[dict[str, Any]] = []
         with self._lock:
             for i, ks in enumerate(self._keys):
-                result.append({
-                    "index": i,
-                    "active": i == self._active_index,
-                    "masked_key": ks.key[:4] + "****" + ks.key[-4:] if len(ks.key) > 8 else "****",
-                    "failures": ks.failures,
-                    "suspended": ks.suspended,
-                    "cooldown_remaining_sec": max(0, round(ks.suspend_until - now, 1)) if ks.suspended else 0,
-                })
+                result.append(
+                    {
+                        "index": i,
+                        "active": i == self._active_index,
+                        "masked_key": ks.key[:4] + "****" + ks.key[-4:] if len(ks.key) > 8 else "****",
+                        "failures": ks.failures,
+                        "suspended": ks.suspended,
+                        "cooldown_remaining_sec": max(0, round(ks.suspend_until - now, 1)) if ks.suspended else 0,
+                    }
+                )
         return result
 
     # ── Internal ───────────────────────────────────────────────────
