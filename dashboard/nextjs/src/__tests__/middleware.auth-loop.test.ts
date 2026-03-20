@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { NextRequest, NextResponse } from "next/server";
-import { middleware } from "../../middleware";
+import { middleware } from "../middleware";
 
 function makeRequest(
     path: string,

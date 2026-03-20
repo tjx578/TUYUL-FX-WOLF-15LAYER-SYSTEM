@@ -20,10 +20,12 @@ Environment variables:
 from __future__ import annotations
 
 import os
+import re
 import threading
 import time
 from collections import defaultdict
 from dataclasses import dataclass, field
+from urllib.parse import parse_qs
 
 from fastapi import Request, Response
 from fastapi.responses import JSONResponse
@@ -36,6 +38,8 @@ from starlette.types import ASGIApp
 from typing_extensions import override
 
 from infrastructure.redis_client import get_client
+
+from .auth import decode_token, validate_api_key
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -111,13 +115,13 @@ EXEMPT_PATHS: set[str] = {"/", "/health", "/healthz", "/health/full", "/docs", "
 
 @dataclass
 class _ClientWindow:
-    """Sliding-window timestamps for a single client IP."""
+    """Sliding-window timestamps for a single key."""
 
     timestamps: list[float] = field(default_factory=lambda: [])
 
 
 class SlidingWindowStore:
-    """Thread-safe per-IP sliding-window store."""
+    """Thread-safe sliding-window store keyed by a caller-provided identity."""
 
     def __init__(self, window_sec: int = 60) -> None:
         super().__init__()
@@ -126,7 +130,7 @@ class SlidingWindowStore:
         self._clients: dict[str, _ClientWindow] = defaultdict(_ClientWindow)
         self._last_cleanup = time.monotonic()
 
-    def hit(self, client_ip: str) -> int:
+    def hit(self, identity_key: str) -> int:
         """
         Record a request and return the count within the current window.
 
@@ -136,7 +140,7 @@ class SlidingWindowStore:
         now = time.monotonic()
 
         with self._lock:
-            window = self._clients[client_ip]
+            window = self._clients[identity_key]
             cutoff = now - self._window
 
             # Prune expired timestamps
@@ -154,11 +158,11 @@ class SlidingWindowStore:
 
         return count
 
-    def get_count(self, client_ip: str) -> int:
+    def get_count(self, identity_key: str) -> int:
         """Peek at the current window count without recording a hit."""
         now = time.monotonic()
         with self._lock:
-            window = self._clients.get(client_ip)
+            window = self._clients.get(identity_key)
             if not window:
                 return 0
             cutoff = now - self._window
@@ -237,6 +241,163 @@ def _is_websocket(request: Request) -> bool:
     return upgrade == "websocket"
 
 
+_SAFE_KEY_RE = re.compile(r"[^a-zA-Z0-9_.:@=-]+")
+
+
+def _safe_key_part(value: str | None, *, default: str = "na", max_len: int = 80) -> str:
+    raw = (value or "").strip().lower()
+    if not raw:
+        return default
+    cleaned = _SAFE_KEY_RE.sub("_", raw)
+    return cleaned[:max_len] if cleaned else default
+
+
+def _extract_token_from_request(request: Request) -> str | None:
+    authorization = request.headers.get("authorization", "")
+    scheme, _, token = authorization.partition(" ")
+    if scheme.lower() == "bearer" and token.strip():
+        return token.strip()
+
+    if _is_websocket(request):
+        q = parse_qs(request.url.query or "", keep_blank_values=False)
+        ws_token = (q.get("token") or [""])[0].strip()
+        if ws_token:
+            return ws_token
+    return None
+
+
+def _resolve_actor_key(request: Request) -> str | None:
+    token = _extract_token_from_request(request)
+    if token:
+        payload = decode_token(token)
+        if payload is not None:
+            subject = _safe_key_part(str(payload.get("sub") or "unknown"), default="unknown")
+            return f"jwt:{subject}"
+        if validate_api_key(token):
+            return "api_key:api_key_user"
+    return None
+
+
+def _extract_path_account(path: str) -> str | None:
+    path_clean = (path or "").strip("/")
+    parts = [p for p in path_clean.split("/") if p]
+    for idx, part in enumerate(parts):
+        if part.lower() == "accounts" and (idx + 1) < len(parts):
+            nxt = parts[idx + 1]
+            if nxt and nxt.lower() not in {"take", "risk-snapshot", "capital-deployment"}:
+                return nxt
+    return None
+
+
+def _extract_query_value(request: Request, *names: str) -> str | None:
+    for name in names:
+        val = request.query_params.get(name)
+        if val and str(val).strip():
+            return str(val).strip()
+    return None
+
+
+async def _extract_json_payload(request: Request) -> dict[str, object] | None:
+    cached = getattr(request.state, "_rate_limit_json", None)
+    if isinstance(cached, dict):
+        return cached
+
+    content_type = request.headers.get("content-type", "").lower()
+    if "application/json" not in content_type:
+        return None
+
+    try:
+        body = await request.body()
+    except Exception:
+        return None
+    if not body:
+        return None
+
+    try:
+        import json
+
+        payload = json.loads(body)
+    except Exception:
+        return None
+
+    if isinstance(payload, dict):
+        request.state._rate_limit_json = payload
+        return payload
+    return None
+
+
+async def _extract_account_and_ea_keys(request: Request) -> tuple[str | None, str | None]:
+    account = _extract_query_value(request, "account_id", "account", "accountId") or _extract_path_account(
+        request.url.path
+    )
+    ea = _extract_query_value(
+        request,
+        "ea_instance_id",
+        "ea_instance",
+        "ea_id",
+        "agent_id",
+        "instance_id",
+    )
+
+    if account and ea:
+        return account, ea
+
+    header_account = request.headers.get("x-account-id")
+    if not account and header_account and header_account.strip():
+        account = header_account.strip()
+
+    header_ea = request.headers.get("x-ea-instance-id") or request.headers.get("x-agent-id")
+    if not ea and header_ea and header_ea.strip():
+        ea = header_ea.strip()
+
+    if request.method.upper() not in {"POST", "PUT", "PATCH", "DELETE"}:
+        return account, ea
+
+    payload = await _extract_json_payload(request)
+    if payload is None:
+        return account, ea
+
+    if not account:
+        for key in ("account_id", "account", "accountId"):
+            raw = payload.get(key)
+            if isinstance(raw, str) and raw.strip():
+                account = raw.strip()
+                break
+
+    if not ea:
+        for key in ("ea_instance_id", "ea_instance", "ea_id", "agent_id", "instance_id"):
+            raw = payload.get(key)
+            if isinstance(raw, str) and raw.strip():
+                ea = raw.strip()
+                break
+
+    return account, ea
+
+
+async def _identity_for_bucket(request: Request, bucket: str, client_ip: str) -> str:
+    actor = _resolve_actor_key(request)
+    account, ea_instance = await _extract_account_and_ea_keys(request)
+
+    actor_part = _safe_key_part(actor, default="anon")
+    ip_part = _safe_key_part(client_ip, default="unknown")
+    account_part = _safe_key_part(account, default="none")
+    ea_part = _safe_key_part(ea_instance, default="none")
+
+    if bucket in {"take", "trade_write"}:
+        return f"a={actor_part}|acct={account_part}|ea={ea_part}"
+    if bucket in {"account_write", "risk_calc"}:
+        return f"a={actor_part}|acct={account_part}"
+    if bucket == "ea_control":
+        return f"a={actor_part}|ea={ea_part}"
+    if bucket in {"admin", "config_write"}:
+        return f"a={actor_part}"
+    if bucket in {"ws", "ws_connect"}:
+        return f"a={actor_part}|ip={ip_part}"
+    if actor:
+        return f"a={actor_part}"
+    return f"ip={ip_part}"
+
+
 async def _redis_window_hit(key: str, ttl_sec: int = 60) -> int | None:
     """Atomic Redis INCR + EXPIRE for distributed rate limiting.
 
@@ -272,17 +433,17 @@ async def _redis_window_hit(key: str, ttl_sec: int = 60) -> int | None:
 
 async def _check_bucket(
     bucket: str,
-    client_ip: str,
+    identity_key: str,
     limit: int,
     fallback_store: SlidingWindowStore,
 ) -> tuple[bool, int]:
     slot = int(time.time() // 60)
-    key = f"{RATE_LIMIT_REDIS_PREFIX}{bucket}:{client_ip}:{slot}"
+    key = f"{RATE_LIMIT_REDIS_PREFIX}{bucket}:{identity_key}:{slot}"
     redis_count = await _redis_window_hit(key)
     if redis_count is not None:
         return redis_count <= limit, redis_count
 
-    count = fallback_store.hit(client_ip)
+    count = fallback_store.hit(identity_key)
     return count <= limit, count
 
 
@@ -298,7 +459,12 @@ def _path_bucket(path: str, method: str, is_ws_upgrade: bool) -> tuple[str, int,
             return ("ea_control", EA_CONTROL_PER_MIN, _ea_control_store)
 
         # ── Trade take (original bucket) ──
-        if "/trades/take" in lowered or "/signals/take" in lowered or ("/accounts/" in lowered and "/take" in lowered):
+        if (
+            "/trades/take" in lowered
+            or "/signals/take" in lowered
+            or "/execution/take-signal" in lowered
+            or ("/accounts/" in lowered and "/take" in lowered)
+        ):
             return ("take", TAKE_PER_MIN, _take_store)
 
         # ── Trade lifecycle (confirm / close / skip) ──
@@ -368,12 +534,13 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         bucket = _path_bucket(path, request.method.upper(), _is_websocket(request))
         if bucket is not None:
             bucket_name, bucket_limit, fallback_store = bucket
-            allowed, count = await _check_bucket(bucket_name, ip, bucket_limit, fallback_store)
+            identity_key = await _identity_for_bucket(request, bucket_name, ip)
+            allowed, count = await _check_bucket(bucket_name, identity_key, bucket_limit, fallback_store)
             if not allowed:
                 logger.warning(
-                    "Rate limit exceeded: bucket=%s ip=%s (%d/%d per min)",
+                    "Rate limit exceeded: bucket=%s key=%s (%d/%d per min)",
                     bucket_name,
-                    ip,
+                    identity_key,
                     count,
                     bucket_limit,
                 )
@@ -389,9 +556,10 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
         # WebSocket upgrade request
         if _is_websocket(request):
-            allowed, count = await _check_bucket("ws", ip, WS_PER_MIN, self.ws_store)
+            ws_identity = await _identity_for_bucket(request, "ws", ip)
+            allowed, count = await _check_bucket("ws", ws_identity, WS_PER_MIN, self.ws_store)
             if not allowed:
-                logger.warning(f"WS rate limit exceeded: {ip} ({count}/{WS_PER_MIN} per min)")
+                logger.warning("WS rate limit exceeded: key=%s (%d/%d per min)", ws_identity, count, WS_PER_MIN)
                 return JSONResponse(
                     status_code=429,
                     content={
@@ -404,10 +572,11 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
         # Regular HTTP request
         limit = REQUESTS_PER_MIN + BURST
-        allowed, count = await _check_bucket("http", ip, limit, self.http_store)
+        http_identity = await _identity_for_bucket(request, "http", ip)
+        allowed, count = await _check_bucket("http", http_identity, limit, self.http_store)
 
         if not allowed:
-            logger.warning(f"HTTP rate limit exceeded: {ip} ({count}/{limit} per min)")
+            logger.warning("HTTP rate limit exceeded: key=%s (%d/%d per min)", http_identity, count, limit)
             return JSONResponse(
                 status_code=429,
                 content={

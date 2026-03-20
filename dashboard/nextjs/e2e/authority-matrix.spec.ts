@@ -5,7 +5,7 @@ import { mockAuthority } from "./mocks";
 const cases = [
   { role: "operator", allowed: true, reason: "OK" },
   { role: "viewer", allowed: false, reason: "DENY" },
-];
+] as const;
 
 for (const c of cases) {
   test(`authority matrix role=${c.role} allowed=${c.allowed}`, async ({ page, seedRole }) => {

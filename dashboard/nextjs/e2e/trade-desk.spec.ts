@@ -156,7 +156,7 @@ async function mockCloseApi(page: Page) {
 
 test.describe("Trade Desk", () => {
     test.beforeEach(async ({ page, seedRole }) => {
-        await seedRole("trader");
+        await seedRole("operator");
         await mockDeskApi(page);
         await mockDetailApi(page);
         await mockConfirmApi(page);
