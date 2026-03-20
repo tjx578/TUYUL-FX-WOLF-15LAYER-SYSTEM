@@ -72,7 +72,7 @@ class TestDataQualityGate:
     def test_h1_not_stale_within_two_candles(self) -> None:
         gate = DataQualityGate()
         candles = [_make_candle() for _ in range(50)]
-        # H1 default stale threshold = max(300s, 2 * 3600s) = 7200s
+        # H1 default stale threshold = max(300s, 3 * 3600s) = 10800s
         old_ts = time.time() - 3900.0
         report = gate.assess("EURUSD", "H1", candles, last_update_ts=old_ts)
         assert report.degraded is False

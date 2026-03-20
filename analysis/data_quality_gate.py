@@ -66,7 +66,7 @@ class DataQualityConfig:
     min_tick_count: int = 3  # candles with <3 ticks are suspect
     max_low_tick_ratio: float = 0.15  # >15% low-tick candles = degraded
     stale_threshold_seconds: float = 300.0  # loaded from stale_threshold_seconds() by default loader
-    stale_candle_multiplier: float = 2.0  # allow up to N candle periods before stale
+    stale_candle_multiplier: float = 3.0  # allow up to N candle periods before stale
     gap_penalty_per_pct: float = 0.5  # penalty per 1% gap ratio (max 0.3)
     low_tick_penalty_per_pct: float = 0.3
     stale_penalty: float = 0.15
