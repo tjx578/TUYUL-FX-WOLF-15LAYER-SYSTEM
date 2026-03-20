@@ -73,6 +73,7 @@ export async function swrFetcher<T = unknown>(url: string): Promise<T> {
     }
 
     const error = new HttpError(
+    const err = new HttpError(
       `Request failed: ${res.status} ${res.statusText}`,
       res.status,
       info
@@ -87,6 +88,10 @@ export async function swrFetcher<T = unknown>(url: string): Promise<T> {
               Math.max(0, new Date(retryAfterHeader).getTime() - Date.now())
             : // delay-seconds integer
               Number(retryAfterHeader) * 1000)
+          ? // HTTP-date format
+          Math.max(0, new Date(retryAfterHeader).getTime() - Date.now())
+          : // seconds integer
+          Number(retryAfterHeader) * 1000)
         : 60_000; // default 60s back-off when header absent
 
       if (process.env.NODE_ENV === "development") {
@@ -95,6 +100,7 @@ export async function swrFetcher<T = unknown>(url: string): Promise<T> {
     }
 
     throw error;
+    throw err;
   }
 
   return res.json() as Promise<T>;
