@@ -15,10 +15,13 @@ import { bearerHeader } from "@/lib/auth";
 /**
  * Typed fetch error — carries HTTP status so callers (SWR retry, diagnostic panels)
  * can distinguish auth failures (401/403) from network errors.
+ * `retryAfterMs` is populated for 429 responses from the `Retry-After` header.
  */
 export class HttpError extends Error {
   status?: number;
   info?: unknown;
+  /** Milliseconds the client should wait before retrying (populated from Retry-After header on 429). */
+  retryAfterMs?: number;
 
   constructor(message: string, status?: number, info?: unknown) {
     super(message);
@@ -70,6 +73,7 @@ export async function swrFetcher<T = unknown>(url: string): Promise<T> {
     }
 
     const err = new HttpError(
+    const error = new HttpError(
       `Request failed: ${res.status} ${res.statusText}`,
       res.status,
       info
@@ -93,6 +97,28 @@ export async function swrFetcher<T = unknown>(url: string): Promise<T> {
     }
 
     throw err;
+    if (res.status === 429) {
+      const retryAfter = res.headers.get("Retry-After");
+      if (retryAfter) {
+        // Retry-After can be a delay-seconds integer or an HTTP-date string (RFC 7231)
+        const parsed = parseInt(retryAfter, 10);
+        error.retryAfterMs = !isNaN(parsed)
+          ? parsed * 1000
+          : Math.max(0, new Date(retryAfter).getTime() - Date.now());
+      } else {
+        error.retryAfterMs = 60_000; // default: 60s when no header is present
+      }
+    }
+
+    // Attach Retry-After so callers (React Query, SWR) can respect the cooldown
+    if (res.status === 429) {
+      const retryAfter = res.headers.get("Retry-After");
+      error.retryAfterMs = retryAfter
+        ? parseInt(retryAfter, 10) * 1000
+        : 60_000;
+    }
+
+    throw error;
   }
 
   return res.json() as Promise<T>;

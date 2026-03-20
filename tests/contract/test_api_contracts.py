@@ -31,7 +31,7 @@ import pytest
 
 pytest.importorskip("httpx")
 
-from fastapi.testclient import TestClient
+from fastapi.testclient import TestClient  # noqa: E402
 
 # ── App factory + auth override ────────────────────────────────────────────────
 
@@ -128,7 +128,28 @@ class TestContextContract:
         if resp.status_code == 204:
             return  # no content is valid
         data: Any = resp.json()
-        assert isinstance(data, (dict, list)), f"Expected dict or list, got {type(data).__name__}"
+        assert isinstance(data, dict | list), f"Expected dict or list, got {type(data).__name__}"
+
+    def test_staleness_is_json_safe(self, client: Any) -> None:
+        """feed_staleness_seconds must be null or finite — never Infinity/NaN.
+
+        Regression: float('inf') from _feed_freshness_snapshot() caused
+        ``json.dumps(..., allow_nan=False)`` in Starlette's JSONResponse
+        to raise ValueError, returning 500 to the dashboard.
+        """
+        import math
+
+        resp = client.get("/api/v1/context")
+        if resp.status_code == 204:
+            return
+        assert resp.status_code in (200, 404), f"Unexpected {resp.status_code}: {resp.text[:200]}"
+        if resp.status_code == 404:
+            return
+        data = resp.json()
+        staleness = data.get("feed_staleness_seconds")
+        assert staleness is None or (
+            isinstance(staleness, int | float) and math.isfinite(staleness)
+        ), f"feed_staleness_seconds must be null or finite, got {staleness!r}"
 
 
 # ── /api/v1/verdict/all ────────────────────────────────────────────────────────
@@ -153,7 +174,7 @@ class TestVerdictAllContract:
 
     def test_is_list_or_dict(self, client: Any) -> None:
         data: Any = client.get("/api/v1/verdict/all").json()
-        assert isinstance(data, (list, dict)), f"Expected list or dict of verdicts, got {type(data).__name__}"
+        assert isinstance(data, list | dict), f"Expected list or dict of verdicts, got {type(data).__name__}"
 
     def test_verdict_item_required_fields(self, client: Any) -> None:
         """Each item must contain the three required FE fields."""
@@ -175,7 +196,7 @@ class TestVerdictAllContract:
             pytest.skip("No verdicts")
         for item in items[:5]:
             assert isinstance(
-                item["confidence"], (int, float)
+                item["confidence"], int | float
             ), f"confidence must be numeric, got {type(item['confidence'])}"
 
     def test_verdict_string_values(self, client: Any) -> None:
@@ -218,7 +239,7 @@ class TestAccountsContract:
     def test_is_list_or_wrapped(self, client: Any) -> None:
         data: Any = client.get("/api/v1/accounts").json()
         # Backend may return [] or {"accounts": [...]}
-        assert isinstance(data, (list, dict)), type(data).__name__
+        assert isinstance(data, list | dict), type(data).__name__
 
     def test_account_item_fields(self, client: Any) -> None:
         raw: Any = client.get("/api/v1/accounts").json()

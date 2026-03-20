@@ -149,6 +149,10 @@ export function connectLiveUpdates(
   let connectAborted = false;
   // 429 rate-limit guard: timestamp when we should next allow a reconnect.
   let rateLimitedUntilMs = 0;
+  // [BUG FIX #10] Minimum interval between connect attempts to prevent
+  // fetchWsTicket() from exceeding backend WS_CONNECT_PER_MIN rate limit.
+  let lastConnectAttemptAt = 0;
+  const MIN_RECONNECT_INTERVAL_MS = 5000;
 
   // Monotonic sequence tracking for gap detection
   let lastSeq = 0;
@@ -213,6 +217,14 @@ export function connectLiveUpdates(
       reconnectTimer = setTimeout(connect, delay);
       return;
     }
+    // [BUG FIX #10] Throttle connect attempts to stay within rate limits
+    const now = Date.now();
+    const elapsed = now - lastConnectAttemptAt;
+    if (elapsed < MIN_RECONNECT_INTERVAL_MS) {
+      await new Promise(r => setTimeout(r, MIN_RECONNECT_INTERVAL_MS - elapsed));
+      if (intentionallyClosed || connectAborted) return;
+    }
+    lastConnectAttemptAt = Date.now();
 
     connectAborted = false;
     emitStatus(reconnectAttempt === 0 ? "CONNECTING" : "RECONNECTING");

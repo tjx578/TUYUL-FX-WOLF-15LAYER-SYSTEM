@@ -36,6 +36,9 @@ import { useSessionStore } from "@/store/useSessionStore";
 // Use relative paths — Next.js rewrites proxy /api/* to the backend.
 const API_BASE = "";
 
+// Global 429 cooldown — prevents all hooks from hammering a rate-limited backend.
+let _rateLimitedUntil = 0;
+
 export const API_ENDPOINTS = {
   health: "/health",
   orchestratorState: "/api/v1/orchestrator/state",
@@ -81,6 +84,11 @@ const fetcher = async (url: string) => {
     throw new HttpError("Session expired", 401);
   }
 
+  // Bail if we're inside a 429 cooldown window — avoids hammering a rate-limited backend
+  if (_rateLimitedUntil > Date.now()) {
+    throw new HttpError("Rate limited — waiting for cooldown", 429);
+  }
+
   const auth = bearerHeader();
   const res = await fetch(`${API_BASE}${url}`, {
     credentials: "include",
@@ -88,6 +96,12 @@ const fetcher = async (url: string) => {
       ...(auth ? { Authorization: auth } : {}),
     },
   });
+
+  if (res.status === 429) {
+    const retryAfter = res.headers.get("Retry-After");
+    _rateLimitedUntil = Date.now() + (retryAfter ? parseInt(retryAfter, 10) * 1000 : 60_000);
+    throw new HttpError("Rate limited", 429);
+  }
 
   if (!res.ok) {
     let info: unknown = null;
