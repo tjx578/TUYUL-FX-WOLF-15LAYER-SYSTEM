@@ -390,7 +390,11 @@ class TestConnect:
         """Successful connect resets attempt counter to 0."""
         ws_client._attempt = 5
         mock_ws = AsyncMock()
-        with patch("ingest.finnhub_ws.websockets.connect", new_callable=AsyncMock, return_value=mock_ws):
+
+        async def _fake_connect(*args, **kwargs):
+            return mock_ws
+
+        with patch("ingest.finnhub_ws._ws_connect", _fake_connect):
             result = await ws_client._connect()
         assert result is mock_ws
         assert ws_client._attempt == 0
@@ -399,7 +403,7 @@ class TestConnect:
     async def test_connect_429_raises_rate_limit_error(self, ws_client: FinnhubWebSocket) -> None:
         """HTTP 429 should raise FinnhubRateLimitError with computed retry_after."""
         exc = _FakeInvalidStatusCodeError(429)
-        with patch("ingest.finnhub_ws.websockets.connect", new_callable=AsyncMock, side_effect=exc):
+        with patch("ingest.finnhub_ws._ws_connect", side_effect=exc):
             with pytest.raises(FinnhubRateLimitError) as exc_info:
                 await ws_client._connect()
             assert exc_info.value.retry_after > 0
@@ -408,7 +412,7 @@ class TestConnect:
     async def test_connect_non_429_raises_connection_error(self, ws_client: FinnhubWebSocket) -> None:
         """Non-429 HTTP status raises FinnhubConnectionError."""
         exc = _FakeInvalidStatusCodeError(503)
-        with patch("ingest.finnhub_ws.websockets.connect", new_callable=AsyncMock, side_effect=exc):  # noqa: SIM117
+        with patch("ingest.finnhub_ws._ws_connect", side_effect=exc):  # noqa: SIM117
             with pytest.raises(FinnhubConnectionError, match="HTTP 503"):
                 await ws_client._connect()
 
@@ -417,8 +421,7 @@ class TestConnect:
         """Arbitrary exceptions are wrapped in FinnhubConnectionError."""
         with (
             patch(
-                "ingest.finnhub_ws.websockets.connect",
-                new_callable=AsyncMock,
+                "ingest.finnhub_ws._ws_connect",
                 side_effect=OSError("network unreachable"),
             ),
             pytest.raises(FinnhubConnectionError, match="network unreachable"),
