@@ -9,47 +9,43 @@ for real-time compliance checks.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from risk.exceptions import PropFirmConfigError
+
 
 def load_prop_firm() -> dict[str, Any]:
-    """Load prop firm configuration from YAML or return defaults.
+    """Load prop firm configuration from YAML.
 
     Looks for ``config/prop_firm.yaml`` relative to the repository root
-    (two levels up from this file).  Falls back to sensible defaults so
-    the module is usable even without the config file.
+    (two levels up from this file).
+
+    Raises
+    ------
+    PropFirmConfigError
+        If the config file is missing, unreadable, or contains invalid YAML.
     """
     config_path = Path(__file__).resolve().parent.parent / "config" / "prop_firm.yaml"
 
-    if config_path.exists():
-        try:
-            import yaml
+    if not config_path.exists():
+        raise PropFirmConfigError(
+            f"Prop firm config not found: {config_path}. " "Risk/compliance requires an explicit configuration file."
+        )
 
-            with open(config_path) as fh:
-                data = yaml.safe_load(fh)
-            if isinstance(data, dict):
-                return data
-        except Exception:  # noqa: BLE001
-            pass  # fall through to defaults
+    try:
+        import yaml
 
-    # Sensible defaults so the guard is always functional
-    return {
-        "allowed_markets": {
-            "forex": True,
-            "commodities": True,
-            "indices": True,
-            "crypto": False,
-        },
-        "risk": {
-            "max_risk_per_trade_percent": 0.01,
-            "min_rr_required": 2.0,
-            "max_daily_loss": 500.0,
-            "max_open_positions": 5,
-            "max_lot_per_trade": 1.0,
-        },
-    }
+        with open(config_path) as fh:
+            data = yaml.safe_load(fh)
+    except Exception as exc:
+        raise PropFirmConfigError(f"Failed to parse prop firm config {config_path}: {exc}") from exc
+
+    if not isinstance(data, dict):
+        raise PropFirmConfigError(f"Prop firm config must be a YAML mapping, got {type(data).__name__}")
+
+    return data
 
 
 @dataclass
@@ -61,15 +57,28 @@ class AccountState:
     daily_loss: float
     open_positions: list[dict]
 
+    @property
+    def position_count(self) -> int:
+        return len(self.open_positions)
+
     @classmethod
     def from_dict(cls, data: dict) -> AccountState:
         """Safe constructor with validation."""
         try:
+            raw_pos = data.get("open_positions", [])
+            # Normalise: callers may pass int (count) or list (actual positions)
+            if isinstance(raw_pos, int):
+                positions: list[dict] = [{} for _ in range(raw_pos)]
+            elif isinstance(raw_pos, list):
+                positions = raw_pos
+            else:
+                positions = []
+
             return cls(
                 balance=float(data.get("balance", 0.0)),
                 equity=float(data.get("equity", 0.0)),
                 daily_loss=float(data.get("daily_loss", 0.0)),
-                open_positions=data.get("open_positions", []),
+                open_positions=positions,
             )
         except (TypeError, ValueError) as e:
             raise ValueError(f"Invalid account state: {e}")  # noqa: B904
@@ -102,14 +111,34 @@ class TradeRisk:
             raise ValueError(f"Invalid trade risk: {e}")  # noqa: B904
 
 
-@dataclass
+@dataclass(frozen=True)
 class GuardResult:
-    """Standard result from a prop-firm guard check."""
+    """Standard result from a prop-firm guard check.
+
+    Immutable dataclass — the canonical return type for all prop-firm
+    guard ``check()`` calls.  Use ``to_dict()`` only at serialisation
+    boundaries (API responses, Redis, journal).
+    """
 
     allowed: bool
     code: str
-    severity: str  # "info" | "warning" | "block"
-    details: dict[str, Any] | None = None
+    severity: str  # "INFO" | "WARNING" | "ERROR"
+    details: str | None = None
+    max_safe_lot: float = 0.0
+    recommended_lot: float = 0.0
+    violations: tuple[str, ...] = field(default_factory=tuple)
+
+    def to_dict(self) -> dict[str, Any]:
+        """Serialise for Redis / API / journal boundaries."""
+        return {
+            "allowed": self.allowed,
+            "code": self.code,
+            "severity": self.severity,
+            "details": self.details,
+            "max_safe_lot": self.max_safe_lot,
+            "recommended_lot": self.recommended_lot,
+            "violations": list(self.violations),
+        }
 
 
 class BasePropFirmGuard(ABC):
@@ -340,7 +369,7 @@ class PropFirmRules:
         # Clamp to max lot per trade
         return min(lot_size, self.max_lot_per_trade)
 
-    def check(self, account_state: dict, trade_risk: dict) -> dict:
+    def check(self, account_state: dict, trade_risk: dict) -> GuardResult:
         """
         Check trade against prop firm rules.
 
@@ -356,16 +385,9 @@ class PropFirmRules:
 
         Returns
         -------
-        dict
-            {
-                allowed: bool,
-                code: str,
-                severity: str,
-                details: str,
-                max_safe_lot: float,
-                recommended_lot: float,
-                violations: list
-            }
+        GuardResult
+            Immutable dataclass with allowed, code, severity, details,
+            max_safe_lot, recommended_lot, violations.
         """
         try:
             # Validate inputs
@@ -377,11 +399,9 @@ class PropFirmRules:
                 code="INVALID_INPUT",
                 severity="ERROR",
                 details=f"Input validation failed: {e}",
-                max_safe_lot=0.0,
-                recommended_lot=0.0,
-            ).to_dict()
+            )
 
-        violations = []
+        violations: list[str] = []
 
         # Validate trade against rules
         trade_result = self.validate_trade(
@@ -393,8 +413,6 @@ class PropFirmRules:
         violations.extend(trade_result["violations"])
 
         # Calculate safe lot size
-        # Note: This requires stop_loss info which may not be in trade_risk yet
-        # For now, use the requested lot and clamp to max
         max_safe_lot = min(t_risk.lot_size, self.max_lot_per_trade)
         recommended_lot = max_safe_lot if trade_result["compliant"] else 0.0
 
@@ -406,8 +424,7 @@ class PropFirmRules:
                 details="Trade compliant with prop firm rules",
                 max_safe_lot=max_safe_lot,
                 recommended_lot=recommended_lot,
-                violations=[],
-            ).to_dict()
+            )
         else:
             return GuardResult(
                 allowed=False,
@@ -416,8 +433,8 @@ class PropFirmRules:
                 details="; ".join(violations),
                 max_safe_lot=max_safe_lot,
                 recommended_lot=0.0,
-                violations=violations,
-            ).to_dict()
+                violations=tuple(violations),
+            )
 
 
 class PropFirmGuard:
@@ -439,7 +456,7 @@ class PropFirmGuard:
         account_state: dict,
         trade_risk: dict,
         signal_verdict: str | None = None,  # For audit only
-    ) -> dict:
+    ) -> GuardResult:
         """
         Validate trade against prop firm rules.
 
@@ -452,14 +469,8 @@ class PropFirmGuard:
             signal_verdict: L12 verdict (for audit only, NOT a bypass key)
 
         Returns:
-            {
-                "allowed": bool,
-                "code": str,
-                "severity": "ERROR" | "WARNING" | "INFO",
-                "details": str | None,
-                "max_safe_lot": float,
-                "recommended_lot": float,
-            }
+            GuardResult — immutable dataclass with allowed, code, severity, details,
+            max_safe_lot, recommended_lot, violations.
         """
         try:
             # Validate inputs using typed models
@@ -471,7 +482,7 @@ class PropFirmGuard:
                 code="INVALID_INPUT",
                 severity="ERROR",
                 details=f"Input validation failed: {e}",
-            ).to_dict()
+            )
 
         # Check 1: Daily loss limit
         if acc_state.daily_loss >= self.profile.max_daily_loss:
@@ -480,7 +491,7 @@ class PropFirmGuard:
                 code="DAILY_LOSS_LIMIT",
                 severity="ERROR",
                 details=f"Daily loss {acc_state.daily_loss:.2f} >= {self.profile.max_daily_loss:.2f}",
-            ).to_dict()
+            )
 
         # Check 2: Max open positions
         if len(acc_state.open_positions) >= self.profile.max_open_positions:
@@ -489,7 +500,7 @@ class PropFirmGuard:
                 code="MAX_POSITIONS",
                 severity="ERROR",
                 details=f"Already at max positions ({self.profile.max_open_positions})",
-            ).to_dict()
+            )
 
         # Check 3: Lot size validation
         if t_risk.lot_size > self.profile.max_lot_per_trade:
@@ -500,12 +511,12 @@ class PropFirmGuard:
                 details=f"Lot {t_risk.lot_size:.2f} > max {self.profile.max_lot_per_trade:.2f}",
                 max_safe_lot=self.profile.max_lot_per_trade,
                 recommended_lot=self.profile.max_lot_per_trade,
-            ).to_dict()
+            )
 
         # Check 4: Comprehensive prop firm rule validation
         prop_check = self.profile.check(account_state, trade_risk)
 
-        if not prop_check["allowed"]:
+        if not prop_check.allowed:
             return prop_check
 
         # All checks passed
@@ -516,4 +527,4 @@ class PropFirmGuard:
             details=f"Trade approved (verdict: {signal_verdict})" if signal_verdict else "Trade approved",
             max_safe_lot=min(t_risk.lot_size, self.profile.max_lot_per_trade),
             recommended_lot=min(t_risk.lot_size, self.profile.max_lot_per_trade),
-        ).to_dict()
+        )

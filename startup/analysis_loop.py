@@ -62,6 +62,26 @@ def _log_pipeline_exception(pair: str, exc: BaseException, *, kind: str) -> None
     state["suppressed"] = int(state["suppressed"]) + 1
 
 
+def _build_degraded_verdict(pair: str, reason: str) -> dict[str, Any]:
+    """Build a minimal HOLD/DEGRADED payload so the dashboard always has data."""
+    return {
+        "symbol": pair,
+        "signal_id": f"DEG-{pair}-{uuid4().hex[:8].upper()}",
+        "verdict": "HOLD",
+        "confidence": 0.0,
+        "wolf_status": "DEGRADED",
+        "direction": "HOLD",
+        "scores": {},
+        "gates": {"passed": 0, "total": 9},
+        "layers": {},
+        "execution": {},
+        "system": {"latency_ms": 0.0, "degraded": True, "degraded_reason": reason},
+        "timestamp": time.time(),
+        "errors": [reason],
+        "last_hold_block_reason": reason,
+    }
+
+
 def _extract_last_hold_block_reason(result: dict[str, Any]) -> str | None:
     governance = result.get("governance")
     if isinstance(governance, dict):
@@ -192,10 +212,18 @@ async def _analyze_pair(
         except TimeoutError as exc:
             span.record_exception(exc)
             _log_pipeline_exception(pair, exc, kind="TIMEOUT")
+            try:
+                set_verdict(pair, _build_degraded_verdict(pair, f"PIPELINE_TIMEOUT:{_PIPELINE_TIMEOUT_SEC}s"))
+            except Exception:
+                logger.warning("[VerdictPath] degraded persist failed | pair={}", pair)
             return None
         except Exception as exc:
             span.record_exception(exc)
             _log_pipeline_exception(pair, exc, kind="ERROR")
+            try:
+                set_verdict(pair, _build_degraded_verdict(pair, f"PIPELINE_ERROR:{type(exc).__name__}"))
+            except Exception:
+                logger.warning("[VerdictPath] degraded persist failed | pair={}", pair)
             return None
 
 
@@ -317,6 +345,15 @@ async def analysis_loop(
         for pair, result in zip(symbols_to_run, results, strict=False):
             if isinstance(result, Exception):
                 logger.error(f"[ERROR] {pair} | {result}")
+                try:
+                    set_verdict(pair, _build_degraded_verdict(pair, f"GATHER_ERROR:{type(result).__name__}"))
+                except Exception:
+                    pass
+                continue
+
+            # Only mark as analyzed when a real result was produced.
+            # Failed pairs (result is None) will be retried next cycle.
+            if result is None:
                 continue
 
             _symbol_last_analysis_ts[pair] = time.time()
