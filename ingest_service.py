@@ -643,6 +643,9 @@ async def run_ingest_services(has_api_key: bool) -> None:
     try:
         redis = await _connect_redis_with_retry()
         system_state = SystemStateManager()
+        # P0-1: Reset state at entry so retries are idempotent even when
+        # main()'s reset() call was suppressed by contextlib.suppress.
+        system_state.reset()
         system_state.set_state(SystemState.WARMING_UP)
 
         warmup_results, redis_has_data, startup_mode = await _bootstrap_cache_and_warmup(
