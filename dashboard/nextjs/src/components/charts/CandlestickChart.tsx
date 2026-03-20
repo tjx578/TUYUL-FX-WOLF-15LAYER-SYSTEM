@@ -13,8 +13,12 @@
  */
 
 import { useEffect, useMemo, useRef } from "react";
-import { createChart, ColorType, type IChartApi, type ISeriesApi, type CandlestickData, type Time } from "lightweight-charts";
+import { createChart, ColorType, CandlestickData, Time } from "lightweight-charts";
 import type { CandleData } from "@/types";
+
+// Infer types from library return values
+type ChartApi = ReturnType<typeof createChart>;
+type CandlestickSeriesApi = ReturnType<ChartApi["addCandlestickSeries"]>;
 
 interface CandlestickChartProps {
   /** Trading pair symbol (e.g. "EURUSD") */
@@ -29,7 +33,7 @@ interface CandlestickChartProps {
   height?: number;
 }
 
-function toChartData(c: CandleData): CandlestickData<Time> {
+function toChartData(c: CandleData): CandlestickData {
   return {
     time: Math.floor(c.timestamp / 1000) as Time,
     open: c.open,
@@ -47,8 +51,8 @@ export function CandlestickChart({
   height = 360,
 }: CandlestickChartProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
-  const chartRef = useRef<IChartApi | null>(null);
-  const seriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
+  const chartRef = useRef<ChartApi | null>(null);
+  const seriesRef = useRef<CandlestickSeriesApi | null>(null);
 
   // Merge history + forming candle
   const merged = useMemo(() => {
