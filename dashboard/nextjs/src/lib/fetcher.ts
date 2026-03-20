@@ -53,6 +53,9 @@ export async function apiFetch(
  * SWR-compatible fetcher (GET + Bearer token).
  * Pass to useSWR as the second argument.
  * Throws HttpError with status code for proper error differentiation.
+ *
+ * 429 handling: throws HttpError with `retryAfterMs` hint so SWR can
+ * honour the Retry-After header instead of hammering the backend again.
  */
 export async function swrFetcher<T = unknown>(url: string): Promise<T> {
   const res = await apiFetch(url);
@@ -68,11 +71,32 @@ export async function swrFetcher<T = unknown>(url: string): Promise<T> {
         info = null;
       }
     }
+
+    const err = new HttpError(
     const error = new HttpError(
       `Request failed: ${res.status} ${res.statusText}`,
       res.status,
       info
     );
+
+    // Attach Retry-After hint for 429 so callers can back off appropriately.
+    if (res.status === 429) {
+      const retryAfterHeader = res.headers.get("Retry-After");
+      const retryAfterMs = retryAfterHeader
+        ? (Number.isNaN(Number(retryAfterHeader))
+            ? // HTTP-date format
+              Math.max(0, new Date(retryAfterHeader).getTime() - Date.now())
+            : // seconds integer
+              Number(retryAfterHeader) * 1000)
+        : 60_000; // default 60s back-off when header absent
+      (err as HttpError & { retryAfterMs: number }).retryAfterMs = retryAfterMs;
+
+      if (process.env.NODE_ENV === "development") {
+        console.warn(`[fetcher] 429 on ${url}. Back-off ${Math.round(retryAfterMs / 1000)}s.`);
+      }
+    }
+
+    throw err;
     if (res.status === 429) {
       const retryAfter = res.headers.get("Retry-After");
       if (retryAfter) {
