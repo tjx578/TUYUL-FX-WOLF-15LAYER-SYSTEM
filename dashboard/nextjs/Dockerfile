@@ -3,8 +3,11 @@ FROM node:20-alpine AS deps
 WORKDIR /app
 
 COPY package.json package-lock.json* ./
-RUN if [ -f package-lock.json ]; then npm ci --omit=dev; \
-    else npm install --omit=dev; fi
+# Install ALL dependencies (including devDependencies) because the build
+# stage needs TypeScript, Tailwind CSS, PostCSS plugins, etc.
+# The final runner stage uses standalone output and does not copy node_modules.
+RUN if [ -f package-lock.json ]; then npm ci; \
+    else npm install; fi
 
 # ---------- STAGE 2: BUILD ----------
 FROM node:20-alpine AS builder
