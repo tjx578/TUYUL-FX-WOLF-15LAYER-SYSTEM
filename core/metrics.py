@@ -545,6 +545,13 @@ SIGNAL_THROTTLED = _R.counter(
     label_names=("symbol",),
 )
 
+# Explicit end-to-end verdict path events (pipeline -> cache -> stream)
+VERDICT_PATH_EVENT_TOTAL = _R.counter(
+    "wolf_verdict_path_events_total",
+    "Observability events along the runtime verdict path",
+    label_names=("event", "symbol", "status"),
+)
+
 # Per-layer execution latency (seconds) — observe inside pipeline execute()
 LAYER_LATENCY = _R.histogram(
     "wolf_layer_latency_seconds",

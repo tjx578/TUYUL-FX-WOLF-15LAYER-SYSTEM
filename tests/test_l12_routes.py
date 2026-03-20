@@ -102,3 +102,55 @@ def test_build_pipeline_data_includes_signal_conditioning_observability() -> Non
     assert obs["noise_ratio"] == 0.21
     assert obs["microstructure_quality_score"] == 0.79
     assert obs["source"] == "candle_H1"
+
+
+def test_extract_hold_block_reason_prefers_cached_field() -> None:
+    raw = {
+        "last_hold_block_reason": "GOVERNANCE_HOLD:stale_preserved",
+        "errors": ["WARMUP_INSUFFICIENT:H1"],
+    }
+    assert l12_routes._extract_hold_block_reason(raw) == "GOVERNANCE_HOLD:stale_preserved"
+
+
+def test_internal_verdict_path_reports_key_and_warmup(monkeypatch) -> None:
+    monkeypatch.setattr(
+        l12_routes,
+        "AVAILABLE_PAIRS",
+        [
+            {"symbol": "EURUSD", "name": "EURUSD", "enabled": True},
+            {"symbol": "GBPJPY", "name": "GBPJPY", "enabled": True},
+        ],
+    )
+
+    def fake_get_verdict(pair: str):
+        if pair == "EURUSD":
+            return {
+                "symbol": "EURUSD",
+                "verdict": "HOLD",
+                "_cached_at": 100.0,
+                "governance": {"action": "HOLD", "reasons": ["stale_preserved"]},
+                "last_hold_block_reason": "GOVERNANCE_HOLD:stale_preserved",
+            }
+        return None
+
+    class _FakeBus:
+        def check_warmup(self, symbol: str, min_bars: dict[str, int]):
+            if symbol == "EURUSD":
+                return {"ready": True, "bars": {"H1": 30}, "required": {"H1": 20}, "missing": {}}
+            return {"ready": False, "bars": {"H1": 5}, "required": {"H1": 20}, "missing": {"H1": 15}}
+
+    monkeypatch.setattr(l12_routes, "get_verdict", fake_get_verdict)
+    monkeypatch.setattr(l12_routes, "LiveContextBus", lambda: _FakeBus())
+    monkeypatch.setattr(l12_routes.time, "time", lambda: 160.0)
+
+    payload = l12_routes.fetch_internal_verdict_path()
+    rows = {row["pair"]: row for row in payload["pairs"]}
+
+    assert rows["EURUSD"]["redis_key_exists"] is True
+    assert rows["EURUSD"]["warmup_status"]["ready"] is True
+    assert rows["EURUSD"]["governance_action"] == "HOLD"
+    assert rows["EURUSD"]["verdict_age_seconds"] == 60.0
+    assert rows["EURUSD"]["last_hold_block_reason"] == "GOVERNANCE_HOLD:stale_preserved"
+
+    assert rows["GBPJPY"]["redis_key_exists"] is False
+    assert rows["GBPJPY"]["warmup_status"]["ready"] is False

@@ -25,11 +25,32 @@ from typing import Any
 from fastapi import Header, HTTPException, Request
 
 
+def _is_production_runtime() -> bool:
+    env = os.getenv("APP_ENV", os.getenv("ENV", os.getenv("RAILWAY_ENVIRONMENT", "development"))).strip().lower()
+    return env == "production"
+
+
+def _resolve_active_profile_name() -> str | None:
+    try:
+        from config.profile_engine import ConfigProfileEngine
+
+        profile = ConfigProfileEngine().get_active_profile().strip().lower()
+        return profile or None
+    except Exception:
+        return None
+
+
+def _is_production_profile() -> bool:
+    active_profile = _resolve_active_profile_name()
+    return active_profile in {"production", "prod"}
+
+
 def _resolve_auth_mode() -> str:
     raw = os.getenv("OBSERVABILITY_AUTH_MODE", "optional").strip().lower()
-    if raw in {"disabled", "optional", "required"}:
-        return raw
-    return "optional"
+    mode = raw if raw in {"disabled", "optional", "required"} else "optional"
+    if (_is_production_runtime() or _is_production_profile()) and mode != "required":
+        return "required"
+    return mode
 
 
 def _resolve_machine_key() -> str:

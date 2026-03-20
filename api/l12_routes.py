@@ -11,7 +11,7 @@ from api.middleware.auth import verify_token
 from config_loader import load_pairs
 from context.live_context_bus import LiveContextBus
 from execution.state_machine import ExecutionStateMachine
-from storage.l12_cache import VERDICT_TTL_SEC, get_verdict
+from storage.l12_cache import KEY_PREFIX, VERDICT_TTL_SEC, get_verdict
 from utils.timezone_utils import format_local, format_utc, now_utc
 
 router: APIRouter = APIRouter()
@@ -39,6 +39,13 @@ def _load_available_pairs() -> list[dict[str, str | bool]]:
 
 
 AVAILABLE_PAIRS: list[dict[str, str | bool]] = _load_available_pairs()
+_WARMUP_MIN_BARS: dict[str, int] = {
+    "H1": 20,
+    "H4": 10,
+    "D1": 5,
+    "W1": 4,
+    "MN": 2,
+}
 
 
 def _build_meta(data: dict[str, Any]) -> dict[str, Any]:
@@ -50,6 +57,41 @@ def _build_meta(data: dict[str, Any]) -> dict[str, Any]:
         "cached_at": cached_at,
         "cache_ttl_seconds": VERDICT_TTL_SEC,
     }
+
+
+def _extract_hold_block_reason(raw: dict[str, Any] | None) -> str | None:
+    if not raw:
+        return None
+    reason = raw.get("last_hold_block_reason")
+    if isinstance(reason, str) and reason:
+        return reason
+    errors = raw.get("errors")
+    if isinstance(errors, list):
+        for err in errors:
+            if isinstance(err, str) and (
+                err.startswith("GOVERNANCE_BLOCK:")
+                or err.startswith("GOVERNANCE_HOLD:")
+                or err.startswith("WARMUP_INSUFFICIENT:")
+            ):
+                return err
+    return None
+
+
+def _extract_governance_action(raw: dict[str, Any] | None) -> str:
+    if not raw:
+        return "UNKNOWN"
+    governance = raw.get("governance")
+    if isinstance(governance, dict):
+        action = governance.get("action")
+        if isinstance(action, str) and action:
+            return action
+    reason = _extract_hold_block_reason(raw)
+    if reason:
+        if reason.startswith("GOVERNANCE_BLOCK"):
+            return "BLOCK"
+        if reason.startswith("GOVERNANCE_HOLD") or reason.startswith("WARMUP_INSUFFICIENT"):
+            return "HOLD"
+    return "ALLOW"
 
 
 @router.get("/api/v1/l12/{pair}", dependencies=[Depends(verify_token)])
@@ -391,3 +433,57 @@ def fetch_pipeline(pair: str):
     if not raw:
         raise HTTPException(status_code=404, detail=f"No pipeline data for {pair}")
     return _build_pipeline_data(pair.upper(), raw)
+
+
+@router.get("/api/v1/internal/verdict/path", dependencies=[Depends(verify_token)])
+def fetch_internal_verdict_path(pair: str | None = None) -> dict[str, Any]:
+    """Internal runtime debug for verdict path health and recency."""
+    context_bus = cast(Any, LiveContextBus())
+    available_symbols = [str(p["symbol"]).upper() for p in AVAILABLE_PAIRS if isinstance(p.get("symbol"), str)]
+    enabled_symbols = [
+        str(p["symbol"]).upper()
+        for p in AVAILABLE_PAIRS
+        if isinstance(p.get("symbol"), str) and bool(p.get("enabled", True))
+    ]
+    targets = [pair.upper()] if pair else enabled_symbols
+
+    rows: list[dict[str, Any]] = []
+    for symbol in targets:
+        raw = get_verdict(symbol)
+        warmup = context_bus.check_warmup(symbol, _WARMUP_MIN_BARS)
+        ts_raw = (raw or {}).get("_cached_at") if raw else None
+        if ts_raw is None and raw:
+            ts_raw = raw.get("timestamp")
+        verdict_ts: float | None = None
+        if isinstance(ts_raw, int | float):
+            verdict_ts = float(ts_raw)
+        elif isinstance(ts_raw, str) and ts_raw.strip():
+            with contextlib.suppress(ValueError):
+                verdict_ts = float(ts_raw)
+        age_sec = round(time.time() - verdict_ts, 3) if verdict_ts is not None else None
+        rows.append(
+            {
+                "pair": symbol,
+                "active_pair": symbol in enabled_symbols,
+                "configured_pair": symbol in available_symbols,
+                "redis_key": f"{KEY_PREFIX}{symbol}",
+                "redis_key_exists": raw is not None,
+                "warmup_status": {
+                    "ready": bool(warmup.get("ready", False)),
+                    "bars": warmup.get("bars", {}),
+                    "required": warmup.get("required", {}),
+                    "missing": warmup.get("missing", {}),
+                },
+                "governance_action": _extract_governance_action(raw),
+                "last_verdict": (raw or {}).get("verdict"),
+                "last_verdict_timestamp": verdict_ts,
+                "verdict_age_seconds": age_sec,
+                "last_hold_block_reason": _extract_hold_block_reason(raw),
+            }
+        )
+
+    return {
+        "generated_at": time.time(),
+        "requested_pair": pair.upper() if pair else None,
+        "pairs": rows,
+    }

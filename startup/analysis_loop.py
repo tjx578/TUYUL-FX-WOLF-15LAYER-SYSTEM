@@ -13,6 +13,7 @@ import asyncio
 import os
 import time
 from typing import Any
+from uuid import uuid4
 
 from loguru import logger
 
@@ -20,9 +21,11 @@ from analysis.latency_tracker import LatencyTracker
 from analysis.reflex_rqi import compute_rqi
 from config_loader import CONFIG
 from core.event_bus import Event, EventType, get_event_bus
+from core.metrics import VERDICT_PATH_EVENT_TOTAL
 from infrastructure.tracing import setup_tracer
 from journal.builders import build_j1, build_j2
 from pipeline import WolfConstitutionalPipeline
+from storage.l12_cache import set_verdict
 
 __all__ = ["analysis_loop"]
 
@@ -59,6 +62,81 @@ def _log_pipeline_exception(pair: str, exc: BaseException, *, kind: str) -> None
     state["suppressed"] = int(state["suppressed"]) + 1
 
 
+def _extract_last_hold_block_reason(result: dict[str, Any]) -> str | None:
+    governance = result.get("governance")
+    if isinstance(governance, dict):
+        action = str(governance.get("action") or "").upper()
+        reasons_raw = governance.get("reasons")
+        reasons = [str(r) for r in reasons_raw] if isinstance(reasons_raw, list) else []
+        if action in {"HOLD", "BLOCK"}:
+            return f"{action}:{','.join(reasons) if reasons else 'governance'}"
+
+    errors_raw = result.get("errors")
+    errors = [str(e) for e in errors_raw] if isinstance(errors_raw, list) else []
+    for prefix in ("GOVERNANCE_BLOCK:", "GOVERNANCE_HOLD:", "WARMUP_INSUFFICIENT:"):
+        matched = next((e for e in errors if e.startswith(prefix)), None)
+        if matched:
+            return matched
+    return None
+
+
+def _build_verdict_cache_payload(pair: str, result: dict[str, Any]) -> dict[str, Any]:
+    synthesis = dict(result.get("synthesis") or {})
+    l12 = dict(result.get("l12_verdict") or {})
+    execution_map = dict(result.get("execution_map") or {})
+    governance = dict(result.get("governance") or {})
+
+    confidence_raw = l12.get("confidence", 0.0)
+    if isinstance(confidence_raw, str):
+        conf_map = {"LOW": 0.25, "MEDIUM": 0.50, "HIGH": 0.75, "VERY_HIGH": 0.95}
+        confidence = float(conf_map.get(confidence_raw.upper(), 0.0))
+    else:
+        confidence = float(confidence_raw or 0.0)
+
+    execution = dict(synthesis.get("execution") or {})
+    scores = dict(synthesis.get("scores") or {})
+    layers = dict(synthesis.get("layers") or {})
+    system = dict(synthesis.get("system") or {})
+
+    timestamp = time.time()
+    hold_block_reason = _extract_last_hold_block_reason(result)
+
+    payload: dict[str, Any] = {
+        "symbol": pair,
+        "signal_id": str(l12.get("signal_id") or f"SIG-{pair}-{uuid4().hex[:12].upper()}"),
+        "verdict": str(l12.get("verdict") or "HOLD"),
+        "confidence": confidence,
+        "wolf_status": str(l12.get("wolf_status") or "NO_HUNT"),
+        "direction": execution.get("direction") or l12.get("direction") or "HOLD",
+        "scores": scores,
+        "gates": dict(l12.get("gates") or {}),
+        "layers": layers,
+        "execution": execution,
+        "system": {
+            **system,
+            "latency_ms": float(result.get("latency_ms") or system.get("latency_ms") or 0.0),
+        },
+        "timestamp": timestamp,
+        "entry_price": execution.get("entry_price"),
+        "stop_loss": execution.get("stop_loss"),
+        "take_profit_1": execution.get("take_profit_1"),
+        "risk_reward_ratio": execution.get("rr_ratio"),
+        "execution_map": execution_map,
+        "governance": governance,
+        "errors": list(result.get("errors") or []),
+        "last_hold_block_reason": hold_block_reason,
+    }
+
+    gates_v74 = l12.get("gates_v74")
+    if isinstance(gates_v74, dict):
+        payload["gates"] = {
+            **payload["gates"],
+            **dict(gates_v74),
+        }
+
+    return payload
+
+
 async def _analyze_pair(
     pair: str,
     pipeline: WolfConstitutionalPipeline,
@@ -86,9 +164,16 @@ async def _analyze_pair(
             )
 
             if result:
+                try:
+                    verdict_payload = _build_verdict_cache_payload(pair, result)
+                    set_verdict(pair, verdict_payload)
+                except Exception as persist_exc:
+                    VERDICT_PATH_EVENT_TOTAL.labels(event="verdict_persisted", symbol=pair, status="error").inc()
+                    logger.warning("[VerdictPath] persist failed | pair={} error={}", pair, persist_exc)
+
                 _lt.record_verdict_emit(pair)
                 synthesis: dict[str, Any] = dict(result.get("synthesis") or {})
-                l12: dict[str, Any] = dict(result.get("l12") or {})
+                l12: dict[str, Any] = dict(result.get("l12_verdict") or {})
                 span.set_attribute("l12.verdict", str(l12.get("verdict", "")))
                 span.set_attribute("l12.confidence", str(l12.get("confidence", "")))
                 try:
