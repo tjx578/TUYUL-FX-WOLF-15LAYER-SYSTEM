@@ -1,0 +1,12 @@
+[importlinter]
+root_package = .
+
+[importlinter:contract:no-reverse-deps]
+name = Dashboard must not be imported by engines or analysis
+type = forbidden
+source_modules =
+    engines
+    analysis
+    constitution
+forbidden_modules =
+    dashboard

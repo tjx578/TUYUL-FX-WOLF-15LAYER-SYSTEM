@@ -1,6 +1,7 @@
-import yaml
 from pathlib import Path
 from typing import Any
+
+import yaml
 
 BASE_DIR = Path(__file__).resolve().parent
 
@@ -8,7 +9,7 @@ BASE_DIR = Path(__file__).resolve().parent
 def _load(path: str) -> dict[str, Any]:
     """Load a YAML config file relative to project root."""
     filepath = BASE_DIR / path
-    with open(filepath, "r", encoding="utf-8") as f:
+    with open(filepath, encoding="utf-8") as f:
         return yaml.safe_load(f)
 
 
@@ -24,14 +25,43 @@ CONFIG: dict[str, Any] = {
 
 # Extract enabled symbols list for main.py
 _pairs_data = CONFIG["pairs"].get("pairs", [])
-CONFIG["pairs"]["symbols"] = [
-    pair["symbol"] for pair in _pairs_data if pair.get("enabled", False)
-]
+CONFIG["pairs"]["symbols"] = [pair["symbol"] for pair in _pairs_data if pair.get("enabled", False)]
+
+
+# =============================
+# Authoritative symbol resolver
+# =============================
+
+
+def get_enabled_symbols() -> list[str]:
+    """Single source of truth for enabled trading symbols.
+
+    Handles both ``pairs.symbols`` (derived at import) and ``pairs.pairs``
+    (raw YAML list).  Every call-site that needs enabled symbols MUST use
+    this function — no ad-hoc CONFIG traversal.
+    """
+    pairs_block = CONFIG.get("pairs", {})
+
+    # Fast path: derived list already computed at import time
+    if isinstance(pairs_block.get("symbols"), list) and pairs_block["symbols"]:
+        return list(pairs_block["symbols"])
+
+    # Fallback: derive from raw pairs list
+    raw_pairs = pairs_block.get("pairs", [])
+    if isinstance(raw_pairs, list):
+        return [
+            str(p["symbol"])
+            for p in raw_pairs
+            if isinstance(p, dict) and p.get("enabled") and isinstance(p.get("symbol"), str)
+        ]
+
+    return []
 
 
 # =============================
 # Convenience loaders
 # =============================
+
 
 def load_settings() -> dict[str, Any]:
     return CONFIG["settings"]

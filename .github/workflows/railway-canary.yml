@@ -1,0 +1,76 @@
+name: Railway Canary Rollout
+
+on:
+  workflow_dispatch:
+    inputs:
+      service:
+        description: "Target service"
+        required: true
+        type: choice
+        options:
+          - wolf_ingest
+          - wolf_execution
+      action:
+        description: "Canary action"
+        required: true
+        type: choice
+        options:
+          - deploy
+          - promote
+          - rollback
+      health_url:
+        description: "Optional health URL override"
+        required: false
+        type: string
+      deploy_cmd:
+        description: "Canary deploy command"
+        required: false
+        type: string
+      shift_cmd:
+        description: "Traffic shift template (use {service} and {traffic_percent})"
+        required: false
+        type: string
+      promote_cmd:
+        description: "Canary promote command"
+        required: false
+        type: string
+      rollback_cmd:
+        description: "Canary rollback command"
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  canary:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install Railway CLI
+        run: npm install -g @railway/cli
+
+      - name: Execute canary automation
+        env:
+          RAILWAY_TOKEN: ${{ secrets['RAILWAY_TOKEN'] }}
+          CANARY_DEPLOY_CMD: ${{ inputs.deploy_cmd }}
+          CANARY_SHIFT_CMD: ${{ inputs.shift_cmd }}
+          CANARY_PROMOTE_CMD: ${{ inputs.promote_cmd }}
+          CANARY_ROLLBACK_CMD: ${{ inputs.rollback_cmd }}
+        run: |
+          python scripts/railway_canary.py \
+            --service "${{ inputs.service }}" \
+            --action "${{ inputs.action }}" \
+            --health-url "${{ inputs.health_url }}"

@@ -1,0 +1,1745 @@
+{
+  "annotations": {
+    "list": []
+  },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": null,
+  "uid": "wolf-command-center",
+  "links": [],
+  "liveNow": false,
+  "panels": [
+    {
+      "type": "row",
+      "title": "⚡ Pipeline & Analysis",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "panels": []
+    },
+    {
+      "type": "timeseries",
+      "title": "TRQ-3D Alpha / Beta / Gamma",
+      "description": "TRQ-3D three-axis values per symbol. Alpha=regime coherence, Beta=FRPC, Gamma=meta integrity.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 1
+      },
+      "targets": [
+        {
+          "expr": "wolf_trq3d_alpha{symbol=~\"$symbol\"}",
+          "legendFormat": "alpha {{symbol}}",
+          "refId": "A"
+        },
+        {
+          "expr": "wolf_trq3d_beta{symbol=~\"$symbol\"}",
+          "legendFormat": "beta {{symbol}}",
+          "refId": "B"
+        },
+        {
+          "expr": "wolf_trq3d_gamma{symbol=~\"$symbol\"}",
+          "legendFormat": "gamma {{symbol}}",
+          "refId": "C"
+        }
+      ]
+    },
+    {
+      "type": "heatmap",
+      "title": "Tick-to-Verdict Latency Histogram",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 1
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(wolf_tick_to_verdict_seconds_bucket{symbol=~\"$symbol\"}[5m])) by (le)",
+          "format": "heatmap",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Per-Symbol TII / FRPC / CONF12 Scores",
+      "description": "Constitutional score panel. Thresholds: TII≥0.60, FRPC≥0.93, CONF12≥0.75.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 9
+      },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 0.6
+              }
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "expr": "wolf_tii_score{symbol=~\"$symbol\"}",
+          "legendFormat": "TII {{symbol}}",
+          "refId": "A"
+        },
+        {
+          "expr": "wolf_frpc_score{symbol=~\"$symbol\"}",
+          "legendFormat": "FRPC {{symbol}}",
+          "refId": "B"
+        },
+        {
+          "expr": "wolf_conf12_score{symbol=~\"$symbol\"}",
+          "legendFormat": "CONF12 {{symbol}}",
+          "refId": "C"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Signal Rate per Minute",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 9
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(wolf_signal_total{symbol=~\"$symbol\"}[1m])) * 60",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Pipeline Latency (p95, p99)",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 17
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(wolf_pipeline_duration_seconds_bucket{symbol=~\"$symbol\"}[5m])) by (le))",
+          "legendFormat": "p95",
+          "refId": "A"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum(rate(wolf_pipeline_duration_seconds_bucket{symbol=~\"$symbol\"}[5m])) by (le))",
+          "legendFormat": "p99",
+          "refId": "B"
+        }
+      ]
+    },
+    {
+      "type": "row",
+      "title": "🏛️ Constitutional & Verdicts",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 25
+      },
+      "panels": []
+    },
+    {
+      "type": "timeseries",
+      "title": "Gate Pass Rate per Gate",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 26
+      },
+      "targets": [
+        {
+          "expr": "sum by (gate) (rate(wolf_pipeline_gate_result_total{result=\"PASS\"}[5m])) / clamp_min(sum by (gate) (rate(wolf_pipeline_gate_result_total[5m])), 1)",
+          "legendFormat": "{{gate}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Sovereignty Level per Symbol",
+      "description": "Current sovereignty enforcement level per symbol. GRANTED=green, RESTRICTED=yellow, REVOKED=red.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 26
+      },
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "INACTIVE"
+                },
+                "1": {
+                  "text": "ACTIVE"
+                }
+              }
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "expr": "wolf_sovereignty_level{symbol=~\"$symbol\"}",
+          "legendFormat": "{{symbol}} / {{level}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "piechart",
+      "title": "Verdict Distribution (1h)",
+      "description": "Distribution of L12 verdict outcomes: EXECUTE_BUY, EXECUTE_SELL, HOLD, NO_TRADE, ABORT.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 34
+      },
+      "targets": [
+        {
+          "expr": "sum by (verdict) (increase(wolf_pipeline_verdict_total{symbol=~\"$symbol\"}[1h]))",
+          "legendFormat": "{{verdict}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Reflective Drift Ratio",
+      "description": "Two-pass reflective drift (|pass1_abg - pass2_abg|). Threshold: 0.15 (GRANTED max), 0.20 (RESTRICTED max).",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 34
+      },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 0.15
+              },
+              {
+                "color": "red",
+                "value": 0.2
+              }
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "expr": "wolf_reflective_drift_ratio{symbol=~\"$symbol\"}",
+          "legendFormat": "{{symbol}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Monte Carlo Win Probability (Gate 2)",
+      "description": "L7 bootstrap MC win probability per symbol. Gate threshold: ≥0.60.",
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 42
+      },
+      "fieldConfig": {
+        "defaults": {
+          "min": 0,
+          "max": 1,
+          "unit": "percentunit",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 0.5
+              },
+              {
+                "color": "green",
+                "value": 0.6
+              }
+            ]
+          },
+          "custom": {
+            "thresholdsStyle": {
+              "mode": "line"
+            }
+          }
+        }
+      },
+      "targets": [
+        {
+          "expr": "wolf_l7_win_probability{symbol=~\"$symbol\"}",
+          "legendFormat": "Win% {{symbol}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Monte Carlo Profit Factor (Gate 2)",
+      "description": "L7 bootstrap MC profit factor (gross profit / gross loss). Gate threshold: ≥1.5.",
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 42
+      },
+      "fieldConfig": {
+        "defaults": {
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 1.0
+              },
+              {
+                "color": "green",
+                "value": 1.5
+              }
+            ]
+          },
+          "custom": {
+            "thresholdsStyle": {
+              "mode": "line"
+            }
+          }
+        }
+      },
+      "targets": [
+        {
+          "expr": "wolf_l7_profit_factor{symbol=~\"$symbol\"}",
+          "legendFormat": "PF {{symbol}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Monte Carlo Risk of Ruin",
+      "description": "L7 bootstrap MC risk of ruin fraction (ruin_count / simulations). Lower is better. Feeds Gate 2.",
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 42
+      },
+      "fieldConfig": {
+        "defaults": {
+          "min": 0,
+          "max": 1,
+          "unit": "percentunit",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 0.1
+              },
+              {
+                "color": "red",
+                "value": 0.2
+              }
+            ]
+          },
+          "custom": {
+            "thresholdsStyle": {
+              "mode": "line"
+            }
+          }
+        }
+      },
+      "targets": [
+        {
+          "expr": "wolf_l7_risk_of_ruin{symbol=~\"$symbol\"}",
+          "legendFormat": "RoR {{symbol}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "row",
+      "title": "🛡️ Risk & Account",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 50
+      },
+      "panels": []
+    },
+    {
+      "type": "gauge",
+      "title": "Account Drawdown Gauge",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 51
+      },
+      "targets": [
+        {
+          "expr": "wolf_account_drawdown_percent",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "row",
+      "title": "🔧 System & Tracing",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 59
+      },
+      "panels": []
+    },
+    {
+      "type": "timeseries",
+      "title": "Memory per Service",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 60
+      },
+      "targets": [
+        {
+          "expr": "process_resident_memory_bytes",
+          "legendFormat": "{{job}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Redis Stream Lag",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 60
+      },
+      "targets": [
+        {
+          "expr": "wolf_redis_stream_lag_seconds",
+          "legendFormat": "{{stream}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "traces",
+      "title": "Trace Viewer (Tempo)",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 68
+      },
+      "datasource": {
+        "type": "tempo",
+        "uid": "tempo"
+      },
+      "targets": [
+        {
+          "queryType": "traceql",
+          "query": "{}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "row",
+      "title": "📈 Trading Performance",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 76
+      },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "type": "stat",
+      "title": "Win Rate",
+      "description": "Rolling win rate per symbol.",
+      "gridPos": {
+        "h": 8,
+        "w": 6,
+        "x": 0,
+        "y": 77
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 0.4
+              },
+              {
+                "color": "green",
+                "value": 0.55
+              }
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "expr": "wolf_win_rate{symbol=~\"$symbol\"}",
+          "legendFormat": "{{symbol}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Realized PnL",
+      "description": "Running realized PnL per account.",
+      "gridPos": {
+        "h": 8,
+        "w": 10,
+        "x": 6,
+        "y": 77
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 0
+              }
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "expr": "wolf_pnl_realized_current",
+          "legendFormat": "{{account_id}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "gauge",
+      "title": "Daily Loss %",
+      "description": "Current daily loss as percentage of starting balance. Red threshold at 4% (FTMO), 5% (max).",
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 77
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "max": 10,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 3
+              },
+              {
+                "color": "red",
+                "value": 4
+              }
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "expr": "wolf_daily_loss_percent",
+          "legendFormat": "{{account_id}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Drawdown % (High-Water)",
+      "description": "Maximum drawdown from high-water mark per account. Red at 8% (FTMO overall limit).",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 85
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 6
+              },
+              {
+                "color": "red",
+                "value": 8
+              }
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "expr": "wolf_drawdown_max_percent",
+          "legendFormat": "{{account_id}}",
+          "refId": "A"
+        },
+        {
+          "expr": "wolf_account_drawdown_percent",
+          "legendFormat": "current {{account_id}}",
+          "refId": "B"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Trade Outcomes (Win / Loss / BE)",
+      "description": "Cumulative trade count by outcome per symbol.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 85
+      },
+      "targets": [
+        {
+          "expr": "sum by (outcome) (increase(wolf_trades_total{symbol=~\"$symbol\"}[1h]))",
+          "legendFormat": "{{outcome}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "row",
+      "title": "🔌 Feed & Infrastructure Health",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 93
+      },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "type": "timeseries",
+      "title": "Feed Age (seconds since last tick)",
+      "description": "Per-symbol feed staleness. Alert threshold at 30s.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 94
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 15
+              },
+              {
+                "color": "red",
+                "value": 30
+              }
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "expr": "wolf_feed_age_seconds{symbol=~\"$symbol\"}",
+          "legendFormat": "{{symbol}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Circuit Breaker Status",
+      "description": "0=CLOSED (ok), 1=HALF_OPEN (recovering), 2=OPEN (tripped).",
+      "gridPos": {
+        "h": 8,
+        "w": 6,
+        "x": 12,
+        "y": 94
+      },
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "CLOSED",
+                  "color": "green"
+                },
+                "1": {
+                  "text": "HALF_OPEN",
+                  "color": "yellow"
+                },
+                "2": {
+                  "text": "OPEN",
+                  "color": "red"
+                }
+              }
+            }
+          ]
+        }
+      },
+      "targets": [
+        {
+          "expr": "wolf_circuit_breaker_state",
+          "legendFormat": "{{name}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Kill Switch",
+      "description": "Kill switch status. 1=TRIPPED (all trading halted).",
+      "gridPos": {
+        "h": 8,
+        "w": 6,
+        "x": 18,
+        "y": 94
+      },
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "NORMAL",
+                  "color": "green"
+                },
+                "1": {
+                  "text": "TRIPPED",
+                  "color": "red"
+                }
+              }
+            }
+          ]
+        }
+      },
+      "targets": [
+        {
+          "expr": "wolf_kill_switch_active",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Ingest Pipeline Latency (per stage)",
+      "description": "End-to-end latency per ingest pipeline stage. SLO threshold visible as annotation.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 102
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms"
+        }
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(wolf_ingest_pipeline_latency_ms_bucket[5m])) by (le, stage))",
+          "legendFormat": "p95 {{stage}}",
+          "refId": "A"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum(rate(wolf_ingest_pipeline_latency_ms_bucket[5m])) by (le, stage))",
+          "legendFormat": "p99 {{stage}}",
+          "refId": "B"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Feed Stale & Reconnect Events",
+      "description": "Rate of feed stale detections and reconnect attempts.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 102
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(wolf_feed_stale_total{symbol=~\"$symbol\"}[5m])) by (symbol) * 60",
+          "legendFormat": "stale {{symbol}}",
+          "refId": "A"
+        },
+        {
+          "expr": "sum(rate(wolf_feed_reconnect_total[5m])) by (source) * 60",
+          "legendFormat": "reconnect {{source}}",
+          "refId": "B"
+        }
+      ]
+    },
+    {
+      "type": "row",
+      "title": "📡 Tick & Signal Telemetry",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 110
+      },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "type": "timeseries",
+      "title": "Tick Rate (ticks/sec per symbol)",
+      "description": "Incoming tick rate per symbol. Flat-line = feed dead.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 111
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops"
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum by (symbol) (rate(wolf_ticks_received_total{symbol=~\"$symbol\"}[1m]))",
+          "legendFormat": "{{symbol}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Pipeline Errors (by error_code)",
+      "description": "Rate of pipeline errors by error code. Sustained errors indicate analysis breakdown.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 111
+      },
+      "targets": [
+        {
+          "expr": "sum by (error_code) (rate(wolf_pipeline_error_total[5m])) * 60",
+          "legendFormat": "{{error_code}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Layer Latency p95 (per analysis layer)",
+      "description": "Per-layer p95 latency across L1–L11. Identifies bottleneck layers.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 119
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        }
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum by (le, layer) (rate(wolf_layer_latency_seconds_bucket{symbol=~\"$symbol\"}[5m])))",
+          "legendFormat": "{{layer}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Signal Throttle Rate (per symbol)",
+      "description": "Throttled signals per symbol. High values indicate overactive signal generation.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 119
+      },
+      "targets": [
+        {
+          "expr": "sum by (symbol) (rate(wolf_signal_throttled_total{symbol=~\"$symbol\"}[5m])) * 60",
+          "legendFormat": "{{symbol}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "HTTP Traffic (requests/min by status)",
+      "description": "API request rate grouped by method and status code. Spot 5xx spikes quickly.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 127
+      },
+      "targets": [
+        {
+          "expr": "sum by (method, status_code) (rate(wolf_http_requests_total[5m])) * 60",
+          "legendFormat": "{{method}} {{status_code}}",
+          "refId": "A"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(wolf_http_request_duration_seconds_bucket[5m])))",
+          "legendFormat": "p95 latency",
+          "refId": "B"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Finnhub WS Reconnects & Connection Status",
+      "description": "Reconnect attempts and live connection gauge per replica. Sustained reconnects = upstream issue.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 127
+      },
+      "targets": [
+        {
+          "expr": "sum by (replica_id) (rate(finnhub_ws_reconnect_attempts_total[5m])) * 60",
+          "legendFormat": "reconnects {{replica_id}}",
+          "refId": "A"
+        },
+        {
+          "expr": "finnhub_ws_connected",
+          "legendFormat": "connected {{replica_id}}",
+          "refId": "B"
+        }
+      ]
+    },
+    {
+      "type": "row",
+      "title": "📈 OHLC Candlestick Charts",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 135
+      },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "type": "candlestick",
+      "title": "$symbol — M15 Candlestick",
+      "description": "15-minute OHLC candlestick chart from PostgreSQL. Select symbol from dropdown.",
+      "datasource": {
+        "type": "postgres",
+        "uid": "postgres"
+      },
+      "gridPos": {
+        "h": 12,
+        "w": 24,
+        "x": 0,
+        "y": 136
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "candlestick",
+            "colorStrategy": "open-close",
+            "upColor": "#73BF69",
+            "downColor": "#F2495C"
+          }
+        }
+      },
+      "options": {
+        "mode": "candles",
+        "candleStyle": "candles",
+        "colorStrategy": "open-close",
+        "colors": {
+          "up": "#73BF69",
+          "down": "#F2495C",
+          "flat": "#808080"
+        },
+        "includeAllFields": false
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "postgres"
+          },
+          "rawSql": "SELECT\n  open_time AS \"time\",\n  open,\n  high,\n  low,\n  close,\n  volume\nFROM ohlc_candles\nWHERE symbol ~ '$symbol'\n  AND timeframe = 'M15'\n  AND open_time >= $__timeFrom()\n  AND open_time < $__timeTo()\nORDER BY open_time ASC",
+          "format": "table",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "candlestick",
+      "title": "$symbol — H1 Candlestick",
+      "description": "1-hour OHLC candlestick chart from PostgreSQL.",
+      "datasource": {
+        "type": "postgres",
+        "uid": "postgres"
+      },
+      "gridPos": {
+        "h": 12,
+        "w": 24,
+        "x": 0,
+        "y": 148
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "candlestick",
+            "colorStrategy": "open-close",
+            "upColor": "#73BF69",
+            "downColor": "#F2495C"
+          }
+        }
+      },
+      "options": {
+        "mode": "candles",
+        "candleStyle": "candles",
+        "colorStrategy": "open-close",
+        "colors": {
+          "up": "#73BF69",
+          "down": "#F2495C",
+          "flat": "#808080"
+        },
+        "includeAllFields": false
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "postgres"
+          },
+          "rawSql": "SELECT\n  open_time AS \"time\",\n  open,\n  high,\n  low,\n  close,\n  volume\nFROM ohlc_candles\nWHERE symbol ~ '$symbol'\n  AND timeframe = 'H1'\n  AND open_time >= $__timeFrom()\n  AND open_time < $__timeTo()\nORDER BY open_time ASC",
+          "format": "table",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "barchart",
+      "title": "$symbol — Volume (M15)",
+      "description": "Tick volume per M15 candle.",
+      "datasource": {
+        "type": "postgres",
+        "uid": "postgres"
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 24,
+        "x": 0,
+        "y": 160
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#5794F2"
+          }
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "postgres"
+          },
+          "rawSql": "SELECT\n  open_time AS \"time\",\n  volume\nFROM ohlc_candles\nWHERE symbol ~ '$symbol'\n  AND timeframe = 'M15'\n  AND open_time >= $__timeFrom()\n  AND open_time < $__timeTo()\nORDER BY open_time ASC",
+          "format": "table",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "row",
+      "title": "🎯 Signal Quality & Intelligence",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 166
+      }
+    },
+    {
+      "type": "gauge",
+      "title": "Signal Quality Score",
+      "description": "Overall signal quality score (0–1). Higher is better.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 6,
+        "x": 0,
+        "y": 167
+      },
+      "fieldConfig": {
+        "defaults": {
+          "min": 0,
+          "max": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 0.5
+              },
+              {
+                "color": "yellow",
+                "value": 0.7
+              },
+              {
+                "color": "green",
+                "value": 0.85
+              }
+            ]
+          },
+          "unit": "percentunit"
+        }
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "showThresholdLabels": false,
+        "showThresholdMarkers": true
+      },
+      "targets": [
+        {
+          "expr": "wolf_signal_quality_score{symbol=~\"$symbol\"}",
+          "legendFormat": "{{symbol}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "gauge",
+      "title": "Reflex RQI Score",
+      "description": "Regime Quality Index from reflex engine (0–1).",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 6,
+        "x": 6,
+        "y": 167
+      },
+      "fieldConfig": {
+        "defaults": {
+          "min": 0,
+          "max": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 0.4
+              },
+              {
+                "color": "yellow",
+                "value": 0.6
+              },
+              {
+                "color": "green",
+                "value": 0.8
+              }
+            ]
+          },
+          "unit": "percentunit"
+        }
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "showThresholdLabels": false,
+        "showThresholdMarkers": true
+      },
+      "targets": [
+        {
+          "expr": "wolf_reflex_rqi_score{symbol=~\"$symbol\"}",
+          "legendFormat": "{{symbol}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "gauge",
+      "title": "Vault Sync Score",
+      "description": "Cross-timeframe vault synchronization score (0–1).",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 6,
+        "x": 12,
+        "y": 167
+      },
+      "fieldConfig": {
+        "defaults": {
+          "min": 0,
+          "max": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 0.4
+              },
+              {
+                "color": "yellow",
+                "value": 0.6
+              },
+              {
+                "color": "green",
+                "value": 0.8
+              }
+            ]
+          },
+          "unit": "percentunit"
+        }
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "showThresholdLabels": false,
+        "showThresholdMarkers": true
+      },
+      "targets": [
+        {
+          "expr": "wolf_vault_sync_score{symbol=~\"$symbol\"}",
+          "legendFormat": "{{symbol}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Signal Noise Ratio",
+      "description": "Signal-to-noise ratio from conditioner. Higher = cleaner signal.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 6,
+        "x": 18,
+        "y": 167
+      },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 1
+              },
+              {
+                "color": "yellow",
+                "value": 2
+              },
+              {
+                "color": "green",
+                "value": 3
+              }
+            ]
+          },
+          "decimals": 2
+        }
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "background",
+        "graphMode": "area",
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "expr": "wolf_signal_noise_ratio{symbol=~\"$symbol\"}",
+          "legendFormat": "{{symbol}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Signal Quality Over Time (All Symbols)",
+      "description": "Time series of signal quality, RQI, vault sync, and noise ratio across all symbols.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 16,
+        "x": 0,
+        "y": 175
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 10,
+            "pointSize": 5,
+            "showPoints": "auto"
+          },
+          "unit": "percentunit"
+        }
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "last",
+            "min",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "expr": "wolf_signal_quality_score{symbol=~\"$symbol\"}",
+          "legendFormat": "Quality — {{symbol}}",
+          "refId": "A"
+        },
+        {
+          "expr": "wolf_reflex_rqi_score{symbol=~\"$symbol\"}",
+          "legendFormat": "RQI — {{symbol}}",
+          "refId": "B"
+        },
+        {
+          "expr": "wolf_vault_sync_score{symbol=~\"$symbol\"}",
+          "legendFormat": "Vault Sync — {{symbol}}",
+          "refId": "C"
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Conditioned Samples",
+      "description": "Number of conditioned signal samples processed per symbol.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 175
+      },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 100
+              }
+            ]
+          },
+          "unit": "short"
+        }
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "background",
+        "graphMode": "area",
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "expr": "wolf_signal_conditioned_samples{symbol=~\"$symbol\"}",
+          "legendFormat": "{{symbol}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "row",
+      "title": "\ud83d\udd2c TIER 2 Diagnostics",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 183 },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "type": "timeseries",
+      "title": "TRQ-3D Energy (mean|\u0394price|/ATR)",
+      "description": "L3 momentum vs volatility ratio. Higher = stronger directional momentum.",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 184 },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 15, "spanNulls": true },
+          "unit": "short",
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] }
+        }
+      },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+      "targets": [
+        { "expr": "wolf_trq3d_energy{symbol=~\"$symbol\"}", "legendFormat": "{{symbol}}", "refId": "A" }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "TRQ-3D Drift (|price-VWAP|/price)",
+      "description": "L3 deviation from equilibrium. Higher = further from VWAP.",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 184 },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 15, "spanNulls": true },
+          "unit": "short",
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] }
+        }
+      },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+      "targets": [
+        { "expr": "wolf_trq3d_drift{symbol=~\"$symbol\"}", "legendFormat": "{{symbol}}", "refId": "A" }
+      ]
+    },
+    {
+      "type": "gauge",
+      "title": "Regime Confidence (L1)",
+      "description": "L1 market regime detection confidence. Higher = clearer regime identification.",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 184 },
+      "fieldConfig": {
+        "defaults": {
+          "min": 0, "max": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "yellow", "value": 0.4 },
+              { "color": "green", "value": 0.7 }
+            ]
+          },
+          "unit": "percentunit"
+        }
+      },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "showThresholdLabels": false, "showThresholdMarkers": true },
+      "targets": [
+        { "expr": "wolf_regime_confidence{symbol=~\"$symbol\"}", "legendFormat": "{{symbol}}", "refId": "A" }
+      ]
+    },
+    {
+      "type": "gauge",
+      "title": "TWMS Score (L8)",
+      "description": "Triple Wolf Momentum Score: 0.30\u00d7MFI + 0.30\u00d7CCI + 0.25\u00d7RSI + 0.15\u00d7Momentum (0-1).",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 6, "x": 0, "y": 192 },
+      "fieldConfig": {
+        "defaults": {
+          "min": 0, "max": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "orange", "value": 0.3 },
+              { "color": "yellow", "value": 0.5 },
+              { "color": "green", "value": 0.7 }
+            ]
+          },
+          "unit": "percentunit"
+        }
+      },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "showThresholdLabels": false, "showThresholdMarkers": true },
+      "targets": [
+        { "expr": "wolf_twms_score{symbol=~\"$symbol\"}", "legendFormat": "{{symbol}}", "refId": "A" }
+      ]
+    },
+    {
+      "type": "gauge",
+      "title": "EAF Score (L5)",
+      "description": "Emotional Awareness Factor: (1-bias) \u00d7 stability \u00d7 focus \u00d7 discipline (0-1).",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 6, "x": 6, "y": 192 },
+      "fieldConfig": {
+        "defaults": {
+          "min": 0, "max": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "orange", "value": 0.3 },
+              { "color": "yellow", "value": 0.5 },
+              { "color": "green", "value": 0.7 }
+            ]
+          },
+          "unit": "percentunit"
+        }
+      },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "showThresholdLabels": false, "showThresholdMarkers": true },
+      "targets": [
+        { "expr": "wolf_eaf_score{symbol=~\"$symbol\"}", "legendFormat": "{{symbol}}", "refId": "A" }
+      ]
+    },
+    {
+      "type": "gauge",
+      "title": "Wolf 30-Point Score",
+      "description": "Discipline checklist score (0-30). Composite of F-score, T-score, Exec-score.",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 6, "x": 12, "y": 192 },
+      "fieldConfig": {
+        "defaults": {
+          "min": 0, "max": 30,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "orange", "value": 10 },
+              { "color": "yellow", "value": 18 },
+              { "color": "green", "value": 24 }
+            ]
+          },
+          "unit": "short"
+        }
+      },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "showThresholdLabels": false, "showThresholdMarkers": true },
+      "targets": [
+        { "expr": "wolf_30pt_score{symbol=~\"$symbol\"}", "legendFormat": "{{symbol}}", "refId": "A" }
+      ]
+    },
+    {
+      "type": "gauge",
+      "title": "FTA Score (Synthesis)",
+      "description": "Fusion-Technical-Action composite: f_score \u00d7 t_score \u00d7 fta_multiplier.",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 6, "x": 18, "y": 192 },
+      "fieldConfig": {
+        "defaults": {
+          "min": 0, "max": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "orange", "value": 0.3 },
+              { "color": "yellow", "value": 0.5 },
+              { "color": "green", "value": 0.7 }
+            ]
+          },
+          "unit": "percentunit"
+        }
+      },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "showThresholdLabels": false, "showThresholdMarkers": true },
+      "targets": [
+        { "expr": "wolf_fta_score{symbol=~\"$symbol\"}", "legendFormat": "{{symbol}}", "refId": "A" }
+      ]
+    }
+  ],
+  "refresh": "10s",
+  "schemaVersion": 39,
+  "style": "dark",
+  "tags": [
+    "wolf",
+    "observability"
+  ],
+  "templating": {
+    "list": [
+      {
+        "name": "symbol",
+        "label": "Symbol",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prometheus"
+        },
+        "query": "label_values(wolf_pipeline_duration_seconds_count, symbol)",
+        "current": {
+          "text": "All",
+          "value": "$__all"
+        },
+        "refresh": 2,
+        "sort": 1,
+        "includeAll": true,
+        "allValue": ".*",
+        "multi": false,
+        "definition": "label_values(wolf_pipeline_duration_seconds_count, symbol)",
+        "regex": ""
+      }
+    ]
+  },
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "Wolf Institutional Command Center",
+  "version": 3,
+  "weekStart": ""
+}

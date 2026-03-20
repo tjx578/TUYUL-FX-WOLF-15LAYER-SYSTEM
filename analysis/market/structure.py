@@ -3,7 +3,7 @@ Market Structure Analysis (H1)
 NO EXECUTION | NO DECISION
 """
 
-from typing import Dict, List
+from typing import Any
 
 from context.live_context_bus import LiveContextBus
 
@@ -19,7 +19,7 @@ class MarketStructureAnalyzer:
     def __init__(self) -> None:
         self.context = LiveContextBus()
 
-    def analyze(self, symbol: str) -> Dict:
+    def analyze(self, symbol: str) -> dict[str, Any]:
         """
         Analyze H1 market structure for a symbol.
 
@@ -90,13 +90,12 @@ class MarketStructureAnalyzer:
         # Determine trend
         if is_higher_high and is_higher_low:
             return "BULLISH"
-        elif is_lower_high and is_lower_low:
+        if is_lower_high and is_lower_low:
             return "BEARISH"
-        else:
-            return "NEUTRAL"
+        return "NEUTRAL"
 
     @staticmethod
-    def _find_swing_highs(highs: List[float], window: int = 2) -> List[float]:
+    def _find_swing_highs(highs: list[float], window: int = 2) -> list[float]:
         """
         Find swing highs (local maxima) in price series.
 
@@ -127,7 +126,7 @@ class MarketStructureAnalyzer:
         return swing_highs
 
     @staticmethod
-    def _find_swing_lows(lows: List[float], window: int = 2) -> List[float]:
+    def _find_swing_lows(lows: list[float], window: int = 2) -> list[float]:
         """
         Find swing lows (local minima) in price series.
 

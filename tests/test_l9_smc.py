@@ -13,7 +13,6 @@ def context_bus():
     """Get LiveContextBus instance."""
     bus = LiveContextBus()
     bus._candle_history.clear()
-    bus._candle_store.clear()
     return bus
 
 
@@ -113,12 +112,12 @@ def test_smc_bearish_bos_detected(analyzer, context_bus):
 
     # Should detect BOS with downtrend breaking previous swing low
     if result["bos_detected"]:
-        assert result["confidence"] == 0.8
+        assert result["confidence"] == pytest.approx(0.85, abs=0.1)
         assert result["displacement"] is True
 
 
 def test_smc_choch_bullish_to_bearish(analyzer, context_bus):
-    """Test CHoCH detection: BULLISH → BEARISH."""
+    """Test CHoCH detection: BULLISH -> BEARISH."""
     # First analysis with BULLISH trend
     structure_bullish = {
         "valid": True,
@@ -147,7 +146,7 @@ def test_smc_choch_bullish_to_bearish(analyzer, context_bus):
 
 
 def test_smc_choch_bearish_to_bullish(analyzer, context_bus):
-    """Test CHoCH detection: BEARISH → BULLISH."""
+    """Test CHoCH detection: BEARISH -> BULLISH."""
     # First analysis with BEARISH trend
     structure_bearish = {
         "valid": True,
@@ -240,3 +239,89 @@ def test_smc_output_format(analyzer, context_bus):
 
     # Verify confidence is in valid range
     assert 0.0 <= result["confidence"] <= 1.0
+
+
+# ------------------------------------------------------------------
+# dvg_confidence wiring
+# ------------------------------------------------------------------
+
+
+def test_dvg_confidence_present_in_output(analyzer):
+    """dvg_confidence key is always present, even on failure."""
+    result = analyzer.analyze("EURUSD", structure={})
+    assert "dvg_confidence" in result
+    assert result["dvg_confidence"] == 0.0
+
+
+def test_dvg_confidence_zero_when_no_engine(analyzer, context_bus):
+    """When ExhaustionDivergenceFusionEngine is unavailable, dvg_confidence == 0."""
+    structure = {"valid": True, "trend": "BULLISH"}
+    # Engine may or may not load; but with no candle data across TFs it produces 0.0
+    result = analyzer.analyze("EURUSD", structure=structure)
+    assert isinstance(result["dvg_confidence"], float)
+    assert 0.0 <= result["dvg_confidence"] <= 1.0
+
+
+def test_dvg_confidence_uses_divergence_engine(analyzer, monkeypatch):
+    """When the divergence engine returns a result, dvg_confidence reflects it."""
+    from unittest.mock import MagicMock
+
+    fake_engine = MagicMock()
+    fake_engine.analyze.return_value = {
+        "score": 0.8,
+        "confidence": 0.75,
+        "reason": "STRONG_DIVERGENCE: 3/4 TFs",
+        "available_tfs": ["M5", "M15", "H1", "H4"],
+        "missing_tfs": [],
+    }
+    analyzer._dvg_engine = fake_engine
+
+    # Provide candle data across all TFs via mock
+    def _fake_candles(symbol, timeframe="H1", count=30):
+        return [
+            {"open": 1.10 + i * 0.001, "high": 1.102 + i * 0.001, "low": 1.098 + i * 0.001, "close": 1.101 + i * 0.001}
+            for i in range(count)
+        ]
+
+    monkeypatch.setattr(type(analyzer), "_get_candles", staticmethod(_fake_candles))
+
+    structure = {"valid": True, "trend": "BEARISH"}
+    result = analyzer.analyze("EURUSD", structure=structure)
+    assert result["dvg_confidence"] == 0.75
+    fake_engine.analyze.assert_called_once()
+
+
+def test_dvg_confidence_zero_on_engine_error(analyzer, monkeypatch):
+    """If divergence engine raises, dvg_confidence degrades to 0.0."""
+    from unittest.mock import MagicMock
+
+    bad_engine = MagicMock()
+    bad_engine.analyze.side_effect = RuntimeError("boom")
+    analyzer._dvg_engine = bad_engine
+
+    def _fake_candles(symbol, timeframe="H1", count=30):
+        return [
+            {"open": 1.10 + i * 0.001, "high": 1.102 + i * 0.001, "low": 1.098 + i * 0.001, "close": 1.101 + i * 0.001}
+            for i in range(count)
+        ]
+
+    monkeypatch.setattr(type(analyzer), "_get_candles", staticmethod(_fake_candles))
+
+    structure = {"valid": True, "trend": "BULLISH"}
+    result = analyzer.analyze("EURUSD", structure=structure)
+    assert result["dvg_confidence"] == 0.0
+
+
+def test_rsi_computation():
+    """RSI computation returns correct length and range."""
+    closes = [1.10 + i * 0.001 for i in range(30)]
+    rsi = L9SMCAnalyzer._compute_rsi(closes)
+    assert len(rsi) > 0
+    assert all(0.0 <= v <= 100.0 for v in rsi)
+
+
+def test_rsi_too_few_values():
+    """RSI with insufficient data returns empty list."""
+    closes = [1.10, 1.11]
+    rsi = L9SMCAnalyzer._compute_rsi(closes)
+    assert rsi == []

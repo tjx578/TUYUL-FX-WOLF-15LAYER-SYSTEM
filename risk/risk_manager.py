@@ -1,432 +1,392 @@
+"""Risk Manager -- Account-level risk governance with dynamic sizing support.
+
+Evaluates whether a trade is allowed given account state, prop-firm rules,
+and dynamically computed risk percentage from DynamicPositionSizingEngine.
+
+Authority: RISK ZONE.
+           Does NOT decide market direction.
+           Does NOT override Layer-12 verdict.
+           Treats prop-firm guard result as BINDING for risk legality.
+           Dashboard treats this output as binding for position sizing.
+
+Enhancement (Tier 2):
+    ✅ Accepts dynamic_risk_percent from DynamicPositionSizingEngine
+    ✅ Uses min(dynamic_risk_percent, static_max_risk) as effective risk
+    ✅ Backward-compatible: dynamic_risk_percent is Optional with None default
+    ✅ Logs which risk source was used (static vs dynamic)
 """
-Risk Manager - Unified Risk Management Facade
 
-Singleton facade that combines all risk management components:
-- DrawdownMonitor (Redis-persistent drawdown tracking)
-- CircuitBreaker (auto-halt on catastrophic loss)
-- PositionSizer (fixed-fractional position sizing)
-- RiskMultiplier (adaptive risk scaling)
-- PropFirmRules (prop firm compliance)
+from __future__ import annotations
 
-Provides simple interface for the rest of the system.
-"""
+from dataclasses import dataclass
+from typing import Any
 
-import threading
-from typing import Optional
+from config.pip_values import DEFAULT_PIP_VALUE, PipLookupError, get_pip_info
 
-from loguru import logger
+_DEFAULT_MAX_RISK_PCT = 0.02      # 2% static default
+_DEFAULT_MAX_DAILY_LOSS_PCT = 0.05  # 5% daily drawdown limit
+_DEFAULT_MAX_OPEN_TRADES = 5
 
-from config_loader import load_risk
-from risk.drawdown import DrawdownMonitor
-from risk.circuit_breaker import CircuitBreaker
-from risk.position_sizer import PositionSizer
-from risk.risk_multiplier import RiskMultiplier
-from risk.prop_firm import PropFirmRules
-from risk.exceptions import (
-    RiskException,
-    CircuitBreakerOpen,
-    DrawdownLimitExceeded,
-)
+
+@dataclass(frozen=True)
+class RiskDecision:
+    """Immutable risk evaluation result.
+
+    This is a RISK decision, not a MARKET decision.
+    trade_allowed = False means risk limits are breached,
+    NOT that the market setup is invalid (that's L12's job).
+    """
+
+    trade_allowed: bool
+    recommended_lot: float
+    max_safe_lot: float
+    effective_risk_percent: float   # Actual risk % used (static or dynamic)
+    risk_source: str                # "STATIC" | "DYNAMIC_PSE" | "DYNAMIC_CLAMPED"
+    risk_amount: float              # Dollar amount at risk
+    reason: str
+    violations: tuple[str, ...]     # All triggered violation codes
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "trade_allowed": self.trade_allowed,
+            "recommended_lot": self.recommended_lot,
+            "max_safe_lot": self.max_safe_lot,
+            "effective_risk_percent": self.effective_risk_percent,
+            "risk_source": self.risk_source,
+            "risk_amount": self.risk_amount,
+            "reason": self.reason,
+            "violations": list(self.violations),
+        }
 
 
 class RiskManager:
+    """Account-level risk governor with dynamic sizing support.
+
+    Parameters
+    ----------
+    max_risk_percent : float
+        Static maximum risk per trade as fraction. Default 0.02 (2%).
+        This is the ABSOLUTE ceiling -- dynamic sizing can only go LOWER.
+    max_daily_loss_percent : float
+        Maximum daily loss as fraction of starting equity. Default 0.05 (5%).
+    max_open_trades : int
+        Maximum concurrent open positions. Default 5.
+    min_lot : float
+        Minimum tradeable lot size. Default 0.01.
+    lot_step : float
+        Lot size granularity. Default 0.01.
     """
-    Unified risk management facade (Singleton).
-    
-    Combines all risk components and provides a simple interface:
-    - get_risk_snapshot() -> dict (for synthesis integration)
-    - record_trade_result() (update drawdown/circuit breaker)
-    - calculate_position() (position sizing with risk multiplier)
-    - is_trading_allowed() (gate checks)
-    
-    This is the single entry point for all risk operations.
-    
-    Usage
-    -----
-    >>> rm = RiskManager.get_instance(initial_balance=10000)
-    >>> snapshot = rm.get_risk_snapshot()
-    >>> allowed = rm.is_trading_allowed()
-    >>> position = rm.calculate_position(1.0950, 1.0900, "EURUSD")
-    """
-    
-    _instance = None
-    _lock = threading.Lock()
-    
-    def __init__(self, initial_balance: float):
-        """
-        Initialize RiskManager (use get_instance() instead).
-        
-        Parameters
-        ----------
-        initial_balance : float
-            Starting account balance
-        """
-        if RiskManager._instance is not None:
-            raise RuntimeError(
-                "RiskManager is a singleton. Use get_instance()."
-            )
-        
-        self._config = load_risk()
-        self._balance = initial_balance
-        
-        # Initialize components
-        self._drawdown = DrawdownMonitor(initial_balance)
-        self._circuit_breaker = CircuitBreaker(initial_balance)
-        self._position_sizer = PositionSizer()
-        self._risk_multiplier = RiskMultiplier()
-        self._prop_firm = PropFirmRules()
-        
-        logger.info(
-            "RiskManager initialized",
-            initial_balance=initial_balance,
-        )
-    
+
+    _instance: RiskManager | None = None
+
     @classmethod
-    def get_instance(cls, initial_balance: Optional[float] = None):
-        """
-        Get RiskManager singleton instance.
-        
-        Parameters
-        ----------
-        initial_balance : float, optional
-            Required on first call, ignored afterward
-            
-        Returns
-        -------
-        RiskManager
-            Singleton instance
+    def get_instance(cls, **kwargs: Any) -> RiskManager:
+        """Get or create the singleton instance.
+
+        Parameters are forwarded to ``__init__`` only on first creation.
+        Subsequent calls return the existing instance and ignore kwargs.
         """
         if cls._instance is None:
-            with cls._lock:
-                if cls._instance is None:
-                    if initial_balance is None:
-                        raise ValueError(
-                            "initial_balance required for first "
-                            "RiskManager initialization"
-                        )
-                    cls._instance = cls(initial_balance)
-        
+            cls._instance = cls(**kwargs)
         return cls._instance
-    
+
     @classmethod
-    def reset_instance(cls):
+    def reset_instance(cls) -> None:
+        """Discard the singleton -- mainly for test isolation."""
+        cls._instance = None
+
+    def __init__(
+        self,
+        max_risk_percent: float = _DEFAULT_MAX_RISK_PCT,
+        max_daily_loss_percent: float = _DEFAULT_MAX_DAILY_LOSS_PCT,
+        max_open_trades: int = _DEFAULT_MAX_OPEN_TRADES,
+        min_lot: float = 0.01,
+        lot_step: float = 0.01,
+        **_extra: Any,
+    ) -> None:
+        if not 0.0 < max_risk_percent <= 1.0:
+            raise ValueError(
+                f"max_risk_percent must be in (0, 1], got {max_risk_percent}"
+            )
+        if not 0.0 < max_daily_loss_percent <= 1.0:
+            raise ValueError(
+                f"max_daily_loss_percent must be in (0, 1], got {max_daily_loss_percent}"
+            )
+
+        self._max_risk_pct = max_risk_percent
+        self._max_daily_loss_pct = max_daily_loss_percent
+        self._max_open = max_open_trades
+        self._min_lot = min_lot
+        self._lot_step = lot_step
+        self._balance = 10_000.0
+        self._daily_loss = 0.0
+        self._circuit_open = False
+
+    def evaluate(  # noqa: PLR0912
+        self,
+        account_balance: float,
+        account_equity: float,
+        daily_pnl: float,
+        open_trade_count: int,
+        stop_loss_pips: float,
+        pip_value_per_lot: float,
+        dynamic_risk_percent: float | None = None,
+    ) -> RiskDecision:
+        """Evaluate whether a trade is allowed under risk constraints.
+
+        Args:
+            account_balance: Current account balance.
+            account_equity: Current account equity (balance + floating P&L).
+            daily_pnl: Today's realized + unrealized P&L.
+            open_trade_count: Number of currently open positions.
+            stop_loss_pips: Distance to stop-loss in pips.
+            pip_value_per_lot: Dollar value per pip per standard lot.
+            dynamic_risk_percent: Optional risk fraction from
+                DynamicPositionSizingEngine.final_fraction.
+                If provided, used as risk % (but clamped to static max).
+                If None, static max_risk_percent is used.
+
+        Returns:
+            RiskDecision with lot sizing and violation details.
         """
-        Reset singleton (for testing only).
-        
-        WARNING: Only use in tests. Do not call in production code.
+        violations: list[str] = []
+
+        # ── Determine effective risk percent ─────────────────────────
+        effective_risk_pct, risk_source = self._resolve_risk_percent(
+            dynamic_risk_percent
+        )
+
+        # ── Daily loss check ─────────────────────────────────────────
+        daily_loss_limit = account_balance * self._max_daily_loss_pct
+        if daily_pnl < 0 and abs(daily_pnl) >= daily_loss_limit:
+            violations.append("DAILY_LOSS_LIMIT_REACHED")
+
+        # ── Daily loss approaching (warning at 80%) ──────────────────
+        if daily_pnl < 0 and abs(daily_pnl) >= daily_loss_limit * 0.80:
+            if "DAILY_LOSS_LIMIT_REACHED" not in violations:
+                violations.append("DAILY_LOSS_LIMIT_WARNING")
+
+        # ── Open trade count ─────────────────────────────────────────
+        if open_trade_count >= self._max_open:
+            violations.append("MAX_OPEN_TRADES_REACHED")
+
+        # ── Equity depletion ─────────────────────────────────────────
+        if account_equity <= 0:
+            violations.append("EQUITY_DEPLETED")
+
+        # ── Insufficient equity for any trade ────────────────────────
+        if account_balance <= 0:
+            violations.append("BALANCE_DEPLETED")
+
+        # ── Zero edge from dynamic sizing ────────────────────────────
+        if dynamic_risk_percent is not None and dynamic_risk_percent <= 0.0:
+            violations.append("DYNAMIC_RISK_ZERO_EDGE")
+
+        # ── Compute lot sizing ───────────────────────────────────────
+        risk_amount = account_equity * effective_risk_pct
+
+        if stop_loss_pips > 0 and pip_value_per_lot > 0:
+            raw_lot = risk_amount / (stop_loss_pips * pip_value_per_lot)
+            max_safe_lot = self._round_lot_down(raw_lot)
+        else:
+            max_safe_lot = 0.0
+            if stop_loss_pips <= 0:
+                violations.append("INVALID_STOP_LOSS")
+            if pip_value_per_lot <= 0:
+                violations.append("INVALID_PIP_VALUE")
+
+        # ── Minimum lot check ────────────────────────────────────────
+        recommended_lot = max_safe_lot
+        if recommended_lot < self._min_lot and recommended_lot > 0:
+            violations.append("BELOW_MIN_LOT")
+            recommended_lot = 0.0  # Cannot trade below minimum
+
+        # ── Final trade_allowed ──────────────────────────────────────
+        blocking_violations = {
+            "DAILY_LOSS_LIMIT_REACHED",
+            "MAX_OPEN_TRADES_REACHED",
+            "EQUITY_DEPLETED",
+            "BALANCE_DEPLETED",
+            "INVALID_STOP_LOSS",
+            "INVALID_PIP_VALUE",
+            "BELOW_MIN_LOT",
+            "DYNAMIC_RISK_ZERO_EDGE",
+        }
+        has_blocking = bool(set(violations) & blocking_violations)
+
+        if has_blocking:
+            reason = f"BLOCKED: {', '.join(v for v in violations if v in blocking_violations)}"
+            recommended_lot = 0.0
+        elif violations:
+            reason = f"WARNING: {', '.join(violations)}"
+        else:
+            reason = "APPROVED"
+
+        return RiskDecision(
+            trade_allowed=not has_blocking,
+            recommended_lot=round(recommended_lot, 2),
+            max_safe_lot=round(max_safe_lot, 2),
+            effective_risk_percent=round(effective_risk_pct, 6),
+            risk_source=risk_source,
+            risk_amount=round(risk_amount, 2),
+            reason=reason,
+            violations=tuple(violations),
+        )
+
+    # ── Private helpers ──────────────────────────────────────────────────────
+
+    def _resolve_risk_percent(
+        self, dynamic_risk_percent: float | None,
+    ) -> tuple[float, str]:
+        """Resolve effective risk percent from static and dynamic sources.
+
+        Dynamic ALWAYS takes the LOWER of dynamic vs static (safety-first).
+        Dynamic can reduce but NEVER amplify beyond static maximum.
+
+        Returns:
+            (effective_risk_percent, risk_source_label)
         """
-        with cls._lock:
-            cls._instance = None
-            logger.warning("RiskManager singleton reset (testing only)")
-    
-    def update_balance(self, new_balance: float) -> None:
+        if dynamic_risk_percent is None:
+            return self._max_risk_pct, "STATIC"
+
+        if dynamic_risk_percent <= 0.0:
+            # No edge -> zero risk
+            return 0.0, "DYNAMIC_PSE"
+
+        if dynamic_risk_percent >= self._max_risk_pct:
+            # Dynamic wants more than static allows -> clamp to static
+            return self._max_risk_pct, "DYNAMIC_CLAMPED"
+
+        # Dynamic is within bounds -> use it
+        return dynamic_risk_percent, "DYNAMIC_PSE"
+
+    def _round_lot_down(self, raw_lot: float) -> float:
+        """Round lot size DOWN to nearest lot_step (never round up for safety)."""
+        if raw_lot <= 0 or self._lot_step <= 0:
+            return 0.0
+        steps = int(raw_lot / self._lot_step)
+        return round(steps * self._lot_step, 2)
+
+    # ── Integration API (used by RiskEngineV2) ───────────────────────────────
+
+    def is_trading_allowed(self, *, category: str = "forex") -> bool:
+        """Check if trading is currently allowed.
+
+        Returns False when circuit breaker is tripped (e.g. large daily loss).
         """
-        Update account balance.
-        
-        Parameters
-        ----------
-        new_balance : float
-            New account balance
-        """
-        with self._lock:
-            self._balance = new_balance
-            logger.debug("Account balance updated", balance=new_balance)
-    
+        return not self._circuit_open
+
     def get_risk_snapshot(
         self,
-        vix_level: Optional[float] = None,
-        session: Optional[str] = None,
-    ) -> dict:
-        """
-        Get complete risk snapshot for synthesis integration.
-        
-        This is called by analysis/synthesis.py to replace the
-        hardcoded "current_drawdown": 0.0 placeholder.
-        
+        vix_level: float | None = None,
+        session: str | None = None,
+    ) -> dict[str, Any]:
+        """Return a snapshot of current risk state.
+
         Parameters
         ----------
-        vix_level : float, optional
-            Current VIX level for adaptive multiplier
-        session : str, optional
-            Trading session for adaptive multiplier
-            
+        vix_level : float | None
+            Optional VIX reading for context.
+        session : str | None
+            Trading session label (e.g. 'LONDON', 'NY').
+
         Returns
         -------
         dict
-            Complete risk snapshot with:
-            - drawdown: daily/weekly/total drawdown
-            - circuit_breaker: state and trading_allowed flag
-            - risk_multiplier: overall multiplier and breakdown
-            - prop_firm: compliance status
+            Snapshot containing balance, risk settings, session info.
         """
-        with self._lock:
-            # Get drawdown snapshot
-            dd_snapshot = self._drawdown.get_snapshot()
-            
-            # Get circuit breaker snapshot
-            cb_snapshot = self._circuit_breaker.get_snapshot()
-            
-            # Calculate risk multiplier
-            # Use total drawdown % as drawdown level
-            drawdown_level = dd_snapshot["total_dd_percent"] / (
-                self._drawdown.max_total_percent or 1.0
-            )
-            
-            rm_overall = self._risk_multiplier.calculate(
-                drawdown_level=drawdown_level,
-                vix_level=vix_level,
-                session=session,
-            )
-            
-            rm_breakdown = self._risk_multiplier.get_breakdown(
-                drawdown_level=drawdown_level,
-                vix_level=vix_level,
-                session=session,
-            )
-            
-            # Combine into snapshot
-            return {
-                "drawdown": dd_snapshot,
-                "circuit_breaker": cb_snapshot,
-                "risk_multiplier": {
-                    "overall": rm_overall,
-                    "breakdown": rm_breakdown,
-                },
-                "balance": self._balance,
-            }
-    
-    def record_trade_result(
-        self,
-        pnl: float,
-        pair: str,
-        current_equity: float,
-    ) -> None:
-        """
-        Record a trade result and update all risk components.
-        
-        Parameters
-        ----------
-        pnl : float
-            Trade profit/loss
-        pair : str
-            Trading pair
-        current_equity : float
-            Current account equity after trade
-        """
-        with self._lock:
-            # Update drawdown
-            self._drawdown.update(current_equity, pnl)
-            
-            # Get daily loss for circuit breaker
-            dd_snapshot = self._drawdown.get_snapshot()
-            daily_loss = dd_snapshot["daily_dd_amount"]
-            
-            # Update circuit breaker
-            self._circuit_breaker.record_trade(pnl, pair, daily_loss)
-            
-            # Update balance
-            self._balance = current_equity
-            
-            logger.info(
-                "Trade result recorded",
-                pair=pair,
-                pnl=pnl,
-                equity=current_equity,
-                daily_loss=daily_loss,
-            )
-    
+        daily_dd_amount = abs(self._daily_loss) if self._daily_loss < 0 else 0.0
+        daily_dd_pct = (daily_dd_amount / self._balance * 100) if self._balance > 0 else 0.0
+        return {
+            "balance": self._balance,
+            "daily_loss": self._daily_loss,
+            "circuit_open": self._circuit_open,
+            "max_risk_percent": self._max_risk_pct,
+            "max_daily_loss_percent": self._max_daily_loss_pct,
+            "max_open_trades": self._max_open,
+            "vix_level": vix_level,
+            "session": session,
+            "drawdown": {
+                "daily_dd_amount": daily_dd_amount,
+                "daily_dd_pct": round(daily_dd_pct, 4),
+            },
+        }
+
     def calculate_position(
         self,
         entry_price: float,
         stop_loss_price: float,
         pair: str,
-        risk_percent: Optional[float] = None,
-        vix_level: Optional[float] = None,
-        session: Optional[str] = None,
-    ) -> dict:
+        risk_percent: float,
+        vix_level: float | None = None,
+        session: str | None = None,
+        balance: float | None = None,
+    ) -> dict[str, Any]:
+        """Calculate position size for a single entry.
+
+        Returns a dict compatible with RiskEngineV2 expectations:
+        ``{lot_size, risk_amount, pips_at_risk, pip_value}``.
         """
-        Calculate position size with adaptive risk multiplier.
-        
-        Parameters
-        ----------
-        entry_price : float
-            Entry price
-        stop_loss_price : float
-            Stop loss price
-        pair : str
-            Trading pair
-        risk_percent : float, optional
-            Base risk % (uses default if None)
-        vix_level : float, optional
-            Current VIX for multiplier
-        session : str, optional
-            Trading session for multiplier
-            
-        Returns
-        -------
-        dict
-            Position sizing details including lot_size
-        """
-        with self._lock:
-            # Get current drawdown level
-            dd_snapshot = self._drawdown.get_snapshot()
-            drawdown_level = dd_snapshot["total_dd_percent"] / (
-                self._drawdown.max_total_percent or 1.0
-            )
-            
-            # Calculate risk multiplier
-            risk_multiplier = self._risk_multiplier.calculate(
-                drawdown_level=drawdown_level,
-                vix_level=vix_level,
-                session=session,
-            )
-            
-            # Calculate position size
-            position = self._position_sizer.calculate(
-                account_balance=self._balance,
-                entry_price=entry_price,
-                stop_loss_price=stop_loss_price,
-                pair=pair,
-                risk_percent=risk_percent,
-                risk_multiplier=risk_multiplier,
-            )
-            
-            logger.debug(
-                "Position calculated",
-                pair=pair,
-                lot_size=position["lot_size"],
-                risk_multiplier=risk_multiplier,
-            )
-            
-            return position
-    
-    def is_trading_allowed(self, category: Optional[str] = None) -> bool:
-        """
-        Check if trading is allowed based on all risk factors.
-        
-        Checks:
-        - Circuit breaker state
-        - Drawdown limits
-        - Prop firm rules (if category provided)
-        
-        Parameters
-        ----------
-        category : str, optional
-            Market category for prop firm check (e.g., "forex")
-            
-        Returns
-        -------
-        bool
-            True if trading allowed
-        """
-        with self._lock:
-            # Check circuit breaker
-            if not self._circuit_breaker.is_trading_allowed():
-                logger.warning(
-                    "Trading not allowed: circuit breaker open",
-                    state=self._circuit_breaker.get_state(),
-                )
-                return False
-            
-            # Check drawdown limits
-            if self._drawdown.is_breached():
-                logger.warning(
-                    "Trading not allowed: drawdown limit breached",
-                    snapshot=self._drawdown.get_snapshot(),
-                )
-                return False
-            
-            # Check prop firm rules
-            if category and not self._prop_firm.is_market_allowed(category):
-                logger.warning(
-                    "Trading not allowed: market not allowed by prop firm",
-                    category=category,
-                )
-                return False
-            
-            return True
-    
-    def check_prop_firm_compliance(self, trade_risk: dict) -> dict:
-        """
-        Check prop firm compliance for a proposed trade.
-        
-        Parameters
-        ----------
-        trade_risk : dict
-            Trade details with:
-            - risk_percent: Risk % for this trade
-            - rr_ratio: Risk/reward ratio
-            
-        Returns
-        -------
-        dict
-            Compliance result with:
-            - compliant: bool
-            - violations: list of violation messages
-        """
-        violations = []
-        
-        # Check risk per trade
-        max_risk = self._prop_firm.max_risk_allowed()
-        if trade_risk.get("risk_percent", 0) > max_risk:
-            violations.append(
-                f"Risk {trade_risk['risk_percent']*100:.2f}% "
-                f"exceeds max {max_risk*100:.2f}%"
-            )
-        
-        # Check min RR
-        min_rr = self._prop_firm.min_rr_required()
-        if trade_risk.get("rr_ratio", 0) < min_rr:
-            violations.append(
-                f"RR {trade_risk['rr_ratio']:.2f} "
-                f"below min {min_rr:.2f}"
-            )
-        
-        compliant = len(violations) == 0
-        
-        if not compliant:
-            logger.warning(
-                "Prop firm compliance check failed",
-                violations=violations,
-            )
-        
+        effective_balance = balance if balance is not None else self._balance
+        try:
+            pip_value, pip_mult = get_pip_info(pair)
+        except PipLookupError:
+            pip_value = DEFAULT_PIP_VALUE
+            pip_mult = 10_000.0
+
+        pips_at_risk = abs(entry_price - stop_loss_price) * pip_mult
+        risk_amount = effective_balance * risk_percent
+
+        if pips_at_risk > 0 and pip_value > 0:
+            raw_lot = risk_amount / (pips_at_risk * pip_value)
+            lot_size = self._round_lot_down(raw_lot)
+        else:
+            lot_size = 0.0
+
         return {
-            "compliant": compliant,
-            "violations": violations,
+            "lot_size": lot_size,
+            "risk_amount": round(risk_amount, 2),
+            "pips_at_risk": round(pips_at_risk, 2),
+            "pip_value": pip_value,
         }
-    
-    def get_component(self, name: str):
+
+    def check_prop_firm_compliance(
+        self,
+        trade_risk: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Check trade against prop firm rules.
+
+        Default implementation: always compliant.
+        Override or configure to use actual prop firm profiles.
         """
-        Get direct access to a risk component (for advanced usage).
-        
+        _ = trade_risk
+        return {
+            "compliant": True,
+            "violations": [],
+        }
+
+    def record_trade_result(
+        self,
+        pnl: float,
+        pair: str = "",
+        current_equity: float | None = None,
+    ) -> None:
+        """Record trade result and update circuit breaker state.
+
         Parameters
         ----------
-        name : str
-            Component name: "drawdown"|"circuit_breaker"|"position_sizer"|
-            "risk_multiplier"|"prop_firm"
-            
-        Returns
-        -------
-        object
-            The requested component
-            
-        Raises
-        ------
-        ValueError
-            If component name is invalid
+        pnl : float
+            Profit/Loss of the trade.
+        pair : str
+            Trading pair (informational).
+        current_equity : float | None
+            Current account equity after the trade.
         """
-        components = {
-            "drawdown": self._drawdown,
-            "circuit_breaker": self._circuit_breaker,
-            "position_sizer": self._position_sizer,
-            "risk_multiplier": self._risk_multiplier,
-            "prop_firm": self._prop_firm,
-        }
-        
-        if name not in components:
-            raise ValueError(
-                f"Invalid component: {name}. "
-                f"Valid: {list(components.keys())}"
-            )
-        
-        return components[name]
+        self._daily_loss += min(0.0, pnl)
+
+        if current_equity is not None:
+            self._balance = current_equity
+
+        # Trip circuit breaker if daily loss exceeds limit
+        if abs(self._daily_loss) >= self._balance * self._max_daily_loss_pct:
+            self._circuit_open = True

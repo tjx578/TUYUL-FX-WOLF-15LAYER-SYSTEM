@@ -1,259 +1,156 @@
 """
-Wolf L12 API Server
+TUYUL FX Wolf-15 — Main API Server
+=====================================
+Entry point for Railway deployment.
 
-FastAPI server for L12 verdict polling, dashboard trade management, and system health monitoring.
+Architecture:
+  - Router registration: api/router_registry.py
+  - App construction:    api/app_factory.py
+  - This file:           logging bootstrap + uvicorn entry point
+
+Run (Railway):
+    python api_server.py
 """
 
-import asyncio
-import os
-from contextlib import asynccontextmanager
-from datetime import datetime, timezone
-from typing import Dict, Optional
+import logging  # noqa: E402
+import os  # noqa: E402
+import sys  # noqa: E402
+from copy import deepcopy  # noqa: E402
+from typing import Any  # noqa: E402
 
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
-from loguru import logger
+from dotenv import load_dotenv
+from typing_extensions import override  # noqa: E402
 
-from api.dashboard_routes import router as dashboard_router
-from api.journal_routes import router as journal_router
-from api.l12_routes import router as l12_router
-from api.ws_routes import router as ws_router
-from risk.risk_router import router as risk_router
-from context.live_context_bus import LiveContextBus
-from context.runtime_state import RuntimeState
-from dashboard.price_feed import PriceFeed
-from dashboard.price_watcher import PriceWatcher
-from utils.timezone_utils import format_local, format_utc, now_utc
+from config.logging_bootstrap import configure_loguru_logging  # noqa: E402
 
 
-# Background task references
-_price_feed_task = None
-_price_watcher_task = None
+def _is_railway_runtime() -> bool:
+    return bool(
+        os.environ.get("RAILWAY_ENVIRONMENT")
+        or os.environ.get("RAILWAY_ENVIRONMENT_ID")
+        or os.environ.get("RAILWAY_PROJECT_ID")
+        or os.environ.get("RAILWAY_SERVICE_ID")
+        or os.environ.get("RAILWAY_DEPLOYMENT_ID")
+        or os.environ.get("RAILWAY_REPLICA_ID")
+    )
 
 
-async def _run_price_feed_updater():
-    """Background task to update price feed from LiveContextBus."""
-    price_feed = PriceFeed()
-    interval_sec = int(os.getenv("PRICE_FEED_INTERVAL_SEC", "2"))
-    
-    logger.info(f"Price feed updater started (interval: {interval_sec}s)")
-    
-    while True:
-        try:
-            updated = price_feed.update_prices()
-            if updated > 0:
-                logger.debug(f"Updated {updated} prices")
-        except Exception as exc:
-            logger.error(f"Price feed update error: {exc}")
-        
-        await asyncio.sleep(interval_sec)
+def _env_true(value: str | None) -> bool:
+    return (value or "").strip().lower() in {"1", "true", "yes", "on"}
 
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    """
-    Lifespan context manager for background tasks.
-    
-    Starts price feed updater and price watcher on startup.
-    Stops them on shutdown.
-    """
-    global _price_feed_task, _price_watcher_task
-    
-    # Startup
-    logger.info("Starting background tasks...")
-    
-    # Start price feed updater
-    _price_feed_task = asyncio.create_task(_run_price_feed_updater())
-    
-    # Start price watcher
-    price_watcher = PriceWatcher()
-    _price_watcher_task = asyncio.create_task(price_watcher.start())
-    
-    logger.info("Background tasks started")
-    
-    yield
-    
-    # Shutdown
-    logger.info("Stopping background tasks...")
-    
-    if _price_feed_task:
-        _price_feed_task.cancel()
-        try:
-            await _price_feed_task
-        except asyncio.CancelledError:
-            pass
-    
-    if _price_watcher_task:
-        price_watcher.stop()
-        _price_watcher_task.cancel()
-        try:
-            await _price_watcher_task
-        except asyncio.CancelledError:
-            pass
-    
-    logger.info("Background tasks stopped")
+# Load .env only for local/dev workflows. On Railway, rely on platform env vars
+# unless explicitly forced via WOLF15_LOAD_DOTENV=true.
+if _env_true(os.getenv("WOLF15_LOAD_DOTENV")) or not _is_railway_runtime():
+    load_dotenv(override=False)
+
+# ── Process-level logging (must run before any app import) ────────────────────
 
 
-app = FastAPI(
-    title="Wolf L12 API",
-    version="7.4r∞",
-    description="Wolf 15-Layer Trading System - L12 Verdict & Dashboard API",
-    lifespan=lifespan,
-)
+def _configure_process_logging() -> None:
+    """Configure stdlib + loguru logging for correct stdout/stderr severity routing."""
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s  %(levelname)-8s  %(name)s  %(message)s",
+        stream=sys.stdout,
+        force=True,
+    )
 
-# CORS middleware for Next.js dashboard
-# Configure allowed origins via environment variable in production
-cors_origins = os.getenv("CORS_ORIGINS", "http://localhost:3000").split(",")
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=cors_origins,
-    allow_credentials=True,
-    allow_methods=["GET", "POST"],  # Allow POST for trade actions
-    allow_headers=["*"],
-)
-
-# Include routers
-app.include_router(l12_router)
-app.include_router(dashboard_router)
-app.include_router(journal_router)
-app.include_router(ws_router)
-app.include_router(risk_router)
+    configure_loguru_logging(level=os.getenv("WOLF15_LOG_LEVEL", "INFO"))
 
 
-def _get_feed_status() -> str:
-    """
-    Determine data feed status.
+_configure_process_logging()
 
-    Returns:
-        "connected" | "disconnected" | "no_api_key"
-    """
-    api_key = os.getenv("FINNHUB_API_KEY", "")
+# ── Build application via factory ─────────────────────────────────────────────
+from api.app_factory import create_app  # noqa: E402
 
-    if not api_key or api_key == "YOUR_FINNHUB_API_KEY":
-        return "no_api_key"
+app = create_app()
 
-    # Check if we have recent tick data
-    context_bus = LiveContextBus()
-    snapshot = context_bus.snapshot()
-
-    if snapshot.get("ticks"):
-        return "connected"
-
-    return "disconnected"
+logger = logging.getLogger(__name__)
 
 
-def _get_last_tick_times() -> Dict[str, Optional[str]]:
-    """
-    Get timestamp of last tick per symbol.
-
-    Returns:
-        Dictionary of symbol -> ISO timestamp
-    """
-    context_bus = LiveContextBus()
-    snapshot = context_bus.snapshot()
-    ticks = snapshot.get("ticks", [])
-
-    last_ticks = {}
-    for tick in reversed(ticks):
-        symbol = tick.get("symbol")
-        if symbol and symbol not in last_ticks:
-            ts = tick.get("timestamp")
-            if isinstance(ts, (int, float)):
-                # Unix timestamp
-                dt = datetime.fromtimestamp(ts, tz=timezone.utc)
-                last_ticks[symbol] = dt.isoformat()
-            elif isinstance(ts, datetime):
-                last_ticks[symbol] = ts.isoformat()
-
-    return last_ticks
+# ── Uvicorn log config ────────────────────────────────────────────────────────
 
 
-def _get_candle_freshness() -> Dict[str, int]:
-    """
-    Get age of latest candle per symbol in seconds.
+class _MaxLevelFilter(logging.Filter):
+    def __init__(self, max_level: int) -> None:
+        super().__init__()
+        self.max_level = max_level
 
-    Returns:
-        Dictionary of symbol -> age in seconds
-    """
-    context_bus = LiveContextBus()
-    snapshot = context_bus.snapshot()
-    candles = snapshot.get("candles", {})
-
-    now = datetime.now(timezone.utc)
-    freshness = {}
-
-    for symbol, timeframes in candles.items():
-        for tf, candle in timeframes.items():
-            ts = candle.get("timestamp")
-            if isinstance(ts, datetime):
-                age = (now - ts).total_seconds()
-                key = f"{symbol}_{tf}"
-                freshness[key] = int(age)
-
-    return freshness
+    @override
+    def filter(self, record: logging.LogRecord) -> bool:
+        return record.levelno <= self.max_level
 
 
-def _get_redis_status() -> str:
-    """
-    Check Redis connection status.
+def _build_uvicorn_log_config() -> dict[str, Any]:
+    from uvicorn.config import LOGGING_CONFIG
 
-    Returns:
-        "connected" | "disconnected" | "not_configured"
-    """
-    context_mode = os.getenv("CONTEXT_MODE", "local").lower()
+    config = deepcopy(LOGGING_CONFIG)
+    config["disable_existing_loggers"] = False
 
-    if context_mode != "redis":
-        return "not_configured"
+    filters = config.setdefault("filters", {})
+    filters["max_warning"] = {
+        "()": _MaxLevelFilter,
+        "max_level": logging.WARNING,
+    }
 
+    handlers = config.setdefault("handlers", {})
+    handlers["default_stdout"] = {
+        "class": "logging.StreamHandler",
+        "formatter": "default",
+        "stream": "ext://sys.stdout",
+        "filters": ["max_warning"],
+    }
+    handlers["default_stderr"] = {
+        "class": "logging.StreamHandler",
+        "formatter": "default",
+        "stream": "ext://sys.stderr",
+        "level": "ERROR",
+    }
+    handlers["access"] = {
+        "class": "logging.StreamHandler",
+        "formatter": "access",
+        "stream": "ext://sys.stdout",
+    }
+
+    loggers = config.setdefault("loggers", {})
+    loggers["uvicorn"] = {
+        "handlers": ["default_stdout", "default_stderr"],
+        "level": "INFO",
+        "propagate": False,
+    }
+    loggers["uvicorn.error"] = {
+        "handlers": ["default_stdout", "default_stderr"],
+        "level": "INFO",
+        "propagate": False,
+    }
+    access_level = os.getenv("UVICORN_ACCESS_LOG_LEVEL", "WARNING").upper().strip() or "WARNING"
+    loggers["uvicorn.access"] = {
+        "handlers": ["access"],
+        "level": access_level,
+        "propagate": False,
+    }
+
+    return config
+
+
+def _resolve_port(default: int = 8000) -> int:
+    raw_port = os.getenv("PORT", str(default)).strip()
     try:
-        # Try to get LiveContextBus and check if Redis bridge exists
-        context_bus = LiveContextBus()
-        if hasattr(context_bus, "_redis_bridge") and context_bus._redis_bridge:
-            return "connected"
-        return "disconnected"
-    except Exception:
-        return "disconnected"
-
-
-@app.get("/")
-async def root():
-    """Root endpoint."""
-    current_time = now_utc()
-    return {
-        "service": "Wolf 15-Layer System",
-        "version": "7.4r∞",
-        "status": "operational",
-        "time_utc": format_utc(current_time),
-        "time_local": format_local(current_time),
-    }
-
-
-@app.get("/health")
-async def health_check():
-    """
-    Enhanced health check endpoint for monitoring.
-
-    Returns:
-        Dictionary with system health information including:
-        - Overall status
-        - Feed connection status
-        - Last tick timestamps per symbol
-        - Candle freshness (age in seconds)
-        - Redis status
-        - System latency
-    """
-    return {
-        "status": "healthy",
-        "service": "wolf-l12-api",
-        "version": "7.4r∞",
-        "latency_ms": RuntimeState.latency_ms,
-        "feed_status": _get_feed_status(),
-        "last_tick_at": _get_last_tick_times(),
-        "candle_freshness": _get_candle_freshness(),
-        "redis_status": _get_redis_status(),
-    }
+        return int(raw_port)
+    except (TypeError, ValueError):
+        logger.warning("Invalid PORT value '%s'; falling back to %d", raw_port, default)
+        return default
 
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+
+    uvicorn.run(
+        "api_server:app",
+        host="0.0.0.0",
+        port=_resolve_port(),
+        log_level="info",
+        log_config=_build_uvicorn_log_config(),
+        ws_per_message_deflate=True,
+    )

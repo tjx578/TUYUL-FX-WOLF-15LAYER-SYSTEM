@@ -1,0 +1,60 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "take_signal_request_schema_v1",
+  "title": "Take Signal Request",
+  "description": "Operator action to bind global signal to account and EA instance.",
+  "type": "object",
+  "required": [
+    "signal_id",
+    "account_id",
+    "ea_instance_id",
+    "operator",
+    "reason",
+    "request_id",
+    "timestamp"
+  ],
+  "properties": {
+    "signal_id": {
+      "type": "string",
+      "minLength": 3
+    },
+    "account_id": {
+      "type": "string",
+      "minLength": 3
+    },
+    "ea_instance_id": {
+      "type": "string",
+      "minLength": 3
+    },
+    "operator": {
+      "type": "string",
+      "minLength": 2,
+      "maxLength": 64
+    },
+    "reason": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 512
+    },
+    "request_id": {
+      "type": "string",
+      "description": "Client-generated idempotency key.",
+      "minLength": 8,
+      "maxLength": 128
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "strategy_profile_id": {
+      "type": ["string", "null"],
+      "minLength": 2,
+      "maxLength": 128
+    },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": false
+}

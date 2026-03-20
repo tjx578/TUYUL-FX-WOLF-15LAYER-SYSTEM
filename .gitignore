@@ -5,77 +5,72 @@
 .env.*
 !.env.example
 
-# =========================
-# Python
-# =========================
+# ── Python artifacts ─────────────────────────
 __pycache__/
 *.py[cod]
+*$py.class
+*.pyc
 *.pyo
-*.pyd
-*.so
 *.egg-info/
 dist/
 build/
-pip-wheel-metadata/
-.venv/
-venv/
-ENV/
-env/
-.pytest_cache/
-.mypy_cache/
-.pytype/
-.pyre/
 
-# =========================
-# Logs / Runtime Artifacts
-# =========================
-logs/
+# ── Test output ──────────────────────────────
+_test_result*.txt
+_test_result*.log
+_batch_result*.txt
+test_result*.txt
+test_run_output.txt
+test_out*.txt
+test_output*.txt
+full_test_out.txt
+pyright_output.txt
+wolf_test_results.txt
+test-results/
+htmlcov/
+.coverage
+.coveragerc
+coverage.xml
+.pytest_cache/
+pytest_cache/
+
+# ── Build artifacts ──────────────────────────
+final_results.txt
+full_results.txt
+collect_results.txt
+full_test_run.txt
+test_collect.txt
 *.log
 *.out
-*.pid
 
-# =========================
-# Storage (runtime snapshots, journals, redis dumps)
-# Keep code, ignore runtime data
-# =========================
-storage/redis_dump/
-storage/snapshots/
-storage/journal/
-storage/ea_commands/
-storage/ea_state/
-storage/decision_archive/
-storage/gpt_exports/
-*.rdb
+# ── Environment ──────────────────────────────
+.env
+.env.local
+.env.*.local
+.venv/
 
-# =========================
-# OS / Editor
-# =========================
-.DS_Store
-Thumbs.db
-.idea/
-.vscode/
-*.swp
-
-# =========================
-# Dashboard Frontend
-# =========================
+# ── Node / JS ────────────────────────────────
 node_modules/
+**/node_modules/
+/package-lock.json
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
-pnpm-lock.yaml
+pnpm-debug.log*
+.next/
+out/
 
-# =========================
-# Coverage
-# =========================
-.coverage
-coverage.xml
-htmlcov/
+# ── IDE ──────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
 
-# =========================
-# Temporary
-# =========================
-tmp/
-temp/
-*.tmp
-# Placeholder
+# ── Ruff / Mypy / Pyright cache ─────────────
+.ruff_cache/
+.mypy_cache/
+.pyright/
+
+# ── OS files ─────────────────────────────────
+Thumbs.db
+.DS_Store

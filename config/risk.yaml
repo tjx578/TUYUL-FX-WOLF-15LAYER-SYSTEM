@@ -58,8 +58,8 @@ position_sizing:
     CHFJPY: 10.0
     
     # Commodities
-    XAUUSD: 10.0   # Gold: 1 pip = $10 per standard lot
-    XAGUSD: 50.0   # Silver: 1 pip = $50 per standard lot
+    XAUUSD: 10.0   # Gold: 1 pip = $100 per standard lot
+    XAGUSD: 50.0   # Silver: 1 pip = $500 per standard lot
 
 # Risk Multiplier - Adaptive Scaling
 risk_multiplier:

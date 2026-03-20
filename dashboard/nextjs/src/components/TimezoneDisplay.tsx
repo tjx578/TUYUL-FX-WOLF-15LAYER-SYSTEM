@@ -1,41 +1,67 @@
-'use client';
+"use client";
 
-import { useEffect, useState } from 'react';
-import { Clock } from 'lucide-react';
-import { getCurrentLocalTime, getCurrentUTCTime } from '@/lib/timezone';
+// ============================================================
+// TUYUL FX Wolf-15 — Timezone Display
+// ============================================================
 
-export default function TimezoneDisplay() {
-  const [utcTime, setUtcTime] = useState<string>('');
-  const [localTime, setLocalTime] = useState<string>('');
+import { formatTime, formatDate, sessionLabel } from "@/lib/timezone";
+import { useClock } from "@/hooks/useClock";
 
-  useEffect(() => {
-    const updateTimes = () => {
-      setUtcTime(getCurrentUTCTime());
-      setLocalTime(getCurrentLocalTime());
-    };
+interface TimezoneDisplayProps {
+  compact?: boolean;
+}
 
-    updateTimes();
-    const interval = setInterval(updateTimes, 1000);
+export function TimezoneDisplay({ compact = false }: TimezoneDisplayProps) {
+  const now = useClock();
 
-    return () => clearInterval(interval);
-  }, []);
+  const session = sessionLabel();
+
+  if (compact) {
+    return (
+      <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+        <span
+          className="num"
+          style={{
+            fontSize: 13,
+            color: "var(--accent)",
+            fontWeight: 700,
+          }}
+        >
+          {formatTime(now)}
+        </span>
+        <span
+          style={{
+            fontSize: 10,
+            color: "var(--text-muted)",
+            letterSpacing: "0.06em",
+          }}
+        >
+          {session ? `${session} SESSION` : ""}
+        </span>
+      </div>
+    );
+  }
 
   return (
-    <div className="bg-wolf-gray rounded-lg p-3 border border-wolf-gray-light">
-      <div className="flex items-center gap-2 mb-2">
-        <Clock className="w-4 h-4 text-wolf-gold" />
-        <span className="text-xs font-semibold text-wolf-gold">TIME</span>
-      </div>
-      <div className="space-y-1 text-xs font-mono-numbers">
-        <div>
-          <span className="text-wolf-gray-light">UTC:</span>{' '}
-          <span className="text-white">{utcTime || 'Loading...'}</span>
-        </div>
-        <div>
-          <span className="text-wolf-gray-light">GMT+8:</span>{' '}
-          <span className="text-white">{localTime || 'Loading...'}</span>
-        </div>
-      </div>
+    <div
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "flex-end",
+        gap: 2,
+      }}
+    >
+      <span
+        className="num"
+        style={{ fontSize: 16, color: "var(--text-primary)", fontWeight: 700 }}
+      >
+        {formatTime(now)}
+      </span>
+      <span
+        style={{ fontSize: 11, color: "var(--text-muted)", letterSpacing: "0.04em" }}
+      >
+        {`${formatDate(now)} · ${session}`}
+      </span>
     </div>
   );
 }

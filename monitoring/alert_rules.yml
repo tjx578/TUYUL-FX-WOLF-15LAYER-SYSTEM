@@ -1,0 +1,181 @@
+groups:
+  - name: wolf_feed_health
+    rules:
+      - alert: FeedStale
+        expr: wolf_feed_age_seconds > 30
+        for: 30s
+        labels:
+          severity: critical
+          team: trading
+        annotations:
+          summary: "Feed stale for {{ $labels.symbol }}"
+          description: "No tick received for {{ $labels.symbol }} in {{ $value }}s (threshold: 30s)."
+
+      - alert: FeedStaleWarning
+        expr: wolf_feed_age_seconds > 15
+        for: 15s
+        labels:
+          severity: warning
+          team: trading
+        annotations:
+          summary: "Feed delayed for {{ $labels.symbol }}"
+          description: "No tick received for {{ $labels.symbol }} in {{ $value }}s."
+
+      - alert: WebSocketDown
+        expr: wolf_ws_connections_active == 0
+        for: 10s
+        labels:
+          severity: critical
+          team: infra
+        annotations:
+          summary: "No active WebSocket connections"
+          description: "All WebSocket connections lost. Ingest is halted."
+
+      - alert: HighReconnectRate
+        expr: sum(rate(wolf_feed_reconnect_total[5m])) by (source) > 0.1
+        for: 2m
+        labels:
+          severity: warning
+          team: infra
+        annotations:
+          summary: "High reconnect rate for {{ $labels.source }}"
+          description: "Feed source {{ $labels.source }} reconnecting > 6/min."
+
+  - name: wolf_drawdown
+    rules:
+      - alert: DailyLossWarning
+        expr: wolf_daily_loss_percent > 3
+        for: 0s
+        labels:
+          severity: warning
+          team: risk
+        annotations:
+          summary: "Daily loss at {{ $value }}% for {{ $labels.account_id }}"
+          description: "Approaching FTMO daily loss limit (4%). Reduce exposure."
+
+      - alert: DailyLossCritical
+        expr: wolf_daily_loss_percent > 4
+        for: 0s
+        labels:
+          severity: critical
+          team: risk
+        annotations:
+          summary: "CRITICAL: Daily loss {{ $value }}% for {{ $labels.account_id }}"
+          description: "Daily loss exceeds 4%. Trading should be halted immediately."
+
+      - alert: DrawdownWarning
+        expr: wolf_drawdown_max_percent > 6
+        for: 0s
+        labels:
+          severity: warning
+          team: risk
+        annotations:
+          summary: "Drawdown at {{ $value }}% for {{ $labels.account_id }}"
+          description: "Approaching max drawdown limit (8% FTMO). Review positions."
+
+      - alert: DrawdownCritical
+        expr: wolf_drawdown_max_percent > 8
+        for: 0s
+        labels:
+          severity: critical
+          team: risk
+        annotations:
+          summary: "CRITICAL: Drawdown {{ $value }}% for {{ $labels.account_id }}"
+          description: "Max drawdown limit breached. Kill switch should activate."
+
+      - alert: AccountDrawdownHigh
+        expr: wolf_account_drawdown_percent > 5
+        for: 0s
+        labels:
+          severity: warning
+          team: risk
+        annotations:
+          summary: "Account drawdown {{ $value }}% for {{ $labels.account_id }}"
+
+  - name: wolf_kill_switch
+    rules:
+      - alert: KillSwitchTripped
+        expr: wolf_kill_switch_active == 1
+        for: 0s
+        labels:
+          severity: critical
+          team: risk
+        annotations:
+          summary: "KILL SWITCH TRIPPED — all trading halted"
+          description: "The kill switch has been activated. No trades will be placed until manually reset."
+
+  - name: wolf_circuit_breaker
+    rules:
+      - alert: CircuitBreakerOpen
+        expr: wolf_circuit_breaker_state == 2
+        for: 0s
+        labels:
+          severity: critical
+          team: infra
+        annotations:
+          summary: "Circuit breaker OPEN for {{ $labels.name }}"
+          description: "Service {{ $labels.name }} has tripped its circuit breaker. Calls are being blocked."
+
+      - alert: CircuitBreakerHalfOpen
+        expr: wolf_circuit_breaker_state == 1
+        for: 30s
+        labels:
+          severity: warning
+          team: infra
+        annotations:
+          summary: "Circuit breaker recovering: {{ $labels.name }}"
+          description: "Service {{ $labels.name }} is in HALF_OPEN state — recovery probes in progress."
+
+  - name: wolf_pipeline
+    rules:
+      - alert: HighPipelineLatency
+        expr: histogram_quantile(0.95, sum(rate(wolf_pipeline_duration_seconds_bucket[5m])) by (le)) > 2.0
+        for: 2m
+        labels:
+          severity: warning
+          team: trading
+        annotations:
+          summary: "Pipeline p95 latency above 2s"
+          description: "Pipeline p95 latency is {{ $value }}s. Signals may be delayed."
+
+      - alert: HighTickToVerdictLatency
+        expr: histogram_quantile(0.95, sum(rate(wolf_tick_to_verdict_seconds_bucket[5m])) by (le)) > 5.0
+        for: 2m
+        labels:
+          severity: critical
+          team: trading
+        annotations:
+          summary: "Tick-to-verdict p95 latency above 5s"
+          description: "End-to-end signal generation is critically slow at {{ $value }}s."
+
+      - alert: HighPipelineErrorRate
+        expr: sum(rate(wolf_pipeline_error_total[5m])) > 0.05
+        for: 2m
+        labels:
+          severity: warning
+          team: trading
+        annotations:
+          summary: "Pipeline error rate elevated"
+          description: "Pipeline errors above 3/min. Check error_code labels for root cause."
+
+      - alert: SLOBreach
+        expr: sum(rate(wolf_slo_breach_total[5m])) > 0
+        for: 5m
+        labels:
+          severity: warning
+          team: trading
+        annotations:
+          summary: "SLO latency breach detected"
+          description: "Pipeline stage {{ $labels.stage }} is consistently breaching SLO threshold."
+
+  - name: wolf_redis
+    rules:
+      - alert: RedisStreamLagHigh
+        expr: histogram_quantile(0.95, sum(rate(wolf_redis_stream_lag_seconds_bucket[5m])) by (le, stream)) > 1.0
+        for: 2m
+        labels:
+          severity: warning
+          team: infra
+        annotations:
+          summary: "Redis stream lag p95 above 1s for {{ $labels.stream }}"
+          description: "Consumer group is falling behind on stream {{ $labels.stream }}."

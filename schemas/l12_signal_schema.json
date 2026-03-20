@@ -1,0 +1,82 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "l12_signal_schema_v2",
+  "title": "Wolf L12 Signal Contract",
+  "description": "Full L12 verdict/signal contract. Must NOT contain account-level state.",
+  "type": "object",
+  "required": ["signal_id", "symbol", "verdict", "confidence", "timestamp"],
+  "properties": {
+    "signal_id": {
+      "type": "string",
+      "pattern": "^SIG-[A-Z0-9]+-[0-9]+-[0-9]+-[A-F0-9]+$"
+    },
+    "symbol": {
+      "type": "string"
+    },
+    "verdict": {
+      "type": "string",
+      "enum": ["EXECUTE", "HOLD", "NO_TRADE", "ABORT"]
+    },
+    "confidence": {
+      "type": "number",
+      "minimum": 0.0,
+      "maximum": 1.0
+    },
+    "direction": {
+      "type": "string",
+      "enum": ["BUY", "SELL"]
+    },
+    "entry_price": {
+      "type": "number",
+      "exclusiveMinimum": 0
+    },
+    "stop_loss": {
+      "type": "number",
+      "exclusiveMinimum": 0
+    },
+    "take_profit_1": {
+      "type": "number",
+      "exclusiveMinimum": 0
+    },
+    "take_profit_2": {
+      "type": ["number", "null"]
+    },
+    "risk_reward_ratio": {
+      "type": "number",
+      "minimum": 0
+    },
+    "scores": {
+      "type": "object",
+      "properties": {
+        "wolf_score": { "type": "number" },
+        "tii_score": { "type": "number" },
+        "frpc_score": { "type": "number" },
+        "regime": { "type": "string" },
+        "session": { "type": "string" }
+      }
+    },
+    "timestamp": {
+      "type": "number"
+    },
+    "expires_at": {
+      "type": "number"
+    },
+    "ttl_seconds": {
+      "type": "number"
+    },
+    "layers_summary": {
+      "type": "object",
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": false,
+  "not": {
+    "anyOf": [
+      { "required": ["balance"] },
+      { "required": ["equity"] },
+      { "required": ["account_balance"] },
+      { "required": ["lot_size"] },
+      { "required": ["risk_amount"] }
+    ]
+  }
+}
