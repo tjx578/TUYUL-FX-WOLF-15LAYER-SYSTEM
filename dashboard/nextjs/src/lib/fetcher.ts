@@ -72,7 +72,6 @@ export async function swrFetcher<T = unknown>(url: string): Promise<T> {
       }
     }
 
-    const err = new HttpError(
     const error = new HttpError(
       `Request failed: ${res.status} ${res.statusText}`,
       res.status,
@@ -82,40 +81,17 @@ export async function swrFetcher<T = unknown>(url: string): Promise<T> {
     // Attach Retry-After hint for 429 so callers can back off appropriately.
     if (res.status === 429) {
       const retryAfterHeader = res.headers.get("Retry-After");
-      const retryAfterMs = retryAfterHeader
+      error.retryAfterMs = retryAfterHeader
         ? (Number.isNaN(Number(retryAfterHeader))
-            ? // HTTP-date format
+            ? // HTTP-date format (RFC 7231)
               Math.max(0, new Date(retryAfterHeader).getTime() - Date.now())
-            : // seconds integer
+            : // delay-seconds integer
               Number(retryAfterHeader) * 1000)
         : 60_000; // default 60s back-off when header absent
-      (err as HttpError & { retryAfterMs: number }).retryAfterMs = retryAfterMs;
 
       if (process.env.NODE_ENV === "development") {
-        console.warn(`[fetcher] 429 on ${url}. Back-off ${Math.round(retryAfterMs / 1000)}s.`);
+        console.warn(`[fetcher] 429 on ${url}. Back-off ${Math.round(error.retryAfterMs / 1000)}s.`);
       }
-    }
-
-    throw err;
-    if (res.status === 429) {
-      const retryAfter = res.headers.get("Retry-After");
-      if (retryAfter) {
-        // Retry-After can be a delay-seconds integer or an HTTP-date string (RFC 7231)
-        const parsed = parseInt(retryAfter, 10);
-        error.retryAfterMs = !isNaN(parsed)
-          ? parsed * 1000
-          : Math.max(0, new Date(retryAfter).getTime() - Date.now());
-      } else {
-        error.retryAfterMs = 60_000; // default: 60s when no header is present
-      }
-    }
-
-    // Attach Retry-After so callers (React Query, SWR) can respect the cooldown
-    if (res.status === 429) {
-      const retryAfter = res.headers.get("Retry-After");
-      error.retryAfterMs = retryAfter
-        ? parseInt(retryAfter, 10) * 1000
-        : 60_000;
     }
 
     throw error;
