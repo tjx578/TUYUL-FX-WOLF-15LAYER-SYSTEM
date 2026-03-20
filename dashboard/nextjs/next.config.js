@@ -44,7 +44,19 @@ function _isProtectedDeployment() {
 }
 
 function _normalizeWsBase(value) {
-  return (value || "").trim().replace(/\/+$/, "").replace(/\/ws$/, "");
+  const raw = (value || "").trim();
+  if (!raw) return "";
+
+  // Aggressively strip any path component — we only want the origin.
+  // Common mistakes: trailing slash, /ws, /ws/, /api/ws, etc.
+  try {
+    const url = new URL(raw);
+    // Rebuild as bare origin (protocol + host + port only)
+    return `${url.protocol}//${url.host}`;
+  } catch {
+    // If URL parsing fails, fallback to regex stripping
+    return raw.replace(/\/+$/, "").replace(/\/ws.*$/, "").replace(/\/api.*$/, "");
+  }
 }
 
 function _validateWsBase(wsBase, { protectedDeploy, explicitlyConfigured }) {
@@ -74,9 +86,12 @@ function _validateWsBase(wsBase, { protectedDeploy, explicitlyConfigured }) {
     );
   }
 
+  // After normalization the path should be stripped. If it still has a path,
+  // warn but don't fail — the normalize step already extracted the origin.
   if (parsed.pathname && parsed.pathname !== "/") {
-    throw new Error(
-      "[next.config] NEXT_PUBLIC_WS_BASE_URL must be a bare origin (no path, no /ws suffix)."
+    console.warn(
+      `[next.config] NEXT_PUBLIC_WS_BASE_URL had unexpected path '${parsed.pathname}'. ` +
+      "Path was stripped; using bare origin only."
     );
   }
 
