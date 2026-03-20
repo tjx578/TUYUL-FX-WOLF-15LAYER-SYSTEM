@@ -29,6 +29,10 @@ export function createQueryClient() {
             if (error.status === 401 || error.status === 403 || error.status === 404) {
               return false;
             }
+            // 429 = rate limited — retrying only amplifies the problem
+            if (error.status === 429) {
+              return false;
+            }
           }
           return failureCount < 3;
         },

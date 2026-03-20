@@ -75,8 +75,10 @@ let sseFallbackTimer: ReturnType<typeof setTimeout> | null = null;
 let wsFailedAt: number | null = null;
 
 // Polling fallback (health heartbeat) — used when WS + SSE are down.
-const POLLING_HEARTBEAT_MS = 10_000;
-let pollingTimer: ReturnType<typeof setInterval> | null = null;
+const POLLING_INITIAL_MS = 10_000;
+const POLLING_MAX_BACKOFF_MS = 120_000; // 2 minute ceiling
+let pollingBackoffMs = POLLING_INITIAL_MS;
+let pollingTimer: ReturnType<typeof setTimeout> | null = null;
 let lastPollingHeartbeatAt: number | null = null;
 
 // ─── INTERNAL: FAN-OUT HELPERS ───────────────────────────────
@@ -140,9 +142,10 @@ function closeSseTransport(): void {
 
 function stopPollingFallback(): void {
     if (pollingTimer) {
-        clearInterval(pollingTimer);
+        clearTimeout(pollingTimer);
         pollingTimer = null;
     }
+    pollingBackoffMs = POLLING_INITIAL_MS;
 }
 
 function startPollingFallback(): void {
@@ -152,7 +155,7 @@ function startPollingFallback(): void {
     fanOutStatus("DEGRADED");
     fanOutDegradation({
         mode: "POLLING",
-        reason: "WS + SSE unavailable. Running HTTP heartbeat polling every 10s.",
+        reason: "WS + SSE unavailable. Running HTTP heartbeat polling with backoff.",
     });
 
     const tick = async () => {
@@ -161,7 +164,17 @@ function startPollingFallback(): void {
             const apiBase = getApiBaseUrl();
             const res = await fetch(`${apiBase}/health`, { credentials: "include" });
             const latency = Date.now() - t0;
+            if (res.status === 429) {
+                // Rate limited — back off aggressively, don't count as failure
+                pollingBackoffMs = Math.min(pollingBackoffMs * 2, POLLING_MAX_BACKOFF_MS);
+                fanOutDegradation({
+                    mode: "POLLING",
+                    reason: `Rate limited (429). Backing off to ${Math.round(pollingBackoffMs / 1000)}s.`,
+                });
+                return;
+            }
             if (!res.ok) {
+                pollingBackoffMs = Math.min(pollingBackoffMs * 2, POLLING_MAX_BACKOFF_MS);
                 fanOutStatus("STALE");
                 fanOutDegradation({
                     mode: "POLLING",
@@ -169,6 +182,7 @@ function startPollingFallback(): void {
                 });
                 return;
             }
+            pollingBackoffMs = POLLING_INITIAL_MS; // Reset on success
             lastPollingHeartbeatAt = Date.now();
             fanOutStatus("DEGRADED");
             fanOutDegradation({
@@ -176,6 +190,7 @@ function startPollingFallback(): void {
                 reason: `Polling heartbeat OK (${latency}ms). Streaming transport still unavailable.`,
             });
         } catch (err) {
+            pollingBackoffMs = Math.min(pollingBackoffMs * 2, POLLING_MAX_BACKOFF_MS);
             fanOutStatus("STALE");
             fanOutDegradation({
                 mode: "POLLING",
@@ -184,10 +199,12 @@ function startPollingFallback(): void {
         }
     };
 
-    pollingTimer = setInterval(() => {
-        void tick();
-    }, POLLING_HEARTBEAT_MS);
-    void tick();
+    const scheduleTick = () => {
+        pollingTimer = setTimeout(() => {
+            void tick().then(scheduleTick);
+        }, pollingBackoffMs);
+    };
+    void tick().then(scheduleTick);
 }
 
 function openSseConnection(): void {
