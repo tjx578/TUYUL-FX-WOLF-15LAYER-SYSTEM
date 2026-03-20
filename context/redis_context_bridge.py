@@ -69,10 +69,9 @@ class RedisContextBridge:
 
         Operations:
           1. XADD to stream "tick:{symbol}" with maxlen cap
-          2. HSET to "latest_tick:{symbol}" for fast latest-tick lookup
-          3. EXPIRE on latest_tick key (3600s — keeps data during WS outages;
-             staleness detected via timestamp field, not key expiry)
-          4. PUBLISH to "tick_updates" channel for real-time notification
+          2. HSET to "latest_tick:{symbol}" with ``last_seen_ts`` field
+             (freshness is computed from this timestamp, NOT key expiry)
+          3. PUBLISH to "tick_updates" channel for real-time notification
 
         Args:
             tick: Tick dictionary with keys: symbol, bid, ask, timestamp, source
