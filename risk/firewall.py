@@ -32,6 +32,7 @@ from typing import Any
 
 from loguru import logger
 
+from core.redis_keys import FIREWALL_EVENTS
 from journal.forensic_replay import append_replay_artifact
 
 
@@ -480,7 +481,7 @@ class RiskFirewall:
 
             publisher = StreamPublisher()
             await publisher.publish(
-                stream="wolf15:firewall:events",
+                stream=FIREWALL_EVENTS,
                 fields={
                     "event_type": event_type,
                     "firewall_id": result.firewall_id,

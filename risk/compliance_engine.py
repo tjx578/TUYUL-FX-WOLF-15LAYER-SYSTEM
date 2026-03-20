@@ -25,6 +25,8 @@ from enum import StrEnum
 
 from loguru import logger
 
+from core.redis_keys import COMPLIANCE_EVENTS, compliance_state
+
 
 class ComplianceMode(StrEnum):
     """Account compliance mode — controls risk posture."""
@@ -207,7 +209,7 @@ class ComplianceAutoModeEngine:
 
             publisher = StreamPublisher()
             await publisher.publish(
-                stream="wolf15:compliance:events",
+                stream=COMPLIANCE_EVENTS,
                 fields={
                     "event_type": "COMPLIANCE_MODE_CHANGED",
                     "event_id": f"cmp_{uuid.uuid4().hex[:16]}",
@@ -231,7 +233,7 @@ class ComplianceAutoModeEngine:
             from storage.redis_client import redis_client  # noqa: PLC0415
 
             redis_client.client.set(
-                f"wolf15:compliance:state:{result.account_id}",
+                compliance_state(result.account_id),
                 json.dumps(
                     {
                         "account_id": result.account_id,

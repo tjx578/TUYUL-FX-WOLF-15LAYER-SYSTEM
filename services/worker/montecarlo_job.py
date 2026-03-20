@@ -16,6 +16,7 @@ from loguru import logger
 # Configure logging FIRST — before any other imports that may trigger logging —
 # so that startup crashes are always captured and visible in Railway logs.
 from config.logging_bootstrap import configure_loguru_logging
+from core.redis_keys import WORKER_MC_INPUT, WORKER_MC_RESULT
 
 configure_loguru_logging()
 
@@ -63,9 +64,7 @@ def _validate_startup() -> bool:
     if redis_url:
         sources.append("WOLF15:RETURN_MATRIX (Redis)")
     else:
-        logger.warning(
-            "[Startup] REDIS_URL not set — Redis data source unavailable for montecarlo_job"
-        )
+        logger.warning("[Startup] REDIS_URL not set — Redis data source unavailable for montecarlo_job")
 
     if not sources:
         logger.warning(
@@ -89,7 +88,7 @@ def run() -> None:
         raw_payload = load_json_payload(
             env_json_var="WOLF15_MC_RETURN_MATRIX_JSON",
             env_file_var="WOLF15_MC_RETURN_MATRIX_FILE",
-            redis_key="WOLF15:RETURN_MATRIX",
+            redis_key=WORKER_MC_INPUT,
         )
         if raw_payload is None:
             logger.warning(
@@ -120,7 +119,7 @@ def run() -> None:
             "result": result.to_dict(),
         }
 
-        publish_result("WOLF15:WORKER:MONTE_CARLO:LAST_RESULT", payload)
+        publish_result(WORKER_MC_RESULT, payload)
         artifact = write_json_artifact("storage/snapshots/worker/montecarlo_latest.json", payload)
 
         if not result.passed_threshold:

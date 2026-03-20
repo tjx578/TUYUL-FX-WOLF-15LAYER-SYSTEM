@@ -32,6 +32,7 @@ from accounts.risk_calculator import AccountScopedRiskEngine
 from accounts.risk_engine import RiskEngine
 from allocation.signal_service import SignalService
 from api.middleware.governance import enforce_write_policy
+from core.redis_keys import compliance_state
 from journal.audit_trail import AuditAction, AuditTrail
 from risk.exceptions import RiskException
 from risk.kill_switch import GlobalKillSwitch
@@ -841,7 +842,7 @@ async def evaluate_compliance(account_id: str) -> dict:
     try:
         import json as _json  # noqa: PLC0415
 
-        raw = redis_client.get(f"wolf15:compliance:state:{account_id}")
+        raw = redis_client.get(compliance_state(account_id))
         if raw:
             cached = _json.loads(raw)
             current_mode = ComplianceMode(cached.get("mode", "NORMAL"))

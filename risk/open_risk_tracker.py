@@ -6,11 +6,11 @@ Persisted in Redis. Updated on INTENDED/OPEN/CLOSE events.
 """
 
 import json
-
 from dataclasses import asdict, dataclass
 
 from loguru import logger
 
+from core.redis_keys import RISK_OPEN_TRADES_PREFIX
 from storage.redis_client import RedisClient
 
 
@@ -35,7 +35,7 @@ class OpenRiskTracker:
     Provides aggregate risk exposure and trade count for guards.
     """
 
-    _KEY_PREFIX = "wolf15:risk:open_trades:"
+    _KEY_PREFIX = RISK_OPEN_TRADES_PREFIX
 
     def __init__(self, account_id: str) -> None:
         self._account_id = account_id
@@ -78,15 +78,9 @@ class OpenRiskTracker:
 
     def remove_trade(self, trade_id: str, entry_number: int = 1) -> None:
         trades = self._load_trades()
-        trades = [
-            t
-            for t in trades
-            if not (t["trade_id"] == trade_id and t.get("entry_number", 1) == entry_number)
-        ]
+        trades = [t for t in trades if not (t["trade_id"] == trade_id and t.get("entry_number", 1) == entry_number)]
         self._save_trades(trades)
-        logger.info(
-            "Open trade removed", trade_id=trade_id, entry=entry_number, remaining=len(trades)
-        )
+        logger.info("Open trade removed", trade_id=trade_id, entry=entry_number, remaining=len(trades))
 
     def get_open_risk(self) -> float:
         trades = self._load_trades()

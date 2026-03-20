@@ -21,6 +21,7 @@ from typing import Any
 
 from loguru import logger
 
+from core.redis_keys import EXECUTION_INTENTS, ORCHESTRATION_EVENTS
 from execution.take_signal_models import TakeSignalStatus
 from execution.take_signal_service import TakeSignalService
 from risk.firewall import FirewallVerdict, RiskFirewall
@@ -229,7 +230,7 @@ class OrchestratorCoordinator:
 
             publisher = StreamPublisher()
             await publisher.publish(
-                stream="wolf15:execution:intents",
+                stream=EXECUTION_INTENTS,
                 fields={
                     "execution_intent_id": execution_intent_id,
                     "take_id": take_id,
@@ -258,6 +259,6 @@ class OrchestratorCoordinator:
             publisher = StreamPublisher()
             fields = {"event_type": event_type, **{k: str(v) for k, v in details.items()}}
             fields["timestamp"] = datetime.now(UTC).isoformat()
-            await publisher.publish(stream="wolf15:orchestration:events", fields=fields)
+            await publisher.publish(stream=ORCHESTRATION_EVENTS, fields=fields)
         except Exception:
             logger.debug("[Coordinator] Event emission failed for %s", event_type)

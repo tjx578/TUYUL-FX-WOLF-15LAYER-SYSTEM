@@ -17,6 +17,7 @@ from loguru import logger
 
 from config_loader import load_finnhub
 from context.live_context_bus import LiveContextBus
+from core.redis_keys import candle_history
 from ingest.finnhub_candles import FinnhubCandleError, FinnhubCandleFetcher
 from ingest.finnhub_ws import is_forex_market_open
 from storage.candle_persistence import enqueue_candle_dict
@@ -212,7 +213,7 @@ class RestPollFallback:
             timeframe = candle.get("timeframe")
             if not symbol or not timeframe:
                 continue
-            key = f"wolf15:candle_history:{symbol}:{timeframe}"
+            key = candle_history(symbol, timeframe)
             try:
                 candle_json = orjson.dumps(candle).decode("utf-8")
                 await self._redis.rpush(key, candle_json)

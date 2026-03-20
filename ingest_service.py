@@ -24,6 +24,7 @@ from core.metrics import (
     INGEST_HEARTBEAT_AGE_SECONDS,
     INGEST_WS_CONNECTED,
 )
+from core.redis_keys import CANDLE_HISTORY_SCAN, HEARTBEAT_INGEST, candle_history, channel_candle
 from infrastructure.circuit_breaker import CircuitBreaker
 from ingest.calendar_news import CalendarNewsIngestor
 from ingest.candle_builder import CandleBuilder, Timeframe
@@ -34,7 +35,6 @@ from ingest.h1_refresh_scheduler import H1RefreshScheduler
 from ingest.htf_refresh_scheduler import HTFRefreshScheduler
 from ingest.macro_monthly_scheduler import MacroMonthlyScheduler
 from ingest.rest_poll_fallback import RestPollFallback
-from state.redis_keys import HEARTBEAT_INGEST
 from storage.candle_persistence import enqueue_candle_dict
 from storage.startup import init_persistent_storage, shutdown_persistent_storage
 
@@ -236,7 +236,7 @@ async def _has_stale_cache(redis: RedisClient) -> bool:
     """
     try:
         cursor = 0
-        pattern = "wolf15:candle_history:*"
+        pattern = CANDLE_HISTORY_SCAN
         while True:
             cursor, keys = await redis.scan(cursor, match=pattern, count=20)
             for key in keys:
@@ -530,7 +530,7 @@ async def _push_candle_to_redis(
     timeframe = candle_dict.get("timeframe")
     if not symbol or not timeframe:
         return
-    key = f"wolf15:candle_history:{symbol}:{timeframe}"
+    key = candle_history(symbol, timeframe)
     try:
         candle_json = orjson.dumps(candle_dict).decode("utf-8")
         await redis.rpush(key, candle_json)
@@ -540,7 +540,7 @@ async def _push_candle_to_redis(
         enqueue_candle_dict(candle_dict)
 
         # Notify engine-side RedisConsumer via Pub/Sub (matches its psubscribe patterns)
-        pub_channel = f"candle:{symbol}:{timeframe}"
+        pub_channel = channel_candle(symbol, timeframe)
         await redis.publish(pub_channel, candle_json)
     except Exception as exc:
         logger.warning("[CandleBridge] RPUSH/PUBLISH failed %s: %s", key, exc)
@@ -706,12 +706,13 @@ async def run_ingest_services(has_api_key: bool) -> None:
         # ── Build M15 → H1 candle chain with Redis RPUSH callbacks ────
         # Every completed M15 and H1 candle is written to Redis so the
         # engine container (separate process) sees fresh data.
-        loop = asyncio.get_running_loop()
+        from core.candle_bridge_fix import publish_candle_sync
+
         h1_builders: dict[str, CandleBuilder] = {}
 
         def _h1_on_complete(candle: Any) -> None:
-            """H1 complete → RPUSH to Redis."""
-            loop.create_task(_push_candle_to_redis(redis, candle.to_dict()))
+            """H1 complete → RPUSH to Redis (sync-safe bridge)."""
+            publish_candle_sync(candle.to_dict(), redis=redis)
 
         for _sym in enabled_symbols:
             h1_builders[_sym] = CandleBuilder(
@@ -724,7 +725,7 @@ async def run_ingest_services(has_api_key: bool) -> None:
             """Factory — avoids closure-in-loop pitfall."""
 
             def _cb(candle: Any) -> None:
-                loop.create_task(_push_candle_to_redis(redis, candle.to_dict()))
+                publish_candle_sync(candle.to_dict(), redis=redis)
                 h1b = h1_builders.get(sym)
                 if h1b is not None:
                     h1b.on_candle(candle)

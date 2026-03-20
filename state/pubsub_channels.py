@@ -1,10 +1,13 @@
-"""Centralized Pub/Sub channels."""
+"""
+Backward-compatibility shim — canonical source is now core/redis_keys.py.
 
-ORCHESTRATOR_COMMANDS = "wolf15:orchestrator:commands"
-RISK_EVENTS = "wolf15:risk:events"
-SIGNAL_EVENTS = "wolf15:signal:events"
+All symbols re-exported so existing `from state.pubsub_channels import …` keeps working.
+New code should import from `core.redis_keys` directly.
+"""
 
-# Cross-instance WS relay: when horizontally scaled, each API instance
-# publishes WS broadcasts here so peer instances can relay to their
-# local WebSocket clients.  Keyed by manager name for targeted relay.
-WS_CROSS_INSTANCE_PREFIX = "wolf15:ws:relay:"
+from core.redis_keys import (  # noqa: F401
+    ORCHESTRATOR_COMMANDS,
+    RISK_EVENTS,
+    SIGNAL_EVENTS,
+    WS_CROSS_INSTANCE_PREFIX,
+)

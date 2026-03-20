@@ -154,19 +154,14 @@ async def run_ingest_services(has_api_key: bool, redis: AsyncRedis) -> None:
 
 async def _sanitize_redis_keys(redis_client: AsyncRedis) -> None:
     """Delete keys whose Redis type conflicts with what writers/consumers expect."""
+    from core.redis_keys import TYPE_MAP  # noqa: PLC0415
 
     def _normalize_redis_type(value: bytes | str) -> str:
         if isinstance(value, bytes | bytearray):
             return value.decode().lower()
         return str(value).lower()
 
-    keys_expected: dict[str, str] = {
-        "wolf15:tick:*": "stream",
-        "wolf15:latest_tick:*": "hash",
-        "wolf15:candle:*": "hash",
-        "wolf15:candle_history:*": "list",
-        "candle_history:*": "list",
-    }
+    keys_expected: dict[str, str] = TYPE_MAP
 
     total_deleted = 0
     mismatch_diagnostic_logged = False

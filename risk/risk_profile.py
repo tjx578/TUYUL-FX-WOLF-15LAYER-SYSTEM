@@ -6,7 +6,6 @@ Risk Engine reads it. Redis = single source of truth.
 """
 
 import json
-
 from dataclasses import asdict, dataclass
 from enum import StrEnum
 
@@ -64,9 +63,7 @@ class RiskProfile:
         if self.risk_mode == RiskMode.SPLIT:
             total = sum(self.split_ratio)
             if abs(total - 1.0) > 0.001:
-                raise RiskException(
-                    f"split_ratio must sum to 1.0, got {self.split_ratio} = {total}"
-                )
+                raise RiskException(f"split_ratio must sum to 1.0, got {self.split_ratio} = {total}")
 
     def to_dict(self) -> dict:
         """Serialize for Redis storage."""
@@ -83,7 +80,7 @@ class RiskProfile:
         return cls(**data)
 
 
-_REDIS_KEY_PREFIX = "wolf15:risk:profile:"
+from core.redis_keys import RISK_PROFILE_PREFIX as _REDIS_KEY_PREFIX  # noqa: N811
 
 
 def save_risk_profile(

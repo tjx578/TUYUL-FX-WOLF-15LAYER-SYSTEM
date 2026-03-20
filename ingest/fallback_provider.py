@@ -49,6 +49,8 @@ from typing import Any
 
 import httpx
 
+from core.redis_keys import CANDLE_CACHE_PREFIX
+
 logger = logging.getLogger(__name__)
 
 
@@ -78,7 +80,7 @@ def _parse_candle_cache_ttl() -> int:
 
 
 _CANDLE_CACHE_TTL_SECONDS: int = _parse_candle_cache_ttl()
-_CANDLE_CACHE_KEY_PREFIX = "WOLF15:CANDLE_CACHE"
+_CANDLE_CACHE_KEY_PREFIX = CANDLE_CACHE_PREFIX
 _SUPPORTED_INTRADAY_TIME_PARSE_FORMATS: tuple[str, ...] = ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d")
 _EXPECTED_CANDLE_KEYS: frozenset[str] = frozenset(
     {

@@ -117,7 +117,7 @@ def get_drawdown_mode(firm_name: str, phase: PropPhase) -> DrawdownMode:
     return DrawdownMode.FIXED
 
 
-_REDIS_TRAILING_DD_PREFIX = "wolf15:risk:trailing_dd:"
+from core.redis_keys import RISK_TRAILING_DD_PREFIX as _REDIS_TRAILING_DD_PREFIX  # noqa: N811
 
 
 class TrailingDrawdownMonitor:

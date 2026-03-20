@@ -11,8 +11,9 @@ from pathlib import Path
 from typing import Any
 
 from loguru import logger
-from config.logging_bootstrap import configure_loguru_logging
 
+from config.logging_bootstrap import configure_loguru_logging
+from core.redis_keys import WORKER_REGIME_INPUT, WORKER_REGIME_RESULT
 from services.worker._job_utils import (
     load_json_payload,
     normalize_returns,
@@ -22,7 +23,6 @@ from services.worker._job_utils import (
 )
 from utils.regime_auto_tuner import RegimeAutoTuner
 
-
 configure_loguru_logging()
 
 
@@ -30,7 +30,7 @@ def run() -> None:
     raw_payload = load_json_payload(
         env_json_var="WOLF15_REGIME_VR_JSON",
         env_file_var="WOLF15_REGIME_VR_FILE",
-        redis_key="WOLF15:REGIME:VR_VALUES",
+        redis_key=WORKER_REGIME_INPUT,
     )
     vr_values = normalize_returns(raw_payload)
     if len(vr_values) < 30:
@@ -57,7 +57,7 @@ def run() -> None:
         "recalibrated": recalibrated,
     }
 
-    publish_result("WOLF15:WORKER:REGIME_RECALIBRATION:LAST_RESULT", payload)
+    publish_result(WORKER_REGIME_RESULT, payload)
     artifact = write_json_artifact("storage/snapshots/worker/regime_recalibration_latest.json", payload)
     logger.info(
         "wolf15-worker regime recalibration completed: vr_count={} artifact={}",
