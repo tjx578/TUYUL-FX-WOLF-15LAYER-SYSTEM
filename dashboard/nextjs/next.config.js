@@ -56,15 +56,6 @@ function _normalizeWsBase(value) {
   } catch {
     // If URL parsing fails, fallback to regex stripping
     return raw.replace(/\/+$/, "").replace(/\/ws.*$/, "").replace(/\/api.*$/, "");
-  const raw = (value || "").trim().replace(/\/+$/, "");
-  if (!raw) return "";
-  try {
-    const u = new URL(raw);
-    // Extract bare origin — strip any path (/ws, /api, etc.)
-    return `${u.protocol}//${u.host}`;
-  } catch {
-    // Not a valid URL yet — strip known suffixes for best effort
-    return raw.replace(/\/ws$/i, "");
   }
 }
 
@@ -101,6 +92,7 @@ function _validateWsBase(wsBase, { protectedDeploy, explicitlyConfigured }) {
     console.warn(
       `[next.config] NEXT_PUBLIC_WS_BASE_URL had unexpected path '${parsed.pathname}'. ` +
       "Path was stripped; using bare origin only."
+    );
     throw new Error(
       `[next.config] NEXT_PUBLIC_WS_BASE_URL must be a bare origin (no path, no /ws suffix). Got: '${wsBase}' (pathname='${parsed.pathname}').`
     );
