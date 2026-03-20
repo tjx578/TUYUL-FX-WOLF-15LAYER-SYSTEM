@@ -104,7 +104,7 @@ class _L7:
 
 
 class _L8:
-    def analyze(self, symbol: str) -> dict[str, Any]:
+    def analyze(self, symbol: str, **kwargs: Any) -> dict[str, Any]:
         return {"tii_score": 0.8, "integrity_index": 0.82}
 
 
