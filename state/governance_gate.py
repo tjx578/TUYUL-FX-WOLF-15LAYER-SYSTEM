@@ -117,6 +117,10 @@ DQ_PENALTY_HOLD_THRESHOLD = _env_float("WOLF_GOVERNANCE_DQ_PENALTY_HOLD", 0.40)
 # Kill-switch override
 KILL_SWITCH_ENABLED_DEFAULT = _env_bool("WOLF_KILL_SWITCH_ACTIVE", False)
 
+# Stale grace period: stale_preserved data below this age (seconds) is allowed
+# with a reduced-confidence penalty instead of forcing HOLD.  Set to 0 to disable.
+STALE_GRACE_SEC = _env_float("WOLF_GOVERNANCE_STALE_GRACE_SEC", 0.0)
+
 
 # ---------------------------------------------------------------------------
 # Governance check functions
@@ -274,6 +278,17 @@ def assess_governance(
                 "Governance WS warmup grace for {}: stale_preserved but WS reconnected {:.0f}s ago — ALLOW_REDUCED",
                 symbol,
                 now - ws_connected_at,
+            )
+        elif STALE_GRACE_SEC > 0 and freshness.staleness_seconds <= STALE_GRACE_SEC:
+            # Recent stale — within configurable grace window, allow with penalty.
+            action = GovernanceAction.ALLOW_REDUCED
+            total_penalty = min(total_penalty + 0.20, 1.0)
+            reasons.append(f"stale_grace:{freshness.staleness_seconds:.0f}s<={STALE_GRACE_SEC:.0f}s")
+            logger.info(
+                "Governance stale grace for {}: stale_preserved {:.0f}s <= grace {:.0f}s — ALLOW_REDUCED",
+                symbol,
+                freshness.staleness_seconds,
+                STALE_GRACE_SEC,
             )
         else:
             # P0-6: stale-preserved supports visibility/diagnosis only,
