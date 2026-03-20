@@ -543,10 +543,31 @@ async def _seed_redis_candle_history(
         return
 
     seeded = 0
+    total_dirty = 0
     for symbol, tf_data in warmup_results.items():
         for timeframe, candles in tf_data.items():
             if not candles:
                 continue
+
+            # ── FIX DATA-NEG1: reject candles with sentinel -1 / invalid OHLC ──
+            clean_candles = [
+                c
+                for c in candles
+                if all(c.get(k, -1) > 0 for k in ("open", "high", "low", "close")) and c["high"] >= c["low"]
+            ]
+            dirty = len(candles) - len(clean_candles)
+            if dirty:
+                total_dirty += dirty
+                logger.warning(
+                    "[Seed] %s/%s: dropped %d/%d dirty candles (sentinel -1 or OHLC violation)",
+                    symbol,
+                    timeframe,
+                    dirty,
+                    len(candles),
+                )
+            if not clean_candles:
+                continue
+            candles = clean_candles
 
             key = f"wolf15:candle_history:{symbol}:{timeframe}"
             # ── FIX RC-1: Non-destructive atomic swap ─────────────
@@ -597,6 +618,8 @@ async def _seed_redis_candle_history(
                     await redis.delete(temp_key)
                 logger.error("[Seed] Failed to seed {}: {} — old data preserved", key, exc)
 
+    if total_dirty:
+        logger.warning("[Seed] Total dirty candles rejected across all pairs: %d", total_dirty)
     logger.info("[Seed] Completed: {} symbol/tf combos seeded to Redis", seeded)
 
 

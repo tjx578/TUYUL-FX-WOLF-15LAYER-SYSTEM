@@ -18,6 +18,7 @@ from loguru import logger
 
 from config_loader import CONFIG, get_enabled_symbols, load_finnhub
 from context.live_context_bus import LiveContextBus
+from core.metrics import WARMUP_FAILURES
 
 
 class FinnhubCandleError(Exception):
@@ -165,8 +166,15 @@ class FinnhubCandleFetcher:
         """
         now = datetime.now(UTC)
 
-        # Calculate time delta with 25% buffer
-        buffer_multiplier = 1.25
+        # ── Weekend alignment: snap back to last Friday 21:00 UTC (forex close)
+        weekday = now.weekday()  # 0=Mon ... 5=Sat, 6=Sun
+        if weekday == 5:  # Saturday → rewind to Friday
+            now = now - timedelta(days=1)
+        elif weekday == 6:  # Sunday → rewind to Friday
+            now = now - timedelta(days=2)
+
+        # 40% buffer accommodates weekends, holidays, and sparse data gaps
+        buffer_multiplier = 1.40
 
         if timeframe == "M15":
             delta = timedelta(minutes=int(bars * 15 * buffer_multiplier))
@@ -218,7 +226,22 @@ class FinnhubCandleFetcher:
             return []
 
         candles: list[dict[str, Any]] = []
+        skipped = 0
         for i in range(length):
+            # Reject sentinel -1 values from Finnhub no_data / partial responses
+            ohlc = [opens[i], highs[i], lows[i], closes[i]]
+            if any(v <= 0 for v in ohlc):
+                skipped += 1
+                continue
+            # OHLC sanity: high must be >= low, open, close
+            if highs[i] < lows[i] or highs[i] < closes[i] or highs[i] < opens[i]:
+                skipped += 1
+                continue
+            # Reject sentinel timestamps
+            if timestamps[i] <= 0:
+                skipped += 1
+                continue
+
             # Convert Unix timestamp to datetime
             timestamp = datetime.fromtimestamp(timestamps[i], tz=UTC)
 
@@ -235,6 +258,14 @@ class FinnhubCandleFetcher:
             }
             candles.append(candle)
 
+        if skipped:
+            logger.warning(
+                "[Normalize] %s %s: skipped %d/%d invalid candles (sentinel -1 or OHLC violation)",
+                symbol,
+                timeframe,
+                skipped,
+                length,
+            )
         return candles
 
     async def fetch(self, symbol: str, timeframe: str, bars: int = 100) -> list[dict[str, Any]]:
@@ -363,6 +394,23 @@ class FinnhubCandleFetcher:
         """
         if not h1_candles:
             return []
+
+        # Filter out invalid H1 bars before aggregation (sentinel -1 / OHLC violation)
+        valid_h1 = [
+            c
+            for c in h1_candles
+            if c.get("close", -1) > 0
+            and c.get("open", -1) > 0
+            and c.get("high", -1) > 0
+            and c.get("low", -1) > 0
+            and c["high"] >= c["low"]
+        ]
+        dropped = len(h1_candles) - len(valid_h1)
+        if dropped:
+            logger.warning("aggregate_h4: dropped %d/%d invalid H1 bars before aggregation", dropped, len(h1_candles))
+        if not valid_h1:
+            return []
+        h1_candles = valid_h1
 
         h4_candles: list[dict[str, Any]] = []
         current_group: list[dict[str, Any]] = []
@@ -525,6 +573,7 @@ class FinnhubCandleFetcher:
             candles = await self.fetch(symbol, timeframe, bars)
 
             if not candles:
+                WARMUP_FAILURES.labels(symbol=symbol, tf=timeframe, reason="empty").inc()
                 logger.warning(f"No candles fetched for {symbol} {timeframe}")
                 return
 
@@ -540,6 +589,7 @@ class FinnhubCandleFetcher:
             logger.debug(f"Warmup {symbol} {timeframe}: {len(candles)} bars seeded to LiveContextBus")
 
         except FinnhubCandlePremiumError:
+            WARMUP_FAILURES.labels(symbol=symbol, tf=timeframe, reason="premium_blocked").inc()
             logger.warning(f"Premium access required for {symbol} {timeframe} — trying fallback providers")
             candles = await self.try_fallback(symbol, timeframe, bars)
             if candles:
@@ -552,8 +602,10 @@ class FinnhubCandleFetcher:
             else:
                 logger.error(f"No fallback data for {symbol} {timeframe} (premium-blocked, no fallback providers)")
         except FinnhubCandleError as exc:
+            WARMUP_FAILURES.labels(symbol=symbol, tf=timeframe, reason="api_error").inc()
             logger.error(f"Error warming up {symbol} {timeframe}: {exc}")
         except Exception as exc:
+            WARMUP_FAILURES.labels(symbol=symbol, tf=timeframe, reason="unexpected").inc()
             logger.exception(f"Unexpected error warming up {symbol} {timeframe}: {exc}")
 
     # ------------------------------------------------------------------
