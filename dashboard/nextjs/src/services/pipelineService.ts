@@ -1,6 +1,15 @@
 import { PipelineResultSchema } from "@/schema/pipelineResultSchema";
 import { apiClient } from "./apiClient";
 
+export class PipelineVerdictUnavailableError extends Error {
+  readonly reason = "NO_VERDICT_AVAILABLE" as const;
+
+  constructor(message = "No verdict payload returned by /api/v1/verdict/all.") {
+    super(message);
+    this.name = "PipelineVerdictUnavailableError";
+  }
+}
+
 export async function fetchLatestPipelineResult(
   symbol?: string,
   _accountId?: string,
@@ -23,7 +32,7 @@ export async function fetchLatestPipelineResult(
   const verdicts: Record<string, any> = response.data ?? {};
   const symbols = Object.keys(verdicts);
   if (symbols.length === 0) {
-    throw new Error("No verdicts available");
+    throw new PipelineVerdictUnavailableError();
   }
   const firstSymbol = symbols[0];
   const data = verdicts[firstSymbol];

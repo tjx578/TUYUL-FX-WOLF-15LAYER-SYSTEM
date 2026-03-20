@@ -7,6 +7,7 @@ from loguru import logger
 
 from core.metrics import VERDICT_PATH_EVENT_TOTAL
 from infrastructure.redis_client import get_client
+from journal.forensic_replay import append_replay_artifact
 from storage.redis_client import redis_client
 
 KEY_PREFIX = "L12:VERDICT:"
@@ -51,6 +52,20 @@ def set_verdict(pair: str, data: dict[str, Any]) -> None:
         redis_client.publish(VERDICT_READY_CHANNEL, json.dumps(event_payload))
     except Exception:
         logger.warning("[L12Cache] Failed to publish VERDICT_READY for %s", pair, exc_info=True)
+    with contextlib.suppress(Exception):
+        append_replay_artifact(
+            "verdict_provenance",
+            correlation_id=str(data_with_ts.get("signal_id") or pair),
+            payload={
+                "pair": pair,
+                "verdict": data_with_ts.get("verdict"),
+                "confidence": data_with_ts.get("confidence"),
+                "timestamp": data_with_ts.get("timestamp"),
+                "cached_at": data_with_ts.get("_cached_at"),
+                "scores": data_with_ts.get("scores"),
+                "gates": data_with_ts.get("gates"),
+            },
+        )
 
 
 async def set_verdict_async(pair: str, data: dict[str, Any]) -> None:
@@ -79,6 +94,20 @@ async def set_verdict_async(pair: str, data: dict[str, Any]) -> None:
         await client.publish(VERDICT_READY_CHANNEL, json.dumps(event_payload))
     except Exception:
         logger.warning("[L12Cache] Failed to publish async VERDICT_READY for %s", pair, exc_info=True)
+    with contextlib.suppress(Exception):
+        append_replay_artifact(
+            "verdict_provenance",
+            correlation_id=str(data_with_ts.get("signal_id") or pair),
+            payload={
+                "pair": pair,
+                "verdict": data_with_ts.get("verdict"),
+                "confidence": data_with_ts.get("confidence"),
+                "timestamp": data_with_ts.get("timestamp"),
+                "cached_at": data_with_ts.get("_cached_at"),
+                "scores": data_with_ts.get("scores"),
+                "gates": data_with_ts.get("gates"),
+            },
+        )
 
 
 def get_verdict(pair: str) -> dict[str, Any] | None:

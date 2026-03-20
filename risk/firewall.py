@@ -32,6 +32,8 @@ from typing import Any
 
 from loguru import logger
 
+from journal.forensic_replay import append_replay_artifact
+
 
 class FirewallVerdict(StrEnum):
     """Overall firewall decision."""
@@ -167,6 +169,14 @@ class RiskFirewall:
         await self._persist(fw_result)
         # Emit event
         await self._emit_event(fw_result)
+        try:
+            append_replay_artifact(
+                "firewall_result",
+                correlation_id=take_id,
+                payload=fw_result.to_dict(),
+            )
+        except Exception:
+            logger.debug("[RiskFirewall] Forensic artifact append failed")
 
         logger.info(
             "[RiskFirewall] take_id=%s verdict=%s checks=%d short_circuit=%s",

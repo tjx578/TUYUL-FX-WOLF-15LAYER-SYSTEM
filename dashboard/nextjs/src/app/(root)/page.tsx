@@ -14,6 +14,7 @@ import { useCommandCenterState } from "@/hooks/useCommandCenterState";
 import { TakeSignalForm } from "@/components/TakeSignalForm";
 import PageComplianceBanner from "@/components/feedback/PageComplianceBanner";
 import DataStreamDiagnostic from "@/components/feedback/DataStreamDiagnostic";
+import VerdictEmptyStatePanel from "@/components/feedback/VerdictEmptyStatePanel";
 import { VerdictCard } from "@/components/VerdictCard";
 import { SystemHealth } from "@/components/SystemHealth";
 import StaleDataBanner from "@/components/command-center/StaleDataBanner";
@@ -626,6 +627,7 @@ export default function CommandCenterPage() {
     isStale,
     wsStatus,
     dataErrors,
+    verdictEmptyState,
     vLoading,
   } = useCommandCenterState();
 
@@ -843,28 +845,7 @@ export default function CommandCenterPage() {
               ))}
             </div>
           ) : verdictList.length === 0 ? (
-            <div
-              className="panel"
-              style={{
-                fontSize: 12,
-                color: "var(--text-muted)",
-                padding: "32px 20px",
-                textAlign: "center",
-              }}
-            >
-              <div
-                style={{
-                  marginBottom: 6,
-                  fontSize: 13,
-                  color: "var(--text-secondary)",
-                }}
-              >
-                No verdicts available
-              </div>
-              <div style={{ fontSize: 11 }}>
-                Connect backend to see live signals.
-              </div>
-            </div>
+            <VerdictEmptyStatePanel state={verdictEmptyState} />
           ) : (
             <div className="overview-verdict-grid">
               {verdictList.map((v: L12Verdict) => (
