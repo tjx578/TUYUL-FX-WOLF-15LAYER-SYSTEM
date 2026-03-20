@@ -131,9 +131,9 @@ async def test_seed_redis_writes_h1_keys(
 
     warmup_results = {
         "EURUSD": {
-            "H1": [{"close": 1.1}],
-            "H4": [{"close": 1.05}],
-            "D1": [{"close": 1.0}],
+            "H1": [{"open": 1.08, "high": 1.12, "low": 1.07, "close": 1.1}],
+            "H4": [{"open": 1.03, "high": 1.06, "low": 1.02, "close": 1.05}],
+            "D1": [{"open": 0.98, "high": 1.02, "low": 0.97, "close": 1.0}],
         }
     }
 

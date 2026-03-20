@@ -62,11 +62,70 @@ def _configure_process_logging() -> None:
 _configure_process_logging()
 
 # ── Build application via factory ─────────────────────────────────────────────
+from fastapi import WebSocket  # noqa: E402
+
 from api.app_factory import create_app  # noqa: E402
+from core.auth_ws_killswitch_fix import ws_auth_fixed  # noqa: E402
 
 app = create_app()
 
 logger = logging.getLogger(__name__)
+
+# ── JWT config ────────────────────────────────────────────────────────────────
+JWT_SECRET: str = os.environ.get("DASHBOARD_JWT_SECRET", "").strip() or os.environ.get("JWT_SECRET", "").strip()
+
+
+# ── WebSocket endpoint (fixed auth) ──────────────────────────────────────────
+
+
+@app.websocket("/ws")
+async def websocket_endpoint(ws: WebSocket) -> None:
+    """General-purpose authenticated WebSocket relay.
+
+    Validates JWT via ws_auth_fixed, then forwards Redis PubSub messages
+    to the connected client until disconnect.
+    """
+    await ws.accept()
+    payload = await ws_auth_fixed(ws, JWT_SECRET)
+    if not payload:
+        return
+
+    import asyncio
+    import contextlib
+    import json as _json
+
+    from storage.redis_client import redis_client
+
+    pubsub = None
+    try:
+        pubsub = redis_client.pubsub()
+        # Subscribe to general signal channels
+        from state.pubsub_channels import SIGNAL_EVENTS
+
+        pubsub.subscribe(SIGNAL_EVENTS)
+        logger.info("WS /ws connected: user=%s", payload.get("sub"))
+
+        while True:
+            # Read from Redis PubSub (non-blocking via thread)
+            raw_msg: object = await asyncio.to_thread(pubsub.get_message, ignore_subscribe_messages=True, timeout=1.0)
+            if raw_msg and isinstance(raw_msg, dict) and raw_msg.get("type") == "message":
+                data = raw_msg.get("data")
+                if isinstance(data, bytes):
+                    data = data.decode("utf-8", errors="replace")
+                if isinstance(data, str):
+                    await ws.send_text(data)
+            else:
+                # Heartbeat ping to detect dead connections
+                with contextlib.suppress(Exception):
+                    await ws.send_text(_json.dumps({"type": "ping", "ts": __import__("time").time()}))
+                await asyncio.sleep(1.0)
+    except Exception:
+        logger.debug("WS /ws disconnected: user=%s", payload.get("sub"))
+    finally:
+        if pubsub is not None:
+            with contextlib.suppress(Exception):
+                pubsub.unsubscribe()
+                pubsub.close()
 
 
 # ── Uvicorn log config ────────────────────────────────────────────────────────
