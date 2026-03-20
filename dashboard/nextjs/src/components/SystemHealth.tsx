@@ -8,11 +8,16 @@ import { useHealth } from "@/lib/api";
 import { useOrchestratorState } from "@/lib/api";
 import type { FeedStatus, FreshnessClassLabel } from "@/types";
 
-/** Map backend internal feed_status to the approved FreshnessClass label. */
+/** Map backend internal feed_status to the approved FreshnessClass label.
+ *  Prefer the `freshness_class` field returned by the backend when available
+ *  (P0: dashboard must not lie by computing its own classification).
+ */
 const toFreshnessLabel = (
+  freshnessClass?: FreshnessClassLabel,
   feedStatus?: FeedStatus,
   staleness?: number,
 ): FreshnessClassLabel => {
+  if (freshnessClass) return freshnessClass;
   if (!feedStatus) return "LIVE";
   if (feedStatus === "config_error") return "CONFIG_ERROR";
   if (feedStatus === "no_transport") return "NO_TRANSPORT";
@@ -47,7 +52,11 @@ export function SystemHealth() {
 
   const isHealthy = health?.status === "ok";
   const statusColor = isHealthy ? "var(--green)" : "var(--red)";
-  const freshnessLabel = toFreshnessLabel(health?.feed_status, health?.feed_staleness_seconds);
+  const freshnessLabel = toFreshnessLabel(
+    health?.freshness_class,
+    health?.feed_status,
+    health?.feed_staleness_seconds,
+  );
   const feedColor = FRESHNESS_COLOR[freshnessLabel];
 
   return (
@@ -116,7 +125,7 @@ export function SystemHealth() {
 
           {health?.producer_heartbeat_age_seconds !== undefined && health.producer_heartbeat_age_seconds !== null && (
             <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, gap: 12 }}>
-              <span style={{ color: "var(--text-muted)" }}>Heartbeat</span>
+              <span style={{ color: "var(--text-muted)" }}>Ingest HB</span>
               <span
                 className="num"
                 style={{
@@ -125,6 +134,21 @@ export function SystemHealth() {
                 }}
               >
                 {`${Math.round(health.producer_heartbeat_age_seconds)}s ago`}
+              </span>
+            </div>
+          )}
+
+          {health?.engine_heartbeat_age_seconds !== undefined && health.engine_heartbeat_age_seconds !== null && (
+            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, gap: 12 }}>
+              <span style={{ color: "var(--text-muted)" }}>Engine HB</span>
+              <span
+                className="num"
+                style={{
+                  color: health.engine_alive ? "var(--green)" : "var(--red)",
+                  textAlign: "right",
+                }}
+              >
+                {`${Math.round(health.engine_heartbeat_age_seconds)}s ago`}
               </span>
             </div>
           )}

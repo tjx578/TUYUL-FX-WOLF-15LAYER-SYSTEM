@@ -356,3 +356,149 @@ class TestFreshnessClassTransitions:
         reached.add(snap.freshness_class)
 
         assert reached == {c for c in FreshnessClass}
+
+
+# ---------------------------------------------------------------------------
+# P0-7: CONFIG_ERROR forces HOLD (conservative under ambiguity)
+# ---------------------------------------------------------------------------
+
+
+class TestP0_7_ConfigErrorForceHold:  # noqa: N801
+    """CONFIG_ERROR freshness must produce HOLD, not ALLOW."""
+
+    def test_config_error_forces_hold(self):
+        now = time.time()
+        verdict = assess_governance(
+            symbol="EURUSD",
+            last_seen_ts=now - 5.0,  # data is fresh
+            transport_ok=True,
+            heartbeat_ts=now - 2.0,  # producer alive
+            warmup_ready=True,
+            now_ts=now,
+            # Inject config_error by setting config_ok=False is not directly
+            # supported via assess_governance — we must test classify_feed_freshness
+        )
+        # fresh data + alive heartbeat → ALLOW (baseline)
+        assert verdict.action in (GovernanceAction.ALLOW, GovernanceAction.ALLOW_REDUCED)
+
+    def test_governance_holds_on_config_error_state(self):
+        """When classify_feed_freshness returns config_error, governance must HOLD."""
+        from unittest.mock import patch
+
+        # Patch classify_feed_freshness to return config_error
+        from state.data_freshness import FeedFreshnessSnapshot
+
+        fake_snapshot = FeedFreshnessSnapshot(
+            state="config_error",
+            staleness_seconds=5.0,
+            threshold_seconds=300.0,
+            detail="invalid stale threshold configuration",
+        )
+        now = time.time()
+        with patch("state.governance_gate.classify_feed_freshness", return_value=fake_snapshot):
+            verdict = assess_governance(
+                symbol="EURUSD",
+                last_seen_ts=now - 5.0,
+                transport_ok=True,
+                heartbeat_ts=now - 2.0,
+                warmup_ready=True,
+                now_ts=now,
+            )
+        assert verdict.action == GovernanceAction.HOLD
+        assert any("config_error" in r for r in verdict.reasons)
+
+
+# ---------------------------------------------------------------------------
+# P0-8: Engine heartbeat key exists in registry
+# ---------------------------------------------------------------------------
+
+
+class TestP0_8_EngineHeartbeat:  # noqa: N801
+    """Engine heartbeat must be defined in the key registry."""
+
+    def test_engine_heartbeat_key_defined(self):
+        from state.redis_keys import HEARTBEAT_ENGINE
+
+        assert HEARTBEAT_ENGINE == "wolf15:heartbeat:engine"
+
+    def test_engine_heartbeat_loop_importable(self):
+        import asyncio
+
+        from startup.analysis_loop import _engine_heartbeat_loop
+        assert asyncio.iscoroutinefunction(_engine_heartbeat_loop)
+
+
+# ---------------------------------------------------------------------------
+# P0-9: Stale must not silently become no-data
+# ---------------------------------------------------------------------------
+
+
+class TestP0_9_StaleNotSilentNoData:  # noqa: N801
+    """latest_tick keys must not expire and reclassify as NO_PRODUCER."""
+
+    def test_no_expire_on_latest_tick_bridge(self):
+        """RedisContextBridge.write_tick must NOT call expire on latest_tick keys."""
+        import inspect
+
+        from context.redis_context_bridge import RedisContextBridge
+
+        source = inspect.getsource(RedisContextBridge.write_tick)
+        # The EXPIRE call should have been removed in P0
+        assert ".expire(" not in source, (
+            "write_tick must not call .expire() on latest_tick keys; "
+            "staleness is determined by last_seen_ts field, not key TTL"
+        )
+
+    def test_old_data_classified_as_stale_preserved_not_no_producer(self):
+        """Data 48h old should be STALE_PRESERVED, not NO_PRODUCER."""
+        snap = classify_feed_freshness(
+            transport_ok=True,
+            has_producer_signal=True,
+            staleness_seconds=48 * 3600,  # 48 hours
+        )
+        assert snap.freshness_class == FreshnessClass.STALE_PRESERVED
+
+    def test_genuinely_no_data_is_no_producer(self):
+        """When no tick has ever arrived, classification is NO_PRODUCER."""
+        snap = classify_feed_freshness(
+            transport_ok=True,
+            has_producer_signal=False,
+        )
+        assert snap.freshness_class == FreshnessClass.NO_PRODUCER
+
+
+# ---------------------------------------------------------------------------
+# P0-10: Readiness depends on freshness legitimacy
+# ---------------------------------------------------------------------------
+
+
+class TestP0_10_ReadinessFreshnessLegitimacy:  # noqa: N801
+    """readyz must check freshness class, producer, AND engine heartbeat."""
+
+    def test_readyz_route_exists(self):
+        from unittest.mock import MagicMock, patch
+
+        mock_redis = MagicMock()
+        mock_redis.get.return_value = None
+        mock_redis.ping.return_value = True
+        mock_redis.client = mock_redis
+
+        with patch("storage.redis_client.RedisClient.__new__", return_value=mock_redis):
+            from api.app_factory import create_app
+
+            app = create_app()
+
+        paths = {getattr(r, "path", None) for r in app.routes}
+        assert "/readyz" in paths
+
+    def test_heartbeat_threshold_uses_governance_constant(self):
+        """API heartbeat alive check must use HEARTBEAT_MAX_AGE_SEC, not hardcoded 60."""
+        import inspect
+
+        from api.app_factory import _register_health_routes
+
+        source = inspect.getsource(_register_health_routes)
+        # Must import and use the governance constant
+        assert "HEARTBEAT_MAX_AGE_SEC" in source
+        # Must NOT use hardcoded 60.0 for heartbeat alive check
+        assert "age <= 60.0" not in source

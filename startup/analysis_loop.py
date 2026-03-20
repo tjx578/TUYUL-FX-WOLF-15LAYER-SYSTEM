@@ -26,6 +26,7 @@ from core.metrics import VERDICT_PATH_EVENT_TOTAL
 from infrastructure.tracing import setup_tracer
 from journal.builders import build_j1, build_j2
 from pipeline import WolfConstitutionalPipeline
+from state.redis_keys import HEARTBEAT_ENGINE
 from storage.l12_cache import set_verdict
 
 __all__ = ["analysis_loop"]
@@ -34,6 +35,7 @@ __all__ = ["analysis_loop"]
 # (e.g.  CPU-bound computation or Redis latency spike) from blocking the
 # entire analysis loop.  Override via ``PIPELINE_TIMEOUT_SEC`` env var.
 _PIPELINE_TIMEOUT_SEC = float(os.getenv("PIPELINE_TIMEOUT_SEC", "30"))
+_ENGINE_HEARTBEAT_INTERVAL_SEC = float(os.getenv("ENGINE_HEARTBEAT_INTERVAL_SEC", "10"))
 _engine_tracer = setup_tracer("wolf-engine-loop")
 _ERROR_LOG_WINDOW_SEC = float(os.getenv("PIPELINE_ERROR_LOG_WINDOW_SEC", "30"))
 _error_log_state: dict[str, dict[str, float | int]] = {}
@@ -233,6 +235,30 @@ async def _analyze_pair(
             return None
 
 
+async def _engine_heartbeat_loop(
+    shutdown_event: asyncio.Event | None = None,
+) -> None:
+    """Publish engine heartbeat to Redis so dashboard/readyz can detect stalled analysis."""
+    import orjson  # noqa: PLC0415
+
+    _redis_client = None
+    try:
+        from storage.redis_client import RedisClient  # noqa: PLC0415
+
+        _redis_client = RedisClient()
+    except Exception:
+        logger.warning("[EngineHeartbeat] Redis client unavailable — heartbeat disabled")
+        return
+
+    while not (shutdown_event and shutdown_event.is_set()):
+        try:
+            payload = orjson.dumps({"producer": "engine_analysis", "ts": time.time()}).decode("utf-8")
+            _redis_client.set(HEARTBEAT_ENGINE, payload)
+        except Exception as exc:
+            logger.debug("[EngineHeartbeat] Failed to write heartbeat: {}", exc)
+        await asyncio.sleep(_ENGINE_HEARTBEAT_INTERVAL_SEC)
+
+
 async def analysis_loop(
     pairs: list[str],
     pipeline: WolfConstitutionalPipeline,
@@ -271,6 +297,10 @@ async def analysis_loop(
 
     bus = get_event_bus()
     bus.subscribe(EventType.CANDLE_CLOSED, _on_candle_closed)
+
+    # Launch engine heartbeat as a background task so readyz/dashboard
+    # can detect whether the analysis loop is alive.
+    _heartbeat_task = asyncio.create_task(_engine_heartbeat_loop(shutdown_event))
 
     _symbol_reflex_inputs: dict[str, tuple[float, float]] = {}
     _symbol_last_analysis_ts: dict[str, float] = {}
@@ -375,3 +405,8 @@ async def analysis_loop(
             if on_first_cycle:
                 on_first_cycle.set()
             logger.info("Engine readiness: READY (first analysis cycle complete)")
+
+    # Clean up heartbeat task on shutdown
+    _heartbeat_task.cancel()
+    with contextlib.suppress(asyncio.CancelledError):
+        await _heartbeat_task

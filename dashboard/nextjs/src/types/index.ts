@@ -400,12 +400,15 @@ export interface SystemHealth {
   active_pairs: number;
   active_trades: number;
   feed_status?: FeedStatus;
+  freshness_class?: FreshnessClassLabel;
   feed_staleness_seconds?: number;
   feed_threshold_seconds?: number;
   feed_last_seen_ts?: number | null;
   detail?: string;
   producer_heartbeat_age_seconds?: number | null;
   producer_alive?: boolean;
+  engine_heartbeat_age_seconds?: number | null;
+  engine_alive?: boolean;
   uptime_seconds?: number;
   last_verdict_at?: number;
   timestamp?: number | string;

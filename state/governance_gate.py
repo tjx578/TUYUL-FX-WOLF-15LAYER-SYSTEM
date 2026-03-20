@@ -212,6 +212,8 @@ def assess_governance(
         reasons.append("no_producer_signal")
     elif freshness.state == "no_transport":
         reasons.append("no_transport")
+    elif freshness.state == "config_error":
+        reasons.append("config_error")
     elif freshness.state == "stale_preserved":
         total_penalty += 0.15
         reasons.append(f"stale_preserved:{freshness.staleness_seconds:.0f}s")
@@ -236,10 +238,11 @@ def assess_governance(
     if ks_active:
         action = GovernanceAction.BLOCK
     # HOLD conditions — check specific states first, then generic staleness
-    elif freshness.state in ("no_producer", "no_transport"):
+    elif freshness.state in ("no_producer", "no_transport", "config_error"):
         # P0-6: conservative — if freshness cannot be proven, HOLD.
         # Even if producer heartbeat is alive but no data arrived,
         # new-trade flow must remain blocked.
+        # P0: config_error is equally untrustworthy — ambiguous freshness → HOLD.
         action = GovernanceAction.HOLD
     elif not warmup_ready or freshness.staleness_seconds > HARD_STALE_THRESHOLD_SEC:
         action = GovernanceAction.HOLD

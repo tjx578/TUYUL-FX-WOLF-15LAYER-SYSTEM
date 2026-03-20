@@ -503,15 +503,28 @@ async def _feed_freshness_snapshot(pair: str = "") -> FeedFreshnessSnapshot:
         has_tick = False
 
         for symbol in symbols:
-            data_raw = await redis.hget(f"wolf15:latest_tick:{symbol}", "data")
-            if not data_raw:
-                continue
-            if isinstance(data_raw, bytes):
-                data_raw = data_raw.decode("utf-8", errors="ignore")
-            payload = _json.loads(data_raw) if isinstance(data_raw, str) else {}
-            if not isinstance(payload, dict):
-                continue
-            ts = float(payload.get("timestamp", 0.0) or 0.0)
+            # P0: Read `last_seen_ts` hash field directly — this is the
+            # authoritative write-time timestamp set by RedisContextBridge.
+            # Falls back to `timestamp` inside the JSON data payload.
+            last_seen_raw = await redis.hget(f"wolf15:latest_tick:{symbol}", "last_seen_ts")
+            ts: float = 0.0
+            if last_seen_raw:
+                try:
+                    ts = float(last_seen_raw if isinstance(last_seen_raw, str) else last_seen_raw.decode("utf-8"))
+                except (TypeError, ValueError):
+                    ts = 0.0
+
+            if ts <= 0:
+                data_raw = await redis.hget(f"wolf15:latest_tick:{symbol}", "data")
+                if not data_raw:
+                    continue
+                if isinstance(data_raw, bytes):
+                    data_raw = data_raw.decode("utf-8", errors="ignore")
+                payload = _json.loads(data_raw) if isinstance(data_raw, str) else {}
+                if not isinstance(payload, dict):
+                    continue
+                ts = float(payload.get("timestamp", 0.0) or 0.0)
+
             if ts <= 0:
                 continue
             has_tick = True

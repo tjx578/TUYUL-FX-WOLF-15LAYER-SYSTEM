@@ -378,19 +378,30 @@ def _register_health_routes(app: FastAPI) -> None:
 
     app.add_api_route("/", root, methods=["GET"])
 
-    async def _read_heartbeat_age(request: Request) -> tuple[float | None, bool]:
-        """Read ingest producer heartbeat from Redis. Returns (age_seconds, alive)."""
+    async def _read_heartbeat_age(
+        request: Request,
+        key: str | None = None,
+    ) -> tuple[float | None, bool]:
+        """Read a heartbeat from Redis. Returns (age_seconds, alive).
+
+        Uses the unified ``HEARTBEAT_MAX_AGE_SEC`` from the governance
+        gate so that the API, readyz, and governance all agree on what
+        constitutes a dead heartbeat.
+        """
         import time as _time
 
         import orjson as _orjson
 
+        from state.governance_gate import HEARTBEAT_MAX_AGE_SEC
         from state.redis_keys import HEARTBEAT_INGEST
+
+        hb_key = key or HEARTBEAT_INGEST
 
         try:
             r = request.app.state.redis
             if r is None:
                 return None, False
-            raw = await r.get(HEARTBEAT_INGEST)
+            raw = await r.get(hb_key)
             if not raw:
                 return None, False
             payload = _orjson.loads(raw)
@@ -398,15 +409,17 @@ def _register_health_routes(app: FastAPI) -> None:
             if ts <= 0:
                 return None, False
             age = max(0.0, _time.time() - ts)
-            return round(age, 2), age <= 60.0
+            return round(age, 2), age <= HEARTBEAT_MAX_AGE_SEC
         except Exception:
             return None, False
 
     async def health(request: Request) -> dict[str, Any]:
         from api.allocation_router import _feed_freshness_snapshot  # noqa: PLC0415
+        from state.redis_keys import HEARTBEAT_ENGINE  # noqa: PLC0415
 
         feed_snapshot = await _feed_freshness_snapshot()
         hb_age, hb_alive = await _read_heartbeat_age(request)
+        engine_hb_age, engine_alive = await _read_heartbeat_age(request, key=HEARTBEAT_ENGINE)
 
         return {
             "status": "ok",
@@ -417,12 +430,15 @@ def _register_health_routes(app: FastAPI) -> None:
             "active_pairs": 0,
             "active_trades": 0,
             "feed_status": feed_snapshot.state,
+            "freshness_class": feed_snapshot.freshness_class.value,
             "feed_staleness_seconds": feed_snapshot.staleness_seconds,
             "feed_threshold_seconds": feed_snapshot.threshold_seconds,
             "feed_last_seen_ts": feed_snapshot.last_seen_ts,
             "detail": feed_snapshot.detail,
             "producer_heartbeat_age_seconds": hb_age,
             "producer_alive": hb_alive,
+            "engine_heartbeat_age_seconds": engine_hb_age,
+            "engine_alive": engine_alive,
         }
 
     app.add_api_route("/health", health, methods=["GET"])
@@ -439,9 +455,11 @@ def _register_health_routes(app: FastAPI) -> None:
         """
         from api.allocation_router import _feed_freshness_snapshot  # noqa: PLC0415
         from state.data_freshness import FreshnessClass  # noqa: PLC0415
+        from state.redis_keys import HEARTBEAT_ENGINE  # noqa: PLC0415
 
         feed_snapshot = await _feed_freshness_snapshot()
         hb_age, hb_alive = await _read_heartbeat_age(request)
+        engine_hb_age, engine_alive = await _read_heartbeat_age(request, key=HEARTBEAT_ENGINE)
         freshness_class = feed_snapshot.freshness_class
 
         checks: dict[str, Any] = {
@@ -449,11 +467,14 @@ def _register_health_routes(app: FastAPI) -> None:
             "feed_staleness_seconds": feed_snapshot.staleness_seconds,
             "producer_alive": hb_alive,
             "producer_heartbeat_age_seconds": hb_age,
+            "engine_alive": engine_alive,
+            "engine_heartbeat_age_seconds": engine_hb_age,
         }
 
         reasons: list[str] = []
 
-        # Feed freshness gate
+        # Feed freshness gate — only LIVE and DEGRADED_BUT_REFRESHING
+        # are legitimate for serving traffic.
         if freshness_class in (FreshnessClass.NO_PRODUCER, FreshnessClass.NO_TRANSPORT, FreshnessClass.CONFIG_ERROR):
             reasons.append(f"feed_{freshness_class.value.lower()}")
         elif freshness_class == FreshnessClass.STALE_PRESERVED:
@@ -462,6 +483,10 @@ def _register_health_routes(app: FastAPI) -> None:
         # Producer heartbeat gate
         if not hb_alive:
             reasons.append("producer_heartbeat_dead")
+
+        # Engine heartbeat gate — analysis loop must be alive
+        if not engine_alive:
+            reasons.append("engine_heartbeat_dead")
 
         ready = len(reasons) == 0
         status_code = 200 if ready else 503
@@ -506,6 +531,7 @@ def _register_health_routes(app: FastAPI) -> None:
             lockdown_state = "locked" if str(locked).lower() in {"1", "true", "locked", "on"} else "normal"
 
         from api.allocation_router import _feed_freshness_snapshot  # noqa: PLC0415
+        from state.redis_keys import HEARTBEAT_ENGINE  # noqa: PLC0415
 
         feed_snapshot = await _feed_freshness_snapshot()
         overall_status = "ok" if redis_ok and bool(postgres_health.get("connected")) else "degraded"
@@ -515,6 +541,7 @@ def _register_health_routes(app: FastAPI) -> None:
             overall_status = "degraded"
 
         hb_age, hb_alive = await _read_heartbeat_age(request)
+        engine_hb_age, engine_alive = await _read_heartbeat_age(request, key=HEARTBEAT_ENGINE)
 
         return {
             "status": overall_status,
@@ -529,12 +556,15 @@ def _register_health_routes(app: FastAPI) -> None:
             "active_pairs": 0,
             "active_trades": 0,
             "feed_status": feed_snapshot.state,
+            "freshness_class": feed_snapshot.freshness_class.value,
             "feed_staleness_seconds": feed_snapshot.staleness_seconds,
             "feed_threshold_seconds": feed_snapshot.threshold_seconds,
             "feed_last_seen_ts": feed_snapshot.last_seen_ts,
             "feed_detail": feed_snapshot.detail,
             "producer_heartbeat_age_seconds": hb_age,
             "producer_alive": hb_alive,
+            "engine_heartbeat_age_seconds": engine_hb_age,
+            "engine_alive": engine_alive,
             "timestamp": datetime.now(UTC).isoformat(),
         }
 

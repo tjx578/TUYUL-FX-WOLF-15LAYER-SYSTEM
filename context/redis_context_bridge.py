@@ -107,9 +107,13 @@ class RedisContextBridge:
                 },
             )
 
-            # 3. Long housekeeping TTL (24h) — NOT a freshness indicator.
-            #    Freshness is computed from the last_seen_ts field above.
-            self._redis.client.expire(latest_key, LATEST_TICK_TTL_SECONDS)
+            # P0: No EXPIRE on latest_tick keys.  Freshness is determined
+            # solely from the `last_seen_ts` field inside the hash.
+            # Removing the TTL prevents stale data from silently vanishing
+            # and being misclassified as NO_PRODUCER (never had data)
+            # instead of STALE_PRESERVED (data present but aged out).
+            # Redis memory is bounded by the number of configured pairs
+            # (one small hash per symbol), so expiry is unnecessary.
 
             # 4. PUBLISH notification
             self._redis.publish("tick_updates", tick_json)
