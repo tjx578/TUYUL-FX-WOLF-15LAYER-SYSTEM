@@ -1,149 +1,295 @@
-'use client';
+"use client";
 
-import { useVerdict } from '@/lib/api';
-import { formatLocalTime, formatUTCTime } from '@/lib/timezone';
-import { Activity } from 'lucide-react';
+// ============================================================
+// TUYUL FX Wolf-15 — VerdictCard
+// Gate glow + breakdowns use CSS transitions (no framer-motion).
+// ============================================================
+
+import type { L12Verdict, VerdictType } from "@/types";
+import { formatTime } from "@/lib/timezone";
+import Panel from "@/components/ui/Panel";
+import StatusBadge from "@/components/ui/StatusBadge";
+import Button from "@/components/ui/Button";
+import { useLivePulse } from "@/hooks/useLivePulse";
 
 interface VerdictCardProps {
-  pair: string;
+  verdict: L12Verdict;
+  onTake?: () => void;
+  onSkip?: () => void;
+  selected?: boolean;
 }
 
-export default function VerdictCard({ pair }: VerdictCardProps) {
-  const { verdict, isLoading, isError } = useVerdict(pair);
+const VERDICT_COLORS: Record<string, string> = {
+  EXECUTE_BUY: "var(--green)",
+  EXECUTE_SELL: "var(--red)",
+  EXECUTE: "var(--green)",
+  EXECUTE_REDUCED_RISK: "var(--yellow)",
+  HOLD: "var(--yellow)",
+  NO_TRADE: "var(--text-muted)",
+  ABORT: "var(--red)",
+};
 
-  if (isLoading) {
-    return (
-      <div className="bg-wolf-gray rounded-lg p-6 border border-wolf-gray-light">
-        <div className="animate-pulse space-y-4">
-          <div className="h-8 bg-wolf-gray-light rounded w-1/3"></div>
-          <div className="h-6 bg-wolf-gray-light rounded w-1/2"></div>
-          <div className="h-4 bg-wolf-gray-light rounded w-2/3"></div>
-        </div>
-      </div>
-    );
-  }
+function confidenceLabel(c: number): string {
+  if (c >= 0.85) return "VERY HIGH";
+  if (c >= 0.7) return "HIGH";
+  if (c >= 0.5) return "MEDIUM";
+  return "LOW";
+}
 
-  if (isError || !verdict) {
-    return (
-      <div className="bg-wolf-gray rounded-lg p-6 border border-red-500/20">
-        <p className="text-red-500">⚠️ Failed to load verdict for {pair}</p>
-      </div>
-    );
-  }
+function verdictGlow(v: string, selected: boolean): "cyan" | "emerald" | "orange" | "none" {
+  if (selected) return "cyan";
+  if (v.startsWith("EXECUTE")) return "emerald";
+  if (v === "ABORT") return "orange";
+  return "none";
+}
 
-  const verdictColor =
-    verdict.verdict.startsWith('EXECUTE') ? 'text-wolf-green' :
-    verdict.verdict === 'HOLD' ? 'text-yellow-500' :
-    'text-wolf-red';
+function verdictBadgeType(v: string): "execute" | "hold" | "no-trade" | "abort" {
+  if (v.startsWith("EXECUTE")) return "execute";
+  if (v === "HOLD") return "hold";
+  if (v === "ABORT") return "abort";
+  return "no-trade";
+}
 
-  const wolfStatusIcon =
-    verdict.wolf_status === 'ALPHA' ? '👑' :
-    verdict.wolf_status === 'PACK' ? '🐺' :
-    verdict.wolf_status === 'SCOUT' ? '👁️' :
-    '🚫';
+export function VerdictCard({
+  verdict,
+  onTake,
+  onSkip,
+  selected,
+}: VerdictCardProps) {
+  const v = verdict.verdict as string;
+  const color = VERDICT_COLORS[v] ?? "var(--text-muted)";
+  const isExecutable = v.startsWith("EXECUTE");
+  const confidencePct = Math.round((verdict.confidence ?? 0) * 100);
+  const verdictPulse = useLivePulse(v);
+  const confidencePulse = useLivePulse(confidencePct);
+  const pulse = verdictPulse || confidencePulse;
 
   return (
-    <div className="bg-wolf-gray rounded-lg p-6 border border-wolf-gray-light">
-      {/* Header */}
-      <div className="flex justify-between items-start mb-6">
-        <div>
-          <h2 className="text-2xl font-bold text-wolf-gold mb-1">
-            🐺 L12 VERDICT
-          </h2>
-          <p className="text-sm text-wolf-gray-light">
-            {pair} • {verdict.schema}
-          </p>
-        </div>
-        <div className="text-right">
-          <div className="text-3xl mb-1">{wolfStatusIcon}</div>
-          <p className="text-xs text-wolf-gray-light">{verdict.wolf_status}</p>
-        </div>
+    <Panel
+      glow={verdictGlow(v, selected ?? false)}
+      className={`animate-fade-in flex flex-col gap-3 cursor-pointer transition-all duration-150${pulse ? " live-pulse" : ""}`}
+      role="button"
+      tabIndex={0}
+      aria-label={`${verdict.symbol} verdict: ${v}, confidence ${confidencePct}%`}
+    >
+      {/* ── Header ── */}
+      <div className="flex items-center gap-2">
+        <span
+          className="num"
+          style={{
+            fontSize: 16,
+            fontWeight: 700,
+            color: "var(--text-primary)",
+            letterSpacing: "0.04em",
+          }}
+        >
+          {verdict.symbol}
+        </span>
+        <StatusBadge type={verdictBadgeType(v)} label={v} />
+        <span
+          style={{
+            marginLeft: "auto",
+            fontFamily: "var(--font-mono)",
+            fontSize: 10,
+            color: "var(--text-muted)",
+          }}
+        >
+          {formatTime(verdict.timestamp * 1000)}
+        </span>
       </div>
 
-      {/* Verdict Status */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-        <div className="bg-wolf-darker p-4 rounded-lg">
-          <p className="text-xs text-wolf-gray-light mb-1">Verdict</p>
-          <p className={`text-lg font-bold ${verdictColor}`}>
-            {verdict.verdict}
-          </p>
-        </div>
-        <div className="bg-wolf-darker p-4 rounded-lg">
-          <p className="text-xs text-wolf-gray-light mb-1">Confidence</p>
-          <p className="text-lg font-bold text-wolf-gold">
-            {verdict.confidence}
-          </p>
-        </div>
-        <div className="bg-wolf-darker p-4 rounded-lg">
-          <p className="text-xs text-wolf-gray-light mb-1">Wolf Score</p>
-          <p className="text-lg font-bold text-white">
-            {verdict.scores.wolf_30_point}/30
-          </p>
-        </div>
-        <div className="bg-wolf-darker p-4 rounded-lg">
-          <p className="text-xs text-wolf-gray-light mb-1">Gates Passed</p>
-          <p className="text-lg font-bold text-white">
-            {verdict.gates.passed}/{verdict.gates.total}
-          </p>
-        </div>
-      </div>
-
-      {/* Execution Details */}
-      {verdict.execution.direction && (
-        <div className="bg-wolf-darker p-4 rounded-lg mb-6">
-          <h3 className="text-sm font-semibold text-wolf-gold mb-3">
-            EXECUTION DETAILS
-          </h3>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
-            <div>
-              <p className="text-wolf-gray-light text-xs">Direction</p>
-              <p className="font-mono-numbers font-semibold">
-                {verdict.execution.direction}
-              </p>
+      {/* ── Direction + prices ── */}
+      {isExecutable && (
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(3, 1fr)",
+            gap: 8,
+          }}
+        >
+          {[
+            { label: "ENTRY", value: verdict.entry_price },
+            { label: "SL", value: verdict.stop_loss },
+            { label: "TP", value: verdict.take_profit_1 },
+          ].map(({ label, value }) => (
+            <div
+              key={label}
+              style={{
+                background: "var(--bg-card)",
+                borderRadius: 4,
+                padding: "6px 8px",
+              }}
+            >
+              <div
+                style={{ fontSize: 9, color: "var(--text-muted)", letterSpacing: "0.08em", marginBottom: 2 }}
+              >
+                {label}
+              </div>
+              <div className="num" style={{ fontSize: 13, color: "var(--text-primary)" }}>
+                {value?.toFixed(5) ?? "—"}
+              </div>
             </div>
-            <div>
-              <p className="text-wolf-gray-light text-xs">Entry</p>
-              <p className="font-mono-numbers">
-                {verdict.execution.entry_price?.toFixed(5) || 'N/A'}
-              </p>
-            </div>
-            <div>
-              <p className="text-wolf-gray-light text-xs">Stop Loss</p>
-              <p className="font-mono-numbers">
-                {verdict.execution.stop_loss?.toFixed(5) || 'N/A'}
-              </p>
-            </div>
-            <div>
-              <p className="text-wolf-gray-light text-xs">Take Profit</p>
-              <p className="font-mono-numbers">
-                {verdict.execution.take_profit_1?.toFixed(5) || 'N/A'}
-              </p>
-            </div>
-            <div>
-              <p className="text-wolf-gray-light text-xs">R:R Ratio</p>
-              <p className="font-mono-numbers">
-                {verdict.execution.rr_ratio?.toFixed(2) || 'N/A'}
-              </p>
-            </div>
-            <div>
-              <p className="text-wolf-gray-light text-xs">Risk %</p>
-              <p className="font-mono-numbers">
-                {verdict.execution.risk_percent?.toFixed(2) || 'N/A'}%
-              </p>
-            </div>
-          </div>
+          ))}
         </div>
       )}
 
-      {/* Timestamps */}
-      <div className="text-xs text-wolf-gray-light space-y-1">
-        <p>
-          <span className="text-wolf-gold">UTC:</span> {formatUTCTime(verdict.timestamp)}
-        </p>
-        <p>
-          <span className="text-wolf-gold">Local (GMT+8):</span> {formatLocalTime(verdict.timestamp)}
-        </p>
+      {/* ── Confidence bar ── */}
+      <div>
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            marginBottom: 4,
+            fontSize: 10,
+            color: "var(--text-muted)",
+            letterSpacing: "0.06em",
+          }}
+        >
+          <span>CONFIDENCE</span>
+          <span className="num" style={{ color }}>
+            {confidencePct}% {confidenceLabel(verdict.confidence ?? 0)}
+          </span>
+        </div>
+        <div className="progress-bar">
+          <div
+            className="progress-fill"
+            style={{
+              width: `${confidencePct}%`,
+              background:
+                confidencePct >= 75 ? "var(--green)" :
+                  confidencePct >= 50 ? "var(--yellow)" : "var(--red)",
+            }}
+          />
+        </div>
       </div>
-    </div>
+
+      {/* ── Gate Sequential Glow Engine ── */}
+      {verdict.scores && (
+        <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+          {([
+            { label: "W", value: verdict.scores.wolf_score },
+            { label: "TII", value: verdict.scores.tii_score },
+            { label: "FRPC", value: verdict.scores.frpc_score },
+          ] as { label: string; value: number | undefined }[]).map(({ label, value }, index) => {
+            // Constitutional thresholds: wolf ≥ 0.70 (21/30), tii ≥ 0.90, frpc ≥ 0.93
+            const threshold = label === "W" ? 21 : label === "TII" ? 0.90 : 0.93;
+            const passing = (value ?? 0) >= threshold;
+            return (
+              <div
+                key={label}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 4,
+                  padding: "3px 7px",
+                  borderRadius: 6,
+                  background: passing ? "rgba(0,245,160,0.08)" : "rgba(255,255,255,0.04)",
+                  border: `1px solid ${passing ? "rgba(0,245,160,0.25)" : "rgba(255,255,255,0.08)"}`,
+                  transition: "background 0.3s ease, border-color 0.3s ease",
+                }}
+              >
+                <div
+                  style={{
+                    width: 6,
+                    height: 6,
+                    borderRadius: "50%",
+                    background: passing ? "var(--green)" : "var(--text-muted)",
+                    boxShadow: passing ? "0 0 6px rgba(0,245,160,0.8)" : "none",
+                    opacity: passing ? 1 : 0.3,
+                    transition: "opacity 0.3s ease, background 0.3s ease, box-shadow 0.3s ease",
+                  }}
+                />
+                <span style={{
+                  fontSize: 9,
+                  fontFamily: "var(--font-mono)",
+                  color: passing ? "var(--green)" : "var(--text-muted)",
+                  letterSpacing: "0.06em",
+                }}>
+                  {label}:{label === "W" ? (value ?? 0).toFixed(0) : (value ?? 0).toFixed(2)}
+                </span>
+              </div>
+            );
+          })}
+          {verdict.scores.regime && (
+            <span
+              className="badge badge-muted"
+              style={{ fontSize: 9, marginLeft: "auto" }}
+            >
+              {verdict.scores.regime}
+            </span>
+          )}
+        </div>
+      )}
+
+      {/* ── Wolf 30-Point Breakdown ── */}
+      {verdict.scores?.f_score != null && (
+        <div
+          style={{
+            display: "flex",
+            gap: 4,
+            fontSize: 9,
+            fontFamily: "var(--font-mono)",
+            color: "var(--text-muted)",
+            letterSpacing: "0.04em",
+          }}
+        >
+          {([
+            { label: "F", value: verdict.scores.f_score, max: 8 },
+            { label: "T", value: verdict.scores.t_score, max: 12 },
+            { label: "FTA", value: verdict.scores.fta_score, max: 5 },
+            { label: "E", value: verdict.scores.exec_score, max: 5 },
+          ] as { label: string; value: number | undefined; max: number }[]).map(({ label, value, max }) => (
+            <span key={label} style={{ opacity: (value ?? 0) >= max * 0.7 ? 1 : 0.6 }}>
+              {label}:{value ?? 0}/{max}
+            </span>
+          ))}
+        </div>
+      )}
+
+      {/* ── RR ── */}
+      {verdict.risk_reward_ratio && (
+        <div
+          style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11 }}
+        >
+          <span style={{ color: "var(--text-muted)" }}>R:R</span>
+          <span
+            className="num"
+            style={{
+              color:
+                verdict.risk_reward_ratio >= 2
+                  ? "var(--green)"
+                  : "var(--yellow)",
+              fontWeight: 700,
+            }}
+          >
+            1:{verdict.risk_reward_ratio.toFixed(2)}
+          </span>
+        </div>
+      )}
+
+      {/* ── Action buttons ── */}
+      {isExecutable && (onTake || onSkip) && (
+        <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
+          {onTake && (
+            <Button
+              variant="take"
+              style={{ flex: 1 }}
+              onClick={(e) => { e.stopPropagation(); onTake(); }}
+            >
+              ▶ TAKE
+            </Button>
+          )}
+          {onSkip && (
+            <Button
+              variant="skip"
+              style={{ flex: 1 }}
+              onClick={(e) => { e.stopPropagation(); onSkip(); }}
+            >
+              ✕ SKIP
+            </Button>
+          )}
+        </div>
+      )}
+    </Panel>
   );
 }

@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "wolf15/signal.schema.json",
+  "title": "Wolf15Signal",
+  "type": "object",
+  "required": ["symbol", "verdict", "confidence", "timestamp"],
+  "properties": {
+    "symbol": { "type": "string", "minLength": 3 },
+    "verdict": { "type": "string", "enum": ["EXECUTE", "HOLD", "NO_TRADE", "ABORT"] },
+    "confidence": { "oneOf": [{ "type": "number", "minimum": 0, "maximum": 1 }, { "type": "string" }] },
+    "entry_price": { "type": ["number", "null"] },
+    "stop_loss": { "type": ["number", "null"] },
+    "take_profit_1": { "type": ["number", "null"] },
+    "timestamp": { "type": "string", "format": "date-time" }
+  },
+  "additionalProperties": true
+}

@@ -1,0 +1,42 @@
+name: 🚀 Wolf Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  release:
+    name: "🚀 Create Release"
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: 📋 Generate changelog
+        id: changelog
+        run: |
+          PREV_TAG=$(git tag --sort=-version:refname | head -2 | tail -1)
+          if [ -z "$PREV_TAG" ]; then
+            PREV_TAG=$(git rev-list --max-parents=0 HEAD)
+          fi
+          echo "## 🐺 Wolf 15-Layer System Release" > CHANGELOG.md
+          echo "" >> CHANGELOG.md
+          echo "### Changes since $PREV_TAG" >> CHANGELOG.md
+          echo "" >> CHANGELOG.md
+          git log "$PREV_TAG"..HEAD --pretty=format:"- %s (%h)" >> CHANGELOG.md
+          echo "" >> CHANGELOG.md
+          echo "---" >> CHANGELOG.md
+          echo "**Authority:** Layer-12 Constitution" >> CHANGELOG.md
+          echo "**Data Provider:** Finnhub API" >> CHANGELOG.md
+          echo "**Execution Mode:** TP1_ONLY · Pending Orders Only" >> CHANGELOG.md
+
+      - name: 🚀 Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          body_path: CHANGELOG.md
+          draft: false
+          prerelease: ${{ contains(github.ref, 'alpha') || contains(github.ref, 'beta') || contains(github.ref, 'rc') }}

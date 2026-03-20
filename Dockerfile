@@ -1,48 +1,61 @@
-# Wolf 15-Layer Trading System - Dockerfile (Multi-stage build)
+# ==========================================================================
+# TUYUL FX Wolf-15 — Multi-stage production Dockerfile
+# ==========================================================================
+# Stage 1: build wheels (with build tools, discarded at runtime)
+# Stage 2: lean runtime image (~150 MB smaller than single-stage)
+# ==========================================================================
 
-FROM python:3.11-slim AS base
+# ---------- STAGE 1: BUILD ----------
+FROM python:3.11-slim AS builder
 
-# Set working directory
-WORKDIR /app
+WORKDIR /build
 
-# Set environment variables
-ENV PYTHONUNBUFFERED=1 \
-    PYTHONDONTWRITEBYTECODE=1 \
-    PIP_NO_CACHE_DIR=1 \
-    PIP_DISABLE_PIP_VERSION_CHECK=1
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1
 
-# Install system dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    gcc \
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends build-essential gcc libpq-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy requirements first for better caching
 COPY requirements.txt .
+RUN pip install --upgrade pip \
+    && pip wheel --no-cache-dir --no-deps -r requirements.txt -w /wheels
 
-# Install Python dependencies
-RUN pip install --no-cache-dir -r requirements.txt
+# ---------- STAGE 2: RUNTIME ----------
+FROM python:3.11-slim AS runtime
 
-# Copy application code
+WORKDIR /app
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    ENV=production \
+    PORT=8000
+
+# Postgres client lib required by psycopg / alembic at runtime
+# curl required for HEALTHCHECK
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends libpq5 curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install wheels from builder (no compiler needed)
+COPY --from=builder /wheels /tmp/wheels
+RUN pip install --no-cache-dir /tmp/wheels/* \
+    && rm -rf /tmp/wheels
+
+# Copy application code (filtered by .dockerignore)
 COPY . .
 
-# Create necessary directories
-RUN mkdir -p /app/storage/snapshots /app/storage/ea_commands /app/storage/ea_state /app/storage/decision_archive /app/storage/gpt_exports /app/logs
+# Non-root user
+RUN groupadd --gid 1000 appuser \
+    && useradd --uid 1000 --gid appuser --shell /bin/bash --create-home appuser \
+    && chown -R appuser:appuser /app
 
-# ================================================
-# Stage: API Server
-# ================================================
-FROM base AS api
-EXPOSE 8000
-CMD ["gunicorn", "api_server:app", "--workers", "2", "--worker-class", "uvicorn.workers.UvicornWorker", "--bind", "0.0.0.0:8000"]
+USER appuser
 
-# ================================================
-# Stage: Trading Engine
-# ================================================
-FROM base AS engine
-CMD ["python", "main.py"]
+EXPOSE ${PORT}
 
-# ================================================
-# Stage: Ingest Service
-# ================================================
-FROM base AS ingest
-CMD ["python", "ingest_service.py"]
+HEALTHCHECK --interval=15s --timeout=10s --start-period=60s --retries=5 \
+    CMD curl -f http://localhost:${PORT:-8000}/health || exit 1
+
+CMD ["python", "api_server.py"]

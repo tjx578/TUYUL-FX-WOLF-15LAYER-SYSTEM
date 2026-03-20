@@ -1,0 +1,26 @@
+{
+  "journal_type": "decision",
+  "recorded_at": "2026-03-19T15:32:36.381256+00:00",
+  "data": {
+    "timestamp": "2026-03-19T15:32:36.377257Z",
+    "pair": "EURUSD",
+    "setup_id": "EURUSD_1773934356",
+    "wolf_30_score": 0,
+    "f_score": 0,
+    "t_score": 0,
+    "fta_score": 0,
+    "exec_score": 0,
+    "tii_sym": 0.0,
+    "integrity_index": 0.0,
+    "monte_carlo_win": 0.0,
+    "conf12": 0.0,
+    "verdict": "EXECUTE_BUY",
+    "confidence": "MEDIUM",
+    "wolf_status": "SCOUT",
+    "gates_passed": 0,
+    "gates_total": 9,
+    "failed_gates": [],
+    "violations": [],
+    "primary_rejection_reason": null
+  }
+}

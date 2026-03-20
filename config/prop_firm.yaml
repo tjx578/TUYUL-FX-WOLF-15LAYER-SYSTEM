@@ -14,6 +14,9 @@ drawdown:
 risk:
   max_risk_per_trade_percent: 1.0
   min_rr_required: 2.0
+  max_daily_loss: 500.0
+  max_open_positions: 5
+  max_lot_per_trade: 1.0
 
 allowed_markets:
   forex: true

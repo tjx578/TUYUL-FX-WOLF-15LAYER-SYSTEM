@@ -1,26 +1,100 @@
+# Version control
 .git
-.github
 .gitignore
+
+# CI/CD
+.github/
+
+# Environment & secrets
 .env
-.env.example
-.dockerignore
-.pytest_cache
-__pycache__
+.env.*
+!.env.example
+
+# Python artifacts
+__pycache__/
 *.pyc
 *.pyo
-node_modules
-.next
-dashboard/nextjs/node_modules
-dashboard/nextjs/.next
-tests
-docs
-scripts
-*.md
-LICENSE
-docker-compose.yml
+*.egg-info/
+dist/
+build/
+*.egg
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.tox/
+
+# Virtual environments
+venv/
+.venv/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Node
+node_modules/
+
+# Docker (avoid recursive copy)
 Dockerfile
-.ruff_cache
-logs
-storage/snapshots
-storage/decision_archive
-storage/gpt_exports
+Dockerfile.*
+docker-compose*.yml
+.dockerignore
+
+# Documentation (not needed at runtime)
+*.md
+!README.md
+docs/
+LICENSE
+
+# Tests (not needed at runtime)
+tests/
+
+# Storage snapshots & archives (runtime-generated, not baked into image)
+storage/snapshots/
+storage/archives/
+storage/exports/
+
+# OS junk
+Thumbs.db
+.DS_Store
+
+# Notebooks (dev only)
+*.ipynb
+.ipynb_checkpoints/
+
+# Tests (not needed in production image)
+tests/
+test_*.py
+*_test.py
+
+# Node / Frontend build artifacts
+node_modules/
+.next/
+out/
+pnpm-lock.yaml
+package-lock.json
+
+# Playwright / E2E
+playwright.config.ts
+playwright-report/
+test-results/
+
+# Misc result/log files
+collect_results.txt
+full_results.txt
+full_test_run.txt
+test_collect.txt
+test_results.txt
+
+# Config & lint (not needed at runtime)
+pyrightconfig.json
+pytest.ini
+conftest.py
+pyproject.toml
+.ruff_cache/

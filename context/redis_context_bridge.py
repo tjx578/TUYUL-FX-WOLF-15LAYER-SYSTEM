@@ -10,12 +10,25 @@ Uses:
   - Redis Hash for latest tick per symbol (fast lookup)
 """
 
-from typing import Any, Optional
+import contextlib
+from typing import Any
 
 import orjson
 from loguru import logger
 
 from storage.redis_client import RedisClient
+
+# === TTL Constants ===
+# Latest tick: 24 hours housekeeping TTL — keeps last-known price available.
+# Staleness is detected via the `last_seen_ts` field INSIDE the hash, NOT via key expiry.
+# The long TTL only exists for garbage collection; it does NOT define freshness.
+# This prevents data loss during temporary WS disconnects (rate limits, weekends).
+LATEST_TICK_TTL_SECONDS: int = 86400  # 24h housekeeping only
+
+# No TTL on candle keys — Redis has persistent volume.
+# Data stays until explicitly deleted or trimmed by LTRIM.
+# Max candle history entries per symbol/timeframe in Redis
+CANDLE_HISTORY_MAXLEN: int = 300
 
 
 class RedisContextBridge:
@@ -29,15 +42,23 @@ class RedisContextBridge:
 
     Consume side (engine container):
       - Handled by RedisConsumer class separately
+
+    TTL Policy:
+      - tick streams: MAXLEN ~10,000 (auto-trim on XADD)
+      - latest_tick hashes: 24h housekeeping TTL (staleness via last_seen_ts field, NOT key expiry)
+      - candle hashes: no TTL (persistent, overwritten on each new candle)
+      - candle history lists: no TTL (capped by LTRIM to 300 entries)
+      - latest_news: 24h TTL (set via SET ex=)
     """
 
-    def __init__(self, redis_client: Optional[RedisClient] = None) -> None:
+    def __init__(self, redis_client: RedisClient | None = None) -> None:
         """
         Initialize Redis context bridge.
 
         Args:
             redis_client: Optional RedisClient instance (uses singleton if None).
         """
+        super().__init__()
         self._redis = redis_client or RedisClient()
         self._prefix = "wolf15"  # Namespace prefix for all keys
         self._tick_stream_maxlen = 10000  # Max entries per tick stream
@@ -49,7 +70,9 @@ class RedisContextBridge:
         Operations:
           1. XADD to stream "tick:{symbol}" with maxlen cap
           2. HSET to "latest_tick:{symbol}" for fast latest-tick lookup
-          3. PUBLISH to "tick_updates" channel for real-time notification
+          3. EXPIRE on latest_tick key (3600s — keeps data during WS outages;
+             staleness detected via timestamp field, not key expiry)
+          4. PUBLISH to "tick_updates" channel for real-time notification
 
         Args:
             tick: Tick dictionary with keys: symbol, bid, ask, timestamp, source
@@ -63,7 +86,7 @@ class RedisContextBridge:
             # Serialize tick to JSON
             tick_json = orjson.dumps(tick).decode("utf-8")
 
-            # 1. XADD to stream
+            # 1. XADD to stream (auto-trimmed by maxlen)
             stream_key = f"{self._prefix}:tick:{symbol}"
             self._redis.xadd(
                 stream_key,
@@ -72,14 +95,24 @@ class RedisContextBridge:
                 approximate=True,
             )
 
-            # 2. HSET latest tick
+            # 2. HSET latest tick + last_seen_ts for freshness classification
+            import time as _time
+
             latest_key = f"{self._prefix}:latest_tick:{symbol}"
-            self._redis.hset(latest_key, mapping={"data": tick_json})
+            self._redis.hset(
+                latest_key,
+                mapping={
+                    "data": tick_json,
+                    "last_seen_ts": str(_time.time()),
+                },
+            )
 
-            # 3. PUBLISH notification
+            # 3. Long housekeeping TTL (24h) — NOT a freshness indicator.
+            #    Freshness is computed from the last_seen_ts field above.
+            self._redis.client.expire(latest_key, LATEST_TICK_TTL_SECONDS)
+
+            # 4. PUBLISH notification
             self._redis.publish("tick_updates", tick_json)
-
-            logger.debug(f"Tick written to Redis: {symbol}")
 
         except Exception as exc:
             logger.error(f"Failed to write tick to Redis for {symbol}: {exc}")
@@ -91,6 +124,7 @@ class RedisContextBridge:
         Operations:
           1. PUBLISH to channel "candle:{symbol}:{timeframe}"
           2. HSET to "candle:{symbol}:{timeframe}" for latest candle storage
+          3. RPUSH+LTRIM candle history list (capped at 300 entries)
 
         Args:
             candle: Candle dictionary with keys: symbol, timeframe, open, high,
@@ -99,9 +133,7 @@ class RedisContextBridge:
         symbol = candle.get("symbol")
         timeframe = candle.get("timeframe")
         if not symbol or not timeframe:
-            logger.warning(
-                "Candle missing symbol/timeframe fields, skipping Redis write"
-            )
+            logger.warning("Candle missing symbol/timeframe fields, skipping Redis write")
             return
 
         try:
@@ -112,17 +144,29 @@ class RedisContextBridge:
             channel = f"candle:{symbol}:{timeframe}"
             self._redis.publish(channel, candle_json)
 
-            # 2. HSET latest candle
-            hash_key = f"{self._prefix}:candle:{symbol}:{timeframe}"
-            self._redis.hset(hash_key, mapping={"data": candle_json})
+            # 2. HSET latest candle + last_seen_ts (no TTL — persistent until overwritten)
+            import time as _time
 
-            logger.debug(f"Candle written to Redis: {symbol} {timeframe}")
+            hash_key = f"{self._prefix}:candle:{symbol}:{timeframe}"
+            self._redis.hset(
+                hash_key,
+                mapping={
+                    "data": candle_json,
+                    "last_seen_ts": str(_time.time()),
+                },
+            )
+
+            # 3. Append to candle history list (enables engine warmup on startup)
+            #    LTRIM caps size; no TTL so data survives restarts.
+            try:
+                list_key = f"{self._prefix}:candle_history:{symbol}:{timeframe}"
+                self._redis.client.rpush(list_key, candle_json)
+                self._redis.client.ltrim(list_key, -CANDLE_HISTORY_MAXLEN, -1)
+            except Exception as exc:
+                logger.error(f"Failed to write candle history list for {symbol} {timeframe}: {exc}")
 
         except Exception as exc:
-            logger.error(
-                f"Failed to write candle to Redis for {symbol} "
-                f"{timeframe}: {exc}"
-            )
+            logger.error(f"Failed to write candle to Redis for {symbol} {timeframe}: {exc}")
 
     def write_news(self, news: dict[str, Any]) -> None:
         """
@@ -130,7 +174,7 @@ class RedisContextBridge:
 
         Operations:
           1. PUBLISH to channel "news_updates"
-          2. SET to "latest_news" for persistence
+          2. SET to "latest_news" for persistence (24h TTL already set)
 
         Args:
             news: News dictionary payload
@@ -142,16 +186,14 @@ class RedisContextBridge:
             # 1. PUBLISH to channel
             self._redis.publish("news_updates", news_json)
 
-            # 2. SET latest news
+            # 2. SET latest news (already has TTL via ex=86400)
             key = f"{self._prefix}:latest_news"
             self._redis.set(key, news_json, ex=86400)  # 24h expiration
-
-            logger.debug("News written to Redis")
 
         except Exception as exc:
             logger.error(f"Failed to write news to Redis: {exc}")
 
-    def read_latest_tick(self, symbol: str) -> Optional[dict[str, Any]]:
+    def read_latest_tick(self, symbol: str) -> dict[str, Any] | None:
         """
         Read latest tick for a symbol from Redis Hash.
 
@@ -159,21 +201,28 @@ class RedisContextBridge:
             symbol: Trading pair symbol.
 
         Returns:
-            Tick dictionary or None if not found.
+            Tick dictionary or None if not found.  Includes ``last_seen_ts``
+            if present in the hash (written by write_tick).
         """
         try:
             key = f"{self._prefix}:latest_tick:{symbol}"
-            tick_json = self._redis.hget(key, "data")
-            if tick_json:
-                return orjson.loads(tick_json)
-            return None
+            raw_map = self._redis.hgetall(key)
+            if not raw_map:
+                return None
+            data_str = raw_map.get("data")
+            if not data_str:
+                return None
+            tick = orjson.loads(data_str)
+            # Attach last_seen_ts from hash so readers can compute freshness
+            last_seen = raw_map.get("last_seen_ts")
+            if last_seen:
+                tick["last_seen_ts"] = float(last_seen)
+            return tick
         except Exception as exc:
             logger.error(f"Failed to read latest tick from Redis: {exc}")
             return None
 
-    def read_latest_candle(
-        self, symbol: str, timeframe: str
-    ) -> Optional[dict[str, Any]]:
+    def read_latest_candle(self, symbol: str, timeframe: str) -> dict[str, Any] | None:
         """
         Read latest candle for a symbol/timeframe from Redis Hash.
 
@@ -182,19 +231,58 @@ class RedisContextBridge:
             timeframe: Timeframe (e.g., "M15", "H1").
 
         Returns:
-            Candle dictionary or None if not found.
+            Candle dictionary or None if not found.  Includes ``last_seen_ts``
+            if present in the hash (written by write_candle).
         """
         try:
             key = f"{self._prefix}:candle:{symbol}:{timeframe}"
-            candle_json = self._redis.hget(key, "data")
-            if candle_json:
-                return orjson.loads(candle_json)
-            return None
+            raw_map = self._redis.hgetall(key)
+            if not raw_map:
+                return None
+            data_str = raw_map.get("data")
+            if not data_str:
+                return None
+            candle = orjson.loads(data_str)
+            last_seen = raw_map.get("last_seen_ts")
+            if last_seen:
+                candle["last_seen_ts"] = float(last_seen)
+            return candle
         except Exception as exc:
             logger.error(f"Failed to read latest candle from Redis: {exc}")
             return None
 
-    def read_latest_news(self) -> Optional[dict[str, Any]]:
+    def read_candle_history(self, symbol: str, timeframe: str, count: int = 0) -> list[dict[str, Any]]:
+        """
+        Read candle history list from Redis.
+
+        Used by engine container on startup to load warmup data that
+        ingest already fetched, avoiding the pub/sub race condition.
+
+        Args:
+            symbol: Trading pair symbol.
+            timeframe: Timeframe (e.g., "H1", "H4", "D1").
+            count: Max candles to return (0 = all available).
+
+        Returns:
+            List of candle dicts, oldest first.
+        """
+        try:
+            list_key = f"{self._prefix}:candle_history:{symbol}:{timeframe}"
+            raw: list[bytes]
+            if count > 0:
+                raw = list(self._redis.client.lrange(list_key, -count, -1))  # type: ignore[arg-type]
+            else:
+                raw = list(self._redis.client.lrange(list_key, 0, -1))  # type: ignore[arg-type]
+            candles: list[dict[str, Any]] = []
+            for item in raw:
+                with contextlib.suppress(Exception):
+                    candles.append(orjson.loads(item))
+            return candles
+        except Exception as exc:
+            logger.error(f"Failed to read candle history from Redis for {symbol} {timeframe}: {exc}")
+            return []
+
+    def read_latest_news(self) -> dict[str, Any] | None:
         """
         Read latest news from Redis.
 

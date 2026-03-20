@@ -1,73 +1,102 @@
-"""
-Client-side timezone utilities
-Handles UTC ↔ GMT+8 conversion for display
-"""
+// ============================================================
+// TUYUL FX Wolf-15 — Timezone Utilities
+//
+// Uses Intl.DateTimeFormat to extract correct wall-clock parts
+// in the target timezone. Avoids the Date(toLocaleString()) anti-pattern
+// which can be off by ±1 hour near DST transitions.
+// ============================================================
 
-import { format, parseISO } from 'date-fns';
-import { toZonedTime } from 'date-fns-tz';
+const TZ = process.env.NEXT_PUBLIC_TIMEZONE || "Asia/Singapore";
 
-const SYSTEM_TZ = process.env.NEXT_PUBLIC_TIMEZONE || 'Asia/Singapore';
-
-// Validate timezone on module load
-try {
-  toZonedTime(new Date(), SYSTEM_TZ);
-} catch (error) {
-  console.error(`Invalid timezone configured: ${SYSTEM_TZ}. Falling back to UTC.`);
-  // Module will use UTC as fallback
-}
+// Reusable formatters (allocated once per TZ, cached by the engine)
+const partFormatter = new Intl.DateTimeFormat("en-US", {
+  timeZone: TZ,
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+  hour: "2-digit",
+  minute: "2-digit",
+  second: "2-digit",
+  hour12: false,
+});
 
 /**
- * Format UTC timestamp to local timezone (GMT+8)
+ * Return an object with the wall-clock parts in the configured timezone.
+ * This is the correct way to extract tz-adjusted components.
  */
-export function formatLocalTime(utcTimestamp: string | Date): string {
-  try {
-    const date = typeof utcTimestamp === 'string' ? parseISO(utcTimestamp) : utcTimestamp;
-    const zonedDate = toZonedTime(date, SYSTEM_TZ);
-    return format(zonedDate, 'yyyy-MM-dd HH:mm:ss');
-  } catch (error) {
-    console.error('Error formatting local time:', error);
-    return 'Invalid time';
+function tzParts(date: Date = new Date()): Record<string, string> {
+  const parts: Record<string, string> = {};
+  for (const { type, value } of partFormatter.formatToParts(date)) {
+    parts[type] = value;
   }
+  return parts;
 }
 
 /**
- * Format UTC timestamp
+ * Return the current hour in the configured timezone (0–23).
+ * Used by sessionLabel() and callers that only need the hour.
  */
-export function formatUTCTime(utcTimestamp: string | Date): string {
-  try {
-    const date = typeof utcTimestamp === 'string' ? parseISO(utcTimestamp) : utcTimestamp;
-    return format(date, 'yyyy-MM-dd HH:mm:ss');
-  } catch (error) {
-    console.error('Error formatting UTC time:', error);
-    return 'Invalid time';
-  }
+export function nowHourInTz(): number {
+  const p = tzParts();
+  return parseInt(p.hour, 10);
 }
 
 /**
- * Get current time in local timezone
+ * Return a Date whose UTC fields equal the wall-clock in TZ.
+ * Useful when you need a Date object for display calculations
+ * but ONLY use getUTC*() methods on the result.
+ *
+ * @deprecated Prefer nowHourInTz() or formatTime/formatDate directly.
  */
-export function getCurrentLocalTime(): string {
+export function nowInTz(): Date {
+  const p = tzParts();
+  return new Date(
+    Date.UTC(
+      parseInt(p.year, 10),
+      parseInt(p.month, 10) - 1,
+      parseInt(p.day, 10),
+      parseInt(p.hour, 10),
+      parseInt(p.minute, 10),
+      parseInt(p.second, 10),
+    ),
+  );
+}
+
+export function formatTime(ts: number | string | Date, tz = TZ): string {
+  const d = typeof ts === "object" ? ts : new Date(ts);
+  return d.toLocaleTimeString("en-US", {
+    timeZone: tz,
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  });
+}
+
+export function formatDate(ts: number | string | Date, tz = TZ): string {
+  const d = typeof ts === "object" ? ts : new Date(ts);
+  return d.toLocaleDateString("en-US", {
+    timeZone: tz,
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  });
+}
+
+export function formatDateTime(ts: number | string | Date, tz = TZ): string {
+  return `${formatDate(ts, tz)} ${formatTime(ts, tz)}`;
+}
+
+export function sessionLabel(): string {
+  const h = nowHourInTz();
+  // Must match backend utils/timezone_utils.py is_trading_session()
+  if (h >= 7 && h < 15) return "ASIA";
+  if (h >= 15 && h < 21) return "LONDON";
+  if (h >= 21 || h < 5) return "NEW_YORK";
+  return "OFF_SESSION";
+}
+
+export function msUntilNextHour(): number {
   const now = new Date();
-  const zonedDate = toZonedTime(now, SYSTEM_TZ);
-  return format(zonedDate, 'yyyy-MM-dd HH:mm:ss');
-}
-
-/**
- * Get current time in UTC
- */
-export function getCurrentUTCTime(): string {
-  return format(new Date(), 'yyyy-MM-dd HH:mm:ss');
-}
-
-/**
- * Format time for display (HH:mm:ss)
- */
-export function formatTimeOnly(utcTimestamp: string | Date): string {
-  try {
-    const date = typeof utcTimestamp === 'string' ? parseISO(utcTimestamp) : utcTimestamp;
-    const zonedDate = toZonedTime(date, SYSTEM_TZ);
-    return format(zonedDate, 'HH:mm:ss');
-  } catch (error) {
-    return '--:--:--';
-  }
+  return (60 - now.getMinutes()) * 60000 - now.getSeconds() * 1000;
 }

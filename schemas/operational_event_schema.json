@@ -1,0 +1,102 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "operational_event_schema_v1",
+  "title": "Operational Event Envelope",
+  "description": "Canonical event schema for signal->take->risk->execution lifecycle.",
+  "type": "object",
+  "required": [
+    "event_id",
+    "event_type",
+    "event_time",
+    "source",
+    "severity",
+    "payload"
+  ],
+  "properties": {
+    "event_id": {
+      "type": "string",
+      "minLength": 8,
+      "maxLength": 128
+    },
+    "event_type": {
+      "type": "string",
+      "enum": [
+        "SIGNAL_CREATED",
+        "SIGNAL_TAKEN",
+        "RISK_FIREWALL_CHECK_STARTED",
+        "RISK_FIREWALL_CHECK_RESULT",
+        "RISK_FIREWALL_REJECTED",
+        "RISK_FIREWALL_APPROVED",
+        "ORDER_PLACED",
+        "ORDER_FILLED",
+        "ORDER_CANCELLED",
+        "ORDER_EXPIRED",
+        "TRADE_CLOSED",
+        "TRADE_ABORTED",
+        "SYSTEM_VIOLATION",
+        "SETTINGS_CHANGED",
+        "SETTINGS_ROLLED_BACK",
+        "COMPLIANCE_MODE_CHANGED"
+      ]
+    },
+    "event_time": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "source": {
+      "type": "string",
+      "enum": [
+        "analysis",
+        "constitution",
+        "dashboard",
+        "risk_firewall",
+        "execution",
+        "journal",
+        "settings",
+        "system"
+      ]
+    },
+    "severity": {
+      "type": "string",
+      "enum": ["INFO", "WARN", "ERROR", "CRITICAL"]
+    },
+    "signal_id": {
+      "type": ["string", "null"]
+    },
+    "account_id": {
+      "type": ["string", "null"]
+    },
+    "ea_instance_id": {
+      "type": ["string", "null"]
+    },
+    "take_id": {
+      "type": ["string", "null"]
+    },
+    "trade_id": {
+      "type": ["string", "null"]
+    },
+    "operator": {
+      "type": ["string", "null"],
+      "maxLength": 64
+    },
+    "code": {
+      "type": ["string", "null"],
+      "description": "Stable violation/rejection code where applicable."
+    },
+    "message": {
+      "type": ["string", "null"],
+      "maxLength": 1024
+    },
+    "payload": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "correlation_id": {
+      "type": ["string", "null"]
+    },
+    "request_id": {
+      "type": ["string", "null"]
+    }
+  },
+  "additionalProperties": false
+}

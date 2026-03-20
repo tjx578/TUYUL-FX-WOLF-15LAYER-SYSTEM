@@ -7,9 +7,12 @@ Verifies that:
 """
 
 import sys
+import time
 from io import StringIO
 
 from loguru import logger
+
+from config.logging_bootstrap import LogBurstLimiter
 
 
 def test_split_stream_logging():
@@ -27,6 +30,18 @@ def test_split_stream_logging():
     stdout_buffer = StringIO()
     stderr_buffer = StringIO()
     
+
+    This ensures Railway classifies logs correctly:
+    - stdout -> "info" level
+    - stderr -> "error" level
+    """
+    # Remove default handler
+    logger.remove()
+
+    # Create string buffers to capture output
+    stdout_buffer = StringIO()
+    stderr_buffer = StringIO()
+
     # Add stdout handler for INFO/WARNING (level < 40)
     logger.add(
         stdout_buffer,
@@ -35,6 +50,7 @@ def test_split_stream_logging():
         filter=lambda record: record["level"].no < 40,
     )
     
+
     # Add stderr handler for ERROR/CRITICAL (level >= 40)
     logger.add(
         stderr_buffer,
@@ -42,6 +58,7 @@ def test_split_stream_logging():
         level="ERROR",
     )
     
+
     # Log messages at different levels
     logger.info("This is an INFO message")
     logger.warning("This is a WARNING message")
@@ -52,6 +69,11 @@ def test_split_stream_logging():
     stdout_output = stdout_buffer.getvalue()
     stderr_output = stderr_buffer.getvalue()
     
+
+    # Get output
+    stdout_output = stdout_buffer.getvalue()
+    stderr_output = stderr_buffer.getvalue()
+
     # Verify INFO and WARNING went to stdout
     assert "INFO" in stdout_output
     assert "This is an INFO message" in stdout_output
@@ -62,6 +84,11 @@ def test_split_stream_logging():
     assert "ERROR" not in stdout_output
     assert "CRITICAL" not in stdout_output
     
+
+    # Verify ERROR did NOT go to stdout
+    assert "ERROR" not in stdout_output
+    assert "CRITICAL" not in stdout_output
+
     # Verify ERROR and CRITICAL went to stderr
     assert "ERROR" in stderr_output
     assert "This is an ERROR message" in stderr_output
@@ -72,6 +99,11 @@ def test_split_stream_logging():
     assert "This is an INFO message" not in stderr_output
     assert "This is a WARNING message" not in stderr_output
     
+
+    # Verify INFO and WARNING did NOT go to stderr
+    assert "This is an INFO message" not in stderr_output
+    assert "This is a WARNING message" not in stderr_output
+
     # Cleanup
     logger.remove()
 
@@ -80,6 +112,7 @@ def test_level_boundary():
     """
     Test that the level boundary (level.no < 40) correctly separates logs.
     
+
     Level numbers:
     - DEBUG: 10
     - INFO: 20
@@ -92,6 +125,10 @@ def test_level_boundary():
     stdout_buffer = StringIO()
     stderr_buffer = StringIO()
     
+
+    stdout_buffer = StringIO()
+    stderr_buffer = StringIO()
+
     logger.add(
         stdout_buffer,
         format="{level} | {message}",
@@ -99,6 +136,7 @@ def test_level_boundary():
         filter=lambda record: record["level"].no < 40,
     )
     
+
     logger.add(
         stderr_buffer,
         format="{level} | {message}",
@@ -110,6 +148,12 @@ def test_level_boundary():
     assert "Debug message" in stdout_buffer.getvalue()
     assert "Debug message" not in stderr_buffer.getvalue()
     
+
+    # Test DEBUG (10 < 40) -> stdout
+    logger.debug("Debug message")
+    assert "Debug message" in stdout_buffer.getvalue()
+    assert "Debug message" not in stderr_buffer.getvalue()
+
     # Clear buffers
     stdout_buffer.truncate(0)
     stdout_buffer.seek(0)
@@ -123,3 +167,22 @@ def test_level_boundary():
     
     # Cleanup
     logger.remove()
+
+    # Test ERROR (40 >= 40) -> stderr
+    logger.error("Error message")
+    assert "Error message" not in stdout_buffer.getvalue()
+    assert "Error message" in stderr_buffer.getvalue()
+
+    # Cleanup
+    logger.remove()
+
+
+def test_log_burst_limiter_allows_then_blocks_then_resets():
+    limiter = LogBurstLimiter(max_per_window=2, window_seconds=0.2)
+
+    assert limiter.allow("svc", "ERROR", "redis timeout") is True
+    assert limiter.allow("svc", "ERROR", "redis timeout") is True
+    assert limiter.allow("svc", "ERROR", "redis timeout") is False
+
+    time.sleep(0.25)
+    assert limiter.allow("svc", "ERROR", "redis timeout") is True

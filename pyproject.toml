@@ -1,20 +1,97 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
 [project]
-name = "tuyulfx-wolf"
-version = "7.4.0"
+name = "tuyul-fx-wolf-15layer"
+version = "0.1.0"
+description = "Wolf-15 Layer Trading Analysis & Governance System"
 requires-python = ">=3.11"
 
+# -----------------------------------------------------------------
+# mypy — HARD FAIL (no soft-fail)
+# -----------------------------------------------------------------
+[tool.mypy]
+python_version = "3.11"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+check_untyped_defs = true
+no_implicit_optional = true
+strict_equality = true
+
+[[tool.mypy.overrides]]
+module = [
+    "tests.*",
+    "scripts.*",
+]
+disallow_untyped_defs = false
+
+[[tool.mypy.overrides]]
+module = [
+    "MetaTrader5.*",
+    "mt5.*",
+]
+ignore_missing_imports = true
+
+# -----------------------------------------------------------------
+# pytest
+# -----------------------------------------------------------------
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-asyncio_mode = "strict"
-asyncio_default_fixture_loop_scope = "function"
-filterwarnings = [
-    "ignore::DeprecationWarning:pytest_asyncio",
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = "-v --tb=short"
+
+# -----------------------------------------------------------------
+# coverage — 85% minimum gate (institutional enforcement)
+# -----------------------------------------------------------------
+[tool.coverage.run]
+source = [
+    "analysis",
+    "constitution",
+    "execution",
+    "dashboard",
+    "journal",
+    "risk",
+]
+omit = [
+    "*/tests/*",
+    "*/__pycache__/*",
+    "*/migrations/*",
 ]
 
+[tool.coverage.report]
+fail_under = 85
+show_missing = true
+skip_empty = true
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+    "if __name__ == .__main__.",
+    "raise NotImplementedError",
+    "@overload",
+]
+
+# -----------------------------------------------------------------
+# ruff (linter/formatter)
+# -----------------------------------------------------------------
 [tool.ruff]
 target-version = "py311"
 line-length = 120
 
 [tool.ruff.lint]
-select = ["E", "F", "W"]
+select = ["E", "F", "W", "I", "N", "UP", "B", "SIM"]
+# UP038 removed — ruff dropped this rule (see your WARN log)
 ignore = ["E501"]
+
+[tool.ruff.lint.isort]
+known-first-party = [
+    "analysis",
+    "constitution",
+    "execution",
+    "dashboard",
+    "journal",
+    "risk",
+]

@@ -1,0 +1,8 @@
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "Dockerfile"
+
+[deploy]
+startCommand = "bash deploy/railway/start_api.sh"
+healthcheckPath = "/healthz"
+healthcheckTimeout = 300

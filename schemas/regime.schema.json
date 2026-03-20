@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "wolf15/regime.schema.json",
+  "title": "Wolf15RegimeState",
+  "type": "object",
+  "required": ["symbol", "regime", "timestamp"],
+  "properties": {
+    "symbol": { "type": "string" },
+    "regime": { "type": "string" },
+    "confidence": { "type": ["number", "null"], "minimum": 0, "maximum": 1 },
+    "timestamp": { "type": "string", "format": "date-time" }
+  },
+  "additionalProperties": true
+}

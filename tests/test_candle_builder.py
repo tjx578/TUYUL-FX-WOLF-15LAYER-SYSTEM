@@ -1,329 +1,307 @@
 """
-Unit tests for CandleBuilder.
+Tests for the unified CandleBuilder (ingest/candle_builder.py).
 
-Tests tick aggregation, M15/H1 candle building, floor_time calculation,
-and empty buffer handling.
+Covers:
+- M15 candle building from ticks
+- H1 candle aggregation from M15 candles
+- Multi-timeframe chaining (tick → M15 → H1)
+- Period alignment
+- Flush behavior
+- Backward-compat import from analysis/
 """
 
-from datetime import datetime, timedelta, timezone
-from unittest.mock import MagicMock
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from ingest.candle_builder import CandleBuilder
+from ingest.candle_builder import (
+    Candle,
+    CandleBuilder,
+    MultiTimeframeCandleBuilder,
+    Timeframe,
+    _align_to_period,
+)
+
+# ── Alignment ────────────────────────────────────────────────────────
+
+class TestAlignment:
+    def test_m15_alignment(self):
+        dt = datetime(2026, 2, 17, 10, 7, 30, tzinfo=UTC)
+        aligned = _align_to_period(dt, 15)
+        assert aligned == datetime(2026, 2, 17, 10, 0, tzinfo=UTC)
+
+    def test_m15_alignment_on_boundary(self):
+        dt = datetime(2026, 2, 17, 10, 15, 0, tzinfo=UTC)
+        aligned = _align_to_period(dt, 15)
+        assert aligned == datetime(2026, 2, 17, 10, 15, tzinfo=UTC)
+
+    def test_h1_alignment(self):
+        dt = datetime(2026, 2, 17, 10, 42, 0, tzinfo=UTC)
+        aligned = _align_to_period(dt, 60)
+        assert aligned == datetime(2026, 2, 17, 10, 0, tzinfo=UTC)
+
+    def test_h4_alignment(self):
+        dt = datetime(2026, 2, 17, 5, 30, 0, tzinfo=UTC)
+        aligned = _align_to_period(dt, 240)
+        assert aligned == datetime(2026, 2, 17, 4, 0, tzinfo=UTC)
+
+    def test_naive_datetime_treated_as_utc(self):
+        dt_naive = datetime(2026, 2, 17, 10, 7, 30)
+        dt_aware = datetime(2026, 2, 17, 10, 7, 30, tzinfo=UTC)
+        assert _align_to_period(dt_naive, 15) == _align_to_period(dt_aware, 15)
 
 
-class TestCandleBuilderFloorTime:
-    """Test floor_time calculation."""
+# ── M15 from Ticks ──────────────────────────────────────────────────
 
-    def test_floor_time_m15(self) -> None:
-        """Test floor_time for M15 intervals."""
-        builder = CandleBuilder()
+class TestM15FromTicks:
+    def _make_builder(self):
+        return CandleBuilder("EURUSD", Timeframe.M15)
 
-        # Test various times
-        dt = datetime(2024, 1, 15, 10, 23, 45, tzinfo=timezone.utc)
-        floored = builder._floor_time(dt, 15)
-
-        # Should floor to 10:15:00
-        assert floored.hour == 10
-        assert floored.minute == 15
-        assert floored.second == 0
-        assert floored.microsecond == 0
-
-    def test_floor_time_h1(self) -> None:
-        """Test floor_time for H1 intervals."""
-        builder = CandleBuilder()
-
-        dt = datetime(2024, 1, 15, 10, 23, 45, tzinfo=timezone.utc)
-        floored = builder._floor_time(dt, 60)
-
-        # Should floor to 10:00:00
-        assert floored.hour == 10
-        assert floored.minute == 0
-        assert floored.second == 0
-        assert floored.microsecond == 0
-
-    def test_floor_time_already_floored(self) -> None:
-        """Test floor_time when time is already on interval."""
-        builder = CandleBuilder()
-
-        dt = datetime(2024, 1, 15, 10, 0, 0, tzinfo=timezone.utc)
-        floored = builder._floor_time(dt, 60)
-
-        # Should remain the same
-        assert floored == dt
-
-    def test_floor_time_edge_cases(self) -> None:
-        """Test floor_time edge cases."""
-        builder = CandleBuilder()
-
-        # Just before midnight
-        dt = datetime(2024, 1, 15, 23, 59, 59, tzinfo=timezone.utc)
-        floored = builder._floor_time(dt, 15)
-
-        # Should floor to 23:45:00
-        assert floored.hour == 23
-        assert floored.minute == 45
-
-
-class TestCandleBuilderNormalizeTimestamp:
-    """Test timestamp normalization."""
-
-    def test_normalize_unix_timestamp(self) -> None:
-        """Test normalizing Unix timestamp (float)."""
-        builder = CandleBuilder()
-
-        unix_ts = 1700000000.0  # Nov 14, 2023
-        dt = builder._normalize_timestamp(unix_ts)
-
-        assert isinstance(dt, datetime)
-        assert dt.tzinfo == timezone.utc
-        assert dt.year == 2023
-
-    def test_normalize_datetime_aware(self) -> None:
-        """Test normalizing timezone-aware datetime."""
-        builder = CandleBuilder()
-
-        dt_in = datetime(2024, 1, 15, 10, 0, 0, tzinfo=timezone.utc)
-        dt_out = builder._normalize_timestamp(dt_in)
-
-        assert dt_out == dt_in
-        assert dt_out.tzinfo == timezone.utc
-
-    def test_normalize_datetime_naive(self) -> None:
-        """Test normalizing naive datetime (assumes UTC)."""
-        builder = CandleBuilder()
-
-        dt_in = datetime(2024, 1, 15, 10, 0, 0)  # Naive
-        dt_out = builder._normalize_timestamp(dt_in)
-
-        assert isinstance(dt_out, datetime)
-        assert dt_out.tzinfo == timezone.utc
-        assert dt_out.year == 2024
-
-
-class TestCandleBuilderM15:
-    """Test M15 candle building."""
-
-    @pytest.mark.asyncio
-    async def test_build_m15_candle_from_ticks(self) -> None:
-        """Test building M15 candle from tick data."""
-        builder = CandleBuilder()
-        builder.context_bus = MagicMock()
-
-        # Create mock ticks within a 15-minute window
-        base_time = datetime(2024, 1, 15, 10, 0, 0, tzinfo=timezone.utc)
-
-        ticks = []
+    def test_single_period_no_completion(self):
+        b = self._make_builder()
+        base = datetime(2026, 2, 17, 10, 0, tzinfo=UTC)
         for i in range(5):
-            tick = {
-                "symbol": "EURUSD",
-                "bid": 1.0850 + i * 0.0001,
-                "ask": 1.0852 + i * 0.0001,
-                "timestamp": (base_time + timedelta(minutes=i)).timestamp(),
-                "source": "test",
-            }
-            ticks.append(tick)
+            result = b.on_tick(1.1000 + i * 0.0001, base + timedelta(seconds=i * 60))
+            assert result is None  # still in same period
 
-        builder.context_bus.consume_ticks.return_value = ticks
-        builder.context_bus.update_candle = MagicMock()
+    def test_cross_period_emits_candle(self):
+        b = self._make_builder()
+        base = datetime(2026, 2, 17, 10, 0, tzinfo=UTC)
 
-        # Process ticks
-        await builder.process_ticks()
+        # Feed ticks in 10:00–10:14
+        b.on_tick(1.1000, base)
+        b.on_tick(1.1050, base + timedelta(minutes=5))
+        b.on_tick(1.0980, base + timedelta(minutes=10))
+        b.on_tick(1.1020, base + timedelta(minutes=14))
 
-        # Should have called update_candle
-        builder.context_bus.update_candle.assert_called()
+        # This tick at 10:15 should trigger completion of the 10:00 candle
+        completed = b.on_tick(1.1030, base + timedelta(minutes=15))
 
-        # Get all candles built (might be multiple as buffer builds incrementally)
-        # The test just verifies that M15 candles are being built
-        calls = builder.context_bus.update_candle.call_args_list
-        m15_candles = [
-            call[0][0] for call in calls
-            if call[0][0].get("timeframe") == "M15"
+        assert completed is not None
+        assert completed.complete is True
+        assert completed.timeframe == "M15"
+        assert completed.open == 1.1000
+        assert completed.high == 1.1050
+        assert completed.low == 1.0980
+        assert completed.close == 1.1020
+        assert completed.tick_count == 4
+        assert completed.open_time == base
+        assert completed.close_time == base + timedelta(minutes=15)
+
+    def test_multiple_periods(self):
+        b = self._make_builder()
+        base = datetime(2026, 2, 17, 10, 0, tzinfo=UTC)
+
+        # Fill 3 periods: 10:00, 10:15, 10:30
+        candles = []
+        for period in range(3):
+            for m in range(15):
+                t = base + timedelta(minutes=period * 15 + m)
+                c = b.on_tick(1.1000 + period * 0.001, t)
+                if c is not None:
+                    candles.append(c)
+
+        # Flush the last one
+        c = b.flush()
+        if c is not None:
+            candles.append(c)
+
+        assert len(candles) == 3
+        assert candles[0].open_time == base
+        assert candles[1].open_time == base + timedelta(minutes=15)
+        assert candles[2].open_time == base + timedelta(minutes=30)
+
+
+# ── H1 from M15 Candles ─────────────────────────────────────────────
+
+class TestH1FromM15:
+    def _make_m15_candle(self, open_time: datetime, o: float, h: float, l: float, c: float) -> Candle:  # noqa: E741
+        return Candle(
+            symbol="EURUSD",
+            timeframe="M15",
+            open_time=open_time,
+            close_time=open_time + timedelta(minutes=15),
+            open=o, high=h, low=l, close=c,
+            volume=100.0, tick_count=50, complete=True,
+        )
+
+    def test_four_m15_make_one_h1(self):
+        b = CandleBuilder("EURUSD", Timeframe.H1)
+        base = datetime(2026, 2, 17, 10, 0, tzinfo=UTC)
+
+        # Feed 4 M15 candles (10:00, 10:15, 10:30, 10:45)
+        m15s = [
+            self._make_m15_candle(base,                        1.10, 1.12, 1.09, 1.11),
+            self._make_m15_candle(base + timedelta(minutes=15), 1.11, 1.13, 1.10, 1.12),
+            self._make_m15_candle(base + timedelta(minutes=30), 1.12, 1.14, 1.11, 1.13),
+            self._make_m15_candle(base + timedelta(minutes=45), 1.13, 1.15, 1.12, 1.14),
         ]
 
-        # Should have built at least one M15 candle
-        assert len(m15_candles) > 0
+        results = [b.on_candle(c) for c in m15s]
+        # None of them trigger completion yet (all in same hour)
+        assert all(r is None for r in results)
 
-        # Verify structure of first candle
-        candle = m15_candles[0]
-        assert candle["symbol"] == "EURUSD"
-        assert candle["timeframe"] == "M15"
-        assert "open" in candle
-        assert "high" in candle
-        assert "low" in candle
-        assert "close" in candle
+        # Feed first M15 of next hour → triggers H1 completion
+        next_hour_candle = self._make_m15_candle(
+            base + timedelta(minutes=60), 1.14, 1.16, 1.13, 1.15
+        )
+        h1 = b.on_candle(next_hour_candle)
 
-    @pytest.mark.asyncio
-    async def test_m15_candle_not_built_insufficient_data(self) -> None:
-        """Test M15 candle not built with insufficient data."""
-        builder = CandleBuilder()
-        builder.context_bus = MagicMock()
+        assert h1 is not None
+        assert h1.timeframe == "H1"
+        assert h1.complete is True
+        assert h1.open == 1.10
+        assert h1.high == 1.15
+        assert h1.low == 1.09
+        assert h1.close == 1.14
+        assert h1.volume == 400.0
+        assert h1.tick_count == 200
+        assert h1.open_time == base
+        assert h1.close_time == base + timedelta(minutes=60)
 
-        # Empty ticks
-        builder.context_bus.consume_ticks.return_value = []
-        builder.context_bus.update_candle = MagicMock()
-
-        # Process ticks
-        await builder.process_ticks()
-
-        # Should not have called update_candle
-        builder.context_bus.update_candle.assert_not_called()
-
-
-class TestCandleBuilderH1:
-    """Test H1 candle building."""
-
-    @pytest.mark.asyncio
-    async def test_build_h1_candle_from_ticks(self) -> None:
-        """Test building H1 candle from tick data."""
-        builder = CandleBuilder()
-        builder.context_bus = MagicMock()
-
-        # Create mock ticks within a 1-hour window
-        base_time = datetime(2024, 1, 15, 10, 0, 0, tzinfo=timezone.utc)
-
-        ticks = []
-        for i in range(10):
-            tick = {
-                "symbol": "XAUUSD",
-                "bid": 2050.0 + i,
-                "ask": 2051.0 + i,
-                "timestamp": (base_time + timedelta(minutes=i * 6)).timestamp(),
-                "source": "test",
-            }
-            ticks.append(tick)
-
-        builder.context_bus.consume_ticks.return_value = ticks
-        builder.context_bus.update_candle = MagicMock()
-
-        # Process ticks
-        await builder.process_ticks()
-
-        # Should have called update_candle for H1
-        builder.context_bus.update_candle.assert_called()
-
-        # Check if H1 candle was built
-        calls = builder.context_bus.update_candle.call_args_list
-        h1_candles = [
-            call[0][0] for call in calls
-            if call[0][0].get("timeframe") == "H1"
-        ]
-
-        if h1_candles:
-            candle = h1_candles[0]
-            assert candle["symbol"] == "XAUUSD"
-            assert candle["timeframe"] == "H1"
-            assert candle["open"] == 2050.0
-            assert candle["high"] == 2059.0
+    def test_incomplete_candle_ignored(self):
+        b = CandleBuilder("EURUSD", Timeframe.H1)
+        incomplete = Candle(
+            symbol="EURUSD", timeframe="M15",
+            open_time=datetime(2026, 2, 17, 10, 0, tzinfo=UTC),
+            close_time=datetime(2026, 2, 17, 10, 15, tzinfo=UTC),
+            open=1.10, high=1.11, low=1.09, close=1.10,
+            complete=False,
+        )
+        assert b.on_candle(incomplete) is None
+        assert len(b.completed_candles) == 0
 
 
-class TestCandleBuilderEmptyBuffer:
-    """Test empty buffer handling."""
+# ── MultiTimeframeCandleBuilder ─────────────────────────────────────
 
-    @pytest.mark.asyncio
-    async def test_empty_buffer_no_candles(self) -> None:
-        """Test no candles built when buffer is empty."""
-        builder = CandleBuilder()
-        builder.context_bus = MagicMock()
+class TestMultiTimeframe:
+    def test_tick_to_m15_and_h1(self):
+        results = {"M15": [], "H1": []}
 
-        builder.context_bus.consume_ticks.return_value = []
-        builder.context_bus.update_candle = MagicMock()
+        def on_any(candle: Candle):
+            results[candle.timeframe].append(candle)
 
-        await builder.process_ticks()
+        mtf = MultiTimeframeCandleBuilder(
+            "EURUSD",
+            timeframes=[Timeframe.M15, Timeframe.H1],
+            on_any_complete=on_any,
+        )
 
-        # Should not build any candles
-        builder.context_bus.update_candle.assert_not_called()
+        base = datetime(2026, 2, 17, 10, 0, tzinfo=UTC)
 
-    @pytest.mark.asyncio
-    async def test_buffer_cleaned_after_candle_built(self) -> None:
-        """Test buffer is cleaned after candle is built."""
-        builder = CandleBuilder()
-        builder.context_bus = MagicMock()
+        # Feed 1 tick per minute for 75 minutes (10:00–11:14)
+        # This should produce 5 completed M15 candles by rollover.
+        # After flush_all(), the in-progress H1 (11:00 period) is also force-closed.
+        for minute in range(75):
+            t = base + timedelta(minutes=minute)
+            price = 1.1000 + (minute % 15) * 0.0001
+            mtf.on_tick(price, t, volume=1.0)
 
-        # Create ticks spanning two M15 periods
-        base_time = datetime(2024, 1, 15, 10, 0, 0, tzinfo=timezone.utc)
+        # Flush remaining
+        mtf.flush_all()
 
-        ticks = []
-        # First period (10:00-10:15)
-        for i in range(3):
-            tick = {
-                "symbol": "EURUSD",
-                "bid": 1.0850,
-                "ask": 1.0852,
-                "timestamp": (base_time + timedelta(minutes=i)).timestamp(),
-                "source": "test",
-            }
-            ticks.append(tick)
+        # Count completed M15 candles: periods 10:00,10:15,10:30,10:45,11:00
+        # The 10:00 M15 completes when 10:15 arrives, etc.
+        # With 75 minutes: 5 full M15 periods completed by rollover
+        assert len(results["M15"]) == 5
 
-        # Second period (10:15-10:30)
-        for i in range(3):
-            tick = {
-                "symbol": "EURUSD",
-                "bid": 1.0860,
-                "ask": 1.0862,
-                "timestamp": (
-                    base_time + timedelta(minutes=15 + i)
-                ).timestamp(),
-                "source": "test",
-            }
-            ticks.append(tick)
+        # H1 candles:
+        # - 10:00 period completes on rollover
+        # - 11:00 period is force-closed by flush_all
+        assert len(results["H1"]) == 2
+        first_h1 = results["H1"][0]
+        second_h1 = results["H1"][1]
+        assert first_h1.open_time == base
+        assert first_h1.timeframe == "H1"
+        assert second_h1.open_time == base + timedelta(hours=1)
 
-        builder.context_bus.consume_ticks.return_value = ticks
-        builder.context_bus.update_candle = MagicMock()
+    def test_default_timeframes(self):
+        mtf = MultiTimeframeCandleBuilder("GBPUSD")
+        assert "M15" in mtf._builders
+        assert "H1" in mtf._builders
 
-        # Process ticks
-        await builder.process_ticks()
-
-        # Buffer should be cleaned (ticks from first period removed)
-        # Only ticks from second period should remain
-        _buffer = builder.buffers
-
-        # Should have some ticks remaining (second period)
-        # Exact count depends on implementation
-        assert builder.buffers is not None
+    def test_custom_timeframes(self):
+        mtf = MultiTimeframeCandleBuilder(
+            "USDJPY",
+            timeframes=[Timeframe.M5, Timeframe.M15, Timeframe.H4],
+        )
+        assert "M5" in mtf._builders
+        assert "M15" in mtf._builders
+        assert "H4" in mtf._builders
 
 
-class TestCandleBuilderMultipleSymbols:
-    """Test candle building for multiple symbols."""
+# ── Flush ────────────────────────────────────────────────────────────
 
-    @pytest.mark.asyncio
-    async def test_build_candles_multiple_symbols(self) -> None:
-        """Test building candles for multiple symbols concurrently."""
-        builder = CandleBuilder()
-        builder.context_bus = MagicMock()
+class TestFlush:
+    def test_flush_partial_candle(self):
+        b = CandleBuilder("EURUSD", Timeframe.M15)
+        base = datetime(2026, 2, 17, 10, 0, tzinfo=UTC)
+        b.on_tick(1.10, base)
+        b.on_tick(1.12, base + timedelta(minutes=5))
 
-        base_time = datetime(2024, 1, 15, 10, 0, 0, tzinfo=timezone.utc)
+        partial = b.current_partial
+        assert partial is not None
+        assert partial.complete is False
 
-        ticks = []
-        # EURUSD ticks
-        for i in range(3):
-            tick = {
-                "symbol": "EURUSD",
-                "bid": 1.0850,
-                "ask": 1.0852,
-                "timestamp": (base_time + timedelta(minutes=i)).timestamp(),
-                "source": "test",
-            }
-            ticks.append(tick)
+        flushed = b.flush()
+        assert flushed is not None
+        assert flushed.complete is True
+        assert flushed.open == 1.10
+        assert flushed.close == 1.12
 
-        # XAUUSD ticks
-        for i in range(3):
-            tick = {
-                "symbol": "XAUUSD",
-                "bid": 2050.0,
-                "ask": 2051.0,
-                "timestamp": (base_time + timedelta(minutes=i)).timestamp(),
-                "source": "test",
-            }
-            ticks.append(tick)
+    def test_flush_empty(self):
+        b = CandleBuilder("EURUSD", Timeframe.M15)
+        assert b.flush() is None
 
-        builder.context_bus.consume_ticks.return_value = ticks
-        builder.context_bus.update_candle = MagicMock()
 
-        # Process ticks
-        await builder.process_ticks()
+# ── Candle.to_dict ───────────────────────────────────────────────────
 
-        # Should have separate buffers for each symbol
-        assert "EURUSD" in builder.buffers
-        assert "XAUUSD" in builder.buffers
+class TestCandleDict:
+    def test_round_trip(self):
+        c = Candle(
+            symbol="EURUSD", timeframe="M15",
+            open_time=datetime(2026, 2, 17, 10, 0, tzinfo=UTC),
+            close_time=datetime(2026, 2, 17, 10, 15, tzinfo=UTC),
+            open=1.10, high=1.12, low=1.09, close=1.11,
+            volume=500.0, tick_count=100, complete=True,
+        )
+        d = c.to_dict()
+        assert d["symbol"] == "EURUSD"
+        assert d["complete"] is True
+        assert isinstance(d["open_time"], str)
+
+
+# ── Timeframe enum ───────────────────────────────────────────────────
+
+class TestTimeframe:
+    def test_from_str(self):
+        assert Timeframe.from_str("m15") == Timeframe.M15
+        assert Timeframe.from_str("H1") == Timeframe.H1
+
+    def test_from_str_invalid(self):
+        with pytest.raises(ValueError, match="Unknown timeframe"):
+            Timeframe.from_str("W1")
+
+    def test_minutes(self):
+        assert Timeframe.M15.minutes == 15
+        assert Timeframe.H1.minutes == 60
+        assert Timeframe.H4.minutes == 240
+
+
+# ── Backward-compat import from analysis/ ────────────────────────────
+
+class TestBackwardCompat:
+    def test_import_from_analysis(self):
+        from analysis.candle_builder import (
+            Candle as ACandle,
+        )
+        from analysis.candle_builder import (
+            CandleBuilder as ACB,  # noqa: N814
+        )
+        from analysis.candle_builder import (
+            Timeframe as ATF,  # noqa: N814
+        )
+        # They should be the exact same objects
+        assert ACandle is Candle
+        assert ACB is CandleBuilder
+        assert ATF is Timeframe

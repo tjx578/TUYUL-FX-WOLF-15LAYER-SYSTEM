@@ -1,3 +1,3 @@
 """
-Ingest package — Market data ingestion (WebSocket, candle building).
+Ingest package - Market data ingestion (WebSocket, candle building).
 """

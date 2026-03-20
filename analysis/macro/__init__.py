@@ -1,0 +1,3 @@
+"""
+Macro regime analysis package.
+"""

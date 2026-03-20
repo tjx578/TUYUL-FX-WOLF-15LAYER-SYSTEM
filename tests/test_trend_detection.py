@@ -13,7 +13,6 @@ def context_bus():
     """Get LiveContextBus instance."""
     bus = LiveContextBus()
     bus._candle_history.clear()
-    bus._candle_store.clear()
     return bus
 
 
