@@ -1,281 +1,115 @@
-// ── Shared types & static data for Architecture Audit page ──
+// ── Architecture Audit — shared types and manifest data ──
+//
+// Source of truth: docs/architecture/audit-manifest.json
+// This file re-exports the typed manifest so the Server Component and the
+// client-side DocExplorer can both consume it without runtime fs calls.
+//
+// When architecture docs are added or updated, edit:
+//   1. docs/architecture/audit-manifest.json  (canonical JSON)
+//   2. AUDIT_MANIFEST below (TypeScript mirror)
 
-export type Status = "VERIFIED" | "PARTIAL" | "GAP" | "EXCEEDS";
+// ── Domain types ──────────────────────────────────────────────
 
-export interface CheckItem {
-    claim: string;
-    actual: string;
-    file?: string;
-    status: Status;
-}
+export type DocStatus = "canonical";
 
-export interface Dimension {
+export interface DocDomain {
     id: string;
     label: string;
-    pdfScore: number;
-    institutionalGrade: number;
-    items: CheckItem[];
+    description: string;
 }
 
-export const STATUS_META: Record<Status, { label: string; color: string; bg: string; border: string }> = {
-    VERIFIED: { label: "VERIFIED", color: "var(--green)", bg: "var(--green-glow)", border: "var(--border-success)" },
-    PARTIAL: { label: "PARTIAL", color: "var(--yellow)", bg: "var(--yellow-glow)", border: "rgba(255,215,64,0.3)" },
-    GAP: { label: "GAP", color: "var(--red)", bg: "var(--red-glow)", border: "var(--border-danger)" },
-    EXCEEDS: { label: "EXCEEDS", color: "var(--cyan)", bg: "var(--cyan-glow)", border: "rgba(0,229,255,0.3)" },
+export interface ArchDoc {
+    id: string;
+    title: string;
+    path: string;
+    domain: string;
+    description: string;
+    status: DocStatus;
+    last_updated: string;
+}
+
+export interface AuditManifest {
+    version: string;
+    generated_at: string;
+    source: string;
+    description: string;
+    domains: DocDomain[];
+    docs: ArchDoc[];
+}
+
+// ── Canonical manifest (mirrors docs/architecture/audit-manifest.json) ───────
+
+export const AUDIT_MANIFEST: AuditManifest = {
+    version: "1.0",
+    generated_at: "2026-03-20",
+    source: "docs/architecture/",
+    description:
+        "Canonical machine-readable index of all production-truth architecture documents for TUYUL-FX Wolf-15 Layer System.",
+    domains: [
+        { id: "core", label: "Core Architecture", description: "System topology, service composition, and end-to-end data flow." },
+        { id: "governance", label: "Governance", description: "Authority boundaries, config authority, lock enforcement, and stale-data guardrails." },
+        { id: "execution", label: "Execution & Contracts", description: "Execution feedback loop, cross-service contracts, and event acceptance specifications." },
+        { id: "risk", label: "Risk", description: "Risk stack layers, runtime risk monitoring, and risk management summary." },
+        { id: "deployment", label: "Deployment & Infrastructure", description: "Railway deployment topology, Docker, Redis, and production infrastructure." },
+        { id: "operations", label: "Operations", description: "Go-live checklists, deploy order, observability, forensic replay, and async worker monitoring." },
+        { id: "components", label: "Components & Integrations", description: "Engine DAG architecture, system components, guardrails, and integration specifications." },
+        { id: "backlog", label: "Migration Backlog", description: "Official execution backlogs (P0/P1/P2) and repo migration plan." },
+    ],
+    docs: [
+        { id: "overview", title: "TUYUL-FX Architecture Overview", path: "docs/architecture/overview.md", domain: "core", description: "Entrypoint for the architecture documentation. Maps each doc to its intended use, defines the canonical reading order, and provides RCA routing guidance.", status: "canonical", last_updated: "2026-03-18" },
+        { id: "system-overview", title: "System Overview", path: "docs/architecture/system-overview.md", domain: "core", description: "End-to-end explanation of how the full system is separated into authorities so that analysis, governance, execution, and operator visibility do not collapse into one unsafe surface.", status: "canonical", last_updated: "2026-03-18" },
+        { id: "data-flow", title: "Data Flow", path: "docs/architecture/data-flow.md", domain: "core", description: "Canonical taxonomy entry for production data path. Primary reference remains data-flow-final.md.", status: "canonical", last_updated: "2026-03-18" },
+        { id: "data-flow-final", title: "Final Data Flow Architecture", path: "docs/architecture/data-flow-final.md", domain: "core", description: "End-to-end realtime data flow: ingest authority, durability, freshness governance, and dashboard transport. Use first when asking: how does data move through the system?", status: "canonical", last_updated: "2026-03-19" },
+        { id: "topology", title: "Topology", path: "docs/architecture/topology.md", domain: "core", description: "Runtime service topology from providers through ingest, Redis fanout, engine, API, and EA bridge.", status: "canonical", last_updated: "2026-03-18" },
+        { id: "authority-boundaries", title: "Authority Boundaries", path: "docs/architecture/authority-boundaries.md", domain: "governance", description: "Defines which layer may observe, validate, constrain, decide, or execute. Use when asking: who is allowed to do what?", status: "canonical", last_updated: "2026-03-18" },
+        { id: "config-governance", title: "Config Governance", path: "docs/architecture/config-governance.md", domain: "governance", description: "How a proposed change becomes an approved and auditable production change instead of an undocumented tweak.", status: "canonical", last_updated: "2026-03-18" },
+        { id: "config-resolver", title: "Config Resolver", path: "docs/architecture/config-resolver.md", domain: "governance", description: "Proposed canonical contract for config authority: how configuration becomes effective runtime truth with deterministic precedence rules.", status: "canonical", last_updated: "2026-03-18" },
+        { id: "lock-enforcement", title: "Lock Enforcement", path: "docs/architecture/lock-enforcement.md", domain: "governance", description: "Layer that prevents unsafe mutation of constitutional thresholds, risk ceilings, execution mode restrictions, and provider failover policy.", status: "canonical", last_updated: "2026-03-18" },
+        { id: "stale-data-guardrails", title: "Stale Data Guardrails", path: "docs/architecture/stale-data-guardrails.md", domain: "governance", description: "Freshness classification, stale-state handling, anti-zombie safeguards, and no-trade enforcement under degraded data conditions.", status: "canonical", last_updated: "2026-03-18" },
+        { id: "governance-final-system-review", title: "Final System Review", path: "docs/architecture/governance/final-system-review.md", domain: "governance", description: "Final locked review of the Wolf 15-layer system. Constitutional architecture, L12 sole authority confirmation, and live-ready status.", status: "canonical", last_updated: "2026-03-18" },
+        { id: "execution-feedback-loop", title: "Execution Feedback Loop", path: "docs/architecture/execution-feedback-loop.md", domain: "execution", description: "Closed loop from verdict to intent to broker response to exposure truth: order intent flow, acknowledgements, idempotency, and post-verdict risk synchronisation.", status: "canonical", last_updated: "2026-03-18" },
+        { id: "service-contracts", title: "Service Contracts", path: "docs/architecture/service-contracts.md", domain: "execution", description: "Cross-service contracts, ownership boundaries, input/output expectations, event/state truth, retry rules, and forbidden service behaviour.", status: "canonical", last_updated: "2026-03-18" },
+        { id: "contracts-canonical-metrics", title: "P0 Canonical Metrics", path: "docs/architecture/contracts/canonical-metrics.md", domain: "execution", description: "Canonical metric sources for Wolf discipline, TII formula, cockpit synthesis metadata, and test coverage targets.", status: "canonical", last_updated: "2026-03-16" },
+        { id: "contracts-api-event-acceptance", title: "Operational API Event Acceptance Spec", path: "docs/architecture/contracts/operational-api-event-acceptance-spec.md", domain: "execution", description: "Acceptance specification for operational API events: which events the API accepts, validates, and forwards.", status: "canonical", last_updated: "2026-03-18" },
+        { id: "contracts-outbox-admin-api", title: "Outbox Admin API", path: "docs/architecture/contracts/outbox-admin-api.md", domain: "execution", description: "Admin API surface for outbox event management: replay, drain, and visibility endpoints.", status: "canonical", last_updated: "2026-03-18" },
+        { id: "contracts-layer-output-template", title: "Wolf-15 Layer Output Template", path: "docs/architecture/contracts/wolf-15-layer-output-template-v7.4r∞.md", domain: "execution", description: "Canonical output template for all 15 Wolf analysis layers. Defines the shape each layer must produce.", status: "canonical", last_updated: "2026-03-18" },
+        { id: "contracts-l14-schema-mapping", title: "Wolf-15 Layer Output to L14 Schema Mapping", path: "docs/architecture/contracts/wolf-15-layer-output-to-l14-schema-mapping.md", domain: "execution", description: "Mapping between Wolf-15 layer outputs and the L14 adaptive learning schema.", status: "canonical", last_updated: "2026-03-18" },
+        { id: "risk-stack", title: "Risk Stack", path: "docs/architecture/risk-stack.md", domain: "risk", description: "Stacked risk control system: market quality risk, analytical risk, execution risk, and prop firm compliance layers.", status: "canonical", last_updated: "2026-03-18" },
+        { id: "risk-monitor", title: "Risk Monitor", path: "docs/architecture/risk-monitor.md", domain: "risk", description: "Operator-facing and machine-readable surface tracking feed freshness, warmup completeness, drawdown, lock violations, and open execution risks.", status: "canonical", last_updated: "2026-03-18" },
+        { id: "risk-management-summary", title: "Risk Management Summary", path: "docs/architecture/risk/risk-management-summary.md", domain: "risk", description: "Comprehensive summary of risk management strategy, prop firm guardrails, and circuit breaker logic.", status: "canonical", last_updated: "2026-03-18" },
+        { id: "deployment-railway", title: "Deployment on Railway", path: "docs/architecture/deployment-railway.md", domain: "deployment", description: "Canonical deployment summary for Railway: core services, probes, readiness gates, and environment configuration.", status: "canonical", last_updated: "2026-03-18" },
+        { id: "deployment-topology-final", title: "Deployment Topology Final", path: "docs/architecture/deployment-topology-final.md", domain: "deployment", description: "Final production deployment topology: service roles, Railway service map, observability endpoints, and governance surface.", status: "canonical", last_updated: "2026-03-18" },
+        { id: "infrastructure-deployment-baseline", title: "Deployment Topology Baseline", path: "docs/architecture/infrastructure/deployment-baseline.md", domain: "deployment", description: "Production architecture diagram and service boundary reference for Railway deployment.", status: "canonical", last_updated: "2026-03-18" },
+        { id: "infrastructure-docker", title: "Docker", path: "docs/architecture/infrastructure/docker.md", domain: "deployment", description: "Docker build strategy, multi-stage configuration, and container runtime requirements.", status: "canonical", last_updated: "2026-03-18" },
+        { id: "infrastructure-redis", title: "Redis Deployment", path: "docs/architecture/infrastructure/redis-deployment.md", domain: "deployment", description: "Redis deployment configuration, stream/key namespace conventions, and operational constraints.", status: "canonical", last_updated: "2026-03-18" },
+        { id: "operations-go-live-checklist", title: "Go-Live Checklist", path: "docs/architecture/operations/go-live-checklist.md", domain: "operations", description: "Production go-live checklist for Vercel + Railway deployment: environment, routing, EA bridge, and readiness verification.", status: "canonical", last_updated: "2026-03-18" },
+        { id: "operations-go-live-prop-firm", title: "Go-Live Checklist (Prop Firm)", path: "docs/architecture/operations/go-live-checklist-prop-firm.md", domain: "operations", description: "Prop firm specific go-live checklist: compliance requirements, circuit breaker validation, and drawdown safeguard verification.", status: "canonical", last_updated: "2026-03-18" },
+        { id: "operations-deploy-order", title: "Deploy Order: Staging → Production", path: "docs/architecture/operations/deploy-order-staging-prod.md", domain: "operations", description: "Step-by-step deployment order for staging and production environments.", status: "canonical", last_updated: "2026-03-18" },
+        { id: "operations-forensic-replay", title: "Forensic Replay & RCA", path: "docs/architecture/operations/forensic-replay-rca.md", domain: "operations", description: "Forensic replay procedures and root cause analysis framework for production incidents.", status: "canonical", last_updated: "2026-03-18" },
+        { id: "operations-observability-workers", title: "Observability: Async Workers", path: "docs/architecture/operations/observability-async-workers.md", domain: "operations", description: "Observability requirements and monitoring strategy for async worker services.", status: "canonical", last_updated: "2026-03-18" },
+        { id: "core-engine-dag", title: "Engine DAG Architecture", path: "docs/architecture/core/engine-dag-architecture.md", domain: "components", description: "Design reference for the 8-phase halt-safe DAG orchestration engine. ADR-011 implemented.", status: "canonical", last_updated: "2026-03-06" },
+        { id: "components-news-engine", title: "News Engine", path: "docs/architecture/components/news-engine.md", domain: "components", description: "News and macro event engine: provider chain, impact classification, and calendar lock integration.", status: "canonical", last_updated: "2026-03-18" },
+        { id: "guardrails-tick-spike-filter", title: "Tick Spike Filter", path: "docs/architecture/guardrails/tick-spike-filter.md", domain: "components", description: "Guardrail for detecting and filtering abnormal tick spikes before they enter the analysis pipeline.", status: "canonical", last_updated: "2026-03-18" },
+        { id: "integrations-calendar-provider", title: "Calendar Provider Chain", path: "docs/architecture/integrations/calendar-provider-chain.md", domain: "components", description: "ForexFactory and economic calendar provider chain: fetch strategy, fallback order, and caching rules.", status: "canonical", last_updated: "2026-03-18" },
+        { id: "migration-backlog-p0", title: "Migration Backlog P0", path: "docs/architecture/migration-backlog-p0.md", domain: "backlog", description: "Stop-the-bleeding P0 implementation work required before trusting live operation: ingest, engine, API health, and Redis freshness.", status: "canonical", last_updated: "2026-03-18" },
+        { id: "migration-backlog-p1", title: "Migration Backlog P1", path: "docs/architecture/migration-backlog-p1.md", domain: "backlog", description: "P1 execution backlog: governance, execution contracts, and post-go-live hardening tasks.", status: "canonical", last_updated: "2026-03-18" },
+        { id: "migration-backlog-p2", title: "Migration Backlog P2", path: "docs/architecture/migration-backlog-p2.md", domain: "backlog", description: "P2 execution backlog: longer-horizon improvements and observability enhancements.", status: "canonical", last_updated: "2026-03-18" },
+        { id: "repo-migration-plan", title: "Repo Migration Plan", path: "docs/architecture/repo-migration-plan.md", domain: "backlog", description: "Plan for restructuring the repository layout to match the canonical architecture zones.", status: "canonical", last_updated: "2026-03-18" },
+    ],
 };
 
-export const DIMENSIONS: Dimension[] = [
-    {
-        id: "websocket",
-        label: "WebSocket Architecture",
-        pdfScore: 9.0,
-        institutionalGrade: 9.5,
-        items: [
-            {
-                claim: "7 dedicated WS endpoints (/ws/prices, /ws/trades, /ws/candles, /ws/verdict, /ws/signals, /ws/pipeline, /ws/live)",
-                actual: "Migrated to lib/realtime/: domain hooks useLivePrices, useLiveTrades, useLiveRisk, useLiveSignals, useLiveEquity, useLiveAlerts cover all channels. Legacy websocket.ts and wsService.ts deleted.",
-                file: "lib/realtime/hooks/*.ts",
-                status: "VERIFIED",
-            },
-            {
-                claim: "JWT pre-auth sebelum WS connection diterima",
-                actual: "useWolfWebSocket() membaca token via getToken() lalu append ?token=... ke URL. Terverifikasi di websocket.ts baris 64-67.",
-                file: "lib/websocket.ts",
-                status: "VERIFIED",
-            },
-            {
-                claim: "Ring buffer 100 messages per client untuk disconnect recovery",
-                actual: "Ring buffer ada di BACKEND (Python). FE realtimeClient.ts has monotonic seq# tracking and gap detection. wsService.ts removed.",
-                file: "lib/realtime/realtimeClient.ts",
-                status: "VERIFIED",
-            },
-            {
-                claim: "Exponential backoff reconnect, leader election (Finnhub)",
-                actual: "realtimeClient.ts: exponential backoff 1s→30s ceiling, ±25% jitter, infinite retry, visibility-aware pause. Leader election ada di backend.",
-                file: "lib/realtime/realtimeClient.ts",
-                status: "VERIFIED",
-            },
-            {
-                claim: "Per-message deflate compression",
-                actual: "Tidak diimplementasikan di FE. realtimeClient.ts tidak menggunakan WebSocket.perMessageDeflate atau compression options.",
-                status: "GAP",
-            },
-            {
-                claim: "SSE sebagai intermediate fallback",
-                actual: "Tidak ada SSE implementation. Fallback hanya: WS gagal → mode DEGRADED (setMode). Tidak ada REST polling fallback setelah 30s.",
-                file: "hooks/useLivePipeline.ts",
-                status: "GAP",
-            },
-        ],
-    },
-    {
-        id: "state",
-        label: "State Management",
-        pdfScore: 8.0,
-        institutionalGrade: 9.0,
-        items: [
-            {
-                claim: "6 Zustand stores: account, system, risk, preferences, auth, tableQuery",
-                actual: "Repo memiliki 10+ stores: useAccountStore, useSystemStore, usePreferencesStore, useAuthStore, useTableQueryStore, useAuthorityStore, useSessionStore, useToastStore, usePipelineDagStore, useActionThrottleStore, useWorkspaceStore. useRiskStore removed (consolidated into useSystemStore).",
-                file: "store/*.ts",
-                status: "EXCEEDS",
-            },
-            {
-                claim: "useLivePipeline hook: REST initial load → WS live updates → store sync → mode=DEGRADED on disconnect",
-                actual: "Terverifikasi sempurna di hooks/useLivePipeline.ts. fetchLatestPipelineResult() → connectLiveUpdates() → setLatestPipelineResult / updateTrade / setPreferences / setMode('DEGRADED').",
-                file: "hooks/useLivePipeline.ts",
-                status: "VERIFIED",
-            },
-            {
-                claim: "React Query @tanstack/react-query 5.66.9 untuk REST dengan stale-while-revalidate",
-                actual: "Terverifikasi di package.json: @tanstack/react-query ^5.66.9. hooks/queries/ memiliki useTradesQuery, useAuditQuery, usePreferencesQuery.",
-                file: "package.json + hooks/queries/*.ts",
-                status: "VERIFIED",
-            },
-            {
-                claim: "Message bus layer antara WebSocket dan stores (16ms RAF batching)",
-                actual: "Implemented: useLivePrices supports optional RAF batching via createRafBatcher (16ms collapse window, 500-event backpressure). Other hooks dispatch directly.",
-                file: "lib/realtime/hooks/useLivePrices.ts + lib/realtime/rafBatcher.ts",
-                status: "VERIFIED",
-            },
-            {
-                claim: "Web Worker untuk computation offloading (candle aggregation, indicators)",
-                actual: "Tidak ada Web Worker di repo. Semua komputasi terjadi di main thread.",
-                status: "GAP",
-            },
-            {
-                claim: "Zod schema validation pada semua incoming WS data",
-                actual: "Terverifikasi. WsEventSchema di schema/wsEventSchema.ts menggunakan z.discriminatedUnion untuk validasi semua event types. realtimeClient.ts: WsEventSchema.parse(parsed).",
-                file: "schema/wsEventSchema.ts + lib/realtime/realtimeClient.ts",
-                status: "VERIFIED",
-            },
-        ],
-    },
-    {
-        id: "rendering",
-        label: "Table Rendering",
-        pdfScore: 7.5,
-        institutionalGrade: 9.0,
-        items: [
-            {
-                claim: "@tanstack/react-virtual untuk large list virtualization",
-                actual: "Terverifikasi. Package.json: @tanstack/react-virtual ^3.11.2. components/primitives/VirtualList.tsx mengimplementasikan virtual rows.",
-                file: "components/primitives/VirtualList.tsx",
-                status: "VERIFIED",
-            },
-            {
-                claim: "URL-synced pagination (useTableQueryStore)",
-                actual: "Terverifikasi. hooks/useUrlSyncedTableQuery.ts + store/useTableQueryStore.ts. Trades page menggunakan keduanya.",
-                file: "hooks/useUrlSyncedTableQuery.ts",
-                status: "VERIFIED",
-            },
-            {
-                claim: "React.memo per row component untuk prevent re-render",
-                actual: "Belum konsisten. TradesTable.tsx tidak menggunakan React.memo pada row components. VirtualList.tsx tidak memiliki row memoization.",
-                file: "components/TradesTable.tsx",
-                status: "GAP",
-            },
-            {
-                claim: "CSS-only flash animations untuk price changes",
-                actual: "components/ui/AnimatedNumber.tsx ada, tapi menggunakan Framer Motion bukan CSS-only. Flash via React state = re-render driven, bukan CSS transition direct.",
-                file: "components/ui/AnimatedNumber.tsx",
-                status: "PARTIAL",
-            },
-            {
-                claim: "Monospace font untuk semua numerical data",
-                actual: "Design token --font-mono='Share Tech Mono, Space Mono' sudah ada. globals.css mendefinisikan .num class. Penggunaan belum konsisten di seluruh table cells.",
-                file: "app/globals.css",
-                status: "PARTIAL",
-            },
-            {
-                claim: "requestAnimationFrame batching untuk DOM updates",
-                actual: "Tidak ada rAF batching. Trades page dan table components update langsung dari store tanpa rAF batching layer.",
-                status: "GAP",
-            },
-        ],
-    },
-    {
-        id: "hierarchy",
-        label: "Information Hierarchy",
-        pdfScore: 8.5,
-        institutionalGrade: 9.5,
-        items: [
-            {
-                claim: "14+ dashboard pages dengan clear routing dan App Router",
-                actual: "Terverifikasi. Repo memiliki 16 routes: /, /cockpit, /pipeline, /trades, /trades/signals, /signals, /accounts, /risk, /news, /journal, /probability, /prices, /ea-manager, /prop-firm, /settings, /audit. Plus (admin)/audit.",
-                file: "app/(root)/*/page.tsx",
-                status: "EXCEEDS",
-            },
-            {
-                claim: "RBAC 5 roles: viewer, operator, risk_admin, config_admin, approver",
-                actual: "Terverifikasi. contracts/authority.ts + components/auth/RequireRole.tsx + contracts/complianceSurface.ts. 5 roles dengan granular permissions per page.",
-                file: "contracts/authority.ts",
-                status: "VERIFIED",
-            },
-            {
-                claim: "Glass-morphism dark palette dengan institutional design",
-                actual: "Terverifikasi. globals.css: --bg-base=#050a14 (deep navy), --accent=#f5a623 (wolf gold), --green/#red/#cyan status colors. design token system lengkap.",
-                file: "app/globals.css",
-                status: "VERIFIED",
-            },
-            {
-                claim: "Persistent status bar selalu visible (P&L, risk, health)",
-                actual: "Header.tsx ada tapi minimal. Tidak ada persistent P&L/risk ribbon yang selalu visible di semua pages. DegradationBanner ada tapi hanya muncul saat DEGRADED.",
-                file: "components/layout/Header.tsx",
-                status: "GAP",
-            },
-            {
-                claim: "Command palette (Ctrl+K) untuk keyboard navigation",
-                actual: "Tidak ada. Tidak ada keyboard shortcut system atau command palette di repo.",
-                status: "GAP",
-            },
-            {
-                claim: "Customizable multi-panel layout (drag, resize)",
-                actual: "components/layout/WorkspaceManager.tsx ada! store/useWorkspaceStore.ts + contracts/workspace.ts menunjukkan workspace management. Perlu verifikasi level implementasinya.",
-                file: "components/layout/WorkspaceManager.tsx",
-                status: "PARTIAL",
-            },
-        ],
-    },
-    {
-        id: "security",
-        label: "Security & Governance",
-        pdfScore: 9.5,
-        institutionalGrade: 9.5,
-        items: [
-            {
-                claim: "Dashboard READ-ONLY — zero write authority ke trading system",
-                actual: "Terverifikasi via contracts/authority.ts + hooks/useAuthoritySurface.ts + components/actions/ProtectedActionButton.tsx. Semua mutations melalui useProtectedMutation dengan authority check.",
-                file: "contracts/authority.ts + hooks/useAuthoritySurface.ts",
-                status: "VERIFIED",
-            },
-            {
-                claim: "Constitutional separation: Analysis → Decision → Execution → Advisory",
-                actual: "Terverifikasi. contracts/complianceSurface.ts mendefinisikan compliance zones. PageComplianceBanner + ComplianceBanner enforce per-page compliance state.",
-                file: "contracts/complianceSurface.ts",
-                status: "VERIFIED",
-            },
-            {
-                claim: "Signal deduplication, throttling, dan expiration enforcement",
-                actual: "store/useActionThrottleStore.ts + hooks/useActionThrottle.ts + hooks/mutations/useProtectedMutation.ts mengimplementasikan throttle dan dedup.",
-                file: "store/useActionThrottleStore.ts",
-                status: "VERIFIED",
-            },
-            {
-                claim: "Violation logging dan audit trail",
-                actual: "Terverifikasi. services/auditService.ts + hooks/queries/useAuditQuery.ts + app/(admin)/audit/page.tsx. Audit trail lengkap dengan RBAC gate (admin-only route).",
-                file: "services/auditService.ts + app/(admin)/audit/",
-                status: "VERIFIED",
-            },
-            {
-                claim: "JWT auth dengan RBAC granular",
-                actual: "Terverifikasi. lib/auth.ts + store/useAuthStore.ts + components/auth/RequireRole.tsx. Session management via serverAuth.ts + session.ts.",
-                file: "lib/auth.ts + lib/serverAuth.ts",
-                status: "VERIFIED",
-            },
-        ],
-    },
-    {
-        id: "pipeline",
-        label: "Pipeline Architecture",
-        pdfScore: 10,
-        institutionalGrade: 9.0,
-        items: [
-            {
-                claim: "15-layer analysis pipeline visualization",
-                actual: "components/panels/PipelineDagCanvas.tsx + components/panels/PipelinePanel.tsx. schema/pipelineDagSchema.ts + services/pipelineDagService.ts. store/usePipelineDagStore.ts. Pipeline DAG visualization lengkap.",
-                file: "components/panels/PipelineDagCanvas.tsx",
-                status: "VERIFIED",
-            },
-            {
-                claim: "8-phase halt-safe DAG orchestration (backend)",
-                actual: "Frontend memiliki: schema/pipelineDagSchema.ts + contracts/pipelineDag.ts mendefinisikan DAG structure. pipelineDagService.ts fetch pipeline state. Orchestration ada di backend (Python).",
-                file: "schema/pipelineDagSchema.ts",
-                status: "VERIFIED",
-            },
-            {
-                claim: "L12 Verdict Engine sebagai SOLE AUTHORITY — 9-gate constitutional check",
-                actual: "VerdictCard.tsx + TakeSignalForm.tsx menampilkan L12 verdicts. contracts/authority.ts enforces read-only. Verdict ditampilkan tapi tidak bisa dioverride dari FE.",
-                file: "components/VerdictCard.tsx + components/TakeSignalForm.tsx",
-                status: "VERIFIED",
-            },
-            {
-                claim: "LiveContextBus singleton state machine (backend)",
-                actual: "Frontend side: useLivePipeline.ts menjadi consumer-side state machine. connectLiveUpdates() di lib/realtime/realtimeClient.ts adalah FE equivalent. Backend LiveContextBus tidak visible dari FE.",
-                file: "hooks/useLivePipeline.ts",
-                status: "VERIFIED",
-            },
-        ],
-    },
-];
+// ── Derived helpers ───────────────────────────────────────────
 
-export const GAP_ITEMS = [
-    { pri: "P1", effort: "4h", title: "Message batching (16ms RAF window)", detail: "DONE: useLivePrices rafBatch option uses createRafBatcher. Other hooks dispatch directly (adequate for current message rates).", dim: "State Mgmt" },
-    { pri: "P1", effort: "2h", title: "React.memo pada TradesTable row components", detail: "Wrap row renderer di TradesTable.tsx dan VirtualList.tsx dengan React.memo + stable key.", dim: "Table Render" },
-    { pri: "P1", effort: "3h", title: "Persistent status bar", detail: "Tambahkan komponen sticky di Header.tsx: live equity, risk level, WS status, P&L session.", dim: "Info Hierarchy" },
-    { pri: "P2", effort: "3d", title: "Exponential backoff reconnect", detail: "DONE: realtimeClient.ts implements 1s→30s ceiling + ±25% jitter + infinite retry + visibility-aware pause.", dim: "WebSocket" },
-    { pri: "P2", effort: "2d", title: "SSE fallback layer", detail: "Setelah 30s WS down, switch ke SSE atau REST polling sebelum full DEGRADED mode. realtimeClient.ts supports seq gap detection → REST re-fetch.", dim: "WebSocket" },
-    { pri: "P2", effort: "3d", title: "Web Worker untuk indicator computation", detail: "Pindahkan candle aggregation dan indicator calc ke Worker thread, post results ke main thread.", dim: "State Mgmt" },
-    { pri: "P3", effort: "1w", title: "Command palette (Ctrl+K)", detail: "Keyboard-first navigation untuk semua routes, actions, dan settings.", dim: "Info Hierarchy" },
-    { pri: "P3", effort: "1w", title: "Per-message WebSocket compression", detail: "Tambahkan deflate compression di server-side WS upgrade dan FE connect options.", dim: "WebSocket" },
-];
+/** Returns docs for a given domain id. */
+export function getDocsByDomain(domainId: string): ArchDoc[] {
+    return AUDIT_MANIFEST.docs.filter((d) => d.domain === domainId);
+}
+
+/** Returns the count of docs per domain as a plain object. */
+export function docCountsByDomain(): Record<string, number> {
+    const counts: Record<string, number> = {};
+    for (const domain of AUDIT_MANIFEST.domains) {
+        counts[domain.id] = getDocsByDomain(domain.id).length;
+    }
+    return counts;
+}
