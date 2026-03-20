@@ -72,6 +72,7 @@ export async function swrFetcher<T = unknown>(url: string): Promise<T> {
       }
     }
 
+    const error = new HttpError(
     const err = new HttpError(
       `Request failed: ${res.status} ${res.statusText}`,
       res.status,
@@ -81,20 +82,24 @@ export async function swrFetcher<T = unknown>(url: string): Promise<T> {
     // Attach Retry-After hint for 429 so callers can back off appropriately.
     if (res.status === 429) {
       const retryAfterHeader = res.headers.get("Retry-After");
-      const retryAfterMs = retryAfterHeader
+      error.retryAfterMs = retryAfterHeader
         ? (Number.isNaN(Number(retryAfterHeader))
+            ? // HTTP-date format (RFC 7231)
+              Math.max(0, new Date(retryAfterHeader).getTime() - Date.now())
+            : // delay-seconds integer
+              Number(retryAfterHeader) * 1000)
           ? // HTTP-date format
           Math.max(0, new Date(retryAfterHeader).getTime() - Date.now())
           : // seconds integer
           Number(retryAfterHeader) * 1000)
         : 60_000; // default 60s back-off when header absent
-      (err as HttpError & { retryAfterMs: number }).retryAfterMs = retryAfterMs;
 
       if (process.env.NODE_ENV === "development") {
-        console.warn(`[fetcher] 429 on ${url}. Back-off ${Math.round(retryAfterMs / 1000)}s.`);
+        console.warn(`[fetcher] 429 on ${url}. Back-off ${Math.round(error.retryAfterMs / 1000)}s.`);
       }
     }
 
+    throw error;
     throw err;
   }
 
