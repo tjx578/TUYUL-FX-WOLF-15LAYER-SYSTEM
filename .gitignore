@@ -15,16 +15,22 @@ __pycache__/
 dist/
 build/
 
+# ── Debug / scratch / probe artifacts ────────
+._*
+_hb_fix_test*.txt
+_next_fail*.txt
+
 # ── Test output ──────────────────────────────
 _test_result*.txt
 _test_result*.log
 _batch_result*.txt
 test_result*.txt
-test_run_output.txt
+test_run_out*.txt
 test_out*.txt
 test_output*.txt
 full_test_out.txt
 pyright_output.txt
+pyright_full.txt
 wolf_test_results.txt
 test-results/
 htmlcov/
