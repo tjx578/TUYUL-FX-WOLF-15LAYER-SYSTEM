@@ -1,17 +1,21 @@
-"""Dedicated engine process entrypoint (no public HTTP)."""
+"""Dedicated engine process entrypoint (no public HTTP).
+
+Starts a bootstrap health probe **before** heavy imports and the DB
+preflight so Railway's ``/healthz`` check passes even while Postgres
+is still being verified.
+"""
 
 from __future__ import annotations
 
 import asyncio
 import os
+import threading
 
 from loguru import logger
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
 from config.logging_bootstrap import configure_loguru_logging
-from main import main as run_main
 from services.shared.db_revision_guard import DatabaseSchemaError, assert_required_tables
-
 
 configure_loguru_logging()
 
@@ -38,15 +42,47 @@ async def _preflight_checks() -> None:
         await engine.dispose()
 
 
+def _start_health_probe_in_thread() -> None:
+    """Run a liveness-only health probe on a daemon thread.
+
+    This keeps ``/healthz`` responsive while the main thread runs the
+    blocking DB preflight and heavy module imports.
+    """
+    from core.health_probe import HealthProbe
+
+    port = int(os.getenv("ENGINE_HEALTH_PORT", os.getenv("PORT", "8081")))
+    probe = HealthProbe(port=port, service_name="engine")
+
+    def _run() -> None:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            loop.run_until_complete(probe.start())
+        except Exception:
+            logger.warning("Bootstrap health probe stopped")
+        finally:
+            loop.close()
+
+    t = threading.Thread(target=_run, daemon=True, name="engine-health-probe")
+    t.start()
+    logger.info("Bootstrap health probe listening on :{}", port)
+
+
 def run() -> None:
     os.environ["RUN_MODE"] = "engine-only"
     logger.info("Starting wolf15-engine service (HTTP disabled)")
+
+    # Start health probe FIRST so Railway sees liveness immediately
+    # while the DB preflight and heavy imports proceed.
+    _start_health_probe_in_thread()
 
     try:
         asyncio.run(_preflight_checks())
     except DatabaseSchemaError:
         logger.exception("Engine startup blocked: database schema is not ready")
         raise
+
+    from main import main as run_main
 
     asyncio.run(run_main())
 

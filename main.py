@@ -296,9 +296,12 @@ async def main() -> None:
     logger.info(f"Context mode: {context_mode.upper()} | Run mode: {RUN_MODE.upper()}")
 
     # ── Health probe FIRST so orchestrators see liveness immediately ─
-    tasks: list[asyncio.Task[object]] = [
-        asyncio.create_task(_health_probe.start(), name="HealthProbe"),
-    ]
+    # In engine-only mode the runner (services/engine/runner.py) already
+    # started a bootstrap probe on PORT before entering main(). Binding
+    # the same port again would fail with EADDRINUSE.
+    tasks: list[asyncio.Task[object]] = []
+    if RUN_MODE != "engine-only":
+        tasks.append(asyncio.create_task(_health_probe.start(), name="HealthProbe"))
 
     await init_persistent_storage()
 
