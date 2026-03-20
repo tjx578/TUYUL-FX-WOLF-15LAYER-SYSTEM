@@ -76,9 +76,7 @@ def ingest_service_module() -> Any:
 class TestIngestReadinessDegradedMode:
     """_ingest_readiness() requires startup + producer heartbeat health."""
 
-    def test_readiness_false_when_both_flags_false(
-        self, ingest_service_module: Any
-    ) -> None:
+    def test_readiness_false_when_both_flags_false(self, ingest_service_module: Any) -> None:
         ingest_service_module._ingest_ready = False
         ingest_service_module._ingest_degraded = False
         ingest_service_module._producer_present = False
@@ -95,9 +93,7 @@ class TestIngestReadinessDegradedMode:
         }
         assert ingest_service_module._ingest_readiness() is True
 
-    def test_readiness_true_when_degraded_if_producer_healthy(
-        self, ingest_service_module: Any
-    ) -> None:
+    def test_readiness_true_when_degraded_if_producer_healthy(self, ingest_service_module: Any) -> None:
         ingest_service_module._ingest_ready = False
         ingest_service_module._ingest_degraded = True
         ingest_service_module._producer_present = True
@@ -107,9 +103,7 @@ class TestIngestReadinessDegradedMode:
         }
         assert ingest_service_module._ingest_readiness() is True
 
-    def test_readiness_false_when_producer_missing(
-        self, ingest_service_module: Any
-    ) -> None:
+    def test_readiness_false_when_producer_missing(self, ingest_service_module: Any) -> None:
         ingest_service_module._ingest_ready = True
         ingest_service_module._ingest_degraded = False
         ingest_service_module._producer_present = False
@@ -119,52 +113,41 @@ class TestIngestReadinessDegradedMode:
         }
         assert ingest_service_module._ingest_readiness() is False
 
-    def test_readiness_false_when_producer_heartbeat_stale(
-        self, ingest_service_module: Any
-    ) -> None:
+    def test_readiness_false_when_producer_heartbeat_stale(self, ingest_service_module: Any) -> None:
         ingest_service_module._ingest_ready = True
         ingest_service_module._ingest_degraded = False
         ingest_service_module._producer_present = True
         ingest_service_module._producer_last_heartbeat_ts = (
-            ingest_service_module.time()
-            - ingest_service_module._PRODUCER_FRESHNESS_SEC
-            - 1
+            ingest_service_module.time() - ingest_service_module._PRODUCER_FRESHNESS_SEC - 1
         )
         ingest_service_module._pair_last_tick_ts = {
             "EURUSD": ingest_service_module.time(),
         }
         assert ingest_service_module._ingest_readiness() is False
 
-    def test_readiness_false_when_all_pairs_stale(
-        self, ingest_service_module: Any
-    ) -> None:
+    def test_readiness_true_in_grace_when_all_pairs_stale(self, ingest_service_module: Any) -> None:
+        """When producer heartbeat is fresh but no pairs have fresh ticks,
+        the WS-connect grace window keeps readiness True (waiting for first tick)."""
         ingest_service_module._ingest_ready = True
         ingest_service_module._ingest_degraded = False
         ingest_service_module._producer_present = True
         ingest_service_module._producer_last_heartbeat_ts = ingest_service_module.time()
-        stale_ts = (
-            ingest_service_module.time()
-            - ingest_service_module._PRODUCER_FRESHNESS_SEC
-            - 1
-        )
+        stale_ts = ingest_service_module.time() - ingest_service_module._PRODUCER_FRESHNESS_SEC - 1
         ingest_service_module._pair_last_tick_ts = {
             "EURUSD": stale_ts,
             "GBPUSD": stale_ts,
         }
-        assert ingest_service_module._ingest_readiness() is False
+        # Grace window is active (heartbeat is fresh) → readiness True
+        assert ingest_service_module._ingest_readiness() is True
 
 
 class TestHasStaleCacheFunction:
     """_has_stale_cache() should correctly detect cached candle keys."""
 
     @pytest.mark.asyncio
-    async def test_returns_true_when_cache_key_found(
-        self, ingest_service_module: Any
-    ) -> None:
+    async def test_returns_true_when_cache_key_found(self, ingest_service_module: Any) -> None:
         mock_redis = AsyncMock()
-        mock_redis.scan = AsyncMock(
-            side_effect=[(0, ["wolf15:candle_history:EURUSD:H1"])]
-        )
+        mock_redis.scan = AsyncMock(side_effect=[(0, ["wolf15:candle_history:EURUSD:H1"])])
         mock_redis.llen = AsyncMock(return_value=50)
 
         result = await ingest_service_module._has_stale_cache(mock_redis)
@@ -179,22 +162,16 @@ class TestHasStaleCacheFunction:
         assert result is False
 
     @pytest.mark.asyncio
-    async def test_returns_false_when_key_empty(
-        self, ingest_service_module: Any
-    ) -> None:
+    async def test_returns_false_when_key_empty(self, ingest_service_module: Any) -> None:
         mock_redis = AsyncMock()
-        mock_redis.scan = AsyncMock(
-            side_effect=[(0, ["wolf15:candle_history:EURUSD:H1"])]
-        )
+        mock_redis.scan = AsyncMock(side_effect=[(0, ["wolf15:candle_history:EURUSD:H1"])])
         mock_redis.llen = AsyncMock(return_value=0)
 
         result = await ingest_service_module._has_stale_cache(mock_redis)
         assert result is False
 
     @pytest.mark.asyncio
-    async def test_returns_false_on_scan_exception(
-        self, ingest_service_module: Any
-    ) -> None:
+    async def test_returns_false_on_scan_exception(self, ingest_service_module: Any) -> None:
         mock_redis = AsyncMock()
         mock_redis.scan = AsyncMock(side_effect=ConnectionError("redis down"))
 
@@ -202,9 +179,7 @@ class TestHasStaleCacheFunction:
         assert result is False
 
     @pytest.mark.asyncio
-    async def test_iterates_multiple_scan_pages(
-        self, ingest_service_module: Any
-    ) -> None:
+    async def test_iterates_multiple_scan_pages(self, ingest_service_module: Any) -> None:
         """Should iterate cursor pages until cursor returns 0."""
         mock_redis = AsyncMock()
         mock_redis.scan = AsyncMock(
