@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "wolf15/audit.schema.json",
+  "title": "Wolf15AuditEvent",
+  "type": "object",
+  "required": ["event_type", "source", "timestamp"],
+  "properties": {
+    "event_type": { "type": "string" },
+    "source": { "type": "string" },
+    "signal_id": { "type": ["string", "null"] },
+    "payload": { "type": "object" },
+    "timestamp": { "type": "string", "format": "date-time" }
+  },
+  "additionalProperties": true
+}

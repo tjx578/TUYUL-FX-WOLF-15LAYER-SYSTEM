@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "wolf15/risk.schema.json",
+  "title": "Wolf15RiskRecommendation",
+  "type": "object",
+  "required": ["trade_allowed", "recommended_lot", "max_safe_lot", "reason", "expiry"],
+  "properties": {
+    "trade_allowed": { "type": "boolean" },
+    "recommended_lot": { "type": "number", "minimum": 0 },
+    "max_safe_lot": { "type": "number", "minimum": 0 },
+    "reason": { "type": "string" },
+    "expiry": { "type": "string", "format": "date-time" }
+  },
+  "additionalProperties": true
+}

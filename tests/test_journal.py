@@ -10,27 +10,28 @@ Tests cover:
 """
 
 import json
+from datetime import UTC, datetime
 
 import pytest
 
+from journal.journal_gpt_bridge import compute_metrics
+from journal.journal_router import JournalRouter
 from journal.journal_schema import (
     ContextJournal,
     DecisionJournal,
     ExecutionJournal,
-    ReflectiveJournal,
-    VerdictType,
-    TradeOutcome,
     ProtectionAssessment,
+    ReflectiveJournal,
+    TradeOutcome,
+    VerdictType,
 )
 from journal.journal_writer import JournalWriter
-from journal.journal_router import JournalRouter
-from journal.journal_gpt_bridge import compute_metrics
 from utils.timezone_utils import now_utc
-
 
 # ========================
 # SCHEMA VALIDATION TESTS
 # ========================
+
 
 def test_context_journal_valid():
     """Test ContextJournal with valid data"""
@@ -236,6 +237,7 @@ def test_reflective_journal_invalid_discipline_low():
 # ENUM VALIDATION TESTS
 # ========================
 
+
 def test_verdict_type_enum():
     """Test VerdictType enum values"""
     assert VerdictType.EXECUTE_BUY.value == "EXECUTE_BUY"
@@ -262,6 +264,7 @@ def test_protection_assessment_enum():
 # ========================
 # JOURNAL WRITER TESTS
 # ========================
+
 
 def test_journal_writer_creates_file(tmp_path):
     """Test JournalWriter creates file in correct location"""
@@ -316,7 +319,7 @@ def test_journal_writer_file_format(tmp_path):
     file_path = writer.write(j2)
 
     # Read and parse JSON
-    with open(file_path, "r") as f:
+    with open(file_path) as f:
         content = json.load(f)
 
     # Verify structure
@@ -328,9 +331,38 @@ def test_journal_writer_file_format(tmp_path):
     assert content["data"]["wolf_30_score"] == 25
 
 
+def test_journal_writer_never_overwrites_existing_file(tmp_path, monkeypatch):
+    """Writer must keep append-only behavior even when filename collisions happen."""
+    writer = JournalWriter(base_dir=str(tmp_path))
+
+    j1 = ContextJournal(
+        timestamp=now_utc(),
+        pair="EURUSD",
+        session="LONDON",
+        market_regime="TRENDING",
+        news_lock=False,
+        context_coherence=0.85,
+        mta_alignment=True,
+        technical_bias="BULLISH",
+    )
+
+    fixed_now = datetime(2026, 3, 9, 12, 0, 0, 123000, tzinfo=UTC)
+    monkeypatch.setattr("journal.journal_writer.now_utc", lambda: fixed_now)
+
+    first_path = writer.write(j1)
+    first_content = first_path.read_text(encoding="utf-8")
+
+    # Same timestamp -> same base filename. Writer must generate a unique immutable file.
+    second_path = writer.write(j1)
+
+    assert second_path != first_path
+    assert first_path.read_text(encoding="utf-8") == first_content
+
+
 # ========================
 # JOURNAL ROUTER TESTS
 # ========================
+
 
 def test_journal_router_is_singleton():
     """Test JournalRouter is a singleton"""
@@ -370,6 +402,7 @@ def test_journal_router_increments_count(tmp_path):
 # ========================
 # GPT BRIDGE METRICS TESTS
 # ========================
+
 
 def test_compute_metrics_empty():
     """Test compute_metrics with empty entries"""

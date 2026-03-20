@@ -1,0 +1,1 @@
+[{"targets": ["app:8000"], "labels": {"service": "api", "env": "docker"}}]

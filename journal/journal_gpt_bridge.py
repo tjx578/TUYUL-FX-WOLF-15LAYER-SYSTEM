@@ -1,5 +1,5 @@
 """
-Journal GPT Bridge — Export journal data for TUYUL FX GPT analysis.
+Journal GPT Bridge - Export journal data for TUYUL FX GPT analysis.
 
 Provides:
   - _load_entries(): Load journal entries from storage
@@ -13,20 +13,20 @@ GPT Role (LOCKED):
 
 import json
 from collections import Counter
-from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from loguru import logger
 
+from journal.journal_repository import JournalRepository
 from utils.timezone_utils import now_utc
 
 
 def _load_entries(
     date_range_days: int = 7,
-    journal_types: Optional[List[str]] = None,
+    journal_types: list[str] | None = None,
     base_dir: str = "storage/decision_archive",
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """
     Load journal entries from storage.
 
@@ -38,54 +38,17 @@ def _load_entries(
     Returns:
         List of journal entries (parsed JSON)
     """
-    entries = []
-    base_path = Path(base_dir)
-
-    if not base_path.exists():
-        logger.warning(f"Journal directory does not exist: {base_path}")
-        return entries
-
-    # Calculate date range
-    end_date = now_utc()
-    start_date = end_date - timedelta(days=date_range_days)
-
-    # Iterate through date directories
-    for date_dir in sorted(base_path.iterdir()):
-        if not date_dir.is_dir():
-            continue
-
-        # Parse directory name (YYYY-MM-DD format)
-        try:
-            dir_date = datetime.strptime(date_dir.name, "%Y-%m-%d")
-            dir_date = dir_date.replace(tzinfo=end_date.tzinfo)
-        except ValueError:
-            continue
-
-        # Skip if outside date range
-        if dir_date < start_date or dir_date > end_date:
-            continue
-
-        # Load all JSON files in this directory
-        for json_file in date_dir.glob("*.json"):
-            try:
-                with open(json_file, "r", encoding="utf-8") as f:
-                    entry = json.load(f)
-
-                # Filter by journal type if specified
-                if journal_types and entry.get("journal_type") not in journal_types:
-                    continue
-
-                entries.append(entry)
-
-            except Exception as exc:
-                logger.warning(f"Failed to load {json_file}: {exc}")
-                continue
+    repository = JournalRepository(base_dir=base_dir)
+    entries = repository.load_entries(
+        date_range_days=date_range_days,
+        journal_types=journal_types,
+    )
 
     logger.info(f"Loaded {len(entries)} journal entries from last {date_range_days} days")
     return entries
 
 
-def compute_metrics(entries: List[Dict[str, Any]]) -> Dict[str, Any]:
+def compute_metrics(entries: list[dict[str, Any]]) -> dict[str, Any]:
     """
     Compute metrics from journal entries.
 
@@ -103,7 +66,7 @@ def compute_metrics(entries: List[Dict[str, Any]]) -> Dict[str, Any]:
     total_executions = len(execution_entries)
 
     # Count verdicts
-    verdict_counts = Counter()
+    verdict_counts: Counter[str] = Counter()
     for entry in decision_entries:
         verdict = entry.get("data", {}).get("verdict")
         if verdict:
@@ -114,7 +77,7 @@ def compute_metrics(entries: List[Dict[str, Any]]) -> Dict[str, Any]:
     rejection_rate = (rejected / total_decisions * 100) if total_decisions > 0 else 0.0
 
     # Failed gates analysis
-    failed_gates_counter = Counter()
+    failed_gates_counter: Counter[str] = Counter()
     for entry in decision_entries:
         failed_gates = entry.get("data", {}).get("failed_gates", [])
         for gate in failed_gates:
@@ -123,7 +86,7 @@ def compute_metrics(entries: List[Dict[str, Any]]) -> Dict[str, Any]:
     top_failed_gates = failed_gates_counter.most_common(5)
 
     # Protection assessment (from J4 reflections)
-    protection_scores = []
+    protection_scores: list[int] = []
     override_count = 0
     for entry in reflection_entries:
         data = entry.get("data", {})
@@ -136,13 +99,11 @@ def compute_metrics(entries: List[Dict[str, Any]]) -> Dict[str, Any]:
             override_count += 1
 
     protection_score = (
-        sum(protection_scores) / len(protection_scores) * 100
-        if protection_scores
-        else None
+        sum(protection_scores) / len(protection_scores) * 100 if protection_scores else None
     )
 
     # Average wolf score for EXECUTE verdicts
-    execute_wolf_scores = []
+    execute_wolf_scores: list[float] = []
     for entry in decision_entries:
         data = entry.get("data", {})
         verdict = data.get("verdict")
@@ -152,9 +113,7 @@ def compute_metrics(entries: List[Dict[str, Any]]) -> Dict[str, Any]:
                 execute_wolf_scores.append(wolf_score)
 
     avg_execute_wolf = (
-        sum(execute_wolf_scores) / len(execute_wolf_scores)
-        if execute_wolf_scores
-        else None
+        sum(execute_wolf_scores) / len(execute_wolf_scores) if execute_wolf_scores else None
     )
 
     return {
@@ -172,7 +131,7 @@ def compute_metrics(entries: List[Dict[str, Any]]) -> Dict[str, Any]:
 
 def export_for_gpt(
     date_range_days: int = 7,
-    journal_types: Optional[List[str]] = None,
+    journal_types: list[str] | None = None,
     output_dir: str = "storage/gpt_exports",
 ) -> Path:
     """
@@ -204,7 +163,7 @@ def export_for_gpt(
     # Generate Markdown content
     with open(file_path, "w", encoding="utf-8") as f:
         # Header
-        f.write("# TUYUL FX WOLF — Journal Export for GPT Analysis\n\n")
+        f.write("# TUYUL FX WOLF - Journal Export for GPT Analysis\n\n")
         f.write(f"**Generated:** {now.isoformat()}\n\n")
         f.write(f"**Period:** Last {date_range_days} days\n\n")
         f.write("---\n\n")
@@ -229,25 +188,27 @@ def export_for_gpt(
         f.write(f"- **Total Reflections:** {metrics['total_reflections']}\n")
         f.write(f"- **Rejection Rate:** {metrics['rejection_rate']}%\n")
 
-        if metrics['protection_score']:
+        if metrics["protection_score"]:
             f.write(f"- **Protection Score:** {metrics['protection_score']}%\n")
 
-        if metrics['avg_execute_wolf_score']:
+        if metrics["avg_execute_wolf_score"]:
             f.write(f"- **Avg Execute Wolf Score:** {metrics['avg_execute_wolf_score']}/30\n")
 
         f.write(f"- **Override Attempts:** {metrics['override_count']}\n\n")
 
         # Verdict distribution
         f.write("### Verdict Distribution\n\n")
-        for verdict, count in sorted(metrics['verdict_counts'].items()):
-            pct = (count / metrics['total_decisions'] * 100) if metrics['total_decisions'] > 0 else 0
+        for verdict, count in sorted(metrics["verdict_counts"].items()):
+            pct = (
+                (count / metrics["total_decisions"] * 100) if metrics["total_decisions"] > 0 else 0
+            )
             f.write(f"- **{verdict}:** {count} ({pct:.1f}%)\n")
         f.write("\n")
 
         # Top failed gates
         f.write("### Top Failed Gates\n\n")
-        if metrics['top_failed_gates']:
-            for gate, count in metrics['top_failed_gates']:
+        if metrics["top_failed_gates"]:
+            for gate, count in metrics["top_failed_gates"]:
                 f.write(f"- **{gate}:** {count} failures\n")
         else:
             f.write("*No gate failures recorded*\n")

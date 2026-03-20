@@ -1,0 +1,1 @@
+[{"targets": ["wolf-execution:9103"], "labels": {"service": "execution", "env": "docker"}}]

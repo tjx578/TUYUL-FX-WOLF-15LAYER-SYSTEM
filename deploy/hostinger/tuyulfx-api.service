@@ -17,7 +17,7 @@ EnvironmentFile=/opt/tuyulfx/.env
 # FastAPI with Gunicorn (production ASGI server)
 ExecStart=/opt/tuyulfx/venv/bin/gunicorn api_server:app \
     --workers 2 \
-    --worker-class uvicorn.workers.UvicornWorker \
+    --worker-class deploy.uvicorn_worker.UvicornWorker \
     --bind 127.0.0.1:8000 \
     --access-logfile /opt/tuyulfx/logs/api-access.log \
     --error-logfile /opt/tuyulfx/logs/api-error.log \

@@ -1,212 +1,709 @@
 """
-Live Context Bus
-Single Source of Truth for live market state.
+LiveContextBus — runtime state hub (ephemeral, NOT durable source of truth)
 
-Supports two modes via CONTEXT_MODE environment variable:
-  - local (default): In-memory storage, single-process only
-  - redis: Redis-backed storage for multi-container deployments
+TUYUL FX v2 Architecture:
+------------------------------------------------------------
+• LiveContextBus is ONLY for fast, in-process consumption by analysis pipeline.
+• It is NOT a permanent storage or source of truth.
+• All durability, fanout, heartbeat, and recovery handled by Redis/PostgreSQL.
+• LiveContextBus is always synchronized with Redis (latest_tick, candle_history, verdicts, heartbeat) and PostgreSQL (durable candle storage, journal/trades, recovery snapshots).
+• Startup hydration/recovery: state is seeded from Redis first, fallback to PG, atomic restore, non-destructive.
+• Stale-but-preserved, empty, and no-producer states are tracked via feed staleness and heartbeat.
+• Heartbeat/freshness lane: explicit producer heartbeat, freshness timestamp, and readiness checks based on data freshness (not just process status).
+• Readiness = fresh data present, not just process alive; stale-but-preserved vs empty vs no-producer distinction is tracked.
+• All authority remains in Layer-12 (verdict engine); EventBus is orchestration/trigger only.
+
+Layers:
+    1. Data layer — candles, ticks, conditioned returns (raw market observations, overflow protection).
+    2. Inference layer — regime_state, volatility_regime, session_state, liquidity_map, news_pressure_vector, signal_stack (derived abstract state for analysis, consumed by L12).
+
+This module is analysis-only; no execution logic, no side effects beyond internal state.
+The inference layer reasons over abstractions, not noisy raw feeds.
+
+Durability and recovery are handled externally (see startup/candle_seeding.py, infrastructure/redis_client.py, journal/audit_trail.py).
 """
 
-import os
-from collections import defaultdict, deque
+from __future__ import annotations
+
+import time
 from threading import Lock
-from typing import Optional
+from typing import Any
 
 from loguru import logger
 
-from context.context_validator import ContextValidator
-from utils.timezone_utils import now_utc
+from config.pip_values import get_pip_multiplier
+from state.data_freshness import (
+    FreshnessClass,
+    classify_feed_freshness,
+    stale_threshold_seconds,
+)
+
+# Maximum candle history entries per symbol:timeframe key.
+# Prevents unbounded memory growth during long-running sessions.
+CANDLE_MAX_BUFFER = 250
 
 
 class LiveContextBus:
+    """Ephemeral inference state machine for live market context.
+
+    Singleton.  Two semantic layers:
+    - **data**: raw candles / ticks / conditioned returns.
+    - **inference**: abstract regime, session, liquidity, news pressure,
+      and signal-stack state produced by analysis layers.
+
+    All inference fields are ephemeral: they reflect the *current* system
+    belief and are overwritten on every refresh cycle.  No persistence
+    beyond in-process memory.
     """
-    Centralized, thread-safe market state container.
 
-    Supports two modes:
-      - CONTEXT_MODE=local (default): In-memory only, for local dev/testing
-      - CONTEXT_MODE=redis: Writes to Redis for multi-container setups
-    """
+    _instance: LiveContextBus | None = None
 
-    _instance: Optional["LiveContextBus"] = None
-    _lock = Lock()
+    @classmethod
+    def reset_singleton(cls) -> None:
+        """Reset the singleton instance (for testing only)."""
+        cls._instance = None
 
-    def __new__(cls) -> "LiveContextBus":
-        if not cls._instance:
-            with cls._lock:
-                if not cls._instance:
-                    cls._instance = super().__new__(cls)
-                    cls._instance._init()
+    def __new__(cls) -> LiveContextBus:
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+            cls._instance._init()
         return cls._instance
 
+    # ------------------------------------------------------------------
+    # Internal init (called once)
+    # ------------------------------------------------------------------
+
     def _init(self) -> None:
-        """Initialize context bus based on CONTEXT_MODE."""
-        # Always maintain local storage for backward compatibility
-        self._tick_buffer = deque(maxlen=10000)
-        self._candle_store = defaultdict(dict)  # symbol -> tf -> candle
-        self._candle_history = defaultdict(
-            lambda: defaultdict(lambda: deque(maxlen=50))
-        )  # symbol -> tf -> deque of candles
-        self._news_store = {}
-        self._meta = {}
-        self._rw_lock = Lock()
+        self._lock = Lock()
 
-        # Check mode and initialize Redis bridge if needed
-        self._mode = os.getenv("CONTEXT_MODE", "local").lower()
-        self._redis_bridge: Optional["RedisContextBridge"] = None
+        # ── Data layer (raw market observations) ──────────────────────
+        # {symbol: {timeframe: [candle_dict, ...]}}
+        self._candles: dict[str, dict[str, list[dict[str, Any]]]] = {}
+        # {symbol: tick_dict}
+        self._ticks: dict[str, dict[str, Any]] = {}
+        self._candle_history: dict[str, list[dict[str, Any]]] = {}
+        # {symbol: conditioned return list}
+        self._conditioned_returns: dict[str, list[float]] = {}
+        # {symbol: diagnostics dict}
+        self._conditioning_meta: dict[str, dict[str, Any]] = {}
 
-        if self._mode == "redis":
-            try:
-                # Lazy import to avoid circular dependency
-                from context.redis_context_bridge import RedisContextBridge
-                self._redis_bridge = RedisContextBridge()
-                logger.info("LiveContextBus initialized in REDIS mode")
-            except Exception as exc:
-                logger.error(
-                    f"Failed to initialize Redis bridge: {exc}. "
-                    "Falling back to local mode."
-                )
-                self._mode = "local"
-                self._redis_bridge = None
+        # ── Inference layer (abstract state — what TUYUL thinks with) ─
+        self._regime_state: dict[str, Any] = {}  # macro regime (0/1/2 + vix fields)
+        self._volatility_regime: str = "NORMAL"  # LOW / NORMAL / HIGH / EXTREME
+        self._session_state: dict[str, Any] = {}  # session window + multiplier
+        self._liquidity_map: dict[str, Any] = {}  # SMC zone abstractions
+        self._news_pressure_vector: dict[str, Any] = {}  # impact-weighted sentiment
+        self._news: dict[str, Any] = {}  # raw news events
+        self._signal_stack: list[dict[str, Any]] = []  # pending signal candidates
+        self._inference_ts: float = 0.0  # last inference update epoch
+
+        # ── Account / trade layer ─────────────────────────────────────
+        self._account_state: dict[str, dict[str, Any]] = {}  # {symbol: account_snapshot}
+        self._trade_history: dict[str, list[float]] = {}  # {symbol: [return_pct, ...]}
+
+        # ── Feed staleness tracking ────────────────────────────────────
+        # Records wall-clock time of the most recent tick per symbol.
+        self._feed_timestamps: dict[str, float] = {}  # {symbol: epoch_sec}
+
+    # ------------------------------------------------------------------
+    # Write API (analysis / consumer only — no execution logic)
+    # ------------------------------------------------------------------
+
+    def set_candle_history(
+        self,
+        symbol: str,
+        timeframe: str,
+        candles: list[dict[str, Any]],
+    ) -> None:
+        """Replace candle history for *symbol*/*timeframe*."""
+        key = f"{symbol}:{timeframe}"
+        self._candle_history[key] = candles
+
+    def push_candle(self, candle: dict[str, Any]) -> None:
+        """Append a single candle to the history for its symbol/timeframe.
+
+        Enforces ``CANDLE_MAX_BUFFER`` per key to prevent unbounded memory growth.
+        When the limit is reached the oldest candles are dropped.
+        """
+        symbol = candle.get("symbol", "")
+        timeframe = candle.get("timeframe", "")
+        if not symbol or not timeframe:
+            return
+        key = f"{symbol}:{timeframe}"
+        if key not in self._candle_history:
+            self._candle_history[key] = []
+        buf = self._candle_history[key]
+        buf.append(candle)
+        if len(buf) > CANDLE_MAX_BUFFER:
+            self._candle_history[key] = buf[-CANDLE_MAX_BUFFER:]
+
+    def update_candle(self, candle: dict[str, Any]) -> None:
+        """Backward-compatible wrapper for pushing a candle.
+
+        Candle must contain 'symbol' and 'timeframe'.
+        """
+        symbol = str(candle.get("symbol", "")).strip()
+        timeframe = str(candle.get("timeframe", "")).strip()
+        if not symbol or not timeframe:
+            logger.warning("LiveContextBus.update_candle: candle missing symbol/timeframe — ignored")
+            return
+        self.push_candle(candle)
+
+    def update_tick(self, tick: dict[str, Any]) -> None:
+        """Store latest tick for a symbol. Tick must contain 'symbol' key."""
+        symbol = tick.get("symbol")
+        if symbol:
+            sym = str(symbol)
+            with self._lock:
+                self._ticks[sym] = tick
+                self._feed_timestamps[sym] = time.time()
         else:
-            logger.info("LiveContextBus initialized in LOCAL mode")
+            logger.warning("LiveContextBus.update_tick: tick missing 'symbol' key — ignored")
 
-    # =========================
-    # WRITE METHODS (INGEST ONLY)
-    # =========================
+    def record_feed_update(self, symbol: str) -> None:
+        """Record that fresh data arrived for *symbol* (updates feed-timestamp).
 
-    def update_tick(self, tick: dict) -> None:
+        Called by RedisConsumer when a candle arrives via Pub/Sub so that
+        ``is_feed_stale()`` / ``get_feed_status()`` work correctly in
+        CONTEXT_MODE=redis where ``update_tick()`` is never called.
         """
-        Update tick data.
+        if symbol:
+            with self._lock:
+                self._feed_timestamps[str(symbol)] = time.time()
 
-        In local mode: Stores in in-memory buffer.
-        In Redis mode: Stores locally AND writes to Redis.
-        """
-        if not ContextValidator.validate_tick(tick):
-            logger.warning("Invalid tick rejected")
+    def reset_state(self) -> None:
+        """Clear all internal state. Used for test isolation."""
+        with self._lock:
+            # Data layer
+            self._candles = {}
+            self._ticks = {}
+            self._candle_history = {}
+            self._conditioned_returns = {}
+            self._conditioning_meta = {}
+            # Inference layer
+            self._regime_state = {}
+            self._volatility_regime = "NORMAL"
+            self._session_state = {}
+            self._liquidity_map = {}
+            self._news_pressure_vector = {}
+            self._news = {}
+            self._signal_stack = []
+            self._inference_ts = 0.0
+            # Feed staleness tracking
+            self._feed_timestamps = {}
+
+    def update_conditioned_returns(
+        self,
+        symbol: str,
+        returns: list[float],
+        diagnostics: dict[str, Any] | None = None,
+    ) -> None:
+        """Store latest conditioned return series and optional diagnostics."""
+        if not symbol:
             return
+        self._conditioned_returns[symbol] = [float(r) for r in returns]
+        if diagnostics is not None:
+            self._conditioning_meta[symbol] = dict(diagnostics)
 
-        with self._rw_lock:
-            self._tick_buffer.append(tick)
+    def get_conditioned_returns(
+        self,
+        symbol: str,
+        count: int | None = None,
+    ) -> list[float]:
+        """Return latest conditioned return series for a symbol."""
+        data = self._conditioned_returns.get(symbol, [])
+        if count is not None and count < len(data):
+            return data[-count:]
+        return list(data)
 
-        # If Redis mode, also write to Redis
-        if self._mode == "redis" and self._redis_bridge:
-            try:
-                self._redis_bridge.write_tick(tick)
-            except Exception as exc:
-                logger.error(f"Failed to write tick to Redis: {exc}")
+    def get_conditioning_meta(self, symbol: str) -> dict[str, Any] | None:
+        """Return latest signal-conditioning diagnostics for a symbol."""
+        meta = self._conditioning_meta.get(symbol)
+        return dict(meta) if meta is not None else None
 
-    def update_candle(self, candle: dict) -> None:
+    # ------------------------------------------------------------------
+    # Inference layer — write API
+    # These methods update the abstract state TUYUL reasons with.
+    # Each write is atomic (lock-protected) and timestamped.
+    # ------------------------------------------------------------------
+
+    def update_macro_state(self, state: dict[str, Any]) -> None:
+        """Update macro regime state (from MacroVolatilityEngine).
+
+        Expected fields: vix_level, vix_regime, regime_state (0/1/2),
+        volatility_multiplier, risk_multiplier, source, timestamp.
         """
-        Update candle data.
+        with self._lock:
+            self._regime_state = dict(state)
+            # Derive volatility_regime label from regime_state int
+            rs = state.get("regime_state", 1)
+            fallback_regime = str(state.get("vix_regime") or "NORMAL")
+            if rs == 0:
+                self._volatility_regime = "LOW"
+            elif rs == 1:
+                self._volatility_regime = "NORMAL"
+            elif rs == 2:
+                self._volatility_regime = "HIGH"
+            else:
+                self._volatility_regime = fallback_regime
+            self._inference_ts = time.time()
 
-        In local mode: Stores in in-memory store.
-        In Redis mode: Stores locally AND writes to Redis.
+    def update_news(self, news: dict[str, Any]) -> None:
+        """Update news events payload.
+
+        Expected shape: {"events": [...], "source": str}.
         """
-        if not ContextValidator.validate_candle(candle):
-            logger.warning("Invalid candle rejected")
-            return
+        with self._lock:
+            self._news = dict(news)
+            self._inference_ts = time.time()
 
-        symbol = candle["symbol"]
-        tf = candle["timeframe"]
+    def update_session_state(self, state: dict[str, Any]) -> None:
+        """Update session window state (from L1 context analyzer).
 
-        with self._rw_lock:
-            self._candle_store[symbol][tf] = candle
-            # Also add to history buffer
-            self._candle_history[symbol][tf].append(candle)
-
-        # If Redis mode, also write to Redis
-        if self._mode == "redis" and self._redis_bridge:
-            try:
-                self._redis_bridge.write_candle(candle)
-            except Exception as exc:
-                logger.error(f"Failed to write candle to Redis: {exc}")
-
-    def update_news(self, news: dict) -> None:
+        Expected fields: session (e.g. "LONDON_OPEN"), session_multiplier,
+        is_overlap, major_session_active.
         """
-        Update news data.
+        with self._lock:
+            self._session_state = dict(state)
+            self._inference_ts = time.time()
 
-        In local mode: Stores in in-memory store.
-        In Redis mode: Stores locally AND writes to Redis.
+    def update_liquidity_map(self, liq: dict[str, Any]) -> None:
+        """Update liquidity zone abstractions (from L9 SMC).
+
+        Expected fields: zones list, nearest_zone, zone_strength.
         """
-        if not ContextValidator.validate_news(news):
-            logger.warning("Invalid news payload rejected")
-            return
+        with self._lock:
+            self._liquidity_map = dict(liq)
+            self._inference_ts = time.time()
 
-        with self._rw_lock:
-            self._news_store = news
-            self._meta["news_updated_at"] = now_utc()
+    def update_news_pressure(self, pressure: dict[str, Any]) -> None:
+        """Update news pressure vector (from NewsEngine).
 
-        # If Redis mode, also write to Redis
-        if self._mode == "redis" and self._redis_bridge:
-            try:
-                self._redis_bridge.write_news(news)
-            except Exception as exc:
-                logger.error(f"Failed to write news to Redis: {exc}")
-
-    # =========================
-    # READ METHODS (EVERYONE ELSE)
-    # =========================
-
-    def consume_ticks(self):
+        Expected fields: pressure_score, locked_symbols, high_impact_pending.
         """
-        Used by CandleBuilder ONLY.
+        with self._lock:
+            self._news_pressure_vector = dict(pressure)
+            self._inference_ts = time.time()
+
+    def push_signal(self, signal: dict[str, Any]) -> None:
+        """Push a signal candidate onto the stack.
+
+        Keeps last 50 signals max (ephemeral — not a journal).
         """
-        with self._rw_lock:
-            ticks = list(self._tick_buffer)
-            self._tick_buffer.clear()
-            return ticks
+        with self._lock:
+            self._signal_stack.append(dict(signal))
+            if len(self._signal_stack) > 50:
+                self._signal_stack = self._signal_stack[-50:]
+            self._inference_ts = time.time()
 
-    def get_latest_tick(self, symbol: str):
-        with self._rw_lock:
-            for tick in reversed(self._tick_buffer):
-                if tick["symbol"] == symbol:
-                    return tick
-        return None
+    def clear_signal_stack(self) -> None:
+        """Clear the signal stack (e.g. after cycle completion)."""
+        with self._lock:
+            self._signal_stack = []
 
-    def get_candle(self, symbol: str, timeframe: str):
-        with self._rw_lock:
-            return self._candle_store.get(symbol, {}).get(timeframe)
+    # ------------------------------------------------------------------
+    # Inference layer — read API
+    # All reads return copies to prevent mutation of internal state.
+    # ------------------------------------------------------------------
 
-    def get_all_candles(self, timeframe: str):
-        with self._rw_lock:
+    def get_macro_state(self) -> dict[str, Any]:
+        """Return current macro regime state (copy)."""
+        with self._lock:
+            return dict(self._regime_state)
+
+    def get_news(self) -> dict[str, Any] | None:
+        """Return current news events or None if empty."""
+        with self._lock:
+            return dict(self._news) if self._news else None
+
+    def get_session_state(self) -> dict[str, Any]:
+        """Return current session window state (copy)."""
+        with self._lock:
+            return dict(self._session_state)
+
+    def get_volatility_regime(self) -> str:
+        """Return current volatility regime label."""
+        with self._lock:
+            return self._volatility_regime
+
+    def get_liquidity_map(self) -> dict[str, Any]:
+        """Return current liquidity zone map (copy)."""
+        with self._lock:
+            return dict(self._liquidity_map)
+
+    def get_news_pressure(self) -> dict[str, Any]:
+        """Return current news pressure vector (copy)."""
+        with self._lock:
+            return dict(self._news_pressure_vector)
+
+    def get_signal_stack(self) -> list[dict[str, Any]]:
+        """Return current signal candidate stack (copy)."""
+        with self._lock:
+            return [dict(s) for s in self._signal_stack]
+
+    def inference_snapshot(self) -> dict[str, Any]:
+        """Return unified inference state — what TUYUL thinks with.
+
+        This is the abstract state the system reasons over.
+        Not raw data, but derived beliefs.
+        """
+        with self._lock:
             return {
-                symbol: tf_map.get(timeframe)
-                for symbol, tf_map in self._candle_store.items()
-                if timeframe in tf_map
+                "regime_state": dict(self._regime_state),
+                "volatility_regime": self._volatility_regime,
+                "session_state": dict(self._session_state),
+                "liquidity_map": dict(self._liquidity_map),
+                "news_pressure_vector": dict(self._news_pressure_vector),
+                "signal_stack": [dict(s) for s in self._signal_stack],
+                "inference_ts": self._inference_ts,
             }
 
-    def get_candle_history(
-        self, symbol: str, timeframe: str, count: int = 20
-    ) -> list:
-        """
-        Get historical candles for a symbol and timeframe.
+    # ------------------------------------------------------------------
+    # Convenience: single candle read (latest bar for symbol/tf)
+    # ------------------------------------------------------------------
 
-        Args:
-            symbol: Trading pair symbol
-            timeframe: Timeframe (M15, H1, etc.)
-            count: Number of candles to return (default 20, max 50)
+    def get_candle(self, symbol: str, timeframe: str) -> dict[str, Any] | None:
+        """Return the latest candle for symbol/timeframe, or None."""
+        key = f"{symbol}:{timeframe}"
+        buf = self._candle_history.get(key, [])
+        return dict(buf[-1]) if buf else None
+
+    def snapshot(self) -> dict[str, Any]:
+        """Return a shallow-immutable view of the live context state.
+
+        Includes both data layer and inference layer.
+        Intended for read-only API consumers and diagnostics.
+        """
+        with self._lock:
+            return {
+                # Data layer
+                "candles": {key: [dict(c) for c in candles] for key, candles in self._candle_history.items()},
+                "ticks": {symbol: dict(tick) for symbol, tick in self._ticks.items()},
+                "conditioned_returns": {symbol: list(values) for symbol, values in self._conditioned_returns.items()},
+                "conditioning_meta": {symbol: dict(meta) for symbol, meta in self._conditioning_meta.items()},
+                # Inference layer
+                "macro": dict(self._regime_state),
+                "news": dict(self._news) if self._news else {},
+                "inference": {
+                    "regime_state": dict(self._regime_state),
+                    "volatility_regime": self._volatility_regime,
+                    "session_state": dict(self._session_state),
+                    "liquidity_map": dict(self._liquidity_map),
+                    "news_pressure_vector": dict(self._news_pressure_vector),
+                    "signal_stack": [dict(s) for s in self._signal_stack],
+                    "inference_ts": self._inference_ts,
+                },
+                "meta": {
+                    "inference_ts": self._inference_ts,
+                    "volatility_regime": self._volatility_regime,
+                },
+            }
+
+    # ------------------------------------------------------------------
+    # Read API
+    # ------------------------------------------------------------------
+
+    def get_candles(self, symbol: str, timeframe: str) -> list[dict[str, Any]]:
+        """Return stored candles for symbol/timeframe (empty list if none).
+
+        Reads from the unified ``_candle_history`` store that is populated by
+        ``set_candle_history``, ``push_candle``, and ``update_candle``.
+        """
+        key = f"{symbol}:{timeframe}"
+        return self._candle_history.get(key, [])
+
+    def get_latest_tick(self, symbol: str) -> dict[str, Any] | None:
+        """Return latest tick for symbol, or None if not yet received."""
+        return self._ticks.get(symbol)
+
+    # ------------------------------------------------------------------
+    # Feed staleness API (read-only — no execution logic)
+    # ------------------------------------------------------------------
+
+    def get_feed_age(self, symbol: str) -> float | None:
+        """Return seconds since the last tick for *symbol*, or None if no tick received."""
+        ts = self._feed_timestamps.get(symbol)
+        if ts is None:
+            return None
+        return time.time() - ts
+
+    def get_feed_timestamp(self, symbol: str) -> float | None:
+        """Return raw epoch timestamp of last feed update for *symbol*, or None."""
+        return self._feed_timestamps.get(symbol)
+
+    def is_feed_stale(self, symbol: str, threshold_sec: float | None = None) -> bool:
+        """Return True if the feed for *symbol* has not updated within *threshold_sec* seconds.
+
+        Defaults to the centralized stale threshold from ``state.data_freshness``.
+        """
+        if threshold_sec is None:
+            threshold_sec = stale_threshold_seconds()
+        age = self.get_feed_age(symbol)
+        if age is None:
+            return True
+        return age > threshold_sec
+
+    def get_feed_status(self, symbol: str) -> str:
+        """Return the canonical freshness class for *symbol*.
+
+        Returns one of the ``FreshnessClass`` enum values (string):
+            ``"LIVE"``                     — tick received within FRESHNESS_LIVE_MAX_AGE_SEC.
+            ``"DEGRADED_BUT_REFRESHING"``  — tick within stale threshold but lagging.
+            ``"STALE_PRESERVED"``          — tick beyond stale threshold.
+            ``"NO_PRODUCER"``              — no tick ever received for this symbol.
+        """
+        ts = self._feed_timestamps.get(symbol)
+        if ts is None:
+            return FreshnessClass.NO_PRODUCER.value
+        snap = classify_feed_freshness(
+            transport_ok=True,
+            has_producer_signal=True,
+            last_seen_ts=ts,
+        )
+        return snap.freshness_class.value
+
+    def get_feed_timestamps(self) -> dict[str, float]:
+        """Return copy of all per-symbol feed timestamps (epoch seconds)."""
+        with self._lock:
+            return dict(self._feed_timestamps)
+
+    def get_all_feed_status(self) -> dict[str, dict[str, Any]]:
+        """Return feed status for every tracked symbol.
 
         Returns:
-            List of candles, newest first
-        """
-        with self._rw_lock:
-            history = self._candle_history.get(symbol, {}).get(timeframe, deque())
-            # Return last N candles, newest first
-            candles = list(history)
-            return candles[-count:] if len(candles) > count else candles
+            ``{symbol: {"status": str, "age_seconds": float|None, "last_seen_ts": float|None}}``
 
-    def get_news(self):
-        with self._rw_lock:
-            return self._news_store
+        Status uses the canonical ``FreshnessClass`` labels.
+        """
+        with self._lock:
+            result: dict[str, dict[str, Any]] = {}
+            now = time.time()
+            for sym, ts in self._feed_timestamps.items():
+                age = now - ts
+                snap = classify_feed_freshness(
+                    transport_ok=True,
+                    has_producer_signal=True,
+                    last_seen_ts=ts,
+                    now_ts=now,
+                )
+                status = snap.freshness_class.value
+                result[sym] = {"status": status, "age_seconds": round(age, 2), "last_seen_ts": ts}
+            return result
 
-    def snapshot(self):
+    @property
+    def warmup_state(self) -> dict[str, Any]:
+        """Return warmup readiness summary for all tracked symbols/timeframes.
+
+        Returns:
+            ``{"symbols": {symbol: {"ready": bool, "bar_counts": {tf: int}}}}``
         """
-        Read-only snapshot for analysis / dashboard.
+        symbols: dict[str, dict[str, Any]] = {}
+        with self._lock:
+            seen_symbols: set[str] = set()
+            for key in self._candle_history:
+                parts = key.split(":", 1)
+                if parts:
+                    seen_symbols.add(parts[0])
+            for sym in seen_symbols:
+                bar_counts: dict[str, int] = {}
+                for key, buf in self._candle_history.items():
+                    if key.startswith(f"{sym}:"):
+                        tf = key.split(":", 1)[1]
+                        bar_counts[tf] = len(buf)
+                symbols[sym] = {
+                    "ready": any(c > 0 for c in bar_counts.values()),
+                    "bar_counts": bar_counts,
+                }
+        return {"symbols": symbols}
+
+    def check_price_drift(self, symbol: str, max_drift_pips: float = 5.0) -> dict[str, Any]:
+        """Compare latest REST H1 close with WS mid-price to detect drift.
+
+        Args:
+            symbol:         Trading symbol (e.g. ``EURUSD``).
+            max_drift_pips: Maximum acceptable drift in pips.
+
+        Returns:
+            Stable dict consumed by ``H1RefreshScheduler``::
+
+                {
+                    "drifted":    bool,
+                    "drift_pips": float,
+                    "rest_close": float | None,
+                    "ws_mid":     float | None,
+                }
         """
-        with self._rw_lock:
+        # Latest REST H1 bar close
+        h1_candles = self.get_candles(symbol, "H1")
+        rest_close: float | None = h1_candles[-1]["close"] if h1_candles else None
+
+        # Latest WS tick mid-price
+        tick = self.get_latest_tick(symbol)
+        ws_mid: float | None = None
+        if tick:
+            bid = tick.get("bid") or tick.get("price")
+            ask = tick.get("ask") or tick.get("price")
+            if bid is not None and ask is not None:
+                ws_mid = (float(bid) + float(ask)) / 2.0
+            elif bid is not None:
+                ws_mid = float(bid)
+
+        # Cannot compute drift without both prices
+        if rest_close is None or ws_mid is None:
             return {
-                "ticks": list(self._tick_buffer),
-                "candles": dict(self._candle_store),
-                "news": self._news_store,
-                "meta": self._meta,
+                "drifted": False,
+                "drift_pips": 0.0,
+                "rest_close": rest_close,
+                "ws_mid": ws_mid,
             }
+
+        # Convert raw price difference to pips
+        try:
+            multiplier = get_pip_multiplier(symbol)
+        except LookupError:
+            # Fall back to standard forex multiplier
+            multiplier = 10_000.0
+
+        drift_pips = abs(rest_close - ws_mid) * multiplier
+        drifted = drift_pips > max_drift_pips
+
+        if drifted:
+            logger.warning(
+                "Price drift alert: %s REST_close=%.5f WS_mid=%.5f drift=%.1f pips (max=%.1f)",
+                symbol,
+                rest_close,
+                ws_mid,
+                drift_pips,
+                max_drift_pips,
+            )
+
+        return {
+            "drifted": drifted,
+            "drift_pips": drift_pips,
+            "rest_close": rest_close,
+            "ws_mid": ws_mid,
+        }
+
+    def get_warmup_bar_count(self, symbol: str, timeframe: str) -> int:
+        """Return number of bars currently stored for symbol/timeframe."""
+        return len(self.get_candles(symbol, timeframe))
+
+    def check_warmup(
+        self,
+        symbol: str,
+        min_bars: dict[str, int],
+    ) -> dict[str, Any]:
+        """Check whether all required timeframes meet minimum bar counts.
+
+        Args:
+            symbol:   Trading symbol to check.
+            min_bars: Mapping of timeframe -> required minimum bar count.
+                      Example: {"H4": 200, "H1": 500, "M15": 1000}
+
+        Returns:
+            Stable schema consumed by pipeline + tests::
+
+                {
+                    "ready":    bool,
+                    "bars":     {tf: have_int, ...},       # all tfs
+                    "required": {tf: need_int, ...},       # all tfs
+                    "missing":  {tf: shortfall_int, ...},  # only tfs that are short
+                    "details":  {tf: {"have": int, "need": int, "missing": int}, ...},
+                }
+
+            ``bars``, ``required``, and ``missing`` are always present (may be
+            empty dicts if ``min_bars`` is empty).  ``details`` mirrors the
+            per-tf breakdown and is kept for backward-compat with consumers that
+            already access ``result["details"]``.
+        """
+        bars: dict[str, int] = {}
+        required_map: dict[str, int] = {}
+        missing: dict[str, int] = {}
+        details: dict[str, dict[str, int]] = {}
+
+        ready = True
+
+        for timeframe, required in min_bars.items():
+            tf = str(timeframe)
+            need = int(required)
+            have = int(self.get_warmup_bar_count(symbol, tf))
+
+            bars[tf] = have
+            required_map[tf] = need
+
+            shortfall = max(0, need - have)
+            details[tf] = {"have": have, "need": need, "missing": shortfall}
+
+            if shortfall > 0:
+                ready = False
+                missing[tf] = shortfall
+                logger.debug(
+                    "LiveContextBus: warmup not ready for %s:%s — have %d, need %d (missing %d)",
+                    symbol,
+                    tf,
+                    have,
+                    need,
+                    shortfall,
+                )
+
+        return {
+            "ready": ready,
+            "bars": bars,
+            "required": required_map,
+            "missing": missing,
+            "details": details,
+        }
+
+    def get_candle_history(self, symbol: str, timeframe: str, count: int | None = None) -> list[dict[str, Any]]:
+        """Return stored candle history for *symbol*/*timeframe*.
+
+        Args:
+            symbol:    Trading symbol.
+            timeframe: Timeframe string (e.g. "H1").
+            count:     If given, return only the last *count* candles.
+
+        Returns:
+            List of candle dicts (empty list if no data stored).
+        """
+        key = f"{symbol}:{timeframe}"
+        data = self._candle_history.get(key, [])
+        if count is not None and count < len(data):
+            return data[-count:]
+        return data
+
+    # ------------------------------------------------------------------
+    # Account / trade history
+    # ------------------------------------------------------------------
+
+    def update_account_state(self, symbol: str, state: dict[str, Any]) -> None:
+        """Store the latest account-state snapshot for *symbol*."""
+        with self._lock:
+            self._account_state[symbol] = state
+
+    def get_account_state(self, symbol: str) -> dict[str, Any]:
+        """Return stored account-state snapshot (empty dict if none)."""
+        with self._lock:
+            return dict(self._account_state.get(symbol, {}))
+
+    def update_trade_history(self, symbol: str, returns: list[float]) -> None:
+        """Replace the stored trade-return series for *symbol*."""
+        with self._lock:
+            self._trade_history[symbol] = list(returns)
+
+    def get_trade_history(self, symbol: str, lookback: int | None = None) -> list[float] | None:
+        """Return stored trade returns for *symbol*.
+
+        Args:
+            symbol:   Trading symbol.
+            lookback: If given, return only the last *lookback* values.
+
+        Returns:
+            List of return floats, or ``None`` if no data stored.
+        """
+        with self._lock:
+            data = self._trade_history.get(symbol)
+            if data is None:
+                return None
+            if lookback is not None and lookback < len(data):
+                return data[-lookback:]
+            return list(data)

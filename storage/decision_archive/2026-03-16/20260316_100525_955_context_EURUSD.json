@@ -1,0 +1,14 @@
+{
+  "journal_type": "context",
+  "recorded_at": "2026-03-16T10:05:25.955053+00:00",
+  "data": {
+    "timestamp": "2026-03-16T10:05:25.954536Z",
+    "pair": "EURUSD",
+    "session": "UNKNOWN",
+    "market_regime": "UNKNOWN",
+    "news_lock": false,
+    "context_coherence": 0.5,
+    "mta_alignment": true,
+    "technical_bias": "NEUTRAL"
+  }
+}

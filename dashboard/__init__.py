@@ -1,3 +1,1 @@
-"""
-Dashboard package — Real-time monitoring interface.
-"""
+"""Dashboard backend support package (read models + websocket feeds)."""

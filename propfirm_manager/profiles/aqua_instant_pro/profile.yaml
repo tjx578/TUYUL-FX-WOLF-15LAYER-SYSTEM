@@ -1,0 +1,11 @@
+name: "Aqua Instant Pro"
+version: "1.0"
+rules:
+  max_daily_dd_percent: 5.0
+  max_total_dd_percent: 10.0
+  max_risk_per_trade_percent: 1.0
+  max_open_trades: 1
+features:
+  allow_scaling: true
+  allow_split_risk: true
+  allow_weekend_holding: true

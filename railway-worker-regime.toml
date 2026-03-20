@@ -1,0 +1,11 @@
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "Dockerfile"
+
+[deploy]
+startCommand = "bash deploy/railway/start_worker.sh services.worker.regime_recalibration"
+restartPolicyType = "NEVER"
+cronSchedule = "0 2 * * 0"
+
+[env]
+WOLF15_WORKER_ENTRY = "services.worker.regime_recalibration"

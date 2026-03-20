@@ -1,327 +1,374 @@
+"""WOLF 15-LAYER TRADING SYSTEM — Engine Orchestrator.
+
+Slim entrypoint that composes lifecycle modules from startup/ package.
+Each concern lives in its own module:
+
+  startup/candle_seeding.py   — Coldstart warmup (Redis or Finnhub REST)
+  startup/signal_handlers.py  — OS signal handling + shutdown event
+  startup/task_supervisor.py  — Auto-restart supervision for async tasks
+  startup/analysis_loop.py    — Event-driven analysis loop + per-pair executor
+  journal/builders.py         — J1/J2 journal entry construction
+
+Run modes (RUN_MODE env):
+  all          — Engine + ingest + HTTP API (local dev)
+  engine-only  — Pipeline analysis loop only
+  ingest-only  — WebSocket + candle ingest only
+  api-only     — HTTP API only
+"""
+
+from __future__ import annotations
+
 import asyncio
 import os
-import signal
 import sys
-from typing import Optional
+from collections.abc import Coroutine
 
+import uvicorn
 from loguru import logger
+from redis.asyncio import Redis as AsyncRedis
 
-from analysis.synthesis import build_synthesis
-from analysis.synthesis_adapter import adapt_synthesis
-from config_loader import CONFIG
-from constitution.verdict_engine import generate_l12_verdict
-from context.runtime_state import RuntimeState
+from config_loader import CONFIG, get_enabled_symbols
+from core.health_probe import HealthProbe
+from infrastructure.tracing import (
+    instrument_asyncio,
+    instrument_httpx,
+    instrument_redis,
+    instrument_requests,
+    setup_tracer,
+)
+from ingest.calendar_news import CalendarNewsIngestor
 from ingest.candle_builder import CandleBuilder
-from ingest.finnhub_news import FinnhubNews
-from ingest.finnhub_ws import FinnhubWebSocket
-from journal.journal_router import journal_router
-from journal.journal_schema import ContextJournal, DecisionJournal, VerdictType
-from storage.l12_cache import set_verdict
-from storage.snapshot_store import save_snapshot
-from utils.timezone_utils import is_trading_session, now_utc
+from ingest.dependencies import create_finnhub_ws
+from ingest.finnhub_market_news import FinnhubMarketNews
+from ingest.h1_refresh_scheduler import H1RefreshScheduler
+from ingest.rest_poll_fallback import RestPollFallback
+from pipeline import WolfConstitutionalPipeline
+from startup.analysis_loop import analysis_loop
+from startup.candle_seeding import seed_candles_on_startup
+from startup.signal_handlers import install_signal_handlers
+from startup.task_supervisor import supervised_task
+from storage.startup import init_persistent_storage, shutdown_persistent_storage
 
-PAIRS = [p["symbol"] for p in CONFIG["pairs"]["pairs"] if p.get("enabled", True)]
+try:
+    from engines.v11 import V11PipelineHook
 
-# Global flag for graceful shutdown
-_shutdown_event: Optional[asyncio.Event] = None
+    _v11_hook: V11PipelineHook | None = V11PipelineHook()
+except Exception:  # V11 optional — missing = skip
+    _v11_hook = None
+
+PAIRS: list[str] = get_enabled_symbols()
+
+_shutdown_event: asyncio.Event | None = None
+_pipeline = WolfConstitutionalPipeline()
+_engine_tracer = setup_tracer("wolf-engine")
+instrument_asyncio()
+instrument_redis()
+instrument_requests()
+instrument_httpx()
+
+# ── Health probe for container orchestration ────────────────────
+_ENGINE_HEALTH_PORT = int(os.getenv("ENGINE_HEALTH_PORT", "8081"))
+_health_probe = HealthProbe(port=_ENGINE_HEALTH_PORT, service_name="engine")
+_analysis_healthy = False
+
+# ── Run mode configuration ──────────────────────────────────────
+RUN_MODE = os.getenv("RUN_MODE", "all").lower()
 
 
-def _build_j1(pair: str, synthesis: dict) -> ContextJournal:
-    """
-    Build J1 ContextJournal from synthesis data.
+def _engine_readiness() -> bool:
+    """Readiness gate: True once at least one analysis cycle has completed."""
+    return _analysis_healthy
 
-    Args:
-        pair: Trading pair symbol
-        synthesis: Synthesis output from adapt_synthesis
 
-    Returns:
-        ContextJournal instance
-    """
-    # Extract context from synthesis layers
-    layers = synthesis.get("layers", {})
-    bias = synthesis.get("bias", {})
+_health_probe.set_readiness_check(_engine_readiness)
 
-    # Get trading session
-    session = is_trading_session()
 
-    # Build J1
-    return ContextJournal(
-        timestamp=now_utc(),
-        pair=pair,
-        session=session,
-        market_regime=synthesis.get("market_regime", "UNKNOWN"),
-        news_lock=synthesis.get("news_lock", False),
-        context_coherence=layers.get("conf12", 0.5),
-        mta_alignment=synthesis.get("mta_alignment", True),
-        technical_bias=bias.get("technical", "NEUTRAL"),
+async def _run_http_server() -> None:
+    """Run FastAPI HTTP server as an async task inside the main event loop."""
+    port = int(os.environ.get("PORT", "8000"))
+    config = uvicorn.Config(
+        "api_server:app",
+        host="0.0.0.0",
+        port=port,
+        workers=1,
+        log_level="info",
+        ws_per_message_deflate=True,
     )
-
-
-def _build_j2(pair: str, synthesis: dict, l12: dict) -> DecisionJournal:
-    """
-    Build J2 DecisionJournal from synthesis and L12 verdict.
-
-    Args:
-        pair: Trading pair symbol
-        synthesis: Synthesis output from adapt_synthesis
-        l12: L12 verdict output from generate_l12_verdict
-
-    Returns:
-        DecisionJournal instance
-    """
-    scores = synthesis.get("scores", {})
-    layers = synthesis.get("layers", {})
-    gates = l12.get("gates", {})
-
-    # Build setup_id from pair and timestamp
-    timestamp_str = now_utc().strftime("%Y%m%d_%H%M%S")
-    setup_id = f"{pair}_{timestamp_str}"
-
-    # Extract failed gates
-    failed_gates = [
-        gate_name for gate_name, gate_value in gates.items()
-        if gate_name not in ["passed", "total"] and gate_value == "FAIL"
-    ]
-
-    # Determine primary rejection reason
-    primary_rejection_reason = None
-    if l12["verdict"] in [VerdictType.HOLD.value, VerdictType.NO_TRADE.value]:
-        if failed_gates:
-            primary_rejection_reason = f"Failed gates: {', '.join(failed_gates)}"
-        else:
-            primary_rejection_reason = "Constitutional violation"
-
-    # Map verdict string to VerdictType enum
-    verdict_str = l12["verdict"]
-    try:
-        verdict_type = VerdictType(verdict_str)
-    except ValueError:
-        verdict_type = VerdictType.NO_TRADE
-
-    # Build J2
-    return DecisionJournal(
-        timestamp=now_utc(),
-        pair=pair,
-        setup_id=setup_id,
-        wolf_30_score=int(scores.get("wolf_30_point", 0)),
-        f_score=int(scores.get("f_score", 0)),
-        t_score=int(scores.get("t_score", 0)),
-        fta_score=int((scores.get("fta_score") or 0) * 10),  # Convert fta_score from 0-1 scale to 0-10 scale
-        exec_score=int(scores.get("exec_score", 0)),
-        tii_sym=float(layers.get("L8_tii_sym", 0.0)),
-        integrity_index=float(layers.get("L8_integrity_index", 0.0)),
-        monte_carlo_win=float(layers.get("L7_monte_carlo_win", 0.0)),
-        conf12=float(layers.get("conf12", 0.0)),
-        verdict=verdict_type,
-        confidence=l12.get("confidence", "LOW"),
-        wolf_status=l12.get("wolf_status", "NO_HUNT"),
-        gates_passed=gates.get("passed", 0),
-        gates_total=gates.get("total", 9),
-        failed_gates=failed_gates,
-        violations=[],  # Would be populated if available in L12
-        primary_rejection_reason=primary_rejection_reason,
-    )
+    server = uvicorn.Server(config)
+    await server.serve()
 
 
 def _validate_api_key() -> bool:
-    """
-    Validate Finnhub API key on startup.
+    from ingest.finnhub_key_manager import finnhub_keys  # noqa: PLC0415
 
-    Returns:
-        bool: True if API key is valid, False otherwise
-    """
-    api_key = os.getenv("FINNHUB_API_KEY", "")
-
-    if not api_key or api_key == "YOUR_FINNHUB_API_KEY":
-        logger.warning(
-            "╔════════════════════════════════════════════════════════════╗\n"
-            "║  WARNING: FINNHUB_API_KEY not configured                 ║\n"
-            "║  System running in DRY RUN mode                           ║\n"
-            "║  No live data feed available                              ║\n"
-            "║  Set FINNHUB_API_KEY environment variable for live data  ║\n"
-            "╚════════════════════════════════════════════════════════════╝"
-        )
+    if not finnhub_keys.available:
+        logger.warning("WARNING: FINNHUB_API_KEY not configured; running in DRY RUN mode.")
         return False
-
-    logger.info("✓ FINNHUB_API_KEY validated")
+    logger.info("FINNHUB_API_KEY validated ({} key(s) loaded)", finnhub_keys.key_count)
     return True
 
 
-async def run_ingest_services(
-    has_api_key: bool,
-) -> None:
-    """
-    Run data ingestion services concurrently.
-
-    Args:
-        has_api_key: Whether a valid Finnhub API key is configured
-    """
+async def run_ingest_services(has_api_key: bool, redis: AsyncRedis) -> None:
+    """Run ingestion tasks concurrently in local mode."""
     if not has_api_key:
         logger.info("Skipping ingest services - no API key configured")
-        # Keep task alive but don't do anything
-        while True:
-            if _shutdown_event and _shutdown_event.is_set():
-                break
+        while not (_shutdown_event and _shutdown_event.is_set()):  # noqa: ASYNC110
             await asyncio.sleep(1)
         return
 
-    ws_feed = FinnhubWebSocket()
-    news_feed = FinnhubNews()
-    candle_builder = CandleBuilder()
-
-    logger.info("Starting ingest services: WebSocket, News, CandleBuilder")
-
-    # Run all three services concurrently
-    await asyncio.gather(
-        ws_feed.run(),
-        news_feed.run(),
-        candle_builder.run(),
+    ws_feed = await create_finnhub_ws(redis=redis)
+    rest_poll = RestPollFallback(
+        ws_connected_fn=lambda: ws_feed.is_connected if ws_feed else False,
+        symbols=PAIRS,
+        redis_client=redis,
     )
+    news_feed = CalendarNewsIngestor(redis_client=redis)
+    market_news = FinnhubMarketNews()
+    h1_refresh = H1RefreshScheduler(redis_client=redis)
+
+    default_timeframe = CONFIG["settings"].get("default_timeframe", "1h")
+    candle_builders = [CandleBuilder(symbol=pair, timeframe=default_timeframe) for pair in PAIRS]
+
+    logger.info(
+        "Starting ingest services: WebSocket, RestPollFallback, CalendarNews, "
+        "MarketNews, CandleBuilder, H1Refresh"
+    )
+    try:
+        cb_coros: list[Coroutine[object, object, object]] = [cb.run() for cb in candle_builders]  # pyright: ignore[reportAttributeAccessIssue]
+        await asyncio.gather(
+            ws_feed.run(),
+            rest_poll.run(),
+            news_feed.run(),
+            market_news.run(),
+            h1_refresh.run(),
+            *cb_coros,
+        )
+    except asyncio.CancelledError:
+        logger.info("Ingest services cancelled - shutting down")
+        raise
+    finally:
+        await ws_feed.stop()
+        await rest_poll.stop()
+        await redis.aclose()
+        logger.info("Ingest services cleanup complete")
+
+
+async def _sanitize_redis_keys(redis_client: AsyncRedis) -> None:
+    """Delete keys whose Redis type conflicts with what writers/consumers expect."""
+
+    def _normalize_redis_type(value: bytes | str) -> str:
+        if isinstance(value, bytes | bytearray):
+            return value.decode().lower()
+        return str(value).lower()
+
+    keys_expected: dict[str, str] = {
+        "wolf15:tick:*": "stream",
+        "wolf15:latest_tick:*": "hash",
+        "wolf15:candle:*": "hash",
+        "wolf15:candle_history:*": "list",
+        "candle_history:*": "list",
+    }
+
+    total_deleted = 0
+    mismatch_diagnostic_logged = False
+    for pattern, expected_type in keys_expected.items():
+        try:
+            keys: list[bytes | str] = await redis_client.keys(pattern)
+        except Exception as exc:
+            logger.warning("[Redis-sanitize] KEYS {} failed: {}", pattern, exc)
+            continue
+
+        for key in keys:
+            key_str = key if isinstance(key, str) else key.decode()
+            try:
+                actual_type_raw: bytes | str = await redis_client.type(key_str)
+            except Exception as exc:
+                logger.warning("[Redis-sanitize] TYPE {} failed: {}", key_str, exc)
+                continue
+
+            actual_type = _normalize_redis_type(actual_type_raw)
+
+            if actual_type == "none":
+                continue
+            if actual_type == expected_type:
+                continue
+
+            if not mismatch_diagnostic_logged:
+                logger.warning(
+                    "[Redis-sanitize] Mismatch diagnostic (one-time): key='{}' raw_type={!r} normalized_type={} expected_type={}",
+                    key_str,
+                    actual_type_raw,
+                    actual_type,
+                    expected_type,
+                )
+                mismatch_diagnostic_logged = True
+
+            logger.warning(
+                "[Redis-sanitize] Key '{}' type mismatch: expected={}, actual={} → deleting",
+                key_str,
+                expected_type,
+                actual_type,
+            )
+            try:
+                await redis_client.delete(key_str)
+                total_deleted += 1
+            except Exception as exc:
+                logger.error("[Redis-sanitize] Failed to delete '{}': {}", key_str, exc)
+
+    if total_deleted:
+        logger.info("[Redis-sanitize] Cleaned {} conflicting key(s)", total_deleted)
+    else:
+        logger.debug("[Redis-sanitize] No type conflicts found")
 
 
 async def run_redis_consumer() -> None:
-    """
-    Run RedisConsumer for CONTEXT_MODE=redis.
+    """Run RedisConsumer when CONTEXT_MODE=redis."""
+    from context.redis_consumer import RedisConsumer  # noqa: PLC0415
+    from infrastructure.redis_url import get_redis_url  # noqa: PLC0415
 
-    This consumes ticks/candles from Redis that were published by a
-    separate ingest container.
-    """
+    redis_url = get_redis_url()
+    redis_client: AsyncRedis = AsyncRedis.from_url(redis_url)
+
+    await _sanitize_redis_keys(redis_client)
+
+    redis_consumer = RedisConsumer(symbols=PAIRS, redis_client=redis_client)
+    logger.info("Starting RedisConsumer...")
+    await redis_consumer.run()
+
+
+async def _run_analysis_loop() -> None:
+    """Wrapper that bridges the analysis loop to the engine health state."""
+    global _analysis_healthy
+    _ready_event = asyncio.Event()
+
+    async def _monitor_readiness() -> None:
+        global _analysis_healthy
+        await _ready_event.wait()
+        _analysis_healthy = True
+
+    monitor = asyncio.create_task(_monitor_readiness())
     try:
-        from context.redis_consumer import RedisConsumer
-
-        redis_consumer = RedisConsumer(symbols=PAIRS)
-        logger.info("Starting RedisConsumer...")
-        await redis_consumer.start()
-
-    except Exception as exc:
-        logger.error(
-            f"Failed to start RedisConsumer: {exc}. "
-            "Continuing without Redis consumer."
+        await analysis_loop(
+            pairs=PAIRS,
+            pipeline=_pipeline,
+            shutdown_event=_shutdown_event,
+            on_first_cycle=_ready_event,
         )
-        # Keep task alive so main doesn't exit
-        while True:
-            if _shutdown_event and _shutdown_event.is_set():
-                break
-            await asyncio.sleep(1)
-
-
-async def analysis_loop() -> None:
-    """
-    Main analysis loop (async version).
-
-    Reads from LiveContextBus and runs L1-L12 analysis pipeline.
-    """
-    loop_interval = CONFIG["settings"].get("loop_interval_sec", 60)
-
-    logger.info(f"Analysis loop started (interval={loop_interval}s)")
-
-    while True:
-        if _shutdown_event and _shutdown_event.is_set():
-            logger.info("Analysis loop shutting down...")
-            break
-
-        for pair in PAIRS:
-            try:
-                # 1. Build analysis (L1-L11)
-                raw_synthesis = build_synthesis(pair)
-
-                # 2. Adapt contract
-                synthesis = adapt_synthesis(raw_synthesis)
-
-                # 3. Inject latency
-                synthesis["system"]["latency_ms"] = RuntimeState.latency_ms
-
-                # === JOURNAL J1: Record context (BEFORE L12) ===
-                try:
-                    j1 = _build_j1(pair, synthesis)
-                    journal_router.record_context(j1)
-                except Exception as journal_exc:
-                    logger.error(f"J1 journal failed for {pair}: {journal_exc}")
-                    # Continue execution — journal failures must not break trading loop
-
-                # 4. L12 verdict
-                l12 = generate_l12_verdict(synthesis)
-
-                # === JOURNAL J2: Record decision (AFTER L12) ===
-                try:
-                    j2 = _build_j2(pair, synthesis, l12)
-                    journal_router.record_decision(j2)
-                except Exception as journal_exc:
-                    logger.error(f"J2 journal failed for {pair}: {journal_exc}")
-                    # Continue execution — journal failures must not break trading loop
-
-                # 5. Cache verdict for EA
-                set_verdict(pair, l12)
-
-                # 6. Snapshot L14
-                save_snapshot(pair, l12)
-
-                logger.debug(f"[L12] {pair} → {l12['verdict']}")
-
-            except Exception as e:
-                logger.error(f"[ERROR] {pair} | {e}")
-
-        await asyncio.sleep(loop_interval)
-
-
-def _signal_handler(signum: int, frame) -> None:
-    """Handle shutdown signals."""
-    logger.info(f"Received signal {signum}, initiating graceful shutdown...")
-    if _shutdown_event:
-        _shutdown_event.set()
+    finally:
+        monitor.cancel()
 
 
 async def main() -> None:
-    """
-    Main async orchestrator.
-
-    Runs ingest services and analysis loop concurrently.
-    Supports both local mode (with Finnhub ingestion) and redis mode
-    (with RedisConsumer).
-    """
     global _shutdown_event
     _shutdown_event = asyncio.Event()
 
-    # Register signal handlers
-    signal.signal(signal.SIGINT, _signal_handler)
-    signal.signal(signal.SIGTERM, _signal_handler)
+    logger.remove()
+    logger.add(
+        sys.stdout,
+        format=(
+            "<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level: <8}</level> | "
+            "<cyan>{name}</cyan>:<cyan>{function}</cyan> - <level>{message}</level>"
+        ),
+        level="INFO",
+        filter=lambda record: record["level"].no < 40,
+    )
+    logger.add(
+        sys.stderr,
+        format=(
+            "<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level: <8}</level> | "
+            "<cyan>{name}</cyan>:<cyan>{function}</cyan> - <level>{message}</level>"
+        ),
+        level="ERROR",
+    )
 
-    logger.info("═" * 60)
-    logger.info("WOLF 15-LAYER TRADING SYSTEM v7.4r∞")
-    logger.info("═" * 60)
+    install_signal_handlers(_shutdown_event)
 
-    # Validate API key
+    logger.info("=" * 60)
+    logger.info("WOLF 15-LAYER TRADING SYSTEM")
+    logger.info("=" * 60)
+
     has_api_key = _validate_api_key()
-
-    # Check context mode
     context_mode = os.getenv("CONTEXT_MODE", "local").lower()
-    logger.info(f"Context mode: {context_mode.upper()}")
+    logger.info(f"Context mode: {context_mode.upper()} | Run mode: {RUN_MODE.upper()}")
 
-    # Create tasks based on mode
-    tasks = []
+    # ── Health probe FIRST so orchestrators see liveness immediately ─
+    tasks: list[asyncio.Task[object]] = [
+        asyncio.create_task(_health_probe.start(), name="HealthProbe"),
+    ]
+
+    await init_persistent_storage()
+
+    # ── Seed candles BEFORE analysis loop starts ────────────────────
+    if RUN_MODE in ("all", "engine-only"):
+        try:
+            await seed_candles_on_startup(PAIRS, WolfConstitutionalPipeline.WARMUP_MIN_BARS)
+        except Exception as exc:
+            logger.error(f"[SEED] Candle seeding failed (non-fatal): {exc}")
+
+    # ── HTTP server (only in all/api-only mode) ─────────────────────
+    if RUN_MODE in ("all", "api-only"):
+        tasks.append(
+            asyncio.create_task(
+                supervised_task("HTTPServer", _run_http_server, _shutdown_event, _health_probe),
+                name="HTTPServer",
+            )
+        )
 
     if context_mode == "redis":
-        # Redis mode: Run RedisConsumer + analysis loop
-        logger.info("Redis mode: Starting RedisConsumer + analysis loop")
-        tasks = [
-            asyncio.create_task(run_redis_consumer(), name="RedisConsumer"),
-            asyncio.create_task(analysis_loop(), name="AnalysisLoop"),
-        ]
+        if RUN_MODE in ("all", "engine-only"):
+            tasks.append(
+                asyncio.create_task(
+                    supervised_task("RedisConsumer", run_redis_consumer, _shutdown_event, _health_probe),
+                    name="RedisConsumer",
+                )
+            )
+            tasks.append(
+                asyncio.create_task(
+                    supervised_task("AnalysisLoop", _run_analysis_loop, _shutdown_event, _health_probe),
+                    name="AnalysisLoop",
+                )
+            )
+            if RUN_MODE == "engine-only":
+                logger.info("RUN_MODE=engine-only — skipping ingest services")
     else:
-        # Local mode: Run ingest services + analysis loop
-        logger.info("Local mode: Starting ingest services + analysis loop")
-        tasks = [
-            asyncio.create_task(
-                run_ingest_services(has_api_key),
-                name="IngestServices",
-            ),
-            asyncio.create_task(analysis_loop(), name="AnalysisLoop"),
-        ]
+        if RUN_MODE in ("all", "ingest-only"):
+            from infrastructure.redis_url import get_redis_url
+
+            redis_url = get_redis_url()
+            redis_client: AsyncRedis = AsyncRedis.from_url(redis_url)
+            tasks.append(
+                asyncio.create_task(
+                    supervised_task(
+                        "IngestServices",
+                        lambda: run_ingest_services(has_api_key, redis_client),
+                        _shutdown_event,
+                        _health_probe,
+                    ),
+                    name="IngestServices",
+                )
+            )
+        if RUN_MODE in ("all", "engine-only"):
+            tasks.append(
+                asyncio.create_task(
+                    supervised_task("AnalysisLoop", _run_analysis_loop, _shutdown_event, _health_probe),
+                    name="AnalysisLoop",
+                )
+            )
+
+        if RUN_MODE == "all":
+            logger.warning(
+                "Running ingest + engine in ONE process (dev mode). "
+                "Use separate containers or RUN_MODE=engine-only|ingest-only for production."
+            )
+
+    if RUN_MODE == "engine-only":
+        logger.info("RUN_MODE=engine-only — HTTP API is disabled by design")
+    elif RUN_MODE == "ingest-only":
+        logger.info("RUN_MODE=ingest-only — HTTP API is disabled by design")
 
     logger.info(f"System initialized. Running {len(tasks)} concurrent tasks.")
 
     try:
-        # Run all tasks concurrently
         await asyncio.gather(*tasks)
     except asyncio.CancelledError:
         logger.info("Tasks cancelled, shutting down...")
@@ -329,6 +376,8 @@ async def main() -> None:
         logger.error(f"Fatal error: {exc}")
         raise
     finally:
+        await _health_probe.stop()
+        await shutdown_persistent_storage()
         logger.info("System shutdown complete.")
 
 
