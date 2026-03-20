@@ -22,11 +22,18 @@ from analysis.latency_tracker import LatencyTracker
 from analysis.reflex_rqi import compute_rqi
 from config_loader import CONFIG
 from core.event_bus import Event, EventType, get_event_bus
-from core.metrics import VERDICT_PATH_EVENT_TOTAL
+from core.metrics import (
+    ENGINE_HEARTBEAT_AGE_SECONDS,
+    ENGINE_HEARTBEAT_READY,
+    INGEST_HEARTBEAT_AGE_SECONDS,
+    INGEST_HEARTBEAT_READY,
+    VERDICT_PATH_EVENT_TOTAL,
+)
 from infrastructure.tracing import setup_tracer
 from journal.builders import build_j1, build_j2
 from pipeline import WolfConstitutionalPipeline
-from state.redis_keys import HEARTBEAT_ENGINE
+from state.heartbeat_classifier import HeartbeatState, classify_heartbeat
+from state.redis_keys import HEARTBEAT_ENGINE, HEARTBEAT_INGEST
 from storage.l12_cache import set_verdict
 
 __all__ = ["analysis_loop"]
@@ -235,10 +242,47 @@ async def _analyze_pair(
             return None
 
 
+_INGEST_HEARTBEAT_MAX_AGE_SEC = float(os.getenv("HEARTBEAT_INGEST_MAX_AGE_SEC", "30"))
+_INGEST_HEARTBEAT_LOG_INTERVAL_SEC = 60.0  # rate-limit repeated warnings
+_last_ingest_heartbeat_log_ts: float = 0.0
+
+
+def _check_ingest_heartbeat(redis_client: Any) -> None:
+    """Read the ingest heartbeat from Redis and update metrics/logging.
+
+    Uses the sync Redis client already available in the engine heartbeat loop.
+    """
+    global _last_ingest_heartbeat_log_ts  # noqa: PLW0603
+
+    try:
+        raw = redis_client.get(HEARTBEAT_INGEST)
+    except Exception as exc:
+        logger.debug("[EngineHeartbeat] Failed to read ingest heartbeat: {}", exc)
+        INGEST_HEARTBEAT_READY.set(0.0)
+        return
+
+    status = classify_heartbeat(raw, _INGEST_HEARTBEAT_MAX_AGE_SEC, service="ingest")
+
+    if status.age_seconds is not None:
+        INGEST_HEARTBEAT_AGE_SECONDS.set(status.age_seconds)
+    INGEST_HEARTBEAT_READY.set(1.0 if status.state == HeartbeatState.ALIVE else 0.0)
+
+    now = time.time()
+    if status.state != HeartbeatState.ALIVE:
+        if (now - _last_ingest_heartbeat_log_ts) >= _INGEST_HEARTBEAT_LOG_INTERVAL_SEC:
+            _last_ingest_heartbeat_log_ts = now
+            logger.warning(
+                "[EngineHeartbeat] Ingest heartbeat {} | age={}s producer={}",
+                status.state.value,
+                status.age_seconds,
+                status.producer,
+            )
+
+
 async def _engine_heartbeat_loop(
     shutdown_event: asyncio.Event | None = None,
 ) -> None:
-    """Publish engine heartbeat to Redis so dashboard/readyz can detect stalled analysis."""
+    """Publish engine heartbeat and consume ingest heartbeat for cross-service health."""
     import orjson  # noqa: PLC0415
 
     _redis_client = None
@@ -254,8 +298,14 @@ async def _engine_heartbeat_loop(
         try:
             payload = orjson.dumps({"producer": "engine_analysis", "ts": time.time()}).decode("utf-8")
             _redis_client.set(HEARTBEAT_ENGINE, payload)
+            ENGINE_HEARTBEAT_AGE_SECONDS.set(0.0)
+            ENGINE_HEARTBEAT_READY.set(1.0)
         except Exception as exc:
             logger.debug("[EngineHeartbeat] Failed to write heartbeat: {}", exc)
+
+        # Consume ingest heartbeat — detect no-producer independently of transport
+        _check_ingest_heartbeat(_redis_client)
+
         await asyncio.sleep(_ENGINE_HEARTBEAT_INTERVAL_SEC)
 
 

@@ -21,6 +21,10 @@ from fastapi.responses import PlainTextResponse
 
 from core.metrics import (
     ACTIVE_PAIRS,
+    ENGINE_HEARTBEAT_AGE_SECONDS,
+    ENGINE_HEARTBEAT_READY,
+    INGEST_HEARTBEAT_AGE_SECONDS,
+    INGEST_HEARTBEAT_READY,
     ORCHESTRATOR_HEARTBEAT_AGE_SECONDS,
     ORCHESTRATOR_MODE,
     ORCHESTRATOR_READY,
@@ -111,6 +115,28 @@ async def _refresh_orchestrator_gauges() -> None:
         ORCHESTRATOR_MODE.labels(mode=m).set(1.0 if mode == m else 0.0)
 
 
+async def _refresh_heartbeat_gauges() -> None:
+    """Pull ingest + engine heartbeat ages from Redis into Prometheus gauges."""
+    try:
+        from state.heartbeat_classifier import HeartbeatState, read_all_heartbeats  # noqa: PLC0415
+
+        redis = await get_async_redis()
+        statuses = await read_all_heartbeats(redis)
+    except Exception:
+        logger.debug("Heartbeat metrics refresh skipped (read failed)", exc_info=True)
+        return
+
+    for svc_name, status in statuses.items():
+        if svc_name == "ingest":
+            if status.age_seconds is not None:
+                INGEST_HEARTBEAT_AGE_SECONDS.set(status.age_seconds)
+            INGEST_HEARTBEAT_READY.set(1.0 if status.state == HeartbeatState.ALIVE else 0.0)
+        elif svc_name == "engine":
+            if status.age_seconds is not None:
+                ENGINE_HEARTBEAT_AGE_SECONDS.set(status.age_seconds)
+            ENGINE_HEARTBEAT_READY.set(1.0 if status.state == HeartbeatState.ALIVE else 0.0)
+
+
 @router.get(
     "/metrics",
     response_class=PlainTextResponse,
@@ -126,6 +152,7 @@ async def prometheus_metrics() -> PlainTextResponse:
     """Expose all registered metrics in Prometheus text format."""
     _refresh_runtime_gauges()
     await _refresh_orchestrator_gauges()
+    await _refresh_heartbeat_gauges()
     payload = get_registry().exposition()
     return PlainTextResponse(content=payload, media_type=_CONTENT_TYPE)
 
@@ -145,6 +172,7 @@ async def metrics_slo(
     """Return SLO status derived from in-process metrics registry."""
     _refresh_runtime_gauges()
     await _refresh_orchestrator_gauges()
+    await _refresh_heartbeat_gauges()
     status = evaluate_latency_slo(
         latency_threshold_ms=latency_threshold_ms,
         min_samples=min_samples,

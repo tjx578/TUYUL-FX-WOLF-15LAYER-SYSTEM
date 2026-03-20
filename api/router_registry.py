@@ -73,6 +73,8 @@ ROUTER_ENTRIES: list[RouterEntry] = [
     RouterEntry("api.redis_health_routes", "router", "Redis observability + diagnostics"),
     # Aggregated fleet health (peer probes)
     RouterEntry("api.system_health_routes", "router", "Aggregated fleet health"),
+    # Heartbeat status (ingest/engine producer heartbeat ages)
+    RouterEntry("api.heartbeat_routes", "router", "Heartbeat status"),
     # Orchestrator governance state (read-only)
     RouterEntry("api.orchestrator_routes", "router", "Orchestrator governance state"),
     # Settings governance (read/write/rollback/audit) — P1-8

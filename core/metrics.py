@@ -757,6 +757,21 @@ INGEST_HEARTBEAT_AGE_SECONDS = _R.gauge(
     "Seconds since last ingest producer heartbeat",
 )
 
+INGEST_HEARTBEAT_READY = _R.gauge(
+    "wolf_ingest_heartbeat_ready",
+    "Ingest producer heartbeat readiness (1=alive, 0=stale/missing)",
+)
+
+ENGINE_HEARTBEAT_AGE_SECONDS = _R.gauge(
+    "wolf_engine_heartbeat_age_seconds",
+    "Seconds since last engine analysis heartbeat",
+)
+
+ENGINE_HEARTBEAT_READY = _R.gauge(
+    "wolf_engine_heartbeat_ready",
+    "Engine heartbeat readiness (1=alive, 0=stale/missing)",
+)
+
 INGEST_FRESH_PAIRS = _R.gauge(
     "wolf_ingest_fresh_pairs",
     "Number of symbols with fresh ticks in ingest service",
