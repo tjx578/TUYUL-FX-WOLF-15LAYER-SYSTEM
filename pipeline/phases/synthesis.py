@@ -98,6 +98,21 @@ def build_l12_synthesis(
 
     vix_regime_state = layer_results.get("macro_vix_state", {}).get("regime_state", 1)
 
+    # -- Regime detection for downstream threshold adaptation --
+    _atr_current = layer_results.get("L3", {}).get("atr", 0.0)
+    _atr_mean_20 = layer_results.get("L3", {}).get("atr_mean_20", 0.0)
+    _regime_type: str = "NORMAL_VOL"
+    _atr_ratio: float = 1.0
+    if _atr_current > 0 and _atr_mean_20 > 0:
+        try:
+            from analysis.volatility_regime_engine import (  # noqa: PLC0415
+                calculate_atr_expansion_ratio,
+                detect_volatility_regime,
+            )
+            _atr_ratio = calculate_atr_expansion_ratio(_atr_current, _atr_mean_20)
+            _regime_type = detect_volatility_regime(_atr_ratio)
+        except Exception:  # noqa: BLE001
+            pass
     # Derive volatility regime from L1's volatility_level (ATR-based)
     l1_vol_level = str(layer_results.get("L1", {}).get("volatility_level", "NORMAL")).upper()
     volatility_regime = _VOL_LEVEL_TO_REGIME.get(l1_vol_level, "NORMAL_VOL")
@@ -247,5 +262,9 @@ def build_l12_synthesis(
     inference = layer_results.get("inference", {})
     if inference:
         synthesis["inference"] = inference
+
+    # Regime metadata for downstream threshold adaptation
+    synthesis["regime_type"] = _regime_type
+    synthesis["atr_ratio"] = _atr_ratio
 
     return synthesis
