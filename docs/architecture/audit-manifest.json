@@ -1,0 +1,401 @@
+{
+  "version": "1.0",
+  "generated_at": "2026-03-20",
+  "source": "docs/architecture/",
+  "description": "Canonical machine-readable index of all production-truth architecture documents for TUYUL-FX Wolf-15 Layer System.",
+  "domains": [
+    {
+      "id": "core",
+      "label": "Core Architecture",
+      "description": "System topology, service composition, and end-to-end data flow."
+    },
+    {
+      "id": "governance",
+      "label": "Governance",
+      "description": "Authority boundaries, config authority, lock enforcement, and stale-data guardrails."
+    },
+    {
+      "id": "execution",
+      "label": "Execution & Contracts",
+      "description": "Execution feedback loop, cross-service contracts, and event acceptance specifications."
+    },
+    {
+      "id": "risk",
+      "label": "Risk",
+      "description": "Risk stack layers, runtime risk monitoring, and risk management summary."
+    },
+    {
+      "id": "deployment",
+      "label": "Deployment & Infrastructure",
+      "description": "Railway deployment topology, Docker, Redis, and production infrastructure."
+    },
+    {
+      "id": "operations",
+      "label": "Operations",
+      "description": "Go-live checklists, deploy order, observability, forensic replay, and async worker monitoring."
+    },
+    {
+      "id": "components",
+      "label": "Components & Integrations",
+      "description": "Engine DAG architecture, system components, guardrails, and integration specifications."
+    },
+    {
+      "id": "backlog",
+      "label": "Migration Backlog",
+      "description": "Official execution backlogs (P0/P1/P2) and repo migration plan."
+    }
+  ],
+  "docs": [
+    {
+      "id": "overview",
+      "title": "TUYUL-FX Architecture Overview",
+      "path": "docs/architecture/overview.md",
+      "domain": "core",
+      "description": "Entrypoint for the architecture documentation. Maps each doc to its intended use, defines the canonical reading order, and provides RCA routing guidance.",
+      "status": "canonical",
+      "last_updated": "2026-03-18"
+    },
+    {
+      "id": "system-overview",
+      "title": "System Overview",
+      "path": "docs/architecture/system-overview.md",
+      "domain": "core",
+      "description": "End-to-end explanation of how the full system is separated into authorities so that analysis, governance, execution, and operator visibility do not collapse into one unsafe surface.",
+      "status": "canonical",
+      "last_updated": "2026-03-18"
+    },
+    {
+      "id": "data-flow",
+      "title": "Data Flow",
+      "path": "docs/architecture/data-flow.md",
+      "domain": "core",
+      "description": "Canonical taxonomy entry for production data path. Primary reference remains data-flow-final.md.",
+      "status": "canonical",
+      "last_updated": "2026-03-18"
+    },
+    {
+      "id": "data-flow-final",
+      "title": "Final Data Flow Architecture",
+      "path": "docs/architecture/data-flow-final.md",
+      "domain": "core",
+      "description": "End-to-end realtime data flow: ingest authority, durability, freshness governance, and dashboard transport. Use first when asking: how does data move through the system?",
+      "status": "canonical",
+      "last_updated": "2026-03-19"
+    },
+    {
+      "id": "topology",
+      "title": "Topology",
+      "path": "docs/architecture/topology.md",
+      "domain": "core",
+      "description": "Runtime service topology from providers through ingest, Redis fanout, engine, API, and EA bridge.",
+      "status": "canonical",
+      "last_updated": "2026-03-18"
+    },
+    {
+      "id": "authority-boundaries",
+      "title": "Authority Boundaries",
+      "path": "docs/architecture/authority-boundaries.md",
+      "domain": "governance",
+      "description": "Defines which layer may observe, validate, constrain, decide, or execute. Use when asking: who is allowed to do what?",
+      "status": "canonical",
+      "last_updated": "2026-03-18"
+    },
+    {
+      "id": "config-governance",
+      "title": "Config Governance",
+      "path": "docs/architecture/config-governance.md",
+      "domain": "governance",
+      "description": "How a proposed change becomes an approved and auditable production change instead of an undocumented tweak.",
+      "status": "canonical",
+      "last_updated": "2026-03-18"
+    },
+    {
+      "id": "config-resolver",
+      "title": "Config Resolver",
+      "path": "docs/architecture/config-resolver.md",
+      "domain": "governance",
+      "description": "Proposed canonical contract for config authority: how configuration becomes effective runtime truth with deterministic precedence rules.",
+      "status": "canonical",
+      "last_updated": "2026-03-18"
+    },
+    {
+      "id": "lock-enforcement",
+      "title": "Lock Enforcement",
+      "path": "docs/architecture/lock-enforcement.md",
+      "domain": "governance",
+      "description": "Layer that prevents unsafe mutation of constitutional thresholds, risk ceilings, execution mode restrictions, and provider failover policy.",
+      "status": "canonical",
+      "last_updated": "2026-03-18"
+    },
+    {
+      "id": "stale-data-guardrails",
+      "title": "Stale Data Guardrails",
+      "path": "docs/architecture/stale-data-guardrails.md",
+      "domain": "governance",
+      "description": "Freshness classification, stale-state handling, anti-zombie safeguards, and no-trade enforcement under degraded data conditions.",
+      "status": "canonical",
+      "last_updated": "2026-03-18"
+    },
+    {
+      "id": "governance-final-system-review",
+      "title": "Final System Review",
+      "path": "docs/architecture/governance/final-system-review.md",
+      "domain": "governance",
+      "description": "Final locked review of the Wolf 15-layer system. Constitutional architecture, L12 sole authority confirmation, and live-ready status.",
+      "status": "canonical",
+      "last_updated": "2026-03-18"
+    },
+    {
+      "id": "execution-feedback-loop",
+      "title": "Execution Feedback Loop",
+      "path": "docs/architecture/execution-feedback-loop.md",
+      "domain": "execution",
+      "description": "Closed loop from verdict to intent to broker response to exposure truth: order intent flow, acknowledgements, idempotency, and post-verdict risk synchronisation.",
+      "status": "canonical",
+      "last_updated": "2026-03-18"
+    },
+    {
+      "id": "service-contracts",
+      "title": "Service Contracts",
+      "path": "docs/architecture/service-contracts.md",
+      "domain": "execution",
+      "description": "Cross-service contracts, ownership boundaries, input/output expectations, event/state truth, retry rules, and forbidden service behaviour.",
+      "status": "canonical",
+      "last_updated": "2026-03-18"
+    },
+    {
+      "id": "contracts-canonical-metrics",
+      "title": "P0 Canonical Metrics",
+      "path": "docs/architecture/contracts/canonical-metrics.md",
+      "domain": "execution",
+      "description": "Canonical metric sources for Wolf discipline, TII formula, cockpit synthesis metadata, and test coverage targets.",
+      "status": "canonical",
+      "last_updated": "2026-03-16"
+    },
+    {
+      "id": "contracts-api-event-acceptance",
+      "title": "Operational API Event Acceptance Spec",
+      "path": "docs/architecture/contracts/operational-api-event-acceptance-spec.md",
+      "domain": "execution",
+      "description": "Acceptance specification for operational API events: which events the API accepts, validates, and forwards.",
+      "status": "canonical",
+      "last_updated": "2026-03-18"
+    },
+    {
+      "id": "contracts-outbox-admin-api",
+      "title": "Outbox Admin API",
+      "path": "docs/architecture/contracts/outbox-admin-api.md",
+      "domain": "execution",
+      "description": "Admin API surface for outbox event management: replay, drain, and visibility endpoints.",
+      "status": "canonical",
+      "last_updated": "2026-03-18"
+    },
+    {
+      "id": "contracts-layer-output-template",
+      "title": "Wolf-15 Layer Output Template",
+      "path": "docs/architecture/contracts/wolf-15-layer-output-template-v7.4r∞.md",
+      "domain": "execution",
+      "description": "Canonical output template for all 15 Wolf analysis layers. Defines the shape each layer must produce.",
+      "status": "canonical",
+      "last_updated": "2026-03-18"
+    },
+    {
+      "id": "contracts-l14-schema-mapping",
+      "title": "Wolf-15 Layer Output to L14 Schema Mapping",
+      "path": "docs/architecture/contracts/wolf-15-layer-output-to-l14-schema-mapping.md",
+      "domain": "execution",
+      "description": "Mapping between Wolf-15 layer outputs and the L14 adaptive learning schema.",
+      "status": "canonical",
+      "last_updated": "2026-03-18"
+    },
+    {
+      "id": "risk-stack",
+      "title": "Risk Stack",
+      "path": "docs/architecture/risk-stack.md",
+      "domain": "risk",
+      "description": "Stacked risk control system: market quality risk, analytical risk, execution risk, and prop firm compliance layers.",
+      "status": "canonical",
+      "last_updated": "2026-03-18"
+    },
+    {
+      "id": "risk-monitor",
+      "title": "Risk Monitor",
+      "path": "docs/architecture/risk-monitor.md",
+      "domain": "risk",
+      "description": "Operator-facing and machine-readable surface tracking feed freshness, warmup completeness, drawdown, lock violations, and open execution risks.",
+      "status": "canonical",
+      "last_updated": "2026-03-18"
+    },
+    {
+      "id": "risk-management-summary",
+      "title": "Risk Management Summary",
+      "path": "docs/architecture/risk/risk-management-summary.md",
+      "domain": "risk",
+      "description": "Comprehensive summary of risk management strategy, prop firm guardrails, and circuit breaker logic.",
+      "status": "canonical",
+      "last_updated": "2026-03-18"
+    },
+    {
+      "id": "deployment-railway",
+      "title": "Deployment on Railway",
+      "path": "docs/architecture/deployment-railway.md",
+      "domain": "deployment",
+      "description": "Canonical deployment summary for Railway: core services, probes, readiness gates, and environment configuration.",
+      "status": "canonical",
+      "last_updated": "2026-03-18"
+    },
+    {
+      "id": "deployment-topology-final",
+      "title": "Deployment Topology Final",
+      "path": "docs/architecture/deployment-topology-final.md",
+      "domain": "deployment",
+      "description": "Final production deployment topology: service roles, Railway service map, observability endpoints, and governance surface.",
+      "status": "canonical",
+      "last_updated": "2026-03-18"
+    },
+    {
+      "id": "infrastructure-deployment-baseline",
+      "title": "Deployment Topology Baseline",
+      "path": "docs/architecture/infrastructure/deployment-baseline.md",
+      "domain": "deployment",
+      "description": "Production architecture diagram and service boundary reference for Railway deployment.",
+      "status": "canonical",
+      "last_updated": "2026-03-18"
+    },
+    {
+      "id": "infrastructure-docker",
+      "title": "Docker",
+      "path": "docs/architecture/infrastructure/docker.md",
+      "domain": "deployment",
+      "description": "Docker build strategy, multi-stage configuration, and container runtime requirements.",
+      "status": "canonical",
+      "last_updated": "2026-03-18"
+    },
+    {
+      "id": "infrastructure-redis",
+      "title": "Redis Deployment",
+      "path": "docs/architecture/infrastructure/redis-deployment.md",
+      "domain": "deployment",
+      "description": "Redis deployment configuration, stream/key namespace conventions, and operational constraints.",
+      "status": "canonical",
+      "last_updated": "2026-03-18"
+    },
+    {
+      "id": "operations-go-live-checklist",
+      "title": "Go-Live Checklist",
+      "path": "docs/architecture/operations/go-live-checklist.md",
+      "domain": "operations",
+      "description": "Production go-live checklist for Vercel + Railway deployment: environment, routing, EA bridge, and readiness verification.",
+      "status": "canonical",
+      "last_updated": "2026-03-18"
+    },
+    {
+      "id": "operations-go-live-prop-firm",
+      "title": "Go-Live Checklist (Prop Firm)",
+      "path": "docs/architecture/operations/go-live-checklist-prop-firm.md",
+      "domain": "operations",
+      "description": "Prop firm specific go-live checklist: compliance requirements, circuit breaker validation, and drawdown safeguard verification.",
+      "status": "canonical",
+      "last_updated": "2026-03-18"
+    },
+    {
+      "id": "operations-deploy-order",
+      "title": "Deploy Order: Staging → Production",
+      "path": "docs/architecture/operations/deploy-order-staging-prod.md",
+      "domain": "operations",
+      "description": "Step-by-step deployment order for staging and production environments.",
+      "status": "canonical",
+      "last_updated": "2026-03-18"
+    },
+    {
+      "id": "operations-forensic-replay",
+      "title": "Forensic Replay & RCA",
+      "path": "docs/architecture/operations/forensic-replay-rca.md",
+      "domain": "operations",
+      "description": "Forensic replay procedures and root cause analysis framework for production incidents.",
+      "status": "canonical",
+      "last_updated": "2026-03-18"
+    },
+    {
+      "id": "operations-observability-workers",
+      "title": "Observability: Async Workers",
+      "path": "docs/architecture/operations/observability-async-workers.md",
+      "domain": "operations",
+      "description": "Observability requirements and monitoring strategy for async worker services.",
+      "status": "canonical",
+      "last_updated": "2026-03-18"
+    },
+    {
+      "id": "core-engine-dag",
+      "title": "Engine DAG Architecture",
+      "path": "docs/architecture/core/engine-dag-architecture.md",
+      "domain": "components",
+      "description": "Design reference for the 8-phase halt-safe DAG orchestration engine. ADR-011 implemented.",
+      "status": "canonical",
+      "last_updated": "2026-03-06"
+    },
+    {
+      "id": "components-news-engine",
+      "title": "News Engine",
+      "path": "docs/architecture/components/news-engine.md",
+      "domain": "components",
+      "description": "News and macro event engine: provider chain, impact classification, and calendar lock integration.",
+      "status": "canonical",
+      "last_updated": "2026-03-18"
+    },
+    {
+      "id": "guardrails-tick-spike-filter",
+      "title": "Tick Spike Filter",
+      "path": "docs/architecture/guardrails/tick-spike-filter.md",
+      "domain": "components",
+      "description": "Guardrail for detecting and filtering abnormal tick spikes before they enter the analysis pipeline.",
+      "status": "canonical",
+      "last_updated": "2026-03-18"
+    },
+    {
+      "id": "integrations-calendar-provider",
+      "title": "Calendar Provider Chain",
+      "path": "docs/architecture/integrations/calendar-provider-chain.md",
+      "domain": "components",
+      "description": "ForexFactory and economic calendar provider chain: fetch strategy, fallback order, and caching rules.",
+      "status": "canonical",
+      "last_updated": "2026-03-18"
+    },
+    {
+      "id": "migration-backlog-p0",
+      "title": "Migration Backlog P0",
+      "path": "docs/architecture/migration-backlog-p0.md",
+      "domain": "backlog",
+      "description": "Stop-the-bleeding P0 implementation work required before trusting live operation: ingest, engine, API health, and Redis freshness.",
+      "status": "canonical",
+      "last_updated": "2026-03-18"
+    },
+    {
+      "id": "migration-backlog-p1",
+      "title": "Migration Backlog P1",
+      "path": "docs/architecture/migration-backlog-p1.md",
+      "domain": "backlog",
+      "description": "P1 execution backlog: governance, execution contracts, and post-go-live hardening tasks.",
+      "status": "canonical",
+      "last_updated": "2026-03-18"
+    },
+    {
+      "id": "migration-backlog-p2",
+      "title": "Migration Backlog P2",
+      "path": "docs/architecture/migration-backlog-p2.md",
+      "domain": "backlog",
+      "description": "P2 execution backlog: longer-horizon improvements and observability enhancements.",
+      "status": "canonical",
+      "last_updated": "2026-03-18"
+    },
+    {
+      "id": "repo-migration-plan",
+      "title": "Repo Migration Plan",
+      "path": "docs/architecture/repo-migration-plan.md",
+      "domain": "backlog",
+      "description": "Plan for restructuring the repository layout to match the canonical architecture zones.",
+      "status": "canonical",
+      "last_updated": "2026-03-18"
+    }
+  ]
+}
