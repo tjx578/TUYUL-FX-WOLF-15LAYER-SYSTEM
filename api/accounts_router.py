@@ -13,8 +13,8 @@ from pydantic import BaseModel, Field
 
 from accounts.capital_deployment import build_readiness
 from accounts.prop_rule_engine import validate_prop_sovereignty
-from api.middleware.auth import verify_token
-from api.middleware.governance import enforce_write_policy
+from .middleware.auth import verify_token
+from .middleware.governance import enforce_write_policy
 from dashboard.account_manager import AccountManager
 from infrastructure.redis_client import get_client
 from journal.audit_trail import AuditAction, AuditTrail

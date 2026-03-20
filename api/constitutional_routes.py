@@ -6,15 +6,15 @@ NEW ENDPOINTS:
   GET /api/v1/equity/history         → Historical equity curve for charting
 """
 
-import json
 import contextlib
+import json
 import logging
 from datetime import UTC, datetime, timedelta
 
 import redis.asyncio as aioredis
 from fastapi import APIRouter, Depends, Query, Request
 
-from api.middleware.auth import verify_token
+from .middleware.auth import verify_token
 
 logger = logging.getLogger(__name__)
 
@@ -26,6 +26,7 @@ router = APIRouter(
 
 
 # ─── Endpoint 1: Constitutional Health ───────────────────────────────────────
+
 
 @router.get("/health/constitutional")
 async def constitutional_health(request: Request) -> dict:
@@ -54,7 +55,7 @@ async def constitutional_health(request: Request) -> dict:
             if not raw:
                 continue
             try:
-                verdict = json.loads(raw) if isinstance(raw, (str, bytes)) else json.loads(str(raw))
+                verdict = json.loads(raw) if isinstance(raw, str | bytes) else json.loads(str(raw))
             except json.JSONDecodeError:
                 continue
 
@@ -80,9 +81,7 @@ async def constitutional_health(request: Request) -> dict:
     except Exception as exc:
         logger.warning("Redis scan for constitutional health failed: %s", exc)
 
-    pass_rate = (
-        round(passed_verdicts / total_verdicts, 4) if total_verdicts > 0 else 0.0
-    )
+    pass_rate = round(passed_verdicts / total_verdicts, 4) if total_verdicts > 0 else 0.0
 
     # Top violated gates
     top_violations = sorted(
@@ -128,6 +127,7 @@ def _grade_health(pass_rate: float, cb: str) -> str:
 
 # ─── Endpoint 2: Equity History ───────────────────────────────────────────────
 
+
 @router.get("/equity/history")
 async def equity_history(
     request: Request,
@@ -150,11 +150,7 @@ async def equity_history(
     history: list[dict] = []
 
     try:
-        pattern = (
-            f"EQUITY:{account_id}:*"
-            if account_id
-            else "EQUITY:*"
-        )
+        pattern = f"EQUITY:{account_id}:*" if account_id else "EQUITY:*"
         keys: list[str] = []
         async for key in r.scan_iter(pattern):
             keys.append(key)
@@ -165,14 +161,14 @@ async def equity_history(
             if not raw:
                 continue
             try:
-                point = json.loads(raw)  # pyright: ignore[reportArgumentType]
+                point = json.loads(raw)
                 ts_str = point.get("timestamp", "")
                 if ts_str:
                     ts = datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
                     if ts >= cutoff:
                         history.append(point)
             except (json.JSONDecodeError, ValueError):
-                continue
+                point = json.loads(raw)
     except Exception as exc:
         logger.warning("Redis equity history scan failed: %s", exc)
 
@@ -183,11 +179,7 @@ async def equity_history(
     equities = [p.get("equity", 0) for p in history if p.get("equity")]
     equity_start = equities[0] if equities else 0
     equity_end = equities[-1] if equities else 0
-    equity_change_pct = (
-        round((equity_end - equity_start) / equity_start * 100, 3)
-        if equity_start > 0
-        else 0.0
-    )
+    equity_change_pct = round((equity_end - equity_start) / equity_start * 100, 3) if equity_start > 0 else 0.0
 
     return {
         "account_id": account_id,

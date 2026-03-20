@@ -7,10 +7,11 @@ from fastapi.params import Depends
 from fastapi.routing import APIRouter
 from pydantic import BaseModel, Field
 
-from api.middleware.auth import verify_token
-from api.middleware.governance import GovernanceContext, enforce_write_policy
 from config.profile_engine import ConfigProfileEngine
 from journal.audit_trail import AuditAction, AuditTrail
+
+from .middleware.auth import verify_token
+from .middleware.governance import GovernanceContext, enforce_write_policy
 
 router: APIRouter = APIRouter(tags=["config-profile"])
 profile_router: APIRouter = APIRouter(prefix="/api/v1/config/profile", tags=["config-profile"])
@@ -154,10 +155,10 @@ def _responses(
     include_404: bool = False,
     include_409: bool = False,
     include_422: bool = False,
-) -> dict[int, dict[str, Any]]:
+) -> dict[int | str, dict[str, Any]]:
     # Keep these status codes explicit across all config-profile operations
     # to make FE/BE contract verification deterministic in OpenAPI docs.
-    responses: dict[int, dict[str, Any]] = {
+    responses: dict[int | str, dict[str, Any]] = {
         200: {"description": "Success", "model": success_model},
         404: {"description": "Not Found", "model": ErrorResponse},
         409: {"description": "Conflict", "model": ErrorResponse},
@@ -179,13 +180,15 @@ def _responses(
     responses=_responses(ProfilesListResponse, include_422=True),
 )
 async def list_profiles() -> ProfilesListResponse:
-    return {
-        "active_profile": _engine.get_active_profile(),
-        "profiles": _engine.list_profile_records(),
-        "profile_names": _engine.list_profiles(),
-        "scopes": _engine.list_scoped_overrides(),
-        "locked": _engine.is_locked(),
-    }
+    return ProfilesListResponse.model_validate(
+        {
+            "active_profile": _engine.get_active_profile(),
+            "profiles": _engine.list_profile_records(),
+            "profile_names": _engine.list_profiles(),
+            "scopes": _engine.list_scoped_overrides(),
+            "locked": _engine.is_locked(),
+        }
+    )
 
 
 @profile_router.post(
@@ -217,7 +220,7 @@ async def create_profile(
             resource=f"config:profile:{result['profile_name']}",
             details={"action": "CREATE_PROFILE", "reason": context.reason, "result": result},
         )
-        return result
+        return ProfilePayloadResponse.model_validate(result)
     except ValueError as exc:
         _raise_from_engine(exc)
 
@@ -235,15 +238,17 @@ async def create_profile(
     responses=_responses(ActiveProfileResponse, include_422=True),
 )
 async def get_active_profile() -> ActiveProfileResponse:
-    return {
-        "active_profile": _engine.get_active_profile(),
-        "locked": _engine.is_locked(),
-        "effective_config": _engine.get_effective_config(
-            account_id=None,
-            prop_firm=None,
-            pair=None,
-        ),
-    }
+    return ActiveProfileResponse.model_validate(
+        {
+            "active_profile": _engine.get_active_profile(),
+            "locked": _engine.is_locked(),
+            "effective_config": _engine.get_effective_config(
+                account_id=None,
+                prop_firm=None,
+                pair=None,
+            ),
+        }
+    )
 
 
 @profile_router.get(
@@ -263,20 +268,22 @@ async def get_effective_profile(
     prop_firm: Annotated[str | None, Query()] = None,
     pair: Annotated[str | None, Query()] = None,
 ) -> EffectiveProfileResponse:
-    return {
-        "active_profile": _engine.get_active_profile(),
-        "locked": _engine.is_locked(),
-        "scope": {
-            "account_id": account_id,
-            "prop_firm": prop_firm,
-            "pair": pair,
-        },
-        "effective_config": _engine.get_effective_config(
-            account_id=account_id,
-            prop_firm=prop_firm,
-            pair=pair,
-        ),
-    }
+    return EffectiveProfileResponse.model_validate(
+        {
+            "active_profile": _engine.get_active_profile(),
+            "locked": _engine.is_locked(),
+            "scope": {
+                "account_id": account_id,
+                "prop_firm": prop_firm,
+                "pair": pair,
+            },
+            "effective_config": _engine.get_effective_config(
+                account_id=account_id,
+                prop_firm=prop_firm,
+                pair=pair,
+            ),
+        }
+    )
 
 
 @profile_router.get(
@@ -292,10 +299,13 @@ async def get_effective_profile(
     responses=_responses(RevisionsListResponse, include_422=True),
 )
 async def list_config_revisions(limit: Annotated[int, Query(ge=1, le=500)] = 50) -> RevisionsListResponse:
-    return {
-        "count": min(limit, len(_engine.list_revisions(limit=limit))),
-        "revisions": _engine.list_revisions(limit=limit),
-    }
+    revisions = _engine.list_revisions(limit=limit)
+    return RevisionsListResponse.model_validate(
+        {
+            "count": min(limit, len(revisions)),
+            "revisions": revisions,
+        }
+    )
 
 
 @profile_router.post(
@@ -327,7 +337,7 @@ async def activate_profile(
             resource="config:profiles",
             details={"action": "ACTIVATE_PROFILE", "reason": context.reason, "result": result},
         )
-        return result
+        return ActiveProfileResponse.model_validate(result)
     except ValueError as exc:
         _raise_from_engine(exc)
 
@@ -348,9 +358,11 @@ async def list_overrides(
     scope: Annotated[str | None, Query(pattern=_SCOPE_PATTERN)] = None,
 ) -> OverrideListResponse:
     try:
-        return {
-            "overrides": _engine.list_overrides(scope=scope),
-        }
+        return OverrideListResponse.model_validate(
+            {
+                "overrides": _engine.list_overrides(scope=scope),
+            }
+        )
     except ValueError as exc:
         _raise_from_engine(exc)
 
@@ -372,7 +384,7 @@ async def get_override(
     scope_key: str,
 ) -> OverrideResponse:
     try:
-        return _engine.get_override(scope, scope_key)
+        return OverrideResponse.model_validate(_engine.get_override(scope, scope_key))
     except ValueError as exc:
         _raise_from_engine(exc)
 
@@ -409,7 +421,7 @@ async def put_override(
             resource=f"config:override:{scope}:{scope_key}",
             details={"action": "UPSERT_OVERRIDE", "reason": context.reason, "result": result},
         )
-        return result
+        return OverrideResponse.model_validate(result)
     except ValueError as exc:
         _raise_from_engine(exc)
 
@@ -444,7 +456,7 @@ async def delete_override_by_path(
             resource=f"config:override:{scope}:{scope_key}",
             details={"action": "DELETE_OVERRIDE", "reason": context.reason, "result": result},
         )
-        return result
+        return OverrideDeleteResponse.model_validate(result)
     except ValueError as exc:
         _raise_from_engine(exc)
 
@@ -479,7 +491,7 @@ async def upsert_override(
             resource=f"config:override:{req.scope}:{req.scope_key}",
             details={"action": "UPSERT_OVERRIDE", "reason": context.reason, "result": result},
         )
-        return result
+        return OverrideResponse.model_validate(result)
     except ValueError as exc:
         _raise_from_engine(exc)
 
@@ -514,7 +526,7 @@ async def delete_override(
             resource=f"config:override:{scope}:{scope_key}",
             details={"action": "DELETE_OVERRIDE", "reason": context.reason, "result": result},
         )
-        return result
+        return OverrideDeleteResponse.model_validate(result)
     except ValueError as exc:
         _raise_from_engine(exc)
 
@@ -542,7 +554,7 @@ async def lock_config(
         resource="config:lock",
         details={"action": "SET_LOCK", "reason": context.reason, "result": result},
     )
-    return result
+    return LockStateResponse.model_validate(result)
 
 
 @profile_router.get(
@@ -559,10 +571,12 @@ async def lock_config(
 )
 async def get_profile(profile_name: str) -> ProfilePayloadResponse:
     try:
-        return {
-            "profile_name": profile_name.strip().lower(),
-            "profile": _engine.get_profile(profile_name),
-        }
+        return ProfilePayloadResponse.model_validate(
+            {
+                "profile_name": profile_name.strip().lower(),
+                "profile": _engine.get_profile(profile_name),
+            }
+        )
     except ValueError as exc:
         _raise_from_engine(exc)
 
@@ -597,7 +611,7 @@ async def update_profile(
             resource=f"config:profile:{result['profile_name']}",
             details={"action": "UPDATE_PROFILE", "reason": context.reason, "result": result},
         )
-        return result
+        return ProfilePayloadResponse.model_validate(result)
     except ValueError as exc:
         _raise_from_engine(exc)
 
@@ -632,7 +646,7 @@ async def patch_profile(
             resource=f"config:profile:{result['profile_name']}",
             details={"action": "PATCH_PROFILE", "reason": context.reason, "result": result},
         )
-        return result
+        return ProfilePayloadResponse.model_validate(result)
     except ValueError as exc:
         _raise_from_engine(exc)
 
@@ -665,7 +679,7 @@ async def delete_profile(
             resource=f"config:profile:{result['profile_name']}",
             details={"action": "DELETE_PROFILE", "reason": context.reason, "result": result},
         )
-        return result
+        return ProfileDeleteResponse.model_validate(result)
     except ValueError as exc:
         _raise_from_engine(exc)
 

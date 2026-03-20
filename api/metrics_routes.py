@@ -19,7 +19,6 @@ import time
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import PlainTextResponse
 
-from api.middleware.machine_auth import verify_observability_machine_auth
 from core.metrics import (
     ACTIVE_PAIRS,
     ORCHESTRATOR_HEARTBEAT_AGE_SECONDS,
@@ -32,6 +31,8 @@ from core.metrics import (
 from infrastructure.redis_client import get_async_redis
 from monitoring.pipeline_metrics import evaluate_latency_slo
 from state.redis_keys import ORCHESTRATOR_STATE
+
+from .middleware.machine_auth import verify_observability_machine_auth
 
 logger = logging.getLogger(__name__)
 

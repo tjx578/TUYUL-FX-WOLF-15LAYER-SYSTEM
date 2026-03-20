@@ -27,7 +27,7 @@ from typing import Any, cast
 
 from fastapi import Depends, Header, HTTPException
 
-from api.middleware.auth import decode_token, validate_api_key
+from .auth import decode_token, validate_api_key
 
 # ── Roles ─────────────────────────────────────────────────────────────────────
 
