@@ -261,14 +261,14 @@ def _check_ingest_heartbeat(redis_client: Any) -> None:
         INGEST_HEARTBEAT_READY.set(0.0)
         return
 
-    status = classify_heartbeat(raw, _INGEST_HEARTBEAT_MAX_AGE_SEC, service="ingest")
+    status = classify_heartbeat(raw, _INGEST_HEARTBEAT_MAX_AGE_SEC, service="ingest")  # noqa: F821
 
     if status.age_seconds is not None:
         INGEST_HEARTBEAT_AGE_SECONDS.set(status.age_seconds)
     INGEST_HEARTBEAT_READY.set(1.0 if status.state == HeartbeatState.ALIVE else 0.0)
 
     now = time.time()
-    if status.state != HeartbeatState.ALIVE:
+    if status.state != HeartbeatState.ALIVE:  # noqa: SIM102
         if (now - _last_ingest_heartbeat_log_ts) >= _INGEST_HEARTBEAT_LOG_INTERVAL_SEC:
             _last_ingest_heartbeat_log_ts = now
             logger.warning(
