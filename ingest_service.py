@@ -794,6 +794,7 @@ async def main(
     global _shutdown_event, _health_probe
     _shutdown_event = asyncio.Event()
 
+    # Configure logging — split streams for Railway compatibility
     # ── Probe ownership ──────────────────────────────────────────
     owns_probe: bool
     health_task: asyncio.Task[None] | None
@@ -807,8 +808,25 @@ async def main(
         health_task = None  # assigned below
 
     logger.remove()
+
+    # INFO/WARNING → stdout (Railway classifies as "info")
     logger.add(
         sys.stdout,
+        format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | "
+               "<level>{level: <8}</level> | "
+               "<cyan>{name}</cyan>:<cyan>{function}</cyan> - "
+               "<level>{message}</level>",
+        level="INFO",
+        filter=lambda record: record["level"].no < 40,  # Below ERROR
+    )
+
+    # ERROR/CRITICAL → stderr (Railway classifies as "error")
+    logger.add(
+        sys.stderr,
+        format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | "
+               "<level>{level: <8}</level> | "
+               "<cyan>{name}</cyan>:<cyan>{function}</cyan> - "
+               "<level>{message}</level>",
         format=(
             "<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level: <8}</level> | "
             "<cyan>{name}</cyan>:<cyan>{function}</cyan> - <level>{message}</level>"
