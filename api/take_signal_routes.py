@@ -12,8 +12,8 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
-from api.middleware.auth import verify_token
-from api.middleware.governance import enforce_write_policy
+from .middleware.auth import verify_token
+from .middleware.governance import enforce_write_policy
 from contracts.api_response_schema import ApiResponse
 from execution.take_signal_models import (
     TakeSignalCreateRequest,

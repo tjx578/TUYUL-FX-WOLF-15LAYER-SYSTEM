@@ -22,7 +22,7 @@ from typing import Any, Final
 from fastapi import APIRouter, Request, status
 from fastapi.responses import JSONResponse
 
-from api.middleware.auth import COOKIE_NAME, decode_token, validate_api_key
+from ..middleware.auth import COOKIE_NAME, decode_token, validate_api_key
 
 router: Final[APIRouter] = APIRouter(prefix="/auth", tags=["auth-compat"])
 

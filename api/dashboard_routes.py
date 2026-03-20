@@ -17,10 +17,11 @@ NOTE: Do NOT add POST /api/v1/trades/* here — those belong to write_router onl
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from api.middleware.auth import verify_token
 from dashboard.price_feed import PriceFeed
 from dashboard.trade_ledger import TradeLedger
 from schemas.trade_models import Trade
+
+from .middleware.auth import verify_token
 
 router = APIRouter(dependencies=[Depends(verify_token)])
 
@@ -63,5 +64,3 @@ async def get_price(symbol: str) -> dict:
     if not price:
         raise HTTPException(status_code=404, detail=f"No price data for {symbol}")
     return {"symbol": symbol.upper(), "price": price}
-
-

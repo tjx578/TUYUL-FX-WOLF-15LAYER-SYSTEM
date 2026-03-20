@@ -33,8 +33,8 @@ from accounts.account_model import (
 )
 from accounts.risk_engine import RiskEngine  # noqa: F401
 from allocation.signal_service import SignalService
-from api.middleware.auth import verify_token
-from api.middleware.governance import enforce_write_policy
+from .middleware.auth import verify_token
+from .middleware.governance import enforce_write_policy
 from config_loader import load_pairs
 from execution.idempotency_ledger import ExecutionIdempotencyLedger
 from infrastructure.redis_client import get_client

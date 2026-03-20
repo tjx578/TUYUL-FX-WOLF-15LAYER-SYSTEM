@@ -41,7 +41,6 @@ import fastapi
 from loguru import logger
 
 from allocation.signal_service import SIGNAL_READY_CHANNEL, SignalService
-from api.middleware.ws_auth import ws_auth_guard
 from config_loader import load_pairs
 from dashboard.account_manager import AccountManager
 from dashboard.price_feed import PriceFeed
@@ -49,6 +48,8 @@ from dashboard.trade_ledger import TradeLedger
 from state.pubsub_channels import RISK_EVENTS
 from storage.l12_cache import VERDICT_READY_CHANNEL, get_verdict_async
 from storage.redis_client import redis_client
+
+from .middleware.ws_auth import ws_auth_guard
 
 router = fastapi.APIRouter()
 

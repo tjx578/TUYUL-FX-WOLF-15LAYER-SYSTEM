@@ -6,8 +6,9 @@ from typing import Any
 
 from fastapi import Header, HTTPException, Request
 
-from api.middleware.auth import decode_token, validate_api_key, verify_token
 from storage.redis_client import redis_client
+
+from .auth import decode_token, validate_api_key, verify_token
 
 WRITE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 CRITICAL_PATH_PARTS = (
@@ -110,7 +111,7 @@ def _normalize_scopes(payload: dict[str, Any]) -> frozenset[str]:
     if isinstance(raw_scopes, str):
         scopes.update(s for s in raw_scopes.replace(",", " ").split() if s)
     elif isinstance(raw_scopes, list):
-        scopes.update({str(item).strip() for item in raw_scopes if str(item).strip()}) # pyright: ignore[reportUnknownVariableType, reportUnknownArgumentType]
+        scopes.update({str(item).strip() for item in raw_scopes if str(item).strip()})
 
     return frozenset(scopes)
 
@@ -130,7 +131,13 @@ def _required_scope(path: str, method: str) -> str:
         return "trade:close"
     if "/config/" in lowered:
         return "config:write"
-    if "/risk/" in lowered and ("/profile" in lowered or "/context" in lowered or "kill-switch" in lowered or "change-risk-profile" in lowered or "change-prop-template" in lowered):
+    if "/risk/" in lowered and (
+        "/profile" in lowered
+        or "/context" in lowered
+        or "kill-switch" in lowered
+        or "change-risk-profile" in lowered
+        or "change-prop-template" in lowered
+    ):
         return "risk:write"
     if "/news-lock/" in lowered:
         return "risk:write"
@@ -196,7 +203,7 @@ async def enforce_write_policy(
         raise HTTPException(status_code=401, detail="Missing Authorization header for write action")
     _, token = parsed
     # Mandatory canonical token verification on every write endpoint.
-    verify_token(authorization) # pyright: ignore[reportArgumentType]
+    verify_token(authorization)  # pyright: ignore[reportArgumentType]
 
     context = _resolve_context(token)
 

@@ -7,12 +7,13 @@ from typing import Any, Protocol, cast
 from fastapi import Depends, HTTPException
 from fastapi.routing import APIRouter
 
-from api.middleware.auth import verify_token
 from config_loader import load_pairs
 from context.live_context_bus import LiveContextBus
 from execution.state_machine import ExecutionStateMachine
 from storage.l12_cache import KEY_PREFIX, VERDICT_TTL_SEC, get_verdict
 from utils.timezone_utils import format_local, format_utc, now_utc
+
+from .middleware.auth import verify_token
 
 router: APIRouter = APIRouter()
 

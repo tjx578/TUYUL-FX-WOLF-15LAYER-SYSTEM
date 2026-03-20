@@ -23,7 +23,7 @@ from fastapi.responses import Response
 from loguru import logger
 from pydantic import BaseModel, Field
 
-from api.middleware.auth import (
+from .middleware.auth import (
     clear_auth_cookie,
     create_token,
     decode_token,
@@ -90,7 +90,7 @@ async def login(body: LoginRequest, response: Response) -> dict[str, Any]:
     allows the frontend to store it for WebSocket auth (query-param based)
     or as a fallback for clients that cannot use cookies.
     """
-    from api.middleware.auth import API_KEY as CONFIGURED_API_KEY  # noqa: N811
+    from .middleware.auth import API_KEY as CONFIGURED_API_KEY  # noqa: N811
 
     key = body.api_key.strip()
 

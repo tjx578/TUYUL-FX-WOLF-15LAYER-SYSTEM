@@ -12,8 +12,8 @@ from typing import Any, Protocol, cast
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 
-from api.middleware.auth import verify_token
-from api.middleware.governance import enforce_write_policy
+from .middleware.auth import verify_token
+from .middleware.governance import enforce_write_policy
 
 logger = logging.getLogger(__name__)
 

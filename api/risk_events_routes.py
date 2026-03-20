@@ -5,18 +5,17 @@ ENDPOINT:
   GET /api/v1/risk/events          → Risk event log (blocked trades, SL breach, news lock)
 """
 
-import os
 import json
 import logging
-from datetime import datetime, timezone, timedelta
-from typing import Optional
+from datetime import UTC, datetime, timedelta
 
 import redis as redis_lib
 import redis.asyncio as aioredis
 from fastapi import APIRouter, Depends, Query
 
-from api.middleware.auth import verify_token
 from infrastructure.redis_client import get_async_redis
+
+from .middleware.auth import verify_token
 
 logger = logging.getLogger(__name__)
 
@@ -29,9 +28,7 @@ router = APIRouter(
 
 def _get_redis() -> None:
     """DEPRECATED — use ``get_async_redis`` FastAPI dependency instead."""
-    raise NotImplementedError(
-        "_get_redis() is removed. Inject via Depends(get_async_redis)."
-    )
+    raise NotImplementedError("_get_redis() is removed. Inject via Depends(get_async_redis).")
 
 
 # ─── Risk Event types ─────────────────────────────────────────────────────────
@@ -52,10 +49,11 @@ RISK_EVENT_TYPES = (
 
 # ─── Endpoint: Risk Events Log ────────────────────────────────────────────────
 
+
 @router.get("/risk/events")
 async def risk_events(
-    account_id: Optional[str] = Query(default=None),
-    event_type: Optional[str] = Query(default=None),
+    account_id: str | None = Query(default=None),
+    event_type: str | None = Query(default=None),
     limit: int = Query(default=50, ge=1, le=200),
     hours_back: int = Query(default=24, ge=1, le=168),
 ) -> dict:
@@ -68,14 +66,10 @@ async def risk_events(
     r: aioredis.Redis = await get_async_redis()
     events: list[dict] = []
 
-    cutoff = datetime.now(timezone.utc) - timedelta(hours=hours_back)
+    cutoff = datetime.now(UTC) - timedelta(hours=hours_back)
 
     try:
-        pattern = (
-            f"RISK_EVENT:{account_id}:*"
-            if account_id
-            else "RISK_EVENT:*"
-        )
+        pattern = f"RISK_EVENT:{account_id}:*" if account_id else "RISK_EVENT:*"
         async for key in r.scan_iter(pattern):
             raw = await r.get(key)
             if not raw:
@@ -124,19 +118,20 @@ async def risk_events(
 
 # ─── Helper: Write a risk event (called by RiskEngine / PropFirmGuard) ────────
 
+
 def write_risk_event(
     r: redis_lib.Redis,
     account_id: str,
     event_type: str,
     severity: str,
     message: str,
-    metadata: Optional[dict] = None,
+    metadata: dict | None = None,
 ) -> None:
     """
     Called internally by risk components to log events.
     Key format: RISK_EVENT:{account_id}:{timestamp_ms}
     """
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     event_id = f"{account_id}:{int(now.timestamp() * 1000)}"
     event = {
         "event_id": event_id,

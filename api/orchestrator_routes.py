@@ -13,9 +13,10 @@ from typing import Any
 
 from fastapi import APIRouter, Depends
 
-from api.middleware.auth import verify_token
 from infrastructure.redis_client import get_async_redis
 from state.redis_keys import ORCHESTRATOR_STATE
+
+from .middleware.auth import verify_token
 
 router = APIRouter(dependencies=[Depends(verify_token)])
 
