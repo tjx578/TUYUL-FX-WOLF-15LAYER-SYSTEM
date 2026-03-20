@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from context.system_state import SystemStateManager
+from context.system_state import SystemState, SystemStateManager
 
 
 @pytest.fixture
@@ -105,7 +105,9 @@ async def test_run_ingest_services_closes_redis_when_ping_fails(
 
     with patch.object(ingest_service_module, "_connect_redis_with_retry", new=AsyncMock(return_value=fake_redis)):  # noqa: SIM117
         with patch.object(ingest_service_module, "_has_stale_cache", new=AsyncMock(return_value=False)):
-            with patch.object(ingest_service_module, "_run_warmup", new=AsyncMock(side_effect=RuntimeError("ping failed"))):
+            with patch.object(
+                ingest_service_module, "_run_warmup", new=AsyncMock(side_effect=RuntimeError("ping failed"))
+            ):
                 with pytest.raises(RuntimeError, match="ping failed"):
                     await ingest_service_module.run_ingest_services(has_api_key=True)
 
@@ -289,7 +291,7 @@ async def test_main_resets_system_state_after_runtime_failure(
         ingest_service_module._shutdown_event.set()
         raise RuntimeError("boom")
 
-    with patch.object(ingest_service_module, "_validate_api_key", return_value=True):
+    with patch.object(ingest_service_module, "_validate_api_key", return_value=True):  # noqa: SIM117
         with patch.object(ingest_service_module, "init_persistent_storage", new=AsyncMock()):
             with patch.object(
                 ingest_service_module,
@@ -306,13 +308,15 @@ async def test_main_resets_system_state_after_runtime_failure(
                         probe.stop = AsyncMock()
                         probe.set_detail = MagicMock()
                         probe.set_readiness_check = MagicMock()
-                        with patch.object(
-                            ingest_service_module.SystemStateManager,
-                            "reset",
-                            autospec=True,
-                        ) as reset_mock:
-                            with patch.object(ingest_service_module.asyncio, "sleep", new=AsyncMock()):
-                                await ingest_service_module.main(_bootstrap_probe=probe)
+                        with (
+                            patch.object(
+                                ingest_service_module.SystemStateManager,
+                                "reset",
+                                autospec=True,
+                            ) as reset_mock,
+                            patch.object(ingest_service_module.asyncio, "sleep", new=AsyncMock()),
+                        ):
+                            await ingest_service_module.main(_bootstrap_probe=probe)
 
     assert reset_mock.call_count == 1
 
@@ -326,7 +330,7 @@ async def test_bootstrap_cache_and_warmup_prefers_stale_cache(
     system_state.reset()
     system_state.set_state(ingest_service_module.SystemState.WARMING_UP)
 
-    with patch.object(ingest_service_module, "_has_stale_cache", new=AsyncMock(return_value=True)):
+    with patch.object(ingest_service_module, "_has_stale_cache", new=AsyncMock(return_value=True)):  # noqa: SIM117
         with patch.object(ingest_service_module, "_run_warmup", new=AsyncMock()) as warmup_mock:
             result, redis_has_data, mode = await ingest_service_module._bootstrap_cache_and_warmup(
                 redis=fake_redis,
@@ -354,3 +358,127 @@ def test_set_startup_mode_flags_degraded_on_stale_cache(
 
     assert ingest_service_module._ingest_ready is False
     assert ingest_service_module._ingest_degraded is True
+
+
+# ── P0-1: Ingest state machine crash-loop prevention ──────────────────────
+
+
+@pytest.mark.asyncio
+async def test_run_ingest_services_resets_state_at_entry(
+    ingest_service_module: Any,
+) -> None:
+    """run_ingest_services() must reset SystemStateManager at entry so retries
+    start from a clean INITIALIZING state even if main()'s reset() was suppressed."""
+    system_state = SystemStateManager()
+    # Simulate a prior run that left state in DEGRADED
+    system_state.reset()
+    system_state.set_state(ingest_service_module.SystemState.WARMING_UP)
+    system_state.set_state(ingest_service_module.SystemState.DEGRADED)
+
+    ingest_service_module._shutdown_event = asyncio.Event()
+
+    fake_redis = MagicMock()
+    fake_redis.aclose = AsyncMock()
+
+    # Let it crash after Redis connect so we can inspect state at the reset point.
+    with (
+        patch.object(
+            ingest_service_module,
+            "_connect_redis_with_retry",
+            new=AsyncMock(return_value=fake_redis),
+        ),
+        patch.object(
+            ingest_service_module,
+            "_bootstrap_cache_and_warmup",
+            new=AsyncMock(side_effect=RuntimeError("test-crash")),
+        ),
+        pytest.raises(RuntimeError, match="test-crash"),
+    ):
+        await ingest_service_module.run_ingest_services(has_api_key=True)
+
+    # After the reset+set_state(WARMING_UP) at entry, state must be WARMING_UP
+    # (bootstrap crashed before it could change it further).
+    assert system_state.get_state() == ingest_service_module.SystemState.WARMING_UP
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "prior_state",
+    [
+        SystemState.WARMING_UP,
+        SystemState.READY,
+        SystemState.DEGRADED,
+        SystemState.ERROR,
+    ],
+)
+async def test_run_ingest_services_idempotent_from_any_prior_state(
+    ingest_service_module: Any,
+    prior_state: "SystemState",
+) -> None:
+    """run_ingest_services() must not crash regardless of the prior SystemState."""
+    system_state = SystemStateManager()
+    # Force arbitrary prior state
+    with system_state._rw_lock:
+        system_state._state = prior_state
+
+    ingest_service_module._shutdown_event = asyncio.Event()
+
+    fake_redis = MagicMock()
+    fake_redis.aclose = AsyncMock()
+
+    with (
+        patch.object(
+            ingest_service_module,
+            "_connect_redis_with_retry",
+            new=AsyncMock(return_value=fake_redis),
+        ),
+        patch.object(
+            ingest_service_module,
+            "_bootstrap_cache_and_warmup",
+            new=AsyncMock(side_effect=RuntimeError("bail")),
+        ),
+        pytest.raises(RuntimeError, match="bail"),
+    ):
+        await ingest_service_module.run_ingest_services(has_api_key=True)
+
+    # Should have reset → INITIALIZING → WARMING_UP; bootstrap crash kept WARMING_UP
+    assert system_state.get_state() == ingest_service_module.SystemState.WARMING_UP
+
+
+@pytest.mark.asyncio
+async def test_retry_loop_clears_warmup_report(
+    ingest_service_module: Any,
+) -> None:
+    """On retry, reset() in run_ingest_services clears stale warmup report."""
+    from context.system_state import WarmupStatus
+
+    system_state = SystemStateManager()
+    system_state.reset()
+    system_state.set_state(ingest_service_module.SystemState.WARMING_UP)
+    # Seed a leftover warmup report from a prior run
+    with system_state._rw_lock:
+        system_state._warmup_report["EURUSD"] = WarmupStatus(symbol="EURUSD")
+    assert system_state.get_warmup_report() != {}
+
+    ingest_service_module._shutdown_event = asyncio.Event()
+
+    fake_redis = MagicMock()
+    fake_redis.aclose = AsyncMock()
+
+    with (
+        patch.object(
+            ingest_service_module,
+            "_connect_redis_with_retry",
+            new=AsyncMock(return_value=fake_redis),
+        ),
+        patch.object(
+            ingest_service_module,
+            "_bootstrap_cache_and_warmup",
+            new=AsyncMock(side_effect=RuntimeError("bail")),
+        ),
+        pytest.raises(RuntimeError, match="bail"),
+    ):
+        await ingest_service_module.run_ingest_services(has_api_key=True)
+
+    # reset() at entry should have cleared the warmup report
+    assert system_state.get_warmup_report() == {}
