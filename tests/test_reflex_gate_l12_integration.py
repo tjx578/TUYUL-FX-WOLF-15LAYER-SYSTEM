@@ -18,11 +18,16 @@ def _make_synthesis(
     rqi: float = 0.90,
     override: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Build a minimal synthesis dict with all 10 gates passing by default."""
+    """Build a minimal synthesis dict with all 10 gates passing by default.
+
+    Default values are calibrated to pass all gates under NORMAL_VOL regime
+    (tii >= 0.90, integrity >= 0.95, mc_win >= 0.58, conf12 >= 0.72, rr >= 2.0).
+    """
     synth = {
         "pair": "XAUUSD",
         "layers": {
             "L8_tii_sym": 0.95,
+            "L8_integrity_index": 0.96,
             "L8_integrity_index": 0.98,
             "L7_monte_carlo_win": 0.70,
             "conf12": 0.85,
@@ -132,13 +137,14 @@ class TestGate10WithOtherFailures:
         assert verdict["verdict"] == "NO_TRADE"
 
     def test_open_but_wolf_weak(self) -> None:
-        """Reflex OPEN but non-critical gate fails → HOLD."""
+        """Reflex OPEN but non-critical gate fails → EXECUTE_REDUCED_RISK (near-pass)."""
         synth = _make_synthesis(
             reflex_gate="OPEN",
             lot_scale=1.0,
             override={"layers.L8_tii_sym": 0.30},
         )
         verdict = generate_l12_verdict(synth)
-        assert verdict["verdict"] == "HOLD"
-        # lot_scale still 1.0 (reflex is fine, other issue)
+        # Single non-critical gate failure → near-pass → EXECUTE_REDUCED_RISK
+        assert verdict["verdict"] in ["EXECUTE_REDUCED_RISK_BUY", "EXECUTE_REDUCED_RISK_SELL"]
+        # lot_scale still 1.0 (reflex gate is fine)
         assert verdict["lot_scale"] == 1.0

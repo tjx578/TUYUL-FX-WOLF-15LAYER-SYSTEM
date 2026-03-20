@@ -143,6 +143,10 @@ export function connectLiveUpdates(
   let visibilityPaused = false;
   // [BUG FIX #6] Guard against async connect() racing with close()
   let connectAborted = false;
+  // [BUG FIX #10] Minimum interval between connect attempts to prevent
+  // fetchWsTicket() from exceeding backend WS_CONNECT_PER_MIN rate limit.
+  let lastConnectAttemptAt = 0;
+  const MIN_RECONNECT_INTERVAL_MS = 5000;
 
   // Monotonic sequence tracking for gap detection
   let lastSeq = 0;
@@ -197,6 +201,15 @@ export function connectLiveUpdates(
   const connect = async () => {
     if (intentionallyClosed) return;
     if (visibilityPaused && reconnectAttempt > 3) return;
+
+    // [BUG FIX #10] Throttle connect attempts to stay within rate limits
+    const now = Date.now();
+    const elapsed = now - lastConnectAttemptAt;
+    if (elapsed < MIN_RECONNECT_INTERVAL_MS) {
+      await new Promise(r => setTimeout(r, MIN_RECONNECT_INTERVAL_MS - elapsed));
+      if (intentionallyClosed || connectAborted) return;
+    }
+    lastConnectAttemptAt = Date.now();
 
     connectAborted = false;
     emitStatus(reconnectAttempt === 0 ? "CONNECTING" : "RECONNECTING");

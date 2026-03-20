@@ -350,6 +350,32 @@ class TestDataQualityReportFreshnessClass:
         )
         assert r.freshness_class == FreshnessClass.STALE_PRESERVED
 
+
+# ---------------------------------------------------------------------------
+# Regression: float("inf") from no_transport/no_producer must be sanitizable
+# ---------------------------------------------------------------------------
+
+
+class TestInfinityStalenessJsonSafety:
+    """Starlette JSONResponse uses allow_nan=False; float('inf') raises ValueError."""
+
+    @pytest.mark.parametrize(
+        "transport_ok, has_producer",
+        [(False, False), (False, True), (True, False)],
+        ids=["no_transport", "transport_down_with_producer", "no_producer"],
+    )
+    def test_non_finite_staleness_sanitized_to_none(self, transport_ok: bool, has_producer: bool) -> None:
+        import math
+
+        snap = classify_feed_freshness(
+            transport_ok=transport_ok,
+            has_producer_signal=has_producer,
+        )
+        staleness = snap.staleness_seconds
+        # API endpoints must convert inf → None before JSON serialization
+        safe = staleness if math.isfinite(staleness) else None
+        assert safe is None, f"Expected None for {snap.state}, got {staleness}"
+
     def test_no_producer_maps(self):
         from analysis.data_quality_gate import DataQualityReport
 
