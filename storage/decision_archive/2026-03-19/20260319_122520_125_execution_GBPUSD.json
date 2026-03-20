@@ -1,0 +1,23 @@
+{
+  "journal_type": "J3",
+  "category": "execution",
+  "execution_intent_id": "ei_truth_002",
+  "take_id": "take_truth_002",
+  "signal_id": "SIG-TRUTH-002",
+  "account_id": "ACC-001",
+  "symbol": "GBPUSD",
+  "direction": "SELL",
+  "previous_state": "ORDER_PLACED",
+  "current_state": "REJECTED",
+  "state_reason": "Broker rejected: insufficient margin",
+  "broker_order_id": null,
+  "entry_price_planned": null,
+  "fill_price_actual": null,
+  "slippage": null,
+  "lot_size_planned": null,
+  "lot_size_actual": null,
+  "stop_loss": null,
+  "take_profit_1": null,
+  "rejection_code": "INSUFFICIENT_MARGIN",
+  "timestamp": "2026-03-19T12:25:20.125410+00:00"
+}

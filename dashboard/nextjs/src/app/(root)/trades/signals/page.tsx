@@ -5,23 +5,37 @@
 // Flow: View EXECUTE verdicts → TAKE or SKIP
 // ============================================================
 
-import { useState } from "react";
-import { useAllVerdicts, useAccounts, usePairs } from "@/lib/api";
+import { useMemo, useState } from "react";
+import { useAllVerdicts, useAccounts, useHealth, usePairs } from "@/lib/api";
 import { VerdictCard } from "@/components/VerdictCard";
 import { GateStatus } from "@/components/GateStatus";
 import { TakeSignalForm } from "@/components/TakeSignalForm";
+import VerdictEmptyStatePanel from "@/components/feedback/VerdictEmptyStatePanel";
+import { useLiveSignals } from "@/lib/realtime/hooks/useLiveSignals";
+import { classifyVerdictEmptyState } from "@/lib/verdictEmptyState";
+import { useSystemStore } from "@/store/useSystemStore";
 import type { L12Verdict } from "@/types";
 
 export default function SignalQueuePage() {
-  const { data: verdicts, isLoading, mutate } = useAllVerdicts();
+  const { data: verdictsRaw, isLoading, mutate } = useAllVerdicts();
+  const { data: health } = useHealth();
   const { data: accounts } = useAccounts();
   const { data: pairs } = usePairs();
+  const mode = useSystemStore((s) => s.mode);
+  const wsStatus = useSystemStore((s) => s.wsStatus);
+
+  const restVerdicts = useMemo(() => verdictsRaw ?? [], [verdictsRaw]);
+  const {
+    verdicts,
+    status: liveStatus,
+    isStale: verdictStale,
+  } = useLiveSignals(restVerdicts, true);
 
   const [selectedVerdict, setSelectedVerdict] = useState<L12Verdict | null>(null);
   const [filterMode, setFilterMode] = useState<"ALL" | "EXECUTE" | "HOLD">("ALL");
   const [selectedPair, setSelectedPair] = useState<string>("ALL");
 
-  const allVerdicts = Object.values(verdicts ?? {});
+  const allVerdicts = useMemo(() => verdicts ?? [], [verdicts]);
 
   const filtered = allVerdicts.filter((v) => {
     const matchMode =
@@ -35,6 +49,20 @@ export default function SignalQueuePage() {
 
   const executeSignals = allVerdicts.filter((v) =>
     v.verdict.toString().startsWith("EXECUTE")
+  );
+
+  const verdictEmptyState = useMemo(
+    () =>
+      classifyVerdictEmptyState({
+        verdictCount: filtered.length,
+        isLoading,
+        verdictStale,
+        liveStatus,
+        mode,
+        wsStatus,
+        feedStatus: health?.feed_status,
+      }),
+    [filtered.length, isLoading, verdictStale, liveStatus, mode, wsStatus, health?.feed_status]
   );
 
   return (
@@ -119,18 +147,10 @@ export default function SignalQueuePage() {
           )}
 
           {!isLoading && filtered.length === 0 && (
-            <div
-              style={{
-                fontSize: 12,
-                color: "var(--text-muted)",
-                padding: "32px",
-                textAlign: "center",
-                background: "var(--bg-panel)",
-                borderRadius: 8,
-              }}
-            >
-              No signals match the current filter.
-            </div>
+            <VerdictEmptyStatePanel
+              state={verdictEmptyState}
+              fallbackDetail="No signals match the current filter."
+            />
           )}
 
           {filtered.map((v) => (

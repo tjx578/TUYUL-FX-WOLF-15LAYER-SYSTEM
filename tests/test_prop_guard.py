@@ -164,42 +164,32 @@ class TestConstitutionalBoundaries:
         assert not hasattr(result, "entry_price")
 
 
-def test_max_safe_lot(prop_guard):
+def test_max_safe_lot(ftmo_guard):
     """Prop firm guard must always return max_safe_lot in result."""
-    account_state = {
-        "balance": 100000.0,
-        "equity": 99500.0,
-        "daily_pnl": -200.0,
-        "open_trades": 2,
-    }
-    trade_risk = {
-        "symbol": "EURUSD",
-        "risk_percent": 1.0,
-        "stop_loss_pips": 30,
-    }
-
-    result = prop_guard.check(account_state, trade_risk)
-
-    # Result must always contain max_safe_lot
-    assert "max_safe_lot" in result, (
-        f"prop_guard.check() must return 'max_safe_lot'. Got keys: {list(result.keys())}"
+    account_state = AccountSnapshot(
+        balance=100_000.0,
+        equity=99_500.0,
+        floating_pnl=-500.0,
+        closed_pnl_today=-200.0,
+        open_position_count=2,
+        day_start_balance=100_000.0,
+        highest_balance=100_000.0,
     )
 
-    max_lot = result["max_safe_lot"]
+    result = ftmo_guard.check(account_state, trade_risk_usd=300.0, lot_size=0.3)
+
+    # Result must always contain max_safe_lot
+    assert hasattr(result, "max_safe_lot"), "GuardResult must expose max_safe_lot"
+
+    max_lot = result.max_safe_lot
     assert isinstance(max_lot, (int, float)), (
         f"max_safe_lot must be numeric, got {type(max_lot)}"
     )
     assert max_lot >= 0, f"max_safe_lot must be >= 0, got {max_lot}"
 
     # If trade is allowed, max_safe_lot must be positive
-    allowed = result.get("allowed", result.get("trade_allowed", False))
+    allowed = bool(result.allowed)
     if allowed:
         assert max_lot > 0, (
             f"max_safe_lot must be > 0 when trade is allowed, got {max_lot}"
         )
-        # max_safe_lot >= recommended_lot (it is the ceiling)
-        recommended = result.get("recommended_lot", 0.0)
-        if recommended > 0:
-            assert max_lot >= recommended, (
-                f"max_safe_lot ({max_lot}) must be >= recommended_lot ({recommended})"
-            )

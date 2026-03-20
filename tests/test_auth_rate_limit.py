@@ -26,7 +26,7 @@ if str(ROOT) not in sys.path:
 
 @pytest.fixture(autouse=True)
 def _configure_jwt_secret(monkeypatch):
-    from dashboard.backend import auth as dashboard_auth  # noqa: PLC0415
+    from api.middleware import auth as dashboard_auth  # noqa: PLC0415
 
     test_secret = "test-dashboard-secret-at-least-32-chars"
     monkeypatch.setattr(dashboard_auth, "JWT_SECRET", test_secret)
@@ -95,7 +95,7 @@ class TestJWT:
     """Tests for JWT create/decode/expiry in auth module."""
 
     def test_create_and_decode_token(self):
-        from dashboard.backend.auth import create_token, decode_token  # noqa: PLC0415
+        from api.middleware.auth import create_token, decode_token  # noqa: PLC0415
 
         token = create_token(sub="test_user")
         payload = decode_token(token)
@@ -106,14 +106,14 @@ class TestJWT:
         assert "exp" in payload
 
     def test_decode_invalid_token_returns_none(self):
-        from dashboard.backend.auth import decode_token  # noqa: PLC0415
+        from api.middleware.auth import decode_token  # noqa: PLC0415
 
         assert decode_token("not.a.valid.jwt") is None
         assert decode_token("garbage") is None
         assert decode_token("") is None
 
     def test_decode_tampered_signature_returns_none(self):
-        from dashboard.backend.auth import create_token, decode_token  # noqa: PLC0415
+        from api.middleware.auth import create_token, decode_token  # noqa: PLC0415
 
         token = create_token(sub="user")
         parts = token.split(".")
@@ -125,7 +125,7 @@ class TestJWT:
     def test_decode_expired_token_returns_none(self):
         import json  # noqa: PLC0415
 
-        from dashboard.backend.auth import (  # noqa: PLC0415
+        from api.middleware.auth import (  # noqa: PLC0415
             JWT_SECRET,
             _b64url_encode,
             _sign,
@@ -143,12 +143,12 @@ class TestJWT:
         sig = _sign(header_b64, payload_b64, JWT_SECRET)
         expired_token = f"{header_b64}.{payload_b64}.{sig}"
 
-        from dashboard.backend.auth import decode_token  # noqa: PLC0415
+        from api.middleware.auth import decode_token  # noqa: PLC0415
 
         assert decode_token(expired_token) is None
 
     def test_create_token_with_extra_claims(self):
-        from dashboard.backend.auth import create_token, decode_token  # noqa: PLC0415
+        from api.middleware.auth import create_token, decode_token  # noqa: PLC0415
 
         token = create_token(sub="svc", extra={"role": "admin", "account": "123"})
         payload = decode_token(token)
@@ -160,7 +160,7 @@ class TestJWT:
     def test_decode_rejects_signature_from_different_secret(self):
         import json  # noqa: PLC0415
 
-        from dashboard.backend import auth as dashboard_auth  # noqa: PLC0415
+        from api.middleware import auth as dashboard_auth  # noqa: PLC0415
 
         now = int(time.time())
         header_b64 = dashboard_auth._b64url_encode(  # noqa: SLF001
@@ -172,29 +172,36 @@ class TestJWT:
         wrong_sig = dashboard_auth._sign(header_b64, payload_b64, "legacy-secret")  # noqa: SLF001
         token = f"{header_b64}.{payload_b64}.{wrong_sig}"
 
-        with patch.object(dashboard_auth, "JWT_SECRET", "dashboard-secret"), patch.object(
-            dashboard_auth,
-            "JWT_VERIFY_SECRETS",
-            ("dashboard-secret",),
+        with (
+            patch.object(dashboard_auth, "JWT_SECRET", "dashboard-secret"),
+            patch.object(
+                dashboard_auth,
+                "JWT_VERIFY_SECRETS",
+                ("dashboard-secret",),
+            ),
         ):
             payload = dashboard_auth.decode_token(token)
 
         assert payload is None
 
     def test_create_token_raises_if_secret_missing(self):
-        from dashboard.backend import auth as dashboard_auth  # noqa: PLC0415
+        from api.middleware import auth as dashboard_auth  # noqa: PLC0415
 
-        with patch.object(dashboard_auth, "JWT_SECRET", ""), patch.object(
-            dashboard_auth,
-            "JWT_VERIFY_SECRETS",
-            (),
-        ), pytest.raises(RuntimeError, match="DASHBOARD_JWT_SECRET"):
+        with (
+            patch.object(dashboard_auth, "JWT_SECRET", ""),
+            patch.object(
+                dashboard_auth,
+                "JWT_VERIFY_SECRETS",
+                (),
+            ),
+            pytest.raises(RuntimeError, match="DASHBOARD_JWT_SECRET"),
+        ):
             dashboard_auth.create_token(sub="blocked_user")
 
     def test_decode_accepts_pyjwt_encoded_token(self):
         jwt = pytest.importorskip("jwt")
 
-        from dashboard.backend import auth as dashboard_auth  # noqa: PLC0415
+        from api.middleware import auth as dashboard_auth  # noqa: PLC0415
 
         shared_secret = "shared-secret-at-least-32-bytes-long"
         now = int(time.time())
@@ -204,10 +211,13 @@ class TestJWT:
             algorithm="HS256",
         )
 
-        with patch.object(dashboard_auth, "JWT_SECRET", shared_secret), patch.object(
-            dashboard_auth,
-            "JWT_VERIFY_SECRETS",
-            (shared_secret,),
+        with (
+            patch.object(dashboard_auth, "JWT_SECRET", shared_secret),
+            patch.object(
+                dashboard_auth,
+                "JWT_VERIFY_SECRETS",
+                (shared_secret,),
+            ),
         ):
             payload = dashboard_auth.decode_token(token)
 
@@ -217,13 +227,16 @@ class TestJWT:
     def test_custom_token_is_decodable_by_pyjwt(self):
         jwt = pytest.importorskip("jwt")
 
-        from dashboard.backend import auth as dashboard_auth  # noqa: PLC0415
+        from api.middleware import auth as dashboard_auth  # noqa: PLC0415
 
         shared_secret = "shared-secret-at-least-32-bytes-long"
-        with patch.object(dashboard_auth, "JWT_SECRET", shared_secret), patch.object(
-            dashboard_auth,
-            "JWT_VERIFY_SECRETS",
-            (shared_secret,),
+        with (
+            patch.object(dashboard_auth, "JWT_SECRET", shared_secret),
+            patch.object(
+                dashboard_auth,
+                "JWT_VERIFY_SECRETS",
+                (shared_secret,),
+            ),
         ):
             token = dashboard_auth.create_token(sub="custom_user")
 
@@ -241,20 +254,20 @@ class TestAPIKey:
     """Tests for static API key validation."""
 
     def test_validate_with_matching_key(self):
-        with patch("dashboard.backend.auth.API_KEY", "my-secret-key-123"):
-            from dashboard.backend.auth import validate_api_key  # noqa: PLC0415
+        with patch("api.middleware.auth.API_KEY", "my-secret-key-123"):
+            from api.middleware.auth import validate_api_key  # noqa: PLC0415
 
             assert validate_api_key("my-secret-key-123") is True
 
     def test_validate_with_wrong_key(self):
-        with patch("dashboard.backend.auth.API_KEY", "my-secret-key-123"):
-            from dashboard.backend.auth import validate_api_key  # noqa: PLC0415
+        with patch("api.middleware.auth.API_KEY", "my-secret-key-123"):
+            from api.middleware.auth import validate_api_key  # noqa: PLC0415
 
             assert validate_api_key("wrong-key") is False
 
     def test_validate_with_empty_configured_key(self):
-        with patch("dashboard.backend.auth.API_KEY", ""):
-            from dashboard.backend.auth import validate_api_key  # noqa: PLC0415
+        with patch("api.middleware.auth.API_KEY", ""):
+            from api.middleware.auth import validate_api_key  # noqa: PLC0415
 
             # If no API key is configured, always reject
             assert validate_api_key("anything") is False
@@ -268,45 +281,51 @@ class TestAPIKey:
 class TestVerifyToken:
     """Tests for the HTTP Bearer token verification dependency."""
 
-    def test_missing_header_raises_401(self):
-        from fastapi import HTTPException # noqa: PLC0415
+    @staticmethod
+    def _request_without_cookie() -> MagicMock:
+        req = MagicMock()
+        req.cookies = {}
+        return req
 
-        from dashboard.backend.auth import verify_token  # noqa: PLC0415
+    def test_missing_header_raises_401(self):
+        from fastapi import HTTPException  # noqa: PLC0415
+
+        from api.middleware.auth import verify_token  # noqa: PLC0415
 
         with pytest.raises(HTTPException) as exc_info:
-            verify_token(authorization=None) # pyright: ignore[reportArgumentType]
+            verify_token(request=self._request_without_cookie(), authorization=None)  # pyright: ignore[reportArgumentType]
         assert exc_info.value.status_code == 401
 
     def test_invalid_scheme_raises_401(self):
-        from fastapi import HTTPException # noqa: PLC0415
+        from fastapi import HTTPException  # noqa: PLC0415
 
-        from dashboard.backend.auth import verify_token  # noqa: PLC0415
+        from api.middleware.auth import verify_token  # noqa: PLC0415
 
         with pytest.raises(HTTPException) as exc_info:
-            verify_token(authorization="Basic dXNlcjpwYXNz")
+            verify_token(request=self._request_without_cookie(), authorization="Basic dXNlcjpwYXNz")
         assert exc_info.value.status_code == 401
 
     def test_valid_jwt_returns_payload(self):
-        from dashboard.backend.auth import create_token, verify_token  # noqa: PLC0415
+        from api.middleware.auth import create_token, verify_token  # noqa: PLC0415
 
         token = create_token(sub="dashboard")
-        result = verify_token(authorization=f"Bearer {token}")
+        result = verify_token(request=self._request_without_cookie(), authorization=f"Bearer {token}")
         assert result["sub"] == "dashboard"
 
     def test_valid_api_key_returns_payload(self):
-        with patch("dashboard.backend.auth.API_KEY", "test-api-key"):
-            from dashboard.backend.auth import verify_token  # noqa: PLC0415
+        with patch("api.middleware.auth.API_KEY", "test-api-key"):
+            from api.middleware.auth import verify_token  # noqa: PLC0415
 
-            result = verify_token(authorization="Bearer test-api-key")
+            result = verify_token(request=self._request_without_cookie(), authorization="Bearer test-api-key")
             assert result["sub"] == "api_key_user"
 
     def test_invalid_token_raises_401(self):
-        from fastapi import HTTPException # noqa: PLC0415
+        from fastapi import HTTPException  # noqa: PLC0415
 
-        from dashboard.backend.auth import verify_token  # noqa: PLC0415
+        from api.middleware.auth import verify_token  # noqa: PLC0415
 
         with pytest.raises(HTTPException) as exc_info:
-            verify_token(authorization="Bearer invalid-garbage")
+            verify_token(request=self._request_without_cookie(), authorization="Bearer invalid-garbage")
         assert exc_info.value.status_code == 401
 
 
@@ -322,8 +341,9 @@ class TestWSAuth:
     async def test_ws_no_token_closes_connection(self):
         from api.middleware.ws_auth import ws_authenticate  # noqa: PLC0415
 
-        ws = AsyncMock(spec=["query_params", "close", "state"])
+        ws = AsyncMock(spec=["query_params", "headers", "close", "state"])
         ws.query_params = {}  # No token
+        ws.headers = {}
         ws.close = AsyncMock()
 
         result = await ws_authenticate(ws)
@@ -332,16 +352,15 @@ class TestWSAuth:
         ws.close.assert_awaited_once()
         # Check close code is 4401
         call_args = ws.close.call_args
-        assert call_args.kwargs.get("code") == 4401 or (
-            call_args.args and call_args.args[0] == 4401
-        )
+        assert call_args.kwargs.get("code") == 4401 or (call_args.args and call_args.args[0] == 4401)
 
     @pytest.mark.asyncio
     async def test_ws_invalid_token_closes_connection(self):
         from api.middleware.ws_auth import ws_authenticate  # noqa: PLC0415
 
-        ws = AsyncMock(spec=["query_params", "close", "state"])
+        ws = AsyncMock(spec=["query_params", "headers", "close", "state"])
         ws.query_params = {"token": "invalid-garbage"}
+        ws.headers = {}
         ws.close = AsyncMock()
 
         result = await ws_authenticate(ws)
@@ -351,12 +370,13 @@ class TestWSAuth:
 
     @pytest.mark.asyncio
     async def test_ws_valid_jwt_authenticates(self):
+        from api.middleware.auth import create_token  # noqa: PLC0415
         from api.middleware.ws_auth import ws_authenticate  # noqa: PLC0415
-        from dashboard.backend.auth import create_token  # noqa: PLC0415
 
         token = create_token(sub="ws_test_user")
-        ws = AsyncMock(spec=["query_params", "close", "state"])
+        ws = AsyncMock(spec=["query_params", "headers", "close", "state"])
         ws.query_params = {"token": token}
+        ws.headers = {}
         ws.state = MagicMock()
         ws.close = AsyncMock()  # explicit AsyncMock so assert_not_awaited works
 
@@ -371,8 +391,9 @@ class TestWSAuth:
         with patch("api.middleware.ws_auth.validate_api_key", return_value=True):
             from api.middleware.ws_auth import ws_authenticate  # noqa: PLC0415
 
-            ws = AsyncMock(spec=["query_params", "close", "state"])
+            ws = AsyncMock(spec=["query_params", "headers", "close", "state"])
             ws.query_params = {"token": "valid-api-key"}
+            ws.headers = {}
             ws.state = MagicMock()
 
             result = await ws_authenticate(ws)
@@ -384,8 +405,8 @@ class TestWSAuth:
     async def test_ws_accepts_pyjwt_token_with_shared_secret(self):
         jwt = pytest.importorskip("jwt")
 
+        from api.middleware import auth as dashboard_auth  # noqa: PLC0415
         from api.middleware.ws_auth import ws_authenticate  # noqa: PLC0415
-        from dashboard.backend import auth as dashboard_auth  # noqa: PLC0415
 
         shared_secret = "shared-secret-at-least-32-bytes-long"
         now = int(time.time())
@@ -395,15 +416,19 @@ class TestWSAuth:
             algorithm="HS256",
         )
 
-        ws = AsyncMock(spec=["query_params", "close", "state"])
+        ws = AsyncMock(spec=["query_params", "headers", "close", "state"])
         ws.query_params = {"token": token}
+        ws.headers = {}
         ws.state = MagicMock()
         ws.close = AsyncMock()
 
-        with patch.object(dashboard_auth, "JWT_SECRET", shared_secret), patch.object(
-            dashboard_auth,
-            "JWT_VERIFY_SECRETS",
-            (shared_secret,),
+        with (
+            patch.object(dashboard_auth, "JWT_SECRET", shared_secret),
+            patch.object(
+                dashboard_auth,
+                "JWT_VERIFY_SECRETS",
+                (shared_secret,),
+            ),
         ):
             result = await ws_authenticate(ws)
 
@@ -422,7 +447,7 @@ class TestRateLimitIntegration:
 
     def test_rate_limit_headers_present(self):
         """Responses should include X-RateLimit-* headers."""
-        import fastapi  # type: ignore # noqa: PLC0415
+        import fastapi  # noqa: PLC0415
         from fastapi.testclient import (  # noqa: PLC0415
             TestClient,
         )
@@ -444,7 +469,7 @@ class TestRateLimitIntegration:
 
     def test_exempt_paths_skip_rate_limit(self):
         """Health and root endpoints should NOT have rate limit headers."""
-        import fastapi # noqa: PLC0415
+        import fastapi  # noqa: PLC0415
         from fastapi.testclient import (  # noqa: PLC0415
             TestClient,
         )
@@ -464,9 +489,9 @@ class TestRateLimitIntegration:
         # Exempt paths don't get rate limit headers
         assert "X-RateLimit-Limit" not in resp.headers
 
-    def test_burst_triggers_429(self):
+    def test_burst_triggers_429(self, monkeypatch):
         """Exceeding burst limit should return 429."""
-        import fastapi # noqa: PLC0415
+        import fastapi  # noqa: PLC0415
         from fastapi.testclient import (  # noqa: PLC0415
             TestClient,
         )
@@ -475,6 +500,11 @@ class TestRateLimitIntegration:
             RateLimitMiddleware,
             _http_store,
         )
+
+        # Force deterministic in-memory limiter and a small limit for fast tests.
+        monkeypatch.setattr("api.middleware.rate_limit.RATE_LIMIT_BACKEND", "memory")
+        monkeypatch.setattr("api.middleware.rate_limit.REQUESTS_PER_MIN", 2)
+        monkeypatch.setattr("api.middleware.rate_limit.BURST", 0)
 
         # Reset state
         _http_store.reset()
@@ -488,10 +518,9 @@ class TestRateLimitIntegration:
 
         client = TestClient(app)
 
-        # Flood with requests up to and beyond the limit
-        # Default: 120 + 20 burst = 140
+        # Flood with requests up to and beyond the test limit.
         hit_429 = False
-        for _ in range(160):
+        for _ in range(6):
             resp = client.get("/api/v1/test")
             if resp.status_code == 429:
                 hit_429 = True

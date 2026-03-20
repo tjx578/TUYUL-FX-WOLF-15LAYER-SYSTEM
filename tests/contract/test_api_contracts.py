@@ -40,6 +40,7 @@ def _make_client() -> Any:
     """Build TestClient with auth dependency overridden to always pass."""
     from fastapi import FastAPI
 
+    import api.l12_routes as l12_routes
     from api.app_factory import create_app
     from api.middleware.auth import verify_token
 
@@ -50,6 +51,9 @@ def _make_client() -> Any:
         return {"sub": "contract_test", "role": "admin"}
 
     application.dependency_overrides[cast(Callable[..., Any], verify_token)] = _fake_auth
+
+    # Contract tests validate response shape; they must not depend on live Redis.
+    l12_routes.get_verdict = lambda _pair: None
 
     return TestClient(application, raise_server_exceptions=True)
 
@@ -170,9 +174,9 @@ class TestVerdictAllContract:
         if not items:
             pytest.skip("No verdicts")
         for item in items[:5]:
-            assert isinstance(item["confidence"], (int, float)), (
-                f"confidence must be numeric, got {type(item['confidence'])}"
-            )
+            assert isinstance(
+                item["confidence"], (int, float)
+            ), f"confidence must be numeric, got {type(item['confidence'])}"
 
     def test_verdict_string_values(self, client: Any) -> None:
         valid_verdicts = {

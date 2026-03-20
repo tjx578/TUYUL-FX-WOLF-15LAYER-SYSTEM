@@ -6,11 +6,13 @@ environment variables with sensible local-dev defaults.
     API_BASE_URL   → http://localhost:8000  (port 8000)
     ENGINE_BASE_URL → http://localhost:8081  (port 8081)
     INGEST_BASE_URL → http://localhost:8082  (port 8082)
+    ORCHESTRATOR_BASE_URL → http://localhost:8083  (port 8083)
 
 On Railway, set these to the internal DNS names:
     API_BASE_URL=http://api.railway.internal:8000
     ENGINE_BASE_URL=http://engine.railway.internal:8081
     INGEST_BASE_URL=http://ingest.railway.internal:8082
+    ORCHESTRATOR_BASE_URL=http://orchestrator.railway.internal:8083
 """
 
 from __future__ import annotations
@@ -50,6 +52,11 @@ def get_peer_services(*, exclude_self: str = "") -> list[ServiceEndpoint]:
         ServiceEndpoint(
             name="ingest",
             base_url=os.environ.get("INGEST_BASE_URL", "http://localhost:8082"),
+            health_path="/healthz",
+        ),
+        ServiceEndpoint(
+            name="orchestrator",
+            base_url=os.environ.get("ORCHESTRATOR_BASE_URL", "http://localhost:8083"),
             health_path="/healthz",
         ),
     ]

@@ -5,6 +5,8 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
+import engines.portfolio_monte_carlo_engine as portfolio_mc
+
 from engines.portfolio_monte_carlo_engine import (
     PortfolioMonteCarloEngine,
     PortfolioMonteCarloResult,
@@ -13,6 +15,7 @@ from engines.portfolio_monte_carlo_engine import (
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
+
 
 def _make_pair_returns(
     n: int = 100,
@@ -53,8 +56,7 @@ def _make_correlated_returns(
             # Mix base returns with noise based on correlation
             noise = _make_pair_returns(n, base_win_rate, seed=seed + i + 100)
             mixed = [
-                correlation * base[j] + (1 - correlation) * noise[j]
-                for j in range(n)
+                correlation * base[j] + (1 - correlation) * noise[j] for j in range(n)
             ]
             result[label] = mixed
 
@@ -64,6 +66,7 @@ def _make_correlated_returns(
 # ---------------------------------------------------------------------------
 # Tests
 # ---------------------------------------------------------------------------
+
 
 class TestPortfolioMonteCarloEngine:
 
@@ -95,11 +98,16 @@ class TestPortfolioMonteCarloEngine:
 
     def test_high_win_rate_passes(self) -> None:
         engine = PortfolioMonteCarloEngine(
-            simulations=200, seed=42,
-            win_threshold=0.50, pf_threshold=1.0,
+            simulations=200,
+            seed=42,
+            win_threshold=0.50,
+            pf_threshold=1.0,
         )
         returns = _make_correlated_returns(
-            100, num_pairs=3, base_win_rate=0.80, seed=99,
+            100,
+            num_pairs=3,
+            base_win_rate=0.80,
+            seed=99,
         )
         result = engine.run(returns)
 
@@ -109,7 +117,10 @@ class TestPortfolioMonteCarloEngine:
     def test_low_win_rate_fails(self) -> None:
         engine = PortfolioMonteCarloEngine(simulations=200, seed=42)
         returns = _make_correlated_returns(
-            100, num_pairs=3, base_win_rate=0.20, seed=7,
+            100,
+            num_pairs=3,
+            base_win_rate=0.20,
+            seed=7,
         )
         result = engine.run(returns)
 
@@ -155,14 +166,20 @@ class TestPortfolioMonteCarloEngine:
 
         # High correlation
         high_corr = _make_correlated_returns(
-            100, num_pairs=3, correlation=0.9, seed=42,
+            100,
+            num_pairs=3,
+            correlation=0.9,
+            seed=42,
         )
         result_high = engine.run(high_corr)
 
         # Low correlation
         engine2 = PortfolioMonteCarloEngine(simulations=200, seed=42)
         low_corr = _make_correlated_returns(
-            100, num_pairs=3, correlation=0.1, seed=42,
+            100,
+            num_pairs=3,
+            correlation=0.1,
+            seed=42,
         )
         result_low = engine2.run(low_corr)
 
@@ -181,5 +198,76 @@ class TestPortfolioMonteCarloEngine:
         returns = _make_correlated_returns(100, num_pairs=3, seed=42)
         result = engine.run(returns)
 
-        # P95 drawdown should be worse (more negative) than mean
-        assert result.portfolio_max_drawdown_p95 <= result.portfolio_max_drawdown_mean
+        # P95 drawdown is reported as a positive magnitude of severe losses.
+        assert result.portfolio_max_drawdown_p95 >= abs(
+            result.portfolio_max_drawdown_mean
+        )
+
+    def test_risk_of_ruin_uses_path_not_terminal_pnl(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        engine = PortfolioMonteCarloEngine(
+            simulations=1,
+            seed=7,
+            ruin_capital_fraction=0.2,
+        )
+        returns = {
+            "PAIR1": [-30.0] + [15.0] * 29,
+            "PAIR2": [0.0] * 30,
+        }
+
+        def _fixed_cdf(_z: np.ndarray) -> np.ndarray:
+            return np.array(
+                [
+                    np.arange(30, dtype=np.float64) / 30.0,
+                    np.zeros(30, dtype=np.float64),
+                ]
+            )
+
+        monkeypatch.setattr(portfolio_mc, "_normal_cdf", _fixed_cdf)
+        result = engine.run(returns, capital=100.0)
+
+        assert result.portfolio_expected_value == 405.0
+        assert result.portfolio_risk_of_ruin == 1.0
+
+    def test_diversification_ratio_matches_simulated_pair_pnls(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        engine = PortfolioMonteCarloEngine(simulations=2, seed=11)
+        returns = {
+            "PAIR1": [1.0] * 15 + [3.0] * 15,
+            "PAIR2": [2.0] * 15 + [6.0] * 15,
+        }
+        uniforms = [
+            np.array(
+                [
+                    np.zeros(30, dtype=np.float64),
+                    np.zeros(30, dtype=np.float64),
+                ]
+            ),
+            np.array(
+                [
+                    np.full(30, 0.999, dtype=np.float64),
+                    np.full(30, 0.999, dtype=np.float64),
+                ]
+            ),
+        ]
+
+        monkeypatch.setattr(
+            portfolio_mc,
+            "_normal_cdf",
+            lambda _z: uniforms.pop(0),
+        )
+
+        result = engine.run(returns)
+        expected_pair_vols = np.std(
+            np.array([[30.0, 90.0], [60.0, 180.0]]),
+            axis=1,
+        )
+        expected_portfolio_vol = np.std([90.0, 270.0])
+        expected_ratio = round(
+            float(expected_portfolio_vol / expected_pair_vols.sum()),
+            4,
+        )
+
+        assert result.diversification_ratio == expected_ratio

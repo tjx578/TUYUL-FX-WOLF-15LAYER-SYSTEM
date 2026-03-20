@@ -101,6 +101,7 @@ class TestInitPersistentStorageRecoveryRouting:
         svc = MagicMock()
         svc.recover_from_postgres = recover_from_pg
         svc.recover_risk_state_only = recover_risk_only
+        svc.hydrate_redis_from_postgres = AsyncMock(return_value=True)
         svc.run = AsyncMock(return_value=None)
         return svc
 
@@ -129,7 +130,8 @@ class TestInitPersistentStorageRecoveryRouting:
             startup._sync_task = None
             await startup.init_persistent_storage()
 
-        recover_from_pg.assert_awaited_once()
+        svc.hydrate_redis_from_postgres.assert_awaited_once_with(mode="full")
+        recover_from_pg.assert_not_awaited()
         recover_risk_only.assert_not_awaited()
 
     @pytest.mark.asyncio
@@ -160,7 +162,8 @@ class TestInitPersistentStorageRecoveryRouting:
             startup._sync_task = None
             await startup.init_persistent_storage()
 
-        recover_risk_only.assert_awaited_once()
+        svc.hydrate_redis_from_postgres.assert_awaited_once_with(mode="risk_only")
+        recover_risk_only.assert_not_awaited()
         recover_from_pg.assert_not_awaited()
 
     @pytest.mark.asyncio

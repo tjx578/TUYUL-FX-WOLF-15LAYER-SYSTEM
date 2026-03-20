@@ -6,6 +6,7 @@ import pytest
 
 from pipeline.warmup_utils import WarmupStatus
 from pipeline.wolf_constitutional_pipeline import WolfConstitutionalPipeline
+from state.governance_gate import GovernanceAction, GovernanceVerdict
 
 
 def _warmup_ready(raw: Any, *, required: int) -> WarmupStatus:
@@ -40,6 +41,9 @@ class _BusStub:
         return []
 
     def get_account_state(self, symbol: str) -> dict[str, Any]:
+        return {}
+
+    def inference_snapshot(self) -> dict[str, Any]:
         return {}
 
 
@@ -187,14 +191,28 @@ class _L15:
 
 
 class _L13:
-    def reflect(self, symbol: str, historical_verdicts: list[dict[str, Any]], current_layer_results: dict[str, Any]) -> dict[str, Any]:
+    def reflect(
+        self, symbol: str, historical_verdicts: list[dict[str, Any]], current_layer_results: dict[str, Any]
+    ) -> dict[str, Any]:
         return {"abg_score": 0.8, "meta_integrity": 1.0}
 
 
 def test_pipeline_fallback_uses_candle_conditioned_path(monkeypatch: pytest.MonkeyPatch) -> None:
+    class _RedisStub:
+        def get(self, key: str) -> None:
+            _ = key
+            return None
+
     monkeypatch.setattr(
         "pipeline.wolf_constitutional_pipeline.normalize_warmup",
         _warmup_ready,
+    )
+    monkeypatch.setattr(
+        "state.governance_gate.assess_governance",
+        lambda **kwargs: GovernanceVerdict(
+            action=GovernanceAction.ALLOW,
+            symbol=str(kwargs.get("symbol", "")),
+        ),
     )
 
     pipe = WolfConstitutionalPipeline()
@@ -203,6 +221,7 @@ def test_pipeline_fallback_uses_candle_conditioned_path(monkeypatch: pytest.Monk
 
     pipe.__dict__.update(
         {
+            "_redis": _RedisStub(),
             "_context_bus": _BusStub(),
             "_l1": _L1(),
             "_l2": _L2(),
@@ -223,12 +242,12 @@ def test_pipeline_fallback_uses_candle_conditioned_path(monkeypatch: pytest.Monk
         }
     )
 
-    pipe._ensure_analyzers = lambda: None  # type: ignore[assignment]
-    pipe._ensure_governance_engines = lambda: None  # type: ignore[assignment]
+    pipe._ensure_analyzers = lambda: None
+    pipe._ensure_governance_engines = lambda: None
     pipe._get_l13_engine = lambda: _L13()  # type: ignore[assignment]
     pipe._get_l15_engine = lambda: _L15()  # type: ignore[assignment]
     pipe._build_l14_json = lambda **kwargs: {}  # type: ignore[assignment]
-    pipe._compute_vault_sync = lambda synthesis, l12_verdict, reflective: {  # type: ignore[assignment]
+    pipe._compute_vault_sync = lambda synthesis, l12_verdict, reflective: {
         "execution_rights": "GRANTED",
         "vault_sync": 1.0,
         "meta_integrity": 1.0,

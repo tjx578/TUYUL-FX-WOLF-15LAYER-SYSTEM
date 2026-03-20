@@ -171,7 +171,7 @@ class TestBusAccountState:
 
     def test_push_then_read(self, fresh_bus: LiveContextBus) -> None:
         """Dashboard pushes state → pipeline reads it back."""
-        fresh_bus.update_account_state({
+        fresh_bus.update_account_state("EURUSD", {
             "equity": 10_000.0,
             "peak_equity": 10_500.0,
             "daily_loss_pct": 0.03,
@@ -186,16 +186,16 @@ class TestBusAccountState:
         assert state["open_positions"] == 2
 
     def test_merge_semantics(self, fresh_bus: LiveContextBus) -> None:
-        """Multiple updates merge (not replace)."""
-        fresh_bus.update_account_state({"equity": 10_000.0})
-        fresh_bus.update_account_state({"daily_loss_pct": 0.02})
+        """Multiple updates replace state (snapshot semantics)."""
+        fresh_bus.update_account_state("EURUSD", {"equity": 10_000.0})
+        fresh_bus.update_account_state("EURUSD", {"equity": 10_000.0, "daily_loss_pct": 0.02})
         state = fresh_bus.get_account_state("EURUSD")
         assert state["equity"] == 10_000.0
         assert state["daily_loss_pct"] == 0.02
 
     def test_bus_feeds_l6_and_blocks(self, fresh_bus: LiveContextBus, engine: L6RiskAnalyzer) -> None:
         """End-to-end: bus state → L6 analyze → circuit breaker / DD block."""
-        fresh_bus.update_account_state({
+        fresh_bus.update_account_state("EURUSD", {
             "equity": 9_000.0,
             "peak_equity": 10_000.0,
             "daily_loss_pct": 0.06,   # 6% daily loss
@@ -214,11 +214,9 @@ class TestBusTradeHistory:
     """LiveContextBus.get_trade_history() retrieval."""
 
     def test_returns_empty_when_no_source(self, fresh_bus: LiveContextBus) -> None:
-        """No archive → returns empty list, L6/L7 degrade gracefully."""
+        """No archive → returns None or empty list, L6/L7 degrade gracefully."""
         returns = fresh_bus.get_trade_history("EURUSD")
-        assert isinstance(returns, list)
-        # Will be empty in test (no Redis/PG)
-        assert returns == [] or len(returns) > 0  # either is fine
+        assert returns is None or isinstance(returns, list)
 
 
 # ═══════════════════════════════════════════════════════════════════

@@ -5,7 +5,9 @@ from typing import Any
 
 from loguru import logger
 
+from core.metrics import VERDICT_PATH_EVENT_TOTAL
 from infrastructure.redis_client import get_client
+from journal.forensic_replay import append_replay_artifact
 from storage.redis_client import redis_client
 
 KEY_PREFIX = "L12:VERDICT:"
@@ -28,6 +30,8 @@ def set_verdict(pair: str, data: dict[str, Any]) -> None:
     # Inject server timestamp for staleness detection
     data_with_ts = {**data, "_cached_at": time.time()}
     redis_client.set(KEY_PREFIX + pair, json.dumps(data_with_ts), ex=VERDICT_TTL_SEC)
+    logger.info("[VerdictPath] verdict persisted | pair={} key={} ttl={}s", pair, KEY_PREFIX + pair, VERDICT_TTL_SEC)
+    VERDICT_PATH_EVENT_TOTAL.labels(event="verdict_persisted", symbol=pair, status="ok").inc()
     event_payload = {
         "event": "VERDICT_READY",
         "pair": pair,
@@ -41,17 +45,35 @@ def set_verdict(pair: str, data: dict[str, Any]) -> None:
             maxlen=VERDICT_STREAM_MAXLEN,
             approximate=True,
         )
+        logger.info("[VerdictPath] verdict stream published | pair={} stream={}", pair, VERDICT_STREAM)
+        VERDICT_PATH_EVENT_TOTAL.labels(event="verdict_stream_published", symbol=pair, status="ok").inc()
     # Best-effort pub/sub for backward compat (ephemeral, may be lost)
     try:
         redis_client.publish(VERDICT_READY_CHANNEL, json.dumps(event_payload))
     except Exception:
         logger.warning("[L12Cache] Failed to publish VERDICT_READY for %s", pair, exc_info=True)
+    with contextlib.suppress(Exception):
+        append_replay_artifact(
+            "verdict_provenance",
+            correlation_id=str(data_with_ts.get("signal_id") or pair),
+            payload={
+                "pair": pair,
+                "verdict": data_with_ts.get("verdict"),
+                "confidence": data_with_ts.get("confidence"),
+                "timestamp": data_with_ts.get("timestamp"),
+                "cached_at": data_with_ts.get("_cached_at"),
+                "scores": data_with_ts.get("scores"),
+                "gates": data_with_ts.get("gates"),
+            },
+        )
 
 
 async def set_verdict_async(pair: str, data: dict[str, Any]) -> None:
     data_with_ts = {**data, "_cached_at": time.time()}
     client = await get_client()
     await client.set(KEY_PREFIX + pair, json.dumps(data_with_ts), ex=VERDICT_TTL_SEC)
+    logger.info("[VerdictPath] verdict persisted | pair={} key={} ttl={}s", pair, KEY_PREFIX + pair, VERDICT_TTL_SEC)
+    VERDICT_PATH_EVENT_TOTAL.labels(event="verdict_persisted", symbol=pair, status="ok").inc()
     event_payload = {
         "event": "VERDICT_READY",
         "pair": pair,
@@ -65,11 +87,27 @@ async def set_verdict_async(pair: str, data: dict[str, Any]) -> None:
             maxlen=VERDICT_STREAM_MAXLEN,
             approximate=True,
         )
+        logger.info("[VerdictPath] verdict stream published | pair={} stream={}", pair, VERDICT_STREAM)
+        VERDICT_PATH_EVENT_TOTAL.labels(event="verdict_stream_published", symbol=pair, status="ok").inc()
     # Best-effort pub/sub for backward compat
     try:
         await client.publish(VERDICT_READY_CHANNEL, json.dumps(event_payload))
     except Exception:
         logger.warning("[L12Cache] Failed to publish async VERDICT_READY for %s", pair, exc_info=True)
+    with contextlib.suppress(Exception):
+        append_replay_artifact(
+            "verdict_provenance",
+            correlation_id=str(data_with_ts.get("signal_id") or pair),
+            payload={
+                "pair": pair,
+                "verdict": data_with_ts.get("verdict"),
+                "confidence": data_with_ts.get("confidence"),
+                "timestamp": data_with_ts.get("timestamp"),
+                "cached_at": data_with_ts.get("_cached_at"),
+                "scores": data_with_ts.get("scores"),
+                "gates": data_with_ts.get("gates"),
+            },
+        )
 
 
 def get_verdict(pair: str) -> dict[str, Any] | None:

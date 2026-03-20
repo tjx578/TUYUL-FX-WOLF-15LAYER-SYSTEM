@@ -33,16 +33,23 @@ from accounts.account_model import (
 )
 from accounts.risk_engine import RiskEngine  # noqa: F401
 from allocation.signal_service import SignalService
-from api.middleware.auth import verify_token
 from api.middleware.governance import enforce_write_policy
 from config_loader import load_pairs
 from execution.idempotency_ledger import ExecutionIdempotencyLedger
 from infrastructure.redis_client import get_client
 from infrastructure.tracing import inject_trace_context, setup_tracer
+from journal.forensic_replay import append_replay_artifact
 from journal.trade_journal_service import trade_journal_automation_service
 from risk.kill_switch import GlobalKillSwitch
-from state.data_freshness import FeedFreshnessSnapshot, classify_feed_freshness, stale_threshold_seconds
+from state.data_freshness import (
+    FeedFreshnessSnapshot,
+    classify_feed_freshness,
+    stale_threshold_config,
+    stale_threshold_seconds,
+)
 from storage.trade_write_through import persist_trade_snapshot
+
+from .middleware.auth import verify_token
 
 logger = logging.getLogger(__name__)
 _allocation_router_tracer = setup_tracer("wolf-api")
@@ -52,6 +59,7 @@ STALE_DATA_THRESHOLD_SEC = int(stale_threshold_seconds())
 # Grace period after pipeline recovery: allow first fresh verdict through even if
 # age slightly exceeds the stale threshold (prevents the post-outage death spiral).
 RECOVERY_GRACE_SEC = int(os.getenv("STALE_RECOVERY_GRACE_SEC", "120"))
+PRODUCER_REQUIRED_STATES = {"no_producer", "no_transport"}
 
 
 # ── In-memory fallback stores ─────────────────────────────────────────────────
@@ -82,6 +90,20 @@ IDEMPOTENCY_TTL_SEC = 60 * 60 * 24
 TRADE_OUTBOX_STREAM = "trade:outbox"
 
 
+def _append_forensic_artifact(
+    artifact_type: str,
+    *,
+    correlation_id: str,
+    payload: dict[str, Any],
+) -> None:
+    with contextlib.suppress(Exception):
+        append_replay_artifact(
+            artifact_type,
+            correlation_id=correlation_id,
+            payload=payload,
+        )
+
+
 def _get_signal_service() -> SignalService:
     """Lazily create SignalService so app boot does not require Redis."""
     global _signal_service
@@ -94,6 +116,19 @@ def _get_signal_service() -> SignalService:
                 detail=f"Signal service unavailable: {exc}",
             ) from exc
     return _signal_service
+
+
+async def _ensure_live_producer(pair: str) -> None:
+    """Reject new trade entry when the live producer signal is absent."""
+    snapshot = await _feed_freshness_snapshot(pair)
+    if snapshot.state in PRODUCER_REQUIRED_STATES:
+        raise HTTPException(
+            status_code=status.HTTP_423_LOCKED,
+            detail=(
+                f"LIVE_PRODUCER_REQUIRED: {pair} feed state is {snapshot.state} "
+                f"({snapshot.detail}). No new trades allowed until producer recovers."
+            ),
+        )
 
 
 async def _check_stale_data(pair: str) -> None:
@@ -144,7 +179,10 @@ async def _check_stale_data(pair: str) -> None:
             logger.warning(
                 "[StaleGuard] %s verdict age=%.0fs exceeds threshold=%ds "
                 "but within recovery grace=%ds — allowing execution",
-                pair, age, STALE_DATA_THRESHOLD_SEC, RECOVERY_GRACE_SEC,
+                pair,
+                age,
+                STALE_DATA_THRESHOLD_SEC,
+                RECOVERY_GRACE_SEC,
             )
             return  # Grace period — allow
 
@@ -450,16 +488,18 @@ async def _feed_freshness_snapshot(pair: str = "") -> FeedFreshnessSnapshot:
             pairs = load_pairs()
             symbols = [str(p.get("symbol", "")).strip().upper() for p in pairs if p.get("symbol")]
 
+        threshold_seconds, config_ok = stale_threshold_config()
+
         if not symbols:
             return classify_feed_freshness(
                 transport_ok=True,
                 has_producer_signal=False,
                 staleness_seconds=float("inf"),
-                threshold_seconds=float(STALE_DATA_THRESHOLD_SEC),
+                threshold_seconds=threshold_seconds,
+                config_ok=config_ok,
             )
 
-        best_staleness = float("inf")
-        now_ts = datetime.now(UTC).timestamp()
+        best_last_seen_ts: float | None = None
         has_tick = False
 
         for symbol in symbols:
@@ -475,22 +515,25 @@ async def _feed_freshness_snapshot(pair: str = "") -> FeedFreshnessSnapshot:
             if ts <= 0:
                 continue
             has_tick = True
-            staleness = max(0.0, now_ts - ts)
-            if staleness < best_staleness:
-                best_staleness = staleness
+            if best_last_seen_ts is None or ts > best_last_seen_ts:
+                best_last_seen_ts = ts
 
         return classify_feed_freshness(
             transport_ok=True,
             has_producer_signal=has_tick,
-            staleness_seconds=best_staleness,
-            threshold_seconds=float(STALE_DATA_THRESHOLD_SEC),
+            last_seen_ts=best_last_seen_ts,
+            now_ts=datetime.now(UTC).timestamp(),
+            threshold_seconds=threshold_seconds,
+            config_ok=config_ok,
         )
     except Exception:
+        threshold_seconds, config_ok = stale_threshold_config()
         return classify_feed_freshness(
             transport_ok=False,
             has_producer_signal=False,
             staleness_seconds=float("inf"),
-            threshold_seconds=float(STALE_DATA_THRESHOLD_SEC),
+            threshold_seconds=threshold_seconds,
+            config_ok=config_ok,
         )
 
 
@@ -511,6 +554,20 @@ async def _runtime_take_precheck(account: dict[str, Any], pair: str = "") -> tup
     daily_dd = float(account.get("daily_dd_percent", 0) or 0)
     daily_cap = float(account.get("max_daily_dd_percent", 5.0) or 5.0)
     feed_snapshot = await _feed_freshness_snapshot(pair)
+    _append_forensic_artifact(
+        "freshness_snapshot",
+        correlation_id=str(pair or "GLOBAL").upper(),
+        payload={
+            "pair": str(pair or "").upper(),
+            "state": feed_snapshot.state,
+            "freshness_class": feed_snapshot.freshness_class.value,
+            "staleness_seconds": feed_snapshot.staleness_seconds,
+            "threshold_seconds": feed_snapshot.threshold_seconds,
+            "last_seen_ts": feed_snapshot.last_seen_ts,
+            "detail": feed_snapshot.detail,
+            "account_id": str(account.get("account_id") or ""),
+        },
+    )
     _kill_switch.evaluate_and_trip(
         metrics={
             "daily_dd_percent": daily_dd,
@@ -696,6 +753,30 @@ async def _confirm_trade_internal(
         topic="trade_confirmed",
         payload={"trade": trade},
     )
+    _append_forensic_artifact(
+        "execution_lifecycle",
+        correlation_id=intent_id,
+        payload={
+            "trade_id": trade_id,
+            "signal_id": signal_id,
+            "event_type": "ORDER_PLACED",
+            "source": "MANUAL",
+            "status": trade.get("status"),
+            "execution_intent_id": intent_id,
+        },
+    )
+    _append_forensic_artifact(
+        "event_history",
+        correlation_id=intent_id,
+        payload={
+            "category": "trade_event",
+            "trade_id": trade_id,
+            "signal_id": signal_id,
+            "event_type": "ORDER_PLACED",
+            "status": trade.get("status"),
+            "source": "MANUAL",
+        },
+    )
 
     _journal_service.on_trade_confirmed(trade)
     with contextlib.suppress(Exception):
@@ -768,6 +849,7 @@ async def take_signal(req: TakeSignalRequest) -> dict[str, Any]:
             detail=f"Global kill switch is active: {state.get('reason', 'N/A')}",
         )
 
+    await _ensure_live_producer(req.pair)
     await _check_stale_data(req.pair)
 
     account = _account_registry.get(req.account_id)
@@ -911,6 +993,7 @@ async def take_signal_multi(req: TakeSignalBatchRequest) -> dict[str, Any]:
             detail=f"Global kill switch is active: {state.get('reason', 'N/A')}",
         )
 
+    await _ensure_live_producer(req.pair)
     await _check_stale_data(req.pair)
 
     with _allocation_router_tracer.start_as_current_span("allocation_enqueue") as span:
@@ -1166,6 +1249,38 @@ async def record_trade_lifecycle_event(req: TradeLifecycleEventRequest) -> dict[
             "status": trade.get("status"),
             "source": req.source,
             "execution_intent_id": execution_intent_id,
+        },
+    )
+    _append_forensic_artifact(
+        "execution_lifecycle",
+        correlation_id=execution_intent_id,
+        payload={
+            "trade_id": req.trade_id,
+            "signal_id": signal_id,
+            "event_type": event_type,
+            "status_before": current_status,
+            "status_after": trade.get("status"),
+            "replay": replay,
+            "source": req.source,
+            "order_id": req.order_id,
+            "reason": reason,
+            "fill_price": req.fill_price,
+            "pnl": req.pnl,
+            "execution_intent_id": execution_intent_id,
+        },
+    )
+    _append_forensic_artifact(
+        "event_history",
+        correlation_id=execution_intent_id,
+        payload={
+            "category": "trade_event",
+            "trade_id": req.trade_id,
+            "signal_id": signal_id,
+            "event_type": event_type,
+            "status": trade.get("status"),
+            "source": req.source,
+            "reason": reason,
+            "replay": replay,
         },
     )
 

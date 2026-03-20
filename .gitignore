@@ -21,6 +21,11 @@ _test_result*.log
 _batch_result*.txt
 test_result*.txt
 test_run_output.txt
+test_out*.txt
+test_output*.txt
+full_test_out.txt
+pyright_output.txt
+wolf_test_results.txt
 test-results/
 htmlcov/
 .coverage

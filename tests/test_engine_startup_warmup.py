@@ -7,10 +7,7 @@ Verifies that:
 """
 from __future__ import annotations
 
-import pytest
-
 from pipeline.wolf_constitutional_pipeline import WolfConstitutionalPipeline
-
 
 # ── Pipeline warmup gate tests ──────────────────────────────────────
 
@@ -48,21 +45,21 @@ def test_seed_from_redis_checks_h1_not_m15() -> None:
     Gating on M15 would cause the engine to exhaust all retries and
     enter DEGRADED mode before analysis ever starts.
 
-    We verify this by reading the source of main.py and checking that
+    We verify this by reading the source of startup/candle_seeding.py and checking that
     the readiness dict uses H1 and no M15 gate is present.
     """
-    import re  # noqa: PLC0415
     import pathlib  # noqa: PLC0415
+    import re  # noqa: PLC0415
 
-    src = pathlib.Path(__file__).parents[1].joinpath("main.py").read_text()
+    src = pathlib.Path(__file__).parents[1].joinpath("startup", "candle_seeding.py").read_text()
 
     # Isolate just the _seed_from_redis function body
     match = re.search(
-        r"async def _seed_from_redis\(\).*?(?=\nasync def |\nclass |\Z)",
+        r"async def _seed_from_redis\([^)]*\).*?(?=\nasync def |\nclass |\Z)",
         src,
         re.DOTALL,
     )
-    assert match, "_seed_from_redis not found in main.py"
+    assert match, "_seed_from_redis not found in startup/candle_seeding.py"
     fn_src = match.group(0)
 
     # H1 must be the readiness key

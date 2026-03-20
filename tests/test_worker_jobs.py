@@ -225,3 +225,46 @@ def test_montecarlo_validate_startup_with_inline_json(monkeypatch: MonkeyPatch) 
     from services.worker.montecarlo_job import _validate_startup  # pyright: ignore[reportPrivateUsage]
 
     assert _validate_startup() is True
+
+
+def test_load_json_payload_ignores_placeholder_inline_and_uses_file(
+    monkeypatch: MonkeyPatch, tmp_path: Path
+) -> None:
+    payload_path = tmp_path / "matrix.json"
+    payload_path.write_text('{"EURUSD": [1.0], "GBPUSD": [2.0]}', encoding="utf-8")
+
+    monkeypatch.setenv("WOLF15_MC_RETURN_MATRIX_JSON", "(JSON string)")
+    monkeypatch.setenv("WOLF15_MC_RETURN_MATRIX_FILE", str(payload_path))
+
+    from services.worker._job_utils import load_json_payload
+
+    payload = load_json_payload(
+        env_json_var="WOLF15_MC_RETURN_MATRIX_JSON",
+        env_file_var="WOLF15_MC_RETURN_MATRIX_FILE",
+        redis_key="WOLF15:RETURN_MATRIX",
+    )
+
+    assert payload == {"EURUSD": [1.0], "GBPUSD": [2.0]}
+
+
+def test_load_json_payload_falls_back_to_redis_when_inline_json_is_invalid(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("WOLF15_MC_RETURN_MATRIX_JSON", "not-json")
+    monkeypatch.delenv("WOLF15_MC_RETURN_MATRIX_FILE", raising=False)
+
+    class _FakeRedis:
+        def get(self, _key: str) -> str:
+            return '{"EURUSD": [0.1], "GBPUSD": [0.2]}'
+
+    from services.worker import _job_utils
+
+    monkeypatch.setattr(_job_utils, "get_redis_client", lambda: _FakeRedis())
+
+    payload = _job_utils.load_json_payload(
+        env_json_var="WOLF15_MC_RETURN_MATRIX_JSON",
+        env_file_var="WOLF15_MC_RETURN_MATRIX_FILE",
+        redis_key="WOLF15:RETURN_MATRIX",
+    )
+
+    assert payload == {"EURUSD": [0.1], "GBPUSD": [0.2]}

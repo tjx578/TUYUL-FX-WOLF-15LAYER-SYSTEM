@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 from datetime import UTC, datetime
-from typing import Any, Protocol, runtime_checkable
+from typing import Any, Literal, Protocol, runtime_checkable
 
 from loguru import logger
 
@@ -27,6 +27,9 @@ class AsyncRedisClient(Protocol):
     ) -> tuple[int, list[Any]]: ...
 
     async def get(self, name: str) -> str | bytes | None: ...
+
+
+RecoveryMode = Literal["full", "risk_only"]
 
 
 class PersistenceSync:
@@ -222,79 +225,50 @@ class PersistenceSync:
 
     async def recover_from_postgres(self) -> bool:
         """Recover key state from latest PostgreSQL snapshots."""
-        if not self._pg.is_available:
-            return False
-
-        drawdown_row = await self._pg.fetchrow(
-            """
-            SELECT state_data FROM risk_snapshots
-            WHERE snapshot_type = 'DRAWDOWN'
-            ORDER BY created_at DESC
-            LIMIT 1
-            """
-        )
-        if drawdown_row:
-            drawdown_data = _load_state_json(drawdown_row["state_data"])
-            self._redis.set("wolf15:drawdown:daily", str(drawdown_data.get("daily_dd", 0.0)))
-            self._redis.set("wolf15:drawdown:weekly", str(drawdown_data.get("weekly_dd", 0.0)))
-            self._redis.set("wolf15:drawdown:total", str(drawdown_data.get("total_dd", 0.0)))
-            self._redis.set("wolf15:peak_equity", str(drawdown_data.get("peak_equity", 0.0)))
-
-        cb_row = await self._pg.fetchrow(
-            """
-            SELECT state_data FROM risk_snapshots
-            WHERE snapshot_type = 'CIRCUIT_BREAKER'
-            ORDER BY created_at DESC
-            LIMIT 1
-            """
-        )
-        if cb_row:
-            cb_data = _load_state_json(cb_row["state_data"])
-            self._redis.set("wolf15:circuit_breaker:state", cb_data.get("state", "CLOSED"))
-            self._redis.set("wolf15:circuit_breaker:data", cb_data.get("data", "|0"))
-            self._redis.set(
-                "wolf15:consecutive_losses",
-                str(cb_data.get("consecutive_losses", 0)),
-            )
-
-        trades = await self._pg.fetch(
-            """
-            SELECT * FROM trade_history
-            WHERE status NOT IN ('CLOSED', 'CANCELLED', 'SKIPPED', 'ABORTED')
-            ORDER BY created_at DESC
-            """
-        )
-        for trade in trades:
-            key = f"wolf15:TRADE:{trade['trade_id']}"
-            payload = dict(trade)
-            for field, value in list(payload.items()):
-                if isinstance(value, datetime):
-                    payload[field] = value.isoformat()
-            self._redis.set(key, json.dumps(payload))
-
-        # ── Candle history recovery ──────────────────────────────────────
-        # When Redis candle lists are empty (post-restart with no WS data),
-        # pull recent candles from the ohlc_candles table so the engine has
-        # warmup data immediately instead of waiting for live candle completion.
-        candle_count = await self._recover_candle_history()
-
-        logger.info(
-            "PostgreSQL recovery complete; active trades=%d, candle keys=%d",
-            len(trades),
-            candle_count,
-        )
-        return True
+        return await self.hydrate_redis_from_postgres(mode="full")
 
     async def recover_risk_state_only(self) -> bool:
-        """Recover only risk/trade state from PostgreSQL, skipping candle history.
+        """Recover only risk/trade state from PostgreSQL, skipping candle history."""
+        return await self.hydrate_redis_from_postgres(mode="risk_only")
 
-        Used when Redis already has candle data (detected via SCAN) but is
-        missing risk/account state keys (e.g. ``wolf15:peak_equity``).
-        Avoids overwriting existing candle history during a partial recovery.
+    async def hydrate_redis_from_postgres(self, mode: RecoveryMode = "full") -> bool:
+        """Explicit Redis <- PostgreSQL hydration entrypoint.
+
+        ``mode="full"`` restores risk state, active trades, and candle history.
+        ``mode="risk_only"`` restores only risk/trade state and leaves candle
+        history untouched.
         """
         if not self._pg.is_available:
             return False
 
+        trades = await self._hydrate_risk_and_trade_state()
+        candle_count = 0
+        if mode == "full":
+            candle_count = await self._recover_candle_history()
+
+        hydration_meta = {
+            "mode": mode,
+            "active_trades": len(trades),
+            "candle_keys": candle_count,
+            "hydrated_at": datetime.now(UTC).isoformat(),
+            "source": "postgres",
+        }
+        self._redis.set("wolf15:recovery:last_hydration", json.dumps(hydration_meta))
+
+        if mode == "full":
+            logger.info(
+                "PostgreSQL recovery complete; active trades=%d, candle keys=%d",
+                len(trades),
+                candle_count,
+            )
+        else:
+            logger.info(
+                "PostgreSQL risk-only recovery complete; active trades=%d (candle history preserved)",
+                len(trades),
+            )
+        return True
+
+    async def _hydrate_risk_and_trade_state(self) -> list[dict[str, Any]]:
         drawdown_row = await self._pg.fetchrow(
             """
             SELECT state_data FROM risk_snapshots
@@ -341,14 +315,7 @@ class PersistenceSync:
                 if isinstance(value, datetime):
                     payload[field] = value.isoformat()
             self._redis.set(key, json.dumps(payload))
-
-        # NOTE: _recover_candle_history() is intentionally NOT called here.
-        # Candle data already exists in Redis — leave it untouched.
-        logger.info(
-            "PostgreSQL risk-only recovery complete; active trades=%d (candle history preserved)",
-            len(trades),
-        )
-        return True
+        return trades
 
     async def _recover_candle_history(self) -> int:
         """Recover candle history from ohlc_candles table into Redis lists.

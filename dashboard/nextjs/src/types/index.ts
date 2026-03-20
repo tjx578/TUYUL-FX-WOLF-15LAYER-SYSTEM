@@ -380,17 +380,45 @@ export interface CandleData {
 
 // ─── SYSTEM ───────────────────────────────────────────────────
 
+export type FeedStatus = "fresh" | "stale_preserved" | "no_producer" | "no_transport" | "config_error";
+
+/** Approved pipeline-wide freshness class labels (matches backend FreshnessClass enum). */
+export type FreshnessClassLabel =
+  | "LIVE"
+  | "DEGRADED_BUT_REFRESHING"
+  | "STALE_PRESERVED"
+  | "NO_PRODUCER"
+  | "NO_TRANSPORT"
+  | "CONFIG_ERROR";
+
 export interface SystemHealth {
   status: "ok" | "degraded" | "error";
   service: string;
   version: string;
-  uptime_seconds: number;
   redis_connected: boolean;
   mt5_connected: boolean;
   active_pairs: number;
   active_trades: number;
+  feed_status?: FeedStatus;
+  feed_staleness_seconds?: number;
+  feed_threshold_seconds?: number;
+  feed_last_seen_ts?: number | null;
+  detail?: string;
+  producer_heartbeat_age_seconds?: number | null;
+  producer_alive?: boolean;
+  uptime_seconds?: number;
   last_verdict_at?: number;
-  timestamp: number;
+  timestamp?: number | string;
+}
+
+export interface OrchestratorState {
+  mode: string;
+  reason: string;
+  compliance_code: string;
+  updated_at?: string;
+  event?: string;
+  orchestrator_heartbeat_age_seconds?: number | null;
+  orchestrator_ready?: boolean;
 }
 
 export interface ContextSnapshot {

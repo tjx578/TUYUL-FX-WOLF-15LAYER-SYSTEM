@@ -18,8 +18,6 @@ the entire 8-phase pipeline code path end-to-end and validates:
 - Error list accumulation
 """
 
-# pyright: reportPrivateUsage=false
-
 from __future__ import annotations
 
 import time
@@ -34,10 +32,14 @@ from pipeline.wolf_constitutional_pipeline import WolfConstitutionalPipeline
 #  Fake layer results
 # ──────────────────────────────────────────────────────────────────
 
+
 def _l1(valid: bool = True, **overrides: Any) -> dict[str, Any]:
     d: dict[str, Any] = {
-        "valid": valid, "direction": "BUY", "strength": 0.75,
-        "session": "London", "volatility_level": "NORMAL",
+        "valid": valid,
+        "direction": "BUY",
+        "strength": 0.75,
+        "session": "London",
+        "volatility_level": "NORMAL",
         "regime": "TRENDING",
     }
     d.update(overrides)
@@ -46,8 +48,11 @@ def _l1(valid: bool = True, **overrides: Any) -> dict[str, Any]:
 
 def _l2(valid: bool = True, **overrides: Any) -> dict[str, Any]:
     d: dict[str, Any] = {
-        "valid": valid, "direction": "BUY", "strength": 0.70,
-        "htf_bias": "BULLISH", "per_tf_bias": {},
+        "valid": valid,
+        "direction": "BUY",
+        "strength": 0.70,
+        "htf_bias": "BULLISH",
+        "per_tf_bias": {},
         "reflex_coherence": 0.85,
     }
     d.update(overrides)
@@ -56,8 +61,11 @@ def _l2(valid: bool = True, **overrides: Any) -> dict[str, Any]:
 
 def _l3(valid: bool = True, **overrides: Any) -> dict[str, Any]:
     d: dict[str, Any] = {
-        "valid": valid, "direction": "BUY", "strength": 0.72,
-        "trend": "BULLISH", "pattern": "OB_RETEST",
+        "valid": valid,
+        "direction": "BUY",
+        "strength": 0.72,
+        "trend": "BULLISH",
+        "pattern": "OB_RETEST",
     }
     d.update(overrides)
     return d
@@ -65,8 +73,11 @@ def _l3(valid: bool = True, **overrides: Any) -> dict[str, Any]:
 
 def _l4(**overrides: Any) -> dict[str, Any]:
     d: dict[str, Any] = {
-        "direction": "BUY", "score": 0.80, "technical_score": 75,
-        "session_score": 0.85, "coherence": 0.78,
+        "direction": "BUY",
+        "score": 0.80,
+        "technical_score": 75,
+        "session_score": 0.85,
+        "coherence": 0.78,
         "directional_bias": 0.65,
     }
     d.update(overrides)
@@ -75,9 +86,12 @@ def _l4(**overrides: Any) -> dict[str, Any]:
 
 def _l5(**overrides: Any) -> dict[str, Any]:
     d: dict[str, Any] = {
-        "psychology_score": 78, "discipline_ok": True,
-        "current_drawdown": 0.01, "consecutive_losses": 0,
-        "emotion_delta": 0.05, "volatility_index": 18.0,
+        "psychology_score": 78,
+        "discipline_ok": True,
+        "current_drawdown": 0.01,
+        "consecutive_losses": 0,
+        "emotion_delta": 0.05,
+        "volatility_index": 18.0,
         "atr_normalized": 20.0,
     }
     d.update(overrides)
@@ -86,9 +100,13 @@ def _l5(**overrides: Any) -> dict[str, Any]:
 
 def _l6(**overrides: Any) -> dict[str, Any]:
     d: dict[str, Any] = {
-        "risk_ok": True, "risk_score": 0.65, "correlation_risk": "LOW",
-        "risk_status": "STABLE", "propfirm_compliant": True,
-        "max_risk_pct": 1.0, "warnings": [],
+        "risk_ok": True,
+        "risk_score": 0.65,
+        "correlation_risk": "LOW",
+        "risk_status": "STABLE",
+        "propfirm_compliant": True,
+        "max_risk_pct": 1.0,
+        "warnings": [],
     }
     d.update(overrides)
     return d
@@ -96,9 +114,12 @@ def _l6(**overrides: Any) -> dict[str, Any]:
 
 def _l7(**overrides: Any) -> dict[str, Any]:
     d: dict[str, Any] = {
-        "confluence_score": 0.77, "validation": "PASS",
-        "win_probability": 62.0, "profit_factor": 1.85,
-        "bayesian_posterior": 0.72, "risk_of_ruin": 0.03,
+        "confluence_score": 0.77,
+        "validation": "PASS",
+        "win_probability": 62.0,
+        "profit_factor": 1.85,
+        "bayesian_posterior": 0.72,
+        "risk_of_ruin": 0.03,
         "mc_passed_threshold": True,
     }
     d.update(overrides)
@@ -113,7 +134,9 @@ def _l8(**overrides: Any) -> dict[str, Any]:
 
 def _l9(**overrides: Any) -> dict[str, Any]:
     d: dict[str, Any] = {
-        "smc_score": 0.70, "structure": "BULLISH", "confidence": 0.68,
+        "smc_score": 0.70,
+        "structure": "BULLISH",
+        "confidence": 0.68,
     }
     d.update(overrides)
     return d
@@ -127,10 +150,16 @@ def _l10(**overrides: Any) -> dict[str, Any]:
 
 def _l11(**overrides: Any) -> dict[str, Any]:
     d: dict[str, Any] = {
-        "valid": True, "rr": 2.8, "rr_ok": True,
-        "entry_price": 1.0850, "stop_loss": 1.0800,
-        "take_profit_1": 1.0990, "entry": 1.0850, "sl": 1.0800,
-        "tp1": 1.0990, "tp": 1.0990,
+        "valid": True,
+        "rr": 2.8,
+        "rr_ok": True,
+        "entry_price": 1.0850,
+        "stop_loss": 1.0800,
+        "take_profit_1": 1.0990,
+        "entry": 1.0850,
+        "sl": 1.0800,
+        "tp1": 1.0990,
+        "tp": 1.0990,
     }
     d.update(overrides)
     return d
@@ -138,9 +167,12 @@ def _l11(**overrides: Any) -> dict[str, Any]:
 
 def _macro(**overrides: Any) -> dict[str, Any]:
     d: dict[str, Any] = {
-        "regime": "RISK_ON", "phase": "EXPANSION",
-        "macro_vol_ratio": 0.85, "alignment": True,
-        "liquidity": {}, "bias_override": {},
+        "regime": "RISK_ON",
+        "phase": "EXPANSION",
+        "macro_vol_ratio": 0.85,
+        "alignment": True,
+        "liquidity": {},
+        "bias_override": {},
     }
     d.update(overrides)
     return d
@@ -150,12 +182,25 @@ def _macro(**overrides: Any) -> dict[str, Any]:
 #  Pipeline builder with all analyzers mocked
 # ──────────────────────────────────────────────────────────────────
 
+
 @pytest.fixture
-def mocked_pipeline():
+def mocked_pipeline(monkeypatch: pytest.MonkeyPatch):
     """
     Build a WolfConstitutionalPipeline with all layer analyzers stubbed
     and external I/O patched out.
     """
+
+    class _FakeRedisClient:
+        def get(self, _key: str) -> bytes | None:
+            from state.redis_keys import HEARTBEAT_INGEST
+
+            if _key == HEARTBEAT_INGEST:
+                return f'{{"ts": {time.time()}}}'.encode()
+            return None
+
+    # Governance gate imports RedisClient inside execute(); force a no-I/O stub.
+    monkeypatch.setattr("storage.redis_client.RedisClient", lambda: _FakeRedisClient())
+
     pipeline = WolfConstitutionalPipeline()
 
     # Replace lazy loader so it doesn't import real analyzers
@@ -193,25 +238,37 @@ def mocked_pipeline():
 
     # Stub governance engines
     pipeline._l13_engine = MagicMock()
-    pipeline._l13_engine.reflect = MagicMock(return_value={
-        "confidence_modifier": 0.02, "risk_adjustment": 0.0,
-        "meta_integrity": 0.95,
-    })
+    pipeline._l13_engine.reflect = MagicMock(
+        return_value={
+            "confidence_modifier": 0.02,
+            "risk_adjustment": 0.0,
+            "meta_integrity": 0.95,
+        }
+    )
     pipeline._l15_engine = MagicMock()
-    pipeline._l15_engine.compute_meta = MagicMock(return_value={
-        "meta_integrity": 0.96, "sovereignty_level": "FULL",
-    })
-    pipeline._l15_engine.enforce_sovereignty = MagicMock(return_value={
-        "drift_detected": False, "verdict_downgraded": False,
-    })
+    pipeline._l15_engine.compute_meta = MagicMock(
+        return_value={
+            "meta_integrity": 0.96,
+            "sovereignty_level": "FULL",
+        }
+    )
+    pipeline._l15_engine.enforce_sovereignty = MagicMock(
+        return_value={
+            "drift_detected": False,
+            "verdict_downgraded": False,
+        }
+    )
 
     # Stub enrichment
     pipeline._enrichment = MagicMock()
     _enrich_result = MagicMock()
     _enrich_result.to_dict.return_value = {
-        "enrichment_score": 0.82, "confidence_adjustment": 0.01,
-        "fusion_momentum": 0.7, "quantum_probability": 0.65,
-        "bias_strength": 0.6, "posterior": 0.7,
+        "enrichment_score": 0.82,
+        "confidence_adjustment": 0.01,
+        "fusion_momentum": 0.7,
+        "quantum_probability": 0.65,
+        "bias_strength": 0.6,
+        "posterior": 0.7,
     }
     _enrich_result.enrichment_score = 0.82
     _enrich_result.errors = []
@@ -219,19 +276,41 @@ def mocked_pipeline():
 
     # Stub context bus
     pipeline._context_bus = MagicMock()
-    pipeline._context_bus.check_warmup = MagicMock(return_value={
-        "ready": True, "bars": 50, "required": 5,
-    })
-    pipeline._context_bus.get_account_state = MagicMock(return_value={
-        "equity": 99000.0, "peak_equity": 100000.0,
-        "corr_exposure": 0.0, "daily_loss_pct": 0.0,
-        "base_kelly": 0.25, "open_positions": 1,
-        "max_open_positions": 5, "circuit_breaker_active": False,
-    })
+    pipeline._context_bus.check_warmup = MagicMock(
+        return_value={
+            "ready": True,
+            "bars": 50,
+            "required": 5,
+        }
+    )
+    pipeline._context_bus.get_account_state = MagicMock(
+        return_value={
+            "equity": 99000.0,
+            "peak_equity": 100000.0,
+            "corr_exposure": 0.0,
+            "daily_loss_pct": 0.0,
+            "base_kelly": 0.25,
+            "open_positions": 1,
+            "max_open_positions": 5,
+            "circuit_breaker_active": False,
+        }
+    )
     pipeline._context_bus.get_trade_history = MagicMock(return_value=None)
     pipeline._context_bus.get_conditioned_returns = MagicMock(return_value=None)
     pipeline._context_bus.get_conditioning_meta = MagicMock(return_value=None)
-    pipeline._context_bus.get_candles = MagicMock(return_value=[])
+    pipeline._context_bus.get_candles = MagicMock(
+        return_value=[
+            {
+                "timestamp": time.time(),
+                "open": 1.0,
+                "high": 1.0,
+                "low": 1.0,
+                "close": 1.0,
+                "volume": 1,
+            }
+        ]
+    )
+    pipeline._context_bus.get_feed_timestamp = MagicMock(return_value=time.time())
     pipeline._context_bus.inference_snapshot = MagicMock(return_value={})
 
     # Stub vault checker with realistic return value
@@ -266,14 +345,26 @@ def mocked_pipeline():
 #  Structural contract tests
 # ──────────────────────────────────────────────────────────────────
 
+
 class TestPipelineStructuralContract:
     """execute() must return a dict with all canonical keys."""
 
     REQUIRED_KEYS = {
-        "schema", "pair", "timestamp", "synthesis", "l12_verdict",
-        "reflective", "reflective_pass1", "reflective_pass2",
-        "l14_json", "l15_meta", "sovereignty", "enforcement",
-        "execution_map", "latency_ms", "errors",
+        "schema",
+        "pair",
+        "timestamp",
+        "synthesis",
+        "l12_verdict",
+        "reflective",
+        "reflective_pass1",
+        "reflective_pass2",
+        "l14_json",
+        "l15_meta",
+        "sovereignty",
+        "enforcement",
+        "execution_map",
+        "latency_ms",
+        "errors",
     }
 
     def test_result_has_all_required_keys(self, mocked_pipeline: WolfConstitutionalPipeline) -> None:
@@ -338,6 +429,7 @@ class TestL12Verdict:
 #  Constitutional boundary: no account data in verdict
 # ──────────────────────────────────────────────────────────────────
 
+
 class TestConstitutionalBoundary:
     FORBIDDEN_KEYS = {"balance", "equity", "margin_used", "account_id"}
 
@@ -358,6 +450,7 @@ class TestConstitutionalBoundary:
 #  L13 two-pass governance
 # ──────────────────────────────────────────────────────────────────
 
+
 class TestL13Governance:
     def test_l13_reflect_called_twice_on_execute(self, mocked_pipeline: WolfConstitutionalPipeline) -> None:
         """Two-pass: baseline (meta=1.0) then refined (real meta)."""
@@ -372,14 +465,16 @@ class TestL13Governance:
 
     def test_l15_meta_computed(self, mocked_pipeline: WolfConstitutionalPipeline) -> None:
         result = mocked_pipeline.execute("EURUSD")
-        if result["l12_verdict"].get("proceed_to_L13", False) or \
-           result["l12_verdict"].get("verdict", "").startswith("EXECUTE"):
+        if result["l12_verdict"].get("proceed_to_L13", False) or result["l12_verdict"].get("verdict", "").startswith(
+            "EXECUTE"
+        ):
             assert result["l15_meta"] is not None
 
 
 # ──────────────────────────────────────────────────────────────────
 #  Sovereignty enforcement
 # ──────────────────────────────────────────────────────────────────
+
 
 class TestSovereignty:
     def test_enforcement_present(self, mocked_pipeline: WolfConstitutionalPipeline) -> None:
@@ -395,6 +490,7 @@ class TestSovereignty:
 # ──────────────────────────────────────────────────────────────────
 #  Early exit on layer failure
 # ──────────────────────────────────────────────────────────────────
+
 
 class TestEarlyExit:
     def test_l1_invalid_returns_early(self, mocked_pipeline: WolfConstitutionalPipeline) -> None:
@@ -422,19 +518,30 @@ class TestEarlyExit:
 #  Warmup gate
 # ──────────────────────────────────────────────────────────────────
 
+
 class TestWarmupGate:
     def test_warmup_blocked_returns_early(self, mocked_pipeline: WolfConstitutionalPipeline) -> None:
-        mocked_pipeline._context_bus.check_warmup = MagicMock(return_value={
-            "ready": False, "bars": 3, "required": 20, "missing": 17,
-        })
+        mocked_pipeline._context_bus.check_warmup = MagicMock(
+            return_value={
+                "ready": False,
+                "bars": 3,
+                "required": 20,
+                "missing": 17,
+            }
+        )
         result = mocked_pipeline.execute("EURUSD")
         assert any("WARMUP" in e for e in result["errors"])
 
     def test_warmup_skipped_in_safe_mode(self, mocked_pipeline: WolfConstitutionalPipeline) -> None:
         """Safe mode bypasses warmup gate."""
-        mocked_pipeline._context_bus.check_warmup = MagicMock(return_value={
-            "ready": False, "bars": 3, "required": 20, "missing": 17,
-        })
+        mocked_pipeline._context_bus.check_warmup = MagicMock(
+            return_value={
+                "ready": False,
+                "bars": 3,
+                "required": 20,
+                "missing": 17,
+            }
+        )
         result = mocked_pipeline.execute("EURUSD", system_metrics={"safe_mode": True})
         # Should NOT have warmup error since safe_mode=True
         assert not any("WARMUP" in e for e in result["errors"])
@@ -443,6 +550,7 @@ class TestWarmupGate:
 # ──────────────────────────────────────────────────────────────────
 #  Signal throttle
 # ──────────────────────────────────────────────────────────────────
+
 
 class TestSignalThrottle:
     def test_throttled_signal_downgraded_to_hold(self, mocked_pipeline: WolfConstitutionalPipeline) -> None:
@@ -462,6 +570,7 @@ class TestSignalThrottle:
 #  tick_ts latency tracking
 # ──────────────────────────────────────────────────────────────────
 
+
 class TestTickLatency:
     def test_tick_to_verdict_latency_recorded(self, mocked_pipeline: WolfConstitutionalPipeline) -> None:
         tick_ts = time.time() - 0.5  # 500ms ago
@@ -474,6 +583,7 @@ class TestTickLatency:
 #  Multiple symbols
 # ──────────────────────────────────────────────────────────────────
 
+
 class TestMultipleSymbols:
     def test_different_symbols_produce_results(self, mocked_pipeline: WolfConstitutionalPipeline) -> None:
         for symbol in ["EURUSD", "GBPUSD", "XAUUSD"]:
@@ -485,6 +595,7 @@ class TestMultipleSymbols:
 # ──────────────────────────────────────────────────────────────────
 #  HOLD direction (neutral trend)
 # ──────────────────────────────────────────────────────────────────
+
 
 class TestNeutralTrend:
     def test_neutral_trend_skips_l11(self, mocked_pipeline: WolfConstitutionalPipeline) -> None:
@@ -500,6 +611,7 @@ class TestNeutralTrend:
 # ──────────────────────────────────────────────────────────────────
 #  Fatal error handling
 # ──────────────────────────────────────────────────────────────────
+
 
 class TestFatalError:
     def test_exception_in_layer_returns_early_exit(self, mocked_pipeline: WolfConstitutionalPipeline) -> None:

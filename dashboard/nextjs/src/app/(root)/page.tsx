@@ -14,11 +14,12 @@ import { useCommandCenterState } from "@/hooks/useCommandCenterState";
 import { TakeSignalForm } from "@/components/TakeSignalForm";
 import PageComplianceBanner from "@/components/feedback/PageComplianceBanner";
 import DataStreamDiagnostic from "@/components/feedback/DataStreamDiagnostic";
+import VerdictEmptyStatePanel from "@/components/feedback/VerdictEmptyStatePanel";
 import { VerdictCard } from "@/components/VerdictCard";
 import { SystemHealth } from "@/components/SystemHealth";
 import StaleDataBanner from "@/components/command-center/StaleDataBanner";
 import { useSessionLabel } from "@/hooks/useSessionLabel";
-import type { L12Verdict, Account } from "@/types";
+import type { L12Verdict, Account, FeedStatus } from "@/types";
 
 // ── Helpers ──────────────────────────────────────────────────
 
@@ -32,11 +33,19 @@ function statusColor(status: string) {
 // ── Sub-components ────────────────────────────────────────────
 
 interface GlobalStatusStripProps {
-  health: { status: string } | undefined;
+  health: { status: string; feed_status?: FeedStatus } | undefined;
   wsStatus: string;
   mode: string;
   executionState: string | undefined;
   openTradeCount: number;
+}
+
+function feedStatusColor(status?: FeedStatus) {
+  if (status === "fresh") return "var(--green)";
+  if (status === "stale_preserved") return "var(--yellow)";
+  if (status === "no_producer") return "#ff9f0a";
+  if (status === "no_transport" || status === "config_error") return "var(--red)";
+  return "var(--text-muted)";
 }
 
 function GlobalStatusStrip({
@@ -70,9 +79,9 @@ function GlobalStatusStrip({
     },
     {
       label: "LIVE FEED",
-      value: wsStatus,
-      color: wsStatus === "LIVE" ? "var(--green)" : (wsStatus === "RECONNECTING" || wsStatus === "CONNECTING" || wsStatus === "DEGRADED" || wsStatus === "STALE") ? "var(--yellow)" : "var(--red)",
-      pulse: wsStatus === "LIVE",
+      value: health?.feed_status?.toUpperCase() ?? wsStatus,
+      color: health?.feed_status ? feedStatusColor(health.feed_status) : wsStatus === "LIVE" ? "var(--green)" : (wsStatus === "RECONNECTING" || wsStatus === "CONNECTING" || wsStatus === "DEGRADED" || wsStatus === "STALE") ? "var(--yellow)" : "var(--red)",
+      pulse: health?.feed_status === "fresh" || wsStatus === "LIVE",
     },
     {
       label: "ENGINE",
@@ -606,6 +615,7 @@ export default function CommandCenterPage() {
     context,
     execution,
     health,
+    orchestrator,
     calendarBlocker,
     recentAlerts,
     topActionableSignals,
@@ -617,6 +627,7 @@ export default function CommandCenterPage() {
     isStale,
     wsStatus,
     dataErrors,
+    verdictEmptyState,
     vLoading,
   } = useCommandCenterState();
 
@@ -670,6 +681,8 @@ export default function CommandCenterPage() {
         isSystemDegraded={isSystemDegraded}
         wsStatus={wsStatus}
         dataErrors={dataErrors}
+        feedStatus={health?.feed_status}
+        feedDetail={health?.detail}
       />
 
       {/* 3. Event Banner — high-impact news blackout */}
@@ -751,6 +764,23 @@ export default function CommandCenterPage() {
               : "no data"
           }
         />
+        <KpiCard
+          label="ORCHESTRATOR"
+          value={orchestrator?.orchestrator_ready ? "READY" : (orchestrator?.mode ?? "UNKNOWN")}
+          color={
+            orchestrator?.orchestrator_ready
+              ? "var(--green)"
+              : orchestrator?.mode === "SAFE"
+                ? "var(--yellow)"
+                : "var(--red)"
+          }
+          sub={
+            orchestrator?.orchestrator_heartbeat_age_seconds !== undefined &&
+              orchestrator?.orchestrator_heartbeat_age_seconds !== null
+              ? `hb ${Math.round(orchestrator.orchestrator_heartbeat_age_seconds)}s`
+              : "heartbeat n/a"
+          }
+        />
       </div>
 
       {/* 8. Main grid: verdicts left, system right */}
@@ -815,28 +845,7 @@ export default function CommandCenterPage() {
               ))}
             </div>
           ) : verdictList.length === 0 ? (
-            <div
-              className="panel"
-              style={{
-                fontSize: 12,
-                color: "var(--text-muted)",
-                padding: "32px 20px",
-                textAlign: "center",
-              }}
-            >
-              <div
-                style={{
-                  marginBottom: 6,
-                  fontSize: 13,
-                  color: "var(--text-secondary)",
-                }}
-              >
-                No verdicts available
-              </div>
-              <div style={{ fontSize: 11 }}>
-                Connect backend to see live signals.
-              </div>
-            </div>
+            <VerdictEmptyStatePanel state={verdictEmptyState} />
           ) : (
             <div className="overview-verdict-grid">
               {verdictList.map((v: L12Verdict) => (

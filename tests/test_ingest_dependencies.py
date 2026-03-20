@@ -9,6 +9,7 @@ import pytest
 from ingest.dependencies import (
     _SYMBOL_REVERSE_MAP,
     _handle_tick,
+    _last_exchange_ts_ms,
     _last_prices,
     _last_timestamps,
     _spike_filter,
@@ -49,6 +50,7 @@ class TestHandleTick:
         """Reset unified filter state between tests."""
         _last_prices.clear()
         _last_timestamps.clear()
+        _last_exchange_ts_ms.clear()
         _spike_filter.clear()
         _unified_dedup.clear()
 
@@ -75,7 +77,6 @@ class TestHandleTick:
 
             # Verify update_tick was called
             mock_bus.update_tick.assert_called_once()
-
 
             # Verify normalized tick format
             call_args = mock_bus.update_tick.call_args[0][0]
@@ -272,7 +273,6 @@ class TestCreateFinnhubWs:
 
             # Verify FinnhubWebSocket was instantiated
             mock_ws_class.assert_called_once()
-
 
             # Verify arguments
             call_kwargs = mock_ws_class.call_args[1]

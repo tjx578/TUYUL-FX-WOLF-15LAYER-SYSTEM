@@ -17,10 +17,11 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from api.middleware.auth import verify_token
 from dashboard.price_feed import PriceFeed
 from dashboard.trade_ledger import TradeLedger
 from schemas.trade_models import TradeStatus
+
+from .middleware.auth import verify_token
 
 logger = logging.getLogger(__name__)
 
@@ -36,11 +37,13 @@ _price_feed = PriceFeed()
 
 # ─── Helpers ──────────────────────────────────────────────────
 
-_ACTIVE_STATUSES = frozenset({
-    TradeStatus.INTENDED,
-    TradeStatus.PENDING,
-    TradeStatus.OPEN,
-})
+_ACTIVE_STATUSES = frozenset(
+    {
+        TradeStatus.INTENDED,
+        TradeStatus.PENDING,
+        TradeStatus.OPEN,
+    }
+)
 
 
 def _detect_anomalies(trade: dict[str, Any]) -> list[dict[str, Any]]:
@@ -53,18 +56,21 @@ def _detect_anomalies(trade: dict[str, Any]) -> list[dict[str, Any]]:
         if created:
             try:
                 from datetime import datetime
+
                 if isinstance(created, str):
                     created_ts = datetime.fromisoformat(created.replace("Z", "+00:00")).timestamp()
-                elif isinstance(created, (int, float)):
+                elif isinstance(created, int | float):
                     created_ts = float(created)
                 else:
                     created_ts = 0
                 if created_ts > 0 and (time.time() - created_ts) > 300:
-                    anomalies.append({
-                        "type": "STALE_PENDING",
-                        "message": "Order pending > 5 minutes without fill",
-                        "severity": "WARNING",
-                    })
+                    anomalies.append(
+                        {
+                            "type": "STALE_PENDING",
+                            "message": "Order pending > 5 minutes without fill",
+                            "severity": "WARNING",
+                        }
+                    )
             except (ValueError, TypeError):
                 pass
 
@@ -74,11 +80,13 @@ def _detect_anomalies(trade: dict[str, Any]) -> list[dict[str, Any]]:
     if entry and current and entry > 0:
         deviation = abs(current - entry) / entry
         if deviation > 0.02:
-            anomalies.append({
-                "type": "PRICE_DEVIATION",
-                "message": f"Current price deviates {deviation:.1%} from entry",
-                "severity": "WARNING",
-            })
+            anomalies.append(
+                {
+                    "type": "PRICE_DEVIATION",
+                    "message": f"Current price deviates {deviation:.1%} from entry",
+                    "severity": "WARNING",
+                }
+            )
 
     return anomalies
 
@@ -88,34 +96,42 @@ def _build_execution_timeline(trade: dict[str, Any]) -> list[dict[str, Any]]:
     events: list[dict[str, Any]] = []
 
     if trade.get("created_at"):
-        events.append({
-            "event": "TRADE_CREATED",
-            "status": TradeStatus.INTENDED,
-            "timestamp": trade["created_at"],
-        })
+        events.append(
+            {
+                "event": "TRADE_CREATED",
+                "status": TradeStatus.INTENDED,
+                "timestamp": trade["created_at"],
+            }
+        )
 
     if trade.get("confirmed_at"):
-        events.append({
-            "event": "TRADE_CONFIRMED",
-            "status": TradeStatus.PENDING,
-            "timestamp": trade["confirmed_at"],
-        })
+        events.append(
+            {
+                "event": "TRADE_CONFIRMED",
+                "status": TradeStatus.PENDING,
+                "timestamp": trade["confirmed_at"],
+            }
+        )
 
     if trade.get("opened_at"):
-        events.append({
-            "event": "ORDER_FILLED",
-            "status": TradeStatus.OPEN,
-            "timestamp": trade["opened_at"],
-        })
+        events.append(
+            {
+                "event": "ORDER_FILLED",
+                "status": TradeStatus.OPEN,
+                "timestamp": trade["opened_at"],
+            }
+        )
 
     if trade.get("closed_at"):
-        events.append({
-            "event": "TRADE_CLOSED",
-            "status": trade.get("status", TradeStatus.CLOSED),
-            "timestamp": trade["closed_at"],
-            "close_reason": trade.get("close_reason"),
-            "pnl": trade.get("pnl"),
-        })
+        events.append(
+            {
+                "event": "TRADE_CLOSED",
+                "status": trade.get("status", TradeStatus.CLOSED),
+                "timestamp": trade["closed_at"],
+                "close_reason": trade.get("close_reason"),
+                "pnl": trade.get("pnl"),
+            }
+        )
 
     # Sort by timestamp
     events.sort(key=lambda e: str(e.get("timestamp", "")))
@@ -173,7 +189,13 @@ async def get_trade_desk() -> dict[str, Any]:
     Used by the Trade Desk page for real-time overview.
     """
     all_trades = await _trade_ledger.get_all_trades_async()
-    trade_list = all_trades if isinstance(all_trades, list) else list(all_trades.values()) if isinstance(all_trades, dict) else []
+    trade_list = (
+        all_trades
+        if isinstance(all_trades, list)
+        else list(all_trades.values())
+        if isinstance(all_trades, dict)
+        else []
+    )
 
     # Normalize to dicts
     normalized: list[dict[str, Any]] = []
@@ -194,14 +216,18 @@ async def get_trade_desk() -> dict[str, Any]:
     for t in active:
         anomalies = _detect_anomalies(t)
         if anomalies:
-            trade_anomalies.append({
-                "trade_id": t.get("trade_id"),
-                "anomalies": anomalies,
-            })
+            trade_anomalies.append(
+                {
+                    "trade_id": t.get("trade_id"),
+                    "anomalies": anomalies,
+                }
+            )
 
     return {
         "trades": {
-            "pending": [t for t in active if t.get("status") == TradeStatus.INTENDED or t.get("status") == TradeStatus.PENDING],
+            "pending": [
+                t for t in active if t.get("status") == TradeStatus.INTENDED or t.get("status") == TradeStatus.PENDING
+            ],
             "open": [t for t in active if t.get("status") == TradeStatus.OPEN],
             "closed": closed,
             "cancelled": cancelled,
@@ -226,7 +252,9 @@ async def get_trade_detail(trade_id: str) -> dict[str, Any]:
     if not trade:
         raise HTTPException(status_code=404, detail=f"Trade not found: {trade_id}")
 
-    trade_dict = trade.model_dump() if hasattr(trade, "model_dump") else dict(trade) if isinstance(trade, dict) else vars(trade)
+    trade_dict = (
+        trade.model_dump() if hasattr(trade, "model_dump") else dict(trade) if isinstance(trade, dict) else vars(trade)
+    )
 
     # Enrich with current price
     pair = trade_dict.get("pair", trade_dict.get("symbol"))
@@ -246,7 +274,13 @@ async def get_trade_detail(trade_id: str) -> dict[str, Any]:
 async def get_exposure_summary() -> dict[str, Any]:
     """Aggregated exposure by pair and account for active trades."""
     all_trades = await _trade_ledger.get_all_trades_async()
-    trade_list = all_trades if isinstance(all_trades, list) else list(all_trades.values()) if isinstance(all_trades, dict) else []
+    trade_list = (
+        all_trades
+        if isinstance(all_trades, list)
+        else list(all_trades.values())
+        if isinstance(all_trades, dict)
+        else []
+    )
 
     normalized: list[dict[str, Any]] = []
     for t in trade_list:

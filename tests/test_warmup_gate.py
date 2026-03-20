@@ -13,6 +13,9 @@ from unittest.mock import MagicMock
 
 from context.live_context_bus import LiveContextBus
 
+# Default minimum bar requirements used across tests
+_DEFAULT_MIN_BARS = {"M15": 20, "H1": 20, "H4": 10, "D1": 5}
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -51,7 +54,7 @@ class TestCheckWarmup:
         LiveContextBus._instance = None
 
     def test_no_data_is_not_ready(self):
-        result = self.bus.check_warmup("EURUSD")
+        result = self.bus.check_warmup("EURUSD", _DEFAULT_MIN_BARS)
         assert result["ready"] is False
         assert all(v == 0 for v in result["bars"].values())
         assert len(result["missing"]) > 0
@@ -60,7 +63,7 @@ class TestCheckWarmup:
         _fill_candles(self.bus, "EURUSD", "M15", 25)
         _fill_candles(self.bus, "EURUSD", "H1", 25)
         # H4 and D1 still empty
-        result = self.bus.check_warmup("EURUSD")
+        result = self.bus.check_warmup("EURUSD", _DEFAULT_MIN_BARS)
         assert result["ready"] is False
         assert "H4" in result["missing"]
         assert "D1" in result["missing"]
@@ -70,7 +73,7 @@ class TestCheckWarmup:
         _fill_candles(self.bus, "EURUSD", "H1", 20)
         _fill_candles(self.bus, "EURUSD", "H4", 10)
         _fill_candles(self.bus, "EURUSD", "D1", 5)
-        result = self.bus.check_warmup("EURUSD")
+        result = self.bus.check_warmup("EURUSD", _DEFAULT_MIN_BARS)
         assert result["ready"] is True
         assert result["missing"] == {}
 
@@ -85,7 +88,7 @@ class TestCheckWarmup:
         _fill_candles(self.bus, "EURUSD", "H1", 20)
         _fill_candles(self.bus, "EURUSD", "H4", 10)
         _fill_candles(self.bus, "EURUSD", "D1", 5)
-        result = self.bus.check_warmup("EURUSD")
+        result = self.bus.check_warmup("EURUSD", _DEFAULT_MIN_BARS)
         assert result["ready"] is True
 
     def test_missing_reports_shortfall(self):
@@ -93,7 +96,7 @@ class TestCheckWarmup:
         _fill_candles(self.bus, "EURUSD", "H1", 20)
         _fill_candles(self.bus, "EURUSD", "H4", 10)
         _fill_candles(self.bus, "EURUSD", "D1", 5)
-        result = self.bus.check_warmup("EURUSD")
+        result = self.bus.check_warmup("EURUSD", _DEFAULT_MIN_BARS)
         assert result["ready"] is False
         assert result["missing"] == {"M15": 5}
 
@@ -104,8 +107,8 @@ class TestCheckWarmup:
         _fill_candles(self.bus, "EURUSD", "D1", 10)
         _fill_candles(self.bus, "GBPJPY", "M15", 5)
 
-        eur_result = self.bus.check_warmup("EURUSD")
-        gbp_result = self.bus.check_warmup("GBPJPY")
+        eur_result = self.bus.check_warmup("EURUSD", _DEFAULT_MIN_BARS)
+        gbp_result = self.bus.check_warmup("GBPJPY", _DEFAULT_MIN_BARS)
 
         assert eur_result["ready"] is True
         assert gbp_result["ready"] is False
@@ -141,7 +144,7 @@ class TestPipelineWarmupGate:
 
         result = pipe.execute("EURUSD")
 
-        assert "WARMUP_INSUFFICIENT" in result["errors"]
+        assert any("WARMUP_INSUFFICIENT" in e for e in result["errors"])
         assert result["l12_verdict"]["verdict"] == "HOLD"
         # Pipeline should not have attempted any layer analysis
         pipe._context_bus.check_warmup.assert_called_once() # pyright: ignore[reportAttributeAccessIssue]

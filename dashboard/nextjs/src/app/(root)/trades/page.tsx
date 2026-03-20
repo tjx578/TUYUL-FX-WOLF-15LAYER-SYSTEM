@@ -8,7 +8,7 @@
 // Sync mismatch indicator
 // ============================================================
 
-import { useMemo } from "react";
+import React, { useMemo } from "react";
 import PageComplianceBanner from "@/components/feedback/PageComplianceBanner";
 import {
   TradeTabs,
@@ -18,6 +18,7 @@ import {
   ExposureSummaryPanel,
   ExecutionAnomalyBanner,
 } from "@/components/trade-desk";
+import OrchestratorReadinessStrip from "@/components/OrchestratorReadinessStrip";
 import { useTradeDeskState, useTradeDeskLivePrices } from "@/hooks/useTradeDeskHooks";
 import type { TradeDeskTrade } from "@/schema/tradeDeskSchema";
 
@@ -105,6 +106,8 @@ export default function TradeDeskPage() {
           </p>
         </div>
       </div>
+
+      <OrchestratorReadinessStrip />
 
       {/* ── Anomaly Banner ── */}
       <ExecutionAnomalyBanner anomalies={anomalies} />

@@ -83,6 +83,7 @@ from core.metrics import (
     LAYER_LATENCY,
     SIGNAL_THROTTLED,
     TICK_TO_VERDICT_LATENCY,
+    VERDICT_PATH_EVENT_TOTAL,
 )
 from core.tracing import layer_span
 from pipeline.engines import L13ReflectiveEngine, L15MetaSovereigntyEngine
@@ -109,6 +110,26 @@ _TZ_GMT8 = timezone(timedelta(hours=8))
 # Per-layer execution timeout (seconds).  Layers that exceed this are
 # aborted and recorded as FATAL_ERROR so the pipeline can fail fast.
 _LAYER_TIMEOUT_SEC: float = 30.0
+
+
+def _parse_heartbeat_timestamp(raw: Any) -> float | None:
+    """Extract a valid heartbeat timestamp from a Redis JSON payload."""
+    if raw is None:
+        return None
+
+    import orjson as _orjson  # noqa: PLC0415
+
+    payload: Any = raw
+    if isinstance(raw, str | bytes | bytearray):
+        with contextlib.suppress(Exception):
+            payload = _orjson.loads(raw)
+
+    if isinstance(payload, dict):
+        ts = _coerce_timestamp_to_epoch(payload.get("ts"))
+        return ts if ts is not None and ts > 0 else None
+
+    ts = _coerce_timestamp_to_epoch(payload)
+    return ts if ts is not None and ts > 0 else None
 
 
 def _coerce_timestamp_to_epoch(value: Any) -> float | None:
@@ -531,6 +552,8 @@ class WolfConstitutionalPipeline:
         safe_mode = bool(metrics.get("safe_mode", False))
 
         start_time = time.time()
+        logger.info("[VerdictPath] pipeline started | symbol={} safe_mode={}", symbol, safe_mode)
+        VERDICT_PATH_EVENT_TOTAL.labels(event="pipeline_started", symbol=symbol, status="ok").inc()
         self._ensure_analyzers()
         self._ensure_governance_engines()
         errors: list[str] = []
@@ -583,6 +606,11 @@ class WolfConstitutionalPipeline:
                 missing = warmup["missing"]
                 layers_executed.append("L0")
                 engines_invoked.append("WarmupGate")
+                VERDICT_PATH_EVENT_TOTAL.labels(event="warmup_rejected", symbol=symbol, status="hold").inc()
+                logger.warning(
+                    f"[VerdictPath] warmup rejected | symbol={symbol} "
+                    f"bars={warmup['bars']} required={warmup['required']} missing={missing}"
+                )
                 logger.warning(
                     f"[Pipeline v8.0] {symbol} WARMUP INSUFFICIENT — "
                     f"bars={warmup['bars']}, required={warmup['required']}, "
@@ -652,6 +680,99 @@ class WolfConstitutionalPipeline:
                 "reason_key": (),
                 "last_log_ts": 0.0,
             }
+
+        # ═══════════════════════════════════════════════════════
+        # GOVERNANCE GATE -- unified freshness / producer health /
+        # kill-switch enforcement.  Must pass before any analysis
+        # layer runs.  Integrates DQ penalty, feed staleness,
+        # producer heartbeat, and operator kill-switch into a
+        # single ALLOW / HOLD / BLOCK decision.
+        # ═══════════════════════════════════════════════════════
+        from state.governance_gate import GovernanceAction, assess_governance  # noqa: PLC0415
+
+        _feed_age_ts = (
+            self._context_bus.get_feed_timestamp(symbol) if hasattr(self._context_bus, "get_feed_timestamp") else None
+        )
+        _heartbeat_ts: float | None = None
+        _kill_switch_val: str | None = None
+        try:
+            from state.redis_keys import HEARTBEAT_INGEST, KILL_SWITCH  # noqa: PLC0415
+
+            _redis_client = getattr(self, "_redis", None)
+            if _redis_client is None:
+                import contextlib as _ctx  # noqa: PLC0415
+
+                from storage.redis_client import RedisClient  # noqa: PLC0415
+
+                with _ctx.suppress(Exception):
+                    _redis_client = RedisClient()
+            if _redis_client is not None:
+                import contextlib as _ctx2  # noqa: PLC0415
+
+                with _ctx2.suppress(Exception):
+                    _hb_raw = _redis_client.get(HEARTBEAT_INGEST)
+                    if _hb_raw is not None:
+                        _heartbeat_ts = _parse_heartbeat_timestamp(_hb_raw)
+                with _ctx2.suppress(Exception):
+                    _ks_raw = _redis_client.get(KILL_SWITCH)
+                    if _ks_raw is not None:
+                        _kill_switch_val = str(_ks_raw)
+        except Exception:
+            pass  # Redis unavailable — governance proceeds with env defaults
+
+        _warmup_raw_gov = (
+            self._context_bus.check_warmup(symbol, self.WARMUP_MIN_BARS) if not safe_mode else {"ready": True}
+        )
+        _warmup_ready_gov = _warmup_raw_gov.get("ready", True) if isinstance(_warmup_raw_gov, dict) else True
+
+        _governance = assess_governance(
+            symbol=symbol,
+            last_seen_ts=_feed_age_ts,
+            transport_ok=True,
+            heartbeat_ts=_heartbeat_ts,
+            warmup_ready=_warmup_ready_gov,
+            dq_penalty=_dq_penalty,
+            dq_degraded=len(_degraded_reports) > 0,
+            kill_switch_value=_kill_switch_val,
+        )
+
+        if _governance.action == GovernanceAction.BLOCK:
+            layers_executed.append("GovernanceGate")
+            engines_invoked.append("GovernanceGate")
+            VERDICT_PATH_EVENT_TOTAL.labels(event="governance_blocked", symbol=symbol, status="block").inc()
+            logger.warning(
+                "[VerdictPath] governance blocked | symbol={} reasons={} penalty={}",
+                symbol,
+                list(_governance.reasons),
+                round(_governance.confidence_penalty, 4),
+            )
+            result = _early_exit_with_map(
+                [f"GOVERNANCE_BLOCK:{','.join(_governance.reasons)}"],
+                time.time() - start_time,
+            )
+            result["governance"] = _governance.to_dict()
+            return result
+
+        if _governance.action == GovernanceAction.HOLD:
+            layers_executed.append("GovernanceGate")
+            engines_invoked.append("GovernanceGate")
+            VERDICT_PATH_EVENT_TOTAL.labels(event="governance_blocked", symbol=symbol, status="hold").inc()
+            logger.warning(
+                "[VerdictPath] governance hold | symbol={} reasons={} penalty={}",
+                symbol,
+                list(_governance.reasons),
+                round(_governance.confidence_penalty, 4),
+            )
+            result = _early_exit_with_map(
+                [f"GOVERNANCE_HOLD:{','.join(_governance.reasons)}"],
+                time.time() - start_time,
+            )
+            result["governance"] = _governance.to_dict()
+            return result
+
+        # Carry governance penalty forward for L12 confidence adjustment
+        if _governance.action == GovernanceAction.ALLOW_REDUCED:
+            _dq_penalty = max(_dq_penalty, _governance.confidence_penalty)
 
         try:
             # ═══════════════════════════════════════════════════════
@@ -1270,7 +1391,7 @@ class WolfConstitutionalPipeline:
             metrics.get("macro_vix_state", {})
 
             gates = self._evaluate_9_gates(synthesis)
-            l12_verdict = generate_l12_verdict(synthesis)  # noqa: F821
+            l12_verdict = generate_l12_verdict(synthesis, governance_penalty=_dq_penalty)
             l12_verdict["gates_v74"] = gates
 
             # ═══════════════════════════════════════════════════════

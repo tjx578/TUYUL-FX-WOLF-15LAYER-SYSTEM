@@ -1,5 +1,4 @@
 {
-  "$schema": "https://railway.app/railway.schema.json",
   "services": [
     {
       "name": "wolf15-api",
@@ -19,17 +18,18 @@
     },
     {
       "name": "wolf15-orchestrator",
-      "startCommand": "python -m services.orchestrator.state_manager",
+      "startCommand": "bash deploy/railway/start_orchestrator.sh",
+      "public": false
+    },
+    {
+      "name": "wolf15-migrator",
+      "startCommand": "bash deploy/railway/start_migrator.sh",
       "public": false
     },
     {
       "name": "wolf15-worker",
-      "startCommand": "python -m services.worker.montecarlo_job",
+      "startCommand": "bash deploy/railway/start_worker.sh services.worker.montecarlo_job",
       "public": false
     }
-  ],
-  "plugins": [
-    "redis",
-    "postgres"
   ]
 }

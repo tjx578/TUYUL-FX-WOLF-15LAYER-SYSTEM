@@ -50,6 +50,7 @@ def _make_redis(
 # Warmup prefix-fallback tests
 # ---------------------------------------------------------------------------
 
+
 async def test_warmup_uses_wolf15_candle_history_prefix() -> None:
     """load_candle_history must pick data stored under wolf15:candle_history:* (List)."""
     candle = _make_candle("EURUSD", "H1", 1.0850)
@@ -127,10 +128,12 @@ async def test_warmup_prefers_first_matching_prefix() -> None:
     """wolf15:candle_history (List) must win over candle_history (legacy) when both have data."""
     candle_new = _make_candle("EURUSD", "H4", 1.0900)
     candle_old = _make_candle("EURUSD", "H4", 1.0800)
-    redis = _make_redis({
-        "wolf15:candle_history:EURUSD:H4": [candle_new],
-        "candle_history:EURUSD:H4": [candle_old],
-    })
+    redis = _make_redis(
+        {
+            "wolf15:candle_history:EURUSD:H4": [candle_new],
+            "candle_history:EURUSD:H4": [candle_old],
+        }
+    )
     bus = LiveContextBus()
 
     consumer = RedisConsumer(["EURUSD"], redis, bus)
@@ -162,14 +165,17 @@ async def test_warmup_skips_malformed_candles() -> None:
 # Additional warmup tests
 # ---------------------------------------------------------------------------
 
+
 async def test_warmup_loads_multiple_symbols() -> None:
     """Warmup must load data for every symbol in the list."""
     candle_eu = _make_candle("EURUSD", "H1", 1.0850)
     candle_gb = _make_candle("GBPUSD", "H1", 1.2700)
-    redis = _make_redis({
-        "wolf15:candle_history:EURUSD:H1": [candle_eu],
-        "wolf15:candle_history:GBPUSD:H1": [candle_gb],
-    })
+    redis = _make_redis(
+        {
+            "wolf15:candle_history:EURUSD:H1": [candle_eu],
+            "wolf15:candle_history:GBPUSD:H1": [candle_gb],
+        }
+    )
     bus = LiveContextBus()
 
     consumer = RedisConsumer(["EURUSD", "GBPUSD"], redis, bus)
@@ -244,10 +250,12 @@ async def test_warmup_mixed_prefixes_per_timeframe() -> None:
     """Different timeframes may resolve via different prefixes."""
     candle_h1 = _make_candle("EURUSD", "H1", 1.0850)
     candle_m15 = _make_candle("EURUSD", "M15", 1.0800)
-    redis = _make_redis({
-        "wolf15:candle_history:EURUSD:H1": [candle_h1],     # primary list prefix for H1
-        "candle_history:EURUSD:M15": [candle_m15],           # legacy list prefix for M15
-    })
+    redis = _make_redis(
+        {
+            "wolf15:candle_history:EURUSD:H1": [candle_h1],  # primary list prefix for H1
+            "candle_history:EURUSD:M15": [candle_m15],  # legacy list prefix for M15
+        }
+    )
     bus = LiveContextBus()
 
     consumer = RedisConsumer(["EURUSD"], redis, bus)
@@ -378,6 +386,27 @@ def test_extract_payload_non_bytes_non_str() -> None:
     assert result is None
 
 
+def test_extract_channel_bytes() -> None:
+    """_extract_channel should decode bytes channel names."""
+    msg: dict[str, Any] = {"type": "message", "channel": b"tick_updates", "data": b"{}"}
+    result = RedisConsumer._extract_channel(msg)  # type: ignore[attr-defined]
+    assert result == "tick_updates"
+
+
+def test_extract_channel_str() -> None:
+    """_extract_channel should return str channel names unchanged."""
+    msg: dict[str, Any] = {"type": "message", "channel": "candle:EURUSD:M15", "data": b"{}"}
+    result = RedisConsumer._extract_channel(msg)  # type: ignore[attr-defined]
+    assert result == "candle:EURUSD:M15"
+
+
+def test_extract_channel_missing() -> None:
+    """_extract_channel should return None when channel is missing."""
+    msg: dict[str, Any] = {"type": "message", "data": b"{}"}
+    result = RedisConsumer._extract_channel(msg)  # type: ignore[attr-defined]
+    assert result is None
+
+
 def test_stop_event_set() -> None:
     """stop() should set the internal stop event."""
     redis = _make_redis({})
@@ -399,6 +428,7 @@ def test_default_config() -> None:
 
     assert consumer._config.pubsub_patterns == RedisConsumerConfig().pubsub_patterns  # type: ignore[attr-defined]
     assert consumer._config.pubsub_channels == RedisConsumerConfig().pubsub_channels  # type: ignore[attr-defined]
+    assert "tick_updates" in consumer._config.pubsub_channels  # type: ignore[attr-defined]
 
 
 def test_custom_config() -> None:
@@ -415,3 +445,27 @@ def test_custom_config() -> None:
 
     assert consumer._config.pubsub_patterns == ("custom:*",)  # type: ignore[attr-defined]
     assert consumer._config.pubsub_channels == ("custom_channel",)  # type: ignore[attr-defined]
+
+
+def test_handle_tick_dict_valid_updates_feed_timestamp() -> None:
+    """Valid tick payload should refresh feed timestamp for the symbol."""
+    redis = _make_redis({})
+    bus = LiveContextBus()
+    bus.reset_state()
+    consumer = RedisConsumer(["EURUSD"], redis, bus)
+
+    assert bus.get_feed_timestamp("EURUSD") is None
+    consumer._handle_tick_dict({"symbol": "EURUSD", "bid": 1.08})  # type: ignore[attr-defined]
+    assert bus.get_feed_timestamp("EURUSD") is not None
+
+
+def test_handle_tick_dict_missing_symbol_ignored() -> None:
+    """Tick payload without a valid symbol must be ignored."""
+    redis = _make_redis({})
+    bus = LiveContextBus()
+    bus.reset_state()
+    consumer = RedisConsumer(["EURUSD"], redis, bus)
+
+    consumer._handle_tick_dict({"bid": 1.08})  # type: ignore[attr-defined]
+    consumer._handle_tick_dict({"symbol": "   "})  # type: ignore[attr-defined]
+    assert bus.get_feed_timestamp("EURUSD") is None

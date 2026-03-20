@@ -3,16 +3,18 @@ from __future__ import annotations
 import contextlib
 import json as _json
 from datetime import UTC, datetime
+from typing import Any, cast
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 
-from api.middleware.auth import verify_token
-from api.middleware.governance import enforce_write_policy
 from execution.ea_manager import EAManager
 from execution.state_machine import ExecutionStateMachine
 from journal.audit_trail import AuditAction, AuditTrail
 from storage.redis_client import redis_client
+
+from .middleware.auth import verify_token
+from .middleware.governance import enforce_write_policy
 
 router = APIRouter(prefix="/api/v1/ea", tags=["ea-bridge"])
 
@@ -54,11 +56,11 @@ def _get_agents() -> list[dict]:
     """Collect per-agent status from Redis EA:AGENT:* hashes."""
     agents: list[dict] = []
     try:
-        keys = redis_client.client.keys(f"{EA_AGENT_PREFIX}*")
+        keys = cast(list[Any], redis_client.client.keys(f"{EA_AGENT_PREFIX}*"))
         for key in keys:
             raw_key = key.decode("utf-8") if isinstance(key, bytes) else str(key)
             agent_id = raw_key.replace(EA_AGENT_PREFIX, "")
-            data = redis_client.client.hgetall(raw_key)
+            data = cast(dict[Any, Any], redis_client.client.hgetall(raw_key))
             decoded: dict[str, str] = {}
             for k, v in data.items():
                 dk = k.decode("utf-8") if isinstance(k, bytes) else str(k)
@@ -88,7 +90,7 @@ def _get_agents() -> list[dict]:
 
     if not agents:
         # Fallback: synthesize from main EA manager state
-        state = _state_machine.snapshot()
+        _state_machine.snapshot()
         agents.append(
             {
                 "agent_id": "ea-primary",
@@ -131,9 +133,8 @@ async def ea_status() -> dict:
 
     # Cooldown: check if restart marker is still active
     cooldown_active = False
-    cooldown_until: str | None = None
     with contextlib.suppress(Exception):
-        restart_ttl = redis_client.client.ttl(EA_RESTART_MARKER_KEY)
+        restart_ttl = cast(int | None, redis_client.client.ttl(EA_RESTART_MARKER_KEY))
         if restart_ttl and restart_ttl > 0:
             cooldown_active = True
 
@@ -163,7 +164,7 @@ async def ea_agents() -> list[dict]:
 async def ea_logs(limit: int = 100, agent_id: str | None = None) -> list[dict]:
     limit = max(1, min(limit, EA_LOG_LIMIT))
     try:
-        rows = redis_client.client.lrange(EA_LOGS_KEY, 0, limit - 1)
+        rows = cast(list[Any], redis_client.client.lrange(EA_LOGS_KEY, 0, limit - 1))
         out: list[dict] = []
         for raw in rows:
             if isinstance(raw, bytes):

@@ -6,17 +6,12 @@ if [[ -z "${REDIS_URL:-}" && -z "${REDIS_PRIVATE_URL:-}" && -z "${REDISHOST:-}" 
   echo "[startup] WARNING: No Redis URL configured (REDIS_URL / REDIS_PRIVATE_URL / REDISHOST). Outbox worker and real-time features will fail." >&2
 fi
 
-# ── Run Alembic migrations (idempotent — safe on every deploy) ──
-if [[ -n "${DATABASE_URL:-}" ]]; then
-  echo "[startup] Running database migrations…"
-  if python -m alembic upgrade head 2>&1; then
-    echo "[startup] Migrations completed successfully."
-  else
-    echo "[startup] WARNING: Alembic migration failed (exit $?) — app will start but DB-backed features may be degraded." >&2
-  fi
-else
-  echo "[startup] DATABASE_URL not set — skipping migrations."
+# ── Migration ownership lives in wolf15-migrator (one-shot) ──
+if [[ -z "${DATABASE_URL:-}" ]]; then
+  echo "[startup] WARNING: DATABASE_URL not set; DB-backed API routes may fail." >&2
 fi
+
+export WOLF15_SERVICE_ROLE="api"
 
 exec gunicorn app:app \
   -k deploy.uvicorn_worker.UvicornWorker \

@@ -3,7 +3,7 @@
 Zones: dashboard (monitoring/ops) — no market logic, no execution authority.
 """
 
-from __future__ import annotations
+from __future__ import annotations  # noqa: I001
 
 import logging
 import re
@@ -12,7 +12,7 @@ from typing import Any, Protocol, cast
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 
-from api.middleware.auth import verify_token
+from .middleware.auth import verify_token
 from api.middleware.governance import enforce_write_policy
 
 logger = logging.getLogger(__name__)
@@ -158,11 +158,14 @@ async def flush_candles_for_pair(request: Request, symbol: str, timeframe: str) 
     if deleted == 0:
         logger.debug(
             "flush_candles_for_pair: no keys found for symbol=%s tf=%s",
-            symbol, timeframe,
+            symbol,
+            timeframe,
         )
     logger.info(
         "flush_candles_for_pair: symbol=%s tf=%s deleted=%d",
-        symbol, timeframe, deleted,
+        symbol,
+        timeframe,
+        deleted,
     )
     return {
         "status": "ok",
