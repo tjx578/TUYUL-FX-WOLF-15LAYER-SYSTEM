@@ -332,16 +332,22 @@ async def test_bootstrap_cache_and_warmup_prefers_stale_cache(
 
     with patch.object(ingest_service_module, "_has_stale_cache", new=AsyncMock(return_value=True)):  # noqa: SIM117
         with patch.object(ingest_service_module, "_run_warmup", new=AsyncMock()) as warmup_mock:
-            result, redis_has_data, mode = await ingest_service_module._bootstrap_cache_and_warmup(
-                redis=fake_redis,
-                system_state=system_state,
-                enabled_symbols=["EURUSD"],
-            )
+            with patch.object(
+                ingest_service_module,
+                "_supplemental_htf_fetch",
+                new=AsyncMock(return_value={}),
+            ) as supp_mock:
+                result, redis_has_data, mode = await ingest_service_module._bootstrap_cache_and_warmup(
+                    redis=fake_redis,
+                    system_state=system_state,
+                    enabled_symbols=["EURUSD"],
+                )
 
     assert result == {}
     assert redis_has_data is True
     assert mode == "stale_cache"
     warmup_mock.assert_not_called()
+    supp_mock.assert_awaited_once()
 
 
 def test_set_startup_mode_flags_degraded_on_stale_cache(
@@ -482,3 +488,113 @@ async def test_retry_loop_clears_warmup_report(
 
     # reset() at entry should have cleared the warmup report
     assert system_state.get_warmup_report() == {}
+
+
+# ── Supplemental HTF fetch tests ─────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_supplemental_htf_fetch_skips_when_bars_sufficient(
+    ingest_service_module: Any,
+) -> None:
+    """When all symbols already have enough H1/H4 bars, no REST fetch happens."""
+    fake_redis = AsyncMock()
+    # llen returns values above threshold for both H1 (>=20) and H4 (>=10)
+    fake_redis.llen = AsyncMock(return_value=25)
+
+    result = await ingest_service_module._supplemental_htf_fetch(
+        redis=fake_redis,
+        enabled_symbols=["EURUSD", "GBPUSD"],
+    )
+
+    assert result == {}
+
+
+@pytest.mark.asyncio
+async def test_supplemental_htf_fetch_fetches_deficit_timeframes(
+    ingest_service_module: Any,
+) -> None:
+    """Symbols with H1 or H4 below threshold should trigger REST fetch."""
+    fake_redis = AsyncMock()
+
+    # EURUSD: H1=5 (deficit), H4=15 (ok)
+    # GBPUSD: H1=25 (ok), H4=3 (deficit)
+    async def _llen(key: str) -> int:
+        if "EURUSD:H1" in key:
+            return 5
+        if "EURUSD:H4" in key:
+            return 15
+        if "GBPUSD:H1" in key:
+            return 25
+        if "GBPUSD:H4" in key:
+            return 3
+        return 50
+
+    fake_redis.llen = AsyncMock(side_effect=_llen)
+
+    fake_candles = [{"symbol": "TEST", "open": 1.0, "high": 1.1, "low": 0.9, "close": 1.05}]
+    fake_fetcher = MagicMock()
+    fake_fetcher.fetch = AsyncMock(return_value=fake_candles)
+    fake_fetcher.context_bus = MagicMock()
+
+    with patch.object(ingest_service_module, "FinnhubCandleFetcher", return_value=fake_fetcher):
+        result = await ingest_service_module._supplemental_htf_fetch(
+            redis=fake_redis,
+            enabled_symbols=["EURUSD", "GBPUSD"],
+        )
+
+    # Should have fetched EURUSD/H1 and GBPUSD/H4
+    assert "EURUSD" in result
+    assert "H1" in result["EURUSD"]
+    assert "GBPUSD" in result
+    assert "H4" in result["GBPUSD"]
+    # H4 for EURUSD should NOT be fetched (already at 15 >= 10)
+    assert "H4" not in result.get("EURUSD", {})
+
+
+@pytest.mark.asyncio
+async def test_supplemental_htf_fetch_skips_when_circuit_open(
+    ingest_service_module: Any,
+) -> None:
+    """Circuit breaker OPEN should skip supplemental fetch entirely."""
+    fake_redis = AsyncMock()
+    fake_redis.llen = AsyncMock(return_value=0)
+
+    with patch.object(ingest_service_module._warmup_circuit, "is_open", return_value=True):
+        result = await ingest_service_module._supplemental_htf_fetch(
+            redis=fake_redis,
+            enabled_symbols=["EURUSD"],
+        )
+
+    assert result == {}
+    fake_redis.llen.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_bootstrap_stale_cache_seeds_supplemental_results(
+    ingest_service_module: Any,
+) -> None:
+    """When stale cache has deficit, supplemental results should be seeded to Redis."""
+    fake_redis = MagicMock()
+    system_state = SystemStateManager()
+    system_state.reset()
+    system_state.set_state(ingest_service_module.SystemState.WARMING_UP)
+
+    supp_data = {"EURUSD": {"H1": [{"open": 1.0, "high": 1.1, "low": 0.9, "close": 1.05}]}}
+
+    with (
+        patch.object(ingest_service_module, "_has_stale_cache", new=AsyncMock(return_value=True)),
+        patch.object(ingest_service_module, "_supplemental_htf_fetch", new=AsyncMock(return_value=supp_data)),
+        patch.object(ingest_service_module, "_seed_redis_candle_history", new=AsyncMock()) as seed_mock,
+        patch.object(ingest_service_module, "_run_warmup", new=AsyncMock()) as warmup_mock,
+    ):
+        result, redis_has_data, mode = await ingest_service_module._bootstrap_cache_and_warmup(
+            redis=fake_redis,
+            system_state=system_state,
+            enabled_symbols=["EURUSD"],
+        )
+
+    assert mode == "stale_cache"
+    assert result == supp_data
+    seed_mock.assert_awaited_once_with(fake_redis, supp_data)
+    warmup_mock.assert_not_called()

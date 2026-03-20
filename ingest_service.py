@@ -423,6 +423,90 @@ async def _run_warmup(
     return {}  # empty — no candles to seed
 
 
+# ── Supplemental HTF fetch for stale-cache mode ──────────────────
+# Warmup thresholds matching api/l12_routes._WARMUP_MIN_BARS.
+# Only H1 and H4 are checked — D1/W1/MN are typically already
+# well above threshold from prior deployment seeding.
+_SUPP_HTF_MIN_BARS: dict[str, int] = {
+    "H1": 20,
+    "H4": 10,
+}
+_SUPP_FETCH_BARS = 50  # bars to request per symbol/tf (well above threshold)
+
+
+async def _supplemental_htf_fetch(
+    redis: RedisClient,
+    enabled_symbols: list[str],
+) -> dict[str, dict[str, list[dict[str, Any]]]]:
+    """Fetch H1/H4 bars via REST for symbols whose Redis counts are below threshold.
+
+    This is a **non-destructive** supplement: it fetches fresh candles and
+    returns them so the caller can seed Redis (RPUSH + atomic swap).  Existing
+    Redis data for other timeframes is untouched.
+
+    Returns warmup_results dict (symbol -> tf -> candles) for any pairs that
+    needed supplemental data.  Empty dict if everything was already sufficient.
+    """
+    if _warmup_circuit.is_open():
+        logger.warning("[SuppHTF] Circuit breaker OPEN — skipping supplemental fetch")
+        return {}
+
+    # Phase 1: scan Redis to find symbols with insufficient H1/H4 bar counts.
+    deficit_map: dict[str, list[str]] = {}  # symbol -> [timeframes that need data]
+    for symbol in enabled_symbols:
+        missing_tfs: list[str] = []
+        for tf, required in _SUPP_HTF_MIN_BARS.items():
+            key = candle_history(symbol, tf)
+            try:
+                have = await redis.llen(key)
+            except Exception:
+                have = 0
+            if have < required:
+                missing_tfs.append(tf)
+        if missing_tfs:
+            deficit_map[symbol] = missing_tfs
+
+    if not deficit_map:
+        logger.info("[SuppHTF] All symbols meet H1/H4 thresholds — no supplemental fetch needed")
+        return {}
+
+    total_tasks = sum(len(tfs) for tfs in deficit_map.values())
+    logger.info(
+        "[SuppHTF] %d symbols need supplemental H1/H4 data (%d fetch tasks)",
+        len(deficit_map),
+        total_tasks,
+    )
+
+    # Phase 2: fetch missing timeframes via REST.
+    fetcher = FinnhubCandleFetcher()
+    results: dict[str, dict[str, list[dict[str, Any]]]] = {}
+
+    async def _fetch_one(symbol: str, tf: str) -> None:
+        try:
+            candles = await fetcher.fetch(symbol, tf, _SUPP_FETCH_BARS)
+            if candles:
+                if symbol not in results:
+                    results[symbol] = {}
+                results[symbol][tf] = candles
+                # Also seed LiveContextBus for in-process consumers
+                for candle in candles:
+                    fetcher.context_bus.update_candle(candle)
+                logger.info("[SuppHTF] %s/%s: fetched %d bars", symbol, tf, len(candles))
+            else:
+                logger.warning("[SuppHTF] %s/%s: REST returned 0 bars", symbol, tf)
+        except Exception as exc:
+            logger.error("[SuppHTF] %s/%s fetch failed: %s", symbol, tf, exc)
+
+    tasks = [_fetch_one(sym, tf) for sym, tfs in deficit_map.items() for tf in tfs]
+    await asyncio.gather(*tasks, return_exceptions=True)
+
+    filled = sum(len(tfs) for tfs in results.values())
+    logger.info("[SuppHTF] Supplemental fetch complete: %d/%d symbol/tf combos filled", filled, total_tasks)
+    if filled > 0:
+        _warmup_circuit.record_success()
+    return results
+
+
 async def _bootstrap_cache_and_warmup(
     redis: RedisClient,
     system_state: SystemStateManager,
@@ -434,9 +518,19 @@ async def _bootstrap_cache_and_warmup(
 
     if redis_has_data:
         logger.info(
-            "[Ingest] Redis candle cache detected — skipping Finnhub REST warmup. "
-            "M15 will build from real-time WebSocket ticks."
+            "[Ingest] Redis candle cache detected — checking H1/H4 bar counts "
+            "before deciding whether to skip REST warmup."
         )
+        # ── FIX WARMUP-SUPP: supplemental REST fetch for under-threshold TFs ──
+        # When stale cache exists, D1/W1 are usually fine (seeded from prior
+        # deployment) but H1/H4 may be far below the warmup threshold because
+        # they only grow 1 bar/hour or 1 bar/4h from WS ticks.  A targeted
+        # REST fetch can close the gap in seconds instead of hours.
+        supp_results = await _supplemental_htf_fetch(redis, enabled_symbols)
+        if supp_results:
+            await _seed_redis_candle_history(redis, supp_results)
+            warmup_results = supp_results
+
         system_state.set_state(SystemState.DEGRADED)
         return warmup_results, True, "stale_cache"
 
