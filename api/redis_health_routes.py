@@ -12,6 +12,7 @@ from typing import Any, Protocol, cast
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 
+from core.redis_keys import CANDLE_HASH_PREFIX, CANDLE_HISTORY_PREFIX
 from .middleware.auth import verify_token
 from api.middleware.governance import enforce_write_policy
 
@@ -21,9 +22,9 @@ router = APIRouter(prefix="/api/v1/redis", tags=["redis"])
 
 # All key prefixes that hold candle data (must stay in sync with context/redis_consumer.py)
 _CANDLE_KEY_PREFIXES: tuple[str, ...] = (
-    "wolf15:candle_history",
+    CANDLE_HISTORY_PREFIX,
     "candle_history",
-    "wolf15:candle",
+    CANDLE_HASH_PREFIX,
     "candles",
 )
 
