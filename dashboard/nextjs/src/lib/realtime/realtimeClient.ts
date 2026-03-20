@@ -90,6 +90,10 @@ const RECONNECT_BASE_MS = 1000;
 const RECONNECT_CEILING_MS = 30000;
 const RECONNECT_JITTER_PCT = 0.25;
 
+// 429 back-off: if the WS ticket fetch or upgrade itself gets rate-limited,
+// pause reconnect for this duration before retrying.
+const RATE_LIMIT_BACKOFF_MS = 60_000;
+
 // [BUG FIX #9] Was 45000ms — still too low for analysis-driven messages
 // (analysis loop = 60s).  Derive from per-domain thresholds in
 // connectionState.ts so the global WS stale timer never fires before
@@ -143,6 +147,8 @@ export function connectLiveUpdates(
   let visibilityPaused = false;
   // [BUG FIX #6] Guard against async connect() racing with close()
   let connectAborted = false;
+  // 429 rate-limit guard: timestamp when we should next allow a reconnect.
+  let rateLimitedUntilMs = 0;
 
   // Monotonic sequence tracking for gap detection
   let lastSeq = 0;
@@ -197,6 +203,16 @@ export function connectLiveUpdates(
   const connect = async () => {
     if (intentionallyClosed) return;
     if (visibilityPaused && reconnectAttempt > 3) return;
+
+    // 429 rate-limit guard: defer connect until the back-off window expires.
+    if (rateLimitedUntilMs > Date.now()) {
+      const delay = rateLimitedUntilMs - Date.now();
+      if (process.env.NODE_ENV === "development") {
+        console.warn(`[WS] Rate-limited. Delaying reconnect by ${Math.round(delay / 1000)}s.`);
+      }
+      reconnectTimer = setTimeout(connect, delay);
+      return;
+    }
 
     connectAborted = false;
     emitStatus(reconnectAttempt === 0 ? "CONNECTING" : "RECONNECTING");
@@ -281,7 +297,12 @@ export function connectLiveUpdates(
 
         // ── Ignore auth errors gracefully ──
         if (msgType === "auth_error") {
-          onError?.(new Error(`WS auth error: ${parsed.message ?? "unknown"}`));
+          const errMsg = parsed.message as string ?? "unknown";
+          // Treat rate-limit responses embedded in WS auth errors as 429.
+          if (typeof errMsg === "string" && (errMsg.includes("429") || errMsg.toLowerCase().includes("rate"))) {
+            rateLimitedUntilMs = Date.now() + RATE_LIMIT_BACKOFF_MS;
+          }
+          onError?.(new Error(`WS auth error: ${errMsg}`));
           return;
         }
 
