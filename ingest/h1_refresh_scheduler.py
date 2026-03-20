@@ -185,5 +185,8 @@ class H1RefreshScheduler:
                 await self._redis.rpush(key, candle_json)
                 await self._redis.ltrim(key, -self._redis_maxlen, -1)
                 enqueue_candle_dict(candle)
+                # PUBLISH so engine RedisConsumer picks up refresh in real-time
+                pub_channel = f"candle:{symbol}:{timeframe}"
+                await self._redis.publish(pub_channel, candle_json)
             except Exception as exc:
-                logger.warning("[H1Refresh] RPUSH failed %s: %s", key, exc)
+                logger.warning("[H1Refresh] Redis push failed %s: %s", key, exc)

@@ -426,12 +426,9 @@ def _register_health_routes(app: FastAPI) -> None:
         }
 
     app.add_api_route("/health", health, methods=["GET"])
-    app.add_api_route(
-        "/healthz",
-        health,
-        methods=["GET"],
-        dependencies=[Depends(verify_observability_machine_auth)],
-    )
+    # /healthz is the liveness probe — must be unauthenticated so
+    # Railway (and k8s) infrastructure healthchecks always succeed.
+    app.add_api_route("/healthz", health, methods=["GET"])
 
     async def readyz(request: Request) -> JSONResponse:
         """Readiness probe — freshness-aware.

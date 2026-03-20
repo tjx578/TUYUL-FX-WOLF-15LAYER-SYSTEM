@@ -337,6 +337,13 @@ class FinnhubWebSocket:
                 ).inc()
                 finnhub_ws_reconnect_current.labels(replica_id=self._replica_id).set(self._attempt)
                 finnhub_ws_connected.labels(replica_id=self._replica_id).set(0)
+                # P2-8: record reconnect for storm detection
+                try:
+                    from monitoring.execution_metrics import record_reconnect_event  # noqa: PLC0415
+
+                    record_reconnect_event()
+                except Exception:
+                    pass
                 logger.warning(
                     "Finnhub WS connection error (retryable)",
                     extra={
@@ -358,6 +365,13 @@ class FinnhubWebSocket:
                 ).inc()
                 finnhub_ws_reconnect_current.labels(replica_id=self._replica_id).set(self._attempt)
                 finnhub_ws_connected.labels(replica_id=self._replica_id).set(0)
+                # P2-8: record reconnect for storm detection
+                try:
+                    from monitoring.execution_metrics import record_reconnect_event  # noqa: PLC0415
+
+                    record_reconnect_event()
+                except Exception:
+                    pass
                 logger.warning(
                     "Finnhub rate limited (HTTP 429)",
                     extra={

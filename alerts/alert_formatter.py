@@ -155,3 +155,78 @@ Impact        : Market feed likely degraded upstream
 {ts}
 ────────────────────────────
 """
+
+    # ═══════════════════════════════════════════════════════
+    #  P2-8: Latency budget + anomaly rate formatters
+    # ═══════════════════════════════════════════════════════
+
+    @staticmethod
+    def format_v11_latency_budget(
+        symbol: str,
+        p95_ms: float,
+        p99_ms: float,
+        budget_ms: float,
+        severity: str,
+    ) -> str:
+        ts = format_dual_timezone(now_utc())
+        return f"""
+⏱️ V11 LATENCY BUDGET — {severity}
+────────────────────────────
+Symbol  : {symbol}
+p95     : {p95_ms:.1f}ms
+p99     : {p99_ms:.1f}ms
+Budget  : {budget_ms:.0f}ms
+{ts}
+────────────────────────────
+"""
+
+    @staticmethod
+    def format_exec_latency_budget(
+        stage: str,
+        p95_ms: float,
+        p99_ms: float,
+        budget_ms: float,
+    ) -> str:
+        ts = format_dual_timezone(now_utc())
+        return f"""
+⏱️ EXECUTION LATENCY BUDGET BREACH
+────────────────────────────
+Stage   : {stage}
+p95     : {p95_ms:.1f}ms
+p99     : {p99_ms:.1f}ms
+Budget  : {budget_ms:.0f}ms
+{ts}
+────────────────────────────
+"""
+
+    @staticmethod
+    def format_anomaly_rate(
+        metric_name: str,
+        rate: float,
+        threshold: float,
+        severity: str,
+        window_count: int,
+    ) -> str:
+        ts = format_dual_timezone(now_utc())
+        return f"""
+📊 ANOMALY RATE — {severity}
+────────────────────────────
+Metric    : {metric_name}
+Rate      : {rate:.1%}
+Threshold : {threshold:.1%}
+Window    : last {window_count} samples
+{ts}
+────────────────────────────
+"""
+
+    @staticmethod
+    def format_reconnect_storm() -> str:
+        ts = format_dual_timezone(now_utc())
+        return f"""
+🌊 RECONNECT STORM DETECTED
+────────────────────────────
+Multiple rapid reconnects in short window.
+Latency and data freshness may be degraded.
+{ts}
+────────────────────────────
+"""

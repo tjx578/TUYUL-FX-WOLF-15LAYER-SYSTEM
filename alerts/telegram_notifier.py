@@ -157,3 +157,60 @@ class TelegramNotifier:
 
         text = AlertFormatter.format_mass_staleness(stale_count, total_symbols, threshold_seconds)
         self._send(text, critical=True)
+
+    # ═══════════════════════════════════════════════════════
+    #  P2-8: Latency budget + anomaly rate notifications
+    # ═══════════════════════════════════════════════════════
+
+    def on_v11_latency_budget(
+        self,
+        symbol: str,
+        p95_ms: float,
+        p99_ms: float,
+        budget_ms: float,
+        severity: str,
+    ) -> None:
+        """Alert when V11 latency p95/p99 exceeds budget."""
+        if not ALERT_RULES.get("V11_LATENCY_BUDGET", False):
+            return
+        text = AlertFormatter.format_v11_latency_budget(symbol, p95_ms, p99_ms, budget_ms, severity)
+        self._send(text, critical=(severity == "CRITICAL"))
+
+    def on_exec_latency_budget(
+        self,
+        stage: str,
+        p95_ms: float,
+        p99_ms: float,
+        budget_ms: float,
+    ) -> None:
+        """Alert when execution stage latency p95 exceeds budget."""
+        if not ALERT_RULES.get("EXEC_LATENCY_BUDGET", False):
+            return
+        text = AlertFormatter.format_exec_latency_budget(stage, p95_ms, p99_ms, budget_ms)
+        self._send(text)
+
+    def on_anomaly_rate(
+        self,
+        metric_name: str,
+        rate: float,
+        threshold: float,
+        severity: str,
+        window_count: int,
+    ) -> None:
+        """Alert when veto/reject/ambiguity rate exceeds threshold."""
+        rule_key = {
+            "v11_veto_rate": "V11_VETO_RATE_HIGH",
+            "l12_reject_rate": "L12_REJECT_RATE_HIGH",
+            "l12_ambiguity_rate": "L12_AMBIGUITY_RATE_HIGH",
+        }.get(metric_name, "")
+        if not ALERT_RULES.get(rule_key, False):
+            return
+        text = AlertFormatter.format_anomaly_rate(metric_name, rate, threshold, severity, window_count)
+        self._send(text, critical=(severity == "CRITICAL"))
+
+    def on_reconnect_storm(self) -> None:
+        """Alert when a reconnect storm is detected."""
+        if not ALERT_RULES.get("RECONNECT_STORM", False):
+            return
+        text = AlertFormatter.format_reconnect_storm()
+        self._send(text, critical=True)

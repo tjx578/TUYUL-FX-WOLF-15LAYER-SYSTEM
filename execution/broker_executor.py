@@ -139,6 +139,7 @@ class BrokerExecutor:  # noqa: F811
 
     def execute(self, req: ExecutionRequest) -> ExecutionResult:
         """Send a single execution request to EA bridge."""
+        _broker_start = time.perf_counter()
         payload = {
             "action": req.action,
             "account_id": req.account_id,
@@ -179,6 +180,7 @@ class BrokerExecutor:  # noqa: F811
                 is_retryable=_is_retryable,
             )
             data = response.json()
+            self._record_broker_latency(_broker_start, "success")
             return ExecutionResult(
                 success=data.get("success", False),
                 request_id=req.request_id,
@@ -188,6 +190,7 @@ class BrokerExecutor:  # noqa: F811
                 raw=data,
             )
         except httpx.HTTPStatusError as exc:
+            self._record_broker_latency(_broker_start, "broker_error")
             response = cast(httpx.Response, exc.response)
             status_code = int(response.status_code)
             logger.error(f"BrokerExecutor: HTTP {status_code} for {req.request_id}")
@@ -198,6 +201,7 @@ class BrokerExecutor:  # noqa: F811
                 error_msg=str(exc),
             )
         except Exception as exc:
+            self._record_broker_latency(_broker_start, "broker_error")
             logger.error(f"BrokerExecutor: unexpected error for {req.request_id}: {exc}")
             return ExecutionResult(
                 success=False,
@@ -205,6 +209,18 @@ class BrokerExecutor:  # noqa: F811
                 error_code=-1,
                 error_msg=str(exc),
             )
+
+    @staticmethod
+    def _record_broker_latency(start: float, outcome: str) -> None:
+        """Record broker HTTP round-trip latency to p95/p99 tracker."""
+        try:
+            from monitoring.execution_metrics import record_exec_outcome, record_exec_stage  # noqa: PLC0415
+
+            latency_ms = (time.perf_counter() - start) * 1000
+            record_exec_stage("broker_call", latency_ms)
+            record_exec_outcome(outcome)
+        except Exception:
+            pass
 
     def cancel_order(self, account_id: str, ticket: int, symbol: str) -> ExecutionResult:
         req = ExecutionRequest(

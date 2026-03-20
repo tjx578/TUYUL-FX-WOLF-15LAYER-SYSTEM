@@ -23,6 +23,26 @@ TRADE_UPDATES_CHANNEL = "trade:updates"
 _MAX_RETRIES = 2
 
 
+def _record_exec_stage(stage: str, latency_ms: float) -> None:
+    """Record an execution stage latency observation."""
+    try:
+        from monitoring.execution_metrics import record_exec_stage  # noqa: PLC0415
+
+        record_exec_stage(stage, latency_ms)
+    except Exception:
+        pass
+
+
+def _record_exec_outcome(outcome: str) -> None:
+    """Record an execution outcome."""
+    try:
+        from monitoring.execution_metrics import record_exec_outcome  # noqa: PLC0415
+
+        record_exec_outcome(outcome)
+    except Exception:
+        pass
+
+
 class QueueOverloadMode(str, Enum):
     """Backpressure behavior when queue is full."""
 
@@ -98,6 +118,7 @@ class EAManager:
 
     def submit(self, req: ExecutionRequest) -> str:
         """Enqueue an execution request. Returns request_id."""
+        guard_start = time.perf_counter()
         signal_id = str(req.meta.get("signal_id", "") or "") if req.meta else ""
         gate = (
             self._guard.execute(
@@ -111,12 +132,15 @@ class EAManager:
                 ea_instance_id=str(req.meta.get("ea_instance_id", "") or "") if req.meta else None,
             )
         )
+        _record_exec_stage("guard_check", (time.perf_counter() - guard_start) * 1000)
         if not gate.allowed:
+            _record_exec_outcome("guard_rejected")
             raise ValueError(f"Execution rejected: {gate.code} ({gate.details})")
 
         if self._queue.full():
             if self._overload_mode == QueueOverloadMode.REJECT_NEW:
                 self._overload_rejections += 1
+                _record_exec_outcome("queue_overload")
                 raise ValueError("Execution queue overloaded: request rejected (backpressure)")
 
             # DROP_OLDEST mode: evict one oldest request to preserve liveness.
@@ -125,8 +149,12 @@ class EAManager:
                 self._overload_drops += 1
             except Empty:
                 self._overload_rejections += 1
+                _record_exec_outcome("queue_overload")
                 raise ValueError("Execution queue overloaded: unable to evict oldest request") from None
 
+        # Stamp enqueue time for queue_wait measurement
+        req.meta = req.meta or {}
+        req.meta["_enqueue_ts"] = time.perf_counter()
         self._queue.put_nowait(req)
         return req.request_id
 
@@ -139,7 +167,13 @@ class EAManager:
                 req = self._queue.get(timeout=1.0)
             except Empty:
                 continue
+            # Queue wait measurement
+            enqueue_ts = (req.meta or {}).get("_enqueue_ts")
+            if enqueue_ts:
+                _record_exec_stage("queue_wait", (time.perf_counter() - enqueue_ts) * 1000)
+            dispatch_start = time.perf_counter()
             result = self._dispatch_with_retry(req)
+            _record_exec_stage("dispatch_total", (time.perf_counter() - dispatch_start) * 1000)
             self._results[req.request_id] = result
             self._emit_trade_event(req, result)
 

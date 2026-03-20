@@ -1,4 +1,3 @@
-
 """
 Rate Limiting Middleware -- per-IP sliding window.
 
@@ -20,6 +19,7 @@ Environment variables:
 
 from __future__ import annotations
 
+import ipaddress
 import os
 import re
 import threading
@@ -90,19 +90,57 @@ RISK_CALC_PER_MIN = _env_int("RATE_LIMIT_RISK_CALC_PER_MIN", 30)
 ADMIN_PER_MIN = _env_int("RATE_LIMIT_ADMIN_PER_MIN", 5)
 RATE_LIMIT_REDIS_PREFIX = os.getenv("RATE_LIMIT_REDIS_PREFIX", "ratelimit:").strip() or "ratelimit:"
 CLEANUP_INTERVAL_SEC = 120  # purge stale entries every N seconds
+
+# Railway runs behind an internal proxy in the 100.64.0.0/10 CGNAT range.
+# Auto-enable proxy trust when running on Railway so X-Forwarded-For is
+# parsed and real client IPs are used for rate-limit identity.
+_ON_RAILWAY = bool(
+    os.environ.get("RAILWAY_ENVIRONMENT")
+    or os.environ.get("RAILWAY_ENVIRONMENT_ID")
+    or os.environ.get("RAILWAY_PROJECT_ID")
+)
+_RAILWAY_PROXY_CIDR = "100.64.0.0/10"
+_default_proxies = "127.0.0.1,::1"
+if _ON_RAILWAY:
+    _default_proxies = f"127.0.0.1,::1,{_RAILWAY_PROXY_CIDR}"
+
 _trusted_proxy_raw = os.getenv(
     "TRUSTED_PROXIES",
-    os.getenv("RATE_LIMIT_TRUSTED_PROXY_IPS", "127.0.0.1,::1"),
+    os.getenv("RATE_LIMIT_TRUSTED_PROXY_IPS", _default_proxies),
 )
-TRUSTED_PROXY_IPS = {ip.strip() for ip in _trusted_proxy_raw.split(",") if ip.strip()}
-TRUST_ALL_PROXIES = "*" in TRUSTED_PROXY_IPS
-TRUSTED_PROXY_ENABLED = _env_bool("TRUSTED_PROXY_ENABLED", False)
+
+# Parse trusted proxies — entries may be bare IPs or CIDR ranges.
+_trusted_proxy_exact: set[str] = set()
+_trusted_proxy_nets: list[ipaddress.IPv4Network | ipaddress.IPv6Network] = []
+TRUST_ALL_PROXIES = False
+for _entry in _trusted_proxy_raw.split(","):
+    _entry = _entry.strip()
+    if not _entry:
+        continue
+    if _entry == "*":
+        TRUST_ALL_PROXIES = True
+        continue
+    if "/" in _entry:
+        try:
+            _trusted_proxy_nets.append(ipaddress.ip_network(_entry, strict=False))
+        except ValueError:
+            logger.warning("Invalid CIDR in TRUSTED_PROXIES: %s", _entry)
+    else:
+        _trusted_proxy_exact.add(_entry)
+
+TRUSTED_PROXY_ENABLED = _env_bool("TRUSTED_PROXY_ENABLED", _ON_RAILWAY)
 
 if TRUSTED_PROXY_ENABLED and TRUST_ALL_PROXIES:
     logger.warning(
-        "RATE_LIMIT_TRUSTED_PROXY_IPS='*' trusts ALL proxies — "
+        "TRUSTED_PROXIES='*' trusts ALL proxies — "
         "X-Forwarded-For can be spoofed by any client. "
         "Set explicit proxy IPs in production."
+    )
+
+if _ON_RAILWAY and TRUSTED_PROXY_ENABLED:
+    logger.info(
+        "Railway detected — trusting proxies in %s for X-Forwarded-For",
+        _RAILWAY_PROXY_CIDR,
     )
 
 # Paths exempted from rate limiting (health, root).
@@ -209,31 +247,44 @@ def get_ws_store() -> SlidingWindowStore:
 
 
 def _client_ip(request: Request) -> str:
-    """Extract client IP, trusting X-Forwarded-For only from trusted proxies."""
+    """Extract client IP, trusting X-Forwarded-For only from trusted proxies.
+
+    Uses the rightmost-untrusted strategy: walk the XFF chain from right to
+    left and return the first IP that is NOT a trusted proxy.  This is safe
+    against client-injected XFF headers because an attacker cannot forge IPs
+    that appear *after* a trusted hop.
+    """
     source_ip = request.client.host if request.client else "unknown"
     if not TRUSTED_PROXY_ENABLED:
         return source_ip
 
     forwarded = request.headers.get("x-forwarded-for")
-    if forwarded and _is_trusted_proxy(source_ip):
-        # Enforce single-IP XFF to reduce spoofing surface.
-        if "," in forwarded:
-            logger.warning(
-                "Ignoring multi-valued X-Forwarded-For from trusted proxy: source=%s xff=%s",
-                source_ip,
-                forwarded,
-            )
-            return source_ip
-        real_ip = forwarded.strip()
-        if real_ip:
-            return real_ip
-    return source_ip
+    if not forwarded or not _is_trusted_proxy(source_ip):
+        return source_ip
+
+    # Walk from right (closest to server) to left (closest to client).
+    # The first non-trusted IP is the real client.
+    parts = [ip.strip() for ip in forwarded.split(",") if ip.strip()]
+    for ip in reversed(parts):
+        if not _is_trusted_proxy(ip):
+            return ip
+
+    # All IPs in the chain are trusted — use the leftmost as last resort.
+    return parts[0] if parts else source_ip
 
 
 def _is_trusted_proxy(source_ip: str) -> bool:
     if TRUST_ALL_PROXIES:
         return True
-    return source_ip in TRUSTED_PROXY_IPS
+    if source_ip in _trusted_proxy_exact:
+        return True
+    if _trusted_proxy_nets:
+        try:
+            addr = ipaddress.ip_address(source_ip)
+            return any(addr in net for net in _trusted_proxy_nets)
+        except ValueError:
+            pass
+    return False
 
 
 def _is_websocket(request: Request) -> bool:
@@ -527,6 +578,18 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
 
         path = request.url.path
+
+        # Log WebSocket upgrade attempts to non-existent routes for diagnostics.
+        # Starlette returns 403 for unmatched WS paths, which surfaces as
+        # "connection rejected (403 Forbidden)" in websockets library logs.
+        if _is_websocket(request):
+            logger.debug(
+                "WS upgrade attempt: path=%s origin=%s ip=%s",
+                path,
+                request.headers.get("origin", "-"),
+                _client_ip(request),
+            )
+
         if path in EXEMPT_PATHS:
             return await call_next(request)
 
