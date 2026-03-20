@@ -6,3 +6,5 @@ dockerfilePath = "Dockerfile"
 startCommand = "bash deploy/railway/start_api.sh"
 healthcheckPath = "/healthz"
 healthcheckTimeout = 300
+# NOTE: /healthz is intentionally unauthenticated (liveness probe).
+# Use /readyz (machine-auth protected) for readiness checks.

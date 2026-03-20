@@ -141,16 +141,32 @@ def test_active_production_profile_forces_required_mode(monkeypatch) -> None:
         client.close()
 
 
-def test_healthz_readyz_are_machine_auth_protected() -> None:
+def test_healthz_is_unauthenticated_liveness_probe() -> None:
+    """Liveness probe /healthz must have NO machine auth so infrastructure
+    healthchecks (Railway, k8s) always reach the handler."""
     app = FastAPI()
     _register_health_routes(app)
     route_map = {route.path: route for route in app.routes if isinstance(route, APIRoute)}
 
-    for path in ("/healthz", "/readyz"):
-        route = route_map[path]
-        dependency_names: set[str] = set()
-        for dep in route.dependant.dependencies:
-            call = getattr(dep, "call", None)
-            if callable(call):
-                dependency_names.add(call.__name__)
-        assert "verify_observability_machine_auth" in dependency_names
+    route = route_map["/healthz"]
+    dependency_names: set[str] = set()
+    for dep in route.dependant.dependencies:
+        call = getattr(dep, "call", None)
+        if callable(call):
+            dependency_names.add(call.__name__)
+    assert "verify_observability_machine_auth" not in dependency_names
+
+
+def test_readyz_is_machine_auth_protected() -> None:
+    """Readiness probe /readyz keeps machine auth."""
+    app = FastAPI()
+    _register_health_routes(app)
+    route_map = {route.path: route for route in app.routes if isinstance(route, APIRoute)}
+
+    route = route_map["/readyz"]
+    dependency_names: set[str] = set()
+    for dep in route.dependant.dependencies:
+        call = getattr(dep, "call", None)
+        if callable(call):
+            dependency_names.add(call.__name__)
+    assert "verify_observability_machine_auth" in dependency_names

@@ -45,7 +45,7 @@ from core.metrics import (
 
 def _to_float(value: Any, default: float = 0.0) -> float:
     """Safely convert dynamic payload values to float for metric emission."""
-    if isinstance(value, (int, float)):
+    if isinstance(value, int | float):
         return float(value)
     if isinstance(value, str):
         with contextlib.suppress(ValueError):
@@ -83,6 +83,14 @@ def record_pipeline_metrics(symbol: str, result: dict[str, Any]) -> None:
 
     verdict = result.get("l12_verdict", {}).get("verdict", "HOLD")
     VERDICT_TOTAL.labels(symbol=symbol, verdict=verdict).inc()
+
+    # P2-8: L12 outcome rate tracking (reject / ambiguity window)
+    try:
+        from monitoring.execution_metrics import record_l12_outcome  # noqa: PLC0415
+
+        record_l12_outcome(verdict)
+    except Exception:
+        pass
 
     if verdict.startswith("EXECUTE_"):
         direction = verdict.replace("EXECUTE_", "")

@@ -101,6 +101,7 @@ class V11PipelineHook:
 
         # Check if v11 is enabled
         if not self._enabled:
+            self._record_metrics(symbol, (time.perf_counter() - start_time) * 1000, "disabled")
             return self._disabled_overlay(time.perf_counter() - start_time)
 
         try:
@@ -110,6 +111,7 @@ class V11PipelineHook:
             # If L12 didn't approve, skip v11 (preserve L12 authority)
             if self._require_l12_execute and l12_verdict != "EXECUTE":
                 latency = (time.perf_counter() - start_time) * 1000
+                self._record_metrics(symbol, latency, "skip")
                 return V11Overlay(
                     enabled=True,
                     should_trade=False,
@@ -155,6 +157,10 @@ class V11PipelineHook:
             # Determine final recommendation
             should_trade = self._compute_final_decision(l12_verdict, gate_result)
 
+            # Record V11 metrics (p95/p99 + outcome)
+            outcome = "pass" if should_trade else "veto"
+            self._record_metrics(symbol, latency, outcome)
+
             # Log decision
             self._log_decision(symbol, l12_verdict, gate_result, should_trade, latency)
 
@@ -168,6 +174,7 @@ class V11PipelineHook:
 
         except Exception as e:
             latency = (time.perf_counter() - start_time) * 1000
+            self._record_metrics(symbol, latency, "error")
             logger.error(f"V11PipelineHook: Error during evaluation: {e}")
 
             return V11Overlay(
@@ -300,6 +307,20 @@ class V11PipelineHook:
             logger.info(
                 f"V11 VETO: symbol={symbol} reasons={gate_result.veto_reasons}"
             )
+
+    @staticmethod
+    def _record_metrics(symbol: str, latency_ms: float, outcome: str) -> None:
+        """Record V11 evaluation to p95/p99 percentile tracker."""
+        try:
+            from monitoring.v11_metrics import record_v11_evaluation  # noqa: PLC0415
+
+            record_v11_evaluation(
+                symbol=symbol,
+                latency_ms=latency_ms,
+                outcome=outcome,
+            )
+        except Exception:  # pragma: no cover — metric failure must not break evaluation
+            pass
 
     def _disabled_overlay(self, elapsed: float) -> V11Overlay:
         """Return overlay indicating v11 is disabled."""

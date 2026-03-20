@@ -31,6 +31,7 @@ from ingest.dependencies import create_finnhub_ws
 from ingest.finnhub_candles import FinnhubCandleFetcher
 from ingest.finnhub_market_news import FinnhubMarketNews
 from ingest.h1_refresh_scheduler import H1RefreshScheduler
+from ingest.htf_refresh_scheduler import HTFRefreshScheduler
 from ingest.macro_monthly_scheduler import MacroMonthlyScheduler
 from ingest.rest_poll_fallback import RestPollFallback
 from state.redis_keys import HEARTBEAT_INGEST
@@ -730,6 +731,7 @@ async def run_ingest_services(has_api_key: bool) -> None:
         news_feed = CalendarNewsIngestor(redis_client=redis)
         market_news = FinnhubMarketNews()
         h1_refresh = H1RefreshScheduler(redis_client=redis)
+        htf_refresh = HTFRefreshScheduler(redis_client=redis)
 
         _health_probe.set_detail("redis", "connected")
         _health_probe.set_detail("system_state", system_state.get_state().value)
@@ -740,7 +742,7 @@ async def run_ingest_services(has_api_key: bool) -> None:
             _ingest_degraded,
         )
 
-        macro_monthly = MacroMonthlyScheduler(enabled_symbols)
+        macro_monthly = MacroMonthlyScheduler(enabled_symbols, redis_client=redis)
         logger.info("Starting ingest services: WebSocket + supervised background refresh/poll/news tasks")
         await asyncio.gather(
             _run_supervised("finnhub_ws", ws_feed),
@@ -748,6 +750,7 @@ async def run_ingest_services(has_api_key: bool) -> None:
             _run_supervised("calendar_news", news_feed),
             _run_supervised("market_news", market_news),
             _run_supervised("h1_refresh", h1_refresh),
+            _run_supervised("htf_refresh", htf_refresh),
             _run_supervised("macro_monthly_refresh", macro_monthly),
         )
     except asyncio.CancelledError:

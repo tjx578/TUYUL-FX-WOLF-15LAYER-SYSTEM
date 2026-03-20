@@ -783,3 +783,111 @@ class TestPathBucketRouting:
         from api.middleware.rate_limit import EA_CONTROL_PER_MIN  # noqa: PLC0415
 
         assert EA_CONTROL_PER_MIN <= 5, "EA control should be tightly limited"
+
+
+# =========================================================================
+# Proxy trust / _client_ip tests
+# =========================================================================
+
+
+class TestClientIpExtraction:
+    """Tests for _client_ip, _is_trusted_proxy, and Railway auto-detection."""
+
+    def _make_request(self, client_host: str, headers: dict[str, str] | None = None) -> MagicMock:
+        from fastapi import Request as _Request  # noqa: PLC0415
+
+        req = MagicMock(spec=_Request)
+        req.client = MagicMock()
+        req.client.host = client_host
+        req.headers = headers or {}
+        return req
+
+    def test_returns_source_ip_when_proxy_trust_disabled(self, monkeypatch):
+        from api.middleware import rate_limit as rl  # noqa: PLC0415
+
+        monkeypatch.setattr(rl, "TRUSTED_PROXY_ENABLED", False)
+        req = self._make_request("1.2.3.4", {"x-forwarded-for": "5.6.7.8"})
+        assert rl._client_ip(req) == "1.2.3.4"
+
+    def test_returns_xff_when_source_is_trusted_exact(self, monkeypatch):
+        from api.middleware import rate_limit as rl  # noqa: PLC0415
+
+        monkeypatch.setattr(rl, "TRUSTED_PROXY_ENABLED", True)
+        monkeypatch.setattr(rl, "_trusted_proxy_exact", {"127.0.0.1"})
+        monkeypatch.setattr(rl, "_trusted_proxy_nets", [])
+        monkeypatch.setattr(rl, "TRUST_ALL_PROXIES", False)
+        req = self._make_request("127.0.0.1", {"x-forwarded-for": "203.0.113.50"})
+        assert rl._client_ip(req) == "203.0.113.50"
+
+    def test_returns_source_ip_when_source_not_trusted(self, monkeypatch):
+        from api.middleware import rate_limit as rl  # noqa: PLC0415
+
+        monkeypatch.setattr(rl, "TRUSTED_PROXY_ENABLED", True)
+        monkeypatch.setattr(rl, "_trusted_proxy_exact", {"127.0.0.1"})
+        monkeypatch.setattr(rl, "_trusted_proxy_nets", [])
+        monkeypatch.setattr(rl, "TRUST_ALL_PROXIES", False)
+        req = self._make_request("9.9.9.9", {"x-forwarded-for": "203.0.113.50"})
+        assert rl._client_ip(req) == "9.9.9.9"
+
+    def test_cidr_trust_railway_cgnat(self, monkeypatch):
+        """100.64.x.x (Railway CGNAT) should be trusted via CIDR."""
+        import ipaddress  # noqa: PLC0415
+
+        from api.middleware import rate_limit as rl  # noqa: PLC0415
+
+        monkeypatch.setattr(rl, "TRUSTED_PROXY_ENABLED", True)
+        monkeypatch.setattr(rl, "_trusted_proxy_exact", set())
+        monkeypatch.setattr(rl, "_trusted_proxy_nets", [ipaddress.ip_network("100.64.0.0/10")])
+        monkeypatch.setattr(rl, "TRUST_ALL_PROXIES", False)
+        req = self._make_request("100.64.0.10", {"x-forwarded-for": "203.0.113.99"})
+        assert rl._client_ip(req) == "203.0.113.99"
+
+    def test_multi_valued_xff_rightmost_untrusted(self, monkeypatch):
+        """Multi-valued XFF should return rightmost non-trusted IP."""
+        import ipaddress  # noqa: PLC0415
+
+        from api.middleware import rate_limit as rl  # noqa: PLC0415
+
+        monkeypatch.setattr(rl, "TRUSTED_PROXY_ENABLED", True)
+        monkeypatch.setattr(rl, "_trusted_proxy_exact", {"10.0.0.1"})
+        monkeypatch.setattr(rl, "_trusted_proxy_nets", [ipaddress.ip_network("100.64.0.0/10")])
+        monkeypatch.setattr(rl, "TRUST_ALL_PROXIES", False)
+        # client → edge(10.0.0.1) → internal(100.64.0.10) → app
+        # XFF: "real_client, 10.0.0.1" from source 100.64.0.10
+        req = self._make_request("100.64.0.10", {"x-forwarded-for": "198.51.100.5, 10.0.0.1"})
+        assert rl._client_ip(req) == "198.51.100.5"
+
+    def test_attacker_injected_xff_ignored(self, monkeypatch):
+        """Attacker-injected IPs at left of XFF should not override real IP."""
+        import ipaddress  # noqa: PLC0415
+
+        from api.middleware import rate_limit as rl  # noqa: PLC0415
+
+        monkeypatch.setattr(rl, "TRUSTED_PROXY_ENABLED", True)
+        monkeypatch.setattr(rl, "_trusted_proxy_exact", set())
+        monkeypatch.setattr(rl, "_trusted_proxy_nets", [ipaddress.ip_network("100.64.0.0/10")])
+        monkeypatch.setattr(rl, "TRUST_ALL_PROXIES", False)
+        # Attacker sends "X-Forwarded-For: 1.1.1.1", proxy appends real IP
+        req = self._make_request("100.64.0.10", {"x-forwarded-for": "1.1.1.1, 198.51.100.5"})
+        # 198.51.100.5 is the rightmost untrusted = real client IP
+        assert rl._client_ip(req) == "198.51.100.5"
+
+    def test_no_xff_returns_source(self, monkeypatch):
+        from api.middleware import rate_limit as rl  # noqa: PLC0415
+
+        monkeypatch.setattr(rl, "TRUSTED_PROXY_ENABLED", True)
+        monkeypatch.setattr(rl, "_trusted_proxy_exact", {"127.0.0.1"})
+        monkeypatch.setattr(rl, "_trusted_proxy_nets", [])
+        monkeypatch.setattr(rl, "TRUST_ALL_PROXIES", False)
+        req = self._make_request("127.0.0.1", {})
+        assert rl._client_ip(req) == "127.0.0.1"
+
+    def test_trust_all_proxies(self, monkeypatch):
+        from api.middleware import rate_limit as rl  # noqa: PLC0415
+
+        monkeypatch.setattr(rl, "TRUSTED_PROXY_ENABLED", True)
+        monkeypatch.setattr(rl, "_trusted_proxy_exact", set())
+        monkeypatch.setattr(rl, "_trusted_proxy_nets", [])
+        monkeypatch.setattr(rl, "TRUST_ALL_PROXIES", True)
+        req = self._make_request("99.99.99.99", {"x-forwarded-for": "42.42.42.42"})
+        assert rl._client_ip(req) == "42.42.42.42"

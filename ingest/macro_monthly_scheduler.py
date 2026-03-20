@@ -1,20 +1,25 @@
 import asyncio
 import datetime
+from typing import Any
 
+import orjson
 from loguru import logger
 
 from analysis.macro.macro_regime_engine import MacroRegimeEngine
 from ingest.finnhub_candles import FinnhubCandleFetcher
+from storage.candle_persistence import enqueue_candle_dict
 
 
 class MacroMonthlyScheduler:
     """Auto-refresh MN candles and run macro regime analysis on month change."""
 
-    def __init__(self, symbols: list[str], redis_client=None):
+    def __init__(self, symbols: list[str], redis_client: Any = None):
         self.symbols = symbols
         self.fetcher = FinnhubCandleFetcher()
         self.engine = MacroRegimeEngine(redis_client)
-        self.last_month = None
+        self._redis = redis_client
+        self._redis_maxlen = 300
+        self.last_month: tuple[int, int] | None = None
 
     async def run(self) -> None:
         logger.info("MacroMonthlyScheduler started")
@@ -54,6 +59,7 @@ class MacroMonthlyScheduler:
 
                 for candle in mn_candles:
                     self.fetcher.context_bus.update_candle(candle)
+                await self._push_candles_to_redis(mn_candles)
 
                 # Recompute macro regime
                 self.engine.update_macro_state(symbol)
@@ -61,3 +67,23 @@ class MacroMonthlyScheduler:
                 logger.info(f"MN refreshed and regime updated for {symbol}")
             except Exception as exc:
                 logger.error(f"Failed to refresh MN for {symbol}: {exc}")
+
+    async def _push_candles_to_redis(self, candles: list[dict[str, Any]]) -> None:
+        """RPUSH + PUBLISH MN candle dicts to Redis (best-effort)."""
+        if not self._redis or not candles:
+            return
+        for candle in candles:
+            symbol = candle.get("symbol")
+            timeframe = candle.get("timeframe")
+            if not symbol or not timeframe:
+                continue
+            key = f"wolf15:candle_history:{symbol}:{timeframe}"
+            try:
+                candle_json = orjson.dumps(candle).decode("utf-8")
+                await self._redis.rpush(key, candle_json)
+                await self._redis.ltrim(key, -self._redis_maxlen, -1)
+                enqueue_candle_dict(candle)
+                pub_channel = f"candle:{symbol}:{timeframe}"
+                await self._redis.publish(pub_channel, candle_json)
+            except Exception as exc:
+                logger.warning("[MacroMonthly] Redis push failed %s: %s", key, exc)

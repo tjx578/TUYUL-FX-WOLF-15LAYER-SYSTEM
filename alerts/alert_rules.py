@@ -32,6 +32,13 @@ ALERT_RULES: dict[str, bool] = {
     "PIPELINE_LATENCY_HIGH": True,
     "HEARTBEAT_ABSENT": True,
     "MASS_FEED_STALENESS": True,
+    # ── P2-8: Latency budget + anomaly rate alerts ──
+    "V11_LATENCY_BUDGET": True,
+    "EXEC_LATENCY_BUDGET": True,
+    "V11_VETO_RATE_HIGH": True,
+    "L12_REJECT_RATE_HIGH": True,
+    "L12_AMBIGUITY_RATE_HIGH": True,
+    "RECONNECT_STORM": True,
 }
 
 
@@ -61,6 +68,25 @@ class AlertThresholds:
 
     # Redis stream lag (seconds)
     redis_lag_warning_seconds: float = 1.0
+
+    # V11 latency budget (milliseconds, p95)
+    v11_latency_p95_budget_ms: float = 100.0
+    v11_latency_p99_budget_ms: float = 150.0
+
+    # Execution stage latency budgets (milliseconds, p95)
+    exec_guard_p95_budget_ms: float = 50.0
+    exec_broker_p95_budget_ms: float = 5000.0
+    exec_dispatch_p95_budget_ms: float = 8000.0
+
+    # Anomaly rate thresholds (0–1)
+    v11_veto_rate_warning: float = 0.30
+    v11_veto_rate_critical: float = 0.50
+    l12_reject_rate_warning: float = 0.80
+    l12_reject_rate_critical: float = 0.95
+    l12_ambiguity_rate_warning: float = 0.10
+
+    # Minimum samples before rate alerts fire
+    rate_alert_min_samples: int = 30
 
 
 DEFAULT_THRESHOLDS = AlertThresholds()

@@ -10,7 +10,7 @@ from fastapi.routing import APIRouter
 from config_loader import load_pairs
 from context.live_context_bus import LiveContextBus
 from execution.state_machine import ExecutionStateMachine
-from storage.l12_cache import KEY_PREFIX, VERDICT_TTL_SEC, get_verdict
+from storage.l12_cache import KEY_PREFIX, VERDICT_TTL_SEC, get_verdict, is_verdict_stale
 from utils.timezone_utils import format_local, format_utc, now_utc
 
 from .middleware.auth import verify_token
@@ -141,6 +141,72 @@ def fetch_all_verdicts() -> dict[str, Any]:
 def fetch_all_verdicts_alias() -> dict[str, Any]:
     """Compatibility alias: return verdicts for all available pairs."""
     return fetch_all_verdicts()
+
+
+_STALE_THRESHOLD_SEC = 300.0  # 5 minutes
+
+
+@router.get("/api/v1/verdict/health", dependencies=[Depends(verify_token)])
+def verdict_health() -> dict[str, Any]:
+    """P0 diagnostic: prove verdicts are being written.
+
+    Returns per-pair verdict presence, freshness, and overall status.
+    Zone: dashboard (monitoring/ops) — no market logic.
+    """
+    now = time.time()
+    pairs_detail: list[dict[str, Any]] = []
+    healthy = 0
+    stale = 0
+    missing = 0
+
+    for pair_info in AVAILABLE_PAIRS:
+        pair = pair_info["symbol"]
+        if not isinstance(pair, str) or not pair_info.get("enabled", True):
+            continue
+
+        data = get_verdict(pair)
+        if data is None:
+            pairs_detail.append({"pair": pair, "status": "missing", "verdict": None, "age_seconds": None})
+            missing += 1
+            continue
+
+        cached_at = data.get("_cached_at")
+        age = round(now - float(cached_at), 3) if cached_at is not None else None
+        stale_flag = is_verdict_stale(data, _STALE_THRESHOLD_SEC)
+
+        if stale_flag:
+            stale += 1
+        else:
+            healthy += 1
+
+        pairs_detail.append(
+            {
+                "pair": pair,
+                "status": "stale" if stale_flag else "ok",
+                "verdict": data.get("verdict"),
+                "confidence": data.get("confidence"),
+                "age_seconds": age,
+                "_cached_at": cached_at,
+            }
+        )
+
+    total = healthy + stale + missing
+    if missing == total:
+        overall = "no_data"
+    elif missing > 0 or (stale > 0 and healthy == 0):
+        overall = "unhealthy"
+    elif stale > 0:
+        overall = "degraded"
+    else:
+        overall = "healthy"
+
+    return {
+        "status": overall,
+        "summary": {"total": total, "healthy": healthy, "stale": stale, "missing": missing},
+        "stale_threshold_seconds": _STALE_THRESHOLD_SEC,
+        "checked_at": now,
+        "pairs": pairs_detail,
+    }
 
 
 @router.get("/api/v1/context", dependencies=[Depends(verify_token)])

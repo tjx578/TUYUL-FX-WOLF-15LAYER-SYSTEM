@@ -1587,6 +1587,29 @@ class WolfConstitutionalPipeline:
                 TICK_TO_VERDICT_LATENCY.labels(symbol=symbol).observe(e2e_latency)  # noqa: F821
                 result_dict["tick_to_verdict_s"] = round(e2e_latency, 4)
 
+            # ── P2-8: freshness–latency correlation ────────────────
+            try:
+                from monitoring.execution_metrics import (  # noqa: PLC0415
+                    flag_freshness_latency_correlation,
+                    is_reconnect_storm,
+                )
+
+                feed_age = 0.0
+                try:
+                    from core.metrics import FEED_AGE  # noqa: PLC0415
+
+                    child = FEED_AGE._children.get((("symbol", symbol),))  # noqa: SLF001
+                    if child is not None:
+                        feed_age = child.value
+                except Exception:
+                    pass
+                stale = feed_age > 15.0
+                slow = latency_ms > 2000.0
+                storm = is_reconnect_storm()
+                flag_freshness_latency_correlation(symbol, stale and (slow or storm))
+            except Exception:
+                pass
+
             result_dict["rqi"] = synthesis.get("system", {}).get("rqi", 0.0)
 
             self._record_metrics(symbol, result_dict)
