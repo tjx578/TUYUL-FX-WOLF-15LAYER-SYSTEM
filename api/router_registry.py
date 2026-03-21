@@ -61,8 +61,8 @@ ROUTER_ENTRIES: list[RouterEntry] = [
     RouterEntry("api.accounts_router", "router", "Read-only account APIs"),
     # Prop-firm governance status/phase
     RouterEntry("api.prop_router", "router", "Prop-firm governance status/phase"),
-    # EA bridge controls (status/restart/logs/safe-mode)
-    RouterEntry("api.ea_router", "router", "EA bridge controls"),
+    # EA bridge controls (status/restart/logs/safe-mode) — DEPRECATED — sunset 2026-06-01, use agent_manager_router
+    RouterEntry("api.ea_router", "router", "EA bridge controls (deprecated shim — use agent_manager_router)"),
     # Agent Manager CRUD + lifecycle (canonical ea_agents table)
     RouterEntry("api.agent_manager_router", "router", "Agent Manager CRUD + lifecycle"),
     # Agent Ingest — MT5 EA → backend heartbeat/status/portfolio

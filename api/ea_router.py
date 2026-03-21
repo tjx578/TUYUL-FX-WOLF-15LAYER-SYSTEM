@@ -1,11 +1,23 @@
+"""Compatibility shim for the legacy EA bridge router.
+
+.. deprecated::
+    This module is a **compatibility shim** — sunset 2026-06-01.
+    All endpoints delegate to the Agent Manager service where available
+    and fall back to the legacy Redis-based implementation when the
+    Agent Manager is unavailable (graceful degradation).
+
+    Use `/api/v1/agent-manager/*` endpoints instead.
+"""
+
 from __future__ import annotations
 
 import contextlib
 import json as _json
+import logging
 from datetime import UTC, datetime
 from typing import Any, cast
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request, Response
 from pydantic import BaseModel, Field
 
 from execution.ea_manager import EAManager
@@ -15,6 +27,12 @@ from storage.redis_client import redis_client
 
 from .middleware.auth import verify_token
 from .middleware.governance import enforce_write_policy
+
+logger = logging.getLogger(__name__)
+
+# Deprecation constants
+_DEPRECATION_SUNSET = "2026-06-01"
+_DEPRECATION_REPLACEMENT = "/api/v1/agent-manager"
 
 router = APIRouter(prefix="/api/v1/ea", tags=["ea-bridge"])
 
@@ -28,9 +46,26 @@ EA_RESTART_MARKER_KEY = "EA:RESTART_REQUEST"
 EA_AGENT_PREFIX = "EA:AGENT:"
 EA_LOG_LIMIT = 200
 
+# AgentStatus → legacy status string mapping
+_AGENT_STATUS_TO_LEGACY: dict[str, str] = {
+    "ONLINE": "connected",
+    "WARNING": "degraded",
+    "OFFLINE": "disconnected",
+    "QUARANTINED": "cooldown",
+    "DISABLED": "disconnected",
+}
+
+
+def _deprecation_response(response: Response) -> None:
+    """Attach deprecation headers to the response."""
+    response.headers["Deprecation"] = "true"
+    response.headers["Sunset"] = _DEPRECATION_SUNSET
+    response.headers["X-Deprecated-Use"] = _DEPRECATION_REPLACEMENT
+
 
 class RestartRequest(BaseModel):
     reason: str = Field(..., min_length=1, max_length=200)
+    agent_id: str | None = None
 
 
 class SafeModeRequest(BaseModel):
@@ -113,7 +148,50 @@ def _get_agents() -> list[dict]:
 
 
 @router.get("/status", dependencies=[Depends(verify_token)])
-async def ea_status() -> dict:
+async def ea_status(request: Request, response: Response) -> dict:
+    """Return aggregated EA status.
+
+    .. deprecated::
+        Use ``GET /api/v1/agent-manager/agents`` instead. Sunset: 2026-06-01.
+        Internally delegates to Agent Manager service; falls back to Redis on failure.
+    """
+    logger.warning("Deprecated endpoint called: %s", request.url)
+    _deprecation_response(response)
+
+    # Try Agent Manager service first (only if it has registered agents)
+    try:
+        from agents.service import AgentManagerService  # noqa: PLC0415
+
+        svc = AgentManagerService()
+        agents_list, total = await svc.list_agents(limit=200)
+
+        if total > 0:
+            online_count = sum(1 for a in agents_list if a.get("status") == "ONLINE")
+            total_failures = sum(
+                a.get("runtime", {}).get("trades_failed", 0) if isinstance(a.get("runtime"), dict) else 0
+                for a in agents_list
+            )
+            safe_mode = any(a.get("safe_mode") for a in agents_list)
+            any_locked = any(a.get("locked") for a in agents_list)
+
+            return {
+                "healthy": online_count > 0,
+                "running": online_count > 0,
+                "engine_state": _state_machine.snapshot().get("state", "IDLE"),
+                "queue_depth": _ea_manager.queue_snapshot().get("queue_depth", 0),
+                "queue_max": _ea_manager.queue_snapshot().get("queue_max", 200),
+                "safe_mode": safe_mode,
+                "agents_total": total,
+                "agents_connected": online_count,
+                "total_failures": total_failures,
+                "recent_failures": [],
+                "cooldown_active": any_locked,
+                "updated_at": datetime.now(UTC).isoformat(),
+            }
+    except Exception:
+        pass
+
+    # Graceful degradation: fall back to Redis-based implementation
     safe_mode = False
     with contextlib.suppress(Exception):
         raw = redis_client.client.get(EA_SAFE_MODE_KEY)
@@ -155,13 +233,113 @@ async def ea_status() -> dict:
 
 
 @router.get("/agents", dependencies=[Depends(verify_token)])
-async def ea_agents() -> list[dict]:
-    """Return per-agent / per-EA-instance status."""
+async def ea_agents(request: Request, response: Response) -> list[dict]:
+    """Return per-agent / per-EA-instance status in legacy format.
+
+    .. deprecated::
+        Use ``GET /api/v1/agent-manager/agents`` instead. Sunset: 2026-06-01.
+        Maps Agent Manager ``AgentStatusEnum`` values back to legacy status strings
+        (connected/disconnected/degraded/cooldown). Falls back to Redis on failure.
+    """
+    logger.warning("Deprecated endpoint called: %s", request.url)
+    _deprecation_response(response)
+
+    # Try Agent Manager service first (only if it has registered agents)
+    try:
+        from agents.service import AgentManagerService  # noqa: PLC0415
+
+        svc = AgentManagerService()
+        agents_list, total = await svc.list_agents(limit=200)
+
+        if total > 0:
+            result: list[dict] = []
+            for a in agents_list:
+                am_status = str(a.get("status", "OFFLINE"))
+                legacy_status = _AGENT_STATUS_TO_LEGACY.get(am_status, "disconnected")
+                runtime = a.get("runtime") or {}
+                if not isinstance(runtime, dict):
+                    runtime = {}
+                result.append(
+                    {
+                        "agent_id": str(a.get("id", "")),
+                        "account_id": str(a.get("linked_account_id") or ""),
+                        "profile": str(a.get("strategy_profile") or "default"),
+                        "status": legacy_status,
+                        "healthy": legacy_status == "connected",
+                        "last_heartbeat": str(runtime.get("last_heartbeat") or ""),
+                        "last_success": str(runtime.get("last_success") or ""),
+                        "last_failure": str(runtime.get("last_failure") or ""),
+                        "failure_reason": str(runtime.get("failure_reason") or ""),
+                        "trades_executed": int(runtime.get("trades_executed") or 0),
+                        "trades_failed": int(runtime.get("trades_failed") or 0),
+                        "uptime_seconds": int(runtime.get("uptime_seconds") or 0),
+                        "version": str(a.get("version") or "unknown"),
+                        "scope": str(a.get("ea_class") or "single").lower(),
+                    }
+                )
+            return result
+    except Exception:
+        pass
+
+    # Graceful degradation: fall back to Redis-based implementation
     return _get_agents()
 
 
 @router.get("/logs", dependencies=[Depends(verify_token)])
-async def ea_logs(limit: int = 100, agent_id: str | None = None) -> list[dict]:
+async def ea_logs(request: Request, response: Response, limit: int = 100, agent_id: str | None = None) -> list[dict]:
+    """Return EA log entries in legacy format.
+
+    .. deprecated::
+        Use ``GET /api/v1/agent-manager/agents/{id}/events`` instead. Sunset: 2026-06-01.
+        Maps Agent Manager ``AgentEvent`` records back to legacy log format.
+        Falls back to Redis logs on failure.
+    """
+    logger.warning("Deprecated endpoint called: %s", request.url)
+    _deprecation_response(response)
+
+    # Try Agent Manager service first (only if it has registered agents)
+    try:
+        from agents.service import AgentManagerService  # noqa: PLC0415
+
+        svc = AgentManagerService()
+        if agent_id:
+            events = await svc.get_agent_events(agent_id, limit=max(1, min(limit, EA_LOG_LIMIT)))
+        else:
+            # Aggregate events from all agents
+            agents_list, total = await svc.list_agents(limit=50)
+            if total == 0:
+                # No AM agents — skip to Redis fallback
+                raise ValueError("no_agents")
+            events = []
+            per_agent_limit = max(1, limit // max(len(agents_list), 1))
+            for a in agents_list:
+                try:
+                    agent_events = await svc.get_agent_events(
+                        str(a["id"]), limit=per_agent_limit
+                    )
+                    events.extend(agent_events)
+                except Exception:
+                    continue
+            events.sort(key=lambda e: str(e.get("created_at", "")), reverse=True)
+            events = events[: max(1, min(limit, EA_LOG_LIMIT))]
+
+        result: list[dict] = []
+        for ev in events:
+            severity = str(ev.get("severity", "INFO")).upper()
+            result.append(
+                {
+                    "id": str(ev.get("id", "")),
+                    "timestamp": str(ev.get("created_at", datetime.now(UTC).isoformat())),
+                    "level": severity,
+                    "message": str(ev.get("message", "")),
+                    "agent_id": str(ev.get("agent_id", "")) or None,
+                }
+            )
+        return result
+    except Exception:
+        pass
+
+    # Graceful degradation: fall back to Redis-based implementation
     limit = max(1, min(limit, EA_LOG_LIMIT))
     try:
         rows = cast(list[Any], redis_client.client.lrange(EA_LOGS_KEY, 0, limit - 1))
@@ -180,8 +358,43 @@ async def ea_logs(limit: int = 100, agent_id: str | None = None) -> list[dict]:
 
 
 @router.post("/restart", dependencies=[Depends(enforce_write_policy)])
-async def restart_ea(req: RestartRequest) -> dict:
+async def restart_ea(req: RestartRequest, request: Request, response: Response) -> dict:
+    """Queue an EA restart request.
+
+    .. deprecated::
+        Use ``POST /api/v1/agent-manager/agents/{id}/lock`` +
+        ``POST /api/v1/agent-manager/agents/{id}/unlock`` instead. Sunset: 2026-06-01.
+        Internally calls Agent Manager lock+unlock flow; always also writes Redis marker
+        for backward compatibility with legacy consumers.
+    """
+    logger.warning("Deprecated endpoint called: %s", request.url)
+    _deprecation_response(response)
     now = datetime.now(UTC).isoformat()
+
+    # Try Agent Manager service for any registered agents
+    try:
+        from agents.models import LockAgentRequest as _LockReq  # noqa: PLC0415
+        from agents.service import AgentManagerService  # noqa: PLC0415
+
+        svc = AgentManagerService()
+        agents_list, total = await svc.list_agents(limit=200)
+        if total > 0:
+            targets = (
+                [a for a in agents_list if str(a.get("id")) == req.agent_id]
+                if req.agent_id
+                else agents_list
+            )
+            for a in targets:
+                agent_id_str = str(a["id"])
+                with contextlib.suppress(Exception):
+                    lock_req = _LockReq(reason=req.reason, locked_by="user:dashboard")
+                    await svc.lock_agent(agent_id_str, lock_req, performed_by="user:dashboard")
+                with contextlib.suppress(Exception):
+                    await svc.unlock_agent(agent_id_str, performed_by="user:dashboard")
+    except Exception:
+        pass
+
+    # Always also write the Redis restart marker for legacy consumers
     with contextlib.suppress(Exception):
         redis_client.client.set(EA_RESTART_MARKER_KEY, now, ex=60 * 10)
 
@@ -196,7 +409,35 @@ async def restart_ea(req: RestartRequest) -> dict:
 
 
 @router.post("/safe-mode", dependencies=[Depends(enforce_write_policy)])
-async def set_safe_mode(req: SafeModeRequest) -> dict:
+async def set_safe_mode(req: SafeModeRequest, request: Request, response: Response) -> dict:
+    """Toggle safe mode for all EA agents.
+
+    .. deprecated::
+        Use ``PUT /api/v1/agent-manager/agents/{id}`` with ``safe_mode`` field instead.
+        Sunset: 2026-06-01.
+        Internally calls Agent Manager updateAgent for each agent; always also writes
+        the Redis safe-mode key for backward compatibility with legacy consumers.
+    """
+    logger.warning("Deprecated endpoint called: %s", request.url)
+    _deprecation_response(response)
+
+    # Try Agent Manager service for any registered agents
+    try:
+        from agents.models import UpdateAgentRequest as _UpdReq  # noqa: PLC0415
+        from agents.service import AgentManagerService  # noqa: PLC0415
+
+        svc = AgentManagerService()
+        agents_list, total = await svc.list_agents(limit=200)
+        if total > 0:
+            for a in agents_list:
+                agent_id_str = str(a["id"])
+                with contextlib.suppress(Exception):
+                    upd_req = _UpdReq(safe_mode=req.enabled)
+                    await svc.update_agent(agent_id_str, upd_req, performed_by="user:dashboard")
+    except Exception:
+        pass
+
+    # Always also write the Redis safe-mode key for legacy consumers
     marker = "1" if req.enabled else "0"
     with contextlib.suppress(Exception):
         redis_client.client.set(EA_SAFE_MODE_KEY, marker)
