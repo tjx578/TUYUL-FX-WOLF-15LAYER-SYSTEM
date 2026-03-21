@@ -7,13 +7,13 @@ from typing import Any, Protocol, cast
 from fastapi import Depends, HTTPException
 from fastapi.routing import APIRouter
 
-from api.redis_context_reader import RedisContextReader
 from config_loader import load_pairs
 from execution.state_machine import ExecutionStateMachine
 from storage.l12_cache import KEY_PREFIX, VERDICT_TTL_SEC, get_verdict, is_verdict_stale
 from utils.timezone_utils import format_local, format_utc, now_utc
 
 from .middleware.auth import verify_token
+from .redis_context_reader import RedisContextReader
 
 router: APIRouter = APIRouter()
 
@@ -209,16 +209,76 @@ def verdict_health() -> dict[str, Any]:
     }
 
 
+def _empty_context() -> dict[str, Any]:
+    """Safe empty context — dashboard shows '—' instead of error banner."""
+    ts = now_utc()
+    return {
+        "candles": {},
+        "ticks": {},
+        "conditioned_returns": {},
+        "conditioning_meta": {},
+        "macro": {},
+        "news": {},
+        "inference": {
+            "regime_state": {},
+            "volatility_regime": "UNKNOWN",
+            "session_state": {},
+            "liquidity_map": {},
+            "news_pressure_vector": {},
+            "signal_stack": [],
+            "inference_ts": 0,
+        },
+        "meta": {"inference_ts": 0, "volatility_regime": "UNKNOWN"},
+        "active_pairs": 0,
+        "timestamp_utc": format_utc(ts),
+        "timestamp_local": format_local(ts),
+        "feed_status": "UNKNOWN",
+        "feed_staleness_seconds": None,
+        "feed_threshold_seconds": None,
+        "feed_last_seen_ts": None,
+        "feed_detail": {},
+    }
+
+
+def _count_active_pairs(reader: RedisContextReader) -> int:
+    """Count symbols with at least one ready warmup timeframe."""
+    ws = reader.warmup_state
+    return sum(1 for s in ws.get("symbols", {}).values() if s.get("ready"))
+
+
 @router.get("/api/v1/context", dependencies=[Depends(verify_token)])
 async def fetch_context() -> dict[str, Any]:
     """Get live context snapshot."""
     import math  # noqa: PLC0415
 
-    from api.allocation_router import _feed_freshness_snapshot  # noqa: PLC0415
+    from loguru import logger  # noqa: PLC0415
 
-    context_bus = cast(_SnapshotProvider, RedisContextReader())
-    snapshot = context_bus.snapshot()
-    feed_snapshot = await _feed_freshness_snapshot()
+    from .allocation_router import _feed_freshness_snapshot  # noqa: PLC0415
+
+    try:
+        reader = RedisContextReader()
+        snapshot = reader.snapshot()
+        # Ensure active_pairs is always present for dashboard Header.tsx
+        if "active_pairs" not in snapshot:
+            snapshot["active_pairs"] = _count_active_pairs(reader)
+    except Exception as exc:
+        logger.warning("/api/v1/context snapshot fallback: {}", exc)
+        return _empty_context()
+
+    try:
+        feed_snapshot = await _feed_freshness_snapshot()
+    except Exception as exc:
+        # Context data available but feed freshness failed — still return context
+        logger.warning("/api/v1/context feed fallback: {}", exc)
+        current_time = now_utc()
+        snapshot["timestamp_utc"] = format_utc(current_time)
+        snapshot["timestamp_local"] = format_local(current_time)
+        snapshot["feed_status"] = "UNKNOWN"
+        snapshot["feed_staleness_seconds"] = None
+        snapshot["feed_threshold_seconds"] = None
+        snapshot["feed_last_seen_ts"] = None
+        snapshot["feed_detail"] = {}
+        return snapshot
 
     # Add timestamp info
     current_time = now_utc()
