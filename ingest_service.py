@@ -777,6 +777,7 @@ async def run_ingest_services(has_api_key: bool) -> None:
     market_news = None
     producer_heartbeat_task: asyncio.Task[None] | None = None
     candle_builders: dict[str, CandleBuilder] = {}
+    forming_pub = None
 
     try:
         redis = await _connect_redis_with_retry()
@@ -839,6 +840,20 @@ async def run_ingest_services(has_api_key: bool) -> None:
             len(enabled_symbols),
         )
 
+        # ── Zone A: micro candle chain (tick → M1 → M5 → M15) ────────────────
+        from ingest.micro_candle_chain import MicroCandleChain
+        from ingest.forming_bar_publisher import FormingBarPublisher
+
+        micro_chain = MicroCandleChain(redis)
+        micro_chain.init_symbols(enabled_symbols)
+
+        # Forming bar publisher (M15 + H1)
+        forming_pub = FormingBarPublisher(redis)
+        for _sym, _m15b in micro_chain.m15_builders.items():
+            forming_pub.register_builder(_sym, "M15", _m15b)
+        for _sym, _h1b in h1_builders.items():
+            forming_pub.register_builder(_sym, "H1", _h1b)
+
         # Tick callback: route to CandleBuilder per symbol
         def _on_tick(symbol: str, price: float, ts: datetime, volume: float) -> None:
             _mark_pair_tick(symbol, ts.timestamp())
@@ -849,6 +864,8 @@ async def run_ingest_services(has_api_key: bool) -> None:
             cb = candle_builders.get(symbol)
             if cb is not None:
                 cb.on_tick(price, ts, volume)
+            # Zone A: also feed micro-wave chain
+            micro_chain.on_tick(symbol, price, ts, volume)
 
         # Create HTF refresh scheduler early so we can wire its force_refresh_now
         # as the on_connect callback for the WS feed. This ensures HTF candles are
@@ -891,6 +908,25 @@ async def run_ingest_services(has_api_key: bool) -> None:
 
         macro_monthly = MacroMonthlyScheduler(enabled_symbols, redis_client=redis)
         logger.info("Starting ingest services: WebSocket + supervised background refresh/poll/news tasks")
+
+        class _FormingPubRunner:
+            """Adapter wrapping FormingBarPublisher for _run_supervised() compatibility."""
+
+            def __init__(self, pub: FormingBarPublisher) -> None:
+                self._pub = pub
+
+            async def run(self) -> None:
+                await self._pub.start()
+                try:
+                    while True:
+                        await asyncio.sleep(3600)
+                except asyncio.CancelledError:
+                    await self._pub.stop()
+                    raise
+
+            async def stop(self) -> None:
+                await self._pub.stop()
+
         await asyncio.gather(
             _run_supervised("finnhub_ws", ws_feed),
             _run_supervised("rest_poll_fallback", rest_poll),
@@ -899,6 +935,7 @@ async def run_ingest_services(has_api_key: bool) -> None:
             _run_supervised("h1_refresh", h1_refresh),
             _run_supervised("htf_refresh", htf_refresh),
             _run_supervised("macro_monthly_refresh", macro_monthly),
+            _run_supervised("forming_publisher", _FormingPubRunner(forming_pub)),
         )
     except asyncio.CancelledError:
         logger.info("Ingest services cancelled - shutting down")
@@ -913,6 +950,8 @@ async def run_ingest_services(has_api_key: bool) -> None:
         await _safe_stop("rest_poll", rest_poll, cleanup_errors)
         await _safe_stop("news_feed", news_feed, cleanup_errors)
         await _safe_stop("market_news", market_news, cleanup_errors)
+        if forming_pub is not None:
+            await _safe_stop("forming_publisher", forming_pub, cleanup_errors)
         if candle_builders:
             for name, cb in candle_builders.items():
                 await _safe_stop(f"candle_builder[{name}]", cb, cleanup_errors)
