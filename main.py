@@ -238,8 +238,11 @@ async def main() -> None:
     # ── Startup validation ──────────────────────────────────────────
     startup_check = await validate_engine_startup_async()
     if not startup_check.ok:
-        logger.error("Startup validation FAILED — aborting")
-        return
+        logger.error(
+            "Startup validation found %d error(s) — engine may not function correctly. "
+            "Continuing to keep health probe alive for diagnostics.",
+            len(startup_check.errors),
+        )
 
     has_api_key = _validate_api_key()
     context_mode = os.getenv("CONTEXT_MODE", "local").lower()
