@@ -246,127 +246,12 @@ MESSAGE_BUFFER_SIZE = 100  # last N messages kept for replay on reconnect
 
 
 # ---------------------------------------------------------------------------
-# Candle Aggregator -- builds OHLC bars from tick stream
+# Candle Aggregator — replaced by HybridCandleAggregator (Dual-Zone SSOT v5)
 # ---------------------------------------------------------------------------
 
+from api.hybrid_candle_agg import CandleBar, FormingBarData, HybridCandleAggregator  # noqa: E402
 
-class CandleBar(TypedDict):
-    open: float
-    high: float
-    low: float
-    close: float
-    volume: int
-    ts_open: float
-    ts_close: float
-
-
-class CandleAggregator:
-    """Builds OHLC candle bars from incoming tick data in real-time.
-
-    Delegates to ``ingest.candle_builder.CandleBuilder`` for the actual OHLC
-    construction, keeping a single source of truth for candle building logic.
-
-    Unlike the pipeline's ``MultiTimeframeCandleBuilder`` (which chains
-    M1→M5→…), this class feeds ticks directly into *every* timeframe so
-    the WS endpoint can push forming bars at all resolutions immediately.
-    """
-
-    TIMEFRAMES = {"M1": 60, "M5": 300, "M15": 900, "H1": 3600}
-
-    def __init__(self) -> None:
-        super().__init__()
-        from datetime import UTC
-        from datetime import datetime as _dt
-
-        from ingest.candle_builder import CandleBuilder, Timeframe
-
-        self._dt = _dt
-        self._utc = UTC
-        self._CandleBuilder = CandleBuilder
-        self._tf_enum = {
-            "M1": Timeframe.M1,
-            "M5": Timeframe.M5,
-            "M15": Timeframe.M15,
-            "H1": Timeframe.H1,
-        }
-        # Per-symbol, per-timeframe builders (each fed directly by ticks)
-        self._builders: dict[str, dict[str, CandleBuilder]] = {}
-        self._pending_completed: list[dict[str, object]] = []
-
-    def _ensure_builders(self, symbol: str) -> dict[str, Any]:
-        if symbol not in self._builders:
-            self._builders[symbol] = {}
-            for tf_name, tf_enum in self._tf_enum.items():
-                self._builders[symbol][tf_name] = self._CandleBuilder(
-                    symbol=symbol,
-                    timeframe=tf_enum,
-                    on_complete=lambda c: self._pending_completed.append(
-                        {
-                            "symbol": c.symbol,
-                            "timeframe": c.timeframe,
-                            "bar": {
-                                "open": c.open,
-                                "high": c.high,
-                                "low": c.low,
-                                "close": c.close,
-                                "volume": c.tick_count,
-                                "ts_open": c.open_time.timestamp(),
-                                "ts_close": c.close_time.timestamp(),
-                            },
-                            "status": "closed",
-                        }
-                    ),
-                )
-        return self._builders[symbol]
-
-    def _bar_key(self, timestamp: float, seconds: int) -> float:
-        """Floor timestamp to bar open."""
-        return float(int(timestamp) // seconds * seconds)
-
-    def ingest_tick(self, symbol: str, bid: float, ask: float, ts: float) -> list[dict[str, object]]:
-        """
-        Feed a tick into the aggregator.
-        Returns list of completed bars (if any bar rolled over).
-        """
-        mid = round((bid + ask) / 2, 6)
-        self._pending_completed.clear()
-
-        builders = self._ensure_builders(symbol)
-        timestamp = self._dt.fromtimestamp(ts, tz=self._utc)
-        for cb in builders.values():
-            cb.on_tick(mid, timestamp, volume=1.0)
-
-        return list(self._pending_completed)
-
-    def get_current_bars(self, symbol: str | None = None) -> dict[str, dict[str, CandleBar]]:
-        """Return all current (forming) bars."""
-        result: dict[str, dict[str, CandleBar]] = {}
-        symbols = [symbol] if symbol else list(self._builders.keys())
-
-        for sym in symbols:
-            sym_builders = self._builders.get(sym)
-            if sym_builders is None:
-                result[sym] = {}
-                continue
-            bars: dict[str, CandleBar] = {}
-            for tf_name, cb in sym_builders.items():
-                partial = cb.current_partial
-                if partial is not None:
-                    bars[tf_name] = {
-                        "open": partial.open,
-                        "high": partial.high,
-                        "low": partial.low,
-                        "close": partial.close,
-                        "volume": partial.tick_count,
-                        "ts_open": partial.open_time.timestamp(),
-                        "ts_close": partial.close_time.timestamp(),
-                    }
-            result[sym] = bars
-
-        return result
-
-
-_candle_agg = CandleAggregator()
+_candle_agg = HybridCandleAggregator()
 
 
 # ---------------------------------------------------------------------------
@@ -916,6 +801,7 @@ async def websocket_candles(websocket: fastapi.WebSocket):
     WebSocket endpoint for real-time OHLC candle updates.
 
     Pushes forming bars every 500ms and closed bar events.
+    Data sourced from Redis (Dual-Zone SSOT v5 — display only, zero computation).
     Query params: ?token=<jwt>&symbol=<EURUSD> (optional symbol filter)
     """
     connected = await candle_manager.connect(websocket)
@@ -928,12 +814,12 @@ async def websocket_candles(websocket: fastapi.WebSocket):
 
     try:
         # Send current bars snapshot
-        bars = _candle_agg.get_current_bars(symbol_filter)
-        await websocket.send_json(_ws_event("candle.snapshot", {"bars": bars}))
+        snapshot = _candle_agg.get_combined_snapshot(symbol_filter)
+        await websocket.send_json(_ws_event("candle.snapshot", {"bars": snapshot}))
 
         while websocket in candle_manager.active_connections:
-            bars = _candle_agg.get_current_bars(symbol_filter)
-            if not await candle_manager.send_stamped(websocket, _ws_event("candle.forming", {"bars": bars})):
+            forming = await _candle_agg.fetch_forming_bars_async(symbol_filter)
+            if not await candle_manager.send_stamped(websocket, _ws_event("candle.forming", {"bars": forming})):
                 break
             await asyncio.sleep(CANDLE_UPDATE_INTERVAL)
 
@@ -1735,3 +1621,80 @@ async def websocket_alerts(websocket: fastapi.WebSocket):
         if pubsub is not None:
             with contextlib.suppress(Exception):
                 pubsub.close()
+
+
+# ---------------------------------------------------------------------------
+# WS /ws/trq -- TRQ pre-move alert stream (Zone A micro-wave)
+# ---------------------------------------------------------------------------
+
+trq_manager = ConnectionManager(name="trq")
+
+
+@router.websocket("/ws/trq")
+async def websocket_trq(websocket: fastapi.WebSocket):
+    """
+    WebSocket endpoint for TRQ pre-move alerts (Zone A micro-wave analysis).
+
+    Pushes TRQ snapshots every 2s.  Data sourced from Redis — display only.
+    Query params: ?token=<jwt>&symbol=<EURUSD> (optional symbol filter)
+    """
+    connected = await trq_manager.connect(websocket)
+    if not connected:
+        return
+
+    symbol_filter = websocket.query_params.get("symbol")
+    logger.info(f"TRQ WebSocket connected (filter={symbol_filter or 'all'})")
+
+    try:
+        # Initial snapshot
+        snapshot = _candle_agg.get_trq_snapshot(symbol_filter)
+        await websocket.send_json(_ws_event("trq.snapshot", {"data": snapshot}))
+
+        while websocket in trq_manager.active_connections:
+            snapshot = _candle_agg.get_trq_snapshot(symbol_filter)
+            if not await trq_manager.send_stamped(websocket, _ws_event("trq.update", {"data": snapshot})):
+                break
+            await asyncio.sleep(2.0)
+
+    except fastapi.WebSocketDisconnect:
+        pass
+    except Exception as exc:
+        logger.error(f"TRQ WebSocket error: {exc}")
+    finally:
+        trq_manager.disconnect(websocket)
+
+
+# ---------------------------------------------------------------------------
+# REST /api/v1/trq/{symbol}/r3d -- R3D history (Zone A)
+# ---------------------------------------------------------------------------
+
+
+@router.get("/api/v1/trq/{symbol}/r3d")
+async def get_trq_r3d_history(symbol: str) -> dict[str, Any]:
+    """Return TRQ R3D history list for a symbol.
+
+    Reads up to 100 most-recent R3D values from Redis.
+    Returns empty list when no data is available (graceful degradation).
+
+    Authentication: requires valid JWT or API key via Authorization header.
+    """
+    sym_upper = symbol.upper()
+    try:
+        from core.redis_keys import trq_r3d_history as _trq_r3d_history
+        from infrastructure.redis_client import get_client
+        redis = await get_client()
+        raw_entries: list[Any] = await redis.lrange(_trq_r3d_history(sym_upper), -100, -1)
+    except Exception as exc:
+        logger.warning("[TRQ R3D] Redis read failed %s: %s", sym_upper, exc)
+        return {"symbol": sym_upper, "r3d_history": [], "count": 0}
+
+    import orjson as _orjson  # noqa: PLC0415
+    history: list[dict[str, Any]] = []
+    for entry in raw_entries:
+        try:
+            data = _orjson.loads(entry) if isinstance(entry, (bytes, str)) else entry
+            history.append(data)
+        except Exception:
+            pass
+
+    return {"symbol": sym_upper, "r3d_history": history, "count": len(history)}
