@@ -7,8 +7,8 @@ from typing import Any, Protocol, cast
 from fastapi import Depends, HTTPException
 from fastapi.routing import APIRouter
 
+from api.redis_context_reader import RedisContextReader
 from config_loader import load_pairs
-from context.live_context_bus import LiveContextBus
 from execution.state_machine import ExecutionStateMachine
 from storage.l12_cache import KEY_PREFIX, VERDICT_TTL_SEC, get_verdict, is_verdict_stale
 from utils.timezone_utils import format_local, format_utc, now_utc
@@ -216,7 +216,7 @@ async def fetch_context() -> dict[str, Any]:
 
     from api.allocation_router import _feed_freshness_snapshot  # noqa: PLC0415
 
-    context_bus = cast(_SnapshotProvider, LiveContextBus())
+    context_bus = cast(_SnapshotProvider, RedisContextReader())
     snapshot = context_bus.snapshot()
     feed_snapshot = await _feed_freshness_snapshot()
 
@@ -516,7 +516,7 @@ def fetch_pipeline(pair: str):
 @router.get("/api/v1/internal/verdict/path", dependencies=[Depends(verify_token)])
 def fetch_internal_verdict_path(pair: str | None = None) -> dict[str, Any]:
     """Internal runtime debug for verdict path health and recency."""
-    context_bus = cast(Any, LiveContextBus())
+    context_bus = cast(Any, RedisContextReader())
     available_symbols = [str(p["symbol"]).upper() for p in AVAILABLE_PAIRS if isinstance(p.get("symbol"), str)]
     enabled_symbols = [
         str(p["symbol"]).upper()
