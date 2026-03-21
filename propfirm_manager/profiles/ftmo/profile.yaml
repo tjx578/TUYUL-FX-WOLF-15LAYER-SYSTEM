@@ -1,11 +1,67 @@
 name: "FTMO"
-version: "1.0"
-rules:
+version: "2.0"
+firm_code: "ftmo"
+
+# Default rules (fallback if plan/phase not found)
+default_rules:
   max_daily_dd_percent: 5.0
   max_total_dd_percent: 10.0
+  drawdown_mode: "FIXED"
   max_risk_per_trade_percent: 1.0
   max_open_trades: 1
+  profit_target_percent: 10.0
+  consistency_rule_percent: 0.0
+  min_trading_days: 0
+  news_restriction: true
+  weekend_holding: false
+  min_rr_required: 2.0
+
+plans:
+  challenge_100k:
+    display_name: "Challenge $100,000"
+    initial_balance: 100000
+    currency: "USD"
+    phases:
+      challenge:
+        max_daily_dd_percent: 5.0
+        max_total_dd_percent: 10.0
+        drawdown_mode: "FIXED"
+        profit_target_percent: 10.0
+        consistency_rule_percent: 0.0
+        min_trading_days: 4
+        max_risk_per_trade_percent: 1.0
+        max_open_trades: 10
+        news_restriction: true
+        weekend_holding: false
+        min_rr_required: 1.5
+      verification:
+        max_daily_dd_percent: 5.0
+        max_total_dd_percent: 10.0
+        drawdown_mode: "FIXED"
+        profit_target_percent: 5.0
+        consistency_rule_percent: 0.0
+        min_trading_days: 4
+        max_risk_per_trade_percent: 1.0
+        max_open_trades: 10
+        news_restriction: true
+        weekend_holding: false
+        min_rr_required: 1.5
+      funded:
+        max_daily_dd_percent: 5.0
+        max_total_dd_percent: 10.0
+        drawdown_mode: "FIXED"
+        profit_target_percent: 0.0
+        consistency_rule_percent: 0.0
+        min_trading_days: 0
+        max_risk_per_trade_percent: 1.0
+        max_open_trades: 10
+        news_restriction: true
+        weekend_holding: false
+        min_rr_required: 1.5
+
 features:
-  allow_scaling: true
-  allow_split_risk: true
+  # FTMO does not permit scaling or split-risk strategies; weekend holding
+  # is also disallowed.  These were incorrectly set to true in the v1 profile.
+  allow_scaling: false
+  allow_split_risk: false
   allow_weekend_holding: false
