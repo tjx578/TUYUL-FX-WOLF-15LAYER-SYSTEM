@@ -24,11 +24,13 @@ depends_on = None
 # Enum definitions — all NEW names to avoid collision with existing pg enums
 # ---------------------------------------------------------------------------
 
+# create_type=False prevents SQLAlchemy from auto-creating these via table
+# before_create events.  We create them explicitly with idempotent raw SQL.
 _EA_CLASS_ENUM = sa.Enum(
     "PRIMARY",
     "PORTFOLIO",
     name="ea_class_enum",
-    create_type=True,
+    create_type=False,
 )
 
 _EA_SUBTYPE_ENUM = sa.Enum(
@@ -37,7 +39,7 @@ _EA_SUBTYPE_ENUM = sa.Enum(
     "EDUMB",
     "STANDARD_REPORTER",
     name="ea_subtype_enum",
-    create_type=True,
+    create_type=False,
 )
 
 _EXECUTION_MODE_ENUM = sa.Enum(
@@ -45,7 +47,7 @@ _EXECUTION_MODE_ENUM = sa.Enum(
     "DEMO",
     "SHADOW",
     name="execution_mode_enum",
-    create_type=True,
+    create_type=False,
 )
 
 _REPORTER_MODE_ENUM = sa.Enum(
@@ -53,7 +55,7 @@ _REPORTER_MODE_ENUM = sa.Enum(
     "BALANCE_ONLY",
     "DISABLED",
     name="reporter_mode_enum",
-    create_type=True,
+    create_type=False,
 )
 
 # Distinct from existing `ea_status` enum (RUNNING/STOPPED) used by ea_instances.
@@ -64,7 +66,7 @@ _EA_AGENT_STATUS_ENUM = sa.Enum(
     "QUARANTINED",
     "DISABLED",
     name="ea_agent_status",
-    create_type=True,
+    create_type=False,
 )
 
 
@@ -72,13 +74,40 @@ def upgrade() -> None:
     bind = op.get_bind()
     inspector = inspect(bind)
 
+    # -- Create enum types idempotently (survives partial prior runs) --------
+    op.execute(sa.text("""
+        DO $$ BEGIN
+            CREATE TYPE ea_class_enum AS ENUM ('PRIMARY', 'PORTFOLIO');
+        EXCEPTION WHEN duplicate_object THEN null;
+        END $$;
+    """))
+    op.execute(sa.text("""
+        DO $$ BEGIN
+            CREATE TYPE ea_subtype_enum AS ENUM ('BROKER', 'PROP_FIRM', 'EDUMB', 'STANDARD_REPORTER');
+        EXCEPTION WHEN duplicate_object THEN null;
+        END $$;
+    """))
+    op.execute(sa.text("""
+        DO $$ BEGIN
+            CREATE TYPE execution_mode_enum AS ENUM ('LIVE', 'DEMO', 'SHADOW');
+        EXCEPTION WHEN duplicate_object THEN null;
+        END $$;
+    """))
+    op.execute(sa.text("""
+        DO $$ BEGIN
+            CREATE TYPE reporter_mode_enum AS ENUM ('FULL', 'BALANCE_ONLY', 'DISABLED');
+        EXCEPTION WHEN duplicate_object THEN null;
+        END $$;
+    """))
+    op.execute(sa.text("""
+        DO $$ BEGIN
+            CREATE TYPE ea_agent_status AS ENUM ('ONLINE', 'WARNING', 'OFFLINE', 'QUARANTINED', 'DISABLED');
+        EXCEPTION WHEN duplicate_object THEN null;
+        END $$;
+    """))
+
     # -- ea_profiles ----------------------------------------------------------
     if not inspector.has_table("ea_profiles"):
-        _EA_CLASS_ENUM.create(bind, checkfirst=True)
-        _EA_SUBTYPE_ENUM.create(bind, checkfirst=True)
-        _EXECUTION_MODE_ENUM.create(bind, checkfirst=True)
-        _REPORTER_MODE_ENUM.create(bind, checkfirst=True)
-
         op.create_table(
             "ea_profiles",
             sa.Column(
@@ -156,8 +185,6 @@ def upgrade() -> None:
 
     # -- ea_agents ------------------------------------------------------------
     if not inspector.has_table("ea_agents"):
-        _EA_AGENT_STATUS_ENUM.create(bind, checkfirst=True)
-
         op.create_table(
             "ea_agents",
             sa.Column(
@@ -477,8 +504,6 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    bind = op.get_bind()
-
     op.drop_index(
         "ix_account_portfolio_snapshots_agent_captured",
         table_name="account_portfolio_snapshots",
@@ -498,8 +523,8 @@ def downgrade() -> None:
 
     op.drop_table("ea_profiles")
 
-    _EA_AGENT_STATUS_ENUM.drop(bind, checkfirst=True)
-    _REPORTER_MODE_ENUM.drop(bind, checkfirst=True)
-    _EXECUTION_MODE_ENUM.drop(bind, checkfirst=True)
-    _EA_SUBTYPE_ENUM.drop(bind, checkfirst=True)
-    _EA_CLASS_ENUM.drop(bind, checkfirst=True)
+    op.execute(sa.text("DROP TYPE IF EXISTS ea_agent_status"))
+    op.execute(sa.text("DROP TYPE IF EXISTS reporter_mode_enum"))
+    op.execute(sa.text("DROP TYPE IF EXISTS execution_mode_enum"))
+    op.execute(sa.text("DROP TYPE IF EXISTS ea_subtype_enum"))
+    op.execute(sa.text("DROP TYPE IF EXISTS ea_class_enum"))
