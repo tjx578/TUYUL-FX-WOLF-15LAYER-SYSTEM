@@ -334,7 +334,22 @@ def _start_health_probe_in_thread(readiness_check: Callable[[], bool] | None = N
 def run() -> None:
     _ORCHESTRATOR_READY.clear()
     _start_health_probe_in_thread(readiness_check=lambda: _ORCHESTRATOR_READY.is_set())
-    StateManager().run_forever(on_started=_ORCHESTRATOR_READY.set)
+    try:
+        StateManager().run_forever(on_started=_ORCHESTRATOR_READY.set)
+    except Exception:
+        logger.exception("Orchestrator fatal error — holding alive for health probe diagnostics")
+        import signal as _signal
+        import types
+
+        shutdown = threading.Event()
+
+        def _on_signal(signum: int, _frame: types.FrameType | None) -> None:
+            logger.info("Received %s — exiting degraded hold", _signal.Signals(signum).name)
+            shutdown.set()
+
+        _signal.signal(_signal.SIGTERM, _on_signal)
+        _signal.signal(_signal.SIGINT, _on_signal)
+        shutdown.wait()
 
 
 if __name__ == "__main__":
