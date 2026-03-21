@@ -1,95 +1,76 @@
+/**
+ * @deprecated Use `AgentManagerDetail` from `@/components/agent-manager` instead. Sunset: 2026-06-01
+ */
 "use client";
 
+import { useEffect, useRef } from "react";
+import { AgentManagerDetail } from "@/components/agent-manager";
 import type { EAAgent } from "@/types";
+import type { AgentItem } from "@/types/agent-manager";
+import { AgentStatus, EAClass, EASubtype, ExecutionMode, ReporterMode } from "@/types/agent-manager";
 
 interface Props {
     agent: EAAgent | null;
 }
 
-function formatTimestamp(iso: string): string {
-    if (!iso) return "—";
-    try {
-        return new Date(iso).toLocaleString();
-    } catch {
-        return iso;
-    }
+function _toAgentItem(agent: EAAgent): AgentItem {
+    const statusMap: Record<EAAgent["status"], AgentStatus> = {
+        connected: AgentStatus.ONLINE,
+        degraded: AgentStatus.WARNING,
+        disconnected: AgentStatus.OFFLINE,
+        cooldown: AgentStatus.QUARANTINED,
+    };
+    return {
+        id: agent.agent_id,
+        agent_name: agent.agent_id,
+        ea_class: EAClass.PRIMARY,
+        ea_subtype: EASubtype.STANDARD_REPORTER,
+        execution_mode: ExecutionMode.LIVE,
+        reporter_mode: ReporterMode.FULL,
+        status: statusMap[agent.status] ?? AgentStatus.OFFLINE,
+        linked_account_id: agent.account_id || null,
+        linked_profile_id: null,
+        mt5_login: null,
+        mt5_server: null,
+        broker_name: null,
+        strategy_profile: agent.profile,
+        risk_multiplier: 1.0,
+        news_lock_setting: "NONE",
+        safe_mode: false,
+        locked: false,
+        lock_reason: null,
+        locked_at: null,
+        locked_by: null,
+        notes: null,
+        version: agent.version,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        runtime: {
+            agent_id: agent.agent_id,
+            last_heartbeat: agent.last_heartbeat || null,
+            last_success: agent.last_success || null,
+            last_failure: agent.last_failure || null,
+            failure_reason: agent.failure_reason || null,
+            trades_executed: agent.trades_executed,
+            trades_failed: agent.trades_failed,
+            uptime_seconds: agent.uptime_seconds,
+            cpu_usage_pct: null,
+            memory_mb: null,
+            connection_latency_ms: null,
+            updated_at: new Date().toISOString(),
+        },
+    };
 }
 
+/** @deprecated Use AgentManagerDetail from @/components/agent-manager instead. Sunset: 2026-06-01 */
 export function AgentDetailPanel({ agent }: Props) {
-    if (!agent) {
-        return (
-            <div
-                style={{
-                    padding: 20,
-                    textAlign: "center",
-                    color: "var(--text-muted)",
-                    fontSize: 12,
-                }}
-            >
-                Select an agent to view details
-            </div>
-        );
-    }
+    const warnedRef = useRef(false);
+    useEffect(() => {
+        if (!warnedRef.current) {
+            warnedRef.current = true;
+            console.warn("[DEPRECATED] AgentDetailPanel: Use AgentManagerDetail from @/components/agent-manager instead");
+        }
+    }, []);
 
-    const rows: Array<{ label: string; value: string; color?: string }> = [
-        { label: "Agent ID", value: agent.agent_id },
-        { label: "Account", value: agent.account_id || "—" },
-        { label: "Profile", value: agent.profile },
-        { label: "Scope", value: agent.scope },
-        { label: "Version", value: `v${agent.version}` },
-        {
-            label: "Status",
-            value: agent.status.toUpperCase(),
-            color: agent.healthy ? "var(--green)" : "var(--red)",
-        },
-        { label: "Trades Executed", value: String(agent.trades_executed) },
-        {
-            label: "Trades Failed",
-            value: String(agent.trades_failed),
-            color: agent.trades_failed > 0 ? "var(--red)" : undefined,
-        },
-        { label: "Last Heartbeat", value: formatTimestamp(agent.last_heartbeat) },
-        { label: "Last Success", value: formatTimestamp(agent.last_success) },
-        { label: "Last Failure", value: formatTimestamp(agent.last_failure) },
-    ];
-
-    if (agent.failure_reason) {
-        rows.push({
-            label: "Failure Reason",
-            value: agent.failure_reason,
-            color: "var(--red)",
-        });
-    }
-
-    return (
-        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            <div
-                style={{
-                    fontSize: 11,
-                    fontWeight: 700,
-                    letterSpacing: "0.08em",
-                    color: "var(--text-muted)",
-                    paddingBottom: 4,
-                    borderBottom: "1px solid var(--bg-border)",
-                }}
-            >
-                AGENT DETAIL — {agent.agent_id}
-            </div>
-
-            {rows.map((row) => (
-                <div
-                    key={row.label}
-                    style={{ display: "flex", justifyContent: "space-between", fontSize: 11 }}
-                >
-                    <span style={{ color: "var(--text-muted)" }}>{row.label}</span>
-                    <span
-                        className="num"
-                        style={{ fontWeight: 600, color: row.color ?? "var(--text-secondary)" }}
-                    >
-                        {row.value}
-                    </span>
-                </div>
-            ))}
-        </div>
-    );
+    return <AgentManagerDetail agent={agent ? _toAgentItem(agent) : null} />;
 }
