@@ -527,6 +527,7 @@ export interface PaginatedResponse<T> {
   per_page: number;
 }
 
+/** @deprecated Use {@link https://github.com/tjx578/TUYUL-FX-WOLF-15LAYER-SYSTEM} AgentListResponse from @/types/agent-manager instead. Sunset: 2026-06-01 */
 export interface EAStatus {
   healthy: boolean;
   running: boolean;
@@ -548,6 +549,7 @@ export interface AgentFailure {
   at: string;
 }
 
+/** @deprecated Use AgentItem from @/types/agent-manager instead. Sunset: 2026-06-01 */
 export interface EAAgent {
   agent_id: string;
   account_id: string;
@@ -565,6 +567,7 @@ export interface EAAgent {
   scope: string;
 }
 
+/** @deprecated Use AgentEvent from @/types/agent-manager instead. Sunset: 2026-06-01 */
 export interface EALog {
   id: string;
   timestamp: string;
