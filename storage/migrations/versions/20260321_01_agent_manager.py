@@ -14,6 +14,7 @@ from __future__ import annotations
 import sqlalchemy as sa
 from alembic import op
 from sqlalchemy import inspect
+from sqlalchemy.dialects.postgresql import ENUM as PG_ENUM
 
 revision = "20260321_01"
 down_revision = "20260316_01"
@@ -26,14 +27,14 @@ depends_on = None
 
 # create_type=False prevents SQLAlchemy from auto-creating these via table
 # before_create events.  We create them explicitly with idempotent raw SQL.
-_EA_CLASS_ENUM = sa.Enum(
+_EA_CLASS_ENUM = PG_ENUM(
     "PRIMARY",
     "PORTFOLIO",
     name="ea_class_enum",
     create_type=False,
 )
 
-_EA_SUBTYPE_ENUM = sa.Enum(
+_EA_SUBTYPE_ENUM = PG_ENUM(
     "BROKER",
     "PROP_FIRM",
     "EDUMB",
@@ -42,7 +43,7 @@ _EA_SUBTYPE_ENUM = sa.Enum(
     create_type=False,
 )
 
-_EXECUTION_MODE_ENUM = sa.Enum(
+_EXECUTION_MODE_ENUM = PG_ENUM(
     "LIVE",
     "DEMO",
     "SHADOW",
@@ -50,7 +51,7 @@ _EXECUTION_MODE_ENUM = sa.Enum(
     create_type=False,
 )
 
-_REPORTER_MODE_ENUM = sa.Enum(
+_REPORTER_MODE_ENUM = PG_ENUM(
     "FULL",
     "BALANCE_ONLY",
     "DISABLED",
@@ -59,7 +60,7 @@ _REPORTER_MODE_ENUM = sa.Enum(
 )
 
 # Distinct from existing `ea_status` enum (RUNNING/STOPPED) used by ea_instances.
-_EA_AGENT_STATUS_ENUM = sa.Enum(
+_EA_AGENT_STATUS_ENUM = PG_ENUM(
     "ONLINE",
     "WARNING",
     "OFFLINE",
@@ -118,39 +119,10 @@ def upgrade() -> None:
             ),
             sa.Column("profile_name", sa.String(100), unique=True, nullable=False),
             sa.Column("description", sa.Text(), nullable=True),
-            sa.Column(
-                "ea_class",
-                sa.Enum("PRIMARY", "PORTFOLIO", name="ea_class_enum", create_type=False),
-                nullable=False,
-            ),
-            sa.Column(
-                "ea_subtype",
-                sa.Enum(
-                    "BROKER",
-                    "PROP_FIRM",
-                    "EDUMB",
-                    "STANDARD_REPORTER",
-                    name="ea_subtype_enum",
-                    create_type=False,
-                ),
-                nullable=False,
-            ),
-            sa.Column(
-                "execution_mode",
-                sa.Enum("LIVE", "DEMO", "SHADOW", name="execution_mode_enum", create_type=False),
-                nullable=False,
-            ),
-            sa.Column(
-                "reporter_mode",
-                sa.Enum(
-                    "FULL",
-                    "BALANCE_ONLY",
-                    "DISABLED",
-                    name="reporter_mode_enum",
-                    create_type=False,
-                ),
-                nullable=False,
-            ),
+            sa.Column("ea_class", _EA_CLASS_ENUM, nullable=False),
+            sa.Column("ea_subtype", _EA_SUBTYPE_ENUM, nullable=False),
+            sa.Column("execution_mode", _EXECUTION_MODE_ENUM, nullable=False),
+            sa.Column("reporter_mode", _REPORTER_MODE_ENUM, nullable=False),
             sa.Column(
                 "default_risk_multiplier",
                 sa.Float(),
@@ -194,55 +166,20 @@ def upgrade() -> None:
                 server_default=sa.text("gen_random_uuid()"),
             ),
             sa.Column("agent_name", sa.String(150), nullable=False),
+            sa.Column("ea_class", _EA_CLASS_ENUM, nullable=False),
+            sa.Column("ea_subtype", _EA_SUBTYPE_ENUM, nullable=False),
             sa.Column(
-                "ea_class",
-                sa.Enum("PRIMARY", "PORTFOLIO", name="ea_class_enum", create_type=False),
-                nullable=False,
+                "execution_mode", _EXECUTION_MODE_ENUM,
+                nullable=False, server_default=sa.text("'DEMO'"),
             ),
             sa.Column(
-                "ea_subtype",
-                sa.Enum(
-                    "BROKER",
-                    "PROP_FIRM",
-                    "EDUMB",
-                    "STANDARD_REPORTER",
-                    name="ea_subtype_enum",
-                    create_type=False,
-                ),
-                nullable=False,
-            ),
-            sa.Column(
-                "execution_mode",
-                sa.Enum("LIVE", "DEMO", "SHADOW", name="execution_mode_enum", create_type=False),
-                nullable=False,
-                server_default=sa.text("'DEMO'"),
-            ),
-            sa.Column(
-                "reporter_mode",
-                sa.Enum(
-                    "FULL",
-                    "BALANCE_ONLY",
-                    "DISABLED",
-                    name="reporter_mode_enum",
-                    create_type=False,
-                ),
-                nullable=False,
-                server_default=sa.text("'FULL'"),
+                "reporter_mode", _REPORTER_MODE_ENUM,
+                nullable=False, server_default=sa.text("'FULL'"),
             ),
             # ea_agent_status is DISTINCT from ea_status (RUNNING/STOPPED) used by ea_instances
             sa.Column(
-                "status",
-                sa.Enum(
-                    "ONLINE",
-                    "WARNING",
-                    "OFFLINE",
-                    "QUARANTINED",
-                    "DISABLED",
-                    name="ea_agent_status",
-                    create_type=False,
-                ),
-                nullable=False,
-                server_default=sa.text("'OFFLINE'"),
+                "status", _EA_AGENT_STATUS_ENUM,
+                nullable=False, server_default=sa.text("'OFFLINE'"),
             ),
             # Nullable UUID — no FK constraint as accounts table may lack UUID PK yet
             sa.Column("linked_account_id", sa.UUID(as_uuid=True), nullable=True),
