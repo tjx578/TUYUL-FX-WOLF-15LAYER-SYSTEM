@@ -33,15 +33,6 @@
       ]
     },
     {
-      "root": "api",
-      "extraPaths": [
-        ".",
-        "../",
-        "./",
-        "../infrastructure"
-      ]
-    },
-    {
       "root": "tests",
       "extraPaths": [
         ".",
