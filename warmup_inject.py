@@ -1,18 +1,29 @@
 #!/usr/bin/env python3
 """
-TUYUL FX Wolf-15 — Emergency Warmup Injector.
+TUYUL FX Wolf-15 — Warmup Injector v2 (Dual-Zone).
 
-Bypasses stale_cache logic by directly seeding H1/H4 bars
-from Finnhub REST API into Redis candle_history lists.
+Seeds M15/H1/H4 bars from Finnhub REST API into Redis candle_history.
+Bypasses stale_cache logic for cold-start and post-flush recovery.
+
+v2 changes from v1:
+  - Added M15 seeding (TRQ engine needs >=30 bars)
+  - Added M5 seeding (TRQ Quad coupling needs >=10 bars)
+  - Skips M1 (builds from ticks within 1-2 minutes)
+  - Added --force flag to overwrite existing data
+  - Added --verify-only mode for health checks
+  - Deterministic candle format matching MicroCandleChain output
 
 Usage:
-    railway run python warmup_inject.py
+    railway run -s wolf15-ingest python warmup_inject.py
+    railway run -s wolf15-ingest python warmup_inject.py --force
+    railway run -s wolf15-ingest python warmup_inject.py --verify-only
 
 Requires env vars:
     REDIS_URL       — Railway Redis URL
     FINNHUB_API_KEY — Finnhub API key
 """
 
+import argparse
 import json
 import os
 import sys
@@ -60,163 +71,239 @@ PAIRS = [
     "OANDA:XAU_USD",
 ]
 
+# Timeframes: {name: (finnhub_resolution, bars_to_fetch, min_required, consumer)}
+TIMEFRAMES = {
+    "M5": ("5", 60, 10, "TRQ Quad coupling"),
+    "M15": ("15", 100, 30, "TRQ engine (Zone A)"),
+    "H1": ("60", 50, 20, "Pipeline gate (Zone B)"),
+    "H4": ("240", 30, 10, "Pipeline gate (Zone B)"),
+}
 
-# Map: Finnhub symbol → Redis symbol (strip OANDA: and underscores)
+
 def to_redis_symbol(finnhub_sym: str) -> str:
     """OANDA:EUR_USD → EURUSD"""
     return finnhub_sym.replace("OANDA:", "").replace("_", "")
 
 
-# Timeframes to seed: {tf_name: (finnhub_resolution, bars_to_fetch)}
-TIMEFRAMES = {
-    "H1": ("60", 50),
-    "H4": ("240", 30),
-}
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="TUYUL FX Warmup Injector v2 (Dual-Zone)")
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Overwrite existing data even if sufficient",
+    )
+    parser.add_argument(
+        "--verify-only",
+        action="store_true",
+        help="Only check warmup status, do not seed",
+    )
+    parser.add_argument(
+        "--timeframes",
+        nargs="+",
+        choices=list(TIMEFRAMES.keys()),
+        default=list(TIMEFRAMES.keys()),
+        help="Timeframes to seed (default: all)",
+    )
+    return parser.parse_args()
 
-# ── Main ──────────────────────────────────────────────────────
+
+def verify_warmup(r: redis.Redis, selected_tfs: list[str]) -> dict:
+    """Check warmup status for all pairs and timeframes."""
+    status = {}
+    for tf in selected_tfs:
+        _, _, min_required, consumer = TIMEFRAMES[tf]
+        counts = []
+        insufficient = []
+        for pair in PAIRS:
+            sym = to_redis_symbol(pair)
+            key = f"wolf15:candle_history:{sym}:{tf}"
+            try:
+                c = cast(int, r.llen(key))
+            except Exception:
+                c = 0
+            counts.append(c)
+            if c < min_required:
+                insufficient.append(f"{sym}({c})")
+
+        status[tf] = {
+            "min": min(counts) if counts else 0,
+            "max": max(counts) if counts else 0,
+            "sufficient": sum(1 for c in counts if c >= min_required),
+            "total": len(PAIRS),
+            "min_required": min_required,
+            "consumer": consumer,
+            "insufficient": insufficient[:5],
+        }
+    return status
 
 
-def main():
-    if not FINNHUB_KEY:
-        print("❌ FINNHUB_API_KEY not set!")
-        sys.exit(1)
+def seed_timeframe(
+    r: redis.Redis,
+    pair: str,
+    tf: str,
+    force: bool = False,
+) -> tuple[int, str | None]:
+    """Seed one pair/timeframe. Returns (bars_seeded, error_or_None)."""
+    resolution, bars_to_fetch, min_required, _ = TIMEFRAMES[tf]
+    redis_sym = to_redis_symbol(pair)
+    key = f"wolf15:candle_history:{redis_sym}:{tf}"
+
+    # Check existing
+    try:
+        existing = cast(int, r.llen(key))
+    except Exception:
+        existing = 0
+
+    if existing >= min_required and not force:
+        return 0, None  # sufficient, skip
+
+    # Fetch from Finnhub
+    now = int(time.time())
+    since = now - (bars_to_fetch * int(resolution) * 60)
+
+    try:
+        resp = requests.get(
+            "https://finnhub.io/api/v1/forex/candle",
+            params={
+                "symbol": pair,
+                "resolution": resolution,
+                "from": since,
+                "to": now,
+                "token": FINNHUB_KEY,
+            },
+            timeout=15,
+        )
+        data = resp.json()
+
+        if data.get("s") != "ok" or "t" not in data:
+            return 0, f"Finnhub: {data.get('s', 'error')}"
+
+        candles = []
+        for i in range(len(data["t"])):
+            candles.append(
+                json.dumps(
+                    {
+                        "symbol": redis_sym,
+                        "timeframe": tf,
+                        "open": data["o"][i],
+                        "high": data["h"][i],
+                        "low": data["l"][i],
+                        "close": data["c"][i],
+                        "volume": data["v"][i],
+                        "timestamp": data["t"][i],
+                        "ts_open": data["t"][i],
+                    }
+                )
+            )
+
+        if not candles:
+            return 0, "0 candles returned"
+
+        # Atomic write
+        pipe = r.pipeline(transaction=True)
+        if force:
+            pipe.delete(key)
+        for c in candles:
+            pipe.rpush(key, c)
+        pipe.ltrim(key, -500, -1)
+        pipe.expire(key, 8 * 3600)
+        pipe.execute()
+
+        return len(candles), None
+
+    except requests.exceptions.RequestException as e:
+        return 0, f"HTTP: {e}"
+    except Exception as e:
+        return 0, str(e)
+
+
+def main() -> None:
+    args = parse_args()
 
     print("=" * 60)
-    print("🐺 TUYUL FX — Emergency Warmup Injector")
+    print("🐺 TUYUL FX — Warmup Injector v2 (Dual-Zone)")
     print("=" * 60)
-    print(f"Redis: {REDIS_URL[:40]}...")
-    print(f"Pairs: {len(PAIRS)}")
-    print(f"Timeframes: {list(TIMEFRAMES.keys())}")
+    print(f"Redis:      {REDIS_URL[:40]}...")
+    print(f"Pairs:      {len(PAIRS)}")
+    print(f"Timeframes: {args.timeframes}")
+    print(f"Mode:       {'VERIFY ONLY' if args.verify_only else 'FORCE' if args.force else 'NORMAL'}")
     print()
 
     # Connect Redis
     r = redis.from_url(REDIS_URL, decode_responses=False)
     try:
         r.ping()
-        print("✅ Redis connected")
+        print("✅ Redis connected\n")
     except Exception as e:
         print(f"❌ Redis failed: {e}")
         sys.exit(1)
 
+    # ── Verify current status ────────────────────────────────
+    print("📋 CURRENT WARMUP STATUS:")
+    status = verify_warmup(r, args.timeframes)
+    all_ready = True
+    for tf, st in status.items():
+        icon = "✅" if st["sufficient"] == st["total"] else "⚠️"
+        if st["sufficient"] < st["total"]:
+            all_ready = False
+        print(
+            f"  {icon} {tf:4s}: {st['sufficient']}/{st['total']} pairs "
+            f"ready (min={st['min']}, max={st['max']}, "
+            f"need≥{st['min_required']}) → {st['consumer']}"
+        )
+        if st["insufficient"]:
+            print(f"        Missing: {', '.join(st['insufficient'])}")
+
+    if args.verify_only:
+        print(f"\n{'✅ All ready' if all_ready else '⚠️  Warmup needed'}")
+        r.close()
+        return
+
+    if all_ready and not args.force:
+        print("\n✅ All timeframes sufficiently seeded. Use --force to override.")
+        r.close()
+        return
+
+    # ── Seed ─────────────────────────────────────────────────
+    print(f"\n{'🔄 SEEDING (force mode)' if args.force else '🔄 SEEDING'}...")
     total_seeded = 0
     total_skipped = 0
     errors = []
 
-    for pair in PAIRS:
-        redis_sym = to_redis_symbol(pair)
+    for tf in args.timeframes:
+        print(f"\n  ── {tf} ({TIMEFRAMES[tf][3]}) ──")
+        for pair in PAIRS:
+            sym = to_redis_symbol(pair)
+            seeded, err = seed_timeframe(r, pair, tf, args.force)
 
-        for tf, (resolution, bars_needed) in TIMEFRAMES.items():
-            key = f"wolf15:candle_history:{redis_sym}:{tf}"
-
-            # Check existing count
-            try:
-                existing = cast(int, r.llen(key))
-            except Exception:
-                existing = 0
-
-            if existing >= bars_needed:
-                print(f"  ⏭  {redis_sym}/{tf}: {existing} bars (sufficient)")
+            if err:
+                print(f"    ❌ {sym}: {err}")
+                errors.append(f"{sym}/{tf}: {err}")
+            elif seeded > 0:
+                print(f"    ✅ {sym}: +{seeded} bars")
+                total_seeded += seeded
+            else:
                 total_skipped += 1
-                continue
 
-            # Fetch from Finnhub REST
-            now = int(time.time())
-            since = now - (bars_needed * int(resolution) * 60)
+            time.sleep(0.1)  # Finnhub rate limit
 
-            try:
-                resp = requests.get(
-                    "https://finnhub.io/api/v1/forex/candle",
-                    params={
-                        "symbol": pair,
-                        "resolution": resolution,
-                        "from": since,
-                        "to": now,
-                        "token": FINNHUB_KEY,
-                    },
-                    timeout=15,
-                )
-                data = resp.json()
-
-                if data.get("s") != "ok" or "t" not in data:
-                    print(f"  ⚠️  {redis_sym}/{tf}: Finnhub returned '{data.get('s', 'error')}'")
-                    errors.append(f"{redis_sym}/{tf}: {data.get('s', 'no data')}")
-                    continue
-
-                # Build candle list
-                candles = []
-                for i in range(len(data["t"])):
-                    candles.append(
-                        json.dumps(
-                            {
-                                "symbol": redis_sym,
-                                "timeframe": tf,
-                                "open": data["o"][i],
-                                "high": data["h"][i],
-                                "low": data["l"][i],
-                                "close": data["c"][i],
-                                "volume": data["v"][i],
-                                "timestamp": data["t"][i],
-                            }
-                        )
-                    )
-
-                if not candles:
-                    print(f"  ⚠️  {redis_sym}/{tf}: 0 candles returned")
-                    continue
-
-                # Write to Redis (atomic pipeline)
-                pipe = r.pipeline(transaction=True)
-                # Delete existing (might be corrupt/stale)
-                pipe.delete(key)
-                # Push all candles
-                for c in candles:
-                    pipe.rpush(key, c)
-                # Trim + TTL
-                pipe.ltrim(key, -300, -1)
-                pipe.expire(key, 8 * 3600)  # 8h TTL (longer than default 6h)
-                pipe.execute()
-
-                new_count = cast(int, r.llen(key))
-                print(f"  ✅ {redis_sym}/{tf}: seeded {len(candles)} bars (was {existing}, now {new_count})")
-                total_seeded += len(candles)
-
-            except requests.exceptions.RequestException as e:
-                print(f"  ❌ {redis_sym}/{tf}: HTTP error: {e}")
-                errors.append(f"{redis_sym}/{tf}: {e}")
-            except Exception as e:
-                print(f"  ❌ {redis_sym}/{tf}: {e}")
-                errors.append(f"{redis_sym}/{tf}: {e}")
-
-            # Rate limit: Finnhub free tier = 30 calls/sec
-            time.sleep(0.1)
-
-    # ── Summary ───────────────────────────────────────────────
-    print()
-    print("=" * 60)
+    # ── Final verification ───────────────────────────────────
+    print(f"\n{'=' * 60}")
     print(f"📊 RESULT: {total_seeded} bars seeded, {total_skipped} skipped")
-
     if errors:
         print(f"\n⚠️  {len(errors)} errors:")
         for e in errors[:10]:
-            print(f"  • {e}")
+            print(f"    • {e}")
 
-    # Verify warmup status
-    print("\n📋 WARMUP STATUS:")
-    for tf in TIMEFRAMES:
-        counts = []
-        for pair in PAIRS:
-            sym = to_redis_symbol(pair)
-            key = f"wolf15:candle_history:{sym}:{tf}"
-            try:
-                c = cast(int, r.llen(key))
-                counts.append(c)
-            except Exception:
-                counts.append(0)
-
-        min_c = min(counts) if counts else 0
-        max_c = max(counts) if counts else 0
-        sufficient = sum(1 for c in counts if c >= TIMEFRAMES[tf][1])
-        print(f"  {tf}: min={min_c}, max={max_c}, " f"sufficient={sufficient}/{len(PAIRS)}")
+    print("\n📋 POST-SEED WARMUP STATUS:")
+    status = verify_warmup(r, args.timeframes)
+    for tf, st in status.items():
+        icon = "✅" if st["sufficient"] == st["total"] else "⚠️"
+        print(
+            f"  {icon} {tf:4s}: {st['sufficient']}/{st['total']} pairs "
+            f"ready (min={st['min']}, max={st['max']}, "
+            f"need≥{st['min_required']}) → {st['consumer']}"
+        )
 
     r.close()
     print("\n✅ Done.")
