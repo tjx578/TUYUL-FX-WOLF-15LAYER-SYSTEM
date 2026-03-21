@@ -4,9 +4,11 @@ Prop Firm Profile Manager
 Loads and caches prop firm profiles, dynamically imports guard classes.
 """
 
+from __future__ import annotations
+
 import importlib
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import yaml
 from loguru import logger
@@ -16,20 +18,23 @@ from propfirm_manager.profiles.base_guard import (
     GuardResult,
 )
 
+if TYPE_CHECKING:
+    from propfirm_manager.resolved_rules import ResolvedPropRules
+
 
 class PropFirmManager:
     """
     Manages prop firm profile loading and guard execution.
 
     Responsibilities:
-        - Load profile YAML configuration
+        - Load profile YAML configuration (v1 and v2 formats)
         - Dynamically import guard class
         - Cache profiles to avoid repeated loads
         - Provide factory method for account-based lookup
     """
 
     # Class-level profile cache
-    _profile_cache: dict[str, "PropFirmManager"] = {}
+    _profile_cache: dict[str, PropFirmManager] = {}
 
     def __new__(cls, profile_name: str):
         """
@@ -66,7 +71,7 @@ class PropFirmManager:
         self._load_guard()
 
     def _load_profile(self) -> None:
-        """Load profile YAML configuration."""
+        """Load profile YAML configuration (v1 and v2 compatible)."""
         base_dir = Path(__file__).parent / "profiles" / self.profile_name
         profile_path = base_dir / "profile.yaml"
 
@@ -76,9 +81,17 @@ class PropFirmManager:
         with open(profile_path) as f:
             config = yaml.safe_load(f)
 
-        self.rules = config.get("rules", {})
-        self.features = config.get("features", {})
+        self._raw_config: dict[str, Any] = config
         self.version = config.get("version", "unknown")
+        self.features: dict[str, Any] = config.get("features", {})
+
+        # Support both v1 ("rules" key) and v2 ("default_rules" key)
+        if "rules" in config:
+            self.rules: dict[str, Any] = config["rules"]
+        elif "default_rules" in config:
+            self.rules = dict(config["default_rules"])
+        else:
+            self.rules = {}
 
         logger.info(f"Loaded profile: {self.profile_name} v{self.version}")
 
@@ -99,7 +112,7 @@ class PropFirmManager:
         if guard_class is None:
             raise ImportError(f"Guard class {class_name} not found in {module_path}")
 
-        # Instantiate guard with rules
+        # Instantiate guard with flat rules (normalized from v1 or v2)
         self.guard: BasePropFirmGuard = guard_class(self.rules)
         logger.debug(f"Guard loaded: {class_name}")
 
@@ -127,7 +140,7 @@ class PropFirmManager:
         return f"{class_name}Guard"
 
     @classmethod
-    def for_account(cls, account_id: str) -> "PropFirmManager":
+    def for_account(cls, account_id: str) -> PropFirmManager:
         """
         Factory method: create manager based on account registry.
 
@@ -161,6 +174,25 @@ class PropFirmManager:
 
         return cls._profile_cache[profile_name]
 
+    def resolve_rules(self, plan_code: str, phase: str) -> ResolvedPropRules:
+        """
+        Resolve fully merged rules for a specific plan and phase.
+
+        For v2 profiles this merges default_rules with the plan+phase overrides.
+        For v1 profiles the flat rules are returned as-is under a synthetic plan.
+
+        Args:
+            plan_code: Plan identifier (e.g. "pro_100k", "challenge_100k").
+            phase: Trading phase (e.g. "funded", "challenge", "verification").
+
+        Returns:
+            ResolvedPropRules instance (frozen, immutable).
+        """
+        from propfirm_manager.rule_resolver import PropFirmRuleResolver
+
+        resolver = PropFirmRuleResolver()
+        return resolver.resolve(self.profile_name, plan_code, phase)
+
     def evaluate_trade(
         self,
         account_state: dict[str, Any],
@@ -180,7 +212,7 @@ class PropFirmManager:
 
     def get_rules(self) -> dict[str, Any]:
         """
-        Get prop firm rules.
+        Get prop firm rules (flat, v1-compatible).
 
         Returns:
             Rules dictionary
