@@ -20,9 +20,6 @@ import { NextRequest, NextResponse } from "next/server";
  */
 
 const SESSION_COOKIE = "wolf15_session";
-const ROLE_HEADER = "x-user-role";
-const ADMIN_ROLES = new Set(["risk_admin", "config_admin", "approver"]);
-const ADMIN_PATHS = ["/audit"];
 
 // Proxy route prefixes that are rewritten to the backend by next.config.js.
 // These MUST NOT be auth-checked by the middleware (no redirect).
@@ -72,34 +69,10 @@ function handleProxyRoute(request: NextRequest): NextResponse {
 }
 
 // ── B) Session guard for page routes ───────────────────────────────────
-function handlePageRoute(request: NextRequest): NextResponse {
-    const { pathname } = request.nextUrl;
-
-    // /login is always accessible
-    if (pathname.startsWith("/login")) {
-        return NextResponse.next();
-    }
-
-    const sessionCookie = request.cookies.get(SESSION_COOKIE)?.value;
-
-    // Redirect unauthenticated requests to /login
-    if (!sessionCookie) {
-        const loginUrl = new URL("/login", request.url);
-        loginUrl.searchParams.set("callbackUrl", pathname);
-        return NextResponse.redirect(loginUrl, 307);
-    }
-
-    // Admin-only paths require an admin role header
-    const isAdminPath = ADMIN_PATHS.some((p) => pathname.startsWith(p));
-    if (isAdminPath) {
-        const role = request.headers.get(ROLE_HEADER);
-        if (!role || !ADMIN_ROLES.has(role)) {
-            const loginUrl = new URL("/login", request.url);
-            loginUrl.searchParams.set("callbackUrl", pathname);
-            return NextResponse.redirect(loginUrl, 307);
-        }
-    }
-
+// NOTE: Owner mode — all pages are accessible without authentication.
+// The server auth (serverAuth.ts) already returns the owner user unconditionally,
+// so the middleware session guard is intentionally disabled here.
+function handlePageRoute(_request: NextRequest): NextResponse {
     return NextResponse.next();
 }
 
