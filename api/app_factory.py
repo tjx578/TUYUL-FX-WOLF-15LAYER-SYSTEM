@@ -164,12 +164,27 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             logger.warning("PeerHealthChecker failed to start — fleet health unavailable")
             peer_checker = None
 
+    # ── HybridCandleAggregator (dual-zone display) ──
+    from api.ws_routes import _candle_agg
+    from config_loader import get_pairs
+
+    _candle_agg_started = False
+    try:
+        _enabled_syms = [p.replace("/", "").upper() for p in get_pairs()]
+        await _candle_agg.start(_enabled_syms)
+        _candle_agg_started = True
+    except Exception as exc:
+        logger.warning("HybridCandleAggregator failed to start: %s — candle WS may be empty", exc)
+
     try:
         yield
     finally:
         if peer_checker is not None:
             with suppress(Exception):
                 await peer_checker.stop()
+        if _candle_agg_started:
+            with suppress(Exception):
+                await _candle_agg.stop()
         if relay is not None:
             with suppress(Exception):
                 await relay.stop()

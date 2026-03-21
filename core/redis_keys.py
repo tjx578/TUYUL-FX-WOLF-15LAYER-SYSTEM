@@ -251,6 +251,11 @@ TYPE_MAP: dict[str, str] = {
     "candle_history:*": "list",
     "wolf15:latest_news": "string",
     "heartbeat:*": "string",
+    # Zone A / dual-zone SSOT additions
+    "wolf15:candle:forming:*": "hash",
+    "wolf15:trq:premove:*": "hash",
+    "wolf15:trq:r3d_history:*": "list",
+    "wolf15:zone:confluence:*": "hash",
 }
 
 
@@ -262,3 +267,69 @@ def expected_type(key: str) -> str | None:
         if fnmatch.fnmatch(key, pattern):
             return rtype
     return None
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  DUAL-ZONE SSOT v5 — Zone A (micro-wave M1/M5/M15) + TRQ pre-move
+# ══════════════════════════════════════════════════════════════════════════════
+
+# ── Forming candle bars (ingest writes, dashboard reads) ─────────────────────
+CANDLE_FORMING_PREFIX = f"{PREFIX}:candle:forming"
+
+
+def candle_forming(symbol: str, timeframe: str) -> str:
+    """Forming candle bar HASH. Type: HASH, TTL=120s.
+
+    Written by FormingBarPublisher (ingest service) every 500ms (M15) or 1s (H1).
+    Read by HybridCandleAggregator (api service) for dashboard display.
+    """
+    return f"{CANDLE_FORMING_PREFIX}:{symbol.upper()}:{timeframe.upper()}"
+
+
+def channel_candle_forming(symbol: str, timeframe: str) -> str:
+    """PubSub channel for forming bar updates: candle:forming:{symbol}:{timeframe}."""
+    return f"candle:forming:{symbol.upper()}:{timeframe.upper()}"
+
+
+# ── TRQ pre-move signals (engine writes, dashboard reads) ────────────────────
+TRQ_PREFIX = f"{PREFIX}:trq"
+
+
+def trq_premove(symbol: str) -> str:
+    """Latest TRQ pre-move snapshot HASH. Type: HASH, TTL=300s."""
+    return f"{TRQ_PREFIX}:premove:{symbol.upper()}"
+
+
+def trq_r3d_history(symbol: str) -> str:
+    """TRQ R3D history list. Type: LIST, max=100 entries, TTL=6h."""
+    return f"{TRQ_PREFIX}:r3d_history:{symbol.upper()}"
+
+
+def channel_trq_premove() -> str:
+    """Broadcast PubSub channel for TRQ pre-move alerts (all symbols)."""
+    return "trq:premove:broadcast"
+
+
+def channel_trq_premove_symbol(symbol: str) -> str:
+    """Per-symbol PubSub channel for TRQ pre-move alerts."""
+    return f"trq:premove:{symbol.upper()}"
+
+
+# ── Zone confluence (engine writes, dashboard reads) ─────────────────────────
+def zone_confluence(symbol: str) -> str:
+    """Zone A + Zone B confluence snapshot HASH. Type: HASH."""
+    return f"{PREFIX}:zone:confluence:{symbol.upper()}"
+
+
+def channel_confluence(symbol: str) -> str:
+    """PubSub channel for zone confluence updates."""
+    return f"zone:confluence:{symbol.upper()}"
+
+
+# ── Dual-zone type map (merged into TYPE_MAP above) ──────────────────────────
+DUALZONE_TYPE_MAP: dict[str, str] = {
+    "wolf15:candle:forming:*": "hash",
+    "wolf15:trq:premove:*": "hash",
+    "wolf15:trq:r3d_history:*": "list",
+    "wolf15:zone:confluence:*": "hash",
+}
