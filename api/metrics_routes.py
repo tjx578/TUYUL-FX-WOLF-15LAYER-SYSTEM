@@ -15,6 +15,7 @@ import json
 import logging
 import os
 import time
+from typing import Any
 
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import PlainTextResponse
@@ -38,6 +39,16 @@ from state.redis_keys import ORCHESTRATOR_STATE
 
 from .middleware.machine_auth import verify_observability_machine_auth
 
+try:
+    from context.runtime_state import RuntimeState
+    from context.system_state import SystemStateManager
+
+    _HAS_ENGINE_CONTEXT = True
+except ImportError:
+    RuntimeState: Any = None
+    SystemStateManager: Any = None
+    _HAS_ENGINE_CONTEXT = False
+
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["observability"], dependencies=[Depends(verify_observability_machine_auth)])
@@ -48,10 +59,11 @@ _CONTENT_TYPE = "text/plain; version=0.0.4; charset=utf-8"
 def _refresh_runtime_gauges() -> None:
     """Pull live values from in-process state into Prometheus gauges."""
 
+    if not _HAS_ENGINE_CONTEXT:
+        return
+
     # ── RuntimeState ─────────────────────────────────────────────────────────
     try:
-        from context.runtime_state import RuntimeState  # local import avoids cycle
-
         PIPELINE_LATENCY_MS.set(float(RuntimeState.latency_ms))
         SYSTEM_HEALTHY.set(1.0 if RuntimeState.healthy else 0.0)
     except Exception:
@@ -59,10 +71,8 @@ def _refresh_runtime_gauges() -> None:
 
     # ── Active pairs from SystemStateManager ─────────────────────────────────
     try:
-        from context.system_state import SystemStateManager
-
         mgr = SystemStateManager()
-        active = mgr.get_active_symbol_count()  # pyright: ignore[reportAttributeAccessIssue]
+        active = mgr.get_active_symbol_count()
         ACTIVE_PAIRS.set(float(active))
     except Exception:
         logger.debug("SystemStateManager active-pairs refresh skipped", exc_info=True)
@@ -150,6 +160,11 @@ async def _refresh_heartbeat_gauges() -> None:
 )
 async def prometheus_metrics() -> PlainTextResponse:
     """Expose all registered metrics in Prometheus text format."""
+    if not _HAS_ENGINE_CONTEXT:
+        return PlainTextResponse(
+            content='{"status": "metrics_not_available", "reason": "engine_only"}',
+            media_type="application/json",
+        )
     _refresh_runtime_gauges()
     await _refresh_orchestrator_gauges()
     await _refresh_heartbeat_gauges()
@@ -170,6 +185,8 @@ async def metrics_slo(
     min_samples: int = Query(default=5, ge=1, le=10_000),
 ) -> dict:
     """Return SLO status derived from in-process metrics registry."""
+    if not _HAS_ENGINE_CONTEXT:
+        return {"status": "metrics_not_available", "reason": "engine_only"}
     _refresh_runtime_gauges()
     await _refresh_orchestrator_gauges()
     await _refresh_heartbeat_gauges()
