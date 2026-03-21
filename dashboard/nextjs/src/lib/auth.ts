@@ -228,11 +228,9 @@ async function performRefresh(): Promise<void> {
         }
       }
     } else {
-      // Refresh failed — token invalid or expired
+      // Refresh failed — clear stale token but do NOT redirect.
+      // Owner mode: dashboard is always accessible without a JWT.
       removeToken();
-      if (typeof window !== "undefined") {
-        window.location.href = "/login";
-      }
     }
   } catch {
     // Network error — retry in 30s
