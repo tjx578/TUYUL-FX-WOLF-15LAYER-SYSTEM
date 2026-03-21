@@ -166,11 +166,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     # ── HybridCandleAggregator (dual-zone display) ──
     from api.ws_routes import _candle_agg
-    from config_loader import get_pairs
+    from config_loader import get_enabled_symbols
 
     _candle_agg_started = False
     try:
-        _enabled_syms = [p.replace("/", "").upper() for p in get_pairs()]
+        _enabled_syms = [p.replace("/", "").upper() for p in get_enabled_symbols()]
         await _candle_agg.start(_enabled_syms)
         _candle_agg_started = True
     except Exception as exc:
