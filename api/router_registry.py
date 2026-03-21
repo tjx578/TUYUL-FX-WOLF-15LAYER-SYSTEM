@@ -63,6 +63,10 @@ ROUTER_ENTRIES: list[RouterEntry] = [
     RouterEntry("api.prop_router", "router", "Prop-firm governance status/phase"),
     # EA bridge controls (status/restart/logs/safe-mode)
     RouterEntry("api.ea_router", "router", "EA bridge controls"),
+    # Agent Manager CRUD + lifecycle (canonical ea_agents table)
+    RouterEntry("api.agent_manager_router", "router", "Agent Manager CRUD + lifecycle"),
+    # Agent Ingest — MT5 EA → backend heartbeat/status/portfolio
+    RouterEntry("api.agent_ingest_router", "router", "Agent Ingest — MT5 EA data ingestion"),
     # Risk evaluation + preview + kill-switch
     RouterEntry("risk.risk_router", "router", "Risk evaluation + preview + kill-switch"),
     # Runtime config profile engine
