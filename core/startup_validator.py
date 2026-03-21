@@ -36,10 +36,16 @@ class StartupCheckResult:
 def _check_redis_url(result: StartupCheckResult) -> None:
     """Ensure a Redis connection target is configured."""
     redis_url = os.getenv("REDIS_URL", "").strip()
+    redis_private_url = os.getenv("REDIS_PRIVATE_URL", "").strip()
     redis_host = os.getenv("REDIS_HOST", "").strip()
+    redis_host_railway = os.getenv("REDISHOST", "").strip()
 
-    if not redis_url and not redis_host:
-        result.fail("No Redis connection configured. " "Set REDIS_URL or REDIS_HOST/REDIS_PORT.")
+    if not redis_url and not redis_private_url and not redis_host and not redis_host_railway:
+        result.fail(
+            "No Redis connection configured. "
+            "Set REDIS_URL, REDIS_PRIVATE_URL, or REDIS_HOST/REDIS_PORT "
+            "(Railway also accepts REDISHOST/REDISPORT/REDISPASSWORD)."
+        )
 
 
 def _check_context_mode(result: StartupCheckResult) -> None:

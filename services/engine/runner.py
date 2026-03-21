@@ -80,11 +80,44 @@ def run() -> None:
         asyncio.run(_preflight_checks())
     except DatabaseSchemaError:
         logger.exception("Engine startup blocked: database schema is not ready")
-        raise
+        _hold_alive_for_diagnostics()
+        return
+    except Exception:
+        logger.exception("Engine DB preflight failed")
+        _hold_alive_for_diagnostics()
+        return
 
-    from main import main as run_main
+    try:
+        from main import main as run_main
 
-    asyncio.run(run_main())
+        asyncio.run(run_main())
+    except Exception:
+        logger.exception("Engine main loop exited with error")
+
+    # If main() returns or crashes, keep process alive so the health
+    # probe stays responsive and operators can inspect /status.
+    _hold_alive_for_diagnostics()
+
+
+def _hold_alive_for_diagnostics() -> None:
+    """Block forever so the daemon-thread health probe stays responsive.
+
+    Same pattern as ingest_worker — Railway deployment succeeds and
+    operators can inspect /healthz and /status for diagnostics.
+    """
+    import signal as _signal
+    import types
+
+    logger.warning("Engine holding alive for health probe diagnostics. Send SIGTERM to exit.")
+    shutdown = threading.Event()
+
+    def _on_signal(signum: int, _frame: types.FrameType | None) -> None:
+        logger.info("Received %s — exiting degraded hold", _signal.Signals(signum).name)
+        shutdown.set()
+
+    _signal.signal(_signal.SIGTERM, _on_signal)
+    _signal.signal(_signal.SIGINT, _on_signal)
+    shutdown.wait()
 
 
 if __name__ == "__main__":
