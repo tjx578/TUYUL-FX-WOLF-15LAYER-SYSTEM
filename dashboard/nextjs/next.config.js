@@ -86,15 +86,12 @@ function _validateWsBase(wsBase, { protectedDeploy, explicitlyConfigured }) {
     );
   }
 
-  // After normalization the path should be stripped. If it still has a path,
-  // warn but don't fail — the normalize step already extracted the origin.
+  // After normalization the path should be stripped. Only warn, never throw —
+  // _normalizeWsBase already strips path to bare origin.
   if (parsed.pathname && parsed.pathname !== "/") {
     console.warn(
       `[next.config] NEXT_PUBLIC_WS_BASE_URL had unexpected path '${parsed.pathname}'. ` +
       "Path was stripped; using bare origin only."
-    );
-    throw new Error(
-      `[next.config] NEXT_PUBLIC_WS_BASE_URL must be a bare origin (no path, no /ws suffix). Got: '${wsBase}' (pathname='${parsed.pathname}').`
     );
   }
 
@@ -106,8 +103,10 @@ function _validateWsBase(wsBase, { protectedDeploy, explicitlyConfigured }) {
   }
 
   if (protectedDeploy && host !== "localhost" && !host.includes("railway.app")) {
-    throw new Error(
-      "[next.config] Protected deployment requires NEXT_PUBLIC_WS_BASE_URL to point directly to Railway origin (wss://*.railway.app)."
+    // Warn but don't throw — backend may be hosted on Render, Fly.io, or custom domain.
+    console.warn(
+      "[next.config] NEXT_PUBLIC_WS_BASE_URL is not a *.railway.app domain. " +
+      "Make sure it points to your actual backend WebSocket origin."
     );
   }
 }
@@ -115,10 +114,14 @@ function _validateWsBase(wsBase, { protectedDeploy, explicitlyConfigured }) {
 const isProtectedDeployment = _isProtectedDeployment();
 
 // Read backend URL from all possible env var names across different platforms:
-//   INTERNAL_API_URL          — Vercel (set manually in project vars)
-//   NEXT_PUBLIC_API_BASE_URL  — Vercel (public, set manually in project vars)
+//   INTERNAL_API_URL          — Vercel (set manually in project vars, server-only)
+//   NEXT_PUBLIC_API_BASE_URL  — Vercel/v0 (public, set manually in project vars)
 //   API_BASE_URL              — Railway (set in railway service vars)
 //   API_DOMAIN                — Railway (alternative domain var in railway)
+//
+// NOTE: NEXT_PUBLIC_* vars are also available server-side in next.config.js
+// because this file runs in Node.js during the build & dev server startup,
+// where all process.env vars (including NEXT_PUBLIC_*) are accessible.
 const rawApiBase =
   process.env.INTERNAL_API_URL ||
   process.env.NEXT_PUBLIC_API_BASE_URL ||
@@ -127,6 +130,11 @@ const rawApiBase =
     ? `https://${process.env.API_DOMAIN}`
     : "") ||
   "";
+
+// Log the resolved base for debugging (only in dev or when env vars are set)
+if (rawApiBase) {
+  console.log("[next.config] Resolved API base from env:", rawApiBase.replace(/^(https?:\/\/[^/]+).*$/, "$1***"));
+}
 
 // Warn loudly in production when env vars are missing.
 // Protected deployments (main/prod) are fail-fast to avoid shipping placeholders.
