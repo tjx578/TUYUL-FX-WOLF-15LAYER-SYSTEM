@@ -7,7 +7,7 @@ from typing import Any, Protocol, cast
 from fastapi import Depends, HTTPException
 from fastapi.routing import APIRouter
 
-from api.redis_context_reader import RedisContextReader
+from .redis_context_reader import RedisContextReader
 from config_loader import load_pairs
 from execution.state_machine import ExecutionStateMachine
 from storage.l12_cache import KEY_PREFIX, VERDICT_TTL_SEC, get_verdict, is_verdict_stale
