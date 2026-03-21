@@ -1,4 +1,9 @@
-"""FTMO prop firm guard."""
+"""FTMO prop firm guard.
+
+Supports both v1 (flat rules) and v2 (nested plans/phases) YAML formats.
+"""
+
+from __future__ import annotations
 
 from typing import Any
 
@@ -7,6 +12,24 @@ from propfirm_manager.profiles.base_guard import BasePropFirmGuard, GuardResult
 
 class FTMOGuard(BasePropFirmGuard):
     """FTMO prop firm rule enforcement."""
+
+    def __init__(self, rules: dict[str, Any] | None = None) -> None:
+        """
+        Initialize guard with flat or v2-structured rules.
+
+        Args:
+            rules: Flat rules dict (v1) or dict that may contain nested
+                   v2 structure. In v2, ``default_rules`` is extracted
+                   and used as the effective flat rules.
+        """
+        super().__init__(self._normalise(rules or {}))
+
+    @staticmethod
+    def _normalise(rules: dict[str, Any]) -> dict[str, Any]:
+        """Extract flat rules from v1 or v2 rule dict."""
+        if "default_rules" in rules:
+            return dict(rules["default_rules"])
+        return rules
 
     def check(self, account_state: dict[str, Any], trade_risk: dict[str, Any]) -> GuardResult:
         open_trades = account_state.get("open_trades", 0)
