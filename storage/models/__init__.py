@@ -1,5 +1,18 @@
 """SQLAlchemy persistence models for account governance data."""
 
+from storage.models.agent_manager_models import (
+    AccountPortfolioSnapshot,
+    AgentStatusEnum,
+    EAAgent,
+    EAAgentAuditLog,
+    EAAgentEvent,
+    EAAgentRuntime,
+    EAClassEnum,
+    EAProfile,
+    EASubtypeEnum,
+    ExecutionModeEnum,
+    ReporterModeEnum,
+)
 from storage.models.governance_models import (
     Account,
     AccountMode,
@@ -12,6 +25,7 @@ from storage.models.governance_models import (
 )
 
 __all__ = [
+    # Governance (legacy — kept for backwards compat)
     "Base",
     "Account",
     "PropFirmRule",
@@ -20,4 +34,16 @@ __all__ = [
     "AccountMode",
     "EAStatus",
     "StrategyType",
+    # Agent Manager (new)
+    "EAClassEnum",
+    "EASubtypeEnum",
+    "ExecutionModeEnum",
+    "ReporterModeEnum",
+    "AgentStatusEnum",
+    "EAProfile",
+    "EAAgent",
+    "EAAgentRuntime",
+    "EAAgentEvent",
+    "EAAgentAuditLog",
+    "AccountPortfolioSnapshot",
 ]
