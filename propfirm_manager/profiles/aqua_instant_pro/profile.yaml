@@ -1,0 +1,77 @@
+name: "Aqua Instant Pro"
+version: "2.0"
+firm_code: "aqua_instant_pro"
+
+# Default rules (fallback if plan/phase not found)
+default_rules:
+  max_daily_dd_percent: 5.0
+  max_total_dd_percent: 10.0
+  drawdown_mode: "FIXED"
+  max_risk_per_trade_percent: 1.0
+  max_open_trades: 1
+  profit_target_percent: 10.0
+  consistency_rule_percent: 0.0
+  min_trading_days: 0
+  news_restriction: false
+  weekend_holding: true
+  min_rr_required: 2.0
+
+plans:
+  pro_100k:
+    display_name: "Pro $100,000"
+    initial_balance: 100000
+    currency: "USD"
+    phases:
+      funded:
+        max_daily_dd_percent: 3.0
+        max_total_dd_percent: 6.0
+        drawdown_mode: "TRAILING"
+        profit_target_percent: 10.0
+        consistency_rule_percent: 15.0
+        min_trading_days: 3
+        max_risk_per_trade_percent: 0.5
+        max_open_trades: 1
+        news_restriction: false
+        weekend_holding: true
+        min_rr_required: 2.0
+
+  pro_50k:
+    display_name: "Pro $50,000"
+    initial_balance: 50000
+    currency: "USD"
+    phases:
+      funded:
+        max_daily_dd_percent: 3.0
+        max_total_dd_percent: 6.0
+        drawdown_mode: "TRAILING"
+        profit_target_percent: 10.0
+        consistency_rule_percent: 15.0
+        min_trading_days: 3
+        max_risk_per_trade_percent: 0.5
+        max_open_trades: 1
+        news_restriction: false
+        weekend_holding: true
+        min_rr_required: 2.0
+
+  pro_25k:
+    display_name: "Pro $25,000"
+    initial_balance: 25000
+    currency: "USD"
+    phases:
+      funded:
+        max_daily_dd_percent: 3.0
+        max_total_dd_percent: 6.0
+        drawdown_mode: "TRAILING"
+        profit_target_percent: 10.0
+        consistency_rule_percent: 15.0
+        min_trading_days: 3
+        max_risk_per_trade_percent: 0.5
+        max_open_trades: 1
+        news_restriction: false
+        weekend_holding: true
+        min_rr_required: 2.0
+
+features:
+  allow_scaling: true
+  allow_split_risk: true
+  allow_weekend_holding: true
