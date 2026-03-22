@@ -56,7 +56,11 @@ _AGENT_STATUS_TO_LEGACY: dict[str, str] = {
     "DISABLED": "disconnected",
 }
 
-# Ping rate-limit store: agent_id → deque of timestamps (seconds since epoch)
+# Ping rate-limit store: agent_id → deque of timestamps (seconds since epoch).
+# NOTE: This is an in-process store. It resets on every worker restart and is
+# not coordinated across gunicorn workers. For multi-worker deployments the
+# effective limit is _PING_MAX_PER_MINUTE × <num_workers>. If stricter
+# enforcement is required, replace with a Redis-backed sliding-window counter.
 _PING_RATE_LIMIT: dict[str, collections.deque[float]] = {}
 _PING_MAX_PER_MINUTE = 10
 
@@ -525,9 +529,9 @@ async def ea_ping(req: PingRequest, response: Response) -> dict:
         agent = await svc.get_agent(req.agent_id)
         agent_status = str(agent.get("status", "OFFLINE"))
     except Exception as exc:
-        # Agent not found → 404 so EA knows it needs to register first
-        exc_name = type(exc).__name__
-        if "NotFound" in exc_name or "not found" in str(exc).lower():
+        from agents.exceptions import AgentNotFoundError  # noqa: PLC0415
+
+        if isinstance(exc, AgentNotFoundError):
             raise HTTPException(
                 status_code=404,
                 detail=f"Agent '{req.agent_id}' is not registered",
