@@ -47,6 +47,19 @@ import type { AgentItem, AgentEvent } from "@/types/agent-manager";
 // NEXT_PUBLIC_API_BASE_URL in your deployment environment.
 const API_BASE = "";
 
+// Staggered polling intervals — spread SWR refetch across buckets to avoid
+// bursting the backend rate limit (140 req/min default).
+export const POLL_INTERVALS = {
+  context: 30_000,
+  verdicts: 30_000,
+  trades: 45_000,
+  accounts: 45_000,
+  execution: 60_000,
+  risk: 60_000,
+  orchestrator: 90_000,
+  calendar: 120_000,
+} as const;
+
 // Global 429 cooldown — prevents all hooks from hammering a rate-limited backend.
 let _rateLimitedUntil = 0;
 
@@ -224,6 +237,7 @@ function useApiQuery<T>(
 export function useAccounts() {
   const { data, error, isLoading, mutate } = useApiQuery<Account[] | { accounts: Account[] }>(
     API_ENDPOINTS.accounts,
+    { refetchInterval: POLL_INTERVALS.accounts },
   );
   const normalized = Array.isArray(data)
     ? data
@@ -236,6 +250,7 @@ export function useAccounts() {
 export function useCapitalDeployment() {
   const { data, error, isLoading, mutate } = useApiQuery<CapitalDeploymentResponse>(
     API_ENDPOINTS.accountsCapitalDeployment,
+    { refetchInterval: POLL_INTERVALS.accounts },
   );
   return {
     data: data?.accounts ?? [],
@@ -253,6 +268,7 @@ export function useActiveTrades() {
     ActiveTradesResponse | Trade[]
   >(
     API_ENDPOINTS.tradesActive,
+    { refetchInterval: POLL_INTERVALS.trades },
   );
   return { data, isLoading, isError: !!error, error, mutate };
 }
@@ -290,7 +306,7 @@ export function useHealth() {
 export function useOrchestratorState() {
   const { data, error, isLoading, mutate } = useApiQuery<OrchestratorState>(
     API_ENDPOINTS.orchestratorState,
-    { refetchInterval: 15_000 },
+    { refetchInterval: POLL_INTERVALS.orchestrator },
   );
   return { data, isLoading, isError: !!error, error, mutate };
 }
@@ -298,7 +314,7 @@ export function useOrchestratorState() {
 export function useContext() {
   const { data, error, isLoading } = useApiQuery<ContextSnapshot>(
     API_ENDPOINTS.context,
-    { refetchInterval: 30_000 },
+    { refetchInterval: POLL_INTERVALS.context },
   );
   return { data, isLoading, isError: !!error, error };
 }
@@ -306,6 +322,7 @@ export function useContext() {
 export function useExecution() {
   const { data, error, isLoading } = useApiQuery<ExecutionState>(
     API_ENDPOINTS.execution,
+    { refetchInterval: POLL_INTERVALS.execution },
   );
   return { data, isLoading, isError: !!error, error };
 }
@@ -313,6 +330,7 @@ export function useExecution() {
 export function useRiskSnapshot(accountId: string) {
   const { data, error, isLoading } = useApiQuery<RiskSnapshot>(
     accountId ? API_ENDPOINTS.riskSnapshotByAccount(accountId) : null,
+    { refetchInterval: POLL_INTERVALS.risk },
   );
   return { data, isLoading, isError: !!error, error };
 }
@@ -332,6 +350,7 @@ export function useCalendarEvents(period = "today", impact?: string) {
     : `${API_ENDPOINTS.calendar}?${params.toString()}`;
   const { data, error, isLoading } = useApiQuery<CalendarDayResponse | CalendarUpcomingResponse | CalendarEvent[]>(
     endpoint,
+    { refetchInterval: POLL_INTERVALS.calendar },
   );
   const raw = Array.isArray(data)
     ? data

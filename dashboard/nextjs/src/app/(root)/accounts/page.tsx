@@ -15,6 +15,7 @@ import CreateAccountModal from "@/components/CreateAccountModal";
 import OrchestratorReadinessStrip from "@/components/OrchestratorReadinessStrip";
 import PageComplianceBanner from "@/components/feedback/PageComplianceBanner";
 import type { Account } from "@/types";
+import { formatNumber } from "@/lib/formatters";
 
 // ── Portfolio Summary Strip ───────────────────────────────────
 
@@ -34,15 +35,15 @@ function PortfolioSummaryStrip({
 
   return (
     <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 10 }}>
-      <KpiCard label="TOTAL BALANCE" value={`$${totalBalance.toLocaleString()}`} />
+      <KpiCard label="TOTAL BALANCE" value={`$${formatNumber(totalBalance)}`} />
       <KpiCard
         label="TOTAL EQUITY"
-        value={`$${totalEquity.toLocaleString()}`}
+        value={`$${formatNumber(totalEquity)}`}
         color={totalEquity >= totalBalance ? "var(--green)" : "var(--red)"}
       />
       <KpiCard
         label="USABLE CAPITAL"
-        value={`$${totalUsable.toLocaleString()}`}
+        value={`$${formatNumber(totalUsable)}`}
         color="var(--green)"
       />
       <KpiCard
@@ -109,7 +110,7 @@ function AccountGridCard({
       style={{ padding: 16, display: "flex", flexDirection: "column", gap: 10 }}
       onClick={onClick}
       onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onClick(); } }}
-      aria-label={`Account ${account.account_name}, ${account.broker}, balance $${account.balance?.toLocaleString()}`}
+      aria-label={`Account ${account.account_name}, ${account.broker}, balance $${formatNumber(account.balance)}`}
     >
       {/* Top row: name + readiness */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
@@ -142,11 +143,11 @@ function AccountGridCard({
 
       {/* Stats */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 8 }}>
-        <Stat label="BALANCE" value={`$${account.balance?.toLocaleString()}`} />
-        <Stat label="EQUITY" value={`$${account.equity?.toLocaleString()}`} />
+        <Stat label="BALANCE" value={`$${formatNumber(account.balance)}`} />
+        <Stat label="EQUITY" value={`$${formatNumber(account.equity)}`} />
         <Stat
           label="USABLE CAPITAL"
-          value={`$${usable.toLocaleString()}`}
+          value={`$${formatNumber(usable)}`}
           color="var(--green)"
         />
         <Stat

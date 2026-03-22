@@ -10,6 +10,7 @@ import { usePropFirmStatus, usePropFirmPhase } from "@/lib/api";
 import Panel from "@/components/ui/Panel";
 import AccountReadinessBadge from "@/components/AccountReadinessBadge";
 import AccountEligibilityPanel from "@/components/AccountEligibilityPanel";
+import { formatNumber } from "@/lib/formatters";
 
 interface AccountDetailDrawerProps {
     account: Account;
@@ -95,7 +96,7 @@ export default function AccountDetailDrawer({ account, onClose }: AccountDetailD
                                 <div>
                                     <div style={{ fontSize: 9, color: "var(--text-muted)", letterSpacing: "0.06em" }}>USABLE CAPITAL</div>
                                     <div className="num" style={{ fontSize: 16, fontWeight: 700, color: "var(--green)" }}>
-                                        ${account.usable_capital.toLocaleString()}
+                                        ${formatNumber(account.usable_capital)}
                                     </div>
                                 </div>
                             )}
@@ -145,13 +146,13 @@ export default function AccountDetailDrawer({ account, onClose }: AccountDetailD
                     <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: "0.12em", color: "var(--text-muted)", marginBottom: 8 }}>
                         FINANCIALS
                     </div>
-                    <DetailRow label="BALANCE" value={`$${account.balance?.toLocaleString()}`} />
+                    <DetailRow label="BALANCE" value={`$${formatNumber(account.balance)}`} />
                     <DetailRow
                         label="EQUITY"
-                        value={`$${account.equity?.toLocaleString()}`}
+                        value={`$${formatNumber(account.equity)}`}
                         color={account.equity >= account.balance ? "var(--green)" : "var(--red)"}
                     />
-                    <DetailRow label="EQUITY HIGH" value={`$${account.equity_high?.toLocaleString()}`} />
+                    <DetailRow label="EQUITY HIGH" value={`$${formatNumber(account.equity_high)}`} />
                     <DetailRow
                         label="DAILY DD"
                         value={`${account.daily_dd_percent?.toFixed(2)}%`}

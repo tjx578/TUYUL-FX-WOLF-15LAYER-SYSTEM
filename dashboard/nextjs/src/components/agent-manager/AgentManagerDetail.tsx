@@ -2,6 +2,7 @@
 
 import type { AgentItem } from "@/types/agent-manager";
 import { AgentStatus } from "@/types/agent-manager";
+import { formatDate } from "@/lib/formatters";
 
 interface Props {
   agent: AgentItem | null;
@@ -17,11 +18,7 @@ const STATUS_COLORS: Record<AgentStatus, string> = {
 
 function fmt(val: string | null | undefined): string {
   if (!val) return "—";
-  try {
-    return new Date(val).toLocaleString();
-  } catch {
-    return val;
-  }
+  return formatDate(val);
 }
 
 function fmtUptime(seconds: number): string {

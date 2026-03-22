@@ -13,6 +13,7 @@ import {
   type RiskPreviewAccountItem,
   type TakeSignalRequest,
 } from "@/lib/api";
+import { formatNumber } from "@/lib/formatters";
 
 interface TakeSignalFormProps {
   verdict: L12Verdict;
@@ -226,7 +227,7 @@ export function TakeSignalForm({
                     onChange={() => toggleAccount(a.account_id)}
                   />
                   <span>
-                    {a.account_name} — {a.broker} (${a.balance.toLocaleString()})
+                    {a.account_name} — {a.broker} (${formatNumber(a.balance)})
                   </span>
                 </label>
               ))}

@@ -29,6 +29,7 @@ import {
 } from "@/lib/api";
 import { useClock } from "@/hooks/useClock";
 import type { Account } from "@/types";
+import { formatNumber } from "@/lib/formatters";
 
 // ── Wolf score shape from API ─────────────────────────────────
 interface WolfScores {
@@ -270,7 +271,7 @@ function AccountCard({ acc }: { acc: CockpitAccount }) {
           <div>
             <L s={8} c={T.t4}>EQUITY</L>
             <div style={{ display: "flex", alignItems: "baseline", gap: 5, marginTop: 2 }}>
-              <M s={20} w={700} c={T.t0}>${acc.equity.toLocaleString()}</M>
+              <M s={20} w={700} c={T.t0}>${formatNumber(acc.equity)}</M>
               <M s={11} w={600} c={pnlPct >= 0 ? T.emerald : T.red}>
                 {pnlPct >= 0 ? "+" : ""}{pnlPct.toFixed(2)}%
               </M>
@@ -278,7 +279,7 @@ function AccountCard({ acc }: { acc: CockpitAccount }) {
           </div>
           <div style={{ textAlign: "right" }}>
             <L s={8} c={T.t4}>BALANCE</L>
-            <div><M s={12} c={T.t2}>${acc.balance.toLocaleString()}</M></div>
+            <div><M s={12} c={T.t2}>${formatNumber(acc.balance)}</M></div>
           </div>
         </div>
       </div>

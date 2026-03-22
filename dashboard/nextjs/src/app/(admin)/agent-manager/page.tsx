@@ -3,6 +3,7 @@
 import Panel from "@/components/ui/Panel";
 import { useAgentManagerState } from "@/hooks/useAgentManagerState";
 import { useAgentManagerAudit, useAgentManagerSnapshots } from "@/lib/agent-manager-api";
+import { formatDate, formatNumber } from "@/lib/formatters";
 import {
   AgentManagerGrid,
   AgentManagerSummary,
@@ -342,14 +343,14 @@ function SnapshotPanel({
               color: "var(--text-muted)",
             }}
           >
-            <span>{new Date(snap.captured_at).toLocaleString()}</span>
+            <span>{formatDate(snap.captured_at)}</span>
             <span style={{ fontStyle: "italic" }}>{snap.snapshot_source}</span>
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 4 }}>
-            <SnapRow label="Balance" value={`$${snap.balance.toLocaleString()}`} />
-            <SnapRow label="Equity" value={`$${snap.equity.toLocaleString()}`} />
-            <SnapRow label="Margin Used" value={`$${snap.margin_used.toLocaleString()}`} />
-            <SnapRow label="Margin Free" value={`$${snap.margin_free.toLocaleString()}`} />
+            <SnapRow label="Balance" value={`$${formatNumber(snap.balance)}`} />
+            <SnapRow label="Equity" value={`$${formatNumber(snap.equity)}`} />
+            <SnapRow label="Margin Used" value={`$${formatNumber(snap.margin_used)}`} />
+            <SnapRow label="Margin Free" value={`$${formatNumber(snap.margin_free)}`} />
             <SnapRow
               label="Daily PnL"
               value={`$${snap.daily_pnl.toFixed(2)}`}
