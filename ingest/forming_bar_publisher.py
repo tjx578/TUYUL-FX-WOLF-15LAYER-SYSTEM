@@ -28,6 +28,7 @@ from __future__ import annotations
 import asyncio
 import os
 import time
+from contextlib import suppress
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -76,12 +77,10 @@ class FormingBarSchema(BaseModel):
         return v
 
     @model_validator(mode="after")
-    def high_gte_low(self) -> "FormingBarSchema":
+    def high_gte_low(self) -> FormingBarSchema:
         """Cross-field validation: high must be ≥ low."""
         if self.high < self.low:
-            raise ValueError(
-                f"high ({self.high}) must be >= low ({self.low})"
-            )
+            raise ValueError(f"high ({self.high}) must be >= low ({self.low})")
         return self
 
 
@@ -193,10 +192,8 @@ class FormingBarPublisher:
         for task in self._tasks:
             task.cancel()
         for task in self._tasks:
-            try:
+            with suppress(asyncio.CancelledError):
                 await task
-            except asyncio.CancelledError:
-                pass
         self._tasks.clear()
 
         if _USE_REDIS_FORMING:
@@ -298,7 +295,5 @@ class FormingBarPublisher:
         for tf_cfg in self._configs.values():
             for symbol in tf_cfg.builders:
                 key = candle_forming(symbol, tf_cfg.timeframe)
-                try:
+                with suppress(Exception):
                     await self._redis.delete(key)
-                except Exception:
-                    pass
