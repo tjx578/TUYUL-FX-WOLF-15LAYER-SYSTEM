@@ -11,13 +11,14 @@
 
 from __future__ import annotations
 
+import collections
 import contextlib
 import json as _json
 import logging
 from datetime import UTC, datetime
 from typing import Any, cast
 
-from fastapi import APIRouter, Depends, Request, Response
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, Field
 
 from execution.ea_manager import EAManager
@@ -55,12 +56,45 @@ _AGENT_STATUS_TO_LEGACY: dict[str, str] = {
     "DISABLED": "disconnected",
 }
 
+# Ping rate-limit store: agent_id → deque of timestamps (seconds since epoch).
+# NOTE: This is an in-process store. It resets on every worker restart and is
+# not coordinated across gunicorn workers. For multi-worker deployments the
+# effective limit is _PING_MAX_PER_MINUTE × <num_workers>. If stricter
+# enforcement is required, replace with a Redis-backed sliding-window counter.
+_PING_RATE_LIMIT: dict[str, collections.deque[float]] = {}
+_PING_MAX_PER_MINUTE = 10
+
 
 def _deprecation_response(response: Response) -> None:
     """Attach deprecation headers to the response."""
     response.headers["Deprecation"] = "true"
     response.headers["Sunset"] = _DEPRECATION_SUNSET
     response.headers["X-Deprecated-Use"] = _DEPRECATION_REPLACEMENT
+
+
+def _check_ping_rate_limit(agent_id: str) -> bool:
+    """Return True if the agent is within rate-limit budget (max 10 req/min).
+
+    Maintains a per-agent sliding window of timestamps in a deque.
+    """
+    now = datetime.now(UTC).timestamp()
+    window_start = now - 60.0
+    if agent_id not in _PING_RATE_LIMIT:
+        _PING_RATE_LIMIT[agent_id] = collections.deque()
+    dq = _PING_RATE_LIMIT[agent_id]
+    # Evict timestamps older than the 60-second window
+    while dq and dq[0] < window_start:
+        dq.popleft()
+    if len(dq) >= _PING_MAX_PER_MINUTE:
+        return False
+    dq.append(now)
+    return True
+
+
+class PingRequest(BaseModel):
+    agent_id: str = Field(..., min_length=1, max_length=200)
+    ea_version: str = Field(default="unknown", max_length=50)
+    ea_class: str = Field(default="PRIMARY", max_length=50)
 
 
 class RestartRequest(BaseModel):
@@ -451,4 +485,64 @@ async def set_safe_mode(req: SafeModeRequest, request: Request, response: Respon
         "safe_mode": req.enabled,
         "reason": req.reason,
         "updated_at": datetime.now(UTC).isoformat(),
+    }
+
+
+@router.post("/ping", dependencies=[Depends(verify_token)])
+async def ea_ping(req: PingRequest, response: Response) -> dict:
+    """Verify EA → backend connectivity, API key validity, and agent registration.
+
+    Unlike ``/health`` (Railway internal healthcheck), this endpoint is called by
+    the EA on startup to confirm the full auth + agent stack is reachable.
+
+    Rate-limited to ``_PING_MAX_PER_MINUTE`` (10) requests per agent per minute.
+
+    Returns:
+        ``{ "status": "ok", "server_time": "<ISO 8601>", "agent_status": "<str>" }``
+
+    Raises:
+        429: Rate limit exceeded for this agent.
+        404: Agent not registered in the Agent Manager.
+    """
+    _deprecation_response(response)
+
+    if not _check_ping_rate_limit(req.agent_id):
+        raise HTTPException(
+            status_code=429,
+            detail=f"Ping rate limit exceeded: max {_PING_MAX_PER_MINUTE} per minute per agent",
+        )
+
+    server_time = datetime.now(UTC).isoformat()
+    agent_status = "unknown"
+
+    # Attempt to look up the agent in the Agent Manager
+    try:
+        from agents.service import AgentManagerService  # noqa: PLC0415
+
+        svc = AgentManagerService()
+        agent = await svc.get_agent(req.agent_id)
+        agent_status = str(agent.get("status", "OFFLINE"))
+    except Exception as exc:
+        from agents.exceptions import AgentNotFoundError  # noqa: PLC0415
+
+        if isinstance(exc, AgentNotFoundError):
+            raise HTTPException(
+                status_code=404,
+                detail=f"Agent '{req.agent_id}' is not registered",
+            ) from exc
+        # Agent Manager unavailable — fall back to a best-effort response
+        logger.warning("[ea/ping] Agent Manager unavailable — returning degraded response: %s", exc)
+
+    logger.info(
+        "[ea/ping] agent_id=%s ea_version=%s ea_class=%s agent_status=%s",
+        req.agent_id,
+        req.ea_version,
+        req.ea_class,
+        agent_status,
+    )
+
+    return {
+        "status": "ok",
+        "server_time": server_time,
+        "agent_status": agent_status,
     }
