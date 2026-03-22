@@ -436,6 +436,40 @@ int OnInit()
     g_last_backend_ok = TimeCurrent();
     g_state           = EA_STATE_RUNNING;
 
+    //--- Connectivity ping — verify backend is reachable before any operation ---
+    if(UseHttpBridge)
+    {
+        bool    pingOk        = false;
+        string  pingServerTime = "";
+        string  pingStatus     = "";
+        int     maxRetries     = 3;
+        int     retryDelaySec  = 5;
+
+        for(int attempt = 1; attempt <= maxRetries; attempt++)
+        {
+            Print(StringFormat("[PRIMARY] Ping attempt %d/%d...", attempt, maxRetries));
+            if(g_http.Ping(pingServerTime, pingStatus, TUYULFX_VERSION, EAClass))
+            {
+                pingOk = true;
+                Print(StringFormat("[PRIMARY] Ping OK — server_time=%s agent_status=%s",
+                                   pingServerTime, pingStatus));
+                g_last_backend_ok = TimeCurrent();
+                break;
+            }
+            Print(StringFormat("[PRIMARY] Ping attempt %d failed", attempt));
+            if(attempt < maxRetries)
+                Sleep(retryDelaySec * 1000);
+        }
+
+        if(!pingOk)
+        {
+            Print("[PRIMARY] FATAL: Ping failed after 3 attempts — aborting init");
+            delete g_http; g_http = NULL;
+            delete g_risk; g_risk = NULL;
+            return(INIT_FAILED);
+        }
+    }
+
     //--- Initial heartbeat and config fetch ---
     if(UseHttpBridge)
     {
