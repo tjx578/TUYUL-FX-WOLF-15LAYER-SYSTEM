@@ -1,0 +1,26 @@
+name: "Aqua Funded"
+version: "1.0"
+firm_code: "aquafunded"
+
+general_trading_rules:
+  ea_allowed: true
+  trade_copier_allowed: true
+  has_max_lot_limit: false
+  max_lot_per_trade: null
+  overnight_holding_allowed: true
+  weekend_holding_allowed: true
+  crypto_trading_24_7: true
+  hedging_allowed: true
+  hedging_same_account_only: true
+  martingale_allowed: true
+  stop_loss_required: false
+  notes:
+    - "Expert Advisors (EAs) are allowed."
+    - "Trade Copiers are allowed."
+    - "No lot size limits."
+    - "Holding trades overnight is allowed."
+    - "Holding trades over the weekend is allowed."
+    - "Crypto trading is available 24/7, including weekends."
+    - "Hedging is allowed within the same account."
+    - "Martingale strategies are permitted."
+    - "Using a Stop Loss is not required."
