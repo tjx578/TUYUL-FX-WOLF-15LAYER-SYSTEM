@@ -87,6 +87,8 @@ CANDLE_HASH_SCAN = f"{PREFIX}:candle:*"
 #  HEARTBEATS
 # ══════════════════════════════════════════════════════════════════════════════
 HEARTBEAT_INGEST = f"{PREFIX}:heartbeat:ingest"
+HEARTBEAT_INGEST_PROCESS = f"{PREFIX}:heartbeat:ingest:process"
+HEARTBEAT_INGEST_PROVIDER = f"{PREFIX}:heartbeat:ingest:provider"
 HEARTBEAT_ENGINE = f"{PREFIX}:heartbeat:engine"
 ORCHESTRATOR_STATE = f"{PREFIX}:orchestrator:state"
 
