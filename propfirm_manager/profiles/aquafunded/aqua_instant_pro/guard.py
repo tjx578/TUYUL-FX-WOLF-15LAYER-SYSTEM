@@ -21,15 +21,19 @@ from typing import Any
 
 from loguru import logger
 
-from propfirm_manager.profiles.base_guard import (
-    BasePropFirmGuard,
-    GuardResult,
-)
+from propfirm_manager.profiles.aquafunded.guard import AquafundedGuard
+from propfirm_manager.profiles.base_guard import GuardResult
 from propfirm_manager.strategy_loader import SoftAdvisory, StrategyLoader
 
 
-class AquaInstantProGuard(BasePropFirmGuard):
-    """Aqua Instant Pro prop firm rule enforcement with strategy integration."""
+class AquaInstantProGuard(AquafundedGuard):
+    """Aqua Instant Pro prop firm rule enforcement with strategy integration.
+
+    Inherits general Aqua Funded trading rules (EA allowed, no lot limits,
+    weekend/overnight holding, hedging, martingale) and adds Instant Pro
+    specific constraints: stricter DD limits, strategy-based hard/soft rules,
+    session windows, news blackouts, and kill-switch logic.
+    """
 
     def __init__(
         self,
@@ -47,6 +51,7 @@ class AquaInstantProGuard(BasePropFirmGuard):
                              the default profile strategy.yaml is loaded.
         """
         super().__init__(self._normalise(rules or {}))
+        self._strategy: StrategyLoader | None
         if strategy_loader is not None:
             self._strategy = strategy_loader
         else:
@@ -57,7 +62,7 @@ class AquaInstantProGuard(BasePropFirmGuard):
                     f"AquaInstantProGuard: strategy_loader failed to load, "
                     f"falling back to profile-only rules: {exc}"
                 )
-                self._strategy = None  # type: ignore[assignment]
+                self._strategy = None
 
     @staticmethod
     def _normalise(rules: dict[str, Any]) -> dict[str, Any]:
@@ -161,9 +166,7 @@ class AquaInstantProGuard(BasePropFirmGuard):
                 news_active=bool(trade_risk.get("news_active", False)),
                 add_to_loser=bool(trade_risk.get("add_to_loser", False)),
                 martingale=bool(trade_risk.get("martingale", False)),
-                floating_loss_percent_of_initial=float(
-                    account_state.get("floating_loss_pct_of_initial", 0.0)
-                ),
+                floating_loss_percent_of_initial=float(account_state.get("floating_loss_pct_of_initial", 0.0)),
                 daily_profit_percent=float(account_state.get("daily_profit_percent", 0.0)),
             )
 
@@ -176,9 +179,7 @@ class AquaInstantProGuard(BasePropFirmGuard):
         max_risk_per_trade: float = float(
             self.rules.get(
                 "max_risk_per_trade_percent",
-                self._strategy.risk.get("risk_per_trade_percent", 1.0)
-                if self._strategy is not None
-                else 1.0,
+                self._strategy.risk.get("risk_per_trade_percent", 1.0) if self._strategy is not None else 1.0,
             )
         )
         if risk_percent > max_risk_per_trade:
@@ -234,10 +235,6 @@ class AquaInstantProGuard(BasePropFirmGuard):
             partial_tp_taken=ctx.get("partial_tp_taken"),
             journal_entry_exists=bool(ctx.get("journal_entry_exists", True)),
             weekly_review_done=bool(ctx.get("weekly_review_done", True)),
-            floating_loss_percent_of_initial=float(
-                account_state.get("floating_loss_pct_of_initial", 0.0)
-            ),
-            best_day_percent_of_total=float(
-                account_state.get("best_day_percent_of_total", 0.0)
-            ),
+            floating_loss_percent_of_initial=float(account_state.get("floating_loss_pct_of_initial", 0.0)),
+            best_day_percent_of_total=float(account_state.get("best_day_percent_of_total", 0.0)),
         )
