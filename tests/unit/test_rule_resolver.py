@@ -6,6 +6,8 @@ handling, enumeration helpers, and instance-level caching.
 
 from __future__ import annotations
 
+import dataclasses
+
 import pytest
 
 from propfirm_manager.resolved_rules import ResolvedPropRules
@@ -17,6 +19,27 @@ def resolver() -> PropFirmRuleResolver:
     """Fresh resolver per test (no shared cache)."""
     return PropFirmRuleResolver()
 
+
+@dataclasses.dataclass
+class _MinimalAccountState:
+    """Minimal account state used as a stand-in for AccountRiskState in tests."""
+
+    prop_firm_code: str
+    balance: float
+    phase_mode: str
+
+
+def _make_minimal_account_state(
+    *,
+    prop_firm_code: str = "aqua_instant_pro",
+    balance: float = 100_000.0,
+    phase_mode: str = "FUNDED",
+) -> _MinimalAccountState:
+    return _MinimalAccountState(
+        prop_firm_code=prop_firm_code,
+        balance=balance,
+        phase_mode=phase_mode,
+    )
 
 # ---------------------------------------------------------------------------
 # Aqua Instant Pro — funded plan resolution
@@ -174,6 +197,7 @@ class TestEnumerationHelpers:
         firms = resolver.list_firms()
         assert "aqua_instant_pro" in firms
         assert "ftmo" in firms
+        assert "aquafunded" in firms
 
     def test_list_firms_returns_sorted_list(self, resolver: PropFirmRuleResolver):
         firms = resolver.list_firms()
@@ -206,6 +230,59 @@ class TestEnumerationHelpers:
     def test_list_phases_unknown_plan_returns_empty(self, resolver: PropFirmRuleResolver):
         phases = resolver.list_phases("ftmo", "nonexistent_plan")
         assert phases == []
+
+
+# ---------------------------------------------------------------------------
+# Aqua Funded — general-rules profile (no plans/phases)
+# ---------------------------------------------------------------------------
+
+
+class TestAquafundedResolution:
+    def test_resolve_returns_resolved_rules(self, resolver: PropFirmRuleResolver):
+        """Resolver returns a valid ResolvedPropRules for aquafunded."""
+        rules = resolver.resolve("aquafunded", "default", "funded")
+        assert isinstance(rules, ResolvedPropRules)
+        assert rules.firm_code == "aquafunded"
+
+    def test_resolve_firm_name(self, resolver: PropFirmRuleResolver):
+        """Firm name matches the profile YAML name field."""
+        rules = resolver.resolve("aquafunded", "default", "funded")
+        assert rules.firm_name == "Aqua Funded"
+
+    def test_resolve_uses_safe_defaults_for_missing_numeric_keys(
+        self, resolver: PropFirmRuleResolver
+    ):
+        """Resolver falls back to coded defaults when no numeric limits are defined."""
+        rules = resolver.resolve("aquafunded", "default", "funded")
+        # Resolver defaults: 5% daily, 10% total — acceptable since the
+        # guard layer applies the permissive 100% defaults at runtime.
+        assert rules.max_daily_dd_percent == pytest.approx(5.0)
+        assert rules.max_total_dd_percent == pytest.approx(10.0)
+
+    def test_resolve_unknown_plan_and_phase_does_not_raise(
+        self, resolver: PropFirmRuleResolver
+    ):
+        """Resolver never raises for unknown plan/phase on aquafunded."""
+        rules = resolver.resolve("aquafunded", "unknown_plan", "unknown_phase")
+        assert isinstance(rules, ResolvedPropRules)
+
+    def test_list_plans_aquafunded_empty(self, resolver: PropFirmRuleResolver):
+        """aquafunded has no plan entries — returns empty list."""
+        plans = resolver.list_plans("aquafunded")
+        assert plans == []
+
+    def test_list_phases_aquafunded_returns_empty(self, resolver: PropFirmRuleResolver):
+        """aquafunded has no phases — returns empty list."""
+        phases = resolver.list_phases("aquafunded", "default")
+        assert phases == []
+
+    def test_resolve_for_account_aquafunded(self, resolver: PropFirmRuleResolver):
+        """resolve_for_account works for an aquafunded account state."""
+        state = _make_minimal_account_state(
+            prop_firm_code="aquafunded", balance=50_000.0, phase_mode="FUNDED"
+        )
+        rules = resolver.resolve_for_account(state)
+        assert rules.firm_code == "aquafunded"
 
 
 # ---------------------------------------------------------------------------
@@ -244,17 +321,9 @@ class TestResolveForAccount:
         prop_firm_code: str = "aqua_instant_pro",
         balance: float = 100_000.0,
         phase_mode: str = "FUNDED",
-    ) -> object:
-        """Build a minimal account state using a simple dataclass."""
-        import dataclasses
-
-        @dataclasses.dataclass
-        class _MinimalAccountState:
-            prop_firm_code: str
-            balance: float
-            phase_mode: str
-
-        return _MinimalAccountState(
+    ) -> _MinimalAccountState:
+        """Build a minimal account state using the module-level helper."""
+        return _make_minimal_account_state(
             prop_firm_code=prop_firm_code,
             balance=balance,
             phase_mode=phase_mode,
