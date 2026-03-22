@@ -31,7 +31,7 @@ from risk.exceptions import PropFirmConfigError
 # ---------------------------------------------------------------------------
 # Profile-local paths
 # ---------------------------------------------------------------------------
-_PROFILE_DIR = Path(__file__).parent / "profiles" / "aqua_instant_pro"
+_PROFILE_DIR = Path(__file__).parent / "profiles" / "aquafunded" / "aqua_instant_pro"
 _DEFAULT_STRATEGY_PATH = _PROFILE_DIR / "strategy.yaml"
 _DEFAULT_RULE_MAPPING_PATH = _PROFILE_DIR / "rule_mapping.yaml"
 
@@ -39,6 +39,7 @@ _DEFAULT_RULE_MAPPING_PATH = _PROFILE_DIR / "rule_mapping.yaml"
 # ---------------------------------------------------------------------------
 # Result dataclasses
 # ---------------------------------------------------------------------------
+
 
 @dataclass(frozen=True)
 class HardRuleViolation:
@@ -74,6 +75,7 @@ class SoftAdvisory:
 # Session window helper
 # ---------------------------------------------------------------------------
 
+
 def _time_in_window(now_local: datetime.time, start: str, end: str) -> bool:
     """Return True if *now_local* falls within [start, end) (HH:MM strings)."""
     start_t = datetime.time.fromisoformat(start)
@@ -87,6 +89,7 @@ def _time_in_window(now_local: datetime.time, start: str, end: str) -> bool:
 # ---------------------------------------------------------------------------
 # StrategyLoader
 # ---------------------------------------------------------------------------
+
 
 class StrategyLoader:
     """Loads and validates the Aqua Instant Pro strategy and rule-mapping files.
@@ -251,133 +254,158 @@ class StrategyLoader:
 
         # 1. Risk per trade
         if risk_percent > max_risk:
-            violations.append(HardRuleViolation(
-                rule="risk_per_trade",
-                action="block_trade",
-                detail=f"Risk {risk_percent:.2f}% exceeds cap {max_risk}%",
-            ))
+            violations.append(
+                HardRuleViolation(
+                    rule="risk_per_trade",
+                    action="block_trade",
+                    detail=f"Risk {risk_percent:.2f}% exceeds cap {max_risk}%",
+                )
+            )
 
         # 2. Total open risk
         if total_open_risk_percent > max_total:
-            violations.append(HardRuleViolation(
-                rule="max_total_open_risk",
-                action="block_trade",
-                detail=f"Total open risk {total_open_risk_percent:.2f}% exceeds {max_total}%",
-            ))
+            violations.append(
+                HardRuleViolation(
+                    rule="max_total_open_risk",
+                    action="block_trade",
+                    detail=f"Total open risk {total_open_risk_percent:.2f}% exceeds {max_total}%",
+                )
+            )
 
         # 3. Max primary positions
         if open_primary_positions >= max_primary:
-            violations.append(HardRuleViolation(
-                rule="max_primary_positions",
-                action="block_trade",
-                detail=f"Open primary positions {open_primary_positions} >= max {max_primary}",
-            ))
+            violations.append(
+                HardRuleViolation(
+                    rule="max_primary_positions",
+                    action="block_trade",
+                    detail=f"Open primary positions {open_primary_positions} >= max {max_primary}",
+                )
+            )
 
         # 4. Correlated exposure
         if correlated_positions >= max_correlated:
-            violations.append(HardRuleViolation(
-                rule="correlated_exposure_cap",
-                action="block_trade",
-                detail=f"Correlated positions {correlated_positions} >= max {max_correlated}",
-            ))
+            violations.append(
+                HardRuleViolation(
+                    rule="correlated_exposure_cap",
+                    action="block_trade",
+                    detail=f"Correlated positions {correlated_positions} >= max {max_correlated}",
+                )
+            )
         if same_direction_correlated >= max_same_dir:
-            violations.append(HardRuleViolation(
-                rule="correlated_exposure_cap",
-                action="block_trade",
-                detail=f"Same-direction correlated positions {same_direction_correlated} >= max {max_same_dir}",
-            ))
+            violations.append(
+                HardRuleViolation(
+                    rule="correlated_exposure_cap",
+                    action="block_trade",
+                    detail=f"Same-direction correlated positions {same_direction_correlated} >= max {max_same_dir}",
+                )
+            )
 
         # 5. Mandatory stop-loss
         if not has_stop_loss:
-            violations.append(HardRuleViolation(
-                rule="mandatory_stop_loss",
-                action="block_trade",
-                detail="Trade must have a stop-loss",
-            ))
+            violations.append(
+                HardRuleViolation(
+                    rule="mandatory_stop_loss",
+                    action="block_trade",
+                    detail="Trade must have a stop-loss",
+                )
+            )
 
         # 6. Consecutive loss lockout
         if consecutive_losses_today >= max_consec:
-            violations.append(HardRuleViolation(
-                rule="daily_consecutive_loss_lockout",
-                action="lock_session",
-                detail=f"Consecutive losses today ({consecutive_losses_today}) >= {max_consec}; stop trading",
-            ))
+            violations.append(
+                HardRuleViolation(
+                    rule="daily_consecutive_loss_lockout",
+                    action="lock_session",
+                    detail=f"Consecutive losses today ({consecutive_losses_today}) >= {max_consec}; stop trading",
+                )
+            )
 
         # 7. Weekly loss cap
         if weekly_loss_percent >= weekly_cap:
-            violations.append(HardRuleViolation(
-                rule="weekly_loss_cap",
-                action="lock_session",
-                detail=f"Weekly loss {weekly_loss_percent:.2f}% >= cap {weekly_cap}%",
-            ))
+            violations.append(
+                HardRuleViolation(
+                    rule="weekly_loss_cap",
+                    action="lock_session",
+                    detail=f"Weekly loss {weekly_loss_percent:.2f}% >= cap {weekly_cap}%",
+                )
+            )
 
         # 8. Allowed symbols
         if allowed_symbols and symbol and symbol.upper() not in [s.upper() for s in allowed_symbols]:
-            violations.append(HardRuleViolation(
-                rule="allowed_symbols",
-                action="block_trade",
-                detail=f"Symbol '{symbol}' not in allowed list: {allowed_symbols}",
-            ))
+            violations.append(
+                HardRuleViolation(
+                    rule="allowed_symbols",
+                    action="block_trade",
+                    detail=f"Symbol '{symbol}' not in allowed list: {allowed_symbols}",
+                )
+            )
 
         # 9. Session window
         if session_time_local is not None:
             sessions: list[dict[str, Any]] = mf.get("sessions", {}).get("windows", [])
             if sessions:
-                in_session = any(
-                    _time_in_window(session_time_local, w["start"], w["end"])
-                    for w in sessions
-                )
+                in_session = any(_time_in_window(session_time_local, w["start"], w["end"]) for w in sessions)
                 if not in_session:
-                    violations.append(HardRuleViolation(
-                        rule="allowed_sessions",
-                        action="block_trade",
-                        detail=f"Current time {session_time_local} outside allowed trading windows",
-                    ))
+                    violations.append(
+                        HardRuleViolation(
+                            rule="allowed_sessions",
+                            action="block_trade",
+                            detail=f"Current time {session_time_local} outside allowed trading windows",
+                        )
+                    )
 
         # 10. News blackout
         if news_active:
-            violations.append(HardRuleViolation(
-                rule="news_blackout",
-                action="block_trade",
-                detail="High-impact news blackout is active; no new trades allowed",
-            ))
+            violations.append(
+                HardRuleViolation(
+                    rule="news_blackout",
+                    action="block_trade",
+                    detail="High-impact news blackout is active; no new trades allowed",
+                )
+            )
 
         # 11. No add-to-loser
         if add_to_loser:
-            violations.append(HardRuleViolation(
-                rule="no_add_to_loser",
-                action="block_trade",
-                detail="Adding to a losing position is prohibited",
-            ))
+            violations.append(
+                HardRuleViolation(
+                    rule="no_add_to_loser",
+                    action="block_trade",
+                    detail="Adding to a losing position is prohibited",
+                )
+            )
 
         # 12. No martingale
         if martingale:
-            violations.append(HardRuleViolation(
-                rule="no_martingale",
-                action="block_trade",
-                detail="Martingale position sizing is prohibited",
-            ))
+            violations.append(
+                HardRuleViolation(
+                    rule="no_martingale",
+                    action="block_trade",
+                    detail="Martingale position sizing is prohibited",
+                )
+            )
 
         # 13. Kill-switch proximity / emergency flatten
         if floating_loss_percent_of_initial >= kill_switch_pct:
-            violations.append(HardRuleViolation(
-                rule="kill_switch_proximity",
-                action="emergency_flatten",
-                detail=(
-                    f"Floating loss {floating_loss_percent_of_initial:.2f}% of initial balance "
-                    f">= kill-switch threshold {kill_switch_pct}%"
-                ),
-            ))
+            violations.append(
+                HardRuleViolation(
+                    rule="kill_switch_proximity",
+                    action="emergency_flatten",
+                    detail=(
+                        f"Floating loss {floating_loss_percent_of_initial:.2f}% of initial balance "
+                        f">= kill-switch threshold {kill_switch_pct}%"
+                    ),
+                )
+            )
 
         # 14. Daily profit target stop
         if daily_profit_percent >= daily_max_pct:
-            violations.append(HardRuleViolation(
-                rule="daily_profit_target_stop",
-                action="lock_session",
-                detail=(
-                    f"Daily profit {daily_profit_percent:.2f}% has reached target cap {daily_max_pct}%"
-                ),
-            ))
+            violations.append(
+                HardRuleViolation(
+                    rule="daily_profit_target_stop",
+                    action="lock_session",
+                    detail=(f"Daily profit {daily_profit_percent:.2f}% has reached target cap {daily_max_pct}%"),
+                )
+            )
 
         allowed = len(violations) == 0
         result = HardRuleResult(allowed=allowed, violations=tuple(violations))
@@ -390,8 +418,7 @@ class StrategyLoader:
         if violations:
             for v in violations:
                 logger.warning(
-                    f"HardRuleViolation | account={account_id} rule={v.rule} "
-                    f"action={v.action} detail={v.detail}"
+                    f"HardRuleViolation | account={account_id} rule={v.rule} " f"action={v.action} detail={v.detail}"
                 )
 
         return result
@@ -444,87 +471,109 @@ class StrategyLoader:
         best_day_warn = float(thresholds.get("best_day_consistency_warning_percent", 15.0))
 
         if not is_pullback_entry:
-            advisories.append(SoftAdvisory(
-                rule="trend_pullback_preference",
-                advisory_type="warn_if_not_pullback",
-                message="Entry does not follow the preferred trend-pullback model",
-            ))
+            advisories.append(
+                SoftAdvisory(
+                    rule="trend_pullback_preference",
+                    advisory_type="warn_if_not_pullback",
+                    message="Entry does not follow the preferred trend-pullback model",
+                )
+            )
 
         if not has_confluence:
-            advisories.append(SoftAdvisory(
-                rule="confirmation_quality",
-                advisory_type="score_penalty_if_missing_confluence",
-                message="No confluence signal present (candlestick / RSI-14 / MACD)",
-            ))
+            advisories.append(
+                SoftAdvisory(
+                    rule="confirmation_quality",
+                    advisory_type="score_penalty_if_missing_confluence",
+                    message="No confluence signal present (candlestick / RSI-14 / MACD)",
+                )
+            )
 
         if not timeframes_aligned:
-            advisories.append(SoftAdvisory(
-                rule="timeframe_alignment",
-                advisory_type="warn_if_misaligned_timeframes",
-                message="H1 execution bias does not align with H4 trend direction",
-            ))
+            advisories.append(
+                SoftAdvisory(
+                    rule="timeframe_alignment",
+                    advisory_type="warn_if_misaligned_timeframes",
+                    message="H1 execution bias does not align with H4 trend direction",
+                )
+            )
 
         if not entry_in_preferred_zone:
-            advisories.append(SoftAdvisory(
-                rule="preferred_entry_zones",
-                advisory_type="warn_if_entry_outside_preferred_zone",
-                message="Entry is outside preferred Fibonacci / S/R zones",
-            ))
+            advisories.append(
+                SoftAdvisory(
+                    rule="preferred_entry_zones",
+                    advisory_type="warn_if_entry_outside_preferred_zone",
+                    message="Entry is outside preferred Fibonacci / S/R zones",
+                )
+            )
 
         if not is_breakout_retest:
-            advisories.append(SoftAdvisory(
-                rule="breakout_retest_preference",
-                advisory_type="warn_if_pure_breakout_entry",
-                message="Pure breakout entry detected; prefer breakout-retest confirmation",
-            ))
+            advisories.append(
+                SoftAdvisory(
+                    rule="breakout_retest_preference",
+                    advisory_type="warn_if_pure_breakout_entry",
+                    message="Pure breakout entry detected; prefer breakout-retest confirmation",
+                )
+            )
 
         if sl_moved_to_breakeven is False:
-            advisories.append(SoftAdvisory(
-                rule="move_to_breakeven_discipline",
-                advisory_type="warn_if_sl_not_moved_to_be",
-                message="SL has not been moved to breakeven after RR 1:1 was reached",
-            ))
+            advisories.append(
+                SoftAdvisory(
+                    rule="move_to_breakeven_discipline",
+                    advisory_type="warn_if_sl_not_moved_to_be",
+                    message="SL has not been moved to breakeven after RR 1:1 was reached",
+                )
+            )
 
         if partial_tp_taken is False:
-            advisories.append(SoftAdvisory(
-                rule="partial_take_profit",
-                advisory_type="warn_if_no_partial_tp_taken",
-                message="No partial TP taken yet; consider scaling out at first target (RR 1:2)",
-            ))
+            advisories.append(
+                SoftAdvisory(
+                    rule="partial_take_profit",
+                    advisory_type="warn_if_no_partial_tp_taken",
+                    message="No partial TP taken yet; consider scaling out at first target (RR 1:2)",
+                )
+            )
 
         if not journal_entry_exists:
-            advisories.append(SoftAdvisory(
-                rule="journaling_compliance",
-                advisory_type="compliance_alert_if_missing_journal",
-                message="Trade is missing a journal entry; journaling is required",
-            ))
+            advisories.append(
+                SoftAdvisory(
+                    rule="journaling_compliance",
+                    advisory_type="compliance_alert_if_missing_journal",
+                    message="Trade is missing a journal entry; journaling is required",
+                )
+            )
 
         if not weekly_review_done:
-            advisories.append(SoftAdvisory(
-                rule="weekly_review_compliance",
-                advisory_type="compliance_alert_if_missing_weekly_review",
-                message="Weekly performance review has not been completed",
-            ))
+            advisories.append(
+                SoftAdvisory(
+                    rule="weekly_review_compliance",
+                    advisory_type="compliance_alert_if_missing_weekly_review",
+                    message="Weekly performance review has not been completed",
+                )
+            )
 
         if floating_loss_percent_of_initial >= ks_warn:
-            advisories.append(SoftAdvisory(
-                rule="kill_switch_proximity_warning",
-                advisory_type="warn_approaching_kill_switch",
-                message=(
-                    f"Floating loss {floating_loss_percent_of_initial:.2f}% is approaching "
-                    f"kill-switch threshold of {self.account_constraints.get('kill_switch_floating_loss_percent', 2.0)}%"
-                ),
-            ))
+            advisories.append(
+                SoftAdvisory(
+                    rule="kill_switch_proximity_warning",
+                    advisory_type="warn_approaching_kill_switch",
+                    message=(
+                        f"Floating loss {floating_loss_percent_of_initial:.2f}% is approaching "
+                        f"kill-switch threshold of {self.account_constraints.get('kill_switch_floating_loss_percent', 2.0)}%"
+                    ),
+                )
+            )
 
         if best_day_percent_of_total >= best_day_warn:
-            advisories.append(SoftAdvisory(
-                rule="consistency_best_day_warning",
-                advisory_type="warn_approaching_consistency_limit",
-                message=(
-                    f"Best-day profit is {best_day_percent_of_total:.1f}% of total profit "
-                    f"(hard limit: 20%); reduce position size to protect payout eligibility"
-                ),
-            ))
+            advisories.append(
+                SoftAdvisory(
+                    rule="consistency_best_day_warning",
+                    advisory_type="warn_approaching_consistency_limit",
+                    message=(
+                        f"Best-day profit is {best_day_percent_of_total:.1f}% of total profit "
+                        f"(hard limit: 20%); reduce position size to protect payout eligibility"
+                    ),
+                )
+            )
 
         if advisories:
             logger.info(
@@ -570,7 +619,7 @@ class StrategyLoader:
             if required:
                 raise PropFirmConfigError(
                     f"Required strategy config not found: {path}. "
-                    "Ensure propfirm_manager/profiles/aqua_instant_pro/ contains strategy.yaml and rule_mapping.yaml."
+                    "Ensure propfirm_manager/profiles/aquafunded/aqua_instant_pro/ contains strategy.yaml and rule_mapping.yaml."
                 )
             logger.warning(f"Optional strategy file not found: {path}")
             return {}
@@ -579,14 +628,10 @@ class StrategyLoader:
             with open(path) as fh:
                 data = yaml.safe_load(fh)
         except yaml.YAMLError as exc:
-            raise PropFirmConfigError(
-                f"Failed to parse strategy config {path}: {exc}"
-            ) from exc
+            raise PropFirmConfigError(f"Failed to parse strategy config {path}: {exc}") from exc
 
         if data is None:
             return {}
         if not isinstance(data, dict):
-            raise PropFirmConfigError(
-                f"Strategy config must be a YAML mapping, got {type(data).__name__}: {path}"
-            )
+            raise PropFirmConfigError(f"Strategy config must be a YAML mapping, got {type(data).__name__}: {path}")
         return data
