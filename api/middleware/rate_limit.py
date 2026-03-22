@@ -15,6 +15,7 @@ Environment variables:
   RATE_LIMIT_TRADE_WRITE_PER_MIN  - trade confirm/close/skip (default 20)
   RATE_LIMIT_RISK_CALC_PER_MIN    - /risk/calculate compute (default 30)
   RATE_LIMIT_ADMIN_PER_MIN        - destructive admin ops (default 5)
+  RATE_LIMIT_EXEMPT_PATHS          - comma-separated extra paths to exempt (default "")
 """
 
 from __future__ import annotations
@@ -145,6 +146,13 @@ if _ON_RAILWAY and TRUSTED_PROXY_ENABLED:
 
 # Paths exempted from rate limiting (health, root).
 EXEMPT_PATHS: set[str] = {"/", "/health", "/healthz", "/health/full", "/docs", "/openapi.json", "/redoc"}
+
+# Merge user-defined exempt paths from env var.
+_extra_exempt = os.getenv("RATE_LIMIT_EXEMPT_PATHS", "")
+if _extra_exempt:
+    _extra = {p.strip() for p in _extra_exempt.split(",") if p.strip()}
+    EXEMPT_PATHS |= _extra
+    logger.info("Rate-limit exempt paths extended: %s", _extra)
 
 
 # ---------------------------------------------------------------------------
