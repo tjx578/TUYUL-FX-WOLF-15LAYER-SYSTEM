@@ -8,7 +8,7 @@ from fastapi import Header, HTTPException, Request
 
 from storage.redis_client import redis_client
 
-from .auth import decode_token, validate_api_key, verify_token
+from .auth import decode_token, validate_api_key
 
 WRITE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 CRITICAL_PATH_PARTS = (
@@ -202,8 +202,6 @@ async def enforce_write_policy(
     if not parsed:
         raise HTTPException(status_code=401, detail="Missing Authorization header for write action")
     _, token = parsed
-    # Mandatory canonical token verification on every write endpoint.
-    verify_token(authorization)  # pyright: ignore[reportArgumentType]
 
     context = _resolve_context(token)
 
