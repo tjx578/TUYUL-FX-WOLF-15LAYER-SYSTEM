@@ -23,7 +23,6 @@ from risk.risk_manager import RiskManager
 
 
 class TestRiskManager:
-
     def _base_params(self, **overrides) -> dict:
         defaults = {
             "account_balance": 100_000.0,
@@ -202,9 +201,14 @@ class TestRiskManager:
         mgr = RiskManager()
         d = mgr.evaluate(**self._base_params()).to_dict()
         expected_keys = {
-            "trade_allowed", "recommended_lot", "max_safe_lot",
-            "effective_risk_percent", "risk_source", "risk_amount",
-            "reason", "violations",
+            "trade_allowed",
+            "recommended_lot",
+            "max_safe_lot",
+            "effective_risk_percent",
+            "risk_source",
+            "risk_amount",
+            "reason",
+            "violations",
         }
         assert expected_keys <= set(d.keys())
 

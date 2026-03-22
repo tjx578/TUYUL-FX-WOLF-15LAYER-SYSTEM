@@ -18,27 +18,27 @@ Usage:
 
 # Core components
 from engines.v11.config import get_v11, is_v11_enabled
+from engines.v11.data_adapter import V11DataAdapter
 from engines.v11.exhaustion_detector import ExhaustionDetector, ExhaustionResult, ExhaustionState
 from engines.v11.exhaustion_dvg_fusion import ExhaustionDVGFusion, ExhaustionDVGResult
-from engines.v11.liquidity_sweep_scorer import LiquiditySweepScorer, LiquiditySweepResult
 from engines.v11.extreme_selectivity_gate import (
-    ExtremeSelectivityGateV11,
+    ConfidenceBand,
     ExtremeGateInput,
     ExtremeGateResult,
+    ExtremeSelectivityGateV11,
     GateVerdict,
-    ConfidenceBand,
 )
-from engines.v11.data_adapter import V11DataAdapter
-from engines.v11.pipeline_hook import V11PipelineHook, V11Overlay
-
-# Regime AI
-from engines.v11.regime_ai import OnlineKMeans, FeatureExtractor, RegimeService
+from engines.v11.liquidity_sweep_scorer import LiquiditySweepResult, LiquiditySweepScorer
+from engines.v11.pipeline_hook import V11Overlay, V11PipelineHook
 
 # Portfolio
-from engines.v11.portfolio import SniperOptimizer, PortfolioDecision
+from engines.v11.portfolio import PortfolioDecision, SniperOptimizer
+
+# Regime AI
+from engines.v11.regime_ai import FeatureExtractor, OnlineKMeans, RegimeService
 
 # Validation
-from engines.v11.validation import EdgeValidator, EdgeValidationResult
+from engines.v11.validation import EdgeValidationResult, EdgeValidator
 
 __all__ = [
     # Config

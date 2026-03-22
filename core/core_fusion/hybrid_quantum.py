@@ -16,12 +16,24 @@ class QuantumReflectiveEngine:
 
     def evaluate_reflective_entropy(self, closes: list[float]) -> dict[str, Any]:
         if len(closes) < 20:
-            return {"alpha": 0.0, "beta": 0.0, "gamma": 0.0, "alpha_beta_gamma": 0.0,
-                    "reflective_energy": 0.5, "flux_state": "Insufficient_Data"}
-        rets = [(closes[i] - closes[i-1]) / closes[i-1] for i in range(1, len(closes)) if closes[i-1] != 0]
+            return {
+                "alpha": 0.0,
+                "beta": 0.0,
+                "gamma": 0.0,
+                "alpha_beta_gamma": 0.0,
+                "reflective_energy": 0.5,
+                "flux_state": "Insufficient_Data",
+            }
+        rets = [(closes[i] - closes[i - 1]) / closes[i - 1] for i in range(1, len(closes)) if closes[i - 1] != 0]
         if not rets:
-            return {"alpha": 0.0, "beta": 0.0, "gamma": 0.0, "alpha_beta_gamma": 0.0,
-                    "reflective_energy": 0.5, "flux_state": "Insufficient_Data"}
+            return {
+                "alpha": 0.0,
+                "beta": 0.0,
+                "gamma": 0.0,
+                "alpha_beta_gamma": 0.0,
+                "reflective_energy": 0.5,
+                "flux_state": "Insufficient_Data",
+            }
         a = self._std(rets[-5:]) if len(rets) >= 5 else 0.0
         b = self._std(rets[-20:]) if len(rets) >= 20 else 0.0
         g = abs(sum(rets[-50:]) / 50) if len(rets) >= 50 else abs(sum(rets) / len(rets))
@@ -33,8 +45,14 @@ class QuantumReflectiveEngine:
             fs = "High_Flux"
         else:
             fs = "Transitional"
-        return {"alpha": round(a, 6), "beta": round(b, 6), "gamma": round(g, 6),
-                "alpha_beta_gamma": abg, "reflective_energy": re, "flux_state": fs}
+        return {
+            "alpha": round(a, 6),
+            "beta": round(b, 6),
+            "gamma": round(g, 6),
+            "alpha_beta_gamma": abg,
+            "reflective_energy": re,
+            "flux_state": fs,
+        }
 
     def _std(self, vals: list[float]) -> float:
         if not vals or len(vals) < 2:
@@ -46,8 +64,13 @@ class QuantumReflectiveEngine:
 class HybridReflectiveCore:
     """L9 Hybrid: Quantum entropy + Vault Macro -> Reflective Macro Coherence."""
 
-    def __init__(self, ema_period: int = 200, sma_periods: list[int] | None = None,
-                 quantum_weight: float = 0.4, macro_weight: float = 0.6) -> None:
+    def __init__(
+        self,
+        ema_period: int = 200,
+        sma_periods: list[int] | None = None,
+        quantum_weight: float = 0.4,
+        macro_weight: float = 0.6,
+    ) -> None:
         self.quantum = QuantumReflectiveEngine()
         self.vault = VaultMacroLayer(ema_period=ema_period, sma_periods=sma_periods or [200, 800])
         self.qw = quantum_weight
@@ -74,21 +97,38 @@ class HybridReflectiveCore:
 
         rmc = round(min(1.0, max(0.0, qf["reflective_energy"] * 0.3 + vm["gravity_score"] * 0.3 + rs * 0.4)), 3)
         return {
-            "alpha": qf["alpha"], "beta": qf["beta"], "gamma": qf["gamma"],
-            "alpha_beta_gamma": qf["alpha_beta_gamma"], "reflective_energy": qf["reflective_energy"],
-            "flux_state": qf["flux_state"], "ema_200": vm["ema_200"],
-            "sma_200": vm.get("sma_200", 0.0), "sma_800": vm.get("sma_800", 0.0),
-            "macro_bias": vm["macro_bias"], "distance_pct": vm["distance_pct"],
-            "structural_alignment": vm["structural_alignment"], "gravity_score": vm["gravity_score"],
-            "hybrid_reflective_strength": rs, "hybrid_bias": hb,
-            "reflective_macro_coherence": rmc, "quantum_weight": self.qw, "macro_weight": self.mw,
+            "alpha": qf["alpha"],
+            "beta": qf["beta"],
+            "gamma": qf["gamma"],
+            "alpha_beta_gamma": qf["alpha_beta_gamma"],
+            "reflective_energy": qf["reflective_energy"],
+            "flux_state": qf["flux_state"],
+            "ema_200": vm["ema_200"],
+            "sma_200": vm.get("sma_200", 0.0),
+            "sma_800": vm.get("sma_800", 0.0),
+            "macro_bias": vm["macro_bias"],
+            "distance_pct": vm["distance_pct"],
+            "structural_alignment": vm["structural_alignment"],
+            "gravity_score": vm["gravity_score"],
+            "hybrid_reflective_strength": rs,
+            "hybrid_bias": hb,
+            "reflective_macro_coherence": rmc,
+            "quantum_weight": self.qw,
+            "macro_weight": self.mw,
         }
 
     def get_execution_status(self, closes: list[float], tii_threshold: float = 0.93) -> dict[str, Any]:
         hd = self.integrate(closes)
         if "error" in hd:
-            return {**hd, "pseudo_tii": 0.0, "execution_decision": "HOLD", "execution_reason": "Error in hybrid analysis"}
-        pt = round(hd["reflective_energy"] * 0.4 + hd["gravity_score"] * 0.3 + hd["hybrid_reflective_strength"] * 0.3, 3)
+            return {
+                **hd,
+                "pseudo_tii": 0.0,
+                "execution_decision": "HOLD",
+                "execution_reason": "Error in hybrid analysis",
+            }
+        pt = round(
+            hd["reflective_energy"] * 0.4 + hd["gravity_score"] * 0.3 + hd["hybrid_reflective_strength"] * 0.3, 3
+        )
         if pt >= tii_threshold and hd["flux_state"] == "Stable":
             dec, reason = "EXECUTE", f"TII={pt} >= {tii_threshold}, Flux=Stable"
         elif pt >= 0.90 and hd["flux_state"] in ["Stable", "High_Flux"]:

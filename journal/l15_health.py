@@ -30,6 +30,7 @@ logger = logging.getLogger(__name__)
 
 class HealthStatus(StrEnum):
     """Aggregate system health status."""
+
     HEALTHY = "HEALTHY"
     DEGRADED = "DEGRADED"
     CRITICAL = "CRITICAL"
@@ -38,11 +39,12 @@ class HealthStatus(StrEnum):
 
 class LayerStatus(StrEnum):
     """Individual layer health."""
+
     OK = "OK"
-    STALE = "STALE"             # data older than threshold
-    ERROR = "ERROR"             # layer returned error on last check
-    MISSING = "MISSING"         # no response / not registered
-    DISABLED = "DISABLED"       # intentionally disabled
+    STALE = "STALE"  # data older than threshold
+    ERROR = "ERROR"  # layer returned error on last check
+    MISSING = "MISSING"  # no response / not registered
+    DISABLED = "DISABLED"  # intentionally disabled
 
 
 class AlertLevel(StrEnum):
@@ -54,7 +56,8 @@ class AlertLevel(StrEnum):
 @dataclass(frozen=True)
 class LayerHealthReport:
     """Health status for a single layer."""
-    layer_id: str               # e.g. "L1", "L4", "L12"
+
+    layer_id: str  # e.g. "L1", "L4", "L12"
     layer_name: str
     status: LayerStatus
     last_update_age_seconds: float | None = None
@@ -65,6 +68,7 @@ class LayerHealthReport:
 @dataclass(frozen=True)
 class HealthAlert:
     """Single health alert for dashboard display."""
+
     alert_level: AlertLevel
     source_layer: str
     code: str
@@ -75,10 +79,11 @@ class HealthAlert:
 @dataclass(frozen=True)
 class LayerHealthInput:
     """Input data about a single layer's current state."""
+
     layer_id: str
     layer_name: str
     is_responding: bool
-    last_update_timestamp: str | None = None     # ISO format
+    last_update_timestamp: str | None = None  # ISO format
     last_error: str | None = None
     is_disabled: bool = False
 
@@ -86,6 +91,7 @@ class LayerHealthInput:
 @dataclass(frozen=True)
 class SystemResourceInput:
     """System resource metrics (optional)."""
+
     memory_usage_mb: float | None = None
     cpu_percent: float | None = None
     redis_connected: bool = True
@@ -99,6 +105,7 @@ class L15HealthReport:
     Immutable system health report. Consumed by dashboard.
     L15 NEVER overrides L12 or any other layer's output.
     """
+
     report_id: str
     overall_status: HealthStatus
     layer_reports: tuple[LayerHealthReport, ...]
@@ -116,8 +123,8 @@ class L15HealthReport:
 # ---------------------------------------------------------------------------
 # Configuration thresholds
 # ---------------------------------------------------------------------------
-STALE_THRESHOLD_SECONDS: float = 300.0          # 5 min
-CRITICAL_STALE_SECONDS: float = 900.0           # 15 min
+STALE_THRESHOLD_SECONDS: float = 300.0  # 5 min
+CRITICAL_STALE_SECONDS: float = 900.0  # 15 min
 REDIS_LATENCY_WARNING_MS: float = 100.0
 REDIS_LATENCY_CRITICAL_MS: float = 500.0
 QUEUE_DEPTH_WARNING: int = 50
@@ -200,86 +207,104 @@ def _generate_alerts(
     # Layer-level alerts
     for lr in layer_reports:
         if lr.status == LayerStatus.ERROR:
-            alerts.append(HealthAlert(
-                alert_level=AlertLevel.CRITICAL,
-                source_layer=lr.layer_id,
-                code="LAYER_ERROR",
-                message=f"{lr.layer_id} ({lr.layer_name}): {lr.error_message or 'error state'}",
-                recommendation=f"Investigate {lr.layer_id} immediately",
-            ))
+            alerts.append(
+                HealthAlert(
+                    alert_level=AlertLevel.CRITICAL,
+                    source_layer=lr.layer_id,
+                    code="LAYER_ERROR",
+                    message=f"{lr.layer_id} ({lr.layer_name}): {lr.error_message or 'error state'}",
+                    recommendation=f"Investigate {lr.layer_id} immediately",
+                )
+            )
         elif lr.status == LayerStatus.STALE:
-            alerts.append(HealthAlert(
-                alert_level=AlertLevel.WARNING,
-                source_layer=lr.layer_id,
-                code="LAYER_STALE",
-                message=f"{lr.layer_id} ({lr.layer_name}): data stale ({lr.last_update_age_seconds:.0f}s)",
-                recommendation=f"Check data feed for {lr.layer_id}",
-            ))
+            alerts.append(
+                HealthAlert(
+                    alert_level=AlertLevel.WARNING,
+                    source_layer=lr.layer_id,
+                    code="LAYER_STALE",
+                    message=f"{lr.layer_id} ({lr.layer_name}): data stale ({lr.last_update_age_seconds:.0f}s)",
+                    recommendation=f"Check data feed for {lr.layer_id}",
+                )
+            )
         elif lr.status == LayerStatus.MISSING:
-            alerts.append(HealthAlert(
-                alert_level=AlertLevel.CRITICAL,
-                source_layer=lr.layer_id,
-                code="LAYER_MISSING",
-                message=f"{lr.layer_id} ({lr.layer_name}): not responding",
-                recommendation=f"Verify {lr.layer_id} is deployed and running",
-            ))
+            alerts.append(
+                HealthAlert(
+                    alert_level=AlertLevel.CRITICAL,
+                    source_layer=lr.layer_id,
+                    code="LAYER_MISSING",
+                    message=f"{lr.layer_id} ({lr.layer_name}): not responding",
+                    recommendation=f"Verify {lr.layer_id} is deployed and running",
+                )
+            )
 
     # Coverage alert
     active_layers = [lr for lr in layer_reports if lr.status not in (LayerStatus.DISABLED,)]
     [lr for lr in active_layers if lr.status == LayerStatus.OK]
     if len(active_layers) < EXPECTED_LAYERS:
-        alerts.append(HealthAlert(
-            alert_level=AlertLevel.WARNING,
-            source_layer="L15",
-            code="INCOMPLETE_COVERAGE",
-            message=f"Only {len(active_layers)}/{EXPECTED_LAYERS} layers active",
-            recommendation="Review disabled/missing layers",
-        ))
+        alerts.append(
+            HealthAlert(
+                alert_level=AlertLevel.WARNING,
+                source_layer="L15",
+                code="INCOMPLETE_COVERAGE",
+                message=f"Only {len(active_layers)}/{EXPECTED_LAYERS} layers active",
+                recommendation="Review disabled/missing layers",
+            )
+        )
 
     # Resource alerts
     if resources:
         if not resources.redis_connected:
-            alerts.append(HealthAlert(
-                alert_level=AlertLevel.CRITICAL,
-                source_layer="L15",
-                code="REDIS_DISCONNECTED",
-                message="Redis connection lost",
-                recommendation="Check Redis server and network",
-            ))
-        elif resources.redis_latency_ms is not None:
-            if resources.redis_latency_ms > REDIS_LATENCY_CRITICAL_MS:
-                alerts.append(HealthAlert(
+            alerts.append(
+                HealthAlert(
                     alert_level=AlertLevel.CRITICAL,
                     source_layer="L15",
-                    code="REDIS_LATENCY_CRITICAL",
-                    message=f"Redis latency {resources.redis_latency_ms:.0f}ms",
-                    recommendation="Investigate Redis performance",
-                ))
+                    code="REDIS_DISCONNECTED",
+                    message="Redis connection lost",
+                    recommendation="Check Redis server and network",
+                )
+            )
+        elif resources.redis_latency_ms is not None:
+            if resources.redis_latency_ms > REDIS_LATENCY_CRITICAL_MS:
+                alerts.append(
+                    HealthAlert(
+                        alert_level=AlertLevel.CRITICAL,
+                        source_layer="L15",
+                        code="REDIS_LATENCY_CRITICAL",
+                        message=f"Redis latency {resources.redis_latency_ms:.0f}ms",
+                        recommendation="Investigate Redis performance",
+                    )
+                )
             elif resources.redis_latency_ms > REDIS_LATENCY_WARNING_MS:
-                alerts.append(HealthAlert(
-                    alert_level=AlertLevel.WARNING,
-                    source_layer="L15",
-                    code="REDIS_LATENCY_HIGH",
-                    message=f"Redis latency {resources.redis_latency_ms:.0f}ms",
-                    recommendation="Monitor Redis load",
-                ))
+                alerts.append(
+                    HealthAlert(
+                        alert_level=AlertLevel.WARNING,
+                        source_layer="L15",
+                        code="REDIS_LATENCY_HIGH",
+                        message=f"Redis latency {resources.redis_latency_ms:.0f}ms",
+                        recommendation="Monitor Redis load",
+                    )
+                )
 
         if resources.pending_queue_depth >= QUEUE_DEPTH_CRITICAL:
-            alerts.append(HealthAlert(
-                alert_level=AlertLevel.CRITICAL,
-                source_layer="L15",
-                code="QUEUE_OVERFLOW",
-                message=f"Pending queue depth: {resources.pending_queue_depth}",
-                recommendation="Scale workers or investigate backpressure",
-            ))
+            alerts.append(
+                HealthAlert(
+                    alert_level=AlertLevel.CRITICAL,
+                    source_layer="L15",
+                    code="QUEUE_OVERFLOW",
+                    message=f"Pending queue depth: {resources.pending_queue_depth}",
+                    recommendation="Scale workers or investigate backpressure",
+                )
+            )
         elif resources.pending_queue_depth >= QUEUE_DEPTH_WARNING:
-            alerts.append(HealthAlert(
-                alert_level=AlertLevel.WARNING,
-                source_layer="L15",
-                code="QUEUE_DEEP",
-                message=f"Pending queue depth: {resources.pending_queue_depth}",
-                recommendation="Monitor queue growth rate",
-            ))
+            alerts.append(
+                HealthAlert(
+                    alert_level=AlertLevel.WARNING,
+                    source_layer="L15",
+                    code="QUEUE_DEEP",
+                    message=f"Pending queue depth: {resources.pending_queue_depth}",
+                    recommendation="Monitor queue growth rate",
+                )
+            )
 
     return alerts
 
@@ -293,9 +318,7 @@ def _classify_overall_status(
     warning_count = sum(1 for a in alerts if a.alert_level == AlertLevel.WARNING)
 
     # L12 (Constitution) being down is always CRITICAL
-    l12_status = next(
-        (lr.status for lr in layer_reports if lr.layer_id == "L12"), None
-    )
+    l12_status = next((lr.status for lr in layer_reports if lr.layer_id == "L12"), None)
     if l12_status in (LayerStatus.ERROR, LayerStatus.MISSING):
         return HealthStatus.CRITICAL
 
@@ -346,12 +369,9 @@ def check_health(
 
     healthy = sum(1 for lr in layer_reports if lr.status == LayerStatus.OK)
     degraded = sum(1 for lr in layer_reports if lr.status == LayerStatus.STALE)
-    critical = sum(
-        1 for lr in layer_reports
-        if lr.status in (LayerStatus.ERROR, LayerStatus.MISSING)
-    )
+    critical = sum(1 for lr in layer_reports if lr.status in (LayerStatus.ERROR, LayerStatus.MISSING))
     stale = any(lr.status == LayerStatus.STALE for lr in layer_reports)
-    constitutional_violation = False     # placeholder for future compliance checks
+    constitutional_violation = False  # placeholder for future compliance checks
 
     report = L15HealthReport(
         report_id=report_id,
@@ -370,6 +390,11 @@ def check_health(
 
     logger.info(
         "L15 [%s] | status=%s | ok=%d degraded=%d critical=%d | %d alerts",
-        report_id, overall.value, healthy, degraded, critical, len(alerts),
+        report_id,
+        overall.value,
+        healthy,
+        degraded,
+        critical,
+        len(alerts),
     )
     return report

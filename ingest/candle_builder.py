@@ -18,12 +18,13 @@ from enum import Enum
 
 class Timeframe(Enum):
     """Supported output timeframes."""
-    M1  = ("M1",  1)
-    M5  = ("M5",  5)
+
+    M1 = ("M1", 1)
+    M5 = ("M5", 5)
     M15 = ("M15", 15)
-    H1  = ("H1",  60)
-    H4  = ("H4",  240)
-    D1  = ("D1",  1440)
+    H1 = ("H1", 60)
+    H4 = ("H4", 240)
+    D1 = ("D1", 1440)
 
     def __init__(self, label: str, minutes: int) -> None:
         self.label = label
@@ -40,10 +41,11 @@ class Timeframe(Enum):
 @dataclass
 class Candle:
     """Immutable OHLCV candle."""
+
     symbol: str
-    timeframe: str          # e.g. "M15", "H1"
-    open_time: datetime     # UTC, period start (inclusive)
-    close_time: datetime    # UTC, period end (exclusive)
+    timeframe: str  # e.g. "M15", "H1"
+    open_time: datetime  # UTC, period start (inclusive)
+    close_time: datetime  # UTC, period end (exclusive)
     open: float
     high: float
     low: float
@@ -82,6 +84,7 @@ def _align_to_period(dt: datetime, period_minutes: int) -> datetime:
 @dataclass
 class _CandleAccumulator:
     """Mutable accumulator for building a single candle in progress."""
+
     symbol: str
     timeframe: str
     period_minutes: int
@@ -328,9 +331,7 @@ class MultiTimeframeCandleBuilder:
         for i, tf in enumerate(timeframes):
             label = tf.label
 
-            def _make_callback(
-                tf_label: str, next_idx: int, tfs: list[Timeframe]
-            ) -> OnCandleComplete:
+            def _make_callback(tf_label: str, next_idx: int, tfs: list[Timeframe]) -> OnCandleComplete:
                 def cb(candle: Candle) -> None:
                     # Notify caller
                     if self.on_any_complete:
@@ -339,6 +340,7 @@ class MultiTimeframeCandleBuilder:
                     if next_idx < len(tfs):
                         next_label = tfs[next_idx].label
                         self._builders[next_label].on_candle(candle)
+
                 return cb
 
             builder = CandleBuilder(
@@ -349,9 +351,7 @@ class MultiTimeframeCandleBuilder:
             self._builders[label] = builder
             self._chain.append(label)
 
-    def on_tick(
-        self, price: float, timestamp: datetime, volume: float = 0.0
-    ) -> None:
+    def on_tick(self, price: float, timestamp: datetime, volume: float = 0.0) -> None:
         """Feed a tick into the base (smallest) timeframe builder."""
         base_label = self._chain[0]
         self._builders[base_label].on_tick(price, timestamp, volume)

@@ -255,9 +255,9 @@ class TestNormalizeResponse:
         for candle in candles:
             ts = candle["timestamp"]
             # tzinfo must be an instance, not a class/type
-            assert not isinstance(
-                ts.tzinfo, type
-            ), f"tzinfo is a type ({ts.tzinfo}), expected an instance like timezone.utc"
+            assert not isinstance(ts.tzinfo, type), (
+                f"tzinfo is a type ({ts.tzinfo}), expected an instance like timezone.utc"
+            )
             assert isinstance(ts.tzinfo, tzinfo)
 
     def test_ohlc_validity(self) -> None:

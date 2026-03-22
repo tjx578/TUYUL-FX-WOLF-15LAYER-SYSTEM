@@ -79,9 +79,8 @@ def _build_provider() -> trace.TracerProvider:
             from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import (  # noqa: PLC0415
                 OTLPSpanExporter,
             )
-            provider.add_span_processor(
-                BatchSpanProcessor(OTLPSpanExporter(endpoint=_OTLP_ENDPOINT))
-            )
+
+            provider.add_span_processor(BatchSpanProcessor(OTLPSpanExporter(endpoint=_OTLP_ENDPOINT)))
         except ImportError:
             # opentelemetry-exporter-otlp not installed — fall through to
             # console or no-op
@@ -154,6 +153,7 @@ def layer_span(
 
 
 # ── Minimal stubs used when opentelemetry is absent ─────────────────
+
 
 class _NullSpan:
     """Stub span used when opentelemetry is not installed."""

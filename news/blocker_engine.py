@@ -15,8 +15,8 @@ Design
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
-from typing import Sequence
 
 from news.models import BlockerStatus, EconomicEvent, ImpactLevel
 from news.news_rules import NEWS_RULES

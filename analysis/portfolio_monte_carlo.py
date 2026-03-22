@@ -11,7 +11,6 @@ Zone: analysis/
 from __future__ import annotations
 
 import logging
-
 from dataclasses import dataclass, field
 
 import numpy as np
@@ -103,7 +102,7 @@ def _simulate_correlated_returns(
     z = rng.standard_normal((n_sims, horizon, n_pairs))
     correlated_z = z @ chol.T
     # Convert to uniform via CDF
-    from scipy.stats import norm  # type: ignore[import-untyped]  # noqa: PLC0415
+    from scipy.stats import norm  # noqa: PLC0415
 
     u = norm.cdf(correlated_z)
 
@@ -160,9 +159,7 @@ def run_portfolio_monte_carlo(
     corr_matrix = _build_correlation_matrix(symbols, historical_correlations)
 
     # ── Simulate ─────────────────────────────────────────────────────
-    pnl = _simulate_correlated_returns(
-        pair_specs, corr_matrix, n_simulations, horizon_bars, rng
-    )
+    pnl = _simulate_correlated_returns(pair_specs, corr_matrix, n_simulations, horizon_bars, rng)
 
     # ── Aggregate portfolio PnL per path ─────────────────────────────
     # Sum across pairs for each (sim, bar) → (n_sims, horizon)
@@ -195,11 +192,7 @@ def run_portfolio_monte_carlo(
     pair_vols = [float(pnl[:, :, i].std()) for i in range(len(pair_specs))]
     sum_individual_vol = sum(pair_vols)
     portfolio_vol = float(portfolio_pnl.std())
-    div_ratio = (
-        portfolio_vol / sum_individual_vol
-        if sum_individual_vol > 0
-        else 1.0
-    )
+    div_ratio = portfolio_vol / sum_individual_vol if sum_individual_vol > 0 else 1.0
 
     # ── Per-pair contribution to portfolio EV ────────────────────────
     pair_contributions = {}

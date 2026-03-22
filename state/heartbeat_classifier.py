@@ -14,7 +14,7 @@ from __future__ import annotations
 import os
 import time
 from dataclasses import dataclass
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 
 import orjson
@@ -41,7 +41,7 @@ SERVICE_HEARTBEAT_CONFIG: dict[str, tuple[str, float]] = {
 }
 
 
-class HeartbeatState(str, Enum):
+class HeartbeatState(StrEnum):
     """Classification of a producer heartbeat."""
 
     ALIVE = "ALIVE"

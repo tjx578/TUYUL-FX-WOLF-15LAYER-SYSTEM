@@ -1,7 +1,6 @@
 """Tests for Pending Execution Engine (execution/pending_engine.py)."""
 
 import json
-
 from datetime import UTC, datetime
 from typing import Any
 from unittest.mock import MagicMock, patch
@@ -24,6 +23,7 @@ NOW = datetime(2026, 2, 15, 14, 0, 0, tzinfo=UTC)
 
 
 # ── Helpers ──────────────────────────────────────────────────────────
+
 
 def _now_factory():
     return NOW
@@ -76,6 +76,7 @@ class MockJournalWriter:
 
 # ── Order ID Generation ──────────────────────────────────────────────
 
+
 class TestOrderIdGeneration:
     def test_order_id_contains_signal_prefix(self):
         oid = _generate_order_id("SIG-ABCD-1234")
@@ -113,6 +114,7 @@ class TestIdempotencyKey:
 
 
 # ── Structural Validation ────────────────────────────────────────────
+
 
 class TestStructuralValidation:
     def test_valid_buy_passes(self):
@@ -177,57 +179,69 @@ class TestStructuralValidation:
 
     def test_buy_sl_above_entry_rejected(self):
         engine = _make_engine()
-        result = engine.submit(_make_request(
-            order_type=OrderType.BUY,
-            entry_price=1.25000,
-            stop_loss=1.26000,  # Above entry
-            take_profit=1.27000,
-        ))
+        result = engine.submit(
+            _make_request(
+                order_type=OrderType.BUY,
+                entry_price=1.25000,
+                stop_loss=1.26000,  # Above entry
+                take_profit=1.27000,
+            )
+        )
         assert result.status == OrderStatus.REJECTED
         assert any("SL must be below" in e for e in result.errors)
 
     def test_buy_tp_below_entry_rejected(self):
         engine = _make_engine()
-        result = engine.submit(_make_request(
-            order_type=OrderType.BUY,
-            entry_price=1.25000,
-            stop_loss=1.24000,
-            take_profit=1.24000,  # Below entry
-        ))
+        result = engine.submit(
+            _make_request(
+                order_type=OrderType.BUY,
+                entry_price=1.25000,
+                stop_loss=1.24000,
+                take_profit=1.24000,  # Below entry
+            )
+        )
         assert result.status == OrderStatus.REJECTED
         assert any("TP must be above" in e for e in result.errors)
 
     def test_sell_sl_below_entry_rejected(self):
         engine = _make_engine()
-        result = engine.submit(_make_sell_request(
-            stop_loss=1.24000,  # Below entry
-        ))
+        result = engine.submit(
+            _make_sell_request(
+                stop_loss=1.24000,  # Below entry
+            )
+        )
         assert result.status == OrderStatus.REJECTED
         assert any("SL must be above" in e for e in result.errors)
 
     def test_sell_tp_above_entry_rejected(self):
         engine = _make_engine()
-        result = engine.submit(_make_sell_request(
-            take_profit=1.26000,  # Above entry
-        ))
+        result = engine.submit(
+            _make_sell_request(
+                take_profit=1.26000,  # Above entry
+            )
+        )
         assert result.status == OrderStatus.REJECTED
         assert any("TP must be below" in e for e in result.errors)
 
     def test_sl_equals_entry_rejected(self):
         engine = _make_engine()
-        result = engine.submit(_make_request(
-            entry_price=1.25000,
-            stop_loss=1.25000,
-        ))
+        result = engine.submit(
+            _make_request(
+                entry_price=1.25000,
+                stop_loss=1.25000,
+            )
+        )
         assert result.status == OrderStatus.REJECTED
         assert any("SL cannot equal" in e for e in result.errors)
 
     def test_tp_equals_entry_rejected(self):
         engine = _make_engine()
-        result = engine.submit(_make_request(
-            entry_price=1.25000,
-            take_profit=1.25000,
-        ))
+        result = engine.submit(
+            _make_request(
+                entry_price=1.25000,
+                take_profit=1.25000,
+            )
+        )
         assert result.status == OrderStatus.REJECTED
         assert any("TP cannot equal" in e for e in result.errors)
 
@@ -244,6 +258,7 @@ class TestStructuralValidation:
 
 # ── Constitutional: No Strategy Logic ────────────────────────────────
 
+
 class TestConstitutionalNoStrategy:
     """Execution must NOT enforce strategy constraints."""
 
@@ -252,38 +267,38 @@ class TestConstitutionalNoStrategy:
         A 0.5 R:R is bad strategy but structurally valid."""
         engine = _make_engine()
         # BUY: 50 pip SL, 25 pip TP -> R:R = 0.5
-        result = engine.submit(_make_request(
-            entry_price=1.25000,
-            stop_loss=1.24500,
-            take_profit=1.25250,
-        ))
-        assert result.status == OrderStatus.DRY_RUN, (
-            "Execution must not reject based on R:R ratio"
+        result = engine.submit(
+            _make_request(
+                entry_price=1.25000,
+                stop_loss=1.24500,
+                take_profit=1.25250,
+            )
         )
+        assert result.status == OrderStatus.DRY_RUN, "Execution must not reject based on R:R ratio"
 
     def test_no_min_sl_pips_enforcement(self):
         """Very tight SL (1 pip) is structurally valid."""
         engine = _make_engine()
-        result = engine.submit(_make_request(
-            entry_price=1.25000,
-            stop_loss=1.24990,   # 1 pip SL
-            take_profit=1.25100,
-        ))
-        assert result.status == OrderStatus.DRY_RUN, (
-            "Execution must not enforce minimum SL distance"
+        result = engine.submit(
+            _make_request(
+                entry_price=1.25000,
+                stop_loss=1.24990,  # 1 pip SL
+                take_profit=1.25100,
+            )
         )
+        assert result.status == OrderStatus.DRY_RUN, "Execution must not enforce minimum SL distance"
 
     def test_no_max_sl_pips_enforcement(self):
         """Very wide SL (1000 pips) is structurally valid."""
         engine = _make_engine()
-        result = engine.submit(_make_request(
-            entry_price=1.25000,
-            stop_loss=1.15000,   # 1000 pips
-            take_profit=1.35000,
-        ))
-        assert result.status == OrderStatus.DRY_RUN, (
-            "Execution must not enforce maximum SL distance"
+        result = engine.submit(
+            _make_request(
+                entry_price=1.25000,
+                stop_loss=1.15000,  # 1000 pips
+                take_profit=1.35000,
+            )
         )
+        assert result.status == OrderStatus.DRY_RUN, "Execution must not enforce maximum SL distance"
 
     def test_no_pip_value_lookup(self):
         """Engine must not derive pip values -- that's L10 analysis."""
@@ -301,6 +316,7 @@ class TestConstitutionalNoStrategy:
 
 
 # ── Idempotency ──────────────────────────────────────────────────────
+
 
 class TestIdempotency:
     def test_duplicate_rejected(self):
@@ -351,6 +367,7 @@ class TestIdempotency:
 
 # ── DRY Mode ─────────────────────────────────────────────────────────
 
+
 class TestDryMode:
     def test_dry_returns_dry_run(self):
         engine = _make_engine(mode=ExecutionMode.DRY)
@@ -368,6 +385,7 @@ class TestDryMode:
 
 
 # ── PAPER Mode ───────────────────────────────────────────────────────
+
 
 class TestPaperMode:
     def test_paper_returns_paper_filled(self):
@@ -387,6 +405,7 @@ class TestPaperMode:
 
 
 # ── LIVE Mode ────────────────────────────────────────────────────────
+
 
 class TestLiveMode:
     def test_live_success(self):
@@ -481,6 +500,7 @@ class TestLiveMode:
 
 # ── Journal Integration ──────────────────────────────────────────────
 
+
 class TestJournalIntegration:
     def test_successful_order_journaled(self):
         journal = MockJournalWriter()
@@ -507,10 +527,23 @@ class TestJournalIntegration:
         engine.submit(_make_request())
 
         entry = journal.entries[0]
-        for key in ("journal_type", "order_id", "signal_id", "status",
-                     "pair", "order_type", "lot_size", "entry_price",
-                     "stop_loss", "take_profit", "execution_mode",
-                     "message", "errors", "mt5_ticket", "timestamp"):
+        for key in (
+            "journal_type",
+            "order_id",
+            "signal_id",
+            "status",
+            "pair",
+            "order_type",
+            "lot_size",
+            "entry_price",
+            "stop_loss",
+            "take_profit",
+            "execution_mode",
+            "message",
+            "errors",
+            "mt5_ticket",
+            "timestamp",
+        ):
             assert key in entry, f"missing J3 key: {key}"
 
     def test_journal_failure_doesnt_block(self):
@@ -546,6 +579,7 @@ class TestJournalIntegration:
 
 # ── Mode Resolution ──────────────────────────────────────────────────
 
+
 class TestModeResolution:
     def test_explicit_mode(self):
         engine = PendingEngine(mode=ExecutionMode.PAPER)
@@ -574,12 +608,13 @@ class TestModeResolution:
 
 # ── OrderResult Immutability ─────────────────────────────────────────
 
+
 class TestOrderResultImmutable:
     def test_frozen(self):
         engine = _make_engine()
         result = engine.submit(_make_request())
         with pytest.raises(AttributeError):
-            result.status = OrderStatus.FILLED # type: ignore
+            result.status = OrderStatus.FILLED  # type: ignore
 
     def test_errors_is_tuple(self):
         engine = _make_engine()
@@ -589,14 +624,16 @@ class TestOrderResultImmutable:
 
 # ── OrderRequest Immutability ────────────────────────────────────────
 
+
 class TestOrderRequestImmutable:
     def test_frozen(self):
         req = _make_request()
         with pytest.raises(AttributeError):
-            req.lot_size = 1.0 # type: ignore
+            req.lot_size = 1.0  # type: ignore
 
 
 # ── Timestamp Injection ─────────────────────────────────────────────
+
 
 class TestTimestampInjection:
     def test_uses_injected_now(self):
@@ -613,25 +650,30 @@ class TestTimestampInjection:
 
 # ── Edge Cases ───────────────────────────────────────────────────────
 
+
 class TestEdgeCases:
     def test_gold_pair_structurally_valid(self):
         engine = _make_engine()
-        result = engine.submit(_make_request(
-            pair="XAUUSD",
-            entry_price=2000.00,
-            stop_loss=1995.00,
-            take_profit=2015.00,
-        ))
+        result = engine.submit(
+            _make_request(
+                pair="XAUUSD",
+                entry_price=2000.00,
+                stop_loss=1995.00,
+                take_profit=2015.00,
+            )
+        )
         assert result.status == OrderStatus.DRY_RUN
 
     def test_jpy_pair_structurally_valid(self):
         engine = _make_engine()
-        result = engine.submit(_make_request(
-            pair="USDJPY",
-            entry_price=155.000,
-            stop_loss=154.500,
-            take_profit=156.000,
-        ))
+        result = engine.submit(
+            _make_request(
+                pair="USDJPY",
+                entry_price=155.000,
+                stop_loss=154.500,
+                take_profit=156.000,
+            )
+        )
         assert result.status == OrderStatus.DRY_RUN
 
     def test_many_orders_different_signals(self):

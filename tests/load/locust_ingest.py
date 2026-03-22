@@ -41,11 +41,9 @@ from typing import Any, cast
 try:
     locust = importlib.import_module("locust")
 except ModuleNotFoundError as exc:
-    raise RuntimeError(
-        "Missing dependency 'locust'. Install it with: pip install locust"
-    ) from exc
+    raise RuntimeError("Missing dependency 'locust'. Install it with: pip install locust") from exc
 
-import websocket
+import websocket  # type: ignore[import-not-found]
 
 # ── Config ────────────────────────────────────────────────────────────────────
 
@@ -74,6 +72,7 @@ def _fire_request_event(**kwargs: Any) -> None:
 
 # ── Tick ingest user ──────────────────────────────────────────────────────────
 
+
 class TickIngestUser(locust.HttpUser):
     """
     Simulates the REST tick-ingest path.
@@ -84,18 +83,16 @@ class TickIngestUser(locust.HttpUser):
         return random.uniform(0.001, 0.01)  # ~100–1000 req/s per user
 
     def on_start(self) -> None:
-        self._auth_headers: dict[str, str] = (
-            {"Authorization": f"Bearer {TOKEN}"} if TOKEN else {}
-        )
+        self._auth_headers: dict[str, str] = {"Authorization": f"Bearer {TOKEN}"} if TOKEN else {}
 
     @locust.task(10)
     def ingest_tick(self) -> None:
-        pair  = random.choice(PAIRS)
+        pair = random.choice(PAIRS)
         price = round(1.0 + random.random() * 0.5, 5)
         payload = {
-            "symbol":    pair,
-            "bid":       price,
-            "ask":       round(price + 0.0002, 5),
+            "symbol": pair,
+            "bid": price,
+            "ask": round(price + 0.0002, 5),
             "timestamp": datetime.now(UTC).isoformat(),
         }
         with self.client.post(
@@ -119,9 +116,10 @@ class TickIngestUser(locust.HttpUser):
 
 # ── WebSocket user ────────────────────────────────────────────────────────────
 
+
 def _ws_url(path: str) -> str:
     base = WS_BASE.rstrip("/")
-    url  = f"{base}{path}"
+    url = f"{base}{path}"
     return f"{url}?token={TOKEN}" if TOKEN else url
 
 
@@ -135,7 +133,7 @@ class WsBehavior(locust.HttpUser):
     """
 
     def wait_time(self) -> float:
-        return random.uniform(55, 60)   # each VU re-opens after ~60 s if closed
+        return random.uniform(55, 60)  # each VU re-opens after ~60 s if closed
 
     def on_start(self) -> None:
         self._connected = False
@@ -155,9 +153,7 @@ class WsBehavior(locust.HttpUser):
 
         ws_app_ctor_obj = getattr(websocket, "WebSocketApp", None)
         if ws_app_ctor_obj is None:
-            raise RuntimeError(
-                "Missing dependency 'websocket-client'. Install it with: pip install websocket-client"
-            )
+            raise RuntimeError("Missing dependency 'websocket-client'. Install it with: pip install websocket-client")
         ws_app_ctor = cast(Callable[..., Any], ws_app_ctor_obj)
 
         def on_open(ws_app: Any) -> None:
@@ -216,6 +212,7 @@ class WsBehavior(locust.HttpUser):
 
 # ── Reconnect storm user ──────────────────────────────────────────────────────
 
+
 class ReconnectStormUser(locust.HttpUser):
     """
     Rapidly connects then immediately closes the WS.
@@ -227,15 +224,13 @@ class ReconnectStormUser(locust.HttpUser):
 
     @locust.task
     def reconnect(self) -> None:
-        url      = _ws_url("/prices")
-        ok       = False
+        url = _ws_url("/prices")
+        ok = False
         start_ms = time.time() * 1000
 
         ws_create_connection_obj = getattr(websocket, "create_connection", None)
         if ws_create_connection_obj is None:
-            raise RuntimeError(
-                "Missing dependency 'websocket-client'. Install it with: pip install websocket-client"
-            )
+            raise RuntimeError("Missing dependency 'websocket-client'. Install it with: pip install websocket-client")
         ws_create_connection = cast(
             Callable[..., Any],
             ws_create_connection_obj,

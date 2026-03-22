@@ -16,13 +16,15 @@ from context.live_context_bus import LiveContextBus
 def _setup_context_bus():
     """Setup context bus with a recent tick to avoid staleness."""
     bus = LiveContextBus()
-    bus.update_tick({
-        "symbol": "EURUSD",
-        "bid": 1.0850,
-        "ask": 1.0852,
-        "timestamp": 1700000000.0,
-        "source": "test",
-    })
+    bus.update_tick(
+        {
+            "symbol": "EURUSD",
+            "bid": 1.0850,
+            "ask": 1.0852,
+            "timestamp": 1700000000.0,
+            "source": "test",
+        }
+    )
     yield
     # No cleanup needed for singleton
 

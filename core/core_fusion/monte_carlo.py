@@ -41,8 +41,9 @@ class MonteCarloConfidence:
         self.simulations = simulations
         self._random = random.Random(seed)
 
-    def run(self, *, base_bias: float, coherence: float, volatility_index: float,
-            confidence_weight: float = 1.0) -> MonteCarloResult:
+    def run(
+        self, *, base_bias: float, coherence: float, volatility_index: float, confidence_weight: float = 1.0
+    ) -> MonteCarloResult:
         base_bias_clamped: float = clamp01(float(base_bias))
         c01: float = clamp01(float(coherence) / 100.0)
         vn: float = clamp01((float(volatility_index) - 10.0) / 30.0)
@@ -70,11 +71,15 @@ class MonteCarloConfidence:
         reliability_val: float = float(clamp01(cm))
 
         return MonteCarloResult(
-            conf12_raw=conf12_raw_val, reliability_score=reliability_val,
-            stability_index=si, total_simulations=self.simulations,
+            conf12_raw=conf12_raw_val,
+            reliability_score=reliability_val,
+            stability_index=si,
+            total_simulations=self.simulations,
             bias_mean=float(base_bias_clamped),
             volatility_mean=float(sum(vol_samples) / len(vol_samples)),
-            reflective_integrity=ri, timestamp=datetime.now(UTC).isoformat())
+            reflective_integrity=ri,
+            timestamp=datetime.now(UTC).isoformat(),
+        )
 
 
 class ReflectiveMonteCarlo:
@@ -95,9 +100,15 @@ class ReflectiveMonteCarlo:
     def calculate_meta_drift(self, frpc_gradient: float, tii_feedback: float, win_rate_mean: float) -> float:
         return self.config.alpha * frpc_gradient + self.config.beta * tii_feedback + self.config.gamma * win_rate_mean
 
-    def run_simulation(self, initial_state: MarketState, market_data: dict[str, float],
-                       signal_direction: str, entry_price: float, stop_loss: float,
-                       take_profit: float) -> FTTCResult:
+    def run_simulation(
+        self,
+        initial_state: MarketState,
+        market_data: dict[str, float],
+        signal_direction: str,
+        entry_price: float,
+        stop_loss: float,
+        take_profit: float,
+    ) -> FTTCResult:
         wins = 0
         returns: list[float] = []
         max_dds: list[float] = []
@@ -131,20 +142,28 @@ class ReflectiveMonteCarlo:
                 k = (wp * aw - (1 - wp) * al) / aw
                 optimal_size = clamp(k * 0.5, 0.0, 0.02)
 
-        return FTTCResult(win_probability=round(wp, 4), expected_return=round(er, 6),
-            max_drawdown_probability=round(mddp, 4), optimal_position_size=round(optimal_size, 4),
+        return FTTCResult(
+            win_probability=round(wp, 4),
+            expected_return=round(er, 6),
+            max_drawdown_probability=round(mddp, 4),
+            optimal_position_size=round(optimal_size, 4),
             confidence_interval=(round(ci[0], 6), round(ci[1], 6)),
             transition_probabilities={s.value: 0.2 for s in self.states if s != initial_state},
-            escape_rates={s.value: 0.5 for s in self.states}, meta_drift=round(md, 6))
+            escape_rates={s.value: 0.5 for s in self.states},
+            meta_drift=round(md, 6),
+        )
 
-    def _sim_trade(self, state: MarketState, direction: str, entry: float,
-                   sl: float, tp: float) -> dict[str, Any]:
+    def _sim_trade(self, state: MarketState, direction: str, entry: float, sl: float, tp: float) -> dict[str, Any]:
         fav = state in ({MarketState.BULLISH} if direction == "BUY" else {MarketState.BEARISH})
         won = self._rng.random() < (0.6 if fav else 0.4)
         risk = abs(entry - sl)
         reward = abs(tp - entry)
-        return {"won": won, "return": reward / entry if won else 0,
-                "loss": risk / entry if not won else 0, "max_drawdown": self._rng.uniform(0.01, 0.08)}
+        return {
+            "won": won,
+            "return": reward / entry if won else 0,
+            "loss": risk / entry if not won else 0,
+            "max_drawdown": self._rng.uniform(0.01, 0.08),
+        }
 
     def validate_signal(self, signal: dict[str, Any], market_data: dict[str, float]) -> dict[str, Any]:
         regime = market_data.get("regime", "RANGING")
@@ -153,13 +172,27 @@ class ReflectiveMonteCarlo:
         except ValueError:
             initial = MarketState.RANGING
 
-        r = self.run_simulation(initial, market_data, signal.get("direction", "BUY"),
-            signal.get("entry", 1.0), signal.get("stop_loss", 0.99), signal.get("take_profit", 1.02))
-        approved = r.win_probability >= 0.65 and r.meta_drift <= self.config.target_drift and r.max_drawdown_probability < 0.30
-        return {"approved": approved, "win_probability": r.win_probability,
-                "expected_return": r.expected_return, "optimal_position_size": r.optimal_position_size,
-                "confidence_interval": r.confidence_interval, "meta_drift": r.meta_drift,
-                "recommendation": "EXECUTE" if approved else "WAIT", "timestamp": r.timestamp}
+        r = self.run_simulation(
+            initial,
+            market_data,
+            signal.get("direction", "BUY"),
+            signal.get("entry", 1.0),
+            signal.get("stop_loss", 0.99),
+            signal.get("take_profit", 1.02),
+        )
+        approved = (
+            r.win_probability >= 0.65 and r.meta_drift <= self.config.target_drift and r.max_drawdown_probability < 0.30
+        )
+        return {
+            "approved": approved,
+            "win_probability": r.win_probability,
+            "expected_return": r.expected_return,
+            "optimal_position_size": r.optimal_position_size,
+            "confidence_interval": r.confidence_interval,
+            "meta_drift": r.meta_drift,
+            "recommendation": "EXECUTE" if approved else "WAIT",
+            "timestamp": r.timestamp,
+        }
 
 
 def create_fttc_engine(config: dict[str, Any] | None = None) -> ReflectiveMonteCarlo:

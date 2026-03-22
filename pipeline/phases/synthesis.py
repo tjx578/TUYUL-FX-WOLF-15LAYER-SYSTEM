@@ -109,6 +109,7 @@ def build_l12_synthesis(
                 calculate_atr_expansion_ratio,
                 detect_volatility_regime,
             )
+
             _atr_ratio = calculate_atr_expansion_ratio(_atr_current, _atr_mean_20)
             _regime_type = detect_volatility_regime(_atr_ratio)
         except Exception:  # noqa: BLE001

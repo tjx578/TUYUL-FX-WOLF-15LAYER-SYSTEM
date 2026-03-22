@@ -14,6 +14,7 @@ from engines.monte_carlo_engine import (
 # Fixtures
 # ---------------------------------------------------------------------------
 
+
 def _make_returns(n: int = 100, win_rate: float = 0.65, seed: int = 42) -> list[float]:
     """Generate synthetic trade returns."""
     rng = np.random.default_rng(seed)
@@ -30,8 +31,8 @@ def _make_returns(n: int = 100, win_rate: float = 0.65, seed: int = 42) -> list[
 # Tests
 # ---------------------------------------------------------------------------
 
-class TestMonteCarloEngine:
 
+class TestMonteCarloEngine:
     def test_basic_run(self) -> None:
         engine = MonteCarloEngine(simulations=500, seed=42)
         returns = _make_returns(100, win_rate=0.65)

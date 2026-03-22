@@ -1,4 +1,4 @@
-﻿"""
+"""
 dashboard/state_manager.py — Centralised dashboard state
 
 Manages account state, active signals, risk overrides, and heartbeat
@@ -17,17 +17,20 @@ from typing import Any
 from dashboard.rwlock import RWLock
 
 # ── Terminal signal states (excluded from active_signals) ────────────
-_TERMINAL_STATUSES: frozenset[str] = frozenset({
-    "TRADE_CLOSED",
-    "SIGNAL_EXPIRED",
-    "PENDING_CANCELLED",
-    "TRADE_ABORTED",
-})
+_TERMINAL_STATUSES: frozenset[str] = frozenset(
+    {
+        "TRADE_CLOSED",
+        "SIGNAL_EXPIRED",
+        "PENDING_CANCELLED",
+        "TRADE_ABORTED",
+    }
+)
 
 
 @dataclass
 class AccountState:
     """Current account state snapshot."""
+
     balance: float = 0.0
     equity: float = 0.0
     open_positions: int = 0
@@ -37,6 +40,7 @@ class AccountState:
 @dataclass
 class SignalState:
     """State for a single L12 signal through its lifecycle."""
+
     signal_id: str = ""
     symbol: str = ""
     verdict: str = ""
@@ -112,11 +116,7 @@ class StateManager:
     def get_active_signals(self) -> list[SignalState]:
         """Return deep copies of all non-terminal signals."""
         with self._lock.read():
-            return [
-                copy.deepcopy(s)
-                for s in self._signals.values()
-                if s.status not in _TERMINAL_STATUSES
-            ]
+            return [copy.deepcopy(s) for s in self._signals.values() if s.status not in _TERMINAL_STATUSES]
 
     # ── Risk overrides ────────────────────────────────────────────
 

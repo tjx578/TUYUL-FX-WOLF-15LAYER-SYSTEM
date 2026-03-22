@@ -1,5 +1,4 @@
 import math
-
 from types import SimpleNamespace
 
 from engines import create_engine_suite
@@ -49,9 +48,7 @@ def _make_candles(n: int = 160, start: float = 100.0) -> dict:
         h = max(o, c) + 0.5
         l = min(o, c) - 0.5  # noqa: E741
         v = 1000 + (i % 9) * 80
-        candles.append(
-            {"open": o, "high": h, "low": l, "close": c, "volume": v, "timestamp": i}
-        )
+        candles.append({"open": o, "high": h, "low": l, "close": c, "volume": v, "timestamp": i})
     return {"M15": candles}
 
 
@@ -85,7 +82,11 @@ def test_engine_suite_runs_end_to_end():
     sl = precision.stop_loss if precision.is_valid else entry - 2.0
     tp = precision.tp1 if precision.is_valid else entry + 4.0
     risk_sim = suite["risk"].analyze(  # type: ignore[attr-defined]
-        candles, direction="BUY", entry_price=entry, stop_loss=sl, take_profit=tp,
+        candles,
+        direction="BUY",
+        entry_price=entry,
+        stop_loss=sl,
+        take_profit=tp,
     )
 
     advisory = suite["advisory"].analyze(  # type: ignore[attr-defined]
@@ -143,12 +144,8 @@ def test_advisory_detects_lockout_conflict():
                 coherence_score=0.4,
                 coherence_verdict="ABORT",
             ),
-            "context": SimpleNamespace(
-                context_score=0.6, context_verdict="NEUTRAL"
-            ),
-            "momentum": SimpleNamespace(
-                momentum_score=0.5, momentum_bias="BULLISH"
-            ),
+            "context": SimpleNamespace(context_score=0.6, context_verdict="NEUTRAL"),
+            "momentum": SimpleNamespace(momentum_score=0.5, momentum_bias="BULLISH"),
             "precision": SimpleNamespace(
                 precision_score=0.8,
                 entry_optimal=1.10,
@@ -156,12 +153,8 @@ def test_advisory_detects_lockout_conflict():
                 tp1=1.12,
                 risk_reward_1=2.0,
             ),
-            "structure": SimpleNamespace(
-                structure_score=0.7, structure_bias="BULLISH"
-            ),
-            "risk_simulation": SimpleNamespace(
-                risk_score=0.8, win_probability=0.65
-            ),
+            "structure": SimpleNamespace(structure_score=0.7, structure_bias="BULLISH"),
+            "risk_simulation": SimpleNamespace(risk_score=0.8, win_probability=0.65),
         }
     )
     assert result.advisory_action == "ABORT"

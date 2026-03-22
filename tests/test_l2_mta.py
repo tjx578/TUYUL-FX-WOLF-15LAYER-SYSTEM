@@ -16,7 +16,6 @@ All tests are self-contained — no external API calls.
 from __future__ import annotations
 
 import math
-
 from unittest.mock import MagicMock
 
 import pytest
@@ -34,6 +33,7 @@ from analysis.layers.L2_mta import (
 # ═══════════════════════════════════════════════════════════════════
 # FIXTURES
 # ═══════════════════════════════════════════════════════════════════
+
 
 @pytest.fixture
 def analyzer() -> L2MTAAnalyzer:
@@ -74,8 +74,10 @@ def _make_candle_source(
 
     if candle_map is not None:
         typed_map: dict[str, dict[str, float] | None] = candle_map
+
         def _get(symbol: str, tf: str) -> dict[str, float] | None:
             return typed_map.get(tf)
+
         source.get_candle.side_effect = _get
     elif default_candle is not None:
         source.get_candle.return_value = default_candle
@@ -86,23 +88,43 @@ def _make_candle_source(
 
 
 # Required output keys for pipeline compatibility
-_REQUIRED_KEYS = frozenset({
-    "mta_compliance", "hierarchy_followed", "reflex_coherence", "conf12",
-    "frpc_energy", "frpc_state", "field_phase", "valid", "direction",
-    "composite_bias", "available_timeframes", "aligned",
-    "alignment_strength", "per_tf_bias",
-})
+_REQUIRED_KEYS = frozenset(
+    {
+        "mta_compliance",
+        "hierarchy_followed",
+        "reflex_coherence",
+        "conf12",
+        "frpc_energy",
+        "frpc_state",
+        "field_phase",
+        "valid",
+        "direction",
+        "composite_bias",
+        "available_timeframes",
+        "aligned",
+        "alignment_strength",
+        "per_tf_bias",
+    }
+)
 
-_BAYESIAN_KEYS = frozenset({
-    "p_mta_bull", "p_mta_bear", "bayesian_rc", "bayesian_rc_damped",
-    "entropy_alignment", "sensitivity_multiplier", "regime_used",
-    "volatility_dampener",
-})
+_BAYESIAN_KEYS = frozenset(
+    {
+        "p_mta_bull",
+        "p_mta_bear",
+        "bayesian_rc",
+        "bayesian_rc_damped",
+        "entropy_alignment",
+        "sensitivity_multiplier",
+        "regime_used",
+        "volatility_dampener",
+    }
+)
 
 
 # ═══════════════════════════════════════════════════════════════════
 # §1  PURE MATH FUNCTIONS
 # ═══════════════════════════════════════════════════════════════════
+
 
 class TestSigmoid:
     """Numerically stable sigmoid."""
@@ -189,7 +211,10 @@ class TestCandleFeatures:
     def test_slope_from_closes_list(self) -> None:
         """When candle has 'closes' list, use linear regression slope."""
         candle = {
-            "open": 1.0800, "high": 1.0870, "low": 1.0790, "close": 1.0860,
+            "open": 1.0800,
+            "high": 1.0870,
+            "low": 1.0790,
+            "close": 1.0860,
             "closes": [1.0800, 1.0810, 1.0830, 1.0845, 1.0860],
         }
         slope, _, _ = _candle_features(candle)
@@ -198,7 +223,10 @@ class TestCandleFeatures:
     def test_slope_clamped_to_range(self) -> None:
         """Slope proxy should be clamped to [-2, +2]."""
         candle = {
-            "open": 1.0, "high": 2.0, "low": 0.5, "close": 1.5,
+            "open": 1.0,
+            "high": 2.0,
+            "low": 0.5,
+            "close": 1.5,
             "closes": [0.5, 0.6, 0.8, 1.2, 1.5],
         }
         slope, _, _ = _candle_features(candle)
@@ -323,11 +351,14 @@ class TestEntropyAlignment:
 # §2  ANALYZER INTEGRATION
 # ═══════════════════════════════════════════════════════════════════
 
+
 class TestAnalyzerBullish:
     """All TFs bullish → BULLISH direction, positive bias, aligned."""
 
     def test_all_bullish(
-        self, analyzer: L2MTAAnalyzer, bullish_candle: dict,
+        self,
+        analyzer: L2MTAAnalyzer,
+        bullish_candle: dict,
     ) -> None:
         analyzer.context = _make_candle_source(default_candle=bullish_candle)
         result = analyzer.analyze("EURUSD")
@@ -339,7 +370,9 @@ class TestAnalyzerBullish:
         assert result["bayesian_rc"] > 0
 
     def test_strong_bullish_high_rc(
-        self, analyzer: L2MTAAnalyzer, strong_bullish_candle: dict,
+        self,
+        analyzer: L2MTAAnalyzer,
+        strong_bullish_candle: dict,
     ) -> None:
         analyzer.context = _make_candle_source(
             default_candle=strong_bullish_candle,
@@ -357,7 +390,9 @@ class TestAnalyzerBearish:
     """All TFs bearish → BEARISH direction, negative bias."""
 
     def test_all_bearish(
-        self, analyzer: L2MTAAnalyzer, bearish_candle: dict,
+        self,
+        analyzer: L2MTAAnalyzer,
+        bearish_candle: dict,
     ) -> None:
         analyzer.context = _make_candle_source(default_candle=bearish_candle)
         result = analyzer.analyze("EURUSD")
@@ -372,7 +407,9 @@ class TestAnalyzerNeutral:
     """Doji candles → NEUTRAL direction, zero bias."""
 
     def test_doji_neutral(
-        self, analyzer: L2MTAAnalyzer, doji_candle: dict,
+        self,
+        analyzer: L2MTAAnalyzer,
+        doji_candle: dict,
     ) -> None:
         analyzer.context = _make_candle_source(default_candle=doji_candle)
         result = analyzer.analyze("EURUSD")
@@ -386,14 +423,19 @@ class TestAnalyzerMixed:
     """Mixed TF signals → direction follows HTF weight dominance."""
 
     def test_htf_bearish_ltf_bullish(
-        self, analyzer: L2MTAAnalyzer,
-        bullish_candle: dict[str, float], bearish_candle: dict[str, float],
+        self,
+        analyzer: L2MTAAnalyzer,
+        bullish_candle: dict[str, float],
+        bearish_candle: dict[str, float],
     ) -> None:
         """HTF (MN,W1,D1,H4) bearish + LTF (H1,M15) bullish → BEARISH."""
         candle_map: dict[str, dict[str, float] | None] = {
-            "MN": bearish_candle, "W1": bearish_candle,
-            "D1": bearish_candle, "H4": bearish_candle,
-            "H1": bullish_candle, "M15": bullish_candle,
+            "MN": bearish_candle,
+            "W1": bearish_candle,
+            "D1": bearish_candle,
+            "H4": bearish_candle,
+            "H1": bullish_candle,
+            "M15": bullish_candle,
         }
         analyzer.context = _make_candle_source(candle_map=candle_map)
         result = analyzer.analyze("EURUSD")
@@ -403,14 +445,19 @@ class TestAnalyzerMixed:
         assert result["composite_bias"] < 0
 
     def test_htf_bullish_ltf_bearish(
-        self, analyzer: L2MTAAnalyzer,
-        bullish_candle: dict[str, float], bearish_candle: dict[str, float],
+        self,
+        analyzer: L2MTAAnalyzer,
+        bullish_candle: dict[str, float],
+        bearish_candle: dict[str, float],
     ) -> None:
         """HTF bullish + LTF bearish → still BULLISH (HTF prior dominates)."""
         candle_map: dict[str, dict[str, float] | None] = {
-            "MN": bullish_candle, "W1": bullish_candle,
-            "D1": bullish_candle, "H4": bullish_candle,
-            "H1": bearish_candle, "M15": bearish_candle,
+            "MN": bullish_candle,
+            "W1": bullish_candle,
+            "D1": bullish_candle,
+            "H4": bullish_candle,
+            "H1": bearish_candle,
+            "M15": bearish_candle,
         }
         analyzer.context = _make_candle_source(candle_map=candle_map)
         result = analyzer.analyze("EURUSD")
@@ -419,8 +466,10 @@ class TestAnalyzerMixed:
         assert result["direction"] == "BULLISH"
 
     def test_conflicting_signals_lower_alignment(
-        self, analyzer: L2MTAAnalyzer,
-        bullish_candle: dict[str, float], bearish_candle: dict[str, float],
+        self,
+        analyzer: L2MTAAnalyzer,
+        bullish_candle: dict[str, float],
+        bearish_candle: dict[str, float],
     ) -> None:
         """Mixed signals → lower entropy alignment than uniform."""
         # Uniform bullish
@@ -429,9 +478,12 @@ class TestAnalyzerMixed:
 
         # Mixed
         candle_map: dict[str, dict[str, float] | None] = {
-            "MN": bullish_candle, "W1": bearish_candle,
-            "D1": bullish_candle, "H4": bearish_candle,
-            "H1": bullish_candle, "M15": bearish_candle,
+            "MN": bullish_candle,
+            "W1": bearish_candle,
+            "D1": bullish_candle,
+            "H4": bearish_candle,
+            "H1": bullish_candle,
+            "M15": bearish_candle,
         }
         analyzer.context = _make_candle_source(candle_map=candle_map)
         mixed = analyzer.analyze("EURUSD")
@@ -455,7 +507,9 @@ class TestAnalyzerFallback:
         assert result["p_mta_bear"] == 0.5
 
     def test_two_timeframes_below_minimum(
-        self, analyzer: L2MTAAnalyzer, bullish_candle: dict[str, float],
+        self,
+        analyzer: L2MTAAnalyzer,
+        bullish_candle: dict[str, float],
     ) -> None:
         candle_map: dict[str, dict[str, float] | None] = {"MN": bullish_candle, "W1": bullish_candle}
         analyzer.context = _make_candle_source(candle_map=candle_map)
@@ -465,10 +519,13 @@ class TestAnalyzerFallback:
         assert result["available_timeframes"] == 2
 
     def test_exactly_three_timeframes_valid(
-        self, analyzer: L2MTAAnalyzer, bullish_candle: dict[str, float],
+        self,
+        analyzer: L2MTAAnalyzer,
+        bullish_candle: dict[str, float],
     ) -> None:
         candle_map: dict[str, dict[str, float] | None] = {
-            "MN": bullish_candle, "W1": bullish_candle,
+            "MN": bullish_candle,
+            "W1": bullish_candle,
             "D1": bullish_candle,
         }
         analyzer.context = _make_candle_source(candle_map=candle_map)
@@ -482,8 +539,10 @@ class TestAnalyzerBusPriority:
     """Bus takes priority over context for candle source."""
 
     def test_bus_over_context(
-        self, analyzer: L2MTAAnalyzer,
-        bullish_candle: dict, bearish_candle: dict,
+        self,
+        analyzer: L2MTAAnalyzer,
+        bullish_candle: dict,
+        bearish_candle: dict,
     ) -> None:
         analyzer.context = _make_candle_source(default_candle=bearish_candle)
         analyzer.bus = _make_candle_source(default_candle=bullish_candle)
@@ -496,11 +555,14 @@ class TestAnalyzerBusPriority:
 # §3  ENGINE INTEGRATION (MOCKED)
 # ═══════════════════════════════════════════════════════════════════
 
+
 class TestReflexEngineIntegration:
     """ReflexEmotionCore integration with proper mocking."""
 
     def test_reflex_enriches_coherence(
-        self, analyzer: L2MTAAnalyzer, bullish_candle: dict,
+        self,
+        analyzer: L2MTAAnalyzer,
+        bullish_candle: dict,
     ) -> None:
         """When reflex engine returns high coherence, it blends into RC."""
         analyzer.context = _make_candle_source(default_candle=bullish_candle)
@@ -531,7 +593,9 @@ class TestReflexEngineIntegration:
         mock_reflex.compute_reflex_emotion.assert_called_once()
 
     def test_reflex_failure_graceful(
-        self, analyzer: L2MTAAnalyzer, bullish_candle: dict,
+        self,
+        analyzer: L2MTAAnalyzer,
+        bullish_candle: dict,
     ) -> None:
         """Engine exception → falls back to pure Bayesian RC."""
         analyzer.context = _make_candle_source(default_candle=bullish_candle)
@@ -539,7 +603,9 @@ class TestReflexEngineIntegration:
         mock_bus = _make_candle_source(default_candle=bullish_candle)
         mock_bus.get_layer_cache.side_effect = None
         mock_bus.get_layer_cache.return_value = {
-            "regime": "TREND_UP", "volatility_level": "NORMAL", "atr_pct": 0.5,
+            "regime": "TREND_UP",
+            "volatility_level": "NORMAL",
+            "atr_pct": 0.5,
         }
         analyzer.bus = mock_bus
 
@@ -556,13 +622,17 @@ class TestFusionIntegration:
     """FusionIntegrator integration with proper mocking."""
 
     def test_fusion_ok_enriches_conf12(
-        self, analyzer: L2MTAAnalyzer, strong_bullish_candle: dict,
+        self,
+        analyzer: L2MTAAnalyzer,
+        strong_bullish_candle: dict,
     ) -> None:
         """Fusion OK status → real conf12 value."""
         mock_bus = _make_candle_source(default_candle=strong_bullish_candle)
         mock_bus.get_layer_cache.side_effect = None
         mock_bus.get_layer_cache.return_value = {
-            "regime": "TREND_UP", "volatility_level": "NORMAL", "atr_pct": 0.5,
+            "regime": "TREND_UP",
+            "volatility_level": "NORMAL",
+            "atr_pct": 0.5,
         }
         analyzer.bus = mock_bus
 
@@ -586,13 +656,17 @@ class TestFusionIntegration:
         assert result["field_phase"] == "expansion"
 
     def test_fusion_aborted_extracts_lineage(
-        self, analyzer: L2MTAAnalyzer, bullish_candle: dict,
+        self,
+        analyzer: L2MTAAnalyzer,
+        bullish_candle: dict,
     ) -> None:
         """Fusion ABORTED → extract from confidence_lineage."""
         mock_bus = _make_candle_source(default_candle=bullish_candle)
         mock_bus.get_layer_cache.side_effect = None
         mock_bus.get_layer_cache.return_value = {
-            "regime": "TRANSITION", "volatility_level": "NORMAL", "atr_pct": 0.3,
+            "regime": "TRANSITION",
+            "volatility_level": "NORMAL",
+            "atr_pct": 0.3,
         }
         analyzer.bus = mock_bus
 
@@ -610,13 +684,17 @@ class TestFusionIntegration:
         assert result["frpc_state"] == "DESYNC"
 
     def test_fusion_failure_graceful(
-        self, analyzer: L2MTAAnalyzer, bullish_candle: dict,
+        self,
+        analyzer: L2MTAAnalyzer,
+        bullish_candle: dict,
     ) -> None:
         """Fusion exception → defaults to 0 values."""
         mock_bus = _make_candle_source(default_candle=bullish_candle)
         mock_bus.get_layer_cache.side_effect = None
         mock_bus.get_layer_cache.return_value = {
-            "regime": "RANGE", "volatility_level": "NORMAL", "atr_pct": 0.3,
+            "regime": "RANGE",
+            "volatility_level": "NORMAL",
+            "atr_pct": 0.3,
         }
         analyzer.bus = mock_bus
 
@@ -633,11 +711,14 @@ class TestFusionIntegration:
 # §4  PIPELINE CONTRACT
 # ═══════════════════════════════════════════════════════════════════
 
+
 class TestPipelineContract:
     """Output schema must satisfy all downstream consumers."""
 
     def test_valid_result_has_all_required_keys(
-        self, analyzer: L2MTAAnalyzer, bullish_candle: dict,
+        self,
+        analyzer: L2MTAAnalyzer,
+        bullish_candle: dict,
     ) -> None:
         analyzer.context = _make_candle_source(default_candle=bullish_candle)
         result = analyzer.analyze("EURUSD")
@@ -645,7 +726,9 @@ class TestPipelineContract:
         assert not missing, f"Missing required keys: {missing}"
 
     def test_valid_result_has_bayesian_keys(
-        self, analyzer: L2MTAAnalyzer, bullish_candle: dict,
+        self,
+        analyzer: L2MTAAnalyzer,
+        bullish_candle: dict,
     ) -> None:
         analyzer.context = _make_candle_source(default_candle=bullish_candle)
         result = analyzer.analyze("EURUSD")
@@ -653,7 +736,8 @@ class TestPipelineContract:
         assert not missing, f"Missing Bayesian keys: {missing}"
 
     def test_fallback_result_has_all_required_keys(
-        self, analyzer: L2MTAAnalyzer,
+        self,
+        analyzer: L2MTAAnalyzer,
     ) -> None:
         analyzer.context = _make_candle_source()
         result = analyzer.analyze("EURUSD")
@@ -661,7 +745,8 @@ class TestPipelineContract:
         assert not missing, f"Missing required keys in fallback: {missing}"
 
     def test_fallback_result_has_bayesian_keys(
-        self, analyzer: L2MTAAnalyzer,
+        self,
+        analyzer: L2MTAAnalyzer,
     ) -> None:
         analyzer.context = _make_candle_source()
         result = analyzer.analyze("EURUSD")
@@ -669,7 +754,9 @@ class TestPipelineContract:
         assert not missing, f"Missing Bayesian keys in fallback: {missing}"
 
     def test_p_mta_sum_to_one(
-        self, analyzer: L2MTAAnalyzer, bullish_candle: dict,
+        self,
+        analyzer: L2MTAAnalyzer,
+        bullish_candle: dict,
     ) -> None:
         analyzer.context = _make_candle_source(default_candle=bullish_candle)
         result = analyzer.analyze("EURUSD")
@@ -677,14 +764,18 @@ class TestPipelineContract:
         assert total == pytest.approx(1.0, abs=0.01)
 
     def test_reflex_coherence_non_negative(
-        self, analyzer: L2MTAAnalyzer, bullish_candle: dict,
+        self,
+        analyzer: L2MTAAnalyzer,
+        bullish_candle: dict,
     ) -> None:
         analyzer.context = _make_candle_source(default_candle=bullish_candle)
         result = analyzer.analyze("EURUSD")
         assert result["reflex_coherence"] >= 0.0
 
     def test_alignment_strength_bounded(
-        self, analyzer: L2MTAAnalyzer, bullish_candle: dict,
+        self,
+        analyzer: L2MTAAnalyzer,
+        bullish_candle: dict,
     ) -> None:
         analyzer.context = _make_candle_source(default_candle=bullish_candle)
         result = analyzer.analyze("EURUSD")
@@ -699,7 +790,9 @@ class TestComputeLegacy:
     """Legacy compute() method backward compatibility."""
 
     def test_compute_returns_per_tf_and_macro(
-        self, analyzer: L2MTAAnalyzer, bullish_candle: dict,
+        self,
+        analyzer: L2MTAAnalyzer,
+        bullish_candle: dict,
     ) -> None:
         analyzer.context = _make_candle_source(default_candle=bullish_candle)
         result = analyzer.compute("EURUSD", macro_bias="BULLISH")
@@ -709,19 +802,22 @@ class TestComputeLegacy:
         assert result["macro_bias"] == "BULLISH"
 
     def test_compute_per_tf_has_weight_bias_candle(
-        self, analyzer: L2MTAAnalyzer, bullish_candle: dict,
+        self,
+        analyzer: L2MTAAnalyzer,
+        bullish_candle: dict,
     ) -> None:
         analyzer.context = _make_candle_source(default_candle=bullish_candle)
         result = analyzer.compute("EURUSD")
 
-        for tf, detail in result["per_tf"].items():
+        for _tf, detail in result["per_tf"].items():
             assert "weight" in detail
             assert "bias" in detail
             assert "candle" in detail
             assert detail["bias"] in ("BULLISH", "BEARISH", "NEUTRAL")
 
     def test_compute_no_data_neutral(
-        self, analyzer: L2MTAAnalyzer,
+        self,
+        analyzer: L2MTAAnalyzer,
     ) -> None:
         analyzer.context = _make_candle_source()
         result = analyzer.compute("EURUSD")
@@ -735,11 +831,13 @@ class TestComputeLegacy:
 # §5  EDGE CASES & NUMERICAL STABILITY
 # ═══════════════════════════════════════════════════════════════════
 
+
 class TestEdgeCases:
     """Numerical edge cases and error resilience."""
 
     def test_context_exception_graceful(
-        self, analyzer: L2MTAAnalyzer,
+        self,
+        analyzer: L2MTAAnalyzer,
     ) -> None:
         """get_candle raising exception → treated as None."""
         source = MagicMock()
@@ -754,8 +852,10 @@ class TestEdgeCases:
     def test_extreme_candle_values(self, analyzer: L2MTAAnalyzer) -> None:
         """Very large price values → no overflow."""
         big_candle = {
-            "open": 50000.0, "high": 51000.0,
-            "low": 49000.0, "close": 50800.0,
+            "open": 50000.0,
+            "high": 51000.0,
+            "low": 49000.0,
+            "close": 50800.0,
         }
         analyzer.context = _make_candle_source(default_candle=big_candle)
         result = analyzer.analyze("XAUUSD")
@@ -767,8 +867,10 @@ class TestEdgeCases:
     def test_micro_price_differences(self, analyzer: L2MTAAnalyzer) -> None:
         """Tiny open-close difference → should not explode."""
         micro_candle = {
-            "open": 1.08500, "high": 1.08501,
-            "low": 1.08499, "close": 1.08501,
+            "open": 1.08500,
+            "high": 1.08501,
+            "low": 1.08499,
+            "close": 1.08501,
         }
         analyzer.context = _make_candle_source(default_candle=micro_candle)
         result = analyzer.analyze("EURUSD")
@@ -787,6 +889,7 @@ class TestEdgeCases:
 # ═══════════════════════════════════════════════════════════════════
 # §6  PARAMETRIZED BAYESIAN VERIFICATION
 # ═══════════════════════════════════════════════════════════════════
+
 
 class TestBayesianMathVerification:
     """Verify mathematical properties of the Bayesian fusion chain."""
@@ -826,8 +929,12 @@ class TestBayesianMathVerification:
         for i, tf in enumerate(tfs):
             probs[tf] = 0.85 if i < n_bullish_tfs else 0.15
         weights = {
-            "MN": 0.35, "W1": 0.25, "D1": 0.15,
-            "H4": 0.15, "H1": 0.07, "M15": 0.03,
+            "MN": 0.35,
+            "W1": 0.25,
+            "D1": 0.15,
+            "H4": 0.15,
+            "H1": 0.07,
+            "M15": 0.03,
         }
         bull, bear = _hierarchical_bayesian_fusion(probs, weights)
         p_mta = max(bull, bear)

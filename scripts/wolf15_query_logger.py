@@ -1,6 +1,7 @@
 """
 Script to issue Wolf-15 system queries and log raw responses for manual review.
 """
+
 import json
 
 import requests
@@ -25,6 +26,7 @@ QUERIES = [
     ("/api/v1/prices/USDCAD", None, "regime:macro:USDCAD:hash"),
 ]
 
+
 def issue_query(endpoint, params=None):
     url = BASE_URL + endpoint
     try:
@@ -33,6 +35,7 @@ def issue_query(endpoint, params=None):
         return resp.json()
     except Exception as e:
         return {"error": str(e)}
+
 
 def main():
     results = []
@@ -45,6 +48,7 @@ def main():
     with open("wolf15_query_log.json", "w") as f:
         json.dump(results, f, indent=2)
     print("\nAll queries completed. Results saved to wolf15_query_log.json.")
+
 
 if __name__ == "__main__":
     main()

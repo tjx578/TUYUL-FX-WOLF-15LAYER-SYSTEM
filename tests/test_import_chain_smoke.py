@@ -12,7 +12,6 @@ import importlib
 
 import pytest
 
-
 # ──────────────────────────────────────────────────────────────────────────────
 # §1  core.core_fusion_unified shim
 # ──────────────────────────────────────────────────────────────────────────────
@@ -22,9 +21,7 @@ import pytest
 def test_core_fusion_unified_shim_importable() -> None:
     """``from core.core_fusion_unified import FusionIntegrator`` must resolve."""
     mod = importlib.import_module("core.core_fusion_unified")
-    assert hasattr(mod, "FusionIntegrator"), (
-        "core.core_fusion_unified shim is missing FusionIntegrator"
-    )
+    assert hasattr(mod, "FusionIntegrator"), "core.core_fusion_unified shim is missing FusionIntegrator"
 
 
 @pytest.mark.smoke
@@ -32,13 +29,9 @@ def test_core_fusion_unified_shim_returns_real_class() -> None:
     """FusionIntegrator from shim must be a real class, not a stub."""
     from core.core_fusion_unified import FusionIntegrator
 
-    assert isinstance(FusionIntegrator, type), (
-        "FusionIntegrator from shim is not a type"
-    )
+    assert isinstance(FusionIntegrator, type), "FusionIntegrator from shim is not a type"
     doc = getattr(FusionIntegrator, "__doc__", "") or ""
-    assert "Stub:" not in doc, (
-        f"FusionIntegrator from shim resolved to a stub: {doc!r}"
-    )
+    assert "Stub:" not in doc, f"FusionIntegrator from shim resolved to a stub: {doc!r}"
 
 
 @pytest.mark.smoke
@@ -48,9 +41,7 @@ def test_core_fusion_unified_shim_all_populated() -> None:
     import core.core_fusion_unified as shim
 
     for name in fusion_pkg.__all__:
-        assert name in shim.__all__, (
-            f"core.core_fusion_unified shim is missing symbol: {name!r}"
-        )
+        assert name in shim.__all__, f"core.core_fusion_unified shim is missing symbol: {name!r}"
         assert getattr(shim, name) is getattr(fusion_pkg, name), (
             f"core.core_fusion_unified.{name} is not the same object as core.core_fusion.{name}"
         )
@@ -76,9 +67,7 @@ def test_core_import_fusion_integrator_is_real_class() -> None:
 
     assert isinstance(FusionIntegrator, type)
     doc = getattr(FusionIntegrator, "__doc__", "") or ""
-    assert "Stub:" not in doc, (
-        f"core.FusionIntegrator is a stub: {doc!r}"
-    )
+    assert "Stub:" not in doc, f"core.FusionIntegrator is a stub: {doc!r}"
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -87,7 +76,7 @@ def test_core_import_fusion_integrator_is_real_class() -> None:
 
 _CORE_UNIFIED_MODULES = [
     "core.core_cognitive_unified",
-    "core.core_fusion_unified",       # shim (new)
+    "core.core_fusion_unified",  # shim (new)
     "core.core_quantum_unified",
     "core.core_reflective_unified",
 ]
@@ -122,9 +111,7 @@ def test_fusion_symbols_all_non_stub() -> None:
         if "Stub:" in doc:
             stubs.append(f"{name} (stub)")
 
-    assert not stubs, (
-        f"The following core fusion symbols are stubs or missing: {stubs}"
-    )
+    assert not stubs, f"The following core fusion symbols are stubs or missing: {stubs}"
 
 
 # ──────────────────────────────────────────────────────────────────────────────

@@ -79,9 +79,7 @@ class MonteCarloEngine:
             ValueError: If insufficient trade samples are provided.
         """
         if len(returns) < self.min_trades:
-            raise ValueError(
-                f"Minimum {self.min_trades} trades required, got {len(returns)}"
-            )
+            raise ValueError(f"Minimum {self.min_trades} trades required, got {len(returns)}")
 
         arr = np.asarray(returns, dtype=np.float64)
         n = arr.shape[0]
@@ -128,10 +126,7 @@ class MonteCarloEngine:
         ror = float(ruin_count / self.simulations)
         ev = float(np.mean(total_pnls))
 
-        passed = bool(
-            mean_win_prob >= self.win_threshold
-            and pf >= self.pf_threshold
-        )
+        passed = bool(mean_win_prob >= self.win_threshold and pf >= self.pf_threshold)
 
         return MonteCarloResult(
             win_probability=round(mean_win_prob, 4),

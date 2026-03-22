@@ -8,8 +8,6 @@ it reads APP_ENV / ENV env vars and returns bool.
 from __future__ import annotations
 
 import os
-
-import pytest
 from unittest.mock import patch
 
 

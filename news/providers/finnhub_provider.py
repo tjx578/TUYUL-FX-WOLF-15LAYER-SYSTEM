@@ -51,6 +51,7 @@ class FinnhubProvider:
         """
         try:
             from ingest.finnhub_key_manager import finnhub_keys
+
             key = finnhub_keys.current_key()
             if key:
                 return key
@@ -91,11 +92,10 @@ class FinnhubProvider:
                 attempt += 1
                 logger.debug("Finnhub retry %d/%d: %s", attempt, self._max_retries, exc)
                 import asyncio
-                await asyncio.sleep(min(2 ** attempt, 10))
+
+                await asyncio.sleep(min(2**attempt, 10))
         else:
-            raise ProviderUnavailableError(
-                self.name, f"All {self._max_retries} retries exhausted: {last_exc}"
-            )
+            raise ProviderUnavailableError(self.name, f"All {self._max_retries} retries exhausted: {last_exc}")
 
         try:
             data = resp.json()

@@ -93,18 +93,23 @@ jobs:
     steps:
       - name: Evaluate security results
         run: |
-          FAILED=0
-          for JOB_RESULT in \
-            "${{ needs.pip-audit.result }}" \
-            "${{ needs.npm-audit.result }}" \
-            "${{ needs.secret-scan.result }}"; do
-            if [[ "$JOB_RESULT" != "success" ]]; then
-              FAILED=1
+          set -euo pipefail
+
+          declare -A results=(
+            ["pip-audit"]="${{ needs.pip-audit.result }}"
+            ["npm-audit"]="${{ needs.npm-audit.result }}"
+            ["secret-scan"]="${{ needs.secret-scan.result }}"
+          )
+
+          failed=0
+          for job in "${!results[@]}"; do
+            if [[ "${results[$job]}" != "success" ]]; then
+              echo "::error::$job failed (result=${results[$job]})"
+              failed=1
             fi
           done
 
-          if [[ "$FAILED" -eq 1 ]]; then
-            echo "::error::Security scan failed — review artifacts"
+          if [[ "$failed" -eq 1 ]]; then
             exit 1
           fi
 

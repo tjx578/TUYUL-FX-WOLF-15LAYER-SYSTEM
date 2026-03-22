@@ -2,13 +2,15 @@
 # loop.run_in_executor(None, redis_client.xreadgroup, ...)
 
 # ✅ NEW — native async
-from infrastructure.stream_consumer import StreamConsumer, StreamBinding
+from infrastructure.stream_consumer import StreamBinding, StreamConsumer
+
 
 async def handle_signal(stream: str, msg_id: str, fields: dict[str, str]) -> None:
     """Process a signal message. Called by StreamConsumer after XREADGROUP."""
-    symbol = fields.get("symbol", "")
-    verdict = fields.get("verdict", "")
+    fields.get("symbol", "")
+    fields.get("verdict", "")
     # ... your processing logic ...
+
 
 consumer = StreamConsumer(
     bindings=[
@@ -20,10 +22,13 @@ consumer = StreamConsumer(
     ],
 )
 
+
 # In your async main:
 async def main():
     await consumer.start()  # Blocks until stop() called
 
+
 if __name__ == "__main__":
     import asyncio
+
     asyncio.run(main())

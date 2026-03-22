@@ -48,12 +48,14 @@ class TestExhaustionDetector:
         price = 1.0
         for i in range(50):
             price += 0.0001 * (1 if i % 2 == 0 else -1)
-            candles.append({
-                "open": price,
-                "high": price + 0.0002,
-                "low": price - 0.0002,
-                "close": price + 0.0001,
-            })
+            candles.append(
+                {
+                    "open": price,
+                    "high": price + 0.0002,
+                    "low": price - 0.0002,
+                    "close": price + 0.0001,
+                }
+            )
 
         result = detector.detect(candles)
 
@@ -69,19 +71,23 @@ class TestExhaustionDetector:
 
         # Create oversold scenario: price far below mean with strong down impulse
         candles = []
-        for i in range(40):
-            candles.append({
-                "open": 1.0,
-                "high": 1.001,
-                "low": 0.999,
-                "close": 1.0,
-            })
+        for _i in range(40):
+            candles.append(
+                {
+                    "open": 1.0,
+                    "high": 1.001,
+                    "low": 0.999,
+                    "close": 1.0,
+                }
+            )
 
         # Add strong down move with long lower wick (rejection)
-        candles.extend([
-            {"open": 1.0, "high": 1.001, "low": 0.95, "close": 0.955},
-            {"open": 0.955, "high": 0.96, "low": 0.93, "close": 0.950},
-        ])
+        candles.extend(
+            [
+                {"open": 1.0, "high": 1.001, "low": 0.95, "close": 0.955},
+                {"open": 0.955, "high": 0.96, "low": 0.93, "close": 0.950},
+            ]
+        )
 
         result = detector.detect(candles)
 
@@ -99,19 +105,23 @@ class TestExhaustionDetector:
 
         # Create overbought scenario: price far above mean with strong up impulse
         candles = []
-        for i in range(40):
-            candles.append({
-                "open": 1.0,
-                "high": 1.001,
-                "low": 0.999,
-                "close": 1.0,
-            })
+        for _i in range(40):
+            candles.append(
+                {
+                    "open": 1.0,
+                    "high": 1.001,
+                    "low": 0.999,
+                    "close": 1.0,
+                }
+            )
 
         # Add strong up move with long upper wick (rejection)
-        candles.extend([
-            {"open": 1.0, "high": 1.05, "low": 0.999, "close": 1.045},
-            {"open": 1.045, "high": 1.07, "low": 1.04, "close": 1.050},
-        ])
+        candles.extend(
+            [
+                {"open": 1.0, "high": 1.05, "low": 0.999, "close": 1.045},
+                {"open": 1.045, "high": 1.07, "low": 1.04, "close": 1.050},
+            ]
+        )
 
         result = detector.detect(candles)
 
@@ -125,12 +135,14 @@ class TestExhaustionDetector:
 
         candles = []
         for i in range(50):
-            candles.append({
-                "open": 1.0 + i * 0.001,
-                "high": 1.002 + i * 0.001,
-                "low": 0.998 + i * 0.001,
-                "close": 1.001 + i * 0.001,
-            })
+            candles.append(
+                {
+                    "open": 1.0 + i * 0.001,
+                    "high": 1.002 + i * 0.001,
+                    "low": 0.998 + i * 0.001,
+                    "close": 1.001 + i * 0.001,
+                }
+            )
 
         result = detector.detect(candles)
 
@@ -144,21 +156,25 @@ class TestExhaustionDetector:
 
         # Create candle with long upper wick
         candles = []
-        for i in range(40):
-            candles.append({
-                "open": 1.0,
-                "high": 1.001,
-                "low": 0.999,
-                "close": 1.0,
-            })
+        for _i in range(40):
+            candles.append(
+                {
+                    "open": 1.0,
+                    "high": 1.001,
+                    "low": 0.999,
+                    "close": 1.0,
+                }
+            )
 
         # Add candle with strong upper wick
-        candles.append({
-            "open": 1.0,
-            "high": 1.05,  # Long upper wick
-            "low": 0.995,
-            "close": 1.01,
-        })
+        candles.append(
+            {
+                "open": 1.0,
+                "high": 1.05,  # Long upper wick
+                "low": 0.995,
+                "close": 1.01,
+            }
+        )
 
         result = detector.detect(candles)
 
@@ -169,10 +185,7 @@ class TestExhaustionDetector:
         """Test handling of NaN values."""
         detector = ExhaustionDetector()
 
-        candles = [
-            {"open": 1.0, "high": 1.1, "low": 0.9, "close": float("nan")}
-            for _ in range(50)
-        ]
+        candles = [{"open": 1.0, "high": 1.1, "low": 0.9, "close": float("nan")} for _ in range(50)]
 
         result = detector.detect(candles)
 
@@ -183,10 +196,7 @@ class TestExhaustionDetector:
         """Test that result is frozen (immutable)."""
         detector = ExhaustionDetector()
 
-        candles = [
-            {"open": 1.0, "high": 1.001, "low": 0.999, "close": 1.0}
-            for _ in range(50)
-        ]
+        candles = [{"open": 1.0, "high": 1.001, "low": 0.999, "close": 1.0} for _ in range(50)]
 
         result = detector.detect(candles)
 
@@ -197,10 +207,7 @@ class TestExhaustionDetector:
         """Test to_dict() serialization."""
         detector = ExhaustionDetector()
 
-        candles = [
-            {"open": 1.0, "high": 1.001, "low": 0.999, "close": 1.0}
-            for _ in range(50)
-        ]
+        candles = [{"open": 1.0, "high": 1.001, "low": 0.999, "close": 1.0} for _ in range(50)]
 
         result = detector.detect(candles)
         d = result.to_dict()

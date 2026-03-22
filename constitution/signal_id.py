@@ -6,7 +6,6 @@ Format: SIG-{SYMBOL_SHORT}-{YYYYMMDD}-{HHMMSS}-{4RANDOM}
 from __future__ import annotations
 
 import secrets
-
 from datetime import UTC, datetime
 
 

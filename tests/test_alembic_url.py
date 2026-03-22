@@ -67,10 +67,7 @@ def test_no_psycopg2_import() -> None:
     with open(source_file) as f:
         source = f.read()
 
-    assert "import psycopg2" not in source, (
-        "storage/migrations/env.py must NOT import psycopg2"
-    )
+    assert "import psycopg2" not in source, "storage/migrations/env.py must NOT import psycopg2"
     assert "psycopg2" not in source.split("psycopg2-style", 1)[0], (
-        "storage/migrations/env.py must not reference psycopg2 "
-        "(except in comments)"
+        "storage/migrations/env.py must not reference psycopg2 (except in comments)"
     )

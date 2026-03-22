@@ -72,9 +72,7 @@ class TestProbePremiumPairs:
         fetcher.fetch.assert_called_once_with("USDJPY", "H1", 1)
 
     @pytest.mark.asyncio
-    @patch("ingest.finnhub_candles.CONFIG", {
-        "pairs": {"symbols": ["EURUSD", "XAUUSD", "GBPJPY"]}
-    })
+    @patch("ingest.finnhub_candles.CONFIG", {"pairs": {"symbols": ["EURUSD", "XAUUSD", "GBPJPY"]}})
     async def test_probe_counts(self) -> None:
         """Verify the probe returns correct counts."""
         fetcher = FinnhubCandleFetcher()

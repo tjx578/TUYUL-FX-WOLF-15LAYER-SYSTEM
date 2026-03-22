@@ -20,19 +20,19 @@ from analysis.layers.L6_risk import L6RiskAnalyzer, _corr_engine
 
 
 def _multi_pair_low_corr(
-    n_pairs: int = 4, n_obs: int = 100, seed: int = 42,
+    n_pairs: int = 4,
+    n_obs: int = 100,
+    seed: int = 42,
 ) -> dict[str, list[float]]:
     """Generate independent (low-correlation) return series per pair."""
     rng = np.random.default_rng(seed)
     pairs = [f"PAIR{i}" for i in range(n_pairs)]
-    return {
-        p: [float(x) for x in rng.normal(0, 1, n_obs)]
-        for p in pairs
-    }
+    return {p: [float(x) for x in rng.normal(0, 1, n_obs)] for p in pairs}
 
 
 def _multi_pair_high_corr(
-    n_obs: int = 100, seed: int = 42,
+    n_obs: int = 100,
+    seed: int = 42,
 ) -> dict[str, list[float]]:
     """Generate highly correlated pair returns (simulating USD exposure)."""
     rng = np.random.default_rng(seed)
@@ -50,9 +50,7 @@ def _multi_pair_high_corr(
 
 class TestPrerequisite:
     def test_engine_loaded(self) -> None:
-        assert _corr_engine is not None, (
-            "CorrelationRiskEngine must be loaded at module level in L6"
-        )
+        assert _corr_engine is not None, "CorrelationRiskEngine must be loaded at module level in L6"
 
 
 # -- Low correlation: risk unaffected -----------------------------------------

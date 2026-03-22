@@ -28,7 +28,7 @@ from typing import Any
 from loguru import logger
 
 from core.candle_bridge_fix import publish_candle_sync
-from ingest.candle_builder import CandleBuilder, Candle, Timeframe
+from ingest.candle_builder import Candle, CandleBuilder, Timeframe
 
 
 class MicroCandleChain:

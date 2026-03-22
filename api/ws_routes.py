@@ -35,7 +35,7 @@ import time
 import uuid as _uuid
 from collections import deque
 from collections.abc import Mapping
-from typing import Any, TypedDict, cast
+from typing import Any, cast
 
 import fastapi
 from loguru import logger
@@ -249,7 +249,7 @@ MESSAGE_BUFFER_SIZE = 100  # last N messages kept for replay on reconnect
 # Candle Aggregator — replaced by HybridCandleAggregator (Dual-Zone SSOT v5)
 # ---------------------------------------------------------------------------
 
-from api.hybrid_candle_agg import CandleBar, FormingBarData, HybridCandleAggregator  # noqa: E402
+from api.hybrid_candle_agg import HybridCandleAggregator  # noqa: E402
 
 _candle_agg = HybridCandleAggregator()
 
@@ -1682,6 +1682,7 @@ async def get_trq_r3d_history(symbol: str) -> dict[str, Any]:
     try:
         from core.redis_keys import trq_r3d_history as _trq_r3d_history
         from infrastructure.redis_client import get_client
+
         redis = await get_client()
         raw_entries: list[Any] = await redis.lrange(_trq_r3d_history(sym_upper), -100, -1)
     except Exception as exc:
@@ -1689,6 +1690,7 @@ async def get_trq_r3d_history(symbol: str) -> dict[str, Any]:
         return {"symbol": sym_upper, "r3d_history": [], "count": 0}
 
     import orjson as _orjson  # noqa: PLC0415
+
     history: list[dict[str, Any]] = []
     for entry in raw_entries:
         try:

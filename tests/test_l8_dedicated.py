@@ -18,8 +18,6 @@ import pytest
 
 from analysis.l8_tii import (
     _classify_tii,
-    _clamp,
-    _compute_tii,
     _compute_twms,
     _score_bias_confirmation,
     _score_energy_coherence,
@@ -31,6 +29,7 @@ NOW = datetime(2026, 2, 16, 14, 0, 0, tzinfo=UTC)
 
 # ── Helpers ──────────────────────────────────────────────────────────
 
+
 def _make_closes(n: int = 60, base: float = 1.3000, drift: float = 0.0001) -> list[float]:
     return [round(base + drift * i, 5) for i in range(n)]
 
@@ -41,14 +40,20 @@ def _full_market_data(n: int = 60) -> dict:
 
 
 REQUIRED_KEYS = {
-    "tii_sym", "tii_status", "integrity", "twms_score",
-    "gate_status", "gate_passed", "valid",
+    "tii_sym",
+    "tii_status",
+    "integrity",
+    "twms_score",
+    "gate_status",
+    "gate_passed",
+    "valid",
 }
 
 DEGRADED_KEYS = {"degraded_fields", "meta_integrity"}
 
 
 # ── Output contract ──────────────────────────────────────────────────
+
 
 class TestOutputContract:
     def test_full_data_has_required_keys(self) -> None:
@@ -70,6 +75,7 @@ class TestOutputContract:
 
 # ── Insufficient data ────────────────────────────────────────────────
 
+
 class TestInsufficientData:
     def test_too_few_bars(self) -> None:
         result = analyze_tii({"closes": [1.3, 1.31]}, now=NOW)
@@ -87,6 +93,7 @@ class TestInsufficientData:
 
 
 # ── Full data path (L3 + L1 + indicators) ───────────────────────────
+
 
 class TestFullDataPath:
     def test_no_degraded_fields_with_l3(self) -> None:
@@ -109,6 +116,7 @@ class TestFullDataPath:
 
 # ── Degraded mode ────────────────────────────────────────────────────
 
+
 class TestDegradedMode:
     def test_fallback_vwap_when_no_l3(self) -> None:
         result = analyze_tii(_full_market_data(), now=NOW)
@@ -120,6 +128,7 @@ class TestDegradedMode:
 
 
 # ── Component scoring functions ──────────────────────────────────────
+
 
 class TestVWAPScoring:
     def test_zero_vwap_returns_zero(self) -> None:
@@ -150,18 +159,23 @@ class TestBiasScoring:
 
 # ── TII classification ──────────────────────────────────────────────
 
+
 class TestClassifyTII:
-    @pytest.mark.parametrize("tii_val, expected", [
-        (0.85, "STRONG"),
-        (0.65, "VALID"),
-        (0.45, "WEAK"),
-        (0.30, "INVALID"),
-    ])
+    @pytest.mark.parametrize(
+        "tii_val, expected",
+        [
+            (0.85, "STRONG"),
+            (0.65, "VALID"),
+            (0.45, "WEAK"),
+            (0.30, "INVALID"),
+        ],
+    )
     def test_classification(self, tii_val: float, expected: str) -> None:
         assert _classify_tii(tii_val) == expected
 
 
 # ── TWMS ─────────────────────────────────────────────────────────────
+
 
 class TestTWMS:
     def test_neutral_indicators(self) -> None:
@@ -180,6 +194,7 @@ class TestTWMS:
 
 
 # ── Determinism ──────────────────────────────────────────────────────
+
 
 class TestDeterminism:
     def test_same_input_same_output(self) -> None:

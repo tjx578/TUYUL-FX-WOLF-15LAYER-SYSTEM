@@ -57,9 +57,7 @@ class PositionSizer:
         self._config = load_risk()
         ps_config = self._config["position_sizing"]
 
-        self.default_risk_percent = (
-            default_risk_percent or ps_config["default_risk_percent"]
-        )
+        self.default_risk_percent = default_risk_percent or ps_config["default_risk_percent"]
         self.min_lot_size = min_lot_size or ps_config["min_lot_size"]
         self.max_lot_size = max_lot_size or ps_config["max_lot_size"]
         self.pip_values = ps_config["pip_values"]
@@ -196,14 +194,10 @@ class PositionSizer:
             raise InvalidPositionSize("Account balance must be positive")
 
         if entry_price <= 0 or stop_loss_price <= 0:
-            raise InvalidPositionSize(
-                "Entry and stop loss prices must be positive"
-            )
+            raise InvalidPositionSize("Entry and stop loss prices must be positive")
 
         if risk_multiplier <= 0 or risk_multiplier > 1:
-            raise InvalidPositionSize(
-                "Risk multiplier must be between 0 and 1"
-            )
+            raise InvalidPositionSize("Risk multiplier must be between 0 and 1")
 
         # Use default risk if not specified
         base_risk_percent = risk_percent or self.default_risk_percent
@@ -225,8 +219,7 @@ class PositionSizer:
 
         if pips_at_risk <= 0:
             raise InvalidPositionSize(
-                f"Invalid stop loss: must differ from entry. "
-                f"Entry={entry_price}, SL={stop_loss_price}"
+                f"Invalid stop loss: must differ from entry. Entry={entry_price}, SL={stop_loss_price}"
             )
 
         # Calculate lot size

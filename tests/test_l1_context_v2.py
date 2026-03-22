@@ -18,7 +18,6 @@ Covers:
 from __future__ import annotations
 
 import math
-
 from datetime import UTC, datetime
 
 import pytest
@@ -54,7 +53,9 @@ from analysis.layers.L1_context import (
 
 
 def _trending_data(
-    n: int = 60, base: float = 1.3000, drift: float = 0.0003,
+    n: int = 60,
+    base: float = 1.3000,
+    drift: float = 0.0003,
 ) -> dict[str, list[float]]:
     """Generate synthetic trending OHLCV."""
     closes, highs, lows, volumes = [], [], [], []
@@ -266,16 +267,20 @@ class TestCSIv3:
 class TestCustomWeights:
     def test_aggressive_weights(self) -> None:
         aggressive = LogisticWeights(
-            w_spread=12.0, w_hurst=6.0,
-            trend_threshold=0.55, transition_threshold=0.40,
+            w_spread=12.0,
+            w_hurst=6.0,
+            trend_threshold=0.55,
+            transition_threshold=0.40,
         )
         p = _compute_regime_probability(0.002, 0.001, 0.6, 0.5, aggressive)
         assert p > 0.5
 
     def test_conservative_weights(self) -> None:
         conservative = LogisticWeights(
-            w_spread=5.0, w_hurst=2.0,
-            trend_threshold=0.75, transition_threshold=0.50,
+            w_spread=5.0,
+            w_hurst=2.0,
+            trend_threshold=0.75,
+            transition_threshold=0.50,
         )
         p = _compute_regime_probability(0.002, 0.001, 0.6, 0.5, conservative)
         regime, _ = _classify_regime(p, 0.002, conservative)
@@ -329,9 +334,17 @@ class TestAnalyzeContext:
         data = _trending_data(n=60)
         r = analyze_context(data, pair="GBPUSD", now=NOW_LONDON)
         for key in [
-            "regime", "dominant_force", "regime_confidence",
-            "csi", "market_alignment", "valid", "session",
-            "pair", "timestamp", "atr", "atr_pct",
+            "regime",
+            "dominant_force",
+            "regime_confidence",
+            "csi",
+            "market_alignment",
+            "valid",
+            "session",
+            "pair",
+            "timestamp",
+            "atr",
+            "atr_pct",
         ]:
             assert key in r, f"Missing backward-compat key: {key}"
 
@@ -390,7 +403,9 @@ class TestValidation:
     def test_high_lt_low_raises(self) -> None:
         with pytest.raises(ContextError, match="high"):
             _validate_market_data(
-                [1.3] * 20, [1.3] * 20, [1.31] * 20,
+                [1.3] * 20,
+                [1.3] * 20,
+                [1.31] * 20,
             )
 
 
@@ -518,37 +533,57 @@ class TestAlignment:
     def test_strongly_bullish(self) -> None:
         # Close > ema9 > ema20 > ema50, positive spread, TREND_UP
         result = _compute_alignment(
-            close=1.35, ema20=1.33, ema50=1.31, ema9=1.34,
-            s=0.01, regime="TREND_UP",
+            close=1.35,
+            ema20=1.33,
+            ema50=1.31,
+            ema9=1.34,
+            s=0.01,
+            regime="TREND_UP",
         )
         assert result == "STRONGLY_BULLISH"
 
     def test_strongly_bearish(self) -> None:
         result = _compute_alignment(
-            close=1.28, ema20=1.30, ema50=1.32, ema9=1.29,
-            s=-0.01, regime="TREND_DOWN",
+            close=1.28,
+            ema20=1.30,
+            ema50=1.32,
+            ema9=1.29,
+            s=-0.01,
+            regime="TREND_DOWN",
         )
         assert result == "STRONGLY_BEARISH"
 
     def test_bullish(self) -> None:
         # Above ema20 and ema9, positive spread, but NOT TREND_UP regime
         result = _compute_alignment(
-            close=1.35, ema20=1.33, ema50=1.36, ema9=1.34,
-            s=0.005, regime="TRANSITION",
+            close=1.35,
+            ema20=1.33,
+            ema50=1.36,
+            ema9=1.34,
+            s=0.005,
+            regime="TRANSITION",
         )
         assert result == "BULLISH"
 
     def test_bearish(self) -> None:
         result = _compute_alignment(
-            close=1.28, ema20=1.30, ema50=1.27, ema9=1.29,
-            s=-0.005, regime="TRANSITION",
+            close=1.28,
+            ema20=1.30,
+            ema50=1.27,
+            ema9=1.29,
+            s=-0.005,
+            regime="TRANSITION",
         )
         assert result == "BEARISH"
 
     def test_neutral(self) -> None:
         result = _compute_alignment(
-            close=1.30, ema20=1.30, ema50=1.30, ema9=1.30,
-            s=0.0, regime="RANGE",
+            close=1.30,
+            ema20=1.30,
+            ema50=1.30,
+            ema9=1.30,
+            s=0.0,
+            regime="RANGE",
         )
         assert result == "NEUTRAL"
 
@@ -601,17 +636,20 @@ class TestMomentumBias:
 
 
 class TestClassifyAsset:
-    @pytest.mark.parametrize("pair,expected", [
-        ("XAUUSD", "METALS"),
-        ("XAGUSD", "METALS"),
-        ("BTCUSD", "CRYPTO"),
-        ("ETHUSD", "CRYPTO"),
-        ("US30", "INDEX"),
-        ("US500", "INDEX"),
-        ("NAS100", "INDEX"),
-        ("EURUSD", "FX"),
-        ("GBPJPY", "FX"),
-    ])
+    @pytest.mark.parametrize(
+        "pair,expected",
+        [
+            ("XAUUSD", "METALS"),
+            ("XAGUSD", "METALS"),
+            ("BTCUSD", "CRYPTO"),
+            ("ETHUSD", "CRYPTO"),
+            ("US30", "INDEX"),
+            ("US500", "INDEX"),
+            ("NAS100", "INDEX"),
+            ("EURUSD", "FX"),
+            ("GBPJPY", "FX"),
+        ],
+    )
     def test_asset_class(self, pair: str, expected: str) -> None:
         assert _classify_asset(pair) == expected
 
@@ -629,19 +667,33 @@ class TestContextResult:
     def test_to_dict_excludes_none(self) -> None:
         """Optional fields with None should not appear in output dict."""
         result = ContextResult(
-            regime="RANGE", dominant_force="NEUTRAL",
-            regime_probability=0.4, context_coherence=0.6,
-            volatility_level="NORMAL", volatility_percentile=0.5,
-            entropy_score=0.5, regime_confidence=0.5,
-            csi=0.5, market_alignment="NEUTRAL", valid=True,
-            session="LONDON", session_multiplier=1.1,
-            pair="EURUSD", asset_class="FX",
+            regime="RANGE",
+            dominant_force="NEUTRAL",
+            regime_probability=0.4,
+            context_coherence=0.6,
+            volatility_level="NORMAL",
+            volatility_percentile=0.5,
+            entropy_score=0.5,
+            regime_confidence=0.5,
+            csi=0.5,
+            market_alignment="NEUTRAL",
+            valid=True,
+            session="LONDON",
+            session_multiplier=1.1,
+            pair="EURUSD",
+            asset_class="FX",
             timestamp="2026-02-16T14:00:00+00:00",
-            feature_spread=0.001, feature_atr_frac=0.001,
-            feature_hurst=0.5, feature_zscore=0.0,
-            ema20=1.3, ema50=1.3, ema9=1.3,
-            atr=0.001, atr_pct=0.1,
-            momentum_direction="NEUTRAL", momentum_magnitude=0.0,
+            feature_spread=0.001,
+            feature_atr_frac=0.001,
+            feature_hurst=0.5,
+            feature_zscore=0.0,
+            ema20=1.3,
+            ema50=1.3,
+            ema9=1.3,
+            atr=0.001,
+            atr_pct=0.1,
+            momentum_direction="NEUTRAL",
+            momentum_magnitude=0.0,
             # All optional Hurst fields left at default None
         )
         d = result.to_dict()
@@ -652,19 +704,33 @@ class TestContextResult:
 
     def test_to_dict_includes_set_optionals(self) -> None:
         result = ContextResult(
-            regime="TREND_UP", dominant_force="BULLISH",
-            regime_probability=0.8, context_coherence=0.9,
-            volatility_level="NORMAL", volatility_percentile=0.5,
-            entropy_score=0.3, regime_confidence=0.85,
-            csi=0.7, market_alignment="STRONGLY_BULLISH", valid=True,
-            session="LONDON", session_multiplier=1.1,
-            pair="GBPUSD", asset_class="FX",
+            regime="TREND_UP",
+            dominant_force="BULLISH",
+            regime_probability=0.8,
+            context_coherence=0.9,
+            volatility_level="NORMAL",
+            volatility_percentile=0.5,
+            entropy_score=0.3,
+            regime_confidence=0.85,
+            csi=0.7,
+            market_alignment="STRONGLY_BULLISH",
+            valid=True,
+            session="LONDON",
+            session_multiplier=1.1,
+            pair="GBPUSD",
+            asset_class="FX",
             timestamp="2026-02-16T14:00:00+00:00",
-            feature_spread=0.005, feature_atr_frac=0.001,
-            feature_hurst=0.65, feature_zscore=0.5,
-            ema20=1.33, ema50=1.31, ema9=1.34,
-            atr=0.002, atr_pct=0.15,
-            momentum_direction="BULLISH", momentum_magnitude=0.5,
+            feature_spread=0.005,
+            feature_atr_frac=0.001,
+            feature_hurst=0.65,
+            feature_zscore=0.5,
+            ema20=1.33,
+            ema50=1.31,
+            ema9=1.34,
+            atr=0.002,
+            atr_pct=0.15,
+            momentum_direction="BULLISH",
+            momentum_magnitude=0.5,
             hurst_regime="TRENDING",
             hurst_confidence=0.85,
             hurst_exponent=0.65,

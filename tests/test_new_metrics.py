@@ -34,27 +34,26 @@ from core.metrics import (
 class TestNewMetricsExist:
     """Ensure every new metric is registered, typed correctly, and has expected labels."""
 
-    @pytest.mark.parametrize("metric,expected_type,expected_labels", [
-        (TRADES_TOTAL, Counter, ("symbol", "outcome")),
-        (PNL_REALIZED_TOTAL, Counter, ("symbol",)),
-        (PNL_REALIZED_CURRENT, Gauge, ("account_id",)),
-        (WIN_RATE, Gauge, ("symbol",)),
-        (DRAWDOWN_MAX_PERCENT, Gauge, ("account_id",)),
-        (DAILY_LOSS_PERCENT, Gauge, ("account_id",)),
-        (FEED_STALE_TOTAL, Counter, ("symbol",)),
-        (FEED_RECONNECT_TOTAL, Counter, ("source",)),
-        (CIRCUIT_BREAKER_STATE, Gauge, ("name",)),
-        (CIRCUIT_BREAKER_TRIPS, Counter, ("name",)),
-        (KILL_SWITCH_ACTIVE, Gauge, ()),
-        (KILL_SWITCH_TRIPS_TOTAL, Counter, ("reason",)),
-    ])
+    @pytest.mark.parametrize(
+        "metric,expected_type,expected_labels",
+        [
+            (TRADES_TOTAL, Counter, ("symbol", "outcome")),
+            (PNL_REALIZED_TOTAL, Counter, ("symbol",)),
+            (PNL_REALIZED_CURRENT, Gauge, ("account_id",)),
+            (WIN_RATE, Gauge, ("symbol",)),
+            (DRAWDOWN_MAX_PERCENT, Gauge, ("account_id",)),
+            (DAILY_LOSS_PERCENT, Gauge, ("account_id",)),
+            (FEED_STALE_TOTAL, Counter, ("symbol",)),
+            (FEED_RECONNECT_TOTAL, Counter, ("source",)),
+            (CIRCUIT_BREAKER_STATE, Gauge, ("name",)),
+            (CIRCUIT_BREAKER_TRIPS, Counter, ("name",)),
+            (KILL_SWITCH_ACTIVE, Gauge, ()),
+            (KILL_SWITCH_TRIPS_TOTAL, Counter, ("reason",)),
+        ],
+    )
     def test_metric_type_and_labels(self, metric, expected_type, expected_labels):
-        assert isinstance(metric, expected_type), (
-            f"{metric.name} should be {expected_type.__name__}"
-        )
-        assert metric.label_names == expected_labels, (
-            f"{metric.name}: labels {metric.label_names} != {expected_labels}"
-        )
+        assert isinstance(metric, expected_type), f"{metric.name} should be {expected_type.__name__}"
+        assert metric.label_names == expected_labels, f"{metric.name}: labels {metric.label_names} != {expected_labels}"
 
 
 class TestMetricsInRegistry:

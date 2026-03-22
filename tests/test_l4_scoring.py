@@ -26,6 +26,7 @@ from analysis.l4_scoring import (
 # Fixtures
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture
 def default_weights() -> ScoringWeights:
     return ScoringWeights()
@@ -71,6 +72,7 @@ def mixed_factors() -> FactorScores:
 # ScoringWeights validation
 # ---------------------------------------------------------------------------
 
+
 class TestScoringWeights:
     def test_default_weights_sum_to_one(self, default_weights: ScoringWeights) -> None:
         total = (
@@ -110,6 +112,7 @@ class TestScoringWeights:
 # FactorScores validation
 # ---------------------------------------------------------------------------
 
+
 class TestFactorScores:
     def test_valid_factors(self) -> None:
         f = FactorScores(
@@ -122,14 +125,17 @@ class TestFactorScores:
         )
         assert f.trend_alignment == 50.0
 
-    @pytest.mark.parametrize("field_name", [
-        "trend_alignment",
-        "structure_quality",
-        "momentum",
-        "volume_confirmation",
-        "multi_timeframe_confluence",
-        "key_level_proximity",
-    ])
+    @pytest.mark.parametrize(
+        "field_name",
+        [
+            "trend_alignment",
+            "structure_quality",
+            "momentum",
+            "volume_confirmation",
+            "multi_timeframe_confluence",
+            "key_level_proximity",
+        ],
+    )
     def test_factor_below_zero_raises(self, field_name: str) -> None:
         kwargs = {
             "trend_alignment": 50.0,
@@ -143,14 +149,17 @@ class TestFactorScores:
         with pytest.raises(ValueError, match="must be 0–100"):
             FactorScores(**kwargs)
 
-    @pytest.mark.parametrize("field_name", [
-        "trend_alignment",
-        "structure_quality",
-        "momentum",
-        "volume_confirmation",
-        "multi_timeframe_confluence",
-        "key_level_proximity",
-    ])
+    @pytest.mark.parametrize(
+        "field_name",
+        [
+            "trend_alignment",
+            "structure_quality",
+            "momentum",
+            "volume_confirmation",
+            "multi_timeframe_confluence",
+            "key_level_proximity",
+        ],
+    )
     def test_factor_above_100_raises(self, field_name: str) -> None:
         kwargs = {
             "trend_alignment": 50.0,
@@ -168,6 +177,7 @@ class TestFactorScores:
 # ---------------------------------------------------------------------------
 # compute_composite
 # ---------------------------------------------------------------------------
+
 
 class TestComputeComposite:
     def test_perfect_score(self, perfect_factors: FactorScores) -> None:
@@ -214,22 +224,26 @@ class TestComputeComposite:
 # classify_grade
 # ---------------------------------------------------------------------------
 
+
 class TestClassifyGrade:
-    @pytest.mark.parametrize("score_val, expected_grade", [
-        (100.0, ScoreGrade.A_PLUS),
-        (95.0, ScoreGrade.A_PLUS),
-        (90.0, ScoreGrade.A_PLUS),
-        (89.9, ScoreGrade.A),
-        (80.0, ScoreGrade.A),
-        (79.9, ScoreGrade.B),
-        (65.0, ScoreGrade.B),
-        (64.9, ScoreGrade.C),
-        (50.0, ScoreGrade.C),
-        (49.9, ScoreGrade.D),
-        (35.0, ScoreGrade.D),
-        (34.9, ScoreGrade.F),
-        (0.0, ScoreGrade.F),
-    ])
+    @pytest.mark.parametrize(
+        "score_val, expected_grade",
+        [
+            (100.0, ScoreGrade.A_PLUS),
+            (95.0, ScoreGrade.A_PLUS),
+            (90.0, ScoreGrade.A_PLUS),
+            (89.9, ScoreGrade.A),
+            (80.0, ScoreGrade.A),
+            (79.9, ScoreGrade.B),
+            (65.0, ScoreGrade.B),
+            (64.9, ScoreGrade.C),
+            (50.0, ScoreGrade.C),
+            (49.9, ScoreGrade.D),
+            (35.0, ScoreGrade.D),
+            (34.9, ScoreGrade.F),
+            (0.0, ScoreGrade.F),
+        ],
+    )
     def test_grade_boundaries(self, score_val: float, expected_grade: ScoreGrade) -> None:
         assert classify_grade(score_val) == expected_grade
 
@@ -237,6 +251,7 @@ class TestClassifyGrade:
 # ---------------------------------------------------------------------------
 # score() — full pipeline
 # ---------------------------------------------------------------------------
+
 
 class TestScoreFunction:
     def test_returns_l4_result(self, mixed_factors: FactorScores) -> None:

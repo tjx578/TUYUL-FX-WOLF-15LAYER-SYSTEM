@@ -15,9 +15,7 @@ from analysis.layers.L6_risk import L6RiskAnalyzer
 
 __all__ = ["analyze_risk", "L6RiskAnalyzer"]
 
-_L6_DEPRECATION = (
-    "analysis.l6_risk is deprecated; use analysis.layers.L6_risk.L6RiskAnalyzer"
-)
+_L6_DEPRECATION = "analysis.l6_risk is deprecated; use analysis.layers.L6_risk.L6RiskAnalyzer"
 
 
 def _to_account_state(market_data: dict[str, Any], account_state: dict[str, Any] | None) -> dict[str, Any]:

@@ -32,6 +32,7 @@ from dashboard.ws_auth import (
 
 # ── Helpers ───────────────────────────────────────────────────────
 
+
 def _make_manager(max_age: int = 3600) -> WSTokenManager:
     return WSTokenManager(secret_key="test-secret-key-32chars-minimum!", max_age=max_age)
 
@@ -77,7 +78,6 @@ def _fake_websocket(
 
 
 class TestParseWSSubprotocolToken:
-
     def test_auth_dot_token(self):
         ws = _fake_websocket(headers={"sec-websocket-protocol": "json, auth.MY_SECRET_TOKEN"})
         assert _parse_ws_subprotocol_token(ws) == "MY_SECRET_TOKEN"
@@ -115,9 +115,7 @@ class TestParseWSSubprotocolToken:
         assert _parse_ws_subprotocol_token(ws) is None
 
     def test_multiple_formats_picks_first(self):
-        ws = _fake_websocket(
-            headers={"sec-websocket-protocol": "auth.FIRST, token.SECOND"}
-        )
+        ws = _fake_websocket(headers={"sec-websocket-protocol": "auth.FIRST, token.SECOND"})
         assert _parse_ws_subprotocol_token(ws) == "FIRST"
 
 
@@ -127,7 +125,6 @@ class TestParseWSSubprotocolToken:
 
 
 class TestMapAuthErrorToCode:
-
     def test_expired_maps_correctly(self):
         err = AuthError(AuthErrorCode.TOKEN_EXPIRED.value)
         assert _map_auth_error_to_code(err) == AuthErrorCode.TOKEN_EXPIRED
@@ -159,7 +156,6 @@ class TestMapAuthErrorToCode:
 
 
 class TestSendErrorAndClose:
-
     @pytest.mark.asyncio
     async def test_sends_error_json_then_closes(self):
         ws = _fake_websocket()
@@ -201,7 +197,6 @@ class TestSendErrorAndClose:
 
 
 class TestWSTokenRotation:
-
     def test_rotate_returns_new_token(self):
         mgr = _make_manager()
         original = mgr.create_token("user:admin")
@@ -272,7 +267,6 @@ class TestWSTokenRotation:
 
 
 class TestAuthenticateWebsocket:
-
     @pytest.mark.asyncio
     async def test_auth_via_subprotocol_header(self):
         mgr = _make_manager()
@@ -334,9 +328,7 @@ class TestAuthenticateWebsocket:
     @pytest.mark.asyncio
     async def test_wrong_message_type_closes_with_1002(self):
         mgr = _make_manager()
-        ws = _fake_websocket(
-            receive_messages=[json.dumps({"type": "subscribe", "channel": "signals"})]
-        )
+        ws = _fake_websocket(receive_messages=[json.dumps({"type": "subscribe", "channel": "signals"})])
 
         with pytest.raises(AuthError, match="NO_TOKEN"):
             await authenticate_websocket(ws, mgr)
@@ -346,9 +338,7 @@ class TestAuthenticateWebsocket:
     @pytest.mark.asyncio
     async def test_invalid_token_closes_with_1008(self):
         mgr = _make_manager()
-        ws = _fake_websocket(
-            receive_messages=[json.dumps({"type": "auth", "token": "fake-token"})]
-        )
+        ws = _fake_websocket(receive_messages=[json.dumps({"type": "auth", "token": "fake-token"})])
 
         with pytest.raises(AuthError, match="TOKEN_INVALID"):
             await authenticate_websocket(ws, mgr)
@@ -361,9 +351,7 @@ class TestAuthenticateWebsocket:
         result = mgr.create_token("user:admin")
         time.sleep(0.01)
 
-        ws = _fake_websocket(
-            receive_messages=[json.dumps({"type": "auth", "token": result["token"]})]
-        )
+        ws = _fake_websocket(receive_messages=[json.dumps({"type": "auth", "token": result["token"]})])
 
         with pytest.raises(AuthError, match="TOKEN_EXPIRED"):
             await authenticate_websocket(ws, mgr)
@@ -379,9 +367,7 @@ class TestAuthenticateWebsocket:
         result = mgr.create_token("user:admin")
         mgr.revoke_session(result["session_id"])
 
-        ws = _fake_websocket(
-            receive_messages=[json.dumps({"type": "auth", "token": result["token"]})]
-        )
+        ws = _fake_websocket(receive_messages=[json.dumps({"type": "auth", "token": result["token"]})])
 
         with pytest.raises(AuthError, match="TOKEN_REVOKED"):
             await authenticate_websocket(ws, mgr)
@@ -392,9 +378,7 @@ class TestAuthenticateWebsocket:
     @pytest.mark.asyncio
     async def test_empty_token_in_message_closes(self):
         mgr = _make_manager()
-        ws = _fake_websocket(
-            receive_messages=[json.dumps({"type": "auth", "token": "  "})]
-        )
+        ws = _fake_websocket(receive_messages=[json.dumps({"type": "auth", "token": "  "})])
 
         with pytest.raises(AuthError, match="NO_TOKEN"):
             await authenticate_websocket(ws, mgr)

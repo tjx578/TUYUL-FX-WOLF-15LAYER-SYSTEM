@@ -26,19 +26,21 @@ from engines.correlation_risk_engine import (
 
 
 def _correlated_matrix(
-    n_pairs: int = 4, n_obs: int = 100, corr: float = 0.9, seed: int = 42,
+    n_pairs: int = 4,
+    n_obs: int = 100,
+    corr: float = 0.9,
+    seed: int = 42,
 ) -> list[list[float]]:
     """Return matrix where all pairs share a correlated base signal."""
     rng = np.random.default_rng(seed)
     base = rng.normal(0, 0.01, n_obs)
-    return [
-        (base * corr + rng.normal(0, 0.01, n_obs) * (1 - corr)).tolist()
-        for _ in range(n_pairs)
-    ]
+    return [(base * corr + rng.normal(0, 0.01, n_obs) * (1 - corr)).tolist() for _ in range(n_pairs)]
 
 
 def _uncorrelated_matrix(
-    n_pairs: int = 4, n_obs: int = 100, seed: int = 42,
+    n_pairs: int = 4,
+    n_obs: int = 100,
+    seed: int = 42,
 ) -> list[list[float]]:
     """Return matrix with independent series."""
     rng = np.random.default_rng(seed)
@@ -91,9 +93,7 @@ class TestCorrelationRiskEngine:
         engine = CorrelationRiskEngine(high_corr_flag=0.70)
         result = engine.evaluate(_uncorrelated_matrix(4, 100))
         # Should have few or no flagged pairs
-        assert all(
-            abs(c) >= 0.70 for _, _, c in result.high_correlation_pairs
-        )
+        assert all(abs(c) >= 0.70 for _, _, c in result.high_correlation_pairs)
 
     def test_nan_handling(self) -> None:
         engine = CorrelationRiskEngine(min_observations=5)
@@ -113,8 +113,12 @@ class TestCorrelationRiskEngine:
         engine = CorrelationRiskEngine()
         d = engine.evaluate(_uncorrelated_matrix(3, 50)).to_dict()
         expected_keys = {
-            "max_correlation", "average_correlation", "concentration_risk",
-            "num_pairs", "high_correlation_pairs", "passed",
+            "max_correlation",
+            "average_correlation",
+            "concentration_risk",
+            "num_pairs",
+            "high_correlation_pairs",
+            "passed",
         }
         assert expected_keys <= set(d.keys())
 

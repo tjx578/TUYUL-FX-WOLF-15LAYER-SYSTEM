@@ -6,7 +6,6 @@ import numpy as np
 import pytest
 
 import engines.portfolio_monte_carlo_engine as portfolio_mc
-
 from engines.portfolio_monte_carlo_engine import (
     PortfolioMonteCarloEngine,
     PortfolioMonteCarloResult,
@@ -55,9 +54,7 @@ def _make_correlated_returns(
         else:
             # Mix base returns with noise based on correlation
             noise = _make_pair_returns(n, base_win_rate, seed=seed + i + 100)
-            mixed = [
-                correlation * base[j] + (1 - correlation) * noise[j] for j in range(n)
-            ]
+            mixed = [correlation * base[j] + (1 - correlation) * noise[j] for j in range(n)]
             result[label] = mixed
 
     return result
@@ -69,7 +66,6 @@ def _make_correlated_returns(
 
 
 class TestPortfolioMonteCarloEngine:
-
     def test_basic_run(self) -> None:
         engine = PortfolioMonteCarloEngine(simulations=200, seed=42)
         returns = _make_correlated_returns(100, num_pairs=3, seed=42)
@@ -199,13 +195,9 @@ class TestPortfolioMonteCarloEngine:
         result = engine.run(returns)
 
         # P95 drawdown is reported as a positive magnitude of severe losses.
-        assert result.portfolio_max_drawdown_p95 >= abs(
-            result.portfolio_max_drawdown_mean
-        )
+        assert result.portfolio_max_drawdown_p95 >= abs(result.portfolio_max_drawdown_mean)
 
-    def test_risk_of_ruin_uses_path_not_terminal_pnl(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_risk_of_ruin_uses_path_not_terminal_pnl(self, monkeypatch: pytest.MonkeyPatch) -> None:
         engine = PortfolioMonteCarloEngine(
             simulations=1,
             seed=7,
@@ -230,9 +222,7 @@ class TestPortfolioMonteCarloEngine:
         assert result.portfolio_expected_value == 405.0
         assert result.portfolio_risk_of_ruin == 1.0
 
-    def test_diversification_ratio_matches_simulated_pair_pnls(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_diversification_ratio_matches_simulated_pair_pnls(self, monkeypatch: pytest.MonkeyPatch) -> None:
         engine = PortfolioMonteCarloEngine(simulations=2, seed=11)
         returns = {
             "PAIR1": [1.0] * 15 + [3.0] * 15,

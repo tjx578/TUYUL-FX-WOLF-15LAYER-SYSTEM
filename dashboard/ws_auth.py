@@ -1,4 +1,4 @@
-﻿"""
+"""
 dashboard/ws_auth.py — WebSocket Authentication
 
 Provides JWT-based WebSocket authentication including:

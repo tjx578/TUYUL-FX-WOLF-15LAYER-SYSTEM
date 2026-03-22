@@ -172,12 +172,22 @@ class TestDeepCopy:
 
     def test_get_active_signals_returns_copies(self) -> None:
         sm = StateManager()
-        sm.register_signal(SignalState(
-            signal_id="sig_a", symbol="EURUSD", verdict="EXECUTE", confidence=0.9,
-        ))
-        sm.register_signal(SignalState(
-            signal_id="sig_b", symbol="GBPUSD", verdict="HOLD", confidence=0.6,
-        ))
+        sm.register_signal(
+            SignalState(
+                signal_id="sig_a",
+                symbol="EURUSD",
+                verdict="EXECUTE",
+                confidence=0.9,
+            )
+        )
+        sm.register_signal(
+            SignalState(
+                signal_id="sig_b",
+                symbol="GBPUSD",
+                verdict="HOLD",
+                confidence=0.6,
+            )
+        )
 
         actives = sm.get_active_signals()
         assert len(actives) == 2
@@ -228,12 +238,14 @@ class TestAccountStateUpdates:
 class TestSignalLifecycle:
     def test_register_and_retrieve(self) -> None:
         sm = StateManager()
-        sm.register_signal(SignalState(
-            signal_id="sig_001",
-            symbol="EURUSD",
-            verdict="EXECUTE",
-            confidence=0.88,
-        ))
+        sm.register_signal(
+            SignalState(
+                signal_id="sig_001",
+                symbol="EURUSD",
+                verdict="EXECUTE",
+                confidence=0.88,
+            )
+        )
         sig = sm.get_signal("sig_001")
         assert sig is not None
         assert sig.symbol == "EURUSD"
@@ -241,9 +253,14 @@ class TestSignalLifecycle:
 
     def test_update_status(self) -> None:
         sm = StateManager()
-        sm.register_signal(SignalState(
-            signal_id="sig_001", symbol="EURUSD", verdict="EXECUTE", confidence=0.88,
-        ))
+        sm.register_signal(
+            SignalState(
+                signal_id="sig_001",
+                symbol="EURUSD",
+                verdict="EXECUTE",
+                confidence=0.88,
+            )
+        )
         assert sm.update_signal_status("sig_001", "PENDING_PLACED") is True
         sig = sm.get_signal("sig_001")
         assert sig is not None
@@ -255,12 +272,22 @@ class TestSignalLifecycle:
 
     def test_get_active_signals_excludes_terminal(self) -> None:
         sm = StateManager()
-        sm.register_signal(SignalState(
-            signal_id="s1", symbol="EURUSD", verdict="EXECUTE", confidence=0.9,
-        ))
-        sm.register_signal(SignalState(
-            signal_id="s2", symbol="GBPUSD", verdict="HOLD", confidence=0.5,
-        ))
+        sm.register_signal(
+            SignalState(
+                signal_id="s1",
+                symbol="EURUSD",
+                verdict="EXECUTE",
+                confidence=0.9,
+            )
+        )
+        sm.register_signal(
+            SignalState(
+                signal_id="s2",
+                symbol="GBPUSD",
+                verdict="HOLD",
+                confidence=0.5,
+            )
+        )
         sm.update_signal_status("s2", "TRADE_CLOSED")
 
         active = sm.get_active_signals()
@@ -300,10 +327,9 @@ class TestConcurrentAccess:
             except Exception as e:
                 errors.append(e)
 
-        threads = (
-            [threading.Thread(target=writer) for _ in range(2)]
-            + [threading.Thread(target=reader) for _ in range(4)]
-        )
+        threads = [threading.Thread(target=writer) for _ in range(2)] + [
+            threading.Thread(target=reader) for _ in range(4)
+        ]
         for t in threads:
             t.start()
         for t in threads:
@@ -316,9 +342,14 @@ class TestReset:
     def test_reset_clears_all(self) -> None:
         sm = StateManager()
         sm.update_account_state(balance=50000.0)
-        sm.register_signal(SignalState(
-            signal_id="s1", symbol="EURUSD", verdict="EXECUTE", confidence=0.9,
-        ))
+        sm.register_signal(
+            SignalState(
+                signal_id="s1",
+                symbol="EURUSD",
+                verdict="EXECUTE",
+                confidence=0.9,
+            )
+        )
         sm.set_risk_override("max_lot", 1.0)
         sm.heartbeat()
 

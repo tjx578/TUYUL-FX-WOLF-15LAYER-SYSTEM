@@ -100,8 +100,7 @@ class FinnhubKeyManager:
 
         if not self._keys:
             logger.warning(
-                "[FINNHUB-KEY] No Finnhub API keys configured — "
-                "all Finnhub features will run in dry-run / mock mode."
+                "[FINNHUB-KEY] No Finnhub API keys configured — all Finnhub features will run in dry-run / mock mode."
             )
         elif len(self._keys) == 1:
             logger.info("[FINNHUB-KEY] Single API key loaded (no rotation available).")
@@ -153,7 +152,7 @@ class FinnhubKeyManager:
                 remaining = max(0.0, state.suspend_until - now)
                 if remaining > 0:
                     logger.warning(
-                        "[FINNHUB-KEY] Single key sedang cooldown (%.0fs sisa) — " "request berikutnya mungkin 429",
+                        "[FINNHUB-KEY] Single key sedang cooldown (%.0fs sisa) — request berikutnya mungkin 429",
                         remaining,
                     )
 
@@ -193,7 +192,7 @@ class FinnhubKeyManager:
             state.suspend_until = now + cooldown
 
             logger.warning(
-                "[FINNHUB-KEY] Key #%d %s (total failures: %d). " "Suspended for %ds.",
+                "[FINNHUB-KEY] Key #%d %s (total failures: %d). Suspended for %ds.",
                 idx,
                 reason,
                 state.failures,

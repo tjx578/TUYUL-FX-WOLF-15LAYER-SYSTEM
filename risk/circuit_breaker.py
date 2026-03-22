@@ -13,7 +13,6 @@ States:
 
 import json
 import threading
-
 from datetime import datetime, timedelta
 from enum import Enum
 
@@ -156,10 +155,7 @@ class CircuitBreaker:
 
             self._redis.set(self._key_consecutive, str(self._consecutive_losses))
         except Exception as e:
-            logger.error(
-                "Failed to persist circuit breaker state",
-                error=str(e)
-            )
+            logger.error("Failed to persist circuit breaker state", error=str(e))
 
     def _check_auto_recovery(self) -> None:
         """Check if cooldown has elapsed and auto-recover to HALF_OPEN."""
@@ -296,11 +292,13 @@ class CircuitBreaker:
             except json.JSONDecodeError:
                 trades = []
 
-            trades.append({
-                "timestamp": now_utc().isoformat(),
-                "pair": pair,
-                "pnl": pnl,
-            })
+            trades.append(
+                {
+                    "timestamp": now_utc().isoformat(),
+                    "pair": pair,
+                    "pnl": pnl,
+                }
+            )
 
             # Keep only last 100 trades
             trades = trades[-100:]
@@ -324,18 +322,14 @@ class CircuitBreaker:
 
                 if self._probe_count >= self.recovery_probe_trades:
                     # Successful recovery
-                    logger.info(
-                        "Recovery probe successful, moving to CLOSED", probe_count=self._probe_count
-                    )
+                    logger.info("Recovery probe successful, moving to CLOSED", probe_count=self._probe_count)
                     self._transition_to(CircuitBreakerState.CLOSED)
                     return
 
             # Check breach conditions (only in CLOSED state)
             if self._state == CircuitBreakerState.CLOSED:
                 breached = (
-                    self._check_daily_loss(daily_loss)
-                    or self._check_consecutive_losses()
-                    or self._check_velocity()
+                    self._check_daily_loss(daily_loss) or self._check_consecutive_losses() or self._check_velocity()
                 )
 
                 if breached:
@@ -407,6 +401,5 @@ class CircuitBreaker:
         if not self.is_trading_allowed():
             snapshot = self.get_snapshot()
             raise CircuitBreakerOpen(
-                f"Circuit breaker is {snapshot['state']}: "
-                f"consecutive_losses={snapshot['consecutive_losses']}"
+                f"Circuit breaker is {snapshot['state']}: consecutive_losses={snapshot['consecutive_losses']}"
             )

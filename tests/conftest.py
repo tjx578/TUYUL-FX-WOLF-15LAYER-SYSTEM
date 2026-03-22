@@ -10,7 +10,6 @@ Provides:
 import asyncio
 import sys
 import time
-
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -196,9 +195,7 @@ def price_watcher():
             }
 
         def get_price(self, symbol: str) -> dict:
-            return self._prices.get(
-                symbol, {"bid": 0.0, "ask": 0.0, "spread": 0.0}
-            )
+            return self._prices.get(symbol, {"bid": 0.0, "ask": 0.0, "spread": 0.0})
 
         def get_bid(self, symbol: str) -> float:
             return self.get_price(symbol)["bid"]

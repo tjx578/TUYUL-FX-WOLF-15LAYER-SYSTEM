@@ -100,4 +100,3 @@ from core.redis_keys import (  # noqa: F401
     ws_relay_channel,
     zone_confluence,
 )
-

@@ -259,7 +259,7 @@ class L7ProbabilityAnalyzer:
                             result["validation"] = "FAIL"
                             validation = "FAIL"
                         logger.warning(
-                            "[L7] {symbol} WF validation failed — " "downgraded to {validation}",
+                            "[L7] {symbol} WF validation failed — downgraded to {validation}",
                             symbol=symbol,
                             validation=validation,
                         )

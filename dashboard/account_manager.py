@@ -4,9 +4,8 @@ import contextlib
 from datetime import UTC, datetime
 from typing import Any
 
-from schemas.trade_models import Account
-
 from infrastructure.redis_client import get_client
+from schemas.trade_models import Account
 from storage.redis_client import redis_client
 
 

@@ -26,9 +26,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 _VALID_EA_CLASSES: frozenset[str] = frozenset({"PRIMARY", "PORTFOLIO"})
-_VALID_AGENT_STATUSES: frozenset[str] = frozenset(
-    {"ONLINE", "WARNING", "OFFLINE", "QUARANTINED", "DISABLED"}
-)
+_VALID_AGENT_STATUSES: frozenset[str] = frozenset({"ONLINE", "WARNING", "OFFLINE", "QUARANTINED", "DISABLED"})
 
 # ---------------------------------------------------------------------------
 # Helper
@@ -231,8 +229,7 @@ class AgentRepository:
         id_idx = len(params)
 
         row = await self._pg.fetchrow(
-            f"UPDATE ea_agents SET {', '.join(set_parts)}, updated_at = now() "
-            f"WHERE id = ${id_idx}::uuid RETURNING *",
+            f"UPDATE ea_agents SET {', '.join(set_parts)}, updated_at = now() WHERE id = ${id_idx}::uuid RETURNING *",
             *params,
         )
         return _row_to_dict(row) if row else None

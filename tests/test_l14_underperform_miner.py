@@ -19,20 +19,18 @@ import pytest
 
 from journal.l14_underperform_miner import (
     _MAX_GROUPED_KEYS,
+    AdaptiveReflectionReport,
+    JournalExtractor,
+    JournalRecord,
+    L14AdaptiveReflection,
+    UnderperformPatternMiner,
     _infer_result,
     _norm_text,
     _to_datetime,
     _to_float,
     _wilson_lower_bound,
-    AdaptiveReflectionReport,
     analyze_underperforming_setups,
-    JournalExtractor,
-    JournalRecord,
-    L14AdaptiveReflection,
-    PatternStats,
-    UnderperformPatternMiner,
 )
-
 
 # ---------------------------------------------------------------------------
 # Shared fixtures
@@ -175,6 +173,7 @@ class TestToDatetime:
 
     def test_already_datetime(self) -> None:
         from datetime import datetime
+
         now = datetime(2026, 1, 1)
         assert _to_datetime(now) is now
 
@@ -449,7 +448,7 @@ class TestUnderperformPatternMiner:
         records = self._extract(rows)
         patterns, _, _ = self.miner.mine(records)
         for p in patterns:
-            for dim, val in zip(p.dimensions, p.values):
+            for dim, val in zip(p.dimensions, p.values, strict=False):
                 assert f"{dim}={val}" in p.signature
 
     def test_wilson_low_in_pattern(self) -> None:
@@ -495,9 +494,7 @@ class TestUnderperformPatternMiner:
 
 class TestL14AdaptiveReflection:
     def setup_method(self) -> None:
-        self.engine = L14AdaptiveReflection(
-            UnderperformPatternMiner(min_trades=8)
-        )
+        self.engine = L14AdaptiveReflection(UnderperformPatternMiner(min_trades=8))
 
     def test_returns_report(self) -> None:
         rows = _mixed_dataset()
@@ -592,6 +589,7 @@ class TestL14AdaptiveReflection:
 
     def test_to_dict_serialisable(self) -> None:
         import json
+
         rows = _mixed_dataset()
         report = self.engine.analyze([], rows)
         d = report.to_dict()
@@ -604,9 +602,14 @@ class TestL14AdaptiveReflection:
         report = self.engine.analyze([], rows)
         d = report.to_dict()
         required_keys = {
-            "total_records", "usable_records", "baseline_expectancy_r",
-            "baseline_win_rate", "current_setup_penalty", "adaptive_notes",
-            "flagged_patterns", "current_setup_matches",
+            "total_records",
+            "usable_records",
+            "baseline_expectancy_r",
+            "baseline_win_rate",
+            "current_setup_penalty",
+            "adaptive_notes",
+            "flagged_patterns",
+            "current_setup_matches",
         }
         assert required_keys <= set(d.keys())
 
@@ -676,6 +679,7 @@ class TestConstitutionalBoundary:
 
     def test_no_execute_method_on_module(self) -> None:
         import journal.l14_underperform_miner as mod
+
         public_names = {n for n in dir(mod) if not n.startswith("_")}
         forbidden = {"execute", "place_order", "send_trade", "override_verdict", "modify_l12"}
         assert forbidden.isdisjoint(public_names)
@@ -688,6 +692,7 @@ class TestConstitutionalBoundary:
 
     def test_report_has_no_execute_field(self) -> None:
         import dataclasses
+
         rows = _mixed_dataset()
         engine = L14AdaptiveReflection(UnderperformPatternMiner(min_trades=8))
         report = engine.analyze([], rows)
@@ -714,6 +719,7 @@ class TestConstitutionalBoundary:
     def test_l14_cannot_modify_l12_verdict(self) -> None:
         """L14 has no mechanism to change the constitution's verdict."""
         import journal.l14_underperform_miner as mod
+
         assert not hasattr(mod, "set_verdict")
         assert not hasattr(mod, "approve_trade")
         assert not hasattr(mod, "reject_trade")
@@ -726,9 +732,7 @@ class TestConstitutionalBoundary:
 
 class TestEdgeCases:
     def setup_method(self) -> None:
-        self.engine = L14AdaptiveReflection(
-            UnderperformPatternMiner(min_trades=8)
-        )
+        self.engine = L14AdaptiveReflection(UnderperformPatternMiner(min_trades=8))
 
     def test_single_record(self) -> None:
         report = self.engine.analyze([], [_row(outcome_r=1.0)])

@@ -353,9 +353,7 @@ class TestGracefulDegradation:
     ) -> None:
         mock_redis.client.get.return_value = "1"  # safe_mode enabled
         mock_redis.client.keys.return_value = [f"{EA_AGENT_PREFIX}ea-1".encode()]
-        mock_redis.client.hgetall.return_value = {
-            k.encode(): v.encode() for k, v in _make_agent_hash("ea-1").items()
-        }
+        mock_redis.client.hgetall.return_value = {k.encode(): v.encode() for k, v in _make_agent_hash("ea-1").items()}
         mock_redis.client.ttl.return_value = -2
 
         # Simulate Agent Manager unavailable

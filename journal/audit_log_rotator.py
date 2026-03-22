@@ -27,7 +27,9 @@ class AuditLogRotator:
         usage = shutil.disk_usage(str(self.log_path.parent))
         free_gb = usage.free / 1e9
         if free_gb < self.min_free_gb:
-            rotated_logs = sorted(self.log_path.parent.glob(f"{self.log_path.stem}.*.jsonl"), key=lambda x: x.stat().st_mtime)
+            rotated_logs = sorted(
+                self.log_path.parent.glob(f"{self.log_path.stem}.*.jsonl"), key=lambda x: x.stat().st_mtime
+            )
             for f in rotated_logs:
                 f.unlink()
                 usage = shutil.disk_usage(str(self.log_path.parent))

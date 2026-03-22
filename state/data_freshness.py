@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 import time
 from dataclasses import dataclass
-from enum import Enum
+from enum import StrEnum
 from typing import Literal
 
 FeedFreshnessState = Literal[
@@ -15,7 +15,7 @@ FeedFreshnessState = Literal[
 ]
 
 
-class FreshnessClass(str, Enum):
+class FreshnessClass(StrEnum):
     """Approved pipeline-wide freshness classification.
 
     This is the single canonical set of freshness labels used across

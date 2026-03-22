@@ -3,6 +3,7 @@ V11 Extreme Selectivity Gate — hardened with input validation & type safety.
 
 Analysis zone only. Produces a gate result; no execution side-effects.
 """
+
 from __future__ import annotations
 
 import logging
@@ -62,11 +63,7 @@ class ExtremeSelectivityGateV11:
             )
 
         ratio = passed / total
-        verdict = (
-            GateVerdict.PASS
-            if ratio >= self.thresholds.min_pass_ratio
-            else GateVerdict.FAIL
-        )
+        verdict = GateVerdict.PASS if ratio >= self.thresholds.min_pass_ratio else GateVerdict.FAIL
 
         overall_score = self._compute_score(inp, ratio)
 
@@ -139,9 +136,7 @@ class ExtremeSelectivityGateV11:
 
         # Volatility / spread checks (only if ATR data is available)
         if inp.atr_value >= t.min_atr:
-            checks.append(
-                (inp.spread_ratio <= t.max_spread_ratio, "spread_too_wide")
-            )
+            checks.append((inp.spread_ratio <= t.max_spread_ratio, "spread_too_wide"))
         else:
             checks.append((False, "atr_too_low_or_missing"))
 
@@ -150,10 +145,7 @@ class ExtremeSelectivityGateV11:
     def _compute_score(self, inp: V11GateInput, pass_ratio: float) -> float:
         """Weighted composite score (0.0–1.0)."""
         score_component = (
-            inp.wolf_score * 0.30
-            + inp.tii_score * 0.20
-            + inp.frpc_score * 0.20
-            + inp.confluence_score * 0.30
+            inp.wolf_score * 0.30 + inp.tii_score * 0.20 + inp.frpc_score * 0.20 + inp.confluence_score * 0.30
         )
         # Blend: 70% from scores, 30% from pass ratio
         return score_component * 0.70 + pass_ratio * 0.30

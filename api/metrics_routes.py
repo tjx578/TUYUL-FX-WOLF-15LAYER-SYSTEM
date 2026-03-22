@@ -176,7 +176,7 @@ async def prometheus_metrics() -> PlainTextResponse:
     "/metrics/slo",
     summary="SLO status for dashboard and alerting",
     description=(
-        "Returns latency SLO status with threshold breach indicators for dashboard " "panels and alert automation."
+        "Returns latency SLO status with threshold breach indicators for dashboard panels and alert automation."
     ),
     include_in_schema=True,
 )

@@ -31,6 +31,7 @@ logger = logging.getLogger(__name__)
 
 class AuditAction(Enum):
     """Auditable trade/system actions."""
+
     # Signal lifecycle
     SIGNAL_CREATED = "SIGNAL_CREATED"
     SIGNAL_EXPIRED = "SIGNAL_EXPIRED"
@@ -79,14 +80,15 @@ class AuditEntry:
 
     Frozen dataclass — cannot be modified after creation.
     """
+
     entry_id: str
-    timestamp: str                # ISO 8601 UTC
-    action: str                   # AuditAction value
-    actor: str                    # Who: "ea", "user:john", "system:l12", etc.
-    resource: str                 # What: "signal:abc123", "order:xyz", "key:kid_xxx"
-    details: dict[str, Any]       # Action-specific payload
-    prev_hash: str                # SHA-256 of previous entry (chain integrity)
-    entry_hash: str               # SHA-256 of this entry (excluding entry_hash itself)
+    timestamp: str  # ISO 8601 UTC
+    action: str  # AuditAction value
+    actor: str  # Who: "ea", "user:john", "system:l12", etc.
+    resource: str  # What: "signal:abc123", "order:xyz", "key:kid_xxx"
+    details: dict[str, Any]  # Action-specific payload
+    prev_hash: str  # SHA-256 of previous entry (chain integrity)
+    entry_hash: str  # SHA-256 of this entry (excluding entry_hash itself)
 
     def to_dict(self) -> dict:
         return {
@@ -114,15 +116,19 @@ def _compute_hash(
     prev_hash: str,
 ) -> str:
     """Compute SHA-256 hash of an entry's content (excluding the hash itself)."""
-    payload = json.dumps({
-        "entry_id": entry_id,
-        "timestamp": timestamp,
-        "action": action,
-        "actor": actor,
-        "resource": resource,
-        "details": details,
-        "prev_hash": prev_hash,
-    }, separators=(",", ":"), sort_keys=True)
+    payload = json.dumps(
+        {
+            "entry_id": entry_id,
+            "timestamp": timestamp,
+            "action": action,
+            "actor": actor,
+            "resource": resource,
+            "details": details,
+            "prev_hash": prev_hash,
+        },
+        separators=(",", ":"),
+        sort_keys=True,
+    )
     return hashlib.sha256(payload.encode()).hexdigest()
 
 
@@ -210,7 +216,10 @@ class AuditTrail:
 
         logger.info(
             "AUDIT [%s] actor=%s resource=%s entry_id=%s",
-            action.value, actor, resource, entry_id,
+            action.value,
+            actor,
+            resource,
+            entry_id,
         )
 
         return entry
@@ -358,7 +367,8 @@ class AuditTrail:
                 self._entry_count = count
                 logger.info(
                     "Audit trail recovered: %d entries, last_hash=%s...",
-                    count, self._last_hash[:16],
+                    count,
+                    self._last_hash[:16],
                 )
             except (json.JSONDecodeError, KeyError) as e:
                 logger.error("Failed to recover audit chain state: %s", e)

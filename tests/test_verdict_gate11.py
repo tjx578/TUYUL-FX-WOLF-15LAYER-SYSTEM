@@ -27,11 +27,13 @@ class TestGate11KellyEdge:
 
     def test_negative_edge_blocks(self) -> None:
         engine = self._make_engine(enabled=True)
-        gate = engine._evaluate_kelly_edge_gate({
-            "edge_negative": True,
-            "kelly_raw": -0.15,
-            "final_fraction": 0.0,
-        })
+        gate = engine._evaluate_kelly_edge_gate(
+            {
+                "edge_negative": True,
+                "kelly_raw": -0.15,
+                "final_fraction": 0.0,
+            }
+        )
 
         assert gate["passed"] is False
         assert gate["severity"] == "HARD_BLOCK"
@@ -40,11 +42,13 @@ class TestGate11KellyEdge:
 
     def test_positive_edge_passes(self) -> None:
         engine = self._make_engine(enabled=True)
-        gate = engine._evaluate_kelly_edge_gate({
-            "edge_negative": False,
-            "kelly_raw": 0.25,
-            "final_fraction": 0.018,
-        })
+        gate = engine._evaluate_kelly_edge_gate(
+            {
+                "edge_negative": False,
+                "kelly_raw": 0.25,
+                "final_fraction": 0.018,
+            }
+        )
 
         assert gate["passed"] is True
         assert gate["severity"] == "NONE"
@@ -53,11 +57,13 @@ class TestGate11KellyEdge:
     def test_zero_kelly_edge_negative(self) -> None:
         """Kelly raw exactly 0 should be treated as edge_negative."""
         engine = self._make_engine(enabled=True)
-        gate = engine._evaluate_kelly_edge_gate({
-            "edge_negative": True,  # Kelly raw ≤ 0
-            "kelly_raw": 0.0,
-            "final_fraction": 0.0,
-        })
+        gate = engine._evaluate_kelly_edge_gate(
+            {
+                "edge_negative": True,  # Kelly raw ≤ 0
+                "kelly_raw": 0.0,
+                "final_fraction": 0.0,
+            }
+        )
 
         assert gate["passed"] is False
 
@@ -70,11 +76,13 @@ class TestGate11KellyEdge:
         # kelly_edge_data is provided. Testing the internal method
         # with valid data to confirm it works; the None-skip is
         # tested via the evaluate() integration path.
-        gate = engine._evaluate_kelly_edge_gate({
-            "edge_negative": False,
-            "kelly_raw": 0.30,
-            "final_fraction": 0.015,
-        })
+        gate = engine._evaluate_kelly_edge_gate(
+            {
+                "edge_negative": False,
+                "kelly_raw": 0.30,
+                "final_fraction": 0.015,
+            }
+        )
         assert gate["passed"] is True
 
     def test_disabled_config(self) -> None:
@@ -86,11 +94,13 @@ class TestGate11KellyEdge:
 
     def test_gate_result_has_diagnostics(self) -> None:
         engine = self._make_engine(enabled=True)
-        gate = engine._evaluate_kelly_edge_gate({
-            "edge_negative": True,
-            "kelly_raw": -0.08,
-            "final_fraction": 0.0,
-        })
+        gate = engine._evaluate_kelly_edge_gate(
+            {
+                "edge_negative": True,
+                "kelly_raw": -0.08,
+                "final_fraction": 0.0,
+            }
+        )
 
         assert "gate" in gate
         assert gate["gate"] == "GATE_11_KELLY_EDGE"
@@ -113,11 +123,13 @@ class TestGate11KellyEdge:
     def test_gate_is_mathematical_not_market(self) -> None:
         """Gate 11 must never reference market direction or signal."""
         engine = self._make_engine(enabled=True)
-        gate = engine._evaluate_kelly_edge_gate({
-            "edge_negative": True,
-            "kelly_raw": -0.10,
-            "final_fraction": 0.0,
-        })
+        gate = engine._evaluate_kelly_edge_gate(
+            {
+                "edge_negative": True,
+                "kelly_raw": -0.10,
+                "final_fraction": 0.0,
+            }
+        )
 
         # Reason should reference math/statistics, never market direction
         reason = gate["reason"].lower()

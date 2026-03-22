@@ -53,7 +53,7 @@ class StreamPublisher:
 
         message_id: str = await client.xadd(
             name=stream,
-            fields=fields, # pyright: ignore[reportArgumentType]
+            fields=fields,  # pyright: ignore[reportArgumentType]
             maxlen=trim_len,
             approximate=approximate,
         )
@@ -66,7 +66,10 @@ class StreamPublisher:
         stream: str,
         symbol: str,
         timeframe: str,
-        o: str, h: str, l: str, c: str,  # noqa: E741
+        o: str,
+        h: str,
+        l: str,
+        c: str,  # noqa: E741
         volume: str = "0",
         extra: dict[str, str] | None = None,
     ) -> str:

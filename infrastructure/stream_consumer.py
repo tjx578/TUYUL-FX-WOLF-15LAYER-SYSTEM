@@ -39,7 +39,8 @@ logger = logging.getLogger(__name__)
 
 class StreamPriority(Enum):
     """Determines retry and recovery behavior."""
-    CRITICAL = "critical"    # Signals, trades — must not lose, PEL recovery
+
+    CRITICAL = "critical"  # Signals, trades — must not lose, PEL recovery
     IMPORTANT = "important"  # Candles, news — PEL recovery on reconnect
     EPHEMERAL = "ephemeral"  # Heartbeat — no PEL sweep
 
@@ -47,6 +48,7 @@ class StreamPriority(Enum):
 @dataclass(frozen=True)
 class StreamBinding:
     """Binds a stream to its consumer group and processing callback."""
+
     stream: str
     group: str
     callback: Callable[[str, str, dict[str, str]], Awaitable[None]]
@@ -57,6 +59,7 @@ class StreamBinding:
 @dataclass
 class ConsumerConfig:
     """Configuration for the stream consumer."""
+
     consumer_name: str | None = None
     consumer_prefix: str = "engine"
     block_ms: int = 2000
@@ -77,17 +80,22 @@ class ConsumerConfig:
     def __post_init__(self) -> None:
         if isinstance(self.backoff, dict):
             backoff_dict: dict[str, Any] = dict(self.backoff)
-            object.__setattr__(self, "backoff", BackoffConfig(
-                initial=float(backoff_dict.get("initial", 1.0)),
-                maximum=float(backoff_dict.get("maximum", 30.0)),
-                factor=float(backoff_dict.get("factor", 2.0)),
-                jitter=float(backoff_dict.get("jitter", 0.25)),
-            ))
+            object.__setattr__(
+                self,
+                "backoff",
+                BackoffConfig(
+                    initial=float(backoff_dict.get("initial", 1.0)),
+                    maximum=float(backoff_dict.get("maximum", 30.0)),
+                    factor=float(backoff_dict.get("factor", 2.0)),
+                    jitter=float(backoff_dict.get("jitter", 0.25)),
+                ),
+            )
 
 
 @dataclass
 class ConsumerStats:
     """Observable consumer metrics."""
+
     messages_processed: int = 0
     messages_acked: int = 0
     messages_failed: int = 0
@@ -191,14 +199,16 @@ class StreamConsumer:
                 )
                 logger.info(
                     "Created consumer group: stream=%s group=%s",
-                    binding.stream, binding.group,
+                    binding.stream,
+                    binding.group,
                 )
             except ResponseError as e:
                 err = str(e)
                 if "BUSYGROUP" in err:
                     logger.debug(
                         "Consumer group exists: stream=%s group=%s",
-                        binding.stream, binding.group,
+                        binding.stream,
+                        binding.group,
                     )
                 elif "WRONGTYPE" in err:
                     # Key exists but is not a stream — reset and retry
@@ -215,7 +225,8 @@ class StreamConsumer:
                     )
                     logger.info(
                         "Recreated consumer group after WRONGTYPE reset: stream=%s group=%s",
-                        binding.stream, binding.group,
+                        binding.stream,
+                        binding.group,
                     )
                 else:
                     raise
@@ -249,7 +260,8 @@ class StreamConsumer:
 
             logger.debug(
                 "Processed+ACK: stream=%s id=%s",
-                binding.stream, message_id,
+                binding.stream,
+                message_id,
             )
             return True
 
@@ -264,7 +276,8 @@ class StreamConsumer:
             self._stats.last_error_at = time.time()
             logger.exception(
                 "Processing failed (no ACK, stays in PEL): stream=%s id=%s",
-                binding.stream, message_id,
+                binding.stream,
+                message_id,
             )
             return False
 
@@ -300,7 +313,9 @@ class StreamConsumer:
                     if not fields:
                         # Empty fields = already delivered, just ACK
                         await client.xack(
-                            binding.stream, binding.group, message_id,
+                            binding.stream,
+                            binding.group,
+                            message_id,
                         )
                         continue
 
@@ -311,14 +326,16 @@ class StreamConsumer:
                 self._stats.pending_recovered += recovered
                 logger.info(
                     "PEL recovery: %d messages from stream=%s",
-                    recovered, binding.stream,
+                    recovered,
+                    binding.stream,
                 )
 
         except (RedisConnectionError, RedisTimeoutError):
             raise
         except Exception:
             logger.exception(
-                "PEL recovery error: stream=%s", binding.stream,
+                "PEL recovery error: stream=%s",
+                binding.stream,
             )
 
         return recovered
@@ -351,7 +368,8 @@ class StreamConsumer:
                 self._stats.pending_autoclaimed += claimed
                 logger.info(
                     "Autoclaimed %d stale messages: stream=%s",
-                    claimed, binding.stream,
+                    claimed,
+                    binding.stream,
                 )
 
         except ResponseError as e:
@@ -363,7 +381,8 @@ class StreamConsumer:
             raise
         except Exception:
             logger.exception(
-                "Autoclaim error: stream=%s", binding.stream,
+                "Autoclaim error: stream=%s",
+                binding.stream,
             )
 
         return claimed
@@ -450,7 +469,9 @@ class StreamConsumer:
                 for _stream_name, messages in response:
                     for message_id, fields in messages:
                         await self._process_and_ack(
-                            binding, message_id, fields,
+                            binding,
+                            message_id,
+                            fields,
                         )
 
             except (RedisConnectionError, RedisTimeoutError):
@@ -467,7 +488,8 @@ class StreamConsumer:
                 self._stats.last_error = "read_loop_unexpected"
                 self._stats.last_error_at = time.time()
                 logger.exception(
-                    "Unexpected read loop error: stream=%s", binding.stream,
+                    "Unexpected read loop error: stream=%s",
+                    binding.stream,
                 )
                 # Brief pause to prevent tight error loop, but not backoff
                 # (backoff is for connection-level failures in the outer loop)
@@ -532,19 +554,24 @@ class StreamConsumer:
                 # Launch parallel tasks
                 tasks: list[asyncio.Task[None]] = []
                 for binding in self._bindings:
-                    tasks.append(asyncio.create_task(
-                        self._read_loop(binding),
-                        name=f"read:{binding.stream}",
-                    ))
-                tasks.append(asyncio.create_task(
-                    self._pending_sweep_loop(),
-                    name="pending_sweep",
-                ))
+                    tasks.append(
+                        asyncio.create_task(
+                            self._read_loop(binding),
+                            name=f"read:{binding.stream}",
+                        )
+                    )
+                tasks.append(
+                    asyncio.create_task(
+                        self._pending_sweep_loop(),
+                        name="pending_sweep",
+                    )
+                )
                 self._tasks = tasks
 
                 # Wait for first failure
                 done, pending = await asyncio.wait(
-                    tasks, return_when=asyncio.FIRST_EXCEPTION,
+                    tasks,
+                    return_when=asyncio.FIRST_EXCEPTION,
                 )
 
                 # Cancel remaining
@@ -570,8 +597,7 @@ class StreamConsumer:
                 self._stats.last_error = f"{type(exc).__name__}"
                 self._stats.last_error_at = time.time()
                 logger.warning(
-                    "Redis connection lost (%s). "
-                    "Reconnecting in %.2fs (attempt #%d, backoff #%d)",
+                    "Redis connection lost (%s). Reconnecting in %.2fs (attempt #%d, backoff #%d)",
                     type(exc).__name__,
                     delay,
                     self._stats.reconnects,

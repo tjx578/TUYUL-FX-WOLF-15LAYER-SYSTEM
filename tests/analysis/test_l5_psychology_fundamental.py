@@ -24,6 +24,7 @@ from analysis.layers.L5_psychology_fundamental import (
 
 # ── Fixtures ───────────────────────────────────────────────────────────
 
+
 @pytest.fixture
 def layer():
     return L5AnalysisLayer()
@@ -67,6 +68,7 @@ def _make_full_gate_data(score_per_sub: int = 3) -> dict:
 # ═══════════════════════════════════════════════════════════════════════
 # FUNDAMENTAL HELPERS
 # ═══════════════════════════════════════════════════════════════════════
+
 
 class TestExtractPairCurrencies:
     def test_standard_pair(self):
@@ -114,6 +116,7 @@ class TestFundamentalStrength:
 # PSYCHOLOGY HELPERS
 # ═══════════════════════════════════════════════════════════════════════
 
+
 class TestFocusLevel:
     def test_initial_focus(self):
         assert _focus_level(0.0) == 0.90
@@ -158,6 +161,7 @@ class TestEAFScore:
 # PSYCHOLOGY GATES
 # ═══════════════════════════════════════════════════════════════════════
 
+
 class TestEvaluateGates:
     def test_full_data_scores_correctly(self):
         data = _make_full_gate_data(3)
@@ -169,9 +173,7 @@ class TestEvaluateGates:
     def test_empty_data_scores_zero(self):
         """Missing data must NOT produce perfect score."""
         result = _evaluate_gates({})
-        assert result["total_score"] == 0, (
-            "Empty gate data should score 0 (fail-safe), not max"
-        )
+        assert result["total_score"] == 0, "Empty gate data should score 0 (fail-safe), not max"
 
     def test_none_data_scores_zero(self):
         result = _evaluate_gates(None)
@@ -210,6 +212,7 @@ class TestEvaluateGates:
 # MAIN ANALYZER — INTEGRATION
 # ═══════════════════════════════════════════════════════════════════════
 
+
 class TestL5AnalysisLayerBasic:
     def test_returns_dict(self, layer, fixed_now):
         result = layer.analyze(pair="EURUSD", now=fixed_now)
@@ -220,13 +223,29 @@ class TestL5AnalysisLayerBasic:
     def test_all_expected_keys_present(self, layer, fixed_now):
         result = layer.analyze(pair="GBPUSD", now=fixed_now)
         required_keys = [
-            "psychology_score", "eaf_score", "emotion_delta", "can_trade",
-            "gate_status", "psychology_ok", "fatigue_level", "focus_level",
-            "emotional_bias", "discipline_score", "stability_index",
-            "fundamental_bias", "fundamental_strength", "sentiment_score",
-            "news_count", "impact_level", "risk_event_active",
-            "psychology_gates", "critical_gates_pass", "has_gate_data",
-            "rgo_governance", "recommendation", "timestamp",
+            "psychology_score",
+            "eaf_score",
+            "emotion_delta",
+            "can_trade",
+            "gate_status",
+            "psychology_ok",
+            "fatigue_level",
+            "focus_level",
+            "emotional_bias",
+            "discipline_score",
+            "stability_index",
+            "fundamental_bias",
+            "fundamental_strength",
+            "sentiment_score",
+            "news_count",
+            "impact_level",
+            "risk_event_active",
+            "psychology_gates",
+            "critical_gates_pass",
+            "has_gate_data",
+            "rgo_governance",
+            "recommendation",
+            "timestamp",
         ]
         for key in required_keys:
             assert key in result, f"Missing key: {key}"
@@ -309,7 +328,9 @@ class TestL5WithGateData:
     def test_gate_data_included_in_output(self, layer, fixed_now):
         gate_data = _make_full_gate_data(3)
         result = layer.analyze(
-            pair="EURUSD", psychology_data=gate_data, now=fixed_now,
+            pair="EURUSD",
+            psychology_data=gate_data,
+            now=fixed_now,
         )
         assert result["has_gate_data"] is True
         assert len(result["psychology_gates"]) == 10
@@ -326,7 +347,9 @@ class TestL5WithGateData:
         gate_data["BODY_CLOSE_PATIENCE"] = {"h4_discipline": 0, "patience_level": 0, "wait_capability": 0}
         gate_data["DECISION_GATE_FOCUS"] = {"proximity_focus": 0, "precision": 0, "no_mid_range": 0}
         result = layer.analyze(
-            pair="EURUSD", psychology_data=gate_data, now=fixed_now,
+            pair="EURUSD",
+            psychology_data=gate_data,
+            now=fixed_now,
         )
         assert result["critical_gates_pass"] is False
         assert "critical_gates" in result["recommendation"].lower()
@@ -349,6 +372,7 @@ class TestL5RGOGovernance:
 # ═══════════════════════════════════════════════════════════════════════
 # BACKWARD COMPATIBILITY
 # ═══════════════════════════════════════════════════════════════════════
+
 
 class TestL5PsychologyAnalyzerCompat:
     def test_original_signature_works(self):
@@ -388,7 +412,7 @@ class TestAnalyzeL5Convenience:
     def test_works_with_gate_data(self, fixed_now):
         result = analyze_l5(
             pair="EURUSD",
-            psychology_data=_make_full_gate_data(3), # type: ignore
+            psychology_data=_make_full_gate_data(3),  # type: ignore
             now=fixed_now,
         )
         assert result["has_gate_data"] is True
@@ -399,18 +423,17 @@ class TestAnalyzeL5Convenience:
 # CONSTITUTIONAL COMPLIANCE
 # ═══════════════════════════════════════════════════════════════════════
 
+
 class TestNoSideEffects:
     """Verify L5 is pure analysis — no execution, no mutation outside self."""
 
     def test_no_execution_fields(self, layer, fixed_now):
         result = layer.analyze(pair="EURUSD", now=fixed_now)
-        forbidden = ["lot_size", "order_id", "account_balance", "equity",
-                      "execute", "place_order"]
+        forbidden = ["lot_size", "order_id", "account_balance", "equity", "execute", "place_order"]
         result_str = str(result)
         for key in forbidden:
             assert key not in result_str, (
-                f"Execution-level field '{key}' found in L5 output — "
-                "violates constitutional boundary"
+                f"Execution-level field '{key}' found in L5 output — violates constitutional boundary"
             )
 
     def test_output_is_dict_not_command(self, layer, fixed_now):

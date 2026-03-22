@@ -4,9 +4,8 @@ TUYUL FX Wolf-15 — Quick Endpoint Smoke Test
 Run: python test_endpoints.py http://localhost:8000
 """
 
-import sys
 import asyncio
-import json
+import sys
 from datetime import datetime
 
 try:
@@ -36,20 +35,21 @@ async def check(client: httpx.AsyncClient, method: str, path: str, body: dict | 
 
 
 async def main() -> None:
-    print(f"\n🐺 TUYUL FX Wolf-15 — Endpoint Smoke Test")
+    print("\n🐺 TUYUL FX Wolf-15 — Endpoint Smoke Test")
     print(f"   Target: {BASE}")
     print(f"   Time:   {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print("-" * 80)
 
     async with httpx.AsyncClient(timeout=10.0) as client:
         # ── Health (no auth needed) ──
-        await check(client, "GET",  "/health")
+        await check(client, "GET", "/health")
 
         # ── Phase 0 Bug-Fix Routes ──
         print("\n── BUG-FIX: Trade Write Routes ──")
-        await check(client, "GET",  "/api/v1/trades/active")
-        await check(client, "POST", "/api/v1/trades/skip",
-                    {"signal_id": "test-001", "pair": "XAUUSD", "reason": "test"})
+        await check(client, "GET", "/api/v1/trades/active")
+        await check(
+            client, "POST", "/api/v1/trades/skip", {"signal_id": "test-001", "pair": "XAUUSD", "reason": "test"}
+        )
 
         # ── Phase 1: New Endpoints ──
         print("\n── NEW: Constitutional Health ──")
@@ -63,15 +63,20 @@ async def main() -> None:
         await check(client, "GET", "/api/v1/risk/test-account/snapshot")
 
         print("\n── NEW: Risk Calculate Preview ──")
-        await check(client, "POST", "/api/v1/risk/calculate", {
-            "account_id": "test-account",
-            "pair": "XAUUSD",
-            "direction": "BUY",
-            "entry": 2350.0,
-            "sl": 2340.0,
-            "tp": 2380.0,
-            "risk_percent": 1.0,
-        })
+        await check(
+            client,
+            "POST",
+            "/api/v1/risk/calculate",
+            {
+                "account_id": "test-account",
+                "pair": "XAUUSD",
+                "direction": "BUY",
+                "entry": 2350.0,
+                "sl": 2340.0,
+                "tp": 2380.0,
+                "risk_percent": 1.0,
+            },
+        )
 
         print("\n── NEW: Journal Extended ──")
         await check(client, "GET", "/api/v1/journal/today")
@@ -92,8 +97,9 @@ async def main() -> None:
         await check(client, "GET", "/api/v1/calendar/upcoming")
         await check(client, "GET", "/api/v1/calendar/upcoming?hours=2")
         await check(client, "GET", "/api/v1/calendar/news-lock/status")
-        await check(client, "POST", "/api/v1/calendar/news-lock/enable",
-                    {"reason": "NFP Release", "duration_minutes": 30})
+        await check(
+            client, "POST", "/api/v1/calendar/news-lock/enable", {"reason": "NFP Release", "duration_minutes": 30}
+        )
         await check(client, "POST", "/api/v1/calendar/news-lock/disable")
 
         print("\n── Dev: Endpoint Summary ──")

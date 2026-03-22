@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import os
 import time
-from enum import Enum
+from enum import StrEnum
 from queue import Empty, Queue
 from threading import Thread
 from typing import Any
@@ -43,7 +43,7 @@ def _record_exec_outcome(outcome: str) -> None:
         pass
 
 
-class QueueOverloadMode(str, Enum):
+class QueueOverloadMode(StrEnum):
     """Backpressure behavior when queue is full."""
 
     REJECT_NEW = "reject_new"
@@ -195,8 +195,7 @@ class EAManager:
                 logger.info(f"EAManager: OK request_id={req.request_id} ticket={result.ticket}")
                 return result
             logger.warning(
-                f"EAManager: attempt {attempt}/{_MAX_RETRIES} failed "
-                f"request_id={req.request_id} err={result.error_msg}"
+                f"EAManager: attempt {attempt}/{_MAX_RETRIES} failed request_id={req.request_id} err={result.error_msg}"
             )
             if attempt < _MAX_RETRIES:
                 time.sleep(1.0)

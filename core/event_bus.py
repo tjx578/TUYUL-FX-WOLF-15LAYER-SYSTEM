@@ -8,9 +8,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections import deque
 import time
-
+from collections import deque
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import TYPE_CHECKING, Any
@@ -63,6 +62,7 @@ class Event:
     def __post_init__(self):
         if not self.event_id:
             import uuid  # noqa: PLC0415
+
             self.event_id = uuid.uuid4().hex[:12]
 
 
@@ -107,13 +107,8 @@ class EventBus:
         # Authority check
         allowed = _ALLOWED_SOURCES.get(event.type)
         if allowed is not None and event.source not in allowed:
-            logger.error(
-                f"AUTHORITY VIOLATION: {event.source} tried to emit {event.type.value} "
-                f"(allowed: {allowed})"
-            )
-            raise PermissionError(
-                f"Module '{event.source}' is not authorized to emit '{event.type.value}'"
-            )
+            logger.error(f"AUTHORITY VIOLATION: {event.source} tried to emit {event.type.value} (allowed: {allowed})")
+            raise PermissionError(f"Module '{event.source}' is not authorized to emit '{event.type.value}'")
 
         # Log event
         self._event_log.append(event)
@@ -132,9 +127,7 @@ class EventBus:
         """Synchronous emit for non-async contexts."""
         allowed = _ALLOWED_SOURCES.get(event.type)
         if allowed is not None and event.source not in allowed:
-            raise PermissionError(
-                f"Module '{event.source}' is not authorized to emit '{event.type.value}'"
-            )
+            raise PermissionError(f"Module '{event.source}' is not authorized to emit '{event.type.value}'")
 
         self._event_log.append(event)
         handlers = self._subscribers.get(event.type, [])

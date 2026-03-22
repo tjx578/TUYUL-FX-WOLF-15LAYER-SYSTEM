@@ -83,9 +83,7 @@ class ContextValidator:
             return False
 
         if h < max(o, c) or l_ > min(o, c):
-            logger.warning(
-                f"Candle OHLC invariant violated: O={o} H={h} L={l_} C={c}"
-            )
+            logger.warning(f"Candle OHLC invariant violated: O={o} H={h} L={l_} C={c}")
             return False
 
         return True

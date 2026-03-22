@@ -175,9 +175,7 @@ async def test_retry_outbox_batch_applies_safety_cap_and_summarizes(monkeypatch:
 
     monkeypatch.setattr("api.ws_routes.publish_live_update", _fake_publish)
 
-    out = await orouter.retry_outbox_batch(
-        orouter.RetryOutboxBatchRequest(limit=999, status_filter="PENDING")
-    )
+    out = await orouter.retry_outbox_batch(orouter.RetryOutboxBatchRequest(limit=999, status_filter="PENDING"))
 
     assert out["capped"] is True
     assert out["applied_limit"] == orouter.RETRY_BATCH_SAFETY_CAP

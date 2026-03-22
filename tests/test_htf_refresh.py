@@ -45,9 +45,12 @@ def _patch_deps():
         patch("ingest.htf_refresh_scheduler.FinnhubCandleFetcher") as mock_fetcher_cls,
         patch("ingest.htf_refresh_scheduler.SystemStateManager") as mock_ssm_cls,
         patch("ingest.htf_refresh_scheduler.LiveContextBus") as mock_bus_cls,
-        patch("ingest.htf_refresh_scheduler.load_finnhub", return_value={
-            "candles": {"refresh": {"htf_interval_sec": 14400, "d1_bars": 10, "w1_bars": 8}},
-        }),
+        patch(
+            "ingest.htf_refresh_scheduler.load_finnhub",
+            return_value={
+                "candles": {"refresh": {"htf_interval_sec": 14400, "d1_bars": 10, "w1_bars": 8}},
+            },
+        ),
         patch("ingest.htf_refresh_scheduler.get_enabled_symbols", return_value=["EURUSD", "EURNZD"]),
     ):
         mock_fetcher = MagicMock()
@@ -72,7 +75,9 @@ class TestHTFRefreshScheduler:
     async def test_refresh_fetches_d1_and_w1(self, _patch_deps: dict) -> None:
         """Refresh cycle fetches D1 and W1 for all enabled symbols."""
         fetcher = _patch_deps["fetcher"]
-        fetcher.fetch = AsyncMock(side_effect=lambda sym, tf, bars: [_d1_candle(sym)] if tf == "D1" else [_w1_candle(sym)])
+        fetcher.fetch = AsyncMock(
+            side_effect=lambda sym, tf, bars: [_d1_candle(sym)] if tf == "D1" else [_w1_candle(sym)]
+        )
 
         scheduler = HTFRefreshScheduler()
         await scheduler.refresh_all_symbols()
@@ -87,7 +92,9 @@ class TestHTFRefreshScheduler:
         """Refreshed candles are pushed to LiveContextBus."""
         fetcher = _patch_deps["fetcher"]
         bus = _patch_deps["bus"]
-        fetcher.fetch = AsyncMock(side_effect=lambda sym, tf, bars: [_d1_candle(sym)] if tf == "D1" else [_w1_candle(sym)])
+        fetcher.fetch = AsyncMock(
+            side_effect=lambda sym, tf, bars: [_d1_candle(sym)] if tf == "D1" else [_w1_candle(sym)]
+        )
 
         scheduler = HTFRefreshScheduler()
         await scheduler.refresh_all_symbols()

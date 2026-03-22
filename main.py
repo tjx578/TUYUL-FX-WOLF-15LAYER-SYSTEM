@@ -131,7 +131,7 @@ async def run_ingest_services(has_api_key: bool, redis: AsyncRedis) -> None:
     candle_builders = [CandleBuilder(symbol=pair, timeframe=default_timeframe) for pair in PAIRS]
 
     logger.info(
-        "Starting ingest services: WebSocket, RestPollFallback, CalendarNews, " "MarketNews, CandleBuilder, H1Refresh"
+        "Starting ingest services: WebSocket, RestPollFallback, CalendarNews, MarketNews, CandleBuilder, H1Refresh"
     )
     try:
         cb_coros: list[Coroutine[object, object, object]] = [cb.run() for cb in candle_builders]  # pyright: ignore[reportAttributeAccessIssue]

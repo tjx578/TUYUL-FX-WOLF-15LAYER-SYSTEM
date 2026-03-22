@@ -14,6 +14,7 @@ This file focuses on:
 Note: Basic unit tests (V11GateInput, ExtremeSelectivityGateV11, V11DataAdapter)
 are in tests/test_v11_gate.py.  This file focuses on the pipeline integration layer.
 """
+
 from __future__ import annotations
 
 from typing import Any
@@ -27,6 +28,7 @@ from analysis.v11.pipeline_hook import V11PipelineHook
 # ──────────────────────────────────────────────────────────────────────────────
 # Realistic synthesis dict fixtures (matches WolfConstitutionalPipeline output)
 # ──────────────────────────────────────────────────────────────────────────────
+
 
 def _sniper_grade_synthesis(symbol: str = "EURUSD", tf: str = "H1") -> dict[str, Any]:
     """
@@ -112,6 +114,7 @@ def _l12_execute_verdict() -> dict[str, Any]:
 # 1. Sniper filter decision accuracy
 # ──────────────────────────────────────────────────────────────────────────────
 
+
 class TestV11SniperDecision:
     """V11 must correctly PASS elite setups and FAIL marginal ones."""
 
@@ -119,18 +122,14 @@ class TestV11SniperDecision:
         """Top-tier synthesis must pass the extreme selectivity gate."""
         hook = V11PipelineHook()
         result = hook.run(_sniper_grade_synthesis())
-        assert result.passed, (
-            f"Sniper-grade setup should PASS. Failed criteria: {result.failed_criteria}"
-        )
+        assert result.passed, f"Sniper-grade setup should PASS. Failed criteria: {result.failed_criteria}"
         assert result.verdict == GateVerdict.PASS
 
     def test_marginal_setup_fails(self):
         """Marginal synthesis (below V11 bar) must be blocked."""
         hook = V11PipelineHook()
         result = hook.run(_marginal_synthesis())
-        assert not result.passed, (
-            "Marginal setup should FAIL the V11 sniper filter"
-        )
+        assert not result.passed, "Marginal setup should FAIL the V11 sniper filter"
         assert result.verdict == GateVerdict.FAIL
 
     def test_pass_has_high_overall_score(self):
@@ -170,6 +169,7 @@ class TestV11SniperDecision:
 # ──────────────────────────────────────────────────────────────────────────────
 # 2. Pipeline synthesis dict integration (nested format)
 # ──────────────────────────────────────────────────────────────────────────────
+
 
 class TestV11NestedSynthesisFormat:
     """
@@ -250,6 +250,7 @@ class TestV11NestedSynthesisFormat:
 # 3. run_and_annotate() — annotation contract
 # ──────────────────────────────────────────────────────────────────────────────
 
+
 class TestV11AnnotationContract:
     """
     run_and_annotate() must inject 'v11_gate' key and preserve original data.
@@ -295,9 +296,7 @@ class TestV11AnnotationContract:
 
         for key in original_keys:
             assert key in annotated, f"Key {key!r} was lost during annotation"
-            assert annotated[key] == synthesis[key], (
-                f"Key {key!r} was modified during annotation"
-            )
+            assert annotated[key] == synthesis[key], f"Key {key!r} was modified during annotation"
 
     def test_annotation_does_not_mutate_original(self):
         """run_and_annotate must not mutate the input dict."""
@@ -326,6 +325,7 @@ class TestV11AnnotationContract:
 # 4. Sniper filter blocks marginal L12 EXECUTE signals
 # ──────────────────────────────────────────────────────────────────────────────
 
+
 class TestV11AsSniperLayer:
     """
     Simulate the pipeline flow: L12 says EXECUTE, V11 acts as final sniper gate.
@@ -349,7 +349,7 @@ class TestV11AsSniperLayer:
         hook = V11PipelineHook()
         pipeline_data = {
             **_l12_execute_verdict(),  # L12 says EXECUTE...
-            **_marginal_synthesis(),   # ...but V11 disagrees
+            **_marginal_synthesis(),  # ...but V11 disagrees
         }
         result = hook.run(pipeline_data)
         # V11 says FAIL → candidate must be blocked
@@ -377,9 +377,7 @@ class TestV11AsSniperLayer:
         annotated = hook.run_and_annotate(pipeline_data)
 
         # Original L12 verdict must be unchanged
-        assert annotated["verdict"] == "EXECUTE", (
-            "V11 hook must not overwrite the L12 verdict field"
-        )
+        assert annotated["verdict"] == "EXECUTE", "V11 hook must not overwrite the L12 verdict field"
 
     def test_v11_result_has_no_execution_side_effects(self):
         """V11GateResult must not contain order, lot, or balance fields."""
@@ -395,14 +393,23 @@ class TestV11AsSniperLayer:
 # 5. Resilience / never-crash guarantee
 # ──────────────────────────────────────────────────────────────────────────────
 
+
 class TestV11HookResilience:
     """V11PipelineHook must never raise — it returns FAIL/SKIP on bad input."""
 
-    @pytest.mark.parametrize("garbage", [
-        None, 42, "string", [], True, b"bytes",
-        {"nested": {"deep": object()}},
-        {i: i for i in range(100)},  # large dict
-    ])
+    @pytest.mark.parametrize(
+        "garbage",
+        [
+            None,
+            42,
+            "string",
+            [],
+            True,
+            b"bytes",
+            {"nested": {"deep": object()}},
+            {i: i for i in range(100)},  # large dict
+        ],
+    )
     def test_run_never_crashes(self, garbage):
         hook = V11PipelineHook()
         result = hook.run(garbage)  # type: ignore[arg-type]
@@ -446,12 +453,14 @@ class TestV11HookResilience:
 # 6. Custom threshold configuration (CI smoke)
 # ──────────────────────────────────────────────────────────────────────────────
 
+
 class TestV11ThresholdConfiguration:
     """Verify hook respects custom thresholds passed at construction."""
 
     def test_strict_threshold_blocks_normal_sniper_grade(self):
         """Ultra-strict thresholds should block even good setups."""
         from analysis.v11.extreme_selectivity_gate import V11Thresholds  # noqa: PLC0415
+
         extreme = V11Thresholds(
             min_wolf_score=0.99,
             min_tii_score=0.99,
@@ -466,6 +475,7 @@ class TestV11ThresholdConfiguration:
     def test_loose_threshold_passes_marginal_setup(self):
         """Very loose thresholds should pass even marginal setups."""
         from analysis.v11.extreme_selectivity_gate import V11Thresholds  # noqa: PLC0415
+
         loose = V11Thresholds(
             min_wolf_score=0.10,
             min_tii_score=0.10,

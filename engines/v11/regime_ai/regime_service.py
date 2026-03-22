@@ -13,7 +13,7 @@ from typing import Any
 
 from engines.v11.config import get_v11
 from engines.v11.regime_ai.feature_extractor import FeatureExtractor
-from engines.v11.regime_ai.online_kmeans import ClusterResult, OnlineKMeans
+from engines.v11.regime_ai.online_kmeans import OnlineKMeans
 
 
 @dataclass(frozen=True)
@@ -61,8 +61,7 @@ class RegimeService:
 
         # Load label mapping
         self._label_mapping = get_v11(
-            "regime_ai.label_mapping",
-            {0: "TRENDING", 1: "RANGING", 2: "EXPANSION", 3: "SHOCK"}
+            "regime_ai.label_mapping", {0: "TRENDING", 1: "RANGING", 2: "EXPANSION", 3: "SHOCK"}
         )
 
     def classify(self, candles: list[dict[str, Any]]) -> RegimeResult | None:

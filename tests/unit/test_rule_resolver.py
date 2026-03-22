@@ -41,6 +41,7 @@ def _make_minimal_account_state(
         phase_mode=phase_mode,
     )
 
+
 # ---------------------------------------------------------------------------
 # Aqua Instant Pro — funded plan resolution
 # ---------------------------------------------------------------------------
@@ -249,9 +250,7 @@ class TestAquafundedResolution:
         rules = resolver.resolve("aquafunded", "default", "funded")
         assert rules.firm_name == "Aqua Funded"
 
-    def test_resolve_uses_safe_defaults_for_missing_numeric_keys(
-        self, resolver: PropFirmRuleResolver
-    ):
+    def test_resolve_uses_safe_defaults_for_missing_numeric_keys(self, resolver: PropFirmRuleResolver):
         """Resolver falls back to coded defaults when no numeric limits are defined."""
         rules = resolver.resolve("aquafunded", "default", "funded")
         # Resolver defaults: 5% daily, 10% total — acceptable since the
@@ -259,9 +258,7 @@ class TestAquafundedResolution:
         assert rules.max_daily_dd_percent == pytest.approx(5.0)
         assert rules.max_total_dd_percent == pytest.approx(10.0)
 
-    def test_resolve_unknown_plan_and_phase_does_not_raise(
-        self, resolver: PropFirmRuleResolver
-    ):
+    def test_resolve_unknown_plan_and_phase_does_not_raise(self, resolver: PropFirmRuleResolver):
         """Resolver never raises for unknown plan/phase on aquafunded."""
         rules = resolver.resolve("aquafunded", "unknown_plan", "unknown_phase")
         assert isinstance(rules, ResolvedPropRules)
@@ -278,9 +275,7 @@ class TestAquafundedResolution:
 
     def test_resolve_for_account_aquafunded(self, resolver: PropFirmRuleResolver):
         """resolve_for_account works for an aquafunded account state."""
-        state = _make_minimal_account_state(
-            prop_firm_code="aquafunded", balance=50_000.0, phase_mode="FUNDED"
-        )
+        state = _make_minimal_account_state(prop_firm_code="aquafunded", balance=50_000.0, phase_mode="FUNDED")
         rules = resolver.resolve_for_account(state)
         assert rules.firm_code == "aquafunded"
 

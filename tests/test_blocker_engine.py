@@ -33,9 +33,7 @@ def test_blocker_engine_locks_inside_window() -> None:
 def test_blocker_engine_upcoming_horizon() -> None:
     now = datetime(2026, 3, 8, 13, 0, tzinfo=UTC)
     upcoming_dt = now + timedelta(minutes=50)
-    status = BlockerEngine(lookahead_minutes=90).evaluate(
-        [_event(upcoming_dt)], symbol="EURUSD", now=now
-    )
+    status = BlockerEngine(lookahead_minutes=90).evaluate([_event(upcoming_dt)], symbol="EURUSD", now=now)
 
     assert status.is_locked is False
     assert len(status.upcoming) == 1

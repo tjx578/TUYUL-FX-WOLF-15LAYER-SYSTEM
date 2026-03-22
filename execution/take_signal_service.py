@@ -56,7 +56,7 @@ class TakeSignalService:
                 or existing.ea_instance_id != request.ea_instance_id
             ):
                 raise ValueError(
-                    f"Idempotency conflict: request_id={request.request_id} " f"already bound with different payload"
+                    f"Idempotency conflict: request_id={request.request_id} already bound with different payload"
                 )
             return self._to_response(existing), False
 

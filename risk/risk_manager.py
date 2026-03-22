@@ -23,7 +23,7 @@ from typing import Any
 
 from config.pip_values import DEFAULT_PIP_VALUE, PipLookupError, get_pip_info
 
-_DEFAULT_MAX_RISK_PCT = 0.02      # 2% static default
+_DEFAULT_MAX_RISK_PCT = 0.02  # 2% static default
 _DEFAULT_MAX_DAILY_LOSS_PCT = 0.05  # 5% daily drawdown limit
 _DEFAULT_MAX_OPEN_TRADES = 5
 
@@ -40,11 +40,11 @@ class RiskDecision:
     trade_allowed: bool
     recommended_lot: float
     max_safe_lot: float
-    effective_risk_percent: float   # Actual risk % used (static or dynamic)
-    risk_source: str                # "STATIC" | "DYNAMIC_PSE" | "DYNAMIC_CLAMPED"
-    risk_amount: float              # Dollar amount at risk
+    effective_risk_percent: float  # Actual risk % used (static or dynamic)
+    risk_source: str  # "STATIC" | "DYNAMIC_PSE" | "DYNAMIC_CLAMPED"
+    risk_amount: float  # Dollar amount at risk
     reason: str
-    violations: tuple[str, ...]     # All triggered violation codes
+    violations: tuple[str, ...]  # All triggered violation codes
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -105,13 +105,9 @@ class RiskManager:
         **_extra: Any,
     ) -> None:
         if not 0.0 < max_risk_percent <= 1.0:
-            raise ValueError(
-                f"max_risk_percent must be in (0, 1], got {max_risk_percent}"
-            )
+            raise ValueError(f"max_risk_percent must be in (0, 1], got {max_risk_percent}")
         if not 0.0 < max_daily_loss_percent <= 1.0:
-            raise ValueError(
-                f"max_daily_loss_percent must be in (0, 1], got {max_daily_loss_percent}"
-            )
+            raise ValueError(f"max_daily_loss_percent must be in (0, 1], got {max_daily_loss_percent}")
 
         self._max_risk_pct = max_risk_percent
         self._max_daily_loss_pct = max_daily_loss_percent
@@ -152,9 +148,7 @@ class RiskManager:
         violations: list[str] = []
 
         # ── Determine effective risk percent ─────────────────────────
-        effective_risk_pct, risk_source = self._resolve_risk_percent(
-            dynamic_risk_percent
-        )
+        effective_risk_pct, risk_source = self._resolve_risk_percent(dynamic_risk_percent)
 
         # ── Daily loss check ─────────────────────────────────────────
         daily_loss_limit = account_balance * self._max_daily_loss_pct
@@ -236,7 +230,8 @@ class RiskManager:
     # ── Private helpers ──────────────────────────────────────────────────────
 
     def _resolve_risk_percent(
-        self, dynamic_risk_percent: float | None,
+        self,
+        dynamic_risk_percent: float | None,
     ) -> tuple[float, str]:
         """Resolve effective risk percent from static and dynamic sources.
 

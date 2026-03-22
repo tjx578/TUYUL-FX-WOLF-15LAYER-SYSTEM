@@ -1,6 +1,7 @@
 """
 Tests for V11 Gate — input validation, type safety, adapter integration.
 """
+
 import pytest
 
 from analysis.v11.data_adapter import V11DataAdapter
@@ -12,6 +13,7 @@ from analysis.v11.pipeline_hook import V11PipelineHook
 # V11GateInput — validation
 # =====================================================================
 
+
 class TestV11GateInput:
     def test_from_dict_empty(self):
         """Empty dict → safe defaults, no crash."""
@@ -22,17 +24,19 @@ class TestV11GateInput:
 
     def test_from_dict_none(self):
         """None input → safe defaults."""
-        inp = V11GateInput.from_dict(None) # pyright: ignore[reportArgumentType]
+        inp = V11GateInput.from_dict(None)  # pyright: ignore[reportArgumentType]
         assert inp.wolf_score == 0.0
 
     def test_from_dict_with_values(self):
-        inp = V11GateInput.from_dict({
-            "wolf_score": 0.85,
-            "tii_score": 0.70,
-            "frpc_score": "0.65",  # string → should be coerced to float
-            "htf_alignment": True,
-            "symbol": "EURUSD",
-        })
+        inp = V11GateInput.from_dict(
+            {
+                "wolf_score": 0.85,
+                "tii_score": 0.70,
+                "frpc_score": "0.65",  # string → should be coerced to float
+                "htf_alignment": True,
+                "symbol": "EURUSD",
+            }
+        )
         assert inp.wolf_score == 0.85
         assert inp.frpc_score == 0.65
         assert inp.htf_alignment is True
@@ -47,15 +51,17 @@ class TestV11GateInput:
     def test_invalid_type_raises(self):
         """Non-numeric score raises TypeError."""
         with pytest.raises(TypeError):
-            V11GateInput(wolf_score="not_a_number") # pyright: ignore[reportArgumentType]
+            V11GateInput(wolf_score="not_a_number")  # pyright: ignore[reportArgumentType]
 
     def test_from_dict_garbage_scores_default(self):
         """Garbage values in dict → fall back to 0.0."""
-        inp = V11GateInput.from_dict({
-            "wolf_score": "garbage",
-            "tii_score": None,
-            "frpc_score": [1, 2, 3],
-        })
+        inp = V11GateInput.from_dict(
+            {
+                "wolf_score": "garbage",
+                "tii_score": None,
+                "frpc_score": [1, 2, 3],
+            }
+        )
         assert inp.wolf_score == 0.0
         assert inp.tii_score == 0.0
         assert inp.frpc_score == 0.0
@@ -64,12 +70,13 @@ class TestV11GateInput:
         """V11GateInput is immutable."""
         inp = V11GateInput(wolf_score=0.8)
         with pytest.raises(AttributeError):
-            inp.wolf_score = 0.9 # pyright: ignore[reportAttributeAccessIssue]
+            inp.wolf_score = 0.9  # pyright: ignore[reportAttributeAccessIssue]
 
 
 # =====================================================================
 # ExtremeSelectivityGateV11 — evaluation
 # =====================================================================
+
 
 class TestExtremeSelectivityGate:
     def _make_passing_input(self) -> dict:
@@ -125,18 +132,31 @@ class TestExtremeSelectivityGate:
             min_pass_ratio=0.50,
         )
         gate = ExtremeSelectivityGateV11(thresholds=loose)
-        result = gate.evaluate({"wolf_score": 0.20, "tii_score": 0.20,
-                                "frpc_score": 0.20, "confluence_score": 0.20,
-                                "atr_value": 0.001, "spread_ratio": 0.1})
+        result = gate.evaluate(
+            {
+                "wolf_score": 0.20,
+                "tii_score": 0.20,
+                "frpc_score": 0.20,
+                "confluence_score": 0.20,
+                "atr_value": 0.001,
+                "spread_ratio": 0.1,
+            }
+        )
         assert result.verdict == GateVerdict.PASS
 
     def test_accepts_v11_gate_input_directly(self):
         gate = ExtremeSelectivityGateV11()
         inp = V11GateInput(
-            wolf_score=0.90, tii_score=0.80, frpc_score=0.75,
-            confluence_score=0.85, htf_alignment=True, session_valid=True,
-            news_clear=True, momentum_confirmed=True,
-            atr_value=0.002, spread_ratio=0.05,
+            wolf_score=0.90,
+            tii_score=0.80,
+            frpc_score=0.75,
+            confluence_score=0.85,
+            htf_alignment=True,
+            session_valid=True,
+            news_clear=True,
+            momentum_confirmed=True,
+            atr_value=0.002,
+            spread_ratio=0.05,
         )
         result = gate.evaluate(inp)
         assert result.verdict == GateVerdict.PASS
@@ -154,28 +174,33 @@ class TestExtremeSelectivityGate:
 # V11DataAdapter — pipeline bridge
 # =====================================================================
 
+
 class TestV11DataAdapter:
     def test_flat_dict(self):
         adapter = V11DataAdapter()
-        inp = adapter.collect({
-            "wolf_score": 0.80,
-            "tii_score": 0.70,
-            "symbol": "GBPUSD",
-        })
+        inp = adapter.collect(
+            {
+                "wolf_score": 0.80,
+                "tii_score": 0.70,
+                "symbol": "GBPUSD",
+            }
+        )
         assert isinstance(inp, V11GateInput)
         assert inp.wolf_score == 0.80
         assert inp.symbol == "GBPUSD"
 
     def test_nested_aliases(self):
         adapter = V11DataAdapter()
-        inp = adapter.collect({
-            "scores": {"wolf": 0.85, "tii": 0.70, "frpc": 0.65},
-            "synthesis": {"confluence_score": 0.75},
-            "context": {"htf_alignment": True, "session_valid": True},
-            "volatility": {"atr": 0.0012, "spread_ratio": 0.08},
-            "pair": "USDJPY",
-            "tf": "M15",
-        })
+        inp = adapter.collect(
+            {
+                "scores": {"wolf": 0.85, "tii": 0.70, "frpc": 0.65},
+                "synthesis": {"confluence_score": 0.75},
+                "context": {"htf_alignment": True, "session_valid": True},
+                "volatility": {"atr": 0.0012, "spread_ratio": 0.08},
+                "pair": "USDJPY",
+                "tf": "M15",
+            }
+        )
         assert inp.wolf_score == 0.85
         assert inp.confluence_score == 0.75
         assert inp.htf_alignment is True
@@ -185,7 +210,7 @@ class TestV11DataAdapter:
 
     def test_garbage_input(self):
         adapter = V11DataAdapter()
-        inp = adapter.collect("not a dict") # pyright: ignore[reportArgumentType]
+        inp = adapter.collect("not a dict")  # pyright: ignore[reportArgumentType]
         assert isinstance(inp, V11GateInput)
         assert inp.wolf_score == 0.0
 
@@ -194,16 +219,25 @@ class TestV11DataAdapter:
 # V11PipelineHook — end-to-end
 # =====================================================================
 
+
 class TestV11PipelineHook:
     def test_full_pipeline_pass(self):
         hook = V11PipelineHook()
-        result = hook.run({
-            "wolf_score": 0.85, "tii_score": 0.75, "frpc_score": 0.70,
-            "confluence_score": 0.80, "htf_alignment": True,
-            "session_valid": True, "news_clear": True,
-            "momentum_confirmed": True, "atr_value": 0.0015,
-            "spread_ratio": 0.10, "symbol": "EURUSD",
-        })
+        result = hook.run(
+            {
+                "wolf_score": 0.85,
+                "tii_score": 0.75,
+                "frpc_score": 0.70,
+                "confluence_score": 0.80,
+                "htf_alignment": True,
+                "session_valid": True,
+                "news_clear": True,
+                "momentum_confirmed": True,
+                "atr_value": 0.0015,
+                "spread_ratio": 0.10,
+                "symbol": "EURUSD",
+            }
+        )
         assert result.passed
 
     def test_full_pipeline_fail(self):

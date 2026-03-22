@@ -9,7 +9,6 @@ ANALYSIS-ONLY module. No execution side-effects.
 from __future__ import annotations
 
 import logging
-
 from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any
@@ -24,7 +23,7 @@ class StructureState(StrEnum):
     BULLISH = "BULLISH"
     BEARISH = "BEARISH"
     NEUTRAL = "NEUTRAL"
-    RANGE_BOUND = "RANGE_BOUND"   # legacy alias for "RANGING"
+    RANGE_BOUND = "RANGE_BOUND"  # legacy alias for "RANGING"
     RANGING = "RANGING"
 
 
@@ -32,9 +31,11 @@ class StructureState(StrEnum):
 # Result dataclass
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class StructureLevel:
     """A detected support/resistance level."""
+
     price: float
     level_type: str  # "SUPPORT" | "RESISTANCE"
     strength: float  # 0.0-1.0
@@ -49,11 +50,11 @@ class StructureResult:
 
     # Overall market structure
     structure_bias: str = "NEUTRAL"  # BULLISH | BEARISH | NEUTRAL | RANGING
-    structure_score: float = 0.0     # 0.0-1.0
+    structure_score: float = 0.0  # 0.0-1.0
 
     # Break of structure / Change of character
     bos_detected: bool = False
-    bos_direction: str = "NONE"      # BULLISH | BEARISH | NONE
+    bos_direction: str = "NONE"  # BULLISH | BEARISH | NONE
     choch_detected: bool = False
     choch_direction: str = "NONE"
 
@@ -86,6 +87,7 @@ class StructureResult:
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _detect_swing_points(
     highs: np.ndarray,
     lows: np.ndarray,
@@ -97,13 +99,15 @@ def _detect_swing_points(
 
     for i in range(lookback, len(highs) - lookback):
         # Swing high: higher than surrounding bars
-        if all(highs[i] >= highs[i - j] for j in range(1, lookback + 1)) and \
-           all(highs[i] >= highs[i + j] for j in range(1, lookback + 1)):
+        if all(highs[i] >= highs[i - j] for j in range(1, lookback + 1)) and all(
+            highs[i] >= highs[i + j] for j in range(1, lookback + 1)
+        ):
             swing_highs.append((i, float(highs[i])))
 
         # Swing low: lower than surrounding bars
-        if all(lows[i] <= lows[i - j] for j in range(1, lookback + 1)) and \
-           all(lows[i] <= lows[i + j] for j in range(1, lookback + 1)):
+        if all(lows[i] <= lows[i - j] for j in range(1, lookback + 1)) and all(
+            lows[i] <= lows[i + j] for j in range(1, lookback + 1)
+        ):
             swing_lows.append((i, float(lows[i])))
 
     return swing_highs, swing_lows
@@ -197,20 +201,24 @@ def _find_structure_levels(
         else:
             level_type = cluster_types[0]
 
-        levels.append(StructureLevel(
-            price=round(avg_price, 5),
-            level_type=level_type,
-            strength=strength,
-            timeframe=timeframe,
-            touch_count=touch_count,
-        ))
+        levels.append(
+            StructureLevel(
+                price=round(avg_price, 5),
+                level_type=level_type,
+                strength=strength,
+                timeframe=timeframe,
+                touch_count=touch_count,
+            )
+        )
 
     return levels
 
 
 def _detect_order_blocks(
-    opens: np.ndarray, closes: np.ndarray,
-    highs: np.ndarray, lows: np.ndarray,
+    opens: np.ndarray,
+    closes: np.ndarray,
+    highs: np.ndarray,
+    lows: np.ndarray,
     swing_highs: list[tuple[int, float]],
     swing_lows: list[tuple[int, float]],
 ) -> list[dict[str, Any]]:
@@ -222,25 +230,29 @@ def _detect_order_blocks(
             continue
         # Bullish OB: last bearish candle before a bullish swing
         if closes[idx - 1] < opens[idx - 1]:
-            ob_list.append({
-                "type": "BULLISH",
-                "top": float(opens[idx - 1]),
-                "bottom": float(closes[idx - 1]),
-                "index": idx - 1,
-                "strength": 0.7,
-            })
+            ob_list.append(
+                {
+                    "type": "BULLISH",
+                    "top": float(opens[idx - 1]),
+                    "bottom": float(closes[idx - 1]),
+                    "index": idx - 1,
+                    "strength": 0.7,
+                }
+            )
 
     for idx, _price in swing_highs[-5:]:
         if idx < 1 or idx >= len(opens):
             continue
         if closes[idx - 1] > opens[idx - 1]:
-            ob_list.append({
-                "type": "BEARISH",
-                "top": float(closes[idx - 1]),
-                "bottom": float(opens[idx - 1]),
-                "index": idx - 1,
-                "strength": 0.7,
-            })
+            ob_list.append(
+                {
+                    "type": "BEARISH",
+                    "top": float(closes[idx - 1]),
+                    "bottom": float(opens[idx - 1]),
+                    "index": idx - 1,
+                    "strength": 0.7,
+                }
+            )
 
     return ob_list
 
@@ -272,6 +284,7 @@ def _classify_structure_bias(
 # ---------------------------------------------------------------------------
 # Engine
 # ---------------------------------------------------------------------------
+
 
 class FusionStructureEngine:
     """Fusion Structure Engine -- pure analysis, no execution.

@@ -94,18 +94,12 @@ class AquafundedGuard(BasePropFirmGuard):
         total_dd_after: float = trade_risk.get("total_dd_after", 0.0)
         risk_percent: float = trade_risk.get("risk_percent", 0.0)
 
-        max_daily_dd: float = float(
-            self.rules.get("max_daily_dd_percent", self._DEFAULT_MAX_DAILY_DD)
-        )
-        max_total_dd: float = float(
-            self.rules.get("max_total_dd_percent", self._DEFAULT_MAX_TOTAL_DD)
-        )
+        max_daily_dd: float = float(self.rules.get("max_daily_dd_percent", self._DEFAULT_MAX_DAILY_DD))
+        max_total_dd: float = float(self.rules.get("max_total_dd_percent", self._DEFAULT_MAX_TOTAL_DD))
         max_risk_per_trade: float = float(
             self.rules.get("max_risk_per_trade_percent", self._DEFAULT_MAX_RISK_PER_TRADE)
         )
-        max_open: int = int(
-            self.rules.get("max_open_trades", self._DEFAULT_MAX_OPEN_TRADES)
-        )
+        max_open: int = int(self.rules.get("max_open_trades", self._DEFAULT_MAX_OPEN_TRADES))
 
         # Only enforce open-trade cap when a finite limit is configured.
         if max_open > 0 and open_trades >= max_open:

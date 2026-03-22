@@ -4,6 +4,7 @@ analysis pipeline via the data adapter.
 
 Analysis zone only.  No execution side-effects.
 """
+
 from __future__ import annotations
 
 import logging

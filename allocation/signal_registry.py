@@ -3,13 +3,14 @@
 All L14 outputs must be persisted here first before allocation/execution.
 Signals are global and account-agnostic.
 """
+
 from __future__ import annotations
 
 import json
 from dataclasses import asdict, dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from threading import Lock
-from typing import Any, Optional
+from typing import Any, cast
 from uuid import uuid4
 
 from loguru import logger
@@ -31,10 +32,10 @@ class SignalRecord:
     gates_json: dict[str, Any] = field(default_factory=dict)
     execution_plan_json: dict[str, Any] = field(default_factory=dict)
     status: str = "OPEN"
-    created_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    created_at: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
 
     @classmethod
-    def from_payload(cls, payload: dict[str, Any]) -> "SignalRecord":
+    def from_payload(cls, payload: dict[str, Any]) -> SignalRecord:
         pair = str(payload.get("pair") or payload.get("symbol") or "UNKNOWN").upper()
         execution_plan = dict(payload.get("execution_plan_json") or {})
         if not execution_plan:
@@ -53,17 +54,18 @@ class SignalRecord:
             gates_json=dict(payload.get("gates_json") or {}),
             execution_plan_json=execution_plan,
             status=str(payload.get("status", "OPEN")).upper(),
-            created_at=str(payload.get("created_at") or datetime.now(timezone.utc).isoformat()),
+            created_at=str(payload.get("created_at") or datetime.now(UTC).isoformat()),
         )
 
 
 class SignalRegistry:
     """Thread-safe global signal registry backed by Redis."""
 
-    _instance: Optional["SignalRegistry"] = None
+    _instance: SignalRegistry | None = None
     _lock = Lock()
+    _redis: RedisClient
 
-    def __new__(cls) -> "SignalRegistry":
+    def __new__(cls) -> SignalRegistry:
         if not cls._instance:
             with cls._lock:
                 if not cls._instance:
@@ -85,7 +87,7 @@ class SignalRegistry:
         logger.debug(f"SignalRegistry: published signal_id={record.signal_id} pair={record.pair}")
         return payload
 
-    def get(self, symbol: str) -> Optional[dict[str, Any]]:
+    def get(self, symbol: str) -> dict[str, Any] | None:
         """Backward-compat: retrieve latest OPEN signal for a symbol."""
         symbol = symbol.upper().strip()
         for sig in self.get_latest(200):
@@ -93,7 +95,7 @@ class SignalRegistry:
                 return sig
         return None
 
-    def get_by_id(self, signal_id: str) -> Optional[dict[str, Any]]:
+    def get_by_id(self, signal_id: str) -> dict[str, Any] | None:
         """Retrieve signal by global signal_id."""
         raw = self._redis.get(f"{_REGISTRY_KEY_PREFIX}{signal_id}")
         return json.loads(raw) if raw else None
@@ -109,11 +111,11 @@ class SignalRegistry:
 
     def list_symbols(self) -> list[str]:
         """Return all symbols with registered signals."""
-        members = self._redis.client.smembers(_SYMBOL_INDEX_KEY)
+        members = cast(set[str], self._redis.client.smembers(_SYMBOL_INDEX_KEY))
         return sorted(members) if members else []
 
     def list_signal_ids(self) -> list[str]:
-        members = self._redis.client.smembers(_REGISTRY_INDEX_KEY)
+        members = cast(set[str], self._redis.client.smembers(_REGISTRY_INDEX_KEY))
         return sorted(members) if members else []
 
     def get_latest(self, n: int = 10) -> list[dict[str, Any]]:

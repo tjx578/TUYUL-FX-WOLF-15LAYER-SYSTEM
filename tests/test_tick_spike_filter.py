@@ -1,7 +1,6 @@
 """Tests for tick spike filter, dedup, and rate metrics in ingest dependencies."""
 
 import time
-
 from unittest.mock import patch
 
 from ingest.dependencies import (
@@ -11,8 +10,8 @@ from ingest.dependencies import (
     _dedup_cache,
     _is_duplicate_tick,
     _is_valid_tick,
-    _last_prices,
     _last_exchange_ts_ms,
+    _last_prices,
     _last_timestamps,
     tick_metrics,
 )
@@ -232,4 +231,3 @@ class TestTickRateMetrics:
         assert snap["GBPUSD"]["duplicates"] == 1
         assert snap["EURUSD"]["ticks_per_sec"] >= 0
         assert snap["GBPUSD"]["ticks_per_sec"] >= 0
-

@@ -31,7 +31,7 @@ def load_prop_firm() -> dict[str, Any]:
 
     if not config_path.exists():
         raise PropFirmConfigError(
-            f"Prop firm config not found: {config_path}. " "Risk/compliance requires an explicit configuration file."
+            f"Prop firm config not found: {config_path}. Risk/compliance requires an explicit configuration file."
         )
 
     try:

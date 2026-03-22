@@ -22,6 +22,7 @@ from journal.l13_reflection import (
 # Fixtures
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture
 def winning_execute() -> tuple[OriginalDecision, TradeOutcome]:
     decision = OriginalDecision(
@@ -113,31 +114,24 @@ def missed_opportunity() -> tuple[OriginalDecision, TradeOutcome]:
 # Reflection verdict classification
 # ---------------------------------------------------------------------------
 
+
 class TestReflectionVerdict:
-    def test_correct_execute(
-        self, winning_execute: tuple[OriginalDecision, TradeOutcome]
-    ) -> None:
+    def test_correct_execute(self, winning_execute: tuple[OriginalDecision, TradeOutcome]) -> None:
         decision, outcome = winning_execute
         verdict = _classify_reflection_verdict(decision.verdict, outcome)
         assert verdict == ReflectionVerdict.CORRECT_EXECUTE
 
-    def test_incorrect_execute(
-        self, losing_execute: tuple[OriginalDecision, TradeOutcome]
-    ) -> None:
+    def test_incorrect_execute(self, losing_execute: tuple[OriginalDecision, TradeOutcome]) -> None:
         decision, outcome = losing_execute
         verdict = _classify_reflection_verdict(decision.verdict, outcome)
         assert verdict == ReflectionVerdict.INCORRECT_EXECUTE
 
-    def test_correct_reject(
-        self, correct_rejection: tuple[OriginalDecision, TradeOutcome]
-    ) -> None:
+    def test_correct_reject(self, correct_rejection: tuple[OriginalDecision, TradeOutcome]) -> None:
         decision, outcome = correct_rejection
         verdict = _classify_reflection_verdict(decision.verdict, outcome)
         assert verdict == ReflectionVerdict.CORRECT_REJECT
 
-    def test_incorrect_reject(
-        self, missed_opportunity: tuple[OriginalDecision, TradeOutcome]
-    ) -> None:
+    def test_incorrect_reject(self, missed_opportunity: tuple[OriginalDecision, TradeOutcome]) -> None:
         decision, outcome = missed_opportunity
         verdict = _classify_reflection_verdict(decision.verdict, outcome)
         assert verdict == ReflectionVerdict.INCORRECT_REJECT
@@ -164,6 +158,7 @@ class TestReflectionVerdict:
 # ---------------------------------------------------------------------------
 # Timing quality
 # ---------------------------------------------------------------------------
+
 
 class TestTimingQuality:
     def test_better_than_planned(self) -> None:
@@ -206,24 +201,27 @@ class TestTimingQuality:
 # Exit quality
 # ---------------------------------------------------------------------------
 
+
 class TestExitQuality:
     def test_tp_hit_is_high(self) -> None:
-        outcome = TradeOutcome(
-            symbol="EURUSD", outcome_type=OutcomeType.WIN, exit_reason="TP hit"
-        )
+        outcome = TradeOutcome(symbol="EURUSD", outcome_type=OutcomeType.WIN, exit_reason="TP hit")
         assert _evaluate_exit_quality(outcome) >= 80.0
 
     def test_sl_hit_loss_is_low(self) -> None:
         outcome = TradeOutcome(
-            symbol="EURUSD", outcome_type=OutcomeType.LOSS,
-            pnl_pips=-20.0, exit_reason="SL hit",
+            symbol="EURUSD",
+            outcome_type=OutcomeType.LOSS,
+            pnl_pips=-20.0,
+            exit_reason="SL hit",
         )
         assert _evaluate_exit_quality(outcome) <= 40.0
 
     def test_sl_hit_in_profit_is_moderate(self) -> None:
         outcome = TradeOutcome(
-            symbol="EURUSD", outcome_type=OutcomeType.WIN,
-            pnl_pips=5.0, exit_reason="SL hit (trailed)",
+            symbol="EURUSD",
+            outcome_type=OutcomeType.WIN,
+            pnl_pips=5.0,
+            exit_reason="SL hit (trailed)",
         )
         assert 50.0 <= _evaluate_exit_quality(outcome) <= 70.0
 
@@ -232,12 +230,14 @@ class TestExitQuality:
 # Lesson tag extraction
 # ---------------------------------------------------------------------------
 
+
 class TestLessonTags:
     def test_loss_tagged(self) -> None:
         tags = _extract_lesson_tags(
             ReflectionVerdict.INCORRECT_EXECUTE,
             TradeOutcome(symbol="X", outcome_type=OutcomeType.LOSS),
-            50.0, 50.0,
+            50.0,
+            50.0,
         )
         assert "loss_taken" in tags
 
@@ -245,7 +245,8 @@ class TestLessonTags:
         tags = _extract_lesson_tags(
             ReflectionVerdict.INCORRECT_REJECT,
             TradeOutcome(symbol="X", outcome_type=OutcomeType.REJECTED_NO_TRADE, pnl_pips=50.0),
-            50.0, 50.0,
+            50.0,
+            50.0,
         )
         assert "missed_opportunity" in tags
 
@@ -253,7 +254,8 @@ class TestLessonTags:
         tags = _extract_lesson_tags(
             ReflectionVerdict.INCORRECT_EXECUTE,
             TradeOutcome(symbol="X", outcome_type=OutcomeType.LOSS),
-            20.0, 50.0,     # timing_quality=20
+            20.0,
+            50.0,  # timing_quality=20
         )
         assert "poor_entry_timing" in tags
 
@@ -261,10 +263,12 @@ class TestLessonTags:
         tags = _extract_lesson_tags(
             ReflectionVerdict.CORRECT_EXECUTE,
             TradeOutcome(
-                symbol="X", outcome_type=OutcomeType.WIN,
+                symbol="X",
+                outcome_type=OutcomeType.WIN,
                 hold_duration_minutes=3.0,
             ),
-            50.0, 50.0,
+            50.0,
+            50.0,
         )
         assert "very_short_hold" in tags
 
@@ -272,10 +276,13 @@ class TestLessonTags:
         tags = _extract_lesson_tags(
             ReflectionVerdict.CORRECT_EXECUTE,
             TradeOutcome(
-                symbol="X", outcome_type=OutcomeType.WIN,
-                actual_rr=0.8, planned_rr=2.0,
+                symbol="X",
+                outcome_type=OutcomeType.WIN,
+                actual_rr=0.8,
+                planned_rr=2.0,
             ),
-            50.0, 50.0,
+            50.0,
+            50.0,
         )
         assert "cut_winner_short" in tags
 
@@ -284,77 +291,58 @@ class TestLessonTags:
 # Full reflect() pipeline
 # ---------------------------------------------------------------------------
 
+
 class TestReflectFunction:
-    def test_returns_reflection_record(
-        self, winning_execute: tuple[OriginalDecision, TradeOutcome]
-    ) -> None:
+    def test_returns_reflection_record(self, winning_execute: tuple[OriginalDecision, TradeOutcome]) -> None:
         decision, outcome = winning_execute
         result = reflect(decision, outcome)
         assert isinstance(result, L13ReflectionRecord)
 
-    def test_result_is_frozen(
-        self, winning_execute: tuple[OriginalDecision, TradeOutcome]
-    ) -> None:
+    def test_result_is_frozen(self, winning_execute: tuple[OriginalDecision, TradeOutcome]) -> None:
         decision, outcome = winning_execute
         result = reflect(decision, outcome)
         with pytest.raises(AttributeError):
             result.reflection_verdict = ReflectionVerdict.TILT  # type: ignore[misc]
 
-    def test_signal_id_preserved(
-        self, winning_execute: tuple[OriginalDecision, TradeOutcome]
-    ) -> None:
+    def test_signal_id_preserved(self, winning_execute: tuple[OriginalDecision, TradeOutcome]) -> None:
         decision, outcome = winning_execute
         result = reflect(decision, outcome)
         assert result.signal_id == "SIG-001"
 
-    def test_symbol_preserved(
-        self, winning_execute: tuple[OriginalDecision, TradeOutcome]
-    ) -> None:
+    def test_symbol_preserved(self, winning_execute: tuple[OriginalDecision, TradeOutcome]) -> None:
         decision, outcome = winning_execute
         result = reflect(decision, outcome)
         assert result.symbol == "EURUSD"
 
-    def test_winning_execute_verdict(
-        self, winning_execute: tuple[OriginalDecision, TradeOutcome]
-    ) -> None:
+    def test_winning_execute_verdict(self, winning_execute: tuple[OriginalDecision, TradeOutcome]) -> None:
         decision, outcome = winning_execute
         result = reflect(decision, outcome)
         assert result.reflection_verdict == ReflectionVerdict.CORRECT_EXECUTE
 
-    def test_losing_execute_verdict(
-        self, losing_execute: tuple[OriginalDecision, TradeOutcome]
-    ) -> None:
+    def test_losing_execute_verdict(self, losing_execute: tuple[OriginalDecision, TradeOutcome]) -> None:
         decision, outcome = losing_execute
         result = reflect(decision, outcome)
         assert result.reflection_verdict == ReflectionVerdict.INCORRECT_EXECUTE
 
-    def test_timestamp_populated(
-        self, winning_execute: tuple[OriginalDecision, TradeOutcome]
-    ) -> None:
+    def test_timestamp_populated(self, winning_execute: tuple[OriginalDecision, TradeOutcome]) -> None:
         decision, outcome = winning_execute
         result = reflect(decision, outcome)
         assert result.timestamp != ""
         assert "2026" in result.timestamp
 
-    def test_metadata_passthrough(
-        self, winning_execute: tuple[OriginalDecision, TradeOutcome]
-    ) -> None:
+    def test_metadata_passthrough(self, winning_execute: tuple[OriginalDecision, TradeOutcome]) -> None:
         decision, outcome = winning_execute
         meta = {"session": "london", "strategy": "wolf-classic"}
         result = reflect(decision, outcome, metadata=meta)
         assert result.metadata == meta
 
-    def test_no_side_effects_on_inputs(
-        self, winning_execute: tuple[OriginalDecision, TradeOutcome]
-    ) -> None:
+    def test_no_side_effects_on_inputs(self, winning_execute: tuple[OriginalDecision, TradeOutcome]) -> None:
         decision, outcome = winning_execute
         original_signal = decision.signal_id
         _ = reflect(decision, outcome)
         assert decision.signal_id == original_signal
 
-    def test_layer_contributions_populated(
-        self, winning_execute: tuple[OriginalDecision, TradeOutcome]
-    ) -> None:
+    def test_layer_contributions_populated(self, winning_execute: tuple[OriginalDecision, TradeOutcome]) -> None:
         """Winning execute with high wolf/tii scores should show positive contributions."""
         decision, outcome = winning_execute
         result = reflect(decision, outcome)
@@ -362,9 +350,7 @@ class TestReflectFunction:
         layer_names = [lc.layer for lc in result.layer_contributions]
         assert "L4_scoring" in layer_names
 
-    def test_reflection_notes_preserved(
-        self, winning_execute: tuple[OriginalDecision, TradeOutcome]
-    ) -> None:
+    def test_reflection_notes_preserved(self, winning_execute: tuple[OriginalDecision, TradeOutcome]) -> None:
         decision, outcome = winning_execute
         result = reflect(decision, outcome, reflection_notes="Clean setup, textbook entry")
         assert result.reflection_notes == "Clean setup, textbook entry"

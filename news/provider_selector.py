@@ -43,10 +43,7 @@ def build_provider_chain(
     NoProvidersConfiguredError
         If NEWS_PROVIDER=off — callers should handle this gracefully.
     """
-    provider_setting = (
-        news_provider
-        or os.getenv("NEWS_PROVIDER", "forexfactory")
-    ).lower().strip()
+    provider_setting = (news_provider or os.getenv("NEWS_PROVIDER", "forexfactory")).lower().strip()
 
     if provider_setting == "off":
         raise NoProvidersConfiguredError()
@@ -56,9 +53,9 @@ def build_provider_chain(
         html_enabled = os.getenv("NEWS_FF_HTML_FALLBACK_ENABLED", "false").lower() == "true"
 
     # Lazy imports to avoid import cycles and unnecessary dependencies
+    from news.providers.finnhub_provider import FinnhubProvider
     from news.providers.forexfactory_json_provider import ForexFactoryJsonProvider
     from news.providers.forexfactory_xml_provider import ForexFactoryXmlProvider
-    from news.providers.finnhub_provider import FinnhubProvider
 
     ff_json = ForexFactoryJsonProvider()
     ff_xml = ForexFactoryXmlProvider()
@@ -74,6 +71,7 @@ def build_provider_chain(
 
     if html_enabled:
         from news.providers.forexfactory_html_provider import ForexFactoryHtmlProvider
+
         chain.append(ForexFactoryHtmlProvider())
 
     return chain

@@ -1,4 +1,4 @@
-﻿"""
+"""
 Base Prop Firm Guard — abstract interface for all prop-firm guard profiles.
 Provides the standard interface:
     check(account_state, trade_risk) -> GuardResult

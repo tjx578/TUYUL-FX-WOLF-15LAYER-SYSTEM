@@ -30,19 +30,40 @@ class PipLookupError(LookupError):
 DEFAULT_PIP_VALUE: float = 10.0
 
 PIP_VALUES_PER_STANDARD_LOT: dict[str, float] = {
-    "EURUSD": 10.00, "GBPUSD": 10.00, "AUDUSD": 10.00, "NZDUSD": 10.00,
-    "USDJPY": 6.67,  "USDCHF": 10.00, "USDCAD": 7.50,
-    "GBPJPY": 6.67,  "EURJPY": 6.67,  "AUDJPY": 6.67,  "NZDJPY": 6.67,
-    "EURGBP": 12.50, "EURAUD": 7.50,  "GBPCHF": 10.00, "GBPAUD": 7.50,
-    "GBPCAD": 7.50,  "GBPNZD": 6.50,  "EURCHF": 10.00, "EURCAD": 7.50,
-    "AUDCAD": 7.50,  "AUDNZD": 6.50,
-    "XAUUSD": 10.00, "XAGUSD": 50.00,
-    "US30":   10.00, "US500":  10.00, "NAS100": 10.00,
+    "EURUSD": 10.00,
+    "GBPUSD": 10.00,
+    "AUDUSD": 10.00,
+    "NZDUSD": 10.00,
+    "USDJPY": 6.67,
+    "USDCHF": 10.00,
+    "USDCAD": 7.50,
+    "GBPJPY": 6.67,
+    "EURJPY": 6.67,
+    "AUDJPY": 6.67,
+    "NZDJPY": 6.67,
+    "EURGBP": 12.50,
+    "EURAUD": 7.50,
+    "GBPCHF": 10.00,
+    "GBPAUD": 7.50,
+    "GBPCAD": 7.50,
+    "GBPNZD": 6.50,
+    "EURCHF": 10.00,
+    "EURCAD": 7.50,
+    "AUDCAD": 7.50,
+    "AUDNZD": 6.50,
+    "XAUUSD": 10.00,
+    "XAGUSD": 50.00,
+    "US30": 10.00,
+    "US500": 10.00,
+    "NAS100": 10.00,
 }
 
 _EXPLICIT_MULTIPLIERS: dict[str, float] = {
-    "XAUUSD": 10.0, "XAGUSD": 100.0,
-    "US30": 1.0, "US500": 1.0, "NAS100": 1.0,
+    "XAUUSD": 10.0,
+    "XAGUSD": 100.0,
+    "US30": 1.0,
+    "US500": 1.0,
+    "NAS100": 1.0,
 }
 _JPY_MULTIPLIER: float = 100.0
 _STANDARD_MULTIPLIER: float = 10_000.0

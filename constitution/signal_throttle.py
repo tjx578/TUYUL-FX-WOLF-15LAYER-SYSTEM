@@ -33,7 +33,6 @@ from __future__ import annotations
 import logging
 import threading
 import time
-
 from collections import defaultdict, deque
 
 logger = logging.getLogger("tuyul.constitution.throttle")
@@ -79,9 +78,11 @@ class SignalThrottle:
             throttled = count >= self.max_signals
             if throttled:
                 logger.warning(
-                    "[SignalThrottle] %s THROTTLED — %d signals in last %.0fs "
-                    "(max %d)",
-                    symbol, count, self.window_seconds, self.max_signals,
+                    "[SignalThrottle] %s THROTTLED — %d signals in last %.0fs (max %d)",
+                    symbol,
+                    count,
+                    self.window_seconds,
+                    self.max_signals,
                 )
             return throttled
 

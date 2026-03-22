@@ -30,14 +30,15 @@ _DEFAULT_LOCK_LOT_SCALE: float = 0.0
 
 # ── Gate decision data ────────────────────────────────────────────────────────
 
+
 @dataclass(frozen=True, slots=True)
 class GateDecision:
     """Immutable gate decision produced by the reflex gate controller."""
 
-    gate: str          # "OPEN" | "CAUTION" | "LOCK"
-    lot_scale: float   # 0.0 – 1.0
-    rqi: float         # smoothed RQI that triggered this decision
-    reason: str        # human-readable explanation
+    gate: str  # "OPEN" | "CAUTION" | "LOCK"
+    lot_scale: float  # 0.0 – 1.0
+    rqi: float  # smoothed RQI that triggered this decision
+    reason: str  # human-readable explanation
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -49,6 +50,7 @@ class GateDecision:
 
 
 # ── Gate controller ───────────────────────────────────────────────────────────
+
 
 class ReflexGateController:
     """Stateless gate controller that classifies RQI into OPEN/CAUTION/LOCK.
@@ -67,10 +69,7 @@ class ReflexGateController:
     ) -> None:
         super().__init__()
         if caution_threshold >= open_threshold:
-            raise ValueError(
-                f"caution_threshold ({caution_threshold}) must be < "
-                f"open_threshold ({open_threshold})"
-            )
+            raise ValueError(f"caution_threshold ({caution_threshold}) must be < open_threshold ({open_threshold})")
         self._open_threshold = open_threshold
         self._caution_threshold = caution_threshold
         self._open_lot = max(0.0, min(1.0, open_lot_scale))
@@ -103,10 +102,7 @@ class ReflexGateController:
                 gate="CAUTION",
                 lot_scale=self._caution_lot,
                 rqi=rqi_clamped,
-                reason=(
-                    f"RQI {rqi_clamped:.4f} in [{self._caution_threshold}, "
-                    f"{self._open_threshold}) — reduced lot"
-                ),
+                reason=(f"RQI {rqi_clamped:.4f} in [{self._caution_threshold}, {self._open_threshold}) — reduced lot"),
             )
 
         return GateDecision(

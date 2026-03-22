@@ -3,7 +3,6 @@ Unit tests for Redis Context Bridge and integration with LiveContextBus.
 """
 
 import os
-
 from unittest.mock import MagicMock, patch
 
 import orjson

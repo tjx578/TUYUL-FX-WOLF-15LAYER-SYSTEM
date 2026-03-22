@@ -1,4 +1,4 @@
-﻿"""
+"""
 dashboard/rwlock.py — Reader/Writer Lock
 
 Thread-safe read-write lock implementation.

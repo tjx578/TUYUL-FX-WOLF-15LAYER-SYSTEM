@@ -98,9 +98,7 @@ def compute_metrics(entries: list[dict[str, Any]]) -> dict[str, Any]:
         if data.get("override_attempted"):
             override_count += 1
 
-    protection_score = (
-        sum(protection_scores) / len(protection_scores) * 100 if protection_scores else None
-    )
+    protection_score = sum(protection_scores) / len(protection_scores) * 100 if protection_scores else None
 
     # Average wolf score for EXECUTE verdicts
     execute_wolf_scores: list[float] = []
@@ -112,9 +110,7 @@ def compute_metrics(entries: list[dict[str, Any]]) -> dict[str, Any]:
             if wolf_score is not None:
                 execute_wolf_scores.append(wolf_score)
 
-    avg_execute_wolf = (
-        sum(execute_wolf_scores) / len(execute_wolf_scores) if execute_wolf_scores else None
-    )
+    avg_execute_wolf = sum(execute_wolf_scores) / len(execute_wolf_scores) if execute_wolf_scores else None
 
     return {
         "total_decisions": total_decisions,
@@ -199,9 +195,7 @@ def export_for_gpt(
         # Verdict distribution
         f.write("### Verdict Distribution\n\n")
         for verdict, count in sorted(metrics["verdict_counts"].items()):
-            pct = (
-                (count / metrics["total_decisions"] * 100) if metrics["total_decisions"] > 0 else 0
-            )
+            pct = (count / metrics["total_decisions"] * 100) if metrics["total_decisions"] > 0 else 0
             f.write(f"- **{verdict}:** {count} ({pct:.1f}%)\n")
         f.write("\n")
 

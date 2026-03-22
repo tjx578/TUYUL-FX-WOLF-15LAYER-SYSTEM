@@ -23,13 +23,13 @@ def _reset_cb_metrics():
 
 
 def _get_state_gauge(name: str) -> float:
-    key = ((("name", name),))
+    key = (("name", name),)
     child = CIRCUIT_BREAKER_STATE._children.get(key)
     return child.value if child else -1.0
 
 
 def _get_trip_count(name: str) -> float:
-    key = ((("name", name),))
+    key = (("name", name),)
     child = CIRCUIT_BREAKER_TRIPS._children.get(key)
     return child.value if child else 0.0
 
@@ -64,7 +64,7 @@ class TestCBMetrics:
     def test_open_to_half_open_sets_gauge_1(self):
         cb = CircuitBreaker("half_svc", failure_threshold=1, recovery_timeout=0.0)
         cb.record_failure()  # → OPEN
-        _ = cb.state         # triggers OPEN → HALF_OPEN
+        _ = cb.state  # triggers OPEN → HALF_OPEN
         assert _get_state_gauge("half_svc") == 1.0
 
     def test_multiple_trips_counted(self):

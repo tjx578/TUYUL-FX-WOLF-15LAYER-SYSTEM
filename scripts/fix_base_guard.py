@@ -1,4 +1,5 @@
 """Script to rewrite propfirm_manager/profiles/base_guard.py cleanly."""
+
 from pathlib import Path
 
 CONTENT = """\

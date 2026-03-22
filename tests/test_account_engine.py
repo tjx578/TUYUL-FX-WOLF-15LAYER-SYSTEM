@@ -11,8 +11,8 @@ Validates:
 
 import pytest
 
-from accounts.account_state_service import AccountEngine
 from accounts.account_model import RiskSeverity
+from accounts.account_state_service import AccountEngine
 
 
 class TestAccountEngineInitialization:

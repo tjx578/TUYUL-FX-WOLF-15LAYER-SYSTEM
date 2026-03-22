@@ -22,6 +22,7 @@ from journal.l15_health import (
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _make_layer_input(
     layer_id: str,
     layer_name: str = "TestLayer",
@@ -43,15 +44,13 @@ def _make_layer_input(
 
 def _make_all_healthy_layers() -> list[LayerHealthInput]:
     """15 healthy layers."""
-    return [
-        _make_layer_input(f"L{i}", f"Layer{i}", age_seconds=5.0)
-        for i in range(1, 16)
-    ]
+    return [_make_layer_input(f"L{i}", f"Layer{i}", age_seconds=5.0) for i in range(1, 16)]
 
 
 # ---------------------------------------------------------------------------
 # All healthy scenario
 # ---------------------------------------------------------------------------
+
 
 class TestAllHealthy:
     def test_all_healthy_returns_healthy(self) -> None:
@@ -87,6 +86,7 @@ class TestAllHealthy:
 # Stale layer detection
 # ---------------------------------------------------------------------------
 
+
 class TestStaleDetection:
     def test_stale_layer_detected(self) -> None:
         layers = _make_all_healthy_layers()
@@ -111,11 +111,13 @@ class TestStaleDetection:
 # Layer errors and missing
 # ---------------------------------------------------------------------------
 
+
 class TestLayerErrors:
     def test_non_responding_layer(self) -> None:
         layers = _make_all_healthy_layers()
         layers[0] = LayerHealthInput(
-            layer_id="L1", layer_name="Market Structure",
+            layer_id="L1",
+            layer_name="Market Structure",
             is_responding=False,
         )
         result = check_health("R004", layers)
@@ -126,7 +128,8 @@ class TestLayerErrors:
     def test_layer_with_error(self) -> None:
         layers = _make_all_healthy_layers()
         layers[0] = LayerHealthInput(
-            layer_id="L1", layer_name="Market Structure",
+            layer_id="L1",
+            layer_name="Market Structure",
             is_responding=False,
             last_error="Connection timeout",
         )
@@ -147,6 +150,7 @@ class TestLayerErrors:
 # L12 special handling
 # ---------------------------------------------------------------------------
 
+
 class TestL12CriticalHandling:
     """L12 (Constitution) being down must always be CRITICAL."""
 
@@ -154,7 +158,8 @@ class TestL12CriticalHandling:
         layers = _make_all_healthy_layers()
         # Replace L12 with error state
         layers[11] = LayerHealthInput(
-            layer_id="L12", layer_name="Constitution",
+            layer_id="L12",
+            layer_name="Constitution",
             is_responding=False,
             last_error="Verdict engine crash",
         )
@@ -164,7 +169,8 @@ class TestL12CriticalHandling:
     def test_l12_missing_forces_critical(self) -> None:
         layers = _make_all_healthy_layers()
         layers[11] = LayerHealthInput(
-            layer_id="L12", layer_name="Constitution",
+            layer_id="L12",
+            layer_name="Constitution",
             is_responding=False,
         )
         result = check_health("R008", layers)
@@ -175,13 +181,16 @@ class TestL12CriticalHandling:
 # Overall status classification
 # ---------------------------------------------------------------------------
 
+
 class TestOverallStatus:
     def test_multiple_criticals_goes_offline(self) -> None:
         layers = _make_all_healthy_layers()
         for i in range(3):
             layers[i] = LayerHealthInput(
-                layer_id=f"L{i+1}", layer_name=f"Layer{i+1}",
-                is_responding=False, last_error="Down",
+                layer_id=f"L{i + 1}",
+                layer_name=f"Layer{i + 1}",
+                is_responding=False,
+                last_error="Down",
             )
         result = check_health("R009", layers)
         assert result.overall_status == HealthStatus.OFFLINE
@@ -196,6 +205,7 @@ class TestOverallStatus:
 # ---------------------------------------------------------------------------
 # Resource monitoring
 # ---------------------------------------------------------------------------
+
 
 class TestResourceMonitoring:
     def test_redis_disconnected(self) -> None:
@@ -228,16 +238,14 @@ class TestResourceMonitoring:
             pending_queue_depth=3,
         )
         result = check_health("R014", layers, resources)
-        resource_alerts = [
-            a for a in result.alerts
-            if a.code.startswith("REDIS_") or a.code.startswith("QUEUE_")
-        ]
+        resource_alerts = [a for a in result.alerts if a.code.startswith("REDIS_") or a.code.startswith("QUEUE_")]
         assert len(resource_alerts) == 0
 
 
 # ---------------------------------------------------------------------------
 # Report integrity
 # ---------------------------------------------------------------------------
+
 
 class TestReportIntegrity:
     def test_report_id_preserved(self) -> None:
@@ -276,11 +284,13 @@ class TestReportIntegrity:
 # Constitutional boundary enforcement
 # ---------------------------------------------------------------------------
 
+
 class TestConstitutionalBoundary:
     """L15 MUST NOT override L12 or trigger execution."""
 
     def test_no_override_method(self) -> None:
         import journal.l15_health as mod
+
         public_names = [n for n in dir(mod) if not n.startswith("_")]
         forbidden = {"override_verdict", "execute_trade", "cancel_order", "modify_l12", "force_decision"}
         assert forbidden.isdisjoint(set(public_names))

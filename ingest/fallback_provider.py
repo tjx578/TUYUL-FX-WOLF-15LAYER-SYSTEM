@@ -72,7 +72,7 @@ def _parse_candle_cache_ttl() -> int:
     except (ValueError, TypeError):
         pass
     logger.warning(
-        "[FallbackProvider] Invalid WOLF15_CANDLE_CACHE_TTL_DAYS value '%s'; " "falling back to 7-day default",
+        "[FallbackProvider] Invalid WOLF15_CANDLE_CACHE_TTL_DAYS value '%s'; falling back to 7-day default",
         os.getenv("WOLF15_CANDLE_CACHE_TTL_DAYS"),
     )
     return 7 * 86_400
@@ -193,9 +193,9 @@ def _aggregate_h4_from_h1(symbol: str, candles: list[dict[str, Any]], source: st
 
     ordered = sorted(
         candles,
-        key=lambda candle: candle["timestamp"]
-        if isinstance(candle["timestamp"], datetime)
-        else datetime.min.replace(tzinfo=UTC),
+        key=lambda candle: (
+            candle["timestamp"] if isinstance(candle["timestamp"], datetime) else datetime.min.replace(tzinfo=UTC)
+        ),
     )
     aggregated: list[dict[str, Any]] = []
     for idx in range(0, len(ordered) - 3, 4):
@@ -687,7 +687,7 @@ class FallbackCandleProvider:
                     break
 
         logger.warning(
-            "[Fallback] All providers exhausted for %s %s (last_error=%s) — " "attempting stale cache",
+            "[Fallback] All providers exhausted for %s %s (last_error=%s) — attempting stale cache",
             symbol,
             timeframe,
             last_error,

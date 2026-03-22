@@ -2,8 +2,9 @@
 Tests for Monthly Regime Analyzer
 """
 
-import pytest
 from unittest.mock import MagicMock, patch
+
+import pytest
 
 from analysis.macro.monthly_regime import MonthlyRegimeAnalyzer
 
@@ -109,19 +110,23 @@ class TestMNATR:
         # Create data where current ATR is much higher than rolling mean
         mn_data = []
         for i in range(12):
-            mn_data.append({
-                "high": 1.1000 + (i * 0.0010),
-                "low": 1.0950 + (i * 0.0010),
-                "open": 1.0960 + (i * 0.0010),
-                "close": 1.0980 + (i * 0.0010),
-            })
+            mn_data.append(
+                {
+                    "high": 1.1000 + (i * 0.0010),
+                    "low": 1.0950 + (i * 0.0010),
+                    "open": 1.0960 + (i * 0.0010),
+                    "close": 1.0980 + (i * 0.0010),
+                }
+            )
         # Add a candle with much larger range (expansion)
-        mn_data.append({
-            "high": 1.2000,
-            "low": 1.1500,
-            "open": 1.1700,
-            "close": 1.1900,
-        })
+        mn_data.append(
+            {
+                "high": 1.2000,
+                "low": 1.1500,
+                "open": 1.1700,
+                "close": 1.1900,
+            }
+        )
 
         mn_atr, macro_vol_ratio, phase = analyzer._calculate_volatility(mn_data)
 
@@ -137,21 +142,25 @@ class TestMNATR:
         # First, create many months with large ranges
         mn_data = []
         for i in range(12):
-            mn_data.append({
-                "high": 1.1000 + (i * 0.0100),
-                "low": 1.0500 + (i * 0.0100),
-                "open": 1.0600 + (i * 0.0100),
-                "close": 1.0900 + (i * 0.0100),
-            })
+            mn_data.append(
+                {
+                    "high": 1.1000 + (i * 0.0100),
+                    "low": 1.0500 + (i * 0.0100),
+                    "open": 1.0600 + (i * 0.0100),
+                    "close": 1.0900 + (i * 0.0100),
+                }
+            )
         # Add a final candle with very small range (contraction)
         # Make sure it's connected to previous close to avoid gap TR
         last_close = mn_data[-1]["close"]
-        mn_data.append({
-            "high": last_close + 0.0010,
-            "low": last_close - 0.0010,
-            "open": last_close,
-            "close": last_close + 0.0005,
-        })
+        mn_data.append(
+            {
+                "high": last_close + 0.0010,
+                "low": last_close - 0.0010,
+                "open": last_close,
+                "close": last_close + 0.0005,
+            }
+        )
 
         mn_atr, macro_vol_ratio, phase = analyzer._calculate_volatility(mn_data)
 
@@ -166,12 +175,14 @@ class TestMNATR:
         # Create data where current ATR is similar to rolling mean
         mn_data = []
         for i in range(13):
-            mn_data.append({
-                "high": 1.1100 + (i * 0.0010),
-                "low": 1.1000 + (i * 0.0010),
-                "open": 1.1020 + (i * 0.0010),
-                "close": 1.1080 + (i * 0.0010),
-            })
+            mn_data.append(
+                {
+                    "high": 1.1100 + (i * 0.0010),
+                    "low": 1.1000 + (i * 0.0010),
+                    "open": 1.1020 + (i * 0.0010),
+                    "close": 1.1080 + (i * 0.0010),
+                }
+            )
 
         mn_atr, macro_vol_ratio, phase = analyzer._calculate_volatility(mn_data)
 
@@ -269,7 +280,7 @@ class TestLiquidityZones:
 class TestBiasOverride:
     """Test bias override for counter-macro trades."""
 
-    @patch.object(MonthlyRegimeAnalyzer, '_detect_regime')
+    @patch.object(MonthlyRegimeAnalyzer, "_detect_regime")
     def test_bullish_expansion_penalizes_sell(self, mock_detect):
         """Test that BULLISH_EXPANSION penalizes SELL trades."""
         mock_detect.return_value = "BULLISH_EXPANSION"
@@ -290,7 +301,7 @@ class TestBiasOverride:
         assert result["bias_override"]["penalized_direction"] == "SELL"
         assert result["bias_override"]["confidence_multiplier"] == 0.7
 
-    @patch.object(MonthlyRegimeAnalyzer, '_detect_regime')
+    @patch.object(MonthlyRegimeAnalyzer, "_detect_regime")
     def test_bearish_expansion_penalizes_buy(self, mock_detect):
         """Test that BEARISH_EXPANSION penalizes BUY trades."""
         mock_detect.return_value = "BEARISH_EXPANSION"
@@ -311,7 +322,7 @@ class TestBiasOverride:
         assert result["bias_override"]["penalized_direction"] == "BUY"
         assert result["bias_override"]["confidence_multiplier"] == 0.7
 
-    @patch.object(MonthlyRegimeAnalyzer, '_detect_regime')
+    @patch.object(MonthlyRegimeAnalyzer, "_detect_regime")
     def test_consolidation_no_penalty(self, mock_detect):
         """Test that CONSOLIDATION has no bias penalty."""
         mock_detect.return_value = "CONSOLIDATION"
@@ -343,12 +354,14 @@ class TestMonthlyRegimeAnalyzer:
         # Mock 24 months of data
         mn_data = []
         for i in range(24):
-            mn_data.append({
-                "high": 1.1000 + (i * 0.0050),
-                "low": 1.0900 + (i * 0.0050),
-                "open": 1.0920 + (i * 0.0050),
-                "close": 1.0980 + (i * 0.0050),
-            })
+            mn_data.append(
+                {
+                    "high": 1.1000 + (i * 0.0050),
+                    "low": 1.0900 + (i * 0.0050),
+                    "open": 1.0920 + (i * 0.0050),
+                    "close": 1.0980 + (i * 0.0050),
+                }
+            )
 
         analyzer.context_bus.get_candle_history.return_value = mn_data
 
@@ -432,18 +445,21 @@ class TestMonthlyRegimeAnalyzer:
         assert "confidence_multiplier" in result["bias_override"]
 
 
-@pytest.mark.parametrize("regime,expected_penalty_dir", [
-    ("BULLISH_EXPANSION", "SELL"),
-    ("BEARISH_EXPANSION", "BUY"),
-    ("CONSOLIDATION", None),
-    ("TRANSITION", None),
-])
+@pytest.mark.parametrize(
+    "regime,expected_penalty_dir",
+    [
+        ("BULLISH_EXPANSION", "SELL"),
+        ("BEARISH_EXPANSION", "BUY"),
+        ("CONSOLIDATION", None),
+        ("TRANSITION", None),
+    ],
+)
 def test_bias_override_parametrized(regime, expected_penalty_dir):
     """Parametrized test for bias override logic."""
     analyzer = MonthlyRegimeAnalyzer()
     analyzer.context_bus = MagicMock()
 
-    with patch.object(analyzer, '_detect_regime', return_value=regime):
+    with patch.object(analyzer, "_detect_regime", return_value=regime):
         mn_data = [
             {"high": 1.1000, "low": 1.0900, "open": 1.0920, "close": 1.0980},
             {"high": 1.1200, "low": 1.1000, "open": 1.1050, "close": 1.1180},

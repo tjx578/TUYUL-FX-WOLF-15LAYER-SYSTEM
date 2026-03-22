@@ -23,6 +23,7 @@ NOW = datetime(2026, 2, 16, 14, 0, 0, tzinfo=UTC)  # London session
 
 # ── Helpers ─────────────────────────────────────────────────────────────
 
+
 def _trending_market(n: int = 60, base: float = 1.3000, drift: float = 0.0003) -> dict:
     closes, highs, lows, volumes = [], [], [], []
     for i in range(n):
@@ -57,10 +58,20 @@ def _flat_market(n: int = 60, price: float = 1.3000) -> dict:
 # ── Contract / output keys ─────────────────────────────────────────────
 
 REQUIRED_KEYS = {
-    "regime", "dominant_force", "regime_probability", "context_coherence",
-    "volatility_level", "volatility_percentile", "entropy_score",
-    "regime_confidence", "csi", "market_alignment", "valid", "session",
-    "pair", "timestamp",
+    "regime",
+    "dominant_force",
+    "regime_probability",
+    "context_coherence",
+    "volatility_level",
+    "volatility_percentile",
+    "entropy_score",
+    "regime_confidence",
+    "csi",
+    "market_alignment",
+    "valid",
+    "session",
+    "pair",
+    "timestamp",
 }
 
 

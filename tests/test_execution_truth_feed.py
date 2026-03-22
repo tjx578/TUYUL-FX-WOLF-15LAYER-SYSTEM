@@ -80,6 +80,7 @@ class TestJournalEntry:
 
         def _fake_open(path, mode, **kw):
             from io import StringIO
+
             buf = StringIO()
             original_close = buf.close
 
@@ -91,8 +92,7 @@ class TestJournalEntry:
             buf.close = _close
             return buf
 
-        with patch("builtins.open", _fake_open), \
-             patch("pathlib.Path.mkdir"):
+        with patch("builtins.open", _fake_open), patch("pathlib.Path.mkdir"):
             await tf._append_journal_entry(filled_intent, ExecutionLifecycleState.ACKNOWLEDGED)
 
         assert written_data["journal_type"] == "J3"
@@ -111,6 +111,7 @@ class TestJournalEntry:
 
         def _fake_open(path, mode, **kw):
             from io import StringIO
+
             buf = StringIO()
             original_close = buf.close
 
@@ -122,8 +123,7 @@ class TestJournalEntry:
             buf.close = _close
             return buf
 
-        with patch("builtins.open", _fake_open), \
-             patch("pathlib.Path.mkdir"):
+        with patch("builtins.open", _fake_open), patch("pathlib.Path.mkdir"):
             await tf._append_journal_entry(rejected_intent, ExecutionLifecycleState.ORDER_PLACED)
 
         assert written_data["journal_type"] == "J3"

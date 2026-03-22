@@ -15,6 +15,7 @@ if TYPE_CHECKING:
 # Enums
 # ---------------------------------------------------------------------------
 
+
 class MarketRegime(StrEnum):
     RISK_ON = "RISK_ON"
     RISK_OFF = "RISK_OFF"
@@ -46,6 +47,7 @@ class InstitutionalPresence(StrEnum):
 # Data classes
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class CognitiveContext:
     market_regime: MarketRegime
@@ -59,6 +61,7 @@ class CognitiveContext:
 # ---------------------------------------------------------------------------
 # Engine
 # ---------------------------------------------------------------------------
+
 
 class CognitiveContextEngine:
     """Context classification using trend, volatility, structure, and volume."""
@@ -169,8 +172,8 @@ class CognitiveContextEngine:
     def _detect_regime(
         self, closes: list[float], highs: list[float], lows: list[float]
     ) -> tuple[MarketRegime, float, dict[str, Any]]:
-        sma_f = sum(closes[-self.sma_fast:]) / self.sma_fast
-        sma_s = sum(closes[-self.sma_slow:]) / self.sma_slow
+        sma_f = sum(closes[-self.sma_fast :]) / self.sma_fast
+        sma_s = sum(closes[-self.sma_slow :]) / self.sma_slow
         spread_pct = (sma_f - sma_s) / sma_s if sma_s else 0.0
         atr = self._calc_atr(highs, lows, closes)
         atr_pct = atr / closes[-1] if closes[-1] else 0.0
@@ -294,4 +297,11 @@ class CognitiveContextEngine:
         return sum(tr_values) / len(tr_values) if tr_values else 0.0
 
 
-__all__ = ["CognitiveContext", "CognitiveContextEngine", "InstitutionalPresence", "LiquidityContext", "MarketRegime", "MarketStructure"]
+__all__ = [
+    "CognitiveContext",
+    "CognitiveContextEngine",
+    "InstitutionalPresence",
+    "LiquidityContext",
+    "MarketRegime",
+    "MarketStructure",
+]

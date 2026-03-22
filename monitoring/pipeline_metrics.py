@@ -38,9 +38,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from pipeline.constants import get_max_latency_ms
-
 from core.metrics import Counter, Gauge, Histogram, get_registry
+from pipeline.constants import get_max_latency_ms
 
 # ---------------------------------------------------------------------------
 # Registry

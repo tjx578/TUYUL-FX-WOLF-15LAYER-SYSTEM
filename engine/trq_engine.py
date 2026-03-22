@@ -23,6 +23,7 @@ Critical fixes vs. earlier drafts
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import hashlib
 import time
 from typing import Any
@@ -85,10 +86,8 @@ def _close_array(candles: list[dict[str, Any]]) -> np.ndarray:
     """Extract close prices as a numpy float64 array."""
     closes = []
     for c in candles:
-        try:
+        with contextlib.suppress(KeyError, TypeError, ValueError):
             closes.append(float(c["close"]))
-        except (KeyError, TypeError, ValueError):
-            pass
     return np.array(closes, dtype=np.float64)
 
 

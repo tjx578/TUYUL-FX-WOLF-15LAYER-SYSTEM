@@ -8,7 +8,6 @@ from __future__ import annotations
 import hashlib
 import time
 import uuid
-
 from dataclasses import dataclass
 
 
@@ -107,6 +106,4 @@ class SignalIntegrityGuard:
 
     def _cleanup_old_hashes(self) -> None:
         cutoff = time.time() - self._dedup_window
-        self._recent_hashes = {
-            h: t for h, t in self._recent_hashes.items() if t > cutoff
-        }
+        self._recent_hashes = {h: t for h, t in self._recent_hashes.items() if t > cutoff}

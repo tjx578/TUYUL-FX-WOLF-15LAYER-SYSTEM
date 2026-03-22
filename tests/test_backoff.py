@@ -53,7 +53,7 @@ class TestExponentialBackoff:
         for _ in range(20):
             delay = backoff.next_delay()
 
-        assert delay <= 5.0 # pyright: ignore[reportPossiblyUnboundVariable]
+        assert delay <= 5.0  # pyright: ignore[reportPossiblyUnboundVariable]
 
     def test_jitter_adds_variance(self) -> None:
         """With jitter, consecutive same-attempt delays should vary."""

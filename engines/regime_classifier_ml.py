@@ -33,12 +33,12 @@ _MIN_PRICES = 25  # Hurst needs lag range(2, 20) + enough returns
 class RegimeClassification:
     """Immutable result of regime classification."""
 
-    regime: str               # TRENDING | MEAN_REVERTING | TRANSITION
-    confidence: float         # 0.0-1.0 (distance from random walk H=0.5)
-    volatility_state: str     # HIGH_VOL | NORMAL_VOL | LOW_VOL
-    hurst_exponent: float     # Raw Hurst value [0, 1]
-    volatility: float         # Std of returns
-    momentum: float           # Mean return (directional lean)
+    regime: str  # TRENDING | MEAN_REVERTING | TRANSITION
+    confidence: float  # 0.0-1.0 (distance from random walk H=0.5)
+    volatility_state: str  # HIGH_VOL | NORMAL_VOL | LOW_VOL
+    hurst_exponent: float  # Raw Hurst value [0, 1]
+    volatility: float  # Std of returns
+    momentum: float  # Mean return (directional lean)
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize for JSON / L1 enrichment consumption."""
@@ -104,15 +104,11 @@ class RegimeClassifier:
         arr = np.asarray(prices, dtype=np.float64)
 
         if len(arr) < _MIN_PRICES:
-            raise ValueError(
-                f"Minimum {_MIN_PRICES} prices required, got {len(arr)}"
-            )
+            raise ValueError(f"Minimum {_MIN_PRICES} prices required, got {len(arr)}")
         if np.any(~np.isfinite(arr)):
             raise ValueError("Prices contain NaN or Inf values")
         if np.any(arr <= 0):
-            raise ValueError(
-                "Prices must be positive (log-return computation requires > 0)"
-            )
+            raise ValueError("Prices must be positive (log-return computation requires > 0)")
 
         # ── Returns ──────────────────────────────────────────────────
         returns = np.diff(arr) / arr[:-1]

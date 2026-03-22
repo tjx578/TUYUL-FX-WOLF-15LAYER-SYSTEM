@@ -72,7 +72,7 @@ class TestHighFrequencyTickBurst:
         elapsed = time.perf_counter() - start
 
         assert elapsed < MAX_PROCESS_TIME_S, (
-            f"Processing {HIGH_FREQ_TICK_COUNT} ticks took {elapsed:.2f}s " f"(limit: {MAX_PROCESS_TIME_S}s)"
+            f"Processing {HIGH_FREQ_TICK_COUNT} ticks took {elapsed:.2f}s (limit: {MAX_PROCESS_TIME_S}s)"
         )
 
     @pytest.mark.asyncio
@@ -172,7 +172,7 @@ class TestMultiSymbolConcurrentLoad:
 
         tps = total_ticks / max(elapsed, 1e-9)
         assert tps >= THROUGHPUT_FLOOR_TPS / 2, (
-            f"Multi-symbol throughput {tps:.0f} tps < " f"required {THROUGHPUT_FLOOR_TPS // 2} tps"
+            f"Multi-symbol throughput {tps:.0f} tps < required {THROUGHPUT_FLOOR_TPS // 2} tps"
         )
 
     @pytest.mark.asyncio

@@ -24,9 +24,9 @@ from __future__ import annotations
 import concurrent.futures
 import logging
 import time
-
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any, Callable
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -76,17 +76,19 @@ class EnrichmentResult:
     @property
     def valid(self) -> bool:
         """True if at least one engine produced output."""
-        return any([
-            self.cognitive_coherence,
-            self.cognitive_context,
-            self.risk_simulation,
-            self.fusion_momentum,
-            self.fusion_precision,
-            self.fusion_structure,
-            self.quantum_field,
-            self.quantum_probability,
-            self.quantum_advisory,
-        ])
+        return any(
+            [
+                self.cognitive_coherence,
+                self.cognitive_context,
+                self.risk_simulation,
+                self.fusion_momentum,
+                self.fusion_precision,
+                self.fusion_structure,
+                self.quantum_field,
+                self.quantum_probability,
+                self.quantum_advisory,
+            ]
+        )
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -161,7 +163,9 @@ class EngineEnrichmentLayer:
         for tf in _DEFAULT_TFS:
             try:
                 bars = self._context_bus.get_candle_history(
-                    symbol, tf, count=_CANDLE_HISTORY_DEPTH,
+                    symbol,
+                    tf,
+                    count=_CANDLE_HISTORY_DEPTH,
                 )
                 if bars:
                     candles[tf] = bars
@@ -256,13 +260,27 @@ class EngineEnrichmentLayer:
 
         if _PARALLEL_ENRICHMENT:
             result = self._run_engines_parallel(
-                result, engines, candles, cog_state,
-                direction, symbol, entry_price, stop_loss, take_profit,
+                result,
+                engines,
+                candles,
+                cog_state,
+                direction,
+                symbol,
+                entry_price,
+                stop_loss,
+                take_profit,
             )
         else:
             result = self._run_engines_sequential(
-                result, engines, candles, cog_state,
-                direction, symbol, entry_price, stop_loss, take_profit,
+                result,
+                engines,
+                candles,
+                cog_state,
+                direction,
+                symbol,
+                entry_price,
+                stop_loss,
+                take_profit,
             )
 
         # ── 9. Quantum Advisory (cross-engine synthesis, always sequential) ──
@@ -279,7 +297,8 @@ class EngineEnrichmentLayer:
                 "direction": direction,
                 "symbol": symbol,
                 "wolf_30_point": layer_results.get("L4", {}).get("wolf_30_point", {}).get("total", 0)
-                if isinstance(layer_results.get("L4", {}).get("wolf_30_point"), dict) else 0,
+                if isinstance(layer_results.get("L4", {}).get("wolf_30_point"), dict)
+                else 0,
                 "tii_sym": layer_results.get("L8", {}).get("tii_sym", 0.0),
             }
             adv_out = engines["advisory"].analyze(advisory_inputs, symbol=symbol)
@@ -515,7 +534,9 @@ class EngineEnrichmentLayer:
         if candles:
             try:
                 struct_out = engines["structure"].analyze(candles, symbol=symbol)
-                result.fusion_structure = struct_out.__dict__ if hasattr(struct_out, "__dict__") else {"raw": str(struct_out)}
+                result.fusion_structure = (
+                    struct_out.__dict__ if hasattr(struct_out, "__dict__") else {"raw": str(struct_out)}
+                )
             except Exception as exc:
                 result.errors.append(f"structure: {exc}")
                 logger.warning("Enrichment: structure engine failed: %s", exc)
@@ -533,7 +554,9 @@ class EngineEnrichmentLayer:
         if candles:
             try:
                 prob_out = engines["probability"].analyze(candles, symbol=symbol)
-                result.quantum_probability = prob_out.__dict__ if hasattr(prob_out, "__dict__") else {"raw": str(prob_out)}
+                result.quantum_probability = (
+                    prob_out.__dict__ if hasattr(prob_out, "__dict__") else {"raw": str(prob_out)}
+                )
             except Exception as exc:
                 result.errors.append(f"probability: {exc}")
                 logger.warning("Enrichment: probability engine failed: %s", exc)
@@ -605,9 +628,7 @@ class EngineEnrichmentLayer:
 
         # Net confidence adjustment: positive = boost, negative = dampen
         result.confidence_adjustment = (
-            result.integrity_boost
-            - (result.tail_risk_dampening * 0.15)
-            + (result.bias_stability - 0.5) * 0.1
+            result.integrity_boost - (result.tail_risk_dampening * 0.15) + (result.bias_stability - 0.5) * 0.1
         )
 
         return result

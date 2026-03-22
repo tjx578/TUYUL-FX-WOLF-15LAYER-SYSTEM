@@ -10,13 +10,11 @@ Covers:
 
 from __future__ import annotations
 
-import hashlib
 from datetime import UTC, datetime, timedelta
-from unittest.mock import AsyncMock, MagicMock, call, patch
+from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pytest
-
 
 # ══════════════════════════════════════════════════════════════════════════════
 #  FormingBarSchema validation
@@ -42,12 +40,15 @@ class TestFormingBarSchema:
 
     def test_valid_payload_passes(self) -> None:
         from ingest.forming_bar_publisher import FormingBarSchema
+
         schema = FormingBarSchema(**self._valid_payload())
         assert schema.symbol == "EURUSD"
 
     def test_high_lt_low_fails(self) -> None:
         from pydantic import ValidationError
+
         from ingest.forming_bar_publisher import FormingBarSchema
+
         payload = self._valid_payload()
         payload["high"] = 1.0840  # below low
         payload["low"] = 1.0845
@@ -56,6 +57,7 @@ class TestFormingBarSchema:
 
     def test_high_equals_low_passes(self) -> None:
         from ingest.forming_bar_publisher import FormingBarSchema
+
         payload = self._valid_payload()
         payload["high"] = 1.0845
         payload["low"] = 1.0845
@@ -64,7 +66,9 @@ class TestFormingBarSchema:
 
     def test_zero_price_fails(self) -> None:
         from pydantic import ValidationError
+
         from ingest.forming_bar_publisher import FormingBarSchema
+
         payload = self._valid_payload()
         payload["open"] = 0.0
         with pytest.raises(ValidationError):
@@ -72,7 +76,9 @@ class TestFormingBarSchema:
 
     def test_negative_price_fails(self) -> None:
         from pydantic import ValidationError
+
         from ingest.forming_bar_publisher import FormingBarSchema
+
         payload = self._valid_payload()
         payload["close"] = -1.0
         with pytest.raises(ValidationError):
@@ -86,6 +92,7 @@ class TestFormingBarSchema:
         approach validates all fields as a unit.
         """
         from ingest.forming_bar_publisher import FormingBarSchema
+
         # This tests that the high/low validation works even if field order
         # were reversed (model_validator runs after all field validators)
         payload = self._valid_payload()
@@ -129,8 +136,7 @@ class TestMicroCandleChainNoDuplicateM15:
 
         # M15 must NOT appear in published timeframes
         assert "M15" not in published_timeframes, (
-            f"publish_candle_sync was called with M15 — this creates duplicates. "
-            f"Called with: {published_timeframes}"
+            f"publish_candle_sync was called with M15 — this creates duplicates. Called with: {published_timeframes}"
         )
 
     def test_m1_complete_calls_publish(self) -> None:
@@ -299,46 +305,55 @@ class TestDualZoneRedisKeys:
 
     def test_candle_forming_key(self) -> None:
         from core.redis_keys import candle_forming
+
         key = candle_forming("EURUSD", "M15")
         assert key == "wolf15:candle:forming:EURUSD:M15"
 
     def test_candle_forming_uppercase(self) -> None:
         from core.redis_keys import candle_forming
+
         key = candle_forming("eurusd", "m15")
         assert key == "wolf15:candle:forming:EURUSD:M15"
 
     def test_channel_candle_forming(self) -> None:
         from core.redis_keys import channel_candle_forming
+
         ch = channel_candle_forming("EURUSD", "H1")
         assert ch == "candle:forming:EURUSD:H1"
 
     def test_trq_premove_key(self) -> None:
         from core.redis_keys import trq_premove
+
         key = trq_premove("GBPUSD")
         assert key == "wolf15:trq:premove:GBPUSD"
 
     def test_trq_r3d_history_key(self) -> None:
         from core.redis_keys import trq_r3d_history
+
         key = trq_r3d_history("EURUSD")
         assert key == "wolf15:trq:r3d_history:EURUSD"
 
     def test_channel_trq_premove_broadcast(self) -> None:
         from core.redis_keys import channel_trq_premove
+
         ch = channel_trq_premove()
         assert ch == "trq:premove:broadcast"
 
     def test_channel_trq_premove_symbol(self) -> None:
         from core.redis_keys import channel_trq_premove_symbol
+
         ch = channel_trq_premove_symbol("EURUSD")
         assert ch == "trq:premove:EURUSD"
 
     def test_zone_confluence_key(self) -> None:
         from core.redis_keys import zone_confluence
+
         key = zone_confluence("EURUSD")
         assert key == "wolf15:zone:confluence:EURUSD"
 
     def test_dualzone_type_map_present(self) -> None:
         from core.redis_keys import DUALZONE_TYPE_MAP
+
         assert "wolf15:candle:forming:*" in DUALZONE_TYPE_MAP
         assert "wolf15:trq:premove:*" in DUALZONE_TYPE_MAP
         assert "wolf15:trq:r3d_history:*" in DUALZONE_TYPE_MAP
@@ -346,12 +361,14 @@ class TestDualZoneRedisKeys:
     def test_type_map_includes_dualzone_keys(self) -> None:
         """DUALZONE keys must be merged into main TYPE_MAP for sanitizer."""
         from core.redis_keys import TYPE_MAP
+
         assert "wolf15:candle:forming:*" in TYPE_MAP
         assert "wolf15:trq:premove:*" in TYPE_MAP
         assert "wolf15:trq:r3d_history:*" in TYPE_MAP
 
     def test_expected_type_forming_key(self) -> None:
         from core.redis_keys import expected_type
+
         result = expected_type("wolf15:candle:forming:EURUSD:M15")
         # Should match wolf15:candle:forming:* → hash
         # But wolf15:candle:* also matches (hash) — either is correct
@@ -360,18 +377,9 @@ class TestDualZoneRedisKeys:
     def test_state_redis_keys_re_exports(self) -> None:
         """state/redis_keys.py must re-export all new dual-zone symbols."""
         from state.redis_keys import (
-            CANDLE_FORMING_PREFIX,
-            DUALZONE_TYPE_MAP,
-            TRQ_PREFIX,
             candle_forming,
-            channel_candle_forming,
-            channel_confluence,
-            channel_trq_premove,
-            channel_trq_premove_symbol,
-            trq_premove,
-            trq_r3d_history,
-            zone_confluence,
         )
+
         assert candle_forming("EURUSD", "M15") == "wolf15:candle:forming:EURUSD:M15"
 
 
@@ -396,12 +404,15 @@ class TestTRQPremoveSchema:
 
     def test_valid_passes(self) -> None:
         from engine.trq_redis_bridge import TRQPremoveSchema
+
         schema = TRQPremoveSchema(**self._valid())
         assert schema.symbol == "EURUSD"
 
     def test_conf12_above_1_fails(self) -> None:
         from pydantic import ValidationError
+
         from engine.trq_redis_bridge import TRQPremoveSchema
+
         payload = self._valid()
         payload["conf12"] = 1.01
         with pytest.raises(ValidationError, match="conf12"):
@@ -409,7 +420,9 @@ class TestTRQPremoveSchema:
 
     def test_conf12_below_0_fails(self) -> None:
         from pydantic import ValidationError
+
         from engine.trq_redis_bridge import TRQPremoveSchema
+
         payload = self._valid()
         payload["conf12"] = -0.01
         with pytest.raises(ValidationError, match="conf12"):
@@ -417,7 +430,9 @@ class TestTRQPremoveSchema:
 
     def test_wlwci_above_1_fails(self) -> None:
         from pydantic import ValidationError
+
         from engine.trq_redis_bridge import TRQPremoveSchema
+
         payload = self._valid()
         payload["wlwci"] = 1.01
         with pytest.raises(ValidationError, match="wlwci"):
@@ -425,7 +440,9 @@ class TestTRQPremoveSchema:
 
     def test_wlwci_below_neg1_fails(self) -> None:
         from pydantic import ValidationError
+
         from engine.trq_redis_bridge import TRQPremoveSchema
+
         payload = self._valid()
         payload["wlwci"] = -1.01
         with pytest.raises(ValidationError, match="wlwci"):
@@ -433,6 +450,7 @@ class TestTRQPremoveSchema:
 
     def test_boundary_values_pass(self) -> None:
         from engine.trq_redis_bridge import TRQPremoveSchema
+
         payload = self._valid()
         payload["conf12"] = 0.0
         payload["wlwci"] = -1.0

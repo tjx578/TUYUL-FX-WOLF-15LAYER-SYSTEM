@@ -97,11 +97,13 @@ class TestSessionState:
 
     def test_update_and_get(self) -> None:
         bus = LiveContextBus()
-        bus.update_session_state({
-            "session": "LONDON_OPEN",
-            "session_multiplier": 1.2,
-            "is_overlap": False,
-        })
+        bus.update_session_state(
+            {
+                "session": "LONDON_OPEN",
+                "session_multiplier": 1.2,
+                "is_overlap": False,
+            }
+        )
         got = bus.get_session_state()
         assert got["session"] == "LONDON_OPEN"
         assert got["session_multiplier"] == 1.2
@@ -112,10 +114,12 @@ class TestLiquidityMap:
 
     def test_update_and_get(self) -> None:
         bus = LiveContextBus()
-        bus.update_liquidity_map({
-            "zones": [{"level": 1.0850, "strength": 0.9}],
-            "nearest_zone": 1.0850,
-        })
+        bus.update_liquidity_map(
+            {
+                "zones": [{"level": 1.0850, "strength": 0.9}],
+                "nearest_zone": 1.0850,
+            }
+        )
         got = bus.get_liquidity_map()
         assert len(got["zones"]) == 1
         assert got["nearest_zone"] == 1.0850
@@ -126,11 +130,13 @@ class TestNewsPressure:
 
     def test_update_and_get(self) -> None:
         bus = LiveContextBus()
-        bus.update_news_pressure({
-            "pressure_score": 0.7,
-            "locked_symbols": ["EURUSD"],
-            "high_impact_pending": True,
-        })
+        bus.update_news_pressure(
+            {
+                "pressure_score": 0.7,
+                "locked_symbols": ["EURUSD"],
+                "high_impact_pending": True,
+            }
+        )
         got = bus.get_news_pressure()
         assert got["pressure_score"] == 0.7
         assert "EURUSD" in got["locked_symbols"]
@@ -141,10 +147,12 @@ class TestNews:
 
     def test_update_and_get(self) -> None:
         bus = LiveContextBus()
-        bus.update_news({
-            "events": [{"event": "NFP", "impact": "high"}],
-            "source": "finnhub",
-        })
+        bus.update_news(
+            {
+                "events": [{"event": "NFP", "impact": "high"}],
+                "source": "finnhub",
+            }
+        )
         got = bus.get_news()
         assert got is not None
         assert got["source"] == "finnhub"
@@ -226,10 +234,9 @@ class TestInferenceThreadSafety:
             for _ in range(100):
                 bus.update_session_state({"session": f"S{thread_id}"})
 
-        threads = (
-            [threading.Thread(target=write_regime, args=(i,)) for i in range(5)]
-            + [threading.Thread(target=write_session, args=(i,)) for i in range(5)]
-        )
+        threads = [threading.Thread(target=write_regime, args=(i,)) for i in range(5)] + [
+            threading.Thread(target=write_session, args=(i,)) for i in range(5)
+        ]
         for t in threads:
             t.start()
         for t in threads:

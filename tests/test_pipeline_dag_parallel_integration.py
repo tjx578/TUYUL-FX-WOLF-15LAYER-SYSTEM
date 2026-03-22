@@ -28,10 +28,7 @@ def _build_dependency_checked_calls(
 ) -> dict[str, Callable[[], dict[str, int | str]]]:
     dag = WolfConstitutionalPipeline._build_pipeline_dag()  # pyright: ignore[reportPrivateUsage]
     active = set(active_layers)
-    dependencies = {
-        layer: [dep for dep in dag.dependencies_for(layer) if dep in active]
-        for layer in active_layers
-    }
+    dependencies = {layer: [dep for dep in dag.dependencies_for(layer) if dep in active] for layer in active_layers}
 
     state_done: set[str] = set()
     state_values: dict[str, dict[str, int | str]] = {}
@@ -69,11 +66,7 @@ def _build_dependency_checked_calls(
 
 def test_l11_and_macro_share_same_dag_batch() -> None:
     dag_batches = WolfConstitutionalPipeline._build_pipeline_dag().execution_batches()  # pyright: ignore[reportPrivateUsage]
-    batch_index = {
-        layer_id: idx
-        for idx, batch in enumerate(dag_batches)
-        for layer_id in batch
-    }
+    batch_index = {layer_id: idx for idx, batch in enumerate(dag_batches) for layer_id in batch}
 
     assert batch_index["L11"] == batch_index["macro"]
 
@@ -81,12 +74,22 @@ def test_l11_and_macro_share_same_dag_batch() -> None:
 def test_pipeline_batch_parallel_matches_sequential_reference() -> None:
     dag_batches = WolfConstitutionalPipeline._build_pipeline_dag().execution_batches()  # pyright: ignore[reportPrivateUsage]
     active_layers = [
-        "L1", "L2", "L3",
-        "L4", "L5",
-        "L7", "L8", "L9",
-        "L11", "macro",
-        "L6", "L10",
-        "L12", "L13", "L15", "L14",
+        "L1",
+        "L2",
+        "L3",
+        "L4",
+        "L5",
+        "L7",
+        "L8",
+        "L9",
+        "L11",
+        "macro",
+        "L6",
+        "L10",
+        "L12",
+        "L13",
+        "L15",
+        "L14",
     ]
 
     parallel_calls = _build_dependency_checked_calls(dag_batches, active_layers)

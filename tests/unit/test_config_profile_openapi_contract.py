@@ -4,7 +4,6 @@ from fastapi import FastAPI
 
 from api.config_profile_router import router as config_profile_router
 
-
 _HTTP_METHODS = {"get", "post", "put", "patch", "delete"}
 _REQUIRED_RESPONSES = {"200", "404", "409", "422"}
 _ERROR_RESPONSE_REF = "#/components/schemas/ErrorResponse"

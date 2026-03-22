@@ -12,7 +12,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import numpy as np
-
 from loguru import logger
 
 
@@ -63,10 +62,10 @@ class VIXProxyEstimator:
             if sma == 0:
                 return None
 
-            vol_ratio = (atr / sma) * 100
+            vol_ratio = float((atr / sma) * 100)
 
             # Scale to VIX
-            vix_eq = self.ATR_VIX_OFFSET + (vol_ratio * self.ATR_VIX_SCALE)
+            vix_eq = float(self.ATR_VIX_OFFSET + (vol_ratio * self.ATR_VIX_SCALE))
             vix_eq = max(5.0, min(vix_eq, 80.0))
 
             # Confidence
@@ -100,11 +99,13 @@ class VIXProxyEstimator:
             if i == 0:
                 tr.append(highs[i] - lows[i])
             else:
-                tr.append(max(
-                    highs[i] - lows[i],
-                    abs(highs[i] - closes[i - 1]),
-                    abs(lows[i] - closes[i - 1]),
-                ))
+                tr.append(
+                    max(
+                        highs[i] - lows[i],
+                        abs(highs[i] - closes[i - 1]),
+                        abs(lows[i] - closes[i - 1]),
+                    )
+                )
         return np.array(tr)
 
     @staticmethod

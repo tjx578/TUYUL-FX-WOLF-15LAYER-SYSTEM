@@ -4,7 +4,8 @@ from collections.abc import Iterable
 
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from services.shared.db_revision_guard import DatabaseSchemaError, assert_required_tables as _assert_required_tables
+from services.shared.db_revision_guard import DatabaseSchemaError
+from services.shared.db_revision_guard import assert_required_tables as _assert_required_tables
 
 
 class DatabaseRevisionMismatchError(RuntimeError):

@@ -139,13 +139,15 @@ class TestFullPipelineE2E:
             h = o + 0.0020
             l = o - 0.0010  # noqa: E741
             c = o + 0.0005
-            candles.append({
-                "time": base_time + (i * 3600),
-                "open": round(o, 5),
-                "high": round(h, 5),
-                "low": round(l, 5),
-                "close": round(c, 5),
-                "volume": 1000 + i,
-            })
+            candles.append(
+                {
+                    "time": base_time + (i * 3600),
+                    "open": round(o, 5),
+                    "high": round(h, 5),
+                    "low": round(l, 5),
+                    "close": round(c, 5),
+                    "volume": 1000 + i,
+                }
+            )
 
         return candles

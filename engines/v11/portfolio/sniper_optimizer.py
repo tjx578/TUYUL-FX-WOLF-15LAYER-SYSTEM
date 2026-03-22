@@ -95,7 +95,7 @@ class SniperOptimizer:
         kelly = self._compute_kelly(win_rate, avg_win, avg_loss)
 
         # Apply confidence scaling
-        kelly *= (confidence ** self._conf_power)
+        kelly *= confidence**self._conf_power
 
         # Apply dampening
         kelly *= self._kelly_frac
@@ -148,9 +148,7 @@ class SniperOptimizer:
         # Clamp to [0, 1]
         return float(np.clip(kelly, 0.0, 1.0))
 
-    def _markowitz_optimize(
-        self, returns: np.ndarray
-    ) -> tuple[tuple[float, ...], float, float]:
+    def _markowitz_optimize(self, returns: np.ndarray) -> tuple[tuple[float, ...], float, float]:
         """
         Markowitz mean-variance optimization.
 

@@ -93,12 +93,8 @@ class Trade(BaseModel):
     legs: list[TradeLeg] = Field(..., description="Trade legs (1 for FIXED, multiple for SPLIT)")
     created_at: datetime = Field(..., description="Trade creation timestamp (UTC)")
     updated_at: datetime = Field(..., description="Last update timestamp (UTC)")
-    close_reason: CloseReason | None = Field(
-        default=None, description="Reason for closure (if closed)"
-    )
-    pnl: float | None = Field(
-        default=None, description="Profit/loss in account currency (if closed)"
-    )
+    close_reason: CloseReason | None = Field(default=None, description="Reason for closure (if closed)")
+    pnl: float | None = Field(default=None, description="Profit/loss in account currency (if closed)")
 
     @field_validator("direction")
     @classmethod

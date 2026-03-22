@@ -35,9 +35,14 @@ class VaultMacroLayer:
         sr = sma_r.get("sma_800", ema200)
         dp = round(((pn - sr) / sr) * 100, 3) if sr != 0 else 0.0
         sa = self._structural(ema200, sma_r, pn)
-        return {"ema_200": ema200, **sma_r, "price_now": round(pn, 5),
-                "macro_bias": "Bullish" if pn > ema200 else "Bearish",
-                "distance_pct": dp, "structural_alignment": sa}
+        return {
+            "ema_200": ema200,
+            **sma_r,
+            "price_now": round(pn, 5),
+            "macro_bias": "Bullish" if pn > ema200 else "Bearish",
+            "distance_pct": dp,
+            "structural_alignment": sa,
+        }
 
     def _structural(self, ema200: float, sma_r: dict[str, float], pn: float) -> str:
         s200 = sma_r.get("sma_200", ema200)
@@ -67,5 +72,8 @@ class VaultMacroLayer:
             gs = 0.6
         else:
             gs = 0.4
-        return {**md, "gravity_score": round(gs, 3),
-                "gravity_status": "Strong" if gs >= 0.8 else "Moderate" if gs >= 0.6 else "Weak"}
+        return {
+            **md,
+            "gravity_score": round(gs, 3),
+            "gravity_status": "Strong" if gs >= 0.8 else "Moderate" if gs >= 0.6 else "Weak",
+        }

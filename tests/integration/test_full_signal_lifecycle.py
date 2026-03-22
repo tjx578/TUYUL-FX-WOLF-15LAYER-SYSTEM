@@ -35,16 +35,20 @@ class TestFullSignalLifecycle:
 
     def _journal_record(self, enriched, journal_entries):
         """Append journal entries -- no decision power."""
-        journal_entries.append({
-            "journal_type": "J2",
-            "verdict": enriched["signal"]["verdict"],
-            "confidence": enriched["signal"]["confidence"],
-        })
+        journal_entries.append(
+            {
+                "journal_type": "J2",
+                "verdict": enriched["signal"]["verdict"],
+                "confidence": enriched["signal"]["confidence"],
+            }
+        )
         if enriched["signal"]["verdict"] == "EXECUTE" and enriched["risk"]["trade_allowed"]:
-            journal_entries.append({
-                "journal_type": "J3",
-                "lot": enriched["risk"]["recommended_lot"],
-            })
+            journal_entries.append(
+                {
+                    "journal_type": "J3",
+                    "lot": enriched["risk"]["recommended_lot"],
+                }
+            )
 
     def test_execute_flow(self, sample_account_state):
         scores = {"wolf": 8.5, "tii": 7.2, "frpc": 7.8}

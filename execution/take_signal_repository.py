@@ -250,7 +250,7 @@ class TakeSignalRepository:
                 args.append(val)
                 idx += 1
             args.append(take_id)
-            query = f"UPDATE take_signal_records SET {', '.join(set_clauses)} " f"WHERE take_id = ${idx}"
+            query = f"UPDATE take_signal_records SET {', '.join(set_clauses)} WHERE take_id = ${idx}"
             await pg_client.execute(query, *args)
         except Exception:
             logger.warning("[TakeSignalRepo] PG update failed", exc_info=True)

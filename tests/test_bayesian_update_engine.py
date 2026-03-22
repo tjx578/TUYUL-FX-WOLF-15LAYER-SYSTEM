@@ -11,7 +11,6 @@ from engines.bayesian_update_engine import (
 
 
 class TestBayesianProbabilityEngine:
-
     def test_basic_update(self) -> None:
         engine = BayesianProbabilityEngine(seed=42)
         result = engine.update(prior_wins=10, prior_losses=5, new_evidence_score=0.7)

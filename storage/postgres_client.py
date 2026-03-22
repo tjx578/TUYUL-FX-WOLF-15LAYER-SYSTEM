@@ -91,7 +91,7 @@ class PostgresClient:
                 self._keepalive_loop(),
                 name="pg-pool-keepalive",
             )
-            logger.debug(f"PostgreSQL pool keepalive started " f"(interval={_POOL_KEEPALIVE_INTERVAL_SEC}s)")
+            logger.debug(f"PostgreSQL pool keepalive started (interval={_POOL_KEEPALIVE_INTERVAL_SEC}s)")
         except Exception as exc:
             raise PostgresConnectionError(str(exc)) from exc
 

@@ -89,7 +89,7 @@ class TestSmoothing:
         """Recovery from a dip should be gradual, not instant."""
         emc = EMCFilter(decay=0.8)
         emc.smooth("XAUUSD", 0.92)
-        emc.smooth("XAUUSD", 0.35)   # crash → ~0.806
+        emc.smooth("XAUUSD", 0.35)  # crash → ~0.806
         s3 = emc.smooth("XAUUSD", 0.90)
         # 0.8 * 0.806 + 0.2 * 0.90 = 0.6448 + 0.18 = 0.8248
         assert math.isclose(s3, 0.8248, rel_tol=1e-4)
@@ -99,10 +99,10 @@ class TestSmoothing:
     def test_full_recovery_sequence(self) -> None:
         """Verify the user's spec: 5-cycle recovery from crash."""
         emc = EMCFilter(decay=0.8)
-        emc.smooth("XAUUSD", 0.92)    # cycle 1
-        emc.smooth("XAUUSD", 0.35)    # cycle 2: crash
-        emc.smooth("XAUUSD", 0.90)    # cycle 3
-        emc.smooth("XAUUSD", 0.91)    # cycle 4
+        emc.smooth("XAUUSD", 0.92)  # cycle 1
+        emc.smooth("XAUUSD", 0.35)  # cycle 2: crash
+        emc.smooth("XAUUSD", 0.90)  # cycle 3
+        emc.smooth("XAUUSD", 0.91)  # cycle 4
         s5 = emc.smooth("XAUUSD", 0.92)  # cycle 5
         # Should be approaching but may not yet fully reach 0.85
         assert s5 > 0.82

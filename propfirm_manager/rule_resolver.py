@@ -45,11 +45,7 @@ class PropFirmRuleResolver:
         Returns:
             Sorted list of firm code strings.
         """
-        return sorted(
-            d.name
-            for d in self._PROFILES_DIR.iterdir()
-            if d.is_dir() and (d / "profile.yaml").exists()
-        )
+        return sorted(d.name for d in self._PROFILES_DIR.iterdir() if d.is_dir() and (d / "profile.yaml").exists())
 
     def list_plans(self, firm_code: str) -> list[str]:
         """Return all plan codes for a given firm.
@@ -119,9 +115,7 @@ class PropFirmRuleResolver:
         features: dict[str, Any] = config.get("features", {})
 
         # Build effective default (v1 uses "rules"; v2 uses "default_rules")
-        default_rules: dict[str, Any] = dict(
-            config.get("default_rules", config.get("rules", {}))
-        )
+        default_rules: dict[str, Any] = dict(config.get("default_rules", config.get("rules", {})))
 
         # Resolve plan metadata
         plans: dict[str, Any] = config.get("plans", {})
@@ -234,9 +228,7 @@ class PropFirmRuleResolver:
 
         profile_path = self._PROFILES_DIR / firm_code / "profile.yaml"
         if not profile_path.exists():
-            raise FileNotFoundError(
-                f"Prop firm profile not found for firm_code='{firm_code}': {profile_path}"
-            )
+            raise FileNotFoundError(f"Prop firm profile not found for firm_code='{firm_code}': {profile_path}")
 
         with open(profile_path) as fh:
             config: dict[str, Any] = yaml.safe_load(fh) or {}

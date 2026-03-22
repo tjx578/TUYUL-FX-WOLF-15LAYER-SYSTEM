@@ -9,8 +9,8 @@ from datetime import UTC, datetime
 from threading import Lock
 from typing import Any
 
-from storage.redis_client import redis_client
 from state.data_freshness import stale_threshold_seconds
+from storage.redis_client import redis_client
 
 _KILL_SWITCH_KEY = "RISK:KILL_SWITCH:GLOBAL"
 

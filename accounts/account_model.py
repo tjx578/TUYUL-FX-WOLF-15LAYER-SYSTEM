@@ -66,9 +66,7 @@ class AccountCreate(BaseModel):
     account_name: str = Field(..., min_length=1, max_length=100)
     balance: float = Field(..., gt=0, description="Account balance in USD")
     equity: float = Field(..., gt=0, description="Account equity in USD")
-    prop_firm_code: str = Field(
-        ..., min_length=1, max_length=50, description="ftmo, aqua_instant_pro, etc"
-    )
+    prop_firm_code: str = Field(..., min_length=1, max_length=50, description="ftmo, aqua_instant_pro, etc")
     currency: str = Field(default="USD", max_length=3)
 
     model_config = ConfigDict(frozen=False)
@@ -98,12 +96,8 @@ class AccountState(BaseModel):
 class RiskProfile(BaseModel):
     """Risk management profile settings."""
 
-    risk_per_trade_percent: float = Field(
-        ..., ge=0.1, le=5.0, description="Risk per trade (0.1-5%)"
-    )
-    max_daily_risk_percent: float = Field(
-        ..., ge=0.1, le=10.0, description="Max daily risk (0.1-10%)"
-    )
+    risk_per_trade_percent: float = Field(..., ge=0.1, le=5.0, description="Risk per trade (0.1-5%)")
+    max_daily_risk_percent: float = Field(..., ge=0.1, le=10.0, description="Max daily risk (0.1-10%)")
     max_total_dd_percent: float = Field(..., ge=0.1, le=20.0, description="Max total DD (0.1-20%)")
     max_open_trades: int = Field(..., ge=1, le=10)
     confidence_scaling: bool = Field(default=True, description="Scale risk by confidence")
@@ -134,11 +128,11 @@ class Layer12Signal(BaseModel):
     verdict: str = Field(..., description="EXECUTE_BUY or EXECUTE_SELL")
     confidence: str = Field(..., description="VERY_HIGH, HIGH, MEDIUM, LOW")
     wolf_score: int = Field(..., ge=0, le=30, description="Wolf 30-point score")
-    tii_sym: float = Field(
-        ..., ge=0.0, le=1.0, description="Technical integrity index"
-    )
+    tii_sym: float = Field(..., ge=0.0, le=1.0, description="Technical integrity index")
     frpc: float = Field(
-        ..., ge=0.0, le=1.0,
+        ...,
+        ge=0.0,
+        le=1.0,
         description="Fundamental-risk-prob-context",
     )
 
@@ -164,24 +158,21 @@ class RiskCalculationRequest(BaseModel):
     account_id: str = Field(...)
     signal_id: UUID = Field(...)
     risk_mode: RiskMode = Field(default=RiskMode.FIXED)
-    split_ratio: list[float] | None = Field(
-        default=None, description="For SPLIT mode: [0.5, 0.3, 0.2] must sum to 1.0"
-    )
+    split_ratio: list[float] | None = Field(default=None, description="For SPLIT mode: [0.5, 0.3, 0.2] must sum to 1.0")
 
     model_config = ConfigDict(frozen=False)
 
     @field_validator("split_ratio")
     @classmethod
     def validate_split_sum(
-        cls, v: list[float] | None,
+        cls,
+        v: list[float] | None,
     ) -> list[float] | None:
         """Ensure split ratios sum to 1.0."""
         if v is not None:
             total = sum(v)
             if not (0.99 <= total <= 1.01):  # Allow small float tolerance
-                raise ValueError(
-                    f"Split ratios must sum to 1.0, got {total}"
-                )
+                raise ValueError(f"Split ratios must sum to 1.0, got {total}")
         return v
 
 

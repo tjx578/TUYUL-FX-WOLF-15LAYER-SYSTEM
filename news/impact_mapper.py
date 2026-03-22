@@ -9,7 +9,6 @@ from __future__ import annotations
 
 from news.models import ImpactLevel
 
-
 # ── Forex Factory ──────────────────────────────────────────────────────────────
 # FF uses string labels: "High", "Medium", "Low", "Holiday" (case-insensitive)
 _FF_IMPACT_MAP: dict[str, ImpactLevel] = {

@@ -65,17 +65,12 @@ class ExhaustionDVGFusion:
         divergence_weight: float | None = None,
         divergence_tf_weights: dict[str, float] | None = None,
     ) -> None:
-        self._exhaustion_weight = exhaustion_weight or get_v11(
-            "exhaustion_dvg_fusion.exhaustion_weight", 0.45
-        )
-        self._divergence_weight = divergence_weight or get_v11(
-            "exhaustion_dvg_fusion.divergence_weight", 0.55
-        )
+        self._exhaustion_weight = exhaustion_weight or get_v11("exhaustion_dvg_fusion.exhaustion_weight", 0.45)
+        self._divergence_weight = divergence_weight or get_v11("exhaustion_dvg_fusion.divergence_weight", 0.55)
 
         if divergence_tf_weights is None:
             self._tf_weights = get_v11(
-                "exhaustion_dvg_fusion.divergence_tf_weights",
-                {"H1": 0.25, "H4": 0.45, "D1": 0.30}
+                "exhaustion_dvg_fusion.divergence_tf_weights", {"H1": 0.25, "H4": 0.45, "D1": 0.30}
             )
         else:
             self._tf_weights = divergence_tf_weights
@@ -115,10 +110,7 @@ class ExhaustionDVGFusion:
         divergence_detected = divergence_data.get("divergence_detected", False)
 
         # Weighted composite
-        composite = (
-            self._exhaustion_weight * exhaustion_conf +
-            self._divergence_weight * divergence_conf
-        )
+        composite = self._exhaustion_weight * exhaustion_conf + self._divergence_weight * divergence_conf
 
         return ExhaustionDVGResult(
             exhaustion_confidence=exhaustion_conf,

@@ -70,10 +70,13 @@ class TestPeriodicRefresh:
             mock_bus.get_warmup_bar_count.return_value = 50
             mock_bus_class.return_value = mock_bus
 
-            with patch("ingest.h1_refresh_scheduler.load_finnhub", return_value={
-                "pairs": {"symbols": ["EURUSD"]},
-                "candles": {"refresh": {}},
-            }):
+            with patch(
+                "ingest.h1_refresh_scheduler.load_finnhub",
+                return_value={
+                    "pairs": {"symbols": ["EURUSD"]},
+                    "candles": {"refresh": {}},
+                },
+            ):
                 scheduler = H1RefreshScheduler()
                 await scheduler.refresh_all_symbols()
 
@@ -133,10 +136,13 @@ class TestPriceDriftDetection:
             mock_bus.get_warmup_bar_count.return_value = 50
             mock_bus_class.return_value = mock_bus
 
-            with patch("ingest.h1_refresh_scheduler.load_finnhub", return_value={
-                "pairs": {"symbols": ["EURUSD"]},
-                "candles": {"refresh": {}},
-            }):
+            with patch(
+                "ingest.h1_refresh_scheduler.load_finnhub",
+                return_value={
+                    "pairs": {"symbols": ["EURUSD"]},
+                    "candles": {"refresh": {}},
+                },
+            ):
                 scheduler = H1RefreshScheduler()
                 await scheduler.refresh_all_symbols()
 
@@ -186,10 +192,13 @@ class TestPriceDriftDetection:
             mock_bus.get_warmup_bar_count.return_value = 50
             mock_bus_class.return_value = mock_bus
 
-            with patch("ingest.h1_refresh_scheduler.load_finnhub", return_value={
-                "pairs": {"symbols": ["EURUSD"]},
-                "candles": {"refresh": {}},
-            }):
+            with patch(
+                "ingest.h1_refresh_scheduler.load_finnhub",
+                return_value={
+                    "pairs": {"symbols": ["EURUSD"]},
+                    "candles": {"refresh": {}},
+                },
+            ):
                 scheduler = H1RefreshScheduler()
                 await scheduler.refresh_all_symbols()
 
@@ -203,47 +212,27 @@ class TestRefreshConfiguration:
     def test_default_interval(self) -> None:
         """Test default refresh interval is 3600 seconds."""
         with patch("ingest.h1_refresh_scheduler.load_finnhub") as mock_load:
-            mock_load.return_value = {
-                "candles": {
-                    "refresh": {}
-                }
-            }
+            mock_load.return_value = {"candles": {"refresh": {}}}
             scheduler = H1RefreshScheduler()
             assert scheduler.interval_sec == 3600
 
     def test_custom_interval(self) -> None:
         """Test custom refresh interval from config."""
         with patch("ingest.h1_refresh_scheduler.load_finnhub") as mock_load:
-            mock_load.return_value = {
-                "candles": {
-                    "refresh": {
-                        "h1_interval_sec": 1800
-                    }
-                }
-            }
+            mock_load.return_value = {"candles": {"refresh": {"h1_interval_sec": 1800}}}
             scheduler = H1RefreshScheduler()
             assert scheduler.interval_sec == 1800
 
     def test_default_h1_bars(self) -> None:
         """Test default H1 bars to fetch is 5."""
         with patch("ingest.h1_refresh_scheduler.load_finnhub") as mock_load:
-            mock_load.return_value = {
-                "candles": {
-                    "refresh": {}
-                }
-            }
+            mock_load.return_value = {"candles": {"refresh": {}}}
             scheduler = H1RefreshScheduler()
             assert scheduler.h1_bars == 5
 
     def test_custom_max_drift(self) -> None:
         """Test custom max drift from config."""
         with patch("ingest.h1_refresh_scheduler.load_finnhub") as mock_load:
-            mock_load.return_value = {
-                "candles": {
-                    "refresh": {
-                        "price_drift_max_pips": 100.0
-                    }
-                }
-            }
+            mock_load.return_value = {"candles": {"refresh": {"price_drift_max_pips": 100.0}}}
             scheduler = H1RefreshScheduler()
             assert scheduler.max_drift_pips == 100.0

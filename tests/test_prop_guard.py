@@ -182,14 +182,10 @@ def test_max_safe_lot(ftmo_guard):
     assert hasattr(result, "max_safe_lot"), "GuardResult must expose max_safe_lot"
 
     max_lot = result.max_safe_lot
-    assert isinstance(max_lot, (int, float)), (
-        f"max_safe_lot must be numeric, got {type(max_lot)}"
-    )
+    assert isinstance(max_lot, (int, float)), f"max_safe_lot must be numeric, got {type(max_lot)}"
     assert max_lot >= 0, f"max_safe_lot must be >= 0, got {max_lot}"
 
     # If trade is allowed, max_safe_lot must be positive
     allowed = bool(result.allowed)
     if allowed:
-        assert max_lot > 0, (
-            f"max_safe_lot must be > 0 when trade is allowed, got {max_lot}"
-        )
+        assert max_lot > 0, f"max_safe_lot must be > 0 when trade is allowed, got {max_lot}"

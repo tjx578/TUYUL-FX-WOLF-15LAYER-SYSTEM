@@ -693,9 +693,9 @@ class TestRunLoopReconnect:
                 await ws_client.run()
 
         # Lock should have been released in the finally block after the first failure
-        assert (
-            LEADER_LOCK_KEY in delete_calls
-        ), f"Leader lock not released in finally block. delete calls: {delete_calls}"
+        assert LEADER_LOCK_KEY in delete_calls, (
+            f"Leader lock not released in finally block. delete calls: {delete_calls}"
+        )
 
     @pytest.mark.asyncio
     async def test_backoff_increases_with_consecutive_failures(

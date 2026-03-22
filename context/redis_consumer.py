@@ -151,9 +151,7 @@ class RedisConsumer:
         has_seed = await self._has_any_candle_seed()
         if not has_seed:
             if not self._logged_empty_seed:
-                logger.warning(
-                    "RedisConsumer: warmup skipped — no candle keys in Redis yet " "(waiting for ingest seed)"
-                )
+                logger.warning("RedisConsumer: warmup skipped — no candle keys in Redis yet (waiting for ingest seed)")
                 self._logged_empty_seed = True
             else:
                 logger.debug("RedisConsumer: warmup still waiting for first Redis candle seed")

@@ -5,14 +5,16 @@ import redis
 
 r = redis.Redis()
 
+
 async def consume():
     loop = asyncio.get_event_loop()
     while True:
         try:
-            await loop.run_in_executor(None, r.xreadgroup, ...) # pyright: ignore[reportArgumentType]
+            await loop.run_in_executor(None, r.xreadgroup, ...)  # pyright: ignore[reportArgumentType]
             # process but never XACK
         except Exception:
             await asyncio.sleep(1)  # linear, no backoff
+
 
 # ✅ NEW PATTERN — native async + XACK + exponential backoff
 from infrastructure.backoff import BackoffConfig  # noqa: E402
@@ -23,6 +25,7 @@ async def handle_candle(stream: str, msg_id: str, fields: dict[str, str]) -> Non
     fields["symbol"]
     # ... process candle ...
     # XACK happens automatically after this returns successfully
+
 
 consumer = StreamConsumer(
     bindings=[
@@ -37,8 +40,10 @@ consumer = StreamConsumer(
     ),
 )
 
+
 async def main():
     await consumer.start()
+
 
 if __name__ == "__main__":
     asyncio.run(main())

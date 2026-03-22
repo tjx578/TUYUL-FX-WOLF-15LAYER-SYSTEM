@@ -60,21 +60,28 @@ class TestRedisConfig:
 
     def test_redis_url_takes_priority_over_private_url(self) -> None:
         """REDIS_URL takes priority over REDIS_PRIVATE_URL."""
-        with patch.dict(os.environ, {
-            "REDIS_URL": "redis://url-host:6001/0",
-            "REDIS_PRIVATE_URL": "redis://private-host:6002/0",
-        }, clear=True):
+        with patch.dict(
+            os.environ,
+            {
+                "REDIS_URL": "redis://url-host:6001/0",
+                "REDIS_PRIVATE_URL": "redis://private-host:6002/0",
+            },
+            clear=True,
+        ):
             cfg = RedisConfig.from_env()
             assert cfg.host == "url-host"
             assert cfg.port == 6001
 
     def test_from_env_individual_vars_override_url(self) -> None:
         """Individual REDIS_HOST/PORT/etc take priority over REDIS_URL components."""
-        with patch.dict(os.environ, {
-            "REDIS_URL": "redis://url-host:6000/0",
-            "REDIS_HOST": "override-host",
-            "REDIS_PORT": "6001",
-        }):
+        with patch.dict(
+            os.environ,
+            {
+                "REDIS_URL": "redis://url-host:6000/0",
+                "REDIS_HOST": "override-host",
+                "REDIS_PORT": "6001",
+            },
+        ):
             cfg = RedisConfig.from_env()
             assert cfg.host == "override-host"
             assert cfg.port == 6001

@@ -35,7 +35,7 @@ def test_complete_pipeline():
 
         # Display results
         print("3. Pipeline Results:")
-        print(f"   Symbol: EURUSD")
+        print("   Symbol: EURUSD")
         print(f"   Latency: {result['latency_ms']:.2f}ms")
         print(f"   Errors: {result['errors'] if result['errors'] else 'None'}")
         print()
@@ -78,12 +78,8 @@ def test_complete_pipeline():
         # L14 Sovereignty
         if result["sovereignty"]:
             print("7. L14 Sovereignty Enforcement:")
-            print(
-                f"   Execution Rights: {result['sovereignty'].get('execution_rights', 'N/A')}"
-            )
-            print(
-                f"   Lot Multiplier: {result['sovereignty'].get('lot_multiplier', 'N/A')}"
-            )
+            print(f"   Execution Rights: {result['sovereignty'].get('execution_rights', 'N/A')}")
+            print(f"   Lot Multiplier: {result['sovereignty'].get('lot_multiplier', 'N/A')}")
             print(f"   Vault Sync: {result['sovereignty'].get('vault_sync', 'N/A'):.3f}")
             print(f"   Meta Integrity: {result['sovereignty'].get('meta_integrity', 'N/A'):.3f}")
             print()

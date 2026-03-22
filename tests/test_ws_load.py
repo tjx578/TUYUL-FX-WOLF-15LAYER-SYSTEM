@@ -153,26 +153,16 @@ async def test_ws_load_50_connections() -> None:
     tasks: list[asyncio.Task[None]] = []
     for i in range(TOTAL_CONNECTIONS):
         channel = WS_CHANNELS[i % len(WS_CHANNELS)]
-        task = asyncio.create_task(
-            _ws_client(base_url, channel, token, stats, HOLD_DURATION, i)
-        )
+        task = asyncio.create_task(_ws_client(base_url, channel, token, stats, HOLD_DURATION, i))
         tasks.append(task)
 
     # Wait for all to complete
     await asyncio.gather(*tasks, return_exceptions=True)
 
     # ── Report ────────────────────────────────────────────────────────────
-    avg_connect = (
-        sum(stats.connect_times) / len(stats.connect_times) if stats.connect_times else 0
-    )
-    avg_latency = (
-        sum(stats.latencies) / len(stats.latencies) if stats.latencies else 0
-    )
-    p95_connect = (
-        sorted(stats.connect_times)[int(len(stats.connect_times) * 0.95)]
-        if stats.connect_times
-        else 0
-    )
+    avg_connect = sum(stats.connect_times) / len(stats.connect_times) if stats.connect_times else 0
+    avg_latency = sum(stats.latencies) / len(stats.latencies) if stats.latencies else 0
+    p95_connect = sorted(stats.connect_times)[int(len(stats.connect_times) * 0.95)] if stats.connect_times else 0
 
     print("\n" + "=" * 60)
     print("WebSocket Load Test Results")
@@ -194,8 +184,7 @@ async def test_ws_load_50_connections() -> None:
     # ── Assertions ────────────────────────────────────────────────────────
     min_connected = int(TOTAL_CONNECTIONS * 0.8)
     assert stats.connected >= min_connected, (
-        f"Only {stats.connected}/{TOTAL_CONNECTIONS} connected "
-        f"(minimum {min_connected} required)"
+        f"Only {stats.connected}/{TOTAL_CONNECTIONS} connected (minimum {min_connected} required)"
     )
 
 

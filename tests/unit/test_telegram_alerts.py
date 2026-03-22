@@ -7,14 +7,16 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 try:
-    from dashboard.telegram import TelegramBot, send_alert
+    from dashboard.telegram import TelegramBot, send_alert  # type: ignore[import-not-found]
+
     HAS_TELEGRAM = True
 except ImportError:
     try:
-        from notifications.telegram import (
+        from notifications.telegram import (  # type: ignore[import-not-found]
             TelegramBot,  # noqa: F401
             send_alert,  # noqa: F401
         )
+
         HAS_TELEGRAM = True
     except ImportError:
         HAS_TELEGRAM = False
@@ -57,11 +59,14 @@ class TestTelegramAlertFormat:
         assert "WARNING" in msg
         assert "3.5%" in msg
 
-    @pytest.mark.parametrize("severity,emoji", [
-        ("INFO", "ℹ️"),  # noqa: RUF001
-        ("WARNING", "⚠️"),
-        ("CRITICAL", "🚨"),
-    ])
+    @pytest.mark.parametrize(
+        "severity,emoji",
+        [
+            ("INFO", "ℹ️"),  # noqa: RUF001
+            ("WARNING", "⚠️"),
+            ("CRITICAL", "🚨"),
+        ],
+    )
     def test_severity_emoji_mapping(self, severity, emoji):
         mapping = {"INFO": "ℹ️", "WARNING": "⚠️", "CRITICAL": "🚨"}  # noqa: RUF001
         assert mapping[severity] == emoji
@@ -90,7 +95,7 @@ class TestTelegramSendMock:
         ]
 
         success = False
-        for attempt in range(3):
+        for _attempt in range(3):
             try:
                 await mock_client.post("url", json={})
                 success = True

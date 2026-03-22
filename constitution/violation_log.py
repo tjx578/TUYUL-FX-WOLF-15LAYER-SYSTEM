@@ -1,5 +1,4 @@
 import logging
-
 from datetime import UTC, datetime
 
 from loguru import logger as loguru_logger  # Move to top with other imports

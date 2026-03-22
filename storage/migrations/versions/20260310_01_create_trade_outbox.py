@@ -13,11 +13,10 @@ Behavior:
 - If the table is unexpectedly missing: create the canonical schema used by runtime code.
 """
 
-from alembic import op
 import sqlalchemy as sa
+from alembic import op
 from sqlalchemy import inspect
 from sqlalchemy.dialects.postgresql import JSONB
-
 
 revision = "20260310_01"
 down_revision = "003_trade_outbox"

@@ -39,8 +39,8 @@ from core.redis_keys import (
 )
 
 # ── Constants ─────────────────────────────────────────────────────────────────
-_TRQ_PREMOVE_TTL_SEC = 300    # 5-minute freshness window for latest snapshot
-_R3D_HISTORY_MAX = 100        # capped history size
+_TRQ_PREMOVE_TTL_SEC = 300  # 5-minute freshness window for latest snapshot
+_R3D_HISTORY_MAX = 100  # capped history size
 _R3D_HISTORY_TTL_SEC = 21600  # 6 hours
 _ZONE_CONFLUENCE_TTL_SEC = 300
 

@@ -20,6 +20,7 @@ from analysis.l8_tii import (
 # Fixtures
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture
 def clean_setup() -> TIIInputs:
     """A textbook-clean setup — high TII expected."""
@@ -60,17 +61,21 @@ def borderline_setup() -> TIIInputs:
 # Input validation
 # ---------------------------------------------------------------------------
 
+
 class TestTIIInputsValidation:
     def test_valid_inputs(self, clean_setup: TIIInputs) -> None:
         assert clean_setup.setup_clarity == 95.0
 
-    @pytest.mark.parametrize("field_name", [
-        "setup_clarity",
-        "rule_compliance",
-        "risk_reward_quality",
-        "confluence_depth",
-        "timing_alignment",
-    ])
+    @pytest.mark.parametrize(
+        "field_name",
+        [
+            "setup_clarity",
+            "rule_compliance",
+            "risk_reward_quality",
+            "confluence_depth",
+            "timing_alignment",
+        ],
+    )
     def test_below_zero_raises(self, field_name: str) -> None:
         kwargs = {
             "setup_clarity": 50.0,
@@ -83,13 +88,16 @@ class TestTIIInputsValidation:
         with pytest.raises(ValueError, match="must be 0–100"):
             TIIInputs(**kwargs)
 
-    @pytest.mark.parametrize("field_name", [
-        "setup_clarity",
-        "rule_compliance",
-        "risk_reward_quality",
-        "confluence_depth",
-        "timing_alignment",
-    ])
+    @pytest.mark.parametrize(
+        "field_name",
+        [
+            "setup_clarity",
+            "rule_compliance",
+            "risk_reward_quality",
+            "confluence_depth",
+            "timing_alignment",
+        ],
+    )
     def test_above_100_raises(self, field_name: str) -> None:
         kwargs = {
             "setup_clarity": 50.0,
@@ -124,6 +132,7 @@ class TestTIIInputsValidation:
 # ---------------------------------------------------------------------------
 # TII computation
 # ---------------------------------------------------------------------------
+
 
 class TestComputeTII:
     def test_clean_setup_high_score(self, clean_setup: TIIInputs) -> None:
@@ -174,19 +183,23 @@ class TestComputeTII:
 # TII grade classification
 # ---------------------------------------------------------------------------
 
+
 class TestTIIGrade:
-    @pytest.mark.parametrize("score_val, expected_grade", [
-        (100.0, TIIGrade.PRISTINE),
-        (90.0, TIIGrade.PRISTINE),
-        (89.9, TIIGrade.CLEAN),
-        (75.0, TIIGrade.CLEAN),
-        (74.9, TIIGrade.ACCEPTABLE),
-        (55.0, TIIGrade.ACCEPTABLE),
-        (54.9, TIIGrade.QUESTIONABLE),
-        (35.0, TIIGrade.QUESTIONABLE),
-        (34.9, TIIGrade.COMPROMISED),
-        (0.0, TIIGrade.COMPROMISED),
-    ])
+    @pytest.mark.parametrize(
+        "score_val, expected_grade",
+        [
+            (100.0, TIIGrade.PRISTINE),
+            (90.0, TIIGrade.PRISTINE),
+            (89.9, TIIGrade.CLEAN),
+            (75.0, TIIGrade.CLEAN),
+            (74.9, TIIGrade.ACCEPTABLE),
+            (55.0, TIIGrade.ACCEPTABLE),
+            (54.9, TIIGrade.QUESTIONABLE),
+            (35.0, TIIGrade.QUESTIONABLE),
+            (34.9, TIIGrade.COMPROMISED),
+            (0.0, TIIGrade.COMPROMISED),
+        ],
+    )
     def test_grade_boundaries(self, score_val: float, expected_grade: TIIGrade) -> None:
         assert classify_tii_grade(score_val) == expected_grade
 
@@ -202,6 +215,7 @@ class TestTIIGrade:
 # ---------------------------------------------------------------------------
 # Pass threshold
 # ---------------------------------------------------------------------------
+
 
 class TestPassThreshold:
     def test_clean_setup_passes(self, clean_setup: TIIInputs) -> None:
@@ -226,6 +240,7 @@ class TestPassThreshold:
 # ---------------------------------------------------------------------------
 # Weakest dimension identification
 # ---------------------------------------------------------------------------
+
 
 class TestWeakestDimension:
     def test_weakest_identified(self) -> None:
@@ -255,6 +270,7 @@ class TestWeakestDimension:
 # Result immutability & integrity
 # ---------------------------------------------------------------------------
 
+
 class TestResultIntegrity:
     def test_returns_tii_result(self, clean_setup: TIIInputs) -> None:
         result = compute_tii("EURUSD", clean_setup)
@@ -283,6 +299,7 @@ class TestResultIntegrity:
 # ---------------------------------------------------------------------------
 # Rule compliance penalty (TII special rule)
 # ---------------------------------------------------------------------------
+
 
 class TestRuleCompliancePenalty:
     """

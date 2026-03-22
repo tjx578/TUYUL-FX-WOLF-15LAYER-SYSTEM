@@ -44,9 +44,7 @@ class TestAccountDataWiring:
             },
         )
         assert result["risk_ok"] is False
-        assert "DAILY_DD_BREACH" in result["risk_status"] or any(
-            "DAILY_DD_BREACH" in w for w in result["warnings"]
-        )
+        assert "DAILY_DD_BREACH" in result["risk_status"] or any("DAILY_DD_BREACH" in w for w in result["warnings"])
 
     def test_daily_dd_ok_when_zero(self, engine: L6RiskAnalyzer) -> None:
         """Check 6 should NOT fire when daily_loss_pct is 0 (no losses)."""
@@ -67,7 +65,7 @@ class TestAccountDataWiring:
         result = engine.analyze(
             rr=2.0,
             account_state={
-                "equity": 9_000.0,     # 10% drawdown from peak
+                "equity": 9_000.0,  # 10% drawdown from peak
                 "peak_equity": 10_000.0,
                 "daily_loss_pct": 0.0,
                 "consecutive_losses": 0,
@@ -147,9 +145,7 @@ class TestAllDefaultsDegrade:
         assert result["valid"] is True
         assert result["risk_ok"] is True
         assert result["risk_status"] == "OPTIMAL"
-        assert result["warnings"] == [] or all(
-            "LOW_RR" not in w for w in result["warnings"]
-        )
+        assert result["warnings"] == [] or all("LOW_RR" not in w for w in result["warnings"])
 
     def test_empty_account_state(self, engine: L6RiskAnalyzer) -> None:
         result = engine.analyze(rr=2.0, account_state={})
@@ -161,6 +157,7 @@ class TestAllDefaultsDegrade:
 #  LiveContextBus account state wiring
 # ═══════════════════════════════════════════════════════════════════
 
+
 class TestBusAccountState:
     """LiveContextBus.get_account_state() and update_account_state()."""
 
@@ -171,14 +168,17 @@ class TestBusAccountState:
 
     def test_push_then_read(self, fresh_bus: LiveContextBus) -> None:
         """Dashboard pushes state → pipeline reads it back."""
-        fresh_bus.update_account_state("EURUSD", {
-            "equity": 10_000.0,
-            "peak_equity": 10_500.0,
-            "daily_loss_pct": 0.03,
-            "circuit_breaker_active": False,
-            "open_positions": 2,
-            "max_open_positions": 5,
-        })
+        fresh_bus.update_account_state(
+            "EURUSD",
+            {
+                "equity": 10_000.0,
+                "peak_equity": 10_500.0,
+                "daily_loss_pct": 0.03,
+                "circuit_breaker_active": False,
+                "open_positions": 2,
+                "max_open_positions": 5,
+            },
+        )
         state = fresh_bus.get_account_state("EURUSD")
         assert state["equity"] == 10_000.0
         assert state["peak_equity"] == 10_500.0
@@ -195,13 +195,16 @@ class TestBusAccountState:
 
     def test_bus_feeds_l6_and_blocks(self, fresh_bus: LiveContextBus, engine: L6RiskAnalyzer) -> None:
         """End-to-end: bus state → L6 analyze → circuit breaker / DD block."""
-        fresh_bus.update_account_state("EURUSD", {
-            "equity": 9_000.0,
-            "peak_equity": 10_000.0,
-            "daily_loss_pct": 0.06,   # 6% daily loss
-            "consecutive_losses": 3,
-            "circuit_breaker_active": True,
-        })
+        fresh_bus.update_account_state(
+            "EURUSD",
+            {
+                "equity": 9_000.0,
+                "peak_equity": 10_000.0,
+                "daily_loss_pct": 0.06,  # 6% daily loss
+                "consecutive_losses": 3,
+                "circuit_breaker_active": True,
+            },
+        )
         state = fresh_bus.get_account_state("EURUSD")
         result = engine.analyze(rr=2.0, account_state=state)
 
@@ -222,6 +225,7 @@ class TestBusTradeHistory:
 # ═══════════════════════════════════════════════════════════════════
 #  LRCE enrichment patch
 # ═══════════════════════════════════════════════════════════════════
+
 
 class TestLRCEEnrichmentPatch:
     """L6 LRCE should detect field fracture from enrichment data."""

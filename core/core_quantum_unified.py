@@ -44,7 +44,6 @@ Version: 7.0r∞
 from __future__ import annotations
 
 import logging
-
 from collections import deque
 from copy import deepcopy
 from dataclasses import dataclass, field
@@ -769,8 +768,12 @@ def analyze_drift(reflections: list[float]) -> DriftAnalysis:
 
 
 def calculate_tii(
-    price: float, vwap: float, trq_energy: float, bias_strength: float,
-    reflective_intensity: float, meta_integrity: float,
+    price: float,
+    vwap: float,
+    trq_energy: float,
+    bias_strength: float,
+    reflective_intensity: float,
+    meta_integrity: float,
 ) -> TIIResult:
     """Calculate Trade Integrity Index (TII)."""
     if vwap == 0:
@@ -872,43 +875,91 @@ class NeuralDecisionTree:
         self._build_default_tree()
 
     def _build_default_tree(self) -> None:
-        self.root = TreeNode(id="root", node_type=NodeType.ROOT, name="Technical Analysis Gate",
-                            layer=1, condition_field="twms_score",
-                            condition_operator=ConditionOperator.GREATER_EQUAL, condition_value=8)
+        self.root = TreeNode(
+            id="root",
+            node_type=NodeType.ROOT,
+            name="Technical Analysis Gate",
+            layer=1,
+            condition_field="twms_score",
+            condition_operator=ConditionOperator.GREATER_EQUAL,
+            condition_value=8,
+        )
         self._nodes["root"] = self.root
 
-        sm_pass = TreeNode(id="sm_pass", node_type=NodeType.CONDITION, name="Smart Money Confirmation",
-                          layer=2, condition_field="smart_money_alignment",
-                          condition_operator=ConditionOperator.GREATER_EQUAL, condition_value=0.70)
-        sm_fail = TreeNode(id="sm_fail", node_type=NodeType.LEAF, name="Insufficient Smart Money",
-                          layer=2, action="WAIT", probability_modifier=0.5)
+        sm_pass = TreeNode(
+            id="sm_pass",
+            node_type=NodeType.CONDITION,
+            name="Smart Money Confirmation",
+            layer=2,
+            condition_field="smart_money_alignment",
+            condition_operator=ConditionOperator.GREATER_EQUAL,
+            condition_value=0.70,
+        )
+        sm_fail = TreeNode(
+            id="sm_fail",
+            node_type=NodeType.LEAF,
+            name="Insufficient Smart Money",
+            layer=2,
+            action="WAIT",
+            probability_modifier=0.5,
+        )
         self._nodes["sm_pass"] = sm_pass
         self._nodes["sm_fail"] = sm_fail
         self.root.true_child = sm_pass
         self.root.false_child = sm_fail
 
-        regime_pass = TreeNode(id="regime_pass", node_type=NodeType.CONDITION, name="Market Regime Filter",
-                              layer=3, condition_field="regime_favorable",
-                              condition_operator=ConditionOperator.EQUAL, condition_value=True)
-        regime_caution = TreeNode(id="regime_caution", node_type=NodeType.DECISION, name="Regime Caution",
-                                 layer=3, action="REDUCE_SIZE", probability_modifier=0.8)
+        regime_pass = TreeNode(
+            id="regime_pass",
+            node_type=NodeType.CONDITION,
+            name="Market Regime Filter",
+            layer=3,
+            condition_field="regime_favorable",
+            condition_operator=ConditionOperator.EQUAL,
+            condition_value=True,
+        )
+        regime_caution = TreeNode(
+            id="regime_caution",
+            node_type=NodeType.DECISION,
+            name="Regime Caution",
+            layer=3,
+            action="REDUCE_SIZE",
+            probability_modifier=0.8,
+        )
         self._nodes["regime_pass"] = regime_pass
         self._nodes["regime_caution"] = regime_caution
         sm_pass.true_child = regime_pass
         sm_pass.false_child = regime_caution
 
-        psych_pass = TreeNode(id="psych_pass", node_type=NodeType.CONDITION, name="Psychology Gate",
-                             layer=4, condition_field="emotion_index",
-                             condition_operator=ConditionOperator.LESS_THAN, condition_value=70)
-        psych_fail = TreeNode(id="psych_fail", node_type=NodeType.LEAF, name="Emotional Override",
-                             layer=4, action="MENTAL_STOP", probability_modifier=0.0)
+        psych_pass = TreeNode(
+            id="psych_pass",
+            node_type=NodeType.CONDITION,
+            name="Psychology Gate",
+            layer=4,
+            condition_field="emotion_index",
+            condition_operator=ConditionOperator.LESS_THAN,
+            condition_value=70,
+        )
+        psych_fail = TreeNode(
+            id="psych_fail",
+            node_type=NodeType.LEAF,
+            name="Emotional Override",
+            layer=4,
+            action="MENTAL_STOP",
+            probability_modifier=0.0,
+        )
         self._nodes["psych_pass"] = psych_pass
         self._nodes["psych_fail"] = psych_fail
         regime_pass.true_child = psych_pass
         regime_pass.false_child = regime_caution
 
-        execute = TreeNode(id="execute", node_type=NodeType.ACTION, name="Execute Trade",
-                          layer=5, action="EXECUTE", probability_modifier=1.0)
+        execute = TreeNode(
+            id="execute",
+            node_type=NodeType.ACTION,
+            name="Execute Trade",
+            layer=5,
+            action="EXECUTE",
+            probability_modifier=1.0,
+        )
         self._nodes["execute"] = execute
         psych_pass.true_child = execute
         psych_pass.false_child = psych_fail
@@ -939,9 +990,13 @@ class NeuralDecisionTree:
         activations = {nid: n.activation_count for nid, n in self._nodes.items()}
 
         return TreeDecision(
-            timestamp=timestamp, path=path, decisions=decisions,
+            timestamp=timestamp,
+            path=path,
+            decisions=decisions,
             final_action=decisions[-1] if decisions else "NO_DECISION",
-            probability=probability, confidence=confidence, node_activations=activations,
+            probability=probability,
+            confidence=confidence,
+            node_activations=activations,
         )
 
     def _evaluate_condition(self, node: TreeNode, context: dict[str, Any]) -> bool:
@@ -999,9 +1054,15 @@ class ProbabilityMatrixCalculator:
         final = max(0.0, min(1.0, weighted_sum * conf_mult))
 
         return ProbabilityMatrix(
-            timestamp=timestamp, pair=pair, layers=layers, raw_sum=raw_sum,
-            weighted_sum=weighted_sum, confidence_multiplier=conf_mult,
-            final_probability=final, direction=self._direction(final), strength=self._strength(final),
+            timestamp=timestamp,
+            pair=pair,
+            layers=layers,
+            raw_sum=raw_sum,
+            weighted_sum=weighted_sum,
+            confidence_multiplier=conf_mult,
+            final_probability=final,
+            direction=self._direction(final),
+            strength=self._strength(final),
         )
 
     def _calc_layer(self, lt: LayerType, weight: float, data: dict[str, Any]) -> LayerProbability:
@@ -1016,33 +1077,50 @@ class ProbabilityMatrixCalculator:
         return LayerProbability(lt, weight, raw, raw * weight, self._layer_conf(comp), comp)
 
     def _tech(self, d: dict[str, Any]) -> tuple[float, dict[str, Any]]:
-        c = {"twms": d.get("twms_score", 6) / 12, "trend": d.get("trend_aligned", 0.5),
-             "rsi": 0.3 if d.get("rsi", 50) > 70 else 0.7 if d.get("rsi", 50) < 30 else 0.5,
-             "ema": d.get("ema_aligned", 0.5), "fib": d.get("fib_confluence", 0.5)}
+        c = {
+            "twms": d.get("twms_score", 6) / 12,
+            "trend": d.get("trend_aligned", 0.5),
+            "rsi": 0.3 if d.get("rsi", 50) > 70 else 0.7 if d.get("rsi", 50) < 30 else 0.5,
+            "ema": d.get("ema_aligned", 0.5),
+            "fib": d.get("fib_confluence", 0.5),
+        }
         w = {"twms": 0.30, "trend": 0.25, "rsi": 0.15, "ema": 0.15, "fib": 0.15}
         return sum(c[k] * w[k] for k in c), c
 
     def _smart(self, d: dict[str, Any]) -> tuple[float, dict[str, Any]]:
-        c = {"inst": d.get("institutional_flow", 0.5), "ob": d.get("order_block_strength", 0.5),
-             "liq": d.get("liquidity_zone", 0.5), "fvg": d.get("fvg_presence", 0.5)}
+        c = {
+            "inst": d.get("institutional_flow", 0.5),
+            "ob": d.get("order_block_strength", 0.5),
+            "liq": d.get("liquidity_zone", 0.5),
+            "fvg": d.get("fvg_presence", 0.5),
+        }
         w = {"inst": 0.35, "ob": 0.30, "liq": 0.20, "fvg": 0.15}
         return sum(c[k] * w[k] for k in c), c
 
     def _regime(self, d: dict[str, Any]) -> tuple[float, dict[str, Any]]:
-        c = {"fav": d.get("regime_favorable", 0.5), "vol": d.get("volatility_appropriate", 0.5),
-             "sess": d.get("session_timing", 0.5)}
+        c = {
+            "fav": d.get("regime_favorable", 0.5),
+            "vol": d.get("volatility_appropriate", 0.5),
+            "sess": d.get("session_timing", 0.5),
+        }
         w = {"fav": 0.50, "vol": 0.30, "sess": 0.20}
         return sum(c[k] * w[k] for k in c), c
 
     def _psych(self, d: dict[str, Any]) -> tuple[float, dict[str, Any]]:
-        c = {"emo": 1 - d.get("emotion_index", 50) / 100, "disc": d.get("discipline_score", 85) / 100,
-             "pat": d.get("patience_level", 7) / 10}
+        c = {
+            "emo": 1 - d.get("emotion_index", 50) / 100,
+            "disc": d.get("discipline_score", 85) / 100,
+            "pat": d.get("patience_level", 7) / 10,
+        }
         w = {"emo": 0.40, "disc": 0.35, "pat": 0.25}
         return sum(c[k] * w[k] for k in c), c
 
     def _external(self, d: dict[str, Any]) -> tuple[float, dict[str, Any]]:
-        c = {"news": d.get("news_clear", 0.7), "cal": d.get("calendar_clear", 0.7),
-             "corr": d.get("correlation_low", 0.7)}
+        c = {
+            "news": d.get("news_clear", 0.7),
+            "cal": d.get("calendar_clear", 0.7),
+            "corr": d.get("correlation_low", 0.7),
+        }
         w = {"news": 0.40, "cal": 0.35, "corr": 0.25}
         return sum(c[k] * w[k] for k in c), c
 
@@ -1078,22 +1156,29 @@ class ConfidenceMultiplier:
     """Calculates confidence multiplier from FRPC and TII using harmonic mean."""
 
     VERSION = "1.0"
-    LEVELS = {"ultra": (1.10, 1.15), "high": (1.05, 1.10), "normal": (0.95, 1.05),
-              "reduced": (0.90, 0.95), "low": (0.85, 0.90)}
+    LEVELS = {
+        "ultra": (1.10, 1.15),
+        "high": (1.05, 1.10),
+        "normal": (0.95, 1.05),
+        "reduced": (0.90, 0.95),
+        "low": (0.85, 0.90),
+    }
 
     def __init__(self, config: dict[str, Any] | None = None) -> None:
-        self.config = config or {"frpc_weight": 0.50, "tii_weight": 0.50,
-                                 "method": "harmonic", "min": 0.85, "max": 1.15}
+        self.config = config or {
+            "frpc_weight": 0.50,
+            "tii_weight": 0.50,
+            "method": "harmonic",
+            "min": 0.85,
+            "max": 1.15,
+        }
 
     def calculate(self, frpc_score: float, tii_score: float) -> ConfidenceResult:
         timestamp = datetime.now(UTC)
         is_valid = frpc_score >= CONFIDENCE_THRESHOLDS["frpc_min"] and tii_score >= CONFIDENCE_THRESHOLDS["tii_min"]
 
         fw, tw = self.config["frpc_weight"], self.config["tii_weight"]
-        if frpc_score > 0 and tii_score > 0:
-            composite = (fw + tw) / (fw / frpc_score + tw / tii_score)
-        else:
-            composite = 0.0
+        composite = (fw + tw) / (fw / frpc_score + tw / tii_score) if frpc_score > 0 and tii_score > 0 else 0.0
 
         mult = max(self.config["min"], min(self.config["max"], 1.0 + (composite - 0.94) * 2.5))
         level = next(
@@ -1157,8 +1242,19 @@ class QuantumDecisionEngine:
         rec = self._recommendation(dec_type, confidence, scenario, gates)
 
         decision = QuantumDecision(
-            timestamp, pair, dec_type, confidence, final_prob, meta.get("neural_confidence", 0.95),
-            frpc, tii, eaf, scenario, layer_probs, gates, rec,
+            timestamp,
+            pair,
+            dec_type,
+            confidence,
+            final_prob,
+            meta.get("neural_confidence", 0.95),
+            frpc,
+            tii,
+            eaf,
+            scenario,
+            layer_probs,
+            gates,
+            rec,
         )
         self._history.append(decision)
         return decision
@@ -1304,10 +1400,15 @@ class QuantumScenarioMatrix:
             score, matches, regime_match = self._score_strategy(
                 strategy, config, regime, confluence_data, direction_bias
             )
-            strategy_scores.append({
-                "strategy": strategy, "config": config, "score": score,
-                "matches": matches, "regime_match": regime_match,
-            })
+            strategy_scores.append(
+                {
+                    "strategy": strategy,
+                    "config": config,
+                    "score": score,
+                    "matches": matches,
+                    "regime_match": regime_match,
+                }
+            )
 
         strategy_scores.sort(key=lambda x: x["score"], reverse=True)
         best = strategy_scores[0]
@@ -1325,8 +1426,12 @@ class QuantumScenarioMatrix:
         )
 
     def _score_strategy(
-        self, strategy: BattleStrategy, config: StrategyConfig, regime: str,
-        confluence_data: dict[str, bool], direction_bias: str,
+        self,
+        strategy: BattleStrategy,
+        config: StrategyConfig,
+        regime: str,
+        confluence_data: dict[str, bool],
+        direction_bias: str,
     ) -> tuple[float, list[str], bool]:
         score = 0.0
         matches = []
@@ -1418,10 +1523,18 @@ class QuantumExecutionOptimizer:
         rr_ratio = self._calculate_rr_ratio(entry_price, stop_loss, take_profit)
 
         return ExecutionPlan(
-            timestamp=timestamp, pair=pair, direction=direction, execution_type=execution_type,
-            entry_price=entry_price, stop_loss=stop_loss, take_profit=take_profit,
-            position_size=position_size, slippage_estimate=slippage, optimal_timing=timing,
-            retry_strategy=retry_strategy, risk_reward_ratio=rr_ratio,
+            timestamp=timestamp,
+            pair=pair,
+            direction=direction,
+            execution_type=execution_type,
+            entry_price=entry_price,
+            stop_loss=stop_loss,
+            take_profit=take_profit,
+            position_size=position_size,
+            slippage_estimate=slippage,
+            optimal_timing=timing,
+            retry_strategy=retry_strategy,
+            risk_reward_ratio=rr_ratio,
         )
 
     def _calculate_optimal_entry(self, market_data: dict[str, Any], direction: str) -> float:
@@ -1505,13 +1618,11 @@ def get_layer_weight(layer: LayerType) -> float:
     return DEFAULT_LAYER_WEIGHTS.get(layer, 0.0)
 
 
-def calculate_quick_probability(tech: float, smart: float, regime: float, psych: float, ext: float,
-                                frpc: float = 0.96, tii: float = 0.92) -> float:
+def calculate_quick_probability(
+    tech: float, smart: float, regime: float, psych: float, ext: float, frpc: float = 0.96, tii: float = 0.92
+) -> float:
     weighted = tech * 0.40 + smart * 0.25 + regime * 0.20 + psych * 0.10 + ext * 0.05
-    if frpc > 0 and tii > 0:
-        mult = max(0.85, min(1.15, 0.9 + (2 * frpc * tii / (frpc + tii) - 0.8) * 0.5))
-    else:
-        mult = 0.9
+    mult = max(0.85, min(1.15, 0.9 + (2 * frpc * tii / (frpc + tii) - 0.8) * 0.5)) if frpc > 0 and tii > 0 else 0.9
     return weighted * mult
 
 
@@ -1643,7 +1754,14 @@ if __name__ == "__main__":
     logger.info("\n📊 Testing Probability Matrix...")
     pmc = ProbabilityMatrixCalculator()
     matrix = pmc.calculate(
-        {"pair": "EURUSD", "technical": {"twms_score": 10}, "smart_money": {}, "market_regime": {}, "psychology": {}, "external": {}},
+        {
+            "pair": "EURUSD",
+            "technical": {"twms_score": 10},
+            "smart_money": {},
+            "market_regime": {},
+            "psychology": {},
+            "external": {},
+        },
         {"frpc": 0.97, "tii": 0.93},
     )
     logger.info(f"  Final: {matrix.final_probability:.4f}, Dir: {matrix.direction}, Str: {matrix.strength}")
