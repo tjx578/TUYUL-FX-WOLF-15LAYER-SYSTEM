@@ -19,6 +19,7 @@ import { VerdictCard } from "@/components/VerdictCard";
 import { SystemHealth } from "@/components/SystemHealth";
 import StaleDataBanner from "@/components/command-center/StaleDataBanner";
 import { useSessionLabel } from "@/hooks/useSessionLabel";
+import { formatTime } from "@/lib/timezone";
 import type { L12Verdict, Account, FeedStatus } from "@/types";
 
 // ── Helpers ──────────────────────────────────────────────────
@@ -313,7 +314,7 @@ function UrgencyRail({ signals, accounts, onTake }: UrgencyRailProps) {
                   marginLeft: "auto",
                 }}
               >
-                EXP {new Date(sig.expires_at * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                EXP {formatTime(sig.expires_at * 1000).slice(0, 5)}
               </span>
             )}
 

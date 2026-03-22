@@ -1,5 +1,6 @@
 "use client";
 
+import { formatTime } from "@/lib/timezone";
 import type { AgentEvent } from "@/types/agent-manager";
 
 interface Props {
@@ -12,14 +13,6 @@ const SEVERITY_COLORS: Record<AgentEvent["severity"], string> = {
   WARNING: "var(--amber, #f59e0b)",
   CRITICAL: "var(--red)",
 };
-
-function formatTime(iso: string): string {
-  try {
-    return new Date(iso).toLocaleTimeString(undefined, { hour12: false });
-  } catch {
-    return iso;
-  }
-}
 
 export function AgentManagerEvents({ events, isLoading }: Props) {
   if (isLoading) {
