@@ -214,6 +214,7 @@ export default function RiskPage() {
           <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8 }}>
             <span style={{ fontSize: 10, color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}>ACCOUNT</span>
             <select
+              name="account_select"
               value={activeAccountId}
               onChange={(e) => setSelectedAccountId(e.target.value)}
               style={{ fontSize: 12 }}

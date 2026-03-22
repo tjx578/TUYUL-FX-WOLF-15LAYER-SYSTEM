@@ -257,6 +257,7 @@ export default function NewsPage() {
 
         {/* Currency filter */}
         <select
+          name="currency_filter"
           value={currencyFilter}
           onChange={(e) => setCurrencyFilter(e.target.value)}
           style={{ fontSize: 11, padding: "5px 10px" }}

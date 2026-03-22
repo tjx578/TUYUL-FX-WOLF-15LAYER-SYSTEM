@@ -24,9 +24,11 @@ export default function PreferencesPanel() {
     <Card className="mt-4">
       <h3 className="text-sm font-semibold">Operator Preferences</h3>
       <div className="mt-3 grid gap-2 md:grid-cols-2">
-        <label className="text-xs">
+        <label htmlFor="pref-density" className="text-xs">
           Density
           <select
+            id="pref-density"
+            name="density"
             className="mt-1 w-full rounded border border-white/20 bg-slate-900 px-2 py-1"
             value={prefs.density}
             onChange={(e) =>
@@ -37,9 +39,11 @@ export default function PreferencesPanel() {
             <option value="compact">Compact</option>
           </select>
         </label>
-        <label className="text-xs">
+        <label htmlFor="pref-layout-preset" className="text-xs">
           Layout preset
           <select
+            id="pref-layout-preset"
+            name="layout_preset"
             className="mt-1 w-full rounded border border-white/20 bg-slate-900 px-2 py-1"
             value={prefs.layoutPreset}
             onChange={(e) =>
@@ -55,6 +59,8 @@ export default function PreferencesPanel() {
       <div className="mt-3 flex gap-3 text-xs">
         <label>
           <input
+            id="pref-show-latency"
+            name="show_latency"
             type="checkbox"
             checked={prefs.showLatency}
             onChange={(e) => patchPreferences({ showLatency: e.target.checked })}
@@ -63,6 +69,8 @@ export default function PreferencesPanel() {
         </label>
         <label>
           <input
+            id="pref-show-hashes"
+            name="show_hashes"
             type="checkbox"
             checked={prefs.showHashes}
             onChange={(e) => patchPreferences({ showHashes: e.target.checked })}

@@ -90,6 +90,7 @@ export default function SignalsPage() {
         }}
       >
         <input
+          name="signal_search"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Search pair (e.g. EURUSD)…"

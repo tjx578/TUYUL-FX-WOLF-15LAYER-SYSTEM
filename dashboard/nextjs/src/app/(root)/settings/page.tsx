@@ -126,6 +126,7 @@ export default function SettingsPage() {
           <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0,1fr))", gap: 10 }}>
             <label className="text-sm">Active Profile
               <input
+                name="profile_name"
                 value={profileName}
                 onChange={(e) => setProfileName(e.target.value)}
                 className="mt-1 w-full rounded border px-2 py-1 bg-transparent"
@@ -145,6 +146,7 @@ export default function SettingsPage() {
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
             <label className="text-sm">Scope
               <select
+                name="scope_type"
                 value={scopeType}
                 onChange={(e) => setScopeType(e.target.value as ScopeType)}
                 className="mt-1 w-full rounded border px-2 py-1 bg-transparent"
@@ -157,6 +159,7 @@ export default function SettingsPage() {
             </label>
             <label className="text-sm">Scope Key
               <input
+                name="scope_key"
                 value={scopeKey}
                 onChange={(e) => setScopeKey(e.target.value)}
                 className="mt-1 w-full rounded border px-2 py-1 bg-transparent"
@@ -168,6 +171,7 @@ export default function SettingsPage() {
           <label className="text-sm">
             Override JSON
             <textarea
+              name="override_json"
               value={overrideJson}
               onChange={(e) => setOverrideJson(e.target.value)}
               rows={10}

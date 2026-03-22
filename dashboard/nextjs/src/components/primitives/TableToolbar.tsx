@@ -16,6 +16,7 @@ export default function TableToolbar({
   return (
     <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
       <input
+        name="table_search"
         aria-label="Search table"
         value={search ?? ""}
         onChange={(e) => onSearchChange(e.target.value)}
@@ -24,6 +25,7 @@ export default function TableToolbar({
       />
       {onSortByChange ? (
         <input
+          name="table_sort_by"
           aria-label="Sort by"
           value={sortBy ?? ""}
           onChange={(e) => onSortByChange(e.target.value)}

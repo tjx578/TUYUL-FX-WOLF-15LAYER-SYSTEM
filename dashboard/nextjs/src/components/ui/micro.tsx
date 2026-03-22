@@ -386,13 +386,14 @@ export function Toggle({
 
 // ── Select ───────────────────────────────────────────────────
 export function Sel({
-  value, options, onChange, label, w,
+  value, options, onChange, label, w, name,
 }: {
   value: string | number;
   options: (string | { value: string | number; label: string })[];
   onChange: (v: string) => void;
   label?: string;
   w?: string | number;
+  name?: string;
 }) {
   return (
     <div>
@@ -406,6 +407,7 @@ export function Sel({
         </div>
       )}
       <select
+        name={name}
         value={value}
         onChange={(e) => onChange(e.target.value)}
         style={{
@@ -427,11 +429,12 @@ export function Sel({
 
 // ── Number Input ─────────────────────────────────────────────
 export function NumInput({
-  value, onChange, label, suffix, min, max, step = 1, w,
+  value, onChange, label, suffix, min, max, step = 1, w, name,
 }: {
   value: number; onChange: (v: number) => void;
   label?: string; suffix?: string;
   min?: number; max?: number; step?: number; w?: number;
+  name?: string;
 }) {
   return (
     <div>
@@ -446,6 +449,7 @@ export function NumInput({
       )}
       <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
         <input
+          name={name}
           type="number"
           value={value}
           min={min} max={max} step={step}

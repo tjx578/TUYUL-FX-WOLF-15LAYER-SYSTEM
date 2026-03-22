@@ -146,6 +146,7 @@ export function AgentManagerActions({ agent, onLock, onUnlock, onToggleSafeMode,
           </span>
           <input
             type="text"
+            name="lock_reason"
             value={lockReason}
             onChange={(e) => setLockReason(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && confirmLock()}
