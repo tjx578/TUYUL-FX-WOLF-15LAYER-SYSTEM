@@ -32,8 +32,18 @@ from core.metrics import (
 from infrastructure.tracing import setup_tracer
 from journal.builders import build_j1, build_j2
 from pipeline import WolfConstitutionalPipeline
-from state.heartbeat_classifier import HeartbeatState, classify_heartbeat
-from state.redis_keys import HEARTBEAT_ENGINE, HEARTBEAT_INGEST
+from state.heartbeat_classifier import (
+    HeartbeatState,
+    IngestHealthState,
+    classify_heartbeat,
+    classify_ingest_health,
+)
+from state.redis_keys import (
+    HEARTBEAT_ENGINE,
+    HEARTBEAT_INGEST,
+    HEARTBEAT_INGEST_PROCESS,
+    HEARTBEAT_INGEST_PROVIDER,
+)
 from storage.l12_cache import set_verdict
 
 __all__ = ["analysis_loop"]
@@ -248,34 +258,56 @@ _last_ingest_heartbeat_log_ts: float = 0.0
 
 
 def _check_ingest_heartbeat(redis_client: Any) -> None:
-    """Read the ingest heartbeat from Redis and update metrics/logging.
+    """Read the split ingest heartbeat keys and update metrics/logging.
 
     Uses the sync Redis client already available in the engine heartbeat loop.
+    Reads both process and provider keys to distinguish weekend-idle from dead.
     """
     global _last_ingest_heartbeat_log_ts  # noqa: PLW0603
 
+    # Try split keys first; fall back to legacy combined key
     try:
-        raw = redis_client.get(HEARTBEAT_INGEST)
+        raw_process = redis_client.get(HEARTBEAT_INGEST_PROCESS)
+        raw_provider = redis_client.get(HEARTBEAT_INGEST_PROVIDER)
     except Exception as exc:
         logger.debug("[EngineHeartbeat] Failed to read ingest heartbeat: {}", exc)
         INGEST_HEARTBEAT_READY.set(0.0)
         return
 
-    status = classify_heartbeat(raw, _INGEST_HEARTBEAT_MAX_AGE_SEC, service="ingest")  # noqa: F821
+    process_status = classify_heartbeat(raw_process, _INGEST_HEARTBEAT_MAX_AGE_SEC, service="ingest_process")
+    provider_status = classify_heartbeat(raw_provider, _INGEST_HEARTBEAT_MAX_AGE_SEC, service="ingest_provider")
 
-    if status.age_seconds is not None:
-        INGEST_HEARTBEAT_AGE_SECONDS.set(status.age_seconds)
-    INGEST_HEARTBEAT_READY.set(1.0 if status.state == HeartbeatState.ALIVE else 0.0)
+    # If split keys not yet populated, fall back to legacy combined key
+    if process_status.state == HeartbeatState.MISSING and provider_status.state == HeartbeatState.MISSING:
+        try:
+            raw_legacy = redis_client.get(HEARTBEAT_INGEST)
+        except Exception:
+            raw_legacy = None
+        legacy = classify_heartbeat(raw_legacy, _INGEST_HEARTBEAT_MAX_AGE_SEC, service="ingest")
+        if legacy.age_seconds is not None:
+            INGEST_HEARTBEAT_AGE_SECONDS.set(legacy.age_seconds)
+        INGEST_HEARTBEAT_READY.set(1.0 if legacy.state == HeartbeatState.ALIVE else 0.0)
+        return
+
+    health = classify_ingest_health(process_status, provider_status)
+
+    # Use provider age for metrics when available, otherwise process age
+    display_age = provider_status.age_seconds if provider_status.age_seconds is not None else process_status.age_seconds
+    if display_age is not None:
+        INGEST_HEARTBEAT_AGE_SECONDS.set(display_age)
+
+    # HEALTHY or DEGRADED both mean the process is alive
+    INGEST_HEARTBEAT_READY.set(1.0 if health.state != IngestHealthState.NO_PRODUCER else 0.0)
 
     now = time.time()
-    if status.state != HeartbeatState.ALIVE:  # noqa: SIM102
+    if health.state != IngestHealthState.HEALTHY:  # noqa: SIM102
         if (now - _last_ingest_heartbeat_log_ts) >= _INGEST_HEARTBEAT_LOG_INTERVAL_SEC:
             _last_ingest_heartbeat_log_ts = now
             logger.warning(
-                "[EngineHeartbeat] Ingest heartbeat {} | age={}s producer={}",
-                status.state.value,
-                status.age_seconds,
-                status.producer,
+                "[EngineHeartbeat] Ingest health {} | process={} provider={}",
+                health.state.value,
+                process_status.state.value,
+                provider_status.state.value,
             )
 
 
