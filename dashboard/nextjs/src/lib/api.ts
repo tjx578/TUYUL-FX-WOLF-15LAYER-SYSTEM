@@ -81,6 +81,8 @@ export const API_ENDPOINTS = {
   eaRestart: "/api/v1/ea/restart",
   /** @deprecated Use {@link updateAgent} from @/lib/agent-manager-api instead. Sunset: 2026-06-01 */
   eaSafeMode: "/api/v1/ea/safe-mode",
+  /** Verify EA → backend connectivity, API key validity, and agent registration. */
+  eaPing: "/api/v1/ea/ping",
   propFirmStatus: (accountId: string) => `/api/v1/prop-firm/${accountId}/status`,
   propFirmPhase: (accountId: string) => `/api/v1/prop-firm/${accountId}/phase`,
   configProfile: "/api/v1/config/profile",
@@ -449,6 +451,59 @@ export function useEALogs(agentId?: string) {
 export function useEAAgents() {
   const { data: agents, isLoading, isError, error, mutate } = useAgentManagerList();
   return { data: agents.map(_agentItemToLegacy), isLoading, isError, error, mutate };
+}
+
+/**
+ * Imperatively POST to `/api/v1/ea/ping` to verify EA → backend connectivity.
+ *
+ * Resolves with the ping response (`status`, `server_time`, `agent_status`) on
+ * success, or throws on network/auth/rate-limit failure.
+ */
+export async function eaPing(
+  agentId: string,
+  eaVersion: string = "unknown",
+  eaClass: string = "PRIMARY",
+): Promise<{ status: string; server_time: string; agent_status: string }> {
+  return apiMutate(API_ENDPOINTS.eaPing, {
+    agent_id: agentId,
+    ea_version: eaVersion,
+    ea_class: eaClass,
+  });
+}
+
+/**
+ * SWR hook that periodically pings `/api/v1/ea/ping` to surface EA connectivity
+ * status on the dashboard.  Pass `agentId=null` to disable polling.
+ *
+ * @param agentId - Agent UUID to ping, or `null` to disable.
+ * @param refreshIntervalMs - Polling interval in milliseconds (default: 60 000).
+ */
+export function useEAPing(agentId: string | null, refreshIntervalMs = 60_000) {
+  const queryClient = useQueryClient();
+  const key = agentId ? ["eaPing", agentId] : null;
+
+  const { data, error, isLoading } = useQuery<{
+    status: string;
+    server_time: string;
+    agent_status: string;
+  }>({
+    queryKey: key ?? ["eaPing", "__disabled__"],
+    queryFn: () => eaPing(agentId!),
+    enabled: !!agentId,
+    refetchInterval: refreshIntervalMs,
+  });
+
+  const mutate = () =>
+    queryClient.invalidateQueries({ queryKey: key ?? ["eaPing", "__disabled__"] });
+
+  return {
+    data,
+    isLoading,
+    isError: !!error,
+    error,
+    mutate,
+    isOnline: data?.status === "ok",
+  };
 }
 
 export function usePropFirmPhase(accountId: string) {
