@@ -22,7 +22,7 @@
     "framer-motion": "^12.34.3",
     "lightweight-charts": "^4.2.0",
     "lucide-react": "^0.400.0",
-    "next": "15.5.10",
+    "next": "15.5.14",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "recharts": "^2.12.0",
@@ -39,11 +39,14 @@
     "@types/react-dom": "^19.0.0",
     "autoprefixer": "^10.4.19",
     "eslint": "^8.57.0",
-    "eslint-config-next": "15.5.10",
+    "eslint-config-next": "15.5.14",
     "jsdom": "^26.0.0",
     "postcss": "^8.4.38",
     "tailwindcss": "^4.0.0",
     "typescript": "^5.7.0",
     "vitest": "^3.0.8"
+  },
+  "overrides": {
+    "flatted": "3.4.2"
   }
 }
