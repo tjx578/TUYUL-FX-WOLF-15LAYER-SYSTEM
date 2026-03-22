@@ -235,12 +235,12 @@ function useApiQuery<T>(
     // the console with synthetic errors, then resume after cooldown + buffer.
     ...(opts?.refetchInterval
       ? {
-        refetchInterval: () => {
-          const remaining = _rateLimitedUntil - Date.now();
-          if (remaining > 0) return remaining + 1_000;
-          return opts.refetchInterval!;
-        },
-      }
+          refetchInterval: () => {
+            const remaining = _rateLimitedUntil - Date.now();
+            if (remaining > 0) return remaining + 1_000;
+            return opts.refetchInterval!;
+          },
+        }
       : {}),
   });
   const mutate = () => queryClient.invalidateQueries({ queryKey: [key] });
