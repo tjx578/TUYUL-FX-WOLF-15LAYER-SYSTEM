@@ -8,6 +8,7 @@
 import { useCallback } from "react";
 import { usePricesREST } from "@/lib/api";
 import { useLivePrices } from "@/lib/realtime";
+import { formatTime } from "@/lib/timezone";
 import type { PriceData } from "@/types";
 
 export default function PricesPage() {
@@ -161,12 +162,7 @@ export default function PricesPage() {
                           color: "var(--text-muted)",
                         }}
                       >
-                        {new Date(p.timestamp).toLocaleTimeString("en-US", {
-                          hour: "2-digit",
-                          minute: "2-digit",
-                          second: "2-digit",
-                          hour12: false,
-                        })}
+                        {formatTime(p.timestamp)}
                       </span>
                     </td>
                   </tr>

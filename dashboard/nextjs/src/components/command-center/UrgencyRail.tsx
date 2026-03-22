@@ -7,6 +7,7 @@
 // ============================================================
 
 import Link from "next/link";
+import { formatTime } from "@/lib/timezone";
 import type { L12Verdict, Account } from "@/types";
 
 interface UrgencyRailProps {
@@ -163,10 +164,7 @@ export default function UrgencyRail({ signals, accounts, onTake }: UrgencyRailPr
                   }}
                 >
                   EXP{" "}
-                  {new Date(sig.expires_at * 1000).toLocaleTimeString([], {
-                    hour: "2-digit",
-                    minute: "2-digit",
-                  })}
+                  {formatTime(sig.expires_at * 1000).slice(0, 5)}
                 </span>
               )}
 

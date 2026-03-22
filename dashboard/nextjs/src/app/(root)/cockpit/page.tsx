@@ -30,6 +30,7 @@ import {
 import { useClock } from "@/hooks/useClock";
 import type { Account } from "@/types";
 import { formatNumber } from "@/lib/formatters";
+import { formatTime } from "@/lib/timezone";
 
 // ── Wolf score shape from API ─────────────────────────────────
 interface WolfScores {
@@ -765,7 +766,7 @@ export default function CockpitPage() {
 
   // Shared clock — single interval across all consumers
   const clockTs = useClock();
-  const clock = new Date(clockTs).toLocaleTimeString();
+  const clock = formatTime(clockTs);
 
   // Wolf scores via SWR (deduplicates with other useAllVerdicts consumers)
   const { data: allVerdicts, isError: wolfScoreStale } = useAllVerdicts({ refreshInterval: 15_000 });

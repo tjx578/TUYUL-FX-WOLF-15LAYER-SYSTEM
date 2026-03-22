@@ -6,6 +6,7 @@
 // Used by: /journal page
 // ============================================================
 
+import { formatTime } from "@/lib/timezone";
 import type { JournalMetrics, DailyJournal, JournalEntry } from "@/types";
 
 // ─── JOURNAL METRICS CARD ─────────────────────────────────────
@@ -19,8 +20,8 @@ export function JournalMetricsCard({ metrics }: JournalMetricsCardProps) {
     metrics.win_rate >= 0.6
       ? "var(--green)"
       : metrics.win_rate >= 0.4
-      ? "var(--yellow)"
-      : "var(--red)";
+        ? "var(--yellow)"
+        : "var(--red)";
 
   return (
     <div className="card" style={{ display: "flex", flexDirection: "column", gap: 14 }}>
@@ -200,11 +201,7 @@ function TimelineEntry({ entry }: { entry: JournalEntry }) {
           flexShrink: 0,
         }}
       >
-        {new Date(entry.timestamp).toLocaleTimeString("en-US", {
-          hour: "2-digit",
-          minute: "2-digit",
-          hour12: false,
-        })}
+        {formatTime(entry.timestamp).slice(0, 5)}
       </span>
 
       {/* Action badge */}
