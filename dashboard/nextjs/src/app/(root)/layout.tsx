@@ -1,14 +1,8 @@
 import type { PropsWithChildren } from "react";
-import nextDynamic from "next/dynamic";
 import { requireVerifiedSession } from "@/lib/serverAuth";
+import DashboardShell from "@/components/layout/DashboardShell";
 
 export const dynamic = "force-dynamic";
-
-// Client-only shell — no SSR = no hydration mismatch
-const DashboardShell = nextDynamic(
-  () => import("@/components/layout/DashboardShell"),
-  { ssr: false },
-);
 
 export default async function RootLayout({ children }: PropsWithChildren) {
   const user = await requireVerifiedSession();
