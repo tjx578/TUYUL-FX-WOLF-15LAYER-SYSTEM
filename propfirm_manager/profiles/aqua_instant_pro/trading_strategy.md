@@ -23,6 +23,7 @@ untuk Instant Pro yang memiliki batas drawdown ketat dan penalti permanen jika m
 
 | Aturan | Implikasi Praktis |
 |--------|-------------------|
+
 | Trailing drawdown 4% | Lantai naik bersama ekuitas; ruang bernapas menyempit setelah profit besar. |
 | Kill-switch −2% floating | Eksposur gabungan yang jatuh > −2% dari saldo awal menutup akun selamanya. |
 | Tanpa batas daily loss | Fleksibilitas, tapi kill-switch −2% membuat risiko harian tetap ketat. |
@@ -76,6 +77,7 @@ untuk Instant Pro yang memiliki batas drawdown ketat dan penalti permanen jika m
 
 | Parameter | Nilai |
 |-----------|-------|
+
 | Risiko per posisi | Maks $400 (0,4%) |
 | Total risiko terbuka | Maks $800 (0,8%) |
 | Pasangan utama | EURUSD, GBPUSD |
