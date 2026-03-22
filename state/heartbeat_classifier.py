@@ -5,8 +5,12 @@ Reads heartbeat keys from Redis and classifies them into one of three states:
     STALE   — heartbeat key exists but the timestamp is older than threshold.
     MISSING — no heartbeat key found in Redis (producer never started or crashed).
 
-This allows the engine and API to distinguish "no producer" from "stale but
-preserved data" independently of transport status.
+For the ingest service, two independent heartbeat keys exist:
+    * ``ingest:process``  — always written while the ingest process is alive.
+    * ``ingest:provider`` — only written when the WS provider is connected.
+
+This allows correct classification during weekends / market-closed periods
+(process ALIVE + provider STALE → DEGRADED, not NO_PRODUCER).
 """
 
 from __future__ import annotations
@@ -20,23 +24,36 @@ from typing import Any
 import orjson
 from loguru import logger
 
-from state.redis_keys import HEARTBEAT_ENGINE, HEARTBEAT_INGEST
+from state.redis_keys import (
+    HEARTBEAT_ENGINE,
+    HEARTBEAT_INGEST,
+    HEARTBEAT_INGEST_PROCESS,
+    HEARTBEAT_INGEST_PROVIDER,
+)
 
 __all__ = [
     "HeartbeatState",
     "HeartbeatStatus",
+    "IngestHealthState",
+    "IngestHealthStatus",
     "classify_heartbeat",
+    "classify_ingest_health",
     "read_heartbeat",
     "read_all_heartbeats",
+    "read_ingest_health",
 ]
 
 # ── Configurable thresholds ───────────────────────────────────────────────────
 _INGEST_MAX_AGE_SEC = float(os.getenv("HEARTBEAT_INGEST_MAX_AGE_SEC", "30"))
 _ENGINE_MAX_AGE_SEC = float(os.getenv("HEARTBEAT_ENGINE_MAX_AGE_SEC", "60"))
+_INGEST_PROCESS_MAX_AGE_SEC = float(os.getenv("HEARTBEAT_INGEST_PROCESS_MAX_AGE_SEC", "30"))
+_INGEST_PROVIDER_MAX_AGE_SEC = float(os.getenv("HEARTBEAT_INGEST_PROVIDER_MAX_AGE_SEC", "30"))
 
 # Map service name → (redis_key, max_age)
 SERVICE_HEARTBEAT_CONFIG: dict[str, tuple[str, float]] = {
     "ingest": (HEARTBEAT_INGEST, _INGEST_MAX_AGE_SEC),
+    "ingest_process": (HEARTBEAT_INGEST_PROCESS, _INGEST_PROCESS_MAX_AGE_SEC),
+    "ingest_provider": (HEARTBEAT_INGEST_PROVIDER, _INGEST_PROVIDER_MAX_AGE_SEC),
     "engine": (HEARTBEAT_ENGINE, _ENGINE_MAX_AGE_SEC),
 }
 
@@ -178,3 +195,61 @@ async def read_all_heartbeats(redis: Any) -> dict[str, HeartbeatStatus]:
     for svc_name, (key, max_age) in SERVICE_HEARTBEAT_CONFIG.items():
         results[svc_name] = await read_heartbeat(redis, key, max_age, service=svc_name)
     return results
+
+
+# ══════════════════════════════════════════════════════════
+#  Split ingest health: process vs provider
+# ══════════════════════════════════════════════════════════
+
+
+class IngestHealthState(StrEnum):
+    """Tri-state classification of the ingest service."""
+
+    HEALTHY = "HEALTHY"
+    DEGRADED = "DEGRADED"
+    NO_PRODUCER = "NO_PRODUCER"
+
+
+@dataclass(frozen=True, slots=True)
+class IngestHealthStatus:
+    """Composite ingest health from process + provider heartbeats."""
+
+    state: IngestHealthState
+    process: HeartbeatStatus
+    provider: HeartbeatStatus
+
+
+def classify_ingest_health(
+    process_status: HeartbeatStatus,
+    provider_status: HeartbeatStatus,
+) -> IngestHealthStatus:
+    """Derive ingest health from two independent heartbeat signals.
+
+    | process  | provider | → state       |
+    |----------|----------|---------------|
+    | ALIVE    | ALIVE    | HEALTHY       |
+    | ALIVE    | STALE    | DEGRADED      |
+    | ALIVE    | MISSING  | DEGRADED      |
+    | STALE    | *        | NO_PRODUCER   |
+    | MISSING  | *        | NO_PRODUCER   |
+    """
+    if process_status.state == HeartbeatState.ALIVE:
+        if provider_status.state == HeartbeatState.ALIVE:
+            state = IngestHealthState.HEALTHY
+        else:
+            state = IngestHealthState.DEGRADED
+    else:
+        state = IngestHealthState.NO_PRODUCER
+
+    return IngestHealthStatus(state=state, process=process_status, provider=provider_status)
+
+
+async def read_ingest_health(redis: Any) -> IngestHealthStatus:
+    """Read both ingest heartbeat keys and classify composite health."""
+    process = await read_heartbeat(
+        redis, HEARTBEAT_INGEST_PROCESS, _INGEST_PROCESS_MAX_AGE_SEC, service="ingest_process"
+    )
+    provider = await read_heartbeat(
+        redis, HEARTBEAT_INGEST_PROVIDER, _INGEST_PROVIDER_MAX_AGE_SEC, service="ingest_provider"
+    )
+    return classify_ingest_health(process, provider)

@@ -24,7 +24,14 @@ from core.metrics import (
     INGEST_HEARTBEAT_AGE_SECONDS,
     INGEST_WS_CONNECTED,
 )
-from core.redis_keys import CANDLE_HISTORY_SCAN, HEARTBEAT_INGEST, candle_history, channel_candle
+from core.redis_keys import (
+    CANDLE_HISTORY_SCAN,
+    HEARTBEAT_INGEST,
+    HEARTBEAT_INGEST_PROCESS,
+    HEARTBEAT_INGEST_PROVIDER,
+    candle_history,
+    channel_candle,
+)
 from infrastructure.circuit_breaker import CircuitBreaker
 from ingest.calendar_news import CalendarNewsIngestor
 from ingest.candle_builder import CandleBuilder, Timeframe
@@ -209,10 +216,22 @@ async def _producer_heartbeat_loop(ws_feed: Any, redis: RedisClient) -> None:
         _health_probe.set_detail("fresh_pairs", str(_fresh_pair_count()))
         _emit_ingest_runtime_metrics(connected)
 
+        # 1. Process heartbeat — ALWAYS write (proves ingest service is alive)
+        process_payload = {"producer": "ingest_service", "ts": time(), "ws_connected": connected}
+        with contextlib.suppress(Exception):
+            await redis.set(HEARTBEAT_INGEST_PROCESS, orjson.dumps(process_payload).decode("utf-8"))
+
+        # 2. Provider heartbeat — only when WS connected (proves data flowing)
         if connected:
-            payload = {"producer": "finnhub_ws", "ts": time()}
+            provider_payload = {"producer": "finnhub_ws", "ts": time()}
             with contextlib.suppress(Exception):
-                await redis.set(_PRODUCER_HEARTBEAT_KEY, orjson.dumps(payload).decode("utf-8"))
+                await redis.set(HEARTBEAT_INGEST_PROVIDER, orjson.dumps(provider_payload).decode("utf-8"))
+
+        # 3. Legacy combined key — backward compat during rollout
+        if connected:
+            legacy_payload = {"producer": "finnhub_ws", "ts": time()}
+            with contextlib.suppress(Exception):
+                await redis.set(_PRODUCER_HEARTBEAT_KEY, orjson.dumps(legacy_payload).decode("utf-8"))
 
         await asyncio.sleep(_PRODUCER_HEARTBEAT_INTERVAL_SEC)
 
