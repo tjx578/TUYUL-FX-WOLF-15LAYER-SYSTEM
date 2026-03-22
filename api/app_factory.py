@@ -432,11 +432,22 @@ def _register_health_routes(app: FastAPI) -> None:
         import math  # noqa: PLC0415
 
         from api.allocation_router import _feed_freshness_snapshot  # noqa: PLC0415
+        from state.heartbeat_classifier import read_ingest_health  # noqa: PLC0415
         from state.redis_keys import HEARTBEAT_ENGINE  # noqa: PLC0415
 
         feed_snapshot = await _feed_freshness_snapshot()
         hb_age, hb_alive = await _read_heartbeat_age(request)
         engine_hb_age, engine_alive = await _read_heartbeat_age(request, key=HEARTBEAT_ENGINE)
+
+        # Read split ingest health (process vs provider)
+        ingest_health_state = None
+        try:
+            r = request.app.state.redis
+            if r is not None:
+                ih = await read_ingest_health(r)
+                ingest_health_state = ih.state.value
+        except Exception:
+            pass
 
         # Sanitize non-finite floats so json.dumps never emits bare
         # ``Infinity``/``NaN`` (not valid JSON; breaks dashboard parsing).
@@ -461,6 +472,7 @@ def _register_health_routes(app: FastAPI) -> None:
             "producer_alive": hb_alive,
             "engine_heartbeat_age_seconds": engine_hb_age,
             "engine_alive": engine_alive,
+            "ingest_health": ingest_health_state,
         }
 
     app.add_api_route("/health", health, methods=["GET"])
