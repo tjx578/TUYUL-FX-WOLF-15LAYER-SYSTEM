@@ -3,15 +3,14 @@
 // ============================================================
 // TUYUL FX Wolf-15 — Route Transition Engine
 // Provides institutional-feel page transitions via Framer Motion.
-// Mode: fade + slight vertical slide + blur layer refresh
+// Mode: fade + slight vertical slide
 //
-// NOTE: Uses mode="popLayout" instead of "wait" to avoid
-// React 19 fiber null-assertion crash (n || rD(e, !0)).
-// "popLayout" keeps both old and new children mounted briefly,
-// preventing the stale-fiber unmount race in concurrent mode.
+// FIXED: Removed AnimatePresence to prevent blocking navigation.
+// AnimatePresence with App Router can cause issues where exit
+// animations prevent new pages from rendering.
 // ============================================================
 
-import { AnimatePresence, motion } from "framer-motion";
+import { motion } from "framer-motion";
 import { usePathname } from "next/navigation";
 import { useEffect } from "react";
 
@@ -28,21 +27,17 @@ export default function RouteTransition({
   }, [pathname]);
 
   return (
-    <AnimatePresence mode="popLayout">
-      <motion.div
-        key={pathname}
-        initial={{ opacity: 0, y: 10, filter: "blur(4px)" }}
-        animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
-        exit={{ opacity: 0, y: -10, filter: "blur(4px)" }}
-        transition={{
-          duration: 0.3,
-          ease: [0.4, 0, 0.2, 1],
-        }}
-        layout
-        style={{ minHeight: "100%", width: "100%" }}
-      >
-        {children}
-      </motion.div>
-    </AnimatePresence>
+    <motion.div
+      key={pathname}
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{
+        duration: 0.25,
+        ease: [0.4, 0, 0.2, 1],
+      }}
+      style={{ minHeight: "100%", width: "100%" }}
+    >
+      {children}
+    </motion.div>
   );
 }
