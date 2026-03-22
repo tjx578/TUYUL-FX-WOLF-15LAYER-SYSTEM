@@ -187,18 +187,20 @@ const nextConfig = {
           {
             key: "Content-Security-Policy",
             value: [
-              "default-src 'self' https://vercel.live",
+              "default-src 'self'",
               "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
               "font-src 'self' https://fonts.gstatic.com",
               "connect-src 'self' wss://*.railway.app https://*.railway.app wss://*.vercel.app https://*.vercel.app https://vitals.vercel-insights.com https://*.vercel-scripts.com",
               "img-src 'self' data:",
-              "script-src 'self' 'unsafe-eval' 'unsafe-inline' https://va.vercel-scripts.com https://vercel.live",
+              "script-src 'self' 'unsafe-eval' 'unsafe-inline' https://va.vercel-scripts.com",
               "worker-src 'self' blob:",
             ].join("; "),
           },
           { key: "X-Frame-Options", value: "DENY" },
           { key: "X-Content-Type-Options", value: "nosniff" },
           { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+          // Disable Vercel Toolbar injection in production
+          { key: "X-Vercel-Skip-Toolbar", value: "1" },
         ],
       },
     ];
