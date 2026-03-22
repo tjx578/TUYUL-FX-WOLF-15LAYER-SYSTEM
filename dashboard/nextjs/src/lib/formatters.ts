@@ -1,46 +1,64 @@
 /**
- * Hydration-safe formatting utilities.
+ * Hydration-safe formatters for TUYUL FX Dashboard.
  *
- * These produce identical output on server (Node.js) and client (browser)
- * by using fixed "en-GB" locale and UTC timezone — no locale/timezone
- * mismatch between Vercel SSR and user's browser.
+ * Problem: .toLocaleString() produces different output on
+ * Vercel Node.js (server) vs browser (client, WIB timezone).
+ * This causes React Error #418 (hydration mismatch).
+ *
+ * Solution: Deterministic formatters that produce identical
+ * output on server and client. No locale-dependent APIs
+ * during SSR — only after hydration via useEffect.
+ *
+ * Usage:
+ *   import { formatDate, formatNumber, formatCurrency } from "@/lib/formatters";
+ *
+ *   // In JSX (safe for SSR):
+ *   <span>{formatDate(timestamp)}</span>
+ *   <span>{formatNumber(1234.56, 2)}</span>
+ *   <span>{formatCurrency(1234.56)}</span>
+ *
+ *   // For locale-aware display (client-only):
+ *   import { useClientDate, useClientNumber } from "@/lib/formatters";
+ *   const formatted = useClientDate(timestamp);
  */
 
-// ── Date formatting ──────────────────────────────────────────
+"use client";
 
-interface FormatDateOptions {
-    showTime?: boolean;
-    showSeconds?: boolean;
-}
+import { useEffect, useState } from "react";
+
+// ══════════════════════════════════════════════════════════════
+// DETERMINISTIC FORMATTERS (SSR-safe, identical on server+client)
+// ══════════════════════════════════════════════════════════════
 
 /**
- * Format a date string/number to a deterministic "DD Mon HH:MM" style.
- * Always uses en-GB + UTC so SSR and client produce the same string.
+ * Format a date/timestamp to ISO-like string (SSR-safe).
+ * Always produces the same output regardless of locale/timezone.
  */
 export function formatDate(
     value: string | number | Date | null | undefined,
-    opts?: FormatDateOptions,
+    options?: { showTime?: boolean; showSeconds?: boolean }
 ): string {
     if (value == null) return "—";
+
+    const { showTime = true, showSeconds = false } = options ?? {};
+
     try {
-        const d = typeof value === "number" && value < 1e12
-            ? new Date(value * 1000) // Unix seconds
-            : new Date(value as string | number);
+        const d = value instanceof Date ? value : new Date(value);
         if (isNaN(d.getTime())) return "—";
 
-        const parts: Intl.DateTimeFormatOptions = {
-            day: "2-digit",
-            month: "short",
-            timeZone: "UTC",
-        };
-        if (opts?.showTime !== false) {
-            parts.hour = "2-digit";
-            parts.minute = "2-digit";
-        }
-        if (opts?.showSeconds) {
-            parts.second = "2-digit";
-        }
-        return d.toLocaleString("en-GB", parts);
+        const yyyy = d.getUTCFullYear();
+        const mm = String(d.getUTCMonth() + 1).padStart(2, "0");
+        const dd = String(d.getUTCDate()).padStart(2, "0");
+
+        if (!showTime) return `${yyyy}-${mm}-${dd}`;
+
+        const hh = String(d.getUTCHours()).padStart(2, "0");
+        const min = String(d.getUTCMinutes()).padStart(2, "0");
+
+        if (!showSeconds) return `${yyyy}-${mm}-${dd} ${hh}:${min} UTC`;
+
+        const ss = String(d.getUTCSeconds()).padStart(2, "0");
+        return `${yyyy}-${mm}-${dd} ${hh}:${min}:${ss} UTC`;
     } catch {
         return "—";
     }
@@ -48,59 +66,193 @@ export function formatDate(
 
 /**
  * Format a full datetime (date + time + seconds) for audit/log views.
+ * Thin wrapper over formatDate — keeps the same SSR-safe approach.
  */
 export function formatDateTime(
-    value: string | number | Date | null | undefined,
+    value: string | number | Date | null | undefined
 ): string {
-    if (value == null) return "—";
-    try {
-        const d = new Date(value as string | number);
-        if (isNaN(d.getTime())) return "—";
-        return d.toLocaleString("en-GB", {
-            dateStyle: "short",
-            timeStyle: "medium",
-            timeZone: "UTC",
-        });
-    } catch {
-        return "—";
-    }
-}
-
-// ── Number / currency formatting ─────────────────────────────
-
-/**
- * Format a number as USD currency string: "$1,234.56"
- * Uses fixed en-US locale for deterministic SSR output.
- */
-export function formatCurrency(
-    value: number | null | undefined,
-    decimals = 2,
-): string {
-    if (value == null || isNaN(value)) return "—";
-    return value.toLocaleString("en-US", {
-        minimumFractionDigits: decimals,
-        maximumFractionDigits: decimals,
-    });
+    return formatDate(value, { showTime: true, showSeconds: true });
 }
 
 /**
- * Format a number with locale-safe thousands separator (no decimals).
- * For display like "10,000" without currency symbol.
+ * Format a number with fixed decimal places and comma separators (SSR-safe).
+ * No locale-dependent APIs — uses regex for thousand separators.
  */
 export function formatNumber(
-    value: number | null | undefined,
+    value: number | string | null | undefined,
+    decimals: number = 2,
+    options?: { fallback?: string }
 ): string {
-    if (value == null || isNaN(value)) return "—";
-    return value.toLocaleString("en-US");
+    const { fallback = "—" } = options ?? {};
+
+    if (value == null) return fallback;
+
+    const num = typeof value === "string" ? parseFloat(value) : value;
+    if (isNaN(num)) return fallback;
+
+    // Add thousand separators deterministically (same regex as formatCurrency)
+    const [intPart, decPart] = num.toFixed(decimals).split(".");
+    const withCommas = intPart.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+
+    return decPart ? `${withCommas}.${decPart}` : withCommas;
 }
 
 /**
- * Format a percentage: "12.34%"
+ * Format currency value (SSR-safe).
+ * Uses $ prefix + fixed decimals. No locale-dependent formatting.
+ */
+export function formatCurrency(
+    value: number | string | null | undefined,
+    options?: { decimals?: number; currency?: string; fallback?: string }
+): string {
+    const { decimals = 2, currency = "$", fallback = "—" } = options ?? {};
+
+    if (value == null) return fallback;
+
+    const num = typeof value === "string" ? parseFloat(value) : value;
+    if (isNaN(num)) return fallback;
+
+    const sign = num < 0 ? "-" : "";
+    const abs = Math.abs(num);
+
+    // Add thousand separators deterministically
+    const [intPart, decPart] = abs.toFixed(decimals).split(".");
+    const withCommas = intPart.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+
+    return `${sign}${currency}${withCommas}${decPart ? "." + decPart : ""}`;
+}
+
+/**
+ * Format percentage (SSR-safe).
  */
 export function formatPercent(
-    value: number | null | undefined,
-    decimals = 2,
+    value: number | string | null | undefined,
+    decimals: number = 1,
+    options?: { fallback?: string }
 ): string {
-    if (value == null || isNaN(value)) return "—";
-    return `${value.toFixed(decimals)}%`;
+    const { fallback = "—" } = options ?? {};
+
+    if (value == null) return fallback;
+
+    const num = typeof value === "string" ? parseFloat(value) : value;
+    if (isNaN(num)) return fallback;
+
+    return `${num >= 0 ? "+" : ""}${num.toFixed(decimals)}%`;
+}
+
+/**
+ * Format pips value (SSR-safe).
+ */
+export function formatPips(
+    value: number | string | null | undefined,
+    decimals: number = 1
+): string {
+    if (value == null) return "—";
+    const num = typeof value === "string" ? parseFloat(value) : value;
+    if (isNaN(num)) return "—";
+    return `${num.toFixed(decimals)} pips`;
+}
+
+// ══════════════════════════════════════════════════════════════
+// CLIENT-ONLY HOOKS (locale-aware, only after hydration)
+// ══════════════════════════════════════════════════════════════
+
+/**
+ * Format date with user's locale (client-only, hydration-safe).
+ *
+ * Returns deterministic string during SSR, switches to
+ * locale-aware format after hydration.
+ *
+ * Usage:
+ *   const formatted = useClientDate(timestamp);
+ *   return <span>{formatted}</span>;
+ */
+export function useClientDate(
+    value: string | number | Date | null | undefined,
+    options?: Intl.DateTimeFormatOptions
+): string {
+    const ssrValue = formatDate(value);
+    const [display, setDisplay] = useState(ssrValue);
+
+    useEffect(() => {
+        if (value == null) return;
+        try {
+            const d = value instanceof Date ? value : new Date(value);
+            if (isNaN(d.getTime())) return;
+
+            const formatted = d.toLocaleString(
+                "en-GB",
+                options ?? {
+                    year: "numeric",
+                    month: "2-digit",
+                    day: "2-digit",
+                    hour: "2-digit",
+                    minute: "2-digit",
+                    timeZoneName: "short",
+                }
+            );
+            setDisplay(formatted);
+        } catch {
+            // Keep SSR value
+        }
+    }, [value]);
+
+    return display;
+}
+
+/**
+ * Format number with user's locale (client-only, hydration-safe).
+ */
+export function useClientNumber(
+    value: number | string | null | undefined,
+    options?: Intl.NumberFormatOptions
+): string {
+    const ssrValue = formatNumber(value);
+    const [display, setDisplay] = useState(ssrValue);
+
+    useEffect(() => {
+        if (value == null) return;
+        const num = typeof value === "string" ? parseFloat(value) : value;
+        if (isNaN(num)) return;
+
+        try {
+            setDisplay(num.toLocaleString(undefined, options));
+        } catch {
+            // Keep SSR value
+        }
+    }, [value]);
+
+    return display;
+}
+
+/**
+ * Format currency with user's locale (client-only, hydration-safe).
+ */
+export function useClientCurrency(
+    value: number | string | null | undefined,
+    currency: string = "USD"
+): string {
+    const ssrValue = formatCurrency(value);
+    const [display, setDisplay] = useState(ssrValue);
+
+    useEffect(() => {
+        if (value == null) return;
+        const num = typeof value === "string" ? parseFloat(value) : value;
+        if (isNaN(num)) return;
+
+        try {
+            setDisplay(
+                num.toLocaleString(undefined, {
+                    style: "currency",
+                    currency,
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: 2,
+                })
+            );
+        } catch {
+            // Keep SSR value
+        }
+    }, [value]);
+
+    return display;
 }
