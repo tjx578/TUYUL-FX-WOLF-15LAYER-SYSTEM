@@ -31,10 +31,11 @@ export function DataFreshnessBadge({
   staleThresholdSec = 5,
   label,
 }: DataFreshnessBadgeProps) {
-  const [now, setNow] = useState(Date.now());
+  const [now, setNow] = useState<number>(0);
 
-  // Update clock every second for accurate age display
+  // Hydration-safe: initialize on client, then tick every second
   useEffect(() => {
+    setNow(Date.now());
     const interval = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(interval);
   }, []);
@@ -83,7 +84,7 @@ export function DataFreshnessBadge({
     );
   }
 
-  const ageSec = Math.max(0, Math.floor((now - lastUpdatedAt) / 1000));
+  const ageSec = now > 0 ? Math.max(0, Math.floor((now - lastUpdatedAt) / 1000)) : 0;
   const isStale = ageSec >= staleThresholdSec;
   const isDisconnected = !connected;
 

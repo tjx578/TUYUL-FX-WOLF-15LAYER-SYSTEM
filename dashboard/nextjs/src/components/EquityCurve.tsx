@@ -110,7 +110,7 @@ export function EquityCurve({
         )}
         {latest && (
           <span className="num" style={{ fontSize: 14, fontWeight: 700, color: "var(--text-primary)" }}>
-            ${formatCurrency(latest.equity)}
+            {formatCurrency(latest.equity)}
           </span>
         )}
       </div>

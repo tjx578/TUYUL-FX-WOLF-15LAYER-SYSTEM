@@ -22,8 +22,13 @@ export function createQueryClient() {
         }
 
         // Global 429 handler: record a cooldown window so retry() can honour it.
+        // Guard: only set if not already active — during cooldown the fetcher
+        // short-circuits with synthetic 429s that must NOT reset the timer
+        // (otherwise cooldown extends infinitely and the dashboard never recovers).
         if (error instanceof HttpError && error.status === 429) {
-          _rateLimitedUntil = Date.now() + (error.retryAfterMs ?? 60_000);
+          if (_rateLimitedUntil < Date.now()) {
+            _rateLimitedUntil = Date.now() + (error.retryAfterMs ?? 60_000);
+          }
         }
       },
     }),
