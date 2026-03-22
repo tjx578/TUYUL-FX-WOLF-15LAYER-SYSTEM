@@ -129,8 +129,11 @@ const fetcher = async (url: string) => {
 
   if (res.status === 429) {
     const retryAfter = res.headers.get("Retry-After");
-    _rateLimitedUntil = Date.now() + (retryAfter ? parseInt(retryAfter, 10) * 1000 : 60_000);
-    throw new HttpError("Rate limited", 429);
+    const retryMs = retryAfter ? parseInt(retryAfter, 10) * 1000 : 60_000;
+    _rateLimitedUntil = Date.now() + retryMs;
+    const err = new HttpError("Rate limited", 429);
+    err.retryAfterMs = retryMs;
+    throw err;
   }
 
   if (!res.ok) {
@@ -228,7 +231,17 @@ function useApiQuery<T>(
     queryKey: [key],
     queryFn: () => fetcher(key!),
     enabled: !!key,
-    ...(opts?.refetchInterval ? { refetchInterval: opts.refetchInterval } : {}),
+    // Dynamic interval: pause polling during 429 cooldown to avoid flooding
+    // the console with synthetic errors, then resume after cooldown + buffer.
+    ...(opts?.refetchInterval
+      ? {
+        refetchInterval: () => {
+          const remaining = _rateLimitedUntil - Date.now();
+          if (remaining > 0) return remaining + 1_000;
+          return opts.refetchInterval!;
+        },
+      }
+      : {}),
   });
   const mutate = () => queryClient.invalidateQueries({ queryKey: [key] });
   return { data, isLoading, isError: !!error, error, mutate };

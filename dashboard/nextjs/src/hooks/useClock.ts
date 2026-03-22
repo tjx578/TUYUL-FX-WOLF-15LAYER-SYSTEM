@@ -7,7 +7,7 @@
 import { useEffect, useState } from "react";
 
 const listeners = new Set<() => void>();
-let current = Date.now();
+let current = 0;
 let intervalId: ReturnType<typeof setInterval> | null = null;
 
 function tick() {

@@ -256,3 +256,63 @@ export function useClientCurrency(
 
     return display;
 }
+
+// ══════════════════════════════════════════════════════════════
+// HYDRATION-SAFE HOOKS
+// ══════════════════════════════════════════════════════════════
+
+/**
+ * Returns `true` only after the component has hydrated on the client.
+ * Use to guard locale-dependent rendering that would cause React #418.
+ *
+ * Usage:
+ *   const hydrated = useHydrated();
+ *   return <span>{hydrated ? liveValue : "—"}</span>;
+ */
+export function useHydrated(): boolean {
+    const [hydrated, setHydrated] = useState(false);
+    useEffect(() => { setHydrated(true); }, []);
+    return hydrated;
+}
+
+/**
+ * Hydration-safe replacement for `useState(Date.now())`.
+ * Returns `0` during SSR (deterministic), then switches to
+ * a live-updating `Date.now()` after hydration.
+ *
+ * @param intervalMs — update interval in ms (default: 1000)
+ *
+ * Usage:
+ *   const now = useHydratedNow(1000);
+ *   const age = now > 0 ? now - lastSeen : 0;
+ */
+export function useHydratedNow(intervalMs: number = 1000): number {
+    const [now, setNow] = useState<number>(0);
+
+    useEffect(() => {
+        setNow(Date.now());
+        const id = setInterval(() => setNow(Date.now()), intervalMs);
+        return () => clearInterval(id);
+    }, [intervalMs]);
+
+    return now;
+}
+
+/**
+ * Format an age in milliseconds to a human-readable string (SSR-safe).
+ * e.g. 3500 → "3s", 125000 → "2m 5s"
+ */
+export function formatAge(ageMs: number): string {
+    if (ageMs <= 0) return "0s";
+
+    const totalSec = Math.floor(ageMs / 1000);
+    if (totalSec < 60) return `${totalSec}s`;
+
+    const min = Math.floor(totalSec / 60);
+    const sec = totalSec % 60;
+    if (min < 60) return sec > 0 ? `${min}m ${sec}s` : `${min}m`;
+
+    const hr = Math.floor(min / 60);
+    const remMin = min % 60;
+    return remMin > 0 ? `${hr}h ${remMin}m` : `${hr}h`;
+}

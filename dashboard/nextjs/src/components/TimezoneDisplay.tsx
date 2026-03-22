@@ -14,6 +14,15 @@ interface TimezoneDisplayProps {
 export function TimezoneDisplay({ compact = false }: TimezoneDisplayProps) {
   const now = useClock();
 
+  // Hydration guard: useClock returns 0 during SSR
+  if (now === 0) {
+    return (
+      <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+        <span className="num" style={{ fontSize: compact ? 13 : 16, color: "var(--text-muted)" }}>—</span>
+      </div>
+    );
+  }
+
   const session = sessionLabel();
 
   if (compact) {
