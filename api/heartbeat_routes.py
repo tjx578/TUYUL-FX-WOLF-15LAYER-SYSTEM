@@ -5,6 +5,13 @@ Zones: dashboard (monitoring/ops) — no market logic, no execution authority.
 Reads ingest and engine heartbeat keys from Redis and classifies them
 so the dashboard and external monitors can distinguish no-producer from
 stale-preserved or quiet-market conditions.
+
+The ingest service exposes two independent heartbeat signals:
+    * ``ingest:process``  — always written while the service is alive.
+    * ``ingest:provider`` — only written when WS provider is connected.
+
+This eliminates weekend false-positives where the service is alive but
+the provider is deliberately idle.
 """
 
 from __future__ import annotations
@@ -18,6 +25,7 @@ from infrastructure.redis_client import get_async_redis
 from state.heartbeat_classifier import (
     HeartbeatState,
     read_all_heartbeats,
+    read_ingest_health,
 )
 
 from .middleware.auth import verify_token
@@ -34,19 +42,18 @@ async def heartbeat_status() -> dict[str, Any]:
         {
             "overall": "HEALTHY" | "DEGRADED" | "NO_PRODUCER",
             "timestamp": <epoch>,
+            "ingest_health": "HEALTHY" | "DEGRADED" | "NO_PRODUCER",
             "services": {
-                "ingest": {
-                    "state": "ALIVE" | "STALE" | "MISSING",
-                    "age_seconds": 4.21,
-                    "producer": "finnhub_ws",
-                    "last_ts": 1711929600.12
-                },
+                "ingest": { ... },
+                "ingest_process": { ... },
+                "ingest_provider": { ... },
                 "engine": { ... }
             }
         }
     """
     redis = await get_async_redis()
     statuses = await read_all_heartbeats(redis)
+    ingest_health = await read_ingest_health(redis)
 
     services: dict[str, dict[str, Any]] = {}
     for svc_name, status in statuses.items():
@@ -57,17 +64,20 @@ async def heartbeat_status() -> dict[str, Any]:
             "last_ts": status.last_ts,
         }
 
-    # Derive overall status
-    states = {s.state for s in statuses.values()}
-    if all(s == HeartbeatState.ALIVE for s in states):
+    # Derive overall status using split ingest health + engine heartbeat
+    engine_status = statuses.get("engine")
+    engine_alive = engine_status is not None and engine_status.state == HeartbeatState.ALIVE
+
+    if ingest_health.state.value == "HEALTHY" and engine_alive:
         overall = "HEALTHY"
-    elif HeartbeatState.MISSING in states:
+    elif ingest_health.state.value == "NO_PRODUCER" or not engine_alive:
         overall = "NO_PRODUCER"
     else:
         overall = "DEGRADED"
 
     return {
         "overall": overall,
+        "ingest_health": ingest_health.state.value,
         "timestamp": time.time(),
         "services": services,
     }

@@ -4,6 +4,8 @@ Covers:
 - classify_heartbeat: ALIVE, STALE, MISSING, malformed payloads
 - read_heartbeat: async Redis integration
 - read_all_heartbeats: multi-service classification
+- classify_ingest_health: split process/provider classification
+- read_ingest_health: async Redis split-key integration
 - API endpoint: /api/v1/heartbeat/status
 """
 
@@ -19,9 +21,13 @@ import pytest
 from state.heartbeat_classifier import (
     HeartbeatState,
     HeartbeatStatus,
+    IngestHealthState,
+    IngestHealthStatus,
     classify_heartbeat,
+    classify_ingest_health,
     read_all_heartbeats,
     read_heartbeat,
+    read_ingest_health,
 )
 
 # ══════════════════════════════════════════════════════════
@@ -215,10 +221,17 @@ class TestEngineHeartbeatCheck:
 
         now = time.time()
         mock_redis = MagicMock()
-        mock_redis.get.return_value = orjson.dumps({"producer": "ws", "ts": now - 2}).decode()
+
+        def mock_get(key: str) -> str | None:
+            if "process" in key:
+                return orjson.dumps({"producer": "ingest_service", "ts": now - 2, "ws_connected": True}).decode()
+            if "provider" in key:
+                return orjson.dumps({"producer": "finnhub_ws", "ts": now - 2}).decode()
+            return orjson.dumps({"producer": "ws", "ts": now - 2}).decode()
+
+        mock_redis.get.side_effect = mock_get
 
         _check_ingest_heartbeat(mock_redis)
-        mock_redis.get.assert_called_once()
 
     def test_check_ingest_heartbeat_missing(self) -> None:
         """When ingest heartbeat is missing, should not raise."""
@@ -230,7 +243,6 @@ class TestEngineHeartbeatCheck:
         mock_redis.get.return_value = None
 
         _check_ingest_heartbeat(mock_redis)  # Must not raise
-        mock_redis.get.assert_called_once()
 
     def test_check_ingest_heartbeat_redis_error(self) -> None:
         """Redis error should not crash the check."""
@@ -268,6 +280,20 @@ class TestHeartbeatRoute:
                     producer="finnhub_ws",
                     last_ts=now - 3,
                 ),
+                "ingest_process": HeartbeatStatus(
+                    service="ingest_process",
+                    state=HeartbeatState.ALIVE,
+                    age_seconds=3.0,
+                    producer="ingest_service",
+                    last_ts=now - 3,
+                ),
+                "ingest_provider": HeartbeatStatus(
+                    service="ingest_provider",
+                    state=HeartbeatState.ALIVE,
+                    age_seconds=3.0,
+                    producer="finnhub_ws",
+                    last_ts=now - 3,
+                ),
                 "engine": HeartbeatStatus(
                     service="engine",
                     state=HeartbeatState.ALIVE,
@@ -277,15 +303,36 @@ class TestHeartbeatRoute:
                 ),
             }
 
+        async def mock_read_ingest(redis: Any) -> IngestHealthStatus:
+            return IngestHealthStatus(
+                state=IngestHealthState.HEALTHY,
+                process=HeartbeatStatus(
+                    service="ingest_process",
+                    state=HeartbeatState.ALIVE,
+                    age_seconds=3.0,
+                    producer="ingest_service",
+                    last_ts=now - 3,
+                ),
+                provider=HeartbeatStatus(
+                    service="ingest_provider",
+                    state=HeartbeatState.ALIVE,
+                    age_seconds=3.0,
+                    producer="finnhub_ws",
+                    last_ts=now - 3,
+                ),
+            )
+
         with (
             patch("api.heartbeat_routes.get_async_redis", new_callable=AsyncMock),
             patch("api.heartbeat_routes.read_all_heartbeats", side_effect=mock_read_all),
+            patch("api.heartbeat_routes.read_ingest_health", side_effect=mock_read_ingest),
         ):
             from api.heartbeat_routes import heartbeat_status
 
             result = await heartbeat_status()
 
         assert result["overall"] == "HEALTHY"
+        assert result["ingest_health"] == "HEALTHY"
         assert "timestamp" in result
         assert "ingest" in result["services"]
         assert "engine" in result["services"]
@@ -293,7 +340,7 @@ class TestHeartbeatRoute:
 
     @pytest.mark.asyncio
     async def test_no_producer_response(self) -> None:
-        """When a service is missing, overall should be NO_PRODUCER."""
+        """When ingest process is dead, overall should be NO_PRODUCER."""
         from unittest.mock import patch
 
         now = time.time()
@@ -302,6 +349,20 @@ class TestHeartbeatRoute:
             return {
                 "ingest": HeartbeatStatus(
                     service="ingest",
+                    state=HeartbeatState.MISSING,
+                    age_seconds=None,
+                    producer=None,
+                    last_ts=None,
+                ),
+                "ingest_process": HeartbeatStatus(
+                    service="ingest_process",
+                    state=HeartbeatState.MISSING,
+                    age_seconds=None,
+                    producer=None,
+                    last_ts=None,
+                ),
+                "ingest_provider": HeartbeatStatus(
+                    service="ingest_provider",
                     state=HeartbeatState.MISSING,
                     age_seconds=None,
                     producer=None,
@@ -316,9 +377,29 @@ class TestHeartbeatRoute:
                 ),
             }
 
+        async def mock_read_ingest(redis: Any) -> IngestHealthStatus:
+            return IngestHealthStatus(
+                state=IngestHealthState.NO_PRODUCER,
+                process=HeartbeatStatus(
+                    service="ingest_process",
+                    state=HeartbeatState.MISSING,
+                    age_seconds=None,
+                    producer=None,
+                    last_ts=None,
+                ),
+                provider=HeartbeatStatus(
+                    service="ingest_provider",
+                    state=HeartbeatState.MISSING,
+                    age_seconds=None,
+                    producer=None,
+                    last_ts=None,
+                ),
+            )
+
         with (
             patch("api.heartbeat_routes.get_async_redis", new_callable=AsyncMock),
             patch("api.heartbeat_routes.read_all_heartbeats", side_effect=mock_read_all),
+            patch("api.heartbeat_routes.read_ingest_health", side_effect=mock_read_ingest),
         ):
             from api.heartbeat_routes import heartbeat_status
 
@@ -328,7 +409,7 @@ class TestHeartbeatRoute:
 
     @pytest.mark.asyncio
     async def test_degraded_response(self) -> None:
-        """When a service is stale, overall should be DEGRADED."""
+        """When provider is stale but process alive, overall should be DEGRADED (weekend)."""
         from unittest.mock import patch
 
         now = time.time()
@@ -337,6 +418,20 @@ class TestHeartbeatRoute:
             return {
                 "ingest": HeartbeatStatus(
                     service="ingest",
+                    state=HeartbeatState.STALE,
+                    age_seconds=45.0,
+                    producer="finnhub_ws",
+                    last_ts=now - 45,
+                ),
+                "ingest_process": HeartbeatStatus(
+                    service="ingest_process",
+                    state=HeartbeatState.ALIVE,
+                    age_seconds=3.0,
+                    producer="ingest_service",
+                    last_ts=now - 3,
+                ),
+                "ingest_provider": HeartbeatStatus(
+                    service="ingest_provider",
                     state=HeartbeatState.STALE,
                     age_seconds=45.0,
                     producer="finnhub_ws",
@@ -351,12 +446,149 @@ class TestHeartbeatRoute:
                 ),
             }
 
+        async def mock_read_ingest(redis: Any) -> IngestHealthStatus:
+            return IngestHealthStatus(
+                state=IngestHealthState.DEGRADED,
+                process=HeartbeatStatus(
+                    service="ingest_process",
+                    state=HeartbeatState.ALIVE,
+                    age_seconds=3.0,
+                    producer="ingest_service",
+                    last_ts=now - 3,
+                ),
+                provider=HeartbeatStatus(
+                    service="ingest_provider",
+                    state=HeartbeatState.STALE,
+                    age_seconds=45.0,
+                    producer="finnhub_ws",
+                    last_ts=now - 45,
+                ),
+            )
+
         with (
             patch("api.heartbeat_routes.get_async_redis", new_callable=AsyncMock),
             patch("api.heartbeat_routes.read_all_heartbeats", side_effect=mock_read_all),
+            patch("api.heartbeat_routes.read_ingest_health", side_effect=mock_read_ingest),
         ):
             from api.heartbeat_routes import heartbeat_status
 
             result = await heartbeat_status()
 
         assert result["overall"] == "DEGRADED"
+        assert result["ingest_health"] == "DEGRADED"
+
+
+# ══════════════════════════════════════════════════════════
+#  classify_ingest_health — split heartbeat logic tests
+# ══════════════════════════════════════════════════════════
+
+
+class TestClassifyIngestHealth:
+    """Test the tri-state ingest health classification."""
+
+    def _make_status(self, service: str, state: HeartbeatState, age: float | None = 3.0) -> HeartbeatStatus:
+        return HeartbeatStatus(
+            service=service,
+            state=state,
+            age_seconds=age,
+            producer="test",
+            last_ts=time.time() - (age or 0),
+        )
+
+    def test_both_alive_is_healthy(self) -> None:
+        process = self._make_status("ingest_process", HeartbeatState.ALIVE)
+        provider = self._make_status("ingest_provider", HeartbeatState.ALIVE)
+        result = classify_ingest_health(process, provider)
+        assert result.state == IngestHealthState.HEALTHY
+
+    def test_process_alive_provider_stale_is_degraded(self) -> None:
+        """Weekend scenario: WS disconnected but process running."""
+        process = self._make_status("ingest_process", HeartbeatState.ALIVE)
+        provider = self._make_status("ingest_provider", HeartbeatState.STALE, age=120.0)
+        result = classify_ingest_health(process, provider)
+        assert result.state == IngestHealthState.DEGRADED
+
+    def test_process_alive_provider_missing_is_degraded(self) -> None:
+        """Provider never started (first deploy)."""
+        process = self._make_status("ingest_process", HeartbeatState.ALIVE)
+        provider = self._make_status("ingest_provider", HeartbeatState.MISSING, age=None)
+        result = classify_ingest_health(process, provider)
+        assert result.state == IngestHealthState.DEGRADED
+
+    def test_process_stale_is_no_producer(self) -> None:
+        """Process crashed — regardless of provider state."""
+        process = self._make_status("ingest_process", HeartbeatState.STALE, age=60.0)
+        provider = self._make_status("ingest_provider", HeartbeatState.ALIVE)
+        result = classify_ingest_health(process, provider)
+        assert result.state == IngestHealthState.NO_PRODUCER
+
+    def test_both_missing_is_no_producer(self) -> None:
+        """Service never deployed."""
+        process = self._make_status("ingest_process", HeartbeatState.MISSING, age=None)
+        provider = self._make_status("ingest_provider", HeartbeatState.MISSING, age=None)
+        result = classify_ingest_health(process, provider)
+        assert result.state == IngestHealthState.NO_PRODUCER
+
+    def test_process_missing_provider_alive_is_no_producer(self) -> None:
+        """Impossible in practice but should still be safe."""
+        process = self._make_status("ingest_process", HeartbeatState.MISSING, age=None)
+        provider = self._make_status("ingest_provider", HeartbeatState.ALIVE)
+        result = classify_ingest_health(process, provider)
+        assert result.state == IngestHealthState.NO_PRODUCER
+
+    def test_result_is_frozen(self) -> None:
+        process = self._make_status("ingest_process", HeartbeatState.ALIVE)
+        provider = self._make_status("ingest_provider", HeartbeatState.ALIVE)
+        result = classify_ingest_health(process, provider)
+        assert isinstance(result, IngestHealthStatus)
+        with pytest.raises(AttributeError):
+            result.state = IngestHealthState.DEGRADED  # type: ignore[misc]
+
+
+# ══════════════════════════════════════════════════════════
+#  read_ingest_health — async Redis split-key tests
+# ══════════════════════════════════════════════════════════
+
+
+class TestReadIngestHealth:
+    """Test read_ingest_health with mocked Redis."""
+
+    @pytest.mark.asyncio
+    async def test_healthy_when_both_fresh(self) -> None:
+        now = time.time()
+        redis = AsyncMock()
+
+        async def mock_get(key: str) -> str | None:
+            if "process" in key:
+                return orjson.dumps({"producer": "ingest_service", "ts": now - 2}).decode()
+            if "provider" in key:
+                return orjson.dumps({"producer": "finnhub_ws", "ts": now - 3}).decode()
+            return None
+
+        redis.get.side_effect = mock_get
+        result = await read_ingest_health(redis)
+        assert result.state == IngestHealthState.HEALTHY
+
+    @pytest.mark.asyncio
+    async def test_degraded_when_provider_stale(self) -> None:
+        """Weekend: process fresh, provider old."""
+        now = time.time()
+        redis = AsyncMock()
+
+        async def mock_get(key: str) -> str | None:
+            if "process" in key:
+                return orjson.dumps({"producer": "ingest_service", "ts": now - 2}).decode()
+            if "provider" in key:
+                return orjson.dumps({"producer": "finnhub_ws", "ts": now - 120}).decode()
+            return None
+
+        redis.get.side_effect = mock_get
+        result = await read_ingest_health(redis)
+        assert result.state == IngestHealthState.DEGRADED
+
+    @pytest.mark.asyncio
+    async def test_no_producer_when_both_missing(self) -> None:
+        redis = AsyncMock()
+        redis.get.return_value = None
+        result = await read_ingest_health(redis)
+        assert result.state == IngestHealthState.NO_PRODUCER
