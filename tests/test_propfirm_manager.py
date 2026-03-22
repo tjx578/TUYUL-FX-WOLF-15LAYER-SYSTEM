@@ -11,7 +11,7 @@ Validates:
 import pytest
 
 from propfirm_manager.profile_manager import PropFirmManager
-from propfirm_manager.profiles.aqua_instant_pro.guard import (
+from propfirm_manager.profiles.aquafunded.aqua_instant_pro.guard import (
     AquaInstantProGuard,
 )
 from propfirm_manager.profiles.aquafunded.guard import AquafundedGuard
@@ -147,11 +147,11 @@ class TestAquaInstantProGuard:
     """Test Aqua Instant Pro guard implementation."""
 
     def test_aqua_allows_safe_trade(self):
-        """Aqua allows trade within limits."""
+        """Aqua allows trade within limits (risk within strategy 0.4% cap)."""
         rules = {
             "max_daily_dd_percent": 5.0,
             "max_total_dd_percent": 10.0,
-            "max_risk_per_trade_percent": 1.0,
+            "max_risk_per_trade_percent": 0.5,
             "max_open_trades": 1,
         }
 
@@ -164,10 +164,14 @@ class TestAquaInstantProGuard:
             "balance": 100000,
         }
 
+        # risk_percent 0.35 is within the strategy.yaml cap (0.4%)
+        # symbol and session_time_local satisfy strategy hard rules
         trade_risk = {
-            "risk_percent": 0.8,
+            "risk_percent": 0.35,
             "daily_dd_after": 1.3,
             "total_dd_after": 1.8,
+            "symbol": "EURUSD",
+            "session_time_local": "15:00",  # London session
         }
 
         result = guard.check(account_state, trade_risk)

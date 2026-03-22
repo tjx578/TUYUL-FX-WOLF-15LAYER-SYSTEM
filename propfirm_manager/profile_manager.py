@@ -70,9 +70,23 @@ class PropFirmManager:
         self._load_profile()
         self._load_guard()
 
+    def _resolve_profile_dir(self) -> Path:
+        """Resolve profile directory, supporting nested layouts."""
+        profiles_dir = Path(__file__).parent / "profiles"
+        direct = profiles_dir / self.profile_name
+        if (direct / "profile.yaml").exists():
+            return direct
+        for sub in profiles_dir.iterdir():
+            if sub.is_dir():
+                nested = sub / self.profile_name
+                if (nested / "profile.yaml").exists():
+                    return nested
+        raise FileNotFoundError(f"Profile not found: {self.profile_name}")
+
     def _load_profile(self) -> None:
         """Load profile YAML configuration (v1 and v2 compatible)."""
-        base_dir = Path(__file__).parent / "profiles" / self.profile_name
+        base_dir = self._resolve_profile_dir()
+        self._profile_dir = base_dir
         profile_path = base_dir / "profile.yaml"
 
         if not profile_path.exists():
@@ -97,8 +111,9 @@ class PropFirmManager:
 
     def _load_guard(self) -> None:
         """Dynamically import and instantiate guard class."""
-        # Import the guard module
-        module_path = f"propfirm_manager.profiles.{self.profile_name}.guard"
+        # Import the guard module — derive dotted path from resolved directory
+        rel = self._profile_dir.relative_to(Path(__file__).parent / "profiles")
+        module_path = "propfirm_manager.profiles." + ".".join(rel.parts) + ".guard"
         try:
             module = importlib.import_module(module_path)
         except ImportError as e:
@@ -154,9 +169,7 @@ class PropFirmManager:
             FileNotFoundError: If registry or profile not found
         """
         # Load account registry
-        registry_path = (
-            Path(__file__).parent / "account_registry.yaml"
-        )
+        registry_path = Path(__file__).parent / "account_registry.yaml"
 
         if not registry_path.exists():
             raise FileNotFoundError(f"Account registry not found: {registry_path}")

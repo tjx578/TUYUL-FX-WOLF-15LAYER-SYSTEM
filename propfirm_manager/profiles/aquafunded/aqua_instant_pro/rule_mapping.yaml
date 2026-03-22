@@ -1,0 +1,131 @@
+# Aqua Instant Pro — Hard / Soft Rule Mapping
+# Version: 1.0
+# Profile: aqua_instant_pro
+#
+# hard_rules: enforced automatically — blocks trade / locks session / triggers emergency flatten.
+# soft_rules: advisory only — produce warnings, compliance alerts, or scoring penalties.
+
+hard_rules:
+  - name: risk_per_trade
+    description: Risk per trade must not exceed max_risk_per_trade_percent (0.4%).
+    action: block_trade
+    config_key: risk_management.risk_per_trade_percent
+
+  - name: max_total_open_risk
+    description: Combined open risk across all positions must not exceed max_total_open_risk_percent (0.8%).
+    action: block_trade
+    config_key: risk_management.max_total_open_risk_percent
+
+  - name: max_primary_positions
+    description: No more than max_primary_positions (2) simultaneous primary positions.
+    action: block_trade
+    config_key: risk_management.max_primary_positions
+
+  - name: correlated_exposure_cap
+    description: Correlated positions must not exceed max_correlated_positions (2) or max_same_direction_correlated_positions (1).
+    action: block_trade
+    config_keys:
+      - risk_management.max_correlated_positions
+      - risk_management.max_same_direction_correlated_positions
+
+  - name: mandatory_stop_loss
+    description: Every trade must include a stop-loss. Trades without SL are blocked.
+    action: block_trade
+    config_key: risk_management.stop_loss_required
+
+  - name: daily_consecutive_loss_lockout
+    description: Trading is locked for the day after max_consecutive_losses_per_day (2) consecutive losses.
+    action: lock_session
+    config_key: risk_management.max_consecutive_losses_per_day
+
+  - name: weekly_loss_cap
+    description: Trading is locked for the week if hard_weekly_loss_limit_percent (2.0%) is reached.
+    action: lock_session
+    config_key: risk_management.hard_weekly_loss_limit_percent
+
+  - name: allowed_symbols
+    description: Only EURUSD and GBPUSD are permitted. All other symbols are blocked.
+    action: block_trade
+    config_key: market_filters.allowed_symbols
+
+  - name: allowed_sessions
+    description: Trading only permitted during London (14:00–18:00) and New York (20:00–23:00) WIB windows.
+    action: block_trade
+    config_key: market_filters.sessions
+
+  - name: news_blackout
+    description: Trading blocked 30 minutes before and after high-impact news releases.
+    action: block_trade
+    config_key: market_filters.news_filter
+
+  - name: no_add_to_loser
+    description: Adding to a losing position is strictly prohibited.
+    action: block_trade
+    config_key: trade_management.add_to_loser
+
+  - name: no_martingale
+    description: Martingale position sizing is strictly prohibited.
+    action: block_trade
+    config_key: trade_management.martingale
+
+  - name: kill_switch_proximity
+    description: >
+      When floating loss approaches kill_switch_floating_loss_percent (2.0% of initial balance),
+      trigger emergency flatten of all open positions.
+    action: emergency_flatten
+    config_key: account_constraints.kill_switch_floating_loss_percent
+
+  - name: daily_profit_target_stop
+    description: >
+      Once daily profit reaches daily_target_max_percent (1.0%), no new positions may be opened.
+    action: lock_session
+    config_key: profit_distribution.daily_target_max_percent
+
+soft_rules:
+  - name: trend_pullback_preference
+    description: Entry should follow the H4/H1 trend and occur on a pullback, not a chase.
+    advisory: warn_if_not_pullback
+
+  - name: confirmation_quality
+    description: Trade should have at least one confluence signal (candlestick, RSI, MACD) before entry.
+    advisory: score_penalty_if_missing_confluence
+
+  - name: timeframe_alignment
+    description: H1 execution bias should align with H4 trend direction.
+    advisory: warn_if_misaligned_timeframes
+
+  - name: preferred_entry_zones
+    description: Entries should target Fibonacci 50% retracement or key S/R levels.
+    advisory: warn_if_entry_outside_preferred_zone
+
+  - name: breakout_retest_preference
+    description: Breakout entries are not preferred; breakout-retest after confirmation is acceptable.
+    advisory: warn_if_pure_breakout_entry
+
+  - name: move_to_breakeven_discipline
+    description: Stop-loss should be moved to breakeven after RR 1:1 is reached.
+    advisory: warn_if_sl_not_moved_to_be
+
+  - name: partial_take_profit
+    description: Partial profit should be taken at first target (RR 1:2) before holding for second target.
+    advisory: warn_if_no_partial_tp_taken
+
+  - name: journaling_compliance
+    description: All trades must be journaled with entry, SL, TP, lot, and floating PnL.
+    advisory: compliance_alert_if_missing_journal
+
+  - name: weekly_review_compliance
+    description: A weekly performance review must be completed every week.
+    advisory: compliance_alert_if_missing_weekly_review
+
+  - name: kill_switch_proximity_warning
+    description: >
+      Warn operator when floating loss approaches kill_switch_proximity_warning_percent (1.5%)
+      so corrective action can be taken before the hard kill-switch triggers.
+    advisory: warn_approaching_kill_switch
+
+  - name: consistency_best_day_warning
+    description: >
+      Warn when the best profit day is approaching best_day_consistency_warning_percent (15%)
+      of total profit for the payout period, so the trader can moderate position sizing.
+    advisory: warn_approaching_consistency_limit
