@@ -33,13 +33,16 @@ import { bearerHeader } from "@/lib/auth";
 import { HttpError } from "@/lib/fetcher";
 import { useSessionStore } from "@/store/useSessionStore";
 
-// Use relative paths — Next.js rewrites proxy /api/* to the backend.
-const API_BASE = "";
+// Use dynamic proxy route that reads backend URL at runtime.
+// This avoids the issue where next.config.js rewrites use stale env vars
+// because they're evaluated once at dev server startup.
+const API_BASE = "/api/proxy";
 
 // Global 429 cooldown — prevents all hooks from hammering a rate-limited backend.
 let _rateLimitedUntil = 0;
 
 export const API_ENDPOINTS = {
+  // Health endpoint - goes through proxy which routes to /health on backend
   health: "/health",
   orchestratorState: "/api/v1/orchestrator/state",
   accounts: "/api/v1/accounts",
