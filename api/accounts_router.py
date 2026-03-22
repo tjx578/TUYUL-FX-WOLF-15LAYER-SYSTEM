@@ -165,6 +165,58 @@ async def list_risk_snapshot() -> list[dict[str, Any]]:
     return snapshots  # noqa: W191
 
 
+@router.get("/capital-deployment", dependencies=[Depends(verify_token)])
+async def list_capital_deployment() -> dict[str, Any]:
+    """Capital deployment view — readiness, usable capital, eligibility per account."""  # noqa: W191
+    items = await _accounts.list_accounts_async()  # noqa: W191
+    client: Any = await get_client()  # noqa: W191
+    deployment: list[dict[str, Any]] = []  # noqa: W191
+
+    for account in items:  # noqa: W191
+        payload: dict[str, Any] = {}  # noqa: W191
+        try:  # noqa: W191
+            raw = await client.hgetall(f"ACCOUNT:{account.account_id}")  # noqa: W191
+            payload = dict(raw or {})  # noqa: W191
+        except Exception:  # noqa: W191
+            payload = {}  # noqa: W191
+
+        readiness = build_readiness(  # noqa: W191
+            account.account_id,  # noqa: W191
+            payload,  # noqa: W191
+            equity=account.equity,  # noqa: W191
+            balance=account.balance,  # noqa: W191
+            max_daily_dd_percent=float(account.max_daily_dd_percent or 4.0),  # noqa: W191
+            max_total_dd_percent=float(account.max_total_dd_percent or 8.0),  # noqa: W191
+            max_concurrent_trades=int(account.max_concurrent_trades or 1),  # noqa: W191
+            prop_firm=bool(account.prop_firm),  # noqa: W191
+        )  # noqa: W191
+
+        enriched = await _enrich(account)  # noqa: W191
+        deployment.append(  # noqa: W191
+            {  # noqa: W191
+                **enriched,  # noqa: W191
+                "readiness_score": readiness.readiness_score,  # noqa: W191
+                "usable_capital": readiness.usable_capital,  # noqa: W191
+                "eligibility_flags": readiness.eligibility_flags,  # noqa: W191
+                "lock_reasons": readiness.lock_reasons,  # noqa: W191
+            }  # noqa: W191
+        )  # noqa: W191
+
+    total_usable = sum(d["usable_capital"] for d in deployment)  # noqa: W191
+    avg_readiness = (  # noqa: W191
+        sum(d["readiness_score"] for d in deployment) / len(deployment)  # noqa: W191
+        if deployment  # noqa: W191
+        else 0.0  # noqa: W191
+    )  # noqa: W191
+
+    return {  # noqa: W191
+        "count": len(deployment),  # noqa: W191
+        "total_usable_capital": round(total_usable, 2),  # noqa: W191
+        "avg_readiness_score": round(avg_readiness, 4),  # noqa: W191
+        "accounts": deployment,  # noqa: W191
+    }  # noqa: W191
+
+
 @router.get("/{account_id}", dependencies=[Depends(verify_token)])
 async def get_account(account_id: str) -> dict[str, Any]:
     account = await _accounts.get_account_async(account_id)  # noqa: W191
@@ -297,55 +349,3 @@ async def delete_account(account_id: str, req: AccountDeleteRequest) -> dict[str
         details={"action": "ACCOUNT_DELETE", "reason": req.reason},  # noqa: W191
     )  # noqa: W191
     return {"deleted": True, "account_id": account_id}  # noqa: W191
-
-
-@router.get("/capital-deployment", dependencies=[Depends(verify_token)])
-async def list_capital_deployment() -> dict[str, Any]:
-    """Capital deployment view — readiness, usable capital, eligibility per account."""  # noqa: W191
-    items = await _accounts.list_accounts_async()  # noqa: W191
-    client: Any = await get_client()  # noqa: W191
-    deployment: list[dict[str, Any]] = []  # noqa: W191
-
-    for account in items:  # noqa: W191
-        payload: dict[str, Any] = {}  # noqa: W191
-        try:  # noqa: W191
-            raw = await client.hgetall(f"ACCOUNT:{account.account_id}")  # noqa: W191
-            payload = dict(raw or {})  # noqa: W191
-        except Exception:  # noqa: W191
-            payload = {}  # noqa: W191
-
-        readiness = build_readiness(  # noqa: W191
-            account.account_id,  # noqa: W191
-            payload,  # noqa: W191
-            equity=account.equity,  # noqa: W191
-            balance=account.balance,  # noqa: W191
-            max_daily_dd_percent=float(account.max_daily_dd_percent or 4.0),  # noqa: W191
-            max_total_dd_percent=float(account.max_total_dd_percent or 8.0),  # noqa: W191
-            max_concurrent_trades=int(account.max_concurrent_trades or 1),  # noqa: W191
-            prop_firm=bool(account.prop_firm),  # noqa: W191
-        )  # noqa: W191
-
-        enriched = await _enrich(account)  # noqa: W191
-        deployment.append(  # noqa: W191
-            {  # noqa: W191
-                **enriched,  # noqa: W191
-                "readiness_score": readiness.readiness_score,  # noqa: W191
-                "usable_capital": readiness.usable_capital,  # noqa: W191
-                "eligibility_flags": readiness.eligibility_flags,  # noqa: W191
-                "lock_reasons": readiness.lock_reasons,  # noqa: W191
-            }  # noqa: W191
-        )  # noqa: W191
-
-    total_usable = sum(d["usable_capital"] for d in deployment)  # noqa: W191
-    avg_readiness = (  # noqa: W191
-        sum(d["readiness_score"] for d in deployment) / len(deployment)  # noqa: W191
-        if deployment  # noqa: W191
-        else 0.0  # noqa: W191
-    )  # noqa: W191
-
-    return {  # noqa: W191
-        "count": len(deployment),  # noqa: W191
-        "total_usable_capital": round(total_usable, 2),  # noqa: W191
-        "avg_readiness_score": round(avg_readiness, 4),  # noqa: W191
-        "accounts": deployment,  # noqa: W191
-    }  # noqa: W191
