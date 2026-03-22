@@ -290,6 +290,36 @@ public:
                            eventType, severity, EscapeJsonString(message)));
         return true;
     }
+
+    //+--------------------------------------------------------------+
+    //| Ping — POST /api/v1/ea/ping                                  |
+    //| Verify connectivity, API key validity, and agent registration |
+    //| Called on OnInit() to confirm the backend is reachable.       |
+    //| Returns true on success; fills outServerTime and outStatus.   |
+    //+--------------------------------------------------------------+
+    bool Ping(string &outServerTime, string &outAgentStatus,
+              const string eaVersion = TUYULFX_VERSION,
+              const string eaClass   = EA_CLASS_PRIMARY)
+    {
+        string keys[]   = {"agent_id",    "ea_version", "ea_class"};
+        string values[] = {m_agent_id,    eaVersion,    eaClass};
+        bool   isStr[]  = {true,          true,         true};
+        string body     = BuildJsonPayload(keys, values, isStr, 3);
+
+        string response;
+        int code = DoRequest("POST", "/api/v1/ea/ping", body, response);
+        if(code < 200 || code > 299)
+        {
+            Print(StringFormat("[HTTP] Ping failed — code=%d body=%s", code, response));
+            return false;
+        }
+
+        // Parse response fields
+        outServerTime  = JsonGetString(response, "server_time");
+        outAgentStatus = JsonGetString(response, "agent_status");
+        string status  = JsonGetString(response, "status");
+        return (status == "ok");
+    }
 };
 
 #endif // TUYULFX_HTTP_MQH
