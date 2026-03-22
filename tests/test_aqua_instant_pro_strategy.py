@@ -18,6 +18,7 @@ from pathlib import Path
 import pytest
 
 from propfirm_manager.profiles.aquafunded.aqua_instant_pro.guard import AquaInstantProGuard
+from propfirm_manager.profiles.aquafunded.guard import AquafundedGuard
 from propfirm_manager.strategy_loader import (
     HardRuleResult,
     SoftAdvisory,
@@ -199,8 +200,7 @@ class TestStrategyLoaderFallback:
         # Point StrategyLoader to nonexistent files so it raises during load
         # Guard should catch the error and still work in degraded mode
         guard = AquaInstantProGuard.__new__(AquaInstantProGuard)
-        BasePropFirmGuard = AquaInstantProGuard.__bases__[0]
-        BasePropFirmGuard.__init__(guard, {"max_daily_dd_percent": 5.0, "max_total_dd_percent": 10.0})
+        AquafundedGuard.__init__(guard, {"max_daily_dd_percent": 5.0, "max_total_dd_percent": 10.0})
         guard._strategy = None  # Simulate failed loader
 
         result = guard.check(_SAFE_ACCOUNT, _SAFE_TRADE)
