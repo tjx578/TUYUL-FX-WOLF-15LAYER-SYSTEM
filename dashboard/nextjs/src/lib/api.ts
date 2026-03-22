@@ -42,10 +42,10 @@ import {
 import { AgentStatus as AgentStatusEnum } from "@/types/agent-manager";
 import type { AgentItem, AgentEvent } from "@/types/agent-manager";
 
-// Use dynamic proxy route that reads backend URL at runtime.
-// This avoids the issue where next.config.js rewrites use stale env vars
-// because they're evaluated once at dev server startup.
-const API_BASE = "/api/proxy";
+// Use next.config.js rewrites to proxy API calls to the backend.
+// Rewrites are evaluated at build/startup — set INTERNAL_API_URL or
+// NEXT_PUBLIC_API_BASE_URL in your deployment environment.
+const API_BASE = "";
 
 // Global 429 cooldown — prevents all hooks from hammering a rate-limited backend.
 let _rateLimitedUntil = 0;
@@ -417,19 +417,19 @@ export function useEAStatus() {
   const { data: agents, isLoading, isError, error, mutate } = useAgentManagerList();
   const data: EAStatus | undefined = agents.length > 0 || !isLoading
     ? {
-        healthy: agents.some((a) => a.status === AgentStatusEnum.ONLINE),
-        running: agents.some((a) => a.status === AgentStatusEnum.ONLINE),
-        engine_state: "IDLE",
-        queue_depth: 0,
-        queue_max: 200,
-        safe_mode: agents.some((a) => a.safe_mode),
-        agents_total: agents.length,
-        agents_connected: agents.filter((a) => a.status === AgentStatusEnum.ONLINE).length,
-        total_failures: agents.reduce((sum, a) => sum + (a.runtime?.trades_failed ?? 0), 0),
-        recent_failures: [],
-        cooldown_active: agents.some((a) => a.locked),
-        updated_at: new Date().toISOString(),
-      }
+      healthy: agents.some((a) => a.status === AgentStatusEnum.ONLINE),
+      running: agents.some((a) => a.status === AgentStatusEnum.ONLINE),
+      engine_state: "IDLE",
+      queue_depth: 0,
+      queue_max: 200,
+      safe_mode: agents.some((a) => a.safe_mode),
+      agents_total: agents.length,
+      agents_connected: agents.filter((a) => a.status === AgentStatusEnum.ONLINE).length,
+      total_failures: agents.reduce((sum, a) => sum + (a.runtime?.trades_failed ?? 0), 0),
+      recent_failures: [],
+      cooldown_active: agents.some((a) => a.locked),
+      updated_at: new Date().toISOString(),
+    }
     : undefined;
   return { data, isLoading, isError, error, mutate };
 }
