@@ -9,11 +9,18 @@
 // React 19 fiber null-assertion crash (n || rD(e, !0)).
 // "popLayout" keeps both old and new children mounted briefly,
 // preventing the stale-fiber unmount race in concurrent mode.
+//
+// FIX: The `layout` prop has been intentionally removed from
+// motion.div. Combining `layout` with `AnimatePresence
+// mode="popLayout"` and Next.js App Router concurrent mode
+// triggers a React fiber null-assertion crash (n || rD(e, !0))
+// on every client-side navigation, preventing all routes except
+// the initial page from loading.
 // ============================================================
 
+import React, { useEffect } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { usePathname } from "next/navigation";
-import { useEffect } from "react";
 
 export default function RouteTransition({
   children,
@@ -38,7 +45,6 @@ export default function RouteTransition({
           duration: 0.3,
           ease: [0.4, 0, 0.2, 1],
         }}
-        layout
         style={{ minHeight: "100%", width: "100%" }}
       >
         {children}
