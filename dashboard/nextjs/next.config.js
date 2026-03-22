@@ -187,7 +187,7 @@ const nextConfig = {
           {
             key: "Content-Security-Policy",
             value: [
-              "default-src 'self'",
+              "default-src 'self' https://vercel.live",
               "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
               "font-src 'self' https://fonts.gstatic.com",
               "connect-src 'self' wss://*.railway.app https://*.railway.app wss://*.vercel.app https://*.vercel.app https://vitals.vercel-insights.com https://*.vercel-scripts.com",
