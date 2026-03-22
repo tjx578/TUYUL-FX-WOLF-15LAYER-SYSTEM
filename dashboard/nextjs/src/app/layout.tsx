@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import QueryProvider from "@/components/providers/QueryProvider";
 import SessionExpiryModal from "@/components/auth/SessionExpiryModal";
 import ToastViewport from "@/components/feedback/ToastViewport";
+import ClientOnly from "@/components/ClientOnly";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -28,11 +29,13 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <body suppressHydrationWarning>
-        <QueryProvider>
-          {children}
-          <SessionExpiryModal />
-          <ToastViewport />
-        </QueryProvider>
+        <ClientOnly>
+          <QueryProvider>
+            {children}
+            <SessionExpiryModal />
+            <ToastViewport />
+          </QueryProvider>
+        </ClientOnly>
       </body>
     </html>
   );
