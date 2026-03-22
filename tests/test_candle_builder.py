@@ -24,6 +24,7 @@ from ingest.candle_builder import (
 
 # ── Alignment ────────────────────────────────────────────────────────
 
+
 class TestAlignment:
     def test_m15_alignment(self):
         dt = datetime(2026, 2, 17, 10, 7, 30, tzinfo=UTC)
@@ -52,6 +53,7 @@ class TestAlignment:
 
 
 # ── M15 from Ticks ──────────────────────────────────────────────────
+
 
 class TestM15FromTicks:
     def _make_builder(self):
@@ -114,6 +116,7 @@ class TestM15FromTicks:
 
 # ── H1 from M15 Candles ─────────────────────────────────────────────
 
+
 class TestH1FromM15:
     def _make_m15_candle(self, open_time: datetime, o: float, h: float, l: float, c: float) -> Candle:  # noqa: E741
         return Candle(
@@ -121,8 +124,13 @@ class TestH1FromM15:
             timeframe="M15",
             open_time=open_time,
             close_time=open_time + timedelta(minutes=15),
-            open=o, high=h, low=l, close=c,
-            volume=100.0, tick_count=50, complete=True,
+            open=o,
+            high=h,
+            low=l,
+            close=c,
+            volume=100.0,
+            tick_count=50,
+            complete=True,
         )
 
     def test_four_m15_make_one_h1(self):
@@ -131,7 +139,7 @@ class TestH1FromM15:
 
         # Feed 4 M15 candles (10:00, 10:15, 10:30, 10:45)
         m15s = [
-            self._make_m15_candle(base,                        1.10, 1.12, 1.09, 1.11),
+            self._make_m15_candle(base, 1.10, 1.12, 1.09, 1.11),
             self._make_m15_candle(base + timedelta(minutes=15), 1.11, 1.13, 1.10, 1.12),
             self._make_m15_candle(base + timedelta(minutes=30), 1.12, 1.14, 1.11, 1.13),
             self._make_m15_candle(base + timedelta(minutes=45), 1.13, 1.15, 1.12, 1.14),
@@ -142,9 +150,7 @@ class TestH1FromM15:
         assert all(r is None for r in results)
 
         # Feed first M15 of next hour → triggers H1 completion
-        next_hour_candle = self._make_m15_candle(
-            base + timedelta(minutes=60), 1.14, 1.16, 1.13, 1.15
-        )
+        next_hour_candle = self._make_m15_candle(base + timedelta(minutes=60), 1.14, 1.16, 1.13, 1.15)
         h1 = b.on_candle(next_hour_candle)
 
         assert h1 is not None
@@ -162,10 +168,14 @@ class TestH1FromM15:
     def test_incomplete_candle_ignored(self):
         b = CandleBuilder("EURUSD", Timeframe.H1)
         incomplete = Candle(
-            symbol="EURUSD", timeframe="M15",
+            symbol="EURUSD",
+            timeframe="M15",
             open_time=datetime(2026, 2, 17, 10, 0, tzinfo=UTC),
             close_time=datetime(2026, 2, 17, 10, 15, tzinfo=UTC),
-            open=1.10, high=1.11, low=1.09, close=1.10,
+            open=1.10,
+            high=1.11,
+            low=1.09,
+            close=1.10,
             complete=False,
         )
         assert b.on_candle(incomplete) is None
@@ -173,6 +183,7 @@ class TestH1FromM15:
 
 
 # ── MultiTimeframeCandleBuilder ─────────────────────────────────────
+
 
 class TestMultiTimeframe:
     def test_tick_to_m15_and_h1(self):
@@ -232,6 +243,7 @@ class TestMultiTimeframe:
 
 # ── Flush ────────────────────────────────────────────────────────────
 
+
 class TestFlush:
     def test_flush_partial_candle(self):
         b = CandleBuilder("EURUSD", Timeframe.M15)
@@ -256,14 +268,21 @@ class TestFlush:
 
 # ── Candle.to_dict ───────────────────────────────────────────────────
 
+
 class TestCandleDict:
     def test_round_trip(self):
         c = Candle(
-            symbol="EURUSD", timeframe="M15",
+            symbol="EURUSD",
+            timeframe="M15",
             open_time=datetime(2026, 2, 17, 10, 0, tzinfo=UTC),
             close_time=datetime(2026, 2, 17, 10, 15, tzinfo=UTC),
-            open=1.10, high=1.12, low=1.09, close=1.11,
-            volume=500.0, tick_count=100, complete=True,
+            open=1.10,
+            high=1.12,
+            low=1.09,
+            close=1.11,
+            volume=500.0,
+            tick_count=100,
+            complete=True,
         )
         d = c.to_dict()
         assert d["symbol"] == "EURUSD"
@@ -272,6 +291,7 @@ class TestCandleDict:
 
 
 # ── Timeframe enum ───────────────────────────────────────────────────
+
 
 class TestTimeframe:
     def test_from_str(self):
@@ -290,6 +310,7 @@ class TestTimeframe:
 
 # ── Backward-compat import from analysis/ ────────────────────────────
 
+
 class TestBackwardCompat:
     def test_import_from_analysis(self):
         from analysis.candle_builder import (
@@ -301,6 +322,7 @@ class TestBackwardCompat:
         from analysis.candle_builder import (
             Timeframe as ATF,  # noqa: N814
         )
+
         # They should be the exact same objects
         assert ACandle is Candle
         assert ACB is CandleBuilder

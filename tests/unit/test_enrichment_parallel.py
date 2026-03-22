@@ -10,6 +10,7 @@ Verifies:
 - Graceful handling when all engines fail
 - Timeout handling per engine
 """
+
 from __future__ import annotations
 
 import time
@@ -23,13 +24,12 @@ import engines.enrichment_orchestrator as _mod
 from engines.enrichment_orchestrator import (
     EngineEnrichmentLayer,
     EnrichmentResult,
-    _PARALLEL_ENRICHMENT,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _make_engines(
     *,
@@ -52,9 +52,11 @@ def _make_engines(
             e.evaluate.side_effect = RuntimeError("coherence boom")
         else:
             if "coherence" in slow_keys:
+
                 def _slow_eval(state: dict[str, Any]) -> Any:
                     time.sleep(slow_keys["coherence"])
                     return snapshot
+
                 e.evaluate.side_effect = _slow_eval
             else:
                 e.evaluate.return_value = snapshot
@@ -67,9 +69,11 @@ def _make_engines(
             e.evaluate.side_effect = RuntimeError(f"{key} boom")
             e.analyze.side_effect = RuntimeError(f"{key} boom")
         elif key in slow_keys:
+
             def _slow(state: Any, **_kw: Any) -> SimpleNamespace:
                 time.sleep(slow_keys[key])
                 return SimpleNamespace(**out_dict)
+
             e.evaluate.side_effect = _slow
             e.analyze.side_effect = _slow
         else:
@@ -85,14 +89,14 @@ def _make_engines(
 
     return {
         "coherence": _make_coherence_engine(),
-        "context":   _make_simple_engine("context",   {"score": 0.7}),
-        "risk_sim":  _make_simple_engine("risk_sim",  {"tail_risk_score": 0.1, "max_drawdown_pct": 0.05}),
-        "momentum":  _make_simple_engine("momentum",  {"momentum_score": 0.6, "valid": True}),
+        "context": _make_simple_engine("context", {"score": 0.7}),
+        "risk_sim": _make_simple_engine("risk_sim", {"tail_risk_score": 0.1, "max_drawdown_pct": 0.05}),
+        "momentum": _make_simple_engine("momentum", {"momentum_score": 0.6, "valid": True}),
         "precision": _make_simple_engine("precision", {"precision_weight": 0.65, "valid": True}),
         "structure": _make_simple_engine("structure", {"structure_score": 0.7}),
-        "field":     _make_simple_engine("field",     {"stability": 0.8}),
+        "field": _make_simple_engine("field", {"stability": 0.8}),
         "probability": _make_simple_engine("probability", {"probability": 0.72}),
-        "advisory":  advisory,
+        "advisory": advisory,
     }
 
 
@@ -114,7 +118,7 @@ def _build_orchestrator_with_engines(
     layer._engines = engines
     # Patch _build_candles to return controlled candles
     mock_candles = candles if candles is not None else {"H1": [{"o": 1.1, "h": 1.2, "l": 1.0, "c": 1.15}]}
-    layer._build_candles = MagicMock(return_value=mock_candles)  # type: ignore[method-assign]
+    layer._build_candles = MagicMock(return_value=mock_candles)
     return layer
 
 
@@ -180,19 +184,20 @@ class TestParallelVsSequential:
 class TestSingleEngineFailureIsolation:
     """If one engine fails, the remaining 7 must still produce results."""
 
-    @pytest.mark.parametrize("failing_engine", [
-        "coherence",
-        "context",
-        "risk_sim",
-        "momentum",
-        "precision",
-        "structure",
-        "field",
-        "probability",
-    ])
-    def test_single_engine_failure_does_not_block_others(
-        self, failing_engine: str
-    ) -> None:
+    @pytest.mark.parametrize(
+        "failing_engine",
+        [
+            "coherence",
+            "context",
+            "risk_sim",
+            "momentum",
+            "precision",
+            "structure",
+            "field",
+            "probability",
+        ],
+    )
+    def test_single_engine_failure_does_not_block_others(self, failing_engine: str) -> None:
         engines = _make_engines(fail_keys={failing_engine})
         layer = _build_orchestrator_with_engines(engines)
 
@@ -205,24 +210,28 @@ class TestSingleEngineFailureIsolation:
         assert isinstance(result, EnrichmentResult)
 
         # The failing engine should be recorded in errors
-        assert any(failing_engine in err for err in result.errors), (
-            f"Expected error for '{failing_engine}' in {result.errors}"
-        )
+        assert any(
+            failing_engine in err for err in result.errors
+        ), f"Expected error for '{failing_engine}' in {result.errors}"
 
         # The remaining engines should NOT all fail — result should still be valid
         # (advisory receives empty/default values for the failed engine but runs)
         # At minimum one field should be populated
         populated = [
-            f for f in (
-                "cognitive_coherence", "cognitive_context", "risk_simulation",
-                "fusion_momentum", "fusion_precision", "fusion_structure",
-                "quantum_field", "quantum_probability",
+            f
+            for f in (
+                "cognitive_coherence",
+                "cognitive_context",
+                "risk_simulation",
+                "fusion_momentum",
+                "fusion_precision",
+                "fusion_structure",
+                "quantum_field",
+                "quantum_probability",
             )
             if getattr(result, f)
         ]
-        assert len(populated) >= 1, (
-            f"Expected at least 1 engine to succeed when only '{failing_engine}' fails"
-        )
+        assert len(populated) >= 1, f"Expected at least 1 engine to succeed when only '{failing_engine}' fails"
 
 
 # ---------------------------------------------------------------------------
@@ -251,8 +260,7 @@ class TestAdvisoryReceivesEngineOutputs:
         assert isinstance(advisory_inputs, dict)
 
         # All 8 engine result keys must be present in the advisory inputs
-        for key in ("coherence", "context", "risk_sim", "momentum",
-                    "precision", "structure", "field", "probability"):
+        for key in ("coherence", "context", "risk_sim", "momentum", "precision", "structure", "field", "probability"):
             assert key in advisory_inputs, f"Advisory missing key: {key}"
 
         # Metadata must be present
@@ -288,8 +296,10 @@ class TestSequentialFallback:
         engines = _make_engines()
         layer = _build_orchestrator_with_engines(engines)
 
-        with patch.object(_mod, "_PARALLEL_ENRICHMENT", False), \
-             patch("concurrent.futures.ThreadPoolExecutor") as mock_pool:
+        with (
+            patch.object(_mod, "_PARALLEL_ENRICHMENT", False),
+            patch("concurrent.futures.ThreadPoolExecutor") as mock_pool,
+        ):
             layer.run(
                 symbol="GBPUSD",
                 direction="SELL",
@@ -307,8 +317,15 @@ class TestAllEnginesFail:
 
     def test_all_engines_failed_returns_valid_result(self) -> None:
         all_keys = {
-            "coherence", "context", "risk_sim", "momentum",
-            "precision", "structure", "field", "probability", "advisory",
+            "coherence",
+            "context",
+            "risk_sim",
+            "momentum",
+            "precision",
+            "structure",
+            "field",
+            "probability",
+            "advisory",
         }
         engines = _make_engines(fail_keys=all_keys)
         layer = _build_orchestrator_with_engines(engines)

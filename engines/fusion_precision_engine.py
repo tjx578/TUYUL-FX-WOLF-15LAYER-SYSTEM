@@ -9,7 +9,6 @@ ANALYSIS-ONLY module. No execution side-effects.
 from __future__ import annotations
 
 import logging
-
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -22,9 +21,11 @@ logger = logging.getLogger(__name__)
 # Result dataclass
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class PrecisionZone:
     """A detected precision zone for entry/exit."""
+
     price: float
     zone_type: str  # "ENTRY" | "SL" | "TP1" | "TP2" | "TP3"
     strength: float = 0.0
@@ -90,9 +91,7 @@ FIB_RATIOS = {
 }
 
 
-def _compute_fib_levels(
-    swing_high: float, swing_low: float, direction: str
-) -> dict[str, float]:
+def _compute_fib_levels(swing_high: float, swing_low: float, direction: str) -> dict[str, float]:
     """Compute Fibonacci retracement/extension levels."""
     diff = swing_high - swing_low
     if diff <= 0:
@@ -107,9 +106,7 @@ def _compute_fib_levels(
     return levels
 
 
-def _compute_atr(
-    highs: np.ndarray, lows: np.ndarray, closes: np.ndarray, period: int = 14
-) -> float:
+def _compute_atr(highs: np.ndarray, lows: np.ndarray, closes: np.ndarray, period: int = 14) -> float:
     """Simple ATR computation."""
     if len(highs) < period + 1:
         return 0.0
@@ -129,11 +126,13 @@ def _find_recent_swings(
     sh: list[tuple[int, float]] = []
     sl: list[tuple[int, float]] = []
     for i in range(lookback, len(highs) - lookback):
-        if all(highs[i] >= highs[i - j] for j in range(1, lookback + 1)) and \
-           all(highs[i] >= highs[i + j] for j in range(1, lookback + 1)):
+        if all(highs[i] >= highs[i - j] for j in range(1, lookback + 1)) and all(
+            highs[i] >= highs[i + j] for j in range(1, lookback + 1)
+        ):
             sh.append((i, float(highs[i])))
-        if all(lows[i] <= lows[i - j] for j in range(1, lookback + 1)) and \
-           all(lows[i] <= lows[i + j] for j in range(1, lookback + 1)):
+        if all(lows[i] <= lows[i - j] for j in range(1, lookback + 1)) and all(
+            lows[i] <= lows[i + j] for j in range(1, lookback + 1)
+        ):
             sl.append((i, float(lows[i])))
     return sh, sl
 
@@ -149,6 +148,7 @@ def _compute_rr(entry: float, sl: float, tp: float) -> float:
 # ---------------------------------------------------------------------------
 # Engine
 # ---------------------------------------------------------------------------
+
 
 class FusionPrecisionEngine:
     """Fusion Precision Engine -- analysis only, no side-effects.

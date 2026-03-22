@@ -37,15 +37,9 @@ class TestFinnhubWSMetrics:
 
     def test_reconnect_attempts_can_increment(self) -> None:
         """Counter should accept increments with labels."""
-        before = finnhub_ws_reconnect_attempts.labels(
-            replica_id="test", error_type="ConnectionError"
-        )._value.get()
-        finnhub_ws_reconnect_attempts.labels(
-            replica_id="test", error_type="ConnectionError"
-        ).inc()
-        after = finnhub_ws_reconnect_attempts.labels(
-            replica_id="test", error_type="ConnectionError"
-        )._value.get()
+        before = finnhub_ws_reconnect_attempts.labels(replica_id="test", error_type="ConnectionError")._value.get()
+        finnhub_ws_reconnect_attempts.labels(replica_id="test", error_type="ConnectionError").inc()
+        after = finnhub_ws_reconnect_attempts.labels(replica_id="test", error_type="ConnectionError")._value.get()
         assert after == before + 1
 
     def test_reconnect_current_gauge_can_set(self) -> None:

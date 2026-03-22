@@ -1,4 +1,4 @@
-﻿"""L5_psychology.py - Alias module for backward compatibility.
+"""L5_psychology.py - Alias module for backward compatibility.
 
 The authoritative implementation is in L5_psychology_fundamental.py.
 This module re-exports everything from there for test/import compatibility.

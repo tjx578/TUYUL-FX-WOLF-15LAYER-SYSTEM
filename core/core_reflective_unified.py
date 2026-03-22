@@ -76,7 +76,6 @@ Version: 7.0r∞
 from __future__ import annotations
 
 import logging
-
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import StrEnum
@@ -96,29 +95,38 @@ logger = logging.getLogger(__name__)
 # ⚠️ SECTION 1: EXCEPTION CLASSES (9)
 # =============================================================================
 
+
 class ReflectiveError(Exception):
     """Base exception for Reflective module errors."""
+
 
 class TIIValidationError(ReflectiveError):
     """Raised when TII validation fails."""
 
+
 class FieldStabilityError(ReflectiveError):
     """Raised when field stability check fails."""
+
 
 class PipelineError(ReflectiveError):
     """Raised when pipeline operations fail."""
 
+
 class VaultIntegrityError(ReflectiveError):
     """Raised when vault integrity check fails."""
+
 
 class BridgeSyncError(ReflectiveError):
     """Raised when bridge synchronization fails."""
 
+
 class EAFCalculationError(ReflectiveError):
     """Raised when EAF calculation fails."""
 
+
 class FRPCError(ReflectiveError):
     """Raised when FRPC calculation fails."""
+
 
 class EvolutionError(ReflectiveError):
     """Raised when evolution engine fails."""
@@ -128,11 +136,13 @@ class EvolutionError(ReflectiveError):
 # 📊 SECTION 2: ENUMERATIONS (13)
 # =============================================================================
 
+
 class FieldState(StrEnum):
     ACCUMULATION = "Accumulation"
     EXPANSION = "Expansion"
     REVERSAL = "Reversal"
     CONSOLIDATION = "Consolidation"
+
 
 class TIIClassification(StrEnum):
     STRONG_TREND = "STRONG_TREND"
@@ -141,11 +151,13 @@ class TIIClassification(StrEnum):
     RANGING = "RANGING"
     NO_TREND = "NO_TREND"
 
+
 class TIIStatus(StrEnum):
     STRONG_VALID = "strong_valid"
     VALID = "valid"
     MARGINAL = "marginal"
     INVALID = "invalid"
+
 
 class PipelineMode(StrEnum):
     BALANCED = "balanced"
@@ -153,22 +165,26 @@ class PipelineMode(StrEnum):
     AGGRESSIVE = "aggressive"
     DEFENSIVE = "defensive"
 
+
 class VaultSyncStatus(StrEnum):
     SYNCED = "synced"
     PENDING = "pending"
     CONFLICT = "conflict"
     ERROR = "error"
 
+
 class IntegrityLevel(StrEnum):
     FULL = "full"
     PARTIAL = "partial"
     COMPROMISED = "compromised"
+
 
 class SyncStatus(StrEnum):
     SYNCED = "SYNCED"
     PENDING = "PENDING"
     DRIFT = "DRIFT"
     ERROR = "ERROR"
+
 
 class EmotionalState(StrEnum):
     CALM = "CALM"
@@ -180,6 +196,7 @@ class EmotionalState(StrEnum):
     OVERCONFIDENT = "OVERCONFIDENT"
     FATIGUED = "FATIGUED"
 
+
 class TradingBehavior(StrEnum):
     NORMAL = "NORMAL"
     REVENGE_TRADING = "REVENGE_TRADING"
@@ -189,22 +206,26 @@ class TradingBehavior(StrEnum):
     IMPULSIVE = "IMPULSIVE"
     DISCIPLINED = "DISCIPLINED"
 
+
 class PropagationState(StrEnum):
     FULL_SYNC = "Full Reflective Sync"
     PARTIAL_SYNC = "Partial Reflective Sync"
     DRIFT_DETECTED = "Reflective Drift Detected"
     DESYNCHRONIZED = "Desynchronized"
 
+
 class ReflectiveEnergyState(StrEnum):
     STABLE = "Stable"
     HIGH_FLUX = "High_Flux"
     LOW_SYNC = "Low_Sync"
+
 
 class MetaState(StrEnum):
     SYNCHRONIZED = "synchronized"
     COHERENT = "coherent"
     LEARNING = "learning"
     DRIFT_DETECTED = "drift_detected"
+
 
 class ExecutionStatus(StrEnum):
     EXECUTED = "Executed"
@@ -220,12 +241,24 @@ REFLECTIVE_MANIFEST: Dict[str, Any] = {
     "version": "v7.0r∞",
     "description": "Reflective Layer - Complete unified system with 30 modules.",
     "modules": [
-        "adaptive_tii_thresholds", "algo_precision_engine", "adaptive_field_stabilizer",
-        "eaf_score_calculator", "hybrid_reflective_bridge_manager", "quantum_reflective_bridge",
-        "reflective_cycle_manager", "data_bridge", "fusion_reflective_propagation_coefficient",
-        "reflective_mode_controller", "reflective_orchestrator", "reflective_quad_energy_manager",
-        "reflective_symmetry_patch", "reflective_trade_execution_bridge", "reflective_trade_pipeline_controller",
-        "reflective_evolution_engine", "reflective_feedback_loop", "reflective_logger",
+        "adaptive_tii_thresholds",
+        "algo_precision_engine",
+        "adaptive_field_stabilizer",
+        "eaf_score_calculator",
+        "hybrid_reflective_bridge_manager",
+        "quantum_reflective_bridge",
+        "reflective_cycle_manager",
+        "data_bridge",
+        "fusion_reflective_propagation_coefficient",
+        "reflective_mode_controller",
+        "reflective_orchestrator",
+        "reflective_quad_energy_manager",
+        "reflective_symmetry_patch",
+        "reflective_trade_execution_bridge",
+        "reflective_trade_pipeline_controller",
+        "reflective_evolution_engine",
+        "reflective_feedback_loop",
+        "reflective_logger",
     ],
     "layers": ["L12", "L13", "L14", "L15", "L16"],
     "energy_stability": {"threshold_alpha_beta_gamma": 0.0025, "reflective_energy_status": "Stable"},
@@ -235,10 +268,30 @@ REFLECTIVE_MANIFEST: Dict[str, Any] = {
 PIPELINE_CONFIG: Dict[str, Any] = {
     "version": "v6.0_EFS_PATCH",
     "modes": {
-        "balanced": {"qcf_bullish_threshold": 0.60, "qcf_bearish_threshold": 0.40, "tii_threshold": 0.92, "wlwci_weight": 0.50},
-        "inversion": {"reflective_inversion_threshold": 0.93, "qcf_inversion_factor": 1.15, "tii_threshold": 0.95, "wlwci_weight": 0.65},
-        "aggressive": {"qcf_bullish_threshold": 0.55, "qcf_bearish_threshold": 0.45, "tii_threshold": 0.88, "wlwci_weight": 0.40},
-        "defensive": {"qcf_bullish_threshold": 0.70, "qcf_bearish_threshold": 0.30, "tii_threshold": 0.96, "wlwci_weight": 0.60},
+        "balanced": {
+            "qcf_bullish_threshold": 0.60,
+            "qcf_bearish_threshold": 0.40,
+            "tii_threshold": 0.92,
+            "wlwci_weight": 0.50,
+        },
+        "inversion": {
+            "reflective_inversion_threshold": 0.93,
+            "qcf_inversion_factor": 1.15,
+            "tii_threshold": 0.95,
+            "wlwci_weight": 0.65,
+        },
+        "aggressive": {
+            "qcf_bullish_threshold": 0.55,
+            "qcf_bearish_threshold": 0.45,
+            "tii_threshold": 0.88,
+            "wlwci_weight": 0.40,
+        },
+        "defensive": {
+            "qcf_bullish_threshold": 0.70,
+            "qcf_bearish_threshold": 0.30,
+            "tii_threshold": 0.96,
+            "wlwci_weight": 0.60,
+        },
     },
     "field_state_triggers": {
         "accumulation": {"preferred_mode": "balanced", "gradient_max": 0.02},
@@ -281,7 +334,8 @@ VAULT_AUDIT_CONFIG: Dict[str, Any] = {
 }
 
 HEXA_VAULT_SCHEMA: Dict[str, Any] = {
-    "title": "HexaVaultGovernance", "version": "v3.0",
+    "title": "HexaVaultGovernance",
+    "version": "v3.0",
     "governance_rules": {"access_control": {"read": ["all_layers"], "write": ["orchestrator", "meta"]}},
     "vault_structure": {"required_folders": ["logs", "snapshots", "configs", "cache"]},
 }
@@ -296,11 +350,43 @@ SYMMETRY_PATCH_CONFIG: Dict[str, Any] = {
     "auto_correction": {"enabled": True, "max_iterations": 5, "convergence_threshold": 0.001},
 }
 
-DEFAULT_TII_THRESHOLDS: Dict[str, float] = {"strong_trend": 0.75, "moderate_trend": 0.50, "weak_trend": 0.25, "ranging": 0.10}
-TRADE_VALIDATION_THRESHOLDS: Dict[str, float] = {"min_rr_ratio": 2.0, "min_integrity_index": 0.97, "min_fusion_confidence": 0.93, "min_tii": 0.92}
-EAF_CONFIG: Dict[str, Any] = {"fear_weight": 0.25, "greed_weight": 0.25, "fatigue_weight": 0.20, "frustration_weight": 0.30, "min_eaf_for_trade": 0.70, "max_consecutive_losses": 3, "cooldown_after_losses_minutes": 30, "max_consecutive_hours": 4}
-QUANTUM_BRIDGE_CONFIG: Dict[str, Any] = {"min_frpc": 0.96, "min_tii": 0.92, "max_drift": 0.005, "sync_interval_ms": 100, "coherence_threshold": 0.95}
-MODE_CONTROLLER_CONFIG: Dict[str, Any] = {"threshold_drift": 0.002, "threshold_rcadj": 0.8, "threshold_qcf": 0.9, "volatility_trigger": 1.8, "hysteresis_factor": 0.85, "switch_cooldown": 300.0}
+DEFAULT_TII_THRESHOLDS: Dict[str, float] = {
+    "strong_trend": 0.75,
+    "moderate_trend": 0.50,
+    "weak_trend": 0.25,
+    "ranging": 0.10,
+}
+TRADE_VALIDATION_THRESHOLDS: Dict[str, float] = {
+    "min_rr_ratio": 2.0,
+    "min_integrity_index": 0.97,
+    "min_fusion_confidence": 0.93,
+    "min_tii": 0.92,
+}
+EAF_CONFIG: Dict[str, Any] = {
+    "fear_weight": 0.25,
+    "greed_weight": 0.25,
+    "fatigue_weight": 0.20,
+    "frustration_weight": 0.30,
+    "min_eaf_for_trade": 0.70,
+    "max_consecutive_losses": 3,
+    "cooldown_after_losses_minutes": 30,
+    "max_consecutive_hours": 4,
+}
+QUANTUM_BRIDGE_CONFIG: Dict[str, Any] = {
+    "min_frpc": 0.96,
+    "min_tii": 0.92,
+    "max_drift": 0.005,
+    "sync_interval_ms": 100,
+    "coherence_threshold": 0.95,
+}
+MODE_CONTROLLER_CONFIG: Dict[str, Any] = {
+    "threshold_drift": 0.002,
+    "threshold_rcadj": 0.8,
+    "threshold_qcf": 0.9,
+    "volatility_trigger": 1.8,
+    "hysteresis_factor": 0.85,
+    "switch_cooldown": 300.0,
+}
 LAMBDA_ESI: float = 0.06
 
 
@@ -308,12 +394,14 @@ LAMBDA_ESI: float = 0.06
 # 📦 SECTION 4: DATACLASSES (24)
 # =============================================================================
 
+
 @dataclass
 class TIIThresholds:
     strong_trend: float = 0.75
     moderate_trend: float = 0.50
     weak_trend: float = 0.25
     ranging: float = 0.10
+
     def classify(self, tii_value: float) -> TIIClassification:
         if tii_value >= self.strong_trend:
             return TIIClassification.STRONG_TREND
@@ -324,8 +412,15 @@ class TIIThresholds:
         if tii_value >= self.ranging:
             return TIIClassification.RANGING
         return TIIClassification.NO_TREND
+
     def to_dict(self) -> Dict[str, float]:
-        return {"strong_trend": self.strong_trend, "moderate_trend": self.moderate_trend, "weak_trend": self.weak_trend, "ranging": self.ranging}
+        return {
+            "strong_trend": self.strong_trend,
+            "moderate_trend": self.moderate_trend,
+            "weak_trend": self.weak_trend,
+            "ranging": self.ranging,
+        }
+
 
 @dataclass
 class TIIResult:
@@ -337,8 +432,10 @@ class TIIResult:
     status: TIIStatus
     precision_factor: float
     components: Dict[str, float]
+
     def to_dict(self) -> Dict[str, Any]:
         return {"timestamp": self.timestamp.isoformat(), "tii": round(self.tii, 4), "status": self.status.value}
+
 
 @dataclass
 class FieldStabilityResult:
@@ -351,6 +448,7 @@ class FieldStabilityResult:
     field_state: FieldState
     sync_cluster: List[str]
 
+
 @dataclass
 class TradeValidation:
     is_valid: bool
@@ -360,6 +458,7 @@ class TradeValidation:
     fusion_confidence: float
     checks_passed: Dict[str, bool]
 
+
 @dataclass
 class PipelineState:
     mode: PipelineMode
@@ -368,6 +467,7 @@ class PipelineState:
     qcf_thresholds: Dict[str, float]
     field_state: FieldState | None = None
     last_mode_change: datetime | None = None
+
 
 @dataclass
 class VaultStatus:
@@ -379,6 +479,7 @@ class VaultStatus:
     file_count: int
     total_size_mb: float
 
+
 @dataclass
 class IntegrityAuditResult:
     timestamp: datetime
@@ -389,6 +490,7 @@ class IntegrityAuditResult:
     issues_found: List[str]
     remediation_applied: bool
 
+
 @dataclass
 class ReflectiveCycleResult:
     metrics: Dict[str, Any]
@@ -396,6 +498,7 @@ class ReflectiveCycleResult:
     active_mode: PipelineMode
     tii_threshold: float
     wlwci_weight: float
+
 
 @dataclass
 class EmotionalInput:
@@ -411,6 +514,7 @@ class EmotionalInput:
     trades_in_last_hour: int = 0
     avg_decision_time_seconds: float = 30.0
     stop_moved_count: int = 0
+
 
 @dataclass
 class EAFResult:
@@ -428,6 +532,7 @@ class EAFResult:
     cooldown_minutes: int
     timestamp: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
 
+
 @dataclass
 class QuantumState:
     probability_matrix_ready: bool = False
@@ -437,6 +542,7 @@ class QuantumState:
     decision_pending: bool = False
     last_decision: str | None = None
 
+
 @dataclass
 class ReflectiveState:
     frpc_score: float = 0.978
@@ -445,6 +551,7 @@ class ReflectiveState:
     drift: float = 0.004
     integrity_valid: bool = True
 
+
 @dataclass
 class BridgeState:
     quantum: QuantumState
@@ -452,6 +559,7 @@ class BridgeState:
     sync_status: SyncStatus
     last_sync: str
     coherence_achieved: bool
+
 
 @dataclass
 class FRPCResult:
@@ -462,21 +570,26 @@ class FRPCResult:
     alpha_sync: float
     gamma_phase: float
     inputs: Dict[str, float]
+
     def to_dict(self) -> Dict[str, Any]:
         return {"frpc": round(self.frpc, 4), "propagation_state": self.propagation_state.value}
+
 
 @dataclass
 class PipelineStage:
     """Represents a stage in the trade pipeline."""
+
     name: str
     handler: Callable | None = None
     timeout: float = 30.0
     required: bool = True
     enabled: bool = True
 
+
 @dataclass
 class PipelineResult:
     """Result from pipeline execution."""
+
     success: bool
     stages_completed: List[str]
     stages_failed: List[str]
@@ -485,14 +598,22 @@ class PipelineResult:
     duration_ms: float = 0.0
     timestamp: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
 
+
 @dataclass
 class EvolutionSnapshot:
     """REE snapshot for downstream consumers."""
+
     timestamp: str
     reflective_integrity: float
     meta_weights: Dict[str, float]
+
     def as_dict(self) -> Dict[str, Any]:
-        return {"timestamp": self.timestamp, "reflective_integrity": self.reflective_integrity, "meta_weights": self.meta_weights}
+        return {
+            "timestamp": self.timestamp,
+            "reflective_integrity": self.reflective_integrity,
+            "meta_weights": self.meta_weights,
+        }
+
 
 @dataclass
 class FeedbackSnapshot:
@@ -505,31 +626,46 @@ class FeedbackSnapshot:
     bias: str
     source_timestamp: str
     evaluated_at: str
+
     def to_dict(self) -> Dict[str, Any]:
-        return {"pair": self.pair, "reflective_integrity": self.reflective_integrity, "meta_state": self.meta_state, "alpha": self.alpha, "beta": self.beta, "gamma": self.gamma}
+        return {
+            "pair": self.pair,
+            "reflective_integrity": self.reflective_integrity,
+            "meta_state": self.meta_state,
+            "alpha": self.alpha,
+            "beta": self.beta,
+            "gamma": self.gamma,
+        }
+
 
 @dataclass
 class ReflectiveTick:
     """Single tick from reflective stream."""
+
     pair: str
     price: float
     timestamp: int
     reflective_energy: float
     iso_datetime: str
 
+
 @dataclass
 class QuadEnergyResult:
     """Result from quad energy calculation."""
+
     mean_energy: float
     reflective_coherence: float
     drift: float
     timestamp: str
+
     def to_dict(self) -> Dict[str, Any]:
         return {"mean_energy": self.mean_energy, "reflective_coherence": self.reflective_coherence, "drift": self.drift}
+
 
 @dataclass
 class SymmetryEvaluation:
     """Result from symmetry patch evaluation."""
+
     pair: str
     timestamp: str
     e3d_star: float
@@ -545,6 +681,7 @@ class SymmetryEvaluation:
 @dataclass
 class SymmetryComputationInput:
     """Input payload for symmetry state evaluation."""
+
     pair: str
     deltas: Tuple[float, float, float]  # delta_p, delta_t, delta_v
     trq_mean: float
@@ -554,8 +691,10 @@ class SymmetryComputationInput:
     integrity_index: float
     drift: float
 
+
 class ReflectiveSymmetryPatchV6:
     """Dual-Polarity Reflective Balance (DPRB) normalization."""
+
     VERSION = "6.0"
 
     def __init__(self, lambda_esi: float = LAMBDA_ESI) -> None:
@@ -577,7 +716,9 @@ class ReflectiveSymmetryPatchV6:
         avg = (alpha + beta + gamma) / 3
         return abs(avg), (alpha - beta + gamma) / 3
 
-    def compute_tii_symmetric(self, reflective_conf: float, integrity_index: float, drift: float, polarity: float) -> float:
+    def compute_tii_symmetric(
+        self, reflective_conf: float, integrity_index: float, drift: float, polarity: float
+    ) -> float:
         if not -1 <= drift <= 1:
             raise ValueError("drift must be within [-1, 1]")
         return max(0.0, min(1.0, reflective_conf * integrity_index * (1 - abs(drift)) / 3 * (1 + abs(polarity))))

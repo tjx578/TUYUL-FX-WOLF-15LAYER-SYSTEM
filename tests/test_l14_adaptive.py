@@ -25,6 +25,7 @@ from journal.l14_adaptive import (
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _make_reflection(
     signal_id: str,
     symbol: str,
@@ -79,26 +80,76 @@ def mixed_history() -> list[L13ReflectionRecord]:
     positive_l8 = LayerContribution(layer="L8_tii", accuracy_contribution="POSITIVE")
 
     return [
-        _make_reflection("S01", "EURUSD", ReflectionVerdict.CORRECT_EXECUTE,
-                         lesson_tags=("clean_exit",), layer_contribs=(positive_l4, positive_l8)),
-        _make_reflection("S02", "EURUSD", ReflectionVerdict.CORRECT_EXECUTE,
-                         lesson_tags=("clean_exit",), layer_contribs=(positive_l4, neutral_l8)),
-        _make_reflection("S03", "EURUSD", ReflectionVerdict.INCORRECT_EXECUTE,
-                         lesson_tags=("poor_entry_timing",), layer_contribs=(negative_l4, neutral_l8)),
-        _make_reflection("S04", "GBPJPY", ReflectionVerdict.CORRECT_EXECUTE,
-                         lesson_tags=("clean_exit",), layer_contribs=(positive_l4,)),
-        _make_reflection("S05", "GBPJPY", ReflectionVerdict.INCORRECT_EXECUTE,
-                         lesson_tags=("loss_taken",), layer_contribs=(negative_l4,)),
-        _make_reflection("S06", "GBPJPY", ReflectionVerdict.INCORRECT_EXECUTE,
-                         lesson_tags=("loss_taken", "poor_entry_timing"), layer_contribs=(negative_l4,)),
-        _make_reflection("S07", "XAUUSD", ReflectionVerdict.CORRECT_REJECT,
-                         lesson_tags=("good_rejection",), layer_contribs=(positive_l4,)),
-        _make_reflection("S08", "XAUUSD", ReflectionVerdict.CORRECT_REJECT,
-                         lesson_tags=("good_rejection",), layer_contribs=(positive_l4,)),
-        _make_reflection("S09", "XAUUSD", ReflectionVerdict.INCORRECT_REJECT,
-                         lesson_tags=("missed_opportunity",), layer_contribs=(negative_l4,)),
-        _make_reflection("S10", "EURUSD", ReflectionVerdict.CORRECT_EXECUTE,
-                         lesson_tags=("excellent_entry_timing",), layer_contribs=(positive_l4,)),
+        _make_reflection(
+            "S01",
+            "EURUSD",
+            ReflectionVerdict.CORRECT_EXECUTE,
+            lesson_tags=("clean_exit",),
+            layer_contribs=(positive_l4, positive_l8),
+        ),
+        _make_reflection(
+            "S02",
+            "EURUSD",
+            ReflectionVerdict.CORRECT_EXECUTE,
+            lesson_tags=("clean_exit",),
+            layer_contribs=(positive_l4, neutral_l8),
+        ),
+        _make_reflection(
+            "S03",
+            "EURUSD",
+            ReflectionVerdict.INCORRECT_EXECUTE,
+            lesson_tags=("poor_entry_timing",),
+            layer_contribs=(negative_l4, neutral_l8),
+        ),
+        _make_reflection(
+            "S04",
+            "GBPJPY",
+            ReflectionVerdict.CORRECT_EXECUTE,
+            lesson_tags=("clean_exit",),
+            layer_contribs=(positive_l4,),
+        ),
+        _make_reflection(
+            "S05",
+            "GBPJPY",
+            ReflectionVerdict.INCORRECT_EXECUTE,
+            lesson_tags=("loss_taken",),
+            layer_contribs=(negative_l4,),
+        ),
+        _make_reflection(
+            "S06",
+            "GBPJPY",
+            ReflectionVerdict.INCORRECT_EXECUTE,
+            lesson_tags=("loss_taken", "poor_entry_timing"),
+            layer_contribs=(negative_l4,),
+        ),
+        _make_reflection(
+            "S07",
+            "XAUUSD",
+            ReflectionVerdict.CORRECT_REJECT,
+            lesson_tags=("good_rejection",),
+            layer_contribs=(positive_l4,),
+        ),
+        _make_reflection(
+            "S08",
+            "XAUUSD",
+            ReflectionVerdict.CORRECT_REJECT,
+            lesson_tags=("good_rejection",),
+            layer_contribs=(positive_l4,),
+        ),
+        _make_reflection(
+            "S09",
+            "XAUUSD",
+            ReflectionVerdict.INCORRECT_REJECT,
+            lesson_tags=("missed_opportunity",),
+            layer_contribs=(negative_l4,),
+        ),
+        _make_reflection(
+            "S10",
+            "EURUSD",
+            ReflectionVerdict.CORRECT_EXECUTE,
+            lesson_tags=("excellent_entry_timing",),
+            layer_contribs=(positive_l4,),
+        ),
     ]
 
 
@@ -110,6 +161,7 @@ def empty_history() -> list[L13ReflectionRecord]:
 # ---------------------------------------------------------------------------
 # Overall win rate
 # ---------------------------------------------------------------------------
+
 
 class TestOverallWinRate:
     def test_mixed_win_rate(self, mixed_history: list[L13ReflectionRecord]) -> None:
@@ -125,16 +177,14 @@ class TestOverallWinRate:
         assert _compute_overall_win_rate(empty_history) == 0.0
 
     def test_all_wins(self) -> None:
-        records = [
-            _make_reflection(f"S{i}", "EURUSD", ReflectionVerdict.CORRECT_EXECUTE)
-            for i in range(5)
-        ]
+        records = [_make_reflection(f"S{i}", "EURUSD", ReflectionVerdict.CORRECT_EXECUTE) for i in range(5)]
         assert _compute_overall_win_rate(records) == 1.0
 
 
 # ---------------------------------------------------------------------------
 # Top lesson tags
 # ---------------------------------------------------------------------------
+
 
 class TestTopLessonTags:
     def test_most_frequent_tags(self, mixed_history: list[L13ReflectionRecord]) -> None:
@@ -152,6 +202,7 @@ class TestTopLessonTags:
 # ---------------------------------------------------------------------------
 # Full analyze_patterns pipeline
 # ---------------------------------------------------------------------------
+
 
 class TestAnalyzePatterns:
     def test_returns_l14_result(self, mixed_history: list[L13ReflectionRecord]) -> None:
@@ -189,9 +240,7 @@ class TestAnalyzePatterns:
         layer_insights = [i for i in result.insights if i.insight_type == InsightType.LAYER_ACCURACY]
         assert len(layer_insights) > 0
 
-    def test_weight_suggestions_are_advisory(
-        self, mixed_history: list[L13ReflectionRecord]
-    ) -> None:
+    def test_weight_suggestions_are_advisory(self, mixed_history: list[L13ReflectionRecord]) -> None:
         """L14 weight suggestions MUST be advisory-only, never auto-applied."""
         result = analyze_patterns(mixed_history, "A001", "2026-W07")
         for suggestion in result.weight_suggestions:
@@ -210,9 +259,7 @@ class TestAnalyzePatterns:
         result = analyze_patterns(mixed_history, "A001", "2026-W07", metadata=meta)
         assert result.metadata == meta
 
-    def test_no_side_effects_on_input(
-        self, mixed_history: list[L13ReflectionRecord]
-    ) -> None:
+    def test_no_side_effects_on_input(self, mixed_history: list[L13ReflectionRecord]) -> None:
         original_len = len(mixed_history)
         original_first_id = mixed_history[0].signal_id
         _ = analyze_patterns(mixed_history, "A001", "2026-W07")
@@ -223,9 +270,7 @@ class TestAnalyzePatterns:
         result = analyze_patterns(mixed_history, "A001", "2026-W07")
         assert "2026" in result.timestamp
 
-    def test_top_lesson_tags_populated(
-        self, mixed_history: list[L13ReflectionRecord]
-    ) -> None:
+    def test_top_lesson_tags_populated(self, mixed_history: list[L13ReflectionRecord]) -> None:
         result = analyze_patterns(mixed_history, "A001", "2026-W07")
         assert len(result.top_lesson_tags) > 0
 
@@ -234,19 +279,19 @@ class TestAnalyzePatterns:
 # Constitutional boundary enforcement
 # ---------------------------------------------------------------------------
 
+
 class TestConstitutionalBoundary:
     """L14 MUST NOT have any method that modifies L12 verdicts or triggers execution."""
 
     def test_no_execute_method(self) -> None:
         """L14 module must not expose any execute/trade function."""
         import journal.l14_adaptive as mod
+
         public_names = [n for n in dir(mod) if not n.startswith("_")]
         forbidden = {"execute", "place_order", "send_trade", "override_verdict", "modify_l12"}
         assert forbidden.isdisjoint(set(public_names))
 
-    def test_result_has_no_execute_field(
-        self, mixed_history: list[L13ReflectionRecord]
-    ) -> None:
+    def test_result_has_no_execute_field(self, mixed_history: list[L13ReflectionRecord]) -> None:
         result = analyze_patterns(mixed_history, "A001", "2026-W07")
         field_names = set(result.__dataclass_fields__.keys())
         forbidden_fields = {"trade_action", "execute", "override", "order_id"}

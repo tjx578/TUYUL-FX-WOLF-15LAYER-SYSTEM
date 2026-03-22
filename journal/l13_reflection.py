@@ -25,41 +25,45 @@ logger = logging.getLogger(__name__)
 
 class ReflectionVerdict(StrEnum):
     """Was the original L12 decision correct in hindsight?"""
-    CORRECT_EXECUTE = "CORRECT_EXECUTE"         # took trade, was profitable
-    CORRECT_REJECT = "CORRECT_REJECT"           # rejected, would have lost
-    INCORRECT_EXECUTE = "INCORRECT_EXECUTE"     # took trade, lost
-    INCORRECT_REJECT = "INCORRECT_REJECT"       # rejected, would have been profitable
-    INCONCLUSIVE = "INCONCLUSIVE"               # no clear outcome
+
+    CORRECT_EXECUTE = "CORRECT_EXECUTE"  # took trade, was profitable
+    CORRECT_REJECT = "CORRECT_REJECT"  # rejected, would have lost
+    INCORRECT_EXECUTE = "INCORRECT_EXECUTE"  # took trade, lost
+    INCORRECT_REJECT = "INCORRECT_REJECT"  # rejected, would have been profitable
+    INCONCLUSIVE = "INCONCLUSIVE"  # no clear outcome
 
 
 class OutcomeType(StrEnum):
     """Actual trade outcome category."""
+
     WIN = "WIN"
     LOSS = "LOSS"
     BREAKEVEN = "BREAKEVEN"
-    EXPIRED = "EXPIRED"             # pending never filled
+    EXPIRED = "EXPIRED"  # pending never filled
     REJECTED_NO_TRADE = "REJECTED"  # L12 said no
 
 
 @dataclass(frozen=True)
 class TradeOutcome:
     """Actual result data for a completed or expired setup."""
+
     symbol: str
     outcome_type: OutcomeType
     pnl_pips: float | None = None
     pnl_percent: float | None = None
-    actual_rr: float | None = None       # actual risk:reward achieved
-    planned_rr: float | None = None      # what L12 planned
+    actual_rr: float | None = None  # actual risk:reward achieved
+    planned_rr: float | None = None  # what L12 planned
     hold_duration_minutes: float | None = None
-    exit_reason: str = ""                   # TP hit, SL hit, manual, expired
+    exit_reason: str = ""  # TP hit, SL hit, manual, expired
 
 
 @dataclass(frozen=True)
 class OriginalDecision:
     """Snapshot of what L12 decided at signal time."""
+
     signal_id: str
     symbol: str
-    verdict: str                    # EXECUTE / REJECT / HOLD
+    verdict: str  # EXECUTE / REJECT / HOLD
     confidence: float
     wolf_score: float | None = None
     tii_score: float | None = None
@@ -70,8 +74,9 @@ class OriginalDecision:
 @dataclass(frozen=True)
 class LayerContribution:
     """How much a specific layer contributed to the outcome — positive or negative."""
+
     layer: str
-    accuracy_contribution: str      # POSITIVE | NEGATIVE | NEUTRAL
+    accuracy_contribution: str  # POSITIVE | NEGATIVE | NEUTRAL
     note: str = ""
 
 
@@ -81,15 +86,16 @@ class L13ReflectionRecord:
     Immutable reflection output. Appended to journal (J4).
     This record MUST NOT feed back into L12 in real-time.
     """
+
     signal_id: str
     symbol: str
     reflection_verdict: ReflectionVerdict
     original_decision: OriginalDecision
     trade_outcome: TradeOutcome
     layer_contributions: tuple[LayerContribution, ...]
-    timing_quality: float               # 0–100: how good was entry timing
-    exit_quality: float                 # 0–100: how good was exit execution
-    lesson_tags: tuple[str, ...]        # e.g. ("early_entry", "held_too_long")
+    timing_quality: float  # 0–100: how good was entry timing
+    exit_quality: float  # 0–100: how good was exit execution
+    lesson_tags: tuple[str, ...]  # e.g. ("early_entry", "held_too_long")
     reflection_notes: str
     timestamp: str
     metadata: dict = field(default_factory=dict)
@@ -145,7 +151,7 @@ def _evaluate_timing_quality(
     Pure function.
     """
     if outcome.actual_rr is None or outcome.planned_rr is None:
-        return 50.0     # neutral when data unavailable
+        return 50.0  # neutral when data unavailable
 
     if outcome.planned_rr <= 0:
         return 50.0
@@ -169,7 +175,7 @@ def _evaluate_exit_quality(
         return 90.0
     if "sl" in exit_lower or "stop_loss" in exit_lower:
         if outcome.pnl_pips is not None and outcome.pnl_pips > 0:
-            return 60.0     # trailed but hit SL in profit
+            return 60.0  # trailed but hit SL in profit
         return 30.0
     if "manual" in exit_lower:
         if outcome.outcome_type == OutcomeType.WIN:
@@ -233,53 +239,80 @@ def _evaluate_layer_contributions(
     # L4 scoring
     if original.wolf_score is not None:
         if original.wolf_score >= 70 and was_correct:
-            contributions.append(LayerContribution(
-                layer="L4_scoring", accuracy_contribution="POSITIVE",
-                note=f"High wolf score {original.wolf_score:.1f} aligned with win",
-            ))
+            contributions.append(
+                LayerContribution(
+                    layer="L4_scoring",
+                    accuracy_contribution="POSITIVE",
+                    note=f"High wolf score {original.wolf_score:.1f} aligned with win",
+                )
+            )
         elif original.wolf_score >= 70 and not was_correct:
-            contributions.append(LayerContribution(
-                layer="L4_scoring", accuracy_contribution="NEGATIVE",
-                note=f"High wolf score {original.wolf_score:.1f} but trade lost",
-            ))
+            contributions.append(
+                LayerContribution(
+                    layer="L4_scoring",
+                    accuracy_contribution="NEGATIVE",
+                    note=f"High wolf score {original.wolf_score:.1f} but trade lost",
+                )
+            )
         else:
-            contributions.append(LayerContribution(
-                layer="L4_scoring", accuracy_contribution="NEUTRAL",
-            ))
+            contributions.append(
+                LayerContribution(
+                    layer="L4_scoring",
+                    accuracy_contribution="NEUTRAL",
+                )
+            )
 
     # L8 TII
     if original.tii_score is not None:
         if original.tii_score >= 70 and was_correct:
-            contributions.append(LayerContribution(
-                layer="L8_tii", accuracy_contribution="POSITIVE",
-                note=f"High TII {original.tii_score:.1f} confirmed clean setup",
-            ))
+            contributions.append(
+                LayerContribution(
+                    layer="L8_tii",
+                    accuracy_contribution="POSITIVE",
+                    note=f"High TII {original.tii_score:.1f} confirmed clean setup",
+                )
+            )
         elif original.tii_score < 50 and not was_correct:
-            contributions.append(LayerContribution(
-                layer="L8_tii", accuracy_contribution="POSITIVE",
-                note=f"Low TII {original.tii_score:.1f} correctly flagged risk",
-            ))
+            contributions.append(
+                LayerContribution(
+                    layer="L8_tii",
+                    accuracy_contribution="POSITIVE",
+                    note=f"Low TII {original.tii_score:.1f} correctly flagged risk",
+                )
+            )
         else:
-            contributions.append(LayerContribution(
-                layer="L8_tii", accuracy_contribution="NEUTRAL",
-            ))
+            contributions.append(
+                LayerContribution(
+                    layer="L8_tii",
+                    accuracy_contribution="NEUTRAL",
+                )
+            )
 
     # L5 psych
     if original.psych_state:
         if original.psych_state in ("TILT", "IMPAIRED") and not was_correct:
-            contributions.append(LayerContribution(
-                layer="L5_psychology", accuracy_contribution="POSITIVE",
-                note=f"Psych state '{original.psych_state}' warned correctly",
-            ))
+            contributions.append(
+                LayerContribution(
+                    layer="L5_psychology",
+                    accuracy_contribution="POSITIVE",
+                    note=f"Psych state '{original.psych_state}' warned correctly",
+                )
+            )
         elif original.psych_state in ("TILT", "IMPAIRED") and was_correct:
-            contributions.append(LayerContribution(
-                layer="L5_psychology", accuracy_contribution="NEGATIVE",
-                note=f"Psych state '{original.psych_state}' was false alarm",
-            ))
+            contributions.append(
+                LayerContribution(
+                    layer="L5_psychology",
+                    accuracy_contribution="NEGATIVE",
+                    note=f"Psych state '{original.psych_state}' was false alarm",
+                )
+            )
         else:
-            contributions.append(LayerContribution(
-                layer="L5_psychology", accuracy_contribution="NEUTRAL",
-            ))
+            contributions.append(
+                LayerContribution(
+                    layer="L5_psychology",
+                    accuracy_contribution="NEUTRAL",
+                )
+            )
 
     return contributions
 
@@ -319,10 +352,14 @@ def reflect(
     timing_quality = _evaluate_timing_quality(trade_outcome)
     exit_quality = _evaluate_exit_quality(trade_outcome)
     lesson_tags = _extract_lesson_tags(
-        reflection_verdict, trade_outcome, timing_quality, exit_quality,
+        reflection_verdict,
+        trade_outcome,
+        timing_quality,
+        exit_quality,
     )
     layer_contributions = _evaluate_layer_contributions(
-        original_decision, trade_outcome,
+        original_decision,
+        trade_outcome,
     )
 
     record = L13ReflectionRecord(
@@ -342,7 +379,11 @@ def reflect(
 
     logger.info(
         "L13 %s [%s] | verdict=%s timing=%.1f exit=%.1f | tags=%s",
-        record.symbol, record.signal_id, reflection_verdict.value,
-        timing_quality, exit_quality, lesson_tags,
+        record.symbol,
+        record.signal_id,
+        reflection_verdict.value,
+        timing_quality,
+        exit_quality,
+        lesson_tags,
     )
     return record

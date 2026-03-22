@@ -9,7 +9,6 @@ from __future__ import annotations
 import json
 import logging
 import time
-
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
@@ -19,14 +18,15 @@ logger = logging.getLogger("tuyul.ea.mt5_bridge")
 @dataclass
 class ExecutionCommand:
     """Command sent TO the EA. Dashboard authority, not analysis."""
+
     signal_id: str
     symbol: str
-    direction: str          # "BUY" or "SELL"
-    order_type: str         # "LIMIT", "STOP", "MARKET"
+    direction: str  # "BUY" or "SELL"
+    order_type: str  # "LIMIT", "STOP", "MARKET"
     entry_price: float
     stop_loss: float
     take_profit: float
-    lot_size: float         # FROM dashboard risk calculator only
+    lot_size: float  # FROM dashboard risk calculator only
     magic_number: int = 151515
     comment: str = "TUYUL-FX"
     expiry_seconds: float = 300.0
@@ -40,6 +40,7 @@ class ExecutionCommand:
 @dataclass
 class ExecutionReport:
     """Report FROM the EA back to dashboard."""
+
     signal_id: str
     event: str  # ORDER_PLACED, ORDER_FILLED, ORDER_CANCELLED, ORDER_EXPIRED, ORDER_FAILED
     broker_ticket: int | None = None
@@ -79,8 +80,12 @@ class FileBasedMT5Bridge:
             filepath.write_text(json.dumps(payload, indent=2), encoding="utf-8")
             logger.info(
                 "Command sent: %s | %s %s %s | lot=%.2f entry=%.5f",
-                command.signal_id, command.symbol, command.direction,
-                command.order_type, command.lot_size, command.entry_price,
+                command.signal_id,
+                command.symbol,
+                command.direction,
+                command.order_type,
+                command.lot_size,
+                command.entry_price,
             )
             return True
         except Exception as e:
@@ -107,7 +112,9 @@ class FileBasedMT5Bridge:
                 filepath.rename(archive_path)
                 logger.info(
                     "Report received: %s | event=%s | ticket=%s",
-                    report.signal_id, report.event, report.broker_ticket,
+                    report.signal_id,
+                    report.event,
+                    report.broker_ticket,
                 )
             except Exception as e:
                 logger.error("Failed to parse report %s: %s", filepath, e)

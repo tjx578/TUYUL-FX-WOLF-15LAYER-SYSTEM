@@ -156,6 +156,7 @@ def test_regime_recalibration_runs_and_publishes(monkeypatch: MonkeyPatch) -> No
 # Crash-protection: run() handles missing data gracefully
 # ═══════════════════════════════════════════════════════════════════
 
+
 def test_montecarlo_run_handles_none_payload_gracefully(monkeypatch: MonkeyPatch) -> None:
     """run() must not raise when load_json_payload returns None."""
     called = {"publish": False}
@@ -227,9 +228,7 @@ def test_montecarlo_validate_startup_with_inline_json(monkeypatch: MonkeyPatch) 
     assert _validate_startup() is True
 
 
-def test_load_json_payload_ignores_placeholder_inline_and_uses_file(
-    monkeypatch: MonkeyPatch, tmp_path: Path
-) -> None:
+def test_load_json_payload_ignores_placeholder_inline_and_uses_file(monkeypatch: MonkeyPatch, tmp_path: Path) -> None:
     payload_path = tmp_path / "matrix.json"
     payload_path.write_text('{"EURUSD": [1.0], "GBPUSD": [2.0]}', encoding="utf-8")
 

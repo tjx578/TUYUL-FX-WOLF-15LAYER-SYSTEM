@@ -41,9 +41,9 @@ class TestTakeSignalStateMachine:
     def test_terminal_states_have_no_outgoing_transitions(self):
         """Terminal states must map to empty frozenset (no outgoing transitions)."""
         for state in TERMINAL_STATES:
-            assert (
-                VALID_TRANSITIONS[state] == frozenset()
-            ), f"Terminal state {state} has outgoing transitions: {VALID_TRANSITIONS[state]}"
+            assert VALID_TRANSITIONS[state] == frozenset(), (
+                f"Terminal state {state} has outgoing transitions: {VALID_TRANSITIONS[state]}"
+            )
 
     def test_terminal_states_are_correct(self):
         expected = frozenset(

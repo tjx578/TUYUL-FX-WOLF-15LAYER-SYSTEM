@@ -1,10 +1,16 @@
 class PositionSizingResult:
     """Result of position sizing calculation."""
 
-    def __init__(self, lot_size: float = 0.0, risk_amount: float = 0.0,
-                 risk_percent: float = 0.0, stop_loss_pips: float = 0.0,
-                 pip_value: float = 0.0, margin_required: float = 0.0,
-                 max_safe_lot: float = 0.0):
+    def __init__(
+        self,
+        lot_size: float = 0.0,
+        risk_amount: float = 0.0,
+        risk_percent: float = 0.0,
+        stop_loss_pips: float = 0.0,
+        pip_value: float = 0.0,
+        margin_required: float = 0.0,
+        max_safe_lot: float = 0.0,
+    ):
         self.lot_size = lot_size
         self.risk_amount = risk_amount
         self.risk_percent = risk_percent

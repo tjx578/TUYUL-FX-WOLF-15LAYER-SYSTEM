@@ -35,9 +35,7 @@ async def assert_required_tables(engine: AsyncEngine, tables: Iterable[str]) -> 
                 if exists is None:
                     missing.append(fqtn)
     except SQLAlchemyError as exc:
-        raise DatabaseSchemaError(
-            f"Failed database schema readiness check: {exc.__class__.__name__}"
-        ) from exc
+        raise DatabaseSchemaError(f"Failed database schema readiness check: {exc.__class__.__name__}") from exc
 
     if missing:
         raise DatabaseSchemaError(

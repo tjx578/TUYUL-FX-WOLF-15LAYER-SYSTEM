@@ -26,6 +26,7 @@ class PriceAnalysisConfig:
     Previously hardcoded — now injectable for backtesting,
     synthetic data, and per-instrument tuning.
     """
+
     # Distance from mean: flag as extreme if abs(distance) > this ratio
     extreme_distance: float = 0.025
 
@@ -40,22 +41,17 @@ class PriceAnalysisConfig:
 
     def __post_init__(self) -> None:
         if self.extreme_distance <= 0:
-            raise ValueError(
-                f"extreme_distance must be positive, got {self.extreme_distance}"
-            )
+            raise ValueError(f"extreme_distance must be positive, got {self.extreme_distance}")
         if self.impulse_limit <= 0:
-            raise ValueError(
-                f"impulse_limit must be positive, got {self.impulse_limit}"
-            )
+            raise ValueError(f"impulse_limit must be positive, got {self.impulse_limit}")
         if self.min_candles < 2:
-            raise ValueError(
-                f"min_candles must be >= 2, got {self.min_candles}"
-            )
+            raise ValueError(f"min_candles must be >= 2, got {self.min_candles}")
 
 
 @dataclass
 class CandleData:
     """Single OHLC candle for analysis input."""
+
     open: float
     high: float
     low: float
@@ -64,19 +60,11 @@ class CandleData:
 
     def __post_init__(self) -> None:
         if self.high < self.low:
-            raise ValueError(
-                f"Candle high ({self.high}) < low ({self.low})"
-            )
+            raise ValueError(f"Candle high ({self.high}) < low ({self.low})")
         if self.high < self.open or self.high < self.close:
-            raise ValueError(
-                f"Candle high ({self.high}) must be >= open ({self.open}) "
-                f"and close ({self.close})"
-            )
+            raise ValueError(f"Candle high ({self.high}) must be >= open ({self.open}) and close ({self.close})")
         if self.low > self.open or self.low > self.close:
-            raise ValueError(
-                f"Candle low ({self.low}) must be <= open ({self.open}) "
-                f"and close ({self.close})"
-            )
+            raise ValueError(f"Candle low ({self.low}) must be <= open ({self.open}) and close ({self.close})")
 
     @property
     def body_top(self) -> float:
@@ -136,6 +124,7 @@ class CandleData:
 
 # ─── Distance from Mean ──────────────────────────────────────
 
+
 def distance_from_mean(
     value: float,
     mean: float,
@@ -190,6 +179,7 @@ def is_extreme_distance(
 
 
 # ─── Impulse Detection ───────────────────────────────────────
+
 
 def compute_zscore(
     value: float,
@@ -252,9 +242,11 @@ def is_impulse(
 
 # ─── Wick Analysis (corrected) ───────────────────────────────
 
+
 @dataclass
 class WickAnalysisResult:
     """Result of wick analysis over a series of candles."""
+
     avg_upper_wick: float
     avg_lower_wick: float
     max_upper_wick: float

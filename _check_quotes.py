@@ -1,5 +1,6 @@
 import ast
 
+source = ""
 try:
     with open("tests/test_logging_config.py") as f:
         source = f.read()
@@ -15,4 +16,4 @@ except SyntaxError as e:
     print("\nLines with triple quotes:")
     for i, line in enumerate(lines):
         if '"""' in line:
-            print(f"  Line {i+1}: {line.rstrip()}")
+            print(f"  Line {i + 1}: {line.rstrip()}")

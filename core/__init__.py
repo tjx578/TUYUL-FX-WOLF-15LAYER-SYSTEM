@@ -189,14 +189,17 @@ _CACHE: dict[str, Any] = {}
 
 class _PipelineModeFallback(Enum):
     """Fallback PipelineMode when not provided by core_reflective_unified."""
+
     STANDARD = "standard"
     CONSTITUTIONAL = "constitutional"
 
 
 def _make_stub(name: str, module_name: str) -> Any:
     """Create a stub that raises NotImplementedError for missing symbols."""
+
     def _stub(*args: Any, **kwargs: Any) -> Any:
         raise NotImplementedError(f"{name} is not available in {module_name}")
+
     _stub.__name__ = name
     _stub.__qualname__ = name
     return _stub
@@ -204,8 +207,10 @@ def _make_stub(name: str, module_name: str) -> Any:
 
 def _make_stub_class(name: str, module_name: str) -> type:
     """Create a stub class that raises NotImplementedError on init."""
+
     def _init(self: Any, *args: Any, **kwargs: Any) -> None:
         raise NotImplementedError(f"{name} is not available in {module_name}")
+
     return type(name, (), {"__init__": _init, "__doc__": f"Stub: {name} not available"})
 
 

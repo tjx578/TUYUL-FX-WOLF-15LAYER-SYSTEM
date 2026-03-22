@@ -153,9 +153,7 @@ class OnlineKMeans:
             raise RuntimeError(msg)
 
         features = np.asarray(features).flatten()
-        distances = np.array([
-            np.linalg.norm(features - c.centroid) for c in self.state.clusters
-        ])
+        distances = np.array([np.linalg.norm(features - c.centroid) for c in self.state.clusters])
 
         cluster_idx = int(np.argmin(distances))
         return cluster_idx, distances
@@ -213,9 +211,7 @@ class OnlineKMeans:
         cluster.count += 1
 
         # Decay learning rate
-        self._current_lr = max(
-            self._current_lr * self.decay_factor, self.min_learning_rate
-        )
+        self._current_lr = max(self._current_lr * self.decay_factor, self.min_learning_rate)
         self.state.total_samples += 1
 
         return cluster_idx
@@ -234,10 +230,7 @@ class OnlineKMeans:
             return {}
 
         features = np.asarray(features).flatten()
-        return {
-            c.label: float(np.linalg.norm(features - c.centroid))
-            for c in self.state.clusters
-        }
+        return {c.label: float(np.linalg.norm(features - c.centroid)) for c in self.state.clusters}
 
     def _kmeans_plus_plus_init(self, data: np.ndarray) -> list[int]:
         """K-Means++ centroid initialization."""
@@ -280,10 +273,7 @@ class OnlineKMeans:
             # Assign all points to nearest centroid
             assignments: list[int] = []
             for point in data:
-                distances = [
-                    np.linalg.norm(point - c.centroid)
-                    for c in self.state.clusters
-                ]
+                distances = [np.linalg.norm(point - c.centroid) for c in self.state.clusters]
                 assignments.append(int(np.argmin(distances)))
 
             # Update centroids

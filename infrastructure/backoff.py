@@ -13,18 +13,17 @@ from dataclasses import dataclass
 @dataclass
 class BackoffConfig:
     """Exponential backoff configuration."""
-    initial: float = 1.0        # First delay in seconds
-    maximum: float = 60.0       # Cap
-    factor: float = 2.0         # Multiplier per attempt
-    jitter: float = 0.25        # ±25% randomization to prevent thundering herd
+
+    initial: float = 1.0  # First delay in seconds
+    maximum: float = 60.0  # Cap
+    factor: float = 2.0  # Multiplier per attempt
+    jitter: float = 0.25  # ±25% randomization to prevent thundering herd
 
     def __post_init__(self) -> None:
         if self.initial <= 0:
             raise ValueError(f"initial must be positive, got {self.initial}")
         if self.maximum < self.initial:
-            raise ValueError(
-                f"maximum ({self.maximum}) must be >= initial ({self.initial})"
-            )
+            raise ValueError(f"maximum ({self.maximum}) must be >= initial ({self.initial})")
         if self.factor < 1.0:
             raise ValueError(f"factor must be >= 1.0, got {self.factor}")
         if not (0.0 <= self.jitter <= 1.0):
@@ -54,7 +53,7 @@ class ExponentialBackoff:
     def next_delay(self) -> float:
         """Calculate next backoff delay and advance attempt counter."""
         base = min(
-            self._config.initial * (self._config.factor ** self._attempt),
+            self._config.initial * (self._config.factor**self._attempt),
             self._config.maximum,
         )
         self._attempt += 1

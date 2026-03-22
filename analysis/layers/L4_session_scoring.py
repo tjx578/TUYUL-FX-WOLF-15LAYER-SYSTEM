@@ -51,13 +51,12 @@ Backward compatibility:
   • Bayesian output ADDITIVE (new key, ignored by v2 consumers)
 
 Zone: analysis/ -- pure computation, zero side-effects.
-"""
+"""  # noqa: N999
 
 from __future__ import annotations
 
 import logging
 import math
-
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, Final, Literal, TypedDict
@@ -81,10 +80,10 @@ __all__ = [
 # Ordered by priority: overlaps first, then single sessions.
 _SESSIONS: Final[list[tuple[str, int, int, float]]] = [
     ("LONDON_NEWYORK", 13, 16, 1.00),
-    ("TOKYO_LONDON",    7,  9, 0.85),
-    ("LONDON",          9, 13, 0.90),
-    ("NEWYORK",        16, 22, 0.85),
-    ("TOKYO",           1,  7, 0.60),
+    ("TOKYO_LONDON", 7, 9, 0.85),
+    ("LONDON", 9, 13, 0.90),
+    ("NEWYORK", 16, 22, 0.85),
+    ("TOKYO", 1, 7, 0.60),
 ]
 _SYDNEY_QUALITY: Final = 0.40
 
@@ -99,13 +98,21 @@ _EVENT_BUFFER_MULT: Final = 0.30
 
 # Known currencies for event relevance
 _KNOWN_CURRENCIES: Final = (
-    "USD", "GBP", "EUR", "JPY", "AUD", "NZD", "CAD", "CHF",
+    "USD",
+    "GBP",
+    "EUR",
+    "JPY",
+    "AUD",
+    "NZD",
+    "CAD",
+    "CHF",
 )
 
 
 # ═══════════════════════════════════════════════════════════════════════
 # §2  HIGH-IMPACT EVENTS (from l4_session.py -- preserved 100%)
 # ═══════════════════════════════════════════════════════════════════════
+
 
 class _HighImpactEvent(TypedDict):
     day: int
@@ -181,9 +188,9 @@ HIGH_IMPACT_EVENTS: Final[dict[str, _HighImpactEvent]] = {
 # ═══════════════════════════════════════════════════════════════════════
 
 # Max points per component
-_F_SCORE_MAX: Final = 8     # Fundamental
-_T_SCORE_MAX: Final = 12    # Technical
-_FTA_SCORE_MAX: Final = 5   # Fundamental-Technical Alignment
+_F_SCORE_MAX: Final = 8  # Fundamental
+_T_SCORE_MAX: Final = 12  # Technical
+_FTA_SCORE_MAX: Final = 5  # Fundamental-Technical Alignment
 _EXEC_SCORE_MAX: Final = 5  # Execution readiness
 _WOLF_TOTAL_MAX: Final = 30
 
@@ -193,7 +200,7 @@ _GRADE_THRESHOLDS: Final[list[tuple[int, str]]] = [
     (23, "EXCELLENT"),
     (18, "GOOD"),
     (13, "MARGINAL"),
-    ( 0, "FAIL"),
+    (0, "FAIL"),
 ]
 
 # F-score sub-weights (within 8 points)
@@ -314,24 +321,34 @@ class BayesianConfig:
         """
         regimes = {
             "TREND_UP": (
-                self.strength_trend_up_f, self.strength_trend_up_t,
-                self.strength_trend_up_fta, self.strength_trend_up_exec,
+                self.strength_trend_up_f,
+                self.strength_trend_up_t,
+                self.strength_trend_up_fta,
+                self.strength_trend_up_exec,
             ),
             "TREND_DOWN": (
-                self.strength_trend_down_f, self.strength_trend_down_t,
-                self.strength_trend_down_fta, self.strength_trend_down_exec,
+                self.strength_trend_down_f,
+                self.strength_trend_down_t,
+                self.strength_trend_down_fta,
+                self.strength_trend_down_exec,
             ),
             "RANGE": (
-                self.strength_range_f, self.strength_range_t,
-                self.strength_range_fta, self.strength_range_exec,
+                self.strength_range_f,
+                self.strength_range_t,
+                self.strength_range_fta,
+                self.strength_range_exec,
             ),
             "TRANSITION": (
-                self.strength_transition_f, self.strength_transition_t,
-                self.strength_transition_fta, self.strength_transition_exec,
+                self.strength_transition_f,
+                self.strength_transition_t,
+                self.strength_transition_fta,
+                self.strength_transition_exec,
             ),
             "UNKNOWN": (
-                self.strength_unknown_f, self.strength_unknown_t,
-                self.strength_unknown_fta, self.strength_unknown_exec,
+                self.strength_unknown_f,
+                self.strength_unknown_t,
+                self.strength_unknown_fta,
+                self.strength_unknown_exec,
             ),
         }
 
@@ -339,13 +356,10 @@ class BayesianConfig:
             s_sum = sum(strengths)
             if not (_STRENGTH_SUM_MIN <= s_sum <= _STRENGTH_SUM_MAX):
                 raise ValueError(
-                    f"BayesianConfig: {regime_name} Σαᵢ={s_sum:.2f} "
-                    f"violates [{_STRENGTH_SUM_MIN}, {_STRENGTH_SUM_MAX}]"
+                    f"BayesianConfig: {regime_name} Σαᵢ={s_sum:.2f} violates [{_STRENGTH_SUM_MIN}, {_STRENGTH_SUM_MAX}]"
                 )
             for i, s in enumerate(strengths):
-                if not (
-                    _STRENGTH_INDIVIDUAL_MIN <= s <= _STRENGTH_INDIVIDUAL_MAX
-                ):
+                if not (_STRENGTH_INDIVIDUAL_MIN <= s <= _STRENGTH_INDIVIDUAL_MAX):
                     raise ValueError(
                         f"BayesianConfig: {regime_name} α[{i}]={s:.2f} "  # noqa: RUF001
                         f"violates [{_STRENGTH_INDIVIDUAL_MIN}, "
@@ -360,14 +374,11 @@ class BayesianConfig:
             ("prior_unknown", self.prior_unknown),
         ]:
             if not (0.0 < prior < 1.0):
-                raise ValueError(
-                    f"BayesianConfig: {name}={prior} must be in (0, 1)"
-                )
+                raise ValueError(f"BayesianConfig: {name}={prior} must be in (0, 1)")
 
         if not (0.0 < self.likelihood_min < self.likelihood_max < 1.0):
             raise ValueError(
-                "BayesianConfig: likelihood bounds invalid: "
-                f"min={self.likelihood_min}, max={self.likelihood_max}"
+                f"BayesianConfig: likelihood bounds invalid: min={self.likelihood_min}, max={self.likelihood_max}"
             )
 
 
@@ -396,31 +407,45 @@ def _get_regime_strengths(
     """
     _map: dict[str, tuple[float, float, float, float]] = {
         "TREND_UP": (
-            cfg.strength_trend_up_f, cfg.strength_trend_up_t,
-            cfg.strength_trend_up_fta, cfg.strength_trend_up_exec,
+            cfg.strength_trend_up_f,
+            cfg.strength_trend_up_t,
+            cfg.strength_trend_up_fta,
+            cfg.strength_trend_up_exec,
         ),
         "TREND_DOWN": (
-            cfg.strength_trend_down_f, cfg.strength_trend_down_t,
-            cfg.strength_trend_down_fta, cfg.strength_trend_down_exec,
+            cfg.strength_trend_down_f,
+            cfg.strength_trend_down_t,
+            cfg.strength_trend_down_fta,
+            cfg.strength_trend_down_exec,
         ),
         "RANGE": (
-            cfg.strength_range_f, cfg.strength_range_t,
-            cfg.strength_range_fta, cfg.strength_range_exec,
+            cfg.strength_range_f,
+            cfg.strength_range_t,
+            cfg.strength_range_fta,
+            cfg.strength_range_exec,
         ),
         "TRANSITION": (
-            cfg.strength_transition_f, cfg.strength_transition_t,
-            cfg.strength_transition_fta, cfg.strength_transition_exec,
+            cfg.strength_transition_f,
+            cfg.strength_transition_t,
+            cfg.strength_transition_fta,
+            cfg.strength_transition_exec,
         ),
     }
-    return _map.get(regime, (
-        cfg.strength_unknown_f, cfg.strength_unknown_t,
-        cfg.strength_unknown_fta, cfg.strength_unknown_exec,
-    ))
+    return _map.get(
+        regime,
+        (
+            cfg.strength_unknown_f,
+            cfg.strength_unknown_t,
+            cfg.strength_unknown_fta,
+            cfg.strength_unknown_exec,
+        ),
+    )
 
 
 # ═══════════════════════════════════════════════════════════════════════
 # §4  SESSION HELPER FUNCTIONS (from l4_session.py -- preserved 100%)
 # ═══════════════════════════════════════════════════════════════════════
+
 
 def _identify_session(h: int) -> tuple[str, float]:
     """Return (session_name, base_quality) for a UTC hour."""
@@ -535,6 +560,7 @@ def _compute_session_context(
 # §5  WOLF 30-POINT SCORING FUNCTIONS
 # ═══════════════════════════════════════════════════════════════════════
 
+
 def _safe(d: dict[str, Any], key: str, default: float = 0.0) -> float:
     """Safely extract a float from a dict, clamping to [0, 1]."""
     try:
@@ -571,7 +597,7 @@ def _normalize_bias(bias: Any) -> tuple[str, float]:
         s = _safe(bias, "strength", 0.5)
         return d, s
 
-    if isinstance(bias, (int, float)):
+    if isinstance(bias, int | float):
         if bias > 0.05:
             return "BULLISH", min(1.0, abs(bias))
         if bias < -0.05:
@@ -693,10 +719,7 @@ def _compute_fta_score(
     else:
         dir_match = 0.5
 
-    if l1_str > 0 and l2_str > 0:
-        mag_match = 1.0 - min(1.0, abs(l1_str - l2_str))
-    else:
-        mag_match = 0.0
+    mag_match = 1.0 - min(1.0, abs(l1_str - l2_str)) if l1_str > 0 and l2_str > 0 else 0.0
 
     pts_dir = round(dir_match * _FTA_WEIGHT_DIRECTION, 2)
     pts_mag = round(mag_match * _FTA_WEIGHT_MAGNITUDE, 2)
@@ -757,6 +780,7 @@ def _classify_grade(total: float) -> str:
 # ═══════════════════════════════════════════════════════════════════════
 # §5B  BAYESIAN WIN PROBABILITY ENGINE (NEW — v3)
 # ═══════════════════════════════════════════════════════════════════════
+
 
 def _bayesian_win_probability(
     prior: float,
@@ -938,21 +962,24 @@ def _compute_bayesian_enrichment(
 
     # ── 3. Bayesian posterior (§V) ────────────────────────────────
     posterior = _bayesian_win_probability(
-        prior, likelihoods, strengths, cfg,
+        prior,
+        likelihoods,
+        strengths,
+        cfg,
     )
 
     # ── 4. Coherence dampener (§VI) ──────────────────────────────
     # PRIMARY: L2.reflex_coherence (technical signal coherence)
     # FALLBACK: L1.context_coherence (regime certainty from entropy)
     reflex_coherence = _safe(
-        l2, "reflex_coherence",
+        l2,
+        "reflex_coherence",
         _safe(l1, "context_coherence", 1.0),
     )
     coherence_applied = False
     if reflex_coherence < cfg.coherence_threshold:
         dampener = cfg.coherence_min_mult + (
-            (1.0 - cfg.coherence_min_mult)
-            * (reflex_coherence / cfg.coherence_threshold)
+            (1.0 - cfg.coherence_min_mult) * (reflex_coherence / cfg.coherence_threshold)
         )
         posterior *= dampener
         coherence_applied = True
@@ -1025,6 +1052,7 @@ def _compute_bayesian_enrichment(
 # ═══════════════════════════════════════════════════════════════════════
 # §6  MAIN ANALYZER CLASS
 # ═══════════════════════════════════════════════════════════════════════
+
 
 class L4SessionScoring:
     """Layer 4: Session + Wolf 30-Point + Bayesian Expectancy — PRODUCTION.
@@ -1115,11 +1143,13 @@ class L4SessionScoring:
         t_score, t_detail = _compute_t_score(l2)
         fta_score, fta_detail = _compute_fta_score(l1, l2)
         exec_score, exec_detail = _compute_exec_score(
-            l3, ctx["quality"],
+            l3,
+            ctx["quality"],
         )
 
         wolf_total = round(
-            f_score + t_score + fta_score + exec_score, 2,
+            f_score + t_score + fta_score + exec_score,
+            2,
         )
         wolf_total = min(_WOLF_TOTAL_MAX, wolf_total)
 
@@ -1127,10 +1157,7 @@ class L4SessionScoring:
 
         grade = _classify_grade(wolf_total)
 
-        technical_score = (
-            round((t_score / _T_SCORE_MAX) * 100)
-            if _T_SCORE_MAX > 0 else 0
-        )
+        technical_score = round((t_score / _T_SCORE_MAX) * 100) if _T_SCORE_MAX > 0 else 0
 
         # ── PHASE 4: Bayesian enrichment (NEW) ───────────────────────
 
@@ -1157,9 +1184,15 @@ class L4SessionScoring:
             "L4 v3: pair=%s session=%s quality=%.4f "
             "F=%s T=%s FTA=%s E=%s total=%.1f grade=%s "
             "P(win)=%.4f EV=%.4f CI=%.4f b_grade=%s tradeable=%s",
-            pair, ctx["session"], ctx["quality"],
-            f_score, t_score, fta_score, exec_score,
-            wolf_total, grade,
+            pair,
+            ctx["session"],
+            ctx["quality"],
+            f_score,
+            t_score,
+            fta_score,
+            exec_score,
+            wolf_total,
+            grade,
             bayesian["posterior_win_probability"],
             bayesian["expected_value"],
             bayesian["confidence_index"],
@@ -1177,7 +1210,6 @@ class L4SessionScoring:
             "event_name": ctx["event_name"],
             "hour_utc": ctx["hour_utc"],
             "day_of_week": ctx["day_of_week"],
-
             # ── Wolf 30-Point (PRESERVED byte-identical) ──
             "wolf_30_point": {
                 "total": wolf_total,
@@ -1191,14 +1223,11 @@ class L4SessionScoring:
                 "fta_detail": fta_detail,
                 "exec_detail": exec_detail,
             },
-
             # ── Bayesian Enrichment (NEW — additive) ──
             "bayesian": bayesian,
-
             # ── Classification ──
             "grade": grade,
             "technical_score": technical_score,
-
             # ── Metadata ──
             "pair": pair,
             "valid": valid,
@@ -1209,6 +1238,7 @@ class L4SessionScoring:
 # ═══════════════════════════════════════════════════════════════════════
 # §7  BACKWARD-COMPATIBLE INTERFACES
 # ═══════════════════════════════════════════════════════════════════════
+
 
 class L4ScoringEngine:
     """Backward-compatible wrapper matching original L4_scoring.py signature.
@@ -1287,5 +1317,9 @@ def analyze_session_scoring(
 ) -> dict[str, Any]:
     """Convenience function for full L4 analysis without class instantiation."""
     return L4SessionScoring().analyze(
-        l1=l1, l2=l2, l3=l3, pair=pair, now=now,
+        l1=l1,
+        l2=l2,
+        l3=l3,
+        pair=pair,
+        now=now,
     )

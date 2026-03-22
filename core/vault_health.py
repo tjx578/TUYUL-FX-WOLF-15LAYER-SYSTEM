@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import logging
 import time
-
 from dataclasses import dataclass
 
 logger = logging.getLogger("tuyul.vault_health")
@@ -16,8 +15,9 @@ logger = logging.getLogger("tuyul.vault_health")
 @dataclass
 class VaultHealthReport:
     """Health report snapshot."""
-    feed_freshness: float         # 0.0 = stale, 1.0 = fresh
-    redis_health: float           # 0.0 = dead, 1.0 = healthy
+
+    feed_freshness: float  # 0.0 = stale, 1.0 = fresh
+    redis_health: float  # 0.0 = dead, 1.0 = healthy
     last_tick_age_seconds: float
     redis_latency_ms: float
     is_healthy: bool

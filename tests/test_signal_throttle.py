@@ -14,7 +14,6 @@ Validates:
 from __future__ import annotations
 
 import time
-
 from unittest.mock import MagicMock
 
 from constitution.signal_throttle import SignalThrottle
@@ -23,6 +22,7 @@ from core.metrics import SIGNAL_THROTTLED
 # =========================================================================
 # SignalThrottle unit tests
 # =========================================================================
+
 
 class TestSignalThrottle:
     def test_not_throttled_initially(self):
@@ -111,6 +111,7 @@ class TestSignalThrottle:
 # Pipeline integration tests
 # =========================================================================
 
+
 class TestPipelineSignalThrottle:
     """Test the throttle gate inside WolfConstitutionalPipeline."""
 
@@ -118,6 +119,7 @@ class TestPipelineSignalThrottle:
         from pipeline.wolf_constitutional_pipeline import (  # noqa: PLC0415
             WolfConstitutionalPipeline,
         )
+
         pipe = WolfConstitutionalPipeline()
         pipe._ensure_analyzers = MagicMock()
         return pipe
@@ -213,10 +215,9 @@ class TestPipelineSignalThrottle:
 
         # Simulate the pipeline's throttle gate
         final_verdict = l12_verdict.get("verdict", "")
-        if final_verdict.startswith("EXECUTE"):
-            if pipe._signal_throttle.is_throttled(symbol):
-                l12_verdict["verdict"] = "HOLD"
-                l12_verdict["throttled_from"] = final_verdict
+        if final_verdict.startswith("EXECUTE") and pipe._signal_throttle.is_throttled(symbol):
+            l12_verdict["verdict"] = "HOLD"
+            l12_verdict["throttled_from"] = final_verdict
 
         assert l12_verdict["verdict"] == "HOLD"
         assert l12_verdict["throttled_from"] == "EXECUTE_SELL"
@@ -225,6 +226,7 @@ class TestPipelineSignalThrottle:
 # =========================================================================
 # Prometheus metric test
 # =========================================================================
+
 
 class TestThrottleMetric:
     def test_signal_throttled_metric_exists(self):

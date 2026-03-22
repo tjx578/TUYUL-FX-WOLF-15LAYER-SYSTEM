@@ -30,7 +30,6 @@ Run: pytest tests/test_l4_session_scoring.py -v --tb=short
 from __future__ import annotations
 
 import math
-
 from datetime import UTC, datetime
 from typing import Any
 
@@ -207,7 +206,9 @@ class TestCurrencyExtraction:
         ],
     )
     def test_extraction(
-        self, pair: str, expected: list[str],
+        self,
+        pair: str,
+        expected: list[str],
     ) -> None:
         result = _extract_currencies(pair)
         assert set(result) == set(expected)
@@ -260,7 +261,8 @@ class TestSessionContext:
         assert "WEEKEND" in ctx["gate_reasons"]
 
     def test_london_ny_overlap_quality(
-        self, london_ny_time: datetime,
+        self,
+        london_ny_time: datetime,
     ) -> None:
         ctx = _compute_session_context("GBPUSD", london_ny_time)
         assert ctx["session"] == "LONDON_NEWYORK"
@@ -508,12 +510,14 @@ class TestBayesianConfig:
         """Verify default Σαᵢ for each regime is within [2.8, 5.2]."""
         cfg = BayesianConfig()
         regimes = [
-            (cfg.strength_trend_up_f, cfg.strength_trend_up_t,
-             cfg.strength_trend_up_fta, cfg.strength_trend_up_exec),
-            (cfg.strength_range_f, cfg.strength_range_t,
-             cfg.strength_range_fta, cfg.strength_range_exec),
-            (cfg.strength_transition_f, cfg.strength_transition_t,
-             cfg.strength_transition_fta, cfg.strength_transition_exec),
+            (cfg.strength_trend_up_f, cfg.strength_trend_up_t, cfg.strength_trend_up_fta, cfg.strength_trend_up_exec),
+            (cfg.strength_range_f, cfg.strength_range_t, cfg.strength_range_fta, cfg.strength_range_exec),
+            (
+                cfg.strength_transition_f,
+                cfg.strength_transition_t,
+                cfg.strength_transition_fta,
+                cfg.strength_transition_exec,
+            ),
         ]
         for strengths in regimes:
             s_sum = sum(strengths)
@@ -523,12 +527,18 @@ class TestBayesianConfig:
         """Each αᵢ must be in [0.5, 2.0]."""
         cfg = BayesianConfig()
         all_strengths = [
-            cfg.strength_trend_up_f, cfg.strength_trend_up_t,
-            cfg.strength_trend_up_fta, cfg.strength_trend_up_exec,
-            cfg.strength_range_f, cfg.strength_range_t,
-            cfg.strength_range_fta, cfg.strength_range_exec,
-            cfg.strength_transition_f, cfg.strength_transition_t,
-            cfg.strength_transition_fta, cfg.strength_transition_exec,
+            cfg.strength_trend_up_f,
+            cfg.strength_trend_up_t,
+            cfg.strength_trend_up_fta,
+            cfg.strength_trend_up_exec,
+            cfg.strength_range_f,
+            cfg.strength_range_t,
+            cfg.strength_range_fta,
+            cfg.strength_range_exec,
+            cfg.strength_transition_f,
+            cfg.strength_transition_t,
+            cfg.strength_transition_fta,
+            cfg.strength_transition_exec,
         ]
         for s in all_strengths:
             assert 0.5 <= s <= 2.0, f"α={s}"  # noqa: RUF001
@@ -596,33 +606,40 @@ class TestRegimeStrengthsLookup:
     """Test _get_regime_strengths for regime-conditioned matrix."""
 
     def test_trend_up_strengths(
-        self, default_config: BayesianConfig,
+        self,
+        default_config: BayesianConfig,
     ) -> None:
         f, t, fta, exc = _get_regime_strengths(
-            "TREND_UP", default_config,
+            "TREND_UP",
+            default_config,
         )
         assert t > f  # Technical most reliable in trend
         assert fta > exc  # Alignment more important than exec
 
     def test_range_strengths(
-        self, default_config: BayesianConfig,
+        self,
+        default_config: BayesianConfig,
     ) -> None:
         _f, t, _fta, exc = _get_regime_strengths(
-            "RANGE", default_config,
+            "RANGE",
+            default_config,
         )
         assert exc > t  # Execution most critical in range
 
     def test_transition_strengths(
-        self, default_config: BayesianConfig,
+        self,
+        default_config: BayesianConfig,
     ) -> None:
         f, t, fta, exc = _get_regime_strengths(
-            "TRANSITION", default_config,
+            "TRANSITION",
+            default_config,
         )
         assert fta > f  # Alignment most critical in transition
         assert exc > t  # Execution more important than tech
 
     def test_unknown_fallback(
-        self, default_config: BayesianConfig,
+        self,
+        default_config: BayesianConfig,
     ) -> None:
         strengths = _get_regime_strengths("GARBAGE", default_config)
         assert all(s == 0.8 for s in strengths)
@@ -876,7 +893,10 @@ class TestCoherenceDampener:
     def test_high_coherence_no_dampening(self) -> None:
         """reflex_coherence ≥ threshold → no dampening applied."""
         result = _compute_bayesian_enrichment(
-            f_score=6.0, t_score=9.0, fta_score=4.0, exec_score=4.0,
+            f_score=6.0,
+            t_score=9.0,
+            fta_score=4.0,
+            exec_score=4.0,
             l1={"regime": "TREND_UP", "volatility_level": "NORMAL"},
             l2={"reflex_coherence": 0.90},
             l3={"rr_ratio": 1.5},
@@ -888,29 +908,35 @@ class TestCoherenceDampener:
         """reflex_coherence < threshold → posterior dampened."""
         cfg = BayesianConfig()
         high_coh = _compute_bayesian_enrichment(
-            f_score=6.0, t_score=9.0, fta_score=4.0, exec_score=4.0,
+            f_score=6.0,
+            t_score=9.0,
+            fta_score=4.0,
+            exec_score=4.0,
             l1={"regime": "TREND_UP", "volatility_level": "NORMAL"},
             l2={"reflex_coherence": 0.90},
             l3={"rr_ratio": 1.5},
             cfg=cfg,
         )
         low_coh = _compute_bayesian_enrichment(
-            f_score=6.0, t_score=9.0, fta_score=4.0, exec_score=4.0,
+            f_score=6.0,
+            t_score=9.0,
+            fta_score=4.0,
+            exec_score=4.0,
             l1={"regime": "TREND_UP", "volatility_level": "NORMAL"},
             l2={"reflex_coherence": 0.40},
             l3={"rr_ratio": 1.5},
             cfg=cfg,
         )
         assert low_coh["dampeners"]["coherence_applied"] is True
-        assert (
-            low_coh["posterior_win_probability"]
-            < high_coh["posterior_win_probability"]
-        )
+        assert low_coh["posterior_win_probability"] < high_coh["posterior_win_probability"]
 
     def test_l1_coherence_fallback(self) -> None:
         """Uses L1.context_coherence when L2.reflex_coherence missing."""
         result = _compute_bayesian_enrichment(
-            f_score=6.0, t_score=9.0, fta_score=4.0, exec_score=4.0,
+            f_score=6.0,
+            t_score=9.0,
+            fta_score=4.0,
+            exec_score=4.0,
             l1={
                 "regime": "TREND_UP",
                 "volatility_level": "NORMAL",
@@ -930,29 +956,35 @@ class TestVolatilityDampener:
     def test_extreme_vol_dampens(self) -> None:
         cfg = BayesianConfig()
         normal = _compute_bayesian_enrichment(
-            f_score=6.0, t_score=9.0, fta_score=4.0, exec_score=4.0,
+            f_score=6.0,
+            t_score=9.0,
+            fta_score=4.0,
+            exec_score=4.0,
             l1={"regime": "TREND_UP", "volatility_level": "NORMAL"},
             l2={"reflex_coherence": 0.90},
             l3={"rr_ratio": 1.5},
             cfg=cfg,
         )
         extreme = _compute_bayesian_enrichment(
-            f_score=6.0, t_score=9.0, fta_score=4.0, exec_score=4.0,
+            f_score=6.0,
+            t_score=9.0,
+            fta_score=4.0,
+            exec_score=4.0,
             l1={"regime": "TREND_UP", "volatility_level": "EXTREME"},
             l2={"reflex_coherence": 0.90},
             l3={"rr_ratio": 1.5},
             cfg=cfg,
         )
-        assert (
-            extreme["posterior_win_probability"]
-            < normal["posterior_win_probability"]
-        )
+        assert extreme["posterior_win_probability"] < normal["posterior_win_probability"]
         assert extreme["dampeners"]["volatility_mult"] == 0.85
 
     def test_high_vol_dampens(self) -> None:
         cfg = BayesianConfig()
         result = _compute_bayesian_enrichment(
-            f_score=6.0, t_score=9.0, fta_score=4.0, exec_score=4.0,
+            f_score=6.0,
+            t_score=9.0,
+            fta_score=4.0,
+            exec_score=4.0,
             l1={"regime": "TREND_UP", "volatility_level": "HIGH"},
             l2={"reflex_coherence": 0.90},
             l3={"rr_ratio": 1.5},
@@ -963,7 +995,10 @@ class TestVolatilityDampener:
     def test_normal_vol_no_dampening(self) -> None:
         cfg = BayesianConfig()
         result = _compute_bayesian_enrichment(
-            f_score=6.0, t_score=9.0, fta_score=4.0, exec_score=4.0,
+            f_score=6.0,
+            t_score=9.0,
+            fta_score=4.0,
+            exec_score=4.0,
             l1={"regime": "TREND_UP", "volatility_level": "NORMAL"},
             l2={"reflex_coherence": 0.90},
             l3={"rr_ratio": 1.5},
@@ -978,7 +1013,10 @@ class TestBayesianEnrichmentIntegration:
     def test_output_structure(self) -> None:
         """Verify all required keys are present."""
         result = _compute_bayesian_enrichment(
-            f_score=6.0, t_score=9.0, fta_score=4.0, exec_score=4.0,
+            f_score=6.0,
+            t_score=9.0,
+            fta_score=4.0,
+            exec_score=4.0,
             l1={"regime": "TREND_UP", "volatility_level": "NORMAL"},
             l2={"reflex_coherence": 0.90},
             l3={"rr_ratio": 1.5},
@@ -1004,7 +1042,10 @@ class TestBayesianEnrichmentIntegration:
     def test_confidence_lineage_values(self) -> None:
         """Verify confidence_lineage = score / max for each component."""
         result = _compute_bayesian_enrichment(
-            f_score=4.0, t_score=6.0, fta_score=2.5, exec_score=2.5,
+            f_score=4.0,
+            t_score=6.0,
+            fta_score=2.5,
+            exec_score=2.5,
             l1={"regime": "RANGE"},
             l2={},
             l3={},
@@ -1020,7 +1061,10 @@ class TestBayesianEnrichmentIntegration:
         """Uses default RR when L3 doesn't provide."""
         cfg = BayesianConfig(default_rr=2.0)
         result = _compute_bayesian_enrichment(
-            f_score=6.0, t_score=9.0, fta_score=4.0, exec_score=4.0,
+            f_score=6.0,
+            t_score=9.0,
+            fta_score=4.0,
+            exec_score=4.0,
             l1={"regime": "TREND_UP"},
             l2={},
             l3={},
@@ -1032,7 +1076,10 @@ class TestBayesianEnrichmentIntegration:
         """Negative RR from L3 should fall back to default."""
         cfg = BayesianConfig(default_rr=1.5)
         result = _compute_bayesian_enrichment(
-            f_score=6.0, t_score=9.0, fta_score=4.0, exec_score=4.0,
+            f_score=6.0,
+            t_score=9.0,
+            fta_score=4.0,
+            exec_score=4.0,
             l1={"regime": "TREND_UP"},
             l2={},
             l3={"rr_ratio": -1.0},
@@ -1044,28 +1091,34 @@ class TestBayesianEnrichmentIntegration:
         """Different regimes should produce different posteriors."""
         cfg = BayesianConfig()
         trend = _compute_bayesian_enrichment(
-            f_score=6.0, t_score=9.0, fta_score=4.0, exec_score=4.0,
+            f_score=6.0,
+            t_score=9.0,
+            fta_score=4.0,
+            exec_score=4.0,
             l1={"regime": "TREND_UP", "volatility_level": "NORMAL"},
             l2={"reflex_coherence": 0.90},
             l3={"rr_ratio": 1.5},
             cfg=cfg,
         )
         rng = _compute_bayesian_enrichment(
-            f_score=6.0, t_score=9.0, fta_score=4.0, exec_score=4.0,
+            f_score=6.0,
+            t_score=9.0,
+            fta_score=4.0,
+            exec_score=4.0,
             l1={"regime": "RANGE", "volatility_level": "NORMAL"},
             l2={"reflex_coherence": 0.90},
             l3={"rr_ratio": 1.5},
             cfg=cfg,
         )
         # Different priors + strengths → different posteriors
-        assert (
-            trend["posterior_win_probability"]
-            != rng["posterior_win_probability"]
-        )
+        assert trend["posterior_win_probability"] != rng["posterior_win_probability"]
 
     def test_posterior_entropy_present_and_valid(self) -> None:
         result = _compute_bayesian_enrichment(
-            f_score=6.0, t_score=9.0, fta_score=4.0, exec_score=4.0,
+            f_score=6.0,
+            t_score=9.0,
+            fta_score=4.0,
+            exec_score=4.0,
             l1={"regime": "TREND_UP"},
             l2={},
             l3={},
@@ -1083,10 +1136,14 @@ class TestRegimeConditioning:
         ["TREND_UP", "TREND_DOWN", "RANGE", "TRANSITION", "UNKNOWN"],
     )
     def test_all_regimes_produce_valid_output(
-        self, regime: str,
+        self,
+        regime: str,
     ) -> None:
         result = _compute_bayesian_enrichment(
-            f_score=5.0, t_score=7.0, fta_score=3.0, exec_score=3.0,
+            f_score=5.0,
+            t_score=7.0,
+            fta_score=3.0,
+            exec_score=3.0,
             l1={"regime": regime, "volatility_level": "NORMAL"},
             l2={"reflex_coherence": 0.80},
             l3={"rr_ratio": 1.5},
@@ -1095,8 +1152,10 @@ class TestRegimeConditioning:
         assert 0.0 <= result["posterior_win_probability"] <= 1.0
         assert result["regime_used"] == regime
         assert result["bayesian_grade"] in {
-            "INSTITUTIONAL_A", "INSTITUTIONAL_B",
-            "SPECULATIVE", "NO_EDGE",
+            "INSTITUTIONAL_A",
+            "INSTITUTIONAL_B",
+            "SPECULATIVE",
+            "NO_EDGE",
         }
 
 
@@ -1218,16 +1277,23 @@ class TestL4SessionScoringAnalyze:
 
     def test_wolf_total_capped_at_30(self) -> None:
         """Even with perfect scores, total ≤ 30."""
-        l1 = {"bias": "BULLISH", "strength": 1.0, "confidence": 1.0,
-               "regime": "TREND_UP"}
-        l2 = {"trend_strength": 1.0, "momentum": 1.0, "rsi_score": 1.0,
-               "structure_score": 1.0, "volume_score": 1.0,
-               "trend_bias": "BULLISH"}
+        l1 = {"bias": "BULLISH", "strength": 1.0, "confidence": 1.0, "regime": "TREND_UP"}
+        l2 = {
+            "trend_strength": 1.0,
+            "momentum": 1.0,
+            "rsi_score": 1.0,
+            "structure_score": 1.0,
+            "volume_score": 1.0,
+            "trend_bias": "BULLISH",
+        }
         l3 = {"confidence": 1.0}
         now = datetime(2026, 2, 11, 14, 0, 0, tzinfo=UTC)
 
         result = L4SessionScoring().analyze(
-            l1=l1, l2=l2, l3=l3, now=now,
+            l1=l1,
+            l2=l2,
+            l3=l3,
+            now=now,
         )
         assert result["wolf_30_point"]["total"] <= 30
 
@@ -1253,8 +1319,7 @@ class TestL4SessionScoringAnalyze:
         now = datetime(2026, 2, 11, 14, 0, 0, tzinfo=UTC)
 
         result = analyzer.analyze(
-            l1={"bias": "BULLISH", "confidence": 0.8,
-                "regime": "TREND_UP"},
+            l1={"bias": "BULLISH", "confidence": 0.8, "regime": "TREND_UP"},
             l2={"trend_strength": 0.7, "momentum": 0.6},
             l3={"confidence": 0.7},
             now=now,
@@ -1265,7 +1330,10 @@ class TestL4SessionScoringAnalyze:
         """Minimal inputs should still produce valid output."""
         now = datetime(2026, 2, 11, 14, 0, 0, tzinfo=UTC)
         result = L4SessionScoring().analyze(
-            l1={}, l2={}, l3={}, now=now,
+            l1={},
+            l2={},
+            l3={},
+            now=now,
         )
         assert result["valid"] is True  # L4 is always valid
         assert result["wolf_30_point"]["total"] >= 0
@@ -1307,8 +1375,7 @@ class TestL4ScoringEngine:
         """New 'bayesian' key is additive — present but non-breaking."""
         engine = L4ScoringEngine()
         result = engine.score(
-            l1={"bias": "BULLISH", "confidence": 0.7,
-                "regime": "TREND_UP"},
+            l1={"bias": "BULLISH", "confidence": 0.7, "regime": "TREND_UP"},
             l2={"trend_strength": 0.6},
             l3={"confidence": 0.6},
         )
@@ -1352,8 +1419,7 @@ class TestAnalyzeSessionScoring:
     def test_returns_full_output(self) -> None:
         now = datetime(2026, 2, 11, 14, 0, 0, tzinfo=UTC)
         result = analyze_session_scoring(
-            l1={"bias": "BULLISH", "confidence": 0.7,
-                "regime": "TREND_UP"},
+            l1={"bias": "BULLISH", "confidence": 0.7, "regime": "TREND_UP"},
             l2={"trend_strength": 0.6},
             l3={"confidence": 0.6},
             now=now,

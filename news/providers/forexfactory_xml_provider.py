@@ -56,19 +56,16 @@ class ForexFactoryXmlProvider:
                     resp.raise_for_status()
                 break
             except httpx.HTTPStatusError as exc:
-                raise ProviderUnavailableError(
-                    self.name, f"HTTP {exc.response.status_code}"
-                ) from exc
+                raise ProviderUnavailableError(self.name, f"HTTP {exc.response.status_code}") from exc
             except (httpx.RequestError, httpx.TimeoutException) as exc:
                 last_exc = exc
                 attempt += 1
                 logger.debug("FF XML retry %d/%d: %s", attempt, self._max_retries, exc)
                 import asyncio
-                await asyncio.sleep(min(2 ** attempt, 10))
+
+                await asyncio.sleep(min(2**attempt, 10))
         else:
-            raise ProviderUnavailableError(
-                self.name, f"All {self._max_retries} retries exhausted: {last_exc}"
-            )
+            raise ProviderUnavailableError(self.name, f"All {self._max_retries} retries exhausted: {last_exc}")
 
         raw_events = self._parse_xml(resp.text)
         day_events = [e for e in raw_events if e.get("date", "")[:10] == date_str]
@@ -88,16 +85,18 @@ class ForexFactoryXmlProvider:
                 el = item.find(tag)
                 return el.text.strip() if el is not None and el.text else ""
 
-            events.append({
-                "title": get_text("title"),
-                "currency": get_text("country"),  # FF XML uses <country> for currency
-                "date": get_text("date"),
-                "time": get_text("time"),
-                "impact": get_text("impact"),
-                "actual": get_text("actual") or None,
-                "forecast": get_text("forecast") or None,
-                "previous": get_text("previous") or None,
-                "url": get_text("url") or None,
-            })
+            events.append(
+                {
+                    "title": get_text("title"),
+                    "currency": get_text("country"),  # FF XML uses <country> for currency
+                    "date": get_text("date"),
+                    "time": get_text("time"),
+                    "impact": get_text("impact"),
+                    "actual": get_text("actual") or None,
+                    "forecast": get_text("forecast") or None,
+                    "previous": get_text("previous") or None,
+                    "url": get_text("url") or None,
+                }
+            )
 
         return events

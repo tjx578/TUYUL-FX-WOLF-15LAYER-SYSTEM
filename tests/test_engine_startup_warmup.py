@@ -5,6 +5,7 @@ Verifies that:
 - WARMUP_MIN_BARS does not include M15 (M15 arrives from tick data,
   not REST, so it must never block pipeline startup).
 """
+
 from __future__ import annotations
 
 from pipeline.wolf_constitutional_pipeline import WolfConstitutionalPipeline
@@ -76,4 +77,3 @@ def test_seed_from_redis_checks_h1_not_m15() -> None:
         f"found pattern at: {m15_gate.group()!r}. "
         "Remove it; M15 arrives from ticks ~15 min after WebSocket connects."
     )
-

@@ -110,9 +110,7 @@ class DecisionJournal(BaseModel):
     gates_total: int = Field(default=9, description="Total number of gates")
     failed_gates: list[str] = Field(default_factory=list, description="List of failed gate names")
     violations: list[str] = Field(default_factory=list, description="Constitutional violations")
-    primary_rejection_reason: str | None = Field(
-        default=None, description="Main reason for rejection"
-    )
+    primary_rejection_reason: str | None = Field(default=None, description="Main reason for rejection")
 
     @field_validator("setup_id")
     @classmethod
@@ -185,9 +183,7 @@ class ReflectiveJournal(BaseModel):
     discipline_rating: int = Field(..., ge=1, le=10, description="Discipline score (1-10)")
     override_attempted: bool = Field(default=False, description="Was override attempted?")
     learning_note: str = Field(default="", description="Key learning from this trade")
-    system_adjustment_candidate: bool = Field(
-        default=False, description="Should system be adjusted?"
-    )
+    system_adjustment_candidate: bool = Field(default=False, description="Should system be adjusted?")
 
     @field_validator("setup_id")
     @classmethod

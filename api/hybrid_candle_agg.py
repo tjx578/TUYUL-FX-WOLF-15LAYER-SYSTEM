@@ -33,11 +33,11 @@ asyncio event loop by ~300ms/sec for 30 pairs × 2 TF × ~2ms each.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import os
 import time
 from typing import Any, TypedDict
 
-import orjson
 from loguru import logger
 
 # ── Feature flag ─────────────────────────────────────────────────────────────
@@ -173,6 +173,7 @@ class HybridCandleAggregator:
 
         try:
             from infrastructure.redis_client import get_client
+
             self._async_redis = await get_client()
             logger.info("[HybridCandleAgg] Async Redis client obtained")
         except Exception as exc:
@@ -186,9 +187,7 @@ class HybridCandleAggregator:
             self._init_local_builders()
 
         # Start TRQ poller background task
-        self._trq_task = asyncio.create_task(
-            self._trq_poller(), name="hybrid_candle_agg_trq"
-        )
+        self._trq_task = asyncio.create_task(self._trq_poller(), name="hybrid_candle_agg_trq")
 
         logger.info(
             "[HybridCandleAgg] Started — %d symbols, USE_REDIS_FORMING=%s",
@@ -200,10 +199,8 @@ class HybridCandleAggregator:
         """Stop background tasks."""
         if self._trq_task is not None:
             self._trq_task.cancel()
-            try:
+            with contextlib.suppress(asyncio.CancelledError):
                 await self._trq_task
-            except asyncio.CancelledError:
-                pass
             self._trq_task = None
         logger.info("[HybridCandleAgg] Stopped")
 
@@ -219,6 +216,7 @@ class HybridCandleAggregator:
             return
         mid = round((bid + ask) / 2, 6)
         from datetime import UTC, datetime
+
         dt = datetime.fromtimestamp(ts, tz=UTC)
         for builder in self._local_builders[symbol].values():
             builder.on_tick(mid, dt, volume=1.0)
@@ -227,9 +225,7 @@ class HybridCandleAggregator:
     # Snapshot methods (called by WS endpoint)
     # ------------------------------------------------------------------
 
-    def get_combined_snapshot(
-        self, symbol_filter: str | None = None
-    ) -> dict[str, dict[str, CandleBar]]:
+    def get_combined_snapshot(self, symbol_filter: str | None = None) -> dict[str, dict[str, CandleBar]]:
         """Return the latest closed bars snapshot for all (or one) symbols.
 
         Loads the most-recent closed bar from Redis for each symbol/TF combination.
@@ -241,9 +237,7 @@ class HybridCandleAggregator:
         result: dict[str, dict[str, CandleBar]] = {sym: {} for sym in symbols}
         return result
 
-    def get_forming_bars(
-        self, symbol_filter: str | None = None
-    ) -> dict[str, dict[str, FormingBarData]]:
+    def get_forming_bars(self, symbol_filter: str | None = None) -> dict[str, dict[str, FormingBarData]]:
         """Return forming bars from Redis (or local builders if fallback mode).
 
         Returns empty dicts if Redis is not yet available; the WS endpoint
@@ -266,9 +260,7 @@ class HybridCandleAggregator:
     # Async Redis fetchers (for active polling by WS endpoint)
     # ------------------------------------------------------------------
 
-    async def fetch_forming_bars_async(
-        self, symbol_filter: str | None = None
-    ) -> dict[str, dict[str, FormingBarData]]:
+    async def fetch_forming_bars_async(self, symbol_filter: str | None = None) -> dict[str, dict[str, FormingBarData]]:
         """Fetch forming bars from Redis asynchronously.
 
         This is the primary method for the WS endpoint to call.
@@ -289,6 +281,7 @@ class HybridCandleAggregator:
             sym_bars: dict[str, FormingBarData] = {}
             for tf in timeframes:
                 from core.redis_keys import candle_forming
+
                 key = candle_forming(sym, tf)
                 try:
                     raw: dict[Any, Any] = await redis.hgetall(key)
@@ -296,9 +289,7 @@ class HybridCandleAggregator:
                     if raw:
                         # Redis returns bytes or str depending on decode_responses
                         decoded: dict[str, Any] = {
-                            (k.decode() if isinstance(k, bytes) else k): (
-                                v.decode() if isinstance(v, bytes) else v
-                            )
+                            (k.decode() if isinstance(k, bytes) else k): (v.decode() if isinstance(v, bytes) else v)
                             for k, v in raw.items()
                         }
                         parsed = _parse_forming_bar(decoded)
@@ -308,7 +299,9 @@ class HybridCandleAggregator:
                     self._redis_errors += 1
                     logger.debug(
                         "[HybridCandleAgg] Redis forming bar read failed %s %s: %s",
-                        sym, tf, exc,
+                        sym,
+                        tf,
+                        exc,
                     )
             result[sym] = sym_bars
 
@@ -339,6 +332,7 @@ class HybridCandleAggregator:
             return self._async_redis
         try:
             from infrastructure.redis_client import get_client
+
             self._async_redis = await get_client()
             return self._async_redis
         except Exception:
@@ -390,25 +384,19 @@ class HybridCandleAggregator:
                 raw = await redis.hgetall(key)
                 if raw:
                     decoded = {
-                        (k.decode() if isinstance(k, bytes) else k): (
-                            v.decode() if isinstance(v, bytes) else v
-                        )
+                        (k.decode() if isinstance(k, bytes) else k): (v.decode() if isinstance(v, bytes) else v)
                         for k, v in raw.items()
                     }
                     self._trq_cache[sym] = decoded
             except Exception:
                 pass
 
-    def _get_cached_forming_bars(
-        self, symbol_filter: str | None
-    ) -> dict[str, dict[str, FormingBarData]]:
+    def _get_cached_forming_bars(self, symbol_filter: str | None) -> dict[str, dict[str, FormingBarData]]:
         """Return empty cached forming bars (data fetched async via fetch_forming_bars_async)."""
         symbols = [symbol_filter] if symbol_filter else self._symbols
         return {sym: {} for sym in symbols}
 
-    def _get_local_forming_bars(
-        self, symbol_filter: str | None
-    ) -> dict[str, dict[str, FormingBarData]]:
+    def _get_local_forming_bars(self, symbol_filter: str | None) -> dict[str, dict[str, FormingBarData]]:
         """Build forming bars from local fallback CandleBuilders."""
         symbols = [symbol_filter] if symbol_filter else self._symbols
         result: dict[str, dict[str, FormingBarData]] = {}
@@ -435,6 +423,7 @@ class HybridCandleAggregator:
         """Initialize local CandleBuilder fallbacks (USE_REDIS_FORMING=false)."""
         try:
             from ingest.candle_builder import CandleBuilder, Timeframe
+
             for sym in self._symbols:
                 self._local_builders[sym] = {
                     "M15": CandleBuilder(symbol=sym, timeframe=Timeframe.M15),

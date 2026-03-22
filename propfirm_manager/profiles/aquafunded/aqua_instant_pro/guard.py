@@ -59,8 +59,7 @@ class AquaInstantProGuard(AquafundedGuard):
                 self._strategy = StrategyLoader.load()
             except Exception as exc:  # noqa: BLE001
                 logger.warning(
-                    f"AquaInstantProGuard: strategy_loader failed to load, "
-                    f"falling back to profile-only rules: {exc}"
+                    f"AquaInstantProGuard: strategy_loader failed to load, falling back to profile-only rules: {exc}"
                 )
                 self._strategy = None
 

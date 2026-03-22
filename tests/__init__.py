@@ -11,12 +11,14 @@ try:
         VerdictEngine,  # pyright: ignore[reportAttributeAccessIssue]
         compute_verdict,  # pyright: ignore[reportAttributeAccessIssue]
     )
+
     HAS_VERDICT = True
 except ImportError:
     HAS_VERDICT = False
 
 
 # ── Schema validation ─────────────────────────────────────────────
+
 
 class TestL12SchemaCompliance:
     """Ensure L12 output matches the JSON schema contract."""
@@ -73,7 +75,8 @@ class TestVerdictAuthorityBoundary:
     @pytest.mark.skipif(not HAS_VERDICT, reason="verdict_engine not importable")
     def test_verdict_engine_signature_no_account_param(self):
         import inspect  # noqa: PLC0415
-        sig = inspect.signature(compute_verdict) # type: ignore
+
+        sig = inspect.signature(compute_verdict)  # type: ignore
         params = list(sig.parameters.keys())
         for forbidden in ["balance", "equity", "account_state", "account"]:
             assert forbidden not in params, (
@@ -84,12 +87,15 @@ class TestVerdictAuthorityBoundary:
 class TestVerdictGate:
     """Layer-12 gate: only EXECUTE verdicts should pass to execution."""
 
-    @pytest.mark.parametrize("verdict,should_pass", [
-        ("EXECUTE", True),
-        ("HOLD", False),
-        ("NO_TRADE", False),
-        ("ABORT", False),
-    ])
+    @pytest.mark.parametrize(
+        "verdict,should_pass",
+        [
+            ("EXECUTE", True),
+            ("HOLD", False),
+            ("NO_TRADE", False),
+            ("ABORT", False),
+        ],
+    )
     def test_gate_pass_logic(self, verdict, should_pass, sample_l12_verdict):
         sample_l12_verdict["verdict"] = verdict
         passed = sample_l12_verdict["verdict"] == "EXECUTE"
@@ -100,9 +106,7 @@ class TestVerdictGate:
         sample_l12_verdict["confidence"] = 0.4
         # If a real engine existed, it should reject. We test the invariant.
         if sample_l12_verdict["verdict"] == "EXECUTE":
-            assert sample_l12_verdict["confidence"] >= 0.6, (
-                "EXECUTE with confidence < 0.6 violates quality gate"
-            )
+            assert sample_l12_verdict["confidence"] >= 0.6, "EXECUTE with confidence < 0.6 violates quality gate"
 
 
 class TestVerdictScoring:
@@ -116,11 +120,14 @@ class TestVerdictScoring:
         for key, val in sample_l12_verdict["scores"].items():
             assert 0 <= val <= 10, f"Score '{key}'={val} out of [0,10]"
 
-    @pytest.mark.parametrize("wolf,tii,frpc,expected_verdict", [
-        (9.0, 8.0, 8.0, "EXECUTE"),
-        (2.0, 2.0, 2.0, "NO_TRADE"),
-        (5.0, 5.0, 5.0, "HOLD"),
-    ])
+    @pytest.mark.parametrize(
+        "wolf,tii,frpc,expected_verdict",
+        [
+            (9.0, 8.0, 8.0, "EXECUTE"),
+            (2.0, 2.0, 2.0, "NO_TRADE"),
+            (5.0, 5.0, 5.0, "HOLD"),
+        ],
+    )
     def test_score_to_verdict_mapping(self, wolf, tii, frpc, expected_verdict):
         """Conceptual mapping -- concrete thresholds depend on engine config."""
         avg = (wolf + tii + frpc) / 3

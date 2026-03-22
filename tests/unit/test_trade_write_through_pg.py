@@ -118,6 +118,7 @@ async def test_trade_ledger_get_trade_async_falls_back_to_postgres(monkeypatch: 
 
     monkeypatch.setattr("dashboard.trade_ledger.get_client", _fake_get_client)
     monkeypatch.setattr("dashboard.trade_ledger.pg_client.fetchrow", AsyncMock(return_value=row))
+
     def _fake_from_dict(self: Any, data: Any) -> Any:
         return _TradeObj()
 

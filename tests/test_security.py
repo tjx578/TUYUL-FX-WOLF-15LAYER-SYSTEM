@@ -26,7 +26,6 @@ from dashboard.db import SQLInjectionError, sanitize_identifier, validate_query
 
 
 class TestSQLInjectionGuard:
-
     def test_valid_asyncpg_query(self):
         validate_query("SELECT * FROM trades WHERE symbol = $1", ("EURUSD",))
 
@@ -62,7 +61,6 @@ class TestSQLInjectionGuard:
 
 
 class TestSanitizeIdentifier:
-
     def test_valid_identifier(self):
         assert sanitize_identifier("trades") == '"trades"'
         assert sanitize_identifier("user_sessions") == '"user_sessions"'
@@ -96,7 +94,6 @@ from dashboard.ws_auth import (  # noqa: E402
 
 
 class TestWSTokenInURL:
-
     def test_reject_token_in_query_string(self):
         with pytest.raises(AuthError, match="TOKEN_IN_URL"):
             reject_token_in_url("token=abc123&foo=bar")
@@ -121,7 +118,6 @@ class TestWSTokenInURL:
 
 
 class TestWSTokenManager:
-
     def _make_manager(self):
         return WSTokenManager(secret_key="test-secret-key-32chars-minimum!")
 
@@ -399,7 +395,6 @@ from dashboard.middleware.tls import TLSRedirectMiddleware  # noqa: E402
 
 
 class TestTLSRedirect:
-
     @pytest.mark.asyncio
     async def test_http_gets_redirected(self):
         app = AsyncMock()
@@ -423,6 +418,7 @@ class TestTLSRedirect:
             from importlib import reload
 
             import dashboard.middleware.tls as tls_mod
+
             reload(tls_mod)
             mw2 = tls_mod.TLSRedirectMiddleware(app)
             await mw2(scope, AsyncMock(), mock_send)
@@ -451,6 +447,7 @@ class TestTLSRedirect:
             from importlib import reload
 
             import dashboard.middleware.tls as tls_mod
+
             reload(tls_mod)
             mw2 = tls_mod.TLSRedirectMiddleware(app)
             await mw2(scope, AsyncMock(), AsyncMock())
@@ -472,6 +469,7 @@ class TestTLSRedirect:
             from importlib import reload
 
             import dashboard.middleware.tls as tls_mod
+
             reload(tls_mod)
             mw = tls_mod.TLSRedirectMiddleware(app)
             await mw(scope, AsyncMock(), AsyncMock())
@@ -487,7 +485,6 @@ from dashboard.api_key_manager import APIKeyManager, KeyStatus  # noqa: E402
 
 
 class TestAPIKeyManager:
-
     def _make_manager(self, tmp_path: Path | None = None):  # noqa: F821
         return APIKeyManager(
             secret_key="test-api-secret-key-long-enough!!",
@@ -570,7 +567,6 @@ from journal.audit_trail import AuditAction, AuditTrail  # noqa: E402
 
 
 class TestAuditTrail:
-
     def test_append_and_count(self, tmp_path):
         trail = AuditTrail(log_path=tmp_path / "audit.jsonl")
 
@@ -693,8 +689,8 @@ class TestAuditTrail:
 # 6. Integration: Audit + API Key rotation
 # ═══════════════════════════════════════════════════════════════════
 
-class TestSecurityIntegration:
 
+class TestSecurityIntegration:
     def test_key_rotation_audited(self, tmp_path):
         """API key rotation events should be audit-loggable."""
         trail = AuditTrail(log_path=tmp_path / "audit.jsonl")
@@ -721,7 +717,7 @@ class TestSecurityIntegration:
             resource=f"key:{result['key_id']}",
             details={
                 "old_key_id": result["key_id"],
-                "new_key_id": new_result["key_id"], # pyright: ignore[reportOptionalSubscript]
+                "new_key_id": new_result["key_id"],  # pyright: ignore[reportOptionalSubscript]
             },
         )
 

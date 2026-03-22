@@ -24,14 +24,16 @@ def test_engine_suite_smoke() -> None:
     field = suite["field"].analyze(candles, symbol="EURUSD")
     momentum = suite["momentum"].analyze(candles, symbol="EURUSD")
     risk = suite["risk"].analyze(
-        candles, direction="BUY", entry_price=110.0, stop_loss=109.0,
-        take_profit=112.0, symbol="EURUSD",
+        candles,
+        direction="BUY",
+        entry_price=110.0,
+        stop_loss=109.0,
+        take_profit=112.0,
+        symbol="EURUSD",
     )
 
     # CognitiveCoherenceEngine uses evaluate(), not analyze()
-    coherence = suite["coherence"].evaluate(
-        {"emotion_state": 0.3, "fatigue": 0.2, "loss_stress": 0.1}
-    )
+    coherence = suite["coherence"].evaluate({"emotion_state": 0.3, "fatigue": 0.2, "loss_stress": 0.1})
 
     precision = suite["precision"].analyze(candles, direction="BUY", symbol="EURUSD")
     structure = suite["structure"].analyze(candles, symbol="EURUSD")
@@ -39,7 +41,9 @@ def test_engine_suite_smoke() -> None:
     advisory = suite["advisory"].analyze(
         engine_outputs={
             "field": SimpleNamespace(energy=0.5, bias=0.3, entropy=0.2, coherence=0.4, signal="BUY"),
-            "probability": SimpleNamespace(weighted_probability=0.6, layer_probabilities={}, confidence=0.5, signal="BUY"),
+            "probability": SimpleNamespace(
+                weighted_probability=0.6, layer_probabilities={}, confidence=0.5, signal="BUY"
+            ),
             "coherence": SimpleNamespace(coherence_index=0.7, state="COHERENT", risk_flag=False, signal="BUY"),
             "structure": SimpleNamespace(structure_score=0.5, trend="BULLISH", signal="BUY"),
         },

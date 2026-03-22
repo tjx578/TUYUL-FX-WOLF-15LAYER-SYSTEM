@@ -11,6 +11,7 @@ def test_insufficient_data():
     assert result["confidence"] == 0.0
     assert "INSUFFICIENT_DATA" in result["reason"]
 
+
 def test_missing_timeframe():
     engine = ExhaustionDivergenceFusionEngine()
     result = engine.analyze(
@@ -21,11 +22,12 @@ def test_missing_timeframe():
     assert result["confidence"] == 0.0
     assert "H4" in result["missing_tfs"]
 
+
 def test_bullish_divergence_detected():
     engine = ExhaustionDivergenceFusionEngine()
     result = engine.analyze(
         osc={
-            "M5": [30.0, 35.0],   # Higher low in RSI
+            "M5": [30.0, 35.0],  # Higher low in RSI
             "M15": [28.0, 33.0],
             "H1": [25.0, 32.0],
             "H4": [20.0, 30.0],

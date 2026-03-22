@@ -198,9 +198,7 @@ class TestStalePoliciesWithGrace:
 
         assert verdict.action == GovernanceAction.ALLOW_REDUCED
 
-    def test_ws_warmup_grace_takes_precedence_over_stale_grace(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_ws_warmup_grace_takes_precedence_over_stale_grace(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """WS warmup grace path fires before stale grace check."""
         import state.governance_gate as gg
 

@@ -136,40 +136,81 @@ from .wlwci_calculator import WLWCI_CONFIG, calculate_wlwci, get_wlwci_config
 
 __all__ = [
     # Exceptions
-    "FusionError", "FusionComputeError", "FusionInputError", "FusionConfigError",
+    "FusionError",
+    "FusionComputeError",
+    "FusionInputError",
+    "FusionConfigError",
     # Enums
-    "FusionBiasMode", "FusionState", "MomentumBand", "DivergenceType", "DivergenceStrength",
-    "FusionAction", "MarketState", "TransitionState", "LiquidityType", "LiquidityStatus",
-    "ResonanceState", "VolumeZoneType", "VolatilityRegime",
+    "FusionBiasMode",
+    "FusionState",
+    "MomentumBand",
+    "DivergenceType",
+    "DivergenceStrength",
+    "FusionAction",
+    "MarketState",
+    "TransitionState",
+    "LiquidityType",
+    "LiquidityStatus",
+    "ResonanceState",
+    "VolumeZoneType",
+    "VolatilityRegime",
     # Dataclasses
-    "FieldContext", "FusionPrecisionResult", "EquilibriumResult", "DivergenceSignal",
-    "MultiDivergenceResult", "AdaptiveUpdate", "ConfidenceLineage", "MonteCarloResult",
-    "FTTCConfig", "FTTCResult", "QMatrixConfig", "LiquidityZone", "LiquidityMapResult",
-    "CoherenceAudit", "VolumeProfileResult", "VolumeZone", "CounterZoneContext",
-    "NormalizedMicro", "MicroBounds",
+    "FieldContext",
+    "FusionPrecisionResult",
+    "EquilibriumResult",
+    "DivergenceSignal",
+    "MultiDivergenceResult",
+    "AdaptiveUpdate",
+    "ConfidenceLineage",
+    "MonteCarloResult",
+    "FTTCConfig",
+    "FTTCResult",
+    "QMatrixConfig",
+    "LiquidityZone",
+    "LiquidityMapResult",
+    "CoherenceAudit",
+    "VolumeProfileResult",
+    "VolumeZone",
+    "CounterZoneContext",
+    "NormalizedMicro",
+    "MicroBounds",
     # Utilities
-    "validate_price_data", "normalize_timeframe", "calculate_rr_ratio",
-    "timestamp_now", "write_jsonl_atomic", "write_json_atomic",
-    "moving_average", "exponential_moving_average",
+    "validate_price_data",
+    "normalize_timeframe",
+    "calculate_rr_ratio",
+    "timestamp_now",
+    "write_jsonl_atomic",
+    "write_json_atomic",
+    "moving_average",
+    "exponential_moving_average",
     # Field Sync
-    "resolve_field_context", "sync_field_state",
+    "resolve_field_context",
+    "sync_field_state",
     # EMA
-    "EMAFusionEngine", "MultiEMAFusion",
+    "EMAFusionEngine",
+    "MultiEMAFusion",
     # Precision + Metrics
-    "FusionPrecisionEngine", "calculate_fusion_precision",
-    "evaluate_fusion_metrics", "aggregate_multi_timeframe_metrics",
+    "FusionPrecisionEngine",
+    "calculate_fusion_precision",
+    "evaluate_fusion_metrics",
+    "aggregate_multi_timeframe_metrics",
     # Equilibrium
-    "equilibrium_momentum_fusion_v6", "equilibrium_momentum_fusion",
+    "equilibrium_momentum_fusion_v6",
+    "equilibrium_momentum_fusion",
     # Divergence
     "MultiIndicatorDivergenceDetector",
     # Adaptive Threshold
     "AdaptiveThresholdController",
     # Integrator
-    "FusionIntegrator", "integrate_fusion_layers",
+    "FusionIntegrator",
+    "integrate_fusion_layers",
     # Monte Carlo
-    "MonteCarloConfidence", "ReflectiveMonteCarlo", "create_fttc_engine",
+    "MonteCarloConfidence",
+    "ReflectiveMonteCarlo",
+    "create_fttc_engine",
     # MTF
-    "multi_timeframe_alignment_analyzer", "audit_reflective_coherence",
+    "multi_timeframe_alignment_analyzer",
+    "audit_reflective_coherence",
     # Phase Resonance
     "phase_resonance_engine_v1_5",
     # Q-Matrix
@@ -181,15 +222,19 @@ __all__ = [
     # Volume Profile
     "VolumeProfileAnalyzer",
     # WLWCI
-    "WLWCI_CONFIG", "get_wlwci_config", "calculate_wlwci",
+    "WLWCI_CONFIG",
+    "get_wlwci_config",
+    "calculate_wlwci",
     # RSI Alignment
     "rsi_alignment_engine",
     # Counter Zone
     "smart_money_counter_v3_5_reflective",
     # Orchestrator
-    "UltraFusionOrchestrator", "UltraFusionOrchestratorV6",
+    "UltraFusionOrchestrator",
+    "UltraFusionOrchestratorV6",
     # Micro Adapter
     "MicroAdapter",
     # Hybrid Quantum
-    "QuantumReflectiveEngine", "HybridReflectiveCore",
+    "QuantumReflectiveEngine",
+    "HybridReflectiveCore",
 ]

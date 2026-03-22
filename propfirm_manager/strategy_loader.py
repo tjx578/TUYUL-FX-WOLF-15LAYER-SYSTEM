@@ -418,7 +418,7 @@ class StrategyLoader:
         if violations:
             for v in violations:
                 logger.warning(
-                    f"HardRuleViolation | account={account_id} rule={v.rule} " f"action={v.action} detail={v.detail}"
+                    f"HardRuleViolation | account={account_id} rule={v.rule} action={v.action} detail={v.detail}"
                 )
 
         return result

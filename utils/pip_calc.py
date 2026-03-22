@@ -8,8 +8,6 @@ side-effects.
 
 from __future__ import annotations
 
-from typing import Optional
-
 __all__ = [
     "get_pip_info",
     "get_pip_multiplier",
@@ -103,7 +101,7 @@ def get_pip_value(
     symbol: str,
     lot_size: float = 1.0,
     account_currency: str = "USD",
-    current_price: Optional[float] = None,
+    current_price: float | None = None,
 ) -> float:
     """Estimate the value of 1 pip in *account_currency* for a given lot size.
 
@@ -162,7 +160,7 @@ def calc_lot_size(
     symbol: str,
     risk_amount: float,
     stop_loss_pips: float,
-    current_price: Optional[float] = None,
+    current_price: float | None = None,
     account_currency: str = "USD",
     min_lot: float = 0.01,
     max_lot: float = 100.0,

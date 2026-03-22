@@ -39,7 +39,8 @@ class TestPerTfCoherence:
     def test_symmetric(self) -> None:
         """Bull and bear at equal distance from 0.5 give same coherence."""
         assert math.isclose(
-            per_tf_coherence(0.8), per_tf_coherence(0.2),
+            per_tf_coherence(0.8),
+            per_tf_coherence(0.2),
         )
 
 

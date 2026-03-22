@@ -140,11 +140,7 @@ def test_calendar_blocker_manual_override(monkeypatch: pytest.MonkeyPatch) -> No
         checked_at=datetime.now(UTC),
     )
     service = _FakeNewsService(_events=[event], _status=unlocked_status)
-    redis = _FakeRedis(
-        initial={
-            "NEWS_LOCK:STATE": '{"locked": true, "reason": "Operator lock"}'
-        }
-    )
+    redis = _FakeRedis(initial={"NEWS_LOCK:STATE": '{"locked": true, "reason": "Operator lock"}'})
 
     client = _test_client_with_mocks(monkeypatch, redis=redis, service=service)
 

@@ -38,14 +38,16 @@ class TestCheckPriceDrift:
     def test_rest_only_no_tick_returns_no_drift(self) -> None:
         """REST close present but no WS tick → no drift."""
         bus = LiveContextBus()
-        bus.push_candle({
-            "symbol": "EURUSD",
-            "timeframe": "H1",
-            "close": 1.1000,
-            "open": 1.0990,
-            "high": 1.1010,
-            "low": 1.0980,
-        })
+        bus.push_candle(
+            {
+                "symbol": "EURUSD",
+                "timeframe": "H1",
+                "close": 1.1000,
+                "open": 1.0990,
+                "high": 1.1010,
+                "low": 1.0980,
+            }
+        )
         result = bus.check_price_drift("EURUSD", 50.0)
         assert result["drifted"] is False
         assert result["rest_close"] == 1.1000
@@ -63,14 +65,16 @@ class TestCheckPriceDrift:
     def test_within_threshold_not_drifted(self) -> None:
         """5-pip difference on EURUSD (pip mult 10000) → 5 pips < 50 threshold."""
         bus = LiveContextBus()
-        bus.push_candle({
-            "symbol": "EURUSD",
-            "timeframe": "H1",
-            "close": 1.10000,
-            "open": 1.09900,
-            "high": 1.10100,
-            "low": 1.09800,
-        })
+        bus.push_candle(
+            {
+                "symbol": "EURUSD",
+                "timeframe": "H1",
+                "close": 1.10000,
+                "open": 1.09900,
+                "high": 1.10100,
+                "low": 1.09800,
+            }
+        )
         # 5 pips away: 1.10000 - 1.09950 = 0.0005 → 5 pips
         bus.update_tick({"symbol": "EURUSD", "bid": 1.09940, "ask": 1.09960})
         result = bus.check_price_drift("EURUSD", 50.0)
@@ -80,14 +84,16 @@ class TestCheckPriceDrift:
     def test_exceeds_threshold_drifted(self) -> None:
         """75-pip diff on EURUSD → drifted=True."""
         bus = LiveContextBus()
-        bus.push_candle({
-            "symbol": "EURUSD",
-            "timeframe": "H1",
-            "close": 1.10000,
-            "open": 1.09900,
-            "high": 1.10100,
-            "low": 1.09800,
-        })
+        bus.push_candle(
+            {
+                "symbol": "EURUSD",
+                "timeframe": "H1",
+                "close": 1.10000,
+                "open": 1.09900,
+                "high": 1.10100,
+                "low": 1.09800,
+            }
+        )
         # 75 pips away: 1.10000 - 1.09250 = 0.0075 → 75 pips
         bus.update_tick({"symbol": "EURUSD", "bid": 1.09240, "ask": 1.09260})
         result = bus.check_price_drift("EURUSD", 50.0)
@@ -97,14 +103,16 @@ class TestCheckPriceDrift:
     def test_jpy_pair_multiplier(self) -> None:
         """USDJPY uses 100× multiplier. 0.30 raw diff → 30 pips."""
         bus = LiveContextBus()
-        bus.push_candle({
-            "symbol": "USDJPY",
-            "timeframe": "H1",
-            "close": 150.000,
-            "open": 149.800,
-            "high": 150.100,
-            "low": 149.700,
-        })
+        bus.push_candle(
+            {
+                "symbol": "USDJPY",
+                "timeframe": "H1",
+                "close": 150.000,
+                "open": 149.800,
+                "high": 150.100,
+                "low": 149.700,
+            }
+        )
         # 30 pips away: (150.000 - 149.700) * 100 = 30
         bus.update_tick({"symbol": "USDJPY", "bid": 149.695, "ask": 149.705})
         result = bus.check_price_drift("USDJPY", 50.0)
@@ -114,14 +122,16 @@ class TestCheckPriceDrift:
     def test_gold_multiplier(self) -> None:
         """XAUUSD uses 10× multiplier. $6.0 raw diff → 60 pips."""
         bus = LiveContextBus()
-        bus.push_candle({
-            "symbol": "XAUUSD",
-            "timeframe": "H1",
-            "close": 2000.00,
-            "open": 1998.00,
-            "high": 2002.00,
-            "low": 1997.00,
-        })
+        bus.push_candle(
+            {
+                "symbol": "XAUUSD",
+                "timeframe": "H1",
+                "close": 2000.00,
+                "open": 1998.00,
+                "high": 2002.00,
+                "low": 1997.00,
+            }
+        )
         # $6.0 away → 6.0 * 10 = 60 pips
         bus.update_tick({"symbol": "XAUUSD", "bid": 1993.90, "ask": 1994.10})
         result = bus.check_price_drift("XAUUSD", 50.0)
@@ -131,14 +141,16 @@ class TestCheckPriceDrift:
     def test_tick_with_price_field_fallback(self) -> None:
         """Tick using 'price' instead of bid/ask still works."""
         bus = LiveContextBus()
-        bus.push_candle({
-            "symbol": "EURUSD",
-            "timeframe": "H1",
-            "close": 1.10000,
-            "open": 1.09900,
-            "high": 1.10100,
-            "low": 1.09800,
-        })
+        bus.push_candle(
+            {
+                "symbol": "EURUSD",
+                "timeframe": "H1",
+                "close": 1.10000,
+                "open": 1.09900,
+                "high": 1.10100,
+                "low": 1.09800,
+            }
+        )
         bus.update_tick({"symbol": "EURUSD", "price": 1.09950})
         result = bus.check_price_drift("EURUSD", 50.0)
         assert result["drifted"] is False
@@ -148,14 +160,16 @@ class TestCheckPriceDrift:
     def test_unknown_pair_uses_default_multiplier(self) -> None:
         """Unknown pair falls back to 10000 multiplier."""
         bus = LiveContextBus()
-        bus.push_candle({
-            "symbol": "TRYMXN",
-            "timeframe": "H1",
-            "close": 1.50000,
-            "open": 1.49000,
-            "high": 1.51000,
-            "low": 1.48000,
-        })
+        bus.push_candle(
+            {
+                "symbol": "TRYMXN",
+                "timeframe": "H1",
+                "close": 1.50000,
+                "open": 1.49000,
+                "high": 1.51000,
+                "low": 1.48000,
+            }
+        )
         bus.update_tick({"symbol": "TRYMXN", "price": 1.49000})
         result = bus.check_price_drift("TRYMXN", 50.0)
         # 0.01 * 10000 = 100 pips with default multiplier

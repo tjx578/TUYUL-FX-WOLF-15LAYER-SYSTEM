@@ -65,9 +65,7 @@ async def get_calendar(
     if impact:
         events_dicts = [e for e in events_dicts if e.get("impact") == impact]
     if currency:
-        events_dicts = [
-            e for e in events_dicts if e.get("currency", "").upper() == currency.upper()
-        ]
+        events_dicts = [e for e in events_dicts if e.get("currency", "").upper() == currency.upper()]
 
     events_dicts.sort(key=lambda e: e.get("datetime_utc") or "")
 
@@ -109,9 +107,7 @@ async def upcoming_events(
     now = datetime.now(UTC)
 
     min_impact = impact or "LOW"
-    events = await service.get_upcoming_events(
-        lookahead_hours=hours, min_impact=min_impact, now=now
-    )
+    events = await service.get_upcoming_events(lookahead_hours=hours, min_impact=min_impact, now=now)
 
     upcoming_dicts: list[dict[str, Any]] = []
     for ev in events:
@@ -177,9 +173,7 @@ async def enable_news_lock(req: NewsLockRequest) -> dict[str, Any]:
         "locked": True,
         "reason": req.reason,
         "enabled_at": datetime.now(UTC).isoformat(),
-        "expires_at": (
-            datetime.now(UTC) + timedelta(minutes=req.duration_minutes or 60)
-        ).isoformat(),
+        "expires_at": (datetime.now(UTC) + timedelta(minutes=req.duration_minutes or 60)).isoformat(),
     }
     try:
         await r.set(

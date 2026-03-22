@@ -31,6 +31,7 @@ from api.middleware.rbac import (  # noqa: E402
 
 # ── Role basics ───────────────────────────────────────────────────────────────
 
+
 class TestRole:
     def test_from_str_valid(self) -> None:
         assert Role.from_str("viewer") == Role.VIEWER
@@ -52,6 +53,7 @@ class TestRole:
 
 
 # ── Permission mapping ───────────────────────────────────────────────────────
+
 
 class TestPermissionMapping:
     def test_viewer_has_read_permissions(self) -> None:
@@ -125,6 +127,7 @@ class TestPermissionMapping:
 
 # ── UserContext ───────────────────────────────────────────────────────────────
 
+
 class TestUserContext:
     def _make_user(
         self,
@@ -179,6 +182,7 @@ class TestUserContext:
 
 
 # ── Completeness check ───────────────────────────────────────────────────────
+
 
 class TestPermissionCoverage:
     def test_every_permission_is_assigned_to_at_least_one_role(self) -> None:

@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """Generate production-ready core_cognitive_unified.py"""
 
-import sys
 from pathlib import Path
 
 # Target path
@@ -362,8 +361,8 @@ class RegimeClassifier:
         self.trend_threshold: float = 0.002
 
     def classify(
-        self, 
-        symbol: str, 
+        self,
+        symbol: str,
         timeframe: str = "H1",
         data: dict[str, typing.Any] | None = None
     ) -> RegimeAnalysis:
@@ -466,7 +465,7 @@ class ReflexEmotionCore:
         self.coherence_history: list[float] = []
 
     def compute_reflex_emotion(
-        self, 
+        self,
         market_data: dict[str, typing.Any]
     ) -> ReflexEmotionResult:
         """
@@ -482,7 +481,7 @@ class ReflexEmotionCore:
         momentum = market_data.get("momentum", 0.0)
         volume_ratio = market_data.get("volume_ratio", 1.0)
 
-        reflex_signal = (momentum * 0.4 + (volume_ratio - 1.0) * 0.3 + 
+        reflex_signal = (momentum * 0.4 + (volume_ratio - 1.0) * 0.3 +
                         (1.0 - volatility * 50) * 0.3)
         reflex_signal = max(-1.0, min(1.0, reflex_signal))
 
@@ -674,8 +673,8 @@ class SmartMoneyDetector:
         self.sweep_threshold: float = 0.003
 
     def analyze(
-        self, 
-        symbol: str, 
+        self,
+        symbol: str,
         timeframe: str = "H1",
         data: dict[str, typing.Any] | None = None
     ) -> SmartMoneyAnalysis:
@@ -773,8 +772,8 @@ class TWMSCalculator:
         self.h1_weight = TWMS_WEIGHT_H1
 
     def calculate(
-        self, 
-        symbol: str, 
+        self,
+        symbol: str,
         timeframes: list[str] | None = None,
         component_scores: dict[str, float] | None = None
     ) -> TWMSResult:
@@ -926,7 +925,7 @@ class EmotionFeedbackEngine:
         self.emotion_memory: list[float] = []
 
     def run_cycle(
-        self, 
+        self,
         current_state: dict[str, typing.Any],
         historical_performance: dict[str, typing.Any] | None = None
     ) -> EmotionFeedbackCycle:
@@ -1252,7 +1251,7 @@ def compute_reflex_emotion(
     Returns:
         Reflex emotion score [-1.0, 1.0]
     """
-    signal = (momentum * 0.4 + (volume_ratio - 1.0) * 0.3 + 
+    signal = (momentum * 0.4 + (volume_ratio - 1.0) * 0.3 +
              (1.0 - volatility * 50) * 0.3)
     return max(-1.0, min(1.0, signal))
 
@@ -1379,7 +1378,7 @@ def validate_cognitive_thresholds(
     Returns:
         True if thresholds pass
     """
-    return (coherence >= COHERENCE_THRESHOLD and 
+    return (coherence >= COHERENCE_THRESHOLD and
             integrity >= INTEGRITY_MINIMUM)
 
 

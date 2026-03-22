@@ -135,9 +135,9 @@ class TestExecutionBoundary:
         mod = importlib.import_module("execution.state_machine")
         source = inspect.getsource(mod)
         for forbidden in ["from analysis", "import analysis", "compute_direction", "compute_verdict"]:
-            assert (
-                forbidden not in source
-            ), f"execution/state_machine.py must not contain '{forbidden}' -- boundary violation"
+            assert forbidden not in source, (
+                f"execution/state_machine.py must not contain '{forbidden}' -- boundary violation"
+            )
 
     def test_execution_order_has_no_strategy_fields(self):
         """Order object should only carry execution-relevant data."""

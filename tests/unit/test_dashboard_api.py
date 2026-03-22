@@ -3,23 +3,25 @@ Tests for dashboard API endpoints & risk governance.
 Constitutional boundary: dashboard cannot override Layer-12 verdict.
 """
 
-
 import pytest
 
 try:
-    from dashboard.app import app as dashboard_app
+    from dashboard.app import app as dashboard_app  # type: ignore[import-not-found]
+
     HAS_DASHBOARD = True
 except ImportError:
     try:
-        from dashboard.main import (
+        from dashboard.main import (  # type: ignore[import-not-found]
             app as dashboard_app,  # noqa: F401
         )
+
         HAS_DASHBOARD = True
     except ImportError:
         HAS_DASHBOARD = False
 
 try:
     from httpx import ASGITransport, AsyncClient  # noqa: F401, I001
+
     HAS_HTTPX = True
 except ImportError:
     HAS_HTTPX = False
@@ -65,16 +67,18 @@ class TestDashboardRiskGovernance:
 class TestTradeReportingEndpoints:
     """Trade events from EA/user -> dashboard."""
 
-    @pytest.mark.parametrize("event_type", [
-        "ORDER_PLACED",
-        "ORDER_FILLED",
-        "ORDER_CANCELLED",
-        "ORDER_EXPIRED",
-        "SYSTEM_VIOLATION",
-    ])
+    @pytest.mark.parametrize(
+        "event_type",
+        [
+            "ORDER_PLACED",
+            "ORDER_FILLED",
+            "ORDER_CANCELLED",
+            "ORDER_EXPIRED",
+            "SYSTEM_VIOLATION",
+        ],
+    )
     def test_required_event_types_accepted(self, event_type):
-        valid_events = {"ORDER_PLACED", "ORDER_FILLED", "ORDER_CANCELLED",
-                        "ORDER_EXPIRED", "SYSTEM_VIOLATION"}
+        valid_events = {"ORDER_PLACED", "ORDER_FILLED", "ORDER_CANCELLED", "ORDER_EXPIRED", "SYSTEM_VIOLATION"}
         assert event_type in valid_events
 
     def test_event_payload_structure(self):
@@ -94,8 +98,7 @@ class TestTradeReportingEndpoints:
 
     def test_manual_and_ea_use_same_format(self):
         """Both manual and EA events must have the same structure."""
-        base = {"event_type": "ORDER_PLACED", "order_id": "X", "symbol": "EURUSD",
-                "timestamp": "2026-02-15T10:00:00Z"}
+        base = {"event_type": "ORDER_PLACED", "order_id": "X", "symbol": "EURUSD", "timestamp": "2026-02-15T10:00:00Z"}
         ea_event = {**base, "source": "EA"}
         manual_event = {**base, "source": "MANUAL"}
         assert set(ea_event.keys()) == set(manual_event.keys())

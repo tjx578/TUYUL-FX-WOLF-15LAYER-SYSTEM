@@ -42,8 +42,8 @@ def _make_redis_mock(stored: dict[str, str] | None = None) -> MagicMock:
     """Build a RedisClient mock backed by an in-memory dict."""
     store: dict[str, str] = dict(stored or {})
     mock = MagicMock()
-    mock.get = MagicMock(side_effect=lambda k: store.get(k))  # type: ignore[misc]
-    mock.set = MagicMock(side_effect=lambda k, v, **_: store.__setitem__(k, v))  # type: ignore[misc]
+    mock.get = MagicMock(side_effect=lambda k: store.get(k))
+    mock.set = MagicMock(side_effect=lambda k, v, **_: store.__setitem__(k, v))
     mock._store = store  # expose for assertions
     return mock
 
@@ -70,6 +70,7 @@ def _build_monitor(
         patch("risk.drawdown.load_risk", return_value=_RISK_CONFIG),
     ):
         from risk.drawdown import DrawdownMonitor
+
         mon = DrawdownMonitor(initial_balance=initial_balance, **kwargs)
     # Expose the mock for verification
     mon._test_redis = redis_mock  # type: ignore[attr-defined]
@@ -80,10 +81,11 @@ def _build_monitor(
 #  Initialization
 # ──────────────────────────────────────────────────────────────────
 
+
 class TestDrawdownInit:
     def test_initializes_with_defaults(self) -> None:
         mon = _build_monitor(100_000)
-        snap: dict[str, float] = mon.get_snapshot()  # type: ignore[assignment]
+        snap: dict[str, float] = mon.get_snapshot()
         assert snap["peak_equity"] == 100_000
         assert snap["daily_dd_amount"] == 0.0
         assert snap["weekly_dd_amount"] == 0.0
@@ -97,7 +99,7 @@ class TestDrawdownInit:
             "wolf15:risk:peak_equity": "105000.0",
         }
         mon = _build_monitor(100_000, stored=stored)
-        snap: dict[str, float] = mon.get_snapshot()  # type: ignore[assignment]
+        snap: dict[str, float] = mon.get_snapshot()
         assert snap["daily_dd_amount"] == 150.0
         assert snap["weekly_dd_amount"] == 300.0
         assert snap["total_dd_amount"] == 500.0
@@ -125,18 +127,19 @@ class TestDrawdownInit:
 #  Peak equity tracking
 # ──────────────────────────────────────────────────────────────────
 
+
 class TestPeakEquity:
     def test_peak_updates_on_higher_equity(self) -> None:
         mon = _build_monitor(100_000)
         mon.update(102_000)
-        snap: dict[str, float] = mon.get_snapshot()  # type: ignore[assignment]
+        snap: dict[str, float] = mon.get_snapshot()
         assert snap["peak_equity"] == 102_000
 
     def test_peak_does_not_decrease(self) -> None:
         mon = _build_monitor(100_000)
         mon.update(102_000)
         mon.update(99_000)
-        snap: dict[str, float] = mon.get_snapshot()  # type: ignore[assignment]
+        snap: dict[str, float] = mon.get_snapshot()
         assert snap["peak_equity"] == 102_000
 
 
@@ -144,19 +147,20 @@ class TestPeakEquity:
 #  Total drawdown (peak − current equity)
 # ──────────────────────────────────────────────────────────────────
 
+
 class TestTotalDrawdown:
     def test_total_drawdown_from_peak(self) -> None:
         mon = _build_monitor(100_000)
         mon.update(100_000)  # peak = 100k
-        mon.update(97_000)   # DD = 3k
-        snap: dict[str, float] = mon.get_snapshot()  # type: ignore[assignment]
+        mon.update(97_000)  # DD = 3k
+        snap: dict[str, float] = mon.get_snapshot()
         assert snap["total_dd_amount"] == 3_000
 
     def test_total_drawdown_percent(self) -> None:
         mon = _build_monitor(100_000)
         mon.update(95_000)
-        snap: dict[str, float] = mon.get_snapshot()  # type: ignore[assignment]
-        dd_percent: float = snap["total_dd_percent"]  # type: ignore[index]
+        snap: dict[str, float] = mon.get_snapshot()
+        dd_percent: float = snap["total_dd_percent"]
         assert abs(dd_percent - 0.05) < 1e-9
 
 
@@ -164,18 +168,19 @@ class TestTotalDrawdown:
 #  Daily / weekly PnL accumulation
 # ──────────────────────────────────────────────────────────────────
 
+
 class TestPnLAccumulation:
     def test_negative_pnl_adds_to_daily_and_weekly(self) -> None:
         mon = _build_monitor(100_000)
         mon.update(99_500, pnl=-500)
-        snap: dict[str, float] = mon.get_snapshot()  # type: ignore[assignment]
+        snap: dict[str, float] = mon.get_snapshot()
         assert snap["daily_dd_amount"] == 500
         assert snap["weekly_dd_amount"] == 500
 
     def test_positive_pnl_does_not_affect_counters(self) -> None:
         mon = _build_monitor(100_000)
         mon.update(100_500, pnl=500)
-        snap: dict[str, float] = mon.get_snapshot()  # type: ignore[assignment]
+        snap: dict[str, float] = mon.get_snapshot()
         assert snap["daily_dd_amount"] == 0.0
         assert snap["weekly_dd_amount"] == 0.0
 
@@ -183,7 +188,7 @@ class TestPnLAccumulation:
         mon = _build_monitor(100_000)
         mon.update(99_700, pnl=-300)
         mon.update(99_400, pnl=-300)
-        snap: dict[str, float] = mon.get_snapshot()  # type: ignore[assignment]
+        snap: dict[str, float] = mon.get_snapshot()
         assert snap["daily_dd_amount"] == 600
         assert snap["weekly_dd_amount"] == 600
 
@@ -192,11 +197,12 @@ class TestPnLAccumulation:
 #  Auto-reset
 # ──────────────────────────────────────────────────────────────────
 
+
 class TestAutoReset:
     def test_daily_reset_on_date_change(self, monkeypatch: pytest.MonkeyPatch) -> None:
         mon = _build_monitor(100_000)
         mon.update(99_000, pnl=-1_000)
-        snap_init: dict[str, float] = mon.get_snapshot()  # type: ignore[assignment]
+        snap_init: dict[str, float] = mon.get_snapshot()
         assert snap_init["daily_dd_amount"] == 1_000
 
         # Simulate date advancing to tomorrow (without touching protected fields)
@@ -204,25 +210,26 @@ class TestAutoReset:
         monkeypatch.setattr("risk.drawdown.now_utc", lambda: tomorrow)
 
         # Next operation triggers auto-reset
-        snap: dict[str, float] = mon.get_snapshot()  # type: ignore[assignment]
+        snap: dict[str, float] = mon.get_snapshot()
         assert snap["daily_dd_amount"] == 0.0
 
     def test_weekly_reset_on_week_change(self, monkeypatch: pytest.MonkeyPatch) -> None:
         mon = _build_monitor(100_000)
         mon.update(98_000, pnl=-2_000)
-        snap_init: dict[str, float] = mon.get_snapshot()  # type: ignore[assignment]
+        snap_init: dict[str, float] = mon.get_snapshot()
         assert snap_init["weekly_dd_amount"] == 2_000
 
         # Simulate week advancing (without touching protected fields)
         future_week = datetime.now(UTC) + timedelta(days=8)
         monkeypatch.setattr("risk.drawdown.now_utc", lambda: future_week)
-        snap: dict[str, float] = mon.get_snapshot()  # type: ignore[assignment]
+        snap: dict[str, float] = mon.get_snapshot()
         assert snap["weekly_dd_amount"] == 0.0
 
 
 # ──────────────────────────────────────────────────────────────────
 #  Breach detection
 # ──────────────────────────────────────────────────────────────────
+
 
 class TestBreachDetection:
     def test_no_breach_when_within_limits(self) -> None:
@@ -248,7 +255,7 @@ class TestBreachDetection:
     def test_total_breach_from_peak(self) -> None:
         mon = _build_monitor(100_000)
         mon.update(105_000)  # new peak
-        mon.update(94_000)   # total DD = 11k / 105k ≈ 10.5% > 10%
+        mon.update(94_000)  # total DD = 11k / 105k ≈ 10.5% > 10%
         assert mon.is_breached() is True
 
     def test_zero_peak_does_not_crash(self) -> None:
@@ -260,6 +267,7 @@ class TestBreachDetection:
 # ──────────────────────────────────────────────────────────────────
 #  check_and_raise
 # ──────────────────────────────────────────────────────────────────
+
 
 class TestCheckAndRaise:
     def test_raises_when_breached(self) -> None:
@@ -280,6 +288,7 @@ class TestCheckAndRaise:
 #  Redis persistence
 # ──────────────────────────────────────────────────────────────────
 
+
 class TestRedisPersistence:
     def test_state_persisted_on_update(self) -> None:
         mon = _build_monitor(100_000)
@@ -298,6 +307,7 @@ class TestRedisPersistence:
 # ──────────────────────────────────────────────────────────────────
 #  Thread safety sanity check
 # ──────────────────────────────────────────────────────────────────
+
 
 class TestThreadSafety:
     def test_concurrent_updates_do_not_corrupt(self) -> None:
@@ -322,6 +332,6 @@ class TestThreadSafety:
             t.join()
 
         assert not errors, f"Concurrent update errors: {errors}"
-        snap: dict[str, float] = mon.get_snapshot()  # type: ignore[assignment]
+        snap: dict[str, float] = mon.get_snapshot()
         assert snap["peak_equity"] >= 100_000
         assert snap["daily_dd_amount"] >= 0.0

@@ -219,8 +219,8 @@ class TestEnsureLiveProducer:
 
     @pytest.mark.asyncio
     async def test_blocks_when_feed_has_no_producer(self):
-        from state.data_freshness import FeedFreshnessSnapshot
         from api.allocation_router import _ensure_live_producer
+        from state.data_freshness import FeedFreshnessSnapshot
 
         snapshot = FeedFreshnessSnapshot(
             state="no_producer",
@@ -238,8 +238,8 @@ class TestEnsureLiveProducer:
 
     @pytest.mark.asyncio
     async def test_allows_when_feed_is_fresh(self):
-        from state.data_freshness import FeedFreshnessSnapshot
         from api.allocation_router import _ensure_live_producer
+        from state.data_freshness import FeedFreshnessSnapshot
 
         snapshot = FeedFreshnessSnapshot(
             state="fresh",

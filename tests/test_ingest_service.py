@@ -197,9 +197,9 @@ def test_cold_start_m15_removed_from_module(
     M15 comes from tick data (CandleBuilder), never from REST.
     Fetching M15 from REST violates the architecture.
     """
-    assert not hasattr(
-        ingest_service_module, "_cold_start_m15_for_warmup"
-    ), "_cold_start_m15_for_warmup still present — should have been removed. M15 must come from tick data only."
+    assert not hasattr(ingest_service_module, "_cold_start_m15_for_warmup"), (
+        "_cold_start_m15_for_warmup still present — should have been removed. M15 must come from tick data only."
+    )
 
 
 @pytest.mark.asyncio

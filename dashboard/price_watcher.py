@@ -1,4 +1,4 @@
-﻿"""
+"""
 dashboard/price_watcher.py — Price-triggered trade status watcher
 
 Monitors active trades and transitions them based on current market prices:

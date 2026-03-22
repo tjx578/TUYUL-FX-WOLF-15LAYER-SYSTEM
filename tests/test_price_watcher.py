@@ -112,7 +112,10 @@ async def test_pending_to_open_buy_entry_hit(price_watcher, mock_trade_ledger, m
 
     # Verify update_status was called to transition to OPEN
     mock_trade_ledger.update_status.assert_called_once_with(
-        "T-001", TradeStatus.OPEN, close_reason=None, pnl=None,
+        "T-001",
+        TradeStatus.OPEN,
+        close_reason=None,
+        pnl=None,
     )
 
 
@@ -146,7 +149,10 @@ async def test_pending_to_open_sell_entry_hit(price_watcher, mock_trade_ledger, 
 
     # Verify update_status was called to transition to OPEN
     mock_trade_ledger.update_status.assert_called_once_with(
-        "T-002", TradeStatus.OPEN, close_reason=None, pnl=None,
+        "T-002",
+        TradeStatus.OPEN,
+        close_reason=None,
+        pnl=None,
     )
 
 

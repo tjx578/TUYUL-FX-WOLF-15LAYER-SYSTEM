@@ -19,7 +19,6 @@ def _make_returns(n: int = 100, win_rate: float = 0.65, seed: int = 42) -> list[
 
 
 class TestL7ProbabilityAnalyzer:
-
     def test_analyze_with_returns_pass(self) -> None:
         analyzer = L7ProbabilityAnalyzer(mc_simulations=200, mc_seed=42)
         returns = _make_returns(100, win_rate=0.75)
@@ -78,9 +77,18 @@ class TestL7ProbabilityAnalyzer:
         result = analyzer.analyze("NZDUSD", technical_score=70)
 
         expected_keys = {
-            "symbol", "win_probability", "profit_factor", "conf12_raw",
-            "max_drawdown", "validation", "valid", "bayesian_posterior",
-            "bayesian_ci_low", "bayesian_ci_high", "risk_of_ruin",
-            "expected_value", "mc_passed_threshold",
+            "symbol",
+            "win_probability",
+            "profit_factor",
+            "conf12_raw",
+            "max_drawdown",
+            "validation",
+            "valid",
+            "bayesian_posterior",
+            "bayesian_ci_low",
+            "bayesian_ci_high",
+            "risk_of_ruin",
+            "expected_value",
+            "mc_passed_threshold",
         }
         assert expected_keys.issubset(result.keys())

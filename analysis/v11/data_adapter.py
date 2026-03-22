@@ -4,6 +4,7 @@ V11 Data Adapter — translates pipeline synthesis output into V11GateInput.
 This bridges the gap between the pipeline's Dict[str, Any] output and
 the validated V11GateInput model.  Lives in analysis zone only.
 """
+
 from __future__ import annotations
 
 import logging

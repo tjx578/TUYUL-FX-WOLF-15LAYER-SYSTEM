@@ -156,9 +156,7 @@ class AgentManagerService:
             agent = await self._repo.create_agent(data)
         except Exception as exc:
             if _is_unique_violation(exc):
-                raise AgentConflictError(
-                    "An agent with the same mt5_login/mt5_server already exists"
-                ) from exc
+                raise AgentConflictError("An agent with the same mt5_login/mt5_server already exists") from exc
             raise AgentError(f"Failed to create agent: {exc}") from exc
 
         await self._repo.insert_audit_log(
@@ -408,9 +406,7 @@ class AgentManagerService:
         old_status = str(previous.get("status", ""))
         new_status = request.new_status.value
         if old_status == new_status:
-            raise AgentValidationError(
-                f"Agent {agent_id!r} already has status {new_status!r}"
-            )
+            raise AgentValidationError(f"Agent {agent_id!r} already has status {new_status!r}")
 
         updated = await self._repo.update_agent_status(agent_id, new_status)
         if updated is None:
@@ -559,9 +555,7 @@ class AgentManagerService:
             profile = await self._repo.create_profile(data)
         except Exception as exc:
             if _is_unique_violation(exc):
-                raise AgentConflictError(
-                    f"Profile name {request.profile_name!r} already exists"
-                ) from exc
+                raise AgentConflictError(f"Profile name {request.profile_name!r} already exists") from exc
             raise AgentError(f"Failed to create profile: {exc}") from exc
         return profile
 

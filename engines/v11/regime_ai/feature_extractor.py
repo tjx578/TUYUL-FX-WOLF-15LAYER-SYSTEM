@@ -34,18 +34,22 @@ class RegimeFeatures:
 
     def to_array(self) -> np.ndarray:
         """Convert core features to numpy array for ML input."""
-        return np.array([
-            self.volatility,
-            self.trend_strength,
-            self.mean_reversion,
-            self.volume_profile,
-            self.momentum,
-            self.atr_ratio,
-            self.spread_normalized,
-            self.bar_range_avg,
-            self.close_position_in_range,
-            self.directional_bias,
-        ])
+        return np.array(
+            [
+                self.volatility,
+                self.trend_strength,
+                self.mean_reversion,
+                self.volume_profile,
+                self.momentum,
+                self.atr_ratio,
+                self.spread_normalized,
+                self.bar_range_avg,
+                self.close_position_in_range,
+                self.directional_bias,
+            ]
+        )
+
+
 class FeatureExtractor:
     """
     Extracts statistical features from OHLCV data for regime detection.
@@ -53,6 +57,7 @@ class FeatureExtractor:
     All methods are pure functions operating on numpy arrays.
     No side-effects, no execution logic.
     """
+
     def __init__(self, atr_period: int = 14, momentum_period: int = 10) -> None:
         """
         Initialize feature extractor.
@@ -63,6 +68,7 @@ class FeatureExtractor:
         super().__init__()
         self.atr_period = atr_period
         self.momentum_period = momentum_period
+
     def extract(
         self,
         highs: np.ndarray,
@@ -91,20 +97,20 @@ class FeatureExtractor:
         features.momentum = self._calc_momentum(closes)
         features.atr_ratio = self._calc_atr_ratio(highs, lows, closes)
         features.bar_range_avg = self._calc_bar_range_avg(highs, lows)
-        features.close_position_in_range = self._calc_close_position(
-            highs, lows, closes
-        )
+        features.close_position_in_range = self._calc_close_position(highs, lows, closes)
         features.directional_bias = self._calc_directional_bias(closes)
 
         if volumes is not None and len(volumes) > 0:
             features.volume_profile = self._calc_volume_profile(volumes)
         return features
+
     def _calc_volatility(self, closes: np.ndarray) -> float:
         """Calculate normalized volatility (std of returns)."""
         if len(closes) < 2:
             return 0.0
         returns = np.diff(np.log(closes))
         return float(np.std(returns))
+
     def _calc_trend_strength(self, closes: np.ndarray) -> float:
         """Calculate trend strength using linear regression R-squared."""
         n = len(closes)
@@ -113,6 +119,7 @@ class FeatureExtractor:
         x = np.arange(n)
         correlation = np.corrcoef(x, closes)[0, 1]
         return float(correlation**2)  # R-squared
+
     def _calc_mean_reversion(self, closes: np.ndarray) -> float:
         """Calculate mean reversion tendency (Hurst exponent approximation)."""
         if len(closes) < 20:
@@ -122,20 +129,20 @@ class FeatureExtractor:
         var1 = np.var(returns)
         if var1 == 0:
             return 0.5
-        returns_2 = returns[::2][:len(returns) // 2]
+        returns_2 = returns[::2][: len(returns) // 2]
         if len(returns_2) < 2:
             return 0.5
         var2 = np.var(returns_2)
         ratio = var2 / (2 * var1) if var1 > 0 else 0.5
         return float(np.clip(ratio, 0.0, 1.0))
+
     def _calc_momentum(self, closes: np.ndarray) -> float:
         """Calculate normalized momentum."""
         if len(closes) < self.momentum_period + 1:
             return 0.0
-        mom = (closes[-1] - closes[-self.momentum_period - 1]) / closes[
-            -self.momentum_period - 1
-        ]
+        mom = (closes[-1] - closes[-self.momentum_period - 1]) / closes[-self.momentum_period - 1]
         return float(mom)
+
     def _calc_atr_ratio(
         self,
         highs: np.ndarray,
@@ -160,9 +167,8 @@ class FeatureExtractor:
         if avg_price == 0:
             return 0.0
         return atr / avg_price
-    def _calc_bar_range_avg(
-        self, highs: np.ndarray, lows: np.ndarray
-    ) -> float:
+
+    def _calc_bar_range_avg(self, highs: np.ndarray, lows: np.ndarray) -> float:
         """Calculate average bar range normalized."""
         ranges = highs - lows
         avg_range = float(np.mean(ranges))
@@ -170,6 +176,7 @@ class FeatureExtractor:
         if avg_price == 0:
             return 0.0
         return avg_range / avg_price
+
     def _calc_close_position(
         self,
         highs: np.ndarray,
@@ -194,6 +201,7 @@ class FeatureExtractor:
         if total == 0:
             return 0.0
         return float((2 * up / total) - 1.0)
+
     def _calc_volume_profile(self, volumes: np.ndarray) -> float:
         """Calculate volume profile metric (recent vs historical)."""
         if len(volumes) < 10:

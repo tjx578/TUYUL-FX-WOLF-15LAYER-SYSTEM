@@ -25,17 +25,23 @@ from analysis.layers.L5_psychology_fundamental import (
 NOW = datetime(2026, 2, 16, 14, 0, 0, tzinfo=UTC)
 
 REQUIRED_PSYCHOLOGY_KEYS = {
-    "psychology_score", "eaf_score", "can_trade",
-    "gate_status", "psychology_ok", "fatigue_level",
+    "psychology_score",
+    "eaf_score",
+    "can_trade",
+    "gate_status",
+    "psychology_ok",
+    "fatigue_level",
     "valid",
 }
 
 REQUIRED_FUNDAMENTAL_KEYS = {
-    "fundamental_bias", "fundamental_strength",
+    "fundamental_bias",
+    "fundamental_strength",
 }
 
 
 # ── L5AnalysisLayer output contract ─────────────────────────────────
+
 
 class TestL5OutputContract:
     def test_has_required_keys(self) -> None:
@@ -56,6 +62,7 @@ class TestL5OutputContract:
 
 # ── EAF thresholds ──────────────────────────────────────────────────
 
+
 class TestEAFScore:
     def test_fresh_trader_eaf_above_threshold(self) -> None:
         layer = L5AnalysisLayer()
@@ -70,6 +77,7 @@ class TestEAFScore:
 
 
 # ── Stateful loss / win tracking ────────────────────────────────────
+
 
 class TestStatefulTracking:
     def test_losses_degrade_psychology(self) -> None:
@@ -108,6 +116,7 @@ class TestStatefulTracking:
 
 # ── Psychology gates ─────────────────────────────────────────────────
 
+
 class TestPsychologyGates:
     def test_gates_present_with_data(self) -> None:
         layer = L5AnalysisLayer()
@@ -130,6 +139,7 @@ class TestPsychologyGates:
 
 # ── Fundamental analysis ─────────────────────────────────────────────
 
+
 class TestFundamentalAnalysis:
     def test_analyze_fundamental_returns_dict(self) -> None:
         result = analyze_fundamental({}, pair="EURUSD", now=NOW)
@@ -142,6 +152,7 @@ class TestFundamentalAnalysis:
 
 
 # ── Backward-compat wrapper ─────────────────────────────────────────
+
 
 class TestL5PsychologyAnalyzerCompat:
     def test_returns_dict(self) -> None:
@@ -160,10 +171,16 @@ class TestL5PsychologyAnalyzerCompat:
 
 # ── Convenience function ────────────────────────────────────────────
 
+
 class TestAnalyzeL5Convenience:
     def test_returns_dict(self) -> None:
-        result = analyze_l5(pair="EURUSD", news_sentiment=None,
-                            volatility_profile=None, session_hours=2.0,
-                            now=NOW, psychology_data=None)
+        result = analyze_l5(
+            pair="EURUSD",
+            news_sentiment=None,
+            volatility_profile=None,
+            session_hours=2.0,
+            now=NOW,
+            psychology_data=None,
+        )
         assert isinstance(result, dict)
         assert "valid" in result

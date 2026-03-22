@@ -15,9 +15,13 @@ class EMAFusionEngine:
         if not prices or len(prices) < max(self.periods):
             return self._empty()
         emas = {f"ema{p}": self._ema(prices, p) for p in self.periods}
-        return {**emas, "direction": self._direction(emas),
-                "fusion_strength": self._strength(emas, prices[-1]),
-                "price": prices[-1], "timestamp": datetime.now(UTC).isoformat()}
+        return {
+            **emas,
+            "direction": self._direction(emas),
+            "fusion_strength": self._strength(emas, prices[-1]),
+            "price": prices[-1],
+            "timestamp": datetime.now(UTC).isoformat(),
+        }
 
     def _ema(self, prices: list[float], period: int) -> float:
         if len(prices) < period:
@@ -32,9 +36,9 @@ class EMAFusionEngine:
         vals = [emas.get(f"ema{p}", 0) for p in self.periods]
         if len(vals) < 2:
             return "NEUTRAL"
-        if all(vals[i] >= vals[i+1] for i in range(len(vals)-1)):
+        if all(vals[i] >= vals[i + 1] for i in range(len(vals) - 1)):
             return "BULL"
-        if all(vals[i] <= vals[i+1] for i in range(len(vals)-1)):
+        if all(vals[i] <= vals[i + 1] for i in range(len(vals) - 1)):
             return "BEAR"
         return "NEUTRAL"
 
@@ -48,8 +52,9 @@ class EMAFusionEngine:
 
     def _empty(self) -> dict[str, Any]:
         r: dict[str, Any] = {f"ema{p}": 0.0 for p in self.periods}
-        r.update({"direction": "NEUTRAL", "fusion_strength": 0.5, "price": 0.0,
-                  "timestamp": datetime.now(UTC).isoformat()})
+        r.update(
+            {"direction": "NEUTRAL", "fusion_strength": 0.5, "price": 0.0, "timestamp": datetime.now(UTC).isoformat()}
+        )
         return r
 
 
@@ -63,7 +68,7 @@ class MultiEMAFusion:
         alpha = 2 / (period + 1)
         ema = [closes[0]]
         for i in range(1, len(closes)):
-            ema.append((closes[i] * alpha) + (ema[i-1] * (1 - alpha)))
+            ema.append((closes[i] * alpha) + (ema[i - 1] * (1 - alpha)))
         return ema
 
     def integrate(self, closes: list[float], wlwci: float = 0.88) -> dict[str, Any]:

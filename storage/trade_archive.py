@@ -19,7 +19,6 @@ from __future__ import annotations
 import json
 import logging
 import os
-
 from typing import Any
 
 logger = logging.getLogger("tuyul.trade_archive")
@@ -33,6 +32,7 @@ _REDIS_PREFIX: str = os.getenv("REDIS_PREFIX", "wolf15")
 # ═══════════════════════════════════════════════════════════════════════════
 #  PUBLIC API
 # ═══════════════════════════════════════════════════════════════════════════
+
 
 def get_closed_returns(
     symbol: str | None = None,
@@ -79,8 +79,7 @@ def get_closed_returns(
         return returns
 
     logger.info(
-        "[TradeArchive] No closed trade returns found (symbol=%s). "
-        "MC engine will use fallback mode.",
+        "[TradeArchive] No closed trade returns found (symbol=%s). MC engine will use fallback mode.",
         symbol,
     )
     return []
@@ -106,6 +105,7 @@ def get_win_loss_counts(
 # ═══════════════════════════════════════════════════════════════════════════
 #  REDIS SOURCE
 # ═══════════════════════════════════════════════════════════════════════════
+
 
 def _from_redis(symbol: str | None, lookback: int) -> list[float]:
     """Scan Redis for CLOSED trades and extract P&L values."""
@@ -165,6 +165,7 @@ def _from_redis(symbol: str | None, lookback: int) -> list[float]:
 #  POSTGRESQL SOURCE
 # ═══════════════════════════════════════════════════════════════════════════
 
+
 def _from_postgres(symbol: str | None, lookback: int) -> list[float]:
     """Query trade_history table for closed-trade P&L values.
 
@@ -222,6 +223,7 @@ def _from_postgres(symbol: str | None, lookback: int) -> list[float]:
 #  IN-MEMORY TRADE-LEDGER FALLBACK
 # ═══════════════════════════════════════════════════════════════════════════
 
+
 def _from_ledger_cache(symbol: str | None, lookback: int) -> list[float]:
     """Read from the in-memory TradeLedger singleton (last resort)."""
     try:
@@ -231,10 +233,9 @@ def _from_ledger_cache(symbol: str | None, lookback: int) -> list[float]:
         all_trades = list(ledger._cache.values())
 
         closed = [
-            t for t in all_trades
-            if str(t.status) == "CLOSED"
-            and t.pnl is not None
-            and (not symbol or t.pair.upper() == symbol.upper())
+            t
+            for t in all_trades
+            if str(t.status) == "CLOSED" and t.pnl is not None and (not symbol or t.pair.upper() == symbol.upper())
         ]
 
         # Sort by updated_at descending

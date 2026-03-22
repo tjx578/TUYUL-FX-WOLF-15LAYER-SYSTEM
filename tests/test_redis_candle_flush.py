@@ -24,6 +24,7 @@ def _delete(client: TestClient, url: str) -> httpx.Response:
     """Typed wrapper around TestClient.delete to satisfy strict type checkers."""
     return client.request("DELETE", url)
 
+
 # ---------------------------------------------------------------------------
 # App fixture — minimal FastAPI with the redis_health router
 # ---------------------------------------------------------------------------
@@ -79,10 +80,12 @@ async def test_delete_keys_by_pattern_with_keys() -> None:
     """Deletes all keys returned by SCAN and returns correct count."""
     r = MagicMock()
     # First SCAN page returns two keys; second page (cursor=0) ends iteration
-    r.scan = AsyncMock(side_effect=[
-        (42, ["candles:EURUSD:M15", "candles:GBPUSD:M15"]),
-        (0, []),
-    ])
+    r.scan = AsyncMock(
+        side_effect=[
+            (42, ["candles:EURUSD:M15", "candles:GBPUSD:M15"]),
+            (0, []),
+        ]
+    )
     r.delete = AsyncMock(return_value=2)
 
     result: int = await delete_keys_by_pattern(r, "candles:*")
@@ -95,10 +98,12 @@ async def test_delete_keys_by_pattern_with_keys() -> None:
 async def test_delete_keys_by_pattern_multiple_pages() -> None:
     """Accumulates deletions across multiple SCAN pages."""
     r = MagicMock()
-    r.scan = AsyncMock(side_effect=[
-        (99, ["k1", "k2"]),
-        (0, ["k3"]),
-    ])
+    r.scan = AsyncMock(
+        side_effect=[
+            (99, ["k1", "k2"]),
+            (0, ["k3"]),
+        ]
+    )
     r.delete = AsyncMock(side_effect=[2, 1])
 
     result: int = await delete_keys_by_pattern(r, "*")

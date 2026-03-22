@@ -112,23 +112,17 @@ class TestBaseRiskCapping:
 
     def test_base_risk_capped_at_max(self):
         rules = _make_rules(max_risk_per_trade_percent=0.5)
-        result = populate_account_risk_state(
-            rules, "ACC-001", 100_000.0, 100_000.0, base_risk_percent=2.0
-        )
+        result = populate_account_risk_state(rules, "ACC-001", 100_000.0, 100_000.0, base_risk_percent=2.0)
         assert result.base_risk_percent == pytest.approx(0.5)
 
     def test_base_risk_not_capped_when_below_max(self):
         rules = _make_rules(max_risk_per_trade_percent=1.0)
-        result = populate_account_risk_state(
-            rules, "ACC-001", 100_000.0, 100_000.0, base_risk_percent=0.5
-        )
+        result = populate_account_risk_state(rules, "ACC-001", 100_000.0, 100_000.0, base_risk_percent=0.5)
         assert result.base_risk_percent == pytest.approx(0.5)
 
     def test_base_risk_equal_to_max_passes_through(self):
         rules = _make_rules(max_risk_per_trade_percent=1.0)
-        result = populate_account_risk_state(
-            rules, "ACC-001", 100_000.0, 100_000.0, base_risk_percent=1.0
-        )
+        result = populate_account_risk_state(rules, "ACC-001", 100_000.0, 100_000.0, base_risk_percent=1.0)
         assert result.base_risk_percent == pytest.approx(1.0)
 
 
@@ -137,37 +131,27 @@ class TestOptionalFields:
 
     def test_daily_loss_used_passed_through(self):
         rules = _make_rules()
-        result = populate_account_risk_state(
-            rules, "ACC-001", 100_000.0, 100_000.0, daily_loss_used_percent=1.5
-        )
+        result = populate_account_risk_state(rules, "ACC-001", 100_000.0, 100_000.0, daily_loss_used_percent=1.5)
         assert result.daily_loss_used_percent == pytest.approx(1.5)
 
     def test_total_loss_used_passed_through(self):
         rules = _make_rules()
-        result = populate_account_risk_state(
-            rules, "ACC-001", 100_000.0, 100_000.0, total_loss_used_percent=3.0
-        )
+        result = populate_account_risk_state(rules, "ACC-001", 100_000.0, 100_000.0, total_loss_used_percent=3.0)
         assert result.total_loss_used_percent == pytest.approx(3.0)
 
     def test_open_trades_count_passed_through(self):
         rules = _make_rules()
-        result = populate_account_risk_state(
-            rules, "ACC-001", 100_000.0, 100_000.0, open_trades_count=1
-        )
+        result = populate_account_risk_state(rules, "ACC-001", 100_000.0, 100_000.0, open_trades_count=1)
         assert result.open_trades_count == 1
 
     def test_account_locked_flag(self):
         rules = _make_rules()
-        result = populate_account_risk_state(
-            rules, "ACC-001", 100_000.0, 100_000.0, account_locked=True
-        )
+        result = populate_account_risk_state(rules, "ACC-001", 100_000.0, 100_000.0, account_locked=True)
         assert result.account_locked is True
 
     def test_circuit_breaker_flag(self):
         rules = _make_rules()
-        result = populate_account_risk_state(
-            rules, "ACC-001", 100_000.0, 100_000.0, circuit_breaker_open=True
-        )
+        result = populate_account_risk_state(rules, "ACC-001", 100_000.0, 100_000.0, circuit_breaker_open=True)
         assert result.circuit_breaker_open is True
 
 

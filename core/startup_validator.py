@@ -71,7 +71,7 @@ def _check_enabled_symbols(result: StartupCheckResult) -> None:
 
         symbols = get_enabled_symbols()
         if not symbols:
-            result.fail("No trading pairs configured. " "Check config/pairs.yaml or WOLF15_PAIRS env var.")
+            result.fail("No trading pairs configured. Check config/pairs.yaml or WOLF15_PAIRS env var.")
     except Exception as exc:
         result.fail(f"Failed to load enabled symbols: {exc}")
 
@@ -83,7 +83,7 @@ def _check_jwt_secret(result: StartupCheckResult) -> None:
     if not secret:
         result.warn("DASHBOARD_JWT_SECRET not set — JWT auth will fail closed.")
     elif secret in forbidden or len(secret) < 32:
-        result.warn("DASHBOARD_JWT_SECRET is weak (< 32 chars or placeholder). " "Use: openssl rand -hex 32")
+        result.warn("DASHBOARD_JWT_SECRET is weak (< 32 chars or placeholder). Use: openssl rand -hex 32")
 
 
 def _check_database_url(result: StartupCheckResult) -> None:
@@ -91,8 +91,7 @@ def _check_database_url(result: StartupCheckResult) -> None:
     db_url = os.getenv("DATABASE_URL", "").strip()
     if not db_url:
         result.warn(
-            "DATABASE_URL not set — PostgreSQL persistence disabled. "
-            "Journal audit trail and candle backup won't work."
+            "DATABASE_URL not set — PostgreSQL persistence disabled. Journal audit trail and candle backup won't work."
         )
 
 

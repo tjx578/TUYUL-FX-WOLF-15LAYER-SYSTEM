@@ -212,9 +212,7 @@ class V11DataAdapter:
         else:
             return "bearish"
 
-    def _compute_correlation_risk(
-        self, synthesis: dict[str, Any], symbol: str
-    ) -> tuple[float, float]:
+    def _compute_correlation_risk(self, synthesis: dict[str, Any], symbol: str) -> tuple[float, float]:
         """
         Compute correlation risk metrics.
 

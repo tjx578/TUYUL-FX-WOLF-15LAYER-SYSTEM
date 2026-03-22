@@ -55,10 +55,13 @@ class TestGetHaMode:
             assert get_ha_mode() == "standalone"
 
     def test_sentinel_priority(self):
-        with patch.dict(os.environ, {
-            "REDIS_SENTINEL_HOSTS": "h1:26379",
-            "REDIS_CLUSTER_HOSTS": "h2:6380",
-        }):
+        with patch.dict(
+            os.environ,
+            {
+                "REDIS_SENTINEL_HOSTS": "h1:26379",
+                "REDIS_CLUSTER_HOSTS": "h2:6380",
+            },
+        ):
             assert get_ha_mode() == "sentinel"
 
     def test_cluster_when_no_sentinel(self):
@@ -92,8 +95,7 @@ class TestSentinelClientManagerConfig:
     def test_defaults(self):
         env = {"REDIS_SENTINEL_HOSTS": "s1:26379"}
         with patch.dict(os.environ, env, clear=False):
-            for key in ("REDIS_SENTINEL_MASTER", "REDIS_SENTINEL_PASSWORD",
-                        "REDIS_SENTINEL_DB", "REDIS_PASSWORD"):
+            for key in ("REDIS_SENTINEL_MASTER", "REDIS_SENTINEL_PASSWORD", "REDIS_SENTINEL_DB", "REDIS_PASSWORD"):
                 os.environ.pop(key, None)
             mgr = SentinelClientManager()
             hosts, master, password, db = mgr._get_config()

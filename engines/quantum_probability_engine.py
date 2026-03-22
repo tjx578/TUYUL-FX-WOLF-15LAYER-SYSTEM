@@ -9,7 +9,6 @@ ANALYSIS-ONLY module. No execution side-effects.
 from __future__ import annotations
 
 import logging
-
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -21,6 +20,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # Result
 # ---------------------------------------------------------------------------
+
 
 @dataclass
 class ProbabilityResult:
@@ -60,6 +60,7 @@ class ProbabilityResult:
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _compute_returns(closes: np.ndarray) -> np.ndarray:
     if len(closes) < 2:
@@ -117,6 +118,7 @@ def _detect_candle_pattern(candles: list[dict[str, Any]]) -> tuple[str, float]:
 # ---------------------------------------------------------------------------
 # Engine
 # ---------------------------------------------------------------------------
+
 
 class QuantumProbabilityEngine:
     """Quantum Probability Engine -- statistical edge analysis.
@@ -205,7 +207,7 @@ class QuantumProbabilityEngine:
             skewness=round(skew, 4),
             kurtosis=round(kurt, 4),
             mean_return=round(mean_ret * 10000, 4),  # bps
-            std_return=round(std_ret * 10000, 4),     # bps
+            std_return=round(std_ret * 10000, 4),  # bps
             prior_bias=prior_bias,
             posterior_bias=posterior_bias,
             confidence=round(confidence, 3),

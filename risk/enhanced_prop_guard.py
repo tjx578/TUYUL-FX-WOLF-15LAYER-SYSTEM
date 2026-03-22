@@ -6,7 +6,6 @@ Covers: daily loss, max drawdown, lot limits, position count, weekend gap.
 from __future__ import annotations
 
 import time
-
 from dataclasses import dataclass, field
 from enum import Enum
 
@@ -42,14 +41,14 @@ class GuardResult:
 @dataclass
 class PropFirmProfile:
     name: str
-    max_daily_loss_pct: float        # e.g., 5.0 for 5%
-    max_total_drawdown_pct: float    # e.g., 10.0 for 10%
-    max_lot_per_trade: float         # e.g., 5.0
-    max_open_positions: int          # e.g., 10
+    max_daily_loss_pct: float  # e.g., 5.0 for 5%
+    max_total_drawdown_pct: float  # e.g., 10.0 for 10%
+    max_lot_per_trade: float  # e.g., 5.0
+    max_open_positions: int  # e.g., 10
     min_lot: float = 0.01
     lot_step: float = 0.01
     weekend_close_required: bool = True
-    news_buffer_minutes: int = 0     # 0 = no restriction
+    news_buffer_minutes: int = 0  # 0 = no restriction
     trailing_drawdown: bool = False  # Some have trailing max DD
     initial_balance: float | None = None  # For tracking from start
 
@@ -83,8 +82,8 @@ class AccountSnapshot:
     floating_pnl: float
     closed_pnl_today: float
     open_position_count: int
-    day_start_balance: float       # Balance at start of trading day (broker timezone!)
-    highest_balance: float = 0.0   # For trailing drawdown firms
+    day_start_balance: float  # Balance at start of trading day (broker timezone!)
+    highest_balance: float = 0.0  # For trailing drawdown firms
     timestamp: float = field(default_factory=time.time)
 
     @property
@@ -117,7 +116,9 @@ class EnhancedPropGuard:
         # 1. Daily loss check (including floating!)
         current_daily_loss_pct = account.daily_loss_pct
         projected_daily_loss = account.daily_loss + trade_risk_usd
-        projected_daily_loss_pct = (projected_daily_loss / account.day_start_balance) * 100 if account.day_start_balance > 0 else 0
+        projected_daily_loss_pct = (
+            (projected_daily_loss / account.day_start_balance) * 100 if account.day_start_balance > 0 else 0
+        )
 
         # Warning at 80% of limit
         warn_threshold = self.profile.max_daily_loss_pct * 0.80
@@ -147,7 +148,7 @@ class EnhancedPropGuard:
             reference = account.day_start_balance
 
         if reference > 0:
-            ((reference - account.equity) / reference) * 100 # type: ignore
+            ((reference - account.equity) / reference) * 100  # type: ignore
             projected_dd_pct = ((reference - (account.equity - trade_risk_usd)) / reference) * 100
 
             if projected_dd_pct >= self.profile.max_total_drawdown_pct * 0.90:
@@ -206,6 +207,7 @@ class EnhancedPropGuard:
     def _is_near_weekend(self) -> bool:
         """Check if we're within 2 hours of market close on Friday."""
         import datetime  # noqa: PLC0415
+
         now = datetime.datetime.utcnow()  # noqa: DTZ003
         # Market closes Friday ~22:00 UTC
         if now.weekday() == 4 and now.hour >= 20:  # Friday after 20:00 UTC

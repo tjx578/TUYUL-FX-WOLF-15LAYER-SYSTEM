@@ -630,7 +630,7 @@ class TestBoundaryIntegrity:
             for node in ast.walk(tree):
                 if isinstance(node, ast.ImportFrom) and node.module:
                     assert not node.module.startswith("analysis.layers"), (
-                        f"{py_file.name} imports {node.module} — " "execution zone must not import analysis layers"
+                        f"{py_file.name} imports {node.module} — execution zone must not import analysis layers"
                     )
 
     def test_risk_firewall_does_not_compute_direction(self):
@@ -645,9 +645,7 @@ class TestBoundaryIntegrity:
             "signal_direction",
         ]
         for pat in direction_patterns:
-            assert pat not in source, (
-                f"risk/firewall.py contains '{pat}' — " "firewall must not compute market direction"
-            )
+            assert pat not in source, f"risk/firewall.py contains '{pat}' — firewall must not compute market direction"
 
     def test_allocation_models_are_frozen(self):
         """Allocation result models use frozen=True to prevent mutation."""

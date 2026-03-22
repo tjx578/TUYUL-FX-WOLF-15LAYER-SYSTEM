@@ -76,36 +76,46 @@ def upgrade() -> None:
     inspector = inspect(bind)
 
     # -- Create enum types idempotently (survives partial prior runs) --------
-    op.execute(sa.text("""
+    op.execute(
+        sa.text("""
         DO $$ BEGIN
             CREATE TYPE ea_class_enum AS ENUM ('PRIMARY', 'PORTFOLIO');
         EXCEPTION WHEN duplicate_object THEN null;
         END $$;
-    """))
-    op.execute(sa.text("""
+    """)
+    )
+    op.execute(
+        sa.text("""
         DO $$ BEGIN
             CREATE TYPE ea_subtype_enum AS ENUM ('BROKER', 'PROP_FIRM', 'EDUMB', 'STANDARD_REPORTER');
         EXCEPTION WHEN duplicate_object THEN null;
         END $$;
-    """))
-    op.execute(sa.text("""
+    """)
+    )
+    op.execute(
+        sa.text("""
         DO $$ BEGIN
             CREATE TYPE execution_mode_enum AS ENUM ('LIVE', 'DEMO', 'SHADOW');
         EXCEPTION WHEN duplicate_object THEN null;
         END $$;
-    """))
-    op.execute(sa.text("""
+    """)
+    )
+    op.execute(
+        sa.text("""
         DO $$ BEGIN
             CREATE TYPE reporter_mode_enum AS ENUM ('FULL', 'BALANCE_ONLY', 'DISABLED');
         EXCEPTION WHEN duplicate_object THEN null;
         END $$;
-    """))
-    op.execute(sa.text("""
+    """)
+    )
+    op.execute(
+        sa.text("""
         DO $$ BEGIN
             CREATE TYPE ea_agent_status AS ENUM ('ONLINE', 'WARNING', 'OFFLINE', 'QUARANTINED', 'DISABLED');
         EXCEPTION WHEN duplicate_object THEN null;
         END $$;
-    """))
+    """)
+    )
 
     # -- ea_profiles ----------------------------------------------------------
     if not inspector.has_table("ea_profiles"):
@@ -169,17 +179,23 @@ def upgrade() -> None:
             sa.Column("ea_class", _EA_CLASS_ENUM, nullable=False),
             sa.Column("ea_subtype", _EA_SUBTYPE_ENUM, nullable=False),
             sa.Column(
-                "execution_mode", _EXECUTION_MODE_ENUM,
-                nullable=False, server_default=sa.text("'DEMO'"),
+                "execution_mode",
+                _EXECUTION_MODE_ENUM,
+                nullable=False,
+                server_default=sa.text("'DEMO'"),
             ),
             sa.Column(
-                "reporter_mode", _REPORTER_MODE_ENUM,
-                nullable=False, server_default=sa.text("'FULL'"),
+                "reporter_mode",
+                _REPORTER_MODE_ENUM,
+                nullable=False,
+                server_default=sa.text("'FULL'"),
             ),
             # ea_agent_status is DISTINCT from ea_status (RUNNING/STOPPED) used by ea_instances
             sa.Column(
-                "status", _EA_AGENT_STATUS_ENUM,
-                nullable=False, server_default=sa.text("'OFFLINE'"),
+                "status",
+                _EA_AGENT_STATUS_ENUM,
+                nullable=False,
+                server_default=sa.text("'OFFLINE'"),
             ),
             # Nullable UUID — no FK constraint as accounts table may lack UUID PK yet
             sa.Column("linked_account_id", sa.UUID(as_uuid=True), nullable=True),

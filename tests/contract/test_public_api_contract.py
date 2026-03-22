@@ -1,4 +1,4 @@
-﻿"""
+"""
 Contract Freeze Tests -- CI Guard
 Prevents silent field renames on Zone-A core contracts.
 
@@ -61,10 +61,7 @@ class TestBackwardCompatibilityAliases:
         if MonteCarloResult is None:
             pytest.skip("MonteCarloResult not found")
 
-        assert hasattr(MonteCarloResult, "passed"), (
-            "MonteCarloResult.passed alias missing -- "
-            "risk_engine_v2 will break"
-        )
+        assert hasattr(MonteCarloResult, "passed"), "MonteCarloResult.passed alias missing -- risk_engine_v2 will break"
 
     def test_position_sizing_risk_multiplier_alias(self):
         dps = pytest.importorskip(
@@ -76,8 +73,7 @@ class TestBackwardCompatibilityAliases:
             pytest.skip("PositionSizingResult not found")
 
         assert hasattr(PositionSizingResult, "risk_multiplier"), (
-            "PositionSizingResult.risk_multiplier alias missing -- "
-            "dashboard will break"
+            "PositionSizingResult.risk_multiplier alias missing -- dashboard will break"
         )
 
     def test_position_sizing_position_size_alias(self):
@@ -90,8 +86,7 @@ class TestBackwardCompatibilityAliases:
             pytest.skip("PositionSizingResult not found")
 
         assert hasattr(PositionSizingResult, "position_size"), (
-            "PositionSizingResult.position_size alias missing -- "
-            "dashboard will break"
+            "PositionSizingResult.position_size alias missing -- dashboard will break"
         )
 
 
@@ -149,8 +144,6 @@ class TestSchemaVersionLock:
         """
         expected = "2.1"
         payload = {"schema_version": "2.1"}
-        assert payload["schema_version"] == expected, (
-            "Schema version drift: expected {}, got {}".format(
-                expected, payload["schema_version"]
-            )
+        assert payload["schema_version"] == expected, "Schema version drift: expected {}, got {}".format(
+            expected, payload["schema_version"]
         )

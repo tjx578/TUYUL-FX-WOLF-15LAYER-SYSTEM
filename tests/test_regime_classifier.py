@@ -113,8 +113,7 @@ class TestRegimeClassifier:
     def test_to_dict_schema(self) -> None:
         clf = RegimeClassifier()
         d = clf.classify(_trending_prices()).to_dict()
-        expected_keys = {"regime", "confidence", "volatility_state",
-                         "hurst_exponent", "volatility", "momentum"}
+        expected_keys = {"regime", "confidence", "volatility_state", "hurst_exponent", "volatility", "momentum"}
         assert expected_keys <= set(d.keys())
 
     def test_constant_prices_no_crash(self) -> None:

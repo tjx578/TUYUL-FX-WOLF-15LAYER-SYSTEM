@@ -50,11 +50,7 @@ def build_execution_map(
         "constitutional_verdict": str(constitutional_verdict or "UNKNOWN"),
     }
     if isinstance(layer_timings_ms, dict):
-        payload["layer_timings_ms"] = {
-            str(k): float(v)
-            for k, v in layer_timings_ms.items()
-            if isinstance(k, str)
-        }
+        payload["layer_timings_ms"] = {str(k): float(v) for k, v in layer_timings_ms.items() if isinstance(k, str)}
     if isinstance(dag, dict):
         payload["dag"] = dag
     return payload

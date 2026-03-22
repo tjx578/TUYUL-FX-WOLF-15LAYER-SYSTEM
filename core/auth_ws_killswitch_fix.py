@@ -79,9 +79,7 @@ def create_token_fixed(
         ValueError: If role is not in allowed set.
     """
     if not _is_strong_secret(jwt_secret):
-        raise RuntimeError(
-            "JWT secret is missing/weak. Provide a strong secret (>=32 chars)."
-        )
+        raise RuntimeError("JWT secret is missing/weak. Provide a strong secret (>=32 chars).")
 
     allowed_roles = {"trader", "admin", "viewer", "service"}
     if role not in allowed_roles:
@@ -167,7 +165,7 @@ def _extract_ws_token(ws: WebSocket) -> str | None:
             lower = stripped.lower()
             for prefix in ("auth.", "token."):
                 if lower.startswith(prefix):
-                    return stripped[len(prefix):]
+                    return stripped[len(prefix) :]
 
     return None
 

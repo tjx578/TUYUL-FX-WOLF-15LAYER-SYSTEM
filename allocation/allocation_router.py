@@ -5,6 +5,7 @@ POST /api/v1/allocation/take → trigger multi-account allocation for a signal
 GET  /api/v1/allocation/signals → list latest signals in registry
 GET  /api/v1/allocation/{request_id} → get allocation result
 """
+
 from __future__ import annotations
 
 import uuid

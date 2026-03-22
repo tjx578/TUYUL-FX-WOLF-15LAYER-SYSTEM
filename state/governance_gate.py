@@ -21,7 +21,7 @@ import math
 import os
 import time
 from dataclasses import dataclass
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 
 from loguru import logger
@@ -37,7 +37,7 @@ from state.data_freshness import (
 # ---------------------------------------------------------------------------
 
 
-class GovernanceAction(str, Enum):
+class GovernanceAction(StrEnum):
     """What the pipeline must do after governance check."""
 
     ALLOW = "ALLOW"  # normal operation
@@ -217,7 +217,7 @@ def assess_governance(
     # Hard stale threshold — only report when staleness is finite;
     # infinite staleness is already covered by no_producer / no_transport.
     if not math.isinf(freshness.staleness_seconds) and freshness.staleness_seconds > HARD_STALE_THRESHOLD_SEC:
-        reasons.append(f"hard_stale:{freshness.staleness_seconds:.0f}s>" f"{HARD_STALE_THRESHOLD_SEC:.0f}s")
+        reasons.append(f"hard_stale:{freshness.staleness_seconds:.0f}s>{HARD_STALE_THRESHOLD_SEC:.0f}s")
 
     if freshness.state == "no_producer":
         reasons.append("no_producer_signal")

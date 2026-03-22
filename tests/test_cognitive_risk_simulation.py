@@ -13,9 +13,7 @@ def _make_candles(n: int = 50, start: float = 100.0) -> dict:
         h = max(o, c) + 0.5
         l = min(o, c) - 0.5  # noqa: E741
         v = 1000 + (i % 9) * 80
-        candles.append(
-            {"open": o, "high": h, "low": l, "close": c, "volume": v, "timestamp": i}
-        )
+        candles.append({"open": o, "high": h, "low": l, "close": c, "volume": v, "timestamp": i})
     return {"M15": candles}
 
 

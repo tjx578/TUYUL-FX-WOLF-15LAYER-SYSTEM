@@ -2,12 +2,14 @@
 Tests for journal (J1-J4) -- append-only, immutable audit trail.
 Constitutional boundary: journal has NO decision power, write-only.
 """
+
 import copy
 
 import pytest
 
 try:
-    from journal.writer import JournalWriter
+    from journal.writer import JournalWriter  # type: ignore[import-not-found]
+
     HAS_JOURNAL = True
 except ImportError:
     HAS_JOURNAL = False
@@ -126,13 +128,12 @@ class TestJournalImmutability:
 
     def test_no_decision_authority(self):
         """Journal module must not export decision functions."""
-        forbidden_names = ["decide", "compute_verdict", "execute_trade",
-                           "place_order", "override_verdict"]
+        forbidden_names = ["decide", "compute_verdict", "execute_trade", "place_order", "override_verdict"]
         # Conceptual test -- verify naming conventions
         for name in forbidden_names:
             # If journal module exists, check it
             if HAS_JOURNAL:
-                assert not hasattr(JournalWriter, name), ( # pyright: ignore[reportPossiblyUnboundVariable]
+                assert not hasattr(JournalWriter, name), (  # pyright: ignore[reportPossiblyUnboundVariable]
                     f"Journal must not have '{name}' -- no decision authority"
                 )
 

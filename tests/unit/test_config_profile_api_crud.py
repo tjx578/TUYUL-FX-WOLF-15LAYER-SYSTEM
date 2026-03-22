@@ -43,7 +43,6 @@ def _reset_engine_state() -> None:
         engine.delete_profile(record["profile_name"], actor="test-admin", reason="RESET_PROFILE")
 
 
-
 def test_profile_crud_on_new_endpoint_and_legacy_compatibility() -> None:
     _reset_engine_state()
     app = _build_app()
@@ -107,7 +106,6 @@ def test_profile_crud_on_new_endpoint_and_legacy_compatibility() -> None:
 
     missing_resp = client.get("/api/v1/config/profile/swing_test")
     assert missing_resp.status_code == 404
-
 
 
 def test_scoped_override_precedence_global_account_prop_firm_pair() -> None:

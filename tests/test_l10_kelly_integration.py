@@ -58,7 +58,9 @@ from risk.risk_multiplier import RiskMultiplierAggregator, RiskMultiplierResult
 
 
 def _trade_returns(
-    n: int = 200, win_rate: float = 0.60, seed: int = 42,
+    n: int = 200,
+    win_rate: float = 0.60,
+    seed: int = 42,
 ) -> list[float]:
     """Generate realistic trade history for integration testing."""
     rng = np.random.default_rng(seed)
@@ -112,7 +114,9 @@ class TestVolClusterToPSEContract:
 
         pse = DynamicPositionSizingEngine()
         sizing = pse.calculate(
-            win_probability=0.60, avg_win=40.0, avg_loss=-25.0,
+            win_probability=0.60,
+            avg_win=40.0,
+            avg_loss=-25.0,
             posterior_probability=0.65,
             returns_history=returns,
             volatility_multiplier=vol_result.risk_multiplier,
@@ -137,7 +141,9 @@ class TestVolClusterToPSEContract:
 
         pse = DynamicPositionSizingEngine()
         base = {
-            "win_probability": 0.60, "avg_win": 40.0, "avg_loss": -25.0,
+            "win_probability": 0.60,
+            "avg_win": 40.0,
+            "avg_loss": -25.0,
             "posterior_probability": 0.65,
         }
 
@@ -282,7 +288,9 @@ class TestPSEToRiskMultiplierContract:
 
         pse = DynamicPositionSizingEngine()
         sizing = pse.calculate(
-            win_probability=0.60, avg_win=40.0, avg_loss=-25.0,
+            win_probability=0.60,
+            avg_win=40.0,
+            avg_loss=-25.0,
             posterior_probability=0.65,
             returns_history=returns,
             volatility_multiplier=mult_result.composite,
@@ -449,8 +457,13 @@ class TestAuthorityBoundary:
         """DynamicPSE MUST NOT have execution capabilities."""
         pse = DynamicPositionSizingEngine()
         forbidden = [
-            "execute", "place_order", "open_trade", "close_trade",
-            "send_order", "modify_order", "cancel_order",
+            "execute",
+            "place_order",
+            "open_trade",
+            "close_trade",
+            "send_order",
+            "modify_order",
+            "cancel_order",
         ]
         for method in forbidden:
             assert not hasattr(pse, method), f"PSE must not have '{method}'"
@@ -494,7 +507,9 @@ class TestDeterminism:
             vol = VolatilityClusteringModel().analyze(returns)
             pse = DynamicPositionSizingEngine()
             sizing = pse.calculate(
-                win_probability=0.63, avg_win=45.0, avg_loss=-25.0,
+                win_probability=0.63,
+                avg_win=45.0,
+                avg_loss=-25.0,
                 posterior_probability=0.66,
                 returns_history=returns,
                 volatility_multiplier=vol.risk_multiplier,

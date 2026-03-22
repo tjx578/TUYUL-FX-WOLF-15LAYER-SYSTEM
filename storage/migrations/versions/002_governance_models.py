@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from alembic import op
 import sqlalchemy as sa
+from alembic import op
 from sqlalchemy.dialects import postgresql
 
 revision = "002_governance_models"
@@ -15,7 +15,9 @@ depends_on = None
 # Define enums as PostgreSQL ENUM with create_type=False.
 # We create types manually via raw SQL so op.create_table() will not emit
 # implicit CREATE TYPE statements that can fail on duplicate objects.
-risk_profile_enum = postgresql.ENUM("Conservative", "Balanced", "Aggressive", name="risk_profile_level", create_type=False)
+risk_profile_enum = postgresql.ENUM(
+    "Conservative", "Balanced", "Aggressive", name="risk_profile_level", create_type=False
+)
 account_mode_enum = postgresql.ENUM("PAPER", "LIVE", name="account_mode", create_type=False)
 ea_status_enum = postgresql.ENUM("RUNNING", "STOPPED", name="ea_status", create_type=False)
 strategy_type_enum = postgresql.ENUM("H1_SWING", "M15_SCALP", name="strategy_type", create_type=False)
@@ -24,10 +26,11 @@ strategy_type_enum = postgresql.ENUM("H1_SWING", "M15_SCALP", name="strategy_typ
 def _create_enum_safe(name: str, values: list[str]) -> None:
     """Create a PostgreSQL ENUM type if it does not already exist."""
     val_list = ", ".join(f"'{v}'" for v in values)
-    op.execute(sa.text(
-        f"DO $$ BEGIN CREATE TYPE {name} AS ENUM ({val_list}); "
-        f"EXCEPTION WHEN duplicate_object THEN NULL; END $$;"
-    ))
+    op.execute(
+        sa.text(
+            f"DO $$ BEGIN CREATE TYPE {name} AS ENUM ({val_list}); EXCEPTION WHEN duplicate_object THEN NULL; END $$;"
+        )
+    )
 
 
 def upgrade() -> None:

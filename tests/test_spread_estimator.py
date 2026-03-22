@@ -18,6 +18,7 @@ from ingest.spread_estimator import (
 # Session detection
 # ---------------------------------------------------------------------------
 
+
 class TestGetActiveSession:
     def test_london_ny_overlap(self):
         assert _get_active_session(13) == "OVERLAP"
@@ -38,6 +39,7 @@ class TestGetActiveSession:
 # ---------------------------------------------------------------------------
 # Spread estimation
 # ---------------------------------------------------------------------------
+
 
 class TestEstimateSpread:
     def test_bid_less_than_ask(self):
@@ -113,6 +115,7 @@ class TestEstimateSpread:
 # Config sanity
 # ---------------------------------------------------------------------------
 
+
 class TestSpreadConfig:
     def test_all_default_pairs_have_spreads(self):
         for pair in ["EURUSD", "GBPUSD", "USDJPY", "GBPJPY", "AUDUSD", "XAUUSD"]:
@@ -126,5 +129,5 @@ class TestSpreadConfig:
         assert PIP_VALUES["XAUUSD"] == 0.10
 
     def test_session_multipliers_positive(self):
-        for session, mult in SESSION_MULTIPLIER.items():
+        for _session, mult in SESSION_MULTIPLIER.items():
             assert mult > 0

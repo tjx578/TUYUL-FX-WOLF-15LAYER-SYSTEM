@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-import pytest
 from types import TracebackType
+
+import pytest
 
 from storage.db_revision_guard import DatabaseRevisionMismatchError, assert_required_tables
 

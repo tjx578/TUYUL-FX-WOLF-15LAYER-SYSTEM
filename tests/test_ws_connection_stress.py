@@ -13,6 +13,7 @@ Covers:
 These tests use ConnectionManager directly (no network I/O), so they
 run fast and are suitable for CI with no external dependencies.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -24,6 +25,7 @@ import pytest
 # ──────────────────────────────────────────────────────────────────────────────
 # Helpers
 # ──────────────────────────────────────────────────────────────────────────────
+
 
 def _make_ws(client_id: str = "ws") -> MagicMock:
     """Lightweight mock WebSocket with async send_json and close."""
@@ -51,9 +53,7 @@ async def _connect_n(manager, n: int, auth_user: dict | None = None) -> list[Mag
         # Suppress heartbeat task creation so it doesn't interfere
         with (
             patch("api.ws_routes.ws_auth_guard", new=AsyncMock(return_value=user)),
-            patch("asyncio.create_task", return_value=MagicMock(
-                done=lambda: True, cancel=lambda: None
-            )),
+            patch("asyncio.create_task", return_value=MagicMock(done=lambda: True, cancel=lambda: None)),
         ):
             connected = await manager.connect(ws)
         if connected:
@@ -65,12 +65,14 @@ async def _connect_n(manager, n: int, auth_user: dict | None = None) -> list[Mag
 # Connection cap: exactly MAX_WS_CONNECTIONS are accepted
 # ──────────────────────────────────────────────────────────────────────────────
 
+
 class TestConnectionCap:
     """MAX_WS_CONNECTIONS = 50 must be strictly enforced."""
 
     @pytest.fixture
     def manager(self):
         from api.ws_routes import MAX_WS_CONNECTIONS, ConnectionManager  # noqa: PLC0415
+
         return ConnectionManager(name="stress-test", buffer_size=10), MAX_WS_CONNECTIONS
 
     @pytest.mark.asyncio
@@ -92,9 +94,7 @@ class TestConnectionCap:
         extra_ws = _make_ws("ws-overflow")
         with (
             patch("api.ws_routes.ws_auth_guard", new=AsyncMock(return_value={"sub": "overflow"})),
-            patch("asyncio.create_task", return_value=MagicMock(
-                done=lambda: True, cancel=lambda: None
-            )),
+            patch("asyncio.create_task", return_value=MagicMock(done=lambda: True, cancel=lambda: None)),
         ):
             connected = await mgr.connect(extra_ws)
 
@@ -121,9 +121,7 @@ class TestConnectionCap:
         new_ws = _make_ws("ws-replacement")
         with (
             patch("api.ws_routes.ws_auth_guard", new=AsyncMock(return_value={"sub": "new"})),
-            patch("asyncio.create_task", return_value=MagicMock(
-                done=lambda: True, cancel=lambda: None
-            )),
+            patch("asyncio.create_task", return_value=MagicMock(done=lambda: True, cancel=lambda: None)),
         ):
             connected = await mgr.connect(new_ws)
 
@@ -156,6 +154,7 @@ class TestConnectionCap:
     async def test_cap_enforced_independently_per_manager(self):
         """Each manager has its own cap — filling one doesn't affect another."""
         from api.ws_routes import MAX_WS_CONNECTIONS, ConnectionManager  # noqa: PLC0415
+
         mgr_a = ConnectionManager(name="a")
         mgr_b = ConnectionManager(name="b")
 
@@ -173,6 +172,7 @@ class TestConnectionCap:
 # Broadcast throughput
 # ──────────────────────────────────────────────────────────────────────────────
 
+
 class TestBroadcastThroughput:
     """Broadcast must reach all 50 clients within time constraints."""
 
@@ -180,6 +180,7 @@ class TestBroadcastThroughput:
     async def test_broadcast_reaches_50_clients(self):
         """broadcast() to 50 clients must call send_json on all 50."""
         from api.ws_routes import ConnectionManager  # noqa: PLC0415
+
         mgr = ConnectionManager(name="broadcast-test")
         clients = [_make_ws(f"ws-{i}") for i in range(50)]
         for c in clients:
@@ -195,6 +196,7 @@ class TestBroadcastThroughput:
     async def test_broadcast_50_clients_under_100ms(self):
         """Broadcast to 50 mock clients must complete in under 100ms."""
         from api.ws_routes import ConnectionManager  # noqa: PLC0415
+
         mgr = ConnectionManager(name="latency-test")
         clients = [_make_ws(f"ws-{i}") for i in range(50)]
         for c in clients:
@@ -205,14 +207,13 @@ class TestBroadcastThroughput:
         await mgr.broadcast(msg)
         elapsed_ms = (time.perf_counter() - start) * 1000
 
-        assert elapsed_ms < 100, (
-            f"Broadcast to 50 clients took {elapsed_ms:.1f}ms (limit: 100ms)"
-        )
+        assert elapsed_ms < 100, f"Broadcast to 50 clients took {elapsed_ms:.1f}ms (limit: 100ms)"
 
     @pytest.mark.asyncio
     async def test_broadcast_1000_messages_to_10_clients(self):
         """1000 sequential broadcasts to 10 clients must stay under 1s total."""
         from api.ws_routes import ConnectionManager  # noqa: PLC0415
+
         mgr = ConnectionManager(name="sustained-test")
         clients = [_make_ws(f"ws-{i}") for i in range(10)]
         for c in clients:
@@ -223,9 +224,7 @@ class TestBroadcastThroughput:
             await mgr.broadcast({"seq": i, "ts": time.time()})
         elapsed = time.perf_counter() - start
 
-        assert elapsed < 1.0, (
-            f"1000 broadcasts to 10 clients took {elapsed:.2f}s (limit: 1.0s)"
-        )
+        assert elapsed < 1.0, f"1000 broadcasts to 10 clients took {elapsed:.2f}s (limit: 1.0s)"
         # All clients must have received all 1000 messages
         for c in clients:
             assert c.send_json.call_count == 1000
@@ -234,6 +233,7 @@ class TestBroadcastThroughput:
     async def test_broadcast_skips_broken_clients_silently(self):
         """Broken clients must be removed without crashing broadcast."""
         from api.ws_routes import ConnectionManager  # noqa: PLC0415
+
         mgr = ConnectionManager(name="broken-test")
 
         good_clients = [_make_ws(f"good-{i}") for i in range(10)]
@@ -260,12 +260,14 @@ class TestBroadcastThroughput:
 # Message ring buffer
 # ──────────────────────────────────────────────────────────────────────────────
 
+
 class TestMessageBuffer:
     """Message buffer (deque maxlen=100) must not overflow and must replay."""
 
     @pytest.fixture
     def buffered_manager(self):
         from api.ws_routes import MESSAGE_BUFFER_SIZE, ConnectionManager  # noqa: PLC0415
+
         mgr = ConnectionManager(name="buf-test", buffer_size=MESSAGE_BUFFER_SIZE)
         return mgr, MESSAGE_BUFFER_SIZE
 
@@ -285,13 +287,12 @@ class TestMessageBuffer:
             mgr.buffer_message({"seq": i})
 
         first_seq = mgr._message_buffer[0]["seq"]
-        assert first_seq == total - cap, (
-            f"Oldest seq should be {total - cap}, got {first_seq}"
-        )
+        assert first_seq == total - cap, f"Oldest seq should be {total - cap}, got {first_seq}"
 
     def test_buffer_is_per_manager(self):
         """Each manager has its own independent buffer."""
         from api.ws_routes import ConnectionManager  # noqa: PLC0415
+
         mgr_a = ConnectionManager(name="buf-a", buffer_size=5)
         mgr_b = ConnectionManager(name="buf-b", buffer_size=5)
 
@@ -343,6 +344,7 @@ class TestMessageBuffer:
 # Heartbeat task lifecycle
 # ──────────────────────────────────────────────────────────────────────────────
 
+
 class TestHeartbeatLifecycle:
     """Heartbeat tasks must be started on connect and cancelled on disconnect."""
 
@@ -350,6 +352,7 @@ class TestHeartbeatLifecycle:
     async def test_disconnect_cancels_heartbeat_task(self):
         """disconnect() must cancel the heartbeat asyncio.Task."""
         from api.ws_routes import ConnectionManager  # noqa: PLC0415
+
         mgr = ConnectionManager(name="hb-test")
 
         ws = _make_ws("ws-hb")
@@ -371,6 +374,7 @@ class TestHeartbeatLifecycle:
     async def test_disconnect_idempotent_on_double_call(self):
         """Calling disconnect twice on the same WS must not raise."""
         from api.ws_routes import ConnectionManager  # noqa: PLC0415
+
         mgr = ConnectionManager(name="idem-test")
 
         ws = _make_ws("ws-idem")
@@ -387,6 +391,7 @@ class TestHeartbeatLifecycle:
         so the task completes normally — await must not raise.
         """
         from api.ws_routes import ConnectionManager  # noqa: PLC0415
+
         mgr = ConnectionManager(name="hb-cancel-test")
 
         ws = _make_ws("ws-hb-cancel")
@@ -411,6 +416,7 @@ class TestHeartbeatLifecycle:
 # Concurrent connect + disconnect stress
 # ──────────────────────────────────────────────────────────────────────────────
 
+
 class TestConcurrentConnectStress:
     """Simulate concurrent connect/disconnect churn within the limit."""
 
@@ -421,6 +427,7 @@ class TestConcurrentConnectStress:
         No slot must be lost (leaked) after all disconnects.
         """
         from api.ws_routes import ConnectionManager  # noqa: PLC0415
+
         mgr = ConnectionManager(name="churn-test")
 
         for _ in range(200):
@@ -428,17 +435,13 @@ class TestConcurrentConnectStress:
             ws = _make_ws()
             with (
                 patch("api.ws_routes.ws_auth_guard", new=AsyncMock(return_value={"sub": "churn"})),
-                patch("asyncio.create_task", return_value=MagicMock(
-                    done=lambda: True, cancel=lambda: None
-                )),
+                patch("asyncio.create_task", return_value=MagicMock(done=lambda: True, cancel=lambda: None)),
             ):
                 connected = await mgr.connect(ws)
             if connected:
                 mgr.disconnect(ws)
 
-        assert len(mgr.active_connections) == 0, (
-            "After 200 connect/disconnect cycles, no connections should remain"
-        )
+        assert len(mgr.active_connections) == 0, "After 200 connect/disconnect cycles, no connections should remain"
 
     @pytest.mark.asyncio
     async def test_interleaved_connect_disconnect_stays_within_cap(self):
@@ -446,6 +449,7 @@ class TestConcurrentConnectStress:
         Interleave connects and disconnects; connection count must never exceed cap.
         """
         from api.ws_routes import MAX_WS_CONNECTIONS, ConnectionManager  # noqa: PLC0415
+
         mgr = ConnectionManager(name="interleave-test")
         connected_ws: list[MagicMock] = []
 
@@ -457,11 +461,8 @@ class TestConcurrentConnectStress:
             else:
                 ws = _make_ws(f"ws-{i}")
                 with (
-                    patch("api.ws_routes.ws_auth_guard",
-                          new=AsyncMock(return_value={"sub": f"u{i}"})),
-                    patch("asyncio.create_task", return_value=MagicMock(
-                        done=lambda: True, cancel=lambda: None
-                    )),
+                    patch("api.ws_routes.ws_auth_guard", new=AsyncMock(return_value={"sub": f"u{i}"})),
+                    patch("asyncio.create_task", return_value=MagicMock(done=lambda: True, cancel=lambda: None)),
                 ):
                     connected = await mgr.connect(ws)
                 if connected:

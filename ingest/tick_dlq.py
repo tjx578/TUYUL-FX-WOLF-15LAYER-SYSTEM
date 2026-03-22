@@ -65,9 +65,7 @@ class TickDeadLetterQueue:
             "exchange_ts": str(exchange_ts),
             "reason": reason,
             "ingest_ts": str(time.time()),
-            "payload_hash": hashlib.sha256(
-                f"{symbol}:{price}:{exchange_ts}".encode()
-            ).hexdigest()[:16],
+            "payload_hash": hashlib.sha256(f"{symbol}:{price}:{exchange_ts}".encode()).hexdigest()[:16],
         }
         if details:
             payload["details"] = json.dumps(details, default=str)
@@ -102,10 +100,13 @@ class TickDeadLetterQueue:
         try:
             raw = await self._redis.xrange(self._stream_key, count=count)
             return [
-                {"id": mid.decode() if isinstance(mid, bytes) else mid, **{
-                    (k.decode() if isinstance(k, bytes) else k): (v.decode() if isinstance(v, bytes) else v)
-                    for k, v in fields.items()
-                }}
+                {
+                    "id": mid.decode() if isinstance(mid, bytes) else mid,
+                    **{
+                        (k.decode() if isinstance(k, bytes) else k): (v.decode() if isinstance(v, bytes) else v)
+                        for k, v in fields.items()
+                    },
+                }
                 for mid, fields in raw
             ]
         except Exception:

@@ -59,10 +59,7 @@ class AccountEngine:
         # Thread safety
         self._lock = Lock()
 
-        logger.info(
-            f"AccountEngine initialized: {account_id} | "
-            f"Balance={balance} | PropFirm={prop_firm_code}"
-        )
+        logger.info(f"AccountEngine initialized: {account_id} | Balance={balance} | PropFirm={prop_firm_code}")
 
     @classmethod
     def get_or_create(
@@ -104,9 +101,7 @@ class AccountEngine:
             # Update equity high watermark
             self._equity_high = max(self._equity_high, equity)
 
-            logger.debug(
-                f"Balance updated: {self.account_id} | Balance={balance} | Equity={equity}"
-            )
+            logger.debug(f"Balance updated: {self.account_id} | Balance={balance} | Equity={equity}")
 
     def record_trade_open(self, risk_amount: float) -> None:
         """
@@ -156,10 +151,7 @@ class AccountEngine:
         """Reset daily drawdown tracking (call at start of trading day)."""
         with self._lock:
             self._daily_starting_equity = self._equity
-            logger.info(
-                f"Daily DD reset: {self.account_id} | "
-                f"StartEquity=${self._equity:.2f}"
-            )
+            logger.info(f"Daily DD reset: {self.account_id} | StartEquity=${self._equity:.2f}")
 
     def get_state(self) -> AccountState:
         """
@@ -184,10 +176,7 @@ class AccountEngine:
                 total_dd_percent = 0.0
 
             # Calculate open risk percent
-            if self._balance > 0:
-                open_risk_percent = self._open_risk_amount / self._balance * 100
-            else:
-                open_risk_percent = 0.0
+            open_risk_percent = self._open_risk_amount / self._balance * 100 if self._balance > 0 else 0.0
 
             # Determine risk state
             risk_state = self._compute_risk_state(daily_dd_percent, total_dd_percent)

@@ -15,7 +15,6 @@ ANALYSIS-ONLY module. No execution side-effects.
 from __future__ import annotations
 
 import math
-
 from dataclasses import dataclass
 from typing import Any
 
@@ -152,8 +151,7 @@ class PortfolioMonteCarloEngine:
 
         if num_pairs < 2:
             raise ValueError(
-                f"Portfolio MC requires >= 2 pairs, got {num_pairs}. "
-                f"Use MonteCarloEngine for single-pair simulation."
+                f"Portfolio MC requires >= 2 pairs, got {num_pairs}. Use MonteCarloEngine for single-pair simulation."
             )
 
         # Build matrix (num_pairs x num_trades)
@@ -161,10 +159,7 @@ class PortfolioMonteCarloEngine:
         min_len = min(lengths)
 
         if min_len < self.min_trades:
-            raise ValueError(
-                f"Minimum {self.min_trades} trades per pair required, "
-                f"shortest series has {min_len}"
-            )
+            raise ValueError(f"Minimum {self.min_trades} trades per pair required, shortest series has {min_len}")
 
         # Truncate all to shortest length for alignment
         mat = np.array(
@@ -175,9 +170,7 @@ class PortfolioMonteCarloEngine:
         n_trades = mat.shape[1]
 
         # ── Compute empirical correlation ────────────────────────────
-        corr_matrix: NDArray[np.float64] = np.atleast_2d(
-            np.asarray(np.corrcoef(mat), dtype=np.float64)
-        )
+        corr_matrix: NDArray[np.float64] = np.atleast_2d(np.asarray(np.corrcoef(mat), dtype=np.float64))
         corr_matrix = np.nan_to_num(corr_matrix, nan=0.0)
         # Ensure symmetric positive semi-definite
         corr_matrix = self._nearest_psd(corr_matrix)
@@ -244,13 +237,9 @@ class PortfolioMonteCarloEngine:
             portfolio_ruin_flags.append(bool(np.any(cumulative <= ruin_threshold)))
 
         # ── Aggregate results ────────────────────────────────────────
-        pair_win_probs = tuple(
-            round(float(pair_win_counts[p] / self.simulations), 4)
-            for p in range(num_pairs)
-        )
+        pair_win_probs = tuple(round(float(pair_win_counts[p] / self.simulations), 4) for p in range(num_pairs))
         pair_evs = tuple(
-            round(float(pair_profit_sums[p] - pair_loss_sums[p]) / self.simulations, 2)
-            for p in range(num_pairs)
+            round(float(pair_profit_sums[p] - pair_loss_sums[p]) / self.simulations, 2) for p in range(num_pairs)
         )
         pair_pfs = tuple(
             round(
@@ -264,9 +253,7 @@ class PortfolioMonteCarloEngine:
             for p in range(num_pairs)
         )
 
-        portfolio_win_prob = float(
-            np.mean([1.0 if pnl > 0 else 0.0 for pnl in portfolio_pnls])
-        )
+        portfolio_win_prob = float(np.mean([1.0 if pnl > 0 else 0.0 for pnl in portfolio_pnls]))
         portfolio_ev = float(np.mean(portfolio_pnls))
         total_portfolio_profit = sum(max(0, p) for p in portfolio_pnls)
         total_portfolio_loss = sum(abs(min(0, p)) for p in portfolio_pnls)
@@ -307,9 +294,7 @@ class PortfolioMonteCarloEngine:
             portfolio_risk_of_ruin=round(portfolio_ror, 4),
             portfolio_max_drawdown_mean=round(mean_dd, 2),
             portfolio_max_drawdown_p95=round(p95_dd, 2),
-            correlation_matrix=tuple(
-                tuple(round(float(c), 4) for c in row) for row in corr_matrix
-            ),
+            correlation_matrix=tuple(tuple(round(float(c), 4) for c in row) for row in corr_matrix),
             diversification_ratio=div_ratio,
             simulations=self.simulations,
             num_pairs=num_pairs,

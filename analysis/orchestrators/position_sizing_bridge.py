@@ -15,6 +15,7 @@ from dataclasses import dataclass
 @dataclass(frozen=True)
 class AnalysisRiskInput:
     """What analysis CAN provide -- no account state here."""
+
     symbol: str
     direction: str  # "BUY" or "SELL"
     entry_price: float
@@ -36,6 +37,7 @@ class AnalysisRiskInput:
 @dataclass(frozen=True)
 class DashboardRiskOutput:
     """What dashboard MUST provide -- computed from account state + prop firm guard."""
+
     trade_allowed: bool
     recommended_lot: float
     max_safe_lot: float

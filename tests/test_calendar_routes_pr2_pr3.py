@@ -28,6 +28,7 @@ from news.routes import calendar_routes
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _make_event(
     title: str = "NFP",
     currency: str = "USD",
@@ -60,9 +61,7 @@ class _FakeService:
         super().__init__()
         self.day_events = day_events or []
         self.upcoming_events_list = upcoming or []
-        self.blocker = blocker or BlockerStatus(
-            is_locked=False, checked_at=datetime.now(UTC)
-        )
+        self.blocker = blocker or BlockerStatus(is_locked=False, checked_at=datetime.now(UTC))
         self.health = health or {"forexfactory_json": {"healthy": True}}
         # capture args
         self.last_day_events_date: str | None = None
@@ -87,9 +86,7 @@ class _FakeService:
         }
         return self.upcoming_events_list
 
-    async def get_blocker_status(
-        self, symbol: str | None = None
-    ) -> BlockerStatus:
+    async def get_blocker_status(self, symbol: str | None = None) -> BlockerStatus:
         self.last_blocker_symbol = symbol
         return self.blocker
 
@@ -118,6 +115,7 @@ class _FakeRedis:
 # Fixtures
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture()
 def fake_service() -> _FakeService:
     return _FakeService()
@@ -130,6 +128,7 @@ def fake_redis() -> _FakeRedis:
 
 def _patch_deps(monkeypatch: pytest.MonkeyPatch, service: _FakeService, redis: _FakeRedis) -> None:
     """Wire FakeService + FakeRedis into the calendar_routes module."""
+
     async def _svc():
         return service
 
@@ -152,6 +151,7 @@ def client(monkeypatch: pytest.MonkeyPatch, fake_service: _FakeService, fake_red
 # GET /health
 # ===================================================================
 
+
 class TestHealth:
     def test_health_returns_sources_and_checked_at(self, client: TestClient) -> None:
         resp = client.get("/api/v1/calendar/health")
@@ -165,6 +165,7 @@ class TestHealth:
 # ===================================================================
 # GET /blocker
 # ===================================================================
+
 
 class TestBlocker:
     def test_blocker_unlocked(self, client: TestClient) -> None:
@@ -196,11 +197,11 @@ class TestBlocker:
         assert body["locked_by"]["title"] == "FOMC"
         assert body["upcoming_count"] == 1
 
-    def test_blocker_manual_override(self, monkeypatch: pytest.MonkeyPatch, fake_service: _FakeService, fake_redis: _FakeRedis) -> None:
+    def test_blocker_manual_override(
+        self, monkeypatch: pytest.MonkeyPatch, fake_service: _FakeService, fake_redis: _FakeRedis
+    ) -> None:
         """Manual Redis lock overrides an unlocked service status."""
-        fake_redis.store["NEWS_LOCK:STATE"] = json.dumps(
-            {"locked": True, "reason": "Manual pre-NFP"}
-        )
+        fake_redis.store["NEWS_LOCK:STATE"] = json.dumps({"locked": True, "reason": "Manual pre-NFP"})
         _patch_deps(monkeypatch, fake_service, fake_redis)
         app = FastAPI()
         app.include_router(calendar_routes.router)
@@ -224,6 +225,7 @@ class TestBlocker:
 # ===================================================================
 # GET /  (day calendar)
 # ===================================================================
+
 
 class TestGetCalendar:
     def test_empty_day(self, client: TestClient) -> None:
@@ -302,9 +304,7 @@ class TestGetCalendar:
         assert event["is_imminent"] is False
 
     def test_news_lock_reflected(self, monkeypatch: pytest.MonkeyPatch, fake_redis: _FakeRedis) -> None:
-        fake_redis.store["NEWS_LOCK:STATE"] = json.dumps(
-            {"locked": True, "reason": "pre-CPI"}
-        )
+        fake_redis.store["NEWS_LOCK:STATE"] = json.dumps({"locked": True, "reason": "pre-CPI"})
         svc = _FakeService()
         _patch_deps(monkeypatch, svc, fake_redis)
         app = FastAPI()
@@ -319,6 +319,7 @@ class TestGetCalendar:
 # ===================================================================
 # GET /upcoming
 # ===================================================================
+
 
 class TestUpcoming:
     def test_empty_upcoming(self, client: TestClient) -> None:
@@ -357,10 +358,13 @@ class TestUpcoming:
 # POST /news-lock/enable, /news-lock/disable, GET /news-lock/status
 # ===================================================================
 
+
 class TestNewsLock:
     """Manual news-lock lifecycle (enable → status → disable → status)."""
 
-    def _make_client(self, monkeypatch: pytest.MonkeyPatch, fake_service: _FakeService, fake_redis: _FakeRedis) -> TestClient:
+    def _make_client(
+        self, monkeypatch: pytest.MonkeyPatch, fake_service: _FakeService, fake_redis: _FakeRedis
+    ) -> TestClient:
         _patch_deps(monkeypatch, fake_service, fake_redis)
         from api.middleware.auth import verify_token
         from api.middleware.governance import enforce_write_policy
@@ -372,7 +376,9 @@ class TestNewsLock:
         app.dependency_overrides[enforce_write_policy] = lambda: None
         return TestClient(app)
 
-    def test_enable_lock(self, monkeypatch: pytest.MonkeyPatch, fake_service: _FakeService, fake_redis: _FakeRedis) -> None:
+    def test_enable_lock(
+        self, monkeypatch: pytest.MonkeyPatch, fake_service: _FakeService, fake_redis: _FakeRedis
+    ) -> None:
         c = self._make_client(monkeypatch, fake_service, fake_redis)
         resp = c.post(
             "/api/v1/calendar/news-lock/enable",
@@ -385,7 +391,9 @@ class TestNewsLock:
         # Verify Redis was written
         assert "NEWS_LOCK:STATE" in fake_redis.store
 
-    def test_disable_lock(self, monkeypatch: pytest.MonkeyPatch, fake_service: _FakeService, fake_redis: _FakeRedis) -> None:
+    def test_disable_lock(
+        self, monkeypatch: pytest.MonkeyPatch, fake_service: _FakeService, fake_redis: _FakeRedis
+    ) -> None:
         c = self._make_client(monkeypatch, fake_service, fake_redis)
         # enable first
         c.post("/api/v1/calendar/news-lock/enable", json={})
@@ -397,7 +405,9 @@ class TestNewsLock:
         assert body["news_lock"] is False
         assert "NEWS_LOCK:STATE" not in fake_redis.store
 
-    def test_status_reflects_lock(self, monkeypatch: pytest.MonkeyPatch, fake_service: _FakeService, fake_redis: _FakeRedis) -> None:
+    def test_status_reflects_lock(
+        self, monkeypatch: pytest.MonkeyPatch, fake_service: _FakeService, fake_redis: _FakeRedis
+    ) -> None:
         c = self._make_client(monkeypatch, fake_service, fake_redis)
         # initially unlocked
         body = c.get("/api/v1/calendar/news-lock/status").json()
@@ -409,7 +419,9 @@ class TestNewsLock:
         assert body["news_lock"] is True
         assert body["reason"] == "CPI"
 
-    def test_full_lifecycle(self, monkeypatch: pytest.MonkeyPatch, fake_service: _FakeService, fake_redis: _FakeRedis) -> None:
+    def test_full_lifecycle(
+        self, monkeypatch: pytest.MonkeyPatch, fake_service: _FakeService, fake_redis: _FakeRedis
+    ) -> None:
         c = self._make_client(monkeypatch, fake_service, fake_redis)
         # enable
         c.post("/api/v1/calendar/news-lock/enable", json={"reason": "FOMC"})

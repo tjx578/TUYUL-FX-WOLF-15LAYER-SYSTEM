@@ -20,6 +20,7 @@ _DEFAULT_MIN_BARS = {"M15": 20, "H1": 20, "H4": 10, "D1": 5}
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _reset_context_bus() -> LiveContextBus:
     """Reset the LiveContextBus singleton and return a fresh instance."""
     LiveContextBus._instance = None
@@ -45,6 +46,7 @@ def _fill_candles(bus: LiveContextBus, symbol: str, tf: str, count: int) -> None
 # ---------------------------------------------------------------------------
 # LiveContextBus.check_warmup()
 # ---------------------------------------------------------------------------
+
 
 class TestCheckWarmup:
     def setup_method(self):
@@ -118,6 +120,7 @@ class TestCheckWarmup:
 # Pipeline warmup gate
 # ---------------------------------------------------------------------------
 
+
 class TestPipelineWarmupGate:
     """Test that the pipeline rejects analysis when warmup is insufficient."""
 
@@ -135,19 +138,21 @@ class TestPipelineWarmupGate:
         return pipe
 
     def test_insufficient_warmup_returns_early_exit(self):
-        pipe = self._make_pipeline_with_warmup({
-            "ready": False,
-            "bars": {"M15": 5, "H1": 3, "H4": 0, "D1": 0},
-            "required": {"M15": 20, "H1": 20, "H4": 10, "D1": 5},
-            "missing": {"M15": 15, "H1": 17, "H4": 10, "D1": 5},
-        })
+        pipe = self._make_pipeline_with_warmup(
+            {
+                "ready": False,
+                "bars": {"M15": 5, "H1": 3, "H4": 0, "D1": 0},
+                "required": {"M15": 20, "H1": 20, "H4": 10, "D1": 5},
+                "missing": {"M15": 15, "H1": 17, "H4": 10, "D1": 5},
+            }
+        )
 
         result = pipe.execute("EURUSD")
 
         assert any("WARMUP_INSUFFICIENT" in e for e in result["errors"])
         assert result["l12_verdict"]["verdict"] == "HOLD"
         # Pipeline should not have attempted any layer analysis
-        pipe._context_bus.check_warmup.assert_called_once() # pyright: ignore[reportAttributeAccessIssue]
+        pipe._context_bus.check_warmup.assert_called_once()  # pyright: ignore[reportAttributeAccessIssue]
 
     def test_sufficient_warmup_proceeds_to_analysis(self):
         """When warmup is OK, the pipeline should proceed past the gate."""
@@ -179,12 +184,14 @@ class TestPipelineWarmupGate:
 
     def test_safe_mode_bypasses_warmup(self):
         """safe_mode=True should skip the warmup check entirely."""
-        pipe = self._make_pipeline_with_warmup({
-            "ready": False,
-            "bars": {"M15": 0, "H1": 0, "H4": 0, "D1": 0},
-            "required": {"M15": 20, "H1": 20, "H4": 10, "D1": 5},
-            "missing": {"M15": 20, "H1": 20, "H4": 10, "D1": 5},
-        })
+        pipe = self._make_pipeline_with_warmup(
+            {
+                "ready": False,
+                "bars": {"M15": 0, "H1": 0, "H4": 0, "D1": 0},
+                "required": {"M15": 20, "H1": 20, "H4": 10, "D1": 5},
+                "missing": {"M15": 20, "H1": 20, "H4": 10, "D1": 5},
+            }
+        )
 
         # Patch _ensure_analyzers and mock L1
         pipe._l1 = MagicMock()
@@ -194,6 +201,6 @@ class TestPipelineWarmupGate:
         result = pipe.execute("EURUSD", system_metrics={"safe_mode": True})
 
         # Warmup check should NOT have been called
-        pipe._context_bus.check_warmup.assert_not_called() # pyright: ignore[reportAttributeAccessIssue]
+        pipe._context_bus.check_warmup.assert_not_called()  # pyright: ignore[reportAttributeAccessIssue]
         # Should have proceeded past warmup to L1
         assert "WARMUP_INSUFFICIENT" not in result["errors"]

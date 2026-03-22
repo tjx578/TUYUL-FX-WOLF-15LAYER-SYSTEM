@@ -1,8 +1,8 @@
 """
 Tests for JSON schema contracts -- L12 and alerts.
 """
-import json
 
+import json
 from pathlib import Path
 
 import pytest
@@ -35,9 +35,7 @@ class TestL12Schema:
     def test_no_account_fields_required(self, schema):
         required = schema.get("required", [])
         for forbidden in ["balance", "equity", "margin", "account_id"]:
-            assert forbidden not in required, (
-                f"L12 schema must not require '{forbidden}' -- boundary violation"
-            )
+            assert forbidden not in required, f"L12 schema must not require '{forbidden}' -- boundary violation"
 
 
 class TestAlertSchema:
@@ -58,9 +56,6 @@ class TestAlertSchema:
         props = schema.get("properties", {})
         if "event_type" in props:
             event_enum = props["event_type"].get("enum", [])
-            expected = {"ORDER_PLACED", "ORDER_FILLED", "ORDER_CANCELLED",
-                        "ORDER_EXPIRED", "SYSTEM_VIOLATION"}
+            expected = {"ORDER_PLACED", "ORDER_FILLED", "ORDER_CANCELLED", "ORDER_EXPIRED", "SYSTEM_VIOLATION"}
             for ev in expected:
-                assert ev in event_enum or len(event_enum) == 0, (
-                    f"Missing event type: {ev}"
-                )
+                assert ev in event_enum or len(event_enum) == 0, f"Missing event type: {ev}"

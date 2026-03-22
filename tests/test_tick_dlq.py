@@ -19,8 +19,10 @@ from ingest.tick_dlq import (
 _reset_dlq: Callable[[], None]
 try:
     from ingest.tick_dlq import reset_dlq as _reset_dlq_import  # type: ignore[attr-defined]
+
     _reset_dlq = cast(Callable[[], None], _reset_dlq_import)
 except ImportError:
+
     def _reset_dlq_fallback() -> None:
         """Fallback no-op if reset_dlq is not yet exported by tick_dlq."""
 

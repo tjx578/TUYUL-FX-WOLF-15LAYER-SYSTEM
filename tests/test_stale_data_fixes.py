@@ -176,9 +176,7 @@ class TestKillSwitchAutoRecovery:
         """Daily DD breach must still trip even when feed is fresh."""
         ks = _make_fresh_kill_switch(monkeypatch)
         ks.disable("RESET")
-        result = ks.evaluate_and_trip(
-            metrics={"daily_dd_percent": 99.0, "feed_stale_seconds": 1.0}
-        )
+        result = ks.evaluate_and_trip(metrics={"daily_dd_percent": 99.0, "feed_stale_seconds": 1.0})
         assert result["enabled"] is True
         assert "AUTO_DAILY_DD_BREACH" in str(result["reason"])
 

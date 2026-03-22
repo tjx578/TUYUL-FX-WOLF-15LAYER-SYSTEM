@@ -13,9 +13,7 @@ def _make_candles(n: int = 50, start: float = 100.0) -> dict:
         h = max(o, c) + 0.5
         l = min(o, c) - 0.5  # noqa: E741
         v = 1000 + (i % 9) * 80
-        candles.append(
-            {"open": o, "high": h, "low": l, "close": c, "volume": v, "timestamp": i}
-        )
+        candles.append({"open": o, "high": h, "low": l, "close": c, "volume": v, "timestamp": i})
     return {"M15": candles}
 
 
@@ -52,10 +50,7 @@ def test_quantum_field_engine_short_input_low_energy() -> None:
     """Very few candles (< 5 per TF) -> energy_score is 0.0."""
     engine = QuantumFieldEngine()
     short_candles = {
-        "M15": [
-            {"open": 1.0, "high": 1.1, "low": 0.9, "close": 1.05, "volume": 100, "timestamp": i}
-            for i in range(3)
-        ]
+        "M15": [{"open": 1.0, "high": 1.1, "low": 0.9, "close": 1.05, "volume": 100, "timestamp": i} for i in range(3)]
     }
     result = engine.analyze(short_candles)
 

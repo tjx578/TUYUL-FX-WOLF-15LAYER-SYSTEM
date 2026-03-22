@@ -54,8 +54,7 @@ class AquaInstantProGuard(BasePropFirmGuard):
                 self._strategy = StrategyLoader.load()
             except Exception as exc:  # noqa: BLE001
                 logger.warning(
-                    f"AquaInstantProGuard: strategy_loader failed to load, "
-                    f"falling back to profile-only rules: {exc}"
+                    f"AquaInstantProGuard: strategy_loader failed to load, falling back to profile-only rules: {exc}"
                 )
                 self._strategy = None  # type: ignore[assignment]
 
@@ -161,9 +160,7 @@ class AquaInstantProGuard(BasePropFirmGuard):
                 news_active=bool(trade_risk.get("news_active", False)),
                 add_to_loser=bool(trade_risk.get("add_to_loser", False)),
                 martingale=bool(trade_risk.get("martingale", False)),
-                floating_loss_percent_of_initial=float(
-                    account_state.get("floating_loss_pct_of_initial", 0.0)
-                ),
+                floating_loss_percent_of_initial=float(account_state.get("floating_loss_pct_of_initial", 0.0)),
                 daily_profit_percent=float(account_state.get("daily_profit_percent", 0.0)),
             )
 
@@ -176,9 +173,7 @@ class AquaInstantProGuard(BasePropFirmGuard):
         max_risk_per_trade: float = float(
             self.rules.get(
                 "max_risk_per_trade_percent",
-                self._strategy.risk.get("risk_per_trade_percent", 1.0)
-                if self._strategy is not None
-                else 1.0,
+                self._strategy.risk.get("risk_per_trade_percent", 1.0) if self._strategy is not None else 1.0,
             )
         )
         if risk_percent > max_risk_per_trade:
@@ -234,10 +229,6 @@ class AquaInstantProGuard(BasePropFirmGuard):
             partial_tp_taken=ctx.get("partial_tp_taken"),
             journal_entry_exists=bool(ctx.get("journal_entry_exists", True)),
             weekly_review_done=bool(ctx.get("weekly_review_done", True)),
-            floating_loss_percent_of_initial=float(
-                account_state.get("floating_loss_pct_of_initial", 0.0)
-            ),
-            best_day_percent_of_total=float(
-                account_state.get("best_day_percent_of_total", 0.0)
-            ),
+            floating_loss_percent_of_initial=float(account_state.get("floating_loss_pct_of_initial", 0.0)),
+            best_day_percent_of_total=float(account_state.get("best_day_percent_of_total", 0.0)),
         )

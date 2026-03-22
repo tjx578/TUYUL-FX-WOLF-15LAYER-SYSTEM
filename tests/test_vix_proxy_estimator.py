@@ -19,11 +19,13 @@ class TestVIXProxyEstimator:
         # Create synthetic candle data (30 candles)
         candles = []
         for i in range(30):
-            candles.append({  # noqa: PERF401
-                "close": 1.1000 + i * 0.0001,
-                "high": 1.1010 + i * 0.0001,
-                "low": 1.0990 + i * 0.0001,
-            })
+            candles.append(
+                {  # noqa: PERF401
+                    "close": 1.1000 + i * 0.0001,
+                    "high": 1.1010 + i * 0.0001,
+                    "low": 1.0990 + i * 0.0001,
+                }
+            )
 
         result = estimator.estimate("EURUSD", candles)
 
@@ -38,10 +40,7 @@ class TestVIXProxyEstimator:
         estimator = VIXProxyEstimator()
 
         # Only 10 candles (need 30)
-        candles = [
-            {"close": 1.1000, "high": 1.1010, "low": 1.0990}
-            for _ in range(10)
-        ]
+        candles = [{"close": 1.1000, "high": 1.1010, "low": 1.0990} for _ in range(10)]
 
         result = estimator.estimate("EURUSD", candles)
         assert result is None
@@ -57,10 +56,7 @@ class TestVIXProxyEstimator:
         estimator = VIXProxyEstimator()
 
         # Candles with zero/negative prices
-        candles = [
-            {"close": 0, "high": 0, "low": 0}
-            for _ in range(30)
-        ]
+        candles = [{"close": 0, "high": 0, "low": 0} for _ in range(30)]
 
         result = estimator.estimate("EURUSD", candles)
         assert result is None
@@ -73,18 +69,18 @@ class TestVIXProxyEstimator:
         candles = []
         for i in range(30):
             volatility = 0.001 + i * 0.0001
-            candles.append({
-                "close": 1.1000 + np.random.normal(0, volatility),
-                "high": 1.1000 + abs(np.random.normal(0, volatility)) + 0.0005,
-                "low": 1.1000 - abs(np.random.normal(0, volatility)) - 0.0005,
-            })
+            candles.append(
+                {
+                    "close": 1.1000 + np.random.normal(0, volatility),
+                    "high": 1.1000 + abs(np.random.normal(0, volatility)) + 0.0005,
+                    "low": 1.1000 - abs(np.random.normal(0, volatility)) - 0.0005,
+                }
+            )
 
         result = estimator.estimate("EURUSD", candles)
 
         assert result is not None
-        assert result.term_structure_estimate in [
-            "CONTANGO", "BACKWARDATION", "FLAT", "UNKNOWN"
-        ]
+        assert result.term_structure_estimate in ["CONTANGO", "BACKWARDATION", "FLAT", "UNKNOWN"]
 
     def test_confidence_calculation(self) -> None:
         """Test confidence calculation with different candle counts."""
@@ -92,10 +88,7 @@ class TestVIXProxyEstimator:
 
         # Create candles
         def make_candles(count):
-            return [
-                {"close": 1.1000, "high": 1.1010, "low": 1.0990}
-                for _ in range(count)
-            ]
+            return [{"close": 1.1000, "high": 1.1010, "low": 1.0990} for _ in range(count)]
 
         # More candles should give higher confidence
         result_30 = estimator.estimate("EURUSD", make_candles(30))
@@ -111,12 +104,14 @@ class TestVIXProxyEstimator:
 
         # Create candles with extreme volatility
         candles = []
-        for i in range(30):
-            candles.append({  # noqa: PERF401
-                "close": 1.1000 + np.random.normal(0, 0.1),
-                "high": 1.2000,
-                "low": 1.0000,
-            })
+        for _i in range(30):
+            candles.append(
+                {  # noqa: PERF401
+                    "close": 1.1000 + np.random.normal(0, 0.1),
+                    "high": 1.2000,
+                    "low": 1.0000,
+                }
+            )
 
         result = estimator.estimate("EURUSD", candles)
 
@@ -127,10 +122,7 @@ class TestVIXProxyEstimator:
         """Test that VIX history is stored and limited."""
         estimator = VIXProxyEstimator()
 
-        candles = [
-            {"close": 1.1000, "high": 1.1010, "low": 1.0990}
-            for _ in range(30)
-        ]
+        candles = [{"close": 1.1000, "high": 1.1010, "low": 1.0990} for _ in range(30)]
 
         # Estimate multiple times
         for _ in range(150):

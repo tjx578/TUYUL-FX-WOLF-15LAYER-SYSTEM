@@ -1,6 +1,7 @@
 """Tests for core.health_probe — lightweight container health server."""
 
 import asyncio
+import contextlib
 import json
 import urllib.error
 import urllib.request
@@ -27,10 +28,8 @@ async def probe_server():
     server.close()
     await server.wait_closed()
     task.cancel()
-    try:
+    with contextlib.suppress(asyncio.CancelledError):
         await task
-    except asyncio.CancelledError:
-        pass
 
 
 def _get(port: int, path: str) -> tuple[int, dict]:

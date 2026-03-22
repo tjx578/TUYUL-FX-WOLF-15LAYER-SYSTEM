@@ -421,6 +421,4 @@ class SettingsGovernanceService:
 
     def _validate_domain(self, domain: str) -> None:
         if domain not in self.ALLOWED_DOMAINS:
-            raise ValueError(
-                f"Unknown settings domain: '{domain}'. " f"Allowed: {', '.join(sorted(self.ALLOWED_DOMAINS))}"
-            )
+            raise ValueError(f"Unknown settings domain: '{domain}'. Allowed: {', '.join(sorted(self.ALLOWED_DOMAINS))}")

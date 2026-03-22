@@ -18,6 +18,7 @@ from config.pip_values import (
 
 # ── Table Integrity ──────────────────────────────────────────────────
 
+
 class TestTableIntegrity:
     """Validate the static tables are self-consistent."""
 
@@ -31,9 +32,7 @@ class TestTableIntegrity:
 
     def test_every_pip_value_pair_has_multiplier(self):
         for pair in PIP_VALUES_PER_STANDARD_LOT:
-            assert pair in PIP_MULTIPLIERS, (
-                f"{pair} in PIP_VALUES but missing from PIP_MULTIPLIERS"
-            )
+            assert pair in PIP_MULTIPLIERS, f"{pair} in PIP_VALUES but missing from PIP_MULTIPLIERS"
 
     def test_no_duplicate_keys(self):
         """Ensure no duplicate pair entries (case-normalized)."""
@@ -46,6 +45,7 @@ class TestTableIntegrity:
 
 
 # ── P0 Bug Fix: XAUUSD ──────────────────────────────────────────────
+
 
 class TestP0XauusdFix:
     """The original bug: XAUUSD was 0.10 in dashboard vs 10.0 in config."""
@@ -68,6 +68,7 @@ class TestP0XauusdFix:
 
 
 # ── get_pip_value ────────────────────────────────────────────────────
+
 
 class TestGetPipValue:
     def test_known_pair(self):
@@ -104,6 +105,7 @@ class TestGetPipValue:
 
 
 # ── get_pip_multiplier ───────────────────────────────────────────────
+
 
 class TestGetPipMultiplier:
     def test_standard_fx(self):
@@ -146,6 +148,7 @@ class TestGetPipMultiplier:
 
 # ── Pip math consistency ─────────────────────────────────────────────
 
+
 class TestPipMathConsistency:
     """Verify pip multiplier and pip values produce correct risk amounts."""
 
@@ -156,7 +159,7 @@ class TestPipMathConsistency:
         mult = get_pip_multiplier("EURUSD")
         pv = get_pip_value("EURUSD")
         sl_pips = abs(entry - sl) * mult
-        risk = sl_pips * pv * 1.0   # 1 standard lot
+        risk = sl_pips * pv * 1.0  # 1 standard lot
 
         assert sl_pips == pytest.approx(50.0, abs=0.1)
         assert risk == pytest.approx(500.0, abs=1.0)
@@ -212,6 +215,7 @@ class TestPipMathConsistency:
 
 # ── get_pip_info ─────────────────────────────────────────────────────
 
+
 class TestGetPipInfo:
     def test_returns_both(self):
         pv, mult = get_pip_info("GBPUSD")
@@ -230,6 +234,7 @@ class TestGetPipInfo:
 
 # ── is_pair_supported ────────────────────────────────────────────────
 
+
 class TestIsPairSupported:
     def test_known(self):
         assert is_pair_supported("GBPUSD") is True
@@ -245,6 +250,7 @@ class TestIsPairSupported:
 
 
 # ── list_supported_pairs ─────────────────────────────────────────────
+
 
 class TestListSupportedPairs:
     def test_returns_list(self):
@@ -268,6 +274,7 @@ class TestListSupportedPairs:
 
 # ── PipLookupError ───────────────────────────────────────────────────
 
+
 class TestPipLookupError:
     def test_is_lookup_error(self):
         err = PipLookupError("ZZZZZZZ", "TEST_TABLE")
@@ -287,17 +294,18 @@ class TestPipLookupError:
 
 # ── Constitutional: No Business Logic ────────────────────────────────
 
+
 class TestConstitutionalNoBusinessLogic:
     """Config module must NOT contain position sizing or risk logic."""
 
     def test_no_lot_size_function(self):
         import config.pip_values as mod  # noqa: PLC0415
-        assert not hasattr(mod, "calculate_lot_size"), (
-            "Lot sizing belongs in risk/position_sizer.py, not config/"
-        )
+
+        assert not hasattr(mod, "calculate_lot_size"), "Lot sizing belongs in risk/position_sizer.py, not config/"
 
     def test_no_risk_amount_function(self):
         import config.pip_values as mod  # noqa: PLC0415
+
         assert not hasattr(mod, "calculate_risk_amount"), (
             "Risk calculation belongs in risk/position_sizer.py, not config/"
         )
@@ -306,16 +314,17 @@ class TestConstitutionalNoBusinessLogic:
         """get_pip_value returns per-standard-lot value only.
         Scaling by lot_size is the caller's responsibility."""
         import inspect  # noqa: PLC0415
+
         sig = inspect.signature(get_pip_value)
         param_names = list(sig.parameters.keys())
         assert "lot_size" not in param_names, (
-            "get_pip_value must not accept lot_size -- "
-            "scaling is the caller's (risk/) responsibility"
+            "get_pip_value must not accept lot_size -- scaling is the caller's (risk/) responsibility"
         )
 
     def test_no_clamping_logic(self):
         """Config must not contain min/max lot enforcement."""
         import config.pip_values as mod  # noqa: PLC0415
+
         source = inspect.getsource(mod)
         assert "max(0.01" not in source, "Lot clamping belongs in risk/"
         assert "min(10.0" not in source, "Lot clamping belongs in risk/"
@@ -325,11 +334,10 @@ class TestConstitutionalNoBusinessLogic:
         import inspect  # noqa: PLC0415
 
         import config.pip_values as mod  # noqa: PLC0415
+
         source = inspect.getsource(mod)
         for forbidden in ("balance", "equity", "account_state"):
-            assert forbidden not in source.lower(), (
-                f"Config must not reference '{forbidden}'"
-            )
+            assert forbidden not in source.lower(), f"Config must not reference '{forbidden}'"
 
 
 # Need inspect for constitutional tests

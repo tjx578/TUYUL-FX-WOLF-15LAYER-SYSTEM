@@ -47,9 +47,7 @@ class SimpleCircuitBreaker:
                 self._opened_at = 0.0
                 self._failures = 0
                 return
-            raise CircuitBreakerOpenError(
-                f"Circuit breaker OPEN for {self._recovery_timeout_sec - elapsed:.1f}s"
-            )
+            raise CircuitBreakerOpenError(f"Circuit breaker OPEN for {self._recovery_timeout_sec - elapsed:.1f}s")
 
     def on_success(self) -> None:
         with self._lock:

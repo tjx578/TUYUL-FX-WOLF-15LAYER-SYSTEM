@@ -12,8 +12,14 @@ from typing import Any
 logger = logging.getLogger("tuyul.constitution.expiry")
 
 TIMEFRAME_TTL: dict[str, int] = {
-    "M1": 60, "M5": 180, "M15": 300, "M30": 600,
-    "H1": 1800, "H4": 3600, "D1": 14400, "W1": 43200,
+    "M1": 60,
+    "M5": 180,
+    "M15": 300,
+    "M30": 600,
+    "H1": 1800,
+    "H4": 3600,
+    "D1": 14400,
+    "W1": 43200,
 }
 
 DEFAULT_TTL = 300
@@ -42,7 +48,8 @@ def is_signal_valid(signal: dict[str, Any]) -> tuple[bool, str]:
     if remaining < 10:
         logger.warning(
             "Signal %s expires in %.0fs -- urgent",
-            signal.get("signal_id", "?"), remaining,
+            signal.get("signal_id", "?"),
+            remaining,
         )
 
     return True, f"Valid -- {remaining:.0f}s remaining"

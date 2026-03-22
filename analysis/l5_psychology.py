@@ -100,10 +100,7 @@ def analyze(
         flags.append(PsychFlag("LOSS_STREAK_CAUTION", "HIGH", "Loss streak caution threshold"))
         penalty += 20.0
 
-    if (
-        inputs.recent_consecutive_losses > 0
-        and inputs.hours_since_last_trade <= REVENGE_TRADE_HOURS
-    ):
+    if inputs.recent_consecutive_losses > 0 and inputs.hours_since_last_trade <= REVENGE_TRADE_HOURS:
         flags.append(PsychFlag("REVENGE_TRADE_RISK", "CRITICAL", "Re-entry too soon after loss"))
         penalty += 30.0
 

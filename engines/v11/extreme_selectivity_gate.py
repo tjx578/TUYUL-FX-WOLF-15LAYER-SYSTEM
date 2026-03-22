@@ -30,7 +30,7 @@ Authority: ANALYSIS-ONLY. No execution side-effects.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 
 import numpy as np
@@ -38,14 +38,16 @@ import numpy as np
 from engines.v11.config import get_v11
 
 
-class GateVerdict(str, Enum):
+class GateVerdict(StrEnum):
     """Gate verdict enum."""
+
     ALLOW = "ALLOW"
     BLOCK = "BLOCK"
 
 
-class ConfidenceBand(str, Enum):
+class ConfidenceBand(StrEnum):
     """Confidence band enum."""
+
     ULTRA_HIGH = "ULTRA_HIGH"
     HIGH = "HIGH"
     MEDIUM = "MEDIUM"
@@ -145,9 +147,7 @@ class ExtremeSelectivityGateV11:
         vol_expansion_min: float | None = None,
     ) -> None:
         # Veto thresholds
-        self._regime_conf_floor = regime_confidence_floor or get_v11(
-            "veto.regime_confidence_floor", 0.65
-        )
+        self._regime_conf_floor = regime_confidence_floor or get_v11("veto.regime_confidence_floor", 0.65)
         self._regime_transition_ceiling = regime_transition_risk_ceiling or get_v11(
             "veto.regime_transition_risk_ceiling", 0.40
         )
@@ -158,9 +158,7 @@ class ExtremeSelectivityGateV11:
         self._emotion_max = emotion_delta_max or get_v11("veto.emotion_delta_max", 0.25)
 
         if allowed_vol_states is None:
-            self._allowed_vol_states = set(get_v11(
-                "veto.allowed_vol_states", ["NORMAL", "EXPANSION", "TRENDING"]
-            ))
+            self._allowed_vol_states = set(get_v11("veto.allowed_vol_states", ["NORMAL", "EXPANSION", "TRENDING"]))
         else:
             self._allowed_vol_states = set(allowed_vol_states)
 
@@ -211,10 +209,7 @@ class ExtremeSelectivityGateV11:
         # Layer 3: EXECUTION
         execution_pass = self._layer3_execution(gate_input, score)
 
-        if execution_pass:
-            verdict = GateVerdict.ALLOW
-        else:
-            verdict = GateVerdict.BLOCK
+        verdict = GateVerdict.ALLOW if execution_pass else GateVerdict.BLOCK
 
         # Compute confidence band
         confidence_band = self._compute_confidence_band(score, gate_input)
@@ -318,11 +313,11 @@ class ExtremeSelectivityGateV11:
             True if all thresholds passed
         """
         return (
-            score >= self._score_min and
-            inp.monte_carlo_win >= self._mc_win_min and
-            inp.posterior >= self._posterior_min and
-            inp.monte_carlo_pf >= self._mc_pf_min and
-            inp.vol_expansion >= self._vol_exp_min
+            score >= self._score_min
+            and inp.monte_carlo_win >= self._mc_win_min
+            and inp.posterior >= self._posterior_min
+            and inp.monte_carlo_pf >= self._mc_pf_min
+            and inp.vol_expansion >= self._vol_exp_min
         )
 
     def _compute_confidence_band(self, score: float, inp: ExtremeGateInput) -> ConfidenceBand:
@@ -354,10 +349,26 @@ class ExtremeSelectivityGateV11:
         """Return execution threshold check results."""
         return {
             "score": {"value": score, "threshold": self._score_min, "passed": score >= self._score_min},
-            "mc_win": {"value": inp.monte_carlo_win, "threshold": self._mc_win_min, "passed": inp.monte_carlo_win >= self._mc_win_min},
-            "posterior": {"value": inp.posterior, "threshold": self._posterior_min, "passed": inp.posterior >= self._posterior_min},
-            "mc_pf": {"value": inp.monte_carlo_pf, "threshold": self._mc_pf_min, "passed": inp.monte_carlo_pf >= self._mc_pf_min},
-            "vol_expansion": {"value": inp.vol_expansion, "threshold": self._vol_exp_min, "passed": inp.vol_expansion >= self._vol_exp_min},
+            "mc_win": {
+                "value": inp.monte_carlo_win,
+                "threshold": self._mc_win_min,
+                "passed": inp.monte_carlo_win >= self._mc_win_min,
+            },
+            "posterior": {
+                "value": inp.posterior,
+                "threshold": self._posterior_min,
+                "passed": inp.posterior >= self._posterior_min,
+            },
+            "mc_pf": {
+                "value": inp.monte_carlo_pf,
+                "threshold": self._mc_pf_min,
+                "passed": inp.monte_carlo_pf >= self._mc_pf_min,
+            },
+            "vol_expansion": {
+                "value": inp.vol_expansion,
+                "threshold": self._vol_exp_min,
+                "passed": inp.vol_expansion >= self._vol_exp_min,
+            },
         }
 
     def _blocked_result(

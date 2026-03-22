@@ -38,11 +38,11 @@ class VolatilityClusterResult:
     """Immutable result of volatility clustering analysis."""
 
     clustering_detected: bool
-    vol_persistence: float                          # Mean autocorr of squared returns
-    risk_multiplier: float                          # Suggested risk scaling [1.0, max]
-    per_lag_autocorrelation: dict[int, float]        # Autocorrelation per lag
-    ljung_box_proxy: float                           # Sum of squared autocorrs
-    sample_size: int                                 # Returns analyzed
+    vol_persistence: float  # Mean autocorr of squared returns
+    risk_multiplier: float  # Suggested risk scaling [1.0, max]
+    per_lag_autocorrelation: dict[int, float]  # Autocorrelation per lag
+    ljung_box_proxy: float  # Sum of squared autocorrs
+    sample_size: int  # Returns analyzed
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize for JSON / L6 risk consumption."""
@@ -104,12 +104,10 @@ class VolatilityClusteringModel:
         arr = np.asarray(returns, dtype=np.float64)
 
         if len(arr) < self._min_returns:
-            raise ValueError(
-                f"Minimum {self._min_returns} returns required, got {len(arr)}"
-            )
+            raise ValueError(f"Minimum {self._min_returns} returns required, got {len(arr)}")
 
         # ── Squared returns (proxy for variance process) ─────────────
-        squared = arr ** 2
+        squared = arr**2
 
         # Demean for proper autocorrelation
         sq_mean = float(np.mean(squared))
@@ -144,7 +142,7 @@ class VolatilityClusteringModel:
         vol_persistence = float(np.mean(ac_values)) if ac_values else 0.0
 
         # ── Ljung-Box proxy (sum of squared autocorrelations) ────────
-        ljung_box_proxy = float(sum(ac ** 2 for ac in ac_values))
+        ljung_box_proxy = float(sum(ac**2 for ac in ac_values))
 
         # ── Detection ────────────────────────────────────────────────
         clustering_detected = vol_persistence > self._clustering_threshold

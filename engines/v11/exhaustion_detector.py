@@ -15,7 +15,7 @@ Authority: ANALYSIS-ONLY. No execution side-effects.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 
 import numpy as np
@@ -23,8 +23,9 @@ import numpy as np
 from engines.v11.config import get_v11
 
 
-class ExhaustionState(str, Enum):
+class ExhaustionState(StrEnum):
     """Exhaustion state enum."""
+
     BUY_EXHAUSTION = "BUY_EXHAUSTION"
     SELL_EXHAUSTION = "SELL_EXHAUSTION"
     NEUTRAL = "NEUTRAL"
@@ -115,15 +116,14 @@ class ExhaustionDetector:
             lows = np.array([c["low"] for c in candles], dtype=np.float64)
 
             # Validate data
-            if np.any(np.isnan(closes)) or np.any(np.isnan(opens)) or \
-               np.any(np.isnan(highs)) or np.any(np.isnan(lows)):
+            if np.any(np.isnan(closes)) or np.any(np.isnan(opens)) or np.any(np.isnan(highs)) or np.any(np.isnan(lows)):
                 return self._neutral_result("NaN values in candle data")
 
             # Current price
             current_close = closes[-1]
 
             # 1. Distance from rolling mean
-            mean_lookback = closes[-self._lookback_mean:]
+            mean_lookback = closes[-self._lookback_mean :]
             rolling_mean = np.mean(mean_lookback)
 
             if rolling_mean == 0:
@@ -175,9 +175,9 @@ class ExhaustionDetector:
             return 0.0
 
         # Get last N candles for ATR computation
-        highs_atr = highs[-(lookback + 1):]
-        lows_atr = lows[-(lookback + 1):]
-        closes_atr = closes[-(lookback + 1):]
+        highs_atr = highs[-(lookback + 1) :]
+        lows_atr = lows[-(lookback + 1) :]
+        closes_atr = closes[-(lookback + 1) :]
 
         true_ranges = []
         for i in range(1, len(highs_atr)):
@@ -215,9 +215,7 @@ class ExhaustionDetector:
 
         return upper_wick / lower_wick
 
-    def _classify_state(
-        self, distance: float, impulse: float, wick_ratio: float
-    ) -> ExhaustionState:
+    def _classify_state(self, distance: float, impulse: float, wick_ratio: float) -> ExhaustionState:
         """
         Classify exhaustion state based on metrics.
 
@@ -226,26 +224,20 @@ class ExhaustionDetector:
         NEUTRAL: Otherwise
         """
         # Check for BUY exhaustion (overextended upward)
-        if (
-            distance > self._extreme_distance and
-            impulse > self._impulse_limit and
-            wick_ratio > self._wick_ratio
-        ):
+        if distance > self._extreme_distance and impulse > self._impulse_limit and wick_ratio > self._wick_ratio:
             return ExhaustionState.BUY_EXHAUSTION
 
         # Check for SELL exhaustion (overextended downward)
         if (
-            distance < -self._extreme_distance and
-            impulse > self._impulse_limit and
-            wick_ratio < (1.0 / self._wick_ratio)
+            distance < -self._extreme_distance
+            and impulse > self._impulse_limit
+            and wick_ratio < (1.0 / self._wick_ratio)
         ):
             return ExhaustionState.SELL_EXHAUSTION
 
         return ExhaustionState.NEUTRAL
 
-    def _compute_confidence(
-        self, distance: float, impulse: float, wick_ratio: float, state: ExhaustionState
-    ) -> float:
+    def _compute_confidence(self, distance: float, impulse: float, wick_ratio: float, state: ExhaustionState) -> float:
         """
         Compute confidence score (0-1) based on how extreme the metrics are.
 

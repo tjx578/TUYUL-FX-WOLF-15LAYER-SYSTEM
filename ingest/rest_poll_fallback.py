@@ -95,8 +95,7 @@ class RestPollFallback:
                     silent = self._get_silent_pairs()
                     if silent:
                         logger.info(
-                            f"WS connected but {len(silent)} pairs silent — "
-                            f"REST polling: {', '.join(sorted(silent))}"
+                            f"WS connected but {len(silent)} pairs silent — REST polling: {', '.join(sorted(silent))}"
                         )
                         if is_forex_market_open():
                             for symbol in silent:

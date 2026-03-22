@@ -264,9 +264,7 @@ class JournalExtractor:
     Postgres, and flat JSON exports without pre-processing.
     """
 
-    def extract(
-        self, rows: Iterable[Mapping[str, Any]]
-    ) -> tuple[list[JournalRecord], int]:
+    def extract(self, rows: Iterable[Mapping[str, Any]]) -> tuple[list[JournalRecord], int]:
         """Extract normalised records from raw journal rows.
 
         Args:
@@ -280,44 +278,35 @@ class JournalExtractor:
         total = 0
         for row in rows:
             total += 1
-            setup_type = _norm_text(
-                _first_present(row, "setup_type", "setup", "setup_name", "model", "pattern")
-            )
+            setup_type = _norm_text(_first_present(row, "setup_type", "setup", "setup_name", "model", "pattern"))
             outcome_r = _to_float(
                 _first_present(
                     row,
-                    "outcome_r", "realized_r", "r_multiple", "r", "result_r", "rr_realized",
+                    "outcome_r",
+                    "realized_r",
+                    "r_multiple",
+                    "r",
+                    "result_r",
+                    "rr_realized",
                 )
             )
             if setup_type is None or outcome_r is None:
                 continue
             record = JournalRecord(
-                stage=_norm_text(
-                    _first_present(row, "journal_stage", "stage", default="J?")
-                ) or "J?",
+                stage=_norm_text(_first_present(row, "journal_stage", "stage", default="J?")) or "J?",
                 setup_type=setup_type,
                 pair=_norm_text(_first_present(row, "pair", "symbol", "instrument")),
                 timeframe=_norm_text(_first_present(row, "timeframe", "tf")),
                 session=_norm_text(_first_present(row, "session")),
                 regime=_norm_text(_first_present(row, "regime", "market_regime")),
                 direction=_norm_text(_first_present(row, "direction", "side")),
-                confidence_bucket=_norm_text(
-                    _first_present(
-                        row, "confidence_bucket", "quality_bucket", "confidence"
-                    )
-                ),
+                confidence_bucket=_norm_text(_first_present(row, "confidence_bucket", "quality_bucket", "confidence")),
                 news_state=_norm_text(_first_present(row, "news_state", "news_filter")),
-                volatility_regime=_norm_text(
-                    _first_present(row, "volatility_regime", "vol_regime")
-                ),
+                volatility_regime=_norm_text(_first_present(row, "volatility_regime", "vol_regime")),
                 outcome_r=outcome_r,
                 pnl=_to_float(_first_present(row, "pnl", "realized_pnl", "profit")),
-                result=_infer_result(
-                    outcome_r, _first_present(row, "result", "outcome")
-                ),
-                timestamp=_to_datetime(
-                    _first_present(row, "timestamp", "closed_at", "created_at", "date")
-                ),
+                result=_infer_result(outcome_r, _first_present(row, "result", "outcome")),
+                timestamp=_to_datetime(_first_present(row, "timestamp", "closed_at", "created_at", "date")),
                 raw=row,
             )
             records.append(record)
@@ -369,9 +358,7 @@ class UnderperformPatternMiner:
         self.min_penalty_score = min_penalty_score
         self.max_patterns = max_patterns
 
-    def mine(
-        self, records: list[JournalRecord]
-    ) -> tuple[list[PatternStats], float, float]:
+    def mine(self, records: list[JournalRecord]) -> tuple[list[PatternStats], float, float]:
         """Mine *records* for underperforming patterns.
 
         Args:
@@ -386,9 +373,7 @@ class UnderperformPatternMiner:
         baseline_expectancy = mean(r.outcome_r for r in records)
         baseline_win_rate = sum(r.is_win for r in records) / len(records)
 
-        grouped: dict[
-            tuple[tuple[str, ...], tuple[str, ...]], list[JournalRecord]
-        ] = defaultdict(list)
+        grouped: dict[tuple[tuple[str, ...], tuple[str, ...]], list[JournalRecord]] = defaultdict(list)
 
         _limit_reached = False
         for record in records:
@@ -450,10 +435,7 @@ class UnderperformPatternMiner:
             win_deficit_factor = max(0.0, baseline_win_rate - wr)
             penalty_score = min(
                 1.0,
-                0.45 * expectancy_factor
-                + 0.20 * streak_factor
-                + 0.20 * win_deficit_factor
-                + 0.15 * sample_factor,
+                0.45 * expectancy_factor + 0.20 * streak_factor + 0.20 * win_deficit_factor + 0.15 * sample_factor,
             )
 
             if penalty_score < self.min_penalty_score:
@@ -583,11 +565,7 @@ class L14AdaptiveReflection:
     ) -> list[PatternStats]:
         if not current_context:
             return []
-        normalized = {
-            k: _norm_text(v)
-            for k, v in current_context.items()
-            if v not in (None, "")
-        }
+        normalized = {k: _norm_text(v) for k, v in current_context.items() if v not in (None, "")}
         matches: list[PatternStats] = []
         for pattern in patterns:
             ok = True
@@ -597,9 +575,7 @@ class L14AdaptiveReflection:
                     break
             if ok:
                 matches.append(pattern)
-        matches.sort(
-            key=lambda p: (len(p.dimensions), p.penalty_score), reverse=True
-        )
+        matches.sort(key=lambda p: (len(p.dimensions), p.penalty_score), reverse=True)
         return matches
 
     def _aggregate_penalty(self, matches: list[PatternStats]) -> float:
@@ -615,18 +591,10 @@ class L14AdaptiveReflection:
             penalty += tail * 0.20
         return min(1.0, penalty)
 
-    def _build_notes(
-        self, matches: list[PatternStats], penalty: float
-    ) -> list[str]:
+    def _build_notes(self, matches: list[PatternStats], penalty: float) -> list[str]:
         if not matches:
-            return [
-                "Tidak ada pola underperform yang cukup kuat dari J3/J4 "
-                "untuk setup saat ini."
-            ]
-        notes = [
-            f"Adaptive penalty {penalty:.2f}: setup saat ini match dengan "
-            "pola underperform historis."
-        ]
+            return ["Tidak ada pola underperform yang cukup kuat dari J3/J4 untuk setup saat ini."]
+        notes = [f"Adaptive penalty {penalty:.2f}: setup saat ini match dengan pola underperform historis."]
         for pattern in matches[:3]:
             notes.append(
                 f"Waspada {pattern.signature} → expectancy "
@@ -662,14 +630,8 @@ def analyze_underperforming_setups(
     Returns:
         JSON-serialisable dict from :meth:`AdaptiveReflectionReport.to_dict`.
     """
-    engine = L14AdaptiveReflection(
-        UnderperformPatternMiner(
-            min_trades=min_trades, max_combo_size=max_combo_size
-        )
-    )
-    return engine.analyze(
-        j3_rows, j4_rows, current_context=current_context
-    ).to_dict()
+    engine = L14AdaptiveReflection(UnderperformPatternMiner(min_trades=min_trades, max_combo_size=max_combo_size))
+    return engine.analyze(j3_rows, j4_rows, current_context=current_context).to_dict()
 
 
 # ---------------------------------------------------------------------------
@@ -719,7 +681,5 @@ if __name__ == "__main__":  # pragma: no cover
         "direction": "SHORT",
     }
 
-    _result = analyze_underperforming_setups(
-        [], _j4_rows, current_context=_context, min_trades=8
-    )
+    _result = analyze_underperforming_setups([], _j4_rows, current_context=_context, min_trades=8)
     print(json.dumps(_result, indent=2, default=str))

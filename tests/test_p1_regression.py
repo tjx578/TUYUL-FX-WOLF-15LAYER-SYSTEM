@@ -30,9 +30,9 @@ class TestTakeSignalAPIExists:
         for route in router.routes:
             if hasattr(route, "methods"):
                 methods.extend(route.methods)  # type: ignore[union-attr]
-        assert any(
-            "POST" in (getattr(r, "methods", set()) or set()) for r in router.routes
-        ), "POST endpoint missing from take_signal_routes"
+        assert any("POST" in (getattr(r, "methods", set()) or set()) for r in router.routes), (
+            "POST endpoint missing from take_signal_routes"
+        )
 
     def test_idempotency_key_in_create_request(self):
         from execution.take_signal_models import TakeSignalCreateRequest
@@ -75,9 +75,9 @@ class TestRiskFirewallOrdered:
         # evaluate method exists and uses ordered check pipeline
         assert hasattr(RiskFirewall, "evaluate"), "RiskFirewall must have evaluate method"
         source = inspect.getsource(RiskFirewall.evaluate)
-        assert (
-            "check_functions" in source or "CHECK_ORDER" in source
-        ), "RiskFirewall.evaluate must define ordered check pipeline"
+        assert "check_functions" in source or "CHECK_ORDER" in source, (
+            "RiskFirewall.evaluate must define ordered check pipeline"
+        )
 
     def test_firewall_result_is_frozen(self):
         # Frozen dataclass — cannot mutate

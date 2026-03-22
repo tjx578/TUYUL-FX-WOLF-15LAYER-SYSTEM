@@ -19,17 +19,19 @@ from news.exceptions import InvalidEventDateError
 _ET = ZoneInfo("America/New_York")
 
 # Strings that indicate the event has no fixed time
-_TIMELESS_TOKENS: frozenset[str] = frozenset({
-    "",
-    "all day",
-    "tentative",
-    "tba",
-    "tbd",
-    "n/a",
-    "na",
-    "-",
-    "--",
-})
+_TIMELESS_TOKENS: frozenset[str] = frozenset(
+    {
+        "",
+        "all day",
+        "tentative",
+        "tba",
+        "tbd",
+        "n/a",
+        "na",
+        "-",
+        "--",
+    }
+)
 
 # HH:MM am/pm  (e.g. "8:30am", "12:00pm", "1:45pm")
 _TIME_PATTERN = re.compile(
@@ -86,9 +88,7 @@ def parse_et_to_utc(date_str: str, time_str: str) -> datetime:
                 return parse_iso_to_utc(date_str)
             except InvalidEventDateError:
                 pass
-        raise InvalidEventDateError(
-            time_str, "does not match HH:MMam/pm or ISO 8601 format"
-        )
+        raise InvalidEventDateError(time_str, "does not match HH:MMam/pm or ISO 8601 format")
 
     hour = int(m.group("hour"))
     minute = int(m.group("minute"))
@@ -100,9 +100,7 @@ def parse_et_to_utc(date_str: str, time_str: str) -> datetime:
         hour = 0
 
     if not (0 <= hour <= 23 and 0 <= minute <= 59):
-        raise InvalidEventDateError(
-            time_str, f"Out-of-range time components: hour={hour} minute={minute}"
-        )
+        raise InvalidEventDateError(time_str, f"Out-of-range time components: hour={hour} minute={minute}")
 
     # Combine into ET-aware datetime (ZoneInfo handles DST automatically)
     naive = datetime.combine(event_date, time(hour, minute))

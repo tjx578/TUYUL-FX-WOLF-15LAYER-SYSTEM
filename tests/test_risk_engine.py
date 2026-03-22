@@ -15,13 +15,13 @@ from uuid import uuid4
 import pytest
 import yaml  # pyright: ignore[reportMissingModuleSource]
 
-from accounts.risk_engine import RiskEngine
 from accounts.account_model import (
     AccountState,
     Layer12Signal,
     RiskMode,
     RiskSeverity,
 )
+from accounts.risk_engine import RiskEngine
 
 
 # Add test accounts to registry for testing

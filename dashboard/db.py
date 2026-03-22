@@ -1,4 +1,4 @@
-﻿"""
+"""
 dashboard/db.py — SQL Injection Guard
 
 Provides safe query validation utilities to prevent SQL injection.
@@ -50,9 +50,7 @@ def validate_query(query: str, params: Any = None) -> None:
 
     # Reject f-string-style interpolation remnants
     if _FSTRING_PATTERN.search(query):
-        raise SQLInjectionError(
-            "SQL interpolation detected: use parameterised queries ($1 or %s), not {variable}"
-        )
+        raise SQLInjectionError("SQL interpolation detected: use parameterised queries ($1 or %s), not {variable}")
 
     # Reject named psycopg2 placeholders — these are format-style and unsafe
     if _NAMED_PSYCOPG_PLACEHOLDER.search(query):
@@ -74,9 +72,7 @@ def validate_query(query: str, params: Any = None) -> None:
         )
 
     if placeholder_count > 0 and param_count == 0:
-        raise SQLInjectionError(
-            "SQL safety: query has placeholders but no params supplied"
-        )
+        raise SQLInjectionError("SQL safety: query has placeholders but no params supplied")
 
     if placeholder_count > 0 and param_count > 0 and placeholder_count != param_count:
         raise SQLInjectionError(
@@ -103,7 +99,5 @@ def sanitize_identifier(name: str) -> str:
     if not name:
         raise ValueError("Identifier cannot be empty")
     if not re.fullmatch(r"[a-zA-Z_][a-zA-Z0-9_]*", name):
-        raise ValueError(
-            f"Invalid SQL identifier '{name}': must match [a-zA-Z_][a-zA-Z0-9_]*"
-        )
+        raise ValueError(f"Invalid SQL identifier '{name}': must match [a-zA-Z_][a-zA-Z0-9_]*")
     return f'"{name}"'

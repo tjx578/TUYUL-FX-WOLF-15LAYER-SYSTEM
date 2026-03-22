@@ -68,14 +68,10 @@ class TestPrerequisites:
     """Verify the config toggle and engine loaded correctly."""
 
     def test_dynamic_sizing_enabled(self) -> None:
-        assert _DYNAMIC_SIZING_ENABLED is True, (
-            "constitution.yaml position_sizing.enable_dynamic_sizing must be true"
-        )
+        assert _DYNAMIC_SIZING_ENABLED is True, "constitution.yaml position_sizing.enable_dynamic_sizing must be true"
 
     def test_engine_loaded(self) -> None:
-        assert _dps_engine is not None, (
-            "DynamicPositionSizingEngine must be instantiated at module level"
-        )
+        assert _dps_engine is not None, "DynamicPositionSizingEngine must be instantiated at module level"
 
 
 # ══════════════════════════════════════════════════════════════════════════════

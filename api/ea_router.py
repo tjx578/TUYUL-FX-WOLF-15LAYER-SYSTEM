@@ -314,9 +314,7 @@ async def ea_logs(request: Request, response: Response, limit: int = 100, agent_
             per_agent_limit = max(1, limit // max(len(agents_list), 1))
             for a in agents_list:
                 try:
-                    agent_events = await svc.get_agent_events(
-                        str(a["id"]), limit=per_agent_limit
-                    )
+                    agent_events = await svc.get_agent_events(str(a["id"]), limit=per_agent_limit)
                     events.extend(agent_events)
                 except Exception:
                     continue
@@ -379,11 +377,7 @@ async def restart_ea(req: RestartRequest, request: Request, response: Response) 
         svc = AgentManagerService()
         agents_list, total = await svc.list_agents(limit=200)
         if total > 0:
-            targets = (
-                [a for a in agents_list if str(a.get("id")) == req.agent_id]
-                if req.agent_id
-                else agents_list
-            )
+            targets = [a for a in agents_list if str(a.get("id")) == req.agent_id] if req.agent_id else agents_list
             for a in targets:
                 agent_id_str = str(a["id"])
                 with contextlib.suppress(Exception):

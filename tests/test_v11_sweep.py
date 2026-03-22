@@ -26,13 +26,15 @@ class TestLiquiditySweepScorer:
         candles = []
         for i in range(30):
             price = 1.0 + i * 0.0005  # Varied prices
-            candles.append({
-                "open": price,
-                "high": price + 0.0003,
-                "low": price - 0.0003,
-                "close": price + 0.0001,
-                "volume": 100,
-            })
+            candles.append(
+                {
+                    "open": price,
+                    "high": price + 0.0003,
+                    "low": price - 0.0003,
+                    "close": price + 0.0001,
+                    "volume": 100,
+                }
+            )
 
         result = scorer.score(candles, direction="bullish")
 
@@ -62,23 +64,27 @@ class TestLiquiditySweepScorer:
 
         # Create equal lows pattern
         candles = []
-        for i in range(20):
-            candles.append({
-                "open": 1.0,
-                "high": 1.01,
-                "low": 0.99,  # Equal lows
-                "close": 1.0,
-                "volume": 100,
-            })
+        for _i in range(20):
+            candles.append(
+                {
+                    "open": 1.0,
+                    "high": 1.01,
+                    "low": 0.99,  # Equal lows
+                    "close": 1.0,
+                    "volume": 100,
+                }
+            )
 
         # Add sweep candle: breaks below low but closes back above
-        candles.append({
-            "open": 0.995,
-            "high": 1.0,
-            "low": 0.98,  # Sweep below
-            "close": 0.995,  # Close above the low
-            "volume": 200,  # Volume spike
-        })
+        candles.append(
+            {
+                "open": 0.995,
+                "high": 1.0,
+                "low": 0.98,  # Sweep below
+                "close": 0.995,  # Close above the low
+                "volume": 200,  # Volume spike
+            }
+        )
 
         result = scorer.score(candles, direction="bullish")
 
@@ -95,23 +101,27 @@ class TestLiquiditySweepScorer:
 
         # Create equal highs pattern
         candles = []
-        for i in range(20):
-            candles.append({
-                "open": 1.0,
-                "high": 1.01,  # Equal highs
-                "low": 0.99,
-                "close": 1.0,
-                "volume": 100,
-            })
+        for _i in range(20):
+            candles.append(
+                {
+                    "open": 1.0,
+                    "high": 1.01,  # Equal highs
+                    "low": 0.99,
+                    "close": 1.0,
+                    "volume": 100,
+                }
+            )
 
         # Add sweep candle: breaks above high but closes back below
-        candles.append({
-            "open": 1.005,
-            "high": 1.02,  # Sweep above
-            "low": 1.0,
-            "close": 1.005,  # Close below the high
-            "volume": 200,  # Volume spike
-        })
+        candles.append(
+            {
+                "open": 1.005,
+                "high": 1.02,  # Sweep above
+                "low": 1.0,
+                "close": 1.005,  # Close below the high
+                "volume": 200,  # Volume spike
+            }
+        )
 
         result = scorer.score(candles, direction="bearish")
 
@@ -125,14 +135,16 @@ class TestLiquiditySweepScorer:
 
         # Create exact equal lows
         candles = []
-        for i in range(10):
-            candles.append({
-                "open": 1.0,
-                "high": 1.01,
-                "low": 0.99,  # Exact same low
-                "close": 1.0,
-                "volume": 100,
-            })
+        for _i in range(10):
+            candles.append(
+                {
+                    "open": 1.0,
+                    "high": 1.01,
+                    "low": 0.99,  # Exact same low
+                    "close": 1.0,
+                    "volume": 100,
+                }
+            )
 
         result = scorer.score(candles, direction="bullish")
 
@@ -147,23 +159,27 @@ class TestLiquiditySweepScorer:
 
         # Normal volume
         candles = []
-        for i in range(15):
-            candles.append({
+        for _i in range(15):
+            candles.append(
+                {
+                    "open": 1.0,
+                    "high": 1.01,
+                    "low": 0.99,
+                    "close": 1.0,
+                    "volume": 100,
+                }
+            )
+
+        # Add high volume candle
+        candles.append(
+            {
                 "open": 1.0,
                 "high": 1.01,
                 "low": 0.99,
                 "close": 1.0,
-                "volume": 100,
-            })
-
-        # Add high volume candle
-        candles.append({
-            "open": 1.0,
-            "high": 1.01,
-            "low": 0.99,
-            "close": 1.0,
-            "volume": 200,  # 2x average
-        })
+                "volume": 200,  # 2x average
+            }
+        )
 
         result = scorer.score(candles, direction="bullish")
 
@@ -174,23 +190,27 @@ class TestLiquiditySweepScorer:
         scorer = LiquiditySweepScorer()
 
         candles = []
-        for i in range(20):
-            candles.append({
-                "open": 1.0,
-                "high": 1.01,
-                "low": 0.99,
-                "close": 1.0,
-                "volume": 100,
-            })
+        for _i in range(20):
+            candles.append(
+                {
+                    "open": 1.0,
+                    "high": 1.01,
+                    "low": 0.99,
+                    "close": 1.0,
+                    "volume": 100,
+                }
+            )
 
         # Add candle with long lower wick (bullish rejection)
-        candles.append({
-            "open": 1.0,
-            "high": 1.01,
-            "low": 0.95,  # Long lower wick
-            "close": 0.995,
-            "volume": 100,
-        })
+        candles.append(
+            {
+                "open": 1.0,
+                "high": 1.01,
+                "low": 0.95,  # Long lower wick
+                "close": 0.995,
+                "volume": 100,
+            }
+        )
 
         result = scorer.score(candles, direction="bullish")
 
@@ -202,23 +222,27 @@ class TestLiquiditySweepScorer:
         scorer = LiquiditySweepScorer()
 
         candles = []
-        for i in range(20):
-            candles.append({
-                "open": 1.0,
-                "high": 1.01,
-                "low": 0.99,
-                "close": 1.0,
-                "volume": 100,
-            })
+        for _i in range(20):
+            candles.append(
+                {
+                    "open": 1.0,
+                    "high": 1.01,
+                    "low": 0.99,
+                    "close": 1.0,
+                    "volume": 100,
+                }
+            )
 
         # Add candle with long upper wick (bearish rejection)
-        candles.append({
-            "open": 1.0,
-            "high": 1.05,  # Long upper wick
-            "low": 0.99,
-            "close": 1.005,
-            "volume": 100,
-        })
+        candles.append(
+            {
+                "open": 1.0,
+                "high": 1.05,  # Long upper wick
+                "low": 0.99,
+                "close": 1.005,
+                "volume": 100,
+            }
+        )
 
         result = scorer.score(candles, direction="bearish")
 
@@ -230,14 +254,16 @@ class TestLiquiditySweepScorer:
         scorer = LiquiditySweepScorer()
 
         candles = []
-        for i in range(30):
-            candles.append({
-                "open": 1.0,
-                "high": 1.01,
-                "low": 0.99,
-                "close": 1.0,
-                "volume": 100,
-            })
+        for _i in range(30):
+            candles.append(
+                {
+                    "open": 1.0,
+                    "high": 1.01,
+                    "low": 0.99,
+                    "close": 1.0,
+                    "volume": 100,
+                }
+            )
 
         result = scorer.score(candles, direction="bullish")
 
@@ -247,10 +273,7 @@ class TestLiquiditySweepScorer:
         """Test result is immutable."""
         scorer = LiquiditySweepScorer()
 
-        candles = [
-            {"open": 1.0, "high": 1.01, "low": 0.99, "close": 1.0, "volume": 100}
-            for _ in range(30)
-        ]
+        candles = [{"open": 1.0, "high": 1.01, "low": 0.99, "close": 1.0, "volume": 100} for _ in range(30)]
 
         result = scorer.score(candles, direction="bullish")
 
@@ -261,10 +284,7 @@ class TestLiquiditySweepScorer:
         """Test to_dict() serialization."""
         scorer = LiquiditySweepScorer()
 
-        candles = [
-            {"open": 1.0, "high": 1.01, "low": 0.99, "close": 1.0, "volume": 100}
-            for _ in range(30)
-        ]
+        candles = [{"open": 1.0, "high": 1.01, "low": 0.99, "close": 1.0, "volume": 100} for _ in range(30)]
 
         result = scorer.score(candles, direction="bullish")
         d = result.to_dict()

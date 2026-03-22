@@ -8,7 +8,6 @@ Thread-safe singleton pattern.
 from __future__ import annotations
 
 import os
-
 from dataclasses import dataclass
 from enum import Enum
 from threading import Lock
@@ -146,9 +145,7 @@ class SystemStateManager:
             # Validate transition
             valid_next = self._VALID_TRANSITIONS.get(current, set())
             if new_state not in valid_next:
-                raise ValueError(
-                    f"Invalid state transition: {current.value} -> {new_state.value}"
-                )
+                raise ValueError(f"Invalid state transition: {current.value} -> {new_state.value}")
 
             self._state = new_state
             logger.info(f"System state: {current.value} -> {new_state.value}")
@@ -254,10 +251,7 @@ class SystemStateManager:
             if incomplete_count == 0:
                 logger.info(f"Warmup validation: {complete_count} symbols COMPLETE")
             else:
-                logger.warning(
-                    f"Warmup validation: {complete_count} COMPLETE, "
-                    f"{incomplete_count} INCOMPLETE"
-                )
+                logger.warning(f"Warmup validation: {complete_count} COMPLETE, {incomplete_count} INCOMPLETE")
 
     def get_warmup_report(self) -> dict[str, WarmupStatus]:
         """Get warmup report for all symbols."""
@@ -278,10 +272,7 @@ class SystemStateManager:
                 logger.warning(f"{symbol} marked as DEGRADED: {reason}")
 
                 # Check if any symbols are still COMPLETE
-                has_complete = any(
-                    s.status == SymbolStatus.COMPLETE
-                    for s in self._warmup_report.values()
-                )
+                has_complete = any(s.status == SymbolStatus.COMPLETE for s in self._warmup_report.values())
 
                 if not has_complete and self._state == SystemState.READY:
                     # All symbols degraded - transition to DEGRADED state
@@ -312,10 +303,7 @@ class SystemStateManager:
 
                     # Check if we can transition back to READY
                     if self._state == SystemState.DEGRADED:
-                        has_incomplete = any(
-                            s.status != SymbolStatus.COMPLETE
-                            for s in self._warmup_report.values()
-                        )
+                        has_incomplete = any(s.status != SymbolStatus.COMPLETE for s in self._warmup_report.values())
 
                         if not has_incomplete:
                             self._state = SystemState.READY

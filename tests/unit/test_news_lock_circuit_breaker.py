@@ -1,24 +1,26 @@
 """
 Tests for news lock engine and circuit breaker state transitions.
 """
-import time
 
+import time
 from datetime import datetime
 
 import pytest
 
 try:
-    from execution.news_lock import (
+    from execution.news_lock import (  # type: ignore[import-not-found]
         NewsLockEngine,  # noqa: F401
     )
+
     HAS_NEWS_LOCK = True
 except ImportError:
     HAS_NEWS_LOCK = False
 
 try:
-    from execution.circuit_breaker import (
+    from execution.circuit_breaker import (  # type: ignore[import-not-found]
         CircuitBreaker,  # noqa: F401
     )
+
     HAS_CB = True
 except ImportError:
     HAS_CB = False
@@ -61,11 +63,14 @@ class TestNewsLockEngine:
         locked = any(self._is_locked(now, ev) for ev in events)
         assert locked
 
-    @pytest.mark.parametrize("impact,should_lock", [
-        ("HIGH", True),
-        ("MEDIUM", False),
-        ("LOW", False),
-    ])
+    @pytest.mark.parametrize(
+        "impact,should_lock",
+        [
+            ("HIGH", True),
+            ("MEDIUM", False),
+            ("LOW", False),
+        ],
+    )
     def test_only_high_impact_locks(self, impact, should_lock):
         """Only high-impact news triggers lockout."""
         locked = impact == "HIGH"
@@ -155,7 +160,7 @@ class TestCircuitBreaker:
     def test_concurrent_failures(self):
         """Multiple rapid failures should all count."""
         cb = self._create_breaker(failure_threshold=5)
-        for i in range(10):
+        for _i in range(10):
             self._record_failure(cb)
         assert cb["state"] == self.OPEN
         assert cb["failures"] == 10

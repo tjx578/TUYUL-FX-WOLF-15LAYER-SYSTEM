@@ -27,22 +27,25 @@ from typing import Any
 
 # ── Defaults ──────────────────────────────────────────────────────────────────
 
-_DEFAULT_DECAY: float = 0.8         # α  (weight of previous smoothed value)
-_DEFAULT_SIGMA_BASE: float = 60.0   # σ_base in seconds
-_MAX_HISTORY: int = 500             # bounded per-symbol history
+_DEFAULT_DECAY: float = 0.8  # α  (weight of previous smoothed value)
+_DEFAULT_SIGMA_BASE: float = 60.0  # σ_base in seconds
+_MAX_HISTORY: int = 500  # bounded per-symbol history
 
 
 # ── Session state per symbol ──────────────────────────────────────────────────
 
+
 @dataclass
 class _SymbolSession:
     """Mutable per-symbol EMC state."""
+
     smoothed_rqi: float | None = None
     history: deque[float] = field(default_factory=lambda: deque(maxlen=_MAX_HISTORY))
     cycle_count: int = 0
 
 
 # ── EMC Filter ────────────────────────────────────────────────────────────────
+
 
 class EMCFilter:
     """Stateful Exponential Moving Coherence filter.
@@ -113,10 +116,7 @@ class EMCFilter:
             # First observation — no history to smooth against
             session.smoothed_rqi = rqi_clamped
         else:
-            session.smoothed_rqi = (
-                self._decay * session.smoothed_rqi
-                + (1.0 - self._decay) * rqi_clamped
-            )
+            session.smoothed_rqi = self._decay * session.smoothed_rqi + (1.0 - self._decay) * rqi_clamped
 
         return max(0.0, min(1.0, session.smoothed_rqi))
 

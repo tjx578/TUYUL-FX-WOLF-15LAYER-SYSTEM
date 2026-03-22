@@ -150,9 +150,7 @@ class V11PipelineHook:
 
             # Check latency budget
             if latency > self._max_latency_ms:
-                logger.warning(
-                    f"V11 latency exceeded budget: {latency:.2f}ms > {self._max_latency_ms}ms"
-                )
+                logger.warning(f"V11 latency exceeded budget: {latency:.2f}ms > {self._max_latency_ms}ms")
 
             # Determine final recommendation
             should_trade = self._compute_final_decision(l12_verdict, gate_result)
@@ -198,11 +196,7 @@ class V11PipelineHook:
         post-L12 governance matrix in engines.v11.
         """
         if isinstance(pipeline_data, dict):
-            resolved_symbol = symbol or str(
-                pipeline_data.get("pair")
-                or pipeline_data.get("symbol")
-                or "UNKNOWN"
-            )
+            resolved_symbol = symbol or str(pipeline_data.get("pair") or pipeline_data.get("symbol") or "UNKNOWN")
             l12_verdict = pipeline_data.get("l12_verdict")
             if not isinstance(l12_verdict, dict):
                 l12_verdict = {"verdict": "EXECUTE"}
@@ -227,10 +221,12 @@ class V11PipelineHook:
         """Lazy-load v11 components to prevent circular imports."""
         if self._data_adapter is None:
             from engines.v11.data_adapter import V11DataAdapter  # noqa: PLC0415
+
             self._data_adapter = V11DataAdapter()
 
         if self._selectivity_gate is None:
             from engines.v11.extreme_selectivity_gate import ExtremeSelectivityGateV11  # noqa: PLC0415
+
             self._selectivity_gate = ExtremeSelectivityGateV11()
 
     def _extract_l12_verdict(self, pipeline_result: Any) -> str:
@@ -304,9 +300,7 @@ class V11PipelineHook:
                 f"score={gate_result.score:.3f} latency={latency:.2f}ms"
             )
         elif log_level == "INFO" and gate_result.veto_triggered:
-            logger.info(
-                f"V11 VETO: symbol={symbol} reasons={gate_result.veto_reasons}"
-            )
+            logger.info(f"V11 VETO: symbol={symbol} reasons={gate_result.veto_reasons}")
 
     @staticmethod
     def _record_metrics(symbol: str, latency_ms: float, outcome: str) -> None:

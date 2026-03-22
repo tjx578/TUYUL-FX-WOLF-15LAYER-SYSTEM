@@ -3,8 +3,7 @@
 from __future__ import annotations
 
 from alembic import op
-from sqlalchemy import BigInteger, Column, Float, ForeignKey, Integer, String
-from sqlalchemy import TIMESTAMP, func
+from sqlalchemy import TIMESTAMP, BigInteger, Column, Float, ForeignKey, Integer, String, func
 from sqlalchemy.dialects.postgresql import JSONB
 
 revision = "001_initial"

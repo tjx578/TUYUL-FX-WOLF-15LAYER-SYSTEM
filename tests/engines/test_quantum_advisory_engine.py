@@ -48,12 +48,8 @@ def test_advisory_produces_execute_with_strong_scores() -> None:
     """Strong component scores -> EXECUTE advisory action."""
     engine = QuantumAdvisoryEngine()
     outputs = {
-        "structure": SimpleNamespace(
-            structure_score=0.9, structure_bias="BULLISH", direction="BUY"
-        ),
-        "momentum": SimpleNamespace(
-            momentum_score=0.8, momentum_bias="BULLISH", direction="BUY"
-        ),
+        "structure": SimpleNamespace(structure_score=0.9, structure_bias="BULLISH", direction="BUY"),
+        "momentum": SimpleNamespace(momentum_score=0.8, momentum_bias="BULLISH", direction="BUY"),
         "precision": SimpleNamespace(
             precision_score=0.7,
             entry_optimal=1.10,
@@ -63,15 +59,9 @@ def test_advisory_produces_execute_with_strong_scores() -> None:
             direction="BUY",
         ),
         "field": SimpleNamespace(energy_score=0.8, field_polarity="BULLISH"),
-        "coherence": SimpleNamespace(
-            coherence_score=0.9, coherence_verdict="PASS"
-        ),
-        "context": SimpleNamespace(
-            context_score=0.7, context_verdict="NEUTRAL"
-        ),
-        "risk_simulation": SimpleNamespace(
-            risk_score=0.8, win_probability=0.6
-        ),
+        "coherence": SimpleNamespace(coherence_score=0.9, coherence_verdict="PASS"),
+        "context": SimpleNamespace(context_score=0.7, context_verdict="NEUTRAL"),
+        "risk_simulation": SimpleNamespace(risk_score=0.8, win_probability=0.6),
     }
     result = engine.analyze(outputs, symbol="EURUSD")
 

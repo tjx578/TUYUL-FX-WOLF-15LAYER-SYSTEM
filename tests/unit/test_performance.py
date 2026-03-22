@@ -1,6 +1,7 @@
 """
 Performance regression tests -- keep CI fast.
 """
+
 import time
 
 import pytest
@@ -13,7 +14,7 @@ class TestPerformanceBaselines:
         start = time.perf_counter()
         # Simulate verdict computation
         scores = [8.5, 7.2, 6.8, 7.5, 8.0, 6.5, 7.8, 8.2, 7.0, 6.9, 7.5]
-        sum(scores) / len(scores) # pyright: ignore[reportUnusedExpression]
+        sum(scores) / len(scores)  # pyright: ignore[reportUnusedExpression]
         elapsed = (time.perf_counter() - start) * 1000
         assert elapsed < 10, f"Verdict computation took {elapsed:.1f}ms"
 
@@ -22,7 +23,7 @@ class TestPerformanceBaselines:
         daily_pnl = -1500
         daily_limit = 5000
         risk_amount = 500
-        (abs(daily_pnl) + risk_amount) <= daily_limit # pyright: ignore[reportUnusedExpression]  # noqa: B015
+        (abs(daily_pnl) + risk_amount) <= daily_limit  # pyright: ignore[reportUnusedExpression]  # noqa: B015
         elapsed = (time.perf_counter() - start) * 1000
         assert elapsed < 5, f"Risk check took {elapsed:.1f}ms"
 
@@ -45,4 +46,4 @@ class TestPerformanceBaselines:
             _ = "EXECUTE" if avg >= 7.0 else "NO_TRADE"
         elapsed = time.perf_counter() - start
         per_pair = elapsed / n_pairs
-        assert per_pair < 0.01, f"Per-pair scoring took {per_pair*1000:.1f}ms"
+        assert per_pair < 0.01, f"Per-pair scoring took {per_pair * 1000:.1f}ms"

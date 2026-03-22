@@ -24,7 +24,6 @@ import pytest
 from constitution.verdict_engine import generate_l12_verdict
 from context.live_context_bus import LiveContextBus
 
-
 # ── Shared fixture: prime the context bus with a fresh tick ──────────────
 
 
@@ -32,13 +31,15 @@ from context.live_context_bus import LiveContextBus
 def _prime_context_bus() -> None:
     """Ensure the singleton LiveContextBus has at least one tick."""
     bus = LiveContextBus()
-    bus.update_tick({
-        "symbol": "EURUSD",
-        "bid": 1.0850,
-        "ask": 1.0852,
-        "timestamp": time.time(),
-        "source": "test",
-    })
+    bus.update_tick(
+        {
+            "symbol": "EURUSD",
+            "bid": 1.0850,
+            "ask": 1.0852,
+            "timestamp": time.time(),
+            "source": "test",
+        }
+    )
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────
@@ -131,19 +132,27 @@ class TestNineGateConcurrentLoad:
     _MAX_WALL_CLOCK_S = 5.0
 
     _PAIRS = [
-        "EURUSD", "GBPUSD", "USDJPY", "AUDUSD",
-        "USDCAD", "NZDUSD", "USDCHF", "EURJPY",
+        "EURUSD",
+        "GBPUSD",
+        "USDJPY",
+        "AUDUSD",
+        "USDCAD",
+        "NZDUSD",
+        "USDCHF",
+        "EURJPY",
     ]
 
     def test_single_call_within_latency_budget(self) -> None:
         """A single generate_l12_verdict call must complete within budget."""
         outcome = _run_verdict("EURUSD")
         assert outcome["elapsed_ms"] < self._MAX_SINGLE_CALL_MS, (
-            f"Single 9-gate call took {outcome['elapsed_ms']:.1f} ms "
-            f"(budget: {self._MAX_SINGLE_CALL_MS} ms)"
+            f"Single 9-gate call took {outcome['elapsed_ms']:.1f} ms (budget: {self._MAX_SINGLE_CALL_MS} ms)"
         )
         assert outcome["result"]["verdict"] in {
-            "EXECUTE_BUY", "EXECUTE_SELL", "HOLD", "NO_TRADE",
+            "EXECUTE_BUY",
+            "EXECUTE_SELL",
+            "HOLD",
+            "NO_TRADE",
         }
 
     def test_concurrent_calls_within_wall_clock_budget(self) -> None:
@@ -154,8 +163,7 @@ class TestNineGateConcurrentLoad:
         elapsed = time.perf_counter() - start
 
         assert elapsed < self._MAX_WALL_CLOCK_S, (
-            f"Concurrent 9-gate sweep took {elapsed:.3f}s "
-            f"(cap: {self._MAX_WALL_CLOCK_S}s)"
+            f"Concurrent 9-gate sweep took {elapsed:.3f}s (cap: {self._MAX_WALL_CLOCK_S}s)"
         )
         assert len(outcomes) == len(self._PAIRS)
 
@@ -197,17 +205,13 @@ class TestNineGateConcurrentLoad:
         """Gate 8 (latency) must FAIL when synthesis latency_ms exceeds 250 ms."""
         synthesis = _make_synthesis(symbol="EURUSD", latency_ms=300)
         result = generate_l12_verdict(synthesis)
-        assert result["gates"]["gate_8_latency"] == "FAIL", (
-            "Gate 8 (latency) should FAIL for 300 ms synthesis latency"
-        )
+        assert result["gates"]["gate_8_latency"] == "FAIL", "Gate 8 (latency) should FAIL for 300 ms synthesis latency"
 
     def test_gate_8_latency_threshold_passes_at_limit(self) -> None:
         """Gate 8 (latency) must PASS when synthesis latency_ms is within 250 ms."""
         synthesis = _make_synthesis(symbol="EURUSD", latency_ms=200)
         result = generate_l12_verdict(synthesis)
-        assert result["gates"]["gate_8_latency"] == "PASS", (
-            "Gate 8 (latency) should PASS for 200 ms synthesis latency"
-        )
+        assert result["gates"]["gate_8_latency"] == "PASS", "Gate 8 (latency) should PASS for 200 ms synthesis latency"
 
     def test_sustained_load_50_sequential_calls(self) -> None:
         """50 sequential calls must all complete; no degradation over time."""
@@ -219,6 +223,5 @@ class TestNineGateConcurrentLoad:
 
         p99 = sorted(elapsed_ms_list)[int(len(elapsed_ms_list) * 0.99)]
         assert p99 < self._MAX_SINGLE_CALL_MS, (
-            f"P99 latency {p99:.1f} ms over 50 sequential calls "
-            f"exceeds budget {self._MAX_SINGLE_CALL_MS} ms"
+            f"P99 latency {p99:.1f} ms over 50 sequential calls exceeds budget {self._MAX_SINGLE_CALL_MS} ms"
         )

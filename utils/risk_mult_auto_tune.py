@@ -25,6 +25,7 @@ def auto_tune_risk_multiplier(latency_samples, vr_samples, base_table):
         tuned[regime] = round(base * penalty, 3)
     return tuned
 
+
 # Example usage:
 if __name__ == "__main__":
     base_table = {"LOW_VOL": 0.8, "NORMAL_VOL": 1.0, "HIGH_VOL": 1.1}

@@ -3,12 +3,13 @@ Allocation Audit — append-only log of all allocation decisions.
 
 Records every AllocationRequest + AllocationResult for compliance.
 """
+
 from __future__ import annotations
 
 import contextlib
 import json
 from dataclasses import asdict, dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from threading import Lock
 from typing import TYPE_CHECKING
@@ -39,7 +40,7 @@ class AllocationAudit:
 
     _lock = Lock()
 
-    def record(self, request: "AllocationRequest", result: "AllocationResult") -> None:
+    def record(self, request: AllocationRequest, result: AllocationResult) -> None:
         """Append an allocation decision to the audit log."""
         logs = [
             AllocationLog(
@@ -50,13 +51,13 @@ class AllocationAudit:
                 action="TAKE" if item.allowed else "SKIP",
                 lot_size=float(item.lot_size),
                 risk_percent=float(item.risk_percent),
-                timestamp=datetime.now(timezone.utc).isoformat(),
+                timestamp=datetime.now(UTC).isoformat(),
             )
             for item in result.account_results
         ]
 
         entry = {
-            "ts": datetime.now(timezone.utc).isoformat(),
+            "ts": datetime.now(UTC).isoformat(),
             "request_id": request.request_id,
             "signal_id": request.signal_id,
             "account_ids": request.account_ids,
@@ -76,7 +77,7 @@ class AllocationAudit:
         with self._lock:
             try:
                 _LOG_DIR.mkdir(parents=True, exist_ok=True)
-                log_file = _LOG_DIR / f"{datetime.now(timezone.utc).strftime('%Y%m%d')}.jsonl"
+                log_file = _LOG_DIR / f"{datetime.now(UTC).strftime('%Y%m%d')}.jsonl"
                 with open(log_file, "a") as f:
                     f.write(json.dumps(entry) + "\n")
             except Exception as exc:
@@ -85,5 +86,6 @@ class AllocationAudit:
     def _redis_append(self, entry: dict) -> None:
         with contextlib.suppress(Exception):
             from storage.redis_client import RedisClient  # noqa: PLC0415
+
             rc = RedisClient()
             rc.xadd("allocation:audit", {"data": json.dumps(entry)}, maxlen=5000)

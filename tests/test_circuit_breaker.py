@@ -12,6 +12,7 @@ from infrastructure.circuit_breaker import CircuitBreaker, CircuitState
 #  Initial state
 # ══════════════════════════════════════════════════════════════════════
 
+
 class TestCircuitBreakerInitialState:
     def test_starts_closed(self) -> None:
         cb = CircuitBreaker(name="test")
@@ -29,6 +30,7 @@ class TestCircuitBreakerInitialState:
 # ══════════════════════════════════════════════════════════════════════
 #  CLOSED → OPEN transitions
 # ══════════════════════════════════════════════════════════════════════
+
 
 class TestCircuitBreakerTripping:
     def test_trips_open_at_threshold(self) -> None:
@@ -62,6 +64,7 @@ class TestCircuitBreakerTripping:
 #  OPEN → HALF_OPEN transition (recovery timeout)
 # ══════════════════════════════════════════════════════════════════════
 
+
 class TestCircuitBreakerRecovery:
     def test_transitions_to_half_open_after_timeout(self) -> None:
         cb = CircuitBreaker(name="test", failure_threshold=1, recovery_timeout=0.01)
@@ -87,6 +90,7 @@ class TestCircuitBreakerRecovery:
 # ══════════════════════════════════════════════════════════════════════
 #  HALF_OPEN → CLOSED transition (probe success)
 # ══════════════════════════════════════════════════════════════════════
+
 
 class TestCircuitBreakerClose:
     def test_closes_after_required_successes(self) -> None:
@@ -133,6 +137,7 @@ class TestCircuitBreakerClose:
 #  Manual reset
 # ══════════════════════════════════════════════════════════════════════
 
+
 class TestCircuitBreakerReset:
     def test_reset_clears_open_state(self) -> None:
         cb = CircuitBreaker(name="test", failure_threshold=1, recovery_timeout=9999)
@@ -152,6 +157,7 @@ class TestCircuitBreakerReset:
 # ══════════════════════════════════════════════════════════════════════
 #  Env-var configuration
 # ══════════════════════════════════════════════════════════════════════
+
 
 class TestCircuitBreakerEnvConfig:
     def test_failure_threshold_from_env(self, monkeypatch: pytest.MonkeyPatch) -> None:

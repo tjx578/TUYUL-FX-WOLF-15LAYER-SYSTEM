@@ -40,7 +40,6 @@ Zone: analysis/ — pure computation, zero side-effects.
 from __future__ import annotations
 
 import logging
-
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any, Final
@@ -100,7 +99,14 @@ _W_NEWS_VOLUME: Final = 0.20
 _W_IMPACT: Final = 0.30
 
 _KNOWN_CURRENCIES: Final = (
-    "USD", "GBP", "EUR", "JPY", "AUD", "NZD", "CAD", "CHF",
+    "USD",
+    "GBP",
+    "EUR",
+    "JPY",
+    "AUD",
+    "NZD",
+    "CAD",
+    "CHF",
 )
 
 
@@ -111,16 +117,16 @@ _KNOWN_CURRENCIES: Final = (
 # Gate definitions: (name, [(sub_key, max_val), ...])
 # 10 gates × 10 points each = 100 total
 _GATE_DEFINITIONS: Final = (
-    ("PHYSICAL_STATE",       [("sleep_quality", 3), ("health_status", 3), ("substances_clear", 4)]),
-    ("EMOTIONAL_STATE",      [("mood_balance", 4), ("stress_level", 3), ("anxiety_level", 3)]),
-    ("REVENGE_DETECTION",    [("recent_loss_impact", 4), ("emotional_recovery", 3), ("behavior_check", 3)]),
-    ("FOMO_CONTROL",         [("missed_setup_impact", 3), ("confidence_level", 4), ("patience_score", 3)]),
-    ("ACCOUNT_HEALTH",       [("drawdown_status", 4), ("daily_limits_ok", 3), ("risk_budget_ok", 3)]),
-    ("FOCUS_LEVEL",          [("concentration", 4), ("environment", 3), ("mental_clarity", 3)]),
-    ("DISCIPLINE_SCORE",     [("rules_followed", 4), ("consistency", 3), ("tracking_active", 3)]),
-    ("MTA_HIERARCHY",        [("sequence_correct", 4), ("compliance", 3), ("no_violations", 3)]),
-    ("BODY_CLOSE_PATIENCE",  [("h4_discipline", 4), ("patience_level", 3), ("wait_capability", 3)]),
-    ("DECISION_GATE_FOCUS",  [("proximity_focus", 4), ("precision", 3), ("no_mid_range", 3)]),
+    ("PHYSICAL_STATE", [("sleep_quality", 3), ("health_status", 3), ("substances_clear", 4)]),
+    ("EMOTIONAL_STATE", [("mood_balance", 4), ("stress_level", 3), ("anxiety_level", 3)]),
+    ("REVENGE_DETECTION", [("recent_loss_impact", 4), ("emotional_recovery", 3), ("behavior_check", 3)]),
+    ("FOMO_CONTROL", [("missed_setup_impact", 3), ("confidence_level", 4), ("patience_score", 3)]),
+    ("ACCOUNT_HEALTH", [("drawdown_status", 4), ("daily_limits_ok", 3), ("risk_budget_ok", 3)]),
+    ("FOCUS_LEVEL", [("concentration", 4), ("environment", 3), ("mental_clarity", 3)]),
+    ("DISCIPLINE_SCORE", [("rules_followed", 4), ("consistency", 3), ("tracking_active", 3)]),
+    ("MTA_HIERARCHY", [("sequence_correct", 4), ("compliance", 3), ("no_violations", 3)]),
+    ("BODY_CLOSE_PATIENCE", [("h4_discipline", 4), ("patience_level", 3), ("wait_capability", 3)]),
+    ("DECISION_GATE_FOCUS", [("proximity_focus", 4), ("precision", 3), ("no_mid_range", 3)]),
 )
 
 # Gates 8, 9, 10 (indices 7-9) are critical MTA discipline gates
@@ -130,6 +136,7 @@ _CRITICAL_GATE_INDICES: Final = (7, 8, 9)
 @dataclass
 class PsychGate:
     """Individual psychology gate with sub-scores."""
+
     name: str = ""
     score: int = 0
     max_score: int = 10
@@ -165,7 +172,8 @@ def _evaluate_gates(psychology_data: dict[str, Any] | None = None) -> dict[str, 
                     gate.missing_fields.append(sub_key)
                     logger.debug(
                         "L5 gate %s missing sub_key '%s' — defaulting to 0",
-                        gate_name, sub_key,
+                        gate_name,
+                        sub_key,
                     )
                 raw = 0
 
@@ -199,6 +207,7 @@ def _evaluate_gates(psychology_data: dict[str, Any] | None = None) -> dict[str, 
 # §4  FUNDAMENTAL HELPERS (preserved 100%)
 # ═══════════════════════════════════════════════════════════════════════
 
+
 def _extract_pair_currencies(pair: str) -> tuple[str | None, str | None]:
     clean = pair.upper().replace("/", "").replace("_", "")
     if len(clean) == 6:
@@ -230,9 +239,7 @@ def _compute_fundamental_strength(
     vol = min(1.0, news_count / 5.0) if news_count > 0 else 0.0
     impact_map = {"CRITICAL": 1.0, "HIGH": 0.80, "MEDIUM": 0.50, "LOW": 0.25, "NONE": 0.0}
     imp = impact_map.get(impact_level.upper(), 0.0)
-    return round(max(0.0, min(1.0,
-        sent * _W_SENTIMENT + vol * _W_NEWS_VOLUME + imp * _W_IMPACT
-    )), 4)
+    return round(max(0.0, min(1.0, sent * _W_SENTIMENT + vol * _W_NEWS_VOLUME + imp * _W_IMPACT)), 4)
 
 
 def _resolve_pair_bias(
@@ -290,7 +297,11 @@ def _run_fundamental_analysis(
     base_ccy, quote_ccy = _extract_pair_currencies(pair)
     raw_bias = _classify_bias(sentiment_score, news_count)
     resolved_bias, conflict_note = _resolve_pair_bias(
-        raw_bias, base_sentiment, quote_sentiment, base_ccy, quote_ccy,
+        raw_bias,
+        base_sentiment,
+        quote_sentiment,
+        base_ccy,
+        quote_ccy,
     )
 
     warnings: list[str] = []
@@ -331,6 +342,7 @@ def _run_fundamental_analysis(
 # ═══════════════════════════════════════════════════════════════════════
 # §5  PSYCHOLOGY HELPERS (preserved 100%)
 # ═══════════════════════════════════════════════════════════════════════
+
 
 def _fatigue_level(hours: float) -> str:
     if hours >= _FATIGUE_HIGH_HOURS:
@@ -407,6 +419,7 @@ def _eaf_score(
 # ═══════════════════════════════════════════════════════════════════════
 # §6  MAIN ANALYZER CLASS
 # ═══════════════════════════════════════════════════════════════════════
+
 
 class L5AnalysisLayer:
     """Layer 5: Psychology & Fundamental Context — PRODUCTION.
@@ -507,7 +520,10 @@ class L5AnalysisLayer:
         stability = _stability_index(self._win_streak, self._consecutive_losses)
 
         eaf = _eaf_score(
-            focus, em_bias, discipline, stability,
+            focus,
+            em_bias,
+            discipline,
+            stability,
             fundamental_strength=fund["fundamental_strength"],
         )
 
@@ -572,8 +588,7 @@ class L5AnalysisLayer:
 
         # ── PHASE 5: RGO governance ──────────────────────────────────
         real_degradation = [
-            f for f in fund["degraded_fields"]
-            if f not in ("no_sentiment_data", "empty_sentiment_data")
+            f for f in fund["degraded_fields"] if f not in ("no_sentiment_data", "empty_sentiment_data")
         ]
         if eaf >= 0.85 and not real_degradation:
             integrity_level = "FULL"
@@ -588,8 +603,14 @@ class L5AnalysisLayer:
         logger.debug(
             "L5 analysis: pair=%s eaf=%.4f bias=%s strength=%.4f "
             "gate_status=%s can_trade=%s critical_pass=%s reasons=%s",
-            pair, eaf, fund["fundamental_bias"], fund["fundamental_strength"],
-            gate_status, can_trade, critical_pass, all_reasons or "none",
+            pair,
+            eaf,
+            fund["fundamental_bias"],
+            fund["fundamental_strength"],
+            gate_status,
+            can_trade,
+            critical_pass,
+            all_reasons or "none",
         )
 
         return {
@@ -613,7 +634,6 @@ class L5AnalysisLayer:
             "emotion_index": emotion_index,
             "stability_index": round(stability, 4),
             "recommendation": recommendation,
-
             # ── Psychology Gates (granular, from gates engine) ──
             "psychology_gates": [
                 {
@@ -630,7 +650,6 @@ class L5AnalysisLayer:
             "gate_total_score": gate_total,
             "gate_total_max": gate_max,
             "has_gate_data": has_gate_data,
-
             # ── RGO Governance (computed, not hardcoded) ──
             "rgo_governance": {
                 "integrity_level": integrity_level,
@@ -638,7 +657,6 @@ class L5AnalysisLayer:
                 "lambda_esi_stable": lambda_esi_stable,
             },
             "current_drawdown": self._drawdown_percent,
-
             # ── Fundamental ──
             "fundamental_bias": fund["fundamental_bias"],
             "fundamental_strength": fund["fundamental_strength"],
@@ -649,7 +667,6 @@ class L5AnalysisLayer:
             "caution_event": fund["caution_event"],
             "base_currency": fund["base_currency"],
             "quote_currency": fund["quote_currency"],
-
             # ── Metadata ──
             "pair": pair,
             "warnings": fund["warnings"],
@@ -663,6 +680,7 @@ class L5AnalysisLayer:
 # ═══════════════════════════════════════════════════════════════════════
 # §7  BACKWARD-COMPATIBLE INTERFACES
 # ═══════════════════════════════════════════════════════════════════════
+
 
 class L5PsychologyAnalyzer:
     """Backward-compatible wrapper matching original L5_psychology.py."""

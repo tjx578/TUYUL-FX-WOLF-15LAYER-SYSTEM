@@ -1,4 +1,4 @@
-"""  # noqa: F821
+"""# noqa: F821
 Layer 14 — Adaptive Learning / Pattern Memory
 Zone: Journal ↔ Analysis boundary. Append-only pattern storage.
 NO execution side-effects. NO decision authority. NO L12 override.
@@ -31,6 +31,7 @@ logger = logging.getLogger(__name__)
 
 class InsightType(StrEnum):
     """Classification of the extracted insight."""
+
     PAIR_PATTERN = "PAIR_PATTERN"
     SESSION_PATTERN = "SESSION_PATTERN"
     LAYER_ACCURACY = "LAYER_ACCURACY"
@@ -41,8 +42,9 @@ class InsightType(StrEnum):
 
 class InsightSeverity(StrEnum):
     """How actionable is this insight?"""
+
     INFORMATIONAL = "INFORMATIONAL"
-    ADVISORY = "ADVISORY"           # L12 may want to consider
+    ADVISORY = "ADVISORY"  # L12 may want to consider
     STRONG_ADVISORY = "STRONG_ADVISORY"  # high statistical confidence
 
 
@@ -52,22 +54,24 @@ class WeightAdjustmentSuggestion:
     Advisory-only suggestion. L14 proposes; L12 decides.
     This NEVER auto-applies — constitutional boundary.
     """
+
     layer: str
     current_weight: float | None = None
     suggested_weight: float | None = None
-    direction: str = ""             # "increase" | "decrease" | "maintain"
-    confidence: float = 0.0         # 0–1 statistical confidence
+    direction: str = ""  # "increase" | "decrease" | "maintain"
+    confidence: float = 0.0  # 0–1 statistical confidence
     reasoning: str = ""
 
 
 @dataclass(frozen=True)
 class PatternInsight:
     """Single extracted pattern / insight from historical data."""
+
     insight_type: InsightType
     severity: InsightSeverity
     title: str
     description: str
-    sample_size: int                # how many reflections support this
+    sample_size: int  # how many reflections support this
     win_rate: float | None = None  # 0–1
     statistical_confidence: float = 0.0  # 0–1
     tags: tuple[str, ...] = ()
@@ -79,34 +83,35 @@ class L14AdaptiveResult:
     Immutable output of L14 analysis. Appended to pattern memory.
     ADVISORY ONLY — L12 decides whether to incorporate.
     """
+
     analysis_id: str
-    period_label: str               # e.g. "2026-W07", "2026-02"
+    period_label: str  # e.g. "2026-W07", "2026-02"
     total_reflections_analysed: int
-    overall_win_rate: float         # 0–1
+    overall_win_rate: float  # 0–1
     insights: tuple[PatternInsight, ...]
     weight_suggestions: tuple[WeightAdjustmentSuggestion, ...]
-    top_lesson_tags: tuple[str, ...]    # most frequent lesson tags
+    top_lesson_tags: tuple[str, ...]  # most frequent lesson tags
     timestamp: str
     metadata: dict[str, object] = field(default_factory=lambda: {})
+
 
 # ---------------------------------------------------------------------------
 # Analysis functions — all pure, no side-effects
 # ---------------------------------------------------------------------------
 
-_CORRECT_VERDICTS = frozenset({
-    ReflectionVerdict.CORRECT_EXECUTE,
-    ReflectionVerdict.CORRECT_REJECT,
-})
+_CORRECT_VERDICTS = frozenset(
+    {
+        ReflectionVerdict.CORRECT_EXECUTE,
+        ReflectionVerdict.CORRECT_REJECT,
+    }
+)
 
 
 def _compute_overall_win_rate(records: Sequence[L13ReflectionRecord]) -> float:
     """Win rate from reflection verdicts."""
     if not records:
         return 0.0
-    wins = sum(
-        1 for r in records
-        if r.reflection_verdict in _CORRECT_VERDICTS
-    )
+    wins = sum(1 for r in records if r.reflection_verdict in _CORRECT_VERDICTS)
     return round(wins / len(records), 4)
 
 
@@ -121,25 +126,24 @@ def _extract_pair_patterns(
 
     for symbol, group in pair_groups.items():
         if len(group) < 3:
-            continue    # not enough data
-        wins = sum(
-            1 for r in group
-            if r.reflection_verdict in _CORRECT_VERDICTS
-        )
+            continue  # not enough data
+        wins = sum(1 for r in group if r.reflection_verdict in _CORRECT_VERDICTS)
         wr = wins / len(group)
         severity = InsightSeverity.INFORMATIONAL
         if (wr >= 0.75 and len(group) >= 5) or (wr <= 0.30 and len(group) >= 5):
             severity = InsightSeverity.STRONG_ADVISORY
 
-        insights.append(PatternInsight(
-            insight_type=InsightType.PAIR_PATTERN,
-            severity=severity,
-            title=f"{symbol} win rate: {wr:.0%}",
-            description=f"{symbol}: {wins}/{len(group)} correct decisions over analysis period.",
-            sample_size=len(group),
-            win_rate=round(wr, 4),
-            statistical_confidence=min(1.0, len(group) / 20.0),
-        ))
+        insights.append(
+            PatternInsight(
+                insight_type=InsightType.PAIR_PATTERN,
+                severity=severity,
+                title=f"{symbol} win rate: {wr:.0%}",
+                description=f"{symbol}: {wins}/{len(group)} correct decisions over analysis period.",
+                sample_size=len(group),
+                win_rate=round(wr, 4),
+                statistical_confidence=min(1.0, len(group) / 20.0),
+            )
+        )
     return insights
 
 
@@ -175,18 +179,20 @@ def _extract_layer_accuracy(
             severity = InsightSeverity.INFORMATIONAL
             title = f"{layer}: mixed accuracy"
 
-        insights.append(PatternInsight(
-            insight_type=InsightType.LAYER_ACCURACY,
-            severity=severity,
-            title=title,
-            description=(
-                f"{layer} — positive: {stats['POSITIVE']}, "
-                f"negative: {stats['NEGATIVE']}, neutral: {stats['NEUTRAL']}"
-            ),
-            sample_size=total,
-            win_rate=round(positive_rate, 4),
-            statistical_confidence=min(1.0, total / 15.0),
-        ))
+        insights.append(
+            PatternInsight(
+                insight_type=InsightType.LAYER_ACCURACY,
+                severity=severity,
+                title=title,
+                description=(
+                    f"{layer} — positive: {stats['POSITIVE']}, "
+                    f"negative: {stats['NEGATIVE']}, neutral: {stats['NEUTRAL']}"
+                ),
+                sample_size=total,
+                win_rate=round(positive_rate, 4),
+                statistical_confidence=min(1.0, total / 15.0),
+            )
+        )
     return insights
 
 
@@ -228,26 +234,32 @@ def _generate_weight_suggestions(
         neg_rate = layer_neg.get(layer, 0) / total
 
         if pos_rate >= 0.75:
-            suggestions.append(WeightAdjustmentSuggestion(
-                layer=layer,
-                direction="increase",
-                confidence=round(min(1.0, total / 20.0), 2),
-                reasoning=f"{pos_rate:.0%} positive accuracy over {total} samples",
-            ))
+            suggestions.append(
+                WeightAdjustmentSuggestion(
+                    layer=layer,
+                    direction="increase",
+                    confidence=round(min(1.0, total / 20.0), 2),
+                    reasoning=f"{pos_rate:.0%} positive accuracy over {total} samples",
+                )
+            )
         elif neg_rate >= 0.50:
-            suggestions.append(WeightAdjustmentSuggestion(
-                layer=layer,
-                direction="decrease",
-                confidence=round(min(1.0, total / 20.0), 2),
-                reasoning=f"{neg_rate:.0%} negative accuracy over {total} samples",
-            ))
+            suggestions.append(
+                WeightAdjustmentSuggestion(
+                    layer=layer,
+                    direction="decrease",
+                    confidence=round(min(1.0, total / 20.0), 2),
+                    reasoning=f"{neg_rate:.0%} negative accuracy over {total} samples",
+                )
+            )
         else:
-            suggestions.append(WeightAdjustmentSuggestion(
-                layer=layer,
-                direction="maintain",
-                confidence=round(min(1.0, total / 20.0), 2),
-                reasoning=f"Mixed results: {pos_rate:.0%} positive, {neg_rate:.0%} negative",
-            ))
+            suggestions.append(
+                WeightAdjustmentSuggestion(
+                    layer=layer,
+                    direction="maintain",
+                    confidence=round(min(1.0, total / 20.0), 2),
+                    reasoning=f"Mixed results: {pos_rate:.0%} positive, {neg_rate:.0%} negative",
+                )
+            )
 
     return suggestions
 
@@ -303,7 +315,11 @@ def analyze_patterns(
 
     logger.info(
         "L14 [%s] period=%s | %d reflections | WR=%.2f | %d insights | %d suggestions",
-        analysis_id, period_label, len(records), overall_wr,
-        len(all_insights), len(weight_suggestions),
+        analysis_id,
+        period_label,
+        len(records),
+        overall_wr,
+        len(all_insights),
+        len(weight_suggestions),
     )
     return result  # noqa: F821

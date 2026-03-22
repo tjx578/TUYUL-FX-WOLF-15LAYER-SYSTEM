@@ -27,8 +27,7 @@ class CommandResult:
 
 
 class RunnerProtocol(Protocol):
-    def run(self, command: str) -> CommandResult:
-        ...
+    def run(self, command: str) -> CommandResult: ...
 
 
 def http_healthcheck(url: str) -> bool:
@@ -121,6 +120,7 @@ class CanaryOrchestrator:
         if result.return_code != 0:
             raise RuntimeError(f"Failed to {action}: `{command}` -> {result.output}")
         return result
+
 
 @dataclass(frozen=True)
 class IncidentResult:

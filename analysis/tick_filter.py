@@ -22,11 +22,12 @@ def _default_per_symbol_spike_pct() -> dict[str, float]:
 @dataclass
 class TickFilterConfig:
     """Configuration for tick filtering thresholds."""
-    spike_threshold_pct: float = 3.0       # Default max % move before flagging as spike
-    staleness_seconds: float = 300.0       # After this many seconds, force-accept new price
-    dedup_ttl_seconds: float = 60.0        # TTL for dedup cache entries
-    dedup_max_size: int = 5000             # Hard cap on dedup cache size
-    dedup_evict_batch: int = 500           # Number of oldest entries to evict when cap hit
+
+    spike_threshold_pct: float = 3.0  # Default max % move before flagging as spike
+    staleness_seconds: float = 300.0  # After this many seconds, force-accept new price
+    dedup_ttl_seconds: float = 60.0  # TTL for dedup cache entries
+    dedup_max_size: int = 5000  # Hard cap on dedup cache size
+    dedup_evict_batch: int = 500  # Number of oldest entries to evict when cap hit
     # Per-symbol spike thresholds override spike_threshold_pct when set.
     # e.g. {"XAUUSD": 2.0, "GBPJPY": 1.0}
     per_symbol_spike_pct: dict[str, float] = field(default_factory=_default_per_symbol_spike_pct)
@@ -35,6 +36,7 @@ class TickFilterConfig:
 @dataclass
 class PriceEntry:
     """Thread-safe price reference with timestamp."""
+
     price: float
     timestamp: float
 
@@ -135,6 +137,7 @@ class DedupCache:
 @dataclass
 class SpikeCheckResult:
     """Result of spike filter check."""
+
     is_spike: bool
     accepted: bool
     reason: str
@@ -173,41 +176,26 @@ class SpikeFilter:
         now = timestamp if timestamp is not None else time.time()
 
         if price <= 0:
-            return SpikeCheckResult(
-                is_spike=False,
-                accepted=False,
-                reason="invalid_price_zero_or_negative"
-            )
+            return SpikeCheckResult(is_spike=False, accepted=False, reason="invalid_price_zero_or_negative")
 
         last = self._store.get(symbol)
 
         # First tick for symbol — always accept
         if last is None:
             self._store.update(symbol, price, now)
-            return SpikeCheckResult(
-                is_spike=False,
-                accepted=True,
-                reason="first_tick"
-            )
+            return SpikeCheckResult(is_spike=False, accepted=True, reason="first_tick")
 
         # Calculate percentage change
         pct_change = abs(price - last.price) / last.price * 100.0
         age_seconds = now - last.timestamp
 
         # Resolve per-symbol threshold (falls back to global default)
-        threshold = self._config.per_symbol_spike_pct.get(
-            symbol, self._config.spike_threshold_pct
-        )
+        threshold = self._config.per_symbol_spike_pct.get(symbol, self._config.spike_threshold_pct)
 
         # Within threshold — normal accept
         if pct_change <= threshold:
             self._store.update(symbol, price, now)
-            return SpikeCheckResult(
-                is_spike=False,
-                accepted=True,
-                reason="within_threshold",
-                pct_change=pct_change
-            )
+            return SpikeCheckResult(is_spike=False, accepted=True, reason="within_threshold", pct_change=pct_change)
 
         # Exceeds threshold — check staleness
         if age_seconds >= self._config.staleness_seconds:
@@ -218,17 +206,12 @@ class SpikeFilter:
                 accepted=True,
                 reason="stale_override_accepted",
                 pct_change=pct_change,
-                stale_override=True
+                stale_override=True,
             )
 
         # Spike detected, reference still fresh — reject
         # Intentionally do NOT update _last_prices here
-        return SpikeCheckResult(
-            is_spike=True,
-            accepted=False,
-            reason="spike_rejected",
-            pct_change=pct_change
-        )
+        return SpikeCheckResult(is_spike=True, accepted=False, reason="spike_rejected", pct_change=pct_change)
 
     def clear(self) -> None:
         self._store.clear()

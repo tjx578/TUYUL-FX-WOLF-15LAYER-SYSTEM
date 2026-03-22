@@ -22,6 +22,7 @@ from analysis.l5_psychology import (
 # Fixtures
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture
 def optimal_inputs() -> PsychologyInputs:
     """Healthy trader state — no flags expected."""
@@ -54,6 +55,7 @@ def tilted_inputs() -> PsychologyInputs:
 # Input validation
 # ---------------------------------------------------------------------------
 
+
 class TestPsychologyInputsValidation:
     def test_valid_inputs(self, optimal_inputs: PsychologyInputs) -> None:
         assert optimal_inputs.retail_long_ratio == 0.50
@@ -83,16 +85,20 @@ class TestPsychologyInputsValidation:
 # Sentiment classification
 # ---------------------------------------------------------------------------
 
+
 class TestSentimentBias:
-    @pytest.mark.parametrize("ratio, expected", [
-        (0.95, SentimentBias.EXTREME_LONG),
-        (EXTREME_SENTIMENT_THRESHOLD, SentimentBias.EXTREME_LONG),
-        (0.70, SentimentBias.LONG),
-        (0.50, SentimentBias.NEUTRAL),
-        (0.30, SentimentBias.SHORT),
-        (0.10, SentimentBias.EXTREME_SHORT),
-        (1.0 - EXTREME_SENTIMENT_THRESHOLD, SentimentBias.EXTREME_SHORT),
-    ])
+    @pytest.mark.parametrize(
+        "ratio, expected",
+        [
+            (0.95, SentimentBias.EXTREME_LONG),
+            (EXTREME_SENTIMENT_THRESHOLD, SentimentBias.EXTREME_LONG),
+            (0.70, SentimentBias.LONG),
+            (0.50, SentimentBias.NEUTRAL),
+            (0.30, SentimentBias.SHORT),
+            (0.10, SentimentBias.EXTREME_SHORT),
+            (1.0 - EXTREME_SENTIMENT_THRESHOLD, SentimentBias.EXTREME_SHORT),
+        ],
+    )
     def test_sentiment_classification(self, ratio: float, expected: SentimentBias) -> None:
         inputs = PsychologyInputs(retail_long_ratio=ratio)
         result = analyze("EURUSD", inputs)
@@ -102,6 +108,7 @@ class TestSentimentBias:
 # ---------------------------------------------------------------------------
 # Contrarian signal
 # ---------------------------------------------------------------------------
+
 
 class TestContrarianSignal:
     def test_extreme_long_triggers_contrarian(self) -> None:
@@ -124,10 +131,9 @@ class TestContrarianSignal:
 # Optimal state
 # ---------------------------------------------------------------------------
 
+
 class TestOptimalState:
-    def test_optimal_inputs_produce_optimal_state(
-        self, optimal_inputs: PsychologyInputs
-    ) -> None:
+    def test_optimal_inputs_produce_optimal_state(self, optimal_inputs: PsychologyInputs) -> None:
         result = analyze("EURUSD", optimal_inputs)
         assert result.state == PsychState.OPTIMAL
 
@@ -151,6 +157,7 @@ class TestOptimalState:
 # ---------------------------------------------------------------------------
 # Loss streak detection
 # ---------------------------------------------------------------------------
+
 
 class TestLossStreak:
     def test_caution_at_threshold(self) -> None:
@@ -186,6 +193,7 @@ class TestLossStreak:
 # ---------------------------------------------------------------------------
 # Revenge trade detection
 # ---------------------------------------------------------------------------
+
 
 class TestRevengeTrade:
     def test_revenge_trade_detected(self) -> None:
@@ -223,6 +231,7 @@ class TestRevengeTrade:
 # Overtrading
 # ---------------------------------------------------------------------------
 
+
 class TestOvertrading:
     def test_overtrade_at_max(self) -> None:
         inputs = PsychologyInputs(
@@ -246,6 +255,7 @@ class TestOvertrading:
 # ---------------------------------------------------------------------------
 # Bad day / session
 # ---------------------------------------------------------------------------
+
 
 class TestBadDayAndSession:
     def test_bad_day_flag(self) -> None:
@@ -271,6 +281,7 @@ class TestBadDayAndSession:
 # Tilt detection — full compound scenario
 # ---------------------------------------------------------------------------
 
+
 class TestTiltDetection:
     def test_tilted_state(self, tilted_inputs: PsychologyInputs) -> None:
         result = analyze("EURUSD", tilted_inputs)
@@ -287,6 +298,7 @@ class TestTiltDetection:
 # ---------------------------------------------------------------------------
 # Psych score bounds & determinism
 # ---------------------------------------------------------------------------
+
 
 class TestPsychScore:
     def test_score_within_bounds(self, optimal_inputs: PsychologyInputs) -> None:
@@ -306,6 +318,7 @@ class TestPsychScore:
 # ---------------------------------------------------------------------------
 # Result immutability & no side-effects
 # ---------------------------------------------------------------------------
+
 
 class TestResultIntegrity:
     def test_result_is_l5result(self, optimal_inputs: PsychologyInputs) -> None:

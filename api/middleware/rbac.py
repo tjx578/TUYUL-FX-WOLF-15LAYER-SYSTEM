@@ -31,8 +31,10 @@ from .auth import decode_token, validate_api_key
 
 # ── Roles ─────────────────────────────────────────────────────────────────────
 
+
 class Role(enum.StrEnum):
     """System roles — ordered by privilege level."""
+
     VIEWER = "viewer"
     TRADER = "trader"
     ADMIN = "admin"
@@ -51,8 +53,10 @@ class Role(enum.StrEnum):
 
 # ── Permissions ───────────────────────────────────────────────────────────────
 
+
 class Permission(enum.StrEnum):
     """Granular action identifiers for scope-based checks."""
+
     # Read
     READ_HEALTH = "read:health"
     READ_L12 = "read:l12"
@@ -94,40 +98,46 @@ class Permission(enum.StrEnum):
 
 # ── Role → Permission mapping ────────────────────────────────────────────────
 
-_VIEWER_PERMISSIONS: frozenset[Permission] = frozenset({
-    Permission.READ_HEALTH,
-    Permission.READ_L12,
-    Permission.READ_SIGNALS,
-    Permission.READ_ACCOUNTS,
-    Permission.READ_JOURNAL,
-    Permission.READ_INSTRUMENTS,
-    Permission.READ_CALENDAR,
-    Permission.READ_PROP,
-    Permission.READ_RISK,
-    Permission.READ_EA,
-    Permission.READ_DASHBOARD,
-    Permission.READ_METRICS,
-    Permission.READ_CONFIG,
-})
+_VIEWER_PERMISSIONS: frozenset[Permission] = frozenset(
+    {
+        Permission.READ_HEALTH,
+        Permission.READ_L12,
+        Permission.READ_SIGNALS,
+        Permission.READ_ACCOUNTS,
+        Permission.READ_JOURNAL,
+        Permission.READ_INSTRUMENTS,
+        Permission.READ_CALENDAR,
+        Permission.READ_PROP,
+        Permission.READ_RISK,
+        Permission.READ_EA,
+        Permission.READ_DASHBOARD,
+        Permission.READ_METRICS,
+        Permission.READ_CONFIG,
+    }
+)
 
-_TRADER_PERMISSIONS: frozenset[Permission] = _VIEWER_PERMISSIONS | frozenset({
-    Permission.TRADE_TAKE,
-    Permission.TRADE_SKIP,
-    Permission.TRADE_CONFIRM,
-    Permission.TRADE_CLOSE,
-    Permission.READ_REDIS,
-})
+_TRADER_PERMISSIONS: frozenset[Permission] = _VIEWER_PERMISSIONS | frozenset(
+    {
+        Permission.TRADE_TAKE,
+        Permission.TRADE_SKIP,
+        Permission.TRADE_CONFIRM,
+        Permission.TRADE_CLOSE,
+        Permission.READ_REDIS,
+    }
+)
 
-_ADMIN_PERMISSIONS: frozenset[Permission] = _TRADER_PERMISSIONS | frozenset({
-    Permission.RISK_WRITE,
-    Permission.RISK_KILL_SWITCH,
-    Permission.EA_RESTART,
-    Permission.EA_SAFE_MODE,
-    Permission.CONFIG_WRITE,
-    Permission.ACCOUNT_WRITE,
-    Permission.OPS_WRITE,
-    Permission.ALL,
-})
+_ADMIN_PERMISSIONS: frozenset[Permission] = _TRADER_PERMISSIONS | frozenset(
+    {
+        Permission.RISK_WRITE,
+        Permission.RISK_KILL_SWITCH,
+        Permission.EA_RESTART,
+        Permission.EA_SAFE_MODE,
+        Permission.CONFIG_WRITE,
+        Permission.ACCOUNT_WRITE,
+        Permission.OPS_WRITE,
+        Permission.ALL,
+    }
+)
 
 ROLE_PERMISSIONS: dict[Role, frozenset[Permission]] = {
     Role.VIEWER: _VIEWER_PERMISSIONS,
@@ -137,6 +147,7 @@ ROLE_PERMISSIONS: dict[Role, frozenset[Permission]] = {
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
+
 
 def role_has_permission(role: Role, permission: Permission) -> bool:
     """Check if a role has a specific permission."""
@@ -150,6 +161,7 @@ def get_permissions_for_role(role: Role) -> frozenset[Permission]:
 
 
 # ── Token → User context ─────────────────────────────────────────────────────
+
 
 class UserContext:
     """Resolved user identity from a JWT or API key."""
@@ -226,6 +238,7 @@ def _extract_user_context(authorization: str | None) -> UserContext:
 
 
 # ── FastAPI Dependencies ──────────────────────────────────────────────────────
+
 
 def get_current_user(authorization: str = Header(None)) -> UserContext:
     """

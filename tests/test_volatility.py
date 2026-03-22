@@ -46,7 +46,7 @@ class TestCalculateATR:
     def test_atr_stable_market(self):
         # Stable market with small ranges
         candles = []
-        for i in range(15):
+        for _i in range(15):
             candles.append({"high": 1.01, "low": 1.00, "close": 1.005})  # noqa: PERF401
 
         atr = calculate_atr(candles, period=14)

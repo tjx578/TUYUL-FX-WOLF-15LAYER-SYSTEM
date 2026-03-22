@@ -77,33 +77,24 @@ class ForexFactoryHtmlProvider:
         last_exc: Exception | None = None
         resp: httpx.Response | None = None
 
-        headers = {
-            "User-Agent": (
-                "Mozilla/5.0 (compatible; EconomicCalendarBot/1.0)"
-            )
-        }
+        headers = {"User-Agent": ("Mozilla/5.0 (compatible; EconomicCalendarBot/1.0)")}
 
         while attempt < self._max_retries:
             try:
-                async with httpx.AsyncClient(
-                    timeout=self._timeout, follow_redirects=True
-                ) as client:
+                async with httpx.AsyncClient(timeout=self._timeout, follow_redirects=True) as client:
                     resp = await client.get(self._url, headers=headers)
                     resp.raise_for_status()
                 break
             except httpx.HTTPStatusError as exc:
-                raise ProviderUnavailableError(
-                    self.name, f"HTTP {exc.response.status_code}"
-                ) from exc
+                raise ProviderUnavailableError(self.name, f"HTTP {exc.response.status_code}") from exc
             except (httpx.RequestError, httpx.TimeoutException) as exc:
                 last_exc = exc
                 attempt += 1
                 import asyncio
-                await asyncio.sleep(min(2 ** attempt, 15))
+
+                await asyncio.sleep(min(2**attempt, 15))
         else:
-            raise ProviderUnavailableError(
-                self.name, f"All retries exhausted: {last_exc}"
-            )
+            raise ProviderUnavailableError(self.name, f"All retries exhausted: {last_exc}")
 
         if resp is None:
             raise ProviderUnavailableError(self.name, "No response received")
@@ -126,6 +117,7 @@ class ForexFactoryHtmlProvider:
         # Prefer BeautifulSoup if available (more robust)
         try:
             from bs4 import BeautifulSoup  # type: ignore[import-untyped]
+
             return self._parse_with_bs4(html, date_str, BeautifulSoup)
         except ImportError:
             pass
@@ -166,15 +158,17 @@ class ForexFactoryHtmlProvider:
             elif "medium" in impact_raw.lower():
                 impact = "Medium"
 
-            events.append({
-                "title": title,
-                "currency": currency,
-                "date": date_str,
-                "time": time_str,
-                "impact": impact,
-                "actual": actual or None,
-                "forecast": forecast or None,
-                "previous": previous or None,
-            })
+            events.append(
+                {
+                    "title": title,
+                    "currency": currency,
+                    "date": date_str,
+                    "time": time_str,
+                    "impact": impact,
+                    "actual": actual or None,
+                    "forecast": forecast or None,
+                    "previous": previous or None,
+                }
+            )
 
         return events

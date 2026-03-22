@@ -1,8 +1,9 @@
 """Equilibrium Momentum Fusion -- v6 + high-level wrapper."""
 
 import math
-from datetime import datetime, timezone
-from typing import Any, Dict, Mapping, Optional
+from collections.abc import Mapping
+from datetime import UTC, datetime
+from typing import Any
 
 from ._types import FusionState, MomentumBand
 from ._utils import _clamp, _clamp01, _safe_float
@@ -10,14 +11,23 @@ from .field_sync import resolve_field_context
 
 
 def equilibrium_momentum_fusion_v6(
-    price_change: float, volume_change: float, time_weight: float, atr: float,
-    trq_energy: float = 1.0, reflective_intensity: float = 1.0,
-    alpha: float = 1.0, beta: float = 1.0, gamma: float = 1.0,
-    integrity_index: float = 0.97, direction_hint: float = 1.0,
-    symbol: Optional[str] = None, pair: Optional[str] = None,
-    trade_id: Optional[str] = None, lambda_esi: float = 0.06,
-    field_override: Optional[Mapping[str, Any]] = None,
-) -> Dict[str, Any]:
+    price_change: float,
+    volume_change: float,
+    time_weight: float,
+    atr: float,
+    trq_energy: float = 1.0,
+    reflective_intensity: float = 1.0,
+    alpha: float = 1.0,
+    beta: float = 1.0,
+    gamma: float = 1.0,
+    integrity_index: float = 0.97,
+    direction_hint: float = 1.0,
+    symbol: str | None = None,
+    pair: str | None = None,
+    trade_id: str | None = None,
+    lambda_esi: float = 0.06,
+    field_override: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
     """Calculate reflective equilibrium momentum across dimensions."""
     values = [price_change, volume_change, time_weight, atr]
     meta = [trq_energy, reflective_intensity, alpha, beta, gamma, integrity_index, direction_hint]
@@ -30,7 +40,9 @@ def equilibrium_momentum_fusion_v6(
     direction_hint = _clamp(direction_hint, -1.0, 1.0)
     trq_energy = _clamp(trq_energy, 0.1, 10.0)
     reflective_intensity = _clamp(reflective_intensity, 0.1, 10.0)
-    alpha = _clamp(alpha, 0.5, 2.0); beta = _clamp(beta, 0.5, 2.0); gamma = _clamp(gamma, 0.5, 2.0)
+    alpha = _clamp(alpha, 0.5, 2.0)
+    beta = _clamp(beta, 0.5, 2.0)
+    gamma = _clamp(gamma, 0.5, 2.0)
     integrity_index = _clamp01(integrity_index)
 
     price_momentum = abs(price_change / atr)
@@ -59,38 +71,71 @@ def equilibrium_momentum_fusion_v6(
 
     confidence = _clamp01(abs(signed_score) / 1.5)
     magnitude = abs(signed_score)
-    if magnitude >= 1.75: momentum_band = MomentumBand.HYPER.value
-    elif magnitude >= 1.25: momentum_band = MomentumBand.STRONG.value
-    elif magnitude >= 0.75: momentum_band = MomentumBand.BALANCED.value
-    else: momentum_band = MomentumBand.CALM.value
+    if magnitude >= 1.75:
+        momentum_band = MomentumBand.HYPER.value
+    elif magnitude >= 1.25:
+        momentum_band = MomentumBand.STRONG.value
+    elif magnitude >= 0.75:
+        momentum_band = MomentumBand.BALANCED.value
+    else:
+        momentum_band = MomentumBand.CALM.value
 
-    fc = resolve_field_context(pair=pair or "XAUUSD", timeframe="H4",
-        alpha=alpha, beta=beta, gamma=gamma, lambda_esi=lambda_esi, field_override=field_override)
+    fc = resolve_field_context(
+        pair=pair or "XAUUSD",
+        timeframe="H4",
+        alpha=alpha,
+        beta=beta,
+        gamma=gamma,
+        lambda_esi=lambda_esi,
+        field_override=field_override,
+    )
 
     return {
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-        "price_momentum": round(price_momentum, 3), "volume_factor": round(volume_factor, 3),
-        "time_factor": round(time_factor, 3), "equilibrium": round(equilibrium, 3),
-        "imbalance": round(imbalance, 3), "fusion_score": round(fusion_score, 3),
-        "fusion_score_signed": round(signed_score, 3), "reflective_confidence": round(confidence, 3),
-        "bias": bias, "state": state, "equilibrium_state": state, "momentum_band": momentum_band,
-        "trq_energy": round(trq_energy, 3), "reflective_intensity": round(reflective_intensity, 3),
-        "alpha": round(alpha, 3), "beta": round(beta, 3), "gamma": round(gamma, 3),
+        "timestamp": datetime.now(UTC).isoformat(),
+        "price_momentum": round(price_momentum, 3),
+        "volume_factor": round(volume_factor, 3),
+        "time_factor": round(time_factor, 3),
+        "equilibrium": round(equilibrium, 3),
+        "imbalance": round(imbalance, 3),
+        "fusion_score": round(fusion_score, 3),
+        "fusion_score_signed": round(signed_score, 3),
+        "reflective_confidence": round(confidence, 3),
+        "bias": bias,
+        "state": state,
+        "equilibrium_state": state,
+        "momentum_band": momentum_band,
+        "trq_energy": round(trq_energy, 3),
+        "reflective_intensity": round(reflective_intensity, 3),
+        "alpha": round(alpha, 3),
+        "beta": round(beta, 3),
+        "gamma": round(gamma, 3),
         "integrity_index": round(integrity_index, 3),
-        "lambda_esi": fc.get("lambda_esi"), "field_state": fc.get("field_state"),
+        "lambda_esi": fc.get("lambda_esi"),
+        "field_state": fc.get("field_state"),
         "field_integrity": fc.get("field_integrity"),
-        "status": "ok", "symbol": symbol, "pair": pair, "trade_id": trade_id,
+        "status": "ok",
+        "symbol": symbol,
+        "pair": pair,
+        "trade_id": trade_id,
     }
 
 
 def equilibrium_momentum_fusion(
-    vwap_val: float, ema_fusion_data: Mapping[str, Any], reflex_strength: float,
-    trq_energy: float = 1.0, reflective_intensity: float = 1.0,
-    alpha: float = 1.0, beta: float = 1.0, gamma: float = 1.0,
-    integrity_index: float = 0.97, symbol: Optional[str] = None,
-    pair: Optional[str] = None, trade_id: Optional[str] = None,
-    lambda_esi: float = 0.06, field_override: Optional[Mapping[str, Any]] = None,
-) -> Dict[str, Any]:
+    vwap_val: float,
+    ema_fusion_data: Mapping[str, Any],
+    reflex_strength: float,
+    trq_energy: float = 1.0,
+    reflective_intensity: float = 1.0,
+    alpha: float = 1.0,
+    beta: float = 1.0,
+    gamma: float = 1.0,
+    integrity_index: float = 0.97,
+    symbol: str | None = None,
+    pair: str | None = None,
+    trade_id: str | None = None,
+    lambda_esi: float = 0.06,
+    field_override: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
     """High-level equilibrium fusion for Ultra Fusion pipeline."""
     ema50 = _safe_float(ema_fusion_data.get("ema50", 0.0))
     fusion_strength = _safe_float(ema_fusion_data.get("fusion_strength", 0.0))
@@ -108,20 +153,35 @@ def equilibrium_momentum_fusion(
     atr_proxy = max(deviation * 1.25, base_scale * 0.0008, 1e-6)
 
     output = equilibrium_momentum_fusion_v6(
-        price_change=price_change, volume_change=max(0.01, fusion_strength),
-        time_weight=max(0.01, abs(reflex_strength)), atr=atr_proxy,
-        trq_energy=trq_energy, reflective_intensity=reflective_intensity,
-        alpha=alpha, beta=beta, gamma=gamma, integrity_index=integrity_index,
-        direction_hint=direction_hint, symbol=symbol, pair=pair, trade_id=trade_id,
-        lambda_esi=lambda_esi, field_override=field_override)
+        price_change=price_change,
+        volume_change=max(0.01, fusion_strength),
+        time_weight=max(0.01, abs(reflex_strength)),
+        atr=atr_proxy,
+        trq_energy=trq_energy,
+        reflective_intensity=reflective_intensity,
+        alpha=alpha,
+        beta=beta,
+        gamma=gamma,
+        integrity_index=integrity_index,
+        direction_hint=direction_hint,
+        symbol=symbol,
+        pair=pair,
+        trade_id=trade_id,
+        lambda_esi=lambda_esi,
+        field_override=field_override,
+    )
 
     if output.get("status") == "invalid_input":
         return output
 
-    output.update({
-        "vwap": round(vwap_val, 6), "ema50": round(ema50, 6),
-        "fusion_strength_input": round(fusion_strength, 4),
-        "reflex_strength": round(reflex_strength, 4),
-        "cross_state": cross_state, "atr_proxy": round(atr_proxy, 6),
-    })
+    output.update(
+        {
+            "vwap": round(vwap_val, 6),
+            "ema50": round(ema50, 6),
+            "fusion_strength_input": round(fusion_strength, 4),
+            "reflex_strength": round(reflex_strength, 4),
+            "cross_state": cross_state,
+            "atr_proxy": round(atr_proxy, 6),
+        }
+    )
     return output

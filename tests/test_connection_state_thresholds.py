@@ -18,9 +18,7 @@ from pathlib import Path
 # ---------------------------------------------------------------------------
 
 _REPO_ROOT = Path(__file__).parent.parent
-_CONNECTION_STATE_TS = (
-    _REPO_ROOT / "dashboard" / "nextjs" / "src" / "lib" / "realtime" / "connectionState.ts"
-)
+_CONNECTION_STATE_TS = _REPO_ROOT / "dashboard" / "nextjs" / "src" / "lib" / "realtime" / "connectionState.ts"
 
 
 def _parse_stale_thresholds() -> dict[str, int]:
@@ -38,9 +36,7 @@ def _parse_stale_thresholds() -> dict[str, int]:
         re.DOTALL,
     )
     if not match:
-        raise ValueError(
-            f"Could not locate STALE_THRESHOLDS_MS in {_CONNECTION_STATE_TS}"
-        )
+        raise ValueError(f"Could not locate STALE_THRESHOLDS_MS in {_CONNECTION_STATE_TS}")
 
     block = match.group(1)
     thresholds: dict[str, int] = {}
@@ -62,15 +58,20 @@ class TestConnectionStateThresholds:
 
     def test_file_exists(self) -> None:
         """connectionState.ts must exist in the expected location."""
-        assert _CONNECTION_STATE_TS.exists(), (
-            f"connectionState.ts not found at {_CONNECTION_STATE_TS}"
-        )
+        assert _CONNECTION_STATE_TS.exists(), f"connectionState.ts not found at {_CONNECTION_STATE_TS}"
 
     def test_all_expected_domains_present(self) -> None:
         """All expected domain keys must be present in STALE_THRESHOLDS_MS."""
         expected_domains = {
-            "prices", "trades", "risk", "equity",
-            "signals", "verdicts", "pipeline", "candles", "alerts",
+            "prices",
+            "trades",
+            "risk",
+            "equity",
+            "signals",
+            "verdicts",
+            "pipeline",
+            "candles",
+            "alerts",
         }
         assert expected_domains.issubset(self.thresholds.keys()), (
             f"Missing domains: {expected_domains - self.thresholds.keys()}"

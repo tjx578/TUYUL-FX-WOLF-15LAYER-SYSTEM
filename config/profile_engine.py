@@ -219,10 +219,7 @@ class ConfigProfileEngine:
         }
 
     def list_scoped_overrides(self) -> dict[str, list[str]]:
-        return {
-            scope: sorted(items.keys())
-            for scope, items in self._scoped_overrides.items()
-        }
+        return {scope: sorted(items.keys()) for scope, items in self._scoped_overrides.items()}
 
     def list_revisions(self, limit: int = 50) -> list[dict[str, Any]]:
         limit = max(1, min(limit, 500))
@@ -313,7 +310,9 @@ class ConfigProfileEngine:
             "override": deepcopy(self._scoped_overrides[scope_norm][scope_key]),
         }
 
-    def delete_override(self, scope: str, key: str, actor: str = "system", reason: str = "DELETE_OVERRIDE") -> dict[str, Any]:
+    def delete_override(
+        self, scope: str, key: str, actor: str = "system", reason: str = "DELETE_OVERRIDE"
+    ) -> dict[str, Any]:
         scope_norm, scope_key = _normalize_scope_and_key(scope, key)
         if self._state.locked:
             raise ValueError("Config is locked")
@@ -345,10 +344,7 @@ class ConfigProfileEngine:
     def list_overrides(self, scope: str | None = None) -> dict[str, Any]:
         if scope is None:
             return {
-                scope_name: {
-                    key: deepcopy(value)
-                    for key, value in sorted(scope_items.items())
-                }
+                scope_name: {key: deepcopy(value) for key, value in sorted(scope_items.items())}
                 for scope_name, scope_items in self._scoped_overrides.items()
             }
 
@@ -356,12 +352,7 @@ class ConfigProfileEngine:
         if scope_norm not in self._scoped_overrides:
             raise ValueError(f"Unknown scope: {scope}")
 
-        return {
-            scope_norm: {
-                key: deepcopy(value)
-                for key, value in sorted(self._scoped_overrides[scope_norm].items())
-            }
-        }
+        return {scope_norm: {key: deepcopy(value) for key, value in sorted(self._scoped_overrides[scope_norm].items())}}
 
     def _append_revision(
         self,

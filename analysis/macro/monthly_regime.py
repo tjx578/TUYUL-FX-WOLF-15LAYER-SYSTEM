@@ -52,9 +52,7 @@ class MonthlyRegimeAnalyzer:
         mn_data = self.context_bus.get_candle_history(symbol, "MN", count=24)
 
         if len(mn_data) < 2:
-            logger.warning(
-                f"Insufficient MN data for {symbol}: {len(mn_data)} candles (need 2+)"
-            )
+            logger.warning(f"Insufficient MN data for {symbol}: {len(mn_data)} candles (need 2+)")
             return self._invalid_result()
 
         # Detect regime

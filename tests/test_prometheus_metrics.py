@@ -41,6 +41,7 @@ from core.metrics import (
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _fresh_registry() -> MetricsRegistry:
     """Reset the MetricsRegistry singleton and return a fresh instance."""
     MetricsRegistry.reset_singleton()
@@ -59,6 +60,7 @@ def _set_pipeline_context_bus(pipe: Any, bus: Any) -> None:
 # ===========================================================================
 # Counter tests
 # ===========================================================================
+
 
 class TestCounter:
     def test_inc_default(self):
@@ -105,6 +107,7 @@ class TestCounter:
 # Gauge tests
 # ===========================================================================
 
+
 class TestGauge:
     def test_set(self):
         g = Gauge("test_gauge", "A test gauge")
@@ -132,10 +135,12 @@ class TestGauge:
 # Histogram tests
 # ===========================================================================
 
+
 class TestHistogram:
     def test_observe_and_buckets(self):
         h = Histogram(
-            "test_hist", "A histogram",
+            "test_hist",
+            "A histogram",
             buckets=(0.1, 0.5, 1.0),
         )
         h.observe(0.05)
@@ -163,8 +168,10 @@ class TestHistogram:
 
     def test_labelled_histogram(self):
         h = Histogram(
-            "test_lhist", "Labelled histogram",
-            label_names=("symbol",), buckets=(1.0,),
+            "test_lhist",
+            "Labelled histogram",
+            label_names=("symbol",),
+            buckets=(1.0,),
         )
         h.labels(symbol="EURUSD").observe(0.5)
         h.labels(symbol="EURUSD").observe(1.5)
@@ -177,6 +184,7 @@ class TestHistogram:
 # ===========================================================================
 # MetricsRegistry tests
 # ===========================================================================
+
 
 class TestMetricsRegistry:
     def setup_method(self):
@@ -235,6 +243,7 @@ class TestMetricsRegistry:
 # get_registry() singleton accessor
 # ===========================================================================
 
+
 class TestGetRegistry:
     def test_returns_singleton(self):
         r1 = get_registry()
@@ -245,6 +254,7 @@ class TestGetRegistry:
 # ===========================================================================
 # Pre-registered Wolf metrics exist
 # ===========================================================================
+
 
 class TestPreRegisteredMetrics:
     """Verify that importing core.metrics registers the standard Wolf metrics."""
@@ -298,6 +308,7 @@ class TestPreRegisteredMetrics:
 # Pipeline _record_metrics integration
 # ===========================================================================
 
+
 class TestPipelineRecordMetrics:
     """Test that pipeline.execute() records Prometheus metrics."""
 
@@ -305,6 +316,7 @@ class TestPipelineRecordMetrics:
         from pipeline.wolf_constitutional_pipeline import (  # noqa: PLC0415
             WolfConstitutionalPipeline,
         )
+
         pipe = WolfConstitutionalPipeline()
         pipe.skip_analyzers()
         return pipe
@@ -330,7 +342,9 @@ class TestPipelineRecordMetrics:
         mock_bus = MagicMock()
         mock_bus.check_warmup.return_value = {
             "ready": False,
-            "bars": {"M15": 0}, "required": {"M15": 20}, "missing": {"M15": 20},
+            "bars": {"M15": 0},
+            "required": {"M15": 20},
+            "missing": {"M15": 20},
         }
         _set_pipeline_context_bus(pipe, mock_bus)
 
@@ -348,9 +362,15 @@ class TestPipelineRecordMetrics:
 
         # All 9 gates should have a FAIL increment
         gate_names = [
-            "gate_1_tii", "gate_2_montecarlo", "gate_3_frpc",
-            "gate_4_conf12", "gate_5_rr", "gate_6_integrity",
-            "gate_7_propfirm", "gate_8_drawdown", "gate_9_latency",
+            "gate_1_tii",
+            "gate_2_montecarlo",
+            "gate_3_frpc",
+            "gate_4_conf12",
+            "gate_5_rr",
+            "gate_6_integrity",
+            "gate_7_propfirm",
+            "gate_8_drawdown",
+            "gate_9_latency",
         ]
         for gate in gate_names:
             assert GATE_RESULT.labels(gate=gate, result="FAIL").value >= 1
@@ -367,10 +387,14 @@ class TestPipelineRecordMetrics:
             "l12_verdict": {
                 "verdict": "EXECUTE_BUY",
                 "gates_v74": {
-                    "gate_1_tii": "PASS", "gate_2_montecarlo": "PASS",
-                    "gate_3_frpc": "PASS", "gate_4_conf12": "PASS",
-                    "gate_5_rr": "PASS", "gate_6_integrity": "PASS",
-                    "gate_7_propfirm": "PASS", "gate_8_drawdown": "PASS",
+                    "gate_1_tii": "PASS",
+                    "gate_2_montecarlo": "PASS",
+                    "gate_3_frpc": "PASS",
+                    "gate_4_conf12": "PASS",
+                    "gate_5_rr": "PASS",
+                    "gate_6_integrity": "PASS",
+                    "gate_7_propfirm": "PASS",
+                    "gate_8_drawdown": "PASS",
                     "gate_9_latency": "PASS",
                 },
             },
@@ -447,6 +471,7 @@ class TestPipelineRecordMetrics:
 # Thread safety
 # ===========================================================================
 
+
 class TestThreadSafety:
     def test_concurrent_counter_increments(self):
         c = Counter("thread_test_counter", "Thread test")
@@ -488,6 +513,7 @@ class TestThreadSafety:
 # Exposition format correctness
 # ===========================================================================
 
+
 class TestExposition:
     def setup_method(self):
         self.registry = _fresh_registry()
@@ -525,16 +551,19 @@ class TestExposition:
 # New constitutional observability metrics (9 new gauges)
 # ===========================================================================
 
+
 class TestNewConstitutionalMetrics:
     """Verify that the 9 new constitutional observability metrics are registered."""
 
     def test_sovereignty_level_exists(self):
         from core.metrics import SOVEREIGNTY_LEVEL  # noqa: PLC0415
+
         assert SOVEREIGNTY_LEVEL is not None
         assert SOVEREIGNTY_LEVEL.name == "wolf_sovereignty_level"
 
     def test_sovereignty_level_labels(self):
         from core.metrics import SOVEREIGNTY_LEVEL  # noqa: PLC0415
+
         SOVEREIGNTY_LEVEL.labels(symbol="EURUSD", level="GRANTED").set(1.0)
         SOVEREIGNTY_LEVEL.labels(symbol="EURUSD", level="RESTRICTED").set(0.0)
         SOVEREIGNTY_LEVEL.labels(symbol="EURUSD", level="REVOKED").set(0.0)
@@ -544,24 +573,26 @@ class TestNewConstitutionalMetrics:
 
     def test_reflective_drift_ratio_exists(self):
         from core.metrics import REFLECTIVE_DRIFT_RATIO  # noqa: PLC0415
+
         assert REFLECTIVE_DRIFT_RATIO is not None
         assert REFLECTIVE_DRIFT_RATIO.name == "wolf_reflective_drift_ratio"
 
     def test_reflective_drift_ratio_labels(self):
         from core.metrics import REFLECTIVE_DRIFT_RATIO  # noqa: PLC0415
+
         REFLECTIVE_DRIFT_RATIO.labels(symbol="XAUUSD").set(0.08)
-        assert math.isclose(
-            REFLECTIVE_DRIFT_RATIO.labels(symbol="XAUUSD").value, 0.08, rel_tol=1e-9
-        )
+        assert math.isclose(REFLECTIVE_DRIFT_RATIO.labels(symbol="XAUUSD").value, 0.08, rel_tol=1e-9)
 
     def test_trq3d_gauges_exist(self):
         from core.metrics import TRQ3D_ALPHA, TRQ3D_BETA, TRQ3D_GAMMA  # noqa: PLC0415
+
         assert TRQ3D_ALPHA.name == "wolf_trq3d_alpha"
         assert TRQ3D_BETA.name == "wolf_trq3d_beta"
         assert TRQ3D_GAMMA.name == "wolf_trq3d_gamma"
 
     def test_trq3d_labels(self):
         from core.metrics import TRQ3D_ALPHA, TRQ3D_BETA, TRQ3D_GAMMA  # noqa: PLC0415
+
         TRQ3D_ALPHA.labels(symbol="GBPUSD").set(0.72)
         TRQ3D_BETA.labels(symbol="GBPUSD").set(0.68)
         TRQ3D_GAMMA.labels(symbol="GBPUSD").set(0.90)
@@ -571,45 +602,51 @@ class TestNewConstitutionalMetrics:
 
     def test_tii_score_exists(self):
         from core.metrics import TII_SCORE  # noqa: PLC0415
+
         assert TII_SCORE is not None
         assert TII_SCORE.name == "wolf_tii_score"
 
     def test_tii_score_labels(self):
         from core.metrics import TII_SCORE  # noqa: PLC0415
+
         TII_SCORE.labels(symbol="USDJPY").set(0.75)
         assert math.isclose(TII_SCORE.labels(symbol="USDJPY").value, 0.75, rel_tol=1e-9)
 
     def test_frpc_score_exists(self):
         from core.metrics import FRPC_SCORE  # noqa: PLC0415
+
         assert FRPC_SCORE is not None
         assert FRPC_SCORE.name == "wolf_frpc_score"
 
     def test_frpc_score_labels(self):
         from core.metrics import FRPC_SCORE  # noqa: PLC0415
+
         FRPC_SCORE.labels(symbol="EURUSD").set(0.95)
         assert math.isclose(FRPC_SCORE.labels(symbol="EURUSD").value, 0.95, rel_tol=1e-9)
 
     def test_conf12_score_exists(self):
         from core.metrics import CONF12_SCORE  # noqa: PLC0415
+
         assert CONF12_SCORE is not None
         assert CONF12_SCORE.name == "wolf_conf12_score"
 
     def test_conf12_score_labels(self):
         from core.metrics import CONF12_SCORE  # noqa: PLC0415
+
         CONF12_SCORE.labels(symbol="XAUUSD").set(0.80)
         assert math.isclose(CONF12_SCORE.labels(symbol="XAUUSD").value, 0.80, rel_tol=1e-9)
 
     def test_account_drawdown_percent_exists(self):
         from core.metrics import ACCOUNT_DRAWDOWN_PERCENT  # noqa: PLC0415
+
         assert ACCOUNT_DRAWDOWN_PERCENT is not None
         assert ACCOUNT_DRAWDOWN_PERCENT.name == "wolf_account_drawdown_percent"
 
     def test_account_drawdown_percent_labels(self):
         from core.metrics import ACCOUNT_DRAWDOWN_PERCENT  # noqa: PLC0415
+
         ACCOUNT_DRAWDOWN_PERCENT.labels(account_id="ACC001").set(3.5)
-        assert math.isclose(
-            ACCOUNT_DRAWDOWN_PERCENT.labels(account_id="ACC001").value, 3.5, rel_tol=1e-9
-        )
+        assert math.isclose(ACCOUNT_DRAWDOWN_PERCENT.labels(account_id="ACC001").value, 3.5, rel_tol=1e-9)
 
     def test_all_new_metrics_in_exposition(self):
         """Verify all 9 new metric names appear in the exposition output."""
@@ -617,6 +654,7 @@ class TestNewConstitutionalMetrics:
         # (captured at import time) rather than get_registry() which may return
         # a reset singleton after TestExposition.teardown_method runs.
         from core.metrics import get_wolf_registry  # noqa: PLC0415
+
         text = get_wolf_registry().exposition()
         new_metric_names = [
             "wolf_sovereignty_level",
@@ -636,6 +674,7 @@ class TestNewConstitutionalMetrics:
 # ===========================================================================
 # Pipeline recorder - new constitutional gauges integration
 # ===========================================================================
+
 
 class TestPipelineRecordNewMetrics:
     """Verify that record_pipeline_metrics records the 9 new constitutional gauges."""
@@ -663,9 +702,7 @@ class TestPipelineRecordNewMetrics:
         assert SOVEREIGNTY_LEVEL.labels(symbol="SOV_TEST", level="RESTRICTED").value == 1.0
         assert SOVEREIGNTY_LEVEL.labels(symbol="SOV_TEST", level="GRANTED").value == 0.0
         assert SOVEREIGNTY_LEVEL.labels(symbol="SOV_TEST", level="REVOKED").value == 0.0
-        assert math.isclose(
-            REFLECTIVE_DRIFT_RATIO.labels(symbol="SOV_TEST").value, 0.17, rel_tol=1e-9
-        )
+        assert math.isclose(REFLECTIVE_DRIFT_RATIO.labels(symbol="SOV_TEST").value, 0.17, rel_tol=1e-9)
 
     def test_trq3d_gauges_recorded(self):
         from core.metrics import TRQ3D_ALPHA, TRQ3D_BETA, TRQ3D_GAMMA  # noqa: PLC0415

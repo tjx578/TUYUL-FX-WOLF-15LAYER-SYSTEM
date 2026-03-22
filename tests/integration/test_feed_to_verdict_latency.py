@@ -2,6 +2,7 @@
 Integration test: end-to-end feed -> analysis -> verdict latency.
 Target: < 2 seconds for a single pair analysis cycle.
 """
+
 import time
 
 import pytest
@@ -15,8 +16,10 @@ class TestFeedToVerdictLatency:
         return {
             "symbol": symbol,
             "timeframe": "H1",
-            "open": 1.0840, "high": 1.0870,
-            "low": 1.0835, "close": 1.0855,
+            "open": 1.0840,
+            "high": 1.0870,
+            "low": 1.0835,
+            "close": 1.0855,
             "volume": 12345,
             "timestamp": "2026-02-15T10:00:00Z",
         }
@@ -34,11 +37,16 @@ class TestFeedToVerdictLatency:
     def _simulate_verdict(self, analysis_result):
         """Simulate L12 verdict from analysis scores."""
         time.sleep(0.01)
-        avg = sum([
-            analysis_result["wolf_score"],
-            analysis_result["tii_score"],
-            analysis_result["frpc_score"],
-        ]) / 3
+        avg = (
+            sum(
+                [
+                    analysis_result["wolf_score"],
+                    analysis_result["tii_score"],
+                    analysis_result["frpc_score"],
+                ]
+            )
+            / 3
+        )
         verdict = "EXECUTE" if avg >= 7.0 else "NO_TRADE"
         return {
             "symbol": analysis_result["symbol"],

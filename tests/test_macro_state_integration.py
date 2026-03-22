@@ -68,10 +68,7 @@ class TestLiveContextBusMacroState:
             bus.update_macro_state(state)
 
         # Concurrent updates
-        threads = [
-            threading.Thread(target=update_state, args=(i,))
-            for i in range(10)
-        ]
+        threads = [threading.Thread(target=update_state, args=(i,)) for i in range(10)]
 
         for thread in threads:
             thread.start()

@@ -84,13 +84,9 @@ class BayesianProbabilityEngine:
             ValueError: If prior counts are negative or evidence out of range.
         """
         if prior_wins < 0 or prior_losses < 0:
-            raise ValueError(
-                f"Invalid prior counts: wins={prior_wins}, losses={prior_losses}"
-            )
+            raise ValueError(f"Invalid prior counts: wins={prior_wins}, losses={prior_losses}")
         if not 0.0 <= new_evidence_score <= 1.0:
-            raise ValueError(
-                f"Evidence score must be in [0, 1], got {new_evidence_score}"
-            )
+            raise ValueError(f"Evidence score must be in [0, 1], got {new_evidence_score}")
 
         # Beta prior (add 1 for uninformative Bayes-Laplace prior)
         alpha_prior = prior_wins + 1

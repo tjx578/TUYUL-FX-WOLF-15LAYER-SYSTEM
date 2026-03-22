@@ -31,6 +31,7 @@ from pipeline.wolf_constitutional_pipeline import (
 # Helpers
 # ──────────────────────────────────────────────────────────────────────────────
 
+
 def _fake_layer_result(direction: str = "BUY", score: float = 0.72) -> dict[str, Any]:
     return {"direction": direction, "strength": score, "score": score}
 
@@ -55,6 +56,7 @@ def _realistic_layer_results() -> dict[str, Any]:
 # ──────────────────────────────────────────────────────────────────────────────
 # Smoke tests (fast, always run)
 # ──────────────────────────────────────────────────────────────────────────────
+
 
 class TestPipelineSmoke:
     """Structural smoke tests — no external I/O required."""
@@ -99,6 +101,7 @@ class TestPipelineSmoke:
 # Full pipeline tests (slow, mock external I/O)
 # ──────────────────────────────────────────────────────────────────────────────
 
+
 class TestPipelineRealLayers:
     """
     Run WolfConstitutionalPipeline.execute() with mocked I/O.
@@ -112,8 +115,10 @@ class TestPipelineRealLayers:
     def pipeline_with_mocked_io(self):
         """Pipeline instance with external I/O patched."""
         with (
-            patch("pipeline.wolf_constitutional_pipeline.WolfConstitutionalPipeline._timed_call",
-                  side_effect=lambda fn, *a, **kw: fn(*a, **kw) if callable(fn) else {}),
+            patch(
+                "pipeline.wolf_constitutional_pipeline.WolfConstitutionalPipeline._timed_call",
+                side_effect=lambda fn, *a, **kw: fn(*a, **kw) if callable(fn) else {},
+            ),
         ):
             yield WolfConstitutionalPipeline()
 
@@ -131,9 +136,7 @@ class TestPipelineRealLayers:
         # Accept dict or PipelineResult-like object
         data = result if isinstance(result, dict) else result.__dict__ if hasattr(result, "__dict__") else {}
 
-        assert "l12_verdict" in data or hasattr(result, "l12_verdict"), (
-            "Pipeline result must contain l12_verdict"
-        )
+        assert "l12_verdict" in data or hasattr(result, "l12_verdict"), "Pipeline result must contain l12_verdict"
 
     def test_execute_latency_is_numeric(self, pipeline_with_mocked_io):
         """latency_ms must be a non-negative number."""
@@ -215,6 +218,7 @@ class TestPipelineRealLayers:
 # Constitutional boundary tests (always run, no I/O)
 # ──────────────────────────────────────────────────────────────────────────────
 
+
 class TestPipelineConstitutionalBoundaries:
     """Verify authority separation is preserved by the pipeline."""
 
@@ -238,8 +242,7 @@ class TestPipelineConstitutionalBoundaries:
         result = build_l12_synthesis(layer_results)
 
         # Account state keys must not appear
-        forbidden = {"account_direction", "broker_direction", "balance", "equity",
-                     "margin_used", "account_id"}
+        forbidden = {"account_direction", "broker_direction", "balance", "equity", "margin_used", "account_id"}
         leaked = forbidden & set(result.keys())
         assert not leaked, f"Account-level keys leaked into synthesis: {leaked}"
 
@@ -250,13 +253,15 @@ class TestPipelineConstitutionalBoundaries:
         """
         pipeline = WolfConstitutionalPipeline()
         execution_methods = [
-            "execute_order", "place_order", "send_order",
-            "open_trade", "submit_order", "fill_order",
+            "execute_order",
+            "place_order",
+            "send_order",
+            "open_trade",
+            "submit_order",
+            "fill_order",
         ]
         for method in execution_methods:
-            assert not hasattr(pipeline, method), (
-                f"Pipeline must not have execution method: {method}"
-            )
+            assert not hasattr(pipeline, method), f"Pipeline must not have execution method: {method}"
 
     def test_pipeline_is_analysis_only_module(self):
         """
@@ -264,15 +269,14 @@ class TestPipelineConstitutionalBoundaries:
         at the class level (constitutional authority check).
         """
         import sys
+
         module_file = sys.modules.get("pipeline.wolf_constitutional_pipeline")
         # If module loaded, check it doesn't expose MT5 or execution
         if module_file is not None:
             source_vars = dir(module_file)
             forbidden_imports = ["mt5", "MetaTrader", "place_order", "execute_order"]
             for forbidden in forbidden_imports:
-                assert forbidden not in source_vars, (
-                    f"Pipeline module must not expose: {forbidden}"
-                )
+                assert forbidden not in source_vars, f"Pipeline module must not expose: {forbidden}"
 
     @pytest.mark.slow
     def test_manual_test_orchestrator_scenarios_are_covered(self):
@@ -298,6 +302,7 @@ class TestPipelineConstitutionalBoundaries:
 # Timing regression test
 # ──────────────────────────────────────────────────────────────────────────────
 
+
 class TestPipelinePerformance:
     """Verify build_l12_synthesis latency stays bounded."""
 
@@ -307,9 +312,7 @@ class TestPipelinePerformance:
         start = time.perf_counter()
         build_l12_synthesis(layer_results)
         elapsed_ms = (time.perf_counter() - start) * 1000
-        assert elapsed_ms < 50, (
-            f"build_l12_synthesis took {elapsed_ms:.1f}ms (limit: 50ms)"
-        )
+        assert elapsed_ms < 50, f"build_l12_synthesis took {elapsed_ms:.1f}ms (limit: 50ms)"
 
     def test_build_synthesis_100_iterations_mean_under_10ms(self):
         """Mean over 100 calls must stay under 10ms (warm-path performance)."""
@@ -321,6 +324,4 @@ class TestPipelinePerformance:
             times.append(time.perf_counter() - start)
 
         mean_ms = (sum(times) / len(times)) * 1000
-        assert mean_ms < 10, (
-            f"Mean synthesis build time {mean_ms:.2f}ms exceeds 10ms limit"
-        )
+        assert mean_ms < 10, f"Mean synthesis build time {mean_ms:.2f}ms exceeds 10ms limit"

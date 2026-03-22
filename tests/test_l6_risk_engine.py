@@ -22,6 +22,7 @@ from analysis.layers.L6_risk import L6RiskAnalyzer
 # Fixtures
 # ─────────────────────────────────────────────────────────────────────
 
+
 @pytest.fixture
 def engine() -> L6RiskAnalyzer:
     return L6RiskAnalyzer()
@@ -30,6 +31,7 @@ def engine() -> L6RiskAnalyzer:
 # ─────────────────────────────────────────────────────────────────────
 # 1. Backward Compatibility
 # ─────────────────────────────────────────────────────────────────────
+
 
 class TestBackwardCompat:
     """Old-style analyze(rr=...) still works with sensible defaults."""
@@ -54,9 +56,18 @@ class TestBackwardCompat:
     def test_result_keys_complete(self, engine: L6RiskAnalyzer) -> None:
         result = engine.analyze(rr=2.5)
         required_keys = {
-            "risk_status", "propfirm_compliant", "drawdown_level",
-            "risk_multiplier", "lrce", "rolling_sharpe", "kelly_adjusted",
-            "max_risk_pct", "risk_ok", "valid", "warnings", "rr_ratio",
+            "risk_status",
+            "propfirm_compliant",
+            "drawdown_level",
+            "risk_multiplier",
+            "lrce",
+            "rolling_sharpe",
+            "kelly_adjusted",
+            "max_risk_pct",
+            "risk_ok",
+            "valid",
+            "warnings",
+            "rr_ratio",
             "current_drawdown",
         }
         assert required_keys.issubset(result.keys())
@@ -65,6 +76,7 @@ class TestBackwardCompat:
 # ─────────────────────────────────────────────────────────────────────
 # 2. Drawdown Tiers
 # ─────────────────────────────────────────────────────────────────────
+
 
 class TestDrawdownTiers:
     """Drawdown classification and risk multiplier scaling."""
@@ -122,6 +134,7 @@ class TestDrawdownTiers:
 # 3. Volatility Cluster Adjustment
 # ─────────────────────────────────────────────────────────────────────
 
+
 class TestVolatilityCluster:
     def test_extreme_vol(self, engine: L6RiskAnalyzer) -> None:
         result = engine.analyze(account_state={"vol_cluster": "EXTREME"})
@@ -140,6 +153,7 @@ class TestVolatilityCluster:
 # 4. Correlation Exposure Dampener
 # ─────────────────────────────────────────────────────────────────────
 
+
 class TestCorrelationExposure:
     def test_high_correlation_dampens(self, engine: L6RiskAnalyzer) -> None:
         result = engine.analyze(account_state={"corr_exposure": 0.8})
@@ -155,6 +169,7 @@ class TestCorrelationExposure:
 # ─────────────────────────────────────────────────────────────────────
 # 5. LRCE — Lorentzian Risk Compression Estimator
 # ─────────────────────────────────────────────────────────────────────
+
 
 class TestLRCE:
     def test_stable_field(self, engine: L6RiskAnalyzer) -> None:
@@ -215,6 +230,7 @@ class TestLRCE:
 # 6. Prop-Firm Hard Rules
 # ─────────────────────────────────────────────────────────────────────
 
+
 class TestPropFirmRules:
     def test_daily_dd_breach(self, engine: L6RiskAnalyzer) -> None:
         """Daily DD exceeding limit → hard block."""
@@ -243,6 +259,7 @@ class TestPropFirmRules:
 # ─────────────────────────────────────────────────────────────────────
 # 7. Kelly Dampener
 # ─────────────────────────────────────────────────────────────────────
+
 
 class TestKellyDampener:
     def test_no_drawdown_full_kelly(self, engine: L6RiskAnalyzer) -> None:
@@ -275,6 +292,7 @@ class TestKellyDampener:
 # 8. Rolling Sharpe Degradation
 # ─────────────────────────────────────────────────────────────────────
 
+
 class TestRollingSharpe:
     def test_insufficient_data_returns_zero(self, engine: L6RiskAnalyzer) -> None:
         result = engine.analyze(trade_returns=[0.01] * 10)
@@ -295,6 +313,7 @@ class TestRollingSharpe:
 # ─────────────────────────────────────────────────────────────────────
 # 9. Combined Scenarios
 # ─────────────────────────────────────────────────────────────────────
+
 
 class TestCombinedScenarios:
     def test_drawdown_plus_vol_compound(self, engine: L6RiskAnalyzer) -> None:
@@ -329,6 +348,7 @@ class TestCombinedScenarios:
 # ─────────────────────────────────────────────────────────────────────
 # 10. Correlation Engine Integration (when engine available)
 # ─────────────────────────────────────────────────────────────────────
+
 
 class TestCorrelationEngineIntegration:
     """Tests for CorrelationRiskEngine integration (optional enrichment)."""

@@ -10,7 +10,6 @@ This is an ANALYSIS-ONLY module. No execution side-effects.
 from __future__ import annotations
 
 import logging
-
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
@@ -26,6 +25,7 @@ logger = logging.getLogger(__name__)
 # Result dataclass
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class FieldResult:
     """Output of the Quantum Field Engine."""
@@ -34,7 +34,7 @@ class FieldResult:
     energy_score: float = 0.0
     momentum_flux: float = 0.0
     volatility_regime: str = "NORMAL"  # LOW | NORMAL | HIGH | EXTREME
-    field_polarity: str = "NEUTRAL"    # BULLISH | BEARISH | NEUTRAL
+    field_polarity: str = "NEUTRAL"  # BULLISH | BEARISH | NEUTRAL
 
     # Component details
     atr_normalized: float = 0.0
@@ -60,6 +60,7 @@ class FieldResult:
 # Helper pure functions
 # ---------------------------------------------------------------------------
 
+
 def _safe_array(data: Sequence[float], min_len: int = 2) -> np.ndarray | None:
     """Convert to numpy array; return None if too short."""
     arr = np.asarray(data, dtype=np.float64)
@@ -74,8 +75,7 @@ def _normalize(value: float, lo: float, hi: float) -> float:
     return max(0.0, min(1.0, (value - lo) / (hi - lo)))
 
 
-def _compute_atr(highs: np.ndarray, lows: np.ndarray, closes: np.ndarray,
-                 period: int = 14) -> float:
+def _compute_atr(highs: np.ndarray, lows: np.ndarray, closes: np.ndarray, period: int = 14) -> float:
     """Average True Range (Wilder smoothing)."""
     if len(highs) < period + 1:
         return 0.0
@@ -97,7 +97,7 @@ def _compute_velocity(closes: np.ndarray, period: int = 5) -> float:
     """Price velocity = average of per-bar returns over *period*."""
     if len(closes) < period + 1:
         return 0.0
-    returns = np.diff(closes[-period - 1:]) / closes[-period - 1:-1]
+    returns = np.diff(closes[-period - 1 :]) / closes[-period - 1 : -1]
     returns = returns[np.isfinite(returns)]
     return float(np.mean(returns)) if len(returns) > 0 else 0.0
 
@@ -108,7 +108,7 @@ def _compute_acceleration(closes: np.ndarray, period: int = 5) -> float:
         return 0.0
     mid = len(closes) - period
     v_recent = _compute_velocity(closes[mid:], min(period, len(closes) - mid - 1))
-    v_prior = _compute_velocity(closes[:mid + 1], min(period, mid))
+    v_prior = _compute_velocity(closes[: mid + 1], min(period, mid))
     return v_recent - v_prior
 
 
@@ -116,7 +116,7 @@ def _volume_energy(volumes: np.ndarray, period: int = 14) -> float:
     """Relative volume energy: current volume vs moving average."""
     if len(volumes) < period + 1:
         return 0.5
-    ma = float(np.mean(volumes[-period - 1:-1]))
+    ma = float(np.mean(volumes[-period - 1 : -1]))
     if ma <= 0:
         return 0.5
     ratio = float(volumes[-1]) / ma
@@ -144,6 +144,7 @@ def _classify_polarity(velocity: float, threshold: float = 0.0002) -> str:
 # ---------------------------------------------------------------------------
 # Engine
 # ---------------------------------------------------------------------------
+
 
 class QuantumFieldEngine:
     """Quantum Field Engine -- analysis only, no side-effects.

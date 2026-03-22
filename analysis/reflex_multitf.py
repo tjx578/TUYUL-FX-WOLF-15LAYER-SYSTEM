@@ -107,9 +107,7 @@ def aggregate_multitf_rqi(
     if total_weight <= 0:
         return 0.0
 
-    weighted_sum = sum(
-        weights[tf] * rqi_per_tf[tf] for tf in common
-    )
+    weighted_sum = sum(weights[tf] * rqi_per_tf[tf] for tf in common)
     return _clamp01(weighted_sum / total_weight)
 
 
@@ -134,7 +132,10 @@ def compute_multitf_rqi(
         }
     """
     rqi_per_tf = compute_per_tf_rqi(
-        per_tf_detail, delta_t_sec, emotion_delta, sigma_sec,
+        per_tf_detail,
+        delta_t_sec,
+        emotion_delta,
+        sigma_sec,
     )
     rqi_multi = aggregate_multitf_rqi(rqi_per_tf, tf_weights)
 

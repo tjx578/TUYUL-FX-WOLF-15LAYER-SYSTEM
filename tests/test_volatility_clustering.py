@@ -106,8 +106,12 @@ class TestVolatilityClusteringModel:
         model = VolatilityClusteringModel()
         d = model.analyze(_garch_returns(100)).to_dict()
         expected_keys = {
-            "clustering_detected", "vol_persistence", "risk_multiplier",
-            "per_lag_autocorrelation", "ljung_box_proxy", "sample_size",
+            "clustering_detected",
+            "vol_persistence",
+            "risk_multiplier",
+            "per_lag_autocorrelation",
+            "ljung_box_proxy",
+            "sample_size",
         }
         assert expected_keys <= set(d.keys())
 

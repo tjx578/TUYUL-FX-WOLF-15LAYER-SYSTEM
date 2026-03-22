@@ -130,9 +130,7 @@ class TestLoadCandleHistory:
             context_bus=fresh_bus,
         )
 
-        assert hasattr(consumer, "load_candle_history"), (
-            "RedisConsumer must expose load_candle_history method"
-        )
+        assert hasattr(consumer, "load_candle_history"), "RedisConsumer must expose load_candle_history method"
         assert inspect.iscoroutinefunction(consumer.load_candle_history), (
             "load_candle_history must be an async coroutine"
         )
@@ -168,9 +166,7 @@ class TestLoadCandleHistory:
         assert fresh_bus.get_warmup_bar_count("GBPUSD", "H1") == 18
 
     @pytest.mark.asyncio
-    async def test_partial_timeframe_failure_does_not_abort_others(
-        self, fresh_bus: LiveContextBus
-    ) -> None:
+    async def test_partial_timeframe_failure_does_not_abort_others(self, fresh_bus: LiveContextBus) -> None:
         """If one timeframe key raises, remaining timeframes still load."""
         symbols = ["EURUSD"]
         h4_candles = [_make_candle("EURUSD", "H4", i) for i in range(12)]
@@ -254,9 +250,7 @@ class TestLoadCandleHistory:
         assert second_count == first_count == 10
 
     @pytest.mark.asyncio
-    async def test_warmup_gate_fails_when_below_minimum(
-        self, fresh_bus: LiveContextBus
-    ) -> None:
+    async def test_warmup_gate_fails_when_below_minimum(self, fresh_bus: LiveContextBus) -> None:
         """check_warmup returns ready=False when loaded bars < required minimum."""
         symbols = ["EURUSD"]
         tf_data = {

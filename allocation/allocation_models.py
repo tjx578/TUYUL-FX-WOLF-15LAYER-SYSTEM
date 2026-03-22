@@ -1,9 +1,10 @@
 """
 Allocation Models — Pydantic schemas for allocation domain.
 """
+
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Any
 
@@ -39,7 +40,7 @@ class AllocationRequest(BaseModel):
     operator: str = Field(default="system", description="Operator identity")
     action: str = Field(default="TAKE", description="TAKE or PREVIEW")
     risk_percent: float = Field(1.0, gt=0, le=5.0, description="Risk % per account")
-    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
     model_config = ConfigDict(frozen=False)
 
@@ -51,7 +52,7 @@ class AllocationResult(BaseModel):
     account_results: list[AccountAllocationResult] = Field(default_factory=list)
     approved_count: int = 0
     rejected_count: int = 0
-    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
     model_config = ConfigDict(frozen=False)
 

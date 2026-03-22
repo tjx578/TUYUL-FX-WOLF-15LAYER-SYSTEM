@@ -39,8 +39,8 @@ class WalkForwardResult:
 
     avg_win_rate: float
     avg_profit_factor: float
-    stability_score: float         # 0.0 = chaotic, 1.0 = perfectly stable
-    regime_consistency: float      # 0.0 = regime-sensitive, 1.0 = regime-robust
+    stability_score: float  # 0.0 = chaotic, 1.0 = perfectly stable
+    regime_consistency: float  # 0.0 = regime-sensitive, 1.0 = regime-robust
     window_count: int
     per_window_win_rates: tuple[float, ...]
     per_window_profit_factors: tuple[float, ...]
@@ -120,8 +120,7 @@ class WalkForwardValidator:
         min_for_one_window = self._train_size + self._test_size
         if len(returns) < min_for_one_window:
             raise ValueError(
-                f"Insufficient data for walk-forward validation: "
-                f"need ≥ {min_for_one_window}, got {len(returns)}"
+                f"Insufficient data for walk-forward validation: need ≥ {min_for_one_window}, got {len(returns)}"
             )
 
         arr = np.asarray(returns, dtype=np.float64)

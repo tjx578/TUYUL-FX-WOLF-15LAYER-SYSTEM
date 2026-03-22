@@ -48,7 +48,7 @@ class PubSubSubscriber:
             backoff_config or BackoffConfig(initial=1.0, maximum=15.0),
         )
         self._running = False
-        self._pubsub: aioredis.client.PubSub | None = None # pyright: ignore[reportAttributeAccessIssue]
+        self._pubsub: aioredis.client.PubSub | None = None  # pyright: ignore[reportAttributeAccessIssue]
 
     async def start(self) -> None:
         """Start listening. Reconnects with exponential backoff."""
@@ -60,7 +60,7 @@ class PubSubSubscriber:
                     self._redis = await get_client()
 
                 self._pubsub = self._redis.pubsub()
-                await self._pubsub.subscribe(*self._channels.keys()) # pyright: ignore[reportOptionalMemberAccess]
+                await self._pubsub.subscribe(*self._channels.keys())  # pyright: ignore[reportOptionalMemberAccess]
 
                 logger.info(
                     "PubSub subscribed (EPHEMERAL ONLY): channels=%s",
@@ -68,7 +68,7 @@ class PubSubSubscriber:
                 )
                 self._backoff.reset()
 
-                async for message in self._pubsub.listen(): # pyright: ignore[reportOptionalMemberAccess]
+                async for message in self._pubsub.listen():  # pyright: ignore[reportOptionalMemberAccess]
                     if not self._running:
                         break
                     if message["type"] != "message":
@@ -84,7 +84,8 @@ class PubSubSubscriber:
                             await callback(message)
                         except Exception:
                             logger.exception(
-                                "PubSub callback error: channel=%s", channel,
+                                "PubSub callback error: channel=%s",
+                                channel,
                             )
 
             except asyncio.CancelledError:
@@ -95,7 +96,8 @@ class PubSubSubscriber:
                 delay = self._backoff.next_delay()
                 logger.warning(
                     "PubSub lost. Reconnecting in %.2fs (attempt #%d)",
-                    delay, self._backoff.attempt,
+                    delay,
+                    self._backoff.attempt,
                 )
                 self._redis = None
                 await asyncio.sleep(delay)

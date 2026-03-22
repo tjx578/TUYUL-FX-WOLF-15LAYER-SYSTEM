@@ -5,13 +5,14 @@ GET  /api/v1/execution/queue    → queue depth stats
 GET  /api/v1/execution/{request_id} → execution result by request ID
 POST /api/v1/execution/cancel   → cancel a pending order
 """
+
 from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
+from execution.broker_executor import BrokerExecutor
 from execution.ea_manager import EAManager
-from execution.broker_executor import BrokerExecutor, ExecutionRequest, OrderAction
 
 router = APIRouter(prefix="/api/v1/execution", tags=["execution"])
 

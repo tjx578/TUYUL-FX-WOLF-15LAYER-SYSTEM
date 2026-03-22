@@ -147,9 +147,9 @@ class TestContextContract:
             return
         data = resp.json()
         staleness = data.get("feed_staleness_seconds")
-        assert staleness is None or (
-            isinstance(staleness, int | float) and math.isfinite(staleness)
-        ), f"feed_staleness_seconds must be null or finite, got {staleness!r}"
+        assert staleness is None or (isinstance(staleness, int | float) and math.isfinite(staleness)), (
+            f"feed_staleness_seconds must be null or finite, got {staleness!r}"
+        )
 
 
 # ── /api/v1/verdict/all ────────────────────────────────────────────────────────
@@ -195,9 +195,9 @@ class TestVerdictAllContract:
         if not items:
             pytest.skip("No verdicts")
         for item in items[:5]:
-            assert isinstance(
-                item["confidence"], int | float
-            ), f"confidence must be numeric, got {type(item['confidence'])}"
+            assert isinstance(item["confidence"], int | float), (
+                f"confidence must be numeric, got {type(item['confidence'])}"
+            )
 
     def test_verdict_string_values(self, client: Any) -> None:
         valid_verdicts = {

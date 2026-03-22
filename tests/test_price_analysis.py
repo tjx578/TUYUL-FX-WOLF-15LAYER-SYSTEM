@@ -13,7 +13,6 @@ import pytest
 from analysis.price_analysis import (
     CandleData,
     PriceAnalysisConfig,
-    WickAnalysisResult,
     analyze_wicks,
     compute_zscore,
     distance_from_mean,
@@ -21,8 +20,8 @@ from analysis.price_analysis import (
     is_impulse,
 )
 
-
 # ─── CandleData Validation ───────────────────────────────────
+
 
 class TestCandleDataValidation:
     def test_valid_bullish_candle(self) -> None:
@@ -58,6 +57,7 @@ class TestCandleDataValidation:
 
 
 # ─── CandleData Wick Properties (the bug fix) ────────────────
+
 
 class TestCandleWicks:
     """
@@ -144,6 +144,7 @@ class TestCandleWicks:
 
 # ─── Distance from Mean (ZeroDivisionError fix) ──────────────
 
+
 class TestDistanceFromMean:
     def test_normal_positive_mean(self) -> None:
         # 1.05 is 5% above 1.0
@@ -203,6 +204,7 @@ class TestIsExtremeDistance:
 
 # ─── Impulse Detection ───────────────────────────────────────
 
+
 class TestZScore:
     def test_normal_zscore(self) -> None:
         values = [10.0, 10.5, 9.8, 10.2, 10.1, 9.9, 10.3]
@@ -259,6 +261,7 @@ class TestImpulse:
 
 
 # ─── Wick Analysis (integration) ─────────────────────────────
+
 
 class TestWickAnalysis:
     def _make_candles(self) -> list[CandleData]:
@@ -334,6 +337,7 @@ class TestWickAnalysis:
 
 
 # ─── Config Validation ────────────────────────────────────────
+
 
 class TestPriceAnalysisConfig:
     def test_default_config(self) -> None:

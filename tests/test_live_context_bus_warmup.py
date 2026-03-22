@@ -12,6 +12,7 @@ from context.live_context_bus import LiveContextBus
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _fresh_bus() -> LiveContextBus:
     """Return a LiveContextBus with a clean internal state.
 
@@ -31,6 +32,7 @@ def _fill(bus: LiveContextBus, symbol: str, tf: str, count: int) -> None:
 # ---------------------------------------------------------------------------
 # Schema shape tests
 # ---------------------------------------------------------------------------
+
 
 class TestCheckWarmupSchema:
     """check_warmup must always return all top-level keys."""
@@ -64,6 +66,7 @@ class TestCheckWarmupSchema:
 # Ready / not-ready logic
 # ---------------------------------------------------------------------------
 
+
 class TestCheckWarmupReadiness:
     def test_ready_when_all_tfs_met(self):
         bus = _fresh_bus()
@@ -77,7 +80,7 @@ class TestCheckWarmupReadiness:
     def test_not_ready_when_one_tf_short(self):
         bus = _fresh_bus()
         _fill(bus, "GBPUSD", "H4", 200)
-        _fill(bus, "GBPUSD", "H1", 300)   # needs 500
+        _fill(bus, "GBPUSD", "H1", 300)  # needs 500
         result = bus.check_warmup("GBPUSD", {"H4": 200, "H1": 500})
 
         assert result["ready"] is False
@@ -106,6 +109,7 @@ class TestCheckWarmupReadiness:
 # ---------------------------------------------------------------------------
 # bars / required / missing / details values
 # ---------------------------------------------------------------------------
+
 
 class TestCheckWarmupValues:
     def test_bars_map_reflects_actual_count(self):
@@ -150,6 +154,7 @@ class TestCheckWarmupValues:
 # ---------------------------------------------------------------------------
 # Backward-compat: 'details' key still present
 # ---------------------------------------------------------------------------
+
 
 class TestCheckWarmupDetailsBackwardCompat:
     def test_details_present_and_correct_when_ready(self):

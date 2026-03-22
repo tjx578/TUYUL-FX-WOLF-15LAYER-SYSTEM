@@ -13,12 +13,12 @@ import json
 import secrets
 import time
 from dataclasses import asdict, dataclass, field
-from enum import Enum
+from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
 
-class KeyStatus(str, Enum):
+class KeyStatus(StrEnum):
     ACTIVE = "active"
     ROTATING = "rotating"
     REVOKED = "revoked"

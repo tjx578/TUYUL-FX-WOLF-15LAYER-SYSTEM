@@ -53,17 +53,11 @@ class HtmlFallbackDisabledError(NewsSubsystemError):
     """Raised when HTML fallback is requested but not enabled via config."""
 
     def __init__(self) -> None:
-        super().__init__(
-            "HTML fallback is disabled. "
-            "Set NEWS_FF_HTML_FALLBACK_ENABLED=true to enable."
-        )
+        super().__init__("HTML fallback is disabled. Set NEWS_FF_HTML_FALLBACK_ENABLED=true to enable.")
 
 
 class NoProvidersConfiguredError(NewsSubsystemError):
     """Raised when NEWS_PROVIDER=off or no provider chain is configured."""
 
     def __init__(self) -> None:
-        super().__init__(
-            "No news providers configured. "
-            "Set NEWS_PROVIDER=forexfactory or NEWS_PROVIDER=finnhub."
-        )
+        super().__init__("No news providers configured. Set NEWS_PROVIDER=forexfactory or NEWS_PROVIDER=finnhub.")

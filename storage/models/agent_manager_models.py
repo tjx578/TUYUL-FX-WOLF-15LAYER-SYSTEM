@@ -202,12 +202,8 @@ class EAAgent(Base):
     runtime: Mapped[EAAgentRuntime | None] = relationship(
         back_populates="agent", cascade="all, delete-orphan", uselist=False
     )
-    events: Mapped[list[EAAgentEvent]] = relationship(
-        back_populates="agent", cascade="all, delete-orphan"
-    )
-    audit_logs: Mapped[list[EAAgentAuditLog]] = relationship(
-        back_populates="agent", cascade="all, delete-orphan"
-    )
+    events: Mapped[list[EAAgentEvent]] = relationship(back_populates="agent", cascade="all, delete-orphan")
+    audit_logs: Mapped[list[EAAgentAuditLog]] = relationship(back_populates="agent", cascade="all, delete-orphan")
     portfolio_snapshots: Mapped[list[AccountPortfolioSnapshot]] = relationship(
         back_populates="agent", cascade="all, delete-orphan"
     )

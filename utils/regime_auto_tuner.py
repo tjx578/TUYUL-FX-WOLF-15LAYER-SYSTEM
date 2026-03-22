@@ -7,6 +7,7 @@ import numpy as np
 
 THRESHOLDS_PATH = Path(__file__).parent.parent / "config" / "thresholds.py"
 
+
 class RegimeAutoTuner:
     def __init__(self, window_size=500, update_interval=3600):
         self.window_size = window_size
@@ -20,7 +21,7 @@ class RegimeAutoTuner:
         with self.lock:
             self.vr_values.append(vr)
             if len(self.vr_values) > self.window_size:
-                self.vr_values = self.vr_values[-self.window_size:]
+                self.vr_values = self.vr_values[-self.window_size :]
 
     def start(self):
         if not self._running:
@@ -49,13 +50,13 @@ class RegimeAutoTuner:
 
     def _write_thresholds(self, sigma, k, clamp):
         # For safety, write to a JSON file (not overwrite .py directly)
-        out_path = Path(THRESHOLDS_PATH).with_suffix('.auto.json')
+        out_path = Path(THRESHOLDS_PATH).with_suffix(".auto.json")
         data = {
             "sigma_VR": sigma,
             "k": k,
             "clamp": clamp,
             "timestamp": time.time(),
         }
-        with open(out_path, 'w') as f:
+        with open(out_path, "w") as f:
             json.dump(data, f, indent=2)
         print(f"[RegimeAutoTuner] Updated: {data}")

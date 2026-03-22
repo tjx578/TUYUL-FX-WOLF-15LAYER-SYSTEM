@@ -5,6 +5,7 @@ from typing import Any, Literal
 @dataclass
 class DivergenceInput:
     """Validated input for divergence analysis."""
+
     osc: dict[str, list[float]]
     price: dict[str, list[float]]
     mode: Literal["bullish", "bearish"]
@@ -95,8 +96,10 @@ class ExhaustionDivergenceFusionEngine:
         for tf, weight in self.tf_weights.items():
             try:
                 dvg_present = self._check_divergence(
-                    osc[tf][-2], osc[tf][-1],
-                    price[tf][-2], price[tf][-1],
+                    osc[tf][-2],
+                    osc[tf][-1],
+                    price[tf][-2],
+                    price[tf][-1],
                     mode,
                 )
 
@@ -161,8 +164,10 @@ class ExhaustionDivergenceFusionEngine:
             osc_lower = curr_osc < prev_osc
             return price_higher and osc_lower
 
+
 async def fetch_price_data(symbol: str) -> dict[str, Any]:
     raise NotImplementedError
+
 
 async def fetch_rsi_data(symbol: str) -> dict[str, Any]:
     raise NotImplementedError

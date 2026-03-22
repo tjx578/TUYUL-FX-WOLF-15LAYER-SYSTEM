@@ -287,7 +287,6 @@ class TestDrawdownPersistence:
         assert meta["source"] == "postgres"
 
 
-
 # ──────────────────────────────────────────────────────────────────
 #  Circuit breaker state round-trip
 # ──────────────────────────────────────────────────────────────────

@@ -30,6 +30,7 @@ from constitution.signal_expiry import (
 #  assign_expiry
 # ──────────────────────────────────────────────────────────────────
 
+
 class TestAssignExpiry:
     def test_attaches_expires_at(self):
         signal = {"signal_id": "SIG-001"}
@@ -60,6 +61,7 @@ class TestAssignExpiry:
 # ──────────────────────────────────────────────────────────────────
 #  is_signal_valid
 # ──────────────────────────────────────────────────────────────────
+
 
 class TestIsSignalValid:
     def test_rejects_missing_expiry(self):
@@ -97,13 +99,13 @@ class TestIsSignalValid:
             signal = {"signal_id": "SIG-URGENT", "expires_at": time.time() + 5}
             valid, _ = is_signal_valid(signal)
             assert valid is True
-        assert any("urgent" in r.message.lower() or "expires" in r.message.lower()
-                    for r in caplog.records)
+        assert any("urgent" in r.message.lower() or "expires" in r.message.lower() for r in caplog.records)
 
 
 # ──────────────────────────────────────────────────────────────────
 #  Round-trip: assign → validate
 # ──────────────────────────────────────────────────────────────────
+
 
 class TestRoundTrip:
     def test_freshly_assigned_signal_is_valid(self):
@@ -121,6 +123,7 @@ class TestRoundTrip:
 # ──────────────────────────────────────────────────────────────────
 #  Edge cases
 # ──────────────────────────────────────────────────────────────────
+
 
 class TestEdgeCases:
     def test_exact_expiry_boundary(self):

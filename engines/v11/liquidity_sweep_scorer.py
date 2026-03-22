@@ -182,8 +182,8 @@ class LiquiditySweepScorer:
         lookback = min(self.lookback_period, len(candles))
 
         # -- equal-level detection -------------------------------------------
-        recent_lows = lows[-lookback :]
-        recent_highs = highs[-lookback :]
+        recent_lows = lows[-lookback:]
+        recent_highs = highs[-lookback:]
 
         equal_level = False
         if direction == "bullish":
@@ -214,10 +214,10 @@ class LiquiditySweepScorer:
         # -- failed to close beyond level ------------------------------------
         failed_to_close = False
         if direction == "bullish" and len(lows) >= 2:
-            prev_low = float(np.min(lows[-lookback : -1]))
+            prev_low = float(np.min(lows[-lookback:-1]))
             failed_to_close = l < prev_low and c > prev_low
         elif direction == "bearish" and len(highs) >= 2:
-            prev_high = float(np.max(highs[-lookback : -1]))
+            prev_high = float(np.max(highs[-lookback:-1]))
             failed_to_close = h > prev_high and c < prev_high
 
         # -- multi-bar pattern -----------------------------------------------
@@ -329,12 +329,8 @@ class LiquiditySweepScorer:
             )
 
         # Identify equal highs / equal lows clusters
-        equal_highs = self._find_equal_levels(
-            [p for _, p in swing_highs], "equal_highs"
-        )
-        equal_lows = self._find_equal_levels(
-            [p for _, p in swing_lows], "equal_lows"
-        )
+        equal_highs = self._find_equal_levels([p for _, p in swing_highs], "equal_highs")
+        equal_lows = self._find_equal_levels([p for _, p in swing_lows], "equal_lows")
         levels.extend(equal_highs)
         levels.extend(equal_lows)
 
@@ -382,21 +378,15 @@ class LiquiditySweepScorer:
             return SweepResult(details={"reason": "no_levels_found"})
 
         # Check recent bars for sweep pattern
-        bullish_sweep = self._check_bullish_sweep(
-            highs, lows, closes, levels, pip_size
-        )
-        bearish_sweep = self._check_bearish_sweep(
-            highs, lows, closes, levels, pip_size
-        )
+        bullish_sweep = self._check_bullish_sweep(highs, lows, closes, levels, pip_size)
+        bearish_sweep = self._check_bearish_sweep(highs, lows, closes, levels, pip_size)
 
         # Return the stronger sweep if both detected
         if bullish_sweep.score >= bearish_sweep.score:
             return bullish_sweep
         return bearish_sweep
 
-    def _find_swing_points(
-        self, prices: np.ndarray, is_high: bool
-    ) -> list[tuple[int, float]]:
+    def _find_swing_points(self, prices: np.ndarray, is_high: bool) -> list[tuple[int, float]]:
         """Find swing highs or lows in price data."""
         swings: list[tuple[int, float]] = []
         if len(prices) < 5:
@@ -422,9 +412,7 @@ class LiquiditySweepScorer:
 
         return swings
 
-    def _find_equal_levels(
-        self, prices: list[float], level_type: str
-    ) -> list[LiquidityLevel]:
+    def _find_equal_levels(self, prices: list[float], level_type: str) -> list[LiquidityLevel]:
         """Find clusters of equal highs or equal lows."""
         if len(prices) < 2:
             return []
@@ -498,9 +486,7 @@ class LiquiditySweepScorer:
     ) -> SweepResult:
         """Check for bullish sweep (sweep below lows then reclaim)."""
         result = SweepResult()
-        low_levels = [
-            lv for lv in levels if lv.level_type in ("low", "equal_lows")
-        ]
+        low_levels = [lv for lv in levels if lv.level_type in ("low", "equal_lows")]
 
         if not low_levels:
             return result
@@ -520,9 +506,7 @@ class LiquiditySweepScorer:
 
         # Calculate score
         avg_strength = sum(lv.strength for lv in swept) / len(swept)
-        sweep_depth = max(
-            (lv.price - recent_low) / pip_size for lv in swept
-        )
+        sweep_depth = max((lv.price - recent_low) / pip_size for lv in swept)
         reclaim_ratio = (recent_close - recent_low) / max(
             float(np.max(highs[-self.max_reclaim_bars :]) - recent_low), pip_size
         )
@@ -564,9 +548,7 @@ class LiquiditySweepScorer:
     ) -> SweepResult:
         """Check for bearish sweep (sweep above highs then reclaim)."""
         result = SweepResult()
-        high_levels = [
-            lv for lv in levels if lv.level_type in ("high", "equal_highs")
-        ]
+        high_levels = [lv for lv in levels if lv.level_type in ("high", "equal_highs")]
 
         if not high_levels:
             return result
@@ -586,9 +568,7 @@ class LiquiditySweepScorer:
 
         # Calculate score
         avg_strength = sum(lv.strength for lv in swept) / len(swept)
-        sweep_depth = max(
-            (recent_high - lv.price) / pip_size for lv in swept
-        )
+        sweep_depth = max((recent_high - lv.price) / pip_size for lv in swept)
         reclaim_ratio = (recent_high - recent_close) / max(
             float(recent_high - np.min(lows[-self.max_reclaim_bars :])), pip_size
         )

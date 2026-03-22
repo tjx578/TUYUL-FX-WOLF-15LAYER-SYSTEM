@@ -3,6 +3,7 @@ Redis Smoke Check — Python version (portable, no bash required).
 Zone: infrastructure diagnostic — no authority boundary impact.
 Run: python scripts/redis_smoke_check.py
 """
+
 import os
 import sys
 from urllib.parse import urlparse, urlunparse
@@ -32,14 +33,16 @@ def _alt_url(redis_url: str, alt_db: int) -> str:
     """Build alternate Redis URL with different DB index using urlunparse (safe for numeric hostnames/ports)."""
     parsed = urlparse(redis_url)
     alt_path = f"/{alt_db}"
-    return urlunparse((
-        parsed.scheme,
-        parsed.netloc,
-        alt_path,
-        parsed.params,
-        parsed.query,
-        parsed.fragment,
-    ))
+    return urlunparse(
+        (
+            parsed.scheme,
+            parsed.netloc,
+            alt_path,
+            parsed.params,
+            parsed.query,
+            parsed.fragment,
+        )
+    )
 
 
 def main():

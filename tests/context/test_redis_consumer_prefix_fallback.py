@@ -22,9 +22,7 @@ from context.redis_consumer import (
     get_candle_prefixes as _get_candle_prefixes_raw,  # type: ignore
 )
 
-_get_candle_prefixes_raw_typed: Callable[[], list[str]] = cast(
-    Callable[[], list[str]], _get_candle_prefixes_raw
-)
+_get_candle_prefixes_raw_typed: Callable[[], list[str]] = cast(Callable[[], list[str]], _get_candle_prefixes_raw)
 get_candle_prefixes = _get_candle_prefixes_raw_typed
 
 pytestmark = pytest.mark.anyio
@@ -35,6 +33,7 @@ _ENV_KEY = "CANDLE_HISTORY_KEY_PREFIXES"
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _make_candle(symbol: str, timeframe: str, close: float) -> bytes:
     return orjson.dumps({"symbol": symbol, "timeframe": timeframe, "close": close})
@@ -67,6 +66,7 @@ def clean_env():
 # ---------------------------------------------------------------------------
 # Unit: _get_candle_prefixes()
 # ---------------------------------------------------------------------------
+
 
 def test_default_prefixes_when_env_not_set() -> None:
     """get_candle_prefixes returns module defaults when env var absent."""
@@ -112,6 +112,7 @@ def test_env_trailing_commas_are_ignored() -> None:
 # DB index mismatch simulation
 # ---------------------------------------------------------------------------
 
+
 async def test_db_mismatch_scenario_no_data() -> None:
     """Simulates DB mismatch: writer uses one prefix, reader uses another → 0 bars.
 
@@ -147,6 +148,7 @@ async def test_db_mismatch_fixed_via_env() -> None:
 
 # --- additional unit tests ---
 
+
 def test_env_ignores_empty_tokens_between_commas() -> None:
     """Empty tokens are removed while preserving non-empty order."""
     os.environ[_ENV_KEY] = "primary:candles, ,secondary:candles,,legacy:candles"
@@ -164,6 +166,7 @@ def test_env_only_commas_falls_back_to_defaults() -> None:
 
 
 # --- additional integration tests ---
+
 
 async def test_env_prefixes_are_stripped_before_lookup() -> None:
     """Leading/trailing spaces in env prefixes are stripped for Redis key lookup."""

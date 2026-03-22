@@ -6,8 +6,8 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from api.accounts_router import router as accounts_router
-from api.middleware.auth import verify_token
 from api.config_profile_router import router as config_profile_router
+from api.middleware.auth import verify_token
 from api.signals_router import router as signals_router
 from api.ws_routes import router as ws_router
 from config.profile_engine import ConfigProfileEngine
@@ -93,7 +93,7 @@ def test_ws_live_feed_endpoint_snapshot() -> None:
     app = _build_app()
     client = TestClient(app)
 
-    with patch("api.ws_routes.ws_auth_guard", new=AsyncMock(return_value={"sub": "test-user"})):
+    with patch("api.ws_routes.ws_auth_guard", new=AsyncMock(return_value={"sub": "test-user"})):  # noqa: SIM117
         with client.websocket_connect("/ws/live?token=dummy") as ws:
             message = ws.receive_json()
             assert message["event_type"] == "live.snapshot"

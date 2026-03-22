@@ -95,9 +95,7 @@ class TestInvalidTransitions:
     def test_trade_closed_to_trade_open_invalid(self):
         """TRADE_CLOSED -> TRADE_OPEN should fail (no reopening)."""
         with pytest.raises(InvalidTransitionError):
-            validate_transition(
-                TradeState.TRADE_CLOSED, TradeState.TRADE_OPEN
-            )
+            validate_transition(TradeState.TRADE_CLOSED, TradeState.TRADE_OPEN)
             validate_transition(TradeState.TRADE_CLOSED, TradeState.TRADE_OPEN)
 
     def test_signal_created_to_trade_closed_invalid(self):
@@ -116,7 +114,7 @@ class TestTransitionMap:
 
     def test_transitions_are_sets(self):
         """All transition values should be sets."""
-        for state, allowed in VALID_TRANSITIONS.items():
+        for _state, allowed in VALID_TRANSITIONS.items():
             assert isinstance(allowed, set)
 
     def test_no_self_transitions(self):

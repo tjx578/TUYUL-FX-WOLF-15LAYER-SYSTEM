@@ -132,8 +132,7 @@ def run() -> None:
             )
         else:
             logger.info(
-                "wolf15-worker montecarlo PASSED: "
-                "portfolio_win_prob={:.4f} >= monte_min={:.2f}, pairs={}, artifact={}",
+                "wolf15-worker montecarlo PASSED: portfolio_win_prob={:.4f} >= monte_min={:.2f}, pairs={}, artifact={}",
                 result.portfolio_win_probability,
                 monte_min,
                 len(return_matrix),

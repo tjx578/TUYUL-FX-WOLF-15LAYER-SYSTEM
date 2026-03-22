@@ -157,7 +157,7 @@ def _ingest_readiness() -> bool:
         ws_age = time() - _producer_last_heartbeat_ts
         if ws_age <= _WS_CONNECT_GRACE_SEC:
             logger.debug(
-                "[Readiness] WS fresh (age=%.1fs) — grace window active, " "menunggu tick pertama masuk",
+                "[Readiness] WS fresh (age=%.1fs) — grace window active, menunggu tick pertama masuk",
                 ws_age,
             )
             return True
@@ -841,8 +841,8 @@ async def run_ingest_services(has_api_key: bool) -> None:
         )
 
         # ── Zone A: micro candle chain (tick → M1 → M5 → M15) ────────────────
-        from ingest.micro_candle_chain import MicroCandleChain
         from ingest.forming_bar_publisher import FormingBarPublisher
+        from ingest.micro_candle_chain import MicroCandleChain
 
         micro_chain = MicroCandleChain(redis)
         micro_chain.init_symbols(enabled_symbols)

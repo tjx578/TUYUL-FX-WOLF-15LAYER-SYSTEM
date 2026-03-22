@@ -88,9 +88,11 @@ def test_one_signal_three_accounts_two_execute_one_reject() -> None:
 
     service = AllocationService()
     service._repo = repo
-    service._registry = _MemoryRegistry(signal)
-    service._audit = _NoopAudit()
-    service._push_execution_plan = lambda request, signal_raw, account_id, lot_size: pushed.append((account_id, lot_size))
+    service._registry = _MemoryRegistry(signal)  # type: ignore[assignment]
+    service._audit = _NoopAudit()  # type: ignore[assignment]
+    service._push_execution_plan = lambda request, signal_raw, account_id, lot_size: pushed.append(
+        (account_id, lot_size)
+    )
 
     req = AllocationRequest(
         request_id="req-001",

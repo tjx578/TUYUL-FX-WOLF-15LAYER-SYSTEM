@@ -2,9 +2,7 @@
 Tests for config.constants module
 """
 
-import pytest
-
-from config.constants import get_threshold, get_all_thresholds, CONSTITUTION_THRESHOLDS
+from config.constants import CONSTITUTION_THRESHOLDS, get_all_thresholds, get_threshold
 
 
 def test_get_threshold_top_level():
