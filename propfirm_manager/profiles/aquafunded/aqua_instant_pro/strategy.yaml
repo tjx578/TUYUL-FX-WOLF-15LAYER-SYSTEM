@@ -1,0 +1,119 @@
+# Aqua Instant Pro — Machine-Readable Strategy Configuration
+# Version: 1.0
+# Profile: aqua_instant_pro
+# Zone: propfirm_manager — strategy constraints consumed by risk manager
+
+strategy:
+  profile: aqua_instant_pro
+  version: "1.0"
+  description: >
+    Production strategy configuration for Aqua Funded Instant Pro accounts.
+    Hard rules are enforced by AquaInstantProGuard; soft rules are surfaced
+    as advisory warnings and compliance scoring.
+
+# ---------------------------------------------------------------------------
+# Account Constraints (from AquaFunded Instant Pro terms)
+# ---------------------------------------------------------------------------
+account_constraints:
+  trailing_drawdown_percent: 4.0          # Trailing equity drawdown limit
+  kill_switch_floating_loss_percent: 2.0  # Floating loss % of initial balance → permanent account closure
+  payout_min_profit_day_percent: 0.5      # Min profit per day (% of initial balance) to count as profitable day
+  payout_min_profitable_days: 5           # Min number of qualifying profitable days before payout request
+  payout_best_day_max_percent_of_total: 20.0  # Best profit day must be < 20% of total profit for the period
+  profit_split_percent: 80.0              # Trader's share of profit
+  leverage_forex_max: 100                 # Max forex leverage (1:100)
+
+# ---------------------------------------------------------------------------
+# Risk Management
+# ---------------------------------------------------------------------------
+risk_management:
+  risk_per_trade_percent: 0.4             # Operational risk cap per trade
+  min_risk_per_trade_percent: 0.25        # Minimum sensible risk per trade
+  max_total_open_risk_percent: 0.8        # Max combined open risk across all positions
+  max_primary_positions: 2               # Max simultaneous primary positions
+  max_correlated_positions: 2            # Max positions across correlated pairs
+  max_same_direction_correlated_positions: 1  # Max same-direction positions in correlated pairs
+  stop_loss_required: true               # Every trade must have a stop-loss
+  catastrophic_stop_required: true       # Catastrophic (emergency) stop also required
+  stop_loss_method: technical_or_atr     # Stop placement: logical technical level or ATR-based
+  atr_stop_multiple: 1.5                 # ATR multiplier for stop placement
+  move_to_breakeven_after_rr: 1.0        # Move SL to breakeven after RR reaches this level
+  partial_tp_enabled: true               # Allow partial take-profit scaling
+  first_target_rr: 2.0                   # First TP at RR 1:2
+  second_target_rr: 3.0                  # Second TP at RR 1:3 (or trailing stop)
+  internal_drawdown_warning_threshold_percent: 1.0  # Warn when account drawdown exceeds this
+  hard_weekly_loss_limit_percent: 2.0    # Hard weekly loss cap (stop trading for the week)
+  max_consecutive_losses_per_day: 2      # Stop trading today after this many consecutive losses
+
+# ---------------------------------------------------------------------------
+# Profit Distribution & Consistency
+# ---------------------------------------------------------------------------
+profit_distribution:
+  daily_target_min_percent: 0.5          # Minimum daily profit target
+  daily_target_max_percent: 1.0          # Maximum daily profit target (stop after this)
+  daily_stop_min_percent: 0.5            # Minimum daily loss to trigger daily stop
+  daily_stop_max_percent: 0.8            # Maximum daily loss before mandatory stop
+  consistency_best_day_limit_percent: 20.0  # Best day must stay below this % of total profit
+
+# ---------------------------------------------------------------------------
+# Market Filters
+# ---------------------------------------------------------------------------
+market_filters:
+  allowed_symbols:
+    - EURUSD
+    - GBPUSD
+  sessions:
+    timezone: Asia/Jakarta
+    windows:
+      - name: london
+        start: "14:00"
+        end: "18:00"
+      - name: new_york
+        start: "20:00"
+        end: "23:00"
+  news_filter:
+    enabled: true
+    blackout_minutes_before: 30
+    blackout_minutes_after: 30
+
+# ---------------------------------------------------------------------------
+# Entry Model
+# ---------------------------------------------------------------------------
+entry_model:
+  primary_model: trend_pullback           # Preferred entry: follow trend, enter on pullbacks
+  higher_timeframe_bias: H4              # Bias determined on H4
+  execution_timeframe: H1               # Entry confirmed and executed on H1
+  confirmation_signals:
+    - candlestick                        # Candlestick pattern confirmation
+    - rsi_14                             # RSI(14) momentum filter
+    - macd                               # MACD confluence
+  breakout_entry_preferred: false        # Avoid pure breakout entries
+  breakout_retest_valid: true            # Breakout-retest variant is valid when supported
+  mean_reversion_allowed: range_only     # Mean reversion only in confirmed range conditions
+
+# ---------------------------------------------------------------------------
+# Trade Management
+# ---------------------------------------------------------------------------
+trade_management:
+  split_entries_max: 2                   # Maximum split entries per setup
+  add_to_loser: false                    # Never add to a losing position
+  martingale: false                      # Martingale strictly prohibited
+  hedge: false                           # Hedging not used in this strategy
+
+# ---------------------------------------------------------------------------
+# Discipline Rules
+# ---------------------------------------------------------------------------
+discipline:
+  stop_after_daily_target_hit: true      # Close trading session once daily target is reached
+  stop_after_consecutive_losses: 2       # Stop trading today after 2 consecutive losses
+  journaling_required: true              # All trades must be journaled
+  weekly_review_required: true           # Weekly performance review is mandatory
+
+# ---------------------------------------------------------------------------
+# Advisory Thresholds (soft warnings for approaching hard limits)
+# ---------------------------------------------------------------------------
+advisory_thresholds:
+  kill_switch_proximity_warning_percent: 1.5  # Warn when floating loss reaches this % of initial balance
+  weekly_loss_warning_percent: 1.5            # Warn when weekly loss reaches this %
+  trailing_dd_warning_percent: 3.0            # Warn when trailing DD reaches this %
+  best_day_consistency_warning_percent: 15.0  # Warn when best day is approaching 20% limit

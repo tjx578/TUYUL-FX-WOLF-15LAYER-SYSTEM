@@ -17,7 +17,7 @@ from pathlib import Path
 
 import pytest
 
-from propfirm_manager.profiles.aqua_instant_pro.guard import AquaInstantProGuard
+from propfirm_manager.profiles.aquafunded.aqua_instant_pro.guard import AquaInstantProGuard
 from propfirm_manager.strategy_loader import (
     HardRuleResult,
     SoftAdvisory,
@@ -29,7 +29,7 @@ from risk.exceptions import PropFirmConfigError
 # Fixtures
 # ---------------------------------------------------------------------------
 
-PROFILE_DIR = Path(__file__).parent.parent / "propfirm_manager" / "profiles" / "aqua_instant_pro"
+PROFILE_DIR = Path(__file__).parent.parent / "propfirm_manager" / "profiles" / "aquafunded" / "aqua_instant_pro"
 
 
 @pytest.fixture()
@@ -81,6 +81,7 @@ _SAFE_TRADE: dict = {
 # ---------------------------------------------------------------------------
 # Loading and parsing
 # ---------------------------------------------------------------------------
+
 
 class TestStrategyYamlLoading:
     """Strategy YAML loads and parses correctly."""
@@ -142,6 +143,7 @@ class TestStrategyYamlLoading:
 # Fallback / error handling
 # ---------------------------------------------------------------------------
 
+
 class TestStrategyLoaderFallback:
     """Fallback behavior on missing or malformed files."""
 
@@ -192,15 +194,13 @@ class TestStrategyLoaderFallback:
         assert loader.risk == {}
         assert loader.hard_rules == []
 
-    def test_guard_degrades_gracefully_if_strategy_unavailable(
-        self, tmp_path: Path
-    ) -> None:
+    def test_guard_degrades_gracefully_if_strategy_unavailable(self, tmp_path: Path) -> None:
         """Guard falls back to profile-only rules if strategy files are missing."""
         # Point StrategyLoader to nonexistent files so it raises during load
         # Guard should catch the error and still work in degraded mode
         guard = AquaInstantProGuard.__new__(AquaInstantProGuard)
-        base_guard_cls = AquaInstantProGuard.__bases__[0]
-        base_guard_cls.__init__(guard, {"max_daily_dd_percent": 5.0, "max_total_dd_percent": 10.0})
+        BasePropFirmGuard = AquaInstantProGuard.__bases__[0]
+        BasePropFirmGuard.__init__(guard, {"max_daily_dd_percent": 5.0, "max_total_dd_percent": 10.0})
         guard._strategy = None  # Simulate failed loader
 
         result = guard.check(_SAFE_ACCOUNT, _SAFE_TRADE)
@@ -210,6 +210,7 @@ class TestStrategyLoaderFallback:
 # ---------------------------------------------------------------------------
 # Hard rule enforcement
 # ---------------------------------------------------------------------------
+
 
 class TestHardRuleMaxPrimaryPositions:
     """Max primary positions enforcement."""
@@ -265,25 +266,19 @@ class TestHardRuleAllowedSessions:
     @pytest.mark.parametrize("hhmm", ["14:00", "15:30", "17:59"])
     def test_allows_london_session(self, loader: StrategyLoader, hhmm: str) -> None:
         t = datetime.time.fromisoformat(hhmm)
-        result = loader.check_hard_rules(
-            risk_percent=0.3, symbol="EURUSD", session_time_local=t
-        )
+        result = loader.check_hard_rules(risk_percent=0.3, symbol="EURUSD", session_time_local=t)
         assert result.allowed
 
     @pytest.mark.parametrize("hhmm", ["20:00", "21:30", "22:59"])
     def test_allows_new_york_session(self, loader: StrategyLoader, hhmm: str) -> None:
         t = datetime.time.fromisoformat(hhmm)
-        result = loader.check_hard_rules(
-            risk_percent=0.3, symbol="EURUSD", session_time_local=t
-        )
+        result = loader.check_hard_rules(risk_percent=0.3, symbol="EURUSD", session_time_local=t)
         assert result.allowed
 
     @pytest.mark.parametrize("hhmm", ["00:00", "08:00", "12:00", "18:01", "19:59", "23:01"])
     def test_blocks_outside_sessions(self, loader: StrategyLoader, hhmm: str) -> None:
         t = datetime.time.fromisoformat(hhmm)
-        result = loader.check_hard_rules(
-            risk_percent=0.3, symbol="EURUSD", session_time_local=t
-        )
+        result = loader.check_hard_rules(risk_percent=0.3, symbol="EURUSD", session_time_local=t)
         assert not result.allowed
         assert any(v.rule == "allowed_sessions" for v in result.violations)
 
@@ -394,6 +389,7 @@ class TestHardRuleKillSwitch:
 # Soft rule advisories
 # ---------------------------------------------------------------------------
 
+
 class TestSoftAdvisories:
     """Soft-rule advisory output."""
 
@@ -479,6 +475,7 @@ class TestSoftAdvisories:
 # Guard integration (AquaInstantProGuard + StrategyLoader)
 # ---------------------------------------------------------------------------
 
+
 class TestAquaInstantProGuardStrategy:
     """End-to-end guard integration with StrategyLoader."""
 
@@ -541,9 +538,7 @@ class TestAquaInstantProGuardStrategy:
         )
         assert len(advisories) >= 2
 
-    def test_guard_soft_advisories_empty_for_clean_setup(
-        self, guard: AquaInstantProGuard
-    ) -> None:
+    def test_guard_soft_advisories_empty_for_clean_setup(self, guard: AquaInstantProGuard) -> None:
         advisories = guard.get_soft_advisories(_SAFE_ACCOUNT, {})
         assert advisories == []
 
@@ -581,6 +576,7 @@ class TestAquaInstantProGuardStrategy:
 # ---------------------------------------------------------------------------
 # Helper stub — simulates a fully unavailable strategy loader
 # ---------------------------------------------------------------------------
+
 
 class _NullStrategyLoader:
     """Stub that returns 'allowed' for all hard-rule checks with no violations."""

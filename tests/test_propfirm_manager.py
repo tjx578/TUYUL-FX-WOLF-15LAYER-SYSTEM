@@ -11,7 +11,7 @@ Validates:
 import pytest
 
 from propfirm_manager.profile_manager import PropFirmManager
-from propfirm_manager.profiles.aqua_instant_pro.guard import (
+from propfirm_manager.profiles.aquafunded.aqua_instant_pro.guard import (
     AquaInstantProGuard,
 )
 from propfirm_manager.profiles.aquafunded.guard import AquafundedGuard
