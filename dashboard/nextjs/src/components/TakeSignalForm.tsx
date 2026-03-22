@@ -223,6 +223,7 @@ export function TakeSignalForm({
                 <label key={a.account_id} style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 12 }}>
                   <input
                     type="checkbox"
+                    name={`account_${a.account_id}`}
                     checked={selectedAccountIds.includes(a.account_id)}
                     onChange={() => toggleAccount(a.account_id)}
                   />
@@ -250,6 +251,7 @@ export function TakeSignalForm({
                 RISK %
               </label>
               <input
+                name="risk_percent"
                 type="number"
                 min={0.1}
                 max={5}
@@ -273,6 +275,7 @@ export function TakeSignalForm({
                 MODE
               </label>
               <select
+                name="risk_mode"
                 value={riskMode}
                 onChange={(e) => setRiskMode(e.target.value as "FIXED" | "SPLIT")}
                 style={{ width: "100%" }}

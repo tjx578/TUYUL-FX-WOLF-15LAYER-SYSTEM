@@ -115,6 +115,7 @@ export default function SignalQueuePage() {
         ))}
 
         <select
+          name="pair_filter"
           value={selectedPair}
           onChange={(e) => setSelectedPair(e.target.value)}
           style={{ fontSize: 12, padding: "5px 10px", marginLeft: 8 }}

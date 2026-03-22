@@ -116,6 +116,7 @@ export default function CreateAccountModal({ onCreated, onCancel }: CreateAccoun
                         <div>
                             <label style={labelStyle}>ACCOUNT NAME *</label>
                             <input
+                                name="account_name"
                                 style={inputStyle}
                                 value={form.account_name}
                                 onChange={(e) => setForm({ ...form, account_name: e.target.value })}
@@ -128,6 +129,7 @@ export default function CreateAccountModal({ onCreated, onCancel }: CreateAccoun
                         <div>
                             <label style={labelStyle}>BROKER *</label>
                             <input
+                                name="broker"
                                 style={inputStyle}
                                 value={form.broker}
                                 onChange={(e) => setForm({ ...form, broker: e.target.value })}
@@ -141,6 +143,7 @@ export default function CreateAccountModal({ onCreated, onCancel }: CreateAccoun
                             <div>
                                 <label style={labelStyle}>BALANCE *</label>
                                 <input
+                                    name="balance"
                                     style={inputStyle}
                                     type="number"
                                     value={form.balance || ""}
@@ -153,6 +156,7 @@ export default function CreateAccountModal({ onCreated, onCancel }: CreateAccoun
                             <div>
                                 <label style={labelStyle}>CURRENCY</label>
                                 <select
+                                    name="currency"
                                     style={inputStyle}
                                     value={form.currency}
                                     onChange={(e) => setForm({ ...form, currency: e.target.value })}
@@ -186,6 +190,7 @@ export default function CreateAccountModal({ onCreated, onCancel }: CreateAccoun
                         <div>
                             <label style={{ ...labelStyle, display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
                                 <input
+                                    name="prop_firm"
                                     type="checkbox"
                                     checked={form.prop_firm}
                                     onChange={(e) => setForm({ ...form, prop_firm: e.target.checked })}
@@ -200,6 +205,7 @@ export default function CreateAccountModal({ onCreated, onCancel }: CreateAccoun
                             <div>
                                 <label style={labelStyle}>PROP FIRM CODE</label>
                                 <input
+                                    name="prop_firm_code"
                                     style={inputStyle}
                                     value={form.prop_firm_code ?? ""}
                                     onChange={(e) => setForm({ ...form, prop_firm_code: e.target.value || "" })}
