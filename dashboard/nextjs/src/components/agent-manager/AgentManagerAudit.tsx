@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import type { AgentAuditLog } from "@/types/agent-manager";
+import { formatDateTime } from "@/lib/formatters";
 
 interface Props {
   logs: AgentAuditLog[];
@@ -9,14 +10,7 @@ interface Props {
 }
 
 function formatTime(iso: string): string {
-  try {
-    return new Date(iso).toLocaleString(undefined, {
-      dateStyle: "short",
-      timeStyle: "medium",
-    });
-  } catch {
-    return iso;
-  }
+  return formatDateTime(iso);
 }
 
 function JsonPreview({ value }: { value: Record<string, unknown> | null }) {

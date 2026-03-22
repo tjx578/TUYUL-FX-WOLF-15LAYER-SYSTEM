@@ -5,6 +5,7 @@ import type { TradeDeskTrade, TimelineEvent, Anomaly } from "@/schema/tradeDeskS
 import { TradeDetailResponseSchema } from "@/schema/tradeDeskSchema";
 import { TradeStatusBadge } from "./TradeStatusBadge";
 import { bearerHeader } from "@/lib/auth";
+import { formatDate } from "@/lib/formatters";
 
 // ── ExecutionTimelineDrawer ──────────────────────────────────
 
@@ -22,12 +23,8 @@ function ExecutionTimelineDrawer({ timeline }: { timeline: TimelineEvent[] }) {
             {timeline.map((ev, i) => {
                 const isLast = i === timeline.length - 1;
                 const ts = typeof ev.timestamp === "number"
-                    ? new Date(ev.timestamp * 1000).toLocaleString("en-GB", {
-                        day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit", second: "2-digit",
-                    })
-                    : new Date(ev.timestamp).toLocaleString("en-GB", {
-                        day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit", second: "2-digit",
-                    });
+                    ? formatDate(ev.timestamp * 1000, { showTime: true, showSeconds: true })
+                    : formatDate(ev.timestamp, { showTime: true, showSeconds: true });
 
                 return (
                     <div key={i} style={{ display: "flex", gap: 10, minHeight: 36 }}>

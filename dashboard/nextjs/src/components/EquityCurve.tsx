@@ -6,6 +6,7 @@
 // ============================================================
 
 import { useLiveEquity } from "@/lib/realtime";
+import { formatCurrency } from "@/lib/formatters";
 
 interface EquityCurveProps {
   accountId?: string;
@@ -109,7 +110,7 @@ export function EquityCurve({
         )}
         {latest && (
           <span className="num" style={{ fontSize: 14, fontWeight: 700, color: "var(--text-primary)" }}>
-            ${latest.equity.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            ${formatCurrency(latest.equity)}
           </span>
         )}
       </div>

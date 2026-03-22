@@ -12,6 +12,7 @@ import { createAccount } from "@/lib/api";
 import Panel from "@/components/ui/Panel";
 import StatusBadge from "@/components/ui/StatusBadge";
 import { useLivePulse } from "@/hooks/useLivePulse";
+import { formatNumber } from "@/lib/formatters";
 
 // ─── ACCOUNT CARD ─────────────────────────────────────────────
 
@@ -34,7 +35,7 @@ function riskBadgeType(riskState: string): "execute" | "hold" | "no-trade" {
 }
 
 export function AccountCard({ account, selected, onClick }: AccountCardProps) {
-  const equityPulse  = useLivePulse(account.equity);
+  const equityPulse = useLivePulse(account.equity);
   const balancePulse = useLivePulse(account.balance);
   const pulse = equityPulse || balancePulse;
 
@@ -88,8 +89,8 @@ export function AccountCard({ account, selected, onClick }: AccountCardProps) {
           gap: 10,
         }}
       >
-        <Stat label="BALANCE" value={`$${account.balance?.toLocaleString()}`} />
-        <Stat label="EQUITY" value={`$${account.equity?.toLocaleString()}`} />
+        <Stat label="BALANCE" value={`$${formatNumber(account.balance)}`} />
+        <Stat label="EQUITY" value={`$${formatNumber(account.equity)}`} />
         <Stat
           label="DAILY DD"
           value={`${account.daily_dd_percent?.toFixed(2)}%`}
