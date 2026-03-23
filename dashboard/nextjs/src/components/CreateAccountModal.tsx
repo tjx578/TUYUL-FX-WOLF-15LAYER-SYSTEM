@@ -5,9 +5,9 @@
 // Full-featured modal for account creation with prop firm options.
 // ============================================================
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import type { AccountCreate } from "@/types";
-import { createAccount } from "@/lib/api";
+import { createAccount, fetchPropFirms, fetchPropFirmPrograms, fetchPropFirmRules } from "@/lib/api";
 import Panel from "@/components/ui/Panel";
 
 interface CreateAccountModalProps {
@@ -22,6 +22,8 @@ export default function CreateAccountModal({ onCreated, onCancel }: CreateAccoun
     }>({
         broker: "",
         account_name: "",
+        program_code: "",
+        phase_code: "funded",
         balance: 0,
         equity: 0,
         prop_firm_code: "",
@@ -29,6 +31,10 @@ export default function CreateAccountModal({ onCreated, onCancel }: CreateAccoun
         prop_firm: false,
         data_source: "MANUAL",
     });
+        const [firms, setFirms] = useState<any[]>([]);
+        const [programs, setPrograms] = useState<any[]>([]);
+        const [phases, setPhases] = useState<string[]>([]);
+        const [rules, setRules] = useState<any | null>(null);
     const [error, setError] = useState<string | null>(null);
     const [submitting, setSubmitting] = useState(false);
 
@@ -48,6 +54,27 @@ export default function CreateAccountModal({ onCreated, onCancel }: CreateAccoun
             });
             onCreated();
         } catch (err) {
+            useEffect(() => {
+                if (form.prop_firm) {
+                    fetchPropFirms().then((res) => setFirms(res.items || []));
+                }
+            }, [form.prop_firm]);
+
+            useEffect(() => {
+                if (form.prop_firm && form.prop_firm_code) {
+                    fetchPropFirmPrograms(form.prop_firm_code).then((res) => setPrograms(res.items || []));
+                } else {
+                    setPrograms([]);
+                }
+            }, [form.prop_firm, form.prop_firm_code]);
+
+            useEffect(() => {
+                if (form.prop_firm && form.prop_firm_code && form.program_code) {
+                    fetchPropFirmRules(form.prop_firm_code, form.program_code, form.phase_code || "funded").then((res) => setRules(res));
+                } else {
+                    setRules(null);
+                }
+            }, [form.prop_firm, form.prop_firm_code, form.program_code, form.phase_code]);
             setError(err instanceof Error ? err.message : "Failed to create account");
         } finally {
             setSubmitting(false);
