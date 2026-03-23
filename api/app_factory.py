@@ -453,6 +453,7 @@ def _register_health_routes(app: FastAPI) -> None:
         # ``Infinity``/``NaN`` (not valid JSON; breaks dashboard parsing).
         staleness = feed_snapshot.staleness_seconds
         safe_staleness = staleness if math.isfinite(staleness) else None
+        router_boot_errors = list(getattr(request.app.state, "router_boot_errors", []))
 
         return {
             "status": "ok",
@@ -473,6 +474,8 @@ def _register_health_routes(app: FastAPI) -> None:
             "engine_heartbeat_age_seconds": engine_hb_age,
             "engine_alive": engine_alive,
             "ingest_health": ingest_health_state,
+            "router_boot_ok": len(router_boot_errors) == 0,
+            "router_boot_errors": router_boot_errors,
         }
 
     app.add_api_route("/health", health, methods=["GET"])
@@ -666,16 +669,31 @@ def create_app() -> FastAPI:
     app.add_middleware(RateLimitMiddleware)
     _add_cors(app)  # outermost — handles preflight before anything else
 
-    # Mount all routers from the registry
-    for router, description in load_routers():
-        app.include_router(router)
-        logger.debug("Mounted router: %s", description)
-
-    # Guard: fail fast if any (method, path) was registered more than once.
-    _assert_no_duplicate_routes(app)
-
-    # Health endpoints
+    # Health endpoints first so infra liveness stays available even if
+    # downstream router imports fail during bootstrap.
     _register_health_routes(app)
+
+    router_boot_errors: list[str] = []
+
+    # Mount all routers from the registry. In degraded fail-open mode,
+    # keep process alive with health endpoints so orchestrators can
+    # inspect diagnostics instead of seeing a dead container.
+    fail_open = _env_bool("ROUTER_BOOT_FAIL_OPEN", default=True)
+    try:
+        for router, description in load_routers():
+            app.include_router(router)
+            logger.debug("Mounted router: %s", description)
+
+        # Guard: fail fast if any (method, path) was registered more than once.
+        _assert_no_duplicate_routes(app)
+    except Exception as exc:
+        detail = f"router_bootstrap_failed: {exc!s}"
+        router_boot_errors.append(detail)
+        logger.exception("Router bootstrap failed")
+        if not fail_open:
+            raise
+
+    app.state.router_boot_errors = router_boot_errors
 
     # Dev routes (gated)
     if enable_dev_routes:
