@@ -70,6 +70,8 @@ def build_l12_synthesis(
     take_profit_1 = layer_results.get("L11", {}).get(
         "take_profit_1", layer_results.get("L11", {}).get("tp1", layer_results.get("L11", {}).get("tp", 0.0))
     )
+    if take_profit_1 is not None and take_profit_1 <= 0:
+        take_profit_1 = 0.0001  # Minimum fallback — ATR warmup insufficient
     rr_ratio = layer_results.get("L11", {}).get("rr", 0.0)
     battle_strategy = layer_results.get("L11", {}).get("battle_strategy", "SHADOW_STRIKE")
     entry_zone = layer_results.get("L11", {}).get("entry_zone", "")
