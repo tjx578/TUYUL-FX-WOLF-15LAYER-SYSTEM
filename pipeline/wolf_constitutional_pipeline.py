@@ -196,7 +196,6 @@ class WolfConstitutionalPipeline:
         "H4": 10,
         "D1": 5,
         "W1": 4,
-        "MN": 2,
     }
 
     # Avoid log storms when a symbol remains degraded for long periods.
