@@ -20,6 +20,7 @@
   ],
   "extraPaths": [
     ".",
+    "./analysis",
     "./services/api",
     "./infrastructure"
   ],
@@ -28,6 +29,7 @@
       "root": ".",
       "extraPaths": [
         ".",
+        "./analysis",
         "./services/api",
         "./infrastructure"
       ]
@@ -37,6 +39,7 @@
       "extraPaths": [
         ".",
         "../",
+        "../analysis",
         "../services/api",
         "../infrastructure"
       ]
