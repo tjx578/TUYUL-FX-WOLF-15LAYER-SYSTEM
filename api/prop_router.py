@@ -11,13 +11,84 @@ Per-account phase progress is not yet persisted — see the /phase endpoint note
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 
-from risk.prop_firm import PropFirmRules
+from propfirm_manager.rule_resolver import PropFirmRuleResolver
 
 from .middleware.auth import verify_token
 
 router = APIRouter(prefix="/api/v1/prop-firm", tags=["prop-firm"], dependencies=[Depends(verify_token)])
+
+# --- New endpoints for prop-firm metadata ---
+resolver = PropFirmRuleResolver()
+
+
+@router.get("/firms")
+def list_prop_firms():
+    """List all available prop firms."""
+    items = []
+    for code in resolver.list_firms():
+        # Try to get name/description from profile if available
+        try:
+            profile = resolver._load_profile(code)
+            name = profile.get("name", code)
+            description = profile.get("description", "")
+        except Exception:
+            name = code
+            description = ""
+        items.append({"code": code, "name": name, "description": description})
+    return {"items": items}
+
+
+@router.get("/firms/{firm_code}/programs")
+def list_programs_by_firm(firm_code: str):
+    """List all programs/plans for a given prop firm."""
+    items = []
+    for plan in resolver.list_plans(firm_code):
+        # Try to get plan details from profile
+        try:
+            profile = resolver._load_profile(firm_code)
+            plans = profile.get("plans", {})
+            plan_data = plans.get(plan, {})
+            name = plan_data.get("display_name", plan)
+            description = plan_data.get("description", "")
+            default_phase_code = next(iter(plan_data.get("phases", {})), "funded")
+        except Exception:
+            name = plan
+            description = ""
+            default_phase_code = "funded"
+        items.append({"code": plan, "name": name, "default_phase_code": default_phase_code, "description": description})
+    return {"firm_code": firm_code, "items": items}
+
+
+@router.get("/firms/{firm_code}/programs/{program_code}/rules")
+def preview_resolved_rules(firm_code: str, program_code: str, phase: str = Query("funded")):
+    """Preview resolved rules for a given firm/program/phase."""
+    try:
+        rules = resolver.resolve(firm_code, program_code, phase)
+    except Exception as exc:
+        raise HTTPException(status_code=404, detail=f"Rules not found: {exc}")
+
+    # Map rules to API contract
+    result = {
+        "firm_code": firm_code,
+        "firm_name": getattr(rules, "firm_name", firm_code),
+        "program_code": program_code,
+        "program_name": getattr(rules, "program_name", program_code),
+        "phase_code": phase,
+        "max_daily_dd_percent": getattr(rules, "max_daily_dd_percent", None),
+        "drawdown_mode_daily": getattr(rules, "drawdown_mode_daily", None),
+        "max_total_dd_percent": getattr(rules, "max_total_dd_percent", None),
+        "drawdown_mode_total": getattr(rules, "drawdown_mode_total", None),
+        "consistency_rule_percent": getattr(rules, "consistency_rule_percent", None),
+        "profit_split_percent": getattr(rules, "profit_split_percent", None),
+        "min_trading_days_for_payout": getattr(rules, "min_trading_days_for_payout", None),
+        "payout_cycle_days": getattr(rules, "payout_cycle_days", None),
+        "leverage": getattr(rules, "leverage", {}),
+        "raw_features": getattr(rules, "raw_features", {}),
+    }
+    return result
+
 
 _rules: PropFirmRules | None = None
 
