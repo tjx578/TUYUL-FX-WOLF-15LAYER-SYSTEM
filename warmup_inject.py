@@ -175,8 +175,13 @@ def seed_timeframe(
         )
         data = resp.json()
 
+        if resp.status_code != 200:
+            detail = data.get("error") or data.get("s") or resp.reason
+            return 0, f"Finnhub HTTP {resp.status_code}: {detail}"
+
         if data.get("s") != "ok" or "t" not in data:
-            return 0, f"Finnhub: {data.get('s', 'error')}"
+            detail = data.get("error") or data.get("s") or "error"
+            return 0, f"Finnhub: {detail}"
 
         candles = []
         for i in range(len(data["t"])):
@@ -219,6 +224,11 @@ def seed_timeframe(
 
 def main() -> None:
     args = parse_args()
+
+    if not FINNHUB_KEY.strip():
+        print("❌ FINNHUB_API_KEY is not set. Aborting warmup.")
+        print("   Set FINNHUB_API_KEY in the same shell before running this script.")
+        sys.exit(1)
 
     print("=" * 60)
     print("🐺 TUYUL FX — Warmup Injector v2 (Dual-Zone)")
