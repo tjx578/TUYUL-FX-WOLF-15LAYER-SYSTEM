@@ -19,6 +19,7 @@ from copy import deepcopy  # noqa: E402
 from typing import Any  # noqa: E402
 
 from dotenv import load_dotenv
+from fastapi import FastAPI
 from typing_extensions import override  # noqa: E402
 
 from config.logging_bootstrap import configure_loguru_logging  # noqa: E402
@@ -67,7 +68,50 @@ from fastapi import WebSocket  # noqa: E402
 from api.app_factory import create_app  # noqa: E402
 from core.auth_ws_killswitch_fix import ws_auth_fixed  # noqa: E402
 
-app = create_app()
+
+def _env_fail_open_enabled() -> bool:
+    return _env_true(os.getenv("API_BOOT_FAIL_OPEN", "true"))
+
+
+def _build_bootstrap_fallback_app(error_text: str) -> FastAPI:
+    """Create a minimal fail-open app that keeps Railway liveness healthy.
+
+    This endpoint set is intentionally tiny and dependency-free so operators
+    can inspect startup failures via ``/health`` while ``/healthz`` remains
+    alive for platform probes.
+    """
+
+    fallback = FastAPI(
+        title="TUYUL FX — Bootstrap Fallback",
+        version="10.0.0",
+        docs_url=None,
+        redoc_url=None,
+        openapi_url=None,
+    )
+
+    @fallback.get("/healthz")
+    async def healthz() -> dict[str, Any]:
+        return {"status": "alive", "service": "tuyul-fx", "degraded": True}
+
+    @fallback.get("/health")
+    async def health() -> dict[str, Any]:
+        return {
+            "status": "degraded",
+            "service": "tuyul-fx",
+            "router_boot_ok": False,
+            "router_boot_errors": [error_text],
+        }
+
+    return fallback
+
+
+try:
+    app = create_app()
+except Exception as exc:  # pragma: no cover - exercised only on bootstrap faults
+    if not _env_fail_open_enabled():
+        raise
+    logging.getLogger(__name__).exception("API bootstrap failed - enabling fallback liveness app")
+    app = _build_bootstrap_fallback_app(f"api_bootstrap_failed: {exc!s}")
 
 logger = logging.getLogger(__name__)
 
