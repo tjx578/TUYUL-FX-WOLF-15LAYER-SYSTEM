@@ -36,6 +36,29 @@ _MIN_CANDLES = 14
 _MIN_RR = 1.5
 _VALID_DIRECTIONS = {"BUY", "SELL"}
 
+# Minimum TP distance to prevent 0.0 when ATR is unavailable
+MIN_TP_DISTANCE_PIPS: dict[str, float] = {
+    "default": 10.0,  # 10 pips minimum TP
+    "JPY": 0.10,  # 10 pips for JPY pairs (2-decimal)
+    "XAU": 1.0,  # 100 pips equivalent for gold
+    "XAG": 0.10,  # silver
+}
+
+
+def _min_tp_distance(symbol: str) -> float:
+    """Return minimum TP distance for a symbol.
+
+    Ensures TP is never 0.0 even when ATR is unavailable.
+    """
+    sym = symbol.upper()
+    if "JPY" in sym:
+        return MIN_TP_DISTANCE_PIPS["JPY"]
+    if "XAU" in sym:
+        return MIN_TP_DISTANCE_PIPS["XAU"]
+    if "XAG" in sym:
+        return MIN_TP_DISTANCE_PIPS["XAG"]
+    return MIN_TP_DISTANCE_PIPS["default"] * 0.0001  # convert pips to price
+
 
 class L11RRAnalyzer:
     """Layer 11: Risk-Reward Optimization - Execution & Decision zone."""
@@ -110,12 +133,12 @@ class L11RRAnalyzer:
 
         # --- Direction validation ---
         if direction not in _VALID_DIRECTIONS:
-            return self._fail("invalid_direction")
+            return self._fail("invalid_direction", symbol)
 
         # --- Candle data ---
         candles = self._get_candles(symbol)
         if len(candles) < _MIN_CANDLES:
-            return self._fail("no_data")
+            return self._fail("no_data", symbol)
 
         # --- ATR ---
         atr = self._compute_atr(candles)
@@ -129,11 +152,17 @@ class L11RRAnalyzer:
             entry = candles[-1].get("close", 0.0)
 
         if entry is None or entry == 0.0:
-            return self._fail("no_entry_price")
+            return self._fail("no_entry_price", symbol)
 
         # --- SL / TP ---
         sl_distance = atr * 1.0
         tp_distance = atr * 2.0
+        # Ensure TP is never 0 (ATR can be 0 during early warmup)
+        min_tp = _min_tp_distance(symbol)
+        if tp_distance < min_tp:
+            tp_distance = min_tp
+        if sl_distance <= 0:
+            sl_distance = min_tp * 0.5
 
         if direction == "BUY":
             sl = round(entry - sl_distance, 5)
@@ -217,7 +246,8 @@ class L11RRAnalyzer:
     # Helpers
     # ------------------------------------------------------------------
     @staticmethod
-    def _fail(reason: str) -> dict[str, Any]:
+    def _fail(reason: str, symbol: str = "") -> dict[str, Any]:
+        _min_tp = _min_tp_distance(symbol) if symbol else 0.0001
         return {
             "valid": False,
             "reason": reason,
@@ -231,6 +261,6 @@ class L11RRAnalyzer:
             "execution_mode": "TP1_ONLY",
             "entry_price": 0.0,
             "stop_loss": 0.0,
-            "take_profit_1": 0.0,
+            "take_profit_1": _min_tp,
             "entry_zone": "0.00000-0.00000",
         }

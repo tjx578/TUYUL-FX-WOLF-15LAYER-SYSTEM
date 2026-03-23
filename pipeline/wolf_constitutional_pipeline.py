@@ -1189,7 +1189,7 @@ class WolfConstitutionalPipeline:
                     layer_results=_enrich_lr,
                     entry_price=l11.get("entry_price", l11.get("entry", 0.0)),
                     stop_loss=l11.get("stop_loss", l11.get("sl", 0.0)),
-                    take_profit=l11.get("take_profit_1", l11.get("tp1", l11.get("tp", 0.0))),
+                    take_profit=l11.get("take_profit_1", l11.get("tp1", l11.get("tp", 0.0))) or 0.0001,
                 )
                 engines_invoked.extend(
                     [
@@ -1792,7 +1792,7 @@ class WolfConstitutionalPipeline:
                     "direction": "HOLD",
                     "entry_price": 0.0,
                     "stop_loss": 0.0,
-                    "take_profit_1": 0.0,
+                    "take_profit_1": 0.0001,
                     "entry_zone": "0.00000-0.00000",
                     "execution_mode": "TP1_ONLY",
                     "battle_strategy": "SHADOW_STRIKE",
