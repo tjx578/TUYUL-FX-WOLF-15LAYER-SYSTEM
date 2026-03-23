@@ -39,6 +39,11 @@ WARMUP_TIMEFRAMES: tuple[str, ...] = ("M15", "H1", "H4", "D1", "W1", "MN")
 # Redis List key prefix for stored candle history
 CANDLE_HISTORY_KEY_PREFIX = "candle_history"
 
+# Redis key types that are incompatible with LRANGE.
+# If a candle_history key has one of these types it was written by the wrong
+# code path (e.g., HSET instead of RPUSH) and lrange would raise WRONGTYPE.
+_INCOMPATIBLE_REDIS_TYPES: frozenset[str] = frozenset({"hash", "string", "set", "zset", "stream"})
+
 # Default ordered list of prefixes that hold *List* data (safe for LRANGE warmup).
 # NOTE: wolf15:candle:{sym}:{tf} is a Hash (HSET by RedisContextBridge)
 #       — handled separately via HGETALL as a single-bar fallback.
@@ -281,6 +286,22 @@ class RedisConsumer:
         for prefix in _get_candle_prefixes():
             key = f"{prefix}:{symbol}:{timeframe}"
             try:
+                # Check key type before issuing lrange to avoid WRONGTYPE errors.
+                # wolf15:candle:{sym}:{tf} is a HASH written by RedisContextBridge;
+                # blindly calling lrange on it triggers WRONGTYPE → silent 0-bar warmup.
+                # Only skip when we receive a concrete wrong-type response from Redis;
+                # an unrecognised response (e.g., test mock) falls through to lrange.
+                raw_type: bytes | str = await self._redis.type(key)
+                key_type = raw_type.decode().lower() if isinstance(raw_type, bytes | bytearray) else str(raw_type).lower()
+                if key_type == "none":
+                    continue  # key does not exist, try next prefix
+                if key_type in _INCOMPATIBLE_REDIS_TYPES:
+                    logger.warning(
+                        "warmup_candle_history | %s is '%s' (expected list) — skipping; run sanitize_redis_keys to clean",
+                        key,
+                        key_type,
+                    )
+                    continue
                 raw = await self._redis.lrange(key, 0, -1)
                 if raw:
                     logger.info(
@@ -302,24 +323,24 @@ class RedisConsumer:
         try:
             data = await self._redis.hgetall(hash_key)
             if data:
-                raw_json: bytes | str | None = data.get(b"data") or data.get("data")
-                if raw_json:
-                    # Optionally enrich with last_seen_ts for freshness metadata.
-                    last_seen: bytes | str | None = data.get(b"last_seen_ts") or data.get("last_seen_ts")
-                    if last_seen:
-                        try:
-                            candle_dict = orjson.loads(raw_json)
-                            ts_str = last_seen if isinstance(last_seen, str) else last_seen.decode("utf-8")
-                            candle_dict["last_seen_ts"] = float(ts_str)
-                            raw_json = orjson.dumps(candle_dict)
-                        except Exception:
-                            pass  # original payload is still valid without enrichment
+                # Decode bytes keys/values if needed
+                bar = {}
+                for k, v in data.items():
+                    k_str = k.decode() if isinstance(k, bytes) else k
+                    v_str = v.decode() if isinstance(v, bytes) else v
+                    try:
+                        bar[k_str] = float(v_str)
+                    except (ValueError, TypeError):
+                        bar[k_str] = v_str
+                if bar:
                     logger.info(
-                        "warmup_candle_history | symbol=%s tf=%s source=hash_fallback count=1",
+                        "warmup_candle_history | symbol=%s tf=%s fallback: 1 bar from HASH %s",
                         symbol,
                         timeframe,
+                        hash_key,
                     )
-                    return [raw_json if isinstance(raw_json, bytes) else raw_json.encode("utf-8")]
+                    import orjson
+                    return [orjson.dumps(bar)]
         except Exception as exc:
             logger.warning("warmup_candle_history | hgetall failed on %s: %s", hash_key, exc)
 
