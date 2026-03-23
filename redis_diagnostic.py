@@ -2,25 +2,19 @@
 """
 TUYUL FX — Redis diagnostic + cleanup
 ============================================================
-Run on Railway after deploying patches:
+Run on Railway:
     railway run -s wolf15-engine python redis_diagnostic.py
-
-Steps:
-  1. Check Redis connectivity
-  2. Identify WRONGTYPE keys (HASH masquerading as LIST)
-  3. Clean stale HASH keys that block LRANGE
-  4. Verify candle_history LIST keys exist
-  5. Inject 2 warmup bars per symbol if empty
-  6. Print health summary
 ============================================================
 """
 
-import asyncio
 import json
 import logging
 import os
 import sys
 import time
+from typing import Any, cast
+
+import redis
 
 logging.basicConfig(
     level=logging.INFO,
@@ -63,29 +57,19 @@ SYMBOLS = [
 
 TIMEFRAME = "M15"
 REQUIRED_BARS = 2
-INJECT_BARS = 5  # inject more than minimum for safety
+INJECT_BARS = 5
 
 
-async def main() -> None:
-    try:
-        import redis.asyncio as aioredis
-    except ImportError:
-        logger.error("redis package not installed. pip install redis")
-        sys.exit(1)
-
+def main() -> None:
     redis_url = os.getenv("REDIS_URL", "redis://localhost:6379")
     logger.info("Connecting to Redis: %s", redis_url[:30] + "...")
 
-    r = aioredis.from_url(
-        redis_url,
-        decode_responses=False,
-        socket_timeout=10,
-    )
+    r = cast(Any, redis.from_url(redis_url, decode_responses=True, socket_timeout=10))
 
     # --- Step 1: Connectivity ---
     try:
-        pong = await r.ping()
-        logger.info("Step 1 — Redis PING: %s", pong)
+        r.ping()
+        logger.info("Step 1 — Redis PING: OK")
     except Exception as exc:
         logger.error("Step 1 — Redis connection FAILED: %s", exc)
         sys.exit(1)
@@ -93,29 +77,20 @@ async def main() -> None:
     # --- Step 2: Identify WRONGTYPE keys ---
     logger.info("Step 2 — Scanning for WRONGTYPE conflicts...")
     wrongtype_keys: list[str] = []
-    cursor: int = 0
+    cursor = 0
     while True:
-        cursor, keys = await r.scan(
-            cursor=cursor,
-            match="wolf15:candle:*",
-            count=200,
-        )
+        scan_result = r.scan(cursor=cursor, match="wolf15:candle:*", count=200)
+        cursor, keys = scan_result
         for key in keys:
-            key_str = key.decode() if isinstance(key, bytes) else str(key)
-            if "candle_history" in key_str:
+            if "candle_history" in key:
                 continue
-            ktype = await r.type(key)
-            type_str = ktype.decode() if isinstance(ktype, bytes) else str(ktype)
-            if type_str == "hash":
-                wrongtype_keys.append(key_str)
+            if r.type(key) == "hash":
+                wrongtype_keys.append(key)
         if cursor == 0:
             break
 
     if wrongtype_keys:
-        logger.warning(
-            "Found %d HASH keys blocking LRANGE:",
-            len(wrongtype_keys),
-        )
+        logger.warning("Found %d HASH keys blocking LRANGE:", len(wrongtype_keys))
         for k in wrongtype_keys[:10]:
             logger.warning("  → %s", k)
         if len(wrongtype_keys) > 10:
@@ -126,8 +101,8 @@ async def main() -> None:
     # --- Step 3: Cleanup stale HASH keys ---
     if wrongtype_keys:
         logger.info("Step 3 — Cleaning %d stale HASH keys...", len(wrongtype_keys))
-        for key_str in wrongtype_keys:
-            await r.delete(key_str)
+        for key in wrongtype_keys:
+            r.delete(key)
         logger.info("Cleaned %d keys.", len(wrongtype_keys))
     else:
         logger.info("Step 3 — No cleanup needed.")
@@ -140,9 +115,8 @@ async def main() -> None:
     for sym in SYMBOLS:
         list_key = f"wolf15:candle_history:{sym}:{TIMEFRAME}"
         try:
-            ktype = await r.type(list_key)
-            type_str = ktype.decode() if isinstance(ktype, bytes) else str(ktype)
-            length = await r.llen(list_key) if type_str == "list" else 0
+            ktype = r.type(list_key)
+            length = r.llen(list_key) if ktype == "list" else 0
         except Exception:
             length = 0
 
@@ -170,12 +144,12 @@ async def main() -> None:
             len(empty_symbols),
         )
         now = time.time()
-        period = 900  # M15 = 900s
+        period = 900
         injected = 0
 
         for sym in empty_symbols:
             list_key = f"wolf15:candle_history:{sym}:{TIMEFRAME}"
-            pipe = r.pipeline(transaction=True)
+            pipe = cast(Any, r.pipeline(transaction=True))
 
             for i in range(INJECT_BARS):
                 ts = now - (INJECT_BARS - i) * period
@@ -193,35 +167,31 @@ async def main() -> None:
                     "status": "closed",
                     "tick_count": 1,
                 }
-                payload = json.dumps(candle)
-                pipe.rpush(list_key, payload)
+                pipe.rpush(list_key, json.dumps(candle))
 
             pipe.ltrim(list_key, -300, -1)
             pipe.expire(list_key, 6 * 3600)
 
             try:
-                await pipe.execute()
+                pipe.execute()
                 injected += 1
             except Exception as exc:
                 logger.error("Failed to inject for %s: %s", sym, exc)
 
         logger.info("Injected warmup bars for %d/%d symbols.", injected, len(empty_symbols))
     else:
-        logger.info("Step 5 — All symbols have sufficient bars. No injection needed.")
+        logger.info("Step 5 — All symbols have sufficient bars.")
 
     # --- Step 6: Flush invalid verdicts ---
     logger.info("Step 6 — Cleaning invalid verdict cache...")
-    verdict_cursor: int = 0
+    verdict_cursor = 0
     verdict_cleaned = 0
     while True:
-        verdict_cursor, keys = await r.scan(
-            cursor=verdict_cursor,
-            match="L12:VERDICT:*",
-            count=200,
-        )
+        scan_result = r.scan(cursor=verdict_cursor, match="L12:VERDICT:*", count=200)
+        verdict_cursor, keys = scan_result
         for key in keys:
             try:
-                await r.delete(key)
+                r.delete(key)
                 verdict_cleaned += 1
             except Exception:
                 pass
@@ -243,10 +213,10 @@ async def main() -> None:
     if not empty_symbols and not wrongtype_keys:
         logger.info("All clear — pipeline should produce valid verdicts.")
     else:
-        logger.info("Warmup bars injected — pipeline will work until real candles replace them (next M15 close).")
+        logger.info("Warmup bars injected — pipeline will work until real candles arrive.")
 
-    await r.aclose()
+    r.close()
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()
