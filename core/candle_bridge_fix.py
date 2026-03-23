@@ -45,10 +45,14 @@ async def _push_candle_to_redis_safe(
     rpush_fn:
         Optional override for the push coroutine (used in tests).
     """
+
     symbol = candle_dict.get("symbol")
     timeframe = candle_dict.get("timeframe")
     if not symbol or not timeframe:
         return
+    # Normalize symbol and timeframe for key consistency
+    symbol = str(symbol).strip().upper()
+    timeframe = str(timeframe).strip().upper()
 
     try:
         import orjson
