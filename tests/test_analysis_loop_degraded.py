@@ -135,6 +135,49 @@ class TestAnalyzePairDegradedFallback:
 
     @pytest.mark.asyncio
     @pytest.mark.usefixtures("_mock_tracing")
+    async def test_abort_result_skips_set_verdict(self):
+        """Pipeline ABORT (verdict=None) → set_verdict must NOT be called."""
+        mock_pipeline = MagicMock()
+        # Simulate the exact ABORT payload the pipeline produces on warmup rejection:
+        # result is a non-empty dict (truthy) but result["verdict"] is explicitly None.
+        # Note: l12_verdict is present because _early_exit() populates it with a HOLD
+        # before the warmup gate appends result["verdict"]=None as the abort signal.
+        abort_result = {
+            "verdict": None,  # explicit ABORT signal — pipeline ran no analysis
+            "errors": ["WARMUP_INSUFFICIENT:17_bars_missing"],
+            "l12_verdict": {"verdict": "HOLD", "confidence": "LOW"},
+            "synthesis": {},
+            "warmup": {"ready": False, "bars": 3, "required": 20, "missing": 17},
+        }
+
+        set_verdict_calls: list = []
+
+        with (
+            patch("context.live_context_bus.LiveContextBus") as mock_bus_cls,
+            patch("startup.analysis_loop.set_verdict", side_effect=lambda p, d: set_verdict_calls.append((p, d))),
+            patch("startup.analysis_loop.VERDICT_PATH_EVENT_TOTAL", MagicMock()),
+            patch("startup.analysis_loop.LatencyTracker") as mock_lt,
+        ):
+            mock_bus = MagicMock()
+            mock_bus.get_latest_tick.return_value = None
+            mock_bus_cls.return_value = mock_bus
+            mock_lt.return_value = MagicMock()
+
+            async def _return_abort(fn):
+                return abort_result
+
+            with patch("asyncio.to_thread", _return_abort):
+                from startup.analysis_loop import _analyze_pair
+
+                result = await _analyze_pair("EURUSD", mock_pipeline)
+
+        # _analyze_pair must return None so the pair is retried next cycle
+        assert result is None
+        # set_verdict must NOT be called — no stale/empty verdict should be written
+        assert set_verdict_calls == [], f"set_verdict was unexpectedly called: {set_verdict_calls}"
+
+    @pytest.mark.asyncio
+    @pytest.mark.usefixtures("_mock_tracing")
     async def test_persist_failure_falls_back_to_degraded(self):
         """set_verdict fails for rich payload → falls back to degraded verdict."""
         mock_pipeline = MagicMock()
