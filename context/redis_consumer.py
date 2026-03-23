@@ -317,6 +317,8 @@ class RedisConsumer:
                 continue
 
         # --- Strategy 2: HASH key via HGETALL (single latest candle) ---
+        # The HASH stores the full candle JSON in the "data" field (written by
+        # RedisContextBridge.write_candle / context/redis_context_bridge.py).
         hash_key = f"wolf15:candle:{symbol}:{timeframe}"
         try:
             data = await self._redis.hgetall(hash_key)
