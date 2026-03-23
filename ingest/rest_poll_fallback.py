@@ -17,7 +17,7 @@ from loguru import logger
 
 from config_loader import load_finnhub
 from context.live_context_bus import LiveContextBus
-from core.redis_keys import candle_history
+from core.redis_keys import candle_history, channel_candle
 from ingest.finnhub_candles import FinnhubCandleError, FinnhubCandleFetcher
 from ingest.finnhub_ws import is_forex_market_open
 from storage.candle_persistence import enqueue_candle_dict
@@ -183,6 +183,33 @@ class RestPollFallback:
                 await asyncio.sleep(min(5.0, self._poll_interval - elapsed))
                 elapsed += 5.0
 
+    # ── FIX: ensure candle dicts always contain symbol + timeframe ──
+    @staticmethod
+    def _normalize_candles(
+        candles: list[dict[str, Any]],
+        symbol: str,
+        timeframe: str,
+    ) -> list[dict[str, Any]]:
+        """Inject symbol/timeframe into candle dicts if missing.
+
+        FinnhubCandleFetcher.fetch() may return candle dicts parsed
+        from the REST API response ({c,h,l,o,t,v}) without symbol
+        and timeframe fields — those are parameters of the fetch call,
+        not fields in Finnhub's response payload.
+
+        Without this normalization, _push_candles_to_redis() silently
+        skips every candle because candle.get("symbol") returns None.
+        """
+        normalized: list[dict[str, Any]] = []
+        for candle in candles:
+            c = dict(candle)  # shallow copy — don't mutate upstream data
+            if not c.get("symbol"):
+                c["symbol"] = symbol
+            if not c.get("timeframe"):
+                c["timeframe"] = timeframe
+            normalized.append(c)
+        return normalized
+
     async def _poll_symbol(self, symbol: str) -> None:
         """Fetch M15 + optional H1 for a single symbol and seed the context bus."""
         from ingest.finnhub_key_manager import finnhub_keys  # noqa: PLC0415
@@ -201,6 +228,9 @@ class RestPollFallback:
 
         try:
             m15_candles = await self._fetcher.fetch(symbol, "M15", self._bars)
+            # ── FIX: normalize before context bus + redis push ──
+            m15_candles = self._normalize_candles(m15_candles, symbol, "M15")
+
             for candle in m15_candles:
                 self._context_bus.update_candle(candle)
             await self._push_candles_to_redis(m15_candles)
@@ -220,13 +250,18 @@ class RestPollFallback:
         if self._refresh_h1:
             try:
                 h1_candles = await self._fetcher.fetch(symbol, "H1", self._h1_bars)
+                # ── FIX: normalize H1 candles ──
+                h1_candles = self._normalize_candles(h1_candles, symbol, "H1")
+
                 for candle in h1_candles:
                     self._context_bus.update_candle(candle)
 
-                # Also aggregate H4
                 if h1_candles:
                     await self._push_candles_to_redis(h1_candles)
+                    # Also aggregate H4
                     h4_candles = self._fetcher.aggregate_h4(h1_candles)
+                    # ── FIX: normalize H4 candles ──
+                    h4_candles = self._normalize_candles(h4_candles, symbol, "H4")
                     for candle in h4_candles:
                         self._context_bus.update_candle(candle)
                     await self._push_candles_to_redis(h4_candles)
@@ -270,10 +305,19 @@ class RestPollFallback:
                 )
             return
 
+        written_in_batch = 0
         for candle in candles:
             symbol = candle.get("symbol")
             timeframe = candle.get("timeframe")
             if not symbol or not timeframe:
+                # ── FIX: log skip instead of silent continue ──
+                logger.warning(
+                    "[RestPoll] Candle skipped — missing symbol=%s "
+                    "timeframe=%s keys=%s",
+                    symbol,
+                    timeframe,
+                    list(candle.keys())[:8],
+                )
                 continue
             key = candle_history(symbol, timeframe)
             try:
@@ -283,15 +327,28 @@ class RestPollFallback:
                 await self._redis.expire(key, self._HISTORY_TTL_SEC)
                 enqueue_candle_dict(candle)
                 self._redis_writes += 1
+                written_in_batch += 1
+
+                # Notify engine-side RedisConsumer via Pub/Sub
+                pub_channel = channel_candle(symbol, timeframe)
+                await self._redis.publish(pub_channel, candle_json)
             except Exception as exc:
                 logger.warning("[RestPoll] RPUSH failed %s: %s", key, exc)
 
-        if candles:
+        if written_in_batch > 0:
             logger.info(
-                "[RestPoll] Wrote %d candles to Redis (%s/%s) — "
+                "[RestPoll] Wrote %d/%d candles to Redis (%s/%s) — "
                 "total writes: %d",
+                written_in_batch,
                 len(candles),
                 candles[0].get("symbol", "?"),
                 candles[0].get("timeframe", "?"),
                 self._redis_writes,
+            )
+        elif candles:
+            logger.warning(
+                "[RestPoll] 0/%d candles written — all skipped! "
+                "First candle keys: %s",
+                len(candles),
+                list(candles[0].keys())[:10],
             )
