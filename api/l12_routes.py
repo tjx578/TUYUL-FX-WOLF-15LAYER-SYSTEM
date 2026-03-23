@@ -131,8 +131,12 @@ def fetch_all_verdicts() -> dict[str, Any]:
             continue
         data = get_verdict(pair)
         if data:
-            data["_meta"] = _build_meta(data)
-            verdicts[pair] = data
+            # Filter out verdicts with invalid score or take_profit_1
+            score = data.get("score", 0)
+            tp1 = data.get("take_profit_1", 0)
+            if score > 0 and tp1 > 0:
+                data["_meta"] = _build_meta(data)
+                verdicts[pair] = data
 
     return verdicts
 
