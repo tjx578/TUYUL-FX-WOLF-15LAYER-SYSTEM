@@ -27,25 +27,25 @@ _accounts = AccountManager()
 _audit = AuditTrail()
 
 
+# --- Updated AccountUpsertRequest for prop firm integration ---
 class AccountUpsertRequest(BaseModel):
-    account_name: str = Field(..., min_length=1, max_length=120)  # noqa: W191
-    broker: str = Field(default="MANUAL", min_length=1, max_length=80)  # noqa: W191
-    currency: str = Field(default="USD", min_length=3, max_length=3)  # noqa: W191
-    starting_balance: float = Field(..., gt=0)  # noqa: W191
-    current_balance: float = Field(..., gt=0)  # noqa: W191
-    equity: float = Field(..., gt=0)  # noqa: W191
-    equity_high: float = Field(..., gt=0)  # noqa: W191
-    leverage: int = Field(default=100, ge=1, le=5000)  # noqa: W191
-    commission_model: str = Field(default="standard", min_length=1, max_length=50)  # noqa: W191
-    notes: str | None = Field(default=None, max_length=300)  # noqa: W191
-    data_source: str = Field(default="MANUAL", pattern="^(EA|MANUAL)$")  # noqa: W191
-    prop_firm: bool = False  # noqa: W191
-    prop_firm_code: str = Field(default="ftmo", min_length=1, max_length=64)  # noqa: W191
-    max_daily_dd_percent: float = Field(default=4.0, gt=0, le=30)  # noqa: W191
-    max_total_dd_percent: float = Field(default=8.0, gt=0, le=50)  # noqa: W191
-    max_concurrent_trades: int = Field(default=1, ge=1, le=20)  # noqa: W191
-    compliance_mode: bool = Field(default=True)  # noqa: W191
-    reason: str = Field(..., min_length=1, max_length=200)  # noqa: W191
+    account_name: str = Field(..., min_length=1, max_length=120)
+    broker: str = Field(default="MANUAL", min_length=1, max_length=80)
+    currency: str = Field(default="USD", min_length=3, max_length=3)
+    starting_balance: float = Field(..., gt=0)
+    current_balance: float = Field(..., gt=0)
+    equity: float = Field(..., ge=0)
+    equity_high: float = Field(..., ge=0)
+    leverage: int = Field(default=100, ge=1, le=5000)
+    commission_model: str = Field(default="standard", min_length=1, max_length=50)
+    notes: str | None = Field(default=None, max_length=300)
+    data_source: str = Field(default="MANUAL", pattern="^(EA|MANUAL)$")
+    prop_firm: bool = False
+    prop_firm_code: str | None = None
+    program_code: str | None = None
+    phase_code: str | None = "funded"
+    compliance_mode: bool = Field(default=True)
+    reason: str = Field(..., min_length=1, max_length=200)
 
 
 def _validate_compliance_pin_or_raise(*, compliance_mode: bool, x_action_pin: str | None) -> None:
@@ -108,13 +108,56 @@ async def _enrich(account: Account) -> dict[str, Any]:
     }  # noqa: W191
 
 
+from fastapi import Query
+
+
 @router.get("", dependencies=[Depends(verify_token)])
-async def list_accounts() -> dict[str, Any]:
-    items = await _accounts.list_accounts_async()  # noqa: W191
-    return {  # noqa: W191
-        "count": len(items),  # noqa: W191
-        "accounts": [await _enrich(a) for a in items],  # noqa: W191
-    }  # noqa: W191
+async def list_accounts(include_archived: bool = Query(False)) -> dict[str, Any]:
+    items = await _accounts.list_accounts_async()
+    accounts = [await _enrich(a) for a in items]
+    if not include_archived:
+        accounts = [a for a in accounts if not a.get("is_archived")]
+    return {
+        "count": len(accounts),
+        "accounts": accounts,
+    }
+
+
+# --- Archive Account Endpoint ---
+from pydantic import BaseModel
+
+
+class AccountArchiveRequest(BaseModel):
+    reason: str = Field(..., min_length=1, max_length=200)
+
+
+@router.post("/{account_id}/archive", dependencies=[Depends(enforce_write_policy)])
+async def archive_account(account_id: str, req: AccountArchiveRequest) -> dict[str, Any]:
+    account = await _accounts.get_account_async(account_id)
+    if not account:
+        raise HTTPException(status_code=404, detail=f"Account not found: {account_id}")
+    client: Any = await get_client()
+    now = datetime.now(UTC).isoformat()
+    await client.hset(
+        f"ACCOUNT:{account_id}",
+        mapping={
+            "is_archived": 1,
+            "archived_at": now,
+            "archived_reason": req.reason,
+        },
+    )
+    _audit.log(
+        AuditAction.ORDER_MODIFIED,
+        actor="user:dashboard",
+        resource=f"account:{account_id}",
+        details={"action": "ACCOUNT_ARCHIVE", "reason": req.reason},
+    )
+    return {
+        "account_id": account_id,
+        "status": "archived",
+        "archived_at": now,
+        "reason": req.reason,
+    }
 
 
 @router.get("/risk-snapshot", dependencies=[Depends(verify_token)])
@@ -225,53 +268,70 @@ async def get_account(account_id: str) -> dict[str, Any]:
     return await _enrich(account)  # noqa: W191
 
 
+from propfirm_manager.rule_resolver import PropFirmRuleResolver
+
+
 @router.post("", dependencies=[Depends(enforce_write_policy)])
 async def create_account(
-    req: AccountUpsertRequest,  # noqa: W191
-    x_action_pin: str | None = Header(default=None, alias="X-Action-Pin"),  # noqa: W191
+    req: AccountUpsertRequest,
+    x_action_pin: str | None = Header(default=None, alias="X-Action-Pin"),
 ) -> dict[str, Any]:
-    _validate_compliance_pin_or_raise(compliance_mode=req.compliance_mode, x_action_pin=x_action_pin)  # noqa: W191
-    _validate_prop_limits_or_raise(req)  # noqa: W191
+    _validate_compliance_pin_or_raise(compliance_mode=req.compliance_mode, x_action_pin=x_action_pin)
 
-    account_id = f"ACC-{uuid.uuid4().hex[:10].upper()}"  # noqa: W191
-    account = Account(  # noqa: W191
-        account_id=account_id,  # noqa: W191
-        name=req.account_name,  # noqa: W191
-        balance=req.current_balance,  # noqa: W191
-        equity=req.equity,  # noqa: W191
-        prop_firm=req.prop_firm,  # noqa: W191
-        max_daily_dd_percent=req.max_daily_dd_percent,  # noqa: W191
-        max_total_dd_percent=req.max_total_dd_percent,  # noqa: W191
-        max_concurrent_trades=req.max_concurrent_trades,  # noqa: W191
-    )  # noqa: W191
-    await _accounts.upsert_account_async(account)  # noqa: W191
+    account_id = f"ACC-{uuid.uuid4().hex[:10].upper()}"
+    resolved_rules_snapshot = None
+    # If prop_firm, resolve rules and validate
+    if req.prop_firm and req.prop_firm_code and req.program_code:
+        resolver = PropFirmRuleResolver()
+        phase_code = req.phase_code or "funded"
+        try:
+            rules = resolver.resolve(req.prop_firm_code, req.program_code, phase_code)
+            resolved_rules_snapshot = rules.__dict__
+        except Exception as exc:
+            raise HTTPException(status_code=422, detail=f"Failed to resolve prop firm rules: {exc}")
+    # Backward compatible for manual/non-prop-firm
+    account = Account(
+        account_id=account_id,
+        name=req.account_name,
+        balance=req.current_balance,
+        equity=req.equity,
+        prop_firm=req.prop_firm,
+        max_daily_dd_percent=getattr(rules, "max_daily_dd_percent", None) if req.prop_firm else None,
+        max_total_dd_percent=getattr(rules, "max_total_dd_percent", None) if req.prop_firm else None,
+        max_concurrent_trades=getattr(rules, "max_concurrent_trades", 1) if req.prop_firm else 1,
+    )
+    await _accounts.upsert_account_async(account)
 
-    client: Any = await get_client()  # noqa: W191
-    mapping: dict[str, Any] = {  # noqa: W191
-        "account_name": req.account_name,  # noqa: W191
-        "broker": req.broker,  # noqa: W191
-        "currency": req.currency.upper(),  # noqa: W191
-        "starting_balance": req.starting_balance,  # noqa: W191
-        "current_balance": req.current_balance,  # noqa: W191
-        "equity": req.equity,  # noqa: W191
-        "equity_high": req.equity_high,  # noqa: W191
-        "leverage": req.leverage,  # noqa: W191
-        "commission_model": req.commission_model,  # noqa: W191
-        "notes": req.notes or "",  # noqa: W191
-        "data_source": req.data_source,  # noqa: W191
-        "prop_firm_code": req.prop_firm_code.strip().lower(),  # noqa: W191
-        "compliance_mode": int(bool(req.compliance_mode)),  # noqa: W191
-        "updated_at": datetime.now(UTC).isoformat(),  # noqa: W191
-    }  # noqa: W191
-    await client.hset(f"ACCOUNT:{account_id}", mapping=mapping)  # noqa: W191
+    client: Any = await get_client()
+    mapping: dict[str, Any] = {
+        "account_name": req.account_name,
+        "broker": req.broker,
+        "currency": req.currency.upper(),
+        "starting_balance": req.starting_balance,
+        "current_balance": req.current_balance,
+        "equity": req.equity,
+        "equity_high": req.equity_high,
+        "leverage": req.leverage,
+        "commission_model": req.commission_model,
+        "notes": req.notes or "",
+        "data_source": req.data_source,
+        "prop_firm": int(bool(req.prop_firm)),
+        "prop_firm_code": req.prop_firm_code or "",
+        "program_code": req.program_code or "",
+        "phase_code": req.phase_code or "funded",
+        "resolved_rules_snapshot": resolved_rules_snapshot,
+        "compliance_mode": int(bool(req.compliance_mode)),
+        "updated_at": datetime.now(UTC).isoformat(),
+    }
+    await client.hset(f"ACCOUNT:{account_id}", mapping=mapping)
 
-    _audit.log(  # noqa: W191
-        AuditAction.ORDER_MODIFIED,  # noqa: W191
-        actor="user:dashboard",  # noqa: W191
-        resource=f"account:{account_id}",  # noqa: W191
-        details={"action": "ACCOUNT_CREATE", "reason": req.reason, "data_source": req.data_source},  # noqa: W191
-    )  # noqa: W191
-    return await _enrich(account)  # noqa: W191
+    _audit.log(
+        AuditAction.ORDER_MODIFIED,
+        actor="user:dashboard",
+        resource=f"account:{account_id}",
+        details={"action": "ACCOUNT_CREATE", "reason": req.reason, "data_source": req.data_source},
+    )
+    return await _enrich(account)
 
 
 @router.put("/{account_id}", dependencies=[Depends(enforce_write_policy)])
