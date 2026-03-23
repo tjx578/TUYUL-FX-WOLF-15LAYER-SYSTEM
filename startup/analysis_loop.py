@@ -204,6 +204,17 @@ async def _analyze_pair(
             )
 
             if result:
+                # ABORT: pipeline explicitly set result["verdict"] = None to signal
+                # that no analysis was performed (e.g., warmup rejection).
+                # Never persist a verdict in this case — it would pollute Redis with
+                # stale/empty payloads while candle history is still warming up.
+                if "verdict" in result and result["verdict"] is None:
+                    logger.debug(
+                        "[VerdictPath] Pipeline ABORTED for {} — skipping verdict persist (will retry next cycle)",
+                        pair,
+                    )
+                    return None  # pair will be re-scheduled next cycle
+
                 try:
                     verdict_payload = _build_verdict_cache_payload(pair, result)
                     set_verdict(pair, verdict_payload)
