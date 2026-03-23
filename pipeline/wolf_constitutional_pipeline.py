@@ -606,22 +606,25 @@ class WolfConstitutionalPipeline:
                 layers_executed.append("L0")
                 engines_invoked.append("WarmupGate")
                 VERDICT_PATH_EVENT_TOTAL.labels(event="warmup_rejected", symbol=symbol, status="hold").inc()
-                logger.warning(
-                    f"[VerdictPath] warmup rejected | symbol={symbol} "
+                logger.error(
+                    f"[VerdictPath] ABORT: warmup rejected | symbol={symbol} "
                     f"bars={warmup['bars']} required={warmup['required']} missing={missing}"
                 )
-                logger.warning(
+                logger.error(
                     f"[Pipeline v8.0] {symbol} WARMUP INSUFFICIENT — "
                     f"bars={warmup['bars']}, required={warmup['required']}, "
                     f"missing={missing}"
                 )
-                # Return full-structure result (same shape as _early_exit)
-                # so downstream consumers never hit missing-key errors.
+                # Strict enforcement: never proceed to any layer or verdict logic
                 result = _early_exit_with_map(
                     [f"WARMUP_INSUFFICIENT:{missing}_bars_missing"],
                     time.time() - start_time,
                 )
                 result["warmup"] = warmup
+                result["verdict"] = None  # Explicitly signal no verdict
+                logger.error(
+                    f"[VerdictPath] Pipeline execution ABORTED for symbol={symbol} due to insufficient warmup. No verdict published."
+                )
                 return result
 
         # ═══════════════════════════════════════════════════════
