@@ -199,6 +199,7 @@ export interface Account {
   usable_capital?: number;
   eligibility_flags?: EligibilityFlags;
   lock_reasons?: string[];
+  is_archived?: boolean;
 }
 
 export interface EligibilityFlags {
@@ -224,8 +225,13 @@ export interface AccountCreate {
   account_name: string;
   balance: number;
   equity: number;
-  prop_firm_code?: string;
   currency: string;
+  data_source?: "MANUAL" | "EA";
+  prop_firm?: boolean;
+  prop_firm_code?: string | null;
+  program_code?: string | null;
+  phase_code?: string | null;
+  reason?: string;
 }
 
 export interface CreateAccountRequest {
