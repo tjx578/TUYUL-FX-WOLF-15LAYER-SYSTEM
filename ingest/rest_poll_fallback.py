@@ -34,6 +34,9 @@ class RestPollFallback:
         List of internal symbols to poll (e.g. ``["EURUSD", "XAUUSD"]``).
     """
 
+    # TTL for candle history keys (6 hours)
+    _HISTORY_TTL_SEC = 6 * 3600
+
     def __init__(
         self,
         ws_connected_fn: Any,
@@ -65,10 +68,32 @@ class RestPollFallback:
         self._context_bus = LiveContextBus()
         self._running = False
 
+        # Track redis write stats for diagnostics
+        self._redis_writes: int = 0
+        self._redis_skips: int = 0
+
+        # Log redis client status at init for visibility
+        if self._redis is None:
+            logger.error(
+                "[RestPoll] redis_client is None at init! "
+                "All candle writes will be silently skipped. "
+                "Check ingest_service.py redis_client injection."
+            )
+        else:
+            logger.info(
+                "[RestPoll] redis_client injected OK: %s",
+                type(self._redis).__name__,
+            )
+
         logger.info(
-            f"RestPollFallback initialized: interval={self._poll_interval}s, "
-            f"grace={self._grace_sec}s, m15_bars={self._bars}, "
-            f"refresh_h1={self._refresh_h1}, symbols={len(self._symbols)}"
+            "RestPollFallback initialized: interval=%.1fs, "
+            "grace=%.1fs, m15_bars=%d, "
+            "refresh_h1=%s, symbols=%d",
+            self._poll_interval,
+            self._grace_sec,
+            self._bars,
+            self._refresh_h1,
+            len(self._symbols),
         )
 
     async def run(self) -> None:
@@ -80,7 +105,10 @@ class RestPollFallback:
             try:
                 if not self._ws_connected():
                     # ── WS fully down path (original behaviour) ──
-                    logger.info(f"WS disconnected — waiting {self._grace_sec:.0f}s grace before REST polling")
+                    logger.info(
+                        "WS disconnected — waiting %.0fs grace before REST polling",
+                        self._grace_sec,
+                    )
                     await asyncio.sleep(self._grace_sec)
 
                     if self._ws_connected():
@@ -95,7 +123,9 @@ class RestPollFallback:
                     silent = self._get_silent_pairs()
                     if silent:
                         logger.info(
-                            f"WS connected but {len(silent)} pairs silent — REST polling: {', '.join(sorted(silent))}"
+                            "WS connected but %d pairs silent — REST polling: %s",
+                            len(silent),
+                            ", ".join(sorted(silent)),
                         )
                         if is_forex_market_open():
                             for symbol in silent:
@@ -134,7 +164,11 @@ class RestPollFallback:
                 continue
 
             cycle += 1
-            logger.info(f"REST poll cycle #{cycle} for {len(self._symbols)} symbols")
+            logger.info(
+                "REST poll cycle #%d for %d symbols",
+                cycle,
+                len(self._symbols),
+            )
 
             for symbol in self._symbols:
                 if self._ws_connected():
@@ -172,12 +206,16 @@ class RestPollFallback:
             await self._push_candles_to_redis(m15_candles)
 
             if m15_candles:
-                logger.debug(f"REST poll: seeded {len(m15_candles)} M15 bars for {symbol}")
+                logger.debug(
+                    "REST poll: seeded %d M15 bars for %s",
+                    len(m15_candles),
+                    symbol,
+                )
 
         except FinnhubCandleError as exc:
-            logger.warning(f"REST poll M15 failed for {symbol}: {exc}")
+            logger.warning("REST poll M15 failed for %s: %s", symbol, exc)
         except Exception as exc:
-            logger.error(f"REST poll M15 unexpected error for {symbol}: {exc}")
+            logger.error("REST poll M15 unexpected error for %s: %s", symbol, exc)
 
         if self._refresh_h1:
             try:
@@ -194,19 +232,44 @@ class RestPollFallback:
                     await self._push_candles_to_redis(h4_candles)
 
             except FinnhubCandleError as exc:
-                logger.warning(f"REST poll H1 failed for {symbol}: {exc}")
+                logger.warning("REST poll H1 failed for %s: %s", symbol, exc)
             except Exception as exc:
-                logger.error(f"REST poll H1 unexpected error for {symbol}: {exc}")
+                logger.error("REST poll H1 unexpected error for %s: %s", symbol, exc)
 
     async def stop(self) -> None:
         """Signal the fallback scheduler to stop."""
         self._running = False
-        logger.info("RestPollFallback stopping")
+        logger.info(
+            "RestPollFallback stopping — redis writes=%d, skips=%d",
+            self._redis_writes,
+            self._redis_skips,
+        )
 
     async def _push_candles_to_redis(self, candles: list[dict[str, Any]]) -> None:
         """RPUSH candle dicts to Redis history lists (best-effort)."""
-        if not self._redis or not candles:
+        if not candles:
             return
+
+        if not self._redis:
+            self._redis_skips += len(candles)
+            # Log loudly on first skip, then throttle
+            if self._redis_skips <= len(candles):
+                logger.error(
+                    "[RestPoll] REDIS CLIENT IS NONE — "
+                    "cannot write %d candles to Redis! "
+                    "Total skipped: %d. "
+                    "Fix: pass redis_client to RestPollFallback.__init__()",
+                    len(candles),
+                    self._redis_skips,
+                )
+            elif self._redis_skips % 100 == 0:
+                logger.error(
+                    "[RestPoll] Still no redis_client — "
+                    "%d candles skipped so far",
+                    self._redis_skips,
+                )
+            return
+
         for candle in candles:
             symbol = candle.get("symbol")
             timeframe = candle.get("timeframe")
@@ -217,6 +280,18 @@ class RestPollFallback:
                 candle_json = orjson.dumps(candle).decode("utf-8")
                 await self._redis.rpush(key, candle_json)
                 await self._redis.ltrim(key, -self._redis_maxlen, -1)
+                await self._redis.expire(key, self._HISTORY_TTL_SEC)
                 enqueue_candle_dict(candle)
+                self._redis_writes += 1
             except Exception as exc:
                 logger.warning("[RestPoll] RPUSH failed %s: %s", key, exc)
+
+        if candles:
+            logger.info(
+                "[RestPoll] Wrote %d candles to Redis (%s/%s) — "
+                "total writes: %d",
+                len(candles),
+                candles[0].get("symbol", "?"),
+                candles[0].get("timeframe", "?"),
+                self._redis_writes,
+            )
