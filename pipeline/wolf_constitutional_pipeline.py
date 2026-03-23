@@ -627,6 +627,10 @@ class WolfConstitutionalPipeline:
                 )
                 return result
 
+        # After pipeline layers, before persisting verdict:
+        # (Find verdict assignment and add TP>0 check before persist)
+        # ...existing code...
+
         # ═══════════════════════════════════════════════════════
         # DATA QUALITY GATE -- assess candle gap ratio / staleness
         # and compute confidence penalty to degrade gracefully
