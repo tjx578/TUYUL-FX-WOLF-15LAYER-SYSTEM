@@ -1,3 +1,19 @@
+// Prop firm metadata endpoints
+export async function fetchPropFirms() {
+  return fetcher("/api/v1/prop-firm/firms");
+}
+
+export async function fetchPropFirmPrograms(firm_code: string) {
+  return fetcher(`/api/v1/prop-firm/firms/${firm_code}/programs`);
+}
+
+export async function fetchPropFirmRules(firm_code: string, program_code: string, phase: string = "funded") {
+  return fetcher(`/api/v1/prop-firm/firms/${firm_code}/programs/${program_code}/rules?phase=${phase}`);
+}
+
+export async function archiveAccount(account_id: string, reason: string) {
+  return apiMutate(`/api/v1/accounts/${account_id}/archive`, { reason }, "POST");
+}
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type {
   L12Verdict,
@@ -237,12 +253,12 @@ function useApiQuery<T>(
     // the console with synthetic errors, then resume after cooldown + buffer.
     ...(opts?.refetchInterval
       ? {
-          refetchInterval: () => {
-            const remaining = _rateLimitedUntil - Date.now();
-            if (remaining > 0) return remaining + 1_000;
-            return opts.refetchInterval!;
-          },
-        }
+        refetchInterval: () => {
+          const remaining = _rateLimitedUntil - Date.now();
+          if (remaining > 0) return remaining + 1_000;
+          return opts.refetchInterval!;
+        },
+      }
       : {}),
   });
   const mutate = () => queryClient.invalidateQueries({ queryKey: [key] });
