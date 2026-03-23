@@ -296,37 +296,18 @@ class RedisConsumer:
                 continue
 
         # --- Strategy 2: HASH key via HGETALL (single latest candle) ---
+        # The HASH stores the full candle JSON in the "data" field (written by
+        # RedisContextBridge.write_candle / context/redis_context_bridge.py).
         hash_key = f"wolf15:candle:{symbol}:{timeframe}"
         try:
             data = await self._redis.hgetall(hash_key)
             if data:
-                # Decode bytes keys/values if needed
-                bar = {}
-                for k, v in data.items():
-                    k_str = k.decode() if isinstance(k, bytes) else k
-                    v_str = v.decode() if isinstance(v, bytes) else v
-                    try:
-                        bar[k_str] = float(v_str)
-                    except (ValueError, TypeError):
-                        bar[k_str] = v_str
-                if bar:
-                    logger.info(
-                        "warmup_candle_history | symbol=%s tf=%s fallback: 1 bar from HASH %s",
-                        symbol,
-                        timeframe,
-                        hash_key,
-                    )
-                    import orjson
-                    return [orjson.dumps(bar)]
-        except Exception as exc:
-            logger.warning("warmup_candle_history | hgetall failed on %s: %s", hash_key, exc)
-
-        logger.warning(
-            "warmup_candle_history | symbol=%s tf=%s: no candle data found in Redis",
-            symbol,
-            timeframe,
-        )
-        return []
+                raw_json: bytes | str | None = data.get(b"data") or data.get("data")
+                if raw_json:
+                    # Optionally enrich with last_seen_ts for freshness metadata.
+                    last_seen: bytes | str | None = data.get(b"last_seen_ts") or data.get("last_seen_ts")
+                    if last_seen:
+                        try:
                             candle_dict = orjson.loads(raw_json)
                             ts_str = last_seen if isinstance(last_seen, str) else last_seen.decode("utf-8")
                             candle_dict["last_seen_ts"] = float(ts_str)
@@ -338,12 +319,15 @@ class RedisConsumer:
                         symbol,
                         timeframe,
                     )
-                    return [raw_json]
+                    return [raw_json if isinstance(raw_json, bytes) else raw_json.encode("utf-8")]
         except Exception as exc:
             logger.warning("warmup_candle_history | hgetall failed on %s: %s", hash_key, exc)
 
-        # Missing data is expected during startup races (engine before ingest).
-        # Keep this as debug to avoid noisy false alarms in platform logs.
+        logger.warning(
+            "warmup_candle_history | symbol=%s tf=%s: no candle data found in Redis",
+            symbol,
+            timeframe,
+        )
         return []
 
     # ------------------------------------------------------------------
