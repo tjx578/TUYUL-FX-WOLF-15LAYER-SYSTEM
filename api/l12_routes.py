@@ -115,13 +115,68 @@ def fetch_l12(pair: str):
     return data
 
 
+# --- PATCH 4: Verdict response filter + cache ---
+import logging
+
+logger = logging.getLogger(__name__)
+
+
+class VerdictCache:
+    """Simple in-memory cache to reduce Redis reads."""
+
+    def __init__(self, ttl_seconds: float = 5.0) -> None:
+        self._ttl = ttl_seconds
+        self._data: dict[str, Any] | None = None
+        self._last_fetch: float = 0.0
+
+    @property
+    def is_stale(self) -> bool:
+        return (time.time() - self._last_fetch) > self._ttl
+
+    def get(self) -> dict[str, Any] | None:
+        if self.is_stale:
+            return None
+        return self._data
+
+    def set(self, data: dict[str, Any]) -> None:
+        self._data = data
+        self._last_fetch = time.time()
+
+
+_verdict_cache = VerdictCache(ttl_seconds=5.0)
+
+
+def _filter_valid_verdicts(verdicts: dict[str, Any]) -> dict[str, Any]:
+    valid = {}
+    for pair, v in verdicts.items():
+        score = v.get("score", 0)
+        tp1 = v.get("take_profit_1", 0)
+        sl = v.get("stop_loss", 0)
+        direction = v.get("direction", "")
+        if not score or score <= 0:
+            continue
+        if not tp1 or tp1 <= 0:
+            continue
+        if not sl or sl <= 0:
+            continue
+        if not direction or direction == "NEUTRAL":
+            continue
+        valid[pair] = v
+    if len(valid) < len(verdicts):
+        logger.debug(
+            "[Verdict API] Filtered %d/%d invalid verdicts",
+            len(verdicts) - len(valid),
+            len(verdicts),
+        )
+    return valid
+
+
 @router.get("/api/v1/verdict/all", dependencies=[Depends(verify_token)])
 def fetch_all_verdicts() -> dict[str, Any]:
-    """Get verdicts for all available pairs.
-
-    Includes degraded verdicts so the frontend can distinguish
-    'pipeline ran but failed' from 'no data yet'.
-    """
+    """Get verdicts for all available pairs (filtered, cached)."""
+    cached = _verdict_cache.get()
+    if cached is not None:
+        return {"verdicts": cached, "count": len(cached), "cached": True}
     verdicts: dict[str, Any] = {}
     for pair_info in AVAILABLE_PAIRS:
         pair = pair_info["symbol"]
@@ -131,14 +186,14 @@ def fetch_all_verdicts() -> dict[str, Any]:
             continue
         data = get_verdict(pair)
         if data:
-            # Filter out verdicts with invalid score or take_profit_1
             score = data.get("score", 0)
             tp1 = data.get("take_profit_1", 0)
             if score > 0 and tp1 > 0:
                 data["_meta"] = _build_meta(data)
                 verdicts[pair] = data
-
-    return verdicts
+    valid = _filter_valid_verdicts(verdicts)
+    _verdict_cache.set(valid)
+    return {"verdicts": valid, "count": len(valid), "cached": False}
 
 
 @router.get("/api/v1/verdict", dependencies=[Depends(verify_token)])

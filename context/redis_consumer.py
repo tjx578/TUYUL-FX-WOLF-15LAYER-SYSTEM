@@ -274,50 +274,59 @@ class RedisConsumer:
 
     async def _warmup_candle_history(self, symbol: str, timeframe: str) -> list[bytes]:
         """
-        Load candle history from Redis, trying multiple sources.
-
-        Priority:
-          1. List keys (wolf15:candle_history, candle_history) — correct type for LRANGE
-          2. Hash key (wolf15:candle) — single latest candle via HGETALL fallback
-
-        Each call is wrapped in try/except so a WRONGTYPE error on one key
-        does not prevent the remaining fallbacks from being tried.
+        Load candle history from Redis, using only LIST keys for lrange.
+        Fallback to HASH key for single latest candle if no history exists.
         """
-        # ── Priority 1: List keys (safe for LRANGE) ──
+        # --- Strategy 1: LIST keys via LRANGE (correct type) ---
         for prefix in _get_candle_prefixes():
             key = f"{prefix}:{symbol}:{timeframe}"
             try:
-                raw_entries: list[bytes] = await self._redis.lrange(key, 0, -1)
-                if raw_entries:
+                raw = await self._redis.lrange(key, 0, -1)
+                if raw:
                     logger.info(
                         "warmup_candle_history | symbol=%s tf=%s prefix_used=%s count=%d",
                         symbol,
                         timeframe,
                         prefix,
-                        len(raw_entries),
+                        len(raw),
                     )
-                    return raw_entries
+                    return raw
             except Exception as exc:
-                # WRONGTYPE or connection error — log and try next prefix
                 logger.warning("warmup_candle_history | lrange failed on %s: %s", key, exc)
+                continue
 
-        # ── Priority 2: Hash key (single latest candle) ──
-        # wolf15:candle:{sym}:{tf} is written via HSET by RedisContextBridge.
-        # It only holds the *latest* candle, but 1 bar > 0 bars.
-        hash_key = f"{CANDLE_HASH_PREFIX}:{symbol}:{timeframe}"
+        # --- Strategy 2: HASH key via HGETALL (single latest candle) ---
+        hash_key = f"wolf15:candle:{symbol}:{timeframe}"
         try:
-            data: dict[str | bytes, str | bytes] = await self._redis.hgetall(hash_key)
+            data = await self._redis.hgetall(hash_key)
             if data:
-                # Hash stores {"data": "<json>", "last_seen_ts": "<epoch>"}
-                raw_json = data.get("data") or data.get(b"data")
-                if raw_json:
-                    if isinstance(raw_json, str):
-                        raw_json = raw_json.encode("utf-8")
-                    # Inject last_seen_ts into candle payload so warmup
-                    # data carries freshness metadata (P0-3).
-                    last_seen = data.get("last_seen_ts") or data.get(b"last_seen_ts")
-                    if last_seen:
-                        try:
+                # Decode bytes keys/values if needed
+                bar = {}
+                for k, v in data.items():
+                    k_str = k.decode() if isinstance(k, bytes) else k
+                    v_str = v.decode() if isinstance(v, bytes) else v
+                    try:
+                        bar[k_str] = float(v_str)
+                    except (ValueError, TypeError):
+                        bar[k_str] = v_str
+                if bar:
+                    logger.info(
+                        "warmup_candle_history | symbol=%s tf=%s fallback: 1 bar from HASH %s",
+                        symbol,
+                        timeframe,
+                        hash_key,
+                    )
+                    import orjson
+                    return [orjson.dumps(bar)]
+        except Exception as exc:
+            logger.warning("warmup_candle_history | hgetall failed on %s: %s", hash_key, exc)
+
+        logger.warning(
+            "warmup_candle_history | symbol=%s tf=%s: no candle data found in Redis",
+            symbol,
+            timeframe,
+        )
+        return []
                             candle_dict = orjson.loads(raw_json)
                             ts_str = last_seen if isinstance(last_seen, str) else last_seen.decode("utf-8")
                             candle_dict["last_seen_ts"] = float(ts_str)
