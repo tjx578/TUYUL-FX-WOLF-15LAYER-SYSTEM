@@ -1,0 +1,46 @@
+# Aqua Instant Standard — Machine-Readable Strategy Configuration
+# Version: 1.0
+# Profile: aquafunded/instant_standard
+# Zone: propfirm_manager — strategy constraints consumed by risk manager
+
+strategy:
+  profile: aquafunded/instant_standard
+  version: "1.0"
+  description: >
+    Production strategy configuration for Aqua Funded Instant Standard accounts.
+    Hard rules are enforced by AquaInstantStandardGuard; soft rules are surfaced
+    as advisory warnings and compliance scoring.
+
+# ---------------------------------------------------------------------------
+# Account Constraints (from AquaFunded Instant Standard terms)
+# ---------------------------------------------------------------------------
+account_constraints:
+  trailing_drawdown_percent: 3.0          # Trailing equity drawdown limit
+  kill_switch_floating_loss_percent: 2.0  # Floating loss % of initial balance → permanent account closure
+  payout_min_profit_day_percent: 0.5      # Min profit per day (% of initial balance) to count as profitable day
+  payout_min_profitable_days: 5           # Min number of qualifying profitable days before payout request
+  payout_best_day_max_percent_of_total: 20.0  # Best profit day must be < 20% of total profit for the period
+  profit_split_percent: 90.0              # Trader's share of profit
+  leverage_forex_max: 30                  # Max forex leverage (1:30)
+
+# ---------------------------------------------------------------------------
+# Risk Management
+# ---------------------------------------------------------------------------
+risk_management:
+  risk_per_trade_percent: 0.4             # Operational risk cap per trade
+  min_risk_per_trade_percent: 0.25        # Minimum sensible risk per trade
+  max_total_open_risk_percent: 0.8        # Max combined open risk across all positions
+  max_primary_positions: 2               # Max simultaneous primary positions
+  max_correlated_positions: 2            # Max positions across correlated pairs
+  max_same_direction_correlated_positions: 1  # Max same-direction positions in correlated pairs
+  stop_loss_required: true               # Every trade must have a stop-loss
+  catastrophic_stop_required: true       # Catastrophic (emergency) stop also required
+  stop_loss_method: technical_or_atr     # Stop placement: logical technical level or ATR-based
+  atr_stop_multiple: 1.5                 # ATR multiplier for stop placement
+  move_to_breakeven_after_rr: 1.0        # Move SL to breakeven after RR reaches this level
+  partial_tp_enabled: true               # Allow partial take-profit scaling
+  first_target_rr: 2.0                   # First TP at RR 1:2
+  second_target_rr: 3.0                  # Second TP at RR 1:3 (or trailing stop)
+  internal_drawdown_warning_threshold_percent: 1.0  # Warn when account drawdown exceeds this
+  hard_weekly_loss_limit_percent: 2.0    # Hard weekly loss cap (stop trading for the week)
+  max_consecutive_losses_per_day: 2      # Stop trading today after this many consecutive losses
