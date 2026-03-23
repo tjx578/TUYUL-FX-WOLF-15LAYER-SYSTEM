@@ -1,0 +1,85 @@
+name: "Aqua Instant Standard"
+version: "1.0"
+firm_code: "aquafunded"
+
+# Default rules (fallback if plan/phase not found)
+default_rules:
+  max_daily_dd_percent: null
+  drawdown_mode_daily: "none"
+  max_total_dd_percent: 3.0
+  drawdown_mode_total: "trailing"
+  consistency_rule_percent: 20.0
+  profit_split_percent: 90.0
+  min_trading_days_for_payout: 5
+  payout_cycle_days: 14
+  leverage:
+    forex: "1:30"
+    indices: "1:10"
+    commodities: "1:10"
+    crypto: "1:1"
+
+plans:
+  standard_100k:
+    display_name: "Standard $100,000"
+    initial_balance: 100000
+    currency: "USD"
+    phases:
+      funded:
+        max_daily_dd_percent: null
+        drawdown_mode_daily: "none"
+        max_total_dd_percent: 3.0
+        drawdown_mode_total: "trailing"
+        consistency_rule_percent: 20.0
+        profit_split_percent: 90.0
+        min_trading_days_for_payout: 5
+        payout_cycle_days: 14
+        leverage:
+          forex: "1:30"
+          indices: "1:10"
+          commodities: "1:10"
+          crypto: "1:1"
+
+  standard_50k:
+    display_name: "Standard $50,000"
+    initial_balance: 50000
+    currency: "USD"
+    phases:
+      funded:
+        max_daily_dd_percent: null
+        drawdown_mode_daily: "none"
+        max_total_dd_percent: 3.0
+        drawdown_mode_total: "trailing"
+        consistency_rule_percent: 20.0
+        profit_split_percent: 90.0
+        min_trading_days_for_payout: 5
+        payout_cycle_days: 14
+        leverage:
+          forex: "1:30"
+          indices: "1:10"
+          commodities: "1:10"
+          crypto: "1:1"
+
+  standard_25k:
+    display_name: "Standard $25,000"
+    initial_balance: 25000
+    currency: "USD"
+    phases:
+      funded:
+        max_daily_dd_percent: null
+        drawdown_mode_daily: "none"
+        max_total_dd_percent: 3.0
+        drawdown_mode_total: "trailing"
+        consistency_rule_percent: 20.0
+        profit_split_percent: 90.0
+        min_trading_days_for_payout: 5
+        payout_cycle_days: 14
+        leverage:
+          forex: "1:30"
+          indices: "1:10"
+          commodities: "1:10"
+          crypto: "1:1"
+
+features:
+  allow_scaling: true
+  allow_split_risk: true
+  allow_weekend_holding: true
