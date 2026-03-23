@@ -99,6 +99,52 @@ class TestAquaInstantProResolution:
 # ---------------------------------------------------------------------------
 
 
+# ---------------------------------------------------------------------------
+# Aqua Instant Standard — funded plan resolution
+# ---------------------------------------------------------------------------
+
+
+class TestAquaInstantStandardResolution:
+    def test_standard_100k_funded_returns_resolved_rules(self, resolver: PropFirmRuleResolver):
+        rules = resolver.resolve("aquafunded", "standard_100k", "funded")
+        assert isinstance(rules, ResolvedPropRules)
+
+    def test_standard_100k_funded_correct_dd_limits(self, resolver: PropFirmRuleResolver):
+        rules = resolver.resolve("aquafunded", "standard_100k", "funded")
+        assert rules.max_daily_dd_percent is None
+        assert rules.max_total_dd_percent == pytest.approx(3.0)
+
+    def test_standard_100k_funded_trailing_mode(self, resolver: PropFirmRuleResolver):
+        rules = resolver.resolve("aquafunded", "standard_100k", "funded")
+        assert rules.drawdown_mode_total == "trailing"
+        assert rules.drawdown_mode_daily == "none"
+
+    def test_standard_100k_funded_consistency_rule(self, resolver: PropFirmRuleResolver):
+        rules = resolver.resolve("aquafunded", "standard_100k", "funded")
+        assert rules.consistency_rule_percent == pytest.approx(20.0)
+
+    def test_standard_100k_funded_min_trading_days(self, resolver: PropFirmRuleResolver):
+        rules = resolver.resolve("aquafunded", "standard_100k", "funded")
+        assert rules.min_trading_days_for_payout == 5
+
+    def test_standard_100k_funded_profit_split(self, resolver: PropFirmRuleResolver):
+        rules = resolver.resolve("aquafunded", "standard_100k", "funded")
+        assert rules.profit_split_percent == pytest.approx(90.0)
+
+    def test_standard_100k_funded_leverage(self, resolver: PropFirmRuleResolver):
+        rules = resolver.resolve("aquafunded", "standard_100k", "funded")
+        assert rules.leverage["forex"] == "1:30"
+        assert rules.leverage["indices"] == "1:10"
+        assert rules.leverage["commodities"] == "1:10"
+        assert rules.leverage["crypto"] == "1:1"
+
+    def test_standard_50k_matches_standard_100k_rules(self, resolver: PropFirmRuleResolver):
+        rules_100k = resolver.resolve("aquafunded", "standard_100k", "funded")
+        rules_50k = resolver.resolve("aquafunded", "standard_50k", "funded")
+        assert rules_100k.max_total_dd_percent == rules_50k.max_total_dd_percent
+        assert rules_100k.consistency_rule_percent == rules_50k.consistency_rule_percent
+
+
 class TestFTMOResolution:
     def test_challenge_100k_challenge_phase(self, resolver: PropFirmRuleResolver):
         rules = resolver.resolve("ftmo", "challenge_100k", "challenge")
