@@ -79,6 +79,17 @@ TIMEFRAMES = {
     "H4": ("240", 30, 10, "Pipeline gate (Zone B)"),
 }
 
+# Expand calendar lookback beyond pure bar math, especially for HTF where
+# weekends and broker feed gaps can reduce returned bars.
+LOOKBACK_MULTIPLIER = {
+    "M5": 2.0,
+    "M15": 2.5,
+    "H1": 6.0,
+    "H4": 12.0,
+}
+
+MAX_FETCH_RETRIES = 3
+
 
 def to_redis_symbol(finnhub_sym: str) -> str:
     """OANDA:EUR_USD → EURUSD"""
@@ -159,21 +170,39 @@ def seed_timeframe(
 
     # Fetch from Finnhub
     now = int(time.time())
-    since = now - (bars_to_fetch * int(resolution) * 60)
+    lookback_seconds = int(bars_to_fetch * int(resolution) * 60 * LOOKBACK_MULTIPLIER.get(tf, 2.0))
+    since = now - lookback_seconds
 
     try:
-        resp = requests.get(
-            "https://finnhub.io/api/v1/forex/candle",
-            params={
-                "symbol": pair,
-                "resolution": resolution,
-                "from": since,
-                "to": now,
-                "token": FINNHUB_KEY,
-            },
-            timeout=15,
-        )
-        data = resp.json()
+        resp = None
+        data = None
+        last_http_error = None
+
+        for attempt in range(1, MAX_FETCH_RETRIES + 1):
+            try:
+                resp = requests.get(
+                    "https://finnhub.io/api/v1/forex/candle",
+                    params={
+                        "symbol": pair,
+                        "resolution": resolution,
+                        "from": since,
+                        "to": now,
+                        "token": FINNHUB_KEY,
+                    },
+                    timeout=15,
+                )
+                data = resp.json()
+                break
+            except requests.exceptions.RequestException as exc:
+                last_http_error = exc
+                if attempt == MAX_FETCH_RETRIES:
+                    raise
+                time.sleep(0.5 * attempt)
+
+        if resp is None or data is None:
+            if last_http_error:
+                raise last_http_error
+            return 0, "Finnhub: no response"
 
         if resp.status_code != 200:
             detail = data.get("error") or data.get("s") or resp.reason
