@@ -1,0 +1,8 @@
+# Force LF line endings for all shell scripts & Docker files
+# Prevents CRLF crash loops on Linux containers when editing on Windows
+*.sh        text eol=lf
+Dockerfile  text eol=lf
+Dockerfile* text eol=lf
+*.yml       text eol=lf
+*.yaml      text eol=lf
+*.toml      text eol=lf
