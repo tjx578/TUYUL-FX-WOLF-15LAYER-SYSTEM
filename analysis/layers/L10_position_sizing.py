@@ -30,6 +30,8 @@ import math
 from datetime import UTC, datetime
 from typing import Any, Final
 
+from core.core_fusion._utils import _clamp01
+
 logger = logging.getLogger(__name__)
 
 # ── Dynamic Position Sizing Config (from constitution.yaml) ──────────────
@@ -249,7 +251,7 @@ def _fta_multiplier(confidence: float) -> tuple[float, str]:
 
     Uses the ``_FTA_BANDS`` table.  Clamps input to [0, 1].
     """
-    c = max(0.0, min(1.0, confidence))
+    c = _clamp01(confidence)
     for lo, hi, mult, label in _FTA_BANDS:
         if lo <= c < hi:
             return mult, label

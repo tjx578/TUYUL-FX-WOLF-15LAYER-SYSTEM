@@ -42,6 +42,7 @@ from typing import Any
 
 from loguru import logger
 
+from core.core_fusion._utils import _clamp01
 from engines.bayesian_update_engine import (
     BayesianProbabilityEngine,
     BayesianResult,
@@ -182,13 +183,13 @@ class L7ProbabilityAnalyzer:
             # Blend MC win-rate with upstream signals into a single
             # evidence observation for the Beta-Binomial update.
             # Clamp inputs to [0, 1] defensively.
-            _mc_wp = max(0.0, min(1.0, mc_result.win_probability))
-            _dvg = max(0.0, min(1.0, dvg_confidence))
-            _liq = max(0.0, min(1.0, liquidity_score))
+            _mc_wp = _clamp01(mc_result.win_probability)
+            _dvg = _clamp01(dvg_confidence)
+            _liq = _clamp01(liquidity_score)
 
             evidence_score = _mc_wp * _EVIDENCE_W_MC + _dvg * _EVIDENCE_W_DVG + _liq * _EVIDENCE_W_LIQ
             # Final clamp (should already be [0,1] but be explicit)
-            evidence_score = max(0.0, min(1.0, evidence_score))
+            evidence_score = _clamp01(evidence_score)
 
             bayes_result: BayesianResult = self._bayesian.update(
                 prior_wins=max(0, prior_wins),
