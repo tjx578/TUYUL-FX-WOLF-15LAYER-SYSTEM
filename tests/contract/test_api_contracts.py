@@ -179,7 +179,13 @@ class TestVerdictAllContract:
     def test_verdict_item_required_fields(self, client: Any) -> None:
         """Each item must contain the three required FE fields."""
         raw: Any = client.get("/api/v1/verdict/all").json()
-        items: list[dict[str, Any]] = raw if isinstance(raw, list) else list(raw.values())
+        # Handle envelope format {verdicts: {...}, count: N, cached: bool}
+        if isinstance(raw, dict) and "verdicts" in raw:
+            items: list[dict[str, Any]] = list(raw["verdicts"].values())
+        elif isinstance(raw, list):
+            items = raw
+        else:
+            items = list(raw.values())
 
         if not items:
             pytest.skip("No verdicts available in test environment")
@@ -191,7 +197,12 @@ class TestVerdictAllContract:
 
     def test_confidence_is_numeric(self, client: Any) -> None:
         raw: Any = client.get("/api/v1/verdict/all").json()
-        items: list[dict[str, Any]] = raw if isinstance(raw, list) else list(raw.values())
+        if isinstance(raw, dict) and "verdicts" in raw:
+            items: list[dict[str, Any]] = list(raw["verdicts"].values())
+        elif isinstance(raw, list):
+            items = raw
+        else:
+            items = list(raw.values())
         if not items:
             pytest.skip("No verdicts")
         for item in items[:5]:
@@ -209,7 +220,12 @@ class TestVerdictAllContract:
             "ABORT",
         }
         raw: Any = client.get("/api/v1/verdict/all").json()
-        items: list[dict[str, Any]] = raw if isinstance(raw, list) else list(raw.values())
+        if isinstance(raw, dict) and "verdicts" in raw:
+            items: list[dict[str, Any]] = list(raw["verdicts"].values())
+        elif isinstance(raw, list):
+            items = raw
+        else:
+            items = list(raw.values())
         if not items:
             pytest.skip("No verdicts")
         for item in items[:5]:

@@ -80,3 +80,6 @@ out/
 # ── OS files ─────────────────────────────────
 Thumbs.db
 .DS_Store
+
+# ── Forensic audit trail (append-only at runtime; not a code artifact) ───────
+storage/forensics/replay_artifacts.jsonl
