@@ -96,27 +96,16 @@ describe("getWsBaseUrl", () => {
         expect(mod.getWsBaseUrl()).toBe("wss://backend.up.railway.app");
     });
 
-    it("should strip /ws/live path (the most common production misconfiguration)", async () => {
+    it("should strip /ws/live path (the root-cause double-path bug)", async () => {
         process.env.NEXT_PUBLIC_WS_BASE_URL = "wss://wolf15-api-production.up.railway.app/ws/live";
         const mod = await freshImport();
         expect(mod.getWsBaseUrl()).toBe("wss://wolf15-api-production.up.railway.app");
     });
 
-    it("should strip any arbitrary path from WS base URL", async () => {
-        process.env.NEXT_PUBLIC_WS_BASE_URL = "wss://backend.up.railway.app/some/deep/path";
+    it("should strip any arbitrary path component", async () => {
+        process.env.NEXT_PUBLIC_WS_BASE_URL = "wss://backend.up.railway.app/api/ws/signals";
         const mod = await freshImport();
         expect(mod.getWsBaseUrl()).toBe("wss://backend.up.railway.app");
-    });
-
-    it("should warn when WS base URL contains a path (all environments)", async () => {
-        process.env.NEXT_PUBLIC_WS_BASE_URL = "wss://backend.up.railway.app/ws/live";
-        const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
-        const mod = await freshImport();
-        mod.getWsBaseUrl();
-        expect(warnSpy).toHaveBeenCalledWith(
-            expect.stringContaining("unexpected path"),
-        );
-        warnSpy.mockRestore();
     });
 
     it("should derive ws:// from window.location when env var not set", async () => {
@@ -147,12 +136,96 @@ describe("getWsBaseUrl", () => {
 });
 
 // ══════════════════════════════════════════════════════════════
+//  getEnvStatus
+// ══════════════════════════════════════════════════════════════
+
+describe("getEnvStatus", () => {
+    it("should return isValid=true when WS URL is a bare origin", async () => {
+        process.env.NEXT_PUBLIC_WS_BASE_URL = "wss://backend.up.railway.app";
+        const mod = await freshImport();
+        const status = mod.getEnvStatus();
+        expect(status.isValid).toBe(true);
+        expect(status.errors).toHaveLength(0);
+    });
+
+    it("should return isValid=false and error when WS URL contains /ws/live path", async () => {
+        process.env.NEXT_PUBLIC_WS_BASE_URL = "wss://wolf15-api-production.up.railway.app/ws/live";
+        const mod = await freshImport();
+        const status = mod.getEnvStatus();
+        expect(status.isValid).toBe(false);
+        expect(status.errors[0]).toMatch(/contains a path/);
+        expect(status.errors[0]).toMatch(/\/ws\/live/);
+    });
+
+    it("should return isValid=false and error when WS URL has any path", async () => {
+        process.env.NEXT_PUBLIC_WS_BASE_URL = "wss://backend.up.railway.app/ws";
+        const mod = await freshImport();
+        const status = mod.getEnvStatus();
+        expect(status.isValid).toBe(false);
+        expect(status.errors[0]).toMatch(/contains a path/);
+    });
+
+    it("should still return stripped wsUrl even when env var has path", async () => {
+        process.env.NEXT_PUBLIC_WS_BASE_URL = "wss://backend.up.railway.app/ws/live";
+        const mod = await freshImport();
+        const status = mod.getEnvStatus();
+        // wsUrl is the stripped (safe) value for callers
+        expect(status.wsUrl).toBe("wss://backend.up.railway.app");
+    });
+});
+
+// ══════════════════════════════════════════════════════════════
 //  validateEnv
 // ══════════════════════════════════════════════════════════════
 
 describe("validateEnv", () => {
-    it("should not throw when called", async () => {
+    it("should not throw when called without env var (no window)", async () => {
         const mod = await freshImport();
         expect(() => mod.validateEnv()).not.toThrow();
+    });
+
+    it("should throw ConfigError with ENV_WS_URL_HAS_PATH when URL contains /ws/live", async () => {
+        // Simulate browser window so validateEnv runs path check
+        const originalWindow = globalThis.window;
+        Object.defineProperty(globalThis, "window", {
+            value: { location: { protocol: "https:", host: "localhost:3000", hostname: "localhost" } },
+            writable: true,
+            configurable: true,
+        });
+
+        process.env.NEXT_PUBLIC_WS_BASE_URL = "wss://wolf15-api-production.up.railway.app/ws/live";
+        const mod = await freshImport();
+        let thrownErr: unknown;
+        try {
+            mod.validateEnv();
+        } catch (e) {
+            thrownErr = e;
+        }
+        expect(thrownErr).toBeInstanceOf(mod.ConfigError);
+        expect((thrownErr as mod.ConfigError).code).toBe("ENV_WS_URL_HAS_PATH");
+
+        Object.defineProperty(globalThis, "window", { value: originalWindow, writable: true, configurable: true });
+    });
+
+    it("should throw ConfigError with ENV_WS_URL_HAS_PATH for any path (not just /ws/live)", async () => {
+        const originalWindow = globalThis.window;
+        Object.defineProperty(globalThis, "window", {
+            value: { location: { protocol: "https:", host: "localhost:3000", hostname: "localhost" } },
+            writable: true,
+            configurable: true,
+        });
+
+        process.env.NEXT_PUBLIC_WS_BASE_URL = "wss://backend.up.railway.app/ws";
+        const mod = await freshImport();
+        let thrownErr: unknown;
+        try {
+            mod.validateEnv();
+        } catch (e) {
+            thrownErr = e;
+        }
+        expect(thrownErr).toBeInstanceOf(mod.ConfigError);
+        expect((thrownErr as mod.ConfigError).code).toBe("ENV_WS_URL_HAS_PATH");
+
+        Object.defineProperty(globalThis, "window", { value: originalWindow, writable: true, configurable: true });
     });
 });

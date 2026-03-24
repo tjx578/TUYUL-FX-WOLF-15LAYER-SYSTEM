@@ -68,6 +68,24 @@ export function getEnvStatus(): EnvStatus {
       "NEXT_PUBLIC_WS_BASE_URL is not set. All live data streams will be unavailable. " +
       "Set it to your Railway wss:// origin (e.g. wss://your-api.up.railway.app)."
     );
+  } else {
+    // Check for path component — causes double-path connections at runtime.
+    try {
+      const parsed = new URL(wsEnvVar);
+      if (parsed.pathname && parsed.pathname !== "/") {
+        errors.push(
+          `NEXT_PUBLIC_WS_BASE_URL contains a path ('${parsed.pathname}'). ` +
+          "It must be a bare origin (protocol+host only, e.g. wss://your-api.up.railway.app). " +
+          "Including a path causes double-path WebSocket connections (e.g. /ws/live/ws/live). " +
+          "The path was automatically stripped but you should fix the env var."
+        );
+      }
+    } catch {
+      errors.push(
+        `NEXT_PUBLIC_WS_BASE_URL='${wsEnvVar}' is not a valid URL. ` +
+        "Use a full wss:// or ws:// origin (e.g. wss://your-api.up.railway.app)."
+      );
+    }
   }
 
   return { isValid: errors.length === 0, errors, wsUrl, apiUrl };
@@ -101,7 +119,7 @@ export function getApiBaseUrl(): string {
 }
 
 /**
- * Returns the WebSocket base URL.
+ * Returns the WebSocket base URL as a bare origin (protocol + host, NO path).
  *
  * On Vercel/deployed: NEXT_PUBLIC_WS_BASE_URL MUST be set to the Railway wss:// URL.
  * Vercel serverless functions cannot handle WebSocket upgrades — /ws/* rewrites
@@ -110,6 +128,10 @@ export function getApiBaseUrl(): string {
  * Fallback (localhost only): derives ws:// or wss:// from window.location.host.
  * This ONLY works on localhost/127.0.0.1 in local dev.
  * On any deployed host, returns "" so callers hard-fail with onDegradation.
+ *
+ * IMPORTANT: Always returns the bare origin only (protocol+host). Any path in the env
+ * var (e.g. /ws/live) is auto-stripped with a warning — hooks append /ws/<channel>
+ * themselves, so including a path causes double-path connections (wss://host/ws/live/ws/live).
  */
 export function getWsBaseUrl(): string {
   // Literal process.env.NEXT_PUBLIC_WS_BASE_URL — Next.js inlines at build time.
@@ -128,28 +150,29 @@ export function getWsBaseUrl(): string {
     }
     return ""; // SSR fallback — not used for real connections
   }
-  // Normalise: strip ALL path components using URL parsing — hooks already append /ws/<channel>.
-  // Common misconfiguration: setting /ws/live (or /ws) causes double-prefix,
-  // e.g. wss://host/ws/live/ws/live.  Return only the origin (protocol + host + port).
-  const rawWsUrl = (process.env.NEXT_PUBLIC_WS_BASE_URL ?? "").trim();
+  // Use URL parsing to extract bare origin — strips ALL path components.
+  // This prevents double-path bugs when the env var includes /ws, /ws/live, or
+  // any other path that hooks already append (e.g. wss://host/ws/live/ws/live).
+  const raw = (process.env.NEXT_PUBLIC_WS_BASE_URL ?? "").trim();
   try {
-    const parsed = new URL(rawWsUrl);
-    const origin = `${parsed.protocol}//${parsed.host}`;
-    if (parsed.pathname && parsed.pathname !== "/") {
-      // Warn in all environments — this misconfiguration breaks WS in production.
+    const parsed = new URL(raw);
+    const hasPath = parsed.pathname && parsed.pathname !== "/";
+    if (hasPath) {
       console.warn(
-        `[env] NEXT_PUBLIC_WS_BASE_URL had unexpected path '${parsed.pathname}' which was stripped. ` +
-        "Set the value to the bare origin only (e.g. wss://your-api.up.railway.app)."
+        `[env] NEXT_PUBLIC_WS_BASE_URL contains path '${parsed.pathname}' which was automatically stripped. ` +
+        "Set the value to the bare origin only (e.g. wss://your-api.up.railway.app). " +
+        "Including a path causes double-path WebSocket connections (e.g. /ws/live/ws/live)."
       );
     }
-    return origin;
+    return `${parsed.protocol}//${parsed.host}`;
   } catch {
-    // URL parsing failed — log the issue and return a minimally cleaned value.
-    console.warn(
-      `[env] NEXT_PUBLIC_WS_BASE_URL='${rawWsUrl}' could not be parsed as a URL. ` +
-      "Ensure it is a valid wss:// or ws:// origin (e.g. wss://your-api.up.railway.app)."
-    );
-    return rawWsUrl.replace(/\/$/, "");
+    // Fallback for malformed URLs: strip everything after the host portion.
+    // Only attempt stripping if the raw value starts with a ws:// or wss:// scheme;
+    // otherwise return empty string to let callers hard-fail safely.
+    const schemeEnd = raw.startsWith("wss://") ? 6 : raw.startsWith("ws://") ? 5 : -1;
+    if (schemeEnd < 0) return "";
+    const pathStart = raw.indexOf("/", schemeEnd);
+    return pathStart > 0 ? raw.slice(0, pathStart) : raw;
   }
 }
 
@@ -176,11 +199,43 @@ export function validateEnv(): void {
     const msg =
       "[env] CRITICAL: NEXT_PUBLIC_WS_BASE_URL is NOT SET. " +
       "All live data streams will fail. " +
-      "Set it to: NEXT_PUBLIC_WS_BASE_URL=wss://your-api.up.railway.app (bare origin, NO /ws suffix).";
+      "Set it to: NEXT_PUBLIC_WS_BASE_URL=wss://your-api.up.railway.app (bare origin, NO path like /ws/live).";
     if (isDeployed) {
       console.error(msg);
     } else {
       console.warn(msg);
+    }
+  } else {
+    // Validate that the URL is a bare origin (no path component).
+    // A path causes double-path connections: wss://host/ws/live/ws/live.
+    try {
+      const parsed = new URL(wsUrl);
+      if (parsed.pathname && parsed.pathname !== "/") {
+        const msg =
+          `[env] INVALID: NEXT_PUBLIC_WS_BASE_URL='${wsUrl}' contains path '${parsed.pathname}'. ` +
+          "It must be a bare origin — protocol+host only (e.g. wss://your-api.up.railway.app). " +
+          "Including a path causes double-path WebSocket connections (e.g. /ws/live/ws/live). " +
+          "Fix the env var: remove everything after the hostname.";
+        console.error(msg);
+        missingVars.push("NEXT_PUBLIC_WS_BASE_URL");
+        throw new ConfigError(
+          `NEXT_PUBLIC_WS_BASE_URL must be a bare origin (protocol+host only), ` +
+          `but got '${wsUrl}' which contains path '${parsed.pathname}'. ` +
+          "Remove the path — hooks append /ws/<channel> automatically. " +
+          "Correct value: wss://your-api.up.railway.app",
+          "ENV_WS_URL_HAS_PATH",
+          missingVars,
+        );
+      }
+    } catch (err) {
+      if (err instanceof ConfigError) throw err;
+      // URL parse failure
+      const msg =
+        `[env] INVALID: NEXT_PUBLIC_WS_BASE_URL='${wsUrl}' is not a valid URL. ` +
+        "Use a full wss:// or ws:// origin (e.g. wss://your-api.up.railway.app).";
+      console.error(msg);
+      missingVars.push("NEXT_PUBLIC_WS_BASE_URL");
+      throw new ConfigError(msg, "ENV_WS_URL_INVALID", missingVars);
     }
   }
 
