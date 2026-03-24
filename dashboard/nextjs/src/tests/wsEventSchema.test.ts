@@ -45,7 +45,6 @@ describe("WsEventSchema", () => {
       payload: {
         density: "compact",
         showLatency: false,
-        showHashes: true,
         layoutPreset: "pipeline_focus",
       },
     });
@@ -53,7 +52,6 @@ describe("WsEventSchema", () => {
     expect(parsed.type).toBe("PreferencesUpdated");
     if (parsed.type === "PreferencesUpdated") {
       expect(parsed.payload.layoutPreset).toBe("pipeline_focus");
-      expect(parsed.payload.showHashes).toBe(true);
     }
   });
 
