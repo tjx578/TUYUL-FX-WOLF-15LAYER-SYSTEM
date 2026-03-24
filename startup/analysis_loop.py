@@ -92,7 +92,7 @@ def _build_degraded_verdict(pair: str, reason: str) -> dict[str, Any]:
         "verdict": "HOLD",
         "confidence": 0.0,
         "wolf_status": "DEGRADED",
-        "direction": "HOLD",
+        "direction": None,
         "scores": {},
         "gates": {"passed": 0, "total": 9},
         "layers": {},
@@ -143,13 +143,15 @@ def _build_verdict_cache_payload(pair: str, result: dict[str, Any]) -> dict[str,
     timestamp = time.time()
     hold_block_reason = _extract_last_hold_block_reason(result)
 
+    _exec_dir = execution.get("direction")
+    _raw_direction = _exec_dir if _exec_dir is not None else l12.get("direction")
     payload: dict[str, Any] = {
         "symbol": pair,
         "signal_id": str(l12.get("signal_id") or f"SIG-{pair}-{uuid4().hex[:12].upper()}"),
         "verdict": str(l12.get("verdict") or "HOLD"),
         "confidence": confidence,
         "wolf_status": str(l12.get("wolf_status") or "NO_HUNT"),
-        "direction": execution.get("direction") or l12.get("direction") or "HOLD",
+        "direction": _raw_direction if _raw_direction in ("BUY", "SELL") else None,
         "scores": scores,
         "gates": dict(l12.get("gates") or {}),
         "layers": layers,
