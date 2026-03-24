@@ -550,7 +550,7 @@ class WolfConstitutionalPipeline:
         safe_mode = bool(metrics.get("safe_mode", False))
 
         start_time = time.time()
-        logger.info("[VerdictPath] pipeline started | symbol={} safe_mode={}", symbol, safe_mode)
+        logger.info("[VerdictPath] pipeline started | symbol=%s safe_mode=%s", symbol, safe_mode)
         VERDICT_PATH_EVENT_TOTAL.labels(event="pipeline_started", symbol=symbol, status="ok").inc()
         self._ensure_analyzers()
         self._ensure_governance_engines()
@@ -679,7 +679,7 @@ class WolfConstitutionalPipeline:
         else:
             state = self._dq_warning_state.get(symbol)
             if state and state.get("degraded", False):
-                logger.info("[Pipeline v8.0] {} DATA QUALITY recovered", symbol)
+                logger.info("[Pipeline v8.0] %s DATA QUALITY recovered", symbol)
             self._dq_warning_state[symbol] = {
                 "degraded": False,
                 "reason_key": (),
@@ -1263,7 +1263,7 @@ class WolfConstitutionalPipeline:
                     else:
                         logger.debug("[Phase-4→2.5] L6 LRCE updated: %.3f (stable)", _lrce)
                 except Exception as _lrce_exc:
-                    logger.debug("[Phase-4→2.5] LRCE patch skipped: {}", _lrce_exc)
+                    logger.debug("[Phase-4→2.5] LRCE patch skipped: %s", _lrce_exc)
 
             # ═══════════════════════════════════════════════════════
             # PHASE 5 -- L12 CONSTITUTIONAL VERDICT (SOLE AUTHORITY)
