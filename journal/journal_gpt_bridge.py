@@ -10,6 +10,7 @@ GPT Role (LOCKED):
   ✅ Constitution Auditor, Journal Interpreter, Edge Miner, System Governor
   ❌ TIDAK mengubah threshold, TIDAK mengirim order, TIDAK override L12
 """
+from __future__ import annotations
 
 import json
 from collections import Counter

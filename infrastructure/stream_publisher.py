@@ -68,8 +68,8 @@ class StreamPublisher:
         timeframe: str,
         o: str,
         h: str,
-        l: str,
-        c: str,  # noqa: E741
+        lo: str,
+        c: str,
         volume: str = "0",
         extra: dict[str, str] | None = None,
     ) -> str:
@@ -79,7 +79,7 @@ class StreamPublisher:
             "timeframe": timeframe,
             "open": o,
             "high": h,
-            "low": l,
+            "low": lo,
             "close": c,
             "volume": volume,
             "ts": str(time.time()),

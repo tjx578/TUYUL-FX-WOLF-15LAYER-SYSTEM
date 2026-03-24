@@ -442,7 +442,7 @@ class EngineEnrichmentLayer:
                     logger.warning("Enrichment: %s engine failed: %s", engine_key, exc)
         except concurrent.futures.TimeoutError:
             # Some futures did not complete within the allotted window
-            for future, (field_name, engine_key) in future_to_field.items():
+            for future, (_, engine_key) in future_to_field.items():
                 if not future.done():
                     msg = f"{engine_key}: timed out after {_ENRICHMENT_TIMEOUT}s"
                     result.errors.append(msg)

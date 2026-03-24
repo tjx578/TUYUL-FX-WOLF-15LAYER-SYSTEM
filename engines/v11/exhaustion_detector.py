@@ -203,11 +203,11 @@ class ExhaustionDetector:
         """
         o = candle["open"]
         h = candle["high"]
-        l = candle["low"]
+        lo = candle["low"]
         c = candle["close"]
 
         upper_wick = h - max(o, c)
-        lower_wick = min(o, c) - l
+        lower_wick = min(o, c) - lo
 
         if lower_wick == 0:
             # Return large finite value when lower wick is zero but upper exists

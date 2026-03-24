@@ -6,6 +6,7 @@ Verifies that the synthesis builder:
 2. Includes regime_type and atr_ratio in the returned synthesis dict.
 3. Falls back gracefully to NORMAL_VOL when ATR data is absent or zero.
 """
+from __future__ import annotations
 
 from typing import Any
 

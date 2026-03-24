@@ -110,8 +110,11 @@ class ForexFactoryHtmlProvider:
         occasionally so this may produce partial results.
         """
         try:
-            from html.parser import HTMLParser
-        except ImportError as exc:
+            import importlib.util
+
+            if importlib.util.find_spec("html.parser") is None:
+                raise ProviderParseError(self.name, "html.parser unavailable")
+        except Exception as exc:
             raise ProviderParseError(self.name, "html.parser unavailable") from exc
 
         # Prefer BeautifulSoup if available (more robust)

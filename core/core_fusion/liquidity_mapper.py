@@ -1,4 +1,5 @@
 """Liquidity Zone Mapper -- SMC institutional level tracking."""
+from __future__ import annotations
 
 from datetime import UTC, datetime
 from typing import Any
@@ -75,10 +76,9 @@ class LiquidityZoneMapper:
                 continue
             sim = [s]
             for j, o in enumerate(swings):
-                if j != i and j not in used and s["price"] != 0:
-                    if abs(s["price"] - o["price"]) / s["price"] < tol:
-                        sim.append(o)
-                        used.add(j)
+                if j != i and j not in used and s["price"] != 0 and abs(s["price"] - o["price"]) / s["price"] < tol:
+                    sim.append(o)
+                    used.add(j)
             if len(sim) >= mt:
                 levels.append({"price": sum(x["price"] for x in sim) / len(sim), "touches": len(sim)})
                 used.add(i)

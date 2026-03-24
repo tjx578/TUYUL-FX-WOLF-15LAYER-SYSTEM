@@ -1,4 +1,5 @@
 """Institutional multi-allocation flow tests."""
+from __future__ import annotations
 
 from accounts.account_repository import AccountRepository, AccountRiskState
 from allocation.allocation_models import AllocationRequest, AllocationStatus

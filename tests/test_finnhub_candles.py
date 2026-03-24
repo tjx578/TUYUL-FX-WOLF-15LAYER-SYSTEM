@@ -4,6 +4,7 @@ Unit tests for Finnhub REST candle fetcher.
 Tests symbol conversion, resolution mapping, response normalization,
 H4 aggregation, and warmup functionality.
 """
+from __future__ import annotations
 
 from datetime import UTC, datetime, tzinfo
 from typing import Any
@@ -549,7 +550,7 @@ class TestRateLimitRetries:
             def __init__(self) -> None:
                 self.calls = 0
 
-            async def __aenter__(self) -> "_FakeClient":
+            async def __aenter__(self) -> _FakeClient:
                 return self
 
             async def __aexit__(self, exc_type: object, exc: object, tb: object) -> None:
@@ -564,10 +565,12 @@ class TestRateLimitRetries:
         fetcher.request_delay = 0
 
         fake_client = _FakeClient()
-        with patch("ingest.finnhub_candles.httpx.AsyncClient", return_value=fake_client):
+        with (
+            patch("ingest.finnhub_candles.httpx.AsyncClient", return_value=fake_client),
+            pytest.raises(FinnhubCandleError, match="429"),
+        ):
             # 429 should raise immediately — no retry
-            with pytest.raises(FinnhubCandleError, match="429"):
-                await fetcher.fetch("XAUUSD", "W1", bars=1)
+            await fetcher.fetch("XAUUSD", "W1", bars=1)
 
         assert fake_client.calls == 1  # single attempt, no retry
 

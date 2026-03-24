@@ -27,7 +27,6 @@ def _make_synthesis(
         "pair": "XAUUSD",
         "layers": {
             "L8_tii_sym": 0.95,
-            "L8_integrity_index": 0.96,
             "L8_integrity_index": 0.98,
             "L7_monte_carlo_win": 0.70,
             "conf12": 0.85,

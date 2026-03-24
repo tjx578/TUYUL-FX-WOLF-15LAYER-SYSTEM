@@ -3,6 +3,7 @@ Redis Smoke Check — Python version (portable, no bash required).
 Zone: infrastructure diagnostic — no authority boundary impact.
 Run: python scripts/redis_smoke_check.py
 """
+from __future__ import annotations
 
 import os
 import sys
