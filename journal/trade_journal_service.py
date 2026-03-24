@@ -39,8 +39,13 @@ class TradeJournalAutomationService:
             )
         )
 
-        direction = str(trade.get("direction", "BUY")).upper()
-        verdict = VerdictType.EXECUTE_BUY if direction == "BUY" else VerdictType.EXECUTE_SELL
+        direction = str(trade.get("direction") or "").upper()
+        if direction == "SELL":
+            verdict = VerdictType.EXECUTE_SELL
+        elif direction == "BUY":
+            verdict = VerdictType.EXECUTE_BUY
+        else:
+            verdict = VerdictType.HOLD
         journal_router.record_decision(
             DecisionJournal(
                 timestamp=now,
@@ -116,7 +121,7 @@ class TradeJournalAutomationService:
         signal_id = str(trade.get("signal_id", ""))
         setup_id = self._setup_by_signal.setdefault(signal_id, f"{pair}_{int(now.timestamp())}")
 
-        direction = str(trade.get("direction", "BUY")).upper()
+        direction = str(trade.get("direction") or "").upper()
         journal_router.record_execution(
             ExecutionJournal(
                 timestamp=now,

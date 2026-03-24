@@ -8,6 +8,7 @@ from loguru import logger
 
 from allocation.signal_registry import SignalRegistry
 from config_loader import load_pairs
+from schemas.direction import normalize_direction
 from schemas.signal_contract import FROZEN_SIGNAL_CONTRACT_VERSION, SignalContract
 from schemas.validator import validate_signal_contract
 from storage.l12_cache import KEY_PREFIX as _L12_KEY_PREFIX
@@ -29,7 +30,7 @@ def _build_signal_payload_from_verdict(symbol: str, verdict: dict[str, Any]) -> 
         "symbol": symbol,
         "verdict": str(verdict.get("verdict", "HOLD")),
         "confidence": float(verdict.get("confidence", 0.0) or 0.0),
-        "direction": verdict.get("direction"),
+        "direction": normalize_direction(verdict.get("direction"), verdict.get("verdict")),
         "entry_price": _to_opt_float(verdict.get("entry_price")),
         "stop_loss": _to_opt_float(verdict.get("stop_loss")),
         "take_profit_1": _to_opt_float(verdict.get("take_profit_1")),
@@ -58,7 +59,7 @@ class SignalService:
             symbol=str(payload.get("symbol", payload.get("pair", "UNKNOWN"))).upper(),
             verdict=str(payload.get("verdict", "HOLD")),
             confidence=float(payload.get("confidence", 0.0) or 0.0),
-            direction=payload.get("direction"),
+            direction=normalize_direction(payload.get("direction"), payload.get("verdict")),
             entry_price=_to_opt_float(payload.get("entry_price")),
             stop_loss=_to_opt_float(payload.get("stop_loss")),
             take_profit_1=_to_opt_float(payload.get("take_profit_1")),
@@ -105,7 +106,7 @@ class SignalService:
             symbol=str(payload.get("symbol", payload.get("pair", "UNKNOWN"))).upper(),
             verdict=str(payload.get("verdict", "HOLD")),
             confidence=float(payload.get("confidence", 0.0) or 0.0),
-            direction=payload.get("direction"),
+            direction=normalize_direction(payload.get("direction"), payload.get("verdict")),
             entry_price=_to_opt_float(payload.get("entry_price")),
             stop_loss=_to_opt_float(payload.get("stop_loss")),
             take_profit_1=_to_opt_float(payload.get("take_profit_1")),
@@ -192,9 +193,7 @@ class SignalService:
 
         pairs = load_pairs()
         symbols: list[str] = [
-            str(pair.get("symbol", "")).upper().strip()
-            for pair in pairs
-            if str(pair.get("symbol", "")).upper().strip()
+            str(pair.get("symbol", "")).upper().strip() for pair in pairs if str(pair.get("symbol", "")).upper().strip()
         ]
 
         if symbols:

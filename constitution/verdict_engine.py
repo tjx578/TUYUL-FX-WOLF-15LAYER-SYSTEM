@@ -578,13 +578,18 @@ def generate_l12_verdict(
 
     # ── Direction from technical bias ─────────────────────────────────────────
     technical_bias: str = str(bias.get("technical", "NEUTRAL")).upper()
-    direction: str = "SELL" if technical_bias == "BEARISH" else "BUY"
+    if technical_bias == "BULLISH":
+        direction: str = "BUY"
+    elif technical_bias == "BEARISH":
+        direction = "SELL"
+    else:
+        direction = ""  # No executable direction for NEUTRAL/unknown bias
 
     # ── Verdict ───────────────────────────────────────────────────────────────
-    if all_pass:
+    if direction and all_pass:
         verdict: str = f"EXECUTE_{direction}"
         proceed: bool = True
-    elif near_pass:
+    elif direction and near_pass:
         verdict = f"EXECUTE_REDUCED_RISK_{direction}"
         proceed = True
     elif critical_fail:
@@ -610,6 +615,9 @@ def generate_l12_verdict(
 
     wolf_status: str = "ACTIVE" if passed >= 7 else "WEAK"
 
+    # Normalize direction for output: only BUY/SELL are valid, else None
+    output_direction: str | None = direction if direction in ("BUY", "SELL") else None
+
     # ── Governance penalty: degrade confidence / downgrade verdict ─────────
     governance_penalty = max(0.0, min(1.0, governance_penalty))
     governance_downgraded = False
@@ -627,7 +635,7 @@ def generate_l12_verdict(
         "symbol": symbol,
         "verdict": verdict,
         "confidence": confidence,
-        "direction": direction,
+        "direction": output_direction,
         "wolf_status": wolf_status,
         "proceed_to_L13": proceed,
         "gates": gate_results,

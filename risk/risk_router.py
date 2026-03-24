@@ -38,6 +38,7 @@ from risk.exceptions import RiskException
 from risk.kill_switch import GlobalKillSwitch
 from risk.risk_engine_v2 import RiskEngineV2, SignalInput
 from risk.risk_profile import RiskMode, RiskProfile, load_risk_profile, save_risk_profile
+from schemas.direction import normalize_direction
 from storage.redis_client import redis_client
 
 router = APIRouter(prefix="/api/v1/risk", dependencies=[Depends(enforce_write_policy)])
@@ -252,7 +253,7 @@ def _runtime_take_guard(state: AccountRiskState) -> tuple[bool, str | None, dict
 
 def _build_risk_signal(payload: dict, signal_id: str) -> Layer12Signal:
     pair = str(payload.get("symbol") or payload.get("pair") or signal_id.split("_")[0]).upper()
-    direction = str(payload.get("direction") or "BUY").upper()
+    direction = normalize_direction(payload.get("direction"), payload.get("verdict")) or "BUY"
     entry = float(payload.get("entry_price") or payload.get("entry") or 1.0)
     sl = float(payload.get("stop_loss") or entry - 0.0010)
     tp = float(payload.get("take_profit_1") or entry + 0.0020)
@@ -263,7 +264,7 @@ def _build_risk_signal(payload: dict, signal_id: str) -> Layer12Signal:
         signal_id=uuid.uuid4(),
         timestamp=datetime.now(UTC),
         pair=pair,
-        direction="BUY" if direction != "SELL" else "SELL",
+        direction=direction,
         entry=entry,
         stop_loss=sl,
         take_profit_1=tp,

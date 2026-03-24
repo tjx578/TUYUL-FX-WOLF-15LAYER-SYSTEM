@@ -172,10 +172,14 @@ class ReflectiveMonteCarlo:
         except ValueError:
             initial = MarketState.RANGING
 
+        from schemas.direction import normalize_direction
+
+        direction = normalize_direction(signal.get("direction"), signal.get("verdict")) or "BUY"
+
         r = self.run_simulation(
             initial,
             market_data,
-            signal.get("direction", "BUY"),
+            direction,
             signal.get("entry", 1.0),
             signal.get("stop_loss", 0.99),
             signal.get("take_profit", 1.02),

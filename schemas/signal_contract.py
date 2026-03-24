@@ -24,6 +24,10 @@ class SignalContract:
     expires_at: float | None = None
     contract_version: str = FROZEN_SIGNAL_CONTRACT_VERSION
 
+    def __post_init__(self) -> None:
+        if self.direction is not None and self.direction not in ("BUY", "SELL"):
+            raise ValueError(f"SignalContract.direction must be 'BUY', 'SELL', or None, got {self.direction!r}")
+
     def as_dict(self) -> dict[str, Any]:
         return {
             "contract_version": self.contract_version,

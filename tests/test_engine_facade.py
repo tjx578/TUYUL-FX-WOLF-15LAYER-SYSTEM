@@ -56,7 +56,8 @@ def test_engine_suite_smoke_flow() -> None:
     )
 
     structure = suite["structure"].analyze(candles)
-    direction = "BUY" if structure.structure_bias != "BEARISH" else "SELL"
+    _BIAS_DIR = {"BULLISH": "BUY", "BEARISH": "SELL"}
+    direction = _BIAS_DIR.get(str(structure.structure_bias or "").upper(), "BUY")
     momentum = suite["momentum"].analyze(candles)
     precision = suite["precision"].analyze(candles, direction=direction)
 

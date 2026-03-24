@@ -84,6 +84,28 @@ def _log_pipeline_exception(pair: str, exc: BaseException, *, kind: str) -> None
     state["suppressed"] = int(state["suppressed"]) + 1
 
 
+def _normalize_boundary_direction(
+    exec_direction: Any | None,
+    l12_direction: Any | None,
+    verdict: Any | None = None,
+) -> str | None:
+    """Normalize direction for verdict cache boundary (signal contract safe).
+
+    Internal pipeline uses HOLD/NEUTRAL as direction, but signal contract
+    only accepts BUY, SELL, or None.  This helper resolves the first
+    valid executable direction from the available sources.
+    """
+    from schemas.direction import normalize_direction  # noqa: PLC0415
+
+    # Prefer execution direction, then L12 direction, then infer from verdict
+    for raw in (exec_direction, l12_direction):
+        result = normalize_direction(str(raw) if raw else None, str(verdict) if verdict else None)
+        if result is not None:
+            return result
+    # Fallback: try verdict-only inference
+    return normalize_direction(None, str(verdict) if verdict else None)
+
+
 def _build_degraded_verdict(pair: str, reason: str) -> dict[str, Any]:
     """Build a minimal HOLD/DEGRADED payload so the dashboard always has data."""
     return {
@@ -92,7 +114,7 @@ def _build_degraded_verdict(pair: str, reason: str) -> dict[str, Any]:
         "verdict": "HOLD",
         "confidence": 0.0,
         "wolf_status": "DEGRADED",
-        "direction": "HOLD",
+        "direction": None,
         "scores": {},
         "gates": {"passed": 0, "total": 9},
         "layers": {},
@@ -149,7 +171,9 @@ def _build_verdict_cache_payload(pair: str, result: dict[str, Any]) -> dict[str,
         "verdict": str(l12.get("verdict") or "HOLD"),
         "confidence": confidence,
         "wolf_status": str(l12.get("wolf_status") or "NO_HUNT"),
-        "direction": execution.get("direction") or l12.get("direction") or "HOLD",
+        "direction": _normalize_boundary_direction(
+            execution.get("direction"), l12.get("direction"), l12.get("verdict")
+        ),
         "scores": scores,
         "gates": dict(l12.get("gates") or {}),
         "layers": layers,
