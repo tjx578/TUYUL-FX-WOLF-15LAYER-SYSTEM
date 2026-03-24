@@ -149,15 +149,17 @@ _verdict_cache = VerdictCache(ttl_seconds=5.0)
 def _filter_valid_verdicts(verdicts: dict[str, Any]) -> dict[str, Any]:
     valid = {}
     for pair, v in verdicts.items():
-        score = v.get("score", 0)
-        tp1 = v.get("take_profit_1", 0)
-        sl = v.get("stop_loss", 0)
+        # Use "confidence" — the actual field emitted by _build_verdict_cache_payload.
+        # The legacy "score" key does not exist in live payloads.
+        confidence = float(v.get("confidence") or 0)
+        tp1 = float(v.get("take_profit_1") or 0)
+        sl = float(v.get("stop_loss") or 0)
         direction = v.get("direction", "")
-        if not score or score <= 0:
+        if confidence <= 0:
             continue
-        if not tp1 or tp1 <= 0:
+        if tp1 <= 0:
             continue
-        if not sl or sl <= 0:
+        if sl <= 0:
             continue
         if not direction or direction == "NEUTRAL":
             continue
@@ -186,9 +188,11 @@ def fetch_all_verdicts() -> dict[str, Any]:
             continue
         data = get_verdict(pair)
         if data:
-            score = data.get("score", 0)
-            tp1 = data.get("take_profit_1", 0)
-            if score > 0 and tp1 > 0:
+            # Use "confidence" — the actual field emitted by _build_verdict_cache_payload.
+            # The legacy "score" key does not exist in live payloads.
+            confidence = float(data.get("confidence") or 0)
+            tp1 = float(data.get("take_profit_1") or 0)
+            if confidence > 0 and tp1 > 0:
                 data["_meta"] = _build_meta(data)
                 verdicts[pair] = data
     valid = _filter_valid_verdicts(verdicts)

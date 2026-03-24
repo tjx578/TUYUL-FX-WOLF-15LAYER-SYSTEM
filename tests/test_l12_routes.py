@@ -17,12 +17,12 @@ def test_fetch_all_verdicts_reads_configured_pairs(monkeypatch) -> None:
     )
 
     def fake_get_verdict(pair: str):
-        # Provide a verdict that passes _filter_valid_verdicts (score > 0, tp1 > 0, sl > 0, direction set)
+        # Provide a verdict that passes _filter_valid_verdicts (confidence > 0, tp1 > 0, sl > 0, direction set)
         if pair == "GBPJPY":
             return {
                 "symbol": pair,
                 "verdict": "HOLD",
-                "score": 0.7,
+                "confidence": 0.7,
                 "take_profit_1": 145.50,
                 "stop_loss": 144.00,
                 "direction": "BUY",
