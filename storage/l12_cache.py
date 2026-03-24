@@ -6,6 +6,7 @@ from typing import Any
 from loguru import logger
 
 from core.metrics import VERDICT_PATH_EVENT_TOTAL
+from core.redis_keys import l12_verdict_meta
 from infrastructure.redis_client import get_client
 from journal.forensic_replay import append_replay_artifact
 from storage.redis_client import redis_client
@@ -32,6 +33,19 @@ def set_verdict(pair: str, data: dict[str, Any]) -> None:
     redis_client.set(KEY_PREFIX + pair, json.dumps(data_with_ts), ex=VERDICT_TTL_SEC)
     logger.info("[VerdictPath] verdict persisted | pair={} key={} ttl={}s", pair, KEY_PREFIX + pair, VERDICT_TTL_SEC)
     VERDICT_PATH_EVENT_TOTAL.labels(event="verdict_persisted", symbol=pair, status="ok").inc()
+    # Write slim metadata key for rapid health inspection (L12:VERDICT_META:<pair>)
+    try:
+        meta = {
+            "pair": pair,
+            "verdict": data_with_ts.get("verdict"),
+            "confidence": data_with_ts.get("confidence"),
+            "direction": data_with_ts.get("direction"),
+            "cached_at": data_with_ts.get("_cached_at"),
+            "timestamp": data_with_ts.get("timestamp"),
+        }
+        redis_client.set(l12_verdict_meta(pair), json.dumps(meta), ex=VERDICT_TTL_SEC)
+    except Exception as exc:
+        logger.debug("[VerdictPath] Failed to write verdict meta for {}: {}", pair, exc)
     event_payload = {
         "event": "VERDICT_READY",
         "pair": pair,
@@ -74,6 +88,19 @@ async def set_verdict_async(pair: str, data: dict[str, Any]) -> None:
     await client.set(KEY_PREFIX + pair, json.dumps(data_with_ts), ex=VERDICT_TTL_SEC)
     logger.info("[VerdictPath] verdict persisted | pair={} key={} ttl={}s", pair, KEY_PREFIX + pair, VERDICT_TTL_SEC)
     VERDICT_PATH_EVENT_TOTAL.labels(event="verdict_persisted", symbol=pair, status="ok").inc()
+    # Write slim metadata key for rapid health inspection (L12:VERDICT_META:<pair>)
+    try:
+        meta = {
+            "pair": pair,
+            "verdict": data_with_ts.get("verdict"),
+            "confidence": data_with_ts.get("confidence"),
+            "direction": data_with_ts.get("direction"),
+            "cached_at": data_with_ts.get("_cached_at"),
+            "timestamp": data_with_ts.get("timestamp"),
+        }
+        await client.set(l12_verdict_meta(pair), json.dumps(meta), ex=VERDICT_TTL_SEC)
+    except Exception as exc:
+        logger.debug("[VerdictPath] Failed to write async verdict meta for {}: {}", pair, exc)
     event_payload = {
         "event": "VERDICT_READY",
         "pair": pair,
