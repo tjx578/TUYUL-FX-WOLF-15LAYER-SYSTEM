@@ -8,7 +8,7 @@ import uuid
 from datetime import UTC, datetime
 from typing import Any
 
-from fastapi import APIRouter, Depends, Header, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from accounts.capital_deployment import build_readiness
@@ -17,6 +17,7 @@ from api.middleware.governance import enforce_write_policy
 from dashboard.account_manager import AccountManager
 from infrastructure.redis_client import get_client
 from journal.audit_trail import AuditAction, AuditTrail
+from propfirm_manager.rule_resolver import PropFirmRuleResolver
 from schemas.trade_models import Account
 
 from .middleware.auth import verify_token
@@ -108,9 +109,6 @@ async def _enrich(account: Account) -> dict[str, Any]:
     }  # noqa: W191
 
 
-from fastapi import Query
-
-
 @router.get("", dependencies=[Depends(verify_token)])
 async def list_accounts(include_archived: bool = Query(False)) -> dict[str, Any]:
     items = await _accounts.list_accounts_async()
@@ -124,7 +122,6 @@ async def list_accounts(include_archived: bool = Query(False)) -> dict[str, Any]
 
 
 # --- Archive Account Endpoint ---
-from pydantic import BaseModel
 
 
 class AccountArchiveRequest(BaseModel):
@@ -268,9 +265,6 @@ async def get_account(account_id: str) -> dict[str, Any]:
     return await _enrich(account)  # noqa: W191
 
 
-from propfirm_manager.rule_resolver import PropFirmRuleResolver
-
-
 @router.post("", dependencies=[Depends(enforce_write_policy)])
 async def create_account(
     req: AccountUpsertRequest,
@@ -288,7 +282,7 @@ async def create_account(
             rules = resolver.resolve(req.prop_firm_code, req.program_code, phase_code)
             resolved_rules_snapshot = rules.__dict__
         except Exception as exc:
-            raise HTTPException(status_code=422, detail=f"Failed to resolve prop firm rules: {exc}")
+            raise HTTPException(status_code=422, detail=f"Failed to resolve prop firm rules: {exc}") from exc
     # Backward compatible for manual/non-prop-firm
     account = Account(
         account_id=account_id,

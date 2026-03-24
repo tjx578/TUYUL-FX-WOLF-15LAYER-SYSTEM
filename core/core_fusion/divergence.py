@@ -131,7 +131,7 @@ class MultiIndicatorDivergenceDetector:
     def _calc_cci(highs: list[float], lows: list[float], closes: list[float], period: int) -> list[float]:
         if len(closes) < period:
             return []
-        typical = [(h + l + c) / 3.0 for h, l, c in zip(highs, lows, closes, strict=False)]
+        typical = [(h + lo + c) / 3.0 for h, lo, c in zip(highs, lows, closes, strict=False)]
         cci: list[float] = []
         for i in range(period - 1, len(typical)):
             w = typical[i - period + 1 : i + 1]
@@ -146,7 +146,7 @@ class MultiIndicatorDivergenceDetector:
     ) -> list[float]:
         if len(closes) < period + 1:
             return []
-        typical = [(h + l + c) / 3.0 for h, l, c in zip(highs, lows, closes, strict=False)]
+        typical = [(h + lo + c) / 3.0 for h, lo, c in zip(highs, lows, closes, strict=False)]
         mfi: list[float] = []
         for i in range(period, len(typical)):
             pf = nf = 0.0

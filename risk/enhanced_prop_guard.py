@@ -212,9 +212,7 @@ class EnhancedPropGuard:
         # Market closes Friday ~22:00 UTC
         if now.weekday() == 4 and now.hour >= 20:  # Friday after 20:00 UTC
             return True
-        if now.weekday() in (5, 6):  # Saturday/Sunday
-            return True
-        return False
+        return now.weekday() in (5, 6)  # Saturday/Sunday
 
     def compute_max_safe_lot(
         self,

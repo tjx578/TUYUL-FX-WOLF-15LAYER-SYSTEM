@@ -17,6 +17,7 @@ from enum import StrEnum
 
 from loguru import logger
 
+from core.redis_keys import RISK_CORRELATION_MAP as _REDIS_CORRELATION_MAP_KEY  # noqa: N811
 from storage.redis_client import RedisClient
 
 
@@ -65,8 +66,6 @@ _DEFAULT_CORRELATION_MAP: dict[frozenset[str], float] = {
     frozenset({"XAUUSD", "XAGUSD"}): 0.88,
     frozenset({"EURUSD", "USDCHF"}): 0.90,  # Inverse correlation (direction matters)
 }
-
-from core.redis_keys import RISK_CORRELATION_MAP as _REDIS_CORRELATION_MAP_KEY  # noqa: N811
 
 
 class CorrelationGuard:
