@@ -2,6 +2,7 @@
 Gatekeeper - Constitutional 9-Gate Enforcement
 NO EXECUTION | NO DISCRETION
 """
+from __future__ import annotations
 
 import copy
 import logging

@@ -1,4 +1,5 @@
 """Tests for dashboard/state_manager.py — RWLock, init, deep copy."""
+from __future__ import annotations
 
 import threading
 import time

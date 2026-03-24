@@ -22,6 +22,7 @@ Lot formula:
   6. lot      = risk_amt / (sl_pips * pip_value)
   7. PropFirmManager.evaluate_trade()                  ← DD-based guard
 """
+from __future__ import annotations
 
 import logging
 import math

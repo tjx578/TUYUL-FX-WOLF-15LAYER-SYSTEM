@@ -7,6 +7,7 @@ Tests FastAPI endpoints:
 - Trade lifecycle (close)
 - Input validation
 """
+from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
@@ -207,7 +208,6 @@ def test_evaluate_signal_allow(client, mock_redis):
                             "direction": "BUY",
                             "entry_price": 1.0950,
                             "stop_loss": 1.0900,
-                            "take_profit_1": 1.1000,
                             "take_profit_1": 1.1050,
                             "rr_ratio": 2.0,
                             "trade_id": "test_trade_1",
@@ -248,7 +248,6 @@ def test_evaluate_signal_with_auto_register(client, mock_redis):
                             "direction": "BUY",
                             "entry_price": 1.0950,
                             "stop_loss": 1.0900,
-                            "take_profit_1": 1.1000,
                             "take_profit_1": 1.1050,
                             "rr_ratio": 2.0,
                             "trade_id": "test_trade_1",

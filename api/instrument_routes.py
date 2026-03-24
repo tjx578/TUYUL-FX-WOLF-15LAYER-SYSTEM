@@ -7,6 +7,7 @@ NEW ENDPOINTS:
   GET /api/v1/instruments/{symbol}/regime    → Current volatility regime
   GET /api/v1/instruments/{symbol}/sessions  → Trading hours + session strength
 """
+from __future__ import annotations
 
 import contextlib
 import importlib

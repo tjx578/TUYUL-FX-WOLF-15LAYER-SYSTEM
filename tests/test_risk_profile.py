@@ -8,6 +8,7 @@ Tests all RiskProfile functionality:
 - Serialization round-trip
 - Redis persistence
 """
+from __future__ import annotations
 
 import json
 from dataclasses import FrozenInstanceError

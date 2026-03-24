@@ -6,6 +6,7 @@ Provides:
 - Tick data generators for stress/load tests
 - Common test helpers
 """
+from __future__ import annotations
 
 import asyncio
 import sys
@@ -158,7 +159,7 @@ class Timer:
         self._start: float = 0
         self.elapsed: float = 0
 
-    def __enter__(self) -> "Timer":
+    def __enter__(self) -> Timer:
         self._start = time.perf_counter()
         return self
 

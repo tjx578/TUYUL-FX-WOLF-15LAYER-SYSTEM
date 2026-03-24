@@ -5,6 +5,8 @@ from __future__ import annotations
 import os
 from unittest.mock import patch
 
+from ingest.finnhub_key_manager import FinnhubKeyManager
+
 # =========================================================================
 # FinnhubKeyManager
 # =========================================================================
@@ -17,9 +19,9 @@ class TestFinnhubKeyManager:
         """Create a fresh manager with custom env vars."""
         with patch.dict(os.environ, env, clear=False):
             # Force fresh import to re-read env
-            from ingest.finnhub_key_manager import FinnhubKeyManager
+            from ingest.finnhub_key_manager import FinnhubKeyManager as _Manager  # noqa: PLC0415
 
-            return FinnhubKeyManager()
+            return _Manager()
 
     # ── Loading ────────────────────────────────────────────────────
 

@@ -9,6 +9,7 @@ Uses:
   - Redis Pub/Sub for candle updates and news (lightweight real-time push)
   - Redis Hash for latest tick per symbol (fast lookup)
 """
+from __future__ import annotations
 
 import contextlib
 from typing import Any

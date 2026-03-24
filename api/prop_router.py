@@ -14,6 +14,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from propfirm_manager.rule_resolver import PropFirmRuleResolver
+from risk.prop_firm import PropFirmRules
 
 from .middleware.auth import verify_token
 
@@ -67,7 +68,7 @@ def preview_resolved_rules(firm_code: str, program_code: str, phase: str = Query
     try:
         rules = resolver.resolve(firm_code, program_code, phase)
     except Exception as exc:
-        raise HTTPException(status_code=404, detail=f"Rules not found: {exc}")
+        raise HTTPException(status_code=404, detail=f"Rules not found: {exc}") from exc
 
     # Map rules to API contract
     result = {

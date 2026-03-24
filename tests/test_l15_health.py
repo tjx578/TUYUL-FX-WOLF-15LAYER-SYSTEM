@@ -2,6 +2,7 @@
 Tests for Layer 15 — System Health & Meta-Governance Monitor.
 Zone: Monitoring/Dashboard. Observe-only. NO L12 override. NO execution.
 """
+from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 

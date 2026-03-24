@@ -5,6 +5,7 @@ NEW ENDPOINTS:
   GET /api/v1/health/constitutional  → L12 pass rate, gate violations, circuit breaker
   GET /api/v1/equity/history         → Historical equity curve for charting
 """
+from __future__ import annotations
 
 import contextlib
 import json

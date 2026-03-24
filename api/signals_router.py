@@ -1,10 +1,12 @@
 """Read-only API for frozen SignalContract payloads."""
+from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Query  # noqa: I001
 
-from .middleware.auth import verify_token
 from allocation.signal_service import SignalService
 from schemas.signal_contract import FROZEN_SIGNAL_CONTRACT_VERSION
+
+from .middleware.auth import verify_token
 
 router = APIRouter(prefix="/api/v1/signals", tags=["signals"], dependencies=[Depends(verify_token)])
 

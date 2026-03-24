@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import contextlib
+import logging
 import time
 from typing import Any, Protocol, cast
 
@@ -116,7 +117,6 @@ def fetch_l12(pair: str):
 
 
 # --- PATCH 4: Verdict response filter + cache ---
-import logging  # noqa: E402
 
 logger = logging.getLogger(__name__)
 

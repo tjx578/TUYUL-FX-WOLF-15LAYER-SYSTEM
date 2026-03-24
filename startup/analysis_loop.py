@@ -165,15 +165,15 @@ def _build_verdict_cache_payload(pair: str, result: dict[str, Any]) -> dict[str,
     timestamp = time.time()
     hold_block_reason = _extract_last_hold_block_reason(result)
 
+    _exec_dir = execution.get("direction")
+    _raw_direction = _exec_dir if _exec_dir is not None else l12.get("direction")
     payload: dict[str, Any] = {
         "symbol": pair,
         "signal_id": str(l12.get("signal_id") or f"SIG-{pair}-{uuid4().hex[:12].upper()}"),
         "verdict": str(l12.get("verdict") or "HOLD"),
         "confidence": confidence,
         "wolf_status": str(l12.get("wolf_status") or "NO_HUNT"),
-        "direction": _normalize_boundary_direction(
-            execution.get("direction"), l12.get("direction"), l12.get("verdict")
-        ),
+        "direction": execution.get("direction") or l12.get("direction") or "HOLD",
         "scores": scores,
         "gates": dict(l12.get("gates") or {}),
         "layers": layers,
@@ -183,9 +183,9 @@ def _build_verdict_cache_payload(pair: str, result: dict[str, Any]) -> dict[str,
             "latency_ms": float(result.get("latency_ms") or system.get("latency_ms") or 0.0),
         },
         "timestamp": timestamp,
-        "entry_price": execution.get("entry_price"),
-        "stop_loss": execution.get("stop_loss"),
-        "take_profit_1": execution.get("take_profit_1"),
+        "entry_price": execution.get("entry_price") or None,
+        "stop_loss": execution.get("stop_loss") or None,
+        "take_profit_1": execution.get("take_profit_1") or None,
         "risk_reward_ratio": execution.get("rr_ratio"),
         "execution_map": execution_map,
         "governance": governance,

@@ -4,6 +4,7 @@ Journal Router - Thread-safe singleton event receiver.
 Receives and routes journal events (J1-J4) to JournalWriter.
 Pattern: Same as LiveContextBus and ExecutionStateMachine.
 """
+from __future__ import annotations
 
 from threading import Lock
 

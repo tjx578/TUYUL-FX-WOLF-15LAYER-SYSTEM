@@ -1,4 +1,5 @@
 """Canonical dashboard DTO contracts shared with frontend typings."""
+from __future__ import annotations
 
 from datetime import datetime
 

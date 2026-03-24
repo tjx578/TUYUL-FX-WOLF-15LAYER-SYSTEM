@@ -46,10 +46,14 @@ def _make_redis(list_data: dict[str, list[bytes]] | None = None) -> MagicMock:
     async def lrange(key: str, start: int, end: int) -> list[bytes]:
         return _ld.get(key, [])
 
+    async def type_cmd(key: str) -> str:
+        return "list" if key in _ld else "none"
+
     async def hgetall(key: str) -> dict[str | bytes, str | bytes]:
         return {}
 
     redis.lrange = lrange
+    redis.type = type_cmd
     redis.hgetall = hgetall
     redis.pubsub = MagicMock(return_value=MagicMock())
     return redis
