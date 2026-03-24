@@ -155,6 +155,20 @@ class TestContextContract:
 # ── /api/v1/verdict/all ────────────────────────────────────────────────────────
 
 
+def _extract_verdict_items(raw: Any) -> list[dict[str, Any]]:
+    """Extract verdict item list from the envelope or flat response format.
+
+    The API returns an envelope ``{verdicts: {pair: item, ...}, count: N, cached: bool}``.
+    This helper normalises both the envelope format and any legacy flat dict/list formats
+    so callers always receive a plain list of individual verdict dicts.
+    """
+    if isinstance(raw, dict) and "verdicts" in raw:
+        return list(raw["verdicts"].values())
+    if isinstance(raw, list):
+        return raw
+    return list(raw.values())
+
+
 class TestVerdictAllContract:
     """
     TypeScript contract:
@@ -179,7 +193,7 @@ class TestVerdictAllContract:
     def test_verdict_item_required_fields(self, client: Any) -> None:
         """Each item must contain the three required FE fields."""
         raw: Any = client.get("/api/v1/verdict/all").json()
-        items: list[dict[str, Any]] = raw if isinstance(raw, list) else list(raw.values())
+        items = _extract_verdict_items(raw)
 
         if not items:
             pytest.skip("No verdicts available in test environment")
@@ -191,7 +205,7 @@ class TestVerdictAllContract:
 
     def test_confidence_is_numeric(self, client: Any) -> None:
         raw: Any = client.get("/api/v1/verdict/all").json()
-        items: list[dict[str, Any]] = raw if isinstance(raw, list) else list(raw.values())
+        items = _extract_verdict_items(raw)
         if not items:
             pytest.skip("No verdicts")
         for item in items[:5]:
@@ -209,7 +223,7 @@ class TestVerdictAllContract:
             "ABORT",
         }
         raw: Any = client.get("/api/v1/verdict/all").json()
-        items: list[dict[str, Any]] = raw if isinstance(raw, list) else list(raw.values())
+        items = _extract_verdict_items(raw)
         if not items:
             pytest.skip("No verdicts")
         for item in items[:5]:
