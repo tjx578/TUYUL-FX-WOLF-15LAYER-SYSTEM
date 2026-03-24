@@ -1443,9 +1443,8 @@ class QuantumScenarioMatrix:
         if strategy in (BattleStrategy.APEX_PREDATOR, BattleStrategy.SHADOW_STRIKE):
             if direction_bias == "SHORT":
                 score += 0.2
-        elif strategy in (BattleStrategy.BLOOD_MOON_HUNT, BattleStrategy.TSUNAMI_BREAKOUT):
-            if direction_bias == "LONG":
-                score += 0.2
+        elif strategy in (BattleStrategy.BLOOD_MOON_HUNT, BattleStrategy.TSUNAMI_BREAKOUT) and direction_bias == "LONG":
+            score += 0.2
 
         confluence_count = 0
         for conf_required in config.required_confluence:

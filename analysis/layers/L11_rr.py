@@ -5,6 +5,7 @@ Sources:
     core_quantum_unified.py    -> QuantumScenarioMatrix, QuantumExecutionOptimizer, BattleStrategy
     core_reflective_unified.py -> generate_trade_targets
     context.live_context_bus   -> candle history for ATR
+    analysis.formulas.tp1_generator -> TP1Generator (algorithmic TP1 from structure)
 
 Produces:
     - rr (float)               -> target ≥ 2.0
@@ -18,6 +19,7 @@ Produces:
     - entry_zone (str)
     - reason (str)
     - valid (bool)
+    - tp1_source (str)         -> origin of TP1 candidate (atr_2x|swing|fvg|fib_*)
 """  # noqa: N999
 
 from __future__ import annotations
@@ -25,6 +27,14 @@ from __future__ import annotations
 from typing import Any
 
 from loguru import logger
+
+try:
+    from analysis.formulas.tp1_generator import TP1Generator as _TP1Generator
+
+    _tp1_gen = _TP1Generator(min_rr=2.0)
+except Exception as _tp1_gen_exc:  # pragma: no cover
+    logger.warning(f"[L11] TP1Generator unavailable: {_tp1_gen_exc}")
+    _tp1_gen = None
 
 try:
     import core.core_quantum_unified
@@ -171,8 +181,28 @@ class L11RRAnalyzer:
             sl = round(entry + sl_distance, 5)
             tp1 = round(entry - tp_distance, 5)
 
+        # --- TP1 Generator: use algorithmic structure-aware TP1 ---
+        tp1_source = "atr_2x"
+        if _tp1_gen is not None and len(candles) >= _MIN_CANDLES:
+            try:
+                gen_result = _tp1_gen.generate(
+                    candles=candles,
+                    entry=entry,
+                    sl=sl,
+                    direction=direction,
+                    atr=atr,
+                )
+                if gen_result.get("valid") and gen_result.get("tp1", 0.0) > 0:
+                    tp1 = gen_result["tp1"]
+                    tp1_source = gen_result.get("source", "atr_2x")
+            except Exception as exc:  # pragma: no cover
+                logger.debug(f"[L11] TP1Generator error (using ATR fallback): {exc}")
+
         # --- RR ---
         rr = round(tp_distance / sl_distance, 2) if sl_distance > 0 else 0.0
+        # Recalculate RR based on the generated TP1
+        if tp1 > 0 and sl_distance > 0:
+            rr = round(abs(tp1 - entry) / sl_distance, 2)
 
         if rr < _MIN_RR:
             return {
@@ -190,6 +220,7 @@ class L11RRAnalyzer:
                 "stop_loss": sl,
                 "take_profit_1": tp1,
                 "entry_zone": f"{sl:.5f}-{tp1:.5f}",
+                "tp1_source": tp1_source,
             }
 
         # --- Battle strategy selection ---
@@ -217,6 +248,7 @@ class L11RRAnalyzer:
             "stop_loss": sl,
             "take_profit_1": tp1,
             "entry_zone": f"{sl:.5f}-{tp1:.5f}",
+            "tp1_source": tp1_source,
         }
 
     # ------------------------------------------------------------------

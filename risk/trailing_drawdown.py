@@ -22,6 +22,7 @@ from enum import StrEnum
 
 from loguru import logger
 
+from core.redis_keys import RISK_TRAILING_DD_PREFIX as _REDIS_TRAILING_DD_PREFIX  # noqa: N811
 from storage.redis_client import RedisClient
 from utils.timezone_utils import now_utc
 
@@ -115,9 +116,6 @@ def get_drawdown_mode(firm_name: str, phase: PropPhase) -> DrawdownMode:
     if isinstance(mode, DrawdownMode):
         return mode
     return DrawdownMode.FIXED
-
-
-from core.redis_keys import RISK_TRAILING_DD_PREFIX as _REDIS_TRAILING_DD_PREFIX  # noqa: N811
 
 
 class TrailingDrawdownMonitor:
