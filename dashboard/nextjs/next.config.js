@@ -165,6 +165,44 @@ _validateWsBase(wsBase, {
   explicitlyConfigured: Boolean(configuredWsBase),
 });
 
+/**
+ * Build the additional connect-src origins derived from the configured WS base URL.
+ *
+ * When NEXT_PUBLIC_WS_BASE_URL points at a custom domain (e.g. a Railway custom
+ * domain or any non-*.railway.app host) the browser's CSP must explicitly allow
+ * that origin for both WebSocket (wss://) and HTTPS (https://) connections.
+ *
+ * The wildcard allowances for *.railway.app and *.vercel.app already cover the
+ * default Railway/Vercel subdomains, so we only add extra entries when the
+ * configured host is NOT covered by those wildcards.
+ *
+ * @param {string} wsOrigin - The resolved wsBase (e.g. "wss://api.example.com")
+ * @returns {string[]} Zero or more additional CSP origin strings.
+ */
+function _extraCspConnectSrcOrigins(wsOrigin) {
+  if (!wsOrigin) return [];
+  try {
+    // Convert wss:// → https:// to parse the host.
+    const httpEquiv = wsOrigin.replace(/^wss:\/\//, "https://").replace(/^ws:\/\//, "http://");
+    const { host } = new URL(httpEquiv);
+    // Already covered by wildcards in the static list.
+    if (
+      host.endsWith(".railway.app") ||
+      host.endsWith(".vercel.app") ||
+      host === "localhost" ||
+      host.startsWith("localhost:")
+    ) {
+      return [];
+    }
+    // Add both wss:// and https:// variants for the custom domain.
+    return [`wss://${host}`, `https://${host}`];
+  } catch {
+    return [];
+  }
+}
+
+const _customCspOrigins = _extraCspConnectSrcOrigins(wsBase);
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
@@ -180,6 +218,16 @@ const nextConfig = {
   // Dockerfile / railway.toml only.
   ...(process.env.NEXT_OUTPUT_STANDALONE === "true" && { output: "standalone" }),
   async headers() {
+    const connectSrcParts = [
+      "'self'",
+      "wss://*.railway.app",
+      "https://*.railway.app",
+      "wss://*.vercel.app",
+      "https://*.vercel.app",
+      "https://vitals.vercel-insights.com",
+      "https://*.vercel-scripts.com",
+      ..._customCspOrigins,
+    ];
     return [
       {
         source: "/(.*)",
@@ -190,7 +238,7 @@ const nextConfig = {
               "default-src 'self'",
               "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
               "font-src 'self' https://fonts.gstatic.com",
-              "connect-src 'self' wss://*.railway.app https://*.railway.app wss://*.vercel.app https://*.vercel.app https://vitals.vercel-insights.com https://*.vercel-scripts.com",
+              `connect-src ${connectSrcParts.join(" ")}`,
               "img-src 'self' data:",
               "script-src 'self' 'unsafe-eval' 'unsafe-inline' https://va.vercel-scripts.com",
               "worker-src 'self' blob:",
