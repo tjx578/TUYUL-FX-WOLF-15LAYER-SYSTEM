@@ -153,15 +153,42 @@ def _build_pipeline_data(pair: str, verdict_data: dict[str, Any]) -> dict[str, A
     pass_count = int(gates_raw.get("passed", 0))
     total_gates = int(gates_raw.get("total", 9))
 
+    # Build set of layers that actually executed (from execution_map.layers_executed).
+    # When present, layers absent from this set are marked "skip" instead of "pass".
+    _exec_map_raw = verdict_data.get("execution_map")
+    _exec_layers_list = (_exec_map_raw or {}).get("layers_executed", []) if isinstance(_exec_map_raw, dict) else []
+    layers_executed_set: set[str] = {str(lyr) for lyr in _exec_layers_list} if isinstance(_exec_layers_list, list) else set()
+
+    # Gate keys that directly reflect a specific layer's outcome
+    _gate_layer_map: dict[str, str] = {
+        "L4": "gate_4_fta",
+        "L6": "gate_7_drawdown",
+        "L7": "gate_5_montecarlo",
+        "L8": "gate_1_tii",
+        "L11": "gate_3_rr",
+    }
+
     layer_list: list[dict[str, str]] = []
     for ldef in _LAYER_DEFS:
         lid = ldef["id"]
         val, detail = layer_score_map.get(lid, ("—", "—"))
-        status = (
-            "pass"
-            if lid != "L12"
-            else ("pass" if pass_count == total_gates else ("warn" if pass_count >= 7 else "fail"))
-        )
+        if lid == "L12":
+            status = "pass" if pass_count == total_gates else ("warn" if pass_count >= 7 else "fail")
+        elif lid in _gate_layer_map:
+            gate_key = _gate_layer_map[lid]
+            gate_val = gates_raw.get(gate_key)
+            if gate_val == "FAIL":
+                status = "fail"
+            elif gate_val == "PASS":
+                status = "pass"
+            elif layers_executed_set and lid not in layers_executed_set:
+                status = "skip"
+            else:
+                status = "pass"
+        elif layers_executed_set and lid not in layers_executed_set:
+            status = "skip"
+        else:
+            status = "pass"
         layer_list.append(
             {
                 "id": lid,
