@@ -117,6 +117,24 @@ export interface AlertUpdatedEvent {
   payload: Record<string, unknown>;
 }
 
+// /ws/live initial snapshot: { signals, accounts, trades }
+export interface LiveSnapshotEvent {
+  type: "LiveSnapshot";
+  payload: Record<string, unknown>;
+}
+
+// /ws/live periodic keepalive: { signal_count, account_count, active_trade_count, server_ts, engine_status }
+export interface LiveHeartbeatStateEvent {
+  type: "LiveHeartbeatState";
+  payload: Record<string, unknown>;
+}
+
+// /ws/pipeline initial snapshot: { pair, pipelines: Record<symbol, pipelineData> }
+export interface PipelineSnapshotEvent {
+  type: "PipelineSnapshot";
+  payload: Record<string, unknown>;
+}
+
 export type WsEvent =
   | PipelineResultUpdatedEvent
   | ExecutionStateUpdatedEvent
@@ -137,4 +155,7 @@ export type WsEvent =
   | CandleFormingEvent
   | EquityUpdatedEvent
   | AlertCreatedEvent
-  | AlertUpdatedEvent;
+  | AlertUpdatedEvent
+  | LiveSnapshotEvent
+  | LiveHeartbeatStateEvent
+  | PipelineSnapshotEvent;

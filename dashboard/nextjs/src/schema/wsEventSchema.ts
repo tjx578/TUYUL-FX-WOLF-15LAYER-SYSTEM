@@ -13,8 +13,22 @@ const RiskStateSchema = z.object({
   dd_pct: z.number(),
 });
 
+// All valid mode strings from backend SystemStatusView + DegradationMode in useSystemStore.
+// Must stay in sync with wsEvents.ts SystemStatusView and useSystemStore DegradationMode.
 const SystemStatusSchema = z.object({
-  mode: z.union([z.literal("NORMAL"), z.literal("SSE"), z.literal("POLLING"), z.literal("DEGRADED")]),
+  mode: z.union([
+    z.literal("NORMAL"),
+    z.literal("SSE"),
+    z.literal("POLLING"),
+    z.literal("DEGRADED"),
+    z.literal("RECONNECTING_WS"),
+    z.literal("POLLING_REST"),
+    z.literal("STALE"),
+    z.literal("STALE_PRESERVED"),
+    z.literal("NO_PRODUCER"),
+    z.literal("NO_TRANSPORT"),
+    z.literal("DEGRADED_BUT_REFRESHING"),
+  ]),
   reason: z.string().optional(),
   updated_at: z.string().optional(),
 });
@@ -121,6 +135,25 @@ export const AlertUpdatedEventSchema = z.object({
   payload: z.record(z.string(), z.unknown()),
 });
 
+// ── Live feed heartbeat events from /ws/live ──
+// Payload: { signals, accounts, trades } — used for initial snapshot on connection.
+export const LiveSnapshotEventSchema = z.object({
+  type: z.literal("LiveSnapshot"),
+  payload: z.record(z.string(), z.unknown()),
+});
+
+// Payload: { signal_count, account_count, active_trade_count, server_ts, engine_status }
+export const LiveHeartbeatStateEventSchema = z.object({
+  type: z.literal("LiveHeartbeatState"),
+  payload: z.record(z.string(), z.unknown()),
+});
+
+// pipeline.snapshot: { pair, pipelines: Record<symbol, pipelineData> }
+export const PipelineSnapshotEventSchema = z.object({
+  type: z.literal("PipelineSnapshot"),
+  payload: z.record(z.string(), z.unknown()),
+});
+
 export const WsEventSchema = z.discriminatedUnion("type", [
   // Legacy / frontend-native
   PipelineResultUpdatedEventSchema,
@@ -144,6 +177,10 @@ export const WsEventSchema = z.discriminatedUnion("type", [
   EquityUpdatedEventSchema,
   AlertCreatedEventSchema,
   AlertUpdatedEventSchema,
+  // Live feed heartbeat events
+  LiveSnapshotEventSchema,
+  LiveHeartbeatStateEventSchema,
+  PipelineSnapshotEventSchema,
 ]);
 
 export type WsEvent = z.infer<typeof WsEventSchema>;

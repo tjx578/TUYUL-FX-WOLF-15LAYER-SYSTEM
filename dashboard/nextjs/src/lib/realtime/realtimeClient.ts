@@ -32,6 +32,8 @@ const EVENT_TYPE_MAP: Record<string, string> = {
   "verdict.snapshot": "VerdictSnapshot",
   "pipeline.update": "PipelineUpdated",
   "pipeline.result": "PipelineResultUpdated",
+  // pipeline.snapshot carries { pair, pipelines } — handled via onRawMessage
+  "pipeline.snapshot": "PipelineSnapshot",
   // ── Prices ──
   "price.snapshot": "PricesSnapshot",
   "price.tick": "PriceUpdated",
@@ -42,17 +44,22 @@ const EVENT_TYPE_MAP: Record<string, string> = {
   // ── System ──
   "system.status": "SystemStatusUpdated",
   "preferences.updated": "PreferencesUpdated",
-  // ── Signals / Trades (not yet in WsEventSchema — handled by onRawMessage) ──
+  // ── Signals / Trades (not in WsEventSchema — handled by onRawMessage) ──
   "signals.update": "SignalUpdated",
+  "signals.snapshot": "SignalUpdated",
   "trade.snapshot": "TradeSnapshot",
   "trade.update": "TradeUpdated",
-  // ── Candles / Equity (not yet in WsEventSchema — handled by onRawMessage) ──
+  // ── Candles / Equity (not in WsEventSchema — handled by onRawMessage) ──
   "candle.snapshot": "CandleSnapshot",
   "candle.forming": "CandleForming",
   "equity.update": "EquityUpdated",
   // ── Live feed events ──
-  "live.heartbeat_state": "SystemStatusUpdated",
-  "live.snapshot": "SystemStatusUpdated",
+  // live.snapshot payload is { signals, accounts, trades } — NOT a SystemStatusView.
+  // Route via onRawMessage only (no Zod schema match needed).
+  "live.snapshot": "LiveSnapshot",
+  // live.heartbeat_state payload is { signal_count, engine_status, ... } — NOT a SystemStatusView.
+  // Route via onRawMessage only.
+  "live.heartbeat_state": "LiveHeartbeatState",
 };
 
 function normalizeWsEvent(raw: Record<string, unknown>): Record<string, unknown> {
