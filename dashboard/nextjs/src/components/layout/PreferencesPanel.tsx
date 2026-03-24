@@ -67,16 +67,6 @@ export default function PreferencesPanel() {
           />{" "}
           Show latency
         </label>
-        <label>
-          <input
-            id="pref-show-hashes"
-            name="show_hashes"
-            type="checkbox"
-            checked={prefs.showHashes}
-            onChange={(e) => patchPreferences({ showHashes: e.target.checked })}
-          />{" "}
-          Show hashes
-        </label>
       </div>
       <button
         type="button"
