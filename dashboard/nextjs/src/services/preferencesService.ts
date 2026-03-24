@@ -5,7 +5,6 @@ import { apiClient } from "./apiClient";
 const DEFAULT_PREFERENCES: OperatorPreferences = {
   density: "comfortable",
   showLatency: true,
-  showHashes: false,
   layoutPreset: "default",
 };
 
