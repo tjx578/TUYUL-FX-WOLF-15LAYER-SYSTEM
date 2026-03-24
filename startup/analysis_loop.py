@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import datetime
 import os
 import time
 from typing import Any
@@ -39,6 +40,7 @@ from state.heartbeat_classifier import (
     classify_ingest_health,
 )
 from state.redis_keys import (
+    ENGINE_HEARTBEAT_SIMPLE,
     HEARTBEAT_ENGINE,
     HEARTBEAT_INGEST,
     HEARTBEAT_INGEST_PROCESS,
@@ -341,6 +343,9 @@ async def _engine_heartbeat_loop(
         try:
             payload = orjson.dumps({"producer": "engine_analysis", "ts": time.time()}).decode("utf-8")
             _redis_client.set(HEARTBEAT_ENGINE, payload)
+            # Also write a simple UTC ISO timestamp for external monitors / dashboard
+            utc_ts = datetime.datetime.now(datetime.UTC).isoformat()
+            _redis_client.set(ENGINE_HEARTBEAT_SIMPLE, utc_ts)
             ENGINE_HEARTBEAT_AGE_SECONDS.set(0.0)
             ENGINE_HEARTBEAT_READY.set(1.0)
         except Exception as exc:

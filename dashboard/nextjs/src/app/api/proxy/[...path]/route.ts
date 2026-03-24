@@ -4,9 +4,14 @@ import { NextRequest, NextResponse } from "next/server";
  * Dynamic API proxy that reads backend URL at **runtime**, not build time.
  * This solves the issue where next.config.js rewrites use stale env vars
  * because they're evaluated once at startup.
+ *
+ * All responses include:
+ *   x-proxy-target  — the resolved backend origin (sanitised, no credentials)
+ *   x-proxy-status  — "ok" | "misconfigured" | "error"
  */
 
-function getBackendUrl(): string {
+/** Resolved backend origin or null when not configured. */
+function getBackendUrl(): string | null {
   // Check all possible env var names (same as next.config.js)
   const url =
     process.env.INTERNAL_API_URL ||
@@ -20,9 +25,7 @@ function getBackendUrl(): string {
     if (process.env.NODE_ENV === "development") {
       return "http://localhost:8000";
     }
-    throw new Error(
-      "[api/proxy] Missing backend URL. Set NEXT_PUBLIC_API_BASE_URL or INTERNAL_API_URL."
-    );
+    return null;
   }
 
   // Normalize: strip trailing slash and accidental /api suffix
@@ -34,6 +37,29 @@ async function proxyRequest(
   path: string[]
 ): Promise<NextResponse> {
   const backendUrl = getBackendUrl();
+
+  // Fail-fast: no backend URL configured outside of local dev
+  if (!backendUrl) {
+    console.error(
+      "[api/proxy] PROXY_MISCONFIGURED: INTERNAL_API_URL / NEXT_PUBLIC_API_BASE_URL not set."
+    );
+    return NextResponse.json(
+      {
+        error: "Proxy misconfigured — backend URL not set",
+        code: "PROXY_MISCONFIGURED",
+        detail:
+          "Set INTERNAL_API_URL (server-side) or NEXT_PUBLIC_API_BASE_URL to the Railway backend origin.",
+      },
+      {
+        status: 503,
+        headers: {
+          "x-proxy-target": "unresolved",
+          "x-proxy-status": "misconfigured",
+        },
+      }
+    );
+  }
+
   const joinedPath = path.join("/");
   
   // Handle paths that already start with 'v1/' (e.g., /api/proxy/v1/health)
@@ -73,6 +99,9 @@ async function proxyRequest(
     headers.set("Authorization", `Bearer ${apiKey}`);
   }
 
+  // Safe target label for headers (origin only, no credentials/path)
+  const targetLabel = `${targetUrl.protocol}//${targetUrl.host}`;
+
   try {
     const response = await fetch(targetUrl.toString(), {
       method: request.method,
@@ -98,6 +127,10 @@ async function proxyRequest(
       }
     });
 
+    // Traceability headers
+    responseHeaders.set("x-proxy-target", targetLabel);
+    responseHeaders.set("x-proxy-status", "ok");
+
     return new NextResponse(response.body, {
       status: response.status,
       statusText: response.statusText,
@@ -110,9 +143,15 @@ async function proxyRequest(
         error: "Backend unavailable",
         detail:
           error instanceof Error ? error.message : "Connection failed",
-        target: targetUrl.toString(),
+        target: targetLabel,
       },
-      { status: 502 }
+      {
+        status: 502,
+        headers: {
+          "x-proxy-target": targetLabel,
+          "x-proxy-status": "error",
+        },
+      }
     );
   }
 }
