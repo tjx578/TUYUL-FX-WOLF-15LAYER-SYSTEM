@@ -16,7 +16,6 @@ Redis Client Wrapper with Connection Pooling, Pub/Sub, and Streams support.
 
 import os
 from typing import Any, Optional, cast  # noqa: UP035
-from urllib.parse import urlsplit, urlunsplit
 
 # Type alias for Redis stream read responses:
 # list of (stream_name, list of (entry_id, fields)) tuples.
@@ -34,23 +33,9 @@ from tenacity import (  # noqa: E402
 )
 
 from config.logging_bootstrap import configure_loguru_logging  # noqa: E402
+from infrastructure.redis_url import sanitize_redis_url as _sanitize_redis_url  # noqa: E402
 
 configure_loguru_logging()
-
-
-def _sanitize_redis_url(url: str) -> str:
-    """Mask password in Redis URL for safe logging."""
-    parts = urlsplit(url)
-    if not parts.netloc or "@" not in parts.netloc:
-        return url
-
-    userinfo, hostinfo = parts.netloc.rsplit("@", 1)
-    if ":" not in userinfo:
-        return url
-
-    username, _password = userinfo.split(":", 1)
-    safe_netloc = f"{username}:***@{hostinfo}"
-    return urlunsplit((parts.scheme, safe_netloc, parts.path, parts.query, parts.fragment))
 
 
 class RedisClient:

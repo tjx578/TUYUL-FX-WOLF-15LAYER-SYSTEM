@@ -44,6 +44,8 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any, Final
 
+from core.core_fusion._utils import _clamp01
+
 logger = logging.getLogger(__name__)
 
 __all__ = [
@@ -239,7 +241,7 @@ def _compute_fundamental_strength(
     vol = min(1.0, news_count / 5.0) if news_count > 0 else 0.0
     impact_map = {"CRITICAL": 1.0, "HIGH": 0.80, "MEDIUM": 0.50, "LOW": 0.25, "NONE": 0.0}
     imp = impact_map.get(impact_level.upper(), 0.0)
-    return round(max(0.0, min(1.0, sent * _W_SENTIMENT + vol * _W_NEWS_VOLUME + imp * _W_IMPACT)), 4)
+    return round(_clamp01(sent * _W_SENTIMENT + vol * _W_NEWS_VOLUME + imp * _W_IMPACT), 4)
 
 
 def _resolve_pair_bias(
