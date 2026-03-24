@@ -151,6 +151,10 @@ class RedisConsumer:
         first one that returns data for each symbol × timeframe combination.
         Per-key errors are caught and logged.
 
+        All symbol × timeframe pairs are fetched concurrently via
+        ``asyncio.gather``, reducing startup latency from O(S × T) sequential
+        round trips to O(1) parallel round trips.
+
         Calling this method more than once replaces (not appends) the stored candles.
         """
         has_seed = await self._has_any_candle_seed()
@@ -166,44 +170,51 @@ class RedisConsumer:
             logger.info("RedisConsumer: Redis candle seed detected — loading warmup history")
             self._logged_empty_seed = False
 
-        for symbol in self._symbols:
-            for timeframe in WARMUP_TIMEFRAMES:
-                raw_entries = await self._warmup_candle_history(symbol, timeframe)
-                if not raw_entries:
-                    if timeframe != "M15":
-                        logger.debug(
-                            "RedisConsumer: no data for %s:%s (tried all prefixes)",
-                            symbol,
-                            timeframe,
-                        )
-                    continue
+        # ── Fetch all symbol × timeframe pairs concurrently ──────────────────
+        # Sequential nested loops made S × T round trips; gather reduces that
+        # to a single parallel batch (_warmup_candle_history handles its own
+        # exceptions and always returns a list, never raises).
+        pairs = [(symbol, timeframe) for symbol in self._symbols for timeframe in WARMUP_TIMEFRAMES]
+        all_raw: list[list[bytes]] = await asyncio.gather(
+            *[self._warmup_candle_history(sym, tf) for sym, tf in pairs]
+        )
 
-                # Derive a display key from the first successful prefix for logging
-                key_display = f"<prefix>:{symbol}:{timeframe}"
-                candles: list[dict[str, Any]] = []
-                for raw in raw_entries:
-                    try:
-                        candle: Any = orjson.loads(raw)
-                        if isinstance(candle, dict):
-                            candles.append(cast(dict[str, Any], candle))
-                        else:
-                            logger.warning(
-                                "RedisConsumer: non-dict candle in key %s — skipped",
-                                key_display,
-                            )
-                    except Exception:
+        for (symbol, timeframe), raw_entries in zip(pairs, all_raw, strict=True):
+            if not raw_entries:
+                if timeframe != "M15":
+                    logger.debug(
+                        "RedisConsumer: no data for %s:%s (tried all prefixes)",
+                        symbol,
+                        timeframe,
+                    )
+                continue
+
+            # Derive a display key from the first successful prefix for logging
+            key_display = f"<prefix>:{symbol}:{timeframe}"
+            candles: list[dict[str, Any]] = []
+            for raw in raw_entries:
+                try:
+                    candle: Any = orjson.loads(raw)
+                    if isinstance(candle, dict):
+                        candles.append(cast(dict[str, Any], candle))
+                    else:
                         logger.warning(
-                            "RedisConsumer: skipping malformed candle bytes in key %s",
+                            "RedisConsumer: non-dict candle in key %s — skipped",
                             key_display,
                         )
+                except Exception:
+                    logger.warning(
+                        "RedisConsumer: skipping malformed candle bytes in key %s",
+                        key_display,
+                    )
 
-                self._bus.set_candle_history(symbol, timeframe, candles)
-                logger.info(
-                    "RedisConsumer: warmup loaded %d candles for %s:%s",
-                    len(candles),
-                    symbol,
-                    timeframe,
-                )
+            self._bus.set_candle_history(symbol, timeframe, candles)
+            logger.info(
+                "RedisConsumer: warmup loaded %d candles for %s:%s",
+                len(candles),
+                symbol,
+                timeframe,
+            )
 
     async def load_candle_history_with_retry(
         self,
