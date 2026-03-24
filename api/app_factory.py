@@ -95,7 +95,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # Log the resolved Redis URL (password masked) so operators can confirm that
     # both the API service and the Engine service are targeting the same Redis
     # instance (BUG #6 — RUN_MODE split-deployment Redis isolation).
-    logger.info("[Redis] API service Redis target: {}", get_safe_redis_url())
+    logger.info("[Redis] API service Redis target: %s", get_safe_redis_url())
 
     # Guard Redis connection — app must start even if Redis is temporarily
     # unreachable so the /healthz probe can pass while infra catches up.
