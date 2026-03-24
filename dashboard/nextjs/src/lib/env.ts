@@ -10,7 +10,8 @@
  *
  * Env vars in use (exactly these two, nothing else):
  *   NEXT_PUBLIC_API_BASE_URL   optional  override REST base (default: relative via rewrite)
- *   NEXT_PUBLIC_WS_BASE_URL    required  bare wss:// ORIGIN for Railway — NO /ws suffix!
+ *   NEXT_PUBLIC_WS_BASE_URL    required  bare wss:// ORIGIN for Railway — NO path suffix!
+ *                                        e.g. wss://wolf15-api.up.railway.app  (NOT .../ws/live)
  *
  * REMOVED (do NOT use):
  *   NEXT_PUBLIC_WS_URL         was in wsService.ts (deleted) — never set this
@@ -127,15 +128,29 @@ export function getWsBaseUrl(): string {
     }
     return ""; // SSR fallback — not used for real connections
   }
-  // Strip trailing slash AND accidental /ws suffix — hooks already append /ws/<channel>
-  const stripped = (process.env.NEXT_PUBLIC_WS_BASE_URL ?? "").trim().replace(/\/$/, "").replace(/\/ws$/, "");
-  if (stripped !== (process.env.NEXT_PUBLIC_WS_BASE_URL ?? "").trim().replace(/\/$/, "") && process.env.NODE_ENV === "development") {
+  // Normalise: strip ALL path components using URL parsing — hooks already append /ws/<channel>.
+  // Common misconfiguration: setting /ws/live (or /ws) causes double-prefix,
+  // e.g. wss://host/ws/live/ws/live.  Return only the origin (protocol + host + port).
+  const rawWsUrl = (process.env.NEXT_PUBLIC_WS_BASE_URL ?? "").trim();
+  try {
+    const parsed = new URL(rawWsUrl);
+    const origin = `${parsed.protocol}//${parsed.host}`;
+    if (parsed.pathname && parsed.pathname !== "/") {
+      // Warn in all environments — this misconfiguration breaks WS in production.
+      console.warn(
+        `[env] NEXT_PUBLIC_WS_BASE_URL had unexpected path '${parsed.pathname}' which was stripped. ` +
+        "Set the value to the bare origin only (e.g. wss://your-api.up.railway.app)."
+      );
+    }
+    return origin;
+  } catch {
+    // URL parsing failed — log the issue and return a minimally cleaned value.
     console.warn(
-      "[env] NEXT_PUBLIC_WS_BASE_URL contains /ws suffix which was automatically stripped. " +
-      "Set the value to the bare origin (e.g. wss://your-api.up.railway.app) to avoid double /ws paths."
+      `[env] NEXT_PUBLIC_WS_BASE_URL='${rawWsUrl}' could not be parsed as a URL. ` +
+      "Ensure it is a valid wss:// or ws:// origin (e.g. wss://your-api.up.railway.app)."
     );
+    return rawWsUrl.replace(/\/$/, "");
   }
-  return stripped;
 }
 
 /**

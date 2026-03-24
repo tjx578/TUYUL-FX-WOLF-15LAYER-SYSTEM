@@ -96,6 +96,29 @@ describe("getWsBaseUrl", () => {
         expect(mod.getWsBaseUrl()).toBe("wss://backend.up.railway.app");
     });
 
+    it("should strip /ws/live path (the most common production misconfiguration)", async () => {
+        process.env.NEXT_PUBLIC_WS_BASE_URL = "wss://wolf15-api-production.up.railway.app/ws/live";
+        const mod = await freshImport();
+        expect(mod.getWsBaseUrl()).toBe("wss://wolf15-api-production.up.railway.app");
+    });
+
+    it("should strip any arbitrary path from WS base URL", async () => {
+        process.env.NEXT_PUBLIC_WS_BASE_URL = "wss://backend.up.railway.app/some/deep/path";
+        const mod = await freshImport();
+        expect(mod.getWsBaseUrl()).toBe("wss://backend.up.railway.app");
+    });
+
+    it("should warn when WS base URL contains a path (all environments)", async () => {
+        process.env.NEXT_PUBLIC_WS_BASE_URL = "wss://backend.up.railway.app/ws/live";
+        const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+        const mod = await freshImport();
+        mod.getWsBaseUrl();
+        expect(warnSpy).toHaveBeenCalledWith(
+            expect.stringContaining("unexpected path"),
+        );
+        warnSpy.mockRestore();
+    });
+
     it("should derive ws:// from window.location when env var not set", async () => {
         // Simulate browser environment
         const originalWindow = globalThis.window;
