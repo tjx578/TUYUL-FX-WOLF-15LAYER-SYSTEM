@@ -134,9 +134,8 @@ def get_redis_url() -> str:
     return _validate_redis_security(_DEFAULT_REDIS_URL)
 
 
-def get_safe_redis_url() -> str:
-    """Return Redis URL with password masked for safe logging."""
-    url = get_redis_url()
+def sanitize_redis_url(url: str) -> str:
+    """Return a Redis URL with the password masked for safe logging."""
     parts = urlsplit(url)
     if not parts.netloc or "@" not in parts.netloc:
         return url
@@ -148,3 +147,8 @@ def get_safe_redis_url() -> str:
     username, _password = userinfo.split(":", 1)
     safe_netloc = f"{username}:***@{hostinfo}"
     return urlunsplit((parts.scheme, safe_netloc, parts.path, parts.query, parts.fragment))
+
+
+def get_safe_redis_url() -> str:
+    """Return Redis URL with password masked for safe logging."""
+    return sanitize_redis_url(get_redis_url())

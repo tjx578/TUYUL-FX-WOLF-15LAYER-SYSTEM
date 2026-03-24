@@ -26,18 +26,13 @@ from __future__ import annotations
 from typing import Any
 
 from analysis.reflex_rqi import latency_decay
-
-# ── Default TF weights for RQI aggregation ────────────────────────────────────
+from core.core_fusion._utils import _clamp01
 
 DEFAULT_TF_WEIGHTS: dict[str, float] = {
     "M15": 0.20,
     "H1": 0.50,
     "H4": 0.30,
 }
-
-
-def _clamp01(value: float) -> float:
-    return max(0.0, min(1.0, float(value)))
 
 
 def per_tf_coherence(p_bull: float) -> float:

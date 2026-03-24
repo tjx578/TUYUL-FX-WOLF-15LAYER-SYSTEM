@@ -38,6 +38,8 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from core.core_fusion._utils import _clamp01
+
 logger = logging.getLogger(__name__)
 
 __all__ = ["L6RiskAnalyzer"]
@@ -379,7 +381,7 @@ class L6RiskAnalyzer:
         # ══════════════════════════════════════════════════════════
         # FINAL RISK CALCULATION
         # ══════════════════════════════════════════════════════════
-        risk_multiplier = max(0.0, min(1.0, risk_multiplier))
+        risk_multiplier = _clamp01(risk_multiplier)
         max_risk_pct = self._base_risk_pct * risk_multiplier
 
         if hard_block:

@@ -10,9 +10,7 @@ from __future__ import annotations
 
 import math
 
-
-def _clamp01(value: float) -> float:
-    return max(0.0, min(1.0, float(value)))
+from core.core_fusion._utils import _clamp01
 
 
 def latency_decay(delta_t_sec: float, sigma_sec: float) -> float:
