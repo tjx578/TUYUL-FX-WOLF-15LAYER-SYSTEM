@@ -81,8 +81,8 @@ class ForexFactoryXmlProvider:
         events: list[dict[str, Any]] = []
         for item in root.iter("event"):
             # FF XML schema: <title>, <country>, <date>, <time>, <impact>, etc.
-            def get_text(tag: str) -> str:
-                el = item.find(tag)
+            def get_text(tag: str, _item: Any = item) -> str:
+                el = _item.find(tag)
                 return el.text.strip() if el is not None and el.text else ""
 
             events.append(

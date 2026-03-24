@@ -83,8 +83,9 @@ line-length = 120
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "N", "UP", "B", "SIM"]
-# UP038 removed — ruff dropped this rule (see your WARN log)
-ignore = ["E501"]
+# UP038 ("Use X | Y in isinstance") was dropped in ruff 0.6 then re-added in 0.8+;
+# explicitly ignored to prevent CI churn across ruff versions.
+ignore = ["E501", "UP038"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["N806"]  # PascalCase mock aliases (MockRedis) are conventional in tests
