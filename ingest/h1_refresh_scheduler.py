@@ -4,6 +4,7 @@ H1/H4 periodic refresh scheduler.
 Refreshes H1 candles hourly and re-aggregates H4.
 Detects price drift between REST and WebSocket feeds.
 """
+from __future__ import annotations
 
 import asyncio
 from typing import Any

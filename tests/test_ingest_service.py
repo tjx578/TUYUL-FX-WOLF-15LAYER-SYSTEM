@@ -1,4 +1,5 @@
 """Unit tests for ingest_service.py."""
+from __future__ import annotations
 
 import asyncio
 import importlib
@@ -419,7 +420,7 @@ async def test_run_ingest_services_resets_state_at_entry(
 )
 async def test_run_ingest_services_idempotent_from_any_prior_state(
     ingest_service_module: Any,
-    prior_state: "SystemState",
+    prior_state: SystemState,
 ) -> None:
     """run_ingest_services() must not crash regardless of the prior SystemState."""
     system_state = SystemStateManager()

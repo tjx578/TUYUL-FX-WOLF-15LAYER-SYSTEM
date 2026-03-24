@@ -7,6 +7,7 @@ Validates that:
 - Memory stays bounded under sustained tick pressure
 - Spike / gap scenarios are handled gracefully
 """
+from __future__ import annotations
 
 import time
 from datetime import UTC, datetime, timedelta

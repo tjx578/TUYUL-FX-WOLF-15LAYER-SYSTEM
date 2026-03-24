@@ -7,6 +7,7 @@ data-quality gate in the engine does not flag them as stale.
 
 Follows the same pattern as H1RefreshScheduler.
 """
+from __future__ import annotations
 
 import asyncio
 from collections import defaultdict

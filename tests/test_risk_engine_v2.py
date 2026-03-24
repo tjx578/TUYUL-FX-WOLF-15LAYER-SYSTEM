@@ -8,6 +8,7 @@ Comprehensive test coverage for RiskEngineV2:
 - Account snapshot
 - Multi-instrument support
 """
+from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 

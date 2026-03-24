@@ -9,6 +9,7 @@ Run on Railway:
     railway run -s wolf15-engine python redis_diagnostic.py
 ============================================================
 """
+from __future__ import annotations
 
 import contextlib
 import json
@@ -53,7 +54,7 @@ class RawRedis:
                 raise RuntimeError(f"AUTH failed: {resp}")
 
     @classmethod
-    def from_url(cls, url: str) -> "RawRedis":
+    def from_url(cls, url: str) -> RawRedis:
         parsed = urlparse(url)
         host = parsed.hostname or "localhost"
         port = parsed.port or 6379

@@ -2,6 +2,7 @@
 Technical Indicators
 Pure calculation layer.
 """
+from __future__ import annotations
 
 import numpy as np
 

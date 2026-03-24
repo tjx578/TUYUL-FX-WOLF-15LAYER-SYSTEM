@@ -7,6 +7,7 @@ All models follow the separation of concerns:
 - Dashboard calculates risk and lots
 - Prop firm guards validate account state
 """
+from __future__ import annotations
 
 from datetime import datetime
 from enum import StrEnum

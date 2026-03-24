@@ -7,6 +7,7 @@ Activates in two scenarios:
    that haven't received a WebSocket tick within the silence threshold
    (e.g. exotic/minor crosses on Finnhub's OANDA feed).
 """
+from __future__ import annotations
 
 import asyncio
 import time
