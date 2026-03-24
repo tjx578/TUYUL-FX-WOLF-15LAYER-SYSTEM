@@ -247,14 +247,23 @@ def _add_cors(app: FastAPI) -> None:
         "CORS_ORIGINS",
         "http://localhost:3000,http://localhost:8000,https://railway-dashboard-production-de97.up.railway.app,https://tuyul-fx-dashboard.vercel.app",
     )
-    origins = [o.strip().rstrip("/") for o in raw.split(",") if o.strip()]
+    # Support both comma and newline separators (common in Vercel env var editor)
+    raw_normalized = raw.replace("\n", ",").replace("\r", "")
+    origins = [o.strip().rstrip("/") for o in raw_normalized.split(",") if o.strip()]
     # Vercel preview/production URLs — add if set
     vercel_url = os.getenv("VERCEL_FRONTEND_URL", "")
     if vercel_url.strip():
-        for u in vercel_url.split(","):
+        for u in vercel_url.replace("\n", ",").split(","):
             u = u.strip().rstrip("/")
             if u and u not in origins:
                 origins.append(u)
+    # VERCEL_URL is set automatically by Vercel to the current deployment URL.
+    # It does NOT include the scheme — prefix https:// if missing.
+    auto_vercel_url = os.getenv("VERCEL_URL", "").strip().rstrip("/")
+    if auto_vercel_url:
+        full = auto_vercel_url if auto_vercel_url.startswith("http") else f"https://{auto_vercel_url}"
+        if full not in origins:
+            origins.append(full)
     # Deduplicate while preserving order
     seen: set[str] = set()
     deduped: list[str] = []
@@ -263,7 +272,7 @@ def _add_cors(app: FastAPI) -> None:
             seen.add(o)
             deduped.append(o)
     origins = deduped
-    logger.info("CORS allowed origins: %s", origins)
+    logger.info("CORS effective origins (%d): %s", len(origins), origins)
     # Regex for dynamic origins (e.g. Vercel preview deployments).
     origin_regex = os.getenv("CORS_ORIGIN_REGEX", "").strip() or None
     if origin_regex:
