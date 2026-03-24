@@ -38,6 +38,7 @@ from collections.abc import Mapping
 from typing import Any, cast
 
 import fastapi
+import redis.asyncio as _aioredis
 from loguru import logger
 
 from allocation.signal_service import SIGNAL_READY_CHANNEL, SignalService
@@ -45,6 +46,7 @@ from config_loader import load_pairs
 from dashboard.account_manager import AccountManager
 from dashboard.price_feed import PriceFeed
 from dashboard.trade_ledger import TradeLedger
+from infrastructure.redis_client import get_client as _get_async_redis_client
 from state.pubsub_channels import RISK_EVENTS
 from storage.l12_cache import VERDICT_READY_CHANNEL, get_verdict_async
 from storage.redis_client import redis_client
@@ -989,19 +991,29 @@ def _signal_key(item: Mapping[str, Any]) -> str:
     return f"{symbol}:{timestamp}"
 
 
-def _signal_snapshot(symbol_filter: str | None = None) -> dict[str, dict[str, Any]]:
-    items = _signal_service.list_by_symbol(symbol_filter) if symbol_filter else _signal_service.list_all()
+async def _signal_snapshot_async(symbol_filter: str | None = None) -> dict[str, dict[str, Any]]:
+    """Async variant of the signal snapshot — uses batched Redis mget via the
+    async Redis client to avoid blocking the event loop.
+
+    This replaces the former sync ``_signal_snapshot()`` in all WS handlers.
+    """
+    items = (
+        await _signal_service.list_by_symbol_async(symbol_filter)
+        if symbol_filter
+        else await _signal_service.list_all_async()
+    )
     snapshot: dict[str, dict[str, Any]] = {}
     for item in items:
         snapshot[_signal_key(item)] = item
     return snapshot
 
 
-def _detect_changed_signals(
+async def _detect_changed_signals_async(
     last_signatures: dict[str, str],
     symbol_filter: str | None = None,
 ) -> dict[str, dict[str, Any]]:
-    current = _signal_snapshot(symbol_filter)
+    """Async variant of _detect_changed_signals."""
+    current = await _signal_snapshot_async(symbol_filter)
     changed: dict[str, dict[str, Any]] = {}
 
     for key, signal in current.items():
@@ -1049,7 +1061,12 @@ async def _detect_changed_pipeline(
 
 
 def _read_pubsub_message(pubsub: Any, timeout: float = 1.0) -> Mapping[str, Any] | None:
-    """Typed wrapper around Redis pubsub.get_message for pyright-safe narrowing."""
+    """Typed wrapper around Redis pubsub.get_message for pyright-safe narrowing.
+
+    .. deprecated::
+        Use :func:`_async_read_pubsub_message` in async WS handlers instead.
+        This sync helper is kept only for non-WS contexts that still require it.
+    """
     raw: object = pubsub.get_message(
         ignore_subscribe_messages=True,
         timeout=timeout,
@@ -1057,6 +1074,38 @@ def _read_pubsub_message(pubsub: Any, timeout: float = 1.0) -> Mapping[str, Any]
     if isinstance(raw, Mapping):
         return cast(Mapping[str, Any], raw)
     return None
+
+
+async def _async_read_pubsub_message(
+    pubsub: _aioredis.client.PubSub,
+    timeout: float = 1.0,
+) -> Mapping[str, Any] | None:
+    """Read one message from an async Redis pubsub without blocking the event loop.
+
+    Returns the message mapping when a data message arrives, ``None`` on timeout
+    or non-data messages (subscribe confirmations, etc.).
+    """
+    raw: object = await pubsub.get_message(ignore_subscribe_messages=True, timeout=timeout)
+    if isinstance(raw, Mapping):
+        return cast(Mapping[str, Any], raw)
+    return None
+
+
+async def _make_async_pubsub(channel: str) -> _aioredis.client.PubSub | None:
+    """Create an async Redis pubsub instance subscribed to *channel*.
+
+    Returns ``None`` on any error so callers can fall back to polling gracefully.
+    Uses the shared async connection pool from :mod:`infrastructure.redis_client`
+    to avoid per-connection pool exhaustion that occurs with the sync singleton.
+    """
+    try:
+        client = await _get_async_redis_client()
+        pubsub = client.pubsub()
+        await pubsub.subscribe(channel)
+        return pubsub
+    except Exception as exc:
+        logger.warning("[WS] Failed to create async pubsub for channel %s: %s", channel, exc)
+        return None
 
 
 @router.websocket("/ws/equity")
@@ -1204,7 +1253,7 @@ async def websocket_verdict(websocket: fastapi.WebSocket):
     logger.info(f"Verdict WebSocket client connected (pair={pair_filter or 'all'})")
 
     signatures: dict[str, str] = {}
-    pubsub: Any | None = None
+    pubsub: _aioredis.client.PubSub | None = None
 
     try:
         snapshot = await _get_verdict_snapshot(pair_filter)
@@ -1221,9 +1270,7 @@ async def websocket_verdict(websocket: fastapi.WebSocket):
             )
         )
 
-        with contextlib.suppress(Exception):
-            pubsub = redis_client.pubsub()
-            pubsub.subscribe(VERDICT_READY_CHANNEL)
+        pubsub = await _make_async_pubsub(VERDICT_READY_CHANNEL)
 
         last_scan_ts = 0.0
 
@@ -1231,7 +1278,7 @@ async def websocket_verdict(websocket: fastapi.WebSocket):
             pushed = False
 
             if pubsub is not None:
-                message_map = await asyncio.to_thread(_read_pubsub_message, pubsub, 1.0)
+                message_map = await _async_read_pubsub_message(pubsub, 1.0)
 
                 if message_map is not None and message_map.get("type") == "message":
                     raw: Any = message_map.get("data")
@@ -1290,7 +1337,7 @@ async def websocket_verdict(websocket: fastapi.WebSocket):
         verdict_manager.disconnect(websocket)
         if pubsub is not None:
             with contextlib.suppress(Exception):
-                pubsub.close()
+                await pubsub.aclose()
 
 
 # ---------------------------------------------------------------------------
@@ -1320,10 +1367,10 @@ async def websocket_signals(websocket: fastapi.WebSocket):
     logger.info(f"Signals WebSocket client connected (symbol={symbol_filter or 'all'})")
 
     signatures: dict[str, str] = {}
-    pubsub: Any | None = None
+    pubsub: _aioredis.client.PubSub | None = None
 
     try:
-        snapshot = _signal_snapshot(symbol_filter)
+        snapshot = await _signal_snapshot_async(symbol_filter)
         for key, signal in snapshot.items():
             signatures[key] = _signal_signature(signal)
 
@@ -1337,9 +1384,7 @@ async def websocket_signals(websocket: fastapi.WebSocket):
             )
         )
 
-        with contextlib.suppress(Exception):
-            pubsub = redis_client.pubsub()
-            pubsub.subscribe(SIGNAL_READY_CHANNEL)
+        pubsub = await _make_async_pubsub(SIGNAL_READY_CHANNEL)
 
         last_scan_ts = 0.0
 
@@ -1347,10 +1392,10 @@ async def websocket_signals(websocket: fastapi.WebSocket):
             pushed = False
 
             if pubsub is not None:
-                message_map = await asyncio.to_thread(_read_pubsub_message, pubsub, 1.0)
+                message_map = await _async_read_pubsub_message(pubsub, 1.0)
 
                 if message_map is not None and message_map.get("type") == "message":
-                    latest = _signal_snapshot(symbol_filter)
+                    latest = await _signal_snapshot_async(symbol_filter)
                     for key, signal in latest.items():
                         signatures[key] = _signal_signature(signal)
                         if not await signal_manager.send_stamped(
@@ -1367,7 +1412,7 @@ async def websocket_signals(websocket: fastapi.WebSocket):
 
             now_ts = time.time()
             if (not pushed) and (now_ts - last_scan_ts >= SIGNAL_FALLBACK_INTERVAL):
-                changed = _detect_changed_signals(signatures, symbol_filter)
+                changed = await _detect_changed_signals_async(signatures, symbol_filter)
                 for signal in changed.values():
                     if not await signal_manager.send_stamped(
                         websocket,
@@ -1391,7 +1436,7 @@ async def websocket_signals(websocket: fastapi.WebSocket):
         signal_manager.disconnect(websocket)
         if pubsub is not None:
             with contextlib.suppress(Exception):
-                pubsub.close()
+                await pubsub.aclose()
 
 
 # ---------------------------------------------------------------------------
@@ -1421,7 +1466,7 @@ async def websocket_pipeline(websocket: fastapi.WebSocket):
     logger.info(f"Pipeline WebSocket client connected (pair={pair_filter or 'all'})")
 
     signatures: dict[str, str] = {}
-    pubsub: Any | None = None
+    pubsub: _aioredis.client.PubSub | None = None
 
     try:
         snapshot = await _pipeline_snapshot(pair_filter)
@@ -1438,9 +1483,7 @@ async def websocket_pipeline(websocket: fastapi.WebSocket):
             )
         )
 
-        with contextlib.suppress(Exception):
-            pubsub = redis_client.pubsub()
-            pubsub.subscribe(VERDICT_READY_CHANNEL)
+        pubsub = await _make_async_pubsub(VERDICT_READY_CHANNEL)
 
         last_scan_ts = 0.0
 
@@ -1448,7 +1491,7 @@ async def websocket_pipeline(websocket: fastapi.WebSocket):
             pushed = False
 
             if pubsub is not None:
-                message_map = await asyncio.to_thread(_read_pubsub_message, pubsub, 1.0)
+                message_map = await _async_read_pubsub_message(pubsub, 1.0)
 
                 if message_map is not None and message_map.get("type") == "message":
                     latest = await _pipeline_snapshot(pair_filter)
@@ -1494,7 +1537,7 @@ async def websocket_pipeline(websocket: fastapi.WebSocket):
         pipeline_manager.disconnect(websocket)
         if pubsub is not None:
             with contextlib.suppress(Exception):
-                pubsub.close()
+                await pubsub.aclose()
 
 
 # ---------------------------------------------------------------------------
@@ -1514,7 +1557,7 @@ async def websocket_live_feed(websocket: fastapi.WebSocket):
             _ws_event(
                 "live.snapshot",
                 {
-                    "signals": _signal_service.list_all(),
+                    "signals": await _signal_service.list_all_async(),
                     "accounts": [a.model_dump() for a in await _account_manager.list_accounts_async()],
                     "trades": [t.model_dump() for t in await _trade_ledger.get_active_trades_async()],
                 },
@@ -1539,7 +1582,7 @@ async def websocket_live_feed(websocket: fastapi.WebSocket):
                 _ws_event(
                     "live.heartbeat_state",
                     {
-                        "signal_count": len(_signal_service.list_all()),
+                        "signal_count": len(await _signal_service.list_all_async()),
                         "account_count": len(await _account_manager.list_accounts_async()),
                         "active_trade_count": len(await _trade_ledger.get_active_trades_async()),
                         "server_ts": time.time(),
@@ -1580,18 +1623,16 @@ async def websocket_alerts(websocket: fastapi.WebSocket):
         return
 
     logger.info("Alerts WebSocket client connected")
-    pubsub: Any | None = None
+    pubsub: _aioredis.client.PubSub | None = None
 
     try:
-        with contextlib.suppress(Exception):
-            pubsub = redis_client.pubsub()
-            pubsub.subscribe(RISK_EVENTS)  # noqa: F821
+        pubsub = await _make_async_pubsub(RISK_EVENTS)
 
         while websocket in alerts_manager.active_connections:
             pushed = False
 
             if pubsub is not None:
-                message_map = await asyncio.to_thread(_read_pubsub_message, pubsub, 1.0)
+                message_map = await _async_read_pubsub_message(pubsub, 1.0)
 
                 if message_map is not None and message_map.get("type") == "message":
                     raw: Any = message_map.get("data")
@@ -1620,7 +1661,7 @@ async def websocket_alerts(websocket: fastapi.WebSocket):
         alerts_manager.disconnect(websocket)
         if pubsub is not None:
             with contextlib.suppress(Exception):
-                pubsub.close()
+                await pubsub.aclose()
 
 
 # ---------------------------------------------------------------------------

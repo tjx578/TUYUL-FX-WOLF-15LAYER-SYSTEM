@@ -235,6 +235,12 @@ async def main() -> None:
     logger.info("WOLF 15-LAYER TRADING SYSTEM")
     logger.info("=" * 60)
 
+    # Log the resolved Redis URL (password masked) so operators can cross-check
+    # that engine and API services target the same Redis instance (BUG #6).
+    from infrastructure.redis_url import get_safe_redis_url as _get_safe_redis_url  # noqa: PLC0415
+
+    logger.info("[Redis] Engine service Redis target: {}", _get_safe_redis_url())
+
     # ── Startup validation ──────────────────────────────────────────
     startup_check = await validate_engine_startup_async()
     if not startup_check.ok:
