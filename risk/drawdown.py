@@ -5,6 +5,7 @@ Tracks daily, weekly, and total drawdown with Redis persistence.
 Survives container restarts and auto-resets on schedule.
 Thread-safe with proper locking.
 """
+from __future__ import annotations
 
 import threading
 from datetime import datetime, timedelta

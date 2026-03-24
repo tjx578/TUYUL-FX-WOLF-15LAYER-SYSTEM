@@ -1,4 +1,5 @@
 """Ultra Fusion Orchestrator v6 -- main pipeline L8-L11."""
+from __future__ import annotations
 
 import logging
 from datetime import UTC, datetime

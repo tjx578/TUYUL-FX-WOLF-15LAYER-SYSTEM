@@ -24,6 +24,7 @@ Upgrade (v3):
   - Trade stream: event-driven diff push with 250ms fallback
   - Candle aggregation (M1/M5/M15/H1) with real-time bar updates
 """
+from __future__ import annotations
 
 import asyncio
 import contextlib

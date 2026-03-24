@@ -3,6 +3,7 @@
 TUYUL FX Wolf-15 — Quick Endpoint Smoke Test
 Run: python test_endpoints.py http://localhost:8000
 """
+from __future__ import annotations
 
 import asyncio
 import sys

@@ -1,4 +1,5 @@
 """Standalone ingest service for multi-container deployments."""
+from __future__ import annotations
 
 import asyncio
 import contextlib

@@ -22,6 +22,7 @@ Requires env vars:
     REDIS_URL       — Railway Redis URL
     FINNHUB_API_KEY — Finnhub API key
 """
+from __future__ import annotations
 
 import argparse
 import json

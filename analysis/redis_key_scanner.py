@@ -2,6 +2,7 @@
 Read-only Redis key scanner for market data discovery.
 Analysis zone only — no execution side-effects.
 """
+from __future__ import annotations
 
 import os
 

@@ -1,4 +1,5 @@
 """Vault Macro Engine -- Reflective Gravity Anchor (EMA+SMA)."""
+from __future__ import annotations
 
 from typing import Any
 

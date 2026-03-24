@@ -4,6 +4,7 @@ Unit tests for Finnhub REST candle fetcher.
 Tests symbol conversion, resolution mapping, response normalization,
 H4 aggregation, and warmup functionality.
 """
+from __future__ import annotations
 
 from datetime import UTC, datetime, tzinfo
 from typing import Any
@@ -549,7 +550,7 @@ class TestRateLimitRetries:
             def __init__(self) -> None:
                 self.calls = 0
 
-            async def __aenter__(self) -> "_FakeClient":
+            async def __aenter__(self) -> _FakeClient:
                 return self
 
             async def __aexit__(self, exc_type: object, exc: object, tb: object) -> None:

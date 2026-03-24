@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from datetime import UTC, datetime, tzinfo
 from unittest.mock import AsyncMock, patch
 

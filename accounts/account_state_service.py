@@ -10,6 +10,7 @@ Responsibilities:
     - Compute risk severity state
     - Thread-safe updates
 """
+from __future__ import annotations
 
 from threading import Lock
 
@@ -26,7 +27,7 @@ class AccountEngine:
     """
 
     # Class-level instance cache
-    _instances: dict[str, "AccountEngine"] = {}
+    _instances: dict[str, AccountEngine] = {}
     _instances_lock = Lock()
 
     def __init__(
@@ -68,7 +69,7 @@ class AccountEngine:
         balance: float,
         equity: float,
         prop_firm_code: str,
-    ) -> "AccountEngine":
+    ) -> AccountEngine:
         """
         Factory method: get existing or create new account engine.
 

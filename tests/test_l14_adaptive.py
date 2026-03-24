@@ -2,6 +2,7 @@
 Tests for Layer 14 — Adaptive Learning / Pattern Memory.
 Zone: Journal boundary. Advisory-only. No L12 override. No execution.
 """
+from __future__ import annotations
 
 import pytest
 
