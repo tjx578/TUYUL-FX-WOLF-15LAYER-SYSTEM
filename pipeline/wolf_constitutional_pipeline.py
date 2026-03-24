@@ -1154,6 +1154,29 @@ class WolfConstitutionalPipeline:
             l10: dict[str, Any] = _timed_layer_call(self._l10.analyze, "L10", risk_ok, smc_confidence)
             layers_executed.append("L10")
 
+            # ── SL/TP zero guard ─────────────────────────────────
+            # When ATR=0 (warmup insufficient), L11 returns SL=0/TP=0.
+            # Schema validation rejects these → verdict never set →
+            # dashboard shows "verdict: Required" error.
+            # Guard: skip enrichment, force NO_TRADE verdict early.
+            _raw_sl = l11.get("stop_loss", l11.get("sl", 0.0))
+            _raw_tp = l11.get("take_profit_1", l11.get("tp1", l11.get("tp", 0.0)))
+            if not _raw_sl or _raw_sl <= 0 or not _raw_tp or _raw_tp <= 0:
+                logger.warning(
+                    "[Pipeline v8.0] %s SL/TP=0 → NO_TRADE (ATR warmup) sl=%.5f tp=%.5f",
+                    symbol,
+                    _raw_sl or 0,
+                    _raw_tp or 0,
+                )
+                result = _early_exit_with_map(
+                    ["sl_tp_zero_guard"],
+                    time.time() - start_time,
+                )
+                result["verdict"] = "NO_TRADE"
+                result["verdict_reason"] = "SL/TP zero (ATR warmup insufficient)"
+                result["l12_verdict"] = {"verdict": "NO_TRADE", "reason": "sl_tp_zero"}
+                return result
+
             # ═══════════════════════════════════════════════════════
             # PHASE 2.5 -- ENGINE ENRICHMENT LAYER (9 Facade Engines)
             #   ADR-011: cognitive/fusion/quantum enrichment before L12
@@ -1187,8 +1210,8 @@ class WolfConstitutionalPipeline:
                     direction=direction,
                     layer_results=_enrich_lr,
                     entry_price=l11.get("entry_price", l11.get("entry", 0.0)),
-                    stop_loss=l11.get("stop_loss", l11.get("sl", 0.0)),
-                    take_profit=l11.get("take_profit_1", l11.get("tp1", l11.get("tp", 0.0))) or 0.0001,
+                    stop_loss=_raw_sl,
+                    take_profit=_raw_tp,
                 )
                 engines_invoked.extend(
                     [
