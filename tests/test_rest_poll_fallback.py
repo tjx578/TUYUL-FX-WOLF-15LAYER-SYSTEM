@@ -520,9 +520,11 @@ class TestPushCandlesToRedis:
 
             await poller._poll_symbol("EURUSD")
 
-        # All 4 raw candles should have been written to Redis (after normalization)
-        assert redis_mock.rpush.call_count == 4
-        # Each write should have published to pub/sub
+        # All 4 raw candles are batched into a single rpush call (one per unique key)
+        assert redis_mock.rpush.call_count == 1
+        rpush_call = redis_mock.rpush.call_args
+        assert len(rpush_call.args) == 5  # key + 4 serialized candle values
+        # Each candle still published individually to pub/sub
         assert redis_mock.publish.call_count == 4
 
 

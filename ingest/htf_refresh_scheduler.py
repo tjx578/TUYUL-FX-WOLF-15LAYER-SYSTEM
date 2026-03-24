@@ -9,6 +9,7 @@ Follows the same pattern as H1RefreshScheduler.
 """
 
 import asyncio
+from collections import defaultdict
 from typing import Any
 
 import orjson
@@ -126,22 +127,37 @@ class HTFRefreshScheduler:
                 logger.error("HTF refresh error for {}: {}", symbol, exc)
 
     async def _push_candles_to_redis(self, candles: list[dict[str, Any]]) -> None:
-        """RPUSH + PUBLISH candle dicts to Redis (best-effort)."""
+        """RPUSH + PUBLISH candle dicts to Redis (best-effort).
+
+        Candles are grouped by key so each unique key receives a single
+        RPUSH with all its values and one LTRIM, reducing round trips
+        from (rpush + ltrim + publish) × N to
+        (rpush + ltrim) × K + publish × N  (K = unique keys ≤ N).
+        """
         if not self._redis or not candles:
             return
+
+        # ── Group valid candles by Redis key to batch writes ─────────────────
+        # Reduces round trips: 3 × N → 2 × K + N  (K = unique keys, K ≤ N).
+        key_batches: dict[str, list[tuple[str, str, dict[str, Any]]]] = defaultdict(list)
         for candle in candles:
             symbol = candle.get("symbol")
             timeframe = candle.get("timeframe")
             if not symbol or not timeframe:
                 continue
             key = candle_history(symbol, timeframe)
+            candle_json = orjson.dumps(candle).decode("utf-8")
+            pub_channel = channel_candle(symbol, timeframe)
+            key_batches[key].append((candle_json, pub_channel, candle))
+
+        for key, items in key_batches.items():
             try:
-                candle_json = orjson.dumps(candle).decode("utf-8")
-                await self._redis.rpush(key, candle_json)
+                # Push all candles for this key in one RPUSH call, then trim once
+                await self._redis.rpush(key, *[item[0] for item in items])
                 await self._redis.ltrim(key, -self._redis_maxlen, -1)
-                enqueue_candle_dict(candle)
-                # PUBLISH so engine RedisConsumer sees the update in real-time
-                pub_channel = channel_candle(symbol, timeframe)
-                await self._redis.publish(pub_channel, candle_json)
+                for candle_json, pub_channel, candle in items:
+                    enqueue_candle_dict(candle)
+                    # PUBLISH so engine RedisConsumer sees the update in real-time
+                    await self._redis.publish(pub_channel, candle_json)
             except Exception as exc:
                 logger.warning("[HTFRefresh] Redis push failed {}: {}", key, exc)
