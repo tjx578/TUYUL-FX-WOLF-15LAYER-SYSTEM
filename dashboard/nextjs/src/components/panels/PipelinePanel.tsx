@@ -15,7 +15,7 @@ export interface PipelineLayer {
   id: string;
   name: string;
   zone: "COG" | "ANA" | "META" | "EXEC" | "VER" | "POST";
-  status: "pass" | "warn" | "fail";
+  status: "pass" | "warn" | "fail" | "skip";
   val: string;
   detail: string;
   timingMs?: number | null;
@@ -26,7 +26,7 @@ export interface PipelineDagNode {
   id: string;
   name: string;
   zone: "COG" | "ANA" | "META" | "EXEC" | "VER" | "POST";
-  status: "pass" | "warn" | "fail";
+  status: "pass" | "warn" | "fail" | "skip";
   timingMs?: number | null;
 }
 
@@ -80,7 +80,7 @@ export interface PipelineData {
 
 // ── Helpers ───────────────────────────────────────────────────
 function statusColor(s: PipelineLayer["status"]): string {
-  return s === "pass" ? T.emerald : s === "warn" ? T.amber : T.red;
+  return s === "pass" ? T.emerald : s === "warn" ? T.amber : s === "skip" ? T.t4 : T.red;
 }
 
 function formatGateVal(val: number | string): string {
@@ -285,7 +285,11 @@ export function PipelinePanel({ pair = "EURUSD" }: { pair?: string }) {
 
   const passCount = pipeline.layers.filter((l) => l.status === "pass").length;
   const totalCount = pipeline.layers.length;
-  const allPass = passCount === totalCount;
+  const skipCount = pipeline.layers.filter((l) => l.status === "skip").length;
+  // executedCount: layers that actually ran (pass + warn + fail, excluding skip)
+  const executedCount = totalCount - skipCount;
+  // allPass: true when every executed (non-skip) layer passed
+  const allPass = executedCount > 0 && passCount === executedCount;
 
   const verdictColor = pipeline.verdict.startsWith("EXECUTE")
     ? T.emerald
@@ -313,7 +317,7 @@ export function PipelinePanel({ pair = "EURUSD" }: { pair?: string }) {
           }}>
             {pipeline.verdict}
           </div>
-          <M s={10} c={T.t3}>{passCount}/{totalCount}</M>
+          <M s={10} c={T.t3}>{executedCount > 0 ? `${passCount}/${executedCount}` : "—"}</M>
         </div>
       }
     >
