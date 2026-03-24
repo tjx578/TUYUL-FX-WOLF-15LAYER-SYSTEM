@@ -38,7 +38,7 @@ class TestBuildDegradedVerdict:
         assert v["verdict"] == "HOLD"
         assert v["wolf_status"] == "DEGRADED"
         assert v["confidence"] == 0.0
-        assert v["direction"] == "HOLD"
+        assert v["direction"] is None
         assert isinstance(v["timestamp"], float)
         assert v["errors"] == ["PIPELINE_TIMEOUT:30s"]
         assert v["last_hold_block_reason"] == "PIPELINE_TIMEOUT:30s"
@@ -267,6 +267,8 @@ class TestBuildVerdictCachePayload:
         assert payload["errors"] == ["WARMUP_INSUFFICIENT:15_bars_missing"]
         assert payload["last_hold_block_reason"] == "WARMUP_INSUFFICIENT:15_bars_missing"
         assert payload["confidence"] == 0.25  # LOW → 0.25
+        # execution.direction="HOLD" is not a valid signal direction — must be normalized to None
+        assert payload["direction"] is None
 
     def test_string_confidence_mapped_correctly(self):
         from startup.analysis_loop import _build_verdict_cache_payload
