@@ -10,7 +10,8 @@
  *
  * Env vars in use (exactly these two, nothing else):
  *   NEXT_PUBLIC_API_BASE_URL   optional  override REST base (default: relative via rewrite)
- *   NEXT_PUBLIC_WS_BASE_URL    required  bare wss:// ORIGIN for Railway — NO /ws suffix!
+ *   NEXT_PUBLIC_WS_BASE_URL    required  bare wss:// ORIGIN for Railway — NO path suffix!
+ *                                        e.g. wss://wolf15-api.up.railway.app  (NOT .../ws/live)
  *
  * REMOVED (do NOT use):
  *   NEXT_PUBLIC_WS_URL         was in wsService.ts (deleted) — never set this
