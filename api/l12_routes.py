@@ -116,7 +116,7 @@ def fetch_l12(pair: str):
 
 
 # --- PATCH 4: Verdict response filter + cache ---
-import logging
+import logging  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
@@ -145,64 +145,110 @@ class VerdictCache:
 
 _verdict_cache = VerdictCache(ttl_seconds=5.0)
 
+_STALE_THRESHOLD_SEC = 300.0  # 5 minutes
 
-def _filter_valid_verdicts(verdicts: dict[str, Any]) -> dict[str, Any]:
+
+def _filter_actionable_verdicts(verdicts: dict[str, Any]) -> dict[str, Any]:
+    """Return only EXECUTE-family verdicts with valid TP/SL/direction.
+
+    HOLD / NO_TRADE / ABORT verdicts legitimately lack TP/SL — they are
+    retained in the unfiltered set but excluded when the caller requests
+    only actionable signals.
+    """
     valid = {}
     for pair, v in verdicts.items():
-        score = v.get("score", 0)
-        tp1 = v.get("take_profit_1", 0)
-        sl = v.get("stop_loss", 0)
+        verdict_str = str(v.get("verdict", ""))
+        if not verdict_str.startswith("EXECUTE"):
+            continue
+        tp1 = v.get("take_profit_1")
+        sl = v.get("stop_loss")
         direction = v.get("direction", "")
-        if not score or score <= 0:
+        if not tp1 or float(tp1) <= 0:
             continue
-        if not tp1 or tp1 <= 0:
+        if not sl or float(sl) <= 0:
             continue
-        if not sl or sl <= 0:
-            continue
-        if not direction or direction == "NEUTRAL":
+        if not direction or direction in ("NEUTRAL", "HOLD"):
             continue
         valid[pair] = v
-    if len(valid) < len(verdicts):
-        logger.debug(
-            "[Verdict API] Filtered %d/%d invalid verdicts",
-            len(verdicts) - len(valid),
-            len(verdicts),
-        )
     return valid
 
 
 @router.get("/api/v1/verdict/all", dependencies=[Depends(verify_token)])
 def fetch_all_verdicts() -> dict[str, Any]:
-    """Get verdicts for all available pairs (filtered, cached)."""
+    """Get verdicts for all available pairs.
+
+    Response schema is stable — always returns ``status``, ``mode``,
+    ``timestamp``, ``stale_seconds``, ``reason``, ``verdicts``, ``count``.
+
+    Modes:
+      LIVE             — at least one verdict fresher than 5 min.
+      DEGRADED         — verdicts exist but all are stale (> 5 min).
+      NO_SNAPSHOT_YET  — no verdicts in Redis at all.
+    """
     cached = _verdict_cache.get()
     if cached is not None:
-        return {"verdicts": cached, "count": len(cached), "cached": True}
+        return {**cached, "cached": True}
+
+    now = time.time()
     verdicts: dict[str, Any] = {}
+    max_stale: float = 0.0
+    fresh_count = 0
+
     for pair_info in AVAILABLE_PAIRS:
         pair = pair_info["symbol"]
-        if not isinstance(pair, str):
-            continue
-        if not pair_info.get("enabled", True):
+        if not isinstance(pair, str) or not pair_info.get("enabled", True):
             continue
         data = get_verdict(pair)
         if data:
-            score = data.get("score", 0)
-            tp1 = data.get("take_profit_1", 0)
-            if score > 0 and tp1 > 0:
-                data["_meta"] = _build_meta(data)
-                verdicts[pair] = data
-    valid = _filter_valid_verdicts(verdicts)
-    _verdict_cache.set(valid)
-    return {"verdicts": valid, "count": len(valid), "cached": False}
+            data["_meta"] = _build_meta(data)
+            age = (data["_meta"] or {}).get("age_seconds")
+            if age is not None:
+                max_stale = max(max_stale, age)
+                if age <= _STALE_THRESHOLD_SEC:
+                    fresh_count += 1
+            verdicts[pair] = data
+
+    # Determine mode
+    if not verdicts:
+        mode = "NO_SNAPSHOT_YET"
+        status = "no_data"
+        reason: str | None = "NO_SNAPSHOT_YET"
+    elif fresh_count == 0:
+        mode = "DEGRADED"
+        status = "degraded"
+        reason = "ALL_STALE"
+    else:
+        mode = "LIVE"
+        status = "ok"
+        reason = None
+
+    logger.info(
+        "[Verdict API] /verdict/all | status=%s mode=%s count=%d fresh=%d stale_max=%.1fs",
+        status,
+        mode,
+        len(verdicts),
+        fresh_count,
+        max_stale,
+    )
+
+    response: dict[str, Any] = {
+        "status": status,
+        "mode": mode,
+        "timestamp": now,
+        "stale_seconds": round(max_stale, 3) if verdicts else None,
+        "reason": reason,
+        "verdicts": verdicts,
+        "count": len(verdicts),
+        "cached": False,
+    }
+    _verdict_cache.set(response)
+    return response
 
 
 @router.get("/api/v1/verdict", dependencies=[Depends(verify_token)])
 def fetch_all_verdicts_alias() -> dict[str, Any]:
     """Compatibility alias: return verdicts for all available pairs."""
     return fetch_all_verdicts()
-
-
-_STALE_THRESHOLD_SEC = 300.0  # 5 minutes
 
 
 @router.get("/api/v1/verdict/health", dependencies=[Depends(verify_token)])
