@@ -29,8 +29,10 @@ export async function fetchLatestPipelineResult(
 
   // No symbol → /api/v1/verdict/all → pick first available
   const response = await apiClient.get("/api/v1/verdict/all");
-  const verdicts: Record<string, any> = response.data ?? {};
-  const symbols = Object.keys(verdicts);
+  // Backend returns { verdicts: Record<string, Verdict>, count: number, cached: boolean }
+  const payload = response.data ?? {};
+  const verdicts: Record<string, any> = payload.verdicts ?? payload;
+  const symbols = Object.keys(verdicts).filter(k => k !== "count" && k !== "cached" && k !== "verdicts");
   if (symbols.length === 0) {
     throw new PipelineVerdictUnavailableError();
   }
