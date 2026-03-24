@@ -86,12 +86,15 @@ function _validateWsBase(wsBase, { protectedDeploy, explicitlyConfigured }) {
     );
   }
 
-  // After normalization the path should be stripped. Only warn, never throw —
-  // _normalizeWsBase already strips path to bare origin.
+  // Reject any path component in the post-normalized value (belt-and-suspenders).
+  // NOTE: _normalizeWsBase already strips paths, so this should not normally trigger.
+  // The definitive path check against the raw env var is done before normalization (see below).
   if (parsed.pathname && parsed.pathname !== "/") {
-    console.warn(
-      `[next.config] NEXT_PUBLIC_WS_BASE_URL had unexpected path '${parsed.pathname}'. ` +
-      "Path was stripped; using bare origin only."
+    throw new Error(
+      `[next.config] NEXT_PUBLIC_WS_BASE_URL must be a bare origin (protocol+host only), ` +
+      `but got '${wsBase}' which contains path '${parsed.pathname}'. ` +
+      "Remove the path from the env var — hooks append /ws/<channel> automatically. " +
+      "Correct value example: wss://wolf15-api-production.up.railway.app"
     );
   }
 
@@ -156,6 +159,32 @@ const resolvedBase = rawApiBase || "http://localhost:8000";
 // Normalize: strip trailing slash and any accidental /api suffix to prevent
 // double-prefix (/api/api/...) when combined with rewrite destinations.
 const apiBase = resolvedBase.replace(/\/+$/, "").replace(/\/api$/, "");
+
+// Validate raw NEXT_PUBLIC_WS_BASE_URL BEFORE normalization.
+// _normalizeWsBase strips the path silently — so we must check the raw value here
+// to catch misconfigured deployments where the path (e.g. /ws/live) is present.
+// A path causes double-path connections at runtime: wss://host/ws/live/ws/live.
+const _rawConfiguredWsBase = (process.env.NEXT_PUBLIC_WS_BASE_URL || "").trim();
+if (_rawConfiguredWsBase) {
+  try {
+    const _rawParsed = new URL(_rawConfiguredWsBase);
+    if (_rawParsed.pathname && _rawParsed.pathname !== "/") {
+      const _pathErrMsg =
+        `[next.config] NEXT_PUBLIC_WS_BASE_URL must be a bare origin (protocol+host only), ` +
+        `but got '${_rawConfiguredWsBase}' which contains path '${_rawParsed.pathname}'. ` +
+        "Remove the path — hooks append /ws/<channel> automatically. " +
+        "Correct value example: wss://wolf15-api-production.up.railway.app";
+      if (isProtectedDeployment) {
+        throw new Error(_pathErrMsg);
+      } else {
+        console.warn(`[next.config] WARNING: ${_pathErrMsg} Path auto-stripped for this build.`);
+      }
+    }
+  } catch (err) {
+    if (err instanceof Error && err.message.startsWith("[next.config]")) throw err;
+    // URL parse failure — will be caught by _validateWsBase below.
+  }
+}
 
 const configuredWsBase = _normalizeWsBase(process.env.NEXT_PUBLIC_WS_BASE_URL || "");
 const wsBase = configuredWsBase || _normalizeWsBase(apiBase.replace(/^https:\/\//, "wss://").replace(/^http:\/\//, "ws://"));
