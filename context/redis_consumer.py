@@ -344,8 +344,7 @@ class RedisConsumer:
                 # Primary: parse the "data" field as JSON (RedisContextBridge format)
                 if "data" in decoded:
                     try:
-                        import orjson as _orjson
-                        candle = _orjson.loads(decoded["data"])
+                        candle = orjson.loads(decoded["data"])
                         if isinstance(candle, dict):
                             logger.info(
                                 "warmup_candle_history | symbol=%s tf=%s fallback: 1 bar from HASH %s (data field)",
@@ -353,9 +352,13 @@ class RedisConsumer:
                                 timeframe,
                                 hash_key,
                             )
-                            return [_orjson.dumps(candle)]
-                    except Exception:
-                        pass
+                            return [orjson.dumps(candle)]
+                    except Exception as data_exc:
+                        logger.warning(
+                            "warmup_candle_history | HASH %s 'data' field invalid JSON: %s",
+                            hash_key,
+                            data_exc,
+                        )
 
                 # Secondary: treat all hash fields as a flat key-value candle dict
                 bar: dict[str, Any] = {}
@@ -371,7 +374,6 @@ class RedisConsumer:
                         timeframe,
                         hash_key,
                     )
-                    import orjson
                     return [orjson.dumps(bar)]
         except Exception as exc:
             logger.warning("warmup_candle_history | hgetall failed on %s: %s", hash_key, exc)
