@@ -212,3 +212,198 @@ def test_internal_verdict_path_survives_redis_error(monkeypatch) -> None:
     assert row["pair"] == "EURUSD"
     assert row["redis_key_exists"] is False
     assert row["warmup_status"]["ready"] is False
+
+
+# ── Regression tests: /api/v1/verdict/all schema stability ───────────
+
+_STALE_THRESHOLD_SEC = 300.0
+
+
+def test_verdict_all_live_fresh(monkeypatch) -> None:
+    """Fresh verdicts -> mode=LIVE, status=ok, all verdicts present."""
+    _patch_pairs(monkeypatch, ["EURUSD", "GBPUSD"])
+    l12_routes._verdict_cache._data = None
+
+    now = time.time()
+    monkeypatch.setattr(l12_routes, "get_verdict", lambda p: _make_verdict(p, cached_at=now - 10))
+
+    result = l12_routes.fetch_all_verdicts()
+
+    assert result["status"] == "ok"
+    assert result["mode"] == "LIVE"
+    assert result["count"] == 2
+    assert result["reason"] is None
+    assert result["stale_seconds"] is not None
+    assert result["stale_seconds"] < _STALE_THRESHOLD_SEC
+    assert "EURUSD" in result["verdicts"]
+    assert "GBPUSD" in result["verdicts"]
+    assert "timestamp" in result
+
+
+def test_verdict_all_stale_with_snapshot(monkeypatch) -> None:
+    """All verdicts older than 5 min -> mode=DEGRADED, still returned."""
+    _patch_pairs(monkeypatch, ["EURUSD", "XAUUSD"])
+    l12_routes._verdict_cache._data = None
+
+    stale_ts = time.time() - 600  # 10 min old
+    monkeypatch.setattr(l12_routes, "get_verdict", lambda p: _make_verdict(p, cached_at=stale_ts))
+
+    result = l12_routes.fetch_all_verdicts()
+
+    assert result["status"] == "degraded"
+    assert result["mode"] == "DEGRADED"
+    assert result["reason"] == "ALL_STALE"
+    assert result["count"] == 2
+    # Stale verdicts are still returned (not filtered out)
+    assert "EURUSD" in result["verdicts"]
+    assert "XAUUSD" in result["verdicts"]
+    assert result["stale_seconds"] >= 600
+
+
+def test_verdict_all_no_snapshot(monkeypatch) -> None:
+    """No verdicts in Redis -> mode=NO_SNAPSHOT_YET, empty items."""
+    _patch_pairs(monkeypatch, ["EURUSD", "GBPUSD"])
+    l12_routes._verdict_cache._data = None
+
+    monkeypatch.setattr(l12_routes, "get_verdict", lambda _p: None)
+
+    result = l12_routes.fetch_all_verdicts()
+
+    assert result["status"] == "no_data"
+    assert result["mode"] == "NO_SNAPSHOT_YET"
+    assert result["reason"] == "NO_SNAPSHOT_YET"
+    assert result["count"] == 0
+    assert result["verdicts"] == {}
+    assert result["stale_seconds"] is None
+
+
+def test_verdict_all_hold_verdicts_not_filtered(monkeypatch) -> None:
+    """HOLD verdicts (no TP/SL) must NOT be silently dropped."""
+    _patch_pairs(monkeypatch, ["EURUSD"])
+    l12_routes._verdict_cache._data = None
+
+    now = time.time()
+    monkeypatch.setattr(
+        l12_routes,
+        "get_verdict",
+        lambda _p: _make_verdict("EURUSD", "HOLD", confidence=0.25, cached_at=now, take_profit_1=None, stop_loss=None),
+    )
+
+    result = l12_routes.fetch_all_verdicts()
+
+    assert result["count"] == 1
+    assert "EURUSD" in result["verdicts"]
+    assert result["verdicts"]["EURUSD"]["verdict"] == "HOLD"
+
+
+def test_filter_actionable_verdicts_keeps_execute_only() -> None:
+    """_filter_actionable_verdicts returns only EXECUTE with valid TP/SL."""
+    now = time.time()
+    verdicts = {
+        "EURUSD": _make_verdict("EURUSD", "HOLD", cached_at=now),
+        "GBPUSD": _make_verdict(
+            "GBPUSD", "EXECUTE", cached_at=now, direction="BUY", take_profit_1=1.30, stop_loss=1.28
+        ),
+        "XAUUSD": _make_verdict(
+            "XAUUSD", "EXECUTE_REDUCED_RISK", cached_at=now, direction="SELL", take_profit_1=1900, stop_loss=1950
+        ),
+    }
+
+    result = l12_routes._filter_actionable_verdicts(verdicts)
+
+    assert "EURUSD" not in result  # HOLD excluded
+    assert "GBPUSD" in result
+    assert "XAUUSD" in result
+
+
+# ---------------------------------------------------------------------------
+# Issue #8 regression: pipeline layer status must reflect actual outcomes
+# ---------------------------------------------------------------------------
+
+
+def test_build_pipeline_data_l12_fail_when_gates_below_threshold() -> None:
+    """L12 status must be 'fail' when pass_count < 7 of 9 gates."""
+    verdict_data = {
+        "verdict": "NO_TRADE",
+        "confidence": 0.2,
+        "gates": {"passed": 4, "total": 9, "gate_1_tii": "FAIL", "gate_5_montecarlo": "FAIL"},
+    }
+    pipeline = l12_routes._build_pipeline_data("EURUSD", verdict_data)
+    l12_layer = next(lyr for lyr in pipeline["layers"] if lyr["id"] == "L12")
+    assert l12_layer["status"] == "fail"
+
+
+def test_build_pipeline_data_l12_warn_when_gates_7_of_9() -> None:
+    """L12 status must be 'warn' when exactly 7 of 9 gates pass."""
+    verdict_data = {
+        "verdict": "HOLD",
+        "confidence": 0.5,
+        "gates": {"passed": 7, "total": 9, "gate_1_tii": "PASS"},
+    }
+    pipeline = l12_routes._build_pipeline_data("EURUSD", verdict_data)
+    l12_layer = next(lyr for lyr in pipeline["layers"] if lyr["id"] == "L12")
+    assert l12_layer["status"] == "warn"
+
+
+def test_build_pipeline_data_gate_mapped_layer_fail_from_gate() -> None:
+    """Layer L8 (TII) status must be 'fail' when gate_1_tii is FAIL."""
+    verdict_data = {
+        "verdict": "NO_TRADE",
+        "confidence": 0.3,
+        "gates": {"passed": 5, "total": 9, "gate_1_tii": "FAIL"},
+    }
+    pipeline = l12_routes._build_pipeline_data("EURUSD", verdict_data)
+    l8_layer = next(lyr for lyr in pipeline["layers"] if lyr["id"] == "L8")
+    assert l8_layer["status"] == "fail"
+
+
+def test_build_pipeline_data_gate_mapped_layer_pass_from_gate() -> None:
+    """Layer L7 (Monte Carlo) status must be 'pass' when gate_5_montecarlo is PASS."""
+    verdict_data = {
+        "verdict": "EXECUTE",
+        "confidence": 0.88,
+        "gates": {"passed": 9, "total": 9, "gate_5_montecarlo": "PASS", "gate_1_tii": "PASS"},
+    }
+    pipeline = l12_routes._build_pipeline_data("EURUSD", verdict_data)
+    l7_layer = next(lyr for lyr in pipeline["layers"] if lyr["id"] == "L7")
+    assert l7_layer["status"] == "pass"
+
+
+def test_build_pipeline_data_skip_vs_pass_for_unexecuted_layers() -> None:
+    """Un-executed layers must show 'skip', not 'pass'."""
+    verdict_data = {
+        "verdict": "NO_TRADE",
+        "confidence": 0.15,
+        "gates": {"passed": 3, "total": 9, "gate_1_tii": "FAIL"},
+        "execution_map": {
+            "pair": "EURUSD",
+            "timestamp": "2026-03-24T00:00:00Z",
+            "layers_executed": ["L1", "L2", "L12"],
+            "engines_invoked": [],
+            "halt_reason": None,
+            "constitutional_verdict": "NO_TRADE",
+            "layer_timings_ms": {"L1": 2.0, "L2": 3.0, "L12": 5.0},
+            "dag": {"topology": ["L1", "L2", "L12"], "batches": [["L1", "L2"], ["L12"]], "edges": []},
+        },
+    }
+
+    pipeline = l12_routes._build_pipeline_data("EURUSD", verdict_data)
+    layer_statuses = {lyr["id"]: lyr["status"] for lyr in pipeline["layers"]}
+
+    # Un-executed layers must all be 'skip', not 'pass' or 'fail'
+    skip_layers = [lid for lid, st in layer_statuses.items() if st == "skip"]
+    pass_layers = [lid for lid, st in layer_statuses.items() if st == "pass"]
+
+    # 12 layers were not in layers_executed, all should be skip
+    assert len(skip_layers) == 12, f"Expected 12 skip layers, got {len(skip_layers)}: {skip_layers}"
+    # Frontend executedCount = total - skipCount = 15 - 12 = 3
+    total = len(pipeline["layers"])
+    skip_count = len(skip_layers)
+    executed_count = total - skip_count
+    assert executed_count == 3, f"Expected executedCount=3, got {executed_count}"
+
+    # passCount / executedCount should read '2/3':
+    #   L1 -> pass, L2 -> pass, L12 -> fail (3/9 gates < 7 threshold)
+    assert len(pass_layers) == 2  # L1 + L2
+    l12_status = layer_statuses["L12"]
+    assert l12_status == "fail"  # 3/9 gates < 7 threshold
