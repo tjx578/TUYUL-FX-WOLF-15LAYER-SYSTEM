@@ -205,12 +205,14 @@ class V11DataAdapter:
     def _infer_direction(self, synthesis: dict[str, Any]) -> str:
         """Infer trade direction from L12 verdict."""
         l12 = synthesis.get("l12", {})
-        direction = l12.get("direction", "BUY")
+        direction = str(l12.get("direction") or "").upper()
+        verdict = str(l12.get("verdict") or "").upper()
 
-        if direction.upper() in ["BUY", "LONG"]:
+        if direction in ("BUY", "LONG") or "EXECUTE_BUY" in verdict or "EXECUTE_REDUCED_RISK_BUY" in verdict:
             return "bullish"
-        else:
+        if direction in ("SELL", "SHORT") or "EXECUTE_SELL" in verdict or "EXECUTE_REDUCED_RISK_SELL" in verdict:
             return "bearish"
+        return "neutral"
 
     def _compute_correlation_risk(self, synthesis: dict[str, Any], symbol: str) -> tuple[float, float]:
         """

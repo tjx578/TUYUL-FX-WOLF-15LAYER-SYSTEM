@@ -20,7 +20,7 @@
 
 export interface SignalData {
   pair: string;
-  direction: "BUY" | "SELL" | "HOLD" | "NO_TRADE";
+  direction: "BUY" | "SELL" | null;
   entry: number;
   sl: number;
   tp1: number;
@@ -45,12 +45,12 @@ export interface PipelineStatus {
 
 export interface WSMessage {
   type:
-    | "auth_ok"
-    | "auth_error"
-    | "signal"
-    | "pipeline_status"
-    | "heartbeat"
-    | "error";
+  | "auth_ok"
+  | "auth_error"
+  | "signal"
+  | "pipeline_status"
+  | "heartbeat"
+  | "error";
   data?: unknown;
   channel?: string;
   role?: string;
@@ -246,7 +246,7 @@ export class TuyulWebSocket {
 
     console.log(
       `[WS] Reconnecting in ${delay / 1000}s ` +
-        `(attempt ${this.reconnectAttempts}/${this.maxReconnects})`
+      `(attempt ${this.reconnectAttempts}/${this.maxReconnects})`
     );
 
     this.reconnectTimer = setTimeout(() => {

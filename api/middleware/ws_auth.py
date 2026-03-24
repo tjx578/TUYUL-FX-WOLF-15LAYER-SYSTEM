@@ -36,7 +36,7 @@ from .auth import decode_token, validate_api_key
 
 logger = logging.getLogger(__name__)
 
-_WS_ALLOWED_ORIGINS_RAW = os.getenv("WS_ALLOWED_ORIGINS", "").strip()
+_WS_ALLOWED_ORIGINS_RAW: str = os.getenv("WS_ALLOWED_ORIGINS", "").strip()
 # If WS_ALLOWED_ORIGINS is not explicitly set, inherit from CORS_ORIGINS so
 # the Vercel frontend domain is automatically allowed for WebSocket connections.
 _ws_origins_source = _WS_ALLOWED_ORIGINS_RAW or os.getenv("CORS_ORIGINS", "").strip()

@@ -11,7 +11,7 @@ def _make_verdict(
         "symbol": pair,
         "verdict": verdict,
         "confidence": confidence,
-        "direction": extra.pop("direction", verdict if verdict.startswith("EXECUTE") else "HOLD"),
+        "direction": extra.pop("direction", verdict.split("_")[-1] if verdict.startswith("EXECUTE") else None),
         "scores": extra.pop("scores", {}),
         "_cached_at": cached_at if cached_at is not None else time.time(),
     }

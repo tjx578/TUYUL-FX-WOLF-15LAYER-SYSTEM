@@ -38,7 +38,7 @@ class TestBuildDegradedVerdict:
         assert v["verdict"] == "HOLD"
         assert v["wolf_status"] == "DEGRADED"
         assert v["confidence"] == 0.0
-        assert v["direction"] == "HOLD"
+        assert v["direction"] is None
         assert isinstance(v["timestamp"], float)
         assert v["errors"] == ["PIPELINE_TIMEOUT:30s"]
         assert v["last_hold_block_reason"] == "PIPELINE_TIMEOUT:30s"
