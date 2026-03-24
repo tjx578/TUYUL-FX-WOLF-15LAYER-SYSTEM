@@ -391,19 +391,20 @@ def test_build_pipeline_data_skip_vs_pass_for_unexecuted_layers() -> None:
     layer_statuses = {lyr["id"]: lyr["status"] for lyr in pipeline["layers"]}
 
     # Un-executed layers must all be 'skip', not 'pass' or 'fail'
+    # Exception: L8 (TII) is gate-mapped to gate_1_tii=FAIL, so it shows 'fail'
     skip_layers = [lid for lid, st in layer_statuses.items() if st == "skip"]
     pass_layers = [lid for lid, st in layer_statuses.items() if st == "pass"]
 
-    # 12 layers were not in layers_executed, all should be skip
-    assert len(skip_layers) == 12, f"Expected 12 skip layers, got {len(skip_layers)}: {skip_layers}"
-    # Frontend executedCount = total - skipCount = 15 - 12 = 3
+    # 11 layers are skip (12 not in layers_executed minus L8 which is gate-mapped)
+    assert len(skip_layers) == 11, f"Expected 11 skip layers, got {len(skip_layers)}: {skip_layers}"
+    # Frontend executedCount = total - skipCount = 15 - 11 = 4
     total = len(pipeline["layers"])
     skip_count = len(skip_layers)
     executed_count = total - skip_count
-    assert executed_count == 3, f"Expected executedCount=3, got {executed_count}"
+    assert executed_count == 4, f"Expected executedCount=4, got {executed_count}"
 
-    # passCount / executedCount should read '2/3':
-    #   L1 -> pass, L2 -> pass, L12 -> fail (3/9 gates < 7 threshold)
+    # passCount / executedCount should read '2/4':
+    #   L1 -> pass, L2 -> pass, L8 -> fail (gate-mapped), L12 -> fail (3/9 gates < 7 threshold)
     assert len(pass_layers) == 2  # L1 + L2
     l12_status = layer_statuses["L12"]
     assert l12_status == "fail"  # 3/9 gates < 7 threshold
