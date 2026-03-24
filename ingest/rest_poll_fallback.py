@@ -10,6 +10,7 @@ Activates in two scenarios:
 
 import asyncio
 import time
+from collections import defaultdict
 from typing import Any
 
 import orjson
@@ -281,7 +282,13 @@ class RestPollFallback:
         )
 
     async def _push_candles_to_redis(self, candles: list[dict[str, Any]]) -> None:
-        """RPUSH candle dicts to Redis history lists (best-effort)."""
+        """RPUSH candle dicts to Redis history lists (best-effort).
+
+        Candles are grouped by key so each unique key receives a single
+        RPUSH with all its values, one LTRIM, and one EXPIRE, reducing
+        round trips from (rpush + ltrim + expire + publish) × N to
+        (rpush + ltrim + expire) × K + publish × N  (K = unique keys ≤ N).
+        """
         if not candles:
             return
 
@@ -306,6 +313,10 @@ class RestPollFallback:
             return
 
         written_in_batch = 0
+
+        # ── Group valid candles by Redis key to batch writes ─────────────────
+        # Reduces round trips: 4 × N → 3 × K + N  (K = unique keys, K ≤ N).
+        key_batches: dict[str, list[tuple[str, str, dict[str, Any]]]] = defaultdict(list)
         for candle in candles:
             symbol = candle.get("symbol")
             timeframe = candle.get("timeframe")
@@ -320,18 +331,22 @@ class RestPollFallback:
                 )
                 continue
             key = candle_history(symbol, timeframe)
+            candle_json = orjson.dumps(candle).decode("utf-8")
+            pub_channel = channel_candle(symbol, timeframe)
+            key_batches[key].append((candle_json, pub_channel, candle))
+
+        for key, items in key_batches.items():
             try:
-                candle_json = orjson.dumps(candle).decode("utf-8")
-                await self._redis.rpush(key, candle_json)
+                # Push all candles for this key in one RPUSH call, then trim/expire once
+                await self._redis.rpush(key, *[item[0] for item in items])
                 await self._redis.ltrim(key, -self._redis_maxlen, -1)
                 await self._redis.expire(key, self._HISTORY_TTL_SEC)
-                enqueue_candle_dict(candle)
-                self._redis_writes += 1
-                written_in_batch += 1
-
-                # Notify engine-side RedisConsumer via Pub/Sub
-                pub_channel = channel_candle(symbol, timeframe)
-                await self._redis.publish(pub_channel, candle_json)
+                for candle_json, pub_channel, candle in items:
+                    enqueue_candle_dict(candle)
+                    # Notify engine-side RedisConsumer via Pub/Sub
+                    await self._redis.publish(pub_channel, candle_json)
+                self._redis_writes += len(items)
+                written_in_batch += len(items)
             except Exception as exc:
                 logger.warning("[RestPoll] RPUSH failed %s: %s", key, exc)
 
