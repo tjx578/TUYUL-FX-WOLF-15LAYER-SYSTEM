@@ -1336,8 +1336,10 @@ async def websocket_verdict(websocket: fastapi.WebSocket):
     finally:
         verdict_manager.disconnect(websocket)
         if pubsub is not None:
-            with contextlib.suppress(Exception):
+            try:
                 await pubsub.aclose()
+            except Exception as exc:
+                logger.warning("[WS/verdict] pubsub cleanup error: %s", exc)
 
 
 # ---------------------------------------------------------------------------
@@ -1435,8 +1437,10 @@ async def websocket_signals(websocket: fastapi.WebSocket):
     finally:
         signal_manager.disconnect(websocket)
         if pubsub is not None:
-            with contextlib.suppress(Exception):
+            try:
                 await pubsub.aclose()
+            except Exception as exc:
+                logger.warning("[WS/signals] pubsub cleanup error: %s", exc)
 
 
 # ---------------------------------------------------------------------------
@@ -1536,8 +1540,10 @@ async def websocket_pipeline(websocket: fastapi.WebSocket):
     finally:
         pipeline_manager.disconnect(websocket)
         if pubsub is not None:
-            with contextlib.suppress(Exception):
+            try:
                 await pubsub.aclose()
+            except Exception as exc:
+                logger.warning("[WS/pipeline] pubsub cleanup error: %s", exc)
 
 
 # ---------------------------------------------------------------------------
@@ -1660,8 +1666,10 @@ async def websocket_alerts(websocket: fastapi.WebSocket):
     finally:
         alerts_manager.disconnect(websocket)
         if pubsub is not None:
-            with contextlib.suppress(Exception):
+            try:
                 await pubsub.aclose()
+            except Exception as exc:
+                logger.warning("[WS/alerts] pubsub cleanup error: %s", exc)
 
 
 # ---------------------------------------------------------------------------

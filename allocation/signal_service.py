@@ -206,7 +206,7 @@ class SignalService:
                 logger.warning("[SignalService] mget failed, falling back to empty verdicts: %s", exc)
                 raw_values = [None] * len(symbols)
 
-            for symbol, raw in zip(symbols, raw_values, strict=False):
+            for symbol, raw in zip(symbols, raw_values, strict=True):
                 if not raw:
                     continue
                 verdict: dict[str, Any] | None = None
