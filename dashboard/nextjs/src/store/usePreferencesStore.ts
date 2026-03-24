@@ -4,7 +4,6 @@ import type { OperatorPreferences } from "@/contracts/preferences";
 const DEFAULT_PREFERENCES: OperatorPreferences = {
   density: "comfortable",
   showLatency: true,
-  showHashes: false,
   layoutPreset: "default",
 };
 
