@@ -1,4 +1,5 @@
 """Finnhub WebSocket client with exponential backoff and distributed locking."""
+from __future__ import annotations
 
 import asyncio
 import contextlib

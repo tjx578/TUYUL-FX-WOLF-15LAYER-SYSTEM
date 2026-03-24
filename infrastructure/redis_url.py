@@ -11,6 +11,7 @@ without underscores (``REDISHOST``, ``REDISPASSWORD``, ``REDISPORT``,
 (Railway private-network URL) then the Railway-style vars when ``REDIS_URL``
 is absent.
 """
+from __future__ import annotations
 
 import os
 from urllib.parse import quote_plus, urlsplit, urlunsplit

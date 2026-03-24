@@ -7,6 +7,7 @@ Provides REST API for:
 - Risk profile management
 - Trade lifecycle tracking
 """
+from __future__ import annotations
 
 import os
 import uuid

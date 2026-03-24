@@ -6,6 +6,7 @@ H4 is aggregated from H1 bars (4:1).
 M15 is normally built from ticks, but REST fallback is available
 for cold-start recovery via ``FinnhubCandleFetcher.cold_start_m15()``.
 """
+from __future__ import annotations
 
 import asyncio
 import time

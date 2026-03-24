@@ -1,4 +1,5 @@
 """Q-Matrix Generator for FTTC Monte Carlo."""
+from __future__ import annotations
 
 from typing import Any
 

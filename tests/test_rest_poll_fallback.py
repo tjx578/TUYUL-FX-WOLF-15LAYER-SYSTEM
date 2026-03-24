@@ -1,4 +1,5 @@
 """Tests for ingest.rest_poll_fallback – REST polling when WebSocket is down."""
+from __future__ import annotations
 
 import asyncio
 import time

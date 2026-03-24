@@ -19,6 +19,7 @@ Constitutional constraints:
 
 Zone: execution/ -- no analysis, no decision-making.
 """
+from __future__ import annotations
 
 import hashlib
 import json

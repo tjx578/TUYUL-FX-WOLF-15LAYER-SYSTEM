@@ -10,6 +10,7 @@ Usage:
     score_min = get_v11("selectivity.score_min", 0.78)
     enabled = is_v11_enabled()
 """
+from __future__ import annotations
 
 from pathlib import Path
 from typing import Any

@@ -13,6 +13,7 @@ TII gate threshold for EXECUTE: >= 0.60 (pipeline bridge uses 0.6).
 
 Zone: analysis/ -- pure read-only analysis, no execution side-effects.
 """
+from __future__ import annotations
 
 import logging
 import math
