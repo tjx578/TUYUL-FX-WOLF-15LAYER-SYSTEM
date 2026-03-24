@@ -127,6 +127,7 @@ jobs:
 
       - name: Install
         run: |
+          npm set fetch-retries 5
           if [ -f package-lock.json ]; then npm ci; else npm install; fi
 
       - name: Lint
