@@ -4,12 +4,20 @@
  * Single source of truth for the JWT access token used by both
  * REST (Authorization: Bearer) and WebSocket (?token=<jwt>) transports.
  *
- * Storage: localStorage key "wolf15_token"  (browser-only, guard is built in)
+ * Storage policy:
+ *   - Development: localStorage key "wolf15_token" (convenient for debugging).
+ *   - Production: HttpOnly session cookie set via POST /api/set-session.
+ *     getToken() returns null in production — callers should use fetchWsTicket()
+ *     or server-side cookie auth instead of client-accessible localStorage.
  */
 
 import type { UserRole } from "@/contracts/auth";
 
 const TOKEN_KEY = "wolf15_token";
+
+// True when running in a production Next.js build.
+// process.env.NODE_ENV is statically inlined by the bundler.
+const IS_PRODUCTION = process.env.NODE_ENV === "production";
 
 export const ADMIN_ROLES = ["risk_admin", "config_admin", "approver"] as const;
 
@@ -24,18 +32,48 @@ export function hasRole(
 }
 
 /**
- * Retrieve the stored JWT.  Returns null if not set or called server-side.
+ * Retrieve the stored JWT.
+ *
+ * In production this always returns null — the JWT lives in an HttpOnly cookie
+ * that is not accessible to client-side JavaScript.  Use fetchWsTicket() for
+ * WebSocket auth or rely on credentials: "include" for REST calls.
+ *
+ * In development the token is read from localStorage for convenience.
  */
 export function getToken(): string | null {
   if (typeof window === "undefined") return null;
+  if (IS_PRODUCTION) {
+    // JWT must not be readable by JS in production (XSS mitigation).
+    // Auth flows use the HttpOnly wolf15_session cookie instead.
+    return null;
+  }
   return localStorage.getItem(TOKEN_KEY);
 }
 
 /**
  * Persist a JWT (received from POST /api/v1/auth/login or equivalent).
+ *
+ * In production the token is persisted only via the HttpOnly cookie by
+ * calling POST /api/set-session (best-effort, fire-and-forget).
+ * localStorage is intentionally NOT written in production to prevent
+ * XSS token theft.
+ *
+ * In development the token is written to localStorage for convenience.
  */
 export function setToken(token: string): void {
   if (typeof window === "undefined") return;
+  if (IS_PRODUCTION) {
+    // Persist via HttpOnly cookie only — do NOT write to localStorage in prod.
+    fetch("/api/set-session", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token }),
+      credentials: "include",
+    }).catch((err: unknown) => {
+      console.error("[auth] setToken: failed to persist session cookie via /api/set-session.", err);
+    });
+    return;
+  }
   localStorage.setItem(TOKEN_KEY, token);
 }
 
@@ -57,9 +95,11 @@ export function clearWsTicketCache(): void {
 /**
  * Remove the stored JWT (logout / session expiry).
  * Also clears the WS ticket cache so the next connect() fetches a fresh ticket.
+ * In production the HttpOnly session cookie is cleared via a server call.
  */
 export function removeToken(): void {
   if (typeof window === "undefined") return;
+  // Always remove from localStorage (handles dev-mode and any legacy entries).
   localStorage.removeItem(TOKEN_KEY);
   clearWsTicketCache();
 }
