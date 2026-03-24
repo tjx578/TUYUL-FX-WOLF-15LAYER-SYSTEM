@@ -11,6 +11,7 @@ Covers:
 - Attempt counter reset on successful connect
 - Multiple consecutive failures with increasing backoff
 """
+from __future__ import annotations
 
 import asyncio
 import json
@@ -59,7 +60,7 @@ class AsyncMessageIterator:
         self._messages = list(messages)
         self._index = 0
 
-    def __aiter__(self) -> "AsyncMessageIterator":
+    def __aiter__(self) -> AsyncMessageIterator:
         return self
 
     async def __anext__(self) -> str:

@@ -1,6 +1,7 @@
 """
 Test candle history functionality in LiveContextBus
 """
+from __future__ import annotations
 
 from typing import Any  # noqa: UP035
 

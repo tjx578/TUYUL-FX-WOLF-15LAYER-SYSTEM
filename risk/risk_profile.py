@@ -4,6 +4,7 @@ Risk Profile - Per-account risk configuration stored in Redis.
 Supports FIXED and SPLIT risk modes. Dashboard writes profile,
 Risk Engine reads it. Redis = single source of truth.
 """
+from __future__ import annotations
 
 import json
 from dataclasses import asdict, dataclass
@@ -74,7 +75,7 @@ class RiskProfile:
         return data
 
     @classmethod
-    def from_dict(cls, data: dict) -> "RiskProfile":
+    def from_dict(cls, data: dict) -> RiskProfile:
         """Deserialize from Redis storage."""
         data["risk_mode"] = RiskMode(data["risk_mode"])
         data["split_ratio"] = tuple(data["split_ratio"])

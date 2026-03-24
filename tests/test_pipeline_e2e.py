@@ -3,6 +3,7 @@ End-to-end pipeline test.
 Simulates: mock feed -> full analysis -> L12 verdict -> risk check -> execution command.
 Verifies ALL constitutional boundaries are maintained.
 """
+from __future__ import annotations
 
 import time
 

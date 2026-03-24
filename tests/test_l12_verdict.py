@@ -3,6 +3,7 @@ Unit tests for L12 verdict engine.
 
 Tests verdict generation with various gate configurations.
 """
+from __future__ import annotations
 
 from typing import Any
 

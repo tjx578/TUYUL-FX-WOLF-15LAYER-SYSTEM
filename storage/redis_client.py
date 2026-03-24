@@ -13,9 +13,10 @@ Redis Client Wrapper with Connection Pooling, Pub/Sub, and Streams support.
     still rely on synchronous Redis calls (e.g. ``storage`` helpers,
     ``ws_routes``).  It will be removed once the async migration is complete.
 """
+from __future__ import annotations
 
 import os
-from typing import Any, Optional, cast  # noqa: UP035
+from typing import Any, cast  # noqa: UP035
 from urllib.parse import urlsplit, urlunsplit
 
 # Type alias for Redis stream read responses:
@@ -64,9 +65,9 @@ class RedisClient:
       - Health checks
     """
 
-    _instance: Optional["RedisClient"] = None
+    _instance: RedisClient | None = None
 
-    def __new__(cls) -> "RedisClient":
+    def __new__(cls) -> RedisClient:
         if not cls._instance:
             cls._instance = super().__new__(cls)
             cls._instance._init()
