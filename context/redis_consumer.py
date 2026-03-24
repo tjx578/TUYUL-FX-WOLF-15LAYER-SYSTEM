@@ -334,11 +334,32 @@ class RedisConsumer:
         try:
             data = await self._redis.hgetall(hash_key)
             if data:
-                # Decode bytes keys/values if needed
-                bar = {}
+                # Decode bytes keys/values
+                decoded: dict[str, str] = {}
                 for k, v in data.items():
-                    k_str = k.decode() if isinstance(k, bytes) else k
-                    v_str = v.decode() if isinstance(v, bytes) else v
+                    k_str = k.decode() if isinstance(k, bytes) else str(k)
+                    v_str = v.decode() if isinstance(v, bytes) else str(v)
+                    decoded[k_str] = v_str
+
+                # Primary: parse the "data" field as JSON (RedisContextBridge format)
+                if "data" in decoded:
+                    try:
+                        import orjson as _orjson
+                        candle = _orjson.loads(decoded["data"])
+                        if isinstance(candle, dict):
+                            logger.info(
+                                "warmup_candle_history | symbol=%s tf=%s fallback: 1 bar from HASH %s (data field)",
+                                symbol,
+                                timeframe,
+                                hash_key,
+                            )
+                            return [_orjson.dumps(candle)]
+                    except Exception:
+                        pass
+
+                # Secondary: treat all hash fields as a flat key-value candle dict
+                bar: dict[str, Any] = {}
+                for k_str, v_str in decoded.items():
                     try:
                         bar[k_str] = float(v_str)
                     except (ValueError, TypeError):
