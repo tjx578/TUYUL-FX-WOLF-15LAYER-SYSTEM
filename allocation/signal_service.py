@@ -29,7 +29,7 @@ def _build_signal_payload_from_verdict(symbol: str, verdict: dict[str, Any]) -> 
         "symbol": symbol,
         "verdict": str(verdict.get("verdict", "HOLD")),
         "confidence": float(verdict.get("confidence", 0.0) or 0.0),
-        "direction": verdict.get("direction"),
+        "direction": (_d := verdict.get("direction")) if _d in ("BUY", "SELL") else None,
         "entry_price": _to_price_float(verdict.get("entry_price")),
         "stop_loss": _to_price_float(verdict.get("stop_loss")),
         "take_profit_1": _to_price_float(verdict.get("take_profit_1")),

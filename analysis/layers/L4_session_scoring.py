@@ -61,6 +61,8 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, Final, Literal, TypedDict
 
+from core.core_fusion._utils import _clamp01
+
 logger = logging.getLogger(__name__)
 
 __all__ = [
@@ -539,7 +541,7 @@ def _compute_session_context(
         quality *= _EVENT_BUFFER_MULT
         gate_reasons.append(f"EVENT_BUFFER_{event_name}")
 
-    quality = round(max(0.0, min(1.0, quality)), 4)
+    quality = round(_clamp01(quality), 4)
 
     if not gate_reasons:
         gate_reasons.append("OK")
@@ -567,7 +569,7 @@ def _safe(d: dict[str, Any], key: str, default: float = 0.0) -> float:
         v = float(d.get(key, default))
         if not math.isfinite(v):
             return default
-        return max(0.0, min(1.0, v))
+        return _clamp01(v)
     except (TypeError, ValueError):
         return default
 
@@ -752,7 +754,7 @@ def _compute_exec_score(
     if struct == 0.0:
         struct = _safe(l3, "quality", 0.0)
 
-    sq = max(0.0, min(1.0, session_quality))
+    sq = _clamp01(session_quality)
 
     pts_struct = round(struct * _EXEC_WEIGHT_STRUCTURE, 2)
     pts_session = round(sq * _EXEC_WEIGHT_SESSION, 2)
@@ -819,9 +821,7 @@ def _bayesian_win_probability(
         odds *= bayes_factor
 
     posterior = odds / (1.0 + odds)
-    return max(0.0, min(1.0, posterior))
-
-
+    return _clamp01(posterior)
 def _compute_expectancy(p_win: float, rr: float) -> float:
     """Compute mathematical expectancy of a trade (§VIII).
 
@@ -994,7 +994,7 @@ def _compute_bayesian_enrichment(
     posterior *= vol_dampener
 
     # Clamp final posterior
-    posterior = round(max(0.0, min(1.0, posterior)), 4)
+    posterior = round(_clamp01(posterior), 4)
 
     # ── 6. Expectancy + RAE (§VIII, §IX) ─────────────────────────
     rr = _safe_raw(l3, "rr_ratio", cfg.default_rr)
