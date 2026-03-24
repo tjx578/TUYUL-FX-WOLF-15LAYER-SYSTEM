@@ -23,7 +23,7 @@ export default function PreferencesPanel() {
   return (
     <Card className="mt-4">
       <h3 className="text-sm font-semibold">Operator Preferences</h3>
-      <div className="mt-3 grid gap-2 md:grid-cols-2">
+      <div className="mt-3">
         <label htmlFor="pref-density" className="text-xs">
           Density
           <select
@@ -37,22 +37,6 @@ export default function PreferencesPanel() {
           >
             <option value="comfortable">Comfortable</option>
             <option value="compact">Compact</option>
-          </select>
-        </label>
-        <label htmlFor="pref-layout-preset" className="text-xs">
-          Layout preset
-          <select
-            id="pref-layout-preset"
-            name="layout_preset"
-            className="mt-1 w-full rounded border border-white/20 bg-slate-900 px-2 py-1"
-            value={prefs.layoutPreset}
-            onChange={(e) =>
-              patchPreferences({ layoutPreset: e.target.value as OperatorPreferences["layoutPreset"] })
-            }
-          >
-            <option value="default">Default</option>
-            <option value="risk_focus">Risk focus</option>
-            <option value="pipeline_focus">Pipeline focus</option>
           </select>
         </label>
       </div>
