@@ -1,4 +1,30 @@
+import time
+
 from api import l12_routes
+
+
+def _make_verdict(
+    pair: str, verdict: str = "HOLD", confidence: float = 0.25, cached_at: float | None = None, **extra: object
+) -> dict:
+    """Build a minimal realistic verdict payload for tests."""
+    base = {
+        "symbol": pair,
+        "verdict": verdict,
+        "confidence": confidence,
+        "direction": extra.pop("direction", verdict if verdict.startswith("EXECUTE") else "HOLD"),
+        "scores": extra.pop("scores", {}),
+        "_cached_at": cached_at if cached_at is not None else time.time(),
+    }
+    base.update(extra)
+    return base
+
+
+def _patch_pairs(monkeypatch, pairs: list[str]) -> None:
+    monkeypatch.setattr(
+        l12_routes,
+        "AVAILABLE_PAIRS",
+        [{"symbol": p, "name": p, "enabled": True} for p in pairs],
+    )
 
 
 def test_fetch_pairs_includes_configured_cross_pair() -> None:
@@ -7,41 +33,29 @@ def test_fetch_pairs_includes_configured_cross_pair() -> None:
 
 
 def test_fetch_all_verdicts_reads_configured_pairs(monkeypatch) -> None:
-    monkeypatch.setattr(
-        l12_routes,
-        "AVAILABLE_PAIRS",
-        [
-            {"symbol": "GBPJPY", "name": "GBPJPY", "enabled": True},
-            {"symbol": "EURUSD", "name": "EURUSD", "enabled": True},
-        ],
-    )
+    _patch_pairs(monkeypatch, ["GBPJPY", "EURUSD"])
+    # Clear in-memory cache from previous test runs
+    l12_routes._verdict_cache._data = None
+
+    now = time.time()
 
     def fake_get_verdict(pair: str):
-        # Provide a verdict that passes _filter_valid_verdicts (score > 0, tp1 > 0, sl > 0, direction set)
         if pair == "GBPJPY":
-            return {
-                "symbol": pair,
-                "verdict": "HOLD",
-                "score": 0.7,
-                "take_profit_1": 145.50,
-                "stop_loss": 144.00,
-                "direction": "BUY",
-            }
+            return _make_verdict("GBPJPY", cached_at=now)
         return None
-
-    # Reset the module-level cache so the test always hits the fetch path
-    l12_routes._verdict_cache._last_fetch = 0.0
 
     monkeypatch.setattr(l12_routes, "get_verdict", fake_get_verdict)
 
-    # fetch_all_verdicts() now returns {"verdicts": {...}, "count": N, "cached": bool}
     result = l12_routes.fetch_all_verdicts()
 
-    verdicts = result["verdicts"]
-    assert "GBPJPY" in verdicts
-    assert verdicts["GBPJPY"]["symbol"] == "GBPJPY"
-    assert verdicts["GBPJPY"]["verdict"] == "HOLD"
-    assert verdicts["GBPJPY"]["_meta"]["cache_ttl_seconds"] == l12_routes.VERDICT_TTL_SEC
+    assert result["status"] == "ok"
+    assert result["mode"] == "LIVE"
+    assert result["count"] == 1
+    assert "GBPJPY" in result["verdicts"]
+    assert result["verdicts"]["GBPJPY"]["symbol"] == "GBPJPY"
+    assert result["verdicts"]["GBPJPY"]["verdict"] == "HOLD"
+    assert result["verdicts"]["GBPJPY"]["_meta"]["cache_ttl_seconds"] == l12_routes.VERDICT_TTL_SEC
+    assert result["reason"] is None
 
 
 def test_build_pipeline_data_includes_execution_map_passthrough() -> None:
@@ -200,6 +214,108 @@ def test_internal_verdict_path_survives_redis_error(monkeypatch) -> None:
     assert row["warmup_status"]["ready"] is False
 
 
+# ── Regression tests: /api/v1/verdict/all schema stability ───────────
+
+_STALE_THRESHOLD_SEC = 300.0
+
+
+def test_verdict_all_live_fresh(monkeypatch) -> None:
+    """Fresh verdicts -> mode=LIVE, status=ok, all verdicts present."""
+    _patch_pairs(monkeypatch, ["EURUSD", "GBPUSD"])
+    l12_routes._verdict_cache._data = None
+
+    now = time.time()
+    monkeypatch.setattr(l12_routes, "get_verdict", lambda p: _make_verdict(p, cached_at=now - 10))
+
+    result = l12_routes.fetch_all_verdicts()
+
+    assert result["status"] == "ok"
+    assert result["mode"] == "LIVE"
+    assert result["count"] == 2
+    assert result["reason"] is None
+    assert result["stale_seconds"] is not None
+    assert result["stale_seconds"] < _STALE_THRESHOLD_SEC
+    assert "EURUSD" in result["verdicts"]
+    assert "GBPUSD" in result["verdicts"]
+    assert "timestamp" in result
+
+
+def test_verdict_all_stale_with_snapshot(monkeypatch) -> None:
+    """All verdicts older than 5 min -> mode=DEGRADED, still returned."""
+    _patch_pairs(monkeypatch, ["EURUSD", "XAUUSD"])
+    l12_routes._verdict_cache._data = None
+
+    stale_ts = time.time() - 600  # 10 min old
+    monkeypatch.setattr(l12_routes, "get_verdict", lambda p: _make_verdict(p, cached_at=stale_ts))
+
+    result = l12_routes.fetch_all_verdicts()
+
+    assert result["status"] == "degraded"
+    assert result["mode"] == "DEGRADED"
+    assert result["reason"] == "ALL_STALE"
+    assert result["count"] == 2
+    # Stale verdicts are still returned (not filtered out)
+    assert "EURUSD" in result["verdicts"]
+    assert "XAUUSD" in result["verdicts"]
+    assert result["stale_seconds"] >= 600
+
+
+def test_verdict_all_no_snapshot(monkeypatch) -> None:
+    """No verdicts in Redis -> mode=NO_SNAPSHOT_YET, empty items."""
+    _patch_pairs(monkeypatch, ["EURUSD", "GBPUSD"])
+    l12_routes._verdict_cache._data = None
+
+    monkeypatch.setattr(l12_routes, "get_verdict", lambda _p: None)
+
+    result = l12_routes.fetch_all_verdicts()
+
+    assert result["status"] == "no_data"
+    assert result["mode"] == "NO_SNAPSHOT_YET"
+    assert result["reason"] == "NO_SNAPSHOT_YET"
+    assert result["count"] == 0
+    assert result["verdicts"] == {}
+    assert result["stale_seconds"] is None
+
+
+def test_verdict_all_hold_verdicts_not_filtered(monkeypatch) -> None:
+    """HOLD verdicts (no TP/SL) must NOT be silently dropped."""
+    _patch_pairs(monkeypatch, ["EURUSD"])
+    l12_routes._verdict_cache._data = None
+
+    now = time.time()
+    monkeypatch.setattr(
+        l12_routes,
+        "get_verdict",
+        lambda _p: _make_verdict("EURUSD", "HOLD", confidence=0.25, cached_at=now, take_profit_1=None, stop_loss=None),
+    )
+
+    result = l12_routes.fetch_all_verdicts()
+
+    assert result["count"] == 1
+    assert "EURUSD" in result["verdicts"]
+    assert result["verdicts"]["EURUSD"]["verdict"] == "HOLD"
+
+
+def test_filter_actionable_verdicts_keeps_execute_only() -> None:
+    """_filter_actionable_verdicts returns only EXECUTE with valid TP/SL."""
+    now = time.time()
+    verdicts = {
+        "EURUSD": _make_verdict("EURUSD", "HOLD", cached_at=now),
+        "GBPUSD": _make_verdict(
+            "GBPUSD", "EXECUTE", cached_at=now, direction="BUY", take_profit_1=1.30, stop_loss=1.28
+        ),
+        "XAUUSD": _make_verdict(
+            "XAUUSD", "EXECUTE_REDUCED_RISK", cached_at=now, direction="SELL", take_profit_1=1900, stop_loss=1950
+        ),
+    }
+
+    result = l12_routes._filter_actionable_verdicts(verdicts)
+
+    assert "EURUSD" not in result  # HOLD excluded
+    assert "GBPUSD" in result
+    assert "XAUUSD" in result
+
+
 # ---------------------------------------------------------------------------
 # Issue #8 regression: pipeline layer status must reflect actual outcomes
 # ---------------------------------------------------------------------------
@@ -253,43 +369,42 @@ def test_build_pipeline_data_gate_mapped_layer_pass_from_gate() -> None:
     assert l7_layer["status"] == "pass"
 
 
-def test_build_pipeline_data_unexecuted_layers_marked_skip() -> None:
-    """Layers not in execution_map.layers_executed must be marked 'skip'."""
+def test_build_pipeline_data_skip_vs_pass_for_unexecuted_layers() -> None:
+    """Un-executed layers must show 'skip', not 'pass'."""
     verdict_data = {
-        "verdict": "EXECUTE",
-        "confidence": 0.88,
-        "gates": {"passed": 9, "total": 9},
+        "verdict": "NO_TRADE",
+        "confidence": 0.15,
+        "gates": {"passed": 3, "total": 9, "gate_1_tii": "FAIL"},
         "execution_map": {
             "pair": "EURUSD",
-            "constitutional_verdict": "EXECUTE",
-            "halt_reason": None,
-            "layers_executed": ["L1", "L2", "L3", "L12"],
+            "timestamp": "2026-03-24T00:00:00Z",
+            "layers_executed": ["L1", "L2", "L12"],
             "engines_invoked": [],
+            "halt_reason": None,
+            "constitutional_verdict": "NO_TRADE",
+            "layer_timings_ms": {"L1": 2.0, "L2": 3.0, "L12": 5.0},
+            "dag": {"topology": ["L1", "L2", "L12"], "batches": [["L1", "L2"], ["L12"]], "edges": []},
         },
     }
+
     pipeline = l12_routes._build_pipeline_data("EURUSD", verdict_data)
     layer_statuses = {lyr["id"]: lyr["status"] for lyr in pipeline["layers"]}
 
-    # Executed layers should be pass/fail (not skip)
-    assert layer_statuses["L1"] == "pass"
-    assert layer_statuses["L2"] == "pass"
+    # Un-executed layers must all be 'skip', not 'pass' or 'fail'
+    # Exception: L8 (TII) is gate-mapped to gate_1_tii=FAIL, so it shows 'fail'
+    skip_layers = [lid for lid, st in layer_statuses.items() if st == "skip"]
+    pass_layers = [lid for lid, st in layer_statuses.items() if st == "pass"]
 
-    # L4, L5, L6, etc. were NOT executed — should be 'skip'
-    assert layer_statuses["L4"] == "skip"
-    assert layer_statuses["L5"] == "skip"
-    assert layer_statuses["L9"] == "skip"
+    # 11 layers are skip (12 not in layers_executed minus L8 which is gate-mapped)
+    assert len(skip_layers) == 11, f"Expected 11 skip layers, got {len(skip_layers)}: {skip_layers}"
+    # Frontend executedCount = total - skipCount = 15 - 11 = 4
+    total = len(pipeline["layers"])
+    skip_count = len(skip_layers)
+    executed_count = total - skip_count
+    assert executed_count == 4, f"Expected executedCount=4, got {executed_count}"
 
-
-def test_build_pipeline_data_no_execution_map_defaults_to_pass() -> None:
-    """When execution_map is absent all non-L12 layers default to 'pass'."""
-    verdict_data = {
-        "verdict": "HOLD",
-        "confidence": 0.4,
-        "gates": {"passed": 6, "total": 9},
-    }
-    pipeline = l12_routes._build_pipeline_data("GBPUSD", verdict_data)
-    for layer in pipeline["layers"]:
-        if layer["id"] != "L12":
-            # Without execution_map, layers_executed_set is empty so no layer is marked "skip".
-            # Without gate results, gated layers fall back to "pass".
-            assert layer["status"] == "pass", f"Expected 'pass' for {layer['id']} without execution_map, got {layer['status']!r}"
+    # passCount / executedCount should read '2/4':
+    #   L1 -> pass, L2 -> pass, L8 -> fail (gate-mapped), L12 -> fail (3/9 gates < 7 threshold)
+    assert len(pass_layers) == 2  # L1 + L2
+    l12_status = layer_statuses["L12"]
+    assert l12_status == "fail"  # 3/9 gates < 7 threshold

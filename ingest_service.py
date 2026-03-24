@@ -283,25 +283,37 @@ def _build_redis_client() -> RedisClient:
     except ModuleNotFoundError as exc:
         raise RuntimeError("Missing dependency 'redis'. Install it with: pip install redis") from exc
 
-    redis_cls = redis_asyncio.Redis
-    redis_url = os.getenv("REDIS_URL")
-    if redis_url:
-        logger.info("Using REDIS_URL for ingest service")
-        return redis_cls.from_url(redis_url, encoding="utf-8", decode_responses=True)
+    from infrastructure.redis_url import get_redis_url, get_safe_redis_url
 
-    redis_host = os.getenv("REDIS_HOST", "localhost")
-    redis_port = int(os.getenv("REDIS_PORT", "6379"))
-    redis_password = os.getenv("REDIS_PASSWORD", "")
-    redis_db = int(os.getenv("REDIS_DB", "0"))
-    logger.info(f"Using Redis: {redis_host}:{redis_port}/{redis_db}")
-    return redis_cls(
-        host=redis_host,
-        port=redis_port,
-        password=redis_password if redis_password else None,
-        db=redis_db,
-        encoding="utf-8",
-        decode_responses=True,
+    url = get_redis_url()
+    socket_timeout = float(os.getenv("REDIS_SOCKET_TIMEOUT_SEC", "10"))
+
+    # Connection-level retry with exponential backoff — mirrors infrastructure/redis_client.py
+    from redis.backoff import ExponentialBackoff
+    from redis.exceptions import ConnectionError as RedisConnectionError
+    from redis.exceptions import TimeoutError as RedisTimeoutError
+    from redis.retry import Retry
+
+    retry = Retry(
+        backoff=ExponentialBackoff(cap=10, base=1),
+        retries=5,
+        supported_errors=(RedisConnectionError, RedisTimeoutError),
     )
+
+    logger.info("Ingest Redis: {}", get_safe_redis_url())
+    pool = redis_asyncio.ConnectionPool.from_url(
+        url,
+        decode_responses=True,
+        max_connections=10,
+        socket_timeout=socket_timeout,
+        socket_connect_timeout=socket_timeout,
+        socket_keepalive=True,
+        health_check_interval=30,
+        retry_on_timeout=True,
+        retry_on_error=[RedisConnectionError, RedisTimeoutError],
+        retry=retry,
+    )
+    return redis_asyncio.Redis(connection_pool=pool)
 
 
 async def _connect_redis() -> RedisClient:
