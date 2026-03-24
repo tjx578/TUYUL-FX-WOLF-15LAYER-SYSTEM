@@ -229,9 +229,11 @@ class TestEnsureLiveProducer:
             detail="no producer heartbeat/tick",
         )
 
-        with patch("api.allocation_router._feed_freshness_snapshot", return_value=snapshot):
-            with pytest.raises(HTTPException) as exc_info:
-                await _ensure_live_producer("EURUSD")
+        with (
+            patch("api.allocation_router._feed_freshness_snapshot", return_value=snapshot),
+            pytest.raises(HTTPException) as exc_info,
+        ):
+            await _ensure_live_producer("EURUSD")
 
         assert exc_info.value.status_code == 423
         assert "LIVE_PRODUCER_REQUIRED" in exc_info.value.detail

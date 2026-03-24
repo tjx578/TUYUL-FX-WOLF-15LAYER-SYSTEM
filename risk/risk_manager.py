@@ -156,9 +156,8 @@ class RiskManager:
             violations.append("DAILY_LOSS_LIMIT_REACHED")
 
         # ── Daily loss approaching (warning at 80%) ──────────────────
-        if daily_pnl < 0 and abs(daily_pnl) >= daily_loss_limit * 0.80:
-            if "DAILY_LOSS_LIMIT_REACHED" not in violations:
-                violations.append("DAILY_LOSS_LIMIT_WARNING")
+        if daily_pnl < 0 and abs(daily_pnl) >= daily_loss_limit * 0.80 and "DAILY_LOSS_LIMIT_REACHED" not in violations:
+            violations.append("DAILY_LOSS_LIMIT_WARNING")
 
         # ── Open trade count ─────────────────────────────────────────
         if open_trade_count >= self._max_open:

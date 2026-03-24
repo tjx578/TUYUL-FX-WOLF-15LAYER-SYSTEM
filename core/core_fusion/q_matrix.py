@@ -17,29 +17,29 @@ class QMatrixGenerator:
 
     def _calculate_base_rates(self) -> list[list[float]]:
         rates = [[0.0] * self.n_states for _ in range(self.n_states)]
-        S = TransitionState
+        ts = TransitionState
         bt = {
-            (S.STRONG_BULLISH, S.WEAK_BULLISH): 0.25,
-            (S.STRONG_BULLISH, S.NEUTRAL): 0.10,
-            (S.STRONG_BULLISH, S.HIGH_VOLATILITY): 0.05,
-            (S.WEAK_BULLISH, S.STRONG_BULLISH): 0.20,
-            (S.WEAK_BULLISH, S.NEUTRAL): 0.30,
-            (S.WEAK_BULLISH, S.WEAK_BEARISH): 0.15,
-            (S.NEUTRAL, S.WEAK_BULLISH): 0.25,
-            (S.NEUTRAL, S.WEAK_BEARISH): 0.25,
-            (S.NEUTRAL, S.LOW_VOLATILITY): 0.10,
-            (S.WEAK_BEARISH, S.STRONG_BEARISH): 0.20,
-            (S.WEAK_BEARISH, S.NEUTRAL): 0.30,
-            (S.WEAK_BEARISH, S.WEAK_BULLISH): 0.15,
-            (S.STRONG_BEARISH, S.WEAK_BEARISH): 0.25,
-            (S.STRONG_BEARISH, S.NEUTRAL): 0.10,
-            (S.STRONG_BEARISH, S.HIGH_VOLATILITY): 0.05,
-            (S.HIGH_VOLATILITY, S.STRONG_BULLISH): 0.15,
-            (S.HIGH_VOLATILITY, S.STRONG_BEARISH): 0.15,
-            (S.HIGH_VOLATILITY, S.NEUTRAL): 0.20,
-            (S.LOW_VOLATILITY, S.NEUTRAL): 0.30,
-            (S.LOW_VOLATILITY, S.WEAK_BULLISH): 0.15,
-            (S.LOW_VOLATILITY, S.WEAK_BEARISH): 0.15,
+            (ts.STRONG_BULLISH, ts.WEAK_BULLISH): 0.25,
+            (ts.STRONG_BULLISH, ts.NEUTRAL): 0.10,
+            (ts.STRONG_BULLISH, ts.HIGH_VOLATILITY): 0.05,
+            (ts.WEAK_BULLISH, ts.STRONG_BULLISH): 0.20,
+            (ts.WEAK_BULLISH, ts.NEUTRAL): 0.30,
+            (ts.WEAK_BULLISH, ts.WEAK_BEARISH): 0.15,
+            (ts.NEUTRAL, ts.WEAK_BULLISH): 0.25,
+            (ts.NEUTRAL, ts.WEAK_BEARISH): 0.25,
+            (ts.NEUTRAL, ts.LOW_VOLATILITY): 0.10,
+            (ts.WEAK_BEARISH, ts.STRONG_BEARISH): 0.20,
+            (ts.WEAK_BEARISH, ts.NEUTRAL): 0.30,
+            (ts.WEAK_BEARISH, ts.WEAK_BULLISH): 0.15,
+            (ts.STRONG_BEARISH, ts.WEAK_BEARISH): 0.25,
+            (ts.STRONG_BEARISH, ts.NEUTRAL): 0.10,
+            (ts.STRONG_BEARISH, ts.HIGH_VOLATILITY): 0.05,
+            (ts.HIGH_VOLATILITY, ts.STRONG_BULLISH): 0.15,
+            (ts.HIGH_VOLATILITY, ts.STRONG_BEARISH): 0.15,
+            (ts.HIGH_VOLATILITY, ts.NEUTRAL): 0.20,
+            (ts.LOW_VOLATILITY, ts.NEUTRAL): 0.30,
+            (ts.LOW_VOLATILITY, ts.WEAK_BULLISH): 0.15,
+            (ts.LOW_VOLATILITY, ts.WEAK_BEARISH): 0.15,
         }
         for (f, t), rate in bt.items():
             rates[self.state_to_idx[f]][self.state_to_idx[t]] = rate * self.config.base_transition_rate

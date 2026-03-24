@@ -11,6 +11,7 @@ from enum import StrEnum
 
 from loguru import logger
 
+from core.redis_keys import RISK_PROFILE_PREFIX as _REDIS_KEY_PREFIX  # noqa: N811
 from risk.exceptions import RiskException
 from storage.redis_client import RedisClient
 
@@ -78,9 +79,6 @@ class RiskProfile:
         data["risk_mode"] = RiskMode(data["risk_mode"])
         data["split_ratio"] = tuple(data["split_ratio"])
         return cls(**data)
-
-
-from core.redis_keys import RISK_PROFILE_PREFIX as _REDIS_KEY_PREFIX  # noqa: N811
 
 
 def save_risk_profile(

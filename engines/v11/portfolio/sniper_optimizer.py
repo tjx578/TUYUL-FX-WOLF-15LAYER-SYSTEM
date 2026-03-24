@@ -181,12 +181,7 @@ class SniperOptimizer:
         # Compute covariance with shrinkage
         cov_matrix = self._shrinkage_covariance(returns_arr)
 
-        if n_assets == 2:
-            # Analytical solution for 2 assets
-            weights = self._solve_2asset(mean_returns, cov_matrix)
-        else:
-            # Equal weights for >2 assets (simplified)
-            weights = tuple([1.0 / n_assets] * n_assets)
+        weights = self._solve_2asset(mean_returns, cov_matrix) if n_assets == 2 else tuple([1.0 / n_assets] * n_assets)
 
         # Compute expected return and risk
         weights_arr = np.array(weights)

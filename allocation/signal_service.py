@@ -30,9 +30,9 @@ def _build_signal_payload_from_verdict(symbol: str, verdict: dict[str, Any]) -> 
         "verdict": str(verdict.get("verdict", "HOLD")),
         "confidence": float(verdict.get("confidence", 0.0) or 0.0),
         "direction": verdict.get("direction"),
-        "entry_price": _to_opt_float(verdict.get("entry_price")),
-        "stop_loss": _to_opt_float(verdict.get("stop_loss")),
-        "take_profit_1": _to_opt_float(verdict.get("take_profit_1")),
+        "entry_price": _to_price_float(verdict.get("entry_price")),
+        "stop_loss": _to_price_float(verdict.get("stop_loss")),
+        "take_profit_1": _to_price_float(verdict.get("take_profit_1")),
         "risk_reward_ratio": _to_opt_float(verdict.get("risk_reward_ratio")),
         "scores": {
             "wolf_score": float((verdict.get("scores") or {}).get("wolf_score", 0.0) or 0.0),
@@ -59,9 +59,9 @@ class SignalService:
             verdict=str(payload.get("verdict", "HOLD")),
             confidence=float(payload.get("confidence", 0.0) or 0.0),
             direction=payload.get("direction"),
-            entry_price=_to_opt_float(payload.get("entry_price")),
-            stop_loss=_to_opt_float(payload.get("stop_loss")),
-            take_profit_1=_to_opt_float(payload.get("take_profit_1")),
+            entry_price=_to_price_float(payload.get("entry_price")),
+            stop_loss=_to_price_float(payload.get("stop_loss")),
+            take_profit_1=_to_price_float(payload.get("take_profit_1")),
             risk_reward_ratio=_to_opt_float(payload.get("risk_reward_ratio")),
             scores={
                 "wolf_score": float((payload.get("scores") or {}).get("wolf_score", 0.0) or 0.0),
@@ -106,9 +106,9 @@ class SignalService:
             verdict=str(payload.get("verdict", "HOLD")),
             confidence=float(payload.get("confidence", 0.0) or 0.0),
             direction=payload.get("direction"),
-            entry_price=_to_opt_float(payload.get("entry_price")),
-            stop_loss=_to_opt_float(payload.get("stop_loss")),
-            take_profit_1=_to_opt_float(payload.get("take_profit_1")),
+            entry_price=_to_price_float(payload.get("entry_price")),
+            stop_loss=_to_price_float(payload.get("stop_loss")),
+            take_profit_1=_to_price_float(payload.get("take_profit_1")),
             risk_reward_ratio=_to_opt_float(payload.get("risk_reward_ratio")),
             scores={
                 "wolf_score": float((payload.get("scores") or {}).get("wolf_score", 0.0) or 0.0),
@@ -233,3 +233,15 @@ def _to_opt_float(value: Any) -> float | None:
         return float(value)
     except (TypeError, ValueError):
         return None
+
+
+def _to_price_float(value: Any) -> float | None:
+    """Convert to float for price fields (entry, SL, TP).
+
+    Returns ``None`` when the value is ``None``, zero, or negative —
+    prices in financial markets are always strictly positive.  Zero is
+    produced by L11._fail() during ATR warm-up and must never reach the
+    signal schema validator (which enforces ``exclusiveMinimum: 0``).
+    """
+    result = _to_opt_float(value)
+    return result if (result is not None and result > 0) else None
