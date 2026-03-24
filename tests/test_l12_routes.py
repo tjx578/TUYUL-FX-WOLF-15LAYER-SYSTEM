@@ -293,3 +293,50 @@ def test_build_pipeline_data_no_execution_map_defaults_to_pass() -> None:
             # Without execution_map, layers_executed_set is empty so no layer is marked "skip".
             # Without gate results, gated layers fall back to "pass".
             assert layer["status"] == "pass", f"Expected 'pass' for {layer['id']} without execution_map, got {layer['status']!r}"
+
+
+def test_build_pipeline_data_skip_layers_not_counted_as_pass() -> None:
+    """Skip layers must have status 'skip', not 'pass'.
+
+    Regression test for the '3/15' display issue: when execution_map
+    lists only a subset of layers as executed, the rest are 'skip'.
+    The frontend executedCount denominator (totalCount - skipCount) must
+    give 3, not 15, so the counter reads '3/3' instead of '3/15'.
+    """
+    verdict_data = {
+        "verdict": "HOLD",
+        "confidence": "LOW",
+        "gates": {"passed": 3, "total": 9},
+        "execution_map": {
+            "pair": "EURUSD",
+            "constitutional_verdict": "HOLD",
+            "halt_reason": None,
+            "layers_executed": ["L1", "L2", "L12"],
+            "engines_invoked": [],
+        },
+    }
+    pipeline = l12_routes._build_pipeline_data("EURUSD", verdict_data)
+    layer_statuses = {lyr["id"]: lyr["status"] for lyr in pipeline["layers"]}
+
+    # Executed layers — should be pass or fail/warn, never skip
+    assert layer_statuses["L1"] == "pass"
+    assert layer_statuses["L2"] == "pass"
+
+    # Un-executed layers — must all be 'skip', not 'pass' or 'fail'
+    skip_layers = [lid for lid, st in layer_statuses.items() if st == "skip"]
+    pass_layers = [lid for lid, st in layer_statuses.items() if st == "pass"]
+
+    # 12 layers were not in layers_executed, all should be skip
+    assert len(skip_layers) == 12, f"Expected 12 skip layers, got {len(skip_layers)}: {skip_layers}"
+
+    # Frontend executedCount = total - skipCount = 15 - 12 = 3
+    total = len(pipeline["layers"])
+    skip_count = len(skip_layers)
+    executed_count = total - skip_count
+    assert executed_count == 3, f"Expected executedCount=3, got {executed_count}"
+
+    # passCount / executedCount should read '2/3':
+    #   L1 → pass, L2 → pass, L12 → fail (3/9 gates < 7 threshold)
+    assert len(pass_layers) == 2  # L1 + L2
+    l12_status = layer_statuses["L12"]
+    assert l12_status == "fail"  # 3/9 gates < 7 threshold
