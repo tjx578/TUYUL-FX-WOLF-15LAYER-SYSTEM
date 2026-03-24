@@ -92,6 +92,19 @@ HEARTBEAT_INGEST_PROVIDER = f"{PREFIX}:heartbeat:ingest:provider"
 HEARTBEAT_ENGINE = f"{PREFIX}:heartbeat:engine"
 ORCHESTRATOR_STATE = f"{PREFIX}:orchestrator:state"
 
+# Simplified engine heartbeat key (UTC ISO timestamp string) — written alongside
+# HEARTBEAT_ENGINE for quick health checks by external monitors and the dashboard.
+ENGINE_HEARTBEAT_SIMPLE = "ENGINE:HEARTBEAT"
+
+# L12 verdict metadata prefix — stores slim per-pair verdict metadata for rapid
+# health inspection without reading the full verdict payload.
+L12_VERDICT_META_PREFIX = "L12:VERDICT_META:"
+
+
+def l12_verdict_meta(pair: str) -> str:
+    """Slim verdict metadata key: L12:VERDICT_META:{pair}. Type: STRING, TTL=1h."""
+    return f"{L12_VERDICT_META_PREFIX}{pair.upper()}"
+
 
 def heartbeat_ingest_symbol(symbol: str) -> str:
     """Per-symbol ingest heartbeat: wolf15:heartbeat:ingest:{symbol}."""
