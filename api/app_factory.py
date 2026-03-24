@@ -89,7 +89,13 @@ def _assert_no_duplicate_routes(application: FastAPI) -> None:
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     logger.info("🐺 TUYUL FX Wolf-15 starting up…")
     from infrastructure.redis_client import close_pool, get_client
+    from infrastructure.redis_url import get_safe_redis_url
     from storage.trade_outbox_worker import TradeOutboxWorker
+
+    # Log the resolved Redis URL (password masked) so operators can confirm that
+    # both the API service and the Engine service are targeting the same Redis
+    # instance (BUG #6 — RUN_MODE split-deployment Redis isolation).
+    logger.info("[Redis] API service Redis target: {}", get_safe_redis_url())
 
     # Guard Redis connection — app must start even if Redis is temporarily
     # unreachable so the /healthz probe can pass while infra catches up.
