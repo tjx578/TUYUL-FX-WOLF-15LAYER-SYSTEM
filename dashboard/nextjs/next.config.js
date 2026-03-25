@@ -1,3 +1,5 @@
+const path = require("path");
+
 // Resolve the backend API base URL for server-side proxy rewrites.
 // Prefer server-side INTERNAL_API_URL (not exposed to browser),
 // then fall back to the public env var.
@@ -235,6 +237,15 @@ const _customCspOrigins = _extraCspConnectSrcOrigins(wsBase);
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+  // Pin the workspace / file-tracing root to this directory so Next.js does
+  // not walk up to the monorepo root and pick up the wrong tsconfig / lockfile.
+  outputFileTracingRoot: __dirname,
+  webpack(config) {
+    // Explicit alias so Webpack always resolves @/ to dashboard/nextjs/src/
+    // regardless of which tsconfig Next.js discovers in the monorepo.
+    config.resolve.alias["@"] = path.join(__dirname, "src");
+    return config;
+  },
   // Expose the resolved backend URL to the client bundle so NEXT_PUBLIC_
   // env var checks in DataStreamDiagnostic / runtimeHealth work correctly
   // even when the user only set API_BASE_URL on Railway.
