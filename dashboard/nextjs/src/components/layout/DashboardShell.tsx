@@ -8,7 +8,6 @@ import LivePipelineProvider from "@/components/LivePipelineProvider";
 import ComplianceBanner from "@/components/feedback/ComplianceBanner";
 import DegradationBanner from "@/components/feedback/DegradationBanner";
 import Header from "@/components/layout/Header";
-import PreferencesPanel from "@/components/layout/PreferencesPanel";
 import WorkspaceManager from "@/components/layout/WorkspaceManager";
 import Sidebar from "@/components/layout/Sidebar";
 import RouteTransition from "@/components/layout/RouteTransition";
@@ -37,7 +36,6 @@ export default function DashboardShell({ user, children }: Props) {
                     <DegradationBanner />
                     <ComplianceBanner />
                     <RouteTransition>{children}</RouteTransition>
-                    <PreferencesPanel />
                     <WorkspaceManager />
                 </main>
             </div>

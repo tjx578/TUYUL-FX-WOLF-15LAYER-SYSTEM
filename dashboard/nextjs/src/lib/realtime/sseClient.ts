@@ -32,7 +32,6 @@ const EVENT_TYPE_MAP: Record<string, string> = {
     "risk.updated": "RiskStateUpdated",
     "execution.state": "ExecutionStateUpdated",
     "system.status": "SystemStatusUpdated",
-    "preferences.updated": "PreferencesUpdated",
     "signals.update": "SignalUpdated",
     "trade.snapshot": "TradeSnapshot",
     "trade.update": "TradeUpdated",

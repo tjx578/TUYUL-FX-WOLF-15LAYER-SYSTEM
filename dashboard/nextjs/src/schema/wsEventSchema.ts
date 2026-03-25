@@ -6,7 +6,6 @@ import {
   VerdictSnapshotPayloadSchema,
   PipelineUpdatedPayloadSchema,
 } from "./pipelineResultSchema";
-import { PreferencesSchema } from "./preferencesSchema";
 
 const RiskStateSchema = z.object({
   account_id: z.string().min(1),
@@ -53,10 +52,7 @@ export const SystemStatusUpdatedEventSchema = z.object({
   payload: SystemStatusSchema,
 });
 
-export const PreferencesUpdatedEventSchema = z.object({
-  type: z.literal("PreferencesUpdated"),
-  payload: PreferencesSchema,
-});
+
 
 // Domain-specific WS endpoint events (prices, risk)
 export const PriceUpdatedEventSchema = z.object({
@@ -139,7 +135,6 @@ export const WsEventSchema = z.discriminatedUnion("type", [
   ExecutionStateUpdatedEventSchema,
   RiskStateUpdatedEventSchema,
   SystemStatusUpdatedEventSchema,
-  PreferencesUpdatedEventSchema,
   PriceUpdatedEventSchema,
   PricesSnapshotEventSchema,
   RiskUpdatedEventSchema,

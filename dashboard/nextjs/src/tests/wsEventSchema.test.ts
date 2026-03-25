@@ -39,22 +39,6 @@ describe("WsEventSchema", () => {
     }
   });
 
-  it("parses PreferencesUpdated payload", () => {
-    const parsed = WsEventSchema.parse({
-      type: "PreferencesUpdated",
-      payload: {
-        density: "compact",
-        showLatency: false,
-        layoutPreset: "pipeline_focus",
-      },
-    });
-
-    expect(parsed.type).toBe("PreferencesUpdated");
-    if (parsed.type === "PreferencesUpdated") {
-      expect(parsed.payload.layoutPreset).toBe("pipeline_focus");
-    }
-  });
-
   it("parses domain event types mapped from backend", () => {
     const types = [
       "SignalUpdated",

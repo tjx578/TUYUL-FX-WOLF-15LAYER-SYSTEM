@@ -1,6 +1,5 @@
 import type { ExecutionStateUpdatedPayload } from "./execution";
 import type { PipelineResultView } from "./pipelineResult";
-import type { OperatorPreferences } from "./preferences";
 
 export interface RiskStateView {
   account_id: string;
@@ -31,11 +30,6 @@ export interface RiskStateUpdatedEvent {
 export interface SystemStatusUpdatedEvent {
   type: "SystemStatusUpdated";
   payload: SystemStatusView;
-}
-
-export interface PreferencesUpdatedEvent {
-  type: "PreferencesUpdated";
-  payload: OperatorPreferences;
 }
 
 // ── Backend-native event types (normalised by realtimeClient) ──
@@ -122,7 +116,6 @@ export type WsEvent =
   | ExecutionStateUpdatedEvent
   | RiskStateUpdatedEvent
   | SystemStatusUpdatedEvent
-  | PreferencesUpdatedEvent
   | VerdictUpdatedEvent
   | VerdictSnapshotEvent
   | PipelineUpdatedEvent
