@@ -39,6 +39,8 @@ export interface SignalViewModel {
     gates: SignalGateViewModel[];
     scores?: SignalScoreViewModel;
     holdReason?: string | null;
+
+    optimisticTakeStatus?: "IDLE" | "SUBMITTING" | "SUBMITTED";
 }
 
 export interface SignalBoardState {
