@@ -339,7 +339,6 @@ export function useLivePipeline(options: UseLivePipelineOptions = {}) {
     options.accountId,
     setLatestPipelineResult,
     updateTrade,
-    setPreferences,
     setComplianceState,
     setMode,
     setSystem,
