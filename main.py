@@ -208,14 +208,17 @@ async def main() -> None:
     # Configure logging — split streams for Railway compatibility
     logger.remove()
 
-    # INFO/WARNING → stdout (Railway classifies as "info")
+    _app_env = os.getenv("APP_ENV", os.getenv("ENV", "development")).strip().lower()
+    _stdout_level = "WARNING" if _app_env == "production" else "INFO"
+
+    # INFO/WARNING (or WARNING-only in production) → stdout (Railway classifies as "info")
     logger.add(
         sys.stdout,
         format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | "
         "<level>{level: <8}</level> | "
         "<cyan>{name}</cyan>:<cyan>{function}</cyan> - "
         "<level>{message}</level>",
-        level="INFO",
+        level=_stdout_level,
         filter=lambda record: record["level"].no < 40,  # Below ERROR
     )
 
