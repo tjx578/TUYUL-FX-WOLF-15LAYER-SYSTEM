@@ -1,7 +1,13 @@
 import React from "react";
 import { describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
-import TradeDeskPage from "@/app/(root)/trades/page";
+import TradeDeskPage from "@/app/(control)/trades/page";
+
+vi.mock("next/navigation", () => ({
+  useSearchParams: () => new URLSearchParams(),
+  useRouter: () => ({ push: vi.fn(), replace: vi.fn() }),
+  usePathname: () => "/trades",
+}));
 
 vi.mock("@/lib/api", () => ({
   useOrchestratorState: () => ({
@@ -33,6 +39,10 @@ vi.mock("@/hooks/useTradeDeskHooks", () => ({
     executionMismatchFlags: {},
   }),
   useTradeDeskLivePrices: () => undefined,
+}));
+
+vi.mock("@/features/trades/hooks/useTakeSignalLifecycle", () => ({
+  useTakeSignalLifecycle: () => ({ data: null, isLoading: false, isError: false, error: null, refetch: vi.fn() }),
 }));
 
 vi.mock("@/components/feedback/PageComplianceBanner", () => ({
