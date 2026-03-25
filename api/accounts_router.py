@@ -11,10 +11,10 @@ from typing import Any
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from pydantic import BaseModel, Field
 
+from accounts.account_manager import AccountManager
 from accounts.capital_deployment import build_readiness
 from accounts.prop_rule_engine import validate_prop_sovereignty
 from api.middleware.governance import enforce_write_policy
-from dashboard.account_manager import AccountManager
 from infrastructure.redis_client import get_client
 from journal.audit_trail import AuditAction, AuditTrail
 from propfirm_manager.rule_resolver import PropFirmRuleResolver

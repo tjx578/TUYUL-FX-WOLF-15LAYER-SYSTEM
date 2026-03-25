@@ -17,9 +17,9 @@ NOTE: Do NOT add POST /api/v1/trades/* here — those belong to write_router onl
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from dashboard.price_feed import PriceFeed
-from dashboard.trade_ledger import TradeLedger
 from schemas.trade_models import Trade
+from storage.price_feed import PriceFeed
+from storage.trade_ledger import TradeLedger
 
 from .middleware.auth import verify_token
 

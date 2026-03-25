@@ -86,7 +86,7 @@ async def test_persist_trade_snapshot_uses_transaction_when_available() -> None:
 
 @pytest.mark.asyncio
 async def test_trade_ledger_get_trade_async_falls_back_to_postgres(monkeypatch: pytest.MonkeyPatch) -> None:
-    from dashboard.trade_ledger import TradeLedger
+    from storage.trade_ledger import TradeLedger
 
     class _TradeObj:
         trade_id = "T-2"
@@ -116,8 +116,8 @@ async def test_trade_ledger_get_trade_async_falls_back_to_postgres(monkeypatch: 
         "closed_at": None,
     }
 
-    monkeypatch.setattr("dashboard.trade_ledger.get_client", _fake_get_client)
-    monkeypatch.setattr("dashboard.trade_ledger.pg_client.fetchrow", AsyncMock(return_value=row))
+    monkeypatch.setattr("storage.trade_ledger.get_client", _fake_get_client)
+    monkeypatch.setattr("storage.trade_ledger.pg_client.fetchrow", AsyncMock(return_value=row))
 
     def _fake_from_dict(self: Any, data: Any) -> Any:
         return _TradeObj()

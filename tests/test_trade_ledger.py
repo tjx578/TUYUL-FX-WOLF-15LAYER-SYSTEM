@@ -11,8 +11,8 @@ Tests cover:
 
 import pytest
 
-from dashboard.trade_ledger import TradeLedger
 from schemas.trade_models import CloseReason, TradeStatus
+from storage.trade_ledger import TradeLedger
 
 
 @pytest.fixture
@@ -24,7 +24,7 @@ def trade_ledger():
     ledger = TradeLedger()
     ledger._memory_trades.clear()
     # Mock Redis to avoid connection timeouts in CI
-    with patch("dashboard.trade_ledger.redis_client", MagicMock()):
+    with patch("storage.trade_ledger.redis_client", MagicMock()):
         yield ledger
 
 

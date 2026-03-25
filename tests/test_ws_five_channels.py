@@ -532,7 +532,7 @@ class TestWsEquityChannel:
 
         with (
             patch("api.ws_routes.ws_auth_guard", new=AsyncMock(return_value=_FAKE_USER)),
-            patch("dashboard.account_manager.AccountManager", return_value=mock_am),
+            patch("accounts.account_manager.AccountManager", return_value=mock_am),
         ):
             yield TestClient(app)  # pyright: ignore[reportOptionalCall]
 
@@ -555,7 +555,7 @@ class TestWsEquityChannel:
 
         with (
             patch("api.ws_routes.ws_auth_guard", new=AsyncMock(return_value=_FAKE_USER)),
-            patch("dashboard.account_manager.AccountManager", return_value=mock_am),
+            patch("accounts.account_manager.AccountManager", return_value=mock_am),
         ):
             yield _TestClient(app)
 
