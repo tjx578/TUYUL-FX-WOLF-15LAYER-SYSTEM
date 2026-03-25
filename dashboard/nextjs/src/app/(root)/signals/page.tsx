@@ -13,12 +13,14 @@ import { SignalDetailPanel } from "@/components/SignalDetailPanel";
 import VerdictEmptyStatePanel from "@/components/feedback/VerdictEmptyStatePanel";
 import { useAllVerdicts, useHealth } from "@/lib/api";
 import { useLiveSignals } from "@/lib/realtime/hooks/useLiveSignals";
+import { useFilteredSignals } from "@/lib/realtime/hooks/useFilteredSignals";
+import { useSignalNotifications } from "@/lib/realtime/hooks/useSignalNotifications";
 import { classifyVerdictEmptyState } from "@/lib/verdictEmptyState";
 import { useSystemStore } from "@/store/useSystemStore";
 import { formatTime } from "@/lib/timezone";
 import type { L12Verdict } from "@/types";
 
-type FilterMode = "ALL" | "EXECUTE" | "NON_EXECUTE";
+type FilterMode = "ALL" | "EXECUTE" | "NON_EXECUTE" | "HIGH_PROB";
 type ViewMode = "GRID" | "TABLE";
 
 // ── Helpers ──────────────────────────────────────────────────
@@ -221,12 +223,30 @@ export default function SignalsPage() {
     isStale: verdictStale,
   } = useLiveSignals(restVerdicts, true);
 
+  // High-probability EXECUTE filter (confidence >= 0.75, active only)
+  const highProbSignals = useFilteredSignals(verdicts, {
+    executeOnly: true,
+    minConfidence: 0.75,
+    activeOnly: true,
+  });
+
+  // Browser notifications for new high-probability signals
+  useSignalNotifications(highProbSignals);
+
   const [query, setQuery] = useState("");
   const [filterMode, setFilterMode] = useState<FilterMode>("ALL");
   const [viewMode, setViewMode] = useState<ViewMode>("GRID");
   const [selectedVerdict, setSelectedVerdict] = useState<L12Verdict | null>(null);
 
   const list = useMemo(() => {
+    // HIGH_PROB mode uses precomputed filtered list
+    if (filterMode === "HIGH_PROB") {
+      const q = query.trim().toUpperCase();
+      return highProbSignals
+        .filter((v) => (q ? v.symbol.toUpperCase().includes(q) : true))
+        .sort((a, b) => (b.confidence ?? 0) - (a.confidence ?? 0));
+    }
+
     const all = verdicts ?? [];
     const q = query.trim().toUpperCase();
     return all
@@ -238,7 +258,7 @@ export default function SignalsPage() {
         return true;
       })
       .sort((a, b) => (b.confidence ?? 0) - (a.confidence ?? 0));
-  }, [verdicts, query, filterMode]);
+  }, [verdicts, highProbSignals, query, filterMode]);
 
   const verdictEmptyState = useMemo(
     () =>
@@ -315,6 +335,7 @@ export default function SignalsPage() {
         {[
           { label: "TOTAL PAIRS", value: list.length, color: "var(--text-primary)" },
           { label: "EXECUTE", value: execCount, color: "var(--green)", pulse: execCount > 0 },
+          { label: "HIGH PROB", value: highProbSignals.length, color: highProbSignals.length > 0 ? "var(--green)" : "var(--text-muted)", pulse: highProbSignals.length > 0 },
           { label: "HOLD", value: holdCount, color: "var(--yellow)" },
           { label: "NO TRADE", value: list.length - execCount - holdCount, color: "var(--text-muted)" },
           { label: "LIVE STATUS", value: liveStatus, color: liveStatus === "LIVE" ? "var(--green)" : liveStatus === "STALE" ? "var(--red)" : "var(--yellow)" },
@@ -324,7 +345,7 @@ export default function SignalsPage() {
             style={{
               flex: 1,
               padding: "10px 14px",
-              borderRight: i < 4 ? "1px solid var(--border-default)" : "none",
+              borderRight: i < 5 ? "1px solid var(--border-default)" : "none",
               display: "flex",
               flexDirection: "column",
               alignItems: "center",
@@ -388,7 +409,7 @@ export default function SignalsPage() {
         />
 
         <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-          {(["ALL", "EXECUTE", "NON_EXECUTE"] as FilterMode[]).map((m) => (
+          {(["ALL", "EXECUTE", "HIGH_PROB", "NON_EXECUTE"] as FilterMode[]).map((m) => (
             <button
               key={m}
               onClick={() => setFilterMode(m)}

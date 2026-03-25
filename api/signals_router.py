@@ -1,5 +1,8 @@
 """Read-only API for frozen SignalContract payloads."""
+
 from __future__ import annotations
+
+import time
 
 from fastapi import APIRouter, Depends, HTTPException, Query  # noqa: I001
 
@@ -12,19 +15,43 @@ router = APIRouter(prefix="/api/v1/signals", tags=["signals"], dependencies=[Dep
 
 _signals = SignalService()
 
+# ── Allowed verdict prefixes for the execute_only filter ──────────────────
+_EXECUTE_VERDICTS = {"EXECUTE", "EXECUTE_BUY", "EXECUTE_SELL", "EXECUTE_REDUCED_RISK"}
+
+
+def _is_execute(verdict_str: str) -> bool:
+    return verdict_str in _EXECUTE_VERDICTS or verdict_str.startswith("EXECUTE")
+
 
 @router.get("")
 async def list_signals(
-    symbol: str | None = Query(default=None),  # noqa: W191
-    limit: int = Query(default=100, ge=1, le=500),  # noqa: W191
+    symbol: str | None = Query(default=None),
+    limit: int = Query(default=100, ge=1, le=500),
+    execute_only: bool = Query(default=False, description="Return only EXECUTE* verdicts"),
+    min_confidence: float = Query(default=0.0, ge=0.0, le=1.0, description="Minimum confidence threshold"),
+    active_only: bool = Query(default=False, description="Exclude expired signals (expires_at in the past)"),
 ) -> dict:
-    items = _signals.list_by_symbol(symbol) if symbol else _signals.list_all()  # noqa: W191
-    clipped = items[:limit]  # noqa: W191
-    return {  # noqa: W191
-        "count": len(clipped),  # noqa: W191
-        "contract_version": FROZEN_SIGNAL_CONTRACT_VERSION,  # noqa: W191
-        "signals": clipped,  # noqa: W191
-    }  # noqa: W191
+    items = _signals.list_by_symbol(symbol) if symbol else _signals.list_all()
+
+    now = time.time()
+    filtered = []
+    for sig in items:
+        if execute_only and not _is_execute(str(sig.get("verdict", ""))):
+            continue
+        if float(sig.get("confidence", 0.0) or 0.0) < min_confidence:
+            continue
+        if active_only:
+            expires = sig.get("expires_at")
+            if expires is not None and float(expires) < now:
+                continue
+        filtered.append(sig)
+
+    clipped = filtered[:limit]
+    return {
+        "count": len(clipped),
+        "contract_version": FROZEN_SIGNAL_CONTRACT_VERSION,
+        "signals": clipped,
+    }
 
 
 @router.get("/contract")
