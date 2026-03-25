@@ -55,7 +55,7 @@ class RedisConfig:
     password: str | None = None
     db: int = 0
     decode_responses: bool = True
-    max_connections: int = 20
+    max_connections: int = 100
     socket_timeout: float = 10.0
     socket_connect_timeout: float = 10.0
     retry_on_timeout: bool = True

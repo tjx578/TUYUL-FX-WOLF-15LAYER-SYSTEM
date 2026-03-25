@@ -85,7 +85,7 @@ async def _push_candle_to_redis_safe(
 
 def publish_candle_sync(
     candle_dict: dict[str, Any],
-    redis: Any | None = None,
+    redis: Any,
 ) -> None:
     """Sync-safe entry point: schedule a Redis candle push from a sync callback.
 
@@ -98,9 +98,18 @@ def publish_candle_sync(
     candle_dict:
         Normalised candle dict — must have at least ``symbol`` and ``timeframe``.
     redis:
-        Async Redis client.  When *None* the function attempts to obtain one
-        from ``infrastructure.redis_client.get_client()`` inside the task.
+        Async Redis client (required).  Must be a shared client backed by the
+        module-level connection pool — callers must NOT create a new client per
+        call.  Pass the redis instance that was injected at service startup so
+        the pool is reused across all candle completions.
     """
+    if redis is None:
+        logger.warning(
+            "[CandleBridgeFix] publish_candle_sync called with redis=None — skipping push. "
+            "Pass a shared async Redis client to avoid connection pool exhaustion."
+        )
+        return
+
     try:
         loop = asyncio.get_running_loop()
     except RuntimeError:
@@ -108,16 +117,7 @@ def publish_candle_sync(
         return
 
     async def _do_push() -> None:
-        client = redis
-        if client is None:
-            try:
-                from infrastructure.redis_client import get_client
-
-                client = await get_client()
-            except Exception as exc:
-                logger.warning("[CandleBridgeFix] Cannot obtain Redis client: %s", exc)
-                return
-        await _push_candle_to_redis_safe(client, candle_dict)
+        await _push_candle_to_redis_safe(redis, candle_dict)
 
     task = loop.create_task(_do_push(), name="candle_bridge_push")
     _background_tasks.add(task)
