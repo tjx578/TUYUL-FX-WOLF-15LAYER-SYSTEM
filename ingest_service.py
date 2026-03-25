@@ -305,7 +305,7 @@ def _build_redis_client() -> RedisClient:
     pool = redis_asyncio.ConnectionPool.from_url(
         url,
         decode_responses=True,
-        max_connections=10,
+        max_connections=100,
         socket_timeout=socket_timeout,
         socket_connect_timeout=socket_timeout,
         socket_keepalive=True,
