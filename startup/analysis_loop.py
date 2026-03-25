@@ -496,10 +496,12 @@ async def analysis_loop(
                 if not symbols_to_run:
                     continue
 
+        cycle_start_time = time.time()
         results = await asyncio.gather(
             *(_analyze_pair(pair, pipeline) for pair in symbols_to_run),
             return_exceptions=True,
         )
+        verdicts_generated = 0
         for pair, result in zip(symbols_to_run, results, strict=False):
             if isinstance(result, Exception):
                 logger.error(f"[ERROR] {pair} | {result}")
@@ -512,6 +514,7 @@ async def analysis_loop(
             if result is None:
                 continue
 
+            verdicts_generated += 1
             _symbol_last_analysis_ts[pair] = time.time()
             if isinstance(result, dict):
                 synthesis: dict[str, Any] = dict(result.get("synthesis") or {})
@@ -521,6 +524,13 @@ async def analysis_loop(
                 coherence = _to_float(layers.get("L2_reflex_coherence"), 0.0)
                 emotion_delta = _to_float(discipline.get("polarity_deviation"), 0.0)
                 _symbol_reflex_inputs[pair] = (coherence, emotion_delta)
+
+        logger.info(
+            "[VerdictPath] cycle complete | pairs_analyzed=%d verdicts_generated=%d latency_ms=%.0f",
+            len(symbols_to_run),
+            verdicts_generated,
+            (time.time() - cycle_start_time) * 1000.0,
+        )
 
         if not _first_cycle_done:
             _first_cycle_done = True
