@@ -227,9 +227,10 @@ export function AccountsScreen() {
 
   const focus = useAccountFocusContract();
 
+  const safeAccounts = accounts ?? [];
   const criticalCount = (riskSnapshots ?? []).filter((s) => s.status === "CRITICAL").length;
   const drawerAccount = drawerAccountId
-    ? accounts.find((a) => a.account_id === drawerAccountId) ?? null
+    ? safeAccounts.find((a) => a.account_id === drawerAccountId) ?? null
     : null;
 
   const handleCreated = () => {
@@ -274,9 +275,9 @@ export function AccountsScreen() {
 
       <OrchestratorReadinessStrip />
 
-      {!isLoading && !isError && accounts.length > 0 && (
+      {!isLoading && !isError && safeAccounts.length > 0 && (
         <PortfolioSummaryStrip
-          accounts={accounts}
+          accounts={safeAccounts}
           totalUsable={totalUsableCapital}
           avgReadiness={avgReadinessScore}
         />
@@ -326,7 +327,7 @@ export function AccountsScreen() {
         </div>
       )}
 
-      {!isLoading && !isError && accounts.length === 0 && (
+      {!isLoading && !isError && safeAccounts.length === 0 && (
         <div className="panel" style={{ padding: "40px 20px", textAlign: "center" }}>
           <div style={{ fontSize: 14, color: "var(--text-secondary)", marginBottom: 8 }}>
             No capital accounts found
@@ -340,7 +341,7 @@ export function AccountsScreen() {
         </div>
       )}
 
-      {!isLoading && !isError && accounts.length > 0 && (
+      {!isLoading && !isError && safeAccounts.length > 0 && (
         <div
           style={{
             display: "grid",
@@ -350,7 +351,7 @@ export function AccountsScreen() {
           role="list"
           aria-label="Capital account cards"
         >
-          {accounts.map((account: Account) => {
+          {safeAccounts.map((account: Account) => {
             const snap = riskSnapshots?.find((s) => s.account_id === account.account_id);
             return (
               <AccountGridCard
