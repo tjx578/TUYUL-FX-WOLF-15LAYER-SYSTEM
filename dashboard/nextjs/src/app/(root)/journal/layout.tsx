@@ -1,11 +1,10 @@
-import type { Metadata } from "next";
+/**
+ * @deprecated CUTOVER-PHASE-9
+ * Metadata ownership moved to (control)/journal/layout.tsx.
+ * This directory has NO sub-pages — safe to delete in next cleanup pass.
+ */
 import type { PropsWithChildren } from "react";
 
-export const metadata: Metadata = {
-  title: "Operator Journal",
-  description: "Operator notes, intervention reasoning, and decision quality log.",
-};
-
-export default function OperatorJournalLayout({ children }: PropsWithChildren) {
+export default function DeprecatedJournalLayout({ children }: PropsWithChildren) {
   return <>{children}</>;
 }

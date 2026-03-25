@@ -1,11 +1,12 @@
-import type { Metadata } from "next";
+/**
+ * @deprecated CUTOVER-PHASE-9
+ * Metadata ownership moved to (control)/trades/layout.tsx.
+ * This layout is retained only because (root)/trades/signals/page.tsx
+ * (a redirect stub) still nests under it.
+ * DELETE this entire directory once trades/signals redirect is removed.
+ */
 import type { PropsWithChildren } from "react";
 
-export const metadata: Metadata = {
-  title: "Trade Desk",
-  description: "Full trade lifecycle — INTENDED → PENDING → OPEN → CLOSED.",
-};
-
-export default function TradeDeskLayout({ children }: PropsWithChildren) {
+export default function DeprecatedTradeDeskLayout({ children }: PropsWithChildren) {
   return <>{children}</>;
 }

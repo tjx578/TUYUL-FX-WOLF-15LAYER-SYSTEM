@@ -1,11 +1,10 @@
-import type { Metadata } from "next";
+/**
+ * @deprecated CUTOVER-PHASE-9
+ * Metadata ownership moved to (control)/accounts/layout.tsx.
+ * This directory has NO sub-pages — safe to delete in next cleanup pass.
+ */
 import type { PropsWithChildren } from "react";
 
-export const metadata: Metadata = {
-  title: "Capital Accounts",
-  description: "Capital deployment surface — equity, drawdown, and account readiness.",
-};
-
-export default function CapitalAccountsLayout({ children }: PropsWithChildren) {
+export default function DeprecatedAccountsLayout({ children }: PropsWithChildren) {
   return <>{children}</>;
 }
