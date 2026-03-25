@@ -1,6 +1,8 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+
 import { useSignalBoardData } from "../hooks/useSignalBoardData";
 import { useSignalBoardFilters } from "../hooks/useSignalBoardFilters";
 import { useSignalSelection } from "../hooks/useSignalSelection";
@@ -14,9 +16,23 @@ import { SignalEmptyState } from "./SignalEmptyState";
 import { TakeSignalDrawer } from "./TakeSignalDrawer";
 
 import { useCapitalDeployment, useAccountsRiskSnapshot } from "@/lib/api";
-import type { TakeSignalAccountOption, TakeSignalResponseVM } from "../api/signalActions.api";
+import type {
+    TakeSignalAccountOption,
+    TakeSignalResponseVM,
+} from "../api/signalActions.api";
+
+const QUERY_KEYS_TO_REFRESH = [
+    "/api/v1/verdict/all",
+    "/api/v1/accounts/capital-deployment",
+    "/api/v1/accounts/risk-snapshot",
+    "/api/v1/trades/active",
+    "/api/v1/journal/today",
+    "/api/v1/journal/weekly",
+    "/api/v1/journal/metrics",
+] as const;
 
 export function SignalBoardScreen() {
+    const queryClient = useQueryClient();
     const {
         signals,
         isLoading,
@@ -93,13 +109,14 @@ export function SignalBoardScreen() {
     const operatorId =
         process.env.NEXT_PUBLIC_DASHBOARD_OPERATOR_ID || "owner:dashboard";
 
-    const handleTakeSubmitted = (result: TakeSignalResponseVM) => {
-        console.log("Take signal submitted:", result);
-        // next step:
-        // - invalidate signals query
-        // - invalidate accounts query
-        // - invalidate risk query
-        // - invalidate trades / journal query
+    const handleTakeSubmitted = async (_result: TakeSignalResponseVM) => {
+        setIsTakeDrawerOpen(false);
+
+        await Promise.all(
+            QUERY_KEYS_TO_REFRESH.map((key) =>
+                queryClient.invalidateQueries({ queryKey: [key] }),
+            ),
+        );
     };
 
     if (isLoading) {
