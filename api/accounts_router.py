@@ -46,6 +46,9 @@ class AccountUpsertRequest(BaseModel):
     program_code: str | None = None
     phase_code: str | None = "funded"
     compliance_mode: bool = Field(default=True)
+    max_daily_dd_percent: float = Field(default=4.0, gt=0, le=100)
+    max_total_dd_percent: float = Field(default=8.0, gt=0, le=100)
+    max_concurrent_trades: int = Field(default=1, ge=1, le=100)
     reason: str = Field(..., min_length=1, max_length=200)
 
 
@@ -60,6 +63,8 @@ def _validate_compliance_pin_or_raise(*, compliance_mode: bool, x_action_pin: st
 
 
 def _validate_prop_limits_or_raise(req: AccountUpsertRequest) -> None:
+    if not req.prop_firm or not req.prop_firm_code:  # noqa: W191
+        return  # noqa: W191
     ok, reason = validate_prop_sovereignty(  # noqa: W191
         prop_firm_code=req.prop_firm_code,  # noqa: W191
         max_daily_dd_percent=req.max_daily_dd_percent,  # noqa: W191
@@ -273,6 +278,7 @@ async def create_account(
     _validate_compliance_pin_or_raise(compliance_mode=req.compliance_mode, x_action_pin=x_action_pin)
 
     account_id = f"ACC-{uuid.uuid4().hex[:10].upper()}"
+    rules = None
     resolved_rules_snapshot = None
     # If prop_firm, resolve rules and validate
     if req.prop_firm and req.prop_firm_code and req.program_code:
@@ -283,16 +289,22 @@ async def create_account(
             resolved_rules_snapshot = rules.__dict__
         except Exception as exc:
             raise HTTPException(status_code=422, detail=f"Failed to resolve prop firm rules: {exc}") from exc
-    # Backward compatible for manual/non-prop-firm
+    # Use resolved prop rules when available, otherwise fall back to request values
     account = Account(
         account_id=account_id,
         name=req.account_name,
         balance=req.current_balance,
         equity=req.equity,
         prop_firm=req.prop_firm,
-        max_daily_dd_percent=getattr(rules, "max_daily_dd_percent", None) if req.prop_firm else None,
-        max_total_dd_percent=getattr(rules, "max_total_dd_percent", None) if req.prop_firm else None,
-        max_concurrent_trades=getattr(rules, "max_concurrent_trades", 1) if req.prop_firm else 1,
+        max_daily_dd_percent=getattr(rules, "max_daily_dd_percent", req.max_daily_dd_percent)
+        if resolved_rules_snapshot
+        else req.max_daily_dd_percent,
+        max_total_dd_percent=getattr(rules, "max_total_dd_percent", req.max_total_dd_percent)
+        if resolved_rules_snapshot
+        else req.max_total_dd_percent,
+        max_concurrent_trades=getattr(rules, "max_concurrent_trades", req.max_concurrent_trades)
+        if resolved_rules_snapshot
+        else req.max_concurrent_trades,
     )
     await _accounts.upsert_account_async(account)
 
@@ -315,6 +327,9 @@ async def create_account(
         "phase_code": req.phase_code or "funded",
         "resolved_rules_snapshot": resolved_rules_snapshot,
         "compliance_mode": int(bool(req.compliance_mode)),
+        "max_daily_dd_percent": account.max_daily_dd_percent,
+        "max_total_dd_percent": account.max_total_dd_percent,
+        "max_concurrent_trades": account.max_concurrent_trades,
         "updated_at": datetime.now(UTC).isoformat(),
     }
     await client.hset(f"ACCOUNT:{account_id}", mapping=mapping)
@@ -366,8 +381,14 @@ async def update_account(
         "commission_model": req.commission_model,  # noqa: W191
         "notes": req.notes or "",  # noqa: W191
         "data_source": req.data_source,  # noqa: W191
-        "prop_firm_code": req.prop_firm_code.strip().lower(),  # noqa: W191
+        "prop_firm": int(bool(req.prop_firm)),  # noqa: W191
+        "prop_firm_code": (req.prop_firm_code or "").strip().lower(),  # noqa: W191
+        "program_code": req.program_code or "",  # noqa: W191
+        "phase_code": req.phase_code or "funded",  # noqa: W191
         "compliance_mode": int(bool(req.compliance_mode)),  # noqa: W191
+        "max_daily_dd_percent": req.max_daily_dd_percent,  # noqa: W191
+        "max_total_dd_percent": req.max_total_dd_percent,  # noqa: W191
+        "max_concurrent_trades": req.max_concurrent_trades,  # noqa: W191
         "updated_at": datetime.now(UTC).isoformat(),  # noqa: W191
     }  # noqa: W191
     await client.hset(f"ACCOUNT:{account_id}", mapping=mapping)  # noqa: W191

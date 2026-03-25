@@ -247,6 +247,10 @@ export interface CreateAccountRequest {
   notes: string;
   data_source: string;
   prop_firm: boolean;
+  prop_firm_code: string | null;
+  program_code: string | null;
+  phase_code: string | null;
+  compliance_mode: boolean;
   max_daily_dd_percent: number;
   max_total_dd_percent: number;
   max_concurrent_trades: number;
