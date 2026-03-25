@@ -6,6 +6,7 @@ Validates FIX-4: set_verdict now writes to Redis Stream in addition to pub/sub.
 from __future__ import annotations
 
 import json
+import unittest.mock
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -67,8 +68,9 @@ class TestSetVerdictStream:
             # Should not raise
             set_verdict("EURUSD", {"verdict": "EXECUTE"})
 
-            # Cache was still written
-            mock_redis.set.assert_called_once()
+            # Cache was still written (main key + meta key)
+            assert mock_redis.set.call_count >= 1
+            mock_redis.set.assert_any_call("L12:VERDICT:EURUSD", unittest.mock.ANY, ex=unittest.mock.ANY)
             # Pub/sub was still attempted
             mock_redis.publish.assert_called_once()
 
@@ -81,8 +83,9 @@ class TestSetVerdictStream:
             # Should not raise
             set_verdict("EURUSD", {"verdict": "EXECUTE"})
 
-            # Cache and stream were still written
-            mock_redis.set.assert_called_once()
+            # Cache and stream were still written (main key + meta key)
+            assert mock_redis.set.call_count >= 1
+            mock_redis.set.assert_any_call("L12:VERDICT:EURUSD", unittest.mock.ANY, ex=unittest.mock.ANY)
             mock_redis.xadd.assert_called_once()
 
 

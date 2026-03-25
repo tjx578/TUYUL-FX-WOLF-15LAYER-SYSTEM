@@ -167,13 +167,15 @@ def _build_verdict_cache_payload(pair: str, result: dict[str, Any]) -> dict[str,
 
     _exec_dir = execution.get("direction")
     _raw_direction = _exec_dir if _exec_dir is not None else l12.get("direction")
+    # Normalize direction: only BUY/SELL are valid, everything else → None
+    _normalized_direction: str | None = _raw_direction if _raw_direction in ("BUY", "SELL") else None
     payload: dict[str, Any] = {
         "symbol": pair,
         "signal_id": str(l12.get("signal_id") or f"SIG-{pair}-{uuid4().hex[:12].upper()}"),
         "verdict": str(l12.get("verdict") or "HOLD"),
         "confidence": confidence,
         "wolf_status": str(l12.get("wolf_status") or "NO_HUNT"),
-        "direction": execution.get("direction") or l12.get("direction") or "HOLD",
+        "direction": _normalized_direction,
         "scores": scores,
         "gates": dict(l12.get("gates") or {}),
         "layers": layers,

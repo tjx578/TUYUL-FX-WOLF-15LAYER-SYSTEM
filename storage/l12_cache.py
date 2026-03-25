@@ -33,7 +33,7 @@ def set_verdict(pair: str, data: dict[str, Any]) -> None:
     # Inject server timestamp for staleness detection
     data_with_ts = {**data, "_cached_at": time.time()}
     redis_client.set(KEY_PREFIX + pair, json.dumps(data_with_ts), ex=VERDICT_TTL_SEC)
-    logger.info("[VerdictPath] verdict persisted | pair={} key={} ttl={}s", pair, KEY_PREFIX + pair, VERDICT_TTL_SEC)
+    logger.debug("[VerdictPath] verdict persisted | pair={} key={} ttl={}s", pair, KEY_PREFIX + pair, VERDICT_TTL_SEC)
     VERDICT_PATH_EVENT_TOTAL.labels(event="verdict_persisted", symbol=pair, status="ok").inc()
     # Write slim metadata key for rapid health inspection (L12:VERDICT_META:<pair>)
     try:
@@ -61,7 +61,7 @@ def set_verdict(pair: str, data: dict[str, Any]) -> None:
             maxlen=VERDICT_STREAM_MAXLEN,
             approximate=True,
         )
-        logger.info("[VerdictPath] verdict stream published | pair={} stream={}", pair, VERDICT_STREAM)
+        logger.debug("[VerdictPath] verdict stream published | pair={} stream={}", pair, VERDICT_STREAM)
         VERDICT_PATH_EVENT_TOTAL.labels(event="verdict_stream_published", symbol=pair, status="ok").inc()
     # Best-effort pub/sub for backward compat (ephemeral, may be lost)
     try:
@@ -88,7 +88,7 @@ async def set_verdict_async(pair: str, data: dict[str, Any]) -> None:
     data_with_ts = {**data, "_cached_at": time.time()}
     client = await get_client()
     await client.set(KEY_PREFIX + pair, json.dumps(data_with_ts), ex=VERDICT_TTL_SEC)
-    logger.info("[VerdictPath] verdict persisted | pair={} key={} ttl={}s", pair, KEY_PREFIX + pair, VERDICT_TTL_SEC)
+    logger.debug("[VerdictPath] verdict persisted | pair={} key={} ttl={}s", pair, KEY_PREFIX + pair, VERDICT_TTL_SEC)
     VERDICT_PATH_EVENT_TOTAL.labels(event="verdict_persisted", symbol=pair, status="ok").inc()
     # Write slim metadata key for rapid health inspection (L12:VERDICT_META:<pair>)
     try:
@@ -116,7 +116,7 @@ async def set_verdict_async(pair: str, data: dict[str, Any]) -> None:
             maxlen=VERDICT_STREAM_MAXLEN,
             approximate=True,
         )
-        logger.info("[VerdictPath] verdict stream published | pair={} stream={}", pair, VERDICT_STREAM)
+        logger.debug("[VerdictPath] verdict stream published | pair={} stream={}", pair, VERDICT_STREAM)
         VERDICT_PATH_EVENT_TOTAL.labels(event="verdict_stream_published", symbol=pair, status="ok").inc()
     # Best-effort pub/sub for backward compat
     try:
