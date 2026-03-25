@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import { useCapitalDeployment, useAccountsRiskSnapshot } from "@/lib/api";
+import { useCapitalDeployment, useAccountsRiskSnapshot } from "@/features/accounts/api/accounts.api";
 import AccountReadinessBadge from "@/components/AccountReadinessBadge";
 import AccountDetailDrawer from "@/components/AccountDetailDrawer";
 import CreateAccountModal from "@/components/CreateAccountModal";

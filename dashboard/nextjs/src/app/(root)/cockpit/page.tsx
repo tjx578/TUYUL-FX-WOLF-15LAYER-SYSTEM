@@ -21,12 +21,9 @@ import {
   Card, Bar, Ring, StreamBadge,
 } from "@/components/ui";
 import { PipelinePanel } from "@/components/panels/PipelinePanel";
-import {
-  useAccounts,
-  useAccountsRiskSnapshot,
-  useContext as useMarketContext,
-  useAllVerdicts,
-} from "@/lib/api";
+import { useAccounts, useAccountsRiskSnapshot } from "@/features/accounts/api/accounts.api";
+import { useContext as useMarketContext } from "@/shared/api/system.api";
+import { useAllVerdicts } from "@/features/signals/api/verdicts.api";
 import { useClock } from "@/hooks/useClock";
 import type { Account } from "@/types";
 import { formatNumber } from "@/lib/formatters";

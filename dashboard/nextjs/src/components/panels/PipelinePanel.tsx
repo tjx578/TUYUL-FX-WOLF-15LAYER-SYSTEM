@@ -8,7 +8,7 @@
 
 import { T, RADIUS, ZONE_COLORS, FONT_MONO, FONT_DISPLAY } from "@/lib/tokens";
 import { M, L, Card } from "@/components/ui";
-import { usePipeline } from "@/lib/api";
+import { usePipeline } from "@/shared/api/system.api";
 
 // ── Types ─────────────────────────────────────────────────────
 export interface PipelineLayer {

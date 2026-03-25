@@ -4,8 +4,7 @@
 // TUYUL FX Wolf-15 — SystemHealth widget
 // ============================================================
 
-import { useHealth } from "@/lib/api";
-import { useOrchestratorState } from "@/lib/api";
+import { useHealth, useOrchestratorState } from "@/shared/api/system.api";
 import type { FeedStatus, FreshnessClassLabel } from "@/types";
 
 /** Map backend internal feed_status to the approved FreshnessClass label.

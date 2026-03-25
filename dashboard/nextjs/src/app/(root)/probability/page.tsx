@@ -8,7 +8,7 @@
 import {
   useProbabilitySummary,
   useProbabilityCalibration,
-} from "@/lib/api";
+} from "@/shared/api/market.api";
 
 const GRADE_COLOR: Record<string, string> = {
   A: "var(--green)",
@@ -134,8 +134,8 @@ export default function ProbabilityPage() {
                         summary.avg_mc_win_prob >= 0.6
                           ? "var(--green)"
                           : summary.avg_mc_win_prob >= 0.4
-                          ? "var(--yellow)"
-                          : "var(--red)",
+                            ? "var(--yellow)"
+                            : "var(--red)",
                     }}
                   />
                 </div>

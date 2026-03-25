@@ -1,6 +1,6 @@
 "use client";
 
-import { confirmTrade } from "@/lib/api";
+import { confirmTrade } from "@/features/trades/api/tradesQuery.api";
 import { useProtectedMutation } from "./useProtectedMutation";
 
 export function useConfirmTradeMutation(accountId?: string, tradeId?: string) {

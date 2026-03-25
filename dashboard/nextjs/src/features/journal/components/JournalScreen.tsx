@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { useJournalToday, useJournalWeekly, useJournalMetrics } from "@/lib/api";
+import { useJournalToday, useJournalWeekly, useJournalMetrics } from "@/features/journal/api/journal.api";
 import PageComplianceBanner from "@/components/feedback/PageComplianceBanner";
 import { JournalMetricsCard, JournalTimeline } from "@/components/JournalMetrics";
 import { useJournalFocusContract } from "../hooks/useJournalFocusContract";
@@ -55,9 +55,9 @@ export function JournalScreen() {
 
   const todayView = today
     ? {
-        ...today,
-        entries: filteredTodayEntries,
-      }
+      ...today,
+      entries: filteredTodayEntries,
+    }
     : null;
 
   return (

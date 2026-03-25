@@ -1,7 +1,8 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { API_ENDPOINTS, useHealth } from "@/lib/api";
+import { API_ENDPOINTS } from "@/shared/api/client";
+import { useHealth } from "@/shared/api/system.api";
 import { bearerHeader } from "@/lib/auth";
 
 const TABS = [

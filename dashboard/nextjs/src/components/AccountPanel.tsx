@@ -8,7 +8,7 @@
 
 import { useState } from "react";
 import type { Account, AccountCreate } from "@/types";
-import { createAccount } from "@/lib/api";
+import { createAccount } from "@/features/accounts/api/accounts.api";
 import Panel from "@/components/ui/Panel";
 import StatusBadge from "@/components/ui/StatusBadge";
 import { useLivePulse } from "@/hooks/useLivePulse";

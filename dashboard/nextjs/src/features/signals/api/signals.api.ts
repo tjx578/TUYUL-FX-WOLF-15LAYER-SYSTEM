@@ -1,4 +1,5 @@
-import { useAllVerdicts, useHealth } from "@/lib/api";
+import { useAllVerdicts } from "@/features/signals/api/verdicts.api";
+import { useHealth } from "@/shared/api/system.api";
 
 const _rawRefreshMs = parseInt(process.env.NEXT_PUBLIC_SIGNAL_REFRESH_INTERVAL_MS ?? "", 10);
 const SIGNAL_REFRESH_INTERVAL_MS =
