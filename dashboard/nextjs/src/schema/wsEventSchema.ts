@@ -52,8 +52,6 @@ export const SystemStatusUpdatedEventSchema = z.object({
   payload: SystemStatusSchema,
 });
 
-
-
 // Domain-specific WS endpoint events (prices, risk)
 export const PriceUpdatedEventSchema = z.object({
   type: z.literal("PriceUpdated"),

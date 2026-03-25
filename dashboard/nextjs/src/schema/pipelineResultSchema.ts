@@ -19,10 +19,6 @@ export const PipelineResultSchema = z.object({
 
 export type PipelineResult = z.infer<typeof PipelineResultSchema>;
 
-/**
- * Schema for the raw verdict payload sent by the backend on /ws/verdict.
- * verdict.update → { pair, verdict: { ...raw L12 verdict data } }
- */
 export const VerdictUpdatedPayloadSchema = z
   .object({
     pair: z.string().min(1),
@@ -32,9 +28,6 @@ export const VerdictUpdatedPayloadSchema = z
 
 export type VerdictUpdatedPayload = z.infer<typeof VerdictUpdatedPayloadSchema>;
 
-/**
- * Schema for verdict.snapshot → { pair, verdicts: Record<symbol, verdict> }
- */
 export const VerdictSnapshotPayloadSchema = z
   .object({
     pair: z.string().nullable().optional(),
@@ -44,9 +37,6 @@ export const VerdictSnapshotPayloadSchema = z
 
 export type VerdictSnapshotPayload = z.infer<typeof VerdictSnapshotPayloadSchema>;
 
-/**
- * Schema for pipeline.update → { pair, pipeline: { ...UI-shaped data } }
- */
 export const PipelineUpdatedPayloadSchema = z
   .object({
     pair: z.string().min(1),
