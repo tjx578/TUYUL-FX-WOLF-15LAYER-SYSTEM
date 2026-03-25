@@ -14,6 +14,8 @@ import AccountDetailDrawer from "@/components/AccountDetailDrawer";
 import CreateAccountModal from "@/components/CreateAccountModal";
 import OrchestratorReadinessStrip from "@/components/OrchestratorReadinessStrip";
 import PageComplianceBanner from "@/components/feedback/PageComplianceBanner";
+import { useAccountsBridge } from "@/features/accounts/hooks/useAccountsBridge";
+import { AccountsBridgeBanner } from "@/features/accounts/components/AccountsBridgeBanner";
 import type { Account } from "@/types";
 import { formatNumber } from "@/lib/formatters";
 
@@ -94,10 +96,12 @@ function AccountGridCard({
   account,
   riskSnap,
   onClick,
+  highlighted,
 }: {
   account: Account;
   riskSnap?: { status: string; circuit_breaker: boolean };
   onClick: () => void;
+  highlighted?: boolean;
 }) {
   const readiness = account.readiness_score ?? 0;
   const usable = account.usable_capital ?? 0;
@@ -107,7 +111,18 @@ function AccountGridCard({
       role="listitem"
       tabIndex={0}
       className="card cursor-pointer transition-all duration-200 hover:border-[var(--blue)]"
-      style={{ padding: 16, display: "flex", flexDirection: "column", gap: 10 }}
+      style={{
+        padding: 16,
+        display: "flex",
+        flexDirection: "column",
+        gap: 10,
+        ...(highlighted
+          ? {
+            borderColor: "rgba(0,230,118,0.45)",
+            boxShadow: "0 0 12px rgba(0,230,118,0.12)",
+          }
+          : {}),
+      }}
       onClick={onClick}
       onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onClick(); } }}
       aria-label={`Account ${account.account_name}, ${account.broker}, balance $${formatNumber(account.balance)}`}
@@ -255,6 +270,7 @@ export default function CapitalAccountsPage() {
     mutate,
   } = useCapitalDeployment();
   const { data: riskSnapshots } = useAccountsRiskSnapshot();
+  const { focus: accountFocus } = useAccountsBridge();
   const [showCreate, setShowCreate] = useState(false);
   const [drawerAccountId, setDrawerAccountId] = useState<string | null>(null);
 
@@ -303,6 +319,8 @@ export default function CapitalAccountsPage() {
       </div>
 
       <OrchestratorReadinessStrip />
+
+      <AccountsBridgeBanner focus={accountFocus} />
 
       {/* ── Portfolio Summary Strip ── */}
       {!isLoading && !isError && accounts.length > 0 && (
@@ -412,6 +430,7 @@ export default function CapitalAccountsPage() {
                 account={account}
                 riskSnap={snap}
                 onClick={() => setDrawerAccountId(account.account_id)}
+                highlighted={accountFocus?.accountId === account.account_id}
               />
             );
           })}

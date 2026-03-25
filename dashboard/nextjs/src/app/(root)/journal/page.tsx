@@ -10,6 +10,8 @@ import { useState } from "react";
 import { useJournalToday, useJournalWeekly, useJournalMetrics } from "@/lib/api";
 import PageComplianceBanner from "@/components/feedback/PageComplianceBanner";
 import { JournalMetricsCard, JournalTimeline } from "@/components/JournalMetrics";
+import { useJournalBridge } from "@/features/journal/hooks/useJournalBridge";
+import { JournalBridgeBanner } from "@/features/journal/components/JournalBridgeBanner";
 
 // ── Summary KPI ───────────────────────────────────────────────
 
@@ -29,9 +31,10 @@ function JournalKpi({ label, value, color }: { label: string; value: string | nu
 // ── Main page ─────────────────────────────────────────────────
 
 export default function JournalPage() {
-  const { data: today,   isLoading: todayLoading } = useJournalToday();
-  const { data: weekly,  isLoading: weeklyLoading } = useJournalWeekly();
+  const { data: today, isLoading: todayLoading } = useJournalToday();
+  const { data: weekly, isLoading: weeklyLoading } = useJournalWeekly();
   const { data: metrics } = useJournalMetrics();
+  const { focus: journalFocus } = useJournalBridge();
   const [view, setView] = useState<"today" | "weekly">("today");
 
   return (
@@ -56,6 +59,8 @@ export default function JournalPage() {
           J1-J4 entry logs — wins, losses, rejections, compliance trace
         </p>
       </div>
+
+      <JournalBridgeBanner focus={journalFocus} />
 
       {/* ── KPI summary from metrics ── */}
       {metrics && (
@@ -106,8 +111,8 @@ export default function JournalPage() {
                   fontSize: 11,
                   padding: "5px 14px",
                   borderColor: view === v ? "var(--accent)" : "var(--border-default)",
-                  color:       view === v ? "var(--accent)" : "var(--text-muted)",
-                  background:  view === v ? "var(--accent-muted)" : "transparent",
+                  color: view === v ? "var(--accent)" : "var(--text-muted)",
+                  background: view === v ? "var(--accent-muted)" : "transparent",
                 }}
                 onClick={() => setView(v)}
                 aria-pressed={view === v}

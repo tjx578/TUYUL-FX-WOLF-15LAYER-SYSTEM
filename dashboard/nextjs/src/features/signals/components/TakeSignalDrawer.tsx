@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { SignalViewModel } from "../model/signal.types";
 import type { TakeSignalAccountOption, TakeSignalResponseVM } from "../api/signalActions.api";
 import { useTakeSignalFlow } from "../hooks/useTakeSignalFlow";
 import { EligibleAccountsPanel } from "./EligibleAccountsPanel";
 import { RiskPreviewPanel } from "./RiskPreviewPanel";
+import type { PostTakeRouteTarget } from "@/shared/contracts/lifecycleNavigation";
 
 interface Props {
     open: boolean;
@@ -13,7 +14,10 @@ interface Props {
     accounts: TakeSignalAccountOption[];
     operatorId: string;
     onClose: () => void;
-    onSubmitted?: (result: TakeSignalResponseVM) => void;
+    onSubmitted?: (
+        result: TakeSignalResponseVM,
+        target: PostTakeRouteTarget,
+    ) => void;
 }
 
 export function TakeSignalDrawer({
@@ -24,6 +28,8 @@ export function TakeSignalDrawer({
     onClose,
     onSubmitted,
 }: Props) {
+    const [target, setTarget] = useState<PostTakeRouteTarget>("trades");
+
     const selectableAccounts = useMemo(
         () =>
             accounts.map((a) => ({
@@ -47,7 +53,7 @@ export function TakeSignalDrawer({
         signal,
         accounts: selectableAccounts,
         operatorId,
-        onSubmitted,
+        onSubmitted: (result) => onSubmitted?.(result, target),
     });
 
     useEffect(() => {
@@ -135,7 +141,33 @@ export function TakeSignalDrawer({
                     <div><strong>SL</strong>: {signal.stopLoss ?? "—"}</div>
                     <div><strong>TP1</strong>: {signal.takeProfit1 ?? "—"}</div>
                     <div><strong>RR</strong>: {signal.riskRewardRatio ? `1:${signal.riskRewardRatio.toFixed(2)}` : "—"}</div>
+                    <div><strong>Signal ID</strong>: {signal.signalId ?? "—"}</div>
                     <div><strong>Expires</strong>: {signal.expiresAt ?? "—"}</div>
+                </div>
+
+                <div style={{ display: "grid", gap: 8 }}>
+                    <div style={{ fontSize: 13, fontWeight: 700 }}>After submit</div>
+                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                        {(["signals", "trades", "accounts"] as const).map((value) => (
+                            <button
+                                key={value}
+                                type="button"
+                                onClick={() => setTarget(value)}
+                                style={{
+                                    padding: "8px 12px",
+                                    borderRadius: 10,
+                                    border: target === value
+                                        ? "1px solid var(--accent)"
+                                        : "1px solid rgba(255,255,255,0.12)",
+                                    background: target === value ? "rgba(0,229,255,0.08)" : "transparent",
+                                    color: "inherit",
+                                    cursor: "pointer",
+                                }}
+                            >
+                                Go to /{value}
+                            </button>
+                        ))}
+                    </div>
                 </div>
 
                 <div style={{ display: "grid", gap: 8 }}>
