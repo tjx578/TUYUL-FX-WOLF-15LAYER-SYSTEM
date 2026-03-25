@@ -1,7 +1,13 @@
 import React from "react";
 import { describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
-import CapitalAccountsPage from "@/app/(root)/accounts/page";
+import CapitalAccountsPage from "@/app/(control)/accounts/page";
+
+vi.mock("next/navigation", () => ({
+  useSearchParams: () => new URLSearchParams(),
+  useRouter: () => ({ push: vi.fn(), replace: vi.fn() }),
+  usePathname: () => "/accounts",
+}));
 
 vi.mock("@/lib/api", () => ({
   useCapitalDeployment: () => ({

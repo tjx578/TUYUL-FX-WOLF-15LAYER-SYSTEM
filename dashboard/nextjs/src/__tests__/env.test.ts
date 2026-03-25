@@ -9,6 +9,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import type { ConfigError } from "@/lib/env";
 
 // ── Env-var-dependent module: re-import per test ─────────────
 
@@ -202,7 +203,7 @@ describe("validateEnv", () => {
             thrownErr = e;
         }
         expect(thrownErr).toBeInstanceOf(mod.ConfigError);
-        expect((thrownErr as mod.ConfigError).code).toBe("ENV_WS_URL_HAS_PATH");
+        expect((thrownErr as ConfigError).code).toBe("ENV_WS_URL_HAS_PATH");
 
         Object.defineProperty(globalThis, "window", { value: originalWindow, writable: true, configurable: true });
     });
@@ -224,7 +225,7 @@ describe("validateEnv", () => {
             thrownErr = e;
         }
         expect(thrownErr).toBeInstanceOf(mod.ConfigError);
-        expect((thrownErr as mod.ConfigError).code).toBe("ENV_WS_URL_HAS_PATH");
+        expect((thrownErr as ConfigError).code).toBe("ENV_WS_URL_HAS_PATH");
 
         Object.defineProperty(globalThis, "window", { value: originalWindow, writable: true, configurable: true });
     });
