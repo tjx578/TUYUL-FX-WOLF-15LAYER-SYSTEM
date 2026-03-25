@@ -41,7 +41,6 @@ const EVENT_TYPE_MAP: Record<string, string> = {
   "execution.state": "ExecutionStateUpdated",
   // ── System ──
   "system.status": "SystemStatusUpdated",
-  "preferences.updated": "PreferencesUpdated",
   // ── Signals / Trades (not yet in WsEventSchema — handled by onRawMessage) ──
   "signals.update": "SignalUpdated",
   "trade.snapshot": "TradeSnapshot",

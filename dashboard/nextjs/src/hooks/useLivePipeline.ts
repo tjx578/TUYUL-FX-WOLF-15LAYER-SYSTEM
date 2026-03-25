@@ -23,7 +23,6 @@ import { useEffect, useRef } from "react";
 import { fetchLatestPipelineResult } from "@/services/pipelineService";
 import { subscribe, getTransport } from "@/lib/realtime/multiplexer";
 import { useAccountStore } from "@/store/useAccountStore";
-import { usePreferencesStore } from "@/store/usePreferencesStore";
 import { useSystemStore } from "@/store/useSystemStore";
 
 interface UseLivePipelineOptions {
@@ -72,7 +71,6 @@ const toFreshnessState = (result?: Record<string, unknown>): FreshnessStateUI =>
 
 export function useLivePipeline(options: UseLivePipelineOptions = {}) {
   const { setLatestPipelineResult, updateTrade } = useAccountStore();
-  const setPreferences = usePreferencesStore((s) => s.setPreferences);
   const setComplianceState = useSystemStore((s) => s.setComplianceState);
   const setWsStatus = useSystemStore((s) => s.setWsStatus);
   const setSystem = useSystemStore((s) => s.setSystem);
@@ -98,10 +96,6 @@ export function useLivePipeline(options: UseLivePipelineOptions = {}) {
     trade: Trade;
   }
 
-  interface PreferencesPayload {
-    [key: string]: unknown;
-  }
-
   interface PipelineEventPayload {
     symbol: string;
     verdict: string;
@@ -117,8 +111,8 @@ export function useLivePipeline(options: UseLivePipelineOptions = {}) {
   type TransportType = "WS" | "SSE" | "REST";
 
   interface StreamEvent {
-    type: "PipelineResultUpdated" | "PipelineUpdated" | "ExecutionStateUpdated" | "PreferencesUpdated";
-    payload?: PipelineResult | PipelineEventPayload | ExecutionStatePayload | PreferencesPayload;
+    type: "PipelineResultUpdated" | "PipelineUpdated" | "ExecutionStateUpdated";
+    payload?: PipelineResult | PipelineEventPayload | ExecutionStatePayload;
   }
 
   interface SubscribeOptions {
@@ -274,8 +268,7 @@ export function useLivePipeline(options: UseLivePipelineOptions = {}) {
       filter: (e) =>
         e.type === "PipelineResultUpdated" ||
         e.type === "PipelineUpdated" ||
-        e.type === "ExecutionStateUpdated" ||
-        e.type === "PreferencesUpdated",
+        e.type === "ExecutionStateUpdated",
       onEvent: (event) => {
         if (!mountedRef.current) return;
 
@@ -304,9 +297,6 @@ export function useLivePipeline(options: UseLivePipelineOptions = {}) {
           updateTrade(event.payload.trade);
         }
 
-        if (event.type === "PreferencesUpdated" && event.payload) {
-          setPreferences(event.payload);
-        }
       },
       onStatusChange: (status) => {
         setWsStatus(status);
