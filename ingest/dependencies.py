@@ -26,7 +26,7 @@ from ingest.spread_estimator import estimate_spread
 from ingest.tick_dlq import get_dlq
 
 if TYPE_CHECKING:
-    from collections.abc import Awaitable, Callable
+    from collections.abc import Awaitable, Callable, Coroutine
 
 logger = logging.getLogger(__name__)
 
