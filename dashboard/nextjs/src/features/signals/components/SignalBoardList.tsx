@@ -39,6 +39,12 @@ export function SignalBoardList({ signals, selectedId, onSelect }: Props) {
                         RR: {signal.riskRewardRatio ? `1:${signal.riskRewardRatio.toFixed(2)}` : "—"} •
                         Entry: {signal.entryPrice ?? "—"} • SL: {signal.stopLoss ?? "—"}
                     </div>
+
+                    {signal.optimisticTakeStatus && signal.optimisticTakeStatus !== "IDLE" && (
+                        <div style={{ fontSize: 11, marginTop: 6, color: "var(--accent)" }}>
+                            {signal.optimisticTakeStatus === "SUBMITTING" ? "TAKE SUBMITTING..." : "TAKE SUBMITTED"}
+                        </div>
+                    )}
                 </button>
             ))}
         </div>

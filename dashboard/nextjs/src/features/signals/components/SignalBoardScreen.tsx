@@ -53,6 +53,8 @@ export function SignalBoardScreen() {
         selectedId,
         setSelectedId,
         selectedSignal,
+        enrichedSignals,
+        setOptimisticStatus,
     } = useSignalSelection(filteredSignals);
 
     const { data: accountsData } = useCapitalDeployment();
@@ -112,6 +114,10 @@ export function SignalBoardScreen() {
         target: PostTakeRouteTarget,
     ) => {
         setIsTakeDrawerOpen(false);
+
+        if (selectedSignal?.id) {
+            setOptimisticStatus(selectedSignal.id, "SUBMITTED");
+        }
 
         await invalidateAfterTakeSignal(queryClient);
 
@@ -179,7 +185,7 @@ export function SignalBoardScreen() {
                         }}
                     >
                         <SignalBoardList
-                            signals={filteredSignals}
+                            signals={enrichedSignals}
                             selectedId={selectedId}
                             onSelect={setSelectedId}
                         />
