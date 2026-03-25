@@ -1,11 +1,14 @@
 "use client";
 
+import type { JournalFocusContract } from "../model/journal.types";
+
 interface Props {
-    accountId: string | null;
-    signalId: string | null;
+    focus: JournalFocusContract | null;
 }
 
-export function JournalBridgeBanner({ accountId, signalId }: Props) {
+export function JournalBridgeBanner({ focus }: Props) {
+    if (!focus) return null;
+
     return (
         <div
             style={{
@@ -16,9 +19,10 @@ export function JournalBridgeBanner({ accountId, signalId }: Props) {
                 fontSize: 13,
             }}
         >
-            Viewing journal in lifecycle context
-            {accountId ? ` \u2022 accountId=${accountId}` : ""}
-            {signalId ? ` \u2022 signalId=${signalId}` : ""}
+            Journal in {focus.filterMode} mode
+            {focus.accountId ? ` \u2022 accountId=${focus.accountId}` : ""}
+            {focus.signalId ? ` \u2022 signalId=${focus.signalId}` : ""}
+            {focus.takeId ? ` \u2022 takeId=${focus.takeId}` : ""}
         </div>
     );
 }

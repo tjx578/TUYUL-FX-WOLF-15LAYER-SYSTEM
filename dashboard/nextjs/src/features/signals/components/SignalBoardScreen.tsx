@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 
 import { useSignalBoardData } from "../hooks/useSignalBoardData";
@@ -16,22 +17,19 @@ import { SignalEmptyState } from "./SignalEmptyState";
 import { TakeSignalDrawer } from "./TakeSignalDrawer";
 
 import { useCapitalDeployment, useAccountsRiskSnapshot } from "@/lib/api";
+import { invalidateAfterTakeSignal } from "@/shared/api/invalidation";
+import { pushToast } from "@/shared/ui/toastBus";
+import {
+    buildLifecycleNavigationQuery,
+    type PostTakeRouteTarget,
+} from "@/shared/contracts/lifecycleNavigation";
 import type {
     TakeSignalAccountOption,
     TakeSignalResponseVM,
 } from "../api/signalActions.api";
 
-const QUERY_KEYS_TO_REFRESH = [
-    "/api/v1/verdict/all",
-    "/api/v1/accounts/capital-deployment",
-    "/api/v1/accounts/risk-snapshot",
-    "/api/v1/trades/active",
-    "/api/v1/journal/today",
-    "/api/v1/journal/weekly",
-    "/api/v1/journal/metrics",
-] as const;
-
 export function SignalBoardScreen() {
+    const router = useRouter();
     const queryClient = useQueryClient();
     const {
         signals,
@@ -109,14 +107,34 @@ export function SignalBoardScreen() {
     const operatorId =
         process.env.NEXT_PUBLIC_DASHBOARD_OPERATOR_ID || "owner:dashboard";
 
-    const handleTakeSubmitted = async (_result: TakeSignalResponseVM) => {
+    const handleTakeSubmitted = async (
+        result: TakeSignalResponseVM,
+        target: PostTakeRouteTarget,
+    ) => {
         setIsTakeDrawerOpen(false);
 
-        await Promise.all(
-            QUERY_KEYS_TO_REFRESH.map((key) =>
-                queryClient.invalidateQueries({ queryKey: [key] }),
-            ),
-        );
+        await invalidateAfterTakeSignal(queryClient);
+
+        pushToast({
+            level: "success",
+            title: "Take signal submitted",
+            message: `takeId=${result.takeId} • account=${result.accountId} • status=${result.status}`,
+        });
+
+        if (target === "signals") {
+            return;
+        }
+
+        const navQuery = buildLifecycleNavigationQuery({
+            takeId: result.takeId,
+            signalId: result.signalId,
+            accountId: result.accountId,
+            sourcePage: "signals",
+            target,
+            ts: Date.now(),
+        });
+
+        router.push(`/${target}?${navQuery}`);
     };
 
     if (isLoading) {
