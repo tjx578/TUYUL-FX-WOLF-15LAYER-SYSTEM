@@ -16,8 +16,6 @@ from typing import TYPE_CHECKING
 from loguru import logger
 
 if TYPE_CHECKING:
-    from redis.asyncio import Redis as AsyncRedis
-
     from context.live_context_bus import LiveContextBus
 
 __all__ = ["seed_candles_on_startup"]
@@ -69,12 +67,9 @@ async def _seed_from_redis(pairs: list[str]) -> dict[str, object]:
     try:
         from context.live_context_bus import LiveContextBus  # noqa: PLC0415
         from context.redis_consumer import RedisConsumer  # noqa: PLC0415
-        from infrastructure.redis_url import get_redis_url  # noqa: PLC0415
+        from infrastructure.redis_client import get_client  # noqa: PLC0415
 
-        redis_url = get_redis_url()
-        from redis.asyncio import Redis as AsyncRedis  # noqa: PLC0415
-
-        redis_client: AsyncRedis = AsyncRedis.from_url(redis_url)
+        redis_client = await get_client()
         try:
             # Sanitise conflicting key types BEFORE warmup reads
             from core.redis_consumer_fix import sanitize_redis_keys  # noqa: PLC0415
@@ -143,7 +138,7 @@ async def _seed_from_redis(pairs: list[str]) -> dict[str, object]:
                 }
             return {"source": "redis", "seeded_pairs": 0, "attempts": max_retries, "status": "degraded"}
         finally:
-            await redis_client.aclose()
+            pass  # Pooled client — don't close; pool is managed by RedisClientManager
     except Exception as exc:
         logger.error(f"[SEED] Failed to seed from Redis: {exc}")
         return {"source": "redis", "seeded_pairs": 0, "attempts": 1, "status": "failed"}

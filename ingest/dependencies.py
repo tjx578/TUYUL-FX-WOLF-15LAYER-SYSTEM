@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import logging
-import os
 import time
 from collections import deque
+from collections.abc import Coroutine
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, cast
@@ -452,7 +452,7 @@ async def create_finnhub_ws(
     redis: Redis,
     symbols: list[str] | None = None,
     candle_callback: Callable[[str, float, datetime, float], None] | None = None,
-    on_connect: Callable[[], Awaitable[None]] | None = None,
+    on_connect: Callable[[], Coroutine[Any, Any, None]] | None = None,
 ) -> FinnhubWebSocket:
     """Factory for FinnhubWebSocket with defaults and tick normalization."""
     # Initialise DLQ singleton (idempotent — safe to call multiple times)
@@ -497,6 +497,7 @@ async def create_finnhub_ws(
 
 async def create_default_finnhub_ws() -> FinnhubWebSocket:
     """Factory that builds Redis client and configured Finnhub WS instance."""
-    redis_url = os.getenv("REDIS_URL", _DEFAULT_REDIS_URL)
-    redis: Redis = Redis.from_url(redis_url, decode_responses=True)
+    from infrastructure.redis_client import get_client  # noqa: PLC0415
+
+    redis = await get_client()
     return await create_finnhub_ws(redis=redis)

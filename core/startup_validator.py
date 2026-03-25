@@ -98,16 +98,10 @@ def _check_database_url(result: StartupCheckResult) -> None:
 async def _check_redis_connectivity(result: StartupCheckResult) -> None:
     """Attempt a Redis PING to verify connectivity."""
     try:
-        from redis.asyncio import Redis as AsyncRedis
+        from infrastructure.redis_client import get_client
 
-        from infrastructure.redis_url import get_redis_url
-
-        redis_url = get_redis_url()
-        client: AsyncRedis = AsyncRedis.from_url(redis_url)
-        try:
-            await client.ping()  # type: ignore[misc]
-        finally:
-            await client.aclose()
+        client = await get_client()
+        await client.ping()  # type: ignore[misc]
     except Exception as exc:
         result.fail(f"Redis connectivity check failed: {exc}")
 
