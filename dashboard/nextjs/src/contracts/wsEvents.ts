@@ -8,7 +8,7 @@ export interface RiskStateView {
 }
 
 export interface SystemStatusView {
-  mode: "NORMAL" | "SSE" | "POLLING" | "DEGRADED" | "RECONNECTING_WS" | "POLLING_REST" | "STALE";
+  mode: "NORMAL" | "SSE" | "POLLING" | "DEGRADED" | "RECONNECTING_WS" | "POLLING_REST" | "STALE" | "STALE_PRESERVED" | "NO_PRODUCER" | "NO_TRANSPORT" | "DEGRADED_BUT_REFRESHING";
   reason?: string;
   updated_at?: string;
 }
