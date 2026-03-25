@@ -39,6 +39,8 @@ ALERT_RULES: dict[str, bool] = {
     "L12_REJECT_RATE_HIGH": True,
     "L12_AMBIGUITY_RATE_HIGH": True,
     "RECONNECT_STORM": True,
+    # ── High-probability EXECUTE signal notification ──
+    "EXECUTE_SIGNAL": True,
 }
 
 

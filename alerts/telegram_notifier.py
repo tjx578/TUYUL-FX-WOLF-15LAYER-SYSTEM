@@ -214,3 +214,39 @@ class TelegramNotifier:
             return
         text = AlertFormatter.format_reconnect_storm()
         self._send(text, critical=True)
+
+    def on_execute_signal(
+        self,
+        symbol: str,
+        verdict: str,
+        confidence: float,
+        direction: str | None = None,
+        entry_price: float | None = None,
+        stop_loss: float | None = None,
+        take_profit_1: float | None = None,
+        risk_reward_ratio: float | None = None,
+        min_confidence: float = 0.75,
+    ) -> None:
+        """Alert when a high-probability EXECUTE signal is produced.
+
+        Only fires when confidence >= min_confidence and verdict starts
+        with EXECUTE. Dashboard calls this after filtering.
+        """
+        if not ALERT_RULES.get("EXECUTE_SIGNAL", False):
+            return
+        if confidence < min_confidence:
+            return
+        if not str(verdict).startswith("EXECUTE"):
+            return
+
+        text = AlertFormatter.format_execute_signal(
+            symbol=symbol,
+            verdict=verdict,
+            confidence=confidence,
+            direction=direction,
+            entry_price=entry_price,
+            stop_loss=stop_loss,
+            take_profit_1=take_profit_1,
+            risk_reward_ratio=risk_reward_ratio,
+        )
+        self._send(text)

@@ -89,6 +89,7 @@ class SignalService:
             logger.warning(
                 "[SignalService] Failed to publish SIGNAL_READY for %s", contract.get("signal_id"), exc_info=True
             )
+        _notify_execute_signal(contract)
         return contract
 
     async def publish_async(self, payload: dict[str, Any]) -> dict[str, Any]:
@@ -139,6 +140,7 @@ class SignalService:
                 contract.get("signal_id"),
                 exc_info=True,
             )
+        _notify_execute_signal(contract)
         return contract
 
     def get(self, signal_id: str) -> dict[str, Any] | None:
@@ -243,3 +245,29 @@ def _to_price_float(value: Any) -> float | None:
     """
     result = _to_opt_float(value)
     return result if (result is not None and result > 0) else None
+
+
+def _notify_execute_signal(contract: dict[str, Any]) -> None:
+    """Fire Telegram notification for high-confidence EXECUTE signals.
+
+    Best-effort: never raises.  Imported lazily to avoid circular imports
+    from heavy alert modules.
+    """
+    verdict = str(contract.get("verdict", ""))
+    if not verdict.startswith("EXECUTE"):
+        return
+    try:
+        from alerts.telegram_notifier import TelegramNotifier
+
+        TelegramNotifier().on_execute_signal(
+            symbol=str(contract.get("symbol", "")),
+            verdict=verdict,
+            confidence=float(contract.get("confidence", 0.0) or 0.0),
+            direction=contract.get("direction"),
+            entry_price=_to_opt_float(contract.get("entry_price")),
+            stop_loss=_to_opt_float(contract.get("stop_loss")),
+            take_profit_1=_to_opt_float(contract.get("take_profit_1")),
+            risk_reward_ratio=_to_opt_float(contract.get("risk_reward_ratio")),
+        )
+    except Exception:
+        logger.debug("[SignalService] Telegram notify failed", exc_info=True)

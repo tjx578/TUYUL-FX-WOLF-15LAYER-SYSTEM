@@ -230,3 +230,36 @@ Latency and data freshness may be degraded.
 {ts}
 ────────────────────────────
 """
+
+    @staticmethod
+    def format_execute_signal(
+        symbol: str,
+        verdict: str,
+        confidence: float,
+        direction: str | None,
+        entry_price: float | None,
+        stop_loss: float | None,
+        take_profit_1: float | None,
+        risk_reward_ratio: float | None,
+    ) -> str:
+        ts = format_dual_timezone(now_utc())
+        dir_arrow = "▲ BUY" if direction == "BUY" else "▼ SELL" if direction == "SELL" else "—"
+        entry_str = f"{entry_price:.5f}" if entry_price else "—"
+        sl_str = f"{stop_loss:.5f}" if stop_loss else "—"
+        tp_str = f"{take_profit_1:.5f}" if take_profit_1 else "—"
+        rr_str = f"1:{risk_reward_ratio:.1f}" if risk_reward_ratio else "—"
+        return f"""
+🐺🟢 EXECUTE SIGNAL — HIGH PROBABILITY
+════════════════════════════════
+Symbol     : <b>{symbol}</b>
+Direction  : {dir_arrow}
+Verdict    : {verdict}
+Confidence : {confidence:.0%}
+────────────────────────────
+Entry      : {entry_str}
+Stop Loss  : {sl_str}
+TP-1       : {tp_str}
+R:R        : {rr_str}
+{ts}
+════════════════════════════════
+"""
