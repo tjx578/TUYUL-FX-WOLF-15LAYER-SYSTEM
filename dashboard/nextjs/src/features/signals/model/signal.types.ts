@@ -22,6 +22,8 @@ export interface SignalScoreViewModel {
 
 export interface SignalViewModel {
     id: string;
+    signalId?: string;
+    backendRefId?: string;
     symbol: string;
     verdict: VerdictType;
     confidence: number;
