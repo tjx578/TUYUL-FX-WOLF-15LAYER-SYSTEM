@@ -1,12 +1,19 @@
 "use client";
 
 import type { SignalViewModel } from "../model/signal.types";
+import { SignalActionPanel } from "./SignalActionPanel";
 
 interface Props {
     signal: SignalViewModel | null;
+    onTake: () => void;
+    isBusy?: boolean;
 }
 
-export function SignalBoardDetail({ signal }: Props) {
+export function SignalBoardDetail({
+    signal,
+    onTake,
+    isBusy = false,
+}: Props) {
     if (!signal) {
         return (
             <div
@@ -51,6 +58,9 @@ export function SignalBoardDetail({ signal }: Props) {
             <div style={{ fontSize: 14 }}>
                 Expires: {signal.expiresAt ?? "—"}
             </div>
+            <div style={{ fontSize: 14 }}>
+                Signal ID: {signal.signalId ?? "—"}
+            </div>
 
             {signal.scores && (
                 <div style={{ fontSize: 14 }}>
@@ -76,6 +86,12 @@ export function SignalBoardDetail({ signal }: Props) {
                     <strong>Hold Reason:</strong> {signal.holdReason}
                 </div>
             )}
+
+            <SignalActionPanel
+                signal={signal}
+                onTake={onTake}
+                disabled={isBusy}
+            />
         </div>
     );
 }
