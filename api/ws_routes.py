@@ -24,6 +24,7 @@ Upgrade (v3):
   - Trade stream: event-driven diff push with 250ms fallback
   - Candle aggregation (M1/M5/M15/H1) with real-time bar updates
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -42,15 +43,15 @@ import fastapi
 import redis.asyncio as _aioredis
 from loguru import logger
 
+from accounts.account_manager import AccountManager
 from allocation.signal_service import SIGNAL_READY_CHANNEL, SignalService
 from config_loader import load_pairs
-from dashboard.account_manager import AccountManager
-from dashboard.price_feed import PriceFeed
-from dashboard.trade_ledger import TradeLedger
 from infrastructure.redis_client import get_client as _get_async_redis_client
 from state.pubsub_channels import RISK_EVENTS
 from storage.l12_cache import VERDICT_READY_CHANNEL, get_verdict_async
+from storage.price_feed import PriceFeed
 from storage.redis_client import redis_client
+from storage.trade_ledger import TradeLedger
 
 from .middleware.ws_auth import ws_auth_guard
 
@@ -158,7 +159,9 @@ def _build_pipeline_data(pair: str, verdict_data: dict[str, Any]) -> dict[str, A
     # When present, layers absent from this set are marked "skip" instead of "pass".
     _exec_map_raw = verdict_data.get("execution_map")
     _exec_layers_list = (_exec_map_raw or {}).get("layers_executed", []) if isinstance(_exec_map_raw, dict) else []
-    layers_executed_set: set[str] = {str(lyr) for lyr in _exec_layers_list} if isinstance(_exec_layers_list, list) else set()
+    layers_executed_set: set[str] = (
+        {str(lyr) for lyr in _exec_layers_list} if isinstance(_exec_layers_list, list) else set()
+    )
 
     # Gate keys that directly reflect a specific layer's outcome
     _gate_layer_map: dict[str, str] = {
@@ -1175,7 +1178,7 @@ async def websocket_equity(websocket: fastapi.WebSocket):
             equity_point: dict[str, object] = {"ts": time.time()}
 
             try:
-                from dashboard.account_manager import AccountManager  # noqa: PLC0415
+                from accounts.account_manager import AccountManager  # noqa: PLC0415
 
                 am = AccountManager()
                 accounts = await am.list_accounts_async()

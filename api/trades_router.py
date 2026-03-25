@@ -17,9 +17,9 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from dashboard.price_feed import PriceFeed
-from dashboard.trade_ledger import TradeLedger
 from schemas.trade_models import TradeStatus
+from storage.price_feed import PriceFeed
+from storage.trade_ledger import TradeLedger
 
 from .middleware.auth import verify_token
 

@@ -81,7 +81,7 @@ class TestAccountsRouterAuth:
     def _setup(self):
         _set_auth_secret()
         with (
-            patch("dashboard.account_manager.AccountManager") as MockAM,  # noqa: N806
+            patch("accounts.account_manager.AccountManager") as MockAM,  # noqa: N806
             patch("journal.audit_trail.AuditTrail"),
             patch("storage.redis_client.redis_client", MagicMock()),
             patch("accounts.prop_rule_engine.validate_prop_sovereignty", return_value=(True, "")),
@@ -227,8 +227,8 @@ class TestDashboardRoutesAuth:
     def _setup(self):
         _set_auth_secret()
         with (
-            patch("dashboard.trade_ledger.TradeLedger") as MockTL,  # noqa: N806
-            patch("dashboard.price_feed.PriceFeed"),
+            patch("storage.trade_ledger.TradeLedger") as MockTL,  # noqa: N806
+            patch("storage.price_feed.PriceFeed"),
         ):
             MockTL.return_value.get_trade.return_value = None
             MockTL.return_value.get_trade_async = AsyncMock(return_value=None)
@@ -264,8 +264,8 @@ class TestPricesEndpointAuth:
     @pytest.fixture(autouse=True)
     def _setup(self):
         with (
-            patch("dashboard.price_feed.PriceFeed") as MockPF,  # noqa: N806
-            patch("dashboard.trade_ledger.TradeLedger"),
+            patch("storage.price_feed.PriceFeed") as MockPF,  # noqa: N806
+            patch("storage.trade_ledger.TradeLedger"),
         ):
             mock_pf = MockPF.return_value
             mock_pf.get_all_prices.return_value = {}

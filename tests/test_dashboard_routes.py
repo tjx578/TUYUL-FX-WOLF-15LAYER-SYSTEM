@@ -264,8 +264,8 @@ def client() -> TestClient:
 @pytest.fixture(autouse=True)
 def _reset_state() -> Any:
     """Clear all in-memory caches and fake Redis between tests."""
-    from dashboard.account_manager import AccountManager
-    from dashboard.trade_ledger import TradeLedger
+    from accounts.account_manager import AccountManager
+    from storage.trade_ledger import TradeLedger
 
     AccountManager._memory_accounts.clear()
     TradeLedger._memory_trades.clear()
