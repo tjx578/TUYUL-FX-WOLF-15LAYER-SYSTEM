@@ -15,8 +15,15 @@ export function mapVerdictToSignalViewModel(
     verdict: L12Verdict,
     freshnessClass?: FreshnessClassLabel,
 ): SignalViewModel {
+    const raw = verdict as L12Verdict & {
+        signal_id?: string;
+        verdict_id?: string;
+    };
+
     return {
         id: `${verdict.symbol}:${verdict.timestamp}`,
+        signalId: raw.signal_id,
+        backendRefId: raw.verdict_id ?? raw.signal_id,
         symbol: verdict.symbol,
         verdict: verdict.verdict,
         confidence: verdict.confidence ?? 0,
