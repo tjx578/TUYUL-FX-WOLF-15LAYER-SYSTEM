@@ -1,15 +1,14 @@
-"""Zone A: MicroCandleChain — tick → M1 → M5 → M15 aggregation chain.
+"""Zone A: MicroCandleChain — tick → M15 aggregation (M1/M5 disabled).
 
 Zone: ingest/ — data pipeline, no analysis side-effects.
 
 Architecture
 ------------
-Each symbol gets three chained CandleBuilders:
-  tick → M1 → M5 → M15
+Each symbol gets a single M15 CandleBuilder fed directly from ticks.
+M1 and M5 builders have been removed to eliminate Redis connection pool
+exhaustion caused by 90+ publish_candle_sync() calls per minute.
 
 On completion:
-  • M1 closed  → publish_candle_sync()  (writes wolf15:candle_history:{SYM}:M1)
-  • M5 closed  → publish_candle_sync()  (writes wolf15:candle_history:{SYM}:M5)
   • M15 closed → COUNT ONLY, NO Redis write.
       The existing M15→H1 chain in ingest_service.py already calls
       publish_candle_sync() for M15.  Writing again from here would
@@ -27,16 +26,15 @@ from typing import Any
 
 from loguru import logger
 
-from core.candle_bridge_fix import publish_candle_sync
 from ingest.candle_builder import Candle, CandleBuilder, Timeframe
 
 
 class MicroCandleChain:
-    """Per-symbol M1→M5→M15 tick aggregation chain.
+    """Per-symbol M15 tick aggregation (M1/M5 disabled).
 
     Zone A of the Dual-Zone SSOT Architecture v5.  Feeds the same tick
-    stream that the existing M15→H1 chain receives, building shorter
-    timeframes for TRQ micro-wave analysis.
+    stream that the existing M15→H1 chain receives, building M15 candles
+    for FormingBarPublisher without any Redis writes.
 
     Usage::
 
@@ -52,34 +50,29 @@ class MicroCandleChain:
     """
 
     def __init__(self, redis: Any) -> None:
-        """
+        """Initialize with M15 builder only (M1/M5 disabled).
+
         Parameters
         ----------
         redis:
-            Async Redis client passed to publish_candle_sync() for M1/M5 writes.
+            Kept for interface compatibility; no Redis writes are made
+            from this component.
         """
-        self._redis = redis
+        self._redis = redis  # Keep for interface compatibility
 
-        # Per-symbol builders keyed by symbol
-        self._m1_builders: dict[str, CandleBuilder] = {}
-        self._m5_builders: dict[str, CandleBuilder] = {}
         self._m15_builders: dict[str, CandleBuilder] = {}
-
-        # Completion counters (for observability / dedup guard)
-        self._m1_count: int = 0
-        self._m5_count: int = 0
-        self._m15_count: int = 0  # M15 closes tracked but NOT written to Redis
+        self._m15_count: int = 0
 
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
 
     def init_symbols(self, symbols: list[str]) -> None:
-        """Create chained M1→M5→M15 builders for each symbol."""
+        """Create M15 builders for each symbol."""
         for sym in symbols:
             self._build_chain(sym)
         logger.info(
-            "[MicroCandleChain] Zone A wired for %d symbols (M1→M5→M15)",
+            "[MicroCandleChain] Zone A wired for %d symbols (M15 only - M1/M5 disabled)",
             len(symbols),
         )
 
@@ -90,15 +83,15 @@ class MicroCandleChain:
         ts: datetime,
         volume: float = 0.0,
     ) -> None:
-        """Feed a tick into the M1 builder for this symbol.
+        """Feed tick directly to M15 builder.
 
-        Creates builders on first tick if init_symbols() was not called.
+        Creates builder on first tick if init_symbols() was not called.
         """
-        m1 = self._m1_builders.get(symbol)
-        if m1 is None:
+        m15 = self._m15_builders.get(symbol)
+        if m15 is None:
             self._build_chain(symbol)
-            m1 = self._m1_builders[symbol]
-        m1.on_tick(price, ts, volume)
+            m15 = self._m15_builders[symbol]
+        m15.on_tick(price, ts, volume)
 
     @property
     def m15_builders(self) -> dict[str, CandleBuilder]:
@@ -106,11 +99,9 @@ class MicroCandleChain:
         return dict(self._m15_builders)
 
     def health(self) -> dict[str, Any]:
-        """Return completion counts for monitoring."""
+        """Return M15 completion count."""
         return {
-            "symbols": list(self._m1_builders.keys()),
-            "m1_completed": self._m1_count,
-            "m5_completed": self._m5_count,
+            "symbols": list(self._m15_builders.keys()),
             "m15_closed_counted": self._m15_count,
         }
 
@@ -119,48 +110,20 @@ class MicroCandleChain:
     # ------------------------------------------------------------------
 
     def _build_chain(self, symbol: str) -> None:
-        """Build and wire the M1→M5→M15 chain for *symbol*."""
-        redis = self._redis
+        """Build M15 builder only - no M1/M5, no Redis writes."""
 
-        # M15: count only — NO Redis write (existing M15→H1 chain handles writes)
         def _on_m15_complete(candle: Candle) -> None:
             self._m15_count += 1
             logger.debug(
-                "[MicroCandleChain] M15 closed (counted, not written) %s #%d",
+                "[MicroCandleChain] M15 closed (counted only, no Redis write) %s #%d",
                 candle.symbol,
                 self._m15_count,
             )
 
-        # M5: publish to Redis and feed M15 builder
         m15_builder = CandleBuilder(
             symbol=symbol,
             timeframe=Timeframe.M15,
             on_complete=_on_m15_complete,
         )
 
-        def _on_m5_complete(candle: Candle) -> None:
-            self._m5_count += 1
-            publish_candle_sync(candle.to_dict(), redis=redis)
-            m15_builder.on_candle(candle)
-
-        # M1: publish to Redis and feed M5 builder
-        m5_builder = CandleBuilder(
-            symbol=symbol,
-            timeframe=Timeframe.M5,
-            on_complete=_on_m5_complete,
-        )
-
-        def _on_m1_complete(candle: Candle) -> None:
-            self._m1_count += 1
-            publish_candle_sync(candle.to_dict(), redis=redis)
-            m5_builder.on_candle(candle)
-
-        m1_builder = CandleBuilder(
-            symbol=symbol,
-            timeframe=Timeframe.M1,
-            on_complete=_on_m1_complete,
-        )
-
-        self._m1_builders[symbol] = m1_builder
-        self._m5_builders[symbol] = m5_builder
         self._m15_builders[symbol] = m15_builder
