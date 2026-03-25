@@ -16,7 +16,7 @@ import { SignalBoardDetail } from "./SignalBoardDetail";
 import { SignalEmptyState } from "./SignalEmptyState";
 import { TakeSignalDrawer } from "./TakeSignalDrawer";
 
-import { useCapitalDeployment, useAccountsRiskSnapshot } from "@/lib/api";
+import { useCapitalDeployment, useAccountsRiskSnapshot } from "@/features/accounts/api/accounts.api";
 import { invalidateAfterTakeSignal } from "@/shared/api/invalidation";
 import { pushToast } from "@/shared/ui/toastBus";
 import {

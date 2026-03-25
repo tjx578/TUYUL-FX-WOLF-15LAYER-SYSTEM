@@ -14,7 +14,8 @@ import AccountSwitcher from "./AccountSwitcher";
 import { useAuthStore } from "@/store/useAuthStore";
 import { hasRole } from "@/lib/auth";
 import type { UserRole } from "@/contracts/auth";
-import { useActiveTrades, useHealth } from "@/lib/api";
+import { useActiveTrades } from "@/features/trades/api/tradesQuery.api";
+import { useHealth } from "@/shared/api/system.api";
 import { useMemo } from "react";
 
 // ── Icon ──────────────────────────────────────────────────────

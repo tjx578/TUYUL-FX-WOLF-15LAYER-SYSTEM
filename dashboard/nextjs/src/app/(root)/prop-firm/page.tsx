@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { useAccounts, usePropFirmPhase, usePropFirmStatus } from "@/lib/api";
+import { useAccounts } from "@/features/accounts/api/accounts.api";
+import { usePropFirmPhase, usePropFirmStatus } from "@/shared/api/propfirm.api";
 
 interface PropFirmStatus {
   allowed: boolean;

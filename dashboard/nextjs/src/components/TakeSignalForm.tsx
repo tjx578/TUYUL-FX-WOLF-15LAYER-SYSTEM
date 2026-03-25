@@ -12,7 +12,7 @@ import {
   skipSignal,
   type RiskPreviewAccountItem,
   type TakeSignalRequest,
-} from "@/lib/api";
+} from "@/features/signals/api/verdicts.api";
 import { formatNumber } from "@/lib/formatters";
 
 interface TakeSignalFormProps {

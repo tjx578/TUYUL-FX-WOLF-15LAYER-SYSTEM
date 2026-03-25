@@ -7,7 +7,8 @@
 
 import { useState, useEffect } from "react";
 import type { Account } from "@/types";
-import { usePropFirmStatus, usePropFirmPhase, archiveAccount } from "@/lib/api";
+import { archiveAccount } from "@/features/accounts/api/accounts.api";
+import { usePropFirmStatus, usePropFirmPhase } from "@/shared/api/propfirm.api";
 import Panel from "@/components/ui/Panel";
 import AccountReadinessBadge from "@/components/AccountReadinessBadge";
 import AccountEligibilityPanel from "@/components/AccountEligibilityPanel";
@@ -125,155 +126,155 @@ export default function AccountDetailDrawer({ account, onClose }: AccountDetailD
                     </div>
                 </div>
 
-            {/* Readiness */}
-            {account.readiness_score != null && (
+                {/* Readiness */}
+                {account.readiness_score != null && (
+                    <Panel>
+                        <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: "0.12em", color: "var(--text-muted)", marginBottom: 8 }}>
+                            READINESS
+                        </div>
+                        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                            <AccountReadinessBadge score={account.readiness_score} size="md" />
+                            {account.usable_capital != null && (
+                                <div>
+                                    <div style={{ fontSize: 9, color: "var(--text-muted)", letterSpacing: "0.06em" }}>USABLE CAPITAL</div>
+                                    <div className="num" style={{ fontSize: 16, fontWeight: 700, color: "var(--green)" }}>
+                                        ${formatNumber(account.usable_capital)}
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    </Panel>
+                )}
+
+                {/* Account data source */}
                 <Panel>
                     <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: "0.12em", color: "var(--text-muted)", marginBottom: 8 }}>
-                        READINESS
+                        ACCOUNT TYPE
                     </div>
-                    <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                        <AccountReadinessBadge score={account.readiness_score} size="md" />
-                        {account.usable_capital != null && (
-                            <div>
-                                <div style={{ fontSize: 9, color: "var(--text-muted)", letterSpacing: "0.06em" }}>USABLE CAPITAL</div>
-                                <div className="num" style={{ fontSize: 16, fontWeight: 700, color: "var(--green)" }}>
-                                    ${formatNumber(account.usable_capital)}
-                                </div>
-                            </div>
-                        )}
-                    </div>
-                </Panel>
-            )}
-
-            {/* Account data source */}
-            <Panel>
-                <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: "0.12em", color: "var(--text-muted)", marginBottom: 8 }}>
-                    ACCOUNT TYPE
-                </div>
-                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <span
-                        style={{
-                            padding: "2px 8px",
-                            borderRadius: 9999,
-                            fontSize: 10,
-                            fontWeight: 700,
-                            background: account.data_source === "EA" ? "rgba(26, 110, 255, 0.12)" : "rgba(70, 95, 120, 0.08)",
-                            color: account.data_source === "EA" ? "var(--blue)" : "var(--text-muted)",
-                            border: `1px solid ${account.data_source === "EA" ? "rgba(26, 110, 255, 0.19)" : "rgba(70, 95, 120, 0.12)"}`,
-                        }}
-                    >
-                        {account.data_source === "EA" ? "EA-LINKED" : "MANUAL"}
-                    </span>
-                    {account.prop_firm && (
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                         <span
                             style={{
                                 padding: "2px 8px",
                                 borderRadius: 9999,
                                 fontSize: 10,
                                 fontWeight: 700,
-                                background: "rgba(26, 110, 255, 0.08)",
-                                color: "var(--accent, var(--yellow))",
-                                border: "1px solid rgba(26, 110, 255, 0.15)",
+                                background: account.data_source === "EA" ? "rgba(26, 110, 255, 0.12)" : "rgba(70, 95, 120, 0.08)",
+                                color: account.data_source === "EA" ? "var(--blue)" : "var(--text-muted)",
+                                border: `1px solid ${account.data_source === "EA" ? "rgba(26, 110, 255, 0.19)" : "rgba(70, 95, 120, 0.12)"}`,
                             }}
                         >
-                            PROP FIRM — {account.prop_firm_code?.toUpperCase()}
+                            {account.data_source === "EA" ? "EA-LINKED" : "MANUAL"}
                         </span>
-                    )}
-                </div>
-            </Panel>
-
-            {/* Financial details */}
-            <Panel>
-                <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: "0.12em", color: "var(--text-muted)", marginBottom: 8 }}>
-                    FINANCIALS
-                </div>
-                <DetailRow label="BALANCE" value={`$${formatNumber(account.balance)}`} />
-                <DetailRow
-                    label="EQUITY"
-                    value={`$${formatNumber(account.equity)}`}
-                    color={account.equity >= account.balance ? "var(--green)" : "var(--red)"}
-                />
-                <DetailRow label="EQUITY HIGH" value={`$${formatNumber(account.equity_high)}`} />
-                <DetailRow
-                    label="DAILY DD"
-                    value={`${account.daily_dd_percent?.toFixed(2)}%`}
-                    color={account.daily_dd_percent > 3 ? "var(--red)" : undefined}
-                />
-                <DetailRow
-                    label="TOTAL DD"
-                    value={`${account.total_dd_percent?.toFixed(2)}%`}
-                    color={account.total_dd_percent > 5 ? "var(--red)" : undefined}
-                />
-                <DetailRow
-                    label="OPEN TRADES"
-                    value={`${account.open_trades}/${account.max_concurrent_trades}`}
-                />
-                <DetailRow label="OPEN RISK" value={`${account.open_risk_percent?.toFixed(2)}%`} />
-            </Panel>
-
-            {/* Prop firm status */}
-            {account.prop_firm && propStatus && (
-                <Panel>
-                    <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: "0.12em", color: "var(--text-muted)", marginBottom: 8 }}>
-                        PROP FIRM STATUS
-                    </div>
-                    <DetailRow label="CODE" value={propStatus.code} />
-                    <DetailRow
-                        label="ALLOWED"
-                        value={propStatus.allowed ? "YES" : "NO"}
-                        color={propStatus.allowed ? "var(--green)" : "var(--red)"}
-                    />
-                    {propStatus.details && <DetailRow label="DETAILS" value={propStatus.details} />}
-                </Panel>
-            )}
-
-            {/* Prop firm phase */}
-            {account.prop_firm && propPhase && (
-                <Panel>
-                    <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: "0.12em", color: "var(--text-muted)", marginBottom: 8 }}>
-                        PROP FIRM PHASE
-                    </div>
-                    <DetailRow label="PHASE" value={propPhase.phase_name} />
-                    {propPhase.progress_percent != null && (
-                        <>
-                            <DetailRow label="PROGRESS" value={`${propPhase.progress_percent}%`} />
-                            <div
+                        {account.prop_firm && (
+                            <span
                                 style={{
-                                    height: 4,
-                                    borderRadius: 2,
-                                    background: "var(--bg-border)",
-                                    marginTop: 4,
-                                    overflow: "hidden",
+                                    padding: "2px 8px",
+                                    borderRadius: 9999,
+                                    fontSize: 10,
+                                    fontWeight: 700,
+                                    background: "rgba(26, 110, 255, 0.08)",
+                                    color: "var(--accent, var(--yellow))",
+                                    border: "1px solid rgba(26, 110, 255, 0.15)",
                                 }}
                             >
-                                <div
-                                    style={{
-                                        width: `${Math.min(100, propPhase.progress_percent)}%`,
-                                        height: "100%",
-                                        background: "var(--green)",
-                                        borderRadius: 2,
-                                        transition: "width 0.3s ease",
-                                    }}
-                                />
-                            </div>
-                        </>
-                    )}
+                                PROP FIRM — {account.prop_firm_code?.toUpperCase()}
+                            </span>
+                        )}
+                    </div>
                 </Panel>
-            )}
 
-            {/* Eligibility panel */}
-            {account.eligibility_flags && (
+                {/* Financial details */}
                 <Panel>
                     <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: "0.12em", color: "var(--text-muted)", marginBottom: 8 }}>
-                        ELIGIBILITY
+                        FINANCIALS
                     </div>
-                    <AccountEligibilityPanel
-                        flags={account.eligibility_flags}
-                        lockReasons={account.lock_reasons ?? []}
+                    <DetailRow label="BALANCE" value={`$${formatNumber(account.balance)}`} />
+                    <DetailRow
+                        label="EQUITY"
+                        value={`$${formatNumber(account.equity)}`}
+                        color={account.equity >= account.balance ? "var(--green)" : "var(--red)"}
                     />
+                    <DetailRow label="EQUITY HIGH" value={`$${formatNumber(account.equity_high)}`} />
+                    <DetailRow
+                        label="DAILY DD"
+                        value={`${account.daily_dd_percent?.toFixed(2)}%`}
+                        color={account.daily_dd_percent > 3 ? "var(--red)" : undefined}
+                    />
+                    <DetailRow
+                        label="TOTAL DD"
+                        value={`${account.total_dd_percent?.toFixed(2)}%`}
+                        color={account.total_dd_percent > 5 ? "var(--red)" : undefined}
+                    />
+                    <DetailRow
+                        label="OPEN TRADES"
+                        value={`${account.open_trades}/${account.max_concurrent_trades}`}
+                    />
+                    <DetailRow label="OPEN RISK" value={`${account.open_risk_percent?.toFixed(2)}%`} />
                 </Panel>
-            )}
+
+                {/* Prop firm status */}
+                {account.prop_firm && propStatus && (
+                    <Panel>
+                        <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: "0.12em", color: "var(--text-muted)", marginBottom: 8 }}>
+                            PROP FIRM STATUS
+                        </div>
+                        <DetailRow label="CODE" value={propStatus.code} />
+                        <DetailRow
+                            label="ALLOWED"
+                            value={propStatus.allowed ? "YES" : "NO"}
+                            color={propStatus.allowed ? "var(--green)" : "var(--red)"}
+                        />
+                        {propStatus.details && <DetailRow label="DETAILS" value={propStatus.details} />}
+                    </Panel>
+                )}
+
+                {/* Prop firm phase */}
+                {account.prop_firm && propPhase && (
+                    <Panel>
+                        <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: "0.12em", color: "var(--text-muted)", marginBottom: 8 }}>
+                            PROP FIRM PHASE
+                        </div>
+                        <DetailRow label="PHASE" value={propPhase.phase_name} />
+                        {propPhase.progress_percent != null && (
+                            <>
+                                <DetailRow label="PROGRESS" value={`${propPhase.progress_percent}%`} />
+                                <div
+                                    style={{
+                                        height: 4,
+                                        borderRadius: 2,
+                                        background: "var(--bg-border)",
+                                        marginTop: 4,
+                                        overflow: "hidden",
+                                    }}
+                                >
+                                    <div
+                                        style={{
+                                            width: `${Math.min(100, propPhase.progress_percent)}%`,
+                                            height: "100%",
+                                            background: "var(--green)",
+                                            borderRadius: 2,
+                                            transition: "width 0.3s ease",
+                                        }}
+                                    />
+                                </div>
+                            </>
+                        )}
+                    </Panel>
+                )}
+
+                {/* Eligibility panel */}
+                {account.eligibility_flags && (
+                    <Panel>
+                        <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: "0.12em", color: "var(--text-muted)", marginBottom: 8 }}>
+                            ELIGIBILITY
+                        </div>
+                        <AccountEligibilityPanel
+                            flags={account.eligibility_flags}
+                            lockReasons={account.lock_reasons ?? []}
+                        />
+                    </Panel>
+                )}
+            </div>
         </div>
-    </div>
-);
+    );
 }

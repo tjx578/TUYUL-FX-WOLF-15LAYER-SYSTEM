@@ -7,7 +7,8 @@
 
 import { useState, useEffect } from "react";
 import type { AccountCreate } from "@/types";
-import { createAccount, fetchPropFirms, fetchPropFirmPrograms, fetchPropFirmRules } from "@/lib/api";
+import { createAccount } from "@/features/accounts/api/accounts.api";
+import { fetchPropFirms, fetchPropFirmPrograms, fetchPropFirmRules } from "@/shared/api/propfirm.api";
 import Panel from "@/components/ui/Panel";
 
 interface CreateAccountModalProps {
@@ -31,10 +32,10 @@ export default function CreateAccountModal({ onCreated, onCancel }: CreateAccoun
         prop_firm: false,
         data_source: "MANUAL",
     });
-        const [firms, setFirms] = useState<any[]>([]);
-        const [programs, setPrograms] = useState<any[]>([]);
-        const [phases, setPhases] = useState<string[]>([]);
-        const [rules, setRules] = useState<any | null>(null);
+    const [firms, setFirms] = useState<any[]>([]);
+    const [programs, setPrograms] = useState<any[]>([]);
+    const [phases, setPhases] = useState<string[]>([]);
+    const [rules, setRules] = useState<any | null>(null);
     const [error, setError] = useState<string | null>(null);
     const [submitting, setSubmitting] = useState(false);
 

@@ -6,7 +6,7 @@
 // ============================================================
 
 import { useCallback } from "react";
-import { usePricesREST } from "@/lib/api";
+import { usePricesREST } from "@/shared/api/market.api";
 import { useLivePrices } from "@/lib/realtime";
 import { formatTime } from "@/lib/timezone";
 import type { PriceData } from "@/types";

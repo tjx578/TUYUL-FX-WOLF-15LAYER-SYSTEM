@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { useOrchestratorState } from "@/lib/api";
+import { useOrchestratorState } from "@/shared/api/system.api";
 
 export default function OrchestratorReadinessStrip() {
     const { data: orchestrator, isLoading } = useOrchestratorState();

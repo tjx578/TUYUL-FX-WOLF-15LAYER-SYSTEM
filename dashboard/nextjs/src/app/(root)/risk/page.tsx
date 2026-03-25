@@ -7,7 +7,8 @@
 // ============================================================
 
 import { useState } from "react";
-import { useAccounts, useRiskSnapshot } from "@/lib/api";
+import { useAccounts } from "@/features/accounts/api/accounts.api";
+import { useRiskSnapshot } from "@/features/risk/api/risk.api";
 import PageComplianceBanner from "@/components/feedback/PageComplianceBanner";
 import { RiskGauge } from "@/components/RiskGauge";
 import { EquityCurve } from "@/components/EquityCurve";

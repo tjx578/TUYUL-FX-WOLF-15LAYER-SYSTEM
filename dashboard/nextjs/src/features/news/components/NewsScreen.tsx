@@ -8,7 +8,7 @@
 // ============================================================
 
 import { useMemo, useState } from "react";
-import { useCalendarEvents, useCalendarBlocker, useCalendarSourceHealth } from "@/lib/api";
+import { useCalendarEvents, useCalendarBlocker, useCalendarSourceHealth } from "@/features/news/api/calendar.api";
 import PageComplianceBanner from "@/components/feedback/PageComplianceBanner";
 import type { CalendarEvent } from "@/types";
 

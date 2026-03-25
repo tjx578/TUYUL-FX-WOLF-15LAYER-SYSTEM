@@ -8,7 +8,7 @@
 import { useState } from "react";
 import type { Trade } from "@/types";
 import { TradeStatus } from "@/types";
-import { confirmTrade, closeTrade } from "@/lib/api";
+import { confirmTrade, closeTrade } from "@/features/trades/api/tradesQuery.api";
 
 const STATUS_COLOR: Record<string, string> = {
   [TradeStatus.INTENDED]: "var(--yellow)",
@@ -196,20 +196,20 @@ export function TradeCard({ trade, onUpdate }: TradeCardProps) {
         )}
         {(trade.status === TradeStatus.OPEN ||
           trade.status === TradeStatus.PENDING) && (
-          <button
-            className="btn btn-ghost"
-            style={{
-              fontSize: 10,
-              padding: "4px 10px",
-              color: "var(--red)",
-              borderColor: "var(--red)",
-            }}
-            onClick={handleClose}
-            disabled={loading}
-          >
-            CLOSE
-          </button>
-        )}
+            <button
+              className="btn btn-ghost"
+              style={{
+                fontSize: 10,
+                padding: "4px 10px",
+                color: "var(--red)",
+                borderColor: "var(--red)",
+              }}
+              onClick={handleClose}
+              disabled={loading}
+            >
+              CLOSE
+            </button>
+          )}
       </div>
     </div>
   );

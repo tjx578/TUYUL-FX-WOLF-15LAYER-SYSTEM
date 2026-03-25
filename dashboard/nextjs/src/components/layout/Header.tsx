@@ -7,7 +7,7 @@
 // ============================================================
 
 import { useAuthStore } from "@/store/useAuthStore";
-import { useExecution, useContext } from "@/lib/api";
+import { useExecution, useContext } from "@/shared/api/system.api";
 import { TimezoneDisplay } from "@/components/TimezoneDisplay";
 import { useSessionLabel } from "@/hooks/useSessionLabel";
 
