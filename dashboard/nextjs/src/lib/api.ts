@@ -712,10 +712,14 @@ export async function createAccount(data: AccountCreate & { data_source?: string
     notes: "",
     data_source: data.data_source || "MANUAL",
     prop_firm: Boolean(data.prop_firm_code),
+    prop_firm_code: data.prop_firm_code || null,
+    program_code: data.program_code || null,
+    phase_code: data.phase_code || null,
+    compliance_mode: true,
     max_daily_dd_percent: 4,
     max_total_dd_percent: 8,
     max_concurrent_trades: 1,
-    reason: "ACCOUNT_CREATE_FROM_UI",
+    reason: data.reason || "ACCOUNT_CREATE_FROM_UI",
   };
   return apiMutate(API_ENDPOINTS.accounts, body);
 }
