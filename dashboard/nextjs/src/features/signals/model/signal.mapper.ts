@@ -1,6 +1,11 @@
 import type { L12Verdict, FreshnessClassLabel } from "@/types";
 import type { SignalViewModel } from "./signal.types";
 
+type ExtendedVerdict = L12Verdict & {
+    signal_id?: string;
+    verdict_id?: string;
+};
+
 function deriveHoldReason(verdict: L12Verdict): string | null {
     if (verdict.verdict !== "HOLD") return null;
 
@@ -15,13 +20,12 @@ export function mapVerdictToSignalViewModel(
     verdict: L12Verdict,
     freshnessClass?: FreshnessClassLabel,
 ): SignalViewModel {
-    const raw = verdict as L12Verdict & {
-        signal_id?: string;
-        verdict_id?: string;
-    };
+    const raw = verdict as ExtendedVerdict;
 
     return {
-        id: `${verdict.symbol}:${verdict.timestamp}`,
+        id: raw.signal_id
+            ? `signal:${raw.signal_id}`
+            : `${verdict.symbol}:${verdict.timestamp}`,
         signalId: raw.signal_id,
         backendRefId: raw.verdict_id ?? raw.signal_id,
         symbol: verdict.symbol,
