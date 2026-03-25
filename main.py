@@ -149,7 +149,7 @@ async def run_ingest_services(has_api_key: bool, redis: AsyncRedis) -> None:
     finally:
         await ws_feed.stop()
         await rest_poll.stop()
-        await redis.aclose()
+        # Don't close pooled Redis client — pool is managed by RedisClientManager
         logger.info("Ingest services cleanup complete")
 
 
@@ -167,10 +167,9 @@ async def _sanitize_redis_keys(redis_client: AsyncRedis) -> None:
 async def run_redis_consumer() -> None:
     """Run RedisConsumer when CONTEXT_MODE=redis."""
     from context.redis_consumer import RedisConsumer  # noqa: PLC0415
-    from infrastructure.redis_url import get_redis_url  # noqa: PLC0415
+    from infrastructure.redis_client import get_client  # noqa: PLC0415
 
-    redis_url = get_redis_url()
-    redis_client: AsyncRedis = AsyncRedis.from_url(redis_url)
+    redis_client = await get_client()
 
     await _sanitize_redis_keys(redis_client)
 
@@ -267,6 +266,16 @@ async def main() -> None:
 
     await init_persistent_storage()
 
+    # ── Redis pool health check at startup ──────────────────────────
+    try:
+        from infrastructure.redis_health import check_redis_pool_health  # noqa: PLC0415
+
+        pool_report = await check_redis_pool_health()
+        if not pool_report.get("healthy"):
+            logger.error("[Startup] Redis pool unhealthy: %s", pool_report)
+    except Exception as exc:
+        logger.warning("[Startup] Redis health check skipped: %s", exc)
+
     # ── Seed candles BEFORE analysis loop starts ────────────────────
     if RUN_MODE in ("all", "engine-only"):
         try:
@@ -301,10 +310,9 @@ async def main() -> None:
                 logger.info("RUN_MODE=engine-only — skipping ingest services")
     else:
         if RUN_MODE in ("all", "ingest-only"):
-            from infrastructure.redis_url import get_redis_url
+            from infrastructure.redis_client import get_client as _get_pooled_client
 
-            redis_url = get_redis_url()
-            redis_client: AsyncRedis = AsyncRedis.from_url(redis_url)
+            redis_client: AsyncRedis = await _get_pooled_client()
             tasks.append(
                 asyncio.create_task(
                     supervised_task(
