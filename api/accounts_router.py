@@ -22,7 +22,7 @@ from schemas.trade_models import Account
 
 from .middleware.auth import verify_token
 
-router = APIRouter(prefix="/api/v1/accounts", tags=["accounts"])
+router = APIRouter(prefix="/api/v1/accounts", tags=["accounts"], dependencies=[Depends(verify_token)])
 
 _accounts = AccountManager()
 _audit = AuditTrail()
