@@ -16,7 +16,7 @@ import {
     TRADE_STATUSES,
     TERMINAL_STATUSES,
     type TradeStatus,
-} from "@/schema/tradeDeskSchema";
+} from "@/features/trades/model/tradeDeskSchema";
 
 // ══════════════════════════════════════════════════════════════
 //  TRADE_STATUSES enum
