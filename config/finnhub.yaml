@@ -45,7 +45,7 @@ candles:
 rest_poll_fallback:
   poll_interval_sec: 90               # Seconds between REST poll cycles
   grace_before_poll_sec: 30           # Wait before first poll (WS may reconn quickly)
-  bars: 4                             # M15 bars per symbol per cycle
+  bars: 5                             # M15 bars per symbol per cycle (increased from 4 — short-term fix while WS is down)
   refresh_h1: true                    # Also fetch H1 + re-aggregate H4
   h1_bars: 2                          # H1 bars per symbol per cycle
 
