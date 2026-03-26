@@ -13,30 +13,6 @@ interface UseLiveEquityResult {
     lastUpdatedAt: number | null;
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-    return !!value && typeof value === "object";
-}
-
-function toDrawdownData(value: unknown): DrawdownData | null {
-    if (!isRecord(value)) return null;
-    if (
-        typeof value.timestamp !== "number" ||
-        typeof value.equity !== "number" ||
-        typeof value.balance !== "number" ||
-        typeof value.daily_dd !== "number" ||
-        typeof value.total_dd !== "number"
-    ) {
-        return null;
-    }
-    return {
-        timestamp: value.timestamp,
-        equity: value.equity,
-        balance: value.balance,
-        daily_dd: value.daily_dd,
-        total_dd: value.total_dd,
-    };
-}
-
 /**
  * useLiveEquity
  *
@@ -74,13 +50,10 @@ export function useLiveEquity(
         const unsub = subscribe({
             filter: (e) => e.type === "EquityUpdated",
             onEvent: (event) => {
-                const raw: unknown = event.payload;
-                if (!isRecord(raw)) return;
+                if (event.type !== "EquityUpdated") return;
+                const payload = event.payload;
                 // Filter by accountId client-side if specified
-                const rawAccountId = typeof raw["account_id"] === "string" ? raw["account_id"] : undefined;
-                if (accountId && rawAccountId !== accountId) return;
-                const payload = toDrawdownData(raw);
-                if (!payload) return;
+                if (accountId && payload.account_id !== accountId) return;
                 setHistory((prev) =>
                     [...prev, payload].slice(-maxPointsRef.current)
                 );

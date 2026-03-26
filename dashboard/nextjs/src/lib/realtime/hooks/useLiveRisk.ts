@@ -14,28 +14,6 @@ interface UseLiveRiskResult {
   lastUpdatedAt: number | null;
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return !!value && typeof value === "object";
-}
-
-function isRiskSnapshot(value: unknown): value is RiskSnapshot {
-  if (!isRecord(value)) return false;
-  return (
-    typeof value.can_trade === "boolean" &&
-    typeof value.block_reason === "string" &&
-    typeof value.account_id === "string" &&
-    typeof value.daily_dd_percent === "number" &&
-    typeof value.daily_dd_limit === "number" &&
-    typeof value.total_dd_percent === "number" &&
-    typeof value.total_dd_limit === "number" &&
-    typeof value.open_risk_percent === "number" &&
-    typeof value.open_trades === "number" &&
-    typeof value.severity === "string" &&
-    typeof value.circuit_breaker === "string" &&
-    typeof value.timestamp === "number"
-  );
-}
-
 /**
  * useLiveRisk
  *
@@ -84,7 +62,6 @@ export function useLiveRisk(
       onEvent: (event) => {
         if (event.type === "RiskUpdated") {
           // Filter by accountId client-side if specified
-          if (!isRiskSnapshot(event.payload)) return;
           const payload = event.payload;
           if (accountId && payload && payload.account_id !== accountId) return;
           setSnapshot((prev) => mergeSingle(prev, payload));

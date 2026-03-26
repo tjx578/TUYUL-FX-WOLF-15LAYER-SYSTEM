@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { CircuitBreakerState, RiskSeverity } from "@/types";
 import { ExecutionStateUpdatedSchema } from "./executionSchema";
 import {
   PipelineResultSchema,
@@ -30,6 +31,84 @@ const SystemStatusSchema = z.object({
   updated_at: z.string().optional(),
 });
 
+const PriceDataSchema = z.object({
+  symbol: z.string().min(1),
+  bid: z.number(),
+  ask: z.number(),
+  spread: z.number(),
+  timestamp: z.number(),
+  change_24h: z.number().optional(),
+  change_percent_24h: z.number().optional(),
+});
+
+const RiskUpdatedSchema = z
+  .object({
+    can_trade: z.boolean(),
+    block_reason: z.string(),
+    account_id: z.string().min(1),
+    daily_dd_percent: z.number(),
+    daily_dd_limit: z.number(),
+    total_dd_percent: z.number(),
+    total_dd_limit: z.number(),
+    open_risk_percent: z.number(),
+    open_trades: z.number(),
+    circuit_breaker: z.nativeEnum(CircuitBreakerState),
+    severity: z.nativeEnum(RiskSeverity),
+    timestamp: z.number(),
+  })
+  .passthrough();
+
+const CandleDataSchema = z.object({
+  symbol: z.string().min(1),
+  timeframe: z.string().min(1),
+  open: z.number(),
+  high: z.number(),
+  low: z.number(),
+  close: z.number(),
+  volume: z.number().optional(),
+  timestamp: z.number(),
+});
+
+const CandleSnapshotPayloadSchema = z
+  .object({
+    symbol: z.string().min(1),
+    candles: z.array(CandleDataSchema),
+  })
+  .passthrough();
+
+const EquityUpdatedPayloadSchema = z
+  .object({
+    timestamp: z.number(),
+    equity: z.number(),
+    balance: z.number(),
+    daily_dd: z.number(),
+    total_dd: z.number(),
+    account_id: z.string().optional(),
+  })
+  .passthrough();
+
+const AlertPayloadSchema = z
+  .object({
+    alert_id: z.string().min(1),
+    type: z.enum([
+      "ORDER_PLACED",
+      "ORDER_FILLED",
+      "ORDER_CANCELLED",
+      "SYSTEM_VIOLATION",
+      "RISK_LIMIT_REACHED",
+      "PROP_FIRM_BREACH",
+      "CIRCUIT_BREAKER_OPEN",
+      "NEWS_LOCK",
+      "SESSION_CHANGE",
+    ]),
+    severity: z.enum(["INFO", "WARNING", "CRITICAL"]),
+    message: z.string().min(1),
+    timestamp: z.string().min(1),
+    pair: z.string().optional(),
+    trade_id: z.string().optional(),
+  })
+  .passthrough();
+
 // ── Legacy / frontend-native event types ──
 
 export const PipelineResultUpdatedEventSchema = z.object({
@@ -57,17 +136,17 @@ export const SystemStatusUpdatedEventSchema = z.object({
 // Domain-specific WS endpoint events (prices, risk)
 export const PriceUpdatedEventSchema = z.object({
   type: z.literal("PriceUpdated"),
-  payload: z.record(z.string(), z.unknown()),
+  payload: z.record(z.string(), PriceDataSchema),
 });
 
 export const PricesSnapshotEventSchema = z.object({
   type: z.literal("PricesSnapshot"),
-  payload: z.record(z.string(), z.unknown()),
+  payload: z.record(z.string(), PriceDataSchema),
 });
 
 export const RiskUpdatedEventSchema = z.object({
   type: z.literal("RiskUpdated"),
-  payload: z.record(z.string(), z.unknown()),
+  payload: RiskUpdatedSchema,
 });
 
 // ── Backend-native event types (normalised by realtimeClient) ──
@@ -106,27 +185,27 @@ export const TradeUpdatedEventSchema = z.object({
 
 export const CandleSnapshotEventSchema = z.object({
   type: z.literal("CandleSnapshot"),
-  payload: z.record(z.string(), z.unknown()),
+  payload: CandleSnapshotPayloadSchema,
 });
 
 export const CandleFormingEventSchema = z.object({
   type: z.literal("CandleForming"),
-  payload: z.record(z.string(), z.unknown()),
+  payload: CandleDataSchema,
 });
 
 export const EquityUpdatedEventSchema = z.object({
   type: z.literal("EquityUpdated"),
-  payload: z.record(z.string(), z.unknown()),
+  payload: EquityUpdatedPayloadSchema,
 });
 
 export const AlertCreatedEventSchema = z.object({
   type: z.literal("AlertCreated"),
-  payload: z.record(z.string(), z.unknown()),
+  payload: AlertPayloadSchema,
 });
 
 export const AlertUpdatedEventSchema = z.object({
   type: z.literal("AlertUpdated"),
-  payload: z.record(z.string(), z.unknown()),
+  payload: AlertPayloadSchema,
 });
 
 export const WsEventSchema = z.discriminatedUnion("type", [

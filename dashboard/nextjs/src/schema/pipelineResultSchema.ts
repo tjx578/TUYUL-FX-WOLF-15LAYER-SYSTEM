@@ -19,6 +19,26 @@ export const PipelineResultSchema = z.object({
 
 export type PipelineResult = z.infer<typeof PipelineResultSchema>;
 
+const RawVerdictSchema = z
+  .object({
+    verdict: z
+      .enum(["EXECUTE", "EXECUTE_BUY", "EXECUTE_SELL", "EXECUTE_REDUCED_RISK", "HOLD", "NO_TRADE", "ABORT"])
+      .optional()
+      .nullable(),
+    confidence: z.number().optional(),
+    gates: z.array(z.unknown()).optional(),
+    timestamp: z.number().optional(),
+    direction: z.enum(["BUY", "SELL"]).optional(),
+    entry_price: z.number().optional(),
+    stop_loss: z.number().optional(),
+    take_profit_1: z.number().optional(),
+    risk_reward_ratio: z.number().optional(),
+    wolf_status: z.string().optional(),
+    scores: z.record(z.string(), z.unknown()).optional(),
+    expires_at: z.number().optional(),
+  })
+  .passthrough();
+
 /**
  * Schema for the raw verdict payload sent by the backend on /ws/verdict.
  * verdict.update → { pair, verdict: { ...raw L12 verdict data } }
@@ -26,7 +46,7 @@ export type PipelineResult = z.infer<typeof PipelineResultSchema>;
 export const VerdictUpdatedPayloadSchema = z
   .object({
     pair: z.string().min(1),
-    verdict: z.record(z.string(), z.unknown()),
+    verdict: RawVerdictSchema,
   })
   .passthrough();
 
@@ -38,7 +58,7 @@ export type VerdictUpdatedPayload = z.infer<typeof VerdictUpdatedPayloadSchema>;
 export const VerdictSnapshotPayloadSchema = z
   .object({
     pair: z.string().nullable().optional(),
-    verdicts: z.record(z.string(), z.unknown()),
+    verdicts: z.record(z.string(), RawVerdictSchema),
   })
   .passthrough();
 
