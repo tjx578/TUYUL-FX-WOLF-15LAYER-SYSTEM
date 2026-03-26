@@ -223,14 +223,14 @@ class TestPipelineWarmupGate:
         monkeypatch.setattr(pipeline_mod.logger, "warning", warning_mock)
         monkeypatch.setattr(pipeline_mod.logger, "error", error_mock)
 
-        # First reject logs two warning lines.
+        # First reject logs one warning line.
         result1 = pipe.execute("EURUSD")
         assert any("WARMUP_INSUFFICIENT" in e for e in result1["errors"])
-        assert warning_mock.call_count == 2
+        assert warning_mock.call_count == 1
         assert error_mock.call_count == 0
 
         # Second reject with same missing profile should be throttled (no additional warnings).
         result2 = pipe.execute("EURUSD")
         assert any("WARMUP_INSUFFICIENT" in e for e in result2["errors"])
-        assert warning_mock.call_count == 2
+        assert warning_mock.call_count == 1
         assert error_mock.call_count == 0
