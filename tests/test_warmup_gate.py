@@ -204,3 +204,33 @@ class TestPipelineWarmupGate:
         pipe._context_bus.check_warmup.assert_not_called()  # pyright: ignore[reportAttributeAccessIssue]
         # Should have proceeded past warmup to L1
         assert "WARMUP_INSUFFICIENT" not in result["errors"]
+
+    def test_warmup_reject_logging_is_warning_only_and_throttled(self, monkeypatch):
+        """Repeated warmup rejects should emit warning logs once per interval and no error logs."""
+        pipe = self._make_pipeline_with_warmup(
+            {
+                "ready": False,
+                "bars": {"H1": 3, "H4": 0, "D1": 0, "W1": 0},
+                "required": {"H1": 20, "H4": 10, "D1": 5, "W1": 4},
+                "missing": {"H1": 17, "H4": 10, "D1": 5, "W1": 4},
+            }
+        )
+
+        from pipeline import wolf_constitutional_pipeline as pipeline_mod  # noqa: PLC0415
+
+        warning_mock = MagicMock()
+        error_mock = MagicMock()
+        monkeypatch.setattr(pipeline_mod.logger, "warning", warning_mock)
+        monkeypatch.setattr(pipeline_mod.logger, "error", error_mock)
+
+        # First reject logs two warning lines.
+        result1 = pipe.execute("EURUSD")
+        assert any("WARMUP_INSUFFICIENT" in e for e in result1["errors"])
+        assert warning_mock.call_count == 2
+        assert error_mock.call_count == 0
+
+        # Second reject with same missing profile should be throttled (no additional warnings).
+        result2 = pipe.execute("EURUSD")
+        assert any("WARMUP_INSUFFICIENT" in e for e in result2["errors"])
+        assert warning_mock.call_count == 2
+        assert error_mock.call_count == 0
