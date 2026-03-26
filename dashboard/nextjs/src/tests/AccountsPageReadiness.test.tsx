@@ -9,7 +9,8 @@ vi.mock("next/navigation", () => ({
   usePathname: () => "/accounts",
 }));
 
-vi.mock("@/lib/api", () => ({
+// AccountsScreen imports from domain-scoped modules after PR-006 cutover
+vi.mock("@/features/accounts/api/accounts.api", () => ({
   useCapitalDeployment: () => ({
     data: [
       {
@@ -44,6 +45,9 @@ vi.mock("@/lib/api", () => ({
       },
     ],
   }),
+}));
+
+vi.mock("@/shared/api/system.api", () => ({
   useOrchestratorState: () => ({
     data: {
       orchestrator_ready: true,
@@ -57,24 +61,46 @@ vi.mock("@/lib/api", () => ({
   }),
 }));
 
+vi.mock("@/features/accounts/hooks/useAccountFocusContract", () => ({
+  useAccountFocusContract: () => ({
+    focusAccountId: null,
+    clearFocus: vi.fn(),
+  }),
+}));
+
 vi.mock("@/components/feedback/PageComplianceBanner", () => ({
   default: () => <div data-testid="compliance-banner" />,
 }));
 
-vi.mock("@/components/AccountReadinessBadge", () => ({
-  default: () => <div data-testid="account-readiness-badge" />,
+vi.mock("@/features/accounts/components/AccountsBridgeBanner", () => ({
+  AccountsBridgeBanner: () => <div data-testid="accounts-bridge-banner" />,
 }));
 
-vi.mock("@/components/AccountPanel", () => ({
-  AccountCard: () => <div data-testid="account-card" />,
+vi.mock("@/features/accounts/components/PortfolioSummaryStrip", () => ({
+  PortfolioSummaryStrip: () => <div data-testid="portfolio-summary" />,
 }));
 
-vi.mock("@/components/AccountDetailDrawer", () => ({
+vi.mock("@/features/accounts/components/AccountGridCard", () => ({
+  AccountGridCard: () => <div data-testid="account-card" />,
+}));
+
+vi.mock("@/features/accounts/components/AccountDetailDrawer", () => ({
   default: () => <div data-testid="account-detail-drawer" />,
 }));
 
-vi.mock("@/components/CreateAccountModal", () => ({
+vi.mock("@/features/accounts/components/CreateAccountModal", () => ({
   default: () => <div data-testid="create-account-modal" />,
+}));
+
+vi.mock("@/shared/api/client", () => ({
+  useApiQuery: () => ({ data: null, isLoading: false, isError: false, error: null, mutate: vi.fn() }),
+  fetcher: vi.fn(),
+  API_ENDPOINTS: {},
+  POLL_INTERVALS: {},
+}));
+
+vi.mock("@/lib/realtime", () => ({
+  useRealtimeClient: () => null,
 }));
 
 describe("CapitalAccountsPage orchestrator readiness", () => {

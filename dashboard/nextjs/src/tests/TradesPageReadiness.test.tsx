@@ -9,7 +9,44 @@ vi.mock("next/navigation", () => ({
   usePathname: () => "/trades",
 }));
 
-vi.mock("@/lib/api", () => ({
+// TradesScreen imports from domain-scoped modules after PR-005 cutover
+vi.mock("@/features/trades/hooks/useTradeDeskState", () => ({
+  useTradeDeskState: () => ({
+    activeTab: "open",
+    setActiveTab: vi.fn(),
+    pendingTrades: [],
+    openTrades: [],
+    closedTrades: [],
+    cancelledTrades: [],
+    selectedTradeId: null,
+    setSelectedTradeId: vi.fn(),
+    exposure: null,
+    anomalies: [],
+    counts: { pending: 0, open: 0, closed: 0, cancelled: 0 },
+    executionMismatchFlags: {},
+  }),
+  useTradeDeskLivePrices: () => undefined,
+}));
+
+vi.mock("@/features/trades/hooks/useTradeBridge", () => ({
+  useTradeBridge: () => ({
+    takeId: null,
+    accountId: null,
+    signalId: null,
+    hasBridgeContext: false,
+    clearBridge: vi.fn(),
+  }),
+}));
+
+vi.mock("@/features/trades/hooks/useTakeSignalLifecycle", () => ({
+  useTakeSignalLifecycle: () => ({ data: null, isLoading: false, isError: false, error: null, refetch: vi.fn() }),
+}));
+
+vi.mock("@/features/trades/hooks/useTradeFocusFilter", () => ({
+  useTradeFocusFilter: (trades: unknown[]) => trades,
+}));
+
+vi.mock("@/shared/api/system.api", () => ({
   useOrchestratorState: () => ({
     data: {
       orchestrator_ready: true,
@@ -23,39 +60,23 @@ vi.mock("@/lib/api", () => ({
   }),
 }));
 
-vi.mock("@/hooks/useTradeDeskHooks", () => ({
-  useTradeDeskState: () => ({
-    activeTab: "open",
-    setActiveTab: vi.fn(),
-    pendingTrades: [],
-    openTrades: [],
-    closedTrades: [],
-    cancelledTrades: [],
-    selectedTradeId: null,
-    setSelectedTradeId: vi.fn(),
-    exposure: [],
-    anomalies: [],
-    counts: { pending: 0, open: 0, closed: 0, cancelled: 0 },
-    executionMismatchFlags: {},
-  }),
-  useTradeDeskLivePrices: () => undefined,
-}));
-
-vi.mock("@/features/trades/hooks/useTakeSignalLifecycle", () => ({
-  useTakeSignalLifecycle: () => ({ data: null, isLoading: false, isError: false, error: null, refetch: vi.fn() }),
-}));
-
 vi.mock("@/components/feedback/PageComplianceBanner", () => ({
   default: () => <div data-testid="compliance-banner" />,
 }));
 
-vi.mock("@/components/trade-desk", () => ({
-  TradeTabs: () => <div data-testid="trade-tabs" />,
-  TradeTable: () => <div data-testid="trade-table" />,
-  TradeDetailPanel: () => <div data-testid="trade-detail" />,
-  TradeActionPanel: () => <div data-testid="trade-action" />,
-  ExposureSummaryPanel: () => <div data-testid="exposure-summary" />,
-  ExecutionAnomalyBanner: () => <div data-testid="anomaly-banner" />,
+vi.mock("@/features/trades/components/TradeBridgeBanner", () => ({
+  TradeBridgeBanner: () => <div data-testid="trade-bridge-banner" />,
+}));
+
+vi.mock("@/shared/api/client", () => ({
+  useApiQuery: () => ({ data: null, isLoading: false, isError: false, error: null, mutate: vi.fn() }),
+  fetcher: vi.fn(),
+  API_ENDPOINTS: {},
+  POLL_INTERVALS: {},
+}));
+
+vi.mock("@/lib/realtime", () => ({
+  useRealtimeClient: () => null,
 }));
 
 describe("TradeDeskPage orchestrator readiness", () => {
