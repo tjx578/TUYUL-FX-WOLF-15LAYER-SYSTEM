@@ -7,6 +7,7 @@ Activates in two scenarios:
    that haven't received a WebSocket tick within the silence threshold
    (e.g. exotic/minor crosses on Finnhub's OANDA feed).
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -88,9 +89,7 @@ class RestPollFallback:
             )
 
         logger.info(
-            "RestPollFallback initialized: interval=%.1fs, "
-            "grace=%.1fs, m15_bars=%d, "
-            "refresh_h1=%s, symbols=%d",
+            "RestPollFallback initialized: interval=%.1fs, grace=%.1fs, m15_bars=%d, refresh_h1=%s, symbols=%d",
             self._poll_interval,
             self._grace_sec,
             self._bars,
@@ -307,8 +306,7 @@ class RestPollFallback:
                 )
             elif self._redis_skips % 100 == 0:
                 logger.error(
-                    "[RestPoll] Still no redis_client — "
-                    "%d candles skipped so far",
+                    "[RestPoll] Still no redis_client — %d candles skipped so far",
                     self._redis_skips,
                 )
             return
@@ -324,8 +322,7 @@ class RestPollFallback:
             if not symbol or not timeframe:
                 # ── FIX: log skip instead of silent continue ──
                 logger.warning(
-                    "[RestPoll] Candle skipped — missing symbol=%s "
-                    "timeframe=%s keys=%s",
+                    "[RestPoll] Candle skipped — missing symbol=%s timeframe=%s keys=%s",
                     symbol,
                     timeframe,
                     list(candle.keys())[:8],
@@ -353,8 +350,7 @@ class RestPollFallback:
 
         if written_in_batch > 0:
             logger.info(
-                "[RestPoll] Wrote %d/%d candles to Redis (%s/%s) — "
-                "total writes: %d",
+                "[RestPoll] Wrote %d/%d candles to Redis (%s/%s) — total writes: %d",
                 written_in_batch,
                 len(candles),
                 candles[0].get("symbol", "?"),
@@ -363,8 +359,7 @@ class RestPollFallback:
             )
         elif candles:
             logger.warning(
-                "[RestPoll] 0/%d candles written — all skipped! "
-                "First candle keys: %s",
+                "[RestPoll] 0/%d candles written — all skipped! First candle keys: %s",
                 len(candles),
                 list(candles[0].keys())[:10],
             )

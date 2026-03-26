@@ -7,6 +7,7 @@ BUG FIXES APPLIED:
   [BUG-2] RiskEngine forward-reference alias moved AFTER class definition in risk_engine.py
   [BUG-3] Redis hardcoded localhost → os.getenv("REDIS_URL") for Railway compatibility
 """
+
 from __future__ import annotations
 
 import contextlib

@@ -400,8 +400,7 @@ function _extraCspConnectSrcOrigins(wsOrigin) {
     def test_custom_domain_adds_origins(self):
         """Custom domain must add both wss:// and https:// origins."""
         out = self._run_node_snippet(
-            self._HELPER_JS
-            + 'console.log(JSON.stringify(_extraCspConnectSrcOrigins("wss://trading.example.com")));'
+            self._HELPER_JS + 'console.log(JSON.stringify(_extraCspConnectSrcOrigins("wss://trading.example.com")));'
         )
         result = json.loads(out)
         assert "wss://trading.example.com" in result
@@ -410,23 +409,18 @@ function _extraCspConnectSrcOrigins(wsOrigin) {
     def test_vercel_domain_returns_empty(self):
         """*.vercel.app domain must not add duplicate CSP entries."""
         out = self._run_node_snippet(
-            self._HELPER_JS
-            + 'console.log(JSON.stringify(_extraCspConnectSrcOrigins("wss://my-app.vercel.app")));'
+            self._HELPER_JS + 'console.log(JSON.stringify(_extraCspConnectSrcOrigins("wss://my-app.vercel.app")));'
         )
         assert out == "[]", f"Expected [] for vercel.app domain, got {out!r}"
 
     def test_localhost_returns_empty(self):
         """localhost WS origin must not add extra CSP entries."""
         out = self._run_node_snippet(
-            self._HELPER_JS
-            + 'console.log(JSON.stringify(_extraCspConnectSrcOrigins("ws://localhost:8080")));'
+            self._HELPER_JS + 'console.log(JSON.stringify(_extraCspConnectSrcOrigins("ws://localhost:8080")));'
         )
         assert out == "[]", f"Expected [] for localhost, got {out!r}"
 
     def test_empty_input_returns_empty(self):
         """Empty wsBase must return empty list."""
-        out = self._run_node_snippet(
-            self._HELPER_JS + 'console.log(JSON.stringify(_extraCspConnectSrcOrigins("")));'
-        )
+        out = self._run_node_snippet(self._HELPER_JS + 'console.log(JSON.stringify(_extraCspConnectSrcOrigins("")));')
         assert out == "[]"
-

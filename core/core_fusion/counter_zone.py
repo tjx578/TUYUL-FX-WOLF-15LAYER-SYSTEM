@@ -1,4 +1,5 @@
 """Smart Money Counter Zone v3.5 Reflective."""
+
 from __future__ import annotations
 
 import math

@@ -1,4 +1,5 @@
 """Tests for core.health_probe — lightweight container health server."""
+
 from __future__ import annotations
 
 import asyncio

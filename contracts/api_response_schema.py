@@ -1,4 +1,5 @@
 """Generic API response envelopes for consistent service output."""
+
 from __future__ import annotations
 
 from typing import Generic, TypeVar

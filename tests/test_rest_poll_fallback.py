@@ -1,4 +1,5 @@
 """Tests for ingest.rest_poll_fallback – REST polling when WebSocket is down."""
+
 from __future__ import annotations
 
 import asyncio
@@ -340,8 +341,9 @@ class TestNormalizeCandles:
     """Unit tests for RestPollFallback._normalize_candles()."""
 
     def _make_poller(self):
-        with patch("ingest.rest_poll_fallback.FinnhubCandleFetcher"), patch(
-            "ingest.rest_poll_fallback.load_finnhub", return_value={}
+        with (
+            patch("ingest.rest_poll_fallback.FinnhubCandleFetcher"),
+            patch("ingest.rest_poll_fallback.load_finnhub", return_value={}),
         ):
             from ingest.rest_poll_fallback import RestPollFallback
 
@@ -401,8 +403,9 @@ class TestPushCandlesToRedis:
     """Tests for RestPollFallback._push_candles_to_redis()."""
 
     def _make_poller_with_redis(self, redis_mock):
-        with patch("ingest.rest_poll_fallback.FinnhubCandleFetcher"), patch(
-            "ingest.rest_poll_fallback.load_finnhub", return_value={}
+        with (
+            patch("ingest.rest_poll_fallback.FinnhubCandleFetcher"),
+            patch("ingest.rest_poll_fallback.load_finnhub", return_value={}),
         ):
             from ingest.rest_poll_fallback import RestPollFallback
 
@@ -475,8 +478,9 @@ class TestPushCandlesToRedis:
     @pytest.mark.asyncio
     async def test_increments_redis_skips_counter_when_no_client(self):
         """_redis_skips counter should track skips when redis_client is None."""
-        with patch("ingest.rest_poll_fallback.FinnhubCandleFetcher"), patch(
-            "ingest.rest_poll_fallback.load_finnhub", return_value={}
+        with (
+            patch("ingest.rest_poll_fallback.FinnhubCandleFetcher"),
+            patch("ingest.rest_poll_fallback.load_finnhub", return_value={}),
         ):
             from ingest.rest_poll_fallback import RestPollFallback
 
@@ -533,8 +537,9 @@ class TestGetSilentPairs:
     """Tests for RestPollFallback._get_silent_pairs()."""
 
     def _make_poller(self):
-        with patch("ingest.rest_poll_fallback.FinnhubCandleFetcher"), patch(
-            "ingest.rest_poll_fallback.load_finnhub", return_value={}
+        with (
+            patch("ingest.rest_poll_fallback.FinnhubCandleFetcher"),
+            patch("ingest.rest_poll_fallback.load_finnhub", return_value={}),
         ):
             from ingest.rest_poll_fallback import RestPollFallback
 

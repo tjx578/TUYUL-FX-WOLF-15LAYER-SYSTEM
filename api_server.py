@@ -11,6 +11,7 @@ Architecture:
 Run (Railway):
     python api_server.py
 """
+
 from __future__ import annotations
 
 import logging  # noqa: E402

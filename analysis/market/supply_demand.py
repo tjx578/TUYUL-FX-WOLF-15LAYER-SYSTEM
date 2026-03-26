@@ -2,6 +2,7 @@
 Supply & Demand Zone Detection
 H1 context only.
 """
+
 from __future__ import annotations
 
 from typing import Any

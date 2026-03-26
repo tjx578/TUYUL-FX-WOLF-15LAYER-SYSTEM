@@ -5,6 +5,7 @@ Verifies that the verdict engine reads regime_type from the synthesis dict
 and applies regime-specific thresholds from config/thresholds.py instead of
 the hardcoded _THRESH_* fallback constants.
 """
+
 from __future__ import annotations
 
 from typing import Any

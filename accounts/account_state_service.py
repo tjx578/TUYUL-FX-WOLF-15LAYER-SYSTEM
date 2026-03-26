@@ -10,6 +10,7 @@ Responsibilities:
     - Compute risk severity state
     - Thread-safe updates
 """
+
 from __future__ import annotations
 
 from threading import Lock

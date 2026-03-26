@@ -3,6 +3,7 @@ Unit tests for SystemStateManager.
 
 Tests state transitions, validation, and per-symbol status tracking.
 """
+
 from __future__ import annotations
 
 import pytest

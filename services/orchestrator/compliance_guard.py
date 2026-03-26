@@ -3,6 +3,7 @@
 This module evaluates account-level legality only and never computes market
 direction, preserving constitutional authority boundaries.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field

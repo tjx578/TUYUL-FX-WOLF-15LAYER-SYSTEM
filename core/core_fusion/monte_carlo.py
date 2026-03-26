@@ -5,6 +5,7 @@ IMPORTANT: These engines are used by core_fusion for CONF12 raw simulation
     The L7-to-L12 Monte Carlo path uses engines/monte_carlo_engine.py
     (bootstrap over historical trade returns).
 """
+
 from __future__ import annotations
 
 import math
