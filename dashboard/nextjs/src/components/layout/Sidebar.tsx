@@ -68,7 +68,7 @@ function ChevronIcon({ open }: { open: boolean }) {
 const ICONS: Record<string, string> = {
   // Tier-1: COMMAND
   "/": "M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z",
-  "/trades/signals": "M13 2L3 14h9l-1 8 10-12h-9l1-8z",
+  "/signals": "M13 2L3 14h9l-1 8 10-12h-9l1-8z",
   "/trades": "M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z",
   "/risk": "M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z",
   // Tier-2: OPERATIONS
@@ -84,7 +84,6 @@ const ICONS: Record<string, string> = {
   "/probability": "M16 8a6 6 0 016 6v7h-4v-7a2 2 0 00-2-2 2 2 0 00-2 2v7h-4v-7a6 6 0 016-6zM2 9h4v12H2z",
   "/prices": "M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z",
   "/cockpit": "M12 2a10 10 0 110 20A10 10 0 0112 2zm0 0v10m0 0l4-4m-4 4l-4-4",
-  "/signals": "M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z",
   "/charts": "M3 3v18h18M7 16l4-4 4 4 5-6",
   // Admin
   "/audit": "M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z",
@@ -104,7 +103,7 @@ type NavItem = {
 // Tier-1: Live operator pages — must be reachable in 1 click at all times
 const TIER1_COMMAND: NavItem[] = [
   { href: "/", label: "Command Center" },
-  { href: "/trades/signals", label: "Signal Board" },
+  { href: "/signals", label: "Signal Board" },
   { href: "/trades", label: "Trade Desk" },
   { href: "/risk", label: "Risk Command" },
   { href: "/charts", label: "Live Charts" },
@@ -225,7 +224,7 @@ function NavSection({
                 {tradeCount > 99 ? "99+" : tradeCount}
               </span>
             )}
-            {item.href === "/trades/signals" && tradeCount > 0 && (
+            {item.href === "/signals" && tradeCount > 0 && (
               <span
                 className="sidebar-badge-count"
                 aria-label={`${tradeCount} active signals`}

@@ -59,6 +59,7 @@ from __future__ import annotations
 import asyncio
 import concurrent.futures
 import contextlib
+import os
 import time
 
 # stdlib imports
@@ -270,6 +271,30 @@ class WolfConstitutionalPipeline:
 
         # Per-symbol warmup warning state for log throttling.
         self._warmup_warning_state: dict[str, dict[str, Any]] = {}
+
+        # Allow operational tuning without code edits.
+        self._dq_warning_log_interval_sec = self._parse_env_float(
+            "DQ_WARNING_LOG_INTERVAL_SEC",
+            self.DQ_WARNING_LOG_INTERVAL_SEC,
+        )
+        self._warmup_warning_log_interval_sec = self._parse_env_float(
+            "WARMUP_WARNING_LOG_INTERVAL_SEC",
+            self.WARMUP_WARNING_LOG_INTERVAL_SEC,
+        )
+        logger.info(
+            "[Pipeline v8.0] startup config | warmup_warning_log_interval_sec={} dq_warning_log_interval_sec={}",
+            self._warmup_warning_log_interval_sec,
+            self._dq_warning_log_interval_sec,
+        )
+
+    @staticmethod
+    def _parse_env_float(name: str, default: float) -> float:
+        raw = os.environ.get(name)
+        if raw is None:
+            return default
+        with contextlib.suppress(ValueError, TypeError):
+            return max(1.0, float(raw))
+        return default
 
     # ──────────────────────────────────────────────────────
     #  Lazy-load all layer analyzers
@@ -618,18 +643,11 @@ class WolfConstitutionalPipeline:
                 should_log = (
                     not state.get("blocked", False)
                     or state.get("missing_key") != missing_key
-                    or (now_ts - float(state.get("last_log_ts", 0.0))) >= self.WARMUP_WARNING_LOG_INTERVAL_SEC
+                    or (now_ts - float(state.get("last_log_ts", 0.0))) >= self._warmup_warning_log_interval_sec
                 )
                 if should_log:
                     logger.warning(
-                        "[VerdictPath] warmup rejected | symbol={} bars={} required={} missing={}",
-                        symbol,
-                        warmup["bars"],
-                        warmup["required"],
-                        missing,
-                    )
-                    logger.warning(
-                        "[Pipeline v8.0] {} WARMUP INSUFFICIENT | bars={} required={} missing={}",
+                        "[Pipeline v8.0] warmup rejected | symbol={} bars={} required={} missing={}",
                         symbol,
                         warmup["bars"],
                         warmup["required"],
@@ -694,7 +712,7 @@ class WolfConstitutionalPipeline:
             should_log = (
                 not state.get("degraded", False)
                 or state.get("reason_key") != reason_key
-                or (now_ts - float(state.get("last_log_ts", 0.0))) >= self.DQ_WARNING_LOG_INTERVAL_SEC
+                or (now_ts - float(state.get("last_log_ts", 0.0))) >= self._dq_warning_log_interval_sec
             )
             if should_log:
                 logger.warning(

@@ -59,7 +59,7 @@ export default function UrgencyRail({ signals, accounts, onTake }: UrgencyRailPr
           ACTIONABLE SIGNALS — TOP {signals.length}
         </span>
         <Link
-          href="/trades/signals"
+          href="/signals"
           className="num"
           style={{
             marginLeft: "auto",

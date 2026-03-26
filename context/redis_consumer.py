@@ -15,6 +15,7 @@ import asyncio
 import contextlib
 import logging
 import os
+import time
 from dataclasses import dataclass
 from typing import Any, cast
 
@@ -127,6 +128,45 @@ class RedisConsumer:
 
         self._stop_event = asyncio.Event()
         self._logged_empty_seed = False
+        self._warmup_max_concurrency = self._read_int_env("REDIS_WARMUP_MAX_CONCURRENCY", default=8)
+        self._warmup_semaphore = asyncio.Semaphore(self._warmup_max_concurrency)
+        self._warmup_error_log_interval_sec = self._read_float_env("REDIS_WARMUP_ERROR_LOG_INTERVAL_SEC", default=60.0)
+        self._warmup_error_log_state: dict[str, float] = {}
+        logger.info(
+            "RedisConsumer startup config | warmup_max_concurrency=%d warmup_error_log_interval_sec=%.1f",
+            self._warmup_max_concurrency,
+            self._warmup_error_log_interval_sec,
+        )
+
+    @staticmethod
+    def _read_int_env(name: str, default: int) -> int:
+        raw = os.environ.get(name)
+        if raw is None:
+            return default
+        with contextlib.suppress(ValueError, TypeError):
+            return max(1, int(raw))
+        return default
+
+    @staticmethod
+    def _read_float_env(name: str, default: float) -> float:
+        raw = os.environ.get(name)
+        if raw is None:
+            return default
+        with contextlib.suppress(ValueError, TypeError):
+            return max(1.0, float(raw))
+        return default
+
+    def _should_log_warmup_error(self, error_key: str) -> bool:
+        now_ts = time.time()
+        last_ts = self._warmup_error_log_state.get(error_key, 0.0)
+        if (now_ts - last_ts) >= self._warmup_error_log_interval_sec:
+            self._warmup_error_log_state[error_key] = now_ts
+            return True
+        return False
+
+    async def _warmup_candle_history_limited(self, symbol: str, timeframe: str) -> list[bytes]:
+        async with self._warmup_semaphore:
+            return await self._warmup_candle_history(symbol, timeframe)
 
     def stop(self) -> None:
         """Request the consumer to stop gracefully."""
@@ -176,7 +216,7 @@ class RedisConsumer:
         # exceptions and always returns a list, never raises).
         pairs = [(symbol, timeframe) for symbol in self._symbols for timeframe in WARMUP_TIMEFRAMES]
         all_raw: list[list[bytes]] = await asyncio.gather(
-            *[self._warmup_candle_history(sym, tf) for sym, tf in pairs]
+            *[self._warmup_candle_history_limited(sym, tf) for sym, tf in pairs]
         )
 
         for (symbol, timeframe), raw_entries in zip(pairs, all_raw, strict=True):
@@ -303,7 +343,9 @@ class RedisConsumer:
                 # Only skip when we receive a concrete wrong-type response from Redis;
                 # an unrecognised response (e.g., test mock) falls through to lrange.
                 raw_type: bytes | str = await self._redis.type(key)
-                key_type = raw_type.decode().lower() if isinstance(raw_type, bytes | bytearray) else str(raw_type).lower()
+                key_type = (
+                    raw_type.decode().lower() if isinstance(raw_type, bytes | bytearray) else str(raw_type).lower()
+                )
                 if key_type == "none":
                     continue  # key does not exist, try next prefix
                 if key_type in _INCOMPATIBLE_REDIS_TYPES:
@@ -324,7 +366,15 @@ class RedisConsumer:
                     )
                     return raw
             except Exception as exc:
-                logger.warning("warmup_candle_history | lrange failed on %s: %s", key, exc)
+                err_text = str(exc).lower()
+                if "too many connections" in err_text:
+                    err_key = "warmup:lrange:too_many_connections"
+                else:
+                    err_key = f"warmup:lrange:{type(exc).__name__}"
+                if self._should_log_warmup_error(err_key):
+                    logger.warning("warmup_candle_history | lrange failed on %s: %s", key, exc)
+                else:
+                    logger.debug("warmup_candle_history | lrange failed on %s: %s", key, exc)
                 continue
 
         # --- Strategy 2: HASH key via HGETALL (single latest candle) ---
@@ -376,9 +426,17 @@ class RedisConsumer:
                     )
                     return [orjson.dumps(bar)]
         except Exception as exc:
-            logger.warning("warmup_candle_history | hgetall failed on %s: %s", hash_key, exc)
+            err_text = str(exc).lower()
+            if "too many connections" in err_text:
+                err_key = "warmup:hgetall:too_many_connections"
+            else:
+                err_key = f"warmup:hgetall:{type(exc).__name__}"
+            if self._should_log_warmup_error(err_key):
+                logger.warning("warmup_candle_history | hgetall failed on %s: %s", hash_key, exc)
+            else:
+                logger.debug("warmup_candle_history | hgetall failed on %s: %s", hash_key, exc)
 
-        logger.warning(
+        logger.debug(
             "warmup_candle_history | symbol=%s tf=%s: no candle data found in Redis",
             symbol,
             timeframe,
