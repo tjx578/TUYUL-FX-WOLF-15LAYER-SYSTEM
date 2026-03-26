@@ -62,7 +62,7 @@ function ChartsPanel() {
   const [selectedSymbol, setSelectedSymbol] = useState("EURUSD");
   const [selectedTimeframe, setSelectedTimeframe] = useState<(typeof TIMEFRAMES)[number]>("M1");
 
-  const { candles, forming, status, isStale } = useLiveCandles(selectedSymbol);
+  const { candles, forming, status, isStale } = useLiveCandles(selectedSymbol, selectedTimeframe);
 
   const lastUpdatedAt = useMemo(() => {
     if (forming?.timestamp) return forming.timestamp;

@@ -1,11 +1,5 @@
-"use client";
-
-import { useEffect } from "react";
+import { redirect } from "next/navigation";
 
 export default function RootPage() {
-  useEffect(() => {
-    window.location.replace("/dashboard");
-  }, []);
-
-  return null;
+  redirect("/agent-manager");
 }

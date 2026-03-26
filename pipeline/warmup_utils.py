@@ -56,12 +56,23 @@ def normalize_warmup(raw: Any, *, required: int) -> WarmupStatus:
         m: Mapping[str, Any] = cast(Mapping[str, Any], raw)
         ready_val = bool(m.get("ready", False))
 
+        def _coerce_int_map(value: Any) -> dict[str, int]:
+            if not isinstance(value, Mapping):
+                return {}
+            out: dict[str, int] = {}
+            for key, val in value.items():
+                try:
+                    out[str(key)] = int(val)
+                except (TypeError, ValueError):
+                    continue
+            return out
+
         # bars bisa beda nama, coba beberapa opsi
         bars_val: Any = m.get("bars") or m.get("count") or m.get("available")
         # check_warmup returns per-timeframe dicts; collapse to scalar
-        if isinstance(bars_val, Mapping):
-            int_bars = cast("Mapping[str, int]", bars_val)
-            bars = min(int_bars.values(), default=0) if int_bars else 0
+        bars_map = _coerce_int_map(bars_val)
+        if bars_map:
+            bars = min(bars_map.values(), default=0)
         else:
             try:
                 bars = int(bars_val) if bars_val is not None else (required if ready_val else 0)
@@ -69,9 +80,9 @@ def normalize_warmup(raw: Any, *, required: int) -> WarmupStatus:
                 bars = required if ready_val else 0
 
         req_val: Any = m.get("required")
-        if isinstance(req_val, Mapping):
-            int_req = cast("Mapping[str, int]", req_val)
-            req = min(int_req.values(), default=required) if int_req else int(required)
+        req_map = _coerce_int_map(req_val)
+        if req_map:
+            req = min(req_map.values(), default=required)
         else:
             try:
                 req = int(req_val) if req_val is not None else int(required)
@@ -81,14 +92,28 @@ def normalize_warmup(raw: Any, *, required: int) -> WarmupStatus:
         missing_val: Any = m.get("missing")
         if missing_val is None:
             missing = max(0, req - bars)
-        elif isinstance(missing_val, Mapping):
-            int_miss = cast("Mapping[str, int]", missing_val)
-            missing = max(int_miss.values(), default=0) if int_miss else 0
         else:
-            try:
-                missing = max(0, int(missing_val))
-            except (TypeError, ValueError):
-                missing = max(0, req - bars)
+            miss_map = _coerce_int_map(missing_val)
+            if miss_map:
+                missing = max(miss_map.values(), default=0)
+            else:
+                try:
+                    missing = max(0, int(missing_val))
+                except (TypeError, ValueError):
+                    missing = max(0, req - bars)
+
+        # If check_warmup returned per-timeframe maps, collapse scalars from one
+        # consistent timeframe (the largest shortfall) to avoid impossible tuples
+        # such as required=4 but missing=6.
+        if bars_map and req_map:
+            shortfalls = {tf: max(0, req_map.get(tf, 0) - bars_map.get(tf, 0)) for tf in req_map}
+            if shortfalls:
+                worst_tf = max(shortfalls, key=lambda tf: shortfalls[tf])
+                bars = bars_map.get(worst_tf, 0)
+                req = req_map.get(worst_tf, int(required))
+                missing = shortfalls.get(worst_tf, max(0, req - bars))
+                if req < bars + missing:
+                    req = bars + missing
 
         return WarmupStatus(
             ready=ready_val,

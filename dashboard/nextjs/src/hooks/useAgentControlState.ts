@@ -178,12 +178,10 @@ export function useAgentControlState(): AgentControlState {
                     await handleUnlock(a.id);
                 })
         );
-        const failed = results.find((r) => r.status === "rejected");
-        if (failed) {
-            const msg = failed.status === "rejected"
-                ? String((failed as PromiseRejectedResult).reason)
-                : "Restart failed";
-            return { success: false, error: msg };
+        const failed = results.filter((r): r is PromiseRejectedResult => r.status === "rejected");
+        if (failed.length > 0) {
+            const msg = failed.map((r) => String(r.reason)).join("; ");
+            return { success: false, error: msg || "Restart failed" };
         }
         refreshAll();
         return { success: true };
@@ -193,12 +191,10 @@ export function useAgentControlState(): AgentControlState {
         const results = await Promise.allSettled(
             agents.map((a) => handleToggleSafeMode(a.id, !enabled))
         );
-        const failed = results.find((r) => r.status === "rejected");
-        if (failed) {
-            const msg = failed.status === "rejected"
-                ? String((failed as PromiseRejectedResult).reason)
-                : "Safe mode toggle failed";
-            return { success: false, error: msg };
+        const failed = results.filter((r): r is PromiseRejectedResult => r.status === "rejected");
+        if (failed.length > 0) {
+            const msg = failed.map((r) => String(r.reason)).join("; ");
+            return { success: false, error: msg || "Safe mode toggle failed" };
         }
         refreshAll();
         return { success: true };

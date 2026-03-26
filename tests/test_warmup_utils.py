@@ -66,6 +66,20 @@ class TestNormalizeWarmupMapping:
         d = normalize_warmup(raw, required=REQUIRED).to_dict()
         assert set(d.keys()) == {"ready", "bars", "required", "missing"}
 
+    def test_per_timeframe_maps_use_consistent_worst_shortfall_tuple(self):
+        raw = {
+            "ready": False,
+            "bars": {"W1": 0, "H1": 0},
+            "required": {"W1": 4, "H1": 6},
+            "missing": {"W1": 4, "H1": 6},
+        }
+        ws = normalize_warmup(raw, required=REQUIRED)
+        # Scalars must be derived from a single timeframe; no impossible tuple.
+        assert ws.bars == 0
+        assert ws.required == 6
+        assert ws.missing == 6
+        assert ws.missing <= ws.required
+
 
 class TestNormalizeWarmupUnknownType:
     def test_none_treated_as_not_ready(self):

@@ -24,6 +24,15 @@ import { STALE_THRESHOLDS_MS } from "@/lib/realtime/connectionState";
 import { useCandleWorker } from "@/lib/workers";
 import type { OHLC } from "@/workers/protocol";
 
+type TimeframeKey = "M1" | "M5" | "M15" | "H1";
+
+const TIMEFRAME_TO_INTERVAL_MS: Record<TimeframeKey, number> = {
+    M1: 60_000,
+    M5: 5 * 60_000,
+    M15: 15 * 60_000,
+    H1: 60 * 60_000,
+};
+
 interface UseLiveCandlesResult {
     /** Completed candle history for the symbol. */
     candles: CandleData[];
@@ -50,7 +59,11 @@ function ohlcToCandle(o: OHLC, symbol: string, timeframe: string): CandleData {
     };
 }
 
-export function useLiveCandles(symbol: string | undefined): UseLiveCandlesResult {
+export function useLiveCandles(
+    symbol: string | undefined,
+    timeframe: TimeframeKey = "M1"
+): UseLiveCandlesResult {
+    const [rawCandles, setRawCandles] = useState<CandleData[]>([]);
     const [candles, setCandles] = useState<CandleData[]>([]);
     const [forming, setForming] = useState<CandleData | null>(null);
     const [status, setStatus] = useState<WsConnectionStatus>("CONNECTING");
@@ -79,7 +92,7 @@ export function useLiveCandles(symbol: string | undefined): UseLiveCandlesResult
                 if (event.type === "CandleSnapshot") {
                     const payload = event.payload as { candles?: CandleData[] };
                     if (payload.candles) {
-                        setCandles(payload.candles.slice(-MAX_CANDLE_HISTORY));
+                        setRawCandles(payload.candles.slice(-MAX_CANDLE_HISTORY));
                     }
                     resetStaleTimer();
                 } else if (event.type === "CandleForming") {
@@ -99,10 +112,48 @@ export function useLiveCandles(symbol: string | undefined): UseLiveCandlesResult
         };
     }, [symbol, resetStaleTimer]);
 
+    useEffect(() => {
+        let cancelled = false;
+
+        if (!symbol || rawCandles.length === 0) {
+            setCandles([]);
+            return;
+        }
+
+        const targetIntervalMs = TIMEFRAME_TO_INTERVAL_MS[timeframe] ?? TIMEFRAME_TO_INTERVAL_MS.M1;
+        if (targetIntervalMs === TIMEFRAME_TO_INTERVAL_MS.M1) {
+            setCandles(rawCandles);
+            return;
+        }
+
+        const ohlcInput: OHLC[] = rawCandles.map((c) => ({
+            open: c.open,
+            high: c.high,
+            low: c.low,
+            close: c.close,
+            volume: c.volume ?? 0,
+            timestamp: c.timestamp,
+        }));
+
+        void resampleCandles(symbol, ohlcInput, targetIntervalMs)
+            .then((resampled) => {
+                if (cancelled) return;
+                setCandles(resampled.map((o) => ohlcToCandle(o, symbol, timeframe)));
+            })
+            .catch(() => {
+                if (cancelled) return;
+                setCandles(rawCandles);
+            });
+
+        return () => {
+            cancelled = true;
+        };
+    }, [rawCandles, symbol, timeframe, resampleCandles]);
+
     const resample = useCallback(
         async (targetIntervalMs: number): Promise<CandleData[]> => {
-            if (candles.length === 0 || !symbol) return [];
-            const ohlcInput: OHLC[] = candles.map((c) => ({
+            if (rawCandles.length === 0 || !symbol) return [];
+            const ohlcInput: OHLC[] = rawCandles.map((c) => ({
                 open: c.open,
                 high: c.high,
                 low: c.low,
@@ -114,8 +165,8 @@ export function useLiveCandles(symbol: string | undefined): UseLiveCandlesResult
             const tf = `${targetIntervalMs / 60_000}m`;
             return resampled.map((o) => ohlcToCandle(o, symbol, tf));
         },
-        [candles, symbol, resampleCandles]
+        [rawCandles, symbol, resampleCandles]
     );
 
-    return { candles, forming, resample, status, isStale };
+    return { candles, forming: timeframe === "M1" ? forming : null, resample, status, isStale };
 }
