@@ -2,18 +2,17 @@
 
 import React, { useMemo } from "react";
 import PageComplianceBanner from "@/components/feedback/PageComplianceBanner";
-import {
-  TradeTabs,
-  TradeTable,
-  TradeDetailPanel,
-  TradeActionPanel,
-  ExposureSummaryPanel,
-  ExecutionAnomalyBanner,
-} from "@/components/trade-desk";
 import OrchestratorReadinessStrip from "@/components/OrchestratorReadinessStrip";
-import { useTradeDeskState, useTradeDeskLivePrices } from "@/hooks/useTradeDeskHooks";
-import type { TradeDeskTrade } from "@/schema/tradeDeskSchema";
+import type { TradeDeskTrade } from "../model/tradeDeskSchema";
 
+import { TradeTabs } from "./TradeTabs";
+import { TradeTable } from "./TradeTable";
+import { TradeDetailPanel } from "./TradeDetailPanel";
+import { TradeActionPanel } from "./TradeActionPanel";
+import { ExposureSummaryPanel } from "./ExposureSummaryPanel";
+import { ExecutionAnomalyBanner } from "./TradeStatusBadge";
+
+import { useTradeDeskState, useTradeDeskLivePrices } from "../hooks/useTradeDeskState";
 import { useTradeBridge } from "../hooks/useTradeBridge";
 import { useTakeSignalLifecycle } from "../hooks/useTakeSignalLifecycle";
 import { TradeBridgeBanner } from "./TradeBridgeBanner";
