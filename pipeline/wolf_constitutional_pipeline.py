@@ -196,7 +196,8 @@ class WolfConstitutionalPipeline:
         "H1": 20,
         "H4": 10,
         "D1": 5,
-        "W1": 5,  # increased from 4 — short-term fix to match REST fallback provision (revert when WS is fixed)
+        "W1": 5,
+        "MN": 2,
     }
 
     # Avoid log storms when a symbol remains degraded for long periods.
