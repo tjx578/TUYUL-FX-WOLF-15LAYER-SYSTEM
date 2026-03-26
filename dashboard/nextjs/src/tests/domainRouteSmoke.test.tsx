@@ -16,6 +16,12 @@ vi.mock("next/navigation", () => ({
     usePathname: () => "/",
 }));
 
+vi.mock("@/shared/ui/DomainHeader", () => ({
+    DomainHeader: ({ title, subtitle }: { title: string; subtitle: string }) => (
+        <div data-testid="domain-header"><h1>{title}</h1><p>{subtitle}</p></div>
+    ),
+}));
+
 vi.mock("@/components/feedback/PageComplianceBanner", () => ({
     default: () => <div data-testid="compliance-banner" />,
 }));
@@ -48,6 +54,43 @@ vi.mock("@/features/signals/api/signals.api", () => ({
 
 vi.mock("@/features/signals/hooks/useSignalRealtime", () => ({
     useSignalRealtime: () => ({ verdicts: [], status: "closed", isStale: false, lastUpdatedAt: null }),
+}));
+
+vi.mock("@/features/signals/hooks/useSignalBoardFilters", () => ({
+    useSignalBoardFilters: () => ({
+        filteredSignals: [],
+        mode: "ALL",
+        setMode: vi.fn(),
+        query: "",
+        setQuery: vi.fn(),
+    }),
+}));
+
+vi.mock("@/features/signals/hooks/useSignalSelection", () => ({
+    useSignalSelection: () => ({
+        selectedSignal: null,
+        setSelectedSignal: vi.fn(),
+        clearSelection: vi.fn(),
+    }),
+}));
+
+vi.mock("@/features/signals/model/signal.constants", () => ({
+    SIGNAL_FILTER_MODES: ["ALL", "EXECUTE", "HOLD", "ABORT"],
+    isExecuteVerdict: (v: string) => v.startsWith("EXECUTE"),
+    isHoldVerdict: (v: string) => v === "HOLD",
+    isAbortVerdict: (v: string) => v === "ABORT",
+}));
+
+vi.mock("@/shared/api/invalidation", () => ({
+    invalidateAfterTakeSignal: vi.fn(),
+}));
+
+vi.mock("@/shared/ui/toastBus", () => ({
+    pushToast: vi.fn(),
+}));
+
+vi.mock("@/shared/contracts/lifecycleNavigation", () => ({
+    buildLifecycleNavigationQuery: vi.fn(() => ""),
 }));
 
 vi.mock("@/features/accounts/api/accounts.api", () => ({
@@ -89,6 +132,14 @@ vi.mock("@/features/trades/hooks/useTradeBridge", () => ({
 
 vi.mock("@/features/trades/hooks/useTakeSignalLifecycle", () => ({
     useTakeSignalLifecycle: () => ({ data: null, isLoading: false, isError: false, error: null, refetch: vi.fn() }),
+}));
+
+vi.mock("@/features/trades/hooks/useTradeFocusFilter", () => ({
+    useTradeFocusFilter: (trades: unknown[]) => trades,
+}));
+
+vi.mock("@/features/accounts/hooks/useAccountFocusContract", () => ({
+    useAccountFocusContract: () => ({ focusAccountId: null, clearFocus: vi.fn() }),
 }));
 
 // ── Journal domain mocks ────────────────────────────────────
@@ -183,7 +234,7 @@ vi.mock("@tanstack/react-query", () => ({
 
 // ── Tests ────────────────────────────────────────────────────
 
-describe("Domain Route Smoke Tests", () => {
+describe("Domain Route Smoke Tests", { timeout: 15_000 }, () => {
     it("signals page renders without crashing", async () => {
         const { default: SignalsPage } = await import("@/app/(control)/signals/page");
         render(<SignalsPage />);

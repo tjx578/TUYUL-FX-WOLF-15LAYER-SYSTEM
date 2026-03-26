@@ -6,6 +6,7 @@ import type { Account } from "@/types";
 import OrchestratorReadinessStrip from "@/components/OrchestratorReadinessStrip";
 import PageComplianceBanner from "@/components/feedback/PageComplianceBanner";
 import { useAccountFocusContract } from "../hooks/useAccountFocusContract";
+import { DomainHeader } from "@/shared/ui/DomainHeader";
 import { AccountsBridgeBanner } from "./AccountsBridgeBanner";
 import { PortfolioSummaryStrip } from "./PortfolioSummaryStrip";
 import { AccountGridCard } from "./AccountGridCard";
@@ -43,25 +44,11 @@ export function AccountsScreen() {
     <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
       <PageComplianceBanner page="accounts" />
 
-      <div style={{ display: "flex", alignItems: "flex-start", gap: 12, flexWrap: "wrap" }}>
-        <div>
-          <h1
-            style={{
-              fontSize: 22,
-              fontWeight: 800,
-              letterSpacing: "0.06em",
-              color: "var(--text-primary)",
-              margin: 0,
-              fontFamily: "var(--font-display)",
-            }}
-          >
-            CAPITAL ACCOUNTS
-          </h1>
-          <p style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 3 }}>
-            Capital deployment view — readiness, usable capital, lock state
-          </p>
-        </div>
-        <div style={{ marginLeft: "auto" }}>
+      <DomainHeader
+        domain="accounts"
+        title="CAPITAL ACCOUNTS"
+        subtitle="Capital deployment view — readiness, usable capital, lock state"
+        actions={
           <button
             className="btn btn-primary"
             onClick={() => setShowCreate(true)}
@@ -69,8 +56,8 @@ export function AccountsScreen() {
           >
             + ADD ACCOUNT
           </button>
-        </div>
-      </div>
+        }
+      />
 
       <AccountsBridgeBanner focus={focus} />
 

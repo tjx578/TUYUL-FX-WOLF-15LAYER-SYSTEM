@@ -8,6 +8,7 @@ import { JournalTimeline } from "./JournalTimeline";
 import { JournalKpiStrip } from "./JournalKpiStrip";
 import { JournalWeeklyDay } from "./JournalWeeklyDay";
 import { useJournalFocusContract } from "../hooks/useJournalFocusContract";
+import { DomainHeader } from "@/shared/ui/DomainHeader";
 import { JournalBridgeBanner } from "./JournalBridgeBanner";
 import { useJournalContextFilter } from "../hooks/useJournalContextFilter";
 
@@ -54,23 +55,11 @@ export function JournalScreen() {
     <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
       <PageComplianceBanner page="journal" />
 
-      <div>
-        <h1
-          style={{
-            fontSize: 22,
-            fontWeight: 800,
-            letterSpacing: "0.06em",
-            color: "var(--text-primary)",
-            margin: 0,
-            fontFamily: "var(--font-display)",
-          }}
-        >
-          TRADING JOURNAL
-        </h1>
-        <p style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 3 }}>
-          J1-J4 entry logs — wins, losses, rejections, compliance trace
-        </p>
-      </div>
+      <DomainHeader
+        domain="journal"
+        title="TRADING JOURNAL"
+        subtitle="J1-J4 entry logs — wins, losses, rejections, compliance trace"
+      />
 
       <JournalBridgeBanner focus={focus} />
 
