@@ -5,6 +5,7 @@ import { useCalendarEvents, useCalendarBlocker } from "../api/calendar.api";
 import PageComplianceBanner from "@/components/feedback/PageComplianceBanner";
 import type { CalendarEvent } from "@/types";
 import { SourceHealth } from "./SourceHealth";
+import { DomainHeader } from "@/shared/ui/DomainHeader";
 import { NewsLockBanner } from "./NewsLockBanner";
 import { NewsFilterBar } from "./NewsFilterBar";
 import { UpcomingAlert } from "./UpcomingAlert";
@@ -36,29 +37,12 @@ export function NewsScreen() {
     <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
       <PageComplianceBanner page="news" />
 
-      {/* Header */}
-      <div style={{ display: "flex", alignItems: "flex-start", gap: 12, flexWrap: "wrap" }}>
-        <div>
-          <h1
-            style={{
-              fontSize: 22,
-              fontWeight: 800,
-              letterSpacing: "0.06em",
-              color: "var(--text-primary)",
-              margin: 0,
-              fontFamily: "var(--font-display)",
-            }}
-          >
-            NEWS CALENDAR
-          </h1>
-          <p style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 3 }}>
-            Economic events — HIGH impact governs news lock
-          </p>
-        </div>
-        <div style={{ marginLeft: "auto" }}>
-          <SourceHealth />
-        </div>
-      </div>
+      <DomainHeader
+        domain="news"
+        title="NEWS CALENDAR"
+        subtitle="Economic events — HIGH impact governs news lock"
+        actions={<SourceHealth />}
+      />
 
       {blocker?.is_locked && <NewsLockBanner reason={blocker.lock_reason} />}
 

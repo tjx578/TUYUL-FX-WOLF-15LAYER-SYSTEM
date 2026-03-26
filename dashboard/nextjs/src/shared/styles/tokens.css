@@ -75,6 +75,14 @@
   --shadow-card:   0 2px 16px rgba(0, 0, 0, 0.45);
   --shadow-panel:  0 6px 32px rgba(0, 0, 0, 0.55);
   --shadow-modal:  0 20px 70px rgba(0, 0, 0, 0.80);
+
+  /* ── DOMAIN ACCENTS ── */
+  --domain-signals:  #1a6eff;
+  --domain-trades:   #00e676;
+  --domain-accounts: #f5a623;
+  --domain-journal:  #b040fb;
+  --domain-news:     #00d4ff;
+  --domain-risk:     #ff3d57;
 }
 
 /* ── TAILWIND v4 THEME TOKENS ── */

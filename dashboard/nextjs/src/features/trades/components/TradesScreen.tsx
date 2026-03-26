@@ -3,6 +3,7 @@
 import React, { useMemo } from "react";
 import PageComplianceBanner from "@/components/feedback/PageComplianceBanner";
 import OrchestratorReadinessStrip from "@/components/OrchestratorReadinessStrip";
+import { DomainHeader } from "@/shared/ui/DomainHeader";
 import type { TradeDeskTrade } from "../model/tradeDeskSchema";
 
 import { TradeTabs } from "./TradeTabs";
@@ -83,25 +84,11 @@ export function TradesScreen() {
     <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
       <PageComplianceBanner page="trades" />
 
-      <div style={{ display: "flex", alignItems: "flex-start", gap: 14, flexWrap: "wrap" }}>
-        <div>
-          <h1
-            style={{
-              fontSize: 22,
-              fontWeight: 800,
-              letterSpacing: "0.06em",
-              color: "var(--text-primary)",
-              margin: 0,
-              fontFamily: "var(--font-display)",
-            }}
-          >
-            TRADE DESK
-          </h1>
-          <p style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 3 }}>
-            Full lifecycle — INTENDED → PENDING → OPEN → CLOSED
-          </p>
-        </div>
-      </div>
+      <DomainHeader
+        domain="trades"
+        title="TRADE DESK"
+        subtitle="Full lifecycle — INTENDED → PENDING → OPEN → CLOSED"
+      />
 
       <OrchestratorReadinessStrip />
 
