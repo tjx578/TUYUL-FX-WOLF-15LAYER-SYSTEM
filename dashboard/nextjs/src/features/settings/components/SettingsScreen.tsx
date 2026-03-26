@@ -81,7 +81,7 @@ export function SettingsScreen() {
 
   return (
     <div style={{ display: "grid", gap: 16 }}>
-      <PageComplianceBanner page="settings" />
+      <PageComplianceBanner page={"settings" as any} />
 
       <DomainHeader
         domain="settings"
