@@ -5,7 +5,8 @@ export type CompliancePage =
   | "news"
   | "journal"
   | "accounts"
-  | "pipeline";
+  | "pipeline"
+  | "settings";
 
 export type ComplianceTone = "info" | "warning" | "error";
 
