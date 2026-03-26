@@ -5,7 +5,7 @@
 // Data: WS /ws/equity → DrawdownData[]
 // ============================================================
 
-import { useLiveEquity } from "@/lib/realtime";
+import { useLiveEquity } from "../hooks/useLiveEquity";
 import { formatCurrency } from "@/lib/formatters";
 
 interface EquityCurveProps {

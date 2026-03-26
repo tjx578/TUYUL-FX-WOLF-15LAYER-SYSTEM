@@ -1,7 +1,8 @@
 "use client";
 
 import { useRiskSnapshot } from "../api/risk.api";
-import { useLiveRisk } from "@/lib/realtime";
+import { useLiveRisk } from "../hooks/useLiveRisk";
+import { DD_MULTIPLIER_RULES } from "../model/risk.types";
 import { RiskGauge } from "./RiskGauge";
 import { EquityCurve } from "./EquityCurve";
 import { RiskStat } from "./RiskStat";
@@ -57,12 +58,7 @@ export function RiskContent({ accountId }: { accountId: string }) {
               </tr>
             </thead>
             <tbody>
-              {[
-                { range: "< 30%", mult: "1.00x", effect: "Full risk", color: "var(--green)" },
-                { range: "30–60%", mult: "0.75x", effect: "Reduced", color: "var(--text-secondary)" },
-                { range: "60–80%", mult: "0.50x", effect: "Half size", color: "var(--yellow)" },
-                { range: "> 80%", mult: "0.25x", effect: "Emergency", color: "var(--red)" },
-              ].map(({ range, mult, effect, color }) => (
+              {DD_MULTIPLIER_RULES.map(({ range, mult, effect, color }) => (
                 <tr key={range}>
                   <td className="num">{range}</td>
                   <td className="num" style={{ color: "var(--accent)", fontWeight: 700 }}>{mult}</td>
