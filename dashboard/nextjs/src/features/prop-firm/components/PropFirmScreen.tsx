@@ -31,7 +31,7 @@ export function PropFirmScreen() {
 
   return (
     <div style={{ display: "grid", gap: 16 }}>
-      <PageComplianceBanner page="prop-firm" />
+      <PageComplianceBanner page="risk" />
 
       <DomainHeader
         domain="prop-firm"
