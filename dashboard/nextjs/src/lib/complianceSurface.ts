@@ -3,11 +3,13 @@ import type { CompliancePage, ComplianceSurface } from "@/contracts/complianceSu
 const PAGE_CONTEXT: Record<CompliancePage, string> = {
   dashboard: "Execution controls remain visible but elevated actions may be restricted.",
   trades: "Trade actions can be delayed or blocked under active compliance controls.",
+  analysis: "Analysis data remains visible while compliance controls limit execution authority.",
   risk: "Risk views should be prioritized while compliance controls are active.",
   news: "News context is informational only and cannot override compliance gating.",
   journal: "Journaling remains available for full auditability during compliance constraints.",
   accounts: "Account management actions may be restricted while compliance controls are active.",
   pipeline: "Pipeline execution and signal routing may be gated by active compliance controls.",
+  settings: "Configuration updates can be gated while compliance controls are active.",
 };
 
 export function buildComplianceSurface(

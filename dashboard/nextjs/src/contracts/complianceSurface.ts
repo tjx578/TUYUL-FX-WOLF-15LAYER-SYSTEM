@@ -1,11 +1,13 @@
 export type CompliancePage =
   | "dashboard"
   | "trades"
+  | "analysis"
   | "risk"
   | "news"
   | "journal"
   | "accounts"
-  | "pipeline";
+  | "pipeline"
+  | "settings";
 
 export type ComplianceTone = "info" | "warning" | "error";
 
