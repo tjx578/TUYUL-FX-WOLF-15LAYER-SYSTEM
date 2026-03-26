@@ -29,6 +29,16 @@ const rawApiBase = _firstNonEmpty(
   process.env.API_DOMAIN ? `https://${process.env.API_DOMAIN}` : undefined,
 );
 
+// Warn in production builds if no backend URL was configured.
+if (!rawApiBase && process.env.NODE_ENV === "production") {
+  console.warn(
+    "[next.config] No backend API URL configured. " +
+    "Set NEXT_PUBLIC_API_BASE_URL (or INTERNAL_API_URL / API_BASE_URL / API_DOMAIN) " +
+    "in your Vercel project settings. Falling back to http://localhost:8000 which " +
+    "will not work in production."
+  );
+}
+
 // Strip trailing slash and accidental /api suffix to avoid double-prefix.
 const apiBase = (rawApiBase || "http://localhost:8000")
   .replace(/\/+$/, "")
