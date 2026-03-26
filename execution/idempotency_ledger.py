@@ -71,7 +71,7 @@ class ExecutionIdempotencyLedger:
                     existing = cast(dict[str, Any], existing_raw)
                     return False, self._to_record(existing)
         except Exception:
-            logger.warning("[IdempotencyLedger] Redis claim_or_get failed for %s", key, exc_info=True)
+            logger.warning("[IdempotencyLedger] Redis claim_or_get failed for {}", key, exc_info=True)
 
         with self._lock:
             if key in self._fallback:
@@ -119,7 +119,7 @@ class ExecutionIdempotencyLedger:
                     data = cast(dict[str, Any], data_raw)
                     return self._to_record(data)
         except Exception:
-            logger.warning("[IdempotencyLedger] Redis get failed for %s", key, exc_info=True)
+            logger.warning("[IdempotencyLedger] Redis get failed for {}", key, exc_info=True)
         with self._lock:
             item = self._fallback.get(key)
             return self._to_record(item) if item else None
@@ -157,7 +157,7 @@ class ExecutionIdempotencyLedger:
                 ex=self._ttl_sec,
             )
         except Exception:
-            logger.warning("[IdempotencyLedger] Redis mark failed for %s", key, exc_info=True)
+            logger.warning("[IdempotencyLedger] Redis mark failed for {}", key, exc_info=True)
 
         with self._lock:
             self._fallback[key] = updated

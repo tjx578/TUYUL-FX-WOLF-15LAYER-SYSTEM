@@ -45,7 +45,7 @@ _NEWS_PRESSURE = "wolf15:news_pressure"
 _FEED_TS = "wolf15:feed_ts"
 
 # Warmup requirements (mirrors wolf_constitutional_pipeline.py)
-_WARMUP_MIN_BARS = {"H1": 20, "H4": 10, "D1": 5, "W1": 4, "MN": 2}
+_WARMUP_MIN_BARS = {"H1": 20, "H4": 10, "D1": 5, "W1": 5, "MN": 2}
 
 # Timeframes to check
 _ALL_TIMEFRAMES = ("M1", "M5", "M15", "H1", "H4", "D1", "W1", "MN")

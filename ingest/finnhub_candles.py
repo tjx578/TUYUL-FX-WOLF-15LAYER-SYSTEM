@@ -6,6 +6,7 @@ H4 is aggregated from H1 bars (4:1).
 M15 is normally built from ticks, but REST fallback is available
 for cold-start recovery via ``FinnhubCandleFetcher.cold_start_m15()``.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -391,7 +392,7 @@ class FinnhubCandleFetcher:
         ]
         dropped = len(h1_candles) - len(valid_h1)
         if dropped:
-            logger.warning("aggregate_h4: dropped %d/%d invalid H1 bars before aggregation", dropped, len(h1_candles))
+            logger.warning("aggregate_h4: dropped {}/{} invalid H1 bars before aggregation", dropped, len(h1_candles))
         if not valid_h1:
             return []
         h1_candles = valid_h1
@@ -501,7 +502,7 @@ class FinnhubCandleFetcher:
 
         # Get enabled symbols from config (supports pairs.symbols and pairs.pairs)
         enabled_symbols = get_enabled_symbols()
-        logger.info("[Warmup] enabled symbols count=%d symbols=%s", len(enabled_symbols), enabled_symbols[:10])
+        logger.info("[Warmup] enabled symbols count={} symbols={}", len(enabled_symbols), enabled_symbols[:10])
         if not enabled_symbols:
             logger.warning("No enabled symbols found for warmup")
             return {}

@@ -283,7 +283,7 @@ class L9SMCAnalyzer:
             result = self._dvg_engine.analyze(osc=osc_data, price=price_data, mode=mode)  # type: ignore[union-attr]
             return float(result.get("confidence", 0.0))
         except Exception as exc:
-            logger.warning("[L9] Divergence analysis failed: %s", exc)
+            logger.warning("[L9] Divergence analysis failed: {}", exc)
             return 0.0
 
     # ------------------------------------------------------------------

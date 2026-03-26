@@ -112,7 +112,7 @@ def _hold_alive_for_diagnostics() -> None:
     shutdown = threading.Event()
 
     def _on_signal(signum: int, _frame: types.FrameType | None) -> None:
-        logger.info("Received %s — exiting degraded hold", _signal.Signals(signum).name)
+        logger.info("Received {} — exiting degraded hold", _signal.Signals(signum).name)
         shutdown.set()
 
     _signal.signal(_signal.SIGTERM, _on_signal)

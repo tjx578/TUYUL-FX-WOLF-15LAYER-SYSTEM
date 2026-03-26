@@ -168,7 +168,7 @@ async def sanitize_redis_keys(redis: AsyncRedis) -> int:
                     if actual in ("none", expected_type):
                         continue
                     logger.warning(
-                        "[sanitize] %s type=%s expected=%s → deleting",
+                        "[sanitize] {} type={} expected={} → deleting",
                         key_str,
                         actual,
                         expected_type,
@@ -177,14 +177,14 @@ async def sanitize_redis_keys(redis: AsyncRedis) -> int:
                         await redis.delete(key_str)
                         total_deleted += 1
                     except Exception as exc:
-                        logger.error("[sanitize] Failed to delete '%s': %s", key_str, exc)
+                        logger.error("[sanitize] Failed to delete '{}': {}", key_str, exc)
                 if cursor == 0:
                     break
         except Exception as exc:
-            logger.warning("[sanitize] scan for %s failed: %s", pattern, exc)
+            logger.warning("[sanitize] scan for {} failed: {}", pattern, exc)
 
     if total_deleted:
-        logger.info("[sanitize] Cleaned %d conflicting key(s)", total_deleted)
+        logger.info("[sanitize] Cleaned {} conflicting key(s)", total_deleted)
     else:
         logger.debug("[sanitize] No type conflicts found")
 
@@ -245,9 +245,9 @@ async def seed_historical_candles_fixed(
             await redis_client.ltrim(key, -CANDLE_HISTORY_MAXLEN, -1)  # type: ignore[misc]  # redis.asyncio ResponseT
 
             seeded[symbol] = len(candles)
-            logger.info("[seed] %s: %d M15 candles seeded", symbol, len(candles))
+            logger.info("[seed] {}: {} M15 candles seeded", symbol, len(candles))
         except Exception as exc:
-            logger.error("[seed] Failed to seed %s: %s", symbol, exc)
+            logger.error("[seed] Failed to seed {}: {}", symbol, exc)
 
     return seeded
 
@@ -269,5 +269,5 @@ async def _fetch_candles_from_finnhub(
             results = await client.warmup(symbols=[symbol])
             return results.get(symbol, {}).get("M15", [])
     except Exception as exc:
-        logger.warning("[seed] Finnhub fetch for %s failed: %s", symbol, exc)
+        logger.warning("[seed] Finnhub fetch for {} failed: {}", symbol, exc)
     return []

@@ -265,7 +265,7 @@ class RiskFirewall:
                     },
                 )
         except Exception as exc:
-            logger.debug("[Firewall] Prop firm check skipped: %s", exc)
+            logger.debug("[Firewall] Prop firm check skipped: {}", exc)
             return FirewallCheckResult(
                 check_name="prop_firm_limits",
                 order=2,

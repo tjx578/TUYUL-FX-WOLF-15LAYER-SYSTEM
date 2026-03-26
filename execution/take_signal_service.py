@@ -158,7 +158,7 @@ class TakeSignalService:
             svc = SignalService()
             return svc.get(signal_id)
         except Exception:
-            logger.debug("[TakeSignalService] Signal lookup failed for %s", signal_id)
+            logger.debug("[TakeSignalService] Signal lookup failed for {}", signal_id)
             return None
 
     @staticmethod
@@ -208,7 +208,7 @@ class TakeSignalService:
                 },
             )
         except Exception:
-            logger.debug("[TakeSignalService] Event emission failed for %s", event_type)
+            logger.debug("[TakeSignalService] Event emission failed for {}", event_type)
 
 
 # ── Exceptions ────────────────────────────────────────────────────────────────

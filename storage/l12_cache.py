@@ -67,7 +67,7 @@ def set_verdict(pair: str, data: dict[str, Any]) -> None:
     try:
         redis_client.publish(VERDICT_READY_CHANNEL, json.dumps(event_payload))
     except Exception:
-        logger.warning("[L12Cache] Failed to publish VERDICT_READY for %s", pair, exc_info=True)
+        logger.warning("[L12Cache] Failed to publish VERDICT_READY for {}", pair, exc_info=True)
     with contextlib.suppress(Exception):
         append_replay_artifact(
             "verdict_provenance",
@@ -122,7 +122,7 @@ async def set_verdict_async(pair: str, data: dict[str, Any]) -> None:
     try:
         await client.publish(VERDICT_READY_CHANNEL, json.dumps(event_payload))
     except Exception:
-        logger.warning("[L12Cache] Failed to publish async VERDICT_READY for %s", pair, exc_info=True)
+        logger.warning("[L12Cache] Failed to publish async VERDICT_READY for {}", pair, exc_info=True)
     with contextlib.suppress(Exception):
         append_replay_artifact(
             "verdict_provenance",

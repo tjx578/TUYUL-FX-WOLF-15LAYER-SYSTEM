@@ -81,9 +81,16 @@ def _check_jwt_secret(result: StartupCheckResult) -> None:
     secret = os.getenv("DASHBOARD_JWT_SECRET", "").strip() or os.getenv("JWT_SECRET", "").strip()
     forbidden = {"CHANGE_ME", "CHANGE_ME_SUPER_SECRET", "CHANGE_ME_TO_RANDOM_STRING"}
     if not secret:
-        result.warn("DASHBOARD_JWT_SECRET not set — JWT auth will fail closed.")
+        result.warn(
+            "DASHBOARD_JWT_SECRET not set — JWT auth will fail closed. "
+            "Fix: set DASHBOARD_JWT_SECRET in Railway secrets or .env "
+            "(generate with: openssl rand -hex 32)"
+        )
     elif secret in forbidden or len(secret) < 32:
-        result.warn("DASHBOARD_JWT_SECRET is weak (< 32 chars or placeholder). Use: openssl rand -hex 32")
+        result.warn(
+            "DASHBOARD_JWT_SECRET is weak (< 32 chars or placeholder). "
+            "Fix: openssl rand -hex 32 → set in Railway secrets + .env"
+        )
 
 
 def _check_database_url(result: StartupCheckResult) -> None:
@@ -104,6 +111,28 @@ async def _check_redis_connectivity(result: StartupCheckResult) -> None:
         await client.ping()  # type: ignore[misc]
     except Exception as exc:
         result.fail(f"Redis connectivity check failed: {exc}")
+
+
+def _log_startup_report(result: StartupCheckResult) -> None:
+    """Log a structured startup readiness report."""
+    for w in result.warnings:
+        logger.warning("[StartupValidator] {}", w)
+    for e in result.errors:
+        logger.error("[StartupValidator] {}", e)
+
+    if result.ok and not result.warnings:
+        logger.info("[StartupValidator] All checks passed")
+    elif result.ok and result.warnings:
+        logger.info(
+            "[StartupValidator] Passed with {} warning(s) — system functional but degraded",
+            len(result.warnings),
+        )
+    else:
+        logger.error(
+            "[StartupValidator] {} error(s), {} warning(s) — engine may not function correctly",
+            len(result.errors),
+            len(result.warnings),
+        )
 
 
 def validate_engine_startup(*, check_redis_ping: bool = False) -> StartupCheckResult:
@@ -129,20 +158,7 @@ def validate_engine_startup(*, check_redis_ping: bool = False) -> StartupCheckRe
     _check_jwt_secret(result)
     _check_database_url(result)
 
-    for w in result.warnings:
-        logger.warning("[StartupValidator] {}", w)
-    for e in result.errors:
-        logger.error("[StartupValidator] {}", e)
-
-    if result.ok:
-        logger.info("[StartupValidator] All checks passed")
-    else:
-        logger.error(
-            "[StartupValidator] %d error(s), %d warning(s) — engine may not function correctly",
-            len(result.errors),
-            len(result.warnings),
-        )
-
+    _log_startup_report(result)
     return result
 
 
@@ -161,18 +177,5 @@ async def validate_engine_startup_async() -> StartupCheckResult:
     if result.ok:
         await _check_redis_connectivity(result)
 
-    for w in result.warnings:
-        logger.warning("[StartupValidator] {}", w)
-    for e in result.errors:
-        logger.error("[StartupValidator] {}", e)
-
-    if result.ok:
-        logger.info("[StartupValidator] All checks passed (with Redis ping)")
-    else:
-        logger.error(
-            "[StartupValidator] %d error(s), %d warning(s)",
-            len(result.errors),
-            len(result.warnings),
-        )
-
+    _log_startup_report(result)
     return result

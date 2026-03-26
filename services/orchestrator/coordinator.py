@@ -125,7 +125,7 @@ class OrchestratorCoordinator:
         try:
             fw_result = await self._firewall.evaluate(take_id, signal, account_state)
         except Exception as exc:
-            logger.error("[Coordinator] Firewall evaluation failed: %s", exc)
+            logger.error("[Coordinator] Firewall evaluation failed: {}", exc)
             await self._take_svc.transition(
                 take_id,
                 TakeSignalStatus.REJECTED,
@@ -261,4 +261,4 @@ class OrchestratorCoordinator:
             fields["timestamp"] = datetime.now(UTC).isoformat()
             await publisher.publish(stream=ORCHESTRATION_EVENTS, fields=fields)
         except Exception:
-            logger.debug("[Coordinator] Event emission failed for %s", event_type)
+            logger.debug("[Coordinator] Event emission failed for {}", event_type)

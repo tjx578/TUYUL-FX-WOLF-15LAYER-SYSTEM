@@ -201,7 +201,7 @@ async def _flush_loop() -> None:
         try:
             written = await _flush_batch()
             if written:
-                logger.debug("ohlc_persist flushed %d candles", written)
+                logger.debug("ohlc_persist flushed {} candles", written)
         except Exception:
             logger.exception("ohlc_persist loop error")
         await asyncio.sleep(FLUSH_INTERVAL_SEC)
@@ -220,7 +220,7 @@ async def start_candle_persistence() -> None:
         logger.info("ohlc_persist: PostgreSQL not available, skipping")
         return
     _flush_task = asyncio.create_task(_flush_loop())
-    logger.info("ohlc_persist: background flush started (interval=%ss)", FLUSH_INTERVAL_SEC)
+    logger.info("ohlc_persist: background flush started (interval={}s)", FLUSH_INTERVAL_SEC)
 
 
 async def stop_candle_persistence() -> None:

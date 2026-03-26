@@ -363,7 +363,7 @@ class HybridCandleAggregator:
             try:
                 await self._poll_trq()
             except Exception as exc:
-                logger.debug("[HybridCandleAgg] TRQ poll error: %s", exc)
+                logger.debug("[HybridCandleAgg] TRQ poll error: {}", exc)
             await asyncio.sleep(_TRQ_POLL_INTERVAL_SEC)
 
     async def _poll_trq(self) -> None:
@@ -430,4 +430,4 @@ class HybridCandleAggregator:
                     "H1": CandleBuilder(symbol=sym, timeframe=Timeframe.H1),
                 }
         except Exception as exc:
-            logger.warning("[HybridCandleAgg] Local builder init failed: %s", exc)
+            logger.warning("[HybridCandleAgg] Local builder init failed: {}", exc)

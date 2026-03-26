@@ -37,13 +37,32 @@ async def seed_candles_on_startup(pairs: list[str], warmup_min_bars: dict[str, i
 
     bus = LiveContextBus()
     ready_count = 0
+    degraded_pairs: list[str] = []
     for pair in pairs:
         status = bus.check_warmup(pair, warmup_min_bars)
         if status.get("ready"):
             ready_count += 1
         else:
-            logger.warning(f"[SEED] {pair} warmup still insufficient after seeding: {status.get('missing')}")
-    logger.info(f"[SEED] Warmup ready: {ready_count}/{len(pairs)} pairs")
+            missing = status.get("missing", {})
+            degraded_pairs.append(pair)
+            logger.warning(
+                "[SEED] {} warmup insufficient after seeding: missing={} | bars_have={} | bars_need={}",
+                pair,
+                missing,
+                status.get("bars", {}),
+                status.get("required", {}),
+            )
+
+    if degraded_pairs:
+        logger.warning(
+            "[SEED] {}/{} pairs degraded after seeding: {} — "
+            "pipeline will gate these until ingest delivers sufficient data. "
+            "This is expected on cold-start; ingest will fill gaps.",
+            len(degraded_pairs),
+            len(pairs),
+            degraded_pairs,
+        )
+    logger.info("[SEED] Warmup ready: {}/{} pairs", ready_count, len(pairs))
     logger.info(
         "[SEED] Hydration report: source={} seeded_pairs={} attempts={} status={}",
         hydration_report.get("source", "unknown"),
@@ -102,7 +121,7 @@ async def _seed_from_redis(pairs: list[str]) -> dict[str, object]:
                         if htf_status.get("missing"):
                             missing_tfs = list(htf_status["missing"].keys())
                             logger.warning(
-                                "[SEED] %s missing higher-TF data: %s — "
+                                "[SEED] {} missing higher-TF data: {} — "
                                 "L1 context/regime analysis may be degraded "
                                 "until ingest delivers these timeframes.",
                                 pair,
@@ -129,7 +148,7 @@ async def _seed_from_redis(pairs: list[str]) -> dict[str, object]:
             # Fallback: recover candle history from PostgreSQL snapshots
             pg_recovered = await _try_restore_from_postgres(pairs, bus)
             if pg_recovered > 0:
-                logger.info("[SEED] PostgreSQL recovery seeded %d pairs into LiveContextBus", pg_recovered)
+                logger.info("[SEED] PostgreSQL recovery seeded {} pairs into LiveContextBus", pg_recovered)
                 return {
                     "source": "postgres_fallback",
                     "seeded_pairs": pg_recovered,
@@ -237,13 +256,13 @@ async def _try_restore_from_postgres(
                         ]
                         ctx_bus.set_candle_history(symbol, tf, candles)
                         recovered += 1
-                        logger.info("[SEED] PG recovery: %s:%s — %d candles", symbol, tf, len(candles))
+                        logger.info("[SEED] PG recovery: {}:{} — {} candles", symbol, tf, len(candles))
                     except Exception as row_exc:
-                        logger.warning("[SEED] PG recovery failed for %s:%s: %s", symbol, tf, row_exc)
+                        logger.warning("[SEED] PG recovery failed for {}:{}: {}", symbol, tf, row_exc)
 
-        logger.info("[SEED] PostgreSQL candle recovery complete: %d symbol/tf combos", recovered)
+        logger.info("[SEED] PostgreSQL candle recovery complete: {} symbol/tf combos", recovered)
         return recovered
 
     except Exception as exc:
-        logger.error("[SEED] PostgreSQL candle recovery failed: %s", exc)
+        logger.error("[SEED] PostgreSQL candle recovery failed: {}", exc)
         return 0

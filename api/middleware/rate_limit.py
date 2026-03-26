@@ -74,7 +74,7 @@ RATE_LIMIT_ENABLED = _env_bool("RATE_LIMIT_ENABLED", True)
 RATE_LIMIT_BACKEND = _default_rate_limit_backend()  # memory | redis
 if RATE_LIMIT_BACKEND not in {"memory", "redis"}:
     logger.warning(
-        "Invalid RATE_LIMIT_BACKEND=%s; falling back to memory",
+        "Invalid RATE_LIMIT_BACKEND={}; falling back to memory",
         RATE_LIMIT_BACKEND,
     )
     RATE_LIMIT_BACKEND = "memory"
@@ -125,7 +125,7 @@ for _entry in _trusted_proxy_raw.split(","):
         try:
             _trusted_proxy_nets.append(ipaddress.ip_network(_entry, strict=False))
         except ValueError:
-            logger.warning("Invalid CIDR in TRUSTED_PROXIES: %s", _entry)
+            logger.warning("Invalid CIDR in TRUSTED_PROXIES: {}", _entry)
     else:
         _trusted_proxy_exact.add(_entry)
 
@@ -140,7 +140,7 @@ if TRUSTED_PROXY_ENABLED and TRUST_ALL_PROXIES:
 
 if _ON_RAILWAY and TRUSTED_PROXY_ENABLED:
     logger.info(
-        "Railway detected — trusting proxies in %s for X-Forwarded-For",
+        "Railway detected — trusting proxies in {} for X-Forwarded-For",
         _RAILWAY_PROXY_CIDR,
     )
 
@@ -152,7 +152,7 @@ _extra_exempt = os.getenv("RATE_LIMIT_EXEMPT_PATHS", "")
 if _extra_exempt:
     _extra = {p.strip() for p in _extra_exempt.split(",") if p.strip()}
     EXEMPT_PATHS |= _extra
-    logger.info("Rate-limit exempt paths extended: %s", _extra)
+    logger.info("Rate-limit exempt paths extended: {}", _extra)
 
 
 # ---------------------------------------------------------------------------
@@ -592,7 +592,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         # "connection rejected (403 Forbidden)" in websockets library logs.
         if _is_websocket(request):
             logger.debug(
-                "WS upgrade attempt: path=%s origin=%s ip=%s",
+                "WS upgrade attempt: path={} origin={} ip={}",
                 path,
                 request.headers.get("origin", "-"),
                 _client_ip(request),
@@ -610,7 +610,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             allowed, count = await _check_bucket(bucket_name, identity_key, bucket_limit, fallback_store)
             if not allowed:
                 logger.warning(
-                    "Rate limit exceeded: bucket=%s key=%s (%d/%d per min)",
+                    "Rate limit exceeded: bucket={} key={} ({}/{} per min)",
                     bucket_name,
                     identity_key,
                     count,
@@ -631,7 +631,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             ws_identity = await _identity_for_bucket(request, "ws", ip)
             allowed, count = await _check_bucket("ws", ws_identity, WS_PER_MIN, self.ws_store)
             if not allowed:
-                logger.warning("WS rate limit exceeded: key=%s (%d/%d per min)", ws_identity, count, WS_PER_MIN)
+                logger.warning("WS rate limit exceeded: key={} ({}/{} per min)", ws_identity, count, WS_PER_MIN)
                 return JSONResponse(
                     status_code=429,
                     content={
@@ -648,7 +648,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         allowed, count = await _check_bucket("http", http_identity, limit, self.http_store)
 
         if not allowed:
-            logger.warning("HTTP rate limit exceeded: key=%s (%d/%d per min)", http_identity, count, limit)
+            logger.warning("HTTP rate limit exceeded: key={} ({}/{} per min)", http_identity, count, limit)
             return JSONResponse(
                 status_code=429,
                 content={

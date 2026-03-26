@@ -197,6 +197,7 @@ class WolfConstitutionalPipeline:
         "H4": 10,
         "D1": 5,
         "W1": 5,  # increased from 4 — short-term fix to match REST fallback provision (revert when WS is fixed)
+        "MN": 2,  # Monthly: L1 regime context needs at least 2 bars
     }
 
     # Avoid log storms when a symbol remains degraded for long periods.
@@ -581,7 +582,7 @@ class WolfConstitutionalPipeline:
         safe_mode = bool(metrics.get("safe_mode", False))
 
         start_time = time.time()
-        logger.info("[VerdictPath] pipeline started | symbol=%s safe_mode=%s", symbol, safe_mode)
+        logger.info("[VerdictPath] pipeline started | symbol={} safe_mode={}", symbol, safe_mode)
         VERDICT_PATH_EVENT_TOTAL.labels(event="pipeline_started", symbol=symbol, status="ok").inc()
         self._ensure_analyzers()
         self._ensure_governance_engines()
@@ -669,7 +670,7 @@ class WolfConstitutionalPipeline:
             else:
                 state = self._warmup_warning_state.get(symbol)
                 if state and state.get("blocked", False):
-                    logger.info("[Pipeline v8.0] %s warmup recovered; analysis resumed", symbol)
+                    logger.info("[Pipeline v8.0] {} warmup recovered; analysis resumed", symbol)
                 self._warmup_warning_state[symbol] = {
                     "blocked": False,
                     "missing_key": "",
@@ -729,7 +730,7 @@ class WolfConstitutionalPipeline:
         else:
             state = self._dq_warning_state.get(symbol)
             if state and state.get("degraded", False):
-                logger.info("[Pipeline v8.0] %s DATA QUALITY recovered", symbol)
+                logger.info("[Pipeline v8.0] {} DATA QUALITY recovered", symbol)
             self._dq_warning_state[symbol] = {
                 "degraded": False,
                 "reason_key": (),
@@ -1271,13 +1272,13 @@ class WolfConstitutionalPipeline:
                 )
                 enrichment_data = enrichment_result.to_dict()
                 logger.info(
-                    "[Pipeline v8.0] Phase 2.5: Enrichment -- %s score=%.3f engines_ok=%d/9",
+                    "[Pipeline v8.0] Phase 2.5: Enrichment -- {} score={:.3f} engines_ok={}/9",
                     symbol,
                     enrichment_result.enrichment_score,
                     9 - len(enrichment_result.errors),
                 )
             except Exception as exc:
-                logger.warning("[Pipeline v8.0] Phase 2.5 enrichment failed (non-fatal): %s", exc)
+                logger.warning("[Pipeline v8.0] Phase 2.5 enrichment failed (non-fatal): {}", exc)
                 enrichment_data = {"error": str(exc)}
 
             # ── LRCE patch: feed enrichment into L6 (Check 4) ────────
@@ -1304,14 +1305,13 @@ class WolfConstitutionalPipeline:
                         l6.setdefault("warnings", []).append(f"LRCE_FRACTURE({_lrce:.3f})")
                         risk_ok = False
                         logger.warning(
-                            "[Phase-4→2.5] L6 LRCE escalation: %.3f > threshold → HARD BLOCK",
+                            "[Phase-4→2.5] L6 LRCE escalation: {:.3f} > threshold → HARD BLOCK",
                             _lrce,
                         )
                     else:
-                        logger.debug("[Phase-4→2.5] L6 LRCE updated: %.3f (stable)", _lrce)
+                        logger.debug("[Phase-4→2.5] L6 LRCE updated: {:.3f} (stable)", _lrce)
                 except Exception as _lrce_exc:
-                    logger.debug("[Phase-4→2.5] LRCE patch skipped: %s", _lrce_exc)
-
+                    logger.debug("[Phase-4→2.5] LRCE patch skipped: {}", _lrce_exc)
             # ═══════════════════════════════════════════════════════
             # PHASE 5 -- L12 CONSTITUTIONAL VERDICT (SOLE AUTHORITY)
             #   Build synthesis -> 9-Gate Check -> L12 verdict
@@ -1475,7 +1475,7 @@ class WolfConstitutionalPipeline:
                         )
                     l14b_report_dict = _l14b_report.to_dict()
             except Exception as exc:
-                logger.warning("[Pipeline v8.0] L14-B adaptive reflection failed (non-fatal): %s", exc)
+                logger.warning("[Pipeline v8.0] L14-B adaptive reflection failed (non-fatal): {}", exc)
 
             synthesis["l14b_adaptive"] = l14b_report_dict
 

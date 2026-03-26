@@ -352,7 +352,7 @@ class PersistenceSync:
                 """
             )
         except Exception as exc:
-            logger.warning("Candle history recovery query failed: %s", exc)
+            logger.warning("Candle history recovery query failed: {}", exc)
             return 0
 
         if not rows:
@@ -391,12 +391,12 @@ class PersistenceSync:
                     self._redis.client.rpush(key, *chunk)
                 self._redis.client.ltrim(key, -300, -1)
                 recovered += 1
-                logger.debug("[PG Recovery] %s: %d candles restored", key, len(candle_jsons))
+                logger.debug("[PG Recovery] {}: {} candles restored", key, len(candle_jsons))
             except Exception as exc:
-                logger.warning("[PG Recovery] Failed for %s: %s", key, exc)
+                logger.warning("[PG Recovery] Failed for {}: {}", key, exc)
 
         if recovered:
-            logger.info("[PG Recovery] Restored candle history for %d symbol/tf combos", recovered)
+            logger.info("[PG Recovery] Restored candle history for {} symbol/tf combos", recovered)
         return recovered
 
 

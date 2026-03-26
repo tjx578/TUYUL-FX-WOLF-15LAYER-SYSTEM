@@ -1135,7 +1135,7 @@ async def _make_async_pubsub(channel: str) -> _AsyncPubSub | None:
         await pubsub.subscribe(channel)
         return pubsub
     except Exception as exc:
-        logger.warning("[WS] Failed to create async pubsub for channel %s: %s", channel, exc)
+        logger.warning("[WS] Failed to create async pubsub for channel {}: {}", channel, exc)
         return None
 
 
@@ -1370,7 +1370,7 @@ async def websocket_verdict(websocket: fastapi.WebSocket):
             try:
                 await pubsub.aclose()
             except Exception as exc:
-                logger.warning("[WS/verdict] pubsub cleanup error: %s", exc)
+                logger.warning("[WS/verdict] pubsub cleanup error: {}", exc)
 
 
 # ---------------------------------------------------------------------------
@@ -1471,7 +1471,7 @@ async def websocket_signals(websocket: fastapi.WebSocket):
             try:
                 await pubsub.aclose()
             except Exception as exc:
-                logger.warning("[WS/signals] pubsub cleanup error: %s", exc)
+                logger.warning("[WS/signals] pubsub cleanup error: {}", exc)
 
 
 # ---------------------------------------------------------------------------
@@ -1574,7 +1574,7 @@ async def websocket_pipeline(websocket: fastapi.WebSocket):
             try:
                 await pubsub.aclose()
             except Exception as exc:
-                logger.warning("[WS/pipeline] pubsub cleanup error: %s", exc)
+                logger.warning("[WS/pipeline] pubsub cleanup error: {}", exc)
 
 
 # ---------------------------------------------------------------------------
@@ -1700,7 +1700,7 @@ async def websocket_alerts(websocket: fastapi.WebSocket):
             try:
                 await pubsub.aclose()
             except Exception as exc:
-                logger.warning("[WS/alerts] pubsub cleanup error: %s", exc)
+                logger.warning("[WS/alerts] pubsub cleanup error: {}", exc)
 
 
 # ---------------------------------------------------------------------------
@@ -1766,7 +1766,7 @@ async def get_trq_r3d_history(symbol: str) -> dict[str, Any]:
         redis = await get_client()
         raw_entries: list[Any] = await redis.lrange(_trq_r3d_history(sym_upper), -100, -1)  # pyright: ignore[reportGeneralTypeIssues]
     except Exception as exc:
-        logger.warning("[TRQ R3D] Redis read failed %s: %s", sym_upper, exc)
+        logger.warning("[TRQ R3D] Redis read failed {}: {}", sym_upper, exc)
         return {"symbol": sym_upper, "r3d_history": [], "count": 0}
 
     import orjson as _orjson  # noqa: PLC0415

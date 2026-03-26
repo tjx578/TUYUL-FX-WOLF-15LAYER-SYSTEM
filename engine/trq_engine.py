@@ -64,7 +64,7 @@ class _RedisCandleReader:
         try:
             raw_entries: list[Any] = await self._redis.lrange(key, -count, -1)
         except Exception as exc:
-            logger.warning("[TRQEngine] Redis read failed %s %s: %s", symbol, timeframe, exc)
+            logger.warning("[TRQEngine] Redis read failed {} {}: {}", symbol, timeframe, exc)
             return []
 
         candles: list[dict[str, Any]] = []
@@ -269,7 +269,7 @@ class TRQEngine:
 
     async def run(self) -> None:
         """Main loop: poll → compute → publish."""
-        logger.info("[TRQEngine] Started for %d symbols", len(self._symbols))
+        logger.info("[TRQEngine] Started for {} symbols", len(self._symbols))
         try:
             while True:
                 start = time.monotonic()
@@ -278,7 +278,7 @@ class TRQEngine:
                 sleep = max(0.0, self._poll_interval - elapsed)
                 await asyncio.sleep(sleep)
         except asyncio.CancelledError:
-            logger.info("[TRQEngine] Stopped after %d cycles", self._cycle_count)
+            logger.info("[TRQEngine] Stopped after {} cycles", self._cycle_count)
             raise
 
     async def _run_cycle(self) -> None:
@@ -288,7 +288,7 @@ class TRQEngine:
             try:
                 await self._process_symbol(symbol)
             except Exception as exc:
-                logger.warning("[TRQEngine] Error processing %s: %s", symbol, exc)
+                logger.warning("[TRQEngine] Error processing {}: {}", symbol, exc)
 
     async def _process_symbol(self, symbol: str) -> None:
         """Compute and publish TRQ metrics for one symbol."""

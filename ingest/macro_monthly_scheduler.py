@@ -89,4 +89,4 @@ class MacroMonthlyScheduler:
                 pub_channel = channel_candle(symbol, timeframe)
                 await self._redis.publish(pub_channel, candle_json)
             except Exception as exc:
-                logger.warning("[MacroMonthly] Redis push failed %s: %s", key, exc)
+                logger.warning("[MacroMonthly] Redis push failed {}: {}", key, exc)

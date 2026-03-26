@@ -247,7 +247,7 @@ async def main() -> None:
     startup_check = await validate_engine_startup_async()
     if not startup_check.ok:
         logger.error(
-            "Startup validation found %d error(s) — engine may not function correctly. "
+            "Startup validation found {} error(s) — engine may not function correctly. "
             "Continuing to keep health probe alive for diagnostics.",
             len(startup_check.errors),
         )
@@ -272,9 +272,9 @@ async def main() -> None:
 
         pool_report = await check_redis_pool_health()
         if not pool_report.get("healthy"):
-            logger.error("[Startup] Redis pool unhealthy: %s", pool_report)
+            logger.error("[Startup] Redis pool unhealthy: {}", pool_report)
     except Exception as exc:
-        logger.warning("[Startup] Redis health check skipped: %s", exc)
+        logger.warning("[Startup] Redis health check skipped: {}", exc)
 
     # ── Seed candles BEFORE analysis loop starts ────────────────────
     if RUN_MODE in ("all", "engine-only"):

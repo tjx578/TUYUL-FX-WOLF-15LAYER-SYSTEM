@@ -203,7 +203,7 @@ class SignalService:
                 client = await get_client()
                 raw_values: list[Any] = await client.mget(*keys)
             except Exception as exc:
-                logger.warning("[SignalService] mget failed, falling back to empty verdicts: %s", exc)
+                logger.warning("[SignalService] mget failed, falling back to empty verdicts: {}", exc)
                 raw_values = [None] * len(symbols)
 
             for symbol, raw in zip(symbols, raw_values, strict=True):

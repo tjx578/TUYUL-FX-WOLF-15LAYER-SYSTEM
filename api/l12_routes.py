@@ -45,7 +45,7 @@ _WARMUP_MIN_BARS: dict[str, int] = {
     "H1": 20,
     "H4": 10,
     "D1": 5,
-    "W1": 4,
+    "W1": 5,
     "MN": 2,
 }
 

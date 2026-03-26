@@ -4,6 +4,7 @@ H1/H4 periodic refresh scheduler.
 Refreshes H1 candles hourly and re-aggregates H4.
 Detects price drift between REST and WebSocket feeds.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -191,4 +192,4 @@ class H1RefreshScheduler:
                 pub_channel = channel_candle(symbol, timeframe)
                 await self._redis.publish(pub_channel, candle_json)
             except Exception as exc:
-                logger.warning("[H1Refresh] Redis push failed %s: %s", key, exc)
+                logger.warning("[H1Refresh] Redis push failed {}: {}", key, exc)

@@ -165,7 +165,7 @@ class L7MinimalAnalyzer:
             return result
 
         except Exception as exc:
-            logger.error("[L7-minimal] %s analysis failed: %s", symbol, exc)
+            logger.error("[L7-minimal] {} analysis failed: {}", symbol, exc)
             return self._fallback_result(symbol, len(returns))
 
     @staticmethod

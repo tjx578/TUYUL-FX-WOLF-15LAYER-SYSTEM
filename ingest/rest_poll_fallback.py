@@ -7,6 +7,7 @@ Activates in two scenarios:
    that haven't received a WebSocket tick within the silence threshold
    (e.g. exotic/minor crosses on Finnhub's OANDA feed).
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -88,9 +89,7 @@ class RestPollFallback:
             )
 
         logger.info(
-            "RestPollFallback initialized: interval=%.1fs, "
-            "grace=%.1fs, m15_bars=%d, "
-            "refresh_h1=%s, symbols=%d",
+            "RestPollFallback initialized: interval=%.1fs, grace=%.1fs, m15_bars=%d, refresh_h1=%s, symbols=%d",
             self._poll_interval,
             self._grace_sec,
             self._bars,
@@ -239,15 +238,15 @@ class RestPollFallback:
 
             if m15_candles:
                 logger.debug(
-                    "REST poll: seeded %d M15 bars for %s",
+                    "REST poll: seeded {} M15 bars for {}",
                     len(m15_candles),
                     symbol,
                 )
 
         except FinnhubCandleError as exc:
-            logger.warning("REST poll M15 failed for %s: %s", symbol, exc)
+            logger.warning("REST poll M15 failed for {}: {}", symbol, exc)
         except Exception as exc:
-            logger.error("REST poll M15 unexpected error for %s: %s", symbol, exc)
+            logger.error("REST poll M15 unexpected error for {}: {}", symbol, exc)
 
         if self._refresh_h1:
             try:
@@ -269,9 +268,9 @@ class RestPollFallback:
                     await self._push_candles_to_redis(h4_candles)
 
             except FinnhubCandleError as exc:
-                logger.warning("REST poll H1 failed for %s: %s", symbol, exc)
+                logger.warning("REST poll H1 failed for {}: {}", symbol, exc)
             except Exception as exc:
-                logger.error("REST poll H1 unexpected error for %s: %s", symbol, exc)
+                logger.error("REST poll H1 unexpected error for {}: {}", symbol, exc)
 
     async def stop(self) -> None:
         """Signal the fallback scheduler to stop."""
@@ -307,8 +306,7 @@ class RestPollFallback:
                 )
             elif self._redis_skips % 100 == 0:
                 logger.error(
-                    "[RestPoll] Still no redis_client — "
-                    "%d candles skipped so far",
+                    "[RestPoll] Still no redis_client — %d candles skipped so far",
                     self._redis_skips,
                 )
             return
@@ -324,8 +322,7 @@ class RestPollFallback:
             if not symbol or not timeframe:
                 # ── FIX: log skip instead of silent continue ──
                 logger.warning(
-                    "[RestPoll] Candle skipped — missing symbol=%s "
-                    "timeframe=%s keys=%s",
+                    "[RestPoll] Candle skipped — missing symbol=%s timeframe=%s keys=%s",
                     symbol,
                     timeframe,
                     list(candle.keys())[:8],
@@ -349,12 +346,11 @@ class RestPollFallback:
                 self._redis_writes += len(items)
                 written_in_batch += len(items)
             except Exception as exc:
-                logger.warning("[RestPoll] RPUSH failed %s: %s", key, exc)
+                logger.warning("[RestPoll] RPUSH failed {}: {}", key, exc)
 
         if written_in_batch > 0:
             logger.info(
-                "[RestPoll] Wrote %d/%d candles to Redis (%s/%s) — "
-                "total writes: %d",
+                "[RestPoll] Wrote %d/%d candles to Redis (%s/%s) — total writes: %d",
                 written_in_batch,
                 len(candles),
                 candles[0].get("symbol", "?"),
@@ -363,8 +359,7 @@ class RestPollFallback:
             )
         elif candles:
             logger.warning(
-                "[RestPoll] 0/%d candles written — all skipped! "
-                "First candle keys: %s",
+                "[RestPoll] 0/%d candles written — all skipped! First candle keys: %s",
                 len(candles),
                 list(candles[0].keys())[:10],
             )

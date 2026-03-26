@@ -61,7 +61,7 @@ class AllocationService:
         # ── Idempotency guard (P1-10) ────────────────────────────────────
         cached = self._check_idempotency(request.request_id)
         if cached is not None:
-            logger.info("AllocationService: idempotent hit for request_id=%s", request.request_id)
+            logger.info("AllocationService: idempotent hit for request_id={}", request.request_id)
             return cached
 
         signal_raw = self._registry.get_by_id(request.signal_id)

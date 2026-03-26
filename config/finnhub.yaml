@@ -26,11 +26,11 @@ candles:
     request_delay_sec: 0.5
     max_concurrent: 5
     min_bars:                          # Minimum bars for READY state
-      MN: 12
-      W1: 20
-      D1: 50
-      H4: 10
-      H1: 50
+      MN: 3                            # Monthly (3 = realistic for REST API, exotic pairs may have less)
+      W1: 12                           # Weekly (12 weeks = ~3 months)
+      D1: 30                           # Daily (30 days = ~1 month)
+      H4: 10                           # 4-hour
+      H1: 50                           # 1-hour
   refresh:
     h1_interval_sec: 3600             # Refresh H1 every 1 hour
     h1_bars: 5                        # Fetch last 5 bars on refresh

@@ -19,5 +19,5 @@ class ExposureControl:
 
     def is_within_limits(self, account_id: str, symbol: str) -> bool:
         """Return True if opening a new position on *symbol* is safe for *account_id*."""
-        logger.debug("[ExposureControl] stub check for %s / %s — allowing", account_id, symbol)
+        logger.debug("[ExposureControl] stub check for {} / {} — allowing", account_id, symbol)
         return True
