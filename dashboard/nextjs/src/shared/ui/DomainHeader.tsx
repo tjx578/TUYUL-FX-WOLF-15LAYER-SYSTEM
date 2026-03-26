@@ -2,7 +2,14 @@
 
 import type { ReactNode } from "react";
 
-export type DomainId = "signals" | "trades" | "accounts" | "journal" | "news" | "risk";
+export type DomainId =
+    | "signals"
+    | "trades"
+    | "accounts"
+    | "journal"
+    | "news"
+    | "risk"
+    | "analysis";
 
 interface DomainHeaderProps {
     domain: DomainId;
