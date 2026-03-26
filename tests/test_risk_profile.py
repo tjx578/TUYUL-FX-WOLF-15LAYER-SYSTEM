@@ -80,7 +80,7 @@ def test_risk_profile_immutability():
     """Test that RiskProfile is immutable (frozen dataclass)."""
     profile = RiskProfile()
     with pytest.raises(FrozenInstanceError):
-        object.__setattr__(profile, "risk_per_trade", cast(Any, 2.0))
+        cast(Any, profile).risk_per_trade = 2.0
 
 
 # ========== Invalid Field Values ==========

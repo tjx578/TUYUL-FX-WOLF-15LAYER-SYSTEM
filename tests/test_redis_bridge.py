@@ -22,7 +22,7 @@ class TestRedisContextBridge:
         mock.xadd.return_value = "1234567890-0"
         mock.hset.return_value = 1
         mock.publish.return_value = 1
-        mock.hget.return_value = None
+        mock.hgetall.return_value = {}
         mock.get.return_value = None
         return mock
 
@@ -142,18 +142,18 @@ class TestRedisContextBridge:
             "timestamp": 1700000000.0,
         }
         tick_json = orjson.dumps(tick).decode("utf-8")
-        mock_redis.hget.return_value = tick_json
+        mock_redis.hgetall.return_value = {"data": tick_json}
 
         result = bridge.read_latest_tick("EURUSD")
 
         assert result == tick
-        assert mock_redis.hget.called
-        call_args = mock_redis.hget.call_args
+        assert mock_redis.hgetall.called
+        call_args = mock_redis.hgetall.call_args
         assert call_args[0][0] == "wolf15:latest_tick:EURUSD"
 
     def test_read_latest_tick_not_found(self, bridge, mock_redis):
         """Test reading latest tick when not found."""
-        mock_redis.hget.return_value = None
+        mock_redis.hgetall.return_value = {}
 
         result = bridge.read_latest_tick("EURUSD")
 
@@ -168,12 +168,12 @@ class TestRedisContextBridge:
             "close": 1.0845,
         }
         candle_json = orjson.dumps(candle).decode("utf-8")
-        mock_redis.hget.return_value = candle_json
+        mock_redis.hgetall.return_value = {"data": candle_json}
 
         result = bridge.read_latest_candle("EURUSD", "M15")
 
         assert result == candle
-        assert mock_redis.hget.called
+        assert mock_redis.hgetall.called
 
     def test_read_latest_news_success(self, bridge, mock_redis):
         """Test reading latest news from Redis."""

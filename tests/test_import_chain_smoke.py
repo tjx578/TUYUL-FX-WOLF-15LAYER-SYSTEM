@@ -9,6 +9,7 @@ Zone: tests/ -- read-only import validation, no execution side-effects.
 from __future__ import annotations
 
 import importlib
+from typing import Any, cast
 
 import pytest
 
@@ -40,9 +41,9 @@ def test_core_fusion_unified_shim_all_populated() -> None:
     import core.core_fusion as fusion_pkg
     import core.core_fusion_unified as shim
 
-    shim_all = getattr(shim, "__all__", [])
+    shim_all = cast(list[str], cast(Any, shim).__all__)
 
-    for name in fusion_pkg.__all__:
+    for name in cast(list[str], cast(Any, fusion_pkg).__all__):
         assert name in shim_all, f"core.core_fusion_unified shim is missing symbol: {name!r}"
         assert getattr(shim, name) is getattr(fusion_pkg, name), (
             f"core.core_fusion_unified.{name} is not the same object as core.core_fusion.{name}"

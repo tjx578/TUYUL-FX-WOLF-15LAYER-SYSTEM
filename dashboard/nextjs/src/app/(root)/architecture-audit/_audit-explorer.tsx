@@ -142,7 +142,7 @@ function DomainTab({
     return (
         <button
             onClick={onClick}
-            aria-selected={isActive}
+            aria-pressed={isActive}
             style={{
                 padding: "10px 12px",
                 borderRadius: "var(--radius-md)",

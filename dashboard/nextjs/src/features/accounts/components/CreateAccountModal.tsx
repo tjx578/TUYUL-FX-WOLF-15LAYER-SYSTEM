@@ -11,16 +11,34 @@ import { createAccount } from "../api/accounts.api";
 import { fetchPropFirms, fetchPropFirmPrograms, fetchPropFirmRules } from "@/shared/api/propfirm.api";
 import Panel from "@/components/ui/Panel";
 
+interface PropFirmItem {
+    code: string;
+    name: string;
+}
+
+interface ProgramItem {
+    code: string;
+    name: string;
+}
+
+interface PropFirmRules {
+    max_daily_loss?: number;
+    max_total_loss?: number;
+    [key: string]: unknown;
+}
+
 interface CreateAccountModalProps {
     onCreated: () => void;
     onCancel: () => void;
 }
 
 export default function CreateAccountModal({ onCreated, onCancel }: CreateAccountModalProps) {
-    const [form, setForm] = useState<AccountCreate & {
-        prop_firm: boolean;
-        data_source: string;
-    }>({
+    const [form, setForm] = useState<
+        AccountCreate & {
+            prop_firm: boolean;
+            data_source: "MANUAL" | "EA";
+        }
+    >({
         broker: "",
         account_name: "",
         program_code: "",
@@ -32,14 +50,40 @@ export default function CreateAccountModal({ onCreated, onCancel }: CreateAccoun
         prop_firm: false,
         data_source: "MANUAL",
     });
-    const [firms, setFirms] = useState<any[]>([]);
-    const [programs, setPrograms] = useState<any[]>([]);
-    const [phases, setPhases] = useState<string[]>([]);
-    const [rules, setRules] = useState<any | null>(null);
+    const [firms, setFirms] = useState<PropFirmItem[]>([]);
+    const [programs, setPrograms] = useState<ProgramItem[]>([]);
+    const [rules, setRules] = useState<PropFirmRules | null>(null);
     const [error, setError] = useState<string | null>(null);
     const [submitting, setSubmitting] = useState(false);
 
-    const handleSubmit = async (e: React.FormEvent) => {
+    useEffect(() => {
+        if (!form.prop_firm) {
+            setFirms([]);
+            return;
+        }
+
+        void fetchPropFirms().then((res) => setFirms(res.items ?? []));
+    }, [form.prop_firm]);
+
+    useEffect(() => {
+        if (!form.prop_firm || !form.prop_firm_code) {
+            setPrograms([]);
+            return;
+        }
+
+        void fetchPropFirmPrograms(form.prop_firm_code).then((res) => setPrograms(res.items ?? []));
+    }, [form.prop_firm, form.prop_firm_code]);
+
+    useEffect(() => {
+        if (!form.prop_firm || !form.prop_firm_code || !form.program_code) {
+            setRules(null);
+            return;
+        }
+
+        void fetchPropFirmRules(form.prop_firm_code, form.program_code, form.phase_code || "funded").then((res) => setRules(res));
+    }, [form.prop_firm, form.prop_firm_code, form.program_code, form.phase_code]);
+
+    const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
         e.preventDefault();
         if (!form.broker || !form.account_name || form.balance <= 0) {
             setError("Please fill all required fields");
@@ -54,28 +98,7 @@ export default function CreateAccountModal({ onCreated, onCancel }: CreateAccoun
                 prop_firm_code: form.prop_firm ? form.prop_firm_code : undefined,
             });
             onCreated();
-        } catch (err) {
-            useEffect(() => {
-                if (form.prop_firm) {
-                    fetchPropFirms().then((res) => setFirms(res.items || []));
-                }
-            }, [form.prop_firm]);
-
-            useEffect(() => {
-                if (form.prop_firm && form.prop_firm_code) {
-                    fetchPropFirmPrograms(form.prop_firm_code).then((res) => setPrograms(res.items || []));
-                } else {
-                    setPrograms([]);
-                }
-            }, [form.prop_firm, form.prop_firm_code]);
-
-            useEffect(() => {
-                if (form.prop_firm && form.prop_firm_code && form.program_code) {
-                    fetchPropFirmRules(form.prop_firm_code, form.program_code, form.phase_code || "funded").then((res) => setRules(res));
-                } else {
-                    setRules(null);
-                }
-            }, [form.prop_firm, form.prop_firm_code, form.program_code, form.phase_code]);
+        } catch (err: unknown) {
             setError(err instanceof Error ? err.message : "Failed to create account");
         } finally {
             setSubmitting(false);
@@ -232,14 +255,72 @@ export default function CreateAccountModal({ onCreated, onCancel }: CreateAccoun
                         {form.prop_firm && (
                             <div>
                                 <label style={labelStyle}>PROP FIRM CODE</label>
-                                <input
-                                    name="prop_firm_code"
+                                {firms.length > 0 ? (
+                                    <select
+                                        name="prop_firm_code"
+                                        style={inputStyle}
+                                        value={form.prop_firm_code ?? ""}
+                                        onChange={(e) => setForm({ ...form, prop_firm_code: e.target.value || "" })}
+                                    >
+                                        <option value="">Select prop firm</option>
+                                        {firms.map((firm) => (
+                                            <option key={firm.code} value={firm.code}>
+                                                {firm.name} ({firm.code})
+                                            </option>
+                                        ))}
+                                    </select>
+                                ) : (
+                                    <input
+                                        name="prop_firm_code"
+                                        style={inputStyle}
+                                        value={form.prop_firm_code ?? ""}
+                                        onChange={(e) => setForm({ ...form, prop_firm_code: e.target.value || "" })}
+                                        placeholder="FTMO / MFF / TFT"
+                                        maxLength={64}
+                                    />
+                                )}
+                            </div>
+                        )}
+
+                        {form.prop_firm && form.prop_firm_code && programs.length > 0 && (
+                            <div>
+                                <label style={labelStyle}>PROGRAM</label>
+                                <select
+                                    name="program_code"
                                     style={inputStyle}
-                                    value={form.prop_firm_code ?? ""}
-                                    onChange={(e) => setForm({ ...form, prop_firm_code: e.target.value || "" })}
-                                    placeholder="FTMO / MFF / TFT"
-                                    maxLength={64}
-                                />
+                                    value={form.program_code ?? ""}
+                                    onChange={(e) => setForm({ ...form, program_code: e.target.value || "" })}
+                                >
+                                    <option value="">Select program</option>
+                                    {programs.map((program) => (
+                                        <option key={program.code} value={program.code}>
+                                            {program.name} ({program.code})
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
+                        )}
+
+                        {form.prop_firm && (
+                            <div>
+                                <label style={labelStyle}>PHASE</label>
+                                <select
+                                    name="phase_code"
+                                    style={inputStyle}
+                                    value={form.phase_code ?? "funded"}
+                                    onChange={(e) => setForm({ ...form, phase_code: e.target.value || "funded" })}
+                                >
+                                    <option value="challenge">challenge</option>
+                                    <option value="verification">verification</option>
+                                    <option value="funded">funded</option>
+                                </select>
+                            </div>
+                        )}
+
+                        {rules && (
+                            <div style={{ fontSize: 10, color: "var(--text-muted)", display: "grid", gap: 4 }}>
+                                <div>Max Daily Loss: {rules.max_daily_loss ?? "-"}</div>
+                                <div>Max Total Loss: {rules.max_total_loss ?? "-"}</div>
                             </div>
                         )}
 
