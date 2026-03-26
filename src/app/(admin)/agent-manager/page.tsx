@@ -120,6 +120,7 @@ export default function AgentManagerPage() {
       >
         {/* LEFT — Agents / Profiles */}
         <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
+          {/* Left Tab Bar */}
           <div
             style={{
               display: "flex",
@@ -177,6 +178,7 @@ export default function AgentManagerPage() {
             ))}
           </div>
 
+          {/* Left Panel Content */}
           <Panel>
             {activeTab === "agents" && (
               <AgentManagerGrid
@@ -195,6 +197,7 @@ export default function AgentManagerPage() {
 
         {/* RIGHT — Detail + Sub-tabs */}
         <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
+          {/* Right Tab Bar */}
           <div
             style={{
               display: "flex",
@@ -228,7 +231,9 @@ export default function AgentManagerPage() {
             ))}
           </div>
 
+          {/* Right Panel Content */}
           <Panel>
+            {/* Actions always visible at top when agent selected */}
             {selectedAgent && detailTab === "detail" && (
               <div
                 style={{
@@ -248,12 +253,15 @@ export default function AgentManagerPage() {
             )}
 
             {detailTab === "detail" && <AgentManagerDetail agent={selectedAgent} />}
+
             {detailTab === "events" && (
               <AgentManagerEvents events={events} isLoading={false} />
             )}
+
             {detailTab === "audit" && (
               <AgentManagerAudit logs={auditLogs} isLoading={auditLoading} />
             )}
+
             {detailTab === "snapshots" && (
               <SnapshotPanel snapshots={snapshots} isLoading={snapshotsLoading} />
             )}
