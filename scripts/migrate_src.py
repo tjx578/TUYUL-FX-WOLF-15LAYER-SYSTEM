@@ -1,12 +1,6 @@
-"""
-Copies all source files from dashboard/nextjs/src/ into the root src/,
-preserving directory structure.  Files already written by hand-crafted
-previous steps are SKIPPED so we don't clobber them.
-
-Run with:  uv run scripts/migrate_src.py
-"""
-
-import os
+# /// script
+# requires-python = ">=3.11"
+# ///
 import shutil
 from pathlib import Path
 
@@ -14,7 +8,6 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 SOURCE = PROJECT_ROOT / "dashboard" / "nextjs" / "src"
 DEST   = PROJECT_ROOT / "src"
 
-# Files we already hand-crafted — keep them untouched.
 SKIP = {
     "app/globals.css",
     "app/layout.tsx",
@@ -35,7 +28,7 @@ for src_path in SOURCE.rglob("*"):
     rel_str = rel.as_posix()
 
     if rel_str in SKIP:
-        print(f"  [SKIP]   {rel_str}")
+        print("  [SKIP]   " + rel_str)
         skipped += 1
         continue
 
@@ -44,13 +37,13 @@ for src_path in SOURCE.rglob("*"):
 
     try:
         shutil.copy2(src_path, dest_path)
-        print(f"  [COPY]   {rel_str}")
+        print("  [COPY]   " + rel_str)
         copied += 1
     except Exception as e:
-        print(f"  [ERROR]  {rel_str}: {e}")
+        print("  [ERROR]  " + rel_str + ": " + str(e))
         errors += 1
 
-print()
-print(f"[migrate_src] Done — {copied} copied, {skipped} skipped, {errors} errors.")
-print(f"[migrate_src] Source : {SOURCE}")
-print(f"[migrate_src] Dest   : {DEST}")
+print("")
+print("[migrate_src] Done - " + str(copied) + " copied, " + str(skipped) + " skipped, " + str(errors) + " errors.")
+print("[migrate_src] Source : " + str(SOURCE))
+print("[migrate_src] Dest   : " + str(DEST))

@@ -11,7 +11,7 @@ import {
   deleteAgent,
   updateAgent,
 } from "@/lib/agent-manager-api";
-import type { AgentItem, AgentListFilters, LockAgentRequest } from "@/types/agent-manager";
+import type { AgentItem, AgentStatus, AgentListFilters, LockAgentRequest } from "@/types/agent-manager";
 import { AgentStatus as AgentStatusEnum } from "@/types/agent-manager";
 
 export interface AgentManagerSummary {
@@ -29,13 +29,20 @@ export type AgentManagerTab = "agents" | "profiles";
 export type AgentManagerDetailTab = "detail" | "events" | "audit" | "snapshots";
 
 export interface AgentManagerState {
+  // Data
   agents: AgentItem[];
   totalAgents: number;
   selectedAgent: AgentItem | null;
   profiles: ReturnType<typeof useAgentManagerProfiles>["data"];
   events: ReturnType<typeof useAgentManagerEvents>["data"];
+
+  // Derived
   summary: AgentManagerSummary;
+
+  // Loading
   isLoading: boolean;
+
+  // UI state
   selectedAgentId: string | null;
   activeTab: AgentManagerTab;
   detailTab: AgentManagerDetailTab;
@@ -44,10 +51,14 @@ export interface AgentManagerState {
   setActiveTab: (tab: AgentManagerTab) => void;
   setDetailTab: (tab: AgentManagerDetailTab) => void;
   setFilters: (filters: AgentListFilters) => void;
+
+  // Mutations
   handleLock: (agentId: string, data: LockAgentRequest) => Promise<{ success: boolean; error?: string }>;
   handleUnlock: (agentId: string) => Promise<{ success: boolean; error?: string }>;
   handleDelete: (agentId: string) => Promise<{ success: boolean; error?: string }>;
   handleToggleSafeMode: (agentId: string, current: boolean) => Promise<{ success: boolean; error?: string }>;
+
+  // Refetch
   refreshAll: () => void;
 }
 
@@ -83,7 +94,9 @@ export function useAgentManagerState(): AgentManagerState {
   } = useAgentManagerList(filters);
 
   const { data: selectedAgent, mutate: mutateDetail } = useAgentManagerDetail(selectedAgentId);
+
   const { data: events, mutate: mutateEvents } = useAgentManagerEvents(selectedAgentId, 50);
+
   const { data: profiles, mutate: mutateProfiles } = useAgentManagerProfiles();
 
   const summary = useMemo(() => computeSummary(agents), [agents]);
@@ -102,7 +115,8 @@ export function useAgentManagerState(): AgentManagerState {
         refreshAll();
         return { success: true };
       } catch (err: unknown) {
-        return { success: false, error: err instanceof Error ? err.message : "Lock failed" };
+        const msg = err instanceof Error ? err.message : "Lock failed";
+        return { success: false, error: msg };
       }
     },
     [refreshAll]
@@ -115,7 +129,8 @@ export function useAgentManagerState(): AgentManagerState {
         refreshAll();
         return { success: true };
       } catch (err: unknown) {
-        return { success: false, error: err instanceof Error ? err.message : "Unlock failed" };
+        const msg = err instanceof Error ? err.message : "Unlock failed";
+        return { success: false, error: msg };
       }
     },
     [refreshAll]
@@ -129,7 +144,8 @@ export function useAgentManagerState(): AgentManagerState {
         refreshAll();
         return { success: true };
       } catch (err: unknown) {
-        return { success: false, error: err instanceof Error ? err.message : "Delete failed" };
+        const msg = err instanceof Error ? err.message : "Delete failed";
+        return { success: false, error: msg };
       }
     },
     [refreshAll, selectedAgentId]
@@ -142,7 +158,8 @@ export function useAgentManagerState(): AgentManagerState {
         refreshAll();
         return { success: true };
       } catch (err: unknown) {
-        return { success: false, error: err instanceof Error ? err.message : "Toggle failed" };
+        const msg = err instanceof Error ? err.message : "Safe mode toggle failed";
+        return { success: false, error: msg };
       }
     },
     [refreshAll]
