@@ -12,7 +12,7 @@
 
 import { describe, it, expect, beforeEach } from "vitest";
 import { useTradeDeskStore } from "@/store/useTradeDeskStore";
-import type { TradeDeskTrade, TradeDeskResponse, ExposureSummary } from "@/schema/tradeDeskSchema";
+import type { TradeDeskTrade, TradeDeskResponse, ExposureSummary } from "@/features/trades/model/tradeDeskSchema";
 
 // ── Test data factories ──────────────────────────────────────
 

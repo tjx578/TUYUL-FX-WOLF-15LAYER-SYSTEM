@@ -71,54 +71,23 @@
 
 ## Import Violation Inventory
 
-These imports in feature screens violate the target architecture. They work today but
-should be progressively migrated to feature-local or `shared/` modules.
+All import violations from the domain cutover (PR-005 through PR-009) have been resolved.
+The deprecated compat shims (`@/components/trade-desk`, `@/hooks/useTradeDeskHooks`,
+`@/schema/tradeDeskSchema`, `@/lib/api`, `@/components/EquityCurve`, `@/components/JournalMetrics`,
+`@/components/RiskGauge`, `@/components/CreateAccountModal`, `@/components/AccountReadinessBadge`,
+`@/components/AccountEligibilityPanel`, `@/components/AccountDetailDrawer`) were deleted in PR-013.
 
-### TradesScreen.tsx — 3 violations
+### Remaining deprecated paths (sunset 2026-06-01)
 
-```text
-@/components/trade-desk          → move to features/trades/components/ or shared/ui/
-@/hooks/useTradeDeskHooks        → move to features/trades/hooks/
-@/schema/tradeDeskSchema         → move to features/trades/model/
-```
-
-### AccountsScreen.tsx — 2 violations
-
-```text
-@/components/AccountDetailDrawer → move to features/accounts/components/
-@/lib/api (useCapitalDeployment) → move to features/accounts/api/
-```
-
-### JournalScreen.tsx — 2 violations
+The agent-control → agent-manager migration is in progress. These files are all
+consumed exclusively by `ea-manager/page.tsx` and will be removed once that page
+is migrated to use `@/hooks/useAgentManagerState` + `@/components/agent-manager/` directly:
 
 ```text
-@/components/JournalMetrics      → move to features/journal/components/
-@/lib/api (useJournal*)          → move to features/journal/api/
-```
-
-### NewsScreen.tsx — 1 violation
-
-```text
-@/lib/api (useCalendar*)         → move to features/news/api/
-```
-
-### SignalBoardScreen.tsx — 1 violation
-
-```text
-@/lib/api (useCapitalDeployment) → cross-domain (accounts), acceptable via shared/api/
-```
-
-### Acceptable legacy imports (no action needed yet)
-
-These are reusable UI components with no domain logic:
-
-```text
-@/components/feedback/PageComplianceBanner   → shared/ui candidate
-@/components/OrchestratorReadinessStrip      → shared/ui candidate
-@/components/feedback/RouteErrorView         → shared/ui candidate
-@/components/AccountReadinessBadge           → shared/ui candidate
-@/components/CreateAccountModal              → features/accounts candidate
-@/lib/formatters                             → shared/utils candidate
+@/hooks/useAgentControlState            → @/hooks/useAgentManagerState
+@/components/agent-control/*            → @/components/agent-manager/*
+@/shared/api/ea.api.ts (deprecated fns) → @/lib/agent-manager-api
+@/types/index.ts (EAAgent, EALog, etc.) → @/types/agent-manager
 ```
 
 ---

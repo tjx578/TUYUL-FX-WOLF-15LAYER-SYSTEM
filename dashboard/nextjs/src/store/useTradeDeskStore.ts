@@ -7,7 +7,7 @@ import type {
   ExposureSummary,
   TradeAnomaly,
   TradeDeskCounts,
-} from "@/schema/tradeDeskSchema";
+} from "@/features/trades/model/tradeDeskSchema";
 
 // ── Types ────────────────────────────────────────────────────
 
