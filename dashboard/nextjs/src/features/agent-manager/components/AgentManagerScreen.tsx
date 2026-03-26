@@ -17,7 +17,7 @@ const TAB_ITEMS: Array<{ key: "overview" | "profiles" | "logs"; label: string }>
   { key: "logs", label: "Logs" },
 ];
 
-export default function AgentControlPage() {
+export function AgentManagerScreen() {
   const {
     status,
     agents,
@@ -36,16 +36,24 @@ export default function AgentControlPage() {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-      {/* Page Header + Controls */}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          flexWrap: "wrap",
+          gap: 12,
+        }}
+      >
         <div>
           <h1 style={{ fontSize: 18, fontWeight: 700, color: "var(--text-primary)", margin: 0 }}>
-            Agent Control
+            Agent Manager
           </h1>
           <p style={{ fontSize: 12, color: "var(--text-muted)", margin: "2px 0 0" }}>
-            EA instance management &amp; monitoring
+            EA instance management, health monitoring, and profile control
           </p>
         </div>
+
         <AgentControlBar
           safeMode={status?.safe_mode ?? false}
           cooldownActive={cooldownState.active}
@@ -54,8 +62,15 @@ export default function AgentControlPage() {
         />
       </div>
 
-      {/* Health Overview */}
-      <Panel glow={agentHealthSummary.overallStatus === "healthy" ? "emerald" : agentHealthSummary.overallStatus === "critical" ? "orange" : "none"}>
+      <Panel
+        glow={
+          agentHealthSummary.overallStatus === "healthy"
+            ? "emerald"
+            : agentHealthSummary.overallStatus === "critical"
+              ? "orange"
+              : "none"
+        }
+      >
         <AgentHealthOverview
           summary={agentHealthSummary}
           safeMode={status?.safe_mode ?? false}
@@ -64,7 +79,6 @@ export default function AgentControlPage() {
         />
       </Panel>
 
-      {/* Tabs */}
       <div style={{ display: "flex", gap: 0, borderBottom: "1px solid var(--bg-border)" }}>
         {TAB_ITEMS.map((tab) => (
           <button
@@ -78,9 +92,11 @@ export default function AgentControlPage() {
               color: activeTab === tab.key ? "var(--cyan, #06b6d4)" : "var(--text-muted)",
               background: "transparent",
               border: "none",
-              borderBottom: activeTab === tab.key ? "2px solid var(--cyan, #06b6d4)" : "2px solid transparent",
+              borderBottom:
+                activeTab === tab.key
+                  ? "2px solid var(--cyan, #06b6d4)"
+                  : "2px solid transparent",
               cursor: "pointer",
-              transition: "all 0.2s",
             }}
           >
             {tab.label}
@@ -88,12 +104,18 @@ export default function AgentControlPage() {
         ))}
       </div>
 
-      {/* Tab Content */}
       {activeTab === "overview" && (
         <div style={{ display: "grid", gridTemplateColumns: "1fr 320px", gap: 16 }}>
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
             {isLoading ? (
-              <div style={{ padding: 20, color: "var(--text-muted)", fontSize: 12, textAlign: "center" }}>
+              <div
+                style={{
+                  padding: 20,
+                  color: "var(--text-muted)",
+                  fontSize: 12,
+                  textAlign: "center",
+                }}
+              >
                 Loading agents...
               </div>
             ) : (
@@ -119,7 +141,15 @@ export default function AgentControlPage() {
 
       {activeTab === "logs" && (
         <Panel>
-          <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", color: "var(--text-muted)", marginBottom: 8 }}>
+          <div
+            style={{
+              fontSize: 11,
+              fontWeight: 700,
+              letterSpacing: "0.08em",
+              color: "var(--text-muted)",
+              marginBottom: 8,
+            }}
+          >
             EA LOGS {selectedAgentId ? `— ${selectedAgentId}` : "— ALL AGENTS"}
           </div>
           <AgentLogsPanel logs={logs} />
