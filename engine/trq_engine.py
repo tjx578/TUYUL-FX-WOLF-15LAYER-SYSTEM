@@ -115,6 +115,8 @@ def _sha256_seed(arr: np.ndarray) -> int:
 
 def _deterministic_volume_split(symbol: str, bar_idx: int, n_buckets: int) -> int:
     """Return a deterministic bucket index via SHA256 of symbol + bar_idx."""
+    if n_buckets <= 0:
+        raise ValueError("n_buckets must be > 0")
     key = f"{symbol}:{bar_idx}".encode()
     digest = hashlib.sha256(key).digest()
     return int.from_bytes(digest[:4], "big") % n_buckets

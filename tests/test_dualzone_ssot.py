@@ -294,6 +294,12 @@ class TestTRQDeterministicVolumeSplit:
             b = _deterministic_volume_split("EURUSD", i, 7)
             assert 0 <= b < 7
 
+    def test_non_positive_bucket_count_fails(self) -> None:
+        from engine.trq_engine import _deterministic_volume_split
+
+        with pytest.raises(ValueError, match="n_buckets"):
+            _deterministic_volume_split("EURUSD", 42, 0)
+
 
 # ══════════════════════════════════════════════════════════════════════════════
 #  Redis keys: dual-zone key functions
