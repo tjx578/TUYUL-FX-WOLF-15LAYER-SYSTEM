@@ -132,7 +132,7 @@ class TRQRedisBridge:
             TRQPremoveSchema(**payload_dict)
         except Exception as exc:
             self._error_count += 1
-            logger.warning("[TRQRedisBridge] Schema validation failed %s: %s", symbol, exc)
+            logger.warning("[TRQRedisBridge] Schema validation failed {}: {}", symbol, exc)
             return False
 
         redis_payload: dict[str, str] = {k: str(v) for k, v in payload_dict.items()}
@@ -156,7 +156,7 @@ class TRQRedisBridge:
             return True
         except Exception as exc:
             self._error_count += 1
-            logger.warning("[TRQRedisBridge] Redis write failed %s: %s", symbol, exc)
+            logger.warning("[TRQRedisBridge] Redis write failed {}: {}", symbol, exc)
             return False
 
     async def publish_zone_confluence(
@@ -188,7 +188,7 @@ class TRQRedisBridge:
             pipe.publish(channel_confluence(symbol), orjson.dumps(payload).decode())
             await pipe.execute()
         except Exception as exc:
-            logger.warning("[TRQRedisBridge] Zone confluence write failed %s: %s", symbol, exc)
+            logger.warning("[TRQRedisBridge] Zone confluence write failed {}: {}", symbol, exc)
 
     def health(self) -> dict[str, Any]:
         """Return publish/error counts for monitoring."""
