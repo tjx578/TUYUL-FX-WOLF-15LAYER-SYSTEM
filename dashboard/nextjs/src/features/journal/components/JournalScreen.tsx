@@ -1,25 +1,15 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { useJournalToday, useJournalWeekly, useJournalMetrics } from "@/features/journal/api/journal.api";
+import { useJournalToday, useJournalWeekly, useJournalMetrics } from "../api/journal.api";
 import PageComplianceBanner from "@/components/feedback/PageComplianceBanner";
-import { JournalMetricsCard, JournalTimeline } from "@/components/JournalMetrics";
+import { JournalMetricsCard } from "./JournalMetricsCard";
+import { JournalTimeline } from "./JournalTimeline";
+import { JournalKpiStrip } from "./JournalKpiStrip";
+import { JournalWeeklyDay } from "./JournalWeeklyDay";
 import { useJournalFocusContract } from "../hooks/useJournalFocusContract";
 import { JournalBridgeBanner } from "./JournalBridgeBanner";
 import { useJournalContextFilter } from "../hooks/useJournalContextFilter";
-
-function JournalKpi({ label, value, color }: { label: string; value: string | number; color?: string }) {
-  return (
-    <div className="card" style={{ padding: "11px 14px", display: "flex", flexDirection: "column", gap: 4 }}>
-      <div style={{ fontSize: 9, letterSpacing: "0.12em", color: "var(--text-muted)", fontWeight: 700, fontFamily: "var(--font-mono)" }}>
-        {label}
-      </div>
-      <div className="num" style={{ fontSize: 20, fontWeight: 700, color: color ?? "var(--text-primary)" }}>
-        {value}
-      </div>
-    </div>
-  );
-}
 
 export function JournalScreen() {
   const { data: today, isLoading: todayLoading } = useJournalToday();
@@ -84,30 +74,7 @@ export function JournalScreen() {
 
       <JournalBridgeBanner focus={focus} />
 
-      {metrics && (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0,1fr))", gap: 12 }}>
-          <JournalKpi
-            label="WIN RATE"
-            value={`${Math.round(metrics.win_rate * 100)}%`}
-            color={metrics.win_rate >= 0.6 ? "var(--green)" : metrics.win_rate >= 0.4 ? "var(--yellow)" : "var(--red)"}
-          />
-          <JournalKpi
-            label="TOTAL PNL"
-            value={`${metrics.total_pnl >= 0 ? "+" : ""}${metrics.total_pnl.toFixed(2)}`}
-            color={metrics.total_pnl >= 0 ? "var(--green)" : "var(--red)"}
-          />
-          <JournalKpi
-            label="AVG R:R"
-            value={metrics.avg_rr?.toFixed(2) ?? "—"}
-            color={metrics.avg_rr >= 2 ? "var(--green)" : metrics.avg_rr >= 1.5 ? "var(--accent)" : "var(--yellow)"}
-          />
-          <JournalKpi
-            label="PROFIT FACTOR"
-            value={metrics.profit_factor?.toFixed(2) ?? "—"}
-            color={(metrics.profit_factor ?? 0) >= 1.5 ? "var(--green)" : "var(--yellow)"}
-          />
-        </div>
-      )}
+      {metrics && <JournalKpiStrip metrics={metrics} />}
 
       <div style={{ display: "grid", gridTemplateColumns: "260px 1fr", gap: 20, alignItems: "start" }}>
         <div>
@@ -169,37 +136,7 @@ export function JournalScreen() {
                 </div>
               ) : (
                 filteredWeekly.map((day) => (
-                  <div key={day.date} className="panel" style={{ padding: 16 }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-                      <span style={{ fontSize: 13, fontWeight: 700, color: "var(--text-primary)", fontFamily: "var(--font-display)" }}>
-                        {day.date}
-                      </span>
-                      <div style={{ display: "flex", gap: 12, fontSize: 11, alignItems: "center" }}>
-                        <span style={{ color: "var(--text-muted)" }}>
-                          Trades: <span className="num" style={{ color: "var(--text-secondary)" }}>{day.metrics.total_trades}</span>
-                        </span>
-                        <span style={{ color: "var(--text-muted)" }}>
-                          WR:{" "}
-                          <span
-                            className="num"
-                            style={{ color: day.metrics.win_rate >= 0.6 ? "var(--green)" : "var(--yellow)", fontWeight: 700 }}
-                          >
-                            {Math.round(day.metrics.win_rate * 100)}%
-                          </span>
-                        </span>
-                        <span
-                          className="num"
-                          style={{
-                            color: day.net_pnl >= 0 ? "var(--green)" : "var(--red)",
-                            fontWeight: 700,
-                          }}
-                        >
-                          {day.net_pnl >= 0 ? "+" : ""}{day.net_pnl.toFixed(2)}
-                        </span>
-                      </div>
-                    </div>
-                    <JournalTimeline journal={day} />
-                  </div>
+                  <JournalWeeklyDay key={day.date} day={day} />
                 ))
               )}
             </div>
