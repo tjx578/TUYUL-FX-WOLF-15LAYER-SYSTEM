@@ -14,9 +14,9 @@ from typing import Any, Protocol, cast
 
 from loguru import logger
 
-from config.logging_bootstrap import configure_loguru_logging
-from core.health_probe import HealthProbe
+import core.health_probe
 from core.redis_keys import ACCOUNT_STATE, KILL_SWITCH, ORCHESTRATOR_STATE, TRADE_RISK
+from engines.v11 import config
 from services.orchestrator.compliance_guard import evaluate_compliance
 from services.orchestrator.execution_mode import ExecutionMode
 from state.pubsub_channels import ORCHESTRATOR_COMMANDS
