@@ -32,7 +32,14 @@ function fmtUptime(seconds: number): string {
 export function AgentManagerDetail({ agent }: Props) {
   if (!agent) {
     return (
-      <div style={{ padding: 20, textAlign: "center", color: "var(--text-muted)", fontSize: 12 }}>
+      <div
+        style={{
+          padding: 20,
+          textAlign: "center",
+          color: "var(--text-muted)",
+          fontSize: 12,
+        }}
+      >
         Select an agent to view details
       </div>
     );
@@ -43,7 +50,10 @@ export function AgentManagerDetail({ agent }: Props) {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      {/* Section Header */}
       <SectionHeader title={`AGENT — ${agent.agent_name}`} />
+
+      {/* Identity */}
       <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
         <Row label="ID" value={agent.id} />
         <Row label="Name" value={agent.agent_name} />
@@ -54,6 +64,7 @@ export function AgentManagerDetail({ agent }: Props) {
         <Row label="Status" value={agent.status} color={statusColor} />
       </div>
 
+      {/* MT5 Connection */}
       <SectionHeader title="MT5 CONNECTION" />
       <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
         <Row label="MT5 Login" value={agent.mt5_login !== null ? String(agent.mt5_login) : "—"} />
@@ -63,13 +74,22 @@ export function AgentManagerDetail({ agent }: Props) {
         <Row label="Linked Profile" value={agent.linked_profile_id ?? "—"} />
       </div>
 
+      {/* Strategy */}
       <SectionHeader title="STRATEGY" />
       <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
         <Row label="Strategy Profile" value={agent.strategy_profile || "—"} />
         <Row label="Risk Multiplier" value={String(agent.risk_multiplier)} />
         <Row label="News Lock Setting" value={agent.news_lock_setting || "—"} />
-        <Row label="Safe Mode" value={agent.safe_mode ? "ENABLED" : "OFF"} color={agent.safe_mode ? "var(--amber, #f59e0b)" : "var(--green)"} />
-        <Row label="Locked" value={agent.locked ? "YES" : "NO"} color={agent.locked ? "var(--amber, #f59e0b)" : "var(--text-secondary)"} />
+        <Row
+          label="Safe Mode"
+          value={agent.safe_mode ? "ENABLED" : "OFF"}
+          color={agent.safe_mode ? "var(--amber, #f59e0b)" : "var(--green)"}
+        />
+        <Row
+          label="Locked"
+          value={agent.locked ? "YES" : "NO"}
+          color={agent.locked ? "var(--amber, #f59e0b)" : "var(--text-secondary)"}
+        />
         {agent.locked && (
           <>
             <Row label="Lock Reason" value={agent.lock_reason ?? "—"} color="var(--amber, #f59e0b)" />
@@ -79,24 +99,38 @@ export function AgentManagerDetail({ agent }: Props) {
         )}
       </div>
 
+      {/* Runtime */}
       {rt && (
         <>
           <SectionHeader title="RUNTIME" />
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             <Row label="Trades Executed" value={String(rt.trades_executed)} valueColor="var(--green)" />
-            <Row label="Trades Failed" value={String(rt.trades_failed)} color={rt.trades_failed > 0 ? "var(--red)" : undefined} />
+            <Row
+              label="Trades Failed"
+              value={String(rt.trades_failed)}
+              color={rt.trades_failed > 0 ? "var(--red)" : undefined}
+            />
             <Row label="Uptime" value={fmtUptime(rt.uptime_seconds)} />
             <Row label="Last Heartbeat" value={fmt(rt.last_heartbeat)} />
             <Row label="Last Success" value={fmt(rt.last_success)} />
             <Row label="Last Failure" value={fmt(rt.last_failure)} />
-            {rt.failure_reason && <Row label="Failure Reason" value={rt.failure_reason} color="var(--red)" />}
-            {rt.cpu_usage_pct !== null && <Row label="CPU Usage" value={`${rt.cpu_usage_pct?.toFixed(1)}%`} />}
-            {rt.memory_mb !== null && <Row label="Memory" value={`${rt.memory_mb?.toFixed(0)} MB`} />}
-            {rt.connection_latency_ms !== null && <Row label="Latency" value={`${rt.connection_latency_ms?.toFixed(0)} ms`} />}
+            {rt.failure_reason && (
+              <Row label="Failure Reason" value={rt.failure_reason} color="var(--red)" />
+            )}
+            {rt.cpu_usage_pct !== null && (
+              <Row label="CPU Usage" value={`${rt.cpu_usage_pct?.toFixed(1)}%`} />
+            )}
+            {rt.memory_mb !== null && (
+              <Row label="Memory" value={`${rt.memory_mb?.toFixed(0)} MB`} />
+            )}
+            {rt.connection_latency_ms !== null && (
+              <Row label="Latency" value={`${rt.connection_latency_ms?.toFixed(0)} ms`} />
+            )}
           </div>
         </>
       )}
 
+      {/* Metadata */}
       <SectionHeader title="METADATA" />
       <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
         {agent.version && <Row label="Version" value={`v${agent.version}`} />}
@@ -110,17 +144,41 @@ export function AgentManagerDetail({ agent }: Props) {
 
 function SectionHeader({ title }: { title: string }) {
   return (
-    <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.08em", color: "var(--text-muted)", paddingBottom: 4, borderBottom: "1px solid var(--bg-border)" }}>
+    <div
+      style={{
+        fontSize: 10,
+        fontWeight: 700,
+        letterSpacing: "0.08em",
+        color: "var(--text-muted)",
+        paddingBottom: 4,
+        borderBottom: "1px solid var(--bg-border)",
+      }}
+    >
       {title}
     </div>
   );
 }
 
-function Row({ label, value, color, valueColor }: { label: string; value: string; color?: string; valueColor?: string }) {
+function Row({
+  label,
+  value,
+  color,
+  valueColor,
+}: {
+  label: string;
+  value: string;
+  color?: string;
+  valueColor?: string;
+}) {
   return (
     <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11 }}>
       <span style={{ color: "var(--text-muted)" }}>{label}</span>
-      <span className="num" style={{ fontWeight: 600, color: color ?? valueColor ?? "var(--text-secondary)" }}>{value}</span>
+      <span
+        className="num"
+        style={{ fontWeight: 600, color: color ?? valueColor ?? "var(--text-secondary)" }}
+      >
+        {value}
+      </span>
     </div>
   );
 }

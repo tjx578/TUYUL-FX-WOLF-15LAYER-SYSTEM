@@ -1,8 +1,15 @@
+// ============================================================
+// TUYUL FX Wolf-15 — Institutional Button with Ripple Engine
+// Production-ready reusable button with physics feedback.
+// ============================================================
 "use client";
+
+import { useRef } from "react";
+import clsx from "clsx";
 
 interface ButtonProps {
   children: React.ReactNode;
-  variant?: "primary" | "danger" | "ghost";
+  variant?: "primary" | "danger" | "ghost" | "take" | "skip";
   onClick?: (e: React.MouseEvent<HTMLButtonElement>) => void;
   disabled?: boolean;
   className?: string;
@@ -15,43 +22,66 @@ export default function Button({
   variant = "primary",
   onClick,
   disabled,
+  className,
   style,
   type = "button",
 }: ButtonProps) {
-  const variantStyles: React.CSSProperties =
-    variant === "primary"
-      ? { background: "var(--accent)", color: "#fff", border: "1px solid var(--accent-dim)" }
-      : variant === "danger"
-      ? { background: "var(--red-glow)", color: "var(--red)", border: "1px solid var(--border-danger)" }
-      : {
-          background: "transparent",
-          color: "var(--text-secondary)",
-          border: "1px solid var(--border-default)",
-        };
+  const ref = useRef<HTMLButtonElement>(null);
+
+  const handleClick = (e: React.MouseEvent<HTMLButtonElement>) => {
+    if (disabled) return;
+    const button = ref.current;
+    if (!button) return;
+
+    // Ripple physics — use bounding rect for accuracy in nested layouts
+    const rect = button.getBoundingClientRect();
+    const diameter = Math.max(button.clientWidth, button.clientHeight);
+    const radius = diameter / 2;
+
+    const circle = document.createElement("span");
+    circle.style.width = circle.style.height = `${diameter}px`;
+    circle.style.left = `${e.clientX - rect.left - radius}px`;
+    circle.style.top = `${e.clientY - rect.top - radius}px`;
+    circle.classList.add("ripple");
+
+    // Remove stale ripple
+    const existing = button.getElementsByClassName("ripple")[0];
+    if (existing) existing.remove();
+
+    button.appendChild(circle);
+    onClick?.(e);
+  };
 
   return (
     <button
+      ref={ref}
       type={type}
       disabled={disabled}
-      onClick={onClick}
-      style={{
-        display: "inline-flex",
-        alignItems: "center",
-        justifyContent: "center",
-        gap: 6,
-        padding: "6px 14px",
-        borderRadius: "var(--radius-sm)",
-        fontSize: 11,
-        fontWeight: 700,
-        letterSpacing: "0.06em",
-        textTransform: "uppercase",
-        cursor: disabled ? "not-allowed" : "pointer",
-        opacity: disabled ? 0.4 : 1,
-        transition: "all 0.15s ease",
-        whiteSpace: "nowrap",
-        ...variantStyles,
-        ...style,
-      }}
+      onClick={handleClick}
+      style={style}
+      className={clsx(
+        // Base
+        "relative overflow-hidden font-semibold transition-all duration-300",
+        "flex items-center justify-content-center gap-1.5",
+        // Variants
+        variant === "primary" && [
+          "btn btn-primary",
+        ],
+        variant === "danger" && [
+          "btn",
+          "bg-accent-red text-white",
+        ],
+        variant === "ghost" && [
+          "btn btn-ghost",
+        ],
+        variant === "take" && [
+          "btn btn-take",
+        ],
+        variant === "skip" && [
+          "btn btn-skip",
+        ],
+        className
+      )}
     >
       {children}
     </button>
