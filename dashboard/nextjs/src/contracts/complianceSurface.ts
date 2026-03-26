@@ -1,6 +1,7 @@
 export type CompliancePage =
   | "dashboard"
   | "trades"
+  | "analysis"
   | "risk"
   | "news"
   | "journal"
