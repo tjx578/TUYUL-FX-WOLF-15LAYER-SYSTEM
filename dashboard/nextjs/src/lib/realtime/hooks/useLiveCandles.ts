@@ -33,6 +33,30 @@ const TIMEFRAME_TO_INTERVAL_MS: Record<TimeframeKey, number> = {
     H1: 60 * 60_000,
 };
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return !!value && typeof value === "object";
+}
+
+function isCandleData(value: unknown): value is CandleData {
+    if (!isRecord(value)) return false;
+    return (
+        typeof value.symbol === "string" &&
+        typeof value.timeframe === "string" &&
+        typeof value.open === "number" &&
+        typeof value.high === "number" &&
+        typeof value.low === "number" &&
+        typeof value.close === "number" &&
+        typeof value.timestamp === "number"
+    );
+}
+
+function getSnapshotCandles(payload: unknown): CandleData[] {
+    if (!isRecord(payload) || !Array.isArray(payload.candles)) {
+        return [];
+    }
+    return payload.candles.filter(isCandleData).slice(-MAX_CANDLE_HISTORY);
+}
+
 interface UseLiveCandlesResult {
     /** Completed candle history for the symbol. */
     candles: CandleData[];
@@ -90,13 +114,15 @@ export function useLiveCandles(
                 (e.payload as Record<string, unknown>).symbol === symbol,
             onEvent: (event) => {
                 if (event.type === "CandleSnapshot") {
-                    const payload = event.payload as { candles?: CandleData[] };
-                    if (payload.candles) {
-                        setRawCandles(payload.candles.slice(-MAX_CANDLE_HISTORY));
+                    const snapshotCandles = getSnapshotCandles(event.payload);
+                    if (snapshotCandles.length > 0) {
+                        setRawCandles(snapshotCandles);
                     }
                     resetStaleTimer();
                 } else if (event.type === "CandleForming") {
-                    setForming(event.payload as unknown as CandleData);
+                    if (isCandleData(event.payload)) {
+                        setForming(event.payload);
+                    }
                     resetStaleTimer();
                 }
             },

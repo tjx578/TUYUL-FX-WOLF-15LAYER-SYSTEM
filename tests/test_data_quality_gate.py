@@ -86,6 +86,27 @@ class TestDataQualityGate:
         assert report.degraded is True
         assert any("stale_data" in r for r in report.reasons)
 
+    def test_w1_stale_is_not_penalized_by_default(self) -> None:
+        gate = DataQualityGate()
+        candles = [_make_candle() for _ in range(50)]
+        # W1 default stale threshold = max(300s, 3 * 7d) = 1814400s
+        old_ts = time.time() - (50 * 24 * 3600)
+        report = gate.assess("EURUSD", "W1", candles, last_update_ts=old_ts)
+        assert report.freshness_state == "stale_preserved"
+        assert report.degraded is False
+        assert report.confidence_penalty == 0.0
+        assert not any("stale_data" in r for r in report.reasons)
+
+    def test_w1_stale_penalty_can_be_enabled_via_config(self) -> None:
+        cfg = DataQualityConfig(stale_penalty_exempt_timeframes=())
+        gate = DataQualityGate(cfg)
+        candles = [_make_candle() for _ in range(50)]
+        old_ts = time.time() - (50 * 24 * 3600)
+        report = gate.assess("EURUSD", "W1", candles, last_update_ts=old_ts)
+        assert report.degraded is True
+        assert report.confidence_penalty > 0.0
+        assert any("stale_data" in r for r in report.reasons)
+
     def test_monthly_not_stale_for_short_age(self) -> None:
         gate = DataQualityGate()
         candles = [_make_candle() for _ in range(50)]

@@ -70,7 +70,7 @@ export function CandlestickChart({
     return [...chartData, formingData];
   }, [data, forming]);
 
-  // Initialize chart once
+  // Reinitialize chart when symbol/timeframe context changes.
   useEffect(() => {
     if (!containerRef.current) return;
 
@@ -129,8 +129,7 @@ export function CandlestickChart({
       chartRef.current = null;
       seriesRef.current = null;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [height]);
+  }, [height, symbol, timeframe]);
 
   // Update data when merged changes
   useEffect(() => {

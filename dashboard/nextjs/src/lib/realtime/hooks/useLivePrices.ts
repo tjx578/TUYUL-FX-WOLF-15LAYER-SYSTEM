@@ -15,6 +15,32 @@ interface UseLivePricesResult {
   lastUpdatedAt: number | null;
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === "object";
+}
+
+function isPriceData(value: unknown): value is PriceData {
+  if (!isRecord(value)) return false;
+  return (
+    typeof value.symbol === "string" &&
+    typeof value.bid === "number" &&
+    typeof value.ask === "number" &&
+    typeof value.spread === "number" &&
+    typeof value.timestamp === "number"
+  );
+}
+
+function toPriceMap(payload: unknown): Record<string, PriceData> {
+  if (!isRecord(payload)) return {};
+  const next: Record<string, PriceData> = {};
+  for (const [symbol, value] of Object.entries(payload)) {
+    if (isPriceData(value)) {
+      next[symbol] = value;
+    }
+  }
+  return next;
+}
+
 /**
  * useLivePrices
  *
@@ -62,7 +88,8 @@ export function useLivePrices(enabled = true, rafBatch = false, onSeqGap?: () =>
       filter: (e) => e.type === "PriceUpdated" || e.type === "PricesSnapshot",
       onEvent: (event) => {
         if (event.type === "PriceUpdated" || event.type === "PricesSnapshot") {
-          const payload = event.payload as Record<string, PriceData>;
+          const payload = toPriceMap(event.payload);
+          if (Object.keys(payload).length === 0) return;
 
           if (batcher) {
             for (const [symbol, data] of Object.entries(payload)) {

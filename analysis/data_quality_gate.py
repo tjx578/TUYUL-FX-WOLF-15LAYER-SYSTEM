@@ -87,6 +87,7 @@ class DataQualityConfig:
     gap_penalty_per_pct: float = 0.5  # penalty per 1% gap ratio (max 0.3)
     low_tick_penalty_per_pct: float = 0.3
     stale_penalty: float = 0.15
+    stale_penalty_exempt_timeframes: tuple[str, ...] = ("W1", "MN")
     max_penalty: float = 0.50  # total penalty cap (50% max)
     lookback_candles: int = 50  # how many recent candles to evaluate
 
@@ -110,6 +111,15 @@ class DataQualityGate:
         except (ValueError, AttributeError):
             return default
 
+    @staticmethod
+    def _env_timeframe_set(name: str, default: tuple[str, ...]) -> tuple[str, ...]:
+        value = os.getenv(name)
+        if value is None:
+            return default
+        parts = [p.strip().upper() for p in str(value).split(",")]
+        cleaned = tuple(p for p in parts if p)
+        return cleaned if cleaned else default
+
     @classmethod
     def _load_config_from_env(cls) -> DataQualityConfig:
         """Load tunable data-quality thresholds from environment variables."""
@@ -125,6 +135,10 @@ class DataQualityGate:
             stale_penalty=cls._env_float(
                 "WOLF_DQ_STALE_PENALTY",
                 DataQualityConfig.stale_penalty,
+            ),
+            stale_penalty_exempt_timeframes=cls._env_timeframe_set(
+                "WOLF_DQ_STALE_EXEMPT_TIMEFRAMES",
+                DataQualityConfig.stale_penalty_exempt_timeframes,
             ),
         )
 
@@ -158,6 +172,13 @@ class DataQualityGate:
         if tf_seconds is None:
             return base
         return max(base, tf_seconds * max(0.0, float(cfg.stale_candle_multiplier)))
+
+    def _stale_penalty_applies(self, timeframe: str) -> bool:
+        tf = (timeframe or "").strip().upper()
+        if not tf:
+            return True
+        exempt = {x.strip().upper() for x in self._config.stale_penalty_exempt_timeframes}
+        return tf not in exempt
 
     def assess(
         self,
@@ -239,8 +260,9 @@ class DataQualityGate:
             threshold_seconds=stale_threshold,
         )
         if freshness.state == "stale_preserved":
-            penalty += cfg.stale_penalty
-            reasons.append(f"stale_data:{staleness:.0f}s>thr:{stale_threshold:.0f}s")
+            if self._stale_penalty_applies(timeframe):
+                penalty += cfg.stale_penalty
+                reasons.append(f"stale_data:{staleness:.0f}s>thr:{stale_threshold:.0f}s")
         elif freshness.state in {"no_producer", "no_transport"}:
             penalty += cfg.stale_penalty
             reasons.append(f"stale_data:{freshness.state}")

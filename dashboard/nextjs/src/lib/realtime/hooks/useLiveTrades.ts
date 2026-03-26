@@ -15,6 +15,24 @@ interface UseLiveTradesResult {
   lastUpdatedAt: number | null;
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === "object";
+}
+
+function isTrade(value: unknown): value is Trade {
+  if (!isRecord(value)) return false;
+  return (
+    typeof value.trade_id === "string" &&
+    typeof value.account_id === "string" &&
+    typeof value.signal_id === "string" &&
+    typeof value.pair === "string" &&
+    typeof value.direction === "string" &&
+    typeof value.status === "string" &&
+    typeof value.created_at === "string" &&
+    typeof value.updated_at === "string"
+  );
+}
+
 /**
  * useLiveTrades
  *
@@ -81,7 +99,8 @@ export function useLiveTrades(
       filter: (e) => e.type === "ExecutionStateUpdated" || e.type === "TradeUpdated" || e.type === "TradeSnapshot",
       onEvent: (event) => {
         if (event.type === "ExecutionStateUpdated") {
-          batcher.push(event.payload.trade as unknown as Trade);
+          if (!isRecord(event.payload) || !isTrade(event.payload.trade)) return;
+          batcher.push(event.payload.trade);
         }
       },
       onStatusChange: (s) => {

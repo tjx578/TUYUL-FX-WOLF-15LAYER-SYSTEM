@@ -14,6 +14,42 @@ interface UseLiveSignalsResult {
   lastUpdatedAt: number | null;
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === "object";
+}
+
+function isL12Verdict(value: unknown): value is L12Verdict {
+  if (!isRecord(value)) return false;
+  return (
+    typeof value.symbol === "string" &&
+    typeof value.verdict === "string" &&
+    typeof value.confidence === "number" &&
+    Array.isArray(value.gates) &&
+    typeof value.timestamp === "number"
+  );
+}
+
+function getVerdictUpdatedPayload(
+  payload: unknown
+): { pair: string; verdict: Record<string, unknown> } | null {
+  if (!isRecord(payload)) return null;
+  if (typeof payload.pair !== "string" || !isRecord(payload.verdict)) return null;
+  return { pair: payload.pair, verdict: payload.verdict };
+}
+
+function getVerdictSnapshotPayload(
+  payload: unknown
+): { verdicts: Record<string, Record<string, unknown>> } | null {
+  if (!isRecord(payload) || !isRecord(payload.verdicts)) return null;
+  const entries = Object.entries(payload.verdicts);
+  const verdicts: Record<string, Record<string, unknown>> = {};
+  for (const [pair, value] of entries) {
+    if (!isRecord(value)) return null;
+    verdicts[pair] = value;
+  }
+  return { verdicts };
+}
+
 /**
  * useLiveSignals
  *
@@ -60,8 +96,8 @@ export function useLiveSignals(
         e.type === "SignalUpdated",
       onEvent: (event) => {
         if (event.type === "PipelineResultUpdated" && event.payload) {
-          const payload = event.payload as unknown as L12Verdict;
-          if (!payload.symbol) return;
+          if (!isL12Verdict(event.payload)) return;
+          const payload = event.payload;
           setVerdicts((prev) => {
             const idx = prev.findIndex((v) => v.symbol === payload.symbol);
             // Timestamp guard: reject WS update older than current state
@@ -78,10 +114,9 @@ export function useLiveSignals(
         // ── Backend-native verdict.update (normalised to VerdictUpdated) ──
         if (event.type === "VerdictUpdated") {
           wsDeliveredRef.current = true;
-          const { pair, verdict } = event.payload as {
-            pair: string;
-            verdict: Record<string, unknown>;
-          };
+          const updatedPayload = getVerdictUpdatedPayload(event.payload);
+          if (!updatedPayload) return;
+          const { pair, verdict } = updatedPayload;
           const incomingTs = typeof verdict.timestamp === "number" ? verdict.timestamp : Date.now();
           const mapped: L12Verdict = {
             symbol: pair,
@@ -114,9 +149,9 @@ export function useLiveSignals(
         // ── Backend verdict.snapshot (normalised to VerdictSnapshot) ──
         if (event.type === "VerdictSnapshot") {
           wsDeliveredRef.current = true;
-          const { verdicts: verdictMap } = event.payload as {
-            verdicts: Record<string, Record<string, unknown>>;
-          };
+          const snapshotPayload = getVerdictSnapshotPayload(event.payload);
+          if (!snapshotPayload) return;
+          const verdictMap = snapshotPayload.verdicts;
           const mapped: L12Verdict[] = Object.entries(verdictMap).map(
             ([pair, v]) => ({
               symbol: pair,

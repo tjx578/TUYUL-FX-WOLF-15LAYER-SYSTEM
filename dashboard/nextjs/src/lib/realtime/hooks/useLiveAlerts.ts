@@ -13,6 +13,21 @@ interface UseLiveAlertsResult {
     lastUpdatedAt: number | null;
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return !!value && typeof value === "object";
+}
+
+function isAlertEvent(value: unknown): value is AlertEvent {
+    if (!isRecord(value)) return false;
+    return (
+        typeof value.alert_id !== "string" ||
+        typeof value.type !== "string" ||
+        typeof value.severity !== "string" ||
+        typeof value.message !== "string" ||
+        typeof value.timestamp !== "string"
+    ) === false;
+}
+
 /**
  * useLiveAlerts
  *
@@ -44,12 +59,11 @@ export function useLiveAlerts(enabled = true, onSeqGap?: () => void): UseLiveAle
             // Alert events — accept any event type that looks like an alert
             // (backend may use various event types for alerts)
             onEvent: (event) => {
-                const payload = event.payload as unknown as AlertEvent;
-                if (payload) {
-                    setAlerts((prev) => [payload, ...prev].slice(0, 50));
-                    setLastUpdatedAt(Date.now());
-                    resetStaleTimer();
-                }
+                const payload: unknown = event.payload;
+                if (!isAlertEvent(payload)) return;
+                setAlerts((prev) => [payload, ...prev].slice(0, 50));
+                setLastUpdatedAt(Date.now());
+                resetStaleTimer();
             },
             filter: (e) => {
                 const t = e.type;
