@@ -13,6 +13,16 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+def _compute_pool_metrics(pool: object) -> tuple[int, int, int, int, int]:
+    """Return (available, in_use, created, max_conns, headroom)."""
+    available = len(getattr(pool, "_available_connections", []))
+    in_use = len(getattr(pool, "_in_use_connections", []))
+    created = available + in_use
+    max_conns = int(getattr(pool, "max_connections", 0) or 0)
+    headroom = max(0, max_conns - in_use) if max_conns > 0 else available
+    return available, in_use, created, max_conns, headroom
+
+
 async def check_redis_pool_health() -> dict[str, object]:
     """Check async Redis pool status and return a health report.
 
@@ -31,16 +41,14 @@ async def check_redis_pool_health() -> dict[str, object]:
         return {"healthy": False, "reason": "pool_not_initialised"}
 
     # ConnectionPool internals: _available_connections (idle) + _in_use_connections (active)
-    available = len(getattr(pool, "_available_connections", []))
-    in_use = len(getattr(pool, "_in_use_connections", []))
-    created = available + in_use
-    max_conns: int = getattr(pool, "max_connections", 0)
+    available, in_use, created, max_conns, headroom = _compute_pool_metrics(pool)
 
     report: dict[str, object] = {
         "pool_created": created,
         "pool_available": available,
         "pool_in_use": in_use,
         "pool_max": max_conns,
+        "pool_headroom": headroom,
     }
 
     # Test actual connectivity
@@ -53,19 +61,23 @@ async def check_redis_pool_health() -> dict[str, object]:
 
     if not healthy:
         logger.error("[RedisHealth] Pool unhealthy — ping failed | %s", report)
-    elif available < 3 and max_conns > 0:
+    elif headroom < 3 and max_conns > 0:
         logger.warning(
-            "[RedisHealth] Low available connections: %d/%d (in_use=%d)",
-            available,
+            "[RedisHealth] Low available connections: %d/%d (in_use=%d, idle=%d, created=%d)",
+            headroom,
             max_conns,
             in_use,
+            available,
+            created,
         )
     else:
         logger.info(
-            "[RedisHealth] Pool status: available=%d in_use=%d max=%d",
-            available,
+            "[RedisHealth] Pool status: headroom=%d in_use=%d max=%d idle=%d created=%d",
+            headroom,
             in_use,
             max_conns,
+            available,
+            created,
         )
 
     return report
@@ -82,10 +94,7 @@ def check_sync_redis_pool_health() -> dict[str, object]:
         client = RedisClient()
         pool = client._pool  # noqa: SLF001
 
-        available = len(getattr(pool, "_available_connections", []))
-        in_use = len(getattr(pool, "_in_use_connections", []))
-        created = available + in_use
-        max_conns: int = getattr(pool, "max_connections", 0)
+        available, in_use, created, max_conns, headroom = _compute_pool_metrics(pool)
 
         healthy = client.ping()
 
@@ -95,14 +104,17 @@ def check_sync_redis_pool_health() -> dict[str, object]:
             "pool_available": available,
             "pool_in_use": in_use,
             "pool_max": max_conns,
+            "pool_headroom": headroom,
         }
 
-        if available < 3 and max_conns > 0:
+        if headroom < 3 and max_conns > 0:
             logger.warning(
-                "[RedisHealth:sync] Low available connections: %d/%d (in_use=%d)",
-                available,
+                "[RedisHealth:sync] Low available connections: %d/%d (in_use=%d, idle=%d, created=%d)",
+                headroom,
                 max_conns,
                 in_use,
+                available,
+                created,
             )
 
         return report

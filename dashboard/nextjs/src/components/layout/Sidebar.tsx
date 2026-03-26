@@ -129,7 +129,6 @@ const ADVANCED_ITEMS: NavItem[] = [
   { href: "/probability", label: "Probability Monitor" },
   { href: "/prices", label: "Price Feed Monitor" },
   { href: "/cockpit", label: "Supervisory Cockpit" },
-  { href: "/signals", label: "Signal Explorer" },
 ];
 
 // Admin only
