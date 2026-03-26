@@ -11,5 +11,24 @@ __pycache__/
 coverage.xml
 test_results.txt
 .github/workflows/ci.yml
+
+# Test files with hardcoded dummy secrets/tokens (not real credentials)
 tests/unit/test_telegram_alerts.py
 tests/test_ws_auth_guard.py
+tests/test_api_auth_guard.py
+tests/test_pr004_auth_governance.py
+tests/test_auth_session_compat.py
+tests/test_auth_rate_limit.py
+tests/test_signal_monitor_strategy.py
+tests/test_redis_client_logging.py
+tests/e2e/auth.spec.ts
+tests/e2e/api-routes.spec.ts
+tests/e2e/health.spec.ts
+dashboard/nextjs/src/__tests__/auth.test.ts
+
+# Ad-hoc test scripts with fake env values
+_check_endpoint.py
+
+# Environment templates (placeholders only)
+railway_env_template.env
+deploy/hostinger/README.md

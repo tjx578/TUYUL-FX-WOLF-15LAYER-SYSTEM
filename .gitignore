@@ -4,6 +4,7 @@
 .env
 .env.*
 !.env.example
+ghpt.txt
 
 # ── Python artifacts ─────────────────────────
 __pycache__/
