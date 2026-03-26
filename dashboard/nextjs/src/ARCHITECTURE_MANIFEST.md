@@ -34,23 +34,21 @@
 | Accounts | `(control)/accounts/page.tsx` | `features/accounts/AccountsScreen` | ✅ Live |
 | Journal | `(control)/journal/page.tsx` | `features/journal/JournalScreen` | ✅ Live |
 | News | `(control)/news/page.tsx` | `features/news/NewsScreen` | ✅ Live |
+| Risk | `(control)/risk/page.tsx` | `features/risk/RiskScreen` | ✅ Live |
+| Settings | `(control)/settings/page.tsx` | `features/settings/SettingsScreen` | ✅ Live |
+| Prop Firm | `(control)/prop-firm/page.tsx` | `features/prop-firm/PropFirmScreen` | ✅ Live |
+| EA Manager | `(control)/ea-manager/page.tsx` | `features/agent-manager/AgentManagerScreen` | ✅ Live |
+| Cockpit | `(control)/cockpit/page.tsx` | `features/cockpit/CockpitScreen` | ✅ Live |
+| Analysis | `(control)/analysis/page.tsx` | `features/market-analysis/MarketAnalysisHubScreen` | ✅ Live |
 
-### Still in `(root)` — not yet migrated
+### Legacy aliases only
 
 | Route | Status | Notes |
 | ----- | ------ | ----- |
-| `(root)/cockpit/page.tsx` | 🟡 Active | Operational dashboard |
-| `(root)/pipeline/page.tsx` | 🟡 Active | Pipeline monitor |
-| `(root)/risk/page.tsx` | 🟡 Active | Risk dashboard |
-| `(root)/prop-firm/page.tsx` | 🟡 Active | Prop firm manager |
-| `(root)/ea-manager/page.tsx` | 🟡 Active | EA manager |
-| `(root)/settings/page.tsx` | 🟡 Active | Settings |
-| `(root)/charts/page.tsx` | 🟡 Active | Chart viewer |
-| `(root)/probability/page.tsx` | 🟡 Active | Probability calculator |
-| `(root)/prices/page.tsx` | 🟡 Active | Live prices |
-| `(root)/calendar/page.tsx` | 🟡 Active | Calendar view |
-| `(root)/architecture-audit/page.tsx` | 🟡 Active | Dev tool |
-| `(root)/dashboard/page.tsx` | 🔴 Deprecated | Already a redirect |
+| `(root)/calendar/page.tsx` | 🟢 Alias | Redirects to `/news` |
+| `(root)/charts/page.tsx` | 🟢 Alias | Redirects to `/analysis?tab=charts` |
+| `(root)/probability/page.tsx` | 🟢 Alias | Redirects to `/analysis?tab=probability` |
+| `(root)/prices/page.tsx` | 🟢 Alias | Redirects to `/analysis?tab=prices` |
 
 ### Legacy redirect stubs
 
