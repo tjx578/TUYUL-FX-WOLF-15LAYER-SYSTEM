@@ -1,5 +1,8 @@
 import type { Metadata, Viewport } from "next";
-import { QueryProvider } from "@/components/providers/QueryProvider";
+import QueryProvider from "@/components/providers/QueryProvider";
+import SessionExpiryModal from "@/components/auth/SessionExpiryModal";
+import ToastViewport from "@/components/feedback/ToastViewport";
+import ClientOnly from "@/components/ClientOnly";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -7,8 +10,9 @@ export const metadata: Metadata = {
     default: "TUYUL FX | WOLF-15 Terminal",
     template: "%s — TUYUL FX",
   },
-  description:
-    "Institutional-grade multi-layer prop-firm control surface: Command Center, Signal Board, Risk Command, Trade Desk, and governed compliance.",
+  description: "Institutional-grade multi-layer prop-firm control surface: Command Center, Signal Board, Risk Command, Trade Desk, and governed compliance.",
+  keywords: ["forex", "trading", "wolf-15", "prop firm", "institutional", "pipeline", "risk", "signal board"],
+  authors: [{ name: "TUYUL FX" }],
 };
 
 export const viewport: Viewport = {
@@ -17,11 +21,21 @@ export const viewport: Viewport = {
   themeColor: "#050a14",
 };
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default function RootLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
   return (
     <html lang="en" suppressHydrationWarning>
       <body suppressHydrationWarning>
-        <QueryProvider>{children}</QueryProvider>
+        <ClientOnly>
+          <QueryProvider>
+            {children}
+            <SessionExpiryModal />
+            <ToastViewport />
+          </QueryProvider>
+        </ClientOnly>
       </body>
     </html>
   );
