@@ -32,7 +32,7 @@ __all__ = ["TP1Generator", "generate_tp1"]
 
 _DEFAULT_MIN_RR: float = 2.0
 _SWING_LOOKBACK: int = 3  # candles each side for swing detection
-_FVG_LOOKBACK: int = 8   # most-recent N candles to scan for FVG
+_FVG_LOOKBACK: int = 8  # most-recent N candles to scan for FVG
 
 
 # ---------------------------------------------------------------------------
@@ -254,15 +254,19 @@ def _swing_levels(candles: list[dict[str, Any]], direction: str) -> list[float]:
         if direction == "BUY":
             # Swing high: local maximum in the high series
             h = highs[i]
-            if h > 0 and all(h >= highs[i - j] for j in range(1, k + 1)) and all(
-                h >= highs[i + j] for j in range(1, k + 1)
+            if (
+                h > 0
+                and all(h >= highs[i - j] for j in range(1, k + 1))
+                and all(h >= highs[i + j] for j in range(1, k + 1))
             ):
                 levels.append(round(h, 5))
         else:
             # Swing low: local minimum in the low series
             lo = lows[i]
-            if lo > 0 and all(lo <= lows[i - j] for j in range(1, k + 1)) and all(
-                lo <= lows[i + j] for j in range(1, k + 1)
+            if (
+                lo > 0
+                and all(lo <= lows[i - j] for j in range(1, k + 1))
+                and all(lo <= lows[i + j] for j in range(1, k + 1))
             ):
                 levels.append(round(lo, 5))
 

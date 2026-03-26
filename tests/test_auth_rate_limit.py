@@ -11,6 +11,7 @@ Covers:
   - verify_token HTTP dependency
   - WebSocket authentication (query param token)
 """
+
 from __future__ import annotations
 
 import sys

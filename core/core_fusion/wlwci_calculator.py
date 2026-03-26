@@ -1,4 +1,5 @@
 """WLWCI Calculator -- Weighted Layered Wave-Context Index."""
+
 from __future__ import annotations
 
 from datetime import UTC, datetime

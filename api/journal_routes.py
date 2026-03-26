@@ -7,6 +7,7 @@ NEW ENDPOINTS:
   GET /api/v1/journal/weekly  → Weekly entries
   GET /api/v1/journal/metrics → Extended metrics including constitutional_violation_count
 """
+
 from __future__ import annotations
 
 import json

@@ -3,6 +3,7 @@ Journal Metrics - Read-only metrics computation.
 
 Provides daily, weekly, and accuracy statistics from journal entries.
 """
+
 from __future__ import annotations
 
 from typing import Any

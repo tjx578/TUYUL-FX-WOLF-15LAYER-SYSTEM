@@ -4,6 +4,7 @@ Risk Profile - Per-account risk configuration stored in Redis.
 Supports FIXED and SPLIT risk modes. Dashboard writes profile,
 Risk Engine reads it. Redis = single source of truth.
 """
+
 from __future__ import annotations
 
 import json

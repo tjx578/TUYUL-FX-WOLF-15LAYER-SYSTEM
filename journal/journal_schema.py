@@ -12,6 +12,7 @@ Enums:
   - TradeOutcome            : WIN, LOSS, BREAKEVEN, SKIPPED, EXPIRED, CANCELLED
   - ProtectionAssessment    : YES, NO, UNCLEAR
 """
+
 from __future__ import annotations
 
 from datetime import datetime

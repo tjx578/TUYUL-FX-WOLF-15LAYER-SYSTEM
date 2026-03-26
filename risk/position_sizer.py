@@ -5,6 +5,7 @@ Calculates position size based on fixed-fractional risk method.
 Supports forex pairs and commodities (XAUUSD, XAGUSD) with
 proper pip value handling.
 """
+
 from __future__ import annotations
 
 from loguru import logger

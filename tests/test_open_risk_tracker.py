@@ -7,6 +7,7 @@ Tests all OpenRiskTracker functionality:
 - Duplicate prevention
 - Edge cases (corrupt data, zero lot size)
 """
+
 from __future__ import annotations
 
 from unittest.mock import MagicMock, patch

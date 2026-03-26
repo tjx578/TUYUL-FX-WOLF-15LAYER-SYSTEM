@@ -124,8 +124,7 @@ def _resolve_mt5_data_dir(cli_value: str | None) -> Path:
     candidates = _detect_mt5_data_dirs()
     if not candidates:
         sys.exit(
-            "[ERROR] Could not auto-detect an MT5 data directory.\n"
-            "       Please supply --mt5-data-dir explicitly."
+            "[ERROR] Could not auto-detect an MT5 data directory.\n       Please supply --mt5-data-dir explicitly."
         )
 
     if len(candidates) == 1:

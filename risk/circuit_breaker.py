@@ -10,6 +10,7 @@ States:
 - OPEN: Trading halted due to breach
 - HALF_OPEN: Recovery probe, limited trading allowed
 """
+
 from __future__ import annotations
 
 import json

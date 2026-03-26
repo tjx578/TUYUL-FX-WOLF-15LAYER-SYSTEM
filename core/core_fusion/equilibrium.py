@@ -1,4 +1,5 @@
 """Equilibrium Momentum Fusion -- v6 + high-level wrapper."""
+
 from __future__ import annotations
 
 import math

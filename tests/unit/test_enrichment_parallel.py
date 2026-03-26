@@ -210,9 +210,9 @@ class TestSingleEngineFailureIsolation:
         assert isinstance(result, EnrichmentResult)
 
         # The failing engine should be recorded in errors
-        assert any(
-            failing_engine in err for err in result.errors
-        ), f"Expected error for '{failing_engine}' in {result.errors}"
+        assert any(failing_engine in err for err in result.errors), (
+            f"Expected error for '{failing_engine}' in {result.errors}"
+        )
 
         # The remaining engines should NOT all fail — result should still be valid
         # (advisory receives empty/default values for the failed engine but runs)

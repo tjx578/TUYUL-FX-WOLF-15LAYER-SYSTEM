@@ -5,6 +5,7 @@ Tests for WebSocket v3 upgrades:
   - Cached risk singletons (_get_risk_manager / _get_circuit_breaker)
   - Exponential backoff helper (frontend-side, tested conceptually)
 """
+
 from __future__ import annotations
 
 import asyncio

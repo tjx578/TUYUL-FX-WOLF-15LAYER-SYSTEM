@@ -1,4 +1,5 @@
 """Tests for analysis/tick_filter.py — spike filter, dedup cache, price store."""
+
 from __future__ import annotations
 
 import threading

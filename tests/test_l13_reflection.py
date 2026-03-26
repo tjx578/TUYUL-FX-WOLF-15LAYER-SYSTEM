@@ -2,6 +2,7 @@
 Tests for Layer 13 — Post-Trade Reflection Engine.
 Zone: Journal (J4). Append-only. No decision authority.
 """
+
 from __future__ import annotations
 
 import pytest

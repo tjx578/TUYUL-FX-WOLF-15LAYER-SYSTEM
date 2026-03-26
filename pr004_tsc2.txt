@@ -1,1 +1,0 @@
-src/features/signals/api/signalActions.api.ts(161,14): error TS2304: Cannot find name 'res'.

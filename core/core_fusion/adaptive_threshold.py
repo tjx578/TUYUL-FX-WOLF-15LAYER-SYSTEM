@@ -1,4 +1,5 @@
 """Adaptive Threshold Controller -- dynamic threshold management."""
+
 from __future__ import annotations
 
 import math

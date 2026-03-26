@@ -1,4 +1,5 @@
 """RSI Alignment Engine -- cross-timeframe RSI analysis."""
+
 from __future__ import annotations
 
 from typing import Any

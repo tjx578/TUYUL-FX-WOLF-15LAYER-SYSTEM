@@ -11,6 +11,7 @@ Covers:
 - Attempt counter reset on successful connect
 - Multiple consecutive failures with increasing backoff
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -34,6 +35,7 @@ class _FakeInvalidStatusCodeError(Exception):
         super().__init__(f"HTTP {status_code}")
 
 
+from ingest.finnhub_key_manager import finnhub_keys  # noqa: E402
 from ingest.finnhub_ws import (  # noqa: E402
     BACKOFF_MULTIPLIER,
     INITIAL_BACKOFF_S,
@@ -95,8 +97,14 @@ def on_message() -> AsyncMock:
 
 @pytest.fixture
 def ws_client(mock_redis: MagicMock, on_message: AsyncMock) -> FinnhubWebSocket:
-    """FinnhubWebSocket instance with injected mocks."""
-    with patch.dict("os.environ", {"FINNHUB_API_KEY": "test-token"}):
+    """FinnhubWebSocket instance with injected mocks.
+
+    Patches the `finnhub_keys` singleton's `current_key` method so that
+    construction never raises even when FINNHUB_API_KEY is absent from the
+    CI/test environment (the singleton is loaded at module-import time, so
+    `patch.dict("os.environ", ...)` alone is too late to seed it).
+    """
+    with patch.object(finnhub_keys, "current_key", return_value="test-token"):
         client = FinnhubWebSocket(
             redis=mock_redis,
             on_message=on_message,

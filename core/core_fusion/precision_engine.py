@@ -1,4 +1,5 @@
 """Fusion Precision Engine + Metrics Analyzer."""
+
 from __future__ import annotations
 
 import math
