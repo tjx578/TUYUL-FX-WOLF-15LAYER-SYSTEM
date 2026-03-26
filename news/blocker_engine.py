@@ -19,10 +19,10 @@ from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
 
 from news.models import BlockerStatus, EconomicEvent, ImpactLevel
-from news.news_rules import NEWS_RULES
+from news.news_rules import NEWS_RULES, NewsRule
 
 
-def _rule_for(impact: ImpactLevel) -> dict:
+def _rule_for(impact: ImpactLevel) -> NewsRule:
     return NEWS_RULES.get(impact.value, NEWS_RULES["UNKNOWN"])
 
 

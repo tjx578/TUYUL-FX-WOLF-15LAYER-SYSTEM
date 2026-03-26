@@ -7,9 +7,9 @@ from pathlib import Path
 import pytest
 
 try:
-    from constitution.verdict_engine import (  # pyright: ignore[reportAttributeAccessIssue] # noqa: F401
-        VerdictEngine,  # pyright: ignore[reportAttributeAccessIssue]
-        compute_verdict,  # pyright: ignore[reportAttributeAccessIssue]
+    from constitution.verdict_engine import (  # noqa: F401
+        VerdictEngine,
+        compute_verdict,
     )
 
     HAS_VERDICT = True

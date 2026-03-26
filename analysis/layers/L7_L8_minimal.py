@@ -8,6 +8,4 @@ Zone: analysis/layers/ -- read-only re-export shim, no execution side-effects.
 """
 
 from core.L7_L8_minimal import *  # noqa: F401,F403
-from core.L7_L8_minimal import __all__ as _all  # noqa: F401
-
-__all__ = list(_all)
+from core.L7_L8_minimal import __all__  # noqa: F401

@@ -64,7 +64,7 @@ class TestProbePremiumPairs:
     async def test_explicit_symbols_override(self) -> None:
         """Passing explicit symbols ignores CONFIG."""
         fetcher = FinnhubCandleFetcher()
-        fetcher.fetch = AsyncMock(return_value=[{"close": 1.0}])  # type: ignore[method-assign]
+        fetcher.fetch = AsyncMock(return_value=[{"close": 1.0}])
 
         results = await fetcher.probe_premium_pairs(symbols=["USDJPY"])
 

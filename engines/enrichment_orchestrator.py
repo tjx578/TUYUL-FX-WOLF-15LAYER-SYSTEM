@@ -145,8 +145,9 @@ class EngineEnrichmentLayer:
 
         from engines import create_engine_suite  # noqa: PLC0415
 
-        self._engines = create_engine_suite()
-        return self._engines
+        engines: dict[str, Any] = dict(create_engine_suite())
+        self._engines = engines
+        return engines
 
     # ------------------------------------------------------------------
     # Multi-TF candle dict builder

@@ -56,7 +56,7 @@ class TestColdStartM15:
             },
         ]
 
-        fetcher.fetch = AsyncMock(return_value=fake_candles)  # type: ignore[method-assign]
+        fetcher.fetch = AsyncMock(return_value=fake_candles)
         mock_bus = MagicMock()
         fetcher.context_bus = mock_bus
 
@@ -71,7 +71,7 @@ class TestColdStartM15:
     async def test_cold_start_uses_all_symbols_by_default(self) -> None:
         """When no symbols are passed, cold_start_m15 uses CONFIG pairs."""
         fetcher = FinnhubCandleFetcher()
-        fetcher.fetch = AsyncMock(return_value=[])  # type: ignore[method-assign]
+        fetcher.fetch = AsyncMock(return_value=[])
         fetcher.context_bus = MagicMock()
 
         await fetcher.cold_start_m15()

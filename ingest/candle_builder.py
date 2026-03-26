@@ -292,20 +292,14 @@ class CandleBuilder:
         self._completed.append(candle)
         if self.on_complete:
             try:
-                # Use publish_candle_sync if available
-                from context.redis_context_bridge import publish_candle_sync
-
-                publish_candle_sync(candle)
-            except ImportError:
-                # Fallback: call the callback as-is
                 self.on_complete(candle)
             except Exception as exc:
                 import logging
 
                 logging.getLogger(__name__).error(
-                    "[CandleBuilder] Sync Redis write failed for %s/%s: %s",
-                    candle.get("symbol"),
-                    candle.get("timeframe"),
+                    "[CandleBuilder] on_complete callback failed for %s/%s: %s",
+                    candle.symbol,
+                    candle.timeframe,
                     exc,
                 )
         return candle

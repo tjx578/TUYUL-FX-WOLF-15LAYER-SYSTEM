@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import contextlib
 import json
+import time
 import uuid
 from typing import Any
 
@@ -18,6 +19,15 @@ from services.orchestrator.execution_mode import ExecutionMode
 from services.orchestrator.state_manager import StateManager
 
 redis = pytest.importorskip("redis")
+
+
+def _wait_until(predicate: Any, timeout: float = 2.0, interval: float = 0.02) -> None:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if predicate():
+            return
+        time.sleep(interval)
+    raise AssertionError("Timed out waiting for predicate")
 
 
 class _RedisAdapter:
@@ -78,7 +88,11 @@ def test_orchestrator_receives_set_mode_command_via_redis(redis_client: Any, mon
             json.dumps({"command": "SET_MODE", "mode": "SAFE", "reason": "integration-test"}),
         )
 
-        manager.process_once(now=0.2)
+        _wait_until(
+            lambda: manager.process_once() or manager.snapshot().mode == ExecutionMode.SAFE,
+            timeout=2.0,
+            interval=0.02,
+        )
 
         snap = manager.snapshot()
         assert snap.mode == ExecutionMode.SAFE

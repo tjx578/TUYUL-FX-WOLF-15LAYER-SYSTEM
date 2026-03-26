@@ -16,7 +16,7 @@ from context.live_context_bus import LiveContextBus
 
 
 @pytest.fixture(autouse=True)
-def _reset_bus():  # pyright: ignore[reportUnusedFunction]
+def _reset_bus():
     """Reset singleton state before each test."""
     bus = LiveContextBus()
     bus.reset_state()

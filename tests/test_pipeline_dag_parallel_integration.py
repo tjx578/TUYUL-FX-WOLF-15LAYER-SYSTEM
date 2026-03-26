@@ -26,7 +26,7 @@ def _build_dependency_checked_calls(
     dag_batches: list[list[str]],
     active_layers: list[str],
 ) -> dict[str, Callable[[], dict[str, int | str]]]:
-    dag = WolfConstitutionalPipeline._build_pipeline_dag()  # pyright: ignore[reportPrivateUsage]
+    dag = WolfConstitutionalPipeline._build_pipeline_dag()
     active = set(active_layers)
     dependencies = {layer: [dep for dep in dag.dependencies_for(layer) if dep in active] for layer in active_layers}
 
@@ -65,14 +65,14 @@ def _build_dependency_checked_calls(
 
 
 def test_l11_and_macro_share_same_dag_batch() -> None:
-    dag_batches = WolfConstitutionalPipeline._build_pipeline_dag().execution_batches()  # pyright: ignore[reportPrivateUsage]
+    dag_batches = WolfConstitutionalPipeline._build_pipeline_dag().execution_batches()
     batch_index = {layer_id: idx for idx, batch in enumerate(dag_batches) for layer_id in batch}
 
     assert batch_index["L11"] == batch_index["macro"]
 
 
 def test_pipeline_batch_parallel_matches_sequential_reference() -> None:
-    dag_batches = WolfConstitutionalPipeline._build_pipeline_dag().execution_batches()  # pyright: ignore[reportPrivateUsage]
+    dag_batches = WolfConstitutionalPipeline._build_pipeline_dag().execution_batches()
     active_layers = [
         "L1",
         "L2",
@@ -93,7 +93,7 @@ def test_pipeline_batch_parallel_matches_sequential_reference() -> None:
     ]
 
     parallel_calls = _build_dependency_checked_calls(dag_batches, active_layers)
-    parallel_results = WolfConstitutionalPipeline._run_dag_batch_calls(  # pyright: ignore[reportPrivateUsage]
+    parallel_results = WolfConstitutionalPipeline._run_dag_batch_calls(
         dag_batches,
         parallel_calls,
     )
@@ -105,7 +105,7 @@ def test_pipeline_batch_parallel_matches_sequential_reference() -> None:
 
 
 def test_pipeline_batch_parallel_halts_before_next_batch_on_failure() -> None:
-    dag_batches = WolfConstitutionalPipeline._build_pipeline_dag().execution_batches()  # pyright: ignore[reportPrivateUsage]
+    dag_batches = WolfConstitutionalPipeline._build_pipeline_dag().execution_batches()
     executed: list[str] = []
 
     def _ok(layer_id: str) -> Callable[[], dict[str, str]]:
@@ -129,7 +129,7 @@ def test_pipeline_batch_parallel_halts_before_next_batch_on_failure() -> None:
     }
 
     with pytest.raises(RuntimeError, match="DAG_BATCH_FAILED"):
-        WolfConstitutionalPipeline._run_dag_batch_calls(  # pyright: ignore[reportPrivateUsage]
+        WolfConstitutionalPipeline._run_dag_batch_calls(
             dag_batches,
             batch_calls,
         )
@@ -140,7 +140,7 @@ def test_pipeline_batch_parallel_halts_before_next_batch_on_failure() -> None:
 
 def test_dag_batch_failed_includes_root_cause_in_message() -> None:
     """RuntimeError message must include the original exception type and message."""
-    dag_batches = WolfConstitutionalPipeline._build_pipeline_dag().execution_batches()  # pyright: ignore[reportPrivateUsage]
+    dag_batches = WolfConstitutionalPipeline._build_pipeline_dag().execution_batches()
 
     def _boom() -> dict[str, str]:
         raise KeyError("missing_candle_data")
@@ -150,7 +150,7 @@ def test_dag_batch_failed_includes_root_cause_in_message() -> None:
     }
 
     with pytest.raises(RuntimeError) as exc_info:
-        WolfConstitutionalPipeline._run_dag_batch_calls(  # pyright: ignore[reportPrivateUsage]
+        WolfConstitutionalPipeline._run_dag_batch_calls(
             dag_batches,
             batch_calls,
         )

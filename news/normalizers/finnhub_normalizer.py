@@ -18,7 +18,7 @@ Key rules
 from __future__ import annotations
 
 import hashlib
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime
 from typing import Any
 
@@ -171,7 +171,7 @@ def normalize_finnhub_event(
 
 
 def normalize_finnhub_events(
-    raw_events: list[Mapping[str, Any]],
+    raw_events: Sequence[Mapping[str, Any]],
     fetched_at: datetime | None = None,
 ) -> list[EconomicEvent]:
     """

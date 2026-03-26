@@ -11,6 +11,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+import numpy as np
+
 from engines.v11.config import get_v11
 from engines.v11.regime_ai.feature_extractor import FeatureExtractor
 from engines.v11.regime_ai.online_kmeans import OnlineKMeans
@@ -51,7 +53,8 @@ class RegimeService:
         feature_window = get_v11("regime_ai.feature_window", 50)
 
         # Initialize components
-        self._feature_extractor = FeatureExtractor(window=feature_window)
+        self._feature_extractor = FeatureExtractor()
+        self._feature_window = int(feature_window)
         self._kmeans = OnlineKMeans(
             n_clusters=n_clusters,
             confidence_tau=confidence_tau,
@@ -74,14 +77,25 @@ class RegimeService:
         Returns:
             RegimeResult or None if insufficient data
         """
-        # Extract features
-        features = self._feature_extractor.extract(candles)
+        # Extract features from candle dicts
+        window = self._feature_window
+        recent = candles[-window:] if len(candles) > window else candles
+        highs = np.array([float(c.get("high", 0)) for c in recent])
+        lows = np.array([float(c.get("low", 0)) for c in recent])
+        closes = np.array([float(c.get("close", 0)) for c in recent])
+        volumes_raw = [c.get("volume") for c in recent]
+        volumes = (
+            np.array([float(v) for v in volumes_raw if v is not None])
+            if all(v is not None for v in volumes_raw)
+            else None
+        )
+        features = self._feature_extractor.extract(highs, lows, closes, volumes)
 
         if features is None:
             return None
 
         # Cluster
-        cluster_result = self._kmeans.fit_predict(features)
+        cluster_result = self._kmeans.fit_predict(features.to_array())
 
         # Map to label
         label = self._label_mapping.get(cluster_result.cluster_id, "UNKNOWN")

@@ -230,7 +230,7 @@ def _from_ledger_cache(symbol: str | None, lookback: int) -> list[float]:
         from storage.trade_ledger import TradeLedger  # noqa: PLC0415
 
         ledger = TradeLedger()
-        all_trades = list(ledger._cache.values())
+        all_trades = list(ledger._memory_trades.values())
 
         closed = [
             t

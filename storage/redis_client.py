@@ -13,10 +13,11 @@ Redis Client Wrapper with Connection Pooling, Pub/Sub, and Streams support.
     still rely on synchronous Redis calls (e.g. ``storage`` helpers,
     ``ws_routes``).  It will be removed once the async migration is complete.
 """
+
 from __future__ import annotations
 
 import os
-from typing import Any, Optional, cast  # noqa: UP035
+from typing import Any, cast  # noqa: UP035
 
 # Type alias for Redis stream read responses:
 # list of (stream_name, list of (entry_id, fields)) tuples.
@@ -37,6 +38,11 @@ from config.logging_bootstrap import configure_loguru_logging  # noqa: E402
 from infrastructure.redis_url import sanitize_redis_url as _sanitize_redis_url  # noqa: E402
 
 configure_loguru_logging()
+
+_RETRY_EXCEPTIONS: tuple[type[BaseException], ...] = (
+    redis.exceptions.ConnectionError,
+    redis.exceptions.TimeoutError,
+)
 
 
 class RedisClient:
@@ -89,7 +95,7 @@ class RedisClient:
         )
 
     @retry(
-        retry=retry_if_exception_type((redis.exceptions.ConnectionError, redis.exceptions.TimeoutError)),
+        retry=retry_if_exception_type(_RETRY_EXCEPTIONS),
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=1, min=1, max=10),
         reraise=True,
@@ -108,7 +114,7 @@ class RedisClient:
         return result
 
     @retry(
-        retry=retry_if_exception_type((redis.exceptions.ConnectionError, redis.exceptions.TimeoutError)),
+        retry=retry_if_exception_type(_RETRY_EXCEPTIONS),
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=1, min=1, max=10),
         reraise=True,
@@ -118,7 +124,7 @@ class RedisClient:
         self.client.set(key, value, ex=ex)
 
     @retry(
-        retry=retry_if_exception_type((redis.exceptions.ConnectionError, redis.exceptions.TimeoutError)),
+        retry=retry_if_exception_type(_RETRY_EXCEPTIONS),
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=1, min=1, max=10),
         reraise=True,
@@ -128,7 +134,7 @@ class RedisClient:
         return cast(str | None, self.client.get(key))
 
     @retry(
-        retry=retry_if_exception_type((redis.exceptions.ConnectionError, redis.exceptions.TimeoutError)),
+        retry=retry_if_exception_type(_RETRY_EXCEPTIONS),
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=1, min=1, max=10),
         reraise=True,
@@ -150,7 +156,7 @@ class RedisClient:
         return cast(int, self.client.hset(name, **kwargs))
 
     @retry(
-        retry=retry_if_exception_type((redis.exceptions.ConnectionError, redis.exceptions.TimeoutError)),
+        retry=retry_if_exception_type(_RETRY_EXCEPTIONS),
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=1, min=1, max=10),
         reraise=True,
@@ -160,7 +166,7 @@ class RedisClient:
         return cast(str | None, self.client.hget(name, key))
 
     @retry(
-        retry=retry_if_exception_type((redis.exceptions.ConnectionError, redis.exceptions.TimeoutError)),
+        retry=retry_if_exception_type(_RETRY_EXCEPTIONS),
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=1, min=1, max=10),
         reraise=True,
@@ -170,7 +176,7 @@ class RedisClient:
         return cast(dict[str, str], self.client.hgetall(name))
 
     @retry(
-        retry=retry_if_exception_type((redis.exceptions.ConnectionError, redis.exceptions.TimeoutError)),
+        retry=retry_if_exception_type(_RETRY_EXCEPTIONS),
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=1, min=1, max=10),
         reraise=True,
@@ -189,7 +195,7 @@ class RedisClient:
         return cast(redis.client.PubSub, self.client.pubsub())
 
     @retry(
-        retry=retry_if_exception_type((redis.exceptions.ConnectionError, redis.exceptions.TimeoutError)),
+        retry=retry_if_exception_type(_RETRY_EXCEPTIONS),
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=1, min=1, max=10),
         reraise=True,
@@ -208,7 +214,7 @@ class RedisClient:
         return cast(int, self.client.publish(channel, message))
 
     @retry(
-        retry=retry_if_exception_type((redis.exceptions.ConnectionError, redis.exceptions.TimeoutError)),
+        retry=retry_if_exception_type(_RETRY_EXCEPTIONS),
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=1, min=1, max=10),
         reraise=True,
@@ -237,7 +243,7 @@ class RedisClient:
         return cast(str, self.client.xadd(name, fields, id=id, maxlen=maxlen, approximate=approximate))  # type: ignore[arg-type]
 
     @retry(
-        retry=retry_if_exception_type((redis.exceptions.ConnectionError, redis.exceptions.TimeoutError)),
+        retry=retry_if_exception_type(_RETRY_EXCEPTIONS),
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=1, min=1, max=10),
         reraise=True,
@@ -262,7 +268,7 @@ class RedisClient:
         return cast(StreamResponse, self.client.xread(streams, count=count, block=block))  # type: ignore
 
     @retry(
-        retry=retry_if_exception_type((redis.exceptions.ConnectionError, redis.exceptions.TimeoutError)),
+        retry=retry_if_exception_type(_RETRY_EXCEPTIONS),
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=1, min=1, max=10),
         reraise=True,
@@ -291,7 +297,7 @@ class RedisClient:
         return cast(StreamResponse, self.client.xreadgroup(groupname, consumername, streams, count=count, block=block))  # type: ignore
 
     @retry(
-        retry=retry_if_exception_type((redis.exceptions.ConnectionError, redis.exceptions.TimeoutError)),
+        retry=retry_if_exception_type(_RETRY_EXCEPTIONS),
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=1, min=1, max=10),
         reraise=True,

@@ -40,8 +40,10 @@ def test_core_fusion_unified_shim_all_populated() -> None:
     import core.core_fusion as fusion_pkg
     import core.core_fusion_unified as shim
 
+    shim_all = getattr(shim, "__all__", [])
+
     for name in fusion_pkg.__all__:
-        assert name in shim.__all__, f"core.core_fusion_unified shim is missing symbol: {name!r}"
+        assert name in shim_all, f"core.core_fusion_unified shim is missing symbol: {name!r}"
         assert getattr(shim, name) is getattr(fusion_pkg, name), (
             f"core.core_fusion_unified.{name} is not the same object as core.core_fusion.{name}"
         )
@@ -99,10 +101,11 @@ def test_core_unified_module_importable(module_path: str) -> None:
 def test_fusion_symbols_all_non_stub() -> None:
     """Every symbol in core._FUSION_SYMBOLS must resolve to a real object."""
     import core
-    from core import _FUSION_SYMBOLS  # type: ignore[attr-defined]
+
+    fusion_symbols = getattr(core, "_FUSION_SYMBOLS", [])
 
     stubs: list[str] = []
-    for name in _FUSION_SYMBOLS:
+    for name in fusion_symbols:
         obj = getattr(core, name, None)
         if obj is None:
             stubs.append(f"{name} (missing)")

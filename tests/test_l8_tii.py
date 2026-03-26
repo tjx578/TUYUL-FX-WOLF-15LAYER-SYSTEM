@@ -9,11 +9,11 @@ quality dimensions. It is NOT a trade decision; that's L12's job.
 import pytest
 
 from analysis.l8_tii import (
-    TIIGrade,  # pyright: ignore[reportAttributeAccessIssue]
-    TIIInputs,  # pyright: ignore[reportAttributeAccessIssue]
-    TIIResult,  # pyright: ignore[reportAttributeAccessIssue]
-    classify_tii_grade,  # pyright: ignore[reportAttributeAccessIssue]
-    compute_tii,  # pyright: ignore[reportAttributeAccessIssue]
+    TIIGrade,
+    TIIInputs,
+    TIIResult,
+    classify_tii_grade,
+    compute_tii,
 )
 
 # ---------------------------------------------------------------------------

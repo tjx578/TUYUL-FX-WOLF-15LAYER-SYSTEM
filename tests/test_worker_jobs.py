@@ -201,7 +201,7 @@ def test_montecarlo_validate_startup_no_sources(monkeypatch: MonkeyPatch) -> Non
     monkeypatch.delenv("WOLF15_MC_RETURN_MATRIX_FILE", raising=False)
     monkeypatch.delenv("REDIS_URL", raising=False)
 
-    from services.worker.montecarlo_job import _validate_startup  # pyright: ignore[reportPrivateUsage]
+    from services.worker.montecarlo_job import _validate_startup
 
     assert _validate_startup() is False
 
@@ -212,7 +212,7 @@ def test_montecarlo_validate_startup_with_redis_url(monkeypatch: MonkeyPatch) ->
     monkeypatch.delenv("WOLF15_MC_RETURN_MATRIX_FILE", raising=False)
     monkeypatch.setenv("REDIS_URL", "redis://localhost:6379/0")
 
-    from services.worker.montecarlo_job import _validate_startup  # pyright: ignore[reportPrivateUsage]
+    from services.worker.montecarlo_job import _validate_startup
 
     assert _validate_startup() is True
 
@@ -223,7 +223,7 @@ def test_montecarlo_validate_startup_with_inline_json(monkeypatch: MonkeyPatch) 
     monkeypatch.delenv("WOLF15_MC_RETURN_MATRIX_FILE", raising=False)
     monkeypatch.delenv("REDIS_URL", raising=False)
 
-    from services.worker.montecarlo_job import _validate_startup  # pyright: ignore[reportPrivateUsage]
+    from services.worker.montecarlo_job import _validate_startup
 
     assert _validate_startup() is True
 

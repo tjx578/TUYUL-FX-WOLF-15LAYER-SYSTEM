@@ -40,8 +40,8 @@ from collections.abc import Mapping
 from typing import Any, cast
 
 import fastapi
-import redis.asyncio as _aioredis
 from loguru import logger
+from redis.asyncio.client import PubSub as _AsyncPubSub
 
 from accounts.account_manager import AccountManager
 from allocation.signal_service import SIGNAL_READY_CHANNEL, SignalService
@@ -1108,7 +1108,7 @@ def _read_pubsub_message(pubsub: Any, timeout: float = 1.0) -> Mapping[str, Any]
 
 
 async def _async_read_pubsub_message(
-    pubsub: _aioredis.client.PubSub,
+    pubsub: _AsyncPubSub,
     timeout: float = 1.0,
 ) -> Mapping[str, Any] | None:
     """Read one message from an async Redis pubsub without blocking the event loop.
@@ -1122,7 +1122,7 @@ async def _async_read_pubsub_message(
     return None
 
 
-async def _make_async_pubsub(channel: str) -> _aioredis.client.PubSub | None:
+async def _make_async_pubsub(channel: str) -> _AsyncPubSub | None:
     """Create an async Redis pubsub instance subscribed to *channel*.
 
     Returns ``None`` on any error so callers can fall back to polling gracefully.
@@ -1284,7 +1284,7 @@ async def websocket_verdict(websocket: fastapi.WebSocket):
     logger.info(f"Verdict WebSocket client connected (pair={pair_filter or 'all'})")
 
     signatures: dict[str, str] = {}
-    pubsub: _aioredis.client.PubSub | None = None
+    pubsub: _AsyncPubSub | None = None
 
     try:
         snapshot = await _get_verdict_snapshot(pair_filter)
@@ -1400,7 +1400,7 @@ async def websocket_signals(websocket: fastapi.WebSocket):
     logger.info(f"Signals WebSocket client connected (symbol={symbol_filter or 'all'})")
 
     signatures: dict[str, str] = {}
-    pubsub: _aioredis.client.PubSub | None = None
+    pubsub: _AsyncPubSub | None = None
 
     try:
         snapshot = await _signal_snapshot_async(symbol_filter)
@@ -1501,7 +1501,7 @@ async def websocket_pipeline(websocket: fastapi.WebSocket):
     logger.info(f"Pipeline WebSocket client connected (pair={pair_filter or 'all'})")
 
     signatures: dict[str, str] = {}
-    pubsub: _aioredis.client.PubSub | None = None
+    pubsub: _AsyncPubSub | None = None
 
     try:
         snapshot = await _pipeline_snapshot(pair_filter)
@@ -1660,7 +1660,7 @@ async def websocket_alerts(websocket: fastapi.WebSocket):
         return
 
     logger.info("Alerts WebSocket client connected")
-    pubsub: _aioredis.client.PubSub | None = None
+    pubsub: _AsyncPubSub | None = None
 
     try:
         pubsub = await _make_async_pubsub(RISK_EVENTS)
@@ -1764,7 +1764,7 @@ async def get_trq_r3d_history(symbol: str) -> dict[str, Any]:
         from infrastructure.redis_client import get_client
 
         redis = await get_client()
-        raw_entries: list[Any] = await redis.lrange(_trq_r3d_history(sym_upper), -100, -1)
+        raw_entries: list[Any] = await redis.lrange(_trq_r3d_history(sym_upper), -100, -1)  # pyright: ignore[reportGeneralTypeIssues]
     except Exception as exc:
         logger.warning("[TRQ R3D] Redis read failed %s: %s", sym_upper, exc)
         return {"symbol": sym_upper, "r3d_history": [], "count": 0}

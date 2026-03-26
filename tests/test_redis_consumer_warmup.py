@@ -32,10 +32,10 @@ def _make_candle(symbol: str, timeframe: str, idx: int) -> dict[str, Any]:
 @pytest.fixture()
 def fresh_bus() -> Generator[LiveContextBus, None, None]:
     """Return a fresh LiveContextBus (reset singleton)."""
-    LiveContextBus._instance = None  # type: ignore[assignment]
+    LiveContextBus._instance = None
     bus = LiveContextBus()
     yield bus
-    LiveContextBus._instance = None  # type: ignore[assignment]
+    LiveContextBus._instance = None
 
 
 class TestLoadCandleHistory:

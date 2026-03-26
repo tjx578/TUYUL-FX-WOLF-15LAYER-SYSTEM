@@ -4,6 +4,7 @@ Journal Router - Thread-safe singleton event receiver.
 Receives and routes journal events (J1-J4) to JournalWriter.
 Pattern: Same as LiveContextBus and ExecutionStateMachine.
 """
+
 from __future__ import annotations
 
 from threading import Lock
@@ -40,7 +41,7 @@ class JournalRouter:
         """Initialize router state"""
         self._repository = JournalRepository()
         # Keep _writer attribute for backward compatibility in tests that patch it.
-        self._writer = self._repository._writer  # pyright: ignore[reportPrivateUsage]
+        self._writer = self._repository._writer
         self._event_count = 0
         self._rw_lock = Lock()
 
@@ -50,7 +51,7 @@ class JournalRouter:
         If tests override ``_writer`` with a custom JournalWriter, honor that
         override to keep deterministic file-path assertions.
         """
-        if self._writer is self._repository._writer:  # pyright: ignore[reportPrivateUsage]
+        if self._writer is self._repository._writer:
             self._repository.append(payload)
             return
         self._writer.write(payload)

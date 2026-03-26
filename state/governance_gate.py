@@ -268,7 +268,7 @@ def assess_governance(
     elif not warmup_ready or freshness.staleness_seconds > HARD_STALE_THRESHOLD_SEC:
         action = GovernanceAction.HOLD
     elif freshness.state == "stale_preserved":
-        if in_ws_warmup:
+        if in_ws_warmup and ws_connected_at is not None:
             # WS just reconnected — HTF candles are stale but will refresh soon.
             # Downgrade to ALLOW_REDUCED with penalty instead of hard HOLD.
             action = GovernanceAction.ALLOW_REDUCED

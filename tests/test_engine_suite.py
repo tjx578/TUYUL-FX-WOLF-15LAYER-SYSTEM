@@ -23,7 +23,7 @@ def test_advisory_flags_lockout_conflict():
     """When coherence_verdict='ABORT', advisory action should be ABORT."""
     suite = create_engine_suite()
     advisory = suite["advisory"]
-    result = advisory.analyze(  # type: ignore[attr-defined]
+    result = advisory.analyze(
         {
             "field": SimpleNamespace(energy_score=0.5, field_polarity="BULLISH"),
             "probability": SimpleNamespace(confidence=0.7),
@@ -64,24 +64,22 @@ def test_engine_suite_runs_end_to_end():
     lows = [c["low"] for c in raw]
     volumes = [c["volume"] for c in raw]
 
-    context = suite["context"].analyze(  # type: ignore[attr-defined]
-        {"closes": closes, "highs": highs, "lows": lows, "volumes": volumes}
-    )
-    coherence = suite["coherence"].evaluate(  # type: ignore[attr-defined]
+    context = suite["context"].analyze({"closes": closes, "highs": highs, "lows": lows, "volumes": volumes})
+    coherence = suite["coherence"].evaluate(
         {"emotion_state": 0.15, "fatigue": 0.2, "loss_stress": 0.1},
         market_volatility=0.01,
     )
-    field = suite["field"].analyze(candles)  # type: ignore[attr-defined]
-    momentum = suite["momentum"].analyze(candles)  # type: ignore[attr-defined]
-    precision = suite["precision"].analyze(candles, direction="BUY")  # type: ignore[attr-defined]
-    structure = suite["structure"].analyze(candles)  # type: ignore[attr-defined]
-    probability = suite["probability"].analyze(candles)  # type: ignore[attr-defined]
+    field = suite["field"].analyze(candles)
+    momentum = suite["momentum"].analyze(candles)
+    precision = suite["precision"].analyze(candles, direction="BUY")
+    structure = suite["structure"].analyze(candles)
+    probability = suite["probability"].analyze(candles)
 
     # Risk simulation uses precision's entry/sl/tp when available
     entry = precision.entry_optimal if precision.is_valid else closes[-1]
     sl = precision.stop_loss if precision.is_valid else entry - 2.0
     tp = precision.tp1 if precision.is_valid else entry + 4.0
-    risk_sim = suite["risk"].analyze(  # type: ignore[attr-defined]
+    risk_sim = suite["risk"].analyze(
         candles,
         direction="BUY",
         entry_price=entry,
@@ -89,7 +87,7 @@ def test_engine_suite_runs_end_to_end():
         take_profit=tp,
     )
 
-    advisory = suite["advisory"].analyze(  # type: ignore[attr-defined]
+    advisory = suite["advisory"].analyze(
         {
             "structure": structure,
             "momentum": momentum,
@@ -118,14 +116,12 @@ def test_engine_suite_simple():
     lows = [c["low"] for c in raw]
     volumes = [c["volume"] for c in raw]
 
-    context = suite["context"].analyze(  # type: ignore[attr-defined]
-        {"closes": closes, "highs": highs, "lows": lows, "volumes": volumes}
-    )
-    coherence = suite["coherence"].evaluate(  # type: ignore[attr-defined]
+    context = suite["context"].analyze({"closes": closes, "highs": highs, "lows": lows, "volumes": volumes})
+    coherence = suite["coherence"].evaluate(
         {"emotion_state": 0.15, "fatigue": 0.2, "loss_stress": 0.1},
         market_volatility=0.01,
     )
-    field = suite["field"].analyze(candles)  # type: ignore[attr-defined]
+    field = suite["field"].analyze(candles)
 
     assert context.market_regime in {"RISK_ON", "RISK_OFF", "TRANSITIONAL"}
     assert 0.0 <= coherence.coherence_index <= 1.0
@@ -136,7 +132,7 @@ def test_advisory_detects_lockout_conflict():
     """Advisory with coherence ABORT should return ABORT action."""
     suite = create_engine_suite()
     advisory = suite["advisory"]
-    result = advisory.analyze(  # type: ignore[attr-defined]
+    result = advisory.analyze(
         {
             "field": SimpleNamespace(energy_score=0.4, field_polarity="BULLISH"),
             "probability": SimpleNamespace(confidence=0.8),

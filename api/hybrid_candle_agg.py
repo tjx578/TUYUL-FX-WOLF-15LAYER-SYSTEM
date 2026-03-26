@@ -106,7 +106,7 @@ def _parse_forming_bar(raw: dict[str, Any]) -> FormingBarData | None:
         if result["high"] < result["low"]:
             return None
         for price_field in ("open", "high", "low", "close"):
-            if result[price_field] <= 0:  # type: ignore[literal-required]
+            if result[price_field] <= 0:
                 return None
         # Staleness check
         ts_written = float(raw.get("ts_written", 0))
@@ -406,7 +406,7 @@ class HybridCandleAggregator:
             for tf_name, builder in builders.items():
                 partial = builder.current_partial
                 if partial is not None:
-                    sym_bars[tf_name] = FormingBarData(  # type: ignore[misc]
+                    sym_bars[tf_name] = FormingBarData(
                         open=partial.open,
                         high=partial.high,
                         low=partial.low,

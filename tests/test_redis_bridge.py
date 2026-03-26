@@ -188,75 +188,81 @@ class TestRedisContextBridge:
 
 
 class TestLiveContextBusRedisIntegration:
-    """Test LiveContextBus integration with Redis mode."""
+    """Test LiveContextBus state behavior via current public API."""
 
     @pytest.fixture(autouse=True)
     def reset_singleton(self):
         """Reset LiveContextBus singleton between tests."""
-        LiveContextBus._instance = None
+        LiveContextBus.reset_singleton()
         yield
-        LiveContextBus._instance = None
-
-    @pytest.fixture
-    def mock_redis_bridge(self):
-        """Create a mock RedisContextBridge."""
-        mock = MagicMock()
-        return mock
+        LiveContextBus.reset_singleton()
 
     def test_local_mode_by_default(self):
-        """Test that LiveContextBus defaults to local mode."""
+        """Bus starts with empty snapshot state."""
         with patch.dict(os.environ, {}, clear=True):
             bus = LiveContextBus()
-            assert bus._mode == "local"
-            assert bus._redis_bridge is None
+            snap = bus.snapshot()
+            assert snap["ticks"] == {}
+            assert snap["candles"] == {}
 
-    def test_redis_mode_enabled(self, mock_redis_bridge):
-        """Test LiveContextBus in Redis mode."""
-        with (
-            patch.dict(os.environ, {"CONTEXT_MODE": "redis"}),
-            patch("context.redis_context_bridge.RedisClient"),
-        ):
-            bus = LiveContextBus()
+    def test_update_tick_stores_latest_tick(self):
+        """update_tick should store and expose latest tick by symbol."""
+        bus = LiveContextBus()
+        tick = {
+            "symbol": "EURUSD",
+            "bid": 1.0842,
+            "ask": 1.0843,
+            "timestamp": 1700000000.0,
+            "source": "test",
+        }
 
-            assert bus._mode == "redis"
-            assert bus._redis_bridge is not None
+        bus.update_tick(tick)
 
-    def test_update_tick_in_redis_mode(self, mock_redis_bridge):
-        """Test tick update in Redis mode writes to both local and Redis."""
-        with (
-            patch.dict(os.environ, {"CONTEXT_MODE": "redis"}),
-            patch("context.redis_context_bridge.RedisClient"),
-        ):
-            bus = LiveContextBus()
-            bus._redis_bridge = mock_redis_bridge
+        latest = bus.get_latest_tick("EURUSD")
+        assert latest == tick
 
-            tick = {
-                "symbol": "EURUSD",
-                "bid": 1.0842,
-                "ask": 1.0843,
-                "timestamp": 1700000000.0,
-                "source": "test",
-            }
+    def test_update_candle_appends_history(self):
+        """update_candle should append into symbol/timeframe history."""
+        bus = LiveContextBus()
+        candle = {
+            "symbol": "EURUSD",
+            "timeframe": "M15",
+            "open": 1.0840,
+            "high": 1.0850,
+            "low": 1.0835,
+            "close": 1.0845,
+            "timestamp": 1700000000.0,
+        }
 
-            bus.update_tick(tick)
+        bus.update_candle(candle)
 
-            # Verify local storage
-            assert len(bus._tick_buffer) == 1
-            assert bus._tick_buffer[0] == tick
+        candles = bus.get_candles("EURUSD", "M15")
+        assert len(candles) == 1
+        assert candles[0] == candle
 
-            # Verify Redis write
-            mock_redis_bridge.write_tick.assert_called_once_with(tick)
+    def test_update_news_in_memory(self):
+        """update_news should persist the latest news payload in bus state."""
+        bus = LiveContextBus()
+        news = {
+            "events": [
+                {
+                    "headline": "Fed raises rates",
+                    "impact": "HIGH",
+                    "timestamp": 1700000000.0,
+                }
+            ],
+        }
 
-    def test_update_candle_in_redis_mode(self, mock_redis_bridge):
-        """Test candle update in Redis mode writes to both local and Redis."""
-        with (
-            patch.dict(os.environ, {"CONTEXT_MODE": "redis"}),
-            patch("context.redis_context_bridge.RedisClient"),
-        ):
-            bus = LiveContextBus()
-            bus._redis_bridge = mock_redis_bridge
+        bus.update_news(news)
 
-            candle = {
+        assert bus.get_news() == news
+
+    def test_snapshot_contains_updates(self):
+        """snapshot should expose current ticks and candles."""
+        bus = LiveContextBus()
+        bus.update_tick({"symbol": "EURUSD", "bid": 1.0842, "ask": 1.0843})
+        bus.update_candle(
+            {
                 "symbol": "EURUSD",
                 "timeframe": "M15",
                 "open": 1.0840,
@@ -265,91 +271,31 @@ class TestLiveContextBusRedisIntegration:
                 "close": 1.0845,
                 "timestamp": 1700000000.0,
             }
+        )
 
-            bus.update_candle(candle)
+        snap = bus.snapshot()
+        assert "EURUSD" in snap["ticks"]
+        assert "EURUSD:M15" in snap["candles"]
 
-            # Verify local storage
-            assert bus._candle_store["EURUSD"]["M15"] == candle
-
-            # Verify Redis write
-            mock_redis_bridge.write_candle.assert_called_once_with(candle)
-
-    def test_update_news_in_redis_mode(self, mock_redis_bridge):
-        """Test news update in Redis mode writes to both local and Redis."""
-        with (
-            patch.dict(os.environ, {"CONTEXT_MODE": "redis"}),
-            patch("context.redis_context_bridge.RedisClient"),
-        ):
-            bus = LiveContextBus()
-            bus._redis_bridge = mock_redis_bridge
-
-            news = {
-                "events": [
-                    {
-                        "headline": "Fed raises rates",
-                        "impact": "HIGH",
-                        "timestamp": 1700000000.0,
-                    }
-                ],
-            }
-
-            bus.update_news(news)
-
-            # Verify local storage
-            assert bus._news_store == news
-
-            # Verify Redis write
-            mock_redis_bridge.write_news.assert_called_once_with(news)
-
-    def test_local_mode_no_redis_writes(self):
-        """Test that local mode doesn't write to Redis."""
-        with patch.dict(os.environ, {"CONTEXT_MODE": "local"}):
-            bus = LiveContextBus()
-
-            tick = {
+    def test_reset_state_clears_data(self):
+        """reset_state should clear stored ticks/candles/news."""
+        bus = LiveContextBus()
+        bus.update_tick({"symbol": "EURUSD", "bid": 1.0842, "ask": 1.0843})
+        bus.update_candle(
+            {
                 "symbol": "EURUSD",
-                "bid": 1.0842,
-                "ask": 1.0843,
+                "timeframe": "M15",
+                "open": 1.0840,
+                "high": 1.0850,
+                "low": 1.0835,
+                "close": 1.0845,
                 "timestamp": 1700000000.0,
-                "source": "test",
             }
+        )
+        bus.update_news({"events": [{"headline": "Test"}]})
 
-            bus.update_tick(tick)
+        bus.reset_state()
 
-            # Verify only local storage
-            assert len(bus._tick_buffer) == 1
-            # Verify no Redis bridge exists
-            assert bus._redis_bridge is None
-
-    def test_backward_compatibility_consume_ticks(self):
-        """Test that consume_ticks works in both modes."""
-        with patch.dict(os.environ, {"CONTEXT_MODE": "local"}):
-            bus = LiveContextBus()
-
-            tick1 = {
-                "symbol": "EURUSD",
-                "bid": 1.0842,
-                "ask": 1.0843,
-                "timestamp": 1700000000.0,
-                "source": "test",
-            }
-            tick2 = {
-                "symbol": "GBPUSD",
-                "bid": 1.2500,
-                "ask": 1.2501,
-                "timestamp": 1700000001.0,
-                "source": "test",
-            }
-
-            bus.update_tick(tick1)
-            bus.update_tick(tick2)
-
-            # Consume ticks
-            ticks = bus.consume_ticks()
-
-            assert len(ticks) == 2
-            assert ticks[0] == tick1
-            assert ticks[1] == tick2
-
-            # Buffer should be cleared
-            assert len(bus._tick_buffer) == 0
+        assert bus.get_latest_tick("EURUSD") is None
+        assert bus.get_candles("EURUSD", "M15") == []
+        assert bus.get_news() is None

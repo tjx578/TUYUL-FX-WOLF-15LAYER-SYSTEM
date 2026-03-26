@@ -56,7 +56,7 @@ class AquaInstantProGuard(BasePropFirmGuard):
                 logger.warning(
                     f"AquaInstantProGuard: strategy_loader failed to load, falling back to profile-only rules: {exc}"
                 )
-                self._strategy = None  # type: ignore[assignment]
+                self._strategy = None
 
     @staticmethod
     def _normalise(rules: dict[str, Any]) -> dict[str, Any]:

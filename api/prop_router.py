@@ -31,7 +31,7 @@ def list_prop_firms():
     for code in resolver.list_firms():
         # Try to get name/description from profile if available
         try:
-            profile = resolver._load_profile(code)
+            profile = resolver._load_raw(code)
             name = profile.get("name", code)
             description = profile.get("description", "")
         except Exception:
@@ -48,7 +48,7 @@ def list_programs_by_firm(firm_code: str):
     for plan in resolver.list_plans(firm_code):
         # Try to get plan details from profile
         try:
-            profile = resolver._load_profile(firm_code)
+            profile = resolver._load_raw(firm_code)
             plans = profile.get("plans", {})
             plan_data = plans.get(plan, {})
             name = plan_data.get("display_name", plan)

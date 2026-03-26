@@ -173,7 +173,7 @@ def _on_candle_complete(candle: Candle) -> None:
     # Uses sync-safe bridge to avoid coroutine-never-awaited bugs.
     from core.candle_bridge_fix import publish_candle_sync
 
-    publish_candle_sync(candle.to_dict())
+    publish_candle_sync(candle.to_dict(), redis=None)
 
 
 def _get_builder(symbol: str) -> MultiTimeframeCandleBuilder:

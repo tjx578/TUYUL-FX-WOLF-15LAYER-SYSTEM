@@ -10,10 +10,10 @@ from redis.exceptions import ConnectionError as RedisConnectionError
 from analysis.tick_filter import SpikeFilter, TickFilterConfig
 from infrastructure.stream_consumer import StreamBinding, StreamConsumer
 from ingest.dependencies import (
-    _dedup_cache,  # pyright: ignore[reportPrivateUsage]
-    _is_duplicate_tick,  # pyright: ignore[reportPrivateUsage]
-    _is_out_of_order_tick,  # pyright: ignore[reportPrivateUsage]
-    _last_exchange_ts_ms,  # pyright: ignore[reportPrivateUsage]
+    _dedup_cache,
+    _is_duplicate_tick,
+    _is_out_of_order_tick,
+    _last_exchange_ts_ms,
 )
 
 
@@ -28,7 +28,7 @@ class TestChaosRedisDown:
         consumer = StreamConsumer(bindings=[binding], redis_client=redis_client)
 
         with pytest.raises(RedisConnectionError):
-            await consumer._process_and_ack(  # pyright: ignore[reportPrivateUsage]
+            await consumer._process_and_ack(
                 binding,
                 "1-0",
                 {"symbol": "EURUSD"},

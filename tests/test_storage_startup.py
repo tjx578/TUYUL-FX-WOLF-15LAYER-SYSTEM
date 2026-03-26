@@ -11,7 +11,7 @@ Covers:
 from __future__ import annotations
 
 import fnmatch
-from typing import Any
+from typing import Any, cast
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -57,14 +57,14 @@ class TestHasCandleData:
         from storage.startup import _has_candle_data
 
         redis = FakeRedis(store={}, candle_keys=["wolf15:candle_history:EURUSD:H1"])
-        assert _has_candle_data(redis) is True  # type: ignore[arg-type]
+        assert _has_candle_data(cast(Any, redis)) is True
 
     def test_returns_false_when_no_candle_keys(self) -> None:
         """Empty SCAN result → False."""
         from storage.startup import _has_candle_data
 
         redis = FakeRedis(store={}, candle_keys=[])
-        assert _has_candle_data(redis) is False  # type: ignore[arg-type]
+        assert _has_candle_data(cast(Any, redis)) is False
 
     def test_returns_false_on_scan_exception(self) -> None:
         """Exception during SCAN → False (fail safe, no crash)."""
@@ -86,7 +86,7 @@ class TestHasCandleData:
             store={},
             candle_keys=["wolf15:peak_equity", "wolf15:drawdown:daily"],
         )
-        assert _has_candle_data(redis) is False
+        assert _has_candle_data(cast(Any, redis)) is False
 
 
 # ──────────────────────────────────────────────────────────────────

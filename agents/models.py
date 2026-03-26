@@ -111,7 +111,7 @@ class CreateAgentRequest(BaseModel):
 class UpdateAgentRequest(BaseModel):
     """Payload for updating an existing EA agent (all fields optional)."""
 
-    agent_name: str | None = Field(None, min_length=1, max_length=150)
+    agent_name: str | None = Field(default=None, min_length=1, max_length=150)
     ea_class: EAClassEnum | None = None
     ea_subtype: EASubtypeEnum | None = None
     execution_mode: ExecutionModeEnum | None = None
@@ -119,14 +119,14 @@ class UpdateAgentRequest(BaseModel):
     linked_account_id: UUID | None = None
     linked_profile_id: UUID | None = None
     mt5_login: int | None = None
-    mt5_server: str | None = Field(None, max_length=200)
-    broker_name: str | None = Field(None, max_length=200)
-    strategy_profile: str | None = Field(None, max_length=100)
-    risk_multiplier: float | None = Field(None, ge=0.0)
-    news_lock_setting: str | None = Field(None, max_length=50)
+    mt5_server: str | None = Field(default=None, max_length=200)
+    broker_name: str | None = Field(default=None, max_length=200)
+    strategy_profile: str | None = Field(default=None, max_length=100)
+    risk_multiplier: float | None = Field(default=None, ge=0.0)
+    news_lock_setting: str | None = Field(default=None, max_length=50)
     safe_mode: bool | None = None
     notes: str | None = None
-    version: str | None = Field(None, max_length=50)
+    version: str | None = Field(default=None, max_length=50)
 
 
 class LockAgentRequest(BaseModel):

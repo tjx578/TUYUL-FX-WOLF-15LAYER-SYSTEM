@@ -10,12 +10,13 @@ Usage:
     TII_MIN = get_threshold("tii.constitutional_min", 0.93)
     WOLF_MIN = get_threshold("wolf_discipline.minimum", 0.75)
 """
+
 from __future__ import annotations
 
 from pathlib import Path
 from typing import Any
 
-import yaml  # pyright: ignore[reportMissingModuleSource]
+import yaml
 
 BASE_DIR = Path(__file__).resolve().parent
 

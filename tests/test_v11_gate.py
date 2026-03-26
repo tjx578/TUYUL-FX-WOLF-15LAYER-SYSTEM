@@ -165,7 +165,7 @@ class TestExtremeSelectivityGate:
         """Gate must NEVER crash, even on absurd input."""
         gate = ExtremeSelectivityGateV11()
         for garbage in [None, 42, "string", [], True, {"nested": {"deep": object()}}]:
-            result = gate.evaluate(garbage)  # type: ignore
+            result = gate.evaluate(garbage)
             assert isinstance(result, V11GateResult)
             assert result.verdict in (GateVerdict.FAIL, GateVerdict.SKIP)
 
@@ -256,5 +256,5 @@ class TestV11PipelineHook:
     def test_never_crashes(self):
         hook = V11PipelineHook()
         for garbage in [None, 42, "x", [], {}]:
-            result = hook.run(garbage)  # type: ignore
+            result = hook.run(garbage)
             assert isinstance(result, V11GateResult)

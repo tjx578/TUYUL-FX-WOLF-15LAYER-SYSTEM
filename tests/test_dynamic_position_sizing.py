@@ -216,8 +216,8 @@ class TestDynamicPositionSizingEngine:
             "returns_history": _typical_returns(100),
         }
 
-        r_normal = engine.calculate(**base_params, volatility_multiplier=1.0)  # type: ignore
-        r_high_vol = engine.calculate(**base_params, volatility_multiplier=1.5)  # pyright: ignore[reportArgumentType]
+        r_normal = engine.calculate(**base_params, volatility_multiplier=1.0)
+        r_high_vol = engine.calculate(**base_params, volatility_multiplier=1.5)
 
         assert r_high_vol.volatility_adjustment < r_normal.volatility_adjustment
         assert r_high_vol.final_fraction <= r_normal.final_fraction
@@ -264,8 +264,8 @@ class TestDynamicPositionSizingEngine:
             "volatility_multiplier": 1.0,
         }
 
-        r_high = engine.calculate(**base_params, posterior_probability=0.90)  # pyright: ignore[reportArgumentType]
-        r_low = engine.calculate(**base_params, posterior_probability=0.30)  # pyright: ignore[reportArgumentType]
+        r_high = engine.calculate(**base_params, posterior_probability=0.90)
+        r_low = engine.calculate(**base_params, posterior_probability=0.30)
 
         assert r_low.posterior_adjustment < r_high.posterior_adjustment
         assert r_low.final_fraction <= r_high.final_fraction
@@ -427,8 +427,8 @@ class TestDynamicPositionSizingEngine:
             "volatility_multiplier": 1.0,
         }
 
-        r_neg = engine.calculate(**base, avg_loss=-25.0)  # pyright: ignore[reportArgumentType]
-        r_pos = engine.calculate(**base, avg_loss=25.0)  # pyright: ignore[reportArgumentType]
+        r_neg = engine.calculate(**base, avg_loss=-25.0)
+        r_pos = engine.calculate(**base, avg_loss=25.0)
 
         assert r_neg.kelly_raw == r_pos.kelly_raw
         assert r_neg.final_fraction == r_pos.final_fraction

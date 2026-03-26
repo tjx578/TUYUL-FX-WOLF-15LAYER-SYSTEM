@@ -1,6 +1,7 @@
 """
 Test candle history functionality in LiveContextBus
 """
+
 from __future__ import annotations
 
 from typing import Any  # noqa: UP035
@@ -16,8 +17,8 @@ def context_bus() -> LiveContextBus:
     bus = LiveContextBus()
     # Clear any existing data using public reset if available,
     # otherwise access internals with type: ignore for test setup.
-    bus._candle_history.clear()  # type: ignore[attr-defined]
-    bus._ticks.clear()  # type: ignore[attr-defined]
+    bus._candle_history.clear()
+    bus._ticks.clear()
     return bus
 
 

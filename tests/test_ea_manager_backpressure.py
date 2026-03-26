@@ -57,7 +57,7 @@ class TestEAManagerBackpressure:
         manager.submit(req1)
         manager.submit(req2)
 
-        queued = manager._queue.get_nowait()  # pyright: ignore[reportPrivateUsage]
+        queued = manager._queue.get_nowait()
         assert queued.request_id == "REQ-NEW"
 
         snap = manager.queue_snapshot()

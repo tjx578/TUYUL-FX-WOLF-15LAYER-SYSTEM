@@ -8,10 +8,12 @@ Tests all RiskProfile functionality:
 - Serialization round-trip
 - Redis persistence
 """
+
 from __future__ import annotations
 
 import json
 from dataclasses import FrozenInstanceError
+from typing import Any, cast
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -78,7 +80,7 @@ def test_risk_profile_immutability():
     """Test that RiskProfile is immutable (frozen dataclass)."""
     profile = RiskProfile()
     with pytest.raises(FrozenInstanceError):
-        profile.risk_per_trade = 2.0
+        object.__setattr__(profile, "risk_per_trade", cast(Any, 2.0))
 
 
 # ========== Invalid Field Values ==========

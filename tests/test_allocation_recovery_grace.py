@@ -68,7 +68,7 @@ _import_error: Exception | None = None
 _check_stale_data = None
 
 try:
-    from api.allocation_router import _check_stale_data  # type: ignore[assignment]
+    from api.allocation_router import _check_stale_data
 except Exception as exc:  # pragma: no cover
     _import_error = exc
 

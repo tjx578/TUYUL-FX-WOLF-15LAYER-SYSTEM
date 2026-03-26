@@ -52,7 +52,7 @@ async def test_fetch_window_events_deduplicates_by_canonical_id(sample_event: Ec
     with pytest.MonkeyPatch.context() as monkeypatch:
         monkeypatch.setattr(calendar_news_module, "NewsService", _news_service_factory)
         ingestor = CalendarNewsIngestor(redis_client=MagicMock())
-        merged = await ingestor._fetch_window_events()  # pyright: ignore[reportPrivateUsage]
+        merged = await ingestor._fetch_window_events()
 
         assert len(merged) == 1
         assert merged[0].canonical_id == "canon-1"

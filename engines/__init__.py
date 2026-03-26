@@ -129,18 +129,18 @@ __all__ = [
     "AdvisorySignal",  # pyright: ignore[reportUnsupportedDunderAll]
     "CognitiveCoherence",  # pyright: ignore[reportUnsupportedDunderAll]
     # Cognitive engines
-    "CognitiveCoherenceEngine",  # pyright: ignore[reportUnsupportedDunderAll]
-    "CognitiveContextEngine",  # pyright: ignore[reportUnsupportedDunderAll]
-    "CognitiveRiskSimulation",  # pyright: ignore[reportUnsupportedDunderAll]
+    "CognitiveCoherenceEngine",
+    "CognitiveContextEngine",
+    "CognitiveRiskSimulation",
     # Cognitive types
     "CoherenceSnapshot",  # pyright: ignore[reportUnsupportedDunderAll]
     "CoherenceState",  # pyright: ignore[reportUnsupportedDunderAll]
     "FieldResult",  # pyright: ignore[reportUnsupportedDunderAll]
     "FusionMomentum",  # pyright: ignore[reportUnsupportedDunderAll]
     # Fusion engines
-    "FusionMomentumEngine",  # pyright: ignore[reportUnsupportedDunderAll]
+    "FusionMomentumEngine",
     "FusionPrecision",  # pyright: ignore[reportUnsupportedDunderAll]
-    "FusionPrecisionEngine",  # pyright: ignore[reportUnsupportedDunderAll]
+    "FusionPrecisionEngine",
     "FusionStructure",
     "FusionStructureEngine",
     "InstitutionalPresence",

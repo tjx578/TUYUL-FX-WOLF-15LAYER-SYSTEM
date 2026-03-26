@@ -11,7 +11,7 @@ async def test_record_trade_event_updates_status_and_persists(monkeypatch: pytes
     import api.allocation_router as ar
 
     trade_id = "T-EVENT-1"
-    trade_ledger = ar._trade_ledger  # pyright: ignore[reportPrivateUsage]
+    trade_ledger = ar._trade_ledger
     trade_ledger[trade_id] = {
         "trade_id": trade_id,
         "signal_id": "SIG-1",
@@ -51,7 +51,7 @@ async def test_record_trade_event_expired_marks_cancelled(monkeypatch: pytest.Mo
     import api.allocation_router as ar
 
     trade_id = "T-EVENT-2"
-    trade_ledger = ar._trade_ledger  # pyright: ignore[reportPrivateUsage]
+    trade_ledger = ar._trade_ledger
     trade_ledger[trade_id] = {
         "trade_id": trade_id,
         "signal_id": "SIG-2",
@@ -107,7 +107,7 @@ async def test_record_trade_event_replay_safe_by_execution_intent(monkeypatch: p
     monkeypatch.setattr("execution.idempotency_ledger.redis_client.client.get", _fake_get)
 
     trade_id = "T-EVENT-3"
-    trade_ledger = ar._trade_ledger  # pyright: ignore[reportPrivateUsage]
+    trade_ledger = ar._trade_ledger
     trade_ledger[trade_id] = {
         "trade_id": trade_id,
         "signal_id": "SIG-3",

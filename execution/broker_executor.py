@@ -12,10 +12,10 @@ from typing import Any, Protocol, cast
 
 from risk.prop_firm import BasePropFirmGuard, GuardResult
 
-__all__ = ["BrokerExecutor"]
+__all__ = ["PreflightGuard", "BrokerExecutor"]
 
 
-class BrokerExecutor:
+class PreflightGuard:
     """Stateless executor that places orders based on dashboard instructions.
 
     The executor receives fully-resolved trade instructions (lot size, SL, TP

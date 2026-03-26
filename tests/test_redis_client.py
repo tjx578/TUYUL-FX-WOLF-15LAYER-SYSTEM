@@ -140,7 +140,7 @@ class TestRedisClientManager:
             pool = await mgr.get_pool()
             # ConnectionPool.from_url passes retry/retry_on_error to
             # connection_kwargs; verify they propagate.
-            ckw: dict[str, object] = dict(pool.connection_kwargs)  # pyright: ignore[reportUnknownMemberType,reportUnknownArgumentType]
+            ckw: dict[str, object] = dict(pool.connection_kwargs)
             assert "retry" in ckw, "Retry object must be set on pool"
             assert isinstance(ckw["retry"], Retry)
             assert ckw.get("retry_on_error") is not None

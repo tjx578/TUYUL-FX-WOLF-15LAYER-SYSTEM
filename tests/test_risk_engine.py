@@ -13,7 +13,7 @@ from pathlib import Path
 from uuid import uuid4
 
 import pytest
-import yaml  # pyright: ignore[reportMissingModuleSource]
+import yaml
 
 from accounts.account_model import (
     AccountState,

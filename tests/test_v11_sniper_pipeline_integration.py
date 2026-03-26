@@ -412,14 +412,14 @@ class TestV11HookResilience:
     )
     def test_run_never_crashes(self, garbage):
         hook = V11PipelineHook()
-        result = hook.run(garbage)  # type: ignore[arg-type]
+        result = hook.run(garbage)
         assert isinstance(result, V11GateResult)
         assert result.verdict in (GateVerdict.FAIL, GateVerdict.SKIP)
 
     @pytest.mark.parametrize("garbage", [None, 42, [], "x"])
     def test_run_and_annotate_never_crashes(self, garbage):
         hook = V11PipelineHook()
-        result = hook.run_and_annotate(garbage)  # type: ignore[arg-type]
+        result = hook.run_and_annotate(garbage)
         assert isinstance(result, dict)
         assert "v11_gate" in result
 

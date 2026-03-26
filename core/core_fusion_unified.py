@@ -9,6 +9,3 @@ Zone: core/ -- compatibility shim only, no execution side-effects.
 """
 
 from .core_fusion import *  # noqa: F401,F403
-from .core_fusion import __all__ as _fusion_all
-
-__all__ = list(_fusion_all)

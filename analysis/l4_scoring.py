@@ -121,8 +121,8 @@ def score(
         "multi_timeframe_confluence": factors.multi_timeframe_confluence,
         "key_level_proximity": factors.key_level_proximity,
     }
-    dominant_factor = max(field_values, key=field_values.get)
-    weakness_factor = min(field_values, key=field_values.get)
+    dominant_factor = max(field_values, key=lambda k: field_values[k])
+    weakness_factor = min(field_values, key=lambda k: field_values[k])
     return L4Result(
         symbol=symbol,
         composite_score=composite,

@@ -24,27 +24,6 @@
     "./services/api",
     "./infrastructure"
   ],
-  "executionEnvironments": [
-    {
-      "root": ".",
-      "extraPaths": [
-        ".",
-        "./analysis",
-        "./services/api",
-        "./infrastructure"
-      ]
-    },
-    {
-      "root": "tests",
-      "extraPaths": [
-        ".",
-        "../",
-        "../analysis",
-        "../services/api",
-        "../infrastructure"
-      ]
-    }
-  ],
   "venvPath": ".",
   "venv": ".venv"
 }

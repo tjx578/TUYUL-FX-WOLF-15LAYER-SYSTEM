@@ -58,14 +58,14 @@ class TestMonteCarloJobThreshold:
 
     def test_build_engine_uses_monte_min(self) -> None:
         with patch("services.worker.montecarlo_job.get_monte_min", return_value=0.55):
-            from services.worker.montecarlo_job import _build_engine  # pyright: ignore[reportPrivateUsage]
+            from services.worker.montecarlo_job import _build_engine
 
             engine = _build_engine()
             assert engine.win_threshold == 0.55
 
     def test_build_engine_custom_monte_min(self) -> None:
         with patch("services.worker.montecarlo_job.get_monte_min", return_value=0.60):
-            from services.worker.montecarlo_job import _build_engine  # pyright: ignore[reportPrivateUsage]
+            from services.worker.montecarlo_job import _build_engine
 
             engine = _build_engine()
             assert engine.win_threshold == 0.60

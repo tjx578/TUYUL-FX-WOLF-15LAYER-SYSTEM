@@ -15,10 +15,11 @@ from typing import Any, Protocol, cast
 from loguru import logger
 
 import core.health_probe
+from config.logging_bootstrap import configure_loguru_logging
 from core.redis_keys import ACCOUNT_STATE, KILL_SWITCH, ORCHESTRATOR_STATE, TRADE_RISK
-from engines.v11 import config
 from services.orchestrator.compliance_guard import evaluate_compliance
 from services.orchestrator.execution_mode import ExecutionMode
+from services.orchestrator.redis_commands import CommandParseError, parse_set_mode_command
 from state.pubsub_channels import ORCHESTRATOR_COMMANDS
 from storage.redis_client import RedisClient
 
@@ -213,18 +214,31 @@ class StateManager:
         if isinstance(payload.get("trade_risk"), dict):
             self._trade_risk.update(payload["trade_risk"])
 
-        command = str(payload.get("command") or payload.get("event") or "").upper()
-        if command in {"SET_MODE", "MODE_SET"}:
-            raw_mode = str(payload.get("mode", "")).upper()
-            if raw_mode in ExecutionMode.__members__:
-                new_mode = ExecutionMode[raw_mode]
-                self.set_mode(
-                    new_mode,
-                    reason=str(payload.get("reason") or "command"),
-                    compliance_code="EXTERNAL_COMMAND",
-                )
-                self._sync_kill_switch(new_mode)
-                self.publish_state("MODE_CHANGED", {"origin": "command"})
+        raw_payload = json.dumps(payload)
+        try:
+            set_mode_command = parse_set_mode_command(raw_payload)
+        except CommandParseError as exc:
+            command = str(payload.get("command") or payload.get("event") or "").strip().lower()
+            if command in {"set_mode", "mode_set"}:
+                logger.warning("invalid set_mode command ignored: {} payload={}", exc, payload)
+            return
+
+        if set_mode_command.mode not in ExecutionMode.__members__:
+            logger.warning(
+                "invalid set_mode enum ignored: mode={} payload={}",
+                set_mode_command.mode,
+                payload,
+            )
+            return
+
+        new_mode = ExecutionMode[set_mode_command.mode]
+        self.set_mode(
+            new_mode,
+            reason=set_mode_command.reason,
+            compliance_code="EXTERNAL_COMMAND",
+        )
+        self._sync_kill_switch(new_mode)
+        self.publish_state("MODE_CHANGED", {"origin": "command"})
 
     def _poll_channel(self) -> None:
         if self._pubsub is None:
@@ -313,7 +327,7 @@ class StateManager:
 def _start_health_probe_in_thread(readiness_check: Callable[[], bool] | None = None) -> None:
     """Run HealthProbe on a daemon thread so the sync event loop isn't blocked."""
     port = int(os.getenv("ORCHESTRATOR_HEALTH_PORT", os.getenv("PORT", "8083")))
-    probe = HealthProbe(
+    probe = core.health_probe.HealthProbe(
         port=port,
         service_name="orchestrator",
         readiness_check=readiness_check,

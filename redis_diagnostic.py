@@ -9,6 +9,7 @@ Run on Railway:
     railway run -s wolf15-engine python redis_diagnostic.py
 ============================================================
 """
+
 from __future__ import annotations
 
 import contextlib
@@ -18,6 +19,7 @@ import os
 import socket
 import sys
 import time
+from typing import cast
 from urllib.parse import urlparse
 
 logging.basicConfig(
@@ -27,12 +29,36 @@ logging.basicConfig(
 logger = logging.getLogger("redis_diagnostic")
 
 SYMBOLS = [
-    "EURUSD", "GBPUSD", "USDJPY", "USDCHF", "USDCAD",
-    "AUDUSD", "NZDUSD", "EURGBP", "EURJPY", "EURCHF",
-    "EURAUD", "EURCAD", "EURNZD", "GBPJPY", "GBPCHF",
-    "GBPAUD", "GBPCAD", "GBPNZD", "AUDJPY", "AUDNZD",
-    "AUDCAD", "AUDCHF", "NZDJPY", "NZDCHF", "NZDCAD",
-    "CADJPY", "CADCHF", "CHFJPY", "XAUUSD", "XAGUSD",
+    "EURUSD",
+    "GBPUSD",
+    "USDJPY",
+    "USDCHF",
+    "USDCAD",
+    "AUDUSD",
+    "NZDUSD",
+    "EURGBP",
+    "EURJPY",
+    "EURCHF",
+    "EURAUD",
+    "EURCAD",
+    "EURNZD",
+    "GBPJPY",
+    "GBPCHF",
+    "GBPAUD",
+    "GBPCAD",
+    "GBPNZD",
+    "AUDJPY",
+    "AUDNZD",
+    "AUDCAD",
+    "AUDCHF",
+    "NZDJPY",
+    "NZDCHF",
+    "NZDCAD",
+    "CADJPY",
+    "CADCHF",
+    "CHFJPY",
+    "XAUUSD",
+    "XAGUSD",
 ]
 
 TIMEFRAME = "M15"
@@ -44,7 +70,8 @@ class RawRedis:
     """Minimal Redis client using raw RESP protocol over TCP."""
 
     def __init__(self, host: str, port: int, password: str | None = None) -> None:
-        self._sock = socket.create_connection((host, port), timeout=10)
+        address_host: str | None = host
+        self._sock = socket.create_connection((address_host, port), timeout=10)
         self._sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
         self._buf = b""
         if password:
@@ -141,10 +168,10 @@ class RawRedis:
     def scan(self, cursor: int, match: str, count: int = 100) -> tuple[int, list[str]]:
         resp = self.execute("SCAN", str(cursor), "MATCH", match, "COUNT", str(count))
         if isinstance(resp, list) and len(resp) == 2:
-            new_cursor = int(resp[0])  # type: ignore[arg-type]
+            new_cursor = int(resp[0])
             keys = [str(k) for k in resp[1]] if isinstance(resp[1], list) else []
-            return new_cursor, keys
-        return 0, []
+            return cast(tuple[int, list[str]], (new_cursor, keys))
+        return cast(tuple[int, list[str]], (0, []))
 
     def close(self) -> None:
         with contextlib.suppress(Exception):

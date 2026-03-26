@@ -2,6 +2,7 @@
 Tests for Layer 14 — Adaptive Learning / Pattern Memory.
 Zone: Journal boundary. Advisory-only. No L12 override. No execution.
 """
+
 from __future__ import annotations
 
 import pytest
@@ -256,7 +257,7 @@ class TestAnalyzePatterns:
         assert len(result.weight_suggestions) == 0
 
     def test_metadata_passthrough(self, mixed_history: list[L13ReflectionRecord]) -> None:
-        meta = {"analyst": "auto", "version": "1.0"}
+        meta: dict[str, object] = {"analyst": "auto", "version": "1.0"}
         result = analyze_patterns(mixed_history, "A001", "2026-W07", metadata=meta)
         assert result.metadata == meta
 
