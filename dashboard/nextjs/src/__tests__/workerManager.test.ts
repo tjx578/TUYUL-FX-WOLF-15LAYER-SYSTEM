@@ -116,8 +116,8 @@ describe("createWorkerManager", () => {
     it("rejects in SSR (no window)", async () => {
         const originalWindow = globalThis.window;
         // Temporarily remove window to simulate SSR
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        (globalThis as any).window = undefined;
+        const globalForSsr = globalThis as { window?: Window & typeof globalThis };
+        globalForSsr.window = undefined;
 
         const mgr = createWorkerManager<
             { id: string; type: string },
@@ -131,6 +131,6 @@ describe("createWorkerManager", () => {
         expect(mgr.alive).toBe(false);
 
         // Restore window
-        globalThis.window = originalWindow;
+        globalForSsr.window = originalWindow;
     });
 });

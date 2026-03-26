@@ -19,7 +19,6 @@ vi.mock("react", () => ({
     },
 }));
 
-// eslint-disable-next-line @typescript-eslint/no-require-imports
 import { useAccountStore } from "@/store/useAccountStore";
 
 describe("useAccountStore getSnapshot() immutability", () => {
