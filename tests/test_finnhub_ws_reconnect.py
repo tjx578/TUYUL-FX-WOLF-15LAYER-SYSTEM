@@ -99,10 +99,10 @@ def on_message() -> AsyncMock:
 def ws_client(mock_redis: MagicMock, on_message: AsyncMock) -> FinnhubWebSocket:
     """FinnhubWebSocket instance with injected mocks.
 
-    Patches the ``finnhub_keys`` singleton's ``current_key`` method so that
+    Patches the `finnhub_keys` singleton's `current_key` method so that
     construction never raises even when FINNHUB_API_KEY is absent from the
     CI/test environment (the singleton is loaded at module-import time, so
-    ``patch.dict("os.environ", ...)`` alone is too late to seed it).
+    `patch.dict("os.environ", ...)` alone is too late to seed it).
     """
     with patch.object(finnhub_keys, "current_key", return_value="test-token"):
         client = FinnhubWebSocket(
