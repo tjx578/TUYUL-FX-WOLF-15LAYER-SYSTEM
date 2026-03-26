@@ -62,7 +62,7 @@ export default function Button({
       className={clsx(
         // Base
         "relative overflow-hidden font-semibold transition-all duration-300",
-        "flex items-center justify-center gap-1.5",
+        "flex items-center justify-content-center gap-1.5",
         // Variants
         variant === "primary" && [
           "btn btn-primary",
