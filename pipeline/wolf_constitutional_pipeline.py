@@ -201,6 +201,9 @@ class WolfConstitutionalPipeline:
     # Avoid log storms when a symbol remains degraded for long periods.
     DQ_WARNING_LOG_INTERVAL_SEC: float = 900.0
 
+    # Avoid warmup reject error storms during startup/reconnect windows.
+    WARMUP_WARNING_LOG_INTERVAL_SEC: float = 900.0
+
     def __init__(self) -> None:
         """Initialize with lazy loading to avoid circular imports."""
         super().__init__()
@@ -264,6 +267,9 @@ class WolfConstitutionalPipeline:
 
         # Per-symbol data quality warning state for log throttling.
         self._dq_warning_state: dict[str, dict[str, Any]] = {}
+
+        # Per-symbol warmup warning state for log throttling.
+        self._warmup_warning_state: dict[str, dict[str, Any]] = {}
 
     # ──────────────────────────────────────────────────────
     #  Lazy-load all layer analyzers
@@ -596,6 +602,7 @@ class WolfConstitutionalPipeline:
         # too thin.  Prevents garbage verdicts on first few
         # minutes after startup.
         # ═══════════════════════════════════════════════════════
+        warmup: dict[str, Any] = {"ready": True, "bars": 0, "required": 0, "missing": 0}
         if not safe_mode:
             _warmup_raw = self._context_bus.check_warmup(symbol, self.WARMUP_MIN_BARS)
             warmup = normalize_warmup(_warmup_raw, required=min(self.WARMUP_MIN_BARS.values())).to_dict()
@@ -605,15 +612,34 @@ class WolfConstitutionalPipeline:
                 layers_executed.append("L0")
                 engines_invoked.append("WarmupGate")
                 VERDICT_PATH_EVENT_TOTAL.labels(event="warmup_rejected", symbol=symbol, status="hold").inc()
-                logger.error(
-                    f"[VerdictPath] ABORT: warmup rejected | symbol={symbol} "
-                    f"bars={warmup['bars']} required={warmup['required']} missing={missing}"
+                now_ts = time.time()
+                state = self._warmup_warning_state.get(symbol, {})
+                missing_key = str(missing)
+                should_log = (
+                    not state.get("blocked", False)
+                    or state.get("missing_key") != missing_key
+                    or (now_ts - float(state.get("last_log_ts", 0.0))) >= self.WARMUP_WARNING_LOG_INTERVAL_SEC
                 )
-                logger.error(
-                    f"[Pipeline v8.0] {symbol} WARMUP INSUFFICIENT — "
-                    f"bars={warmup['bars']}, required={warmup['required']}, "
-                    f"missing={missing}"
-                )
+                if should_log:
+                    logger.warning(
+                        "[VerdictPath] warmup rejected | symbol={} bars={} required={} missing={}",
+                        symbol,
+                        warmup["bars"],
+                        warmup["required"],
+                        missing,
+                    )
+                    logger.warning(
+                        "[Pipeline v8.0] {} WARMUP INSUFFICIENT | bars={} required={} missing={}",
+                        symbol,
+                        warmup["bars"],
+                        warmup["required"],
+                        missing,
+                    )
+                    self._warmup_warning_state[symbol] = {
+                        "blocked": True,
+                        "missing_key": missing_key,
+                        "last_log_ts": now_ts,
+                    }
                 # Strict enforcement: never proceed to any layer or verdict logic
                 result = _early_exit_with_map(
                     [f"WARMUP_INSUFFICIENT:{missing}_bars_missing"],
@@ -621,10 +647,16 @@ class WolfConstitutionalPipeline:
                 )
                 result["warmup"] = warmup
                 result["verdict"] = None  # Explicitly signal no verdict
-                logger.error(
-                    f"[VerdictPath] Pipeline execution ABORTED for symbol={symbol} due to insufficient warmup. No verdict published."
-                )
                 return result
+            else:
+                state = self._warmup_warning_state.get(symbol)
+                if state and state.get("blocked", False):
+                    logger.info("[Pipeline v8.0] %s warmup recovered; analysis resumed", symbol)
+                self._warmup_warning_state[symbol] = {
+                    "blocked": False,
+                    "missing_key": "",
+                    "last_log_ts": 0.0,
+                }
 
         # After pipeline layers, before persisting verdict:
         # (Find verdict assignment and add TP>0 check before persist)
@@ -730,10 +762,7 @@ class WolfConstitutionalPipeline:
         except Exception:
             pass  # Redis unavailable — governance proceeds with env defaults
 
-        _warmup_raw_gov = (
-            self._context_bus.check_warmup(symbol, self.WARMUP_MIN_BARS) if not safe_mode else {"ready": True}
-        )
-        _warmup_ready_gov = _warmup_raw_gov.get("ready", True) if isinstance(_warmup_raw_gov, dict) else True
+        _warmup_ready_gov = warmup.get("ready", True)
 
         _governance = assess_governance(
             symbol=symbol,
