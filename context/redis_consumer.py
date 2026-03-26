@@ -632,7 +632,7 @@ class RedisConsumer:
         Steps:
         0) Sanitise: delete keys with wrong Redis type (defence-in-depth)
         1) Warmup: load candle history from Redis Lists
-        2) Realtime: start pubsub consumer (best-effort)
+        2) Realtime: start pubsub consumer with auto-reconnect on transient errors
         3) Block forever until stop requested (or task cancelled)
         """
         logger.info("RedisConsumer: starting (symbols=%d)", len(self._symbols))
@@ -646,14 +646,32 @@ class RedisConsumer:
         # Warmup is critical for pipeline readiness
         await self.load_candle_history()
 
-        # Realtime consumer is best-effort; do not crash if pubsub fails
-        try:
-            await self._consume_pubsub()
-        except asyncio.CancelledError:
-            logger.info("RedisConsumer: cancelled")
-            raise
-        except Exception:
-            logger.exception("RedisConsumer: pubsub loop crashed; continuing idle")
-            # Idle loop to keep task alive (mirrors main.py behavior)
-            while not self._stop_event.is_set():
-                await asyncio.sleep(1.0)
+        # Realtime consumer with auto-reconnect on transient failures
+        max_backoff = 60.0
+        backoff = 1.0
+        consecutive_failures = 0
+
+        while not self._stop_event.is_set():
+            try:
+                await self._consume_pubsub()
+                # _consume_pubsub returns normally only when stop_event is set
+                break
+            except asyncio.CancelledError:
+                logger.info("RedisConsumer: cancelled")
+                raise
+            except Exception:
+                consecutive_failures += 1
+                logger.warning(
+                    "RedisConsumer: pubsub loop crashed (attempt %d); reconnecting in %.1fs",
+                    consecutive_failures,
+                    backoff,
+                    exc_info=True,
+                )
+                await asyncio.sleep(backoff)
+                backoff = min(backoff * 2, max_backoff)
+
+                # Re-warmup after reconnect to fill any gap
+                try:
+                    await self.load_candle_history()
+                except Exception:
+                    logger.debug("RedisConsumer: post-reconnect warmup failed", exc_info=True)

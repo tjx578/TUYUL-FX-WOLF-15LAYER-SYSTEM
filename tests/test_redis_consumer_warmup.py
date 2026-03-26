@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Generator
 from datetime import UTC, datetime
 from typing import Any
@@ -276,3 +277,59 @@ class TestLoadCandleHistory:
 
         result = fresh_bus.check_warmup("EURUSD", min_bars={"H1": 20})
         assert result["ready"] is False
+
+
+class TestPubsubReconnect:
+    """Test that run() reconnects after transient pubsub failures."""
+
+    @pytest.mark.asyncio
+    async def test_run_retries_after_connection_error(self, fresh_bus: LiveContextBus) -> None:
+        """run() should retry _consume_pubsub when it raises ConnectionError."""
+        from redis.exceptions import ConnectionError as RedisConnectionError
+
+        mock_redis = AsyncMock()
+        mock_redis.lrange = AsyncMock(return_value=[])
+        mock_redis.scan = AsyncMock(return_value=(0, []))
+
+        consumer = RedisConsumer(
+            symbols=["EURUSD"],
+            redis_client=mock_redis,
+            context_bus=fresh_bus,
+        )
+
+        call_count = 0
+
+        async def fake_consume_pubsub() -> None:
+            nonlocal call_count
+            call_count += 1
+            if call_count < 3:
+                raise RedisConnectionError("Connection closed by server.")
+            # Third call: stop consumer to exit the loop
+            consumer.stop()
+
+        consumer._consume_pubsub = fake_consume_pubsub
+
+        await asyncio.wait_for(consumer.run(), timeout=10.0)
+
+        assert call_count == 3, f"Expected 3 calls to _consume_pubsub, got {call_count}"
+
+    @pytest.mark.asyncio
+    async def test_run_does_not_retry_on_cancellation(self, fresh_bus: LiveContextBus) -> None:
+        """CancelledError should propagate immediately, not be retried."""
+        mock_redis = AsyncMock()
+        mock_redis.lrange = AsyncMock(return_value=[])
+        mock_redis.scan = AsyncMock(return_value=(0, []))
+
+        consumer = RedisConsumer(
+            symbols=["EURUSD"],
+            redis_client=mock_redis,
+            context_bus=fresh_bus,
+        )
+
+        async def fake_consume_pubsub() -> None:
+            raise asyncio.CancelledError()
+
+        consumer._consume_pubsub = fake_consume_pubsub
+
+        with pytest.raises(asyncio.CancelledError):
+            await consumer.run()
