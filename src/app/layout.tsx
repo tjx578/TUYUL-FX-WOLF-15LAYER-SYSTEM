@@ -29,13 +29,13 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <body suppressHydrationWarning>
-        <ClientOnly>
-          <QueryProvider>
-            {children}
+        <QueryProvider>
+          {children}
+          <ClientOnly>
             <SessionExpiryModal />
             <ToastViewport />
-          </QueryProvider>
-        </ClientOnly>
+          </ClientOnly>
+        </QueryProvider>
       </body>
     </html>
   );
