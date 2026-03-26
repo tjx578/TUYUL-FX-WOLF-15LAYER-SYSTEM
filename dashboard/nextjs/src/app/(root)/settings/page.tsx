@@ -1,9 +1,8 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { API_ENDPOINTS } from "@/shared/api/client";
+import { API_ENDPOINTS, apiMutate } from "@/shared/api/client";
 import { useHealth } from "@/shared/api/system.api";
-import { bearerHeader } from "@/lib/auth";
 
 const TABS = [
   "General",
@@ -40,27 +39,7 @@ export default function SettingsPage() {
   );
 
   const sendWrite = async (url: string, method: string, body: unknown) => {
-    const auth = bearerHeader();
-    const res = await fetch(url, {
-      method,
-      credentials: "include",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Edit-Mode": "ON",
-        "X-Action-Reason": "SETTINGS_UPDATE",
-        ...(auth ? { Authorization: auth } : {}),
-        ...(process.env.NEXT_PUBLIC_ACTION_PIN
-          ? { "X-Action-Pin": process.env.NEXT_PUBLIC_ACTION_PIN }
-          : {}),
-      },
-      body: JSON.stringify(body),
-    });
-
-    if (!res.ok) {
-      const txt = await res.text();
-      throw new Error(`Failed (${res.status}): ${txt}`);
-    }
-    return res.json().catch(() => ({}));
+    return apiMutate(url, body, method);
   };
 
   const activate = async () => {

@@ -1,13 +1,10 @@
 // ============================================================
 // TUYUL FX Wolf-15 — Agent Manager API Hooks & Mutations
 // Connects to: /api/v1/agent-manager/* (Phase 2 backend)
-// Self-contained: replicates fetcher pattern from @/lib/api
 // ============================================================
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { bearerHeader } from "@/lib/auth";
-import { HttpError } from "@/lib/fetcher";
-import { useSessionStore } from "@/store/useSessionStore";
+import { fetcher, apiMutate } from "@/shared/api/client";
 import type {
   AgentItem,
   AgentListResponse,
@@ -23,9 +20,6 @@ import type {
   CreateProfileRequest,
 } from "@/types/agent-manager";
 
-// Global 429 cooldown for agent-manager API calls
-let _amRateLimitedUntil = 0;
-
 export const AGENT_MANAGER_ENDPOINTS = {
   agents: "/api/v1/agent-manager/agents",
   agentById: (id: string) => `/api/v1/agent-manager/agents/${id}`,
@@ -38,96 +32,13 @@ export const AGENT_MANAGER_ENDPOINTS = {
   profiles: "/api/v1/agent-manager/profiles",
 } as const;
 
-// ─── Internal Fetch Helpers ───────────────────────────────────
-
-const amFetcher = async (url: string) => {
-  if (useSessionStore.getState().expiredReason) {
-    throw new HttpError("Session expired", 401);
-  }
-
-  if (_amRateLimitedUntil > Date.now()) {
-    throw new HttpError("Rate limited — waiting for cooldown", 429);
-  }
-
-  const auth = bearerHeader();
-  const res = await fetch(url, {
-    credentials: "include",
-    headers: {
-      ...(auth ? { Authorization: auth } : {}),
-    },
-  });
-
-  if (res.status === 429) {
-    const retryAfter = res.headers.get("Retry-After");
-    _amRateLimitedUntil = Date.now() + (retryAfter ? parseInt(retryAfter, 10) * 1000 : 60_000);
-    throw new HttpError("Rate limited", 429);
-  }
-
-  if (!res.ok) {
-    let info: unknown = null;
-    try {
-      info = await res.json();
-    } catch {
-      try {
-        info = await res.text();
-      } catch {
-        info = null;
-      }
-    }
-    throw new HttpError(`Request failed: ${res.status} ${res.statusText}`, res.status, info);
-  }
-
-  return res.json();
-};
-
-const amMutate = async (url: string, body?: unknown, method = "POST") => {
-  const governanceHeaders: Record<string, string> =
-    method.toUpperCase() === "GET"
-      ? {}
-      : {
-          "X-Edit-Mode": "ON",
-          "X-Action-Reason": "UI_WRITE_ACTION",
-          ...(process.env.NEXT_PUBLIC_ACTION_PIN
-            ? { "X-Action-Pin": process.env.NEXT_PUBLIC_ACTION_PIN }
-            : {}),
-        };
-
-  const auth = bearerHeader();
-  const res = await fetch(url, {
-    method,
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      ...(auth ? { Authorization: auth } : {}),
-      ...governanceHeaders,
-    },
-    body: body !== undefined ? JSON.stringify(body) : undefined,
-  });
-
-  if (!res.ok) {
-    let info: unknown = null;
-    try {
-      info = await res.json();
-    } catch {
-      try {
-        info = await res.text();
-      } catch {
-        info = null;
-      }
-    }
-    throw new HttpError(`Request failed: ${res.status} ${res.statusText}`, res.status, info);
-  }
-
-  return res.json().catch(() => undefined);
-};
-
 // ─── Internal Query Helper ────────────────────────────────────
 
 function useAmQuery<T>(key: string | null, opts?: { refetchInterval?: number }) {
   const queryClient = useQueryClient();
   const { data, error, isLoading } = useQuery<T>({
     queryKey: [key],
-    queryFn: () => amFetcher(key!),
+    queryFn: () => fetcher(key!),
     enabled: !!key,
     ...(opts?.refetchInterval ? { refetchInterval: opts.refetchInterval } : {}),
   });
@@ -225,25 +136,25 @@ export function useAgentManagerSnapshots(agentId: string | null, limit?: number)
 // ─── MUTATIONS ────────────────────────────────────────────────
 
 export async function createAgent(data: CreateAgentRequest): Promise<AgentItem> {
-  return amMutate(AGENT_MANAGER_ENDPOINTS.agents, data, "POST");
+  return apiMutate(AGENT_MANAGER_ENDPOINTS.agents, data, "POST");
 }
 
 export async function updateAgent(agentId: string, data: UpdateAgentRequest): Promise<AgentItem> {
-  return amMutate(AGENT_MANAGER_ENDPOINTS.agentById(agentId), data, "PUT");
+  return apiMutate(AGENT_MANAGER_ENDPOINTS.agentById(agentId), data, "PUT");
 }
 
 export async function deleteAgent(agentId: string): Promise<void> {
-  await amMutate(AGENT_MANAGER_ENDPOINTS.agentById(agentId), undefined, "DELETE");
+  await apiMutate(AGENT_MANAGER_ENDPOINTS.agentById(agentId), undefined, "DELETE");
 }
 
 export async function lockAgent(agentId: string, data: LockAgentRequest): Promise<AgentItem> {
-  return amMutate(AGENT_MANAGER_ENDPOINTS.agentLock(agentId), data, "POST");
+  return apiMutate(AGENT_MANAGER_ENDPOINTS.agentLock(agentId), data, "POST");
 }
 
 export async function unlockAgent(agentId: string): Promise<AgentItem> {
-  return amMutate(AGENT_MANAGER_ENDPOINTS.agentUnlock(agentId), undefined, "POST");
+  return apiMutate(AGENT_MANAGER_ENDPOINTS.agentUnlock(agentId), undefined, "POST");
 }
 
 export async function createProfile(data: CreateProfileRequest): Promise<AgentProfile> {
-  return amMutate(AGENT_MANAGER_ENDPOINTS.profiles, data, "POST");
+  return apiMutate(AGENT_MANAGER_ENDPOINTS.profiles, data, "POST");
 }

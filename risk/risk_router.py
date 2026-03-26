@@ -7,6 +7,7 @@ Provides REST API for:
 - Risk profile management
 - Trade lifecycle tracking
 """
+
 from __future__ import annotations
 
 import os
@@ -32,6 +33,7 @@ from accounts.prop_rule_engine import get_prop_template, validate_prop_sovereign
 from accounts.risk_calculator import AccountScopedRiskEngine
 from accounts.risk_engine import RiskEngine
 from allocation.signal_service import SignalService
+from api.middleware.auth import verify_token
 from api.middleware.governance import enforce_write_policy
 from core.redis_keys import compliance_state
 from journal.audit_trail import AuditAction, AuditTrail
@@ -42,7 +44,7 @@ from risk.risk_profile import RiskMode, RiskProfile, load_risk_profile, save_ris
 from schemas.direction import normalize_direction
 from storage.redis_client import redis_client
 
-router = APIRouter(prefix="/api/v1/risk", dependencies=[Depends(enforce_write_policy)])
+router = APIRouter(prefix="/api/v1/risk", dependencies=[Depends(verify_token), Depends(enforce_write_policy)])
 _kill_switch = GlobalKillSwitch()
 _account_repo = AccountRepository.get_default()
 _account_risk_engine = AccountScopedRiskEngine()

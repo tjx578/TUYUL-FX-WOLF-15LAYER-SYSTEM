@@ -308,6 +308,9 @@ def _add_cors(app: FastAPI) -> None:
             "Origin",
             "X-Requested-With",
             "X-Idempotency-Key",
+            "X-Edit-Mode",
+            "X-Action-Reason",
+            "X-Action-Pin",
         ],
         expose_headers=[],
     )

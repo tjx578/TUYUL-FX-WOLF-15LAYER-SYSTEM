@@ -1,0 +1,17 @@
+warning: The following rules have been removed and ignoring them has no effect:
+    - UP038
+
+SIM102 Use a single `if` statement instead of nested `if` statements
+   --> tests\test_pr004_auth_governance.py:128:13
+    |
+126 |           found = False
+127 |           for node in ast.walk(tree):
+128 | /             if isinstance(node, ast.ImportFrom) and node.module and "auth" in node.module:
+129 | |                 if any(alias.name == "verify_token" for alias in node.names):
+    | |_____________________________________________________________________________^
+130 |                       found = True
+131 |           assert found, "risk_router.py must import verify_token from auth module"
+    |
+help: Combine `if` statements using `and`
+
+Found 1 error.
