@@ -272,10 +272,13 @@ class ForwardedHTTPSRedirectMiddleware(BaseHTTPMiddleware):
 
 
 def _add_cors(app: FastAPI) -> None:
-    raw = os.getenv(
-        "CORS_ORIGINS",
-        "http://localhost:3000,http://localhost:8000,https://railway-dashboard-production-de97.up.railway.app,https://tuyul-fx-dashboard.vercel.app",
-    )
+    # Production should set CORS_ORIGINS explicitly. Keep fallback minimal and stable
+    # so redeploy-specific hostnames (e.g., Railway-generated domains) are never baked in.
+    raw = os.getenv("CORS_ORIGINS", "http://localhost:3000,http://localhost:8000,https://tuyul-fx-dashboard.vercel.app")
+    if "CORS_ORIGINS" not in os.environ:
+        logger.warning(
+            "CORS_ORIGINS not set; using fallback origins. Set CORS_ORIGINS explicitly in deployed services."
+        )
     # Support both comma and newline separators (common in Vercel env var editor)
     raw_normalized = raw.replace("\n", ",").replace("\r", "")
     origins = [o.strip().rstrip("/") for o in raw_normalized.split(",") if o.strip()]
