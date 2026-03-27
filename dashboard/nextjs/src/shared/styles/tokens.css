@@ -89,11 +89,36 @@
 
 /* ── TAILWIND v4 THEME TOKENS ── */
 @theme inline {
+  /* Fonts */
   --font-sans: "Inter", sans-serif;
-  --font-mono: "Share Tech Mono", monospace;
+  --font-mono: "Share Tech Mono", "Space Mono", monospace;
+
+  /* Background colors */
   --color-bg-primary:   var(--bg-base);
+  --color-bg-secondary: var(--bg-card);
+  --color-bg-elevated:  var(--bg-elevated);
   --color-bg-panel:     var(--bg-panel);
-  --color-text-primary: var(--text-primary);
-  --color-accent:       var(--accent);
-  --color-accent-gold:  var(--gold);
+
+  /* Accent colors */
+  --color-accent:         var(--accent);
+  --color-accent-gold:    var(--gold);
+  --color-accent-cyan:    var(--cyan);
+  --color-accent-emerald: var(--green);
+  --color-accent-amber:   var(--yellow);
+  --color-accent-red:     var(--red);
+  --color-accent-orange:  var(--gold);
+
+  /* Text colors */
+  --color-text-primary:   var(--text-primary);
+  --color-text-secondary: var(--text-secondary);
+  --color-text-muted:     var(--text-muted);
+
+  /* Border colors */
+  --color-border-subtle: var(--border-subtle);
+  --color-border-strong: var(--border-strong);
+
+  /* Box shadows (glow effects) */
+  --shadow-glow-cyan:    0 0 24px rgba(0, 212, 255, 0.15);
+  --shadow-glow-emerald: 0 0 24px rgba(0, 230, 118, 0.15);
+  --shadow-glow-orange:  0 0 24px rgba(245, 166, 35, 0.18);
 }
