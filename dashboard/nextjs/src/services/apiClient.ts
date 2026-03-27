@@ -1,5 +1,6 @@
 import axios, { AxiosError } from "axios";
 import { bearerHeader } from "@/lib/auth";
+import { getRestPrefix } from "@/lib/env";
 
 export interface ApiErrorPayload {
   code?: string;
@@ -7,12 +8,11 @@ export interface ApiErrorPayload {
   details?: unknown;
 }
 
-// Use an empty baseURL so all requests are sent as relative paths (e.g. /api/v1/trades).
-// Next.js rewrites in next.config.js proxy those paths to the real backend using
-// INTERNAL_API_URL (server-side only), so no NEXT_PUBLIC_* build-time var is needed
-// in the browser bundle.
+// On local dev / valid builds: baseURL = "" (relative paths via Next.js rewrites).
+// On deployed hosts with stale/missing build-time env: baseURL = "/api/proxy"
+// so requests route through the runtime proxy that reads env vars at request time.
 export const apiClient = axios.create({
-  baseURL: "",
+  baseURL: getRestPrefix(),
   headers: {
     "Content-Type": "application/json",
   },

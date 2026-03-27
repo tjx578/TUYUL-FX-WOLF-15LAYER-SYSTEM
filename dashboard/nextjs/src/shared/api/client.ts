@@ -7,10 +7,13 @@
  */
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { bearerHeader } from "@/lib/auth";
+import { getRestPrefix } from "@/lib/env";
 import { HttpError } from "@/lib/fetcher";
 import { useSessionStore } from "@/store/useSessionStore";
 
-const API_BASE = "";
+// Resolved at module load: "" on local dev / valid build, "/api/proxy" on
+// deployed hosts where build-time rewrites may be stale (Finding 3.1 fix).
+const API_BASE = getRestPrefix();
 
 // Global 429 cooldown — prevents all hooks from hammering a rate-limited backend.
 let _rateLimitedUntil = 0;
