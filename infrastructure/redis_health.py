@@ -37,8 +37,12 @@ async def check_redis_pool_health() -> dict[str, object]:
 
     pool = _manager._pool  # noqa: SLF001
     if pool is None:
-        logger.warning("[RedisHealth] Pool not initialised yet")
-        return {"healthy": False, "reason": "pool_not_initialised"}
+        # Lazily initialise if no earlier code path created the pool yet
+        try:
+            pool = await _manager.get_pool()
+        except Exception as exc:
+            logger.warning("[RedisHealth] Pool initialisation failed: %s", exc)
+            return {"healthy": False, "reason": f"pool_init_failed: {exc}"}
 
     # ConnectionPool internals: _available_connections (idle) + _in_use_connections (active)
     available, in_use, created, max_conns, headroom = _compute_pool_metrics(pool)
