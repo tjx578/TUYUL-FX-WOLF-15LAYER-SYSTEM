@@ -76,23 +76,6 @@ def _check_enabled_symbols(result: StartupCheckResult) -> None:
         result.fail(f"Failed to load enabled symbols: {exc}")
 
 
-def _check_jwt_secret(result: StartupCheckResult) -> None:
-    """Warn if JWT secret is missing or weak (API auth will fail)."""
-    secret = os.getenv("DASHBOARD_JWT_SECRET", "").strip() or os.getenv("JWT_SECRET", "").strip()
-    forbidden = {"CHANGE_ME", "CHANGE_ME_SUPER_SECRET", "CHANGE_ME_TO_RANDOM_STRING"}
-    if not secret:
-        result.warn(
-            "DASHBOARD_JWT_SECRET not set — JWT auth will fail closed. "
-            "Fix: set DASHBOARD_JWT_SECRET in Railway secrets or .env "
-            "(generate with: openssl rand -hex 32)"
-        )
-    elif secret in forbidden or len(secret) < 32:
-        result.warn(
-            "DASHBOARD_JWT_SECRET is weak (< 32 chars or placeholder). "
-            "Fix: openssl rand -hex 32 → set in Railway secrets + .env"
-        )
-
-
 def _check_database_url(result: StartupCheckResult) -> None:
     """Warn if DATABASE_URL is missing (journal persistence won't work)."""
     db_url = os.getenv("DATABASE_URL", "").strip()
@@ -155,7 +138,6 @@ def validate_engine_startup(*, check_redis_ping: bool = False) -> StartupCheckRe
     _check_context_mode(result)
     _check_run_mode(result)
     _check_enabled_symbols(result)
-    _check_jwt_secret(result)
     _check_database_url(result)
 
     _log_startup_report(result)
@@ -170,7 +152,6 @@ async def validate_engine_startup_async() -> StartupCheckResult:
     _check_context_mode(result)
     _check_run_mode(result)
     _check_enabled_symbols(result)
-    _check_jwt_secret(result)
     _check_database_url(result)
 
     # Only attempt ping if Redis URL is configured

@@ -17,40 +17,14 @@ dist/
 build/
 
 # ── Debug / scratch / probe artifacts ────────
-._*
-_hb_fix_test*.txt
-_next_fail*.txt
-# Root-level debug/audit scratch files (committed by mistake — never again)
-_pr004_*.txt
-_test_*.txt
-_test_iter*.txt
-_test_monitor*.txt
-_test_run_*.txt
-_test_full_out*.txt
-_test_dash_*.txt
-_test_pr004_*.txt
-_suite_out*.txt
-_run_suite.py
-_check_endpoint.py
-_check_quotes.py
-pr004_*.txt
-tsc_pr*.txt
-contract_test_out.txt
-redis_diagnostic.py
-warmup_inject.py
+# Catch-all: any root-level .txt except requirements.txt and known tracked files
+/*.txt
+!requirements.txt
+# Catch-all: underscore-prefixed scratch scripts
+/_*
+/._*
 
 # ── Test output ──────────────────────────────
-_test_result*.txt
-_test_result*.log
-_batch_result*.txt
-test_result*.txt
-test_run_out*.txt
-test_out*.txt
-test_output*.txt
-full_test_out.txt
-pyright_output.txt
-pyright_full.txt
-wolf_test_results.txt
 test-results/
 htmlcov/
 .coverage
@@ -75,6 +49,12 @@ test_collect.txt
 .venv/
 
 # ── Node / JS ────────────────────────────────
+# Ghost root Next.js configs (real dashboard lives in dashboard/nextjs/)
+/next.config.*
+/package.json
+/pnpm-lock.yaml
+/postcss.config.*
+/tsconfig.json
 node_modules/
 **/node_modules/
 /package-lock.json
