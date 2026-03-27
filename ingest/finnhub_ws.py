@@ -370,7 +370,7 @@ class FinnhubWebSocket:
 
                     # Process tick
                     if msg.get("type") == "trade":
-                        await self._process_tick(msg)
+                        await self._on_message(msg)
 
                 except json.JSONDecodeError:
                     logger.warning(f"[WS] Invalid JSON: {raw_msg}")
@@ -391,54 +391,56 @@ class FinnhubWebSocket:
 
     async def run(self):
         """Run WebSocket with exponential backoff reconnection."""
+        self._running = True
         attempt = 0
         max_attempts = 10
-        base_delay = 2  # seconds
 
         while attempt < max_attempts:
             try:
+                # Acquire leader lock first
+                if not await self._acquire_leader_lock():
+                    logger.info("[WS] Not leader - waiting for lock release")
+                    await asyncio.sleep(10)
+                    continue
+
                 logger.info(f"[WS] Connection attempt {attempt + 1}/{max_attempts}")
 
-                # Connect
-                async with websockets.connect(
-                    self._url,
-                    ping_interval=20,
-                    ping_timeout=10,
-                    close_timeout=10,
-                    max_size=10_000_000,
-                ) as ws:
-                    self._ws = ws
-                    self._connected = True
-                    attempt = 0  # Reset on success
+                # Connect using _connect() method (BUKAN self._url!)
+                ws = await self._connect()
+                self._ws = ws
 
-                    logger.info("[WS] Connected successfully")
+                # Subscribe to symbols
+                await self._subscribe(ws)
 
-                    # Subscribe to symbols
-                    await self._subscribe(ws)
+                # Listen for messages
+                await self._listen(ws)
 
-                    # Listen
-                    await self._listen(ws)
+            except FinnhubRateLimitError as e:
+                attempt += 1
+                logger.warning(f"[WS] Rate limited. Retry in {e.retry_after}s (attempt {attempt}/{max_attempts})")
+                self._connected = False
+                await asyncio.sleep(e.retry_after)
 
             except asyncio.CancelledError:
                 logger.info("[WS] Task cancelled")
                 break
 
-            except websockets.exceptions.ConnectionClosedError:
-                attempt += 1
-                delay = min(base_delay * (2**attempt), 300)  # Max 5 minutes
-                logger.warning(f"[WS] Connection closed. Retry in {delay}s (attempt {attempt}/{max_attempts})")
-                self._connected = False
-                await asyncio.sleep(delay)
-
             except Exception as e:
                 attempt += 1
-                delay = min(base_delay * (2**attempt), 300)
+                delay = min(2 * (2**attempt), 300)
                 logger.error(f"[WS] Error: {e}. Retry in {delay}s (attempt {attempt}/{max_attempts})")
                 self._connected = False
                 await asyncio.sleep(delay)
 
+            finally:
+                self._cancel_lock_renewal()
+                if self._ws is not None:
+                    with contextlib.suppress(Exception):
+                        await self._ws.close()
+
         logger.error(f"[WS] Max reconnection attempts ({max_attempts}) reached. Giving up.")
         self._connected = False
+        await self._release_leader_lock()
 
     async def stop(self) -> None:
         """Gracefully shutdown the WebSocket client."""
