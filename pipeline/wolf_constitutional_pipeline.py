@@ -681,25 +681,50 @@ class WolfConstitutionalPipeline:
         # (Find verdict assignment and add TP>0 check before persist)
         # ...existing code...
 
+        # ─── Redis client for authoritative freshness data ────
+        # Ingest writes last_seen_ts to Redis candle/tick hashes.
+        # Read from Redis first; fall back to LiveContextBus only
+        # when Redis is unavailable.
+        import contextlib as _rctx  # noqa: PLC0415
+
+        _redis_client: Any = getattr(self, "_redis", None)
+        if _redis_client is None:
+            from storage.redis_client import RedisClient as _SyncRedisClient  # noqa: PLC0415
+
+            with _rctx.suppress(Exception):
+                _redis_client = _SyncRedisClient()
+
         # ═══════════════════════════════════════════════════════
         # DATA QUALITY GATE -- assess candle gap ratio / staleness
         # and compute confidence penalty to degrade gracefully
         # rather than trading on bad data.
         # ═══════════════════════════════════════════════════════
         from analysis.data_quality_gate import DataQualityGate  # noqa: PLC0415
+        from core.redis_keys import latest_candle as _latest_candle_key  # noqa: PLC0415
 
         _dq_gate = DataQualityGate()
         _dq_penalty: float = 0.0
         _dq_reports: list[dict[str, Any]] = []
         for tf in self.WARMUP_MIN_BARS:
             candles = self._context_bus.get_candles(symbol, tf)
-            # Extract last-update timestamp from the newest candle so the
-            # staleness check uses real data instead of defaulting to inf.
+            # Read authoritative last_seen_ts from Redis candle hash
+            # (written by ingest via RedisContextBridge.write_candle).
             _last_ts: float | None = None
-            if candles:
+            if _redis_client is not None:
+                with _rctx.suppress(Exception):
+                    _raw_ts = _redis_client.hget(_latest_candle_key(symbol, tf), "last_seen_ts")
+                    if _raw_ts is not None:
+                        _last_ts = float(str(_raw_ts))
+            # Fallback: extract from candle dict if Redis unavailable
+            if _last_ts is None and candles:
                 _last_c = candles[-1]
-                _last_ts = _last_c.get("timestamp_close") or _last_c.get("timestamp") or _last_c.get("time")
-                _last_ts = _coerce_timestamp_to_epoch(_last_ts)
+                _last_ts = _coerce_timestamp_to_epoch(
+                    _last_c.get("timestamp_close")
+                    or _last_c.get("close_time")
+                    or _last_c.get("timestamp")
+                    or _last_c.get("time")
+                    or _last_c.get("open_time")
+                )
             dq_report = _dq_gate.assess(symbol, tf, candles, last_update_ts=_last_ts)
             _dq_reports.append(dq_report.to_dict())
             if dq_report.confidence_penalty > _dq_penalty:
@@ -746,35 +771,38 @@ class WolfConstitutionalPipeline:
         # ═══════════════════════════════════════════════════════
         from state.governance_gate import GovernanceAction, assess_governance  # noqa: PLC0415
 
-        _feed_age_ts = (
-            self._context_bus.get_feed_timestamp(symbol) if hasattr(self._context_bus, "get_feed_timestamp") else None
-        )
+        # Read feed freshness from Redis (authoritative) via latest_tick hash.
+        _feed_age_ts: float | None = None
+        if _redis_client is not None:
+            with _rctx.suppress(Exception):
+                from core.redis_keys import latest_tick as _latest_tick_key  # noqa: PLC0415
+
+                _raw_feed_ts = _redis_client.hget(_latest_tick_key(symbol), "last_seen_ts")
+                if _raw_feed_ts is not None:
+                    _feed_age_ts = float(str(_raw_feed_ts))
+        # Fallback to LiveContextBus if Redis unavailable
+        if _feed_age_ts is None:
+            _feed_age_ts = (
+                self._context_bus.get_feed_timestamp(symbol)
+                if hasattr(self._context_bus, "get_feed_timestamp")
+                else None
+            )
         _heartbeat_ts: float | None = None
         _kill_switch_val: str | None = None
         _ws_connected_at: float | None = None
         try:
             from state.redis_keys import HEARTBEAT_INGEST, KILL_SWITCH, WS_CONNECTED_AT  # noqa: PLC0415
 
-            _redis_client = getattr(self, "_redis", None)
-            if _redis_client is None:
-                import contextlib as _ctx  # noqa: PLC0415
-
-                from storage.redis_client import RedisClient  # noqa: PLC0415
-
-                with _ctx.suppress(Exception):
-                    _redis_client = RedisClient()
             if _redis_client is not None:
-                import contextlib as _ctx2  # noqa: PLC0415
-
-                with _ctx2.suppress(Exception):
+                with _rctx.suppress(Exception):
                     _hb_raw = _redis_client.get(HEARTBEAT_INGEST)
                     if _hb_raw is not None:
                         _heartbeat_ts = _parse_heartbeat_timestamp(_hb_raw)
-                with _ctx2.suppress(Exception):
+                with _rctx.suppress(Exception):
                     _ks_raw = _redis_client.get(KILL_SWITCH)
                     if _ks_raw is not None:
                         _kill_switch_val = str(_ks_raw)
-                with _ctx2.suppress(Exception):
+                with _rctx.suppress(Exception):
                     _ws_raw = _redis_client.get(WS_CONNECTED_AT)
                     if _ws_raw is not None:
                         _ws_connected_at = float(str(_ws_raw))
