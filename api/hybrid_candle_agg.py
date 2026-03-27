@@ -308,6 +308,72 @@ class HybridCandleAggregator:
         return result
 
     # ------------------------------------------------------------------
+    # Feed status metadata (for dashboard staleness awareness)
+    # ------------------------------------------------------------------
+
+    async def fetch_feed_meta_async(self, symbol_filter: str | None = None) -> dict[str, Any]:
+        """Build per-symbol feed status + ingest health for the candle WS event.
+
+        Returns a dict with:
+            ingest_status: "HEALTHY" | "DEGRADED" | "NO_PRODUCER"
+            provider_connected: bool
+            symbols: { SYM: { feed_status, age_seconds } }
+
+        This lets the dashboard distinguish between:
+            - "WS disconnected, data is stale" → show warning banner
+            - "Market closed, no ticks expected" → show idle state
+            - "All good, data is live" → normal display
+        """
+        redis = await self._get_redis()
+        meta: dict[str, Any] = {
+            "ingest_status": "UNKNOWN",
+            "provider_connected": False,
+            "symbols": {},
+        }
+        if redis is None:
+            return meta
+
+        # Read ingest health (process + provider heartbeats)
+        try:
+            from state.heartbeat_classifier import read_ingest_health
+
+            ingest_health = await read_ingest_health(redis)
+            meta["ingest_status"] = ingest_health.state.value
+            meta["provider_connected"] = ingest_health.provider.state.value == "ALIVE"
+        except Exception as exc:
+            logger.debug("[HybridCandleAgg] Ingest health read failed: {}", exc)
+
+        # Per-symbol feed freshness from latest_tick timestamps
+        symbols = [symbol_filter] if symbol_filter else self._symbols
+        now = time.time()
+        for sym in symbols:
+            sym_meta: dict[str, Any] = {"feed_status": "NO_DATA", "age_seconds": None}
+            try:
+                from core.redis_keys import latest_tick as _latest_tick_key
+
+                raw = await redis.hgetall(_latest_tick_key(sym))
+                if raw:
+                    decoded = {
+                        (k.decode() if isinstance(k, bytes) else k): (v.decode() if isinstance(v, bytes) else v)
+                        for k, v in raw.items()
+                    }
+                    ts_val = decoded.get("last_seen_ts") or decoded.get("timestamp") or decoded.get("ts")
+                    if ts_val is not None:
+                        age = now - float(ts_val)
+                        sym_meta["age_seconds"] = round(age, 1)
+                        if age < 30:
+                            sym_meta["feed_status"] = "LIVE"
+                        elif age < 120:
+                            sym_meta["feed_status"] = "DEGRADED"
+                        else:
+                            sym_meta["feed_status"] = "STALE"
+            except Exception:
+                pass
+            meta["symbols"][sym] = sym_meta
+
+        return meta
+
+    # ------------------------------------------------------------------
     # Monitoring
     # ------------------------------------------------------------------
 

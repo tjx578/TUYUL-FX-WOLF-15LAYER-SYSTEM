@@ -886,6 +886,13 @@ async def websocket_candles(websocket: fastapi.WebSocket):
     Pushes forming bars every 500ms and closed bar events.
     Data sourced from Redis (Dual-Zone SSOT v5 — display only, zero computation).
     Query params: ?token=<jwt>&symbol=<EURUSD> (optional symbol filter)
+
+    Each ``candle.forming`` event includes a ``feed_meta`` field with:
+      - ``ingest_status``: "HEALTHY" | "DEGRADED" | "NO_PRODUCER" | "UNKNOWN"
+      - ``provider_connected``: bool (Finnhub WS connected)
+      - ``symbols``: per-symbol ``{ feed_status, age_seconds }``
+    This allows the dashboard to show appropriate status indicators
+    when the ingest pipeline is down or data is stale.
     """
     connected = await candle_manager.connect(websocket)
     if not connected:
@@ -895,14 +902,39 @@ async def websocket_candles(websocket: fastapi.WebSocket):
     symbol_filter = websocket.query_params.get("symbol")
     logger.info(f"Candle WebSocket connected (filter={symbol_filter or 'all'})")
 
+    # Feed meta polling: check every 5s (not every 500ms) to avoid Redis overhead
+    _FEED_META_INTERVAL = 5.0
+    _last_feed_meta_ts: float = 0.0
+    _cached_feed_meta: dict[str, object] = {}
+
     try:
-        # Send current bars snapshot
+        # Send current bars snapshot with initial feed meta
         snapshot = _candle_agg.get_combined_snapshot(symbol_filter)
-        await websocket.send_json(_ws_event("candle.snapshot", {"bars": snapshot}))
+        try:
+            _cached_feed_meta = await _candle_agg.fetch_feed_meta_async(symbol_filter)
+            _last_feed_meta_ts = time.time()
+        except Exception:
+            pass
+        await websocket.send_json(
+            _ws_event("candle.snapshot", {"bars": snapshot, "feed_meta": _cached_feed_meta})
+        )
 
         while websocket in candle_manager.active_connections:
             forming = await _candle_agg.fetch_forming_bars_async(symbol_filter)
-            if not await candle_manager.send_stamped(websocket, _ws_event("candle.forming", {"bars": forming})):
+
+            # Refresh feed meta periodically (every 5s, not every tick)
+            now = time.time()
+            if now - _last_feed_meta_ts >= _FEED_META_INTERVAL:
+                try:
+                    _cached_feed_meta = await _candle_agg.fetch_feed_meta_async(symbol_filter)
+                except Exception:
+                    pass
+                _last_feed_meta_ts = now
+
+            if not await candle_manager.send_stamped(
+                websocket,
+                _ws_event("candle.forming", {"bars": forming, "feed_meta": _cached_feed_meta}),
+            ):
                 break
             await asyncio.sleep(CANDLE_UPDATE_INTERVAL)
 
