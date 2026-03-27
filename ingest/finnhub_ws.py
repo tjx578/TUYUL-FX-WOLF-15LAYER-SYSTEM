@@ -10,7 +10,7 @@ import os
 import random
 import time
 from collections.abc import Awaitable, Callable, Coroutine
-from typing import Any
+from typing import Any, cast
 
 import websockets
 import websockets.asyncio.client
@@ -397,33 +397,48 @@ class FinnhubWebSocket:
 
         while attempt < max_attempts:
             try:
-                # Acquire leader lock first
+                # Acquire leader lock
                 if not await self._acquire_leader_lock():
-                    logger.info("[WS] Not leader - waiting for lock release")
+                    logger.info("[WS] Not leader - waiting")
                     await asyncio.sleep(10)
                     continue
 
                 logger.info(f"[WS] Connection attempt {attempt + 1}/{max_attempts}")
 
-                # Connect using _connect() method (BUKAN self._url!)
-                ws = await self._connect()
-                self._ws = ws
+                # Build URL correctly
+                url = FINNHUB_WS_URL.format(token=self._token)
 
-                # Subscribe to symbols
-                await self._subscribe(ws)
+                # Connect
+                async with websockets.connect(
+                    url,
+                    ping_interval=PING_INTERVAL_S,
+                    ping_timeout=PING_TIMEOUT_S,
+                    close_timeout=10,
+                    max_size=10_000_000,
+                ) as ws_raw:
+                    ws = cast(websockets.asyncio.client.ClientConnection, ws_raw)
+                    self._ws = ws
+                    self._connected = True
+                    attempt = 0  # Reset on success
 
-                # Listen for messages
-                await self._listen(ws)
+                    logger.info("[WS] Connected successfully")
 
-            except FinnhubRateLimitError as e:
-                attempt += 1
-                logger.warning(f"[WS] Rate limited. Retry in {e.retry_after}s (attempt {attempt}/{max_attempts})")
-                self._connected = False
-                await asyncio.sleep(e.retry_after)
+                    # Subscribe to symbols
+                    await self._subscribe(ws)
+
+                    # Listen
+                    await self._listen(ws)
 
             except asyncio.CancelledError:
                 logger.info("[WS] Task cancelled")
                 break
+
+            except websockets.exceptions.ConnectionClosedError:
+                attempt += 1
+                delay = min(2 * (2**attempt), 300)
+                logger.warning(f"[WS] Connection closed. Retry in {delay}s (attempt {attempt}/{max_attempts})")
+                self._connected = False
+                await asyncio.sleep(delay)
 
             except Exception as e:
                 attempt += 1
