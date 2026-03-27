@@ -50,7 +50,16 @@ def _as_bool(value: str | None, default: bool = True) -> bool:
 
 
 def _tracing_enabled() -> bool:
-    return _as_bool(os.getenv("OTEL_ENABLED"), default=True)
+    """Return True only when tracing is explicitly enabled AND an endpoint is configured.
+
+    Without an OTLP endpoint, initializing a TracerProvider and instrumenting
+    libraries adds CPU/memory overhead with zero observability benefit.
+    """
+    enabled = _as_bool(os.getenv("OTEL_ENABLED"), default=False)
+    if not enabled:
+        return False
+    endpoint = os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT", "").strip()
+    return bool(endpoint)
 
 
 def _init_provider_once(service_name: str) -> None:
@@ -63,6 +72,16 @@ def _init_provider_once(service_name: str) -> None:
     service_version = os.getenv("OTEL_SERVICE_VERSION", "unknown")
     deployment_environment = os.getenv("OTEL_DEPLOYMENT_ENV", os.getenv("APP_ENV", "unknown"))
 
+    if not endpoint:
+        # _tracing_enabled() should have caught this, but guard defensively.
+        _provider_initialized = True
+        logger.info(
+            "Tracing disabled service={} reason=no_endpoint env={}",
+            service_name,
+            deployment_environment,
+        )
+        return
+
     try:
         resource = Resource(
             attributes={
@@ -72,30 +91,22 @@ def _init_provider_once(service_name: str) -> None:
             }
         )
         provider = TracerProvider(resource=resource)
-        # Export is opt-in: if endpoint is unset, spans remain local/no-op export.
-        if endpoint:
-            exporter = OTLPSpanExporter(endpoint=endpoint, insecure=insecure)
-            provider.add_span_processor(BatchSpanProcessor(exporter))
+        exporter = OTLPSpanExporter(endpoint=endpoint, insecure=insecure)
+        provider.add_span_processor(BatchSpanProcessor(exporter))
         # Only set if no real provider has been registered yet.
         existing = trace.get_tracer_provider()
         _is_proxy = type(existing).__name__ == "ProxyTracerProvider"
         if _is_proxy:
             trace.set_tracer_provider(provider)
         _provider_initialized = True
-        if endpoint:
-            logger.info(
-                "Tracing enabled service={} endpoint={} env={}",
-                service_name,
-                endpoint,
-                deployment_environment,
-            )
-        else:
-            logger.info(
-                "Tracing enabled service={} endpoint=disabled env={}",
-                service_name,
-                deployment_environment,
-            )
+        logger.info(
+            "Tracing enabled service={} endpoint={} env={}",
+            service_name,
+            endpoint,
+            deployment_environment,
+        )
     except Exception as exc:  # pragma: no cover
+        _provider_initialized = True
         logger.warning("Tracing init failed service={} err={}", service_name, exc)
 
 
