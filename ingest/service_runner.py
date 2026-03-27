@@ -189,6 +189,7 @@ async def run_ingest_services(
     news_feed = None
     market_news = None
     producer_heartbeat_task: asyncio.Task[None] | None = None
+    supervised_tasks: list[asyncio.Task[None]] = []
     candle_builders: dict[str, CandleBuilder] = {}
     forming_pub = None
 
@@ -319,22 +320,58 @@ async def run_ingest_services(
             async def stop(self) -> None:
                 await self._pub.stop()
 
-        await asyncio.gather(
-            _run_supervised("finnhub_ws", ws_feed, shutdown_event=shutdown_event),
-            _run_supervised("rest_poll_fallback", rest_poll, shutdown_event=shutdown_event),
-            _run_supervised("calendar_news", news_feed, shutdown_event=shutdown_event),
-            _run_supervised("market_news", market_news, shutdown_event=shutdown_event),
-            _run_supervised("h1_refresh", h1_refresh, shutdown_event=shutdown_event),
-            _run_supervised("htf_refresh", htf_refresh, shutdown_event=shutdown_event),
-            _run_supervised("macro_monthly_refresh", macro_monthly, shutdown_event=shutdown_event),
-            _run_supervised("forming_publisher", _FormingPubRunner(forming_pub), shutdown_event=shutdown_event),
-            _run_supervised("health_check", _HealthCheckRunner(_ws_connected_fn, redis), shutdown_event=shutdown_event),
-        )
+        supervised_tasks = [
+            asyncio.create_task(
+                _run_supervised("finnhub_ws", ws_feed, shutdown_event=shutdown_event),
+                name="IngestSupervisor:finnhub_ws",
+            ),
+            asyncio.create_task(
+                _run_supervised("rest_poll_fallback", rest_poll, shutdown_event=shutdown_event),
+                name="IngestSupervisor:rest_poll_fallback",
+            ),
+            asyncio.create_task(
+                _run_supervised("calendar_news", news_feed, shutdown_event=shutdown_event),
+                name="IngestSupervisor:calendar_news",
+            ),
+            asyncio.create_task(
+                _run_supervised("market_news", market_news, shutdown_event=shutdown_event),
+                name="IngestSupervisor:market_news",
+            ),
+            asyncio.create_task(
+                _run_supervised("h1_refresh", h1_refresh, shutdown_event=shutdown_event),
+                name="IngestSupervisor:h1_refresh",
+            ),
+            asyncio.create_task(
+                _run_supervised("htf_refresh", htf_refresh, shutdown_event=shutdown_event),
+                name="IngestSupervisor:htf_refresh",
+            ),
+            asyncio.create_task(
+                _run_supervised("macro_monthly_refresh", macro_monthly, shutdown_event=shutdown_event),
+                name="IngestSupervisor:macro_monthly_refresh",
+            ),
+            asyncio.create_task(
+                _run_supervised("forming_publisher", _FormingPubRunner(forming_pub), shutdown_event=shutdown_event),
+                name="IngestSupervisor:forming_publisher",
+            ),
+            asyncio.create_task(
+                _run_supervised(
+                    "health_check", _HealthCheckRunner(_ws_connected_fn, redis), shutdown_event=shutdown_event
+                ),
+                name="IngestSupervisor:health_check",
+            ),
+        ]
+        await asyncio.gather(*supervised_tasks)
     except asyncio.CancelledError:
         logger.info("Ingest services cancelled - shutting down")
         raise
     finally:
         cleanup_errors: list[tuple[str, Exception]] = []
+        for task in supervised_tasks:
+            if not task.done():
+                task.cancel()
+        for task in supervised_tasks:
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
         if producer_heartbeat_task is not None:
             producer_heartbeat_task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
