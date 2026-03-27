@@ -20,6 +20,24 @@ build/
 ._*
 _hb_fix_test*.txt
 _next_fail*.txt
+# Root-level debug/audit scratch files (committed by mistake — never again)
+_pr004_*.txt
+_test_*.txt
+_test_iter*.txt
+_test_monitor*.txt
+_test_run_*.txt
+_test_full_out*.txt
+_test_dash_*.txt
+_test_pr004_*.txt
+_suite_out*.txt
+_run_suite.py
+_check_endpoint.py
+_check_quotes.py
+pr004_*.txt
+tsc_pr*.txt
+contract_test_out.txt
+redis_diagnostic.py
+warmup_inject.py
 
 # ── Test output ──────────────────────────────
 _test_result*.txt

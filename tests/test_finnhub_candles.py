@@ -4,6 +4,7 @@ Unit tests for Finnhub REST candle fetcher.
 Tests symbol conversion, resolution mapping, response normalization,
 H4 aggregation, and warmup functionality.
 """
+
 from __future__ import annotations
 
 from datetime import UTC, datetime, tzinfo

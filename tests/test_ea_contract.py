@@ -322,9 +322,7 @@ class TestPingEndpointContract:
             assert resp.status_code == 200
             assert resp.json()["agent_status"] == am_status
 
-    def test_ping_agent_manager_unavailable_returns_ok_degraded(
-        self, client: TestClient
-    ) -> None:
+    def test_ping_agent_manager_unavailable_returns_ok_degraded(self, client: TestClient) -> None:
         """If Agent Manager is unavailable (non-NotFound error), endpoint degrades gracefully."""
         agent_id = str(uuid.uuid4())
 
@@ -379,9 +377,7 @@ class TestPingRateLimit:
         agent_id = str(uuid.uuid4())
         now = datetime.now(UTC).timestamp()
         # Manually inject _PING_MAX_PER_MINUTE timestamps that are 61 s old
-        _PING_RATE_LIMIT[agent_id] = deque(
-            [now - 61.0] * _PING_MAX_PER_MINUTE
-        )
+        _PING_RATE_LIMIT[agent_id] = deque([now - 61.0] * _PING_MAX_PER_MINUTE)
         # Now a new request should be permitted (old ones expired)
         assert _check_ping_rate_limit(agent_id) is True
 

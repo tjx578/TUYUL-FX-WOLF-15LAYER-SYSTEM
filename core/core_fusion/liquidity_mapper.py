@@ -1,4 +1,5 @@
 """Liquidity Zone Mapper -- SMC institutional level tracking."""
+
 from __future__ import annotations
 
 from datetime import UTC, datetime

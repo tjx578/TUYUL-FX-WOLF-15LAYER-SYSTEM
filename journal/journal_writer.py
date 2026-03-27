@@ -6,6 +6,7 @@ Format: {timestamp}_{journal_type}_{pair}.json
 
 APPEND-ONLY. No update. No delete.
 """
+
 from __future__ import annotations
 
 import json

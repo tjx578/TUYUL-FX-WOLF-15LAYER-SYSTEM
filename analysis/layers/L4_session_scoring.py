@@ -822,6 +822,8 @@ def _bayesian_win_probability(
 
     posterior = odds / (1.0 + odds)
     return _clamp01(posterior)
+
+
 def _compute_expectancy(p_win: float, rr: float) -> float:
     """Compute mathematical expectancy of a trade (§VIII).
 

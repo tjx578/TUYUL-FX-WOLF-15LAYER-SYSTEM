@@ -6,6 +6,7 @@ Pure lookups only — NO business logic, NO position sizing.
 
 All modules that need pip values MUST import from here.
 """
+
 from __future__ import annotations
 
 __all__ = [

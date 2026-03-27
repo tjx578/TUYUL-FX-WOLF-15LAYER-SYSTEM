@@ -2,6 +2,7 @@
 Market Structure Analysis (H1)
 NO EXECUTION | NO DECISION
 """
+
 from __future__ import annotations
 
 from typing import Any

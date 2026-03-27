@@ -1,4 +1,5 @@
 """Multi-Indicator Divergence Detector -- RSI/MACD/CCI/MFI."""
+
 from __future__ import annotations
 
 from datetime import UTC, datetime

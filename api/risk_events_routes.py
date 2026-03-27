@@ -4,6 +4,7 @@ TUYUL FX Wolf-15 — Risk Event Log Routes
 ENDPOINT:
   GET /api/v1/risk/events          → Risk event log (blocked trades, SL breach, news lock)
 """
+
 from __future__ import annotations
 
 import json

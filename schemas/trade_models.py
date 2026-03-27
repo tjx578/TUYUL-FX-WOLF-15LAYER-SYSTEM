@@ -11,6 +11,7 @@ Enums:
   - RiskMode         : FIXED, SPLIT
   - CloseReason      : TP_HIT, SL_HIT, MANUAL_CLOSE, etc.
 """
+
 from __future__ import annotations
 
 from datetime import datetime
