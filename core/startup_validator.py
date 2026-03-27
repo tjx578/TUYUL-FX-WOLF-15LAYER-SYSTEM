@@ -59,7 +59,7 @@ def _check_context_mode(result: StartupCheckResult) -> None:
 def _check_run_mode(result: StartupCheckResult) -> None:
     """Validate RUN_MODE value."""
     mode = os.getenv("RUN_MODE", "all").strip().lower()
-    valid_modes = {"all", "engine-only", "ingest-only", "api-only"}
+    valid_modes = {"all", "engine-only", "ingest-only", "engine-ingest", "api-only"}
     if mode not in valid_modes:
         result.fail(f"Invalid RUN_MODE='{mode}'. Must be one of: {valid_modes}")
 
