@@ -12,7 +12,26 @@ import { NextRequest, NextResponse } from "next/server";
 
 /** Resolved backend origin or null when not configured. */
 function getBackendUrl(): string | null {
-  // Check all possible env var names (same as next.config.js)
+  // Canonical env vars (preferred):
+  //   INTERNAL_API_URL          — server-only, set in Vercel/Railway project vars
+  //   NEXT_PUBLIC_API_BASE_URL  — public, also available server-side in Node.js
+  //
+  // Deprecated (still read for backward compat, will be removed):
+  //   API_BASE_URL              — use INTERNAL_API_URL instead
+  //   API_DOMAIN                — use INTERNAL_API_URL instead
+  if (process.env.API_BASE_URL && !process.env.INTERNAL_API_URL) {
+    console.warn(
+      "[api/proxy] DEPRECATED: API_BASE_URL is deprecated. " +
+      "Rename it to INTERNAL_API_URL in your deployment env vars."
+    );
+  }
+  if (process.env.API_DOMAIN && !process.env.INTERNAL_API_URL) {
+    console.warn(
+      "[api/proxy] DEPRECATED: API_DOMAIN is deprecated. " +
+      "Use INTERNAL_API_URL=https://<your-domain> instead."
+    );
+  }
+
   const url =
     process.env.INTERNAL_API_URL ||
     process.env.NEXT_PUBLIC_API_BASE_URL ||
@@ -61,14 +80,26 @@ async function proxyRequest(
   }
 
   const joinedPath = path.join("/");
-  
-  // Handle paths that already start with 'v1/' (e.g., /api/proxy/v1/health)
-  // These should map to /api/v1/... on backend, not /api/v1/v1/...
-  // Also handle bare 'health' endpoint
+
+  // Map the incoming proxy path to the correct backend path.
+  //
+  // Callers may send paths in two forms:
+  //   1. /api/proxy/v1/trades/active   → joinedPath = "v1/trades/active"
+  //   2. /api/proxy/api/v1/trades/active → joinedPath = "api/v1/trades/active"
+  //
+  // Form (2) happens when getRestPrefix() returns "/api/proxy" and the client
+  // code already prepends "/api/" in the endpoint path (e.g. API_ENDPOINTS).
+  // We must NOT double the /api/ prefix → /api/api/v1/...
   let targetPath: string;
   if (joinedPath === "health" || joinedPath === "v1/health") {
     targetPath = "/health";
+  } else if (joinedPath.startsWith("api/")) {
+    // Already has /api/ prefix (form 2) — use as-is with leading slash.
+    targetPath = `/${joinedPath}`;
   } else if (joinedPath.startsWith("v1/")) {
+    targetPath = `/api/${joinedPath}`;
+  } else if (joinedPath.startsWith("auth/")) {
+    // /auth/* maps to /api/auth/* on the backend (matches next.config.js rewrite).
     targetPath = `/api/${joinedPath}`;
   } else {
     targetPath = `/api/${joinedPath}`;

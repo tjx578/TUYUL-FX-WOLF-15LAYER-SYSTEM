@@ -11,6 +11,7 @@
  * Note: Uses relative paths (no base URL) so Next.js rewrites proxy to the real backend.
  */
 import { bearerHeader } from "@/lib/auth";
+import { getRestPrefix } from "@/lib/env";
 
 /**
  * Typed fetch error — carries HTTP status so callers (SWR retry, diagnostic panels)
@@ -35,10 +36,11 @@ export async function apiFetch(
   path: string,
   opts: RequestInit = {}
 ): Promise<Response> {
-  // Relative path — Next.js rewrites proxy /api/* to the backend.
+  // Prefix with runtime proxy path when build-time rewrites are stale.
+  const prefix = getRestPrefix();
   const auth = bearerHeader();
 
-  return fetch(path, {
+  return fetch(`${prefix}${path}`, {
     ...opts,
     credentials: "include",
     headers: {

@@ -274,5 +274,52 @@ export function validateEnv(): void {
   }
 }
 
+// ── Runtime proxy fallback ─────────────────────────────────────
+//
+// On deployed hosts (Vercel, Railway, *.app), if the build-time API base URL
+// resolved to localhost or is empty, Next.js rewrites will route /api/* to the
+// wrong destination.  In that case, we route all REST calls through the runtime
+// proxy at /api/proxy/[...path] which reads the env vars at request time.
+//
+// This eliminates the silent-404 / loop bug described in Finding 3.1.
+
+/**
+ * Returns the URL prefix that client-side fetch calls should prepend.
+ *
+ *   - Local dev: `""` — relies on Next.js rewrite (fast, zero-overhead).
+ *   - Deployed with correct env: `""` — rewrites work at build time.
+ *   - Deployed without env / stale build: `"/api/proxy"` — runtime proxy.
+ *
+ * Callers use it like:  fetch(`${getRestPrefix()}/api/v1/trades/active`)
+ * When the prefix is "/api/proxy", the URL becomes
+ *   /api/proxy/api/v1/trades/active
+ * and the catch-all route handler forwards to the backend correctly.
+ */
+export function getRestPrefix(): string {
+  // Server-side rendering — always use relative (rewrites handle it).
+  if (typeof window === "undefined") return "";
+
+  // Local dev — rewrites always work via the Next.js dev server.
+  const host = window.location.hostname;
+  const isLocalDev = host === "localhost" || host === "127.0.0.1" || host === "";
+  if (isLocalDev) return "";
+
+  // Deployed host — check if the build-time API base looks valid.
+  // next.config.js injects the resolved value into NEXT_PUBLIC_API_BASE_URL.
+  const buildTimeBase = (process.env.NEXT_PUBLIC_API_BASE_URL || "").trim();
+  if (
+    buildTimeBase &&
+    !buildTimeBase.includes("localhost") &&
+    !buildTimeBase.includes("127.0.0.1")
+  ) {
+    // Build-time rewrites point to a real backend — use them (zero overhead).
+    return "";
+  }
+
+  // Build-time base is empty or points to localhost — rewrites are broken.
+  // Fall back to the runtime proxy which reads env vars at request time.
+  return "/api/proxy";
+}
+
 // Legacy export kept for existing imports — resolves identically to getApiBaseUrl().
 export const API_BASE_URL = (process.env.NEXT_PUBLIC_API_BASE_URL || process.env.NEXT_PUBLIC_API_URL || "").trim().replace(/\/$/, "");

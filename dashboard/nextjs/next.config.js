@@ -118,15 +118,30 @@ function _validateWsBase(wsBase, { protectedDeploy, explicitlyConfigured }) {
 
 const isProtectedDeployment = _isProtectedDeployment();
 
-// Read backend URL from all possible env var names across different platforms:
-//   INTERNAL_API_URL          — Vercel (set manually in project vars, server-only)
-//   NEXT_PUBLIC_API_BASE_URL  — Vercel/v0 (public, set manually in project vars)
-//   API_BASE_URL              — Railway (set in railway service vars)
-//   API_DOMAIN                — Railway (alternative domain var in railway)
+// Canonical env vars for backend URL:
+//   INTERNAL_API_URL          — server-only, preferred (Vercel/Railway project vars)
+//   NEXT_PUBLIC_API_BASE_URL  — public, also available server-side in Node.js
+//
+// Deprecated (still read for backward compat — will be removed in a future release):
+//   API_BASE_URL              — rename to INTERNAL_API_URL
+//   API_DOMAIN                — use INTERNAL_API_URL=https://<domain> instead
 //
 // NOTE: NEXT_PUBLIC_* vars are also available server-side in next.config.js
 // because this file runs in Node.js during the build & dev server startup,
 // where all process.env vars (including NEXT_PUBLIC_*) are accessible.
+if (process.env.API_BASE_URL && !process.env.INTERNAL_API_URL) {
+  console.warn(
+    "[next.config] DEPRECATED: API_BASE_URL is deprecated. " +
+    "Rename it to INTERNAL_API_URL in your deployment env vars."
+  );
+}
+if (process.env.API_DOMAIN && !process.env.INTERNAL_API_URL) {
+  console.warn(
+    "[next.config] DEPRECATED: API_DOMAIN is deprecated. " +
+    "Use INTERNAL_API_URL=https://<your-domain> instead."
+  );
+}
+
 const rawApiBase =
   process.env.INTERNAL_API_URL ||
   process.env.NEXT_PUBLIC_API_BASE_URL ||
