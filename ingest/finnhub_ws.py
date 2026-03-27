@@ -304,6 +304,10 @@ class FinnhubWebSocket:
             FinnhubRateLimitError: On HTTP 429 response.
             FinnhubConnectionError: On other connection failures.
         """
+        # Refresh token from key manager in case of prior rotation
+        refreshed = self._key_manager.current_key()
+        if refreshed:
+            self._token = refreshed
         url = FINNHUB_WS_URL.format(token=self._token)
         try:
             ws = await asyncio.wait_for(
@@ -346,15 +350,18 @@ class FinnhubWebSocket:
             return ws
         except Exception as exc:
             # websockets raises InvalidStatusCode on HTTP error responses
-            status_code = getattr(exc, "status_code", None)
-            if status_code == RATE_LIMIT_STATUS:
-                backoff = _calculate_backoff(
-                    self._attempt,
-                    base=RATE_LIMIT_BASE_BACKOFF_S,
-                    maximum=MAX_BACKOFF_S,
-                )
-                raise FinnhubRateLimitError(retry_after=backoff) from exc
+            status_code: int | None = getattr(exc, "status_code", None)
             if status_code is not None:
+                if status_code == RATE_LIMIT_STATUS:
+                    self._key_manager.report_failure(self._token, status_code)
+                    backoff = _calculate_backoff(
+                        self._attempt,
+                        base=RATE_LIMIT_BASE_BACKOFF_S,
+                        maximum=MAX_BACKOFF_S,
+                    )
+                    raise FinnhubRateLimitError(retry_after=backoff) from exc
+                if status_code in (401, 403):
+                    self._key_manager.report_failure(self._token, status_code)
                 raise FinnhubConnectionError(f"WS connection rejected: HTTP {status_code}") from exc
             raise FinnhubConnectionError(str(exc)) from exc
 
@@ -366,14 +373,31 @@ class FinnhubWebSocket:
 
         Lock renewal is handled by the background ``_lock_renewal_loop``
         task started in ``_connect()``.
+
+        Individual message errors (malformed JSON, handler exceptions) are
+        logged and skipped so a single bad message does not trigger a full
+        reconnect cycle.
         """
         async for raw_msg in ws:
-            data = json.loads(raw_msg)
+            try:
+                data = json.loads(raw_msg)
+            except (json.JSONDecodeError, ValueError) as exc:
+                logger.warning(
+                    "Malformed WS message — skipping",
+                    extra={"error": str(exc), "raw_len": len(raw_msg) if raw_msg else 0},
+                )
+                continue
 
             if data.get("type") == "ping":
                 continue
 
-            await self._on_message(data)
+            try:
+                await self._on_message(data)
+            except Exception:
+                logger.exception(
+                    "Error processing WS message — continuing",
+                    extra={"msg_type": data.get("type")},
+                )
 
     async def run(self) -> None:
         """Main loop: connect, subscribe, listen, reconnect on failure.
@@ -421,6 +445,10 @@ class FinnhubWebSocket:
                 ConnectionError,
                 OSError,
             ) as exc:
+                # Mark disconnected IMMEDIATELY so heartbeat + REST fallback
+                # see the real state during backoff sleep.
+                self._connected = False
+                finnhub_ws_connected.labels(replica_id=self._replica_id).set(0)
                 self._attempt += 1
                 backoff = _calculate_backoff(self._attempt)
                 finnhub_ws_reconnect_attempts.labels(
@@ -428,7 +456,6 @@ class FinnhubWebSocket:
                     error_type=type(exc).__name__,
                 ).inc()
                 finnhub_ws_reconnect_current.labels(replica_id=self._replica_id).set(self._attempt)
-                finnhub_ws_connected.labels(replica_id=self._replica_id).set(0)
                 # P2-8: record reconnect for storm detection
                 try:
                     from monitoring.execution_metrics import record_reconnect_event  # noqa: PLC0415
@@ -450,13 +477,14 @@ class FinnhubWebSocket:
                 await asyncio.sleep(backoff)
 
             except FinnhubRateLimitError as exc:
+                self._connected = False
+                finnhub_ws_connected.labels(replica_id=self._replica_id).set(0)
                 self._attempt += 1
                 finnhub_ws_reconnect_attempts.labels(
                     replica_id=self._replica_id,
                     error_type="RateLimit429",
                 ).inc()
                 finnhub_ws_reconnect_current.labels(replica_id=self._replica_id).set(self._attempt)
-                finnhub_ws_connected.labels(replica_id=self._replica_id).set(0)
                 # P2-8: record reconnect for storm detection
                 try:
                     from monitoring.execution_metrics import record_reconnect_event  # noqa: PLC0415
@@ -475,6 +503,8 @@ class FinnhubWebSocket:
                 await asyncio.sleep(exc.retry_after)
 
             except FinnhubConnectionError as exc:
+                self._connected = False
+                finnhub_ws_connected.labels(replica_id=self._replica_id).set(0)
                 self._attempt += 1
                 backoff = _calculate_backoff(self._attempt)
                 finnhub_ws_reconnect_attempts.labels(
@@ -482,7 +512,6 @@ class FinnhubWebSocket:
                     error_type="FinnhubConnectionError",
                 ).inc()
                 finnhub_ws_reconnect_current.labels(replica_id=self._replica_id).set(self._attempt)
-                finnhub_ws_connected.labels(replica_id=self._replica_id).set(0)
                 logger.error(
                     "Finnhub WS connection error",
                     extra={
@@ -495,6 +524,8 @@ class FinnhubWebSocket:
                 await asyncio.sleep(backoff)
 
             except ConnectionClosed as exc:
+                self._connected = False
+                finnhub_ws_connected.labels(replica_id=self._replica_id).set(0)
                 self._attempt += 1
                 backoff = _calculate_backoff(self._attempt)
                 finnhub_ws_reconnect_attempts.labels(
@@ -502,7 +533,6 @@ class FinnhubWebSocket:
                     error_type="ConnectionClosed",
                 ).inc()
                 finnhub_ws_reconnect_current.labels(replica_id=self._replica_id).set(self._attempt)
-                finnhub_ws_connected.labels(replica_id=self._replica_id).set(0)
                 logger.warning(
                     "Finnhub WS connection closed",
                     extra={
