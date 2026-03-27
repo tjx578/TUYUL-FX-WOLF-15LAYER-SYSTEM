@@ -23,6 +23,8 @@ build/
 # Catch-all: underscore-prefixed scratch scripts
 /_*
 /._*
+# Scratch "old pattern" / comparison files (emoji-named junk)
+**/\#\ *
 
 # ── Test output ──────────────────────────────
 test-results/
