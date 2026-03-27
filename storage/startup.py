@@ -16,19 +16,17 @@ _sync_service: PersistenceSync | None = None
 _sync_task: asyncio.Task[None] | None = None
 
 
-async def _has_candle_data(redis: RedisClient) -> bool:
+def _has_candle_data(redis: RedisClient) -> bool:
     """Return True if Redis holds any candle history keys.
 
-    Uses SCAN to avoid blocking the server. A single key is enough to
-    conclude candle data is present. Returns False on Redis errors so callers
-    can fall back to PostgreSQL recovery.
-    Uses ``SCAN`` to avoid blocking the server. A single key is sufficient to
-    conclude that candle data survived the restart.
+    Uses ``SCAN`` to avoid blocking the server.  A single key is sufficient
+    to conclude that candle data survived the restart.
+    Returns False on Redis errors so callers can fall back to PostgreSQL recovery.
     """
     try:
         cursor = 0
         while True:
-            cursor, keys = await redis.client.scan(cursor, match=CANDLE_HISTORY_SCAN, count=20)
+            cursor, keys = redis.client.scan(cursor, match=CANDLE_HISTORY_SCAN, count=20)
             if keys:
                 return True
             if cursor == 0:
