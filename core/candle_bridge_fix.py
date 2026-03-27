@@ -24,6 +24,27 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
+
+def _safe_epoch(candle: dict) -> float:
+    """Extract epoch float from candle dict, handling ISO strings."""
+    for key in ("ts_close", "close_time", "timestamp", "time"):
+        val = candle.get(key)
+        if val is None:
+            continue
+        if isinstance(val, (int, float)):
+            return float(val)
+        if isinstance(val, str):
+            try:
+                return float(val)
+            except ValueError:
+                from datetime import datetime
+                try:
+                    return datetime.fromisoformat(val).timestamp()
+                except Exception:
+                    continue
+    return time.time()
+
+
 # Weak set of outstanding tasks so they aren't garbage-collected mid-flight.
 # (asyncio tasks are weak-referenced by the event loop; without a strong ref
 # a fire-and-forget task can be collected before it finishes.)
@@ -76,7 +97,7 @@ async def _push_candle_to_redis_safe(
             await redis.hset(
                 lc_key,
                 mapping={
-                    "last_seen_ts": str(candle_dict.get("ts_close", candle_dict.get("close_time", time.time()))),
+                    "last_seen_ts": str(_safe_epoch(candle_dict)),
                     "symbol": symbol,
                     "timeframe": timeframe,
                 },
