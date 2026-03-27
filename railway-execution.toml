@@ -3,8 +3,10 @@ builder = "DOCKERFILE"
 dockerfilePath = "Dockerfile"
 
 [deploy]
-startCommand = "bash deploy/railway/start_execution.sh"
+startCommand = "bash deploy/railway/start_trade_consolidated.sh"
 healthcheckPath = "/healthz"
 healthcheckTimeout = 300
 restartPolicyType = "ON_FAILURE"
 restartPolicyMaxRetries = 5
+# Consolidation: Runs allocation + execution in one process.
+# Allocation TOML (railway-allocation.toml) is now redundant.

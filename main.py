@@ -10,9 +10,10 @@ Each concern lives in its own module:
   journal/builders.py         — J1/J2 journal entry construction
 
 Run modes (RUN_MODE env):
-  all          — Engine + ingest + HTTP API (local dev)
-  engine-only  — Pipeline analysis loop only
-  ingest-only  — WebSocket + candle ingest only
+  all            — Engine + ingest + HTTP API (local dev)
+  engine-only    — Pipeline analysis loop only
+  ingest-only    — WebSocket + candle ingest only
+  engine-ingest  — Engine + ingest, no HTTP (Railway consolidated)
   api-only     — HTTP API only
 """
 
@@ -261,7 +262,7 @@ async def main() -> None:
     # started a bootstrap probe on PORT before entering main(). Binding
     # the same port again would fail with EADDRINUSE.
     tasks: list[asyncio.Task[object]] = []
-    if RUN_MODE != "engine-only":
+    if RUN_MODE not in ("engine-only", "engine-ingest"):
         tasks.append(asyncio.create_task(_health_probe.start(), name="HealthProbe"))
 
     await init_persistent_storage()
@@ -277,7 +278,7 @@ async def main() -> None:
         logger.warning("[Startup] Redis health check skipped: {}", exc)
 
     # ── Seed candles BEFORE analysis loop starts ────────────────────
-    if RUN_MODE in ("all", "engine-only"):
+    if RUN_MODE in ("all", "engine-only", "engine-ingest"):
         try:
             await seed_candles_on_startup(PAIRS, WolfConstitutionalPipeline.WARMUP_MIN_BARS)
         except Exception as exc:
@@ -293,7 +294,7 @@ async def main() -> None:
         )
 
     if context_mode == "redis":
-        if RUN_MODE in ("all", "engine-only"):
+        if RUN_MODE in ("all", "engine-only", "engine-ingest"):
             tasks.append(
                 asyncio.create_task(
                     supervised_task("RedisConsumer", run_redis_consumer, _shutdown_event, _health_probe),
@@ -309,7 +310,7 @@ async def main() -> None:
             if RUN_MODE == "engine-only":
                 logger.info("RUN_MODE=engine-only — skipping ingest services")
     else:
-        if RUN_MODE in ("all", "ingest-only"):
+        if RUN_MODE in ("all", "ingest-only", "engine-ingest"):
             from infrastructure.redis_client import get_client as _get_pooled_client
 
             redis_client: AsyncRedis = await _get_pooled_client()
@@ -324,7 +325,7 @@ async def main() -> None:
                     name="IngestServices",
                 )
             )
-        if RUN_MODE in ("all", "engine-only"):
+        if RUN_MODE in ("all", "engine-only", "engine-ingest"):
             tasks.append(
                 asyncio.create_task(
                     supervised_task("AnalysisLoop", _run_analysis_loop, _shutdown_event, _health_probe),
@@ -342,6 +343,8 @@ async def main() -> None:
         logger.info("RUN_MODE=engine-only — HTTP API is disabled by design")
     elif RUN_MODE == "ingest-only":
         logger.info("RUN_MODE=ingest-only — HTTP API is disabled by design")
+    elif RUN_MODE == "engine-ingest":
+        logger.info("RUN_MODE=engine-ingest — engine + ingest consolidated, HTTP API disabled")
 
     logger.info(f"System initialized. Running {len(tasks)} concurrent tasks.")
 

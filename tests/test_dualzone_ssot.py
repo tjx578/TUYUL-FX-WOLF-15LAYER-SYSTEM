@@ -205,7 +205,7 @@ class TestTRQMonteCarloSeed:
 
     def test_same_array_same_seed(self) -> None:
         """Same polar array → same seed every time."""
-        from engine.trq_engine import _sha256_seed
+        from trq.trq_engine import _sha256_seed
 
         arr = np.array([0.1, -0.2, 0.3, -0.05, 0.15], dtype=np.float64)
         seed1 = _sha256_seed(arr)
@@ -214,7 +214,7 @@ class TestTRQMonteCarloSeed:
 
     def test_different_arrays_different_seeds(self) -> None:
         """Two different polar arrays must produce different seeds."""
-        from engine.trq_engine import _sha256_seed
+        from trq.trq_engine import _sha256_seed
 
         arr1 = np.array([0.1, -0.2, 0.3], dtype=np.float64)
         arr2 = np.array([-0.1, 0.2, -0.3], dtype=np.float64)
@@ -225,7 +225,7 @@ class TestTRQMonteCarloSeed:
 
         The old ``int(polar[-1] * 1e6) & 0xFFFFFFFF`` seed had this problem.
         """
-        from engine.trq_engine import _sha256_seed
+        from trq.trq_engine import _sha256_seed
 
         # Construct two arrays where old seed would collide
         # (same last element, different overall distribution)
@@ -239,7 +239,7 @@ class TestTRQMonteCarloSeed:
 
     def test_seed_is_64bit_integer(self) -> None:
         """Seed must be a non-negative integer (valid for np.random.default_rng)."""
-        from engine.trq_engine import _sha256_seed
+        from trq.trq_engine import _sha256_seed
 
         arr = np.array([0.1, -0.2], dtype=np.float64)
         seed = _sha256_seed(arr)
@@ -248,7 +248,7 @@ class TestTRQMonteCarloSeed:
 
     def test_monte_carlo_conf_deterministic(self) -> None:
         """_monte_carlo_conf must return same result for same input."""
-        from engine.trq_engine import _monte_carlo_conf
+        from trq.trq_engine import _monte_carlo_conf
 
         polar = np.array([0.1, 0.2, -0.05, 0.15, 0.08], dtype=np.float64)
         conf1 = _monte_carlo_conf(polar, n_sims=200)
@@ -257,7 +257,7 @@ class TestTRQMonteCarloSeed:
 
     def test_conf12_range(self) -> None:
         """CONF12 must be in [0, 1]."""
-        from engine.trq_engine import _monte_carlo_conf
+        from trq.trq_engine import _monte_carlo_conf
 
         polar = np.array([0.1, -0.2, 0.3, -0.1, 0.05], dtype=np.float64)
         conf = _monte_carlo_conf(polar, n_sims=100)
@@ -273,7 +273,7 @@ class TestTRQDeterministicVolumeSplit:
     """Volume split must be deterministic via SHA256."""
 
     def test_same_input_same_bucket(self) -> None:
-        from engine.trq_engine import _deterministic_volume_split
+        from trq.trq_engine import _deterministic_volume_split
 
         b1 = _deterministic_volume_split("EURUSD", 42, 10)
         b2 = _deterministic_volume_split("EURUSD", 42, 10)
@@ -281,21 +281,21 @@ class TestTRQDeterministicVolumeSplit:
 
     def test_different_bars_different_buckets(self) -> None:
         """Different bar indices should (generally) produce different buckets."""
-        from engine.trq_engine import _deterministic_volume_split
+        from trq.trq_engine import _deterministic_volume_split
 
         # With 10 buckets and different indices, we expect variety
         buckets = {_deterministic_volume_split("EURUSD", i, 10) for i in range(20)}
         assert len(buckets) > 1, "All bar indices producing same bucket — not deterministic"
 
     def test_bucket_in_range(self) -> None:
-        from engine.trq_engine import _deterministic_volume_split
+        from trq.trq_engine import _deterministic_volume_split
 
         for i in range(50):
             b = _deterministic_volume_split("EURUSD", i, 7)
             assert 0 <= b < 7
 
     def test_non_positive_bucket_count_fails(self) -> None:
-        from engine.trq_engine import _deterministic_volume_split
+        from trq.trq_engine import _deterministic_volume_split
 
         with pytest.raises(ValueError, match="n_buckets"):
             _deterministic_volume_split("EURUSD", 42, 0)
@@ -409,7 +409,7 @@ class TestTRQPremoveSchema:
         }
 
     def test_valid_passes(self) -> None:
-        from engine.trq_redis_bridge import TRQPremoveSchema
+        from trq.trq_redis_bridge import TRQPremoveSchema
 
         schema = TRQPremoveSchema(**self._valid())
         assert schema.symbol == "EURUSD"
@@ -417,7 +417,7 @@ class TestTRQPremoveSchema:
     def test_conf12_above_1_fails(self) -> None:
         from pydantic import ValidationError
 
-        from engine.trq_redis_bridge import TRQPremoveSchema
+        from trq.trq_redis_bridge import TRQPremoveSchema
 
         payload = self._valid()
         payload["conf12"] = 1.01
@@ -427,7 +427,7 @@ class TestTRQPremoveSchema:
     def test_conf12_below_0_fails(self) -> None:
         from pydantic import ValidationError
 
-        from engine.trq_redis_bridge import TRQPremoveSchema
+        from trq.trq_redis_bridge import TRQPremoveSchema
 
         payload = self._valid()
         payload["conf12"] = -0.01
@@ -437,7 +437,7 @@ class TestTRQPremoveSchema:
     def test_wlwci_above_1_fails(self) -> None:
         from pydantic import ValidationError
 
-        from engine.trq_redis_bridge import TRQPremoveSchema
+        from trq.trq_redis_bridge import TRQPremoveSchema
 
         payload = self._valid()
         payload["wlwci"] = 1.01
@@ -447,7 +447,7 @@ class TestTRQPremoveSchema:
     def test_wlwci_below_neg1_fails(self) -> None:
         from pydantic import ValidationError
 
-        from engine.trq_redis_bridge import TRQPremoveSchema
+        from trq.trq_redis_bridge import TRQPremoveSchema
 
         payload = self._valid()
         payload["wlwci"] = -1.01
@@ -455,7 +455,7 @@ class TestTRQPremoveSchema:
             TRQPremoveSchema(**payload)
 
     def test_boundary_values_pass(self) -> None:
-        from engine.trq_redis_bridge import TRQPremoveSchema
+        from trq.trq_redis_bridge import TRQPremoveSchema
 
         payload = self._valid()
         payload["conf12"] = 0.0

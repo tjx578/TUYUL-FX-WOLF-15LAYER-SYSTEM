@@ -133,7 +133,7 @@ pytest -m integration            # integration only
 ## Security
 - Never commit `.env`. Use `.env.example` as template.
 - Never print API keys, JWT secrets, Redis passwords.
-- Auth: `PyJWT` for tokens, API key middleware for service-to-service.
+- Auth: HMAC-SHA256 JWT (stdlib `hmac`/`hashlib`), API key middleware for service-to-service.
 
 ---
 

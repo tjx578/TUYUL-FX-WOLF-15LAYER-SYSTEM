@@ -69,8 +69,9 @@ def _start_health_probe_in_thread() -> None:
 
 
 def run() -> None:
-    os.environ["RUN_MODE"] = "engine-only"
-    logger.info("Starting wolf15-engine service (HTTP disabled)")
+    os.environ.setdefault("RUN_MODE", "engine-only")
+    run_mode = os.environ["RUN_MODE"]
+    logger.info("Starting wolf15-engine service (RUN_MODE={}, HTTP disabled)", run_mode)
 
     # Start health probe FIRST so Railway sees liveness immediately
     # while the DB preflight and heavy imports proceed.

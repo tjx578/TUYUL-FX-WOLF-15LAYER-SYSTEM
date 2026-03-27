@@ -1,3 +1,6 @@
+# DEPRECATED: Allocation is now consolidated into the Trade service
+# (railway-execution.toml, services.trade.runner). Keep this file
+# for rollback to per-service deployment if needed.
 [build]
 builder = "DOCKERFILE"
 dockerfilePath = "Dockerfile"

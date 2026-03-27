@@ -81,11 +81,11 @@ class TestP0_2_HeartbeatKey:  # noqa: N801
     """Ingest must write to the canonical heartbeat key from redis_keys."""
 
     def test_ingest_uses_canonical_key(self):
-        # The ingest module must use the centralized key
-        import ingest_service
+        # The ingest service_runner must use the canonical heartbeat key
+        from ingest.service_runner import _PRODUCER_HEARTBEAT_KEY
         from state.redis_keys import HEARTBEAT_INGEST
 
-        assert ingest_service._PRODUCER_HEARTBEAT_KEY == HEARTBEAT_INGEST
+        assert _PRODUCER_HEARTBEAT_KEY == HEARTBEAT_INGEST
 
     def test_pipeline_parses_json_heartbeat_payload(self):
         from pipeline.wolf_constitutional_pipeline import _parse_heartbeat_timestamp

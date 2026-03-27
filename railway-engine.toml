@@ -3,8 +3,10 @@ builder = "DOCKERFILE"
 dockerfilePath = "Dockerfile"
 
 [deploy]
-startCommand = "bash deploy/railway/start_engine.sh"
+startCommand = "bash deploy/railway/start_engine_consolidated.sh"
 healthcheckPath = "/healthz"
 healthcheckTimeout = 300
 restartPolicyType = "ON_FAILURE"
 restartPolicyMaxRetries = 5
+# Consolidation: Runs engine + ingest (RUN_MODE=engine-ingest).
+# Ingestor TOML (railway-ingestor.toml) is now redundant.

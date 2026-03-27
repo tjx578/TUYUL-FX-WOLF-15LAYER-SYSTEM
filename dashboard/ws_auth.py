@@ -2,10 +2,15 @@
 dashboard/ws_auth.py — WebSocket Authentication
 
 Provides JWT-based WebSocket authentication including:
-- Token creation and validation (JWT via PyJWT)
+- Token creation and validation (HMAC-SHA256, stdlib only — no PyJWT)
 - Sec-WebSocket-Protocol subprotocol token extraction
 - Token-in-URL rejection (security: tokens must never appear in URLs)
 - Error-to-code mapping
+
+Uses the same HMAC-SHA256 algorithm as ``api.middleware.auth`` so tokens
+are cross-compatible.  The only difference is that WSTokenManager accepts
+a per-instance secret (useful for tests) while ``api.middleware.auth``
+reads from environment variables.
 
 Authority: Dashboard-layer security. No market decisions.
 """
@@ -13,21 +18,38 @@ Authority: Dashboard-layer security. No market decisions.
 from __future__ import annotations
 
 import asyncio
+import base64
 import contextlib
+import hashlib
+import hmac
 import json
 import secrets
 import time
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, cast
+from typing import Any
 
-_jwt_available = False
-try:
-    import jwt as _jwt  # PyJWT
+# ---------------------------------------------------------------------------
+# Lightweight JWT helpers — same algorithm as api.middleware.auth
+# ---------------------------------------------------------------------------
 
-    _jwt_available = True
-except ImportError:
-    _jwt = None
+
+def _b64url_encode(data: bytes) -> str:
+    return base64.urlsafe_b64encode(data).rstrip(b"=").decode("ascii")
+
+
+def _b64url_decode(s: str) -> bytes:
+    padding = 4 - len(s) % 4
+    if padding != 4:
+        s += "=" * padding
+    return base64.urlsafe_b64decode(s)
+
+
+def _hmac_sign(header_b64: str, payload_b64: str, secret: str) -> str:
+    """HMAC-SHA256 signature over ``header.payload``."""
+    msg = f"{header_b64}.{payload_b64}".encode("ascii")
+    sig = hmac.new(secret.encode("utf-8"), msg, hashlib.sha256).digest()
+    return _b64url_encode(sig)
 
 
 class AuthErrorCode(Enum):
@@ -160,15 +182,11 @@ class WSTokenManager:
             "iat": now,
             "exp": exp,
         }
-        if _jwt_available and _jwt is not None:
-            token = _jwt.encode(payload, self._secret, algorithm="HS256")
-            if isinstance(token, bytes):
-                token = token.decode("utf-8")
-        else:
-            # Fallback: simple base64-encoded JSON (not production-safe)
-            import base64
-
-            token = base64.urlsafe_b64encode(json.dumps(payload).encode()).decode()
+        header = {"alg": "HS256", "typ": "JWT"}
+        header_b64 = _b64url_encode(json.dumps(header, separators=(",", ":")).encode())
+        payload_b64 = _b64url_encode(json.dumps(payload, separators=(",", ":")).encode())
+        signature = _hmac_sign(header_b64, payload_b64, self._secret)
+        token = f"{header_b64}.{payload_b64}.{signature}"
 
         # Track session
         if session_id not in self._sessions:
@@ -193,30 +211,33 @@ class WSTokenManager:
             raise AuthError(AuthErrorCode.TOKEN_REVOKED.value)
 
         try:
-            if _jwt_available and _jwt is not None:
-                payload = cast(
-                    dict[str, Any],
-                    _jwt.decode(
-                        token,
-                        self._secret,
-                        algorithms=["HS256"],
-                        options={"verify_exp": True},
-                    ),
-                )
-            else:
-                import base64
+            parts = token.split(".")
+            if len(parts) != 3:
+                raise AuthError(f"{AuthErrorCode.TOKEN_INVALID.value}: malformed JWT")
 
-                raw = base64.urlsafe_b64decode(token + "==")
-                payload = json.loads(raw.decode())
-                if "exp" in payload and time.time() > payload["exp"]:
-                    raise AuthError(AuthErrorCode.TOKEN_EXPIRED.value)
+            header_b64, payload_b64, sig_b64 = parts
+
+            # Verify header
+            header = json.loads(_b64url_decode(header_b64))
+            if header.get("alg") != "HS256":
+                raise AuthError(f"{AuthErrorCode.TOKEN_INVALID.value}: unsupported algorithm")
+
+            # Verify signature
+            expected_sig = _hmac_sign(header_b64, payload_b64, self._secret)
+            if not hmac.compare_digest(sig_b64, expected_sig):
+                raise AuthError(f"{AuthErrorCode.TOKEN_INVALID.value}: signature mismatch")
+
+            # Decode payload
+            payload: dict[str, Any] = json.loads(_b64url_decode(payload_b64))
+
+            # Check expiry
+            exp = payload.get("exp")
+            if exp is not None and time.time() > float(exp):
+                raise AuthError(AuthErrorCode.TOKEN_EXPIRED.value)
+
         except AuthError:
             raise
         except Exception as exc:
-            # Map known PyJWT exceptions to specific codes
-            exc_name = type(exc).__name__
-            if "ExpiredSignature" in exc_name:
-                raise AuthError(AuthErrorCode.TOKEN_EXPIRED.value) from exc
             raise AuthError(f"{AuthErrorCode.TOKEN_INVALID.value}: {exc}") from exc
 
         session_id: str = payload.get("sid", "")

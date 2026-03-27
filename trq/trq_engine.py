@@ -1,6 +1,6 @@
 """TRQ-3D Quad PreMove Engine v6.0 — Zone A micro-wave analysis.
 
-Zone: engine/ — reads from Redis, publishes TRQ signals. No pipeline modification.
+Zone: trq/ — reads from Redis, publishes TRQ signals. No pipeline modification.
 
 Architecture
 ------------
@@ -33,7 +33,7 @@ import orjson
 from loguru import logger
 
 from core.redis_keys import candle_history
-from engine.trq_redis_bridge import TRQRedisBridge
+from trq.trq_redis_bridge import TRQRedisBridge
 
 # ── Poll interval ─────────────────────────────────────────────────────────────
 _POLL_INTERVAL_SEC = 5.0

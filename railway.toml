@@ -3,8 +3,10 @@ builder = "DOCKERFILE"
 dockerfilePath = "Dockerfile"
 
 [deploy]
-startCommand = "bash deploy/railway/start_api.sh"
+startCommand = "bash deploy/railway/start_api_consolidated.sh"
 healthcheckPath = "/healthz"
 healthcheckTimeout = 300
 # NOTE: /healthz is intentionally unauthenticated (liveness probe).
 # Use /readyz (machine-auth protected) for readiness checks.
+# Consolidation: Orchestrator runs as embedded daemon thread
+#                when WOLF15_EMBED_ORCHESTRATOR=true.

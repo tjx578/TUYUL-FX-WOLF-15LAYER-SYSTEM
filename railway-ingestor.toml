@@ -1,3 +1,6 @@
+# DEPRECATED: Ingest is now consolidated into the Engine service
+# (railway-engine.toml, RUN_MODE=engine-ingest). Keep this file
+# for rollback to per-service deployment if needed.
 [build]
 builder = "DOCKERFILE"
 dockerfilePath = "Dockerfile"

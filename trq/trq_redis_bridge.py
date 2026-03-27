@@ -1,6 +1,6 @@
 """TRQ Redis Bridge — publish TRQ pre-move results to Redis.
 
-Zone: engine/ — writes signals to Redis. No analysis authority.
+Zone: trq/ — writes signals to Redis. No analysis authority.
 
 Architecture
 ------------
