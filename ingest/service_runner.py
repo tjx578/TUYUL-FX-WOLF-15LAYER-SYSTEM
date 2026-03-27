@@ -213,7 +213,12 @@ async def run_ingest_services(
             redis_has_data=redis_has_data,
         )
 
+        # Inject async Redis client into tick_pipeline so its _on_candle_complete
+        # callback can persist completed candles (fixes redis=None bug).
+        from analysis.tick_pipeline import set_redis_client
         from core.candle_bridge_fix import publish_candle_sync
+
+        set_redis_client(redis)
 
         h1_builders: dict[str, CandleBuilder] = {}
 

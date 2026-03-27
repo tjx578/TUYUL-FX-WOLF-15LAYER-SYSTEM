@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -67,6 +68,19 @@ async def _push_candle_to_redis_safe(
         else:
             await redis.rpush(key, candle_json)
             await redis.ltrim(key, -500, -1)
+
+            # Write latest_candle hash so pipeline gets last_seen_ts
+            from core.redis_keys import latest_candle
+
+            lc_key = latest_candle(symbol, timeframe)
+            await redis.hset(
+                lc_key,
+                mapping={
+                    "last_seen_ts": str(candle_dict.get("ts_close", candle_dict.get("close_time", time.time()))),
+                    "symbol": symbol,
+                    "timeframe": timeframe,
+                },
+            )
 
             # Notify engine-side consumers via Pub/Sub
             pub_channel = channel_candle(symbol, timeframe)

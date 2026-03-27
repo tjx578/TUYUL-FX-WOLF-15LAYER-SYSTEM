@@ -149,6 +149,16 @@ _completed_candle_log: deque[Candle] = deque(maxlen=500)
 # Max length for the per-symbol Redis candle history list
 _REDIS_HISTORY_MAXLEN = 500
 
+# Shared async Redis client — set by ingest service_runner after pool init.
+# When None, candle Redis writes are skipped (logged as warning).
+_shared_redis: Any = None
+
+
+def set_redis_client(redis: Any) -> None:
+    """Inject the async Redis client for candle persistence."""
+    global _shared_redis  # noqa: PLW0603
+    _shared_redis = redis
+
 
 def _on_candle_complete(candle: Candle) -> None:
     """Callback: log completed candles and enqueue for PostgreSQL persistence."""
@@ -173,7 +183,7 @@ def _on_candle_complete(candle: Candle) -> None:
     # Uses sync-safe bridge to avoid coroutine-never-awaited bugs.
     from core.candle_bridge_fix import publish_candle_sync
 
-    publish_candle_sync(candle.to_dict(), redis=None)
+    publish_candle_sync(candle.to_dict(), redis=_shared_redis)
 
 
 def _get_builder(symbol: str) -> MultiTimeframeCandleBuilder:
