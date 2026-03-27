@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+from typing import cast
 
 from loguru import logger
 
@@ -24,16 +25,18 @@ def _has_candle_data(redis: RedisClient) -> bool:
     Returns False on Redis errors so callers can fall back to PostgreSQL recovery.
     """
     try:
-        cursor = 0
+        cursor: int = 0
         while True:
-            cursor, keys = redis.client.scan(cursor, match=CANDLE_HISTORY_SCAN, count=20)
+            cursor, keys = cast(
+                tuple[int, list[str]],
+                redis.client.scan(cursor, match=CANDLE_HISTORY_SCAN, count=20),
+            )
             if keys:
                 return True
             if cursor == 0:
                 break
     except Exception as exc:
         logger.warning("Failed to scan Redis for candle data — assuming empty: {}", exc)
-        logger.warning("Failed to scan Redis for candle data; assuming empty: {}", exc)
         return False
     return False
 
@@ -53,7 +56,7 @@ async def init_persistent_storage() -> PersistenceSync | None:
 
     redis = RedisClient()
     try:
-        has_candles = await _has_candle_data(redis)
+        has_candles = _has_candle_data(redis)
         has_risk_data = bool(redis.get(PEAK_EQUITY))
 
         if not has_candles and not has_risk_data:
