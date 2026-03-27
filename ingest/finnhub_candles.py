@@ -486,6 +486,61 @@ class FinnhubCandleFetcher:
             "source": "h1_aggregated",
         }
 
+    def aggregate_mn(self, d1_candles: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Aggregate D1 bars into MN (monthly) bars.
+
+        Groups D1 candles by (year, month) and builds one MN candle per group.
+        Used as a fallback when the REST API returns no monthly data.
+        """
+        if not d1_candles:
+            return []
+
+        valid_d1 = [
+            c
+            for c in d1_candles
+            if c.get("close", -1) > 0
+            and c.get("open", -1) > 0
+            and c.get("high", -1) > 0
+            and c.get("low", -1) > 0
+            and c["high"] >= c["low"]
+        ]
+        if not valid_d1:
+            return []
+
+        # Group by (year, month)
+        from collections import defaultdict
+
+        monthly_groups: dict[tuple[int, int], list[dict[str, Any]]] = defaultdict(list)
+        for d1 in valid_d1:
+            ts = d1["timestamp"]
+            dt = ts if isinstance(ts, datetime) else datetime.fromtimestamp(ts, tz=UTC)
+            monthly_groups[(dt.year, dt.month)].append(d1)
+
+        mn_candles: list[dict[str, Any]] = []
+        for (_year, _month), group in sorted(monthly_groups.items()):
+            first = group[0]
+            last = group[-1]
+            last_ts = last["timestamp"]
+            if not isinstance(last_ts, datetime):
+                last_ts = datetime.fromtimestamp(last_ts, tz=UTC)
+
+            mn_candles.append(
+                {
+                    "symbol": first["symbol"],
+                    "timeframe": "MN",
+                    "open": group[0]["open"],
+                    "high": max(c["high"] for c in group),
+                    "low": min(c["low"] for c in group),
+                    "close": group[-1]["close"],
+                    "volume": sum(c.get("volume", 0) for c in group),
+                    "timestamp": last_ts,
+                    "source": "d1_aggregated",
+                }
+            )
+
+        logger.debug("Aggregated {} D1 bars into {} MN bars", len(valid_d1), len(mn_candles))
+        return mn_candles
+
     async def warmup_all(self) -> dict[str, dict[str, list[dict[str, Any]]]]:
         """
         Warmup all enabled symbols with historical candles.
@@ -534,6 +589,25 @@ class FinnhubCandleFetcher:
         ]
 
         await asyncio.gather(*tasks, return_exceptions=True)
+
+        # ── MN fallback: synthesize from D1 when REST returned no monthly data ──
+        for symbol in enabled_symbols:
+            sym_data = results.get(symbol, {})
+            mn_candles = sym_data.get("MN", [])
+            d1_candles = sym_data.get("D1", [])
+            if not mn_candles and d1_candles:
+                synthesized = self.aggregate_mn(d1_candles)
+                if synthesized:
+                    if symbol not in results:
+                        results[symbol] = {}
+                    results[symbol]["MN"] = synthesized
+                    for candle in synthesized:
+                        self.context_bus.update_candle(candle)
+                    logger.info(
+                        "[Warmup] {} MN: synthesized {} bars from D1 (REST returned no monthly data)",
+                        symbol,
+                        len(synthesized),
+                    )
 
         logger.info(f"Warmup complete: {len(results)} symbols warmed up")
         return results

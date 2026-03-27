@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+from datetime import UTC
 from typing import TYPE_CHECKING
 
 from loguru import logger
@@ -19,6 +20,74 @@ if TYPE_CHECKING:
     from context.live_context_bus import LiveContextBus
 
 __all__ = ["seed_candles_on_startup"]
+
+
+def _synthesize_mn_from_d1(bus: LiveContextBus, pairs: list[str]) -> None:
+    """Synthesize MN candles from D1 data for pairs missing monthly bars.
+
+    Finnhub often returns no_data for monthly resolution on many forex pairs.
+    This mirrors the H4-from-H1 aggregation pattern already used in the fetcher.
+    """
+    from collections import defaultdict
+    from datetime import datetime
+
+    for pair in pairs:
+        mn_candles = bus.get_candles(pair, "MN")
+        if mn_candles:
+            continue
+        d1_candles = bus.get_candles(pair, "D1")
+        if not d1_candles:
+            continue
+
+        # Group D1 bars by (year, month)
+        monthly_groups: dict[tuple[int, int], list[dict]] = defaultdict(list)
+        for d1 in d1_candles:
+            ts = d1.get("timestamp")
+            if ts is None:
+                continue
+            if isinstance(ts, str):
+                try:
+                    dt = datetime.fromisoformat(ts)
+                except (ValueError, TypeError):
+                    continue
+            elif isinstance(ts, datetime):
+                dt = ts
+            elif isinstance(ts, (int, float)):
+                dt = datetime.fromtimestamp(ts, tz=UTC)
+            else:
+                continue
+            ohlc = [d1.get(k, -1) for k in ("open", "high", "low", "close")]
+            if any(v <= 0 for v in ohlc):
+                continue
+            monthly_groups[(dt.year, dt.month)].append(d1)
+
+        if not monthly_groups:
+            continue
+
+        synthesized = []
+        for (_y, _m), group in sorted(monthly_groups.items()):
+            last_ts = group[-1].get("timestamp")
+            synthesized.append(
+                {
+                    "symbol": pair,
+                    "timeframe": "MN",
+                    "open": group[0]["open"],
+                    "high": max(c["high"] for c in group),
+                    "low": min(c["low"] for c in group),
+                    "close": group[-1]["close"],
+                    "volume": sum(c.get("volume", 0) for c in group),
+                    "timestamp": last_ts,
+                    "source": "d1_aggregated",
+                }
+            )
+
+        bus.set_candle_history(pair, "MN", synthesized)
+        logger.info(
+            "[SEED] {} MN: synthesized {} bars from {} D1 bars (REST returned no monthly data)",
+            pair,
+            len(synthesized),
+            len(d1_candles),
+        )
 
 
 async def seed_candles_on_startup(pairs: list[str], warmup_min_bars: dict[str, int]) -> None:
@@ -115,6 +184,9 @@ async def _seed_from_redis(pairs: list[str]) -> dict[str, object]:
                         len(pairs),
                         attempt,
                     )
+
+                    # Synthesize MN from D1 when ingest didn't provide monthly data
+                    _synthesize_mn_from_d1(bus, pairs)
 
                     for pair in pairs:
                         htf_status = bus.check_warmup(pair, _htf_verify)
