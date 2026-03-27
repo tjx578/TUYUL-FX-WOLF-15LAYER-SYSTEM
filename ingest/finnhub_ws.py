@@ -9,7 +9,7 @@ import logging
 import os
 import random
 import time
-from collections.abc import AsyncIterable, Awaitable, Callable, Coroutine
+from collections.abc import Awaitable, Callable, Coroutine
 from typing import Any
 
 import websockets
@@ -365,39 +365,33 @@ class FinnhubWebSocket:
                 raise FinnhubConnectionError(f"WS connection rejected: HTTP {status_code}") from exc
             raise FinnhubConnectionError(str(exc)) from exc
 
-    async def _listen(
-        self,
-        ws: AsyncIterable[str] | websockets.asyncio.client.ClientConnection,
-    ) -> None:
-        """Listen for messages and dispatch to handler.
+    async def _listen(self, ws):
+        """Listen to WebSocket messages with proper error handling."""
+        try:
+            async for raw_msg in ws:
+                try:
+                    msg = json.loads(raw_msg)
 
-        Lock renewal is handled by the background ``_lock_renewal_loop``
-        task started in ``_connect()``.
+                    # Process tick
+                    if msg.get("type") == "trade":
+                        await self._process_tick(msg)
 
-        Individual message errors (malformed JSON, handler exceptions) are
-        logged and skipped so a single bad message does not trigger a full
-        reconnect cycle.
-        """
-        async for raw_msg in ws:
-            try:
-                data = json.loads(raw_msg)
-            except (json.JSONDecodeError, ValueError) as exc:
-                logger.warning(
-                    "Malformed WS message — skipping",
-                    extra={"error": str(exc), "raw_len": len(raw_msg) if raw_msg else 0},
-                )
-                continue
+                except json.JSONDecodeError:
+                    logger.warning(f"[WS] Invalid JSON: {raw_msg}")
+                    continue
+                except Exception as e:
+                    logger.error(f"[WS] Error processing message: {e}")
+                    continue
 
-            if data.get("type") == "ping":
-                continue
-
-            try:
-                await self._on_message(data)
-            except Exception:
-                logger.exception(
-                    "Error processing WS message — continuing",
-                    extra={"msg_type": data.get("type")},
-                )
+        except asyncio.CancelledError:
+            logger.info("[WS] Listen task cancelled")
+            raise
+        except websockets.exceptions.ConnectionClosedError as e:
+            logger.warning(f"[WS] Connection closed: {e}")
+            raise
+        except Exception as e:
+            logger.error(f"[WS] Unexpected error: {e}", exc_info=True)
+            raise
 
     async def run(self) -> None:
         """Main loop: connect, subscribe, listen, reconnect on failure.
