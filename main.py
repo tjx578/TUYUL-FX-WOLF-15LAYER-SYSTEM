@@ -40,7 +40,7 @@ from infrastructure.tracing import (
 from pipeline import WolfConstitutionalPipeline
 from startup.analysis_loop import analysis_loop
 from startup.candle_seeding import seed_candles_on_startup
-from startup.ingest_tasks import run_ingest_services
+from ingest.service_runner import run_ingest_services
 from startup.signal_handlers import install_signal_handlers
 from startup.task_supervisor import supervised_task
 from storage.startup import init_persistent_storage, shutdown_persistent_storage
@@ -261,14 +261,11 @@ async def main() -> None:
                 logger.info("RUN_MODE=engine-only — skipping ingest services")
     else:
         if RUN_MODE in ("all", "ingest-only", "engine-ingest"):
-            from infrastructure.redis_client import get_client as _get_pooled_client
-
-            redis_client: AsyncRedis = await _get_pooled_client()
             tasks.append(
                 asyncio.create_task(
                     supervised_task(
                         "IngestServices",
-                        lambda: run_ingest_services(has_api_key, redis_client, _shutdown_event),
+                        lambda: run_ingest_services(has_api_key, _shutdown_event),
                         _shutdown_event,
                         _health_probe,
                     ),
