@@ -21,7 +21,6 @@
   "extraPaths": [
     ".",
     "./analysis",
-    "./services/api",
     "./infrastructure"
   ],
   "venvPath": ".",

@@ -110,9 +110,9 @@ class TestCandleAggregator:
 
     @pytest.fixture
     def agg(self) -> Any:
-        from api.ws_routes import CandleAggregator  # noqa: PLC0415
+        from api.hybrid_candle_agg import HybridCandleAggregator  # noqa: PLC0415
 
-        return CandleAggregator()
+        return HybridCandleAggregator()
 
     def test_first_tick_opens_bars(self, agg: Any):
         """First tick for a symbol must create bars in all 4 timeframes."""
@@ -414,9 +414,9 @@ class TestWsCandlesChannel:
         """Client with a pre-seeded CandleAggregator."""
         if not has_fastapi:
             pytest.skip("fastapi not installed")
-        from api.ws_routes import CandleAggregator  # noqa: PLC0415
+        from api.hybrid_candle_agg import HybridCandleAggregator  # noqa: PLC0415
 
-        agg = CandleAggregator()
+        agg = HybridCandleAggregator()
         ts = 1_700_000_000.0
         agg.ingest_tick("EURUSD", bid=1.085, ask=1.0851, ts=ts)
 

@@ -19,7 +19,7 @@ import pytest
 from context.live_context_bus import LiveContextBus
 from context.redis_consumer import RedisConsumer
 from context.redis_consumer import (
-    get_candle_prefixes as _get_candle_prefixes_raw,  # type: ignore
+    get_candle_prefixes as _get_candle_prefixes_raw,
 )
 
 _get_candle_prefixes_raw_typed: Callable[[], list[str]] = cast(Callable[[], list[str]], _get_candle_prefixes_raw)
@@ -147,7 +147,7 @@ async def test_db_mismatch_fixed_via_env() -> None:
 
     history: list[dict[str, Any]] | None = bus.get_candle_history("NZDUSD", "H1")
     assert history is not None and len(history) == 1
-    assert history[0]["close"] == pytest.approx(0.6100)  # type: ignore[reportUnknownMemberType]
+    assert history[0]["close"] == pytest.approx(0.6100)
 
 
 # --- additional unit tests ---
@@ -184,7 +184,7 @@ async def test_env_prefixes_are_stripped_before_lookup() -> None:
 
     history: list[dict[str, Any]] | None = bus.get_candle_history("USDJPY", "H1")
     assert history is not None and len(history) == 1
-    assert history[0]["close"] == pytest.approx(154.321)  # type: ignore[reportUnknownMemberType]
+    assert history[0]["close"] == pytest.approx(154.321)
 
 
 async def test_env_override_can_load_multiple_symbols_independently() -> None:
@@ -209,8 +209,8 @@ async def test_env_override_can_load_multiple_symbols_independently() -> None:
 
     assert h_eurusd is not None and len(h_eurusd) == 1
     assert h_usdcad is not None and len(h_usdcad) == 1
-    assert h_eurusd[0]["close"] == pytest.approx(1.1010)  # type: ignore[reportUnknownMemberType]
-    assert h_usdcad[0]["close"] == pytest.approx(1.3570)  # type: ignore[reportUnknownMemberType]
+    assert h_eurusd[0]["close"] == pytest.approx(1.1010)
+    assert h_usdcad[0]["close"] == pytest.approx(1.3570)
 
 
 class SignalResult(TypedDict):

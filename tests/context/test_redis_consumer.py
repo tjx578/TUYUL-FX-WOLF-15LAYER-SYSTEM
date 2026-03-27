@@ -7,7 +7,7 @@ import orjson
 import pytest
 
 # Alias to silence Pyright "reportUnknownMemberType" on pytest.approx
-_approx = pytest.approx  # type: ignore[reportUnknownMemberType]
+_approx = pytest.approx
 
 from context.live_context_bus import LiveContextBus  # noqa: E402
 from context.redis_consumer import RedisConsumer  # noqa: E402
@@ -289,7 +289,7 @@ async def test_warmup_replaces_on_second_call() -> None:
     await consumer.load_candle_history()
 
     # Replace redis mock data and reload
-    consumer._redis = _make_redis({"wolf15:candle_history:EURUSD:H1": [candle_v2]})  # type: ignore[attr-defined]
+    consumer._redis = _make_redis({"wolf15:candle_history:EURUSD:H1": [candle_v2]})
     await consumer.load_candle_history()
 
     history: list[dict[str, Any]] | None = bus.get_candle_history("EURUSD", "H1")
@@ -330,7 +330,7 @@ async def test_handle_candle_dict_valid() -> None:
     consumer = RedisConsumer(["EURUSD"], redis, bus)
 
     candle: dict[str, Any] = {"symbol": "EURUSD", "timeframe": "H1", "close": 1.0850}
-    consumer._handle_candle_dict(candle)  # type: ignore[attr-defined]
+    consumer._handle_candle_dict(candle)
 
     # Verify candle was pushed (depends on bus.push_candle implementation)
     # At minimum, this should not raise
@@ -343,7 +343,7 @@ async def test_handle_candle_dict_missing_symbol() -> None:
     consumer = RedisConsumer(["EURUSD"], redis, bus)
 
     candle: dict[str, Any] = {"timeframe": "H1", "close": 1.0850}
-    consumer._handle_candle_dict(candle)  # type: ignore[attr-defined]  # must not raise
+    consumer._handle_candle_dict(candle)  # must not raise
 
 
 async def test_handle_candle_dict_empty_symbol() -> None:
@@ -353,7 +353,7 @@ async def test_handle_candle_dict_empty_symbol() -> None:
     consumer = RedisConsumer(["EURUSD"], redis, bus)
 
     candle: dict[str, Any] = {"symbol": "  ", "timeframe": "H1", "close": 1.0850}
-    consumer._handle_candle_dict(candle)  # type: ignore[attr-defined]  # must not raise
+    consumer._handle_candle_dict(candle)  # must not raise
 
 
 async def test_handle_candle_dict_missing_timeframe() -> None:
@@ -363,55 +363,55 @@ async def test_handle_candle_dict_missing_timeframe() -> None:
     consumer = RedisConsumer(["EURUSD"], redis, bus)
 
     candle: dict[str, Any] = {"symbol": "EURUSD", "close": 1.0850}
-    consumer._handle_candle_dict(candle)  # type: ignore[attr-defined]  # must not raise
+    consumer._handle_candle_dict(candle)  # must not raise
 
 
 def test_extract_payload_bytes() -> None:
     """_extract_payload should return bytes from bytes data."""
     msg: dict[str, Any] = {"type": "message", "data": b'{"symbol":"EURUSD"}'}
-    result = RedisConsumer._extract_payload(msg)  # type: ignore[attr-defined]
+    result = RedisConsumer._extract_payload(msg)
     assert result == b'{"symbol":"EURUSD"}'
 
 
 def test_extract_payload_str() -> None:
     """_extract_payload should encode str data to bytes."""
     msg: dict[str, Any] = {"type": "message", "data": '{"symbol":"EURUSD"}'}
-    result = RedisConsumer._extract_payload(msg)  # type: ignore[attr-defined]
+    result = RedisConsumer._extract_payload(msg)
     assert result == b'{"symbol":"EURUSD"}'
 
 
 def test_extract_payload_none() -> None:
     """_extract_payload should return None when data is missing."""
     msg: dict[str, Any] = {"type": "message"}
-    result = RedisConsumer._extract_payload(msg)  # type: ignore[attr-defined]
+    result = RedisConsumer._extract_payload(msg)
     assert result is None
 
 
 def test_extract_payload_non_bytes_non_str() -> None:
     """_extract_payload should return None for unexpected data types."""
     msg: dict[str, Any] = {"type": "message", "data": 12345}
-    result = RedisConsumer._extract_payload(msg)  # type: ignore[attr-defined]
+    result = RedisConsumer._extract_payload(msg)
     assert result is None
 
 
 def test_extract_channel_bytes() -> None:
     """_extract_channel should decode bytes channel names."""
     msg: dict[str, Any] = {"type": "message", "channel": b"tick_updates", "data": b"{}"}
-    result = RedisConsumer._extract_channel(msg)  # type: ignore[attr-defined]
+    result = RedisConsumer._extract_channel(msg)
     assert result == "tick_updates"
 
 
 def test_extract_channel_str() -> None:
     """_extract_channel should return str channel names unchanged."""
     msg: dict[str, Any] = {"type": "message", "channel": "candle:EURUSD:M15", "data": b"{}"}
-    result = RedisConsumer._extract_channel(msg)  # type: ignore[attr-defined]
+    result = RedisConsumer._extract_channel(msg)
     assert result == "candle:EURUSD:M15"
 
 
 def test_extract_channel_missing() -> None:
     """_extract_channel should return None when channel is missing."""
     msg: dict[str, Any] = {"type": "message", "data": b"{}"}
-    result = RedisConsumer._extract_channel(msg)  # type: ignore[attr-defined]
+    result = RedisConsumer._extract_channel(msg)
     assert result is None
 
 
@@ -421,9 +421,9 @@ def test_stop_event_set() -> None:
     bus = LiveContextBus()
     consumer = RedisConsumer(["EURUSD"], redis, bus)
 
-    assert not consumer._stop_event.is_set()  # type: ignore[attr-defined]
+    assert not consumer._stop_event.is_set()
     consumer.stop()
-    assert consumer._stop_event.is_set()  # type: ignore[attr-defined]
+    assert consumer._stop_event.is_set()
 
 
 def test_default_config() -> None:
@@ -434,9 +434,9 @@ def test_default_config() -> None:
     bus = LiveContextBus()
     consumer = RedisConsumer(["EURUSD"], redis, bus)
 
-    assert consumer._config.pubsub_patterns == RedisConsumerConfig().pubsub_patterns  # type: ignore[attr-defined]
-    assert consumer._config.pubsub_channels == RedisConsumerConfig().pubsub_channels  # type: ignore[attr-defined]
-    assert "tick_updates" in consumer._config.pubsub_channels  # type: ignore[attr-defined]
+    assert consumer._config.pubsub_patterns == RedisConsumerConfig().pubsub_patterns
+    assert consumer._config.pubsub_channels == RedisConsumerConfig().pubsub_channels
+    assert "tick_updates" in consumer._config.pubsub_channels
 
 
 def test_custom_config() -> None:
@@ -451,8 +451,8 @@ def test_custom_config() -> None:
     bus = LiveContextBus()
     consumer = RedisConsumer(["EURUSD"], redis, bus, config=custom)
 
-    assert consumer._config.pubsub_patterns == ("custom:*",)  # type: ignore[attr-defined]
-    assert consumer._config.pubsub_channels == ("custom_channel",)  # type: ignore[attr-defined]
+    assert consumer._config.pubsub_patterns == ("custom:*",)
+    assert consumer._config.pubsub_channels == ("custom_channel",)
 
 
 def test_handle_tick_dict_valid_updates_feed_timestamp() -> None:
@@ -463,7 +463,7 @@ def test_handle_tick_dict_valid_updates_feed_timestamp() -> None:
     consumer = RedisConsumer(["EURUSD"], redis, bus)
 
     assert bus.get_feed_timestamp("EURUSD") is None
-    consumer._handle_tick_dict({"symbol": "EURUSD", "bid": 1.08})  # type: ignore[attr-defined]
+    consumer._handle_tick_dict({"symbol": "EURUSD", "bid": 1.08})
     assert bus.get_feed_timestamp("EURUSD") is not None
 
 
@@ -474,6 +474,6 @@ def test_handle_tick_dict_missing_symbol_ignored() -> None:
     bus.reset_state()
     consumer = RedisConsumer(["EURUSD"], redis, bus)
 
-    consumer._handle_tick_dict({"bid": 1.08})  # type: ignore[attr-defined]
-    consumer._handle_tick_dict({"symbol": "   "})  # type: ignore[attr-defined]
+    consumer._handle_tick_dict({"bid": 1.08})
+    consumer._handle_tick_dict({"symbol": "   "})
     assert bus.get_feed_timestamp("EURUSD") is None

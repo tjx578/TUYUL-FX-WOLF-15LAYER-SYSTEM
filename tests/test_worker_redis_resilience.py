@@ -23,17 +23,17 @@ from prometheus_client import REGISTRY as _REG
 # tests they coexist.  Force-import allocation first, then clear shared metric
 # names so the execution module can safely re-register them.
 try:  # noqa: SIM105
-    import allocation.async_worker  # noqa: F401  # pyright: ignore[reportUnusedImport]
+    import allocation.async_worker  # noqa: F401
 except Exception:
     pass
 
 for _coll_name in list(getattr(_REG, "_names_to_collectors", {})):
     if _coll_name.startswith("wolf_"):
         with contextlib.suppress(Exception):
-            _REG.unregister(_REG._names_to_collectors[_coll_name])  # pyright: ignore[reportPrivateUsage]
+            _REG.unregister(_REG._names_to_collectors[_coll_name])
 
 try:  # noqa: SIM105
-    import execution.async_worker  # noqa: F401  # pyright: ignore[reportUnusedImport]
+    import execution.async_worker  # noqa: F401
 except Exception:
     pass
 
@@ -207,7 +207,7 @@ class TestAllocationSupervisedMain:
             patch.object(mod, "_RESTART_COOLDOWN", 0.0),
             patch.object(mod, "start_http_server"),
         ):
-            await mod._main()  # pyright: ignore[reportPrivateUsage]
+            await mod._main()
 
         assert run_calls == 3  # 2 crashes + 1 clean exit
 
@@ -228,7 +228,7 @@ class TestAllocationSupervisedMain:
             patch.object(mod, "_RESTART_COOLDOWN", 0.0),
             patch.object(mod, "start_http_server"),
         ):
-            await mod._main()  # pyright: ignore[reportPrivateUsage]
+            await mod._main()
 
         # 3+1 = 4 attempts (0..3 inclusive)
         assert run_calls == 4
@@ -245,7 +245,7 @@ class TestAllocationSupervisedMain:
             patch.object(mod, "start_http_server"),
         ):
             # CancelledError should return cleanly, not crash
-            await mod._main()  # pyright: ignore[reportPrivateUsage]
+            await mod._main()
 
 
 class TestExecutionSupervisedMain:
@@ -269,7 +269,7 @@ class TestExecutionSupervisedMain:
             patch.object(mod, "_RESTART_COOLDOWN", 0.0),
             patch.object(mod, "start_http_server"),
         ):
-            await mod._main()  # pyright: ignore[reportPrivateUsage]
+            await mod._main()
 
         assert run_calls == 3
 
@@ -290,6 +290,6 @@ class TestExecutionSupervisedMain:
             patch.object(mod, "_RESTART_COOLDOWN", 0.0),
             patch.object(mod, "start_http_server"),
         ):
-            await mod._main()  # pyright: ignore[reportPrivateUsage]
+            await mod._main()
 
         assert run_calls == 4

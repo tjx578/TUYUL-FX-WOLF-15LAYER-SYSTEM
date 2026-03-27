@@ -193,12 +193,15 @@ async def run_ingest_services(
     candle_builders: dict[str, CandleBuilder] = {}
     forming_pub = None
 
+    _phase = "init"
     try:
+        _phase = "redis_connect"
         redis = await connect_redis_with_retry(shutdown_event)
         system_state = SystemStateManager()
         system_state.reset()
         system_state.set_state(SystemState.WARMING_UP)
 
+        _phase = "warmup_bootstrap"
         warmup_results, redis_has_data, startup_mode = await bootstrap_cache_and_warmup(
             redis=redis,
             system_state=system_state,
@@ -268,6 +271,7 @@ async def run_ingest_services(
 
         htf_refresh = HTFRefreshScheduler(redis_client=redis)
 
+        _phase = "ws_connect"
         ws_feed = await create_finnhub_ws(
             redis=redis,  # pyright: ignore[reportArgumentType]
             candle_callback=_on_tick,
@@ -320,6 +324,7 @@ async def run_ingest_services(
             async def stop(self) -> None:
                 await self._pub.stop()
 
+        _phase = "running"
         supervised_tasks = [
             asyncio.create_task(
                 _run_supervised("finnhub_ws", ws_feed, shutdown_event=shutdown_event),
@@ -362,7 +367,10 @@ async def run_ingest_services(
         ]
         await asyncio.gather(*supervised_tasks)
     except asyncio.CancelledError:
-        logger.info("Ingest services cancelled - shutting down")
+        logger.info("Ingest services cancelled during phase '%s' - shutting down", _phase)
+        raise
+    except Exception:
+        logger.error("Ingest services failed during phase '%s'", _phase)
         raise
     finally:
         cleanup_errors: list[tuple[str, Exception]] = []

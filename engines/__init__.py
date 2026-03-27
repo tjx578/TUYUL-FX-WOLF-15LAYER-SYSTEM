@@ -78,6 +78,23 @@ if TYPE_CHECKING:
         advisory: QuantumAdvisoryEngine
 
     FusionStructure = StructureResult
+else:
+    # Provide a runtime-accessible EngineSuite so that
+    # ``from engines import EngineSuite`` works outside TYPE_CHECKING.
+    from typing import TypedDict
+
+    class EngineSuite(TypedDict):  # type: ignore[no-redef]
+        coherence: object
+        context: object
+        risk_sim: object
+        risk: object
+        momentum: object
+        precision: object
+        structure: object
+        field: object
+        probability: object
+        advisory: object
+
 
 # ---------------------------------------------------------------------------
 # Lazy-import registry: name → (module_relative_path, real_name | None)

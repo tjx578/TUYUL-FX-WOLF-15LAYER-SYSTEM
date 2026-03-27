@@ -9,6 +9,7 @@ from __future__ import annotations
 import sys
 import time
 import types
+from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 from unittest.mock import MagicMock, patch
 
@@ -64,8 +65,14 @@ def _restore_modules():
 
 _install_stubs()
 
+
 # Resolve the real helper while dependency stubs are active.
+async def _missing_check_stale_data(_symbol: str) -> None:
+    raise RuntimeError("_check_stale_data import failed")
+
+
 _import_failed = False
+check_stale_data: Callable[[str], Awaitable[None]] = _missing_check_stale_data
 try:
     from api.allocation_router import _check_stale_data as check_stale_data
 except Exception:

@@ -16,7 +16,7 @@ _sync_service: PersistenceSync | None = None
 _sync_task: asyncio.Task[None] | None = None
 
 
-def _has_candle_data(redis: RedisClient) -> bool:
+async def _has_candle_data(redis: RedisClient) -> bool:
     """Return True if Redis holds any candle history keys.
 
     Uses SCAN to avoid blocking the server. A single key is enough to
@@ -28,7 +28,7 @@ def _has_candle_data(redis: RedisClient) -> bool:
     try:
         cursor = 0
         while True:
-            cursor, keys = redis.client.scan(cursor, match=CANDLE_HISTORY_SCAN, count=20)  # type: ignore[misc]
+            cursor, keys = await redis.client.scan(cursor, match=CANDLE_HISTORY_SCAN, count=20)
             if keys:
                 return True
             if cursor == 0:
@@ -55,7 +55,7 @@ async def init_persistent_storage() -> PersistenceSync | None:
 
     redis = RedisClient()
     try:
-        has_candles = _has_candle_data(redis)
+        has_candles = await _has_candle_data(redis)
         has_risk_data = bool(redis.get(PEAK_EQUITY))
 
         if not has_candles and not has_risk_data:

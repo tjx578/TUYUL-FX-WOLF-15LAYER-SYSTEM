@@ -73,7 +73,7 @@ def _get_test_token() -> str:
         "exp": int(time.time()) + 3600,
         "iat": int(time.time()),
     }
-    return pyjwt.encode(payload, secret, algorithm=algo)  # type: ignore[arg-type]
+    return pyjwt.encode(payload, secret, algorithm=algo)
 
 
 async def _ws_client(
@@ -141,7 +141,7 @@ async def test_ws_load_50_connections() -> None:
       - Server stays responsive throughout
     """
     try:
-        import websockets  # type: ignore[import-untyped] # noqa: F401
+        import websockets  # noqa: F401
     except ImportError:
         pytest.skip("websockets not installed")
 
@@ -192,7 +192,7 @@ async def test_ws_load_50_connections() -> None:
 async def test_ws_channel_isolation() -> None:
     """Verify each channel can accept at least 1 connection independently."""
     try:
-        import websockets  # type: ignore[import-untyped] # noqa: F401
+        import websockets  # noqa: F401
     except ImportError:
         pytest.skip("websockets not installed")
 

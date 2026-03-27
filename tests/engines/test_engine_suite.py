@@ -1,9 +1,8 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
-from typing import Any
 
-from engines import create_engine_suite
+from engines import EngineSuite, create_engine_suite
 
 
 def _make_candles(n: int = 60) -> dict[str, list[dict]]:
@@ -16,7 +15,7 @@ def _make_candles(n: int = 60) -> dict[str, list[dict]]:
 
 
 def test_engine_suite_smoke() -> None:
-    suite: dict[str, Any] = create_engine_suite()
+    suite: EngineSuite = create_engine_suite()
     candles = _make_candles(60)
 
     # CognitiveContextEngine.analyze() expects market_snapshot dict (not candles=)

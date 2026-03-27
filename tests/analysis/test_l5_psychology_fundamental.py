@@ -10,12 +10,12 @@ import pytest
 from analysis.layers.L5_psychology_fundamental import (
     L5AnalysisLayer,
     L5PsychologyAnalyzer,
-    PsychGate,  # pyright: ignore[reportAttributeAccessIssue]
+    PsychGate,
     _classify_bias,
     _compute_fundamental_strength,
     _eaf_score,
     _emotional_bias,
-    _evaluate_gates,  # pyright: ignore[reportAttributeAccessIssue]
+    _evaluate_gates,
     _extract_pair_currencies,
     _focus_level,
     analyze_fundamental,
@@ -412,7 +412,7 @@ class TestAnalyzeL5Convenience:
     def test_works_with_gate_data(self, fixed_now):
         result = analyze_l5(
             pair="EURUSD",
-            psychology_data=_make_full_gate_data(3),  # type: ignore
+            psychology_data=_make_full_gate_data(3),
             now=fixed_now,
         )
         assert result["has_gate_data"] is True

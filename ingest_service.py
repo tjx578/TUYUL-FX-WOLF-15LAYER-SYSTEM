@@ -26,6 +26,24 @@ from storage.startup import init_persistent_storage, shutdown_persistent_storage
 _shutdown_event: asyncio.Event | None = None
 
 
+async def _preflight_redis_check() -> bool:
+    """Fast ping to verify Redis is reachable before heavy init."""
+    try:
+        from ingest.redis_setup import build_redis_client  # noqa: PLC0415
+
+        client = build_redis_client()
+        try:
+            await client.ping()
+            return True
+        except Exception:
+            return False
+        finally:
+            with contextlib.suppress(Exception):
+                await client.aclose()
+    except Exception:
+        return False
+
+
 def _validate_api_key() -> bool:
     from ingest.finnhub_key_manager import finnhub_keys  # noqa: PLC0415
 
@@ -111,6 +129,25 @@ async def main(
 
         restart_attempt = 0
         while not _shutdown_event.is_set():
+            # ── Preflight: fast Redis connectivity check ─────────────
+            # If Redis is unreachable, skip the heavy init inside
+            # run_ingest_services() and wait here instead — avoids
+            # rebuilding candle builders, WS feeds, etc. each attempt.
+            if restart_attempt > 0:
+                redis_ok = await _preflight_redis_check()
+                if not redis_ok:
+                    backoff = min(30.0, float(2 ** min(restart_attempt, 5)))
+                    hp.set_detail("runtime_restart", str(restart_attempt))
+                    hp.set_detail("runtime_error", "redis_preflight_failed")
+                    logger.warning(
+                        "Redis preflight failed (attempt %d) — retrying in %.1fs",
+                        restart_attempt,
+                        backoff,
+                    )
+                    restart_attempt += 1
+                    await asyncio.sleep(backoff)
+                    continue
+
             try:
                 await run_ingest_services(has_api_key, shutdown_event=_shutdown_event)
                 break
