@@ -73,7 +73,10 @@ export interface ConnectSseOptions {
 
 const SSE_RECONNECT_BASE_MS = 2000;
 const SSE_RECONNECT_CEILING_MS = 30000;
-const SSE_MAX_RETRIES = 5;
+// Keep retries low: the backend SSE endpoint (/sse/live) may not exist yet.
+// A single retry is enough to distinguish transient network blip from missing
+// endpoint, avoiding 60s+ of dead time before reaching REST polling.
+const SSE_MAX_RETRIES = 1;
 
 // ─── CONNECT SSE ─────────────────────────────────────────────
 

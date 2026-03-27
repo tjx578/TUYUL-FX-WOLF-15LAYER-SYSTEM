@@ -19,7 +19,8 @@
  *
  * Lifecycle:
  *   - First subscriber triggers connection (WS first).
- *   - WS DEGRADED/DISCONNECTED for 30s → SSE fallback.
+ *   - If WS URL not configured → skip SSE, go straight to REST polling (~500ms).
+ *   - If WS configured but fails → try SSE after 30s (1 retry max).
  *   - SSE DEGRADED → REST polling fallback.
  *   - Last subscriber leaving closes all transports.
  *
@@ -281,11 +282,27 @@ function startSseFallbackTimer(): void {
     wsFailedAt = Date.now();
 
     // Detect instant WS failure: if WS disconnected within 1s of opening, the
-    // URL is likely not configured (empty wsBaseUrl) or unreachable. Skip the
-    // full 30s wait and try SSE/polling almost immediately.
+    // URL is likely not configured (empty wsBaseUrl) or unreachable.
     const wsAgeMs = wsOpenedAt ? (Date.now() - wsOpenedAt) : Infinity;
     const wsKnownUnavailable = !getWsBaseUrl();
-    const delay = (wsKnownUnavailable || wsAgeMs < 1000)
+
+    // When WS is known-unavailable (no NEXT_PUBLIC_WS_BASE_URL), the backend
+    // also won't have an SSE endpoint (/sse/live doesn't exist yet). Skip
+    // the SSE transport entirely and go straight to REST polling.
+    if (wsKnownUnavailable) {
+        sseFallbackTimer = setTimeout(() => {
+            sseFallbackTimer = null;
+            if (currentStatus !== "LIVE" && subscribers.size > 0) {
+                if (process.env.NODE_ENV === "development") {
+                    console.debug("[MUX] WS unavailable — skipping SSE, activating REST polling");
+                }
+                startPollingFallback();
+            }
+        }, SSE_INSTANT_FALLBACK_MS);
+        return;
+    }
+
+    const delay = wsAgeMs < 1000
         ? SSE_INSTANT_FALLBACK_MS
         : SSE_FALLBACK_DELAY_MS;
 
