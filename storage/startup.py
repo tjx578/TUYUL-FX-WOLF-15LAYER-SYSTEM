@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import inspect
 
 from loguru import logger
 
@@ -28,13 +29,15 @@ async def _has_candle_data(redis: RedisClient) -> bool:
     try:
         cursor = 0
         while True:
-            cursor, keys = await redis.client.scan(cursor, match=CANDLE_HISTORY_SCAN, count=20)
+            scan_result = redis.client.scan(cursor, match=CANDLE_HISTORY_SCAN, count=20)
+            if inspect.isawaitable(scan_result):
+                scan_result = await scan_result
+            cursor, keys = scan_result
             if keys:
                 return True
             if cursor == 0:
                 break
     except Exception as exc:
-        logger.warning("Failed to scan Redis for candle data — assuming empty: {}", exc)
         logger.warning("Failed to scan Redis for candle data; assuming empty: {}", exc)
         return False
     return False

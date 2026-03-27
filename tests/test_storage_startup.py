@@ -52,21 +52,24 @@ class FakeRedis:
 
 
 class TestHasCandleData:
-    def test_returns_true_when_candle_key_present(self) -> None:
+    @pytest.mark.asyncio
+    async def test_returns_true_when_candle_key_present(self) -> None:
         """SCAN matching wolf15:candle_history:* → True."""
         from storage.startup import _has_candle_data
 
         redis = FakeRedis(store={}, candle_keys=["wolf15:candle_history:EURUSD:H1"])
-        assert _has_candle_data(cast(Any, redis)) is True
+        assert await _has_candle_data(cast(Any, redis)) is True
 
-    def test_returns_false_when_no_candle_keys(self) -> None:
+    @pytest.mark.asyncio
+    async def test_returns_false_when_no_candle_keys(self) -> None:
         """Empty SCAN result → False."""
         from storage.startup import _has_candle_data
 
         redis = FakeRedis(store={}, candle_keys=[])
-        assert _has_candle_data(cast(Any, redis)) is False
+        assert await _has_candle_data(cast(Any, redis)) is False
 
-    def test_returns_false_on_scan_exception(self) -> None:
+    @pytest.mark.asyncio
+    async def test_returns_false_on_scan_exception(self) -> None:
         """Exception during SCAN → False (fail safe, no crash)."""
         from storage.startup import _has_candle_data
 
@@ -76,9 +79,10 @@ class TestHasCandleData:
 
         redis = MagicMock()
         redis.client = ErrorSyncClient()
-        assert _has_candle_data(redis) is False
+        assert await _has_candle_data(redis) is False
 
-    def test_ignores_non_candle_keys(self) -> None:
+    @pytest.mark.asyncio
+    async def test_ignores_non_candle_keys(self) -> None:
         """Keys that don't match wolf15:candle_history:* must not affect result."""
         from storage.startup import _has_candle_data
 
@@ -86,7 +90,20 @@ class TestHasCandleData:
             store={},
             candle_keys=["wolf15:peak_equity", "wolf15:drawdown:daily"],
         )
-        assert _has_candle_data(cast(Any, redis)) is False
+        assert await _has_candle_data(cast(Any, redis)) is False
+
+    @pytest.mark.asyncio
+    async def test_supports_async_scan_client(self) -> None:
+        """Async Redis clients should also be supported by _has_candle_data."""
+        from storage.startup import _has_candle_data
+
+        class AsyncScanClient:
+            async def scan(self, cursor: int = 0, match: str = "*", count: int = 50) -> tuple[int, list[str]]:
+                return (0, ["wolf15:candle_history:GBPUSD:M15"])
+
+        redis = MagicMock()
+        redis.client = AsyncScanClient()
+        assert await _has_candle_data(redis) is True
 
 
 # ──────────────────────────────────────────────────────────────────
@@ -105,6 +122,11 @@ class TestInitPersistentStorageRecoveryRouting:
         svc.run = AsyncMock(return_value=None)
         return svc
 
+    def _fake_create_task(self, coro: Any) -> MagicMock:
+        """Close coroutine immediately so tests do not leak un-awaited coroutines."""
+        coro.close()
+        return MagicMock()
+
     @pytest.mark.asyncio
     async def test_full_recovery_when_redis_truly_empty(self) -> None:
         """No candle keys + no peak_equity → full recover_from_postgres."""
@@ -122,7 +144,7 @@ class TestInitPersistentStorageRecoveryRouting:
             patch("storage.startup.pg_client", fake_pg),
             patch("storage.startup.RedisClient", return_value=redis),
             patch("storage.startup.PersistenceSync", return_value=svc),
-            patch("storage.startup.asyncio.create_task"),
+            patch("storage.startup.asyncio.create_task", side_effect=self._fake_create_task),
         ):
             from storage import startup
 
@@ -154,7 +176,7 @@ class TestInitPersistentStorageRecoveryRouting:
             patch("storage.startup.pg_client", fake_pg),
             patch("storage.startup.RedisClient", return_value=redis),
             patch("storage.startup.PersistenceSync", return_value=svc),
-            patch("storage.startup.asyncio.create_task"),
+            patch("storage.startup.asyncio.create_task", side_effect=self._fake_create_task),
         ):
             from storage import startup
 
@@ -186,7 +208,7 @@ class TestInitPersistentStorageRecoveryRouting:
             patch("storage.startup.pg_client", fake_pg),
             patch("storage.startup.RedisClient", return_value=redis),
             patch("storage.startup.PersistenceSync", return_value=svc),
-            patch("storage.startup.asyncio.create_task"),
+            patch("storage.startup.asyncio.create_task", side_effect=self._fake_create_task),
         ):
             from storage import startup
 
