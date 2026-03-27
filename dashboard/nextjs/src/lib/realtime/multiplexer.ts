@@ -29,7 +29,7 @@
 
 import { connectLiveUpdates, type WsControls, type WsConnectionStatus } from "./realtimeClient";
 import { connectSse, type SseControls } from "./sseClient";
-import { getApiBaseUrl } from "@/lib/env";
+import { getApiBaseUrl, getWsBaseUrl, getRestPrefix } from "@/lib/env";
 import type { WsEventParsed } from "@/schema/wsEventSchema";
 import type { SystemStatusView } from "@/contracts/wsEvents";
 
@@ -69,10 +69,14 @@ let subscriberCounter = 0;
 const subscribers = new Map<number, MultiplexerSubscribeOptions>();
 let lastReason = "Realtime channel not initialized yet.";
 
-// SSE fallback timer: triggers SSE after 30s of WS failure
+// SSE fallback timer: triggers SSE after 30s of WS failure.
+// When WS is known-unavailable (NEXT_PUBLIC_WS_BASE_URL not set), the delay
+// is skipped entirely so the client reaches polling fallback within seconds.
 const SSE_FALLBACK_DELAY_MS = 30_000;
+const SSE_INSTANT_FALLBACK_MS = 500; // used when WS is known-unavailable
 let sseFallbackTimer: ReturnType<typeof setTimeout> | null = null;
 let wsFailedAt: number | null = null;
+let wsOpenedAt: number | null = null; // tracks when WS was opened to detect instant failure
 
 // Polling fallback (health heartbeat) — used when WS + SSE are down.
 // Uses exponential backoff when the server responds with 429.
@@ -182,8 +186,8 @@ function startPollingFallback(): void {
 
         try {
             const t0 = Date.now();
-            const apiBase = getApiBaseUrl();
-            const res = await fetch(`${apiBase}/health`, { credentials: "include" });
+            const prefix = getRestPrefix();
+            const res = await fetch(`${prefix}/health`, { credentials: "include" });
             const latency = Date.now() - t0;
 
             if (res.status === 429) {
@@ -275,19 +279,30 @@ function startSseFallbackTimer(): void {
     if (sseConnection) return; // SSE already active
 
     wsFailedAt = Date.now();
+
+    // Detect instant WS failure: if WS disconnected within 1s of opening, the
+    // URL is likely not configured (empty wsBaseUrl) or unreachable. Skip the
+    // full 30s wait and try SSE/polling almost immediately.
+    const wsAgeMs = wsOpenedAt ? (Date.now() - wsOpenedAt) : Infinity;
+    const wsKnownUnavailable = !getWsBaseUrl();
+    const delay = (wsKnownUnavailable || wsAgeMs < 1000)
+        ? SSE_INSTANT_FALLBACK_MS
+        : SSE_FALLBACK_DELAY_MS;
+
     sseFallbackTimer = setTimeout(() => {
         sseFallbackTimer = null;
         // Only activate SSE if WS is still not LIVE
         if (currentStatus !== "LIVE" && subscribers.size > 0) {
             openSseConnection();
         }
-    }, SSE_FALLBACK_DELAY_MS);
+    }, delay);
 }
 
 function openWsConnection(): void {
     if (wsConnection) return;
 
     currentTransport = "WS";
+    wsOpenedAt = Date.now();
 
     wsConnection = connectLiveUpdates({
         path: "/ws/live",
@@ -337,6 +352,7 @@ function closeAllTransports(): void {
 
     currentTransport = "NONE";
     currentStatus = "DISCONNECTED";
+    wsOpenedAt = null;
 }
 
 // ─── PUBLIC API ──────────────────────────────────────────────

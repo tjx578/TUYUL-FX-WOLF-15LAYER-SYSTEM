@@ -16,7 +16,7 @@
 import { WsEventSchema, type WsEventParsed } from "@/schema/wsEventSchema";
 import type { SystemStatusView } from "@/contracts/wsEvents";
 import { getTransportToken } from "@/lib/auth";
-import { getApiBaseUrl } from "@/lib/env";
+import { getApiBaseUrl, getRestPrefix } from "@/lib/env";
 import type { WsConnectionStatus } from "./connectionState";
 
 // ─── BACKEND ENVELOPE NORMALISATION (mirrors realtimeClient.ts) ──
@@ -98,7 +98,8 @@ export function connectSse(options: ConnectSseOptions): SseControls {
         onStatusChange?.(s);
     };
 
-    const apiBase = getApiBaseUrl();
+    // Use getApiBaseUrl for direct connection, fall back to getRestPrefix for Vercel proxy
+    const apiBase = getApiBaseUrl() || getRestPrefix();
 
     const connect = () => {
         if (intentionallyClosed) return;
