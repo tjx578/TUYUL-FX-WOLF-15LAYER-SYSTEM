@@ -114,6 +114,50 @@ async def _safe_stop(name: str, obj: Any, cleanup_errors: list[tuple[str, Except
         cleanup_errors.append((f"{name}.stop()", exc))
 
 
+async def _check_redis(redis: RedisClient | None) -> bool:
+    """Best-effort Redis health probe."""
+    if redis is None:
+        return False
+    try:
+        pong = await redis.ping()
+        return bool(pong)
+    except Exception:
+        return False
+
+
+class _HealthCheckRunner:
+    """Periodic health monitor for WS + Redis connectivity."""
+
+    def __init__(self, ws_connected_fn: Any, redis: RedisClient | None) -> None:
+        self._ws_connected_fn = ws_connected_fn
+        self._redis = redis
+
+    async def run(self) -> None:
+        """Monitor system health and log status."""
+        while True:
+            try:
+                ws_connected = bool(self._ws_connected_fn())
+                redis_ok = await _check_redis(self._redis)
+
+                status = "HEALTHY" if (ws_connected and redis_ok) else "DEGRADED"
+
+                logger.info(
+                    "[HealthCheck] %s | WS: %s | Redis: %s",
+                    status,
+                    ws_connected,
+                    redis_ok,
+                )
+
+                await asyncio.sleep(60)  # Check every minute
+
+            except Exception as e:
+                logger.error(f"[HealthCheck] Error: {e}")
+                await asyncio.sleep(60)
+
+    async def stop(self) -> None:
+        return None
+
+
 async def run_ingest_services(
     has_api_key: bool,
     shutdown_event: asyncio.Event | None = None,
@@ -284,6 +328,7 @@ async def run_ingest_services(
             _run_supervised("htf_refresh", htf_refresh, shutdown_event=shutdown_event),
             _run_supervised("macro_monthly_refresh", macro_monthly, shutdown_event=shutdown_event),
             _run_supervised("forming_publisher", _FormingPubRunner(forming_pub), shutdown_event=shutdown_event),
+            _run_supervised("health_check", _HealthCheckRunner(_ws_connected_fn, redis), shutdown_event=shutdown_event),
         )
     except asyncio.CancelledError:
         logger.info("Ingest services cancelled - shutting down")

@@ -98,49 +98,36 @@ class RestPollFallback:
         )
 
     async def run(self) -> None:
-        """Main loop — hybrid: WS-down full poll + per-symbol silence poll."""
+        """Monitor WS and activate REST fallback when needed."""
         self._running = True
-        logger.info("RestPollFallback started — monitoring WS connection + per-symbol silence")
+        grace_period = 30  # seconds
+        logger.info(
+            "RestPollFallback started — aggressive WS down detection enabled (grace=%ss)",
+            grace_period,
+        )
 
         while self._running:
             try:
+                # Check if WS is connected
                 if not self._ws_connected():
-                    # ── WS fully down path (original behaviour) ──
-                    logger.info(
-                        "WS disconnected — waiting %.0fs grace before REST polling",
-                        self._grace_sec,
-                    )
-                    await asyncio.sleep(self._grace_sec)
-
-                    if self._ws_connected():
-                        logger.info("WS reconnected during grace period — skipping REST poll")
-                        continue
-
-                    logger.warning("WS still disconnected after grace — activating full REST poll fallback")
-                    await self._poll_loop_ws_down()
-                    logger.info("REST poll fallback deactivated — WS reconnected")
+                    logger.warning("[RestFallback] WS disconnected - activating REST fallback")
+                    await self._poll_all_symbols()
                 else:
-                    # ── WS connected: check for per-symbol silence ──
-                    silent = self._get_silent_pairs()
-                    if silent:
-                        logger.info(
-                            "WS connected but %d pairs silent — REST polling: %s",
-                            len(silent),
-                            ", ".join(sorted(silent)),
-                        )
-                        if is_forex_market_open():
-                            for symbol in silent:
-                                if not self._running:
-                                    break
-                                await self._poll_symbol(symbol)
-                    await asyncio.sleep(self._silence_check_interval)
+                    # WS connected - check for silent symbols
+                    silent_symbols = self._get_silent_symbols()
+                    if silent_symbols:
+                        logger.info(f"[RestFallback] Polling {len(silent_symbols)} silent symbols")
+                        await self._poll_symbols(silent_symbols)
+
+                # Check every 10 seconds for faster failover response.
+                await asyncio.sleep(10)
 
             except asyncio.CancelledError:
-                logger.info("RestPollFallback cancelled")
+                logger.info("[RestFallback] Task cancelled")
                 raise
-            except Exception:
-                logger.exception("RestPollFallback unexpected error — restarting loop")
-                await asyncio.sleep(5)
+            except Exception as e:
+                logger.error(f"[RestFallback] Error: {e}")
+                await asyncio.sleep(10)
 
     def _get_silent_pairs(self) -> list[str]:
         """Return pairs whose last WS tick exceeds the silence threshold."""
@@ -153,6 +140,64 @@ class RestPollFallback:
             if now - last > PAIR_WS_SILENCE_THRESHOLD_S:
                 silent.append(symbol)
         return silent
+
+    def _get_silent_symbols(self) -> list[str]:
+        """Compatibility alias for silent symbol detection."""
+        return self._get_silent_pairs()
+
+    async def _poll_symbols(self, symbols: list[str]) -> None:
+        """Poll only the provided symbols via the existing symbol poll routine."""
+        if not is_forex_market_open():
+            logger.info("[RestFallback] Market closed - skipping silent-symbol polling")
+            return
+        for symbol in symbols:
+            if not self._running:
+                break
+            await self._poll_symbol(symbol)
+
+    async def _poll_all_symbols(self) -> None:
+        """Poll all symbols via REST API."""
+        if not is_forex_market_open():
+            logger.info("[RestFallback] Market closed - skipping full-symbol polling")
+            return
+
+        for symbol in self._symbols:
+            if not self._running:
+                break
+
+            try:
+                # Fetch H1, H4, D1, W1
+                for tf in ["H1", "H4", "D1", "W1"]:
+                    candles = await self._fetch_candles(symbol, tf)
+                    if candles:
+                        await self._save_to_redis(symbol, tf, candles)
+
+                await asyncio.sleep(1)  # Rate limit
+
+            except Exception as e:
+                logger.error(f"[RestFallback] Error polling {symbol}: {e}")
+
+    async def _fetch_candles(self, symbol: str, timeframe: str) -> list[dict[str, Any]]:
+        """Fetch candles for one symbol/timeframe using the shared fetcher."""
+        bars_by_tf = {
+            "H1": self._h1_bars,
+            "H4": max(1, self._h1_bars),
+            "D1": 1,
+            "W1": 1,
+        }
+        bars = bars_by_tf.get(timeframe, 1)
+        try:
+            return await self._fetcher.fetch(symbol, timeframe, bars)
+        except FinnhubCandleError as exc:
+            logger.warning("[RestFallback] Fetch failed %s %s: %s", symbol, timeframe, exc)
+            return []
+
+    async def _save_to_redis(self, symbol: str, timeframe: str, candles: list[dict[str, Any]]) -> None:
+        """Normalize and persist candles to context bus and Redis."""
+        normalized = self._normalize_candles(candles, symbol, timeframe)
+        for candle in normalized:
+            self._context_bus.update_candle(candle)
+        await self._push_candles_to_redis(normalized)
 
     async def _poll_loop_ws_down(self) -> None:
         """Fetch M15 (and optionally H1) candles until WS reconnects."""
