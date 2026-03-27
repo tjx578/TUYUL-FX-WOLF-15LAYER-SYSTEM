@@ -22,13 +22,12 @@ from __future__ import annotations
 import asyncio
 import os
 import sys
-from collections.abc import Coroutine
 
 import uvicorn
 from loguru import logger
 from redis.asyncio import Redis as AsyncRedis
 
-from config_loader import CONFIG, get_enabled_symbols
+from config_loader import get_enabled_symbols
 from core.health_probe import HealthProbe
 from core.startup_validator import validate_engine_startup_async
 from infrastructure.tracing import (
@@ -38,15 +37,10 @@ from infrastructure.tracing import (
     instrument_requests,
     setup_tracer,
 )
-from ingest.calendar_news import CalendarNewsIngestor
-from ingest.candle_builder import CandleBuilder
-from ingest.dependencies import create_finnhub_ws
-from ingest.finnhub_market_news import FinnhubMarketNews
-from ingest.h1_refresh_scheduler import H1RefreshScheduler
-from ingest.rest_poll_fallback import RestPollFallback
 from pipeline import WolfConstitutionalPipeline
 from startup.analysis_loop import analysis_loop
 from startup.candle_seeding import seed_candles_on_startup
+from startup.ingest_tasks import run_ingest_services
 from startup.signal_handlers import install_signal_handlers
 from startup.task_supervisor import supervised_task
 from storage.startup import init_persistent_storage, shutdown_persistent_storage
@@ -108,50 +102,6 @@ def _validate_api_key() -> bool:
         return False
     logger.info("FINNHUB_API_KEY validated ({} key(s) loaded)", finnhub_keys.key_count)
     return True
-
-
-async def run_ingest_services(has_api_key: bool, redis: AsyncRedis) -> None:
-    """Run ingestion tasks concurrently in local mode."""
-    if not has_api_key:
-        logger.info("Skipping ingest services - no API key configured")
-        while not (_shutdown_event and _shutdown_event.is_set()):  # noqa: ASYNC110
-            await asyncio.sleep(1)
-        return
-
-    ws_feed = await create_finnhub_ws(redis=redis)
-    rest_poll = RestPollFallback(
-        ws_connected_fn=lambda: ws_feed.is_connected if ws_feed else False,
-        symbols=PAIRS,
-        redis_client=redis,
-    )
-    news_feed = CalendarNewsIngestor(redis_client=redis)
-    market_news = FinnhubMarketNews()
-    h1_refresh = H1RefreshScheduler(redis_client=redis)
-
-    default_timeframe = CONFIG["settings"].get("default_timeframe", "1h")
-    candle_builders = [CandleBuilder(symbol=pair, timeframe=default_timeframe) for pair in PAIRS]
-
-    logger.info(
-        "Starting ingest services: WebSocket, RestPollFallback, CalendarNews, MarketNews, CandleBuilder, H1Refresh"
-    )
-    try:
-        cb_coros: list[Coroutine[object, object, object]] = [cb.run() for cb in candle_builders]  # pyright: ignore[reportAttributeAccessIssue]
-        await asyncio.gather(
-            ws_feed.run(),
-            rest_poll.run(),
-            news_feed.run(),
-            market_news.run(),
-            h1_refresh.run(),
-            *cb_coros,
-        )
-    except asyncio.CancelledError:
-        logger.info("Ingest services cancelled - shutting down")
-        raise
-    finally:
-        await ws_feed.stop()
-        await rest_poll.stop()
-        # Don't close pooled Redis client — pool is managed by RedisClientManager
-        logger.info("Ingest services cleanup complete")
 
 
 async def _sanitize_redis_keys(redis_client: AsyncRedis) -> None:
@@ -318,7 +268,7 @@ async def main() -> None:
                 asyncio.create_task(
                     supervised_task(
                         "IngestServices",
-                        lambda: run_ingest_services(has_api_key, redis_client),
+                        lambda: run_ingest_services(has_api_key, redis_client, _shutdown_event),
                         _shutdown_event,
                         _health_probe,
                     ),

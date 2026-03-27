@@ -669,7 +669,33 @@ def _register_health_routes(app: FastAPI) -> None:
 # ── Factory ───────────────────────────────────────────────────────────────────
 
 
-def create_app() -> FastAPI:
+def _build_bootstrap_fallback_app(error_text: str) -> FastAPI:
+    """Minimal fail-open app that keeps Railway liveness healthy during startup failures."""
+    fallback = FastAPI(
+        title="TUYUL FX — Bootstrap Fallback",
+        version="10.0.0",
+        docs_url=None,
+        redoc_url=None,
+        openapi_url=None,
+    )
+
+    @fallback.get("/healthz")
+    async def healthz() -> dict[str, Any]:
+        return {"status": "alive", "service": "tuyul-fx", "degraded": True}
+
+    @fallback.get("/health")
+    async def health() -> dict[str, Any]:
+        return {
+            "status": "degraded",
+            "service": "tuyul-fx",
+            "router_boot_ok": False,
+            "router_boot_errors": [error_text],
+        }
+
+    return fallback
+
+
+def _create_app_inner() -> FastAPI:
     """Build and return the fully-configured FastAPI application."""
     app_env = os.getenv("ENV", "development").strip().lower()
     is_production = app_env == "production"
@@ -741,3 +767,20 @@ def create_app() -> FastAPI:
         _register_dev_routes(app)
 
     return app
+
+
+def create_app() -> FastAPI:
+    """Build the FastAPI application with fail-open bootstrap protection.
+
+    If ``API_BOOT_FAIL_OPEN`` is truthy (default) and the inner factory
+    raises, returns a minimal fallback app that keeps ``/healthz`` alive
+    so operators can diagnose the failure via ``/health``.
+    """
+    fail_open = _env_bool("API_BOOT_FAIL_OPEN", True)
+    try:
+        return _create_app_inner()
+    except Exception as exc:
+        if not fail_open:
+            raise
+        logger.exception("API bootstrap failed — enabling fallback liveness app")
+        return _build_bootstrap_fallback_app(f"api_bootstrap_failed: {exc!s}")

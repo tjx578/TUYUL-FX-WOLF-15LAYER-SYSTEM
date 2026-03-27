@@ -2,6 +2,7 @@
 WebSocket Routes - Real-time push to frontend.
 
 Endpoints:
+  WS /ws?token=<jwt>              - General-purpose signal relay (Redis PubSub)
   WS /ws/prices?token=<jwt>       - Live tick-by-tick price stream
   WS /ws/trades?token=<jwt>       - Trade status change events (event-driven)
   WS /ws/candles?token=<jwt>      - Real-time candle aggregation stream
@@ -667,6 +668,55 @@ def _get_circuit_breaker():
         except Exception:
             _cached_circuit_breaker = None
     return _cached_circuit_breaker
+
+
+# ---------------------------------------------------------------------------
+# WS /ws -- General-purpose authenticated signal relay
+# ---------------------------------------------------------------------------
+
+
+@router.websocket("/ws")
+async def websocket_general_relay(websocket: fastapi.WebSocket):
+    """General-purpose authenticated WebSocket relay.
+
+    Validates JWT, then forwards Redis PubSub ``SIGNAL_EVENTS`` messages
+    to the connected client until disconnect.
+    """
+    await websocket.accept()
+    payload = await ws_auth_guard(websocket)
+    if not payload:
+        return
+
+    from state.pubsub_channels import SIGNAL_EVENTS
+
+    pubsub = None
+    try:
+        r = await _get_async_redis_client()
+        pubsub = r.pubsub()
+        await pubsub.subscribe(SIGNAL_EVENTS)
+        logger.info("WS /ws connected: user={}", payload.get("sub"))
+
+        while True:
+            raw_msg: object = await pubsub.get_message(ignore_subscribe_messages=True, timeout=1.0)
+            if raw_msg and isinstance(raw_msg, dict) and raw_msg.get("type") == "message":
+                data = raw_msg.get("data")
+                if isinstance(data, bytes):
+                    data = data.decode("utf-8", errors="replace")
+                if isinstance(data, str):
+                    await websocket.send_text(data)
+            else:
+                with contextlib.suppress(Exception):
+                    await websocket.send_text(json.dumps({"type": "ping", "ts": time.time()}))
+                await asyncio.sleep(1.0)
+    except fastapi.WebSocketDisconnect:
+        pass
+    except Exception:
+        logger.debug("WS /ws disconnected: user={}", payload.get("sub"))
+    finally:
+        if pubsub is not None:
+            with contextlib.suppress(Exception):
+                await pubsub.unsubscribe()
+                await pubsub.aclose()
 
 
 # ---------------------------------------------------------------------------
