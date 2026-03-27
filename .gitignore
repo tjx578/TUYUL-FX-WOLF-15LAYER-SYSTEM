@@ -70,6 +70,12 @@ out/
 .idea/
 *.swp
 *.swo
+.cursor/
+.windsurf/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
 
 # ── Ruff / Mypy / Pyright cache ─────────────
 .ruff_cache/
