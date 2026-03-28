@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { useSessionStore } from "@/store/useSessionStore";
 import { useSessionRefresh } from "@/hooks/useSessionRefresh";
@@ -13,14 +13,24 @@ export default function SessionExpiryModal() {
   const setExpiringInSeconds = useSessionStore((state) => state.setExpiringInSeconds);
   const refresh = useSessionRefresh();
 
+  // Use wall-clock elapsed time to avoid setTimeout drift (especially in
+  // background tabs where timers are throttled).
+  const deadlineRef = useRef<number | null>(null);
   useEffect(() => {
-    // Passive countdown simulation hook; backend source can overwrite store values.
     if (expiringInSeconds === null || expiringInSeconds <= 0) {
+      deadlineRef.current = null;
       return;
     }
-    const timer = setTimeout(() => setExpiringInSeconds(expiringInSeconds - 1), 1000);
-    return () => clearTimeout(timer);
-  }, [expiringInSeconds, setExpiringInSeconds]);
+    // Capture absolute deadline on first non-null value
+    if (deadlineRef.current === null) {
+      deadlineRef.current = Date.now() + expiringInSeconds * 1000;
+    }
+    const timer = setInterval(() => {
+      const remaining = Math.max(0, Math.round(((deadlineRef.current ?? 0) - Date.now()) / 1000));
+      setExpiringInSeconds(remaining);
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [expiringInSeconds === null || expiringInSeconds <= 0]); // only re-run on start/stop transitions
 
   const shouldShow = Boolean(expiredReason) || (expiringInSeconds !== null && expiringInSeconds <= 60);
   if (!shouldShow) {

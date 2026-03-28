@@ -1,14 +1,10 @@
 "use client";
 
-import { useMemo } from "react";
-import { useAccountStore } from "@/store/useAccountStore";
+import { useAccounts } from "@/features/accounts/api/accounts.api";
 
 export default function AccountSwitcher() {
-  const { trades } = useAccountStore();
-  const label = useMemo(() => {
-    const first = Object.values(trades)[0];
-    return first?.account_id ?? "DEFAULT";
-  }, [trades]);
+  const { data: accounts } = useAccounts();
+  const label = accounts.length > 0 ? accounts[0].account_name ?? accounts[0].account_id : "DEFAULT";
 
   return (
     <div className="rounded-lg border border-white/10 bg-slate-900/60 px-3 py-2 text-xs text-slate-300">

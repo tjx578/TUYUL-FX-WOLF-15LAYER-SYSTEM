@@ -62,7 +62,9 @@ export default function CreateAccountModal({ onCreated, onCancel }: CreateAccoun
             return;
         }
 
-        void fetchPropFirms().then((res) => setFirms(res.items ?? []));
+        void fetchPropFirms()
+            .then((res) => setFirms(res.items ?? []))
+            .catch(() => setFirms([]));
     }, [form.prop_firm]);
 
     useEffect(() => {
@@ -71,7 +73,9 @@ export default function CreateAccountModal({ onCreated, onCancel }: CreateAccoun
             return;
         }
 
-        void fetchPropFirmPrograms(form.prop_firm_code).then((res) => setPrograms(res.items ?? []));
+        void fetchPropFirmPrograms(form.prop_firm_code)
+            .then((res) => setPrograms(res.items ?? []))
+            .catch(() => setPrograms([]));
     }, [form.prop_firm, form.prop_firm_code]);
 
     useEffect(() => {
@@ -80,7 +84,9 @@ export default function CreateAccountModal({ onCreated, onCancel }: CreateAccoun
             return;
         }
 
-        void fetchPropFirmRules(form.prop_firm_code, form.program_code, form.phase_code || "funded").then((res) => setRules(res));
+        void fetchPropFirmRules(form.prop_firm_code, form.program_code, form.phase_code || "funded")
+            .then((res) => setRules(res))
+            .catch(() => setRules(null));
     }, [form.prop_firm, form.prop_firm_code, form.program_code, form.phase_code]);
 
     const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {

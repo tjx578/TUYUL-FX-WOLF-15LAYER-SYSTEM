@@ -13,7 +13,7 @@ export default function DegradationBanner() {
 
   const [staleSince, setStaleSince] = useState<number | null>(null);
   const [staleSeconds, setStaleSeconds] = useState(0);
-  const [dismissed, setDismissed] = useState(false);
+  // NOTE: Dismiss removed — PRD requires stale indicator to remain visible
 
   const reasonLower = system?.reason?.toLowerCase() ?? "";
   const isOffline =
@@ -41,7 +41,6 @@ export default function DegradationBanner() {
   useEffect(() => {
     if (isDegraded && staleSince === null) {
       setStaleSince(Date.now());
-      setDismissed(false);
     }
     if (!isDegraded) {
       setStaleSince(null);
@@ -57,7 +56,7 @@ export default function DegradationBanner() {
     return () => clearInterval(interval);
   }, [staleSince]);
 
-  if (!isDegraded || dismissed) return null;
+  if (!isDegraded) return null;
 
   const reason =
     system?.reason ||
@@ -196,24 +195,6 @@ export default function DegradationBanner() {
           </p>
         )}
       </div>
-
-      {/* Dismiss */}
-      <button
-        onClick={() => setDismissed(true)}
-        aria-label="Dismiss degradation banner"
-        style={{
-          background: "transparent",
-          border: "none",
-          cursor: "pointer",
-          color: "var(--text-faint)",
-          fontSize: 14,
-          lineHeight: 1,
-          padding: "2px 4px",
-          flexShrink: 0,
-        }}
-      >
-        &times;
-      </button>
     </section>
   );
 }

@@ -56,6 +56,36 @@ function patchTradeInList(
   return next;
 }
 
+function tradeExistsInAnyList(
+  state: Pick<TradeDeskState, "pendingTrades" | "openTrades" | "closedTrades" | "cancelledTrades">,
+  tradeId: string
+): boolean {
+  return (
+    state.pendingTrades.some((t) => t.trade_id === tradeId) ||
+    state.openTrades.some((t) => t.trade_id === tradeId) ||
+    state.closedTrades.some((t) => t.trade_id === tradeId) ||
+    state.cancelledTrades.some((t) => t.trade_id === tradeId)
+  );
+}
+
+/** Determine which list a trade belongs in based on its status. */
+function listKeyForStatus(status: string): "pendingTrades" | "openTrades" | "closedTrades" | "cancelledTrades" {
+  switch (status) {
+    case "INTENDED":
+    case "PENDING":
+      return "pendingTrades";
+    case "OPEN":
+    case "PARTIALLY_FILLED":
+      return "openTrades";
+    case "CANCELLED":
+    case "SKIPPED":
+    case "REJECTED":
+      return "cancelledTrades";
+    default:
+      return "closedTrades";
+  }
+}
+
 function removeTradeFromList(
   list: TradeDeskTrade[],
   tradeId: string
@@ -115,12 +145,20 @@ export const useTradeDeskStore = create<TradeDeskState>((set) => ({
     }),
 
   patchTrade: (trade) =>
-    set((state) => ({
-      pendingTrades: patchTradeInList(state.pendingTrades, trade),
-      openTrades: patchTradeInList(state.openTrades, trade),
-      closedTrades: patchTradeInList(state.closedTrades, trade),
-      cancelledTrades: patchTradeInList(state.cancelledTrades, trade),
-    })),
+    set((state) => {
+      // If trade exists in any list, update in-place
+      if (tradeExistsInAnyList(state, trade.trade_id)) {
+        return {
+          pendingTrades: patchTradeInList(state.pendingTrades, trade),
+          openTrades: patchTradeInList(state.openTrades, trade),
+          closedTrades: patchTradeInList(state.closedTrades, trade),
+          cancelledTrades: patchTradeInList(state.cancelledTrades, trade),
+        };
+      }
+      // New trade — insert into the correct list based on status
+      const key = listKeyForStatus(trade.status);
+      return { [key]: [...state[key], trade] };
+    }),
 
   removeTrade: (tradeId) =>
     set((state) => ({

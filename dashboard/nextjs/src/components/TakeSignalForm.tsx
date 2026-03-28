@@ -2,6 +2,10 @@
 
 // ============================================================
 // TUYUL FX Wolf-15 — TakeSignalForm (modal overlay)
+//
+// @deprecated Use TakeSignalDrawer (features/signals/) instead.
+// This component is retained for backwards compatibility only.
+// See GAP-02 fix — CommandCenterScreen no longer uses this.
 // ============================================================
 
 import { useState, useRef } from "react";

@@ -2,7 +2,6 @@
 
 import type { PropsWithChildren } from "react";
 import type { SessionUser } from "@/contracts/auth";
-import { Providers } from "@/components/Providers";
 import AuthBootstrap from "@/components/auth/AuthBootstrap";
 import LivePipelineProvider from "@/components/LivePipelineProvider";
 import ComplianceBanner from "@/components/feedback/ComplianceBanner";
@@ -18,7 +17,7 @@ interface Props extends PropsWithChildren {
 
 export default function DashboardShell({ user, children }: Props) {
     return (
-        <Providers>
+        <>
             <AuthBootstrap user={user} />
             <LivePipelineProvider />
             <div className="relative z-10 flex min-h-screen">
@@ -39,6 +38,6 @@ export default function DashboardShell({ user, children }: Props) {
                     <WorkspaceManager />
                 </main>
             </div>
-        </Providers>
+        </>
     );
 }

@@ -15,7 +15,7 @@
 // ============================================================
 
 import React, { useEffect } from "react";
-import { motion, useSpring, useMotionValue, animate } from "framer-motion";
+import { motion, useSpring } from "framer-motion";
 import { T, RADIUS, FONT_MONO, FONT_DISPLAY } from "@/lib/tokens";
 
 // ── Monospace data text ───────────────────────────────────────
@@ -339,10 +339,10 @@ export function Ring({
 
 // ── Toggle switch ────────────────────────────────────────────
 export function Toggle({
-  value, onChange, label, small,
+  value, onChangeAction, label, small,
 }: {
   value: boolean;
-  onChange: (v: boolean) => void;
+  onChangeAction: (v: boolean) => void;
   label?: string;
   small?: boolean;
 }) {
@@ -360,7 +360,7 @@ export function Toggle({
         <span style={{ fontSize: 11, color: T.t2, fontFamily: FONT_MONO }}>{label}</span>
       )}
       <button
-        onClick={() => onChange(!value)}
+        onClick={() => onChangeAction(!value)}
         aria-pressed={value}
         style={{
           width: trackW, height: trackH,
@@ -386,11 +386,11 @@ export function Toggle({
 
 // ── Select ───────────────────────────────────────────────────
 export function Sel({
-  value, options, onChange, label, w, name,
+  value, options, onChangeAction, label, w, name,
 }: {
   value: string | number;
   options: (string | { value: string | number; label: string })[];
-  onChange: (v: string) => void;
+  onChangeAction: (v: string) => void;
   label?: string;
   w?: string | number;
   name?: string;
@@ -409,7 +409,7 @@ export function Sel({
       <select
         name={name}
         value={value}
-        onChange={(e) => onChange(e.target.value)}
+        onChange={(e) => onChangeAction(e.target.value)}
         style={{
           width: w ?? "100%", padding: "5px 8px", borderRadius: RADIUS.sm,
           border: `1px solid ${T.b1}`, backgroundColor: T.bg3, color: T.t1,
@@ -429,9 +429,9 @@ export function Sel({
 
 // ── Number Input ─────────────────────────────────────────────
 export function NumInput({
-  value, onChange, label, suffix, min, max, step = 1, w, name,
+  value, onChangeAction, label, suffix, min, max, step = 1, w, name,
 }: {
-  value: number; onChange: (v: number) => void;
+  value: number; onChangeAction: (v: number) => void;
   label?: string; suffix?: string;
   min?: number; max?: number; step?: number; w?: number;
   name?: string;
@@ -453,7 +453,7 @@ export function NumInput({
           type="number"
           value={value}
           min={min} max={max} step={step}
-          onChange={(e) => onChange(parseFloat(e.target.value) || 0)}
+          onChange={(e) => onChangeAction(parseFloat(e.target.value) || 0)}
           style={{
             width: w ?? 78, padding: "5px 7px", borderRadius: RADIUS.sm,
             border: `1px solid ${T.b1}`, backgroundColor: T.bg3,
@@ -498,11 +498,11 @@ export function Section({
 // ── Tabs ─────────────────────────────────────────────────────
 // Rendered as pill-tab bar. Active tab gets bg3 / text-primary highlight.
 export function Tabs({
-  tabs, active, onChange, compact,
+  tabs, active, onChangeAction, compact,
 }: {
   tabs: { id: string; label: string; icon?: string }[];
   active: string;
-  onChange: (id: string) => void;
+  onChangeAction: (id: string) => void;
   compact?: boolean;
 }) {
   return (
@@ -516,7 +516,7 @@ export function Tabs({
           key={t.id}
           type="button"
           className="tab-btn"
-          onClick={() => onChange(t.id)}
+          onClick={() => onChangeAction(t.id)}
           aria-pressed={active === t.id}
           style={{
             flex: 1,

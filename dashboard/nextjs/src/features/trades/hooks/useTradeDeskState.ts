@@ -80,6 +80,8 @@ export function useLiveTrades(wsActiveRef?: React.MutableRefObject<boolean>) {
     ws.onclose = () => {
       patchBatcher.dispose();
       wsRef.current = null;
+      // Allow REST polling to take over while WS is disconnected
+      if (wsActiveRef) wsActiveRef.current = false;
       // Exponential backoff: 1s, 2s, 4s, 8s ... max 30s
       const delay = backoffRef.current;
       backoffRef.current = Math.min(delay * 2, 30_000);
