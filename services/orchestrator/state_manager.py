@@ -264,7 +264,9 @@ class StateManager:
         result = evaluate_compliance(self._account_state, self._trade_risk)
         target_mode = _mode_from_compliance(result.allowed, result.severity)
 
-        # Auto-recovery: require 3 consecutive normal checks before resuming
+        # Auto-recovery: require 3 net normal checks before resuming.
+        # Decrement (not hard-reset) on non-normal to avoid oscillation deadlock
+        # where rapid NORMAL/non-NORMAL flapping prevents recovery forever.
         if target_mode == ExecutionMode.NORMAL and self._state.mode != ExecutionMode.NORMAL:
             self._recovery_count += 1
             if self._recovery_count < 3:
@@ -274,7 +276,7 @@ class StateManager:
                 )
                 return
         elif target_mode != ExecutionMode.NORMAL:
-            self._recovery_count = 0
+            self._recovery_count = max(0, self._recovery_count - 1)
 
         if self._state.mode != target_mode or self._state.compliance_code != result.code:
             self._state = OrchestratorState(
@@ -283,6 +285,8 @@ class StateManager:
                 compliance_code=result.code,
                 updated_at=_utc_now_iso(),
             )
+            # Reset recovery counter after successful transition
+            self._recovery_count = 0
             logger.warning(
                 "compliance transition -> mode={} code={} severity={}",
                 target_mode,

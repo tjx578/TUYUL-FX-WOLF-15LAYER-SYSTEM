@@ -171,3 +171,88 @@ def test_command_set_mode_from_pubsub() -> None:
     assert snap.mode == ExecutionMode.SAFE
     assert snap.compliance_code == "EXTERNAL_COMMAND"
     assert any(json.loads(raw)["event"] == "MODE_CHANGED" for _, raw in redis.published)
+
+
+# --- account state helper for healthy compliance ---
+
+_HEALTHY_ACCOUNT = {
+    "balance": 10000,
+    "equity": 9990,
+    "compliance_mode": True,
+    "daily_dd_percent": 1.0,
+    "max_daily_dd_percent": 5.0,
+    "total_dd_percent": 2.0,
+    "max_total_dd_percent": 10.0,
+}
+
+_WARNING_ACCOUNT = {
+    "balance": 10000,
+    "equity": 9800,
+    "compliance_mode": True,
+    "daily_dd_percent": 4.6,
+    "max_daily_dd_percent": 5.0,
+}
+
+
+def test_recovery_counter_resets_after_successful_transition() -> None:
+    """After 3 normals → NORMAL, _recovery_count must be 0 (not lingering at 3)."""
+    redis = _FakeRedis()
+    manager = _new_manager(redis)
+    manager.set_mode(ExecutionMode.SAFE, reason="test")
+    manager.update_account_state(_HEALTHY_ACCOUNT)
+
+    manager.process_once(now=10.0)  # 1/3
+    manager.process_once(now=20.0)  # 2/3
+    manager.process_once(now=30.0)  # 3/3 → NORMAL
+
+    assert manager.snapshot().mode == ExecutionMode.NORMAL
+    assert manager._recovery_count == 0  # noqa: SLF001
+
+
+def test_oscillation_does_not_deadlock_recovery() -> None:
+    """Rapid NORMAL/non-NORMAL oscillation must not prevent recovery forever.
+
+    With decrement-by-1 instead of hard-reset, interleaved non-normal checks
+    only slow recovery, not block it.
+    """
+    redis = _FakeRedis()
+    manager = _new_manager(redis)
+    manager.set_mode(ExecutionMode.SAFE, reason="test")
+
+    t = 10.0
+
+    # Oscillation pattern: normal, non-normal, normal, normal, non-normal, normal, normal, normal
+    # With decrement: count goes 1 → 0 → 1 → 2 → 1 → 2 → 3 → recover
+    for healthy in [True, False, True, True, False, True, True, True]:
+        if healthy:
+            manager.update_account_state(_HEALTHY_ACCOUNT)
+        else:
+            manager.update_account_state(_WARNING_ACCOUNT)
+        manager.process_once(now=t)
+        t += 10.0
+
+    assert manager.snapshot().mode == ExecutionMode.NORMAL, "System should have recovered despite oscillation"
+
+
+def test_sustained_nonnormal_drains_counter_to_zero() -> None:
+    """Sustained non-NORMAL ticks must still drain recovery progress to 0."""
+    redis = _FakeRedis()
+    manager = _new_manager(redis)
+    manager.set_mode(ExecutionMode.SAFE, reason="test")
+    manager.update_account_state(_HEALTHY_ACCOUNT)
+
+    t = 10.0
+    # Build up 2 recovery counts
+    manager.process_once(now=t)
+    t += 10.0  # count = 1
+    manager.process_once(now=t)
+    t += 10.0  # count = 2
+
+    # Now 5 non-normals: decrements 2→1→0→0→0
+    for _ in range(5):
+        manager.update_account_state(_WARNING_ACCOUNT)
+        manager.process_once(now=t)
+        t += 10.0
+
+    assert manager.snapshot().mode != ExecutionMode.NORMAL
+    assert manager._recovery_count == 0  # noqa: SLF001
