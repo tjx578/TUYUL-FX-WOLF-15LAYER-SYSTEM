@@ -139,6 +139,20 @@ class RedisClient:
         wait=wait_exponential(multiplier=1, min=1, max=10),
         reraise=True,
     )
+    def mget(self, keys: list[str]) -> list[str | None]:
+        """Get multiple values in a single round-trip."""
+        return cast(list[str | None], self.client.mget(keys))
+
+    def pipeline(self) -> redis.client.Pipeline:
+        """Return a Redis pipeline for batching commands."""
+        return self.client.pipeline()
+
+    @retry(
+        retry=retry_if_exception_type(_RETRY_EXCEPTIONS),
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=1, max=10),
+        reraise=True,
+    )
     def hset(self, name: str, mapping: dict[str, Any] | None = None, **kwargs: Any) -> int:
         """
         Set hash field(s).

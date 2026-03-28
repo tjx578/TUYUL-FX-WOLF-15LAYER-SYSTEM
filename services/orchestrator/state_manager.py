@@ -44,6 +44,8 @@ class OrchestratorRedisProtocol(Protocol):
     def get(self, key: str) -> str | None: ...
     def set(self, key: str, value: str, ex: int | None = None) -> None: ...
     def publish(self, channel: str, message: str) -> int: ...
+    def mget(self, keys: list[str]) -> list[str | None]: ...
+    def pipeline(self) -> Any: ...
 
 
 def _utc_now_iso() -> str:
@@ -89,7 +91,7 @@ class StateManager:
         self._account_state_key = os.getenv("ORCHESTRATOR_ACCOUNT_STATE_KEY", ACCOUNT_STATE)
         self._trade_risk_key = os.getenv("ORCHESTRATOR_TRADE_RISK_KEY", TRADE_RISK)
 
-        self._loop_sleep_sec = max(0.1, float(os.getenv("ORCHESTRATOR_LOOP_SLEEP_SEC", "0.5")))
+        self._loop_sleep_sec = max(0.01, float(os.getenv("ORCHESTRATOR_LOOP_SLEEP_SEC", "0.05")))
         self._compliance_interval_sec = max(1.0, float(os.getenv("ORCHESTRATOR_COMPLIANCE_INTERVAL_SEC", "5")))
         self._heartbeat_interval_sec = max(5.0, float(os.getenv("ORCHESTRATOR_HEARTBEAT_INTERVAL_SEC", "30")))
 
@@ -191,15 +193,18 @@ class StateManager:
             payload["details"] = details
 
         encoded = json.dumps(payload)
-        self._redis.publish(self._channel, encoded)
-        self._redis.set(self._state_key, encoded)
+        pipe = self._redis.pipeline()
+        pipe.publish(self._channel, encoded)
+        pipe.set(self._state_key, encoded)
+        pipe.execute()
 
     def _refresh_snapshots_from_redis(self) -> None:
-        account_snapshot = _parse_json(self._redis.get(self._account_state_key))
+        raw_values = self._redis.mget([self._account_state_key, self._trade_risk_key])
+        account_snapshot = _parse_json(raw_values[0])
         if account_snapshot:
             self._account_state.update(account_snapshot)
 
-        risk_snapshot = _parse_json(self._redis.get(self._trade_risk_key))
+        risk_snapshot = _parse_json(raw_values[1])
         if risk_snapshot:
             self._trade_risk.update(risk_snapshot)
 
@@ -245,7 +250,7 @@ class StateManager:
             return
 
         for _ in range(64):
-            message = self._pubsub.get_message(ignore_subscribe_messages=True, timeout=0.01)
+            message = self._pubsub.get_message(ignore_subscribe_messages=True, timeout=0)
             if not message:
                 break
             raw: Any = message.get("data")

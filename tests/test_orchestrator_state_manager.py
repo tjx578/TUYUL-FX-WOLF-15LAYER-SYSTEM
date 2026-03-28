@@ -34,6 +34,31 @@ class _FakePubSub:
         self.closed = True
 
 
+class _FakePipeline:
+    def __init__(self, redis: _FakeRedis) -> None:
+        self._redis = redis
+        self._commands: list[tuple[str, tuple[Any, ...]]] = []
+
+    def set(self, key: str, value: str, ex: int | None = None) -> _FakePipeline:
+        self._commands.append(("set", (key, value, ex)))
+        return self
+
+    def publish(self, channel: str, message: str) -> _FakePipeline:
+        self._commands.append(("publish", (channel, message)))
+        return self
+
+    def execute(self) -> list[Any]:
+        results: list[Any] = []
+        for cmd, args in self._commands:
+            if cmd == "set":
+                self._redis.set(args[0], args[1], ex=args[2])
+                results.append(True)
+            elif cmd == "publish":
+                results.append(self._redis.publish(args[0], args[1]))
+        self._commands.clear()
+        return results
+
+
 class _FakeRedis:
     def __init__(self) -> None:
         super().__init__()
@@ -57,6 +82,12 @@ class _FakeRedis:
     def publish(self, channel: str, message: str) -> int:
         self.published.append((channel, message))
         return 1
+
+    def mget(self, keys: list[str]) -> list[str | None]:
+        return [self.values.get(k) for k in keys]
+
+    def pipeline(self) -> _FakePipeline:
+        return _FakePipeline(self)
 
 
 def _new_manager(redis_client: _FakeRedis) -> StateManager:

@@ -19,10 +19,7 @@
     "e2e"
   ],
   "extraPaths": [
-    ".",
-    "./config",
-    "./analysis",
-    "./infrastructure"
+    "."
   ],
   "venvPath": ".",
   "venv": ".venv"

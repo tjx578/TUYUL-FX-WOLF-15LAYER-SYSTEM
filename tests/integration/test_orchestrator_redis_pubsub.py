@@ -49,6 +49,12 @@ class _RedisAdapter:
     def publish(self, channel: str, message: str) -> int:
         return int(self._client.publish(channel, message))
 
+    def mget(self, keys: list[str]) -> list[str | None]:
+        return self._client.mget(keys)
+
+    def pipeline(self) -> Any:
+        return self._client.pipeline()
+
 
 @pytest.fixture
 def redis_client() -> Any:
