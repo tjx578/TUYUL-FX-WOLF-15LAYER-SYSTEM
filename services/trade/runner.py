@@ -13,6 +13,7 @@ Environment variables:
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import os
 
 from loguru import logger
@@ -24,28 +25,49 @@ configure_loguru_logging()
 
 
 async def _main() -> None:
-    # Single health probe for Railway — covers both workers.
+    # Resolve ports BEFORE importing workers so env vars are visible at
+    # import time (workers may read them during module-level init).
     health_port = int(os.getenv("PORT", os.getenv("TRADE_HEALTH_PORT", "8090")))
-    probe = HealthProbe(port=health_port, service_name="trade")
-    asyncio.create_task(probe.start())
-    logger.info("Trade service health probe started on :{}", health_port)
+    alloc_health_port = str(health_port + 1)
+    exec_health_port = str(health_port + 2)
+    os.environ["ALLOC_HEALTH_PORT"] = alloc_health_port
+    os.environ["EXEC_HEALTH_PORT"] = exec_health_port
 
-    # Prevent child workers from binding their own health probes on PORT
-    # (would conflict with our consolidated probe).  Give each a distinct
-    # secondary port that is NOT the Railway-probed PORT.
-    os.environ["ALLOC_HEALTH_PORT"] = str(health_port + 1)
-    os.environ["EXEC_HEALTH_PORT"] = str(health_port + 2)
+    # Track whether workers are alive so probe reports unhealthy on crash.
+    _workers_alive = True
+
+    def _readiness_check() -> bool:
+        return _workers_alive
+
+    probe = HealthProbe(
+        port=health_port,
+        service_name="trade",
+        readiness_check=_readiness_check,
+    )
+    # Store reference to prevent GC collection (Python docs warning).
+    probe_task = asyncio.create_task(probe.start(), name="TradeHealthProbe")
+    logger.info("Trade service health probe started on :{}", health_port)
 
     # Import workers lazily to avoid import-time side effects until we're ready.
     from allocation.async_worker import _main as alloc_main  # noqa: PLC0415
     from execution.async_worker import _main as exec_main  # noqa: PLC0415
 
-    # Run both workers as concurrent tasks in the same event loop.
     alloc_task = asyncio.create_task(alloc_main(), name="AllocationWorker")
     exec_task = asyncio.create_task(exec_main(), name="ExecutionWorker")
-
     logger.info("Trade service running allocation + execution workers")
-    await asyncio.gather(alloc_task, exec_task)
+
+    try:
+        await asyncio.gather(alloc_task, exec_task)
+    except Exception:
+        _workers_alive = False
+        logger.exception("Trade service worker crashed — marking unhealthy")
+        raise
+    finally:
+        _workers_alive = False
+        probe_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await probe_task
+        await probe.stop()
 
 
 if __name__ == "__main__":
