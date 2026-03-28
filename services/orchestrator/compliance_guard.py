@@ -139,4 +139,43 @@ def evaluate_compliance(account_state: dict[str, Any], trade_risk: dict[str, Any
                 {"risk_percent": risk_percent, "max_risk_per_trade_percent": max_risk_percent},
             )
 
+    # ── News lock: HIGH impact economic event window ─────────────
+    if _to_bool(account_state.get("news_lock_active"), False):
+        return ComplianceResult(
+            False,
+            "NEWS_LOCK_ACTIVE",
+            "warning",
+            {"reason": str(account_state.get("news_lock_reason", "high_impact_event"))},
+        )
+
+    # ── Session lock: market closed / outside trading session ────
+    if _to_bool(account_state.get("session_locked"), False):
+        return ComplianceResult(
+            False,
+            "SESSION_LOCKED",
+            "warning",
+            {"reason": str(account_state.get("session_lock_reason", "market_closed"))},
+        )
+
+    # ── Correlation exposure: over-exposure to correlated pairs ──
+    if _to_bool(account_state.get("correlation_breached"), False):
+        return ComplianceResult(
+            False,
+            "CORRELATION_LIMIT_BREACHED",
+            "warning",
+            {"reason": str(account_state.get("correlation_breach_reason", "group_exposure_exceeded"))},
+        )
+
+    # ── Data freshness: stale market data ────────────────────────
+    if _to_bool(account_state.get("data_stale"), False):
+        return ComplianceResult(
+            False,
+            "DATA_STALE",
+            "warning",
+            {
+                "feed_freshness": str(account_state.get("feed_freshness_class", "unknown")),
+                "staleness_seconds": _to_float(account_state.get("staleness_seconds"), 0.0),
+            },
+        )
+
     return ComplianceResult(True, "OK", "info")

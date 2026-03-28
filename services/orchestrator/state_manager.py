@@ -18,6 +18,7 @@ import core.health_probe
 from config.logging_bootstrap import configure_loguru_logging
 from core.redis_keys import (
     ACCOUNT_STATE,
+    HEARTBEAT_INGEST,
     HEARTBEAT_ORCHESTRATOR,
     KILL_SWITCH,
     ORCHESTRATOR_STATE,
@@ -28,9 +29,18 @@ from services.orchestrator.execution_mode import ExecutionMode
 from services.orchestrator.redis_commands import CommandParseError, parse_set_mode_command
 from state.pubsub_channels import ORCHESTRATOR_COMMANDS
 from storage.redis_client import RedisClient
+from utils.market_hours import is_forex_market_open
 
 ORCHESTRATOR_SOURCE = "wolf15-orchestrator"
 _ORCHESTRATOR_READY = threading.Event()
+
+# Redis key for manual news lock (set by API /news-lock/enable endpoint)
+_NEWS_LOCK_STATE_KEY = "NEWS_LOCK:STATE"
+
+# Ingest heartbeat staleness threshold for compliance data-freshness check.
+# More generous than the per-symbol threshold (120s vs 30s) because this is
+# an account-level gate, not a per-tick freshness check.
+_DATA_STALE_THRESHOLD_SEC = float(os.getenv("COMPLIANCE_DATA_STALE_SEC", "120"))
 
 configure_loguru_logging()
 
@@ -217,6 +227,65 @@ class StateManager:
         risk_snapshot = _parse_json(raw_values[1])
         if risk_snapshot:
             self._trade_risk.update(risk_snapshot)
+
+        self._refresh_compliance_signals()
+
+    def _refresh_compliance_signals(self) -> None:
+        """Compute and inject news_lock, session_lock, and data_stale into account state."""
+        try:
+            extra_keys = [_NEWS_LOCK_STATE_KEY, HEARTBEAT_INGEST]
+            raw = self._redis.mget(extra_keys)
+            news_raw, hb_raw = raw[0], raw[1]
+        except Exception as exc:
+            logger.warning("compliance signal refresh failed: {}", exc)
+            return
+
+        # ── News lock ────────────────────────────────────────────
+        news_active = False
+        news_reason = ""
+        if news_raw:
+            news_parsed = _parse_json(news_raw)
+            if news_parsed:
+                news_active = True
+                news_reason = str(news_parsed.get("reason", "manual_lock"))
+        self._account_state["news_lock_active"] = news_active
+        if news_active:
+            self._account_state["news_lock_reason"] = news_reason
+
+        # ── Session lock ─────────────────────────────────────────
+        market_open = is_forex_market_open()
+        self._account_state["session_locked"] = not market_open
+        if not market_open:
+            self._account_state["session_lock_reason"] = "forex_market_closed"
+
+        # ── Data freshness (ingest heartbeat) ────────────────────
+        data_stale = False
+        staleness_sec = 0.0
+        freshness_class = "unknown"
+        if hb_raw:
+            hb_parsed = _parse_json(hb_raw)
+            hb_ts = 0.0
+            if hb_parsed:
+                try:
+                    hb_ts = float(hb_parsed.get("ts", 0))
+                except (TypeError, ValueError):
+                    hb_ts = 0.0
+            if hb_ts > 0:
+                staleness_sec = time.time() - hb_ts
+                if staleness_sec > _DATA_STALE_THRESHOLD_SEC:
+                    data_stale = True
+                    freshness_class = "STALE_PRESERVED"
+                else:
+                    freshness_class = "LIVE"
+            else:
+                data_stale = True
+                freshness_class = "NO_PRODUCER"
+        else:
+            data_stale = True
+            freshness_class = "NO_PRODUCER"
+        self._account_state["data_stale"] = data_stale
+        self._account_state["staleness_seconds"] = staleness_sec
+        self._account_state["feed_freshness_class"] = freshness_class
 
     def _handle_channel_message(self, payload: dict[str, Any]) -> None:
         if not payload:
