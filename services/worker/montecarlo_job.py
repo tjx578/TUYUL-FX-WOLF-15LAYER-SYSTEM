@@ -9,20 +9,15 @@ from __future__ import annotations
 
 import os
 import sys
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from loguru import logger
 
-# Configure logging FIRST — before any other imports that may trigger logging —
-# so that startup crashes are always captured and visible in Railway logs.
-from config.logging_bootstrap import configure_loguru_logging
+if TYPE_CHECKING:
+    from engines.portfolio_monte_carlo_engine import PortfolioMonteCarloEngine
+
 from core.redis_keys import WORKER_MC_INPUT, WORKER_MC_RESULT
-
-configure_loguru_logging()
-
-from engines.portfolio_monte_carlo_engine import PortfolioMonteCarloEngine  # noqa: E402
-from pipeline.constants import get_monte_min  # noqa: E402
-from services.worker._job_utils import (  # noqa: E402
+from services.worker._job_utils import (
     load_json_payload,
     normalize_return_matrix,
     publish_result,
@@ -32,6 +27,9 @@ from services.worker._job_utils import (  # noqa: E402
 
 
 def _build_engine() -> PortfolioMonteCarloEngine:
+    from engines.portfolio_monte_carlo_engine import PortfolioMonteCarloEngine
+    from pipeline.constants import get_monte_min
+
     simulations = int(os.getenv("WOLF15_MC_SIMULATIONS", "1000"))
     seed_raw = os.getenv("WOLF15_MC_SEED", "42")
     seed = int(seed_raw) if seed_raw.strip() else None
@@ -105,6 +103,8 @@ def run() -> None:
             )
             return
 
+        from pipeline.constants import get_monte_min
+
         monte_min = get_monte_min()
         engine = _build_engine()
         result = engine.run(return_matrix)
@@ -146,6 +146,9 @@ def run() -> None:
 
 
 if __name__ == "__main__":
+    from config.logging_bootstrap import configure_loguru_logging
+
+    configure_loguru_logging()
     try:
         if _validate_startup():
             run()

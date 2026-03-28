@@ -6,7 +6,6 @@ from typing import Any
 
 from loguru import logger
 
-from config.logging_bootstrap import configure_loguru_logging
 from core.redis_keys import WORKER_BACKTEST_INPUT, WORKER_BACKTEST_RESULT
 from engines.walk_forward_validation_engine import WalkForwardValidator
 from services.worker._job_utils import (
@@ -16,8 +15,6 @@ from services.worker._job_utils import (
     utc_now_iso,
     write_json_artifact,
 )
-
-configure_loguru_logging()
 
 
 def run() -> None:
@@ -54,6 +51,9 @@ def run() -> None:
 
 
 if __name__ == "__main__":
+    from config.logging_bootstrap import configure_loguru_logging
+
+    configure_loguru_logging()
     try:
         run()
     except Exception as exc:
