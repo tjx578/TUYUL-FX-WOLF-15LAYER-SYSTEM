@@ -8,7 +8,8 @@
 
 export interface RuntimeHealth {
     apiBaseResolved: boolean;
-    apiKeyPresent: boolean;
+    /** Auth is session-based (JWT via HttpOnly cookie). Always true post-v3. */
+    authSessionMode: boolean;
     wsBaseResolved: boolean;
     nodeEnv: string;
 }
@@ -20,8 +21,10 @@ export function getRuntimeHealth(): RuntimeHealth {
     // `!!(process.env.NEXT_PUBLIC_FOO)` → correctly inlined at build time.
     return {
         apiBaseResolved: !!(process.env.NEXT_PUBLIC_API_BASE_URL),
-        apiKeyPresent:   !!(process.env.NEXT_PUBLIC_API_KEY),
-        wsBaseResolved:  !!(process.env.NEXT_PUBLIC_WS_BASE_URL),
+        // Auth is now session-based (login → JWT → HttpOnly cookie).
+        // NEXT_PUBLIC_API_KEY is deprecated and must NOT be set (XSS risk).
+        authSessionMode: true,
+        wsBaseResolved: !!(process.env.NEXT_PUBLIC_WS_BASE_URL),
         nodeEnv: process.env.NODE_ENV ?? "unknown",
     };
 }

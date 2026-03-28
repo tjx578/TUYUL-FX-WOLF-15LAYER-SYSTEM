@@ -39,6 +39,7 @@ ORCHESTRATION_EVENTS = f"{PREFIX}:orchestration:events"
 # ── Compliance streams ───────────────────────────────────────────────────────
 COMPLIANCE_EVENTS = f"{PREFIX}:compliance:events"
 COMPLIANCE_AUTO_MODE = f"{PREFIX}:compliance:auto_mode"
+COMPLIANCE_AUTO_MODE_STATE = f"{PREFIX}:compliance:auto_mode:state"
 
 # ── Firewall streams ─────────────────────────────────────────────────────────
 FIREWALL_EVENTS = f"{PREFIX}:firewall:events"

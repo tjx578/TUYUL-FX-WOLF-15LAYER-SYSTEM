@@ -372,8 +372,8 @@ export default function DataStreamDiagnostic({
                 <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: health.apiBaseResolved ? "var(--green)" : "var(--red)", fontWeight: 700 }}>
                   API BASE: {health.apiBaseResolved ? "OK" : "MISSING"}
                 </span>
-                <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: health.apiKeyPresent ? "var(--green)" : "var(--red)", fontWeight: 700 }}>
-                  API KEY: {health.apiKeyPresent ? "OK" : "MISSING"}
+                <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: health.authSessionMode ? "var(--green)" : "var(--red)", fontWeight: 700 }}>
+                  AUTH: {health.authSessionMode ? "SESSION" : "NONE"}
                 </span>
                 <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: health.wsBaseResolved ? "var(--green)" : "var(--red)", fontWeight: 700 }}>
                   WS BASE: {health.wsBaseResolved ? "OK" : "MISSING"}

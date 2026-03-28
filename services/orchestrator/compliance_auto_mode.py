@@ -26,7 +26,7 @@ from typing import Any
 
 from loguru import logger
 
-from core.redis_keys import COMPLIANCE_AUTO_MODE
+from core.redis_keys import COMPLIANCE_AUTO_MODE, COMPLIANCE_AUTO_MODE_STATE
 
 
 class AutoTradingState(StrEnum):
@@ -58,15 +58,24 @@ class AutoModeTransition:
         }
 
 
+class _AutoModeRedisProtocol:
+    """Minimal Redis protocol for auto-mode state persistence."""
+
+    def get(self, key: str) -> str | None: ...
+    def set(self, key: str, value: str, ex: int | None = None) -> None: ...
+
+
 class ComplianceAutoMode:
     """Auto-trading mode state machine with event publishing.
 
-    Thread-safe singleton-style state (shared in-process).
+    State is persisted to Redis so that restarts do not silently
+    resume auto-trading when it was paused by a compliance violation.
     """
 
-    def __init__(self) -> None:
-        self._state: AutoTradingState = AutoTradingState.ENABLED
+    def __init__(self, redis_client: _AutoModeRedisProtocol | None = None) -> None:
+        self._redis = redis_client
         self._transitions: list[AutoModeTransition] = []
+        self._state: AutoTradingState = self._restore_state()
 
     @property
     def state(self) -> AutoTradingState:
@@ -83,6 +92,29 @@ class ComplianceAutoMode:
     @property
     def transition_history(self) -> list[AutoModeTransition]:
         return list(self._transitions)
+
+    def _restore_state(self) -> AutoTradingState:
+        """Restore persisted state from Redis. Default PAUSED if previously paused."""
+        if self._redis is None:
+            return AutoTradingState.ENABLED
+        try:
+            raw = self._redis.get(COMPLIANCE_AUTO_MODE_STATE)
+        except Exception:
+            logger.warning("[ComplianceAutoMode] Redis read failed on init — defaulting to PAUSED for safety")
+            return AutoTradingState.PAUSED
+        if raw == AutoTradingState.PAUSED.value:
+            logger.warning("[ComplianceAutoMode] Restored PAUSED state from Redis — operator resume required")
+            return AutoTradingState.PAUSED
+        return AutoTradingState.ENABLED
+
+    def _persist_state(self) -> None:
+        """Best-effort write of current state to Redis."""
+        if self._redis is None:
+            return
+        try:
+            self._redis.set(COMPLIANCE_AUTO_MODE_STATE, self._state.value)
+        except Exception:
+            logger.warning("[ComplianceAutoMode] Redis write failed — state may be lost on restart")
 
     def pause(self, trigger_code: str, reason: str, actor: str = "system:compliance") -> AutoModeTransition:
         """Pause auto-trading. Idempotent: pausing when already paused is a no-op."""
@@ -104,6 +136,7 @@ class ComplianceAutoMode:
         )
         self._state = AutoTradingState.PAUSED
         self._transitions.append(transition)
+        self._persist_state()
 
         logger.warning(
             "[ComplianceAutoMode] PAUSED auto-trading: code=%s reason=%s actor=%s",
@@ -130,6 +163,7 @@ class ComplianceAutoMode:
         )
         self._state = AutoTradingState.ENABLED
         self._transitions.append(transition)
+        self._persist_state()
 
         logger.info(
             "[ComplianceAutoMode] RESUMED auto-trading: reason=%s actor=%s",
