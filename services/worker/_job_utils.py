@@ -36,8 +36,14 @@ def _load_json_from_file(path_str: str) -> Any:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+_redis_client: RedisClient | None = None
+
+
 def get_redis_client() -> RedisClient:
-    return RedisClient()
+    global _redis_client  # noqa: PLW0603
+    if _redis_client is None:
+        _redis_client = RedisClient()
+    return _redis_client
 
 
 def _looks_like_placeholder_json(raw: str) -> bool:
