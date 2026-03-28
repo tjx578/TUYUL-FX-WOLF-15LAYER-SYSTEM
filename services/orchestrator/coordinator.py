@@ -22,9 +22,16 @@ from typing import Any
 from loguru import logger
 
 from core.redis_keys import EXECUTION_INTENTS, ORCHESTRATION_EVENTS
-from execution.take_signal_models import TakeSignalStatus
-from execution.take_signal_service import TakeSignalService
-from risk.firewall import FirewallVerdict, RiskFirewall
+from services.orchestrator.protocols import (
+    STATUS_EXECUTION_SENT,
+    STATUS_FIREWALL_APPROVED,
+    STATUS_FIREWALL_REJECTED,
+    STATUS_PENDING,
+    STATUS_REJECTED,
+    VERDICT_REJECTED,
+    RiskFirewallLike,
+    TakeSignalServiceLike,
+)
 
 
 class OrchestrationResult:
@@ -69,11 +76,19 @@ class OrchestratorCoordinator:
 
     def __init__(
         self,
-        take_signal_service: TakeSignalService | None = None,
-        risk_firewall: RiskFirewall | None = None,
+        take_signal_service: TakeSignalServiceLike | None = None,
+        risk_firewall: RiskFirewallLike | None = None,
     ) -> None:
-        self._take_svc = take_signal_service or TakeSignalService()
-        self._firewall = risk_firewall or RiskFirewall()
+        if take_signal_service is None:
+            from execution.take_signal_service import TakeSignalService  # noqa: PLC0415
+
+            take_signal_service = TakeSignalService()
+        if risk_firewall is None:
+            from risk.firewall import RiskFirewall  # noqa: PLC0415
+
+            risk_firewall = RiskFirewall()
+        self._take_svc = take_signal_service
+        self._firewall = risk_firewall
 
     async def process_take_signal(
         self,
@@ -103,12 +118,12 @@ class OrchestratorCoordinator:
                 reason=f"take_id={take_id} not found",
             )
 
-        if take_response.status != TakeSignalStatus.PENDING:
+        if take_response.status != STATUS_PENDING:
             return OrchestrationResult(
                 take_id=take_id,
                 verdict="NOOP",
-                status=take_response.status.value,
-                reason=f"Take-signal already in {take_response.status.value} state",
+                status=str(take_response.status),
+                reason=f"Take-signal already in {take_response.status} state",
             )
 
         # Emit orchestration started event
@@ -128,7 +143,7 @@ class OrchestratorCoordinator:
             logger.error("[Coordinator] Firewall evaluation failed: {}", exc)
             await self._take_svc.transition(
                 take_id,
-                TakeSignalStatus.REJECTED,
+                STATUS_REJECTED,
                 reason=f"Firewall evaluation error: {exc}",
             )
             return OrchestrationResult(
@@ -139,10 +154,10 @@ class OrchestratorCoordinator:
             )
 
         # 3. If firewall rejects: stop
-        if fw_result.verdict == FirewallVerdict.REJECTED:
+        if fw_result.verdict == VERDICT_REJECTED:
             await self._take_svc.transition(
                 take_id,
-                TakeSignalStatus.FIREWALL_REJECTED,
+                STATUS_FIREWALL_REJECTED,
                 reason=f"Firewall rejected at: {fw_result.short_circuited_at}",
                 firewall_result_id=fw_result.firewall_id,
             )
@@ -158,14 +173,14 @@ class OrchestratorCoordinator:
                 take_id=take_id,
                 verdict="REJECTED",
                 firewall_id=fw_result.firewall_id,
-                status=TakeSignalStatus.FIREWALL_REJECTED.value,
+                status=STATUS_FIREWALL_REJECTED,
                 reason=f"Firewall blocked at: {fw_result.short_circuited_at}",
             )
 
         # 4. Firewall approved → transition
         await self._take_svc.transition(
             take_id,
-            TakeSignalStatus.FIREWALL_APPROVED,
+            STATUS_FIREWALL_APPROVED,
             reason="All firewall checks passed",
             firewall_result_id=fw_result.firewall_id,
         )
@@ -181,7 +196,7 @@ class OrchestratorCoordinator:
         # 6. Transition to EXECUTION_SENT
         await self._take_svc.transition(
             take_id,
-            TakeSignalStatus.EXECUTION_SENT,
+            STATUS_EXECUTION_SENT,
             reason="Dispatched to execution",
             execution_intent_id=execution_intent_id,
         )
@@ -205,7 +220,7 @@ class OrchestratorCoordinator:
             verdict="APPROVED",
             firewall_id=fw_result.firewall_id,
             execution_intent_id=execution_intent_id,
-            status=TakeSignalStatus.EXECUTION_SENT.value,
+            status=STATUS_EXECUTION_SENT,
             reason="Dispatched to execution",
         )
 

@@ -301,3 +301,58 @@ class TestDispatchFailure:
         calls = mock_take_service.transition.call_args_list
         statuses = [c.args[1] for c in calls]
         assert TakeSignalStatus.EXECUTION_SENT not in statuses
+
+
+# ── ARCH-GAP-09: Decoupling boundary tests ───────────────────────────────
+
+
+class TestArchGap09Decoupling:
+    """Verify coordinator module is decoupled from execution.* and risk.* at module level."""
+
+    def test_coordinator_does_not_import_execution_at_module_level(self):
+        """coordinator.py must not have top-level imports from execution.*."""
+        import ast
+        from pathlib import Path
+
+        src = Path(__file__).resolve().parent.parent / "services" / "orchestrator" / "coordinator.py"
+        tree = ast.parse(src.read_text(encoding="utf-8"))
+        for node in ast.iter_child_nodes(tree):
+            if isinstance(node, ast.ImportFrom) and node.module:
+                assert not node.module.startswith("execution"), (
+                    f"coordinator.py has top-level import from {node.module}"
+                )
+
+    def test_coordinator_does_not_import_risk_at_module_level(self):
+        """coordinator.py must not have top-level imports from risk.*."""
+        import ast
+        from pathlib import Path
+
+        src = Path(__file__).resolve().parent.parent / "services" / "orchestrator" / "coordinator.py"
+        tree = ast.parse(src.read_text(encoding="utf-8"))
+        for node in ast.iter_child_nodes(tree):
+            if isinstance(node, ast.ImportFrom) and node.module:
+                assert not node.module.startswith("risk"), (
+                    f"coordinator.py has top-level import from {node.module}"
+                )
+
+    def test_coordinator_uses_protocol_types(self):
+        """OrchestratorCoordinator accepts any Protocol-satisfying dependency."""
+
+        # AsyncMock satisfies Protocol (duck typing)
+        svc = AsyncMock()
+        fw = AsyncMock()
+        coord = OrchestratorCoordinator(take_signal_service=svc, risk_firewall=fw)
+        assert coord._take_svc is svc
+        assert coord._firewall is fw
+
+    def test_transition_accepts_plain_string(self):
+        """TakeSignalService.transition() accepts plain str (ARCH-GAP-09 coercion)."""
+        import inspect
+
+        from execution.take_signal_service import TakeSignalService
+
+        sig = inspect.signature(TakeSignalService.transition)
+        param = sig.parameters["new_status"]
+        annotation = str(param.annotation)
+        # Should accept str (either 'str | TakeSignalStatus' or union including str)
+        assert "str" in annotation

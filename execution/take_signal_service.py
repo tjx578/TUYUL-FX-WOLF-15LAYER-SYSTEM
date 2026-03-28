@@ -117,7 +117,7 @@ class TakeSignalService:
     async def transition(
         self,
         take_id: str,
-        new_status: TakeSignalStatus,
+        new_status: str | TakeSignalStatus,
         *,
         reason: str | None = None,
         firewall_result_id: str | None = None,
@@ -126,7 +126,11 @@ class TakeSignalService:
         """Transition a take-signal to a new lifecycle state.
 
         Validates transition rules. Raises on invalid transitions.
+        Accepts plain status strings (e.g. from orchestrator) and coerces
+        to TakeSignalStatus internally.
         """
+        if not isinstance(new_status, TakeSignalStatus):
+            new_status = TakeSignalStatus(new_status)
         record = await self._repo.transition(
             take_id,
             new_status,
