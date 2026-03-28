@@ -40,12 +40,20 @@ function normalizeVerdictResponse(
 ): L12Verdict[] {
     if (!data) return [];
     if (Array.isArray(data)) return data;
-    if ("verdicts" in data) {
-        const inner = (data as Record<string, unknown>).verdicts;
+    const obj = data as Record<string, unknown>;
+    if ("verdicts" in obj) {
+        const inner = obj.verdicts;
         if (Array.isArray(inner)) return inner as L12Verdict[];
         if (inner && typeof inner === "object") return Object.values(inner as Record<string, L12Verdict>);
     }
-    return Object.values(data);
+    // Handle wrapped responses like { data: [...], status: "ok", count: N }
+    if ("data" in obj && Array.isArray(obj.data)) return obj.data as L12Verdict[];
+    // Last resort: only use Object.values if every value looks like a verdict object
+    const values = Object.values(obj);
+    if (values.length > 0 && values.every((v) => v && typeof v === "object" && "symbol" in (v as object))) {
+        return values as L12Verdict[];
+    }
+    return [];
 }
 
 export function useAllVerdicts(options?: { refreshInterval?: number }) {

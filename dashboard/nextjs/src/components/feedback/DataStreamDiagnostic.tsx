@@ -7,7 +7,7 @@
 // ============================================================
 
 import { useState, useCallback, useEffect } from "react";
-import { mutate } from "swr";
+import { useQueryClient } from "@tanstack/react-query";
 import { getRuntimeHealth } from "@/lib/runtimeHealth";
 import { getTransportDiagnostics, type TransportDiagnostics } from "@/lib/realtime/multiplexer";
 
@@ -55,6 +55,7 @@ export default function DataStreamDiagnostic({
   failedStreams,
   allStreams,
 }: DataStreamDiagnosticProps) {
+  const queryClient = useQueryClient();
   const [expanded, setExpanded] = useState(false);
   const [pinging, setPinging] = useState(false);
   const [pingResult, setPingResult] = useState<{
@@ -102,13 +103,15 @@ export default function DataStreamDiagnostic({
         failedStreams.map((s) => {
           const ep = STREAM_ENDPOINTS[s];
           // Skip streams with no REST endpoint (e.g. "context") to avoid 404/429.
-          return ep && ep.trim() ? mutate(ep) : Promise.resolve();
+          return ep && ep.trim()
+            ? queryClient.invalidateQueries({ queryKey: [ep] })
+            : Promise.resolve();
         })
       );
     } finally {
       setTimeout(() => setRetrying(false), 800);
     }
-  }, [failedStreams]);
+  }, [failedStreams, queryClient]);
 
   return (
     <div
