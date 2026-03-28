@@ -63,6 +63,8 @@ async def _bootstrap_and_run() -> None:
         logger.exception(exc)
         # Keep process alive so health probe keeps responding.
         # Railway deployment succeeds; operator can inspect /status.
+        hold_timeout = int(os.environ.get("DEGRADED_HOLD_TIMEOUT_SEC", "3600"))
+        logger.warning("Degraded hold active (max {}s). Send SIGTERM to exit.", hold_timeout)
         shutdown = asyncio.Event()
 
         def _sig(signum: int, _frame: types.FrameType | None) -> None:
@@ -71,8 +73,10 @@ async def _bootstrap_and_run() -> None:
 
         signal.signal(signal.SIGTERM, _sig)
         signal.signal(signal.SIGINT, _sig)
-        with contextlib.suppress(asyncio.CancelledError):
-            await shutdown.wait()
+        with contextlib.suppress(asyncio.CancelledError, asyncio.TimeoutError):
+            await asyncio.wait_for(shutdown.wait(), timeout=hold_timeout)
+        if not shutdown.is_set():
+            logger.warning("Degraded hold timeout ({}s) — exiting for auto-restart", hold_timeout)
     finally:
         health_task.cancel()
         with contextlib.suppress(Exception):

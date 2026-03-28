@@ -364,6 +364,8 @@ def run() -> None:
         import signal as _signal
         import types
 
+        hold_timeout = int(os.getenv("DEGRADED_HOLD_TIMEOUT_SEC", "3600"))
+        logger.warning("Degraded hold active (max {}s). Send SIGTERM to exit.", hold_timeout)
         shutdown = threading.Event()
 
         def _on_signal(signum: int, _frame: types.FrameType | None) -> None:
@@ -372,7 +374,8 @@ def run() -> None:
 
         _signal.signal(_signal.SIGTERM, _on_signal)
         _signal.signal(_signal.SIGINT, _on_signal)
-        shutdown.wait()
+        if not shutdown.wait(timeout=hold_timeout):
+            logger.warning("Degraded hold timeout ({}s) — exiting for auto-restart", hold_timeout)
 
 
 if __name__ == "__main__":
