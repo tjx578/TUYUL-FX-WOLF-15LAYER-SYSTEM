@@ -266,7 +266,7 @@ describe("Domain Route Smoke Tests", { timeout: 15_000 }, () => {
     });
 
     it("risk page renders without crashing", async () => {
-        const { default: RiskPage } = await import("@/app/(root)/risk/page");
+        const { default: RiskPage } = await import("@/app/(control)/risk/page");
         render(<RiskPage />);
         expect(screen.getByText("RISK MONITOR")).toBeTruthy();
     });

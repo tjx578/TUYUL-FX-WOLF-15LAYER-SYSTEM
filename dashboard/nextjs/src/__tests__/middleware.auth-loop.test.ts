@@ -1,4 +1,5 @@
 // @vitest-environment node
+import { describe, it, expect } from "vitest";
 import { NextRequest, NextResponse } from "next/server";
 import { middleware } from "../middleware";
 
@@ -28,12 +29,11 @@ describe("middleware auth-loop prevention", () => {
         expect(res.headers.get("location")).toBeNull();
     });
 
-    it("redirects unauthenticated root to /login", () => {
+    it("allows unauthenticated root through (owner mode — no redirect)", () => {
         const res = middleware(makeRequest("/"));
-        expect(res.status).toBe(307);
-        const loc = new URL(res.headers.get("location")!);
-        expect(loc.pathname).toBe("/login");
-        expect(loc.searchParams.get("callbackUrl")).toBe("/");
+        // handlePageRoute returns NextResponse.next() unconditionally in owner mode.
+        // The server-side auth (serverAuth.ts) returns the owner user without a session.
+        expect(res.headers.get("location")).toBeNull();
     });
 
     it("allows authenticated request through", () => {
@@ -41,10 +41,10 @@ describe("middleware auth-loop prevention", () => {
         expect(res.headers.get("location")).toBeNull();
     });
 
-    it("blocks /audit without admin role", () => {
+    it("allows /audit without admin role through (owner mode — no redirect)", () => {
+        // handlePageRoute is disabled in owner mode — all page routes pass through.
         const res = middleware(makeRequest("/audit", { cookie: "valid-session" }));
-        expect(res.status).toBe(307);
-        expect(new URL(res.headers.get("location")!).pathname).toBe("/login");
+        expect(res.headers.get("location")).toBeNull();
     });
 
     it("allows /audit with admin role", () => {
