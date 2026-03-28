@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# ── Consolidated Engine + Ingest Service ──
-# Runs the analysis pipeline AND candle ingest in one process.
-# HTTP API is NOT started (that's the separate API service).
+# ── Engine-Only Service ──
+# Runs the analysis pipeline only (no ingest, no HTTP API).
+# Ingest runs as a separate service.
 
 if [[ -z "${DATABASE_URL:-}" ]]; then
 	echo "[startup] DATABASE_URL is required for engine preflight." >&2
@@ -15,5 +15,5 @@ if [[ -n "${PORT:-}" ]]; then
 fi
 
 export WOLF15_SERVICE_ROLE="engine"
-export RUN_MODE="engine-ingest"
+export RUN_MODE="engine-only"
 exec python -m services.engine.runner
