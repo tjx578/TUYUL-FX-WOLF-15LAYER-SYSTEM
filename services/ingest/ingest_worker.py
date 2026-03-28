@@ -4,17 +4,17 @@ Starts a lightweight health probe **before** importing the heavy
 ``ingest_service`` module so that Railway's ``/healthz`` check passes
 even when module-level imports or config loading fail.
 
-The heavy import is run in a thread executor so the asyncio event loop
-stays responsive — without this, ``ingest_service``'s module-level
-imports (numpy, pandas, config loading, etc.) block the loop and the
-health probe cannot answer Railway's periodic ``/healthz`` probes.
+The heavy import is done synchronously in the main thread after the
+health probe has bound its port.  An earlier version used
+``run_in_executor`` to offload the import to a thread, but
+``ingest_service`` performs module-level imports of Redis clients and
+async infrastructure that must live on the event-loop thread.
 """
 
 from __future__ import annotations
 
 import asyncio
 import contextlib
-import importlib
 import os
 import signal
 import types
@@ -40,13 +40,18 @@ async def _bootstrap_and_run() -> None:
     logger.info("Bootstrap health probe listening on :{}", port)
 
     try:
-        # Import ingest_service in a thread so heavy module-level imports
-        # (numpy, pandas, config YAML, etc.) don't block the event loop.
-        # This keeps the health probe responsive during the import.
+        # Import ingest_service in the main thread.  Using run_in_executor
+        # was the original approach but ingest_service's module-level imports
+        # pull in Redis clients, asyncpg helpers and context managers that
+        # assume they run on the event-loop thread.  Importing in a worker
+        # thread risks import-lock contention and creates async resources
+        # on the wrong thread.  The synchronous import may briefly block
+        # the loop, but the health probe has already bound its port and
+        # answered the first Railway /healthz probe above.
         probe.set_detail("startup_stage", "importing_ingest_service")
-        loop = asyncio.get_running_loop()
-        ingest_mod = await loop.run_in_executor(None, importlib.import_module, "ingest_service")
-        run_main = ingest_mod.main
+        import ingest_service  # noqa: PLC0415
+
+        run_main = ingest_service.main
         probe.set_detail("startup_stage", "running")
 
         # Hand the already-running probe to main() so there is no
