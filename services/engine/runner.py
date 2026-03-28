@@ -3,13 +3,23 @@
 Starts a bootstrap health probe **before** heavy imports and the DB
 preflight so Railway's ``/healthz`` check passes even while Postgres
 is still being verified.
+
+Architecture:
+- Single event loop: preflight and main() run in the SAME loop to avoid
+  state corruption from loop closure/recreation
+- Health probe runs in daemon thread with isolated loop (no shared state)
+- Explicit sys.path for main.py import (not reliant on CWD)
 """
 
 from __future__ import annotations
 
 import asyncio
 import os
+import sys
 import threading
+from collections.abc import Callable, Coroutine
+from pathlib import Path
+from typing import Any
 
 from loguru import logger
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
@@ -47,6 +57,9 @@ def _start_health_probe_in_thread() -> None:
 
     This keeps ``/healthz`` responsive while the main thread runs the
     blocking DB preflight and heavy module imports.
+
+    The probe runs in an ISOLATED event loop with no shared asyncio
+    primitives to avoid cross-loop state corruption.
     """
     from core.health_probe import HealthProbe
 
@@ -68,6 +81,43 @@ def _start_health_probe_in_thread() -> None:
     logger.info("Bootstrap health probe listening on :{}", port)
 
 
+def _import_main() -> Callable[[], Coroutine[Any, Any, None]]:
+    """Import main() from root main.py with explicit sys.path setup.
+
+    Ensures the project root is on sys.path so the import succeeds
+    regardless of CWD.
+    """
+    project_root = str(Path(__file__).resolve().parent.parent.parent)
+    if project_root not in sys.path:
+        sys.path.insert(0, project_root)
+
+    from main import main as run_main  # noqa: PLC0415
+
+    return run_main
+
+
+async def _run_engine() -> None:
+    """Run preflight checks and main() in a SINGLE event loop.
+
+    This avoids the double-asyncio.run() problem where global state
+    created during main.py import could reference the wrong loop.
+    """
+    try:
+        await _preflight_checks()
+    except DatabaseSchemaError:
+        logger.exception("Engine startup blocked: database schema is not ready")
+        raise
+    except Exception:
+        logger.exception("Engine DB preflight failed")
+        raise
+
+    # Import main AFTER preflight succeeds, within the same event loop
+    # that will run it. This ensures any loop-bound state created during
+    # import (instrumentation, tracers) binds to the correct loop.
+    run_main = _import_main()
+    await run_main()
+
+
 def run() -> None:
     os.environ.setdefault("RUN_MODE", "engine-only")
     run_mode = os.environ["RUN_MODE"]
@@ -78,20 +128,10 @@ def run() -> None:
     _start_health_probe_in_thread()
 
     try:
-        asyncio.run(_preflight_checks())
+        asyncio.run(_run_engine())
     except DatabaseSchemaError:
-        logger.exception("Engine startup blocked: database schema is not ready")
-        _hold_alive_for_diagnostics()
-        return
-    except Exception:
-        logger.exception("Engine DB preflight failed")
-        _hold_alive_for_diagnostics()
-        return
-
-    try:
-        from main import main as run_main
-
-        asyncio.run(run_main())
+        # Logged inside _run_engine, fall through to diagnostics
+        pass
     except Exception:
         logger.exception("Engine main loop exited with error")
 
