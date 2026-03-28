@@ -12,8 +12,13 @@ class DatabaseRevisionMismatchError(RuntimeError):
     """Raised when DB revision is not at expected Alembic head."""
 
 
-async def assert_required_tables(engine: AsyncEngine, required_tables: Iterable[str]) -> None:
+async def assert_required_tables(
+    engine: AsyncEngine,
+    required_tables: Iterable[str],
+    *,
+    default_schema: str = "public",
+) -> None:
     try:
-        await _assert_required_tables(engine, required_tables)
+        await _assert_required_tables(engine, required_tables, default_schema=default_schema)
     except DatabaseSchemaError as exc:
         raise DatabaseRevisionMismatchError(str(exc)) from exc
