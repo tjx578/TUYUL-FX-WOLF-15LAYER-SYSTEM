@@ -22,7 +22,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import StrEnum
-from typing import Any
+from typing import Any, Protocol
 
 from loguru import logger
 
@@ -58,7 +58,7 @@ class AutoModeTransition:
         }
 
 
-class _AutoModeRedisProtocol:
+class _AutoModeRedisProtocol(Protocol):
     """Minimal Redis protocol for auto-mode state persistence."""
 
     def get(self, key: str) -> str | None: ...

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import pytest
 
+from core.redis_keys import COMPLIANCE_AUTO_MODE_STATE
 from services.orchestrator.compliance_auto_mode import (
     AutoModeTransition,
     AutoTradingState,
@@ -247,6 +248,92 @@ class TestComplianceGuard:
         )
         assert result.allowed is True
         assert result.code == "OK"
+
+
+# ── State Persistence (SVC-BUG-06) ───────────────────────────────────────
+
+
+class _FakeRedis:
+    """Minimal Redis fake for auto-mode persistence tests."""
+
+    def __init__(self) -> None:
+        self.store: dict[str, str] = {}
+
+    def get(self, key: str) -> str | None:
+        return self.store.get(key)
+
+    def set(self, key: str, value: str, ex: int | None = None) -> None:
+        self.store[key] = value
+
+
+class _BrokenRedis:
+    """Redis that always raises on access."""
+
+    def get(self, key: str) -> str | None:
+        raise ConnectionError("Redis unavailable")
+
+    def set(self, key: str, value: str, ex: int | None = None) -> None:
+        raise ConnectionError("Redis unavailable")
+
+
+class TestAutoModeStatePersistence:
+    def test_no_redis_defaults_to_enabled(self):
+        mode = ComplianceAutoMode(redis_client=None)
+        assert mode.state == AutoTradingState.ENABLED
+
+    def test_fresh_redis_defaults_to_enabled(self):
+        redis = _FakeRedis()
+        mode = ComplianceAutoMode(redis_client=redis)
+        assert mode.state == AutoTradingState.ENABLED
+
+    def test_pause_persists_to_redis(self):
+        redis = _FakeRedis()
+        mode = ComplianceAutoMode(redis_client=redis)
+        mode.pause("DD_BREACH", "daily dd exceeded", "system:compliance")
+        assert redis.store[COMPLIANCE_AUTO_MODE_STATE] == "PAUSED"
+
+    def test_resume_persists_to_redis(self):
+        redis = _FakeRedis()
+        mode = ComplianceAutoMode(redis_client=redis)
+        mode.pause("DD_BREACH", "daily dd exceeded", "system:compliance")
+        mode.resume("Risk cleared", "admin")
+        assert redis.store[COMPLIANCE_AUTO_MODE_STATE] == "ENABLED"
+
+    def test_restart_restores_paused_state(self):
+        """Simulate restart: pause, then create new instance with same Redis."""
+        redis = _FakeRedis()
+        mode1 = ComplianceAutoMode(redis_client=redis)
+        mode1.pause("VIOLATION", "compliance violation", "system:compliance")
+
+        # Simulate restart — new instance, same Redis
+        mode2 = ComplianceAutoMode(redis_client=redis)
+        assert mode2.state == AutoTradingState.PAUSED
+        assert mode2.is_paused is True
+
+    def test_restart_after_resume_is_enabled(self):
+        """After operator resume + restart, state should be ENABLED."""
+        redis = _FakeRedis()
+        mode1 = ComplianceAutoMode(redis_client=redis)
+        mode1.pause("VIOLATION", "test", "system:compliance")
+        mode1.resume("Cleared", "admin")
+
+        mode2 = ComplianceAutoMode(redis_client=redis)
+        assert mode2.state == AutoTradingState.ENABLED
+
+    def test_redis_failure_on_init_defaults_to_paused(self):
+        """If Redis is unreachable on startup, default to PAUSED for safety."""
+        redis = _BrokenRedis()
+        mode = ComplianceAutoMode(redis_client=redis)
+        assert mode.state == AutoTradingState.PAUSED
+
+    def test_redis_failure_on_persist_does_not_crash(self):
+        """Write failure is best-effort — should not raise."""
+        redis = _FakeRedis()
+        mode = ComplianceAutoMode(redis_client=redis)
+        # Break redis after init
+        mode._redis = _BrokenRedis()  # noqa: SLF001
+        mode.pause("TEST", "test", "system:compliance")
+        assert mode.state == AutoTradingState.PAUSED  # state changed in-memory
 
     def test_compliance_result_fields(self):
         result = ComplianceResult(True, "OK", "info")
