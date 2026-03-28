@@ -64,4 +64,7 @@ def run() -> None:
 
 
 if __name__ == "__main__":
-    run()
+    try:
+        run()
+    except Exception as exc:
+        logger.exception("wolf15-worker regime recalibration: unhandled error in __main__: {}", exc)
