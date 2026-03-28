@@ -3,7 +3,11 @@ import { NextRequest, NextResponse } from "next/server";
 const COOKIE_NAME = "wolf15_session";
 const MAX_AGE = 60 * 60 * 8; // 8 hours
 
-// Simple in-memory rate limiter: max 10 requests per 60s per IP
+// Simple in-memory rate limiter: max 10 requests per 60s per IP.
+// SEC-02 NOTE: This is best-effort only in serverless deployments (Vercel).
+// Each cold start resets the Map. For production hardening, replace with
+// an external atomic counter (Upstash Redis + @upstash/ratelimit, or
+// Vercel KV). For a single-owner private dashboard this is acceptable.
 const RATE_WINDOW_MS = 60_000;
 const RATE_MAX = 10;
 const rateBuckets = new Map<string, { count: number; resetAt: number }>();

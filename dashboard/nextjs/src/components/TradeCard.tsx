@@ -26,15 +26,17 @@ interface TradeCardProps {
 
 export function TradeCard({ trade, onUpdate }: TradeCardProps) {
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const color = STATUS_COLOR[trade.status] ?? "var(--text-muted)";
 
   const handleConfirm = async () => {
     setLoading(true);
+    setError(null);
     try {
       await confirmTrade(trade.trade_id);
       onUpdate();
-    } catch {
-      // silently fail — user will see stale state
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to confirm trade");
     } finally {
       setLoading(false);
     }
@@ -42,11 +44,12 @@ export function TradeCard({ trade, onUpdate }: TradeCardProps) {
 
   const handleClose = async () => {
     setLoading(true);
+    setError(null);
     try {
       await closeTrade(trade.trade_id, "MANUAL_CLOSE");
       onUpdate();
-    } catch {
-      // silently fail
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to close trade");
     } finally {
       setLoading(false);
     }
@@ -183,33 +186,40 @@ export function TradeCard({ trade, onUpdate }: TradeCardProps) {
       )}
 
       {/* Actions */}
-      <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
-        {trade.status === TradeStatus.INTENDED && (
-          <button
-            className="btn btn-primary"
-            style={{ fontSize: 10, padding: "4px 10px" }}
-            onClick={handleConfirm}
-            disabled={loading}
-          >
-            CONFIRM
-          </button>
-        )}
-        {(trade.status === TradeStatus.OPEN ||
-          trade.status === TradeStatus.PENDING) && (
+      <div style={{ display: "flex", flexDirection: "column", gap: 4, flexShrink: 0, alignItems: "flex-end" }}>
+        <div style={{ display: "flex", gap: 6 }}>
+          {trade.status === TradeStatus.INTENDED && (
             <button
-              className="btn btn-ghost"
-              style={{
-                fontSize: 10,
-                padding: "4px 10px",
-                color: "var(--red)",
-                borderColor: "var(--red)",
-              }}
-              onClick={handleClose}
+              className="btn btn-primary"
+              style={{ fontSize: 10, padding: "4px 10px" }}
+              onClick={handleConfirm}
               disabled={loading}
             >
-              CLOSE
+              CONFIRM
             </button>
           )}
+          {(trade.status === TradeStatus.OPEN ||
+            trade.status === TradeStatus.PENDING) && (
+              <button
+                className="btn btn-ghost"
+                style={{
+                  fontSize: 10,
+                  padding: "4px 10px",
+                  color: "var(--red)",
+                  borderColor: "var(--red)",
+                }}
+                onClick={handleClose}
+                disabled={loading}
+              >
+                CLOSE
+              </button>
+            )}
+        </div>
+        {error && (
+          <span style={{ fontSize: 10, color: "var(--red)", maxWidth: 180, textAlign: "right" }}>
+            {error}
+          </span>
+        )}
       </div>
     </div>
   );

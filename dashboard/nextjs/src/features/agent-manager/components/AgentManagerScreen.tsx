@@ -1,99 +1,80 @@
 "use client";
 
 import Panel from "@/components/ui/Panel";
-import { useAgentControlState } from "@/hooks/useAgentControlState";
+import { useAgentManagerState } from "@/hooks/useAgentManagerState";
 import {
-  AgentHealthOverview,
-  AgentGrid,
-  AgentDetailPanel,
-  EAProfilesTab,
-  AgentLogsPanel,
-  AgentControlBar,
-} from "@/components/agent-control";
+  AgentManagerSummary,
+  AgentManagerGrid,
+  AgentManagerDetail,
+  AgentManagerActions,
+  AgentManagerProfiles,
+  AgentManagerEvents,
+} from "@/components/agent-manager";
 
-const TAB_ITEMS: Array<{ key: "overview" | "profiles" | "logs"; label: string }> = [
-  { key: "overview", label: "Overview" },
+const TAB_ITEMS: Array<{ key: "agents" | "profiles" | "events"; label: string }> = [
+  { key: "agents", label: "Overview" },
   { key: "profiles", label: "Profiles" },
-  { key: "logs", label: "Logs" },
+  { key: "events", label: "Logs" },
 ];
 
 export function AgentManagerScreen() {
   const {
-    status,
     agents,
-    logs,
+    profiles,
+    events,
+    summary,
     selectedAgent,
-    agentHealthSummary,
-    cooldownState,
     isLoading,
     selectedAgentId,
     activeTab,
-    setSelectedAgent,
+    filters,
+    setSelectedAgentId,
     setActiveTab,
-    handleRestart,
-    handleSetSafeMode,
-  } = useAgentControlState();
+    setFilters,
+    handleLock,
+    handleUnlock,
+    handleDelete,
+    handleToggleSafeMode,
+  } = useAgentManagerState();
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          flexWrap: "wrap",
-          gap: 12,
-        }}
-      >
-        <div>
-          <h1 style={{ fontSize: 18, fontWeight: 700, color: "var(--text-primary)", margin: 0 }}>
-            Agent Manager
-          </h1>
-          <p style={{ fontSize: 12, color: "var(--text-muted)", margin: "2px 0 0" }}>
-            EA instance management, health monitoring, and profile control
-          </p>
-        </div>
-
-        <AgentControlBar
-          safeMode={status?.safe_mode ?? false}
-          cooldownActive={cooldownState.active}
-          onRestart={handleRestart}
-          onSetSafeMode={handleSetSafeMode}
-        />
+      <div>
+        <h1 style={{ fontSize: 18, fontWeight: 700, color: "var(--text-primary)", margin: 0 }}>
+          Agent Manager
+        </h1>
+        <p style={{ fontSize: 12, color: "var(--text-muted)", margin: "2px 0 0" }}>
+          EA instance management, health monitoring, and profile control
+        </p>
       </div>
 
       <Panel
         glow={
-          agentHealthSummary.overallStatus === "healthy"
+          summary.healthPercent === 100
             ? "emerald"
-            : agentHealthSummary.overallStatus === "critical"
+            : summary.healthPercent < 50
               ? "orange"
               : "none"
         }
       >
-        <AgentHealthOverview
-          summary={agentHealthSummary}
-          safeMode={status?.safe_mode ?? false}
-          queueDepth={status?.queue_depth ?? 0}
-          queueMax={status?.queue_max ?? 200}
-        />
+        <AgentManagerSummary summary={summary} />
       </Panel>
 
       <div style={{ display: "flex", gap: 0, borderBottom: "1px solid var(--bg-border)" }}>
         {TAB_ITEMS.map((tab) => (
           <button
             key={tab.key}
-            onClick={() => setActiveTab(tab.key)}
+            onClick={() => setActiveTab(tab.key === "events" ? "agents" : tab.key)}
             style={{
               padding: "8px 18px",
               fontSize: 12,
               fontWeight: 600,
               letterSpacing: "0.04em",
-              color: activeTab === tab.key ? "var(--cyan, #06b6d4)" : "var(--text-muted)",
+              color: activeTab === (tab.key === "events" ? "agents" : tab.key) ? "var(--cyan, #06b6d4)" : "var(--text-muted)",
               background: "transparent",
               border: "none",
               borderBottom:
-                activeTab === tab.key
+                activeTab === (tab.key === "events" ? "agents" : tab.key)
                   ? "2px solid var(--cyan, #06b6d4)"
                   : "2px solid transparent",
               cursor: "pointer",
@@ -104,7 +85,7 @@ export function AgentManagerScreen() {
         ))}
       </div>
 
-      {activeTab === "overview" && (
+      {activeTab === "agents" && (
         <div style={{ display: "grid", gridTemplateColumns: "1fr 320px", gap: 16 }}>
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
             {isLoading ? (
@@ -119,27 +100,45 @@ export function AgentManagerScreen() {
                 Loading agents...
               </div>
             ) : (
-              <AgentGrid
+              <AgentManagerGrid
                 agents={agents}
                 selectedId={selectedAgentId}
-                onSelect={setSelectedAgent}
+                onSelect={setSelectedAgentId}
+                filters={filters}
+                onFiltersChange={setFilters}
               />
             )}
           </div>
 
-          <Panel>
-            <AgentDetailPanel agent={selectedAgent} />
-          </Panel>
+          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            <Panel>
+              <AgentManagerDetail agent={selectedAgent} />
+            </Panel>
+            <Panel>
+              <AgentManagerActions
+                agent={selectedAgent}
+                onLock={handleLock}
+                onUnlock={handleUnlock}
+                onToggleSafeMode={handleToggleSafeMode}
+                onDelete={handleDelete}
+              />
+            </Panel>
+          </div>
         </div>
       )}
 
       {activeTab === "profiles" && (
         <Panel>
-          <EAProfilesTab agents={agents} />
+          <AgentManagerProfiles
+            profiles={profiles}
+            agents={agents}
+            isLoading={isLoading}
+          />
         </Panel>
       )}
 
-      {activeTab === "logs" && (
+      {/* Logs rendered inline on overview tab — separate tab not needed with new API */}
+      {activeTab === "agents" && selectedAgentId && (
         <Panel>
           <div
             style={{
@@ -150,9 +149,12 @@ export function AgentManagerScreen() {
               marginBottom: 8,
             }}
           >
-            EA LOGS {selectedAgentId ? `— ${selectedAgentId}` : "— ALL AGENTS"}
+            EA LOGS — {selectedAgentId}
           </div>
-          <AgentLogsPanel logs={logs} />
+          <AgentManagerEvents
+            events={events ?? []}
+            isLoading={isLoading}
+          />
         </Panel>
       )}
     </div>

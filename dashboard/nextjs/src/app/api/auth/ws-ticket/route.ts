@@ -6,6 +6,13 @@ import { NextRequest, NextResponse } from "next/server";
  * Returns an auth token for WebSocket connections.
  * Reads the session cookie first, then falls back to the server-only
  * API_KEY env var. Neither value is exposed in the client JS bundle.
+ *
+ * SEC-03 NOTE: In owner mode, the session cookie == API_KEY, so this
+ * endpoint effectively returns the API_KEY as the WS token. Clients
+ * send it as a URL query param (?token=...) which is visible in browser
+ * DevTools and proxy logs. To harden: have the backend issue short-lived
+ * WS tickets (TTL ~30s) and only return those here. For a private
+ * single-owner dashboard this exposure is acceptable.
  */
 export async function GET(request: NextRequest): Promise<NextResponse> {
     // 1. Prefer session cookie (set by /api/set-session after login)
