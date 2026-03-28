@@ -28,6 +28,7 @@ from allocation.allocation_models import (
 )
 from allocation.signal_registry import SignalRegistry
 from config.pip_values import DEFAULT_PIP_VALUE, PipLookupError, get_pip_info
+from contracts.execution_queue_contract import ExecutionQueuePayload
 from infrastructure.tracing import inject_trace_context
 
 EXECUTION_STREAM = "execution:queue"
@@ -307,22 +308,26 @@ class AllocationService:
 
             rc = RedisClient()
             execution_plan = dict(signal_raw.get("execution_plan_json") or {})
-            plan = {
-                "request_id": request.request_id,
-                "signal_id": request.signal_id,
-                "account_id": account_id,
-                "symbol": signal_raw.get("pair") or signal_raw.get("symbol"),
-                "verdict": signal_raw.get("verdict"),
-                "entry_price": str(
-                    execution_plan.get("entry_price", signal_raw.get("entry_price", signal_raw.get("entry", "")))
+
+            # Validate through ExecutionQueuePayload contract before publishing.
+            payload = ExecutionQueuePayload(
+                request_id=request.request_id,
+                signal_id=request.signal_id,
+                account_id=account_id,
+                symbol=str(signal_raw.get("pair") or signal_raw.get("symbol") or ""),
+                verdict=str(signal_raw.get("verdict") or ""),
+                direction=str(signal_raw.get("direction") or ""),
+                entry_price=float(
+                    execution_plan.get("entry_price", signal_raw.get("entry_price", signal_raw.get("entry", 0)))
                 ),
-                "stop_loss": str(execution_plan.get("stop_loss", signal_raw.get("stop_loss", ""))),
-                "take_profit_1": str(execution_plan.get("take_profit_1", signal_raw.get("take_profit_1", ""))),
-                "order_type": execution_plan.get("order_type", signal_raw.get("order_type", "PENDING_ONLY")),
-                "execution_mode": execution_plan.get("execution_mode", signal_raw.get("execution_mode", "TP1_ONLY")),
-                "lot_size": str(lot_size),
-                "operator": request.operator,
-            }
+                stop_loss=float(execution_plan.get("stop_loss", signal_raw.get("stop_loss", 0))),
+                take_profit_1=float(execution_plan.get("take_profit_1", signal_raw.get("take_profit_1", 0))),
+                order_type=execution_plan.get("order_type", signal_raw.get("order_type", "PENDING_ONLY")),
+                execution_mode=execution_plan.get("execution_mode", signal_raw.get("execution_mode", "TP1_ONLY")),
+                lot_size=lot_size,
+                operator=request.operator,
+            )
+            plan = payload.to_stream_fields()
             inject_trace_context(plan)
             rc.xadd(EXECUTION_STREAM, plan)
         except Exception as exc:

@@ -31,6 +31,7 @@ def _get_or_create_metric(metric_cls: type, name: str, *args: Any, **kwargs: Any
 
 
 from config.logging_bootstrap import configure_loguru_logging  # noqa: E402
+from contracts.execution_queue_contract import ExecutionQueuePayload  # noqa: E402
 from core.health_probe import HealthProbe  # noqa: E402
 from execution.broker_executor import BrokerExecutor, ExecutionRequest, OrderAction  # noqa: E402
 from infrastructure.redis_client import RedisConfig, close_pool, get_client  # noqa: E402
@@ -228,23 +229,40 @@ class AsyncExecutionWorker:
     @staticmethod
     def _build_execution_request(msg: dict[str, str]) -> ExecutionRequest:
         try:
-            return ExecutionRequest(
-                action=OrderAction.PLACE,
-                account_id=str(msg["account_id"]),
-                symbol=str(msg["symbol"]),
-                lot_size=float(msg.get("lot_size", "0")),
-                order_type=str(msg.get("order_type", "BUY_LIMIT")),
+            # Validate incoming stream fields through Pydantic contract
+            payload = ExecutionQueuePayload(
+                request_id=msg.get("request_id", uuid.uuid4().hex),
+                signal_id=msg.get("signal_id", "N/A"),
+                account_id=msg["account_id"],
+                symbol=msg["symbol"],
+                verdict=msg.get("verdict", "EXECUTE"),
+                direction=msg.get("direction", "BUY"),
                 entry_price=float(msg.get("entry_price", "0")),
                 stop_loss=float(msg.get("stop_loss", "0")),
-                take_profit=float(msg.get("take_profit_1", msg.get("take_profit", "0"))),
-                request_id=str(msg.get("request_id", uuid.uuid4().hex)),
-                meta={
-                    "signal_id": str(msg.get("signal_id", "")),
-                    "execution_mode": str(msg.get("execution_mode", "TP1_ONLY")),
-                },
+                take_profit_1=float(msg.get("take_profit_1", msg.get("take_profit", "0"))),
+                lot_size=float(msg.get("lot_size", "0")),
+                order_type=msg.get("order_type", "PENDING_ONLY"),
+                execution_mode=msg.get("execution_mode", "TP1_ONLY"),
+                operator=msg.get("operator", "system"),
             )
-        except KeyError as exc:
-            raise ValueError(f"missing field: {exc.args[0]}") from exc
+        except (KeyError, ValueError) as exc:
+            raise ValueError(f"contract validation failed: {exc}") from exc
+
+        return ExecutionRequest(
+            action=OrderAction.PLACE,
+            account_id=payload.account_id,
+            symbol=payload.symbol,
+            lot_size=payload.lot_size,
+            order_type=payload.order_type,
+            entry_price=payload.entry_price,
+            stop_loss=payload.stop_loss,
+            take_profit=payload.take_profit_1,
+            request_id=payload.request_id,
+            meta={
+                "signal_id": payload.signal_id,
+                "execution_mode": payload.execution_mode,
+            },
+        )
 
     async def _update_runtime_metrics(self, redis_client: aioredis.Redis) -> None:
         pending_count = 0

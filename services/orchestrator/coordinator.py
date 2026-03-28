@@ -226,24 +226,27 @@ class OrchestratorCoordinator:
         execution_intent_id = f"ei_{uuid.uuid4().hex[:16]}"
 
         try:
+            from contracts.redis_stream_contracts import ExecutionIntentPayload  # noqa: PLC0415
             from infrastructure.stream_publisher import StreamPublisher  # noqa: PLC0415
+
+            payload = ExecutionIntentPayload(
+                execution_intent_id=execution_intent_id,
+                take_id=take_id,
+                signal_id=signal.get("signal_id", ""),
+                symbol=signal.get("symbol", ""),
+                direction=signal.get("direction", ""),
+                entry_price=str(signal.get("entry_price", "")),
+                stop_loss=str(signal.get("stop_loss", "")),
+                take_profit_1=str(signal.get("take_profit_1", "")),
+                account_id=account_state.get("account_id", ""),
+                firewall_id=firewall_id,
+                timestamp=datetime.now(UTC).isoformat(),
+            )
 
             publisher = StreamPublisher()
             await publisher.publish(
                 stream=EXECUTION_INTENTS,
-                fields={
-                    "execution_intent_id": execution_intent_id,
-                    "take_id": take_id,
-                    "signal_id": signal.get("signal_id", ""),
-                    "symbol": signal.get("symbol", ""),
-                    "direction": signal.get("direction", ""),
-                    "entry_price": str(signal.get("entry_price", "")),
-                    "stop_loss": str(signal.get("stop_loss", "")),
-                    "take_profit_1": str(signal.get("take_profit_1", "")),
-                    "account_id": account_state.get("account_id", ""),
-                    "firewall_id": firewall_id,
-                    "timestamp": datetime.now(UTC).isoformat(),
-                },
+                fields=payload.to_stream_fields(),
             )
         except Exception:
             logger.error("[Coordinator] Execution dispatch failed to stream", exc_info=True)

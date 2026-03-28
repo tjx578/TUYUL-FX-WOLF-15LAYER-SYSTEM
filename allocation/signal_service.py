@@ -8,6 +8,7 @@ from loguru import logger
 
 from allocation.signal_registry import SignalRegistry
 from config_loader import load_pairs
+from contracts.redis_stream_contracts import VerdictPayload
 from schemas.signal_contract import FROZEN_SIGNAL_CONTRACT_VERSION, SignalContract
 from schemas.validator import validate_signal_contract
 from storage.l12_cache import KEY_PREFIX as _L12_KEY_PREFIX
@@ -181,7 +182,6 @@ class SignalService:
 
         Zone: allocation/ — read-only aggregation, no execution side-effects.
         """
-        import contextlib
         import json as _json
 
         from infrastructure.redis_client import get_client  # avoid circular at module level
@@ -209,10 +209,11 @@ class SignalService:
             for symbol, raw in zip(symbols, raw_values, strict=True):
                 if not raw:
                     continue
-                verdict: dict[str, Any] | None = None
-                with contextlib.suppress(Exception):
-                    verdict = _json.loads(raw)
-                if not verdict:
+                try:
+                    verdict: dict[str, Any] = _json.loads(raw)
+                    VerdictPayload.model_validate(verdict)  # structural check
+                except Exception:
+                    logger.warning("[SignalService] verdict validation failed for {}, skipping", symbol)
                     continue
                 built = _build_signal_payload_from_verdict(symbol, verdict)
                 if built:
