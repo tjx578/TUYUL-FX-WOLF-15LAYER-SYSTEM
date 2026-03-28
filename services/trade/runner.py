@@ -13,7 +13,6 @@ Environment variables:
 from __future__ import annotations
 
 import asyncio
-import contextlib
 import os
 
 from loguru import logger
@@ -56,18 +55,21 @@ async def _main() -> None:
     exec_task = asyncio.create_task(exec_main(), name="ExecutionWorker")
     logger.info("Trade service running allocation + execution workers")
 
+    from startup.graceful_shutdown import GracefulShutdown  # noqa: PLC0415
+
+    gs = GracefulShutdown(drain_timeout=float(os.getenv("SHUTDOWN_DRAIN_SEC", "15")))
+    gs.register_cleanup("trade health probe", probe.stop)
+
+    worker_tasks: list[asyncio.Task[object]] = [alloc_task, exec_task]
     try:
-        await asyncio.gather(alloc_task, exec_task)
+        await asyncio.gather(*worker_tasks)
     except Exception:
         _workers_alive = False
         logger.exception("Trade service worker crashed — marking unhealthy")
         raise
     finally:
         _workers_alive = False
-        probe_task.cancel()
-        with contextlib.suppress(asyncio.CancelledError):
-            await probe_task
-        await probe.stop()
+        await gs.shutdown([alloc_task, exec_task, probe_task])
 
 
 if __name__ == "__main__":

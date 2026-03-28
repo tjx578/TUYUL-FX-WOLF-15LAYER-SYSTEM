@@ -37,10 +37,11 @@ from infrastructure.tracing import (
     instrument_requests,
     setup_tracer,
 )
+from ingest.service_runner import run_ingest_services
 from pipeline import WolfConstitutionalPipeline
 from startup.analysis_loop import analysis_loop
 from startup.candle_seeding import seed_candles_on_startup
-from ingest.service_runner import run_ingest_services
+from startup.graceful_shutdown import GracefulShutdown
 from startup.signal_handlers import install_signal_handlers
 from startup.task_supervisor import supervised_task
 from storage.startup import init_persistent_storage, shutdown_persistent_storage
@@ -295,16 +296,23 @@ async def main() -> None:
 
     logger.info(f"System initialized. Running {len(tasks)} concurrent tasks.")
 
+    # ── Graceful shutdown coordinator ──────────────────────────────
+    from infrastructure.redis_client import close_pool  # noqa: PLC0415
+
+    gs = GracefulShutdown(drain_timeout=float(os.getenv("SHUTDOWN_DRAIN_SEC", "15")))
+    gs.register_cleanup("health probe", _health_probe.stop)
+    gs.register_cleanup("persistent storage", shutdown_persistent_storage)
+    gs.register_cleanup("redis pool", close_pool)
+
     try:
         await asyncio.gather(*tasks)
     except asyncio.CancelledError:
-        logger.info("Tasks cancelled, shutting down...")
+        logger.info("Tasks cancelled, initiating graceful shutdown...")
     except Exception as exc:
         logger.error(f"Fatal error: {exc}")
         raise
     finally:
-        await _health_probe.stop()
-        await shutdown_persistent_storage()
+        await gs.shutdown(tasks)
         logger.info("System shutdown complete.")
 
 

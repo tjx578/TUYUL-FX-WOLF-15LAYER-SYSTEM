@@ -330,6 +330,12 @@ class StateManager:
                 self.process_once()
                 time.sleep(self._loop_sleep_sec)
         finally:
+            # Persist SHUTDOWN state so other services see orchestrator went down
+            try:
+                self.publish_state("SHUTDOWN")
+                logger.info("orchestrator published SHUTDOWN state to Redis")
+            except Exception as exc:
+                logger.error("orchestrator failed to publish SHUTDOWN state: {}", exc)
             self.close()
 
 

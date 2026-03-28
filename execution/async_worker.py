@@ -95,6 +95,7 @@ class AsyncExecutionWorker:
         self._executor = BrokerExecutor(
             ea_url=os.getenv("EA_BRIDGE_URL", "http://localhost:8081"),
         )
+        self._in_flight: list[asyncio.Task[None]] = []
 
     async def run(self) -> None:
         tracemalloc.start()
@@ -160,10 +161,14 @@ class AsyncExecutionWorker:
                                 ),
                             )
                     if tasks:
-                        await asyncio.gather(*tasks)
+                        # Track in-flight for graceful drain on shutdown
+                        self._in_flight = [t for t in self._in_flight if not t.done()]
+                        self._in_flight.extend(tasks)
+                        await asyncio.gather(*tasks, return_exceptions=False)
 
             except asyncio.CancelledError:
-                logger.info("Execution worker cancelled — shutting down")
+                logger.info("Execution worker cancelled — draining in-flight tasks")
+                await self._drain_in_flight()
                 raise
             except Exception as exc:
                 execution_errors_total.inc()
@@ -175,6 +180,15 @@ class AsyncExecutionWorker:
 
             await asyncio.sleep(backoff)
             backoff = min(backoff * 2, max_backoff)
+
+    async def _drain_in_flight(self) -> None:
+        """Wait for in-flight execution tasks to complete before shutdown."""
+        from startup.graceful_shutdown import GracefulShutdown  # noqa: PLC0415
+
+        gs = GracefulShutdown(
+            drain_timeout=float(os.getenv("SHUTDOWN_DRAIN_SEC", "15")),
+        )
+        await gs.drain_worker_tasks(self._in_flight, label="execution")
 
     async def _ensure_group(self, redis_client: aioredis.Redis) -> None:
         try:
@@ -296,31 +310,35 @@ async def _main() -> None:
     logger.info("Execution health probe started on :{}", health_port)
 
     restarts = 0
-    while restarts <= _MAX_RESTARTS:
-        try:
-            logger.info(
-                "[SUPERVISOR] Starting execution worker (attempt {}/{})",
-                restarts + 1,
-                _MAX_RESTARTS + 1,
-            )
-            worker = AsyncExecutionWorker()
-            await worker.run()
-            return  # clean exit
-        except asyncio.CancelledError:
-            logger.info("[SUPERVISOR] Execution worker cancelled")
-            return
-        except Exception as exc:
-            restarts += 1
-            logger.error(
-                "[SUPERVISOR] Execution worker crashed: {} (restart {}/{})",
-                exc,
-                restarts,
-                _MAX_RESTARTS,
-            )
-            if restarts > _MAX_RESTARTS:
-                logger.critical("[SUPERVISOR] Execution worker exceeded max restarts — giving up")
+    try:
+        while restarts <= _MAX_RESTARTS:
+            try:
+                logger.info(
+                    "[SUPERVISOR] Starting execution worker (attempt {}/{})",
+                    restarts + 1,
+                    _MAX_RESTARTS + 1,
+                )
+                worker = AsyncExecutionWorker()
+                await worker.run()
+                return  # clean exit
+            except asyncio.CancelledError:
+                logger.info("[SUPERVISOR] Execution worker cancelled")
                 return
-            await asyncio.sleep(_RESTART_COOLDOWN)
+            except Exception as exc:
+                restarts += 1
+                logger.error(
+                    "[SUPERVISOR] Execution worker crashed: {} (restart {}/{})",
+                    exc,
+                    restarts,
+                    _MAX_RESTARTS,
+                )
+                if restarts > _MAX_RESTARTS:
+                    logger.critical("[SUPERVISOR] Execution worker exceeded max restarts — giving up")
+                    return
+                await asyncio.sleep(_RESTART_COOLDOWN)
+    finally:
+        await close_pool()
+        await probe.stop()
 
 
 if __name__ == "__main__":
