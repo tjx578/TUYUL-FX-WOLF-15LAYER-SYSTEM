@@ -85,6 +85,37 @@
   --domain-risk:     #ff3d57;
   --domain-prop-firm:#5b8cff;
   --domain-analysis: #00b8a9;
+
+  /* ── EXTRA TEXT LEVELS ── */
+  --text-bright:   rgba(255, 255, 255, 0.97); /* t0 — max-brightness hero text */
+  --text-tertiary: rgba(118, 148, 178, 0.70); /* t3 — between secondary and muted */
+
+  /* ── SEMANTIC COLOR ALIASES ── */
+  /* Bridge verbose names used in lib/tokens.ts to canonical status vars above */
+  --accent-red:     var(--red);
+  --accent-amber:   var(--yellow);
+  --accent-emerald: var(--green);
+  --accent-cyan:    var(--cyan);
+  --accent-teal:    var(--teal);
+  --accent-blue:    var(--accent);
+  --accent-gold:    var(--gold);
+  --accent-purple:  var(--purple);
+  --accent-violet:  #8b5cf6;
+
+  /* ── GLOW FILL SURFACES (~7% opacity — subtle background tints) ── */
+  /* Distinct from --*-glow vars above (which are ~15% for borders/shadows) */
+  --glow-surface-red:   rgba(255,  61,  87, 0.07);
+  --glow-surface-green: rgba(  0, 230, 118, 0.07);
+  --glow-surface-amber: rgba(255, 215,  64, 0.07);
+  --glow-surface-cyan:  rgba(  0, 212, 255, 0.07);
+  --glow-surface-gold:  rgba(245, 166,  35, 0.07);
+
+  /* ── DIM BORDER TINTS (~20% opacity) ── */
+  --border-dim-red:   rgba(255,  61,  87, 0.20);
+  --border-dim-green: rgba(  0, 230, 118, 0.20);
+  --border-dim-amber: rgba(255, 215,  64, 0.20);
+  --border-dim-cyan:  rgba(  0, 212, 255, 0.20);
+  --border-dim-gold:  rgba(245, 166,  35, 0.20);
 }
 
 /* ── TAILWIND v4 THEME TOKENS ── */
@@ -107,10 +138,14 @@
   --color-accent-amber:   var(--yellow);
   --color-accent-red:     var(--red);
   --color-accent-orange:  var(--gold);
+  --color-accent-teal:    var(--teal);
+  --color-accent-purple:  var(--purple);
+  --color-accent-violet:  var(--accent-violet);
 
   /* Text colors */
   --color-text-primary:   var(--text-primary);
   --color-text-secondary: var(--text-secondary);
+  --color-text-tertiary:  var(--text-tertiary);
   --color-text-muted:     var(--text-muted);
 
   /* Border colors */

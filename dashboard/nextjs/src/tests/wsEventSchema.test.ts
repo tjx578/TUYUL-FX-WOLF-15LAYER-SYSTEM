@@ -40,23 +40,35 @@ describe("WsEventSchema", () => {
   });
 
   it("parses domain event types mapped from backend", () => {
-    const types = [
-      "SignalUpdated",
-      "TradeSnapshot",
-      "TradeUpdated",
-      "CandleSnapshot",
-      "CandleForming",
-      "EquityUpdated",
-    ] as const;
+    // Each type has a different required payload shape — provide correct fields per type.
+    const cases: Array<{ type: string; payload: Record<string, unknown> }> = [
+      { type: "SignalUpdated", payload: { symbol: "EURUSD" } },
+      { type: "TradeSnapshot", payload: { symbol: "EURUSD" } },
+      { type: "TradeUpdated", payload: { symbol: "EURUSD" } },
+      {
+        type: "CandleSnapshot",
+        payload: {
+          symbol: "EURUSD",
+          candles: [
+            { symbol: "EURUSD", timeframe: "M1", open: 1.1, high: 1.2, low: 1.0, close: 1.15, timestamp: 1700000000 },
+          ],
+        },
+      },
+      {
+        type: "CandleForming",
+        payload: { symbol: "EURUSD", timeframe: "M1", open: 1.1, high: 1.2, low: 1.0, close: 1.15, timestamp: 1700000000 },
+      },
+      {
+        type: "EquityUpdated",
+        payload: { timestamp: 1700000000, equity: 10000, balance: 9800, daily_dd: -1.5, total_dd: -2.0 },
+      },
+    ];
 
-    for (const t of types) {
-      const result = WsEventSchema.safeParse({
-        type: t,
-        payload: { symbol: "EURUSD" },
-      });
-      expect(result.success).toBe(true);
+    for (const { type, payload } of cases) {
+      const result = WsEventSchema.safeParse({ type, payload });
+      expect(result.success, `${type} should parse successfully`).toBe(true);
       if (result.success) {
-        expect(result.data.type).toBe(t);
+        expect(result.data.type).toBe(type);
       }
     }
   });

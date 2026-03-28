@@ -35,7 +35,8 @@ export interface SkipSignalRequest {
     reason?: string;
 }
 
-function isVerdictLike(v: unknown): v is L12Verdict {
+/** @internal — exported for unit testing only */
+export function isVerdictLike(v: unknown): v is L12Verdict {
     return (
         v != null &&
         typeof v === "object" &&
@@ -44,7 +45,8 @@ function isVerdictLike(v: unknown): v is L12Verdict {
     );
 }
 
-function normalizeVerdictResponse(
+/** @internal — exported for unit testing only */
+export function normalizeVerdictResponse(
     data: L12Verdict[] | Record<string, L12Verdict> | undefined
 ): L12Verdict[] {
     if (!data) return [];

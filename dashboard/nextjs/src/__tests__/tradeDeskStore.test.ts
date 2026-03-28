@@ -174,13 +174,15 @@ describe("Trade patching", () => {
     expect(state.openTrades[0].pnl).toBe(25);
   });
 
-  it("should not add trade if not already in the list", () => {
+  it("should insert a new trade into the correct list when not already present", () => {
     useTradeDeskStore.setState({ openTrades: [] });
 
     const newTrade = makeTrade({ trade_id: "T-NEW", status: "OPEN" });
     useTradeDeskStore.getState().patchTrade(newTrade);
 
-    expect(useTradeDeskStore.getState().openTrades).toHaveLength(0);
+    // patchTrade upserts: unknown trade is inserted into the list matching its status
+    expect(useTradeDeskStore.getState().openTrades).toHaveLength(1);
+    expect(useTradeDeskStore.getState().openTrades[0].trade_id).toBe("T-NEW");
   });
 });
 
