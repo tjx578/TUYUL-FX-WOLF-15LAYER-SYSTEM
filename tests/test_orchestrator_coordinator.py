@@ -7,7 +7,7 @@ Verifies the coordinator does NOT mutate verdicts, only routes flow.
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -131,7 +131,8 @@ class TestOrchestratorHappyPath:
         mock_firewall.evaluate.return_value = approved_firewall_result
         mock_take_service.transition.return_value = pending_take_response
 
-        result = await coordinator.process_take_signal("take_001", test_signal, test_account)
+        with patch("infrastructure.stream_publisher.StreamPublisher.publish", new_callable=AsyncMock):
+            result = await coordinator.process_take_signal("take_001", test_signal, test_account)
 
         assert result.verdict == "APPROVED"
         assert result.status == TakeSignalStatus.EXECUTION_SENT.value
@@ -162,7 +163,8 @@ class TestOrchestratorHappyPath:
         mock_take_service.transition.return_value = pending_take_response
 
         signal_copy = test_signal.copy()
-        await coordinator.process_take_signal("take_001", test_signal, test_account)
+        with patch("infrastructure.stream_publisher.StreamPublisher.publish", new_callable=AsyncMock):
+            await coordinator.process_take_signal("take_001", test_signal, test_account)
         assert test_signal == signal_copy, "Signal was mutated by coordinator!"
 
 
@@ -263,3 +265,39 @@ class TestOrchestrationResult:
         assert r.reason == ""
         assert r.firewall_id is None
         assert r.execution_intent_id is None
+
+
+# ── Dispatch failure ──────────────────────────────────────────────────────
+
+
+class TestDispatchFailure:
+    async def test_stream_publish_failure_does_not_transition_to_execution_sent(
+        self,
+        coordinator,
+        mock_take_service,
+        mock_firewall,
+        pending_take_response,
+        approved_firewall_result,
+        test_signal,
+        test_account,
+    ):
+        """If stream publish fails, EXECUTION_SENT must NOT be reached (SVC-BUG-04)."""
+        mock_take_service.get.return_value = pending_take_response
+        mock_firewall.evaluate.return_value = approved_firewall_result
+        mock_take_service.transition.return_value = pending_take_response
+
+        from unittest.mock import patch
+
+        with (
+            patch(
+                "infrastructure.stream_publisher.StreamPublisher.publish",
+                side_effect=ConnectionError("Redis down"),
+            ),
+            pytest.raises(ConnectionError, match="Redis down"),
+        ):
+            await coordinator.process_take_signal("take_001", test_signal, test_account)
+
+        # Only one transition (FIREWALL_APPROVED) — never EXECUTION_SENT
+        calls = mock_take_service.transition.call_args_list
+        statuses = [c.args[1] for c in calls]
+        assert TakeSignalStatus.EXECUTION_SENT not in statuses

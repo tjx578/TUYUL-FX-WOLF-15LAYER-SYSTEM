@@ -246,7 +246,8 @@ class OrchestratorCoordinator:
                 },
             )
         except Exception:
-            logger.warning("[Coordinator] Execution dispatch failed to stream", exc_info=True)
+            logger.error("[Coordinator] Execution dispatch failed to stream", exc_info=True)
+            raise
 
         return execution_intent_id
 
