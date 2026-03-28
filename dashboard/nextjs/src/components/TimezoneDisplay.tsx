@@ -4,7 +4,7 @@
 // TUYUL FX Wolf-15 — Timezone Display
 // ============================================================
 
-import { formatTime, formatDate, sessionLabel } from "@/lib/timezone";
+import { formatTime, formatLocalDate, sessionLabel } from "@/lib/timezone";
 import { useClock } from "@/hooks/useClock";
 
 interface TimezoneDisplayProps {
@@ -69,7 +69,7 @@ export function TimezoneDisplay({ compact = false }: TimezoneDisplayProps) {
       <span
         style={{ fontSize: 11, color: "var(--text-muted)", letterSpacing: "0.04em" }}
       >
-        {`${formatDate(now)} · ${session}`}
+        {`${formatLocalDate(now)} · ${session}`}
       </span>
     </div>
   );

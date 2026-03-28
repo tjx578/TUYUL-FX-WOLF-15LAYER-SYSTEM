@@ -2,13 +2,13 @@
  * Unit tests for lib/timezone.ts
  *
  * Tests:
- *  - formatTime, formatDate, formatDateTime
+ *  - formatTime, formatLocalDate, formatLocalDateTime
  *  - sessionLabel (ASIA / LONDON / NEW_YORK / OFF_SESSION)
  *  - msUntilNextHour returns a positive number
  */
 
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { formatTime, formatDate, formatDateTime, sessionLabel, msUntilNextHour, nowInTz, nowHourInTz } from "@/lib/timezone";
+import { formatTime, formatLocalDate, formatLocalDateTime, sessionLabel, msUntilNextHour, nowInTz, nowHourInTz } from "@/lib/timezone";
 
 afterEach(() => {
     vi.useRealTimers();
@@ -26,9 +26,9 @@ describe("formatTime", () => {
     });
 });
 
-describe("formatDate", () => {
+describe("formatLocalDate", () => {
     it("should format a timestamp as DD/Mon/YYYY", () => {
-        const result = formatDate(new Date("2025-06-15T10:30:45Z"), "UTC");
+        const result = formatLocalDate(new Date("2025-06-15T10:30:45Z"), "UTC");
         // en-US format: "Jun 15, 2025" or similar
         expect(result).toContain("Jun");
         expect(result).toContain("15");
@@ -36,21 +36,21 @@ describe("formatDate", () => {
     });
 });
 
-describe("formatDateTime", () => {
+describe("formatLocalDateTime", () => {
     it("should combine date and time", () => {
-        const result = formatDateTime(new Date("2025-06-15T10:30:45Z"), "UTC");
+        const result = formatLocalDateTime(new Date("2025-06-15T10:30:45Z"), "UTC");
         expect(result).toContain("Jun");
         expect(result).toContain("10:30:45");
     });
 
     it("should handle numeric timestamp input", () => {
         const ts = new Date("2025-06-15T10:30:45Z").getTime();
-        const result = formatDateTime(ts, "UTC");
+        const result = formatLocalDateTime(ts, "UTC");
         expect(result).toContain("Jun");
     });
 
     it("should handle string timestamp input", () => {
-        const result = formatDateTime("2025-06-15T10:30:45Z", "UTC");
+        const result = formatLocalDateTime("2025-06-15T10:30:45Z", "UTC");
         expect(result).toContain("Jun");
     });
 });

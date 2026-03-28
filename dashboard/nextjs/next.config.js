@@ -252,6 +252,10 @@ const _customCspOrigins = _extraCspConnectSrcOrigins(wsBase);
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+  // Exclude browser-only chart library from server bundle.
+  // lightweight-charts uses browser APIs (document/window) when createChart() is
+  // called; keeping it out of the server bundle reduces cold-start parse time.
+  serverExternalPackages: ["lightweight-charts"],
   // Pin the workspace / file-tracing root to this directory so Next.js does
   // not walk up to the monorepo root and pick up the wrong tsconfig / lockfile.
   outputFileTracingRoot: __dirname,

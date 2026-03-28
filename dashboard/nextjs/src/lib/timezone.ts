@@ -73,7 +73,14 @@ export function formatTime(ts: number | string | Date, tz = TZ): string {
   });
 }
 
-export function formatDate(ts: number | string | Date, tz = TZ): string {
+/**
+ * Format a timestamp as a short locale date in the configured timezone.
+ * e.g. "15 Jan, 2024"
+ *
+ * Named `formatLocalDate` to distinguish from `formatDate` in `@/lib/formatters`
+ * (which outputs UTC ISO-style strings for SSR-safe audit/log display).
+ */
+export function formatLocalDate(ts: number | string | Date, tz = TZ): string {
   const d = typeof ts === "object" ? ts : new Date(ts);
   return d.toLocaleDateString("en-US", {
     timeZone: tz,
@@ -83,9 +90,21 @@ export function formatDate(ts: number | string | Date, tz = TZ): string {
   });
 }
 
-export function formatDateTime(ts: number | string | Date, tz = TZ): string {
-  return `${formatDate(ts, tz)} ${formatTime(ts, tz)}`;
+/**
+ * Format a timestamp as a locale datetime string in the configured timezone.
+ * e.g. "15 Jan, 2024 14:30:45"
+ *
+ * Named `formatLocalDateTime` to distinguish from `formatDateTime` in `@/lib/formatters`
+ * (which outputs UTC ISO-style strings for SSR-safe audit/log display).
+ */
+export function formatLocalDateTime(ts: number | string | Date, tz = TZ): string {
+  return `${formatLocalDate(ts, tz)} ${formatTime(ts, tz)}`;
 }
+
+/** @deprecated Use formatLocalDate — avoids confusion with formatters.formatDate (UTC) */
+export const formatDate = formatLocalDate;
+/** @deprecated Use formatLocalDateTime — avoids confusion with formatters.formatDateTime (UTC) */
+export const formatDateTime = formatLocalDateTime;
 
 export function sessionLabel(): string {
   const h = nowHourInTz();
