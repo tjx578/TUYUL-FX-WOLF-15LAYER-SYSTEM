@@ -33,7 +33,7 @@ def parse_set_mode_command(raw_message: str) -> SetModeCommand:
     except json.JSONDecodeError as exc:
         raise CommandParseError("Invalid JSON payload for set_mode") from exc
 
-    command = str(payload.get("command") or payload.get("event") or "").strip().lower()
+    command = str(payload.get("command") or "").strip().lower()
     if command not in {RedisCommandName.SET_MODE.value, RedisCommandName.MODE_SET.value}:
         raise CommandParseError(f"Unsupported command: {command!r}")
 
