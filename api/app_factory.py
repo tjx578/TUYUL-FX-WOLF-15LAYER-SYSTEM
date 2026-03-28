@@ -483,6 +483,11 @@ def _register_health_routes(app: FastAPI) -> None:
         hb_age, hb_alive = await _read_heartbeat_age(request)
         engine_hb_age, engine_alive = await _read_heartbeat_age(request, key=HEARTBEAT_ENGINE)
 
+        # Orchestrator heartbeat
+        from state.redis_keys import HEARTBEAT_ORCHESTRATOR  # noqa: PLC0415
+
+        orch_hb_age, orch_alive = await _read_heartbeat_age(request, key=HEARTBEAT_ORCHESTRATOR)
+
         # Read split ingest health (process vs provider)
         ingest_health_state = None
         try:
@@ -517,6 +522,8 @@ def _register_health_routes(app: FastAPI) -> None:
             "producer_alive": hb_alive,
             "engine_heartbeat_age_seconds": engine_hb_age,
             "engine_alive": engine_alive,
+            "orchestrator_heartbeat_age_seconds": orch_hb_age,
+            "orchestrator_alive": orch_alive,
             "ingest_health": ingest_health_state,
             "router_boot_ok": len(router_boot_errors) == 0,
             "router_boot_errors": router_boot_errors,
@@ -544,11 +551,12 @@ def _register_health_routes(app: FastAPI) -> None:
 
         from api.allocation_router import _feed_freshness_snapshot  # noqa: PLC0415
         from state.data_freshness import FreshnessClass  # noqa: PLC0415
-        from state.redis_keys import HEARTBEAT_ENGINE  # noqa: PLC0415
+        from state.redis_keys import HEARTBEAT_ENGINE, HEARTBEAT_ORCHESTRATOR  # noqa: PLC0415
 
         feed_snapshot = await _feed_freshness_snapshot()
         hb_age, hb_alive = await _read_heartbeat_age(request)
         engine_hb_age, engine_alive = await _read_heartbeat_age(request, key=HEARTBEAT_ENGINE)
+        orch_hb_age, orch_alive = await _read_heartbeat_age(request, key=HEARTBEAT_ORCHESTRATOR)
         freshness_class = feed_snapshot.freshness_class
 
         _staleness = feed_snapshot.staleness_seconds
@@ -559,6 +567,8 @@ def _register_health_routes(app: FastAPI) -> None:
             "producer_heartbeat_age_seconds": hb_age,
             "engine_alive": engine_alive,
             "engine_heartbeat_age_seconds": engine_hb_age,
+            "orchestrator_alive": orch_alive,
+            "orchestrator_heartbeat_age_seconds": orch_hb_age,
         }
 
         reasons: list[str] = []
@@ -577,6 +587,10 @@ def _register_health_routes(app: FastAPI) -> None:
         # Engine heartbeat gate — analysis loop must be alive
         if not engine_alive:
             reasons.append("engine_heartbeat_dead")
+
+        # Orchestrator heartbeat gate — compliance loop must be alive
+        if not orch_alive:
+            reasons.append("orchestrator_heartbeat_dead")
 
         ready = len(reasons) == 0
         status_code = 200 if ready else 503

@@ -105,6 +105,7 @@ class AsyncAllocationWorker:
         self._service = AllocationService()
         self._sem = asyncio.Semaphore(self._cfg.max_concurrency)
         self._in_flight: list[asyncio.Task[None]] = []
+        self._orchestrator_alive: bool = True
 
     async def run(self) -> None:
         tracemalloc.start()
@@ -153,6 +154,7 @@ class AsyncAllocationWorker:
                         break  # Break inner loop → reconnect in outer loop
 
                     await self._update_runtime_metrics(redis_client)
+                    await self._check_orchestrator_health(redis_client)
 
                     if not response:
                         continue
@@ -256,6 +258,16 @@ class AsyncAllocationWorker:
                 span.set_attribute("redis.stream", stream_name)
                 span.set_attribute("redis.message_id", msg_id)
 
+                # Reject allocation if orchestrator compliance data is stale
+                if not self._orchestrator_alive:
+                    alloc_reject.labels(account_id="*", reason="orchestrator_heartbeat_dead").inc()
+                    logger.warning(
+                        "[AllocationWorker] Rejecting allocation msg_id={} — orchestrator heartbeat dead",
+                        msg_id,
+                    )
+                    await redis_client.xack(stream_name, self._cfg.group, msg_id)
+                    return
+
                 request = self._build_request(msg)
                 if request is None:
                     alloc_errors_total.inc()
@@ -340,6 +352,24 @@ class AsyncAllocationWorker:
 
         current_mem, _peak_mem = tracemalloc.get_traced_memory()
         process_memory.labels(service="allocation").set(float(current_mem))
+
+    async def _check_orchestrator_health(self, redis_client: aioredis.Redis) -> None:
+        """Validate orchestrator heartbeat and update internal flag + metrics."""
+        from state.cross_service_validator import validate_peer_health  # noqa: PLC0415
+
+        try:
+            summary = await validate_peer_health(redis_client, ("orchestrator",))
+            was_alive = self._orchestrator_alive
+            self._orchestrator_alive = summary.all_alive
+            if not summary.all_alive and was_alive:
+                logger.warning(
+                    "[AllocationWorker] Orchestrator heartbeat lost — compliance data may be stale | {}",
+                    summary.stale_peers or summary.missing_peers,
+                )
+            elif summary.all_alive and not was_alive:
+                logger.info("[AllocationWorker] Orchestrator heartbeat restored")
+        except Exception:
+            pass
 
 
 _MAX_RESTARTS = int(os.getenv("ALLOC_MAX_RESTARTS", "10"))

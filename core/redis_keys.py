@@ -91,6 +91,7 @@ HEARTBEAT_INGEST = f"{PREFIX}:heartbeat:ingest"
 HEARTBEAT_INGEST_PROCESS = f"{PREFIX}:heartbeat:ingest:process"
 HEARTBEAT_INGEST_PROVIDER = f"{PREFIX}:heartbeat:ingest:provider"
 HEARTBEAT_ENGINE = f"{PREFIX}:heartbeat:engine"
+HEARTBEAT_ORCHESTRATOR = f"{PREFIX}:heartbeat:orchestrator"
 ORCHESTRATOR_STATE = f"{PREFIX}:orchestrator:state"
 
 # Simplified engine heartbeat key (UTC ISO timestamp string) — written alongside

@@ -29,6 +29,7 @@ from state.redis_keys import (
     HEARTBEAT_INGEST,
     HEARTBEAT_INGEST_PROCESS,
     HEARTBEAT_INGEST_PROVIDER,
+    HEARTBEAT_ORCHESTRATOR,
 )
 
 __all__ = [
@@ -48,6 +49,7 @@ _INGEST_MAX_AGE_SEC = float(os.getenv("HEARTBEAT_INGEST_MAX_AGE_SEC", "30"))
 _ENGINE_MAX_AGE_SEC = float(os.getenv("HEARTBEAT_ENGINE_MAX_AGE_SEC", "60"))
 _INGEST_PROCESS_MAX_AGE_SEC = float(os.getenv("HEARTBEAT_INGEST_PROCESS_MAX_AGE_SEC", "30"))
 _INGEST_PROVIDER_MAX_AGE_SEC = float(os.getenv("HEARTBEAT_INGEST_PROVIDER_MAX_AGE_SEC", "30"))
+_ORCHESTRATOR_MAX_AGE_SEC = float(os.getenv("HEARTBEAT_ORCHESTRATOR_MAX_AGE_SEC", "90"))
 
 # Map service name → (redis_key, max_age)
 SERVICE_HEARTBEAT_CONFIG: dict[str, tuple[str, float]] = {
@@ -55,6 +57,7 @@ SERVICE_HEARTBEAT_CONFIG: dict[str, tuple[str, float]] = {
     "ingest_process": (HEARTBEAT_INGEST_PROCESS, _INGEST_PROCESS_MAX_AGE_SEC),
     "ingest_provider": (HEARTBEAT_INGEST_PROVIDER, _INGEST_PROVIDER_MAX_AGE_SEC),
     "engine": (HEARTBEAT_ENGINE, _ENGINE_MAX_AGE_SEC),
+    "orchestrator": (HEARTBEAT_ORCHESTRATOR, _ORCHESTRATOR_MAX_AGE_SEC),
 }
 
 

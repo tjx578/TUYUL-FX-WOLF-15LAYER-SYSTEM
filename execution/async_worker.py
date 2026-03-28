@@ -96,6 +96,7 @@ class AsyncExecutionWorker:
             ea_url=os.getenv("EA_BRIDGE_URL", "http://localhost:8081"),
         )
         self._in_flight: list[asyncio.Task[None]] = []
+        self._orchestrator_alive: bool = True
 
     async def run(self) -> None:
         tracemalloc.start()
@@ -143,6 +144,7 @@ class AsyncExecutionWorker:
                         break  # Break inner loop → reconnect in outer loop
 
                     await self._update_runtime_metrics(redis_client)
+                    await self._check_orchestrator_health(redis_client)
 
                     if not response:
                         continue
@@ -295,6 +297,24 @@ class AsyncExecutionWorker:
 
         current_mem, _peak_mem = tracemalloc.get_traced_memory()
         process_memory.labels(service="execution").set(float(current_mem))
+
+    async def _check_orchestrator_health(self, redis_client: aioredis.Redis) -> None:
+        """Validate orchestrator heartbeat and update internal flag + metrics."""
+        from state.cross_service_validator import validate_peer_health  # noqa: PLC0415
+
+        try:
+            summary = await validate_peer_health(redis_client, ("orchestrator",))
+            was_alive = self._orchestrator_alive
+            self._orchestrator_alive = summary.all_alive
+            if not summary.all_alive and was_alive:
+                logger.warning(
+                    "[ExecutionWorker] Orchestrator heartbeat lost — compliance data may be stale | {}",
+                    summary.stale_peers or summary.missing_peers,
+                )
+            elif summary.all_alive and not was_alive:
+                logger.info("[ExecutionWorker] Orchestrator heartbeat restored")
+        except Exception:
+            pass
 
 
 _MAX_RESTARTS = int(os.getenv("EXEC_MAX_RESTARTS", "10"))

@@ -16,7 +16,13 @@ from loguru import logger
 
 import core.health_probe
 from config.logging_bootstrap import configure_loguru_logging
-from core.redis_keys import ACCOUNT_STATE, KILL_SWITCH, ORCHESTRATOR_STATE, TRADE_RISK
+from core.redis_keys import (
+    ACCOUNT_STATE,
+    HEARTBEAT_ORCHESTRATOR,
+    KILL_SWITCH,
+    ORCHESTRATOR_STATE,
+    TRADE_RISK,
+)
 from services.orchestrator.compliance_guard import evaluate_compliance
 from services.orchestrator.execution_mode import ExecutionMode
 from services.orchestrator.redis_commands import CommandParseError, parse_set_mode_command
@@ -193,9 +199,13 @@ class StateManager:
             payload["details"] = details
 
         encoded = json.dumps(payload)
+        heartbeat_payload = json.dumps(
+            {"producer": ORCHESTRATOR_SOURCE, "ts": time.time()}
+        )
         pipe = self._redis.pipeline()
         pipe.publish(self._channel, encoded)
         pipe.set(self._state_key, encoded)
+        pipe.set(HEARTBEAT_ORCHESTRATOR, heartbeat_payload)
         pipe.execute()
 
     def _refresh_snapshots_from_redis(self) -> None:
