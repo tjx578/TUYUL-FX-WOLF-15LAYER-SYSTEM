@@ -231,6 +231,33 @@ class TestComplianceGuard:
         assert result.allowed is False
         assert result.code == "TRADE_RISK_TOO_HIGH"
 
+    def test_empty_trade_risk_with_limit_configured(self):
+        """Empty trade_risk must NOT pass when max_risk_per_trade_percent is set."""
+        result = evaluate_compliance(
+            {
+                "balance": 100_000,
+                "equity": 100_000,
+                "compliance_mode": True,
+                "max_risk_per_trade_percent": 2.0,
+            },
+            {},
+        )
+        assert result.allowed is False
+        assert result.code == "TRADE_RISK_MISSING"
+
+    def test_empty_trade_risk_without_limit_passes(self):
+        """Empty trade_risk passes when no max_risk_per_trade_percent configured."""
+        result = evaluate_compliance(
+            {
+                "balance": 100_000,
+                "equity": 100_000,
+                "compliance_mode": True,
+            },
+            {},
+        )
+        assert result.allowed is True
+        assert result.code == "OK"
+
     def test_healthy_account_passes(self):
         result = evaluate_compliance(
             {

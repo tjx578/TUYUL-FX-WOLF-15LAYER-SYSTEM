@@ -121,10 +121,17 @@ def evaluate_compliance(account_state: dict[str, Any], trade_risk: dict[str, Any
             {"open_trades": open_trades, "max_concurrent_trades": max_open_trades},
         )
 
-    if trade_risk:
+    max_risk_percent = _to_float(account_state.get("max_risk_per_trade_percent"), 0.0)
+    if max_risk_percent > 0:
+        if not trade_risk:
+            return ComplianceResult(
+                False,
+                "TRADE_RISK_MISSING",
+                "warning",
+                {"max_risk_per_trade_percent": max_risk_percent},
+            )
         risk_percent = _to_float(trade_risk.get("risk_percent"), 0.0)
-        max_risk_percent = _to_float(account_state.get("max_risk_per_trade_percent"), 5.0)
-        if max_risk_percent > 0 and risk_percent > max_risk_percent:
+        if risk_percent > max_risk_percent:
             return ComplianceResult(
                 False,
                 "TRADE_RISK_TOO_HIGH",
