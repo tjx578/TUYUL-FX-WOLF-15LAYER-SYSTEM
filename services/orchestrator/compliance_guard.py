@@ -41,7 +41,7 @@ def _to_bool(value: Any, default: bool = False) -> bool:
 
 
 def evaluate_compliance(account_state: dict[str, Any], trade_risk: dict[str, Any]) -> ComplianceResult:
-    if not account_state:
+    if not account_state or ("balance" not in account_state and "equity" not in account_state):
         return ComplianceResult(False, "ACCOUNT_STATE_MISSING", "critical")
 
     balance = _to_float(account_state.get("balance"), 0.0)
