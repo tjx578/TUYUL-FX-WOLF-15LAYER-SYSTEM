@@ -6,8 +6,6 @@ updated thresholds artifact.
 
 from __future__ import annotations
 
-import json
-from pathlib import Path
 from typing import Any
 
 from loguru import logger
@@ -18,6 +16,7 @@ from services.worker._job_utils import (
     load_json_payload,
     normalize_returns,
     publish_result,
+    read_json_artifact,
     utc_now_iso,
     write_json_artifact,
 )
@@ -45,10 +44,8 @@ def run() -> None:
         tuner.add_vr(vr)
     tuner.tune_and_update()
 
-    out_path = Path("config/thresholds.auto.json")
-    recalibrated: dict[str, Any] = {}
-    if out_path.exists():
-        recalibrated = json.loads(out_path.read_text(encoding="utf-8"))
+    # Read recalibrated thresholds — Redis primary, filesystem fallback.
+    recalibrated = read_json_artifact("config/thresholds.auto.json") or {}
 
     payload: dict[str, Any] = {
         "job": "regime_recalibration",

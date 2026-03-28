@@ -140,9 +140,12 @@ def test_regime_recalibration_runs_and_publishes(monkeypatch: MonkeyPatch) -> No
     def _artifact_writer(_path: str, _payload: dict[str, object]) -> Path:
         return Path("dummy.json")
 
+    def _artifact_reader(_path: str) -> dict[str, object] | None:
+        return {"sigma_VR": 0.1, "k": 0.5, "clamp": 0.9}
+
     monkeypatch.setattr(regime_recalibration, "load_json_payload", _payload_loader)
     monkeypatch.setattr(regime_recalibration, "RegimeAutoTuner", _FakeTuner)
-    monkeypatch.setattr(regime_recalibration, "Path", _FakePath)
+    monkeypatch.setattr(regime_recalibration, "read_json_artifact", _artifact_reader)
     monkeypatch.setattr(regime_recalibration, "publish_result", _capture_publish)
     monkeypatch.setattr(regime_recalibration, "write_json_artifact", _artifact_writer)
 
@@ -150,6 +153,7 @@ def test_regime_recalibration_runs_and_publishes(monkeypatch: MonkeyPatch) -> No
 
     assert published["job"] == "regime_recalibration"
     assert published["vr_count"] == 40
+    assert published["recalibrated"] == {"sigma_VR": 0.1, "k": 0.5, "clamp": 0.9}
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -267,3 +271,103 @@ def test_load_json_payload_falls_back_to_redis_when_inline_json_is_invalid(
     )
 
     assert payload == {"EURUSD": [0.1], "GBPUSD": [0.2]}
+
+
+# ═══════════════════════════════════════════════════════════════════
+# Artifact persistence: Redis-backed read/write round-trip
+# ═══════════════════════════════════════════════════════════════════
+
+
+class _FakeArtifactRedis:
+    """In-memory Redis stub for artifact tests."""
+
+    def __init__(self) -> None:
+        self.store: dict[str, str] = {}
+
+    def set(self, key: str, value: str) -> None:
+        self.store[key] = value
+
+    def get(self, key: str) -> str | None:
+        return self.store.get(key)
+
+
+def test_write_json_artifact_persists_to_redis(monkeypatch: MonkeyPatch, tmp_path: Path) -> None:
+    """write_json_artifact must write payload to Redis under a deterministic key."""
+    fake_redis = _FakeArtifactRedis()
+    from services.worker import _job_utils
+
+    monkeypatch.setattr(_job_utils, "get_redis_client", lambda: fake_redis)
+
+    rel = str(tmp_path / "snapshot.json")
+    _job_utils.write_json_artifact(rel, {"job": "test", "v": 42})
+
+    redis_key = f"WOLF15:ARTIFACT:{rel}"
+    assert redis_key in fake_redis.store
+    import json
+
+    stored = json.loads(fake_redis.store[redis_key])
+    assert stored["job"] == "test"
+    assert stored["v"] == 42
+
+
+def test_read_json_artifact_reads_from_redis(monkeypatch: MonkeyPatch) -> None:
+    """read_json_artifact must return data from Redis when available."""
+    import json
+
+    fake_redis = _FakeArtifactRedis()
+    fake_redis.store["WOLF15:ARTIFACT:config/thresholds.auto.json"] = json.dumps(
+        {"sigma_VR": 0.12, "k": 0.55}
+    )
+    from services.worker import _job_utils
+
+    monkeypatch.setattr(_job_utils, "get_redis_client", lambda: fake_redis)
+
+    result = _job_utils.read_json_artifact("config/thresholds.auto.json")
+    assert result is not None
+    assert result["sigma_VR"] == 0.12
+
+
+def test_read_json_artifact_falls_back_to_filesystem(monkeypatch: MonkeyPatch, tmp_path: Path) -> None:
+    """read_json_artifact must fall back to filesystem when Redis has no data."""
+    import json
+
+    fake_redis = _FakeArtifactRedis()  # empty
+    from services.worker import _job_utils
+
+    monkeypatch.setattr(_job_utils, "get_redis_client", lambda: fake_redis)
+
+    # Write a file that the fallback can find
+    artifact = tmp_path / "artifact.json"
+    artifact.write_text(json.dumps({"from": "disk"}), encoding="utf-8")
+
+    result = _job_utils.read_json_artifact(str(artifact))
+    assert result is not None
+    assert result["from"] == "disk"
+
+
+def test_read_json_artifact_returns_none_when_missing(monkeypatch: MonkeyPatch) -> None:
+    """read_json_artifact returns None when artifact is in neither Redis nor filesystem."""
+    fake_redis = _FakeArtifactRedis()
+    from services.worker import _job_utils
+
+    monkeypatch.setattr(_job_utils, "get_redis_client", lambda: fake_redis)
+
+    result = _job_utils.read_json_artifact("nonexistent/path.json")
+    assert result is None
+
+
+def test_write_then_read_artifact_round_trip(monkeypatch: MonkeyPatch, tmp_path: Path) -> None:
+    """Round-trip: write_json_artifact → read_json_artifact returns same data."""
+    fake_redis = _FakeArtifactRedis()
+    from services.worker import _job_utils
+
+    monkeypatch.setattr(_job_utils, "get_redis_client", lambda: fake_redis)
+
+    rel = str(tmp_path / "round_trip.json")
+    payload = {"job": "regime_recalibration", "sigma": 0.15}
+    _job_utils.write_json_artifact(rel, payload)
+
+    result = _job_utils.read_json_artifact(rel)
+    assert result is not None
+    assert result["job"] == "regime_recalibration"
+    assert result["sigma"] == 0.15

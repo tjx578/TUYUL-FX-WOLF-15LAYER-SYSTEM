@@ -57,6 +57,17 @@ class RegimeAutoTuner:
             "clamp": clamp,
             "timestamp": time.time(),
         }
-        with open(out_path, "w") as f:
-            json.dump(data, f, indent=2)
-        print(f"[RegimeAutoTuner] Updated: {data}")
+        try:
+            with open(out_path, "w") as f:
+                json.dump(data, f, indent=2)
+        except OSError:
+            pass  # best-effort filesystem write
+
+        # Persist to Redis so data survives ephemeral-filesystem restarts
+        try:
+            from storage.redis_client import RedisClient
+
+            redis_key = "WOLF15:ARTIFACT:config/thresholds.auto.json"
+            RedisClient().set(redis_key, json.dumps(data))
+        except Exception:
+            pass  # best-effort — Redis may not be available in all contexts

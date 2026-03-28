@@ -120,11 +120,58 @@ def normalize_return_matrix(values: Any) -> dict[str, list[float]]:
     return matrix
 
 
+def _artifact_redis_key(relative_path: str) -> str:
+    """Deterministic Redis key for a filesystem artifact path."""
+    return f"WOLF15:ARTIFACT:{relative_path}"
+
+
 def write_json_artifact(relative_path: str, payload: dict[str, Any]) -> Path:
+    """Persist artifact to Redis (primary) and filesystem (best-effort).
+
+    On ephemeral-filesystem deployments (Railway) the filesystem copy may be
+    lost on restart, so Redis is the durable store.
+    """
+    serialised = json.dumps(payload, indent=2)
+
+    # Primary: Redis
+    try:
+        get_redis_client().set(_artifact_redis_key(relative_path), serialised)
+    except Exception as exc:  # pragma: no cover
+        logger.warning("failed to persist artifact {} to redis: {}", relative_path, exc)
+
+    # Best-effort: filesystem
     out_path = Path(relative_path)
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    out_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    try:
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        out_path.write_text(serialised, encoding="utf-8")
+    except OSError as exc:  # pragma: no cover
+        logger.warning("failed to write artifact to filesystem {}: {}", relative_path, exc)
+
     return out_path
+
+
+def read_json_artifact(relative_path: str) -> dict[str, Any] | None:
+    """Read artifact from Redis first, filesystem fallback.
+
+    Returns ``None`` when the artifact cannot be found in either store.
+    """
+    redis_key = _artifact_redis_key(relative_path)
+    try:
+        raw = (get_redis_client().get(redis_key) or "").strip()
+        if raw:
+            return json.loads(raw)
+    except Exception as exc:  # pragma: no cover
+        logger.warning("failed to read artifact {} from redis: {}", relative_path, exc)
+
+    # Fallback: filesystem
+    fs_path = Path(relative_path)
+    if fs_path.exists():
+        try:
+            return json.loads(fs_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:  # pragma: no cover
+            logger.warning("failed to read artifact from filesystem {}: {}", relative_path, exc)
+
+    return None
 
 
 def publish_result(redis_key: str, payload: dict[str, Any]) -> None:
