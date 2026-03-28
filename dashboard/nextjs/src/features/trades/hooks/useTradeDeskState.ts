@@ -148,6 +148,14 @@ export function useTradeDeskLivePrices() {
     };
   }, []);
 
+  useEffect(() => {
+    void connect();
+    return () => {
+      if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
+      wsRef.current?.close();
+    };
+  }, [connect]);
+
   return pricesRef;
 }
 
