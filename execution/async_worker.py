@@ -16,16 +16,25 @@ from dataclasses import dataclass, replace
 from typing import Any, cast
 
 import redis.asyncio as aioredis
-from alembic.environment import Any  # noqa: F811
 from loguru import logger
-from prometheus_client import Counter, Gauge, Histogram, start_http_server
+from prometheus_client import REGISTRY, Counter, Gauge, Histogram, start_http_server
 from redis.exceptions import ResponseError
 
-from config.logging_bootstrap import configure_loguru_logging
-from core.health_probe import HealthProbe
-from execution.broker_executor import BrokerExecutor, ExecutionRequest, OrderAction
-from infrastructure.redis_client import RedisConfig, close_pool, get_client
-from infrastructure.tracing import (
+
+def _get_or_create_metric(metric_cls: type, name: str, *args: Any, **kwargs: Any) -> Any:
+    """Return existing metric or create new one (handles duplicate registration)."""
+    try:
+        return metric_cls(name, *args, **kwargs)
+    except ValueError:
+        # Already registered — return the existing collector
+        return REGISTRY._names_to_collectors.get(name)
+
+
+from config.logging_bootstrap import configure_loguru_logging  # noqa: E402
+from core.health_probe import HealthProbe  # noqa: E402
+from execution.broker_executor import BrokerExecutor, ExecutionRequest, OrderAction  # noqa: E402
+from infrastructure.redis_client import RedisConfig, close_pool, get_client  # noqa: E402
+from infrastructure.tracing import (  # noqa: E402
     extract_trace_carrier,
     extract_trace_context,
     instrument_asyncio,
@@ -38,22 +47,18 @@ EXEC_GROUP = "exec-group"
 
 configure_loguru_logging()
 
-execution_latency = Histogram(
-    "wolf_execution_latency_seconds",
-    "Order send latency",
-)
-orders_sent = Counter("wolf_orders_total", "Orders sent")
-orders_failed = Counter("wolf_orders_failed_total", "Orders failed")
-execution_errors_total = Counter(
-    "wolf_execution_errors_total",
-    "Execution worker errors",
-)
-redis_stream_lag = Gauge(
+execution_latency = _get_or_create_metric(Histogram, "wolf_execution_latency_seconds", "Order send latency")
+orders_sent = _get_or_create_metric(Counter, "wolf_orders_total", "Orders sent")
+orders_failed = _get_or_create_metric(Counter, "wolf_orders_failed_total", "Orders failed")
+execution_errors_total = _get_or_create_metric(Counter, "wolf_execution_errors_total", "Execution worker errors")
+redis_stream_lag = _get_or_create_metric(
+    Gauge,
     "wolf_redis_stream_lag",
     "Pending Redis stream messages per consumer group",
     ["stream", "group"],
 )
-process_memory = Gauge(
+process_memory = _get_or_create_metric(
+    Gauge,
     "wolf_process_memory_bytes",
     "Python memory tracked by tracemalloc",
     ["service"],

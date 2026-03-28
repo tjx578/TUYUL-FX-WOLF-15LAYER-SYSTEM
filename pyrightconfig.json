@@ -20,6 +20,7 @@
   ],
   "extraPaths": [
     ".",
+    "./config",
     "./analysis",
     "./infrastructure"
   ],

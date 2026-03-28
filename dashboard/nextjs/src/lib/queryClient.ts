@@ -12,11 +12,15 @@ export function createQueryClient() {
     queryCache: new QueryCache({
       onError: (error) => {
         // Global 401 handler: clear stale auth state and trigger session expiry.
-        // Guard: only fire once — skip if already marked expired.
+        // Guard: only fire when a real user session existed.
+        // In owner mode (user_id === "owner") the dashboard has no JWT —
+        // a 401 means missing API_KEY configuration, not an expired session.
         if (error instanceof HttpError && error.status === 401) {
           const session = useSessionStore.getState();
-          if (!session.expiredReason) {
-            useAuthStore.getState().clear();
+          const auth = useAuthStore.getState();
+          const hasRealSession = auth.user != null && auth.user.user_id !== "owner";
+          if (hasRealSession && !session.expiredReason) {
+            auth.clear();
             session.setExpiredReason("SESSION_EXPIRED");
           }
         }
