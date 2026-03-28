@@ -4,26 +4,33 @@ import { useEffect, useRef, useCallback } from "react";
 import { useTradeDeskStore } from "@/store/useTradeDeskStore";
 import { TradeDeskResponseSchema } from "../model/tradeDeskSchema";
 import type { TradeDeskTrade } from "../model/tradeDeskSchema";
-import { bearerHeader, getTransportToken } from "@/lib/auth";
+import { bearerHeader, fetchWsTicket } from "@/lib/auth";
+import { getWsBaseUrl } from "@/lib/env";
 import { createRafListBatcher } from "@/lib/realtime/rafBatcher";
+
+/** Build a full WebSocket URL pointing at the Railway backend. */
+function buildWsUrl(path: string, ticket: string): string {
+  const base = getWsBaseUrl();
+  const tokenQuery = ticket ? `?token=${encodeURIComponent(ticket)}` : "";
+  return `${base}${path}${tokenQuery}`;
+}
 
 // ─── useLiveTrades ───────────────────────────────────────────
 // Connects to /ws/trades and patches the TradeDeskStore on each event.
 
-export function useLiveTrades() {
+export function useLiveTrades(wsActiveRef?: React.MutableRefObject<boolean>) {
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const backoffRef = useRef(1000); // exponential backoff start 1s
   const patchTrade = useTradeDeskStore((s) => s.patchTrade);
   const removeTrade = useTradeDeskStore((s) => s.removeTrade);
   const setExecutionMismatch = useTradeDeskStore((s) => s.setExecutionMismatch);
 
-  const connect = useCallback(() => {
+  const connect = useCallback(async () => {
     if (typeof window === "undefined") return;
 
-    const token = getTransportToken() ?? "";
-    const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-    const tokenQuery = token ? `?token=${encodeURIComponent(token)}` : "";
-    const url = `${protocol}//${window.location.host}/ws/trades${tokenQuery}`;
+    const ticket = await fetchWsTicket() ?? "";
+    const url = buildWsUrl("/ws/trades", ticket);
 
     const ws = new WebSocket(url);
     wsRef.current = ws;
@@ -41,6 +48,10 @@ export function useLiveTrades() {
 
     ws.onmessage = (ev) => {
       try {
+        // Mark WS as active on first message — prevents REST from overwriting
+        if (wsActiveRef) wsActiveRef.current = true;
+        backoffRef.current = 1000; // reset backoff on successful message
+
         const msg = JSON.parse(ev.data);
         const eventType = msg.event_type ?? msg.type;
         const payload = msg.payload ?? msg;
@@ -69,7 +80,10 @@ export function useLiveTrades() {
     ws.onclose = () => {
       patchBatcher.dispose();
       wsRef.current = null;
-      reconnectTimerRef.current = setTimeout(connect, 3000);
+      // Exponential backoff: 1s, 2s, 4s, 8s ... max 30s
+      const delay = backoffRef.current;
+      backoffRef.current = Math.min(delay * 2, 30_000);
+      reconnectTimerRef.current = setTimeout(connect, delay);
     };
 
     ws.onerror = () => {
@@ -93,29 +107,27 @@ export function useTradeDeskLivePrices() {
   const pricesRef = useRef<Record<string, number>>({});
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const backoffRef = useRef(1000);
 
-  const connect = useCallback(() => {
+  const connect = useCallback(async () => {
     if (typeof window === "undefined") return;
 
-    const token = getTransportToken() ?? "";
-    const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-    const tokenQuery = token ? `?token=${encodeURIComponent(token)}` : "";
-    const url = `${protocol}//${window.location.host}/ws/prices${tokenQuery}`;
+    const ticket = await fetchWsTicket() ?? "";
+    const url = buildWsUrl("/ws/prices", ticket);
 
     const ws = new WebSocket(url);
     wsRef.current = ws;
 
     ws.onmessage = (ev) => {
       try {
+        backoffRef.current = 1000; // reset backoff on message
         const msg = JSON.parse(ev.data);
         const payload = msg.payload ?? msg;
         if (payload.symbol && typeof payload.price === "number") {
-          pricesRef.current = {
-            ...pricesRef.current,
-            [payload.symbol as string]: payload.price as number,
-          };
+          // Direct mutation on ref — avoids spread allocation on every tick
+          pricesRef.current[payload.symbol as string] = payload.price as number;
         } else if (payload.prices && typeof payload.prices === "object") {
-          pricesRef.current = { ...pricesRef.current, ...(payload.prices as Record<string, number>) };
+          Object.assign(pricesRef.current, payload.prices as Record<string, number>);
         }
       } catch {
         // Ignore
@@ -124,7 +136,9 @@ export function useTradeDeskLivePrices() {
 
     ws.onclose = () => {
       wsRef.current = null;
-      reconnectTimerRef.current = setTimeout(connect, 3000);
+      const delay = backoffRef.current;
+      backoffRef.current = Math.min(delay * 2, 30_000);
+      reconnectTimerRef.current = setTimeout(connect, delay);
     };
 
     ws.onerror = () => {
@@ -183,8 +197,8 @@ export function useTradeDeskState() {
     };
   }, [applyDeskSnapshot]);
 
-  // Start WS subscriptions (now using connectLiveUpdates with proper reconnect)
-  useLiveTrades();
+  // Start WS subscriptions — pass wsActiveRef so WS can flag REST as stale
+  useLiveTrades(wsActiveRef);
 
   return {
     activeTab: store.activeTab,

@@ -49,7 +49,45 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   // Validate JWT structure (header.payload.signature)
   const parts = token.split(".");
   if (parts.length !== 3) {
-    return NextResponse.json({ error: "malformed token" }, { status: 400 });
+    return NextResponse.json({ error: "must have 3 dot-separated segments" }, { status: 400 });
+  }
+
+  // Each segment must be at least 10 chars of valid base64url
+  const base64urlRe = /^[A-Za-z0-9_-]{10,}$/;
+  if (!base64urlRe.test(parts[0])) {
+    return NextResponse.json({ error: "invalid header segment" }, { status: 400 });
+  }
+  if (!base64urlRe.test(parts[1])) {
+    return NextResponse.json({ error: "invalid payload segment" }, { status: 400 });
+  }
+  if (!base64urlRe.test(parts[2])) {
+    return NextResponse.json({ error: "invalid signature segment" }, { status: 400 });
+  }
+
+  // Decode and validate header — must have "alg" field
+  try {
+    const header = JSON.parse(Buffer.from(parts[0], "base64url").toString());
+    if (!header || typeof header !== "object" || !header.alg) {
+      return NextResponse.json({ error: "header missing alg field" }, { status: 400 });
+    }
+  } catch {
+    return NextResponse.json({ error: "invalid header encoding" }, { status: 400 });
+  }
+
+  // Decode and validate payload — must be a JSON object
+  let payload: Record<string, unknown>;
+  try {
+    payload = JSON.parse(Buffer.from(parts[1], "base64url").toString());
+    if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+      return NextResponse.json({ error: "payload must be a JSON object" }, { status: 400 });
+    }
+  } catch {
+    return NextResponse.json({ error: "invalid payload encoding" }, { status: 400 });
+  }
+
+  // Check expiry if present
+  if (typeof payload.exp === "number" && payload.exp * 1000 < Date.now()) {
+    return NextResponse.json({ error: "token expired" }, { status: 400 });
   }
 
   const response = NextResponse.json({ ok: true });

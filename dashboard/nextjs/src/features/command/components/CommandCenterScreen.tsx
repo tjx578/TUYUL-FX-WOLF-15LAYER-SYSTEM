@@ -8,19 +8,22 @@
 //      Quick Actions, Stale Data Banner, Recent Changes
 // ============================================================
 
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useCommandCenterState } from "@/hooks/useCommandCenterState";
-import { TakeSignalForm } from "@/components/TakeSignalForm";
 import PageComplianceBanner from "@/components/feedback/PageComplianceBanner";
 import DataStreamDiagnostic from "@/components/feedback/DataStreamDiagnostic";
 import VerdictEmptyStatePanel from "@/components/feedback/VerdictEmptyStatePanel";
 import { VerdictCard } from "@/components/VerdictCard";
 import { SystemHealth } from "@/components/SystemHealth";
+import GlobalStatusStrip from "@/components/command-center/GlobalStatusStrip";
+import UrgencyRail from "@/components/command-center/UrgencyRail";
 import StaleDataBanner from "@/components/command-center/StaleDataBanner";
 import { useSessionLabel } from "@/hooks/useSessionLabel";
 import { formatTime } from "@/lib/timezone";
 import type { L12Verdict, Account, FeedStatus } from "@/types";
+import type { WsConnectionStatus } from "@/lib/realtime/connectionState";
 
 // ── Helpers ──────────────────────────────────────────────────
 
@@ -31,320 +34,7 @@ function statusColor(status: string) {
   return "var(--text-muted)";
 }
 
-// ── Sub-components ────────────────────────────────────────────
-
-interface GlobalStatusStripProps {
-  health: { status: string; feed_status?: FeedStatus } | undefined;
-  wsStatus: string;
-  mode: string;
-  executionState: string | undefined;
-  openTradeCount: number;
-}
-
-function feedStatusColor(status?: FeedStatus) {
-  if (status === "fresh") return "var(--green)";
-  if (status === "stale_preserved") return "var(--yellow)";
-  if (status === "no_producer") return "#ff9f0a";
-  if (status === "no_transport" || status === "config_error") return "var(--red)";
-  return "var(--text-muted)";
-}
-
-function GlobalStatusStrip({
-  health,
-  wsStatus,
-  mode,
-  executionState,
-  openTradeCount,
-}: GlobalStatusStripProps) {
-  const backendOk = health?.status === "ok";
-  const degraded = mode === "DEGRADED" || mode === "RECONNECTING_WS" || mode === "POLLING_REST" || mode === "STALE";
-
-  const modeLabel =
-    mode === "STALE" ? "STALE"
-      : mode === "POLLING_REST" ? "POLLING"
-        : mode === "RECONNECTING_WS" ? "RECONNECTING"
-          : degraded ? "DEGRADED"
-            : "NORMAL";
-
-  const modeColor =
-    mode === "STALE" ? "var(--red)"
-      : degraded ? "var(--yellow)"
-        : "var(--green)";
-
-  const items = [
-    {
-      label: "BACKEND",
-      value: health ? health.status.toUpperCase() : "UNKNOWN",
-      color: health ? statusColor(health.status) : "var(--text-faint)",
-      pulse: backendOk,
-    },
-    {
-      label: "LIVE FEED",
-      value: health?.feed_status?.toUpperCase() ?? wsStatus,
-      color: health?.feed_status ? feedStatusColor(health.feed_status) : wsStatus === "LIVE" ? "var(--green)" : (wsStatus === "RECONNECTING" || wsStatus === "CONNECTING" || wsStatus === "DEGRADED" || wsStatus === "STALE") ? "var(--yellow)" : "var(--red)",
-      pulse: health?.feed_status === "fresh" || wsStatus === "LIVE",
-    },
-    {
-      label: "ENGINE",
-      value: executionState ?? "—",
-      color: executionState === "SIGNAL_READY" ? "var(--accent)" : executionState === "EXECUTING" ? "var(--green)" : "var(--text-muted)",
-      pulse: false,
-    },
-    {
-      label: "OPEN TRADES",
-      value: String(openTradeCount),
-      color: openTradeCount > 0 ? "var(--green)" : "var(--text-muted)",
-      pulse: false,
-    },
-    {
-      label: "MODE",
-      value: modeLabel,
-      color: modeColor,
-      pulse: degraded,
-    },
-  ];
-
-  return (
-    <div
-      style={{
-        display: "flex",
-        alignItems: "center",
-        gap: 0,
-        borderRadius: "var(--radius-sm)",
-        border: "1px solid var(--border-default)",
-        overflow: "hidden",
-        background: "var(--bg-panel)",
-      }}
-      role="status"
-      aria-label="System status strip"
-    >
-      {items.map((item, i) => (
-        <div
-          key={item.label}
-          style={{
-            display: "flex",
-            flexDirection: "column",
-            alignItems: "center",
-            gap: 2,
-            padding: "8px 14px",
-            borderRight: i < items.length - 1 ? "1px solid var(--border-default)" : "none",
-            flex: 1,
-            minWidth: 0,
-          }}
-        >
-          <span
-            style={{
-              fontFamily: "var(--font-mono)",
-              fontSize: 8,
-              letterSpacing: "0.10em",
-              color: "var(--text-faint)",
-              fontWeight: 700,
-            }}
-          >
-            {item.label}
-          </span>
-          <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-            {item.pulse && (
-              <span
-                style={{
-                  width: 5,
-                  height: 5,
-                  borderRadius: "50%",
-                  background: item.color,
-                  animation: "pulse-dot 1.5s ease-in-out infinite",
-                  flexShrink: 0,
-                }}
-                aria-hidden="true"
-              />
-            )}
-            <span
-              style={{
-                fontFamily: "var(--font-mono)",
-                fontSize: 10,
-                fontWeight: 800,
-                color: item.color,
-                letterSpacing: "0.04em",
-              }}
-            >
-              {item.value}
-            </span>
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-interface UrgencyRailProps {
-  signals: L12Verdict[];
-  accounts: Account[];
-  onTake: (v: L12Verdict) => void;
-}
-
-function UrgencyRail({ signals, accounts, onTake }: UrgencyRailProps) {
-  if (signals.length === 0) return null;
-
-  return (
-    <div
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        gap: 6,
-        padding: "12px 16px",
-        borderRadius: "var(--radius-sm)",
-        border: "1px solid var(--accent)",
-        borderLeft: "3px solid var(--accent)",
-        background: "rgba(0,229,255,0.04)",
-      }}
-      role="region"
-      aria-label="Actionable signals urgency rail"
-    >
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 8,
-          marginBottom: 4,
-        }}
-      >
-        <span
-          style={{
-            width: 7,
-            height: 7,
-            borderRadius: "50%",
-            background: "var(--accent)",
-            animation: "pulse-dot 1s ease-in-out infinite",
-            flexShrink: 0,
-          }}
-          aria-hidden="true"
-        />
-        <span
-          style={{
-            fontFamily: "var(--font-mono)",
-            fontSize: 9,
-            fontWeight: 800,
-            color: "var(--accent)",
-            letterSpacing: "0.10em",
-          }}
-        >
-          ACTIONABLE SIGNALS — TOP {signals.length}
-        </span>
-        <Link
-          href="/signals"
-          style={{
-            marginLeft: "auto",
-            fontFamily: "var(--font-mono)",
-            fontSize: 9,
-            color: "var(--text-muted)",
-            textDecoration: "none",
-            padding: "2px 8px",
-            border: "1px solid var(--border-default)",
-            borderRadius: 3,
-          }}
-        >
-          SIGNAL BOARD →
-        </Link>
-      </div>
-
-      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-        {signals.map((sig) => (
-          <div
-            key={sig.symbol}
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 10,
-              padding: "7px 10px",
-              borderRadius: "var(--radius-sm)",
-              background: "rgba(0,0,0,0.2)",
-              border: "1px solid var(--border-default)",
-            }}
-          >
-            <span
-              style={{
-                fontFamily: "var(--font-mono)",
-                fontSize: 12,
-                fontWeight: 800,
-                color: "var(--text-primary)",
-                minWidth: 72,
-              }}
-            >
-              {sig.symbol}
-            </span>
-
-            <span
-              className={
-                String(sig.verdict).includes("BUY")
-                  ? "badge badge-cyan"
-                  : "badge badge-gold"
-              }
-              style={{ fontSize: 9 }}
-            >
-              {sig.verdict}
-            </span>
-
-            <span
-              style={{
-                fontFamily: "var(--font-mono)",
-                fontSize: 10,
-                color: "var(--text-muted)",
-              }}
-            >
-              CONF {((sig.confidence ?? 0) * 100).toFixed(0)}%
-            </span>
-
-            {sig.risk_reward_ratio && (
-              <span
-                style={{
-                  fontFamily: "var(--font-mono)",
-                  fontSize: 10,
-                  color: "var(--text-secondary)",
-                }}
-              >
-                RR {sig.risk_reward_ratio.toFixed(1)}
-              </span>
-            )}
-
-            {sig.expires_at && (
-              <span
-                style={{
-                  fontFamily: "var(--font-mono)",
-                  fontSize: 9,
-                  color: "var(--yellow)",
-                  marginLeft: "auto",
-                }}
-              >
-                EXP {formatTime(sig.expires_at * 1000).slice(0, 5)}
-              </span>
-            )}
-
-            <button
-              onClick={() => onTake(sig)}
-              disabled={accounts.length === 0}
-              style={{
-                padding: "4px 14px",
-                borderRadius: "var(--radius-sm)",
-                background: "var(--accent)",
-                color: "var(--bg-primary)",
-                border: "none",
-                fontSize: 10,
-                fontWeight: 800,
-                letterSpacing: "0.08em",
-                cursor: accounts.length === 0 ? "not-allowed" : "pointer",
-                fontFamily: "var(--font-mono)",
-                opacity: accounts.length === 0 ? 0.4 : 1,
-                flexShrink: 0,
-              }}
-              aria-label={`Take signal for ${sig.symbol}`}
-            >
-              TAKE
-            </button>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
+// ── Sub-components (CriticalRiskStrip, EventBanner, KpiCard kept inline — DEBT-03) ──
 
 interface CriticalRiskStripProps {
   breached: { account_id: string; circuit_breaker: boolean; daily_dd_percent?: number; total_dd_percent?: number }[];
@@ -634,6 +324,13 @@ export function CommandCenterScreen() {
 
   const [selectedVerdict, setSelectedVerdict] = useState<L12Verdict | null>(null);
   const liveSession = useSessionLabel();
+  const router = useRouter();
+
+  // GAP-02: Navigate to Signal Board with signal pre-selected (single take-signal flow)
+  const handleTakeFromRail = useCallback((verdict: L12Verdict) => {
+    const signalRef = `${verdict.symbol}_${verdict.timestamp ?? ""}`;
+    router.push(`/signals?select=${encodeURIComponent(signalRef)}`);
+  }, [router]);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
@@ -670,10 +367,11 @@ export function CommandCenterScreen() {
       {/* 1. Global Status Strip */}
       <GlobalStatusStrip
         health={health}
-        wsStatus={wsStatus}
+        wsStatus={wsStatus as WsConnectionStatus}
         mode={isSystemDegraded ? "DEGRADED" : "NORMAL"}
         executionState={execution?.state}
         openTradeCount={activeTrades.length}
+        isStale={isStale}
       />
 
       {/* 2. Stale / degraded banner */}
@@ -719,11 +417,11 @@ export function CommandCenterScreen() {
         />
       )}
 
-      {/* 6. Urgency Rail — top 3 actionable signals */}
+      {/* 6. Urgency Rail — top 3 actionable signals → navigates to Signal Board */}
       <UrgencyRail
         signals={topActionableSignals}
         accounts={accounts}
-        onTake={setSelectedVerdict}
+        onTake={handleTakeFromRail}
       />
 
       {/* 7. KPI bar */}
@@ -854,7 +552,7 @@ export function CommandCenterScreen() {
                   key={`${v.symbol}-${v.timestamp}`}
                   verdict={v}
                   selected={selectedVerdict?.symbol === v.symbol}
-                  onTake={() => setSelectedVerdict(v)}
+                  onTake={() => handleTakeFromRail(v)}
                   onSkip={() => setSelectedVerdict(null)}
                 />
               ))}
@@ -1122,38 +820,7 @@ export function CommandCenterScreen() {
         </div>
       </div>
 
-      {/* ── TakeSignalForm modal ── */}
-      {selectedVerdict && accounts.length > 0 && (
-        <div
-          role="dialog"
-          aria-modal="true"
-          aria-label="Take signal form"
-          style={{
-            position: "fixed",
-            inset: 0,
-            background: "var(--bg-overlay)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            zIndex: 100,
-            padding: 16,
-            backdropFilter: "blur(4px)",
-          }}
-          onClick={() => setSelectedVerdict(null)}
-        >
-          <div
-            className="animate-fade-in"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <TakeSignalForm
-              verdict={selectedVerdict}
-              accounts={accounts}
-              onDone={() => setSelectedVerdict(null)}
-              onCancel={() => setSelectedVerdict(null)}
-            />
-          </div>
-        </div>
-      )}
+      {/* TakeSignalForm removed (GAP-02) — signals are now taken from Signal Board */}
     </div>
   );
 }

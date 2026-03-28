@@ -5,7 +5,8 @@
 // Slide-out panel showing full account details + eligibility.
 // ============================================================
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import type { Account } from "@/types";
 import { archiveAccount } from "../api/accounts.api";
 import { usePropFirmStatus, usePropFirmPhase } from "@/shared/api/propfirm.api";
@@ -31,23 +32,23 @@ function DetailRow({ label, value, color }: { label: string; value: string; colo
 }
 
 export default function AccountDetailDrawer({ account, onClose }: AccountDetailDrawerProps) {
+    const queryClient = useQueryClient();
     const { data: propStatus } = usePropFirmStatus(account.prop_firm ? account.account_id : "");
     const { data: propPhase } = usePropFirmPhase(account.prop_firm ? account.account_id : "");
     const [archiving, setArchiving] = useState(false);
     const [archived, setArchived] = useState(false);
+    const [showArchiveConfirm, setShowArchiveConfirm] = useState(false);
 
     const handleArchive = async () => {
-        if (!window.confirm("Archive this account? This cannot be undone.")) return;
         setArchiving(true);
         try {
             await archiveAccount(account.account_id, "ACCOUNT_ARCHIVE_FROM_UI");
             setArchived(true);
-            setTimeout(() => {
-                onClose();
-                window.location.reload(); // Or trigger refresh via SWR/React Query if available
-            }, 800);
-        } catch (err) {
-            alert("Failed to archive account");
+            // React Query invalidation instead of page reload
+            await queryClient.invalidateQueries({ queryKey: ["/api/v1/accounts"] });
+            setTimeout(() => onClose(), 800);
+        } catch {
+            // Archive failure — confirmation UI stays visible for retry
         } finally {
             setArchiving(false);
         }
@@ -117,14 +118,50 @@ export default function AccountDetailDrawer({ account, onClose }: AccountDetailD
                             <button
                                 className="btn btn-danger"
                                 style={{ fontSize: 11, marginTop: 8, minWidth: 90 }}
-                                onClick={handleArchive}
-                                disabled={archiving}
+                                onClick={() => setShowArchiveConfirm(true)}
+                                disabled={archiving || showArchiveConfirm}
                             >
                                 {archiving ? "Archiving..." : "Archive"}
                             </button>
                         )}
                     </div>
                 </div>
+
+                {/* Inline archive confirmation (replaces window.confirm) */}
+                {showArchiveConfirm && (
+                    <div
+                        style={{
+                            border: "1px solid rgba(239,68,68,0.3)",
+                            borderRadius: "var(--radius-sm, 6px)",
+                            background: "rgba(239,68,68,0.06)",
+                            padding: "12px 14px",
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 12,
+                            flexWrap: "wrap",
+                        }}
+                    >
+                        <span style={{ fontSize: 12, color: "var(--red, #ef4444)", fontWeight: 600, flex: 1 }}>
+                            Archive {account.account_name}? This cannot be undone.
+                        </span>
+                        <button
+                            className="btn btn-danger"
+                            style={{ fontSize: 10, padding: "5px 14px", fontWeight: 800 }}
+                            onClick={handleArchive}
+                            disabled={archiving}
+                        >
+                            {archiving ? "ARCHIVING..." : "CONFIRM ARCHIVE"}
+                        </button>
+                        <button
+                            className="btn btn-ghost"
+                            style={{ fontSize: 10, padding: "5px 14px" }}
+                            onClick={() => setShowArchiveConfirm(false)}
+                            disabled={archiving}
+                        >
+                            CANCEL
+                        </button>
+                    </div>
+                )}
 
                 {/* Readiness */}
                 {account.readiness_score != null && (

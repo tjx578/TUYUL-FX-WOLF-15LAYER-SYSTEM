@@ -29,6 +29,7 @@ import {
   YAxis,
 } from "recharts";
 import { motion } from "framer-motion";
+import { useId } from "react";
 
 // ─── Props ────────────────────────────────────────────────
 interface EquityChartProps {
@@ -70,6 +71,9 @@ export default function EquityChart({
   title = "EQUITY CURVE",
   unit,
 }: EquityChartProps) {
+  const instanceId = useId();
+  const gradientId = `equityGrad-${instanceId.replace(/:/g, "")}`;
+
   // Zip labels + values into recharts-friendly [{label, value}]
   const chartData = labels.map((label, i) => ({
     label,
@@ -83,10 +87,10 @@ export default function EquityChart({
   const delta = first !== 0 ? ((last - first) / first) * 100 : 0;
   const isUp = delta >= 0;
 
-  const lineColor   = isUp ? "#00F5A0" : "#FF4D4F";
-  const gradColorHi = isUp ? "rgba(0,245,160,0.4)"  : "rgba(255,77,79,0.4)";
+  const lineColor = isUp ? "#00F5A0" : "#FF4D4F";
+  const gradColorHi = isUp ? "rgba(0,245,160,0.4)" : "rgba(255,77,79,0.4)";
   const gradColorLo = isUp ? "rgba(0,245,160,0.02)" : "rgba(255,77,79,0.02)";
-  const glowColor   = isUp ? "rgba(0,245,160,0.25)" : "rgba(255,77,79,0.20)";
+  const glowColor = isUp ? "rgba(0,245,160,0.25)" : "rgba(255,77,79,0.20)";
 
   return (
     <motion.div
@@ -150,8 +154,8 @@ export default function EquityChart({
             >
               <defs>
                 {/* Unique gradient id so multiple charts on the page don't conflict */}
-                <linearGradient id="equityGrad" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%"   stopColor={lineColor} stopOpacity={0.4} />
+                <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor={lineColor} stopOpacity={0.4} />
                   <stop offset="100%" stopColor={lineColor} stopOpacity={0.02} />
                 </linearGradient>
               </defs>
@@ -196,7 +200,7 @@ export default function EquityChart({
                 dataKey="value"
                 stroke={lineColor}
                 strokeWidth={2}
-                fill="url(#equityGrad)"
+                fill={`url(#${gradientId})`}
                 dot={false}
                 activeDot={{
                   r: 4,

@@ -35,6 +35,15 @@ export interface SkipSignalRequest {
     reason?: string;
 }
 
+function isVerdictLike(v: unknown): v is L12Verdict {
+    return (
+        v != null &&
+        typeof v === "object" &&
+        "symbol" in (v as Record<string, unknown>) &&
+        ("verdict" in (v as Record<string, unknown>) || "confidence" in (v as Record<string, unknown>))
+    );
+}
+
 function normalizeVerdictResponse(
     data: L12Verdict[] | Record<string, L12Verdict> | undefined
 ): L12Verdict[] {
@@ -48,10 +57,16 @@ function normalizeVerdictResponse(
     }
     // Handle wrapped responses like { data: [...], status: "ok", count: N }
     if ("data" in obj && Array.isArray(obj.data)) return obj.data as L12Verdict[];
-    // Last resort: only use Object.values if every value looks like a verdict object
+    // Handle { results: [...] } wrapper
+    if ("results" in obj && Array.isArray(obj.results)) return obj.results as L12Verdict[];
+    // Last resort: only use Object.values if every value looks like a verdict (has symbol + verdict/confidence)
     const values = Object.values(obj);
-    if (values.length > 0 && values.every((v) => v && typeof v === "object" && "symbol" in (v as object))) {
+    if (values.length > 0 && values.every(isVerdictLike)) {
         return values as L12Verdict[];
+    }
+    // Unknown shape — warn and return empty to avoid corrupt data
+    if (values.length > 0) {
+        console.warn("[verdicts.api] Unknown verdict response shape, returning empty array:", Object.keys(obj));
     }
     return [];
 }
