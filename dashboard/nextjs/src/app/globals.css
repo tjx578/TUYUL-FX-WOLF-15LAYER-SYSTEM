@@ -1,8 +1,11 @@
-@import "tailwindcss";
+@import "tailwindcss/preflight" layer(base);
+@import "tailwindcss/theme" layer(theme);
 
 /* ── Design system layers (tokens → primitives → shell) ── */
 @import "../shared/styles/tokens.css";
 @import "../shared/styles/primitives.css";
+
+@import "tailwindcss/utilities" layer(utilities);
 
 /* ============================================================
    WOLF-15 TERMINAL — SHELL RULES
