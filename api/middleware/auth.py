@@ -59,7 +59,11 @@ def _is_strong_jwt_secret(secret: str) -> bool:
 
 
 if not _is_strong_jwt_secret(JWT_SECRET):
-    logger.error(
+    # Downgraded from error → warning.  Services that only use API-key
+    # auth (e.g. ingest) don't need JWT_SECRET at all.  Actual JWT
+    # operations (create_token, decode_token) already fail closed when
+    # the secret is missing, so this log is purely informational.
+    logger.warning(
         "DASHBOARD_JWT_SECRET is missing/weak. "
         "JWT issuance/verification will fail closed until a strong secret (>=32 chars) is configured."
     )
