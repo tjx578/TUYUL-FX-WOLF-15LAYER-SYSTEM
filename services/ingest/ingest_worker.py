@@ -19,13 +19,13 @@ import os
 
 from loguru import logger
 
+from config.logging_bootstrap import configure_loguru_logging
+
+configure_loguru_logging()
+
 
 async def _bootstrap_and_run() -> None:
     """Start health probe first, then import and run ingest service."""
-    from config.logging_bootstrap import configure_loguru_logging
-
-    configure_loguru_logging()
-
     from services.shared.health_probe_launcher import start_probe_as_task
 
     port = int(os.getenv("INGEST_HEALTH_PORT") or os.getenv("PORT", "8082"))
@@ -71,9 +71,6 @@ async def _bootstrap_and_run() -> None:
 
 
 def run() -> None:
-    from config.logging_bootstrap import configure_loguru_logging
-
-    configure_loguru_logging()
     logger.info("Starting wolf15-ingest service")
     asyncio.run(_bootstrap_and_run())
 
