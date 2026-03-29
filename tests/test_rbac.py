@@ -180,6 +180,27 @@ class TestUserContext:
         assert user.has_permission(Permission.ALL)
         assert user.has_permission(Permission.TRADE_CLOSE)
 
+    def test_is_dataclass_with_slots(self) -> None:
+        import dataclasses
+
+        assert dataclasses.is_dataclass(UserContext)
+        assert hasattr(UserContext, "__slots__")
+        assert "sub" in UserContext.__slots__
+        assert "role" in UserContext.__slots__
+        user = self._make_user()
+        assert not hasattr(user, "__dict__")
+
+    def test_auto_eq(self) -> None:
+        a = UserContext(sub="u", role=Role.VIEWER, scopes=frozenset(), auth_method="jwt", raw_payload={})
+        b = UserContext(sub="u", role=Role.VIEWER, scopes=frozenset(), auth_method="jwt", raw_payload={})
+        assert a == b
+
+    def test_auto_repr(self) -> None:
+        user = self._make_user()
+        text = repr(user)
+        assert "UserContext" in text
+        assert "test-user" in text
+
 
 # ── Completeness check ───────────────────────────────────────────────────────
 

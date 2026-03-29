@@ -15,6 +15,7 @@ Zone: execution — safety authority, prevents duplicate semantics.
 from __future__ import annotations
 
 import os
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
@@ -31,24 +32,15 @@ from execution.execution_intent import (
 _PENDING_TIMEOUT_SEC = int(os.getenv("EXECUTION_PENDING_TIMEOUT_SEC", "300"))
 
 
+@dataclass(slots=True)
 class ReconciliationResult:
     """Result of a single intent reconciliation."""
 
-    __slots__ = ("execution_intent_id", "previous_state", "resolved_state", "resolution_source", "reason")
-
-    def __init__(
-        self,
-        execution_intent_id: str,
-        previous_state: str,
-        resolved_state: str,
-        resolution_source: str,
-        reason: str,
-    ) -> None:
-        self.execution_intent_id = execution_intent_id
-        self.previous_state = previous_state
-        self.resolved_state = resolved_state
-        self.resolution_source = resolution_source
-        self.reason = reason
+    execution_intent_id: str
+    previous_state: str
+    resolved_state: str
+    resolution_source: str
+    reason: str
 
     def to_dict(self) -> dict[str, Any]:
         return {

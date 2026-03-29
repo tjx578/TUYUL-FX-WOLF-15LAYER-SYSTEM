@@ -37,7 +37,7 @@ class AutoTradingState(StrEnum):
     PAUSED = "PAUSED"
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class AutoModeTransition:
     """Immutable record of an auto-mode state change."""
 

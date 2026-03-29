@@ -16,6 +16,7 @@ Zone: orchestrator — coordination authority, NOT verdict authority.
 
 from __future__ import annotations
 
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
 
@@ -35,27 +36,17 @@ from services.orchestrator.protocols import (
 )
 
 
+@dataclass(slots=True)
 class OrchestrationResult:
     """Result of an orchestrated take-signal flow."""
 
-    __slots__ = ("take_id", "verdict", "firewall_id", "execution_intent_id", "status", "reason", "timestamp")
-
-    def __init__(
-        self,
-        take_id: str,
-        verdict: str,
-        firewall_id: str | None = None,
-        execution_intent_id: str | None = None,
-        status: str = "PENDING",
-        reason: str = "",
-    ) -> None:
-        self.take_id = take_id
-        self.verdict = verdict
-        self.firewall_id = firewall_id
-        self.execution_intent_id = execution_intent_id
-        self.status = status
-        self.reason = reason
-        self.timestamp = datetime.now(UTC).isoformat()
+    take_id: str
+    verdict: str
+    firewall_id: str | None = None
+    execution_intent_id: str | None = None
+    status: str = "PENDING"
+    reason: str = ""
+    timestamp: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
 
     def to_dict(self) -> dict[str, Any]:
         return {

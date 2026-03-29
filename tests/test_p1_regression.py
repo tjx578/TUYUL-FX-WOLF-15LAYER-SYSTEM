@@ -106,7 +106,7 @@ class TestOrchestratorAuthorityBoundary:
     def test_coordinator_result_has_verdict_passthrough(self):
         from services.orchestrator.coordinator import OrchestrationResult
 
-        # OrchestrationResult uses __slots__ (not __annotations__)
+        # OrchestrationResult uses @dataclass(slots=True)
         slots = getattr(OrchestrationResult, "__slots__", ())
         assert "verdict" in slots, "OrchestrationResult must have 'verdict' slot for authority passthrough"
 

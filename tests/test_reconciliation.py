@@ -77,6 +77,37 @@ class TestReconciliationResult:
         assert d["resolved_state"] == "UNRESOLVED"
         assert d["resolution_source"] == "timeout"
 
+    def test_is_dataclass_with_slots(self):
+        import dataclasses
+
+        assert dataclasses.is_dataclass(ReconciliationResult)
+        assert hasattr(ReconciliationResult, "__slots__")
+        assert "execution_intent_id" in ReconciliationResult.__slots__
+        r = ReconciliationResult("ei", "A", "B", "C", "D")
+        assert not hasattr(r, "__dict__")
+
+    def test_auto_eq(self):
+        a = ReconciliationResult("ei", "A", "B", "C", "D")
+        b = ReconciliationResult("ei", "A", "B", "C", "D")
+        assert a == b
+        c = ReconciliationResult("ei", "A", "B", "C", "other")
+        assert a != c
+
+    def test_auto_repr(self):
+        r = ReconciliationResult("ei_001", "A", "B", "C", "D")
+        text = repr(r)
+        assert "ReconciliationResult" in text
+        assert "ei_001" in text
+
+    def test_positional_args_preserved(self):
+        """Existing callers pass all 5 args positionally."""
+        r = ReconciliationResult("ei", "prev", "resolved", "src", "reason")
+        assert r.execution_intent_id == "ei"
+        assert r.previous_state == "prev"
+        assert r.resolved_state == "resolved"
+        assert r.resolution_source == "src"
+        assert r.reason == "reason"
+
 
 # ── Restart Reconciliation ────────────────────────────────────────────────
 

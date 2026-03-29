@@ -266,6 +266,35 @@ class TestOrchestrationResult:
         assert r.firewall_id is None
         assert r.execution_intent_id is None
 
+    def test_is_dataclass_with_slots(self):
+        import dataclasses
+
+        assert dataclasses.is_dataclass(OrchestrationResult)
+        assert hasattr(OrchestrationResult, "__slots__")
+        assert "verdict" in OrchestrationResult.__slots__
+        assert "timestamp" in OrchestrationResult.__slots__
+        # slots=True means no __dict__
+        r = OrchestrationResult(take_id="t", verdict="X")
+        assert not hasattr(r, "__dict__")
+
+    def test_auto_eq(self):
+        a = OrchestrationResult(take_id="t", verdict="X", timestamp="fixed")
+        b = OrchestrationResult(take_id="t", verdict="X", timestamp="fixed")
+        assert a == b
+        c = OrchestrationResult(take_id="t", verdict="Y", timestamp="fixed")
+        assert a != c
+
+    def test_auto_repr(self):
+        r = OrchestrationResult(take_id="t", verdict="X")
+        text = repr(r)
+        assert "OrchestrationResult" in text
+        assert "take_id='t'" in text
+
+    def test_timestamp_auto_generated(self):
+        r = OrchestrationResult(take_id="t", verdict="X")
+        assert isinstance(r.timestamp, str)
+        assert len(r.timestamp) > 0
+
 
 # ── Dispatch failure ──────────────────────────────────────────────────────
 
@@ -331,9 +360,7 @@ class TestArchGap09Decoupling:
         tree = ast.parse(src.read_text(encoding="utf-8"))
         for node in ast.iter_child_nodes(tree):
             if isinstance(node, ast.ImportFrom) and node.module:
-                assert not node.module.startswith("risk"), (
-                    f"coordinator.py has top-level import from {node.module}"
-                )
+                assert not node.module.startswith("risk"), f"coordinator.py has top-level import from {node.module}"
 
     def test_coordinator_uses_protocol_types(self):
         """OrchestratorCoordinator accepts any Protocol-satisfying dependency."""
