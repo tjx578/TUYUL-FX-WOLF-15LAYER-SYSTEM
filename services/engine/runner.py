@@ -139,33 +139,9 @@ def run() -> None:
 
     # If main() returns or crashes, keep process alive so the health
     # probe stays responsive and operators can inspect /status.
-    _hold_alive_for_diagnostics()
+    from services.shared.diagnostics import hold_alive_sync  # noqa: PLC0415
 
-
-def _hold_alive_for_diagnostics() -> None:
-    """Block forever so the daemon-thread health probe stays responsive.
-
-    Same pattern as ingest_worker — Railway deployment succeeds and
-    operators can inspect /healthz and /status for diagnostics.
-    """
-    import signal as _signal
-    import types
-
-    hold_timeout = int(os.environ.get("DEGRADED_HOLD_TIMEOUT_SEC", "3600"))
-    logger.warning(
-        "Engine holding alive for health probe diagnostics (max {}s). Send SIGTERM to exit.",
-        hold_timeout,
-    )
-    shutdown = threading.Event()
-
-    def _on_signal(signum: int, _frame: types.FrameType | None) -> None:
-        logger.info("Received {} — exiting degraded hold", _signal.Signals(signum).name)
-        shutdown.set()
-
-    _signal.signal(_signal.SIGTERM, _on_signal)
-    _signal.signal(_signal.SIGINT, _on_signal)
-    if not shutdown.wait(timeout=hold_timeout):
-        logger.warning("Degraded hold timeout ({}s) — exiting for auto-restart", hold_timeout)
+    hold_alive_sync(service_name="Engine")
 
 
 if __name__ == "__main__":

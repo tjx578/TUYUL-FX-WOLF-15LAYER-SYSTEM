@@ -234,9 +234,7 @@ class StateManager:
             payload["details"] = details
 
         encoded = json.dumps(payload)
-        heartbeat_payload = json.dumps(
-            {"producer": ORCHESTRATOR_SOURCE, "ts": time.time()}
-        )
+        heartbeat_payload = json.dumps({"producer": ORCHESTRATOR_SOURCE, "ts": time.time()})
         pipe = self._redis.pipeline()
         pipe.publish(self._channel, encoded)
         pipe.set(self._state_key, encoded)
@@ -491,21 +489,9 @@ def run() -> None:
         StateManager().run_forever(on_started=_ORCHESTRATOR_READY.set)
     except Exception:
         logger.exception("Orchestrator fatal error — holding alive for health probe diagnostics")
-        import signal as _signal
-        import types
+        from services.shared.diagnostics import hold_alive_sync  # noqa: PLC0415
 
-        hold_timeout = int(os.getenv("DEGRADED_HOLD_TIMEOUT_SEC", "3600"))
-        logger.warning("Degraded hold active (max {}s). Send SIGTERM to exit.", hold_timeout)
-        shutdown = threading.Event()
-
-        def _on_signal(signum: int, _frame: types.FrameType | None) -> None:
-            logger.info("Received {} — exiting degraded hold", _signal.Signals(signum).name)
-            shutdown.set()
-
-        _signal.signal(_signal.SIGTERM, _on_signal)
-        _signal.signal(_signal.SIGINT, _on_signal)
-        if not shutdown.wait(timeout=hold_timeout):
-            logger.warning("Degraded hold timeout ({}s) — exiting for auto-restart", hold_timeout)
+        hold_alive_sync(service_name="Orchestrator")
 
 
 if __name__ == "__main__":

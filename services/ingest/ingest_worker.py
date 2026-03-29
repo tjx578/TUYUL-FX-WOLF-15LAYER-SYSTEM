@@ -16,8 +16,6 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import os
-import signal
-import types
 
 from loguru import logger
 
@@ -63,20 +61,9 @@ async def _bootstrap_and_run() -> None:
         logger.exception(exc)
         # Keep process alive so health probe keeps responding.
         # Railway deployment succeeds; operator can inspect /status.
-        hold_timeout = int(os.environ.get("DEGRADED_HOLD_TIMEOUT_SEC", "3600"))
-        logger.warning("Degraded hold active (max {}s). Send SIGTERM to exit.", hold_timeout)
-        shutdown = asyncio.Event()
+        from services.shared.diagnostics import hold_alive_async  # noqa: PLC0415
 
-        def _sig(signum: int, _frame: types.FrameType | None) -> None:
-            logger.info("Received {} — exiting degraded hold", signal.Signals(signum).name)
-            shutdown.set()
-
-        signal.signal(signal.SIGTERM, _sig)
-        signal.signal(signal.SIGINT, _sig)
-        with contextlib.suppress(asyncio.CancelledError, asyncio.TimeoutError):
-            await asyncio.wait_for(shutdown.wait(), timeout=hold_timeout)
-        if not shutdown.is_set():
-            logger.warning("Degraded hold timeout ({}s) — exiting for auto-restart", hold_timeout)
+        await hold_alive_async(service_name="Ingest")
     finally:
         health_task.cancel()
         with contextlib.suppress(Exception):
