@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
-from services.trade import runner as runner
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from services.trade import runner as runner
 
 __all__ = ["runner"]

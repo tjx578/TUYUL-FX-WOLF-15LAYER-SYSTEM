@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
-from services.ingest import ingest_worker as ingest_worker
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from services.ingest import ingest_worker as ingest_worker
 
 __all__ = ["ingest_worker"]
