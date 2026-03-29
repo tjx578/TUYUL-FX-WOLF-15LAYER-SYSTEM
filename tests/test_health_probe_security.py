@@ -132,7 +132,7 @@ class TestStatusAuth:
             _get, port, "/status", headers={"Authorization": "Bearer correct-secret-token"}
         )
         assert status == 200
-        assert body["fatal_error"] == "redis down"
+        assert body["fatal_error"] == "redis down"  # no colon → kept as-is
         assert body["system_state"] == "RUNNING"
         assert body["alive"] is True
 
@@ -224,3 +224,38 @@ class TestSafeDetailKeys:
         probe.set_detail("dead_reason", "crash")
         safe = probe._safe_details()
         assert safe == {}
+
+
+# ── Error detail sanitization (DEBT-SVC-13 hardening) ────────
+
+
+class TestErrorDetailSanitization:
+    def test_colon_in_fatal_error_stripped(self):
+        probe = HealthProbe()
+        probe.set_detail("fatal_error", "ConnectionRefusedError: redis://user:pass@host:6379")
+        assert probe._details["fatal_error"] == "ConnectionRefusedError"
+
+    def test_colon_in_runtime_error_stripped(self):
+        probe = HealthProbe()
+        probe.set_detail("runtime_error", "Traceback: File /app/main.py line 42")
+        assert probe._details["runtime_error"] == "Traceback"
+
+    def test_colon_in_dead_reason_stripped(self):
+        probe = HealthProbe()
+        probe.set_detail("dead_reason", "ingest_crash_limit: exceeded 3 restarts")
+        assert probe._details["dead_reason"] == "ingest_crash_limit"
+
+    def test_no_colon_kept_as_is(self):
+        probe = HealthProbe()
+        probe.set_detail("fatal_error", "redis down")
+        assert probe._details["fatal_error"] == "redis down"
+
+    def test_non_error_key_not_sanitized(self):
+        probe = HealthProbe()
+        probe.set_detail("system_state", "RUNNING: extra info")
+        assert probe._details["system_state"] == "RUNNING: extra info"
+
+    def test_empty_value_returns_error(self):
+        probe = HealthProbe()
+        probe.set_detail("fatal_error", "")
+        assert probe._details["fatal_error"] == "error"

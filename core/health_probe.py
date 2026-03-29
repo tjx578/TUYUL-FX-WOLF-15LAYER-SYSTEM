@@ -78,8 +78,12 @@ class HealthProbe:
         self._readiness_check = check
 
     def set_detail(self, key: str, value: str) -> None:
-        """Attach extra key-value metadata included in probe responses."""
-        self._details[key] = value
+        """Attach extra key-value metadata included in probe responses.
+
+        Error-class keys have their values scrubbed to avoid leaking
+        connection strings, file paths, or API keys.
+        """
+        self._details[key] = self._sanitize_detail(key, value)
 
     # ── detail classification ──────────────────────────────────────
 
@@ -92,6 +96,31 @@ class HealthProbe:
             "warmup_retry",
         }
     )
+
+    #: Detail keys whose values may contain raw exception text.
+    _ERROR_DETAIL_KEYS: frozenset[str] = frozenset(
+        {
+            "fatal_error",
+            "runtime_error",
+            "dead_reason",
+        }
+    )
+
+    @classmethod
+    def _sanitize_detail(cls, key: str, value: str) -> str:
+        """Scrub values for error-class detail keys.
+
+        Strips connection strings, file paths, and anything after the
+        first colon in exception text so that ``str(exc)`` fragments
+        don't leak infrastructure details even on authenticated endpoints.
+        """
+        if key not in cls._ERROR_DETAIL_KEYS:
+            return value
+        # Keep only the exception class name / short label.
+        # "ConnectionRefusedError: redis://user:pass@host:6379/0" → "ConnectionRefusedError"
+        # "Invalid API key for service X" → kept as-is (no colon)
+        sanitized = value.split(":")[0].strip()
+        return sanitized[:120] if sanitized else "error"
 
     # ── HTTP handling ───────────────────────────────────────────────
 
