@@ -248,6 +248,19 @@ class RedisConsumer:
                         key_display,
                     )
 
+            # Guard: don't overwrite richer data (e.g. synthesized D1/W1
+            # from candle_seeding) with a single-bar HASH fallback.
+            existing = self._bus.get_candles(symbol, timeframe)
+            if len(existing) >= len(candles):
+                logger.debug(
+                    "RedisConsumer: skipping %s:%s — bus already has %d bars (Redis returned %d)",
+                    symbol,
+                    timeframe,
+                    len(existing),
+                    len(candles),
+                )
+                continue
+
             self._bus.set_candle_history(symbol, timeframe, candles)
             logger.info(
                 "RedisConsumer: warmup loaded %d candles for %s:%s",
