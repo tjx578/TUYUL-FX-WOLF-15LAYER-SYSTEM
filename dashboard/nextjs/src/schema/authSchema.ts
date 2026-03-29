@@ -6,6 +6,7 @@ export const SessionUserSchema = z.object({
   // when authenticating via static API key (e.g. "api_key_user").
   email: z.string().min(1),
   role: z.enum([
+    "owner",
     "viewer",
     "operator",
     "risk_admin",

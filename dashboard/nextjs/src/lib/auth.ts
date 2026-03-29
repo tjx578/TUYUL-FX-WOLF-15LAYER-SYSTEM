@@ -19,7 +19,7 @@ const TOKEN_KEY = "wolf15_token";
 // process.env.NODE_ENV is statically inlined by the bundler.
 const IS_PRODUCTION = process.env.NODE_ENV === "production";
 
-export const ADMIN_ROLES = ["risk_admin", "config_admin", "approver"] as const;
+export const ADMIN_ROLES = ["owner", "risk_admin", "config_admin", "approver"] as const;
 
 export function hasRole(
   role: UserRole | undefined,

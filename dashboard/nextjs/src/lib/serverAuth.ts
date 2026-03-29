@@ -1,12 +1,20 @@
 import type { SessionUser, UserRole } from "@/contracts/auth";
 import { hasRole } from "@/lib/auth";
 
-// Owner is the sole user — no login, no API key, no cookie required.
-// The dashboard is unrestricted: every server component receives this default user.
+/**
+ * Owner-only auth model.
+ *
+ * This dashboard is a private owner control surface — NOT a public
+ * multi-user product.  There is no login UI, no public-user session,
+ * and no browser-facing API key flow.
+ *
+ * Every server component receives this fixed owner identity.
+ * See docs/architecture/dashboard-control-surface.md — Auth Model.
+ */
 const OWNER_USER: SessionUser = {
   user_id: "owner",
   email: "owner@tuyulfx.com",
-  role: "risk_admin" as UserRole,
+  role: "owner" as UserRole,
   name: "TUYUL FX Owner",
 };
 

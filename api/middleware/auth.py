@@ -1,18 +1,26 @@
 """
-Dashboard Authentication -- JWT + API-key support.
+Dashboard Authentication — owner-only JWT + machine-key support.
+
+Auth model: OWNER-ONLY.  This dashboard is private and single-tenant.
+  - No public-user login flow exists.
+  - Browser-facing API key submission is NOT allowed.
+  - Machine/service API keys (DASHBOARD_API_KEY) are for server-to-server use only.
+  - Owner identity is established via server-side auth injection (Next.js middleware).
+
+See docs/architecture/dashboard-control-surface.md for the canonical auth contract.
 
 Provides:
-  - ``create_token(sub, extra)`` -- issue a signed JWT.
-  - ``decode_token(raw)`` -- decode and validate a JWT; returns payload or None.
-  - ``validate_api_key(key)`` -- check against the static API key.
-  - ``verify_token(authorization)`` -- FastAPI Depends() for HTTP routes.
-  - ``verify_ws_token_from_query(websocket)`` -- WS-safe auth via query param.
+  - ``create_token(sub, extra)`` — issue a signed JWT.
+  - ``decode_token(raw)`` — decode and validate a JWT; returns payload or None.
+  - ``validate_api_key(key)`` — check against the static machine API key.
+  - ``verify_token(authorization)`` — FastAPI Depends() for HTTP routes.
+  - ``verify_ws_token(websocket)`` — WS-safe auth via query param.
 
 Environment variables:
-    DASHBOARD_JWT_SECRET      -- canonical HMAC secret (required, strong value)
-  DASHBOARD_JWT_ALGO          -- algorithm (default HS256)
-  DASHBOARD_TOKEN_EXPIRE_MIN  -- token lifetime in minutes (default 60)
-  DASHBOARD_API_KEY           -- optional static API key for service-to-service calls
+  DASHBOARD_JWT_SECRET       — canonical HMAC secret (required, strong value)
+  DASHBOARD_JWT_ALGO         — algorithm (default HS256)
+  DASHBOARD_TOKEN_EXPIRE_MIN — token lifetime in minutes (default 60)
+  DASHBOARD_API_KEY          — machine-only API key for service-to-service calls
 """
 
 from __future__ import annotations
