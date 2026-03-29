@@ -238,7 +238,7 @@ class OrchestratorCoordinator:
         """
         import uuid  # noqa: PLC0415
 
-        execution_intent_id = f"ei_{uuid.uuid4().hex[:16]}"
+        execution_intent_id = f"ei_{uuid.uuid4().hex}"
 
         try:
             from contracts.redis_stream_contracts import ExecutionIntentPayload  # noqa: PLC0415
