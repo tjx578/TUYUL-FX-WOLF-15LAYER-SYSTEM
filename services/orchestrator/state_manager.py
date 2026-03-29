@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import hmac as _hmac
 import json
 import os
 import threading
@@ -85,6 +87,29 @@ def _mode_from_compliance(allowed: bool, severity: str) -> ExecutionMode:
     if sev == "critical":
         return ExecutionMode.KILL_SWITCH
     return ExecutionMode.SAFE
+
+
+def _verify_command_signature(payload: dict[str, Any]) -> bool:
+    """Verify HMAC-SHA256 signature on a command payload.
+
+    Returns True when ORCHESTRATOR_COMMAND_SECRET is not configured (auth
+    disabled), or when the payload's ``signature`` field matches the HMAC of
+    the canonical JSON of the payload (the ``signature`` key is excluded from
+    the digest input).
+
+    SEC-SVC-02: This prevents an attacker with bare Redis write access from
+    forging arbitrary mode-change commands.
+    """
+    secret = os.getenv("ORCHESTRATOR_COMMAND_SECRET", "")
+    if not secret:
+        return True
+    sig = str(payload.get("signature", ""))
+    if not sig:
+        return False
+    check_payload = {k: v for k, v in payload.items() if k != "signature"}
+    canonical = json.dumps(check_payload, sort_keys=True, separators=(",", ":"))
+    expected = _hmac.new(secret.encode(), canonical.encode(), hashlib.sha256).hexdigest()
+    return _hmac.compare_digest(expected, sig)
 
 
 @dataclass(slots=True)
@@ -293,10 +318,10 @@ class StateManager:
         if str(payload.get("source", "")).strip().lower() == ORCHESTRATOR_SOURCE:
             return
 
-        if isinstance(payload.get("account_state"), dict):
-            self._account_state.update(payload["account_state"])
-        if isinstance(payload.get("trade_risk"), dict):
-            self._trade_risk.update(payload["trade_risk"])
+        # SEC-SVC-02: account_state / trade_risk are NOT accepted from pub/sub.
+        # Authoritative state comes only from Redis keys via _refresh_snapshots_from_redis.
+        # Accepting arbitrary dicts here would allow a Redis-access attacker to
+        # spoof balance, drawdown, and compliance_mode fields.
 
         raw_payload = json.dumps(payload)
         try:
@@ -315,7 +340,27 @@ class StateManager:
             )
             return
 
+        # SEC-SVC-02: Verify HMAC signature when a command secret is configured.
+        if not _verify_command_signature(payload):
+            logger.warning(
+                "set_mode command rejected: invalid or missing HMAC signature payload={}",
+                {k: v for k, v in payload.items() if k != "signature"},
+            )
+            return
+
         new_mode = ExecutionMode[set_mode_command.mode]
+
+        # SEC-SVC-02: External commands must not downgrade an active KILL_SWITCH.
+        # Only internal compliance evaluation (or a local API call) may clear it.
+        if self._state.mode == ExecutionMode.KILL_SWITCH and new_mode != ExecutionMode.KILL_SWITCH:
+            logger.warning(
+                "set_mode command rejected: cannot downgrade KILL_SWITCH via external command "
+                "requested_mode={} payload={}",
+                new_mode,
+                {k: v for k, v in payload.items() if k != "signature"},
+            )
+            return
+
         self.set_mode(
             new_mode,
             reason=set_mode_command.reason,

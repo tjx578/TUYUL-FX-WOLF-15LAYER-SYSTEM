@@ -2,7 +2,8 @@
   "permissions": {
     "allow": [
       "Bash(find /c/Users/Administrator/Documents/GitHub/TUYUL-FX-WOLF-15LAYER-SYSTEM/src -type f -name *.ts -o -name *.tsx)",
-      "Bash(find c:/Users/Administrator/Documents/GitHub/TUYUL-FX-WOLF-15LAYER-SYSTEM/dashboard/nextjs/src -type f \\\\\\(-name *.ts -o -name *.tsx \\\\\\))"
+      "Bash(find c:/Users/Administrator/Documents/GitHub/TUYUL-FX-WOLF-15LAYER-SYSTEM/dashboard/nextjs/src -type f \\\\\\(-name *.ts -o -name *.tsx \\\\\\))",
+      "Bash(python -m pytest tests/test_orchestrator_state_manager.py -v)"
     ]
   }
 }
