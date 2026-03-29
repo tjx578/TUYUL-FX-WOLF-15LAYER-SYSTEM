@@ -7,7 +7,6 @@ Pure observability — no execution side-effects.
 
 from __future__ import annotations
 
-import contextlib
 from typing import Any, cast
 
 from core.metrics import (
@@ -41,16 +40,7 @@ from core.metrics import (
     VERDICT_TOTAL,
     WOLF_30PT_SCORE,
 )
-
-
-def _to_float(value: Any, default: float = 0.0) -> float:
-    """Safely convert dynamic payload values to float for metric emission."""
-    if isinstance(value, int | float):
-        return float(value)
-    if isinstance(value, str):
-        with contextlib.suppress(ValueError):
-            return float(value)
-    return default
+from services.shared.type_coerce import to_float as _to_float
 
 
 def record_pipeline_metrics(symbol: str, result: dict[str, Any]) -> None:

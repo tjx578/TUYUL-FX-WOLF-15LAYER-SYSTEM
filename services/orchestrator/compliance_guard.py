@@ -9,6 +9,10 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+from services.shared.type_coerce import to_bool as _to_bool
+from services.shared.type_coerce import to_float as _to_float
+from services.shared.type_coerce import to_int as _to_int
+
 
 @dataclass(slots=True)
 class ComplianceResult:
@@ -16,28 +20,6 @@ class ComplianceResult:
     code: str
     severity: str = "info"
     details: dict[str, Any] = field(default_factory=lambda: {})
-
-
-def _to_float(value: Any, default: float = 0.0) -> float:
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return default
-
-
-def _to_int(value: Any, default: int = 0) -> int:
-    try:
-        return int(value)
-    except (TypeError, ValueError):
-        return default
-
-
-def _to_bool(value: Any, default: bool = False) -> bool:
-    if isinstance(value, bool):
-        return value
-    if value is None:
-        return default
-    return str(value).strip().lower() in {"1", "true", "yes", "on"}
 
 
 def evaluate_compliance(account_state: dict[str, Any], trade_risk: dict[str, Any]) -> ComplianceResult:

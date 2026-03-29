@@ -80,26 +80,8 @@ def _timeframe_to_delta(timeframe: str) -> timedelta | None:
     return mapping.get(str(timeframe).upper())
 
 
-def _to_float(value: object, default: float = 0.0) -> float:
-    if isinstance(value, (int, float)):
-        return float(value)
-    if isinstance(value, str):
-        with contextlib.suppress(ValueError):
-            return float(value)
-    return default
-
-
-def _to_int(value: object, default: int = 0) -> int:
-    if isinstance(value, bool):
-        return int(value)
-    if isinstance(value, int):
-        return value
-    if isinstance(value, float):
-        return int(value)
-    if isinstance(value, str):
-        with contextlib.suppress(ValueError):
-            return int(float(value))
-    return default
+from services.shared.type_coerce import to_float as _to_float  # noqa: E402
+from services.shared.type_coerce import to_int as _to_int  # noqa: E402
 
 
 def enqueue_candle_dict(candle_dict: dict[str, object]) -> None:
