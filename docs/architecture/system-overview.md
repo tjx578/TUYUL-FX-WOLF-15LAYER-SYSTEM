@@ -7,6 +7,9 @@
 
 This document explains how the full system is separated into authorities so that analysis, governance, execution, and operator visibility do not collapse into one unsafe surface.
 
+This system separates analysis, governance, execution, and owner operations so they do not collapse into one unsafe surface.
+The dashboard is part of owner operations, not part of constitutional decision authority.
+
 ## End-to-end model
 
 ```text
@@ -42,9 +45,17 @@ Layer 12 is the only component that may issue an executable verdict.
 
 Execution services are blind executors. They honor approved commands and enforce expiry, cancel, and state-machine safety.
 
-### 6. Operations and observability
+### 6. Operations and control surfaces
 
-APIs, dashboards, and alerts are consumers of system state. They are not alternate command paths.
+APIs, dashboards, and alerts consume system state, but they do not share the same authority level.
+
+- Alerts are downstream notification consumers.
+- Read APIs expose state and diagnostics.
+- The dashboard is a private owner-operated control surface for diagnostics, transport coordination, and explicitly allowed operational actions.
+
+The dashboard is NOT a constitutional trading authority and must never become a shadow strategy engine or verdict source.
+
+Operational control is allowed only through documented backend paths that preserve governance, firewall, and execution boundaries.
 
 ## Relationship to existing references
 

@@ -1,4 +1,4 @@
-# 🐺 TUYUL FX — WOLF 15-LAYER SYSTEM  
+# 🐺 TUYUL FX — WOLF 15-LAYER SYSTEM
 
 ## FINAL SYSTEM REVIEW (v7.4r∞)
 
@@ -26,7 +26,7 @@
 ## 2. TIMEFRAME LAW
 
 | Timeframe | Fungsi | Status |
-|---------|-------|-------|
+| --------- | ------ | ------ |
 | H1 | Setup creation | 🔒 |
 | M15 | Monitoring & invalidation | 🔒 |
 | Tick | Data only | 🔒 |
@@ -77,15 +77,13 @@ M15 **tidak membuat setup**, hanya:
 
 ## 6. FINAL REVIEW VERDICT
 
-```
-
+```text
 ARCHITECTURE : PASS
 CONSTITUTION : PASS
 RISK MODEL   : PASS
 PROP FIRM    : SAFE
 
 ∴ SYSTEM STATUS: LIVE READY
-
 ```
 
 ---

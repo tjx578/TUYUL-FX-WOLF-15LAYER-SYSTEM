@@ -23,6 +23,10 @@ from typing import Any
 from loguru import logger
 
 from core.redis_keys import EXECUTION_INTENTS, ORCHESTRATION_EVENTS
+from services.orchestrator.compliance_auto_mode import (
+    ComplianceAutoMode,
+    ComplianceAutoModePaused,
+)
 from services.orchestrator.protocols import (
     STATUS_EXECUTION_SENT,
     STATUS_FIREWALL_APPROVED,
@@ -62,7 +66,7 @@ class OrchestrationResult:
 
 
 class OrchestratorCoordinator:
-    """Coordinator for the take-signal → firewall → execution pipeline.
+    """Coordinator for the take-signal → compliance → firewall → execution pipeline.
 
     This module ONLY routes flow — it never invents or mutates verdicts.
     """
@@ -72,6 +76,7 @@ class OrchestratorCoordinator:
         take_signal_service: TakeSignalServiceLike | None = None,
         risk_firewall: RiskFirewallLike | None = None,
         stream_publisher: StreamPublisherLike | None = None,
+        compliance_auto_mode: ComplianceAutoMode | None = None,
     ) -> None:
         if take_signal_service is None:
             from execution.take_signal_service import TakeSignalService  # noqa: PLC0415
@@ -84,6 +89,7 @@ class OrchestratorCoordinator:
         self._take_svc = take_signal_service
         self._firewall = risk_firewall
         self._publisher = stream_publisher
+        self._compliance = compliance_auto_mode
 
     def _get_publisher(self) -> StreamPublisherLike:
         if self._publisher is None:
@@ -104,15 +110,21 @@ class OrchestratorCoordinator:
 
         Pipeline:
           1. Validate take-signal exists and is in PENDING state
-          2. Run risk firewall checks
-          3. If firewall rejects → handle rejection, stop
-          4. If firewall approves → dispatch to execution, complete
+          2. Enforce compliance auto-mode (block if paused)
+          3. Run risk firewall checks
+          4. If firewall rejects → handle rejection, stop
+          5. If firewall approves → dispatch to execution, complete
 
         The orchestrator does NOT modify the signal, verdict, or direction.
         """
         take_response = await self._validate_take(take_id)
         if isinstance(take_response, OrchestrationResult):
             return take_response
+
+        # ── Compliance gate: must pass BEFORE firewall ────────────────
+        compliance_block = self._enforce_compliance(take_id)
+        if compliance_block is not None:
+            return compliance_block
 
         await self._emit_event(
             "ORCHESTRATION_STARTED",
@@ -131,13 +143,43 @@ class OrchestratorCoordinator:
             return await self._handle_rejection(take_id, fw_result)
 
         return await self._dispatch_and_complete(
-            take_id, signal, account_state, fw_result,
+            take_id,
+            signal,
+            account_state,
+            fw_result,
         )
 
     # ── Pipeline steps (private) ───────────────────────────────────────────
 
+    def _enforce_compliance(self, take_id: str) -> OrchestrationResult | None:
+        """Check compliance auto-mode. Returns OrchestrationResult if blocked, else None.
+
+        This is a synchronous gate — ComplianceAutoMode.enforce() raises
+        ComplianceAutoModePaused when auto-trading is paused.
+        Called BEFORE the firewall so that compliance violations are caught
+        before any risk evaluation or downstream dispatch.
+        """
+        if self._compliance is None:
+            return None
+        try:
+            self._compliance.enforce()
+        except ComplianceAutoModePaused as exc:
+            logger.warning(
+                "[Coordinator] Compliance gate blocked take_id=%s: %s",
+                take_id,
+                exc,
+            )
+            return OrchestrationResult(
+                take_id=take_id,
+                verdict="REJECTED",
+                status="COMPLIANCE_BLOCKED",
+                reason=str(exc),
+            )
+        return None
+
     async def _validate_take(
-        self, take_id: str,
+        self,
+        take_id: str,
     ) -> TakeSignalResponseLike | OrchestrationResult:
         """Fetch take-signal and verify it is in PENDING state."""
         take_response = await self._take_svc.get(take_id)
@@ -181,7 +223,9 @@ class OrchestratorCoordinator:
             )
 
     async def _handle_rejection(
-        self, take_id: str, fw_result: Any,
+        self,
+        take_id: str,
+        fw_result: Any,
     ) -> OrchestrationResult:
         """Transition to FIREWALL_REJECTED and emit rejection event."""
         await self._take_svc.transition(
