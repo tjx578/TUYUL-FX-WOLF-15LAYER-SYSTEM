@@ -2,12 +2,15 @@ import type { SystemHealth, OrchestratorState, ContextSnapshot, ExecutionState }
 import type { PipelineData } from "@/components/panels/PipelinePanel";
 import { useApiQuery, API_ENDPOINTS, POLL_INTERVALS } from "@/shared/api/client";
 
-export function useHealth() {
+export function useStatus() {
     const { data, error, isLoading } = useApiQuery<SystemHealth>(
-        API_ENDPOINTS.health,
+        API_ENDPOINTS.status,
     );
     return { data, isLoading, isError: !!error, error };
 }
+
+/** @deprecated Use useStatus() — kept as alias for migration. */
+export const useHealth = useStatus;
 
 export function useOrchestratorState() {
     const { data, error, isLoading, mutate } = useApiQuery<OrchestratorState>(

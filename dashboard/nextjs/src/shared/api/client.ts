@@ -29,7 +29,10 @@ export const POLL_INTERVALS = {
 } as const;
 
 export const API_ENDPOINTS = {
-    health: "/healthz",
+    /** Liveness probe — lightweight, no auth, no Redis. */
+    healthz: "/healthz",
+    /** Operator status — rich diagnostics for the dashboard (JWT-authed). */
+    status: "/api/v1/status",
     orchestratorState: "/api/v1/orchestrator/state",
     accounts: "/api/v1/accounts",
     accountsRiskSnapshot: "/api/v1/accounts/risk-snapshot",

@@ -75,12 +75,21 @@ NOT proxied — they handle their own auth.
 
 ## Health Rule
 
-Infrastructure health and dashboard status must not share ambiguous semantics.
+Infrastructure health and dashboard operator status are **semantically separate**.
 
-- infra probes: `/healthz`, `/readyz`
-- owner/operator status: separate dashboard-facing status surface
+| Surface | Path | Auth | Purpose |
+|---------|------|------|---------|
 
-The dashboard may relay status, but must not blur the meaning of infra probe routes.
+| Liveness | `/healthz`, `/health` | none | Process alive? Infra probes. |
+| Readiness | `/readyz` | machine-key | Safe to serve traffic? |
+| Operator status | `/api/v1/status` | JWT | Dashboard rich diagnostics (16+ fields). |
+| Deep diagnostics | `/api/v1/status/full` | JWT | Redis, Postgres, config, engine, lockdown. |
+
+The dashboard calls `/api/v1/status` for operator diagnostics.
+Heartbeat / liveness pings (multiplexer, DataStreamDiagnostic) use `/healthz`.
+Docker / Railway / k8s probes use `/healthz` (liveness) and `/readyz` (readiness).
+
+The dashboard must not blur the meaning of infra probe routes.
 
 ## Constitutional Rule
 

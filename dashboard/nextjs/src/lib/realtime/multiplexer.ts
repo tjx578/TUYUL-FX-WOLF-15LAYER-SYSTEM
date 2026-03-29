@@ -188,7 +188,7 @@ function startPollingFallback(): void {
         try {
             const t0 = Date.now();
             const prefix = getRestPrefix();
-            const res = await fetch(`${prefix}/health`, { credentials: "include" });
+            const res = await fetch(`${prefix}/healthz`, { credentials: "include" });
             const latency = Date.now() - t0;
 
             if (res.status === 429) {
@@ -211,7 +211,7 @@ function startPollingFallback(): void {
                 fanOutStatus("STALE");
                 fanOutDegradation({
                     mode: "POLLING",
-                    reason: `Polling heartbeat failed: /health returned HTTP ${res.status}.`,
+                    reason: `Polling heartbeat failed: /healthz returned HTTP ${res.status}.`,
                 });
             } else {
                 // Successful response — reset backoff

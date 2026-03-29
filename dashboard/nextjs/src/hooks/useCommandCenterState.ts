@@ -16,7 +16,7 @@ import { useMemo } from "react";
 import { useAccounts, useAccountsRiskSnapshot, type AccountRiskSnapshot } from "@/features/accounts/api/accounts.api";
 import { useAllVerdicts } from "@/features/signals/api/verdicts.api";
 import { useActiveTrades, type ActiveTradesResponse } from "@/features/trades/api/tradesQuery.api";
-import { useContext, useExecution, useHealth, useOrchestratorState } from "@/shared/api/system.api";
+import { useContext, useExecution, useStatus, useOrchestratorState } from "@/shared/api/system.api";
 import { useCalendarBlocker } from "@/features/news/api/calendar.api";
 import { useLiveSignals } from "@/lib/realtime/hooks/useLiveSignals";
 import { useLiveAlerts } from "@/lib/realtime";
@@ -155,7 +155,7 @@ export function useCommandCenterRisk() {
 export function useCommandCenterStatus() {
   const { data: context, isError: contextError } = useContext();
   const { data: execution, isError: executionError } = useExecution();
-  const { data: health } = useHealth();
+  const { data: health } = useStatus();
   const { data: orchestrator } = useOrchestratorState();
   const { data: calendarBlocker } = useCalendarBlocker();
   const { alerts } = useLiveAlerts();
@@ -203,7 +203,7 @@ export interface CommandCenterState {
   snapshotList: AccountRiskSnapshot[];
   context: ReturnType<typeof useContext>["data"];
   execution: ReturnType<typeof useExecution>["data"];
-  health: ReturnType<typeof useHealth>["data"];
+  health: ReturnType<typeof useStatus>["data"];
   orchestrator: OrchestratorState | undefined;
   calendarBlocker: ReturnType<typeof useCalendarBlocker>["data"];
   recentAlerts: unknown[];

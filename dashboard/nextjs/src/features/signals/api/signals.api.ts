@@ -1,5 +1,5 @@
 import { useAllVerdicts } from "@/features/signals/api/verdicts.api";
-import { useHealth } from "@/shared/api/system.api";
+import { useStatus } from "@/shared/api/system.api";
 
 const _rawRefreshMs = parseInt(process.env.NEXT_PUBLIC_SIGNAL_REFRESH_INTERVAL_MS ?? "", 10);
 const SIGNAL_REFRESH_INTERVAL_MS =
@@ -7,7 +7,7 @@ const SIGNAL_REFRESH_INTERVAL_MS =
 
 export function useSignalsBootstrap() {
     const verdicts = useAllVerdicts({ refreshInterval: SIGNAL_REFRESH_INTERVAL_MS });
-    const health = useHealth();
+    const health = useStatus();
 
     return {
         verdicts,

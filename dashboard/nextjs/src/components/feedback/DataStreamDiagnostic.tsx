@@ -3,7 +3,7 @@
 // ============================================================
 // TUYUL FX Wolf-15 — DataStreamDiagnostic
 // Shown when one or more API streams fail.
-// Per-stream status grid, /health ping, env checklist, retry.
+// Per-stream status grid, /healthz ping, env checklist, retry.
 // ============================================================
 
 import { useState, useCallback, useEffect } from "react";
@@ -41,8 +41,8 @@ const CHECKLIST = [
     key: "env-ws",
   },
   {
-    label: "/health endpoint reachable",
-    detail: "Backend must respond 200 at GET /health (no /api prefix). Check PING /health result above.",
+    label: "/healthz endpoint reachable",
+    detail: "Backend must respond 200 at GET /healthz (liveness probe). Check PING /healthz result above.",
     key: "health",
   },
   {
@@ -86,7 +86,7 @@ export default function DataStreamDiagnostic({
     setPingResult(null);
     const t0 = performance.now();
     try {
-      const res = await fetch(`${getRestPrefix()}/health`, { credentials: "include" });
+      const res = await fetch(`${getRestPrefix()}/healthz`, { credentials: "include" });
       const latency = Math.round(performance.now() - t0);
       setPingResult({ ok: res.ok, latency, status: res.status });
     } catch (err) {
@@ -156,7 +156,7 @@ export default function DataStreamDiagnostic({
             disabled={pinging}
             aria-label="Ping backend health endpoint"
           >
-            {pinging ? "PINGING…" : "PING /health"}
+            {pinging ? "PINGING…" : "PING /healthz"}
           </button>
           <button
             className="btn btn-danger"
