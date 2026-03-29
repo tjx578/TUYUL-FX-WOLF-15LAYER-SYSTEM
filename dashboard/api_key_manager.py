@@ -10,6 +10,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import os
 import secrets
 import time
 from dataclasses import asdict, dataclass, field
@@ -34,6 +35,7 @@ class KeyRecord:
     status: KeyStatus = KeyStatus.ACTIVE
     created_at: float = field(default_factory=time.time)
     rotated_from: str | None = None
+    rotated_at: float | None = None
 
 
 class APIKeyManager:
@@ -41,11 +43,12 @@ class APIKeyManager:
 
     _PREFIX = "wolf_"
 
-    def __init__(self, secret_key: str, storage_path: Path | None = None) -> None:
+    def __init__(self, secret_key: str, storage_path: Path | None = None, *, grace_period: float = 300.0) -> None:
         if not secret_key:
             raise ValueError("API_KEY_SECRET must not be empty")
         self._secret = secret_key.encode("utf-8")
         self._storage = storage_path
+        self._grace_period = grace_period
         self._keys: dict[str, KeyRecord] = {}
         if self._storage and self._storage.exists():
             self._load()
@@ -79,6 +82,11 @@ class APIKeyManager:
             if hmac.compare_digest(rec.key_hash, h):
                 if rec.status == KeyStatus.REVOKED:
                     return None
+                if rec.status == KeyStatus.ROTATING:
+                    if rec.rotated_at is None:
+                        return None
+                    if time.time() - rec.rotated_at > self._grace_period:
+                        return None
                 return rec
         return None
 
@@ -87,6 +95,7 @@ class APIKeyManager:
         if old is None:
             return None
         old.status = KeyStatus.ROTATING
+        old.rotated_at = time.time()
 
         new_key_id = secrets.token_hex(8)
         raw_key = f"{self._PREFIX}{secrets.token_hex(24)}"
@@ -127,7 +136,9 @@ class APIKeyManager:
         if not self._storage:
             return
         data = {kid: asdict(rec) for kid, rec in self._keys.items()}
-        self._storage.write_text(json.dumps(data, indent=2))
+        tmp = self._storage.with_suffix(".tmp")
+        tmp.write_text(json.dumps(data, indent=2))
+        os.replace(tmp, self._storage)
 
     def _load(self) -> None:
         if not self._storage or not self._storage.exists():

@@ -558,6 +558,32 @@ class TestAPIKeyManager:
             with pytest.raises(ValueError, match="API_KEY_SECRET"):
                 APIKeyManager(secret_key="")
 
+    def test_rotating_key_rejected_after_grace(self, tmp_path):
+        """ROTATING key must be rejected once grace period expires."""
+        mgr = self._make_manager(tmp_path)
+        old = mgr.create_key("user:admin", label="expiring")
+        new = mgr.rotate_key(old["key_id"])
+        assert new is not None
+
+        # Simulate grace expiry by back-dating rotated_at
+        rec = mgr._keys[old["key_id"]]
+        rec.rotated_at = time.time() - mgr._grace_period - 1
+
+        assert mgr.validate_key(old["raw_key"]) is None  # expired
+        assert mgr.validate_key(new["raw_key"]) is not None  # still active
+
+    def test_rotating_key_without_timestamp_rejected(self, tmp_path):
+        """ROTATING key with no rotated_at must be rejected (no implicit grace)."""
+        mgr = self._make_manager(tmp_path)
+        result = mgr.create_key("user:admin")
+
+        # Manually force ROTATING without rotated_at
+        rec = mgr._keys[result["key_id"]]
+        rec.status = KeyStatus.ROTATING
+        rec.rotated_at = None
+
+        assert mgr.validate_key(result["raw_key"]) is None
+
 
 # ═══════════════════════════════════════════════════════════════════
 # 5. Audit Trail Immutability & Integrity
