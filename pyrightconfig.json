@@ -19,7 +19,7 @@
     "e2e"
   ],
   "extraPaths": [
-    "${workspaceFolder}"
+    "."
   ],
   "venvPath": ".",
   "venv": ".venv"

@@ -22,6 +22,7 @@ from pathlib import Path
 from typing import Any
 
 from loguru import logger
+from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
 from config.logging_bootstrap import configure_loguru_logging
@@ -33,14 +34,15 @@ REQUIRED_TABLES: tuple[str, ...] = ("trade_outbox",)
 
 
 def _build_engine_from_env() -> AsyncEngine:
-    database_url = os.getenv("DATABASE_URL")
-    if not database_url:
+    raw_url = os.getenv("DATABASE_URL")
+    if not raw_url:
         raise RuntimeError("DATABASE_URL is not set")
 
-    if database_url.startswith("postgresql://"):
-        database_url = database_url.replace("postgresql://", "postgresql+asyncpg://", 1)
+    url = make_url(raw_url)
+    if url.drivername == "postgresql":
+        url = url.set(drivername="postgresql+asyncpg")
 
-    return create_async_engine(database_url, pool_pre_ping=True, future=True)
+    return create_async_engine(url, pool_pre_ping=True, future=True)
 
 
 async def _preflight_checks() -> None:
