@@ -22,7 +22,7 @@
 Historical architecture documents relocated from the canonical surface:
 
 | File | Origin | Reason |
-|------|--------|--------|
+| ------ | -------- | -------- |
 | `docker-compose-legacy.md` | `docs/architecture/infrastructure/` | Superseded by `deployment-railway.md` |
 | `final-system-review.md` | `docs/architecture/governance/` | Historical v7.4r∞ snapshot; current rules live in `system-overview.md` |
 | `unified-architecture-v2.1.md` | `docs/concepts/architecture-history/` | Historical unified arch; current topology in `runtime-topology-current.md` |

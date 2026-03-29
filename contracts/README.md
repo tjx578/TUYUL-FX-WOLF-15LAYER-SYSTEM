@@ -11,7 +11,7 @@ Contracts live here — never in the service that produces or consumes the data.
 ## Module inventory
 
 | Module | Scope | Key models |
-|--------|-------|------------|
+| -------- | ------- | ------------ |
 | `redis_stream_contracts.py` | Redis inter-service messages | `VerdictPayload`, `ExecutionIntentPayload`, `WorkerResultPayload`, `OrchestratorCommand` |
 | `execution_queue_contract.py` | Allocation → execution worker stream | `ExecutionQueuePayload` |
 | `websocket_events.py` | Real-time dashboard WS channels | `MarketEvent`, `SignalEvent`, `RiskEvent` |
@@ -44,7 +44,7 @@ Priority: `ACCOUNT_STATE` and `TRADE_RISK` should be contracted next since the o
 The orchestrator `StateManager` (`services/orchestrator/state_manager.py`) consumes several Redis keys and maps them to compliance guard inputs:
 
 | Redis key | Guard input field | Compliance check |
-|-----------|-------------------|------------------|
+| ----------- | ------------------- | ------------------ |
 | `ACCOUNT_STATE` | `balance`, `equity`, `drawdown_*` | Account health gates |
 | `TRADE_RISK` | `risk_*`, `exposure_*` | Risk limit gates |
 | `NEWS_LOCK:STATE` | `news_lock_active` | News event lockout |

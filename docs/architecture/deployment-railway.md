@@ -82,7 +82,7 @@ API, engine, ingest, and orchestrator are independent runtime concerns even when
 All role-scoped entrypoints live in `deploy/railway/`:
 
 | Script | Role |
-|--------|------|
+| -------- | ------ |
 | `start_api.sh` | API service |
 | `start_api_consolidated.sh` | API consolidated mode |
 | `start_engine.sh` | Engine worker |
