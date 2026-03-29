@@ -148,6 +148,14 @@ class TestComplianceGateBeforeFirewall:
         assert "paused" in result.reason.lower()
         assert not firewall.called, "Firewall must NOT be called when compliance blocks"
 
+        # P1 upgrade: take-signal must be transitioned to REJECTED
+        assert ("take_001", "REJECTED") in take_service.transitions
+
+        # P1 upgrade: ORCHESTRATION_BLOCKED_BY_COMPLIANCE event must be emitted
+        blocked_events = [e for e in publisher.events if e.get("event_type") == "ORCHESTRATION_BLOCKED_BY_COMPLIANCE"]
+        assert len(blocked_events) == 1
+        assert blocked_events[0]["take_id"] == "take_001"
+
     @pytest.mark.asyncio()
     async def test_compliance_enabled_allows_firewall(
         self,
@@ -218,3 +226,5 @@ class TestComplianceGateBeforeFirewall:
 
         assert result.status == "COMPLIANCE_BLOCKED"
         assert "firewall" not in call_order, "Firewall must not run when compliance is paused"
+        # Transition and event must still fire even in ordering proof
+        assert ("take_004", "REJECTED") in take_service.transitions

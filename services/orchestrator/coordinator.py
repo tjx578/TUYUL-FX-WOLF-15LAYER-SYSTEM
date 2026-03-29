@@ -122,7 +122,7 @@ class OrchestratorCoordinator:
             return take_response
 
         # ── Compliance gate: must pass BEFORE firewall ────────────────
-        compliance_block = self._enforce_compliance(take_id)
+        compliance_block = await self._enforce_compliance(take_id)
         if compliance_block is not None:
             return compliance_block
 
@@ -151,29 +151,41 @@ class OrchestratorCoordinator:
 
     # ── Pipeline steps (private) ───────────────────────────────────────────
 
-    def _enforce_compliance(self, take_id: str) -> OrchestrationResult | None:
+    async def _enforce_compliance(self, take_id: str) -> OrchestrationResult | None:
         """Check compliance auto-mode. Returns OrchestrationResult if blocked, else None.
 
-        This is a synchronous gate — ComplianceAutoMode.enforce() raises
-        ComplianceAutoModePaused when auto-trading is paused.
-        Called BEFORE the firewall so that compliance violations are caught
-        before any risk evaluation or downstream dispatch.
+        ComplianceAutoMode.enforce() raises ComplianceAutoModePaused when
+        auto-trading is paused.  Called BEFORE the firewall so that compliance
+        violations are caught before any risk evaluation or downstream dispatch.
+
+        On block: transitions the take-signal to REJECTED and emits an
+        ORCHESTRATION_BLOCKED_BY_COMPLIANCE event before returning.
         """
         if self._compliance is None:
             return None
         try:
             self._compliance.enforce()
         except ComplianceAutoModePaused as exc:
+            reason = str(exc)
             logger.warning(
                 "[Coordinator] Compliance gate blocked take_id=%s: %s",
                 take_id,
-                exc,
+                reason,
+            )
+            await self._take_svc.transition(
+                take_id,
+                STATUS_REJECTED,
+                reason=reason,
+            )
+            await self._emit_event(
+                "ORCHESTRATION_BLOCKED_BY_COMPLIANCE",
+                {"take_id": take_id, "reason": reason},
             )
             return OrchestrationResult(
                 take_id=take_id,
                 verdict="REJECTED",
                 status="COMPLIANCE_BLOCKED",
-                reason=str(exc),
+                reason=reason,
             )
         return None
 
