@@ -1,5 +1,7 @@
 # ──────────────────────────────────────────────────────────────────────
-# Build from repository ROOT (the COPY commands reference root-level files):
+# Worker Dockerfile — scoped to worker-relevant packages.
+#
+# Build from repository ROOT:
 #   docker build -f services/worker/Dockerfile .
 # ──────────────────────────────────────────────────────────────────────
 FROM python:3.11-slim
@@ -14,7 +16,21 @@ COPY requirements.txt ./
 RUN pip install --no-cache-dir --upgrade pip \
     && pip install --no-cache-dir -r requirements.txt
 
-COPY . .
+# ── Scoped COPY: worker + shared packages ────────────────────────────
+COPY analysis/ analysis/
+COPY config/ config/
+COPY context/ context/
+COPY core/ core/
+COPY engines/ engines/
+COPY infrastructure/ infrastructure/
+COPY monitoring/ monitoring/
+COPY schemas/ schemas/
+COPY storage/ storage/
+COPY utils/ utils/
+COPY services/worker/ services/worker/
+
+# Root modules
+COPY config_loader.py throttle_log_filter.py ./
 
 RUN groupadd --gid 1000 appuser \
     && useradd --uid 1000 --gid appuser --shell /bin/bash --create-home appuser \
