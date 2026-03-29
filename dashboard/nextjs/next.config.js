@@ -324,17 +324,10 @@ const nextConfig = {
       },
     ];
   },
-  async rewrites() {
-    // P4: All API rewrites removed. The runtime proxy at /api/proxy/[...path]
-    // is now the single canonical proxy path. This eliminates the dual-path
-    // overlap (build-time rewrites vs runtime proxy vs middleware) that
-    // caused stale-env bugs and made auth injection fragile.
-    //
-    // Callers use getRestPrefix() which always returns "/api/proxy" on the
-    // client. The catch-all route handler reads INTERNAL_API_URL at request
-    // time and forwards to the backend.
-    return [];
-  },
+  // NO rewrites — the runtime proxy at /api/proxy/[...path] is the single
+  // canonical backend access path.  Do NOT re-add rewrites here; that
+  // creates a dual-path overlap with the runtime proxy and breaks auth
+  // injection in middleware.
   eslint: {
     // Allow builds to complete even if there are ESLint warnings/errors
     ignoreDuringBuilds: true,

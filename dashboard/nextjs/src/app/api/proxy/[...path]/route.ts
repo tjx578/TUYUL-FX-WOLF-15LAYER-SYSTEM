@@ -1,49 +1,31 @@
 import { NextRequest, NextResponse } from "next/server";
 
 /**
- * Single canonical API proxy — reads backend URL at **runtime**, not build time.
+ * Single canonical backend proxy — runtime route handler.
  *
- * P4 consolidation: all REST traffic from the browser flows through this
- * route handler. Build-time rewrites in next.config.js have been removed.
- * getRestPrefix() always returns "/api/proxy" on the client, so every
- * fetch call goes through this handler.
+ * ALL browser REST traffic flows through this handler.  There are no
+ * build-time rewrites; getRestPrefix() always returns "/api/proxy" on the
+ * client, so every fetch request arrives here as:
  *
- * All responses include:
- *   x-proxy-target  — the resolved backend origin (sanitised, no credentials)
+ *   /api/proxy/api/v1/<resource>
+ *
+ * The handler reads INTERNAL_API_URL at request time (not build time),
+ * strips the /api/proxy prefix that Next.js already consumed, and
+ * forwards the remaining path to the backend.
+ *
+ * Traceability headers on every response:
+ *   x-proxy-target  — resolved backend origin (no credentials/path)
  *   x-proxy-status  — "ok" | "misconfigured" | "error"
  */
 
 /** Resolved backend origin or null when not configured. */
 function getBackendUrl(): string | null {
-  // Canonical env vars (preferred):
-  //   INTERNAL_API_URL          — server-only, set in Vercel/Railway project vars
-  //   NEXT_PUBLIC_API_BASE_URL  — public, also available server-side in Node.js
-  //
-  // Deprecated (still read for backward compat, will be removed):
-  //   API_BASE_URL              — use INTERNAL_API_URL instead
-  //   API_DOMAIN                — use INTERNAL_API_URL instead
-  if (process.env.API_BASE_URL && !process.env.INTERNAL_API_URL) {
-    console.warn(
-      "[api/proxy] DEPRECATED: API_BASE_URL is deprecated. " +
-      "Rename it to INTERNAL_API_URL in your deployment env vars."
-    );
-  }
-  if (process.env.API_DOMAIN && !process.env.INTERNAL_API_URL) {
-    console.warn(
-      "[api/proxy] DEPRECATED: API_DOMAIN is deprecated. " +
-      "Use INTERNAL_API_URL=https://<your-domain> instead."
-    );
-  }
-
   const url =
     process.env.INTERNAL_API_URL ||
     process.env.NEXT_PUBLIC_API_BASE_URL ||
-    process.env.API_BASE_URL ||
-    (process.env.API_DOMAIN ? `https://${process.env.API_DOMAIN}` : "") ||
     "";
 
   if (!url) {
-    // In development without env vars, fallback to localhost
     if (process.env.NODE_ENV === "development") {
       return "http://localhost:8000";
     }
@@ -84,31 +66,28 @@ async function proxyRequest(
 
   const joinedPath = path.join("/");
 
-  // Map the incoming proxy path to the correct backend path.
+  // Canonical path mapping.
   //
-  // Callers may send paths in two forms:
-  //   1. /api/proxy/v1/trades/active   → joinedPath = "v1/trades/active"
-  //   2. /api/proxy/api/v1/trades/active → joinedPath = "api/v1/trades/active"
+  // getRestPrefix() returns "/api/proxy" on the client, so callers
+  // always produce:  /api/proxy/api/v1/<resource>
   //
-  // Form (2) happens when getRestPrefix() returns "/api/proxy" and the client
-  // code already prepends "/api/" in the endpoint path (e.g. API_ENDPOINTS).
-  // We must NOT double the /api/ prefix → /api/api/v1/...
+  // Next.js strips the /api/proxy prefix and hands us the rest,
+  // e.g. ["api", "v1", "trades", "active"] → joinedPath = "api/v1/trades/active".
+  //
+  // We prepend "/" to reconstruct the backend path.  Special health
+  // endpoints are mapped explicitly to their root-level paths.
   let targetPath: string;
-  if (joinedPath === "health" || joinedPath === "v1/health") {
+  if (joinedPath === "health" || joinedPath === "api/health" || joinedPath === "api/v1/health") {
     targetPath = "/health";
-  } else if (joinedPath === "healthz") {
+  } else if (joinedPath === "healthz" || joinedPath === "api/healthz") {
     targetPath = "/healthz";
-  } else if (joinedPath === "readyz") {
+  } else if (joinedPath === "readyz" || joinedPath === "api/readyz") {
     targetPath = "/readyz";
   } else if (joinedPath.startsWith("api/")) {
-    // Already has /api/ prefix (form 2) — use as-is with leading slash.
+    // Canonical form: path already includes /api/ prefix → use as-is.
     targetPath = `/${joinedPath}`;
-  } else if (joinedPath.startsWith("v1/")) {
-    targetPath = `/api/${joinedPath}`;
-  } else if (joinedPath.startsWith("auth/")) {
-    // /auth/* maps to /api/auth/* on the backend (matches next.config.js rewrite).
-    targetPath = `/api/${joinedPath}`;
   } else {
+    // Fallback for any non-canonical caller — prepend /api/.
     targetPath = `/api/${joinedPath}`;
   }
   const targetUrl = new URL(targetPath, backendUrl);
@@ -131,9 +110,8 @@ async function proxyRequest(
     }
   });
 
-  // API_KEY fallback removed (P3): machine keys must not silently
-  // authenticate proxied requests.  Auth comes from the session cookie
-  // injected by middleware, or from the client's own Authorization header.
+  // Auth comes from the session cookie injected by middleware, or from
+  // the client's own Authorization header.  No API_KEY fallback.
 
   // Safe target label for headers (origin only, no credentials/path)
   const targetLabel = `${targetUrl.protocol}//${targetUrl.host}`;
