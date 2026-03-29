@@ -32,6 +32,7 @@ from services.orchestrator.protocols import (
     VERDICT_REJECTED,
     RiskFirewallLike,
     StreamPublisherLike,
+    TakeSignalResponseLike,
     TakeSignalServiceLike,
 )
 
@@ -91,6 +92,8 @@ class OrchestratorCoordinator:
             self._publisher = StreamPublisher()
         return self._publisher
 
+    # ── Public entry point ────────────────────────────────────────────────
+
     async def process_take_signal(
         self,
         take_id: str,
@@ -99,35 +102,18 @@ class OrchestratorCoordinator:
     ) -> OrchestrationResult:
         """Run the ordered orchestration flow for a take-signal.
 
-        Flow:
+        Pipeline:
           1. Validate take-signal exists and is in PENDING state
           2. Run risk firewall checks
-          3. If firewall rejects: transition to FIREWALL_REJECTED, stop
-          4. If firewall approves: transition to FIREWALL_APPROVED
-          5. Dispatch to execution (creates execution intent)
-          6. Transition to EXECUTION_SENT
+          3. If firewall rejects → handle rejection, stop
+          4. If firewall approves → dispatch to execution, complete
 
         The orchestrator does NOT modify the signal, verdict, or direction.
         """
-        # 1. Validate take-signal exists
-        take_response = await self._take_svc.get(take_id)
-        if take_response is None:
-            return OrchestrationResult(
-                take_id=take_id,
-                verdict="REJECTED",
-                status="ERROR",
-                reason=f"take_id={take_id} not found",
-            )
+        take_response = await self._validate_take(take_id)
+        if isinstance(take_response, OrchestrationResult):
+            return take_response
 
-        if take_response.status != STATUS_PENDING:
-            return OrchestrationResult(
-                take_id=take_id,
-                verdict="NOOP",
-                status=str(take_response.status),
-                reason=f"Take-signal already in {take_response.status} state",
-            )
-
-        # Emit orchestration started event
         await self._emit_event(
             "ORCHESTRATION_STARTED",
             {
@@ -137,9 +123,49 @@ class OrchestratorCoordinator:
             },
         )
 
-        # 2. Run risk firewall
+        fw_result = await self._evaluate_firewall(take_id, signal, account_state)
+        if isinstance(fw_result, OrchestrationResult):
+            return fw_result
+
+        if fw_result.verdict == VERDICT_REJECTED:
+            return await self._handle_rejection(take_id, fw_result)
+
+        return await self._dispatch_and_complete(
+            take_id, signal, account_state, fw_result,
+        )
+
+    # ── Pipeline steps (private) ───────────────────────────────────────────
+
+    async def _validate_take(
+        self, take_id: str,
+    ) -> TakeSignalResponseLike | OrchestrationResult:
+        """Fetch take-signal and verify it is in PENDING state."""
+        take_response = await self._take_svc.get(take_id)
+        if take_response is None:
+            return OrchestrationResult(
+                take_id=take_id,
+                verdict="REJECTED",
+                status="ERROR",
+                reason=f"take_id={take_id} not found",
+            )
+        if take_response.status != STATUS_PENDING:
+            return OrchestrationResult(
+                take_id=take_id,
+                verdict="NOOP",
+                status=str(take_response.status),
+                reason=f"Take-signal already in {take_response.status} state",
+            )
+        return take_response
+
+    async def _evaluate_firewall(
+        self,
+        take_id: str,
+        signal: dict[str, Any],
+        account_state: dict[str, Any],
+    ) -> Any | OrchestrationResult:
+        """Run firewall evaluation. Returns firewall result or OrchestrationResult on error."""
         try:
-            fw_result = await self._firewall.evaluate(take_id, signal, account_state)
+            return await self._firewall.evaluate(take_id, signal, account_state)
         except Exception as exc:
             logger.error("[Coordinator] Firewall evaluation failed: {}", exc)
             await self._take_svc.transition(
@@ -154,31 +180,40 @@ class OrchestratorCoordinator:
                 reason=f"Firewall error: {exc}",
             )
 
-        # 3. If firewall rejects: stop
-        if fw_result.verdict == VERDICT_REJECTED:
-            await self._take_svc.transition(
-                take_id,
-                STATUS_FIREWALL_REJECTED,
-                reason=f"Firewall rejected at: {fw_result.short_circuited_at}",
-                firewall_result_id=fw_result.firewall_id,
-            )
-            await self._emit_event(
-                "ORCHESTRATION_REJECTED",
-                {
-                    "take_id": take_id,
-                    "firewall_id": fw_result.firewall_id,
-                    "reason": fw_result.short_circuited_at,
-                },
-            )
-            return OrchestrationResult(
-                take_id=take_id,
-                verdict="REJECTED",
-                firewall_id=fw_result.firewall_id,
-                status=STATUS_FIREWALL_REJECTED,
-                reason=f"Firewall blocked at: {fw_result.short_circuited_at}",
-            )
+    async def _handle_rejection(
+        self, take_id: str, fw_result: Any,
+    ) -> OrchestrationResult:
+        """Transition to FIREWALL_REJECTED and emit rejection event."""
+        await self._take_svc.transition(
+            take_id,
+            STATUS_FIREWALL_REJECTED,
+            reason=f"Firewall rejected at: {fw_result.short_circuited_at}",
+            firewall_result_id=fw_result.firewall_id,
+        )
+        await self._emit_event(
+            "ORCHESTRATION_REJECTED",
+            {
+                "take_id": take_id,
+                "firewall_id": fw_result.firewall_id,
+                "reason": fw_result.short_circuited_at,
+            },
+        )
+        return OrchestrationResult(
+            take_id=take_id,
+            verdict="REJECTED",
+            firewall_id=fw_result.firewall_id,
+            status=STATUS_FIREWALL_REJECTED,
+            reason=f"Firewall blocked at: {fw_result.short_circuited_at}",
+        )
 
-        # 4. Firewall approved → transition
+    async def _dispatch_and_complete(
+        self,
+        take_id: str,
+        signal: dict[str, Any],
+        account_state: dict[str, Any],
+        fw_result: Any,
+    ) -> OrchestrationResult:
+        """Approve, dispatch to execution, and finalize the flow."""
         await self._take_svc.transition(
             take_id,
             STATUS_FIREWALL_APPROVED,
@@ -186,7 +221,6 @@ class OrchestratorCoordinator:
             firewall_result_id=fw_result.firewall_id,
         )
 
-        # 5. Dispatch to execution
         execution_intent_id = await self._dispatch_to_execution(
             take_id=take_id,
             signal=signal,
@@ -194,7 +228,6 @@ class OrchestratorCoordinator:
             firewall_id=fw_result.firewall_id,
         )
 
-        # 6. Transition to EXECUTION_SENT
         await self._take_svc.transition(
             take_id,
             STATUS_EXECUTION_SENT,

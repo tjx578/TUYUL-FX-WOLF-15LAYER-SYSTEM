@@ -296,6 +296,84 @@ class TestOrchestrationResult:
         assert len(r.timestamp) > 0
 
 
+# ── Pipeline decomposition (DEBT-SVC-07) ─────────────────────────────────
+
+
+class TestPipelineDecomposition:
+    """Verify process_take_signal is decomposed into testable pipeline steps."""
+
+    def test_pipeline_methods_exist(self):
+        coord = OrchestratorCoordinator(
+            take_signal_service=AsyncMock(), risk_firewall=AsyncMock(),
+        )
+        assert callable(getattr(coord, "_validate_take", None))
+        assert callable(getattr(coord, "_evaluate_firewall", None))
+        assert callable(getattr(coord, "_handle_rejection", None))
+        assert callable(getattr(coord, "_dispatch_and_complete", None))
+
+    def test_process_take_signal_is_short(self):
+        """The public method should be a short pipeline dispatcher, not a god method."""
+        import inspect
+        import textwrap
+
+        source = inspect.getsource(OrchestratorCoordinator.process_take_signal)
+        lines = [l for l in textwrap.dedent(source).splitlines() if l.strip() and not l.strip().startswith(("#", '"""', "\'\'\'"))]  # noqa: E741
+        assert len(lines) <= 30, f"process_take_signal still too long: {len(lines)} lines"
+
+    async def test_validate_take_not_found(self, coordinator, mock_take_service):
+        mock_take_service.get.return_value = None
+        result = await coordinator._validate_take("missing")
+        assert isinstance(result, OrchestrationResult)
+        assert result.verdict == "REJECTED"
+        assert result.status == "ERROR"
+
+    async def test_validate_take_non_pending(self, coordinator, mock_take_service):
+        from execution.take_signal_models import TakeSignalResponse, TakeSignalStatus
+
+        resp = TakeSignalResponse(
+            take_id="t", request_id="r", signal_id="s", account_id="a",
+            ea_instance_id="e", status=TakeSignalStatus.EXECUTED,
+            created_at="x", updated_at="x",
+        )
+        mock_take_service.get.return_value = resp
+        result = await coordinator._validate_take("t")
+        assert isinstance(result, OrchestrationResult)
+        assert result.verdict == "NOOP"
+
+    async def test_validate_take_pending_returns_response(
+        self, coordinator, mock_take_service, pending_take_response,
+    ):
+        mock_take_service.get.return_value = pending_take_response
+        result = await coordinator._validate_take("take_001")
+        assert not isinstance(result, OrchestrationResult)
+        assert result.signal_id == "SIG-001"
+
+    async def test_evaluate_firewall_error_returns_result(
+        self, coordinator, mock_firewall,
+    ):
+        mock_firewall.evaluate.side_effect = RuntimeError("boom")
+        result = await coordinator._evaluate_firewall("t", {}, {})
+        assert isinstance(result, OrchestrationResult)
+        assert result.verdict == "REJECTED"
+        assert "Firewall error" in result.reason
+
+    async def test_evaluate_firewall_success_returns_fw_result(
+        self, coordinator, mock_firewall, approved_firewall_result,
+    ):
+        mock_firewall.evaluate.return_value = approved_firewall_result
+        result = await coordinator._evaluate_firewall("t", {}, {})
+        assert not isinstance(result, OrchestrationResult)
+        assert result.firewall_id == "fw_001"
+
+    async def test_handle_rejection(
+        self, coordinator, rejected_firewall_result,
+    ):
+        result = await coordinator._handle_rejection("take_001", rejected_firewall_result)
+        assert isinstance(result, OrchestrationResult)
+        assert result.verdict == "REJECTED"
+        assert result.firewall_id == "fw_002"
+
+
 # ── Dispatch failure ──────────────────────────────────────────────────────
 
 
