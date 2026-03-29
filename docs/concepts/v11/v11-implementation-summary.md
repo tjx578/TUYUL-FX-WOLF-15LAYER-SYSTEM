@@ -16,7 +16,7 @@ Successfully implemented the **V11 Hyper-Precision Sniper Engine Suite** as a co
 ## Implementation Statistics
 
 | Metric | Value |
-|--------|-------|
+| -------- | ------- |
 | Files Created | 23 (18 source + 5 test) |
 | Lines of Code | ~2,856 (source) + ~1,026 (tests) |
 | Test Coverage | 51 tests, 100% passing |
@@ -73,7 +73,7 @@ Successfully implemented the **V11 Hyper-Precision Sniper Engine Suite** as a co
 ### Decision Matrix
 
 | L12 Verdict | V11 Gate | Final Decision | Authority |
-|-------------|----------|----------------|-----------|
+| ------------- | ---------- | ---------------- | ----------- |
 | EXECUTE | ALLOW | ✅ **TRADE** | Sniper Entry (both approve) |
 | EXECUTE | BLOCK | ❌ **NO TRADE** | V11 veto (extreme selectivity) |
 | HOLD | * | ❌ **NO TRADE** | L12 preserved (constitutional) |
@@ -434,7 +434,7 @@ Verified:
 ### Latency Characteristics
 
 | Operation | Typical Latency | Max Budget |
-|-----------|----------------|------------|
+| ----------- | ---------------- | ------------ |
 | Full v11 evaluation | 20-50ms | 100ms (configurable) |
 | Exhaustion detector | 5-10ms | - |
 | Gate evaluation | 2-5ms | - |
@@ -449,7 +449,7 @@ Verified:
 ### Memory Footprint
 
 | Component | Memory Usage |
-|-----------|--------------|
+| ----------- | -------------- |
 | Gate evaluation | <1KB |
 | Regime AI state | ~10KB (persistent) |
 | Candle history | Shared (LiveContextBus) |

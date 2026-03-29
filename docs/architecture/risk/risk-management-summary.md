@@ -110,7 +110,7 @@ f_final = min(f_final, max_risk_cap)
 
 | Problem with Pure Kelly | Our Solution |
 
-|---|---|
+| --- | --- |
 | Over-aggressive (full Kelly) | Half-Kelly default (configurable) |
 | Ignores tail risk | CVaR (Expected Shortfall) dampening |
 | Not volatility-aware | Volatility clustering adjustment |
@@ -123,7 +123,7 @@ f_final = min(f_final, max_risk_cap)
 
 | Parameter | Type | Default | Description |
 
-|---|---|---|---|
+| --- | --- | --- | --- |
 | `max_risk_cap` | float | 0.03 | Absolute maximum risk fraction per trade |
 | `kelly_fraction_multiplier` | float | 0.5 | Fraction of full Kelly (1.0 = full, 0.5 = half) |
 | `cvar_confidence` | float | 0.95 | CVaR confidence level |
@@ -134,7 +134,7 @@ f_final = min(f_final, max_risk_cap)
 
 | Field | Type | Description |
 
-|---|---|---|
+| --- | --- | --- |
 | `kelly_raw` | float | Raw full-Kelly fraction (can be negative) |
 | `kelly_fraction` | float | Fractional Kelly after clamp [0, 1] |
 | `cvar_adjustment` | float | CVaR dampening factor (0, 1] |
@@ -276,7 +276,7 @@ composite = clamp(composite, floor, cap)
 
 | Parameter | Default | Description
 
-|---|---|---|
+| --- | --- | --- |
 
 | `floor` | 0.1 | Minimum composite (prevents over-compression) |
 | `cap` | 3.0 | Maximum composite (prevents over-amplification) |
@@ -285,7 +285,7 @@ composite = clamp(composite, floor, cap)
 
 | Field | Type | Description |
 
-|---|---|---|
+| --- | --- | --- |
 | `macro_multiplier` | float | Individual source value |
 | `session_multiplier` | float | Individual source value |
 | `regime_multiplier` | float | Individual source value |
@@ -326,7 +326,7 @@ else:
 
 | Code | Blocking | Description |
 
-|---|---|---|
+| --- | --- | --- |
 | `DAILY_LOSS_LIMIT_REACHED` | ✅ | Daily P&L exceeds limit |
 | `DAILY_LOSS_LIMIT_WARNING` | ❌ | Approaching 80% of daily limit |
 | `MAX_OPEN_TRADES_REACHED` | ✅ | Too many concurrent positions |
@@ -341,7 +341,7 @@ else:
 
 | Field | Type | Description |
 
-|---|---|---|
+| --- | --- | --- |
 | `trade_allowed` | bool | True if no blocking violations |
 | `recommended_lot` | float | Safe lot size (rounded down) |
 | `max_safe_lot` | float | Maximum safe lot before min_lot check |
@@ -383,7 +383,7 @@ kelly_edge_gate:
 
 | Field | Type | Description |
 
-|---|---|---|
+| --- | --- | --- |
 | `passed` | bool | True if edge is positive |
 | `gate` | str | "GATE_11_KELLY_EDGE" |
 | `reason` | str | Mathematical explanation |
@@ -492,7 +492,7 @@ risk_multiplier:
 
 | File | Class | Purpose |
 
-|---|---|---|
+| --- | --- | --- |
 | `engines/dynamic_position_sizing_engine.py` | `DynamicPositionSizingEngine` | Kelly+CVaR+Vol+Bayesian hybrid sizing |
 | `engines/monte_carlo_engine.py` | `MonteCarloEngine` | Win probability simulation |
 | `engines/bayesian_update_engine.py` | `BayesianProbabilityEngine` | Posterior probability updating |
@@ -506,7 +506,7 @@ risk_multiplier:
 
 | File | Class | Purpose |
 
-|---|---|---|
+| --- | --- | --- |
 | `risk/risk_multiplier.py` | `RiskMultiplierAggregator` | Composite risk multiplier |
 | `risk/risk_manager.py` | `RiskManager` | Account-level risk evaluation |
 | `risk/position_sizer.py` | — | Execution-layer lot formula (not enrichment) |
@@ -516,21 +516,21 @@ risk_multiplier:
 
 | File | Class | Purpose |
 
-|---|---|---|
+| --- | --- | --- |
 | `constitution/verdict_engine.py` | `VerdictEngine` | L12 verdict + Gate 11 |
 
 ### Pipeline Zone (Wiring)
 
 | File | Purpose |
 
-|---|---|
+| --- | --- |
 | `pipeline/wolf_constitutional_pipeline.py` | Wires MC→Bayesian→VolCluster→PSE→L10→L12 |
 
 Configuration
 
 | File | Purpose |
 
-|---|---|
+| --- | --- |
 | `config/constitution.yaml` | All Risk Management configuration |
 
 ---
@@ -539,7 +539,7 @@ Configuration
 
 | Zone | Authority | Cannot Do |
 
-|---|---|---|
+| --- | --- | --- |
 | **Engines** (`engines/`) | Compute metrics, sizing recommendations | Execute trades, decide market direction |
 | **Risk** (`risk/`) | Evaluate account limits, compute lot sizes | Decide market direction, override L12 |
 | **Constitution** (`constitution/`) | SOLE decision authority (EXECUTE/HOLD/NO_TRADE) | Execute trades directly |
@@ -564,7 +564,7 @@ The Dynamic Position Sizing Engine is designed for prop firm safety:
 
 | Constraint | Enforcement | Location |
 
-|---|---|---|
+| --- | --- | --- |
 | Max 3% risk per trade | `max_risk_cap=0.03` | DynamicPSE |
 | Max 5% daily drawdown | `max_daily_loss_percent=0.05` | RiskManager |
 | Max open trades | `max_open_trades=5` | RiskManager |
@@ -595,7 +595,7 @@ Maximum possible risk: 3.0% ✅ Prop-firm safe
 
 | File | Tests | Coverage |
 
-|---|---|---|
+| --- | --- | --- |
 | `tests/test_dynamic_position_sizing.py` | 42 | Kelly formula, CVaR, volatility, posterior, hybrid, validation, serialization, edge cases |
 | `tests/test_risk_multiplier.py` | 11 | All sources, clamping, backward compat, immutability |
 | `tests/test_risk_manager.py` | 16 | Static/dynamic risk, violations, lot rounding, edge cases |
@@ -605,7 +605,7 @@ Maximum possible risk: 3.0% ✅ Prop-firm safe
 
 | File | Tests | Coverage |
 
-|---|---|---|
+| --- | --- | --- |
 | `tests/test_l10_kelly_integration.py` | 15 | VolCluster→PSE, PSE→RiskManager, PSE→Gate11, full pipeline, authority, determinism |
 
 ### Running Tests

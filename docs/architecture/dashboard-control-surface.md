@@ -88,7 +88,7 @@ NOT proxied — they handle their own auth.
 Infrastructure health and dashboard operator status are **semantically separate**.
 
 | Surface | Path | Auth | Purpose |
-|---------|------|------|---------|
+| --------- | ------ | ------ | --------- |
 
 | Liveness | `/healthz`, `/health` | none | Process alive? Infra probes. |
 | Readiness | `/readyz` | machine-key | Safe to serve traffic? |

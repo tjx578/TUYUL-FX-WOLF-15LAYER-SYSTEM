@@ -49,7 +49,7 @@ This means:
 All read-model modules now live under the `storage.*` canonical namespace:
 
 | Module | Canonical import |
-|--------|------------------|
+| -------- | ------------------ |
 | TradeLedger | `storage.trade_ledger` |
 | PriceFeed | `storage.price_feed` |
 | TradeJournal | `storage.trade_journal` |

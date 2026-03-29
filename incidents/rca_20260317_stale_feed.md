@@ -15,7 +15,7 @@ Engine service started successfully, but it was launched in `RUN_MODE=engine-onl
 ## Timeline
 
 | Time (UTC) | Event |
-|---|---|
+| --- | --- |
 | T+0 | Engine container starts in `RUN_MODE=engine-only` |
 | T+1 | `init_persistent_storage()` runs → "Redis appears empty; attempting recovery from PostgreSQL" |
 | T+2 | Candle history seeded into `LiveContextBus` from PostgreSQL recovery (~8.7 h stale) |
@@ -44,7 +44,7 @@ The dashboard "stale feed" warning is a **correct symptom**, not a bug in monito
 ## Contributing Factors
 
 | # | Factor | Description |
-|---|---|---|
+| --- | --- | --- |
 | 1 | `LATEST_TICK_TTL_SECONDS = 60` | Tick keys expire after 60 s with no incoming ticks. During a typical Finnhub rate-limit back-off (30–300 s) or brief network blip this causes all tick keys to vanish, leaving the engine with zero live data. A 1-hour TTL covers normal reconnection scenarios; outages beyond that fall back to PostgreSQL recovery on restart. |
 | 2 | Destructive warmup seed | `_seed_redis_candle_history()` deletes existing candle lists before confirming new data is available, risking data loss on Finnhub rate-limit errors (403/429). |
 | 3 | `RestPollFallback` not writing to Redis | REST poll fallback updates `LiveContextBus` in memory but did not reliably persist candles back to Redis, so a restarting engine container sees empty lists. |
@@ -78,7 +78,7 @@ The dashboard "stale feed" warning is a **correct symptom**, not a bug in monito
 ## Action Items
 
 | # | Owner | Action | Status |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | 1 | Platform / DevOps | Always deploy engine + ingest in the same Railway environment or linked services | ✅ Done |
 | 2 | Backend | Non-destructive candle seed (atomic RENAME) | ✅ Done |
 | 3 | Backend | Extend `LATEST_TICK_TTL_SECONDS` to 3,600 | ✅ Done |

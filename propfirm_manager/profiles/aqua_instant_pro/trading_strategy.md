@@ -22,7 +22,7 @@ untuk Instant Pro yang memiliki batas drawdown ketat dan penalti permanen jika m
 ## Konsekuensi dari Aturan Instant Pro
 
 | Aturan | Implikasi Praktis |
-|--------|-------------------|
+| -------- | ------------------- |
 
 | Trailing drawdown 4% | Lantai naik bersama ekuitas; ruang bernapas menyempit setelah profit besar. |
 | Kill-switch −2% floating | Eksposur gabungan yang jatuh > −2% dari saldo awal menutup akun selamanya. |
@@ -76,7 +76,7 @@ untuk Instant Pro yang memiliki batas drawdown ketat dan penalti permanen jika m
 ## Contoh Rencana Trading — Akun $100.000
 
 | Parameter | Nilai |
-|-----------|-------|
+| ----------- | ------- |
 
 | Risiko per posisi | Maks $400 (0,4%) |
 | Total risiko terbuka | Maks $800 (0,8%) |

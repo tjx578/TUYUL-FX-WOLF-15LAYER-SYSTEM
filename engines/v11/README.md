@@ -23,7 +23,7 @@ V11Overlay { should_trade: bool, gate_result, ... }
 ## Decision Matrix
 
 | L12 Verdict | V11 Gate | Final Decision | Reasoning |
-|-------------|----------|----------------|-----------|
+| ------------- | ---------- | ---------------- | ----------- |
 | EXECUTE | ALLOW | ✅ TRADE | Both approve (Sniper Entry) |
 | EXECUTE | BLOCK | ❌ NO TRADE | V11 veto |
 | HOLD/NO_TRADE | * | ❌ NO TRADE | L12 authority preserved |

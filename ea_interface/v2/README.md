@@ -13,14 +13,14 @@ These files are **separate from** the legacy `ea_interface/TuyulFX_Bridge_EA.mq5
 ### EA Types
 
 | EA | File | Class | Purpose |
-|----|------|-------|---------|
+| ---- | ------ | ------- | --------- |
 | **PRIMARY** | `TuyulFX_Primary_EA.mq5` | PRIMARY | Full execution + reporting |
 | **PORTFOLIO** | `TuyulFX_Portfolio_EA.mq5` | PORTFOLIO | Reporter-only, no execution |
 
 ### vs Legacy v1
 
 | Feature | v1 (Bridge EA) | v2 (Agent Manager EA) |
-|---------|----------------|----------------------|
+| --------- | ---------------- | ---------------------- |
 | Communication | File-based JSON | HTTP REST API |
 | Registration | None | Agent Manager backend |
 | Heartbeat | None | Every 30 s (configurable) |
@@ -35,7 +35,7 @@ These files are **separate from** the legacy `ea_interface/TuyulFX_Bridge_EA.mq5
 ## Include Files
 
 | File | Purpose |
-|------|---------|
+| ------ | --------- |
 | `Include/TuyulFX_Common.mqh` | Constants, enums, utility functions |
 | `Include/TuyulFX_Json.mqh` | JSON parser / builder (improved v2) |
 | `Include/TuyulFX_Http.mqh` | HTTP client for Agent Manager API |
@@ -46,7 +46,7 @@ These files are **separate from** the legacy `ea_interface/TuyulFX_Bridge_EA.mq5
 ## Backend API Endpoints Used
 
 | Method | Endpoint | Purpose |
-|--------|----------|---------|
+| -------- | ---------- | --------- |
 | `POST` | `/api/v1/agent-ingest/heartbeat` | Send heartbeat |
 | `POST` | `/api/v1/agent-ingest/status-change` | Send status change |
 | `POST` | `/api/v1/agent-ingest/portfolio-snapshot` | Send account snapshot |
@@ -103,7 +103,7 @@ Set the following input parameters:
 ### TuyulFX_Primary_EA.mq5
 
 | Parameter | Default | Description |
-|-----------|---------|-------------|
+| ----------- | --------- | ------------- |
 | `AgentId` | *(empty)* | Agent Manager UUID — **REQUIRED** |
 | `ApiBaseUrl` | `http://localhost:8000` | Backend API URL |
 | `ApiKey` | *(empty)* | Bearer token for authentication |
@@ -127,7 +127,7 @@ Set the following input parameters:
 ### TuyulFX_Portfolio_EA.mq5
 
 | Parameter | Default | Description |
-|-----------|---------|-------------|
+| ----------- | --------- | ------------- |
 | `AgentId` | *(empty)* | Agent Manager UUID — **REQUIRED** |
 | `ApiBaseUrl` | `http://localhost:8000` | Backend API URL |
 | `ApiKey` | *(empty)* | Bearer token for authentication |
@@ -187,7 +187,7 @@ The Primary EA supports backwards-compatible operation with v1:
 ## Version History
 
 | Version | File | Description |
-|---------|------|-------------|
+| --------- | ------ | ------------- |
 | 2.00 | `ea_interface/TuyulFX_Bridge_EA.mq5` | Legacy file-based bridge executor |
 | 3.00 | `ea_interface/v2/TuyulFX_Primary_EA.mq5` | HTTP-based Primary EA + Agent Manager |
 | 3.00 | `ea_interface/v2/TuyulFX_Portfolio_EA.mq5` | HTTP-based Portfolio reporter EA |

@@ -15,7 +15,7 @@ The tick spike filter in [`ingest/dependencies.py`](ingest/dependencies.py) was 
 ### Three Problems Identified
 
 | Problem | Severity | Impact |
-|---------|----------|--------|
+| --------- | ---------- | -------- |
 
 | **Stale baseline after WS reconnect** | 🔴 Critical | After WebSocket disconnects/reconnects, `_last_prices` held outdated prices. First post-reconnect tick appeared as a "spike" even for legitimate market movement. |
 | **XAU_USD volatility** | 🟡 High | Gold (XAU_USD) frequently moves >0.5% between ticks during normal trading. Flat 0.5% threshold was too restrictive for volatile instruments. |
@@ -109,7 +109,7 @@ Baseline resets now log:
 Added 7 new test cases in [`tests/test_tick_spike_filter.py`](tests/test_tick_spike_filter.py):
 
 | Test | Validates |
-|------|-----------|
+| ------ | ----------- |
 
 | `test_xauusd_wider_threshold` | XAU_USD accepts 1.5% moves but rejects 2.1% |
 | `test_gbpjpy_medium_threshold` | GBP/JPY uses 1% threshold |
@@ -126,7 +126,7 @@ Added 7 new test cases in [`tests/test_tick_spike_filter.py`](tests/test_tick_sp
 ## 🏛️ Architecture Compliance
 
 | Boundary | Status | Notes |
-|----------|--------|-------|
+| ---------- | -------- | ------- |
 
 | **Analysis Zone** | ✅ Clean | Changes confined to `ingest/dependencies.py` (data ingestion layer). |
 | **Constitution (L12)** | ✅ No conflict | No decision authority added. Spike filter is still a data quality guard only. |

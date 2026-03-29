@@ -18,7 +18,7 @@ Dokumen ini mendefinisikan **hubungan 1-banding-1** antara:
 ## 🧠 MAPPING PRINSIP
 
 | Layer | Status di JSON | Catatan |
-|------|---------------|---------|
+| ------ | --------------- | --------- |
 | L1–L11 | Aggregated | Disimpan sebagai nilai numerik / ringkas |
 | L12 | Mandatory | Verdict final (authority) |
 | L13 | Aggregated | Field energy & reflective metrics |
@@ -30,7 +30,7 @@ Dokumen ini mendefinisikan **hubungan 1-banding-1** antara:
 ## 🟢 CORE IDENTIFIERS
 
 | TEMPLATE FIELD | L14 JSON FIELD |
-|---------------|---------------|
+| --------------- | --------------- |
 | Instrument / Pair | `pair` |
 | Analysis Time | `timestamp` |
 | Final Verdict | `verdict` |
@@ -42,7 +42,7 @@ Dokumen ini mendefinisikan **hubungan 1-banding-1** antara:
 ## 📊 SCORE & DISCIPLINE MAPPING
 
 | TEMPLATE (L4 / L5 / L7 / L8) | JSON FIELD |
-|-----------------------------|-----------|
+| ----------------------------- | ----------- |
 | Wolf 30-Point Score | `scores.wolf_30_point` |
 | F-Score | `scores.f_score` |
 | T-Score | `scores.t_score` |
@@ -56,7 +56,7 @@ Dokumen ini mendefinisikan **hubungan 1-banding-1** antara:
 ## 🌍 CONTEXT & COGNITIVE (L1)
 
 | TEMPLATE FIELD | JSON FIELD |
-|---------------|-----------|
+| --------------- | ----------- |
 | Market Regime | `cognitive.regime` |
 | Dominant Force | `cognitive.dominant_force` |
 | Cognitive Bias | `cognitive.cbv` |
@@ -67,7 +67,7 @@ Dokumen ini mendefinisikan **hubungan 1-banding-1** antara:
 ## 🎲 PROBABILITY & VALIDATION (L7)
 
 | TEMPLATE FIELD | JSON FIELD |
-|---------------|-----------|
+| --------------- | ----------- |
 | Win Probability | `layers.L7_monte_carlo_win` |
 | CONF₁₂ | `fusion_frpc.conf12` |
 
@@ -76,7 +76,7 @@ Dokumen ini mendefinisikan **hubungan 1-banding-1** antara:
 ## 🧮 TII & INTEGRITY (L8)
 
 | TEMPLATE FIELD | JSON FIELD |
-|---------------|-----------|
+| --------------- | ----------- |
 | TIIₛᵧₘ | `layers.L8_tii_sym` |
 | Integrity Index | `layers.L8_integrity_index` |
 
@@ -85,7 +85,7 @@ Dokumen ini mendefinisikan **hubungan 1-banding-1** antara:
 ## 🏦 SMC & LIQUIDITY (L9)
 
 | TEMPLATE FIELD | JSON FIELD |
-|---------------|-----------|
+| --------------- | ----------- |
 | Liquidity Score | `layers.L9_liquidity_score` |
 | DVG Confidence | `layers.L9_dvg_confidence` |
 | Market Structure | `smc.structure` |
@@ -99,7 +99,7 @@ Dokumen ini mendefinisikan **hubungan 1-banding-1** antara:
 ## ⚖️ EXECUTION & RR (L10–L11)
 
 | TEMPLATE FIELD | JSON FIELD |
-|---------------|-----------|
+| --------------- | ----------- |
 | Entry Zone | `execution.entry_zone` |
 | Entry Price | `execution.entry_price` |
 | Stop Loss | `execution.stop_loss` |
@@ -115,7 +115,7 @@ Dokumen ini mendefinisikan **hubungan 1-banding-1** antara:
 ## 🚪 CONSTITUTIONAL GATES (L12)
 
 | TEMPLATE GATE | JSON FIELD |
-|--------------|-----------|
+| -------------- | ----------- |
 | Gate 1 – TII | `gates.gate_1_tii` |
 | Gate 2 – FRPC | `gates.gate_2_frpc` |
 | Gate 3 – RR | `gates.gate_3_rr` |
@@ -133,7 +133,7 @@ Dokumen ini mendefinisikan **hubungan 1-banding-1** antara:
 ## 🧬 REFLECTIVE & META (L13–L15)
 
 | TEMPLATE FIELD | JSON FIELD |
-|---------------|-----------|
+| --------------- | ----------- |
 | α β γ | `trq3d.alpha / beta / gamma` |
 | Drift | `trq3d.drift` |
 | Mean Energy | `trq3d.mean_energy` |

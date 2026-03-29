@@ -17,7 +17,7 @@ fails due to one fixable bug. Ruff formatting is broken across 96 files.
 **CI State on `main` (run #2339):**
 
 | Job | Status | Root Cause |
-|-----|--------|------------|
+| ----- | -------- | ------------ |
 
 | Ruff lint | ❌ FAIL | 96 files need `ruff format` |
 | Python tests | ❌ FAIL | `FINNHUB_API_KEY` singleton bug in test fixture |
@@ -37,7 +37,7 @@ The following files were committed directly to the repo root. They are debug out
 probe scripts, and temporary CI artifacts that should never have been committed:
 
 | Category | Files |
-|----------|-------|
+| ---------- | ------- |
 
 | PR004 debug txt | `_pr004_collect.txt`, `_pr004_cors.txt`, `_pr004_cors2.txt`, `_pr004_existing.txt`, `_pr004_gov.txt`, `_pr004_gov2.txt`, `_pr004_gov3.txt`, `_pr004_out2.txt`, `_pr004_out3.txt`, `_pr004_static.txt`, `_pr004_test_out.txt` |
 | Test output txt | `_test_dash_err.txt`, `_test_full_out.txt`, `_test_full_out2.txt`, `_test_full_out3.txt`, `_test_iter.txt`, `_test_iter2.txt`, `_test_iter4.txt`, `_test_monitor.txt`, `_test_monitor2.txt`, `_test_pr004_wg.txt`, `_test_run_current.txt`, `_suite_out.txt` |
@@ -113,7 +113,7 @@ with patch.object(finnhub_keys, "current_key", return_value="test-token"):
 *Severity: MEDIUM (naming confusion, unclear ownership)**
 
 | Directory | Contents | Role |
-|-----------|----------|------|
+| ----------- | ---------- | ------ |
 
 | `engine/` | `trq_engine.py`, `trq_redis_bridge.py` | Zone A micro-wave engine (M1/M5/M15) |
 
@@ -368,7 +368,7 @@ All `railway-*.toml` files point to scripts in `deploy/railway/`:
 
 | Service | Start Script |
 
-|---------|-------------|
+| --------- | ------------- |
 | API | `deploy/railway/start_api.sh` |
 | Engine | `deploy/railway/start_engine.sh` |
 | Ingest | `deploy/railway/start_ingest.sh` |
@@ -399,7 +399,7 @@ Multi-stage build with Python 3.11. All services share one `Dockerfile`.
 
 | Severity | Count | Fixed in this PR? |
 
-|----------|-------|-------------------|
+| ---------- | ------- | ------------------- |
 | CRITICAL | 2 | ✅ Yes (ruff format, test fixture bug) |
 | HIGH | 1 | ✅ Yes (40+ debug files removed) |
 | MEDIUM | 4 | ⚠️ Documented; separate PRs recommended |
@@ -423,7 +423,7 @@ Multi-stage build with Python 3.11. All services share one `Dockerfile`.
 
 | Rule | Status |
 
-|------|--------|
+| ------ | -------- |
 | No execution authority in analysis modules | ✅ PASS |
 | Dashboard/EA cannot override L12 verdict | ✅ PASS |
 | No market direction computed in execution/dashboard | ✅ PASS |
