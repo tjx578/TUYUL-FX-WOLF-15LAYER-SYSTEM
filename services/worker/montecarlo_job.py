@@ -103,10 +103,8 @@ def run() -> None:
             )
             return
 
-        from pipeline.constants import get_monte_min
-
-        monte_min = get_monte_min()
         engine = _build_engine()
+        monte_min = engine.win_threshold
         result = engine.run(return_matrix)
 
         payload: dict[str, Any] = {
