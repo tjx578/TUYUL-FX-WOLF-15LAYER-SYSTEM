@@ -104,6 +104,16 @@ class RiskFirewall:
     All checks are run in strict order. A HARD_FAIL short-circuits.
     """
 
+    def __init__(self, stream_publisher: Any = None) -> None:
+        self._stream_publisher = stream_publisher
+
+    def _get_publisher(self) -> Any:
+        if self._stream_publisher is None:
+            from infrastructure.stream_publisher import StreamPublisher  # noqa: PLC0415
+
+            self._stream_publisher = StreamPublisher()
+        return self._stream_publisher
+
     async def evaluate(
         self,
         take_id: str,
@@ -477,9 +487,7 @@ class RiskFirewall:
         """Emit firewall result event."""
         event_type = "FIREWALL_APPROVED" if result.verdict == FirewallVerdict.APPROVED else "FIREWALL_REJECTED"
         try:
-            from infrastructure.stream_publisher import StreamPublisher  # noqa: PLC0415
-
-            publisher = StreamPublisher()
+            publisher = self._get_publisher()
             await publisher.publish(
                 stream=FIREWALL_EVENTS,
                 fields={

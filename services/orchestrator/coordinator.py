@@ -30,6 +30,7 @@ from services.orchestrator.protocols import (
     STATUS_REJECTED,
     VERDICT_REJECTED,
     RiskFirewallLike,
+    StreamPublisherLike,
     TakeSignalServiceLike,
 )
 
@@ -78,6 +79,7 @@ class OrchestratorCoordinator:
         self,
         take_signal_service: TakeSignalServiceLike | None = None,
         risk_firewall: RiskFirewallLike | None = None,
+        stream_publisher: StreamPublisherLike | None = None,
     ) -> None:
         if take_signal_service is None:
             from execution.take_signal_service import TakeSignalService  # noqa: PLC0415
@@ -89,6 +91,14 @@ class OrchestratorCoordinator:
             risk_firewall = RiskFirewall()
         self._take_svc = take_signal_service
         self._firewall = risk_firewall
+        self._publisher = stream_publisher
+
+    def _get_publisher(self) -> StreamPublisherLike:
+        if self._publisher is None:
+            from infrastructure.stream_publisher import StreamPublisher  # noqa: PLC0415
+
+            self._publisher = StreamPublisher()
+        return self._publisher
 
     async def process_take_signal(
         self,
@@ -242,7 +252,6 @@ class OrchestratorCoordinator:
 
         try:
             from contracts.redis_stream_contracts import ExecutionIntentPayload  # noqa: PLC0415
-            from infrastructure.stream_publisher import StreamPublisher  # noqa: PLC0415
 
             payload = ExecutionIntentPayload(
                 execution_intent_id=execution_intent_id,
@@ -258,7 +267,7 @@ class OrchestratorCoordinator:
                 timestamp=datetime.now(UTC).isoformat(),
             )
 
-            publisher = StreamPublisher()
+            publisher = self._get_publisher()
             await publisher.publish(
                 stream=EXECUTION_INTENTS,
                 fields=payload.to_stream_fields(),
@@ -269,13 +278,10 @@ class OrchestratorCoordinator:
 
         return execution_intent_id
 
-    @staticmethod
-    async def _emit_event(event_type: str, details: dict[str, Any]) -> None:
+    async def _emit_event(self, event_type: str, details: dict[str, Any]) -> None:
         """Emit orchestration status event (non-blocking, best-effort)."""
         try:
-            from infrastructure.stream_publisher import StreamPublisher  # noqa: PLC0415
-
-            publisher = StreamPublisher()
+            publisher = self._get_publisher()
             fields = {"event_type": event_type, **{k: str(v) for k, v in details.items()}}
             fields["timestamp"] = datetime.now(UTC).isoformat()
             await publisher.publish(stream=ORCHESTRATION_EVENTS, fields=fields)

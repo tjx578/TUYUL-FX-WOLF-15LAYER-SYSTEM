@@ -27,6 +27,7 @@ from typing import Any, Protocol
 from loguru import logger
 
 from core.redis_keys import COMPLIANCE_AUTO_MODE, COMPLIANCE_AUTO_MODE_STATE
+from services.orchestrator.protocols import StreamPublisherLike
 
 
 class AutoTradingState(StrEnum):
@@ -72,10 +73,22 @@ class ComplianceAutoMode:
     resume auto-trading when it was paused by a compliance violation.
     """
 
-    def __init__(self, redis_client: _AutoModeRedisProtocol | None = None) -> None:
+    def __init__(
+        self,
+        redis_client: _AutoModeRedisProtocol | None = None,
+        stream_publisher: StreamPublisherLike | None = None,
+    ) -> None:
         self._redis = redis_client
+        self._publisher = stream_publisher
         self._transitions: list[AutoModeTransition] = []
         self._state: AutoTradingState = self._restore_state()
+
+    def _get_publisher(self) -> StreamPublisherLike:
+        if self._publisher is None:
+            from infrastructure.stream_publisher import StreamPublisher  # noqa: PLC0415
+
+            self._publisher = StreamPublisher()
+        return self._publisher
 
     @property
     def state(self) -> AutoTradingState:
@@ -184,9 +197,7 @@ class ComplianceAutoMode:
     async def emit_transition_event(self, transition: AutoModeTransition) -> None:
         """Emit state change event to Redis stream (best-effort)."""
         try:
-            from infrastructure.stream_publisher import StreamPublisher  # noqa: PLC0415
-
-            publisher = StreamPublisher()
+            publisher = self._get_publisher()
             await publisher.publish(
                 stream=COMPLIANCE_AUTO_MODE,
                 fields={

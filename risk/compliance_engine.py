@@ -22,6 +22,7 @@ import uuid
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import StrEnum
+from typing import Any
 
 from loguru import logger
 
@@ -83,10 +84,19 @@ class ComplianceAutoModeEngine:
         warn_threshold_percent: float = DEFAULT_WARN_THRESHOLD_PERCENT,
         block_threshold_percent: float = DEFAULT_BLOCK_THRESHOLD_PERCENT,
         recovery_threshold_percent: float = DEFAULT_RECOVERY_THRESHOLD_PERCENT,
+        stream_publisher: Any = None,
     ) -> None:
         self._warn = warn_threshold_percent
         self._block = block_threshold_percent
         self._recovery = recovery_threshold_percent
+        self._stream_publisher = stream_publisher
+
+    def _get_publisher(self) -> Any:
+        if self._stream_publisher is None:
+            from infrastructure.stream_publisher import StreamPublisher  # noqa: PLC0415
+
+            self._stream_publisher = StreamPublisher()
+        return self._stream_publisher
 
     def evaluate(
         self,
@@ -205,9 +215,7 @@ class ComplianceAutoModeEngine:
     async def _emit_mode_change(self, result: ComplianceModeResult) -> None:
         """Emit COMPLIANCE_MODE_CHANGED to Redis Streams."""
         try:
-            from infrastructure.stream_publisher import StreamPublisher  # noqa: PLC0415
-
-            publisher = StreamPublisher()
+            publisher = self._get_publisher()
             await publisher.publish(
                 stream=COMPLIANCE_EVENTS,
                 fields={

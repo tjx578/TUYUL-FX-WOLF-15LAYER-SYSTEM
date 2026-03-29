@@ -33,6 +33,7 @@ VERDICT_REJECTED = "REJECTED"
 
 # ── Protocol: TakeSignalResponse ──────────────────────────────────────────
 
+
 @runtime_checkable
 class TakeSignalResponseLike(Protocol):
     """Minimal read interface the coordinator needs from a take-signal record."""
@@ -48,6 +49,7 @@ class TakeSignalResponseLike(Protocol):
 
 
 # ── Protocol: TakeSignalService ───────────────────────────────────────────
+
 
 @runtime_checkable
 class TakeSignalServiceLike(Protocol):
@@ -68,6 +70,7 @@ class TakeSignalServiceLike(Protocol):
 
 # ── Protocol: FirewallResult ──────────────────────────────────────────────
 
+
 @runtime_checkable
 class FirewallResultLike(Protocol):
     """Minimal read interface the coordinator needs from a firewall result."""
@@ -84,6 +87,7 @@ class FirewallResultLike(Protocol):
 
 # ── Protocol: RiskFirewall ────────────────────────────────────────────────
 
+
 @runtime_checkable
 class RiskFirewallLike(Protocol):
     """Async firewall evaluator for take-signal gating."""
@@ -94,3 +98,19 @@ class RiskFirewallLike(Protocol):
         signal: dict[str, Any],
         account_state: dict[str, Any],
     ) -> FirewallResultLike: ...
+
+
+# ── Protocol: StreamPublisher ─────────────────────────────────────────────
+
+
+@runtime_checkable
+class StreamPublisherLike(Protocol):
+    """Async publisher for Redis Streams — DEBT-SVC-02 injectable boundary."""
+
+    async def publish(
+        self,
+        stream: str,
+        fields: dict[str, str],
+        maxlen: int | None = None,
+        approximate: bool = True,
+    ) -> str: ...

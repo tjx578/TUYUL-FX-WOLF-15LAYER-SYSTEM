@@ -34,8 +34,17 @@ class TakeSignalService:
     def __init__(
         self,
         repository: TakeSignalRepository | None = None,
+        stream_publisher: Any = None,
     ) -> None:
         self._repo = repository or TakeSignalRepository()
+        self._stream_publisher = stream_publisher
+
+    def _get_publisher(self) -> Any:
+        if self._stream_publisher is None:
+            from infrastructure.stream_publisher import StreamPublisher  # noqa: PLC0415
+
+            self._stream_publisher = StreamPublisher()
+        return self._stream_publisher
 
     async def create(
         self,
@@ -193,13 +202,10 @@ class TakeSignalService:
             execution_intent_id=record.execution_intent_id,
         )
 
-    @staticmethod
-    async def _emit_event(event_type: str, record: TakeSignalRecord) -> None:
+    async def _emit_event(self, event_type: str, record: TakeSignalRecord) -> None:
         """Best-effort event emission for take-signal lifecycle changes."""
         try:
-            from infrastructure.stream_publisher import StreamPublisher  # noqa: PLC0415
-
-            publisher = StreamPublisher()
+            publisher = self._get_publisher()
             await publisher.publish(
                 stream=TAKE_SIGNAL_EVENTS,
                 fields={
