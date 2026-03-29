@@ -44,6 +44,19 @@ This means:
 - dashboard actions must remain downstream of backend authority boundaries
 - health/status routes must not blur infrastructure probe semantics
 
+## Storage namespace migration
+
+All read-model modules now live under the `storage.*` canonical namespace:
+
+| Module | Canonical import |
+|--------|------------------|
+| TradeLedger | `storage.trade_ledger` |
+| PriceFeed | `storage.price_feed` |
+| TradeJournal | `storage.trade_journal` |
+
+Deprecated shims at `dashboard/price_feed.py` and `dashboard/trade_ledger.py` have been deleted.
+The boundary test suite (`test_pr003_boundary.py`) enforces that no `api/` file imports from the retired `dashboard.*` namespace.
+
 ## Promotion rule
 
 Any future changes to flow semantics must first be reflected in `data-flow-final.md`, then summarized here only after the change is accepted as system truth.

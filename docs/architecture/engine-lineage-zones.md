@@ -37,6 +37,12 @@ For current runtime truth, use:
 - `deployment-railway.md`
 - `dashboard-control-surface.md`
 
+## Storage Namespace
+
+Read-model modules previously located in the `dashboard.*` namespace have been migrated to `storage.*` as the canonical location.
+The deprecated `dashboard/price_feed.py` and `dashboard/trade_ledger.py` shims have been deleted.
+Boundary tests enforce that no production code imports from the retired namespace.
+
 ## Why this file exists
 
 The historical zone model remains useful for:

@@ -61,17 +61,29 @@ It is not constitutional verdict authority.
 
 The following debt is acknowledged until removed:
 
-- owner dashboard auth model is not yet fully simplified
-- browser-facing auth fallback must be reduced to a single clean contract
-- overlapping proxy paths must be removed
-- dashboard status routing and infrastructure probe routing must be clearly separated
 - orchestrator entry flow must visibly enforce compliance before downstream action where required
+
+The following items were previously listed as debt and have been resolved:
+
+- ~~owner dashboard auth model is not yet fully simplified~~ — resolved: `DASHBOARD_MODE=owner` with `validateDashboardMode()` guard.
+- ~~browser-facing auth fallback must be reduced to a single clean contract~~ — resolved: API key fallback removed from ws-ticket route.
+- ~~overlapping proxy paths must be removed~~ — resolved: single canonical proxy at `/api/proxy/[...path]`, dead `rewrites()` removed.
+- ~~dashboard status routing and infrastructure probe routing must be clearly separated~~ — resolved: `/api/status` (operator, session-authed) vs `/healthz` + `/readyz` (infra, no session).
 
 ## Health and Status Semantics
 
 - `/healthz` and `/readyz` are infrastructure/service health surfaces
 - dashboard/operator status must be presented on a separate surface
 - frontend relay endpoints must not redefine infra semantics
+
+## Concurrency Model
+
+Dashboard state is protected by a write-preferring reader/writer lock (`RWLock`):
+
+- Multiple readers may access state concurrently.
+- When a writer is waiting, new readers queue behind it to prevent writer starvation.
+- Both read and write acquisitions are bounded by a safety timeout (10 s default).
+- State snapshots read all fields within a single critical section to prevent torn reads.
 
 ## Runtime Truth vs Historical Truth
 

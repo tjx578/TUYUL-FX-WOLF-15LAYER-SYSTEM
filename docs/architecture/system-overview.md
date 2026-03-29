@@ -82,6 +82,9 @@ Operational control is allowed only through documented backend paths that preser
 - Execution may execute, cancel, and expire, but may not decide direction.
 - The dashboard may operate and observe, but may not become an undocumented execution path.
 - Machine auth, owner dashboard auth, and internal service auth must remain distinct.
+- Deprecated shims (dashboard/price_feed, dashboard/trade_ledger) have been retired. All read-model imports use the canonical `storage.*` namespace.
+- API key rotation requires an explicit grace policy; keys in `ROTATING` status are rejected after the grace window or if no `rotated_at` timestamp exists.
+- State snapshots must read all fields within a single critical section to prevent torn reads.
 
 ## Relationship to existing references
 
@@ -90,5 +93,6 @@ For implementation-level detail, pair this overview with:
 - `data-flow-final.md`
 - `runtime-topology-current.md`
 - `dashboard-control-surface.md`
+- `engine-lineage-zones.md`
 - `deployment-railway.md`
 - `core/engine-dag-architecture.md`

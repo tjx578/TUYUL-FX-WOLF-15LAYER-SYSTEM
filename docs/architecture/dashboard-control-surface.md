@@ -37,8 +37,18 @@ Therefore:
 - public-user login semantics are NOT the primary architecture
 - browser-facing API key fallback is NOT allowed
 - machine/service API keys must remain machine-only
-- owner identity must be explicit and bounded
+- owner identity must be explicit and bounded (`DASHBOARD_MODE=owner`)
 - websocket/browser auth must follow a dedicated dashboard contract
+
+## Key Rotation Policy
+
+API keys managed through `APIKeyManager` follow an explicit rotation protocol:
+
+- `ACTIVE` keys validate normally.
+- `ROTATING` keys are only valid during a bounded grace window (default 300 s) measured from the `rotated_at` timestamp.
+- `ROTATING` keys with no `rotated_at` timestamp are rejected immediately.
+- `REVOKED` keys are rejected unconditionally.
+- Key material is persisted atomically (write-then-rename) to prevent corruption.
 
 ## Auth Boundary
 
