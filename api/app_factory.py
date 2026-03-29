@@ -529,12 +529,11 @@ def _register_health_routes(app: FastAPI) -> None:
             "router_boot_errors": router_boot_errors,
         }
 
-    app.add_api_route(
-        "/health",
-        health,
-        methods=["GET"],
-        dependencies=[Depends(verify_observability_machine_auth)],
-    )
+    # /health is the primary dashboard health probe — must be publicly
+    # accessible so the Next.js health-proxy and frontend multiplexer
+    # can reach it without machine-auth credentials.  Detailed diagnostics
+    # remain gated behind verify_token on /health/full.
+    app.add_api_route("/health", health, methods=["GET"])
 
     # /healthz is the liveness probe — must be unauthenticated and
     # return instantly with NO external dependencies (no Redis, no DB).
