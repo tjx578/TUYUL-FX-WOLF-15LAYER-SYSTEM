@@ -5,7 +5,7 @@ import { useTradeDeskStore } from "@/store/useTradeDeskStore";
 import { TradeDeskResponseSchema } from "../model/tradeDeskSchema";
 import type { TradeDeskTrade } from "../model/tradeDeskSchema";
 import { bearerHeader, fetchWsTicket } from "@/lib/auth";
-import { getWsBaseUrl } from "@/lib/env";
+import { getWsBaseUrl, getRestPrefix } from "@/lib/env";
 import { createRafListBatcher } from "@/lib/realtime/rafBatcher";
 
 /** Build a full WebSocket URL pointing at the Railway backend. */
@@ -176,7 +176,7 @@ export function useTradeDeskState() {
     async function fetchDesk() {
       try {
         const auth = bearerHeader();
-        const res = await fetch("/api/v1/trades/desk", {
+        const res = await fetch(`${getRestPrefix()}/api/v1/trades/desk`, {
           credentials: "include",
           headers: {
             ...(auth ? { Authorization: auth } : {}),

@@ -6,7 +6,7 @@ export async function fetchPipelineDag(
   symbol?: string,
   accountId?: string
 ): Promise<PipelineDagView> {
-  const { data } = await apiClient.get("/pipeline/dag", {
+  const { data } = await apiClient.get("/api/v1/pipeline/dag", {
     params: { symbol, account_id: accountId },
   });
 

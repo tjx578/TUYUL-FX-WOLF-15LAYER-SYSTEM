@@ -11,8 +11,7 @@ import { getRestPrefix } from "@/lib/env";
 import { HttpError } from "@/lib/fetcher";
 import { useSessionStore } from "@/store/useSessionStore";
 
-// Resolved at module load: "" on local dev / valid build, "/api/proxy" on
-// deployed hosts where build-time rewrites may be stale (Finding 3.1 fix).
+// P4 consolidation: always "/api/proxy" on client — the single canonical path.
 const API_BASE = getRestPrefix();
 
 // Global 429 cooldown — prevents all hooks from hammering a rate-limited backend.

@@ -15,4 +15,4 @@ export const AUTH_LOGIN = "/api/auth/login" as const;
 export const AUTH_LOGOUT = "/api/auth/logout" as const;
 
 /** Auth token refresh (POST). */
-export const AUTH_REFRESH = "/auth/refresh" as const;
+export const AUTH_REFRESH = "/api/auth/refresh" as const;

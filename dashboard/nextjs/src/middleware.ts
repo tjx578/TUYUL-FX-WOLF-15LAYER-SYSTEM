@@ -1,49 +1,38 @@
 import { NextRequest, NextResponse } from "next/server";
 
 /**
- * Next.js Edge Middleware — Unified auth guard + auth-header injection
+ * Next.js Edge Middleware — Auth-header injection for the runtime proxy.
  *
- * This single middleware replaces two previously-conflicting files
- * (root middleware.ts was dead code because Next.js only loads src/middleware.ts
- *  when using the src/ directory layout).
+ * P4 consolidation: all backend REST traffic flows through the single
+ * runtime proxy at /api/proxy/[...path]. This middleware injects the
+ * session cookie as an Authorization header so secrets stay out of
+ * the client JS bundle.
  *
- * Responsibility split by path:
+ * Path handling:
  *
- * A) PROXY ROUTES (/api/*, /health, /auth/*, /preferences/*, /pipeline/*):
- *    Inject Authorization header server-side so secrets stay out of the
- *    client JS bundle.  Never redirect — backend decides auth failures.
- *    Priority: existing header > session cookie > server API_KEY.
+ * A) PROXY ROUTE (/api/proxy/*):
+ *    Inject Authorization header from session cookie.
+ *    Never redirect — backend decides auth failures.
  *
- * B) PAGE ROUTES (everything else except /login, static assets):
- *    Enforce session cookie.  Missing cookie → 307 redirect to /login.
- *    Admin-only paths additionally require x-user-role header.
+ * B) INTERNAL API ROUTES (/api/auth/*, /api/set-session):
+ *    Pass through — these Next.js route handlers manage their own auth.
+ *
+ * C) PAGE ROUTES (everything else):
+ *    Owner mode — pass through without guards.
  */
 
 const SESSION_COOKIE = "wolf15_session";
 
-// Proxy route prefixes that are rewritten to the backend by next.config.js.
-// These MUST NOT be auth-checked by the middleware (no redirect).
-const PROXY_PREFIXES = [
-    "/api/",
-    "/health",
-    "/auth/",
-    "/preferences",
-    "/pipeline",
-];
+// Only the runtime proxy prefix needs auth-header injection.
+// Build-time rewrites have been removed (P4) — /api/proxy is the single path.
+const PROXY_PREFIX = "/api/proxy/";
 
 function isProxyRoute(pathname: string): boolean {
-    return PROXY_PREFIXES.some((p) => pathname.startsWith(p));
+    return pathname.startsWith(PROXY_PREFIX);
 }
 
 // ── A) Auth-header injection for proxy routes ──────────────────────────
 function handleProxyRoute(request: NextRequest): NextResponse {
-    const { pathname } = request.nextUrl;
-
-    // Internal Next.js API routes handle their own auth
-    if (pathname.startsWith("/api/auth/") || pathname.startsWith("/api/set-session")) {
-        return NextResponse.next();
-    }
-
     // If the client already sends an Authorization header, pass through
     if (request.headers.get("authorization")) {
         return NextResponse.next();
@@ -65,10 +54,7 @@ function handleProxyRoute(request: NextRequest): NextResponse {
     return NextResponse.next();
 }
 
-// ── B) Session guard for page routes ───────────────────────────────────
-// NOTE: Owner mode — all pages are accessible without authentication.
-// The server auth (serverAuth.ts) already returns the owner user unconditionally,
-// so the middleware session guard is intentionally disabled here.
+// ── B/C) Page routes — owner mode, no guard ────────────────────────────
 function handlePageRoute(_request: NextRequest): NextResponse {
     return NextResponse.next();
 }
@@ -93,9 +79,8 @@ export const config = {
          *   /_next/image    — optimised images
          *   /favicon.ico    — browser icon
          *
-         * Proxy routes (/api/, /auth/, /health, /pipeline/, /preferences/)
-         * ARE matched so handleProxyRoute() can inject Authorization headers.
-         * The isProxyRoute() check inside middleware() routes them correctly.
+         * The runtime proxy (/api/proxy/*) IS matched so handleProxyRoute()
+         * can inject Authorization headers from the session cookie.
          */
         "/((?!login|_next/|favicon\\.ico).*)",
     ],

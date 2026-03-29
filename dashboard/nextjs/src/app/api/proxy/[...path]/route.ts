@@ -1,9 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 
 /**
- * Dynamic API proxy that reads backend URL at **runtime**, not build time.
- * This solves the issue where next.config.js rewrites use stale env vars
- * because they're evaluated once at startup.
+ * Single canonical API proxy — reads backend URL at **runtime**, not build time.
+ *
+ * P4 consolidation: all REST traffic from the browser flows through this
+ * route handler. Build-time rewrites in next.config.js have been removed.
+ * getRestPrefix() always returns "/api/proxy" on the client, so every
+ * fetch call goes through this handler.
  *
  * All responses include:
  *   x-proxy-target  — the resolved backend origin (sanitised, no credentials)

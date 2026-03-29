@@ -60,10 +60,18 @@ These surfaces must not be conflated.
 
 ## Proxy Rule
 
-The dashboard must not rely on overlapping backend access strategies.
+The dashboard uses a single canonical backend access path.
 
-One backend access path must be canonical.
-Any temporary overlap must be documented as architecture debt and scheduled for removal.
+All browser-side REST traffic flows through the runtime proxy at
+`/api/proxy/[...path]` (Next.js route handler). Build-time rewrites have
+been removed (P4) — the proxy reads `INTERNAL_API_URL` at request time,
+eliminating stale-env bugs.
+
+Edge middleware injects the session cookie as an `Authorization` header
+only for `/api/proxy/` requests.
+
+Internal Next.js routes (`/api/set-session`, `/api/auth/ws-ticket`) are
+NOT proxied — they handle their own auth.
 
 ## Health Rule
 
