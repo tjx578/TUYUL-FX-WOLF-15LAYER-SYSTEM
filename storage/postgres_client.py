@@ -83,7 +83,7 @@ class PostgresClient:
                     min_size=1,
                     max_size=10,
                     command_timeout=30,
-                    max_inactive_connection_lifetime=300.0,
+                    max_inactive_connection_lifetime=_POOL_MAX_INACTIVE_LIFETIME_SEC,
                     server_settings={
                         "tcp_keepalives_idle": "60",
                         "tcp_keepalives_interval": "10",
