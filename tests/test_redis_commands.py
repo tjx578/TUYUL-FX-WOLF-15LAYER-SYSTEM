@@ -16,11 +16,11 @@ class TestParseSetModeCommand:
         assert result.mode == "NORMAL"
         assert result.reason == "manual"
 
-    def test_valid_mode_set_command(self) -> None:
+    def test_legacy_mode_set_alias_rejected(self) -> None:
+        """DEBT-SVC-09: mode_set alias removed — only set_mode is accepted."""
         raw = json.dumps({"command": "mode_set", "mode": "PAUSED"})
-        result = parse_set_mode_command(raw)
-        assert result.mode == "PAUSED"
-        assert result.reason == "command"
+        with pytest.raises(CommandParseError, match="Unsupported command"):
+            parse_set_mode_command(raw)
 
     def test_event_field_does_not_trigger_mode_change(self) -> None:
         """event field must NOT be treated as a command — prevents telemetry crosstalk."""

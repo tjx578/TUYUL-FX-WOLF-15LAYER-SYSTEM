@@ -324,7 +324,7 @@ class StateManager:
             set_mode_command = parse_set_mode_command(raw_payload)
         except CommandParseError as exc:
             command = str(payload.get("command") or payload.get("event") or "").strip().lower()
-            if command in {"set_mode", "mode_set"}:
+            if command == "set_mode":
                 logger.warning("invalid set_mode command ignored: {} payload={}", exc, payload)
             return
 

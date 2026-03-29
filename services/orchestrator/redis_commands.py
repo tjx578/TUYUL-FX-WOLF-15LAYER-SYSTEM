@@ -14,7 +14,6 @@ class CommandParseError(ValueError):
 
 class RedisCommandName(StrEnum):
     SET_MODE = "set_mode"
-    MODE_SET = "mode_set"
 
 
 @dataclass(frozen=True, slots=True)
@@ -34,7 +33,7 @@ def parse_set_mode_command(raw_message: str) -> SetModeCommand:
         raise CommandParseError("Invalid JSON payload for set_mode") from exc
 
     command = str(payload.get("command") or "").strip().lower()
-    if command not in {RedisCommandName.SET_MODE.value, RedisCommandName.MODE_SET.value}:
+    if command != RedisCommandName.SET_MODE.value:
         raise CommandParseError(f"Unsupported command: {command!r}")
 
     raw_mode = str(payload.get("mode", "")).strip().upper()
