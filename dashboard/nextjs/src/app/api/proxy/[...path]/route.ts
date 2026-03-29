@@ -124,11 +124,9 @@ async function proxyRequest(
     }
   });
 
-  // Add API key if available (for authenticated backend calls)
-  const apiKey = process.env.API_KEY;
-  if (apiKey && !headers.has("Authorization")) {
-    headers.set("Authorization", `Bearer ${apiKey}`);
-  }
+  // API_KEY fallback removed (P3): machine keys must not silently
+  // authenticate proxied requests.  Auth comes from the session cookie
+  // injected by middleware, or from the client's own Authorization header.
 
   // Safe target label for headers (origin only, no credentials/path)
   const targetLabel = `${targetUrl.protocol}//${targetUrl.host}`;

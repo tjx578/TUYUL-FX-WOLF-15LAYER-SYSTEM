@@ -49,7 +49,10 @@ function handleProxyRoute(request: NextRequest): NextResponse {
         return NextResponse.next();
     }
 
-    // Try session cookie first
+    // Session cookie → Authorization header injection.
+    // API_KEY fallback removed (P3): machine keys must not silently
+    // authenticate browser requests.  Owner must have a session cookie
+    // from the /api/auth/owner-session flow.
     const sessionToken = request.cookies.get(SESSION_COOKIE)?.value?.trim();
     if (sessionToken) {
         const headers = new Headers(request.headers);
@@ -57,14 +60,8 @@ function handleProxyRoute(request: NextRequest): NextResponse {
         return NextResponse.next({ request: { headers } });
     }
 
-    // Fallback: server-only API key (NOT NEXT_PUBLIC_*)
-    const apiKey = process.env.API_KEY?.trim();
-    if (apiKey) {
-        const headers = new Headers(request.headers);
-        headers.set("authorization", `Bearer ${apiKey}`);
-        return NextResponse.next({ request: { headers } });
-    }
-
+    // No session cookie and no client header → pass through unauthenticated.
+    // Backend will return 401; frontend should redirect to owner-session init.
     return NextResponse.next();
 }
 
