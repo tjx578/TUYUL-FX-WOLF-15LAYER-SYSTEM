@@ -13,18 +13,11 @@ export default async function LoginPage() {
     redirect("/");
   }
 
-  // 2. If API_KEY env var exists (owner-mode), auto-set session via API route
+  // 2. If API_KEY env var exists (owner-mode), redirect through the
+  //    owner-session route handler which CAN set cookies (Server Components cannot).
   const apiKey = process.env.API_KEY?.trim();
   if (apiKey) {
-    // Set the session cookie server-side and redirect
-    cookieStore.set(SESSION_COOKIE, apiKey, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "lax",
-      path: "/",
-      maxAge: 60 * 60 * 8, // 8 hours
-    });
-    redirect("/");
+    redirect("/api/auth/owner-session");
   }
 
   // 3. No session, no API_KEY → render setup instructions
