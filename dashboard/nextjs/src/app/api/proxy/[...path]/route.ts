@@ -96,6 +96,10 @@ async function proxyRequest(
   let targetPath: string;
   if (joinedPath === "health" || joinedPath === "v1/health") {
     targetPath = "/health";
+  } else if (joinedPath === "healthz") {
+    targetPath = "/healthz";
+  } else if (joinedPath === "readyz") {
+    targetPath = "/readyz";
   } else if (joinedPath.startsWith("api/")) {
     // Already has /api/ prefix (form 2) — use as-is with leading slash.
     targetPath = `/${joinedPath}`;

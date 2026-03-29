@@ -1,0 +1,20 @@
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "noEmit": true,
+    "baseUrl": ".",
+    "paths": {
+      "@playwright/test": [
+        "../../dashboard/nextjs/node_modules/@playwright/test"
+      ]
+    },
+    "typeRoots": [
+      "../../dashboard/nextjs/node_modules/@types",
+      "../../dashboard/nextjs/node_modules/@playwright"
+    ]
+  },
+  "include": ["./**/*.spec.ts"]
+}

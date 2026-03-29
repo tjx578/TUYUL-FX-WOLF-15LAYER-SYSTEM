@@ -142,11 +142,14 @@ Includes:
 
 ## 10) Monitoring Minimum
 
-Health endpoint:
+Health endpoints:
 
-- `GET /health`
+- `GET /healthz` — liveness probe (no deps, no auth)
+- `GET /health` — liveness alias (same as /healthz)
+- `GET /api/v1/status` — operator diagnostics (JWT-authed)
+- `GET /api/v1/status/full` — deep diagnostics (JWT-authed)
 
-Checks:
+Operator status checks:
 
 - Redis connectivity
 - Postgres connectivity
@@ -173,7 +176,7 @@ Recommended Railway alerts:
 - [ ] all secrets configured only in Railway
 - [ ] Redis private + AUTH + persistence enabled
 - [ ] Postgres SSL + backups enabled
-- [ ] `/health` returns Redis + Postgres connected
+- [ ] `/api/v1/status` returns Redis + Postgres connected
 - [ ] WS auth fails closed without token
 - [ ] WS stale clients disconnected <= 30s
 - [ ] 429 response triggered when limit exceeded

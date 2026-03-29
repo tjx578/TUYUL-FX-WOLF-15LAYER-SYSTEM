@@ -433,9 +433,9 @@ def _register_health_routes(app: FastAPI) -> None:
     async def root() -> dict[str, str]:
         return {
             "service": "tuyul-fx",
-            "status": "ok",
-            "health": "/healthz",
-            "status": "/api/v1/status",  # noqa: F601
+            "alive": "ok",
+            "healthz": "/healthz",
+            "operator_status": "/api/v1/status",
         }
 
     app.add_api_route("/", root, methods=["GET"])
