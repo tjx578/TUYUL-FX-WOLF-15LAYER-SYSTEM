@@ -3,32 +3,29 @@ import { NextRequest, NextResponse } from "next/server";
 /**
  * GET /api/auth/ws-ticket
  *
- * Returns an auth token for WebSocket connections.
- * Reads the session cookie first, then falls back to the server-only
- * API_KEY env var. Neither value is exposed in the client JS bundle.
+ * Returns a session-cookie-based auth token for WebSocket connections.
+ * The session cookie is set server-side by /api/set-session after the
+ * owner-session flow — neither raw API keys nor secrets are exposed
+ * in the client JS bundle.
  *
- * SEC-03 NOTE: In owner mode, the session cookie == API_KEY, so this
- * endpoint effectively returns the API_KEY as the WS token. Clients
- * send it as a URL query param (?token=...) which is visible in browser
- * DevTools and proxy logs. To harden: have the backend issue short-lived
- * WS tickets (TTL ~30s) and only return those here. For a private
- * single-owner dashboard this exposure is acceptable.
+ * Auth model: owner-only.
+ *   - The API_KEY fallback has been REMOVED (P3).
+ *   - Returning a raw machine API key to the browser violates the
+ *     dashboard-control-surface auth contract: "browser-facing API key
+ *     fallback is NOT allowed".
+ *   - If no session cookie is present, the caller gets 401.
+ *
+ * See docs/architecture/dashboard-control-surface.md — Auth Model.
  */
 export async function GET(request: NextRequest): Promise<NextResponse> {
-    // 1. Prefer session cookie (set by /api/set-session after login)
+    // Session cookie (set by /api/set-session after owner-session flow)
     const sessionToken = request.cookies.get("wolf15_session")?.value?.trim();
     if (sessionToken) {
         return NextResponse.json({ token: sessionToken });
     }
 
-    // 2. Fallback: server-only API key (NOT NEXT_PUBLIC_*)
-    const apiKey = process.env.API_KEY?.trim();
-    if (apiKey) {
-        return NextResponse.json({ token: apiKey });
-    }
-
     return NextResponse.json(
-        { error: "no auth configured" },
+        { error: "no session — authenticate via /api/auth/owner-session first" },
         { status: 401 },
     );
 }
