@@ -336,7 +336,7 @@ class TestNoInlineInstantiation:
             ("risk.compliance_engine", "ComplianceAutoModeEngine", "_emit_mode_change"),
             ("services.orchestrator.coordinator", "OrchestratorCoordinator", "_emit_event"),
             ("services.orchestrator.coordinator", "OrchestratorCoordinator", "_dispatch_to_execution"),
-            ("services.orchestrator.compliance_auto_mode", "ComplianceAutoMode", "emit_transition_event"),
+            ("services.orchestrator.compliance_auto_mode", "ComplianceAutoMode", "_emit_transition_event"),
         ],
     )
     def test_emit_method_has_no_inline_publisher(self, module_path, class_name, method_name):

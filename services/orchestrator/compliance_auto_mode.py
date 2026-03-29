@@ -129,7 +129,7 @@ class ComplianceAutoMode:
         except Exception:
             logger.warning("[ComplianceAutoMode] Redis write failed — state may be lost on restart")
 
-    def pause(self, trigger_code: str, reason: str, actor: str = "system:compliance") -> AutoModeTransition:
+    async def pause(self, trigger_code: str, reason: str, actor: str = "system:compliance") -> AutoModeTransition:
         """Pause auto-trading. Idempotent: pausing when already paused is a no-op."""
         if self._state == AutoTradingState.PAUSED:
             return AutoModeTransition(
@@ -157,9 +157,10 @@ class ComplianceAutoMode:
             reason,
             actor,
         )
+        await self._emit_transition_event(transition)
         return transition
 
-    def resume(self, reason: str, actor: str) -> AutoModeTransition:
+    async def resume(self, reason: str, actor: str) -> AutoModeTransition:
         """Resume auto-trading (requires explicit operator action).
 
         Raises ValueError if already enabled (prevents accidental resume).
@@ -183,6 +184,7 @@ class ComplianceAutoMode:
             reason,
             actor,
         )
+        await self._emit_transition_event(transition)
         return transition
 
     def enforce(self) -> None:
@@ -194,8 +196,8 @@ class ComplianceAutoMode:
         if self._state == AutoTradingState.PAUSED:
             raise ComplianceAutoModePaused("Auto-trading is paused by compliance — no new trades allowed")
 
-    async def emit_transition_event(self, transition: AutoModeTransition) -> None:
-        """Emit state change event to Redis stream (best-effort)."""
+    async def _emit_transition_event(self, transition: AutoModeTransition) -> None:
+        """Emit state change event to Redis stream (best-effort, internal)."""
         try:
             publisher = self._get_publisher()
             await publisher.publish(
