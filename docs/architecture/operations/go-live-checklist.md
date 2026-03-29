@@ -16,9 +16,9 @@ Set exactly in Railway service variables:
 - `ENV=production`
 - `DEBUG=false`
 - `ENABLE_DEV_ROUTES=false`
-- `JWT_SECRET=<64+ random chars>`
-- `JWT_ALGORITHM=HS256`
-- `JWT_TTL_MINUTES=30`
+- `DASHBOARD_JWT_SECRET=<64+ random chars>`  (only needed by wolf15-api)
+- `DASHBOARD_JWT_ALGO=HS256`
+- `DASHBOARD_TOKEN_EXPIRE_MIN=60`
 - `DATABASE_URL=postgresql://...`
 - `REDIS_URL=redis://...`
 - `RATE_LIMIT_ENABLED=true`
