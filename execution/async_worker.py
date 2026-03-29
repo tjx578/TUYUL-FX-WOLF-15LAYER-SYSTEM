@@ -32,7 +32,6 @@ def _get_or_create_metric(metric_cls: type, name: str, *args: Any, **kwargs: Any
 
 from config.logging_bootstrap import configure_loguru_logging  # noqa: E402
 from contracts.execution_queue_contract import ExecutionQueuePayload  # noqa: E402
-from core.health_probe import HealthProbe  # noqa: E402
 from execution.broker_executor import BrokerExecutor, ExecutionRequest, OrderAction  # noqa: E402
 from infrastructure.redis_client import RedisConfig, close_pool, get_client  # noqa: E402
 from infrastructure.tracing import (  # noqa: E402
@@ -325,9 +324,12 @@ async def _main() -> None:
     start_http_server(int(os.getenv("EXEC_METRICS_PORT", "9103")))
 
     health_port = int(os.getenv("PORT", os.getenv("EXEC_HEALTH_PORT", "8084")))
-    probe = HealthProbe(port=health_port, service_name="execution")
-    asyncio.create_task(probe.start())
-    logger.info("Execution health probe started on :{}", health_port)
+    from services.shared.health_probe_launcher import start_probe_as_task  # noqa: PLC0415
+
+    _probe, _probe_task = await start_probe_as_task(
+        port=health_port,
+        service_name="execution",
+    )
 
     restarts = 0
     try:
@@ -358,7 +360,7 @@ async def _main() -> None:
                 await asyncio.sleep(_RESTART_COOLDOWN)
     finally:
         await close_pool()
-        await probe.stop()
+        await _probe.stop()
 
 
 if __name__ == "__main__":

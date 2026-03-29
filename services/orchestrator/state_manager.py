@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import hashlib
 import hmac as _hmac
 import json
@@ -16,7 +15,6 @@ from typing import Any, Protocol, cast
 
 from loguru import logger
 
-import core.health_probe
 from config.logging_bootstrap import configure_loguru_logging
 from core.redis_keys import (
     ACCOUNT_STATE,
@@ -463,23 +461,18 @@ class StateManager:
 
 def _start_health_probe_in_thread(readiness_check: Callable[[], bool] | None = None) -> None:
     """Run HealthProbe on a daemon thread so the sync event loop isn't blocked."""
+    from services.shared.health_probe_launcher import start_probe_in_thread
+
     port = int(os.getenv("ORCHESTRATOR_HEALTH_PORT", os.getenv("PORT", "8083")))
-    probe = core.health_probe.HealthProbe(
+    start_probe_in_thread(
         port=port,
         service_name="orchestrator",
         readiness_check=readiness_check,
+        extra_details={
+            "service_role": "orchestrator",
+            "source": ORCHESTRATOR_SOURCE,
+        },
     )
-    probe.set_detail("service_role", "orchestrator")
-    probe.set_detail("source", ORCHESTRATOR_SOURCE)
-
-    def _run() -> None:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        loop.run_until_complete(probe.start())
-
-    t = threading.Thread(target=_run, daemon=True)
-    t.start()
-    logger.info("Orchestrator health probe started on :{}", port)
 
 
 def run() -> None:

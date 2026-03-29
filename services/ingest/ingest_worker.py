@@ -26,16 +26,16 @@ async def _bootstrap_and_run() -> None:
 
     configure_loguru_logging()
 
-    # core.health_probe only depends on stdlib + loguru — safe early import.
-    from core.health_probe import HealthProbe
+    from services.shared.health_probe_launcher import start_probe_as_task
 
     port = int(os.getenv("INGEST_HEALTH_PORT") or os.getenv("PORT", "8082"))
-    probe = HealthProbe(port=port, service_name="ingest")
-    health_task = asyncio.create_task(probe.start(), name="BootstrapHealthProbe")
+    probe, health_task = await start_probe_as_task(
+        port=port,
+        service_name="ingest",
+        task_name="BootstrapHealthProbe",
+    )
     # Yield so the probe can bind the port before any slow work.
     await asyncio.sleep(0.2)
-
-    logger.info("Bootstrap health probe listening on :{}", port)
 
     try:
         # Import ingest_service in the main thread.  Using run_in_executor

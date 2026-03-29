@@ -680,15 +680,32 @@ class FinnhubCandleFetcher:
                 if tf not in timeframes and tf != "M15":
                     timeframes.append(tf)
 
+        # When D1/W1 are synthesized from H1 (Finnhub free-tier returns
+        # no_data for "D"/"W" resolutions), the H1 fetch must span enough
+        # history.  5 W1 bars ≈ 5 forex weeks ≈ 25 trading days × 24 H1/day
+        # = 600 H1, plus ~40 % calendar buffer for weekends ≈ 840.
+        h1_synthesis_min = 0
+        if "D1" in timeframes or "W1" in timeframes:
+            h1_synthesis_min = max(warmup_bars, 840)
+
+        tf_bars: dict[str, int] = {}
+        for tf in timeframes:
+            tf_bars[tf] = warmup_bars
+        if h1_synthesis_min:
+            tf_bars["H1"] = max(tf_bars.get("H1", warmup_bars), h1_synthesis_min)
+
         logger.info(
-            f"Starting warmup for {len(enabled_symbols)} symbols, {len(timeframes)} timeframes, {warmup_bars} bars each"
+            f"Starting warmup for {len(enabled_symbols)} symbols, {len(timeframes)} timeframes, "
+            f"{warmup_bars} bars each (H1={tf_bars.get('H1', warmup_bars)} for synthesis coverage)"
         )
 
         results: dict[str, dict[str, list[dict[str, Any]]]] = {}
 
         # Create tasks for all symbol/timeframe combinations
         tasks = [
-            self.warmup_symbol_tf(symbol, tf, warmup_bars, results) for symbol in enabled_symbols for tf in timeframes
+            self.warmup_symbol_tf(symbol, tf, tf_bars.get(tf) or warmup_bars, results)
+            for symbol in enabled_symbols
+            for tf in timeframes
         ]
 
         await asyncio.gather(*tasks, return_exceptions=True)

@@ -16,7 +16,6 @@ from __future__ import annotations
 import asyncio
 import os
 import sys
-import threading
 from collections.abc import Callable, Coroutine
 from pathlib import Path
 from typing import Any
@@ -59,28 +58,11 @@ def _start_health_probe_in_thread() -> None:
 
     This keeps ``/healthz`` responsive while the main thread runs the
     blocking DB preflight and heavy module imports.
-
-    The probe runs in an ISOLATED event loop with no shared asyncio
-    primitives to avoid cross-loop state corruption.
     """
-    from core.health_probe import HealthProbe
+    from services.shared.health_probe_launcher import start_probe_in_thread
 
     port = int(os.getenv("ENGINE_HEALTH_PORT", os.getenv("PORT", "8081")))
-    probe = HealthProbe(port=port, service_name="engine")
-
-    def _run() -> None:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        try:
-            loop.run_until_complete(probe.start())
-        except Exception:
-            logger.warning("Bootstrap health probe stopped")
-        finally:
-            loop.close()
-
-    t = threading.Thread(target=_run, daemon=True, name="engine-health-probe")
-    t.start()
-    logger.info("Bootstrap health probe listening on :{}", port)
+    start_probe_in_thread(port=port, service_name="engine")
 
 
 def _import_main() -> Callable[[], Coroutine[Any, Any, None]]:
