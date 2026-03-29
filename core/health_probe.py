@@ -25,9 +25,12 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import hmac
 import json
+import os
 import time
 from typing import TYPE_CHECKING
+from urllib.parse import parse_qs, urlparse
 
 from loguru import logger
 
@@ -78,21 +81,76 @@ class HealthProbe:
         """Attach extra key-value metadata included in probe responses."""
         self._details[key] = value
 
+    # ── detail classification ──────────────────────────────────────
+
+    #: Keys considered safe for unauthenticated probes (status-only, no
+    #: internal errors or state fragments).
+    _SAFE_DETAIL_KEYS: frozenset[str] = frozenset(
+        {
+            "startup_stage",
+            "warmup",
+            "warmup_retry",
+        }
+    )
+
     # ── HTTP handling ───────────────────────────────────────────────
+
+    @staticmethod
+    def _parse_request(raw: bytes) -> tuple[str, dict[str, str]]:
+        """Extract path and headers from a raw HTTP request."""
+        text = raw.decode("utf-8", errors="replace")
+        lines = text.split("\r\n")
+        request_line = lines[0] if lines else ""
+        parts = request_line.split(" ")
+        raw_path = parts[1] if len(parts) > 1 else "/"
+        parsed = urlparse(raw_path)
+        path = parsed.path
+
+        headers: dict[str, str] = {}
+        for line in lines[1:]:
+            if not line:
+                break
+            if ": " in line:
+                k, _, v = line.partition(": ")
+                headers[k.lower()] = v.strip()
+
+        # Attach query params for token extraction
+        qs = parse_qs(parsed.query)
+        token_vals = qs.get("token", [])
+        if token_vals:
+            headers["_query_token"] = token_vals[0]
+
+        return path, headers
+
+    def _is_authenticated(self, headers: dict[str, str]) -> bool:
+        """Check if the request carries a valid HEALTH_PROBE_TOKEN."""
+        expected = os.environ.get("HEALTH_PROBE_TOKEN", "").strip()
+        if not expected:
+            # No token configured → deny /status (fail-closed)
+            return False
+
+        # Check Authorization: Bearer <token>
+        auth_header = headers.get("authorization", "")
+        if auth_header.lower().startswith("bearer "):
+            presented = auth_header[7:].strip()
+            if presented and hmac.compare_digest(presented, expected):
+                return True
+
+        # Check ?token=<value> query param
+        query_token = headers.get("_query_token", "")
+        return bool(query_token and hmac.compare_digest(query_token, expected))
 
     async def _handle(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         try:
             data = await asyncio.wait_for(reader.read(4096), timeout=5.0)
-            request_line = data.decode("utf-8", errors="replace").split("\r\n")[0]
-            parts = request_line.split(" ")
-            path = parts[1] if len(parts) > 1 else "/"
+            path, headers = self._parse_request(data)
 
             if path in ("/healthz", "/health"):
                 response = self._liveness_response()
             elif path == "/readyz":
                 response = self._readiness_response()
             elif path == "/status":
-                response = self._status_response()
+                response = self._status_response() if self._is_authenticated(headers) else self._unauthorized_response()
             else:
                 response = self._not_found_response()
 
@@ -106,13 +164,16 @@ class HealthProbe:
             with contextlib.suppress(Exception):
                 await writer.wait_closed()
 
+    def _safe_details(self) -> dict[str, str]:
+        """Return only non-sensitive detail keys for unauthenticated probes."""
+        return {k: v for k, v in self._details.items() if k in self._SAFE_DETAIL_KEYS}
+
     def _liveness_response(self) -> str:
         uptime = int(time.monotonic() - self._started_at)
-        body = {
+        body: dict[str, object] = {
             "status": "alive" if self._alive else "dead",
             "service": self._service_name,
             "uptime_sec": uptime,
-            **self._details,
         }
         status_code = 200 if self._alive else 503
         status_text = "OK" if self._alive else "Service Unavailable"
@@ -123,23 +184,22 @@ class HealthProbe:
             ready = self._readiness_check()
         except Exception:
             ready = False
-        body = {
+        body: dict[str, object] = {
             "status": "ready" if ready else "not_ready",
             "service": self._service_name,
-            **self._details,
         }
         status_code = 200 if ready else 503
         status_text = "OK" if ready else "Service Unavailable"
         return self._http_response(status_code, status_text, body)
 
     def _status_response(self) -> str:
-        """Combined liveness + readiness + all detail metadata."""
+        """Combined liveness + readiness + all detail metadata (authenticated only)."""
         try:
             ready = self._readiness_check()
         except Exception:
             ready = False
         uptime = int(time.monotonic() - self._started_at)
-        body = {
+        body: dict[str, object] = {
             "alive": self._alive,
             "ready": ready,
             "service": self._service_name,
@@ -150,6 +210,14 @@ class HealthProbe:
         code = 200 if ok else 503
         text = "OK" if ok else "Service Unavailable"
         return self._http_response(code, text, body)
+
+    @staticmethod
+    def _unauthorized_response() -> str:
+        body = {
+            "error": "unauthorized",
+            "hint": "Set HEALTH_PROBE_TOKEN and pass via Authorization header or ?token= query param",
+        }
+        return HealthProbe._http_response(401, "Unauthorized", body)
 
     @staticmethod
     def _not_found_response() -> str:

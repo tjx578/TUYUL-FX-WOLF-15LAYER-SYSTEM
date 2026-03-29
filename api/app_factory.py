@@ -529,7 +529,12 @@ def _register_health_routes(app: FastAPI) -> None:
             "router_boot_errors": router_boot_errors,
         }
 
-    app.add_api_route("/health", health, methods=["GET"])
+    app.add_api_route(
+        "/health",
+        health,
+        methods=["GET"],
+        dependencies=[Depends(verify_observability_machine_auth)],
+    )
 
     # /healthz is the liveness probe — must be unauthenticated and
     # return instantly with NO external dependencies (no Redis, no DB).
