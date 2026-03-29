@@ -11,8 +11,9 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Any, Protocol, cast
+from typing import Any, cast
 
+import redis.client
 from loguru import logger
 
 from config.logging_bootstrap import configure_loguru_logging
@@ -43,25 +44,6 @@ _NEWS_LOCK_STATE_KEY = "NEWS_LOCK:STATE"
 _DATA_STALE_THRESHOLD_SEC = float(os.getenv("COMPLIANCE_DATA_STALE_SEC", "120"))
 
 configure_loguru_logging()
-
-
-class OrchestratorPubSubProtocol(Protocol):
-    def subscribe(self, channel: str) -> None: ...
-    def close(self) -> None: ...
-    def get_message(
-        self,
-        ignore_subscribe_messages: bool = True,
-        timeout: float = 0.0,
-    ) -> dict[str, Any] | None: ...
-
-
-class OrchestratorRedisProtocol(Protocol):
-    def pubsub(self) -> OrchestratorPubSubProtocol: ...
-    def get(self, key: str) -> str | None: ...
-    def set(self, key: str, value: str, ex: int | None = None) -> None: ...
-    def publish(self, channel: str, message: str) -> int: ...
-    def mget(self, keys: list[str]) -> list[str | None]: ...
-    def pipeline(self) -> Any: ...
 
 
 def _utc_now_iso() -> str:
@@ -119,11 +101,11 @@ class OrchestratorState:
 
 
 class StateManager:
-    def __init__(self, redis_client: OrchestratorRedisProtocol | None = None) -> None:
+    def __init__(self, redis_client: RedisClient | None = None) -> None:
         super().__init__()
         self._state = OrchestratorState(updated_at=_utc_now_iso())
-        self._redis: OrchestratorRedisProtocol = redis_client or RedisClient()
-        self._pubsub: OrchestratorPubSubProtocol | None = None
+        self._redis: RedisClient = redis_client or RedisClient()
+        self._pubsub: redis.client.PubSub | None = None
 
         self._channel = os.getenv("ORCHESTRATOR_CHANNEL", ORCHESTRATOR_COMMANDS)
         self._state_key = os.getenv("ORCHESTRATOR_STATE_KEY", ORCHESTRATOR_STATE)
