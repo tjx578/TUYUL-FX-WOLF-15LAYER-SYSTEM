@@ -14,9 +14,9 @@ import logging
 from collections.abc import Callable
 from typing import Any, cast
 
+from schemas.trade_models import CloseReason, TradeStatus
 from storage.price_feed import PriceFeed
 from storage.trade_ledger import TradeLedger
-from schemas.trade_models import CloseReason, TradeStatus
 
 logger = logging.getLogger(__name__)
 
@@ -136,24 +136,36 @@ class PriceWatcher:
                     pnl = self._compute_pnl(legs, direction, bid)
                     logger.info("OPEN->CLOSED: BUY %s TP hit at bid=%.5f pnl=%.6f", trade_id, bid, pnl)
                     self._update_trade_status(
-                        trade_id, TradeStatus.CLOSED, close_reason=CloseReason.TP_HIT, pnl=pnl,
+                        trade_id,
+                        TradeStatus.CLOSED,
+                        close_reason=CloseReason.TP_HIT,
+                        pnl=pnl,
                     )
                 elif bid <= max(sls):
                     pnl = self._compute_pnl(legs, direction, bid)
                     logger.info("OPEN->CLOSED: BUY %s SL hit at bid=%.5f pnl=%.6f", trade_id, bid, pnl)
                     self._update_trade_status(
-                        trade_id, TradeStatus.CLOSED, close_reason=CloseReason.SL_HIT, pnl=pnl,
+                        trade_id,
+                        TradeStatus.CLOSED,
+                        close_reason=CloseReason.SL_HIT,
+                        pnl=pnl,
                     )
             elif direction == "SELL":
                 if ask <= max(tps):
                     pnl = self._compute_pnl(legs, direction, ask)
                     logger.info("OPEN->CLOSED: SELL %s TP hit at ask=%.5f pnl=%.6f", trade_id, ask, pnl)
                     self._update_trade_status(
-                        trade_id, TradeStatus.CLOSED, close_reason=CloseReason.TP_HIT, pnl=pnl,
+                        trade_id,
+                        TradeStatus.CLOSED,
+                        close_reason=CloseReason.TP_HIT,
+                        pnl=pnl,
                     )
                 elif ask >= min(sls):
                     pnl = self._compute_pnl(legs, direction, ask)
                     logger.info("OPEN->CLOSED: SELL %s SL hit at ask=%.5f pnl=%.6f", trade_id, ask, pnl)
                     self._update_trade_status(
-                        trade_id, TradeStatus.CLOSED, close_reason=CloseReason.SL_HIT, pnl=pnl,
+                        trade_id,
+                        TradeStatus.CLOSED,
+                        close_reason=CloseReason.SL_HIT,
+                        pnl=pnl,
                     )
