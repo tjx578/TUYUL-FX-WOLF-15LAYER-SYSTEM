@@ -81,6 +81,21 @@ if (!internalUrl && !apiUrl) {
   );
 }
 
+// ── DASHBOARD_MODE (required) ─────────────────────────────────
+
+const dashboardMode = (process.env.DASHBOARD_MODE || "").trim().toLowerCase();
+if (!dashboardMode) {
+  errors.push(
+    "DASHBOARD_MODE is not set. All page loads will crash at runtime.\n" +
+    '  Set DASHBOARD_MODE=owner in Vercel/Railway env vars.'
+  );
+} else if (dashboardMode !== "owner") {
+  errors.push(
+    `DASHBOARD_MODE="${dashboardMode}" is not supported.\n` +
+    '  The only supported value is "owner".'
+  );
+}
+
 // ── Output ────────────────────────────────────────────────────
 
 if (warnings.length > 0) {
