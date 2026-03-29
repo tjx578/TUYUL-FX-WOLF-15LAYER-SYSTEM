@@ -1,4 +1,14 @@
-"""Runtime state manager for governance mode transitions."""
+"""Runtime state manager for governance mode transitions.
+
+Guard mappings (Redis key → compliance input):
+  ACCOUNT_STATE      → balance, equity, drawdown  → account health gates
+  TRADE_RISK         → risk/exposure limits        → risk limit gates
+  NEWS_LOCK:STATE    → news_lock_active            → news event lockout
+  HEARTBEAT_INGEST   → data_stale, staleness_sec   → data freshness gate
+  (runtime)          → session_locked              → forex market hours gate
+
+See contracts/README.md for coverage status.
+"""
 
 from __future__ import annotations
 
@@ -234,7 +244,13 @@ class StateManager:
         self._refresh_compliance_signals()
 
     def _refresh_compliance_signals(self) -> None:
-        """Compute and inject news_lock, session_lock, and data_stale into account state."""
+        """Compute and inject news_lock, session_lock, and data_stale into account state.
+
+        Guard mapping (see contracts/README.md § Orchestrator guard mappings):
+          NEWS_LOCK:STATE   → news_lock_active / news_lock_reason
+          HEARTBEAT_INGEST  → data_stale / staleness_seconds / feed_freshness_class
+          is_forex_market_open() → session_locked / session_lock_reason
+        """
         try:
             extra_keys = [_NEWS_LOCK_STATE_KEY, HEARTBEAT_INGEST]
             raw = self._redis.mget(extra_keys)
