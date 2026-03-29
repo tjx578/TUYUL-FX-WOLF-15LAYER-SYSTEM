@@ -30,7 +30,7 @@ export const POLL_INTERVALS = {
 } as const;
 
 export const API_ENDPOINTS = {
-    health: "/health",
+    health: "/healthz",
     orchestratorState: "/api/v1/orchestrator/state",
     accounts: "/api/v1/accounts",
     accountsRiskSnapshot: "/api/v1/accounts/risk-snapshot",
