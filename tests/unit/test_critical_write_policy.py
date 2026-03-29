@@ -5,6 +5,7 @@ from fastapi.testclient import TestClient
 
 from api.config_profile_router import router as config_profile_router
 from api.ea_router import router as ea_router
+from api.middleware import auth as auth_mod
 from api.middleware import governance
 from risk.risk_router import router as risk_router
 
@@ -32,7 +33,10 @@ def test_rbac_rejects_missing_role_claim(monkeypatch) -> None:
     app = _app()
     client = TestClient(app)
 
-    monkeypatch.setattr(governance, "decode_token", lambda _t: {"sub": "user-1", "iss": "issuer-A"})
+    _payload = {"sub": "user-1", "iss": "issuer-A"}
+    monkeypatch.setattr(auth_mod, "decode_token", lambda _t: _payload)
+    monkeypatch.setattr(auth_mod, "validate_api_key", lambda _t: False)
+    monkeypatch.setattr(governance, "decode_token", lambda _t: _payload)
     monkeypatch.setattr(governance, "validate_api_key", lambda _t: False)
     monkeypatch.setenv("DASHBOARD_ACTION_PIN", "1234")
 
@@ -49,11 +53,10 @@ def test_rbac_rejects_invalid_role_claim(monkeypatch) -> None:
     app = _app()
     client = TestClient(app)
 
-    monkeypatch.setattr(
-        governance,
-        "decode_token",
-        lambda _t: {"sub": "user-2", "role": "superuser", "iss": "issuer-A"},
-    )
+    _payload = {"sub": "user-2", "role": "superuser", "iss": "issuer-A"}
+    monkeypatch.setattr(auth_mod, "decode_token", lambda _t: _payload)
+    monkeypatch.setattr(auth_mod, "validate_api_key", lambda _t: False)
+    monkeypatch.setattr(governance, "decode_token", lambda _t: _payload)
     monkeypatch.setattr(governance, "validate_api_key", lambda _t: False)
     monkeypatch.setenv("DASHBOARD_ACTION_PIN", "1234")
 
@@ -70,11 +73,10 @@ def test_rbac_rejects_untrusted_issuer(monkeypatch) -> None:
     app = _app()
     client = TestClient(app)
 
-    monkeypatch.setattr(
-        governance,
-        "decode_token",
-        lambda _t: {"sub": "user-3", "role": "admin", "iss": "rogue-issuer"},
-    )
+    _payload = {"sub": "user-3", "role": "admin", "iss": "rogue-issuer"}
+    monkeypatch.setattr(auth_mod, "decode_token", lambda _t: _payload)
+    monkeypatch.setattr(auth_mod, "validate_api_key", lambda _t: False)
+    monkeypatch.setattr(governance, "decode_token", lambda _t: _payload)
     monkeypatch.setattr(governance, "validate_api_key", lambda _t: False)
     monkeypatch.setenv("DASHBOARD_ACTION_PIN", "1234")
     monkeypatch.setenv("DASHBOARD_JWT_REQUIRED_ISSUER", "issuer-A,issuer-B")
@@ -92,11 +94,10 @@ def test_critical_kill_switch_requires_pin(monkeypatch) -> None:
     app = _app()
     client = TestClient(app)
 
-    monkeypatch.setattr(
-        governance,
-        "decode_token",
-        lambda _t: {"sub": "trader-1", "role": "admin", "iss": "issuer-A"},
-    )
+    _payload = {"sub": "trader-1", "role": "admin", "iss": "issuer-A", "scopes": ["*"]}
+    monkeypatch.setattr(auth_mod, "decode_token", lambda _t: _payload)
+    monkeypatch.setattr(auth_mod, "validate_api_key", lambda _t: False)
+    monkeypatch.setattr(governance, "decode_token", lambda _t: _payload)
     monkeypatch.setattr(governance, "validate_api_key", lambda _t: False)
     monkeypatch.setenv("DASHBOARD_ACTION_PIN", "4321")
 
@@ -109,11 +110,10 @@ def test_critical_routes_accept_with_valid_pin(monkeypatch) -> None:
     app = _app()
     client = TestClient(app)
 
-    monkeypatch.setattr(
-        governance,
-        "decode_token",
-        lambda _t: {"sub": "admin-1", "role": "admin", "iss": "issuer-A"},
-    )
+    _payload = {"sub": "admin-1", "role": "admin", "iss": "issuer-A", "scopes": ["*"]}
+    monkeypatch.setattr(auth_mod, "decode_token", lambda _t: _payload)
+    monkeypatch.setattr(auth_mod, "validate_api_key", lambda _t: False)
+    monkeypatch.setattr(governance, "decode_token", lambda _t: _payload)
     monkeypatch.setattr(governance, "validate_api_key", lambda _t: False)
     monkeypatch.setenv("DASHBOARD_ACTION_PIN", "9999")
 
