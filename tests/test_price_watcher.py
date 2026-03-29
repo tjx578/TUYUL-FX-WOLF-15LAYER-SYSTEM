@@ -33,14 +33,7 @@ def mock_price_feed():
 
 
 @pytest.fixture
-def mock_journal():
-    """Mock JournalRouter for isolated testing."""
-    with patch("dashboard.price_watcher.JournalRouter") as mock:
-        yield mock.return_value
-
-
-@pytest.fixture
-def price_watcher(mock_trade_ledger, mock_price_feed, mock_journal):
+def price_watcher(mock_trade_ledger, mock_price_feed):
     """Create a PriceWatcher instance for testing (patches must be active)."""
     return PriceWatcher()
 
@@ -221,7 +214,7 @@ async def test_open_to_closed_buy_tp_hit(price_watcher, mock_trade_ledger, mock_
         "T-004",
         TradeStatus.CLOSED,
         close_reason=CloseReason.TP_HIT,
-        pnl=None,
+        pnl=0.0001,
     )
 
 
@@ -258,7 +251,7 @@ async def test_open_to_closed_buy_sl_hit(price_watcher, mock_trade_ledger, mock_
         "T-005",
         TradeStatus.CLOSED,
         close_reason=CloseReason.SL_HIT,
-        pnl=None,
+        pnl=-0.00005,
     )
 
 
@@ -295,7 +288,7 @@ async def test_open_to_closed_sell_tp_hit(price_watcher, mock_trade_ledger, mock
         "T-006",
         TradeStatus.CLOSED,
         close_reason=CloseReason.TP_HIT,
-        pnl=None,
+        pnl=0.0001,
     )
 
 
@@ -332,7 +325,7 @@ async def test_open_to_closed_sell_sl_hit(price_watcher, mock_trade_ledger, mock
         "T-007",
         TradeStatus.CLOSED,
         close_reason=CloseReason.SL_HIT,
-        pnl=None,
+        pnl=-0.00005,
     )
 
 
