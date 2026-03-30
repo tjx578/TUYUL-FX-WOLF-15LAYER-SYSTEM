@@ -116,8 +116,25 @@ def _build_degraded_verdict(pair: str, reason: str) -> dict[str, Any]:
         "confidence": 0.0,
         "wolf_status": "DEGRADED",
         "direction": None,
-        "scores": {},
-        "gates": {"passed": 0, "total": 9},
+        "scores": {
+            "wolf_score": 0,
+            "wolf_30_point": 0,
+            "tii_score": 0.0,
+            "frpc_score": 0.0,
+            "f_score": 0,
+            "t_score": 0,
+            "fta_score": 0.0,
+            "exec_score": 0,
+            "regime": "UNKNOWN",
+            "session": "",
+        },
+        "gates": [
+            {"gate_id": f"gate_{i}_{n}", "name": n.replace("_", " ").title(), "passed": False, "value": "FAIL"}
+            for i, n in enumerate(
+                ["tii", "montecarlo", "frpc", "conf12", "rr", "integrity", "propfirm", "drawdown", "latency"],
+                start=1,
+            )
+        ],
         "layers": {},
         "execution": {},
         "system": {"latency_ms": 0.0, "degraded": True, "degraded_reason": reason},
@@ -161,7 +178,24 @@ def _build_verdict_cache_payload(pair: str, result: dict[str, Any]) -> dict[str,
     execution = dict(synthesis.get("execution") or {})
     scores = dict(synthesis.get("scores") or {})
     layers = dict(synthesis.get("layers") or {})
+    fusion_frpc = dict(synthesis.get("fusion_frpc") or {})
     system = dict(synthesis.get("system") or {})
+
+    # ── Dashboard-expected field aliases ────────────────────────────
+    # Pipeline synthesis uses wolf_30_point / L8_tii_sym / conf12 but
+    # the dashboard L12Scores type expects wolf_score / tii_score / frpc_score.
+    # Inject aliases so the verdict cache matches the frontend contract.
+    if "wolf_score" not in scores:
+        scores["wolf_score"] = scores.get("wolf_30_point", 0)
+    if "tii_score" not in scores:
+        scores["tii_score"] = layers.get("L8_tii_sym", 0.0)
+    if "frpc_score" not in scores:
+        scores["frpc_score"] = fusion_frpc.get("conf12", layers.get("conf12", 0.0))
+    if "regime" not in scores:
+        cognitive = dict(synthesis.get("cognitive") or {})
+        scores["regime"] = cognitive.get("regime", "UNKNOWN")
+    if "session" not in scores:
+        scores["session"] = ""
 
     timestamp = time.time()
     hold_block_reason = _extract_last_hold_block_reason(result)
@@ -202,6 +236,33 @@ def _build_verdict_cache_payload(pair: str, result: dict[str, Any]) -> dict[str,
             **payload["gates"],
             **dict(gates_v74),
         }
+
+    # ── Transform gates dict → GateCheck[] array for dashboard ──
+    # Backend gates use {total_passed, total_gates, gate_1_tii: "PASS", ...}
+    # Dashboard expects [{gate_id, name, passed, value, threshold, message}, ...]
+    raw_gates = payload.get("gates")
+    if isinstance(raw_gates, dict):
+        gate_array: list[dict[str, Any]] = []
+        _GATE_NAMES = {
+            "gate_1_tii": "TII Symmetry",
+            "gate_2_montecarlo": "Monte Carlo Win %",
+            "gate_3_frpc": "FRPC Sync",
+            "gate_4_conf12": "CONF12 Threshold",
+            "gate_5_rr": "Risk/Reward",
+            "gate_6_integrity": "Integrity Index",
+            "gate_7_propfirm": "Prop-Firm Compliance",
+            "gate_8_drawdown": "Drawdown Limit",
+            "gate_9_latency": "Latency Threshold",
+        }
+        for key in sorted(_GATE_NAMES):
+            status = raw_gates.get(key, "FAIL")
+            gate_array.append({
+                "gate_id": key,
+                "name": _GATE_NAMES[key],
+                "passed": status == "PASS",
+                "value": status,
+            })
+        payload["gates"] = gate_array
 
     return payload
 

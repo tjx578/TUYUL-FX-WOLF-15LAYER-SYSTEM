@@ -1866,6 +1866,9 @@ class WolfConstitutionalPipeline:
                 "pair": symbol,
                 "scores": {
                     "wolf_30_point": 0,
+                    "wolf_score": 0,
+                    "tii_score": 0.0,
+                    "frpc_score": 0.0,
                     "f_score": 0,
                     "t_score": 0,
                     "fta_score": 0.0,
@@ -1873,6 +1876,8 @@ class WolfConstitutionalPipeline:
                     "exec_score": 0,
                     "psychology_score": 0,
                     "technical_score": 0,
+                    "regime": "UNKNOWN",
+                    "session": "",
                 },
                 "layers": {
                     "L1_context_coherence": 0.0,
