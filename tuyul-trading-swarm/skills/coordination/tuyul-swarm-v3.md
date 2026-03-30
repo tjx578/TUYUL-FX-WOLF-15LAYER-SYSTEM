@@ -10,7 +10,7 @@ topology: hierarchical-veto-mesh
 
 ## Topologi: Hierarchical Veto Mesh
 
-```
+`
                      [Orchestrator]
                            │
          ┌────────────────┬┴──────────────────┐
@@ -29,7 +29,7 @@ topology: hierarchical-veto-mesh
        │ Journal     │          │ MemHandoff  │
        │ Audit       │          │             │
        └─────────────┘          └─────────────┘
-```
+``
 
 ## Shift Rotation 24/5
 
@@ -41,7 +41,9 @@ topology: hierarchical-veto-mesh
 | REVIEW      | 18-24     | Journal, Audit, MemoryHandoff          |
 
 ## Handoff Protocol
+
 Setiap pergantian shift WAJIB menghasilkan handoff summary berisi:
+
 - Active watchlist
 - Open trades
 - Psychology warnings
@@ -51,7 +53,8 @@ Setiap pergantian shift WAJIB menghasilkan handoff summary berisi:
 - Audit flags
 
 ## Memory Namespaces
-```
+
+```text
 tuyul:memory:session_bias:<instrument>:<session>
 tuyul:memory:active_watchlist
 tuyul:memory:rejected_reasons:<instrument>
