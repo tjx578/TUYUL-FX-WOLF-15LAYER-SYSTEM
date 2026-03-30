@@ -10,7 +10,7 @@ topology: hierarchical-veto-mesh
 
 ## Topologi: Hierarchical Veto Mesh
 
-`
+```text
                      [Orchestrator]
                            │
          ┌────────────────┬┴──────────────────┐
@@ -29,7 +29,7 @@ topology: hierarchical-veto-mesh
        │ Journal     │          │ MemHandoff  │
        │ Audit       │          │             │
        └─────────────┘          └─────────────┘
-``
+```
 
 ## Shift Rotation 24/5
 
