@@ -420,12 +420,16 @@ _REGIME_STATE_MAP: dict[int, str] = {
 def _resolve_regime(synthesis: dict[str, Any]) -> str:
     """Resolve volatility regime from synthesis dict.
 
-    Priority: synthesis["volatility_regime"] (injected by build_l12_synthesis
-    from L1's ATR-based volatility_level) → macro_vix.regime_state → default.
+    Priority: synthesis["volatility_regime"] → synthesis["regime_type"]
+    → macro_vix.regime_state → default NORMAL_VOL.
     """
+    _valid = ("LOW_VOL", "NORMAL_VOL", "HIGH_VOL")
     vol_regime = synthesis.get("volatility_regime")
-    if vol_regime in ("LOW_VOL", "NORMAL_VOL", "HIGH_VOL"):
+    if vol_regime in _valid:
         return vol_regime
+    regime_type = synthesis.get("regime_type")
+    if regime_type in _valid:
+        return regime_type
     regime_state = synthesis.get("macro_vix", {}).get("regime_state", 2)
     return _REGIME_STATE_MAP.get(regime_state, "NORMAL_VOL")
 
