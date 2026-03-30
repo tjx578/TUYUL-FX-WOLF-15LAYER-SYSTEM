@@ -82,14 +82,15 @@ def build_l12_synthesis(
             entry_zone = f"{entry_price:.5f}-{entry_price + 0.0010:.5f}"
 
     # -- Risk (from L10/dashboard -- placeholders) --
-    lot_size = layer_results.get("L10", {}).get("final_lot_size", 0.01)
+    lot_size = layer_results.get("L10", {}).get("lot_size", 0.01)
     risk_percent = layer_results.get("L10", {}).get("adjusted_risk_pct", 1.0)
-    risk_amount = layer_results.get("L10", {}).get("adjusted_risk_amount", 0.0)
+    risk_amount = layer_results.get("L10", {}).get("risk_amount", 0.0)
 
     # -- Metrics --
     tii_sym = layer_results.get("L8", {}).get("tii_sym", 0.0)
     integrity = layer_results.get("L8", {}).get("integrity", 0.0)
     conf12 = layer_results.get("L2", {}).get("conf12", (tii_sym + integrity) / 2.0)
+    frpc_state = layer_results.get("L2", {}).get("frpc_state", "DESYNC")
     current_drawdown = layer_results.get("L5", {}).get("current_drawdown", 0.0)
     prop_compliant = layer_results.get("L6", {}).get("propfirm_compliant", True)
     # If propfirm checks are disabled, force compliant=True
@@ -191,6 +192,7 @@ def build_l12_synthesis(
         },
         "fusion_frpc": {
             "conf12": conf12,
+            "frpc_state": frpc_state,
             "frpc_energy": layer_results.get("L2", {}).get("frpc_energy", 0.0),
             "lambda_esi": 0.003,
             "integrity": integrity,

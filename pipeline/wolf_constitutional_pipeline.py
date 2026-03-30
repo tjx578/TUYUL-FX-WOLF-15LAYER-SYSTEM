@@ -1227,7 +1227,26 @@ class WolfConstitutionalPipeline:
             risk_ok: Any = l6.get("risk_ok", False)
             smc_confidence: Any = l9.get("confidence", 0.0)
             assert self._l10 is not None
-            l10: dict[str, Any] = _timed_layer_call(self._l10.analyze, "L10", risk_ok, smc_confidence)
+
+            # Build trade_params from L11 + account state for L10
+            _l10_trade_params: dict[str, Any] = {
+                "entry": float(l11.get("entry_price", l11.get("entry", 0.0))),
+                "stop_loss": float(l11.get("stop_loss", l11.get("sl", 0.0))),
+                "take_profit": float(l11.get("take_profit_1", l11.get("tp1", l11.get("tp", 0.0)))),
+                "direction": direction,
+            }
+            _l10_balance = float(_l6_account_state.get("equity", 10_000.0)) or 10_000.0
+            l10: dict[str, Any] = _timed_layer_call(
+                self._l10.analyze,
+                "L10",
+                _l10_trade_params,
+                _l10_balance,
+                symbol,
+                confidence=float(smc_confidence),
+                trade_returns=trade_returns,
+                win_probability=l7.get("win_probability"),
+                bayesian_posterior=l7.get("bayesian_posterior"),
+            )
             layers_executed.append("L10")
 
             # ── SL/TP zero guard ─────────────────────────────────

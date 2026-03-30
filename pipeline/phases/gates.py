@@ -42,43 +42,46 @@ def evaluate_9_gates(synthesis: dict[str, Any]) -> dict[str, Any]:
     Returns:
         dict with per-gate booleans, overall pass, and metadata.
     """
+    layers = synthesis.get("layers", {})
+    execution = synthesis.get("execution", {})
+    fusion_frpc = synthesis.get("fusion_frpc", {})
+
     # Gate 1: TIIsym >= 0.93
-    tii = synthesis.get("L8", {}).get("tii_sym", 0.0)
+    tii = layers.get("L8_tii_sym", 0.0)
     g1 = tii >= get_tii_min()
 
     # Gate 2: Monte Carlo Win-Rate + Risk of Ruin
-    l7 = synthesis.get("L7", {})
-
-    _raw_win = l7.get("win_probability", 0.0)
-    win_pct = _raw_win if _raw_win > 1.0 else _raw_win * 100.0
+    _mc_win = layers.get("L7_monte_carlo_win", 0.0)
+    # L7_monte_carlo_win is normalized 0.0-1.0 in synthesis
+    win_pct = _mc_win * 100.0 if _mc_win <= 1.0 else _mc_win
 
     _monte_min = get_monte_min()
     g2_win = win_pct >= (_monte_min * 100.0)
 
-    _risk_of_ruin = l7.get("risk_of_ruin", 1.0)
+    _risk_of_ruin = synthesis.get("risk_of_ruin", 1.0)
     _ror_threshold = 0.20
     g2_ror = _risk_of_ruin < _ror_threshold
 
     g2 = g2_win and g2_ror
 
     # Gate 3: FRPC State = SYNC
-    frpc_state = synthesis.get("L2", {}).get("frpc_state", "DESYNC")
+    frpc_state = fusion_frpc.get("frpc_state", "DESYNC")
     g3 = frpc_state == "SYNC"
 
     # Gate 4: CONF12 >= 0.75
-    conf12 = synthesis.get("L2", {}).get("conf12", 0.0)
+    conf12 = layers.get("conf12", 0.0)
     g4 = conf12 >= get_conf12_min()
 
     # Gate 5: RR >= 1:2.0
-    rr = synthesis.get("L11", {}).get("rr", 0.0)
+    rr = execution.get("rr_ratio", 0.0)
     g5 = rr >= get_rr_min()
 
     # Gate 6: Integrity >= 0.97
-    integrity = synthesis.get("L8", {}).get("integrity", 0.0)
+    integrity = layers.get("L8_integrity_index", 0.0)
     g6 = integrity >= get_integrity_min()
 
     # Gate 7: PropFirm Compliant
-    compliant = synthesis.get("L6", {}).get("propfirm_compliant", True)
+    compliant = synthesis.get("propfirm", {}).get("compliant", True)
     g7 = bool(compliant)
 
     # Gate 8: Drawdown <= 2.5%
